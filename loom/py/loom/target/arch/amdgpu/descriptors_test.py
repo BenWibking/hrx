@@ -244,6 +244,93 @@ def test_ds_crosslane_effects_use_lds_counter_without_memory_alias(
     )
 
 
+def test_gfx950_permlane_swaps_model_complete_destructive_family() -> None:
+    gfx950_overlays = {
+        overlay.descriptor_key: overlay for overlay in _gfx950_core_overlays()
+    }
+    family_keys = {
+        f"amdgpu.v_permlane{lane_count}_swap_b32{suffix}"
+        for lane_count in (16, 32)
+        for suffix in ("", ".e64")
+    }
+    assert family_keys.issubset(gfx950_overlays)
+    assert family_keys.isdisjoint(
+        overlay.descriptor_key for overlay in _gfx940_core_overlays()
+    )
+    assert family_keys.isdisjoint(
+        overlay.descriptor_key for overlay in _gfx9_4_generic_core_overlays()
+    )
+
+    expected_operands = (
+        ("VDST", "dst", OperandRole.RESULT, ()),
+        ("SRC0", "src", OperandRole.RESULT, ()),
+        ("VDST", "old_dst", OperandRole.OPERAND, (OperandFlag.IMPLICIT,)),
+        ("SRC0", "old_src", OperandRole.OPERAND, (OperandFlag.IMPLICIT,)),
+    )
+    expected_constraints = (
+        Constraint(ConstraintKind.TIED, 0, 2),
+        Constraint(ConstraintKind.DESTRUCTIVE, 0, 2),
+        Constraint(ConstraintKind.TIED, 1, 3),
+        Constraint(ConstraintKind.DESTRUCTIVE, 1, 3),
+    )
+    expected_effects = (Effect(EffectKind.CONVERGENT, flags=(EffectFlag.ORDERED,)),)
+
+    for lane_count in (16, 32):
+        base_key = f"amdgpu.v_permlane{lane_count}_swap_b32"
+        compact = gfx950_overlays[base_key]
+        extended = gfx950_overlays[f"{base_key}.e64"]
+        for overlay in (compact, extended):
+            assert overlay.semantic_tag == f"lane.permlane{lane_count}.swap.b32"
+            assert (
+                tuple(
+                    (
+                        operand.xml_field_name,
+                        operand.descriptor_operand.field_name,
+                        operand.descriptor_operand.role,
+                        operand.descriptor_operand.flags,
+                    )
+                    for operand in overlay.operands
+                )
+                == expected_operands
+            )
+            assert overlay.constraints == expected_constraints
+            assert overlay.effects == expected_effects
+
+        assert compact.encoding_name == "ENC_VOP1"
+        assert compact.immediate_fields == ()
+        assert compact.immediates == ()
+        assert extended.encoding_name == "ENC_VOP3"
+        assert extended.immediate_fields == ("OP_SEL", "OP_SEL")
+        assert tuple(
+            (
+                immediate.field_name,
+                immediate.encoding_field_bit_offset,
+                immediate.flags,
+                immediate.default_value,
+            )
+            for immediate in extended.immediates
+        ) == (
+            ("bound_ctrl", 1, (ImmediateFlag.DEFAULT_VALUE,), 0),
+            ("fi", 0, (ImmediateFlag.DEFAULT_VALUE,), 0),
+        )
+        native_form = extended.asm_forms[0]
+        assert extended.mnemonic == f"v_permlane{lane_count}_swap_b32_e64"
+        assert native_form.native_assembly_mnemonic is None
+        assert tuple(
+            (value.kind, value.field_name, value.literal)
+            for value in native_form.native_assembly_values
+        ) == (
+            (NativeAsmValueKind.RESULT, "dst", None),
+            (NativeAsmValueKind.RESULT, "src", None),
+            (
+                NativeAsmValueKind.IMMEDIATE_TARGET_FORMAT,
+                "bound_ctrl",
+                "bound_ctrl",
+            ),
+            (NativeAsmValueKind.IMMEDIATE_TARGET_FORMAT, "fi", "fi"),
+        )
+
+
 def test_contract_descriptor_projection_preserves_operation_kind() -> None:
     for overlay_builder in _AMDGPU_CONTRACT_DESCRIPTOR_OVERLAY_BUILDERS.values():
         overlay = overlay_builder()
@@ -1406,7 +1493,8 @@ def test_pure_integer_valu_results_are_rematerializable() -> None:
         "amdgpu.v_sub_co_ci_u32",
         "amdgpu.v_lshlrev_b32.src0_16_low16",
         "amdgpu.v_lshlrev_b64",
-        "amdgpu.v_bfe_u32.offset_0_width_16_low16",
+        "amdgpu.v_bfe_i32.offset_0_width_inline_low16",
+        "amdgpu.v_bfe_u32.offset_0_width_inline_low16",
         "amdgpu.v_permlanex16_b32.src12_inline",
     )
     rematerializable_result = Constraint(

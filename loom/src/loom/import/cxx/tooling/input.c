@@ -44,15 +44,17 @@ static iree_status_t loom_cxx_input_token(iree_string_view_t* remaining,
   return iree_ok_status();
 }
 
-static iree_status_t loom_cxx_input_options(
-    const loom_input_request_t* request, iree_arena_allocator_t* arena,
-    iree_allocator_t host_allocator, loom_cxx_import_options_t* options) {
+iree_status_t loom_cxx_input_parse_options(
+    iree_string_view_t source_path, iree_string_view_t input_options,
+    iree_arena_allocator_t* arena, iree_allocator_t host_allocator,
+    loom_cxx_import_options_t* out_options) {
+  loom_cxx_import_options_initialize(out_options);
   iree_string_view_t* tokens = NULL;
   iree_host_size_t count = 0;
   iree_host_size_t capacity = 0;
   iree_string_builder_t token;
   iree_string_builder_initialize(host_allocator, &token);
-  iree_string_view_t remaining = iree_string_view_trim(request->options);
+  iree_string_view_t remaining = iree_string_view_trim(input_options);
   iree_status_t status = iree_ok_status();
   while (iree_status_is_ok(status) && remaining.size) {
     status = loom_cxx_input_token(&remaining, &token);
@@ -85,10 +87,10 @@ static iree_status_t loom_cxx_input_options(
       iree_arena_allocate_array(arena, count, sizeof(*roots), (void**)&roots));
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(arena, count, sizeof(*defines),
                                                  (void**)&defines));
-  options->include_paths = include_paths;
-  options->system_include_paths = system_paths;
-  options->roots = roots;
-  options->defines = defines;
+  out_options->include_paths = include_paths;
+  out_options->system_include_paths = system_paths;
+  out_options->roots = roots;
+  out_options->defines = defines;
   for (iree_host_size_t i = 0; i < count; ++i) {
     iree_string_view_t name, value;
     if (iree_string_view_split(tokens[i], '=', &name, &value) < 0 ||
@@ -99,38 +101,38 @@ static iree_status_t loom_cxx_input_options(
           (int)tokens[i].size, tokens[i].data);
     }
     if (iree_string_view_equal(name, IREE_SV("std"))) {
-      options->standard = value;
+      out_options->standard = value;
     } else if (iree_string_view_equal(name, IREE_SV("triple"))) {
-      options->triple = value;
+      out_options->triple = value;
     } else if (iree_string_view_equal(name, IREE_SV("data-model"))) {
       if (iree_string_view_equal(value, IREE_SV("lp64"))) {
-        options->data_model = LOOM_CXX_DATA_MODEL_LP64;
+        out_options->data_model = LOOM_CXX_DATA_MODEL_LP64;
       } else if (iree_string_view_equal(value, IREE_SV("llp64"))) {
-        options->data_model = LOOM_CXX_DATA_MODEL_LLP64;
+        out_options->data_model = LOOM_CXX_DATA_MODEL_LLP64;
       } else if (iree_string_view_equal(value, IREE_SV("ilp32"))) {
-        options->data_model = LOOM_CXX_DATA_MODEL_ILP32;
+        out_options->data_model = LOOM_CXX_DATA_MODEL_ILP32;
       } else {
         return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                                 "unknown source data model '%.*s'",
                                 (int)value.size, value.data);
       }
     } else if (iree_string_view_equal(name, IREE_SV("root"))) {
-      roots[options->root_count++] = value;
+      roots[out_options->root_count++] = value;
     } else if (iree_string_view_equal(name, IREE_SV("I")) ||
                iree_string_view_equal(name, IREE_SV("isystem"))) {
       char* path = NULL;
       IREE_RETURN_IF_ERROR(loom_tooling_file_path_join(
-          iree_file_path_dirname(request->path), value,
+          iree_file_path_dirname(source_path), value,
           iree_arena_allocator(arena), &path));
       if (iree_string_view_equal(name, IREE_SV("I"))) {
-        include_paths[options->include_path_count++] =
+        include_paths[out_options->include_path_count++] =
             iree_make_cstring_view(path);
       } else {
-        system_paths[options->system_include_path_count++] =
+        system_paths[out_options->system_include_path_count++] =
             iree_make_cstring_view(path);
       }
     } else if (iree_string_view_equal(name, IREE_SV("D"))) {
-      loom_cxx_define_t* define = &defines[options->define_count++];
+      loom_cxx_define_t* define = &defines[out_options->define_count++];
       if (iree_string_view_split(value, '=', &define->name, &define->value) <
           0) {
         define->value = IREE_SV("1");
@@ -152,9 +154,9 @@ static iree_status_t loom_cxx_input_options(
         enabled = !enabled;
       }
       if (enabled) {
-        options->flags |= flag;
+        out_options->flags |= flag;
       } else {
-        options->flags &= ~flag;
+        out_options->flags &= ~flag;
       }
     } else {
       return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
@@ -174,16 +176,15 @@ static iree_status_t loom_cxx_input_load(const loom_input_request_t* request,
   iree_arena_allocator_t arena;
   iree_arena_initialize(block_pool, &arena);
   loom_cxx_import_options_t options;
-  loom_cxx_import_options_initialize(&options);
-  options.diagnostic_sink = request->parse_options.diagnostic_sink;
-  options.low_asm_environment = request->parse_options.low_asm_environment;
-  if (capture.fn) {
-    options.source_observer = (loom_cxx_source_observer_t){
-        .fn = capture.fn, .user_data = capture.user_data};
-  }
-  iree_status_t status =
-      loom_cxx_input_options(request, &arena, host_allocator, &options);
+  iree_status_t status = loom_cxx_input_parse_options(
+      request->path, request->options, &arena, host_allocator, &options);
   if (iree_status_is_ok(status)) {
+    options.diagnostic_sink = request->parse_options.diagnostic_sink;
+    options.low_asm_environment = request->parse_options.low_asm_environment;
+    if (capture.fn) {
+      options.source_observer = (loom_cxx_source_observer_t){
+          .fn = capture.fn, .user_data = capture.user_data};
+    }
     status = loom_cxx_import(request->source, request->path, context,
                              block_pool, &options, host_allocator, out_module);
   }

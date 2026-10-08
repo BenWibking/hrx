@@ -264,13 +264,11 @@ TEST_F(SpirvDeviceProviderTest, SelectsRawBdaTarget) {
   IREE_ASSERT_OK(SelectBaselineTarget());
   EXPECT_TRUE(iree_string_view_equal(loom_spirv_vulkan_device_provider.name,
                                      IREE_SV("spirv-vulkan-hal")));
-  ASSERT_NE(loom_spirv_vulkan_device_provider.target_emitter, nullptr);
-  EXPECT_TRUE(iree_string_view_equal(
-      loom_spirv_vulkan_device_provider.target_emitter->name,
-      IREE_SV("spirv")));
-  EXPECT_EQ(
-      loom_spirv_vulkan_device_provider.target_emitter->target_artifact_format,
-      LOOM_TARGET_ARTIFACT_FORMAT_SPIRV_BINARY);
+  ASSERT_NE(target_.target_emitter, nullptr);
+  EXPECT_TRUE(
+      iree_string_view_equal(target_.target_emitter->name, IREE_SV("spirv")));
+  EXPECT_EQ(target_.target_emitter->target_artifact_format,
+            LOOM_TARGET_ARTIFACT_FORMAT_SPIRV_BINARY);
 
   const loom_spirv_target_profile_t* target_profile =
       loom_spirv_target_profile_cast(target_.target_profile);

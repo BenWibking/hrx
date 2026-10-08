@@ -4154,6 +4154,130 @@ def test_generator_emits_sliced_immediate_encoding_rows() -> None:
     assert ".signed_min = (-INT64_C(2147483648))," in generated.source
 
 
+def test_generator_emits_disjoint_immediate_encoding_subfields() -> None:
+    descriptor = replace(
+        TEST_LOW_CONST_I32_DESCRIPTOR,
+        immediates=(
+            Immediate(
+                "low_flag",
+                ImmediateKind.UNSIGNED,
+                bit_width=1,
+                encoding_field_id=7,
+                encoding_field_bit_offset=0,
+                unsigned_max=1,
+            ),
+            Immediate(
+                "high_flag",
+                ImmediateKind.UNSIGNED,
+                bit_width=1,
+                encoding_field_id=7,
+                encoding_field_bit_offset=1,
+                unsigned_max=1,
+            ),
+        ),
+        asm_forms=(
+            AsmForm(
+                results=("dst",),
+                immediates=(AsmImmediate("low_flag"), AsmImmediate("high_flag")),
+            ),
+        ),
+    )
+    descriptor_set = replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,))
+
+    generated = generate_descriptor_set(descriptor_set)
+
+    assert generated.source.count(".encoding_field_id = 7,") == 2
+    assert ".encoding_subfield_offset = 1," in generated.source
+    assert ".encoding_subfield_offset = 2," in generated.source
+
+
+def test_generator_preserves_target_owned_shared_immediate_field() -> None:
+    descriptor = replace(
+        TEST_LOW_CONST_I32_DESCRIPTOR,
+        immediates=(
+            Immediate(
+                "first",
+                ImmediateKind.UNSIGNED,
+                bit_width=1,
+                encoding_field_id=7,
+                unsigned_max=1,
+            ),
+            Immediate(
+                "second",
+                ImmediateKind.UNSIGNED,
+                bit_width=1,
+                encoding_field_id=7,
+                unsigned_max=1,
+            ),
+        ),
+        asm_forms=(
+            AsmForm(
+                results=("dst",),
+                immediates=(AsmImmediate("first"), AsmImmediate("second")),
+            ),
+        ),
+    )
+    descriptor_set = replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,))
+
+    generated = generate_descriptor_set(descriptor_set)
+
+    assert generated.source.count(".encoding_field_id = 7,") == 2
+
+
+def test_generator_rejects_overlapping_immediate_encoding_subfields() -> None:
+    descriptor = replace(
+        TEST_LOW_CONST_I32_DESCRIPTOR,
+        immediates=(
+            Immediate(
+                "first",
+                ImmediateKind.UNSIGNED,
+                bit_width=2,
+                encoding_field_id=7,
+                encoding_field_bit_offset=0,
+                unsigned_max=3,
+            ),
+            Immediate(
+                "second",
+                ImmediateKind.UNSIGNED,
+                bit_width=1,
+                encoding_field_id=7,
+                encoding_field_bit_offset=1,
+                unsigned_max=1,
+            ),
+        ),
+    )
+    descriptor_set = replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,))
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape("descriptor 'test.const.i32' immediate 'second' subfield overlaps another immediate in encoding field id 7"),
+    ):
+        generate_descriptor_set(descriptor_set)
+
+
+def test_generator_rejects_immediate_encoding_subfield_without_field() -> None:
+    base_immediate = TEST_LOW_CONST_I32_DESCRIPTOR.immediates[0]
+    descriptor = replace(
+        TEST_LOW_CONST_I32_DESCRIPTOR,
+        immediates=(
+            replace(
+                base_immediate,
+                bit_width=1,
+                encoding_field_bit_offset=0,
+                signed_min=0,
+                unsigned_max=1,
+            ),
+        ),
+    )
+    descriptor_set = replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,))
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape("descriptor 'test.const.i32' immediate 'i32_value' has an encoding field bit offset without a direct encoding field"),
+    ):
+        generate_descriptor_set(descriptor_set)
+
+
 def test_generator_rejects_immediate_with_direct_and_sliced_encoding() -> None:
     base_descriptor = TEST_LOW_CONST_I32_DESCRIPTOR
     descriptor = replace(

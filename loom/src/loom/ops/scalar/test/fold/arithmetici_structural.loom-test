@@ -1,5 +1,47 @@
 // RUN: pass canonicalize
 
+// The proof uses both runtime ranges and preserves the dividend identity.
+func.def @bounded_unsigned_remainder(%input: i32, %divisor: i32) -> (i32) {
+  %bounded = scalar.assume %input [range(%input, 12, 60), multiple_of(%input, 6)] : i32
+  %positive = scalar.assume %divisor [range(%divisor, 61, 100)] : i32
+  %result = scalar.remui %bounded, %positive : i32
+  func.return %result : i32
+}
+
+// ----
+func.def @bounded_unsigned_remainder(%input: i32, %divisor: i32) -> (i32) {
+  %bounded = scalar.assume %input [range(%input, 12, 60), multiple_of(%input, 6)] : i32
+  func.return %bounded : i32
+}
+
+// ====
+
+func.def @high_bit_unsigned_remainder(%input: i64, %divisor: i64) -> (i64) {
+  %bounded = scalar.assume %input [range(%input, -32, -16)] : i64
+  %larger = scalar.assume %divisor [range(%divisor, -15, -1)] : i64
+  %result = scalar.remui %bounded, %larger : i64
+  func.return %result : i64
+}
+
+// ----
+func.def @high_bit_unsigned_remainder(%input: i64, %divisor: i64) -> (i64) {
+  %bounded = scalar.assume %input [range(%input, -32, -16)] : i64
+  func.return %bounded : i64
+}
+
+// ====
+
+func.def @remainder_overlap_and_zero_are_not_identities(%input: i32, %divisor: i32) -> (i32, i32) {
+  %bounded = scalar.assume %input [range(%input, 0, 60)] : i32
+  %overlapping = scalar.assume %divisor [range(%divisor, 60, 100)] : i32
+  %maybe_zero = scalar.assume %divisor [range(%divisor, 0, 100)] : i32
+  %overlap = scalar.remui %bounded, %overlapping : i32
+  %zero = scalar.remui %bounded, %maybe_zero : i32
+  func.return %overlap, %zero : i32, i32
+}
+
+// ====
+
 func.def @addi_dynamic_identities(%x: i32) -> (i32, i32) {
   %c0 = scalar.constant 0 : i32
   %lhs = scalar.addi %c0, %x : i32

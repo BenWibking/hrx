@@ -171,18 +171,18 @@ low.func.def target<amdgpu.rdna3_5.core>(@caller_target) abi(hal_kernel) @target
 // and indices without giving low.invoke an interprocedural fact environment.
 amdgpu.target<gfx11-generic> @target
 
-low.func.def target<amdgpu.gfx11.generic.core>(@target) @bounded_identity(%value: reg<amdgpu.sgpr>) -> (reg<amdgpu.sgpr>) where [mul(%value, 16)] asm {
+low.func.def target<amdgpu.gfx11.generic.core>(@target) @bounded_identity(%value: reg<amdgpu.sgpr>) -> (reg<amdgpu.sgpr>) where [multiple_of(%value, 16)] asm {
   return %value
 }
 
-func.def target(@target) @scalar_argument_contract(%value: index) -> (index) where [range(%value, 1, 1024), mul(%value, 16)] {
+func.def target(@target) @scalar_argument_contract(%value: index) -> (index) where [range(%value, 1, 1024), multiple_of(%value, 16)] {
   %result = low.invoke @bounded_identity(%value) : (index) -> (index)
   func.return %result : index
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @scalar_argument_contract(%value: reg<amdgpu.sgpr>) -> (reg<amdgpu.sgpr>) where [range(%value, 1, 1024), mul(%value, 16)] asm {
-  %7 = low.assume %value [mul(%value, 16)] : reg<amdgpu.sgpr>
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @scalar_argument_contract(%value: reg<amdgpu.sgpr>) -> (reg<amdgpu.sgpr>) where [range(%value, 1, 1024), multiple_of(%value, 16)] asm {
+  %7 = low.assume %value [multiple_of(%value, 16)] : reg<amdgpu.sgpr>
   return %7
 }
 

@@ -520,6 +520,12 @@ static iree_status_t loom_amdgpu_loom_check_emit_provider_execute(
   }
   const loom_low_emission_frame_options_t frame_options = {
       .schedule_strategy = options.schedule_strategy,
+      .schedule_flags =
+          LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES |
+          LOOM_LOW_SCHEDULE_FLAG_RETAIN_ACYCLIC_MEMORY_COMPLETIONS,
+      .allocation_flags =
+          LOOM_LOW_ALLOCATION_FLAG_RETAIN_COALESCED_INCOMING_INDEX |
+          LOOM_LOW_ALLOCATION_FLAG_RETAIN_STORAGE_RELEASE_ACTION_INDEX,
       .schedule_diagnostic_flags = options.schedule_diagnostic_flags,
       .allocation_diagnostic_flags = options.allocation_diagnostic_flags,
       .allocation_budgets = options.allocation_budgets,

@@ -337,6 +337,17 @@ iree_status_t iree_hal_create_device_from_flags(
     const iree_hal_device_create_params_t* create_params,
     iree_allocator_t host_allocator, iree_hal_device_t** out_device) {
   IREE_ASSERT_ARGUMENT(create_params);
+  IREE_ASSERT_ARGUMENT(out_device);
+  *out_device = NULL;
+
+  const iree_string_view_list_t device_flags = iree_hal_device_flag_list();
+  if (device_flags.count > 1) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "more than one --device= flag was specified; this operation requires "
+        "exactly one device");
+  }
+
   iree_hal_device_list_t* device_list = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_create_devices_from_flags(
       driver_registry, default_device, create_params, host_allocator,

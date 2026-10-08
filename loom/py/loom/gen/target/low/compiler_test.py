@@ -182,6 +182,35 @@ def test_immediate_identity_is_part_of_interned_layout() -> None:
     assert sorted(value_masks) == [1, 2]
 
 
+@pytest.mark.parametrize(
+    ("immediate", "message"),
+    [
+        (
+            replace(
+                TEST_LOW_CONST_I32_DESCRIPTOR.immediates[0],
+                flags=(ImmediateFlag.SYMBOLIC, ImmediateFlag.READ_ONLY_DATA),
+            ),
+            "marks read-only data on a non-ordinal",
+        ),
+        (
+            replace(
+                TEST_LOW_CONST_I32_DESCRIPTOR.immediates[0],
+                kind=ImmediateKind.ORDINAL,
+                flags=(ImmediateFlag.READ_ONLY_DATA,),
+            ),
+            "marks read-only data without symbolic",
+        ),
+    ],
+)
+def test_read_only_data_immediate_requires_symbolic_ordinal(immediate, message) -> None:
+    descriptor = replace(
+        TEST_LOW_CONST_I32_DESCRIPTOR,
+        immediates=(immediate,),
+    )
+    with pytest.raises(ValueError, match=message):
+        compiler.compile_descriptor_set(replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,)))
+
+
 @pytest.mark.parametrize("count", [32, 33])
 def test_immediate_presence_capacity(count) -> None:
     base = TEST_LOW_CONST_I32_DESCRIPTOR

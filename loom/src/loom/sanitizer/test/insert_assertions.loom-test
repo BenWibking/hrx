@@ -5,14 +5,14 @@
 // new runtime assertion.
 func.def @assume_predicates_filter_to_missing_proof(%n: index) -> (index) {
   %known = index.assume %n [range(%n, 0, 1024)] : index
-  %checked = index.assume %known [range(%known, 0, 2048), mul(%known, 16)] : index
+  %checked = index.assume %known [range(%known, 0, 2048), multiple_of(%known, 16)] : index
   func.return %checked : index
 }
 
 // ----
 func.def @assume_predicates_filter_to_missing_proof(%n: index) -> (index) {
   %known = sanitizer.assert.value %n [range(%n, 0, 1024)] : index
-  %checked = sanitizer.assert.value %known [mul(%known, 16)] : index
+  %checked = sanitizer.assert.value %known [multiple_of(%known, 16)] : index
   func.return %checked : index
 }
 

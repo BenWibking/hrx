@@ -31,6 +31,24 @@ iree_py_library(
 )
 
 iree_py_library(
+    name = "vector_families",
+    srcs = ["vector_families.py"],
+    deps = [":package_init"],
+)
+
+iree_py_library(
+    name = "native_vector",
+    srcs = [
+        "native_vector.py",
+        "vector_encoding.py",
+    ],
+    deps = [
+        ":package_init",
+        "//loom/py/loom/target:low_descriptors",
+    ],
+)
+
+iree_py_library(
     name = "dialect",
     srcs = ["dialect.py"],
     deps = [
@@ -55,7 +73,9 @@ iree_py_library(
         "descriptors/simd128.py",
     ],
     deps = [
+        ":native_vector",
         ":target_info",
+        ":vector_families",
         "//loom/py/loom/target:low_descriptors",
         "//loom/py/loom/target/arch:package",
     ],
@@ -87,5 +107,19 @@ iree_py_test(
         "//loom/py/loom/target:native_contraction_layout",
         "//loom/py/loom/target:native_coordinate_projection",
         "//loom/py/loom/target:native_layout_facts",
+    ],
+)
+
+iree_py_test(
+    name = "vector_families_test",
+    srcs = [
+        "vector_families_test.py",
+        "//loom/py/loom/tools:pytest_style_runner.py",
+    ],
+    args = ["loom.target.arch.x86.vector_families_test"],
+    main = "pytest_style_runner.py",
+    deps = [
+        ":descriptors",
+        ":vector_families",
     ],
 )

@@ -241,17 +241,28 @@ loomc_status_t loomc_result_add_diagnostic(
         LOOMC_STATUS_INVALID_ARGUMENT,
         "diagnostic related locations have a count but no storage");
   }
+  if (diagnostic->parameter_count != 0 && diagnostic->parameters == NULL) {
+    return loomc_make_status(
+        LOOMC_STATUS_INVALID_ARGUMENT,
+        "diagnostic parameters have a count but no storage");
+  }
   LOOMC_RETURN_IF_ERROR(loomc_result_grow_array(
       result->allocator, sizeof(result->diagnostics[0]),
       result->diagnostic_count, result->diagnostic_count + 1,
       &result->diagnostic_capacity, (void**)&result->diagnostics));
   loomc_host_size_t related_size = diagnostic->related_location_count *
                                    sizeof(loomc_diagnostic_related_location_t);
-  loomc_host_size_t storage_size = related_size + diagnostic->code.size +
-                                   diagnostic->message.size +
-                                   diagnostic->formatted_text.size;
+  loomc_host_size_t parameter_size =
+      diagnostic->parameter_count * sizeof(loomc_diagnostic_parameter_t);
+  loomc_host_size_t storage_size =
+      related_size + parameter_size + diagnostic->code.size +
+      diagnostic->message.size + diagnostic->formatted_text.size;
   for (loomc_host_size_t i = 0; i < diagnostic->related_location_count; ++i) {
     storage_size += diagnostic->related_locations[i].label.size;
+  }
+  for (loomc_host_size_t i = 0; i < diagnostic->parameter_count; ++i) {
+    storage_size += diagnostic->parameters[i].name.size;
+    storage_size += diagnostic->parameters[i].value.size;
   }
   void* storage = NULL;
   if (storage_size) {
@@ -264,6 +275,11 @@ loomc_status_t loomc_result_add_diagnostic(
   if (diagnostic->related_location_count) {
     related_locations = storage;
     cursor += related_size;
+  }
+  loomc_diagnostic_parameter_t* parameters = NULL;
+  if (diagnostic->parameter_count) {
+    parameters = (loomc_diagnostic_parameter_t*)cursor;
+    cursor += parameter_size;
   }
   loomc_owned_diagnostic_t* target =
       &result->diagnostics[result->diagnostic_count];
@@ -278,6 +294,14 @@ loomc_status_t loomc_result_add_diagnostic(
   target->value.formatted_text =
       loomc_diagnostic_copy_string(diagnostic->formatted_text, &cursor);
   target->value.related_locations = related_locations;
+  target->value.parameters = parameters;
+  for (loomc_host_size_t i = 0; i < diagnostic->parameter_count; ++i) {
+    parameters[i] = diagnostic->parameters[i];
+    parameters[i].name =
+        loomc_diagnostic_copy_string(parameters[i].name, &cursor);
+    parameters[i].value =
+        loomc_diagnostic_copy_string(parameters[i].value, &cursor);
+  }
   loomc_status_t status = loomc_result_copy_diagnostic_range(
       result, &diagnostic->range, /*shared_source=*/NULL, &target->value.range);
   for (loomc_host_size_t i = 0; i < diagnostic->related_location_count; ++i) {

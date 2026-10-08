@@ -290,7 +290,7 @@ func.def public @entry(%x: i32) -> (i32) {
 ModulePtr CreateConfigConsumerModule(loomc_context_t* context,
                                      loomc_workspace_t* workspace) {
   SourcePtr source = CreateTextSource("config.loom", R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), multiple_of(%value, 16)]
 
 func.def public @entry() -> (index) {
   %hidden = config.get @model36.model.hidden_size : index

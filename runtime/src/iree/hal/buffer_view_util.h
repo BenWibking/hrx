@@ -81,7 +81,7 @@ typedef iree_status_t(IREE_API_PTR* iree_hal_buffer_view_generator_fn_t)(
 // exposed.
 //
 // IREE_HAL_MEMORY_TYPE_HOST_VISIBLE,
-// IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
+// IREE_HAL_MEMORY_ACCESS_WRITE,
 // IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED, and
 // IREE_HAL_BUFFER_USAGE_MAPPING_ACCESS_SEQUENTIAL_WRITE are added to
 // |buffer_params|. Non-coherent host writes are flushed before returning.

@@ -575,7 +575,7 @@ func.def @distinct_expression_classes_do_not_merge(%storage: buffer, %raw: index
 func.def @compound_record_translation_cfg(%input: buffer, %storage: buffer, %base_raw: index, %lane_raw: index, %word_count: i32) {
   %origin = index.constant 0 : offset
   %header_words = index.constant 4 : index
-  %base = index.assume %base_raw [range(%base_raw, 0, 992), mul(%base_raw, 32)] : index
+  %base = index.assume %base_raw [range(%base_raw, 0, 992), multiple_of(%base_raw, 32)] : index
   %lane = index.assume %lane_raw [range(%lane_raw, 0, 31)] : index
   %count_input = index.cast %word_count : i32 to offset
   %count = index.assume %count_input [range(%count_input, 1, 1024)] : offset
@@ -638,7 +638,7 @@ CHECK-NOT: scf.if *
 func.def @translated_endpoint_guard_keeps_raw_relation(%storage: buffer, %base_raw: index, %lane_raw: index, %word_count: i32, %value: i32) {
   %origin = index.constant 0 : offset
   %header_words = index.constant 4 : index
-  %base = index.assume %base_raw [range(%base_raw, 0, 992), mul(%base_raw, 32)] : index
+  %base = index.assume %base_raw [range(%base_raw, 0, 992), multiple_of(%base_raw, 32)] : index
   %lane = index.assume %lane_raw [range(%lane_raw, 0, 31)] : index
   %count_input = index.cast %word_count : i32 to offset
   %count = index.assume %count_input [range(%count_input, 1, 1024)] : offset
@@ -692,7 +692,7 @@ func.def @compound_record_negative_translation(%storage: buffer, %base_raw: inde
 func.def @compound_record_guard_stays_in_selected_scope(%storage: buffer, %base_raw: index, %lane_raw: index, %word_count: i32, %value: i32) {
   %origin = index.constant 0 : offset
   %header_words = index.constant 4 : index
-  %base = index.assume %base_raw [range(%base_raw, 0, 992), mul(%base_raw, 32)] : index
+  %base = index.assume %base_raw [range(%base_raw, 0, 992), multiple_of(%base_raw, 32)] : index
   %lane = index.assume %lane_raw [range(%lane_raw, 0, 31)] : index
   %count_input = index.cast %word_count : i32 to offset
   %count = index.assume %count_input [range(%count_input, 1, 1024)] : offset
@@ -725,7 +725,7 @@ func.def @compound_record_rejects_extra_word(%storage: buffer, %base_raw: index,
   %origin = index.constant 0 : offset
   %header_words = index.constant 4 : index
   %extra_header_words = index.constant 5 : index
-  %base = index.assume %base_raw [range(%base_raw, 0, 992), mul(%base_raw, 32)] : index
+  %base = index.assume %base_raw [range(%base_raw, 0, 992), multiple_of(%base_raw, 32)] : index
   %lane = index.assume %lane_raw [range(%lane_raw, 0, 31)] : index
   %count_input = index.cast %word_count : i32 to offset
   %count = index.assume %count_input [range(%count_input, 1, 1024)] : offset
@@ -752,7 +752,7 @@ func.def @compound_record_rejects_extra_word(%storage: buffer, %base_raw: index,
 func.def @compound_record_rejects_nonstrict_guard(%storage: buffer, %base_raw: index, %lane_raw: index, %word_count: i32, %value: i32) {
   %origin = index.constant 0 : offset
   %header_words = index.constant 4 : index
-  %base = index.assume %base_raw [range(%base_raw, 0, 992), mul(%base_raw, 32)] : index
+  %base = index.assume %base_raw [range(%base_raw, 0, 992), multiple_of(%base_raw, 32)] : index
   %lane = index.assume %lane_raw [range(%lane_raw, 0, 31)] : index
   %count_input = index.cast %word_count : i32 to offset
   %count = index.assume %count_input [range(%count_input, 1, 1024)] : offset

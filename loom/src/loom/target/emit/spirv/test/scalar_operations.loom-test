@@ -39,6 +39,8 @@ low.func.def target<spirv.logical.core>(@target) abi(shader_entry_point) @spirv_
                OpName %as_float "as_float"
                OpName %roundtrip "roundtrip"
                OpName %result "result"
+               OpDecorate %as_float NoContraction
+               OpDecorate %roundtrip NoContraction
        %void = OpTypeVoid
           %3 = OpTypeFunction %void
         %int = OpTypeInt 32 1
@@ -59,7 +61,6 @@ low.func.def target<spirv.logical.core>(@target) abi(shader_entry_point) @spirv_
      %result = OpBitcast %int %roundtrip
                OpReturn
                OpFunctionEnd
-
 
 // ====
 
@@ -252,9 +253,13 @@ low.kernel.def target<spirv.logical.core>(@hal_target) workgroup_size(1, 1, 1) @
                OpMemberDecorate %_struct_24 0 Offset 0
                OpDecorate %_ptr_PhysicalStorageBuffer_char ArrayStride 1
                OpDecorate %_ptr_PhysicalStorageBuffer_int ArrayStride 4
+               OpDecorate %converted_f32 NoContraction
                OpDecorate %_ptr_PhysicalStorageBuffer_float ArrayStride 4
                OpDecorate %_ptr_PhysicalStorageBuffer_long ArrayStride 8
                OpDecorate %_ptr_PhysicalStorageBuffer_half ArrayStride 2
+               OpDecorate %extended_f32 NoContraction
+               OpDecorate %truncated_f16 NoContraction
+               OpDecorate %converted_i16 NoContraction
                OpDecorate %_ptr_PhysicalStorageBuffer_short ArrayStride 2
                OpDecorate %_arr_uint_uint_2_0 ArrayStride 4
                OpDecorate %_struct_128 Block

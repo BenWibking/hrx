@@ -179,11 +179,9 @@ typedef struct loom_low_schedule_unspillable_completion_path_t {
   uint32_t sink;
 } loom_low_schedule_unspillable_completion_path_t;
 
+// Mutable scheduling facts indexed by function-local value ordinal. The
+// acquired value domain owns the corresponding module value IDs.
 typedef struct loom_low_schedule_value_record_t {
-  // Module value represented by this local record.
-  loom_value_id_t value_id;
-  // Defining node index, or NONE for block arguments/external definitions.
-  uint32_t producer_node;
   // First same-class architectural-state writer after the producer.
   loom_low_schedule_state_access_t state_next_write;
   // Register units contributed to the pressure model.
@@ -250,6 +248,8 @@ typedef struct loom_low_schedule_build_state_t {
   const loom_cfg_graph_t* cfg_graph;
   // Dense per-local-value scheduler records indexed by value ordinal.
   loom_low_schedule_value_record_t* values;
+  // Defining schedule node indexed by local value ordinal.
+  uint32_t* value_producer_nodes;
   // Schedule block records indexed by region block ordinal.
   loom_low_schedule_block_t* blocks;
   // Schedule node records indexed by scheduler node ordinal.
@@ -291,6 +291,8 @@ typedef struct loom_low_schedule_build_state_t {
   loom_low_schedule_candidate_decision_t* candidate_decisions;
   // Descriptor effects in scheduled order.
   loom_low_schedule_effect_use_t* effect_uses;
+  // Exact cross-block memory completions retained for target consumers.
+  loom_low_schedule_memory_completion_edge_t* memory_completion_edges;
   // Descriptor hazard rows in scheduled order.
   loom_low_schedule_hazard_use_t* hazard_uses;
   // Minimum-distance hazard gaps in scheduled order.
@@ -435,6 +437,8 @@ typedef struct loom_low_schedule_build_state_t {
   iree_host_size_t resource_use_count;
   // Number of populated effect_uses entries.
   iree_host_size_t effect_use_count;
+  // Number of populated memory_completion_edges entries.
+  iree_host_size_t memory_completion_edge_count;
   // Number of populated hazard_uses entries.
   iree_host_size_t hazard_use_count;
   // Number of populated hazard_gaps entries.

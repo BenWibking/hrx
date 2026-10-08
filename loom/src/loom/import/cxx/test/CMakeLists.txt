@@ -15,6 +15,7 @@ loom_check_test_suite(
     compiler_test
   SRCS
     "aggregate_constants.cxx-test"
+    "array_records.cxx-test"
     "assembly.cxx-test"
     "assembly_invalid.cxx-test"
     "assumptions.cxx-test"
@@ -94,6 +95,8 @@ loom_check_test_suite(
     "parameter_noalias.cxx-test"
     "parameter_noalias_invalid.cxx-test"
     "pointers.cxx-test"
+    "predicate_contracts.cxx-test"
+    "predicate_contracts_invalid.cxx-test"
     "record_arrays.cxx-test"
     "record_memory.cxx-test"
     "record_memory_invalid.cxx-test"
@@ -110,6 +113,8 @@ loom_check_test_suite(
     "shaped_intrinsics_invalid.cxx-test"
     "standards.cxx-test"
     "storage_updates.cxx-test"
+    "subgroup_reductions.cxx-test"
+    "subgroup_reductions_invalid.cxx-test"
     "subgroups.cxx-test"
     "subgroups_invalid.cxx-test"
     "symbols.cxx-test"
@@ -342,6 +347,42 @@ loom_execution_test(
     "loom-executor=reference"
 )
 endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+loom_test_module(
+  NAME
+    array_records_test_module
+  SRCS
+    "array_records.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    array_records_test_execute_vm_reference_test
+  MODULE
+    "::array_records_test_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    array_records_module
+  SRCS
+    "array_records_kernel.cxx"
+    "array_records_kernel.loom"
+)
 endif()
 
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)

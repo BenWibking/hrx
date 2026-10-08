@@ -8,6 +8,7 @@
 
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
+#include "loom/target/selection.h"
 
 #ifndef LOOM_CONFIG_COMPILER_HAVE_X86
 #define LOOM_CONFIG_COMPILER_HAVE_X86 0
@@ -72,6 +73,41 @@ TEST(ConfiguredCompilerProviderSetTest, ComposesSelectedTargetCompilers) {
             static_cast<bool>(LOOM_CONFIG_COMPILER_HAVE_XDNA));
   loom_target_environment_deinitialize(&environment);
 }
+
+#if LOOM_CONFIG_COMPILER_HAVE_X86
+TEST(ConfiguredCompilerProviderSetTest, NativeCpuSelectionUsesDeviceFacts) {
+  loom_target_environment_t environment;
+  IREE_ASSERT_OK(loom_target_environment_initialize(
+      loom_configured_compiler_provider_set(), &environment));
+  const loom_target_specification_t scalar_specification = {
+      /*.family=*/IREE_SVL("x86"),
+      /*.selector=*/IREE_SVL("scalar"),
+  };
+  const loom_target_profile_t* scalar_profile = nullptr;
+  IREE_ASSERT_OK(loom_target_environment_select_profile(
+      &environment, &scalar_specification, &scalar_profile));
+
+  // No optional ISA features are promised by this execution device.
+  iree_cpu_data_t cpu_data = {};
+  cpu_data.architecture = IREE_CPU_ARCHITECTURE_X86_64;
+  const loom_target_profile_t* selected = nullptr;
+  IREE_ASSERT_OK(loom_target_environment_select_cpu_profile(
+      &environment, &cpu_data, nullptr, nullptr, &selected));
+  EXPECT_EQ(selected, scalar_profile);
+  IREE_ASSERT_OK(loom_target_environment_select_cpu_profile(
+      &environment, &cpu_data, nullptr, scalar_profile, &selected));
+  EXPECT_EQ(selected, scalar_profile);
+
+  // A compiler running on x86 must still reject an x86 profile for ARM.
+  cpu_data.architecture = IREE_CPU_ARCHITECTURE_ARM_64;
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_UNAVAILABLE,
+      loom_target_environment_select_cpu_profile(
+          &environment, &cpu_data, nullptr, scalar_profile, &selected));
+  EXPECT_EQ(selected, nullptr);
+  loom_target_environment_deinitialize(&environment);
+}
+#endif  // LOOM_CONFIG_COMPILER_HAVE_X86
 
 }  // namespace
 }  // namespace loom

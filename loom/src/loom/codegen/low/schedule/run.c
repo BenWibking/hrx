@@ -17,6 +17,7 @@
 #include "loom/codegen/low/schedule/descriptor_rows.h"
 #include "loom/codegen/low/schedule/diagnostics.h"
 #include "loom/codegen/low/schedule/graph.h"
+#include "loom/codegen/low/schedule/memory_completion.h"
 #include "loom/codegen/low/schedule/pressure.h"
 #include "loom/codegen/low/schedule/ready_frontier.h"
 #include "loom/codegen/low/schedule/ready_policy.h"
@@ -42,13 +43,22 @@ static iree_status_t loom_low_schedule_initialize_value_records(
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       state->scratch_arena, value_domain->value_count, sizeof(*state->values),
       (void**)&state->values));
+  iree_arena_allocator_t* producer_arena =
+      iree_any_bit_set(state->options->flags,
+                       LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES)
+          ? state->arena
+          : state->scratch_arena;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(producer_arena, value_domain->value_count,
+                                sizeof(*state->value_producer_nodes),
+                                (void**)&state->value_producer_nodes));
+  memset(state->value_producer_nodes, 0xFF,
+         value_domain->value_count * sizeof(*state->value_producer_nodes));
   for (loom_value_ordinal_t ordinal = 0; ordinal < value_domain->value_count;
        ++ordinal) {
     const loom_value_id_t value_id = value_domain->value_ids[ordinal];
     loom_low_schedule_value_record_t* value = &state->values[ordinal];
     *value = (loom_low_schedule_value_record_t){
-        .value_id = value_id,
-        .producer_node = LOOM_LOW_SCHEDULE_NODE_NONE,
         .state_next_write =
             {
                 .node_index = LOOM_LOW_SCHEDULE_NODE_NONE,
@@ -936,8 +946,8 @@ static loom_value_id_t loom_low_schedule_state_value_for_dependency(
       loom_low_schedule_node_const_operand_ordinals(reader);
   if (dependency->value_operand_index != LOOM_LOW_ID_NONE) {
     IREE_ASSERT_LT(dependency->value_operand_index, reader->operand_count);
-    return state->values[operand_ordinals[dependency->value_operand_index]]
-        .value_id;
+    return state->value_domain
+        ->value_ids[operand_ordinals[dependency->value_operand_index]];
   }
   loom_value_id_t state_value_id = LOOM_VALUE_ID_INVALID;
   for (uint16_t i = 0; i < reader->operand_count; ++i) {
@@ -948,11 +958,12 @@ static loom_value_id_t loom_low_schedule_state_value_for_dependency(
         value->state_next_write.node_index != dependency->consumer_node) {
       continue;
     }
-    if (state_value_id != LOOM_VALUE_ID_INVALID &&
-        state_value_id != value->value_id) {
+    const loom_value_id_t value_id =
+        state->value_domain->value_ids[operand_ordinals[i]];
+    if (state_value_id != LOOM_VALUE_ID_INVALID && state_value_id != value_id) {
       return LOOM_VALUE_ID_INVALID;
     }
-    state_value_id = value->value_id;
+    state_value_id = value_id;
   }
   return state_value_id;
 }
@@ -1733,6 +1744,12 @@ static iree_status_t loom_low_schedule_build(
   if (iree_status_is_ok(status) && state.error_count == 0) {
     status = loom_low_schedule_run_list_scheduler(&state, node_count);
   }
+  if (iree_status_is_ok(status) && state.error_count == 0 &&
+      iree_any_bit_set(
+          options->flags,
+          LOOM_LOW_SCHEDULE_FLAG_RETAIN_ACYCLIC_MEMORY_COMPLETIONS)) {
+    status = loom_low_schedule_build_acyclic_memory_completions(&state);
+  }
   if (iree_status_is_ok(status) && state.error_count == 0) {
     loom_low_schedule_compact_model_summaries(&state);
     loom_low_schedule_compact_resource_summaries(&state);
@@ -1772,6 +1789,11 @@ static iree_status_t loom_low_schedule_build(
         .requirements = model->requirements,
         .value_ids = model->value_domain.value_ids,
         .value_count = model->value_domain.value_count,
+        .value_producer_nodes =
+            iree_any_bit_set(options->flags,
+                             LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES)
+                ? state.value_producer_nodes
+                : NULL,
         .liveness = retain_liveness ? liveness : (loom_liveness_analysis_t){0},
         .pressure_summary_budgets = pressure_summary_budgets,
         .blocks = state.blocks,
@@ -1817,6 +1839,8 @@ static iree_status_t loom_low_schedule_build(
             state.matrix_coexecution_source_use_count,
         .effect_uses = state.effect_uses,
         .effect_use_count = state.effect_use_count,
+        .memory_completion_edges = state.memory_completion_edges,
+        .memory_completion_edge_count = state.memory_completion_edge_count,
         .hazard_uses = state.hazard_uses,
         .hazard_use_count = state.hazard_use_count,
         .hazard_gaps = state.hazard_gaps,

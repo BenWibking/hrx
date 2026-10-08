@@ -32,7 +32,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @subview_scalar_st
 // ====
 
 func.def @subview_nested_dynamic(%input: buffer, %output: buffer, %base: offset, %row: index, %column: index) -> (i32) {
-  %origin = index.assume %base [range(%base, 4, 16), mul(%base, 4)] : offset
+  %origin = index.assume %base [range(%base, 4, 16), multiple_of(%base, 4)] : offset
   %row_bounded = index.assume %row [range(%row, 0, 1)] : index
   %column_bounded = index.assume %column [range(%column, 0, 2)] : index
   %input_aligned = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
@@ -259,7 +259,7 @@ low.func.def public target<amd.xdna.aie2p.core> abi(object_function) @subview_co
 // ====
 
 func.def public @subview_composed_refined_nested(%input: buffer, %output: buffer, %base: offset, %row_pitch: index, %column_pitch: index) {
-  %origin = index.assume %base [range(%base, 4, 12), mul(%base, 4)] : offset
+  %origin = index.assume %base [range(%base, 4, 12), multiple_of(%base, 4)] : offset
   %row_stride = index.assume %row_pitch [range(%row_pitch, 8, 12)] : index
   %column_stride = index.assume %column_pitch [range(%column_pitch, 1, 2)] : index
   %layout = encoding.layout.strided [%row_stride, %column_stride] : encoding<layout>

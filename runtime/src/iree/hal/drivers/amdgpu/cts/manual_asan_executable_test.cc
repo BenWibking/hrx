@@ -351,7 +351,9 @@ TEST_P(ManualAsanExecutableTest, ReportsCompatibleHooksThroughFeedback) {
   IREE_ASSERT_OK(SanitizerCreateDeviceBuffer(
       asan_device.allocator(), kManualAsanBufferLength, stale_buffer.out()));
   const uint64_t stale_address =
-      (uint64_t)(uintptr_t)iree_hal_amdgpu_buffer_device_pointer(stale_buffer);
+      (uint64_t)(uintptr_t)iree_hal_amdgpu_buffer_device_pointer(
+          iree_hal_buffer_allocated_buffer(stale_buffer)) +
+      iree_hal_buffer_byte_offset(stale_buffer);
   ASSERT_NE(stale_address, 0u);
   stale_buffer.reset();
   asan_device.recorder()->Reset();

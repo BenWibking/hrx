@@ -618,6 +618,7 @@ def emit_source_for_views(
                 f".kind = {immediate.kind.c_name},",
                 f".flags = {c_spelling.flag_expr(immediate.flags)},",
                 f".bit_width = {immediate.bit_width},",
+                *([f".encoding_subfield_offset = {immediate.encoding_field_bit_offset + 1},"] if immediate.encoding_field_bit_offset is not None else []),
                 f".value_step = {c_spelling.u64_literal(immediate.value_step)},",
                 f".encoding_field_id = {immediate.encoding_field_id},",
                 f".encoding_slice_count = {len(immediate.encoding_slices)},",

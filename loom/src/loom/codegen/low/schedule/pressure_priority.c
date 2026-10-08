@@ -131,7 +131,7 @@ static uint64_t loom_low_schedule_ready_storage_key(
   for (uint16_t operand_index = 0; operand_index < node->operand_count;
        ++operand_index) {
     const uint32_t producer_node =
-        state->values[operand_ordinals[operand_index]].producer_node;
+        state->value_producer_nodes[operand_ordinals[operand_index]];
     if (producer_node != LOOM_LOW_SCHEDULE_NODE_NONE &&
         iree_any_bit_set(state->nodes[producer_node].flags,
                          LOOM_LOW_SCHEDULE_NODE_FLAG_STORAGE_SETUP)) {
@@ -211,7 +211,7 @@ static bool loom_low_schedule_operand_has_future_activation(
       return false;
     }
   }
-  const uint32_t producer_node = state->values[operand_ordinal].producer_node;
+  const uint32_t producer_node = state->value_producer_nodes[operand_ordinal];
   return producer_node != LOOM_LOW_SCHEDULE_NODE_NONE &&
          producer_node >= source_range_start &&
          state->nodes[producer_node].block_index == node->block_index;
@@ -304,8 +304,9 @@ static uint64_t loom_low_schedule_unspillable_handoff_replacement_units(
     }
     const loom_low_schedule_value_record_t* destination =
         &state->values[relation->destination_ordinal];
-    const loom_value_t* destination_value =
-        loom_module_value(state->module, destination->value_id);
+    const loom_value_t* destination_value = loom_module_value(
+        state->module,
+        state->value_domain->value_ids[relation->destination_ordinal]);
     if (!loom_value_is_block_arg(destination_value) ||
         loom_value_def_block(destination_value) != consumer_block ||
         loom_low_schedule_unspillable_completion_domain_id(
@@ -488,7 +489,7 @@ void loom_low_schedule_pressure_compute_node_priorities(
       for (uint16_t operand_index = 0; operand_index < node->operand_count;
            ++operand_index) {
         const uint32_t producer_node =
-            state->values[operand_ordinals[operand_index]].producer_node;
+            state->value_producer_nodes[operand_ordinals[operand_index]];
         if (producer_node == LOOM_LOW_SCHEDULE_NODE_NONE ||
             state->nodes[producer_node].block_index != node->block_index) {
           continue;
@@ -624,7 +625,7 @@ void loom_low_schedule_pressure_compute_node_priorities(
                       consumer)[dependency->value_operand_index];
               loom_low_schedule_value_record_t* value =
                   &state->values[value_ordinal];
-              if (value->producer_node != node_index ||
+              if (state->value_producer_nodes[value_ordinal] != node_index ||
                   iree_any_bit_set(value->flags,
                                    LOOM_LOW_SCHEDULE_VALUE_FLAG_FORWARDED) ||
                   loom_low_schedule_unspillable_completion_domain_id(

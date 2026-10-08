@@ -31,15 +31,15 @@ constexpr iree_device_size_t kDefaultAllocationSize = 1024;
 //   - write into a subspan of a buffer
 class BufferMappingTest : public CtsTestBase<> {
  protected:
-  // Allocates a buffer with HOST_VISIBLE + MAPPING usage for mapping tests.
+  // Allocates a host-visible buffer with the requested mapping capabilities.
   // This differs from the base class helpers which use STORAGE.
-  iree_status_t AllocateUninitializedBuffer(iree_device_size_t buffer_size,
-                                            iree_hal_buffer_t** out_buffer) {
+  iree_status_t AllocateUninitializedBuffer(
+      iree_device_size_t buffer_size, iree_hal_buffer_usage_t mapping_usage,
+      iree_hal_buffer_t** out_buffer) {
     *out_buffer = NULL;
     iree_hal_buffer_params_t params = {0};
     params.type = IREE_HAL_MEMORY_TYPE_HOST_VISIBLE;
-    params.usage =
-        IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_MAPPING;
+    params.usage = IREE_HAL_BUFFER_USAGE_TRANSFER | mapping_usage;
     iree_device_size_t allocation_size = buffer_size;
     iree_hal_buffer_compatibility_t compatibility =
         iree_hal_allocator_query_buffer_compatibility(
@@ -65,8 +65,8 @@ class BufferMappingTest : public CtsTestBase<> {
 #define IREE_HAL_CTS_ALLOCATE_UNINITIALIZED_BUFFER_OR_SKIP(buffer_size, \
                                                            out_buffer)  \
   do {                                                                  \
-    iree_status_t allocate_status =                                     \
-        AllocateUninitializedBuffer((buffer_size), (out_buffer));       \
+    iree_status_t allocate_status = AllocateUninitializedBuffer(        \
+        (buffer_size), IREE_HAL_BUFFER_USAGE_MAPPING, (out_buffer));    \
     if (iree_status_is_unavailable(allocate_status)) {                  \
       iree_status_free(allocate_status);                                \
       GTEST_SKIP() << "Allocator does not support host-visible mapped " \
@@ -503,6 +503,7 @@ TEST_P(BufferMappingTest, MapRangeRead) {
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE,
       /*byte_offset=*/0, /*byte_length=*/buffer_size, &mapping));
   EXPECT_EQ(buffer, mapping.buffer);
   EXPECT_GE(mapping.contents.data_length, (iree_host_size_t)buffer_size);
@@ -525,8 +526,8 @@ TEST_P(BufferMappingTest, MapRangeWrite) {
 
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
-      buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
       /*byte_offset=*/0, /*byte_length=*/buffer_size, &mapping));
   EXPECT_EQ(buffer, mapping.buffer);
   EXPECT_GE(mapping.contents.data_length, (iree_host_size_t)buffer_size);
@@ -545,6 +546,46 @@ TEST_P(BufferMappingTest, MapRangeWrite) {
 
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
   iree_hal_buffer_release(buffer);
+}
+
+TEST_P(BufferMappingTest, ReadWriteMapPreservesNestedViewContents) {
+  Ref<iree_hal_buffer_t> buffer;
+  iree_status_t status = AllocateUninitializedBuffer(
+      64,
+      IREE_HAL_BUFFER_USAGE_MAPPING | IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
+      buffer.out());
+  if (iree_status_is_unavailable(status)) {
+    iree_status_free(status);
+    GTEST_SKIP() << "Allocator does not support persistent mapped buffers";
+  }
+  IREE_ASSERT_OK(status);
+  const uint8_t pattern = 0x5A;
+  IREE_ASSERT_OK(iree_hal_buffer_map_fill(buffer, 0, IREE_HAL_WHOLE_BUFFER,
+                                          &pattern, sizeof(pattern)));
+  Ref<iree_hal_buffer_t> outer;
+  IREE_ASSERT_OK(iree_hal_buffer_subspan(buffer, 8, 40, iree_allocator_system(),
+                                         outer.out()));
+  Ref<iree_hal_buffer_t> inner;
+  IREE_ASSERT_OK(iree_hal_buffer_subspan(outer, 8, 24, iree_allocator_system(),
+                                         inner.out()));
+  outer.reset();
+  for (iree_hal_mapping_mode_t mode :
+       {IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MAPPING_MODE_PERSISTENT}) {
+    iree_hal_buffer_mapping_t mapping = {};
+    IREE_ASSERT_OK(iree_hal_buffer_map_range(
+        inner, mode, IREE_HAL_MEMORY_ACCESS_ALL,
+        IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, 4, 16, &mapping));
+    IREE_ASSERT_OK(iree_hal_buffer_mapping_invalidate_range(&mapping, 0, 16));
+    for (size_t i = 0; i < 16; ++i) {
+      EXPECT_EQ(pattern, mapping.contents.data[i]);
+    }
+    IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  }
+  inner.reset();
+  std::vector<uint8_t> contents(64);
+  IREE_ASSERT_OK(
+      iree_hal_buffer_map_read(buffer, 0, contents.data(), contents.size()));
+  EXPECT_THAT(contents, ContainerEq(std::vector<uint8_t>(64, pattern)));
 }
 
 CTS_REGISTER_TEST_SUITE(BufferMappingTest);

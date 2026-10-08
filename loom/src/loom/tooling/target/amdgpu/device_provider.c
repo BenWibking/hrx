@@ -167,6 +167,7 @@ static iree_status_t loom_amdgpu_device_provider_try_select_target(
   *out_target = (loom_device_target_t){
       .executable_target = result.target,
       .target_profile = &profile->base,
+      .target_emitter = &loom_amdgpu_hal_kernel_library_emitter,
   };
   *out_selected = true;
   return iree_ok_status();
@@ -200,18 +201,14 @@ static iree_status_t loom_amdgpu_device_provider_select_compatible_target(
     if (authored_requirement != NULL) {
       status = iree_make_status(
           IREE_STATUS_UNAVAILABLE,
-          "selected %.*s HAL device has no Loom-supported native target "
+          "selected AMDGPU HAL device has no Loom-supported native target "
           "satisfying authored target '%.*s'",
-          (int)provider->target_profile_type->name.size,
-          provider->target_profile_type->name.data,
           (int)authored_requirement->target->name.size,
           authored_requirement->target->name.data);
     } else {
       status = iree_make_status(
           IREE_STATUS_UNAVAILABLE,
-          "selected %.*s HAL device has no Loom-supported native target",
-          (int)provider->target_profile_type->name.size,
-          provider->target_profile_type->name.data);
+          "selected AMDGPU HAL device has no Loom-supported native target");
     }
   }
   return status;
@@ -282,8 +279,6 @@ static iree_status_t loom_amdgpu_device_provider_select_profile_target(
 
 const loom_device_provider_t loom_amdgpu_device_provider = {
     .name = IREE_SVL("amdgpu-hal"),
-    .target_profile_type = &loom_amdgpu_target_profile_type,
-    .target_emitter = &loom_amdgpu_hal_kernel_library_emitter,
     .driver_name = IREE_SVL("amdgpu"),
     .select_compatible_target =
         loom_amdgpu_device_provider_select_compatible_target_from_facts,

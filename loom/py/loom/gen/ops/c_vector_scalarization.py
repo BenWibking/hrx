@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from loom.dialect.index import defs as index
 from loom.dialect.scalar import ALL_SCALAR_OPS
 from loom.dialect.vector import ALL_VECTOR_OPS
 from loom.dsl import ATTR_TYPE_FLAGS, Op
@@ -23,6 +24,13 @@ from loom.gen.support.generated_file import line_comment_header
 
 _GENERATOR = "loom.gen.ops.c_vector_scalarization"
 _NO_SEED_OPERAND = 0xFF
+
+# Vector operations whose scalar semantic counterpart lives outside the scalar
+# dialect. Keep these explicit: suffix matching is deliberately confined to
+# the scalar dialect so a new cross-dialect relation requires review.
+_CROSS_DIALECT_COUNTERPARTS = {
+    "vector.index_cast": index.index_cast,
+}
 
 # Elementwise vector ops without a scalar-dialect counterpart. These are
 # handled by explicit vector-to-scalar lane programs.
@@ -153,17 +161,20 @@ def collect_vector_scalarization_rows(
 
     scalar_ops_by_suffix = {_op_suffix(op): op for op in scalar_ops}
     vector_op_names = {op.name for op in vector_ops}
+    stale_cross_dialect_counterparts = sorted(set(_CROSS_DIALECT_COUNTERPARTS) - vector_op_names)
     stale_counterpart_exclusions = sorted(_SCALAR_COUNTERPART_EXCLUSIONS - vector_op_names)
     stale_seed_preferences = sorted(set(_PREFERRED_SEED_OPERANDS) - vector_op_names)
-    if stale_counterpart_exclusions or stale_seed_preferences:
-        raise ValueError(f"stale vector scalarization exclusions: {stale_counterpart_exclusions}; stale seed preferences: {stale_seed_preferences}")
+    if stale_cross_dialect_counterparts or stale_counterpart_exclusions or stale_seed_preferences:
+        raise ValueError(
+            f"stale cross-dialect counterparts: {stale_cross_dialect_counterparts}; stale vector scalarization exclusions: {stale_counterpart_exclusions}; stale seed preferences: {stale_seed_preferences}"
+        )
 
     rows: list[VectorScalarizationRow] = []
     missing_counterparts: list[str] = []
     for vector_op in vector_ops:
         if not _has_trait(vector_op, "Elementwise"):
             continue
-        scalar_op = scalar_ops_by_suffix.get(_op_suffix(vector_op))
+        scalar_op = _CROSS_DIALECT_COUNTERPARTS.get(vector_op.name, scalar_ops_by_suffix.get(_op_suffix(vector_op)))
         if scalar_op is None:
             if vector_op.name not in _SCALAR_COUNTERPART_EXCLUSIONS:
                 missing_counterparts.append(vector_op.name)

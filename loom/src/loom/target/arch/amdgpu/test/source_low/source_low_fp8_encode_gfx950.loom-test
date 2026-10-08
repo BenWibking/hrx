@@ -78,7 +78,7 @@ low.func.def target<amdgpu.cdna4.core>(@target) abi(hal_kernel) @scalar_fptrunc_
   %8 = v_cmp_u_f32 %input, %input
   %9 = v_cndmask_b32 %7, %input, %8
   %converted = v_cvt_pk_fp8_f32_low %9, %9
-  %14 = v_bfe_u32_offset_0_width_16_low16 %converted
+  %14 = v_bfe_u32_offset_0_width_inline_low16 %converted
   return %14
 }
 
@@ -95,7 +95,7 @@ func.def target(@target) @scalar_fptrunc_f16_to_bf8(%input: f16) -> (f8E5M2) {
 low.func.def target<amdgpu.cdna4.core>(@target) abi(hal_kernel) @scalar_fptrunc_f16_to_bf8(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
   %5 = v_cvt_f32_f16 %input
   %converted = v_cvt_pk_bf8_f32_low %5, %5
-  %7 = v_bfe_u32_offset_0_width_16_low16 %converted
+  %7 = v_bfe_u32_offset_0_width_inline_low16 %converted
   return %7
 }
 
@@ -144,7 +144,7 @@ func.def target(@target) @scalar_fptrunc_bf16_to_bf8(%input: bf16) -> (f8E5M2) {
 low.func.def target<amdgpu.cdna4.core>(@target) abi(hal_kernel) @scalar_fptrunc_bf16_to_bf8(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
   %5 = v_lshlrev_b32_src0_inline %input, 16
   %converted = v_cvt_pk_bf8_f32_low %5, %5
-  %7 = v_bfe_u32_offset_0_width_16_low16 %converted
+  %7 = v_bfe_u32_offset_0_width_inline_low16 %converted
   return %7
 }
 
@@ -220,6 +220,6 @@ low.func.def target<amdgpu.cdna4.core>(@target) abi(hal_kernel) @scalar_sitofp_i
   %6 = v_mov_b32_sdwa %input {dst_sel = 6, dst_unused = 0, src0_sel = 0, src0_sext = 1}
   %float = v_cvt_f32_i32 %6
   %converted = v_cvt_pk_fp8_f32_low %float, %float
-  %9 = v_bfe_u32_offset_0_width_16_low16 %converted
+  %9 = v_bfe_u32_offset_0_width_inline_low16 %converted
   return %9
 }

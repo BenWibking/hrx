@@ -17,6 +17,7 @@
 
 #include "iree/base/api.h"
 #include "iree/base/byte_sequence.h"
+#include "iree/base/cpu_data.h"
 #include "iree/base/internal/arena.h"
 #include "loom/codegen/low/lower/lower.h"
 #include "loom/codegen/low/verify.h"
@@ -188,6 +189,18 @@ typedef struct loom_target_emit_artifact_t {
   loom_target_emit_artifact_storage_release_fn_t release_storage;
 } loom_target_emit_artifact_t;
 
+// Attaches owned metadata to an artifact whose metadata fields are empty.
+// Copies the optional bundle, all of its strings, sidecar descriptors, and
+// sidecar identifiers into one allocation. Retains each sidecar byte sequence;
+// the caller keeps its original references. All input storage may be released
+// after this call. Primary contents and listing fields are left unchanged.
+// With no bundle or sidecars this performs no allocation. Failure leaves the
+// artifact unchanged. loom_target_emit_artifact_release owns the result.
+iree_status_t loom_target_emit_artifact_retain_metadata(
+    const loom_target_bundle_t* target_bundle, iree_host_size_t sidecar_count,
+    const loom_target_emit_sidecar_artifact_t* sidecars,
+    iree_allocator_t allocator, loom_target_emit_artifact_t* artifact);
+
 // Releases all storage owned by |artifact| and resets it to a zero-initialized
 // value. Safe to call on a zero-initialized artifact.
 void loom_target_emit_artifact_release(loom_target_emit_artifact_t* artifact);
@@ -331,6 +344,17 @@ typedef iree_status_t (*loom_target_provider_pipeline_contribution_fn_t)(
 typedef iree_status_t (*loom_target_provider_select_profile_fn_t)(
     iree_string_view_t selector, const loom_target_profile_t** out_profile);
 
+// Selects a native execution profile from explicit, OS-enabled CPU facts.
+// At most one of |requirement| and |profile| is non-NULL: authored target facts
+// constrain automatic selection, while an explicit profile preserves identity.
+// Returns a borrowed process-lifetime profile, or NULL when this provider
+// cannot execute the requested representation on the supplied CPU. This query
+// neither detects the compiler host nor allocates storage.
+typedef const loom_target_profile_t* (
+    *loom_target_provider_select_cpu_profile_fn_t)(
+    const iree_cpu_data_t* cpu_data, const loom_target_facts_t* requirement,
+    const loom_target_profile_t* profile);
+
 // Target-owned compiler capability contribution linked into a tool or driver.
 struct loom_target_provider_t {
   // Target-family profile representation owned by this provider, or NULL when
@@ -408,6 +432,8 @@ struct loom_target_provider_t {
   // emitter contributions can be linked separately. Must be NULL if and only
   // if |canonical_kernel_emitter| is NULL.
   const loom_target_fact_type_t* canonical_kernel_fact_type;
+  // Optional projection from execution-device CPU facts to a native profile.
+  loom_target_provider_select_cpu_profile_fn_t select_cpu_profile;
 };
 
 // Static target provider table linked into a binary or embedding.

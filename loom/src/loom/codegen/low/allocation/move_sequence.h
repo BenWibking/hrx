@@ -92,6 +92,14 @@ typedef struct loom_low_move_sequence_options_t {
   loom_low_move_sequence_record_scratch_callback_t record_scratch;
 } loom_low_move_sequence_options_t;
 
+enum loom_low_move_sequence_input_flag_bits_e {
+  // At least one input row names the same source and destination storage.
+  LOOM_LOW_MOVE_SEQUENCE_INPUT_FLAG_IDENTITY = 1u << 0,
+  // At least one input row requires a physical move.
+  LOOM_LOW_MOVE_SEQUENCE_INPUT_FLAG_ACTIVE = 1u << 1,
+};
+typedef uint8_t loom_low_move_sequence_input_flags_t;
+
 // Returns true when |location| overlaps a source or destination in the current
 // parallel move group, including identity moves that emit no instruction.
 // |occupied_locations| is valid only during the temporary resolver callback
@@ -111,6 +119,8 @@ iree_status_t loom_low_move_sequence_scratch_initialize(
 // cycle adds one scratch-save move. Non-identity transfers retain their source
 // and destination register views; aliased views need not have the same width.
 // Scratch saves use the source view whose contents must survive the cycle.
+// When non-NULL, |out_input_flags| reports the identity and active rows already
+// classified while preparing the move set.
 // |out_complete| is false only when the temporary resolver emitted an
 // allocation diagnostic.
 // All groups sharing |scratch| use the same descriptor set and its resolved
@@ -119,7 +129,8 @@ iree_status_t loom_low_move_sequence_resolve(
     loom_low_move_sequence_scratch_t* scratch, iree_host_size_t move_count,
     const loom_low_move_sequence_options_t* options,
     iree_host_size_t out_move_capacity, loom_low_move_t* out_moves,
-    iree_host_size_t* out_move_count, bool* out_complete);
+    iree_host_size_t* out_move_count,
+    loom_low_move_sequence_input_flags_t* out_input_flags, bool* out_complete);
 
 #ifdef __cplusplus
 }  // extern "C"

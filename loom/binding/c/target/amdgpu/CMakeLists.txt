@@ -54,6 +54,7 @@ loom_cc_library(
     loom::binding::c::loomc
     loom::binding::c::target::iree_hal
     loom::target::arch::amdgpu::artifact_key
+    loom::target::arch::amdgpu::profile
     loom::target::arch::amdgpu::target_info
   ALWAYSLINK
   PUBLIC

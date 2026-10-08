@@ -876,7 +876,8 @@ class ReplayAtomicExecutionTest : public ::testing::Test {
 
     const iree_hal_buffer_params_t buffer_params = {
         /*.usage=*/IREE_HAL_BUFFER_USAGE_STORAGE |
-            IREE_HAL_BUFFER_USAGE_TRANSFER,
+            IREE_HAL_BUFFER_USAGE_TRANSFER |
+            IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED,
         /*.access=*/IREE_HAL_MEMORY_ACCESS_ALL,
         /*.type=*/IREE_HAL_MEMORY_TYPE_HOST_LOCAL |
             IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,
@@ -1609,7 +1610,8 @@ TEST(ReplayExecutorLifecycleTest,
   iree_hal_pool_t* pool = nullptr;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
       pool_options, backend.slab_provider, backend.notification,
-      iree_allocator_system(), &pool));
+      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+      &pool));
 
   iree_hal_semaphore_t* signal_semaphore = nullptr;
   IREE_ASSERT_OK(iree_hal_semaphore_create(

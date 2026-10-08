@@ -3,7 +3,7 @@
 // RUN: emit source-low target=spirv:vulkan1.3+bda output=low control-flow=structured-low
 
 func.def @wide_subview_selection(%input: buffer, %byte_base0: offset, %condition: i1) -> (i32) {
-  %byte_base = index.assume %byte_base0 [range(%byte_base0, 2147483648, 4294967296), mul(%byte_base0, 4)] : offset
+  %byte_base = index.assume %byte_base0 [range(%byte_base0, 2147483648, 4294967296), multiple_of(%byte_base0, 4)] : offset
   %aligned = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   %root = buffer.view %aligned[%byte_base] : buffer -> view<4xi32>
   %first = view.subview %root[1] : view<4xi32> -> view<1xi32>
@@ -135,8 +135,8 @@ low.func.def public target<spirv.logical.core> abi(shader_entry_point) @rotate_b
 
 func.def @correlated_duplicate_rotation(%input: buffer, %count_input: index, %first_offset_input: offset, %second_offset_input: offset) -> (i32) {
   %count = index.assume %count_input [range(%count_input, 0, 257)] : index
-  %first_offset = index.assume %first_offset_input [range(%first_offset_input, 0, 4092), mul(%first_offset_input, 4)] : offset
-  %second_offset = index.assume %second_offset_input [range(%second_offset_input, 0, 4092), mul(%second_offset_input, 4)] : offset
+  %first_offset = index.assume %first_offset_input [range(%first_offset_input, 0, 4092), multiple_of(%first_offset_input, 4)] : offset
+  %second_offset = index.assume %second_offset_input [range(%second_offset_input, 0, 4092), multiple_of(%second_offset_input, 4)] : offset
   %storage = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   %begin = index.constant 0 : index
   %step = index.constant 1 : index

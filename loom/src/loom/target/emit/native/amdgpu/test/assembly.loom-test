@@ -1643,7 +1643,7 @@ low.func.def target<amdgpu.rdna3.core>(@gfx11_target) @gfx11_low16_shift_high(%v
 amdgpu.target<gfx1100> @gfx11_target
 
 low.func.def target<amdgpu.rdna3.core>(@gfx11_target) @gfx11_low16_extract_full(%value: reg<amdgpu.vgpr>) asm {
-  %extended = v_bfe_u32_offset_0_width_16_low16 %value
+  %extended = v_bfe_u32_offset_0_width_inline_low16 %value
   return
 }
 

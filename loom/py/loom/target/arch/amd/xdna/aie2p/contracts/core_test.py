@@ -40,7 +40,6 @@ from loom.target.arch.amd.xdna.aie2p.contracts.reduction import (
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.structural import (
     _ACCUMULATOR_BITCAST_TYPE_GROUPS,
-    _I8_DEINTERLEAVE_CONTROLS,
     _PREDICATE_VECTOR,
     _WIDE_VECTOR_BITCAST_TYPES,
     AIE2P_STRUCTURAL_RULES,
@@ -301,6 +300,8 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
         ("bf16", "i16"),
         ("i32", "i32"),
         ("f32", "i32"),
+        ("index", "i32"),
+        ("offset", "i32"),
     ):
         expected_extract_keys.extend(
             (
@@ -394,6 +395,8 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
         ("bf16", "i16"),
         ("i32", "i32"),
         ("f32", "i32"),
+        ("index", "i32"),
+        ("offset", "i32"),
     ):
         expected_insert_rows.extend(
             (
@@ -1033,37 +1036,6 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
         "i": _BF16_OUTER_PRODUCT_MULTIPLY_CONTROL
     }
 
-    deinterleave_rules = [
-        rule for rule in rules if rule.source_op is vector.vector_deinterleave
-    ]
-    assert len(deinterleave_rules) == 1
-    deinterleave = deinterleave_rules[0]
-    assert deinterleave.descriptor.key == "amd.xdna.aie2p.shuffle.x.configured"
-    assert [emit.descriptor.key for emit in deinterleave.emit] == [
-        "amd.xdna.aie2p.constant.i32.mova",
-        "amd.xdna.aie2p.shuffle.x.configured",
-        "amd.xdna.aie2p.constant.i32.mova",
-        "amd.xdna.aie2p.shuffle.x.configured",
-    ]
-    shuffles = tuple(
-        emit
-        for emit in deinterleave.emit
-        if emit.descriptor.key == "amd.xdna.aie2p.shuffle.x.configured"
-    )
-    assert tuple(emit.results["dst"].field for emit in shuffles) == (
-        "results",
-        "results",
-    )
-    assert tuple(emit.results["dst"].element for emit in shuffles) == (0, 1)
-    assert (
-        tuple(
-            emit.immediates["i"]
-            for emit in deinterleave.emit
-            if emit.descriptor.key == "amd.xdna.aie2p.constant.i32.mova"
-        )
-        == _I8_DEINTERLEAVE_CONTROLS
-    )
-
     f32_add_rules = [rule for rule in rules if rule.source_op is vector.vector_addf]
     assert len(f32_add_rules) == 2
     f32_add = f32_add_rules[0]
@@ -1196,6 +1168,8 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
         "amd.xdna.aie2p.splat.i32x16",
         "amd.xdna.aie2p.splat.i32x16",
         "amd.xdna.aie2p.splat.i32x16",
+        "amd.xdna.aie2p.splat.i32x16",
+        "amd.xdna.aie2p.splat.i32x16",
         "amd.xdna.aie2p.cmp.lt.unsigned.i8x64",
     ]
     assert [
@@ -1210,6 +1184,8 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
         ("bf16", "bf16"),
         ("i32", "i32"),
         ("f32", "f32"),
+        ("index", "index"),
+        ("offset", "offset"),
         ("f32", "f32"),
         ("i1", "i1"),
     ]
@@ -1243,6 +1219,8 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
         "amd.xdna.aie2p.select.i16x32.mask64",
         "amd.xdna.aie2p.select.i16x32.mask64",
         "amd.xdna.aie2p.select.i16x32.mask64",
+        "amd.xdna.aie2p.select.i32x16.mask64",
+        "amd.xdna.aie2p.select.i32x16.mask64",
         "amd.xdna.aie2p.select.i32x16.mask64",
         "amd.xdna.aie2p.select.i32x16.mask64",
     ]
@@ -1366,6 +1344,8 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
         Vector("f32", minimum_static_elements=1, maximum_static_elements=16),
         Vector("i64", minimum_static_elements=1, maximum_static_elements=8),
         Vector("f64", minimum_static_elements=1, maximum_static_elements=8),
+        Vector("index", minimum_static_elements=1, maximum_static_elements=16),
+        Vector("offset", minimum_static_elements=1, maximum_static_elements=16),
     ]
     for rule in vector_select_rules:
         assert [emit.descriptor.key for emit in rule.emit] == [
@@ -1589,6 +1569,8 @@ def test_vector_constant_rules_materialize_each_register_carrier() -> None:
         ("f16", 32, 1),
         ("bf16", 32, 1),
         ("f32", 16, 1),
+        ("index", 16, 2),
+        ("offset", 16, 2),
     )
     native = [
         rule
@@ -1626,6 +1608,16 @@ def test_vector_constant_rules_materialize_each_register_carrier() -> None:
                 else ValueProjectKind.FLOAT_BITS
             )
             assert rule.emit[0].immediates["i"].kind is expected_kind
+    full_offset = next(
+        rule
+        for rule in native
+        if result_shape(rule)[0] == "offset"
+        and next(guard.maximum for guard in rule.guards if guard.maximum is not None)
+        == 2**32 - 1
+    )
+    assert (
+        full_offset.emit[0].immediates["i"].kind is ValueProjectKind.EXACT_I64_I32_WORD
+    )
 
     pair = [rule for rule in rules if result_shape(rule)[0] in ("i64", "f64")]
     assert {result_shape(rule) for rule in pair} == {
@@ -1650,15 +1642,18 @@ def test_vector_constant_rules_materialize_each_register_carrier() -> None:
         == "amd.xdna.aie2p.move.vector512.to.accumulator512"
     ]
     assert sorted(
-        (result_shape(rule)[0], result_shape(rule)[3], len(rule.emit[-1].sources))
-        for rule in accumulator
+        (result_shape(rule), len(rule.emit[-1].sources)) for rule in accumulator
     ) == sorted(
         [
-            ("i32", 64, 4),
-            ("i32", 64, 4),
-            ("f32", 32, 2),
-            ("f32", 64, 4),
-            ("i64", 32, 4),
+            (("i32", None, None, 64), 4),
+            (("i32", None, None, 64), 4),
+            (("f32", None, None, 32), 2),
+            (("f32", None, None, 64), 4),
+            (("i64", None, None, 32), 4),
+            (("index", 33, 64, None), 4),
+            (("index", 33, 64, None), 4),
+            (("offset", 33, 64, None), 4),
+            (("offset", 33, 64, None), 4),
         ]
     )
 

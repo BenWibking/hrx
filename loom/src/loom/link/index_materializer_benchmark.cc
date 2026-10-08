@@ -179,7 +179,7 @@ func.def public @entry(%value: i32) -> (i32) {
       source.append(name);
       if (contract_shape_ == TemplateProviderContractShape::kComplete) {
         source.append(
-            "(%value: i32) -> (i32) where [mul(%value, 16)] {\n"
+            "(%value: i32) -> (i32) where [multiple_of(%value, 16)] {\n"
             "  template.return %value : i32\n"
             "}\n\n");
         continue;

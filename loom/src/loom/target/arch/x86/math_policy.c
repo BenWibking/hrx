@@ -37,12 +37,13 @@ static void loom_x86_math_policy_query(
     *out_decision = loom_x86_math_reject(IREE_SV("math.op.supported"));
     return;
   }
-  if (query->element_type != LOOM_SCALAR_TYPE_F32) {
-    *out_decision = loom_x86_math_reject(IREE_SV("math.element.f32"));
+  if (query->element_type != LOOM_SCALAR_TYPE_F32 &&
+      query->element_type != LOOM_SCALAR_TYPE_F64) {
+    *out_decision = loom_x86_math_reject(IREE_SV("math.element.f32_f64"));
     return;
   }
 
-  *out_decision = loom_x86_math_keep(IREE_SV("math.op.native_f32"));
+  *out_decision = loom_x86_math_keep(IREE_SV("math.op.native_f32_f64"));
 }
 
 static bool loom_x86_math_prefer_scalar_fma(
@@ -50,8 +51,12 @@ static bool loom_x86_math_prefer_scalar_fma(
     loom_target_math_fastmath_flags_t fastmath_flags) {
   (void)policy;
   (void)fastmath_flags;
-  return loom_type_is_scalar(value_type) &&
-         loom_type_element_type(value_type) == LOOM_SCALAR_TYPE_F32;
+  if (!loom_type_is_scalar(value_type)) {
+    return false;
+  }
+  const loom_scalar_type_t element_type = loom_type_element_type(value_type);
+  return element_type == LOOM_SCALAR_TYPE_F32 ||
+         element_type == LOOM_SCALAR_TYPE_F64;
 }
 
 static bool loom_x86_math_prefer_avx512_fma(
@@ -64,10 +69,30 @@ static bool loom_x86_math_prefer_avx512_fma(
           loom_type_element_type(value_type) == LOOM_SCALAR_TYPE_F32);
 }
 
+static bool loom_x86_math_prefer_avx2_fma(
+    const loom_target_math_policy_t* policy, loom_type_t value_type,
+    loom_target_math_fastmath_flags_t fastmath_flags) {
+  if (loom_x86_math_prefer_scalar_fma(policy, value_type, fastmath_flags)) {
+    return true;
+  }
+  if (!loom_type_is_vector(value_type) || loom_type_rank(value_type) != 1 ||
+      !loom_type_is_all_static(value_type)) {
+    return false;
+  }
+  const loom_scalar_type_t element_type = loom_type_element_type(value_type);
+  if (element_type != LOOM_SCALAR_TYPE_F32 &&
+      element_type != LOOM_SCALAR_TYPE_F64) {
+    return false;
+  }
+  const int64_t bit_width = loom_type_dim_static_size_at(value_type, 0) *
+                            loom_scalar_type_bitwidth(element_type);
+  return bit_width == 128 || bit_width == 256;
+}
+
 static const loom_target_math_policy_t kX86MathPolicy = {
     .name = IREE_SVL("x86-math"),
     .query = loom_x86_math_policy_query,
-    .prefer_fma = loom_x86_math_prefer_scalar_fma,
+    .prefer_fma = loom_x86_math_prefer_avx2_fma,
 };
 
 static const loom_target_math_policy_t kX86Avx512MathPolicy = {

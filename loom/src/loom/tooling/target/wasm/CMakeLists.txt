@@ -56,7 +56,6 @@ loom_cc_library(
     loom::target::selection
     loom::tooling::compile::pipeline
     loom::tooling::config
-    loom::tooling::execution::execution_provider
     loom::tooling::testbench::scenario::executor
   PUBLIC
 )
@@ -73,6 +72,7 @@ loom_cc_library(
   DEPS
     iree::base
     loom::target::tool::wasm
+    loom::tools::loom-check::compile
     loom::tools::loom-check::execute
   PUBLIC
 )

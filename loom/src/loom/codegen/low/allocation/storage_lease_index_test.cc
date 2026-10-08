@@ -514,6 +514,57 @@ TEST_F(LowAllocationStorageLeaseIndexTest, HandlesHighKeysAndEmptyIndexes) {
             Query(index, 0x80000001u, 0x80000001u, 0x80000000u));
 }
 
+TEST_F(LowAllocationStorageLeaseIndexTest,
+       WalksSparseMaterializedUnitsAcrossTheFullLocationDomain) {
+  std::vector<loom_low_allocation_storage_lease_t> leases = {
+      Lease(0, 10, 1),
+      Lease(0, 10, 0x80000000u),
+      Lease(0, 10, UINT32_MAX),
+      Lease(0, 10, 1, 1, 2),
+  };
+  loom_low_allocation_storage_lease_unit_index_t index;
+  Initialize(leases, &index);
+  for (uint32_t i : {2u, 0u, 3u, 1u}) {
+    loom_low_allocation_storage_lease_unit_index_insert(&index, &descriptors_,
+                                                        i, 0);
+  }
+
+  const auto query_units = [&](uint32_t location_base, uint32_t location_count,
+                               uint16_t reg_class) {
+    loom_low_allocation_storage_lease_unit_query_t query;
+    loom_low_allocation_storage_lease_unit_query_initialize(
+        &index, &descriptors_, reg_class,
+        LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, location_base,
+        location_count,
+        /*minimum_end_point=*/1, /*start_point_limit=*/1,
+        /*selection=*/nullptr, &query);
+    std::vector<std::pair<uint32_t, uint32_t>> result;
+    uint32_t lease_index = 0;
+    while (loom_low_allocation_storage_lease_unit_query_next(&query,
+                                                             &lease_index)) {
+      result.emplace_back(query.active_location, lease_index);
+    }
+    return result;
+  };
+
+  EXPECT_EQ((std::vector<std::pair<uint32_t, uint32_t>>{
+                {1, 0}, {0x80000000u, 1}, {UINT32_MAX, 2}}),
+            query_units(1, UINT32_MAX, 0));
+  EXPECT_TRUE(query_units(1, 0, 0).empty());
+  EXPECT_TRUE(query_units(2, 0x7FFFFFFEu, 0).empty());
+  EXPECT_EQ((std::vector<std::pair<uint32_t, uint32_t>>{{0x80000000u, 1}}),
+            query_units(2, 0x7FFFFFFFu, 0));
+  EXPECT_EQ((std::vector<std::pair<uint32_t, uint32_t>>{{1, 3}}),
+            query_units(1, 1, 2));
+
+  std::swap(leases[0].location_base, leases[2].location_base);
+  loom_low_allocation_storage_lease_unit_index_rebuild(&index, &descriptors_,
+                                                       leases.size());
+  EXPECT_EQ((std::vector<std::pair<uint32_t, uint32_t>>{
+                {1, 2}, {0x80000000u, 1}, {UINT32_MAX, 0}}),
+            query_units(1, UINT32_MAX, 0));
+}
+
 TEST_F(LowAllocationStorageLeaseIndexTest, PreservesEmptyBoundaryQueries) {
   std::vector<loom_low_allocation_storage_lease_t> leases = {
       Lease(0, UINT32_MAX)};

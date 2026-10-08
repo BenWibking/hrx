@@ -99,8 +99,8 @@ struct iree_task_executor_t {
   iree_allocator_t allocator;
 
   // NUMA node this executor's workers are pinned to, or
-  // IREE_TASK_TOPOLOGY_NODE_ID_ANY if unspecified.
-  iree_task_topology_node_id_t node_id;
+  // IREE_NUMA_NODE_ANY if unknown or spanning memory nodes.
+  iree_numa_node_id_t numa_node_id;
 
   // Leaked dynamically allocated name used for tracing calls.
   // This pointer - once allocated - will be valid for the lifetime of the

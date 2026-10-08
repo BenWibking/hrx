@@ -158,6 +158,9 @@ static iree_status_t loom_amdgpu_occupancy_check_emit_provider_execute(
   loom_amdgpu_storage_lease_provider(&storage_lease_provider);
   const loom_low_emission_frame_options_t frame_options = {
       .schedule_strategy = options.schedule_strategy,
+      .schedule_flags =
+          LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES |
+          LOOM_LOW_SCHEDULE_FLAG_RETAIN_ACYCLIC_MEMORY_COMPLETIONS,
       .allocation_budgets = options.allocation_budgets,
       .allocation_budget_count = options.allocation_budget_count,
       .residency_query = loom_amdgpu_occupancy_residency_view,

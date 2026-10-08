@@ -22,6 +22,25 @@
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
 #include "loom/util/fact_table.h"
 
+iree_status_t loom_amdgpu_emit_i1_mask_select(loom_low_lower_context_t* context,
+                                              const loom_op_t* source_op,
+                                              loom_value_id_t false_value,
+                                              loom_value_id_t true_value,
+                                              loom_value_id_t condition,
+                                              loom_type_t mask_type,
+                                              loom_value_id_t* out_value) {
+  loom_value_id_t changed = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_binary(
+      context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_XOR_B64, false_value,
+      true_value, mask_type, &changed));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_binary(
+      context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_AND_B64, changed,
+      condition, mask_type, &changed));
+  return loom_amdgpu_emit_binary(context, source_op,
+                                 LOOM_AMDGPU_DESCRIPTOR_REF_S_XOR_B64,
+                                 false_value, changed, mask_type, out_value);
+}
+
 static bool loom_amdgpu_select_vector_storage(
     loom_type_t result_type, loom_amdgpu_vector_storage_t* out_storage,
     bool* out_full_width_storage, bool* out_allows_lane_immediates) {

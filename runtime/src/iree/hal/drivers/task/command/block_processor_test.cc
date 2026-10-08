@@ -97,18 +97,14 @@ static int kernel_write_tile_id(
   return 0;
 }
 
-// Sums all push constants and atomically adds the result to binding[0][0]
-// per tile.
+// Sums the constant bytes and their exact span length into binding[0][0].
 static int kernel_sum_constants(
     const iree_hal_executable_environment_v0_t* environment,
     const iree_hal_executable_dispatch_state_v0_t* dispatch_state,
     const iree_hal_executable_workgroup_state_v0_t* workgroup_state) {
-  uint32_t sum = 0;
-  const uint32_t* constants =
-      reinterpret_cast<const uint32_t*>(dispatch_state->constants.data);
-  for (size_t i = 0;
-       i < dispatch_state->constants.data_length / sizeof(uint32_t); ++i) {
-    sum += constants[i];
+  uint32_t sum = (uint32_t)dispatch_state->constants.data_length;
+  for (size_t i = 0; i < dispatch_state->constants.data_length; ++i) {
+    sum += dispatch_state->constants.data[i];
   }
   iree_atomic_int32_t* output =
       reinterpret_cast<iree_atomic_int32_t*>(dispatch_state->binding_ptrs[0]);
@@ -164,12 +160,15 @@ class BlockProcessorTest : public ::testing::TestWithParam<uint32_t> {
   // Records a dispatch with the given kernel, workgroup count, and bindings.
   // Uses indirect fixups (binding table) for simplicity.
   struct DispatchDesc {
+    // Native entry called once for each workgroup.
     iree_hal_executable_dispatch_v0_t function;
+    // XYZ dispatch dimensions.
     uint32_t workgroup_count[3];
+    // Number of mapped buffers passed to the entry.
     uint8_t binding_count;
+    // First mapped-buffer slot in the block data region.
     uint16_t binding_data_base;
-    uint8_t constant_count;
-    const uint32_t* constants;
+    // Command execution flags.
     uint8_t flags;
   };
 
@@ -181,9 +180,7 @@ class BlockProcessorTest : public ::testing::TestWithParam<uint32_t> {
                                 desc.workgroup_count[1] *
                                 desc.workgroup_count[2];
     const iree_host_size_t cmd_size =
-        iree_host_align(offsetof(iree_hal_cmd_dispatch_t, constants) +
-                            desc.constant_count * sizeof(uint32_t),
-                        8);
+        iree_host_align(offsetof(iree_hal_cmd_dispatch_t, constants), 8);
 
     iree_hal_cmd_dispatch_t* dispatch = NULL;
     iree_hal_cmd_fixup_t* out_fixups = NULL;
@@ -201,7 +198,7 @@ class BlockProcessorTest : public ::testing::TestWithParam<uint32_t> {
     dispatch->executable = &mock_executable_;
     dispatch->export_ordinal = 0;
     dispatch->reserved = 0;
-    dispatch->constant_count = desc.constant_count;
+    dispatch->constant_byte_length = 0;
     dispatch->binding_count = desc.binding_count;
     dispatch->binding_data_base = desc.binding_data_base;
     dispatch->workgroup_size[0] = 1;
@@ -213,11 +210,6 @@ class BlockProcessorTest : public ::testing::TestWithParam<uint32_t> {
     dispatch->tile_count = tile_count;
     dispatch->tiles_per_reservation = 1;
     dispatch->local_memory_size = 0;
-
-    if (desc.constant_count > 0 && desc.constants) {
-      memcpy(dispatch->constants, desc.constants,
-             desc.constant_count * sizeof(uint32_t));
-    }
 
     return iree_ok_status();
   }
@@ -429,46 +421,59 @@ TEST_P(BlockProcessorTest, DispatchWritesTileIds) {
   iree_hal_cmd_block_builder_deinitialize(&builder);
 }
 
-TEST_P(BlockProcessorTest, DispatchWithConstants) {
-  // Dispatch kernel_sum_constants with 3 push constants: 10 + 20 + 30 = 60.
-  // 4 tiles → 4 × 60 = 240 accumulated.
-  iree_atomic_int32_t result = IREE_ATOMIC_VAR_INIT(0);
-  iree_hal_cmd_binding_entry_t table[] = {
-      {&result, sizeof(result)},
-  };
+TEST_P(BlockProcessorTest, DispatchWithByteConstants) {
+  // Use the production recorder: both admission and execution must preserve
+  // the byte span, including odd lengths and the full 256-byte boundary.
+  uint8_t constants[IREE_HAL_EXECUTABLE_MAX_CONSTANT_BYTE_LENGTH];
+  for (size_t i = 0; i < sizeof(constants); ++i) {
+    constants[i] = static_cast<uint8_t>(31 + 17 * i);
+  }
+  for (uint16_t length : {0, 1, 2, 3, 4, 7, 255, 256}) {
+    SCOPED_TRACE(length);
+    iree_atomic_int32_t result = IREE_ATOMIC_VAR_INIT(0);
+    iree_hal_cmd_binding_entry_t table[] = {{&result, sizeof(result)}};
+    iree_hal_executable_dispatch_attrs_v0_t attributes = {};
+    attributes.constant_byte_length = length;
+    attributes.binding_count = 1;
+    attributes.workgroup_size_x = 1;
+    attributes.workgroup_size_y = 1;
+    attributes.workgroup_size_z = 1;
+    const iree_hal_executable_dispatch_v0_t entry = kernel_sum_constants;
+    mock_executable_.export_count = 1;
+    mock_executable_.dispatch_attrs = &attributes;
+    mock_executable_.dispatch_ptrs = &entry;
 
-  iree_hal_cmd_fixup_t fixups[1];
-  memset(fixups, 0, sizeof(fixups));
-  fixups[0].host_ptr = NULL;
-  fixups[0].slot = 0;
-  fixups[0].data_index = 0;
+    iree_hal_cmd_block_builder_t builder;
+    iree_hal_cmd_block_builder_initialize(&block_pool_, &builder);
+    IREE_ASSERT_OK(iree_hal_cmd_block_builder_begin(&builder));
+    auto config = iree_hal_make_static_dispatch_config(4, 1, 1);
+    config.workgroup_size[0] = 1;
+    config.workgroup_size[1] = 1;
+    config.workgroup_size[2] = 1;
+    iree_hal_cmd_fixup_t* fixups = nullptr;
+    iree_hal_cmd_build_token_t token;
+    IREE_ASSERT_OK(iree_hal_cmd_build_dispatch(
+        &builder, &mock_executable_.base,
+        iree_hal_executable_function_from_index(0), config,
+        iree_make_const_byte_span(constants, length), 1,
+        IREE_HAL_DISPATCH_FLAG_NONE, &fixups, &token));
+    const uint16_t data_index = fixups[0].data_index;
+    fixups[0] = {};
+    fixups[0].slot = 0;
+    fixups[0].data_index = data_index;
 
-  uint32_t constants[3] = {10, 20, 30};
-
-  iree_hal_cmd_block_builder_t builder;
-  iree_hal_cmd_block_builder_initialize(&block_pool_, &builder);
-  IREE_ASSERT_OK(iree_hal_cmd_block_builder_begin(&builder));
-
-  DispatchDesc desc = {};
-  desc.function = kernel_sum_constants;
-  desc.workgroup_count[0] = 4;
-  desc.workgroup_count[1] = 1;
-  desc.workgroup_count[2] = 1;
-  desc.binding_count = 1;
-  desc.binding_data_base = 0;
-  desc.constant_count = 3;
-  desc.constants = constants;
-  IREE_ASSERT_OK(record_dispatch(&builder, desc, fixups, 1));
-
-  iree_hal_cmd_block_recording_t recording;
-  IREE_ASSERT_OK(iree_hal_cmd_block_builder_end(&builder, &recording));
-
-  IREE_ASSERT_OK(execute(&recording, table, IREE_ARRAYSIZE(table)));
-
-  EXPECT_EQ(iree_atomic_load(&result, iree_memory_order_relaxed), 240);
-
-  iree_hal_cmd_block_recording_release(&recording);
-  iree_hal_cmd_block_builder_deinitialize(&builder);
+    iree_hal_cmd_block_recording_t recording;
+    IREE_ASSERT_OK(iree_hal_cmd_block_builder_end(&builder, &recording));
+    IREE_ASSERT_OK(execute(&recording, table, IREE_ARRAYSIZE(table)));
+    uint32_t expected = length;
+    for (size_t i = 0; i < length; ++i) {
+      expected += constants[i];
+    }
+    EXPECT_EQ(iree_atomic_load(&result, iree_memory_order_relaxed),
+              4 * expected);
+    iree_hal_cmd_block_recording_release(&recording);
+    iree_hal_cmd_block_builder_deinitialize(&builder);
+  }
 }
 
 TEST_P(BlockProcessorTest, FillCommand) {
@@ -1080,7 +1085,7 @@ TEST_P(BlockProcessorTest, IndirectDispatch) {
   dispatch->executable = &mock_executable_;
   dispatch->export_ordinal = 0;
   dispatch->reserved = 0;
-  dispatch->constant_count = 0;
+  dispatch->constant_byte_length = 0;
   dispatch->binding_count = 2;
   dispatch->binding_data_base = 0;
   dispatch->workgroup_size[0] = 1;
@@ -1145,7 +1150,7 @@ TEST_P(BlockProcessorTest, PredicatedDispatchSkipped) {
   dispatch->executable = &mock_executable_;
   dispatch->export_ordinal = 0;
   dispatch->reserved = 0;
-  dispatch->constant_count = 0;
+  dispatch->constant_byte_length = 0;
   dispatch->binding_count = 2;
   dispatch->binding_data_base = 0;
   dispatch->workgroup_size[0] = 1;

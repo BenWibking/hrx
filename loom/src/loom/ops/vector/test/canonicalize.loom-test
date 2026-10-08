@@ -1,5 +1,95 @@
 // RUN: pass canonicalize
 
+// Every widened lane is below the divisor, including large and ranked shapes.
+func.def @widened_unsigned_remainder(%input: vector<4x32xi8>) -> (vector<4x32xi32>) {
+  %wide = vector.extui %input : vector<4x32xi8> to vector<4x32xi32>
+  %divisor = vector.constant 257 : vector<4x32xi32>
+  %result = vector.remui %wide, %divisor : vector<4x32xi32>
+  func.return %result : vector<4x32xi32>
+}
+
+// ----
+func.def @widened_unsigned_remainder(%input: vector<4x32xi8>) -> (vector<4x32xi32>) {
+  %wide = vector.extui %input : vector<4x32xi8> to vector<4x32xi32>
+  func.return %wide : vector<4x32xi32>
+}
+
+// ====
+
+func.def @lane_bounded_unsigned_remainder(%first: i32, %second: i32) -> (vector<2xi32>) {
+  %small = scalar.assume %first [range(%first, 0, 6)] : i32
+  %large = scalar.assume %second [range(%second, 10, 30)] : i32
+  %input = vector.from_elements %small, %large : vector<2xi32>
+  %c7 = scalar.constant 7 : i32
+  %c31 = scalar.constant 31 : i32
+  %divisor = vector.from_elements %c7, %c31 : vector<2xi32>
+  %result = vector.remui %input, %divisor : vector<2xi32>
+  func.return %result : vector<2xi32>
+}
+
+// ----
+func.def @lane_bounded_unsigned_remainder(%first: i32, %second: i32) -> (vector<2xi32>) {
+  %small = scalar.assume %first [range(%first, 0, 6)] : i32
+  %large = scalar.assume %second [range(%second, 10, 30)] : i32
+  %input = vector.from_elements %small, %large : vector<2xi32>
+  func.return %input : vector<2xi32>
+}
+
+// ====
+
+// Every lane must satisfy the bound, not just the first one.
+func.def @partially_bounded_unsigned_remainder(%first: i32, %second: i32) -> (vector<2xi32>) {
+  %small = scalar.assume %first [range(%first, 0, 6)] : i32
+  %large = scalar.assume %second [range(%second, 10, 31)] : i32
+  %input = vector.from_elements %small, %large : vector<2xi32>
+  %c7 = scalar.constant 7 : i32
+  %c31 = scalar.constant 31 : i32
+  %divisor = vector.from_elements %c7, %c31 : vector<2xi32>
+  %result = vector.remui %input, %divisor : vector<2xi32>
+  func.return %result : vector<2xi32>
+}
+
+// ----
+func.def @partially_bounded_unsigned_remainder(%first: i32, %second: i32) -> (vector<2xi32>) {
+  %small = scalar.assume %first [range(%first, 0, 6)] : i32
+  %large = scalar.assume %second [range(%second, 10, 31)] : i32
+  %input = vector.from_elements %small, %large : vector<2xi32>
+  %c7 = scalar.constant 7 : i32
+  %c31 = scalar.constant 31 : i32
+  %divisor = vector.from_elements %c7, %c31 : vector<2xi32>
+  %result = vector.remui %input, %divisor : vector<2xi32>
+  func.return %result : vector<2xi32>
+}
+
+// ====
+
+func.def @empty_unsigned_remainder() -> (vector<0xi32>) {
+  %empty = vector.from_elements : vector<0xi32>
+  %divisor = vector.constant 7 : vector<0xi32>
+  %result = vector.remui %empty, %divisor : vector<0xi32>
+  func.return %result : vector<0xi32>
+}
+
+// ----
+func.def @empty_unsigned_remainder() -> (vector<0xi32>) {
+  %result = vector.empty : vector<0xi32>
+  func.return %result : vector<0xi32>
+}
+
+// ====
+
+// Identity casts inside one address domain are aliases.
+func.def @index_cast_identity(%value: vector<4xindex>) -> (vector<4xindex>) {
+  %result = vector.index_cast %value : vector<4xindex> to vector<4xindex>
+  func.return %result : vector<4xindex>
+}
+// ----
+func.def @index_cast_identity(%value: vector<4xindex>) -> (vector<4xindex>) {
+  func.return %value : vector<4xindex>
+}
+
+// ====
+
 // A unary concat is the input value itself.
 func.def @concat_unary(%value: vector<4xi8>) -> (vector<4xi8>) {
   %result = vector.concat<0> %value : vector<4xi8> -> vector<4xi8>

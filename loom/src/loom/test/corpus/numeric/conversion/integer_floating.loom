@@ -324,3 +324,105 @@ check.scenario @floating_integer_values {
   }
   check.return
 }
+
+// Conversion results cross loop boundaries instead of being consumed directly
+// by stores. Scalar loads keep vector-memory support independent of this path.
+kernel.def @loop_carried_floating_conversions() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%signed_input: buffer, %unsigned_input: buffer, %count: index, %signed_output: buffer, %unsigned_output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %signed_source = buffer.view %signed_input[%base] : buffer -> view<2xf64>
+  %unsigned_source = buffer.view %unsigned_input[%base] : buffer -> view<4xf32>
+  %signed_target = buffer.view %signed_output[%base] : buffer -> view<2xf64>
+  %unsigned_target = buffer.view %unsigned_output[%base] : buffer -> view<4xf32>
+  %first = view.load %signed_source[0] : view<2xf64> -> f64
+  %second = view.load %signed_source[1] : view<2xf64> -> f64
+  %signed_initial = vector.from_elements %first, %second : vector<2xf64>
+  %signed_result = scf.for %iteration = [%begin to %count step %step](%state = %signed_initial : vector<2xf64>) -> (vector<2xf64>) {
+    %halves = vector.fptrunc %state : vector<2xf64> to vector<2xf16>
+    %integers = vector.fptosi %halves : vector<2xf16> to vector<2xi64>
+    %singles = vector.sitofp %integers : vector<2xi64> to vector<2xf32>
+    %doubles = vector.extf %singles : vector<2xf32> to vector<2xf64>
+    scf.yield %doubles : vector<2xf64>
+  }
+  %signed_first = vector.extract %signed_result[0] : vector<2xf64> -> f64
+  %signed_second = vector.extract %signed_result[1] : vector<2xf64> -> f64
+  view.store %signed_first, %signed_target[0] : f64, view<2xf64>
+  view.store %signed_second, %signed_target[1] : f64, view<2xf64>
+
+  %first_unsigned = view.load %unsigned_source[0] : view<4xf32> -> f32
+  %second_unsigned = view.load %unsigned_source[1] : view<4xf32> -> f32
+  %third_unsigned = view.load %unsigned_source[2] : view<4xf32> -> f32
+  %fourth_unsigned = view.load %unsigned_source[3] : view<4xf32> -> f32
+  %unsigned_initial = vector.from_elements %first_unsigned, %second_unsigned, %third_unsigned, %fourth_unsigned : vector<4xf32>
+  %unsigned_result = scf.for %iteration = [%begin to %count step %step](%state = %unsigned_initial : vector<4xf32>) -> (vector<4xf32>) {
+    %integers = vector.fptoui %state : vector<4xf32> to vector<4xi16>
+    %doubles = vector.uitofp %integers : vector<4xi16> to vector<4xf64>
+    %singles = vector.fptrunc %doubles : vector<4xf64> to vector<4xf32>
+    scf.yield %singles : vector<4xf32>
+  }
+  %unsigned_first = vector.extract %unsigned_result[0] : vector<4xf32> -> f32
+  %unsigned_second = vector.extract %unsigned_result[1] : vector<4xf32> -> f32
+  %unsigned_third = vector.extract %unsigned_result[2] : vector<4xf32> -> f32
+  %unsigned_fourth = vector.extract %unsigned_result[3] : vector<4xf32> -> f32
+  view.store %unsigned_first, %unsigned_target[0] : f32, view<4xf32>
+  view.store %unsigned_second, %unsigned_target[1] : f32, view<4xf32>
+  view.store %unsigned_third, %unsigned_target[2] : f32, view<4xf32>
+  view.store %unsigned_fourth, %unsigned_target[3] : f32, view<4xf32>
+  kernel.return
+}
+
+func.def @loop_carried_floating_oracle(%signed_input: buffer, %unsigned_input: buffer, %count: index, %signed_output: buffer, %unsigned_output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %signed_length = index.constant 2 : index
+  %unsigned_length = index.constant 4 : index
+  %signed_source = buffer.view %signed_input[%base] : buffer -> view<2xf64>
+  %unsigned_source = buffer.view %unsigned_input[%base] : buffer -> view<4xf32>
+  %signed_target = buffer.view %signed_output[%base] : buffer -> view<2xf64>
+  %unsigned_target = buffer.view %unsigned_output[%base] : buffer -> view<4xf32>
+  scf.for %lane = [%begin to %signed_length step %step] {
+    %initial = view.load %signed_source[%lane] : view<2xf64> -> f64
+    %result = scf.for %iteration = [%begin to %count step %step](%state = %initial : f64) -> (f64) {
+      %half = scalar.fptrunc %state : f64 to f16
+      %integer = scalar.fptosi %half : f16 to i64
+      %single = scalar.sitofp %integer : i64 to f32
+      %double = scalar.extf %single : f32 to f64
+      scf.yield %double : f64
+    }
+    view.store %result, %signed_target[%lane] : f64, view<2xf64>
+  }
+  scf.for %lane = [%begin to %unsigned_length step %step] {
+    %initial = view.load %unsigned_source[%lane] : view<4xf32> -> f32
+    %result = scf.for %iteration = [%begin to %count step %step](%state = %initial : f32) -> (f32) {
+      %integer = scalar.fptoui %state : f32 to i16
+      %double = scalar.uitofp %integer : i16 to f64
+      %single = scalar.fptrunc %double : f64 to f32
+      scf.yield %single : f32
+    }
+    view.store %result, %unsigned_target[%lane] : f32, view<4xf32>
+  }
+  func.return
+}
+
+check.scenario @loop_carried_floating_values {
+  check.trial[64](%trial: index, %entropy: check.entropy) {
+    %unsigned_entropy = check.entropy.fork %entropy name("unsigned") : check.entropy
+    %signed_seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %unsigned_seed = check.entropy.read %unsigned_entropy[%trial] : check.entropy -> i64
+    %signed_input = check.generate.random.uniform seed(%signed_seed) range(-32768.0 to 32768.0) : tensor<2xf64>
+    %unsigned_input = check.generate.random.uniform seed(%unsigned_seed) range(0.0 to 65535.75) : tensor<4xf32>
+    %count = check.literal value(3) : index
+    %signed_output = check.generate.fill value(-123.0) : tensor<2xf64>
+    %unsigned_output = check.generate.fill value(-123.0) : tensor<4xf32>
+    check.compare<@loop_carried_floating_conversions, @loop_carried_floating_oracle>(%signed_input, %unsigned_input, %count, %signed_output, %unsigned_output) : (tensor<2xf64>, tensor<4xf32>, index, tensor<2xf64>, tensor<4xf32>) -> () {
+      check.expect.bitwise actual(%signed_output) expected(%signed_output) : tensor<2xf64>
+      check.expect.bitwise actual(%unsigned_output) expected(%unsigned_output) : tensor<4xf32>
+    }
+  }
+  check.return
+}

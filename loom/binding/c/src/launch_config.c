@@ -395,10 +395,9 @@ loomc_status_t loomc_launch_config_program_lookup_function(
                              "launch config program must not be NULL");
   }
   if (!loomc_launch_config_string_view_is_well_formed(export_name) ||
-      loomc_string_view_is_empty(export_name) || export_name.data[0] == '@') {
-    return loomc_make_status(
-        LOOMC_STATUS_INVALID_ARGUMENT,
-        "export_name must be a non-empty name without a leading '@'");
+      loomc_string_view_is_empty(export_name)) {
+    return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
+                             "export_name must be non-empty");
   }
 
   const iree_string_view_t name = iree_string_view_from_loomc(export_name);

@@ -384,7 +384,7 @@ uint32_t FindFreeLocationWithStorageLease(
                /*unit_count=*/1),
   };
   const uint32_t interval_indices[] = {0, 1};
-  const loom_value_id_t value_ids[] = {candidate_value, leased_value};
+  loom_value_id_t value_ids[] = {candidate_value, leased_value};
   const loom_liveness_block_info_t blocks[] = {
       Block(/*start_point=*/0, /*end_point=*/4),
   };
@@ -396,6 +396,11 @@ uint32_t FindFreeLocationWithStorageLease(
   liveness.value_ids = value_ids;
   liveness.value_count = IREE_ARRAYSIZE(value_ids);
   liveness.value_interval_indices = interval_indices;
+  loom_local_value_domain_t value_domain = {};
+  value_domain.module = module;
+  value_domain.value_ids = value_ids;
+  value_domain.value_count = IREE_ARRAYSIZE(value_ids);
+  value_domain.flags = LOOM_LOCAL_VALUE_DOMAIN_FLAG_ACQUIRED;
 
   loom_low_allocation_unit_liveness_value_t unit_values[] = {
       {0, 2}, {options.unit_count, 0}};
@@ -453,7 +458,14 @@ uint32_t FindFreeLocationWithStorageLease(
   schedule_blocks[0].scheduled_node_count = 4;
   loom_low_schedule_node_t schedule_nodes[4] = {};
   uint32_t scheduled_node_indices[] = {0, 1, 2, 3};
+  const uint32_t value_producer_nodes[] = {
+      LOOM_LOW_SCHEDULE_NODE_NONE,
+      LOOM_LOW_SCHEDULE_NODE_NONE,
+  };
   loom_low_schedule_table_t schedule = {};
+  schedule.value_ids = value_ids;
+  schedule.value_count = IREE_ARRAYSIZE(value_ids);
+  schedule.value_producer_nodes = value_producer_nodes;
   schedule.blocks = schedule_blocks;
   schedule.block_count = IREE_ARRAYSIZE(schedule_blocks);
   schedule.nodes = schedule_nodes;
@@ -484,6 +496,7 @@ uint32_t FindFreeLocationWithStorageLease(
   uint8_t lease_instance_written[] = {1};
   loom_low_allocation_storage_lease_state_t storage_leases = {};
   storage_leases.lease_table = &lease_table;
+  storage_leases.value_domain = &value_domain;
   storage_leases.instances = lease_instances;
   storage_leases.instance_written = lease_instance_written;
   storage_leases.pressure_release_record_count = iree_any_bit_set(
@@ -1067,7 +1080,7 @@ TEST_F(LowAllocationSearchTest,
                /*unit_count=*/2),
   };
   const uint32_t interval_indices[] = {0, 1};
-  const loom_value_id_t value_ids[] = {candidate_value, active_value};
+  loom_value_id_t value_ids[] = {candidate_value, active_value};
   const loom_liveness_block_info_t blocks[] = {Block(/*start_point=*/0,
                                                      /*end_point=*/16)};
   loom_liveness_analysis_t liveness = {};
@@ -1078,6 +1091,11 @@ TEST_F(LowAllocationSearchTest,
   liveness.value_ids = value_ids;
   liveness.value_count = IREE_ARRAYSIZE(value_ids);
   liveness.value_interval_indices = interval_indices;
+  loom_local_value_domain_t value_domain = {};
+  value_domain.module = module;
+  value_domain.value_ids = value_ids;
+  value_domain.value_count = IREE_ARRAYSIZE(value_ids);
+  value_domain.flags = LOOM_LOCAL_VALUE_DOMAIN_FLAG_ACQUIRED;
 
   loom_low_allocation_unit_liveness_value_t unit_values[] = {{0, 2}, {2, 0}};
   uint32_t unit_end_points[] = {6, 6, 12, 12};
@@ -1127,7 +1145,14 @@ TEST_F(LowAllocationSearchTest,
   schedule_blocks[0].scheduled_node_count = 3;
   loom_low_schedule_node_t schedule_nodes[3] = {};
   uint32_t scheduled_node_indices[] = {0, 1, 2};
+  const uint32_t value_producer_nodes[] = {
+      LOOM_LOW_SCHEDULE_NODE_NONE,
+      LOOM_LOW_SCHEDULE_NODE_NONE,
+  };
   loom_low_schedule_table_t schedule = {};
+  schedule.value_ids = value_ids;
+  schedule.value_count = IREE_ARRAYSIZE(value_ids);
+  schedule.value_producer_nodes = value_producer_nodes;
   schedule.blocks = schedule_blocks;
   schedule.block_count = IREE_ARRAYSIZE(schedule_blocks);
   schedule.nodes = schedule_nodes;
@@ -1158,6 +1183,7 @@ TEST_F(LowAllocationSearchTest,
   uint8_t lease_instance_written[] = {1};
   loom_low_allocation_storage_lease_state_t storage_leases = {};
   storage_leases.lease_table = &lease_table;
+  storage_leases.value_domain = &value_domain;
   storage_leases.instances = lease_instances;
   storage_leases.instance_written = lease_instance_written;
   loom_low_allocation_spill_plan_traffic_t spill_traffic[] = {

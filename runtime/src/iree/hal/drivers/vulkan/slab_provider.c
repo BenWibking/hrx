@@ -10,7 +10,6 @@
 
 #include "iree/base/internal/atomics.h"
 #include "iree/hal/drivers/vulkan/buffer.h"
-#include "iree/hal/drivers/vulkan/sparse_buffer.h"
 #include "iree/hal/memory/tracing.h"
 
 //===----------------------------------------------------------------------===//
@@ -131,7 +130,7 @@ iree_status_t iree_hal_vulkan_slab_provider_create(
   provider->properties.memory_type = options.memory_type;
   provider->properties.supported_usage = options.supported_usage;
   provider->properties.queue_family_affinity =
-      IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY;
+      options.queue_family_affinity_mask;
   provider->properties.atomic_operations = options.atomic_operations;
   provider->queue_family_affinity_mask = options.queue_family_affinity_mask;
   provider->min_alignment = options.min_alignment;
@@ -164,35 +163,10 @@ static void iree_hal_vulkan_slab_provider_destroy(
   IREE_TRACE_ZONE_END(z0);
 }
 
-static iree_status_t iree_hal_vulkan_slab_provider_query_device_address(
-    iree_hal_buffer_t* buffer, VkDeviceAddress* out_device_address) {
-  if (iree_hal_vulkan_buffer_isa(buffer)) {
-    return iree_hal_vulkan_buffer_device_address(buffer, out_device_address);
-  }
-  if (iree_hal_vulkan_sparse_buffer_isa(buffer)) {
-    return iree_hal_vulkan_sparse_buffer_device_address(buffer,
-                                                        out_device_address);
-  }
-  return iree_make_status(IREE_STATUS_INTERNAL,
-                          "Vulkan slab provider acquired a non-Vulkan buffer");
-}
-
-static iree_status_t iree_hal_vulkan_slab_provider_query_handles(
-    iree_hal_buffer_t* buffer, VkDeviceMemory* out_memory,
-    VkBuffer* out_handle) {
-  if (iree_hal_vulkan_buffer_isa(buffer)) {
-    return iree_hal_vulkan_buffer_handle(buffer, out_memory, out_handle);
-  }
-  if (iree_hal_vulkan_sparse_buffer_isa(buffer)) {
-    return iree_hal_vulkan_sparse_buffer_handle(buffer, out_memory, out_handle);
-  }
-  return iree_make_status(IREE_STATUS_INTERNAL,
-                          "Vulkan slab provider acquired a non-Vulkan buffer");
-}
-
 static iree_status_t iree_hal_vulkan_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* base_provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab) {
+    iree_device_size_t alignment, iree_hal_slab_t* out_slab) {
+  (void)alignment;
   IREE_ASSERT_ARGUMENT(out_slab);
   iree_hal_vulkan_slab_provider_t* provider =
       iree_hal_vulkan_slab_provider_cast(base_provider);
@@ -233,8 +207,7 @@ static iree_status_t iree_hal_vulkan_slab_provider_acquire_slab(
 
   VkDeviceAddress device_address = 0;
   if (iree_status_is_ok(status)) {
-    status = iree_hal_vulkan_slab_provider_query_device_address(
-        buffer, &device_address);
+    status = iree_hal_vulkan_buffer_device_address(buffer, &device_address);
   }
 
   if (iree_status_is_ok(status)) {
@@ -342,11 +315,11 @@ static iree_status_t iree_hal_vulkan_slab_provider_wrap_buffer(
 
   VkDeviceMemory device_memory = VK_NULL_HANDLE;
   VkBuffer handle = VK_NULL_HANDLE;
-  IREE_RETURN_IF_ERROR(iree_hal_vulkan_slab_provider_query_handles(
-      slab_buffer, &device_memory, &handle));
+  IREE_RETURN_IF_ERROR(
+      iree_hal_vulkan_buffer_handle(slab_buffer, &device_memory, &handle));
   VkDeviceAddress device_address = 0;
-  IREE_RETURN_IF_ERROR(iree_hal_vulkan_slab_provider_query_device_address(
-      slab_buffer, &device_address));
+  IREE_RETURN_IF_ERROR(
+      iree_hal_vulkan_buffer_device_address(slab_buffer, &device_address));
   iree_hal_vulkan_buffer_mapping_state_t* mapping_state =
       iree_hal_vulkan_buffer_mapping_state(slab_buffer);
 
@@ -387,14 +360,14 @@ static void iree_hal_vulkan_slab_provider_advise_asan_range(
 }
 
 static void iree_hal_vulkan_slab_provider_prefault(
-    iree_hal_slab_provider_t* base_provider, iree_hal_slab_t* slab) {
+    iree_hal_slab_provider_t* base_provider, const iree_hal_slab_t* slab,
+    iree_device_size_t offset, iree_device_size_t length) {
   (void)base_provider;
   (void)slab;
 }
 
 static void iree_hal_vulkan_slab_provider_trim(
-    iree_hal_slab_provider_t* base_provider,
-    iree_hal_slab_provider_trim_flags_t flags) {
+    iree_hal_slab_provider_t* base_provider, iree_hal_pool_trim_flags_t flags) {
   (void)base_provider;
   (void)flags;
 }
@@ -420,6 +393,17 @@ static void iree_hal_vulkan_slab_provider_query_properties(
   const iree_hal_vulkan_slab_provider_t* provider =
       iree_hal_vulkan_slab_provider_const_cast(base_provider);
   *out_properties = provider->properties;
+  out_properties->allocation_alignment =
+      provider->min_alignment ? provider->min_alignment : 1;
+  out_properties->max_allocation_alignment =
+      out_properties->allocation_alignment;
+  out_properties->maintenance_alignment =
+      iree_any_bit_set(provider->memory_property_flags,
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+              !iree_any_bit_set(provider->memory_property_flags,
+                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+          ? provider->non_coherent_atom_size
+          : 1;
 }
 
 static const iree_hal_slab_provider_vtable_t

@@ -14,12 +14,14 @@
 #include "iree/base/internal/arena.h"
 #include "iree/base/tooling/flags.h"
 #include "loom/sanitizer/options.h"
-#include "loom/target/selection.h"
 #include "loom/tooling/cli/help.h"
+#include "loom/tooling/cli/loomc_options.h"
 #include "loom/tooling/context/context.h"
+#include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/file.h"
 #include "loom/tools/loom-check/json_output.h"
 #include "loom/tools/loom-check/output.h"
+#include "loomc/iree.h"
 
 IREE_FLAG(bool, update, false,
           "Rewrite test files with actual output in the expected\n"
@@ -154,9 +156,8 @@ static void loom_check_print_agents_markdown(FILE* stream) {
       "\n"
       "### Compile for a profile\n"
       "\n"
-      "`--target=family:selector` compiles every source case or each\n"
-      "kernel in a linked `.loombc` test module through final artifact "
-      "emission.\n"
+      "`--target=family:selector` compiles every source case or linked\n"
+      "`.loombc` test module through one final artifact invocation.\n"
       "A pass means a nonempty artifact or exactly matched source diagnostic\n"
       "annotations. No device is opened and numerical checks are not "
       "executed.\n"
@@ -227,8 +228,9 @@ static void loom_check_print_agents_markdown(FILE* stream) {
 // Entry points
 //===----------------------------------------------------------------------===//
 
-int loom_check_main(int argc, char** argv,
-                    const loom_check_environment_t* base_environment) {
+int loom_check_main(
+    int argc, char** argv, const loom_check_environment_t* base_environment,
+    const struct loom_check_compile_provider_t* compile_provider) {
   if (!base_environment) {
     fprintf(stderr, "loom-check environment is required\n");
     return 1;
@@ -416,14 +418,23 @@ int loom_check_main(int argc, char** argv,
   iree_arena_block_pool_t block_pool;
   iree_arena_block_pool_initialize(32 * 1024, host_allocator, &block_pool);
 
-  // Initialize context with the dialects selected by this loom-check binary.
-  loom_context_t context;
-  loom_context_initialize(host_allocator, &context);
   loom_tooling_config_set_t config_set;
   loom_tooling_config_set_initialize(host_allocator, &config_set);
+  loomc_config_binding_t* config_bindings = NULL;
+  loomc_config_options_t config_options = {0};
+  loomc_sanitizer_options_t loomc_sanitizer = {0};
+  loom_check_compile_session_t compile_session = {
+      .provider = compile_provider,
+      .host_allocator = host_allocator,
+  };
+  loomc_target_profile_t* target_profile = NULL;
   const iree_string_view_t target =
       iree_string_view_trim(iree_make_cstring_view(FLAG_target));
   const bool compile_enabled = !iree_string_view_is_empty(target);
+  loom_context_t context = {0};
+  if (!compile_enabled) {
+    loom_context_initialize(host_allocator, &context);
+  }
   iree_status_t status = iree_ok_status();
   if (FLAG_check_templates &&
       (FLAG_update || !iree_string_view_is_empty(target) ||
@@ -441,19 +452,9 @@ int loom_check_main(int argc, char** argv,
         "inputs",
         argc - 1);
   }
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && !compile_enabled) {
     status =
         loom_check_context_register_and_finalize(base_environment, &context);
-  }
-  loom_target_specification_t target_specification = {0};
-  const loom_target_profile_t* target_profile = NULL;
-  if (iree_status_is_ok(status) && compile_enabled) {
-    status = loom_target_specification_parse(target, &target_specification);
-  }
-  if (iree_status_is_ok(status) && compile_enabled) {
-    status = loom_target_environment_select_profile(
-        base_environment->target_environment, &target_specification,
-        &target_profile);
   }
   const iree_flag_string_list_t config_files = FLAG_config_file_list();
   const iree_flag_string_list_t configs = FLAG_config_list();
@@ -484,14 +485,30 @@ int loom_check_main(int argc, char** argv,
     status = loom_tooling_config_set_append_assignment(&config_set,
                                                        configs.values[i]);
   }
+  if (iree_status_is_ok(status) && compile_enabled) {
+    status = loom_check_compile_session_select_target_profile(
+        &compile_session, target, &target_profile);
+  }
+  if (iree_status_is_ok(status) && compile_enabled) {
+    status = loom_tooling_cli_make_loomc_config_options(
+        &config_set, host_allocator, &config_bindings, &config_options);
+  }
+  loom_tooling_cli_make_loomc_sanitizer_options(&sanitizer, &loomc_sanitizer);
+  const bool sanitizer_enabled =
+      sanitizer.checks != 0 ||
+      sanitizer.reporting_mode != LOOM_SANITIZER_REPORTING_MODE_DEFAULT;
 
   iree_host_size_t pass_count = 0;
   iree_host_size_t fail_count = 0;
   iree_host_size_t skip_count = 0;
   const loom_check_process_options_t process_options = {
-      .compile = {.target_profile = target_profile,
-                  .config_set = &config_set,
-                  .sanitizer = sanitizer},
+      .compile =
+          {
+              .session = &compile_session,
+              .target_profile = target_profile,
+              .config = &config_options,
+              .sanitizer = sanitizer_enabled ? &loomc_sanitizer : NULL,
+          },
       .input_format = iree_make_cstring_view(FLAG_input_format),
       .mode = FLAG_check_templates ? LOOM_CHECK_PROCESS_CHECK_TEMPLATES
               : FLAG_update        ? LOOM_CHECK_PROCESS_UPDATE
@@ -508,6 +525,7 @@ int loom_check_main(int argc, char** argv,
 
   if (iree_status_is_ok(status)) {
     loom_check_environment_t environment = *base_environment;
+    environment.compile_session = &compile_session;
     if (argc < 2) {
       // No positional args: read from stdin.
       status = loom_check_read_and_process(
@@ -533,7 +551,12 @@ int loom_check_main(int argc, char** argv,
     iree_status_free(status);
   }
 
-  loom_context_deinitialize(&context);
+  if (!compile_enabled) {
+    loom_context_deinitialize(&context);
+  }
+  loomc_target_profile_release(target_profile);
+  loom_check_compile_session_deinitialize(&compile_session);
+  iree_allocator_free(host_allocator, config_bindings);
   loom_tooling_config_set_deinitialize(&config_set);
   iree_arena_block_pool_deinitialize(&block_pool);
 

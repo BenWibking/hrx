@@ -21,7 +21,7 @@ kernel.def target(@target) @double_i32_at_byte_offset() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%input: buffer, %output: buffer, %byte_offset: offset) {
-  %byte_offset_aligned = index.assume %byte_offset [mul(%byte_offset, 4)] : offset
+  %byte_offset_aligned = index.assume %byte_offset [multiple_of(%byte_offset, 4)] : offset
   %input_aligned = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   %output_aligned = buffer.assume.alignment %output {minimum_alignment = 4} : buffer
   %input_view = buffer.view %input_aligned[%byte_offset_aligned] : buffer -> view<1xi32>
@@ -79,33 +79,10 @@ loomc_status_t ValidateSpirvVulkanProfile(
   return loomc_ok_status();
 }
 
-loomc_status_t EmitSpirvModule(loomc_target_environment_t* target_environment,
-                               loomc_workspace_t* workspace,
-                               loomc_module_t* module,
-                               loomc_string_view_t artifact_format,
-                               loomc_string_view_t artifact_identifier,
-                               loomc_result_t** out_result) {
-  loomc_spirv_emit_options_t spirv_options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_SPIRV_EMIT_OPTIONS,
-      /*.structure_size=*/sizeof(spirv_options),
-      /*.next=*/nullptr,
-  };
-  loomc_emit_options_t emit_options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
-      /*.structure_size=*/sizeof(emit_options),
-      /*.next=*/&spirv_options,
-      /*.artifact_format=*/artifact_format,
-      /*.identifier=*/artifact_identifier,
-      /*.artifact_flags=*/LOOMC_EMIT_ARTIFACT_FLAG_PRIMARY,
-  };
-  return loomc_emit_module(target_environment, workspace, module, &emit_options,
-                           loomc_allocator_system(), out_result);
-}
-
 TEST(LoomcSpirvIreeHalExecutionTest,
      CompilesEmitsAndExecutesOnLiveVulkanHalDevice) {
-  const loomc_iree_hal_profile_provider_t* profile_providers[] = {
-      loomc_spirv_iree_hal_profile_provider(),
+  const loomc_iree_hal_target_provider_t* target_providers[] = {
+      loomc_spirv_iree_hal_target_provider(),
   };
 
   loomc::testing::target::IreeHalKernelExecutionTarget target = {};
@@ -115,7 +92,6 @@ TEST(LoomcSpirvIreeHalExecutionTest,
   target.source_identifier =
       loomc_make_cstring_view("double_i32_at_byte_offset.loom");
   target.source_text = loomc_make_cstring_view(kSourceText);
-  target.module_name = loomc_make_cstring_view("live_vulkan_execution_test");
   target.kernel_export_name =
       loomc_make_cstring_view("double_i32_at_byte_offset");
   target.target_pipeline_identifier =
@@ -126,17 +102,10 @@ TEST(LoomcSpirvIreeHalExecutionTest,
   target.artifact_format = loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_SPIRV);
   target.artifact_identifier =
       loomc_make_cstring_view("double_i32_at_byte_offset.spv");
-  target.executable_target_selection = {
-      /*.family=*/IREE_SV("spirv"),
-      /*.target_key=*/IREE_SV("vulkan1.3+bda"),
-      /*.kind_flags=*/IREE_HAL_EXECUTABLE_TARGET_KIND_FLAG_GENERIC,
-      /*.physical_device_affinity=*/0,
-  };
-  target.profile_providers = profile_providers;
-  target.profile_provider_count = 1;
+  target.target_providers = target_providers;
+  target.target_provider_count = 1;
   target.create_target_environment = CreateSpirvTargetEnvironment;
   target.validate_target_profile = ValidateSpirvVulkanProfile;
-  target.emit_module = EmitSpirvModule;
 
   loomc::testing::target::RunIreeHalKernelExecutionTest(
       target, loomc::testing::target::RunIreeHalByteOffsetExecution);

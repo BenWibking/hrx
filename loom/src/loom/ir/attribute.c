@@ -34,77 +34,92 @@ bool loom_attr_matches_scalar_type(loom_attribute_t attr,
   return matches;
 }
 
+typedef uint8_t loom_predicate_value_domain_t;
+
+enum loom_predicate_value_domain_e {
+  LOOM_PREDICATE_VALUE_DOMAIN_NUMERIC = 0,
+  LOOM_PREDICATE_VALUE_DOMAIN_INTEGER = 1,
+  LOOM_PREDICATE_VALUE_DOMAIN_FIXED_INTEGER = 2,
+  LOOM_PREDICATE_VALUE_DOMAIN_FLOAT = 3,
+};
+
+typedef struct loom_predicate_descriptor_t {
+  // Canonical textual spelling.
+  const char* name;
+  // Byte length of |name| excluding its NUL terminator.
+  uint8_t name_length;
+  // Exact number of predicate arguments.
+  uint8_t argument_count;
+  // Scalar value domain accepted by the predicate.
+  loom_predicate_value_domain_t value_domain;
+} loom_predicate_descriptor_t;
+
+#define LOOM_PREDICATE_DESCRIPTOR(name, argument_count, value_domain) \
+  {name, sizeof(name) - 1, argument_count, value_domain}
+
+// Indexed by loom_predicate_kind_t. Keeping the stable vocabulary in one
+// table makes spelling, arity, and accepted value domain one contract.
+static const loom_predicate_descriptor_t loom_predicate_descriptors[] = {
+    LOOM_PREDICATE_DESCRIPTOR("eq", 2, LOOM_PREDICATE_VALUE_DOMAIN_NUMERIC),
+    LOOM_PREDICATE_DESCRIPTOR("ne", 2, LOOM_PREDICATE_VALUE_DOMAIN_NUMERIC),
+    LOOM_PREDICATE_DESCRIPTOR("lt", 2, LOOM_PREDICATE_VALUE_DOMAIN_INTEGER),
+    LOOM_PREDICATE_DESCRIPTOR("le", 2, LOOM_PREDICATE_VALUE_DOMAIN_INTEGER),
+    LOOM_PREDICATE_DESCRIPTOR("gt", 2, LOOM_PREDICATE_VALUE_DOMAIN_INTEGER),
+    LOOM_PREDICATE_DESCRIPTOR("ge", 2, LOOM_PREDICATE_VALUE_DOMAIN_INTEGER),
+    LOOM_PREDICATE_DESCRIPTOR("multiple_of", 2,
+                              LOOM_PREDICATE_VALUE_DOMAIN_INTEGER),
+    LOOM_PREDICATE_DESCRIPTOR("power_of_two", 1,
+                              LOOM_PREDICATE_VALUE_DOMAIN_INTEGER),
+    LOOM_PREDICATE_DESCRIPTOR("range", 3, LOOM_PREDICATE_VALUE_DOMAIN_INTEGER),
+    LOOM_PREDICATE_DESCRIPTOR("not_nan", 1, LOOM_PREDICATE_VALUE_DOMAIN_FLOAT),
+    LOOM_PREDICATE_DESCRIPTOR("not_inf", 1, LOOM_PREDICATE_VALUE_DOMAIN_FLOAT),
+    LOOM_PREDICATE_DESCRIPTOR("finite", 1, LOOM_PREDICATE_VALUE_DOMAIN_FLOAT),
+    LOOM_PREDICATE_DESCRIPTOR("ult", 2,
+                              LOOM_PREDICATE_VALUE_DOMAIN_FIXED_INTEGER),
+    LOOM_PREDICATE_DESCRIPTOR("ule", 2,
+                              LOOM_PREDICATE_VALUE_DOMAIN_FIXED_INTEGER),
+    LOOM_PREDICATE_DESCRIPTOR("ugt", 2,
+                              LOOM_PREDICATE_VALUE_DOMAIN_FIXED_INTEGER),
+    LOOM_PREDICATE_DESCRIPTOR("uge", 2,
+                              LOOM_PREDICATE_VALUE_DOMAIN_FIXED_INTEGER),
+};
+
+static_assert(IREE_ARRAYSIZE(loom_predicate_descriptors) ==
+                  LOOM_PREDICATE_COUNT_,
+              "predicate descriptor table must cover every kind");
+
+#undef LOOM_PREDICATE_DESCRIPTOR
+
+static const loom_predicate_descriptor_t* loom_predicate_descriptor(
+    uint8_t kind) {
+  return kind < LOOM_PREDICATE_COUNT_ ? &loom_predicate_descriptors[kind]
+                                      : NULL;
+}
+
 const char* loom_predicate_kind_name(uint8_t kind) {
-  switch ((loom_predicate_kind_t)kind) {
-    case LOOM_PREDICATE_EQ:
-      return "eq";
-    case LOOM_PREDICATE_NE:
-      return "ne";
-    case LOOM_PREDICATE_LT:
-      return "lt";
-    case LOOM_PREDICATE_LE:
-      return "le";
-    case LOOM_PREDICATE_GT:
-      return "gt";
-    case LOOM_PREDICATE_GE:
-      return "ge";
-    case LOOM_PREDICATE_MUL:
-      return "mul";
-    case LOOM_PREDICATE_MIN:
-      return "min";
-    case LOOM_PREDICATE_MAX:
-      return "max";
-    case LOOM_PREDICATE_POW2:
-      return "pow2";
-    case LOOM_PREDICATE_RANGE:
-      return "range";
-    case LOOM_PREDICATE_NOT_NAN:
-      return "not_nan";
-    case LOOM_PREDICATE_NOT_INF:
-      return "not_inf";
-    case LOOM_PREDICATE_FINITE:
-      return "finite";
-    case LOOM_PREDICATE_ULT:
-      return "ult";
-    case LOOM_PREDICATE_ULE:
-      return "ule";
-    case LOOM_PREDICATE_UGT:
-      return "ugt";
-    case LOOM_PREDICATE_UGE:
-      return "uge";
-    case LOOM_PREDICATE_COUNT_:
-      return NULL;
+  const loom_predicate_descriptor_t* descriptor =
+      loom_predicate_descriptor(kind);
+  return descriptor ? descriptor->name : NULL;
+}
+
+bool loom_predicate_kind_parse(iree_string_view_t name,
+                               loom_predicate_kind_t* out_kind) {
+  for (loom_predicate_kind_t kind = 0; kind < LOOM_PREDICATE_COUNT_; ++kind) {
+    const loom_predicate_descriptor_t* descriptor =
+        &loom_predicate_descriptors[kind];
+    if (name.size == descriptor->name_length &&
+        memcmp(name.data, descriptor->name, descriptor->name_length) == 0) {
+      *out_kind = kind;
+      return true;
+    }
   }
-  return NULL;
+  return false;
 }
 
 uint8_t loom_predicate_kind_argument_count(uint8_t kind) {
-  switch ((loom_predicate_kind_t)kind) {
-    case LOOM_PREDICATE_EQ:
-    case LOOM_PREDICATE_NE:
-    case LOOM_PREDICATE_LT:
-    case LOOM_PREDICATE_LE:
-    case LOOM_PREDICATE_GT:
-    case LOOM_PREDICATE_GE:
-    case LOOM_PREDICATE_ULT:
-    case LOOM_PREDICATE_ULE:
-    case LOOM_PREDICATE_UGT:
-    case LOOM_PREDICATE_UGE:
-    case LOOM_PREDICATE_MUL:
-    case LOOM_PREDICATE_MIN:
-    case LOOM_PREDICATE_MAX:
-      return 2;
-    case LOOM_PREDICATE_POW2:
-    case LOOM_PREDICATE_NOT_NAN:
-    case LOOM_PREDICATE_NOT_INF:
-    case LOOM_PREDICATE_FINITE:
-      return 1;
-    case LOOM_PREDICATE_RANGE:
-      return 3;
-    case LOOM_PREDICATE_COUNT_:
-      return UINT8_MAX;
-  }
-  return UINT8_MAX;
+  const loom_predicate_descriptor_t* descriptor =
+      loom_predicate_descriptor(kind);
+  return descriptor ? descriptor->argument_count : UINT8_MAX;
 }
 
 bool loom_predicate_kind_accepts_value_type(uint8_t kind, loom_type_t type) {
@@ -119,37 +134,27 @@ bool loom_predicate_kind_accepts_value_type(uint8_t kind, loom_type_t type) {
     return false;
   }
 
+  const loom_predicate_descriptor_t* descriptor =
+      loom_predicate_descriptor(kind);
+  if (!descriptor) {
+    return false;
+  }
+
   const loom_scalar_type_t scalar_type = loom_type_element_type(type);
-  switch ((loom_predicate_kind_t)kind) {
-    case LOOM_PREDICATE_EQ:
-    case LOOM_PREDICATE_NE:
+  switch (descriptor->value_domain) {
+    case LOOM_PREDICATE_VALUE_DOMAIN_NUMERIC:
       return scalar_type == LOOM_SCALAR_TYPE_INDEX ||
              scalar_type == LOOM_SCALAR_TYPE_OFFSET ||
              loom_scalar_type_is_integer(scalar_type) ||
              loom_scalar_type_is_float(scalar_type);
-    case LOOM_PREDICATE_LT:
-    case LOOM_PREDICATE_LE:
-    case LOOM_PREDICATE_GT:
-    case LOOM_PREDICATE_GE:
-    case LOOM_PREDICATE_MUL:
-    case LOOM_PREDICATE_MIN:
-    case LOOM_PREDICATE_MAX:
-    case LOOM_PREDICATE_POW2:
-    case LOOM_PREDICATE_RANGE:
+    case LOOM_PREDICATE_VALUE_DOMAIN_INTEGER:
       return scalar_type == LOOM_SCALAR_TYPE_INDEX ||
              scalar_type == LOOM_SCALAR_TYPE_OFFSET ||
              loom_scalar_type_is_integer(scalar_type);
-    case LOOM_PREDICATE_ULT:
-    case LOOM_PREDICATE_ULE:
-    case LOOM_PREDICATE_UGT:
-    case LOOM_PREDICATE_UGE:
+    case LOOM_PREDICATE_VALUE_DOMAIN_FIXED_INTEGER:
       return loom_scalar_type_is_integer(scalar_type);
-    case LOOM_PREDICATE_NOT_NAN:
-    case LOOM_PREDICATE_NOT_INF:
-    case LOOM_PREDICATE_FINITE:
+    case LOOM_PREDICATE_VALUE_DOMAIN_FLOAT:
       return loom_scalar_type_is_float(scalar_type);
-    case LOOM_PREDICATE_COUNT_:
-      return false;
   }
   return false;
 }

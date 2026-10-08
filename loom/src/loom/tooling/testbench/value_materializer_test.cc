@@ -291,6 +291,13 @@ check.case @generated {
       LookupBufferView(&table, case_plan.value_sources[1].value_id, &i8);
   ExpectBufferViewContents<int8_t>(i8_view, {4}, IREE_HAL_ELEMENT_TYPE_SINT_8,
                                    {-2, -1, 0, 1});
+  iree_hal_buffer_mapping_t persistent_mapping = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      iree_hal_buffer_view_buffer(i8_view), IREE_HAL_MAPPING_MODE_PERSISTENT,
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, 0,
+      IREE_HAL_WHOLE_BUFFER, &persistent_mapping));
+  EXPECT_EQ(persistent_mapping.contents.data_length, 4u);
+  IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&persistent_mapping));
   loom_testbench_value_deinitialize(&i8);
 
   loom_testbench_value_t i8_down = {};

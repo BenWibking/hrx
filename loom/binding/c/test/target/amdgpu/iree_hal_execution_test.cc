@@ -24,7 +24,7 @@ kernel.def @double_i32_at_byte_offset() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%input: buffer, %output: buffer, %byte_offset: offset) {
-  %byte_offset_aligned = index.assume %byte_offset [mul(%byte_offset, 4)] : offset
+  %byte_offset_aligned = index.assume %byte_offset [multiple_of(%byte_offset, 4)] : offset
   %input_aligned = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   %output_aligned = buffer.assume.alignment %output {minimum_alignment = 4} : buffer
   %input_view = buffer.view %input_aligned[%byte_offset_aligned] : buffer -> view<1xi32>
@@ -171,28 +171,10 @@ loomc_status_t ValidateAmdgpuProfile(loomc_target_profile_t* target_profile,
   return loomc_amdgpu_target_profile_query_identity(target_profile, &identity);
 }
 
-loomc_status_t EmitAmdgpuModule(loomc_target_environment_t* target_environment,
-                                loomc_workspace_t* workspace,
-                                loomc_module_t* module,
-                                loomc_string_view_t artifact_format,
-                                loomc_string_view_t artifact_identifier,
-                                loomc_result_t** out_result) {
-  const loomc_emit_options_t emit_options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
-      /*.structure_size=*/sizeof(emit_options),
-      /*.next=*/nullptr,
-      /*.artifact_format=*/artifact_format,
-      /*.identifier=*/artifact_identifier,
-      /*.artifact_flags=*/LOOMC_EMIT_ARTIFACT_FLAG_PRIMARY,
-  };
-  return loomc_emit_module(target_environment, workspace, module, &emit_options,
-                           loomc_allocator_system(), out_result);
-}
-
 loomc::testing::target::IreeHalKernelExecutionTarget MakeExecutionTarget(
     const char* source_text, const char* kernel_export_name) {
-  static const loomc_iree_hal_profile_provider_t* const profile_providers[] = {
-      loomc_amdgpu_iree_hal_profile_provider(),
+  static const loomc_iree_hal_target_provider_t* const target_providers[] = {
+      loomc_amdgpu_iree_hal_target_provider(),
   };
 
   loomc::testing::target::IreeHalKernelExecutionTarget target = {};
@@ -201,7 +183,6 @@ loomc::testing::target::IreeHalKernelExecutionTarget MakeExecutionTarget(
   target.target_profile_identifier = loomc_make_cstring_view("live-amdgpu");
   target.source_identifier = loomc_make_cstring_view("live_amdgpu.loom");
   target.source_text = loomc_make_cstring_view(source_text);
-  target.module_name = loomc_make_cstring_view("live_amdgpu_execution_test");
   target.kernel_export_name = loomc_make_cstring_view(kernel_export_name);
   target.target_pipeline_identifier =
       loomc_make_cstring_view("live-amdgpu-prepared-low");
@@ -211,17 +192,10 @@ loomc::testing::target::IreeHalKernelExecutionTarget MakeExecutionTarget(
   target.artifact_format =
       loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_AMDGPU_HSACO);
   target.artifact_identifier = loomc_make_cstring_view("live_amdgpu.hsaco");
-  target.executable_target_selection = {
-      /*.family=*/IREE_SV("amdgpu"),
-      /*.target_key=*/iree_string_view_empty(),
-      /*.kind_flags=*/IREE_HAL_EXECUTABLE_TARGET_KIND_FLAG_EXACT,
-      /*.physical_device_affinity=*/0,
-  };
-  target.profile_providers = profile_providers;
-  target.profile_provider_count = 1;
+  target.target_providers = target_providers;
+  target.target_provider_count = 1;
   target.create_target_environment = CreateAmdgpuTargetEnvironment;
   target.validate_target_profile = ValidateAmdgpuProfile;
-  target.emit_module = EmitAmdgpuModule;
   return target;
 }
 

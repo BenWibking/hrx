@@ -143,6 +143,7 @@ class ImmediateFlag(CEnum):
     SYMBOLIC = "LOOM_LOW_IMMEDIATE_FLAG_SYMBOLIC"
     RELATIVE = "LOOM_LOW_IMMEDIATE_FLAG_RELATIVE"
     DEFAULT_VALUE = "LOOM_LOW_IMMEDIATE_FLAG_DEFAULT_VALUE"
+    READ_ONLY_DATA = "LOOM_LOW_IMMEDIATE_FLAG_READ_ONLY_DATA"
 
 
 class EffectKind(CEnum):
@@ -505,6 +506,9 @@ class Immediate:
     bit_width: int = 0
     value_step: int = 1
     encoding_field_id: int = 0
+    # Physical bit offset when this immediate populates only a subfield of its
+    # encoding field. None denotes whole-field ownership.
+    encoding_field_bit_offset: int | None = None
     encoding_slices: tuple[ImmediateEncodingSlice, ...] = ()
     enum_domain: str | None = None
     encoding_id: int = 0

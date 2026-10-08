@@ -563,7 +563,7 @@ func.def @aliased_second_argument(%seed: index) -> (index, i64, i64) {
 ^header(%payload: index, %counter: index):
   %lo = test.fact_range_lo %counter : index -> i64
   %hi = test.fact_range_hi %counter : index -> i64
-  %alias = index.assume %counter [mul(%counter, 1)] : index
+  %alias = index.assume %counter [multiple_of(%counter, 1)] : index
   %more = index.cmp slt, %alias, %end : index
   cfg.cond_br %more, ^body, ^exit
 ^body:

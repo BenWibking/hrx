@@ -822,7 +822,8 @@ static iree_status_t loom_testbench_reference_map_view_read(
     iree_hal_buffer_view_t* view, iree_hal_buffer_mapping_t* out_mapping) {
   return iree_hal_buffer_map_range(
       iree_hal_buffer_view_buffer(view), IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ, 0, IREE_HAL_WHOLE_BUFFER, out_mapping);
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE, 0,
+      IREE_HAL_WHOLE_BUFFER, out_mapping);
 }
 
 static iree_status_t loom_testbench_reference_store_accumulator(

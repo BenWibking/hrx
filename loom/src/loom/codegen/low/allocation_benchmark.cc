@@ -637,6 +637,8 @@ class AllocationBenchmark {
     }
     if (shape == Shape::kLeasedPrefix) {
       loom_low_schedule_options_t schedule_options = {};
+      schedule_options.flags =
+          LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES;
       IREE_CHECK_OK(loom_low_schedule_function(&model_, &schedule_options,
                                                &base_arena_, &schedule_));
       Require(schedule_.error_count == 0, "Scheduling failed");

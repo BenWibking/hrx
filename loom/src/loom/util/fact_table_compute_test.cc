@@ -268,7 +268,7 @@ TEST_F(FactTableComputeTest, ExactDynamicRelationsAreRetainedLazily) {
                                                              assume, &changed));
   EXPECT_TRUE(PendingExactRelations(table_).empty());
 
-  predicate.kind = LOOM_PREDICATE_POW2;
+  predicate.kind = LOOM_PREDICATE_POWER_OF_TWO;
   predicate.arg_count = 1;
   predicate.arg_tags[0] = LOOM_PRED_ARG_VALUE;
   predicate.args[0] = inputs_[1];

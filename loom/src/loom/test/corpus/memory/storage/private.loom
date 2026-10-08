@@ -8,6 +8,11 @@ kernel.def @private_vector_lookup() {
 } launch(%input: buffer, %output: buffer) {
   %lane = kernel.workitem.id<x> : index
   %group = kernel.workgroup.id<x> : index
+  func.call @compute_private_vector_lookup(%lane, %group, %input, %output) : (index, index, buffer, buffer)
+  kernel.return
+}
+
+func.def device inline @compute_private_vector_lookup(%lane: index, %group: index, %input: buffer, %output: buffer) {
   %width = index.constant 4 : index
   %position = index.mul %lane, %width : index
   %group_base = index.mul %group, %width : index
@@ -23,22 +28,32 @@ kernel.def @private_vector_lookup() {
   vector.store %values, %private[0] : vector<4xi32>, view<4xi32>
   %selected = view.load %private[%lane] : view<4xi32> -> i32
   view.store %selected, %outputs[%output_index] : i32, view<32xi32>
-  kernel.return
+  func.return
 }
 
-check.case public @private_memory_roundtrip {
-  %input = check.generate.iota offset(0) step(1) : tensor<16xi32>
-  %storage = check.generate.fill value(91) : tensor<40xi32>
-  %output = check.tensor.view %storage offset(16) : tensor<40xi32> -> tensor<32xi32>
-  kernel.launch @private_vector_lookup(%input, %output) : (tensor<16xi32>, tensor<32xi32>)
-  %expected = check.generate.iota offset(0) step(5) period(4) : tensor<32xi32>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<32xi32>
-  %expected_input = check.generate.iota offset(0) step(1) : tensor<16xi32>
-  check.expect.bitwise actual(%input) expected(%expected_input) : tensor<16xi32>
-  %prefix = check.tensor.view %storage offset(0) : tensor<40xi32> -> tensor<4xi32>
-  %suffix = check.tensor.view %storage offset(144) : tensor<40xi32> -> tensor<4xi32>
-  %guard = check.generate.fill value(91) : tensor<4xi32>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<4xi32>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<4xi32>
+func.def @private_vector_lookup_oracle(%input: buffer, %output: buffer) {
+  %group_begin = index.constant 0 : index
+  %group_end = index.constant 8 : index
+  %lane_begin = index.constant 0 : index
+  %lane_end = index.constant 4 : index
+  %step = index.constant 1 : index
+  scf.for %group = [%group_begin to %group_end step %step] {
+    scf.for %lane = [%lane_begin to %lane_end step %step] {
+      func.call @compute_private_vector_lookup(%lane, %group, %input, %output) : (index, index, buffer, buffer)
+    }
+  }
+  func.return
+}
+
+check.scenario @private_vector_lookup_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(0) step(1) : tensor<16xi32>
+    %storage = check.generate.fill value(91) : tensor<40xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<40xi32> -> tensor<32xi32>
+    check.compare<@private_vector_lookup, @private_vector_lookup_oracle>(%input, %output) : (tensor<16xi32>, tensor<32xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<16xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<40xi32>
+    }
+  }
   check.return
 }

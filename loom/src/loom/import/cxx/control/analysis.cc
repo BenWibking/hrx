@@ -57,7 +57,18 @@ bool ControlFlow::addressed(cxx::Symbol* binding) const {
 }
 
 bool ControlFlow::storage_backed(cxx::MemberExpressionAST* expression) const {
-  return storage_expressions_.contains(expression);
+  auto* owner = object_owner(expression);
+  return storage_expressions_.contains(expression) ||
+         (owner &&
+          (addressed(owner) || unit_.typeTraits().is_volatile(owner->type())));
+}
+
+cxx::Symbol* ControlFlow::object_owner(cxx::ExpressionAST* expression) const {
+  if (auto* id = cxx::ast_cast<cxx::IdExpressionAST>(expression)) {
+    return id->symbol;
+  }
+  auto found = object_owners_.find(expression);
+  return found == object_owners_.end() ? nullptr : found->second;
 }
 
 const CountedLoop* ControlFlow::counted(cxx::ForStatementAST* loop) const {
@@ -109,6 +120,29 @@ bool ControlFlow::preVisit(cxx::AST* ast) {
 
 void ControlFlow::postVisit(cxx::AST* ast) {
   if (auto* expression = cxx::ast_cast<cxx::ExpressionAST>(ast)) {
+    cxx::Symbol* owner = nullptr;
+    if (auto* member = cxx::ast_cast<cxx::MemberExpressionAST>(expression)) {
+      if (member->accessOp == cxx::TokenKind::T_DOT) {
+        owner = object_owner(member->baseExpression);
+      }
+    } else if (auto* nested =
+                   cxx::ast_cast<cxx::NestedExpressionAST>(expression)) {
+      owner = object_owner(nested->expression);
+    } else if (auto* cast =
+                   cxx::ast_cast<cxx::ImplicitCastExpressionAST>(expression)) {
+      if (cast->valueCategory != cxx::ValueCategory::kPrValue) {
+        owner = object_owner(cast->expression);
+      }
+    }
+    if (owner) {
+      object_owners_.emplace(expression, owner);
+      // The resolved frontend can retain an array operand directly on builtin
+      // subscripts instead of inserting an explicit decay cast. Evaluating an
+      // array lvalue borrows its storage in either spelling.
+      if (expression->type && unit_.typeTraits().is_array(expression->type)) {
+        addressed_.insert(owner);
+      }
+    }
     if (classify_storage(expression)) {
       storage_expressions_.insert(expression);
     }
@@ -193,16 +227,16 @@ void ControlFlow::visit(cxx::PostIncrExpressionAST* ast) {
 }
 
 void ControlFlow::visit(cxx::UnaryExpressionAST* ast) {
+  cxx::ASTVisitor::visit(ast);
   if (!ast->symbol && ast->op == cxx::TokenKind::T_AMP) {
-    if (auto target = classify_destination(ast->expression)) {
-      addressed_.insert(target->binding);
+    if (auto* owner = object_owner(ast->expression)) {
+      addressed_.insert(owner);
     }
   }
   if (ast->op == cxx::TokenKind::T_PLUS_PLUS ||
       ast->op == cxx::TokenKind::T_MINUS_MINUS) {
     record(ast->expression);
   }
-  cxx::ASTVisitor::visit(ast);
 }
 
 bool ControlFlow::structured(cxx::AST* ast) {

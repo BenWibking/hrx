@@ -47,7 +47,7 @@ TEST_F(HalInvocationTest, RequestInitializeDefaultsToSingleWorkgroup) {
   EXPECT_EQ(request.options.workgroup_count[0], 1u);
   EXPECT_EQ(request.options.workgroup_count[1], 1u);
   EXPECT_EQ(request.options.workgroup_count[2], 1u);
-  EXPECT_EQ(request.options.constant_count, 0u);
+  EXPECT_EQ(request.options.constant_byte_length, 0u);
 }
 
 TEST_F(HalInvocationTest, DispatchBatchOptionsUseFastReusableDefaults) {
@@ -320,12 +320,13 @@ TEST_F(HalInvocationTest, PreparePlanFromListsRejectsTooManyBindings) {
   loom_run_hal_binding_list_deinitialize(&bindings);
 }
 
-TEST_F(HalInvocationTest, DispatchPlanRejectsTooManyConstantsBeforeDeviceUse) {
+TEST_F(HalInvocationTest,
+       DispatchPlanRejectsOversizedConstantsBeforeDeviceUse) {
   loom_run_hal_runtime_t runtime = {};
   loom_run_hal_prepared_candidate_t candidate = {};
   loom_run_hal_invocation_plan_t plan = {};
   loom_run_hal_invocation_plan_initialize(&plan);
-  plan.options.constant_count = LOOM_RUN_HAL_MAX_CONSTANT_COUNT + 1;
+  plan.options.constant_byte_length = LOOM_RUN_HAL_MAX_CONSTANT_BYTE_LENGTH + 1;
 
   loom_run_hal_iteration_t iteration = {};
   IREE_EXPECT_STATUS_IS(

@@ -21,11 +21,13 @@ extern "C" {
 typedef struct loom_x86_instruction_t {
   // Fully allocated operands; branch displacement is resolved during layout.
   loom_x86_encoding_operands_t operands;
-  // Shared CFG block ordinal for branches, module symbol ID for calls, or
-  // UINT32_MAX for instructions without a control target.
-  uint32_t control_target;
-  // Native operand/encoding form.
-  uint16_t form;
+  // Shared CFG block ordinal for branches, module symbol ID for calls and
+  // symbolic addresses, or UINT32_MAX without a reference. The encoding format
+  // determines the namespace; this has no effect on instruction size or
+  // register use.
+  uint32_t reference;
+  // Native scalar form or packed vector recipe.
+  uint16_t encoding_format_id;
   // Immutable opcode fields from the descriptor.
   uint16_t encoding_id;
 } loom_x86_instruction_t;
@@ -38,8 +40,8 @@ typedef struct loom_x86_function_t {
   loom_x86_instruction_t* instructions;
   // Number of instructions, excluding the preservation envelope.
   iree_host_size_t instruction_count;
-  // Number of call relocation rows written by this function.
-  iree_host_size_t call_count;
+  // Number of native symbol relocation rows written by this function.
+  iree_host_size_t symbol_fixup_count;
   // First instruction of each shared CFG block and the common epilogue. Entry
   // transport precedes every block and runs only when the function is invoked.
   iree_host_size_t* block_starts;
@@ -47,6 +49,8 @@ typedef struct loom_x86_function_t {
   uint32_t block_count;
   // Callee-preserved GPRs actually written by instructions or transport.
   uint16_t saved_registers;
+  // True when the function may leave the upper state of YMM/ZMM0-15 dirty.
+  bool may_dirty_upper_vector_state;
   // Fixed stack allocation after callee saves. Byte emission consumes these
   // concrete adjustments without computing alignment or selecting scratch.
   struct {
@@ -71,18 +75,21 @@ typedef struct loom_x86_function_t {
 // reserved RSP. Stack, scratch, and private storage share the native stack;
 // workgroup storage has no ordinary host-function ABI. Call permutations and
 // clobbers come from the shared allocation. Unsupported authored instructions
-// return UNIMPLEMENTED.
+// emit diagnostics and leave |out_accepted| false. Status failures describe
+// allocation or diagnostic-sink failures.
 iree_status_t loom_x86_function_prepare(const loom_low_emission_frame_t* frame,
+                                        iree_diagnostic_emitter_t emitter,
                                         iree_arena_allocator_t* arena,
+                                        bool* out_accepted,
                                         loom_x86_function_t* out_function);
 
 // Encodes the prepared envelope and instructions, then resolves branch fields
 // against the retained block map. Requires a writable, seekable stream. This
 // routine has no access to source IR or allocation and makes no ABI decisions.
 // |symbol_indices| translates retained module symbol IDs into object symbols.
-// |fixups| has space for |function->call_count| records relative to the
+// |fixups| has space for |function->symbol_fixup_count| records relative to the
 // supplied section contribution. Both may be NULL when the function has no
-// calls.
+// symbol references.
 iree_status_t loom_x86_function_write(const loom_x86_function_t* function,
                                       const uint32_t* symbol_indices,
                                       iree_host_size_t section_index,

@@ -31,7 +31,6 @@ _AMDGPU_TARGET_COPTS = iree_select({
 _AMDGPU_TARGET_DEPS = iree_select({
     "//loom/config/execute:amdgpu_hal": [
         "//loom/src/loom/tooling/target/amdgpu:device_provider",
-        "//loom/src/loom/tooling/target/amdgpu:execution_provider",
         "//loom/src/loom/tooling/target/amdgpu:testbench_requirements",
     ],
     "//conditions:default": [],
@@ -47,7 +46,6 @@ _SPIRV_VULKAN_TARGET_COPTS = iree_select({
 _SPIRV_VULKAN_TARGET_DEPS = iree_select({
     "//loom/config/execute:spirv_vulkan_hal": [
         "//loom/src/loom/tooling/target/spirv:device_provider",
-        "//loom/src/loom/tooling/target/spirv:execution_provider",
         "//loom/src/loom/tooling/target/spirv:testbench_requirements",
     ],
     "//conditions:default": [],
@@ -81,14 +79,22 @@ _IREE_TEST_LOOM_TARGET_COPTS = (
     _AMDGPU_TARGET_COPTS +
     _SPIRV_VULKAN_TARGET_COPTS +
     _VM_TARGET_COPTS +
-    _WASM_TARGET_COPTS
+    _WASM_TARGET_COPTS +
+    iree_select({
+        "//loom/config/execute:task_hal": ["-DIREE_TEST_LOOM_HAVE_TASK=1"],
+        "//conditions:default": [],
+    })
 )
 
 _IREE_TEST_LOOM_TARGET_DEPS = (
     _AMDGPU_TARGET_DEPS +
     _SPIRV_VULKAN_TARGET_DEPS +
     _VM_TARGET_DEPS +
-    _WASM_TARGET_DEPS
+    _WASM_TARGET_DEPS +
+    iree_select({
+        "//loom/config/execute:task_hal": ["//loom/src/loom/tooling/target/cpu:task_device"],
+        "//conditions:default": [],
+    })
 )
 
 loom_cc_library(
@@ -182,7 +188,8 @@ loom_cc_binary(
     copts = _IREE_TEST_LOOM_TARGET_COPTS,
     deps = [
         ":main",
-        "//loom/src/loom/tooling/execution:execution_provider",
+        "//loom/src/loom/target:provider",
+        "//loom/src/loom/target/configured:compiler_provider_set",
         "//loom/src/loom/tooling/input:configured",
         "//loom/src/loom/transforms/cleanup:configured",
         "//runtime/src/iree/base",
@@ -209,7 +216,7 @@ loom_cc_binary(
     deps = [
         ":main",
         "//loom/src/loom/ir",
-        "//loom/src/loom/tooling/execution:execution_provider",
+        "//loom/src/loom/target:provider",
         "//loom/src/loom/tooling/testbench/scenario:executor",
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",

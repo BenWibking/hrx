@@ -418,7 +418,8 @@ static iree_status_t loom_low_move_sequence_resolve_temporary(
 }
 
 static iree_status_t loom_low_move_sequence_prepare(
-    loom_low_move_sequence_state_t* state) {
+    loom_low_move_sequence_state_t* state,
+    loom_low_move_sequence_input_flags_t* out_input_flags) {
   loom_low_move_sequence_scratch_t* scratch = state->scratch;
   IREE_ASSERT_LE(state->move_count, scratch->move_capacity);
   iree_host_size_t active_move_count = 0;
@@ -431,6 +432,13 @@ static iree_status_t loom_low_move_sequence_prepare(
     }
     active_move_index = i;
     ++active_move_count;
+  }
+  *out_input_flags = 0;
+  if (active_move_count != state->move_count) {
+    *out_input_flags |= LOOM_LOW_MOVE_SEQUENCE_INPUT_FLAG_IDENTITY;
+  }
+  if (active_move_count != 0) {
+    *out_input_flags |= LOOM_LOW_MOVE_SEQUENCE_INPUT_FLAG_ACTIVE;
   }
   state->active_count = active_move_count;
   scratch->temporary_count = 0;
@@ -582,8 +590,12 @@ iree_status_t loom_low_move_sequence_resolve(
     loom_low_move_sequence_scratch_t* scratch, iree_host_size_t move_count,
     const loom_low_move_sequence_options_t* options,
     iree_host_size_t out_move_capacity, loom_low_move_t* out_moves,
-    iree_host_size_t* out_move_count, bool* out_complete) {
+    iree_host_size_t* out_move_count,
+    loom_low_move_sequence_input_flags_t* out_input_flags, bool* out_complete) {
   *out_move_count = 0;
+  if (out_input_flags != NULL) {
+    *out_input_flags = 0;
+  }
   *out_complete = true;
   loom_low_move_sequence_state_t state = {
       .scratch = scratch,
@@ -593,7 +605,8 @@ iree_status_t loom_low_move_sequence_resolve(
       .out_move_capacity = out_move_capacity,
       .complete = true,
   };
-  IREE_RETURN_IF_ERROR(loom_low_move_sequence_prepare(&state));
+  loom_low_move_sequence_input_flags_t input_flags = 0;
+  IREE_RETURN_IF_ERROR(loom_low_move_sequence_prepare(&state, &input_flags));
   while (state.active_count != 0 && state.complete) {
     while (state.ready_head != state.ready_tail) {
       const iree_host_size_t move_index =
@@ -612,6 +625,9 @@ iree_status_t loom_low_move_sequence_resolve(
         loom_low_move_sequence_emit_cycle(&state, first_move_index));
   }
   *out_move_count = state.out_move_count;
+  if (out_input_flags != NULL) {
+    *out_input_flags = input_flags;
+  }
   *out_complete = state.complete;
   return iree_ok_status();
 }

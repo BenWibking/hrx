@@ -15,7 +15,7 @@ kernel.def target(@target) @fragment_bounded_table_origin() {
   %row = kernel.workgroup.id<x> : index
   %origins = buffer.view %table_unique[%table_base] : buffer -> view<4xi64>
   %word = view.load %origins[%row] : view<4xi64> -> i64
-  %bounded = scalar.assume %word [range(%word, 0, 1048576), mul(%word, 16)] : i64
+  %bounded = scalar.assume %word [range(%word, 0, 1048576), multiple_of(%word, 16)] : i64
   %origin = index.cast %bounded : i64 to offset
   %padding = index.constant 256 : offset
   %base = index.add %origin, %padding : offset
@@ -77,7 +77,7 @@ kernel.def target(@target) @fragment_constant_bounded_origin() {
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%threads, %unit, %unit) : index
 } launch(%input: buffer, %output: buffer, %origin_input: offset) {
   %constant = buffer.assume.memory_space<constant> %input : buffer
-  %origin = index.assume %origin_input [range(%origin_input, 0, 1048576), mul(%origin_input, 16)] : offset
+  %origin = index.assume %origin_input [range(%origin_input, 0, 1048576), multiple_of(%origin_input, 16)] : offset
   %padding = index.constant 64 : offset
   %base = index.add %origin, %padding : offset
   %extent = index.constant 16 : index

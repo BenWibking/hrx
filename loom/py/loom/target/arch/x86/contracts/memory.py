@@ -53,6 +53,7 @@ _STORAGE_FORMATS = (
     (("i32", "f32"), 4),
     (_BYTE_STORAGE_TYPES, 1),
     (_WORD_STORAGE_TYPES, 2),
+    (("i64", "f64"), 8),
 )
 
 
@@ -139,7 +140,8 @@ def _source_memory_constraint(
     return SourceMemoryConstraint(
         operation=operation,
         root_kind=SourceMemoryRootKind.ANY,
-        memory_spaces=("unknown", "generic", "global", "private"),
+        memory_spaces=("unknown", "generic", "global", "private")
+        + (("constant",) if operation is SourceMemoryOperation.LOAD else ()),
         element_byte_count=element_byte_count,
         vector_lane_count=lane_count,
         vector_lane_byte_stride=element_byte_count,
@@ -322,7 +324,8 @@ def _full_width_memory_rules(
         source_memory = SourceMemoryConstraint(
             operation=operation,
             root_kind=SourceMemoryRootKind.ANY,
-            memory_spaces=("unknown", "generic", "global", "private"),
+            memory_spaces=("unknown", "generic", "global", "private")
+            + (("constant",) if operation is SourceMemoryOperation.LOAD else ()),
             element_byte_count=element_byte_count,
             vector_lane_count=lane_count,
             vector_lane_byte_stride=element_byte_count,
@@ -399,7 +402,7 @@ def _view_carrier_constraint(
     return SourceMemoryConstraint(
         operation=SourceMemoryOperation.VIEW_CARRIER,
         root_kind=SourceMemoryRootKind.ANY,
-        memory_spaces=("unknown", "generic", "global", "private"),
+        memory_spaces=("unknown", "generic", "global", "private", "constant"),
         element_byte_count=element_byte_count,
         vector_lane_count=1,
         vector_lane_byte_stride=element_byte_count,

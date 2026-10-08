@@ -3,6 +3,11 @@ kernel.def @reordered_storage_cfg() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%input_a: buffer, %input_b: buffer) {
+  func.call @compute_reordered_storage_cfg(%input_a, %input_b) : (buffer, buffer)
+  kernel.return
+}
+
+func.def device inline @compute_reordered_storage_cfg(%input_a: buffer, %input_b: buffer) {
   %a = buffer.assume.alignment %input_a {minimum_alignment = 16} : buffer
   %b = buffer.assume.alignment %input_b {minimum_alignment = 16} : buffer
   %start = index.constant 0 : index
@@ -29,16 +34,22 @@ kernel.def @reordered_storage_cfg() {
   %next_i = index.add %latch_i, %step : index
   cfg.br ^header(%next_i: index)
 ^exit:
-  kernel.return
+  func.return
 }
 
-check.case public @reordered_storage_cfg_0 {
-  %a = check.generate.fill value(1) : tensor<1xi32>
-  %b = check.generate.fill value(2) : tensor<1xi32>
-  kernel.launch @reordered_storage_cfg(%a, %b) : (tensor<1xi32>, tensor<1xi32>)
-  %expected_a = check.generate.fill value(3) : tensor<1xi32>
-  check.expect.bitwise actual(%a) expected(%expected_a) : tensor<1xi32>
-  %expected_b = check.generate.fill value(4) : tensor<1xi32>
-  check.expect.bitwise actual(%b) expected(%expected_b) : tensor<1xi32>
+func.def @reordered_storage_cfg_oracle(%input_a: buffer, %input_b: buffer) {
+  func.call @compute_reordered_storage_cfg(%input_a, %input_b) : (buffer, buffer)
+  func.return
+}
+
+check.scenario @reordered_storage_cfg_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %a = check.generate.fill value(1) : tensor<1xi32>
+    %b = check.generate.fill value(2) : tensor<1xi32>
+    check.compare<@reordered_storage_cfg, @reordered_storage_cfg_oracle>(%a, %b) : (tensor<1xi32>, tensor<1xi32>) -> () {
+      check.expect.bitwise actual(%a) expected(%a) : tensor<1xi32>
+      check.expect.bitwise actual(%b) expected(%b) : tensor<1xi32>
+    }
+  }
   check.return
 }

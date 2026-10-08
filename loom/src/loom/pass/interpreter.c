@@ -34,11 +34,9 @@ typedef struct loom_pass_interpreter_epoch_t {
 typedef struct loom_pass_interpreter_frame_t {
   // Active anchor kind.
   loom_pass_kind_t kind;
-  // Current symbol when kind is LOOM_PASS_FUNCTION.
-  loom_symbol_t* symbol;
-  // Current function when kind is LOOM_PASS_FUNCTION.
-  loom_func_like_t function;
-  // Concrete compiler version of |function|, or NULL.
+  // Stable module symbol identity for an unversioned function anchor.
+  loom_symbol_ref_t symbol_ref;
+  // Concrete compiler version, observing replacements directly when present.
   loom_function_version_t* function_version;
 } loom_pass_interpreter_frame_t;
 
@@ -82,9 +80,9 @@ static iree_fpu_state_t loom_pass_interpreter_push_fpu_state(void) {
 }
 
 typedef struct loom_pass_interpreter_symbol_snapshot_entry_t {
-  // Symbol entry captured before entering a pass.for body.
-  loom_symbol_t* symbol;
-  // Function-like view of symbol->defining_op.
+  // Stable symbol identity captured before entering a pass.for body.
+  loom_symbol_ref_t symbol_ref;
+  // Function-like definition observed when constructing the snapshot.
   loom_func_like_t function;
   // Concrete compiler version of |function|, or NULL.
   loom_function_version_t* function_version;
@@ -123,14 +121,44 @@ static bool loom_pass_interpreter_epoch_changed(
          lhs.encoding_count != rhs.encoding_count;
 }
 
+// Function versions own their current implementation. Unversioned pipelines
+// follow the module symbol. Neither path retains an operation or table-entry
+// pointer across a pass that may replace the function or grow the symbol table.
+static loom_func_like_t loom_pass_interpreter_frame_function(
+    const loom_pass_interpreter_state_t* state,
+    const loom_pass_interpreter_frame_t* frame) {
+  if (frame->kind != LOOM_PASS_FUNCTION) {
+    return (loom_func_like_t){0};
+  }
+  if (frame->function_version) {
+    return frame->function_version->function;
+  }
+  return loom_func_like_cast(
+      state->module,
+      state->module->symbols.entries[frame->symbol_ref.symbol_id].defining_op);
+}
+
+static const loom_symbol_t* loom_pass_interpreter_frame_symbol(
+    const loom_pass_interpreter_state_t* state,
+    const loom_pass_interpreter_frame_t* frame) {
+  if (frame->kind != LOOM_PASS_FUNCTION) {
+    return NULL;
+  }
+  const loom_symbol_ref_t symbol_ref =
+      frame->function_version
+          ? loom_func_like_callee(frame->function_version->function)
+          : frame->symbol_ref;
+  return &state->module->symbols.entries[symbol_ref.symbol_id];
+}
+
 static iree_string_view_t loom_pass_interpreter_symbol_name(
     const loom_pass_interpreter_state_t* state,
     const loom_pass_interpreter_frame_t* frame) {
-  if (!frame->symbol ||
-      frame->symbol->name_id >= state->module->strings.count) {
-    return IREE_SV("<none>");
-  }
-  return loom_string_table_get(&state->module->strings, frame->symbol->name_id);
+  const loom_symbol_t* symbol =
+      loom_pass_interpreter_frame_symbol(state, frame);
+  return symbol
+             ? loom_string_table_get(&state->module->strings, symbol->name_id)
+             : IREE_SV("<none>");
 }
 
 static iree_string_view_t loom_pass_interpreter_source_symbol_name(
@@ -354,7 +382,9 @@ static iree_status_t loom_pass_interpreter_invoke_function(
     bool* out_invocation_changed) {
   *out_invocation_changed = false;
   const loom_pass_program_invoke_t* invoke = &instruction->invoke;
-  if (!loom_func_like_isa(frame->function)) {
+  loom_func_like_t function =
+      loom_pass_interpreter_frame_function(state, frame);
+  if (!loom_func_like_isa(function)) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "function pass requires current function");
   }
@@ -367,8 +397,7 @@ static iree_status_t loom_pass_interpreter_invoke_function(
 
   loom_pass_interpreter_epoch_t before =
       loom_pass_interpreter_epoch(state->module);
-  iree_status_t status =
-      invoke->function_run(pass, state->module, frame->function);
+  iree_status_t status = invoke->function_run(pass, state->module, function);
   loom_pass_interpreter_epoch_t after =
       loom_pass_interpreter_epoch(state->module);
 
@@ -584,7 +613,7 @@ static iree_status_t loom_pass_interpreter_build_function_snapshot(
       continue;
     }
     entries[i] = (loom_pass_interpreter_symbol_snapshot_entry_t){
-        .symbol = symbol,
+        .symbol_ref = loom_func_like_callee(function),
         .function = function,
     };
   }
@@ -654,8 +683,7 @@ static iree_status_t loom_pass_interpreter_execute_for(
        ++i) {
     loom_pass_interpreter_frame_t body_frame = {
         .kind = LOOM_PASS_FUNCTION,
-        .symbol = entries[i].symbol,
-        .function = entries[i].function,
+        .symbol_ref = entries[i].symbol_ref,
         .function_version = entries[i].function_version,
     };
     bool body_changed = false;
@@ -689,15 +717,6 @@ static const loom_pass_program_attr_t* loom_pass_interpreter_find_optional_attr(
     if (iree_string_view_equal(attrs.attrs[i].name, name)) {
       return &attrs.attrs[i];
     }
-  }
-  return NULL;
-}
-
-static const loom_op_t* loom_pass_interpreter_frame_op(
-    const loom_pass_interpreter_frame_t* frame) {
-  if (frame->kind == LOOM_PASS_FUNCTION &&
-      loom_func_like_isa(frame->function)) {
-    return frame->function.op;
   }
   return NULL;
 }
@@ -807,7 +826,8 @@ static iree_status_t loom_pass_interpreter_evaluate_attr_predicate(
     const loom_pass_interpreter_frame_t* frame,
     const loom_pass_program_where_t* where, bool* out_match) {
   *out_match = false;
-  const loom_op_t* current_op = loom_pass_interpreter_frame_op(frame);
+  const loom_op_t* current_op =
+      loom_pass_interpreter_frame_function(state, frame).op;
   if (!current_op) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
@@ -850,7 +870,8 @@ static iree_status_t loom_pass_interpreter_evaluate_trait_predicate(
     const loom_pass_interpreter_frame_t* frame,
     const loom_pass_program_where_t* where, bool* out_match) {
   *out_match = false;
-  const loom_op_t* current_op = loom_pass_interpreter_frame_op(frame);
+  const loom_op_t* current_op =
+      loom_pass_interpreter_frame_function(state, frame).op;
   if (!current_op) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
@@ -897,8 +918,8 @@ static iree_status_t loom_pass_interpreter_evaluate_provider_predicate(
           .predicate = instruction->where.predicate,
           .environment = &state->options->environment,
           .target_module = state->module,
-          .symbol = frame->symbol,
-          .function = frame->function,
+          .symbol = loom_pass_interpreter_frame_symbol(state, frame),
+          .function = loom_pass_interpreter_frame_function(state, frame),
           .function_version = frame->function_version,
       },
       out_match);
@@ -1119,15 +1140,9 @@ iree_status_t loom_pass_interpreter_run_function(
   loom_pass_value_fact_owner_initialize(options->block_pool,
                                         &state.value_facts);
   loom_symbol_ref_t callee = loom_func_like_callee(function);
-  loom_symbol_t* symbol = NULL;
-  if (loom_symbol_ref_is_valid(callee) && callee.module_id == 0 &&
-      callee.symbol_id < module->symbols.count) {
-    symbol = &module->symbols.entries[callee.symbol_id];
-  }
   loom_pass_interpreter_frame_t frame = {
       .kind = LOOM_PASS_FUNCTION,
-      .symbol = symbol,
-      .function = function,
+      .symbol_ref = callee,
       .function_version =
           loom_function_version_list_find(options->function_versions, function),
   };

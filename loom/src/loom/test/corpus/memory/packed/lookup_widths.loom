@@ -1,11 +1,6 @@
 // Nibble values cross every packed output word before signed conversion.
-kernel.def @lookup_nibbles_4() {
-  %unit = index.constant 1 : index
-  %threads = index.constant 32 : index
-  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%threads, %unit, %unit) : index
-} launch(%input: buffer, %table: buffer, %bytes: buffer, %floats: buffer) {
+func.def device inline @compute_lookup_nibbles_4_lane(%thread: index, %input: buffer, %table: buffer, %bytes: buffer, %floats: buffer) {
   %base = index.constant 0 : offset
-  %thread = kernel.workitem.id<x> : index
   %input_view = buffer.view %input[%base] : buffer -> view<32x2xi8>
   %table_view = buffer.view %table[%base] : buffer -> view<16xi8>
   %byte_view = buffer.view %bytes[%base] : buffer -> view<32x4xi8>
@@ -17,31 +12,48 @@ kernel.def @lookup_nibbles_4() {
   %converted = vector.sitofp %values : vector<4xi8> to vector<4xf32>
   vector.store %values, %byte_view[%thread, 0] : vector<4xi8>, view<32x4xi8>
   vector.store %converted, %float_view[%thread, 0] : vector<4xf32>, view<32x4xf32>
-  kernel.return
+  func.return
 }
 
-check.case public @nibble_lookup_4_consumers {
-  // Alternating 0x76543210 and 0xfedcba98 encodes all sixteen nibble values.
-  %input = check.generate.iota offset(1985229328) step(-2004318072) period(2) : tensor<16xi32>
-  %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
-  %bytes = check.generate.fill value(91) : tensor<128xi8>
-  %floats = check.generate.fill value(91.0) : tensor<128xf32>
-  kernel.launch @lookup_nibbles_4(%input, %table, %bytes, %floats) : (tensor<16xi32>, tensor<16xi8>, tensor<128xi8>, tensor<128xf32>)
-  %expected_bytes = check.generate.iota offset(-127) step(16) period(16) : tensor<128xi8>
-  %expected_floats = check.generate.iota offset(-127.0) step(16.0) period(16) : tensor<128xf32>
-  check.expect.bitwise actual(%bytes) expected(%expected_bytes) : tensor<128xi8>
-  check.expect.bitwise actual(%floats) expected(%expected_floats) : tensor<128xf32>
-  check.return
-}
-
-// Nibble values cross every packed output word before signed conversion.
-kernel.def @lookup_nibbles_8() {
+kernel.def @lookup_nibbles_4() {
   %unit = index.constant 1 : index
   %threads = index.constant 32 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%threads, %unit, %unit) : index
 } launch(%input: buffer, %table: buffer, %bytes: buffer, %floats: buffer) {
-  %base = index.constant 0 : offset
   %thread = kernel.workitem.id<x> : index
+  func.call @compute_lookup_nibbles_4_lane(%thread, %input, %table, %bytes, %floats) : (index, buffer, buffer, buffer, buffer)
+  kernel.return
+}
+
+func.def @lookup_nibbles_4_oracle(%input: buffer, %table: buffer, %bytes: buffer, %floats: buffer) {
+  %begin = index.constant 0 : index
+  %end = index.constant 32 : index
+  %step = index.constant 1 : index
+  scf.for %thread = [%begin to %end step %step] {
+    func.call @compute_lookup_nibbles_4_lane(%thread, %input, %table, %bytes, %floats) : (index, buffer, buffer, buffer, buffer)
+  }
+  func.return
+}
+
+check.scenario @nibble_lookup_4_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(1985229328) step(-2004318072) period(2) : tensor<16xi32>
+    %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
+    %bytes = check.generate.fill value(91) : tensor<128xi8>
+    %floats = check.generate.fill value(91.0) : tensor<128xf32>
+    check.compare<@lookup_nibbles_4, @lookup_nibbles_4_oracle>(%input, %table, %bytes, %floats) : (tensor<16xi32>, tensor<16xi8>, tensor<128xi8>, tensor<128xf32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<16xi32>
+      check.expect.bitwise actual(%table) expected(%table) : tensor<16xi8>
+      check.expect.bitwise actual(%bytes) expected(%bytes) : tensor<128xi8>
+      check.expect.bitwise actual(%floats) expected(%floats) : tensor<128xf32>
+    }
+  }
+  check.return
+}
+
+// Nibble values cross every packed output word before signed conversion.
+func.def device inline @compute_lookup_nibbles_8_lane(%thread: index, %input: buffer, %table: buffer, %bytes: buffer, %floats: buffer) {
+  %base = index.constant 0 : offset
   %input_view = buffer.view %input[%base] : buffer -> view<32x4xi8>
   %table_view = buffer.view %table[%base] : buffer -> view<16xi8>
   %byte_view = buffer.view %bytes[%base] : buffer -> view<32x8xi8>
@@ -53,31 +65,48 @@ kernel.def @lookup_nibbles_8() {
   %converted = vector.sitofp %values : vector<8xi8> to vector<8xf32>
   vector.store %values, %byte_view[%thread, 0] : vector<8xi8>, view<32x8xi8>
   vector.store %converted, %float_view[%thread, 0] : vector<8xf32>, view<32x8xf32>
-  kernel.return
+  func.return
 }
 
-check.case public @nibble_lookup_8_consumers {
-  // Alternating 0x76543210 and 0xfedcba98 encodes all sixteen nibble values.
-  %input = check.generate.iota offset(1985229328) step(-2004318072) period(2) : tensor<32xi32>
-  %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
-  %bytes = check.generate.fill value(91) : tensor<256xi8>
-  %floats = check.generate.fill value(91.0) : tensor<256xf32>
-  kernel.launch @lookup_nibbles_8(%input, %table, %bytes, %floats) : (tensor<32xi32>, tensor<16xi8>, tensor<256xi8>, tensor<256xf32>)
-  %expected_bytes = check.generate.iota offset(-127) step(16) period(16) : tensor<256xi8>
-  %expected_floats = check.generate.iota offset(-127.0) step(16.0) period(16) : tensor<256xf32>
-  check.expect.bitwise actual(%bytes) expected(%expected_bytes) : tensor<256xi8>
-  check.expect.bitwise actual(%floats) expected(%expected_floats) : tensor<256xf32>
-  check.return
-}
-
-// Nibble values cross every packed output word before signed conversion.
-kernel.def @lookup_nibbles_16() {
+kernel.def @lookup_nibbles_8() {
   %unit = index.constant 1 : index
   %threads = index.constant 32 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%threads, %unit, %unit) : index
 } launch(%input: buffer, %table: buffer, %bytes: buffer, %floats: buffer) {
-  %base = index.constant 0 : offset
   %thread = kernel.workitem.id<x> : index
+  func.call @compute_lookup_nibbles_8_lane(%thread, %input, %table, %bytes, %floats) : (index, buffer, buffer, buffer, buffer)
+  kernel.return
+}
+
+func.def @lookup_nibbles_8_oracle(%input: buffer, %table: buffer, %bytes: buffer, %floats: buffer) {
+  %begin = index.constant 0 : index
+  %end = index.constant 32 : index
+  %step = index.constant 1 : index
+  scf.for %thread = [%begin to %end step %step] {
+    func.call @compute_lookup_nibbles_8_lane(%thread, %input, %table, %bytes, %floats) : (index, buffer, buffer, buffer, buffer)
+  }
+  func.return
+}
+
+check.scenario @nibble_lookup_8_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(1985229328) step(-2004318072) period(2) : tensor<32xi32>
+    %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
+    %bytes = check.generate.fill value(91) : tensor<256xi8>
+    %floats = check.generate.fill value(91.0) : tensor<256xf32>
+    check.compare<@lookup_nibbles_8, @lookup_nibbles_8_oracle>(%input, %table, %bytes, %floats) : (tensor<32xi32>, tensor<16xi8>, tensor<256xi8>, tensor<256xf32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32xi32>
+      check.expect.bitwise actual(%table) expected(%table) : tensor<16xi8>
+      check.expect.bitwise actual(%bytes) expected(%bytes) : tensor<256xi8>
+      check.expect.bitwise actual(%floats) expected(%floats) : tensor<256xf32>
+    }
+  }
+  check.return
+}
+
+// Nibble values cross every packed output word before signed conversion.
+func.def device inline @compute_lookup_nibbles_16_lane(%thread: index, %input: buffer, %table: buffer, %bytes: buffer, %floats: buffer) {
+  %base = index.constant 0 : offset
   %input_view = buffer.view %input[%base] : buffer -> view<32x8xi8>
   %table_view = buffer.view %table[%base] : buffer -> view<16xi8>
   %byte_view = buffer.view %bytes[%base] : buffer -> view<32x16xi8>
@@ -89,26 +118,78 @@ kernel.def @lookup_nibbles_16() {
   %converted = vector.sitofp %values : vector<16xi8> to vector<16xf32>
   vector.store %values, %byte_view[%thread, 0] : vector<16xi8>, view<32x16xi8>
   vector.store %converted, %float_view[%thread, 0] : vector<16xf32>, view<32x16xf32>
+  func.return
+}
+
+kernel.def @lookup_nibbles_16() {
+  %unit = index.constant 1 : index
+  %threads = index.constant 32 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%threads, %unit, %unit) : index
+} launch(%input: buffer, %table: buffer, %bytes: buffer, %floats: buffer) {
+  %thread = kernel.workitem.id<x> : index
+  func.call @compute_lookup_nibbles_16_lane(%thread, %input, %table, %bytes, %floats) : (index, buffer, buffer, buffer, buffer)
   kernel.return
 }
 
-check.case public @nibble_lookup_16_consumers {
-  // Alternating 0x76543210 and 0xfedcba98 encodes all sixteen nibble values.
-  %input = check.generate.iota offset(1985229328) step(-2004318072) period(2) : tensor<64xi32>
-  %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
-  %bytes = check.generate.fill value(91) : tensor<512xi8>
-  %floats = check.generate.fill value(91.0) : tensor<512xf32>
-  kernel.launch @lookup_nibbles_16(%input, %table, %bytes, %floats) : (tensor<64xi32>, tensor<16xi8>, tensor<512xi8>, tensor<512xf32>)
-  %expected_bytes = check.generate.iota offset(-127) step(16) period(16) : tensor<512xi8>
-  %expected_floats = check.generate.iota offset(-127.0) step(16.0) period(16) : tensor<512xf32>
-  check.expect.bitwise actual(%bytes) expected(%expected_bytes) : tensor<512xi8>
-  check.expect.bitwise actual(%floats) expected(%expected_floats) : tensor<512xf32>
+func.def @lookup_nibbles_16_oracle(%input: buffer, %table: buffer, %bytes: buffer, %floats: buffer) {
+  %begin = index.constant 0 : index
+  %end = index.constant 32 : index
+  %step = index.constant 1 : index
+  scf.for %thread = [%begin to %end step %step] {
+    func.call @compute_lookup_nibbles_16_lane(%thread, %input, %table, %bytes, %floats) : (index, buffer, buffer, buffer, buffer)
+  }
+  func.return
+}
+
+check.scenario @nibble_lookup_16_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(1985229328) step(-2004318072) period(2) : tensor<64xi32>
+    %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
+    %bytes = check.generate.fill value(91) : tensor<512xi8>
+    %floats = check.generate.fill value(91.0) : tensor<512xf32>
+    check.compare<@lookup_nibbles_16, @lookup_nibbles_16_oracle>(%input, %table, %bytes, %floats) : (tensor<64xi32>, tensor<16xi8>, tensor<512xi8>, tensor<512xf32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64xi32>
+      check.expect.bitwise actual(%table) expected(%table) : tensor<16xi8>
+      check.expect.bitwise actual(%bytes) expected(%bytes) : tensor<512xi8>
+      check.expect.bitwise actual(%floats) expected(%floats) : tensor<512xf32>
+    }
+  }
   check.return
 }
 
 // Seventeen workitems exercise every table entry at every vector position.
 // Transposed stores are disjoint; 17 is one modulo both table sizes, so their
-// flattened expected values form simple periodic iotas.
+// flattened results form simple periodic iotas.
+// Computed scatter layouts cover every output byte exactly once. Since the
+// stride is one modulo either table width, the semantic result is the table
+// repeated across the dense output span.
+func.def @repeat_table_bytes(%table: buffer, %output: buffer) {
+  %table_length_offset = buffer.length %table
+  %output_length_offset = buffer.length %output
+  %bounded_table_length = index.assume %table_length_offset [range(%table_length_offset, 0, 9223372036854775807)] : offset
+  %bounded_output_length = index.assume %output_length_offset [range(%output_length_offset, 0, 9223372036854775807)] : offset
+  %table_length = index.cast %bounded_table_length : offset to index
+  %output_length = index.cast %bounded_output_length : offset to index
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  scf.for %position = [%begin to %output_length step %step] {
+    %table_position = index.rem %position, %table_length : index
+    %bounded_table_position = index.assume %table_position [range(%table_position, 0, 9223372036854775807)] : index
+    %bounded_output_position = index.assume %position [range(%position, 0, 9223372036854775807)] : index
+    %table_offset = index.cast %bounded_table_position : index to offset
+    %output_offset = index.cast %bounded_output_position : index to offset
+    %value = buffer.load.i8.u %table[%table_offset]
+    buffer.store.i8 %value, %output[%output_offset]
+  }
+  func.return
+}
+
+func.def @repeat_two_tables(%short_table: buffer, %table: buffer, %short_output: buffer, %output: buffer) {
+  func.call @repeat_table_bytes(%short_table, %short_output) : (buffer, buffer)
+  func.call @repeat_table_bytes(%table, %output) : (buffer, buffer)
+  func.return
+}
+
 kernel.def @lookup_computed_1() {
   %unit = index.constant 1 : index
   %threads = index.constant 17 : index
@@ -139,16 +220,19 @@ kernel.def @lookup_computed_1() {
   kernel.return
 }
 
-check.case public @computed_lookup_1 {
-  %short_table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
-  %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
-  %short_output = check.generate.fill value(91) : tensor<17xi8>
-  %output = check.generate.fill value(91) : tensor<17xi8>
-  kernel.launch @lookup_computed_1(%short_table, %table, %short_output, %output) : (tensor<4xi8>, tensor<16xi8>, tensor<17xi8>, tensor<17xi8>)
-  %short_expected = check.generate.iota offset(-127) step(64) period(4) : tensor<17xi8>
-  %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<17xi8>
-  check.expect.bitwise actual(%short_output) expected(%short_expected) : tensor<17xi8>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<17xi8>
+check.scenario @computed_lookup_1_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %short_table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
+    %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
+    %short_output = check.generate.fill value(91) : tensor<17xi8>
+    %output = check.generate.fill value(91) : tensor<17xi8>
+    check.compare<@lookup_computed_1, @repeat_two_tables>(%short_table, %table, %short_output, %output) : (tensor<4xi8>, tensor<16xi8>, tensor<17xi8>, tensor<17xi8>) -> () {
+      check.expect.bitwise actual(%short_table) expected(%short_table) : tensor<4xi8>
+      check.expect.bitwise actual(%table) expected(%table) : tensor<16xi8>
+      check.expect.bitwise actual(%short_output) expected(%short_output) : tensor<17xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<17xi8>
+    }
+  }
   check.return
 }
 
@@ -182,16 +266,19 @@ kernel.def @lookup_computed_2() {
   kernel.return
 }
 
-check.case public @computed_lookup_2 {
-  %short_table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
-  %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
-  %short_output = check.generate.fill value(91) : tensor<34xi8>
-  %output = check.generate.fill value(91) : tensor<34xi8>
-  kernel.launch @lookup_computed_2(%short_table, %table, %short_output, %output) : (tensor<4xi8>, tensor<16xi8>, tensor<34xi8>, tensor<34xi8>)
-  %short_expected = check.generate.iota offset(-127) step(64) period(4) : tensor<34xi8>
-  %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<34xi8>
-  check.expect.bitwise actual(%short_output) expected(%short_expected) : tensor<34xi8>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<34xi8>
+check.scenario @computed_lookup_2_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %short_table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
+    %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
+    %short_output = check.generate.fill value(91) : tensor<34xi8>
+    %output = check.generate.fill value(91) : tensor<34xi8>
+    check.compare<@lookup_computed_2, @repeat_two_tables>(%short_table, %table, %short_output, %output) : (tensor<4xi8>, tensor<16xi8>, tensor<34xi8>, tensor<34xi8>) -> () {
+      check.expect.bitwise actual(%short_table) expected(%short_table) : tensor<4xi8>
+      check.expect.bitwise actual(%table) expected(%table) : tensor<16xi8>
+      check.expect.bitwise actual(%short_output) expected(%short_output) : tensor<34xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<34xi8>
+    }
+  }
   check.return
 }
 
@@ -225,16 +312,19 @@ kernel.def @lookup_computed_3() {
   kernel.return
 }
 
-check.case public @computed_lookup_3 {
-  %short_table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
-  %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
-  %short_output = check.generate.fill value(91) : tensor<51xi8>
-  %output = check.generate.fill value(91) : tensor<51xi8>
-  kernel.launch @lookup_computed_3(%short_table, %table, %short_output, %output) : (tensor<4xi8>, tensor<16xi8>, tensor<51xi8>, tensor<51xi8>)
-  %short_expected = check.generate.iota offset(-127) step(64) period(4) : tensor<51xi8>
-  %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<51xi8>
-  check.expect.bitwise actual(%short_output) expected(%short_expected) : tensor<51xi8>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<51xi8>
+check.scenario @computed_lookup_3_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %short_table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
+    %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
+    %short_output = check.generate.fill value(91) : tensor<51xi8>
+    %output = check.generate.fill value(91) : tensor<51xi8>
+    check.compare<@lookup_computed_3, @repeat_two_tables>(%short_table, %table, %short_output, %output) : (tensor<4xi8>, tensor<16xi8>, tensor<51xi8>, tensor<51xi8>) -> () {
+      check.expect.bitwise actual(%short_table) expected(%short_table) : tensor<4xi8>
+      check.expect.bitwise actual(%table) expected(%table) : tensor<16xi8>
+      check.expect.bitwise actual(%short_output) expected(%short_output) : tensor<51xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<51xi8>
+    }
+  }
   check.return
 }
 
@@ -268,16 +358,19 @@ kernel.def @lookup_computed_5() {
   kernel.return
 }
 
-check.case public @computed_lookup_5 {
-  %short_table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
-  %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
-  %short_output = check.generate.fill value(91) : tensor<85xi8>
-  %output = check.generate.fill value(91) : tensor<85xi8>
-  kernel.launch @lookup_computed_5(%short_table, %table, %short_output, %output) : (tensor<4xi8>, tensor<16xi8>, tensor<85xi8>, tensor<85xi8>)
-  %short_expected = check.generate.iota offset(-127) step(64) period(4) : tensor<85xi8>
-  %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<85xi8>
-  check.expect.bitwise actual(%short_output) expected(%short_expected) : tensor<85xi8>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<85xi8>
+check.scenario @computed_lookup_5_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %short_table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
+    %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
+    %short_output = check.generate.fill value(91) : tensor<85xi8>
+    %output = check.generate.fill value(91) : tensor<85xi8>
+    check.compare<@lookup_computed_5, @repeat_two_tables>(%short_table, %table, %short_output, %output) : (tensor<4xi8>, tensor<16xi8>, tensor<85xi8>, tensor<85xi8>) -> () {
+      check.expect.bitwise actual(%short_table) expected(%short_table) : tensor<4xi8>
+      check.expect.bitwise actual(%table) expected(%table) : tensor<16xi8>
+      check.expect.bitwise actual(%short_output) expected(%short_output) : tensor<85xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<85xi8>
+    }
+  }
   check.return
 }
 
@@ -304,12 +397,15 @@ kernel.def @lookup_computed_63() {
   kernel.return
 }
 
-check.case public @computed_lookup_63 {
-  %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
-  %output = check.generate.fill value(91) : tensor<1071xi8>
-  kernel.launch @lookup_computed_63(%table, %output) : (tensor<16xi8>, tensor<1071xi8>)
-  %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<1071xi8>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<1071xi8>
+check.scenario @computed_lookup_63_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
+    %output = check.generate.fill value(91) : tensor<1071xi8>
+    check.compare<@lookup_computed_63, @repeat_table_bytes>(%table, %output) : (tensor<16xi8>, tensor<1071xi8>) -> () {
+      check.expect.bitwise actual(%table) expected(%table) : tensor<16xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1071xi8>
+    }
+  }
   check.return
 }
 
@@ -336,12 +432,15 @@ kernel.def @lookup_computed_64() {
   kernel.return
 }
 
-check.case public @computed_lookup_64 {
-  %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
-  %output = check.generate.fill value(91) : tensor<1088xi8>
-  kernel.launch @lookup_computed_64(%table, %output) : (tensor<16xi8>, tensor<1088xi8>)
-  %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<1088xi8>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<1088xi8>
+check.scenario @computed_lookup_64_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %table = check.generate.iota offset(-127) step(16) : tensor<16xi8>
+    %output = check.generate.fill value(91) : tensor<1088xi8>
+    check.compare<@lookup_computed_64, @repeat_table_bytes>(%table, %output) : (tensor<16xi8>, tensor<1088xi8>) -> () {
+      check.expect.bitwise actual(%table) expected(%table) : tensor<16xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1088xi8>
+    }
+  }
   check.return
 }
 
@@ -368,12 +467,15 @@ kernel.def @lookup_short_computed_63() {
   kernel.return
 }
 
-check.case public @computed_short_lookup_63 {
-  %table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
-  %output = check.generate.fill value(91) : tensor<1071xi8>
-  kernel.launch @lookup_short_computed_63(%table, %output) : (tensor<4xi8>, tensor<1071xi8>)
-  %expected = check.generate.iota offset(-127) step(64) period(4) : tensor<1071xi8>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<1071xi8>
+check.scenario @computed_short_lookup_63_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
+    %output = check.generate.fill value(91) : tensor<1071xi8>
+    check.compare<@lookup_short_computed_63, @repeat_table_bytes>(%table, %output) : (tensor<4xi8>, tensor<1071xi8>) -> () {
+      check.expect.bitwise actual(%table) expected(%table) : tensor<4xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1071xi8>
+    }
+  }
   check.return
 }
 
@@ -400,21 +502,21 @@ kernel.def @lookup_short_computed_64() {
   kernel.return
 }
 
-check.case public @computed_short_lookup_64 {
-  %table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
-  %output = check.generate.fill value(91) : tensor<1088xi8>
-  kernel.launch @lookup_short_computed_64(%table, %output) : (tensor<4xi8>, tensor<1088xi8>)
-  %expected = check.generate.iota offset(-127) step(64) period(4) : tensor<1088xi8>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<1088xi8>
+check.scenario @computed_short_lookup_64_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %table = check.generate.iota offset(-127) step(64) : tensor<4xi8>
+    %output = check.generate.fill value(91) : tensor<1088xi8>
+    check.compare<@lookup_short_computed_64, @repeat_table_bytes>(%table, %output) : (tensor<4xi8>, tensor<1088xi8>) -> () {
+      check.expect.bitwise actual(%table) expected(%table) : tensor<4xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1088xi8>
+    }
+  }
   check.return
 }
 
 // Predicate tables keep their packed representation while selecting both true
 // and false values at alternating runtime indices.
-kernel.def @lookup_predicates() {
-  %unit = index.constant 1 : index
-  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
-} launch(%table_input: buffer, %index_input: buffer, %output: buffer) {
+func.def device inline @compute_lookup_predicates(%table_input: buffer, %index_input: buffer, %output: buffer) {
   %base = index.constant 0 : offset
   %table_view = buffer.view %table_input[%base] : buffer -> view<2xi32>
   %index_view = buffer.view %index_input[%base] : buffer -> view<8xi32>
@@ -426,15 +528,32 @@ kernel.def @lookup_predicates() {
   %selected = vector.table.lookup %table[%indices] : vector<2xi1>, vector<8xi32> -> vector<8xi1>
   %selected_words = vector.extui %selected : vector<8xi1> to vector<8xi32>
   vector.store %selected_words, %output_view[0] : vector<8xi32>, view<8xi32>
+  func.return
+}
+
+kernel.def @lookup_predicates() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%table_input: buffer, %index_input: buffer, %output: buffer) {
+  func.call @compute_lookup_predicates(%table_input, %index_input, %output) : (buffer, buffer, buffer)
   kernel.return
 }
 
-check.case public @predicate_lookup_values {
-  %table = check.generate.iota offset(-1) step(2) : tensor<2xi32>
-  %indices = check.generate.iota offset(0) step(1) period(2) : tensor<8xi32>
-  %output = check.generate.fill value(91) : tensor<8xi32>
-  kernel.launch @lookup_predicates(%table, %indices, %output) : (tensor<2xi32>, tensor<8xi32>, tensor<8xi32>)
-  %expected = check.generate.iota offset(1) step(-1) period(2) : tensor<8xi32>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<8xi32>
+func.def @lookup_predicates_oracle(%table_input: buffer, %index_input: buffer, %output: buffer) {
+  func.call @compute_lookup_predicates(%table_input, %index_input, %output) : (buffer, buffer, buffer)
+  func.return
+}
+
+check.scenario @predicate_lookup_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %table = check.generate.iota offset(-1) step(2) : tensor<2xi32>
+    %indices = check.generate.iota offset(0) step(1) period(2) : tensor<8xi32>
+    %output = check.generate.fill value(91) : tensor<8xi32>
+    check.compare<@lookup_predicates, @lookup_predicates_oracle>(%table, %indices, %output) : (tensor<2xi32>, tensor<8xi32>, tensor<8xi32>) -> () {
+      check.expect.bitwise actual(%table) expected(%table) : tensor<2xi32>
+      check.expect.bitwise actual(%indices) expected(%indices) : tensor<8xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<8xi32>
+    }
+  }
   check.return
 }

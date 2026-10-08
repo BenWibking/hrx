@@ -23,8 +23,8 @@ loom_low_lower_rule_value_materializer(
 }
 
 loom_low_lower_unsigned_divisor_magic_info_t
-loom_low_lower_unsigned_divisor_magic_info(uint64_t divisor,
-                                           uint32_t bit_width) {
+loom_low_lower_unsigned_divisor_magic_info(uint64_t divisor, uint32_t bit_width,
+                                           uint64_t numerator_maximum) {
   IREE_ASSERT_GE(bit_width, 2u);
   IREE_ASSERT_LE(bit_width, 64u);
   IREE_ASSERT_GT(divisor, 1u);
@@ -32,10 +32,16 @@ loom_low_lower_unsigned_divisor_magic_info(uint64_t divisor,
   IREE_ASSERT_LE(divisor, mask);
   const uint64_t half = UINT64_C(1) << (bit_width - 1);
   const uint64_t half_minus_one = half - 1;
+  if (numerator_maximum < divisor) {
+    return (loom_low_lower_unsigned_divisor_magic_info_t){0};
+  }
 
-  // The recurrence stays in the numerator's unsigned domain. Forming
-  // 2^bit_width - divisor as mask - divisor + 1 also works at width 64.
-  const uint64_t nc = mask - ((mask - divisor + 1) % divisor);
+  // The last numerator congruent to divisor-1 bounds reciprocal-rounding
+  // error. Using the proven domain here retains native product precision while
+  // allowing fewer reciprocal bits. The subtraction also works at width 64
+  // without forming an unrepresentable 2^64.
+  const uint64_t nc =
+      numerator_maximum - ((numerator_maximum - divisor + 1) % divisor);
   uint32_t p = bit_width - 1;
   uint64_t q1 = half / nc;
   uint64_t r1 = half % nc;
@@ -44,11 +50,14 @@ loom_low_lower_unsigned_divisor_magic_info(uint64_t divisor,
   bool is_add = false;
   for (;;) {
     ++p;
-    if (r1 >= nc - r1) {
-      q1 = ((q1 << 1) + 1) & mask;
+    const bool carry = r1 >= nc - r1;
+    // q1 is used only for the termination comparison against delta < divisor.
+    // A small numerator bound can make it exceed the product width; saturation
+    // preserves that comparison whereas wrapping would lose the range proof.
+    q1 = q1 >= half ? mask : (q1 << 1) + carry;
+    if (carry) {
       r1 = ((r1 << 1) - nc) & mask;
     } else {
-      q1 = (q1 << 1) & mask;
       r1 = (r1 << 1) & mask;
     }
     if (r2 + 1 >= divisor - r2) {
@@ -336,13 +345,30 @@ bool loom_low_lower_rule_float_immediate_facts(
   return true;
 }
 
+uint64_t loom_low_lower_unsigned_numerator_maximum(
+    const loom_value_fact_table_t* fact_table, loom_value_id_t numerator,
+    uint32_t bit_width) {
+  const uint64_t mask = UINT64_MAX >> (64 - bit_width);
+  if (fact_table == NULL) {
+    return mask;
+  }
+  const loom_value_facts_t facts =
+      loom_value_fact_table_lookup(fact_table, numerator);
+  if (facts.range_lo >= 0) {
+    return iree_min((uint64_t)facts.range_hi, mask);
+  }
+  // A wholly negative signed interval is contiguous in the unsigned domain.
+  // An interval crossing zero includes -1 and therefore the unsigned maximum.
+  return facts.range_hi < 0 ? (uint64_t)facts.range_hi & mask : mask;
+}
+
 bool loom_low_lower_rule_value_facts_u32_divisor_magic_info(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
-    loom_value_id_t value_id,
+    loom_value_id_t numerator, loom_value_id_t divisor,
     loom_low_lower_unsigned_divisor_magic_info_t* out_info) {
   *out_info = (loom_low_lower_unsigned_divisor_magic_info_t){0};
   loom_value_facts_t facts = loom_value_facts_unknown();
-  if (!loom_low_lower_rule_integer_immediate_facts(module, fact_table, value_id,
+  if (!loom_low_lower_rule_integer_immediate_facts(module, fact_table, divisor,
                                                    &facts)) {
     return false;
   }
@@ -351,7 +377,8 @@ bool loom_low_lower_rule_value_facts_u32_divisor_magic_info(
       exact_value > UINT32_MAX) {
     return false;
   }
-  *out_info = loom_low_lower_unsigned_divisor_magic_info((uint32_t)exact_value,
-                                                         /*bit_width=*/32);
+  *out_info = loom_low_lower_unsigned_divisor_magic_info(
+      (uint32_t)exact_value, /*bit_width=*/32,
+      loom_low_lower_unsigned_numerator_maximum(fact_table, numerator, 32));
   return true;
 }

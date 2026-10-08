@@ -4,8 +4,14 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+#include "iree/hal/drivers/amdgpu/slab_provider.h"
+
+#include <array>
+#include <cstring>
+
 #include "iree/hal/api.h"
 #include "iree/hal/cts/util/test_base.h"
+#include "iree/hal/drivers/amdgpu/access_policy.h"
 #include "iree/hal/drivers/amdgpu/buffer.h"
 #include "iree/hal/drivers/amdgpu/logical_device.h"
 #include "iree/hal/drivers/amdgpu/physical_device.h"
@@ -87,6 +93,76 @@ class TestLogicalDevice {
   iree_hal_device_group_t* device_group = NULL;
 };
 
+TEST_F(SlabProviderTest, CapturesAccessBeforeNativeAcquisition) {
+  iree_hal_amdgpu_logical_device_options_t device_options;
+  iree_hal_amdgpu_logical_device_options_initialize(&device_options);
+  TestLogicalDevice test_device;
+  IREE_ASSERT_OK(test_device.Initialize(&device_options, &libhsa_, &topology_,
+                                        host_allocator_));
+  auto* physical_device = test_device.device()->physical_devices[0];
+  auto* queue = iree_hal_device_queue(test_device.hal_device(), 0, 0);
+  const auto family_affinity = iree_hal_make_queue_family_affinity(0);
+  for (auto memory_pool :
+       {physical_device->coarse_block_pools.large.memory_pool,
+        physical_device->host_memory_pools.fine_pool}) {
+    iree_hal_amdgpu_slab_provider_memory_pool_properties_t properties;
+    IREE_ASSERT_OK(iree_hal_amdgpu_slab_provider_query_memory_pool_properties(
+        &libhsa_, memory_pool, &properties));
+    iree_hal_amdgpu_access_agent_list_t agents;
+    IREE_ASSERT_OK(iree_hal_amdgpu_access_agent_list_resolve_memory_agents(
+        &topology_, family_affinity, &agents));
+    iree_hal_amdgpu_slab_provider_options_t options = {};
+    options.memory_pool = memory_pool;
+    options.memory_type = properties.memory_type;
+    options.supported_usage = properties.supported_usage;
+    options.access.queue_family_affinity = family_affinity;
+    options.access.agent_count = agents.count;
+    options.access.agents = agents.values;
+    IREE_ASSERT_OK(iree_hal_amdgpu_atomic_memory_query_source_masks(
+        &libhsa_, &topology_, memory_pool, HSA_AMD_MEMORY_POOL_STANDARD_FLAG,
+        &options.access.atomic_source_masks));
+    iree_hal_slab_provider_t* provider = nullptr;
+    IREE_ASSERT_OK(iree_hal_amdgpu_slab_provider_create(
+        test_device.hal_device(), &libhsa_, options, 0,
+        &physical_device->materialized_buffer_pool, IREE_SV("captured-access"),
+        host_allocator_, &provider));
+    // Construction inputs can be reused before the first payload acquisition.
+    memset(&agents, 0, sizeof(agents));
+    memset(&options, 0, sizeof(options));
+    iree_hal_slab_t slab = {};
+    IREE_ASSERT_OK(iree_hal_slab_provider_acquire_slab(
+        provider, 128, /*min_alignment=*/1, &slab));
+    std::array<uint32_t, 32> values;
+    values.fill(0xA5A5A5A5u);
+    IREE_ASSERT_OK(iree_hsa_memory_copy(IREE_LIBHSA(&libhsa_), slab.base_ptr,
+                                        values.data(), sizeof(values)));
+    iree_hal_buffer_params_t params = {};
+    params.type = properties.memory_type;
+    params.usage = IREE_HAL_BUFFER_USAGE_TRANSFER;
+    params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+    params.queue_family_affinity = family_affinity;
+    iree::hal::cts::Ref<iree_hal_buffer_t> view;
+    IREE_ASSERT_OK(iree_hal_slab_provider_wrap_buffer(
+        provider, &slab, 32, 64, params,
+        iree_hal_buffer_release_callback_null(), view.out()));
+    iree::hal::cts::SemaphoreList filled(test_device.hal_device(), {0}, {1});
+    const uint32_t pattern = 0x12345678u;
+    IREE_ASSERT_OK(iree_hal_queue_fill(
+        queue, iree_hal_semaphore_list_empty(), filled, view, 0, 64, &pattern,
+        sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(filled, iree_infinite_timeout(),
+                                                IREE_ASYNC_WAIT_FLAG_NONE));
+    IREE_ASSERT_OK(iree_hsa_memory_copy(IREE_LIBHSA(&libhsa_), values.data(),
+                                        slab.base_ptr, sizeof(values)));
+    for (size_t i = 0; i < values.size(); ++i) {
+      EXPECT_EQ(values[i], i >= 8 && i < 24 ? pattern : 0xA5A5A5A5u);
+    }
+    view.reset();
+    iree_hal_slab_provider_release_slab(provider, &slab);
+    iree_hal_slab_provider_release(provider);
+  }
+}
+
 TEST_F(SlabProviderTest,
        DefaultPhysicalDevicePoolMaterializesDeviceLocalBuffer) {
   iree_hal_amdgpu_logical_device_options_t options;
@@ -117,8 +193,8 @@ TEST_F(SlabProviderTest,
 
   iree_hal_buffer_t* buffer = NULL;
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
-      default_pool, params, /*allocation_size=*/128,
-      /*requester_frontier=*/NULL, iree_make_timeout_ms(0), &buffer));
+      default_pool, params, /*allocation_size=*/128, iree_make_timeout_ms(0),
+      &buffer));
   ASSERT_NE(buffer, nullptr);
   EXPECT_GE(iree_hal_buffer_allocation_size(buffer), 128u);
   EXPECT_GE(iree_hal_buffer_byte_length(buffer), 128u);
@@ -133,7 +209,7 @@ TEST_F(SlabProviderTest,
   iree_hal_buffer_release(buffer);
 }
 
-TEST_F(SlabProviderTest, SelectedQueuePoolRoutesOversizedRequests) {
+TEST_F(SlabProviderTest, SelectedQueuePoolServesLargeRequests) {
   iree_hal_amdgpu_logical_device_options_t options;
   iree_hal_amdgpu_logical_device_options_initialize(&options);
   options.default_pool.range_length = 4096;
@@ -163,14 +239,15 @@ TEST_F(SlabProviderTest, SelectedQueuePoolRoutesOversizedRequests) {
   ASSERT_NE(queue, nullptr);
   params.queue_family_affinity = iree_hal_make_queue_family_affinity(
       iree_hal_queue_family_ordinal(iree_hal_queue_family(queue)));
-  constexpr iree_device_size_t kAllocationSize = 8192;
+  const auto* physical_device = test_device.device()->physical_devices[0];
+  const iree_device_size_t allocation_size =
+      physical_device->default_pool_options.tlsf_options.range_length + 1;
   iree_hal_pool_t* pool = iree_hal_pool_set_select(
-      &test_device.device()->physical_devices[0]->default_pool_set, params,
-      kAllocationSize);
-  ASSERT_NE(pool, nullptr);
+      &physical_device->default_pool_set, params, allocation_size);
+  ASSERT_EQ(pool, physical_device->default_pool);
   const iree_hal_pool_reservation_request_t request = {
       /*.params=*/params,
-      /*.allocation_size=*/kAllocationSize,
+      /*.allocation_size=*/allocation_size,
   };
 
   iree_hal_buffer_t* buffer = NULL;
@@ -220,18 +297,15 @@ TEST_F(SlabProviderTest, DefaultPhysicalDevicePoolGrowsAdditionalSlabs) {
   iree_hal_pool_t* default_pool = device->physical_devices[0]->default_pool;
   ASSERT_NE(default_pool, nullptr);
 
-  iree_hal_pool_capabilities_t capabilities;
-  iree_hal_pool_query_capabilities(default_pool, &capabilities);
-  ASSERT_NE(capabilities.max_allocation_size, 0u);
-
   iree_hal_pool_reservation_t first_reservation = {0};
   iree_hal_pool_acquire_info_t first_info = {0};
   iree_hal_pool_acquire_result_t first_result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED;
   iree_hal_buffer_params_t params = {};
-  params.min_alignment = capabilities.min_allocation_size;
   const iree_hal_pool_reservation_request_t request = {
       /*.params=*/params,
-      /*.allocation_size=*/capabilities.max_allocation_size,
+      /*.allocation_size=*/
+      device->physical_devices[0]
+          ->default_pool_options.tlsf_options.range_length,
   };
   iree::Status first_status(iree_hal_pool_acquire_reservations(
       default_pool, 1, &request, /*requester_frontier=*/NULL,

@@ -34,7 +34,7 @@ static bool iree_benchmark_loom_hal_invocation_options_equal(
     const loom_run_hal_invocation_options_t* lhs,
     const loom_run_hal_invocation_options_t* rhs) {
   if (!iree_string_view_equal(lhs->function_name, rhs->function_name) ||
-      lhs->constant_count != rhs->constant_count) {
+      lhs->constant_byte_length != rhs->constant_byte_length) {
     return false;
   }
   for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(lhs->workgroup_count); ++i) {
@@ -42,12 +42,7 @@ static bool iree_benchmark_loom_hal_invocation_options_equal(
       return false;
     }
   }
-  for (iree_host_size_t i = 0; i < lhs->constant_count; ++i) {
-    if (lhs->constants[i] != rhs->constants[i]) {
-      return false;
-    }
-  }
-  return true;
+  return memcmp(lhs->constants, rhs->constants, lhs->constant_byte_length) == 0;
 }
 
 static iree_status_t iree_benchmark_loom_prepare_hal_invocation_plan_for_sample(

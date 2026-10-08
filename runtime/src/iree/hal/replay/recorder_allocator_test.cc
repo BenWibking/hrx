@@ -108,8 +108,8 @@ class ReplayRecorderAllocatorTest : public ::testing::Test {
     EXPECT_EQ(0, release_count_);
     iree_hal_buffer_mapping_t mapping;
     IREE_ASSERT_OK(iree_hal_buffer_map_range(
-        buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE, 0,
-        IREE_HAL_WHOLE_BUFFER, &mapping));
+        buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+        IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, IREE_HAL_WHOLE_BUFFER, &mapping));
     EXPECT_EQ(storage_, mapping.contents.data);
     EXPECT_EQ(sizeof(storage_), mapping.contents.data_length);
     mapping.contents.data[7] = 0xA7;

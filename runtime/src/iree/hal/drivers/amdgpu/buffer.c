@@ -32,13 +32,12 @@ struct iree_hal_amdgpu_buffer_t {
   // Unowned libhsa handle for freeing the allocation on destroy.
   const iree_hal_amdgpu_libhsa_t* libhsa;
 
-  // HSA-allocated pointer. Accessible from both host and device when allocated
-  // from a fine-grained pool, or device-only from a coarse-grained pool.
-  void* host_ptr;
+  // Prepared native addresses and atomic capabilities shared by all views.
+  iree_hal_amdgpu_buffer_native_t native;
 
   // Optional callback for provider/pool-owned buffer storage.
-  // When present the callback owns release of |host_ptr| and any backing pool
-  // bookkeeping. When null this buffer frees |host_ptr| directly with HSA.
+  // When present the callback owns release of the native storage and backing
+  // bookkeeping. Otherwise this buffer frees the agent address with HSA.
   iree_hal_buffer_release_callback_t release_callback;
 
   // Session-local profiling allocation id for direct allocator buffers.
@@ -52,9 +51,6 @@ struct iree_hal_amdgpu_buffer_t {
 
   // Physical device ordinal used for profiling allocation/free events.
   uint32_t profile_physical_device_ordinal;
-
-  // Immutable width and scope cells supported by the backing allocation.
-  iree_hal_amdgpu_atomic_memory_cell_flags_t atomic_memory_cells;
 
   // Byte alignment used for profiling allocation/free events.
   iree_device_size_t profile_alignment;
@@ -227,37 +223,66 @@ static void iree_hal_amdgpu_buffer_pool_release(
 // iree_hal_amdgpu_buffer_t
 //===----------------------------------------------------------------------===//
 
-void* iree_hal_amdgpu_buffer_device_pointer(iree_hal_buffer_t* base_buffer) {
-  if (!iree_hal_resource_is((const iree_hal_resource_t*)base_buffer,
-                            &iree_hal_amdgpu_buffer_vtable)) {
-    if (iree_hal_amdgpu_transient_buffer_isa(base_buffer)) {
-      iree_hal_buffer_t* backing_buffer =
-          iree_hal_amdgpu_transient_buffer_backing_buffer(base_buffer);
-      if (!backing_buffer) {
-        return NULL;
-      }
-      return iree_hal_amdgpu_buffer_device_pointer(backing_buffer);
+bool iree_hal_amdgpu_buffer_isa(const iree_hal_buffer_t* buffer) {
+  return iree_hal_resource_is(&buffer->resource,
+                              &iree_hal_amdgpu_buffer_vtable);
+}
+
+const iree_hal_buffer_binding_layout_t* iree_hal_amdgpu_buffer_binding_layout(
+    void) {
+  static const uint16_t types[] = {
+      IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
+      IREE_HAL_BUFFER_INTERFACE_HOST,
+  };
+  static const iree_hal_buffer_binding_layout_t layout = {
+      .byte_length = sizeof(iree_hal_amdgpu_buffer_native_t),
+      .binding_count = IREE_ARRAYSIZE(types),
+      .host_binding_index = IREE_HAL_AMDGPU_BUFFER_BINDING_HOST,
+      .types = types,
+  };
+  return &layout;
+}
+
+// Packet emission may precede alloca commitment. Resolve that staged edge once;
+// any nested committed backing already carries its own prepared native table.
+// Scoped sources are qualified at the queue/recording family boundary and
+// preserve that table regardless of which backend owns the transient wrapper.
+static const iree_hal_buffer_t* iree_hal_amdgpu_buffer_resolve_native(
+    iree_hal_buffer_t* buffer) {
+  iree_hal_buffer_t* root = iree_hal_buffer_allocated_buffer(buffer);
+  if (iree_hal_amdgpu_transient_buffer_isa(root)) {
+    buffer = iree_hal_amdgpu_transient_buffer_backing_buffer(root);
+    if (!buffer) {
+      return NULL;
     }
+    root = iree_hal_buffer_allocated_buffer(buffer);
+  }
+  if (!iree_hal_amdgpu_buffer_isa(root) &&
+      !iree_hal_amdgpu_transient_buffer_isa(root) && !buffer->memory.contract) {
     return NULL;
   }
-  return ((iree_hal_amdgpu_buffer_t*)base_buffer)->host_ptr;
+  return buffer;
+}
+
+void* iree_hal_amdgpu_buffer_device_pointer(iree_hal_buffer_t* base_buffer) {
+  const iree_hal_buffer_t* buffer =
+      iree_hal_amdgpu_buffer_resolve_native(base_buffer);
+  if (!buffer) {
+    return NULL;
+  }
+  const uint64_t address =
+      buffer->memory.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS]
+          .device_address;
+  return address ? (void*)(uintptr_t)(address + buffer->memory.binding_offset)
+                 : NULL;
 }
 
 iree_hal_amdgpu_atomic_memory_cell_flags_t
 iree_hal_amdgpu_buffer_atomic_memory_cells(iree_hal_buffer_t* base_buffer) {
-  if (!iree_hal_resource_is((const iree_hal_resource_t*)base_buffer,
-                            &iree_hal_amdgpu_buffer_vtable)) {
-    if (iree_hal_amdgpu_transient_buffer_isa(base_buffer)) {
-      iree_hal_buffer_t* backing_buffer =
-          iree_hal_amdgpu_transient_buffer_backing_buffer(base_buffer);
-      if (!backing_buffer) {
-        return IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_NONE;
-      }
-      return iree_hal_amdgpu_buffer_atomic_memory_cells(backing_buffer);
-    }
-    return IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_NONE;
-  }
-  return ((iree_hal_amdgpu_buffer_t*)base_buffer)->atomic_memory_cells;
+  const iree_hal_buffer_t* buffer =
+      iree_hal_amdgpu_buffer_resolve_native(base_buffer);
+  return buffer ? iree_hal_amdgpu_buffer_native(buffer)->atomic_memory_cells
+                : IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_NONE;
 }
 
 bool iree_hal_amdgpu_buffer_uses_release_callback(
@@ -279,7 +304,7 @@ void iree_hal_amdgpu_buffer_disarm_storage(
   IREE_ASSERT(iree_hal_amdgpu_buffer_uses_release_callback(base_buffer,
                                                            release_callback));
   iree_hal_amdgpu_buffer_t* buffer = iree_hal_amdgpu_buffer_cast(base_buffer);
-  buffer->host_ptr = NULL;
+  memset(&buffer->native, 0, sizeof(buffer->native));
   buffer->release_callback = iree_hal_buffer_release_callback_null();
 }
 
@@ -290,7 +315,8 @@ static void iree_hal_amdgpu_buffer_initialize(
     iree_hal_buffer_usage_t allowed_usage,
     iree_hal_amdgpu_atomic_memory_cell_flags_t atomic_memory_cells,
     iree_device_size_t allocation_size, iree_device_size_t byte_length,
-    void* host_ptr, iree_hal_buffer_release_callback_t release_callback,
+    void* device_pointer, void* host_pointer,
+    iree_hal_buffer_release_callback_t release_callback,
     iree_hal_amdgpu_buffer_pool_t* pool, iree_allocator_t host_allocator,
     iree_hal_amdgpu_buffer_t* out_buffer) {
   iree_hal_buffer_initialize(placement, &out_buffer->base, allocation_size,
@@ -301,13 +327,19 @@ static void iree_hal_amdgpu_buffer_initialize(
   out_buffer->pool = pool;
   out_buffer->pool_next = NULL;
   out_buffer->libhsa = libhsa;
-  out_buffer->host_ptr = host_ptr;
+  memset(&out_buffer->native, 0, sizeof(out_buffer->native));
+  out_buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS]
+      .device_address = (uint64_t)(uintptr_t)device_pointer;
+  out_buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_HOST]
+      .host_pointer = host_pointer;
+  out_buffer->native.atomic_memory_cells = atomic_memory_cells;
+  out_buffer->base.memory.bindings = out_buffer->native.bindings;
+  out_buffer->base.host_binding_index = IREE_HAL_AMDGPU_BUFFER_BINDING_HOST;
   out_buffer->release_callback = release_callback;
   out_buffer->profile_allocation_id = 0;
   out_buffer->profile_session_id = 0;
   out_buffer->profile_pool_id = 0;
   out_buffer->profile_physical_device_ordinal = UINT32_MAX;
-  out_buffer->atomic_memory_cells = atomic_memory_cells;
   out_buffer->profile_alignment = 0;
 }
 
@@ -318,7 +350,8 @@ iree_status_t iree_hal_amdgpu_buffer_create(
     iree_hal_buffer_usage_t allowed_usage,
     iree_hal_amdgpu_atomic_memory_cell_flags_t atomic_memory_cells,
     iree_device_size_t allocation_size, iree_device_size_t byte_length,
-    void* host_ptr, iree_hal_buffer_release_callback_t release_callback,
+    void* device_pointer, void* host_pointer,
+    iree_hal_buffer_release_callback_t release_callback,
     iree_allocator_t host_allocator, iree_hal_buffer_t** out_buffer) {
   IREE_ASSERT_ARGUMENT(out_buffer);
   IREE_TRACE_ZONE_BEGIN(z0);
@@ -330,8 +363,8 @@ iree_status_t iree_hal_amdgpu_buffer_create(
       iree_allocator_malloc(host_allocator, sizeof(*buffer), (void**)&buffer));
   iree_hal_amdgpu_buffer_initialize(
       libhsa, placement, memory_type, allowed_access, allowed_usage,
-      atomic_memory_cells, allocation_size, byte_length, host_ptr,
-      release_callback, /*pool=*/NULL, host_allocator, buffer);
+      atomic_memory_cells, allocation_size, byte_length, device_pointer,
+      host_pointer, release_callback, /*pool=*/NULL, host_allocator, buffer);
 
   *out_buffer = &buffer->base;
   IREE_TRACE_ZONE_END(z0);
@@ -345,7 +378,8 @@ iree_status_t iree_hal_amdgpu_buffer_create_pooled(
     iree_hal_buffer_usage_t allowed_usage,
     iree_hal_amdgpu_atomic_memory_cell_flags_t atomic_memory_cells,
     iree_device_size_t allocation_size, iree_device_size_t byte_length,
-    void* host_ptr, iree_hal_buffer_release_callback_t release_callback,
+    void* device_pointer, void* host_pointer,
+    iree_hal_buffer_release_callback_t release_callback,
     iree_hal_amdgpu_buffer_pool_t* pool, iree_allocator_t host_allocator,
     iree_hal_buffer_t** out_buffer) {
   IREE_ASSERT_ARGUMENT(pool);
@@ -358,8 +392,8 @@ iree_status_t iree_hal_amdgpu_buffer_create_pooled(
       z0, iree_hal_amdgpu_buffer_pool_acquire(pool, &buffer));
   iree_hal_amdgpu_buffer_initialize(
       libhsa, placement, memory_type, allowed_access, allowed_usage,
-      atomic_memory_cells, allocation_size, byte_length, host_ptr,
-      release_callback, pool, host_allocator, buffer);
+      atomic_memory_cells, allocation_size, byte_length, device_pointer,
+      host_pointer, release_callback, pool, host_allocator, buffer);
 
   *out_buffer = &buffer->base;
   IREE_TRACE_ZONE_END(z0);
@@ -383,6 +417,10 @@ static void iree_hal_amdgpu_buffer_destroy(iree_hal_buffer_t* base_buffer) {
   iree_allocator_t host_allocator = buffer->host_allocator;
   iree_hal_amdgpu_buffer_pool_t* pool = buffer->pool;
   IREE_TRACE_ZONE_BEGIN(z0);
+  void* device_pointer =
+      (void*)(uintptr_t)buffer->native
+          .bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS]
+          .device_address;
 
   if (buffer->profile_allocation_id != 0 && base_buffer->placement.device) {
     iree_hal_profile_memory_event_t event =
@@ -390,7 +428,7 @@ static void iree_hal_amdgpu_buffer_destroy(iree_hal_buffer_t* base_buffer) {
     event.type = IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_BUFFER_FREE;
     event.allocation_id = buffer->profile_allocation_id;
     event.pool_id = buffer->profile_pool_id;
-    event.backing_id = (uint64_t)(uintptr_t)buffer->host_ptr;
+    event.backing_id = (uint64_t)(uintptr_t)device_pointer;
     event.physical_device_ordinal = buffer->profile_physical_device_ordinal;
     event.memory_type = base_buffer->memory_type;
     event.buffer_usage = base_buffer->allowed_usage;
@@ -403,19 +441,18 @@ static void iree_hal_amdgpu_buffer_destroy(iree_hal_buffer_t* base_buffer) {
   if (buffer->release_callback.fn) {
     buffer->release_callback.fn(buffer->release_callback.user_data,
                                 base_buffer);
-  } else if (buffer->host_ptr) {
+  } else if (device_pointer) {
     iree_hal_amdgpu_hsa_cleanup_assert_success(
-        iree_hsa_amd_memory_pool_free_raw(buffer->libhsa, buffer->host_ptr));
+        iree_hsa_amd_memory_pool_free_raw(buffer->libhsa, device_pointer));
   }
 
   buffer->libhsa = NULL;
-  buffer->host_ptr = NULL;
+  memset(&buffer->native, 0, sizeof(buffer->native));
   buffer->release_callback = iree_hal_buffer_release_callback_null();
   buffer->profile_allocation_id = 0;
   buffer->profile_session_id = 0;
   buffer->profile_pool_id = 0;
   buffer->profile_physical_device_ordinal = UINT32_MAX;
-  buffer->atomic_memory_cells = IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_NONE;
   buffer->profile_alignment = 0;
   if (pool) {
     iree_hal_amdgpu_buffer_pool_release(pool, buffer);
@@ -439,24 +476,31 @@ static iree_status_t iree_hal_amdgpu_buffer_export_range(
                             "0x%x",
                             requested_flags);
   }
-  if (IREE_UNLIKELY(!buffer->host_ptr)) {
+  if (IREE_UNLIKELY(
+          !buffer->native
+               .bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS]
+               .device_address)) {
     return iree_make_status(
         IREE_STATUS_UNAVAILABLE,
         "AMDGPU buffer has no HSA allocation pointer to export");
   }
-  void* pointer = (uint8_t*)buffer->host_ptr + local_byte_offset;
   switch (requested_type) {
     case IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION:
+      // The stored pointer is the HSA agent address, including the address
+      // returned when registering host memory. Visibility, not placement,
+      // determines whether it can be exported as a device allocation.
       if (IREE_UNLIKELY(
               !iree_all_bits_set(iree_hal_buffer_memory_type(base_buffer),
-                                 IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL))) {
+                                 IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE))) {
         return iree_make_status(
             IREE_STATUS_UNAVAILABLE,
             "AMDGPU buffer memory type is not supported for export as an "
             "external device allocation");
       }
       out_external_buffer->handle.device_allocation.ptr =
-          (uint64_t)(uintptr_t)pointer;
+          buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS]
+              .device_address +
+          local_byte_offset;
       break;
     case IREE_HAL_EXTERNAL_BUFFER_TYPE_HOST_ALLOCATION:
       if (IREE_UNLIKELY(
@@ -467,7 +511,10 @@ static iree_status_t iree_hal_amdgpu_buffer_export_range(
             "AMDGPU buffer memory type is not supported for export as an "
             "external host allocation");
       }
-      out_external_buffer->handle.host_allocation.ptr = pointer;
+      out_external_buffer->handle.host_allocation.ptr =
+          buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_HOST]
+              .host_pointer +
+          local_byte_offset;
       break;
     case IREE_HAL_EXTERNAL_BUFFER_TYPE_OPAQUE_FD:
     case IREE_HAL_EXTERNAL_BUFFER_TYPE_OPAQUE_WIN32:
@@ -487,7 +534,7 @@ static iree_status_t iree_hal_amdgpu_buffer_export_range(
 
 static iree_status_t iree_hal_amdgpu_buffer_map_range(
     iree_hal_buffer_t* base_buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access,
+    iree_hal_memory_access_t memory_access, iree_hal_buffer_map_flags_t flags,
     iree_device_size_t local_byte_offset, iree_device_size_t local_byte_length,
     iree_hal_buffer_mapping_t* mapping) {
   iree_hal_amdgpu_buffer_t* buffer = iree_hal_amdgpu_buffer_cast(base_buffer);
@@ -503,7 +550,10 @@ static iree_status_t iree_hal_amdgpu_buffer_map_range(
 
   // Host-visible AMDGPU HSA allocations are directly host-accessible.
   mapping->contents = iree_make_byte_span(
-      (uint8_t*)buffer->host_ptr + local_byte_offset, local_byte_length);
+      buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_HOST]
+              .host_pointer +
+          local_byte_offset,
+      local_byte_length);
 
   return iree_ok_status();
 }

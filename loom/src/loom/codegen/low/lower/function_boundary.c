@@ -352,6 +352,9 @@ static iree_status_t loom_low_lower_create_func_op(
   IREE_RETURN_IF_ERROR(loom_low_lower_map_abi_layout(
       context, LOOM_LOW_LOWER_ABI_LAYOUT_KIND_FUNC, arg_types, arg_count,
       result_types, result_count, &abi_layout));
+  if (context->result->error_count) {
+    return iree_ok_status();
+  }
   loom_string_id_t export_symbol =
       loom_func_like_export_symbol(context->source_function);
   loom_named_attr_slice_t export_attrs =
@@ -475,6 +478,9 @@ static iree_status_t loom_low_lower_create_kernel_op(
   IREE_RETURN_IF_ERROR(loom_low_lower_map_abi_layout(
       context, LOOM_LOW_LOWER_ABI_LAYOUT_KIND_KERNEL, arg_types, arg_count,
       /*result_types=*/NULL, /*result_count=*/0, &abi_layout));
+  if (context->result->error_count) {
+    return iree_ok_status();
+  }
   if (abi_layout.count > 0) {
     build_flags |= LOOM_LOW_KERNEL_DEF_BUILD_FLAG_HAS_ABI_LAYOUT;
   }
@@ -536,6 +542,9 @@ iree_status_t loom_low_lower_function_boundary_create(
   iree_host_size_t result_count = 0;
   IREE_RETURN_IF_ERROR(loom_low_lower_map_signature_types(
       context, &arg_types, &arg_count, &result_types, &result_count));
+  if (context->result->error_count) {
+    return iree_ok_status();
+  }
 
   if (loom_low_lower_source_is_kernel_def(context)) {
     IREE_ASSERT_EQ(result_count, 0);
@@ -545,6 +554,9 @@ iree_status_t loom_low_lower_function_boundary_create(
     IREE_RETURN_IF_ERROR(loom_low_lower_create_func_op(
         context, source_body, low_func_ref, arg_types, arg_count, result_types,
         result_count));
+  }
+  if (context->result->error_count) {
+    return iree_ok_status();
   }
   context->result->low_func_op = context->low_func_op;
   context->result->low_func_ref = low_func_ref;
@@ -814,7 +826,7 @@ iree_status_t loom_low_lower_declaration(
       retain = LOOM_LOW_RETAIN_RETAIN;
     }
 
-    if (iree_status_is_ok(status)) {
+    if (iree_status_is_ok(status) && out_result->error_count == 0) {
       loom_builder_initialize(module, &module->arena, loom_module_block(module),
                               &context.builder);
       loom_builder_set_before(&context.builder, source_declaration.op);

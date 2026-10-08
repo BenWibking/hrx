@@ -60,7 +60,7 @@ _GUARD_VALUE_REF_KINDS = frozenset(
         GuardKind.VALUE_UNSIGNED_BIT_COUNT,
         GuardKind.VALUE_EXACT_I64,
         GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
-        GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+        GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
         GuardKind.VALUE_EXACT_FLOAT,
         GuardKind.VALUE_NOT_NAN,
         GuardKind.VALUE_I64_RANGE,
@@ -80,6 +80,7 @@ _GUARD_VALUE_REF_KINDS = frozenset(
 
 _GUARD_OTHER_VALUE_REF_KINDS = frozenset(
     (
+        GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
         GuardKind.LOW_VALUE_REGISTER_UNIT_COUNT_EQ,
         GuardKind.VALUE_STATIC_ELEMENT_COUNT_EQ,
         GuardKind.VALUE_I64_RANGE_LE,
@@ -124,6 +125,7 @@ _ATTR_COPY_VALUE_REF_KINDS = frozenset(
         LowerAttrCopyKind.VALUE_I32_AS_U32_BITS,
         LowerAttrCopyKind.VALUE_FLOAT_BITS,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F32_I32,
+        LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I64,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I32_WORD,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
@@ -142,6 +144,14 @@ def guard_uses_other_value_ref(kind: GuardKind) -> bool:
 
 def attr_copy_uses_value_ref(kind: LowerAttrCopyKind) -> bool:
     return kind in _ATTR_COPY_VALUE_REF_KINDS
+
+
+def attr_copy_uses_other_value_ref(kind: LowerAttrCopyKind) -> bool:
+    return kind in (
+        LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_MULTIPLIER,
+        LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_MULTIPLIER_AS_I32,
+        LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_SHIFT,
+    )
 
 
 def diagnostic_has_implicit_target_context(row: LowerDiagnostic) -> bool:
@@ -257,6 +267,7 @@ def source_node_row(row: LowerSourceNode) -> list[str]:
 def source_memory_row(
     row: LowerSourceMemory,
     *,
+    shape_index: int,
     byte_offset_materializer_ordinal: int,
     address_materializer_ordinal: int,
     diagnostics_index: int,
@@ -314,24 +325,7 @@ def source_memory_row(
         constraint.vector_lane_count,
         always=True,
     )
-    _append_field(
-        fields,
-        "vector_lane_byte_stride",
-        _c_i64_literal(constraint.vector_lane_byte_stride),
-        always=True,
-    )
-    _append_field(
-        fields,
-        "static_byte_offset_minimum",
-        _c_i64_literal(constraint.static_byte_offset_minimum),
-        always=True,
-    )
-    _append_field(
-        fields,
-        "static_byte_offset_maximum",
-        _c_i64_literal(constraint.static_byte_offset_maximum),
-        always=True,
-    )
+    _append_field(fields, "shape_index", shape_index, always=True)
     _append_field(fields, "minimum_alignment", constraint.minimum_alignment)
     _append_field(
         fields,
@@ -355,12 +349,6 @@ def source_memory_row(
         lower_rule_spelling.SOURCE_MEMORY_DYNAMIC_INDEX_SOURCE_C_NAMES[constraint.dynamic_index_source],
         default="LOOM_LOW_SOURCE_MEMORY_DYNAMIC_INDEX_SOURCE_NONE",
     )
-    if constraint.dynamic_byte_stride is not None:
-        _append_field(
-            fields,
-            "dynamic_byte_stride",
-            _c_i64_literal(constraint.dynamic_byte_stride),
-        )
     _append_field(
         fields,
         "byte_offset_unsigned_bit_count",
@@ -389,6 +377,25 @@ def source_memory_row(
             constraint.cache_policy_build_flags,
         )
     return fields
+
+
+def source_memory_shape(row: LowerSourceMemory) -> tuple[int, int, int, int]:
+    constraint = row.constraint
+    return (
+        constraint.vector_lane_byte_stride,
+        constraint.static_byte_offset_minimum,
+        constraint.static_byte_offset_maximum,
+        0 if constraint.dynamic_byte_stride is None else constraint.dynamic_byte_stride,
+    )
+
+
+def source_memory_shape_row(shape: tuple[int, int, int, int]) -> list[str]:
+    return [
+        f".vector_lane_byte_stride = {_c_i64_literal(shape[0])}",
+        f".static_byte_offset_minimum = {_c_i64_literal(shape[1])}",
+        f".static_byte_offset_maximum = {_c_i64_literal(shape[2])}",
+        f".dynamic_byte_stride = {_c_i64_literal(shape[3])}",
+    ]
 
 
 def source_memory_diagnostic_indices(
@@ -575,6 +582,7 @@ def guard_row(
     elif row.kind in (
         GuardKind.ATTR_KIND,
         GuardKind.ENUM_ATTR_EQUALS,
+        GuardKind.ENUM_ATTR_IN,
         GuardKind.I64_RANGE,
         GuardKind.OPERAND_SEGMENT_COUNT,
         GuardKind.I64_ARRAY_COUNT,
@@ -647,13 +655,14 @@ def guard_payload_row(row: LowerGuard) -> list[str]:
     u64_payload: str | None = None
     if row.kind in (
         GuardKind.ENUM_ATTR_EQUALS,
+        GuardKind.ENUM_ATTR_IN,
         GuardKind.OPERAND_SEGMENT_COUNT,
         GuardKind.LOW_VALUE_REGISTER_UNIT_COUNT,
         GuardKind.VALUE_STATIC_DIM0_MULTIPLE,
         GuardKind.I64_ARRAY_COUNT,
         GuardKind.VALUE_SIGNED_BIT_COUNT,
         GuardKind.VALUE_UNSIGNED_BIT_COUNT,
-        GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+        GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
         GuardKind.VALUE_FLOAT_EQUALS,
         GuardKind.INSTANCE_FLAGS_HAS_ALL,
         GuardKind.INSTANCE_FLAGS_HAS_NONE,
@@ -751,12 +760,19 @@ def attr_copy_row(
     if row.kind in (
         LowerAttrCopyKind.DIRECT,
         LowerAttrCopyKind.ENUM_ORDINAL,
+        LowerAttrCopyKind.ENUM_REMAP,
         LowerAttrCopyKind.I64_LOG2,
         LowerAttrCopyKind.I64_ARRAY_ELEMENT,
         LowerAttrCopyKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_QUOTIENT,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_REMAINDER,
         LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
         LowerAttrCopyKind.ATTRS_PACK_CONSECUTIVE,
         LowerAttrCopyKind.I64_ARRAY_LANE_BYTE,
+        LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
+        LowerAttrCopyKind.I64_ARRAY_READ_ONLY_ELEMENTS,
+        LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT,
+        LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_WORDS,
         LowerAttrCopyKind.I64_LOW_BIT_MASK,
         LowerAttrCopyKind.I64_SHIFTED_LOW_BIT_MASK,
         LowerAttrCopyKind.I64_SHIFTED_LOW_BIT_CLEAR_MASK,
@@ -769,6 +785,7 @@ def attr_copy_row(
         LowerAttrCopyKind.I64_SHIFTED_LOW_BIT_MASK,
         LowerAttrCopyKind.I64_SHIFTED_LOW_BIT_CLEAR_MASK,
         LowerAttrCopyKind.I64_LITERAL_MINUS_ATTRS,
+        LowerAttrCopyKind.ENUM_REMAP,
     ):
         _append_field(
             fields,
@@ -779,13 +796,18 @@ def attr_copy_row(
     if row.kind in (
         LowerAttrCopyKind.I64_ARRAY_ELEMENT,
         LowerAttrCopyKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_QUOTIENT,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_REMAINDER,
         LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
         LowerAttrCopyKind.I64_ARRAY_LANE_BYTE,
+        LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
+        LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_WORDS,
         LowerAttrCopyKind.VALUE_EXACT_I64_I32_WORD,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I32_WORD,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_LOW_BITS_MASK,
+        LowerAttrCopyKind.ENUM_REMAP,
     ):
         _append_field(
             fields,
@@ -797,9 +819,12 @@ def attr_copy_row(
         LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
         LowerAttrCopyKind.ATTRS_PACK_CONSECUTIVE,
         LowerAttrCopyKind.I64_ARRAY_LANE_BYTE,
+        LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
+        LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_LOW_BITS_MASK,
+        LowerAttrCopyKind.ENUM_REMAP,
     ):
         _append_field(
             fields,
@@ -810,6 +835,10 @@ def attr_copy_row(
     if row.kind in (
         LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
         LowerAttrCopyKind.ATTRS_PACK_CONSECUTIVE,
+        LowerAttrCopyKind.ENUM_REMAP,
+        LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
+        LowerAttrCopyKind.I64_ARRAY_READ_ONLY_ELEMENTS,
+        LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT,
     ):
         _append_field(
             fields,
@@ -820,10 +849,16 @@ def attr_copy_row(
     _append_field(fields, "target_bit_offset", row.target_bit_offset)
     if attr_copy_uses_value_ref(row.kind):
         _append_field(fields, "value_ref_index", row.value_ref_index, always=True)
+    if attr_copy_uses_other_value_ref(row.kind):
+        _append_field(fields, "other_value_ref_index", row.other_value_ref_index, always=True)
     if row.kind in (
         LowerAttrCopyKind.I64_LITERAL,
         LowerAttrCopyKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_QUOTIENT,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_REMAINDER,
         LowerAttrCopyKind.I64_ARRAY_LANE_BYTE,
+        LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
+        LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT,
         LowerAttrCopyKind.I64_LITERAL_MINUS_ATTR,
         LowerAttrCopyKind.I64_LITERAL_MINUS_ATTRS,
         LowerAttrCopyKind.I64_ATTR_MINUS_LITERAL,
@@ -835,6 +870,7 @@ def attr_copy_row(
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_LOW_BITS_MASK,
+        LowerAttrCopyKind.ENUM_REMAP,
     ):
         _append_field(
             fields,
@@ -1035,10 +1071,14 @@ def rule_set_row(
     report_keys: tuple[str, ...],
     report_keys_name: str,
     type_patterns_name: str,
+    type_pattern_ranges: tuple[object, ...],
+    type_pattern_ranges_name: str,
     value_refs_name: str,
     source_nodes_name: str,
     materializers_name: str,
     source_memories_name: str,
+    source_memory_shapes: tuple[object, ...],
+    source_memory_shapes_name: str,
     source_memory_diagnostics: tuple[object, ...],
     source_memory_diagnostics_name: str,
     source_memory_byte_offset_materializers: tuple[object, ...],
@@ -1086,6 +1126,12 @@ def rule_set_row(
         table.type_patterns,
         type_patterns_name,
     )
+    _append_table_fields(
+        fields,
+        "type_pattern_ranges",
+        type_pattern_ranges,
+        type_pattern_ranges_name,
+    )
     _append_table_fields(fields, "value_refs", table.value_refs, value_refs_name)
     _append_table_fields(
         fields,
@@ -1104,6 +1150,12 @@ def rule_set_row(
         "source_memories",
         table.source_memories,
         source_memories_name,
+    )
+    _append_table_fields(
+        fields,
+        "source_memory_shapes",
+        source_memory_shapes,
+        source_memory_shapes_name,
     )
     _append_table_fields(
         fields,
@@ -1252,7 +1304,33 @@ def diagnostic_param_row(
     return fields
 
 
-def type_pattern_row(type_pattern: TypePattern) -> list[str]:
+def type_pattern_range(
+    type_pattern: TypePattern,
+) -> tuple[int | str, int | str] | None:
+    if type_pattern.minimum_lanes is not None and type_pattern.maximum_lanes is not None:
+        return type_pattern.minimum_lanes, type_pattern.maximum_lanes
+    if type_pattern.minimum_static_elements is not None and type_pattern.maximum_static_elements is not None:
+        return (
+            type_pattern.minimum_static_elements,
+            type_pattern.maximum_static_elements,
+        )
+    return None
+
+
+def type_pattern_range_row(
+    shape_range: tuple[int | str, int | str],
+) -> list[str]:
+    return [
+        f".minimum = {lower_rule_spelling.c_expression(shape_range[0])}",
+        f".maximum = {lower_rule_spelling.c_expression(shape_range[1])}",
+    ]
+
+
+def type_pattern_row(
+    type_pattern: TypePattern,
+    *,
+    range_ref: int = 0,
+) -> list[str]:
     flags = ["LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND"]
     if type_pattern.elements:
         flags.append("LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_ELEMENT")
@@ -1280,22 +1358,16 @@ def type_pattern_row(type_pattern: TypePattern) -> list[str]:
             row[0] += " | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_RANK | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM0"
             row.append(f".shape.exact.dim0 = {lower_rule_spelling.c_expression(type_pattern.lanes)}")
         elif type_pattern.minimum_lanes is not None and type_pattern.maximum_lanes is not None:
+            if range_ref == 0:
+                raise ValueError("generated vector lane range is missing its table ref")
             row.append(".rank = 1")
             row[0] += " | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_RANK | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM0_RANGE"
-            row.extend(
-                [
-                    f".shape.dim0_range.minimum = {lower_rule_spelling.c_expression(type_pattern.minimum_lanes)}",
-                    f".shape.dim0_range.maximum = {lower_rule_spelling.c_expression(type_pattern.maximum_lanes)}",
-                ]
-            )
+            row.append(f".shape.range_ref = {range_ref}")
         elif type_pattern.minimum_static_elements is not None and type_pattern.maximum_static_elements is not None:
+            if range_ref == 0:
+                raise ValueError("generated vector static element range is missing its table ref")
             row[0] += " | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_ELEMENT_COUNT_RANGE"
-            row.extend(
-                [
-                    f".shape.static_element_count_range.minimum = {lower_rule_spelling.c_expression(type_pattern.minimum_static_elements)}",
-                    f".shape.static_element_count_range.maximum = {lower_rule_spelling.c_expression(type_pattern.maximum_static_elements)}",
-                ]
-            )
+            row.append(f".shape.range_ref = {range_ref}")
         else:
             raise ValueError("generated vector type patterns require static shape")
     return row

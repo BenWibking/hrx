@@ -6,8 +6,6 @@
 
 #include "loom/codegen/low/pipeline/pass_environment.h"
 
-#include "loom/codegen/low/pipeline/pass_requirements.h"
-
 static bool loom_low_pass_capability_satisfies_requirement(
     const loom_pass_environment_capability_t* capability,
     iree_string_view_t requirement) {

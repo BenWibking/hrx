@@ -53,7 +53,7 @@ kernel.def target(@target) @gfx1250_runtime_strided_fragment_bank_service() {
   %workgroup_size = index.constant 32 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%workgroup_size, %unit, %unit) : index
 } launch(%row_stride0: index, %output: buffer) {
-  %row_stride = index.assume %row_stride0 [range(%row_stride0, 32, 64), mul(%row_stride0, 32)] : index
+  %row_stride = index.assume %row_stride0 [range(%row_stride0, 32, 64), multiple_of(%row_stride0, 32)] : index
   %buffer_base = index.constant 0 : offset
   %fragment_origin = index.constant 0 : index
   %m = index.constant 16 : index

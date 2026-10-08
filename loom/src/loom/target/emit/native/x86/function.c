@@ -7,13 +7,14 @@
 #include "loom/target/emit/native/x86/function.h"
 
 #include "iree/base/internal/math.h"
-#include "loom/analysis/storage_layout.h"
 #include "loom/codegen/low/allocation/unit_location.h"
 #include "loom/codegen/low/packet.h"
 #include "loom/codegen/low/storage_layout.h"
+#include "loom/error/x86_error_catalog.h"
 #include "loom/ir/context.h"
 #include "loom/ops/low/ops.h"
 #include "loom/target/arch/x86/register_classes.h"
+#include "loom/target/emit/native/x86/transport.h"
 
 typedef struct loom_x86_incoming_fixup_t {
   // Saved pre-alignment pointer load, or UINT32_MAX with static alignment.
@@ -26,6 +27,12 @@ typedef struct loom_x86_incoming_fixup_t {
 typedef struct loom_x86_function_builder_t {
   // Prepared output under construction.
   loom_x86_function_t* function;
+  // Source operation being prepared, used only for admission diagnostics.
+  const loom_op_t* source_op;
+  // Optional destination for source diagnostics; sink failures propagate.
+  iree_diagnostic_emitter_t emitter;
+  // Rejection is independent of whether a diagnostic sink is installed.
+  bool rejected;
   // Native RSP-relative base of each generic storage space.
   uint64_t storage_offsets[LOOM_STORAGE_SPACE_COUNT_];
   // RSP-relative byte offsets indexed by final move-storage cell ordinal.
@@ -43,54 +50,84 @@ typedef struct loom_x86_function_builder_t {
   } incoming;
 } loom_x86_function_builder_t;
 
+static iree_status_t loom_x86_function_reject(
+    loom_x86_function_builder_t* builder, const loom_error_def_t* error,
+    iree_string_view_t constraint) {
+  builder->rejected = true;
+  const loom_diagnostic_param_t params[] = {loom_param_string(constraint)};
+  return iree_diagnostic_emit(builder->emitter,
+                              &(loom_diagnostic_emission_t){
+                                  .op = builder->source_op,
+                                  .error = error,
+                                  .params = params,
+                                  .param_count = IREE_ARRAYSIZE(params),
+                              });
+}
+
+// Bound each component before arithmetic. The native stack has signed 32-bit
+// displacements, so accepted components cannot overflow the 64-bit layout sum.
+static iree_status_t loom_x86_function_append_storage(
+    uint64_t byte_length, uint64_t byte_alignment,
+    loom_x86_function_builder_t* builder, uint64_t* out_offset) {
+  if (byte_length > INT32_MAX || byte_alignment > INT32_MAX) {
+    return loom_x86_function_reject(
+        builder, LOOM_ERR_X86_004,
+        IREE_SV("stack storage and alignment within signed 32-bit addressing"));
+  }
+  const uint64_t offset =
+      iree_host_align(builder->storage_byte_length, byte_alignment);
+  if (offset + byte_length > INT32_MAX) {
+    return loom_x86_function_reject(
+        builder, LOOM_ERR_X86_004,
+        IREE_SV("stack storage and alignment within signed 32-bit addressing"));
+  }
+  *out_offset = offset;
+  builder->storage_byte_length = offset + byte_length;
+  builder->storage_alignment =
+      iree_max(builder->storage_alignment, byte_alignment);
+  return iree_ok_status();
+}
+
 static iree_status_t loom_x86_function_storage_layout(
     const loom_low_emission_frame_t* frame, iree_arena_allocator_t* arena,
     loom_x86_function_builder_t* builder) {
   const loom_low_storage_layout_t* layout =
       &frame->schedule.requirements.storage_layout;
   if (layout->space_sizes.workgroup_bytes) {
-    return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
-                            "x86 host functions have no workgroup storage ABI");
+    return loom_x86_function_reject(
+        builder, LOOM_ERR_X86_004,
+        IREE_SV("stack, scratch, or private storage; host functions have no "
+                "workgroup storage ABI"));
   }
   static const loom_storage_space_t spaces[] = {
       LOOM_STORAGE_SPACE_STACK,
       LOOM_STORAGE_SPACE_SCRATCH,
       LOOM_STORAGE_SPACE_PRIVATE,
   };
-  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(spaces); ++i) {
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(spaces) && !builder->rejected;
+       ++i) {
     const loom_low_storage_layout_requirement_t requirement =
         loom_low_storage_layout_requirement(layout, spaces[i]);
     if (requirement.byte_length == 0) {
       continue;
     }
-    IREE_RETURN_IF_ERROR(loom_storage_layout_append(
-        requirement.byte_length, requirement.minimum_alignment,
-        &builder->storage_byte_length, &builder->storage_offsets[spaces[i]]));
-    builder->storage_alignment =
-        iree_max(builder->storage_alignment, requirement.minimum_alignment);
+    IREE_RETURN_IF_ERROR(loom_x86_function_append_storage(
+        requirement.byte_length, requirement.minimum_alignment, builder,
+        &builder->storage_offsets[spaces[i]]));
   }
   const loom_low_allocation_table_t* allocation = &frame->allocation;
-  if (allocation->move_storage_count) {
+  if (!builder->rejected && allocation->move_storage_count) {
     IREE_RETURN_IF_ERROR(
         iree_arena_allocate_array(arena, allocation->move_storage_count,
                                   sizeof(*builder->move_storage_offsets),
                                   (void**)&builder->move_storage_offsets));
-    for (iree_host_size_t i = 0; i < allocation->move_storage_count; ++i) {
+    for (iree_host_size_t i = 0;
+         i < allocation->move_storage_count && !builder->rejected; ++i) {
       const loom_low_move_storage_t* cell = &allocation->move_storage[i];
-      IREE_RETURN_IF_ERROR(loom_storage_layout_append(
-          cell->byte_length, cell->byte_alignment,
-          &builder->storage_byte_length, &builder->move_storage_offsets[i]));
-      builder->storage_alignment =
-          iree_max(builder->storage_alignment, cell->byte_alignment);
+      IREE_RETURN_IF_ERROR(loom_x86_function_append_storage(
+          cell->byte_length, cell->byte_alignment, builder,
+          &builder->move_storage_offsets[i]));
     }
-  }
-  // Every body reference uses the ordinary signed displacement form. Checking
-  // the combined extent here also bounds later per-reference address sums.
-  if (builder->storage_byte_length > INT32_MAX ||
-      builder->storage_alignment > INT32_MAX) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "x86 native stack storage exceeds signed 32-bit "
-                            "addressing or alignment");
   }
   return iree_ok_status();
 }
@@ -105,10 +142,10 @@ static iree_status_t loom_x86_function_stack_frame(
   function->stack.alignment = (uint32_t)alignment;
   uint64_t allocation_size = builder->storage_byte_length;
   if (alignment > 16) {
-    uint64_t saved_pointer_offset = 0;
-    IREE_RETURN_IF_ERROR(
-        loom_storage_layout_append(sizeof(uint64_t), sizeof(uint64_t),
-                                   &allocation_size, &saved_pointer_offset));
+    // Storage admission bounds the extent to INT32_MAX, leaving ample room
+    // in this widened calculation for the restoration slot and padding.
+    const uint64_t saved_pointer_offset = iree_host_align(allocation_size, 8);
+    allocation_size = saved_pointer_offset + sizeof(uint64_t);
     function->stack.realignment.saved_pointer_offset =
         (uint32_t)saved_pointer_offset;
     function->stack.realignment.mask = -(int32_t)alignment;
@@ -127,9 +164,9 @@ static iree_status_t loom_x86_function_stack_frame(
         incoming_bytes;
   }
   if (allocation_size > INT32_MAX) {
-    return iree_make_status(
-        IREE_STATUS_OUT_OF_RANGE,
-        "x86 native stack adjustment exceeds signed 32 bits");
+    return loom_x86_function_reject(
+        builder, LOOM_ERR_X86_004,
+        IREE_SV("a stack adjustment within signed 32 bits"));
   }
   function->stack.allocation_size = (uint32_t)allocation_size;
   const uint32_t incoming_offset =
@@ -151,45 +188,73 @@ static iree_status_t loom_x86_function_stack_frame(
 }
 
 static void loom_x86_function_append(loom_x86_function_t* function,
-                                     loom_x86_encoding_form_t form,
+                                     uint16_t encoding_format_id,
                                      uint16_t encoding_id,
                                      loom_x86_encoding_operands_t operands,
-                                     uint32_t control_target) {
+                                     uint32_t reference) {
   function->instructions[function->instruction_count++] =
       (loom_x86_instruction_t){
           .operands = operands,
-          .control_target = control_target,
-          .form = form,
+          .reference = reference,
+          .encoding_format_id = encoding_format_id,
           .encoding_id = encoding_id,
       };
   // SysV RBX, RBP, R12..R15 are callee-preserved. Reads, unused entry
   // arguments, and coalesced moves require no preservation.
   const uint16_t preserved = (1u << 3) | (1u << 5) | (0xfu << 12);
-  function->saved_registers |=
-      loom_x86_encoding_gpr_writes(form, &operands) & preserved;
+  if (!(encoding_format_id & LOOM_X86_ENCODING_FORMAT_VECTOR)) {
+    function->saved_registers |=
+        loom_x86_encoding_gpr_writes(
+            (loom_x86_encoding_form_t)encoding_format_id, &operands) &
+        preserved;
+  }
 }
 
-static iree_status_t loom_x86_function_move(loom_x86_function_t* function,
-                                            uint16_t register_class,
-                                            uint8_t destination,
-                                            uint8_t source) {
-  loom_x86_register_class_t logical_class =
-      loom_x86_logical_register_class(register_class);
-  if (logical_class != LOOM_X86_REGISTER_CLASS_GPR32 &&
-      logical_class != LOOM_X86_REGISTER_CLASS_GPR64) {
-    return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
-                            "x86 native transport requires a scalar GPR");
+static uint8_t loom_x86_function_register(
+    const loom_low_allocation_assignment_t* assignment) {
+  return loom_x86_transport_register(assignment->descriptor_reg_class_id,
+                                     assignment->location_base);
+}
+
+static void loom_x86_function_note_upper_vector_state(
+    loom_x86_function_t* function, uint16_t descriptor_reg_class_id,
+    uint32_t location) {
+  const loom_x86_register_class_t register_class =
+      loom_x86_logical_register_class(descriptor_reg_class_id);
+  if ((register_class == LOOM_X86_REGISTER_CLASS_YMM ||
+       register_class == LOOM_X86_REGISTER_CLASS_ZMM) &&
+      location < 16) {
+    function->may_dirty_upper_vector_state = true;
   }
-  if (destination != source) {
-    loom_x86_function_append(
-        function, LOOM_X86_ENCODING_FORM_MOVE,
-        0x8b | (logical_class == LOOM_X86_REGISTER_CLASS_GPR64
-                    ? LOOM_X86_ENCODING_REX_W
-                    : 0),
-        (loom_x86_encoding_operands_t){.result = destination,
-                                       .inputs = {source}},
-        UINT32_MAX);
+}
+
+static void loom_x86_function_append_transport(
+    loom_x86_function_t* function,
+    const loom_x86_transport_instruction_t* instruction) {
+  if (instruction->encoding_format_id) {
+    loom_x86_function_append(function, instruction->encoding_format_id,
+                             instruction->encoding_id, instruction->operands,
+                             UINT32_MAX);
+    // Vector-form transport may write a GPR, which the generic append path
+    // cannot derive from a packed vector recipe.
+    const uint16_t preserved = (1u << 3) | (1u << 5) | (0xfu << 12);
+    function->saved_registers |= instruction->gpr_writes & preserved;
+    function->may_dirty_upper_vector_state |=
+        instruction->may_dirty_upper_vector_state;
   }
+}
+
+static iree_status_t loom_x86_function_move(
+    loom_x86_function_builder_t* builder, uint16_t destination_class,
+    uint32_t destination, uint16_t source_class, uint32_t source) {
+  loom_x86_transport_instruction_t instruction;
+  if (!loom_x86_transport_select_register(destination_class, destination,
+                                          source_class, source, &instruction)) {
+    return loom_x86_function_reject(
+        builder, LOOM_ERR_X86_004,
+        IREE_SV("compatible physical register representations"));
+  }
+  loom_x86_function_append_transport(builder->function, &instruction);
   return iree_ok_status();
 }
 
@@ -197,7 +262,8 @@ static iree_status_t loom_x86_function_moves(
     const loom_low_allocation_table_t* allocation, loom_low_move_range_t range,
     loom_x86_function_builder_t* builder) {
   iree_status_t status = iree_ok_status();
-  for (iree_host_size_t i = 0; i < range.count && iree_status_is_ok(status);
+  for (iree_host_size_t i = 0;
+       i < range.count && !builder->rejected && iree_status_is_ok(status);
        ++i) {
     const loom_low_move_t* move = &allocation->moves[range.start + i];
     const bool is_store =
@@ -213,17 +279,6 @@ static iree_status_t loom_x86_function_moves(
           is_store ? &move->destination : &move->source;
       const loom_low_move_location_t* reg =
           is_store ? &move->source : &move->destination;
-      const loom_x86_register_class_t logical_class =
-          loom_x86_logical_register_class(reg->descriptor_reg_class_id);
-      if (logical_class != LOOM_X86_REGISTER_CLASS_GPR32 &&
-          logical_class != LOOM_X86_REGISTER_CLASS_GPR64) {
-        status = iree_make_status(IREE_STATUS_UNIMPLEMENTED,
-                                  "x86 native transport requires a scalar GPR");
-        continue;
-      }
-      const uint16_t width = logical_class == LOOM_X86_REGISTER_CLASS_GPR64
-                                 ? LOOM_X86_ENCODING_REX_W
-                                 : 0;
       uint64_t byte_offset = 0;
       if (cell->location_kind == LOOM_LOW_ALLOCATION_LOCATION_STORAGE) {
         const loom_low_storage_transport_binding_t* binding =
@@ -233,20 +288,19 @@ static iree_status_t loom_x86_function_moves(
       } else {
         byte_offset = builder->move_storage_offsets[cell->location];
       }
-      loom_x86_function_append(
-          builder->function,
-          is_store ? LOOM_X86_ENCODING_FORM_STORE : LOOM_X86_ENCODING_FORM_LOAD,
-          (is_store ? 0x89 : 0x8b) | width,
-          (loom_x86_encoding_operands_t){
-              .immediate = (int64_t)byte_offset,
-              .result = (uint8_t)reg->location,
-              .inputs = {is_store ? (uint8_t)reg->location : 4, 4}},
-          UINT32_MAX);
+      loom_x86_transport_instruction_t instruction;
+      loom_x86_transport_select_storage(
+          is_store ? LOOM_X86_STORAGE_TRANSFER_STORE
+                   : LOOM_X86_STORAGE_TRANSFER_LOAD,
+          reg->descriptor_reg_class_id, reg->location, 4, (int32_t)byte_offset,
+          &instruction);
+      loom_x86_function_append_transport(builder->function, &instruction);
       continue;
     }
     status = loom_x86_function_move(
-        builder->function, move->destination.descriptor_reg_class_id,
-        (uint8_t)move->destination.location, (uint8_t)move->source.location);
+        builder, move->destination.descriptor_reg_class_id,
+        move->destination.location, move->source.descriptor_reg_class_id,
+        move->source.location);
   }
   return status;
 }
@@ -374,52 +428,79 @@ static iree_status_t loom_x86_function_call(
       function, LOOM_X86_ENCODING_FORM_CALL, 0,
       (loom_x86_encoding_operands_t){0},
       loom_low_func_call_callee(packet->node->op).symbol_id);
-  ++function->call_count;
+  ++function->symbol_fixup_count;
   return loom_x86_function_moves(&frame->allocation, moves->results, builder);
 }
 
-static int64_t loom_x86_function_immediate(
+static loom_attribute_t loom_x86_function_immediate(
     const loom_low_emission_frame_t* frame,
     const loom_low_packet_view_t* packet, uint16_t index) {
   const loom_low_immediate_t* immediate =
       &frame->target.descriptor_set
            ->immediates[packet->descriptor->immediate_start + index];
   loom_attribute_t value = loom_low_packet_immediate_attr(packet, immediate);
-  return value.kind == LOOM_ATTR_ABSENT ? immediate->default_value : value.i64;
+  return value.kind == LOOM_ATTR_ABSENT
+             ? loom_attr_i64(immediate->default_value)
+             : value;
 }
 
 static iree_status_t loom_x86_function_packet(
     const loom_low_emission_frame_t* frame,
-    const loom_low_packet_view_t* packet, loom_x86_function_t* function) {
+    const loom_low_packet_view_t* packet,
+    loom_x86_function_builder_t* builder) {
+  loom_x86_function_t* function = builder->function;
   const loom_low_descriptor_t* descriptor = packet->descriptor;
   if (descriptor->encoding_format_id == LOOM_X86_ENCODING_FORM_NONE) {
     iree_string_view_t mnemonic = loom_low_descriptor_set_string(
         frame->target.descriptor_set, descriptor->mnemonic_string_ref);
-    return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
-                            "x86 native encoding is unavailable for '%.*s'",
-                            (int)mnemonic.size, mnemonic.data);
+    return loom_x86_function_reject(builder, LOOM_ERR_X86_005, mnemonic);
   }
   loom_x86_encoding_operands_t operands = {0};
+  const bool may_dirty_upper_vector_state =
+      (descriptor->encoding_format_id & LOOM_X86_ENCODING_FORMAT_VECTOR) &&
+      (descriptor->encoding_id >> 14);
   for (uint16_t i = 0; i < packet->node->operand_count; ++i) {
-    operands.inputs[i] = (uint8_t)loom_low_packet_operand_assignment(
-                             &frame->allocation, packet, i)
-                             ->location_base;
+    const loom_low_allocation_assignment_t* input =
+        loom_low_packet_operand_assignment(&frame->allocation, packet, i);
+    if (may_dirty_upper_vector_state) {
+      loom_x86_function_note_upper_vector_state(
+          function, input->descriptor_reg_class_id, input->location_base);
+    }
+    operands.inputs[i] = loom_x86_function_register(input);
   }
   if (packet->node->result_count) {
-    operands.result = (uint8_t)loom_low_packet_result_assignment(
-                          &frame->allocation, packet, 0)
-                          ->location_base;
+    const loom_low_allocation_assignment_t* result =
+        loom_low_packet_result_assignment(&frame->allocation, packet, 0);
+    if (may_dirty_upper_vector_state) {
+      loom_x86_function_note_upper_vector_state(
+          function, result->descriptor_reg_class_id, result->location_base);
+    }
+    operands.result = loom_x86_function_register(result);
+    const loom_x86_register_class_t result_class =
+        loom_x86_logical_register_class(result->descriptor_reg_class_id);
+    if (result_class == LOOM_X86_REGISTER_CLASS_GPR32 ||
+        result_class == LOOM_X86_REGISTER_CLASS_GPR64) {
+      const uint16_t preserved = (1u << 3) | (1u << 5) | (0xfu << 12);
+      function->saved_registers |= (1u << operands.result) & preserved;
+    }
   }
+  uint32_t reference = UINT32_MAX;
   if (descriptor->immediate_count) {
-    operands.immediate = loom_x86_function_immediate(frame, packet, 0);
+    const loom_attribute_t immediate =
+        loom_x86_function_immediate(frame, packet, 0);
+    if (immediate.kind == LOOM_ATTR_SYMBOL) {
+      reference = loom_attr_as_symbol(immediate).symbol_id;
+      ++function->symbol_fixup_count;
+    } else {
+      operands.immediate = immediate.i64;
+    }
   }
   if (descriptor->immediate_count == 2) {
     operands.scale = (uint8_t)iree_math_count_trailing_zeros_u32(
-        (uint32_t)loom_x86_function_immediate(frame, packet, 1));
+        (uint32_t)loom_x86_function_immediate(frame, packet, 1).i64);
   }
-  loom_x86_function_append(
-      function, (loom_x86_encoding_form_t)descriptor->encoding_format_id,
-      descriptor->encoding_id, operands, UINT32_MAX);
+  loom_x86_function_append(function, descriptor->encoding_format_id,
+                           descriptor->encoding_id, operands, reference);
   return iree_ok_status();
 }
 
@@ -456,43 +537,43 @@ static iree_status_t loom_x86_function_storage(
   }
   const loom_x86_register_class_t logical_class =
       loom_x86_logical_register_class(assignment->descriptor_reg_class_id);
-  if (logical_class != LOOM_X86_REGISTER_CLASS_GPR32 &&
-      logical_class != LOOM_X86_REGISTER_CLASS_GPR64) {
-    return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
-                            "x86 native storage transfers require scalar GPRs");
-  }
   if (is_address && (logical_class != LOOM_X86_REGISTER_CLASS_GPR64 ||
                      assignment->location_count != 1)) {
-    return iree_make_status(
-        IREE_STATUS_UNIMPLEMENTED,
-        "x86 native storage addresses require one 64-bit GPR");
+    return loom_x86_function_reject(
+        builder, LOOM_ERR_X86_004,
+        IREE_SV("one 64-bit GPR for storage addresses"));
   }
   const uint32_t unit_bytes =
-      logical_class == LOOM_X86_REGISTER_CLASS_GPR64 ? 8 : 4;
-  if (!is_address && (uint64_t)assignment->location_count * unit_bytes >
-                         reference.byte_length - relative_offset) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "x86 register transfer exceeds its storage span");
+      loom_x86_transport_byte_length(assignment->descriptor_reg_class_id);
+  if (!is_address && (relative_offset > reference.byte_length ||
+                      (uint64_t)assignment->location_count * unit_bytes >
+                          reference.byte_length - relative_offset)) {
+    return loom_x86_function_reject(
+        builder, LOOM_ERR_X86_004,
+        IREE_SV("a register transfer that fits within its storage span"));
   }
-  // Allocatable scalar x86 views each own one physical GPR. Wider register
-  // tuples require target register views before they can reach native emission.
+  // Every current x86 register class owns one physical allocation unit.
   IREE_ASSERT_EQ(assignment->location_count, 1u);
   const loom_low_move_location_t location =
       loom_low_allocation_assignment_unit_location(frame->target.descriptor_set,
                                                    assignment, 0);
-  const uint16_t width = unit_bytes == 8 ? LOOM_X86_ENCODING_REX_W : 0;
-  const loom_x86_encoding_operands_t operands = {
-      .immediate = (int64_t)byte_offset,
-      .result = (uint8_t)location.location,
-      .inputs = {is_store ? (uint8_t)location.location : 4, 4},
-  };
-  loom_x86_function_append(
-      builder->function,
-      is_address ? LOOM_X86_ENCODING_FORM_ADDRESS_DISPLACEMENT
-                 : (is_store ? LOOM_X86_ENCODING_FORM_STORE
-                             : LOOM_X86_ENCODING_FORM_LOAD),
-      (is_address ? 0x8d : (is_store ? 0x89 : 0x8b)) | width, operands,
-      UINT32_MAX);
+  if (is_address) {
+    loom_x86_function_append(
+        builder->function, LOOM_X86_ENCODING_FORM_ADDRESS_DISPLACEMENT,
+        0x8d | LOOM_X86_ENCODING_REX_W,
+        (loom_x86_encoding_operands_t){.immediate = (int64_t)byte_offset,
+                                       .result = (uint8_t)location.location,
+                                       .inputs = {4}},
+        UINT32_MAX);
+  } else {
+    loom_x86_transport_instruction_t instruction;
+    loom_x86_transport_select_storage(is_store ? LOOM_X86_STORAGE_TRANSFER_STORE
+                                               : LOOM_X86_STORAGE_TRANSFER_LOAD,
+                                      location.descriptor_reg_class_id,
+                                      location.location, 4,
+                                      (int32_t)byte_offset, &instruction);
+    loom_x86_function_append_transport(builder->function, &instruction);
+  }
   return iree_ok_status();
 }
 
@@ -531,24 +612,18 @@ static iree_status_t loom_x86_function_structural(
         const loom_low_storage_transport_binding_t* binding =
             &frame->allocation.storage_transport
                  ->bindings[result->location_base];
-        const uint16_t width =
-            loom_x86_logical_register_class(result->descriptor_reg_class_id) ==
-                    LOOM_X86_REGISTER_CLASS_GPR64
-                ? LOOM_X86_ENCODING_REX_W
-                : 0;
-        loom_x86_function_append(
-            function, LOOM_X86_ENCODING_FORM_LOAD, 0x8b | width,
-            (loom_x86_encoding_operands_t){
-                .immediate =
-                    (int64_t)(builder->storage_offsets[binding->space] +
-                              binding->byte_offset),
-                .result = 0,
-                .inputs = {4}},
-            UINT32_MAX);
+        loom_x86_transport_instruction_t instruction;
+        loom_x86_transport_select_storage(
+            LOOM_X86_STORAGE_TRANSFER_LOAD, result->descriptor_reg_class_id, 0,
+            4,
+            (int32_t)(builder->storage_offsets[binding->space] +
+                      binding->byte_offset),
+            &instruction);
+        loom_x86_function_append_transport(function, &instruction);
       } else {
-        IREE_RETURN_IF_ERROR(
-            loom_x86_function_move(function, result->descriptor_reg_class_id, 0,
-                                   (uint8_t)result->location_base));
+        IREE_RETURN_IF_ERROR(loom_x86_function_move(
+            builder, result->descriptor_reg_class_id, 0,
+            result->descriptor_reg_class_id, result->location_base));
       }
     }
     loom_x86_function_jump(function, function->block_count, block_index + 1);
@@ -602,15 +677,15 @@ static iree_status_t loom_x86_function_structural(
                  : iree_ok_status();
   }
   iree_string_view_t name = loom_op_name(frame->module, node->op);
-  return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
-                          "x86 native instruction materialization does not "
-                          "support '%.*s'",
-                          (int)name.size, name.data);
+  return loom_x86_function_reject(builder, LOOM_ERR_X86_005, name);
 }
 
 iree_status_t loom_x86_function_prepare(const loom_low_emission_frame_t* frame,
+                                        iree_diagnostic_emitter_t emitter,
                                         iree_arena_allocator_t* arena,
+                                        bool* out_accepted,
                                         loom_x86_function_t* out_function) {
+  *out_accepted = false;
   *out_function = (loom_x86_function_t){0};
   const loom_low_schedule_table_t* schedule = &frame->schedule;
   loom_x86_function_t function = {.block_count =
@@ -636,12 +711,17 @@ iree_status_t loom_x86_function_prepare(const loom_low_emission_frame_t* frame,
       3u * (argument_count - iree_min(argument_count, 6));
   loom_x86_function_builder_t builder = {
       .function = &function,
+      .source_op = frame->function_op,
+      .emitter = emitter,
       .storage_byte_length = outgoing_bytes,
       .storage_alignment =
           frame->allocation.call_move_count ? 16 : (argument_count > 6 ? 8 : 0),
   };
   IREE_RETURN_IF_ERROR(
       loom_x86_function_storage_layout(frame, arena, &builder));
+  if (builder.rejected) {
+    return iree_ok_status();
+  }
   IREE_RETURN_IF_ERROR(
       iree_arena_allocate_array(arena, capacity, sizeof(*function.instructions),
                                 (void**)&function.instructions));
@@ -659,33 +739,38 @@ iree_status_t loom_x86_function_prepare(const loom_low_emission_frame_t* frame,
                              LOOM_LOW_ALLOCATION_LOCATION_STORAGE, &builder);
   iree_status_t status = loom_x86_function_moves(
       &frame->allocation, frame->allocation.entry_moves.moves, &builder);
-  if (iree_status_is_ok(status)) {
+  if (!builder.rejected && iree_status_is_ok(status)) {
     loom_x86_function_incoming(frame, argument_count,
                                LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
                                &builder);
   }
-  for (uint32_t b = 0; b < schedule->block_count && iree_status_is_ok(status);
+  for (uint32_t b = 0; b < schedule->block_count && !builder.rejected &&
+                       iree_status_is_ok(status);
        ++b) {
     function.block_starts[b] = function.instruction_count;
     const loom_low_schedule_block_t* block = &schedule->blocks[b];
-    for (uint32_t i = 0;
-         i < block->scheduled_node_count && iree_status_is_ok(status); ++i) {
+    for (uint32_t i = 0; i < block->scheduled_node_count && !builder.rejected &&
+                         iree_status_is_ok(status);
+         ++i) {
       const loom_low_packet_view_t packet =
           loom_low_packet_at_block_ordinal(schedule, b, i);
       if (loom_low_packet_is_compile_time_only(&packet)) {
         continue;
       }
+      builder.source_op = packet.node->op;
       status = packet.descriptor
-                   ? loom_x86_function_packet(frame, &packet, &function)
+                   ? loom_x86_function_packet(frame, &packet, &builder)
                    : loom_x86_function_structural(frame, &packet, &builder);
     }
   }
   function.block_starts[schedule->block_count] = function.instruction_count;
-  if (iree_status_is_ok(status)) {
+  if (!builder.rejected && iree_status_is_ok(status)) {
+    builder.source_op = frame->function_op;
     status = loom_x86_function_stack_frame(&builder);
   }
-  if (iree_status_is_ok(status)) {
+  if (!builder.rejected && iree_status_is_ok(status)) {
     *out_function = function;
+    *out_accepted = true;
   }
   return status;
 }
@@ -762,10 +847,16 @@ static iree_status_t loom_x86_function_write_stack_leave(
   return iree_ok_status();
 }
 
+static iree_status_t loom_x86_function_write_upper_vector_state_cleanup(
+    iree_io_stream_t* stream) {
+  static const uint8_t bytes[] = {0xc5, 0xf8, 0x77};
+  return iree_io_stream_write(stream, sizeof(bytes), bytes);
+}
+
 iree_status_t loom_x86_function_write(const loom_x86_function_t* function,
                                       const uint32_t* symbol_indices,
                                       iree_host_size_t section_index,
-                                      loom_native_object_fixup_t* call_fixups,
+                                      loom_native_object_fixup_t* symbol_fixups,
                                       iree_io_stream_t* stream,
                                       iree_arena_allocator_t* arena) {
   const iree_io_stream_pos_t function_start = iree_io_stream_offset(stream);
@@ -787,7 +878,7 @@ iree_status_t loom_x86_function_write(const loom_x86_function_t* function,
     status = loom_x86_function_write_stack_enter(function, stream);
   }
   iree_host_size_t fixup_count = 0;
-  iree_host_size_t call_index = 0;
+  iree_host_size_t symbol_fixup_index = 0;
   uint32_t block = 0;
   for (iree_host_size_t i = 0;
        i < function->instruction_count && iree_status_is_ok(status); ++i) {
@@ -797,22 +888,31 @@ iree_status_t loom_x86_function_write(const loom_x86_function_t* function,
     }
     const loom_x86_instruction_t* prepared = &function->instructions[i];
     loom_x86_encoded_instruction_t instruction;
-    loom_x86_encode_instruction((loom_x86_encoding_form_t)prepared->form,
+    loom_x86_encode_instruction(prepared->encoding_format_id,
                                 prepared->encoding_id, &prepared->operands,
                                 &instruction);
-    if (prepared->form == LOOM_X86_ENCODING_FORM_CALL) {
-      call_fixups[call_index++] = (loom_native_object_fixup_t){
+    const bool is_call =
+        prepared->encoding_format_id == LOOM_X86_ENCODING_FORM_CALL;
+    const bool is_symbol_address =
+        prepared->encoding_format_id ==
+            LOOM_X86_ENCODING_FORM_ADDRESS_PC_RELATIVE ||
+        (prepared->encoding_format_id & LOOM_X86_ENCODING_FORMAT_VECTOR &&
+         ((prepared->encoding_format_id >> 12) & 7) ==
+             LOOM_X86_VECTOR_ENCODING_RIP_LOAD);
+    if ((is_call || is_symbol_address) && prepared->reference != UINT32_MAX) {
+      symbol_fixups[symbol_fixup_index++] = (loom_native_object_fixup_t){
           .section_contribution_index = section_index,
           .section_offset = iree_io_stream_offset(stream) + instruction.length -
                             4 - function_start,
-          .relocation_kind = LOOM_X86_RELOCATION_CALL,
-          .target_symbol_index = symbol_indices[prepared->control_target],
+          .relocation_kind =
+              is_call ? LOOM_X86_RELOCATION_CALL : LOOM_X86_RELOCATION_ADDRESS,
+          .target_symbol_index = symbol_indices[prepared->reference],
           .addend = -4,
       };
-    } else if (prepared->control_target != UINT32_MAX) {
+    } else if (prepared->reference != UINT32_MAX) {
       fixups[fixup_count++] = (loom_x86_branch_fixup_t){
           .offset = iree_io_stream_offset(stream) + instruction.length - 4,
-          .target = prepared->control_target,
+          .target = prepared->reference,
       };
     }
     status =
@@ -830,6 +930,11 @@ iree_status_t loom_x86_function_write(const loom_x86_function_t* function,
       status = loom_x86_function_write_stack(stream, LOOM_X86_ENCODING_FORM_POP,
                                              reg);
     }
+  }
+  // Public results in the current platform ABI are scalar or pointer values,
+  // so no live result occupies the upper vector state at this boundary.
+  if (iree_status_is_ok(status) && function->may_dirty_upper_vector_state) {
+    status = loom_x86_function_write_upper_vector_state_cleanup(stream);
   }
   if (iree_status_is_ok(status)) {
     status =

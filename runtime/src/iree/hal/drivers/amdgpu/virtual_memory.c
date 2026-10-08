@@ -293,6 +293,10 @@ iree_status_t iree_hal_amdgpu_virtual_memory_reserve(
         state->libhsa, buffer_placement, placement.memory_type,
         IREE_HAL_MEMORY_ACCESS_ALL, placement.buffer_usage,
         placement.atomic_memory_cells, size, size, base_ptr,
+        iree_any_bit_set(placement.memory_type,
+                         IREE_HAL_MEMORY_TYPE_HOST_VISIBLE)
+            ? base_ptr
+            : NULL,
         iree_hal_amdgpu_virtual_memory_reservation_release_callback(state),
         state->host_allocator, &virtual_buffer);
   }

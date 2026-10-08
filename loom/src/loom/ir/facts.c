@@ -691,7 +691,6 @@ static bool loom_value_facts_predicate_required_range(
       *out_maximum = constant - 1;
       return true;
     case LOOM_PREDICATE_LE:
-    case LOOM_PREDICATE_MAX:
       if (!loom_value_facts_predicate_const_arg(predicate, 1, &constant)) {
         return false;
       }
@@ -709,7 +708,6 @@ static bool loom_value_facts_predicate_required_range(
       *out_minimum = constant + 1;
       return true;
     case LOOM_PREDICATE_GE:
-    case LOOM_PREDICATE_MIN:
       if (!loom_value_facts_predicate_const_arg(predicate, 1, &constant)) {
         return false;
       }
@@ -769,12 +767,12 @@ static bool loom_value_facts_predicate_exact_i64_conflict(
                                                        &predicate_value) &&
                   known_value == predicate_value;
       break;
-    case LOOM_PREDICATE_MUL:
+    case LOOM_PREDICATE_MULTIPLE_OF:
       conflicts = loom_value_facts_predicate_const_arg(predicate, 1,
                                                        &predicate_value) &&
                   predicate_value > 0 && known_value % predicate_value != 0;
       break;
-    case LOOM_PREDICATE_POW2:
+    case LOOM_PREDICATE_POWER_OF_TWO:
       conflicts = known_value <= 0 || (known_value & (known_value - 1)) != 0;
       break;
     case LOOM_PREDICATE_ULT:
@@ -933,7 +931,7 @@ void loom_value_facts_apply_predicate(loom_value_facts_t* facts,
   // literal endpoint independently; higher-level relation analysis supplies
   // facts for value endpoints. Treating a value ID as an integer literal here
   // would corrupt range facts.
-  if (predicate->kind == LOOM_PREDICATE_POW2 ||
+  if (predicate->kind == LOOM_PREDICATE_POWER_OF_TWO ||
       predicate->kind == LOOM_PREDICATE_NOT_NAN ||
       predicate->kind == LOOM_PREDICATE_NOT_INF ||
       predicate->kind == LOOM_PREDICATE_FINITE) {
@@ -1010,7 +1008,7 @@ void loom_value_facts_apply_predicate(loom_value_facts_t* facts,
       return;
     }
 
-    case LOOM_PREDICATE_MUL: {
+    case LOOM_PREDICATE_MULTIPLE_OF: {
       // a is a multiple of N → known_divisor = lcm(known_divisor, N).
       int64_t new_divisor;
       if (iree_math_checked_lcm_i64(facts->known_divisor, constant,
@@ -1021,17 +1019,7 @@ void loom_value_facts_apply_predicate(loom_value_facts_t* facts,
       break;
     }
 
-    case LOOM_PREDICATE_MIN:
-      // a >= N (same semantics as GE with a constant).
-      facts->range_lo = iree_max(facts->range_lo, constant);
-      break;
-
-    case LOOM_PREDICATE_MAX:
-      // a <= N (same semantics as LE with a constant).
-      facts->range_hi = iree_min(facts->range_hi, constant);
-      break;
-
-    case LOOM_PREDICATE_POW2:
+    case LOOM_PREDICATE_POWER_OF_TWO:
       facts->flags |= LOOM_VALUE_FACT_POWER_OF_TWO;
       break;
 

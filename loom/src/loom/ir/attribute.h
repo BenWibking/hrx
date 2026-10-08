@@ -73,30 +73,26 @@ enum loom_predicate_kind_e {
   LOOM_PREDICATE_GT = 4,
   // ge(a, b)
   LOOM_PREDICATE_GE = 5,
-  // mul(a, n): a is a multiple of positive n.
-  LOOM_PREDICATE_MUL = 6,
-  // min(a, n): a >= n.
-  LOOM_PREDICATE_MIN = 7,
-  // max(a, n): a <= n.
-  LOOM_PREDICATE_MAX = 8,
-  // pow2(a): a is power of 2.
-  LOOM_PREDICATE_POW2 = 9,
+  // multiple_of(a, n): a is a multiple of positive n.
+  LOOM_PREDICATE_MULTIPLE_OF = 6,
+  // power_of_two(a): a is a power of 2.
+  LOOM_PREDICATE_POWER_OF_TWO = 7,
   // range(a, lo, hi): lo <= a <= hi.
-  LOOM_PREDICATE_RANGE = 10,
+  LOOM_PREDICATE_RANGE = 8,
   // not_nan(a): a is not NaN.
-  LOOM_PREDICATE_NOT_NAN = 11,
+  LOOM_PREDICATE_NOT_NAN = 9,
   // not_inf(a): a is not positive or negative infinity.
-  LOOM_PREDICATE_NOT_INF = 12,
+  LOOM_PREDICATE_NOT_INF = 10,
   // finite(a): a is not NaN or infinity.
-  LOOM_PREDICATE_FINITE = 13,
+  LOOM_PREDICATE_FINITE = 11,
   // ult(a, b): sign-extended 64-bit carrier of a is unsigned less than b.
-  LOOM_PREDICATE_ULT = 14,
+  LOOM_PREDICATE_ULT = 12,
   // ule(a, b): sign-extended 64-bit carrier of a is unsigned <= b.
-  LOOM_PREDICATE_ULE = 15,
+  LOOM_PREDICATE_ULE = 13,
   // ugt(a, b): sign-extended 64-bit carrier of a is unsigned greater than b.
-  LOOM_PREDICATE_UGT = 16,
+  LOOM_PREDICATE_UGT = 14,
   // uge(a, b): sign-extended 64-bit carrier of a is unsigned >= b.
-  LOOM_PREDICATE_UGE = 17,
+  LOOM_PREDICATE_UGE = 15,
   // Number of predicate kinds.
   LOOM_PREDICATE_COUNT_,
 };
@@ -117,10 +113,9 @@ enum loom_predicate_arg_tag_e {
 
 // A single predicate constraint. 32 bytes, arena-allocated.
 //
-// Predicates constrain dynamic dimension values in where clauses and
-// assume ops. Each predicate has a kind (eq, mul, range, etc.)
-// and 1-3 arguments. Arguments are tagged: SSA value references or
-// integer constants.
+// Predicates constrain dynamic dimension values in where clauses and assume
+// ops. Each predicate has a kind (eq, multiple_of, range, etc.) and 1-3
+// arguments. Arguments are tagged: SSA value references or integer constants.
 typedef struct loom_predicate_t {
   // Predicate kind.
   loom_predicate_kind_t kind;
@@ -140,6 +135,11 @@ static_assert(sizeof(loom_predicate_t) == 32,
 // Returns the canonical text spelling for |kind| or NULL if |kind| is outside
 // the predicate vocabulary.
 const char* loom_predicate_kind_name(uint8_t kind);
+
+// Parses a canonical predicate spelling into its kind. Returns false when
+// |name| is outside the predicate vocabulary.
+bool loom_predicate_kind_parse(iree_string_view_t name,
+                               loom_predicate_kind_t* out_kind);
 
 // Returns the exact arity for |kind| or UINT8_MAX if |kind| is outside the
 // predicate vocabulary.

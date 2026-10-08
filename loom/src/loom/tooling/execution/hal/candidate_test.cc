@@ -59,11 +59,6 @@ static const iree_hal_executable_target_t kFakeExecutableTarget = {
     /*.family=*/IREE_SVL("fake"),
     /*.target_key=*/IREE_SVL("fake-hal"),
 };
-static const loom_device_target_t kFakeDeviceTarget = {
-    /*.executable_target=*/&kFakeExecutableTarget,
-    /*.target_profile=*/&kFakeTargetProfile,
-};
-
 typedef struct fake_hal_artifact_storage_t {
   // Host allocator owning this storage.
   iree_allocator_t allocator;
@@ -151,10 +146,14 @@ const loom_target_emitter_t kFakeTargetEmitter = {
     /*.emit=*/FakeHalEmitArtifact,
 };
 
+static const loom_device_target_t kFakeDeviceTarget = {
+    /*.executable_target=*/&kFakeExecutableTarget,
+    /*.target_profile=*/&kFakeTargetProfile,
+    /*.target_emitter=*/&kFakeTargetEmitter,
+};
+
 const loom_device_provider_t kFakeDeviceProvider = {
     /*.name=*/IREE_SVL("fake-hal"),
-    /*.target_profile_type=*/&kFakeTargetProfileType,
-    /*.target_emitter=*/&kFakeTargetEmitter,
     /*.driver_name=*/IREE_SVL("fake"),
 };
 
@@ -301,13 +300,13 @@ TEST_F(HalCandidateTest, EmitterFailurePreservesCallerReport) {
   options.report = &report;
   loom_target_emitter_t target_emitter = kFakeTargetEmitter;
   target_emitter.emit = FakeHalFailAfterArtifactEmission;
-  loom_device_provider_t device_provider = kFakeDeviceProvider;
-  device_provider.target_emitter = &target_emitter;
+  loom_device_target_t device_target = kFakeDeviceTarget;
+  device_target.target_emitter = &target_emitter;
 
   loom_run_hal_candidate_t candidate = {};
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_RESOURCE_EXHAUSTED,
-      loom_run_hal_candidate_emit_target(&device_provider, &kFakeDeviceTarget,
+      loom_run_hal_candidate_emit_target(&kFakeDeviceProvider, &device_target,
                                          &session_, &run_module, &options,
                                          iree_allocator_system(), &candidate));
   EXPECT_EQ(g_fake_hal_emit_report, &report);

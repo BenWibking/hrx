@@ -4,13 +4,14 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-// Direct x86-64 encoding of allocated scalar instructions.
+// Direct x86-64 encoding of allocated instructions.
 //
-// Descriptor encoding_format_id selects the operand form below. encoding_id
-// contains the opcode in bits 0..7, the 0F escape in bit 8, a ModRM opcode
-// extension in bits 9..11, and encoding flags in bits 12..15. Python descriptor
-// declarations supply these immutable facts; encoding never interprets a
-// mnemonic or resolves SSA values.
+// Descriptor encoding_format_id selects either a scalar operand form below or
+// a packed vector recipe marked by LOOM_X86_ENCODING_FORMAT_VECTOR. Python
+// descriptor declarations supply all immutable opcode and recipe facts;
+// encoding never interprets a mnemonic or resolves SSA values. Vector
+// encoding_id fields hold opcode, map, mandatory prefix, W, VEX/EVEX kind, and
+// vector length in that order from low to high bits.
 
 #ifndef LOOM_TARGET_EMIT_NATIVE_X86_ENCODING_H_
 #define LOOM_TARGET_EMIT_NATIVE_X86_ENCODING_H_
@@ -51,6 +52,8 @@ typedef enum loom_x86_encoding_form_e {
   LOOM_X86_ENCODING_FORM_RETURN = 24,
   LOOM_X86_ENCODING_FORM_BRANCH_ZERO = 25,
   LOOM_X86_ENCODING_FORM_CALL = 26,
+  // RIP-relative address with a signed displacement in the last four bytes.
+  LOOM_X86_ENCODING_FORM_ADDRESS_PC_RELATIVE = 27,
 } loom_x86_encoding_form_t;
 
 // Native fixup identities. Object adapters supply their format's mapping.
@@ -58,7 +61,45 @@ typedef enum loom_x86_relocation_kind_e {
   LOOM_X86_RELOCATION_NONE = 0,
   // Signed rel32 call displacement, relative to the end of its four-byte field.
   LOOM_X86_RELOCATION_CALL = 1,
+  // Signed rel32 data address, relative to the end of its four-byte field.
+  LOOM_X86_RELOCATION_ADDRESS = 2,
+  // Absolute 64-bit image pointer, relocated by the loader's load bias.
+  LOOM_X86_RELOCATION_POINTER = 3,
 } loom_x86_relocation_kind_t;
+
+enum loom_x86_encoding_format_bits_e {
+  // Marks a packed VEX/EVEX operand recipe. Scalar forms leave this bit clear.
+  LOOM_X86_ENCODING_FORMAT_VECTOR = 1u << 15,
+};
+
+// Packed vector recipes use four-bit selectors for ModRM.reg in bits 0..3,
+// VEX.vvvv or a memory index in bits 4..7, and ModRM.r/m or a memory base in
+// bits 8..11. Memory recipes use selector bit 3 as the EVEX full-vector-tuple
+// flag. Bits 12..14 select the encoding behavior and bit 15 marks the recipe.
+// Selectors name allocated results and inputs or the bounded ModRM opcode
+// extensions used by immediate shift forms.
+typedef enum loom_x86_vector_register_selector_e {
+  LOOM_X86_VECTOR_REGISTER_RESULT = 0,
+  LOOM_X86_VECTOR_REGISTER_INPUT_0 = 1,
+  LOOM_X86_VECTOR_REGISTER_INPUT_1 = 2,
+  LOOM_X86_VECTOR_REGISTER_INPUT_2 = 3,
+  LOOM_X86_VECTOR_REGISTER_NONE = 4,
+  LOOM_X86_VECTOR_REGISTER_FIXED_2 = 5,
+  LOOM_X86_VECTOR_REGISTER_FIXED_3 = 6,
+  LOOM_X86_VECTOR_REGISTER_FIXED_4 = 7,
+  LOOM_X86_VECTOR_REGISTER_FIXED_6 = 8,
+} loom_x86_vector_register_selector_t;
+
+// Bits 12..14 of a packed vector recipe select bounded encoding behavior.
+typedef enum loom_x86_vector_encoding_behavior_e {
+  LOOM_X86_VECTOR_ENCODING_REGISTERS = 0,
+  LOOM_X86_VECTOR_ENCODING_IMMEDIATE = 1,
+  LOOM_X86_VECTOR_ENCODING_BLEND_MASK = 2,
+  LOOM_X86_VECTOR_ENCODING_EVEX_MASK = 3,
+  LOOM_X86_VECTOR_ENCODING_LOAD = 4,
+  LOOM_X86_VECTOR_ENCODING_STORE = 5,
+  LOOM_X86_VECTOR_ENCODING_RIP_LOAD = 6,
+} loom_x86_vector_encoding_behavior_t;
 
 enum loom_x86_encoding_flag_bits_e {
   LOOM_X86_ENCODING_OPCODE_0F = 1u << 8,
@@ -105,7 +146,7 @@ uint16_t loom_x86_encoding_gpr_writes(
 // ranges, legal register classes, and destructive ties are producer invariants.
 // The caller rejects descriptors with FORM_NONE at the target-support boundary.
 void loom_x86_encode_instruction(
-    loom_x86_encoding_form_t form, uint16_t encoding_id,
+    uint16_t encoding_format_id, uint16_t encoding_id,
     const loom_x86_encoding_operands_t* operands,
     loom_x86_encoded_instruction_t* out_instruction);
 

@@ -34,6 +34,16 @@ struct iree_hal_device_group_t {
 
   // Immutable topology matrix built during creation.
   iree_hal_topology_t* topology;
+
+  // Retained source of instrumentation aliases, or NULL for an original group.
+  iree_hal_device_group_t* source_group;
+
+  // Stable namespace identity shared only with explicit instrumentation
+  // aliases.
+  const void* memory_domain;
+
+  // Dense wildcard/host/family site count in the memory namespace.
+  uint32_t memory_scope_count;
 };
 
 IREE_API_EXPORT iree_status_t iree_hal_device_group_create_from_device(
@@ -65,6 +75,7 @@ static void iree_hal_device_group_destroy(iree_hal_device_group_t* group) {
   }
   iree_async_frontier_tracker_release(group->frontier_tracker);
   iree_hal_topology_destroy(group->topology, group->host_allocator);
+  iree_hal_device_group_release(group->source_group);
 
   iree_allocator_t host_allocator = group->host_allocator;
   iree_allocator_free(host_allocator, group);
@@ -105,6 +116,38 @@ IREE_API_EXPORT const iree_hal_topology_t* iree_hal_device_group_topology(
     const iree_hal_device_group_t* group) {
   IREE_ASSERT_ARGUMENT(group);
   return group->topology;
+}
+
+IREE_API_EXPORT const void* iree_hal_device_group_memory_domain(
+    const iree_hal_device_group_t* group) {
+  return group->memory_domain;
+}
+
+IREE_API_EXPORT uint32_t
+iree_hal_device_group_memory_scope_count(const iree_hal_device_group_t* group) {
+  return group->memory_scope_count;
+}
+
+// All fallible device assignment has completed. These canonical cells become
+// immutable with group publication, including for dynamically acquired queues.
+static void iree_hal_device_group_assign_memory_scopes(
+    iree_hal_device_group_t* group) {
+  group->memory_domain =
+      group->source_group ? group->source_group->memory_domain : group;
+  uint32_t scope_id = 2;  // Wildcard zero and the host site precede families.
+  for (iree_host_size_t i = 0; i < group->device_count; ++i) {
+    iree_hal_device_t* device = group->devices[i];
+    const iree_hal_device_queue_spec_t* queues =
+        iree_hal_device_spec_queues(iree_hal_device_spec(device));
+    for (uint32_t j = 0; j < queues->family_count; ++j) {
+      iree_hal_queue_family_t* family =
+          (iree_hal_queue_family_t*)iree_hal_device_queue_family(device, j);
+      family->memory.domain = group->memory_domain;
+      family->memory.queue_scope_id = scope_id;
+      scope_id += 2;
+    }
+  }
+  group->memory_scope_count = scope_id;
 }
 
 //===----------------------------------------------------------------------===//
@@ -244,6 +287,8 @@ IREE_API_EXPORT iree_status_t iree_hal_device_group_create_with_replacements(
   group->host_allocator = host_allocator;
   group->device_count = device_count;
   group->frontier_tracker = source_group->frontier_tracker;
+  group->source_group = source_group;
+  iree_hal_device_group_retain(source_group);
   iree_async_frontier_tracker_retain(group->frontier_tracker);
   status = iree_hal_topology_clone(source_group->topology, host_allocator,
                                    &group->topology);
@@ -261,6 +306,18 @@ IREE_API_EXPORT iree_status_t iree_hal_device_group_create_with_replacements(
     }
     if (iree_status_is_ok(status)) {
       group->devices[i] = replacement_device;
+      const iree_hal_device_queue_spec_t* source_queues =
+          iree_hal_device_spec_queues(
+              iree_hal_device_spec(source_group->devices[i]));
+      const iree_hal_device_spec_t* replacement_spec =
+          iree_hal_device_spec(replacement_device);
+      if (!replacement_spec ||
+          source_queues->family_count !=
+              iree_hal_device_spec_queues(replacement_spec)->family_count) {
+        status = iree_make_status(
+            IREE_STATUS_INVALID_ARGUMENT,
+            "replacement device must preserve canonical queue family ordinals");
+      }
     } else {
       iree_hal_device_release(replacement_device);
     }
@@ -293,6 +350,7 @@ IREE_API_EXPORT iree_status_t iree_hal_device_group_create_with_replacements(
   }
 
   if (iree_status_is_ok(status)) {
+    iree_hal_device_group_assign_memory_scopes(group);
     *out_group = group;
   } else {
     for (iree_host_size_t i = 0; i < assigned_device_count; ++i) {
@@ -425,6 +483,7 @@ IREE_API_EXPORT iree_status_t iree_hal_device_group_builder_finalize(
   }
 
   if (iree_status_is_ok(status)) {
+    iree_hal_device_group_assign_memory_scopes(group);
     *out_group = group;
   } else {
     for (iree_host_size_t i = 0; i < assigned_device_count; ++i) {

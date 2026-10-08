@@ -287,6 +287,46 @@ TEST_F(NotificationRingTest, SingleNotification) {
   iree_async_semaphore_release(semaphore);
 }
 
+TEST_F(NotificationRingTest, DeviceCompletionWaitsForHostPublication) {
+  IREE_ASSERT_OK_AND_ASSIGN(auto ring, InitializeRing());
+  iree_async_semaphore_t* semaphore = CreateSemaphore();
+  PreSignalActionState action_state = {semaphore, 0};
+  auto* reclaim_entry = ReclaimEntryForNextEpoch(ring.get(), 64);
+  reclaim_entry->pre_signal_action = {
+      VerifySemaphoreNotVisibleBeforePreSignalAction, &action_state};
+  const uint64_t epoch =
+      iree_hal_amdgpu_notification_ring_advance_epoch(ring.get());
+  PushNotification(ring.get(), epoch, semaphore, 1);
+
+  // The GPU can finish assembled packets while the submitting thread still
+  // holds their host resources. Neither retirement nor user completion is
+  // visible until that thread publishes its final resource accesses.
+  iree_hsa_signal_store_screlease(
+      IREE_LIBHSA(&libhsa), ring->epoch.signal,
+      (hsa_signal_value_t)(IREE_HAL_AMDGPU_EPOCH_INITIAL_VALUE - epoch));
+  uint64_t kernarg_position = 0;
+  EXPECT_EQ(
+      iree_hal_amdgpu_notification_ring_drain(
+          ring.get(), EmptyFrontier(), nullptr, nullptr, &kernarg_position),
+      0u);
+  EXPECT_EQ(action_state.callback_count, 0);
+  EXPECT_EQ(iree_async_semaphore_query(semaphore), 0u);
+  EXPECT_EQ(kernarg_position, 0u);
+  EXPECT_EQ(
+      iree_atomic_load(&ring->epoch.last_drained, iree_memory_order_acquire),
+      0);
+
+  iree_hal_amdgpu_notification_ring_publish_epoch(ring.get(), epoch);
+  EXPECT_EQ(
+      iree_hal_amdgpu_notification_ring_drain(
+          ring.get(), EmptyFrontier(), nullptr, nullptr, &kernarg_position),
+      1u);
+  EXPECT_EQ(action_state.callback_count, 1);
+  EXPECT_EQ(iree_async_semaphore_query(semaphore), 1u);
+  EXPECT_EQ(kernarg_position, 64u);
+  iree_async_semaphore_release(semaphore);
+}
+
 TEST_F(NotificationRingTest, MultiplePerEpochAndSparseEpochs) {
   IREE_ASSERT_OK_AND_ASSIGN(auto ring, InitializeRing());
   iree_async_semaphore_t* semaphore_a = CreateSemaphore();

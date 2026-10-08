@@ -84,19 +84,20 @@ TEST(LoomcFullPackageTest, LinksCoreAndSpirvTargetPackages) {
   };
   EXPECT_EQ(vulkan_functions.type,
             LOOMC_STRUCTURE_TYPE_SPIRV_VULKAN_FUNCTION_TABLE);
-  loomc_iree_hal_profile_options_t hal_options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_IREE_HAL_PROFILE_OPTIONS,
+  loomc_iree_hal_target_options_t hal_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_IREE_HAL_TARGET_OPTIONS,
       /*.structure_size=*/sizeof(hal_options),
       /*.next=*/nullptr,
       /*.identifier=*/loomc_make_cstring_view("full-package"),
       /*.device=*/nullptr,
       /*.physical_device_affinity=*/0,
+      /*.target_profile=*/nullptr,
       /*.providers=*/nullptr,
       /*.provider_count=*/0,
   };
-  EXPECT_EQ(hal_options.type, LOOMC_STRUCTURE_TYPE_IREE_HAL_PROFILE_OPTIONS);
-  const loomc_iree_hal_profile_provider_t* provider =
-      loomc_spirv_iree_hal_profile_provider();
+  EXPECT_EQ(hal_options.type, LOOMC_STRUCTURE_TYPE_IREE_HAL_TARGET_OPTIONS);
+  const loomc_iree_hal_target_provider_t* provider =
+      loomc_spirv_iree_hal_target_provider();
   ASSERT_NE(provider, nullptr);
 
   loomc_target_environment_t* target_environment = nullptr;

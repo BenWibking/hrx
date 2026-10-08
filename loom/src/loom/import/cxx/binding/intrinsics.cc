@@ -128,12 +128,14 @@ void Intrinsics::declaration(cxx::FunctionSymbol* function,
                                              owner)) {
       diagnostics_.reject(unit_, owner,
                           "template.apply requires an ordinary function");
+    } else if (SubgroupIntrinsic::supports(selected->arguments[0]->name())) {
+      // Concrete specialization owns source type and template-argument
+      // validation. Retain the complete descriptor until those are known.
     } else if (selected->arguments.size() != 1 ||
                (!ViewIntrinsic::supports(selected->arguments[0]->name()) &&
                 !DecodeIntrinsic::supports(selected->arguments[0]->name()) &&
                 !AtomicIntrinsic::supports(selected->arguments[0]->name()) &&
                 !FenceIntrinsic::supports(selected->arguments[0]->name()) &&
-                !SubgroupIntrinsic::supports(selected->arguments[0]->name()) &&
                 !BarrierIntrinsic::supports(selected->arguments[0]->name()) &&
                 !CheckIntrinsic::parse_operation(
                     selected->arguments[0]->name()) &&
@@ -174,7 +176,7 @@ Intrinsics::Binding Intrinsics::resolve(cxx::FunctionSymbol* function,
   if (auto family = TemplateApplyIntrinsic::admit(unit_, diagnostics_,
                                                   attribute, owner)) {
     return TemplateApplyIntrinsic::resolve(
-        unit_, diagnostics_, types_, function,
+        unit_, diagnostics_, types_, function_contracts_, function,
         intern_template_family(*family, owner), locations_.get(owner), owner);
   }
   if (auto decode = DecodeIntrinsic::resolve(

@@ -507,7 +507,8 @@ static iree_status_t loom_aie2p_legalize_vector_store(
     // native-width and accumulator stores retain their selected realization.
     const uint64_t payload_bit_count =
         (uint64_t)loom_type_dim_static_size_at(value_type, 0) *
-        loom_scalar_type_bitwidth(loom_type_element_type(value_type));
+        loom_aie2p_scalar_type_physical_bit_count(
+            loom_type_element_type(value_type));
     if (payload_bit_count != 1024) {
       return iree_ok_status();
     }

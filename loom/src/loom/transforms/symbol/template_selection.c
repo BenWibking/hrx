@@ -18,6 +18,7 @@
 #include "loom/analysis/symbol_liveness.h"
 #include "loom/analysis/symbol_references.h"
 #include "loom/analysis/template_provider_catalog.h"
+#include "loom/ir/attribute.h"
 #include "loom/ir/context.h"
 #include "loom/ir/facts.h"
 #include "loom/ir/local_value_domain.h"
@@ -413,7 +414,7 @@ static iree_string_view_t loom_template_selection_context_symbol_name(
                                context->source_symbol->name_id);
 }
 
-static iree_string_view_t loom_template_selection_unresolved_reason_code(
+static iree_string_view_t loom_template_selection_constraint_reason_code(
     loom_template_provider_unresolved_reason_t reason) {
   switch (reason) {
     case LOOM_TEMPLATE_PROVIDER_UNRESOLVED_TARGET_IDENTITY:
@@ -584,7 +585,7 @@ static iree_status_t loom_template_selection_append_report_detail(
         loom_template_selection_contract_role_code(entry->blocker_contract));
     fields[field_count++] = loom_pass_report_detail_string_field(
         IREE_SV("unresolved_reason"),
-        loom_template_selection_unresolved_reason_code(
+        loom_template_selection_constraint_reason_code(
             entry->unresolved_reason));
   }
   if (entry->unresolved_target_condition) {
@@ -610,6 +611,84 @@ static iree_status_t loom_template_selection_append_report_detail(
       IREE_SV("best_match_count"), best_match_count);
   return loom_pass_report_append_detail(
       state->pass, IREE_SV("template-selection"), fields, field_count);
+}
+
+static iree_string_view_t loom_template_selection_provider_outcome(
+    loom_decision_truth_t feasibility) {
+  switch (feasibility) {
+    case LOOM_DECISION_TRUTH_TRUE:
+      return IREE_SV("accepted");
+    case LOOM_DECISION_TRUTH_FALSE:
+      return IREE_SV("rejected");
+    case LOOM_DECISION_TRUTH_UNKNOWN:
+      return IREE_SV("unresolved");
+  }
+  IREE_ASSERT_UNREACHABLE("invalid provider feasibility");
+  IREE_BUILTIN_UNREACHABLE();
+}
+
+static iree_status_t loom_template_selection_append_provider_reports(
+    loom_template_selection_state_t* state,
+    const loom_symbol_liveness_contributor_context_t* context,
+    const loom_template_application_result_t* entry,
+    const loom_template_decision_model_t* model) {
+  // A family-level decision leaves provider evidence deliberately untouched.
+  if (!state->reports_enabled || model == NULL ||
+      entry->blocker_contract == LOOM_TEMPLATE_CONTRACT_FAMILY) {
+    return iree_ok_status();
+  }
+
+  for (uint32_t choice_ordinal = 0;
+       choice_ordinal < model->program.choice_count; ++choice_ordinal) {
+    const loom_decision_program_choice_t* choice =
+        &model->program.choices[choice_ordinal];
+    const loom_template_provider_summary_t* provider =
+        loom_template_decision_model_provider(model, choice->action_ordinal);
+    const loom_decision_program_choice_evidence_t* evidence =
+        &state->decision_scratch.provider_evidence[choice_ordinal];
+    loom_pass_report_detail_field_t fields[10];
+    uint16_t field_count = 0;
+    fields[field_count++] = loom_pass_report_detail_string_field(
+        IREE_SV("outcome"),
+        loom_template_selection_provider_outcome(evidence->feasibility));
+    fields[field_count++] = loom_pass_report_detail_string_field(
+        IREE_SV("function"),
+        loom_template_selection_context_symbol_name(state, context));
+    fields[field_count++] = loom_pass_report_detail_string_field(
+        IREE_SV("application_op"),
+        loom_op_name(state->module, entry->application_op));
+    fields[field_count++] = loom_pass_report_detail_string_field(
+        IREE_SV("family"), entry->family_name);
+    fields[field_count++] = loom_pass_report_detail_string_field(
+        IREE_SV("provider"), provider->name);
+    fields[field_count++] = loom_pass_report_detail_int64_field(
+        IREE_SV("priority"), provider->priority);
+    fields[field_count++] = loom_pass_report_detail_bool_field(
+        IREE_SV("selected"), entry->selected_provider == provider);
+
+    const loom_template_decision_constraint_info_t constraint_info =
+        loom_template_decision_model_constraint_info(
+            model, evidence->decisive_constraint);
+    if (constraint_info.reason != LOOM_TEMPLATE_PROVIDER_UNRESOLVED_NONE) {
+      fields[field_count++] = loom_pass_report_detail_string_field(
+          IREE_SV("constraint"), loom_template_selection_constraint_reason_code(
+                                     constraint_info.reason));
+    }
+    if (constraint_info.target_condition != NULL) {
+      fields[field_count++] = loom_pass_report_detail_string_field(
+          IREE_SV("condition"),
+          loom_template_application_condition_name(
+              state->module, constraint_info.target_condition));
+    }
+    if (constraint_info.value_predicate != NULL) {
+      fields[field_count++] = loom_pass_report_detail_string_field(
+          IREE_SV("predicate"), iree_make_cstring_view(loom_predicate_kind_name(
+                                    constraint_info.value_predicate->kind)));
+    }
+    IREE_RETURN_IF_ERROR(loom_pass_report_append_detail(
+        state->pass, IREE_SV("template-provider"), fields, field_count));
+  }
+  return iree_ok_status();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1027,12 +1106,14 @@ static iree_status_t loom_template_selection_analyze_apply(
 
   const loom_template_decision_evidence_summary_t* summary =
       &state->decision_scratch.summary;
-  return loom_template_selection_append_report_detail(
+  IREE_RETURN_IF_ERROR(loom_template_selection_append_report_detail(
       state, context, entry, &apply_target, model ? model->providers.count : 0,
       summary->target_identity_match_count,
       summary->target_identity_unresolved_count, summary->possible_count,
       summary->best_match_count,
-      model ? model->highest_provider_priority : INT64_MIN);
+      model ? model->highest_provider_priority : INT64_MIN));
+  return loom_template_selection_append_provider_reports(state, context, entry,
+                                                         model);
 }
 
 static iree_status_t loom_template_selection_analyze_exact_call(

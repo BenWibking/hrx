@@ -39,6 +39,21 @@ iree_cc_library(
 
 iree_cc_library(
   NAME
+    pool_test_util
+  HDRS
+    "pool_test_util.h"
+  SRCS
+    "pool_test_util.cc"
+  DEPS
+    iree::hal
+    iree::hal::memory::fixed_block_pool
+    iree::hal::memory::passthrough_pool
+  TESTONLY
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
     profile_test_util
   HDRS
     "profile_test_util.h"

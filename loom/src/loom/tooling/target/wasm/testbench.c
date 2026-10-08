@@ -18,11 +18,6 @@
 #include "loom/tooling/config/config.h"
 #include "loom/tooling/target/wasm/host.h"
 
-const loom_run_execution_provider_t loom_wasm_execution_provider = {
-    .name = IREE_SVL("wasm"),
-    .compiler_provider_set = &loom_wasm_compiler_provider_set,
-};
-
 enum {
   LOOM_WASM_TESTBENCH_ROOT_ALIGNMENT = 16,
   LOOM_WASM_TESTBENCH_NO_ROOT = UINT32_MAX,
@@ -652,8 +647,9 @@ static iree_status_t loom_wasm_testbench_execute_call(
     if (has_memory) {
       status = iree_hal_buffer_map_range(
           root, IREE_HAL_MAPPING_MODE_SCOPED,
-          IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE, 0,
-          IREE_HAL_WHOLE_BUFFER, &product->root_mappings[i]);
+          IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
+          IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, 0, IREE_HAL_WHOLE_BUFFER,
+          &product->root_mappings[i]);
       if (iree_status_is_ok(status)) {
         ++mapped_count;
         product->root_regions[i].data = product->root_mappings[i].contents.data;

@@ -71,3 +71,20 @@ func.def @i8x128_legal_boundary(%lhs: vector<128xi8>, %rhs: vector<128xi8>, %mas
   %xor = vector.concat<0> %17, %20 : vector<64xi8>, vector<64xi8> -> vector<128xi8>
   func.return %minimum, %xor : vector<128xi8>, vector<128xi8>
 }
+
+// ====
+
+func.def @i8x33_signed_extension(%input: vector<33xi8>) -> (vector<33xi32>) {
+  %result = vector.extsi %input : vector<33xi8> to vector<33xi32>
+  func.return %result : vector<33xi32>
+}
+
+// ----
+func.def @i8x33_signed_extension(%input: vector<33xi8>) -> (vector<33xi32>) {
+  %3 = vector.slice %input[0] : vector<33xi8> -> vector<32xi8>
+  %4 = vector.extsi %3 : vector<32xi8> to vector<32xi32>
+  %5 = vector.slice %input[32] : vector<33xi8> -> vector<1xi8>
+  %6 = vector.extsi %5 : vector<1xi8> to vector<1xi32>
+  %result = vector.concat<0> %4, %6 : vector<32xi32>, vector<1xi32> -> vector<33xi32>
+  func.return %result : vector<33xi32>
+}

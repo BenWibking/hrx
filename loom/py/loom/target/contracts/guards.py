@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import Enum, unique
+from enum import Enum, IntEnum, unique
 from typing import Self
 
 from loom.dsl import (
@@ -43,12 +43,30 @@ _MAX_U32 = 0xFFFFFFFF
 
 
 @unique
+class UnsignedDivisorMagicKind(IntEnum):
+    """Arithmetic shape of an exact word-sized reciprocal recipe."""
+
+    MULTIPLY = 0
+    MULTIPLY_SHIFT = 1
+    MULTIPLY_ADD_SHIFT = 2
+
+    @property
+    def has_add(self) -> bool:
+        return self is self.MULTIPLY_ADD_SHIFT
+
+    @property
+    def has_shift(self) -> bool:
+        return self is not self.MULTIPLY
+
+
+@unique
 class GuardKind(Enum):
     """Selection guard kind for descriptor-rule contracts."""
 
     VALUE_TYPE = "value_type"
     ATTR_KIND = "attr_kind"
     ENUM_ATTR_EQUALS = "enum_attr_equals"
+    ENUM_ATTR_IN = "enum_attr_in"
     I64_RANGE = "i64_range"
     DESCRIPTOR_AVAILABLE = "descriptor_available"
     VALUE_MATERIALIZABLE = "value_materializable"
@@ -64,7 +82,7 @@ class GuardKind(Enum):
     VALUE_UNSIGNED_BIT_COUNT = "value_unsigned_bit_count"
     VALUE_EXACT_I64 = "value_exact_i64"
     VALUE_EXACT_POWER_OF_TWO_I64 = "value_exact_power_of_two_i64"
-    VALUE_U32_DIVISOR_MAGIC_IS_ADD = "value_u32_divisor_magic_is_add"
+    VALUE_U32_DIVISOR_MAGIC_KIND = "value_u32_divisor_magic_kind"
     VALUE_EXACT_FLOAT = "value_exact_float"
     VALUE_NOT_NAN = "value_not_nan"
     VALUE_I64_RANGE = "value_i64_range"
@@ -135,6 +153,7 @@ class Guard:
     value_ref: ValueRef | None = None
     attr_type: str | None = None
     enum_keyword: str | None = None
+    enum_keywords: tuple[str, ...] = ()
     count: int | None = None
     element: int | None = None
     minimum: int | None = None
@@ -224,6 +243,25 @@ class Guard:
             kind=GuardKind.ENUM_ATTR_EQUALS,
             field=field,
             enum_keyword=keyword,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
+    def enum_attr_in(
+        cls,
+        field: str,
+        enum_cases: Sequence[str | EnumCase],
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        keywords = tuple(
+            enum_case.keyword if isinstance(enum_case, EnumCase) else enum_case
+            for enum_case in enum_cases
+        )
+        return cls(
+            kind=GuardKind.ENUM_ATTR_IN,
+            field=field,
+            enum_keywords=keywords,
             diagnostic=diagnostic,
         )
 
@@ -460,17 +498,19 @@ class Guard:
         )
 
     @classmethod
-    def value_u32_divisor_magic_is_add(
+    def value_u32_divisor_magic_kind(
         cls,
-        field: str,
-        is_add: bool,
+        numerator: str,
+        divisor: str,
+        kind: UnsignedDivisorMagicKind,
         *,
         diagnostic: GuardDiagnostic | None = None,
     ) -> Self:
         return cls(
-            kind=GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
-            field=field,
-            count=1 if is_add else 0,
+            kind=GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
+            field=divisor,
+            other_field=numerator,
+            count=kind,
             diagnostic=diagnostic,
         )
 
@@ -759,6 +799,15 @@ class Guard:
             raise ValueError(f"{self.kind.value} attr type must be non-empty")
         if self.enum_keyword is not None and not self.enum_keyword:
             raise ValueError(f"{self.kind.value} enum keyword must be non-empty")
+        if self.kind == GuardKind.ENUM_ATTR_IN:
+            if not self.enum_keywords:
+                raise ValueError(f"{self.kind.value} guard needs enum keywords")
+            if any(not keyword for keyword in self.enum_keywords):
+                raise ValueError(f"{self.kind.value} enum keywords must be non-empty")
+            if len(self.enum_keywords) != len(set(self.enum_keywords)):
+                raise ValueError(f"{self.kind.value} guard repeats an enum keyword")
+        elif self.enum_keywords:
+            raise ValueError(f"{self.kind.value} guard cannot carry enum keywords")
         if self.count is not None and self.count < 0:
             raise ValueError(f"{self.kind.value} count must be non-negative")
         if self.element is not None and self.element < 0:
@@ -834,26 +883,33 @@ class Guard:
             if self.attr_type is None:
                 raise ValueError(f"{source_op.name}: {subject} needs an attr type")
             return
-        if self.kind == GuardKind.ENUM_ATTR_EQUALS:
+        if self.kind in (GuardKind.ENUM_ATTR_EQUALS, GuardKind.ENUM_ATTR_IN):
             attr = _require_attr(source_op, self.field, subject)
             if attr.attr_type != ATTR_TYPE_ENUM:
                 raise ValueError(
                     f"{source_op.name}: {subject} field '{self.field}' "
                     "must be an enum attr"
                 )
-            if self.enum_keyword is None:
-                raise ValueError(f"{source_op.name}: {subject} needs an enum keyword")
             enum_def = attr.enum_def
             if enum_def is None:
                 raise ValueError(
                     f"{source_op.name}: {subject} field '{self.field}' "
                     "has no enum definition"
                 )
-            if self.enum_keyword not in enum_def.keywords:
-                raise ValueError(
-                    f"{source_op.name}: {subject} field '{self.field}' "
-                    f"has no enum case '{self.enum_keyword}'"
-                )
+            keywords = (
+                (self.enum_keyword,)
+                if self.kind == GuardKind.ENUM_ATTR_EQUALS
+                else self.enum_keywords
+            )
+            if keywords == (None,):
+                raise ValueError(f"{source_op.name}: {subject} needs an enum keyword")
+            for keyword in keywords:
+                assert keyword is not None
+                if keyword not in enum_def.keywords:
+                    raise ValueError(
+                        f"{source_op.name}: {subject} field '{self.field}' "
+                        f"has no enum case '{keyword}'"
+                    )
             return
         if self.kind == GuardKind.I64_RANGE:
             attr = _require_attr(source_op, self.field, subject)
@@ -892,7 +948,7 @@ class Guard:
             GuardKind.VALUE_UNSIGNED_BIT_COUNT,
             GuardKind.VALUE_EXACT_I64,
             GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
-            GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+            GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_EXACT_FLOAT,
             GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_I64_RANGE,
@@ -1017,10 +1073,13 @@ def _validate_value_fact_guard(
         if guard.count is None or guard.count <= 0:
             raise ValueError(f"{source_op.name}: {subject} needs a positive bit count")
         return
-    if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD:
-        if guard.count not in (0, 1):
+    if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND:
+        if guard.other_field is None:
+            raise ValueError(f"{source_op.name}: {subject} needs a numerator")
+        _require_value(source_op, guard.other_field, subject)
+        if not isinstance(guard.count, UnsignedDivisorMagicKind):
             raise ValueError(
-                f"{source_op.name}: {subject} needs an expected add indicator"
+                f"{source_op.name}: {subject} needs a reciprocal recipe kind"
             )
         return
     if guard.kind == GuardKind.VALUE_I64_RANGE and (

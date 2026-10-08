@@ -58,6 +58,9 @@ loom_memory_access_flags_t Types::memory_access_flags(const cxx::Type* input) {
 }
 
 const Partition& Types::partition(const cxx::Type* input, cxx::AST* owner) {
+  if (auto* admitted = array(input, owner)) {
+    return *admitted;
+  }
   if (auto* admitted = special(input, owner)) {
     return *admitted;
   }
@@ -74,16 +77,39 @@ bool Types::requires_binding(const cxx::Type* input, cxx::AST* owner) {
   if (admitted.kind == ValueKind::View) {
     return true;
   }
-  if (admitted.kind != ValueKind::Record) {
-    return false;
+  return admitted.kind == ValueKind::Record
+             ? static_cast<const RecordPartition&>(admitted).requires_binding
+         : admitted.kind == ValueKind::Array
+             ? static_cast<const ArrayPartition&>(admitted).requires_binding
+             : false;
+}
+
+const ArrayPartition* Types::array(const cxx::Type* input, cxx::AST* owner) {
+  auto* source = cxx::type_cast<cxx::BoundedArrayType>(unqualified(input));
+  if (!source) {
+    return nullptr;
   }
-  const auto& record = static_cast<const RecordPartition&>(admitted);
-  for (const auto& member : record.members) {
-    if (requires_binding(member.field->type(), owner)) {
-      return true;
-    }
+  if (unit_.typeTraits().is_volatile(input)) {
+    diagnostics_.reject(unit_, owner,
+                        "volatile objects require addressable storage");
   }
-  return false;
+  if (auto found = arrays_.find(source); found != arrays_.end()) {
+    return found->second.get();
+  }
+  const auto& element = partition(source->elementType(), owner);
+  if (element.component_count &&
+      source->size() > SIZE_MAX / element.component_count) {
+    diagnostics_.reject(unit_, owner, "array value component count overflows");
+  }
+  auto result = std::make_unique<ArrayPartition>();
+  result->kind = ValueKind::Array;
+  result->component_count = source->size() * element.component_count;
+  result->source = source;
+  result->element = &element;
+  result->requires_binding = requires_binding(source->elementType(), owner);
+  auto* admitted = result.get();
+  arrays_.emplace(source, std::move(result));
+  return admitted;
 }
 
 const Partition* Types::special(const cxx::Type* input, cxx::AST* owner) {
@@ -349,11 +375,10 @@ const RecordPartition* Types::record(const cxx::Type* input, cxx::AST* owner) {
     if (!field || field->isStatic()) {
       continue;
     }
-    if (field->isBitField() || traits.is_reference(field->type()) ||
-        traits.is_array(field->type())) {
+    if (field->isBitField() || traits.is_reference(field->type())) {
       diagnostics_.reject(
           unit_, owner,
-          "record value fields cannot be bitfields, references or arrays");
+          "record value fields cannot be bitfields or references");
     }
     auto& member_partition = partition(field->type(), owner);
     MemberPartition member{field, &member_partition, result->component_count};
@@ -362,6 +387,7 @@ const RecordPartition* Types::record(const cxx::Type* input, cxx::AST* owner) {
     auto name = cxx::to_string(field->name());
     append_component_names(member_partition, name, result->component_names);
     result->component_count += member_partition.component_count;
+    result->requires_binding |= requires_binding(field->type(), owner);
   }
   auto* admitted = result.get();
   records_.emplace(source, std::move(result));
@@ -392,6 +418,15 @@ void Types::append_component_names(const Partition& partition,
       const auto& record = static_cast<const RecordPartition&>(partition);
       for (const auto& name : record.component_names) {
         append(name);
+      }
+      return;
+    }
+    case ValueKind::Array: {
+      const auto& array = static_cast<const ArrayPartition&>(partition);
+      for (size_t index = 0; index < array.source->size(); ++index) {
+        append_component_names(
+            *array.element, std::string(prefix) + "_" + std::to_string(index),
+            output);
       }
       return;
     }
@@ -674,6 +709,19 @@ void Types::append_bound(const cxx::Type* input, cxx::AST* owner,
                 : identities.subspan(member.component_offset,
                                      member.partition->component_count);
         append_bound(member.field->type(), owner, member_identities, output);
+      }
+      return;
+    }
+    case ValueKind::Array: {
+      const auto& array = static_cast<const ArrayPartition&>(admitted);
+      for (size_t index = 0; index < array.source->size(); ++index) {
+        auto element_identities =
+            identities.empty()
+                ? std::span<const loom_value_id_t>{}
+                : identities.subspan(index * array.element->component_count,
+                                     array.element->component_count);
+        append_bound(array.source->elementType(), owner, element_identities,
+                     output);
       }
       return;
     }

@@ -12,6 +12,7 @@
 #include "iree/hal/atomic.h"
 #include "iree/hal/buffer.h"
 #include "iree/hal/memory/asan.h"
+#include "iree/hal/pool.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,16 +24,6 @@ typedef struct iree_hal_slab_provider_vtable_t iree_hal_slab_provider_vtable_t;
 //===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
-
-// Flags controlling trim behavior.
-typedef uint32_t iree_hal_slab_provider_trim_flags_t;
-enum iree_hal_slab_provider_trim_flag_bits_e {
-  IREE_HAL_SLAB_PROVIDER_TRIM_FLAG_NONE = 0u,
-  // Release all cached/unused resources regardless of retention policy.
-  IREE_HAL_SLAB_PROVIDER_TRIM_FLAG_ALL = 1u << 0,
-  // Release only resources above the target retention level.
-  IREE_HAL_SLAB_PROVIDER_TRIM_FLAG_EXCESS = 1u << 1,
-};
 
 // Immutable properties of slabs acquired from a provider.
 typedef struct iree_hal_slab_provider_properties_t {
@@ -46,6 +37,15 @@ typedef struct iree_hal_slab_provider_properties_t {
   // IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY means every queue family in the
   // containing logical device.
   iree_hal_queue_family_affinity_t queue_family_affinity;
+
+  // Guaranteed power-of-two alignment of acquired slab byte zero.
+  iree_device_size_t allocation_alignment;
+
+  // Largest power-of-two alignment accepted for an individual acquisition.
+  iree_device_size_t max_allocation_alignment;
+
+  // Smallest independently maintained byte granule; one for coherent storage.
+  iree_device_size_t maintenance_alignment;
 
   // Atomic operations supported by naturally aligned slab locations.
   iree_hal_atomic_operation_capabilities_t atomic_operations;
@@ -162,10 +162,13 @@ void iree_hal_slab_provider_retain(iree_hal_slab_provider_t* provider);
 // Releases a reference. Destroys the provider when the count reaches zero.
 void iree_hal_slab_provider_release(iree_hal_slab_provider_t* provider);
 
-// Acquires a slab of at least |min_length| bytes from the provider.
+// Acquires a slab of at least |min_length| bytes from the provider. The caller
+// has validated the nonzero power-of-two |min_alignment| against the provider's
+// maximum. The returned storage satisfies both this request and the provider's
+// guaranteed allocation alignment.
 iree_status_t iree_hal_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab);
+    iree_device_size_t min_alignment, iree_hal_slab_t* out_slab);
 
 // Releases a previously acquired slab back to the provider.
 void iree_hal_slab_provider_release_slab(iree_hal_slab_provider_t* provider,
@@ -175,8 +178,8 @@ void iree_hal_slab_provider_release_slab(iree_hal_slab_provider_t* provider,
 // buffer implementation for that slab's memory.
 //
 // |slab_offset| and |allocation_size| define the byte range relative to the
-// slab's base. The range must lie fully inside [0, slab->length). |params| is
-// canonicalized before dispatch.
+// slab's base. The range must lie fully inside [0, slab->length). |params|
+// carries the owner's resolved permissions; zero usage grants no operations.
 iree_status_t iree_hal_slab_provider_wrap_buffer(
     iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
     iree_device_size_t slab_offset, iree_device_size_t allocation_size,
@@ -198,22 +201,27 @@ iree_status_t iree_hal_slab_provider_validate_asan_options(
 // |backing_offset| identifies the beginning of |layout|'s backing range within
 // |slab|. The provider uses |layout| to locate the user-visible range and
 // poison/unpoison bytes in its target-specific shadow state according to
-// |advice_flags|. This hook must be infallible after enabled ASAN options have
-// been accepted by iree_hal_slab_provider_validate_asan_options().
+// |advice_flags|. The caller establishes actual completion of prior accesses
+// before changing shadow state. This hook must be infallible after enabled ASAN
+// options have been accepted by iree_hal_slab_provider_validate_asan_options().
 void iree_hal_slab_provider_advise_asan_range(
     iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
     iree_device_size_t backing_offset,
     iree_hal_asan_range_advice_flags_t advice_flags,
     const iree_hal_asan_allocation_layout_t* layout);
 
-// Prepares a slab for use (page faulting, NUMA pinning, etc.).
+// Prepares an exclusively owned, retired range (page faulting, first touch,
+// etc.). May change contents inside the range, never outside it. The caller
+// establishes actual completion of prior users before requesting preparation.
 void iree_hal_slab_provider_prefault(iree_hal_slab_provider_t* provider,
-                                     iree_hal_slab_t* slab);
+                                     const iree_hal_slab_t* slab,
+                                     iree_device_size_t offset,
+                                     iree_device_size_t length);
 
 // Releases unused cached resources. Passes |flags| through to the provider
 // and any inner providers in the chain.
 void iree_hal_slab_provider_trim(iree_hal_slab_provider_t* provider,
-                                 iree_hal_slab_provider_trim_flags_t flags);
+                                 iree_hal_pool_trim_flags_t flags);
 
 // Accumulates statistics from the provider (and any inner providers).
 // |visited| prevents double-counting across shared provider chains.
@@ -234,6 +242,29 @@ bool iree_hal_slab_provider_visited(
     iree_hal_slab_provider_visited_set_t* visited,
     const iree_hal_slab_provider_t* provider);
 
+// Prepared buffer facts embedded beside stable pool-owned slab metadata.
+// The slab, provider, progress owner, and tracker are borrowed for that
+// lifetime.
+typedef struct iree_hal_slab_buffer_backing_t {
+  // Immutable facts shared by materialized views of this slab.
+  iree_hal_buffer_backing_facts_t facts;
+  // Native lifecycle dispatch using this object's stable address.
+  iree_hal_buffer_range_advice_t advice;
+  // Native provider borrowed from the allocation owner.
+  iree_hal_slab_provider_t* provider;
+  // Stable native slab descriptor borrowed from the allocation owner.
+  const iree_hal_slab_t* slab;
+} iree_hal_slab_buffer_backing_t;
+
+// Initializes facts after the slab descriptor reaches its stable owned address.
+// |min_alignment| is the alignment used to acquire this slab.
+void iree_hal_slab_buffer_backing_initialize(
+    iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
+    iree_device_size_t min_alignment, iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* tracker,
+    iree_hal_memory_maintenance_t* maintenance,
+    iree_hal_slab_buffer_backing_t* out_backing);
+
 //===----------------------------------------------------------------------===//
 // iree_hal_slab_provider_t vtable
 //===----------------------------------------------------------------------===//
@@ -247,6 +278,7 @@ struct iree_hal_slab_provider_vtable_t {
   // release_slab when done.
   iree_status_t (*acquire_slab)(iree_hal_slab_provider_t* provider,
                                 iree_device_size_t min_length,
+                                iree_device_size_t min_alignment,
                                 iree_hal_slab_t* out_slab);
 
   // Releases a previously acquired slab back to the platform.
@@ -287,24 +319,17 @@ struct iree_hal_slab_provider_vtable_t {
                             iree_hal_asan_range_advice_flags_t advice_flags,
                             const iree_hal_asan_allocation_layout_t* layout);
 
-  // Prepares a slab for use after acquisition. Called by the slab cache's
-  // background thread after acquire_slab() succeeds and before the slab is
-  // placed on the ready freelist.
-  //
-  // Provider-specific preparation:
-  //   CPU (Linux): madvise(MADV_POPULATE_WRITE) to force page allocation
-  //     and zeroing, eliminating lazy zero-fill page faults on first write.
-  //   CPU (Windows): PrefetchVirtualMemory or page-strided writes.
-  //   CPU (any): NUMA pinning via mbind + first-touch policy.
-  // Providers where acquire_slab already commits all pages implement this
-  // as an empty function.
-  void (*prefault)(iree_hal_slab_provider_t* provider, iree_hal_slab_t* slab);
+  // Prepares only the requested range after prior accesses have completed.
+  // Providers whose allocations already commit every page may do nothing.
+  void (*prefault)(iree_hal_slab_provider_t* provider,
+                   const iree_hal_slab_t* slab, iree_device_size_t offset,
+                   iree_device_size_t length);
 
   // Releases unused cached resources. Caching providers release freelisted
   // slabs back to their inner provider. Non-caching providers do nothing.
   // |flags| controls which resources are released (ALL vs EXCESS).
   void (*trim)(iree_hal_slab_provider_t* provider,
-               iree_hal_slab_provider_trim_flags_t flags);
+               iree_hal_pool_trim_flags_t flags);
 
   // Accumulates this provider's statistics into |out_stats|. Wrapping
   // providers call into their inner provider first, then add their own

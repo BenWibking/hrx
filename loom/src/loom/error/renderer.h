@@ -58,6 +58,14 @@ typedef struct loom_type_formatter_t {
   void* user_data;
 } loom_type_formatter_t;
 
+// Renders one diagnostic parameter value using the canonical human-readable
+// spelling shared by messages, structured diagnostic consumers, and tests.
+// Type parameters use |type_formatter| and fall back to "<type>" when its
+// callback is NULL.
+iree_status_t loom_diagnostic_render_param_value(
+    const loom_diagnostic_param_t* param, loom_type_formatter_t type_formatter,
+    loom_output_stream_t* stream);
+
 // Renders a diagnostic message by substituting params into the error
 // def's message template. Literal text is copied verbatim. Placeholders
 // ({param_name}) are looked up in the error definition's parameter schema and

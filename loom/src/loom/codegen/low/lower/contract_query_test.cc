@@ -492,46 +492,93 @@ TEST_F(LowContractQuerySourceMemoryTest,
       /*.source_node_index=*/0,
       /*.index=*/0,
   };
-  loom_low_lower_type_pattern_t type_pattern = {};
-  type_pattern.flags = LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND |
-                       LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_ELEMENT |
-                       LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_RANK |
-                       LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM0;
-  type_pattern.type_kind = LOOM_TYPE_VECTOR;
-  type_pattern.rank = 1;
-  type_pattern.element_type_mask =
-      LOOM_LOW_LOWER_SCALAR_TYPE_BIT(LOOM_SCALAR_TYPE_F32);
-  type_pattern.shape.exact.dim0 = 16;
-  loom_low_lower_guard_t guard = {};
-  guard.kind = LOOM_LOW_LOWER_GUARD_VALUE_TYPE;
-  guard.diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
-  guard.selector.value.value_ref_index = 0;
-  guard.selector.value.parameter_index = 0;
-  const loom_low_lower_guard_ref_t guard_ref = 0;
-  loom_low_lower_rule_t rule = {};
-  rule.guard_count = 1;
+  loom_low_lower_type_pattern_t type_patterns[2] = {};
+  for (loom_low_lower_type_pattern_t& type_pattern : type_patterns) {
+    type_pattern.flags = LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND |
+                         LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_ELEMENT |
+                         LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_RANK |
+                         LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM0;
+    type_pattern.type_kind = LOOM_TYPE_VECTOR;
+    type_pattern.rank = 1;
+    type_pattern.element_type_mask =
+        LOOM_LOW_LOWER_SCALAR_TYPE_BIT(LOOM_SCALAR_TYPE_F32);
+  }
+  type_patterns[0].shape.exact.dim0 = 64;
+  type_patterns[1].shape.exact.dim0 = 16;
+  loom_low_lower_guard_t guards[2] = {};
+  for (uint16_t i = 0; i < IREE_ARRAYSIZE(guards); ++i) {
+    guards[i].kind = LOOM_LOW_LOWER_GUARD_VALUE_TYPE;
+    guards[i].diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
+    guards[i].selector.value.value_ref_index = 0;
+    guards[i].selector.value.parameter_index = i;
+  }
+  const loom_low_lower_guard_ref_t guard_refs[] = {0, 1};
+  loom_low_lower_rule_t rules[2] = {};
+  rules[0].guard_count = 1;
+  rules[1].guard_start = 1;
+  rules[1].guard_count = 1;
   const loom_low_lower_rule_span_t span = {
       /*.source_op_kind=*/LOOM_OP_VECTOR_NEGF,
       /*.rule_start=*/0,
-      /*.rule_count=*/1,
+      /*.rule_count=*/2,
   };
   loom_low_lower_rule_set_t rule_set = {};
   rule_set.spans = &span;
   rule_set.span_count = 1;
-  rule_set.rules = &rule;
-  rule_set.rule_count = 1;
-  rule_set.guards = &guard;
-  rule_set.guard_count = 1;
-  rule_set.guard_refs = &guard_ref;
-  rule_set.guard_ref_count = 1;
+  rule_set.rules = rules;
+  rule_set.rule_count = IREE_ARRAYSIZE(rules);
+  rule_set.guards = guards;
+  rule_set.guard_count = IREE_ARRAYSIZE(guards);
+  rule_set.guard_refs = guard_refs;
+  rule_set.guard_ref_count = IREE_ARRAYSIZE(guard_refs);
   rule_set.value_refs = &value_ref;
   rule_set.value_ref_count = 1;
-  rule_set.type_patterns = &type_pattern;
-  rule_set.type_pattern_count = 1;
+  rule_set.type_patterns = type_patterns;
+  rule_set.type_pattern_count = IREE_ARRAYSIZE(type_patterns);
   const loom_low_lower_rule_set_t* rule_sets[] = {&rule_set};
-  SingleOpContract<LOOM_OP_VECTOR_NEGF> contract;
+  const loom_target_contract_descriptor_rule_t descriptor_rules[] = {{0}, {1}};
+  const loom_target_contract_fragment_t fragment = {
+      LOOM_TARGET_CONTRACT_FRAGMENT_FLAG_TARGET_QUERY,
+      IREE_ARRAYSIZE(descriptor_rules),
+      descriptor_rules,
+      0,
+      nullptr,
+  };
+  const loom_target_contract_binding_t binding = {&fragment, 0};
+  const loom_target_contract_case_t cases[] = {
+      {LOOM_TARGET_CONTRACT_SYSTEM_DESCRIPTOR_RULE, 0, 0},
+      {LOOM_TARGET_CONTRACT_SYSTEM_DESCRIPTOR_RULE, 0, 1},
+  };
+  loom_target_contract_op_entry_t entries[(LOOM_OP_VECTOR_NEGF & 0xFF) + 1] =
+      {};
+  entries[loom_op_dialect_index(LOOM_OP_VECTOR_NEGF)] = {0, 2};
+  const loom_target_contract_dialect_table_t dialect = {IREE_ARRAYSIZE(entries),
+                                                        entries};
+  const uint32_t selection_data[] = {
+      1u | (2u << 16),
+      1u,
+      3u,
+      2u,
+      static_cast<uint32_t>(LOOM_OP_VECTOR_NEGF) << 16,
+      (2u << 28) | (LOOM_SCALAR_TYPE_F32 << 16) | 16u,
+      1u << 16,
+      (2u << 28) | (LOOM_SCALAR_TYPE_F32 << 16) | 64u,
+      1u | (1u << 16),
+      1u,
+      0u,
+  };
+  const loom_target_contract_index_t contract_index = {
+      LOOM_OP_VECTOR_NEGF >> 8,
+      1,
+      &dialect,
+      IREE_ARRAYSIZE(cases),
+      cases,
+      1,
+      &binding,
+      selection_data,
+  };
   const loom_low_lower_contract_query_options_t options = {
-      /*.contract_index=*/contract.index(),
+      /*.contract_index=*/&contract_index,
       /*.rule_sets=*/
       {
           /*.count=*/IREE_ARRAYSIZE(rule_sets),
@@ -548,7 +595,8 @@ TEST_F(LowContractQuerySourceMemoryTest,
       loom_target_contract_query_result_empty();
   IREE_ASSERT_OK(loom_low_lower_query_target_contract(&environment, &options,
                                                       source_op, &result));
-  EXPECT_EQ(result.outcome, LOOM_TARGET_CONTRACT_QUERY_UNSUPPORTED);
+  EXPECT_EQ(result.outcome, LOOM_TARGET_CONTRACT_QUERY_LEGAL);
+  EXPECT_EQ(result.case_index, 0);
 
   environment.vector_lane_projection = {
       /*.source_lane_count=*/64,
@@ -558,6 +606,7 @@ TEST_F(LowContractQuerySourceMemoryTest,
   IREE_ASSERT_OK(loom_low_lower_query_target_contract(&environment, &options,
                                                       source_op, &result));
   EXPECT_EQ(result.outcome, LOOM_TARGET_CONTRACT_QUERY_LEGAL);
+  EXPECT_EQ(result.case_index, 1);
   EXPECT_TRUE(loom_type_equal(
       loom_module_value_type(module_, loom_vector_negf_result(source_op)),
       authored_type));
@@ -811,13 +860,14 @@ TEST_F(LowContractQuerySourceMemoryTest,
                                     LOOM_LOW_LOWER_MEMORY_SPACE_DESCRIPTOR;
   source_memory.element_byte_count = 4;
   source_memory.vector_lane_count = 1;
-  source_memory.vector_lane_byte_stride = 4;
-  source_memory.static_byte_offset_minimum = INT64_MIN;
-  source_memory.static_byte_offset_maximum = INT64_MAX;
   source_memory.dynamic_term_count = 1;
   source_memory.dynamic_index_source =
       LOOM_LOW_SOURCE_MEMORY_DYNAMIC_INDEX_SOURCE_VALUE;
-  source_memory.dynamic_byte_stride = 4;
+  loom_low_lower_source_memory_shape_t source_memory_shape = {};
+  source_memory_shape.vector_lane_byte_stride = 4;
+  source_memory_shape.static_byte_offset_minimum = INT64_MIN;
+  source_memory_shape.static_byte_offset_maximum = INT64_MAX;
+  source_memory_shape.dynamic_byte_stride = 4;
   loom_low_lower_source_memory_diagnostics_t source_memory_diagnostics = {};
   for (uint16_t& diagnostic_index :
        source_memory_diagnostics.rejection_diagnostic_indices) {
@@ -836,6 +886,8 @@ TEST_F(LowContractQuerySourceMemoryTest,
   rule_set.rule_count = 1;
   rule_set.source_memories = &source_memory;
   rule_set.source_memory_count = 1;
+  rule_set.source_memory_shapes = &source_memory_shape;
+  rule_set.source_memory_shape_count = 1;
   rule_set.source_memory_diagnostics = &source_memory_diagnostics;
   rule_set.source_memory_diagnostic_count = 1;
   rule_set.emit_refs = &emit_ref;

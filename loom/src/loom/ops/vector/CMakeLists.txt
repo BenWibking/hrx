@@ -100,6 +100,7 @@ loom_generated_cc_library(
     loom::ops::combining
     loom::ops::encoding
     loom::ops::index
+    loom::ops::index::cast
     loom::ops::op_defs
     loom::ops::scalar
     loom::ops::scf

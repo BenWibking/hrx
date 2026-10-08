@@ -445,7 +445,11 @@ TEST_P(CompileReportLowTest, RecordsPressureSpillAndAllocationFailureRows) {
   const loom_low_allocation_packet_move_group_t packet_move_groups[] = {
       {
           /*.source_ordinal=*/0,
+          /*.transfer_start=*/0,
+          /*.transfer_count=*/0,
           /*.cause=*/LOOM_LOW_PLACEMENT_CAUSE_LOW_COPY,
+          /*.transfer_flags=*/
+          LOOM_LOW_ALLOCATION_PACKET_TRANSFER_GROUP_FLAG_MATERIALIZED,
           /*.move_group=*/
           {
               /*.moves=*/
@@ -459,9 +463,11 @@ TEST_P(CompileReportLowTest, RecordsPressureSpillAndAllocationFailureRows) {
   const loom_low_allocation_edge_copy_t edge_copies[kEdgeCopyCount] = {
       {
           /*.payload_index=*/0,
+          /*.kind=*/LOOM_LOW_ALLOCATION_COPY_MATERIALIZED,
           /*.source_ordinal=*/0,
           /*.destination_ordinal=*/1,
-          /*.source_assignment_index=*/kSourceAssignmentIndex,
+          /*.next_coalesced_incoming_copy_index=*/
+          LOOM_LOW_ALLOCATION_EDGE_COPY_INDEX_NONE,
           /*.destination_assignment_index=*/kResultAssignmentIndex,
           /*.source_unit_offset=*/0,
           /*.destination_unit_offset=*/0,

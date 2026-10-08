@@ -161,8 +161,9 @@ iree_runtime_cc_library(
         "//runtime/src/iree/hal/drivers/task/executable:loader",
         "//runtime/src/iree/hal/drivers/task/queue",
         "//runtime/src/iree/hal/memory:cpu_slab_provider",
-        "//runtime/src/iree/hal/memory:passthrough_pool",
-        "//runtime/src/iree/hal/memory:tlsf_pool",
+        "//runtime/src/iree/hal/memory:host_memory_backend",
+        "//runtime/src/iree/hal/memory:maintenance",
+        "//runtime/src/iree/hal/memory:maintenance_thread",
         "//runtime/src/iree/hal/utils:files",
         "//runtime/src/iree/task",
     ],
@@ -179,5 +180,22 @@ iree_runtime_cc_library(
         "//runtime/src/iree/hal",
         "//runtime/src/iree/hal/drivers/task/executable:loader",
         "//runtime/src/iree/task",
+    ],
+)
+
+iree_runtime_cc_test(
+    name = "device_test",
+    srcs = ["device_test.cc"],
+    deps = [
+        ":device",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/util:proactor_pool",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/threading",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/hal/drivers/task/queue",
+        "//runtime/src/iree/task",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )

@@ -254,43 +254,41 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @wide_in
   %231 = slice %wide[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
   %232 = v_mov_b32_copy %231
   %234 = v_mov_b32_copy %scale
-  %235 = v_mov_b32 0
-  %241 = v_mul_lo_u32 %230, %234
-  %242 = v_mul_hi_u32 %230, %234
-  %243 = v_mul_lo_u32 %230, %235
-  %244 = v_mul_lo_u32 %232, %234
-  %245 = v_add_u32 %242, %243
-  %246 = v_add_u32 %245, %244
-  %248 = v_mov_b32_copy %low
-  %255, %256 = v_add_co_u32 %241, %248
-  %257, %258 = v_add_co_ci_u32 %246, %235, %256
-  %263 = v_cndmask_b32 %230, %255, %condition
-  %267 = v_cndmask_b32 %232, %257, %condition
-  %selected = concat(%263, %267) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %237 = v_mul_lo_u32 %230, %234
+  %238 = v_mul_hi_u32 %230, %234
+  %239 = v_mul_lo_u32 %232, %234
+  %240 = v_add_u32 %238, %239
+  %242 = v_mov_b32_copy %low
+  %243 = v_mov_b32 0
+  %249, %250 = v_add_co_u32 %237, %242
+  %251, %252 = v_add_co_ci_u32 %240, %243, %250
+  %257 = v_cndmask_b32 %230, %249, %condition
+  %261 = v_cndmask_b32 %232, %251, %condition
+  %selected = concat(%257, %261) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
   return %selected
 }
 
 low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @wide_offset_fixed_cast_cycle(%initial: reg<amdgpu.sgpr x2>, %increments: reg<amdgpu.vgpr x4>, %iteration_count: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr x2>) asm {
   %c0 = s_mov_b32 0
   %increment_i32 = slice %increments[0] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
-  %277 = v_mov_b32 0
-  %279 = slice %initial[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %280 = v_mov_b32_copy %279
-  %281 = slice %initial[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %282 = v_mov_b32_copy %281
-  %283 = concat(%280, %282) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  low.br ^_bb1(%iteration_count: reg<amdgpu.sgpr>, %283: reg<amdgpu.vgpr x2>)
+  %271 = v_mov_b32 0
+  %273 = slice %initial[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %274 = v_mov_b32_copy %273
+  %275 = slice %initial[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %276 = v_mov_b32_copy %275
+  %277 = concat(%274, %276) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.br ^_bb1(%iteration_count: reg<amdgpu.sgpr>, %277: reg<amdgpu.vgpr x2>)
 ^_bb1(%remaining: reg<amdgpu.sgpr>, %wide: reg<amdgpu.vgpr x2>):
   %more = s_cmp_gt_i32 %remaining, %c0
   low.cond_br %more, ^_bb2, ^_bb3 : reg<amdgpu.scc>
 ^_bb2:
-  %285 = slice %wide[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %286 = slice %wide[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %289, %290 = v_add_co_u32 %285, %increment_i32
-  %291, %292 = v_add_co_ci_u32 %286, %277, %290
-  %next_value = concat(%289, %291) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  %294 = s_mov_b32 4294967295
-  %next_remaining = s_add_u32 %remaining, %294
+  %279 = slice %wide[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %280 = slice %wide[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %283, %284 = v_add_co_u32 %279, %increment_i32
+  %285, %286 = v_add_co_ci_u32 %280, %271, %284
+  %next_value = concat(%283, %285) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %288 = s_mov_b32 4294967295
+  %next_remaining = s_add_u32 %remaining, %288
   low.br ^_bb1(%next_remaining: reg<amdgpu.sgpr>, %next_value: reg<amdgpu.vgpr x2>)
 ^_bb3:
   return %wide

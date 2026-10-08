@@ -1,0 +1,103 @@
+# Copyright 2026 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+load("//build_tools/bazel:executable.bzl", "iree_executable_test")
+load(
+    "//loom/build_tools/bazel:build_defs.bzl",
+    "loom_cc_library",
+    "loom_config_compatible_with",
+)
+load(
+    "//loom/build_tools/bazel:defs.bzl",
+    "loom_execution_profile",
+    "loom_test",
+)
+load(
+    "//loom/requirements:defs.bzl",
+    "EXECUTE_IREE_HAL",
+    "TARGET_ARCH_VM",
+    "TARGET_ARCH_X86",
+)
+load(
+    "//runtime/requirements:defs.bzl",
+    "HAL_EXECUTABLE_LOADER_EMBEDDED_ELF",
+    "HAL_TASK",
+)
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+loom_cc_library(
+    name = "task_device",
+    srcs = ["task_device.c"],
+    hdrs = ["task_device.h"],
+    target_compatible_with = loom_config_compatible_with(["//loom/config/execute:task_hal"]),
+    deps = [
+        "//loom/src/loom/target:selection",
+        "//loom/src/loom/tooling/execution/hal:device_provider",
+        "//loom/src/loom/tooling/execution/hal:runtime",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/hal/drivers/task:device_spec",
+    ],
+)
+
+_X86_TASK_HARDWARE_PROFILE = loom_execution_profile(
+    name = "x86_task_hardware",
+    build_requirements = [
+        TARGET_ARCH_X86,
+        TARGET_ARCH_VM,
+        EXECUTE_IREE_HAL,
+        HAL_TASK,
+        HAL_EXECUTABLE_LOADER_EMBEDDED_ELF,
+    ],
+    executor = "hardware",
+    runner_args = ["--device=task"],
+    target_class = "cpu",
+    target_family = "x86",
+)
+
+# Copied C++ array records cross a native call and preserve independent storage
+# through the public task HAL runner.
+loom_test(
+    name = "array_records_test",
+    benchmark_smoke = False,
+    execution_profiles = [_X86_TASK_HARDWARE_PROFILE],
+    module = "//loom/src/loom/import/cxx/test:array_records_module",
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/import:cxx",
+    ]) + ["@platforms//cpu:x86_64"],
+)
+
+# Exercises shared corpus programs through the task HAL and independent VM oracle.
+[
+    iree_executable_test(
+        name = name + "_scenario_test",
+        src = "//loom/src/loom/tools/iree-test-loom",
+        args = [
+            "$(rootpath " + source + ")",
+            "--device=task",
+            "--case=@" + scenario,
+        ],
+        data = [source],
+        target_compatible_with = loom_config_compatible_with([
+            "//loom/config/target/arch:x86",
+            "//runtime/config/hal:executable_loader_embedded_elf",
+            "//loom/config/execute:task_hal",
+            "//loom/config/target/arch:vm",
+        ]) + ["@platforms//cpu:x86_64"],
+    )
+    for name, source, scenario in [
+        ("scalar_loop", "//loom/src/loom/test/corpus/control:loop/scalar_state.loom", "scalar_loop_state_values"),
+        ("scalar_arithmetic", "//loom/src/loom/test/corpus/numeric:integer/scalar_observations.loom", "scalar_i32_arithmetic_values"),
+        ("scalar_bitfield", "//loom/src/loom/test/corpus/numeric:integer/scalar_observations.loom", "scalar_i32_bitfield_values"),
+        ("rodata", "//loom/src/loom/test/corpus/function:rodata.loom", "rodata_values"),
+        ("scalar_division", "//loom/src/loom/test/corpus/numeric:integer/constant_unsigned_division.loom", "constant_scalar_quotient_values"),
+    ]
+]

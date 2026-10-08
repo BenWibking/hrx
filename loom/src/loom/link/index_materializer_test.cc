@@ -312,7 +312,7 @@ class LinkIndexMaterializerTest : public ::testing::Test {
 TEST_F(LinkIndexMaterializerTest,
        SelectsBytecodeProviderWithoutReadingRejectedBody) {
   loom_module_t* root = Parse(IREE_SV(R"(
-template.decl @demo.choose(%x: i32) -> (i32) where [mul(%x, 16)]
+template.decl @demo.choose(%x: i32) -> (i32) where [multiple_of(%x, 16)]
 
 func.def public @entry(%x: i32) -> (i32) where [range(%x, 32, 32)] {
   %result = template.apply<@demo.choose>(%x) : (i32) -> (i32)
@@ -420,7 +420,7 @@ template.def<@demo.choose> priority(30) @wrong_predicate(%x: i32) -> (i32) where
   template.return %x : i32
 }
 
-template.def<@demo.choose> target(@matching_target) requires [#target.subgroup.size<64>] priority(20) @selected(%x: i32) -> (i32) where [mul(%x, 16)] {
+template.def<@demo.choose> target(@matching_target) requires [#target.subgroup.size<64>] priority(20) @selected(%x: i32) -> (i32) where [multiple_of(%x, 16)] {
   template.return %x : i32
 }
 
@@ -490,7 +490,7 @@ template.def<@demo.choose> priority(1) @fallback(%x: i32) -> (i32) {
 TEST_F(LinkIndexMaterializerTest,
        RejectedFamilyDoesNotReadBytecodeProviderBody) {
   loom_module_t* root = Parse(IREE_SV(R"(
-template.decl @demo.choose(%x: i32) -> (i32) where [mul(%x, 16)]
+template.decl @demo.choose(%x: i32) -> (i32) where [multiple_of(%x, 16)]
 
 func.def public @entry(%x: i32) -> (i32) where [range(%x, 15, 15)] {
   %result = template.apply<@demo.choose>(%x) : (i32) -> (i32)
@@ -499,7 +499,7 @@ func.def public @entry(%x: i32) -> (i32) where [range(%x, 15, 15)] {
 )"),
                               IREE_SV("root.loom"));
   loom_module_t* library = Parse(IREE_SV(R"(
-template.decl @demo.choose(%x: i32) -> (i32) where [mul(%x, 16)]
+template.decl @demo.choose(%x: i32) -> (i32) where [multiple_of(%x, 16)]
 
 template.def<@demo.choose> @implementation(%x: i32) -> (i32) {
   template.return %x : i32

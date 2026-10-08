@@ -4,6 +4,7 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+#include <atomic>
 #include <cstdint>
 #include <thread>
 #include <vector>
@@ -439,6 +440,36 @@ TEST_P(SemaphoreSubmissionTest, SubmitWithMultipleSemaphores) {
   iree_hal_semaphore_release(wait_semaphore_2);
   iree_hal_semaphore_release(signal_semaphore_1);
   iree_hal_semaphore_release(signal_semaphore_2);
+}
+
+// Tests host signals racing capture and registration of all dependency entries.
+TEST_P(SemaphoreSubmissionTest, HostSignalsRaceDependencyRegistration) {
+  SemaphoreList waits(device_, {0, 0}, {0, 0});
+  SemaphoreList signals(device_, {0}, {0});
+  for (uint64_t value = 1; value <= 64; ++value) {
+    waits.payload_values = {value, value};
+    signals.payload_values = {value};
+    std::atomic<bool> start = false;
+    auto signal = [&](size_t index) {
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      IREE_EXPECT_OK(iree_hal_semaphore_signal(waits.semaphores[index], value,
+                                               /*frontier=*/nullptr));
+    };
+    std::thread first(signal, 0);
+    std::thread second(signal, 1);
+    start.store(true, std::memory_order_release);
+    iree_status_t status = iree_hal_queue_barrier(
+        QueueAtFlatIndex(0), waits, signals, IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
+    // Both signal calls return before their captured state leaves this scope,
+    // including when queue admission fails.
+    first.join();
+    second.join();
+    IREE_ASSERT_OK(status);
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+        signals, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+  }
 }
 
 // Tests waiting on both host and device semaphores to signal.

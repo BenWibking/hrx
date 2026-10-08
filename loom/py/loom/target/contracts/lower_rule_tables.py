@@ -56,9 +56,12 @@ class LowerAttrCopyKind(Enum):
 
     DIRECT = "direct"
     ENUM_ORDINAL = "enum_ordinal"
+    ENUM_REMAP = "enum_remap"
     I64_LOG2 = "i64_log2"
     I64_ARRAY_ELEMENT = "i64_array_element"
     I64_ARRAY_ELEMENT_PLUS_LITERAL = "i64_array_element_plus_literal"
+    I64_ARRAY_ELEMENT_QUOTIENT = "i64_array_element_quotient"
+    I64_ARRAY_ELEMENT_REMAINDER = "i64_array_element_remainder"
     I64_ARRAY_PACK_ELEMENTS = "i64_array_pack_elements"
     ATTRS_PACK_CONSECUTIVE = "attrs_pack_consecutive"
     I64_LITERAL = "i64_literal"
@@ -75,6 +78,7 @@ class LowerAttrCopyKind(Enum):
     VALUE_I32_AS_U32_BITS = "value_i32_as_u32_bits"
     VALUE_FLOAT_BITS = "value_float_bits"
     VALUE_FLOAT_AS_F32_I32 = "value_float_as_f32_i32"
+    VALUE_FLOAT_AS_F64_I64 = "value_float_as_f64_i64"
     VALUE_FLOAT_AS_F64_I32_WORD = "value_float_as_f64_i32_word"
     VALUE_TYPE_STATIC_DIM_SCALED = "value_type_static_dim_scaled"
     VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED = (
@@ -82,6 +86,10 @@ class LowerAttrCopyKind(Enum):
     )
     VALUE_TYPE_STATIC_DIM_LOW_BITS_MASK = "value_type_static_dim_low_bits_mask"
     I64_ARRAY_LANE_BYTE = "i64_array_lane_byte"
+    I64_ARRAY_SHUFFLE_MASK_CHUNK = "i64_array_shuffle_mask_chunk"
+    I64_ARRAY_READ_ONLY_ELEMENTS = "i64_array_read_only_elements"
+    I64_ARRAY_READ_ONLY_BYTE_SEGMENT = "i64_array_read_only_byte_segment"
+    I64_ARRAY_READ_ONLY_BYTE_WORDS = "i64_array_read_only_byte_words"
     SOURCE_MEMORY_STATIC_BYTE_OFFSET = "source_memory_static_byte_offset"
     SOURCE_MEMORY_STATIC_BYTE_OFFSET_PLUS_LITERAL = (
         "source_memory_static_byte_offset_plus_literal"
@@ -259,6 +267,8 @@ class LowerAttrCopy:
     source_element_bit_width: int = 0
     target_bit_offset: int = 0
     value_ref_index: int = 0
+    # Second value retained by pairwise immediate projections.
+    other_value_ref_index: int = 0
     literal_i64: int = 0
     dynamic_term_index: int = 0
 

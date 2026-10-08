@@ -9,7 +9,6 @@
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 #include "loom/codegen/low/pipeline/pass_environment.h"
-#include "loom/codegen/low/pipeline/pass_requirements.h"
 #include "loom/pass/testing/registry_verify.h"
 #include "loom/target/legalization.h"
 #include "loom/target/pass_environment.h"

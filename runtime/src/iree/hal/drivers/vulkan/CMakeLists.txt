@@ -271,6 +271,7 @@ iree_cc_library(
   SRCS
     "transient_buffer.c"
   DEPS
+    ::headers
     iree::async
     iree::base
     iree::base::threading
@@ -343,6 +344,8 @@ iree_cc_library(
     "executable.h"
     "logical_device.c"
     "logical_device.h"
+    "memory_backend.c"
+    "memory_backend.h"
     "physical_device.c"
     "physical_device.h"
     "physical_device_selection.c"
@@ -375,7 +378,10 @@ iree_cc_library(
     iree::hal
     iree::hal::drivers::vulkan::device::library
     iree::hal::drivers::vulkan::util::libvulkan
+    iree::hal::memory::maintenance
+    iree::hal::memory::maintenance_thread
     iree::hal::memory::passthrough_pool
+    iree::hal::memory::slab_cache
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
     iree::hal::memory::tracing

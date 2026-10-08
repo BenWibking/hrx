@@ -1809,7 +1809,7 @@ TEST_F(WriterTest, GlobalSymbolWritesDeclarationLocalValues) {
   IREE_ASSERT_OK(iree_arena_allocate_array(
       &module->arena, 1, sizeof(loom_predicate_t), (void**)&predicates));
   predicates[0] = loom_predicate_t{
-      /*.kind=*/LOOM_PREDICATE_MUL,
+      /*.kind=*/LOOM_PREDICATE_MULTIPLE_OF,
       /*.arg_count=*/2,
       /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST},
       /*.reserved=*/{},
@@ -1938,7 +1938,7 @@ TEST_F(WriterTest, GlobalValueClosureRetainsFirstDiscoveryOrder) {
     for (iree_host_size_t i = 0; i < predicates.size(); ++i) {
       const uint32_t logical_index = (uint32_t)i % kLocalValueCount;
       predicates[i] = loom_predicate_t{
-          /*.kind=*/LOOM_PREDICATE_MUL,
+          /*.kind=*/LOOM_PREDICATE_MULTIPLE_OF,
           /*.arg_count=*/2,
           /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST},
           /*.reserved=*/{},

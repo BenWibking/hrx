@@ -108,6 +108,7 @@ loom_cc_library(
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ir:facts",
+        "//loom/src/loom/ir:symbol_map",
         "//loom/src/loom/ops:atomic",
         "//loom/src/loom/ops:callable_effects",
         "//loom/src/loom/ops:func_symbol_facts",
@@ -116,6 +117,7 @@ loom_cc_library(
         "//loom/src/loom/ops/buffer",
         "//loom/src/loom/ops/cfg",
         "//loom/src/loom/ops/encoding",
+        "//loom/src/loom/ops/global",
         "//loom/src/loom/ops/index",
         "//loom/src/loom/ops/kernel",
         "//loom/src/loom/ops/low",
@@ -415,5 +417,20 @@ loom_cc_test(
         "//loom/src/loom/target/test:lower",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
+    name = "task_abi",
+    srcs = ["task_abi.c"],
+    hdrs = ["task_abi.h"],
+    visibility = _LOWER_VISIBILITY,
+    deps = [
+        ":lower",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/kernel",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/target/abi/task:state_layout",
+        "//runtime/src/iree/base",
     ],
 )

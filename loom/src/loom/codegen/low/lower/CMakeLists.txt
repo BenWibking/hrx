@@ -93,12 +93,14 @@ loom_cc_library(
     loom::error::error_defs
     loom::ir
     loom::ir::facts
+    loom::ir::symbol_map
     loom::ops::atomic
     loom::ops::buffer
     loom::ops::callable_effects
     loom::ops::cfg
     loom::ops::encoding
     loom::ops::func_symbol_facts
+    loom::ops::global
     loom::ops::index
     loom::ops::kernel
     loom::ops::low
@@ -412,6 +414,23 @@ loom_cc_test(
     iree::testing::gtest_main
     loom::ops::scalar
     loom::target::test::lower
+)
+
+loom_cc_library(
+  NAME
+    task_abi
+  HDRS
+    "task_abi.h"
+  SRCS
+    "task_abi.c"
+  DEPS
+    ::lower
+    iree::base
+    loom::ir
+    loom::ops::kernel
+    loom::ops::low
+    loom::target::abi::task::state_layout
+  PUBLIC
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

@@ -890,10 +890,10 @@ bool loom_op_defines_value(const loom_op_t* op, loom_value_id_t value_id);
 loom_trait_flags_t loom_op_effective_traits(const loom_module_t* module,
                                             const loom_op_t* op);
 
-// Refreshes callback-backed effective traits for |op| after attrs or instance
-// flags have changed. Ops with no effective-traits callback keep their current
-// trait word; descriptor-backed ops are stamped explicitly by target-low
-// construction helpers.
+// Refreshes callback-backed effective traits for |op| after attributes,
+// instance flags, or types have changed. Ops with no effective-traits callback
+// keep their current trait word; descriptor-backed ops are stamped explicitly
+// by target-low construction helpers.
 void loom_op_refresh_effective_traits(const loom_module_t* module,
                                       loom_op_t* op);
 
@@ -1333,7 +1333,8 @@ typedef uint8_t loom_memory_access_flags_t;
 // Derives effective traits for a memory-access operation from its instance
 // flags. Volatile accesses carry ObservableEffect in addition to their static
 // read or write effects.
-loom_trait_flags_t loom_memory_access_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_memory_access_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 
 // Returns true if |access| refers to a valid memory-access op. All accessor
 // helpers below tolerate a NULL op vtable and return safe defaults.

@@ -39,6 +39,7 @@
 #include "iree/async/util/intrusive_list.h"
 #include "iree/base/api.h"
 #include "iree/base/internal/atomics.h"
+#include "iree/base/threading/affinity.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -415,6 +416,11 @@ typedef struct iree_async_proactor_options_t {
 
   // Threading model. Defaults to SAME_THREAD.
   iree_async_proactor_threading_mode_t threading_mode;
+
+  // Affinity applied before backend-owned worker threads begin executing.
+  // Creation fails if a worker cannot apply it. Zero leaves worker placement
+  // unspecified. The caller separately controls the polling thread's affinity.
+  iree_thread_affinity_t worker_affinity;
 } iree_async_proactor_options_t;
 
 // Returns default proactor options.
@@ -1037,7 +1043,7 @@ static inline iree_status_t iree_async_proactor_cancel(
 //
 // The target must have been successfully submitted to this proactor and must
 // not yet have delivered its terminal callback. Supported targets are private,
-// non-pooled SOCKET_CONNECT, SOCKET_ACCEPT (including multishot), and
+// non-pooled TIMER, SOCKET_CONNECT, SOCKET_ACCEPT (including multishot), and
 // HANDLE_POLL operations. Targets must not participate in LINKED chains or
 // sequences. The caller owns this precondition, including for the final link of
 // a chain. There must be at most one cancellation request for each target

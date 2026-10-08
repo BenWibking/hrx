@@ -6,6 +6,8 @@
 
 #include "iree/hal/buffer.h"
 
+#include <array>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -13,6 +15,68 @@
 #include "iree/testing/status_matchers.h"
 
 namespace {
+
+TEST(BufferBindingTest, PublishesEveryInterfaceAndPreservesNativeFacts) {
+  uint8_t storage[256] = {};
+  const uint16_t types[] = {
+      IREE_HAL_BUFFER_INTERFACE_HOST,
+      IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
+      IREE_HAL_BUFFER_INTERFACE_VULKAN_BUFFER,
+      IREE_HAL_BUFFER_INTERFACE_XDNA_SHIM_DMA,
+      IREE_HAL_BUFFER_INTERFACE_XDNA_FIRMWARE,
+      IREE_HAL_BUFFER_INTERFACE_RDMA,
+      IREE_HAL_BUFFER_INTERFACE_REGISTERED_IO,
+      IREE_HAL_BUFFER_INTERFACE_REMOTE,
+  };
+  struct NativeTable {
+    // Generic representations copied and translated by the shared publisher.
+    iree_hal_buffer_native_binding_t bindings[IREE_ARRAYSIZE(types)];
+    // Producer-specific value data borrowed unchanged by native consumers.
+    uint64_t native_facts;
+  } source = {}, target = {};
+  source.bindings[0].host_pointer = storage;
+  source.bindings[1].device_address = 0x1000;
+  source.bindings[2].vulkan = {7, 64};
+  source.bindings[3].device_address = 0x2000;
+  source.bindings[4].device_address = 0x3000;
+  source.bindings[5].rdma = {0x4000, 11, 22};
+  source.bindings[6].registered_io = {storage, 33, 128};
+  source.bindings[7].remote = {44, 256};
+  source.native_facts = 0x123456789ABCDEF0;
+  const iree_hal_buffer_binding_layout_t layout = {
+      sizeof(source), IREE_ARRAYSIZE(types), 0, types};
+  iree_hal_buffer_t buffer = {};
+  buffer.memory.bindings = source.bindings;
+  buffer.memory.binding_offset = 16;
+  iree_hal_buffer_copy_bindings(&buffer, &layout, target.bindings);
+  EXPECT_EQ(target.bindings[0].host_pointer, storage + 16);
+  EXPECT_EQ(target.bindings[1].device_address, 0x1010u);
+  EXPECT_EQ(target.bindings[2].vulkan.buffer, 7u);
+  EXPECT_EQ(target.bindings[2].vulkan.offset, 80u);
+  EXPECT_EQ(target.bindings[3].device_address, 0x2010u);
+  EXPECT_EQ(target.bindings[4].device_address, 0x3010u);
+  EXPECT_EQ(target.bindings[5].rdma.address, 0x4010u);
+  EXPECT_EQ(target.bindings[5].rdma.local_key, 11u);
+  EXPECT_EQ(target.bindings[5].rdma.remote_key, 22u);
+  EXPECT_EQ(target.bindings[6].registered_io.table, storage);
+  EXPECT_EQ(target.bindings[6].registered_io.index, 33u);
+  EXPECT_EQ(target.bindings[6].registered_io.offset, 144u);
+  EXPECT_EQ(target.bindings[7].remote.object_id, 44u);
+  EXPECT_EQ(target.bindings[7].remote.offset, 272u);
+  EXPECT_EQ(target.native_facts, source.native_facts);
+
+  // A resource without an optional raw address does not acquire one merely
+  // because its view begins at a nonzero offset.
+  source.bindings[0].host_pointer = nullptr;
+  for (uint16_t index : {1, 3, 4}) {
+    source.bindings[index].device_address = 0;
+  }
+  iree_hal_buffer_copy_bindings(&buffer, &layout, target.bindings);
+  EXPECT_EQ(target.bindings[0].host_pointer, nullptr);
+  for (uint16_t index : {1, 3, 4}) {
+    EXPECT_EQ(target.bindings[index].device_address, 0u);
+  }
+}
 
 static std::string FormatMemoryType(iree_hal_memory_type_t memory_type) {
   iree_bitfield_string_temp_t temporary;
@@ -81,6 +145,23 @@ TEST(BufferRangeTest, RejectsOutOfRangeAndOverflowingRanges) {
       iree_hal_buffer_validate_range(&buffer, IREE_DEVICE_SIZE_MAX - 3, 8));
 }
 
+TEST(BufferPermissionTest, OpaqueStorageRequiresEitherDirection) {
+  for (iree_hal_buffer_usage_t usage :
+       {IREE_HAL_BUFFER_USAGE_STORAGE_READ, IREE_HAL_BUFFER_USAGE_STORAGE_WRITE,
+        IREE_HAL_BUFFER_USAGE_STORAGE}) {
+    IREE_EXPECT_OK(iree_hal_buffer_validate_usage_any(
+        usage, IREE_HAL_BUFFER_USAGE_STORAGE));
+  }
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_PERMISSION_DENIED,
+      iree_hal_buffer_validate_usage_any(IREE_HAL_BUFFER_USAGE_TRANSFER,
+                                         IREE_HAL_BUFFER_USAGE_STORAGE));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_PERMISSION_DENIED,
+      iree_hal_buffer_validate_usage(IREE_HAL_BUFFER_USAGE_STORAGE_READ,
+                                     IREE_HAL_BUFFER_USAGE_STORAGE_WRITE));
+}
+
 TEST(BufferPermissionTest, ValidatesAccessAndUsage) {
   IREE_EXPECT_OK(iree_hal_buffer_validate_access(IREE_HAL_MEMORY_ACCESS_READ,
                                                  IREE_HAL_MEMORY_ACCESS_READ));
@@ -96,6 +177,21 @@ TEST(BufferPermissionTest, ValidatesAccessAndUsage) {
       IREE_STATUS_PERMISSION_DENIED,
       iree_hal_buffer_validate_usage(IREE_HAL_BUFFER_USAGE_TRANSFER_SOURCE,
                                      IREE_HAL_BUFFER_USAGE_TRANSFER_TARGET));
+}
+
+TEST(BufferPermissionTest, RequiresOnlyReadWritePermissions) {
+  for (iree_hal_memory_access_t access :
+       {IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_MEMORY_ACCESS_WRITE,
+        IREE_HAL_MEMORY_ACCESS_ALL}) {
+    IREE_EXPECT_OK(
+        iree_hal_buffer_validate_access(IREE_HAL_MEMORY_ACCESS_ALL, access));
+  }
+  for (iree_hal_memory_access_t access :
+       {0u, 1u << 4, (1u << 5) | IREE_HAL_MEMORY_ACCESS_WRITE}) {
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_INVALID_ARGUMENT,
+        iree_hal_buffer_validate_access(IREE_HAL_MEMORY_ACCESS_ALL, access));
+  }
 }
 
 static void CountBufferRelease(void* user_data, iree_hal_buffer_t* buffer) {
@@ -390,6 +486,273 @@ TEST(BufferExportTest, FailureClearsOutputAndPreservesMappingRequirements) {
   EXPECT_EQ(0u, external_buffer.size);
   EXPECT_EQ(nullptr, external_buffer.handle.host_allocation.ptr);
   iree_hal_buffer_release(buffer);
+}
+
+class BufferMapTest : public ::testing::TestWithParam<iree_hal_mapping_mode_t> {
+ protected:
+  void SetUp() override {
+    for (size_t i = 0; i < sizeof(storage_); ++i) {
+      storage_[i] = i;
+    }
+    IREE_ASSERT_OK(iree_hal_heap_buffer_wrap(
+        iree_hal_buffer_placement_undefined(), IREE_HAL_MEMORY_TYPE_HOST_LOCAL,
+        IREE_HAL_MEMORY_ACCESS_ALL,
+        IREE_HAL_BUFFER_USAGE_MAPPING |
+            IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
+        sizeof(storage_), iree_make_byte_span(storage_, sizeof(storage_)),
+        iree_hal_buffer_release_callback_null(), iree_allocator_system(),
+        &buffer_));
+    iree_hal_buffer_t* outer = nullptr;
+    IREE_ASSERT_OK(iree_hal_buffer_subspan(buffer_, 8, 48,
+                                           iree_allocator_system(), &outer));
+    IREE_ASSERT_OK(
+        iree_hal_buffer_subspan(outer, 5, 24, iree_allocator_system(), &view_));
+    iree_hal_buffer_release(outer);
+  }
+
+  void TearDown() override {
+    iree_hal_buffer_release(view_);
+    iree_hal_buffer_release(buffer_);
+  }
+
+  // Imported host storage, including bytes outside the nested logical view.
+  alignas(64) uint8_t storage_[64] = {};
+  // Root view of the imported allocation.
+  iree_hal_buffer_t* buffer_ = nullptr;
+  // Nested view starting at byte 13 of storage_.
+  iree_hal_buffer_t* view_ = nullptr;
+};
+
+TEST_P(BufferMapTest, ReadWritePreservesContentsWithEitherAliasPromise) {
+  for (iree_hal_buffer_map_flags_t flags :
+       {IREE_HAL_BUFFER_MAP_FLAG_NONE, IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS}) {
+    iree_hal_buffer_mapping_t mapping = {};
+    IREE_ASSERT_OK(iree_hal_buffer_map_range(
+        view_, GetParam(), IREE_HAL_MEMORY_ACCESS_ALL, flags, 3, 16, &mapping));
+    EXPECT_EQ(storage_ + 16, mapping.contents.data);
+    EXPECT_EQ(16u, mapping.contents.data_length);
+    for (size_t i = 0; i < sizeof(storage_); ++i) {
+      EXPECT_EQ(i, storage_[i]);
+    }
+    IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  }
+}
+
+TEST_P(BufferMapTest, PreparedDiscardAppliesOnlyWhenCommitted) {
+  iree_hal_buffer_mapping_t mapping = {};
+  IREE_ASSERT_OK(iree_hal_buffer_prepare_map_range(
+      view_, GetParam(), IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_DISCARD, 3, 16, &mapping));
+  EXPECT_EQ(nullptr, mapping.contents.data);
+  for (size_t i = 0; i < sizeof(storage_); ++i) {
+    EXPECT_EQ(i, storage_[i]);
+  }
+  IREE_ASSERT_OK(iree_hal_buffer_commit_map_range(&mapping));
+  EXPECT_EQ(storage_ + 16, mapping.contents.data);
+  memset(mapping.contents.data, 0xA5, mapping.contents.data_length);
+  IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  for (size_t i = 0; i < sizeof(storage_); ++i) {
+    EXPECT_EQ(i >= 16 && i < 32 ? 0xA5u : i, storage_[i]);
+  }
+}
+
+TEST_P(BufferMapTest, RejectsInvalidFlagsBeforeMapping) {
+  iree_hal_buffer_mapping_t mapping = {};
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        iree_hal_buffer_map_range(
+                            view_, GetParam(), IREE_HAL_MEMORY_ACCESS_READ,
+                            IREE_HAL_BUFFER_MAP_FLAG_DISCARD, 0, 8, &mapping));
+  EXPECT_EQ(nullptr, mapping.buffer);
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      iree_hal_buffer_map_range(view_, GetParam(), IREE_HAL_MEMORY_ACCESS_ALL,
+                                static_cast<iree_hal_buffer_map_flags_t>(0x80),
+                                0, 8, &mapping));
+  EXPECT_EQ(nullptr, mapping.buffer);
+  for (size_t i = 0; i < sizeof(storage_); ++i) {
+    EXPECT_EQ(i, storage_[i]);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(Modes, BufferMapTest,
+                         ::testing::Values(IREE_HAL_MAPPING_MODE_SCOPED,
+                                           IREE_HAL_MAPPING_MODE_PERSISTENT));
+
+// Models a device allocation whose host cache changes only at the buffer's
+// explicit invalidate/flush boundary. The convenience helpers remain the
+// production implementation under test.
+struct MappedTransferBuffer : iree_hal_buffer_t {
+  // Bytes visible to completed device work.
+  std::array<uint8_t, 64> device_contents = {};
+  // Stale host cache for noncoherent mappings.
+  std::array<uint8_t, 64> host_contents = {};
+  // Outstanding mappings that must be returned even after a cache error.
+  size_t mapping_count = 0;
+  // Source transitions performed by the caller.
+  size_t invalidate_count = 0;
+  // Target transitions performed by the caller.
+  size_t flush_count = 0;
+  // Injected native invalidation result, without owning a status allocation.
+  iree_status_code_t invalidate_code = IREE_STATUS_OK;
+
+  explicit MappedTransferBuffer(iree_hal_memory_type_t coherence) {
+    static const iree_hal_buffer_vtable_t vtable = {
+        /*.recycle=*/iree_hal_buffer_recycle,
+        /*.destroy=*/
+        [](iree_hal_buffer_t* base) {
+          delete static_cast<MappedTransferBuffer*>(base);
+        },
+        /*.export_range=*/nullptr,
+        /*.map_range=*/
+        [](iree_hal_buffer_t* base, iree_hal_mapping_mode_t,
+           iree_hal_memory_access_t, iree_hal_buffer_map_flags_t,
+           iree_device_size_t offset, iree_device_size_t length,
+           iree_hal_buffer_mapping_t* mapping) {
+          auto* buffer = static_cast<MappedTransferBuffer*>(base);
+          ++buffer->mapping_count;
+          auto& contents = iree_all_bits_set(iree_hal_buffer_memory_type(base),
+                                             IREE_HAL_MEMORY_TYPE_HOST_COHERENT)
+                               ? buffer->device_contents
+                               : buffer->host_contents;
+          mapping->contents =
+              iree_make_byte_span(contents.data() + offset, length);
+          return iree_ok_status();
+        },
+        /*.unmap_range=*/
+        [](iree_hal_buffer_t* base, iree_device_size_t, iree_device_size_t,
+           iree_hal_buffer_mapping_t*) {
+          --static_cast<MappedTransferBuffer*>(base)->mapping_count;
+          return iree_ok_status();
+        },
+        /*.invalidate_range=*/
+        [](iree_hal_buffer_t* base, iree_device_size_t offset,
+           iree_device_size_t length) {
+          auto* buffer = static_cast<MappedTransferBuffer*>(base);
+          ++buffer->invalidate_count;
+          if (buffer->invalidate_code != IREE_STATUS_OK) {
+            return iree_status_from_code(buffer->invalidate_code);
+          }
+          memcpy(buffer->host_contents.data() + offset,
+                 buffer->device_contents.data() + offset, length);
+          return iree_ok_status();
+        },
+        /*.flush_range=*/
+        [](iree_hal_buffer_t* base, iree_device_size_t offset,
+           iree_device_size_t length) {
+          auto* buffer = static_cast<MappedTransferBuffer*>(base);
+          ++buffer->flush_count;
+          memcpy(buffer->device_contents.data() + offset,
+                 buffer->host_contents.data() + offset, length);
+          return iree_ok_status();
+        },
+        /*.query_memory=*/nullptr,
+        /*.allocation=*/nullptr,
+    };
+    iree_hal_buffer_initialize(
+        iree_hal_buffer_placement_undefined(), this, device_contents.size(), 0,
+        device_contents.size(), IREE_HAL_MEMORY_TYPE_HOST_LOCAL | coherence,
+        IREE_HAL_MEMORY_ACCESS_ALL, IREE_HAL_BUFFER_USAGE_MAPPING, &vtable,
+        this);
+  }
+};
+
+using MappedTransferBufferPtr =
+    std::unique_ptr<MappedTransferBuffer, decltype(&iree_hal_buffer_release)>;
+
+static MappedTransferBufferPtr MakeMappedTransferBuffer(
+    iree_hal_memory_type_t coherence = 0) {
+  return MappedTransferBufferPtr(new MappedTransferBuffer(coherence),
+                                 iree_hal_buffer_release);
+}
+
+TEST(BufferMappedTransferTest, ReadObservesEveryCompletedWrite) {
+  for (iree_hal_memory_type_t coherence :
+       {0u, static_cast<uint32_t>(IREE_HAL_MEMORY_TYPE_HOST_COHERENT)}) {
+    auto source = MakeMappedTransferBuffer(coherence);
+    for (uint8_t batch = 1; batch <= 4; ++batch) {
+      for (size_t i = 0; i < source->device_contents.size(); ++i) {
+        source->device_contents[i] = batch * 17 + i;
+      }
+      std::array<uint8_t, 8> output = {};
+      IREE_ASSERT_OK(iree_hal_buffer_map_read(source.get(), 9, output.data(),
+                                              output.size()));
+      for (size_t i = 0; i < output.size(); ++i) {
+        EXPECT_EQ(output[i], source->device_contents[9 + i]);
+      }
+      EXPECT_EQ(source->mapping_count, 0u);
+    }
+    EXPECT_EQ(source->invalidate_count, coherence ? 0u : 4u);
+    EXPECT_EQ(source->flush_count, 0u);
+  }
+}
+
+TEST(BufferMappedTransferTest, CopyTransitionsOnlyTheCopiedRanges) {
+  for (iree_hal_memory_type_t source_coherence :
+       {0u, static_cast<uint32_t>(IREE_HAL_MEMORY_TYPE_HOST_COHERENT)}) {
+    for (iree_hal_memory_type_t target_coherence :
+         {0u, static_cast<uint32_t>(IREE_HAL_MEMORY_TYPE_HOST_COHERENT)}) {
+      for (iree_device_size_t length :
+           {iree_device_size_t{8}, IREE_HAL_WHOLE_BUFFER}) {
+        auto source = MakeMappedTransferBuffer(source_coherence);
+        auto target = MakeMappedTransferBuffer(target_coherence);
+        const size_t copied_length = length == IREE_HAL_WHOLE_BUFFER ? 50 : 8;
+        for (uint8_t batch = 1; batch <= 4; ++batch) {
+          for (size_t i = 0; i < source->device_contents.size(); ++i) {
+            source->device_contents[i] = batch * 17 + i;
+          }
+          target->device_contents.fill(0xE7);
+          target->host_contents.fill(0xA9);
+          IREE_ASSERT_OK(iree_hal_buffer_map_copy(source.get(), 9, target.get(),
+                                                  14, length));
+          for (size_t i = 0; i < target->device_contents.size(); ++i) {
+            EXPECT_EQ(target->device_contents[i],
+                      i >= 14 && i < 14 + copied_length
+                          ? source->device_contents[9 + i - 14]
+                          : 0xE7);
+            if (!source_coherence) {
+              EXPECT_EQ(source->host_contents[i],
+                        i >= 9 && i < 9 + copied_length
+                            ? source->device_contents[i]
+                            : 0);
+            }
+          }
+          EXPECT_EQ(source->mapping_count, 0u);
+          EXPECT_EQ(target->mapping_count, 0u);
+        }
+        EXPECT_EQ(source->invalidate_count, source_coherence ? 0u : 4u);
+        EXPECT_EQ(target->flush_count, target_coherence ? 0u : 4u);
+        EXPECT_EQ(source->flush_count, 0u);
+        EXPECT_EQ(target->invalidate_count, 0u);
+      }
+    }
+  }
+}
+
+TEST(BufferMappedTransferTest, FailedInvalidationReturnsEveryMapping) {
+  auto source = MakeMappedTransferBuffer();
+  auto target = MakeMappedTransferBuffer();
+  source->invalidate_code = IREE_STATUS_UNAVAILABLE;
+  source->device_contents.fill(0x37);
+  target->device_contents.fill(0xE7);
+  std::array<uint8_t, 8> output;
+  output.fill(0xA9);
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_UNAVAILABLE,
+      iree_hal_buffer_map_read(source.get(), 9, output.data(), output.size()));
+  for (uint8_t value : output) {
+    EXPECT_EQ(value, 0xA9);
+  }
+  EXPECT_EQ(source->mapping_count, 0u);
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_UNAVAILABLE,
+                        iree_hal_buffer_map_copy(source.get(), 9, target.get(),
+                                                 14, output.size()));
+  for (uint8_t value : target->device_contents) {
+    EXPECT_EQ(value, 0xE7);
+  }
+  EXPECT_EQ(source->mapping_count, 0u);
+  EXPECT_EQ(target->mapping_count, 0u);
+  EXPECT_EQ(source->invalidate_count, 2u);
+  EXPECT_EQ(target->flush_count, 0u);
 }
 
 }  // namespace

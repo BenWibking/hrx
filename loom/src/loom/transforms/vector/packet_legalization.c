@@ -10,7 +10,6 @@
 
 #include "loom/analysis/motion.h"
 #include "loom/analysis/view_regions.h"
-#include "loom/ir/local_value_domain.h"
 #include "loom/ir/module.h"
 #include "loom/ir/scalar_type.h"
 #include "loom/ops/buffer/ops.h"
@@ -56,11 +55,25 @@ static uint32_t loom_vector_packet_structural_lane_limit(
   return 0;
 }
 
+static int32_t loom_vector_packet_element_bit_count(
+    const loom_target_vector_packet_policy_t* policy,
+    loom_scalar_type_t element_type) {
+  if (element_type == LOOM_SCALAR_TYPE_INDEX && policy->index_bit_count != 0) {
+    return policy->index_bit_count;
+  }
+  if (element_type == LOOM_SCALAR_TYPE_OFFSET &&
+      policy->offset_bit_count != 0) {
+    return policy->offset_bit_count;
+  }
+  return loom_scalar_type_bitwidth(element_type);
+}
+
 static uint32_t loom_vector_packet_lane_count_for_bit_count(
     const loom_target_vector_packet_policy_t* policy, loom_type_t vector_type,
     uint16_t packet_bit_count) {
   const loom_scalar_type_t element_type = loom_type_element_type(vector_type);
-  const int32_t element_bit_count = loom_scalar_type_bitwidth(element_type);
+  const int32_t element_bit_count =
+      loom_vector_packet_element_bit_count(policy, element_type);
   if (element_bit_count <= 0 || packet_bit_count == 0 ||
       packet_bit_count % (uint32_t)element_bit_count != 0) {
     return 0;
@@ -89,12 +102,12 @@ static bool loom_vector_packet_static_lane_count(loom_type_t vector_type,
   return true;
 }
 
-static bool loom_vector_packet_payload_bit_count(loom_type_t vector_type,
-                                                 uint32_t lane_count,
-                                                 uint64_t* out_bit_count) {
+static bool loom_vector_packet_payload_bit_count(
+    const loom_target_vector_packet_policy_t* policy, loom_type_t vector_type,
+    uint32_t lane_count, uint64_t* out_bit_count) {
   *out_bit_count = 0;
-  const int32_t element_bit_count =
-      loom_scalar_type_bitwidth(loom_type_element_type(vector_type));
+  const int32_t element_bit_count = loom_vector_packet_element_bit_count(
+      policy, loom_type_element_type(vector_type));
   if (element_bit_count <= 0) {
     return false;
   }
@@ -146,7 +159,7 @@ static bool loom_vector_packet_shape_from_type(
   uint32_t chunk_lane_count = 0;
   uint64_t payload_bit_count = 0;
   if (!loom_vector_packet_static_lane_count(vector_type, &lane_count) ||
-      !loom_vector_packet_payload_bit_count(vector_type, lane_count,
+      !loom_vector_packet_payload_bit_count(policy, vector_type, lane_count,
                                             &payload_bit_count) ||
       payload_bit_count <= policy->maximum_unpacketized_bit_count ||
       !loom_vector_packet_select_native_chunk_lane_count(
@@ -232,7 +245,7 @@ static bool loom_vector_packet_uniform_shape_from_type(
   const uint32_t lane_count = (uint32_t)lane_count_u64;
   uint32_t chunk_lane_count = 0;
   uint64_t payload_bit_count = 0;
-  if (!loom_vector_packet_payload_bit_count(vector_type, lane_count,
+  if (!loom_vector_packet_payload_bit_count(policy, vector_type, lane_count,
                                             &payload_bit_count) ||
       payload_bit_count <= policy->maximum_unpacketized_bit_count ||
       !loom_vector_packet_select_native_chunk_lane_count(
@@ -305,6 +318,9 @@ static loom_type_t loom_vector_packet_type(loom_type_t vector_type,
 typedef struct loom_vector_packetized_value_t {
   // Original oversized source value represented by a native packet.
   loom_value_id_t source;
+  // One-based child indices for source-ID bits above the root directory bits.
+  // Zero denotes an absent branch; indices survive record-array growth.
+  uint32_t children[2];
   // Original oversized source type.
   loom_type_t source_type;
   // Packet materialization mode for this source value.
@@ -312,6 +328,9 @@ typedef struct loom_vector_packetized_value_t {
   // Native packet materialized for the current physical loop iteration.
   loom_value_id_t packet;
 } loom_vector_packetized_value_t;
+
+// A 64-byte directory selects the first four bits without tree traversal.
+#define LOOM_VECTOR_PACKET_INDEX_ROOT_BITS 4u
 
 typedef struct loom_vector_packetization_t {
   // Target legalization context that owns the rewrite.
@@ -323,10 +342,8 @@ typedef struct loom_vector_packetization_t {
   bool select_captured_values;
   // Source location assigned to slices of captured graph leaves.
   loom_location_id_t captured_value_location;
-  // Function-local value domain providing direct value-to-ordinal mapping.
-  const loom_local_value_domain_t* value_domain;
-  // One-based compact value record index keyed directly by value ordinal.
-  uint32_t* value_indices;
+  // One-based roots selected by the low source-ID bits; zero is an empty root.
+  uint32_t roots[1u << LOOM_VECTOR_PACKET_INDEX_ROOT_BITS];
   // Arena-backed packetized values materialized for this root rewrite.
   loom_vector_packetized_value_t* values;
   // Number of populated values.
@@ -556,29 +573,39 @@ static bool loom_vector_packet_type_shape_matches(
          lane_count == shape->lane_count;
 }
 
-static iree_status_t loom_vector_packetization_initialize(
+static void loom_vector_packetization_initialize(
     loom_target_legalization_context_t* context,
     const loom_target_vector_packet_policy_t* policy,
     loom_vector_packetization_t* out_packetization) {
   *out_packetization = (loom_vector_packetization_t){
       .context = context,
       .policy = policy,
-      .value_domain = context->value_domain,
   };
-  const iree_host_size_t value_count = context->value_domain->value_count;
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      context->arena, value_count, sizeof(*out_packetization->value_indices),
-      (void**)&out_packetization->value_indices));
-  memset(out_packetization->value_indices, 0,
-         value_count * sizeof(*out_packetization->value_indices));
-  return iree_ok_status();
+}
+
+// Each branch consumes one source-ID bit, bounding lookup to 29 records even
+// for sparse identities. Only selected producers occupy the index: unrelated
+// function values require neither storage nor initialization per packet root.
+static uint32_t* loom_vector_packet_find_index(
+    loom_vector_packetization_t* packetization, loom_value_id_t source) {
+  const uint32_t root_mask = (1u << LOOM_VECTOR_PACKET_INDEX_ROOT_BITS) - 1u;
+  uint32_t* index = &packetization->roots[source & root_mask];
+  uint32_t remaining_bits = source >> LOOM_VECTOR_PACKET_INDEX_ROOT_BITS;
+  while (*index != 0) {
+    loom_vector_packetized_value_t* value = &packetization->values[*index - 1u];
+    if (value->source == source) {
+      break;
+    }
+    index = &value->children[remaining_bits & 1u];
+    remaining_bits >>= 1;
+  }
+  return index;
 }
 
 static loom_vector_packetized_value_t* loom_vector_packet_find(
     loom_vector_packetization_t* packetization, loom_value_id_t source) {
-  const loom_value_ordinal_t value_ordinal =
-      loom_local_value_domain_ordinal(packetization->value_domain, source);
-  const uint32_t value_index = packetization->value_indices[value_ordinal];
+  const uint32_t value_index =
+      *loom_vector_packet_find_index(packetization, source);
   return value_index == 0 ? NULL : &packetization->values[value_index - 1u];
 }
 
@@ -614,16 +641,15 @@ static iree_status_t loom_vector_packet_record(
     loom_type_t source_type) {
   IREE_RETURN_IF_ERROR(loom_vector_packet_reserve(
       packetization, packetization->value_count + 1u));
+  uint32_t* index = loom_vector_packet_find_index(packetization, source);
+  IREE_ASSERT_EQ(*index, 0u);
   const uint32_t value_index = packetization->value_count++;
   packetization->values[value_index] = (loom_vector_packetized_value_t){
       .source = source,
       .source_type = source_type,
       .packet = LOOM_VALUE_ID_INVALID,
   };
-  const loom_value_ordinal_t value_ordinal =
-      loom_local_value_domain_ordinal(packetization->value_domain, source);
-  IREE_ASSERT_EQ(packetization->value_indices[value_ordinal], 0u);
-  packetization->value_indices[value_ordinal] = value_index + 1u;
+  *index = value_index + 1u;
   return iree_ok_status();
 }
 
@@ -712,8 +738,8 @@ static bool loom_vector_packet_select_snapshot_shape(
       packet_lane_count % chunk_lane_count != 0) {
     const loom_type_t result_type =
         loom_module_value_type(module, loom_vector_concat_result(op));
-    const int32_t element_bit_count =
-        loom_scalar_type_bitwidth(loom_type_element_type(result_type));
+    const int32_t element_bit_count = loom_vector_packet_element_bit_count(
+        packetization->policy, loom_type_element_type(result_type));
     if (element_bit_count <= 0) {
       return false;
     }
@@ -909,25 +935,33 @@ static bool loom_vector_packet_shared_snapshot_requires_staging(
 
     const loom_value_t* value = loom_module_value(
         packetization->context->module, packetized_value->source);
-    iree_host_size_t consumer_count = 0;
+    // One packet tuple plus one per distinct consumer must fit the budget.
+    // Keep only distinct users and stop as soon as that bound is exceeded;
+    // repeated operand uses never enlarge the search domain.
+    const uint32_t tuple_limit =
+        LOOM_VECTOR_PACKET_STATIC_OP_LIMIT / shape->chunk_count;
+    if (tuple_limit == 0) {
+      return true;
+    }
+    const loom_op_t* consumers[LOOM_VECTOR_PACKET_STATIC_OP_LIMIT];
+    uint32_t consumer_count = 0;
     const loom_use_t* uses = loom_value_uses(value);
     for (uint32_t use_index = 0; use_index < value->use_count; ++use_index) {
       const loom_op_t* consumer = loom_use_user_op(uses[use_index]);
       bool first_use = true;
-      for (uint32_t previous_index = 0; previous_index < use_index;
+      for (uint32_t previous_index = 0; previous_index < consumer_count;
            ++previous_index) {
-        if (loom_use_user_op(uses[previous_index]) == consumer) {
+        if (consumers[previous_index] == consumer) {
           first_use = false;
           break;
         }
       }
-      consumer_count += first_use ? 1u : 0u;
-    }
-    iree_host_size_t operation_count = 0;
-    if (!iree_host_size_checked_mul(consumer_count + 1u, shape->chunk_count,
-                                    &operation_count) ||
-        operation_count > LOOM_VECTOR_PACKET_STATIC_OP_LIMIT) {
-      return true;
+      if (first_use) {
+        if (consumer_count + 1u >= tuple_limit) {
+          return true;
+        }
+        consumers[consumer_count++] = consumer;
+      }
     }
   }
   return false;
@@ -1653,8 +1687,8 @@ static iree_status_t loom_vector_packet_build_staging_view(
     const loom_vector_packet_shape_t* shape, const loom_op_t* source_op,
     loom_value_id_t* out_staging_view) {
   *out_staging_view = LOOM_VALUE_ID_INVALID;
-  const int32_t element_bit_count =
-      loom_scalar_type_bitwidth(loom_type_element_type(vector_type));
+  const int32_t element_bit_count = loom_vector_packet_element_bit_count(
+      packetization->policy, loom_type_element_type(vector_type));
   IREE_ASSERT_GT(element_bit_count, 0);
   IREE_ASSERT_EQ(element_bit_count % 8, 0);
   const int64_t byte_count =
@@ -2301,8 +2335,7 @@ iree_status_t loom_vector_packet_legalize_table_lookup(
   }
 
   loom_vector_packetization_t packetization = {0};
-  IREE_RETURN_IF_ERROR(
-      loom_vector_packetization_initialize(context, policy, &packetization));
+  loom_vector_packetization_initialize(context, policy, &packetization);
   packetization.select_captured_values = true;
   packetization.captured_value_location = op->location;
   bool producer_selected = false;
@@ -2462,8 +2495,7 @@ iree_status_t loom_vector_packet_legalize_store(
   }
 
   loom_vector_packetization_t packetization = {0};
-  IREE_RETURN_IF_ERROR(
-      loom_vector_packetization_initialize(context, policy, &packetization));
+  loom_vector_packetization_initialize(context, policy, &packetization);
   bool producer_selected = false;
   IREE_RETURN_IF_ERROR(loom_vector_packet_select_value_shape(
       &packetization, store_footprint.value, &shape, &producer_selected));
@@ -2620,8 +2652,7 @@ iree_status_t loom_vector_packet_legalize_reduce(
   }
 
   loom_vector_packetization_t packetization = {0};
-  IREE_RETURN_IF_ERROR(
-      loom_vector_packetization_initialize(context, policy, &packetization));
+  loom_vector_packetization_initialize(context, policy, &packetization);
   packetization.select_captured_values = true;
   packetization.captured_value_location = op->location;
   bool producer_selected = false;

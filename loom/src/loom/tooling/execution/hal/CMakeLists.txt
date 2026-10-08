@@ -161,7 +161,7 @@ loom_cc_library(
   DEPS
     iree::base
     iree::hal
-    loom::target::provider
+    loom::target::types
   PUBLIC
 )
 
@@ -288,7 +288,6 @@ loom_cc_library(
     loom::tooling::compile::pipeline
     loom::tooling::compile::report_capture
     loom::tooling::config
-    loom::tooling::execution::execution_backend
     loom::tooling::execution::session
     loom::tooling::testbench
     loom::tooling::testbench::api
@@ -344,32 +343,6 @@ loom_cc_library(
   PUBLIC
 )
 
-loom_cc_library(
-  NAME
-    execution_backend
-  HDRS
-    "execution_backend.h"
-  SRCS
-    "execution_backend.c"
-  DEPS
-    ::artifact
-    ::candidate
-    ::device_provider
-    ::invocation
-    ::runtime
-    iree::base
-    iree::base::core_headers
-    iree::base::internal::arena
-    loom::pass::pipeline_snapshot
-    loom::target::entry_selection
-    loom::tooling::compile::pipeline
-    loom::tooling::compile::report_capture
-    loom::tooling::execution::execution_backend
-    loom::tooling::execution::one_shot
-    loom::tooling::io::file
-  PUBLIC
-)
-
 if(IREE_HAL_DRIVER_TASK)
 loom_cc_test(
   NAME
@@ -385,30 +358,6 @@ loom_cc_test(
     iree::hal::drivers::task::semaphore
     iree::testing::gtest
     iree::testing::gtest_main
-)
-endif()
-
-if(IREE_HAL_DRIVER_TASK)
-loom_cc_test(
-  NAME
-    execution_backend_test
-  SRCS
-    "execution_backend_test.cc"
-  DEPS
-    ::execution_backend
-    ::runtime
-    iree::base
-    iree::hal
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::ops::test
-    loom::target::function_version
-    loom::target::low_descriptor_registry_core_test
-    loom::target::provider
-    loom::target::test::target_record_table
-    loom::tooling::compile::options
-    loom::tooling::execution::session
-    loom::transforms::cleanup::configured
 )
 endif()
 

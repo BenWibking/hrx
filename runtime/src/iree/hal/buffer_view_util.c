@@ -232,7 +232,7 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_view_generate(
 
   iree_hal_buffer_params_canonicalize(&buffer_params);
   buffer_params.type |= IREE_HAL_MEMORY_TYPE_HOST_VISIBLE;
-  buffer_params.access |= IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE;
+  buffer_params.access |= IREE_HAL_MEMORY_ACCESS_WRITE;
   buffer_params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED |
                          IREE_HAL_BUFFER_USAGE_MAPPING_ACCESS_SEQUENTIAL_WRITE;
 
@@ -245,7 +245,7 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_view_generate(
   if (iree_status_is_ok(status)) {
     status = iree_hal_buffer_map_range(
         iree_hal_buffer_view_buffer(buffer_view), IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE, 0,
+        IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD, 0,
         iree_hal_buffer_view_byte_length(buffer_view), &mapping);
   }
   if (iree_status_is_ok(status)) {
@@ -516,8 +516,8 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_view_format(
       iree_hal_buffer_view_byte_length(buffer_view);
   iree_hal_buffer_mapping_t mapping = {{0}};
   iree_status_t status = iree_hal_buffer_map_range(
-      hal_buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ, 0,
-      byte_length, &mapping);
+      hal_buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, byte_length, &mapping);
   if (iree_status_is_ok(status) && byte_length > 0 &&
       !iree_all_bits_set(iree_hal_buffer_memory_type(hal_buffer),
                          IREE_HAL_MEMORY_TYPE_HOST_COHERENT)) {

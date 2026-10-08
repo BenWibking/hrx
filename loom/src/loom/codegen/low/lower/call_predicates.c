@@ -84,18 +84,14 @@ static bool loom_low_call_predicate_integer_relation(
       *out_integer_relation = LOOM_SYMBOLIC_INTEGER_RELATION_GT;
       return true;
     case LOOM_PREDICATE_GE:
-    case LOOM_PREDICATE_MIN:
       *out_integer_relation = LOOM_SYMBOLIC_INTEGER_RELATION_GE;
-      return true;
-    case LOOM_PREDICATE_MAX:
-      *out_integer_relation = LOOM_SYMBOLIC_INTEGER_RELATION_LE;
       return true;
     case LOOM_PREDICATE_ULT:
     case LOOM_PREDICATE_ULE:
     case LOOM_PREDICATE_UGT:
     case LOOM_PREDICATE_UGE:
-    case LOOM_PREDICATE_MUL:
-    case LOOM_PREDICATE_POW2:
+    case LOOM_PREDICATE_MULTIPLE_OF:
+    case LOOM_PREDICATE_POWER_OF_TWO:
     case LOOM_PREDICATE_RANGE:
     case LOOM_PREDICATE_NOT_NAN:
     case LOOM_PREDICATE_NOT_INF:

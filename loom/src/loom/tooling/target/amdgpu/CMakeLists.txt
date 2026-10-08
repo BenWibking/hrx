@@ -30,24 +30,6 @@ loom_cc_library(
 )
 endif()
 
-if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
-loom_cc_library(
-  NAME
-    execution_provider
-  HDRS
-    "execution_provider.h"
-  SRCS
-    "execution_provider.c"
-  DEPS
-    ::device_provider
-    iree::base
-    loom::target::emit::native::amdgpu::hal_kernel_library
-    loom::tooling::execution::execution_provider
-    loom::tooling::execution::hal::execution_backend
-  PUBLIC
-)
-endif()
-
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 loom_cc_library(
   NAME

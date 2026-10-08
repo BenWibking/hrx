@@ -18,29 +18,31 @@ kernel.def @copy_byte_origins() {
   kernel.return
 }
 
-check.case public @packed_byte_origins {
-  %input = check.generate.iota offset(0) step(1) : tensor<64xi8>
-  %storage = check.generate.fill value(-37) : tensor<160xi8>
-  %output = check.tensor.view %storage offset(16) : tensor<160xi8> -> tensor<128xi8>
-  kernel.launch @copy_byte_origins(%input, %output) : (tensor<64xi8>, tensor<128xi8>)
-  %row0 = check.tensor.view %output offset(0) : tensor<128xi8> -> tensor<32xi8>
-  %row1 = check.tensor.view %output offset(32) : tensor<128xi8> -> tensor<32xi8>
-  %row2 = check.tensor.view %output offset(64) : tensor<128xi8> -> tensor<32xi8>
-  %row3 = check.tensor.view %output offset(96) : tensor<128xi8> -> tensor<32xi8>
-  %expected0 = check.generate.iota offset(0) step(1) : tensor<32xi8>
-  %expected1 = check.generate.iota offset(1) step(1) : tensor<32xi8>
-  %expected2 = check.generate.iota offset(2) step(1) : tensor<32xi8>
-  %expected3 = check.generate.iota offset(3) step(1) : tensor<32xi8>
-  check.expect.bitwise actual(%row0) expected(%expected0) : tensor<32xi8>
-  check.expect.bitwise actual(%row1) expected(%expected1) : tensor<32xi8>
-  check.expect.bitwise actual(%row2) expected(%expected2) : tensor<32xi8>
-  check.expect.bitwise actual(%row3) expected(%expected3) : tensor<32xi8>
-  %prefix = check.tensor.view %storage offset(0) : tensor<160xi8> -> tensor<16xi8>
-  %suffix = check.tensor.view %storage offset(144) : tensor<160xi8> -> tensor<16xi8>
-  %guard = check.generate.fill value(-37) : tensor<16xi8>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi8>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi8>
-  %original = check.generate.iota offset(0) step(1) : tensor<64xi8>
-  check.expect.bitwise actual(%input) expected(%original) : tensor<64xi8>
+func.def @copy_byte_origins_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %length = index.constant 32 : offset
+  %width = index.constant 32 : index
+  %begin = index.constant 0 : index
+  %end = index.constant 4 : index
+  %step = index.constant 1 : index
+  scf.for %group = [%begin to %end step %step] {
+    %position = index.mul %group, %width : index
+    %source_offset = index.cast %group : index to offset
+    %destination_offset = index.cast %position : index to offset
+    buffer.copy %input[%source_offset], %output[%destination_offset], %length
+  }
+  func.return
+}
+
+check.scenario @packed_byte_origin_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(0) step(1) : tensor<64xi8>
+    %storage = check.generate.fill value(-37) : tensor<160xi8>
+    %output = check.tensor.view %storage offset(16) : tensor<160xi8> -> tensor<128xi8>
+    check.compare<@copy_byte_origins, @copy_byte_origins_oracle>(%input, %output) : (tensor<64xi8>, tensor<128xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64xi8>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<160xi8>
+    }
+  }
   check.return
 }

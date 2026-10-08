@@ -50,6 +50,19 @@ iree_runtime_cc_library(
     ],
 )
 
+# Finite native-backed arenas for allocation and queue CTS.
+iree_runtime_cc_library(
+    name = "pool_test_util",
+    testonly = True,
+    srcs = ["pool_test_util.cc"],
+    hdrs = ["pool_test_util.h"],
+    deps = [
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/hal/memory:fixed_block_pool",
+        "//runtime/src/iree/hal/memory:passthrough_pool",
+    ],
+)
+
 # Reusable profile sink helpers for CTS coverage of HAL profiling behavior.
 iree_runtime_cc_library(
     name = "profile_test_util",

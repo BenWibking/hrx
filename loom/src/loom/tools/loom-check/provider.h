@@ -18,6 +18,8 @@
 #include "loom/target/provider.h"
 #include "loom/tooling/input/input.h"
 
+struct loom_check_compile_provider_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -50,6 +52,8 @@ typedef struct loom_check_provider_set_t {
   iree_host_size_t provider_count;
   // Optional binary-wide target provider contribution.
   const loom_target_provider_set_t* target_provider_set;
+  // Public compiler integrations owned by the final runner binary.
+  const struct loom_check_compile_provider_t* compile_provider;
 } loom_check_provider_set_t;
 
 // Runs loom-check using tool dialects plus |provider_set|'s target/check

@@ -62,21 +62,6 @@ bool is_target_optional(cxx::TranslationUnit& unit, const cxx::Type* type) {
          (!loom_namespace->parent() || !loom_namespace->parent()->name());
 }
 
-const cxx::Attribute* find_annotation(const cxx::Symbol* symbol,
-                                      std::string_view name) {
-  if (!symbol || !symbol->canonical()->attributes()) {
-    return nullptr;
-  }
-  for (const auto& attribute : *symbol->canonical()->attributes()) {
-    if (attribute.attributeNamespace && attribute.name &&
-        attribute.attributeNamespace->name() == "loom" &&
-        attribute.name->name() == name) {
-      return &attribute;
-    }
-  }
-  return nullptr;
-}
-
 const cxx::FieldSymbol* field_symbol(const cxx::ConstObject::Member& member) {
   return member.symbol && member.symbol->kind() == cxx::SymbolKind::kField
              ? static_cast<const cxx::FieldSymbol*>(member.symbol)
@@ -295,7 +280,7 @@ void TargetDefinitions::admit_function(
 bool TargetDefinitions::admit_definition(cxx::VariableSymbol* variable,
                                          cxx::AST* owner) {
   auto* definition = class_definition(unit_, variable->type());
-  auto* marker = find_annotation(definition, "target");
+  auto* marker = annotation(definition, "target");
   if (!marker) {
     return false;
   }

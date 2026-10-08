@@ -20,6 +20,14 @@
 extern "C" {
 #endif
 
+// One named rendered diagnostic parameter copied for annotation matching.
+typedef struct loom_test_diagnostic_param_t {
+  // Stable parameter name from the diagnostic definition.
+  iree_string_view_t name;
+  // Canonically rendered parameter value.
+  iree_string_view_t value;
+} loom_test_diagnostic_param_t;
+
 // One diagnostic copied into arena-owned storage for matching and reporting.
 typedef struct loom_test_diagnostic_t {
   // Diagnostic severity to match against ERROR/WARNING/REMARK annotations.
@@ -30,9 +38,6 @@ typedef struct loom_test_diagnostic_t {
 
   // Structured error code to match against DOMAIN/CODE annotations.
   uint16_t code;
-
-  // Generated error definition carrying parameter names.
-  const loom_error_def_t* error;
 
   // Original diagnostic source, independent of its rendered message.
   struct {
@@ -45,11 +50,11 @@ typedef struct loom_test_diagnostic_t {
   // Rendered diagnostic message text, arena-allocated.
   iree_string_view_t message;
 
-  // Rendered parameter values in the error schema's order, arena-allocated.
-  iree_string_view_t* param_values;
+  // Named rendered parameters, arena-allocated.
+  loom_test_diagnostic_param_t* params;
 
-  // Number of populated entries in param_values.
-  iree_host_size_t param_value_count;
+  // Number of populated entries in params.
+  iree_host_size_t param_count;
 
   // Full source-rendered diagnostic text, arena-allocated.
   iree_string_view_t formatted_diagnostic;

@@ -698,7 +698,14 @@ class EmitDescriptorOp:
                         immediate_name,
                         source_ops=source_ops,
                     )
-                elif isinstance(binding, AttrProject | SourceOpProject):
+                elif isinstance(binding, AttrProject):
+                    binding.validate(
+                        source_op,
+                        descriptor_set,
+                        self.descriptor,
+                        immediate_name,
+                    )
+                elif isinstance(binding, SourceOpProject):
                     binding.validate(source_op, self.descriptor, immediate_name)
                 elif isinstance(binding, SourceMemoryProject):
                     if self.source_memory is None:
@@ -754,7 +761,12 @@ class EmitDescriptorOp:
         else:
             bound_names = set[str]()
             for projection in self.immediates:
-                projection.validate(source_op, self.descriptor, None)
+                projection.validate(
+                    source_op,
+                    descriptor_set,
+                    self.descriptor,
+                    None,
+                )
                 bound_names.update(projection.target_names)
         for immediate in self.descriptor.immediates:
             if _immediate_has_default(immediate):

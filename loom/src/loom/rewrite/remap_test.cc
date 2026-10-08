@@ -566,7 +566,7 @@ TEST_F(RemapTest, RemapsPredicateListsInsideDictAttributes) {
   IREE_ASSERT_OK(loom_module_intern_string(source_, IREE_SV("predicates"),
                                            &source_predicates_name));
   loom_predicate_t predicate = {
-      /*.kind=*/LOOM_PREDICATE_MUL,
+      /*.kind=*/LOOM_PREDICATE_MULTIPLE_OF,
       /*.arg_count=*/2,
       /*.arg_tags=*/
       {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST, LOOM_PRED_ARG_NONE},

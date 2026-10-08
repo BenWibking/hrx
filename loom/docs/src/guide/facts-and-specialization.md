@@ -46,12 +46,12 @@ value even before an exact definition is available:
 
 ```loom
 config.decl @model.layer_count : %value: index where [range(%value, 1, 256)]
-config.decl @model.prefill_batch_size : %value: index where [range(%value, 64, 512), mul(%value, 64), pow2(%value)]
+config.decl @model.prefill_batch_size : %value: index where [range(%value, 64, 512), multiple_of(%value, 64), power_of_two(%value)]
 config.decl @model.weight_encoding : encoding<schema>
 ```
 
-`range(%value, lo, hi)` is inclusive. `mul(%value, 64)` means that the value
-is a multiple of 64; it does not perform multiplication. `pow2` records a
+`range(%value, lo, hi)` is inclusive. `multiple_of(%value, 64)` records
+divisibility without performing multiplication. `power_of_two` records a
 power-of-two contract. Relational predicates such as `lt`, `le`, `eq`, and
 `ne` may relate a value to a literal or another SSA value.
 
@@ -143,7 +143,7 @@ contract for fixed-width integer and floating-point payloads:
 
 ```loom
 %finite_scale = scalar.assume %scale [finite(%scale)] : f32
-%aligned_length = scalar.assume %length [mul(%length, 16)] : i64
+%aligned_length = scalar.assume %length [multiple_of(%length, 16)] : i64
 ```
 
 An assumption is not an executable check. It records a fact established by the
@@ -153,7 +153,7 @@ checks the predicates, aborts the execution path on failure, and returns
 refined aliases on success:
 
 ```loom
-%checked_length = sanitizer.assert.value %length [range(%length, 0, 4096), mul(%length, 16)] : index
+%checked_length = sanitizer.assert.value %length [range(%length, 0, 4096), multiple_of(%length, 16)] : index
 ```
 
 The distinction is semantic: `assume` makes a promise to the compiler;

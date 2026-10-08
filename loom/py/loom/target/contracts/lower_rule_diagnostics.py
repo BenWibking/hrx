@@ -82,6 +82,17 @@ def _enum_attr_diagnostic(field: str, enum_keyword: str) -> DiagnosticRef:
     )
 
 
+def _enum_attr_set_diagnostic(
+    field: str,
+    enum_keywords: tuple[str, ...],
+) -> DiagnosticRef:
+    return _named_constraint_diagnostic(
+        "field",
+        field,
+        "enum_set." + ".".join(enum_keywords),
+    )
+
+
 def _i64_attr_range_diagnostic(
     field: str,
     minimum: int,
@@ -227,8 +238,8 @@ def _exact_power_of_two_integer_diagnostic(field: str, addend: int) -> Diagnosti
     )
 
 
-def _u32_divisor_magic_is_add_diagnostic(field: str, *, is_add: bool) -> DiagnosticRef:
-    suffix = "add" if is_add else "no_add"
+def _u32_divisor_magic_kind_diagnostic(field: str, kind: int) -> DiagnosticRef:
+    suffix = ("multiply", "multiply_shift", "multiply_add_shift")[kind]
     return _named_constraint_diagnostic(
         "value_fact",
         field,

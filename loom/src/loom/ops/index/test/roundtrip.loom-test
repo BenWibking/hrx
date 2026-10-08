@@ -55,6 +55,6 @@ func.def @offset_address_ops(%base: offset, %delta: offset, %limit: offset, %con
 // ====
 
 func.def @index_assume(%n: index, %base: offset) -> (index, offset) {
-  %n2, %base2 = index.assume %n, %base [mul(%n, 16), mul(%base, 64)] : index, offset
+  %n2, %base2 = index.assume %n, %base [multiple_of(%n, 16), multiple_of(%base, 64)] : index, offset
   func.return %n2, %base2 : index, offset
 }

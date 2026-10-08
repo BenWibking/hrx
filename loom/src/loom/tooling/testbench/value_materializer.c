@@ -1270,7 +1270,8 @@ static iree_status_t loom_testbench_generate_buffer(void* user_data,
 
 static iree_hal_buffer_params_t loom_testbench_default_buffer_params(void) {
   iree_hal_buffer_params_t buffer_params = {
-      .usage = IREE_HAL_BUFFER_USAGE_DEFAULT | IREE_HAL_BUFFER_USAGE_MAPPING,
+      .usage = IREE_HAL_BUFFER_USAGE_DEFAULT | IREE_HAL_BUFFER_USAGE_MAPPING |
+               IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
       .access = IREE_HAL_MEMORY_ACCESS_ALL,
       .type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL,
   };

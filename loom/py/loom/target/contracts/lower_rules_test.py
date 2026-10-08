@@ -119,6 +119,25 @@ def test_memory_flags_do_not_shift_cache_policy_guard_indices() -> None:
     assert [guard.attr_index for guard in compiled.guards] == [0, 1, 0]
 
 
+def test_compile_lower_rule_set_compiles_enum_set_guard() -> None:
+    table = ContractFragment(
+        name="test.enum-set-guard",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=[
+            RecipeRule(
+                source_op=scalar_comparison.scalar_cmpi,
+                guards=(Guard.enum_attr_in("predicate", ("eq", "uge")),),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+
+    assert len(compiled.guards) == 1
+    assert compiled.guards[0].kind == GuardKind.ENUM_ATTR_IN
+    assert compiled.guards[0].u64 == (1 << 0) | (1 << 9)
+
+
 def _add_f32_flags_descriptor_set():
     descriptor = replace(
         TEST_LOW_ADD_F32_DESCRIPTOR,
@@ -2669,11 +2688,17 @@ def test_compile_lower_rule_set_compiles_consecutive_i64_attr_pack() -> None:
 def test_consecutive_attr_pack_accepts_only_fitting_enum_ordinals() -> None:
     projection = AttrProject.attrs_pack_consecutive("predicate", count=1, bit_width=4)
     projection.validate(
-        scalar_comparison.scalar_cmpi, TEST_LOW_CONST_I32_DESCRIPTOR, "i32_value"
+        scalar_comparison.scalar_cmpi,
+        TEST_LOW_CORE_DESCRIPTOR_SET,
+        TEST_LOW_CONST_I32_DESCRIPTOR,
+        "i32_value",
     )
     _expect_value_error(
         lambda: replace(projection, bit_width=1).validate(
-            scalar_comparison.scalar_cmpi, TEST_LOW_CONST_I32_DESCRIPTOR, "i32_value"
+            scalar_comparison.scalar_cmpi,
+            TEST_LOW_CORE_DESCRIPTOR_SET,
+            TEST_LOW_CONST_I32_DESCRIPTOR,
+            "i32_value",
         ),
         "enum 'predicate' does not fit the packed field",
     )
@@ -2831,6 +2856,84 @@ def test_compile_lower_rule_set_compiles_i64_array_element_offset_projection() -
     )
 
 
+def test_compile_lower_rule_set_compiles_i64_array_element_division() -> None:
+    table = ContractFragment(
+        name="test.array-element-division",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=(
+            DescriptorRule(
+                source_op=vector.vector_extract,
+                descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                guards=(
+                    Guard.value_type("source", Vector("i32", lanes=8)),
+                    Guard.value_type("result", Scalar("i32")),
+                    Guard.i64_array_element_range("static_indices", 0, 0, 7),
+                ),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                        results={"dst": ValueRef.result("result")},
+                        immediates={
+                            "i32_value": (
+                                AttrProject.i64_array_element_quotient(
+                                    "static_indices", element=0, divisor=4
+                                )
+                            )
+                        },
+                        form=DescriptorEmitForm.CONST,
+                    ),
+                    EmitDescriptorOp(
+                        descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                        results={"dst": ValueRef.temporary("lane")},
+                        result_types={"dst": Scalar("i32")},
+                        immediates={
+                            "i32_value": (
+                                AttrProject.i64_array_element_remainder(
+                                    "static_indices", element=0, divisor=4
+                                )
+                            )
+                        },
+                        form=DescriptorEmitForm.CONST,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"vector": ALL_VECTOR_OPS})
+
+    quotient, remainder = compiled.attr_copies
+    assert quotient.kind == LowerAttrCopyKind.I64_ARRAY_ELEMENT_QUOTIENT
+    assert remainder.kind == LowerAttrCopyKind.I64_ARRAY_ELEMENT_REMAINDER
+    for attr_copy in (quotient, remainder):
+        assert attr_copy.source_attr_index == 0
+        assert attr_copy.source_element_index == 0
+        assert attr_copy.literal_i64 == 4
+
+    _expect_value_error(
+        lambda: AttrProject.i64_array_element_quotient(
+            "static_indices", element=0, divisor=0
+        ),
+        "divisor must be positive",
+    )
+
+
+def test_i64_array_pack_elements_accepts_full_i64_payload() -> None:
+    project = AttrProject.i64_array_pack_elements(
+        "source_lanes", element=0, count=2, bit_width=32
+    )
+
+    assert project.count == 2
+    assert project.bit_width == 32
+
+    _expect_value_error(
+        lambda: AttrProject.i64_array_pack_elements(
+            "source_lanes", element=0, count=65, bit_width=1
+        ),
+        "packed bit count must fit in i64",
+    )
+
+
 def test_compile_lower_rule_set_compiles_lane_byte_offset_projection() -> None:
     table = ContractFragment(
         name="test.lane-byte-offset",
@@ -2871,6 +2974,49 @@ def test_compile_lower_rule_set_compiles_lane_byte_offset_projection() -> None:
     assert attr_copy.source_element_index == 0
     assert attr_copy.source_element_count == 4
     assert attr_copy.literal_i64 == -64
+
+
+def test_compile_lower_rule_set_compiles_shuffle_mask_chunk_projection() -> None:
+    table = ContractFragment(
+        name="test.shuffle-mask-chunk",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=(
+            DescriptorRule(
+                source_op=vector.vector_shuffle,
+                descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                guards=(
+                    Guard.value_type("source", Vector("i16", lanes=16)),
+                    Guard.value_type("result", Vector("i16", lanes=16)),
+                    Guard.i64_array_count("source_lanes", 16),
+                ),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                        results={"dst": ValueRef.result("result")},
+                        immediates={
+                            "i32_value": AttrProject.i64_array_shuffle_mask_chunk(
+                                "source_lanes",
+                                output_byte_offset=8,
+                                bytes_per_lane=2,
+                                source_byte_offset=16,
+                            )
+                        },
+                        form=DescriptorEmitForm.CONST,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"vector": ALL_VECTOR_OPS})
+
+    attr_copy = compiled.attr_copies[0]
+    assert attr_copy.kind == LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK
+    assert attr_copy.source_attr_index == 0
+    assert attr_copy.source_element_index == 8
+    assert attr_copy.source_element_count == 2
+    assert attr_copy.source_element_bit_width == 16
+    assert attr_copy.literal_i64 == 16
 
 
 def test_compile_lower_rule_set_projects_guarded_variadic_value_type_dimension() -> (
@@ -3050,6 +3196,93 @@ def test_compile_lower_rule_set_validates_enum_immediate_literal() -> None:
             ],
         ),
         "literal 5 is not in enum domain 'test.enum_mode'",
+    )
+
+
+def test_compile_lower_rule_set_compiles_packed_enum_remap() -> None:
+    immediate = Immediate(
+        "predicate",
+        ImmediateKind.UNSIGNED,
+        bit_width=5,
+        unsigned_max=31,
+    )
+    descriptor = replace(TEST_LOW_CONST_I32_DESCRIPTOR, immediates=(immediate,))
+    descriptor_set = replace(
+        TEST_LOW_CORE_DESCRIPTOR_SET,
+        descriptors=tuple(
+            descriptor
+            if existing_descriptor == TEST_LOW_CONST_I32_DESCRIPTOR
+            else existing_descriptor
+            for existing_descriptor in TEST_LOW_CORE_DESCRIPTOR_SET.descriptors
+        ),
+    )
+    predicate_values = {
+        "oeq": 0,
+        "ogt": 30,
+        "oge": 29,
+        "olt": 17,
+        "ole": 18,
+        "one": 12,
+        "ord": 7,
+        "ueq": 8,
+        "ugt": 22,
+        "uge": 21,
+        "ult": 25,
+        "ule": 26,
+        "une": 4,
+        "uno": 3,
+    }
+    table = ContractFragment(
+        name="test.enum-remap",
+        descriptor_set=descriptor_set,
+        cases=[
+            DescriptorRule(
+                source_op=scalar_comparison.scalar_cmpf,
+                descriptor=descriptor,
+                guards=(Guard.value_type("result", Scalar("i1")),),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=descriptor,
+                        results={"dst": ValueRef.result("result")},
+                        immediates={
+                            "predicate": AttrProject.enum_remap(
+                                "predicate",
+                                predicate_values,
+                            )
+                        },
+                        form=DescriptorEmitForm.CONST,
+                    ),
+                ),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+
+    assert len(compiled.attr_copies) == 1
+    attr_copy = compiled.attr_copies[0]
+    assert attr_copy.kind == LowerAttrCopyKind.ENUM_REMAP
+    assert attr_copy.source_element_count == 14
+    assert attr_copy.source_element_bit_width == 5
+    packed_values = sum(
+        value << (ordinal * 5)
+        for ordinal, value in enumerate(predicate_values.values())
+    )
+    assert attr_copy.literal_i64 == packed_values & ((1 << 63) - 1)
+    assert attr_copy.other_source_attr_index == (packed_values >> 63) & 0xFFFF
+    assert attr_copy.source_element_index == packed_values >> 79
+
+    _expect_value_error(
+        lambda: AttrProject.enum_remap(
+            "predicate",
+            {"oeq": 0},
+        ).validate(
+            scalar_comparison.scalar_cmpf,
+            descriptor_set,
+            descriptor,
+            "predicate",
+        ),
+        "must map every source enum case",
     )
 
 
@@ -3459,7 +3692,7 @@ def test_divisor_magic_shift_retains_product_width() -> None:
                             results={"dst": ValueRef.result("result")},
                             immediates={
                                 "i32_value": ValueProject.u32_divisor_magic_shift(
-                                    "rhs", product_bit_width=width
+                                    "lhs", "rhs", product_bit_width=width
                                 )
                             },
                         ),
@@ -3473,8 +3706,11 @@ def test_divisor_magic_shift_retains_product_width() -> None:
         assert projected.kind == LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_SHIFT
         assert projected.literal_i64 == width - 32
         assert compiled.value_refs[projected.value_ref_index].index == 1
+        assert compiled.value_refs[projected.other_value_ref_index].index == 0
     _expect_value_error(
-        lambda: ValueProject.u32_divisor_magic_shift("rhs", product_bit_width=16),
+        lambda: ValueProject.u32_divisor_magic_shift(
+            "lhs", "rhs", product_bit_width=16
+        ),
         "product width must be 32 or 64",
     )
     _expect_value_error(
@@ -3485,12 +3721,15 @@ def test_divisor_magic_shift_retains_product_width() -> None:
 
 def test_divisor_magic_multiplier_retains_width() -> None:
     for width in (32, 64):
-        projected = ValueProject.u32_divisor_magic_multiplier("rhs", bit_width=width)
+        projected = ValueProject.u32_divisor_magic_multiplier(
+            "lhs", "rhs", bit_width=width
+        )
         assert projected.source_value == "rhs"
+        assert projected.other_source_value == "lhs"
         assert projected.multiplier_bit_width == width
         assert projected.product_bit_width == 32
     _expect_value_error(
-        lambda: ValueProject.u32_divisor_magic_multiplier("rhs", bit_width=16),
+        lambda: ValueProject.u32_divisor_magic_multiplier("lhs", "rhs", bit_width=16),
         "multiplier width must be 32 or 64",
     )
     _expect_value_error(
@@ -3499,9 +3738,25 @@ def test_divisor_magic_multiplier_retains_width() -> None:
     )
     _expect_value_error(
         lambda: ValueProject.u32_divisor_magic_multiplier(
-            "rhs", bit_width=64, target_bit_offset=1
+            "lhs", "rhs", bit_width=64, target_bit_offset=1
         ),
         "64-bit reciprocal must not use target bit offset",
+    )
+
+
+def test_divisor_magic_requires_explicit_numerator() -> None:
+    for project in (
+        ValueProject.u32_divisor_magic_multiplier("lhs", "rhs"),
+        ValueProject.u32_divisor_magic_multiplier_as_i32("lhs", "rhs"),
+        ValueProject.u32_divisor_magic_shift("lhs", "rhs", product_bit_width=32),
+    ):
+        _expect_value_error(
+            lambda project=project: replace(project, other_source_value=""),
+            "projection requires a numerator",
+        )
+    _expect_value_error(
+        lambda: replace(ValueProject.exact_i64("rhs"), other_source_value="lhs"),
+        "projection does not consume a second value",
     )
 
 
@@ -3600,7 +3855,7 @@ def test_word_value_projections_require_signed_i32_immediate() -> None:
 
     for projection in (
         ValueProject.exact_i64_i32_word("lhs", word_index=0),
-        ValueProject.u32_divisor_magic_multiplier_as_i32("rhs"),
+        ValueProject.u32_divisor_magic_multiplier_as_i32("lhs", "rhs"),
     ):
         _expect_value_error(
             lambda projection=projection: compile_unsigned_immediate(projection),
@@ -3611,7 +3866,7 @@ def test_word_value_projections_require_signed_i32_immediate() -> None:
 def test_signed_reciprocal_projection_rejects_bit_offset() -> None:
     _expect_value_error(
         lambda: replace(
-            ValueProject.u32_divisor_magic_multiplier_as_i32("rhs"),
+            ValueProject.u32_divisor_magic_multiplier_as_i32("lhs", "rhs"),
             target_bit_offset=1,
         ),
         "signed reciprocal projection must not use target bit offset",
@@ -3650,6 +3905,81 @@ def test_compile_lower_rule_set_compiles_f64_i32_word() -> None:
     assert attr_copy.source_element_index == 1
     value_ref = compiled.value_refs[attr_copy.value_ref_index]
     assert value_ref.index == 0
+
+
+def test_compile_lower_rule_set_compiles_f64_i64() -> None:
+    signed_i64_descriptor = replace(
+        TEST_LOW_CONST_I32_DESCRIPTOR,
+        immediates=(
+            Immediate(
+                "i64_value",
+                ImmediateKind.SIGNED,
+                bit_width=64,
+                signed_min=-(2**63),
+                unsigned_max=(2**63) - 1,
+            ),
+        ),
+    )
+    descriptor_set = replace(
+        TEST_LOW_CORE_DESCRIPTOR_SET,
+        descriptors=tuple(
+            signed_i64_descriptor
+            if descriptor == TEST_LOW_CONST_I32_DESCRIPTOR
+            else descriptor
+            for descriptor in TEST_LOW_CORE_DESCRIPTOR_SET.descriptors
+        ),
+    )
+    table = ContractFragment(
+        name="test.value-f64-i64-immediate",
+        descriptor_set=descriptor_set,
+        cases=[
+            DescriptorRule(
+                source_op=scalar_arithmetic.scalar_addf,
+                descriptor=signed_i64_descriptor,
+                guards=(Guard.value_type("result", Scalar("f32")),),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=signed_i64_descriptor,
+                        results={"dst": ValueRef.result("result")},
+                        immediates={
+                            "i64_value": ValueProject.float_as_f64_i64("lhs"),
+                        },
+                    ),
+                ),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+
+    assert len(compiled.attr_copies) == 1
+    attr_copy = compiled.attr_copies[0]
+    assert attr_copy.kind == LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I64
+    value_ref = compiled.value_refs[attr_copy.value_ref_index]
+    assert value_ref.index == 0
+
+    _expect_value_error(
+        lambda: ValueProject.float_as_f64_i64("lhs").validate(
+            scalar_arithmetic.scalar_addf,
+            TEST_LOW_CONST_I32_DESCRIPTOR,
+            "i32_value",
+        ),
+        "must be a signed 64-bit immediate",
+    )
+
+
+def test_signed_float_projections_reject_bit_offset() -> None:
+    for projection in (
+        ValueProject.float_as_f32_i32("lhs"),
+        ValueProject.float_as_f64_i64("lhs"),
+    ):
+        _expect_value_error(
+            lambda projection=projection: replace(
+                projection,
+                target_bit_offset=1,
+            ),
+            "projection must not use target bit offset",
+        )
 
 
 def test_compile_lower_rule_set_compiles_f32_i32() -> None:

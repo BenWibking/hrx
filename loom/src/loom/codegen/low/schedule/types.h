@@ -169,6 +169,10 @@ enum loom_low_schedule_flag_bits_e {
   // Retains final-issue lower bounds for source suffixes consumed by guarded
   // motion profitability planning.
   LOOM_LOW_SCHEDULE_FLAG_RETAIN_SOURCE_SUFFIX_BOUNDS = 1u << 4,
+  // Retains the defining schedule node for each function-local value.
+  LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES = 1u << 5,
+  // Retains exact memory-completion edges across acyclic CFG paths.
+  LOOM_LOW_SCHEDULE_FLAG_RETAIN_ACYCLIC_MEMORY_COMPLETIONS = 1u << 6,
 };
 typedef uint32_t loom_low_schedule_flags_t;
 
@@ -512,6 +516,12 @@ typedef struct loom_low_schedule_candidate_decision_t {
   uint32_t rejected_units_until_pressure_cliff;
 } loom_low_schedule_candidate_decision_t;
 
+enum loom_low_schedule_effect_use_flag_bits_e {
+  // A source-derived summary participates in acyclic memory completion.
+  LOOM_LOW_SCHEDULE_EFFECT_USE_FLAG_REFINED_MEMORY = 1u << 0,
+};
+typedef uint16_t loom_low_schedule_effect_use_flags_t;
+
 // Descriptor effect row recorded in scheduled order. Effects describe memory,
 // counter, call, barrier, and control behavior used by dependency construction
 // and target-owned wait and hazard planning.
@@ -526,6 +536,8 @@ typedef struct loom_low_schedule_effect_use_t {
   uint32_t issue_cycle;
   // Effect row ordinal within the node's descriptor.
   uint16_t effect_ordinal;
+  // Schedule-derived effect-use classification flags.
+  loom_low_schedule_effect_use_flags_t flags;
   // Effect kind used by dependency and legality construction.
   loom_low_effect_kind_t kind;
   // Memory space or external resource touched by the effect.
@@ -540,6 +552,19 @@ typedef struct loom_low_schedule_effect_use_t {
   // Access width in bits, or zero when not width-specific.
   uint16_t width_bits;
 } loom_low_schedule_effect_use_t;
+
+static_assert(sizeof(loom_low_schedule_effect_use_t) == 36,
+              "scheduled effect uses must remain compact");
+
+// One asynchronous memory completion required across an acyclic CFG path.
+// Effect-use ordinals preserve exact producer counters and consumer accesses
+// without requiring downstream consumers to repeat memory analysis.
+typedef struct loom_low_schedule_memory_completion_edge_t {
+  // Producer index in loom_low_schedule_table_t::effect_uses.
+  uint32_t producer_effect_use;
+  // Consumer index in loom_low_schedule_table_t::effect_uses.
+  uint32_t consumer_effect_use;
+} loom_low_schedule_memory_completion_edge_t;
 
 // Descriptor hazard row recorded in scheduled order. These rows are passive
 // facts: target overlays consume them to insert waits, enforce distances, or
@@ -788,6 +813,10 @@ typedef struct loom_low_schedule_table_t {
   const loom_value_id_t* value_ids;
   // Number of entries in |value_ids|.
   loom_value_ordinal_t value_count;
+  // Defining schedule node indexed by local value ordinal, or NONE for block
+  // arguments and external definitions. Present only with
+  // RETAIN_VALUE_PRODUCER_NODES.
+  const uint32_t* value_producer_nodes;
   // Optional source-order liveness analysis. Present only when explicitly
   // retained or required by requested diagnostics; schedule construction may
   // consume transient liveness without publishing it here.
@@ -872,6 +901,11 @@ typedef struct loom_low_schedule_table_t {
   const loom_low_schedule_effect_use_t* effect_uses;
   // Number of effect-use records.
   iree_host_size_t effect_use_count;
+  // Exact cross-block memory completions proven along acyclic CFG paths.
+  // Present only with RETAIN_ACYCLIC_MEMORY_COMPLETIONS.
+  const loom_low_schedule_memory_completion_edge_t* memory_completion_edges;
+  // Number of entries in |memory_completion_edges|.
+  iree_host_size_t memory_completion_edge_count;
   // Descriptor hazards in scheduled order. Empty when scheduled nodes do not
   // reference descriptor hazard rows.
   const loom_low_schedule_hazard_use_t* hazard_uses;
@@ -890,6 +924,17 @@ typedef struct loom_low_schedule_table_t {
   // Number of resource summary records.
   iree_host_size_t resource_summary_count;
 } loom_low_schedule_table_t;
+
+// Returns the defining schedule node for |value_ordinal|, or NONE for a block
+// argument or external definition. The schedule must retain value producers.
+static inline uint32_t loom_low_schedule_value_producer_node(
+    const loom_low_schedule_table_t* schedule,
+    loom_value_ordinal_t value_ordinal) {
+  IREE_ASSERT_ARGUMENT(schedule);
+  IREE_ASSERT_LT(value_ordinal, schedule->value_count);
+  IREE_ASSERT(schedule->value_producer_nodes != NULL);
+  return schedule->value_producer_nodes[value_ordinal];
+}
 
 // Returns the source-order schedule node for |op|, or NULL when |op| does not
 // belong to |schedule|. The returned node retains its final scheduled ordinal.

@@ -28,6 +28,7 @@ loom_check_test_suite(
     name = "compiler_test",
     srcs = [
         "aggregate_constants.cxx-test",
+        "array_records.cxx-test",
         "assembly.cxx-test",
         "assembly_invalid.cxx-test",
         "assumptions.cxx-test",
@@ -107,6 +108,8 @@ loom_check_test_suite(
         "parameter_noalias.cxx-test",
         "parameter_noalias_invalid.cxx-test",
         "pointers.cxx-test",
+        "predicate_contracts.cxx-test",
+        "predicate_contracts_invalid.cxx-test",
         "record_arrays.cxx-test",
         "record_memory.cxx-test",
         "record_memory_invalid.cxx-test",
@@ -123,6 +126,8 @@ loom_check_test_suite(
         "shaped_intrinsics_invalid.cxx-test",
         "standards.cxx-test",
         "storage_updates.cxx-test",
+        "subgroup_reductions.cxx-test",
+        "subgroup_reductions_invalid.cxx-test",
         "subgroups.cxx-test",
         "subgroups_invalid.cxx-test",
         "symbols.cxx-test",
@@ -246,6 +251,22 @@ loom_test(
     srcs = ["local_arrays.cxx"],
     execution_profiles = [VM_REFERENCE_PROFILE],
     target_compatible_with = _HOST_COMPATIBILITY,
+)
+
+loom_test(
+    name = "array_records_test",
+    srcs = ["array_records.cxx"],
+    execution_profiles = [VM_REFERENCE_PROFILE],
+    target_compatible_with = _HOST_COMPATIBILITY,
+)
+
+loom_test_module(
+    name = "array_records_module",
+    srcs = [
+        "array_records_kernel.cxx",
+        "array_records_kernel.loom",
+    ],
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
 )
 
 loom_test(

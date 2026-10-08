@@ -47,6 +47,7 @@ typedef struct loom_cleanup_pattern_provider_set_t
 typedef struct loom_target_environment_t loom_target_environment_t;
 typedef struct loom_check_diagnostic_collector_t
     loom_check_diagnostic_collector_t;
+typedef struct loom_check_compile_session_t loom_check_compile_session_t;
 
 //===----------------------------------------------------------------------===//
 // Types
@@ -100,10 +101,10 @@ typedef struct loom_check_result_t {
   // source; apply multiple edits atomically or in descending range order.
   loom_json_value_list_t annotation_edits;
 
-  // Structured diagnostic JSON objects emitted through the shared
-  // loom_diagnostic_json_write_object path. These preserve the full
-  // parser/verifier shape: source ranges, highlights, related locations,
-  // params, field refs, rendered message, and fix hints.
+  // Structured diagnostic JSON objects. Internal checker stages preserve the
+  // complete parser/verifier shape; public compiler qualification preserves
+  // the code, message, source range, related locations, and rendered params
+  // exposed by LoomC.
   loom_json_value_list_t diagnostics;
 } loom_check_result_t;
 
@@ -152,6 +153,9 @@ typedef struct loom_check_emit_provider_request_t {
   iree_string_view_t filename;
   // Parsed test case being executed.
   const loom_test_case_t* test_case;
+  // Original source admission request. Source-consuming providers admit this
+  // input through the public compiler and receive no internal |module|.
+  const loom_input_request_t* input_request;
   // Runner environment that selected this provider.
   const loom_check_environment_t* environment;
   // Module admitted by the selected input provider.
@@ -180,8 +184,8 @@ typedef bool (*loom_check_emit_provider_match_fn_t)(
 // Checks provider-specific REQUIRES declarations before execution.
 typedef iree_status_t (*loom_check_emit_provider_check_requirements_fn_t)(
     const loom_check_emit_provider_t* provider,
-    const loom_test_case_t* test_case, loom_check_result_t* result,
-    bool* out_continue_execution);
+    const loom_test_case_t* test_case, iree_string_view_t target_options,
+    loom_check_result_t* result, bool* out_continue_execution);
 
 // Emits the provider-owned comparable output for |request|.
 typedef iree_status_t (*loom_check_emit_provider_execute_fn_t)(
@@ -197,6 +201,8 @@ typedef iree_status_t (*loom_check_emit_provider_append_names_fn_t)(
 struct loom_check_emit_provider_t {
   // Human-readable provider name used for debugging and ownership comments.
   iree_string_view_t name;
+  // True when the provider consumes source before common module admission.
+  bool consumes_source;
   // Returns true when this provider owns an emit target name.
   loom_check_emit_provider_match_fn_t match;
   // Checks provider-specific REQUIRES declarations for an emit case.
@@ -261,6 +267,8 @@ struct loom_check_environment_t {
   loom_check_register_context_callback_t register_context;
   // Composed target environment used by target-aware check modes.
   const loom_target_environment_t* target_environment;
+  // Lazy public compiler session used only by source-consuming providers.
+  loom_check_compile_session_t* compile_session;
   // Cleanup rewrite providers linked into this runner.
   const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set;
   // Optional emit providers linked into this runner.

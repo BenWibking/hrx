@@ -385,7 +385,7 @@ static loom_low_schedule_dependency_endpoint_t
 loom_low_schedule_value_write_endpoint(
     const loom_low_schedule_build_state_t* state,
     loom_value_ordinal_t value_ordinal) {
-  const uint32_t producer_node = state->values[value_ordinal].producer_node;
+  const uint32_t producer_node = state->value_producer_nodes[value_ordinal];
   if (producer_node == LOOM_LOW_SCHEDULE_NODE_NONE) {
     return loom_low_schedule_dependency_endpoint_none();
   }
@@ -803,7 +803,7 @@ static iree_status_t loom_low_schedule_note_edge_source_writes(
     const loom_low_schedule_edge_source_record_t current =
         state->storage_reads.edge_source_worklist[i];
     const loom_value_ordinal_t current_ordinal = current.value_ordinal;
-    const uint32_t writer_node = state->values[current_ordinal].producer_node;
+    const uint32_t writer_node = state->value_producer_nodes[current_ordinal];
     if (writer_node == LOOM_LOW_SCHEDULE_NODE_NONE ||
         state->nodes[writer_node].block_index != edge_node->block_index) {
       continue;
@@ -1135,7 +1135,7 @@ static iree_status_t loom_low_schedule_note_explicit_state_value_read(
     uint16_t reg_class_id,
     loom_low_schedule_dependency_endpoint_t read_endpoint) {
   const loom_low_schedule_value_record_t* value = &state->values[value_ordinal];
-  const uint32_t producer_node = value->producer_node;
+  const uint32_t producer_node = state->value_producer_nodes[value_ordinal];
   const bool has_same_block_producer =
       producer_node != LOOM_LOW_SCHEDULE_NODE_NONE &&
       state->nodes[producer_node].block_index ==
@@ -1521,7 +1521,7 @@ iree_status_t loom_low_schedule_fill_nodes(
           loom_low_schedule_node_const_result_ordinals(node);
       for (uint16_t result_index = 0; result_index < node->result_count;
            ++result_index) {
-        state->values[result_ordinals[result_index]].producer_node =
+        state->value_producer_nodes[result_ordinals[result_index]] =
             next_node_index;
       }
       ++next_node_index;
@@ -1556,7 +1556,7 @@ static void loom_low_schedule_preserve_live_out_state(
     // An explicit state value fixes the state observed across this CFG edge.
     // Its writers retain source order: a local value must survive all later
     // writers, and an incoming value must survive the whole block.
-    const uint32_t producer = value->producer_node;
+    const uint32_t producer = state->value_producer_nodes[ordinal];
     const uint32_t clobber =
         producer != LOOM_LOW_SCHEDULE_NODE_NONE &&
                 state->nodes[producer].block_index == block_index
@@ -1575,7 +1575,7 @@ static void loom_low_schedule_preserve_live_out_state(
         .consumer_node = block->node_start + block->node_count - 1,
         .dependency_kind = LOOM_LOW_SCHEDULE_DEPENDENCY_STATE,
         .operand_index = UINT32_MAX,
-        .state_value_id = value->value_id,
+        .state_value_id = liveness->live_out_values[i],
     };
     ++state->error_count;
     return;
@@ -1639,7 +1639,7 @@ iree_status_t loom_low_schedule_build_dependencies(
         const loom_value_ordinal_t operand_ordinal =
             operand_ordinals[operand_index];
         const uint32_t producer_node =
-            state->values[operand_ordinal].producer_node;
+            state->value_producer_nodes[operand_ordinal];
         if (producer_node != LOOM_LOW_SCHEDULE_NODE_NONE &&
             state->nodes[producer_node].block_index == node->block_index) {
           const uint16_t descriptor_operand_index =
@@ -1712,7 +1712,7 @@ iree_status_t loom_low_schedule_build_dependencies(
             loom_low_schedule_storage_relation_index_at(
                 &state->storage_relations, handoff->relation_index);
         const uint32_t producer =
-            state->values[relation->source_ordinal].producer_node;
+            state->value_producer_nodes[relation->source_ordinal];
         IREE_RETURN_IF_ERROR(loom_low_schedule_note_edge_source_writes(
             state, &state->nodes[producer], relation));
         index = handoff->next_handoff;

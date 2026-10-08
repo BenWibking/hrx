@@ -261,7 +261,9 @@ static void loom_spirv_emit_validate_packet_shape(
     const loom_op_t* op, const loom_low_descriptor_packet_t* packet,
     const loom_spirv_packet_row_t* row) {
   (void)packet;
-  IREE_ASSERT_EQ(op->result_count, row->result_count);
+  IREE_ASSERT_EQ(
+      op->result_count,
+      row->result_type_ref != LOOM_SPIRV_PACKET_VALUE_TYPE_REF_UNKNOWN);
   IREE_ASSERT_EQ(op->operand_count, row->operand_count);
 }
 
@@ -326,6 +328,20 @@ static iree_status_t loom_spirv_emit_boolean_constant_packet(
       loom_spirv_packet_row_result_type(row));
 }
 
+// Conversion chains must preserve destination rounding just like arithmetic:
+// Vulkan otherwise permits transformations that remove intermediate precision.
+static iree_status_t loom_spirv_emit_rounding_decoration(
+    loom_spirv_emit_state_t* state, loom_spirv_packet_flags_t flags,
+    uint32_t result_id) {
+  if (!iree_any_bit_set(flags, LOOM_SPIRV_PACKET_FLAG_NO_CONTRACTION)) {
+    return iree_ok_status();
+  }
+  const uint32_t operands[] = {result_id, LOOM_SPIRV_DECORATION_NO_CONTRACTION};
+  return loom_spirv_binary_write_instruction(
+      loom_spirv_emit_section(state, LOOM_SPIRV_MODULE_SECTION_ANNOTATION),
+      LOOM_SPIRV_OP_DECORATE, operands, IREE_ARRAYSIZE(operands));
+}
+
 static iree_status_t loom_spirv_emit_binary_same_type_packet(
     loom_spirv_emit_state_t* state, const loom_low_descriptor_packet_t* packet,
     const loom_spirv_packet_row_t* row) {
@@ -343,14 +359,8 @@ static iree_status_t loom_spirv_emit_binary_same_type_packet(
       operands[0].id,
       operands[1].id,
   };
-  if (iree_any_bit_set(row->flags, LOOM_SPIRV_PACKET_FLAG_NO_CONTRACTION)) {
-    const uint32_t decoration_operands[] = {
-        result_id, LOOM_SPIRV_DECORATION_NO_CONTRACTION};
-    IREE_RETURN_IF_ERROR(loom_spirv_binary_write_instruction(
-        loom_spirv_emit_section(state, LOOM_SPIRV_MODULE_SECTION_ANNOTATION),
-        LOOM_SPIRV_OP_DECORATE, decoration_operands,
-        IREE_ARRAYSIZE(decoration_operands)));
-  }
+  IREE_RETURN_IF_ERROR(
+      loom_spirv_emit_rounding_decoration(state, row->flags, result_id));
   IREE_RETURN_IF_ERROR(loom_spirv_binary_write_instruction(
       loom_spirv_emit_section(state, LOOM_SPIRV_MODULE_SECTION_FUNCTION),
       row->opcode, instruction_operands, IREE_ARRAYSIZE(instruction_operands)));
@@ -378,6 +388,8 @@ static iree_status_t loom_spirv_emit_unary_typed_packet(
       result_id,
       operands[0].id,
   };
+  IREE_RETURN_IF_ERROR(
+      loom_spirv_emit_rounding_decoration(state, row->flags, result_id));
   IREE_RETURN_IF_ERROR(loom_spirv_binary_write_instruction(
       loom_spirv_emit_section(state, LOOM_SPIRV_MODULE_SECTION_FUNCTION),
       row->opcode, instruction_operands, IREE_ARRAYSIZE(instruction_operands)));

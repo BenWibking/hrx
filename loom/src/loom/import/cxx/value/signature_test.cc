@@ -6,7 +6,9 @@
 
 #include "loom/import/cxx/value/signature.h"
 
+#include <cxx/ast.h>
 #include <cxx/symbols.h>
+#include <cxx/types.h>
 #include <cxx/views/symbol_chain.h>
 
 #include <array>
@@ -64,6 +66,45 @@ TEST_F(ValueBuilderTest, BindsFunctionArgumentsAndResultsToTheirOwnIdentities) {
   auto result_view = loom_module_value_type(module_, loom_op_results(op)[2]);
   EXPECT_EQ(loom_type_dim_value_id_at(result_view, 0), loom_op_results(op)[0]);
   EXPECT_EQ(loom_type_encoding_value_id(result_view), loom_op_results(op)[1]);
+}
+
+TEST_F(ValueBuilderTest, ReservesStaticIdentitiesForCallableContracts) {
+  Source source(IREE_SV("unsigned forward(unsigned input);"),
+                IREE_SV("signature.cxx"), options());
+  auto* root = cxx::ast_cast<cxx::TranslationUnitAST>(source.unit().ast());
+  cxx::SimpleDeclarationAST* simple = nullptr;
+  for (auto* declaration : cxx::ListView{root->declarationList}) {
+    if ((simple = cxx::ast_cast<cxx::SimpleDeclarationAST>(declaration))) {
+      break;
+    }
+  }
+  ASSERT_NE(simple, nullptr);
+  auto* declarator = simple->initDeclaratorList->value;
+  auto* function = cxx::symbol_cast<cxx::FunctionSymbol>(declarator->symbol);
+  auto* function_type = cxx::type_cast<cxx::FunctionType>(function->type());
+  std::array<const cxx::Type*, 2> sources = {function->parameters()[0]->type(),
+                                             function_type->returnType()};
+  Types types(source.unit(), source.diagnostics());
+
+  auto signature = bind_signature(types, sources, declarator, &builder_,
+                                  SignatureIdentityRequirement::Required);
+  ASSERT_EQ(signature.types.size(), 2u);
+  ASSERT_EQ(signature.identities.size(), 2u);
+
+  loom_string_id_t name;
+  IREE_ASSERT_OK(loom_module_intern_string(module_, IREE_SV("forward"), &name));
+  loom_symbol_id_t symbol;
+  IREE_ASSERT_OK(loom_module_add_symbol(module_, name, &symbol));
+  loom_op_t* op;
+  IREE_ASSERT_OK(loom_test_func_build(&builder_, 0, 0, 0, {0, symbol},
+                                      signature.types.data(), 1,
+                                      signature.types.data() + 1, 1, nullptr, 0,
+                                      nullptr, 0, LOOM_LOCATION_UNKNOWN, &op));
+
+  auto* entry = loom_region_entry_block(loom_test_func_body(op));
+  ASSERT_EQ(entry->arg_count, 1u);
+  EXPECT_EQ(entry->arg_ids[0], signature.identities[0]);
+  EXPECT_EQ(loom_op_results(op)[0], signature.identities[1]);
 }
 
 }  // namespace

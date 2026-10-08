@@ -12,6 +12,7 @@
 #include "iree/base/tooling/flags.h"
 #include "loom/sanitizer/options.h"
 #include "loom/tooling/cli/help.h"
+#include "loom/tooling/cli/loomc_options.h"
 #include "loom/tooling/config/config.h"
 #include "loom/tooling/io/file.h"
 #include "loom/tooling/io/source_path.h"
@@ -297,23 +298,7 @@ static iree_status_t loom_compile_parse_sanitizer_options(
   IREE_RETURN_IF_ERROR(loom_sanitizer_reporting_mode_parse(
       iree_make_cstring_view(FLAG_sanitizer_reporting),
       IREE_SV("--sanitizer-reporting"), &internal_options.reporting_mode));
-  *out_options = (loomc_sanitizer_options_t){
-      .type = LOOMC_STRUCTURE_TYPE_SANITIZER_OPTIONS,
-      .structure_size = sizeof(*out_options),
-      .checks = internal_options.checks,
-      .flags = internal_options.flags,
-  };
-  switch (internal_options.reporting_mode) {
-    case LOOM_SANITIZER_REPORTING_MODE_DEFAULT:
-      out_options->reporting_mode = LOOMC_SANITIZER_REPORTING_MODE_DEFAULT;
-      break;
-    case LOOM_SANITIZER_REPORTING_MODE_TRAP:
-      out_options->reporting_mode = LOOMC_SANITIZER_REPORTING_MODE_TRAP;
-      break;
-    case LOOM_SANITIZER_REPORTING_MODE_REPORT_ONLY:
-      out_options->reporting_mode = LOOMC_SANITIZER_REPORTING_MODE_REPORT_ONLY;
-      break;
-  }
+  loom_tooling_cli_make_loomc_sanitizer_options(&internal_options, out_options);
   *out_enabled =
       internal_options.checks != 0 ||
       internal_options.reporting_mode != LOOM_SANITIZER_REPORTING_MODE_DEFAULT;
@@ -337,31 +322,6 @@ static iree_status_t loom_compile_append_config_files(
     IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_json_file(
         config_set, paths.values[i], allocator));
   }
-  return iree_ok_status();
-}
-
-static iree_status_t loom_compile_make_config_options(
-    const loom_tooling_config_set_t* config_set, iree_allocator_t allocator,
-    loomc_config_binding_t** out_bindings,
-    loomc_config_options_t* out_options) {
-  *out_bindings = NULL;
-  *out_options = (loomc_config_options_t){
-      .flags = LOOMC_CONFIG_POLICY_FLAG_REQUIRE_RESOLVED,
-  };
-  if (config_set->binding_count == 0) {
-    return iree_ok_status();
-  }
-  IREE_RETURN_IF_ERROR(iree_allocator_malloc(
-      allocator, config_set->binding_count * sizeof(**out_bindings),
-      (void**)out_bindings));
-  for (iree_host_size_t i = 0; i < config_set->binding_count; ++i) {
-    (*out_bindings)[i] = (loomc_config_binding_t){
-        .key = loomc_string_view_from_iree(config_set->bindings[i].key),
-        .value = loomc_string_view_from_iree(config_set->bindings[i].value),
-    };
-  }
-  out_options->bindings = *out_bindings;
-  out_options->binding_count = config_set->binding_count;
   return iree_ok_status();
 }
 
@@ -778,7 +738,7 @@ int main(int argc, char** argv) {
     status = loom_compile_append_config_flags(&config_set);
   }
   if (iree_status_is_ok(status)) {
-    status = loom_compile_make_config_options(
+    status = loom_tooling_cli_make_loomc_config_options(
         &config_set, allocator, &config_bindings, &config_options);
   }
   const iree_flag_string_list_t root_list = FLAG_root_list();

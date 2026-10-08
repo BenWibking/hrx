@@ -624,7 +624,6 @@ loom_cc_library(
     loom::codegen::low::allocation::table
     loom::codegen::low::allocation::target_constraints
     loom::codegen::low::allocation::unit_liveness
-    loom::codegen::low::allocation::unit_location
     loom::codegen::low::allocation::write_interference
     loom::codegen::low::schedule
     loom::error::emitter
@@ -1237,6 +1236,7 @@ loom_cc_library(
     loom::error::emitter
     loom::error::error_defs
     loom::ir
+    loom::ops::global
     loom::ops::low
     loom::target::function_version
     loom::target::registers

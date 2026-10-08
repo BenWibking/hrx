@@ -1007,15 +1007,16 @@ typedef iree_status_t (*loom_canonicalize_fn_t)(loom_op_t* op,
                                                 loom_rewriter_t* rewriter);
 
 // Per-instance effective traits callback. Recomputes the trait flags for a
-// specific op instance when construction or mutation changes attrs/flags that
-// affect generic semantics. NULL means "use the op vtable construction default
-// as-is" and is the common case. Pass hot paths read loom_op_t::traits instead
-// of invoking this callback.
+// specific op instance when construction or mutation changes attributes,
+// flags, or types that affect generic semantics. NULL means "use the op vtable
+// construction default as-is" and is the common case. Pass hot paths read
+// loom_op_t::traits instead of invoking this callback.
 //
 // Instance flags are dialect-specific per op kind: bit 0 on func.call
 // means "callee pure" but bit 0 on scalar.addf means a fast-math flag.
 // The callback gives each op kind control over interpretation.
-typedef loom_trait_flags_t (*loom_effective_traits_fn_t)(const loom_op_t* op);
+typedef loom_trait_flags_t (*loom_effective_traits_fn_t)(
+    const loom_module_t* module, const loom_op_t* op);
 
 typedef struct loom_fact_context_t loom_fact_context_t;
 typedef struct loom_value_facts_t loom_value_facts_t;

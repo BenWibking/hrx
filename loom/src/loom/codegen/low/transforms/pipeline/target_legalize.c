@@ -527,7 +527,6 @@ static bool loom_low_target_legalize_predicate_const_range(
       *out_maximum = predicate->args[1] - 1;
       return true;
     case LOOM_PREDICATE_LE:
-    case LOOM_PREDICATE_MAX:
       if (predicate->arg_count < 2 ||
           predicate->arg_tags[1] != LOOM_PRED_ARG_CONST) {
         return false;
@@ -543,7 +542,6 @@ static bool loom_low_target_legalize_predicate_const_range(
       *out_minimum = predicate->args[1] + 1;
       return true;
     case LOOM_PREDICATE_GE:
-    case LOOM_PREDICATE_MIN:
       if (predicate->arg_count < 2 ||
           predicate->arg_tags[1] != LOOM_PRED_ARG_CONST) {
         return false;
@@ -1459,7 +1457,12 @@ static iree_status_t loom_low_target_legalize_report_packet_rewrite(
       (loom_low_target_legalize_function_state_t*)user_data;
   loom_low_target_legalize_report_decision_t* report_decision =
       loom_low_target_legalize_report_decision(state, source_op);
-  IREE_ASSERT(report_decision != NULL);
+  // Component packetization can revisit operations created after report source
+  // capture. Their work remains part of the authored rewrite that created them
+  // and does not introduce an independent compile-report row.
+  if (report_decision == NULL) {
+    return iree_ok_status();
+  }
   IREE_ASSERT(report_decision->has_authored_query_result);
   static const loom_target_legalizer_entry_t packet_legalizer_entry = {
       .provider_name = IREE_SVL("vector-packet"),

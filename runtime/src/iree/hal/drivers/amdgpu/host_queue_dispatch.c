@@ -204,6 +204,7 @@ static iree_status_t iree_hal_amdgpu_host_queue_validate_dispatch_shape(
 }
 
 static iree_status_t iree_hal_amdgpu_host_queue_validate_dispatch_binding(
+    const iree_hal_queue_family_t* queue_family,
     const iree_hal_buffer_ref_t* binding) {
   if (IREE_UNLIKELY(binding->reserved != 0 || binding->buffer_slot != 0)) {
     return iree_make_status(
@@ -221,12 +222,9 @@ static iree_status_t iree_hal_amdgpu_host_queue_validate_dispatch_binding(
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
       iree_hal_buffer_memory_type(binding->buffer),
       IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE));
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
-      iree_hal_buffer_allowed_usage(binding->buffer),
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage_any(
+      iree_hal_buffer_family_usage(binding->buffer, queue_family),
       IREE_HAL_BUFFER_USAGE_STORAGE));
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
-      iree_hal_buffer_allowed_access(binding->buffer),
-      IREE_HAL_MEMORY_ACCESS_ANY));
   iree_device_size_t binding_offset = 0;
   iree_device_size_t binding_length = 0;
   return iree_hal_buffer_calculate_range(
@@ -236,6 +234,7 @@ static iree_status_t iree_hal_amdgpu_host_queue_validate_dispatch_binding(
 
 static iree_status_t
 iree_hal_amdgpu_host_queue_validate_dispatch_indirect_parameters(
+    const iree_hal_queue_family_t* queue_family,
     const iree_hal_buffer_ref_t* workgroup_count_ref) {
   const iree_device_size_t workgroup_count_length = sizeof(uint32_t[3]);
   if (IREE_UNLIKELY(workgroup_count_ref->reserved != 0 ||
@@ -262,8 +261,8 @@ iree_hal_amdgpu_host_queue_validate_dispatch_indirect_parameters(
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
       iree_hal_buffer_memory_type(workgroup_count_ref->buffer),
       IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE));
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
-      iree_hal_buffer_allowed_usage(workgroup_count_ref->buffer),
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_family_usage(
+      workgroup_count_ref->buffer, queue_family,
       IREE_HAL_BUFFER_USAGE_DISPATCH_INDIRECT_PARAMETERS));
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
       iree_hal_buffer_allowed_access(workgroup_count_ref->buffer),
@@ -497,13 +496,15 @@ static iree_status_t iree_hal_amdgpu_host_queue_resolve_validated_binding_ptr(
 // channels used to retain resources and write final kernargs. The arrays are
 // caller-owned scratch; passing NULL runs only the corresponding validation.
 static iree_status_t iree_hal_amdgpu_host_queue_prepare_dispatch_bindings(
+    const iree_hal_queue_family_t* queue_family,
     const iree_hal_buffer_ref_list_t bindings,
     iree_hal_resource_t** operation_resources, uint64_t* binding_ptrs) {
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t i = 0; i < bindings.count && iree_status_is_ok(status);
        ++i) {
     const iree_hal_buffer_ref_t* binding = &bindings.values[i];
-    status = iree_hal_amdgpu_host_queue_validate_dispatch_binding(binding);
+    status = iree_hal_amdgpu_host_queue_validate_dispatch_binding(queue_family,
+                                                                  binding);
     if (iree_status_is_ok(status) && binding_ptrs) {
       status = iree_hal_amdgpu_host_queue_resolve_validated_binding_ptr(
           binding, &binding_ptrs[i]);
@@ -520,6 +521,7 @@ static iree_status_t iree_hal_amdgpu_host_queue_prepare_dispatch_bindings(
 
 static iree_status_t
 iree_hal_amdgpu_host_queue_prepare_dispatch_indirect_parameters(
+    const iree_hal_queue_family_t* queue_family,
     const iree_hal_dispatch_config_t config,
     iree_hal_resource_t** operation_resources,
     iree_host_size_t operation_resource_index,
@@ -527,7 +529,7 @@ iree_hal_amdgpu_host_queue_prepare_dispatch_indirect_parameters(
   *out_workgroup_count_ptr = 0;
   IREE_RETURN_IF_ERROR(
       iree_hal_amdgpu_host_queue_validate_dispatch_indirect_parameters(
-          &config.workgroup_count_ref));
+          queue_family, &config.workgroup_count_ref));
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_host_queue_resolve_validated_binding_ptr(
       &config.workgroup_count_ref, out_workgroup_count_ptr));
   operation_resources[operation_resource_index] =
@@ -650,11 +652,12 @@ iree_status_t iree_hal_amdgpu_host_queue_validate_dispatch(
       !iree_any_bit_set(flags,
                         IREE_HAL_DISPATCH_FLAG_CUSTOM_DIRECT_ARGUMENTS)) {
     status = iree_hal_amdgpu_host_queue_prepare_dispatch_bindings(
-        bindings, /*operation_resources=*/NULL, /*binding_ptrs=*/NULL);
+        queue->base.queue_family, bindings, /*operation_resources=*/NULL,
+        /*binding_ptrs=*/NULL);
   }
   if (iree_status_is_ok(status) && plan.uses_indirect_parameters) {
     status = iree_hal_amdgpu_host_queue_validate_dispatch_indirect_parameters(
-        &config.workgroup_count_ref);
+        queue->base.queue_family, &config.workgroup_count_ref);
   }
   if (iree_status_is_ok(status)) {
     *out_operation_resource_count = plan.operation_resource_count;
@@ -1017,8 +1020,6 @@ static iree_status_t iree_hal_amdgpu_host_queue_submit_dispatch_packets(
     iree_hal_amdgpu_host_queue_publish_profile_host_writes(queue);
   }
   iree_hal_amdgpu_host_queue_publish_submission_kernargs(queue, &submission);
-  iree_hal_amdgpu_notification_ring_publish_epoch(&queue->notification_ring,
-                                                  submission_epoch);
   if (queue_device_event) {
     iree_hal_amdgpu_host_queue_commit_queue_device_start_packet(
         queue, resolution,
@@ -1084,6 +1085,8 @@ static iree_status_t iree_hal_amdgpu_host_queue_submit_dispatch_packets(
         submission.first_packet_id + submission.packet_count - 1,
         queue_device_event);
   }
+  iree_hal_amdgpu_notification_ring_publish_epoch(&queue->notification_ring,
+                                                  submission_epoch);
   iree_hal_amdgpu_aql_ring_doorbell(
       &queue->aql_ring,
       submission.first_packet_id + submission.packet_count - 1);
@@ -1123,14 +1126,15 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_dispatch(
   iree_status_t status = iree_ok_status();
   if (!uses_custom_direct_arguments) {
     status = iree_hal_amdgpu_host_queue_prepare_dispatch_bindings(
-        bindings, operation_resources, binding_ptrs);
+        queue->base.queue_family, bindings, operation_resources, binding_ptrs);
   }
   uint64_t workgroup_count_ptr = 0;
   if (iree_status_is_ok(status) && plan.uses_indirect_parameters) {
     const iree_host_size_t resource_index =
         uses_custom_direct_arguments ? 1 : 1 + bindings.count;
     status = iree_hal_amdgpu_host_queue_prepare_dispatch_indirect_parameters(
-        config, operation_resources, resource_index, &workgroup_count_ptr);
+        queue->base.queue_family, config, operation_resources, resource_index,
+        &workgroup_count_ptr);
   }
 
   if (iree_status_is_ok(status)) {

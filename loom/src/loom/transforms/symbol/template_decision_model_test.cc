@@ -306,7 +306,7 @@ class TemplateDecisionModelTest : public ::testing::Test {
             LOOM_DECISION_TRUTH_UNKNOWN) {
           const loom_template_decision_constraint_info_t info =
               loom_template_decision_model_constraint_info(
-                  model, evidence[choice_ordinal].unresolved_constraint);
+                  model, evidence[choice_ordinal].decisive_constraint);
           EXPECT_EQ(info.reason,
                     classifications[provider_ordinal].unresolved_reason);
           EXPECT_EQ(
@@ -412,7 +412,7 @@ TEST_F(TemplateDecisionModelTest,
   ModulePtr module = ParseModule(R"(
 template.decl @family.a(%x: index, %y: index) -> (index) where [le(%x, %y)]
 
-template.def<@family.a> priority(10) @a_blocked(%x: index, %y: index) -> (index) where [range(%x, 32, 64), mul(%y, 8)] {
+template.def<@family.a> priority(10) @a_blocked(%x: index, %y: index) -> (index) where [range(%x, 32, 64), multiple_of(%y, 8)] {
   template.return %x : index
 }
 
@@ -426,7 +426,7 @@ template.def<@family.a> priority(1) @a_fallback(%x: index, %y: index) -> (index)
 
 template.decl @family.b(%v0: index, %v1: index, %v2: index, %v3: index, %v4: index, %v5: index, %v6: index, %v7: index, %v8: index) -> (index) where [ge(%v8, -32)]
 
-template.def<@family.b> priority(20) @b_exact(%v0: index, %v1: index, %v2: index, %v3: index, %v4: index, %v5: index, %v6: index, %v7: index, %v8: index) -> (index) where [eq(%v8, 7), mul(%v0, 3)] {
+template.def<@family.b> priority(20) @b_exact(%v0: index, %v1: index, %v2: index, %v3: index, %v4: index, %v5: index, %v6: index, %v7: index, %v8: index) -> (index) where [eq(%v8, 7), multiple_of(%v0, 3)] {
   template.return %v8 : index
 }
 

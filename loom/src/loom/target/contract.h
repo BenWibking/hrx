@@ -78,6 +78,10 @@ typedef struct loom_target_vector_packet_policy_t {
   const uint16_t* native_bit_counts;
   // Logical lane counts worth evaluating for decomposable components.
   const uint16_t* native_lane_counts;
+  // Physical target width of index lanes. Zero uses the abstract source width.
+  uint8_t index_bit_count;
+  // Physical target width of offset lanes. Zero uses the abstract source width.
+  uint8_t offset_bit_count;
   // Sparse per-element lane ceilings for structural packet widths.
   const loom_target_vector_packet_lane_limit_t* structural_lane_limits;
   // Largest payload in bits that remains owned by ordinary structural

@@ -16,6 +16,7 @@
 #include "iree/hal/drivers/amdgpu/util/info.h"
 #include "iree/hal/drivers/amdgpu/util/topology.h"
 #include "iree/hal/drivers/amdgpu/util/vmem.h"
+#include "iree/hal/memory/maintenance.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -82,10 +83,10 @@ static iree_status_t QueueReadbackAndWait(iree_hal_device_t* device,
                                         readback_buffer, target.data_length));
 
   iree_hal_buffer_mapping_t readback_mapping;
-  IREE_RETURN_IF_ERROR(
-      iree_hal_buffer_map_range(readback_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                IREE_HAL_MEMORY_ACCESS_READ, /*byte_offset=*/0,
-                                target.data_length, &readback_mapping));
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
+      readback_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+      /*byte_offset=*/0, target.data_length, &readback_mapping));
   std::memcpy(target.data, readback_mapping.contents.data, target.data_length);
   return iree_hal_buffer_unmap_range(&readback_mapping);
 }
@@ -292,6 +293,20 @@ static iree_device_size_t OversizedAllocationSize(
   return tlsf_range_length + 1;
 }
 
+// The caller has finished publishing releases. Drain on the captured owner so
+// TLSF returns and the native retirements they enqueue all finish before the
+// observation. A FIFO barrier alone does not join work enqueued behind it.
+static void DrainMemoryMaintenance(iree_hal_memory_maintenance_t* owner) {
+  iree_hal_memory_maintenance_call(
+      owner,
+      [](void* user_data) {
+        auto* owner = static_cast<iree_hal_memory_maintenance_t*>(user_data);
+        while (iree_hal_memory_maintenance_run_one(owner)) {
+        }
+      },
+      owner);
+}
+
 static const char* QueryHostIncompatibilityReason(
     const iree_hal_amdgpu_logical_device_options_t* options) {
   switch (iree_hal_amdgpu_logical_device_options_query_host_compatibility(
@@ -459,6 +474,14 @@ TEST_F(AllocatorTest, VirtualMemoryLifecycleUsesNativeState) {
       allocator, kQueueFamilyAffinity0, recommended_page_size,
       virtual_memory.out()));
   ASSERT_NE(nullptr, virtual_memory.get());
+  const iree_hal_buffer_native_binding_slot_t device_slot = {
+      IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS,
+      IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
+  };
+  EXPECT_EQ(iree_hal_buffer_native_binding(virtual_memory.get(), device_slot)
+                .device_address,
+            (uint64_t)(uintptr_t)iree_hal_amdgpu_buffer_device_pointer(
+                virtual_memory.get()));
   EXPECT_EQ(IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_DEVICE_SCOPE_32 |
                 IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_DEVICE_SCOPE_64,
             iree_hal_amdgpu_buffer_atomic_memory_cells(virtual_memory.get()));
@@ -1103,10 +1126,23 @@ TEST_F(AllocatorTest, AsanDiagnosticsExposeDefaultQuarantineRetention) {
       OversizedAllocationSize(test_device.logical_device());
   IREE_ASSERT_OK(AllocateAndExportDevicePointer(
       test_device.allocator(), params, allocation_size, &buffer, &ptr));
+  iree_hal_buffer_t* small_buffer = nullptr;
+  uint64_t small_ptr = 0;
+  IREE_ASSERT_OK(AllocateAndExportDevicePointer(
+      test_device.allocator(), params, 128, &small_buffer, &small_ptr));
   iree_hal_buffer_release(buffer);
+  iree_hal_buffer_release(small_buffer);
+
+  DrainMemoryMaintenance(
+      test_device.logical_device()->physical_devices[0]->memory_maintenance);
 
   asan = QueryAsanObservation(test_device.device());
-  EXPECT_GT(asan.quarantine_size, 0u);
+  iree_hal_pool_stats_t pool_stats;
+  iree_hal_pool_query_stats(
+      test_device.logical_device()->physical_devices[0]->default_pool,
+      &pool_stats);
+  EXPECT_GT(pool_stats.bytes_quarantined, allocation_size + 128);
+  EXPECT_EQ(asan.quarantine_size, pool_stats.bytes_quarantined);
   EXPECT_EQ(asan.quarantine_eviction_count, 0u);
   EXPECT_GE(asan.shadow_mapped_slab_count, initial_shadow_mapped_slab_count);
   EXPECT_GE(asan.shadow_committed_size, initial_shadow_committed_size);
@@ -1150,6 +1186,9 @@ TEST_F(AllocatorTest, AsanDiagnosticsExposeZeroQuarantineRelease) {
   IREE_ASSERT_OK(AllocateAndExportDevicePointer(
       test_device.allocator(), params, allocation_size, &buffer, &ptr));
   iree_hal_buffer_release(buffer);
+
+  DrainMemoryMaintenance(
+      test_device.logical_device()->physical_devices[0]->memory_maintenance);
 
   asan = QueryAsanObservation(test_device.device());
   EXPECT_EQ(asan.quarantine_size, 0u);
@@ -1716,6 +1755,54 @@ TEST_F(AllocatorTest, HostAllocationImportUsesFinePoolAtomicContract) {
     EXPECT_EQ(values[i], kPattern);
   }
 
+  // Device export names the registered HSA agent address, regardless of where
+  // the allocation resides. Views preserve that address plus their offset.
+  iree_hal_external_buffer_t root_export = {};
+  IREE_ASSERT_OK(iree_hal_buffer_export(
+      buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
+      IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &root_export));
+  Ref<iree_hal_buffer_t> view;
+  IREE_ASSERT_OK(
+      iree_hal_buffer_subspan(buffer, 128, 64, host_allocator_, view.out()));
+  iree_hal_external_buffer_t view_export = {};
+  IREE_ASSERT_OK(iree_hal_buffer_export(
+      view, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
+      IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &view_export));
+  EXPECT_EQ(root_export.handle.device_allocation.ptr + 128,
+            view_export.handle.device_allocation.ptr);
+  EXPECT_EQ(64u, view_export.size);
+  const iree_hal_buffer_native_binding_slot_t device_slot = {
+      IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS,
+      IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
+  };
+  EXPECT_EQ(iree_hal_buffer_native_binding(view, device_slot).device_address,
+            view_export.handle.device_allocation.ptr);
+  iree_byte_span_t host_span = iree_byte_span_empty();
+  IREE_ASSERT_OK(iree_hal_buffer_native_host_span(view, 0, 64, &host_span));
+  EXPECT_EQ(host_span.data, static_cast<uint8_t*>(host_ptr) + 128);
+  EXPECT_EQ(host_span.data_length, 64u);
+  iree_hal_external_buffer_t host_export = {};
+  IREE_ASSERT_OK(iree_hal_buffer_export(
+      view, IREE_HAL_EXTERNAL_BUFFER_TYPE_HOST_ALLOCATION,
+      IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &host_export));
+  EXPECT_EQ(host_export.handle.host_allocation.ptr, host_span.data);
+  // The registered execution address does not grant public mapping access.
+  iree_hal_buffer_mapping_t mapping = {};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_PERMISSION_DENIED,
+      iree_hal_buffer_map_range(
+          view, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+          IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 64, &mapping));
+  std::array<uint32_t, 16> exported_values = {};
+  IREE_ASSERT_OK(iree_hsa_memory_copy(
+      IREE_LIBHSA(&libhsa_), exported_values.data(),
+      reinterpret_cast<void*>(view_export.handle.device_allocation.ptr),
+      sizeof(exported_values)));
+  for (uint32_t value : exported_values) {
+    EXPECT_EQ(kPattern, value);
+  }
+  view.reset();
+
   iree_hal_buffer_release(buffer);
   EXPECT_EQ(release_count, 1);
   iree_allocator_free_aligned(host_allocator_, host_ptr);
@@ -2218,20 +2305,11 @@ TEST_F(AllocatorTest, ExternalBufferExportValidatesMemoryType) {
       test_device.allocator(), params, /*allocation_size=*/4096, &buffer));
 
   iree_hal_external_buffer_t external_buffer = {};
-  if (iree_all_bits_set(iree_hal_buffer_memory_type(buffer),
-                        IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL)) {
-    IREE_ASSERT_OK(iree_hal_buffer_export(
-        buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
-        IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &external_buffer));
-    EXPECT_NE(external_buffer.handle.device_allocation.ptr, 0u);
-    EXPECT_EQ(external_buffer.size, iree_hal_buffer_allocation_size(buffer));
-  } else {
-    IREE_EXPECT_STATUS_IS(
-        IREE_STATUS_UNAVAILABLE,
-        iree_hal_buffer_export(
-            buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
-            IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &external_buffer));
-  }
+  IREE_ASSERT_OK(iree_hal_buffer_export(
+      buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
+      IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &external_buffer));
+  EXPECT_NE(external_buffer.handle.device_allocation.ptr, 0u);
+  EXPECT_EQ(external_buffer.size, iree_hal_buffer_allocation_size(buffer));
 
   IREE_ASSERT_OK(iree_hal_buffer_export(
       buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_HOST_ALLOCATION,

@@ -10,15 +10,13 @@ from loom.dialect.vector import defs as vector
 from loom.target.arch.amd.xdna.aie2p.contracts.accumulator_structural import (
     _ACCUMULATOR_BITCAST_TYPE_GROUPS,
     _ACCUMULATOR_CONCAT_RULES,
+    _ACCUMULATOR_VECTOR_EXTRACT_RULES,
     _ACCUMULATOR_VECTOR_SLICE_RULES,
     _F32X32_ACCUMULATOR,
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.carrier import (
     concat_x_carriers_emits,
     concat_x_carriers_with_controls_emits,
-)
-from loom.target.arch.amd.xdna.aie2p.contracts.data_path import (
-    I8_INTERLEAVE_CONTROL,
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.predicate_concat import (
     AIE2P_PREDICATE_CONCAT_RULES,
@@ -46,8 +44,6 @@ from loom.target.contracts import (
 )
 from loom.target.low_descriptors import Descriptor
 
-_I8X32_VECTOR = Vector("i8", lanes=32)
-_I8X64_VECTOR = Vector("i8", lanes=64)
 _I8_4X4_VECTOR = Vector("i8", dims=(4, 4))
 _I1_VECTOR = Vector("i1", minimum_lanes=1, maximum_lanes=64)
 _WIDE_PREDICATE_VECTOR = Vector("i1", minimum_lanes=65, maximum_lanes=128)
@@ -60,12 +56,16 @@ _INDEX = Scalar("index")
 # Ordinary vectors retain one or two full X carriers independently of their
 # logical extent. F32 excludes vector<32xf32>, whose accumulator contract uses
 # a distinct physical representation.
-_VECTOR_CARRIER_SPECS = (
+_BITCAST_VECTOR_CARRIER_SPECS = (
     (("i8", "f8E4M3", "f8E5M2"), 1, 128),
     (("i16", "f16", "bf16"), 2, 64),
     (("i32",), 4, 32),
     (("f32",), 4, 31),
     (("i64", "f64"), 8, 16),
+)
+_VECTOR_CARRIER_SPECS = (
+    *_BITCAST_VECTOR_CARRIER_SPECS,
+    (("index", "offset"), 4, 32),
 )
 
 # Every value matching these patterns and mapped to the ordinary vector file
@@ -78,7 +78,7 @@ _WIDE_VECTOR_BITCAST_TYPES = tuple(
         minimum_static_elements=64 // element_byte_count + 1,
         maximum_static_elements=128 // element_byte_count,
     )
-    for element_types, element_byte_count, _ in _VECTOR_CARRIER_SPECS
+    for element_types, element_byte_count, _ in _BITCAST_VECTOR_CARRIER_SPECS
 )
 
 # Exact 1024-bit ordinary vector-file values that can cross the flat F32x32
@@ -89,7 +89,7 @@ _ORDINARY_1024_BITCAST_TYPES = tuple(
         minimum_static_elements=128 // element_byte_count,
         maximum_static_elements=128 // element_byte_count,
     )
-    for element_types, element_byte_count, _ in _VECTOR_CARRIER_SPECS
+    for element_types, element_byte_count, _ in _BITCAST_VECTOR_CARRIER_SPECS
 )
 
 # Ordinary source vectors wider than one 512-bit X register are carried as two
@@ -146,6 +146,20 @@ _WIDE_VECTOR_EXTRACT_SPECS = (
         1,
     ),
     (
+        Vector("index", minimum_static_elements=17, maximum_static_elements=32),
+        Scalar("index"),
+        16,
+        "i32",
+        1,
+    ),
+    (
+        Vector("offset", minimum_static_elements=17, maximum_static_elements=32),
+        Scalar("offset"),
+        16,
+        "i32",
+        1,
+    ),
+    (
         Vector("f32", minimum_static_elements=17, maximum_static_elements=31),
         Scalar("f32"),
         16,
@@ -173,9 +187,6 @@ _WIDE_VECTOR_EXTRACT_SPECS = (
 # carrier, with the remaining lanes outside the source vector's value domain.
 _I8_DEINTERLEAVE_CONTROLS = (0, 1)
 
-# T16_2x32_lo interleaves the low sixteen 16-bit lanes of two X carriers.
-_I16_INTERLEAVE_CONTROL = 18
-
 # AIE2P's T32_4x4 VSHUFFLE mode transposes the sixteen 32-bit lanes carried
 # by one X register.
 _I32_F32_TRANSPOSE_4X4_CONTROL = 34
@@ -189,7 +200,7 @@ _I16_TRANSPOSE_8X8_CONTROLS = (52, 53)
 _PACKED_VECTOR_ELEMENT_TYPES = (
     (("i8", "f8E4M3", "f8E5M2"), 1),
     (("i16", "f16", "bf16"), 2),
-    (("i32", "f32"), 4),
+    (("i32", "f32", "index", "offset"), 4),
     (("i64", "f64"), 8),
 )
 
@@ -208,7 +219,10 @@ _WIDE_VECTOR_CONCAT_SPECS = (
         Vector(("i16", "f16", "bf16"), lanes=32),
         Vector(("i16", "f16", "bf16"), minimum_lanes=33, maximum_lanes=64),
     ),
-    (Vector("i32", lanes=16), Vector("i32", minimum_lanes=17, maximum_lanes=32)),
+    (
+        Vector(("i32", "index", "offset"), lanes=16),
+        Vector(("i32", "index", "offset"), minimum_lanes=17, maximum_lanes=32),
+    ),
     (Vector("f32", lanes=16), Vector("f32", minimum_lanes=17, maximum_lanes=31)),
     (
         Vector(("i64", "f64"), lanes=8),
@@ -418,87 +432,6 @@ def _wide_vector_extract_dynamic_rule(
             ),
         ),
         emit=tuple(emits),
-    )
-
-
-def _vector_deinterleave_i8x64_rule() -> DescriptorRule:
-    control_constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
-    shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
-
-    emits = []
-    for result_index, result_name in enumerate(("even", "odd")):
-        control_name = f"{result_name}_control"
-        emits.extend(
-            (
-                EmitDescriptorOp(
-                    descriptor=control_constant,
-                    results={"dst": ValueRef.temporary(control_name)},
-                    result_types={"dst": DescriptorResultType()},
-                    immediates={"i": _I8_DEINTERLEAVE_CONTROLS[result_index]},
-                    form=DescriptorEmitForm.CONST,
-                ),
-                EmitDescriptorOp(
-                    descriptor=shuffle,
-                    operands={
-                        "s1": ValueRef.operand("source"),
-                        "s2": ValueRef.operand("source"),
-                        "mod": ValueRef.temporary(control_name),
-                    },
-                    results={"dst": ValueRef.result("results", element=result_index)},
-                    form=DescriptorEmitForm.OP,
-                ),
-            )
-        )
-
-    return DescriptorRule(
-        source_op=vector.vector_deinterleave,
-        descriptor=shuffle,
-        guards=(
-            Guard.value_type("source", _I8X64_VECTOR),
-            Guard.value_type("results", _I8X32_VECTOR),
-            Guard.attr_kind("axis", "i64"),
-            Guard.i64_range("axis", 0, 0),
-        ),
-        emit=tuple(emits),
-    )
-
-
-def _vector_interleave_rule(
-    input_type: TypePattern,
-    result_type: TypePattern,
-    control_value: int,
-) -> DescriptorRule:
-    constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
-    shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
-    control = ValueRef.temporary("control")
-    return DescriptorRule(
-        source_op=vector.vector_interleave,
-        descriptor=shuffle,
-        guards=(
-            Guard.value_type("even", input_type),
-            Guard.value_type("odd", input_type),
-            Guard.value_type("result", result_type),
-            Guard.i64_range("axis", 0, 0),
-        ),
-        emit=(
-            EmitDescriptorOp(
-                descriptor=constant,
-                results={"dst": control},
-                result_types={"dst": DescriptorResultType()},
-                immediates={"i": control_value},
-                form=DescriptorEmitForm.CONST,
-            ),
-            EmitDescriptorOp(
-                descriptor=shuffle,
-                operands={
-                    "s1": ValueRef.operand("even"),
-                    "s2": ValueRef.operand("odd"),
-                    "mod": control,
-                },
-                results={"dst": ValueRef.result("result")},
-                form=DescriptorEmitForm.OP,
-            ),
-        ),
     )
 
 
@@ -1571,6 +1504,7 @@ AIE2P_STRUCTURAL_RULES = (
             ),
         )
     ),
+    *_ACCUMULATOR_VECTOR_EXTRACT_RULES,
     *_ACCUMULATOR_VECTOR_SLICE_RULES,
     *(
         rule
@@ -1613,25 +1547,6 @@ AIE2P_STRUCTURAL_RULES = (
             element_byte_count,
             wide_lane_maximum,
         )
-    ),
-    _vector_deinterleave_i8x64_rule(),
-    _vector_interleave_rule(
-        Vector(
-            ("i8", "f8E4M3", "f8E5M2"),
-            minimum_lanes=1,
-            maximum_lanes=32,
-        ),
-        Vector(
-            ("i8", "f8E4M3", "f8E5M2"),
-            minimum_lanes=2,
-            maximum_lanes=64,
-        ),
-        I8_INTERLEAVE_CONTROL,
-    ),
-    _vector_interleave_rule(
-        Vector(("i16", "f16", "bf16"), lanes=16),
-        Vector(("i16", "f16", "bf16"), lanes=32),
-        _I16_INTERLEAVE_CONTROL,
     ),
     _vector_transpose_i8_4x4_rule(),
     _vector_transpose_i32_f32_4x4_rule(),

@@ -100,6 +100,7 @@ static iree_status_t loom_spirv_device_provider_select_target(
 
   out_target->executable_target = executable_target;
   out_target->target_profile = &profile_storage->profile.base;
+  out_target->target_emitter = &loom_spirv_module_emitter;
   return iree_ok_status();
 }
 
@@ -138,6 +139,7 @@ static iree_status_t loom_spirv_device_provider_select_profile_target(
   *out_target = (loom_device_target_t){
       .executable_target = executable_target,
       .target_profile = base_profile,
+      .target_emitter = &loom_spirv_module_emitter,
   };
   return iree_ok_status();
 }
@@ -179,8 +181,6 @@ static void loom_spirv_device_provider_deinitialize_target(
 
 const loom_device_provider_t loom_spirv_vulkan_device_provider = {
     .name = IREE_SVL("spirv-vulkan-hal"),
-    .target_profile_type = &loom_spirv_target_profile_type,
-    .target_emitter = &loom_spirv_module_emitter,
     .driver_name = IREE_SVL("vulkan"),
     .select_compatible_target =
         loom_spirv_device_provider_select_compatible_target_from_facts,

@@ -471,9 +471,10 @@ static iree_status_t iree_hal_replay_dump_append_json_payload(
       return iree_string_builder_append_format(
           builder,
           ",\"payload\":{\"byte_offset\":%" PRIu64 ",\"byte_length\":%" PRIu64
-          ",\"mapping_mode\":%" PRIu32 ",\"memory_access\":%" PRIu16 "}",
+          ",\"mapping_mode\":%" PRIu32 ",\"memory_access\":%" PRIu16
+          ",\"map_flags\":%" PRIu16 "}",
           payload.byte_offset, payload.byte_length, payload.mapping_mode,
-          payload.memory_access);
+          payload.memory_access, payload.map_flags);
     }
     case IREE_HAL_REPLAY_PAYLOAD_TYPE_BUFFER_RANGE_DATA: {
       if (record->payload.data_length <
@@ -492,9 +493,10 @@ static iree_status_t iree_hal_replay_dump_append_json_payload(
       IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
           builder,
           ",\"payload\":{\"byte_offset\":%" PRIu64 ",\"byte_length\":%" PRIu64
-          ",\"mapping_mode\":%" PRIu32 ",\"memory_access\":%" PRIu16,
+          ",\"mapping_mode\":%" PRIu32 ",\"memory_access\":%" PRIu16
+          ",\"map_flags\":%" PRIu16,
           payload.byte_offset, payload.byte_length, payload.mapping_mode,
-          payload.memory_access));
+          payload.memory_access, payload.map_flags));
       iree_hal_replay_file_range_t data_range =
           iree_hal_replay_file_range_empty();
       data_range.offset =

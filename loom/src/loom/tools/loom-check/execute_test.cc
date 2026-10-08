@@ -177,6 +177,7 @@ iree_status_t TestEmitProviderAppendNames(
 
 const loom_check_emit_provider_t kTestEmitProvider = {
     /*.name=*/IREE_SVL("test"),
+    /*.consumes_source=*/false,
     /*.match=*/TestEmitProviderMatches,
     /*.check_requirements=*/nullptr,
     /*.execute=*/TestEmitProviderExecute,
@@ -195,6 +196,7 @@ const loom_check_environment_t kExecuteTestEnvironment = {
         /*.user_data=*/nullptr,
     },
     /*.target_environment=*/{},
+    /*.compile_session=*/nullptr,
     /*.cleanup_pattern_provider_set=*/
     loom_cleanup_configured_pattern_provider_set(),
 };
@@ -207,6 +209,7 @@ const loom_check_environment_t kExecuteTestProviderEnvironment = {
         /*.user_data=*/nullptr,
     },
     /*.target_environment=*/{},
+    /*.compile_session=*/nullptr,
     /*.cleanup_pattern_provider_set=*/
     loom_cleanup_configured_pattern_provider_set(),
     /*.emit_providers=*/

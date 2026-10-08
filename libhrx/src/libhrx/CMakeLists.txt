@@ -30,6 +30,7 @@ iree_cc_library(
     "device.h"
     "hrx_internal.h"
     "mem_pool.h"
+    "mem_pool_backing.h"
     "runtime.h"
     "transfer.h"
     "vmm_slab_provider.h"
@@ -47,6 +48,7 @@ iree_cc_library(
     "graph_exec.c"
     "host_allocator.c"
     "mem_pool.c"
+    "mem_pool_backing.c"
     "pool.c"
     "queue_ops.c"
     "runtime.c"
@@ -68,7 +70,7 @@ iree_cc_library(
     iree::hal::drivers::task::driver
     iree::hal::drivers::task::executable::loaders::registration
     iree::hal::memory::asan
-    iree::hal::memory::passthrough_pool
+    iree::hal::memory::slab_cache
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
     iree::hal::utils::profile_file
@@ -106,6 +108,7 @@ iree_cc_library(
     "device.h"
     "hrx_internal.h"
     "mem_pool.h"
+    "mem_pool_backing.h"
     "runtime.h"
     "transfer.h"
     "vmm_slab_provider.h"
@@ -123,6 +126,7 @@ iree_cc_library(
     "graph_exec.c"
     "host_allocator.c"
     "mem_pool.c"
+    "mem_pool_backing.c"
     "pool.c"
     "queue_ops.c"
     "runtime.c"
@@ -144,7 +148,7 @@ iree_cc_library(
     iree::hal::drivers::task::driver
     iree::hal::drivers::task::executable::loaders::registration
     iree::hal::memory::asan
-    iree::hal::memory::passthrough_pool
+    iree::hal::memory::slab_cache
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
     iree::hal::utils::profile_file
@@ -196,6 +200,34 @@ iree_cc_test(
 
 iree_cc_test(
   NAME
+    status_test
+  SRCS
+    "status_test.cc"
+  DEPS
+    ::hrx_static
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+    libhrx_defs
+)
+
+iree_cc_test(
+  NAME
+    buffer_test
+  SRCS
+    "buffer_test.cc"
+  DEPS
+    ::hrx_static
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+    libhrx_defs
+)
+
+iree_cc_test(
+  NAME
     graph_buffer_test
   SRCS
     "graph_buffer_test.cc"
@@ -217,9 +249,49 @@ iree_cc_test(
     ::hrx_static
     iree::base
     iree::hal
+    iree::hal::memory::maintenance
     iree::testing::gtest
     iree::testing::gtest_main
     libhrx_defs
+)
+
+iree_cc_test(
+  NAME
+    mem_pool_backing_test
+  SRCS
+    "mem_pool_backing_test.cc"
+  DEPS
+    ::hrx_static
+    iree::base
+    iree::hal
+    iree::hal::memory::maintenance
+    iree::hal::memory::slab_cache
+    iree::testing::gtest
+    iree::testing::gtest_main
+    libhrx_defs
+)
+
+iree_cc_test(
+  NAME
+    mem_pool_backing_gpu_test
+  SRCS
+    "mem_pool_backing_test.cc"
+  COPTS
+    "-DHRX_TEST_GPU=1"
+  DEPS
+    ::hrx_static
+    iree::base
+    iree::hal
+    iree::hal::memory::maintenance
+    iree::hal::memory::slab_cache
+    iree::testing::gtest
+    iree::testing::gtest_main
+    libhrx_defs
+  LABELS
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+  RESOURCE_GROUP
+    iree-hal-drivers-amdgpu-tests
 )
 
 iree_cc_test(
@@ -231,6 +303,8 @@ iree_cc_test(
     ::hrx_static
     iree::base
     iree::hal
+    iree::hal::memory::maintenance
+    iree::hal::memory::passthrough_pool
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
     iree::testing::gtest

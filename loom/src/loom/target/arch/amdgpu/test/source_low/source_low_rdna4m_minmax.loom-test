@@ -37,10 +37,10 @@ low.func.def target<amdgpu.rdna4m.core>(@target) abi(hal_kernel) @scalar_f16_min
   %maxnum = v_max_num_f16 %lhs, %rhs
   %minimum = v_minimum_f16 %lhs, %rhs
   %maximum = v_maximum_f16 %lhs, %rhs
-  %20 = v_bfe_u32_offset_0_width_16_low16 %minnum
-  %21 = v_bfe_u32_offset_0_width_16_low16 %maxnum
-  %22 = v_bfe_u32_offset_0_width_16_low16 %minimum
-  %23 = v_bfe_u32_offset_0_width_16_low16 %maximum
+  %20 = v_bfe_u32_offset_0_width_inline_low16 %minnum
+  %21 = v_bfe_u32_offset_0_width_inline_low16 %maxnum
+  %22 = v_bfe_u32_offset_0_width_inline_low16 %minimum
+  %23 = v_bfe_u32_offset_0_width_inline_low16 %maximum
   return %20, %21, %22, %23
 }
 
@@ -129,8 +129,8 @@ func.def target(@target) @scalar_f16_clamp_semantics(%value: f16, %lower: f16, %
 low.func.def target<amdgpu.rdna4m.core>(@target) abi(hal_kernel) @scalar_f16_clamp_semantics(%value: reg<amdgpu.vgpr>, %lower: reg<amdgpu.vgpr>, %upper: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) asm {
   %number = v_maxmin_num_f16 %value, %lower, %upper
   %ieee = v_maximumminimum_f16 %value, %lower, %upper
-  %14 = v_bfe_u32_offset_0_width_16_low16 %number
-  %15 = v_bfe_u32_offset_0_width_16_low16 %ieee
+  %14 = v_bfe_u32_offset_0_width_inline_low16 %number
+  %15 = v_bfe_u32_offset_0_width_inline_low16 %ieee
   return %14, %15
 }
 

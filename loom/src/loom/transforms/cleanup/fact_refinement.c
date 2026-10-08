@@ -546,14 +546,8 @@ static bool loom_fact_refinement_orient_binary_predicate(
     case LOOM_PREDICATE_UGE:
       *out_swapped_kind = LOOM_PREDICATE_ULE;
       return true;
-    case LOOM_PREDICATE_MIN:
-      *out_swapped_kind = LOOM_PREDICATE_MAX;
-      return true;
-    case LOOM_PREDICATE_MAX:
-      *out_swapped_kind = LOOM_PREDICATE_MIN;
-      return true;
-    case LOOM_PREDICATE_MUL:
-    case LOOM_PREDICATE_POW2:
+    case LOOM_PREDICATE_MULTIPLE_OF:
+    case LOOM_PREDICATE_POWER_OF_TWO:
     case LOOM_PREDICATE_RANGE:
     case LOOM_PREDICATE_NOT_NAN:
     case LOOM_PREDICATE_NOT_INF:

@@ -22,19 +22,36 @@ kernel.def @stage_i8_3() {
   kernel.return
 }
 
-check.case public @stage_i8_3_bits {
-  %input = check.generate.iota offset(-128) step(1) : tensor<192xi8>
-  %output = check.generate.fill value(91) : tensor<194xi8>
-  kernel.launch @stage_i8_3(%input, %output) : (tensor<192xi8>, tensor<194xi8>)
-  %actual = check.tensor.view %output offset(1) : tensor<194xi8> -> tensor<192xi8>
-  %prefix = check.tensor.view %output offset(0) : tensor<194xi8> -> tensor<1xi8>
-  %suffix = check.tensor.view %output offset(193) : tensor<194xi8> -> tensor<1xi8>
-  %expected = check.generate.iota offset(-128) step(1) : tensor<192xi8>
-  %guard = check.generate.fill value(91) : tensor<1xi8>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<192xi8>
-  check.expect.bitwise actual(%input) expected(%expected) : tensor<192xi8>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
+// The oracle copies the complete input byte span into the centered output
+// span. Typed staging kernels must preserve exactly this raw state while their
+// workgroup/private storage, volatile accesses, barriers, and tail vectors are
+// exercised on the target.
+func.def @stage_packed_span_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %c2 = index.constant 2 : index
+  %input_length = buffer.length %input
+  %output_length = buffer.length %output
+  %bounded_input_length = index.assume %input_length [range(%input_length, 0, 9223372036854775807)] : offset
+  %bounded_output_length = index.assume %output_length [range(%output_length, 0, 9223372036854775807)] : offset
+  %input_extent = index.cast %bounded_input_length : offset to index
+  %output_extent = index.cast %bounded_output_length : offset to index
+  %guard_span = index.sub %output_extent, %input_extent : index
+  %guard_index = index.div %guard_span, %c2 : index
+  %bounded_guard = index.assume %guard_index [range(%guard_index, 0, 9223372036854775807)] : index
+  %guard = index.cast %bounded_guard : index to offset
+  buffer.copy %input[%origin], %output[%guard], %input_length
+  func.return
+}
+
+check.scenario @stage_i8_3_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-128) step(1) : tensor<192xi8>
+    %output = check.generate.fill value(91) : tensor<194xi8>
+    check.compare<@stage_i8_3, @stage_packed_span_oracle>(%input, %output) : (tensor<192xi8>, tensor<194xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<192xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<194xi8>
+    }
+  }
   check.return
 }
 
@@ -59,19 +76,15 @@ kernel.def @stage_i8_7() {
   kernel.return
 }
 
-check.case public @stage_i8_7_bits {
-  %input = check.generate.iota offset(-128) step(1) : tensor<224xi8>
-  %output = check.generate.fill value(91) : tensor<226xi8>
-  kernel.launch @stage_i8_7(%input, %output) : (tensor<224xi8>, tensor<226xi8>)
-  %actual = check.tensor.view %output offset(1) : tensor<226xi8> -> tensor<224xi8>
-  %prefix = check.tensor.view %output offset(0) : tensor<226xi8> -> tensor<1xi8>
-  %suffix = check.tensor.view %output offset(225) : tensor<226xi8> -> tensor<1xi8>
-  %expected = check.generate.iota offset(-128) step(1) : tensor<224xi8>
-  %guard = check.generate.fill value(91) : tensor<1xi8>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<224xi8>
-  check.expect.bitwise actual(%input) expected(%expected) : tensor<224xi8>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
+check.scenario @stage_i8_7_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-128) step(1) : tensor<224xi8>
+    %output = check.generate.fill value(91) : tensor<226xi8>
+    check.compare<@stage_i8_7, @stage_packed_span_oracle>(%input, %output) : (tensor<224xi8>, tensor<226xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<224xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<226xi8>
+    }
+  }
   check.return
 }
 
@@ -96,19 +109,15 @@ kernel.def @stage_i8_17() {
   kernel.return
 }
 
-check.case public @stage_i8_17_bits {
-  %input = check.generate.iota offset(-128) step(1) : tensor<136xi8>
-  %output = check.generate.fill value(91) : tensor<138xi8>
-  kernel.launch @stage_i8_17(%input, %output) : (tensor<136xi8>, tensor<138xi8>)
-  %actual = check.tensor.view %output offset(1) : tensor<138xi8> -> tensor<136xi8>
-  %prefix = check.tensor.view %output offset(0) : tensor<138xi8> -> tensor<1xi8>
-  %suffix = check.tensor.view %output offset(137) : tensor<138xi8> -> tensor<1xi8>
-  %expected = check.generate.iota offset(-128) step(1) : tensor<136xi8>
-  %guard = check.generate.fill value(91) : tensor<1xi8>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<136xi8>
-  check.expect.bitwise actual(%input) expected(%expected) : tensor<136xi8>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
+check.scenario @stage_i8_17_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-128) step(1) : tensor<136xi8>
+    %output = check.generate.fill value(91) : tensor<138xi8>
+    check.compare<@stage_i8_17, @stage_packed_span_oracle>(%input, %output) : (tensor<136xi8>, tensor<138xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<136xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<138xi8>
+    }
+  }
   check.return
 }
 
@@ -133,19 +142,15 @@ kernel.def @stage_i8_63() {
   kernel.return
 }
 
-check.case public @stage_i8_63_bits {
-  %input = check.generate.iota offset(-128) step(1) : tensor<252xi8>
-  %output = check.generate.fill value(91) : tensor<254xi8>
-  kernel.launch @stage_i8_63(%input, %output) : (tensor<252xi8>, tensor<254xi8>)
-  %actual = check.tensor.view %output offset(1) : tensor<254xi8> -> tensor<252xi8>
-  %prefix = check.tensor.view %output offset(0) : tensor<254xi8> -> tensor<1xi8>
-  %suffix = check.tensor.view %output offset(253) : tensor<254xi8> -> tensor<1xi8>
-  %expected = check.generate.iota offset(-128) step(1) : tensor<252xi8>
-  %guard = check.generate.fill value(91) : tensor<1xi8>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<252xi8>
-  check.expect.bitwise actual(%input) expected(%expected) : tensor<252xi8>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
+check.scenario @stage_i8_63_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-128) step(1) : tensor<252xi8>
+    %output = check.generate.fill value(91) : tensor<254xi8>
+    check.compare<@stage_i8_63, @stage_packed_span_oracle>(%input, %output) : (tensor<252xi8>, tensor<254xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<252xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<254xi8>
+    }
+  }
   check.return
 }
 
@@ -170,19 +175,15 @@ kernel.def @stage_f8E4M3_3() {
   kernel.return
 }
 
-check.case public @stage_f8E4M3_3_bits {
-  %input = check.generate.iota offset(-128) step(1) : tensor<192xi8>
-  %output = check.generate.fill value(91) : tensor<194xi8>
-  kernel.launch @stage_f8E4M3_3(%input, %output) : (tensor<192xi8>, tensor<194xi8>)
-  %actual = check.tensor.view %output offset(1) : tensor<194xi8> -> tensor<192xi8>
-  %prefix = check.tensor.view %output offset(0) : tensor<194xi8> -> tensor<1xi8>
-  %suffix = check.tensor.view %output offset(193) : tensor<194xi8> -> tensor<1xi8>
-  %expected = check.generate.iota offset(-128) step(1) : tensor<192xi8>
-  %guard = check.generate.fill value(91) : tensor<1xi8>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<192xi8>
-  check.expect.bitwise actual(%input) expected(%expected) : tensor<192xi8>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
+check.scenario @stage_f8E4M3_3_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-128) step(1) : tensor<192xi8>
+    %output = check.generate.fill value(91) : tensor<194xi8>
+    check.compare<@stage_f8E4M3_3, @stage_packed_span_oracle>(%input, %output) : (tensor<192xi8>, tensor<194xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<192xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<194xi8>
+    }
+  }
   check.return
 }
 
@@ -207,19 +208,15 @@ kernel.def @stage_f8E5M2_7() {
   kernel.return
 }
 
-check.case public @stage_f8E5M2_7_bits {
-  %input = check.generate.iota offset(-128) step(1) : tensor<224xi8>
-  %output = check.generate.fill value(91) : tensor<226xi8>
-  kernel.launch @stage_f8E5M2_7(%input, %output) : (tensor<224xi8>, tensor<226xi8>)
-  %actual = check.tensor.view %output offset(1) : tensor<226xi8> -> tensor<224xi8>
-  %prefix = check.tensor.view %output offset(0) : tensor<226xi8> -> tensor<1xi8>
-  %suffix = check.tensor.view %output offset(225) : tensor<226xi8> -> tensor<1xi8>
-  %expected = check.generate.iota offset(-128) step(1) : tensor<224xi8>
-  %guard = check.generate.fill value(91) : tensor<1xi8>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<224xi8>
-  check.expect.bitwise actual(%input) expected(%expected) : tensor<224xi8>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
+check.scenario @stage_f8E5M2_7_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-128) step(1) : tensor<224xi8>
+    %output = check.generate.fill value(91) : tensor<226xi8>
+    check.compare<@stage_f8E5M2_7, @stage_packed_span_oracle>(%input, %output) : (tensor<224xi8>, tensor<226xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<224xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<226xi8>
+    }
+  }
   check.return
 }
 
@@ -244,19 +241,15 @@ kernel.def @stage_i16_3() {
   kernel.return
 }
 
-check.case public @stage_i16_3_bits {
-  %input = check.generate.iota offset(-30000) step(257) : tensor<192xi16>
-  %output = check.generate.fill value(91) : tensor<194xi16>
-  kernel.launch @stage_i16_3(%input, %output) : (tensor<192xi16>, tensor<194xi16>)
-  %actual = check.tensor.view %output offset(2) : tensor<194xi16> -> tensor<192xi16>
-  %prefix = check.tensor.view %output offset(0) : tensor<194xi16> -> tensor<1xi16>
-  %suffix = check.tensor.view %output offset(386) : tensor<194xi16> -> tensor<1xi16>
-  %expected = check.generate.iota offset(-30000) step(257) : tensor<192xi16>
-  %guard = check.generate.fill value(91) : tensor<1xi16>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<192xi16>
-  check.expect.bitwise actual(%input) expected(%expected) : tensor<192xi16>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi16>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi16>
+check.scenario @stage_i16_3_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-30000) step(257) : tensor<192xi16>
+    %output = check.generate.fill value(91) : tensor<194xi16>
+    check.compare<@stage_i16_3, @stage_packed_span_oracle>(%input, %output) : (tensor<192xi16>, tensor<194xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<192xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<194xi16>
+    }
+  }
   check.return
 }
 
@@ -281,19 +274,15 @@ kernel.def @stage_f16_63() {
   kernel.return
 }
 
-check.case public @stage_f16_63_bits {
-  %input = check.generate.iota offset(-30000) step(257) : tensor<63xi16>
-  %output = check.generate.fill value(91) : tensor<65xi16>
-  kernel.launch @stage_f16_63(%input, %output) : (tensor<63xi16>, tensor<65xi16>)
-  %actual = check.tensor.view %output offset(2) : tensor<65xi16> -> tensor<63xi16>
-  %prefix = check.tensor.view %output offset(0) : tensor<65xi16> -> tensor<1xi16>
-  %suffix = check.tensor.view %output offset(128) : tensor<65xi16> -> tensor<1xi16>
-  %expected = check.generate.iota offset(-30000) step(257) : tensor<63xi16>
-  %guard = check.generate.fill value(91) : tensor<1xi16>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<63xi16>
-  check.expect.bitwise actual(%input) expected(%expected) : tensor<63xi16>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi16>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi16>
+check.scenario @stage_f16_63_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-30000) step(257) : tensor<63xi16>
+    %output = check.generate.fill value(91) : tensor<65xi16>
+    check.compare<@stage_f16_63, @stage_packed_span_oracle>(%input, %output) : (tensor<63xi16>, tensor<65xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<63xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<65xi16>
+    }
+  }
   check.return
 }
 
@@ -318,19 +307,15 @@ kernel.def @stage_bf16_7() {
   kernel.return
 }
 
-check.case public @stage_bf16_7_bits {
-  %input = check.generate.iota offset(-30000) step(257) : tensor<224xi16>
-  %output = check.generate.fill value(91) : tensor<226xi16>
-  kernel.launch @stage_bf16_7(%input, %output) : (tensor<224xi16>, tensor<226xi16>)
-  %actual = check.tensor.view %output offset(2) : tensor<226xi16> -> tensor<224xi16>
-  %prefix = check.tensor.view %output offset(0) : tensor<226xi16> -> tensor<1xi16>
-  %suffix = check.tensor.view %output offset(450) : tensor<226xi16> -> tensor<1xi16>
-  %expected = check.generate.iota offset(-30000) step(257) : tensor<224xi16>
-  %guard = check.generate.fill value(91) : tensor<1xi16>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<224xi16>
-  check.expect.bitwise actual(%input) expected(%expected) : tensor<224xi16>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi16>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi16>
+check.scenario @stage_bf16_7_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-30000) step(257) : tensor<224xi16>
+    %output = check.generate.fill value(91) : tensor<226xi16>
+    check.compare<@stage_bf16_7, @stage_packed_span_oracle>(%input, %output) : (tensor<224xi16>, tensor<226xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<224xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<226xi16>
+    }
+  }
   check.return
 }
 
@@ -352,22 +337,28 @@ kernel.def @capture_tail() {
   kernel.return
 }
 
-check.case public @three_byte_snapshot {
-  %input = check.generate.iota offset(115) step(-89) : tensor<3xi8>
-  %output = check.generate.fill value(37) : tensor<5xi8>
-  %observed = check.generate.fill value(99) : tensor<3xi8>
-  kernel.launch @capture_tail(%input, %output, %observed) : (tensor<3xi8>, tensor<5xi8>, tensor<3xi8>)
-  %payload = check.tensor.view %output offset(1) : tensor<5xi8> -> tensor<3xi8>
-  %prefix = check.tensor.view %output offset(0) : tensor<5xi8> -> tensor<1xi8>
-  %suffix = check.tensor.view %output offset(4) : tensor<5xi8> -> tensor<1xi8>
-  %expected = check.generate.iota offset(115) step(-89) : tensor<3xi8>
-  %guard = check.generate.fill value(37) : tensor<1xi8>
-  %cleared = check.generate.fill value(0) : tensor<3xi8>
-  check.expect.bitwise actual(%payload) expected(%expected) : tensor<3xi8>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%input) expected(%cleared) : tensor<3xi8>
-  check.expect.bitwise actual(%observed) expected(%cleared) : tensor<3xi8>
+func.def @capture_tail_oracle(%input: buffer, %output: buffer, %observed: buffer) {
+  %origin = index.constant 0 : offset
+  %guard = index.constant 1 : offset
+  %length = index.constant 3 : offset
+  %c0 = scalar.constant 0 : i8
+  buffer.copy %input[%origin], %output[%guard], %length
+  buffer.fill %c0, %input[%origin], %length : i8
+  buffer.fill %c0, %observed[%origin], %length : i8
+  func.return
+}
+
+check.scenario @three_byte_snapshot_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(115) step(-89) : tensor<3xi8>
+    %output = check.generate.fill value(37) : tensor<5xi8>
+    %observed = check.generate.fill value(99) : tensor<3xi8>
+    check.compare<@capture_tail, @capture_tail_oracle>(%input, %output, %observed) : (tensor<3xi8>, tensor<5xi8>, tensor<3xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<3xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<5xi8>
+      check.expect.bitwise actual(%observed) expected(%observed) : tensor<3xi8>
+    }
+  }
   check.return
 }
 
@@ -392,18 +383,14 @@ kernel.def @stage_private_i8_3() {
   kernel.return
 }
 
-check.case public @stage_private_i8_3_bits {
-  %input = check.generate.iota offset(-128) step(1) : tensor<192xi8>
-  %output = check.generate.fill value(91) : tensor<194xi8>
-  kernel.launch @stage_private_i8_3(%input, %output) : (tensor<192xi8>, tensor<194xi8>)
-  %actual = check.tensor.view %output offset(1) : tensor<194xi8> -> tensor<192xi8>
-  %prefix = check.tensor.view %output offset(0) : tensor<194xi8> -> tensor<1xi8>
-  %suffix = check.tensor.view %output offset(193) : tensor<194xi8> -> tensor<1xi8>
-  %expected = check.generate.iota offset(-128) step(1) : tensor<192xi8>
-  %guard = check.generate.fill value(91) : tensor<1xi8>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<192xi8>
-  check.expect.bitwise actual(%input) expected(%expected) : tensor<192xi8>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
+check.scenario @stage_private_i8_3_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-128) step(1) : tensor<192xi8>
+    %output = check.generate.fill value(91) : tensor<194xi8>
+    check.compare<@stage_private_i8_3, @stage_packed_span_oracle>(%input, %output) : (tensor<192xi8>, tensor<194xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<192xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<194xi8>
+    }
+  }
   check.return
 }

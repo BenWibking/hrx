@@ -352,12 +352,15 @@ static iree_status_t iree_hal_amdgpu_file_action_submit_next_write(
 static iree_status_t iree_hal_amdgpu_file_action_start_async(
     iree_hal_amdgpu_file_action_state_t* state) {
   iree_hal_memory_access_t mapping_access = IREE_HAL_MEMORY_ACCESS_READ;
+  iree_hal_buffer_map_flags_t mapping_flags = IREE_HAL_BUFFER_MAP_FLAG_NONE;
   if (state->kind == IREE_HAL_AMDGPU_FILE_ACTION_READ) {
-    mapping_access = IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE;
+    mapping_access = IREE_HAL_MEMORY_ACCESS_WRITE;
+    mapping_flags = IREE_HAL_BUFFER_MAP_FLAG_DISCARD;
   }
   iree_status_t status = iree_hal_buffer_map_range(
       state->buffer, IREE_HAL_MAPPING_MODE_SCOPED, mapping_access,
-      state->buffer_offset, state->requested_length, &state->mapping);
+      mapping_flags, state->buffer_offset, state->requested_length,
+      &state->mapping);
 
   if (iree_status_is_ok(status) &&
       state->kind == IREE_HAL_AMDGPU_FILE_ACTION_WRITE &&

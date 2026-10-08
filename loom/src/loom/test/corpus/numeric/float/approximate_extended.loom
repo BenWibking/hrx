@@ -1,14 +1,9 @@
 // Representative normal inputs exercise approximate scalar and vector
 // transcendental instructions without imposing target-specific behavior for
 // subnormals. Number extrema use NaN operands to observe finite-value selection.
-kernel.def @approximate_extended_math_f32() {
-  %unit = index.constant 1 : index
-  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
-} launch(%output: buffer) {
+func.def device inline @compute_approximate_extended_math_f32(%output: buffer) {
   %base = index.constant 0 : offset
-  %global = buffer.assume.memory_space<global> %output : buffer
-  %results = buffer.view %global[%base] : buffer -> view<18xf32>
-
+  %results = buffer.view %output[%base] : buffer -> view<18xf32>
   %c0 = scalar.constant 0.0 : f32
   %c1 = scalar.constant 1.0 : f32
   %c2 = scalar.constant 2.0 : f32
@@ -51,42 +46,32 @@ kernel.def @approximate_extended_math_f32() {
   %scalar_max = scalar.maxnumf<nsz> %nan, %c1 : f32
   view.store %scalar_min, %results[16] : f32, view<18xf32>
   view.store %scalar_max, %results[17] : f32, view<18xf32>
+  func.return
+}
+
+kernel.def @approximate_extended_math_f32() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%output: buffer) {
+  %global = buffer.assume.memory_space<global> %output : buffer
+  func.call @compute_approximate_extended_math_f32(%global) : (buffer)
   kernel.return
 }
 
-check.case public @approximate_extended_math_f32_case {
-  %output = check.generate.fill value(-1000.0) : tensor<18xf32>
-  kernel.launch @approximate_extended_math_f32(%output) : (tensor<18xf32>)
+func.def @approximate_extended_math_f32_oracle(%output: buffer) {
+  func.call @compute_approximate_extended_math_f32(%output) : (buffer)
+  func.return
+}
 
-  %scalar_exp = check.tensor.view %output offset(0) : tensor<18xf32> -> tensor<1xf32>
-  %expected_two = check.generate.fill value(2.0) : tensor<1xf32>
-  check.expect.close actual(%scalar_exp) expected(%expected_two) atol(9.9999999999999995e-07) rtol(9.9999999999999995e-07) nan(same) : tensor<1xf32>
-  %scalar_log = check.tensor.view %output offset(4) : tensor<18xf32> -> tensor<1xf32>
-  %expected_one = check.generate.fill value(1.0) : tensor<1xf32>
-  check.expect.close actual(%scalar_log) expected(%expected_one) atol(9.9999999999999995e-07) rtol(9.9999999999999995e-07) nan(same) : tensor<1xf32>
-  %scalar_exp2 = check.tensor.view %output offset(8) : tensor<18xf32> -> tensor<1xf32>
-  check.expect.close actual(%scalar_exp2) expected(%expected_two) atol(9.9999999999999995e-07) rtol(9.9999999999999995e-07) nan(same) : tensor<1xf32>
-  %scalar_log2 = check.tensor.view %output offset(12) : tensor<18xf32> -> tensor<1xf32>
-  check.expect.close actual(%scalar_log2) expected(%expected_one) atol(9.9999999999999995e-07) rtol(9.9999999999999995e-07) nan(same) : tensor<1xf32>
-
-  %vector_exp = check.tensor.view %output offset(16) : tensor<18xf32> -> tensor<2xf32>
-  %expected_one_two = check.generate.iota offset(1.0) step(1.0) : tensor<2xf32>
-  check.expect.close actual(%vector_exp) expected(%expected_one_two) atol(9.9999999999999995e-07) rtol(9.9999999999999995e-07) nan(same) : tensor<2xf32>
-  %vector_log = check.tensor.view %output offset(24) : tensor<18xf32> -> tensor<2xf32>
-  %expected_zero_one = check.generate.iota offset(0.0) step(1.0) : tensor<2xf32>
-  check.expect.close actual(%vector_log) expected(%expected_zero_one) atol(9.9999999999999995e-07) rtol(9.9999999999999995e-07) nan(same) : tensor<2xf32>
-  %vector_exp2 = check.tensor.view %output offset(32) : tensor<18xf32> -> tensor<2xf32>
-  check.expect.close actual(%vector_exp2) expected(%expected_one_two) atol(9.9999999999999995e-07) rtol(9.9999999999999995e-07) nan(same) : tensor<2xf32>
-  %vector_log2 = check.tensor.view %output offset(40) : tensor<18xf32> -> tensor<2xf32>
-  check.expect.close actual(%vector_log2) expected(%expected_zero_one) atol(9.9999999999999995e-07) rtol(9.9999999999999995e-07) nan(same) : tensor<2xf32>
-
-  %vector_min = check.tensor.view %output offset(48) : tensor<18xf32> -> tensor<2xf32>
-  %expected_min = check.generate.iota offset(1.0) step(-4.0) : tensor<2xf32>
-  check.expect.close actual(%vector_min) expected(%expected_min) atol(0.0) rtol(0.0) nan(same) : tensor<2xf32>
-  %vector_max = check.tensor.view %output offset(56) : tensor<18xf32> -> tensor<2xf32>
-  check.expect.close actual(%vector_max) expected(%expected_one_two) atol(0.0) rtol(0.0) nan(same) : tensor<2xf32>
-  %scalar_extrema = check.tensor.view %output offset(64) : tensor<18xf32> -> tensor<2xf32>
-  %expected_ones = check.generate.fill value(1.0) : tensor<2xf32>
-  check.expect.close actual(%scalar_extrema) expected(%expected_ones) atol(0.0) rtol(0.0) nan(same) : tensor<2xf32>
+check.scenario @approximate_extended_math_f32_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %output = check.generate.fill value(-1000.0) : tensor<18xf32>
+    %approximate = check.tensor.view %output offset(0) : tensor<18xf32> -> tensor<12xf32>
+    %extrema = check.tensor.view %output offset(48) : tensor<18xf32> -> tensor<6xf32>
+    check.compare<@approximate_extended_math_f32, @approximate_extended_math_f32_oracle>(%output) : (tensor<18xf32>) -> () {
+      check.expect.close actual(%approximate) expected(%approximate) atol(9.9999999999999995e-07) rtol(9.9999999999999995e-07) nan(same) : tensor<12xf32>
+      check.expect.bitwise actual(%extrema) expected(%extrema) : tensor<6xf32>
+    }
+  }
   check.return
 }

@@ -24,8 +24,8 @@
 #include "iree/hal/drivers/task/queue/queue.h"
 #include "iree/hal/drivers/task/semaphore.h"
 #include "iree/hal/memory/cpu_slab_provider.h"
-#include "iree/hal/memory/passthrough_pool.h"
-#include "iree/hal/memory/tlsf_pool.h"
+#include "iree/hal/memory/host_memory_backend.h"
+#include "iree/hal/memory/maintenance_thread.h"
 #include "iree/hal/utils/file_registry.h"
 
 // Queue indices are encoded in eight bits of an async frontier axis.
@@ -71,20 +71,8 @@ typedef struct iree_hal_task_device_t {
   // Transfer strategy threshold inherited by all queues.
   iree_device_size_t inline_transfer_threshold;
 
-  // Routes default queue allocations to the best device-owned pool.
-  iree_hal_pool_set_t default_pool_set;
-
-  // Shared slab provider backing the default queue-allocation pools.
-  iree_hal_slab_provider_t* default_slab_provider;
-
-  // Shared notification published when default-pool reservations are released.
-  iree_async_notification_t* default_pool_notification;
-
-  // Suballocating pool used for requests up to the TLSF slab length.
-  iree_hal_pool_t* default_tlsf_pool;
-
-  // Direct per-allocation pool used for requests larger than one TLSF slab.
-  iree_hal_pool_t* default_oversized_pool;
+  // Owned native CPU memory resources, exposed as an immutable borrowed view.
+  iree_hal_host_memory_backend_t memory_backend;
 
   // Proactor pool for async I/O. Retained for the lifetime of the device to
   // ensure proactor threads outlive all device resources (semaphores, etc.).
@@ -132,24 +120,6 @@ typedef struct iree_hal_task_device_t {
 } iree_hal_task_device_t;
 
 static const iree_hal_device_vtable_t iree_hal_task_device_vtable;
-
-// Logical byte length for the default queue-allocation pool.
-#define IREE_HAL_TASK_DEVICE_DEFAULT_POOL_RANGE_LENGTH_DEFAULT \
-  (64 * 1024 * 1024)
-
-// Minimum byte alignment for default-pool suballocations.
-#define IREE_HAL_TASK_DEVICE_DEFAULT_POOL_ALIGNMENT_DEFAULT \
-  IREE_HAL_HEAP_BUFFER_ALIGNMENT
-
-// Maximum death-frontier entries stored per free default-pool block.
-#define IREE_HAL_TASK_DEVICE_DEFAULT_POOL_FRONTIER_CAPACITY_DEFAULT \
-  IREE_HAL_MEMORY_TLSF_DEFAULT_FRONTIER_CAPACITY
-
-// Catch-all priority for direct allocations in the default pool set.
-#define IREE_HAL_TASK_DEVICE_DEFAULT_POOL_PRIORITY_OVERSIZED 0
-
-// Preferred priority for pooled allocations in the default pool set.
-#define IREE_HAL_TASK_DEVICE_DEFAULT_POOL_PRIORITY_TLSF 10
 
 static iree_hal_task_device_t* iree_hal_task_device_cast(
     iree_hal_device_t* base_value) {
@@ -225,93 +195,6 @@ static bool iree_hal_task_device_query_pool_epoch(void* user_data,
                                                  epoch);
 }
 
-static iree_status_t iree_hal_task_device_create_default_pools(
-    iree_hal_task_device_t* device, iree_async_proactor_t* proactor,
-    iree_allocator_t host_allocator, iree_hal_pool_set_t* out_pool_set,
-    iree_hal_slab_provider_t** out_slab_provider,
-    iree_async_notification_t** out_notification,
-    iree_hal_pool_t** out_tlsf_pool, iree_hal_pool_t** out_oversized_pool) {
-  IREE_ASSERT_ARGUMENT(proactor);
-  IREE_ASSERT_ARGUMENT(out_pool_set);
-  IREE_ASSERT_ARGUMENT(out_slab_provider);
-  IREE_ASSERT_ARGUMENT(out_notification);
-  IREE_ASSERT_ARGUMENT(out_tlsf_pool);
-  IREE_ASSERT_ARGUMENT(out_oversized_pool);
-  memset(out_pool_set, 0, sizeof(*out_pool_set));
-  *out_slab_provider = NULL;
-  *out_notification = NULL;
-  *out_tlsf_pool = NULL;
-  *out_oversized_pool = NULL;
-
-  IREE_RETURN_IF_ERROR(iree_hal_pool_set_initialize(
-      /*initial_capacity=*/2, host_allocator, out_pool_set));
-
-  iree_hal_slab_provider_t* slab_provider = NULL;
-  iree_async_notification_t* notification = NULL;
-  iree_hal_pool_t* tlsf_pool = NULL;
-  iree_hal_pool_t* oversized_pool = NULL;
-
-  iree_status_t status =
-      iree_hal_cpu_slab_provider_create(host_allocator, &slab_provider);
-  if (iree_status_is_ok(status)) {
-    status = iree_async_notification_create(
-        proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification);
-  }
-  if (iree_status_is_ok(status)) {
-    iree_hal_tlsf_pool_options_t options = {
-        .tlsf_options =
-            {
-                .range_length =
-                    IREE_HAL_TASK_DEVICE_DEFAULT_POOL_RANGE_LENGTH_DEFAULT,
-                .alignment =
-                    IREE_HAL_TASK_DEVICE_DEFAULT_POOL_ALIGNMENT_DEFAULT,
-                .frontier_capacity =
-                    IREE_HAL_TASK_DEVICE_DEFAULT_POOL_FRONTIER_CAPACITY_DEFAULT,
-            },
-        .budget_limit = 0,
-    };
-    status = iree_hal_tlsf_pool_create(
-        options, slab_provider, notification,
-        (iree_hal_pool_epoch_query_t){
-            .fn = iree_hal_task_device_query_pool_epoch,
-            .user_data = device,
-        },
-        host_allocator, &tlsf_pool);
-  }
-  if (iree_status_is_ok(status)) {
-    iree_hal_passthrough_pool_options_t options = {0};
-    status = iree_hal_passthrough_pool_create(
-        options, slab_provider, notification, host_allocator, &oversized_pool);
-  }
-  if (iree_status_is_ok(status)) {
-    status = iree_hal_pool_set_register(
-        out_pool_set, IREE_HAL_TASK_DEVICE_DEFAULT_POOL_PRIORITY_OVERSIZED,
-        oversized_pool);
-  }
-  if (iree_status_is_ok(status)) {
-    status = iree_hal_pool_set_register(
-        out_pool_set, IREE_HAL_TASK_DEVICE_DEFAULT_POOL_PRIORITY_TLSF,
-        tlsf_pool);
-  }
-  if (iree_status_is_ok(status)) {
-    *out_slab_provider = slab_provider;
-    *out_notification = notification;
-    *out_tlsf_pool = tlsf_pool;
-    *out_oversized_pool = oversized_pool;
-    slab_provider = NULL;
-    notification = NULL;
-    tlsf_pool = NULL;
-    oversized_pool = NULL;
-  } else {
-    iree_hal_pool_set_deinitialize(out_pool_set);
-  }
-  iree_hal_pool_release(oversized_pool);
-  iree_hal_pool_release(tlsf_pool);
-  iree_async_notification_release(notification);
-  iree_hal_slab_provider_release(slab_provider);
-  return status;
-}
-
 void iree_hal_task_device_params_initialize(
     iree_hal_task_device_params_t* out_params) {
   out_params->arena_block_size = 32 * 1024;
@@ -337,6 +220,34 @@ static iree_status_t iree_hal_task_device_check_params(
         "task devices support at most %u provisioned queues", UINT8_MAX);
   }
   return iree_ok_status();
+}
+
+// A task executor can use an explicitly unplaced service when its caller has
+// provided one. A pool containing only bound services must include the
+// executor's physical node. This selection happens only during construction.
+static iree_status_t iree_hal_task_device_select_proactor(
+    iree_async_proactor_pool_t* pool, iree_numa_node_id_t node_id,
+    iree_async_proactor_t** out_proactor) {
+  if (node_id == IREE_NUMA_NODE_ANY) {
+    return iree_async_proactor_pool_get(pool, 0, out_proactor);
+  }
+  iree_host_size_t unspecified_index = IREE_HOST_SIZE_MAX;
+  for (iree_host_size_t i = 0; i < iree_async_proactor_pool_count(pool); ++i) {
+    uint32_t entry_node = iree_async_proactor_pool_node_id(pool, i);
+    if (entry_node == node_id) {
+      return iree_async_proactor_pool_get(pool, i, out_proactor);
+    }
+    if (entry_node == UINT32_MAX && unspecified_index == IREE_HOST_SIZE_MAX) {
+      unspecified_index = i;
+    }
+  }
+  if (unspecified_index != IREE_HOST_SIZE_MAX) {
+    return iree_async_proactor_pool_get(pool, unspecified_index, out_proactor);
+  }
+  *out_proactor = NULL;
+  return iree_make_status(IREE_STATUS_NOT_FOUND,
+                          "task executor NUMA node %u has no proactor service",
+                          node_id);
 }
 
 iree_status_t iree_hal_task_device_create(
@@ -391,17 +302,17 @@ iree_status_t iree_hal_task_device_create(
   iree_atomic_store(&device->next_profile_submission_id, 0,
                     iree_memory_order_relaxed);
 
-  // Retain the proactor pool. Each queue will get a NUMA-correct proactor
-  // borrowed from the pool based on its executor's node assignment.
+  // Retain the proactor pool. Queues borrow a local or explicitly unplaced
+  // service based on their executor's physical NUMA affinity.
   device->proactor_pool = create_params->proactor_pool;
   device->event_sink = create_params->event_sink;
   iree_async_proactor_pool_retain(device->proactor_pool);
 
   // Select the device-level proactor from the first queue's executor NUMA
-  // node. Used for device-owned pools, files, and semaphores.
-  iree_task_topology_node_id_t default_node_id =
-      iree_task_executor_node_id(queue_executors[0]);
-  iree_status_t status = iree_async_proactor_pool_get_for_node(
+  // node. Used for pool notifications, files, and semaphores.
+  iree_numa_node_id_t default_node_id =
+      iree_task_executor_numa_node(queue_executors[0]);
+  iree_status_t status = iree_hal_task_device_select_proactor(
       device->proactor_pool, default_node_id, &device->proactor);
   if (iree_status_is_ok(status)) {
     iree_hal_task_device_spec_params_t spec_params = {
@@ -422,11 +333,24 @@ iree_status_t iree_hal_task_device_create(
   }
 
   if (iree_status_is_ok(status)) {
-    status = iree_hal_task_device_create_default_pools(
-        device, device->proactor, device->host_allocator,
-        &device->default_pool_set, &device->default_slab_provider,
-        &device->default_pool_notification, &device->default_tlsf_pool,
-        &device->default_oversized_pool);
+    status = iree_hal_cpu_slab_provider_create(
+        /*min_alignment=*/0, host_allocator,
+        &device->memory_backend.slab_provider);
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_async_notification_create(
+        device->proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE,
+        &device->memory_backend.notification);
+  }
+  if (iree_status_is_ok(status)) {
+    // Completion callbacks can synchronously destroy pools. Their cleanup
+    // cannot depend on progress by this device's execution workers.
+    iree_thread_affinity_t memory_affinity = {0};
+    if (default_node_id != IREE_NUMA_NODE_ANY) {
+      iree_thread_affinity_set_group_any(default_node_id, &memory_affinity);
+    }
+    status = iree_hal_memory_maintenance_thread_create(
+        memory_affinity, host_allocator, &device->memory_backend.maintenance);
   }
 
   if (iree_status_is_ok(status)) {
@@ -453,14 +377,13 @@ iree_status_t iree_hal_task_device_create(
     iree_hal_queue_params_t queue_params;
     iree_hal_queue_params_initialize(&queue_params);
     for (iree_host_size_t i = 0; i < queue_count; ++i) {
-      // Select a NUMA-correct proactor for this queue based on its executor's
-      // node assignment. Falls back to the first proactor in the pool if the
-      // executor's node doesn't have a dedicated proactor.
+      // Prefer the executor's local service, accepting an explicitly unplaced
+      // service when the caller provides one.
       iree_async_proactor_t* queue_proactor = NULL;
-      iree_task_topology_node_id_t node_id =
-          iree_task_executor_node_id(queue_executors[i]);
-      status = iree_async_proactor_pool_get_for_node(device->proactor_pool,
-                                                     node_id, &queue_proactor);
+      iree_numa_node_id_t node_id =
+          iree_task_executor_numa_node(queue_executors[i]);
+      status = iree_hal_task_device_select_proactor(device->proactor_pool,
+                                                    node_id, &queue_proactor);
       if (!iree_status_is_ok(status)) {
         break;
       }
@@ -488,6 +411,14 @@ iree_status_t iree_hal_task_device_create(
   }
 
   if (iree_status_is_ok(status)) {
+    iree_hal_host_memory_backend_initialize(
+        device->memory_backend.slab_provider,
+        device->memory_backend.notification, device->memory_backend.maintenance,
+        (iree_hal_pool_epoch_query_t){
+            .fn = iree_hal_task_device_query_pool_epoch,
+            .user_data = device,
+        },
+        &device->memory_backend);
     *out_device = (iree_hal_device_t*)device;
   } else {
     iree_hal_device_release((iree_hal_device_t*)device);
@@ -535,13 +466,9 @@ static void iree_hal_task_device_destroy(iree_hal_device_t* base_device) {
     iree_hal_executable_loader_release(device->loaders[i]);
   }
 
-  if (device->default_pool_set.entries) {
-    iree_hal_pool_set_deinitialize(&device->default_pool_set);
-  }
-  iree_hal_pool_release(device->default_oversized_pool);
-  iree_hal_pool_release(device->default_tlsf_pool);
-  iree_hal_slab_provider_release(device->default_slab_provider);
-  iree_async_notification_release(device->default_pool_notification);
+  iree_hal_slab_provider_release(device->memory_backend.slab_provider);
+  iree_hal_memory_maintenance_release(device->memory_backend.maintenance);
+  iree_async_notification_release(device->memory_backend.notification);
   iree_hal_allocator_release(device->device_allocator);
   iree_hal_channel_provider_release(device->channel_provider);
   iree_hal_device_spec_release(device->device_spec);
@@ -591,8 +518,6 @@ static iree_status_t iree_hal_task_device_trim(iree_hal_device_t* base_device) {
     iree_hal_task_queue_trim(&device->queues[i]);
   }
   IREE_RETURN_IF_ERROR(iree_hal_allocator_trim(device->device_allocator));
-  IREE_RETURN_IF_ERROR(iree_hal_pool_trim(device->default_tlsf_pool));
-  IREE_RETURN_IF_ERROR(iree_hal_pool_trim(device->default_oversized_pool));
 
   iree_arena_block_pool_trim(&device->small_block_pool);
   iree_arena_block_pool_trim(&device->large_block_pool);
@@ -644,36 +569,31 @@ static iree_status_t iree_hal_task_device_acquire_queue(
   IREE_RETURN_IF_ERROR(iree_hal_task_device_acquire_dynamic_queue_slot(
       device, &queue_index, &incarnation));
 
-  iree_task_executor_t* executor =
-      device->queues[queue_index % device->queue_count].executor;
-  iree_async_proactor_t* proactor = NULL;
-  iree_status_t status = iree_async_proactor_pool_get_for_node(
-      device->proactor_pool, iree_task_executor_node_id(executor), &proactor);
+  // Reuse the executor/service pairing established for the provisioned queue.
+  const iree_hal_task_queue_t* provisioned_queue =
+      &device->queues[queue_index % device->queue_count];
+  const iree_hal_task_queue_create_params_t queue_create_params = {
+      .identifier = device->identifier,
+      .device = base_device,
+      .queue_family = queue_family,
+      .queue_params = *params,
+      .scope_flags = device->queue_scope_flags,
+      .executor = provisioned_queue->executor,
+      .proactor = provisioned_queue->proactor,
+      .inline_transfer_threshold = device->inline_transfer_threshold,
+      .small_block_pool = &device->small_block_pool,
+      .large_block_pool = &device->large_block_pool,
+      .device_allocator = device->device_allocator,
+  };
+  const iree_hal_task_queue_release_slot_callback_t release_slot = {
+      .fn = iree_hal_task_device_release_dynamic_queue_slot,
+      .user_data = device,
+      .queue_index = queue_index,
+  };
   iree_hal_task_queue_t* queue = NULL;
-  bool queue_owns_slot = false;
-  if (iree_status_is_ok(status)) {
-    const iree_hal_task_queue_create_params_t queue_create_params = {
-        .identifier = device->identifier,
-        .device = base_device,
-        .queue_family = queue_family,
-        .queue_params = *params,
-        .scope_flags = device->queue_scope_flags,
-        .executor = executor,
-        .proactor = proactor,
-        .inline_transfer_threshold = device->inline_transfer_threshold,
-        .small_block_pool = &device->small_block_pool,
-        .large_block_pool = &device->large_block_pool,
-        .device_allocator = device->device_allocator,
-    };
-    const iree_hal_task_queue_release_slot_callback_t release_slot = {
-        .fn = iree_hal_task_device_release_dynamic_queue_slot,
-        .user_data = device,
-        .queue_index = queue_index,
-    };
-    status = iree_hal_task_queue_create(&queue_create_params, release_slot,
-                                        device->host_allocator, &queue);
-    queue_owns_slot = iree_status_is_ok(status);
-  }
+  iree_status_t status = iree_hal_task_queue_create(
+      &queue_create_params, release_slot, device->host_allocator, &queue);
+  bool queue_owns_slot = iree_status_is_ok(status);
   if (iree_status_is_ok(status)) {
     const iree_async_axis_t base_axis =
         device->topology_info.frontier.base_axis;
@@ -836,13 +756,19 @@ iree_hal_task_device_query_semaphore_compatibility(
   return IREE_HAL_SEMAPHORE_COMPATIBILITY_ALL;
 }
 
+static const iree_hal_memory_backend_t* iree_hal_task_device_memory_backend(
+    iree_hal_device_t* base_device) {
+  return &iree_hal_task_device_cast(base_device)->memory_backend.base;
+}
+
 static iree_status_t iree_hal_task_device_query_queue_pool_backend(
     iree_hal_device_t* base_device, const iree_hal_queue_family_t* queue_family,
     iree_hal_queue_pool_backend_t* out_backend) {
   (void)queue_family;
   iree_hal_task_device_t* device = iree_hal_task_device_cast(base_device);
-  out_backend->slab_provider = device->default_slab_provider;
-  out_backend->notification = device->default_pool_notification;
+  out_backend->slab_provider = device->memory_backend.slab_provider;
+  out_backend->notification = device->memory_backend.notification;
+  out_backend->maintenance = device->memory_backend.maintenance;
   out_backend->epoch_query = (iree_hal_pool_epoch_query_t){
       .fn = iree_hal_task_device_query_pool_epoch,
       .user_data = device,
@@ -988,4 +914,5 @@ static const iree_hal_device_vtable_t iree_hal_task_device_vtable = {
     .profiling_begin = iree_hal_task_device_profiling_begin,
     .profiling_flush = iree_hal_task_device_profiling_flush,
     .profiling_end = iree_hal_task_device_profiling_end,
+    .memory_backend = iree_hal_task_device_memory_backend,
 };

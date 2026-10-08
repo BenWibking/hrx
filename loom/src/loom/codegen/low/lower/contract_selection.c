@@ -63,10 +63,10 @@ static bool loom_low_lower_contract_type_key(loom_type_t type,
   return true;
 }
 
-static bool loom_low_lower_contract_selector_key(const loom_module_t* module,
-                                                 const loom_op_t* source_op,
-                                                 uint16_t selector,
-                                                 uint32_t* out_key) {
+static bool loom_low_lower_contract_selector_key(
+    const loom_module_t* module, const loom_op_t* source_op,
+    loom_target_contract_vector_lane_projection_t vector_lane_projection,
+    uint16_t selector, uint32_t* out_key) {
   const uint8_t kind = selector & 0x3u;
   const uint8_t field_index = (uint8_t)((selector >> 2) & 0xFFu);
   const uint8_t element_index = (uint8_t)((selector >> 10) & 0x3Fu);
@@ -97,7 +97,9 @@ static bool loom_low_lower_contract_selector_key(const loom_module_t* module,
     return false;
   }
   return loom_low_lower_contract_type_key(
-      loom_module_value_type(module, span.values[element_index]), out_key);
+      loom_target_contract_query_value_type(vector_lane_projection, module,
+                                            span.values[element_index]),
+      out_key);
 }
 
 static void loom_low_lower_contract_case_iterator_select_span(
@@ -117,6 +119,7 @@ static void loom_low_lower_contract_case_iterator_select_span(
 bool loom_low_lower_contract_case_iterator_initialize(
     const loom_module_t* module, const loom_target_contract_index_t* index,
     loom_target_contract_op_entry_t entry, const loom_op_t* source_op,
+    loom_target_contract_vector_lane_projection_t vector_lane_projection,
     loom_low_lower_contract_case_iteration_mode_t mode,
     loom_low_lower_contract_case_iterator_t* out_iterator) {
   *out_iterator = (loom_low_lower_contract_case_iterator_t){
@@ -162,8 +165,8 @@ bool loom_low_lower_contract_case_iterator_initialize(
 
   uint32_t packed_span = (row[1] >> 16) | ((row[2] & 0xFFFFu) << 16);
   uint32_t key = 0;
-  if (loom_low_lower_contract_selector_key(module, source_op, row[0] & 0xFFFFu,
-                                           &key)) {
+  if (loom_low_lower_contract_selector_key(
+          module, source_op, vector_lane_projection, row[0] & 0xFFFFu, &key)) {
     uint16_t bucket_lower_bound = row[0] >> 16;
     uint16_t bucket_upper_bound = bucket_lower_bound + (row[1] & 0xFFFFu);
     while (bucket_lower_bound < bucket_upper_bound) {

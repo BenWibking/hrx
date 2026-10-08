@@ -8,12 +8,10 @@
 
 #include <stddef.h>
 
-#include "iree/hal/drivers/amdgpu/access_policy.h"
 #include "iree/hal/drivers/amdgpu/asan_state.h"
 #include "iree/hal/drivers/amdgpu/atomic_memory.h"
 #include "iree/hal/drivers/amdgpu/buffer.h"
 #include "iree/hal/drivers/amdgpu/logical_device.h"
-#include "iree/hal/drivers/amdgpu/util/topology.h"
 #include "iree/hal/memory/tracing.h"
 
 typedef struct iree_hal_amdgpu_slab_provider_t {
@@ -29,8 +27,15 @@ typedef struct iree_hal_amdgpu_slab_provider_t {
   // Borrowed HSA dispatch table used for memory-pool operations.
   const iree_hal_amdgpu_libhsa_t* libhsa;
 
-  // Borrowed topology used to allow GPU peers to access acquired slabs.
-  const iree_hal_amdgpu_topology_t* topology;
+  // Native grants copied into this provider's metadata allocation.
+  struct {
+    // Number of unique agents qualified at construction.
+    uint32_t count;
+    // Inline agent handles used by ordinary HSA memory-pool allocation.
+    hsa_agent_t* agents;
+    // Inline RW descriptors present only for ASAN VMM allocation.
+    hsa_amd_memory_access_desc_t* vmem_descriptors;
+  } access;
 
   // HSA pool this provider acquires slabs from.
   hsa_amd_memory_pool_t memory_pool;
@@ -106,8 +111,8 @@ typedef struct iree_hal_amdgpu_slab_handle_t {
   // True when |base_ptr| is an active HSA VMM mapping.
   uint32_t is_vmem_mapped : 1;
 
-  // True when any ASAN advice has published shadow bytes for this slab.
-  uint32_t has_asan_advice : 1;
+  // Set by independently advised subranges; read after all users retire.
+  iree_atomic_int32_t has_asan_advice;
 
   // Borrowed HSA API table used to release slab backing allocations.
   const iree_hal_amdgpu_libhsa_t* libhsa;
@@ -186,26 +191,6 @@ static bool iree_hal_amdgpu_slab_provider_record_memory_event(
   return recorded;
 }
 
-static iree_status_t iree_hal_amdgpu_slab_provider_resolve_access_agents(
-    const iree_hal_amdgpu_slab_provider_t* provider,
-    iree_hal_amdgpu_access_agent_list_t* out_agent_list) {
-  return iree_hal_amdgpu_access_agent_list_resolve_memory_agents(
-      provider->topology, provider->supported_queue_family_affinity,
-      out_agent_list);
-}
-
-static iree_status_t iree_hal_amdgpu_slab_provider_build_vmem_access_descs(
-    const iree_hal_amdgpu_slab_provider_t* provider,
-    iree_host_size_t access_desc_capacity,
-    hsa_amd_memory_access_desc_t* access_descs,
-    iree_host_size_t* out_access_desc_count) {
-  hsa_agent_t local_agent =
-      provider->topology->gpu_agents[provider->physical_device_ordinal];
-  return iree_hal_amdgpu_vmem_build_access_descs_for_topology(
-      provider->topology, local_agent, IREE_HAL_AMDGPU_ACCESS_MODE_SHARED,
-      access_desc_capacity, access_descs, out_access_desc_count);
-}
-
 static void iree_hal_amdgpu_slab_provider_finalize_vmem_handle(
     void* user_data) {
   iree_hal_amdgpu_slab_handle_t* slab_handle =
@@ -266,14 +251,6 @@ static iree_status_t iree_hal_amdgpu_slab_provider_acquire_vmem_slab(
     slab_handle->base_ptr = (void*)(uintptr_t)application_address;
   }
 
-  hsa_amd_memory_access_desc_t access_descs[IREE_HAL_AMDGPU_MAX_CPU_AGENT +
-                                            IREE_HAL_AMDGPU_MAX_GPU_AGENT];
-  iree_host_size_t access_desc_count = 0;
-  if (iree_status_is_ok(status)) {
-    status = iree_hal_amdgpu_slab_provider_build_vmem_access_descs(
-        provider, IREE_ARRAYSIZE(access_descs), access_descs,
-        &access_desc_count);
-  }
   if (iree_status_is_ok(status)) {
     status = iree_hsa_amd_vmem_handle_create(
         IREE_LIBHSA(provider->libhsa), provider->memory_pool, allocation_size,
@@ -300,7 +277,7 @@ static iree_status_t iree_hal_amdgpu_slab_provider_acquire_vmem_slab(
   if (iree_status_is_ok(status)) {
     status = iree_hsa_amd_vmem_set_access(
         IREE_LIBHSA(provider->libhsa), slab_handle->base_ptr, allocation_size,
-        access_descs, access_desc_count);
+        provider->access.vmem_descriptors, provider->access.count);
   }
   if (iree_status_is_ok(status)) {
     status = iree_hal_amdgpu_asan_state_map_range(
@@ -410,41 +387,17 @@ iree_hal_amdgpu_slab_provider_query_memory_pool_properties(
 
 iree_status_t iree_hal_amdgpu_slab_provider_create(
     iree_hal_device_t* device, const iree_hal_amdgpu_libhsa_t* libhsa,
-    const iree_hal_amdgpu_topology_t* topology,
     iree_hal_amdgpu_slab_provider_options_t options,
     iree_host_size_t physical_device_ordinal,
     iree_hal_amdgpu_buffer_pool_t* buffer_pool, iree_string_view_t trace_name,
     iree_allocator_t host_allocator, iree_hal_slab_provider_t** out_provider) {
   IREE_ASSERT_ARGUMENT(device);
   IREE_ASSERT_ARGUMENT(libhsa);
-  IREE_ASSERT_ARGUMENT(topology);
   IREE_ASSERT_ARGUMENT(buffer_pool);
   IREE_ASSERT_ARGUMENT(out_provider);
   IREE_TRACE_ZONE_BEGIN(z0);
   *out_provider = NULL;
 
-  if (IREE_UNLIKELY(physical_device_ordinal >= topology->gpu_agent_count)) {
-    IREE_TRACE_ZONE_END(z0);
-    return iree_make_status(
-        IREE_STATUS_OUT_OF_RANGE,
-        "AMDGPU slab provider physical device ordinal %" PRIhsz
-        " exceeds topology GPU agent count %" PRIhsz,
-        physical_device_ordinal, topology->gpu_agent_count);
-  }
-  if (IREE_UNLIKELY(topology->gpu_agent_count > IREE_HAL_MAX_QUEUE_FAMILIES)) {
-    IREE_TRACE_ZONE_END(z0);
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "AMDGPU topology GPU agent count %" PRIhsz
-                            " exceeds queue-family affinity capacity %" PRIhsz,
-                            topology->gpu_agent_count,
-                            (iree_host_size_t)IREE_HAL_MAX_QUEUE_FAMILIES);
-  }
-  const iree_hal_queue_family_affinity_t supported_queue_family_affinity =
-      topology->gpu_agent_count == IREE_HAL_MAX_QUEUE_FAMILIES
-          ? IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY
-          : (((iree_hal_queue_family_affinity_t)1
-              << topology->gpu_agent_count) -
-             1);
   if (IREE_UNLIKELY(!options.memory_pool.handle)) {
     IREE_TRACE_ZONE_END(z0);
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
@@ -490,20 +443,48 @@ iree_status_t iree_hal_amdgpu_slab_provider_create(
   }
 
   iree_hal_amdgpu_slab_provider_t* provider = NULL;
+  const iree_host_size_t agents_size =
+      options.access.agent_count * sizeof(hsa_agent_t);
+  const iree_host_size_t descriptors_size =
+      iree_any_bit_set(options.flags,
+                       IREE_HAL_AMDGPU_SLAB_PROVIDER_FLAG_ASAN_VMM)
+          ? options.access.agent_count * sizeof(hsa_amd_memory_access_desc_t)
+          : 0;
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0, iree_allocator_malloc(host_allocator, sizeof(*provider),
-                                (void**)&provider));
+      z0,
+      iree_allocator_malloc(host_allocator,
+                            sizeof(*provider) + agents_size + descriptors_size,
+                            (void**)&provider));
   memset(provider, 0, sizeof(*provider));
   iree_hal_slab_provider_initialize(&iree_hal_amdgpu_slab_provider_vtable,
                                     &provider->base);
   provider->host_allocator = host_allocator;
   provider->device = device;
   provider->libhsa = libhsa;
-  provider->topology = topology;
+  provider->access.count = options.access.agent_count;
+  provider->access.agents = (hsa_agent_t*)(provider + 1);
+  memcpy(provider->access.agents, options.access.agents, agents_size);
+  if (descriptors_size) {
+    provider->access.vmem_descriptors =
+        (hsa_amd_memory_access_desc_t*)(provider->access.agents +
+                                        options.access.agent_count);
+    for (uint32_t i = 0; i < options.access.agent_count; ++i) {
+      provider->access.vmem_descriptors[i] = (hsa_amd_memory_access_desc_t){
+          .agent_handle = options.access.agents[i],
+          .permissions = HSA_ACCESS_PERMISSION_RW,
+      };
+    }
+  }
   provider->memory_pool = options.memory_pool;
   provider->physical_device_ordinal = (uint32_t)physical_device_ordinal;
   provider->buffer_pool = buffer_pool;
-  provider->supported_queue_family_affinity = supported_queue_family_affinity;
+  provider->supported_queue_family_affinity =
+      options.access.queue_family_affinity;
+  provider->atomic_memory_source_masks = options.access.atomic_source_masks;
+  provider->atomic_memory_cells =
+      iree_hal_amdgpu_atomic_memory_select_device_cells(
+          &provider->atomic_memory_source_masks,
+          provider->supported_queue_family_affinity);
   provider->flags = options.flags;
   provider->vmem_memory_type = options.vmem_memory_type;
   provider->asan_state = options.asan_state;
@@ -517,18 +498,6 @@ iree_status_t iree_hal_amdgpu_slab_provider_create(
   if (iree_status_is_ok(status)) {
     status = iree_hal_amdgpu_slab_provider_query_memory_pool_properties(
         libhsa, options.memory_pool, &properties);
-  }
-  if (iree_status_is_ok(status)) {
-    status = iree_hal_amdgpu_atomic_memory_query_source_masks(
-        libhsa, topology, options.memory_pool,
-        HSA_AMD_MEMORY_POOL_STANDARD_FLAG,
-        &provider->atomic_memory_source_masks);
-  }
-  if (iree_status_is_ok(status)) {
-    provider->atomic_memory_cells =
-        iree_hal_amdgpu_atomic_memory_select_device_cells(
-            &provider->atomic_memory_source_masks,
-            (iree_hal_amdgpu_gpu_agent_mask_t)supported_queue_family_affinity);
   }
   if (iree_status_is_ok(status) &&
       iree_hal_amdgpu_slab_provider_uses_asan_vmm(provider)) {
@@ -579,7 +548,8 @@ static void iree_hal_amdgpu_slab_provider_destroy(
 
 static iree_status_t iree_hal_amdgpu_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* base_provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab) {
+    iree_device_size_t alignment, iree_hal_slab_t* out_slab) {
+  (void)alignment;
   IREE_ASSERT_ARGUMENT(out_slab);
   iree_hal_amdgpu_slab_provider_t* provider =
       iree_hal_amdgpu_slab_provider_cast(base_provider);
@@ -630,13 +600,9 @@ static iree_status_t iree_hal_amdgpu_slab_provider_acquire_slab(
   }
   if (iree_status_is_ok(status) &&
       !iree_hal_amdgpu_slab_provider_uses_asan_vmm(provider)) {
-    iree_hal_amdgpu_access_agent_list_t access_agents;
-    status = iree_hal_amdgpu_slab_provider_resolve_access_agents(
-        provider, &access_agents);
-    if (iree_status_is_ok(status)) {
-      status = iree_hal_amdgpu_access_allow_agent_list(
-          provider->libhsa, &access_agents, base_ptr);
-    }
+    status = iree_hsa_amd_agents_allow_access(
+        IREE_LIBHSA(provider->libhsa), provider->access.count,
+        provider->access.agents, /*flags=*/NULL, base_ptr);
   }
   if (iree_status_is_ok(status) &&
       iree_hal_amdgpu_slab_provider_uses_asan_shadow(provider) &&
@@ -685,7 +651,8 @@ static void iree_hal_amdgpu_slab_provider_release_slab(
         slab->base_ptr);
     iree_hal_memory_trace_free(&provider->trace, slab->base_ptr);
     if (iree_hal_amdgpu_slab_provider_uses_asan_shadow(provider) &&
-        slab_handle->has_asan_advice) {
+        iree_atomic_load(&slab_handle->has_asan_advice,
+                         iree_memory_order_relaxed)) {
       iree_hal_amdgpu_asan_quarantine_release_fn_t release_fn =
           iree_hal_amdgpu_slab_provider_uses_asan_vmm(provider)
               ? iree_hal_amdgpu_slab_provider_finalize_vmem_handle
@@ -796,8 +763,12 @@ static iree_status_t iree_hal_amdgpu_slab_provider_wrap_buffer(
   return iree_hal_amdgpu_buffer_create_pooled(
       provider->libhsa, placement, resolved_type, params.access, params.usage,
       atomic_memory_cells, allocation_size, allocation_size,
-      slab->base_ptr + slab_offset, release_callback, provider->buffer_pool,
-      provider->host_allocator, out_buffer);
+      slab->base_ptr + slab_offset,
+      iree_any_bit_set(resolved_type, IREE_HAL_MEMORY_TYPE_HOST_VISIBLE)
+          ? slab->base_ptr + slab_offset
+          : NULL,
+      release_callback, provider->buffer_pool, provider->host_allocator,
+      out_buffer);
 }
 
 static iree_status_t iree_hal_amdgpu_slab_provider_validate_asan_options(
@@ -841,7 +812,8 @@ static void iree_hal_amdgpu_slab_provider_advise_asan_range(
   IREE_ASSERT(iree_hal_amdgpu_asan_state_is_enabled(provider->asan_state));
   iree_hal_amdgpu_slab_handle_t* slab_handle =
       (iree_hal_amdgpu_slab_handle_t*)(uintptr_t)slab->provider_handle;
-  slab_handle->has_asan_advice = true;
+  iree_atomic_store(&slab_handle->has_asan_advice, 1,
+                    iree_memory_order_relaxed);
 
   const uint64_t mapped_address =
       (uint64_t)(uintptr_t)slab->base_ptr + backing_offset;
@@ -862,14 +834,14 @@ static void iree_hal_amdgpu_slab_provider_advise_asan_range(
 }
 
 static void iree_hal_amdgpu_slab_provider_prefault(
-    iree_hal_slab_provider_t* base_provider, iree_hal_slab_t* slab) {
+    iree_hal_slab_provider_t* base_provider, const iree_hal_slab_t* slab,
+    iree_device_size_t offset, iree_device_size_t length) {
   (void)base_provider;
   (void)slab;
 }
 
 static void iree_hal_amdgpu_slab_provider_trim(
-    iree_hal_slab_provider_t* base_provider,
-    iree_hal_slab_provider_trim_flags_t flags) {
+    iree_hal_slab_provider_t* base_provider, iree_hal_pool_trim_flags_t flags) {
   (void)base_provider;
   (void)flags;
 }
@@ -895,6 +867,9 @@ static void iree_hal_amdgpu_slab_provider_query_properties(
   const iree_hal_amdgpu_slab_provider_t* provider =
       iree_hal_amdgpu_slab_provider_const_cast(base_provider);
   *out_properties = provider->properties;
+  out_properties->allocation_alignment = provider->allocation_alignment;
+  out_properties->max_allocation_alignment = provider->allocation_alignment;
+  out_properties->maintenance_alignment = 1;
 }
 
 static const iree_hal_slab_provider_vtable_t

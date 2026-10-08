@@ -17,6 +17,7 @@ iree_cc_library(
     "api.h"
     "atomic.h"
     "buffer.h"
+    "buffer_allocation.h"
     "buffer_view.h"
     "buffer_view_util.h"
     "channel.h"
@@ -31,8 +32,11 @@ iree_cc_library(
     "executable.h"
     "fence.h"
     "file.h"
+    "memory_backend.h"
+    "memory_scope.h"
     "pool.h"
     "pool_set.h"
+    "pool_wait.h"
     "profile_metrics.h"
     "profile_options.h"
     "profile_schema.h"
@@ -40,6 +44,7 @@ iree_cc_library(
     "queue.h"
     "resource.h"
     "semaphore.h"
+    "slab_pool.h"
     "string_util.h"
     "topology.h"
     "topology_builder.h"
@@ -50,6 +55,7 @@ iree_cc_library(
     "allocator_heap.c"
     "atomic.c"
     "buffer.c"
+    "buffer_allocation.c"
     "buffer_heap.c"
     "buffer_heap_impl.h"
     "buffer_view.c"
@@ -71,13 +77,17 @@ iree_cc_library(
     "executable.c"
     "fence.c"
     "file.c"
+    "memory_backend.c"
+    "memory_scope.c"
     "pool.c"
     "pool_set.c"
+    "pool_wait.c"
     "profile_metrics.c"
     "profile_options.c"
     "profile_sink.c"
     "queue.c"
     "semaphore.c"
+    "slab_pool.c"
     "string_util.c"
     "topology.c"
     "topology_builder.c"
@@ -200,6 +210,26 @@ iree_cc_test(
     ::hal
     iree::async
     iree::async::platform
+    iree::async::util::proactor_thread
+    iree::base
+    iree::hal::memory::cpu_slab_provider
+    iree::hal::memory::fixed_block_pool
+    iree::hal::memory::maintenance_thread
+    iree::hal::memory::passthrough_pool
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+iree_cc_test(
+  NAME
+    pool_wait_test
+  SRCS
+    "pool_wait_test.cc"
+  DEPS
+    ::hal
+    iree::async
+    iree::async::platform
+    iree::async::util::proactor_thread
     iree::base
     iree::testing::gtest
     iree::testing::gtest_main

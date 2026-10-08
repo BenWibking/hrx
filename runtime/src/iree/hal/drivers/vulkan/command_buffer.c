@@ -606,16 +606,6 @@ static iree_status_t iree_hal_vulkan_command_buffer_resolve_native_buffer_ref(
   iree_hal_buffer_t* backing_buffer = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_buffer_resolve_backing(
       resolved_ref.buffer, &backing_buffer));
-  iree_hal_buffer_t* allocated_buffer =
-      iree_hal_buffer_allocated_buffer(backing_buffer);
-  if (!iree_hal_vulkan_buffer_isa(allocated_buffer) &&
-      !iree_hal_vulkan_sparse_buffer_isa(allocated_buffer)) {
-    return iree_make_status(
-        IREE_STATUS_FAILED_PRECONDITION,
-        "Vulkan command buffer %.*s buffer reference is not backed by the "
-        "Vulkan HAL",
-        (int)usage.size, usage.data);
-  }
 
   VkDeviceMemory memory = VK_NULL_HANDLE;
   VkBuffer handle = VK_NULL_HANDLE;
@@ -2693,8 +2683,9 @@ iree_hal_vulkan_command_buffer_materialize_transfer_staging(
   if (iree_status_is_ok(status)) {
     status = iree_hal_buffer_map_range(
         staging_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE, /*byte_offset=*/0,
-        command_buffer->transfer_staging_length, &staging_mapping);
+        IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
+        /*byte_offset=*/0, command_buffer->transfer_staging_length,
+        &staging_mapping);
   }
 
   iree_hal_vulkan_command_buffer_iterator_t iterator =

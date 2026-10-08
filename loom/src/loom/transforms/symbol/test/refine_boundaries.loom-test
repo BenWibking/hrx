@@ -325,7 +325,7 @@ kernel.def @exported_kernel(%workload: index) {
 }
 
 func.def public @launch_exported_kernel(%workload: index, %aligned: index, %apparently_dead: index) {
-  %assumed = index.assume %aligned [mul(%aligned, 16)] : index
+  %assumed = index.assume %aligned [multiple_of(%aligned, 16)] : index
   kernel.launch @exported_kernel[%workload](%assumed, %apparently_dead) : [index](index, index)
   func.return
 }
@@ -342,7 +342,7 @@ kernel.def @exported_kernel(%workload: index) {
 }
 
 func.def public @launch_exported_kernel(%workload: index, %aligned: index, %apparently_dead: index) {
-  %assumed = index.assume %aligned [mul(%aligned, 16)] : index
+  %assumed = index.assume %aligned [multiple_of(%aligned, 16)] : index
   kernel.launch @exported_kernel[%workload](%assumed, %apparently_dead) : [index](index, index)
   func.return
 }

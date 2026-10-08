@@ -29,13 +29,6 @@ using IreeHalTargetEnvironmentCreateFn =
 using IreeHalTargetProfileValidateFn = loomc_status_t (*)(
     loomc_target_profile_t* target_profile, const char** out_skip_reason);
 
-// Emits a target-specific executable artifact from the compiled module.
-using IreeHalTargetModuleEmitFn = loomc_status_t (*)(
-    loomc_target_environment_t* target_environment,
-    loomc_workspace_t* workspace, loomc_module_t* module,
-    loomc_string_view_t artifact_format,
-    loomc_string_view_t artifact_identifier, loomc_result_t** out_result);
-
 // Target-specific inputs for the shared kernel-to-HAL execution test.
 struct IreeHalKernelExecutionTarget {
   // Human-readable target name used in skip and failure messages.
@@ -44,7 +37,7 @@ struct IreeHalKernelExecutionTarget {
   // HAL device URI used to create the live device.
   iree_string_view_t device_uri;
 
-  // Profile identifier passed to `loomc_target_profile_create_iree_hal`.
+  // Profile identifier passed to `loomc_target_select_iree_hal`.
   loomc_string_view_t target_profile_identifier;
 
   // Source identifier reported in parse diagnostics.
@@ -52,9 +45,6 @@ struct IreeHalKernelExecutionTarget {
 
   // Borrowed `.loom` source contents for the target-specific kernel.
   loomc_string_view_t source_text;
-
-  // Module name passed to the compile invocation.
-  loomc_string_view_t module_name;
 
   // Public kernel export compiled and dispatched by the test.
   loomc_string_view_t kernel_export_name;
@@ -77,23 +67,17 @@ struct IreeHalKernelExecutionTarget {
   // Artifact identifier reported by emission diagnostics.
   loomc_string_view_t artifact_identifier;
 
-  // HAL executable target selected for direct loading.
-  iree_hal_executable_target_selection_t executable_target_selection;
+  // Static provider array used to select compiler-and-loader targets.
+  const loomc_iree_hal_target_provider_t* const* target_providers;
 
-  // Static provider array used to project HAL device facts into Loom facts.
-  const loomc_iree_hal_profile_provider_t* const* profile_providers;
-
-  // Number of provider entries in `profile_providers`.
-  loomc_host_size_t profile_provider_count;
+  // Number of provider entries in `target_providers`.
+  loomc_host_size_t target_provider_count;
 
   // Target environment factory for this backend.
   IreeHalTargetEnvironmentCreateFn create_target_environment;
 
   // Target-specific profile validation callback.
   IreeHalTargetProfileValidateFn validate_target_profile;
-
-  // Target-specific module emission callback.
-  IreeHalTargetModuleEmitFn emit_module;
 };
 
 // Borrowed execution objects valid for the duration of an execution callback.

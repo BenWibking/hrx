@@ -536,7 +536,6 @@ loom_cc_library(
   DEPS
     iree::base
     loom::codegen::low::pipeline::pass_environment
-    loom::codegen::low::pipeline::pass_requirements
     loom::pass::registry
     loom::target::arch::amdgpu::hal::binding_materialization_pass
   PUBLIC

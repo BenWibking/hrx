@@ -155,25 +155,26 @@ enum {
   LOOM_OP_VECTOR_FPTOSI = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 130),
   LOOM_OP_VECTOR_FPTOUI = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 131),
   LOOM_OP_VECTOR_BITCAST = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 132),
-  LOOM_OP_VECTOR_BITFIELD_EXTRACTU = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 133),
-  LOOM_OP_VECTOR_BITFIELD_EXTRACTS = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 134),
-  LOOM_OP_VECTOR_BITFIELD_INSERT = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 135),
-  LOOM_OP_VECTOR_BITPACK = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 136),
-  LOOM_OP_VECTOR_BITUNPACKU = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 137),
-  LOOM_OP_VECTOR_BITUNPACKS = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 138),
-  LOOM_OP_VECTOR_DOTF = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 139),
-  LOOM_OP_VECTOR_DOT2F = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 140),
-  LOOM_OP_VECTOR_DOT4I = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 141),
-  LOOM_OP_VECTOR_DOT8I4 = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 142),
-  LOOM_OP_VECTOR_DOT4F8 = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 143),
-  LOOM_OP_VECTOR_MMA = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 144),
-  LOOM_OP_VECTOR_REDUCE = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 145),
-  LOOM_OP_VECTOR_REDUCE_AXES = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 146),
-  LOOM_OP_VECTOR_DECODE = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 147),
-  LOOM_OP_VECTOR_ENCODE = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 148),
-  LOOM_OP_VECTOR_FRAGMENT = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 149),
-  LOOM_OP_VECTOR_FRAGMENT_REPACK = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 150),
-  LOOM_OP_VECTOR_COUNT_ = 151,
+  LOOM_OP_VECTOR_INDEX_CAST = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 133),
+  LOOM_OP_VECTOR_BITFIELD_EXTRACTU = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 134),
+  LOOM_OP_VECTOR_BITFIELD_EXTRACTS = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 135),
+  LOOM_OP_VECTOR_BITFIELD_INSERT = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 136),
+  LOOM_OP_VECTOR_BITPACK = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 137),
+  LOOM_OP_VECTOR_BITUNPACKU = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 138),
+  LOOM_OP_VECTOR_BITUNPACKS = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 139),
+  LOOM_OP_VECTOR_DOTF = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 140),
+  LOOM_OP_VECTOR_DOT2F = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 141),
+  LOOM_OP_VECTOR_DOT4I = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 142),
+  LOOM_OP_VECTOR_DOT8I4 = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 143),
+  LOOM_OP_VECTOR_DOT4F8 = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 144),
+  LOOM_OP_VECTOR_MMA = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 145),
+  LOOM_OP_VECTOR_REDUCE = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 146),
+  LOOM_OP_VECTOR_REDUCE_AXES = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 147),
+  LOOM_OP_VECTOR_DECODE = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 148),
+  LOOM_OP_VECTOR_ENCODE = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 149),
+  LOOM_OP_VECTOR_FRAGMENT = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 150),
+  LOOM_OP_VECTOR_FRAGMENT_REPACK = LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 151),
+  LOOM_OP_VECTOR_COUNT_ = 152,
 };
 
 // IEEE 754 fast-math relaxation flags for float operations.
@@ -826,7 +827,8 @@ iree_status_t loom_vector_load_build(
     loom_type_t result_type,
     loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_memory_access_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_memory_access_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_vector_load_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -865,7 +867,8 @@ iree_status_t loom_vector_store_build(
     loom_optional uint8_t cache_temporal,
     loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_memory_access_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_memory_access_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_vector_store_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
@@ -1701,7 +1704,8 @@ iree_status_t loom_vector_addi_build(
     loom_type_t result_type, loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_vector_binary_identity_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
-loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_vector_addi_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -1720,7 +1724,8 @@ iree_status_t loom_vector_subi_build(
     loom_value_id_t lhs, loom_value_id_t rhs,
     loom_type_t result_type, loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_vector_subi_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -1739,7 +1744,8 @@ iree_status_t loom_vector_muli_build(
     loom_value_id_t lhs, loom_value_id_t rhs,
     loom_type_t result_type, loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_vector_muli_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -1954,7 +1960,8 @@ iree_status_t loom_vector_fmai_build(
     loom_type_t result_type,
     loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_vector_fmai_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -2949,6 +2956,25 @@ iree_status_t loom_vector_bitcast_facts(
     const loom_module_t* module, const loom_op_t* op,
     const loom_value_facts_t* operand_facts,
     loom_value_facts_t* result_facts);
+
+// LOOM_OP_VECTOR_INDEX_CAST: Lanewise integer conversion at an address boundary. Index uses a signed target-selected carrier and offset uses an independently selected unsigned carrier. Each lane follows index.cast semantics, including 0/1 conversion for i1, source-domain signedness, low-bit preservation when narrowing, and destination representability. Source and result shapes match exactly. Pure fixed-width integer changes use the ordinary vector extension and truncation ops.
+// %indices = vector.index_cast %lanes : vector<16xi32> to vector<16xindex>
+LOOM_DEFINE_ISA(loom_vector_index_cast_isa, LOOM_OP_VECTOR_INDEX_CAST)
+LOOM_DEFINE_OPERAND(loom_vector_index_cast_input, 0)
+LOOM_DEFINE_RESULT(loom_vector_index_cast_result, 0)
+iree_status_t loom_vector_index_cast_build(
+    loom_builder_t* builder, loom_value_id_t input,
+    loom_type_t input_type, loom_type_t result_type,
+    loom_location_id_t location, loom_op_t** out_op);
+iree_status_t loom_vector_index_cast_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
+iree_status_t loom_vector_index_cast_facts(
+    loom_fact_context_t* context,
+    const loom_module_t* module, const loom_op_t* op,
+    const loom_value_facts_t* operand_facts,
+    loom_value_facts_t* result_facts);
+iree_status_t loom_vector_index_cast_verify(
+    const loom_module_t* module, const loom_op_t* op,
+    iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_VECTOR_BITFIELD_EXTRACTU: Extract one fixed bitfield from each integer source lane and zero-extend it into the corresponding result lane. The bitfield is identified by least-significant-bit offset and width.
 // %lo = vector.bitfield.extractu %bytes {offset = 0, width = 4} : vector<16xi8> -> vector<16xi32>

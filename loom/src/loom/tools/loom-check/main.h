@@ -17,13 +17,17 @@
 #include "iree/base/api.h"
 #include "loom/tools/loom-check/execute.h"
 
+struct loom_check_compile_provider_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Runs loom-check using |environment| as the linked tool environment.
-int loom_check_main(int argc, char** argv,
-                    const loom_check_environment_t* environment);
+// Runs loom-check using |environment| and the final binary's compiler
+// integrations.
+int loom_check_main(
+    int argc, char** argv, const loom_check_environment_t* environment,
+    const struct loom_check_compile_provider_t* compile_provider);
 
 #ifdef __cplusplus
 }  // extern "C"

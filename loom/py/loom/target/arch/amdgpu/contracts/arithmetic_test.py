@@ -15,6 +15,7 @@ from loom.dialect.scalar import defs as scalar_defs
 from loom.dialect.scalar import math as scalar_math
 from loom.dialect.vector import defs as vector
 from loom.dsl import Op
+from loom.scalar_type import ScalarTypeKind, scalar_type_name
 from loom.target.arch.amdgpu.contracts.arithmetic import (
     AMDGPU_ARITHMETIC_CONTRACT_DIALECT_OPS,
     AMDGPU_ARITHMETIC_CONTRACT_FRAGMENT,
@@ -33,6 +34,7 @@ from loom.target.contracts import (
     Scalar,
     SourceValueKind,
     TypePattern,
+    UnsignedDivisorMagicKind,
     compile_lower_rule_set,
 )
 
@@ -168,11 +170,16 @@ def test_constant_unsigned_quotients_cover_both_register_classes() -> None:
             key.endswith("mul_hi_u32") for key in _rule_descriptor_keys(compiled, rule)
         )
     )
-    # Both magic variants share the index implementation, with scalar i32
+    # Every reciprocal shape shares the index implementation, with scalar i32
     # materialization instead of nonnegative address-value materialization.
-    assert len(index_sequences) == 4
-    assert scalar_sequences[:4] == index_sequences
-    assert scalar_sequences[4:] == (
+    magic_count = 2 * len(UnsignedDivisorMagicKind)
+    assert len(index_sequences) == magic_count
+    assert scalar_sequences[:magic_count] == index_sequences
+    assert index_sequences[:2] == (
+        ("amdgpu.s_mov_b32", "amdgpu.s_mul_hi_u32"),
+        ("amdgpu.v_mov_b32", "amdgpu.v_mul_hi_u32"),
+    )
+    assert scalar_sequences[magic_count:] == (
         (
             "amdgpu.s_cmp_ge_u32",
             "amdgpu.s_mov_b32",
@@ -662,7 +669,7 @@ def test_vector_construct_rules_publish_contract_only_storage_rows() -> None:
     expected_rule_counts = {
         vector.vector_from_elements: 12,
         vector.vector_iota: 2,
-        vector.vector_insert: 8,
+        vector.vector_insert: 11,
         vector.vector_splat: 11,
     }
     for source_op, expected_rule_count in expected_rule_counts.items():
@@ -683,6 +690,37 @@ def test_vector_construct_rules_publish_contract_only_storage_rows() -> None:
             assert guards[0].kind == GuardKind.VALUE_TYPE
             value_ref = compiled.value_refs[guards[0].value_ref_index]
             assert value_ref.kind == SourceValueKind.RESULT
+
+
+def test_insertion_uses_the_complete_construction_storage_family() -> None:
+    compiled = _compiled_arithmetic_rules()
+    insertion = {
+        pattern.elements[0]: pattern
+        for rule in _rules_for_source_op(compiled, vector.vector_insert)
+        for pattern in _rule_type_patterns(compiled, rule)
+        if pattern.kind == "vector"
+    }
+    assert set(insertion) == {
+        scalar_type_name(kind)
+        for kind in ScalarTypeKind
+        if kind not in (ScalarTypeKind.INDEX, ScalarTypeKind.OFFSET)
+    }
+    for source_op in (
+        vector.vector_from_elements,
+        vector.vector_splat,
+        vector.vector_extract,
+    ):
+        shapes = {
+            pattern
+            for rule in _rules_for_source_op(compiled, source_op)
+            for pattern in _rule_type_patterns(compiled, rule)
+            if pattern.kind == "vector"
+        }
+        assert set(insertion.values()) <= shapes, source_op.name
+    for rule in _rules_for_source_op(compiled, vector.vector_insert):
+        scalar, destination, result = _rule_type_patterns(compiled, rule)
+        assert scalar == Scalar(destination.elements)
+        assert destination == result
 
 
 def test_vector_packed_float_conversion_rules_publish_contract_only_shape_rows() -> (

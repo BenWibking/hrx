@@ -1,0 +1,365 @@
+# Copyright 2026 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+"""Immutable x86 vector-family rows shared by descriptor and contract generation."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+AVX2_VECTOR_BIT_WIDTHS = (128, 256)
+AVX512_VECTOR_BIT_WIDTHS = (512,)
+AVX512VL_VECTOR_BIT_WIDTHS = AVX2_VECTOR_BIT_WIDTHS
+AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS = (
+    *AVX2_VECTOR_BIT_WIDTHS,
+    *AVX512_VECTOR_BIT_WIDTHS,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class VectorElement:
+    name: str
+    bit_width: int
+
+    def lane_count(self, vector_bit_width: int) -> int:
+        if vector_bit_width % self.bit_width:
+            raise ValueError(
+                f"vector width {vector_bit_width} does not contain whole "
+                f"{self.name} lanes"
+            )
+        return vector_bit_width // self.bit_width
+
+
+@dataclass(frozen=True, slots=True)
+class VectorBinaryFamily:
+    source_operation: str
+    mnemonic: str
+    semantic: str
+    element: VectorElement
+
+
+@dataclass(frozen=True, slots=True)
+class VectorLaneFamily:
+    """Bit-compatible scalar lane movement shared by source element types."""
+
+    element_bit_width: int
+    element_names: tuple[str, ...]
+    extract_mnemonic: str
+    insert_mnemonic: str
+
+
+@dataclass(frozen=True, slots=True)
+class VectorShuffleFamily:
+    """Bit-compatible shuffle strategy shared by source element types."""
+
+    element_bit_width: int
+    element_names: tuple[str, ...]
+
+
+INTEGER_ELEMENTS = (
+    VectorElement("i8", 8),
+    VectorElement("i16", 16),
+    VectorElement("i32", 32),
+    VectorElement("i64", 64),
+)
+
+FLOAT_ELEMENTS = (
+    VectorElement("f32", 32),
+    VectorElement("f64", 64),
+)
+
+STORAGE_ELEMENTS = (
+    VectorElement("f8E4M3", 8),
+    VectorElement("f8E5M2", 8),
+    VectorElement("f16", 16),
+    VectorElement("bf16", 16),
+)
+
+X86_LANE_FAMILIES = (
+    VectorLaneFamily(
+        8,
+        ("i8", "f8E4M3", "f8E5M2"),
+        "vpextrb",
+        "vpinsrb",
+    ),
+    VectorLaneFamily(
+        16,
+        ("i16", "f16", "bf16"),
+        "vpextrw",
+        "vpinsrw",
+    ),
+    VectorLaneFamily(32, ("i32",), "vpextrd", "vpinsrd"),
+    VectorLaneFamily(64, ("i64",), "vpextrq", "vpinsrq"),
+)
+
+AVX2_SHUFFLE_FAMILIES = (
+    VectorShuffleFamily(8, ("i8", "f8E4M3", "f8E5M2")),
+    VectorShuffleFamily(16, ("i16", "f16", "bf16")),
+    VectorShuffleFamily(32, ("i32", "f32")),
+    VectorShuffleFamily(64, ("i64", "f64")),
+)
+
+AVX2_INTEGER_BINARY_FAMILIES = (
+    *(
+        VectorBinaryFamily("addi", f"vpadd{suffix}", "integer.add", element)
+        for element, suffix in zip(INTEGER_ELEMENTS, ("b", "w", "d", "q"), strict=True)
+    ),
+    *(
+        VectorBinaryFamily("subi", f"vpsub{suffix}", "integer.sub", element)
+        for element, suffix in zip(INTEGER_ELEMENTS, ("b", "w", "d", "q"), strict=True)
+    ),
+    VectorBinaryFamily("muli", "vpmullw", "integer.mul", INTEGER_ELEMENTS[1]),
+    VectorBinaryFamily("muli", "vpmulld", "integer.mul", INTEGER_ELEMENTS[2]),
+    *(
+        VectorBinaryFamily("minsi", mnemonic, "integer.mins", element)
+        for element, mnemonic in zip(
+            INTEGER_ELEMENTS[:3], ("vpminsb", "vpminsw", "vpminsd"), strict=True
+        )
+    ),
+    *(
+        VectorBinaryFamily("maxsi", mnemonic, "integer.maxs", element)
+        for element, mnemonic in zip(
+            INTEGER_ELEMENTS[:3], ("vpmaxsb", "vpmaxsw", "vpmaxsd"), strict=True
+        )
+    ),
+    *(
+        VectorBinaryFamily("minui", mnemonic, "integer.minu", element)
+        for element, mnemonic in zip(
+            INTEGER_ELEMENTS[:3], ("vpminub", "vpminuw", "vpminud"), strict=True
+        )
+    ),
+    *(
+        VectorBinaryFamily("maxui", mnemonic, "integer.maxu", element)
+        for element, mnemonic in zip(
+            INTEGER_ELEMENTS[:3], ("vpmaxub", "vpmaxuw", "vpmaxud"), strict=True
+        )
+    ),
+    VectorBinaryFamily("shli", "vpsllvd", "integer.shl", INTEGER_ELEMENTS[2]),
+    VectorBinaryFamily("shli", "vpsllvq", "integer.shl", INTEGER_ELEMENTS[3]),
+    VectorBinaryFamily("shrsi", "vpsravd", "integer.shrs", INTEGER_ELEMENTS[2]),
+    VectorBinaryFamily("shrui", "vpsrlvd", "integer.shru", INTEGER_ELEMENTS[2]),
+    VectorBinaryFamily("shrui", "vpsrlvq", "integer.shru", INTEGER_ELEMENTS[3]),
+)
+
+# AVX-512BW extends the word variable shifts while AVX-512DQ completes the
+# native i64 multiply, extrema, and arithmetic-shift cells. Core AVX-512 has no
+# native byte-shift or byte-multiply forms, so those use a distinct composed
+# lowering mechanism.
+AVX512_INTEGER_BINARY_FAMILIES = (
+    *AVX2_INTEGER_BINARY_FAMILIES,
+    VectorBinaryFamily("muli", "vpmullq", "integer.mul", INTEGER_ELEMENTS[3]),
+    *(
+        VectorBinaryFamily(source_operation, mnemonic, semantic, INTEGER_ELEMENTS[3])
+        for source_operation, mnemonic, semantic in (
+            ("minsi", "vpminsq", "integer.mins"),
+            ("maxsi", "vpmaxsq", "integer.maxs"),
+            ("minui", "vpminuq", "integer.minu"),
+            ("maxui", "vpmaxuq", "integer.maxu"),
+        )
+    ),
+    *(
+        VectorBinaryFamily(source_operation, mnemonic, semantic, INTEGER_ELEMENTS[1])
+        for source_operation, mnemonic, semantic in (
+            ("shli", "vpsllvw", "integer.shl"),
+            ("shrsi", "vpsravw", "integer.shrs"),
+            ("shrui", "vpsrlvw", "integer.shru"),
+        )
+    ),
+    VectorBinaryFamily("shrsi", "vpsravq", "integer.shrs", INTEGER_ELEMENTS[3]),
+)
+
+_AVX2_INTEGER_BINARY_KEYS = frozenset(
+    (family.source_operation, family.element.name)
+    for family in AVX2_INTEGER_BINARY_FAMILIES
+)
+AVX512VL_INTEGER_BINARY_FAMILIES = tuple(
+    family
+    for family in AVX512_INTEGER_BINARY_FAMILIES
+    if (family.source_operation, family.element.name) not in _AVX2_INTEGER_BINARY_KEYS
+)
+
+AVX2_FLOAT_BINARY_FAMILIES = tuple(
+    VectorBinaryFamily(source_operation, f"v{stem}{suffix}", semantic, element)
+    for source_operation, stem, semantic in (
+        ("addf", "add", "float.add"),
+        ("subf", "sub", "float.sub"),
+        ("mulf", "mul", "float.mul"),
+        ("divf", "div", "float.div"),
+    )
+    for element, suffix in zip(FLOAT_ELEMENTS, ("ps", "pd"), strict=True)
+)
+
+AVX512_FLOAT_BINARY_FAMILIES = AVX2_FLOAT_BINARY_FAMILIES
+
+AVX2_SCALAR_FLOAT_BINARY_FAMILIES = tuple(
+    VectorBinaryFamily(source_operation, f"v{stem}{suffix}", semantic, element)
+    for source_operation, stem, semantic in (
+        ("addf", "add", "float.add"),
+        ("subf", "sub", "float.sub"),
+        ("mulf", "mul", "float.mul"),
+        ("divf", "div", "float.div"),
+    )
+    for element, suffix in zip(FLOAT_ELEMENTS, ("ss", "sd"), strict=True)
+)
+
+AVX2_BITWISE_FAMILIES = (
+    ("andi", "vpand", "bits.and"),
+    ("ori", "vpor", "bits.or"),
+    ("xori", "vpxor", "bits.xor"),
+)
+
+# The EVEX dword forms operate on the complete 512-bit payload regardless of
+# the source element interpretation.
+AVX512_BITWISE_FAMILIES = (
+    ("andi", "vpandd", "bits.and"),
+    ("ori", "vpord", "bits.or"),
+    ("xori", "vpxord", "bits.xor"),
+)
+
+AVX2_INTEGER_REDUCTION_FAMILIES = (
+    *(
+        row
+        for row in AVX2_INTEGER_BINARY_FAMILIES
+        if row.source_operation in ("addi", "muli", "minsi", "maxsi", "minui", "maxui")
+    ),
+    *(
+        VectorBinaryFamily(source_operation, mnemonic, semantic, element)
+        for source_operation, mnemonic, semantic in AVX2_BITWISE_FAMILIES
+        for element in INTEGER_ELEMENTS
+    ),
+)
+
+AVX512_INTEGER_REDUCTION_FAMILIES = (
+    *(
+        row
+        for row in AVX512_INTEGER_BINARY_FAMILIES
+        if row.source_operation in ("addi", "muli", "minsi", "maxsi", "minui", "maxui")
+    ),
+    *(
+        VectorBinaryFamily(source_operation, mnemonic, semantic, element)
+        for source_operation, mnemonic, semantic in AVX512_BITWISE_FAMILIES
+        for element in INTEGER_ELEMENTS
+    ),
+)
+
+AVX2_INTEGER_COMPARE_MNEMONICS = {
+    element.name: (f"vpcmpeq{suffix}", f"vpcmpgt{suffix}")
+    for element, suffix in zip(INTEGER_ELEMENTS, ("b", "w", "d", "q"), strict=True)
+}
+
+AVX2_FLOAT_COMPARE_MNEMONICS = {
+    "f32": "vcmpps",
+    "f64": "vcmppd",
+}
+
+AVX2_FLOAT_FMA_MNEMONICS = {
+    "f32": "vfmadd231ps",
+    "f64": "vfmadd231pd",
+}
+
+AVX512_FLOAT_FMA_MNEMONICS = AVX2_FLOAT_FMA_MNEMONICS
+
+AVX512_INTEGER_COMPARE_MNEMONICS = {
+    element.name: (f"vpcmp{suffix}", f"vpcmpu{suffix}")
+    for element, suffix in zip(INTEGER_ELEMENTS, ("b", "w", "d", "q"), strict=True)
+}
+
+AVX512_FLOAT_COMPARE_MNEMONICS = AVX2_FLOAT_COMPARE_MNEMONICS
+
+AVX512_SELECT_MNEMONICS = {
+    **{
+        element.name: f"vpblendm{suffix}"
+        for element, suffix in zip(INTEGER_ELEMENTS, ("b", "w", "d", "q"), strict=True)
+    },
+    **{
+        element.name: f"vpblendm{suffix}"
+        for element, suffix in zip(STORAGE_ELEMENTS, ("b", "b", "w", "w"), strict=True)
+    },
+    "f32": "vblendmps",
+    "f64": "vblendmpd",
+}
+
+AVX2_SCALAR_FLOAT_FMA_MNEMONICS = {
+    "f32": "vfmadd231ss",
+    "f64": "vfmadd231sd",
+}
+
+FLOAT_EXTREMA_OPERATIONS = (
+    "minimumf",
+    "maximumf",
+    "minnumf",
+    "maxnumf",
+)
+
+FLOAT_EXTREMA_MNEMONICS = {
+    "minimumf": {"f32": "vminps", "f64": "vminpd"},
+    "maximumf": {"f32": "vmaxps", "f64": "vmaxpd"},
+    "minnumf": {"f32": "vminps", "f64": "vminpd"},
+    "maxnumf": {"f32": "vmaxps", "f64": "vmaxpd"},
+}
+
+AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS = {
+    "minimumf": {"f32": "vminss", "f64": "vminsd"},
+    "maximumf": {"f32": "vmaxss", "f64": "vmaxsd"},
+    "minnumf": {"f32": "vminss", "f64": "vminsd"},
+    "maxnumf": {"f32": "vmaxss", "f64": "vmaxsd"},
+}
+
+AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS = ("addf", "mulf")
+
+AVX2_FLOAT_REDUCTION_OPERATIONS = (
+    *AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
+    *FLOAT_EXTREMA_OPERATIONS,
+)
+
+AVX2_PAYLOAD_ELEMENT_NAMES = tuple(
+    element.name for element in (*INTEGER_ELEMENTS, *STORAGE_ELEMENTS, *FLOAT_ELEMENTS)
+)
+
+
+def validate_vector_families() -> None:
+    keys = [
+        (family.source_operation, family.element.name)
+        for family in (*AVX2_INTEGER_BINARY_FAMILIES, *AVX2_FLOAT_BINARY_FAMILIES)
+    ]
+    if len(keys) != len(set(keys)):
+        raise ValueError("duplicate AVX2 source-operation and element family")
+    if set(AVX2_INTEGER_COMPARE_MNEMONICS) != {
+        element.name for element in INTEGER_ELEMENTS
+    }:
+        raise ValueError(
+            "AVX2 integer comparison rows must cover every integer element"
+        )
+    if set(AVX2_FLOAT_COMPARE_MNEMONICS) != {
+        element.name for element in FLOAT_ELEMENTS
+    }:
+        raise ValueError("AVX2 floating comparison rows must cover every float element")
+    if set(FLOAT_EXTREMA_MNEMONICS) != set(FLOAT_EXTREMA_OPERATIONS):
+        raise ValueError("packed extrema rows must cover every float semantic")
+    if set(AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS) != set(FLOAT_EXTREMA_OPERATIONS):
+        raise ValueError("AVX2 scalar extrema rows must cover every float semantic")
+    avx512_keys = [
+        (family.source_operation, family.element.name)
+        for family in AVX512_INTEGER_BINARY_FAMILIES
+    ]
+    if len(avx512_keys) != len(set(avx512_keys)):
+        raise ValueError("duplicate AVX-512 source-operation and element family")
+    if {
+        (family.source_operation, family.element.name)
+        for family in AVX512VL_INTEGER_BINARY_FAMILIES
+    } != set(avx512_keys) - _AVX2_INTEGER_BINARY_KEYS:
+        raise ValueError("AVX-512VL rows must contain exactly the non-AVX2 cells")
+    if set(AVX512_INTEGER_COMPARE_MNEMONICS) != {
+        element.name for element in INTEGER_ELEMENTS
+    }:
+        raise ValueError(
+            "AVX-512 integer comparison rows must cover every integer element"
+        )
+    if set(AVX512_SELECT_MNEMONICS) != set(AVX2_PAYLOAD_ELEMENT_NAMES):
+        raise ValueError("AVX-512 select rows must cover every payload element")
+
+
+validate_vector_families()

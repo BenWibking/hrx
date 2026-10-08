@@ -93,6 +93,50 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    hal_materialization
+  HDRS
+    "hal_materialization.h"
+  SRCS
+    "hal_materialization.c"
+  DEPS
+    ::register_classes
+    iree::base
+    iree::base::internal::arena
+    iree::hal::drivers::task::executable::library::abi
+    loom::codegen::low::builder
+    loom::codegen::low::transforms::task_abi
+    loom::ir
+    loom::ops::low
+    loom::ops::op_defs
+    loom::pass::types
+    loom::target::arch::x86::descriptors::entry
+    loom::target::arch::x86::ops
+    loom::target::registers
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
+    pass_registry
+  HDRS
+    "pass_registry.h"
+  SRCS
+    "pass_registry.c"
+  DEPS
+    ::hal_materialization
+    loom::codegen::low::pipeline::pass_environment
+    loom::pass::registry
+    loom::target::pass_environment
+    loom::target::pass_requirements
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     provider
   HDRS
     "provider.h"
@@ -101,8 +145,10 @@ loom_cc_library(
   DEPS
     ::legalization
     ::math_policy
+    ::pass_registry
     iree::base
     loom::ir
+    loom::pass::builder
     loom::target::arch::x86::descriptors::low_registry
     loom::target::arch::x86::lower
     loom::target::arch::x86::ops
@@ -134,6 +180,9 @@ loom_check_test_suite(
   NAME
     loom_check_file_test
   SRCS
+    "test/hal_materialization.loom-test"
+    "test/hal_materialization_diagnostics.loom-test"
+    "test/hal_query.loom-test"
     "test/instruction_immediates.loom-test"
     "test/register_classes.loom-test"
     "test/source_low/allocation.loom-test"
@@ -166,9 +215,13 @@ loom_check_test_suite(
     "test/source_low/numeric_bitwise_constants.loom-test"
     "test/source_low/numeric_boolean_comparison.loom-test"
     "test/source_low/numeric_constant_remainder.loom-test"
+    "test/source_low/numeric_f32_constants.loom-test"
+    "test/source_low/numeric_f64_constants.loom-test"
     "test/source_low/numeric_index_operands.loom-test"
     "test/source_low/numeric_integer_extrema.loom-test"
+    "test/source_low/numeric_integer_vector_constants.loom-test"
     "test/source_low/numeric_integer_widening.loom-test"
+    "test/source_low/numeric_narrow_constants.loom-test"
     "test/source_low/numeric_narrow_widening.loom-test"
     "test/source_low/numeric_offset_wide.loom-test"
     "test/source_low/numeric_scalar_i64.loom-test"
@@ -180,13 +233,23 @@ loom_check_test_suite(
     "test/source_low/packed_memory_alignment.loom-test"
     "test/source_low/packed_memory_values.loom-test"
     "test/source_low/predicate_extension.loom-test"
+    "test/source_low/rodata.loom-test"
     "test/source_low/scalar_selection.loom-test"
     "test/source_low/selected_payload_transport.loom-test"
     "test/source_low/semantic_assertions.loom-test"
     "test/source_low/shared_conditional_values.loom-test"
     "test/source_low/source_low.loom-test"
     "test/source_low/source_low_avx2.loom-test"
+    "test/source_low/source_low_avx2_arithmetic.loom-test"
+    "test/source_low/source_low_avx2_construction.loom-test"
+    "test/source_low/source_low_avx2_float_semantics.loom-test"
+    "test/source_low/source_low_avx2_predicates.loom-test"
+    "test/source_low/source_low_avx2_reductions.loom-test"
+    "test/source_low/source_low_avx512_families.loom-test"
+    "test/source_low/source_low_avx512_float_semantics.loom-test"
     "test/source_low/source_low_avx512_packed_dot.loom-test"
+    "test/source_low/source_low_avx512_predicates.loom-test"
+    "test/source_low/source_low_avx512_reductions.loom-test"
     "test/source_low/source_low_avx_vnni.loom-test"
     "test/source_low/source_low_contraction.loom-test"
     "test/source_low/source_low_invoke.loom-test"
@@ -202,8 +265,8 @@ loom_check_test_suite(
     "test/source_low/source_low_scalar_memory.loom-test"
     "test/source_low/source_low_schedule_scopes.loom-test"
     "test/source_low/source_low_v4.loom-test"
+    "test/source_low/source_low_x86_shuffle.loom-test"
     "test/source_low/split_barrier.loom-test"
-    "test/source_low/uniform_predicate_control.loom-test"
     "test/source_low/vector_large_insert.loom-test"
     "test/source_low/view_carrier.loom-test"
     "test/source_low/view_transport.loom-test"

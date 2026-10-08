@@ -288,17 +288,14 @@ static bool loom_low_allocation_try_candidate_definition_node(
     const loom_liveness_analysis_t* liveness,
     const loom_low_allocation_assignment_t* candidate,
     uint32_t* out_node_index) {
-  if (state->defining_node_indices_by_value_ordinal == NULL) {
-    return false;
-  }
   loom_value_ordinal_t value_ordinal = LOOM_VALUE_ORDINAL_INVALID;
   if (!loom_low_allocation_value_ordinal_for_liveness_value(
           state->value_domain, liveness, candidate->value_id, &value_ordinal)) {
     return false;
   }
-  const uint32_t node_index =
-      state->defining_node_indices_by_value_ordinal[value_ordinal];
-  if (node_index == UINT32_MAX) {
+  const uint32_t node_index = loom_low_schedule_value_producer_node(
+      state->lease_table->schedule, value_ordinal);
+  if (node_index == LOOM_LOW_SCHEDULE_NODE_NONE) {
     return false;
   }
   *out_node_index = node_index;
@@ -607,6 +604,10 @@ iree_status_t loom_low_allocation_storage_lease_state_initialize(
   if (lease_table->record_count == 0) {
     return iree_ok_status();
   }
+  const loom_low_schedule_table_t* schedule = lease_table->schedule;
+  IREE_ASSERT(schedule != NULL);
+  IREE_ASSERT(schedule->value_count == 0 ||
+              schedule->value_producer_nodes != NULL);
 
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       arena, lease_table->record_count, sizeof(*out_state->instances),
@@ -640,32 +641,6 @@ iree_status_t loom_low_allocation_storage_lease_state_initialize(
   for (iree_host_size_t i = 0; i < liveness->value_count; ++i) {
     out_state->record_heads_by_value_ordinal[i] = UINT32_MAX;
   }
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      arena, liveness->value_count,
-      sizeof(*out_state->defining_node_indices_by_value_ordinal),
-      (void**)&out_state->defining_node_indices_by_value_ordinal));
-  for (iree_host_size_t i = 0; i < liveness->value_count; ++i) {
-    out_state->defining_node_indices_by_value_ordinal[i] = UINT32_MAX;
-  }
-  const loom_low_schedule_table_t* schedule = lease_table->schedule;
-  for (iree_host_size_t i = 0; i < schedule->node_count; ++i) {
-    if (i > UINT32_MAX) {
-      break;
-    }
-    const uint32_t node_index = (uint32_t)i;
-    const loom_low_schedule_node_t* node = &schedule->nodes[node_index];
-    const loom_value_ordinal_t* result_ordinals =
-        loom_low_schedule_node_const_result_ordinals(node);
-    for (uint16_t result_index = 0; result_index < node->result_count;
-         ++result_index) {
-      const loom_value_ordinal_t value_ordinal = result_ordinals[result_index];
-      if (value_ordinal < liveness->value_count) {
-        out_state->defining_node_indices_by_value_ordinal[value_ordinal] =
-            node_index;
-      }
-    }
-  }
-
   iree_host_size_t lease_unit_capacity = 0;
   for (iree_host_size_t i = 0; i < lease_table->record_count; ++i) {
     const loom_low_storage_lease_record_t* record = &lease_table->records[i];

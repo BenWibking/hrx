@@ -432,6 +432,38 @@ loom_cc_library(
 endif()
 
 if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_library(
+  NAME
+    wait_dependency_visit
+  HDRS
+    "wait_dependency_visit.h"
+  SRCS
+    "wait_dependency_visit.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_test(
+  NAME
+    wait_dependency_visit_test
+  SRCS
+    "wait_dependency_visit_test.cc"
+  DEPS
+    ::wait_dependency_visit
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
 loom_cc_test(
   NAME
     trans_result_window_test
@@ -466,6 +498,7 @@ loom_cc_library(
     ::wait_classification
     ::wait_completion
     ::wait_counters
+    ::wait_dependency_visit
     ::wait_frontier
     ::wait_loop
     ::wait_packet_tables
@@ -521,11 +554,13 @@ loom_cc_test(
     loom::codegen::low::immediates
     loom::codegen::low::schedule
     loom::ir
+    loom::ops::cache
     loom::ops::low
     loom::target::arch::amdgpu::descriptors::low_registry
     loom::target::arch::amdgpu::facts
     loom::target::arch::amdgpu::refs::target_refs
     loom::target::arch::amdgpu::target_info
+    loom::util::cfg_graph_test_util
   LABELS
     "iree-build-requirement=loom.target.arch.amdgpu"
 )

@@ -17,6 +17,7 @@
 #include "iree/hal/drivers/task/executable/loaders/registration/init.h"
 #include "iree/hal/utils/resource_set.h"
 #include "iree_hal_compat.h"
+#include "mem_pool_backing.h"
 #include "runtime.h"
 
 #ifdef __cplusplus
@@ -133,8 +134,6 @@ static_assert(HRX_MEMORY_ACCESS_READ == IREE_HAL_MEMORY_ACCESS_READ,
               "memory access mismatch");
 static_assert(HRX_MEMORY_ACCESS_WRITE == IREE_HAL_MEMORY_ACCESS_WRITE,
               "memory access mismatch");
-static_assert(HRX_MEMORY_ACCESS_DISCARD == IREE_HAL_MEMORY_ACCESS_DISCARD,
-              "memory access mismatch");
 static_assert(HRX_MEMORY_ACCESS_ALL == IREE_HAL_MEMORY_ACCESS_ALL,
               "memory access mismatch");
 
@@ -213,12 +212,10 @@ static_assert(HRX_MEMORY_PROTECTION_READ == IREE_HAL_MEMORY_PROTECTION_READ,
 static_assert(HRX_MEMORY_PROTECTION_WRITE == IREE_HAL_MEMORY_PROTECTION_WRITE,
               "memory protection mismatch");
 
-// Map flags reuse memory access values.
+// Map permissions share memory access values; operation flags are translated.
 static_assert(HRX_MAP_READ == IREE_HAL_MEMORY_ACCESS_READ,
               "map flags mismatch");
 static_assert(HRX_MAP_WRITE == IREE_HAL_MEMORY_ACCESS_WRITE,
-              "map flags mismatch");
-static_assert(HRX_MAP_DISCARD == IREE_HAL_MEMORY_ACCESS_DISCARD,
               "map flags mismatch");
 
 //===----------------------------------------------------------------------===//
@@ -253,6 +250,8 @@ typedef struct hrx_device_s {
   // |hal_device|, which must outlive every use.
   iree_hal_queue_t* dispatch_queue;
   iree_hal_device_group_t* hal_device_group;
+  // Shared native backing and retention coordination for public memory pools.
+  hrx_mem_pool_backing_t mem_pool_backing;
   bool profiling_active;
   hrx_allocator_s allocator;           // Inline, owned by device.
   hrx_buffer_table_t buffer_table;     // Device-pointer-to-buffer lookup.
@@ -481,20 +480,17 @@ typedef struct hrx_mem_pool_s {
   // References held by public handles and bounded allocations.
   iree_atomic_ref_count_t ref_count;
 
-  // Device whose HAL pool backend supplies this pool's backing storage.
+  // Retained device owning the cache shared by compatible public pools.
   hrx_device_t device;
 
   // HIP/CUDA-style creation properties used for attribute queries.
   hrx_mem_pool_props_t props;
 
-  // TLSF HAL pool serving allocations up to |suballocation_max_size|.
+  // TLSF HAL pool serving suballocated and dedicated ordinary backing.
   iree_hal_pool_t* hal_pool;
 
-  // Pass-through HAL pool serving allocations larger than the TLSF slab size.
-  iree_hal_pool_t* oversized_hal_pool;
-
-  // Largest request routed to |hal_pool| rather than |oversized_hal_pool|.
-  iree_device_size_t suballocation_max_size;
+  // Embedded request linked into the device's shared retention policy.
+  hrx_mem_pool_retention_t retention;
 
   // Bytes charged to the immutable |props.max_size| allocation limit.
   size_t allocation_budget_current;
@@ -514,10 +510,10 @@ typedef struct hrx_mem_pool_s {
   // True when opportunistic reuse is allowed.
   bool reuse_allow_opportunistic;
 
-  // Current bytes reserved from the system for this pool.
+  // Current backing borrowed by this child, excluding shared idle storage.
   uint64_t reserved_mem_current;
 
-  // Peak bytes reserved from the system for this pool.
+  // Peak backing borrowed by this child, including padding and fragmentation.
   uint64_t reserved_mem_high;
 
   // Current backing bytes charged to live allocations.
@@ -641,9 +637,13 @@ hrx_status_t hrx_status_from_iree(iree_status_t iree_status);
 // Convert hrx_status_t back to iree_status_t and consume the hrx status.
 iree_status_t hrx_status_to_iree(hrx_status_t status);
 
-iree_status_t hrx_iree_exact_pool_create(iree_hal_allocator_t* allocator,
-                                         iree_hal_buffer_params_t params,
-                                         iree_hal_pool_t** out_pool);
+// Creates an exact-allocation pool using the caller's memory and progress
+// domain. Retains allocator/notification and borrows the group's tracker.
+iree_status_t hrx_iree_exact_pool_create(
+    iree_hal_allocator_t* allocator, iree_hal_buffer_params_t params,
+    iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* frontier_tracker,
+    iree_allocator_t host_allocator, iree_hal_pool_t** out_pool);
 
 #ifdef __cplusplus
 }

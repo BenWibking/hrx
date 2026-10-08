@@ -192,6 +192,43 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    entry
+  HDRS
+    "entry.h"
+  SRCS
+    "entry.c"
+  DEPS
+    ::avx2_descriptors_ids
+    ::avx512_descriptors_ids
+    ::avx512_packed_dot_descriptors_ids
+    ::scalar_descriptors_ids
+    ::simd128_descriptors_ids
+    iree::base
+    loom::codegen::low::descriptors
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_test(
+  NAME
+    entry_test
+  SRCS
+    "entry_test.cc"
+  DEPS
+    ::entry
+    ::shards_for_testing
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::codegen::low::descriptors
+  LABELS
+    "iree-build-requirement=loom.target.arch.x86"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     low_registry
   HDRS
     "low_registry.h"

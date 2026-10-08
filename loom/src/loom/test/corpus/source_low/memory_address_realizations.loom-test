@@ -82,7 +82,7 @@ kernel.def @address_reuse_with_wide_scalar_base() {
   %lanes = index.constant 64 : index
   kernel.launch.config workgroups(%groups, %unit, %unit) workgroup_size(%lanes, %unit, %unit) : index
 } launch(%input: buffer, %output: buffer, %base_input: offset, %limit: index) {
-  %base = index.assume %base_input [mul(%base_input, 4)] : offset
+  %base = index.assume %base_input [multiple_of(%base_input, 4)] : offset
   %lane = kernel.workitem.id<x> : index
   %group = kernel.workgroup.id<x> : index
   %width = index.constant 64 : index
@@ -166,7 +166,7 @@ kernel.def @address_materialized_wide_offset() {
   %lanes = index.constant 64 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%lanes, %unit, %unit) : index
 } launch(%input: buffer, %output: buffer, %base_input: offset) {
-  %base = index.assume %base_input [mul(%base_input, 4)] : offset
+  %base = index.assume %base_input [multiple_of(%base_input, 4)] : offset
   %lane = kernel.workitem.id<x> : index
   %stride = index.constant 4 : offset
   %lane_offset = index.scale %lane, %stride : index, offset -> offset

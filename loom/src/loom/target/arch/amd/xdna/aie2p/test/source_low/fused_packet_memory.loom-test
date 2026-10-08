@@ -26,7 +26,7 @@ aie2p.target<core> @target
 
 func.def target(@target) @load_extf_bf16x32_dynamic(%source: buffer, %element0: index) -> (vector<32xf32>) {
   %source_aligned = buffer.assume.alignment %source {minimum_alignment = 64} : buffer
-  %element = index.assume %element0 [range(%element0, 0, 96), mul(%element0, 32)] : index
+  %element = index.assume %element0 [range(%element0, 0, 96), multiple_of(%element0, 32)] : index
   %base = index.constant 0 : offset
   %source_view = buffer.view %source_aligned[%base] : buffer -> view<128xbf16>
   %loaded = vector.load<volatile> %source_view[%element] : view<128xbf16> -> vector<32xbf16>
@@ -135,7 +135,7 @@ aie2p.target<core> @target
 
 func.def target(@target) @load_encode_bfp_dynamic_volatile(%source: buffer, %element_input: index) -> (vector<72xi8>) {
   %source_aligned = buffer.assume.alignment %source {minimum_alignment = 64} : buffer
-  %element = index.assume %element_input [range(%element_input, 0, 64), mul(%element_input, 32)] : index
+  %element = index.assume %element_input [range(%element_input, 0, 64), multiple_of(%element_input, 32)] : index
   %base = index.constant 0 : offset
   %source_view = buffer.view %source_aligned[%base] : buffer -> view<128xbf16>
   %schema = encoding.define #encoding.operand<element_format=bfp16ebs8, payload_elements=64, payload_packing=target_fragment, payload_registers=18, rounding=flush_subnormal> : encoding<schema>
@@ -268,7 +268,7 @@ aie2p.target<core> @target
 
 func.def target(@target) @load_extui_i8x64_dynamic(%source: buffer, %element0: index) -> (vector<64xi32>) {
   %source_aligned = buffer.assume.alignment %source {minimum_alignment = 64} : buffer
-  %element = index.assume %element0 [range(%element0, 0, 192), mul(%element0, 64)] : index
+  %element = index.assume %element0 [range(%element0, 0, 192), multiple_of(%element0, 64)] : index
   %base = index.constant 0 : offset
   %source_view = buffer.view %source_aligned[%base] : buffer -> view<256xi8>
   %loaded = vector.load %source_view[%element] : view<256xi8> -> vector<64xi8>
@@ -316,7 +316,7 @@ aie2p.target<core> @target
 
 func.def target(@target) @load_bitunpacks_i4x128_dynamic(%source: buffer, %element0: index) -> (vector<128xi8>) {
   %source_aligned = buffer.assume.alignment %source {minimum_alignment = 64} : buffer
-  %element = index.assume %element0 [range(%element0, 0, 192), mul(%element0, 64)] : index
+  %element = index.assume %element0 [range(%element0, 0, 192), multiple_of(%element0, 64)] : index
   %base = index.constant 0 : offset
   %source_view = buffer.view %source_aligned[%base] : buffer -> view<256xi8>
   %packed = vector.load<volatile> %source_view[%element] : view<256xi8> -> vector<64xi8>
@@ -363,7 +363,7 @@ aie2p.target<core> @target
 
 func.def target(@target) @store_fptrunc_bf16x32_dynamic(%input: vector<32xf32>, %output: buffer, %element0: index) {
   %output_aligned = buffer.assume.alignment %output {minimum_alignment = 64} : buffer
-  %element = index.assume %element0 [range(%element0, 0, 96), mul(%element0, 32)] : index
+  %element = index.assume %element0 [range(%element0, 0, 96), multiple_of(%element0, 32)] : index
   %base = index.constant 0 : offset
   %output_view = buffer.view %output_aligned[%base] : buffer -> view<128xbf16>
   %converted = vector.fptrunc %input : vector<32xf32> to vector<32xbf16>
@@ -412,7 +412,7 @@ aie2p.target<core> @target
 
 func.def target(@target) @store_bitpack_i8x128_dynamic(%input: vector<128xi8>, %output: buffer, %element0: index) {
   %output_aligned = buffer.assume.alignment %output {minimum_alignment = 64} : buffer
-  %element = index.assume %element0 [range(%element0, 0, 192), mul(%element0, 64)] : index
+  %element = index.assume %element0 [range(%element0, 0, 192), multiple_of(%element0, 64)] : index
   %base = index.constant 0 : offset
   %output_view = buffer.view %output_aligned[%base] : buffer -> view<256xi8>
   %converted = vector.bitpack<4> %input : vector<128xi8> -> vector<64xi8>

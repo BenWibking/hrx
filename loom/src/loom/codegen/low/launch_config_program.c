@@ -420,15 +420,13 @@ static iree_status_t loom_kernel_launch_config_workgroup_storage_bytes(
     const loom_module_t* module, loom_func_like_t low_function,
     uint64_t* out_bytes) {
   *out_bytes = 0;
-  if (!loom_low_kernel_def_isa(low_function.op)) {
-    return iree_make_status(
-        IREE_STATUS_FAILED_PRECONDITION,
-        "launch config entry does not resolve to a final low kernel");
-  }
+  // ABI materialization can replace a kernel with a callable function. Both
+  // carry final storage reservations in their function-like body.
   const loom_region_t* body = loom_func_like_body(low_function);
   if (body == NULL) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "final low kernel has no body for storage layout");
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "final lowered entry has no body for storage layout");
   }
   loom_low_storage_layout_space_sizes_t sizes = {0};
   loom_block_t* block = NULL;

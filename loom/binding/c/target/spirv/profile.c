@@ -15,6 +15,7 @@
 #include "loom/target/arch/spirv/profile.h"
 #include "loom/target/arch/spirv/records/target_records.h"
 #include "loomc/iree.h"
+#include "profile_match.h"
 #include "profile_rows.h"
 #include "result.h"
 #include "target.h"
@@ -887,6 +888,40 @@ static loomc_status_t loomc_spirv_profile_validate_query(
                              "profile is not a SPIR-V profile");
   }
   *out_storage = profile_storage;
+  return loomc_ok_status();
+}
+
+loomc_status_t loomc_spirv_target_profile_match_selector(
+    const loomc_target_profile_t* profile, loomc_string_view_t selector,
+    bool* out_is_spirv, bool* out_matches) {
+  if (out_is_spirv == NULL) {
+    return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
+                             "out_is_spirv must not be NULL");
+  }
+  *out_is_spirv = false;
+  if (out_matches != NULL) {
+    *out_matches = false;
+  }
+  if (profile == NULL) {
+    return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
+                             "profile must not be NULL");
+  }
+  const loomc_spirv_target_profile_storage_t* profile_storage =
+      loomc_spirv_profile_storage_from_profile(profile);
+  if (profile_storage == NULL) {
+    return loomc_ok_status();
+  }
+  *out_is_spirv = true;
+  if (out_matches == NULL) {
+    return loomc_ok_status();
+  }
+  const loom_spirv_target_profile_t* named_profile = NULL;
+  LOOMC_RETURN_IF_ERROR(loomc_status_from_iree(loom_spirv_target_profile_select(
+      iree_string_view_from_loomc(selector), &named_profile)));
+  *out_matches = profile_storage->profile.base.target_bundle ==
+                     named_profile->base.target_bundle &&
+                 profile_storage->profile.cooperative_properties ==
+                     named_profile->cooperative_properties;
   return loomc_ok_status();
 }
 

@@ -29,6 +29,7 @@
 #include "iree/hal/drivers/amdgpu/semaphore.h"
 #include "iree/hal/drivers/amdgpu/target/selection.h"
 #include "iree/hal/drivers/amdgpu/util/benchmark_flags.h"
+#include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/memory/tlsf_pool.h"
 #include "iree/io/file_contents.h"
 
@@ -755,9 +756,17 @@ class QueueBenchmark : public benchmark::Fixture {
     options.tlsf_options.alignment = kPayloadBufferAlignment;
     options.tlsf_options.initial_block_capacity = 16;
     options.tlsf_options.frontier_capacity = 2;
-    return iree_hal_tlsf_pool_create(
-        options, backend.slab_provider, backend.notification,
-        iree_hal_pool_epoch_query_null(), host_allocator_, out_pool);
+    iree_hal_passthrough_pool_options_t backing_options = {};
+    backing_options.epoch_query = iree_hal_pool_epoch_query_null();
+    iree_hal_pool_t* backing_pool = nullptr;
+    IREE_RETURN_IF_ERROR(iree_hal_passthrough_pool_create(
+        backing_options, backend.slab_provider, backend.notification,
+        backend.frontier_tracker, backend.maintenance, host_allocator_,
+        &backing_pool));
+    iree_status_t status = iree_hal_tlsf_pool_create(backing_pool, &options,
+                                                     host_allocator_, out_pool);
+    iree_hal_pool_release(backing_pool);
+    return status;
   }
 
   iree_status_t QueueAllocaSubmit(iree_hal_pool_t* pool,

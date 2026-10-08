@@ -99,17 +99,17 @@ static bool iree_hal_webgpu_fd_file_supports_synchronous_io(
   return false;
 }
 
-static iree_status_t iree_hal_webgpu_fd_file_read(
-    iree_hal_file_t* base_file, uint64_t file_offset, iree_hal_buffer_t* buffer,
-    iree_device_size_t buffer_offset, iree_device_size_t length) {
+static iree_status_t iree_hal_webgpu_fd_file_read(iree_hal_file_t* base_file,
+                                                  uint64_t file_offset,
+                                                  iree_byte_span_t target) {
   return iree_make_status(IREE_STATUS_UNAVAILABLE,
                           "synchronous file read not supported on wasm; use "
                           "queue_read for async file-to-GPU transfer");
 }
 
 static iree_status_t iree_hal_webgpu_fd_file_write(
-    iree_hal_file_t* base_file, uint64_t file_offset, iree_hal_buffer_t* buffer,
-    iree_device_size_t buffer_offset, iree_device_size_t length) {
+    iree_hal_file_t* base_file, uint64_t file_offset,
+    iree_const_byte_span_t source) {
   return iree_make_status(IREE_STATUS_UNAVAILABLE,
                           "synchronous file write not supported on wasm; use "
                           "queue_write for async GPU-to-file transfer");

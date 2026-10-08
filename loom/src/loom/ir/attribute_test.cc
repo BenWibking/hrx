@@ -16,11 +16,36 @@ namespace {
 
 TEST(AttributeTest, Size) { static_assert(sizeof(loom_attribute_t) == 16); }
 
+TEST(AttributeTest, PredicateMetadataCoversEveryKind) {
+  static constexpr const char* kNames[] = {
+      "eq",          "ne",           "lt",    "le",      "gt",      "ge",
+      "multiple_of", "power_of_two", "range", "not_nan", "not_inf", "finite",
+      "ult",         "ule",          "ugt",   "uge",
+  };
+  static_assert(IREE_ARRAYSIZE(kNames) == LOOM_PREDICATE_COUNT_);
+
+  for (loom_predicate_kind_t kind = 0; kind < LOOM_PREDICATE_COUNT_; ++kind) {
+    EXPECT_STREQ(loom_predicate_kind_name(kind), kNames[kind]);
+    loom_predicate_kind_t parsed_kind = LOOM_PREDICATE_COUNT_;
+    EXPECT_TRUE(loom_predicate_kind_parse(iree_make_cstring_view(kNames[kind]),
+                                          &parsed_kind));
+    EXPECT_EQ(parsed_kind, kind);
+    EXPECT_NE(loom_predicate_kind_argument_count(kind), UINT8_MAX);
+  }
+
+  loom_predicate_kind_t parsed_kind = LOOM_PREDICATE_COUNT_;
+  EXPECT_FALSE(loom_predicate_kind_parse(IREE_SV("unknown"), &parsed_kind));
+  EXPECT_EQ(loom_predicate_kind_name(LOOM_PREDICATE_COUNT_), nullptr);
+  EXPECT_EQ(loom_predicate_kind_argument_count(LOOM_PREDICATE_COUNT_),
+            UINT8_MAX);
+}
+
 TEST(AttributeTest, PredicateValueTypeContracts) {
   static constexpr loom_predicate_kind_t kIntegerPredicateKinds[] = {
-      LOOM_PREDICATE_LT,  LOOM_PREDICATE_LE,   LOOM_PREDICATE_GT,
-      LOOM_PREDICATE_GE,  LOOM_PREDICATE_MUL,  LOOM_PREDICATE_MIN,
-      LOOM_PREDICATE_MAX, LOOM_PREDICATE_POW2, LOOM_PREDICATE_RANGE,
+      LOOM_PREDICATE_LT,          LOOM_PREDICATE_LE,
+      LOOM_PREDICATE_GT,          LOOM_PREDICATE_GE,
+      LOOM_PREDICATE_MULTIPLE_OF, LOOM_PREDICATE_POWER_OF_TWO,
+      LOOM_PREDICATE_RANGE,
   };
   static constexpr loom_predicate_kind_t kEqualityPredicateKinds[] = {
       LOOM_PREDICATE_EQ,
@@ -269,11 +294,11 @@ TEST(AttributeEqual, I64ArraySamePointer) {
 TEST(AttributeEqual, PredicateListSameContent) {
   loom_predicate_t preds_a[2];
   memset(preds_a, 0, sizeof(preds_a));
-  preds_a[0].kind = LOOM_PREDICATE_MUL;
+  preds_a[0].kind = LOOM_PREDICATE_MULTIPLE_OF;
   preds_a[0].arg_count = 2;
   preds_a[0].args[0] = 100;
   preds_a[0].args[1] = 16;
-  preds_a[1].kind = LOOM_PREDICATE_MIN;
+  preds_a[1].kind = LOOM_PREDICATE_GE;
   preds_a[1].arg_count = 2;
   preds_a[1].args[0] = 100;
   preds_a[1].args[1] = 1;
@@ -290,7 +315,7 @@ TEST(AttributeEqual, PredicateListSameContent) {
 TEST(AttributeEqual, PredicateListDifferentContent) {
   loom_predicate_t preds_a[1];
   memset(preds_a, 0, sizeof(preds_a));
-  preds_a[0].kind = LOOM_PREDICATE_MUL;
+  preds_a[0].kind = LOOM_PREDICATE_MULTIPLE_OF;
   preds_a[0].arg_count = 2;
   preds_a[0].args[0] = 100;
   preds_a[0].args[1] = 16;

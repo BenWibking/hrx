@@ -198,6 +198,51 @@ func.def public @float_to_integer(%signed_single: f32, %unsigned_single: f32, %s
   func.return %signed_single_word, %signed_single_wide, %unsigned_single_word, %unsigned_single_wide, %signed_double_word, %signed_double_wide, %unsigned_double_word, %unsigned_double_wide : i32, i64, i32, i64, i32, i64, i32, i64
 }
 
+// Every intermediate conversion contributes its own rounding, even when the
+// final value returns to the input format.
+func.def @floating_rounding_chain(%signed_input: buffer, %unsigned_input: buffer, %signed_output: buffer, %unsigned_output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 64 : index
+  %step = index.constant 1 : index
+  %signed_source = buffer.view %signed_input[%base] : buffer -> view<64xf64>
+  %unsigned_source = buffer.view %unsigned_input[%base] : buffer -> view<64xf64>
+  %signed_target = buffer.view %signed_output[%base] : buffer -> view<64xf64>
+  %unsigned_target = buffer.view %unsigned_output[%base] : buffer -> view<64xf64>
+  scf.for %lane = [%begin to %end step %step] {
+    %signed_value = view.load %signed_source[%lane] : view<64xf64> -> f64
+    %signed_half = scalar.fptrunc %signed_value : f64 to f16
+    %signed_integer = scalar.fptosi %signed_half : f16 to i64
+    %signed_single = scalar.sitofp %signed_integer : i64 to f32
+    %signed_double = scalar.extf %signed_single : f32 to f64
+    view.store %signed_double, %signed_target[%lane] : f64, view<64xf64>
+    %unsigned_value = view.load %unsigned_source[%lane] : view<64xf64> -> f64
+    %unsigned_half = scalar.fptrunc %unsigned_value : f64 to f16
+    %unsigned_integer = scalar.fptoui %unsigned_half : f16 to i64
+    %unsigned_single = scalar.uitofp %unsigned_integer : i64 to f32
+    %unsigned_double = scalar.extf %unsigned_single : f32 to f64
+    view.store %unsigned_double, %unsigned_target[%lane] : f64, view<64xf64>
+  }
+  func.return
+}
+
+check.scenario @floating_rounding_chain_values {
+  check.trial[8](%trial: index, %entropy: check.entropy) {
+    %unsigned_entropy = check.entropy.fork %entropy name("unsigned") : check.entropy
+    %signed_seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %unsigned_seed = check.entropy.read %unsigned_entropy[%trial] : check.entropy -> i64
+    %signed_input = check.generate.random.uniform seed(%signed_seed) range(-32768.0 to 32768.0) : tensor<64xf64>
+    %unsigned_input = check.generate.random.uniform seed(%unsigned_seed) range(0.0 to 32768.0) : tensor<64xf64>
+    %signed_output = check.generate.fill value(-123.0) : tensor<64xf64>
+    %unsigned_output = check.generate.fill value(-123.0) : tensor<64xf64>
+    check.compare<@floating_rounding_chain>(%signed_input, %unsigned_input, %signed_output, %unsigned_output) : (tensor<64xf64>, tensor<64xf64>, tensor<64xf64>, tensor<64xf64>) -> () {
+      check.expect.bitwise actual(%signed_output) expected(%signed_output) : tensor<64xf64>
+      check.expect.bitwise actual(%unsigned_output) expected(%unsigned_output) : tensor<64xf64>
+    }
+  }
+  check.return
+}
+
 check.scenario @float_to_integer_values {
   check.trial[1](%trial: index, %entropy: check.entropy) {
     %signed_single = check.literal value(-7.75) : f32

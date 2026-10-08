@@ -1,4 +1,4 @@
-// RUN: emit spirv-dis input=source-low target=spirv:vulkan1.3+bda+extended-types validate
+// RUN: emit spirv-dis @replace_bfloat input=source-low target=spirv:vulkan1.3+bda+extended-types validate
 // REQUIRES: spirv-dis, spirv-val
 
 // Conversion consumes the captured value, even when its source is overwritten.
@@ -58,6 +58,8 @@ func.def @replace_bfloat(%input: buffer, %replacement: bf16) -> (f32, f32) {
                OpDecorate %19 DescriptorSet 0
                OpDecorate %19 Binding 3
                OpDecorate %_ptr_PhysicalStorageBuffer_bfloat16 ArrayStride 2
+               OpDecorate %before_wide NoContraction
+               OpDecorate %after_wide NoContraction
         %int = OpTypeInt 32 1
       %int_0 = OpConstant %int 0
       %ulong = OpTypeInt 64 0

@@ -133,5 +133,6 @@ int loom_check_provider_main(int argc, char** argv,
               .provider_count = state.requirement_provider_count,
           },
   };
-  return loom_check_main(argc, argv, &environment);
+  return loom_check_main(argc, argv, &environment,
+                         provider_set->compile_provider);
 }

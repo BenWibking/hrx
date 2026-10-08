@@ -8,6 +8,10 @@
 
 from enum import IntEnum, IntFlag
 
+from loom.target.arch.x86.vector_encoding import (
+    VECTOR_ENCODING_FORMAT_MARKER,
+    validate_vector_encoding_recipe,
+)
 from loom.target.low_descriptors import Descriptor, OperandRole
 
 
@@ -31,6 +35,8 @@ class Form(IntEnum):
     ADDRESS_DISPLACEMENT = 17
     ADDRESS_SCALE = 18
     ADDRESS_ADD_SCALE = 19
+    # Values 20..26 are structural control and ABI forms in the C encoder.
+    ADDRESS_PC_RELATIVE = 27
 
 
 class Flag(IntFlag):
@@ -56,7 +62,17 @@ def validate_descriptor_encoding(descriptor: Descriptor) -> None:
     """Establishes the fixed native operand carrier bounds during generation."""
     if not descriptor.encoding_format_id:
         return
-    Form(descriptor.encoding_format_id)
+    if descriptor.encoding_format_id & VECTOR_ENCODING_FORMAT_MARKER:
+        try:
+            validate_vector_encoding_recipe(descriptor.encoding_format_id)
+        except ValueError as error:
+            raise ValueError(f"{descriptor.key}: {error}") from error
+        if not descriptor.encoding_id:
+            raise ValueError(f"{descriptor.key}: invalid native vector encoding")
+        if not 1 <= (descriptor.encoding_id >> 8) & 3 <= 3:
+            raise ValueError(f"{descriptor.key}: invalid native vector opcode map")
+    else:
+        Form(descriptor.encoding_format_id)
     inputs = sum(
         o.role
         in (

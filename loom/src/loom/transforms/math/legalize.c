@@ -660,7 +660,7 @@ static iree_status_t loom_math_build_integer_constant(
 // infinity, subnormal, and NaN payload encodings. Target contracts are queried
 // before this portable recipe, so native scalar and packed vector forms remain
 // preferred wherever they exist.
-static iree_status_t loom_math_target_legalize_narrow_float_sign(
+static iree_status_t loom_math_target_legalize_float_sign(
     const loom_target_legalizer_entry_t* entry,
     loom_target_legalization_context_t* context, loom_op_t* op,
     loom_target_legalizer_result_t* out_result) {
@@ -672,9 +672,12 @@ static iree_status_t loom_math_target_legalize_narrow_float_sign(
   const loom_value_id_t input = loom_op_operands(op)[0];
   const loom_type_t float_type = loom_module_value_type(context->module, input);
   const loom_scalar_type_t float_element = loom_type_element_type(float_type);
+  const int32_t bit_width = loom_scalar_type_bitwidth(float_element);
   const loom_scalar_type_t integer_element =
-      loom_scalar_type_bitwidth(float_element) == 8 ? LOOM_SCALAR_TYPE_I8
-                                                    : LOOM_SCALAR_TYPE_I16;
+      bit_width == 8    ? LOOM_SCALAR_TYPE_I8
+      : bit_width == 16 ? LOOM_SCALAR_TYPE_I16
+      : bit_width == 32 ? LOOM_SCALAR_TYPE_I32
+                        : LOOM_SCALAR_TYPE_I64;
   loom_type_t integer_type = float_type;
   integer_type.header = loom_type_make_header(
       loom_type_kind(float_type), integer_element, loom_type_rank(float_type),
@@ -696,9 +699,10 @@ static iree_status_t loom_math_target_legalize_narrow_float_sign(
             .bitwise_or = loom_scalar_ori_build,
             .bitwise_xor = loom_scalar_xori_build,
         };
-  const int32_t bit_width = loom_scalar_type_bitwidth(float_element);
-  const int64_t sign_mask = -(INT64_C(1) << (bit_width - 1));
-  const int64_t magnitude_mask = (INT64_C(1) << (bit_width - 1)) - 1;
+  const int64_t sign_mask =
+      bit_width == 64 ? INT64_MIN : -(INT64_C(1) << (bit_width - 1));
+  const int64_t magnitude_mask =
+      bit_width == 64 ? INT64_MAX : (INT64_C(1) << (bit_width - 1)) - 1;
 
   loom_rewriter_t* rewriter = context->rewriter;
   loom_builder_t* builder = &rewriter->builder;
@@ -756,39 +760,39 @@ static iree_status_t loom_math_target_legalize_narrow_float_sign(
   return iree_ok_status();
 }
 
-// Keep narrow sign operations and arithmetic introduced by reference rewrites
-// in the target fixed point. Native contracts remain preferred, including
-// packed BF16.
+// Keep exact sign operations and narrow arithmetic introduced by reference
+// rewrites in the target fixed point. Native contracts remain preferred,
+// including packed BF16.
 static const loom_target_legalizer_rule_t kMathLegalizerRules[] = {
     {
         .root_kind = LOOM_OP_SCALAR_ABSF,
-        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
-        .legalize = loom_math_target_legalize_narrow_float_sign,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_math_target_legalize_float_sign,
     },
     {
         .root_kind = LOOM_OP_SCALAR_NEGF,
-        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
-        .legalize = loom_math_target_legalize_narrow_float_sign,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_math_target_legalize_float_sign,
     },
     {
         .root_kind = LOOM_OP_SCALAR_COPYSIGNF,
-        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
-        .legalize = loom_math_target_legalize_narrow_float_sign,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_math_target_legalize_float_sign,
     },
     {
         .root_kind = LOOM_OP_VECTOR_ABSF,
-        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
-        .legalize = loom_math_target_legalize_narrow_float_sign,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_math_target_legalize_float_sign,
     },
     {
         .root_kind = LOOM_OP_VECTOR_NEGF,
-        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
-        .legalize = loom_math_target_legalize_narrow_float_sign,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_math_target_legalize_float_sign,
     },
     {
         .root_kind = LOOM_OP_VECTOR_COPYSIGNF,
-        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
-        .legalize = loom_math_target_legalize_narrow_float_sign,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_math_target_legalize_float_sign,
     },
     {
         .root_kind = LOOM_OP_SCALAR_ADDF,

@@ -52,6 +52,19 @@ loom_cc_test(
 )
 
 loom_cc_test(
+    name = "traits_test",
+    srcs = ["traits_test.cc"],
+    deps = [
+        ":scf",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
     name = "verify_test",
     srcs = ["verify_test.cc"],
     deps = [
@@ -72,6 +85,7 @@ loom_generated_cc_library(
         "canonicalize_loop.c",
         "facts.c",
         "forwarding_equivalence.c",
+        "traits.c",
         "verify.c",
     ],
     hdrs = [

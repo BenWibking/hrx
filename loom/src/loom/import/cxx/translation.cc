@@ -21,6 +21,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -28,6 +29,7 @@
 #include "iree/base/api.h"
 #include "loom/import/cxx/binding/assumptions.h"
 #include "loom/import/cxx/binding/config.h"
+#include "loom/import/cxx/binding/function_contracts.h"
 #include "loom/import/cxx/binding/intrinsics.h"
 #include "loom/import/cxx/binding/launch.h"
 #include "loom/import/cxx/binding/loop_schedule.h"
@@ -42,6 +44,8 @@
 #include "loom/import/cxx/source/source.h"
 #include "loom/import/cxx/symbol/functions.h"
 #include "loom/import/cxx/value/bitcast.h"
+#include "loom/import/cxx/value/initialization.h"
+#include "loom/import/cxx/value/objects.h"
 #include "loom/import/cxx/value/representation.h"
 #include "loom/import/cxx/value/scalar.h"
 #include "loom/import/cxx/value/signature.h"
@@ -59,7 +63,7 @@
 
 namespace loom::cxx_import {
 namespace {
-class Translator {
+class Translator final : private Initialization::Evaluation {
  public:
   Translator(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
              loom_module_t* module, const loom_cxx_import_options_t& options)
@@ -70,16 +74,21 @@ class Translator {
         types_(unit, diagnostics),
         scalars_(unit, diagnostics, types_, locations_, builder_),
         names_(unit, diagnostics),
+        function_contracts_(unit, diagnostics),
         configs_(unit, diagnostics, types_, scalars_, locations_, names_),
         target_definitions_(unit, diagnostics, locations_, names_, module),
         template_definitions_(unit, diagnostics),
         vectors_(unit, diagnostics, types_, scalars_, locations_, builder_),
         storage_(unit, diagnostics, types_, scalars_, locations_, builder_),
+        objects_(unit, types_, storage_, value_arena_),
+        initialization_(unit, diagnostics, types_, scalars_, vectors_, storage_,
+                        objects_, value_arena_, locations_, builder_, *this),
         launches_(unit, diagnostics),
         intrinsics_(unit, diagnostics, types_, locations_, names_, launches_,
-                    module),
+                    function_contracts_, module),
         functions_(unit, diagnostics, module, intrinsics_, launches_, configs_,
-                   target_definitions_, template_definitions_, names_),
+                   function_contracts_, target_definitions_,
+                   template_definitions_, names_),
         options_(options),
         math_flags_(iree_any_bit_set(options.flags,
                                      LOOM_CXX_IMPORT_FLAG_APPROXIMATE_FUNCTIONS)
@@ -124,10 +133,10 @@ class Translator {
   }
 
   Value convert(cxx::ExpressionAST* input_ast, const cxx::Type* output_type,
-                cxx::AST* owner) {
+                cxx::AST* owner) override {
     auto value = expression(input_ast);
-    if (value.is_record() || value.is_encoding() || value.is_view() ||
-        value.is_tensor()) {
+    if (value.is_record() || value.is_array() || value.is_encoding() ||
+        value.is_view() || value.is_tensor()) {
       if (&types_.partition(output_type, owner) != &value.partition()) {
         fail(owner, "conversion must preserve the source value type");
       }
@@ -295,16 +304,14 @@ class Translator {
       value = name(value, cxx::to_string(parameter->name()));
       if (control_->addressed(parameter) ||
           unit_.typeTraits().is_volatile(parameter->type())) {
-        if (partition.kind != ValueKind::SSA) {
-          // Diagnose the missing object representation before assuming that a
-          // multi-component callable value can initialize one memory access.
-          types_.storage_size(parameter->type(), defined.source);
-          fail(defined.source,
-               "addressable record parameters require aggregate object "
-               "initialization");
-        }
         auto access = allocate_local(parameter, 0, defined.source);
-        storage_.store(access, value.ssa(), parameter->type(), defined.source);
+        if (partition.kind == ValueKind::SSA) {
+          storage_.store(access, value.ssa(), parameter->type(),
+                         defined.source);
+        } else {
+          objects_.store(local_object(parameter, defined.source), value,
+                         parameter->type(), defined.source);
+        }
       } else {
         values_[parameter] = value;
       }
@@ -392,50 +399,28 @@ class Translator {
     if (unit_.typeTraits().is_array(symbol->type())) {
       return found->second.pointer;
     }
-    return name(storage_.load({found->second.view, std::nullopt},
-                              symbol->type(), owner),
-                cxx::to_string(symbol->name()));
+    auto value =
+        unit_.typeTraits().is_class(symbol->type())
+            ? objects_.load(local_object(symbol, owner), symbol->type(), owner)
+            : Value(storage_.load({found->second.view, std::nullopt},
+                                  symbol->type(), owner));
+    return name(value, cxx::to_string(symbol->name()));
+  }
+
+  StorageProjection local_object(cxx::Symbol* symbol, cxx::AST* owner) {
+    return storage_.project(locals_.at(symbol).pointer, symbol->type(), owner);
   }
 
   void initialize_variable(cxx::VariableSymbol* variable,
                            cxx::ExpressionAST* initializer, cxx::AST* owner) {
-    if (auto* array = cxx::type_cast<cxx::BoundedArrayType>(
-            types_.unqualified(variable->type()))) {
-      auto access =
-          allocate_local(variable, variable->explicitAlignment(), owner);
-      if (!initializer) {
-        return;
-      }
-      cxx::Initializer source(initializer);
-      if (source.form() != cxx::InitializerForm::kList &&
-          source.form() != cxx::InitializerForm::kParen) {
-        fail(owner, "automatic arrays require element-wise initialization");
-      }
-      auto elements = source.arguments();
-      auto* element_type =
-          unit_.typeTraits().get_element_type(variable->type());
-      // The source frontend supplies conversions and explicit element order.
-      // Each store precedes the next clause, which may read this same array.
-      // Omitted trivial elements are value-initialized, unlike a declaration
-      // without an initializer.
-      for (size_t index = 0; index < array->size(); ++index) {
-        auto value =
-            index < elements.size()
-                ? expression(elements[index]).ssa()
-                : initialize(array->elementType(), nullptr, owner).ssa();
-        access.index = scalars_.integer(index, LOOM_SCALAR_TYPE_INDEX,
-                                        locations_.get(owner));
-        storage_.store(access, value, element_type, owner);
-      }
-      return;
-    }
-    if (control_->addressed(variable) ||
+    if (unit_.typeTraits().is_array(variable->type()) ||
+        control_->addressed(variable) ||
         unit_.typeTraits().is_volatile(variable->type())) {
-      auto access =
-          allocate_local(variable, variable->explicitAlignment(), owner);
+      allocate_local(variable, variable->explicitAlignment(), owner);
       if (initializer) {
-        storage_.store(access, expression(initializer).ssa(), variable->type(),
-                       owner);
+        types_.admit_copy(variable->constructor(), variable->type(), owner);
+        initialization_.storage(locals_.at(variable), variable->type(),
+                                initializer, owner);
       }
       return;
     }
@@ -680,6 +665,15 @@ class Translator {
         return pointer_expression(unary->expression);
       }
     }
+    if (unit_.typeTraits().is_class(ast->type) &&
+        ast->valueCategory == cxx::ValueCategory::kPrValue) {
+      auto value = expression(ast);
+      auto allocation = storage_.allocate(
+          ast->type, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE, 0, ast);
+      auto object = storage_.project(allocation.pointer, ast->type, ast);
+      objects_.store(object, value, ast->type, ast);
+      return object;
+    }
     fail(ast, "address-of requires an existing storage-backed element");
   }
 
@@ -688,6 +682,9 @@ class Translator {
     // projections preserve that origin without loading or copying the array.
     if (unit_.typeTraits().is_array(ast->type)) {
       return object_address(ast).pointer;
+    }
+    if (unit_.typeTraits().is_class(ast->type)) {
+      return objects_.load(object_address(ast), ast->type, ast);
     }
     return storage_.load(address(ast), ast->type, ast);
   }
@@ -700,19 +697,21 @@ class Translator {
     // Source element type retains qualifiers and arithmetic conversion rules.
     const cxx::Type* type;
     // An automatic SSA partition or an evaluated storage projection.
-    std::variant<Destination, StorageAccess> location;
+    std::variant<Destination, StorageAccess, StorageProjection> location;
   };
 
   Lvalue destination(cxx::ExpressionAST* expression, cxx::AST* owner) {
     types_.require_mutable(expression->type, expression);
     if (auto destination = control_->destination(expression)) {
-      if (locals_.contains(destination->binding)) {
-        return {expression->type, address(expression)};
+      if (!locals_.contains(destination->binding)) {
+        if (!values_.contains(destination->binding)) {
+          fail(owner, "mutation requires an owned automatic source binding");
+        }
+        return {expression->type, *destination};
       }
-      if (!values_.contains(destination->binding)) {
-        fail(owner, "mutation requires an owned automatic source binding");
-      }
-      return {expression->type, *destination};
+    }
+    if (unit_.typeTraits().is_class(expression->type)) {
+      return {expression->type, object_address(expression)};
     }
     return {expression->type, address(expression)};
   }
@@ -723,6 +722,9 @@ class Translator {
       return destination->member ? value.project(*destination->member,
                                                  destination->component_offset)
                                  : value;
+    }
+    if (auto* object = std::get_if<StorageProjection>(&target.location)) {
+      return objects_.load(*object, target.type, owner);
     }
     return storage_.load(std::get<StorageAccess>(target.location), target.type,
                          owner);
@@ -736,6 +738,9 @@ class Translator {
                                binding, destination->component_offset, value)
                          : value,
                      cxx::to_string(destination->binding->name()));
+    } else if (auto* object =
+                   std::get_if<StorageProjection>(&target.location)) {
+      objects_.store(*object, value, target.type, owner);
     } else {
       storage_.store(std::get<StorageAccess>(target.location), value.ssa(),
                      target.type, owner);
@@ -839,14 +844,20 @@ class Translator {
   }
 
   // The condition has already executed. Each arm starts from that same state
-  // and yields its value followed by the bindings it may have changed.
+  // and yields its optional value followed by bindings it may have changed.
+  // Object initialization uses void arms that publish directly to storage.
   template <typename Then, typename Else>
-  Value conditional_value(cxx::ExpressionAST* ast, loom_value_id_t condition,
-                          Then then_value, Else else_value) {
+  auto conditional(cxx::ExpressionAST* ast, loom_value_id_t condition,
+                   Then then_value, Else else_value) {
+    constexpr bool has_value = !std::is_void_v<std::invoke_result_t<Then>>;
     auto written = live_mutations(ast);
-    auto value_count = types_.partition(ast->type, ast).component_count;
-    std::vector<const cxx::Type*> sources = {ast->type};
-    sources.reserve(1 + written.size());
+    auto value_count =
+        has_value ? types_.partition(ast->type, ast).component_count : 0;
+    std::vector<const cxx::Type*> sources;
+    sources.reserve((has_value ? 1 : 0) + written.size());
+    if constexpr (has_value) {
+      sources.push_back(ast->type);
+    }
     for (auto* symbol : written) {
       sources.push_back(symbol->type());
     }
@@ -860,7 +871,11 @@ class Translator {
     auto saved =
         loom_builder_enter_region(&builder_, op, loom_scf_if_then_region(op));
     std::vector<loom_value_id_t> yielded;
-    then_value().append_to(yielded);
+    if constexpr (has_value) {
+      then_value().append_to(yielded);
+    } else {
+      then_value();
+    }
     auto mutations = current(written);
     yielded.insert(yielded.end(), mutations.begin(), mutations.end());
     loom_op_t* yield;
@@ -871,71 +886,39 @@ class Translator {
     saved =
         loom_builder_enter_region(&builder_, op, loom_scf_if_else_region(op));
     yielded.clear();
-    else_value().append_to(yielded);
+    if constexpr (has_value) {
+      else_value().append_to(yielded);
+    } else {
+      else_value();
+    }
     mutations = current(written);
     yielded.insert(yielded.end(), mutations.begin(), mutations.end());
     check(loom_scf_yield_build(&builder_, yielded.data(), yielded.size(),
                                source, &yield));
     loom_builder_restore(&builder_, saved);
     bind_values(written, loom_op_results(op) + value_count);
-    return value_arena_.capture(types_.partition(ast->type, ast),
-                                {loom_op_results(op), value_count});
+    if constexpr (has_value) {
+      return value_arena_.capture(types_.partition(ast->type, ast),
+                                  {loom_op_results(op), value_count});
+    }
   }
 
-  Value initialize(const cxx::Type* type,
-                   cxx::List<cxx::ExpressionAST*>* elements, cxx::AST* owner) {
-    if (auto* record = types_.record(type, owner)) {
-      // Single same-type arguments are copy-list/direct initialization, not
-      // the first aggregate field. The normalized AST retains that distinction.
-      if (elements && !elements->next &&
-          types_.unqualified(elements->value->type) ==
-              types_.unqualified(type)) {
-        return expression(elements->value);
-      }
-      std::vector<loom_value_id_t> components;
-      components.reserve(record->component_count);
-      for (const auto& member : record->members) {
-        convert(elements->value, member.field->type(), owner)
-            .append_to(components);
-        elements = elements->next;
-      }
-      return value_arena_.capture(*record, components);
+  void conditional_object(StorageProjection destination, const cxx::Type* type,
+                          cxx::ConditionalExpressionAST* select) override {
+    if (types_.vector(select->condition->type)) {
+      fail(select, "vector conditions require lane-wise selection");
     }
-    const auto& partition = types_.partition(type, owner);
-    if (partition.kind == ValueKind::Encoding ||
-        partition.kind == ValueKind::View ||
-        partition.kind == ValueKind::Tensor) {
-      if (elements && !elements->next &&
-          types_.unqualified(elements->value->type) ==
-              types_.unqualified(type)) {
-        return expression(elements->value);
-      }
-      fail(owner,
-           "encoding, view and tensor values require an operation result or a "
-           "copy");
-    }
-    if (auto* vector = types_.vector(type)) {
-      std::vector<loom_value_id_t> components;
-      for (auto* element : cxx::ListView{elements}) {
-        components.push_back(
-            convert(element, vector->elementType(), owner).ssa());
-      }
-      return vectors_.construct(components, type, owner);
-    }
-    auto output = types_.get(type, owner);
-    if (elements && !elements->next) {
-      return convert(elements->value, type, owner);
-    }
-    if (elements || loom_type_kind(output) != LOOM_TYPE_SCALAR) {
-      fail(owner,
-           "value initialization requires a scalar, vector or admitted record");
-    }
-    loom_op_t* op;
-    check(loom_scalar_constant_build(
-        &builder_,
-        types_.is_float(type) ? loom_attr_f64(0.0) : loom_attr_i64(0), output,
-        locations_.get(owner), &op));
-    return result(op);
+    auto condition = expression(select->condition).ssa();
+    conditional(
+        select, condition,
+        [&] {
+          initialization_.object(destination, type, select->iftrueExpression,
+                                 select);
+        },
+        [&] {
+          initialization_.object(destination, type, select->iffalseExpression,
+                                 select);
+        });
   }
 
   std::optional<IntrinsicCallResult> atomic_builtin(
@@ -967,7 +950,7 @@ class Translator {
                                     : scalars_.constant(value, ast->type, ast);
   }
 
-  Value expression(cxx::ExpressionAST* ast) {
+  Value expression(cxx::ExpressionAST* ast) override {
     if (!ast) {
       throw std::runtime_error("missing expression");
     }
@@ -1035,7 +1018,7 @@ class Translator {
     if (auto* cast = cxx::ast_cast<cxx::TypeConstructionAST>(ast)) {
       if (types_.record(ast->type, ast)) {
         types_.admit_copy(cast->constructorSymbol, ast->type, ast);
-        return initialize(ast->type, cast->expressionList, ast);
+        return initialization_.value(ast->type, cast->expressionList, ast);
       }
       auto output = types_.get(ast->type, ast);
       if (cast->constructorSymbol ||
@@ -1056,21 +1039,21 @@ class Translator {
     if (auto* construction =
             cxx::ast_cast<cxx::BracedTypeConstructionAST>(ast)) {
       types_.admit_copy(construction->constructorSymbol, ast->type, ast);
-      return initialize(ast->type, construction->bracedInitList->expressionList,
-                        ast);
+      return initialization_.value(
+          ast->type, construction->bracedInitList->expressionList, ast);
     }
     if (auto* initializer = cxx::ast_cast<cxx::BracedInitListAST>(ast)) {
-      return initialize(ast->type, initializer->expressionList, ast);
+      return initialization_.value(ast->type, initializer->expressionList, ast);
     }
     if (auto* initializer = cxx::ast_cast<cxx::ParenInitializerAST>(ast)) {
-      return initialize(ast->type, initializer->expressionList, ast);
+      return initialization_.value(ast->type, initializer->expressionList, ast);
     }
     if (auto* select = cxx::ast_cast<cxx::ConditionalExpressionAST>(ast)) {
       if (types_.vector(select->condition->type)) {
         fail(ast, "vector conditions require lane-wise selection");
       }
       auto condition = expression(select->condition).ssa();
-      return conditional_value(
+      return conditional(
           ast, condition, [&] { return expression(select->iftrueExpression); },
           [&] { return expression(select->iffalseExpression); });
     }
@@ -1139,7 +1122,8 @@ class Translator {
     }
     if (auto* member = cxx::ast_cast<cxx::MemberExpressionAST>(ast)) {
       auto* base = cxx::ast_cast<cxx::IdExpressionAST>(member->baseExpression);
-      if (control_->storage_backed(member)) {
+      if (control_->storage_backed(member) ||
+          unit_.typeTraits().is_array(member->type)) {
         return name(load(ast), cxx::to_string(member->symbol->name()));
       }
       bool topology = base && (annotated(base->symbol, "workitem_id") ||
@@ -1210,9 +1194,8 @@ class Translator {
         };
         auto skipped = [&] { return left; };
         return binary->op == cxx::TokenKind::T_AMP_AMP
-                   ? conditional_value(ast, left.ssa(), evaluate_right, skipped)
-                   : conditional_value(ast, left.ssa(), skipped,
-                                       evaluate_right);
+                   ? conditional(ast, left.ssa(), evaluate_right, skipped)
+                   : conditional(ast, left.ssa(), skipped, evaluate_right);
       }
       auto right = expression(binary->rightExpression);
       if (left.is_pointer() || right.is_pointer()) {
@@ -1905,7 +1888,7 @@ class Translator {
     }
   }
 
-  void effect(cxx::ExpressionAST* ast) {
+  void effect(cxx::ExpressionAST* ast) override {
     if (auto* binary = cxx::ast_cast<cxx::BinaryExpressionAST>(ast);
         binary && !binary->symbol && binary->op == cxx::TokenKind::T_COMMA) {
       effect(binary->leftExpression);
@@ -1941,25 +1924,32 @@ class Translator {
         auto predicates = assumption_predicates(unit_, diagnostics_, call);
         for (const auto& predicate : predicates) {
           for (size_t i = 0; i < predicate.value_count; ++i) {
-            auto* symbol = predicate.values[i].binding->symbol;
+            const auto& source_value = predicate.values[i];
+            if (source_value.origin != PredicateValueOrigin::Binding ||
+                !source_value.members.empty()) {
+              fail(source_value.source,
+                   "assume can refine only direct automatic scalar bindings");
+            }
+            auto* symbol = source_value.binding;
             if (locals_.contains(symbol)) {
-              fail(predicate.values[i].binding,
+              fail(source_value.source,
                    "assume cannot retain facts for an addressable binding "
                    "whose storage may change through an alias");
             }
             if (!values_.contains(symbol)) {
-              fail(predicate.values[i].binding,
+              fail(source_value.source,
                    "assume can retain facts only for an owned automatic "
                    "scalar binding");
             }
           }
         }
         for (const auto& admitted : predicates) {
-          std::array<loom_value_id_t, 2> values;
-          std::array<loom_type_t, 2> value_types;
+          std::array<loom_value_id_t, 3> values;
+          std::array<loom_type_t, 3> value_types;
           for (size_t i = 0; i < admitted.value_count; ++i) {
-            values[i] = expression(admitted.values[i].value).ssa();
-            value_types[i] = types_.get(admitted.values[i].value->type, ast);
+            values[i] = expression(admitted.values[i].converted).ssa();
+            value_types[i] =
+                types_.get(admitted.values[i].converted->type, ast);
           }
           loom_predicate_t predicate = admitted.predicate;
           for (uint8_t i = 0; i < predicate.arg_count; ++i) {
@@ -1974,11 +1964,11 @@ class Translator {
               &op));
           for (size_t i = 0; i < admitted.value_count; ++i) {
             const auto& source_value = admitted.values[i];
-            values_[source_value.binding->symbol] =
+            values_[source_value.binding] =
                 name(numeric_convert(loom_op_results(op)[i],
-                                     source_value.value->type,
-                                     source_value.binding->type, ast),
-                     cxx::to_string(source_value.binding->symbol->name()));
+                                     source_value.converted->type,
+                                     source_value.source->type, ast),
+                     cxx::to_string(source_value.binding->name()));
           }
         }
         return;
@@ -2075,6 +2065,8 @@ class Translator {
   Scalars scalars_;
   // Shared output namespace for callables and configuration symbols.
   SymbolNames names_;
+  // Callable predicates shared by definitions and template declarations.
+  FunctionContracts function_contracts_;
   // Namespace-scope scalar configs retain key identity across source aliases.
   Configs configs_;
   // Source target definitions bind function-like operations without
@@ -2086,6 +2078,12 @@ class Translator {
   Vectors vectors_;
   // Memory representations retain declared array extents and access shape.
   Storage storage_;
+  // Immutable large source bindings, released after each function's maps.
+  ValueArena value_arena_;
+  // Source-layout object snapshots share the callable value partitions.
+  Objects objects_;
+  // Aggregate clauses preserve in-place initialization and copy ordering.
+  Initialization initialization_;
   // Admitted launch contracts, including bounds from function redeclarations.
   LaunchContracts launches_;
   // Retained generated operation bindings for reached source declarations.
@@ -2100,8 +2098,6 @@ class Translator {
   uint8_t math_flags_;
   // Source and native definition contracts for the body being translated.
   FunctionBody current_function_ = {};
-  // Immutable large source bindings, released after each function's maps.
-  ValueArena value_arena_;
   // Bound symbols, never identifier spellings, key source-to-SSA mappings.
   std::unordered_map<cxx::Symbol*, Value> values_;
   // Storage-backed automatic objects retain one allocation across direct and

@@ -129,13 +129,14 @@ static iree_status_t loom_check_require_emit_tool_declarations(
   iree_string_view_t emit_target =
       iree_string_view_trim(test_case->emit_target);
   iree_string_view_t target_name = iree_string_view_empty();
-  iree_string_view_split(emit_target, ' ', &target_name, NULL);
-  target_name = iree_string_view_trim(target_name);
+  iree_string_view_t target_options = iree_string_view_empty();
+  iree_string_view_split(emit_target, ' ', &target_name, &target_options);
+  target_options = iree_string_view_trim(target_options);
   const loom_check_emit_provider_t* provider =
       loom_check_environment_lookup_emit_provider(environment, target_name);
   if (provider != NULL && provider->check_requirements != NULL) {
-    return provider->check_requirements(provider, test_case, result,
-                                        out_continue_execution);
+    return provider->check_requirements(provider, test_case, target_options,
+                                        result, out_continue_execution);
   }
 
   return iree_ok_status();

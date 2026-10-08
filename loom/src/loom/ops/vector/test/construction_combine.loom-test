@@ -1,5 +1,27 @@
 // RUN: pass combine
 
+// Importer-style scalar address casts are reconstructed as one shaped
+// conversion before target legalization selects the physical carrier.
+func.def @from_elements_of_index_casts(%values: vector<4xi32>) -> (vector<4xindex>) {
+  %lane0 = vector.extract %values[0] : vector<4xi32> -> i32
+  %index0 = index.cast %lane0 : i32 to index
+  %lane1 = vector.extract %values[1] : vector<4xi32> -> i32
+  %index1 = index.cast %lane1 : i32 to index
+  %lane2 = vector.extract %values[2] : vector<4xi32> -> i32
+  %index2 = index.cast %lane2 : i32 to index
+  %lane3 = vector.extract %values[3] : vector<4xi32> -> i32
+  %index3 = index.cast %lane3 : i32 to index
+  %result = vector.from_elements %index0, %index1, %index2, %index3 : vector<4xindex>
+  func.return %result : vector<4xindex>
+}
+// ----
+func.def @from_elements_of_index_casts(%values: vector<4xi32>) -> (vector<4xindex>) {
+  %result = vector.index_cast %values : vector<4xi32> to vector<4xindex>
+  func.return %result : vector<4xindex>
+}
+
+// ====
+
 // Scalar lane chains produced by importers fold back to the equivalent vector
 // operations before target legalization chooses their physical representation.
 func.def @from_elements_of_scalarized_quantizer_chain(%values: vector<4xf32>) -> (vector<4xi8>) {

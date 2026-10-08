@@ -23,6 +23,21 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    cast
+  HDRS
+    "cast.h"
+  SRCS
+    "cast.c"
+  DEPS
+    iree::base
+    iree::base::internal
+    loom::ir
+    loom::ir::facts
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     comparison
   HDRS
     "carrier.h"
@@ -67,6 +82,7 @@ loom_generated_cc_library(
   EXTRA_OUTPUTS
     "ops.inc"
   DEPS
+    ::cast
     ::comparison
     ::op_defs
     iree::base::internal

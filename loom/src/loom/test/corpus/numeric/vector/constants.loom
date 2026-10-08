@@ -1,6 +1,44 @@
 // Every constant reaches memory so the target and oracle compare its exact
 // bits, including signed zeros, subnormals, infinities, and NaNs.
 
+func.def @vector_constants_narrow(%output: buffer) {
+  %byte_origin = index.constant 0 : offset
+  %e4_origin = index.constant 16 : offset
+  %e5_origin = index.constant 32 : offset
+  %word_origin = index.constant 48 : offset
+  %half_origin = index.constant 64 : offset
+  %bfloat_origin = index.constant 80 : offset
+  %byte_view = buffer.view %output[%byte_origin] : buffer -> view<16xi8>
+  %e4_view = buffer.view %output[%e4_origin] : buffer -> view<16xf8E4M3>
+  %e5_view = buffer.view %output[%e5_origin] : buffer -> view<16xf8E5M2>
+  %word_view = buffer.view %output[%word_origin] : buffer -> view<8xi16>
+  %half_view = buffer.view %output[%half_origin] : buffer -> view<8xf16>
+  %bfloat_view = buffer.view %output[%bfloat_origin] : buffer -> view<8xbf16>
+  %bytes = vector.constant -91 : vector<16xi8>
+  %e4 = vector.constant -2.0 : vector<16xf8E4M3>
+  %e5 = vector.constant -0.0 : vector<16xf8E5M2>
+  %words = vector.constant -21846 : vector<8xi16>
+  %half = vector.constant -0.0 : vector<8xf16>
+  %bfloat = vector.constant -2.0 : vector<8xbf16>
+  vector.store %bytes, %byte_view[0] : vector<16xi8>, view<16xi8>
+  vector.store %e4, %e4_view[0] : vector<16xf8E4M3>, view<16xf8E4M3>
+  vector.store %e5, %e5_view[0] : vector<16xf8E5M2>, view<16xf8E5M2>
+  vector.store %words, %word_view[0] : vector<8xi16>, view<8xi16>
+  vector.store %half, %half_view[0] : vector<8xf16>, view<8xf16>
+  vector.store %bfloat, %bfloat_view[0] : vector<8xbf16>, view<8xbf16>
+  func.return
+}
+
+check.scenario @narrow_vector_constant_bits {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %output = check.generate.fill value(91) : tensor<96xi8>
+    check.compare<@vector_constants_narrow>(%output) : (tensor<96xi8>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<96xi8>
+    }
+  }
+  check.return
+}
+
 func.def @vector_constants_i32(%output: buffer) {
   %base = index.constant 0 : offset
   %view = buffer.view %output[%base] : buffer -> view<24xi32>

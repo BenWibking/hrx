@@ -93,6 +93,14 @@ static loom_testbench_value_t I32Value(int32_t value) {
   return result;
 }
 
+static loom_testbench_value_t RawU32Value(uint32_t value) {
+  loom_testbench_value_t result = {};
+  result.kind = LOOM_TESTBENCH_VALUE_KIND_SCALAR;
+  result.scalar.kind = IREE_TOOLING_VALUE_KIND_RAW_U32;
+  result.scalar.storage.u32 = value;
+  return result;
+}
+
 static loom_testbench_value_t I64Value(int64_t value) {
   loom_testbench_value_t result = {};
   result.kind = LOOM_TESTBENCH_VALUE_KIND_SCALAR;
@@ -200,6 +208,25 @@ static loom_target_provider_t MakeFakeTargetProvider() {
 
 const loom_target_provider_t kFakeTargetProvider = MakeFakeTargetProvider();
 
+static iree_status_t EmitFakeTargetArtifact(
+    const loom_target_emit_request_t* request, bool* out_emitted,
+    loom_target_emit_artifact_t* out_artifact) {
+  (void)request;
+  *out_emitted = false;
+  *out_artifact = {};
+  return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                          "fake target emitter rejects emission");
+}
+
+static const loom_target_emitter_t kFakeTargetEmitter = {
+    /*.name=*/IREE_SVL("fake-hal"),
+    /*.public_artifact_format=*/IREE_SVL("fake-hal"),
+    /*.default_identifier=*/IREE_SVL("fake.bin"),
+    /*.target_artifact_format=*/LOOM_TARGET_ARTIFACT_FORMAT_ELF,
+    /*.default_pipeline_options=*/{},
+    /*.emit=*/EmitFakeTargetArtifact,
+};
+
 static iree_status_t FakeHalSelectDeviceTarget(
     const loom_device_provider_t* provider,
     const loom_run_hal_runtime_t* runtime, iree_allocator_t allocator,
@@ -220,6 +247,7 @@ static iree_status_t FakeHalSelectDeviceTarget(
   *out_target = (loom_device_target_t){
       /*.executable_target=*/executable_target,
       /*.target_profile=*/&kFakeTargetProfile,
+      /*.target_emitter=*/&kFakeTargetEmitter,
   };
   return iree_ok_status();
 }
@@ -251,29 +279,8 @@ static iree_status_t FakeHalSelectProfileDeviceTarget(
                                    out_target);
 }
 
-static iree_status_t EmitFakeTargetArtifact(
-    const loom_target_emit_request_t* request, bool* out_emitted,
-    loom_target_emit_artifact_t* out_artifact) {
-  (void)request;
-  *out_emitted = false;
-  *out_artifact = {};
-  return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                          "fake target emitter rejects emission");
-}
-
-static const loom_target_emitter_t kFakeTargetEmitter = {
-    /*.name=*/IREE_SVL("fake-hal"),
-    /*.public_artifact_format=*/IREE_SVL("fake-hal"),
-    /*.default_identifier=*/IREE_SVL("fake.bin"),
-    /*.target_artifact_format=*/LOOM_TARGET_ARTIFACT_FORMAT_ELF,
-    /*.default_pipeline_options=*/{},
-    /*.emit=*/EmitFakeTargetArtifact,
-};
-
 static const loom_device_provider_t kFakeDeviceProvider = {
     /*.name=*/IREE_SVL("fake-hal"),
-    /*.target_profile_type=*/&kFakeTargetProfileType,
-    /*.target_emitter=*/&kFakeTargetEmitter,
     /*.driver_name=*/IREE_SVL("fake"),
     /*.select_compatible_target=*/FakeHalSelectCompatibleDeviceTarget,
     /*.select_profile_target=*/FakeHalSelectProfileDeviceTarget,
@@ -545,11 +552,69 @@ TEST_F(HalTestbenchActualTest, ScalarInputsPackDispatchConstantWords) {
       iree_allocator_system(), &bindings));
 
   EXPECT_EQ(bindings.count, 0u);
-  EXPECT_EQ(options.constant_count, 3u);
-  EXPECT_EQ(options.constants[0], 0x12345678u);
-  EXPECT_EQ(options.constants[1], 0x55667788u);
-  EXPECT_EQ(options.constants[2], 0x11223344u);
+  EXPECT_EQ(options.constant_byte_length, 12u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants), 0x12345678u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants + 4), 0x55667788u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants + 8), 0x11223344u);
 
+  loom_run_hal_binding_list_deinitialize(&bindings);
+}
+
+TEST_F(HalTestbenchActualTest, ReflectionPlacesAlignedAndNarrowConstants) {
+  loom_testbench_value_t inputs[] = {
+      I32Value(0x12345678), I64Value(INT64_C(0x1122334455667788)),
+      I32Value(INT8_MIN),   I32Value(INT16_MIN),
+      I32Value(1),          RawU32Value(0x38),
+      RawU32Value(0x3c),    RawU32Value(0x3c00),
+      RawU32Value(0x3f80),  I32Value(127),
+  };
+  loom_type_t input_types[] = {
+      loom_type_scalar(LOOM_SCALAR_TYPE_I32),
+      loom_type_scalar(LOOM_SCALAR_TYPE_I64),
+      loom_type_scalar(LOOM_SCALAR_TYPE_I8),
+      loom_type_scalar(LOOM_SCALAR_TYPE_I16),
+      loom_type_scalar(LOOM_SCALAR_TYPE_I1),
+      loom_type_scalar(LOOM_SCALAR_TYPE_F8E4M3),
+      loom_type_scalar(LOOM_SCALAR_TYPE_F8E5M2),
+      loom_type_scalar(LOOM_SCALAR_TYPE_F16),
+      loom_type_scalar(LOOM_SCALAR_TYPE_BF16),
+      loom_type_scalar(LOOM_SCALAR_TYPE_I8),
+  };
+  const uint16_t offsets[] = {0, 8, 16, 18, 20, 21, 22, 24, 26, 28};
+  const uint8_t sizes[] = {4, 8, 1, 2, 1, 1, 1, 2, 2, 1};
+  iree_hal_executable_function_parameter_t parameters[IREE_ARRAYSIZE(inputs)] =
+      {};
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(inputs); ++i) {
+    parameters[i].type = IREE_HAL_EXECUTABLE_FUNCTION_PARAMETER_TYPE_CONSTANT;
+    parameters[i].size = sizes[i];
+    parameters[i].offset = offsets[i];
+  }
+  loom_run_hal_invocation_options_t options = {};
+  loom_run_hal_invocation_options_initialize(&options);
+  // Padding must be initialized even when the caller reuses its argument
+  // storage.
+  memset(options.constants, 0xcd, sizeof(options.constants));
+  loom_run_hal_binding_list_t bindings = {};
+  IREE_ASSERT_OK(loom_run_hal_testbench_invocation_inputs_from_values(
+      inputs, input_types, nullptr, parameters, IREE_ARRAYSIZE(inputs),
+      &options, iree_allocator_system(), &bindings));
+
+  EXPECT_EQ(options.constant_byte_length, 29u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants), 0x12345678u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants + 4), 0u);
+  EXPECT_EQ(iree_unaligned_load_le_u64(options.constants + 8),
+            UINT64_C(0x1122334455667788));
+  EXPECT_EQ(options.constants[16], 0x80u);
+  EXPECT_EQ(options.constants[17], 0u);
+  EXPECT_EQ(iree_unaligned_load_le_u16(options.constants + 18), 0x8000u);
+  EXPECT_EQ(options.constants[20], 1u);
+  EXPECT_EQ(options.constants[21], 0x38u);
+  EXPECT_EQ(options.constants[22], 0x3cu);
+  EXPECT_EQ(options.constants[23], 0u);
+  EXPECT_EQ(iree_unaligned_load_le_u16(options.constants + 24), 0x3c00u);
+  EXPECT_EQ(iree_unaligned_load_le_u16(options.constants + 26), 0x3f80u);
+  EXPECT_EQ(options.constants[28], 127u);
+  EXPECT_EQ(options.constants[29], 0xcdu);
   loom_run_hal_binding_list_deinitialize(&bindings);
 }
 
@@ -570,9 +635,9 @@ TEST_F(HalTestbenchActualTest, F64InputsPackDispatchConstantWords) {
       iree_allocator_system(), &bindings));
 
   EXPECT_EQ(bindings.count, 0u);
-  EXPECT_EQ(options.constant_count, 2u);
-  EXPECT_EQ(options.constants[0], 0x00000000u);
-  EXPECT_EQ(options.constants[1], 0x3ff00000u);
+  EXPECT_EQ(options.constant_byte_length, 8u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants), 0x00000000u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants + 4), 0x3ff00000u);
 
   loom_run_hal_binding_list_deinitialize(&bindings);
 }
@@ -594,8 +659,8 @@ TEST_F(HalTestbenchActualTest, IndexInputUsesSelected32BitTargetCarrier) {
       iree_allocator_system(), &bindings));
 
   EXPECT_EQ(bindings.count, 0u);
-  EXPECT_EQ(options.constant_count, 1u);
-  EXPECT_EQ(options.constants[0], 3584u);
+  EXPECT_EQ(options.constant_byte_length, 4u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants), 3584u);
 
   loom_run_hal_binding_list_deinitialize(&bindings);
 }
@@ -617,9 +682,9 @@ TEST_F(HalTestbenchActualTest, IndexInputUsesSelected64BitTargetCarrier) {
       iree_allocator_system(), &bindings));
 
   EXPECT_EQ(bindings.count, 0u);
-  EXPECT_EQ(options.constant_count, 2u);
-  EXPECT_EQ(options.constants[0], 0x55667788u);
-  EXPECT_EQ(options.constants[1], 0x11223344u);
+  EXPECT_EQ(options.constant_byte_length, 8u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants), 0x55667788u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants + 4), 0x11223344u);
 
   loom_run_hal_binding_list_deinitialize(&bindings);
 }
@@ -676,9 +741,9 @@ TEST_F(HalTestbenchActualTest, IndexInputUsesSignedReflectedFourByteRange) {
       IREE_ARRAYSIZE(inputs), &options, iree_allocator_system(), &bindings));
 
   EXPECT_EQ(bindings.count, 0u);
-  EXPECT_EQ(options.constant_count, 2u);
-  EXPECT_EQ(options.constants[0], 0x80000000u);
-  EXPECT_EQ(options.constants[1], 0x7fffffffu);
+  EXPECT_EQ(options.constant_byte_length, 8u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants), 0x80000000u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants + 4), 0x7fffffffu);
 
   loom_run_hal_binding_list_deinitialize(&bindings);
 }
@@ -741,10 +806,10 @@ TEST_F(HalTestbenchActualTest, MixedInputsUseReflectedWidthsAndOffsets) {
       IREE_ARRAYSIZE(inputs), &options, iree_allocator_system(), &bindings));
 
   EXPECT_EQ(bindings.count, 0u);
-  EXPECT_EQ(options.constant_count, 3u);
-  EXPECT_EQ(options.constants[0], 3584u);
-  EXPECT_EQ(options.constants[1], 0u);
-  EXPECT_EQ(options.constants[2], 0x40800000u);
+  EXPECT_EQ(options.constant_byte_length, 12u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants), 3584u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants + 4), 0u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants + 8), 0x40800000u);
 
   loom_run_hal_binding_list_deinitialize(&bindings);
 }
@@ -766,9 +831,9 @@ TEST_F(HalTestbenchActualTest, OffsetInputUsesSelected64BitTargetCarrier) {
       iree_allocator_system(), &bindings));
 
   EXPECT_EQ(bindings.count, 0u);
-  EXPECT_EQ(options.constant_count, 2u);
-  EXPECT_EQ(options.constants[0], 0x55667788u);
-  EXPECT_EQ(options.constants[1], 0x11223344u);
+  EXPECT_EQ(options.constant_byte_length, 8u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants), 0x55667788u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants + 4), 0x11223344u);
 
   loom_run_hal_binding_list_deinitialize(&bindings);
 }
@@ -790,8 +855,8 @@ TEST_F(HalTestbenchActualTest, OffsetInputUsesSelected32BitTargetCarrier) {
       iree_allocator_system(), &bindings));
 
   EXPECT_EQ(bindings.count, 0u);
-  EXPECT_EQ(options.constant_count, 1u);
-  EXPECT_EQ(options.constants[0], UINT32_MAX);
+  EXPECT_EQ(options.constant_byte_length, 4u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants), UINT32_MAX);
 
   loom_run_hal_binding_list_deinitialize(&bindings);
 }
@@ -818,8 +883,8 @@ TEST_F(HalTestbenchActualTest, OffsetInputUsesReflectedFourByteWidth) {
       IREE_ARRAYSIZE(inputs), &options, iree_allocator_system(), &bindings));
 
   EXPECT_EQ(bindings.count, 0u);
-  EXPECT_EQ(options.constant_count, 1u);
-  EXPECT_EQ(options.constants[0], UINT32_MAX);
+  EXPECT_EQ(options.constant_byte_length, 4u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(options.constants), UINT32_MAX);
 
   loom_run_hal_binding_list_deinitialize(&bindings);
 }
@@ -1033,8 +1098,9 @@ func.def public pure @device_dynamic(%workgroup_count: index) -> (index, index, 
             &prepared_options, &prepared_bindings));
     provider.prepared_candidate_initialized = false;
     EXPECT_EQ(prepared_options.workgroup_count[0], expected_workgroup_count);
-    EXPECT_EQ(prepared_options.constant_count, 1u);
-    EXPECT_EQ(prepared_options.constants[0], expected_workgroup_count);
+    EXPECT_EQ(prepared_options.constant_byte_length, 4u);
+    EXPECT_EQ(iree_unaligned_load_le_u32(prepared_options.constants),
+              expected_workgroup_count);
     EXPECT_EQ(prepared_bindings.count, 0u);
     loom_run_hal_binding_list_deinitialize(&prepared_bindings);
     loom_run_hal_binding_list_deinitialize(&bindings);

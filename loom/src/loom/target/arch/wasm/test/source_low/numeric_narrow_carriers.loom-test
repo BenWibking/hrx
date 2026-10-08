@@ -1,0 +1,91 @@
+// RUN: emit source-low target=wasm:simd128 output=low
+
+// Narrow floating values use unsigned integer lane payloads without conversion.
+func.def @byte_lanes(%input: vector<16xf8E4M3>, %replacement: f8E4M3, %condition: i1) -> (vector<16xi8>, f8E4M3) {
+  %last = vector.extract %input[15] : vector<16xf8E4M3> -> f8E4M3
+  %broadcast = vector.splat %last : vector<16xf8E4M3>
+  %updated = vector.insert %replacement into %broadcast[0] : f8E4M3, vector<16xf8E4M3>
+  %reversed = vector.shuffle<[15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]> %input : vector<16xf8E4M3>
+  %selected = scf.select %condition, %reversed, %updated : vector<16xf8E4M3>
+  %bits = vector.bitcast %selected : vector<16xf8E4M3> to vector<16xi8>
+  func.return %bits, %last : vector<16xi8>, f8E4M3
+}
+
+// ----
+low.func.def target<wasm.core.simd128> abi(wasm_function) @byte_lanes(%input: reg<wasm.v128>, %replacement: reg<wasm.i32>, %condition: reg<wasm.i32>) -> (reg<wasm.v128>, reg<wasm.i32>) asm {
+  %last = i8x16.extract_lane_u %input, 15
+  %broadcast = i8x16.splat %last
+  %updated = i8x16.replace_lane %broadcast, %replacement, 0
+  %reversed = i8x16.shuffle %input, %input, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
+  %bits = v128.select %reversed, %updated, %condition
+  return %bits, %last
+}
+
+// ====
+
+func.def @word_lanes(%input: vector<8xbf16>, %replacement: bf16, %condition: i1) -> (vector<8xi16>, bf16) {
+  %last = vector.extract %input[7] : vector<8xbf16> -> bf16
+  %broadcast = vector.splat %last : vector<8xbf16>
+  %updated = vector.insert %replacement into %broadcast[0] : bf16, vector<8xbf16>
+  %reversed = vector.shuffle<[7, 6, 5, 4, 3, 2, 1, 0]> %input : vector<8xbf16>
+  %selected = scf.select %condition, %reversed, %updated : vector<8xbf16>
+  %bits = vector.bitcast %selected : vector<8xbf16> to vector<8xi16>
+  func.return %bits, %last : vector<8xi16>, bf16
+}
+
+// ----
+low.func.def target<wasm.core.simd128> abi(wasm_function) @word_lanes(%input: reg<wasm.v128>, %replacement: reg<wasm.i32>, %condition: reg<wasm.i32>) -> (reg<wasm.v128>, reg<wasm.i32>) asm {
+  %last = i16x8.extract_lane_u %input, 7
+  %broadcast = i16x8.splat %last
+  %updated = i16x8.replace_lane %broadcast, %replacement, 0
+  %reversed = i8x16.shuffle %input, %input, 14, 15, 12, 13, 10, 11, 8, 9, 6, 7, 4, 5, 2, 3, 0, 1
+  %bits = v128.select %reversed, %updated, %condition
+  return %bits, %last
+}
+
+// ====
+
+// Integer immediates retain float payload bits, including signed zero.
+func.def @narrow_constants() -> (vector<16xi8>, vector<16xf8E4M3>, vector<16xf8E5M2>, vector<8xi16>, vector<8xf16>, vector<8xbf16>) {
+  %bytes = vector.constant -91 : vector<16xi8>
+  %e4m3 = vector.constant -2.0 : vector<16xf8E4M3>
+  %e5m2 = vector.constant -0.0 : vector<16xf8E5M2>
+  %words = vector.constant -21846 : vector<8xi16>
+  %half = vector.constant -0.0 : vector<8xf16>
+  %bfloat = vector.constant -2.0 : vector<8xbf16>
+  func.return %bytes, %e4m3, %e5m2, %words, %half, %bfloat : vector<16xi8>, vector<16xf8E4M3>, vector<16xf8E5M2>, vector<8xi16>, vector<8xf16>, vector<8xbf16>
+}
+
+// ----
+low.func.def target<wasm.core.simd128> abi(wasm_function) @narrow_constants() -> (reg<wasm.v128>, reg<wasm.v128>, reg<wasm.v128>, reg<wasm.v128>, reg<wasm.v128>, reg<wasm.v128>) asm {
+  %18 = i32.const -91
+  %bytes = i8x16.splat %18
+  %20 = i32.const 192
+  %e4m3 = i8x16.splat %20
+  %22 = i32.const 128
+  %e5m2 = i8x16.splat %22
+  %24 = i32.const -21846
+  %words = i16x8.splat %24
+  %26 = i32.const 32768
+  %half = i16x8.splat %26
+  %28 = i32.const 49152
+  %bfloat = i16x8.splat %28
+  return %bytes, %e4m3, %e5m2, %words, %half, %bfloat
+}
+
+// ====
+
+// Changing numeric lane widths leaves the carrier bits unchanged. A 64-bit
+// lane permutation moves all eight bytes of each lane together.
+func.def @wide_lane_shuffle(%input: vector<16xi8>) -> (vector<8xf16>) {
+  %wide = vector.bitcast %input : vector<16xi8> to vector<2xf64>
+  %reversed = vector.shuffle<[1, 0]> %wide : vector<2xf64>
+  %result = vector.bitcast %reversed : vector<2xf64> to vector<8xf16>
+  func.return %result : vector<8xf16>
+}
+
+// ----
+low.func.def target<wasm.core.simd128> abi(wasm_function) @wide_lane_shuffle(%wide: reg<wasm.v128>) -> (reg<wasm.v128>) asm {
+  %result = i8x16.shuffle %wide, %wide, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7
+  return %result
+}

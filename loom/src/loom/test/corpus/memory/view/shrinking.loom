@@ -10,6 +10,11 @@ kernel.def @shrinking_view() {
   %c1 = index.constant 1 : index
   kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%c1, %c1, %c1) : index
 } launch(%input: buffer, %output: buffer, %count: index) {
+  func.call @compute_shrinking_view(%input, %output, %count) : (buffer, buffer, index)
+  kernel.return
+}
+
+func.def device inline @compute_shrinking_view(%input: buffer, %output: buffer, %count: index) {
   %iterations = index.assume %count [range(%count, 0, 3)] : index
   %c0 = index.constant 0 : index
   %c1 = index.constant 1 : index
@@ -43,68 +48,41 @@ kernel.def @shrinking_view() {
   }
   view.store %sum, %destination[0] : i32, view<2xi32>
   view.store %final, %destination[1] : i32, view<2xi32>
-  kernel.return
+  func.return
 }
 
-check.case public @shrinking_view_0 {
-  %count = check.literal value(0) : index
-  %input = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %input_expected = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %output = check.generate.fill value(-99) : tensor<4xi32>
-  kernel.launch @shrinking_view(%input, %output, %count) : (tensor<68xi32>, tensor<4xi32>, index)
-  %sum = check.tensor.view %output offset(4) : tensor<4xi32> -> tensor<1xi32>
-  %final = check.tensor.view %output offset(8) : tensor<4xi32> -> tensor<1xi32>
-  %expected_sum = check.generate.fill value(0) : tensor<1xi32>
-  %expected_final = check.generate.fill value(102) : tensor<1xi32>
-  check.expect.bitwise actual(%sum) expected(%expected_sum) : tensor<1xi32>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi32>
-  %prefix = check.tensor.view %output offset(0) : tensor<4xi32> -> tensor<1xi32>
-  %suffix = check.tensor.view %output offset(12) : tensor<4xi32> -> tensor<1xi32>
-  %guard = check.generate.fill value(-99) : tensor<1xi32>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%input) expected(%input_expected) : tensor<68xi32>
-  check.return
+func.def @shrinking_view_oracle(%input: buffer, %output: buffer, %count: index) {
+  func.call @compute_shrinking_view(%input, %output, %count) : (buffer, buffer, index)
+  func.return
 }
 
-check.case public @shrinking_view_1 {
-  %count = check.literal value(1) : index
-  %input = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %input_expected = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %output = check.generate.fill value(-99) : tensor<4xi32>
-  kernel.launch @shrinking_view(%input, %output, %count) : (tensor<68xi32>, tensor<4xi32>, index)
-  %sum = check.tensor.view %output offset(4) : tensor<4xi32> -> tensor<1xi32>
-  %final = check.tensor.view %output offset(8) : tensor<4xi32> -> tensor<1xi32>
-  %expected_sum = check.generate.fill value(102) : tensor<1xi32>
-  %expected_final = check.generate.fill value(110) : tensor<1xi32>
-  check.expect.bitwise actual(%sum) expected(%expected_sum) : tensor<1xi32>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi32>
-  %prefix = check.tensor.view %output offset(0) : tensor<4xi32> -> tensor<1xi32>
-  %suffix = check.tensor.view %output offset(12) : tensor<4xi32> -> tensor<1xi32>
-  %guard = check.generate.fill value(-99) : tensor<1xi32>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%input) expected(%input_expected) : tensor<68xi32>
-  check.return
-}
-
-check.case public @shrinking_view_3 {
-  %count = check.literal value(3) : index
-  %input = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %input_expected = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %output = check.generate.fill value(-99) : tensor<4xi32>
-  kernel.launch @shrinking_view(%input, %output, %count) : (tensor<68xi32>, tensor<4xi32>, index)
-  %sum = check.tensor.view %output offset(4) : tensor<4xi32> -> tensor<1xi32>
-  %final = check.tensor.view %output offset(8) : tensor<4xi32> -> tensor<1xi32>
-  %expected_sum = check.generate.fill value(330) : tensor<1xi32>
-  %expected_final = check.generate.fill value(126) : tensor<1xi32>
-  check.expect.bitwise actual(%sum) expected(%expected_sum) : tensor<1xi32>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi32>
-  %prefix = check.tensor.view %output offset(0) : tensor<4xi32> -> tensor<1xi32>
-  %suffix = check.tensor.view %output offset(12) : tensor<4xi32> -> tensor<1xi32>
-  %guard = check.generate.fill value(-99) : tensor<1xi32>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%input) expected(%input_expected) : tensor<68xi32>
+check.scenario @shrinking_view_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %count = check.literal value(0) : index
+    %input = check.generate.iota offset(100) step(1) : tensor<68xi32>
+    %output = check.generate.fill value(-99) : tensor<4xi32>
+    check.compare<@shrinking_view, @shrinking_view_oracle>(%input, %output, %count) : (tensor<68xi32>, tensor<4xi32>, index) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<68xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<4xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %count = check.literal value(1) : index
+    %input = check.generate.iota offset(100) step(1) : tensor<68xi32>
+    %output = check.generate.fill value(-99) : tensor<4xi32>
+    check.compare<@shrinking_view, @shrinking_view_oracle>(%input, %output, %count) : (tensor<68xi32>, tensor<4xi32>, index) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<68xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<4xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %count = check.literal value(3) : index
+    %input = check.generate.iota offset(100) step(1) : tensor<68xi32>
+    %output = check.generate.fill value(-99) : tensor<4xi32>
+    check.compare<@shrinking_view, @shrinking_view_oracle>(%input, %output, %count) : (tensor<68xi32>, tensor<4xi32>, index) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<68xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<4xi32>
+    }
+  }
   check.return
 }

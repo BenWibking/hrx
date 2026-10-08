@@ -21,3 +21,9 @@ def test_every_decomposable_vector_op_has_a_reference_lane_program() -> None:
     generated_scalarizations = {row.vector_op.name for row in collect_vector_scalarization_rows()}
 
     assert decomposable_ops == generated_scalarizations | _EXPLICIT_VECTOR_LANE_PROGRAMS
+
+
+def test_vector_index_cast_uses_index_dialect_scalar_semantics() -> None:
+    rows = {row.vector_op.name: row for row in collect_vector_scalarization_rows()}
+
+    assert rows["vector.index_cast"].scalar_op.name == "index.cast"

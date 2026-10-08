@@ -137,6 +137,7 @@ enum iree_hal_memory_fixed_block_allocator_block_flag_bits_e {
 // This struct is exposed for sizeof() in IREE_STRUCT_LAYOUT; callers must
 // not access block fields directly.
 typedef struct iree_hal_memory_fixed_block_allocator_block_t {
+  // Reuse validity of the inline frontier following this header.
   iree_hal_memory_fixed_block_allocator_block_flags_t flags;
 } iree_hal_memory_fixed_block_allocator_block_t;
 
@@ -156,10 +157,12 @@ typedef struct iree_hal_memory_fixed_block_allocator_options_t {
   // Maximum number of frontier entries per block. Set to 0 to use
   // IREE_HAL_MEMORY_FIXED_BLOCK_ALLOCATOR_DEFAULT_FRONTIER_CAPACITY.
   uint16_t frontier_capacity;
+  // Exact prerequisite for the entire initial range, copied during creation.
+  // NULL means no prerequisite. A frontier wider than capacity is rejected.
+  const iree_async_frontier_t* initial_frontier;
 } iree_hal_memory_fixed_block_allocator_options_t;
 
-// Describes the result of a successful allocation from the fixed-block
-// allocator.
+// Describes an acquired block or a read-only candidate for acquisition.
 typedef struct iree_hal_memory_fixed_block_allocator_allocation_t {
   // Start offset of the allocated block within [0, block_count * block_size).
   iree_device_size_t offset;
@@ -171,7 +174,8 @@ typedef struct iree_hal_memory_fixed_block_allocator_allocation_t {
 
   // The death frontier from the block's previous deallocation. Points into
   // the block's inline frontier storage (valid and stable while the block is
-  // allocated). NULL if the block had no frontier entries.
+  // allocated). Candidate queries borrow it only while acquisitions remain
+  // externally serialized. NULL if the block had no frontier entries.
   const iree_async_frontier_t* death_frontier;
 
   // Flags from the block at allocation time. Check
@@ -226,9 +230,9 @@ typedef struct iree_hal_memory_fixed_block_allocator_t {
   // Number of 64-bit bitmap words in use: ceil(block_count / 64).
   uint16_t word_count;
 
-  // Per-block metadata stride and frontier offset within each block's
-  // metadata (computed once during creation, used for stride arithmetic).
+  // Byte stride between adjacent blocks' metadata, computed during creation.
   iree_host_size_t block_stride;
+  // Byte offset of the inline frontier within each block's metadata.
   iree_host_size_t frontier_offset;
 
   // Host allocator used for allocating this allocator object.
@@ -296,6 +300,33 @@ iree_status_t iree_hal_memory_fixed_block_allocator_allocate(
 // has ceased.
 void iree_hal_memory_fixed_block_allocator_free(
     iree_hal_memory_fixed_block_allocator_t* pool);
+
+// Finds the first available block at or after |start_block_index| without
+// claiming it. Returns false when no candidate remains. The returned frontier
+// is borrowed; copy it before allowing another acquisition to proceed.
+//
+// The caller must exclude all acquisitions while querying and reading the
+// candidate. Releases may proceed concurrently: their bitmap publication makes
+// the complete frontier visible before the candidate becomes available.
+bool iree_hal_memory_fixed_block_allocator_query_candidate(
+    const iree_hal_memory_fixed_block_allocator_t* pool,
+    uint32_t start_block_index,
+    iree_hal_memory_fixed_block_allocator_allocation_t* out_candidate);
+
+// Returns whether the candidate's block remains available with the same exact
+// frontier and flags. |candidate| points to a caller-owned frontier snapshot.
+// Requires the same acquisition exclusion as query_candidate().
+bool iree_hal_memory_fixed_block_allocator_candidate_is_current(
+    const iree_hal_memory_fixed_block_allocator_t* pool,
+    const iree_hal_memory_fixed_block_allocator_allocation_t* candidate);
+
+// Claims a current candidate and returns its acquired block, with the frontier
+// borrowed until release. The caller must exclude other acquisitions from its
+// successful candidate_is_current() check through this call. This permits
+// validating a complete transaction before making any claims.
+void iree_hal_memory_fixed_block_allocator_acquire_candidate(
+    iree_hal_memory_fixed_block_allocator_t* pool, uint32_t block_index,
+    iree_hal_memory_fixed_block_allocator_allocation_t* out_allocation);
 
 // Attempts to acquire a block from the allocator.
 //

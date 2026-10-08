@@ -273,10 +273,22 @@ bool Functions::admit_declaration(
                                         prototype);
     if (function && !function->isTemplatePattern()) {
       parameter_contracts_.declaration(function, prototype);
+      function_contracts_.declaration(function, prototype);
     }
   }
   reject_misplaced_binding_attributes(unit_, diagnostics_, attributes,
                                       BindingAttributeScope::Declaration);
+  if (function) {
+    visit_loom_attributes(
+        unit_, attributes,
+        [&](std::string_view name, cxx::AttributeAST* attribute) {
+          if (name == "where") {
+            diagnostics_.reject(
+                unit_, attribute,
+                "function where contracts must follow the parameter list");
+          }
+        });
+  }
   template_definitions_.declaration(function, attributes);
   bool is_module_metadata = configs_.declaration(symbol, attributes, owner);
   is_module_metadata |=
@@ -487,9 +499,10 @@ loom_symbol_ref_t Functions::retain(cxx::FunctionSymbol* function,
   if (!function->templateArguments().empty() && function->declaration()) {
     launches_.declaration(function, function->declaration()->attributeList);
     if (!definitions_.contains(function->canonical())) {
-      parameter_contracts_.declaration(
-          function,
-          cxx::getFunctionPrototype(function->declaration()->declarator));
+      auto* prototype =
+          cxx::getFunctionPrototype(function->declaration()->declarator);
+      parameter_contracts_.declaration(function, prototype);
+      function_contracts_.declaration(function, prototype);
     }
   }
   auto callee = create_symbol(function, body->declaration());
@@ -588,6 +601,17 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
                         "variadic functions are not admitted");
   }
   bool returns_void = signature->returnType()->kind() == cxx::TypeKind::kVoid;
+  bool has_predicates = function_contracts_.has_predicates(symbol);
+  bool has_requirements = function_contracts_.has_requirements(symbol);
+  if (check_case && has_predicates) {
+    diagnostics_.reject(unit_, definition,
+                        "check cases cannot carry callable predicates");
+  }
+  if (has_requirements && !template_definition) {
+    diagnostics_.reject(
+        unit_, definition,
+        "target requirements require a template family or definition");
+  }
   std::vector<loom_type_t> arguments;
   std::vector<loom_type_t> results;
   std::optional<LaunchConfiguration> launch_configuration;
@@ -619,13 +643,22 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
     if (!returns_void) {
       sources.push_back(signature->returnType());
     }
-    callable_signature = bind_signature(types, sources, definition, builder);
+    callable_signature = bind_signature(
+        types, sources, definition, builder,
+        has_predicates ? SignatureIdentityRequirement::Required
+                       : SignatureIdentityRequirement::DependentTypes);
     arguments.assign(callable_signature.types.begin(),
                      callable_signature.types.begin() + argument_count);
     results.assign(callable_signature.types.begin() + argument_count,
                    callable_signature.types.end());
   }
   loom_op_t* op;
+  std::vector<loom_predicate_t> predicates;
+  if (!kernel && !check_case) {
+    predicates = function_contracts_.bind(
+        symbol, types, callable_signature.identities,
+        FunctionContractSignature::Flattened, definition);
+  }
   if (check_case) {
     launches_.reject_ordinary_function(symbol);
     check(loom_check_case_build(
@@ -642,14 +675,29 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
     std::span<const loom_type_t> configuration_arguments =
         launch_configuration ? std::span(launch_configuration->arguments)
                              : std::span<const loom_type_t>{};
+    std::vector<loom_value_id_t> kernel_identities;
+    if (has_predicates) {
+      kernel_identities.resize(configuration_arguments.size() +
+                               arguments.size());
+      check(loom_builder_reserve_values(builder, kernel_identities.size(),
+                                        kernel_identities.data()));
+      predicates = function_contracts_.bind(
+          symbol, types,
+          std::span<const loom_value_id_t>(kernel_identities)
+              .subspan(configuration_arguments.size()),
+          FunctionContractSignature::Kernel, definition);
+    }
     check(loom_kernel_def_build(
         builder,
-        loom_symbol_ref_is_valid(target) ? LOOM_KERNEL_DEF_BUILD_FLAG_HAS_TARGET
-                                         : 0,
+        (loom_symbol_ref_is_valid(target)
+             ? LOOM_KERNEL_DEF_BUILD_FLAG_HAS_TARGET
+             : 0) |
+            (predicates.empty() ? 0
+                                : LOOM_KERNEL_DEF_BUILD_FLAG_HAS_PREDICATES),
         0, target, LOOM_STRING_ID_INVALID, 0, callee,
         configuration_arguments.data(), configuration_arguments.size(),
-        arguments.data(), arguments.size(), nullptr, 0,
-        locations.get(definition), &op));
+        arguments.data(), arguments.size(), predicates.data(),
+        predicates.size(), locations.get(definition), &op));
     auto saved =
         loom_builder_enter_region(builder, op, loom_kernel_def_config(op));
     auto spelling = loom_string_table_get(&module_->strings, name_id);
@@ -675,16 +723,24 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
     if (template_definition->priority) {
       flags |= LOOM_TEMPLATE_DEF_BUILD_FLAG_HAS_PRIORITY;
     }
+    if (!predicates.empty()) {
+      flags |= LOOM_TEMPLATE_DEF_BUILD_FLAG_HAS_PREDICATES;
+    }
+    auto requirements = function_contracts_.bind_requirements(symbol, module_);
+    if (!requirements.empty()) {
+      flags |= LOOM_TEMPLATE_DEF_BUILD_FLAG_HAS_REQUIRES;
+    }
     check(loom_template_def_build(
         builder, flags, family.reference, /*visibility=*/0, /*retain=*/0,
         is_device ? LOOM_TEMPLATE_CC_DEVICE : 0,
         /*purity=*/0, /*temperature=*/0, target,
-        loom_parameterized_attr_array_empty(),
+        loom_make_parameterized_attr_array(requirements.data(),
+                                           requirements.size()),
         template_definition->priority.value_or(0),
         callees_.at(symbol->canonical()), arguments.data(), arguments.size(),
         results.data(), results.size(), /*tied_results=*/nullptr,
-        /*tied_result_count=*/0, /*predicates=*/nullptr,
-        /*predicates_count=*/0, locations.get(definition), &op));
+        /*tied_result_count=*/0, predicates.data(), predicates.size(),
+        locations.get(definition), &op));
   } else {
     launches_.reject_ordinary_function(symbol);
     check(loom_func_def_build(
@@ -695,13 +751,14 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
                  : 0) |
             (annotated(symbol, "force_inline")
                  ? LOOM_FUNC_DEF_BUILD_FLAG_HAS_INLINE_POLICY
-                 : 0),
+                 : 0) |
+            (predicates.empty() ? 0 : LOOM_FUNC_DEF_BUILD_FLAG_HAS_PREDICATES),
         exported_.contains(symbol) ? LOOM_FUNC_VISIBILITY_PUBLIC : 0, 0,
         annotated(symbol, "device") ? LOOM_FUNC_CC_DEVICE : 0, 0, 0,
         annotated(symbol, "force_inline") ? LOOM_INLINE_POLICY_INLINE : 0, {},
         0, {}, 0, {}, callees_.at(symbol->canonical()), arguments.data(),
-        arguments.size(), results.data(), results.size(), nullptr, 0, nullptr,
-        0, locations.get(definition), &op));
+        arguments.size(), results.data(), results.size(), nullptr, 0,
+        predicates.data(), predicates.size(), locations.get(definition), &op));
   }
   auto* region = check_case            ? loom_check_case_body(op)
                  : kernel              ? loom_kernel_def_body(op)

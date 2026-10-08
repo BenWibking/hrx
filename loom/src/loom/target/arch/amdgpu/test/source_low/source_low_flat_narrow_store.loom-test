@@ -46,7 +46,7 @@ func.def target(@target) @flat_half_store(%output: buffer, %input: f32) {
 low.func.def target<amdgpu.rdna3.core>(@target) abi(hal_kernel) @flat_half_store(%input: reg<amdgpu.vgpr>) asm {
   %view = resource<hal_binding> {extent = 2, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
   %half = v_cvt_f16_f32 %input
-  %9 = v_bfe_u32_offset_0_width_16_low16 %half
+  %9 = v_bfe_u32_offset_0_width_inline_low16 %half
   %10 = slice %view[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
   %11 = slice %view[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
   %12 = v_mov_b32_copy %10

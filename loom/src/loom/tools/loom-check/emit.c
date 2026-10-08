@@ -1484,6 +1484,39 @@ static iree_status_t loom_check_emit_verify_provider_module(
   return iree_ok_status();
 }
 
+static iree_status_t loom_check_emit_invoke_provider(
+    const loom_check_emit_provider_t* provider,
+    loom_check_emit_provider_request_t* request) {
+  iree_arena_allocator_t case_arena;
+  iree_arena_initialize(request->block_pool, &case_arena);
+  request->case_arena = &case_arena;
+  iree_status_t status = provider->execute(provider, request);
+  iree_arena_deinitialize(&case_arena);
+  // Successful emission owns a comparable output even when it is empty.
+  // Remarks do not suppress that comparison; compilation errors do.
+  request->result->has_actual_output =
+      iree_status_is_ok(status) &&
+      !loom_check_diagnostic_collector_has_error(request->diagnostic_collector);
+  return status;
+}
+
+static iree_status_t loom_check_emit_finish_provider(
+    iree_status_t status, const loom_check_emit_provider_request_t* request,
+    iree_host_size_t case_index, loom_check_file_report_t* report) {
+  if (!iree_status_is_ok(status)) {
+    return loom_check_emit_finish_status_failure(status, request->target_name,
+                                                 request->result);
+  }
+  if (request->test_case->annotation_count > 0 ||
+      request->diagnostic_collector->count > 0) {
+    return loom_check_emit_finish_diagnostics_and_compare_output(
+        request->diagnostic_collector, request->test_case, case_index, report,
+        request->host_allocator, request->result);
+  }
+  return loom_check_compare_output(request->test_case, request->host_allocator,
+                                   request->result);
+}
+
 iree_status_t loom_check_execute_emit(
     const loom_test_case_t* test_case, iree_host_size_t case_index,
     loom_check_file_report_t* report, iree_string_view_t filename,
@@ -1557,13 +1590,44 @@ iree_status_t loom_check_execute_emit(
     return status;
   }
 
-  loom_input_module_t input = {0};
-  loom_module_t* module = NULL;
   const loom_target_low_descriptor_registry_t low_registry =
       loom_target_environment_low_descriptor_registry(
           environment->target_environment);
   loom_low_descriptor_text_print_context_initialize(
       &low_registry.registry, &diagnostic_collector.type_print_context);
+  if (provider != NULL && provider->execute == NULL) {
+    status = iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                              "emit provider '%.*s' has no execute callback",
+                              (int)provider->name.size, provider->name.data);
+    status = loom_check_emit_finish_status_failure(
+        status, request.emit_target_name, result);
+    iree_arena_deinitialize(&diagnostic_arena);
+    return status;
+  }
+  loom_check_emit_provider_request_t provider_request = {
+      .emit_target = test_case->emit_target,
+      .target_name = provider_target_name,
+      .target_options = provider_target_options,
+      .filename = filename,
+      .test_case = test_case,
+      .input_request = input_request,
+      .environment = environment,
+      .low_registry = &low_registry,
+      .diagnostic_collector = &diagnostic_collector,
+      .block_pool = block_pool,
+      .host_allocator = allocator,
+      .result = result,
+  };
+  if (provider != NULL && provider->consumes_source) {
+    status = loom_check_emit_invoke_provider(provider, &provider_request);
+    status = loom_check_emit_finish_provider(status, &provider_request,
+                                             case_index, report);
+    iree_arena_deinitialize(&diagnostic_arena);
+    return status;
+  }
+
+  loom_input_module_t input = {0};
+  loom_module_t* module = NULL;
   loom_text_parse_options_t parse_options = {
       .diagnostic_sink = {.fn = loom_check_diagnostic_collector_sink,
                           .user_data = &diagnostic_collector},
@@ -1600,16 +1664,6 @@ iree_status_t loom_check_execute_emit(
   }
 
   if (provider != NULL) {
-    if (provider->execute == NULL) {
-      status = iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                                "emit provider '%.*s' has no execute callback",
-                                (int)provider->name.size, provider->name.data);
-      loom_input_module_deinitialize(&input);
-      status = loom_check_emit_finish_status_failure(
-          status, request.emit_target_name, result);
-      iree_arena_deinitialize(&diagnostic_arena);
-      return status;
-    }
     if (iree_status_is_ok(status)) {
       status = loom_check_emit_verify_provider_module(
           module, &low_registry, source_resolver,
@@ -1632,49 +1686,21 @@ iree_status_t loom_check_execute_emit(
       iree_arena_deinitialize(&diagnostic_arena);
       return status;
     }
-    // Providers may rewind workspace while rebuilding a frame. Collected
-    // diagnostics must survive those rewinds and the provider invocation.
-    iree_arena_allocator_t case_arena;
-    iree_arena_initialize(block_pool, &case_arena);
-    const loom_check_emit_provider_request_t provider_request = {
-        .emit_target = test_case->emit_target,
-        .target_name = provider_target_name,
-        .target_options = provider_target_options,
-        .filename = filename,
-        .test_case = test_case,
-        .environment = environment,
-        .module = module,
-        .source_resolver = source_resolver,
-        .low_registry = &low_registry,
-        .diagnostic_collector = &diagnostic_collector,
-        .case_arena = &case_arena,
-        .block_pool = block_pool,
-        .host_allocator = allocator,
-        .result = result,
-    };
-    status = provider->execute(provider, &provider_request);
-    iree_arena_deinitialize(&case_arena);
-    // Successful emission owns a comparable output even when it is empty.
-    // Remarks do not suppress that comparison; compilation errors do.
-    result->has_actual_output =
-        iree_status_is_ok(status) &&
-        !loom_check_diagnostic_collector_has_error(&diagnostic_collector);
+    provider_request.module = module;
+    provider_request.source_resolver = source_resolver;
+    status = loom_check_emit_invoke_provider(provider, &provider_request);
+    if (iree_status_is_ok(status) &&
+        !loom_check_diagnostic_collector_has_error(&diagnostic_collector)) {
+      status = loom_check_emit_verify_provider_module(
+          module, &low_registry, source_resolver,
+          loom_target_environment_low_verify_provider_list(
+              environment->target_environment),
+          &diagnostic_collector);
+    }
     loom_input_module_deinitialize(&input);
     diagnostic_collector.module = NULL;
-    if (!iree_status_is_ok(status)) {
-      status = loom_check_emit_finish_status_failure(
-          status, request.emit_target_name, result);
-      iree_arena_deinitialize(&diagnostic_arena);
-      return status;
-    }
-    if (test_case->annotation_count > 0 || diagnostic_collector.count > 0) {
-      status = loom_check_emit_finish_diagnostics_and_compare_output(
-          &diagnostic_collector, test_case, case_index, report, allocator,
-          result);
-      iree_arena_deinitialize(&diagnostic_arena);
-      return status;
-    }
-    status = loom_check_compare_output(test_case, allocator, result);
+    status = loom_check_emit_finish_provider(status, &provider_request,
+                                             case_index, report);
     iree_arena_deinitialize(&diagnostic_arena);
     return status;
   }

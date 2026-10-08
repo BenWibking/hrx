@@ -15,9 +15,11 @@ loom_corpus_sources(
   MANIFEST
     "kernel"
   SRCS
+    "subgroup/match.loom"
     "subgroup/shuffle_participation.loom"
     "subgroup/transport.loom"
     "subgroup/transport_carrier.loom"
+    "workgroup/predicate_insertion.loom"
     "subgroup/active_predicate.loom"
     "subgroup/ballot.loom"
     "subgroup/shuffle_dynamic.loom"

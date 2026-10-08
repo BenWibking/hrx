@@ -1,4 +1,3 @@
-// TEMPLATE: loom/src/loom/test/corpus/source_low/vector_shuffle.loom-test
 // RUN: emit source-low target=amd.xdna.aie2p:core output=low
 
 func.def @shuffle_i1_family(%value: vector<3xi1>) -> (vector<3xi1>) {
@@ -113,12 +112,13 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @shuffle_i64_famil
   %24 = vextbcst.64 %float, 1
   %25 = vextbcst.64 %float, 0
   %float_result = vsel.32.mask64 %24, %25, %22
-  %28 = vextbcst.64 %indices, 1
-  %29 = vextbcst.64 %indices, 0
-  %index_result = vsel.32.mask64 %28, %29, %22
-  %32 = vextbcst.64 %offsets, 1
-  %33 = vextbcst.64 %offsets, 0
-  %offset_result = vsel.32.mask64 %32, %33, %22
+  %28 = vextbcst.32 %indices, 1
+  %29 = vextbcst.32 %indices, 0
+  %30 = predicate.constant.low32 2
+  %index_result = vsel.32.mask64 %28, %29, %30
+  %32 = vextbcst.32 %offsets, 1
+  %33 = vextbcst.32 %offsets, 0
+  %offset_result = vsel.32.mask64 %32, %33, %30
   return %integer_result, %float_result, %index_result, %offset_result
 }
 

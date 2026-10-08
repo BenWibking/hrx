@@ -1208,6 +1208,7 @@ def compile_descriptor_set(
                 f"descriptor '{descriptor.key}' immediate '{immediate.field_name}' encoding id",
             )
             validation.validate_immediate_encoding(descriptor, immediate)
+            validation.validate_immediate_flags(descriptor, immediate)
             if immediate.kind is ImmediateKind.ENUM:
                 if immediate.value_step != 1:
                     raise ValueError(f"descriptor '{descriptor.key}' enum immediate '{immediate.field_name}' has non-unit value step {immediate.value_step}")

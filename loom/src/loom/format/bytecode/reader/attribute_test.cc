@@ -98,8 +98,8 @@ class BytecodeAttributeTest : public ::testing::Test {
 
 TEST_F(BytecodeAttributeTest, NamedPredicatesValidateAndMaterialize) {
   const uint8_t data[] = {
-      0x01, LOOM_PREDICATE_MUL,  0x02, LOOM_PRED_ARG_VALUE,
-      0x01, LOOM_PRED_ARG_CONST, 0x20,
+      0x01, LOOM_PREDICATE_MULTIPLE_OF, 0x02, LOOM_PRED_ARG_VALUE,
+      0x01, LOOM_PRED_ARG_CONST,        0x20,
   };
   loom_bytecode_attribute_validator_t validator = MakeValidator();
   loom_bytecode_reader_cursor_t validation_cursor =
@@ -120,7 +120,7 @@ TEST_F(BytecodeAttributeTest, NamedPredicatesValidateAndMaterialize) {
 
   ASSERT_EQ(attr.kind, LOOM_ATTR_PREDICATE_LIST);
   ASSERT_EQ(attr.count, 1u);
-  EXPECT_EQ(attr.predicate_list[0].kind, LOOM_PREDICATE_MUL);
+  EXPECT_EQ(attr.predicate_list[0].kind, LOOM_PREDICATE_MULTIPLE_OF);
   EXPECT_EQ(attr.predicate_list[0].arg_count, 2u);
   EXPECT_EQ(attr.predicate_list[0].arg_tags[0], LOOM_PRED_ARG_VALUE);
   EXPECT_EQ(attr.predicate_list[0].args[0], 1);
@@ -158,8 +158,8 @@ TEST_F(BytecodeAttributeTest,
 
 TEST_F(BytecodeAttributeTest, SsaPredicatesResolveThroughConcreteValueMap) {
   const uint8_t data[] = {
-      0x01, LOOM_PREDICATE_MUL,  0x02, LOOM_PRED_ARG_VALUE,
-      0x00, LOOM_PRED_ARG_CONST, 0x20,
+      0x01, LOOM_PREDICATE_MULTIPLE_OF, 0x02, LOOM_PRED_ARG_VALUE,
+      0x00, LOOM_PRED_ARG_CONST,        0x20,
   };
   loom_value_id_t value_id = LOOM_VALUE_ID_INVALID;
   IREE_ASSERT_OK(loom_module_define_value(
@@ -403,8 +403,8 @@ TEST_F(BytecodeAttributeTest, ScopedDialectNameUsesFullStringOrdinal) {
 
 TEST_F(BytecodeAttributeTest, SsaValidationRejectsOutOfRangeValue) {
   const uint8_t data[] = {
-      0x01, LOOM_PREDICATE_MUL,  0x02, LOOM_PRED_ARG_VALUE,
-      0x01, LOOM_PRED_ARG_CONST, 0x20,
+      0x01, LOOM_PREDICATE_MULTIPLE_OF, 0x02, LOOM_PRED_ARG_VALUE,
+      0x01, LOOM_PRED_ARG_CONST,        0x20,
   };
   const loom_bytecode_attribute_ssa_validation_scope_t scope = {
       /*.symbol_name=*/IREE_SV("function"),
@@ -423,7 +423,7 @@ TEST_F(BytecodeAttributeTest, SsaValidationRejectsOutOfRangeValue) {
 
 TEST_F(BytecodeAttributeTest, PredicateArityMustMatchKind) {
   const uint8_t data[] = {
-      0x01, LOOM_PREDICATE_MUL, 0x01, LOOM_PRED_ARG_VALUE, 0x00,
+      0x01, LOOM_PREDICATE_MULTIPLE_OF, 0x01, LOOM_PRED_ARG_VALUE, 0x00,
   };
   loom_bytecode_attribute_validator_t validator = MakeValidator();
   loom_bytecode_reader_cursor_t cursor = MakeCursor(data, sizeof(data));

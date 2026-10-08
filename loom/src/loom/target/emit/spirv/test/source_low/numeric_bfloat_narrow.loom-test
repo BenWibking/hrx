@@ -1,4 +1,4 @@
-// RUN: emit spirv-dis input=source-low target=spirv:vulkan1.3+bda+extended-types validate
+// RUN: emit spirv-dis @store_narrow_bfloat input=source-low target=spirv:vulkan1.3+bda+extended-types validate
 // REQUIRES: spirv-dis, spirv-val
 
 func.def @store_narrow_bfloat(%input: f32, %output: buffer) {
@@ -63,8 +63,8 @@ func.def @store_narrow_bfloat(%input: f32, %output: buffer) {
 %int_2139095040 = OpConstant %int 2139095040
        %bool = OpTypeBool
      %int_64 = OpConstant %int 64
-      %short = OpTypeInt 16 1
    %bfloat16 = OpTypeFloat 16 BFloat16KHR
+ %v2bfloat16 = OpTypeVector %bfloat16 2
     %ulong_0 = OpConstant %ulong 0
 %_ptr_PhysicalStorageBuffer_bfloat16 = OpTypePointer PhysicalStorageBuffer %bfloat16
 %store_narrow_bfloat = OpFunction %void None %15
@@ -83,8 +83,8 @@ func.def @store_narrow_bfloat(%input: f32, %output: buffer) {
          %34 = OpSGreaterThan %bool %31 %int_2139095040
          %36 = OpBitwiseOr %int %23 %int_64
          %37 = OpSelect %int %34 %36 %29
-         %39 = OpSConvert %short %37
-     %narrow = OpBitcast %bfloat16 %39
+         %40 = OpBitcast %v2bfloat16 %37
+     %narrow = OpCompositeExtract %bfloat16 %40 0
          %43 = OpIAdd %ulong %output %ulong_0
          %45 = OpConvertUToPtr %_ptr_PhysicalStorageBuffer_bfloat16 %43
                OpStore %45 %narrow Aligned 2

@@ -850,6 +850,7 @@ kernel_workitem_dispatch_id = Op(
     ],
     traits=[PURE, HasAncestor("kernel.def")],
     facts="loom_kernel_workitem_dispatch_id_facts",
+    canonicalize="loom_kernel_workitem_dispatch_id_canonicalize",
     format=[TemplateParam("dimension"), COLON, ResultType("result")],
     examples=["%gid = kernel.workitem.dispatch.id<x> : index"],
 )

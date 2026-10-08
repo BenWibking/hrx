@@ -683,6 +683,12 @@ static iree_status_t loom_amdgpu_hal_kernel_library_build_kernel(
       .instruction_preferences =
           loom_amdgpu_placement_instruction_preferences(&plan->target),
       .schedule_structural_state_reads = schedule_state_reads,
+      .schedule_flags =
+          LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES |
+          LOOM_LOW_SCHEDULE_FLAG_RETAIN_ACYCLIC_MEMORY_COMPLETIONS,
+      .allocation_flags =
+          LOOM_LOW_ALLOCATION_FLAG_RETAIN_COALESCED_INCOMING_INDEX |
+          LOOM_LOW_ALLOCATION_FLAG_RETAIN_STORAGE_RELEASE_ACTION_INDEX,
       .schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL,
       .memory_accesses = plan->memory_accesses,
       .allocation_fixed_values = plan->abi_verify.fixed_values,
@@ -1175,24 +1181,6 @@ iree_status_t loom_amdgpu_compile_hal_kernel_library(
   return status;
 }
 
-typedef struct loom_amdgpu_hal_kernel_library_artifact_storage_t {
-  // Allocator owning this storage.
-  iree_allocator_t allocator;
-
-  // Exact target bundle retained for the emitted artifact.
-  loom_target_bundle_storage_t target_bundle_storage;
-
-  // Artifact manifest sidecar descriptor.
-  loom_target_emit_sidecar_artifact_t artifact_manifest;
-} loom_amdgpu_hal_kernel_library_artifact_storage_t;
-
-static void loom_amdgpu_hal_kernel_library_artifact_storage_release(
-    void* storage) {
-  loom_amdgpu_hal_kernel_library_artifact_storage_t* artifact_storage =
-      (loom_amdgpu_hal_kernel_library_artifact_storage_t*)storage;
-  iree_allocator_free(artifact_storage->allocator, artifact_storage);
-}
-
 static iree_status_t loom_amdgpu_hal_kernel_library_emit(
     const loom_target_emit_request_t* request, bool* out_emitted,
     loom_target_emit_artifact_t* out_artifact) {
@@ -1236,46 +1224,20 @@ static iree_status_t loom_amdgpu_hal_kernel_library_emit(
   }
   const bool retain_target_bundle = iree_any_bit_set(
       request->flags, LOOM_TARGET_EMIT_REQUEST_FLAG_RETAIN_TARGET_BUNDLE);
-  loom_amdgpu_hal_kernel_library_artifact_storage_t* storage = NULL;
   if (iree_status_is_ok(status) && emitted &&
       (retain_target_bundle || library.artifact_manifest.contents != NULL)) {
-    status = iree_allocator_malloc(request->allocator, sizeof(*storage),
-                                   (void**)&storage);
-    if (iree_status_is_ok(status)) {
-      *storage = (loom_amdgpu_hal_kernel_library_artifact_storage_t){
-          .allocator = request->allocator,
-      };
-      if (retain_target_bundle) {
-        storage->target_bundle_storage = library.target_bundle_storage;
-        loom_target_bundle_storage_rebind(&storage->target_bundle_storage);
-      }
-      if (library.artifact_manifest.contents != NULL) {
-        storage->artifact_manifest = library.artifact_manifest;
-      }
-    }
+    status = loom_target_emit_artifact_retain_metadata(
+        retain_target_bundle ? &library.target_bundle_storage.bundle : NULL,
+        library.artifact_manifest.contents != NULL ? 1 : 0,
+        &library.artifact_manifest, request->allocator, out_artifact);
   }
   if (iree_status_is_ok(status) && emitted) {
-    *out_artifact = (loom_target_emit_artifact_t){
-        .target_bundle = retain_target_bundle
-                             ? &storage->target_bundle_storage.bundle
-                             : NULL,
-        .target_artifact_format = LOOM_TARGET_ARTIFACT_FORMAT_ELF,
-        .contents = library.hsaco_data,
-        .target_listing_format = library.target_listing_format,
-        .target_listing_contents = library.target_listing_data,
-        .sidecars = library.artifact_manifest.contents != NULL
-                        ? &storage->artifact_manifest
-                        : NULL,
-        .sidecar_count = library.artifact_manifest.contents != NULL ? 1 : 0,
-        .storage = storage,
-        .release_storage =
-            storage != NULL
-                ? loom_amdgpu_hal_kernel_library_artifact_storage_release
-                : NULL,
-    };
+    out_artifact->target_artifact_format = LOOM_TARGET_ARTIFACT_FORMAT_ELF;
+    out_artifact->contents = library.hsaco_data;
+    out_artifact->target_listing_format = library.target_listing_format;
+    out_artifact->target_listing_contents = library.target_listing_data;
     library.hsaco_data = NULL;
     library.target_listing_data = NULL;
-    library.artifact_manifest = (loom_target_emit_sidecar_artifact_t){0};
     *out_emitted = true;
   }
   loom_amdgpu_hal_kernel_library_deinitialize(&library, request->allocator);

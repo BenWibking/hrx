@@ -171,7 +171,11 @@ iree_status_t loom_x86_function_abi_prepare(loom_module_t* module,
         module, entry,
         IREE_SV("native x86 supports the sysv calling convention"), emitter);
   }
-  if (!loom_x86_callable_layout_supported(module, entry->func)) {
+  const bool hal_dispatch =
+      loom_target_entry_bundle(entry)->export_plan->abi_kind ==
+      LOOM_TARGET_ABI_HAL_KERNEL;
+  if (!hal_dispatch &&
+      !loom_x86_callable_layout_supported(module, entry->func)) {
     return loom_x86_callable_reject(
         module, entry,
         IREE_SV("native x86 ABI signature requires scalar i32, i64, or "
@@ -181,6 +185,33 @@ iree_status_t loom_x86_function_abi_prepare(loom_module_t* module,
   uint16_t argument_count = 0;
   const loom_value_id_t* arguments =
       loom_func_like_arg_ids(entry->func, &argument_count);
+  if (hal_dispatch) {
+    bool physical_signature = loom_low_func_def_isa(entry->func.op) &&
+                              argument_count == 3 &&
+                              entry->func.op->result_count == 1;
+    for (uint16_t i = 0; i < argument_count && physical_signature; ++i) {
+      const loom_type_t type = loom_module_value_type(module, arguments[i]);
+      physical_signature = loom_low_type_is_register(type) &&
+                           loom_low_register_type_class_id(type) ==
+                               LOOM_X86_REGISTER_CLASS_GPR64 &&
+                           loom_low_register_type_unit_count(type) == 1;
+    }
+    if (physical_signature) {
+      const loom_type_t result = loom_module_value_type(
+          module, loom_op_const_results(entry->func.op)[0]);
+      physical_signature = loom_low_type_is_register(result) &&
+                           loom_low_register_type_class_id(result) ==
+                               LOOM_X86_REGISTER_CLASS_GPR32 &&
+                           loom_low_register_type_unit_count(result) == 1;
+    }
+    if (!physical_signature) {
+      return loom_x86_callable_reject(
+          module, entry,
+          IREE_SV("x86 HAL dispatch requires three GPR64 state pointers and "
+                  "one GPR32 status result"),
+          emitter);
+    }
+  }
   if (entry->func.op->result_count > 1) {
     return loom_x86_callable_reject(
         module, entry, IREE_SV("native x86 supports at most one scalar result"),

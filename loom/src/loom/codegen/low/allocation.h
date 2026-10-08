@@ -43,6 +43,8 @@ struct loom_low_schedule_table_t;
 
 // Options controlling allocation table construction.
 typedef struct loom_low_allocation_options_t {
+  // Optional retained result relations requested by downstream consumers.
+  loom_low_allocation_flags_t flags;
   // Optional final schedule. Allocation uses its retained operation order for
   // liveness and its node ordinals for schedule-sensitive coalescing.
   const struct loom_low_schedule_table_t* schedule;

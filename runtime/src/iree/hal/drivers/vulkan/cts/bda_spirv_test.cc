@@ -8,15 +8,18 @@
 // table the dispatch provides and the shader consumes it through the hidden BDA
 // root.
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <vector>
 
 #include "iree/hal/cts/util/profile_test_util.h"
 #include "iree/hal/cts/util/test_base.h"
+#include "iree/hal/drivers/vulkan/buffer.h"
 #include "iree/hal/drivers/vulkan/command_buffer.h"
 #include "iree/hal/drivers/vulkan/cts/bda_spirv_test_spv.h"
 #include "iree/hal/drivers/vulkan/queue_stats.h"
+#include "iree/hal/memory/tlsf_pool.h"
 
 namespace iree::hal::cts {
 
@@ -325,6 +328,41 @@ static iree_hal_buffer_params_t SparseDispatchBufferParams() {
                 IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
   params.usage = IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_STORAGE;
   return params;
+}
+
+static void ExpectNativeBindingRange(iree_hal_buffer_t* root,
+                                     iree_hal_buffer_t* view,
+                                     iree_device_size_t offset) {
+  const iree_hal_buffer_native_binding_slot_t resource_slot = {
+      IREE_HAL_VULKAN_BUFFER_BINDING_RESOURCE,
+      IREE_HAL_BUFFER_INTERFACE_VULKAN_BUFFER};
+  const iree_hal_buffer_native_binding_slot_t address_slot = {
+      IREE_HAL_VULKAN_BUFFER_BINDING_DEVICE_ADDRESS,
+      IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS};
+  const auto root_resource =
+      iree_hal_buffer_native_binding(root, resource_slot).vulkan;
+  const auto view_resource =
+      iree_hal_buffer_native_binding(view, resource_slot).vulkan;
+  const uint64_t root_address =
+      iree_hal_buffer_native_binding(root, address_slot).device_address;
+  const uint64_t view_address =
+      iree_hal_buffer_native_binding(view, address_slot).device_address;
+  ASSERT_NE(root_resource.buffer, 0u);
+  ASSERT_NE(root_address, 0u);
+  EXPECT_EQ(view->memory.bindings, root->memory.bindings);
+  EXPECT_EQ(view_resource.buffer, root_resource.buffer);
+  EXPECT_EQ(view_resource.offset, root_resource.offset + offset);
+  EXPECT_EQ(view_address, root_address + offset);
+
+  VkDeviceAddress packet_address = 0;
+  IREE_ASSERT_OK(iree_hal_vulkan_buffer_device_address(view, &packet_address));
+  EXPECT_EQ(packet_address, view_address);
+  iree_hal_buffer_t* backing = nullptr;
+  IREE_ASSERT_OK(iree_hal_vulkan_buffer_resolve_backing(view, &backing));
+  iree_device_size_t packet_offset = 0;
+  IREE_ASSERT_OK(iree_hal_vulkan_buffer_resolve_backing_offset(view, backing, 0,
+                                                               &packet_offset));
+  EXPECT_EQ(packet_offset, view_resource.offset);
 }
 
 TEST_P(BdaSpirvTest, PrepareRejectsDescriptorDecoratedBdaSpirv) {
@@ -901,6 +939,208 @@ TEST_P(BdaSpirvTest, CommandBufferHandlesOversizedBdaPublication) {
   ExpectOutput(output_buffer);
 }
 
+TEST_P(BdaSpirvTest, NativeBindingsExecuteFromInteriorPoolRanges) {
+  std::array<iree_hal_pool_family_access_t, 2> families = {};
+  families[0].family = iree_hal_queue_family(transfer_queue_);
+  families[0].usage = IREE_HAL_BUFFER_USAGE_TRANSFER;
+  families[1].family = iree_hal_queue_family(dispatch_queue_);
+  families[1].usage = IREE_HAL_BUFFER_USAGE_STORAGE |
+                      IREE_HAL_BUFFER_USAGE_DISPATCH_INDIRECT_PARAMETERS;
+  iree_hal_pool_scope_t scope = {};
+  scope.family_count = families[0].family == families[1].family ? 1 : 2;
+  if (scope.family_count == 1) {
+    families[0].usage |= families[1].usage;
+  }
+  scope.families = families.data();
+  iree_hal_slab_pool_options_t source_options;
+  iree_hal_slab_pool_options_initialize(&source_options);
+  Ref<iree_hal_pool_t> source;
+  IREE_ASSERT_OK(
+      iree_hal_slab_pool_create(device_group_, scope, &source_options,
+                                iree_allocator_system(), source.out()));
+  const iree_hal_buffer_params_t params = {};
+  Ref<iree_hal_buffer_t> backing;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      source, params, 8192, iree_infinite_timeout(), backing.out()));
+  iree_hal_tlsf_pool_options_t options = {};
+  options.tlsf_options.frontier_capacity = 4;
+  Ref<iree_hal_pool_t> arena_pool;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create_from_buffer(
+      backing, 256, 7168, &options, iree_allocator_system(), arena_pool.out()));
+  for (bool queued_arena : {false, true}) {
+    SCOPED_TRACE(::testing::Message() << "queued arena: " << queued_arena);
+    Ref<iree_hal_buffer_t> arena;
+    if (queued_arena) {
+      const iree_hal_pool_reservation_request_t request = {params, 4096};
+      SemaphoreList allocated(device_, {0}, {1});
+      IREE_ASSERT_OK(iree_hal_queue_alloca(
+          transfer_queue_, iree_hal_semaphore_list_empty(), allocated,
+          arena_pool, 1, &request, arena.out()));
+      IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+          allocated, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    } else {
+      IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+          arena_pool, params, 4096, iree_infinite_timeout(), arena.out()));
+    }
+    Ref<iree_hal_pool_t> pool;
+    IREE_ASSERT_OK(iree_hal_tlsf_pool_create_from_buffer(
+        arena, 256, 3584, &options, iree_allocator_system(), pool.out()));
+
+    enum class DispatchMode {
+      kQueue,
+      kRecorded,
+      kBindingTable,
+      kIndirectParameters,
+    };
+    for (bool queued : {false, true}) {
+      SCOPED_TRACE(queued);
+      for (auto mode :
+           {DispatchMode::kQueue, DispatchMode::kRecorded,
+            DispatchMode::kBindingTable, DispatchMode::kIndirectParameters}) {
+        SCOPED_TRACE(static_cast<int>(mode));
+        const std::array<int32_t, 8> input = {11, 22, 1, -2, 30, 400, 77, 88};
+        const std::array<int32_t, 8> initial_output = {11, 22, -1, -1,
+                                                       -1, -1, 77, 88};
+        const std::array<uint32_t, 3> workgroups = {4, 1, 1};
+        std::array<Ref<iree_hal_buffer_t>, 3> roots;
+        std::array<Ref<iree_hal_buffer_t>, 2> views;
+        SemaphoreList gate(device_, {0}, {1});
+        SemaphoreList allocated(device_, {0}, {1});
+        if (queued) {
+          std::array<iree_hal_pool_reservation_request_t, 3> requests = {};
+          for (auto& request : requests) {
+            request.params = params;
+            request.allocation_size = sizeof(input);
+          }
+          iree_hal_buffer_t* buffers[3] = {};
+          IREE_ASSERT_OK(iree_hal_queue_alloca(transfer_queue_, gate, allocated,
+                                               pool, requests.size(),
+                                               requests.data(), buffers));
+          for (size_t i = 0; i < roots.size(); ++i) {
+            roots[i].reset(buffers[i]);
+          }
+        } else {
+          for (auto& root : roots) {
+            IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+                pool, params, sizeof(input), iree_infinite_timeout(),
+                root.out()));
+          }
+        }
+        // The unsignaled gate keeps queued storage uncommitted while both
+        // levels of ordinary views capture their immutable binding-table
+        // pointer.
+        for (size_t i = 0; i < views.size(); ++i) {
+          Ref<iree_hal_buffer_t> outer;
+          IREE_ASSERT_OK(iree_hal_buffer_subspan(
+              roots[i], sizeof(int32_t), 6 * sizeof(int32_t),
+              iree_allocator_system(), outer.out()));
+          IREE_ASSERT_OK(iree_hal_buffer_subspan(
+              outer, sizeof(int32_t), 4 * sizeof(int32_t),
+              iree_allocator_system(), views[i].out()));
+          EXPECT_EQ(views[i].get()->memory.bindings,
+                    roots[i].get()->memory.bindings);
+          iree_hal_buffer_mapping_t mapping = {};
+          IREE_EXPECT_STATUS_IS(
+              IREE_STATUS_PERMISSION_DENIED,
+              iree_hal_buffer_map_range(views[i], IREE_HAL_MAPPING_MODE_SCOPED,
+                                        IREE_HAL_MEMORY_ACCESS_READ,
+                                        IREE_HAL_BUFFER_MAP_FLAG_NONE, 0,
+                                        IREE_HAL_WHOLE_BUFFER, &mapping));
+        }
+        IREE_ASSERT_OK(iree_hal_semaphore_list_signal(gate, nullptr));
+        const iree_hal_semaphore_list_t ready =
+            queued ? static_cast<iree_hal_semaphore_list_t>(allocated)
+                   : iree_hal_semaphore_list_empty();
+        SemaphoreList uploaded(device_, {0, 0, 0}, {1, 1, 1});
+        const void* upload_data[] = {input.data(), initial_output.data(),
+                                     workgroups.data()};
+        const iree_device_size_t upload_lengths[] = {
+            sizeof(input), sizeof(initial_output), sizeof(workgroups)};
+        for (size_t i = 0; i < roots.size(); ++i) {
+          const iree_hal_semaphore_list_t done = {1, &uploaded.semaphores[i],
+                                                  &uploaded.payload_values[i]};
+          IREE_ASSERT_OK(iree_hal_queue_upload(transfer_queue_, ready, done,
+                                               upload_data[i], roots[i], 0,
+                                               upload_lengths[i]));
+        }
+
+        iree_hal_buffer_ref_t refs[2];
+        const auto bindings = MakeBindings(views[0], views[1], refs);
+        SemaphoreList executed(device_, {0}, {1});
+        if (mode == DispatchMode::kRecorded ||
+            mode == DispatchMode::kBindingTable) {
+          Ref<iree_hal_command_buffer_t> commands;
+          iree_hal_buffer_binding_t entries[2];
+          auto table = iree_hal_buffer_binding_table_empty();
+          if (mode == DispatchMode::kBindingTable) {
+            CreateIndirectDispatchCommandBuffer(kElementCount, &commands);
+            table = MakeBindingTable(views[0], views[1], entries);
+          } else {
+            IREE_ASSERT_OK(CreateCommandBuffer(
+                IREE_HAL_COMMAND_BUFFER_MODE_ONE_SHOT,
+                IREE_HAL_COMMAND_CATEGORY_DISPATCH, 0, commands.out()));
+            IREE_ASSERT_OK(iree_hal_command_buffer_begin(commands));
+            IREE_ASSERT_OK(iree_hal_command_buffer_dispatch(
+                commands, executable_,
+                iree_hal_executable_function_from_index(0),
+                iree_hal_make_static_dispatch_config(kElementCount, 1, 1),
+                iree_const_byte_span_empty(), bindings,
+                IREE_HAL_DISPATCH_FLAG_NONE));
+            IREE_ASSERT_OK(iree_hal_command_buffer_end(commands));
+          }
+          IREE_ASSERT_OK(iree_hal_queue_execute(
+              dispatch_queue_, uploaded, executed, commands, table,
+              IREE_HAL_QUEUE_EXECUTE_FLAG_NONE));
+        } else {
+          auto config =
+              iree_hal_make_static_dispatch_config(kElementCount, 1, 1);
+          iree_hal_dispatch_flags_t flags = IREE_HAL_DISPATCH_FLAG_NONE;
+          if (mode == DispatchMode::kIndirectParameters) {
+            config.workgroup_count_ref =
+                iree_hal_make_buffer_ref(roots[2], 0, sizeof(workgroups));
+            flags |= IREE_HAL_DISPATCH_FLAG_DYNAMIC_INDIRECT_PARAMETERS;
+          }
+          IREE_ASSERT_OK(iree_hal_queue_dispatch(
+              dispatch_queue_, uploaded, executed, executable_,
+              iree_hal_executable_function_from_index(0), config,
+              iree_const_byte_span_empty(), bindings, flags));
+        }
+        std::array<int32_t, 8> result = {};
+        SemaphoreList downloaded(device_, {0}, {1});
+        IREE_ASSERT_OK(iree_hal_queue_download(transfer_queue_, executed,
+                                               downloaded, roots[1], 0,
+                                               result.data(), sizeof(result)));
+        IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+            downloaded, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+        EXPECT_THAT(result,
+                    ::testing::ElementsAre(11, 22, 8, 5, 37, 407, 77, 88));
+        for (size_t i = 0; i < views.size(); ++i) {
+          ExpectNativeBindingRange(roots[i], views[i], 2 * sizeof(int32_t));
+        }
+        if (queued) {
+          iree_hal_buffer_t* buffers[] = {roots[0], roots[1], roots[2]};
+          SemaphoreList deallocated(device_, {0}, {1});
+          IREE_ASSERT_OK(
+              iree_hal_queue_dealloca(transfer_queue_, downloaded, deallocated,
+                                      IREE_ARRAYSIZE(buffers), buffers));
+          IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+              deallocated, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+        }
+      }
+    }
+    pool.reset();
+    if (queued_arena) {
+      iree_hal_buffer_t* buffers[] = {arena};
+      SemaphoreList deallocated(device_, {0}, {1});
+      IREE_ASSERT_OK(iree_hal_queue_dealloca(
+          transfer_queue_, iree_hal_semaphore_list_empty(), deallocated,
+          IREE_ARRAYSIZE(buffers), buffers));
+      IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+          deallocated, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    }
+  }
+}
+
 TEST_P(BdaSpirvTest, CommandBufferExecutesBdaShaderWithSparseBindings) {
   if (!iree_hal_allocator_supports_virtual_memory(device_allocator_)) {
     GTEST_SKIP() << "Vulkan sparse virtual memory is not available";
@@ -913,7 +1153,7 @@ TEST_P(BdaSpirvTest, CommandBufferExecutesBdaShaderWithSparseBindings) {
       device_allocator_, params, &minimum_page_size, &recommended_page_size));
   ASSERT_NE(0u, minimum_page_size);
   ASSERT_GE(recommended_page_size, minimum_page_size);
-  ASSERT_GE(recommended_page_size, 4 * sizeof(int32_t));
+  ASSERT_GE(recommended_page_size, 8 * sizeof(int32_t));
 
   BdaSparseVirtualBufferRef input_buffer(device_allocator_);
   IREE_ASSERT_OK(iree_hal_allocator_virtual_memory_reserve(
@@ -950,18 +1190,37 @@ TEST_P(BdaSpirvTest, CommandBufferExecutesBdaShaderWithSparseBindings) {
       IREE_HAL_VIRTUAL_MEMORY_ACCESS_SCOPE_DEVICE,
       IREE_HAL_MEMORY_PROTECTION_READ_WRITE));
 
+  std::array<Ref<iree_hal_buffer_t>, 2> views;
+  iree_hal_buffer_t* roots[] = {input_buffer.get(), output_buffer.get()};
+  for (size_t i = 0; i < views.size(); ++i) {
+    Ref<iree_hal_buffer_t> outer;
+    IREE_ASSERT_OK(
+        iree_hal_buffer_subspan(roots[i], sizeof(int32_t), 6 * sizeof(int32_t),
+                                iree_allocator_system(), outer.out()));
+    IREE_ASSERT_OK(
+        iree_hal_buffer_subspan(outer, sizeof(int32_t), 4 * sizeof(int32_t),
+                                iree_allocator_system(), views[i].out()));
+    ExpectNativeBindingRange(roots[i], views[i], 2 * sizeof(int32_t));
+  }
+
   const int32_t input_pattern = 5;
+  const int32_t output_pattern = -1;
   SemaphoreList fill_signal(device_, {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_fill(
       transfer_queue_, iree_hal_semaphore_list_empty(), fill_signal,
-      input_buffer.get(), /*target_offset=*/0, 4 * sizeof(input_pattern),
+      input_buffer.get(), /*target_offset=*/0, 8 * sizeof(input_pattern),
       &input_pattern, sizeof(input_pattern), IREE_HAL_FILL_FLAG_NONE));
+  SemaphoreList output_signal(device_, {0}, {1});
+  IREE_ASSERT_OK(iree_hal_queue_fill(
+      transfer_queue_, fill_signal, output_signal, output_buffer.get(),
+      /*target_offset=*/0, 8 * sizeof(output_pattern), &output_pattern,
+      sizeof(output_pattern), IREE_HAL_FILL_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
-      fill_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+      output_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
   iree_hal_buffer_ref_t binding_refs[2];
   iree_hal_buffer_ref_list_t bindings =
-      MakeBindings(input_buffer.get(), output_buffer.get(), binding_refs);
+      MakeBindings(views[0], views[1], binding_refs);
 
   Ref<iree_hal_command_buffer_t> command_buffer;
   IREE_ASSERT_OK(CreateCommandBuffer(
@@ -977,17 +1236,18 @@ TEST_P(BdaSpirvTest, CommandBufferExecutesBdaShaderWithSparseBindings) {
 
   Ref<iree_hal_buffer_t> readback_buffer;
   IREE_ASSERT_OK(
-      CreateZeroedDeviceBuffer(4 * sizeof(int32_t), readback_buffer.out()));
+      CreateZeroedDeviceBuffer(8 * sizeof(int32_t), readback_buffer.out()));
   SemaphoreList copy_signal(device_, {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_copy(
       transfer_queue_, iree_hal_semaphore_list_empty(), copy_signal,
       output_buffer.get(), /*source_offset=*/0, readback_buffer.get(),
-      /*target_offset=*/0, 4 * sizeof(int32_t), IREE_HAL_COPY_FLAG_NONE));
+      /*target_offset=*/0, 8 * sizeof(int32_t), IREE_HAL_COPY_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       copy_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
   std::vector<int32_t> output_data = ReadBufferData<int32_t>(readback_buffer);
-  EXPECT_THAT(output_data, ContainerEq(std::vector<int32_t>{12, 12, 12, 12}));
+  EXPECT_THAT(output_data, ContainerEq(std::vector<int32_t>{-1, -1, 12, 12, 12,
+                                                            12, -1, -1}));
 
   IREE_ASSERT_OK(iree_hal_allocator_virtual_memory_unmap(
       device_allocator_, output_buffer.get(), /*virtual_offset=*/0,

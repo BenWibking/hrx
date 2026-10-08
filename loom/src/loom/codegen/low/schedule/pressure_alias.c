@@ -166,7 +166,7 @@ void loom_low_schedule_pressure_alias_deactivate_result(
                         LOOM_LOW_SCHEDULE_VALUE_FLAG_ACTIVE_PRESSURE_ALIAS)) {
     return;
   }
-  const uint32_t producer_node = result->producer_node;
+  const uint32_t producer_node = state->value_producer_nodes[result_ordinal];
   if (producer_node == LOOM_LOW_SCHEDULE_NODE_NONE) {
     return;
   }
@@ -283,7 +283,7 @@ uint32_t loom_low_schedule_pressure_alias_append_source_baseline_result(
   if (alias_state->records == NULL) {
     return 0;
   }
-  const uint32_t producer_node = state->values[result_ordinal].producer_node;
+  const uint32_t producer_node = state->value_producer_nodes[result_ordinal];
   if (producer_node == LOOM_LOW_SCHEDULE_NODE_NONE ||
       state->nodes[producer_node].block_index != block_index ||
       state->nodes[producer_node].storage_relation_count == 0) {
@@ -372,7 +372,7 @@ void loom_low_schedule_pressure_alias_note_candidate_result_releases(
   }
   loom_low_schedule_pressure_alias_state_t* alias_state =
       &pressure_state->storage_aliases;
-  const uint32_t producer_node = result->producer_node;
+  const uint32_t producer_node = state->value_producer_nodes[result_ordinal];
   const uint32_t relation_begin =
       loom_low_schedule_storage_relation_index_begin(&state->storage_relations,
                                                      producer_node);

@@ -2204,7 +2204,17 @@ def _v_bfe_low16_offset_immediate() -> Immediate:
     return replace(
         _v_bfe_offset_immediate(),
         flags=(ImmediateFlag.DEFAULT_VALUE,),
+        unsigned_max=0,
         default_value=0,
+    )
+
+
+def _v_bfe_low16_width_immediate() -> Immediate:
+    return replace(
+        _v_bfe_width_immediate(),
+        flags=(ImmediateFlag.DEFAULT_VALUE,),
+        unsigned_max=16,
+        default_value=16,
     )
 
 
@@ -2245,13 +2255,16 @@ def _v_bfe_offset_width_inline_overlay(*, is_signed: bool) -> AmdgpuDescriptorOv
     )
 
 
-def _v_bfe_u32_offset_0_width_16_low16_overlay() -> AmdgpuDescriptorOverlay:
+def _v_bfe_offset_0_width_inline_low16_overlay(
+    *, is_signed: bool
+) -> AmdgpuDescriptorOverlay:
+    type_suffix = "i32" if is_signed else "u32"
     return AmdgpuDescriptorOverlay(
-        descriptor_key="amdgpu.v_bfe_u32.offset_0_width_16_low16",
-        instruction_name="V_BFE_U32",
-        mnemonic="v_bfe_u32",
+        descriptor_key=f"amdgpu.v_bfe_{type_suffix}.offset_0_width_inline_low16",
+        instruction_name=f"V_BFE_{type_suffix.upper()}",
+        mnemonic=f"v_bfe_{type_suffix}",
         encoding_name="ENC_VOP3",
-        semantic_tag="integer.bitfield.extract.u32.low16_to_full32",
+        semantic_tag=f"integer.bitfield.extract.{type_suffix}.low16_to_full32",
         schedule_class=_SCHEDULE_VALU,
         operands=(
             AmdgpuOperandOverlay("VDST", _vgpr_result()),
@@ -2262,8 +2275,8 @@ def _v_bfe_u32_offset_0_width_16_low16_overlay() -> AmdgpuDescriptorOverlay:
             ),
         ),
         asm_forms=_asm(
-            mnemonic="v_bfe_u32_offset_0_width_16_low16",
-            native_assembly_mnemonic="v_bfe_u32",
+            mnemonic=f"v_bfe_{type_suffix}_offset_0_width_inline_low16",
+            native_assembly_mnemonic=f"v_bfe_{type_suffix}",
             results=("dst",),
             operands=("value",),
             immediates=("offset", "width"),
@@ -2278,7 +2291,7 @@ def _v_bfe_u32_offset_0_width_16_low16_overlay() -> AmdgpuDescriptorOverlay:
         immediate_fields=("SRC1", "SRC2"),
         immediates=(
             _v_bfe_low16_offset_immediate(),
-            _source_inline_u32_16_immediate("width"),
+            _v_bfe_low16_width_immediate(),
         ),
         flags=(DescriptorFlag.DEAD_REMOVABLE,),
     )
@@ -2602,7 +2615,8 @@ def _integer_bitwise_shift_overlays(
         ),
         _v_bfe_offset_width_inline_overlay(is_signed=False),
         _v_bfe_offset_width_inline_overlay(is_signed=True),
-        _v_bfe_u32_offset_0_width_16_low16_overlay(),
+        _v_bfe_offset_0_width_inline_low16_overlay(is_signed=False),
+        _v_bfe_offset_0_width_inline_low16_overlay(is_signed=True),
         _v_bfi_b32_overlay(),
         *((_v_bfi_b32_src0_literal_overlay(),) if include_vop3_literal_forms else ()),
         _v_lshrrev_b32_overlay(),
@@ -7376,6 +7390,118 @@ def _v_mov_b32_copy_overlay() -> AmdgpuDescriptorOverlay:
     )
 
 
+_PERMLANE_SWAP_CONTROL_IMMEDIATES = (
+    Immediate(
+        "bound_ctrl",
+        ImmediateKind.UNSIGNED,
+        flags=(ImmediateFlag.DEFAULT_VALUE,),
+        bit_width=1,
+        encoding_field_bit_offset=1,
+        unsigned_max=1,
+        default_value=0,
+    ),
+    Immediate(
+        "fi",
+        ImmediateKind.UNSIGNED,
+        flags=(ImmediateFlag.DEFAULT_VALUE,),
+        bit_width=1,
+        encoding_field_bit_offset=0,
+        unsigned_max=1,
+        default_value=0,
+    ),
+)
+
+_PERMLANE_SWAP_CONSTRAINTS = (
+    Constraint(ConstraintKind.TIED, 0, 2),
+    Constraint(ConstraintKind.DESTRUCTIVE, 0, 2),
+    Constraint(ConstraintKind.TIED, 1, 3),
+    Constraint(ConstraintKind.DESTRUCTIVE, 1, 3),
+)
+
+
+def _v_permlane_swap_overlays(
+    lane_count: int,
+) -> tuple[AmdgpuDescriptorOverlay, ...]:
+    mnemonic = f"v_permlane{lane_count}_swap_b32"
+    native_register_values = (
+        _native_result("dst"),
+        _native_result("src"),
+    )
+    compact = AmdgpuDescriptorOverlay(
+        descriptor_key=f"amdgpu.{mnemonic}",
+        instruction_name=mnemonic.upper(),
+        mnemonic=mnemonic,
+        encoding_name="ENC_VOP1",
+        semantic_tag=f"lane.permlane{lane_count}.swap.b32",
+        schedule_class=_SCHEDULE_VALU,
+        operands=(
+            AmdgpuOperandOverlay("VDST", _vgpr_result("dst")),
+            AmdgpuOperandOverlay("SRC0", _vgpr_result("src")),
+            AmdgpuOperandOverlay(
+                "VDST",
+                Operand(
+                    "old_dst",
+                    OperandRole.OPERAND,
+                    _VGPR_ALT,
+                    flags=(OperandFlag.IMPLICIT,),
+                ),
+                role_exception_reason=(
+                    "the encoded destination register is also the tied first swap input"
+                ),
+            ),
+            AmdgpuOperandOverlay(
+                "SRC0",
+                Operand(
+                    "old_src",
+                    OperandRole.OPERAND,
+                    _VGPR_ALT,
+                    flags=(OperandFlag.IMPLICIT,),
+                ),
+                role_exception_reason=(
+                    "the encoded source register is also the tied second swap input"
+                ),
+            ),
+        ),
+        asm_forms=_asm(
+            results=("dst", "src"),
+            operands=("old_dst", "old_src"),
+            native_assembly_values=native_register_values,
+        ),
+        constraints=_PERMLANE_SWAP_CONSTRAINTS,
+        effects=(_CONVERGENT_EFFECT,),
+    )
+    extended_mnemonic = f"{mnemonic}_e64"
+    extended = replace(
+        compact,
+        descriptor_key=f"amdgpu.{mnemonic}.e64",
+        mnemonic=extended_mnemonic,
+        encoding_name="ENC_VOP3",
+        immediate_fields=("OP_SEL", "OP_SEL"),
+        immediates=_PERMLANE_SWAP_CONTROL_IMMEDIATES,
+        asm_forms=_asm(
+            mnemonic=extended_mnemonic,
+            results=("dst", "src"),
+            operands=("old_dst", "old_src"),
+            immediates=("bound_ctrl", "fi"),
+            named_immediates=True,
+            native_assembly_values=(
+                *native_register_values,
+                _native_amdgpu_named_i64_immediate("bound_ctrl"),
+                _native_amdgpu_named_i64_immediate("fi"),
+            ),
+        ),
+    )
+    return compact, extended
+
+
+def _gfx950_permlane_swap_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
+    return tuple(
+        overlay
+        for lane_count in (16, 32)
+        for overlay in _v_permlane_swap_overlays(lane_count)
+    )
+
+
 def _v_mov_b32_dpp_overlay(
     *,
     descriptor_key: str,
@@ -7542,6 +7668,7 @@ def _v_mov_b32_sdwa_overlay() -> AmdgpuDescriptorOverlay:
 
 
 __all__ = (
+    "_gfx950_permlane_swap_overlays",
     "_integer_bitwise_permute_overlays",
     "_integer_bitwise_shift_overlays",
     "_s_add_u32_overlay",
@@ -7614,8 +7741,9 @@ __all__ = (
     "_v_ashrrev_i32_overlay",
     "_v_ashrrev_i32_src0_inline_overlay",
     "_v_bfe_offset_immediate",
+    "_v_bfe_offset_0_width_inline_low16_overlay",
     "_v_bfe_offset_width_inline_overlay",
-    "_v_bfe_u32_offset_0_width_16_low16_overlay",
+    "_v_bfe_low16_width_immediate",
     "_v_bfe_width_immediate",
     "_v_bfi_b32_src0_literal_overlay",
     "_v_binary_f16_overlay",

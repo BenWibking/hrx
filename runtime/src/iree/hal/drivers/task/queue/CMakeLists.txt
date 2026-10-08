@@ -57,4 +57,38 @@ iree_cc_test(
     iree::testing::gtest_main
 )
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "Windows")
+set(_queue_alloca_test_platform_deps "")
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+  list(APPEND _queue_alloca_test_platform_deps iree::async::platform::iocp)
+else()
+  list(APPEND _queue_alloca_test_platform_deps iree::async::platform::posix)
+endif()
+iree_cc_test(
+  NAME
+    queue_alloca_test
+  SRCS
+    "queue_alloca_test.cc"
+  DEPS
+    ::queue
+    iree::async
+    iree::async::util::proactor_pool
+    iree::base
+    iree::hal
+    iree::hal::cts::util::pool_test_util
+    iree::hal::cts::util::test_base
+    iree::hal::drivers::task::device
+    iree::hal::memory::cpu_slab_provider
+    iree::hal::memory::fixed_block_pool
+    iree::hal::memory::maintenance
+    iree::hal::memory::passthrough_pool
+    iree::hal::memory::slab_cache
+    iree::hal::memory::tlsf_pool
+    iree::task
+    iree::testing::gtest
+    iree::testing::gtest_main
+    ${_queue_alloca_test_platform_deps}
+)
+endif()
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

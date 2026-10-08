@@ -38,6 +38,17 @@ iree_status_t loom_target_environment_select_profile(
     const loom_target_specification_t* specification,
     const loom_target_profile_t** out_profile);
 
+// Selects a native profile eligible for |cpu_data| from linked core providers.
+// |requirement| constrains automatic selection, or |profile| forces an exact
+// identity; both may be NULL, but they are never supplied together. Returned
+// profiles are borrowed for the environment's lifetime. An unavailable native
+// representation is reported before compilation or dispatch.
+iree_status_t loom_target_environment_select_cpu_profile(
+    const loom_target_environment_t* environment,
+    const iree_cpu_data_t* cpu_data, const loom_target_facts_t* requirement,
+    const loom_target_profile_t* profile,
+    const loom_target_profile_t** out_profile);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

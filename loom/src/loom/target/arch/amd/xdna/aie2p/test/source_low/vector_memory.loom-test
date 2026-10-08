@@ -158,7 +158,7 @@ aie2p.target<core> @target
 
 func.def target(@target) @copy_i32x16_dynamic(%source: buffer, %output: buffer, %element0: index) {
   %source_aligned, %output_aligned = buffer.assume.alignment %source, %output {minimum_alignment = 64} : buffer, buffer
-  %element = index.assume %element0 [range(%element0, 0, 48), mul(%element0, 16)] : index
+  %element = index.assume %element0 [range(%element0, 0, 48), multiple_of(%element0, 16)] : index
   %base = index.constant 0 : offset
   %source_view = buffer.view %source_aligned[%base] : buffer -> view<64xi32>
   %output_view = buffer.view %output_aligned[%base] : buffer -> view<64xi32>
@@ -181,7 +181,7 @@ aie2p.target<core> @target
 
 func.def target(@target) @copy_i32x16_dynamic_static(%source: buffer, %output: buffer, %element0: index) {
   %source_aligned, %output_aligned = buffer.assume.alignment %source, %output {minimum_alignment = 64} : buffer, buffer
-  %element = index.assume %element0 [range(%element0, 0, 48), mul(%element0, 16)] : index
+  %element = index.assume %element0 [range(%element0, 0, 48), multiple_of(%element0, 16)] : index
   %base = index.constant 64 : offset
   %source_view = buffer.view %source_aligned[%base] : buffer -> view<64xi32>
   %output_view = buffer.view %output_aligned[%base] : buffer -> view<64xi32>

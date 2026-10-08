@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 from loom.dsl import ATTR_TYPE_ENUM, Op
+from loom.target.contracts.descriptors import _require_immediate
 from loom.target.contracts.diagnostics import (
     DiagnosticParam,
     DiagnosticParamKind,
@@ -65,6 +66,7 @@ from loom.target.contracts.lower_rule_diagnostics import (
     _bounded_integer_diagnostic,
     _descriptor_available_diagnostic,
     _enum_attr_diagnostic,
+    _enum_attr_set_diagnostic,
     _exact_float_diagnostic,
     _exact_integer_diagnostic,
     _exact_power_of_two_integer_diagnostic,
@@ -89,7 +91,7 @@ from loom.target.contracts.lower_rule_diagnostics import (
     _static_element_count_relation_diagnostic,
     _storage_element_format_diagnostic,
     _storage_operand_schema_diagnostic,
-    _u32_divisor_magic_is_add_diagnostic,
+    _u32_divisor_magic_kind_diagnostic,
     _value_no_uses_after_diagnostic,
     _value_no_uses_diagnostic,
     _value_type_diagnostic,
@@ -144,7 +146,7 @@ from loom.target.contracts.source_memory import (
     SourceMemoryConstraint,
 )
 from loom.target.contracts.temporary_allocation import allocate_temporary_slots
-from loom.target.low_descriptors import ConstraintKind
+from loom.target.low_descriptors import ConstraintKind, Descriptor
 
 
 def _emit_operand_value_refs(emit: ContractEmit) -> tuple[ValueRef, ...]:
@@ -686,6 +688,43 @@ class _LowerRuleSetCompiler:
             )
             return
 
+        if guard.kind == GuardKind.ENUM_ATTR_IN:
+            attr_index = _source_attr_index(source_op, guard.field)
+            attr = source_op.attrs[attr_index]
+            assert attr.attr_type == ATTR_TYPE_ENUM
+            assert attr.enum_def is not None
+            enum_cases = {
+                enum_case.keyword: enum_case for enum_case in attr.enum_def.cases
+            }
+            enum_mask = 0
+            for enum_keyword in guard.enum_keywords:
+                enum_value = enum_cases[enum_keyword].value
+                if not 0 <= enum_value < 64:
+                    raise ValueError(
+                        f"{source_op.name}: enum guard field '{guard.field}' "
+                        f"case '{enum_keyword}' value {enum_value} does not fit "
+                        "the generated u64 set"
+                    )
+                enum_mask |= 1 << enum_value
+            self._guards.append(
+                LowerGuard(
+                    kind=guard.kind,
+                    attr_index=attr_index,
+                    diagnostic_index=self._append_diagnostic_ref(
+                        source_op,
+                        _guard_diagnostic(
+                            guard,
+                            _enum_attr_set_diagnostic(
+                                guard.field,
+                                guard.enum_keywords,
+                            ),
+                        ),
+                    ),
+                    u64=enum_mask,
+                )
+            )
+            return
+
         if guard.kind == GuardKind.ATTR_KIND:
             if guard.attr_type is None:
                 raise ValueError(f"{source_op.name}: attr_kind guard needs a kind")
@@ -904,7 +943,7 @@ class _LowerRuleSetCompiler:
             GuardKind.VALUE_UNSIGNED_BIT_COUNT,
             GuardKind.VALUE_EXACT_I64,
             GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
-            GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+            GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_EXACT_FLOAT,
             GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_I64_RANGE,
@@ -1197,22 +1236,22 @@ class _LowerRuleSetCompiler:
                 )
             )
             return
-        if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD:
-            if guard.count not in (0, 1):
-                raise ValueError(
-                    f"{source_op.name}: divisor-magic add guard needs 0 or 1"
-                )
+        if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND:
             self._guards.append(
                 LowerGuard(
                     kind=guard.kind,
                     value_ref_index=value_ref_index,
+                    other_value_ref_index=self._append_value_ref(
+                        source_op,
+                        _value_ref_for_source_field(source_op, guard.other_field),
+                    ),
                     diagnostic_index=self._append_diagnostic_ref(
                         source_op,
                         _guard_diagnostic(
                             guard,
-                            _u32_divisor_magic_is_add_diagnostic(
+                            _u32_divisor_magic_kind_diagnostic(
                                 guard.field,
-                                is_add=bool(guard.count),
+                                guard.count,
                             ),
                         ),
                     ),
@@ -1939,7 +1978,12 @@ class _LowerRuleSetCompiler:
                 continue
             if isinstance(binding, AttrProject):
                 attr_copies.append(
-                    self._lower_attr_project(source_op, target_name, binding)
+                    self._lower_attr_project(
+                        source_op,
+                        emit.descriptor,
+                        target_name,
+                        binding,
+                    )
                 )
                 continue
             if isinstance(binding, SourceOpProject):
@@ -1971,6 +2015,7 @@ class _LowerRuleSetCompiler:
     def _lower_attr_project(
         self,
         source_op: Op,
+        descriptor: Descriptor,
         target_name: str,
         project: AttrProject,
     ) -> LowerAttrCopy:
@@ -1986,6 +2031,34 @@ class _LowerRuleSetCompiler:
                 kind=LowerAttrCopyKind.ENUM_ORDINAL,
                 target_name=target_name,
                 source_attr_index=source_attr_index,
+            )
+        if project.kind == AttrProjectKind.ENUM_REMAP:
+            source_attr = source_op.attrs[source_attr_index]
+            assert source_attr.enum_def is not None
+            immediate = _require_immediate(
+                descriptor,
+                target_name,
+                "enum_remap projection",
+            )
+            enum_values = dict(project.enum_values)
+            case_span = max(case.value for case in source_attr.enum_def.cases) + 1
+            bit_width = max(1, max(enum_values.values()).bit_length())
+            packed_values = 0
+            for case in source_attr.enum_def.cases:
+                packed_values |= enum_values[case.keyword] << (case.value * bit_width)
+            lower_bits = packed_values & ((1 << 63) - 1)
+            upper_bits = packed_values >> 63
+            assert upper_bits <= (2**32) - 1
+            assert max(enum_values.values()) <= immediate.unsigned_max
+            return LowerAttrCopy(
+                kind=LowerAttrCopyKind.ENUM_REMAP,
+                target_name=target_name,
+                source_attr_index=source_attr_index,
+                other_source_attr_index=upper_bits & 0xFFFF,
+                source_element_index=upper_bits >> 16,
+                source_element_count=case_span,
+                source_element_bit_width=bit_width,
+                literal_i64=lower_bits,
             )
         if project.kind == AttrProjectKind.I64_LOG2:
             return LowerAttrCopy(
@@ -2018,6 +2091,27 @@ class _LowerRuleSetCompiler:
                 source_element_index=project.element,
                 literal_i64=project.literal_i64,
             )
+        if project.kind in (
+            AttrProjectKind.I64_ARRAY_ELEMENT_QUOTIENT,
+            AttrProjectKind.I64_ARRAY_ELEMENT_REMAINDER,
+        ):
+            if project.element is None or project.literal_i64 <= 0:
+                raise ValueError(
+                    f"{source_op.name}: i64-array element division projection "
+                    "needs an element and positive divisor"
+                )
+            return LowerAttrCopy(
+                kind=(
+                    LowerAttrCopyKind.I64_ARRAY_ELEMENT_QUOTIENT
+                    if project.kind == AttrProjectKind.I64_ARRAY_ELEMENT_QUOTIENT
+                    else LowerAttrCopyKind.I64_ARRAY_ELEMENT_REMAINDER
+                ),
+                target_name=target_name,
+                source_attr_index=source_attr_index,
+                source_element_index=project.element,
+                literal_i64=project.literal_i64,
+                target_bit_offset=project.target_bit_offset,
+            )
         if project.kind == AttrProjectKind.I64_ARRAY_LANE_BYTE_OFFSET:
             if project.element is None or project.bytes_per_lane is None:
                 raise ValueError(
@@ -2031,6 +2125,61 @@ class _LowerRuleSetCompiler:
                 source_element_index=project.element,
                 source_element_count=project.bytes_per_lane,
                 literal_i64=project.literal_i64,
+            )
+        if project.kind == AttrProjectKind.I64_ARRAY_SHUFFLE_MASK_CHUNK:
+            if (
+                project.element is None
+                or project.bytes_per_lane is None
+                or project.count is None
+            ):
+                raise ValueError(
+                    f"{source_op.name}: shuffle-mask projection needs an "
+                    "output byte offset, bytes_per_lane, and source byte count"
+                )
+            return LowerAttrCopy(
+                kind=LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
+                target_name=target_name,
+                source_attr_index=source_attr_index,
+                source_element_index=project.element,
+                source_element_count=project.bytes_per_lane,
+                source_element_bit_width=project.count,
+                literal_i64=project.literal_i64,
+            )
+        if project.kind == AttrProjectKind.I64_ARRAY_READ_ONLY_ELEMENTS:
+            if project.bit_width is None:
+                raise ValueError(
+                    f"{source_op.name}: read-only element projection needs a bit width"
+                )
+            return LowerAttrCopy(
+                kind=LowerAttrCopyKind.I64_ARRAY_READ_ONLY_ELEMENTS,
+                target_name=target_name,
+                source_attr_index=source_attr_index,
+                source_element_bit_width=project.bit_width,
+            )
+        if project.kind == AttrProjectKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT:
+            if project.bytes_per_lane is None or project.count is None:
+                raise ValueError(
+                    f"{source_op.name}: read-only byte-segment projection needs "
+                    "bytes_per_lane/count"
+                )
+            return LowerAttrCopy(
+                kind=LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT,
+                target_name=target_name,
+                source_attr_index=source_attr_index,
+                source_element_count=project.bytes_per_lane,
+                source_element_bit_width=project.count,
+                literal_i64=project.literal_i64,
+            )
+        if project.kind == AttrProjectKind.I64_ARRAY_READ_ONLY_BYTE_WORDS:
+            if project.element is None:
+                raise ValueError(
+                    f"{source_op.name}: read-only byte-word projection needs parity"
+                )
+            return LowerAttrCopy(
+                kind=LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_WORDS,
+                target_name=target_name,
+                source_attr_index=source_attr_index,
+                source_element_index=project.element,
             )
         if project.kind == AttrProjectKind.I64_ARRAY_PACK_ELEMENTS:
             if (
@@ -2175,6 +2324,8 @@ class _LowerRuleSetCompiler:
             kind = LowerAttrCopyKind.VALUE_FLOAT_BITS
         elif project.kind == ValueProjectKind.FLOAT_AS_F32_I32:
             kind = LowerAttrCopyKind.VALUE_FLOAT_AS_F32_I32
+        elif project.kind == ValueProjectKind.FLOAT_AS_F64_I64:
+            kind = LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I64
         elif project.kind == ValueProjectKind.FLOAT_AS_F64_I32_WORD:
             kind = LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I32_WORD
         else:
@@ -2196,6 +2347,16 @@ class _LowerRuleSetCompiler:
         )
         if project.source_node:
             value_ref = replace(value_ref, source_node=project.source_node)
+        other_value_ref_index = 0
+        if project.other_source_value:
+            other_value_ref = _value_ref_for_source_field(
+                referenced_op, project.other_source_value
+            )
+            if project.source_node:
+                other_value_ref = replace(
+                    other_value_ref, source_node=project.source_node
+                )
+            other_value_ref_index = self._append_value_ref(source_op, other_value_ref)
         return LowerAttrCopy(
             kind=kind,
             target_name=target_name,
@@ -2203,6 +2364,7 @@ class _LowerRuleSetCompiler:
                 source_op,
                 value_ref,
             ),
+            other_value_ref_index=other_value_ref_index,
             target_bit_offset=project.target_bit_offset,
             source_element_index=project.word_index,
             literal_i64=(

@@ -46,3 +46,16 @@ func.def @constant_remainder_by_seven(%word: i32, %position: index) -> (i32, ind
   %index_remainder = index.rem %bounded, %index_divisor : index
   func.return %word_remainder, %index_remainder, %word, %bounded : i32, index, i32, index
 }
+
+// ====
+
+// Bounds reach both the corrected-reciprocal and quotient-product recipes.
+func.def @bounded_constant_remainders(%byte: i8, %position: index) -> (i32, index) {
+  %word = scalar.extui %byte : i8 to i32
+  %bounded = index.assume %position [range(%position, 0, 65535)] : index
+  %c3 = scalar.constant 3 : i32
+  %c7 = index.constant 7 : index
+  %third = scalar.remui %word, %c3 : i32
+  %seventh = index.rem %bounded, %c7 : index
+  func.return %third, %seventh : i32, index
+}

@@ -7,6 +7,7 @@
 #include "loom/ops/vector/construction.h"
 
 #include "loom/ir/module.h"
+#include "loom/ops/index/ops.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/vector/ops.h"
 #include "loom/util/fact_table.h"
@@ -118,6 +119,7 @@ static bool loom_vector_lane_chain_steps_equal(
 static bool loom_vector_scalar_lane_chain_kind_supported(
     loom_op_kind_t scalar_kind) {
   switch (scalar_kind) {
+    case LOOM_OP_INDEX_CAST:
     case LOOM_OP_SCALAR_CEILF:
     case LOOM_OP_SCALAR_FLOORF:
     case LOOM_OP_SCALAR_ROUNDF:
@@ -277,6 +279,9 @@ static iree_status_t loom_vector_build_lane_chain_step(
     loom_location_id_t location, loom_op_t** out_op) {
   *out_op = NULL;
   switch (step->scalar_kind) {
+    case LOOM_OP_INDEX_CAST:
+      return loom_vector_index_cast_build(builder, input, input_type,
+                                          result_type, location, out_op);
     case LOOM_OP_SCALAR_CEILF:
       return loom_vector_ceilf_build(builder, step->instance_flags, input,
                                      result_type, location, out_op);

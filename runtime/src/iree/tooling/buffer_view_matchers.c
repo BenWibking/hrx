@@ -408,7 +408,8 @@ iree_status_t iree_hal_buffer_view_element_matcher_match(
   iree_hal_buffer_mapping_t actual_mapping;
   IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
       iree_hal_buffer_view_buffer(matchee), IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ, 0, IREE_HAL_WHOLE_BUFFER, &actual_mapping));
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE, 0,
+      IREE_HAL_WHOLE_BUFFER, &actual_mapping));
   iree_const_byte_span_t actual_contents = iree_make_const_byte_span(
       actual_mapping.contents.data, actual_mapping.contents.data_length);
 
@@ -530,7 +531,8 @@ iree_status_t iree_hal_buffer_view_array_matcher_match(
   iree_hal_buffer_mapping_t actual_mapping;
   IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
       iree_hal_buffer_view_buffer(matchee), IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ, 0, IREE_HAL_WHOLE_BUFFER, &actual_mapping));
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE, 0,
+      IREE_HAL_WHOLE_BUFFER, &actual_mapping));
   iree_const_byte_span_t actual_contents = iree_make_const_byte_span(
       actual_mapping.contents.data, actual_mapping.contents.data_length);
 
@@ -636,12 +638,14 @@ iree_status_t iree_hal_buffer_view_matcher_match(
   iree_hal_buffer_mapping_t actual_mapping;
   IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
       iree_hal_buffer_view_buffer(matchee), IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ, 0, IREE_HAL_WHOLE_BUFFER, &actual_mapping));
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE, 0,
+      IREE_HAL_WHOLE_BUFFER, &actual_mapping));
   iree_hal_buffer_mapping_t expected_mapping;
   iree_status_t status = iree_hal_buffer_map_range(
       iree_hal_buffer_view_buffer(matcher->expected),
-      IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ, 0,
-      IREE_HAL_WHOLE_BUFFER, &expected_mapping);
+      IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, IREE_HAL_WHOLE_BUFFER,
+      &expected_mapping);
   if (!iree_status_is_ok(status)) {
     return iree_status_join(status,
                             iree_hal_buffer_unmap_range(&actual_mapping));

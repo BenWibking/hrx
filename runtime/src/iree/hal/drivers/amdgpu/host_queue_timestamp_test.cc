@@ -14,6 +14,7 @@
 #include <cstdint>
 
 #include "iree/hal/api.h"
+#include "iree/hal/cts/util/pool_test_util.h"
 #include "iree/hal/cts/util/test_base.h"
 #include "iree/hal/drivers/amdgpu/host_queue.h"
 #include "iree/hal/drivers/amdgpu/host_queue_policy.h"
@@ -1061,7 +1062,8 @@ static iree_hal_buffer_params_t DeviceLocalTransientBufferParams() {
 // second allocation stays unstaged until the first one is released.
 static iree_status_t CreateSingleBlockPool(
     iree_hal_device_t* device, const iree_hal_queue_family_t* queue_family,
-    iree_device_size_t block_size, iree_hal_pool_t** out_pool) {
+    iree_device_size_t block_size, iree_hal_pool_t** out_backing_pool,
+    iree_hal_pool_t** out_pool) {
   iree_hal_queue_pool_backend_t backend = {0};
   IREE_RETURN_IF_ERROR(
       iree_hal_device_query_queue_pool_backend(device, queue_family, &backend));
@@ -1071,12 +1073,11 @@ static iree_status_t CreateSingleBlockPool(
         "queue pool backend query returned an incomplete backend bundle");
   }
   iree_hal_fixed_block_pool_options_t options = {};
-  options.block_allocator_options.block_size = block_size;
-  options.block_allocator_options.block_count = 1;
-  options.block_allocator_options.frontier_capacity = 2;
-  return iree_hal_fixed_block_pool_create(
-      options, backend.slab_provider, backend.notification,
-      iree_hal_pool_epoch_query_null(), iree_allocator_system(), out_pool);
+  options.block_size = block_size;
+  options.blocks_per_slab = 1;
+  options.frontier_capacity = 2;
+  return iree::hal::cts::CreateFiniteBlockPool(
+      backend, options, iree_allocator_system(), out_backing_pool, out_pool);
 }
 
 // A queue_alloca target with no staged backing has no device pointer to write
@@ -1091,10 +1092,11 @@ TEST_P(HostQueueTimestampTest, RejectsUnstagedTargetWithoutAllocationWait) {
   ASSERT_NE(queue, nullptr);
 
   const iree_device_size_t allocation_size = 4096;
+  Ref<iree_hal_pool_t> backing_pool;
   Ref<iree_hal_pool_t> pool;
-  IREE_ASSERT_OK(CreateSingleBlockPool(device,
-                                       iree_hal_queue_family(&queue->base),
-                                       allocation_size, pool.out()));
+  IREE_ASSERT_OK(
+      CreateSingleBlockPool(device, iree_hal_queue_family(&queue->base),
+                            allocation_size, backing_pool.out(), pool.out()));
 
   // One timeline per wrapper: the blocked allocation completes only after the
   // held wrapper is deallocated, so a shared timeline would signal backwards.

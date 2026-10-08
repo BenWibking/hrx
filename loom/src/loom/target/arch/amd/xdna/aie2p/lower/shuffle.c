@@ -14,6 +14,7 @@
 #include "loom/ops/low/ops.h"
 #include "loom/ops/vector/ops.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
+#include "loom/target/arch/amd/xdna/aie2p/lower/vector_packet.h"
 #include "loom/target/arch/amd/xdna/aie2p/vector_carrier.h"
 
 enum {
@@ -46,26 +47,16 @@ typedef struct loom_aie2p_shuffle_emit_state_t {
   const loom_aie2p_shuffle_plan_t* plan;
   loom_attribute_t source_lanes;
   loom_value_id_t low_source;
-  loom_type_t scalar_type;
-  loom_type_t vector_packet_type;
-  loom_type_t predicate_packet_type;
+  loom_aie2p_vector_packet_emitter_t packet_emitter;
   loom_type_t native_packet_type;
   loom_type_t result_type;
-  loom_string_id_t scalar_immediate_name;
   loom_string_id_t lane_immediate_name;
   loom_value_id_t source_native_packets[LOOM_AIE2P_SHUFFLE_MAX_PACKET_COUNT];
   loom_value_id_t source_vector_packets[LOOM_AIE2P_SHUFFLE_MAX_PACKET_COUNT];
-  loom_value_id_t zero_bytes;
-  loom_value_id_t one_bytes;
 } loom_aie2p_shuffle_emit_state_t;
 
 static uint8_t loom_aie2p_shuffle_packet_lane_count(uint8_t element_bit_count) {
   return element_bit_count == 1 ? 64 : (uint8_t)(512 / element_bit_count);
-}
-
-static uint8_t loom_aie2p_shuffle_units_per_packet(
-    loom_aie2p_vector_carrier_kind_t carrier_kind) {
-  return carrier_kind == LOOM_AIE2P_VECTOR_CARRIER_ORDINARY ? 2 : 1;
 }
 
 static uint8_t loom_aie2p_shuffle_packet_source_alias(
@@ -123,8 +114,8 @@ static bool loom_aie2p_shuffle_plan_from_op(
     return false;
   }
 
-  const int32_t element_bit_count =
-      loom_scalar_type_bitwidth(loom_type_element_type(source_type));
+  const uint16_t element_bit_count = loom_aie2p_scalar_type_physical_bit_count(
+      loom_type_element_type(source_type));
   const int64_t element_count = loom_type_dim_static_size_at(source_type, 0);
 
   const uint8_t packet_lane_count =
@@ -223,17 +214,9 @@ static iree_status_t loom_aie2p_shuffle_emit_descriptor_op(
     loom_named_attr_slice_t attrs, loom_type_t result_type,
     const loom_tied_result_t* tied_results, iree_host_size_t tied_result_count,
     loom_value_id_t* out_result) {
-  *out_result = LOOM_VALUE_ID_INVALID;
-  const loom_low_lower_resolved_descriptor_t descriptor = {
-      .descriptor = &loom_low_lower_context_descriptor_set(state->context)
-                         ->descriptors[descriptor_ordinal],
-  };
-  loom_op_t* low_op = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_lower_emit_resolved_descriptor_op(
-      state->context, &descriptor, operands, operand_count, attrs, &result_type,
-      1, tied_results, tied_result_count, state->source_op->location, &low_op));
-  *out_result = loom_value_slice_get(loom_low_op_results(low_op), 0);
-  return iree_ok_status();
+  return loom_aie2p_vector_packet_emit_descriptor_op(
+      &state->packet_emitter, descriptor_ordinal, operands, operand_count,
+      attrs, result_type, tied_results, tied_result_count, out_result);
 }
 
 static int64_t loom_aie2p_shuffle_signed_i32_bits(uint32_t value) {
@@ -252,19 +235,9 @@ static loom_named_attr_t loom_aie2p_shuffle_immediate_attr(
 static iree_status_t loom_aie2p_shuffle_emit_constant(
     loom_aie2p_shuffle_emit_state_t* state, uint32_t descriptor_ordinal,
     int64_t value, loom_type_t result_type, loom_value_id_t* out_result) {
-  *out_result = LOOM_VALUE_ID_INVALID;
-  const loom_named_attr_t immediate =
-      loom_aie2p_shuffle_immediate_attr(state->scalar_immediate_name, value);
-  const loom_low_lower_resolved_descriptor_t descriptor = {
-      .descriptor = &loom_low_lower_context_descriptor_set(state->context)
-                         ->descriptors[descriptor_ordinal],
-  };
-  loom_op_t* low_op = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_lower_emit_resolved_descriptor_const(
-      state->context, &descriptor, loom_make_named_attr_slice(&immediate, 1),
-      result_type, state->source_op->location, &low_op));
-  *out_result = loom_low_const_result(low_op);
-  return iree_ok_status();
+  return loom_aie2p_vector_packet_emit_constant(&state->packet_emitter,
+                                                descriptor_ordinal, value,
+                                                result_type, out_result);
 }
 
 static iree_status_t loom_aie2p_shuffle_source_native_packet(
@@ -276,43 +249,14 @@ static iree_status_t loom_aie2p_shuffle_source_native_packet(
     return iree_ok_status();
   }
 
-  const uint8_t units_per_packet =
-      loom_aie2p_shuffle_units_per_packet(state->plan->carrier_kind);
-  if (state->plan->carrier_unit_count == units_per_packet) {
-    *cached = state->low_source;
-  } else {
-    loom_op_t* slice_op = NULL;
-    IREE_RETURN_IF_ERROR(loom_low_slice_build(
-        loom_low_lower_context_builder(state->context), state->low_source,
-        packet * units_per_packet, state->native_packet_type,
-        state->source_op->location, &slice_op));
-    *cached = loom_low_slice_result(slice_op);
-  }
+  const loom_aie2p_vector_carrier_t carrier = {
+      .kind = state->plan->carrier_kind,
+      .unit_count = state->plan->carrier_unit_count,
+  };
+  IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_read_native(
+      &state->packet_emitter, state->low_source, carrier, packet, cached));
   *out_packet = *cached;
   return iree_ok_status();
-}
-
-static iree_status_t loom_aie2p_shuffle_ensure_boolean_byte_vectors(
-    loom_aie2p_shuffle_emit_state_t* state) {
-  if (state->zero_bytes != LOOM_VALUE_ID_INVALID) {
-    return iree_ok_status();
-  }
-
-  loom_value_id_t one = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_aie2p_shuffle_emit_constant(
-      state, AIE2P_CORE_DESCRIPTOR_REF_CONSTANT_I32_SHORT, 1,
-      state->scalar_type, &one));
-  IREE_RETURN_IF_ERROR(loom_aie2p_shuffle_emit_descriptor_op(
-      state, AIE2P_CORE_DESCRIPTOR_REF_SPLAT_I8X64, &one, 1,
-      loom_named_attr_slice_empty(), state->vector_packet_type,
-      /*tied_results=*/NULL, /*tied_result_count=*/0, &state->one_bytes));
-  const loom_value_id_t subtract_operands[] = {state->one_bytes,
-                                               state->one_bytes};
-  return loom_aie2p_shuffle_emit_descriptor_op(
-      state, AIE2P_CORE_DESCRIPTOR_REF_SUB_I8X64, subtract_operands,
-      IREE_ARRAYSIZE(subtract_operands), loom_named_attr_slice_empty(),
-      state->vector_packet_type, /*tied_results=*/NULL,
-      /*tied_result_count=*/0, &state->zero_bytes);
 }
 
 static iree_status_t loom_aie2p_shuffle_source_vector_packet(
@@ -327,38 +271,9 @@ static iree_status_t loom_aie2p_shuffle_source_vector_packet(
   loom_value_id_t native_packet = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(
       loom_aie2p_shuffle_source_native_packet(state, packet, &native_packet));
-  switch (state->plan->carrier_kind) {
-    case LOOM_AIE2P_VECTOR_CARRIER_ORDINARY:
-      *cached = native_packet;
-      break;
-    case LOOM_AIE2P_VECTOR_CARRIER_PREDICATE: {
-      IREE_RETURN_IF_ERROR(
-          loom_aie2p_shuffle_ensure_boolean_byte_vectors(state));
-      const loom_value_id_t select_operands[] = {
-          state->zero_bytes,
-          state->one_bytes,
-          native_packet,
-      };
-      IREE_RETURN_IF_ERROR(loom_aie2p_shuffle_emit_descriptor_op(
-          state, AIE2P_CORE_DESCRIPTOR_REF_SELECT_I8X64, select_operands,
-          IREE_ARRAYSIZE(select_operands), loom_named_attr_slice_empty(),
-          state->vector_packet_type, /*tied_results=*/NULL,
-          /*tied_result_count=*/0, cached));
-      break;
-    }
-    case LOOM_AIE2P_VECTOR_CARRIER_ACCUMULATOR: {
-      IREE_RETURN_IF_ERROR(loom_aie2p_shuffle_emit_descriptor_op(
-          state, AIE2P_CORE_DESCRIPTOR_REF_MOVE_ACCUMULATOR512_TO_VECTOR512,
-          &native_packet, 1, loom_named_attr_slice_empty(),
-          state->vector_packet_type, /*tied_results=*/NULL,
-          /*tied_result_count=*/0, cached));
-      break;
-    }
-    case LOOM_AIE2P_VECTOR_CARRIER_NONE:
-    default:
-      IREE_ASSERT_UNREACHABLE("selected AIE2P shuffle carrier");
-      break;
-  }
+  IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_native_to_vector(
+      &state->packet_emitter, state->plan->carrier_kind, native_packet,
+      cached));
   *out_packet = *cached;
   return iree_ok_status();
 }
@@ -414,44 +329,24 @@ static iree_status_t loom_aie2p_shuffle_emit_broadcast(
       state,
       loom_aie2p_shuffle_broadcast_descriptor(state->plan->element_bit_count),
       &source_vector, 1, loom_make_named_attr_slice(&immediate, 1),
-      state->vector_packet_type, /*tied_results=*/NULL,
+      state->packet_emitter.vector_type, /*tied_results=*/NULL,
       /*tied_result_count=*/0, out_broadcast);
 }
 
 static iree_status_t loom_aie2p_shuffle_emit_selector(
     loom_aie2p_shuffle_emit_state_t* state, uint64_t mask,
     loom_value_id_t* out_selector) {
-  const uint32_t low_word = (uint32_t)mask;
-  IREE_RETURN_IF_ERROR(loom_aie2p_shuffle_emit_constant(
-      state, AIE2P_CORE_DESCRIPTOR_REF_CONSTANT_I32_PREDICATE_LOW32,
-      loom_aie2p_shuffle_signed_i32_bits(low_word),
-      state->predicate_packet_type, out_selector));
-  if (state->plan->element_bit_count != 1 &&
-      state->plan->element_bit_count != 8) {
-    return iree_ok_status();
+  if (state->plan->element_bit_count == 1 ||
+      state->plan->element_bit_count == 8) {
+    return loom_aie2p_vector_packet_emit_byte_selector(&state->packet_emitter,
+                                                       mask, out_selector);
   }
 
-  const uint32_t high_word = (uint32_t)(mask >> 32);
-  uint32_t descriptor_ordinal =
-      AIE2P_CORE_DESCRIPTOR_REF_PREDICATE_COMPLETE_ZERO_HIGH32;
-  loom_named_attr_t immediate =
-      loom_aie2p_shuffle_immediate_attr(state->scalar_immediate_name, 0);
-  if (high_word != 0) {
-    descriptor_ordinal =
-        AIE2P_CORE_DESCRIPTOR_REF_PREDICATE_COMPLETE_CONSTANT_HIGH32;
-    immediate = loom_aie2p_shuffle_immediate_attr(
-        state->scalar_immediate_name,
-        loom_aie2p_shuffle_signed_i32_bits(high_word));
-  }
-  const loom_tied_result_t tied_result = {
-      .result_index = 0,
-      .operand_index = 0,
-  };
-  const loom_value_id_t low_selector = *out_selector;
-  return loom_aie2p_shuffle_emit_descriptor_op(
-      state, descriptor_ordinal, &low_selector, 1,
-      loom_make_named_attr_slice(&immediate, 1), state->predicate_packet_type,
-      &tied_result, 1, out_selector);
+  const uint32_t low_word = (uint32_t)mask;
+  return loom_aie2p_shuffle_emit_constant(
+      state, AIE2P_CORE_DESCRIPTOR_REF_CONSTANT_I32_PREDICATE_LOW32,
+      loom_aie2p_shuffle_signed_i32_bits(low_word),
+      state->packet_emitter.predicate_type, out_selector);
 }
 
 static uint64_t loom_aie2p_shuffle_selector_lane_mask(uint8_t element_bit_count,
@@ -510,7 +405,7 @@ static iree_status_t loom_aie2p_shuffle_emit_vector_packet(
         state,
         loom_aie2p_shuffle_select_descriptor(state->plan->element_bit_count),
         select_operands, IREE_ARRAYSIZE(select_operands),
-        loom_named_attr_slice_empty(), state->vector_packet_type,
+        loom_named_attr_slice_empty(), state->packet_emitter.vector_type,
         /*tied_results=*/NULL, /*tied_result_count=*/0, &composed));
   }
   IREE_ASSERT_NE(composed, LOOM_VALUE_ID_INVALID);
@@ -521,32 +416,9 @@ static iree_status_t loom_aie2p_shuffle_emit_vector_packet(
 static iree_status_t loom_aie2p_shuffle_vector_to_native_packet(
     loom_aie2p_shuffle_emit_state_t* state, loom_value_id_t vector_packet,
     loom_value_id_t* out_packet) {
-  switch (state->plan->carrier_kind) {
-    case LOOM_AIE2P_VECTOR_CARRIER_ORDINARY:
-      *out_packet = vector_packet;
-      return iree_ok_status();
-    case LOOM_AIE2P_VECTOR_CARRIER_PREDICATE: {
-      IREE_RETURN_IF_ERROR(
-          loom_aie2p_shuffle_ensure_boolean_byte_vectors(state));
-      const loom_value_id_t compare_operands[] = {state->zero_bytes,
-                                                  vector_packet};
-      return loom_aie2p_shuffle_emit_descriptor_op(
-          state, AIE2P_CORE_DESCRIPTOR_REF_CMP_LT_UNSIGNED_I8X64,
-          compare_operands, IREE_ARRAYSIZE(compare_operands),
-          loom_named_attr_slice_empty(), state->predicate_packet_type,
-          /*tied_results=*/NULL, /*tied_result_count=*/0, out_packet);
-    }
-    case LOOM_AIE2P_VECTOR_CARRIER_ACCUMULATOR:
-      return loom_aie2p_shuffle_emit_descriptor_op(
-          state, AIE2P_CORE_DESCRIPTOR_REF_MOVE_VECTOR512_TO_ACCUMULATOR512,
-          &vector_packet, 1, loom_named_attr_slice_empty(),
-          state->native_packet_type, /*tied_results=*/NULL,
-          /*tied_result_count=*/0, out_packet);
-    case LOOM_AIE2P_VECTOR_CARRIER_NONE:
-    default:
-      IREE_ASSERT_UNREACHABLE("selected AIE2P shuffle carrier");
-      IREE_BUILTIN_UNREACHABLE();
-  }
+  return loom_aie2p_vector_packet_write_native(&state->packet_emitter,
+                                               state->plan->carrier_kind,
+                                               vector_packet, out_packet);
 }
 
 static bool loom_aie2p_shuffle_is_identity(
@@ -569,74 +441,36 @@ static iree_status_t loom_aie2p_shuffle_emit_state_initialize(
       .plan = plan,
       .source_lanes = loom_vector_shuffle_source_lanes(source_op),
       .low_source = LOOM_VALUE_ID_INVALID,
-      .scalar_type = loom_type_none(),
-      .vector_packet_type = loom_type_none(),
-      .predicate_packet_type = loom_type_none(),
       .native_packet_type = loom_type_none(),
       .result_type = loom_type_none(),
-      .scalar_immediate_name = LOOM_STRING_ID_INVALID,
       .lane_immediate_name = LOOM_STRING_ID_INVALID,
       .source_native_packets = {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID,
                                 LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID},
       .source_vector_packets = {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID,
                                 LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID},
-      .zero_bytes = LOOM_VALUE_ID_INVALID,
-      .one_bytes = LOOM_VALUE_ID_INVALID,
   };
   IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
       context, loom_vector_shuffle_source(source_op), &out_state->low_source));
+  IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_emitter_initialize(
+      context, source_op, &out_state->packet_emitter));
 
-  uint16_t result_register_class = 0;
   const uint8_t units_per_packet =
-      loom_aie2p_shuffle_units_per_packet(plan->carrier_kind);
-  switch (plan->carrier_kind) {
-    case LOOM_AIE2P_VECTOR_CARRIER_ORDINARY:
-      result_register_class = AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256;
-      break;
-    case LOOM_AIE2P_VECTOR_CARRIER_PREDICATE:
-      result_register_class = AIE2P_CORE_REG_CLASS_ID_AIE2P_ELPREDICATE;
-      break;
-    case LOOM_AIE2P_VECTOR_CARRIER_ACCUMULATOR:
-      result_register_class = AIE2P_CORE_REG_CLASS_ID_AIE2P_MBMS;
-      break;
-    case LOOM_AIE2P_VECTOR_CARRIER_NONE:
-    default:
-      IREE_ASSERT_UNREACHABLE("selected AIE2P shuffle carrier");
-      break;
-  }
-  IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
-      context, result_register_class, units_per_packet,
+      loom_aie2p_vector_packet_carrier_unit_count(plan->carrier_kind);
+  IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
+      &out_state->packet_emitter, plan->carrier_kind, units_per_packet,
       &out_state->native_packet_type));
   if (plan->carrier_unit_count == units_per_packet) {
     out_state->result_type = out_state->native_packet_type;
   } else {
-    IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
-        context, result_register_class, plan->carrier_unit_count,
-        &out_state->result_type));
+    IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
+        &out_state->packet_emitter, plan->carrier_kind,
+        plan->carrier_unit_count, &out_state->result_type));
   }
   if (!loom_aie2p_shuffle_plan_uses_broadcast_select(plan)) {
     return iree_ok_status();
   }
 
-  if (plan->carrier_kind == LOOM_AIE2P_VECTOR_CARRIER_ORDINARY) {
-    out_state->vector_packet_type = out_state->native_packet_type;
-  } else {
-    IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
-        context, AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256, 2,
-        &out_state->vector_packet_type));
-  }
-  if (plan->carrier_kind == LOOM_AIE2P_VECTOR_CARRIER_PREDICATE) {
-    out_state->predicate_packet_type = out_state->native_packet_type;
-    IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
-        context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ER, 1, &out_state->scalar_type));
-  } else {
-    IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
-        context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ELPREDICATE, 1,
-        &out_state->predicate_packet_type));
-  }
   loom_builder_t* builder = loom_low_lower_context_builder(context);
-  IREE_RETURN_IF_ERROR(loom_builder_intern_string(
-      builder, IREE_SV("i"), &out_state->scalar_immediate_name));
   return loom_builder_intern_string(builder, IREE_SV("idx"),
                                     &out_state->lane_immediate_name);
 }
@@ -679,7 +513,7 @@ iree_status_t loom_aie2p_emit_shuffle_plan(loom_low_lower_context_t* context,
   }
 
   const uint8_t units_per_packet =
-      loom_aie2p_shuffle_units_per_packet(shuffle_plan->carrier_kind);
+      loom_aie2p_vector_packet_carrier_unit_count(shuffle_plan->carrier_kind);
   const uint8_t physical_packet_count =
       shuffle_plan->carrier_unit_count / units_per_packet;
   for (uint8_t packet = shuffle_plan->logical_packet_count;

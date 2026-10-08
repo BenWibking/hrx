@@ -30,7 +30,6 @@ loom_cc_library(
     execute
   HDRS
     "analysis.h"
-    "artifact.h"
     "comparison.h"
     "diagnostics.h"
     "execute.h"
@@ -41,7 +40,6 @@ loom_cc_library(
     "source_low.h"
   SRCS
     "analysis.c"
-    "artifact.c"
     "comparison.c"
     "diagnostics.c"
     "emit.c"
@@ -291,18 +289,20 @@ loom_cc_library(
     compile
   HDRS
     "compile.h"
+    "compile_diagnostics.h"
   SRCS
     "compile.c"
+    "compile_diagnostics.c"
   DEPS
     ::execute
     iree::base
-    loom::codegen::low::repr
-    loom::compile::request
-    loom::sanitizer::options
-    loom::target::entry_selection
-    loom::target::profile
-    loom::tooling::compile::pipeline
-    loom::tooling::config
+    loom::binding::c::loomc
+    loom::error::error_defs
+    loom::testing::test_file
+    loom::tooling::input
+    loom::tooling::io::source_path
+    loom::util::json
+    loom::util::stream
   PUBLIC
 )
 
@@ -372,6 +372,7 @@ loom_cc_library(
   SRCS
     "main.c"
   DEPS
+    ::compile
     ::execute
     ::file
     ::json_output
@@ -379,9 +380,10 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     iree::base::tooling::flags
+    loom::binding::c::loomc
     loom::sanitizer::options
-    loom::target::selection
     loom::tooling::cli::help
+    loom::tooling::cli::loomc_options
     loom::tooling::config
     loom::tooling::context
   PUBLIC
@@ -417,6 +419,8 @@ loom_cc_library(
     ::execute
     ::provider
     iree::base
+    iree::base::threading
+    loom::binding::c::loomc
     loom::codegen::low::allocation
     loom::codegen::low::descriptors
     loom::codegen::low::function_model
@@ -428,6 +432,7 @@ loom_cc_library(
     loom::codegen::low::storage_layout
     loom::codegen::low::storage_transport
     loom::ir
+    loom::target::configured::compiler_provider_set
     loom::target::test::provider
   TESTONLY
   PUBLIC
@@ -452,6 +457,9 @@ loom_cc_test(
 )
 
 set(_loom_check_platform_copts "")
+if(LOOM_IMPORT_CXX)
+  list(APPEND _loom_check_platform_copts "-DLOOM_CHECK_HAVE_IMPORT_CXX=1")
+endif()
 if(LOOM_EMIT_AMDGPU)
   list(APPEND _loom_check_platform_copts "-DLOOM_CHECK_HAVE_EMIT_AMDGPU=1")
 endif()
@@ -477,6 +485,9 @@ if(LOOM_TARGET_ARCH_XDNA)
   list(APPEND _loom_check_platform_copts "-DLOOM_CHECK_HAVE_TARGET_XDNA=1")
 endif()
 set(_loom_check_platform_deps "")
+if(LOOM_IMPORT_CXX)
+  list(APPEND _loom_check_platform_deps loom::import::cxx::tooling::loomc_input)
+endif()
 if(LOOM_EMIT_AMDGPU)
   list(APPEND _loom_check_platform_deps loom::target::arch::amdgpu::check::provider)
 endif()
@@ -509,8 +520,10 @@ loom_cc_binary(
   COPTS
     ${_loom_check_platform_copts}
   DEPS
+    ::compile
     ::provider
     iree::base
+    loom::binding::c::target::configured
     loom::target::arch::cmd::check::check_provider
     loom::target::configured::compiler_provider_set
     loom::tooling::input::configured
@@ -518,6 +531,9 @@ loom_cc_binary(
 )
 
 set(_loom_check_test_platform_copts "")
+if(LOOM_IMPORT_CXX)
+  list(APPEND _loom_check_test_platform_copts "-DLOOM_CHECK_HAVE_IMPORT_CXX=1")
+endif()
 if(LOOM_EMIT_AMDGPU)
   list(APPEND _loom_check_test_platform_copts "-DLOOM_CHECK_HAVE_EMIT_AMDGPU=1")
 endif()
@@ -543,6 +559,9 @@ if(LOOM_TARGET_ARCH_XDNA)
   list(APPEND _loom_check_test_platform_copts "-DLOOM_CHECK_HAVE_TARGET_XDNA=1")
 endif()
 set(_loom_check_test_platform_deps "")
+if(LOOM_IMPORT_CXX)
+  list(APPEND _loom_check_test_platform_deps loom::import::cxx::tooling::loomc_input)
+endif()
 if(LOOM_EMIT_AMDGPU)
   list(APPEND _loom_check_test_platform_deps loom::target::arch::amdgpu::check::provider)
 endif()
@@ -576,9 +595,11 @@ loom_cc_binary(
     "-DLOOM_CHECK_HAVE_TEST_PROVIDER=1"
     ${_loom_check_test_platform_copts}
   DEPS
+    ::compile
     ::provider
     ::test_provider
     iree::base
+    loom::binding::c::target::configured
     loom::target::arch::cmd::check::check_provider
     loom::target::configured::compiler_provider_set
     loom::tooling::input::configured

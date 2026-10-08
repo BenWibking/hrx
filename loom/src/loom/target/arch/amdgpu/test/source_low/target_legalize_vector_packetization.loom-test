@@ -85,3 +85,61 @@ kernel.def target(@target) @wide_shared_producer_noalias() {
   }
   kernel.return
 }
+
+// ====
+
+// Shared producers remain one record each while the packet graph grows. The
+// source and destination do not alias, so the whole graph streams in one loop.
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @shared_packet_graph(%source: buffer, %destination: buffer, %bias: i32) {
+  %base = index.constant 0 : offset
+  %source_noalias, %destination_noalias = buffer.assume.noalias %source, %destination : buffer, buffer
+  %source_view = buffer.view %source_noalias[%base] : buffer -> view<36xi32>
+  %destination_view = buffer.view %destination_noalias[%base] : buffer -> view<36xi32>
+  %observed = vector.load %source_view[0] : view<36xi32> -> vector<36xi32>
+  %bias_vector = vector.splat %bias : vector<36xi32>
+  %biased = vector.addi %observed, %bias_vector : vector<36xi32>
+  %left = vector.addi %biased, %observed : vector<36xi32>
+  %right = vector.addi %biased, %bias_vector : vector<36xi32>
+  %combined = vector.addi %left, %right : vector<36xi32>
+  %biased_combined = vector.addi %combined, %biased : vector<36xi32>
+  %left_accumulated = vector.addi %biased_combined, %left : vector<36xi32>
+  %right_accumulated = vector.addi %left_accumulated, %right : vector<36xi32>
+  %combined_accumulated = vector.addi %right_accumulated, %combined : vector<36xi32>
+  %biased_accumulated = vector.addi %combined_accumulated, %biased_combined : vector<36xi32>
+  %left_recombined = vector.addi %biased_accumulated, %left_accumulated : vector<36xi32>
+  %result = vector.addi %left_recombined, %right_accumulated : vector<36xi32>
+  vector.store %result, %destination_view[0] : vector<36xi32>, view<36xi32>
+  func.return
+}
+
+// ----
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @shared_packet_graph(%source: buffer, %destination: buffer, %bias: i32) {
+  %base = index.constant 0 : offset
+  %source_noalias, %destination_noalias = buffer.assume.noalias %source, %destination : buffer, buffer
+  %source_view = buffer.view %source_noalias[%base] : buffer -> view<36xi32>
+  %destination_view = buffer.view %destination_noalias[%base] : buffer -> view<36xi32>
+  %21 = index.constant 0 : index
+  %22 = index.constant 36 : index
+  %23 = index.constant 4 : index
+  scf.for %24 = [%21 to %22 step %23] {
+    %25 = vector.load %source_view[%24] : view<36xi32> -> vector<4xi32>
+    %26 = vector.splat %bias : vector<4xi32>
+    %27 = vector.addi %25, %26 : vector<4xi32>
+    %28 = vector.addi %27, %25 : vector<4xi32>
+    %29 = vector.addi %27, %26 : vector<4xi32>
+    %30 = vector.addi %28, %29 : vector<4xi32>
+    %31 = vector.addi %30, %27 : vector<4xi32>
+    %32 = vector.addi %31, %28 : vector<4xi32>
+    %33 = vector.addi %32, %29 : vector<4xi32>
+    %34 = vector.addi %33, %30 : vector<4xi32>
+    %35 = vector.addi %34, %31 : vector<4xi32>
+    %36 = vector.addi %35, %32 : vector<4xi32>
+    %37 = vector.addi %36, %33 : vector<4xi32>
+    vector.store %37, %destination_view[%24] : vector<4xi32>, view<36xi32>
+  }
+  func.return
+}

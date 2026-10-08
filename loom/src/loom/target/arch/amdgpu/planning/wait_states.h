@@ -55,8 +55,9 @@ typedef enum loom_amdgpu_wait_state_reason_e {
   // A VALU or VMEM packet consumes SGPR storage written by a recent VALU
   // packet.
   LOOM_AMDGPU_WAIT_STATE_REASON_VALU_SGPR_READ = 4,
-  // A DPP packet consumes VGPR storage written by a recent VALU packet.
-  LOOM_AMDGPU_WAIT_STATE_REASON_DPP_VGPR_READ = 5,
+  // A lane-permute packet consumes VGPR storage written by a recent VALU
+  // packet.
+  LOOM_AMDGPU_WAIT_STATE_REASON_LANE_PERMUTE_VGPR_READ = 5,
   // A fixed-lane VGPR-to-SGPR read consumes VGPR storage written by a recent
   // VALU packet.
   LOOM_AMDGPU_WAIT_STATE_REASON_READFIRSTLANE_VGPR_READ = 6,

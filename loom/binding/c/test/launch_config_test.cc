@@ -167,7 +167,7 @@ TEST(LaunchConfigProgramTest, LoadsAndLooksUpMultipleFunctions) {
       loomc_launch_config_program_lookup_function(
           program.get(), loomc_make_cstring_view("missing"), &missing));
   LOOMC_EXPECT_STATUS_IS(
-      LOOMC_STATUS_INVALID_ARGUMENT,
+      LOOMC_STATUS_NOT_FOUND,
       loomc_launch_config_program_lookup_function(
           program.get(), loomc_make_cstring_view("@prefill"), &missing));
 }

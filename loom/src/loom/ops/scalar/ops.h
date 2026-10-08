@@ -200,7 +200,8 @@ iree_status_t loom_scalar_addi_build(
     loom_type_t result_type, loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_scalar_addi_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
-loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_scalar_addi_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -220,7 +221,8 @@ iree_status_t loom_scalar_subi_build(
     loom_type_t result_type, loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_scalar_subi_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
-loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_scalar_subi_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -240,7 +242,8 @@ iree_status_t loom_scalar_muli_build(
     loom_type_t result_type, loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_scalar_muli_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
-loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_scalar_muli_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -469,7 +472,8 @@ iree_status_t loom_scalar_fmai_build(
     loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_scalar_fmai_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
-loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_scalar_integer_arithmetic_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_scalar_fmai_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -1890,7 +1894,7 @@ iree_status_t loom_scalar_bitfield_extracts_facts(
     loom_value_facts_t* result_facts);
 
 // LOOM_OP_SCALAR_ASSUME: Identity with predicate constraints on scalar payload results. Use index.assume for index or offset values.
-// %n2 = scalar.assume %n [mul(%n, 16)] : i64
+// %n2 = scalar.assume %n [multiple_of(%n, 16)] : i64
 LOOM_DEFINE_ISA(loom_scalar_assume_isa, LOOM_OP_SCALAR_ASSUME)
 LOOM_DEFINE_VARIADIC_OPERANDS(loom_scalar_assume_values, 0)
 LOOM_DEFINE_VARIADIC_RESULTS(loom_scalar_assume_results, 0)

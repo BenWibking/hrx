@@ -296,7 +296,12 @@ static iree_status_t loom_spirv_prepare_workgroup_carriers(
       continue;
     }
 
-    if (scalar_descriptor->kind != LOOM_SPIRV_SCALAR_TYPE_KIND_FLOAT) {
+    // Software BF16 keeps its payload in i32 registers but occupies one i16
+    // storage element. Retain that choice with the allocation's other views.
+    if (scalar_descriptor->kind != LOOM_SPIRV_SCALAR_TYPE_KIND_FLOAT ||
+        (scalar_type == LOOM_SPIRV_SCALAR_TYPE_BF16 &&
+         !iree_all_bits_set(feature_bits,
+                            LOOM_SPIRV_FEATURE_BFLOAT16_TYPE_KHR))) {
       root_carrier->requires_integer = true;
       continue;
     }

@@ -41,6 +41,39 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    transport
+  HDRS
+    "transport.h"
+  SRCS
+    "transport.c"
+  DEPS
+    ::encoding
+    iree::base
+    loom::target::arch::x86::register_classes
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_test(
+  NAME
+    transport_test
+  SRCS
+    "transport_test.cc"
+  DEPS
+    ::encoding
+    ::transport
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::x86::register_classes
+  LABELS
+    "iree-build-requirement=loom.target.arch.x86"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     function
   HDRS
     "function.h"
@@ -48,14 +81,15 @@ loom_cc_library(
     "function.c"
   DEPS
     ::encoding
+    ::transport
     iree::base
     iree::base::internal
     iree::io::stream
-    loom::analysis::storage_layout
     loom::codegen::low::allocation::unit_location
     loom::codegen::low::frame
     loom::codegen::low::packet
     loom::codegen::low::storage_layout
+    loom::error::x86_error_defs
     loom::ir
     loom::ops::low
     loom::target::arch::x86::register_classes
@@ -117,10 +151,7 @@ loom_cc_library(
     iree::base::internal::arena
     iree::io::stream
     loom::codegen::low::frame
-    loom::ops::low
-    loom::target::emit::native::object_elf
-    loom::target::entry_selection
-    loom::target::provider
+    loom::target::emit::native::module
   PUBLIC
 )
 endif()
@@ -151,6 +182,21 @@ loom_check_test_suite(
 )
 endif()
 
+if(LOOM_TARGET_ARCH_X86)
+iree_native_test(
+  NAME
+    "native_diagnostics_test"
+  WORKING_DIRECTORY "${IREE_ROOT_DIR}"
+  ARGS
+    "--target=x86:scalar"
+    "{{${CMAKE_CURRENT_SOURCE_DIR}/test/native_diagnostics.loom-test}}"
+  SRC
+    loom::tools::loom-check::loom-check
+  LABELS
+    "loom-check"
+)
+endif()
+
 if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 loom_generated_file(
   NAME
@@ -171,17 +217,121 @@ loom_generated_file(
 endif()
 
 if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_generated_file(
+  NAME
+    vector_callable_object
+  GENERATOR
+    loom::tools::loom-compile::loom-compile
+  OUTPUT
+    "vector_callable.o"
+  OUTPUT_FLAG
+    "--output="
+  ARGS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/vector_callable.loom"
+    "--target=x86:avx2"
+  INPUTS
+    "test/vector_callable.loom"
+  TESTONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_generated_file(
+  NAME
+    avx512_callable_object
+  GENERATOR
+    loom::tools::loom-compile::loom-compile
+  OUTPUT
+    "avx512_callable.o"
+  OUTPUT_FLAG
+    "--output="
+  ARGS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/avx512_callable.loom"
+    "--target=x86:avx512"
+  INPUTS
+    "test/avx512_callable.loom"
+  TESTONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 loom_cc_test(
   NAME
     callable_link_test
   SRCS
+    "avx512_callable.o"
     "callable.o"
     "callable_link_test.cc"
+    "vector_callable.o"
   DEPS
     iree::testing::gtest
     iree::testing::gtest_main
   LABELS
     "iree-build-requirement=loom.target.arch.x86"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_generated_file(
+  NAME
+    hal_dispatch_image
+  GENERATOR
+    loom::tools::loom-compile::loom-compile
+  OUTPUT
+    "hal_dispatch.so"
+  OUTPUT_FLAG
+    "--output="
+  ARGS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/hal_dispatch.loom"
+    "--target=x86:scalar"
+  INPUTS
+    "test/hal_dispatch.loom"
+  TESTONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_DRIVER_TASK AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "hal_dispatch_test"
+  ARGS
+    "--executable_file={{${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch.so}}"
+  SRC
+    loom::target::abi::task::dispatch_test_runner
+  DATA
+    "${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch.so"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_generated_file(
+  NAME
+    hal_dispatch_c_api_image
+  GENERATOR
+    loom::binding::c::example::compile_artifact
+  OUTPUT
+    "hal_dispatch_c_api.so"
+  OUTPUT_FLAG
+    "{path}"
+  ARGS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/hal_dispatch.loom"
+    "x86:scalar"
+  INPUTS
+    "test/hal_dispatch.loom"
+  TESTONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_DRIVER_TASK AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "hal_dispatch_c_api_test"
+  ARGS
+    "--executable_file={{${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch_c_api.so}}"
+  SRC
+    loom::target::abi::task::dispatch_test_runner
+  DATA
+    "${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch_c_api.so"
 )
 endif()
 

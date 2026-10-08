@@ -54,7 +54,7 @@ iree_status_t loom_global_constant_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_GLOBAL_VARIABLE: Mutable global value with an optional inline scalar default initializer. Can be stored from any function at any time. Declaration-local dim/encoding names and predicates work the same as global.constant.
-// global.variable @kv_cache : tile<[%s]x[%d]xf32> where [mul(%s, 64)]
+// global.variable @kv_cache : tile<[%s]x[%d]xf32> where [multiple_of(%s, 64)]
 LOOM_DEFINE_ISA(loom_global_variable_isa, LOOM_OP_GLOBAL_VARIABLE)
 LOOM_DEFINE_RESULT(loom_global_variable_type, 0)
 LOOM_DEFINE_ATTR_SYMBOL(loom_global_variable_symbol, 0)

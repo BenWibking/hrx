@@ -8,3 +8,25 @@ func.def @packet_report(%input: vector<64xbf16>) -> (vector<64xbf16>) {
 // ----
 CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=1 scalarized=0 target_rewritten=1 reference_rewritten=0 deferred=0 invalid_ir=0 unsupported=0 unhandled=0 rows=1 *
 CHECK: COMPILE-REPORT: target_legalization[0] function=packet_report source_op=vector.negf * action=rewritten outcome=target-rewrite contract=unsupported legalizer=vector-packet strategy=target * scalarized=false * created_ops=5 erased_ops=1
+
+// ====
+
+func.def @cast_packet_report(%input: vector<33xi8>) -> (vector<33xi32>) {
+  %result = vector.extsi %input : vector<33xi8> to vector<33xi32>
+  func.return %result : vector<33xi32>
+}
+
+// ----
+CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=1 scalarized=0 target_rewritten=1 reference_rewritten=0 deferred=0 invalid_ir=0 unsupported=0 unhandled=0 rows=1 *
+CHECK: COMPILE-REPORT: target_legalization[0] function=cast_packet_report source_op=vector.extsi * action=rewritten outcome=target-rewrite contract=unsupported legalizer=vector-packet strategy=target * scalarized=false *
+
+// ====
+
+func.def @address_cast_packet_report(%input: vector<33xi8>) -> (vector<33xindex>) {
+  %result = vector.index_cast %input : vector<33xi8> to vector<33xindex>
+  func.return %result : vector<33xindex>
+}
+
+// ----
+CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=1 scalarized=0 target_rewritten=1 reference_rewritten=0 deferred=0 invalid_ir=0 unsupported=0 unhandled=0 rows=1 *
+CHECK: COMPILE-REPORT: target_legalization[0] function=address_cast_packet_report source_op=vector.index_cast * action=rewritten outcome=target-rewrite contract=unsupported legalizer=vector-packet strategy=target * scalarized=false *

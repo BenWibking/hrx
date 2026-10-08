@@ -59,7 +59,7 @@ kernel.def export("resident_channels") @resident_channels() {
   %held_channel_index = index.assume %held_channel_input [range(%held_channel_input, 0, 1)] : index
   %held_channel_word = index.cast %held_channel_index : index to i32
   %channel_stride_input = index.cast %channel_byte_stride : i32 to offset
-  %channel_stride = index.assume %channel_stride_input [range(%channel_stride_input, 64, 4160), mul(%channel_stride_input, 64)] : offset
+  %channel_stride = index.assume %channel_stride_input [range(%channel_stride_input, 64, 4160), multiple_of(%channel_stride_input, 64)] : offset
   %startup_word = buffer.view %startup_aligned[%origin] : buffer -> view<1xi32>
   %control_words = buffer.view %control_aligned[%origin] : buffer -> view<128xi32>
   %c0 = scalar.constant 0 : i32

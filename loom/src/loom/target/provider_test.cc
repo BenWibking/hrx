@@ -6,6 +6,9 @@
 
 #include "loom/target/provider.h"
 
+#include <cstring>
+
+#include "iree/base/byte_sequence.h"
 #include "iree/base/internal/arena.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -19,6 +22,89 @@ namespace loom {
 namespace {
 
 using ModulePtr = ::loom::testing::ModulePtr;
+
+TEST(TargetArtifactTest, AbsentMetadataDoesNotAllocate) {
+  loom_target_emit_artifact_t artifact = {};
+  IREE_ASSERT_OK(loom_target_emit_artifact_retain_metadata(
+      nullptr, 0, nullptr, iree_allocator_null(), &artifact));
+  EXPECT_EQ(artifact.storage, nullptr);
+  loom_target_emit_artifact_release(&artifact);
+}
+
+TEST(TargetArtifactTest, MetadataOutlivesItsSourceStorage) {
+  char strings[][16] = {"bundle",   "snapshot",   "export",
+                        "entry",    "sysv",       "config",
+                        "contract", "first.json", "second.json"};
+  loom_target_bundle_storage_t target = {};
+  target.bundle.name = iree_make_cstring_view(strings[0]);
+  target.snapshot.name = iree_make_cstring_view(strings[1]);
+  target.snapshot.index_bitwidth = 64;
+  target.export_plan.name = iree_make_cstring_view(strings[2]);
+  target.export_plan.export_symbol = iree_make_cstring_view(strings[3]);
+  target.export_plan.calling_convention = iree_make_cstring_view(strings[4]);
+  target.export_plan.abi_kind = LOOM_TARGET_ABI_HAL_KERNEL;
+  target.export_plan.hal_kernel.required_workgroup_size = {1, 1, 1};
+  target.config.name = iree_make_cstring_view(strings[5]);
+  target.config.contract_set_key = iree_make_cstring_view(strings[6]);
+  target.config.contract_feature_bits = 7;
+  loom_target_bundle_storage_rebind(&target);
+
+  iree_byte_span_t bytes = iree_byte_span_empty();
+  IREE_ASSERT_OK(iree_allocator_clone(iree_allocator_system(),
+                                      iree_make_const_byte_span("payload", 7),
+                                      reinterpret_cast<void**>(&bytes.data)));
+  bytes.data_length = 7;
+  iree_byte_sequence_t* sequence = nullptr;
+  IREE_ASSERT_OK(iree_byte_sequence_create_from_span_move(
+      &bytes, iree_allocator_system(), &sequence));
+  loom_target_emit_sidecar_artifact_t sidecars[2] = {};
+  for (size_t i = 0; i < IREE_ARRAYSIZE(sidecars); ++i) {
+    sidecars[i].kind = LOOM_TARGET_EMIT_SIDECAR_ARTIFACT_KIND_ARTIFACT_MANIFEST;
+    sidecars[i].identifier = iree_make_cstring_view(strings[7 + i]);
+    sidecars[i].contents = sequence;
+  }
+  loom_target_emit_artifact_t artifact = {};
+  IREE_ASSERT_OK(loom_target_emit_artifact_retain_metadata(
+      &target.bundle, IREE_ARRAYSIZE(sidecars), sidecars,
+      iree_allocator_system(), &artifact));
+  iree_byte_sequence_release(sequence);
+  memset(strings, '!', sizeof(strings));
+  target = {};
+  memset(sidecars, 0, sizeof(sidecars));
+
+  const loom_target_bundle_t* retained = artifact.target_bundle;
+  ASSERT_NE(retained, nullptr);
+  EXPECT_EQ(retained->snapshot->index_bitwidth, 64u);
+  EXPECT_EQ(retained->export_plan->abi_kind, LOOM_TARGET_ABI_HAL_KERNEL);
+  EXPECT_EQ(retained->export_plan->hal_kernel.required_workgroup_size.x, 1u);
+  EXPECT_EQ(retained->config->contract_feature_bits, 7u);
+  ASSERT_EQ(artifact.sidecar_count, 2u);
+  const iree_string_view_t retained_strings[] = {
+      retained->name,
+      retained->snapshot->name,
+      retained->export_plan->name,
+      retained->export_plan->export_symbol,
+      retained->export_plan->calling_convention,
+      retained->config->name,
+      retained->config->contract_set_key,
+      artifact.sidecars[0].identifier,
+      artifact.sidecars[1].identifier,
+  };
+  const char* expected[] = {"bundle",   "snapshot",   "export",
+                            "entry",    "sysv",       "config",
+                            "contract", "first.json", "second.json"};
+  for (size_t i = 0; i < IREE_ARRAYSIZE(expected); ++i) {
+    EXPECT_TRUE(iree_string_view_equal(retained_strings[i],
+                                       iree_make_cstring_view(expected[i])));
+  }
+  EXPECT_EQ(artifact.sidecars[0].contents, artifact.sidecars[1].contents);
+  iree_const_byte_span_t retained_bytes = iree_const_byte_span_empty();
+  ASSERT_TRUE(iree_byte_sequence_try_get_contiguous_span(
+      artifact.sidecars[0].contents, &retained_bytes));
+  ASSERT_EQ(retained_bytes.data_length, 7u);
+  EXPECT_EQ(memcmp(retained_bytes.data, "payload", 7), 0);
+  loom_target_emit_artifact_release(&artifact);
+}
 
 const loom_pass_info_t* TargetAlphaPassInfo(void) {
   static const loom_pass_info_t kInfo = {

@@ -57,7 +57,7 @@ static void BM_Multiple(benchmark::State& state) {
   for (auto _ : state) {
     benchmark::DoNotOptimize(operands);
     benchmark::DoNotOptimize(
-        loom_decision_predicate_evaluate(LOOM_PREDICATE_MUL, operands));
+        loom_decision_predicate_evaluate(LOOM_PREDICATE_MULTIPLE_OF, operands));
   }
   state.SetItemsProcessed(state.iterations());
 }

@@ -10,8 +10,10 @@
 
 #include "diagnostic.h"
 #include "iree/hal/drivers/vulkan/device_spec.h"
+#include "loom/binding/c/target/spirv/profile_match.h"
 #include "loomc/iree.h"
 #include "result.h"
+#include "target.h"
 
 #define LOOMC_SPIRV_IREE_HAL_VULKAN_API_VERSION(major, minor, patch) \
   ((((uint32_t)(major)) << 22) | (((uint32_t)(minor)) << 12) |       \
@@ -58,13 +60,13 @@ static loomc_status_t loomc_spirv_iree_hal_validate_string_view(
 }
 
 static loomc_status_t loomc_spirv_iree_hal_validate_options(
-    const loomc_spirv_iree_hal_profile_options_t* options) {
+    const loomc_spirv_iree_hal_target_options_t* options) {
   if (options == NULL) {
     return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
                              "SPIR-V IREE HAL options must not be NULL");
   }
   if (options->type != LOOMC_STRUCTURE_TYPE_NONE &&
-      options->type != LOOMC_STRUCTURE_TYPE_SPIRV_IREE_HAL_PROFILE_OPTIONS) {
+      options->type != LOOMC_STRUCTURE_TYPE_SPIRV_IREE_HAL_TARGET_OPTIONS) {
     return loomc_make_status(
         LOOMC_STATUS_INVALID_ARGUMENT,
         "SPIR-V IREE HAL options have an unknown structure type");
@@ -242,9 +244,11 @@ static loomc_status_t loomc_spirv_iree_hal_load_device_specs(
 }
 
 static loomc_status_t loomc_spirv_iree_hal_query_facts(
-    const loomc_spirv_iree_hal_profile_options_t* options,
-    loomc_spirv_iree_hal_profile_facts_t* out_facts, loomc_result_t* result) {
+    const loomc_spirv_iree_hal_target_options_t* options,
+    loomc_spirv_iree_hal_profile_facts_t* out_facts, loomc_result_t* result,
+    const iree_hal_executable_target_t** out_executable_target) {
   *out_facts = (loomc_spirv_iree_hal_profile_facts_t){0};
+  *out_executable_target = NULL;
   const iree_hal_device_spec_t* device_spec =
       iree_hal_device_spec(options->device);
   if (device_spec == NULL) {
@@ -271,6 +275,7 @@ static loomc_status_t loomc_spirv_iree_hal_query_facts(
         result,
         "IREE HAL device reports ambiguous vulkan1.3+bda SPIR-V targets");
   }
+  *out_executable_target = target_result.target;
 
   const iree_hal_device_dispatch_spec_t* dispatch = NULL;
   iree_hal_vulkan_device_spec_t vulkan_spec = {0};
@@ -455,56 +460,94 @@ static loomc_status_t loomc_spirv_iree_hal_query_facts(
           "iree-hal:vulkan.feature.shader_bfloat16_cooperative_matrix"));
 }
 
-loomc_status_t loomc_target_profile_create_spirv_iree_hal(
+static loomc_status_t loomc_spirv_iree_hal_profile_is_loadable(
+    const loomc_target_profile_t* target_profile, bool* out_is_loadable) {
+  bool is_spirv = false;
+  return loomc_spirv_target_profile_match_selector(
+      target_profile, loomc_make_cstring_view("vulkan1.3+bda"), &is_spirv,
+      out_is_loadable);
+}
+
+loomc_status_t loomc_target_select_spirv_iree_hal(
     loomc_target_environment_t* target_environment,
-    const loomc_spirv_iree_hal_profile_options_t* options,
-    loomc_allocator_t allocator, loomc_target_profile_t** out_profile,
+    const loomc_spirv_iree_hal_target_options_t* options,
+    loomc_allocator_t allocator,
+    loomc_iree_hal_target_selection_t* out_selection,
     loomc_result_t** out_result) {
-  if (out_profile == NULL || out_result == NULL) {
+  if (out_selection == NULL || out_result == NULL) {
     return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
-                             "out_profile and out_result must not be NULL");
+                             "out_selection and out_result must not be NULL");
   }
-  *out_profile = NULL;
+  *out_selection = (loomc_iree_hal_target_selection_t){0};
   *out_result = NULL;
   if (target_environment == NULL) {
     return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
                              "target_environment must not be NULL");
   }
   LOOMC_RETURN_IF_ERROR(loomc_spirv_iree_hal_validate_options(options));
+  if (options->target_profile != NULL) {
+    LOOMC_RETURN_IF_ERROR(loomc_target_profile_validate_environment(
+        options->target_profile, target_environment));
+  }
 
   loomc_result_t* result = NULL;
   LOOMC_RETURN_IF_ERROR(loomc_result_create(LOOMC_RESULT_STATE_SUCCEEDED,
                                             LOOMC_SOURCE_RETENTION_EXACT,
                                             allocator, &result));
   loomc_spirv_iree_hal_profile_facts_t facts = {0};
-  loomc_status_t status =
-      loomc_spirv_iree_hal_query_facts(options, &facts, result);
+  const iree_hal_executable_target_t* executable_target = NULL;
+  loomc_status_t status = loomc_spirv_iree_hal_query_facts(
+      options, &facts, result, &executable_target);
+  loomc_target_profile_t* target_profile = NULL;
   if (loomc_status_is_ok(status) && loomc_result_succeeded(result)) {
-    loomc_result_release(result);
-    result = NULL;
-    loomc_spirv_profile_options_t profile_options = {
-        /*.type=*/LOOMC_STRUCTURE_TYPE_SPIRV_PROFILE_OPTIONS,
-        /*.structure_size=*/sizeof(profile_options),
-        /*.next=*/NULL,
-        /*.identifier=*/options->identifier,
-        /*.preset=*/LOOMC_SPIRV_PROFILE_PRESET_VULKAN_1_3_BDA,
-        /*.feature_facts=*/facts.feature_facts,
-        /*.feature_fact_count=*/facts.feature_fact_count,
-        /*.limit_facts=*/facts.limit_facts,
-        /*.limit_fact_count=*/facts.limit_fact_count,
-        /*.environment_facts=*/facts.environment_facts,
-        /*.environment_fact_count=*/facts.environment_fact_count,
-    };
-    return loomc_target_profile_create_spirv(target_environment,
-                                             &profile_options, allocator,
-                                             out_profile, out_result);
+    if (options->target_profile != NULL) {
+      bool is_loadable = false;
+      status = loomc_spirv_iree_hal_profile_is_loadable(options->target_profile,
+                                                        &is_loadable);
+      if (loomc_status_is_ok(status) && !is_loadable) {
+        status = loomc_spirv_iree_hal_fail_status(
+            result, loomc_make_status(
+                        LOOMC_STATUS_UNAVAILABLE,
+                        "IREE HAL Vulkan device cannot load the forced SPIR-V "
+                        "profile"));
+      } else if (loomc_status_is_ok(status)) {
+        loomc_target_profile_retain(options->target_profile);
+        target_profile = options->target_profile;
+      }
+    } else {
+      loomc_result_release(result);
+      result = NULL;
+      loomc_spirv_profile_options_t profile_options = {
+          /*.type=*/LOOMC_STRUCTURE_TYPE_SPIRV_PROFILE_OPTIONS,
+          /*.structure_size=*/sizeof(profile_options),
+          /*.next=*/NULL,
+          /*.identifier=*/options->identifier,
+          /*.preset=*/LOOMC_SPIRV_PROFILE_PRESET_VULKAN_1_3_BDA,
+          /*.feature_facts=*/facts.feature_facts,
+          /*.feature_fact_count=*/facts.feature_fact_count,
+          /*.limit_facts=*/facts.limit_facts,
+          /*.limit_fact_count=*/facts.limit_fact_count,
+          /*.environment_facts=*/facts.environment_facts,
+          /*.environment_fact_count=*/facts.environment_fact_count,
+      };
+      status = loomc_target_profile_create_spirv(target_environment,
+                                                 &profile_options, allocator,
+                                                 &target_profile, &result);
+    }
   }
   if (loomc_status_is_ok(status)) {
+    if (loomc_result_succeeded(result)) {
+      *out_selection = (loomc_iree_hal_target_selection_t){
+          .target_profile = target_profile,
+          .executable_target = executable_target,
+      };
+      target_profile = NULL;
+    }
     *out_result = result;
     result = NULL;
-  } else {
-    loomc_result_release(result);
   }
+  loomc_target_profile_release(target_profile);
+  loomc_result_release(result);
   return status;
 }
 
@@ -530,39 +573,46 @@ static loomc_status_t loomc_spirv_iree_hal_device_is_supported(
   return loomc_ok_status();
 }
 
-static loomc_status_t loomc_spirv_iree_hal_provider_create_profile(
+static loomc_status_t loomc_spirv_iree_hal_provider_select_target(
     void* user_data, loomc_target_environment_t* target_environment,
-    const loomc_iree_hal_profile_options_t* options,
-    loomc_allocator_t allocator, bool* out_supported,
-    loomc_target_profile_t** out_profile, loomc_result_t** out_result) {
+    const loomc_iree_hal_target_options_t* options, loomc_allocator_t allocator,
+    bool* out_supported, loomc_iree_hal_target_selection_t* out_selection,
+    loomc_result_t** out_result) {
   (void)user_data;
   *out_supported = false;
-  *out_profile = NULL;
+  *out_selection = (loomc_iree_hal_target_selection_t){0};
   *out_result = NULL;
-  LOOMC_RETURN_IF_ERROR(
-      loomc_spirv_iree_hal_device_is_supported(options->device, out_supported));
+  if (options->target_profile != NULL) {
+    LOOMC_RETURN_IF_ERROR(loomc_spirv_target_profile_match_selector(
+        options->target_profile, loomc_make_cstring_view("vulkan1.3+bda"),
+        out_supported, NULL));
+  } else {
+    LOOMC_RETURN_IF_ERROR(loomc_spirv_iree_hal_device_is_supported(
+        options->device, out_supported));
+  }
   if (!*out_supported) {
     return loomc_ok_status();
   }
 
-  loomc_spirv_iree_hal_profile_options_t spirv_options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_SPIRV_IREE_HAL_PROFILE_OPTIONS,
+  loomc_spirv_iree_hal_target_options_t spirv_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_SPIRV_IREE_HAL_TARGET_OPTIONS,
       /*.structure_size=*/sizeof(spirv_options),
       /*.next=*/options->next,
       /*.identifier=*/options->identifier,
       /*.device=*/options->device,
       /*.physical_device_affinity=*/options->physical_device_affinity,
+      /*.target_profile=*/options->target_profile,
   };
-  return loomc_target_profile_create_spirv_iree_hal(
-      target_environment, &spirv_options, allocator, out_profile, out_result);
+  return loomc_target_select_spirv_iree_hal(
+      target_environment, &spirv_options, allocator, out_selection, out_result);
 }
 
-const loomc_iree_hal_profile_provider_t* loomc_spirv_iree_hal_profile_provider(
+const loomc_iree_hal_target_provider_t* loomc_spirv_iree_hal_target_provider(
     void) {
-  static const loomc_iree_hal_profile_provider_t provider = {
+  static const loomc_iree_hal_target_provider_t provider = {
       /*.name=*/{"spirv.iree_hal.vulkan", 21},
       /*.user_data=*/NULL,
-      /*.create_profile=*/loomc_spirv_iree_hal_provider_create_profile,
+      /*.select_target=*/loomc_spirv_iree_hal_provider_select_target,
   };
   return &provider;
 }

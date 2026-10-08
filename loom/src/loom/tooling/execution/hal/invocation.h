@@ -21,8 +21,9 @@ extern "C" {
 #endif
 
 enum {
-  // Maximum number of HAL dispatch constants accepted by the generic runner.
-  LOOM_RUN_HAL_MAX_CONSTANT_COUNT = 64,
+  // Maximum byte length of HAL dispatch constants accepted by the generic
+  // runner.
+  LOOM_RUN_HAL_MAX_CONSTANT_BYTE_LENGTH = 256,
   // Maximum number of HAL dispatch bindings accepted by the generic runner.
   LOOM_RUN_HAL_MAX_BINDING_COUNT = 64,
 };
@@ -33,10 +34,10 @@ typedef struct loom_run_hal_invocation_options_t {
   iree_string_view_t function_name;
   // Dispatch workgroup count in x, y, z order.
   uint32_t workgroup_count[3];
-  // Dispatch constants in HAL ABI order.
-  uint32_t constants[LOOM_RUN_HAL_MAX_CONSTANT_COUNT];
-  // Number of entries in |constants|.
-  iree_host_size_t constant_count;
+  // Byte-addressed dispatch constants in the reflected HAL ABI layout.
+  uint8_t constants[LOOM_RUN_HAL_MAX_CONSTANT_BYTE_LENGTH];
+  // Live byte length of |constants|, including ABI padding.
+  iree_host_size_t constant_byte_length;
 } loom_run_hal_invocation_options_t;
 
 typedef struct loom_run_hal_binding_specs_t {
@@ -110,9 +111,9 @@ typedef struct loom_run_hal_queue_dispatch_t {
   // Static dispatch configuration copied from the invocation plan.
   iree_hal_dispatch_config_t config;
   // Dispatch constants copied from the invocation plan in HAL ABI order.
-  uint32_t constants[LOOM_RUN_HAL_MAX_CONSTANT_COUNT];
-  // Number of entries in |constants|.
-  iree_host_size_t constant_count;
+  uint8_t constants[LOOM_RUN_HAL_MAX_CONSTANT_BYTE_LENGTH];
+  // Live byte length of |constants|, including ABI padding.
+  iree_host_size_t constant_byte_length;
   // Required number of direct buffer bindings for each submission.
   iree_host_size_t binding_count;
   // Timeline semaphore signaled after each direct queue dispatch.

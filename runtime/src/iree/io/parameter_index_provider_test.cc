@@ -148,9 +148,9 @@ static iree_hal_buffer_t* AllocateTransferBuffer(
 static void WriteBufferBytes(iree_hal_buffer_t* buffer,
                              iree_const_byte_span_t source) {
   iree_hal_buffer_mapping_t mapping;
-  IREE_ASSERT_OK(iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                           IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
-                                           0, source.data_length, &mapping));
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_DISCARD, 0, source.data_length, &mapping));
   iree_byte_span_t span;
   IREE_ASSERT_OK(iree_hal_buffer_mapping_subspan(
       &mapping, IREE_HAL_MEMORY_ACCESS_WRITE, 0, source.data_length, &span));
@@ -162,9 +162,9 @@ static void ExpectBufferBytes(iree_hal_buffer_t* buffer,
                               iree_device_size_t byte_length,
                               uint8_t expected_value) {
   iree_hal_buffer_mapping_t mapping;
-  IREE_ASSERT_OK(iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                           IREE_HAL_MEMORY_ACCESS_READ, 0,
-                                           byte_length, &mapping));
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, byte_length, &mapping));
   iree_byte_span_t span;
   IREE_ASSERT_OK(iree_hal_buffer_mapping_subspan(
       &mapping, IREE_HAL_MEMORY_ACCESS_READ, 0, byte_length, &span));
@@ -177,9 +177,9 @@ static void ExpectBufferBytes(iree_hal_buffer_t* buffer,
 static void ExpectBufferBytesEqual(iree_hal_buffer_t* buffer,
                                    iree_const_byte_span_t expected) {
   iree_hal_buffer_mapping_t mapping;
-  IREE_ASSERT_OK(iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                           IREE_HAL_MEMORY_ACCESS_READ, 0,
-                                           expected.data_length, &mapping));
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, expected.data_length, &mapping));
   iree_byte_span_t span;
   IREE_ASSERT_OK(iree_hal_buffer_mapping_subspan(
       &mapping, IREE_HAL_MEMORY_ACCESS_READ, 0, expected.data_length, &span));

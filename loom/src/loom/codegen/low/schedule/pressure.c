@@ -606,7 +606,8 @@ static void loom_low_schedule_nominate_unspillable_completion(
     return;
   }
   const uint32_t transaction_sink = value->unspillable_completion.sink;
-  if (value->producer_node != LOOM_LOW_SCHEDULE_NODE_NONE &&
+  if (state->value_producer_nodes[value_ordinal] !=
+          LOOM_LOW_SCHEDULE_NODE_NONE &&
       transaction_sink != LOOM_LOW_SCHEDULE_NODE_NONE &&
       state->nodes[transaction_sink].scheduled_ordinal ==
           LOOM_LOW_SCHEDULE_NODE_NONE) {
@@ -749,8 +750,9 @@ void loom_low_schedule_reset_source_pressure_sweep(
     loom_low_schedule_build_state_t* state,
     loom_low_schedule_pressure_state_t* pressure_state) {
   for (iree_host_size_t i = 0; i < pressure_state->block_value_count; ++i) {
-    loom_low_schedule_value_record_t* value =
-        &state->values[pressure_state->block_value_ordinals[i]];
+    const loom_value_ordinal_t value_ordinal =
+        pressure_state->block_value_ordinals[i];
+    loom_low_schedule_value_record_t* value = &state->values[value_ordinal];
     value->flags &= ~(LOOM_LOW_SCHEDULE_VALUE_FLAG_PRESSURE_TOUCHED |
                       LOOM_LOW_SCHEDULE_VALUE_FLAG_LIVE |
                       LOOM_LOW_SCHEDULE_VALUE_FLAG_ACTIVE_PRESSURE_ALIAS);
@@ -870,12 +872,13 @@ void loom_low_schedule_pressure_initialize_block(
   }
 
   for (iree_host_size_t i = 0; i < pressure_state->block_value_count; ++i) {
-    loom_low_schedule_value_record_t* value =
-        &state->values[pressure_state->block_value_ordinals[i]];
+    const loom_value_ordinal_t value_ordinal =
+        pressure_state->block_value_ordinals[i];
+    loom_low_schedule_value_record_t* value = &state->values[value_ordinal];
     if (value->remaining_use_count == 0) {
       continue;
     }
-    const uint32_t producer_node = value->producer_node;
+    const uint32_t producer_node = state->value_producer_nodes[value_ordinal];
     if (producer_node != LOOM_LOW_SCHEDULE_NODE_NONE &&
         state->nodes[producer_node].block_index ==
             block_record->block->region_index) {
@@ -1245,7 +1248,8 @@ static bool loom_low_schedule_descriptor_frontier_is_non_growing(
     }
     if (iree_any_bit_set(value->flags, LOOM_LOW_SCHEDULE_VALUE_FLAG_LIVE)) {
       killed_units += value->live_unit_count;
-    } else if (value->producer_node == candidate_node_index) {
+    } else if (state->value_producer_nodes[value_ordinal] ==
+               candidate_node_index) {
       killed_units += value->unit_count;
     }
   }
@@ -1616,9 +1620,11 @@ bool loom_low_schedule_pressure_candidate_unlocks_packing_continuation(
         loom_low_schedule_node_const_operand_ordinals(consumer);
     for (uint16_t operand_index = 0; operand_index < consumer->operand_count;
          ++operand_index) {
+      const loom_value_ordinal_t value_ordinal =
+          operand_ordinals[operand_index];
       const loom_low_schedule_value_record_t* value =
-          &state->values[operand_ordinals[operand_index]];
-      if (value->producer_node == candidate_node ||
+          &state->values[value_ordinal];
+      if (state->value_producer_nodes[value_ordinal] == candidate_node ||
           !iree_any_bit_set(value->flags, LOOM_LOW_SCHEDULE_VALUE_FLAG_LIVE)) {
         continue;
       }
@@ -1735,9 +1741,11 @@ void loom_low_schedule_pressure_score_candidate(
       // Repair retained this result's private consumer placement. Keep that
       // placement for input-free clones too; the ready policy can still
       // advance them to complete live storage groups.
+      const loom_value_id_t value_id =
+          state->value_domain->value_ids[result_ordinals[result_index]];
       has_per_user_placement |=
-          value->value_id < per_user_placement_values.bit_count &&
-          iree_bitmap_test(per_user_placement_values, value->value_id);
+          value_id < per_user_placement_values.bit_count &&
+          iree_bitmap_test(per_user_placement_values, value_id);
       ++produced_live_value_count;
       rematerializable_leaf =
           rematerializable_leaf &&

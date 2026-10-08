@@ -27,12 +27,28 @@ extern "C" uint32_t replace_narrow(uint8_t* bytes, uint16_t* words,
 extern "C" uint64_t high_mix(uint64_t unused, uint64_t factor, uint64_t word);
 extern "C" uint64_t recurrence(uint64_t first, uint64_t second,
                                uint64_t iterations);
+extern "C" const uint32_t* immutable_data();
+extern "C" const void* empty_data();
+extern "C" const uint8_t* external_data();
+extern "C" uint32_t immutable_lookup(uint64_t position);
+extern "C" const uint8_t native_host_table[] = {7, 19, 41};
 
 extern "C" uint64_t pressure64(const uint64_t* values);
 extern "C" uint32_t pressure32(const uint32_t* values);
 extern "C" uint64_t storage_spaces(uint64_t input, uint32_t word);
 extern "C" uint64_t local_pair(uint64_t first, uint64_t second, uint64_t index);
 extern "C" uint32_t sum_previous_instances(uint64_t count);
+extern "C" void add_i32x4(const int32_t* lhs, const int32_t* rhs,
+                          int32_t* output);
+extern "C" void add_constant_i32x4(const int32_t* input, int32_t* output);
+extern "C" void reverse_i8x32_lanes(const uint8_t* input, uint8_t* output);
+extern "C" void spill_i8x32(const uint8_t* input, uint8_t* output);
+extern "C" void avx512_select_i32x16(const int32_t* scalar, const int32_t* lhs,
+                                     const int32_t* rhs,
+                                     const int32_t* fallback, int32_t* output);
+extern "C" void avx512_reverse_i32x16(const int32_t* input, int32_t* output);
+extern "C" void avx512_reduce_f32x16(const float* values, const float* bias,
+                                     const float* initial, float* output);
 
 extern "C" uint64_t call_pair(uint64_t, uint64_t);
 extern "C" uint64_t incoming_eight(uint64_t, uint64_t, uint64_t, uint64_t,
@@ -75,6 +91,22 @@ extern "C" uint64_t saturated_permutation(uint64_t, uint64_t, uint64_t,
                                           uint64_t, uint64_t, uint32_t);
 
 namespace {
+
+TEST(NativeCallableTest, ReadonlyDataOutlivesTheCompilerAndCrossesCalls) {
+  const std::array<uint32_t, 4> expected = {0x44332211, 0x7e00ff80, 0x89abcdef,
+                                            0x01234567};
+  const uint32_t* data = immutable_data();
+  ASSERT_NE(data, nullptr);
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(data) % 64, 0u);
+  EXPECT_EQ(immutable_data(), data);
+  for (size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_EQ(data[i], expected[i]);
+    EXPECT_EQ(immutable_lookup(i), expected[i] ^ expected[0]);
+  }
+  ASSERT_NE(empty_data(), nullptr);
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(empty_data()) % 32, 0u);
+  EXPECT_EQ(external_data(), native_host_table);
+}
 
 TEST(NativeCallableTest, SaturatedLoopPermutation) {
   const std::array<uint64_t, 14> words = {UINT64_C(0x0123456789abcdef),
@@ -134,6 +166,77 @@ TEST(NativeCallableTest, OrdinaryCLinkage) {
     }
     ASSERT_EQ(recurrence(a, b, i % 23), first);
   }
+}
+
+TEST(NativeCallableTest, Avx2VectorFunctionUsesOrdinaryCLinkage) {
+  const std::array<int32_t, 4> lhs = {INT32_MIN, -2, 3, INT32_MAX};
+  const std::array<int32_t, 4> rhs = {-1, 5, 7, 1};
+  std::array<int32_t, 4> output = {};
+  add_i32x4(lhs.data(), rhs.data(), output.data());
+  EXPECT_EQ(output, (std::array<int32_t, 4>{INT32_MAX, 3, 10, INT32_MIN}));
+
+  const std::array<int32_t, 4> input = {4, 7, -100, -1};
+  add_constant_i32x4(input.data(), output.data());
+  EXPECT_EQ(output, (std::array<int32_t, 4>{5, 2, 0, INT32_MAX}));
+
+  std::array<uint8_t, 32> bytes = {};
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    bytes[i] = static_cast<uint8_t>(i);
+  }
+  std::array<uint8_t, 32> reversed = {};
+  reverse_i8x32_lanes(bytes.data(), reversed.data());
+  for (size_t i = 0; i < reversed.size(); ++i) {
+    EXPECT_EQ(reversed[i], 15 - i % 16 + i / 16 * 16);
+  }
+
+  std::array<uint8_t, 32> spilled = {};
+  spill_i8x32(bytes.data(), spilled.data());
+  EXPECT_EQ(spilled, bytes);
+}
+
+TEST(NativeCallableTest, Avx512CoreUsesOrdinaryCLinkage) {
+  if (!__builtin_cpu_supports("avx512f") ||
+      !__builtin_cpu_supports("avx512bw") ||
+      !__builtin_cpu_supports("avx512dq") ||
+      !__builtin_cpu_supports("avx512vl")) {
+    GTEST_SKIP() << "AVX-512F/BW/DQ/VL are unavailable on this test host";
+  }
+
+  const int32_t scalar = 3;
+  std::array<int32_t, 16> lhs;
+  std::array<int32_t, 16> rhs;
+  std::array<int32_t, 16> fallback;
+  for (size_t i = 0; i < lhs.size(); ++i) {
+    lhs[i] = static_cast<int32_t>(i) - 8;
+    rhs[i] = static_cast<int32_t>(i / 2);
+    fallback[i] = i % 3 == 0 ? rhs[i] : 1000 + static_cast<int32_t>(i);
+  }
+  std::array<int32_t, 16> selected = {};
+  avx512_select_i32x16(&scalar, lhs.data(), rhs.data(), fallback.data(),
+                       selected.data());
+  for (size_t i = 0; i < selected.size(); ++i) {
+    const int32_t sum = lhs[i] + scalar;
+    const bool condition = sum > rhs[i] || rhs[i] == fallback[i];
+    EXPECT_EQ(selected[i], condition ? sum : fallback[i]) << "lane " << i;
+  }
+
+  std::array<int32_t, 16> reversed = {};
+  avx512_reverse_i32x16(lhs.data(), reversed.data());
+  for (size_t i = 0; i < reversed.size(); ++i) {
+    EXPECT_EQ(reversed[i], lhs[lhs.size() - i - 1]) << "lane " << i;
+  }
+
+  std::array<float, 16> values;
+  std::array<float, 16> bias;
+  for (size_t i = 0; i < values.size(); ++i) {
+    values[i] = static_cast<float>(i);
+    bias[i] = 1.0f;
+  }
+  const std::array<float, 4> initial = {8.0f, 0.0f, 0.0f, 0.0f};
+  std::array<float, 4> reduced = {};
+  avx512_reduce_f32x16(values.data(), bias.data(), initial.data(),
+                       reduced.data());
+  EXPECT_EQ(reduced[0], 144.0f);
 }
 
 TEST(NativeCallableTest, NarrowMemoryPreservesNeighbors) {

@@ -25,6 +25,7 @@
 #include "loom/ops/combining.h"
 #include "loom/ops/encoding/hadamard.h"
 #include "loom/ops/encoding/storage.h"
+#include "loom/ops/index/cast.h"
 #include "loom/ops/scalar/compare.h"
 #include "loom/ops/vector/fragment.h"
 #include "loom/ops/vector/ops.h"
@@ -3558,6 +3559,47 @@ LOOM_VECTOR_FLOAT_UNARY_FACTS(loom_vector_roundevenf_facts,
                               loom_vector_roundeven_f64)
 LOOM_VECTOR_FLOAT_UNARY_FACTS(loom_vector_truncf_facts, truncf, trunc)
 LOOM_VECTOR_UNARY_FACTS(loom_vector_signi_facts, loom_vector_signi_transfer)
+
+iree_status_t loom_vector_index_cast_facts(
+    loom_fact_context_t* context, const loom_module_t* module,
+    const loom_op_t* op, const loom_value_facts_t* operand_facts,
+    loom_value_facts_t* result_facts) {
+  const loom_value_id_t input = loom_vector_index_cast_input(op);
+  const loom_value_id_t result = loom_vector_index_cast_result(op);
+  const loom_scalar_type_t input_type =
+      loom_type_element_type(loom_module_value_type(module, input));
+  const loom_scalar_type_t result_type =
+      loom_type_element_type(loom_module_value_type(module, result));
+
+  loom_value_facts_t uniform = loom_value_facts_unknown();
+  if (loom_vector_facts_query_uniform_element(context, operand_facts[0],
+                                              &uniform)) {
+    uniform = loom_index_cast_transfer_facts(input_type, result_type, uniform);
+    IREE_RETURN_IF_ERROR(loom_value_facts_make_uniform_element(
+        context, uniform, &result_facts[0]));
+  } else {
+    loom_value_fact_small_static_lanes_t input_lanes = {0};
+    if (loom_vector_facts_query_small_lanes(context, operand_facts[0],
+                                            &input_lanes)) {
+      loom_value_facts_t lanes[LOOM_VALUE_FACT_SMALL_STATIC_LANE_LIMIT] = {{0}};
+      for (iree_host_size_t i = 0; i < input_lanes.count; ++i) {
+        lanes[i] = loom_index_cast_transfer_facts(input_type, result_type,
+                                                  input_lanes.lanes[i]);
+      }
+      IREE_RETURN_IF_ERROR(loom_vector_make_small_static_lane_facts(
+          context, lanes, input_lanes.count, &result_facts[0]));
+    } else {
+      uniform = loom_index_cast_transfer_facts(input_type, result_type,
+                                               loom_value_facts_unknown());
+      IREE_RETURN_IF_ERROR(loom_value_facts_make_uniform_element(
+          context, uniform, &result_facts[0]));
+    }
+  }
+
+  return loom_vector_try_define_same_lane_origin(context, module, result,
+                                                 input);
+}
+
 iree_status_t loom_vector_extf_facts(loom_fact_context_t* context,
                                      const loom_module_t* module,
                                      const loom_op_t* op,

@@ -7,6 +7,7 @@
 from loom.dialect.scalar import conversion
 from loom.ir import ScalarType
 from loom.scalar_type import ScalarTypeKind, scalar_type_name
+from loom.target.arch.spirv.contracts.bfloat import bfloat_narrow_rules
 from loom.target.arch.spirv.contracts.descriptor_rule import (
     descriptor_feature_guards,
     logical_core_descriptor,
@@ -14,6 +15,7 @@ from loom.target.arch.spirv.contracts.descriptor_rule import (
 from loom.target.arch.spirv.contracts.logical_core import (
     SPIRV_LOGICAL_CORE_CONTRACT_FRAGMENT,
 )
+from loom.target.arch.spirv.features import feature_bits_value
 from loom.target.contracts import DescriptorRule, GuardKind
 
 _FLOAT_KINDS = frozenset(
@@ -96,6 +98,59 @@ def test_generic_narrowing_recipes_cover_every_non_native_pair() -> None:
     }
 
     assert exact_recipe_pairs == _expected_narrowing_pairs() - native_pairs
+
+
+def test_bfloat_narrowing_preserves_the_profile_result_representation() -> None:
+    # Native BF16 and Int16 are independent capabilities. Every narrowing row
+    # must produce the representation selected by the profile's BF16 support,
+    # including when the input is known not to be NaN.
+    for source_kind in (ScalarTypeKind.F32, ScalarTypeKind.F64):
+        source_type = scalar_type_name(source_kind)
+        rules = tuple(
+            rule
+            for rule in bfloat_narrow_rules()
+            if _narrowing_pair(rule) == (source_type, "bf16")
+        )
+        assert len(rules) == 4
+        bit_width = ScalarType(source_kind).bitwidth
+        vector_suffix = f"v{bit_width // 16}bf16"
+        for rule in rules[:2]:
+            bitcast, extract = rule.emit[-2:]
+            assert bitcast.descriptor.key == (
+                f"spirv.op_bitcast.i{bit_width}.{vector_suffix}"
+            )
+            assert extract.descriptor.key == (
+                f"spirv.op_composite_extract.{vector_suffix}.bf16"
+            )
+            assert extract.immediates == {"component_index": 0}
+        for native_bfloat in (False, True):
+            for int16 in (False, True):
+                features = feature_bits_value(
+                    ("vulkan_shader", "float64", "int64")
+                    + (("bfloat16_type_khr",) if native_bfloat else ())
+                    + (("int16",) if int16 else ())
+                )
+                for not_nan in (False, True):
+                    applicable = []
+                    for rule in rules:
+                        feature_masks = (
+                            word
+                            for guard in rule.guards
+                            if guard.kind is GuardKind.DESCRIPTOR_AVAILABLE
+                            for word in guard.descriptor.feature_mask_words
+                        )
+                        if any(mask & ~features for mask in feature_masks):
+                            continue
+                        if not not_nan and any(
+                            guard.kind is GuardKind.VALUE_NOT_NAN
+                            for guard in rule.guards
+                        ):
+                            continue
+                        applicable.append(rule)
+                    assert applicable
+                    assert applicable[0].descriptor.key.endswith(".bf16") == (
+                        native_bfloat
+                    ), (source_type, native_bfloat, int16, not_nan)
 
 
 def test_descriptor_feature_guards_deduplicate_only_identical_descriptors() -> None:

@@ -34,8 +34,7 @@ static iree_status_t loom_check_emit_parse_source_low_option(
       return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                               "duplicate source-low option 'target'");
     }
-    IREE_RETURN_IF_ERROR(
-        loom_target_specification_parse(value, &request->target));
+    request->target = value;
     request->options |= LOOM_CHECK_SOURCE_LOW_OPTION_TARGET;
     return iree_ok_status();
   }
@@ -390,28 +389,6 @@ iree_status_t loom_check_prepare_source_low_module(
   return status;
 }
 
-iree_status_t loom_check_emit_source_low_artifact(
-    const loom_check_emit_provider_request_t* request,
-    const loom_check_prepare_source_low_options_t* options,
-    iree_string_view_t public_artifact_format, bool* out_emitted,
-    loom_target_emit_artifact_t* out_artifact) {
-  *out_emitted = false;
-  *out_artifact = (loom_target_emit_artifact_t){0};
-  loom_compile_pipeline_result_t pipeline_result = {0};
-  iree_status_t status = loom_check_prepare_source_low_module_with_pipeline(
-      request->module, options, IREE_SV("default"),
-      LOOM_COMPILE_DEFAULT_PIPELINE_SOURCE_LOW, request->environment,
-      request->source_resolver, request->diagnostic_collector,
-      request->block_pool, &pipeline_result);
-  if (iree_status_is_ok(status) && request->diagnostic_collector->count == 0) {
-    status = loom_check_emit_target_artifact(
-        request, public_artifact_format,
-        &pipeline_result.function_versions.list, out_emitted, out_artifact);
-  }
-  loom_compile_pipeline_result_deinitialize(&pipeline_result);
-  return status;
-}
-
 static iree_status_t loom_check_emit_write_source_low_pipeline_text(
     loom_module_t* source_module,
     const loom_check_source_low_request_t* request,
@@ -561,9 +538,12 @@ iree_status_t loom_check_source_low_emit(
   prepare_options.sanitizer = request->sanitizer;
   loom_target_specialization_request_t specialization = {0};
   if (iree_any_bit_set(request->options, LOOM_CHECK_SOURCE_LOW_OPTION_TARGET)) {
+    loom_target_specification_t target = {0};
+    IREE_RETURN_IF_ERROR(
+        loom_target_specification_parse(request->target, &target));
     IREE_RETURN_IF_ERROR(loom_check_resolve_source_target(
         module, environment->target_environment, request->function_name,
-        &request->target, &specialization));
+        &target, &specialization));
     prepare_options.target_specializations =
         (loom_target_specialization_request_list_t){&specialization, 1};
   }

@@ -105,6 +105,7 @@ class ControlFlow final : private cxx::ASTVisitor {
   std::optional<Destination> classify_destination(
       cxx::ExpressionAST* expression);
   bool classify_storage(cxx::ExpressionAST* expression) const;
+  cxx::Symbol* object_owner(cxx::ExpressionAST* expression) const;
   std::optional<CountedLoop> classify(cxx::ForStatementAST* loop);
   unsigned paths(cxx::StatementAST* statement) const;
   unsigned classify_paths(cxx::StatementAST* statement) const;
@@ -126,6 +127,9 @@ class ControlFlow final : private cxx::ASTVisitor {
   std::unordered_map<cxx::ExpressionAST*, Destination> destinations_;
   // Memory record objects and member projections, including nested fields.
   std::unordered_set<cxx::ExpressionAST*> storage_expressions_;
+  // Automatic roots retained through member projections and transparent
+  // expressions. Complete address demand applies even to earlier field uses.
+  std::unordered_map<cxx::ExpressionAST*, cxx::Symbol*> object_owners_;
   // Proven intervals retained after each source loop's children are visited.
   std::unordered_map<cxx::ForStatementAST*, CountedLoop> counted_;
   // Sparse path sets retain statements with function or iteration exits.

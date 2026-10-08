@@ -30,6 +30,8 @@ from loom.gen.target.contracts.lower_rule_rows import (
     source_memory_diagnostic_indices,
     source_memory_diagnostics_row,
     source_memory_row,
+    source_memory_shape,
+    source_memory_shape_row,
     source_node_row,
     type_pattern_row,
     value_ref_row,
@@ -85,6 +87,7 @@ from loom.target.contracts import (
     SourceNodeRelation,
     SourceOpProject,
     SourceValueKind,
+    UnsignedDivisorMagicKind,
     ValueProject,
     ValueRef,
     Vector,
@@ -204,12 +207,34 @@ def test_validate_c_table_shape_rejects_oversized_table_count() -> None:
     )
 
 
+def test_validate_c_table_shape_rejects_oversized_report_key_count() -> None:
+    table = _compiled_lower_rule_set(
+        rules=tuple(
+            LowerRule(
+                source_op=scalar_arithmetic.scalar_addi,
+                report_key=f"key_{index}",
+                temporary_count=0,
+                guard_start=0,
+                guard_count=0,
+                emit_start=0,
+                emit_count=0,
+            )
+            for index in range(0x100)
+        ),
+    )
+
+    _expect_value_error(
+        lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
+        "lower-rule set 'test.low.generated_c_shape' report-key count exceeds uint8_t",
+    )
+
+
 def test_validate_c_table_shape_rejects_oversized_rule_field() -> None:
     table = _compiled_lower_rule_set(
         rules=(
             LowerRule(
                 source_op=scalar_arithmetic.scalar_addi,
-                temporary_count=0x10000,
+                temporary_count=0x100,
                 guard_start=0,
                 guard_count=0,
                 emit_start=0,
@@ -220,7 +245,7 @@ def test_validate_c_table_shape_rejects_oversized_rule_field() -> None:
 
     _expect_value_error(
         lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
-        "lower-rule set 'test.low.generated_c_shape' rule 0 temporary count exceeds uint16_t",
+        "lower-rule set 'test.low.generated_c_shape' rule 0 temporary count exceeds uint8_t",
     )
 
 
@@ -407,24 +432,61 @@ def test_validate_c_table_shape_rejects_structural_primary_emit() -> None:
 
 def test_validate_c_table_shape_rejects_oversized_type_payload() -> None:
     table = _compiled_lower_rule_set(
-        type_patterns=(LowerTypePattern(Vector("i32", lanes=2**63)),),
+        type_patterns=(LowerTypePattern(Vector("i32", lanes=0x10000)),),
     )
 
     _expect_value_error(
         lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
-        "lower-rule set 'test.low.generated_c_shape' type-pattern 0 static lanes exceeds int64_t",
+        "lower-rule set 'test.low.generated_c_shape' type-pattern 0 static lanes exceeds uint16_t",
     )
 
 
 def test_validate_c_table_shape_rejects_oversized_view_dimension() -> None:
     table = _compiled_lower_rule_set(
-        type_patterns=(LowerTypePattern(View("i32", dims=(2**63, 4))),),
+        type_patterns=(LowerTypePattern(View("i32", dims=(0x10000, 4))),),
     )
 
     _expect_value_error(
         lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
-        "lower-rule set 'test.low.generated_c_shape' type-pattern 0 static dim 0 exceeds int64_t",
+        "lower-rule set 'test.low.generated_c_shape' type-pattern 0 static dim 0 exceeds uint16_t",
     )
+
+
+def test_validate_c_table_shape_rejects_oversized_static_element_range() -> None:
+    table = _compiled_lower_rule_set(
+        type_patterns=(
+            LowerTypePattern(
+                Vector(
+                    "i32",
+                    minimum_static_elements=1,
+                    maximum_static_elements=2**64,
+                )
+            ),
+        ),
+    )
+
+    _expect_value_error(
+        lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
+        "lower-rule set 'test.low.generated_c_shape' type-pattern 0 maximum static elements exceeds uint64_t",
+    )
+
+
+def test_validate_c_table_shape_rejects_oversized_attr_copy_byte_fields() -> None:
+    row = LowerAttrCopy(
+        kind=LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
+        target_name="value",
+    )
+    for field_name, field_subject in (
+        ("source_attr_index", "source attr index"),
+        ("source_element_count", "source element count"),
+    ):
+        table = _compiled_lower_rule_set(
+            attr_copies=(replace(row, **{field_name: 0x100}),),
+        )
+        _expect_value_error(
+            lambda table=table: _validate_c_table_shape(table, _c_shape_contract(), ()),
+            f"lower-rule set 'test.low.generated_c_shape' attr-copy 0 {field_subject} exceeds uint8_t",
+        )
 
 
 def test_validate_c_table_shape_rejects_rule_guard_range_oob() -> None:
@@ -510,6 +572,37 @@ def test_validate_c_table_shape_rejects_source_memory_diagnostic_indices_oob() -
         _expect_value_error(
             lambda table=table: _validate_c_table_shape(table, _c_shape_contract(), ()),
             f"lower-rule set 'test.low.generated_c_shape' source-memory 0 {reason.value} diagnostic index references missing diagnostic row",
+        )
+
+
+def test_validate_c_table_shape_rejects_oversized_source_memory_fields() -> None:
+    constraint = SourceMemoryConstraint(
+        operation=SourceMemoryOperation.LOAD,
+        memory_spaces=("global",),
+        element_byte_count=4,
+        vector_lane_count=1,
+        vector_lane_byte_stride=4,
+        static_byte_offset=0,
+    )
+    for field_name, value, subject, storage in (
+        ("element_byte_count", 0x100, "element byte count", "uint8_t"),
+        ("vector_lane_count", 0x10000, "vector lane count", "uint16_t"),
+        ("minimum_alignment", 0x10000, "minimum alignment", "uint16_t"),
+        (
+            "cache_policy_build_flags",
+            0x100,
+            "cache policy build flags",
+            "uint8_t",
+        ),
+    ):
+        row = LowerSourceMemory(
+            constraint=replace(constraint, **{field_name: value}),
+            rejection_diagnostic_indices=_rejection_diagnostic_indices(0xFFFF),
+        )
+        table = _compiled_lower_rule_set(source_memories=(row,))
+        _expect_value_error(
+            lambda table=table: _validate_c_table_shape(table, _c_shape_contract(), ()),
+            f"lower-rule set 'test.low.generated_c_shape' source-memory 0 {subject} exceeds {storage}",
         )
 
 
@@ -784,6 +877,23 @@ def test_validate_c_table_shape_rejects_attr_copy_value_ref_index_oob() -> None:
     _expect_value_error(
         lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
         "lower-rule set 'test.low.generated_c_shape' attr-copy 0 value-ref index references missing value-ref row",
+    )
+
+
+def test_validate_c_table_shape_rejects_attr_copy_numerator_ref_index_oob() -> None:
+    table = _compiled_lower_rule_set(
+        value_refs=(LowerValueRef(kind=SourceValueKind.OPERAND, index=1),),
+        attr_copies=(
+            LowerAttrCopy(
+                kind=LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_SHIFT,
+                target_name="i32_value",
+                other_value_ref_index=1,
+            ),
+        ),
+    )
+    _expect_value_error(
+        lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
+        "attr-copy 0 other value-ref index references missing value-ref row",
     )
 
 
@@ -1500,6 +1610,37 @@ def test_generated_tables_intern_guards_and_diagnostic_params() -> None:
     assert param_refs == (0, 0, 1)
 
 
+def test_generated_tables_intern_source_memory_shapes() -> None:
+    constraint = SourceMemoryConstraint(
+        operation=SourceMemoryOperation.LOAD,
+        memory_spaces=("global",),
+        element_byte_count=4,
+        vector_lane_count=8,
+        vector_lane_byte_stride=4,
+        static_byte_offset_minimum=-16,
+        static_byte_offset_maximum=16,
+        dynamic_term_count=1,
+        dynamic_index_source=SourceMemoryDynamicIndexSource.VALUE,
+        dynamic_byte_stride=4,
+    )
+    rows = tuple(
+        LowerSourceMemory(
+            constraint=replace(constraint, **fields),
+            rejection_diagnostic_indices=_rejection_diagnostic_indices(0xFFFF),
+        )
+        for fields in (
+            {},
+            {"operation": SourceMemoryOperation.STORE},
+            {"vector_lane_byte_stride": 8},
+        )
+    )
+
+    unique_shapes, shape_indices = _intern_rows(tuple(source_memory_shape(row) for row in rows))
+
+    assert unique_shapes == (source_memory_shape(rows[0]), source_memory_shape(rows[2]))
+    assert shape_indices == (0, 0, 1)
+
+
 def test_diagnostic_rows_use_recorded_target_context() -> None:
     target_context_params = (
         LowerDiagnosticParam("target_key", DiagnosticParamKind.TARGET_KEY),
@@ -1594,8 +1735,12 @@ def test_generate_lower_rule_set_emits_static_element_count_type_pattern() -> No
     type_pattern_start = generated.source.index("LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_ELEMENT_COUNT_RANGE")
     type_pattern_end = generated.source.index("},", type_pattern_start)
     type_pattern_text = generated.source[type_pattern_start:type_pattern_end]
-    assert ".shape.static_element_count_range.minimum = 1," in type_pattern_text
-    assert ".shape.static_element_count_range.maximum = 8," in type_pattern_text
+    assert ".shape.range_ref = 1," in type_pattern_text
+    range_start = generated.source.index("static const loom_low_lower_type_pattern_range_t")
+    range_end = generated.source.index("};", range_start)
+    range_text = generated.source[range_start:range_end]
+    assert ".minimum = 1," in range_text
+    assert ".maximum = 8," in range_text
 
     guard_start = generated.source.index("LOOM_LOW_LOWER_GUARD_VECTOR_EXTRACT_SHAPE")
     guard_end = generated.source.index("},", guard_start)
@@ -1760,25 +1905,25 @@ def test_generate_lower_rule_set_emits_divisor_magic_projection() -> None:
                     Guard.value_type("lhs", Scalar("i32")),
                     Guard.value_type("rhs", Scalar("i32")),
                     Guard.value_type("result", Scalar("i32")),
-                    Guard.value_u32_divisor_magic_is_add("rhs", False),
+                    Guard.value_u32_divisor_magic_kind("lhs", "rhs", UnsignedDivisorMagicKind.MULTIPLY_SHIFT),
                 ),
                 emit=(
                     EmitDescriptorOp(
                         descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
                         results={"dst": ValueRef.result("result")},
-                        immediates={"i32_value": ValueProject.u32_divisor_magic_multiplier("rhs")},
+                        immediates={"i32_value": ValueProject.u32_divisor_magic_multiplier("lhs", "rhs")},
                     ),
                     EmitDescriptorOp(
                         descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
                         results={"dst": ValueRef.temporary("shift")},
                         result_types={"dst": ValueRef.result("result")},
-                        immediates={"i32_value": ValueProject.u32_divisor_magic_shift("rhs", product_bit_width=64)},
+                        immediates={"i32_value": ValueProject.u32_divisor_magic_shift("lhs", "rhs", product_bit_width=64)},
                     ),
                     EmitDescriptorOp(
                         descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
                         results={"dst": ValueRef.temporary("signed_multiplier")},
                         result_types={"dst": ValueRef.result("result")},
-                        immediates={"i32_value": ValueProject.u32_divisor_magic_multiplier_as_i32("rhs")},
+                        immediates={"i32_value": ValueProject.u32_divisor_magic_multiplier_as_i32("lhs", "rhs")},
                     ),
                     EmitDescriptorOp(
                         descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
@@ -1793,7 +1938,7 @@ def test_generate_lower_rule_set_emits_divisor_magic_projection() -> None:
 
     generated = generate_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
 
-    assert "LOOM_LOW_LOWER_GUARD_VALUE_U32_DIVISOR_MAGIC_IS_ADD" in generated.source
+    assert "LOOM_LOW_LOWER_GUARD_VALUE_U32_DIVISOR_MAGIC_KIND" in generated.source
     assert "LOOM_LOW_LOWER_ATTR_COPY_VALUE_U32_DIVISOR_MAGIC_MULTIPLIER" in generated.source
     assert "LOOM_LOW_LOWER_ATTR_COPY_VALUE_U32_DIVISOR_MAGIC_MULTIPLIER_AS_I32" in generated.source
     assert "LOOM_LOW_LOWER_ATTR_COPY_VALUE_U32_DIVISOR_MAGIC_SHIFT" in generated.source
@@ -1824,6 +1969,7 @@ def test_source_memory_row_emits_dynamic_byte_stride_any_flag() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -1854,6 +2000,7 @@ def test_source_memory_row_emits_cache_policy_any_flag() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -1885,6 +2032,7 @@ def test_source_memory_row_emits_compact_address_layout() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -1919,6 +2067,7 @@ def test_source_memory_row_emits_preserve_source_index_flag() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -1948,6 +2097,7 @@ def test_source_memory_row_emits_any_positive_dynamic_term_count() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -1958,7 +2108,7 @@ def test_source_memory_row_emits_any_positive_dynamic_term_count() -> None:
     assert (".dynamic_view_base_term_count = LOOM_LOW_LOWER_SOURCE_MEMORY_DYNAMIC_VIEW_BASE_TERM_COUNT_ANY") in fields
 
 
-def test_source_memory_row_emits_portable_signed_i64_values() -> None:
+def test_source_memory_shape_row_emits_portable_signed_i64_values() -> None:
     row = LowerSourceMemory(
         constraint=SourceMemoryConstraint(
             operation=SourceMemoryOperation.LOAD,
@@ -1975,12 +2125,7 @@ def test_source_memory_row_emits_portable_signed_i64_values() -> None:
         rejection_diagnostic_indices=_rejection_diagnostic_indices(0xFFFF),
     )
 
-    fields = source_memory_row(
-        row,
-        byte_offset_materializer_ordinal=0,
-        address_materializer_ordinal=0,
-        diagnostics_index=0,
-    )
+    fields = source_memory_shape_row(source_memory_shape(row))
 
     assert ".vector_lane_byte_stride = (-INT64_C(2147483648))" in fields
     assert ".static_byte_offset_minimum = INT64_MIN" in fields
@@ -2011,6 +2156,7 @@ def test_source_memory_row_emits_dynamic_stride_values_flag() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -2062,6 +2208,7 @@ def test_source_memory_rows_split_complete_address_materializer() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=1,
         diagnostics_index=0,

@@ -139,14 +139,6 @@ struct iree_hal_task_queue_op_t {
   // table buffers, etc.). Allocated from the small block pool.
   iree_hal_resource_set_t* resource_set;
 
-  // SCOPED buffer mappings referenced by a deferred block recording. The
-  // arena-owned array remains live through recording execution and is unmapped
-  // before user-visible completion is published.
-  iree_hal_buffer_mapping_t* recording_mappings;
-
-  // Number of entries in |recording_mappings|.
-  iree_host_size_t recording_mapping_count;
-
   // Frontier tracker advanced when the operation completes.
   iree_async_frontier_tracker_t* frontier_tracker;
 
@@ -471,7 +463,7 @@ typedef struct iree_hal_task_queue_create_params_t {
   // Executor retained by the queue.
   iree_task_executor_t* executor;
 
-  // NUMA-local proactor borrowed from the parent device's proactor pool.
+  // Local or explicitly unplaced proactor borrowed from the device's pool.
   iree_async_proactor_t* proactor;
 
   // Aggregate transfer payload length selecting direct or recorded execution.
@@ -528,9 +520,9 @@ struct iree_hal_task_queue_t {
   iree_task_executor_t* executor;
 
   // Proactor for async I/O operations on this queue. Borrowed from the
-  // device's proactor pool — selected at device creation time based on the
-  // executor's NUMA node for NUMA-correct I/O. Valid as long as the device
-  // (which retains the proactor pool) is alive.
+  // device's proactor pool. Device construction selects a local or explicitly
+  // unplaced service; dynamic queues reuse their executor's selected service.
+  // Valid as long as the device (which retains the proactor pool) is alive.
   iree_async_proactor_t* proactor;
 
   // Shared frontier tracker for cross-device causal ordering.

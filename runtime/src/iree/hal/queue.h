@@ -1047,6 +1047,15 @@ struct iree_hal_queue_family_t {
 
   // Exact immutable specification row. Borrowed from the parent device.
   const iree_hal_queue_family_spec_t* spec;
+
+  // Assigned once when the containing group is sealed. Instrumentation groups
+  // preserve the underlying namespace and ordinal aliases.
+  struct {
+    // Borrowed group memory namespace, or NULL before group assignment.
+    const void* domain;
+    // Dense queue site; the program site is the following coordinate.
+    uint32_t queue_scope_id;
+  } memory;
 };
 
 // Initializes the canonical family cell owned by |device| with its |ordinal|

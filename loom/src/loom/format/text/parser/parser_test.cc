@@ -1662,11 +1662,11 @@ TEST_F(ParserTest, PredicateListBeyondInlineCapacityRoundTrips) {
 TEST_F(ParserTest, PredicateArityMismatchEmitsStructuredDiagnostic) {
   const auto& diagnostics = ParseExpectErrors(
       "%x = test.constant 0 : index\n"
-      "%y = test.assume %x [pow2(%x, 16)] : index\n");
+      "%y = test.assume %x [power_of_two(%x, 16)] : index\n");
   ASSERT_GE(diagnostics.size(), 1u);
   ExpectError(diagnostics[0],
               loom_error_def_lookup(LOOM_ERROR_DOMAIN_PARSE, 31));
-  EXPECT_EQ(GetStringParam(diagnostics[0], 0), "pow2");
+  EXPECT_EQ(GetStringParam(diagnostics[0], 0), "power_of_two");
   ExpectU32Param(diagnostics[0], 1, 1u);
   ExpectU32Param(diagnostics[0], 2, 2u);
 }

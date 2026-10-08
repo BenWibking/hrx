@@ -150,7 +150,7 @@ TEST_F(FuncSymbolFactsTest, TemplateFactsCarryFamilyIdentity) {
   ModulePtr module = ParseModule(R"(
 template.decl @qwen.q4.matmul(%m: index) -> (index)
 
-template.def<@qwen.q4.matmul> public device pure hot requires [#target.subgroup.size<64>] priority(7) @impl(%m: index) -> (index) where [mul(%m, 16)] {
+template.def<@qwen.q4.matmul> public device pure hot requires [#target.subgroup.size<64>] priority(7) @impl(%m: index) -> (index) where [multiple_of(%m, 16)] {
   template.return %m : index
 }
 )");

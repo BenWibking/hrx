@@ -42,11 +42,14 @@ typedef struct loom_low_lower_contract_case_iterator_t {
 } loom_low_lower_contract_case_iterator_t;
 
 // Initializes an iterator for |entry| and returns true when candidate mode
-// selected a generated exact-key sequence. All mode preserves the full
-// composed order used for exact failure diagnostics and returns false.
+// selected a generated exact-key sequence. Type selectors observe
+// |vector_lane_projection| so the candidate set and subsequent rule matching
+// use the same scoped types. All mode preserves the full composed order used
+// for exact failure diagnostics and returns false.
 bool loom_low_lower_contract_case_iterator_initialize(
     const loom_module_t* module, const loom_target_contract_index_t* index,
     loom_target_contract_op_entry_t entry, const loom_op_t* source_op,
+    loom_target_contract_vector_lane_projection_t vector_lane_projection,
     loom_low_lower_contract_case_iteration_mode_t mode,
     loom_low_lower_contract_case_iterator_t* out_iterator);
 

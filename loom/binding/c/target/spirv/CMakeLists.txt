@@ -18,6 +18,7 @@ loom_cc_library(
     "${PROJECT_SOURCE_DIR}/loom/binding/c/include/loomc/target/spirv/base.h"
     "${PROJECT_SOURCE_DIR}/loom/binding/c/include/loomc/target/spirv/emit.h"
     "${PROJECT_SOURCE_DIR}/loom/binding/c/include/loomc/target/spirv/profile.h"
+    "profile_match.h"
     "profile_rows.h"
   SRCS
     "profile.c"

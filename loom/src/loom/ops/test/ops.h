@@ -948,7 +948,7 @@ iree_status_t loom_test_deflate_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_ASSUME: Test predicate-constrained identity (SSA assume).
-// %M2 = test.assume %M [mul(%M, 16)] : index
+// %M2 = test.assume %M [multiple_of(%M, 16)] : index
 LOOM_DEFINE_ISA(loom_test_assume_isa, LOOM_OP_TEST_ASSUME)
 LOOM_DEFINE_VARIADIC_OPERANDS(loom_test_assume_values, 0)
 LOOM_DEFINE_VARIADIC_RESULTS(loom_test_assume_results, 0)

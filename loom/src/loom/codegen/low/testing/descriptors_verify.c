@@ -2525,7 +2525,8 @@ static iree_status_t loom_low_verify_immediate(
   IREE_RETURN_IF_ERROR(loom_low_verify_known_flags(
       immediate->flags,
       LOOM_LOW_IMMEDIATE_FLAG_SYMBOLIC | LOOM_LOW_IMMEDIATE_FLAG_RELATIVE |
-          LOOM_LOW_IMMEDIATE_FLAG_DEFAULT_VALUE,
+          LOOM_LOW_IMMEDIATE_FLAG_DEFAULT_VALUE |
+          LOOM_LOW_IMMEDIATE_FLAG_READ_ONLY_DATA,
       "immediate", immediate_index));
   IREE_RETURN_IF_ERROR(loom_low_verify_required_string(
       descriptor_set, immediate->field_name_string_ref,
@@ -2539,6 +2540,21 @@ static iree_status_t loom_low_verify_immediate(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "low immediate %" PRIu32 " has invalid kind %u",
                             immediate_index, (unsigned)immediate->kind);
+  }
+  if (iree_any_bit_set(immediate->flags,
+                       LOOM_LOW_IMMEDIATE_FLAG_READ_ONLY_DATA)) {
+    if (immediate->kind != LOOM_LOW_IMMEDIATE_KIND_ORDINAL) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "low read-only-data immediate %" PRIu32
+                              " is not ordinal",
+                              immediate_index);
+    }
+    if (!iree_any_bit_set(immediate->flags, LOOM_LOW_IMMEDIATE_FLAG_SYMBOLIC)) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "low read-only-data immediate %" PRIu32
+                              " is not symbolic",
+                              immediate_index);
+    }
   }
   if (immediate->kind == LOOM_LOW_IMMEDIATE_KIND_ENUM) {
     if (immediate->enum_domain_id == LOOM_LOW_ENUM_DOMAIN_NONE) {
@@ -2588,6 +2604,27 @@ static iree_status_t loom_low_verify_immediate(
                             "low immediate %" PRIu32
                             " uses both direct and sliced encoding fields",
                             immediate_index);
+  }
+  if (immediate->encoding_subfield_offset != 0) {
+    const uint16_t encoding_bit_offset =
+        (uint16_t)(immediate->encoding_subfield_offset - 1u);
+    if (immediate->encoding_field_id == 0 ||
+        immediate->encoding_slice_count != 0) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "low immediate %" PRIu32
+          " encoding subfield requires one direct encoding field",
+          immediate_index);
+    }
+    if (immediate->bit_width == 0 ||
+        encoding_bit_offset > 64u - immediate->bit_width) {
+      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                              "low immediate %" PRIu32
+                              " encoding subfield range [%" PRIu16 ", %" PRIu16
+                              ") does not fit 64 bits",
+                              immediate_index, encoding_bit_offset,
+                              encoding_bit_offset + immediate->bit_width);
+    }
   }
   if (immediate->encoding_slice_count != 0) {
     uint64_t covered_bits = 0;

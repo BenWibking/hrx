@@ -118,15 +118,13 @@ func.def @i32x4_shuffle_reduce(%v: vector<4xi32>, %init: i32) -> (i32) {
 // ----
 low.func.def target<x86.avx512.core> abi(object_function) abi_layout({signature = (vector<4xi32>, i32) -> (i32)}) @i32x4_shuffle_reduce(%v: reg<x86.xmm>, %init: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
   %reversed = vpshufd.xmm %v, 27
-  %9 = vpextrd.xmm %reversed, 0
-  %10 = copy %init : reg<x86.gpr32> -> reg<x86.gpr32>
-  %11 = add.gpr32 %10, %9
-  %12 = vpextrd.xmm %reversed, 1
-  %13 = add.gpr32 %11, %12
-  %14 = vpextrd.xmm %reversed, 2
-  %15 = add.gpr32 %13, %14
-  %16 = vpextrd.xmm %reversed, 3
-  %sum = add.gpr32 %15, %16
+  %9 = vpsrldq.xmm %reversed, 8
+  %10 = vpaddd.xmm %reversed, %9
+  %11 = vpsrldq.xmm %10, 4
+  %12 = vpaddd.xmm %10, %11
+  %13 = vmovd.xmm.gpr32 %init
+  %14 = vpaddd.xmm %12, %13
+  %sum = vpextrd.xmm %14, 0
   return %sum
 }
 
@@ -139,7 +137,7 @@ func.def @f32x4_shuffle(%v: vector<4xf32>) -> (vector<4xf32>) {
 
 // ----
 low.func.def target<x86.avx512.core> abi(object_function) abi_layout({signature = (vector<4xf32>) -> (vector<4xf32>)}) @f32x4_shuffle(%v: reg<x86.xmm>) -> (reg<x86.xmm>) asm {
-  %shuffled = vpermilps.xmm %v, 39
+  %shuffled = vpshufd.xmm %v, 39
   return %shuffled
 }
 
@@ -153,7 +151,7 @@ func.def @f32x4_shuffle_reduce(%v: vector<4xf32>, %init: f32) -> (f32) {
 
 // ----
 low.func.def target<x86.avx512.core> abi(object_function) abi_layout({signature = (vector<4xf32>, f32) -> (f32)}) @f32x4_shuffle_reduce(%v: reg<x86.xmm>, %init: reg<x86.xmm>) -> (reg<x86.xmm>) asm {
-  %shuffled = vpermilps.xmm %v, 39
+  %shuffled = vpshufd.xmm %v, 39
   %9 = vaddss.xmm %init, %shuffled
   %10 = vpermilps.xmm %shuffled, 1
   %11 = vaddss.xmm %9, %10
@@ -174,7 +172,7 @@ func.def @i32x4_select(%lhs: vector<4xi32>, %rhs: vector<4xi32>, %true_value: ve
 
 // ----
 low.func.def target<x86.avx512.core> abi(object_function) abi_layout({signature = (vector<4xi32>, vector<4xi32>, vector<4xi32>, vector<4xi32>) -> (vector<4xi32>)}) @i32x4_select(%lhs: reg<x86.xmm>, %rhs: reg<x86.xmm>, %true_value: reg<x86.xmm>, %false_value: reg<x86.xmm>) -> (reg<x86.xmm>) asm {
-  %mask = vpcmpd.slt.xmm %lhs, %rhs
+  %mask = vpcmpd.xmm %lhs, %rhs, 1
   %selected = vpblendmd.xmm %mask, %true_value, %false_value
   return %selected
 }
@@ -189,7 +187,7 @@ func.def @f32x4_select(%lhs: vector<4xf32>, %rhs: vector<4xf32>, %true_value: ve
 
 // ----
 low.func.def target<x86.avx512.core> abi(object_function) abi_layout({signature = (vector<4xf32>, vector<4xf32>, vector<4xf32>, vector<4xf32>) -> (vector<4xf32>)}) @f32x4_select(%lhs: reg<x86.xmm>, %rhs: reg<x86.xmm>, %true_value: reg<x86.xmm>, %false_value: reg<x86.xmm>) -> (reg<x86.xmm>) asm {
-  %mask = vcmpps.olt.xmm %lhs, %rhs
+  %mask = vcmpps.xmm %lhs, %rhs, 17
   %selected = vblendmps.xmm %mask, %true_value, %false_value
   return %selected
 }
