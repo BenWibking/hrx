@@ -50,6 +50,19 @@ loomc_status_t loomc_module_get_interop_view(
   return status;
 }
 
+loomc_module_mutable_interop_view_t loomc_module_get_mutable_interop_view(
+    loomc_module_t* module) {
+  if (module == NULL || loomc_module_loom_module(module) == NULL) {
+    return (loomc_module_mutable_interop_view_t){0};
+  }
+  loomc_module_invalidate_verification(module);
+  loomc_module_invalidate_compilation(module);
+  return (loomc_module_mutable_interop_view_t){
+      .module = loomc_module_loom_module(module),
+      .source_table = loomc_module_source_table(module),
+  };
+}
+
 const loom_target_environment_t* loomc_target_environment_get_interop_view(
     const loomc_target_environment_t* target_environment) {
   return loomc_target_environment_loom_target_environment(target_environment);

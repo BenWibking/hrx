@@ -40,6 +40,24 @@ typedef struct loomc_module_interop_view_t {
   const loom_source_table_resolver_t* source_table;
 } loomc_module_interop_view_t;
 
+/// Mutable native projection of a LoomC module for exact-version producers.
+///
+/// Requesting this view invalidates cached verification and compiler products
+/// before exposing the native module. The caller may mutate the module using
+/// native Loom APIs and must leave it structurally valid before the next public
+/// LoomC operation. That operation re-establishes the required invariants.
+///
+/// The source table is read-only: native mutations may reuse existing source
+/// IDs but must not invent source snapshots or retain either pointer beyond the
+/// public module lifetime.
+typedef struct loomc_module_mutable_interop_view_t {
+  /// Mutable native module owned by the public module handle.
+  loom_module_t* module;
+
+  /// Exact source snapshots indexed by native module source ID.
+  const loom_source_table_resolver_t* source_table;
+} loomc_module_mutable_interop_view_t;
+
 /// Structurally verifies a public module and projects its native read-only
 /// view.
 ///
@@ -66,6 +84,22 @@ typedef struct loomc_module_interop_view_t {
 LOOMC_API_EXPORT loomc_status_t loomc_module_get_interop_view(
     loomc_module_t* module, loomc_allocator_t allocator,
     loomc_module_interop_view_t* out_view, loomc_result_t** out_result);
+
+/// Projects a mutable native view after invalidating derived module state.
+///
+/// This is an exact-version escape hatch for producers that construct or adapt
+/// Loom IR with native builder APIs before returning to public LoomC
+/// compilation. It performs no verification and returns a zero view when
+/// `module` is NULL or does not contain native IR.
+///
+/// @param module Module whose native IR will be mutated.
+/// @return Borrowed mutable module and read-only source-table pointers.
+///
+/// @lifetime
+/// The returned pointers remain valid until `module` is replaced, mutated by a
+/// public operation, or released. Concurrent access to `module` is invalid.
+LOOMC_API_EXPORT loomc_module_mutable_interop_view_t
+loomc_module_get_mutable_interop_view(loomc_module_t* module);
 
 /// Returns the immutable native environment owned by a public target handle.
 ///

@@ -127,4 +127,37 @@ func.def @missing_result(%value: i32) -> (i32, i32) {
   EXPECT_TRUE(found_structural_error);
 }
 
+TEST(InteropTest, MutableProjectionReturnsToPublicVerification) {
+  ContextPtr context = CreateContext();
+  WorkspacePtr workspace = CreateWorkspace();
+  SourcePtr source = CreateSource("module.loom", R"(
+func.def public @identity(%value: i32) -> (i32) {
+  func.return %value : i32
+}
+)");
+  ModulePtr module = Deserialize(context.get(), workspace.get(), source.get());
+
+  loomc_module_mutable_interop_view_t mutable_view =
+      loomc_module_get_mutable_interop_view(module.get());
+  ASSERT_NE(mutable_view.module, nullptr);
+  ASSERT_NE(mutable_view.source_table, nullptr);
+  loom_string_id_t name_id = LOOM_STRING_ID_INVALID;
+  IREE_ASSERT_OK(loom_module_intern_string(mutable_view.module,
+                                           IREE_SV("adapted"), &name_id));
+  mutable_view.module->name_id = name_id;
+
+  loomc_module_interop_view_t verified_view = {};
+  loomc_result_t* result = nullptr;
+  LOOMC_EXPECT_OK(loomc_module_get_interop_view(
+      module.get(), loomc_allocator_system(), &verified_view, &result));
+  ResultPtr result_ptr(result);
+  ASSERT_TRUE(loomc_result_succeeded(result_ptr.get()));
+  EXPECT_EQ(verified_view.module, mutable_view.module);
+  EXPECT_EQ(verified_view.source_table, mutable_view.source_table);
+  EXPECT_TRUE(iree_string_view_equal(
+      loom_string_table_get(&verified_view.module->strings,
+                            verified_view.module->name_id),
+      IREE_SV("adapted")));
+}
+
 }  // namespace
