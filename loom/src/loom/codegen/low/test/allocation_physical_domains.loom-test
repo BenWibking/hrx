@@ -1,4 +1,4 @@
-// RUN: with-checks emit low-allocation-json @copy_declared_pair fixed=%source:physical_register:5:2
+// RUN: emit low-allocation-query @copy_declared_pair values=%source,%result copies=%result fixed=%source:physical_register:5:2
 
 test.target<low_core> @target
 
@@ -9,11 +9,13 @@ low.func.def target<test.low.core>(@target) @copy_declared_pair(%source: reg<tes
 }
 
 // ----
-CHECK: *"coalesced_copy_count":1,"materialized_copy_count":0,*"name":"source"*"location":{"kind":"physical_register","base":5,"count":2}*"name":"result"*"location":{"kind":"physical_register","base":5,"count":2}*
+value %source: test.explicit32 -> physical_register[5:2]
+value %result: test.explicit32 -> physical_register[5:2]
+copy %source -> %result: coalesced
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @join_preserves_loop_storage fixed=%initial:physical_register:4:2
+// RUN: emit low-allocation-query @join_preserves_loop_storage values=%initial,%state,%fresh,%merged fixed=%initial:physical_register:4:2
 
 test.target<low_core> @target
 
@@ -39,11 +41,14 @@ low.func.def target<test.low.core>(@target) @join_preserves_loop_storage(%condit
 }
 
 // ----
-CHECK: *"spill_count":0,*"name":"state"*"location":{"kind":"physical_register","base":4,"count":2}*"name":"fresh"*"location":{"kind":"physical_register","base":5,"count":2}*"name":"merged"*"location":{"kind":"physical_register","base":4,"count":2}*
+value %initial: test.explicit32 -> physical_register[4:2]
+value %state: test.explicit32 -> physical_register[4:2]
+value %fresh: test.explicit32 -> physical_register[5:2]
+value %merged: test.explicit32 -> physical_register[4:2]
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @atomic_storage_defines_domains
+// RUN: emit low-allocation-query @atomic_storage_defines_domains values=%broad,%narrow
 
 test.target<low_core> @target
 
@@ -54,11 +59,12 @@ low.func.def target<test.low.core>(@target) @atomic_storage_defines_domains(%bro
 }
 
 // ----
-CHECK: *"name":"broad"*"base":1,*"name":"narrow"*"base":4,*
+value %broad: test.explicit32 -> physical_register[1:1]
+value %narrow: test.atomic.narrow -> physical_register[4:1]
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @equal_atomic_domains_combine_demand
+// RUN: emit low-allocation-query @equal_atomic_domains_combine_demand values=%broad,%left,%right
 
 test.target<low_core> @target
 
@@ -69,11 +75,13 @@ low.func.def target<test.low.core>(@target) @equal_atomic_domains_combine_demand
 }
 
 // ----
-CHECK: *"spill_count":0,*"name":"broad"*"base":2,*"name":"left"*"base":0,*"name":"right"*"base":8,*
+value %broad: test.explicit32 -> physical_register[2:1]
+value %left: test.packed.narrow -> physical_register[0:1]
+value %right: test.alias.narrow -> physical_register[8:1]
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @reuse_idle_restricted_domain
+// RUN: emit low-allocation-query @reuse_idle_restricted_domain values=%short0,%short1,%short2,%long,%restricted0,%restricted1
 
 test.target<low_core> @target
 
@@ -93,11 +101,16 @@ low.func.def target<test.low.core>(@target) @reuse_idle_restricted_domain(%short
 }
 
 // ----
-CHECK: *"spill_count":0,*"name":"short0"*"base":2,*"name":"short1"*"base":3,*"name":"short2"*"base":0,*"name":"long"*"base":1,*"name":"restricted0"*"base":2,*"name":"restricted1"*"base":3,*
+value %short0: test.explicit32 -> physical_register[2:1]
+value %short1: test.explicit32 -> physical_register[3:1]
+value %short2: test.explicit32 -> physical_register[0:1]
+value %long: test.explicit32 -> physical_register[1:1]
+value %restricted0: test.coindexed.partner -> physical_register[2:1]
+value %restricted1: test.coindexed.partner -> physical_register[3:1]
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @later_restricted_value
+// RUN: emit low-allocation-query @later_restricted_value values=%persistent,%restricted
 
 test.target<low_core> @target
 
@@ -109,11 +122,12 @@ low.func.def target<test.low.core>(@target) @later_restricted_value(%persistent:
 }
 
 // ----
-CHECK: *"spill_count":0,*"name":"persistent"*"base":2,*"name":"restricted"*"base":0,*
+value %persistent: test.explicit32 -> physical_register[2:1]
+value %restricted: test.packed.narrow -> physical_register[0:1]
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @copy_keeps_general_storage fixed=%source:physical_register:2:1
+// RUN: emit low-allocation-query @copy_keeps_general_storage values=%source,%result copies=%result fixed=%source:physical_register:2:1
 
 test.target<low_core> @target
 
@@ -126,11 +140,13 @@ low.func.def target<test.low.core>(@target) @copy_keeps_general_storage(%source:
 }
 
 // ----
-CHECK: *"coalesced_copy_count":1,"materialized_copy_count":0,*"name":"source"*"base":2,*"name":"result"*"base":2,*
+value %source: test.explicit32 -> physical_register[2:1]
+value %result: test.explicit32 -> physical_register[2:1]
+copy %source -> %result: coalesced
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @future_fixed_copy fixed=%result:physical_register:2:1
+// RUN: emit low-allocation-query @future_fixed_copy values=%source,%result copies=%result fixed=%result:physical_register:2:1
 
 test.target<low_core> @target
 
@@ -142,11 +158,13 @@ low.func.def target<test.low.core>(@target) @future_fixed_copy(%source: reg<test
 }
 
 // ----
-CHECK: *"coalesced_copy_count":1,"materialized_copy_count":0,*"name":"source"*"base":2,*"name":"result"*"base":2,*
+value %source: test.explicit32 -> physical_register[2:1]
+value %result: test.explicit32 -> physical_register[2:1]
+copy %source -> %result: coalesced
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @loop_initializer_keeps_future_domain_available
+// RUN: emit low-allocation-query @loop_initializer_keeps_future_domain_available values=%initial,%state,%restricted
 
 test.target<low_core> @target
 
@@ -166,11 +184,13 @@ low.func.def target<test.low.core>(@target) @loop_initializer_keeps_future_domai
 }
 
 // ----
-CHECK: *"spill_count":0,*"name":"initial"*"base":2,*"name":"state"*"base":2,*"name":"restricted"*"base":0,*
+value %initial: test.explicit32 -> physical_register[2:1]
+value %state: test.explicit32 -> physical_register[2:1]
+value %restricted: test.packed.narrow -> physical_register[0:1]
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @equal_restricted_domains_remain_preferred
+// RUN: emit low-allocation-query @equal_restricted_domains_remain_preferred values=%first,%second,%narrow_first,%narrow_second copies=%narrow_first,%narrow_second
 
 test.target<low_core> @target
 
@@ -183,11 +203,16 @@ low.func.def target<test.low.core>(@target) @equal_restricted_domains_remain_pre
 }
 
 // ----
-CHECK: *"coalesced_copy_count":2,"materialized_copy_count":0,*"name":"first"*"base":0,*"name":"second"*"base":1,*"name":"narrow_first"*"base":0,*"name":"narrow_second"*"base":1,*
+value %first: test.explicit32 -> physical_register[0:1]
+value %second: test.explicit32 -> physical_register[1:1]
+value %narrow_first: test.packed.narrow -> physical_register[0:1]
+value %narrow_second: test.packed.narrow -> physical_register[1:1]
+copy %first -> %narrow_first: coalesced
+copy %second -> %narrow_second: coalesced
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @semantic_candidates_use_physical_identity
+// RUN: emit low-allocation-query @semantic_candidates_use_physical_identity values=%source,%result copies=%result
 
 test.target<low_core> @target
 
@@ -199,11 +224,13 @@ low.func.def target<test.low.core>(@target) @semantic_candidates_use_physical_id
 }
 
 // ----
-CHECK: *"coalesced_copy_count":1,"materialized_copy_count":0,*"name":"source"*"base":2,*"name":"result"*"base":2,*
+value %source: test.packed.wide -> physical_register[2:1]
+value %result: test.coindexed.partner -> physical_register[2:1]
+copy %source -> %result: coalesced
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @disjoint_domains_preserve_transfer
+// RUN: emit low-allocation-query @disjoint_domains_preserve_transfer values=%source,%result copies=%result
 
 test.target<low_core> @target
 
@@ -213,11 +240,13 @@ low.func.def target<test.low.core>(@target) @disjoint_domains_preserve_transfer(
 }
 
 // ----
-CHECK: *"coalesced_copy_count":0,"materialized_copy_count":1,*"name":"source"*"base":0,*"name":"result"*"base":2,*
+value %source: test.packed.narrow -> physical_register[0:1]
+value %result: test.coindexed.partner -> physical_register[2:1]
+copy %source -> %result: materialized
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @fixed_binding_overrides_preference fixed=%persistent:physical_register:0:1
+// RUN: emit low-allocation-query @fixed_binding_overrides_preference values=%persistent,%restricted fixed=%persistent:physical_register:0:1
 
 test.target<low_core> @target
 
@@ -227,11 +256,12 @@ low.func.def target<test.low.core>(@target) @fixed_binding_overrides_preference(
 }
 
 // ----
-CHECK: *"spill_count":0,*"name":"persistent"*"base":0,*"name":"restricted"*"base":1,*
+value %persistent: test.explicit32 -> physical_register[0:1]
+value %restricted: test.packed.narrow -> physical_register[1:1]
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @budget_overrides_preference test.explicit32=2
+// RUN: emit low-allocation-query @budget_overrides_preference values=%persistent,%restricted test.explicit32=2
 
 test.target<low_core> @target
 
@@ -241,11 +271,12 @@ low.func.def target<test.low.core>(@target) @budget_overrides_preference(%persis
 }
 
 // ----
-CHECK: *"spill_count":0,*"name":"persistent"*"base":0,*"name":"restricted"*"base":2,*
+value %persistent: test.explicit32 -> physical_register[0:1]
+value %restricted: test.coindexed.partner -> physical_register[2:1]
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @rotating_versions_remain_distinct
+// RUN: emit low-allocation-query @rotating_versions_remain_distinct values=%first,%second,%left,%right,%restricted
 
 test.target<low_core> @target
 
@@ -264,11 +295,15 @@ low.func.def target<test.low.core>(@target) @rotating_versions_remain_distinct(%
 }
 
 // ----
-CHECK: *"spill_count":0,*"name":"first"*"base":2,*"name":"second"*"base":1,*"name":"left"*"base":2,*"name":"right"*"base":1,*"name":"restricted"*"base":0,*
+value %first: test.explicit32 -> physical_register[2:1]
+value %second: test.explicit32 -> physical_register[1:1]
+value %left: test.explicit32 -> physical_register[2:1]
+value %right: test.explicit32 -> physical_register[1:1]
+value %restricted: test.packed.narrow -> physical_register[0:1]
 
 // ====
 
-// RUN: with-checks emit low-allocation-json @soft_affinity_fallback_counts_as_broad_demand
+// RUN: emit low-allocation-query @soft_affinity_fallback_counts_as_broad_demand values=%probe,%affine0,%affine2
 
 test.target<low_core> @target
 
@@ -287,4 +322,6 @@ low.func.def target<test.low.core>(@target) @soft_affinity_fallback_counts_as_br
 }
 
 // ----
-CHECK: *"spill_count":0,*"name":"probe"*"base":3,*"name":"affine0"*"base":0,*"name":"affine2"*"base":2,*
+value %probe: test.explicit32 -> physical_register[3:1]
+value %affine0: test.explicit32 -> physical_register[0:1]
+value %affine2: test.explicit32 -> physical_register[2:1]

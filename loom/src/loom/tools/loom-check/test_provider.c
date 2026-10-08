@@ -18,6 +18,7 @@
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loom/tools/loom-check/execute.h"
 #include "loom/tools/loom-check/low_emit.h"
+#include "loom/tools/loom-check/test_allocation_provider.h"
 #include "loom/tools/loom-check/test_schedule_provider.h"
 
 enum {
@@ -378,6 +379,7 @@ static const loom_check_emit_provider_t kLoomCheckTestSyntheticHazardProvider =
 };
 
 static const loom_check_emit_provider_t* const kLoomCheckTestEmitProviders[] = {
+    &loom_check_test_allocation_provider,
     &loom_check_test_schedule_provider,
     &kLoomCheckTestSyntheticHazardProvider,
 };

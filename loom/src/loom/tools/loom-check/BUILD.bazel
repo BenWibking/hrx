@@ -546,10 +546,12 @@ loom_cc_library(
     name = "test_provider",
     testonly = True,
     srcs = [
+        "test_allocation_provider.c",
         "test_provider.c",
         "test_schedule_provider.c",
     ],
     hdrs = [
+        "test_allocation_provider.h",
         "test_provider.h",
         "test_schedule_provider.h",
     ],

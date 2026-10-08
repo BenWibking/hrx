@@ -446,9 +446,11 @@ loom_cc_library(
   NAME
     test_provider
   HDRS
+    "test_allocation_provider.h"
     "test_provider.h"
     "test_schedule_provider.h"
   SRCS
+    "test_allocation_provider.c"
     "test_provider.c"
     "test_schedule_provider.c"
   DEPS
