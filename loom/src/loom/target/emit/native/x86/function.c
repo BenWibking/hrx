@@ -216,6 +216,18 @@ static uint8_t loom_x86_function_register(
                                      assignment->location_base);
 }
 
+static void loom_x86_function_note_upper_vector_state(
+    loom_x86_function_t* function, uint16_t descriptor_reg_class_id,
+    uint32_t location) {
+  const loom_x86_register_class_t register_class =
+      loom_x86_logical_register_class(descriptor_reg_class_id);
+  if ((register_class == LOOM_X86_REGISTER_CLASS_YMM ||
+       register_class == LOOM_X86_REGISTER_CLASS_ZMM) &&
+      location < 16) {
+    function->may_dirty_upper_vector_state = true;
+  }
+}
+
 static void loom_x86_function_append_transport(
     loom_x86_function_t* function,
     const loom_x86_transport_instruction_t* instruction) {
@@ -227,6 +239,8 @@ static void loom_x86_function_append_transport(
     // cannot derive from a packed vector recipe.
     const uint16_t preserved = (1u << 3) | (1u << 5) | (0xfu << 12);
     function->saved_registers |= instruction->gpr_writes & preserved;
+    function->may_dirty_upper_vector_state |=
+        instruction->may_dirty_upper_vector_state;
   }
 }
 
@@ -442,13 +456,25 @@ static iree_status_t loom_x86_function_packet(
     return loom_x86_function_reject(builder, LOOM_ERR_X86_005, mnemonic);
   }
   loom_x86_encoding_operands_t operands = {0};
+  const bool may_dirty_upper_vector_state =
+      (descriptor->encoding_format_id & LOOM_X86_ENCODING_FORMAT_VECTOR) &&
+      (descriptor->encoding_id >> 14);
   for (uint16_t i = 0; i < packet->node->operand_count; ++i) {
-    operands.inputs[i] = loom_x86_function_register(
-        loom_low_packet_operand_assignment(&frame->allocation, packet, i));
+    const loom_low_allocation_assignment_t* input =
+        loom_low_packet_operand_assignment(&frame->allocation, packet, i);
+    if (may_dirty_upper_vector_state) {
+      loom_x86_function_note_upper_vector_state(
+          function, input->descriptor_reg_class_id, input->location_base);
+    }
+    operands.inputs[i] = loom_x86_function_register(input);
   }
   if (packet->node->result_count) {
     const loom_low_allocation_assignment_t* result =
         loom_low_packet_result_assignment(&frame->allocation, packet, 0);
+    if (may_dirty_upper_vector_state) {
+      loom_x86_function_note_upper_vector_state(
+          function, result->descriptor_reg_class_id, result->location_base);
+    }
     operands.result = loom_x86_function_register(result);
     const loom_x86_register_class_t result_class =
         loom_x86_logical_register_class(result->descriptor_reg_class_id);
@@ -821,6 +847,12 @@ static iree_status_t loom_x86_function_write_stack_leave(
   return iree_ok_status();
 }
 
+static iree_status_t loom_x86_function_write_upper_vector_state_cleanup(
+    iree_io_stream_t* stream) {
+  static const uint8_t bytes[] = {0xc5, 0xf8, 0x77};
+  return iree_io_stream_write(stream, sizeof(bytes), bytes);
+}
+
 iree_status_t loom_x86_function_write(const loom_x86_function_t* function,
                                       const uint32_t* symbol_indices,
                                       iree_host_size_t section_index,
@@ -898,6 +930,11 @@ iree_status_t loom_x86_function_write(const loom_x86_function_t* function,
       status = loom_x86_function_write_stack(stream, LOOM_X86_ENCODING_FORM_POP,
                                              reg);
     }
+  }
+  // Public results in the current platform ABI are scalar or pointer values,
+  // so no live result occupies the upper vector state at this boundary.
+  if (iree_status_is_ok(status) && function->may_dirty_upper_vector_state) {
+    status = loom_x86_function_write_upper_vector_state_cleanup(stream);
   }
   if (iree_status_is_ok(status)) {
     status =

@@ -79,6 +79,18 @@ TEST_F(FunctionTest, EmptyLeafNeedsOnlyReturn) {
   EXPECT_EQ(Read(), Encode(Instruction(LOOM_X86_ENCODING_FORM_RETURN)));
 }
 
+TEST_F(FunctionTest, DirtyUpperVectorStateCleansBeforeReturn) {
+  iree_host_size_t block_starts[] = {0, 0};
+  loom_x86_function_t function = {};
+  function.block_starts = block_starts;
+  function.block_count = 1;
+  function.may_dirty_upper_vector_state = true;
+
+  IREE_ASSERT_OK(loom_x86_function_write(&function, nullptr, 0, nullptr,
+                                         stream_, &arena_));
+  EXPECT_EQ(Read(), std::string("\xc5\xf8\x77\xc3", 4));
+}
+
 TEST_F(FunctionTest, PackedVectorRecipeUsesOrdinaryWriterPath) {
   loom_x86_encoding_operands_t operands = {};
   operands.result = 17;
@@ -156,6 +168,7 @@ TEST_F(FunctionTest, RestoreStackAndRegistersAfterResultTransport) {
       /*.block_starts=*/block_starts,
       /*.block_count=*/1,
       /*.saved_registers=*/(1u << 3) | (1u << 12),
+      /*.may_dirty_upper_vector_state=*/false,
       /*.stack=*/{24, 16, {}},
   };
   IREE_ASSERT_OK(loom_x86_function_write(&function, nullptr, 0, nullptr,
@@ -211,6 +224,7 @@ TEST_F(FunctionTest, BranchesSkipEntryTransportAndPreservation) {
       /*.block_starts=*/block_starts,
       /*.block_count=*/4,
       /*.saved_registers=*/1u << 3,
+      /*.may_dirty_upper_vector_state=*/false,
       /*.stack=*/{16, 16, {}},
   };
 

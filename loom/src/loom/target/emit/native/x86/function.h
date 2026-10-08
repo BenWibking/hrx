@@ -49,6 +49,8 @@ typedef struct loom_x86_function_t {
   uint32_t block_count;
   // Callee-preserved GPRs actually written by instructions or transport.
   uint16_t saved_registers;
+  // True when the function may leave the upper state of YMM/ZMM0-15 dirty.
+  bool may_dirty_upper_vector_state;
   // Fixed stack allocation after callee saves. Byte emission consumes these
   // concrete adjustments without computing alignment or selecting scratch.
   struct {

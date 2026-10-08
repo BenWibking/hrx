@@ -150,6 +150,10 @@ static iree_status_t loom_x86_loom_check_emit_frame(
         register_names[function.stack.realignment.scratch_register],
         function.stack.realignment.saved_pointer_offset));
   }
+  if (function.may_dirty_upper_vector_state) {
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(
+        builder, "upper-state-cleanup: vzeroupper\n"));
+  }
   return iree_ok_status();
 }
 

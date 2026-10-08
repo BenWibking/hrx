@@ -31,6 +31,8 @@ typedef struct loom_x86_transport_instruction_t {
   uint16_t encoding_id;
   // Architectural GPRs written by the transfer.
   uint16_t gpr_writes;
+  // True when the transfer may leave YMM/ZMM0-15 upper state dirty.
+  bool may_dirty_upper_vector_state;
 } loom_x86_transport_instruction_t;
 
 // Maps an allocation location to its architectural register number. K values

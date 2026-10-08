@@ -136,6 +136,10 @@ bool loom_x86_transport_select_register(
                 loom_x86_transport_byte_length(source_reg_class_id)
             ? destination_class
             : source_class;
+    out_instruction->may_dirty_upper_vector_state =
+        (width == LOOM_X86_REGISTER_CLASS_YMM ||
+         width == LOOM_X86_REGISTER_CLASS_ZMM) &&
+        (destination < 16 || source < 16);
     const bool evex = destination >= 16 || source >= 16 ||
                       width == LOOM_X86_REGISTER_CLASS_ZMM;
     encoding_id = loom_x86_transport_vector_encoding(
@@ -204,6 +208,8 @@ void loom_x86_transport_select_storage(
   }
 
   if (loom_x86_transport_is_simd(register_class)) {
+    out_instruction->may_dirty_upper_vector_state =
+        register_class != LOOM_X86_REGISTER_CLASS_XMM && reg < 16;
     out_instruction->encoding_format_id =
         is_store ? LOOM_X86_TRANSPORT_RECIPE_FULL_STORE
                  : LOOM_X86_TRANSPORT_RECIPE_FULL_LOAD;

@@ -30,22 +30,28 @@ void ExpectBytes(const loom_x86_transport_instruction_t& transport,
 void ExpectRegister(uint16_t destination_class, uint32_t destination,
                     uint16_t source_class, uint32_t source,
                     std::initializer_list<uint8_t> bytes,
-                    uint16_t gpr_writes = 0) {
+                    uint16_t gpr_writes = 0,
+                    bool may_dirty_upper_vector_state = false) {
   loom_x86_transport_instruction_t instruction;
   ASSERT_TRUE(loom_x86_transport_select_register(
       destination_class, destination, source_class, source, &instruction));
   EXPECT_EQ(instruction.gpr_writes, gpr_writes);
+  EXPECT_EQ(instruction.may_dirty_upper_vector_state,
+            may_dirty_upper_vector_state);
   ExpectBytes(instruction, bytes);
 }
 
 void ExpectStorage(loom_x86_storage_transfer_t transfer,
                    uint16_t register_class, uint32_t reg, uint8_t base,
                    int32_t displacement, std::initializer_list<uint8_t> bytes,
-                   uint16_t gpr_writes = 0) {
+                   uint16_t gpr_writes = 0,
+                   bool may_dirty_upper_vector_state = false) {
   loom_x86_transport_instruction_t instruction;
   loom_x86_transport_select_storage(transfer, register_class, reg, base,
                                     displacement, &instruction);
   EXPECT_EQ(instruction.gpr_writes, gpr_writes);
+  EXPECT_EQ(instruction.may_dirty_upper_vector_state,
+            may_dirty_upper_vector_state);
   ExpectBytes(instruction, bytes);
 }
 
@@ -142,7 +148,9 @@ TEST(TransportTest, RegisterTransfersUseExactWidthAndDirection) {
   ExpectRegister(LOOM_X86_REGISTER_CLASS_XMM, 1, LOOM_X86_REGISTER_CLASS_XMM, 2,
                  {0xc5, 0xf8, 0x28, 0xca});
   ExpectRegister(LOOM_X86_REGISTER_CLASS_YMM, 9, LOOM_X86_REGISTER_CLASS_YMM,
-                 10, {0xc4, 0x41, 0x7c, 0x28, 0xca});
+                 10, {0xc4, 0x41, 0x7c, 0x28, 0xca}, 0, true);
+  ExpectRegister(LOOM_X86_REGISTER_CLASS_ZMM, 1, LOOM_X86_REGISTER_CLASS_ZMM, 2,
+                 {0x62, 0xf1, 0x7c, 0x48, 0x28, 0xca}, 0, true);
   ExpectRegister(LOOM_X86_REGISTER_CLASS_ZMM, 17, LOOM_X86_REGISTER_CLASS_ZMM,
                  18, {0x62, 0xa1, 0x7c, 0x48, 0x28, 0xca});
   ExpectRegister(LOOM_X86_REGISTER_CLASS_ZMM, 17, LOOM_X86_REGISTER_CLASS_YMM,
@@ -190,6 +198,12 @@ TEST(TransportTest, CoalescesOnlyIdenticalPhysicalRepresentations) {
       LOOM_X86_REGISTER_CLASS_GPR64, 3, LOOM_X86_REGISTER_CLASS_GPR32, 3,
       &instruction));
   EXPECT_EQ(instruction.encoding_format_id, LOOM_X86_ENCODING_FORM_MOVE);
+
+  ASSERT_TRUE(loom_x86_transport_select_register(LOOM_X86_REGISTER_CLASS_YMM, 3,
+                                                 LOOM_X86_REGISTER_CLASS_YMM, 3,
+                                                 &instruction));
+  EXPECT_EQ(instruction.encoding_format_id, 0);
+  EXPECT_FALSE(instruction.may_dirty_upper_vector_state);
 }
 
 TEST(TransportTest, StackTransfersCoverVectorAndMaskFamilies) {
@@ -198,11 +212,12 @@ TEST(TransportTest, StackTransfersCoverVectorAndMaskFamilies) {
   ExpectStorage(LOOM_X86_STORAGE_TRANSFER_STORE, LOOM_X86_REGISTER_CLASS_XMM, 1,
                 4, 0, {0xc5, 0xf8, 0x11, 0x0c, 0x24});
   ExpectStorage(LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_YMM, 9,
-                12, 64, {0xc4, 0x41, 0x7c, 0x10, 0x4c, 0x24, 0x40});
+                12, 64, {0xc4, 0x41, 0x7c, 0x10, 0x4c, 0x24, 0x40}, 0, true);
   ExpectStorage(LOOM_X86_STORAGE_TRANSFER_STORE, LOOM_X86_REGISTER_CLASS_YMM, 9,
-                12, 64, {0xc4, 0x41, 0x7c, 0x11, 0x4c, 0x24, 0x40});
+                12, 64, {0xc4, 0x41, 0x7c, 0x11, 0x4c, 0x24, 0x40}, 0, true);
   ExpectStorage(LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_ZMM, 9,
-                12, 64, {0x62, 0x51, 0x7c, 0x48, 0x10, 0x4c, 0x24, 0x01});
+                12, 64, {0x62, 0x51, 0x7c, 0x48, 0x10, 0x4c, 0x24, 0x01}, 0,
+                true);
   ExpectStorage(
       LOOM_X86_STORAGE_TRANSFER_STORE, LOOM_X86_REGISTER_CLASS_ZMM, 17, 12,
       8192, {0x62, 0xc1, 0x7c, 0x48, 0x11, 0x8c, 0x24, 0x00, 0x20, 0x00, 0x00});
