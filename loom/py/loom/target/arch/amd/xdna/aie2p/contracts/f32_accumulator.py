@@ -21,16 +21,12 @@ from loom.target.contracts import (
     DescriptorEmitForm,
     DescriptorResultType,
     EmitDescriptorOp,
-    EmitRegisterConcat,
     EmitRegisterSlice,
     ResultTypeBinding,
     ValueRef,
-    Vector,
     descriptor_by_key,
 )
 from loom.target.low_descriptors import Descriptor
-
-_F32X64_ACCUMULATOR = Vector("f32", lanes=64)
 
 
 def _descriptor(key: str) -> Descriptor:
@@ -73,34 +69,10 @@ class F32AccumulatorProgram:
     def __init__(self, temporary_prefix: str = "") -> None:
         self.emits: list[ContractEmit] = []
         self.temporary_prefix = temporary_prefix
-        self._zero_accumulator_unit: ValueRef | None = None
         self._arithmetic_control: ValueRef | None = None
 
     def temporary(self, name: str) -> ValueRef:
         return ValueRef.temporary(f"{self.temporary_prefix}{name}")
-
-    def _zero_unit(self) -> ValueRef:
-        zero_unit = self._zero_accumulator_unit
-        if zero_unit is not None:
-            return zero_unit
-        zero_accumulator = self.temporary("zero_accumulator")
-        zero_unit = self.temporary("zero_accumulator_unit")
-        self.emits.extend(
-            (
-                _op_emit(
-                    _descriptor("amd.xdna.aie2p.accumulator.clear.f32x64"),
-                    results={"dst": zero_accumulator},
-                    result_types={"dst": DescriptorResultType()},
-                ),
-                EmitRegisterSlice(
-                    source=zero_accumulator,
-                    result=zero_unit,
-                    unit_count=1,
-                ),
-            )
-        )
-        self._zero_accumulator_unit = zero_unit
-        return zero_unit
 
     def _control(self) -> ValueRef:
         control = self._arithmetic_control
@@ -118,24 +90,15 @@ class F32AccumulatorProgram:
         return control
 
     def vector_to_accumulator(self, name: str, source: ValueRef) -> ValueRef:
-        """Moves one X-carried F32 packet into a zero-padded accumulator."""
+        """Moves one X-carried F32 packet into the low accumulator quarter."""
 
-        zero_unit = self._zero_unit()
-        accumulator_unit = self.temporary(f"{name}_accumulator_unit")
         accumulator = self.temporary(f"{name}_accumulator")
-        self.emits.extend(
-            (
-                _op_emit(
-                    _descriptor("amd.xdna.aie2p.move.vector512.to.accumulator512"),
-                    operands={"src": source},
-                    results={"dst": accumulator_unit},
-                    result_types={"dst": DescriptorResultType()},
-                ),
-                EmitRegisterConcat(
-                    sources=(accumulator_unit, zero_unit, zero_unit, zero_unit),
-                    result=accumulator,
-                    result_type=_F32X64_ACCUMULATOR,
-                ),
+        self.emits.append(
+            _op_emit(
+                _descriptor("amd.xdna.aie2p.move.vector512.to.accumulator512.low"),
+                operands={"src": source},
+                results={"dst": accumulator},
+                result_types={"dst": DescriptorResultType()},
             )
         )
         return accumulator

@@ -429,16 +429,16 @@ def _evaluate_packet_lane(
             elif descriptor_key == "accumulator.clear.f32x64":
                 value = 0
             elif descriptor_key in (
+                "add.f32x16.configured",
                 "add.f32x64.configured",
+                "sub.f32x16.configured",
                 "sub.f32x64.configured",
             ):
                 assert operands["acc"] == 60
                 lhs = _bits_float(operands["acc1"])
                 rhs = _bits_float(operands["acc2"])
                 value = _float_bits(
-                    lhs + rhs
-                    if descriptor_key == "add.f32x64.configured"
-                    else lhs - rhs
+                    lhs + rhs if descriptor_key.startswith("add.") else lhs - rhs
                 )
             elif descriptor_key.startswith("move."):
                 value = operands["src"]
@@ -2370,14 +2370,28 @@ def test_integer_to_f32_packet_family_is_complete_and_compact() -> None:
             assert result_type.minimum_static_elements == 1
             assert result_type.maximum_static_elements == 16
 
-            descriptor_keys = {
+            descriptor_keys = [
                 emit.descriptor.key
                 for emit in rule.emit
                 if isinstance(emit, EmitDescriptorOp)
-            }
+            ]
             assert "amd.xdna.aie2p.extract.i32.immediate" not in descriptor_keys
             assert "amd.xdna.aie2p.insert.i32.register" not in descriptor_keys
             assert "amd.xdna.aie2p.convert.signed.i32.to.f32" not in descriptor_keys
+            assert "amd.xdna.aie2p.accumulator.clear.f32x64" not in descriptor_keys
+            assert (
+                "amd.xdna.aie2p.move.vector512.to.accumulator512" not in descriptor_keys
+            )
+            assert not any(isinstance(emit, EmitRegisterConcat) for emit in rule.emit)
+            assert descriptor_keys.count(
+                "amd.xdna.aie2p.move.vector512.to.accumulator512.low"
+            ) == (4 if bit_width == 32 else 2)
+            assert descriptor_keys.count("amd.xdna.aie2p.sub.f32x16.configured") == (
+                2 if bit_width == 32 else 1
+            )
+            assert descriptor_keys.count("amd.xdna.aie2p.add.f32x64.configured") == (
+                1 if bit_width == 32 else 0
+            )
             assert len(rule.emit) <= 33
 
 

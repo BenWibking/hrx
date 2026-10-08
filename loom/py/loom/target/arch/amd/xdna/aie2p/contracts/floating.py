@@ -1330,8 +1330,8 @@ AIE2P_FLOATING_RULES = (
     *(
         _float_vector_accumulator_binary_rule(source_op, descriptor_key)
         for source_op, descriptor_key in (
-            (vector.vector_addf, "amd.xdna.aie2p.add.f32x64.configured"),
-            (vector.vector_subf, "amd.xdna.aie2p.sub.f32x64.configured"),
+            (vector.vector_addf, "amd.xdna.aie2p.add.f32x16.configured"),
+            (vector.vector_subf, "amd.xdna.aie2p.sub.f32x16.configured"),
         )
     ),
     *(
@@ -1339,11 +1339,11 @@ AIE2P_FLOATING_RULES = (
         for source_op, descriptor_key in (
             (
                 scalar_arithmetic.scalar_addf,
-                "amd.xdna.aie2p.add.f32x64.configured",
+                "amd.xdna.aie2p.add.f32x16.configured",
             ),
             (
                 scalar_arithmetic.scalar_subf,
-                "amd.xdna.aie2p.sub.f32x64.configured",
+                "amd.xdna.aie2p.sub.f32x16.configured",
             ),
         )
     ),

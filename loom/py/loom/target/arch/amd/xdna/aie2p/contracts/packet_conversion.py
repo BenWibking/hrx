@@ -1590,9 +1590,9 @@ def _integer_to_f32_packet_rule(
             "result",
             biased_accumulator,
             bias_accumulator,
-            "amd.xdna.aie2p.sub.f32x64.configured",
+            "amd.xdna.aie2p.sub.f32x16.configured",
         )
-        primary_descriptor = _descriptor("amd.xdna.aie2p.sub.f32x64.configured")
+        primary_descriptor = _descriptor("amd.xdna.aie2p.sub.f32x16.configured")
     else:
         # The high and low components are exact integers in F32. Their single
         # final addition performs exactly the rounding required by the source
@@ -1623,7 +1623,7 @@ def _integer_to_f32_packet_rule(
             "high_float",
             high_biased_accumulator,
             high_bias_accumulator,
-            "amd.xdna.aie2p.sub.f32x64.configured",
+            "amd.xdna.aie2p.sub.f32x16.configured",
         )
         low_biased_accumulator = accumulator.vector_to_accumulator(
             "low_biased", low_biased
@@ -1633,7 +1633,7 @@ def _integer_to_f32_packet_rule(
             "low_float",
             low_biased_accumulator,
             low_bias_accumulator,
-            "amd.xdna.aie2p.sub.f32x64.configured",
+            "amd.xdna.aie2p.sub.f32x16.configured",
         )
         result_accumulator = accumulator.binary(
             "result",

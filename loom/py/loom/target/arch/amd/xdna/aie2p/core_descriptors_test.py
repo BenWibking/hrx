@@ -671,6 +671,55 @@ def test_vector_encoding_roles_share_one_low_storage_class() -> None:
     )
 
 
+def test_f32_packet_descriptors_retain_complete_destination_clobbers() -> None:
+    descriptors = {
+        descriptor.key: descriptor
+        for descriptor in AIE2P_CORE_DESCRIPTOR_SET.descriptors
+    }
+    for operation in ("add", "sub"):
+        packet = descriptors[f"amd.xdna.aie2p.{operation}.f32x16.configured"]
+        complete = descriptors[f"amd.xdna.aie2p.{operation}.f32x64.configured"]
+        assert [operand.field_name for operand in packet.operands[:4]] == [
+            "dst",
+            "acc1",
+            "acc2",
+            "acc",
+        ]
+        assert [operand.reg_alts[0].reg_class for operand in packet.operands[:4]] == [
+            "aie2p.mbms",
+            "aie2p.ebmll",
+            "aie2p.ebmll",
+            "aie2p.er",
+        ]
+        assert [operand.unit_count for operand in packet.operands[:4]] == [4, 1, 1, 1]
+        assert packet.operands[0] == complete.operands[0]
+        assert all(operand.encoding_adapter_id != 0 for operand in packet.operands[1:3])
+
+    low_move = descriptors["amd.xdna.aie2p.move.vector512.to.accumulator512.low"]
+    assert [operand.reg_alts[0].reg_class for operand in low_move.operands] == [
+        "aie2p.ebmll",
+        "aie2p.vec256",
+    ]
+    assert [operand.unit_count for operand in low_move.operands] == [1, 2]
+
+    classes = {row.name: row for row in CORE_MACHINE_TABLE.register_classes}
+    registers = {row.name: row for row in CORE_MACHINE_TABLE.physical_registers}
+    adapters = {row.name: row for row in CORE_MACHINE_TABLE.register_adapters}
+    quarter_adapter = adapters["LOOM_eBMLL_eDM"]
+    assert quarter_adapter.register_class == "eBMLL"
+    assert quarter_adapter.effective_register_encodings == tuple(
+        (
+            quarter_name,
+            registers[complete_name].hardware_encoding,
+        )
+        for quarter_name, complete_name in zip(
+            classes["eBMLL"].candidates,
+            classes["eDM"].candidates,
+            strict=True,
+        )
+    )
+
+
 def test_descriptor_encoding_ids_and_adapters_are_materialized() -> None:
     descriptors = {
         descriptor.key: descriptor

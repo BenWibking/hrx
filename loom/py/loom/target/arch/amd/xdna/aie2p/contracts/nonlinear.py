@@ -241,7 +241,7 @@ def _range_reduce_turns_emits(
             turns,
             rounded_float,
             reduced,
-            "amd.xdna.aie2p.sub.f32x64.configured",
+            "amd.xdna.aie2p.sub.f32x16.configured",
             temporary_prefix="trig_reduce_",
         ),
     ]
@@ -261,7 +261,7 @@ def _range_reduce_turns_emits(
                 half,
                 absolute,
                 mirrored,
-                "amd.xdna.aie2p.sub.f32x64.configured",
+                "amd.xdna.aie2p.sub.f32x16.configured",
                 temporary_prefix="trig_mirror_",
             )
         )
@@ -281,7 +281,7 @@ def _range_reduce_turns_emits(
             quarter,
             absolute,
             signed_argument,
-            "amd.xdna.aie2p.sub.f32x64.configured",
+            "amd.xdna.aie2p.sub.f32x16.configured",
             temporary_prefix="trig_quarter_",
         )
     )

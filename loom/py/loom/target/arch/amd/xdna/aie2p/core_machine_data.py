@@ -1348,8 +1348,48 @@ def _derive_vector_storage_adapters(
     return (
         restrict_adapter("LOOM_mXm_OP_mMvBMXDst", "OP_mMvBMXDst", "mXm"),
         restrict_adapter("LOOM_mXm_OP_mMvBMXSrc", "OP_mMvBMXSrc", "mXm"),
+        restrict_adapter("LOOM_eBMLL_OP_mMvBMXDst", "OP_mMvBMXDst", "eBMLL"),
         restrict_adapter("LOOM_mBMs_OP_mMvBMXDst", "OP_mMvBMXDst", "mBMs"),
         restrict_adapter("LOOM_mBMs_OP_mMvBMXSrc", "OP_mMvBMXSrc", "mBMs"),
+    )
+
+
+def _derive_accumulator_quarter_adapters(
+    register_classes: tuple[RegisterClass, ...],
+    physical_registers: tuple[PhysicalRegister, ...],
+) -> tuple[RegisterAdapter, ...]:
+    """Encodes each low accumulator quarter through its complete DM selector."""
+
+    classes = {row.name: row for row in register_classes}
+    registers = {row.name: row for row in physical_registers}
+    low_quarters = classes["eBMLL"].candidates
+    complete_accumulators = classes["eDM"].candidates
+    parent_by_quarter = {}
+    for quarter_name in low_quarters:
+        quarter_units = set(registers[quarter_name].atomic_units)
+        parents = tuple(
+            register_name
+            for register_name in complete_accumulators
+            if quarter_units <= set(registers[register_name].atomic_units)
+        )
+        if len(parents) != 1:
+            raise ValueError(
+                f"{quarter_name}: expected one complete accumulator parent, "
+                f"found {parents}"
+            )
+        parent_by_quarter[quarter_name] = parents[0]
+    return (
+        RegisterAdapter(
+            name="LOOM_eBMLL_eDM",
+            register_class="eBMLL",
+            register_encodings=tuple(
+                (
+                    quarter_name,
+                    registers[parent_by_quarter[quarter_name]].hardware_encoding,
+                )
+                for quarter_name in low_quarters
+            ),
+        ),
     )
 
 
@@ -1491,6 +1531,10 @@ _REGISTER_ADAPTERS = (
     *_derive_vector_storage_adapters(
         _SOURCE_REGISTER_ADAPTERS,
         _REGISTER_CLASSES,
+    ),
+    *_derive_accumulator_quarter_adapters(
+        _REGISTER_CLASSES,
+        _PHYSICAL_REGISTERS,
     ),
     *_derive_fifo_storage_adapters(
         _SOURCE_REGISTER_ADAPTERS,

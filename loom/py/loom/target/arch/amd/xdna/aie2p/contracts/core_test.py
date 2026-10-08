@@ -1054,8 +1054,8 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
     for rule, arithmetic_key in zip(
         f32_vector_carrier_rules,
         (
-            "amd.xdna.aie2p.add.f32x64.configured",
-            "amd.xdna.aie2p.sub.f32x64.configured",
+            "amd.xdna.aie2p.add.f32x16.configured",
+            "amd.xdna.aie2p.sub.f32x16.configured",
         ),
         strict=True,
     ):
@@ -1064,15 +1064,14 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
             for emit in rule.emit
             if not isinstance(emit, (EmitRegisterConcat, EmitRegisterSlice))
         ] == [
-            "amd.xdna.aie2p.accumulator.clear.f32x64",
-            "amd.xdna.aie2p.move.vector512.to.accumulator512",
-            "amd.xdna.aie2p.move.vector512.to.accumulator512",
+            "amd.xdna.aie2p.move.vector512.to.accumulator512.low",
+            "amd.xdna.aie2p.move.vector512.to.accumulator512.low",
             "amd.xdna.aie2p.constant.i32.mova",
             arithmetic_key,
             "amd.xdna.aie2p.move.accumulator512.to.vector512",
         ]
-        assert sum(isinstance(emit, EmitRegisterConcat) for emit in rule.emit) == 2
-        assert sum(isinstance(emit, EmitRegisterSlice) for emit in rule.emit) == 2
+        assert not any(isinstance(emit, EmitRegisterConcat) for emit in rule.emit)
+        assert sum(isinstance(emit, EmitRegisterSlice) for emit in rule.emit) == 1
 
     f32_scalar_carrier_rules = (
         next(rule for rule in rules if rule.source_op is scalar_arithmetic.scalar_addf),
@@ -1081,8 +1080,8 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
     for rule, arithmetic_key in zip(
         f32_scalar_carrier_rules,
         (
-            "amd.xdna.aie2p.add.f32x64.configured",
-            "amd.xdna.aie2p.sub.f32x64.configured",
+            "amd.xdna.aie2p.add.f32x16.configured",
+            "amd.xdna.aie2p.sub.f32x16.configured",
         ),
         strict=True,
     ):
@@ -1093,9 +1092,8 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
         ] == [
             "amd.xdna.aie2p.splat.i32x16",
             "amd.xdna.aie2p.splat.i32x16",
-            "amd.xdna.aie2p.accumulator.clear.f32x64",
-            "amd.xdna.aie2p.move.vector512.to.accumulator512",
-            "amd.xdna.aie2p.move.vector512.to.accumulator512",
+            "amd.xdna.aie2p.move.vector512.to.accumulator512.low",
+            "amd.xdna.aie2p.move.vector512.to.accumulator512.low",
             "amd.xdna.aie2p.constant.i32.mova",
             arithmetic_key,
             "amd.xdna.aie2p.move.accumulator512.to.vector512",

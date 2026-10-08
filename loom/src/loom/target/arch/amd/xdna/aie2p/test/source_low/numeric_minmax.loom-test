@@ -61,17 +61,13 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @scalar_f32_minnum
   %max = sel.nez %76, %74, %77
   %79 = vbcst.32 %min
   %80 = vbcst.32 %max
-  %81 = acc.clear.f32x64
-  %82 = slice %81[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
-  %83 = vmov.vector512.to.accumulator512 %79
-  %84 = concat(%83, %82, %82, %82) : (reg<aie2p.mbms>, reg<aie2p.mbms>, reg<aie2p.mbms>, reg<aie2p.mbms>) -> reg<aie2p.mbms x4>
-  %85 = vmov.vector512.to.accumulator512 %80
-  %86 = concat(%85, %82, %82, %82) : (reg<aie2p.mbms>, reg<aie2p.mbms>, reg<aie2p.mbms>, reg<aie2p.mbms>) -> reg<aie2p.mbms x4>
-  %87 = mova.i32 60
-  %88 = vadd.f32x64 %84, %86, %87
-  %89 = slice %88[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
-  %90 = vmov.accumulator512.to.vector512 %89
-  %sum = vextract.32.imm %90, 0
+  %81 = vmov.vector512.to.accumulator512.low %79
+  %82 = vmov.vector512.to.accumulator512.low %80
+  %83 = mova.i32 60
+  %84 = vadd.f32x16 %81, %82, %83
+  %85 = slice %84[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %86 = vmov.accumulator512.to.vector512 %85
+  %sum = vextract.32.imm %86, 0
   return %sum
 }
 
@@ -135,17 +131,13 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @scalar_f32_minimu
   %max = sel.nez %37, %74, %75
   %77 = vbcst.32 %min
   %78 = vbcst.32 %max
-  %79 = acc.clear.f32x64
-  %80 = slice %79[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
-  %81 = vmov.vector512.to.accumulator512 %77
-  %82 = concat(%81, %80, %80, %80) : (reg<aie2p.mbms>, reg<aie2p.mbms>, reg<aie2p.mbms>, reg<aie2p.mbms>) -> reg<aie2p.mbms x4>
-  %83 = vmov.vector512.to.accumulator512 %78
-  %84 = concat(%83, %80, %80, %80) : (reg<aie2p.mbms>, reg<aie2p.mbms>, reg<aie2p.mbms>, reg<aie2p.mbms>) -> reg<aie2p.mbms x4>
-  %85 = mova.i32 60
-  %86 = vadd.f32x64 %82, %84, %85
-  %87 = slice %86[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
-  %88 = vmov.accumulator512.to.vector512 %87
-  %sum = vextract.32.imm %88, 0
+  %79 = vmov.vector512.to.accumulator512.low %77
+  %80 = vmov.vector512.to.accumulator512.low %78
+  %81 = mova.i32 60
+  %82 = vadd.f32x16 %79, %80, %81
+  %83 = slice %82[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %84 = vmov.accumulator512.to.vector512 %83
+  %sum = vextract.32.imm %84, 0
   return %sum
 }
 
