@@ -6,7 +6,6 @@
 
 #include <array>
 #include <tuple>
-#include <vector>
 
 #include "iree/base/internal/arena.h"
 #include "iree/testing/gtest.h"
@@ -1091,7 +1090,7 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
   const loom_value_id_t value_ids[] = {0, 1, 2, 3, 4, 5};
   const uint32_t interval_indices[] = {0, 1, 2, 3, 4, 5};
   const loom_liveness_interval_t intervals[] = {
-      RegisterInterval(0, 0, 13, 1),  RegisterInterval(1, 3, 5, 1),
+      RegisterInterval(0, 0, 13, 1),  RegisterInterval(1, 4, 5, 1),
       RegisterInterval(2, 8, 10, 1),  RegisterInterval(3, 13, 13, 1),
       RegisterInterval(4, 15, 17, 1), RegisterInterval(5, 17, 19, 1),
   };
@@ -1104,7 +1103,7 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
   blocks[3].start_point = 15;
   blocks[3].end_point = 19;
   const loom_liveness_segment_t segments[] = {
-      {0, 3}, {6, 8}, {11, 13}, {3, 5}, {8, 10}, {15, 17}, {17, 19},
+      {0, 3}, {6, 8}, {11, 13}, {4, 5}, {8, 10}, {15, 17}, {17, 19},
   };
   const loom_liveness_segment_range_t ranges[] = {
       {0, 3}, {3, 1}, {4, 1}, {5, 0}, {5, 1}, {6, 1},
@@ -1118,19 +1117,28 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
 
   // The second result has a storage use beyond its semantic end, and the
   // source at ordinal four has incomplete edge storage. The unused third result
-  // still writes its physical destination at point 13.
+  // still writes its physical destination at point 13. A prior physical read
+  // extends the first source segment through point 3; tied retention must
+  // preserve that refined table and use it to bridge the result starting at
+  // point 4.
   loom_low_allocation_unit_liveness_value_t values[] = {
-      {0, 0}, {1, 3}, {2, 8}, {3, 13}, {4, 15}, {5, 17}};
-  uint32_t starts[] = {0, 3, 8, 13, 15, 17};
+      {0, 0}, {1, 4}, {2, 8}, {3, 13}, {4, 15}, {5, 17}};
+  uint32_t starts[] = {0, 4, 8, 13, 15, 17};
   uint32_t ends[] = {13, 5, 11, 14, 17, 19};
   uint64_t incomplete[] = {(1u << 2) | (1u << 4)};
+  std::array<loom_liveness_segment_t, IREE_ARRAYSIZE(segments)>
+      storage_segments;
+  for (iree_host_size_t i = 0; i < storage_segments.size(); ++i) {
+    storage_segments[i] = segments[i];
+  }
+  storage_segments[0].end_point = 4;
   loom_low_allocation_unit_liveness_t unit_liveness = {};
   unit_liveness.values = values;
   unit_liveness.start_points = starts;
   unit_liveness.end_points = ends;
   unit_liveness.point_count = IREE_ARRAYSIZE(starts);
   unit_liveness.values_with_incomplete_storage_segments = {6, incomplete};
-  unit_liveness.storage_segments.entries = segments;
+  unit_liveness.storage_segments.entries = storage_segments.data();
   loom_low_placement_relation_t relations[4] = {};
   for (uint32_t i = 0; i < IREE_ARRAYSIZE(relations); ++i) {
     relations[i].source_ordinal = i < 3 ? 0 : 4;
@@ -1165,6 +1173,7 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
   EXPECT_EQ(reservations[0].end_point, 5u);
   EXPECT_EQ(reservations[1].start_point, 6u);
   EXPECT_EQ(reservations[1].end_point, 14u);
+  EXPECT_EQ(unit_liveness.storage_segments.entries[0].end_point, 4u);
   EXPECT_EQ(ends[0], 14u);
   EXPECT_EQ(ends[4], 19u);
   EXPECT_EQ(
@@ -1205,193 +1214,6 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
   EXPECT_EQ(liveness.segments, segments);
   EXPECT_EQ(liveness.value_segment_ranges, ranges);
   EXPECT_EQ(liveness.segment_count, IREE_ARRAYSIZE(segments));
-}
-
-TEST_F(LowAllocationUnitLivenessTest,
-       RefinesForwardedBackedgeEarlyClobberReadSegment) {
-  loom_low_reg_class_t reg_class = {};
-  reg_class.alloc_unit_bits = 32;
-  const loom_low_reg_class_alt_t alternative = {
-      0, LOOM_LOW_REGISTER_PART_NONE, LOOM_LOW_REG_CLASS_ALT_FLAG_PREFERRED, 0};
-  loom_low_operand_t descriptor_operands[2] = {};
-  descriptor_operands[0].role = LOOM_LOW_OPERAND_ROLE_RESULT;
-  descriptor_operands[0].flags = LOOM_LOW_OPERAND_FLAG_EARLY_CLOBBER;
-  descriptor_operands[0].reg_class_alt_count = 1;
-  descriptor_operands[0].unit_count = 1;
-  descriptor_operands[1].role = LOOM_LOW_OPERAND_ROLE_OPERAND;
-  descriptor_operands[1].source_value_index = 0;
-  descriptor_operands[1].reg_class_alt_count = 1;
-  descriptor_operands[1].unit_count = 1;
-  const loom_low_constraint_t constraint = {
-      LOOM_LOW_CONSTRAINT_KIND_EARLY_CLOBBER, 0, LOOM_LOW_ID_NONE, 0};
-  loom_low_descriptor_t descriptor = {};
-  descriptor.flags = LOOM_LOW_DESCRIPTOR_FLAG_EARLY_CLOBBER;
-  descriptor.operand_count = IREE_ARRAYSIZE(descriptor_operands);
-  descriptor.result_count = 1;
-  descriptor.minimum_packet_operand_count = 1;
-  descriptor.constraint_count = 1;
-  loom_low_descriptor_set_t descriptor_set = {};
-  descriptor_set.stable_id = 1;
-  descriptor_set.reg_classes = &reg_class;
-  descriptor_set.reg_class_count = 1;
-  descriptor_set.reg_class_alts = &alternative;
-  descriptor_set.reg_class_alt_count = 1;
-  descriptor_set.operands = descriptor_operands;
-  descriptor_set.operand_count = IREE_ARRAYSIZE(descriptor_operands);
-  descriptor_set.descriptors = &descriptor;
-  descriptor_set.descriptor_count = 1;
-  descriptor_set.constraints = &constraint;
-  descriptor_set.constraint_count = 1;
-  loom_low_resolved_target_t target = {};
-  target.descriptor_set = &descriptor_set;
-
-  loom_module_t* module = AllocateModule();
-  loom_builder_t builder;
-  loom_builder_initialize(module, &module->arena, loom_module_block(module),
-                          &builder);
-  loom_string_id_t name = LOOM_STRING_ID_INVALID;
-  IREE_ASSERT_OK(loom_builder_intern_string(
-      &builder, IREE_SV("forwarded_backedge_drain"), &name));
-  loom_symbol_id_t symbol = LOOM_SYMBOL_ID_INVALID;
-  IREE_ASSERT_OK(loom_module_add_symbol(module, name, &symbol));
-  const loom_type_t type = loom_low_register_type(1, 0, 1);
-  const loom_type_t arg_types[] = {type, type};
-  loom_op_t* function = nullptr;
-  IREE_ASSERT_OK(loom_low_func_def_build(
-      &builder, 0, 0, 0, 0, 0, 0, 0, 0, name, {}, 0, {}, {},
-      LOOM_STRING_ID_INVALID, {}, loom_symbol_ref_t{0, symbol}, arg_types,
-      IREE_ARRAYSIZE(arg_types), &type, 1, nullptr, 0, nullptr, 0,
-      LOOM_LOCATION_UNKNOWN, &function));
-  loom_region_t* body = loom_low_func_def_body(function);
-  loom_builder_enter_region(&builder, function, body);
-  const loom_value_id_t condition = loom_region_entry_arg_id(body, 0);
-  const loom_value_id_t seed = loom_region_entry_arg_id(body, 1);
-
-  // Match the parser compatibility layout: the forwarding block is physically
-  // before the loop whose value it forwards on the backedge.
-  loom_block_t* forwarding = nullptr;
-  loom_block_t* loop = nullptr;
-  loom_block_t* drain = nullptr;
-  IREE_ASSERT_OK(loom_region_append_block(module, body, &forwarding));
-  IREE_ASSERT_OK(loom_region_append_block(module, body, &loop));
-  IREE_ASSERT_OK(loom_region_append_block(module, body, &drain));
-  ASSERT_EQ(loom_region_block(body, 1), forwarding);
-  ASSERT_EQ(loom_region_block(body, 2), loop);
-  ASSERT_EQ(loom_region_block(body, 3), drain);
-  loom_value_id_t current = LOOM_VALUE_ID_INVALID;
-  IREE_ASSERT_OK(loom_module_define_value(module, type, &current));
-  IREE_ASSERT_OK(loom_block_add_arg(module, loop, current));
-
-  loom_op_t* entry_branch = nullptr;
-  IREE_ASSERT_OK(loom_low_br_build(&builder, loop, &seed, 1,
-                                   LOOM_LOCATION_UNKNOWN, &entry_branch));
-  loom_builder_set_block(&builder, loop);
-  loom_op_t* next_op = nullptr;
-  IREE_ASSERT_OK(loom_low_copy_build(&builder, current, false, type,
-                                     LOOM_LOCATION_UNKNOWN, &next_op));
-  const loom_value_id_t next = loom_low_copy_result(next_op);
-  loom_op_t* loop_branch = nullptr;
-  IREE_ASSERT_OK(loom_low_cond_br_build(&builder, condition, forwarding, drain,
-                                        LOOM_LOCATION_UNKNOWN, &loop_branch));
-
-  // Populate the earlier block only after |next| exists, preserving the direct
-  // backward SSA reference that triggered the production failure.
-  loom_builder_set_block(&builder, forwarding);
-  loom_op_t* backedge = nullptr;
-  IREE_ASSERT_OK(loom_low_br_build(&builder, loop, &next, 1,
-                                   LOOM_LOCATION_UNKNOWN, &backedge));
-  loom_builder_set_block(&builder, drain);
-  loom_op_t* drain_op = nullptr;
-  IREE_ASSERT_OK(loom_low_build_resolved_descriptor_op(
-      &builder, &descriptor_set, &descriptor, 0, &next, 1, {}, &type, 1,
-      nullptr, 0, LOOM_LOCATION_UNKNOWN, &drain_op));
-  loom_op_t* terminator = nullptr;
-  const loom_value_id_t drained = loom_op_results(drain_op)[0];
-  IREE_ASSERT_OK(loom_low_return_build(&builder, &drained, 1,
-                                       LOOM_LOCATION_UNKNOWN, &terminator));
-
-  loom_local_value_domain_t domain = {};
-  IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region(
-      module, body, &arena_, &domain));
-  loom_liveness_analysis_t liveness = {};
-  IREE_ASSERT_OK(loom_liveness_analyze_local_value_domain(
-      &domain, loom_liveness_order_empty(), &arena_, &liveness));
-  loom_cfg_graph_t graph = {};
-  IREE_ASSERT_OK(loom_cfg_graph_build(module, body, &arena_, &graph));
-  const loom_value_ordinal_t next_ordinal =
-      loom_local_value_domain_ordinal(&domain, next);
-  const loom_liveness_operation_point_t* drain_point = nullptr;
-  for (iree_host_size_t i = 0; i < liveness.operation_count; ++i) {
-    const auto* point = loom_liveness_operation_at(&liveness, i);
-    if (point->op == drain_op) {
-      drain_point = point;
-      break;
-    }
-  }
-  ASSERT_NE(drain_point, nullptr);
-  const uint32_t physical_read_point = drain_point->start_point + 1u;
-  const loom_liveness_segment_range_t semantic_range =
-      loom_liveness_segment_range_for_value_ordinal(&liveness, next_ordinal);
-  ASSERT_GT(semantic_range.count, 1u);
-  uint32_t adjacent_segment = UINT32_MAX;
-  bool has_sparse_gap = false;
-  for (uint32_t i = 0; i < semantic_range.count; ++i) {
-    const uint32_t segment_index = semantic_range.start + i;
-    const auto segment = liveness.segments[segment_index];
-    if (segment.end_point == physical_read_point) {
-      adjacent_segment = segment_index;
-    }
-    if (i > 0 &&
-        liveness.segments[segment_index - 1].end_point < segment.start_point) {
-      has_sparse_gap = true;
-    }
-  }
-  ASSERT_NE(adjacent_segment, UINT32_MAX);
-  EXPECT_TRUE(has_sparse_gap);
-
-  loom_low_allocation_unit_liveness_t unit_liveness = {};
-  IREE_ASSERT_OK(loom_low_allocation_unit_liveness_initialize(
-      &target, nullptr, &domain, &liveness, &graph, {}, &arena_,
-      &decision_arena_, &unit_liveness));
-  EXPECT_FALSE(iree_bitmap_test(
-      unit_liveness.values_with_incomplete_storage_segments, next_ordinal));
-  const loom_liveness_segment_range_t physical_range =
-      loom_low_allocation_unit_liveness_storage_segment_range_for_value_ordinal(
-          &unit_liveness, &liveness, next_ordinal);
-  EXPECT_EQ(physical_range.start, semantic_range.start);
-  EXPECT_EQ(physical_range.count, semantic_range.count);
-  EXPECT_EQ(unit_liveness.storage_segments.entries[adjacent_segment].end_point,
-            physical_read_point + 1u);
-
-  // A non-adjacent physical use cannot refine a semantic segment. Preserve the
-  // incomplete marker so conflict queries use the conservative linear hull.
-  std::vector<loom_liveness_segment_t> disconnected_segments(
-      liveness.segments, liveness.segments + liveness.segment_count);
-  ASSERT_GT(disconnected_segments[adjacent_segment].start_point, 0u);
-  --disconnected_segments[adjacent_segment].start_point;
-  --disconnected_segments[adjacent_segment].end_point;
-  loom_liveness_analysis_t disconnected_liveness = liveness;
-  disconnected_liveness.segments = disconnected_segments.data();
-  loom_low_allocation_unit_liveness_t disconnected = {};
-  IREE_ASSERT_OK(loom_low_allocation_unit_liveness_initialize(
-      &target, nullptr, &domain, &disconnected_liveness, &graph, {}, &arena_,
-      &decision_arena_, &disconnected));
-  EXPECT_TRUE(iree_bitmap_test(
-      disconnected.values_with_incomplete_storage_segments, next_ordinal));
-  EXPECT_EQ(
-      loom_low_allocation_unit_liveness_storage_segment_range_for_value_ordinal(
-          &disconnected, &disconnected_liveness, next_ordinal)
-          .count,
-      0u);
-  loom_low_placement_table_t no_ties = {};
-  no_ties.value_count = domain.value_count;
-  EXPECT_TRUE(loom_low_allocation_unit_liveness_storage_component_live_at_point(
-      &disconnected, &disconnected_liveness, &no_ties, next_ordinal,
-      /*unit_offset=*/0, /*unit_count=*/1,
-      /*program_point=*/physical_read_point));
-
-  loom_local_value_domain_release(&domain);
-  loom_module_free(module);
 }
 
 }  // namespace
