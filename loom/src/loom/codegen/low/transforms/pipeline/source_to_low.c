@@ -349,6 +349,7 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
   const loom_low_representation_projection_plan_t** projection_plans = NULL;
   iree_host_size_t projection_count = 0;
   iree_host_size_t projection_capacity = 0;
+  loom_low_representation_projection_index_t projection_index = {0};
   loom_low_source_declaration_plan_t* declaration_plans = NULL;
   iree_host_size_t planned_declaration_count = 0;
   iree_host_size_t declaration_capacity = 0;
@@ -379,6 +380,11 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
     if (iree_status_is_ok(status) && !emitted_error_diagnostics) {
       projection_plans[projection_count++] = projection_plan;
     }
+  }
+  if (iree_status_is_ok(status) && !emitted_error_diagnostics) {
+    status = loom_low_representation_projection_index_build(
+        module, projection_plans, projection_count, &selection_arena,
+        &projection_index);
   }
   for (iree_host_size_t i = 0;
        i < selection_list.count && iree_status_is_ok(status) &&
@@ -507,6 +513,7 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
         .policy = selection->policy,
         .fact_table = fact_table,
         .call_effects = call_effects,
+        .representation_projections = &projection_index,
         .emitter = pass->diagnostic_emitter,
         .max_errors = state ? state->max_errors : 20,
         .control_flow_lowering = state ? state->control_flow_lowering

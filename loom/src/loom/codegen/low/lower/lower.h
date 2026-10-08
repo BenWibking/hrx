@@ -44,6 +44,9 @@
 extern "C" {
 #endif
 
+typedef struct loom_low_representation_projection_index_t
+    loom_low_representation_projection_index_t;
+
 typedef struct loom_low_lower_context_t loom_low_lower_context_t;
 typedef struct loom_low_lower_rule_set_t loom_low_lower_rule_set_t;
 typedef struct loom_low_source_memory_access_plan_t
@@ -1000,6 +1003,8 @@ typedef struct loom_low_lower_options_t {
   loom_value_fact_table_t* fact_table;
   // Detached call effects established before any source body is lowered.
   const loom_call_effects_t* call_effects;
+  // Borrowed projected helper interfaces, available before IR publication.
+  const loom_low_representation_projection_index_t* representation_projections;
   // Structured diagnostic emitter for user legality and lowering failures.
   iree_diagnostic_emitter_t emitter;
   // Maximum number of errors to emit before aborting. Zero means no limit.

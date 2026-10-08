@@ -914,6 +914,30 @@ TEST_F(LowLowerPassTest,
   EXPECT_TRUE(loom_region_has_write_effects(body));
   EXPECT_FALSE(loom_region_has_convergent_effects(body));
 
+  const loom_low_representation_projection_plan_t* plans[] = {plan,
+                                                              import_plan};
+  loom_low_representation_projection_index_t index = {};
+  IREE_ASSERT_OK(loom_low_representation_projection_index_build(
+      module.get(), plans, IREE_ARRAYSIZE(plans), &arena, &index));
+  EXPECT_EQ(loom_low_representation_projection_index_find(
+                &index, function_ref.symbol_id),
+            plan);
+  EXPECT_EQ(loom_low_representation_projection_index_find(&index,
+                                                          import_ref.symbol_id),
+            import_plan);
+  const loom_type_t projected_argument_type =
+      loom_low_representation_projection_argument_type(plan, 0);
+  const loom_type_t projected_result_type =
+      loom_low_representation_projection_result_type(plan, 0);
+  EXPECT_FALSE(
+      loom_type_equal(projected_argument_type, authored_argument_type));
+  EXPECT_TRUE(loom_type_equal(
+      loom_low_representation_projection_argument_type(import_plan, 0),
+      projected_argument_type));
+  EXPECT_TRUE(loom_type_equal(
+      loom_low_representation_projection_result_type(import_plan, 0),
+      projected_result_type));
+
   bool changed = false;
   IREE_ASSERT_OK(
       loom_low_apply_function_representation(module.get(), plan, &changed));
@@ -940,6 +964,13 @@ TEST_F(LowLowerPassTest,
   EXPECT_EQ(loom_low_op_descriptor(packet), target_ordinal);
   EXPECT_EQ(loom_func_like_repr_contract(import),
             loom_func_like_repr_contract(function));
+  EXPECT_TRUE(loom_type_equal(
+      projected_argument_type,
+      loom_block_arg_type(module.get(), loom_region_entry_block(body), 0)));
+  EXPECT_TRUE(loom_type_equal(
+      projected_result_type,
+      loom_module_value_type(
+          module.get(), loom_low_func_def_results(function.op).values[0])));
   EXPECT_TRUE(loom_type_equal(
       loom_module_value_type(module.get(),
                              loom_low_func_decl_args(import.op).values[0]),

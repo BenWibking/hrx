@@ -32,7 +32,7 @@ iree_status_t loom_low_lower_source_call(loom_low_lower_context_t* context,
 // Resolves a low.invoke helper contract, checks result carriers, and proves its
 // preconditions. Retained predicates preserve each formal's operand position;
 // emission does not borrow the helper's signature or source body. Selection has
-// already projected the helper into the caller's exact Low contract.
+// already planned the helper's exact Low contract; publication is not required.
 iree_status_t loom_low_lower_source_invoke_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_low_lower_source_invoke_plan_t** out_plan);

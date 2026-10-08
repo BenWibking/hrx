@@ -9,6 +9,7 @@
 #include "loom/analysis/symbol_facts.h"
 #include "loom/codegen/low/lower/call_predicates.h"
 #include "loom/codegen/low/lower/context.h"
+#include "loom/codegen/low/lower/representation_projection.h"
 #include "loom/error/error_catalog.h"
 #include "loom/ir/module.h"
 #include "loom/ops/func_symbol_facts.h"
@@ -167,10 +168,19 @@ static iree_status_t loom_low_source_call_resolve_callee_target(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_symbol_ref_t callee_ref, const loom_op_t* callee_op,
     iree_string_view_t callee_name,
+    const loom_low_representation_projection_plan_t* projection,
     const loom_target_facts_t** out_callee_target_facts,
     const loom_low_descriptor_set_t** out_callee_descriptor_set) {
   *out_callee_target_facts = NULL;
   *out_callee_descriptor_set = NULL;
+
+  if (projection != NULL) {
+    *out_callee_descriptor_set =
+        loom_low_representation_projection_descriptors(projection);
+    *out_callee_target_facts =
+        loom_low_representation_projection_target_facts(projection);
+    return iree_ok_status();
+  }
 
   const iree_string_view_t callee_contract =
       loom_low_source_call_function_descriptor_set(context->module, callee_op);
@@ -259,8 +269,11 @@ iree_status_t loom_low_lower_source_invoke_plan(
 
   const loom_target_facts_t* callee_target_facts = NULL;
   const loom_low_descriptor_set_t* callee_descriptor_set = NULL;
+  const loom_low_representation_projection_plan_t* callee_projection =
+      loom_low_representation_projection_index_find(
+          context->options->representation_projections, callee_ref.symbol_id);
   IREE_RETURN_IF_ERROR(loom_low_source_call_resolve_callee_target(
-      context, source_op, callee_ref, callee_op, callee_name,
+      context, source_op, callee_ref, callee_op, callee_name, callee_projection,
       &callee_target_facts, &callee_descriptor_set));
   if (callee_descriptor_set == NULL) {
     return iree_ok_status();
@@ -280,8 +293,8 @@ iree_status_t loom_low_lower_source_invoke_plan(
   const loom_low_descriptor_set_t* caller_descriptor_set =
       loom_low_lower_context_descriptor_set(context);
   if (callee_descriptor_set != caller_descriptor_set) {
-    const iree_string_view_t callee_contract =
-        loom_low_source_call_function_descriptor_set(module, callee_op);
+    const iree_string_view_t callee_contract = loom_low_descriptor_set_string(
+        callee_descriptor_set, callee_descriptor_set->key_string_ref);
     const iree_string_view_t caller_target_contract =
         loom_low_lower_context_bundle(context)->config->contract_set_key;
     return loom_low_source_call_emit_representation_error(
@@ -319,9 +332,13 @@ iree_status_t loom_low_lower_source_invoke_plan(
       (void**)&plan));
   loom_type_id_t* type_ids = (loom_type_id_t*)(plan + 1);
   for (uint16_t i = 0; i < callee_argument_count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_module_intern_type_id(
-        module, loom_module_value_type(module, callee_arguments[i]),
-        &type_ids[i]));
+    const loom_type_t type =
+        callee_projection != NULL
+            ? loom_low_representation_projection_argument_type(
+                  callee_projection, i)
+            : loom_module_value_type(module, callee_arguments[i]);
+    IREE_RETURN_IF_ERROR(
+        loom_module_intern_type_id(module, type, &type_ids[i]));
   }
 
   for (uint16_t i = 0; i < source_results.count; ++i) {
@@ -332,7 +349,10 @@ iree_status_t loom_low_lower_source_invoke_plan(
       return iree_ok_status();
     }
     const loom_type_t expected_type =
-        loom_module_value_type(module, callee_results.values[i]);
+        callee_projection != NULL
+            ? loom_low_representation_projection_result_type(callee_projection,
+                                                             i)
+            : loom_module_value_type(module, callee_results.values[i]);
     if (!loom_type_equal(result_type, expected_type)) {
       return loom_low_source_call_emit_type_error(
           context, source_op, callee_name, IREE_SV("result"), result_type,
