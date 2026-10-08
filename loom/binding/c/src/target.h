@@ -26,10 +26,6 @@ typedef struct loom_low_repr_environment_t loom_low_repr_environment_t;
 extern "C" {
 #endif
 
-// Destroys a target-family profile owned by a public profile handle.
-typedef void (*loomc_target_profile_destroy_fn_t)(
-    loom_target_profile_t* profile, loomc_allocator_t allocator);
-
 // Prepared target pass capability tables derived from a public target
 // environment.
 typedef struct loomc_target_pass_environment_t {
@@ -112,7 +108,7 @@ LOOMC_API_PRIVATE loomc_status_t loomc_target_specialization_options_make_lists(
 LOOMC_API_PRIVATE loomc_status_t loomc_target_profile_create(
     loomc_target_environment_t* target_environment,
     loomc_string_view_t identifier, loom_target_profile_t* target_profile,
-    loomc_target_profile_destroy_fn_t destroy, loomc_allocator_t allocator,
+    loom_target_profile_destroy_fn_t destroy, loomc_allocator_t allocator,
     loomc_target_profile_t** out_profile);
 
 // Returns the typed target-family profile owned by a public profile.

@@ -110,14 +110,18 @@ static iree_status_t loom_x86_select_profile(
                           (int)selector.size, selector.data);
 }
 
-static const loom_target_profile_t* loom_x86_select_cpu_profile(
+static iree_status_t loom_x86_select_cpu_profile(
     const iree_cpu_data_t* cpu_data, const loom_target_facts_t* requirement,
-    const loom_target_profile_t* profile) {
+    const loom_target_profile_t* profile,
+    loom_target_profile_selection_t* out_selection,
+    iree_allocator_t allocator) {
+  (void)allocator;
+  *out_selection = (loom_target_profile_selection_t){0};
   if (cpu_data->architecture != IREE_CPU_ARCHITECTURE_X86_64) {
-    return NULL;
+    return iree_ok_status();
   }
   if (requirement && requirement->fact_type != &loom_x86_target_fact_type) {
-    return NULL;
+    return iree_ok_status();
   }
 
   const loom_x86_target_profile_t* selected = NULL;
@@ -135,14 +139,17 @@ static const loom_target_profile_t* loom_x86_select_cpu_profile(
       continue;
     }
     if (profile || requirement) {
-      return &kProfiles[i].base;
+      out_selection->profile = (loom_target_profile_t*)&kProfiles[i].base;
+      return iree_ok_status();
     }
     if (policy.automatic_priority > selected_priority) {
       selected = candidate;
       selected_priority = policy.automatic_priority;
     }
   }
-  return selected ? &selected->base : NULL;
+  out_selection->profile =
+      selected ? (loom_target_profile_t*)&selected->base : NULL;
+  return iree_ok_status();
 }
 
 static iree_status_t loom_x86_materialize_definition(

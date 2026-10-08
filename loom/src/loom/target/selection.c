@@ -93,39 +93,51 @@ iree_status_t loom_target_environment_select_cpu_profile(
     const loom_target_environment_t* environment,
     const iree_cpu_data_t* cpu_data, const loom_target_facts_t* requirement,
     const loom_target_profile_t* profile,
-    const loom_target_profile_t** out_profile) {
-  *out_profile = NULL;
+    loom_target_profile_selection_t* out_selection,
+    iree_allocator_t allocator) {
+  *out_selection = (loom_target_profile_selection_t){0};
   const loom_target_provider_set_t* providers = environment->provider_set;
-  const loom_target_profile_t* selected = NULL;
+  loom_target_profile_selection_t selected = {0};
+  iree_status_t status = iree_ok_status();
   for (iree_host_size_t i = 0; i < providers->provider_count; ++i) {
     const loom_target_provider_t* provider = providers->providers[i];
     if (!provider->select_cpu_profile) {
       continue;
     }
-    const loom_target_profile_t* candidate =
-        provider->select_cpu_profile(cpu_data, requirement, profile);
-    if (!candidate) {
+    loom_target_profile_selection_t candidate = {0};
+    status = provider->select_cpu_profile(cpu_data, requirement, profile,
+                                          &candidate, allocator);
+    if (!iree_status_is_ok(status)) {
+      break;
+    }
+    if (candidate.profile == NULL) {
       continue;
     }
-    if (selected) {
-      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                              "multiple compiler providers accept this CPU");
+    if (selected.profile != NULL) {
+      loom_target_profile_selection_release(&candidate, allocator);
+      status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                                "multiple compiler providers accept this CPU");
+      break;
     }
     selected = candidate;
   }
-  if (!selected) {
+  if (iree_status_is_ok(status) && selected.profile == NULL) {
     const iree_string_view_t architecture =
         iree_cpu_architecture_name(cpu_data->architecture);
     const iree_string_view_t requested =
         profile       ? profile->target_bundle->name
         : requirement ? loom_target_facts_identity_name(requirement)
                       : IREE_SV("automatic");
-    return iree_make_status(
+    status = iree_make_status(
         IREE_STATUS_UNAVAILABLE,
         "no native CPU profile for '%.*s' satisfies target '%.*s'",
         (int)architecture.size, architecture.data, (int)requested.size,
         requested.data);
   }
-  *out_profile = selected;
-  return iree_ok_status();
+  if (iree_status_is_ok(status)) {
+    *out_selection = selected;
+    selected = (loom_target_profile_selection_t){0};
+  }
+  loom_target_profile_selection_release(&selected, allocator);
+  return status;
 }

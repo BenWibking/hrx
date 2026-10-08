@@ -47,7 +47,7 @@ struct loomc_target_profile_t {
   loom_target_profile_t* target_profile;
 
   // Destroys target_profile when the final public reference is released.
-  loomc_target_profile_destroy_fn_t target_profile_destroy;
+  loom_target_profile_destroy_fn_t target_profile_destroy;
 };
 
 typedef struct loomc_descriptor_prefix_t {
@@ -227,12 +227,12 @@ static void loomc_target_pass_environment_deinitialize(
 
 static void loomc_target_profile_destroy_owned(
     loom_target_profile_t* target_profile,
-    loomc_target_profile_destroy_fn_t target_profile_destroy,
+    loom_target_profile_destroy_fn_t target_profile_destroy,
     loomc_allocator_t allocator) {
   if (target_profile == NULL || target_profile_destroy == NULL) {
     return;
   }
-  target_profile_destroy(target_profile, allocator);
+  target_profile_destroy(target_profile, iree_allocator_from_loomc(allocator));
 }
 
 loomc_status_t loomc_target_environment_create_from_provider_set_internal(
@@ -513,7 +513,7 @@ void loomc_target_environment_release(
 loomc_status_t loomc_target_profile_create(
     loomc_target_environment_t* target_environment,
     loomc_string_view_t identifier, loom_target_profile_t* target_profile,
-    loomc_target_profile_destroy_fn_t destroy, loomc_allocator_t allocator,
+    loom_target_profile_destroy_fn_t destroy, loomc_allocator_t allocator,
     loomc_target_profile_t** out_profile) {
   loom_target_profile_t* pending_target_profile = target_profile;
   loomc_target_profile_t* profile = NULL;

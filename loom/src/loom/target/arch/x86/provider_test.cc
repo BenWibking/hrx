@@ -14,6 +14,18 @@
 namespace loom {
 namespace {
 
+static void ExpectSelectedCpuProfile(
+    const iree_cpu_data_t* cpu_data, const loom_target_facts_t* requirement,
+    const loom_target_profile_t* profile,
+    const loom_target_profile_t* expected_profile) {
+  loom_target_profile_selection_t selection = {};
+  IREE_EXPECT_OK(loom_x86_target_provider.select_cpu_profile(
+      cpu_data, requirement, profile, &selection, iree_allocator_system()));
+  EXPECT_EQ(selection.profile, expected_profile);
+  EXPECT_EQ(selection.destroy, nullptr);
+  loom_target_profile_selection_release(&selection, iree_allocator_system());
+}
+
 TEST(X86ProviderTest, PreservesLowCalls) {
   ASSERT_NE(loom_x86_target_provider.select_call_policy, nullptr);
   const loom_resolved_target_t resolved_target = {};
@@ -41,27 +53,19 @@ TEST(X86ProviderTest, SelectsStrongestExecutableCpuProfile) {
 
   iree_cpu_data_t cpu_data = {};
   cpu_data.architecture = IREE_CPU_ARCHITECTURE_X86_64;
-  EXPECT_EQ(
-      loom_x86_target_provider.select_cpu_profile(&cpu_data, nullptr, nullptr),
-      scalar_profile);
+  ExpectSelectedCpuProfile(&cpu_data, nullptr, nullptr, scalar_profile);
 
   cpu_data.fields[0] = IREE_CPU_DATA0_X86_64_AVX;
-  EXPECT_EQ(
-      loom_x86_target_provider.select_cpu_profile(&cpu_data, nullptr, nullptr),
-      simd128_profile);
+  ExpectSelectedCpuProfile(&cpu_data, nullptr, nullptr, simd128_profile);
 
   cpu_data.fields[0] = IREE_CPU_DATA0_X86_64_AVX | IREE_CPU_DATA0_X86_64_FMA |
                        IREE_CPU_DATA0_X86_64_AVX2;
-  EXPECT_EQ(
-      loom_x86_target_provider.select_cpu_profile(&cpu_data, nullptr, nullptr),
-      avx2_profile);
+  ExpectSelectedCpuProfile(&cpu_data, nullptr, nullptr, avx2_profile);
 
   cpu_data.fields[0] |=
       IREE_CPU_DATA0_X86_64_AVX512F | IREE_CPU_DATA0_X86_64_AVX512VL |
       IREE_CPU_DATA0_X86_64_AVX512DQ | IREE_CPU_DATA0_X86_64_AVX512BW;
-  EXPECT_EQ(
-      loom_x86_target_provider.select_cpu_profile(&cpu_data, nullptr, nullptr),
-      avx512_profile);
+  ExpectSelectedCpuProfile(&cpu_data, nullptr, nullptr, avx512_profile);
 }
 
 TEST(X86ProviderTest, RequiresCompleteCpuFeatureClosures) {
@@ -89,19 +93,15 @@ TEST(X86ProviderTest, RequiresCompleteCpuFeatureClosures) {
     IREE_ASSERT_OK(loom_x86_target_provider.select_profile(
         iree_make_cstring_view(profile_case.selector), &profile));
     cpu_data.fields[0] = profile_case.required_features;
-    EXPECT_EQ(loom_x86_target_provider.select_cpu_profile(&cpu_data, nullptr,
-                                                          profile),
-              profile)
-        << profile_case.selector;
+    SCOPED_TRACE(profile_case.selector);
+    ExpectSelectedCpuProfile(&cpu_data, nullptr, profile, profile);
     for (uint64_t feature = 1; feature != 0; feature <<= 1) {
       if (!iree_any_bit_set(profile_case.required_features, feature)) {
         continue;
       }
       cpu_data.fields[0] = profile_case.required_features & ~feature;
-      EXPECT_EQ(loom_x86_target_provider.select_cpu_profile(&cpu_data, nullptr,
-                                                            profile),
-                nullptr)
-          << profile_case.selector << " missing feature " << feature;
+      SCOPED_TRACE(feature);
+      ExpectSelectedCpuProfile(&cpu_data, nullptr, profile, nullptr);
     }
   }
 }
@@ -121,9 +121,7 @@ TEST(X86ProviderTest, PreservesRequirementIdentity) {
       IREE_CPU_DATA0_X86_64_AVX2 | IREE_CPU_DATA0_X86_64_AVX512F |
       IREE_CPU_DATA0_X86_64_AVX512VL | IREE_CPU_DATA0_X86_64_AVX512DQ |
       IREE_CPU_DATA0_X86_64_AVX512BW;
-  EXPECT_EQ(loom_x86_target_provider.select_cpu_profile(&cpu_data, &requirement,
-                                                        nullptr),
-            avx2_profile);
+  ExpectSelectedCpuProfile(&cpu_data, &requirement, nullptr, avx2_profile);
 }
 
 TEST(X86ProviderTest, RejectsNonExecutableAndForeignProfiles) {
@@ -140,17 +138,12 @@ TEST(X86ProviderTest, RejectsNonExecutableAndForeignProfiles) {
   iree_cpu_data_t cpu_data = {};
   cpu_data.architecture = IREE_CPU_ARCHITECTURE_X86_64;
   cpu_data.fields[0] = UINT64_MAX;
-  EXPECT_EQ(loom_x86_target_provider.select_cpu_profile(&cpu_data, nullptr,
-                                                        packed_dot_profile),
-            nullptr);
-  EXPECT_EQ(loom_x86_target_provider.select_cpu_profile(
-                &cpu_data, nullptr, avx512_packed_dot_profile),
-            nullptr);
+  ExpectSelectedCpuProfile(&cpu_data, nullptr, packed_dot_profile, nullptr);
+  ExpectSelectedCpuProfile(&cpu_data, nullptr, avx512_packed_dot_profile,
+                           nullptr);
 
   cpu_data.architecture = IREE_CPU_ARCHITECTURE_ARM_64;
-  EXPECT_EQ(loom_x86_target_provider.select_cpu_profile(&cpu_data, nullptr,
-                                                        scalar_profile),
-            nullptr);
+  ExpectSelectedCpuProfile(&cpu_data, nullptr, scalar_profile, nullptr);
 }
 
 }  // namespace
