@@ -62,6 +62,7 @@ loom_cc_library(
     "src/visibility.h"
     "src/workspace.h"
   SRCS
+    "include/loomc/interop.h"
     "src/artifact.c"
     "src/artifact_manifest.c"
     "src/base.c"
@@ -74,6 +75,7 @@ loom_cc_library(
     "src/context.c"
     "src/diagnostic.c"
     "src/emit.c"
+    "src/interop.c"
     "src/launch_config.c"
     "src/link.c"
     "src/link_dependency.c"
@@ -172,6 +174,22 @@ loom_cc_library(
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>"
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/src>"
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    interop
+  HDRS
+    "include/loomc/interop.h"
+  DEPS
+    ::loomc
+    loom::error::source
+    loom::ir
+    loom::target::provider
+  INCLUDES
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
   PUBLIC
 )
 
