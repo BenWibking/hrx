@@ -508,11 +508,7 @@ TEST_F(AmdgpuWaitPlanTest, RefinedCrossBlockMemoryOmitsDisjointWait) {
   CrossBlockMemoryFixture fixture = {};
   ConfigureRefinedAcyclicMemory(graph, &fixture);
   IREE_ASSERT_OK(BuildPlan());
-  for (iree_host_size_t i = 0; i < plan_.action_count; ++i) {
-    const loom_amdgpu_wait_plan_action_t& action = plan_.actions[i];
-    EXPECT_FALSE(action.reason == LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT &&
-                 action.consumer_node == fixture.consumer_node);
-  }
+  EXPECT_EQ(plan_.action_count, 0u);
 }
 
 TEST_F(AmdgpuWaitPlanTest, RefinedCrossBlockMemoryWaitsForExactCompletion) {
@@ -521,19 +517,17 @@ TEST_F(AmdgpuWaitPlanTest, RefinedCrossBlockMemoryWaitsForExactCompletion) {
   ConfigureRefinedAcyclicMemory(graph, &fixture);
   MemoryCompletion(fixture.producer_effect, fixture.consumer_effect);
   IREE_ASSERT_OK(BuildPlan());
-  iree_host_size_t matching_action_count = 0;
-  for (iree_host_size_t i = 0; i < plan_.action_count; ++i) {
-    const loom_amdgpu_wait_plan_action_t& action = plan_.actions[i];
-    if (action.reason != LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT ||
-        action.consumer_node != fixture.consumer_node) {
-      continue;
-    }
-    ++matching_action_count;
-    EXPECT_EQ(action.producer_node, fixture.producer_node);
-    EXPECT_EQ(action.counter_id, LOOM_AMDGPU_WAIT_COUNTER_VMEM_STORE);
-    EXPECT_EQ(action.target_count, 0);
-  }
-  EXPECT_EQ(matching_action_count, 1u);
+  ASSERT_EQ(plan_.action_count, 1u);
+  const loom_amdgpu_wait_plan_action_t& action = plan_.actions[0];
+  EXPECT_EQ(action.kind, LOOM_AMDGPU_WAIT_PLAN_ACTION_PLANNED);
+  EXPECT_EQ(action.block_index, 1u);
+  EXPECT_EQ(action.node_index, fixture.consumer_node);
+  EXPECT_EQ(action.scheduled_ordinal, 0u);
+  EXPECT_EQ(action.producer_node, fixture.producer_node);
+  EXPECT_EQ(action.consumer_node, fixture.consumer_node);
+  EXPECT_EQ(action.counter_id, LOOM_AMDGPU_WAIT_COUNTER_VMEM_STORE);
+  EXPECT_EQ(action.target_count, 0);
+  EXPECT_EQ(action.reason, LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT);
 }
 
 TEST_F(AmdgpuWaitPlanTest, MixedConsumerEffectsRemainConservative) {
@@ -548,19 +542,15 @@ TEST_F(AmdgpuWaitPlanTest, MixedConsumerEffectsRemainConservative) {
   schedule_.effect_use_count = effects_.size();
 
   IREE_ASSERT_OK(BuildPlan());
-  iree_host_size_t matching_action_count = 0;
-  for (iree_host_size_t i = 0; i < plan_.action_count; ++i) {
-    const loom_amdgpu_wait_plan_action_t& action = plan_.actions[i];
-    if (action.reason != LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT ||
-        action.consumer_node != fixture.consumer_node) {
-      continue;
-    }
-    ++matching_action_count;
-    EXPECT_EQ(action.producer_node, UINT32_MAX);
-    EXPECT_EQ(action.counter_id, LOOM_AMDGPU_WAIT_COUNTER_VMEM_STORE);
-    EXPECT_EQ(action.target_count, 0);
-  }
-  EXPECT_EQ(matching_action_count, 1u);
+  ASSERT_EQ(plan_.action_count, 1u);
+  const loom_amdgpu_wait_plan_action_t& action = plan_.actions[0];
+  EXPECT_EQ(action.block_index, 1u);
+  EXPECT_EQ(action.node_index, fixture.consumer_node);
+  EXPECT_EQ(action.producer_node, LOOM_LOW_SCHEDULE_NODE_NONE);
+  EXPECT_EQ(action.consumer_node, fixture.consumer_node);
+  EXPECT_EQ(action.counter_id, LOOM_AMDGPU_WAIT_COUNTER_VMEM_STORE);
+  EXPECT_EQ(action.target_count, 0);
+  EXPECT_EQ(action.reason, LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT);
 }
 
 TEST_F(AmdgpuWaitPlanTest, BackedgeMemoryRemainsConservative) {
@@ -568,18 +558,23 @@ TEST_F(AmdgpuWaitPlanTest, BackedgeMemoryRemainsConservative) {
   CrossBlockMemoryFixture fixture = {};
   ConfigureRefinedAcyclicMemory(graph, &fixture);
   IREE_ASSERT_OK(BuildPlan());
-  iree_host_size_t matching_action_count = 0;
-  for (iree_host_size_t i = 0; i < plan_.action_count; ++i) {
-    const loom_amdgpu_wait_plan_action_t& action = plan_.actions[i];
-    if (action.reason != LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT ||
-        action.consumer_node != fixture.producer_node) {
-      continue;
-    }
-    ++matching_action_count;
-    EXPECT_EQ(action.counter_id, LOOM_AMDGPU_WAIT_COUNTER_TENSOR);
-    EXPECT_EQ(action.target_count, 0);
-  }
-  EXPECT_EQ(matching_action_count, 1u);
+  ASSERT_EQ(plan_.action_count, 2u);
+  const loom_amdgpu_wait_plan_action_t& header_action = plan_.actions[0];
+  EXPECT_EQ(header_action.block_index, 0u);
+  EXPECT_EQ(header_action.node_index, fixture.producer_node);
+  EXPECT_EQ(header_action.producer_node, LOOM_LOW_SCHEDULE_NODE_NONE);
+  EXPECT_EQ(header_action.consumer_node, fixture.producer_node);
+  EXPECT_EQ(header_action.counter_id, LOOM_AMDGPU_WAIT_COUNTER_TENSOR);
+  EXPECT_EQ(header_action.target_count, 0);
+  EXPECT_EQ(header_action.reason, LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT);
+  const loom_amdgpu_wait_plan_action_t& body_action = plan_.actions[1];
+  EXPECT_EQ(body_action.block_index, 1u);
+  EXPECT_EQ(body_action.node_index, fixture.consumer_node);
+  EXPECT_EQ(body_action.producer_node, LOOM_LOW_SCHEDULE_NODE_NONE);
+  EXPECT_EQ(body_action.consumer_node, fixture.consumer_node);
+  EXPECT_EQ(body_action.counter_id, LOOM_AMDGPU_WAIT_COUNTER_VMEM_STORE);
+  EXPECT_EQ(body_action.target_count, 0);
+  EXPECT_EQ(body_action.reason, LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT);
 }
 
 TEST_F(AmdgpuWaitPlanTest, PartialWaitCompletesAnOlderTransfer) {

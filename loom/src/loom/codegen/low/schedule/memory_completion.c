@@ -119,10 +119,13 @@ static iree_status_t loom_low_schedule_consume_memory_frontier(
 
 static void loom_low_schedule_union_forward_memory_frontiers(
     const loom_cfg_graph_t* graph, uint16_t block_index,
-    iree_host_size_t frontier_word_count, uint64_t* read_frontiers,
+    iree_host_size_t frontier_row_word_count,
+    iree_host_size_t active_word_count, uint64_t* read_frontiers,
     uint64_t* write_frontiers) {
-  uint64_t* target_reads = read_frontiers + block_index * frontier_word_count;
-  uint64_t* target_writes = write_frontiers + block_index * frontier_word_count;
+  uint64_t* target_reads =
+      read_frontiers + block_index * frontier_row_word_count;
+  uint64_t* target_writes =
+      write_frontiers + block_index * frontier_row_word_count;
   const loom_cfg_edge_index_span_t incoming_edges =
       loom_cfg_graph_predecessor_edges(graph, block_index);
   for (iree_host_size_t i = 0; i < incoming_edges.count; ++i) {
@@ -132,10 +135,10 @@ static void loom_low_schedule_union_forward_memory_frontiers(
       continue;
     }
     const uint64_t* source_reads =
-        read_frontiers + edge->source_block_index * frontier_word_count;
+        read_frontiers + edge->source_block_index * frontier_row_word_count;
     const uint64_t* source_writes =
-        write_frontiers + edge->source_block_index * frontier_word_count;
-    for (iree_host_size_t word_index = 0; word_index < frontier_word_count;
+        write_frontiers + edge->source_block_index * frontier_row_word_count;
+    for (iree_host_size_t word_index = 0; word_index < active_word_count;
          ++word_index) {
       target_reads[word_index] |= source_reads[word_index];
       target_writes[word_index] |= source_writes[word_index];
@@ -233,9 +236,11 @@ iree_status_t loom_low_schedule_build_acyclic_memory_completions(
       continue;
     }
 
+    const iree_host_size_t active_word_count = iree_host_size_ceil_div(
+        refined_ordinal, LOOM_LOW_SCHEDULE_MEMORY_COMPLETION_BITS_PER_WORD);
     loom_low_schedule_union_forward_memory_frontiers(
-        state->cfg_graph, block_index, frontier_word_count, read_frontiers,
-        write_frontiers);
+        state->cfg_graph, block_index, frontier_word_count, active_word_count,
+        read_frontiers, write_frontiers);
     uint64_t* block_reads = read_frontiers + block_index * frontier_word_count;
     uint64_t* block_writes =
         write_frontiers + block_index * frontier_word_count;
@@ -249,6 +254,8 @@ iree_status_t loom_low_schedule_build_acyclic_memory_completions(
         ++node_effect_end;
       }
 
+      const iree_host_size_t active_node_word_count = iree_host_size_ceil_div(
+          refined_ordinal, LOOM_LOW_SCHEDULE_MEMORY_COMPLETION_BITS_PER_WORD);
       iree_host_size_t node_refined_ordinal = refined_ordinal;
       for (iree_host_size_t i = node_effect_start; i < node_effect_end; ++i) {
         const loom_low_schedule_effect_use_t* effect = &state->effect_uses[i];
@@ -263,7 +270,7 @@ iree_status_t loom_low_schedule_build_acyclic_memory_completions(
                                           ? block_writes
                                           : block_reads;
         IREE_RETURN_IF_ERROR(loom_low_schedule_consume_memory_frontier(
-            state, refined_effects, effect, summary, frontier_word_count,
+            state, refined_effects, effect, summary, active_node_word_count,
             opposite_frontier, &scratch_edges, &scratch_edge_count,
             &scratch_edge_capacity));
       }

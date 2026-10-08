@@ -116,6 +116,43 @@ TEST_F(MemoryCompletionTest, AliasingForwardEffectsRetainExactCompletion) {
   EXPECT_EQ(state_.memory_completion_edges[0].consumer_effect_use, consumer);
 }
 
+TEST_F(MemoryCompletionTest, DiamondJoinRetainsOnlyAliasingProducer) {
+  testing::CfgGraph graph({{1, 2}, {3}, {3}, {}});
+  uint32_t aliasing_producer = 0;
+  uint32_t disjoint_producer = 0;
+  uint32_t consumer = 0;
+  AddEffect(1, LOOM_LOW_EFFECT_KIND_WRITE, Access(1), &aliasing_producer);
+  AddEffect(2, LOOM_LOW_EFFECT_KIND_WRITE, Access(2), &disjoint_producer);
+  AddEffect(3, LOOM_LOW_EFFECT_KIND_READ, Access(1), &consumer);
+
+  Analyze(graph.get());
+
+  ASSERT_EQ(state_.memory_completion_edge_count, 1u);
+  EXPECT_EQ(state_.memory_completion_edges[0].producer_effect_use,
+            aliasing_producer);
+  EXPECT_EQ(state_.memory_completion_edges[0].consumer_effect_use, consumer);
+}
+
+TEST_F(MemoryCompletionTest, CompletionMustHoldOnEveryIncomingPath) {
+  testing::CfgGraph graph({{1, 2}, {3}, {3}, {}});
+  uint32_t producer = 0;
+  uint32_t branch_consumer = 0;
+  uint32_t join_consumer = 0;
+  AddEffect(0, LOOM_LOW_EFFECT_KIND_WRITE, Access(1), &producer);
+  AddEffect(1, LOOM_LOW_EFFECT_KIND_READ, Access(1), &branch_consumer);
+  AddEffect(3, LOOM_LOW_EFFECT_KIND_READ, Access(1), &join_consumer);
+
+  Analyze(graph.get());
+
+  ASSERT_EQ(state_.memory_completion_edge_count, 2u);
+  EXPECT_EQ(state_.memory_completion_edges[0].producer_effect_use, producer);
+  EXPECT_EQ(state_.memory_completion_edges[0].consumer_effect_use,
+            branch_consumer);
+  EXPECT_EQ(state_.memory_completion_edges[1].producer_effect_use, producer);
+  EXPECT_EQ(state_.memory_completion_edges[1].consumer_effect_use,
+            join_consumer);
+}
+
 TEST_F(MemoryCompletionTest, ReadsCompleteBeforeAliasingForwardWrites) {
   testing::CfgGraph graph({{1}, {}});
   uint32_t producer = 0;
