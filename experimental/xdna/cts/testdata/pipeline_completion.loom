@@ -6,6 +6,58 @@
 
 aie2p.target<array> @npu
 
+// Autonomous ingress rotates three slots while computation mutates each record
+// and drains it to a padded external layout. Five records leave a partial ring
+// revolution; each independent invocation must start with slot zero again.
+pipeline.def<kernel> public retain target(@npu) @autonomous_strided_ingress() run(%input_arg: buffer, %output_arg: buffer) {
+  %input_unique, %output_unique = buffer.assume.noalias %input_arg, %output_arg : buffer, buffer
+  %input, %output = buffer.assume.alignment %input_unique, %output_unique {minimum_alignment = 4} : buffer, buffer
+  %memory = pipeline.memory<workgroup>[0, 3] : pool
+  %origin = index.constant 0 : offset
+  %storage_bytes = index.constant 24 : offset
+  %capacity = index.constant 3 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %storage_bytes : buffer
+  %slots = buffer.view %storage[%origin] : buffer -> view<3x2xi32>
+  %records = channel.bind<fifo> %slots, %capacity : view<3x2xi32>, index -> channel<tile<2xi32>>
+  %begin = index.constant 0 : index
+  %count = index.constant 5 : index
+  %step = index.constant 1 : index
+  %record_bytes = index.constant 12 : index
+
+  pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
+    scf.for %record = [%begin to %count step %step] {
+      %byte_index = index.mul %record, %record_bytes : index
+      %offset = index.cast %byte_index : index to offset
+      %external = buffer.view %input[%offset] : buffer -> view<2xi32, #encoding.layout.strided<strides=[2]>>
+      %write, %destination = channel.reserve %records : channel<tile<2xi32>> -> (write<tile<2xi32>>, view<2xi32>)
+      %copy = kernel.async.copy %external to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2xi32, #encoding.layout.strided<strides=[2]>> to view<2xi32> -> kernel.async.token
+      %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+      kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+      channel.publish %write : write<tile<2xi32>>
+    }
+  }
+
+  pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
+    %width = index.constant 2 : index
+    %factor = scalar.constant 2 : i32
+    scf.for %record = [%begin to %count step %step] {
+      %read, %payload = channel.acquire<mutable> %records : channel<tile<2xi32>> -> (read<tile<2xi32>, mutable>, view<2xi32>)
+      scf.for %field = [%begin to %width step %step] {
+        %value = view.load %payload[%field] : view<2xi32> -> i32
+        %scaled = scalar.muli %value, %factor : i32
+        view.store %scaled, %payload[%field] : i32, view<2xi32>
+      }
+      %byte_index = index.mul %record, %record_bytes : index
+      %offset = index.cast %byte_index : index to offset
+      %external = buffer.view %output[%offset] : buffer -> view<2xi32, #encoding.layout.strided<strides=[2]>>
+      %copy = kernel.async.copy %payload to %external {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<2xi32> to view<2xi32, #encoding.layout.strided<strides=[2]>> -> kernel.async.token
+      %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+      kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+      channel.release %read : read<tile<2xi32>, mutable>
+    }
+  }
+}
+
 // Each two-slot endpoint admits only one record. Transfers therefore use fixed
 // descriptor addresses even though storage has room for a second record.
 // Distinct nonzero local origins exercise descriptor initialization on both
@@ -54,7 +106,6 @@ pipeline.def<kernel> public retain target(@npu) @single_admission() run(%output_
 // origin separates the slot address from the memory owner's aperture. Capacity
 // one keeps that address fixed; capacity three rotates it while the dynamic
 // projection and external output offset advance independently.
-
 pipeline.def<kernel> @projected_records(%capacity: index) run(%output_arg: buffer) {
   %output = buffer.assume.alignment %output_arg {minimum_alignment = 4} : buffer
   %memory = pipeline.memory<workgroup>[0, 3] : pool
@@ -133,7 +184,6 @@ pipeline.def<kernel> public retain target(@npu) @projected_ring() run(%output: b
 
 // The second reservation becomes ready first.
 // A FIFO consumer must still wait for the first reservation's publication.
-
 pipeline.def<kernel> public retain target(@npu) @reordered_publication() run(%output_arg: buffer) {
   %output = buffer.assume.alignment %output_arg {minimum_alignment = 4} : buffer
   %memory = pipeline.memory<workgroup>[0, 3] : pool
@@ -174,7 +224,6 @@ pipeline.def<kernel> public retain target(@npu) @reordered_publication() run(%ou
 
 // Retiring the second slot must not permit the
 // producer to overwrite the first slot before the first read is released.
-
 pipeline.def<kernel> public retain target(@npu) @reordered_retirement() run(%output_arg: buffer) {
   %output = buffer.assume.alignment %output_arg {minimum_alignment = 4} : buffer
   %memory = pipeline.memory<workgroup>[0, 3] : pool
@@ -214,7 +263,6 @@ pipeline.def<kernel> public retain target(@npu) @reordered_retirement() run(%out
 // A held read rotates through ordinary loop arguments. Wait borrows its ready
 // payload without another admission. Each iteration retires the later read
 // first, then completes DMA from the older record and returns both credits.
-
 pipeline.def<kernel> public retain target(@npu) @rotating_retirement() run(%output_arg: buffer) {
   %output = buffer.assume.alignment %output_arg {minimum_alignment = 4} : buffer
   %memory = pipeline.memory<workgroup>[0, 3] : pool

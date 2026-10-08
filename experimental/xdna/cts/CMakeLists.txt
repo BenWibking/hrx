@@ -40,6 +40,7 @@ loom_kernel_binary(
   SRCS
     "testdata/pipeline_completion.loom"
   ROOTS
+    "@autonomous_strided_ingress"
     "@single_admission"
     "@projected_single_slot"
     "@projected_ring"
@@ -63,6 +64,7 @@ loom_kernel_binary(
   SRCS
     "testdata/pipeline_completion.loom"
   ROOTS
+    "@autonomous_strided_ingress"
     "@single_admission"
     "@projected_single_slot"
     "@projected_ring"

@@ -39,6 +39,7 @@ _PIPELINE_ARTIFACTS = select({
         srcs = ["testdata/pipeline_completion.loom"],
         out = "pipeline_completion_" + profile + ".xdna",
         roots = [
+            "@autonomous_strided_ingress",
             "@single_admission",
             "@projected_single_slot",
             "@projected_ring",

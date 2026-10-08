@@ -36,6 +36,30 @@ class XdnaPipelineCompletionTest : public XdnaExecutionFixture {
         iree_hal_amd_xdna_image_find_entry(executable_, name, &entry_ordinal_));
   }
 
+  void BindPipeline(
+      iree::span<const iree_hal_amd_xdna_executable_binding_t> bindings) {
+    // Rebind only after the previous invocation has retired. The same context
+    // and command storage must use the newly supplied buffer DMA addresses.
+    iree_hal_amd_xdna_executable_storage_t storage = {};
+    storage.memory = first_.instructions.memory;
+    storage.mapping =
+        iree_make_byte_span(first_.instructions.pointer, first_.byte_length);
+    ASSERT_EQ(api_->memory_query_address(storage.memory, 0,
+                                         AMDF_MEMORY_ADDRESS_XDNA_FIRMWARE,
+                                         &storage.device_address),
+              AMDF_STATUS_OK);
+    IREE_ASSERT_OK(iree_hal_amd_xdna_executable_bind(
+        executable_, entry_ordinal_, 1, &storage, bindings.size(),
+        bindings.data()));
+    first_.original_instructions.assign(
+        first_.instructions.pointer,
+        first_.instructions.pointer + first_.byte_length);
+    ASSERT_EQ(api_->host_mapping_cache_control(first_.instructions.mapping,
+                                               AMDF_HOST_CACHE_OPERATION_FLUSH,
+                                               0, first_.byte_length),
+              AMDF_STATUS_OK);
+  }
+
   void CheckPipeline(iree_string_view_t name,
                      iree::span<const uint32_t> results) {
     ASSERT_NO_FATAL_FAILURE(LoadPipeline(name));
@@ -58,26 +82,8 @@ class XdnaPipelineCompletionTest : public XdnaExecutionFixture {
       for (size_t binding = 0; binding < expected.size(); ++binding) {
         ASSERT_NO_FATAL_FAILURE(WriteBinding(binding, expected[binding]));
       }
-      // Rebind only after the previous invocation has retired. The same
-      // context and command storage must now use the new buffer's DMA address.
-      iree_hal_amd_xdna_executable_storage_t storage = {};
-      storage.memory = first_.instructions.memory;
-      storage.mapping =
-          iree_make_byte_span(first_.instructions.pointer, first_.byte_length);
-      ASSERT_EQ(api_->memory_query_address(storage.memory, 0,
-                                           AMDF_MEMORY_ADDRESS_XDNA_FIRMWARE,
-                                           &storage.device_address),
-                AMDF_STATUS_OK);
-      IREE_ASSERT_OK(iree_hal_amd_xdna_executable_bind(
-          executable_, entry_ordinal_, 1, &storage, 1,
-          &resolved_bindings_[output_binding]));
-      first_.original_instructions.assign(
-          first_.instructions.pointer,
-          first_.instructions.pointer + first_.byte_length);
-      ASSERT_EQ(api_->host_mapping_cache_control(
-                    first_.instructions.mapping,
-                    AMDF_HOST_CACHE_OPERATION_FLUSH, 0, first_.byte_length),
-                AMDF_STATUS_OK);
+      ASSERT_NO_FATAL_FAILURE(
+          BindPipeline({&resolved_bindings_[output_binding], 1}));
       std::copy(results.begin(), results.end(),
                 expected[output_binding].begin());
       ASSERT_NO_FATAL_FAILURE(RunExecution(first_));
@@ -85,6 +91,37 @@ class XdnaPipelineCompletionTest : public XdnaExecutionFixture {
     }
   }
 };
+
+TEST_F(XdnaPipelineCompletionTest, StreamsStridedRecordsThroughPartialRing) {
+  ASSERT_NO_FATAL_FAILURE(LoadPipeline(IREE_SV("autonomous_strided_ingress")));
+  ASSERT_NO_FATAL_FAILURE(CreateBindings(AMDF_MEMORY_PROFILE_ROLE_CREATE));
+  ASSERT_NO_FATAL_FAILURE(
+      PrepareExecution({resolved_bindings_.data(), 2}, &first_));
+  for (size_t generation = 0; generation < 3; ++generation) {
+    SCOPED_TRACE(generation);
+    const size_t input_binding = generation;
+    const size_t output_binding = (generation + 1) % resolved_bindings_.size();
+    std::array<BindingValues, 3> expected;
+    for (size_t binding = 0; binding < expected.size(); ++binding) {
+      for (size_t i = 0; i < kElementCount; ++i) {
+        expected[binding][i] =
+            kValues[(i + binding + generation) % kElementCount];
+      }
+      ASSERT_NO_FATAL_FAILURE(WriteBinding(binding, expected[binding]));
+    }
+    const std::array<iree_hal_amd_xdna_executable_binding_t, 2> bindings = {
+        resolved_bindings_[input_binding], resolved_bindings_[output_binding]};
+    ASSERT_NO_FATAL_FAILURE(BindPipeline(bindings));
+    for (size_t record = 0; record < 5; ++record) {
+      for (size_t field = 0; field < 2; ++field) {
+        const size_t index = record * 3 + field * 2;
+        expected[output_binding][index] = expected[input_binding][index] * 2;
+      }
+    }
+    ASSERT_NO_FATAL_FAILURE(RunExecution(first_));
+    ASSERT_NO_FATAL_FAILURE(VerifyBindings(expected));
+  }
+}
 
 TEST_F(XdnaPipelineCompletionTest, PublishesReservationOrder) {
   constexpr std::array<uint32_t, 2> results = {11, 22};
