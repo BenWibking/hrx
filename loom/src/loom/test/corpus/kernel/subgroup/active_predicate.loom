@@ -43,16 +43,51 @@ kernel.def @subgroup_active_predicate() {
   kernel.return
 }
 
-check.case public @votes_ignore_inactive_lanes {
-  %input = check.generate.iota offset(0) step(1) : tensor<64xi32>
-  %any = check.generate.fill value(99) : tensor<32xi32>
-  %all = check.generate.fill value(99) : tensor<32xi32>
-  %ballot = check.generate.fill value(99) : tensor<32xi32>
-  kernel.launch @subgroup_active_predicate(%input, %any, %all, %ballot) : (tensor<64xi32>, tensor<32xi32>, tensor<32xi32>, tensor<32xi32>)
-  %expected_false = check.generate.fill value(0) : tensor<32xi32>
-  %expected_true = check.generate.fill value(1) : tensor<32xi32>
-  check.expect.equal actual(%any) expected(%expected_false) : tensor<32xi32>
-  check.expect.equal actual(%all) expected(%expected_true) : tensor<32xi32>
-  check.expect.equal actual(%ballot) expected(%expected_true) : tensor<32xi32>
+func.def @subgroup_active_predicate_oracle(%input: buffer, %any_output: buffer, %all_output: buffer, %ballot_output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 32 : index
+  %step = index.constant 1 : index
+  %false = scalar.constant 0 : i32
+  %true = scalar.constant 1 : i32
+  %any_view = buffer.view %any_output[%base] : buffer -> view<32xi32>
+  %all_view = buffer.view %all_output[%base] : buffer -> view<32xi32>
+  %ballot_view = buffer.view %ballot_output[%base] : buffer -> view<32xi32>
+  scf.for %position = [%begin to %end step %step] {
+    view.store %false, %any_view[%position] : i32, view<32xi32>
+    view.store %true, %all_view[%position] : i32, view<32xi32>
+    view.store %true, %ballot_view[%position] : i32, view<32xi32>
+  }
+  func.return
+}
+
+check.scenario @votes_ignore_inactive_lanes {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(0) step(1) : tensor<64xi32>
+    %any_storage = check.generate.fill value(99) : tensor<40xi32>
+    %any_prefix = check.tensor.view %any_storage offset(0) : tensor<40xi32> -> tensor<4xi32>
+    %any = check.tensor.view %any_storage offset(16) : tensor<40xi32> -> tensor<32xi32>
+    %any_suffix = check.tensor.view %any_storage offset(144) : tensor<40xi32> -> tensor<4xi32>
+    %all_storage = check.generate.fill value(98) : tensor<40xi32>
+    %all_prefix = check.tensor.view %all_storage offset(0) : tensor<40xi32> -> tensor<4xi32>
+    %all = check.tensor.view %all_storage offset(16) : tensor<40xi32> -> tensor<32xi32>
+    %all_suffix = check.tensor.view %all_storage offset(144) : tensor<40xi32> -> tensor<4xi32>
+    %ballot_storage = check.generate.fill value(97) : tensor<40xi32>
+    %ballot_prefix = check.tensor.view %ballot_storage offset(0) : tensor<40xi32> -> tensor<4xi32>
+    %ballot = check.tensor.view %ballot_storage offset(16) : tensor<40xi32> -> tensor<32xi32>
+    %ballot_suffix = check.tensor.view %ballot_storage offset(144) : tensor<40xi32> -> tensor<4xi32>
+    check.compare<@subgroup_active_predicate, @subgroup_active_predicate_oracle>(%input, %any, %all, %ballot) : (tensor<64xi32>, tensor<32xi32>, tensor<32xi32>, tensor<32xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64xi32>
+      check.expect.bitwise actual(%any) expected(%any) : tensor<32xi32>
+      check.expect.bitwise actual(%all) expected(%all) : tensor<32xi32>
+      check.expect.bitwise actual(%ballot) expected(%ballot) : tensor<32xi32>
+      check.expect.bitwise actual(%any_prefix) expected(%any_prefix) : tensor<4xi32>
+      check.expect.bitwise actual(%any_suffix) expected(%any_suffix) : tensor<4xi32>
+      check.expect.bitwise actual(%all_prefix) expected(%all_prefix) : tensor<4xi32>
+      check.expect.bitwise actual(%all_suffix) expected(%all_suffix) : tensor<4xi32>
+      check.expect.bitwise actual(%ballot_prefix) expected(%ballot_prefix) : tensor<4xi32>
+      check.expect.bitwise actual(%ballot_suffix) expected(%ballot_suffix) : tensor<4xi32>
+    }
+  }
   check.return
 }

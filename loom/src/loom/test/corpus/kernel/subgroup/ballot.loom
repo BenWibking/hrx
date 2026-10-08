@@ -60,15 +60,6 @@ kernel.def @subgroup_ballot_masks() {
   kernel.return
 }
 
-check.case public @subgroup_ballot_exact_masks {
-  %input = check.generate.iota offset(0) step(1) : tensor<64xi32>
-  %output = check.generate.fill value(99) : tensor<3xi32>
-  kernel.launch @subgroup_ballot_masks(%input, %output) : (tensor<64xi32>, tensor<3xi32>)
-  %expected = check.generate.fill value(1) : tensor<3xi32>
-  check.expect.equal actual(%output) expected(%expected) : tensor<3xi32>
-  check.return
-}
-
 kernel.def @subgroup_ballot_divergent() {
   %unit = index.constant 1 : index
   %width = kernel.subgroup.size : index
@@ -107,15 +98,6 @@ kernel.def @subgroup_ballot_divergent() {
     }
   }
   kernel.return
-}
-
-check.case public @subgroup_ballot_active_lanes {
-  %input = check.generate.iota offset(0) step(1) : tensor<64xi32>
-  %output = check.generate.fill value(99) : tensor<2xi32>
-  kernel.launch @subgroup_ballot_divergent(%input, %output) : (tensor<64xi32>, tensor<2xi32>)
-  %expected = check.generate.fill value(1) : tensor<2xi32>
-  check.expect.equal actual(%output) expected(%expected) : tensor<2xi32>
-  check.return
 }
 
 func.def device inline @subgroup_ballot_helper(%predicate: i1) -> (i64) {
@@ -168,10 +150,82 @@ kernel.def @subgroup_ballot_helpers_and_loop() {
   kernel.return
 }
 
-check.case public @subgroup_ballot_helper_loop_results {
-  %output = check.generate.fill value(99) : tensor<3xi32>
-  kernel.launch @subgroup_ballot_helpers_and_loop(%output) : (tensor<3xi32>)
-  %expected = check.generate.fill value(1) : tensor<3xi32>
-  check.expect.equal actual(%output) expected(%expected) : tensor<3xi32>
+func.def @three_true_results_oracle(%output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 3 : index
+  %step = index.constant 1 : index
+  %true = scalar.constant 1 : i32
+  %output_view = buffer.view %output[%base] : buffer -> view<3xi32>
+  scf.for %position = [%begin to %end step %step] {
+    view.store %true, %output_view[%position] : i32, view<3xi32>
+  }
+  func.return
+}
+
+func.def @three_true_input_results_oracle(%input: buffer, %output: buffer) {
+  func.call @three_true_results_oracle(%output) : (buffer)
+  func.return
+}
+
+func.def @two_true_results_oracle(%input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 2 : index
+  %step = index.constant 1 : index
+  %true = scalar.constant 1 : i32
+  %output_view = buffer.view %output[%base] : buffer -> view<2xi32>
+  scf.for %position = [%begin to %end step %step] {
+    view.store %true, %output_view[%position] : i32, view<2xi32>
+  }
+  func.return
+}
+
+check.scenario @subgroup_ballot_exact_masks {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(0) step(1) : tensor<64xi32>
+    %storage = check.generate.fill value(99) : tensor<11xi32>
+    %prefix = check.tensor.view %storage offset(0) : tensor<11xi32> -> tensor<4xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<11xi32> -> tensor<3xi32>
+    %suffix = check.tensor.view %storage offset(28) : tensor<11xi32> -> tensor<4xi32>
+    check.compare<@subgroup_ballot_masks, @three_true_input_results_oracle>(%input, %output) : (tensor<64xi32>, tensor<3xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<3xi32>
+      check.expect.bitwise actual(%prefix) expected(%prefix) : tensor<4xi32>
+      check.expect.bitwise actual(%suffix) expected(%suffix) : tensor<4xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario @subgroup_ballot_active_lanes {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(0) step(1) : tensor<64xi32>
+    %storage = check.generate.fill value(98) : tensor<10xi32>
+    %prefix = check.tensor.view %storage offset(0) : tensor<10xi32> -> tensor<4xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<10xi32> -> tensor<2xi32>
+    %suffix = check.tensor.view %storage offset(24) : tensor<10xi32> -> tensor<4xi32>
+    check.compare<@subgroup_ballot_divergent, @two_true_results_oracle>(%input, %output) : (tensor<64xi32>, tensor<2xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi32>
+      check.expect.bitwise actual(%prefix) expected(%prefix) : tensor<4xi32>
+      check.expect.bitwise actual(%suffix) expected(%suffix) : tensor<4xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario @subgroup_ballot_helper_loop_results {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %storage = check.generate.fill value(97) : tensor<11xi32>
+    %prefix = check.tensor.view %storage offset(0) : tensor<11xi32> -> tensor<4xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<11xi32> -> tensor<3xi32>
+    %suffix = check.tensor.view %storage offset(28) : tensor<11xi32> -> tensor<4xi32>
+    check.compare<@subgroup_ballot_helpers_and_loop, @three_true_results_oracle>(%output) : (tensor<3xi32>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<3xi32>
+      check.expect.bitwise actual(%prefix) expected(%prefix) : tensor<4xi32>
+      check.expect.bitwise actual(%suffix) expected(%suffix) : tensor<4xi32>
+    }
+  }
   check.return
 }

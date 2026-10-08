@@ -12,8 +12,11 @@ KERNEL_CORPUS = loom_corpus_manifest(
     name = "kernel",
     package = "//loom/src/loom/test/corpus/kernel",
     scenario_srcs = [
+        "subgroup/active_predicate.loom",
+        "subgroup/ballot.loom",
         "subgroup/match.loom",
         "subgroup/reduce.loom",
+        "subgroup/shuffle_dynamic.loom",
         "subgroup/shuffle_participation.loom",
         "subgroup/transport.loom",
         "subgroup/transport_carrier.loom",
@@ -22,9 +25,6 @@ KERNEL_CORPUS = loom_corpus_manifest(
         "workgroup/reduce_tree.loom",
     ],
     legacy_case_srcs = [
-        "subgroup/active_predicate.loom",
-        "subgroup/ballot.loom",
-        "subgroup/shuffle_dynamic.loom",
         "workgroup/loop_state.loom",
     ],
 )
