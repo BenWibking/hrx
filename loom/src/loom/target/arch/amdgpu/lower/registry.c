@@ -48,6 +48,7 @@
 #include "loom/target/arch/amdgpu/lower/compare.h"
 #include "loom/target/arch/amdgpu/lower/constants.h"
 #include "loom/target/arch/amdgpu/lower/control.h"
+#include "loom/target/arch/amdgpu/lower/control_operands.h"
 #include "loom/target/arch/amdgpu/lower/dot.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/encoding/vector_conversion.h"
@@ -1967,8 +1968,9 @@ static const loom_low_lower_policy_t kAmdgpuLowLowerPolicy = {
                     .emit = loom_amdgpu_emit_entry_setup,
                     .user_data = NULL},
     .prepare_branch = {.fn = loom_amdgpu_prepare_branch, .user_data = NULL},
-    .materialize_branch_arg = {.fn = loom_amdgpu_materialize_branch_arg,
-                               .user_data = NULL},
+    .control_operand = {.prepare = loom_amdgpu_prepare_control_operand,
+                        .emit = loom_amdgpu_emit_control_operand,
+                        .user_data = NULL},
     .materialize_structural_operand =
         {.fn = loom_amdgpu_materialize_structural_operand, .user_data = NULL},
     .materialize_descriptor_operands = loom_amdgpu_materialize_vop3_operands,

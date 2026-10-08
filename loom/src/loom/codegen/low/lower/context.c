@@ -750,9 +750,8 @@ iree_status_t loom_low_lower_materialize_structural_operand(
 
 iree_status_t loom_low_lower_remap_successor_args(
     loom_low_lower_context_t* context, const loom_op_t* source_terminator,
-    uint8_t successor_index, loom_block_t* low_dest,
-    const loom_value_id_t* source_args, uint16_t source_arg_count,
-    loom_value_slice_t* out_low_args) {
+    loom_block_t* low_dest, const loom_value_id_t* source_args,
+    uint16_t source_arg_count, loom_value_slice_t* out_low_args) {
   *out_low_args = (loom_value_slice_t){0};
   const uint16_t supplemental_count =
       loom_low_lower_realization_edge_count(context, source_terminator);
@@ -771,22 +770,8 @@ iree_status_t loom_low_lower_remap_successor_args(
 
     const loom_type_t required_type =
         loom_block_arg_type(context->module, low_dest, i);
-    const loom_type_t actual_type =
-        loom_module_value_type(context->module, low_args[i]);
-    if (!loom_type_equal(actual_type, required_type)) {
-      IREE_ASSERT(context->policy->materialize_branch_arg.fn != NULL,
-                  "lowering policy produced a branch payload type mismatch");
-      IREE_RETURN_IF_ERROR(context->policy->materialize_branch_arg.fn(
-          context->policy->materialize_branch_arg.user_data, context,
-          source_terminator, successor_index, i, source_args[i], low_args[i],
-          required_type, &low_args[i]));
-
-      const loom_type_t materialized_type =
-          loom_module_value_type(context->module, low_args[i]);
-      IREE_ASSERT(loom_type_equal(materialized_type, required_type),
-                  "lowering policy materialized a branch payload with the "
-                  "wrong type");
-    }
+    IREE_RETURN_IF_ERROR(loom_low_lower_control_materialize_operand(
+        context, source_terminator, i, required_type, &low_args[i]));
     IREE_RETURN_IF_ERROR(loom_low_lower_materialize_structural_operand(
         context, source_terminator, i, source_args[i], required_type,
         &low_args[i]));

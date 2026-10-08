@@ -189,6 +189,8 @@ iree_status_t loom_low_lower_remap_values(loom_low_lower_context_t* context,
   if (value_count == 0) {
     return iree_ok_status();
   }
+  const bool is_callable_exit =
+      loom_low_lower_source_op_is_callable_exit(context, source_op);
   loom_value_id_t* low_values = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
       context, value_count, sizeof(*low_values), (void**)&low_values));
@@ -198,6 +200,10 @@ iree_status_t loom_low_lower_remap_values(loom_low_lower_context_t* context,
     const loom_type_t required_low_type =
         required_types ? required_types[i]
                        : loom_module_value_type(context->module, low_values[i]);
+    if (is_callable_exit) {
+      IREE_RETURN_IF_ERROR(loom_low_lower_control_materialize_operand(
+          context, source_op, i, required_low_type, &low_values[i]));
+    }
     IREE_RETURN_IF_ERROR(loom_low_lower_materialize_structural_operand(
         context, source_op, i, source_values[i], required_low_type,
         &low_values[i]));
@@ -544,7 +550,7 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
       IREE_RETURN_IF_ERROR(
           loom_low_lower_realizations_emit_edge(context, source_op));
       IREE_RETURN_IF_ERROR(loom_low_lower_remap_successor_args(
-          context, source_op, 0, low_dest, args.values, args.count, &low_args));
+          context, source_op, low_dest, args.values, args.count, &low_args));
       loom_op_t* low_br_op = NULL;
       return loom_low_br_build(&context->builder, low_dest, low_args.values,
                                low_args.count, source_op->location, &low_br_op);

@@ -23,9 +23,10 @@ typedef uint32_t loom_low_lower_block_ref_t;
 
 typedef struct loom_low_lower_control_plan_t loom_low_lower_control_plan_t;
 
-// Plans target branch expansion after source operation selection has finalized
-// block signatures. Construction scratch is released before returning. No Low
-// blocks, values, or symbols are published by this phase.
+// Plans target branch expansion and branch/return operand conversions after
+// source operation selection has finalized producer and boundary signatures.
+// Construction scratch is released before returning. No Low blocks, values,
+// or symbols are published by this phase.
 iree_status_t loom_low_lower_control_plan_build(
     loom_low_lower_context_t* context);
 
@@ -72,6 +73,14 @@ void loom_low_lower_set_branch_plan(loom_low_lower_context_t* context,
 bool loom_low_lower_lookup_branch_plan(loom_low_lower_context_t* context,
                                        const loom_op_t* source_terminator,
                                        loom_low_lower_plan_t* out_plan);
+
+// Applies a prepared branch or callable-exit operand conversion. The operand
+// ordinal addresses the terminator's source tuple; |required_type| is the
+// retained receiving signature. Matching carriers need no target callback.
+iree_status_t loom_low_lower_control_materialize_operand(
+    loom_low_lower_context_t* context, const loom_op_t* source_terminator,
+    uint16_t operand_index, loom_type_t required_type,
+    loom_value_id_t* inout_low_value);
 
 // Creates the retained synthetic blocks after all authored Low blocks and
 // their complete argument tuples have been constructed. Only allocation can

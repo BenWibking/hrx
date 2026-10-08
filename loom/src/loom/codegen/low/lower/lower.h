@@ -286,22 +286,31 @@ typedef struct loom_low_lower_prepare_branch_callback_t {
   void* user_data;
 } loom_low_lower_prepare_branch_callback_t;
 
-typedef iree_status_t (*loom_low_lower_materialize_branch_arg_fn_t)(
+typedef iree_status_t (*loom_low_lower_prepare_control_operand_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
-    const loom_op_t* source_terminator, uint8_t successor_index,
-    uint16_t arg_index, loom_value_id_t source_value_id,
-    loom_value_id_t low_value_id, loom_type_t required_low_type,
-    loom_value_id_t* out_low_value_id);
+    const loom_op_t* source_terminator, loom_value_id_t source_value_id,
+    loom_type_t required_low_type, const void** out_plan);
 
-typedef struct loom_low_lower_materialize_branch_arg_callback_t {
-  // Optional callback invoked when a structural branch payload's already
-  // lowered value does not match the destination block argument type. Targets
-  // use this to materialize edge-local register-class copies without changing
-  // the source value's canonical low mapping.
-  loom_low_lower_materialize_branch_arg_fn_t fn;
-  // Caller-owned payload passed to |fn|.
+typedef iree_status_t (*loom_low_lower_emit_control_operand_fn_t)(
+    void* user_data, loom_low_lower_context_t* context,
+    const loom_op_t* source_terminator, loom_value_id_t source_value_id,
+    loom_value_id_t low_value_id, loom_type_t required_low_type,
+    const void* plan, loom_value_id_t* out_low_value_id);
+
+typedef struct loom_low_lower_control_operand_t {
+  // Prepares a branch or callable-exit operand whose actual producer carrier
+  // differs from its receiving signature. Source facts are available here;
+  // rejection emits diagnostics before any Low construction. Retained data
+  // belongs to the function arena or immutable target storage. NULL is a
+  // valid recipe for a conversion determined entirely by the selected types.
+  loom_low_lower_prepare_control_operand_fn_t prepare;
+  // Emits the prepared conversion without consulting source analysis or
+  // changing the source value's canonical mapping. Only infrastructure
+  // failures remain possible. Both callbacks are present or both are absent.
+  loom_low_lower_emit_control_operand_fn_t emit;
+  // Caller-owned payload passed to both callbacks.
   void* user_data;
-} loom_low_lower_materialize_branch_arg_callback_t;
+} loom_low_lower_control_operand_t;
 
 typedef iree_status_t (*loom_low_lower_materialize_structural_operand_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
@@ -311,9 +320,8 @@ typedef iree_status_t (*loom_low_lower_materialize_structural_operand_fn_t)(
 
 typedef struct loom_low_lower_materialize_structural_operand_callback_t {
   // Optional callback invoked for low structural op operands after source value
-  // lookup. Required types come from the receiving boundary when one exists,
-  // such as the callable result signature. Targets materialize representation
-  // conversions and storage contracts such as defined register parts.
+  // lookup and prepared carrier conversion. Targets enforce storage contracts
+  // such as defined register parts using only the emitted Low operands.
   loom_low_lower_materialize_structural_operand_fn_t fn;
   // Caller-owned payload passed to |fn|.
   void* user_data;
@@ -894,13 +902,12 @@ typedef struct loom_low_lower_policy_t {
   // Optionally materializes target-owned low boundary attrs/layout from the
   // source function signature and mapped low signature.
   loom_low_lower_map_abi_layout_callback_t map_abi_layout;
-  // Optionally plans target-specific branch expansion after low blocks exist.
+  // Optionally plans target-specific branch expansion before Low creation.
   loom_low_lower_prepare_branch_callback_t prepare_branch;
-  // Optionally materializes branch payloads to the exact destination block
-  // argument type after the canonical low value has been looked up.
-  loom_low_lower_materialize_branch_arg_callback_t materialize_branch_arg;
-  // Optionally materializes structural op operands to their required low type
-  // and target storage contract, including the selected callable result type.
+  // Prepares and emits branch/return conversions to the receiving signature.
+  loom_low_lower_control_operand_t control_operand;
+  // Optionally materializes the target storage contract of structural operands
+  // after their carrier matches the receiving signature.
   loom_low_lower_materialize_structural_operand_callback_t
       materialize_structural_operand;
   // Optionally materializes relationships across a complete descriptor
@@ -1374,9 +1381,8 @@ loom_block_t* loom_low_lower_lookup_successor_dest(
 // loom_low_lower_lookup_value loops when forwarding block arguments.
 iree_status_t loom_low_lower_remap_successor_args(
     loom_low_lower_context_t* context, const loom_op_t* source_terminator,
-    uint8_t successor_index, loom_block_t* low_dest,
-    const loom_value_id_t* source_args, uint16_t source_arg_count,
-    loom_value_slice_t* out_low_args);
+    loom_block_t* low_dest, const loom_value_id_t* source_args,
+    uint16_t source_arg_count, loom_value_slice_t* out_low_args);
 
 // Resolves source values to their Low mappings and materializes each value for
 // a structural operation boundary. |required_types| may be NULL to retain each

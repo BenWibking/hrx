@@ -544,6 +544,84 @@ TEST_F(LowLowerSourcePlanTest, RejectsControlPlanWithoutPublishingBlocks) {
             function_.op);
 }
 
+enum class ControlBoundary { kBranch, kReturn };
+
+class LowLowerControlOperandTest
+    : public LowLowerSourcePlanTest,
+      public ::testing::WithParamInterface<ControlBoundary> {};
+
+TEST_P(LowLowerControlOperandTest,
+       RejectsReceivingCarrierBeforePublishingValues) {
+  if (GetParam() == ControlBoundary::kBranch) {
+    AddForwardingBlock();
+  }
+  loom_value_id_t receiving_argument =
+      GetParam() == ControlBoundary::kBranch
+          ? loom_block_arg_id(
+                loom_region_block(loom_func_like_body(function_), 1), 0)
+          : LOOM_VALUE_ID_INVALID;
+  // The test target's arithmetic produces one register, while this policy
+  // requests pairs at receiving boundaries. This exercises conversion of an
+  // actual producer carrier instead of remapping that producer's source type.
+  policy_.map_value = {
+      [](void* user_data, loom_low_lower_context_t* context,
+         const loom_op_t* source_op, loom_value_id_t source_value,
+         loom_type_t source_type, loom_type_t* out_type) -> iree_status_t {
+        IREE_RETURN_IF_ERROR(loom_test_low_lower_map_type(
+            nullptr, context, source_op, source_type, out_type));
+        if (loom_func_return_isa(source_op) ||
+            source_value == *static_cast<loom_value_id_t*>(user_data)) {
+          *out_type =
+              loom_low_register_carrier_type_with_unit_count(*out_type, 2);
+        }
+        return iree_ok_status();
+      },
+      &receiving_argument};
+  policy_.control_operand = {
+      [](void* user_data, loom_low_lower_context_t* context,
+         const loom_op_t* terminator, loom_value_id_t source_value,
+         loom_type_t required_type, const void** out_plan) -> iree_status_t {
+        *out_plan = nullptr;
+        EXPECT_EQ(loom_low_lower_context_low_function(context), nullptr);
+        EXPECT_EQ(loom_low_register_type_unit_count(
+                      loom_low_lower_value_binding_type(context, source_value)),
+                  1u);
+        EXPECT_EQ(loom_low_register_type_unit_count(required_type), 2u);
+        return loom_low_lower_emit_branch_constraint(
+            context, terminator, IREE_SV("test_control_operand_constraint"));
+      },
+      [](void* user_data, loom_low_lower_context_t* context,
+         const loom_op_t* terminator, loom_value_id_t source_value,
+         loom_value_id_t low_value, loom_type_t required_type, const void* plan,
+         loom_value_id_t* out_value) -> iree_status_t {
+        ADD_FAILURE() << "Rejected control operand reached emission";
+        *out_value = low_value;
+        return iree_ok_status();
+      },
+      nullptr};
+  options_.max_errors = 1;
+  const iree_host_size_t value_count = module_->values.count;
+  const loom_region_t* body = loom_func_like_body(function_);
+  const uint16_t block_count = body->block_count;
+  const loom_symbol_ref_t symbol = loom_func_like_callee(function_);
+  IREE_ASSERT_OK(
+      loom_low_lower_function(module_, function_, &options_, &result_));
+  EXPECT_EQ(result_.error_count, 1u);
+  EXPECT_EQ(result_.low_func_op, nullptr);
+  EXPECT_FALSE(observer_.type_mapping.emission_started);
+  EXPECT_EQ(module_->values.count, value_count);
+  EXPECT_EQ(body->block_count, block_count);
+  EXPECT_EQ(module_->symbols.entries[symbol.symbol_id].defining_op,
+            function_.op);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ControlBoundaries, LowLowerControlOperandTest,
+    ::testing::Values(ControlBoundary::kBranch, ControlBoundary::kReturn),
+    [](const ::testing::TestParamInfo<ControlBoundary>& info) {
+      return info.param == ControlBoundary::kBranch ? "Branch" : "Return";
+    });
+
 TEST_F(LowLowerSourcePlanTest, InheritedCarrierTracksLaterProducerSelection) {
   const loom_op_t* dependency = observer_.expected_source_ops[1];
   const loom_value_id_t producer = loom_scalar_addi_result(dependency);
