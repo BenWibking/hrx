@@ -201,12 +201,6 @@ IREE_FLAG_CALLBACK_NAMED(
     "Appends an expected HAL binding after dispatch. When present, one "
     "expected binding must be provided for every input binding.");
 
-static bool iree_run_loom_pipeline_is_default(iree_string_view_t pipeline) {
-  pipeline = iree_string_view_trim(pipeline);
-  return iree_string_view_is_empty(pipeline) ||
-         iree_string_view_equal(pipeline, IREE_SV("default"));
-}
-
 static iree_status_t iree_run_loom_parse_workgroup_count(
     iree_string_view_t value, uint32_t* out_workgroup_count) {
   iree_string_view_t remaining = value;
@@ -424,37 +418,6 @@ static iree_status_t iree_run_loom_select_kernel(const loomc_module_t* module,
     *out_root_storage = NULL;
   }
   return status;
-}
-
-static iree_status_t iree_run_loom_prepare_pass_program(
-    loomc_context_t* context, loomc_module_t* module,
-    iree_allocator_t allocator, loomc_pass_program_t** out_pass_program,
-    loomc_result_t** out_result) {
-  *out_pass_program = NULL;
-  *out_result = NULL;
-  const iree_string_view_t pipeline =
-      iree_string_view_trim(iree_make_cstring_view(FLAG_pipeline));
-  if (iree_run_loom_pipeline_is_default(pipeline)) {
-    return iree_ok_status();
-  }
-  const loomc_pass_program_options_t options = {
-      .type = LOOMC_STRUCTURE_TYPE_PASS_PROGRAM_OPTIONS,
-      .structure_size = sizeof(options),
-      .identifier = loomc_make_cstring_view("iree-run-loom pipeline"),
-  };
-  if (iree_string_view_equal(pipeline, IREE_SV("none"))) {
-    return iree_status_from_loomc(loomc_pass_program_create_empty(
-        context, &options, loomc_allocator_from_iree(allocator),
-        out_pass_program));
-  }
-  if (pipeline.data[0] == '@') {
-    return iree_status_from_loomc(loomc_pass_program_create_from_module_symbol(
-        module, loomc_string_view_from_iree(pipeline), &options,
-        loomc_allocator_from_iree(allocator), out_pass_program, out_result));
-  }
-  return iree_status_from_loomc(loomc_pass_program_create_from_pipeline_text(
-      context, loomc_string_view_from_iree(pipeline), &options,
-      loomc_allocator_from_iree(allocator), out_pass_program, out_result));
 }
 
 static iree_hal_physical_device_affinity_t
@@ -748,7 +711,7 @@ int iree_run_loom_main(int argc, char** argv,
   const iree_string_view_t pipeline =
       iree_string_view_trim(iree_make_cstring_view(FLAG_pipeline));
   if (iree_status_is_ok(status) && sanitizer_enabled &&
-      !iree_run_loom_pipeline_is_default(pipeline)) {
+      !loom_tooling_cli_pipeline_uses_default(pipeline)) {
     status = iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
         "--sanitizer and --sanitizer-reporting require --pipeline=default");
@@ -821,8 +784,9 @@ int iree_run_loom_main(int argc, char** argv,
         module, allocator, &root, &root_storage, &export_name, &export_storage);
   }
   if (iree_status_is_ok(status) && exit_code == 0) {
-    status = iree_run_loom_prepare_pass_program(context, module, allocator,
-                                                &pass_program, &result);
+    status = loom_tooling_cli_prepare_loomc_pass_program(
+        context, module, iree_make_cstring_view(FLAG_pipeline),
+        IREE_SV("iree-run-loom pipeline"), &pass_program, &result, allocator);
   }
   if (iree_status_is_ok(status) && result != NULL) {
     bool prepared = false;
