@@ -1232,6 +1232,15 @@ def test_guard_row_preserves_power_of_two_addend() -> None:
         assert guard_payload_row(row) == [f".addend = {literal}"]
 
 
+def test_guard_row_preserves_float_power_of_two_exponent_range() -> None:
+    row = LowerGuard(
+        kind=GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT,
+        minimum_i64=-149,
+        maximum_i64=127,
+    )
+    assert guard_payload_row(row) == [".i64_range = {.minimum = (-INT64_C(149)), .maximum = INT64_C(127)}"]
+
+
 def test_generate_lower_rule_set_emits_storage_element_format_guard() -> None:
     table = ContractFragment(
         name="test.low.storage_schema",

@@ -4063,3 +4063,54 @@ def test_compile_lower_rule_set_compiles_power_of_two_log2_immediate() -> None:
     assert compiled.attr_copies[0].kind == LowerAttrCopyKind.VALUE_EXACT_I64_LOG2
     value_ref = compiled.value_refs[compiled.attr_copies[0].value_ref_index]
     assert value_ref.index == 0
+
+
+def test_compile_lower_rule_set_compiles_float_power_of_two_exponents() -> None:
+    table = ContractFragment(
+        name="test.float-power-of-two-exponents",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=[
+            DescriptorRule(
+                source_op=scalar_arithmetic.scalar_mulf,
+                descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                guards=(
+                    Guard.value_exact_power_of_two_float("lhs", -149, -1),
+                    Guard.value_type("result", Scalar("f32")),
+                ),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                        results={"dst": ValueRef.temporary("exponent")},
+                        result_types={"dst": DescriptorResultType()},
+                        immediates={
+                            "i32_value": ValueProject.float_power_of_two_exponent(
+                                "lhs"
+                            ),
+                        },
+                    ),
+                    EmitDescriptorOp(
+                        descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                        results={"dst": ValueRef.result("result")},
+                        immediates={
+                            "i32_value": (
+                                ValueProject.float_power_of_two_negated_exponent(
+                                    "lhs", target_bit_offset=2
+                                )
+                            ),
+                        },
+                    ),
+                ),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+
+    guard = compiled.guards[0]
+    assert guard.kind == GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT
+    assert (guard.minimum_i64, guard.maximum_i64) == (-149, -1)
+    assert tuple(attr_copy.kind for attr_copy in compiled.attr_copies) == (
+        LowerAttrCopyKind.VALUE_FLOAT_POWER_OF_TWO_EXPONENT,
+        LowerAttrCopyKind.VALUE_FLOAT_POWER_OF_TWO_NEGATED_EXPONENT,
+    )
+    assert compiled.attr_copies[1].target_bit_offset == 2

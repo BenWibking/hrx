@@ -13,6 +13,7 @@
 #include "loom/codegen/low/lower/rule_source_memory.h"
 #include "loom/codegen/low/testing/source_workload.h"
 #include "loom/ir/context.h"
+#include "loom/ir/float_facts.h"
 #include "loom/ir/module.h"
 #include "loom/ops/index/ops.h"
 #include "loom/ops/scalar/ops.h"
@@ -189,6 +190,14 @@ class LowLowerRuleMatchTest : public ::testing::Test {
     loom_op_t* op = nullptr;
     IREE_EXPECT_OK(loom_scalar_constant_build(
         &builder_, loom_attr_i64(value), loom_type_scalar(LOOM_SCALAR_TYPE_I32),
+        LOOM_LOCATION_UNKNOWN, &op));
+    return op;
+  }
+
+  loom_op_t* BuildFloatConstant(double value) {
+    loom_op_t* op = nullptr;
+    IREE_EXPECT_OK(loom_scalar_constant_build(
+        &builder_, loom_attr_f64(value), loom_type_scalar(LOOM_SCALAR_TYPE_F32),
         LOOM_LOCATION_UNKNOWN, &op));
     return op;
   }
@@ -503,6 +512,64 @@ TEST_F(LowLowerRuleMatchTest, MatchesBiasedPowersWithoutSignedOverflow) {
         &match_context, &rule_set, op, &selection));
     EXPECT_EQ(selection.rule != nullptr, test_case.matches)
         << "value=" << test_case.value << " addend=" << test_case.addend;
+  }
+}
+
+TEST_F(LowLowerRuleMatchTest, MatchesFloatingPowersInExponentRange) {
+  loom_low_lower_guard_t guard = {};
+  guard.kind = LOOM_LOW_LOWER_GUARD_VALUE_EXACT_POWER_OF_TWO_FLOAT;
+  guard.diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
+  guard.payload_ordinal = 1;
+  loom_low_lower_guard_payload_t guard_payload = {};
+  guard_payload.i64_range.minimum = -9;
+  guard_payload.i64_range.maximum = -8;
+  const loom_low_lower_guard_ref_t guard_ref = 0;
+  loom_low_lower_value_ref_t value_ref = {};
+  value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_RESULT;
+  loom_low_lower_rule_t rule = {};
+  rule.guard_count = 1;
+  const loom_low_lower_rule_span_t span = {
+      /*.source_op_kind=*/LOOM_OP_SCALAR_CONSTANT,
+      /*.rule_start=*/0,
+      /*.rule_count=*/1,
+  };
+  loom_low_lower_rule_set_t rule_set = {};
+  rule_set.spans = &span;
+  rule_set.span_count = 1;
+  rule_set.rules = &rule;
+  rule_set.rule_count = 1;
+  rule_set.guard_payloads = &guard_payload;
+  rule_set.guard_payload_count = 1;
+  rule_set.guards = &guard;
+  rule_set.guard_count = 1;
+  rule_set.guard_refs = &guard_ref;
+  rule_set.guard_ref_count = 1;
+  rule_set.value_refs = &value_ref;
+  rule_set.value_ref_count = 1;
+  struct Case {
+    double value;
+    bool matches;
+  };
+  const Case cases[] = {
+      {-0x1p-9, true}, {0x1p-8, true}, {0x1p-7, false},
+      {1.5, false},    {-0.0, false},
+  };
+  for (const Case& test_case : cases) {
+    const loom_op_t* op = BuildFloatConstant(test_case.value);
+    loom_value_fact_table_t facts = {};
+    IREE_ASSERT_OK(loom_value_fact_table_initialize(&facts, &module_->arena,
+                                                    module_->values.count));
+    IREE_ASSERT_OK(loom_value_fact_table_define(
+        &facts, loom_scalar_constant_result(op),
+        loom_value_facts_exact_float(LOOM_SCALAR_TYPE_F32, test_case.value)));
+    loom_low_lower_rule_match_context_t match_context = {};
+    match_context.module = module_;
+    match_context.fact_table = &facts;
+    loom_low_lower_rule_selection_t selection = {};
+    IREE_ASSERT_OK(loom_low_lower_rule_set_select_with_match_context(
+        &match_context, &rule_set, op, &selection));
+    EXPECT_EQ(selection.rule != nullptr, test_case.matches)
+        << "value=" << test_case.value;
   }
 }
 

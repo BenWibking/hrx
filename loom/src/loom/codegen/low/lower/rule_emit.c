@@ -280,6 +280,29 @@ static uint64_t loom_low_lower_rule_attr_copy_float_bits(
   }
 }
 
+static int64_t loom_low_lower_rule_attr_copy_float_power_of_two_exponent(
+    loom_low_lower_context_t* context,
+    const loom_low_lower_rule_set_t* rule_set,
+    const loom_low_lower_rule_emit_state_t* state,
+    const loom_low_lower_attr_copy_t* attr_copy) {
+  const loom_value_id_t source_value_id = loom_low_lower_rule_emit_source_value(
+      context, rule_set, state, attr_copy->value_ref_index);
+  const loom_value_fact_table_t* fact_table =
+      loom_low_lower_context_fact_table(context);
+  loom_value_facts_t facts = loom_value_facts_unknown();
+  const loom_module_t* module = loom_low_lower_context_module(context);
+  const bool has_float_facts = loom_low_lower_rule_float_immediate_facts(
+      module, fact_table, source_value_id, &facts);
+  IREE_ASSERT(has_float_facts);
+  const loom_scalar_type_t scalar_type =
+      loom_type_element_type(loom_module_value_type(module, source_value_id));
+  int32_t exponent = 0;
+  const bool is_power_of_two = loom_value_facts_as_exact_power_of_two_float(
+      scalar_type, facts, &exponent);
+  IREE_ASSERT(is_power_of_two);
+  return exponent;
+}
+
 static int64_t loom_low_lower_rule_attr_copy_exact_i64(
     loom_low_lower_context_t* context,
     const loom_low_lower_rule_set_t* rule_set,
@@ -1080,6 +1103,27 @@ static iree_status_t loom_low_lower_rule_build_attrs(
         int32_t signed_word = 0;
         memcpy(&signed_word, &word, sizeof(signed_word));
         attrs[i].value = loom_attr_i64(signed_word);
+        break;
+      }
+      case LOOM_LOW_LOWER_ATTR_COPY_VALUE_FLOAT_POWER_OF_TWO_EXPONENT:
+      case LOOM_LOW_LOWER_ATTR_COPY_VALUE_FLOAT_POWER_OF_TWO_NEGATED_EXPONENT: {
+        int64_t exponent =
+            loom_low_lower_rule_attr_copy_float_power_of_two_exponent(
+                context, rule_set, state, attr_copy);
+        if (attr_copy->kind ==
+            LOOM_LOW_LOWER_ATTR_COPY_VALUE_FLOAT_POWER_OF_TWO_NEGATED_EXPONENT) {
+          exponent = -exponent;
+        }
+        if (attr_copy->target_bit_offset == 0) {
+          attrs[i].value = loom_attr_i64(exponent);
+          break;
+        }
+        IREE_ASSERT_GE(exponent, 0);
+        IREE_ASSERT_LT(attr_copy->target_bit_offset, 63);
+        IREE_ASSERT_LE((uint64_t)exponent,
+                       (uint64_t)INT64_MAX >> attr_copy->target_bit_offset);
+        attrs[i].value = loom_attr_i64(
+            (int64_t)((uint64_t)exponent << attr_copy->target_bit_offset));
         break;
       }
       case LOOM_LOW_LOWER_ATTR_COPY_SOURCE_MEMORY_STATIC_BYTE_OFFSET:

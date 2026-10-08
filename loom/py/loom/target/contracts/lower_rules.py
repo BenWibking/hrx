@@ -69,6 +69,7 @@ from loom.target.contracts.lower_rule_diagnostics import (
     _enum_attr_set_diagnostic,
     _exact_float_diagnostic,
     _exact_integer_diagnostic,
+    _exact_power_of_two_float_diagnostic,
     _exact_power_of_two_integer_diagnostic,
     _float_equals_diagnostic,
     _guard_diagnostic,
@@ -945,6 +946,7 @@ class _LowerRuleSetCompiler:
             GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
             GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_EXACT_FLOAT,
+            GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT,
             GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_I64_RANGE,
             GuardKind.VALUE_I64_RANGE_LE,
@@ -1273,6 +1275,32 @@ class _LowerRuleSetCompiler:
                             else _not_nan_diagnostic(guard.field),
                         ),
                     ),
+                )
+            )
+            return
+        if guard.kind == GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT:
+            if guard.minimum is None or guard.maximum is None:
+                raise ValueError(
+                    f"{source_op.name}: floating power-of-two guard needs "
+                    "exponent bounds"
+                )
+            self._guards.append(
+                LowerGuard(
+                    kind=guard.kind,
+                    value_ref_index=value_ref_index,
+                    diagnostic_index=self._append_diagnostic_ref(
+                        source_op,
+                        _guard_diagnostic(
+                            guard,
+                            _exact_power_of_two_float_diagnostic(
+                                guard.field,
+                                guard.minimum,
+                                guard.maximum,
+                            ),
+                        ),
+                    ),
+                    minimum_i64=guard.minimum,
+                    maximum_i64=guard.maximum,
                 )
             )
             return
@@ -2328,6 +2356,10 @@ class _LowerRuleSetCompiler:
             kind = LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I64
         elif project.kind == ValueProjectKind.FLOAT_AS_F64_I32_WORD:
             kind = LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I32_WORD
+        elif project.kind == ValueProjectKind.FLOAT_POWER_OF_TWO_EXPONENT:
+            kind = LowerAttrCopyKind.VALUE_FLOAT_POWER_OF_TWO_EXPONENT
+        elif project.kind == ValueProjectKind.FLOAT_POWER_OF_TWO_NEGATED_EXPONENT:
+            kind = LowerAttrCopyKind.VALUE_FLOAT_POWER_OF_TWO_NEGATED_EXPONENT
         else:
             raise ValueError(
                 f"{source_op.name}: immediate projection '{project.kind.value}' is "

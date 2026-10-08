@@ -113,6 +113,49 @@ TEST(FloatFacts, RetainsRoundedFiniteIntervals) {
       loom_value_facts_make_float_range(LOOM_SCALAR_TYPE_F32, 2.0, 1.0)));
 }
 
+TEST(FloatFacts, ClassifiesExactPowersOfTwoAtEveryDeclaredWidth) {
+  struct Case {
+    loom_scalar_type_t type;
+    int32_t minimum_subnormal_exponent;
+  };
+  const Case cases[] = {
+      {LOOM_SCALAR_TYPE_F8E4M3, -9}, {LOOM_SCALAR_TYPE_F8E5M2, -16},
+      {LOOM_SCALAR_TYPE_F16, -24},   {LOOM_SCALAR_TYPE_BF16, -133},
+      {LOOM_SCALAR_TYPE_F32, -149},  {LOOM_SCALAR_TYPE_F64, -1074},
+  };
+  for (const Case& test_case : cases) {
+    SCOPED_TRACE(loom_scalar_type_name(test_case.type));
+    int32_t exponent = 0;
+    EXPECT_TRUE(loom_value_facts_as_exact_power_of_two_float(
+        test_case.type, loom_value_facts_exact_float(test_case.type, -8.0),
+        &exponent));
+    EXPECT_EQ(exponent, 3);
+
+    loom_value_facts_t minimum_subnormal = loom_value_facts_unknown();
+    ASSERT_TRUE(loom_value_facts_from_float_bits(test_case.type, 1,
+                                                 &minimum_subnormal));
+    EXPECT_TRUE(loom_value_facts_as_exact_power_of_two_float(
+        test_case.type, minimum_subnormal, &exponent));
+    EXPECT_EQ(exponent, test_case.minimum_subnormal_exponent);
+
+    EXPECT_FALSE(loom_value_facts_as_exact_power_of_two_float(
+        test_case.type, loom_value_facts_exact_float(test_case.type, 1.5),
+        &exponent));
+    EXPECT_FALSE(loom_value_facts_as_exact_power_of_two_float(
+        test_case.type, loom_value_facts_exact_float(test_case.type, -0.0),
+        &exponent));
+  }
+
+  int32_t exponent = 0;
+  EXPECT_FALSE(loom_value_facts_as_exact_power_of_two_float(
+      LOOM_SCALAR_TYPE_F32,
+      loom_value_facts_exact_float(LOOM_SCALAR_TYPE_F32, INFINITY), &exponent));
+  EXPECT_FALSE(loom_value_facts_as_exact_power_of_two_float(
+      LOOM_SCALAR_TYPE_F32, loom_value_facts_known_nan(), &exponent));
+  EXPECT_FALSE(loom_value_facts_as_exact_power_of_two_float(
+      LOOM_SCALAR_TYPE_F32, loom_value_facts_unknown(), &exponent));
+}
+
 TEST(FloatFacts, JoinsFiniteIntervalsAndSupportsAliasedOutput) {
   loom_value_facts_t lhs =
       loom_value_facts_make_float_range(LOOM_SCALAR_TYPE_F32, -2.0, 1.0);
