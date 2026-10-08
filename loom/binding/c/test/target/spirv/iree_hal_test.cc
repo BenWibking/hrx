@@ -37,7 +37,18 @@ using DeviceSpecPtr =
 
 constexpr uint32_t kVulkanApiVersion13 =
     (1u << 22) | (3u << 12) | static_cast<uint32_t>(0);
+constexpr uint32_t kVulkanComponentTypeBfloat16Khr = 1000141000;
+constexpr uint32_t kVulkanSubgroupFeatureBallotBit = 0x00000008;
 constexpr uint64_t kMaximumWorkgroupLocalMemorySize = 32 * 1024;
+
+constexpr const char kF16CooperativeMatrixRow[] =
+    "khr.cooperative_matrix.f16.16x16x16.f32.subgroup";
+constexpr const char kBf16CooperativeMatrixRow[] =
+    "khr.cooperative_matrix.bf16.16x16x16.f32.subgroup";
+constexpr const char kS8CooperativeMatrixRow[] =
+    "khr.cooperative_matrix.s8.16x16x32.s32.subgroup.signed_saturating";
+constexpr const char kU8CooperativeMatrixRow[] =
+    "khr.cooperative_matrix.u8.16x16x32.u32.subgroup";
 
 typedef uint32_t DeviceSpecFlags;
 typedef enum DeviceSpecFlagBits {
@@ -93,21 +104,29 @@ iree_hal_vulkan_features_t RequiredVulkanFeatures() {
 
 iree_status_t CreateVulkanDeviceSpec(
     iree_hal_vulkan_features_t enabled_features, DeviceSpecFlags flags,
-    DeviceSpecPtr* out_device_spec) {
+    DeviceSpecPtr* out_device_spec,
+    iree_host_size_t cooperative_matrix_property_count = 0,
+    const iree_hal_vulkan_cooperative_matrix_property_t*
+        cooperative_matrix_properties = nullptr,
+    iree_hal_vulkan_device_spec_flags_t device_spec_flags =
+        IREE_HAL_VULKAN_DEVICE_SPEC_FLAG_NONE,
+    uint32_t subgroup_supported_operations = 0) {
   out_device_spec->reset();
   iree_hal_vulkan_device_spec_t vulkan_spec = {
       /*.api_version=*/kVulkanApiVersion13,
       /*.driver_version=*/1,
       /*.physical_device_type=*/2,
       /*.enabled_features=*/enabled_features,
-      /*.flags=*/IREE_HAL_VULKAN_DEVICE_SPEC_FLAG_NONE,
+      /*.flags=*/device_spec_flags,
+      /*.subgroup_supported_operations=*/subgroup_supported_operations,
   };
   iree_host_size_t vulkan_payload_size = 0;
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_device_spec_calculate_payload_size(
-      /*property_count=*/0, &vulkan_payload_size));
+      cooperative_matrix_property_count, &vulkan_payload_size));
   std::vector<uint8_t> vulkan_payload_storage(vulkan_payload_size);
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_device_spec_encode(
-      &vulkan_spec, /*property_count=*/0, /*properties=*/nullptr,
+      &vulkan_spec, cooperative_matrix_property_count,
+      cooperative_matrix_properties,
       iree_make_byte_span(vulkan_payload_storage.data(),
                           vulkan_payload_storage.size())));
   iree_hal_device_spec_facet_t vulkan_facet = {
@@ -203,6 +222,75 @@ TargetEnvironmentPtr CreateSpirvTargetEnvironment() {
   return TargetEnvironmentPtr(target_environment);
 }
 
+iree_hal_vulkan_features_t CooperativeMatrixVulkanFeatures() {
+  iree_hal_vulkan_features_t features = RequiredVulkanFeatures();
+  features.general |=
+      IREE_HAL_VULKAN_FEATURE_ENABLE_COOPERATIVE_MATRIX |
+      IREE_HAL_VULKAN_FEATURE_ENABLE_SHADER_FLOAT16 |
+      IREE_HAL_VULKAN_FEATURE_ENABLE_SHADER_INT8 |
+      IREE_HAL_VULKAN_FEATURE_ENABLE_STORAGE_BUFFER_8BIT_ACCESS |
+      IREE_HAL_VULKAN_FEATURE_ENABLE_SHADER_BFLOAT16_TYPE |
+      IREE_HAL_VULKAN_FEATURE_ENABLE_SHADER_BFLOAT16_COOPERATIVE_MATRIX;
+  return features;
+}
+
+iree_hal_vulkan_cooperative_matrix_property_t F16MatrixProperty() {
+  return {
+      /*.m_size=*/16,
+      /*.n_size=*/16,
+      /*.k_size=*/16,
+      /*.a_type=*/LOOMC_SPIRV_COMPONENT_TYPE_FLOAT16_NV,
+      /*.b_type=*/LOOMC_SPIRV_COMPONENT_TYPE_FLOAT16_NV,
+      /*.c_type=*/LOOMC_SPIRV_COMPONENT_TYPE_FLOAT32_NV,
+      /*.result_type=*/LOOMC_SPIRV_COMPONENT_TYPE_FLOAT32_NV,
+      /*.saturating_accumulation=*/0,
+      /*.scope=*/LOOMC_SPIRV_SCOPE_SUBGROUP,
+  };
+}
+
+iree_hal_vulkan_cooperative_matrix_property_t Bf16MatrixProperty() {
+  return {
+      /*.m_size=*/16,
+      /*.n_size=*/16,
+      /*.k_size=*/16,
+      /*.a_type=*/kVulkanComponentTypeBfloat16Khr,
+      /*.b_type=*/kVulkanComponentTypeBfloat16Khr,
+      /*.c_type=*/LOOMC_SPIRV_COMPONENT_TYPE_FLOAT32_NV,
+      /*.result_type=*/LOOMC_SPIRV_COMPONENT_TYPE_FLOAT32_NV,
+      /*.saturating_accumulation=*/0,
+      /*.scope=*/LOOMC_SPIRV_SCOPE_SUBGROUP,
+  };
+}
+
+iree_hal_vulkan_cooperative_matrix_property_t S8MatrixProperty(
+    uint32_t saturating_accumulation) {
+  return {
+      /*.m_size=*/16,
+      /*.n_size=*/16,
+      /*.k_size=*/32,
+      /*.a_type=*/LOOMC_SPIRV_COMPONENT_TYPE_SIGNED_INT8_NV,
+      /*.b_type=*/LOOMC_SPIRV_COMPONENT_TYPE_SIGNED_INT8_NV,
+      /*.c_type=*/LOOMC_SPIRV_COMPONENT_TYPE_SIGNED_INT32_NV,
+      /*.result_type=*/LOOMC_SPIRV_COMPONENT_TYPE_SIGNED_INT32_NV,
+      /*.saturating_accumulation=*/saturating_accumulation,
+      /*.scope=*/LOOMC_SPIRV_SCOPE_SUBGROUP,
+  };
+}
+
+iree_hal_vulkan_cooperative_matrix_property_t U8MatrixProperty() {
+  return {
+      /*.m_size=*/16,
+      /*.n_size=*/16,
+      /*.k_size=*/32,
+      /*.a_type=*/LOOMC_SPIRV_COMPONENT_TYPE_UNSIGNED_INT8_NV,
+      /*.b_type=*/LOOMC_SPIRV_COMPONENT_TYPE_UNSIGNED_INT8_NV,
+      /*.c_type=*/LOOMC_SPIRV_COMPONENT_TYPE_UNSIGNED_INT32_NV,
+      /*.result_type=*/LOOMC_SPIRV_COMPONENT_TYPE_UNSIGNED_INT32_NV,
+      /*.saturating_accumulation=*/0,
+      /*.scope=*/LOOMC_SPIRV_SCOPE_SUBGROUP,
+  };
+}
+
 void ExpectSucceededResult(const loomc_result_t* result) {
   ASSERT_NE(result, nullptr);
   if (!loomc_result_succeeded(result) &&
@@ -223,6 +311,23 @@ void ExpectFailedSpirvIreeHalResult(const loomc_result_t* result) {
   ASSERT_NE(diagnostic, nullptr);
   EXPECT_EQ(diagnostic->severity, LOOMC_DIAGNOSTIC_SEVERITY_ERROR);
   EXPECT_EQ(ToString(diagnostic->code), "SPIRV/IREE_HAL");
+}
+
+bool FindCooperativeMatrixRow(const loomc_target_profile_t* profile,
+                              const char* name,
+                              loomc_spirv_cooperative_matrix_row_t* out_row) {
+  loomc_spirv_profile_info_t info = {};
+  LOOMC_EXPECT_OK(loomc_spirv_target_profile_query_info(profile, &info));
+  for (loomc_host_size_t i = 0; i < info.cooperative_matrix_row_count; ++i) {
+    loomc_spirv_cooperative_matrix_row_t row = {};
+    LOOMC_EXPECT_OK(
+        loomc_spirv_target_profile_cooperative_matrix_row_at(profile, i, &row));
+    if (ToString(row.name) == name) {
+      *out_row = row;
+      return true;
+    }
+  }
+  return false;
 }
 
 TargetProfilePtr SelectTargetFromHal(
@@ -292,6 +397,151 @@ TEST(LoomcSpirvIreeHalTargetTest, CreatesProfileFromHalFacts) {
   LOOMC_EXPECT_OK(loomc_spirv_target_profile_query_feature(
       profile.get(), LOOMC_SPIRV_FEATURE_GROUP_NON_UNIFORM, &feature_state));
   EXPECT_EQ(feature_state, LOOMC_TARGET_FACT_STATE_TRUE);
+}
+
+TEST(LoomcSpirvIreeHalTargetTest, PreservesExtendedCompilerFeatureFamily) {
+  iree_hal_vulkan_features_t enabled_features = RequiredVulkanFeatures();
+  enabled_features.general |=
+      IREE_HAL_VULKAN_FEATURE_ENABLE_SHADER_FLOAT16 |
+      IREE_HAL_VULKAN_FEATURE_ENABLE_SHADER_FLOAT64 |
+      IREE_HAL_VULKAN_FEATURE_ENABLE_VULKAN_MEMORY_MODEL |
+      IREE_HAL_VULKAN_FEATURE_ENABLE_VULKAN_MEMORY_MODEL_DEVICE_SCOPE;
+  enabled_features.atomics =
+      IREE_HAL_VULKAN_SHADER_ATOMIC_FEATURE_ALL_RECOGNIZED;
+  DeviceSpecPtr device_spec;
+  IREE_ASSERT_OK(CreateVulkanDeviceSpec(
+      enabled_features, kCompleteDeviceSpecFlags, &device_spec,
+      /*cooperative_matrix_property_count=*/0,
+      /*cooperative_matrix_properties=*/nullptr,
+      IREE_HAL_VULKAN_DEVICE_SPEC_FLAG_FLOAT32_DENORM_PRESERVE,
+      /*subgroup_supported_operations=*/kVulkanSubgroupFeatureBallotBit));
+  FakeHalDevice device = {};
+  InitializeFakeDevice(device_spec.get(), &device);
+  TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
+  loomc_result_t* result = nullptr;
+  TargetProfilePtr profile =
+      SelectTargetFromHal(target_environment.get(), &device, &result);
+  ResultPtr result_ptr(result);
+
+  ASSERT_NE(profile.get(), nullptr);
+  ExpectSucceededResult(result_ptr.get());
+  const loomc_spirv_feature_t expected_features[] = {
+      LOOMC_SPIRV_FEATURE_VULKAN_MEMORY_MODEL_DEVICE_SCOPE,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_INT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_INT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT16_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT16_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT16_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT16_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT32_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT32_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT32_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT32_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT64_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT64_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_FLOAT32_DENORM_PRESERVE,
+      LOOMC_SPIRV_FEATURE_GROUP_NON_UNIFORM_BALLOT,
+  };
+  for (loomc_spirv_feature_t feature : expected_features) {
+    loomc_target_fact_state_t state = LOOMC_TARGET_FACT_STATE_UNKNOWN;
+    LOOMC_EXPECT_OK(loomc_spirv_target_profile_query_feature(profile.get(),
+                                                             feature, &state));
+    EXPECT_EQ(state, LOOMC_TARGET_FACT_STATE_TRUE) << feature;
+  }
+}
+
+TEST(LoomcSpirvIreeHalTargetTest,
+     FiltersCooperativeMatrixRowsToDeviceProperties) {
+  const iree_hal_vulkan_cooperative_matrix_property_t properties[] = {
+      F16MatrixProperty(),
+      Bf16MatrixProperty(),
+      S8MatrixProperty(/*saturating_accumulation=*/0),
+      U8MatrixProperty(),
+  };
+  DeviceSpecPtr device_spec;
+  IREE_ASSERT_OK(CreateVulkanDeviceSpec(
+      CooperativeMatrixVulkanFeatures(), kCompleteDeviceSpecFlags, &device_spec,
+      IREE_ARRAYSIZE(properties), properties));
+  FakeHalDevice device = {};
+  InitializeFakeDevice(device_spec.get(), &device);
+  TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
+  loomc_result_t* result = nullptr;
+  TargetProfilePtr profile =
+      SelectTargetFromHal(target_environment.get(), &device, &result);
+  ResultPtr result_ptr(result);
+
+  ASSERT_NE(profile.get(), nullptr);
+  ExpectSucceededResult(result_ptr.get());
+  loomc_spirv_cooperative_matrix_row_t row = {};
+  ASSERT_TRUE(
+      FindCooperativeMatrixRow(profile.get(), kF16CooperativeMatrixRow, &row));
+  EXPECT_EQ(row.state, LOOMC_TARGET_FACT_STATE_TRUE);
+  ASSERT_TRUE(
+      FindCooperativeMatrixRow(profile.get(), kBf16CooperativeMatrixRow, &row));
+  EXPECT_EQ(row.state, LOOMC_TARGET_FACT_STATE_TRUE);
+  ASSERT_TRUE(
+      FindCooperativeMatrixRow(profile.get(), kU8CooperativeMatrixRow, &row));
+  EXPECT_EQ(row.state, LOOMC_TARGET_FACT_STATE_TRUE);
+  ASSERT_TRUE(
+      FindCooperativeMatrixRow(profile.get(), kS8CooperativeMatrixRow, &row));
+  EXPECT_EQ(row.state, LOOMC_TARGET_FACT_STATE_FALSE);
+  EXPECT_EQ(ToString(row.provenance),
+            "iree-hal:vulkan.device.cooperative_matrix_properties");
+}
+
+TEST(LoomcSpirvIreeHalTargetTest, AcceptsSaturatingCooperativeMatrixProperty) {
+  const iree_hal_vulkan_cooperative_matrix_property_t property =
+      S8MatrixProperty(/*saturating_accumulation=*/1);
+  DeviceSpecPtr device_spec;
+  IREE_ASSERT_OK(CreateVulkanDeviceSpec(
+      CooperativeMatrixVulkanFeatures(), kCompleteDeviceSpecFlags, &device_spec,
+      /*cooperative_matrix_property_count=*/1, &property));
+  FakeHalDevice device = {};
+  InitializeFakeDevice(device_spec.get(), &device);
+  TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
+  loomc_result_t* result = nullptr;
+  TargetProfilePtr profile =
+      SelectTargetFromHal(target_environment.get(), &device, &result);
+  ResultPtr result_ptr(result);
+
+  ASSERT_NE(profile.get(), nullptr);
+  ExpectSucceededResult(result_ptr.get());
+  loomc_spirv_cooperative_matrix_row_t row = {};
+  ASSERT_TRUE(
+      FindCooperativeMatrixRow(profile.get(), kS8CooperativeMatrixRow, &row));
+  EXPECT_EQ(row.state, LOOMC_TARGET_FACT_STATE_TRUE);
+  ASSERT_TRUE(
+      FindCooperativeMatrixRow(profile.get(), kF16CooperativeMatrixRow, &row));
+  EXPECT_EQ(row.state, LOOMC_TARGET_FACT_STATE_FALSE);
+}
+
+TEST(LoomcSpirvIreeHalTargetTest,
+     EmptyDeviceTableRejectsAllCooperativeMatrixRows) {
+  DeviceSpecPtr device_spec;
+  IREE_ASSERT_OK(CreateVulkanDeviceSpec(CooperativeMatrixVulkanFeatures(),
+                                        kCompleteDeviceSpecFlags,
+                                        &device_spec));
+  FakeHalDevice device = {};
+  InitializeFakeDevice(device_spec.get(), &device);
+  TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
+  loomc_result_t* result = nullptr;
+  TargetProfilePtr profile =
+      SelectTargetFromHal(target_environment.get(), &device, &result);
+  ResultPtr result_ptr(result);
+
+  ASSERT_NE(profile.get(), nullptr);
+  ExpectSucceededResult(result_ptr.get());
+  loomc_spirv_profile_info_t info = {};
+  LOOMC_ASSERT_OK(loomc_spirv_target_profile_query_info(profile.get(), &info));
+  ASSERT_GT(info.cooperative_matrix_row_count, 0u);
+  for (loomc_host_size_t i = 0; i < info.cooperative_matrix_row_count; ++i) {
+    loomc_spirv_cooperative_matrix_row_t row = {};
+    LOOMC_ASSERT_OK(loomc_spirv_target_profile_cooperative_matrix_row_at(
+        profile.get(), i, &row));
+    EXPECT_EQ(row.state, LOOMC_TARGET_FACT_STATE_FALSE) << ToString(row.name);
+  }
 }
 
 TEST(LoomcSpirvIreeHalTargetTest, MissingExecutableTargetFailsResult) {
