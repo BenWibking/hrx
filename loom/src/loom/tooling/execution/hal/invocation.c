@@ -346,14 +346,13 @@ static iree_status_t loom_run_hal_record_dispatch_sequence_edge(
       .target_scope = IREE_HAL_ACCESS_SCOPE_DISPATCH_READ |
                       IREE_HAL_ACCESS_SCOPE_DISPATCH_WRITE,
   };
-  const iree_hal_execution_barrier_t execution_barrier = {
+  const iree_hal_barrier_t execution_barrier = {
       .source_stage_mask = IREE_HAL_EXECUTION_STAGE_DISPATCH,
       .target_stage_mask = IREE_HAL_EXECUTION_STAGE_DISPATCH,
       .memory_barrier_count = 1,
       .memory_barriers = &memory_barrier,
   };
-  return iree_hal_command_buffer_execution_barrier(command_buffer,
-                                                   &execution_barrier);
+  return iree_hal_command_buffer_barrier(command_buffer, &execution_barrier);
 }
 
 static iree_status_t loom_run_hal_record_dispatch_batch(

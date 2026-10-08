@@ -302,10 +302,10 @@ iree_status_t iree_hal_command_buffer_end_debug_group_validation(
   return iree_ok_status();
 }
 
-iree_status_t iree_hal_command_buffer_execution_barrier_validation(
+iree_status_t iree_hal_command_buffer_barrier_validation(
     iree_hal_command_buffer_t* command_buffer,
     iree_hal_command_buffer_validation_state_t* validation_state,
-    const iree_hal_execution_barrier_t* barrier) {
+    const iree_hal_barrier_t* barrier) {
   return iree_hal_command_buffer_validate_categories(
       command_buffer, validation_state, /*required_categories=*/0);
 }

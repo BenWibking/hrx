@@ -224,9 +224,9 @@ static iree_status_t iree_hal_replay_recorder_command_buffer_end_debug_group(
                            command_buffer->base_command_buffer));
 }
 
-static iree_status_t iree_hal_replay_recorder_command_buffer_execution_barrier(
+static iree_status_t iree_hal_replay_recorder_command_buffer_barrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    const iree_hal_execution_barrier_t* barrier) {
+    const iree_hal_barrier_t* barrier) {
   iree_hal_replay_recorder_command_buffer_t* command_buffer =
       iree_hal_replay_recorder_command_buffer_cast(base_command_buffer);
   iree_hal_replay_command_buffer_execution_barrier_payload_t payload;
@@ -336,12 +336,12 @@ static iree_status_t iree_hal_replay_recorder_command_buffer_execution_barrier(
         &pending_record);
   }
   if (iree_status_is_ok(status)) {
-    iree_hal_execution_barrier_t base_barrier = *barrier;
+    iree_hal_barrier_t base_barrier = *barrier;
     base_barrier.buffer_barriers = base_buffer_barriers;
     status = iree_hal_replay_recorder_end_operation_with_payload(
         &pending_record,
-        iree_hal_command_buffer_execution_barrier(
-            command_buffer->base_command_buffer, &base_barrier),
+        iree_hal_command_buffer_barrier(command_buffer->base_command_buffer,
+                                        &base_barrier),
         IREE_ARRAYSIZE(iovecs), iovecs);
   }
 
@@ -808,8 +808,7 @@ static const iree_hal_command_buffer_vtable_t
             iree_hal_replay_recorder_command_buffer_begin_debug_group,
         .end_debug_group =
             iree_hal_replay_recorder_command_buffer_end_debug_group,
-        .execution_barrier =
-            iree_hal_replay_recorder_command_buffer_execution_barrier,
+        .barrier = iree_hal_replay_recorder_command_buffer_barrier,
         .atomic_wait = iree_hal_replay_recorder_command_buffer_atomic_wait,
         .atomic_store = iree_hal_replay_recorder_command_buffer_atomic_store,
         .atomic_rmw = iree_hal_replay_recorder_command_buffer_atomic_rmw,

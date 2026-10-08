@@ -343,12 +343,12 @@ TEST_P(TransientBufferTest, FillThenCopyInSingleCommandBuffer) {
         sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
 
     // Barrier: fill must complete before copy reads.
-    const iree_hal_execution_barrier_t execution_barrier = {
+    const iree_hal_barrier_t execution_barrier = {
         /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER |
             IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
         /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE |
             IREE_HAL_EXECUTION_STAGE_TRANSFER,
-        /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+        /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
         /*.effects=*/{},
         /*.memory_barrier_count=*/0,
         /*.memory_barriers=*/nullptr,
@@ -356,7 +356,7 @@ TEST_P(TransientBufferTest, FillThenCopyInSingleCommandBuffer) {
         /*.buffer_barriers=*/nullptr,
     };
     IREE_RETURN_IF_ERROR(
-        iree_hal_command_buffer_execution_barrier(cmd, &execution_barrier));
+        iree_hal_command_buffer_barrier(cmd, &execution_barrier));
 
     // Copy transient → output.
     return iree_hal_command_buffer_copy_buffer(

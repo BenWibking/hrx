@@ -27,8 +27,7 @@ static void iree_hal_amdgpu_barrier_accumulate_access_scopes(
 iree_hal_amdgpu_barrier_scopes_t iree_hal_amdgpu_barrier_resolve_scopes(
     iree_hal_execution_stage_t source_stage_mask,
     iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
+    iree_hal_barrier_flags_t flags, iree_host_size_t memory_barrier_count,
     const iree_hal_memory_barrier_t* memory_barriers,
     iree_host_size_t buffer_barrier_count,
     const iree_hal_buffer_barrier_t* buffer_barriers) {
@@ -38,13 +37,11 @@ iree_hal_amdgpu_barrier_scopes_t iree_hal_amdgpu_barrier_resolve_scopes(
   };
 
   if (iree_any_bit_set(source_stage_mask, IREE_HAL_EXECUTION_STAGE_HOST) ||
-      iree_any_bit_set(flags,
-                       IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE)) {
+      iree_any_bit_set(flags, IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE)) {
     scopes.acquire = IREE_HSA_FENCE_SCOPE_SYSTEM;
   }
   if (iree_any_bit_set(target_stage_mask, IREE_HAL_EXECUTION_STAGE_HOST) ||
-      iree_any_bit_set(flags,
-                       IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE)) {
+      iree_any_bit_set(flags, IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE)) {
     scopes.release = IREE_HSA_FENCE_SCOPE_SYSTEM;
   }
 

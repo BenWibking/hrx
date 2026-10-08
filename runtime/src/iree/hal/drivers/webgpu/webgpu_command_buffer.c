@@ -215,9 +215,9 @@ static iree_status_t iree_hal_webgpu_command_buffer_end_debug_group(
   return iree_ok_status();
 }
 
-static iree_status_t iree_hal_webgpu_command_buffer_execution_barrier(
+static iree_status_t iree_hal_webgpu_command_buffer_barrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    const iree_hal_execution_barrier_t* barrier) {
+    const iree_hal_barrier_t* barrier) {
   // WebGPU excludes simultaneous host and device access. Host/device ownership
   // transitions happen at queue submission and mapping boundaries, so the
   // ordinary barrier already covers every concurrently accessible agent.
@@ -344,7 +344,7 @@ static const iree_hal_command_buffer_vtable_t
         .end = iree_hal_webgpu_command_buffer_end,
         .begin_debug_group = iree_hal_webgpu_command_buffer_begin_debug_group,
         .end_debug_group = iree_hal_webgpu_command_buffer_end_debug_group,
-        .execution_barrier = iree_hal_webgpu_command_buffer_execution_barrier,
+        .barrier = iree_hal_webgpu_command_buffer_barrier,
         .atomic_wait = iree_hal_webgpu_command_buffer_atomic_wait,
         .atomic_store = iree_hal_webgpu_command_buffer_atomic_store,
         .atomic_rmw = iree_hal_webgpu_command_buffer_atomic_rmw,

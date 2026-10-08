@@ -1156,7 +1156,7 @@ static iree_status_t iree_hal_replay_executor_queue_timestamp(
   return status;
 }
 
-static iree_status_t iree_hal_replay_executor_command_buffer_execution_barrier(
+static iree_status_t iree_hal_replay_executor_command_buffer_barrier(
     iree_hal_replay_executor_t* executor,
     const iree_hal_replay_file_record_t* record) {
   IREE_RETURN_IF_ERROR(iree_hal_replay_executor_require_payload(
@@ -1265,7 +1265,7 @@ static iree_status_t iree_hal_replay_executor_command_buffer_execution_barrier(
         IREE_HAL_REPLAY_OBJECT_TYPE_COMMAND_BUFFER, &command_buffer_entry);
   }
   if (iree_status_is_ok(status)) {
-    const iree_hal_execution_barrier_t execution_barrier = {
+    const iree_hal_barrier_t execution_barrier = {
         .source_stage_mask = payload.source_stage_mask,
         .target_stage_mask = payload.target_stage_mask,
         .flags = payload.flags,
@@ -1274,7 +1274,7 @@ static iree_status_t iree_hal_replay_executor_command_buffer_execution_barrier(
         .buffer_barrier_count = (iree_host_size_t)payload.buffer_barrier_count,
         .buffer_barriers = buffer_barriers,
     };
-    status = iree_hal_command_buffer_execution_barrier(
+    status = iree_hal_command_buffer_barrier(
         command_buffer_entry->value.command_buffer, &execution_barrier);
   }
   if (buffer_barriers_allocated) {
@@ -1902,8 +1902,7 @@ iree_status_t iree_hal_replay_executor_replay_operation(
       return iree_hal_command_buffer_end(entry->value.command_buffer);
     }
     case IREE_HAL_REPLAY_OPERATION_CODE_COMMAND_BUFFER_EXECUTION_BARRIER:
-      return iree_hal_replay_executor_command_buffer_execution_barrier(executor,
-                                                                       record);
+      return iree_hal_replay_executor_command_buffer_barrier(executor, record);
     case IREE_HAL_REPLAY_OPERATION_CODE_COMMAND_BUFFER_ATOMIC_WAIT:
       return iree_hal_replay_executor_command_buffer_atomic_wait(executor,
                                                                  record);

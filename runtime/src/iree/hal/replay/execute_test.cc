@@ -2635,10 +2635,10 @@ TEST(ReplayExecuteTest, ExecutesRecordedCommandBufferTransfers) {
       /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
   };
-  const iree_hal_execution_barrier_t execution_barrier = {
+  const iree_hal_barrier_t execution_barrier = {
       /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
       /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
-      /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+      /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
       /*.effects=*/
       {IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM |
        IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM},
@@ -2647,8 +2647,8 @@ TEST(ReplayExecuteTest, ExecutesRecordedCommandBufferTransfers) {
       /*.buffer_barrier_count=*/0,
       /*.buffer_barriers=*/nullptr,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(command_buffer,
-                                                           &execution_barrier));
+  IREE_ASSERT_OK(
+      iree_hal_command_buffer_barrier(command_buffer, &execution_barrier));
   const uint8_t update_data[8] = {
       0xE0, 0x20, 0x21, 0x22, 0x23, 0xE1, 0xE2, 0xE3,
   };
@@ -2709,9 +2709,8 @@ TEST(ReplayExecuteTest, ExecutesRecordedCommandBufferTransfers) {
     iree_hal_replay_command_buffer_execution_barrier_payload_t payload;
     ASSERT_GE(record.payload.data_length, sizeof(payload));
     memcpy(&payload, record.payload.data, sizeof(payload));
-    EXPECT_EQ(payload.flags,
-              IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
-                  IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE);
+    EXPECT_EQ(payload.flags, IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
+                                 IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE);
     ++captured_barrier_count;
   }
   EXPECT_EQ(captured_barrier_count, 1u);

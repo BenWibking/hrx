@@ -55,7 +55,7 @@ typedef struct BarrierSpyCommandBuffer {
   uint32_t barrier_count;
   iree_hal_execution_stage_t source_stage;
   iree_hal_execution_stage_t target_stage;
-  iree_hal_execution_barrier_flags_t flags;
+  iree_hal_barrier_flags_t flags;
   iree_host_size_t memory_barrier_count;
   iree_hal_memory_barrier_t memory_barrier;
   iree_host_size_t buffer_barrier_count;
@@ -65,7 +65,7 @@ static void BarrierSpyDestroy(iree_hal_command_buffer_t* base_command_buffer) {}
 
 static iree_status_t BarrierSpyExecutionBarrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    const iree_hal_execution_barrier_t* barrier) {
+    const iree_hal_barrier_t* barrier) {
   auto* command_buffer =
       reinterpret_cast<BarrierSpyCommandBuffer*>(base_command_buffer);
   if (command_buffer->failure_code != IREE_STATUS_OK) {
@@ -89,7 +89,7 @@ static const iree_hal_command_buffer_vtable_t kBarrierSpyVtable = {
     /*.end=*/nullptr,
     /*.begin_debug_group=*/nullptr,
     /*.end_debug_group=*/nullptr,
-    /*.execution_barrier=*/BarrierSpyExecutionBarrier,
+    /*.barrier=*/BarrierSpyExecutionBarrier,
 };
 
 class GraphBarrierTest : public ::testing::Test {
@@ -214,7 +214,7 @@ TEST_F(GraphBarrierTest, BarrierUsesRetireIssueAndAllMemoryScopes) {
             IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE);
   EXPECT_EQ(command_buffer_.target_stage,
             IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE);
-  EXPECT_EQ(command_buffer_.flags, IREE_HAL_EXECUTION_BARRIER_FLAG_NONE);
+  EXPECT_EQ(command_buffer_.flags, IREE_HAL_BARRIER_FLAG_NONE);
   EXPECT_EQ(command_buffer_.memory_barrier_count, 1u);
   EXPECT_EQ(
       command_buffer_.memory_barrier.source_scope,

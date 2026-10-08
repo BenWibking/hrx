@@ -22,19 +22,18 @@
 #if defined(IREE_PLATFORM_LINUX)
 static std::atomic<bool> g_fail_next_memory_barrier = false;
 
-extern "C" iree_status_t __real_iree_hal_command_buffer_execution_barrier(
+extern "C" iree_status_t __real_iree_hal_command_buffer_barrier(
     iree_hal_command_buffer_t* command_buffer,
-    const iree_hal_execution_barrier_t* barrier);
+    const iree_hal_barrier_t* barrier);
 
-extern "C" iree_status_t __wrap_iree_hal_command_buffer_execution_barrier(
+extern "C" iree_status_t __wrap_iree_hal_command_buffer_barrier(
     iree_hal_command_buffer_t* command_buffer,
-    const iree_hal_execution_barrier_t* barrier) {
+    const iree_hal_barrier_t* barrier) {
   if (g_fail_next_memory_barrier.exchange(false, std::memory_order_acq_rel)) {
     return iree_make_status(IREE_STATUS_ABORTED,
                             "injected post-copy barrier failure");
   }
-  return __real_iree_hal_command_buffer_execution_barrier(command_buffer,
-                                                          barrier);
+  return __real_iree_hal_command_buffer_barrier(command_buffer, barrier);
 }
 
 #endif  // IREE_PLATFORM_LINUX

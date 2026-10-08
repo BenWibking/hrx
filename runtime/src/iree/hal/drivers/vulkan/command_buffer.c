@@ -114,7 +114,7 @@ typedef struct iree_hal_vulkan_command_execution_barrier_t {
   iree_hal_execution_stage_t target_stage_mask;
 
   // HAL barrier flags captured during recording.
-  iree_hal_execution_barrier_flags_t flags;
+  iree_hal_barrier_flags_t flags;
 
   // Number of memory barriers represented by the native barrier.
   iree_host_size_t memory_barrier_count;
@@ -2015,15 +2015,15 @@ static void iree_hal_vulkan_command_buffer_record_execution_barrier_native(
   const bool has_memory_visibility =
       execution_barrier->memory_barrier_count != 0 ||
       execution_barrier->buffer_barrier_count != 0 ||
-      execution_barrier->flags != IREE_HAL_EXECUTION_BARRIER_FLAG_NONE;
+      execution_barrier->flags != IREE_HAL_BARRIER_FLAG_NONE;
   const bool acquire_system_scope =
       iree_any_bit_set(execution_barrier->flags,
-                       IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE) ||
+                       IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE) ||
       iree_any_bit_set(execution_barrier->source_stage_mask,
                        IREE_HAL_EXECUTION_STAGE_HOST);
   const bool release_system_scope =
       iree_any_bit_set(execution_barrier->flags,
-                       IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE) ||
+                       IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE) ||
       iree_any_bit_set(execution_barrier->target_stage_mask,
                        IREE_HAL_EXECUTION_STAGE_HOST);
   iree_hal_vulkan_barrier_t barrier = {
@@ -2861,13 +2861,13 @@ static iree_status_t iree_hal_vulkan_command_buffer_end_debug_group(
   return iree_ok_status();
 }
 
-static iree_status_t iree_hal_vulkan_command_buffer_execution_barrier(
+static iree_status_t iree_hal_vulkan_command_buffer_barrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    const iree_hal_execution_barrier_t* barrier) {
+    const iree_hal_barrier_t* barrier) {
   iree_hal_vulkan_command_buffer_t* command_buffer =
       iree_hal_vulkan_command_buffer_cast(base_command_buffer);
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_command_buffer_validate_recording_state(
-      command_buffer, IREE_SV("execution_barrier")));
+      command_buffer, IREE_SV("barrier")));
 
   iree_host_size_t record_length = 0;
   iree_host_size_t payload_offset = 0;
@@ -3337,7 +3337,7 @@ static const iree_hal_command_buffer_vtable_t
         .end = iree_hal_vulkan_command_buffer_end,
         .begin_debug_group = iree_hal_vulkan_command_buffer_begin_debug_group,
         .end_debug_group = iree_hal_vulkan_command_buffer_end_debug_group,
-        .execution_barrier = iree_hal_vulkan_command_buffer_execution_barrier,
+        .barrier = iree_hal_vulkan_command_buffer_barrier,
         .atomic_wait = iree_hal_vulkan_command_buffer_atomic_wait,
         .atomic_store = iree_hal_vulkan_command_buffer_atomic_store,
         .atomic_rmw = iree_hal_vulkan_command_buffer_atomic_rmw,

@@ -160,18 +160,18 @@ TEST_P(SemaphoreSubmissionTest,
         /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
         /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_READ,
     };
-    const iree_hal_execution_barrier_t execution_barrier = {
+    const iree_hal_barrier_t execution_barrier = {
         /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
         /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
-        /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+        /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
         /*.effects=*/{},
         /*.memory_barrier_count=*/1,
         /*.memory_barriers=*/&update_barrier,
         /*.buffer_barrier_count=*/0,
         /*.buffer_barriers=*/nullptr,
     };
-    IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-        command_buffer, &execution_barrier));
+    IREE_ASSERT_OK(
+        iree_hal_command_buffer_barrier(command_buffer, &execution_barrier));
     IREE_ASSERT_OK(iree_hal_command_buffer_copy_buffer(
         command_buffer,
         iree_hal_make_buffer_ref(source_buffer, kSourceOffset,

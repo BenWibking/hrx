@@ -15,8 +15,7 @@ TEST(BarrierTest, ExecutionOnlyHasNoFenceScope) {
   const iree_hal_amdgpu_barrier_scopes_t scopes =
       iree_hal_amdgpu_barrier_resolve_scopes(
           IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
-          IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE,
-          IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+          IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE, IREE_HAL_BARRIER_FLAG_NONE,
           /*memory_barrier_count=*/0, /*memory_barriers=*/nullptr,
           /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr);
   EXPECT_EQ(scopes.acquire, IREE_HSA_FENCE_SCOPE_NONE);
@@ -31,7 +30,7 @@ TEST(BarrierTest, GenericMemoryScopesUseAgentFences) {
   const iree_hal_amdgpu_barrier_scopes_t scopes =
       iree_hal_amdgpu_barrier_resolve_scopes(
           IREE_HAL_EXECUTION_STAGE_DISPATCH, IREE_HAL_EXECUTION_STAGE_DISPATCH,
-          IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+          IREE_HAL_BARRIER_FLAG_NONE,
           /*memory_barrier_count=*/1, &memory_barrier,
           /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr);
   EXPECT_EQ(scopes.acquire, IREE_HSA_FENCE_SCOPE_AGENT);
@@ -46,7 +45,7 @@ TEST(BarrierTest, SystemFlagsWidenScopesIndependently) {
   iree_hal_amdgpu_barrier_scopes_t scopes =
       iree_hal_amdgpu_barrier_resolve_scopes(
           IREE_HAL_EXECUTION_STAGE_DISPATCH, IREE_HAL_EXECUTION_STAGE_DISPATCH,
-          IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE,
+          IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE,
           /*memory_barrier_count=*/1, &memory_barrier,
           /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr);
   EXPECT_EQ(scopes.acquire, IREE_HSA_FENCE_SCOPE_SYSTEM);
@@ -54,7 +53,7 @@ TEST(BarrierTest, SystemFlagsWidenScopesIndependently) {
 
   scopes = iree_hal_amdgpu_barrier_resolve_scopes(
       IREE_HAL_EXECUTION_STAGE_DISPATCH, IREE_HAL_EXECUTION_STAGE_DISPATCH,
-      IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE,
+      IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE,
       /*memory_barrier_count=*/1, &memory_barrier,
       /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr);
   EXPECT_EQ(scopes.acquire, IREE_HSA_FENCE_SCOPE_AGENT);
@@ -65,7 +64,7 @@ TEST(BarrierTest, HostStagesImplySystemScopes) {
   iree_hal_amdgpu_barrier_scopes_t scopes =
       iree_hal_amdgpu_barrier_resolve_scopes(
           IREE_HAL_EXECUTION_STAGE_HOST, IREE_HAL_EXECUTION_STAGE_DISPATCH,
-          IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+          IREE_HAL_BARRIER_FLAG_NONE,
           /*memory_barrier_count=*/0, /*memory_barriers=*/nullptr,
           /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr);
   EXPECT_EQ(scopes.acquire, IREE_HSA_FENCE_SCOPE_SYSTEM);
@@ -73,7 +72,7 @@ TEST(BarrierTest, HostStagesImplySystemScopes) {
 
   scopes = iree_hal_amdgpu_barrier_resolve_scopes(
       IREE_HAL_EXECUTION_STAGE_DISPATCH, IREE_HAL_EXECUTION_STAGE_HOST,
-      IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+      IREE_HAL_BARRIER_FLAG_NONE,
       /*memory_barrier_count=*/0, /*memory_barriers=*/nullptr,
       /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr);
   EXPECT_EQ(scopes.acquire, IREE_HSA_FENCE_SCOPE_NONE);

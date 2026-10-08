@@ -349,19 +349,19 @@ TEST_F(VulkanCommandBufferTest, SystemScopeUsesHostMemoryDomain) {
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_DISPATCH_READ,
   };
   IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
-  const iree_hal_execution_barrier_t execution_barrier = {
+  const iree_hal_barrier_t execution_barrier = {
       /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
       /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
-      /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
-          IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE,
+      /*.flags=*/IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
+          IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE,
       /*.effects=*/{},
       /*.memory_barrier_count=*/1,
       /*.memory_barriers=*/&memory_barrier,
       /*.buffer_barrier_count=*/0,
       /*.buffer_barriers=*/nullptr,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(command_buffer.get(),
-                                                           &execution_barrier));
+  IREE_ASSERT_OK(iree_hal_command_buffer_barrier(command_buffer.get(),
+                                                 &execution_barrier));
   IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
 
   NativeReplayCapture capture;
@@ -409,11 +409,11 @@ TEST_F(VulkanCommandBufferTest,
   ASSERT_NE(command_buffer, nullptr);
 
   IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
-  iree_hal_execution_barrier_t execution_barrier = {};
+  iree_hal_barrier_t execution_barrier = {};
   execution_barrier.effects.bits = IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM |
                                    IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM;
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(command_buffer.get(),
-                                                           &execution_barrier));
+  IREE_ASSERT_OK(iree_hal_command_buffer_barrier(command_buffer.get(),
+                                                 &execution_barrier));
   IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
 
   NativeReplayCapture capture;

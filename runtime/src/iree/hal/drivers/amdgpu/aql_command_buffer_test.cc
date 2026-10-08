@@ -229,18 +229,18 @@ TEST_F(AqlCommandBufferTest, BarrierOnlyRecordingHasBarrierAndReturn) {
   ASSERT_NE(command_buffer, nullptr);
 
   IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
-  const iree_hal_execution_barrier_t execution_barrier = {
+  const iree_hal_barrier_t execution_barrier = {
       /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE,
       /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
-      /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+      /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
       /*.effects=*/{},
       /*.memory_barrier_count=*/0,
       /*.memory_barriers=*/nullptr,
       /*.buffer_barrier_count=*/0,
       /*.buffer_barriers=*/nullptr,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(command_buffer.get(),
-                                                           &execution_barrier));
+  IREE_ASSERT_OK(iree_hal_command_buffer_barrier(command_buffer.get(),
+                                                 &execution_barrier));
   IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
 
   const iree_hal_amdgpu_aql_program_t* program =
@@ -273,18 +273,18 @@ TEST_F(AqlCommandBufferTest, MemoryBarrierRecordingPreservesFenceScopes) {
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_DISPATCH_READ,
   };
   IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
-  const iree_hal_execution_barrier_t execution_barrier = {
+  const iree_hal_barrier_t execution_barrier = {
       /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
       /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
-      /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+      /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
       /*.effects=*/{},
       /*.memory_barrier_count=*/1,
       /*.memory_barriers=*/&memory_barrier,
       /*.buffer_barrier_count=*/0,
       /*.buffer_barriers=*/nullptr,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(command_buffer.get(),
-                                                           &execution_barrier));
+  IREE_ASSERT_OK(iree_hal_command_buffer_barrier(command_buffer.get(),
+                                                 &execution_barrier));
   IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
 
   const iree_hal_amdgpu_aql_program_t* program =
@@ -310,18 +310,18 @@ TEST_F(AqlCommandBufferTest, SystemScopeBarrierWidensSelectedFence) {
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_MEMORY_READ,
   };
   IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
-  const iree_hal_execution_barrier_t execution_barrier = {
+  const iree_hal_barrier_t execution_barrier = {
       /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
       /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
-      /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE,
+      /*.flags=*/IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE,
       /*.effects=*/{},
       /*.memory_barrier_count=*/1,
       /*.memory_barriers=*/&memory_barrier,
       /*.buffer_barrier_count=*/0,
       /*.buffer_barriers=*/nullptr,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(command_buffer.get(),
-                                                           &execution_barrier));
+  IREE_ASSERT_OK(iree_hal_command_buffer_barrier(command_buffer.get(),
+                                                 &execution_barrier));
   IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
 
   const iree_hal_amdgpu_aql_program_t* program =
@@ -390,7 +390,7 @@ TEST_F(AqlCommandBufferTest, PreparedActionsBecomeSelfContainedNativeBarriers) {
     auto& command_buffer = command_buffers[actions];
     command_buffer = CreateCommandBuffer();
     IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
-    iree_hal_execution_barrier_t barrier = {};
+    iree_hal_barrier_t barrier = {};
     if (actions & 1) {
       barrier.effects = release;
     }
@@ -398,8 +398,8 @@ TEST_F(AqlCommandBufferTest, PreparedActionsBecomeSelfContainedNativeBarriers) {
       barrier.effects =
           iree_hal_memory_effects_combine(barrier.effects, acquire);
     }
-    IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-        command_buffer.get(), &barrier));
+    IREE_ASSERT_OK(
+        iree_hal_command_buffer_barrier(command_buffer.get(), &barrier));
     IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
   }
   // Only chosen cache actions survive recording. Neither the scalar pair
@@ -430,11 +430,11 @@ TEST_F(AqlCommandBufferTest,
   auto command_buffer =
       CreateCommandBufferWithMode(IREE_HAL_COMMAND_BUFFER_MODE_UNVALIDATED);
   IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
-  iree_hal_execution_barrier_t barrier = {};
+  iree_hal_barrier_t barrier = {};
   barrier.effects.bits = IREE_HAL_MEMORY_EFFECT_UNSUPPORTED;
-  IREE_EXPECT_STATUS_IS(IREE_STATUS_UNAVAILABLE,
-                        iree_hal_command_buffer_execution_barrier(
-                            command_buffer.get(), &barrier));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_UNAVAILABLE,
+      iree_hal_command_buffer_barrier(command_buffer.get(), &barrier));
   for (uint32_t bits : {uint32_t{IREE_HAL_MEMORY_EFFECT_PROGRAM_EXECUTOR |
                                  IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM},
                         uint32_t{IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS |
@@ -442,15 +442,15 @@ TEST_F(AqlCommandBufferTest,
                         uint32_t{IREE_HAL_MEMORY_EFFECT_NATIVE_OWNERSHIP |
                                  IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS}}) {
     barrier.effects.bits = bits;
-    IREE_EXPECT_STATUS_IS(IREE_STATUS_UNIMPLEMENTED,
-                          iree_hal_command_buffer_execution_barrier(
-                              command_buffer.get(), &barrier));
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_UNIMPLEMENTED,
+        iree_hal_command_buffer_barrier(command_buffer.get(), &barrier));
   }
   barrier.effects.bits = 0;
   barrier.flags = UINT64_C(1) << 63;
-  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
-                        iree_hal_command_buffer_execution_barrier(
-                            command_buffer.get(), &barrier));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      iree_hal_command_buffer_barrier(command_buffer.get(), &barrier));
   IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
   const auto* program =
       iree_hal_amdgpu_aql_command_buffer_program(command_buffer.get());
