@@ -1,0 +1,29 @@
+// RUN: pass vector-memory-footprint
+
+// Lane two wraps to -128. Mathematical affine endpoints cannot bound this
+// gather, even though the unwrapped endpoints would fit inside the view.
+func.def @wrapping_iota_cannot_prove_offsets(%input: buffer) -> (vector<4xi32>) {
+  %base = index.constant 0 : offset
+  %origin = index.constant 0 : index
+  %view = buffer.view %input[%base] : buffer -> view<256xi32>
+  %first = scalar.constant 126 : i8
+  %step = scalar.constant 1 : i8
+  %offsets = vector.iota %first step %step : vector<4xi8>
+  // ERROR@+1: SUBRANGE/013 {op_name="vector.gather"}
+  %result = vector.gather %view[%origin][%offsets] : view<256xi32>, vector<4xi8> -> vector<4xi32>
+  func.return %result : vector<4xi32>
+}
+
+// ====
+
+// The adjacent nonwrapping sequence still proves a complete memory footprint.
+func.def @nonwrapping_iota_proves_offsets(%input: buffer) -> (vector<4xi32>) {
+  %base = index.constant 0 : offset
+  %origin = index.constant 0 : index
+  %view = buffer.view %input[%base] : buffer -> view<128xi32>
+  %first = scalar.constant 124 : i8
+  %step = scalar.constant 1 : i8
+  %offsets = vector.iota %first step %step : vector<4xi8>
+  %result = vector.gather %view[%origin][%offsets] : view<128xi32>, vector<4xi8> -> vector<4xi32>
+  func.return %result : vector<4xi32>
+}

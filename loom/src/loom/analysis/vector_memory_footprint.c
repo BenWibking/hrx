@@ -1184,8 +1184,19 @@ static iree_status_t loom_vector_memory_footprint_offset_bounds(
   const loom_op_t* iota_op = NULL;
   if (loom_vector_memory_footprint_value_defines_iota(
           state->module, access->offsets, &iota_op)) {
-    IREE_RETURN_IF_ERROR(loom_vector_memory_footprint_iota_offset_bounds(
-        state, iota_op, offsets_type, out_lower, out_upper, out_known));
+    // Fixed-width coordinates may wrap rather than follow the mathematical
+    // affine endpoints. Only use those endpoints when the retained facts prove
+    // the whole sequence fits; source-index coordinates keep their own domain.
+    const loom_value_facts_t facts =
+        loom_value_fact_table_lookup(state->fact_table, access->offsets);
+    int64_t lower = 0;
+    int64_t upper = 0;
+    if (loom_type_element_type(offsets_type) == LOOM_SCALAR_TYPE_INDEX ||
+        loom_vector_memory_footprint_offset_bounds_from_facts(
+            state, facts, offsets_type, &lower, &upper)) {
+      IREE_RETURN_IF_ERROR(loom_vector_memory_footprint_iota_offset_bounds(
+          state, iota_op, offsets_type, out_lower, out_upper, out_known));
+    }
     if (*out_known) {
       return iree_ok_status();
     }

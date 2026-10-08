@@ -110,8 +110,17 @@ static bool loom_vector_value_is_unit_stride_iota(
   loom_value_facts_t facts = loom_rewriter_value_facts(rewriter, value_id);
   if (loom_value_facts_query_vector_iota(&rewriter->fact_table->context, facts,
                                          &iota)) {
-    return loom_vector_exact_i64_facts_match(iota.base, 0) &&
-           loom_vector_exact_i64_facts_match(iota.step, 1);
+    if (!loom_vector_exact_i64_facts_match(iota.base, 0) ||
+        !loom_vector_exact_i64_facts_match(iota.step, 1)) {
+      return false;
+    }
+    uint64_t lane_count = 0;
+    int64_t lower = 0;
+    int64_t upper = 0;
+    return iota.bit_count == 0 ||
+           (loom_type_static_element_count(vector_type, &lane_count) &&
+            loom_value_fact_vector_iota_bounds(iota, lane_count, &lower,
+                                               &upper));
   }
 
   loom_value_fact_small_static_lanes_t lanes = {0};
@@ -766,18 +775,23 @@ static iree_status_t loom_vector_canonicalize_iota(loom_op_t* op,
     return iree_ok_status();
   }
 
-  int64_t base = 0;
-  int64_t step = 0;
-  if (!loom_value_facts_as_exact_i64(
-          loom_rewriter_value_facts(rewriter, loom_vector_iota_base(op)),
-          &base) ||
-      !loom_value_facts_as_exact_i64(
-          loom_rewriter_value_facts(rewriter, loom_vector_iota_step(op)),
-          &step)) {
+  loom_value_fact_vector_iota_t iota = {0};
+  if (!loom_value_facts_query_vector_iota(
+          &rewriter->fact_table->context,
+          loom_rewriter_value_facts(rewriter, loom_vector_iota_result(op)),
+          &iota)) {
     return iree_ok_status();
   }
   if (!rewriter->materialize_constant) {
     return iree_ok_status();
+  }
+
+  loom_value_facts_t lanes[LOOM_VALUE_FACT_SMALL_STATIC_LANE_LIMIT];
+  for (uint64_t i = 0; i < lane_count; ++i) {
+    lanes[i] = loom_value_fact_vector_iota_element(iota, i);
+    if (!loom_value_facts_is_exact(lanes[i])) {
+      return iree_ok_status();
+    }
   }
 
   loom_builder_set_before(&rewriter->builder, op);
@@ -788,15 +802,8 @@ static iree_status_t loom_vector_canonicalize_iota(loom_op_t* op,
   loom_value_id_t elements[LOOM_VALUE_FACT_SMALL_STATIC_LANE_LIMIT] = {
       LOOM_VALUE_ID_INVALID};
   for (uint64_t i = 0; i < lane_count; ++i) {
-    int64_t delta = 0;
-    int64_t value = 0;
-    if (!iree_checked_mul_i64((int64_t)i, step, &delta) ||
-        !iree_checked_add_i64(base, delta, &value)) {
-      return iree_ok_status();
-    }
     IREE_RETURN_IF_ERROR(loom_rewriter_build_constant(
-        rewriter, loom_value_facts_exact_i64(value), element_type, op->location,
-        &elements[i]));
+        rewriter, lanes[i], element_type, op->location, &elements[i]));
   }
 
   loom_op_t* replacement_op = NULL;
@@ -985,27 +992,20 @@ static iree_status_t loom_vector_canonicalize_extract_from_iota(
     return iree_ok_status();
   }
 
-  int64_t base = 0;
-  int64_t step = 0;
-  if (loom_value_facts_as_exact_i64(
+  loom_value_fact_vector_iota_t iota = {0};
+  if (loom_value_facts_query_vector_iota(
+          &rewriter->fact_table->context,
           loom_rewriter_value_facts(rewriter,
-                                    loom_vector_iota_base(source_def_op)),
-          &base) &&
-      loom_value_facts_as_exact_i64(
-          loom_rewriter_value_facts(rewriter,
-                                    loom_vector_iota_step(source_def_op)),
-          &step)) {
-    int64_t delta = 0;
+                                    loom_vector_iota_result(source_def_op)),
+          &iota)) {
     int64_t value = 0;
-    if (!iree_checked_mul_i64((int64_t)lane, step, &delta) ||
-        !iree_checked_add_i64(base, delta, &value)) {
+    if (loom_value_facts_as_exact_i64(
+            loom_value_fact_vector_iota_element(iota, lane), &value)) {
+      IREE_RETURN_IF_ERROR(loom_vector_replace_single_result_with_scalar_i64(
+          op, rewriter, value, result_type));
+      *out_changed = true;
       return iree_ok_status();
     }
-
-    IREE_RETURN_IF_ERROR(loom_vector_replace_single_result_with_scalar_i64(
-        op, rewriter, value, result_type));
-    *out_changed = true;
-    return iree_ok_status();
   }
 
   loom_builder_set_before(&rewriter->builder, op);

@@ -102,21 +102,8 @@ static bool loom_vector_facts_query_iota_lane(
   if (!loom_value_facts_query_vector_iota(context, facts, &iota)) {
     return false;
   }
-  int64_t base = 0;
-  int64_t step = 0;
-  if (!loom_value_facts_as_exact_i64(iota.base, &base) ||
-      !loom_value_facts_as_exact_i64(iota.step, &step) ||
-      lane > (iree_host_size_t)INT64_MAX) {
-    return false;
-  }
-  int64_t delta = 0;
-  int64_t value = 0;
-  if (!iree_checked_mul_i64((int64_t)lane, step, &delta) ||
-      !iree_checked_add_i64(base, delta, &value)) {
-    return false;
-  }
-  *out_element = loom_value_facts_exact_i64(value);
-  return true;
+  *out_element = loom_value_fact_vector_iota_element(iota, lane);
+  return loom_value_facts_is_exact(*out_element);
 }
 
 static bool loom_vector_facts_query_lane(const loom_fact_context_t* context,
@@ -625,11 +612,13 @@ static iree_status_t loom_vector_try_join_iota_extensions(
   const bool rhs_has_iota =
       loom_value_facts_query_vector_iota(&rhs_table->context, rhs, &rhs_iota);
   *out_handled = lhs_has_iota || rhs_has_iota;
-  if (!lhs_has_iota || !rhs_has_iota) {
+  if (!lhs_has_iota || !rhs_has_iota ||
+      lhs_iota.bit_count != rhs_iota.bit_count) {
     return iree_ok_status();
   }
 
   loom_value_fact_vector_iota_t joined = {0};
+  joined.bit_count = lhs_iota.bit_count;
   loom_value_facts_meet(&lhs_iota.base, &rhs_iota.base, &joined.base);
   loom_value_facts_meet(&lhs_iota.step, &rhs_iota.step, &joined.step);
   loom_value_facts_t extension = loom_value_facts_unknown();
@@ -2257,9 +2246,14 @@ iree_status_t loom_vector_iota_facts(loom_fact_context_t* context,
                                      const loom_op_t* op,
                                      const loom_value_facts_t* operand_facts,
                                      loom_value_facts_t* result_facts) {
+  const loom_scalar_type_t element_type =
+      loom_vector_result_element_type(module, op);
   loom_value_fact_vector_iota_t iota = {
       .base = operand_facts[0],
       .step = operand_facts[1],
+      .bit_count = element_type == LOOM_SCALAR_TYPE_INDEX
+                       ? 0
+                       : (uint8_t)loom_scalar_type_bitwidth(element_type),
   };
   return loom_value_facts_make_vector_iota(context, iota, &result_facts[0]);
 }

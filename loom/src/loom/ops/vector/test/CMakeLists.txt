@@ -19,6 +19,7 @@ loom_check_test_suite(
     "canonicalize.loom-test"
     "comparisonf.loom-test"
     "construction_combine.loom-test"
+    "coordinate_facts.loom-test"
     "facts.loom-test"
     "float_conversion_facts.loom-test"
     "integer_extrema_facts.loom-test"
