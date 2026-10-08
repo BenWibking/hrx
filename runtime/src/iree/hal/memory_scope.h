@@ -16,6 +16,8 @@ extern "C" {
 
 typedef struct iree_hal_device_group_t iree_hal_device_group_t;
 typedef struct iree_hal_pool_t iree_hal_pool_t;
+typedef struct iree_hal_memory_transition_details_t
+    iree_hal_memory_transition_details_t;
 
 // Dense coordinate in one sealed group's memory namespace. Zero denotes all
 // admitted sites; it does not grant access to an otherwise excluded site.
@@ -146,12 +148,14 @@ typedef struct iree_hal_memory_scope_access_t {
 typedef struct iree_hal_memory_contract_t {
   // Cold pool references, independent of native allocation lifetimes.
   iree_atomic_ref_count_t ref_count;
-  // Allocator for this contract and its inline site array.
+  // Allocator for this contract and its captured transition details.
   iree_allocator_t host_allocator;
   // Borrowed namespace identity from the sealed group.
   const void* domain;
   // Number of dense site entries, including wildcard zero.
   uint32_t scope_count;
+  // Log2 of the power-of-two transition row stride, in eight-byte cells.
+  uint32_t transition_row_shift;
   // Complete native publication format, with types owned by this contract.
   iree_hal_buffer_binding_layout_t binding_layout;
   // Global permission projection consumed by native buffer wrappers.
@@ -160,8 +164,14 @@ typedef struct iree_hal_memory_contract_t {
   iree_hal_pool_placement_t placement;
   // Achieved public host mapping contract.
   iree_hal_pool_host_access_t host;
-  // Inline immutable site facts, indexed by memory scope ID.
-  iree_hal_memory_scope_access_t scopes[];
+  // Immutable site facts in this allocation, indexed by memory scope ID.
+  iree_hal_memory_scope_access_t* scopes;
+  // Owned cold pair descriptions, never followed by a hot transition query.
+  iree_hal_memory_transition_details_t* transition_details;
+  // Directional visibility cells at a fixed offset from the contract. The low
+  // 32 bits encode release effects and the high 32 bits encode acquire effects.
+  // Rows use transition_row_shift; row/column zero contain wildcard joins.
+  uint64_t transitions[];
 } iree_hal_memory_contract_t;
 
 // Copies the native layout and allocates empty site metadata. The producer
@@ -192,6 +202,251 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_validate_family_usage(
 // The queue and program sites share the family's semantic permission set.
 IREE_API_EXPORT iree_hal_buffer_usage_t iree_hal_buffer_family_usage(
     const iree_hal_buffer_t* buffer, const iree_hal_queue_family_t* family);
+
+//===----------------------------------------------------------------------===//
+// Prepared visibility transitions
+//===----------------------------------------------------------------------===//
+
+// HAL-owned visibility requirements, combinable at one local execution site
+// and boundary. Callers obtain values from a qualified memory contract; native
+// cache enums and table-local recipe indices are never effect encodings.
+typedef struct iree_hal_memory_effects_t {
+  // Semantic action bits and sticky qualification/executor requirements.
+  uint32_t bits;
+} iree_hal_memory_effects_t;
+
+// Representation shared by contract producers and barrier implementations.
+// Callers requesting conservative barriers use execution-barrier flags instead
+// of manufacturing these values. Resource and program requirements survive OR
+// combination so a global queue barrier cannot silently consume them.
+enum iree_hal_memory_effect_bits_e {
+  IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM = 1u << 0,
+  IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM = 1u << 1,
+  IREE_HAL_MEMORY_EFFECT_HOST_FLUSH = 1u << 2,
+  IREE_HAL_MEMORY_EFFECT_HOST_INVALIDATE = 1u << 3,
+  IREE_HAL_MEMORY_EFFECT_NATIVE_OWNERSHIP = 1u << 4,
+  IREE_HAL_MEMORY_EFFECT_PROGRAM_EXECUTOR = 1u << 29,
+  IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS = 1u << 30,
+  IREE_HAL_MEMORY_EFFECT_UNSUPPORTED = 1u << 31,
+};
+
+static inline iree_hal_memory_effects_t iree_hal_memory_effects_combine(
+    iree_hal_memory_effects_t lhs, iree_hal_memory_effects_t rhs) {
+  iree_hal_memory_effects_t result = {lhs.bits | rhs.bits};
+  return result;
+}
+
+static inline bool iree_hal_memory_effects_is_supported(
+    iree_hal_memory_effects_t effects) {
+  return !(effects.bits & IREE_HAL_MEMORY_EFFECT_UNSUPPORTED);
+}
+
+static inline bool iree_hal_memory_effects_is_empty(
+    iree_hal_memory_effects_t effects) {
+  return effects.bits == 0;
+}
+
+static inline bool iree_hal_memory_effects_requires_resources(
+    iree_hal_memory_effects_t effects) {
+  return (effects.bits & IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS) != 0;
+}
+
+// Write-to-read visibility on corresponding bytes of one backing. An empty
+// side needs no additional cache action; data commands must still honor their
+// qualified access policy. Execution ordering and reader retirement remain
+// explicit semaphore/stage dependencies independent of these effects.
+typedef struct iree_hal_memory_transition_t {
+  // Producer-local action before publishing the dependency.
+  iree_hal_memory_effects_t release;
+  // Consumer-local action after observing it, before payload reads.
+  iree_hal_memory_effects_t acquire;
+} iree_hal_memory_transition_t;
+
+typedef enum iree_hal_memory_transition_action_e {
+  IREE_HAL_MEMORY_TRANSITION_RELEASE = 0,
+  IREE_HAL_MEMORY_TRANSITION_ACQUIRE = 1,
+} iree_hal_memory_transition_action_t;
+
+// Borrowed immutable table. Its pool/buffer owner outlives every query. Empty
+// tables from unscoped legacy storage cannot prepare a pair. Preparing a pair
+// checks public inputs once; querying it trusts the sealed group layout.
+typedef struct iree_hal_memory_transition_table_t {
+  // Existing memory contract; no per-buffer table descriptor is allocated.
+  const iree_hal_memory_contract_t* contract;
+} iree_hal_memory_transition_table_t;
+
+// Trusted key for one sealed group's fixed layout. Reusable across same-group
+// tables; each table's cell independently reports its own qualification.
+typedef struct iree_hal_memory_transition_pair_t {
+  // Flattened matrix index; repeated queries need no stride arithmetic.
+  uint32_t cell_index;
+} iree_hal_memory_transition_pair_t;
+
+// Borrows this pool's captured table for repeated queries.
+IREE_API_EXPORT iree_hal_memory_transition_table_t
+iree_hal_pool_transition_table(const iree_hal_pool_t* pool);
+
+static inline iree_hal_memory_transition_table_t
+iree_hal_buffer_transition_table(const iree_hal_buffer_t* buffer) {
+  iree_hal_memory_transition_table_t table = {buffer->memory.contract};
+  return table;
+}
+
+// Checks namespaces, admitted write/read roles and the selected local action.
+// ANY->B permits ACQUIRE; A->ANY permits RELEASE; ANY->ANY is invalid.
+// An unqualified native relation is a sticky UNSUPPORTED cell, not an error.
+IREE_API_EXPORT iree_status_t iree_hal_memory_transition_prepare_pair(
+    iree_hal_memory_transition_table_t table, iree_hal_memory_scope_t producer,
+    iree_hal_memory_scope_t consumer,
+    iree_hal_memory_transition_action_t action,
+    iree_hal_memory_transition_pair_t* out_pair);
+
+// Trusted eight-byte indexed load. The prepared key and table belong to the
+// same sealed group. There is no status, driver call, or topology traversal.
+static inline iree_hal_memory_transition_t iree_hal_memory_transition_query(
+    iree_hal_memory_transition_table_t table,
+    iree_hal_memory_transition_pair_t pair) {
+  const uint64_t cell = table.contract->transitions[pair.cell_index];
+  iree_hal_memory_transition_t result = {{(uint32_t)cell},
+                                         {(uint32_t)(cell >> 32)}};
+  return result;
+}
+
+// Single-use conveniences check namespaces and roles and return UNSUPPORTED
+// for invalid or unqualified relations. Repeated recording prepares a key once
+// instead. A wildcard's inapplicable side is always UNSUPPORTED.
+IREE_API_EXPORT iree_hal_memory_transition_t iree_hal_pool_query_transition(
+    const iree_hal_pool_t* pool, iree_hal_memory_scope_t producer,
+    iree_hal_memory_scope_t consumer);
+IREE_API_EXPORT iree_hal_memory_transition_t iree_hal_buffer_query_transition(
+    const iree_hal_buffer_t* buffer, iree_hal_memory_scope_t producer,
+    iree_hal_memory_scope_t consumer);
+
+//===----------------------------------------------------------------------===//
+// Captured native qualification
+//===----------------------------------------------------------------------===//
+
+typedef enum iree_hal_memory_transition_kind_e {
+  IREE_HAL_MEMORY_TRANSITION_KIND_UNKNOWN = 0,
+  IREE_HAL_MEMORY_TRANSITION_KIND_NONE = 1,
+  IREE_HAL_MEMORY_TRANSITION_KIND_RANGE = 2,
+  IREE_HAL_MEMORY_TRANSITION_KIND_GLOBAL = 3,
+} iree_hal_memory_transition_kind_t;
+
+typedef enum iree_hal_memory_transition_executor_e {
+  IREE_HAL_MEMORY_TRANSITION_EXECUTOR_NONE = 0,
+  IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE = 1,
+  IREE_HAL_MEMORY_TRANSITION_EXECUTOR_PROGRAM = 2,
+  IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_DIRECT = 3,
+  IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API = 4,
+  IREE_HAL_MEMORY_TRANSITION_EXECUTOR_EXTERNAL = 5,
+} iree_hal_memory_transition_executor_t;
+
+typedef enum iree_hal_memory_transition_operation_e {
+  IREE_HAL_MEMORY_TRANSITION_OPERATION_NONE = 0,
+  IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM = 1,
+  IREE_HAL_MEMORY_TRANSITION_OPERATION_ACQUIRE_FROM_SYSTEM = 2,
+  IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_FLUSH = 3,
+  IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_INVALIDATE = 4,
+  IREE_HAL_MEMORY_TRANSITION_OPERATION_NATIVE_OWNERSHIP = 5,
+} iree_hal_memory_transition_operation_t;
+
+typedef enum iree_hal_host_cache_instruction_e {
+  IREE_HAL_HOST_CACHE_INSTRUCTION_NONE = 0,
+  IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLFLUSH = 1,
+  IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLFLUSHOPT = 2,
+  IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLWB = 3,
+} iree_hal_host_cache_instruction_t;
+
+typedef enum iree_hal_host_cache_fence_e {
+  IREE_HAL_HOST_CACHE_FENCE_NONE = 0,
+  IREE_HAL_HOST_CACHE_FENCE_X86_SFENCE = 1,
+  IREE_HAL_HOST_CACHE_FENCE_X86_MFENCE = 2,
+} iree_hal_host_cache_fence_t;
+
+typedef struct iree_hal_memory_transition_recipe_info_t {
+  // Qualified granularity, no-op, or unqualified action.
+  iree_hal_memory_transition_kind_t kind;
+  // Executor that actually performs the action.
+  iree_hal_memory_transition_executor_t executor;
+  // Semantic operation independent of native packet encodings.
+  iree_hal_memory_transition_operation_t operation;
+  // Coverage in absolute native bytes; zero for a non-ranged action.
+  iree_device_size_t range_granularity;
+  // Direct host emission contract; NONE fields for other executors.
+  struct {
+    // Instruction applied to every covered cache line.
+    iree_hal_host_cache_instruction_t instruction;
+    // Fence preceding the first instruction.
+    iree_hal_host_cache_fence_t fence_before;
+    // Fence following the final instruction.
+    iree_hal_host_cache_fence_t fence_after;
+  } host;
+} iree_hal_memory_transition_recipe_info_t;
+
+typedef uint32_t iree_hal_memory_pair_flags_t;
+enum iree_hal_memory_pair_flag_bits_e {
+  IREE_HAL_MEMORY_PAIR_SHARED_BACKING_REACHABLE = 1u << 0,
+  IREE_HAL_MEMORY_PAIR_MAPPING_SOURCE = 1u << 1,
+  IREE_HAL_MEMORY_PAIR_FIXED_COST_KNOWN = 1u << 2,
+};
+
+// Mutual atomic reach for naturally aligned words, independent of supported
+// operations at either site or the queue's zero-compute atomic capabilities.
+typedef enum iree_hal_atomic_reach_scope_e {
+  IREE_HAL_ATOMIC_REACH_NONE = 0,
+  IREE_HAL_ATOMIC_REACH_DEVICE = 1,
+  IREE_HAL_ATOMIC_REACH_FABRIC = 2,
+  IREE_HAL_ATOMIC_REACH_SYSTEM = 3,
+} iree_hal_atomic_reach_scope_t;
+
+typedef struct iree_hal_memory_pair_info_t {
+  // Reach, mapping-source and cost qualification without implicit ordering.
+  iree_hal_memory_pair_flags_t flags;
+  // Exact producer action, including global operations without resources.
+  iree_hal_memory_transition_recipe_info_t release;
+  // Exact consumer action, including global operations without resources.
+  iree_hal_memory_transition_recipe_info_t acquire;
+  // Mutually atomic reach of the pair, separate from operation capabilities.
+  struct {
+    // Reach for 32-bit naturally aligned words.
+    iree_hal_atomic_reach_scope_t scope_32;
+    // Reach for 64-bit naturally aligned words.
+    iree_hal_atomic_reach_scope_t scope_64;
+  } atomic_reach;
+  // Native estimate; meaningful only with FIXED_COST_KNOWN, including zero.
+  uint64_t estimated_fixed_cost_nanoseconds;
+} iree_hal_memory_pair_info_t;
+
+// Exact-pair metadata for informed scheduling, inspection and compiler
+// emission. Wildcards have no fabricated single-operation summary and return
+// UNKNOWN metadata; their constituent exact pairs remain individually
+// queryable.
+IREE_API_EXPORT iree_hal_memory_pair_info_t
+iree_hal_memory_transition_query_info(iree_hal_memory_transition_table_t table,
+                                      iree_hal_memory_transition_pair_t pair);
+
+//===----------------------------------------------------------------------===//
+// Contract construction
+//===----------------------------------------------------------------------===//
+
+// Cold backend qualification of an admitted exact write/read pair. The builder
+// zeroes out_info before each call. An unknown capability leaves its field zero
+// and succeeds; status is reserved for actual native-query/allocation failures.
+// Native qualification and resource ownership stay with the constructing
+// backend; the callback is not retained or used during recording/submission.
+typedef iree_status_t(IREE_API_PTR* iree_hal_memory_pair_query_fn_t)(
+    void* user_data, iree_hal_memory_scope_id_t producer,
+    iree_hal_memory_scope_id_t consumer, iree_hal_memory_pair_info_t* out_info);
+
+// Captures qualification once, after the producer has filled scopes and host
+// access and before any pool/buffer publication. Deduplicates cold pair facts
+// and precomputes wildcard joins over only applicable writers/readers. Failure
+// leaves the original unsupported table intact; the caller releases the
+// unpublished contract through its ordinary construction cleanup.
+IREE_API_EXPORT iree_status_t iree_hal_memory_contract_initialize_transitions(
+    iree_hal_memory_contract_t* contract, iree_hal_memory_pair_query_fn_t query,
+    void* user_data);
 
 #ifdef __cplusplus
 }  // extern "C"

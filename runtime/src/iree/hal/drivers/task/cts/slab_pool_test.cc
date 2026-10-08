@@ -342,6 +342,41 @@ TEST_P(TaskSlabPoolTest, InteriorArenasInheritTheCompleteScope) {
   EXPECT_GE(memory.offset, 192u);
   EXPECT_EQ(memory.offset, memory.binding_offset);
 
+  // A prepared key works through every policy layer and interior view without
+  // a parent traversal. Coherence elides cache work, not the semaphore edges
+  // below: the second device still waits for the first device's write.
+  const iree_hal_memory_scope_t producer = {
+      memory.contract->domain, families_[0].family->memory.queue_scope_id};
+  const iree_hal_memory_scope_t consumer = {
+      memory.contract->domain, families_[1].family->memory.queue_scope_id};
+  iree_hal_memory_transition_pair_t pair;
+  IREE_ASSERT_OK(iree_hal_memory_transition_prepare_pair(
+      iree_hal_pool_transition_table(source), producer, consumer,
+      IREE_HAL_MEMORY_TRANSITION_ACQUIRE, &pair));
+  for (auto* pool : {source.get(), blocks.get(), arena.get()}) {
+    const auto transition = iree_hal_memory_transition_query(
+        iree_hal_pool_transition_table(pool), pair);
+    EXPECT_TRUE(iree_hal_memory_effects_is_empty(transition.release));
+    EXPECT_TRUE(iree_hal_memory_effects_is_empty(transition.acquire));
+  }
+  const auto table = iree_hal_buffer_transition_table(buffer);
+  const auto transition = iree_hal_memory_transition_query(table, pair);
+  EXPECT_TRUE(iree_hal_memory_effects_is_empty(transition.release));
+  EXPECT_TRUE(iree_hal_memory_effects_is_empty(transition.acquire));
+  const auto info = iree_hal_memory_transition_query_info(table, pair);
+  EXPECT_TRUE(iree_all_bits_set(info.flags,
+                                IREE_HAL_MEMORY_PAIR_SHARED_BACKING_REACHABLE |
+                                    IREE_HAL_MEMORY_PAIR_FIXED_COST_KNOWN));
+  EXPECT_EQ(info.estimated_fixed_cost_nanoseconds, 0u);
+  const iree_hal_memory_scope_t any = {memory.contract->domain, 0};
+  EXPECT_TRUE(iree_hal_memory_effects_is_empty(
+      iree_hal_buffer_query_transition(buffer, any, consumer).acquire));
+  const iree_hal_memory_scope_t excluded = {
+      memory.contract->domain,
+      iree_hal_queue_family(queues_[2])->memory.queue_scope_id};
+  EXPECT_FALSE(iree_hal_memory_effects_is_supported(
+      iree_hal_buffer_query_transition(buffer, excluded, consumer).acquire));
+
   SemaphoreList filled(devices_[0], {0}, {1});
   const uint32_t value = 0x01234567;
   IREE_ASSERT_OK(iree_hal_queue_update(
