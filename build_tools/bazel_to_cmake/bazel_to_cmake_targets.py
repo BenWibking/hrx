@@ -41,6 +41,7 @@ class TargetConverter:
                     "iree::third_party::aqlprofile_sdk_headers"
                 ],
                 "//third_party:libbacktrace": ["${IREE_LIBBACKTRACE_TARGET}"],
+                "//third_party:mimalloc": ["iree::third_party::mimalloc"],
                 "//third_party:zstd": ["iree::third_party::zstd"],
                 "//third_party:spirv_as": ["iree::third_party::spirv_as"],
                 "//third_party:spirv_dis": ["iree::third_party::spirv_dis"],

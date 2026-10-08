@@ -18,6 +18,7 @@ set(IREE_DEPENDENCY_IDS
   "catch2"
   "tracy_client"
   "cxx"
+  "mimalloc"
   "rdma_core_headers"
   "libdrm_headers"
   "linux_kfd_ioctl_header"
@@ -155,6 +156,26 @@ set(IREE_DEP_CXX_STRIP_PREFIX "cplusplus-87ac2f8c90dafe0fc95a72bdb90643a207e08f4
 set(IREE_DEP_CXX_BUILD_FILE "//build_tools/third_party/cxx:cxx.BUILD.bazel")
 set(IREE_DEP_CXX_PATCHES "")
 set(IREE_DEP_CXX_PATCH_ARGS "")
+
+set(IREE_DEP_MIMALLOC_KIND "http_archive")
+set(IREE_DEP_MIMALLOC_OWNER "shared")
+set(IREE_DEP_MIMALLOC_MODULE_NAME "mimalloc")
+set(IREE_DEP_MIMALLOC_REPO_NAME "mimalloc")
+set(IREE_DEP_MIMALLOC_VERSION "")
+set(IREE_DEP_MIMALLOC_DEV_DEPENDENCY "FALSE")
+set(IREE_DEP_MIMALLOC_SOURCE_URL "")
+set(IREE_DEP_MIMALLOC_URLS
+  "https://github.com/microsoft/mimalloc/archive/refs/tags/v3.5.3.tar.gz"
+)
+set(IREE_DEP_MIMALLOC_SHA256 "3b4a15153a59905995f7070296ed604bb5ccc00cabb8b93446931aff77224d47")
+set(IREE_DEP_MIMALLOC_STRIP_PREFIX "mimalloc-3.5.3")
+set(IREE_DEP_MIMALLOC_BUILD_FILE "//build_tools/third_party/mimalloc:mimalloc.BUILD.bazel")
+set(IREE_DEP_MIMALLOC_PATCHES
+  "//build_tools/third_party/mimalloc:c_new_handler.patch"
+)
+set(IREE_DEP_MIMALLOC_PATCH_ARGS
+  "-p1"
+)
 
 set(IREE_DEP_RDMA_CORE_HEADERS_KIND "http_archive")
 set(IREE_DEP_RDMA_CORE_HEADERS_OWNER "shared")

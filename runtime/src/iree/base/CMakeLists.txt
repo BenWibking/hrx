@@ -104,6 +104,22 @@ iree_cc_test(
     iree::testing::gtest_main
 )
 
+if(IREE_ALLOCATOR_SYSTEM STREQUAL "mimalloc")
+  iree_cc_test(
+    NAME
+      allocator_mimalloc_test
+    SRCS
+      "allocator_mimalloc_test.cc"
+    CXX_FEATURES
+      exceptions
+    DEPS
+      ::base
+      iree::testing::gtest
+      iree::testing::gtest_main
+      iree::third_party::mimalloc
+  )
+endif()
+
 iree_cc_test(
   NAME
     alignment_test

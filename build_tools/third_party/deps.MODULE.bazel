@@ -61,6 +61,16 @@ http_archive(
     url = "https://github.com/benvanik/cplusplus/archive/87ac2f8c90dafe0fc95a72bdb90643a207e08f42.tar.gz",
 )
 
+http_archive(
+    name = "mimalloc",
+    build_file = "//build_tools/third_party/mimalloc:mimalloc.BUILD.bazel",
+    patch_args = ["-p1"],
+    patches = ["//build_tools/third_party/mimalloc:c_new_handler.patch"],
+    sha256 = "3b4a15153a59905995f7070296ed604bb5ccc00cabb8b93446931aff77224d47",
+    strip_prefix = "mimalloc-3.5.3",
+    url = "https://github.com/microsoft/mimalloc/archive/refs/tags/v3.5.3.tar.gz",
+)
+
 rocm_repository = use_repo_rule("//build_tools/third_party/rocm:repository.bzl", "rocm_repository")
 
 http_archive(

@@ -112,6 +112,20 @@ that executes it. Target platforms and toolchains own portable ISA selection;
 local benchmark runs may add an explicit architecture flag only when the build
 and execution machine are intentionally the same.
 
+### Default allocator
+
+IREE uses libc for `iree_allocator_system()` by default. Native builds can
+select the repository-pinned mimalloc provider for the shared default:
+
+```bash
+iree-bazel-build --config=mimalloc //runtime/src/iree/base:allocator_mimalloc_test
+iree-cmake-configure -DIREE_ALLOCATOR_SYSTEM=mimalloc
+```
+
+Explicit allocator arguments retain their caller-selected implementation. The
+mimalloc provider is incompatible with sanitizer configurations because those
+runtimes own allocation instrumentation.
+
 Cross-built executables run on their destination OS. Transfer the executable,
 dependent libraries, debug artifacts, and consumer runfiles to that host.
 Linux `bazel run` and `bazel test` cannot execute Windows or macOS binaries.
