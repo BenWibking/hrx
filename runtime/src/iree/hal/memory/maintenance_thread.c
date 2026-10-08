@@ -32,6 +32,7 @@ static bool iree_hal_memory_maintenance_thread_is_ready(void* user_data) {
 static int iree_hal_memory_maintenance_thread_main(void* user_data) {
   iree_hal_memory_maintenance_thread_t* maintenance =
       (iree_hal_memory_maintenance_thread_t*)user_data;
+  IREE_TRACE_ZONE_BEGIN(z0);
   while (true) {
     if (iree_hal_memory_maintenance_run_one(&maintenance->base)) {
       continue;
@@ -39,10 +40,13 @@ static int iree_hal_memory_maintenance_thread_main(void* user_data) {
     if (iree_atomic_load(&maintenance->stopping, iree_memory_order_acquire)) {
       break;
     }
+    IREE_TRACE_ZONE_BEGIN_NAMED(z1, "iree_hal_memory_maintenance_thread_wait");
     iree_notification_await(&maintenance->notification,
                             iree_hal_memory_maintenance_thread_is_ready,
                             maintenance, iree_infinite_timeout());
+    IREE_TRACE_ZONE_END(z1);
   }
+  IREE_TRACE_ZONE_END(z0);
   return 0;
 }
 
@@ -55,6 +59,7 @@ static void iree_hal_memory_maintenance_thread_wake(
 
 static void iree_hal_memory_maintenance_thread_destroy(
     iree_hal_memory_maintenance_t* base_maintenance) {
+  IREE_TRACE_ZONE_BEGIN(z0);
   iree_hal_memory_maintenance_thread_t* maintenance =
       (iree_hal_memory_maintenance_thread_t*)base_maintenance;
   iree_atomic_store(&maintenance->stopping, 1, iree_memory_order_release);
@@ -63,6 +68,7 @@ static void iree_hal_memory_maintenance_thread_destroy(
   iree_notification_deinitialize(&maintenance->notification);
   iree_hal_memory_maintenance_deinitialize(base_maintenance);
   iree_allocator_free(maintenance->host_allocator, maintenance);
+  IREE_TRACE_ZONE_END(z0);
 }
 
 static const iree_hal_memory_maintenance_vtable_t
@@ -74,10 +80,12 @@ static const iree_hal_memory_maintenance_vtable_t
 iree_status_t iree_hal_memory_maintenance_thread_create(
     iree_thread_affinity_t affinity, iree_allocator_t host_allocator,
     iree_hal_memory_maintenance_t** out_maintenance) {
+  IREE_TRACE_ZONE_BEGIN(z0);
   *out_maintenance = NULL;
   iree_hal_memory_maintenance_thread_t* maintenance = NULL;
-  IREE_RETURN_IF_ERROR(iree_allocator_malloc(
-      host_allocator, sizeof(*maintenance), (void**)&maintenance));
+  IREE_RETURN_AND_END_ZONE_IF_ERROR(
+      z0, iree_allocator_malloc(host_allocator, sizeof(*maintenance),
+                                (void**)&maintenance));
   iree_hal_memory_maintenance_initialize(
       &iree_hal_memory_maintenance_thread_vtable, &maintenance->base);
   maintenance->host_allocator = host_allocator;
@@ -94,5 +102,6 @@ iree_status_t iree_hal_memory_maintenance_thread_create(
   } else {
     iree_hal_memory_maintenance_release(&maintenance->base);
   }
+  IREE_TRACE_ZONE_END(z0);
   return status;
 }

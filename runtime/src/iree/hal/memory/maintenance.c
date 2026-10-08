@@ -49,8 +49,10 @@ static void iree_hal_memory_maintenance_call_run(
 void iree_hal_memory_maintenance_call(
     iree_hal_memory_maintenance_t* maintenance,
     void(IREE_API_PTR* fn)(void* user_data), void* user_data) {
+  IREE_TRACE_ZONE_BEGIN(z0);
   if (iree_hal_memory_maintenance_current == maintenance) {
     fn(user_data);
+    IREE_TRACE_ZONE_END(z0);
     return;
   }
   iree_hal_memory_maintenance_call_t call = {
@@ -66,6 +68,7 @@ void iree_hal_memory_maintenance_call(
                           iree_infinite_timeout());
   iree_notification_deinitialize(&call.notification);
   iree_slim_mutex_deinitialize(&call.mutex);
+  IREE_TRACE_ZONE_END(z0);
 }
 
 void iree_hal_memory_maintenance_initialize(
@@ -95,6 +98,7 @@ void iree_hal_memory_maintenance_release(
 void iree_hal_memory_maintenance_enqueue(
     iree_hal_memory_maintenance_t* maintenance,
     iree_hal_memory_maintenance_entry_t* entry) {
+  IREE_TRACE_ZONE_BEGIN(z0);
   entry->next = NULL;
   iree_slim_mutex_lock(&maintenance->mutex);
   const bool needs_wake = maintenance->head == NULL;
@@ -111,6 +115,7 @@ void iree_hal_memory_maintenance_enqueue(
             maintenance->resource.vtable;
     vtable->wake(maintenance);
   }
+  IREE_TRACE_ZONE_END(z0);
 }
 
 bool iree_hal_memory_maintenance_has_work(
@@ -135,9 +140,11 @@ bool iree_hal_memory_maintenance_run_one(
   if (!entry) {
     return false;
   }
+  IREE_TRACE_ZONE_BEGIN(z0);
   iree_hal_memory_maintenance_t* previous = iree_hal_memory_maintenance_current;
   iree_hal_memory_maintenance_current = maintenance;
   entry->fn(entry);
   iree_hal_memory_maintenance_current = previous;
+  IREE_TRACE_ZONE_END(z0);
   return true;
 }

@@ -901,8 +901,8 @@ TEST_P(TaskQueueNativeRetirementTest, CompletionCanDestroyItsPool) {
         iree_status_t status = iree_hal_buffer_map_read(
             completion->buffer, 0, completion->words.data(),
             sizeof(completion->words));
-        // HRX's async-free terminal cleanup returns the last buffer and can
-        // destroy its now-idle pool on this same execution worker.
+        // Final pool release on a Task worker must join native cleanup without
+        // depending on work scheduled to that same worker.
         iree_hal_buffer_release(completion->buffer);
         iree_hal_pool_trim(completion->pool, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
         iree_hal_pool_release(completion->pool);
