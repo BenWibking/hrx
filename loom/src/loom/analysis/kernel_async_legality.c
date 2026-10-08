@@ -62,6 +62,9 @@ typedef struct loom_kernel_async_legality_stream_t {
   // Number of committed groups in groups.
   iree_host_size_t count;
 
+  // Prefix retired by waits. Every later group remains pending.
+  iree_host_size_t completed_group_count;
+
   // Async endpoints issued by transfer ops, in program order.
   loom_kernel_async_legality_endpoint_t* endpoints;
 
@@ -70,6 +73,10 @@ typedef struct loom_kernel_async_legality_stream_t {
 
   // Prefix of endpoints committed to groups.
   iree_host_size_t committed_endpoint_count;
+
+  // Prefix belonging to retired groups. Later endpoints remain pending,
+  // including transfers that have not yet been committed to a group.
+  iree_host_size_t completed_endpoint_count;
 } loom_kernel_async_legality_stream_t;
 
 #define LOOM_KERNEL_ASYNC_LEGALITY_INITIAL_REGION_CAPACITY 16
@@ -471,24 +478,15 @@ static iree_status_t loom_kernel_async_legality_endpoints_overlap(
   return iree_ok_status();
 }
 
-static bool loom_kernel_async_legality_endpoint_is_pending(
-    const loom_kernel_async_legality_stream_t* stream,
-    const loom_kernel_async_legality_endpoint_t* endpoint) {
-  return endpoint->group_index == IREE_HOST_SIZE_MAX ||
-         !stream->groups[endpoint->group_index].completion;
-}
-
 static iree_status_t loom_kernel_async_legality_pending_dest_overlaps(
     loom_kernel_async_legality_state_t* state,
     const loom_kernel_async_legality_stream_t* stream,
     const loom_view_region_t* access_region, bool* out_overlaps) {
   *out_overlaps = false;
-  for (iree_host_size_t i = 0; i < stream->endpoint_count; ++i) {
+  for (iree_host_size_t i = stream->completed_endpoint_count;
+       i < stream->endpoint_count; ++i) {
     const loom_kernel_async_legality_endpoint_t* endpoint =
         &stream->endpoints[i];
-    if (!loom_kernel_async_legality_endpoint_is_pending(stream, endpoint)) {
-      continue;
-    }
 
     bool overlaps = false;
     IREE_RETURN_IF_ERROR(loom_kernel_async_legality_endpoints_overlap(
@@ -507,12 +505,10 @@ static iree_status_t loom_kernel_async_legality_pending_source_overlaps(
     const loom_kernel_async_legality_stream_t* stream,
     const loom_view_region_t* access_region, bool* out_overlaps) {
   *out_overlaps = false;
-  for (iree_host_size_t i = 0; i < stream->endpoint_count; ++i) {
+  for (iree_host_size_t i = stream->completed_endpoint_count;
+       i < stream->endpoint_count; ++i) {
     const loom_kernel_async_legality_endpoint_t* endpoint =
         &stream->endpoints[i];
-    if (!loom_kernel_async_legality_endpoint_is_pending(stream, endpoint)) {
-      continue;
-    }
     if (endpoint->request.source.kind != LOOM_MOVEMENT_ENDPOINT_VIEW) {
       continue;
     }
@@ -566,7 +562,7 @@ static iree_status_t loom_kernel_async_legality_check_pending_source_hazard(
 static iree_status_t loom_kernel_async_legality_check_op_memory_accesses(
     loom_kernel_async_legality_state_t* state,
     const loom_kernel_async_legality_stream_t* stream, const loom_op_t* op) {
-  if (stream->endpoint_count == 0) {
+  if (stream->completed_endpoint_count == stream->endpoint_count) {
     return iree_ok_status();
   }
 
@@ -753,7 +749,10 @@ static iree_status_t loom_kernel_async_legality_append_group(
 static iree_host_size_t loom_kernel_async_legality_find_group(
     const loom_kernel_async_legality_stream_t* stream,
     loom_value_id_t group_id) {
-  for (iree_host_size_t i = 0; i < stream->count; ++i) {
+  // Successful waits advance past every examined group, so the searches over
+  // the whole stream visit each group only once.
+  for (iree_host_size_t i = stream->completed_group_count; i < stream->count;
+       ++i) {
     if (loom_op_const_results(stream->groups[i].op)[0] == group_id) {
       return i;
     }
@@ -761,26 +760,18 @@ static iree_host_size_t loom_kernel_async_legality_find_group(
   return IREE_HOST_SIZE_MAX;
 }
 
-static iree_host_size_t loom_kernel_async_legality_newer_uncompleted_count(
-    const loom_kernel_async_legality_stream_t* stream,
-    iree_host_size_t group_index) {
-  iree_host_size_t newer_groups = 0;
-  for (iree_host_size_t i = group_index + 1; i < stream->count; ++i) {
-    if (!stream->groups[i].completion) {
-      ++newer_groups;
-    }
-  }
-  return newer_groups;
-}
-
 static void loom_kernel_async_legality_complete_through(
     loom_kernel_async_legality_stream_t* stream, iree_host_size_t group_index,
     const loom_op_t* completion) {
-  for (iree_host_size_t i = 0; i <= group_index; ++i) {
-    if (!stream->groups[i].completion) {
-      stream->groups[i].completion = completion;
-    }
+  for (iree_host_size_t i = stream->completed_group_count; i <= group_index;
+       ++i) {
+    stream->groups[i].completion = completion;
   }
+  stream->completed_group_count = group_index + 1;
+  const loom_kernel_async_legality_group_t* group =
+      &stream->groups[group_index];
+  stream->completed_endpoint_count =
+      group->first_transfer + group->transfer_count;
 }
 
 static iree_status_t loom_kernel_async_legality_check_wait(
@@ -796,15 +787,19 @@ static iree_status_t loom_kernel_async_legality_check_wait(
   iree_host_size_t group_index =
       loom_kernel_async_legality_find_group(stream, group_id);
   if (group_index == IREE_HOST_SIZE_MAX) {
-    return loom_kernel_async_legality_fail(state, op, LOOM_ERR_LOWERING_029);
-  }
-  if (stream->groups[group_index].completion) {
-    return loom_kernel_async_legality_fail(state, op, LOOM_ERR_LOWERING_030);
+    const loom_value_t* value = loom_module_value(state->module, group_id);
+    const loom_op_t* group_op =
+        loom_value_is_block_arg(value) ? NULL : loom_value_def_op(value);
+    // SSA dominance places a local group definition before the wait. Absence
+    // from the pending suffix means an earlier wait already retired it.
+    const bool completed = group_op && loom_kernel_async_group_isa(group_op) &&
+                           group_op->parent_block == op->parent_block;
+    return loom_kernel_async_legality_fail(
+        state, op, completed ? LOOM_ERR_LOWERING_030 : LOOM_ERR_LOWERING_029);
   }
 
   int64_t actual_newer_groups = loom_kernel_async_wait_newer_groups(op);
-  iree_host_size_t expected_newer_groups =
-      loom_kernel_async_legality_newer_uncompleted_count(stream, group_index);
+  iree_host_size_t expected_newer_groups = stream->count - group_index - 1;
   if ((uint64_t)actual_newer_groups != (uint64_t)expected_newer_groups) {
     return loom_kernel_async_legality_fail_newer_groups(
         state, op, actual_newer_groups, expected_newer_groups);
@@ -818,12 +813,10 @@ static iree_status_t loom_kernel_async_legality_check_wait(
 static iree_status_t loom_kernel_async_legality_check_uncompleted_groups(
     loom_kernel_async_legality_state_t* state,
     const loom_kernel_async_legality_stream_t* stream) {
-  for (iree_host_size_t i = 0; i < stream->count; ++i) {
-    if (stream->groups[i].completion) {
-      continue;
-    }
-    return loom_kernel_async_legality_fail(state, stream->groups[i].op,
-                                           LOOM_ERR_LOWERING_032);
+  if (stream->completed_group_count < stream->count) {
+    return loom_kernel_async_legality_fail(
+        state, stream->groups[stream->completed_group_count].op,
+        LOOM_ERR_LOWERING_032);
   }
   return iree_ok_status();
 }
