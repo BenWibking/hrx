@@ -46,8 +46,9 @@ static iree_status_t loom_amdgpu_storage_progress_bound_emit(
   };
   if (iree_any_bit_set(descriptor_traits,
                        LOOM_AMDGPU_DESCRIPTOR_TRAIT_XCNT_IMPLICIT_DRAIN) ||
-      loom_amdgpu_structural_packet_control_transfer_count(schedule, node) !=
-          0) {
+      (node->kind == LOOM_LOW_SCHEDULE_NODE_TERMINATOR &&
+       loom_amdgpu_structural_packet_control_transfer_count(schedule, node) !=
+           0)) {
     event.kind = LOOM_LOW_STORAGE_PROGRESS_BOUND_PACKET;
     event.release_group_id = LOOM_LOW_STORAGE_LEASE_RELEASE_GROUP_ALL;
     return emit(emit_user_data, &event);
@@ -69,6 +70,10 @@ static iree_status_t loom_amdgpu_storage_lease_query(
       schedule->target.descriptor_set == NULL) {
     return iree_ok_status();
   }
+  if (node->descriptor == NULL &&
+      node->kind != LOOM_LOW_SCHEDULE_NODE_TERMINATOR) {
+    return iree_ok_status();
+  }
   const loom_low_descriptor_set_t* descriptor_set =
       schedule->target.descriptor_set;
   if (descriptor_set->target_stable_id != LOOM_AMDGPU_TARGET_STABLE_ID) {
@@ -87,7 +92,9 @@ static iree_status_t loom_amdgpu_storage_lease_query(
                                                         node, sink);
   }
   const loom_amdgpu_descriptor_traits_t descriptor_traits =
-      loom_amdgpu_descriptor_traits(descriptor_set, node->descriptor);
+      node->descriptor == NULL
+          ? 0
+          : loom_amdgpu_descriptor_traits(descriptor_set, node->descriptor);
   loom_amdgpu_storage_lease_query_t query = {
       .descriptor_traits = descriptor_traits,
       .sink = sink,

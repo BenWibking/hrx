@@ -31,6 +31,12 @@ typedef struct loom_low_storage_lease_build_state_t {
   iree_host_size_t progress_bound_capacity;
   // Number of progress bounds counted or populated so far.
   iree_host_size_t progress_bound_count;
+  // Block owning the currently counted run of full progress bounds.
+  uint32_t full_progress_bound_block_index;
+  // Full progress bounds counted in |full_progress_bound_block_index|.
+  iree_host_size_t block_full_progress_bound_count;
+  // Maximum full progress bounds counted in any one block.
+  iree_host_size_t maximum_block_full_progress_bound_count;
 } loom_low_storage_lease_build_state_t;
 
 typedef struct loom_low_storage_progress_bound_map_entry_t {
@@ -143,6 +149,17 @@ static iree_status_t loom_low_storage_progress_bound_count_event(
   loom_low_storage_progress_bound_validate_event(state, event);
   IREE_ASSERT_NE(state->progress_bound_count, IREE_HOST_SIZE_MAX);
   ++state->progress_bound_count;
+  if (event->remaining_count == 0) {
+    if (state->full_progress_bound_block_index !=
+        state->current_node->block_index) {
+      state->full_progress_bound_block_index = state->current_node->block_index;
+      state->block_full_progress_bound_count = 0;
+    }
+    ++state->block_full_progress_bound_count;
+    state->maximum_block_full_progress_bound_count =
+        iree_max(state->maximum_block_full_progress_bound_count,
+                 state->block_full_progress_bound_count);
+  }
   return iree_ok_status();
 }
 
@@ -339,24 +356,24 @@ static uint32_t* loom_low_storage_progress_bound_map_lookup(
   }
 }
 
-static iree_status_t loom_low_storage_lease_resolve_progress_bounds(
+IREE_ATTRIBUTE_NOINLINE static iree_status_t
+loom_low_storage_lease_resolve_progress_bounds(
     const loom_low_schedule_table_t* schedule,
     loom_low_storage_lease_record_t* records, iree_host_size_t record_count,
     const loom_low_storage_progress_bound_record_t* progress_bounds,
-    iree_host_size_t progress_bound_count, iree_arena_allocator_t* arena) {
-  iree_host_size_t full_bound_count = 0;
-  for (iree_host_size_t i = 0; i < progress_bound_count; ++i) {
-    full_bound_count += progress_bounds[i].remaining_count == 0;
-  }
-  if (record_count == 0 || full_bound_count == 0) {
+    iree_host_size_t progress_bound_count,
+    iree_host_size_t maximum_block_full_bound_count,
+    iree_arena_allocator_t* arena) {
+  if (record_count == 0 || maximum_block_full_bound_count == 0) {
     return iree_ok_status();
   }
 
-  if (full_bound_count > IREE_HOST_SIZE_MAX / 2u) {
+  if (maximum_block_full_bound_count > IREE_HOST_SIZE_MAX / 2u) {
     return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
                             "storage progress-bound map is too large");
   }
-  const iree_host_size_t minimum_map_capacity = full_bound_count * 2u;
+  const iree_host_size_t minimum_map_capacity =
+      maximum_block_full_bound_count * 2u;
   iree_host_size_t map_capacity = 1;
   while (map_capacity < minimum_map_capacity) {
     if (map_capacity > IREE_HOST_SIZE_MAX / 2u) {
@@ -456,6 +473,7 @@ iree_status_t loom_low_storage_lease_build(
       .provider = provider,
       .current_packet_index = LOOM_LOW_STORAGE_LEASE_PACKET_NONE,
       .current_node_index = LOOM_LOW_STORAGE_LEASE_NODE_NONE,
+      .full_progress_bound_block_index = UINT32_MAX,
   };
   IREE_RETURN_IF_ERROR(loom_low_storage_lease_run_pass(
       &state, loom_low_storage_lease_count_event,
@@ -488,7 +506,8 @@ iree_status_t loom_low_storage_lease_build(
   IREE_ASSERT_EQ(state.progress_bound_count, progress_bound_capacity);
   IREE_RETURN_IF_ERROR(loom_low_storage_lease_resolve_progress_bounds(
       schedule, records, record_capacity, progress_bounds,
-      progress_bound_capacity, arena));
+      progress_bound_capacity, state.maximum_block_full_progress_bound_count,
+      arena));
 
   *out_table = (loom_low_storage_lease_table_t){
       .schedule = schedule,
