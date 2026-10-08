@@ -10,7 +10,59 @@
 #include "loom/target/arch/vm/provider.h"
 #include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/execute.h"
-#include "loom/tools/loom-check/source_low.h"
+
+typedef struct loom_vm_check_request_t {
+  // Optional root function name without a leading '@'.
+  iree_string_view_t function_name;
+  // Optional complete target profile specification.
+  iree_string_view_t target;
+  // True when |target| was explicitly supplied.
+  bool has_target;
+} loom_vm_check_request_t;
+
+static iree_status_t loom_vm_check_parse_request(
+    iree_string_view_t text, loom_vm_check_request_t* out_request) {
+  *out_request = (loom_vm_check_request_t){0};
+  text = iree_string_view_trim(text);
+  if (iree_string_view_starts_with_char(text, '@')) {
+    iree_string_view_t symbol = iree_string_view_empty();
+    iree_string_view_split(text, ' ', &symbol, &text);
+    out_request->function_name =
+        iree_string_view_substr(symbol, 1, IREE_HOST_SIZE_MAX);
+    if (iree_string_view_is_empty(out_request->function_name)) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "vm-dis requires a nonempty function symbol");
+    }
+  }
+
+  text = iree_string_view_trim(text);
+  while (!iree_string_view_is_empty(text)) {
+    iree_string_view_t token = iree_string_view_empty();
+    iree_string_view_split(text, ' ', &token, &text);
+    iree_string_view_t name = iree_string_view_empty();
+    iree_string_view_t value = iree_string_view_empty();
+    iree_string_view_split(token, '=', &name, &value);
+    if (!iree_string_view_equal(name, IREE_SV("target"))) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "vm-dis accepts only @function and target options");
+    }
+    if (out_request->has_target) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "duplicate vm-dis option 'target'");
+    }
+    out_request->target = value;
+    out_request->has_target = true;
+    text = iree_string_view_trim(text);
+  }
+  if (!iree_string_view_is_empty(out_request->function_name) &&
+      !out_request->has_target) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "vm-dis @function requires "
+                            "target=family:selector");
+  }
+  return iree_ok_status();
+}
 
 static bool loom_vm_check_match(const loom_check_emit_provider_t* provider,
                                 iree_string_view_t target_name) {
@@ -25,17 +77,13 @@ static iree_status_t loom_vm_check_write(void* user_data,
 static iree_status_t loom_vm_check_emit(
     const loom_check_emit_provider_t* provider,
     const loom_check_emit_provider_request_t* request) {
-  loom_check_source_low_request_t source_request;
+  loom_vm_check_request_t vm_request;
   IREE_RETURN_IF_ERROR(
-      loom_check_source_low_parse(request->target_options, &source_request));
-  if (source_request.options & ~LOOM_CHECK_SOURCE_LOW_OPTION_TARGET) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "vm-dis accepts only @function and target options");
-  }
+      loom_vm_check_parse_request(request->target_options, &vm_request));
   const loom_check_compile_artifact_options_t compile_options = {
       .artifact_format = IREE_SV("vm"),
-      .root = source_request.function_name,
-      .target = source_request.target,
+      .root = vm_request.function_name,
+      .target = vm_request.target,
       .lower_source_to_low = true,
       .control_flow_lowering = LOOMC_TARGET_CONTROL_FLOW_LOWERING_CFG,
   };

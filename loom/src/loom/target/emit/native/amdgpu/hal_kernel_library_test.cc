@@ -31,7 +31,6 @@
 #include "loom/target/arch/amdgpu/matrix/contract.h"
 #include "loom/target/arch/amdgpu/planning/wait_counters.h"
 #include "loom/target/arch/amdgpu/profile.h"
-#include "loom/target/arch/amdgpu/provider.h"
 #include "loom/target/arch/amdgpu/records/target_records.h"
 #include "loom/target/arch/amdgpu/target_info.h"
 #include "loom/target/emit/native/amdgpu/runtime_globals.h"
@@ -40,9 +39,12 @@
 #include "loom/target/function_contract.h"
 #include "loom/target/function_version.h"
 #include "loom/target/profile.h"
+#include "loom/target/provider.h"
 #include "loom/testing/diagnostic_matchers.h"
-#include "loom/tooling/compile/pipeline.h"
-#include "loom/transforms/cleanup/configured.h"
+#include "loomc/interop.h"
+#include "loomc/iree.h"
+#include "loomc/loomc.h"
+#include "loomc/target/amdgpu.h"
 
 namespace loom {
 namespace {
@@ -383,21 +385,43 @@ std::string DiagnosticSummary(const DiagnosticCapture& capture) {
   return result;
 }
 
+std::string LoomcDiagnosticSummary(const loomc_result_t* result) {
+  std::string summary;
+  if (result == nullptr) {
+    return "operation did not return a result";
+  }
+  for (loomc_host_size_t i = 0; i < loomc_result_diagnostic_count(result);
+       ++i) {
+    if (!summary.empty()) {
+      summary += "\n";
+    }
+    const loomc_diagnostic_t* diagnostic =
+        loomc_result_diagnostic_at(result, i);
+    summary.append(diagnostic->message.data, diagnostic->message.size);
+  }
+  return summary;
+}
+
 class AmdgpuHalKernelLibraryTest : public ::testing::Test {
  protected:
   void SetUp() override {
     iree_arena_block_pool_initialize(4096, iree_allocator_system(),
                                      &block_pool_);
-    IREE_ASSERT_OK(loom_target_environment_initialize(
-        &loom_amdgpu_target_provider_set, &target_environment_));
-    IREE_ASSERT_OK(InitializeAmdgpuContext(&target_environment_, &context_));
-    low_registry_ =
-        loom_target_environment_low_descriptor_registry(&target_environment_);
+    IREE_ASSERT_OK(
+        iree_status_from_loomc(loomc_target_environment_create_amdgpu(
+            loomc_allocator_system(), &target_environment_)));
+    native_target_environment_ =
+        loomc_target_environment_get_interop_view(target_environment_);
+    ASSERT_NE(native_target_environment_, nullptr);
+    IREE_ASSERT_OK(
+        InitializeAmdgpuContext(native_target_environment_, &context_));
+    low_registry_ = loom_target_environment_low_descriptor_registry(
+        native_target_environment_);
   }
 
   void TearDown() override {
     loom_context_deinitialize(&context_);
-    loom_target_environment_deinitialize(&target_environment_);
+    loomc_target_environment_release(target_environment_);
     iree_arena_block_pool_deinitialize(&block_pool_);
   }
 
@@ -465,7 +489,7 @@ class AmdgpuHalKernelLibraryTest : public ::testing::Test {
         ParseSource(iree_make_cstring_view(kSource), out_module));
   }
 
-  void ParseGfx1250TensorLoadKernel(loom_module_t** out_module) {
+  iree_string_view_t Gfx1250TensorLoadSource() {
     static const char kSource[] =
         "amdgpu.target<gfx1250> @gfx_target\n"
         "kernel.def target(@gfx_target) @tensor_load() {\n"
@@ -496,8 +520,7 @@ class AmdgpuHalKernelLibraryTest : public ::testing::Test {
         "kernel.async.group\n"
         "  kernel.return\n"
         "}\n";
-    ASSERT_NO_FATAL_FAILURE(
-        ParseSource(iree_make_cstring_view(kSource), out_module));
+    return iree_make_cstring_view(kSource);
   }
 
   void ParseGfx11MultiKernel(loom_module_t** out_module) {
@@ -537,7 +560,7 @@ class AmdgpuHalKernelLibraryTest : public ::testing::Test {
         ParseSource(iree_make_cstring_view(kSource), out_module));
   }
 
-  void ParseGfx11SourceSanitizerKernels(loom_module_t** out_module) {
+  iree_string_view_t Gfx11SourceSanitizerKernelsSource() {
     static const char kSource[] =
         "amdgpu.target<gfx1100> @gfx_target\n"
         "kernel.def target(@gfx_target) @read_kernel() {\n"
@@ -570,26 +593,89 @@ class AmdgpuHalKernelLibraryTest : public ::testing::Test {
         "view<1xi32>\n"
         "  kernel.return\n"
         "}\n";
-    ASSERT_NO_FATAL_FAILURE(
-        ParseSource(iree_make_cstring_view(kSource), out_module));
+    return iree_make_cstring_view(kSource);
   }
 
-  void RunPreparedLowPipeline(loom_module_t* module,
-                              DiagnosticCapture* capture) {
-    loom_compile_pipeline_options_t options = {};
-    loom_compile_pipeline_options_initialize(&options);
-    options.target_environment = &target_environment_;
-    options.cleanup_pattern_provider_set =
-        loom_cleanup_configured_pattern_provider_set();
-    options.diagnostic_sink = capture->sink();
-    options.max_errors = 20;
-    loom_compile_pipeline_result_t result = {};
-    iree_status_t status =
-        loom_compile_run_pipeline(module, &options, &block_pool_, &result);
-    const uint32_t error_count = result.pass.error_count;
-    loom_compile_pipeline_result_deinitialize(&result);
-    IREE_ASSERT_OK(status);
-    ASSERT_EQ(error_count, 0u) << DiagnosticSummary(*capture);
+  void CompilePreparedLowSource(iree_string_view_t source,
+                                loomc_module_t** out_module_handle,
+                                loom_module_t** out_module) {
+    *out_module_handle = nullptr;
+    *out_module = nullptr;
+    const loomc_allocator_t allocator = loomc_allocator_system();
+    loomc_context_target_options_t target_options = {
+        /*.type=*/LOOMC_STRUCTURE_TYPE_CONTEXT_TARGET_OPTIONS,
+        /*.structure_size=*/sizeof(target_options),
+        /*.next=*/nullptr,
+        /*.target_environment=*/target_environment_,
+    };
+    loomc_context_options_t context_options = {
+        /*.type=*/LOOMC_STRUCTURE_TYPE_CONTEXT_OPTIONS,
+        /*.structure_size=*/sizeof(context_options),
+        /*.next=*/&target_options,
+    };
+    loomc_context_t* compiler_context = nullptr;
+    IREE_ASSERT_OK(iree_status_from_loomc(
+        loomc_context_create(&context_options, allocator, &compiler_context)));
+    loomc_workspace_t* workspace = nullptr;
+    IREE_ASSERT_OK(iree_status_from_loomc(loomc_workspace_create(
+        /*options=*/nullptr, allocator, &workspace)));
+    loomc_compiler_t* compiler = nullptr;
+    IREE_ASSERT_OK(iree_status_from_loomc(loomc_compiler_create(
+        compiler_context, /*options=*/nullptr, allocator, &compiler)));
+    loomc_result_t* program_result = nullptr;
+    loomc_pass_program_t* pass_program = nullptr;
+    IREE_ASSERT_OK(
+        iree_status_from_loomc(loomc_pass_program_create_from_target_pipeline(
+            compiler_context, /*options=*/nullptr, allocator, &pass_program,
+            &program_result)));
+    ASSERT_TRUE(loomc_result_succeeded(program_result))
+        << LoomcDiagnosticSummary(program_result);
+    loomc_result_release(program_result);
+
+    const loomc_source_options_t source_options = {
+        /*.type=*/LOOMC_STRUCTURE_TYPE_SOURCE_OPTIONS,
+        /*.structure_size=*/sizeof(source_options),
+        /*.next=*/nullptr,
+        /*.format=*/LOOMC_SOURCE_FORMAT_TEXT,
+        /*.identifier=*/loomc_make_cstring_view("amdgpu_emit_test.loom"),
+        /*.contents=*/loomc_make_byte_span(source.data, source.size),
+        /*.storage=*/LOOMC_SOURCE_STORAGE_COPY,
+    };
+    loomc_source_t* compiler_source = nullptr;
+    IREE_ASSERT_OK(iree_status_from_loomc(
+        loomc_source_create(&source_options, allocator, &compiler_source)));
+    loomc_module_t* module_handle = nullptr;
+    loomc_result_t* deserialize_result = nullptr;
+    IREE_ASSERT_OK(iree_status_from_loomc(loomc_module_deserialize_from_source(
+        compiler_context, workspace, compiler_source, /*options=*/nullptr,
+        allocator, &module_handle, &deserialize_result)));
+    loomc_source_release(compiler_source);
+    ASSERT_TRUE(loomc_result_succeeded(deserialize_result))
+        << LoomcDiagnosticSummary(deserialize_result);
+    loomc_result_release(deserialize_result);
+
+    loomc_result_t* compile_result = nullptr;
+    IREE_ASSERT_OK(iree_status_from_loomc(
+        loomc_compile_module(compiler, workspace, pass_program, module_handle,
+                             /*options=*/nullptr, allocator, &compile_result)));
+    ASSERT_TRUE(loomc_result_succeeded(compile_result))
+        << LoomcDiagnosticSummary(compile_result);
+    loomc_result_release(compile_result);
+
+    loomc_module_t* projected_module = nullptr;
+    IREE_ASSERT_OK(iree_status_from_loomc(loomc_module_clone(
+        module_handle, workspace, allocator, &projected_module)));
+    loomc_module_release(module_handle);
+    const loomc_module_mutable_interop_view_t view =
+        loomc_module_get_mutable_interop_view(projected_module);
+    ASSERT_NE(view.module, nullptr);
+    *out_module_handle = projected_module;
+    *out_module = view.module;
+
+    loomc_pass_program_release(pass_program);
+    loomc_compiler_release(compiler);
+    loomc_workspace_release(workspace);
+    loomc_context_release(compiler_context);
   }
 
   void ParseGfx942Kernel(loom_module_t** out_module) {
@@ -660,7 +746,8 @@ class AmdgpuHalKernelLibraryTest : public ::testing::Test {
   }
 
   iree_arena_block_pool_t block_pool_;
-  loom_target_environment_t target_environment_ = {};
+  loomc_target_environment_t* target_environment_ = nullptr;
+  const loom_target_environment_t* native_target_environment_ = nullptr;
   loom_context_t context_ = {};
   loom_target_low_descriptor_registry_t low_registry_ = {};
 };
@@ -1326,10 +1413,11 @@ TEST_F(AmdgpuHalKernelLibraryTest, RecordsTensorWaitCounter) {
     GTEST_SKIP() << "amdgpu.rdna4.gfx125x.core is not linked in this build";
   }
 
+  loomc_module_t* module_handle = nullptr;
   loom_module_t* module = nullptr;
-  ASSERT_NO_FATAL_FAILURE(ParseGfx1250TensorLoadKernel(&module));
+  ASSERT_NO_FATAL_FAILURE(CompilePreparedLowSource(Gfx1250TensorLoadSource(),
+                                                   &module_handle, &module));
   DiagnosticCapture capture;
-  ASSERT_NO_FATAL_FAILURE(RunPreparedLowPipeline(module, &capture));
 
   loom_target_compile_report_t report = {};
   loom_target_compile_report_initialize(&report, iree_allocator_system());
@@ -1355,7 +1443,7 @@ TEST_F(AmdgpuHalKernelLibraryTest, RecordsTensorWaitCounter) {
   loom_amdgpu_hal_kernel_library_deinitialize(&library,
                                               iree_allocator_system());
   loom_target_compile_report_deinitialize(&report);
-  loom_module_free(module);
+  loomc_module_release(module_handle);
 }
 
 TEST_F(AmdgpuHalKernelLibraryTest, EmitsArgumentMetadataFromLowKernelAbi) {
@@ -1789,11 +1877,11 @@ TEST_F(AmdgpuHalKernelLibraryTest,
 
 TEST_F(AmdgpuHalKernelLibraryTest, EmitsSourceLoweredSanitizerSiteTableRodata) {
   static constexpr char kSiteSymbolName[] = "loom_sanitizer_sites";
+  loomc_module_t* module_handle = nullptr;
   loom_module_t* module = nullptr;
-  ASSERT_NO_FATAL_FAILURE(ParseGfx11SourceSanitizerKernels(&module));
-
+  ASSERT_NO_FATAL_FAILURE(CompilePreparedLowSource(
+      Gfx11SourceSanitizerKernelsSource(), &module_handle, &module));
   DiagnosticCapture capture;
-  ASSERT_NO_FATAL_FAILURE(RunPreparedLowPipeline(module, &capture));
 
   loom_amdgpu_hal_kernel_library_t library = {};
   loom_amdgpu_hal_kernel_library_options_t options = {};
@@ -1880,7 +1968,7 @@ TEST_F(AmdgpuHalKernelLibraryTest, EmitsSourceLoweredSanitizerSiteTableRodata) {
 
   loom_amdgpu_hal_kernel_library_deinitialize(&library,
                                               iree_allocator_system());
-  loom_module_free(module);
+  loomc_module_release(module_handle);
 }
 
 }  // namespace

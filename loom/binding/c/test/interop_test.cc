@@ -21,16 +21,39 @@ namespace {
 
 using loomc::testing::HandlePtr;
 
+using CompilerPtr = HandlePtr<loomc_compiler_t, loomc_compiler_release>;
 using ContextPtr = HandlePtr<loomc_context_t, loomc_context_release>;
 using ModulePtr = HandlePtr<loomc_module_t, loomc_module_release>;
+using PassProgramPtr =
+    HandlePtr<loomc_pass_program_t, loomc_pass_program_release>;
 using ResultPtr = HandlePtr<loomc_result_t, loomc_result_release>;
 using SourcePtr = HandlePtr<loomc_source_t, loomc_source_release>;
+using TargetEnvironmentPtr =
+    HandlePtr<loomc_target_environment_t, loomc_target_environment_release>;
 using WorkspacePtr = HandlePtr<loomc_workspace_t, loomc_workspace_release>;
 
 ContextPtr CreateContext() {
   loomc_context_t* context = nullptr;
   LOOMC_EXPECT_OK(
       loomc_context_create(nullptr, loomc_allocator_system(), &context));
+  return ContextPtr(context);
+}
+
+ContextPtr CreateTargetContext(loomc_target_environment_t* target_environment) {
+  loomc_context_target_options_t target_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_CONTEXT_TARGET_OPTIONS,
+      /*.structure_size=*/sizeof(target_options),
+      /*.next=*/nullptr,
+      /*.target_environment=*/target_environment,
+  };
+  loomc_context_options_t context_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_CONTEXT_OPTIONS,
+      /*.structure_size=*/sizeof(context_options),
+      /*.next=*/&target_options,
+  };
+  loomc_context_t* context = nullptr;
+  LOOMC_EXPECT_OK(loomc_context_create(&context_options,
+                                       loomc_allocator_system(), &context));
   return ContextPtr(context);
 }
 
@@ -158,6 +181,92 @@ func.def public @identity(%value: i32) -> (i32) {
       loom_string_table_get(&verified_view.module->strings,
                             verified_view.module->name_id),
       IREE_SV("adapted")));
+}
+
+TEST(InteropTest, CreatesOwnedNativeTargetEnvironment) {
+  const loom_target_provider_set_t provider_set = {};
+
+  loomc_target_environment_t* target_environment = nullptr;
+  LOOMC_EXPECT_OK(loomc_target_environment_create_from_provider_set(
+      &provider_set, loomc_allocator_system(), &target_environment));
+  TargetEnvironmentPtr target_environment_ptr(target_environment);
+  const loom_target_environment_t* native_environment =
+      loomc_target_environment_get_interop_view(target_environment_ptr.get());
+  ASSERT_NE(native_environment, nullptr);
+  EXPECT_EQ(native_environment->provider_set, &provider_set);
+}
+
+TEST(InteropTest, BuildsNativeSourceLowPassProgram) {
+  const loom_target_provider_set_t provider_set = {};
+
+  loomc_target_environment_t* target_environment = nullptr;
+  LOOMC_EXPECT_OK(loomc_target_environment_create_from_provider_set(
+      &provider_set, loomc_allocator_system(), &target_environment));
+  TargetEnvironmentPtr target_environment_ptr(target_environment);
+  ContextPtr context = CreateTargetContext(target_environment_ptr.get());
+
+  loomc_pass_program_t* pass_program = nullptr;
+  loomc_result_t* result = nullptr;
+  LOOMC_EXPECT_OK(loomc_pass_program_create_from_native_source_low_pipeline(
+      context.get(), loom_target_pipeline_build_to_source_low_artifacts,
+      loomc_string_view_empty(), /*options=*/nullptr, loomc_allocator_system(),
+      &pass_program, &result));
+  PassProgramPtr pass_program_ptr(pass_program);
+  ResultPtr result_ptr(result);
+  EXPECT_TRUE(loomc_result_succeeded(result_ptr.get()));
+  EXPECT_NE(pass_program_ptr.get(), nullptr);
+
+  result_ptr.reset();
+  pass_program_ptr.reset();
+  context.reset();
+  target_environment_ptr.reset();
+}
+
+TEST(InteropTest, CompilesPublicModuleWithNativeReport) {
+  const loom_target_provider_set_t provider_set = {};
+
+  loomc_target_environment_t* target_environment = nullptr;
+  LOOMC_EXPECT_OK(loomc_target_environment_create_from_provider_set(
+      &provider_set, loomc_allocator_system(), &target_environment));
+  TargetEnvironmentPtr target_environment_ptr(target_environment);
+  ContextPtr context = CreateTargetContext(target_environment_ptr.get());
+  WorkspacePtr workspace = CreateWorkspace();
+  SourcePtr source = CreateSource("module.loom", R"(
+func.def public @identity(%value: i32) -> (i32) {
+  func.return %value : i32
+}
+)");
+  ModulePtr module = Deserialize(context.get(), workspace.get(), source.get());
+
+  loomc_compiler_t* compiler = nullptr;
+  LOOMC_EXPECT_OK(loomc_compiler_create(context.get(), /*options=*/nullptr,
+                                        loomc_allocator_system(), &compiler));
+  CompilerPtr compiler_ptr(compiler);
+  loomc_pass_program_t* pass_program = nullptr;
+  LOOMC_EXPECT_OK(
+      loomc_pass_program_create_empty(context.get(), /*options=*/nullptr,
+                                      loomc_allocator_system(), &pass_program));
+  PassProgramPtr pass_program_ptr(pass_program);
+
+  loom_target_compile_report_t report = {};
+  loomc_result_t* result = nullptr;
+  LOOMC_EXPECT_OK(loomc_compile_module_with_native_report(
+      compiler_ptr.get(), workspace.get(), pass_program_ptr.get(), module.get(),
+      /*options=*/nullptr, &report, loomc_allocator_system(), &result));
+  ResultPtr result_ptr(result);
+  EXPECT_TRUE(loomc_result_succeeded(result_ptr.get()));
+  EXPECT_NE(report.allocator.ctl, nullptr);
+  EXPECT_EQ(report.status_code, IREE_STATUS_OK);
+  loom_target_compile_report_deinitialize(&report);
+
+  result_ptr.reset();
+  pass_program_ptr.reset();
+  compiler_ptr.reset();
+  module.reset();
+  source.reset();
+  workspace.reset();
+  context.reset();
+  target_environment_ptr.reset();
 }
 
 }  // namespace

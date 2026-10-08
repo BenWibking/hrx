@@ -11,6 +11,13 @@
 #include "result.h"
 #include "target.h"
 
+loomc_status_t loomc_target_environment_create_from_provider_set(
+    const loom_target_provider_set_t* provider_set, loomc_allocator_t allocator,
+    loomc_target_environment_t** out_target_environment) {
+  return loomc_target_environment_create_from_provider_set_internal(
+      provider_set, allocator, out_target_environment);
+}
+
 loomc_status_t loomc_module_get_interop_view(
     loomc_module_t* module, loomc_allocator_t allocator,
     loomc_module_interop_view_t* out_view, loomc_result_t** out_result) {
@@ -35,7 +42,12 @@ loomc_status_t loomc_module_get_interop_view(
       LOOMC_RESULT_STATE_SUCCEEDED,
       loomc_context_source_retention(loomc_module_context(module)), allocator,
       &result));
-  loomc_status_t status = loomc_module_verify_structural(module, result);
+  loomc_target_environment_t* target_environment =
+      loomc_context_target_environment(loomc_module_context(module));
+  loomc_status_t status =
+      target_environment != NULL
+          ? loomc_module_verify(module, target_environment, result)
+          : loomc_module_verify_structural(module, result);
   if (loomc_status_is_ok(status)) {
     if (loomc_result_succeeded(result)) {
       *out_view = (loomc_module_interop_view_t){

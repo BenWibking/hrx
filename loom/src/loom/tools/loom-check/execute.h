@@ -156,6 +156,8 @@ typedef struct loom_check_emit_provider_request_t {
   // Original source admission request. Source-consuming providers admit this
   // input through the public compiler and receive no internal |module|.
   const loom_input_request_t* input_request;
+  // Finalized runner context for checker-owned inspection IR.
+  loom_context_t* context;
   // Runner environment that selected this provider.
   const loom_check_environment_t* environment;
   // Module admitted by the selected input provider.

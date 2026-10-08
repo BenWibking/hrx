@@ -24,14 +24,9 @@
 #include "loom/codegen/low/frame.h"
 #include "loom/codegen/low/function.h"
 #include "loom/codegen/low/target_binding.h"
-#include "loom/codegen/low/text_asm.h"
 #include "loom/codegen/low/verify.h"
-#include "loom/error/diagnostic.h"
-#include "loom/format/text/parser.h"
-#include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/low/ops.h"
-#include "loom/ops/op_registry.h"
 #include "loom/target/arch/amdgpu/hal/kernel_abi.h"
 #include "loom/target/arch/amdgpu/planning/address_state.h"
 #include "loom/target/arch/amdgpu/planning/descriptor_semantics.h"
@@ -40,12 +35,13 @@
 #include "loom/target/arch/amdgpu/planning/placement.h"
 #include "loom/target/arch/amdgpu/planning/storage_lease.h"
 #include "loom/target/arch/amdgpu/planning/vopd_plan.h"
-#include "loom/target/arch/amdgpu/provider.h"
 #include "loom/target/emit/native/amdgpu/packet_plan_attention_bf16.h"
 #include "loom/target/low_descriptor_registry.h"
 #include "loom/target/provider.h"
-#include "loom/tooling/compile/pipeline.h"
-#include "loom/transforms/cleanup/configured.h"
+#include "loomc/interop.h"
+#include "loomc/iree.h"
+#include "loomc/loomc.h"
+#include "loomc/target/amdgpu.h"
 
 namespace {
 
@@ -163,6 +159,22 @@ static void AbortOnError(iree_status_t status) {
   if (!iree_status_is_ok(status)) {
     iree_status_abort(status);
   }
+}
+
+static void AbortOnFailedResult(const loomc_result_t* result) {
+  if (result != nullptr && loomc_result_succeeded(result)) {
+    return;
+  }
+  if (result != nullptr) {
+    for (loomc_host_size_t i = 0; i < loomc_result_diagnostic_count(result);
+         ++i) {
+      const loomc_diagnostic_t* diagnostic =
+          loomc_result_diagnostic_at(result, i);
+      std::fprintf(stderr, "%.*s\n", static_cast<int>(diagnostic->message.size),
+                   diagnostic->message.data);
+    }
+  }
+  std::abort();
 }
 
 static loom_op_t* FindFirstLowFunction(loom_module_t* module) {
@@ -459,8 +471,6 @@ class PacketPlanFixture {
  public:
   PacketPlanFixture(const FixtureSpec& spec, PlanComponent component) {
     iree_arena_block_pool_initialize(kArenaBlockSize, iree_allocator_system(),
-                                     &module_block_pool_);
-    iree_arena_block_pool_initialize(kArenaBlockSize, iree_allocator_system(),
                                      &frame_block_pool_);
     iree_arena_block_pool_initialize(kArenaBlockSize, iree_allocator_system(),
                                      &plan_block_pool_);
@@ -468,15 +478,31 @@ class PacketPlanFixture {
     iree_arena_initialize(&plan_block_pool_, &plan_arena_);
     iree_arena_initialize(&plan_block_pool_, &transient_arena_);
 
-    AbortOnError(loom_target_environment_initialize(
-        &loom_amdgpu_target_provider_set, &target_environment_));
-    loom_context_initialize(iree_allocator_system(), &context_);
-    AbortOnError(loom_op_registry_register_all_dialects(&context_));
-    AbortOnError(loom_target_environment_register_context(&target_environment_,
-                                                          &context_));
-    AbortOnError(loom_context_finalize(&context_));
-    target_registry_ =
-        loom_target_environment_low_descriptor_registry(&target_environment_);
+    const loomc_allocator_t compiler_allocator = loomc_allocator_system();
+    AbortOnError(iree_status_from_loomc(loomc_target_environment_create_amdgpu(
+        compiler_allocator, &target_environment_)));
+    native_target_environment_ =
+        loomc_target_environment_get_interop_view(target_environment_);
+    if (native_target_environment_ == nullptr) {
+      std::abort();
+    }
+    target_registry_ = loom_target_environment_low_descriptor_registry(
+        native_target_environment_);
+    loomc_context_target_options_t target_options = {
+        /*.type=*/LOOMC_STRUCTURE_TYPE_CONTEXT_TARGET_OPTIONS,
+        /*.structure_size=*/sizeof(target_options),
+        /*.next=*/nullptr,
+        /*.target_environment=*/target_environment_,
+    };
+    loomc_context_options_t context_options = {
+        /*.type=*/LOOMC_STRUCTURE_TYPE_CONTEXT_OPTIONS,
+        /*.structure_size=*/sizeof(context_options),
+        /*.next=*/&target_options,
+    };
+    AbortOnError(iree_status_from_loomc(
+        loomc_context_create(&context_options, compiler_allocator, &context_)));
+    AbortOnError(iree_status_from_loomc(loomc_workspace_create(
+        /*options=*/nullptr, compiler_allocator, &workspace_)));
 
     std::string generated_source;
     iree_string_view_t source = iree_string_view_empty();
@@ -487,39 +513,56 @@ class PacketPlanFixture {
       source = iree_make_string_view(generated_source.data(),
                                      generated_source.size());
     }
-    loom_text_parse_options_t parse_options = {
-        /*.diagnostic_sink=*/{loom_diagnostic_stderr_sink, nullptr},
-        /*.max_errors=*/20,
+    const loomc_source_options_t source_options = {
+        /*.type=*/LOOMC_STRUCTURE_TYPE_SOURCE_OPTIONS,
+        /*.structure_size=*/sizeof(source_options),
+        /*.next=*/nullptr,
+        /*.format=*/LOOMC_SOURCE_FORMAT_TEXT,
+        /*.identifier=*/loomc_make_cstring_view(spec.name),
+        /*.contents=*/loomc_make_byte_span(source.data, source.size),
+        /*.storage=*/LOOMC_SOURCE_STORAGE_COPY,
     };
-    loom_low_descriptor_text_asm_environment_initialize(
-        &target_registry_.registry, &parse_options.low_asm_environment);
-    AbortOnError(loom_text_parse(source, iree_make_cstring_view(spec.name),
-                                 &context_, &module_block_pool_, &parse_options,
-                                 &module_));
-    if (module_ == nullptr) {
-      std::abort();
-    }
+    loomc_source_t* compiler_source = nullptr;
+    AbortOnError(iree_status_from_loomc(loomc_source_create(
+        &source_options, compiler_allocator, &compiler_source)));
+    loomc_result_t* deserialize_result = nullptr;
+    AbortOnError(iree_status_from_loomc(loomc_module_deserialize_from_source(
+        context_, workspace_, compiler_source, /*options=*/nullptr,
+        compiler_allocator, &module_handle_, &deserialize_result)));
+    loomc_source_release(compiler_source);
+    AbortOnFailedResult(deserialize_result);
+    loomc_result_release(deserialize_result);
 
     if (spec.input_stage == FixtureInputStage::kAuthoredSource) {
-      loom_compile_pipeline_options_t pipeline_options = {};
-      loom_compile_pipeline_options_initialize(&pipeline_options);
-      pipeline_options.target_environment = &target_environment_;
-      pipeline_options.cleanup_pattern_provider_set =
-          loom_cleanup_configured_pattern_provider_set();
-      pipeline_options.diagnostic_sink = {
-          /*.fn=*/loom_diagnostic_stderr_sink,
-          /*.user_data=*/nullptr,
-      };
-      pipeline_options.max_errors = 20;
-      loom_compile_pipeline_result_t pipeline_result = {};
-      iree_status_t status = loom_compile_run_pipeline(
-          module_, &pipeline_options, &module_block_pool_, &pipeline_result);
-      const uint32_t error_count = pipeline_result.pass.error_count;
-      loom_compile_pipeline_result_deinitialize(&pipeline_result);
-      AbortOnError(status);
-      if (error_count != 0) {
-        std::abort();
-      }
+      loomc_compiler_t* compiler = nullptr;
+      AbortOnError(iree_status_from_loomc(loomc_compiler_create(
+          context_, /*options=*/nullptr, compiler_allocator, &compiler)));
+      loomc_pass_program_t* pass_program = nullptr;
+      loomc_result_t* program_result = nullptr;
+      AbortOnError(
+          iree_status_from_loomc(loomc_pass_program_create_from_target_pipeline(
+              context_, /*options=*/nullptr, compiler_allocator, &pass_program,
+              &program_result)));
+      AbortOnFailedResult(program_result);
+      loomc_result_release(program_result);
+      loomc_result_t* compile_result = nullptr;
+      AbortOnError(iree_status_from_loomc(loomc_compile_module(
+          compiler, workspace_, pass_program, module_handle_,
+          /*options=*/nullptr, compiler_allocator, &compile_result)));
+      AbortOnFailedResult(compile_result);
+      loomc_result_release(compile_result);
+      loomc_pass_program_release(pass_program);
+      loomc_compiler_release(compiler);
+    }
+
+    loomc_module_t* projected_module = nullptr;
+    AbortOnError(iree_status_from_loomc(loomc_module_clone(
+        module_handle_, workspace_, compiler_allocator, &projected_module)));
+    loomc_module_release(module_handle_);
+    module_handle_ = projected_module;
+    module_ = loomc_module_get_mutable_interop_view(module_handle_).module;
+    if (module_ == nullptr) {
+      std::abort();
     }
 
     loom_op_t* low_function = FindFirstLowFunction(module_);
@@ -604,14 +647,12 @@ class PacketPlanFixture {
     iree_arena_deinitialize(&transient_arena_);
     iree_arena_deinitialize(&plan_arena_);
     iree_arena_deinitialize(&frame_arena_);
-    if (module_ != nullptr) {
-      loom_module_free(module_);
-    }
-    loom_context_deinitialize(&context_);
-    loom_target_environment_deinitialize(&target_environment_);
+    loomc_module_release(module_handle_);
+    loomc_workspace_release(workspace_);
+    loomc_context_release(context_);
+    loomc_target_environment_release(target_environment_);
     iree_arena_block_pool_deinitialize(&plan_block_pool_);
     iree_arena_block_pool_deinitialize(&frame_block_pool_);
-    iree_arena_block_pool_deinitialize(&module_block_pool_);
   }
 
   PacketPlanFixture(const PacketPlanFixture&) = delete;
@@ -629,16 +670,18 @@ class PacketPlanFixture {
   const FrameAnalysis& analysis() const { return analysis_; }
 
  private:
-  iree_arena_block_pool_t module_block_pool_ = {};
   iree_arena_block_pool_t frame_block_pool_ = {};
   iree_arena_block_pool_t plan_block_pool_ = {};
   iree_arena_allocator_t frame_arena_ = {};
   iree_arena_allocator_t plan_arena_ = {};
   // Scratch storage discarded after each direct wait-plan build.
   iree_arena_allocator_t transient_arena_ = {};
-  loom_target_environment_t target_environment_ = {};
-  loom_context_t context_ = {};
+  loomc_target_environment_t* target_environment_ = nullptr;
+  const loom_target_environment_t* native_target_environment_ = nullptr;
+  loomc_context_t* context_ = nullptr;
+  loomc_workspace_t* workspace_ = nullptr;
   loom_target_low_descriptor_registry_t target_registry_ = {};
+  loomc_module_t* module_handle_ = nullptr;
   loom_module_t* module_ = nullptr;
   loom_low_emission_frame_t frame_ = {};
   // Address-state input prepared before the measured wait-planning stage.

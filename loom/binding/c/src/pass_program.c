@@ -19,6 +19,7 @@
 #include "loom/pass/tooling.h"
 #include "loom/target/pipeline.h"
 #include "loom/target/predicate.h"
+#include "loomc/interop.h"
 #include "loomc/iree.h"
 #include "loomc/target.h"
 #include "module.h"
@@ -310,7 +311,8 @@ loomc_pass_program_target_pipeline_options(
 }
 
 static loomc_status_t loomc_pass_program_build_target_pipeline(
-    loomc_pass_program_t* pass_program, loomc_target_pipeline_kind_t kind,
+    loomc_pass_program_t* pass_program,
+    loom_target_pipeline_build_fn_t build_pipeline,
     iree_string_view_t identifier,
     const loom_target_pipeline_options_t* pipeline_options,
     const loomc_pass_program_compile_state_t* state,
@@ -322,23 +324,11 @@ static loomc_status_t loomc_pass_program_build_target_pipeline(
     return loomc_make_status(LOOMC_STATUS_FAILED_PRECONDITION,
                              "context has no target environment");
   }
-
   loom_op_t* pipeline_op = NULL;
-  iree_status_t status = iree_ok_status();
-  switch (kind) {
-    case LOOMC_TARGET_PIPELINE_KIND_PREPARED_LOW:
-      status = loom_target_pipeline_build_to_prepared_low(
-          pass_program->pipeline_module, identifier, pipeline_options,
-          loomc_target_environment_loom_target_environment(target_environment),
-          state->compile_options.environment, &pipeline_op);
-      break;
-    case LOOMC_TARGET_PIPELINE_KIND_SOURCE_LOW:
-      status = loom_target_pipeline_build_to_source_low(
-          pass_program->pipeline_module, identifier, pipeline_options,
-          loomc_target_environment_loom_target_environment(target_environment),
-          state->compile_options.environment, &pipeline_op);
-      break;
-  }
+  iree_status_t status = build_pipeline(
+      pass_program->pipeline_module, identifier, pipeline_options,
+      loomc_target_environment_loom_target_environment(target_environment),
+      state->compile_options.environment, &pipeline_op);
   if (iree_status_is_ok(status)) {
     *out_pipeline_op = pipeline_op;
   }
@@ -353,8 +343,8 @@ static loomc_status_t loomc_pass_program_fail_result_from_status(
 }
 
 static loomc_status_t loomc_pass_program_create_target_pipeline_into_result(
-    loomc_context_t* context, loomc_target_pipeline_kind_t kind,
-    iree_string_view_t identifier,
+    loomc_context_t* context, loom_target_pipeline_build_fn_t build_pipeline,
+    loomc_pass_program_trace_stage_t trace_stage, iree_string_view_t identifier,
     const loom_target_pipeline_options_t* pipeline_options,
     loomc_allocator_t allocator, loomc_result_t* result,
     loomc_pass_program_t** out_pass_program) {
@@ -375,10 +365,7 @@ static loomc_status_t loomc_pass_program_create_target_pipeline_into_result(
   loomc_status_t status =
       loomc_pass_program_allocate_storage(context, allocator, &pass_program);
   if (loomc_status_is_ok(status)) {
-    pass_program->trace_stage =
-        kind == LOOMC_TARGET_PIPELINE_KIND_SOURCE_LOW
-            ? LOOMC_PASS_PROGRAM_TRACE_STAGE_SOURCE_LOW
-            : LOOMC_PASS_PROGRAM_TRACE_STAGE_PREPARED_LOW;
+    pass_program->trace_stage = trace_stage;
   }
   if (loomc_status_is_ok(status)) {
     status = loomc_pass_program_allocate_pipeline_module(pass_program,
@@ -390,8 +377,8 @@ static loomc_status_t loomc_pass_program_create_target_pipeline_into_result(
   }
   if (loomc_status_is_ok(status)) {
     status = loomc_pass_program_build_target_pipeline(
-        pass_program, kind, identifier, pipeline_options, &compile_state,
-        &pipeline_op);
+        pass_program, build_pipeline, identifier, pipeline_options,
+        &compile_state, &pipeline_op);
   }
   if (loomc_status_is_ok(status)) {
     status = loomc_pass_program_compile_pipeline_op_with_state(
@@ -426,9 +413,56 @@ loomc_status_t loomc_pass_program_create_from_internal_target_pipeline(
                              "context has no target environment");
   }
   return loomc_pass_program_create_target_pipeline_into_result(
-      context, LOOMC_TARGET_PIPELINE_KIND_PREPARED_LOW,
+      context, loom_target_pipeline_build_to_prepared_low,
+      LOOMC_PASS_PROGRAM_TRACE_STAGE_PREPARED_LOW,
       IREE_SV("__loomc_target_pipeline"), pipeline_options, allocator, result,
       out_pass_program);
+}
+
+loomc_status_t loomc_pass_program_create_from_native_source_low_pipeline(
+    loomc_context_t* context, loom_target_pipeline_build_fn_t build_pipeline,
+    loomc_string_view_t identifier,
+    const loom_target_pipeline_options_t* options, loomc_allocator_t allocator,
+    loomc_pass_program_t** out_pass_program, loomc_result_t** out_result) {
+  if (out_pass_program == NULL || out_result == NULL) {
+    return loomc_make_status(
+        LOOMC_STATUS_INVALID_ARGUMENT,
+        "out_pass_program and out_result must not be NULL");
+  }
+  *out_pass_program = NULL;
+  *out_result = NULL;
+  if (context == NULL || build_pipeline == NULL) {
+    return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
+                             "context and build_pipeline must not be NULL");
+  }
+  if (loomc_context_target_environment(context) == NULL) {
+    return loomc_make_status(LOOMC_STATUS_FAILED_PRECONDITION,
+                             "context has no target environment");
+  }
+
+  loomc_result_t* result = NULL;
+  LOOMC_RETURN_IF_ERROR(loomc_result_create(
+      LOOMC_RESULT_STATE_SUCCEEDED, loomc_context_source_retention(context),
+      allocator, &result));
+  const iree_string_view_t pipeline_identifier =
+      loomc_string_view_is_empty(identifier)
+          ? IREE_SV("__loomc_native_source_low_pipeline")
+          : iree_string_view_from_loomc(identifier);
+  const loom_target_pipeline_options_t pipeline_options =
+      options ? *options : (loom_target_pipeline_options_t){0};
+  loomc_pass_program_t* pass_program = NULL;
+  loomc_status_t status = loomc_pass_program_create_target_pipeline_into_result(
+      context, build_pipeline, LOOMC_PASS_PROGRAM_TRACE_STAGE_SOURCE_LOW,
+      pipeline_identifier, &pipeline_options, allocator, result, &pass_program);
+  if (loomc_status_is_ok(status)) {
+    *out_pass_program = pass_program;
+    *out_result = result;
+    pass_program = NULL;
+    result = NULL;
+  }
+  loomc_pass_program_release(pass_program);
+  loomc_result_release(result);
+  return status;
 }
 
 loomc_status_t loomc_pass_program_create_empty(
@@ -614,10 +648,18 @@ loomc_status_t loomc_pass_program_create_from_target_pipeline(
 
   const loom_target_pipeline_options_t internal_options =
       loomc_pass_program_target_pipeline_options(options, &option_chain);
+  loom_target_pipeline_build_fn_t build_pipeline =
+      loom_target_pipeline_build_to_prepared_low;
+  loomc_pass_program_trace_stage_t trace_stage =
+      LOOMC_PASS_PROGRAM_TRACE_STAGE_PREPARED_LOW;
+  if (options != NULL &&
+      options->kind == LOOMC_TARGET_PIPELINE_KIND_SOURCE_LOW) {
+    build_pipeline = loom_target_pipeline_build_to_source_low;
+    trace_stage = LOOMC_PASS_PROGRAM_TRACE_STAGE_SOURCE_LOW;
+  }
   loomc_pass_program_t* pass_program = NULL;
   loomc_status_t status = loomc_pass_program_create_target_pipeline_into_result(
-      context,
-      options ? options->kind : LOOMC_TARGET_PIPELINE_KIND_PREPARED_LOW,
+      context, build_pipeline, trace_stage,
       loomc_pass_program_target_pipeline_identifier(options), &internal_options,
       allocator, result, &pass_program);
 

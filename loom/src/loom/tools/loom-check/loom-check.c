@@ -19,8 +19,6 @@
 #endif  // LOOM_CHECK_HAVE_TEST_PROVIDER
 #if LOOM_CHECK_HAVE_TEST_PROVIDER
 #include "loom/tools/loom-check/test_provider.h"
-#else
-#include "loomc/target/configured.h"
 #endif  // LOOM_CHECK_HAVE_TEST_PROVIDER
 #ifndef LOOM_CHECK_HAVE_EMIT_AMDGPU
 #define LOOM_CHECK_HAVE_EMIT_AMDGPU 0
@@ -107,11 +105,6 @@ int main(int argc, char** argv) {
   IREE_TRACE_APP_ENTER();
   IREE_TRACE_ZONE_BEGIN(z0);
   const loom_check_compile_provider_t compile_provider = {
-#if LOOM_CHECK_HAVE_TEST_PROVIDER
-      .create_target_environment = loom_check_test_create_target_environment,
-#else
-      .create_target_environment = loomc_target_environment_create_configured,
-#endif  // LOOM_CHECK_HAVE_TEST_PROVIDER
       .import = loom_configured_input_loomc_importer(),
   };
   const loom_check_provider_set_t provider_set = {

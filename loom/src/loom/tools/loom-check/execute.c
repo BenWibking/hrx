@@ -19,17 +19,19 @@
 #include "loom/ir/context.h"
 #include "loom/ir/function_version.h"
 #include "loom/ir/module.h"
+#include "loom/ops/op_defs.h"
 #include "loom/pass/builtin_registry.h"
 #include "loom/pass/report.h"
 #include "loom/pass/tooling.h"
 #include "loom/target/predicate.h"
 #include "loom/target/provider.h"
 #include "loom/target/reporting/format.h"
+#include "loom/target/selection.h"
+#include "loom/target/specialization.h"
 #include "loom/tools/loom-check/comparison.h"
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loom/tools/loom-check/input.h"
 #include "loom/tools/loom-check/requirements.h"
-#include "loom/tools/loom-check/source_low.h"
 #include "loom/tools/loom-format/convert.h"
 #include "loom/transforms/cleanup/patterns.h"
 #include "loom/util/diff.h"
@@ -401,6 +403,15 @@ typedef enum loom_check_pass_output_kind_e {
   LOOM_CHECK_PASS_OUTPUT_PASS_REPORT = 2,
 } loom_check_pass_output_kind_t;
 
+typedef struct loom_check_pass_target_request_t {
+  // Optional source function to specialize.
+  iree_string_view_t function_name;
+  // Complete family:selector target spelling.
+  iree_string_view_t target;
+  // True when |target| was explicitly supplied.
+  bool has_target;
+} loom_check_pass_target_request_t;
+
 static loom_text_print_flags_t loom_check_pass_print_flags(
     const loom_test_case_t* test_case) {
   loom_text_print_flags_t flags =
@@ -418,8 +429,8 @@ static loom_text_print_flags_t loom_check_pass_print_flags(
 // to this front door. A named pipeline starts with '@', so an explicit entry
 // uses entry=@function instead of overloading the pipeline spelling.
 static iree_status_t loom_check_parse_pass_target(
-    iree_string_view_t* pipeline, loom_check_source_low_request_t* request) {
-  *request = (loom_check_source_low_request_t){0};
+    iree_string_view_t* pipeline, loom_check_pass_target_request_t* request) {
+  *request = (loom_check_pass_target_request_t){0};
   *pipeline = iree_string_view_trim(*pipeline);
   while (iree_string_view_starts_with(*pipeline, IREE_SV("target=")) ||
          iree_string_view_starts_with(*pipeline, IREE_SV("entry="))) {
@@ -430,13 +441,12 @@ static iree_status_t loom_check_parse_pass_target(
     iree_string_view_t value;
     iree_string_view_split(token, '=', &name, &value);
     if (iree_string_view_equal(name, IREE_SV("target"))) {
-      if (iree_any_bit_set(request->options,
-                           LOOM_CHECK_SOURCE_LOW_OPTION_TARGET)) {
+      if (request->has_target) {
         return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                                 "duplicate pass option 'target'");
       }
       request->target = value;
-      request->options |= LOOM_CHECK_SOURCE_LOW_OPTION_TARGET;
+      request->has_target = true;
     } else {
       if (value.size <= 1 || value.data[0] != '@' ||
           !iree_string_view_is_empty(request->function_name)) {
@@ -447,12 +457,51 @@ static iree_status_t loom_check_parse_pass_target(
     }
   }
   if (!iree_string_view_is_empty(request->function_name) &&
-      !iree_any_bit_set(request->options,
-                        LOOM_CHECK_SOURCE_LOW_OPTION_TARGET)) {
+      !request->has_target) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "pass entry requires target=family:selector");
   }
   return iree_ok_status();
+}
+
+static iree_status_t loom_check_resolve_pass_target(
+    const loom_module_t* module, const loom_target_environment_t* environment,
+    iree_string_view_t function_name,
+    const loom_target_specification_t* specification,
+    loom_target_specialization_request_t* out_request) {
+  *out_request = (loom_target_specialization_request_t){0};
+  if (iree_string_view_is_empty(function_name)) {
+    iree_host_size_t definition_count = 0;
+    iree_host_size_t public_count = 0;
+    for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
+      const loom_symbol_t* symbol = &module->symbols.entries[i];
+      const loom_func_like_t function =
+          loom_func_like_const_cast(module, symbol->defining_op);
+      if (loom_func_like_body(function) == NULL) {
+        continue;
+      }
+      ++definition_count;
+      const bool is_public =
+          iree_any_bit_set(symbol->flags, LOOM_SYMBOL_FLAG_PUBLIC);
+      public_count += is_public;
+      if (definition_count == 1 || is_public) {
+        function_name =
+            loom_string_table_get(&module->strings, symbol->name_id);
+      }
+    }
+    if (definition_count == 0 || (definition_count > 1 && public_count != 1)) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "target compile option requires one function definition or one "
+          "public entry with private helpers; specify @function for an "
+          "ambiguous module (got %" PRIhsz " definitions and %" PRIhsz
+          " public entries)",
+          definition_count, public_count);
+    }
+  }
+  out_request->function_name = function_name;
+  return loom_target_environment_select_profile(environment, specification,
+                                                &out_request->target_profile);
 }
 
 static iree_status_t loom_check_execute_pass_with_output(
@@ -532,7 +581,7 @@ static iree_status_t loom_check_execute_pass_with_output(
   loom_function_version_owner_t function_versions;
   loom_function_version_owner_initialize(&diagnostic_arena, &function_versions);
   iree_string_view_t pipeline = test_case->pipeline;
-  loom_check_source_low_request_t target_request;
+  loom_check_pass_target_request_t target_request;
   if (iree_status_is_ok(status)) {
     status = loom_check_parse_pass_target(&pipeline, &target_request);
   }
@@ -547,13 +596,12 @@ static iree_status_t loom_check_execute_pass_with_output(
     }
   }
   if (iree_status_is_ok(status) && run_result.error_count == 0 &&
-      iree_any_bit_set(target_request.options,
-                       LOOM_CHECK_SOURCE_LOW_OPTION_TARGET)) {
+      target_request.has_target) {
     loom_target_specification_t target = {0};
     loom_target_specialization_request_t specialization;
     status = loom_target_specification_parse(target_request.target, &target);
     if (iree_status_is_ok(status)) {
-      status = loom_check_resolve_source_target(
+      status = loom_check_resolve_pass_target(
           module, environment->target_environment, target_request.function_name,
           &target, &specialization);
     }

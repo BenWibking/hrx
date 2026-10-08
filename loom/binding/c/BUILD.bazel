@@ -290,7 +290,9 @@ loom_cc_library(
         ":loomc",
         "//loom/src/loom/error:source",
         "//loom/src/loom/ir",
+        "//loom/src/loom/target:pipeline",
         "//loom/src/loom/target:provider",
+        "//loom/src/loom/target/reporting:report",
     ],
 )
 
