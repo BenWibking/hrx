@@ -1642,10 +1642,15 @@ typedef struct loom_amdgpu_memory_packet_plan_t {
   // First byte moved in the packed source/result register payload. Packets at
   // offset 2 within a register complete the preceding zero-extended halfword.
   uint32_t payload_byte_offset;
+  // Exact store payload words, or NULL when the packet consumes its SSA value.
+  // When present, contains payload_register_count words in source order.
+  const uint32_t* constant_words;
 } loom_amdgpu_memory_packet_plan_t;
 
 // Immutable function-retained direct-memory packet plan.
 typedef struct loom_amdgpu_memory_access_plan_t {
+  // Selected complete load carrier, or invalid for stores.
+  loom_type_id_t result_type;
   // Number of populated packet plans.
   uint32_t packet_count;
   // Direct memory packets emitted in increasing payload-byte order. The
