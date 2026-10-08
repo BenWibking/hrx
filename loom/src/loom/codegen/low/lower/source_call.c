@@ -368,6 +368,27 @@ iree_status_t loom_low_lower_source_invoke_plan(
   return iree_ok_status();
 }
 
+iree_status_t loom_low_lower_source_invoke_finalize(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    const loom_low_lower_source_invoke_plan_t* plan) {
+  const loom_value_slice_t operands = loom_low_invoke_operands(source_op);
+  const loom_type_id_t* type_ids = (const loom_type_id_t*)(plan + 1);
+  for (uint16_t i = 0; i < operands.count; ++i) {
+    const loom_type_t actual_type =
+        loom_low_lower_value_binding_type(context, operands.values[i]);
+    const loom_type_t expected_type =
+        loom_type_table_get(&context->module->types, type_ids[i]);
+    if (!loom_type_equal(actual_type, expected_type)) {
+      return loom_low_source_call_emit_type_error(
+          context, source_op,
+          loom_low_source_call_symbol_name(context->module,
+                                           loom_low_invoke_callee(source_op)),
+          IREE_SV("operand"), actual_type, expected_type);
+    }
+  }
+  return iree_ok_status();
+}
+
 iree_status_t loom_low_lower_source_invoke(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_low_lower_source_invoke_plan_t* plan) {
@@ -384,16 +405,8 @@ iree_status_t loom_low_lower_source_invoke(
   for (uint16_t i = 0; i < source_operands.count; ++i) {
     IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
         context, source_operands.values[i], &low_operands[i]));
-    const loom_type_t actual_type =
-        loom_module_value_type(module, low_operands[i]);
     const loom_type_t expected_type =
         loom_type_table_get(&module->types, type_ids[i]);
-    if (!loom_type_equal(actual_type, expected_type)) {
-      return loom_low_source_call_emit_type_error(
-          context, source_op,
-          loom_low_source_call_symbol_name(module, callee_ref),
-          IREE_SV("operand"), actual_type, expected_type);
-    }
     IREE_RETURN_IF_ERROR(loom_low_lower_materialize_structural_operand(
         context, source_op, i, source_operands.values[i], expected_type,
         &low_operands[i]));

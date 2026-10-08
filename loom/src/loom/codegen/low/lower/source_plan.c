@@ -1129,9 +1129,6 @@ static iree_status_t loom_low_lower_finalize_selected_plans(
           loom_low_lower_rule_plan_finalize(context, selected_plan);
       loom_low_lower_planning_scope_end(context);
       IREE_RETURN_IF_ERROR(status);
-      if (context->result->error_count != 0) {
-        return iree_ok_status();
-      }
     } else if (selected_plan->kind ==
                    LOOM_LOW_LOWER_SELECTED_PLAN_DESCRIPTOR_MATRIX &&
                !iree_any_bit_set(selected_plan->flags,
@@ -1154,9 +1151,12 @@ static iree_status_t loom_low_lower_finalize_selected_plans(
       IREE_RETURN_IF_ERROR(context->policy->finalize_plan.fn(
           context->policy->finalize_plan.user_data, context,
           selected_plan->source_op, selected_plan->data.target_plan));
-      if (context->result->error_count != 0) {
-        return iree_ok_status();
-      }
+    } else if (selected_plan->kind == LOOM_LOW_LOWER_SELECTED_PLAN_INVOKE) {
+      IREE_RETURN_IF_ERROR(loom_low_lower_source_invoke_finalize(
+          context, selected_plan->source_op, selected_plan->data.invoke));
+    }
+    if (context->result->error_count != 0) {
+      return iree_ok_status();
     }
     if (!loom_low_lower_selected_plan_preserves_volatile_memory(
             context->module, selected_plan)) {

@@ -621,9 +621,15 @@ TEST_F(LowLowerSourcePlanTest, RejectsEntryResourcesBeforeLowConstruction) {
             function_.op);
 }
 
-TEST_F(LowLowerSourcePlanTest, RejectsHelperPreconditionBeforeLowConstruction) {
-  // Produce a real native helper through the same lowering interface, then
-  // give its first argument a precondition the new caller cannot establish.
+enum class HelperConstraint { kPredicate, kOperandCarrier };
+
+class LowLowerHelperPlanTest
+    : public LowLowerSourcePlanTest,
+      public ::testing::WithParamInterface<HelperConstraint> {};
+
+TEST_P(LowLowerHelperPlanTest, RejectsConstraintBeforeLowConstruction) {
+  // Produce the helper through the ordinary lowering interface. The new caller
+  // violates either its first argument's predicate or its native carrier.
   IREE_ASSERT_OK(
       loom_low_lower_function(module_, function_, &options_, &result_));
   ASSERT_EQ(result_.error_count, 0u);
@@ -632,18 +638,20 @@ TEST_F(LowLowerSourcePlanTest, RejectsHelperPreconditionBeforeLowConstruction) {
   const loom_symbol_ref_t helper_ref = loom_func_like_callee(helper);
   const loom_value_id_t helper_argument =
       loom_region_entry_arg_id(loom_func_like_body(helper), 0);
-  loom_predicate_t* predicate = nullptr;
-  IREE_ASSERT_OK(iree_arena_allocate(&module_->arena, sizeof(*predicate),
-                                     reinterpret_cast<void**>(&predicate)));
-  *predicate = {};
-  predicate->kind = LOOM_PREDICATE_GE;
-  predicate->arg_count = 2;
-  predicate->arg_tags[0] = LOOM_PRED_ARG_VALUE;
-  predicate->arg_tags[1] = LOOM_PRED_ARG_CONST;
-  predicate->args[0] = helper_argument;
-  IREE_ASSERT_OK(loom_op_set_attr(module_, helper.op,
-                                  helper.vtable->predicates_attr_index,
-                                  loom_attr_predicate_list(predicate, 1)));
+  if (GetParam() == HelperConstraint::kPredicate) {
+    loom_predicate_t* predicate = nullptr;
+    IREE_ASSERT_OK(iree_arena_allocate(&module_->arena, sizeof(*predicate),
+                                       reinterpret_cast<void**>(&predicate)));
+    *predicate = {};
+    predicate->kind = LOOM_PREDICATE_GE;
+    predicate->arg_count = 2;
+    predicate->arg_tags[0] = LOOM_PRED_ARG_VALUE;
+    predicate->arg_tags[1] = LOOM_PRED_ARG_CONST;
+    predicate->args[0] = helper_argument;
+    IREE_ASSERT_OK(loom_op_set_attr(module_, helper.op,
+                                    helper.vtable->predicates_attr_index,
+                                    loom_attr_predicate_list(predicate, 1)));
+  }
   loom_low_lower_result_deinitialize(&result_);
   result_ = {};
   observer_.type_mapping.emission_started = false;
@@ -657,10 +665,18 @@ TEST_F(LowLowerSourcePlanTest, RejectsHelperPreconditionBeforeLowConstruction) {
   loom_builder_initialize(module_, &module_->arena, entry, &builder);
   loom_builder_set_before(&builder, entry->last_op);
   const loom_type_t i32_type = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
+  loom_value_id_t operands[] = {entry->arg_ids[0], entry->arg_ids[1]};
+  if (GetParam() == HelperConstraint::kOperandCarrier) {
+    loom_op_t* bitcast = nullptr;
+    IREE_ASSERT_OK(loom_scalar_bitcast_build(
+        &builder, operands[0], i32_type, loom_type_scalar(LOOM_SCALAR_TYPE_F32),
+        LOOM_LOCATION_UNKNOWN, &bitcast));
+    operands[0] = loom_scalar_bitcast_result(bitcast);
+  }
   loom_op_t* invoke = nullptr;
   IREE_ASSERT_OK(loom_low_invoke_build(
       &builder, /*build_flags=*/0, /*purity=*/0, /*inline_policy=*/0,
-      helper_ref, entry->arg_ids, entry->arg_count, &i32_type, 1,
+      helper_ref, operands, IREE_ARRAYSIZE(operands), &i32_type, 1,
       /*tied_results=*/nullptr, /*tied_result_count=*/0, LOOM_LOCATION_UNKNOWN,
       &invoke));
   IREE_ASSERT_OK(loom_value_fact_table_initialize(
@@ -684,6 +700,15 @@ TEST_F(LowLowerSourcePlanTest, RejectsHelperPreconditionBeforeLowConstruction) {
   EXPECT_EQ(module_->symbols.entries[helper_ref.symbol_id].defining_op,
             helper.op);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    HelperConstraints, LowLowerHelperPlanTest,
+    ::testing::Values(HelperConstraint::kPredicate,
+                      HelperConstraint::kOperandCarrier),
+    [](const ::testing::TestParamInfo<HelperConstraint>& info) {
+      return info.param == HelperConstraint::kPredicate ? "Predicate"
+                                                        : "OperandCarrier";
+    });
 
 TEST_F(LowLowerSourcePlanTest,
        LowersNonFuncDialectCallableBoundaryThroughInterfaces) {
