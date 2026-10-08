@@ -13,7 +13,6 @@
 #include "loom/tooling/input/configured.h"
 #include "loom/tooling/input/loomc_configured.h"
 #include "loom/tools/iree-test-loom/main.h"
-#include "loom/transforms/cleanup/configured.h"
 #include "loomc/iree.h"
 #include "loomc/target/configured.h"
 
@@ -145,8 +144,6 @@ int main(int argc, char** argv) {
       .tool_name = "iree-test-loom",
       .target_environment = target_environment,
       .import = loom_configured_input_loomc_importer(),
-      .cleanup_pattern_provider_set =
-          loom_cleanup_configured_pattern_provider_set(),
 #if IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
       .hal_target_routes = hal_target_routes,
       .hal_target_route_count = IREE_ARRAYSIZE(hal_target_routes),

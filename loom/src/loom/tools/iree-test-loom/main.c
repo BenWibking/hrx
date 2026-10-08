@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "iree/base/api.h"
+#include "iree/base/internal/arena.h"
 #include "iree/base/internal/path.h"
 #include "iree/base/tooling/flags.h"
 #include "iree/io/stdio_stream.h"
@@ -86,6 +87,8 @@ IREE_FLAG_LIST_NAMED(
     "A pass is valid, while any other diagnostic fails the run.");
 
 enum {
+  // Total bytes retained per runner scratch arena block.
+  IREE_TEST_LOOM_BLOCK_POOL_BLOCK_SIZE = 128 * 1024,
   // Target-linked requirement providers.
   IREE_TEST_LOOM_MAX_REQUIREMENT_PROVIDERS = 8,
   // Trials submitted through one prepared product callback.
@@ -877,6 +880,9 @@ int iree_test_loom_main(int argc, char** argv,
   iree_flags_parse_checked(IREE_FLAGS_PARSE_MODE_DEFAULT, &argc, &argv);
 
   iree_allocator_t allocator = iree_allocator_system();
+  iree_arena_block_pool_t block_pool;
+  iree_arena_block_pool_initialize(IREE_TEST_LOOM_BLOCK_POOL_BLOCK_SIZE,
+                                   allocator, &block_pool);
   loom_tooling_config_set_t config_set;
   loom_tooling_config_set_initialize(allocator, &config_set);
   loomc_config_binding_t* config_bindings = NULL;
@@ -888,8 +894,8 @@ int iree_test_loom_main(int argc, char** argv,
   loomc_pass_program_t* pass_program = NULL;
   loomc_target_profile_t* requested_target_profile = NULL;
   loomc_module_interop_view_t module_view = {0};
-  loom_run_session_t session = {0};
-  loom_run_module_t run_module = {0};
+  const loom_module_t* native_module = NULL;
+  const loom_source_table_resolver_t* source_table = NULL;
   loom_sanitizer_options_t sanitizer_options = {0};
   loomc_sanitizer_options_t loomc_sanitizer_options = {0};
   loom_run_hal_testbench_context_t hal_context = {0};
@@ -1000,9 +1006,6 @@ int iree_test_loom_main(int argc, char** argv,
                                                   &loomc_sanitizer_options);
   }
 
-  const loom_target_environment_t* native_target_environment =
-      loomc_target_environment_get_interop_view(
-          configuration->target_environment);
   if (iree_status_is_ok(status)) {
     const loomc_context_target_options_t target_options = {
         .type = LOOMC_STRUCTURE_TYPE_CONTEXT_TARGET_OPTIONS,
@@ -1030,15 +1033,6 @@ int iree_test_loom_main(int argc, char** argv,
                               loomc_allocator_from_iree(allocator), &compiler));
   }
   if (iree_status_is_ok(status)) {
-    loom_run_session_options_t session_options = {0};
-    loom_run_session_options_initialize(&session_options);
-    session_options.host_allocator = allocator;
-    session_options.target_environment = native_target_environment;
-    session_options.cleanup_pattern_provider_set =
-        configuration->cleanup_pattern_provider_set;
-    status = loom_run_session_initialize(&session_options, &session);
-  }
-  if (iree_status_is_ok(status)) {
     loom_run_hal_testbench_context_initialize(
         configuration->target_environment, configuration->hal_target_routes,
         configuration->hal_target_route_count, allocator, &hal_context);
@@ -1064,8 +1058,7 @@ int iree_test_loom_main(int argc, char** argv,
   if (iree_status_is_ok(status)) {
     status = iree_test_loom_admit_module(
         configuration, &input_options, input_path, compiler_context,
-        compiler_workspace, loom_run_session_block_pool(&session), allocator,
-        &module);
+        compiler_workspace, &block_pool, allocator, &module);
   }
   if (iree_status_is_ok(status)) {
     const iree_flag_string_list_t libraries = FLAG_library_list();
@@ -1075,8 +1068,7 @@ int iree_test_loom_main(int argc, char** argv,
             .count = libraries.count,
             .values = libraries.values,
         },
-        compiler_context, compiler_workspace,
-        loom_run_session_block_pool(&session), allocator, &module);
+        compiler_context, compiler_workspace, &block_pool, allocator, &module);
   }
   if (iree_status_is_ok(status)) {
     loomc_result_t* result = NULL;
@@ -1091,11 +1083,8 @@ int iree_test_loom_main(int argc, char** argv,
   if (iree_status_is_ok(status)) {
     // Execution providers only inspect or independently clone this
     // exact-version native view. The public module retains all borrowed state.
-    run_module = (loom_run_module_t){
-        .module = (loom_module_t*)module_view.module,
-        .filename = filename,
-        .sources = {.table = *module_view.source_table},
-    };
+    native_module = module_view.module;
+    source_table = module_view.source_table;
   }
   const iree_string_view_t requested_target =
       iree_string_view_trim(iree_make_cstring_view(FLAG_target));
@@ -1124,15 +1113,14 @@ int iree_test_loom_main(int argc, char** argv,
   }
 
   if (iree_status_is_ok(status)) {
-    iree_arena_initialize(loom_run_session_block_pool(&session), &plan_arena);
-    iree_arena_initialize(loom_run_session_block_pool(&session),
-                          &execution_arena);
+    iree_arena_initialize(&block_pool, &plan_arena);
+    iree_arena_initialize(&block_pool, &execution_arena);
     loom_testbench_plan_options_t plan_options = {0};
     loom_testbench_plan_options_initialize(&plan_options);
     plan_options.max_samples_per_case =
         (iree_host_size_t)FLAG_max_samples_per_case;
     loom_testbench_module_plan_t module_plan = {0};
-    status = loom_testbench_plan_module(run_module.module, &plan_options,
+    status = loom_testbench_plan_module(native_module, &plan_options,
                                         &plan_arena, &module_plan);
     const iree_string_view_t selected_case_name =
         iree_test_loom_normalize_case_name(iree_make_cstring_view(FLAG_case));
@@ -1182,7 +1170,7 @@ int iree_test_loom_main(int argc, char** argv,
         scenario_execution_options.target =
             configuration->scenario_target_profile.fn(
                 configuration->scenario_target_profile.user_data, &compilation,
-                &run_module.sources.table, &config_set,
+                source_table, &config_set,
                 iree_test_loom_diagnostic_capture_sink(&diagnostic_capture),
                 compile_result_callback);
       }
@@ -1190,7 +1178,7 @@ int iree_test_loom_main(int argc, char** argv,
         scenario_execution_options.oracle =
             configuration->scenario_oracle_profile.fn(
                 configuration->scenario_oracle_profile.user_data, &compilation,
-                &run_module.sources.table, &config_set,
+                source_table, &config_set,
                 iree_test_loom_diagnostic_capture_sink(&diagnostic_capture),
                 compile_result_callback);
       }
@@ -1235,7 +1223,7 @@ int iree_test_loom_main(int argc, char** argv,
                 .context = &hal_context,
                 .compilation = &compilation,
                 .module = module,
-                .native_module = run_module.module,
+                .native_module = native_module,
                 .pass_program = pass_program,
                 .requested_target_profile = requested_target_profile,
                 .sanitizer =
@@ -1245,7 +1233,7 @@ int iree_test_loom_main(int argc, char** argv,
         loom_run_hal_testbench_scenario_profile_initialize(
             iree_string_view_is_empty(target) ? hal_context.driver_name
                                               : target,
-            &provider_options, &run_module.sources.table,
+            &provider_options, source_table,
             iree_test_loom_diagnostic_capture_sink(&diagnostic_capture),
             &hal_scenario_profile);
         scenario_execution_options.target =
@@ -1292,7 +1280,7 @@ int iree_test_loom_main(int argc, char** argv,
             &module_plan, case_plan, &planning_issues, &planning_issue_count);
       } else {
         status = iree_test_loom_run_case_samples(
-            configuration, &compilation, run_module.module, &module_plan,
+            configuration, &compilation, native_module, &module_plan,
             case_index, &execution_options, pass_program,
             requested_target_profile,
             sanitizer_enabled ? &loomc_sanitizer_options : NULL,
@@ -1461,7 +1449,7 @@ int iree_test_loom_main(int argc, char** argv,
   if (device_event_capture_initialized) {
     loom_testbench_device_event_capture_deinitialize(&device_event_capture);
   }
-  loom_run_session_deinitialize(&session);
+  iree_arena_block_pool_deinitialize(&block_pool);
   loomc_target_profile_release(requested_target_profile);
   loomc_pass_program_release(pass_program);
   loomc_module_release(module);
