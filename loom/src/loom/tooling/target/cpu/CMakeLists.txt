@@ -29,16 +29,19 @@ loom_cc_library(
 endif()
 
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
-iree_native_test(
+loom_execution_test(
   NAME
-    "array_records_test"
-  ARGS
-    "{{$<TARGET_FILE:loom::import::cxx::test::array_records_module>}}"
-    "--device=task"
-  SRC
-    loom::tools::iree-test-loom
-  DATA
+    array_records_test_execute_x86_task_hardware_test
+  CORRECTNESS_ONLY
+  MODULE
     "loom::import::cxx::test::array_records_module"
+  RUNNER_ARGS
+    "--device=task"
+  LABELS
+    "loom-execution-profile=x86_task_hardware"
+    "loom-target-family=x86"
+    "loom-target-class=cpu"
+    "loom-executor=hardware"
 )
 endif()
 
