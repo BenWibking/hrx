@@ -86,9 +86,14 @@ typedef struct loom_value_fact_vector_iota_t {
   loom_value_facts_t base;
   // Facts for the logical lane-ordinal delta.
   loom_value_facts_t step;
+  // Fixed-width signed coordinate carrier. Zero retains the mathematical
+  // source-index domain instead of applying modular payload arithmetic.
+  uint8_t bit_count;
 } loom_value_fact_vector_iota_t;
 
-// Vector value is a prefix mask produced by vector.mask.range.
+// Vector value is a range mask produced by vector.mask.range. These operand
+// facts do not establish a prefix: fixed-width coordinate arithmetic may wrap,
+// and a negative step can produce a suffix instead.
 typedef struct loom_value_fact_vector_prefix_mask_t {
   // Facts for the first tested coordinate.
   loom_value_facts_t lower_bound;
@@ -550,13 +555,27 @@ bool loom_value_facts_query_vector_iota(const loom_fact_context_t* context,
                                         loom_value_facts_t facts,
                                         loom_value_fact_vector_iota_t* out);
 
+// Evaluates one coordinate using the sequence's arithmetic domain. Unknown
+// operands or an unrepresentable mathematical index produce unknown facts.
+// Fixed-width coordinates wrap modulo their declared width, including i64.
+loom_value_facts_t loom_value_fact_vector_iota_element(
+    loom_value_fact_vector_iota_t iota, uint64_t lane_ordinal);
+
+// Bounds all coordinates without signed wrap. The lane count is an exact count
+// or an upper bound; UINT64_MAX is unknown. The empty interval is [0, -1].
+// Returns false when the mathematical endpoints cannot be represented in the
+// coordinate domain. This is not a bound on a wrapping sequence.
+bool loom_value_fact_vector_iota_bounds(loom_value_fact_vector_iota_t iota,
+                                        uint64_t maximum_lane_count,
+                                        int64_t* out_lower, int64_t* out_upper);
+
 // Returns inclusive integer bounds across every logical lane represented by a
 // uniform-element, small-static-lanes, or vector-iota extension. Iota bounds
 // use |maximum_lane_count| as either the exact static lane count or a proven
 // upper bound; UINT64_MAX means the lane count is unavailable. Empty explicit
 // lane lists and zero-count iotas report the canonical empty interval [0, -1].
-// Returns false when any lane is floating point or unbounded, the iota step is
-// not exact, arithmetic overflows, or |facts| has another extension kind.
+// Returns false when any lane is floating point or unbounded, an iota may wrap,
+// or |facts| has another extension kind.
 bool loom_value_facts_query_vector_integer_bounds(
     const loom_fact_context_t* context, loom_value_facts_t facts,
     uint64_t maximum_lane_count, int64_t* out_lower, int64_t* out_upper);

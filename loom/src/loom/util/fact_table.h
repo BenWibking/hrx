@@ -189,6 +189,9 @@ struct loom_value_fact_table_t {
   // At least one structured region entry has Boolean branch semantics.
   bool has_boolean_branch_regions;
 
+  // This fact scope has published at least one counted-loop domain.
+  bool has_counted_loop_domains;
+
   // Structured region entries with visible projected integer relations.
   uint32_t condition_integer_projection_count;
 
@@ -428,6 +431,13 @@ static inline loom_value_facts_t loom_value_fact_table_lookup(
   }
   return table->entries[value_id];
 }
+
+// Returns a shaped type's maximum element count from its static dimensions and
+// indexed dynamic-extent facts. UINT64_MAX denotes an unavailable or
+// overflowing bound. Work is bounded by the type's rank and allocates no
+// storage.
+uint64_t loom_value_fact_table_maximum_element_count(
+    const loom_value_fact_table_t* table, loom_type_t type);
 
 // Returns true for the same valid SSA value or equal exact integer values.
 // Equal ranges do not prove runtime equality. A NULL table permits SSA identity

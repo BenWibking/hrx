@@ -165,6 +165,8 @@ loom_cc_test(
     "loop_like_test.cc"
   DEPS
     ::loop_like
+    ::materialize
+    ::remap
     ::rewriter
     iree::base::internal::arena
     iree::testing::gtest
@@ -172,6 +174,7 @@ loom_cc_test(
     loom::ir
     loom::ops::scf
     loom::ops::test
+    loom::util::fact_table
     loom::verify
 )
 

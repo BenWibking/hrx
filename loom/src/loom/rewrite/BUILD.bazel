@@ -147,10 +147,13 @@ loom_cc_test(
     srcs = ["loop_like_test.cc"],
     deps = [
         ":loop_like",
+        ":materialize",
+        ":remap",
         ":rewriter",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/scf",
         "//loom/src/loom/ops/test",
+        "//loom/src/loom/util:fact_table",
         "//loom/src/loom/verify",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",

@@ -125,5 +125,5 @@ func.def target(@target) @last_axis(%even: vector<2x1xi64>, %odd: vector<2x1xi64
 
 // ----
 CHECK: COMPILE-REPORT: source_low selected_ops=38 * rows=38 *
-CHECK: COMPILE-REPORT: target_legalization * scalarized=0 * rows=38 *
+CHECK-NOT: COMPILE-REPORT: target_legalization[*] * action=rewritten *
 CHECK-NOT: scalarized=true

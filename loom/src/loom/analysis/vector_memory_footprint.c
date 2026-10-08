@@ -1064,26 +1064,11 @@ static bool loom_vector_memory_footprint_offset_bounds_from_facts(
     return false;
   }
 
-  uint64_t maximum_lane_count = UINT64_MAX;
-  if (!loom_type_dim_is_dynamic_at(offsets_type, 0)) {
-    int64_t lane_count = loom_type_dim_static_size_at(offsets_type, 0);
-    if (lane_count >= 0) {
-      maximum_lane_count = (uint64_t)lane_count;
-    }
-  } else {
-    loom_value_facts_t count_facts = loom_value_fact_table_lookup(
-        state->fact_table, loom_type_dim_value_id_at(offsets_type, 0));
-    int64_t lane_count_upper = 0;
-    if (loom_value_facts_is_positive(count_facts) &&
-        loom_value_facts_as_non_negative_i64_maximum(count_facts,
-                                                     &lane_count_upper)) {
-      maximum_lane_count = (uint64_t)lane_count_upper;
-    }
-  }
-
   return loom_value_facts_query_vector_integer_bounds(
-      &state->fact_table->context, facts, maximum_lane_count, out_lower,
-      out_upper);
+      &state->fact_table->context, facts,
+      loom_value_fact_table_maximum_element_count(state->fact_table,
+                                                  offsets_type),
+      out_lower, out_upper);
 }
 
 static bool loom_vector_memory_footprint_value_defines_iota(
@@ -1184,8 +1169,19 @@ static iree_status_t loom_vector_memory_footprint_offset_bounds(
   const loom_op_t* iota_op = NULL;
   if (loom_vector_memory_footprint_value_defines_iota(
           state->module, access->offsets, &iota_op)) {
-    IREE_RETURN_IF_ERROR(loom_vector_memory_footprint_iota_offset_bounds(
-        state, iota_op, offsets_type, out_lower, out_upper, out_known));
+    // Fixed-width coordinates may wrap rather than follow the mathematical
+    // affine endpoints. Only use those endpoints when the retained facts prove
+    // the whole sequence fits; source-index coordinates keep their own domain.
+    const loom_value_facts_t facts =
+        loom_value_fact_table_lookup(state->fact_table, access->offsets);
+    int64_t lower = 0;
+    int64_t upper = 0;
+    if (loom_type_element_type(offsets_type) == LOOM_SCALAR_TYPE_INDEX ||
+        loom_vector_memory_footprint_offset_bounds_from_facts(
+            state, facts, offsets_type, &lower, &upper)) {
+      IREE_RETURN_IF_ERROR(loom_vector_memory_footprint_iota_offset_bounds(
+          state, iota_op, offsets_type, out_lower, out_upper, out_known));
+    }
     if (*out_known) {
       return iree_ok_status();
     }

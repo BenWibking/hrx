@@ -35,13 +35,17 @@ loom_cc_library(
     srcs = ["combine_patterns.c"],
     hdrs = ["combine_patterns.h"],
     deps = [
+        "//loom/src/loom/analysis:symbolic_expr",
         "//loom/src/loom/ir",
+        "//loom/src/loom/ops/index:comparison",
         "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/vector",
         "//loom/src/loom/rewrite:pattern_registry",
         "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/transforms/cleanup:patterns",
         "//loom/src/loom/transforms/conversion:chain",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal",
     ],
 )
 

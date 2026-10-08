@@ -798,6 +798,7 @@ TEST_F(FactTableTest, VectorIotaExtensionRoundTrips) {
   loom_value_fact_vector_iota_t iota = {
       /*.base=*/loom_value_facts_exact_i64(2),
       /*.step=*/loom_value_facts_exact_i64(3),
+      /*.bit_count=*/8,
   };
   loom_value_facts_t facts = loom_value_facts_unknown();
   IREE_ASSERT_OK(
@@ -810,6 +811,123 @@ TEST_F(FactTableTest, VectorIotaExtensionRoundTrips) {
       loom_value_facts_query_vector_iota(&table.context, facts, &result));
   EXPECT_EQ(result.base.range_lo, 2);
   EXPECT_EQ(result.step.range_lo, 3);
+  EXPECT_EQ(result.bit_count, 8);
+
+  loom_value_facts_t repeated;
+  IREE_ASSERT_OK(
+      loom_value_facts_make_vector_iota(&table.context, iota, &repeated));
+  EXPECT_EQ(facts.extension_id, repeated.extension_id);
+  iota.bit_count = 16;
+  IREE_ASSERT_OK(
+      loom_value_facts_make_vector_iota(&table.context, iota, &repeated));
+  EXPECT_NE(facts.extension_id, repeated.extension_id);
+
+  loom_value_fact_table_t imported;
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&imported, &arena_, 0));
+  loom_value_facts_t cloned;
+  IREE_ASSERT_OK(
+      loom_value_fact_table_clone_fact(&imported, &table, facts, &cloned));
+  EXPECT_TRUE(
+      loom_value_fact_table_facts_equal(&table, facts, &imported, cloned));
+  EXPECT_FALSE(
+      loom_value_fact_table_facts_equal(&table, repeated, &imported, cloned));
+  ASSERT_TRUE(
+      loom_value_facts_query_vector_iota(&imported.context, cloned, &result));
+  EXPECT_EQ(result.bit_count, 8);
+}
+
+TEST_F(FactTableTest, IotaElementsWrapInEveryFixedWidthCarrier) {
+  for (const uint8_t bit_count : {8, 16, 32, 64}) {
+    SCOPED_TRACE(bit_count);
+    const int64_t maximum = INT64_MAX >> (64 - bit_count);
+    const int64_t minimum = -maximum - 1;
+    loom_value_fact_vector_iota_t iota = {
+        /*.base=*/loom_value_facts_exact_i64(maximum),
+        /*.step=*/loom_value_facts_exact_i64(1),
+        /*.bit_count=*/bit_count,
+    };
+    EXPECT_EQ(loom_value_fact_vector_iota_element(iota, 0).range_lo, maximum);
+    EXPECT_EQ(loom_value_fact_vector_iota_element(iota, 1).range_lo, minimum);
+    EXPECT_EQ(loom_value_fact_vector_iota_element(iota, 2).range_lo,
+              minimum + 1);
+    iota.base = loom_value_facts_exact_i64(minimum);
+    iota.step = loom_value_facts_exact_i64(-1);
+    EXPECT_EQ(loom_value_fact_vector_iota_element(iota, 1).range_lo, maximum);
+    iota.base = loom_value_facts_exact_i64(0);
+    iota.step = loom_value_facts_exact_i64(minimum);
+    EXPECT_EQ(loom_value_fact_vector_iota_element(iota, 2).range_lo, 0);
+    EXPECT_EQ(loom_value_fact_vector_iota_element(iota, 3).range_lo, minimum);
+    iota.step = loom_value_facts_exact_i64(0);
+    EXPECT_EQ(loom_value_fact_vector_iota_element(iota, UINT64_MAX).range_lo,
+              0);
+  }
+}
+
+TEST_F(FactTableTest, IotaMathematicalIndicesRemainUnknownOnOverflow) {
+  loom_value_fact_vector_iota_t iota = {
+      /*.base=*/loom_value_facts_exact_i64(INT64_MAX),
+      /*.step=*/loom_value_facts_exact_i64(1),
+      /*.bit_count=*/0,
+  };
+  EXPECT_TRUE(loom_value_facts_is_unknown(
+      loom_value_fact_vector_iota_element(iota, 1)));
+  iota.base = loom_value_facts_unknown();
+  EXPECT_TRUE(loom_value_facts_is_unknown(
+      loom_value_fact_vector_iota_element(iota, 0)));
+}
+
+TEST_F(FactTableTest, IotaBoundsRequireBothEndpointsToFit) {
+  for (const uint8_t bit_count : {8, 16, 32, 64}) {
+    SCOPED_TRACE(bit_count);
+    const int64_t maximum = INT64_MAX >> (64 - bit_count);
+    const int64_t minimum = -maximum - 1;
+    loom_value_fact_vector_iota_t iota = {
+        /*.base=*/loom_value_facts_make(maximum - 3, maximum - 2, 1),
+        /*.step=*/loom_value_facts_make(1, 2, 1),
+        /*.bit_count=*/bit_count,
+    };
+    int64_t lower = 0;
+    int64_t upper = 0;
+    ASSERT_TRUE(loom_value_fact_vector_iota_bounds(iota, 2, &lower, &upper));
+    EXPECT_EQ(lower, maximum - 3);
+    EXPECT_EQ(upper, maximum);
+    EXPECT_FALSE(loom_value_fact_vector_iota_bounds(iota, 3, &lower, &upper));
+    iota.base = loom_value_facts_make(minimum + 2, minimum + 3, 1);
+    iota.step = loom_value_facts_make(-2, -1, 1);
+    ASSERT_TRUE(loom_value_fact_vector_iota_bounds(iota, 2, &lower, &upper));
+    EXPECT_EQ(lower, minimum);
+    EXPECT_EQ(upper, minimum + 3);
+    EXPECT_FALSE(loom_value_fact_vector_iota_bounds(iota, 3, &lower, &upper));
+    // Equal first/last values do not make a wrapping sequence monotonic.
+    iota.base = loom_value_facts_exact_i64(0);
+    iota.step = loom_value_facts_exact_i64(minimum);
+    EXPECT_FALSE(loom_value_fact_vector_iota_bounds(iota, 3, &lower, &upper));
+    iota.step = loom_value_facts_exact_i64(0);
+    ASSERT_TRUE(
+        loom_value_fact_vector_iota_bounds(iota, UINT64_MAX, &lower, &upper));
+    EXPECT_EQ(lower, 0);
+    EXPECT_EQ(upper, 0);
+  }
+}
+
+TEST_F(FactTableTest, MaximumElementCountUsesExtentFacts) {
+  loom_value_fact_table_t table;
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&table, &arena_, 2));
+  const auto type = loom_type_shaped_2d(
+      LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_I1, loom_dim_pack_static(4),
+      loom_dim_pack_dynamic(1), /*encoding_id=*/0);
+  EXPECT_EQ(loom_value_fact_table_maximum_element_count(&table, type),
+            UINT64_MAX);
+  IREE_ASSERT_OK(
+      loom_value_fact_table_define(&table, 1, loom_value_facts_make(1, 8, 1)));
+  EXPECT_EQ(loom_value_fact_table_maximum_element_count(&table, type), 32);
+  IREE_ASSERT_OK(
+      loom_value_fact_table_define(&table, 1, loom_value_facts_exact_i64(0)));
+  EXPECT_EQ(loom_value_fact_table_maximum_element_count(&table, type), 0);
+  IREE_ASSERT_OK(loom_value_fact_table_define(
+      &table, 1, loom_value_facts_make(0, INT64_MAX - 1, 1)));
+  EXPECT_EQ(loom_value_fact_table_maximum_element_count(&table, type),
+            UINT64_MAX);
 }
 
 TEST_F(FactTableTest, VectorIntegerBoundsSummarizeExplicitLanes) {
@@ -850,7 +968,7 @@ TEST_F(FactTableTest, VectorIntegerBoundsSummarizeIotas) {
   IREE_ASSERT_OK(loom_value_facts_make_vector_iota(
       &table.context,
       {/*.base=*/loom_value_facts_make(2, 4, 1),
-       /*.step=*/loom_value_facts_exact_i64(3)},
+       /*.step=*/loom_value_facts_exact_i64(3), /*.bit_count=*/0},
       &facts));
   int64_t lower = 0;
   int64_t upper = 0;
@@ -862,7 +980,7 @@ TEST_F(FactTableTest, VectorIntegerBoundsSummarizeIotas) {
   IREE_ASSERT_OK(loom_value_facts_make_vector_iota(
       &table.context,
       {/*.base=*/loom_value_facts_make(20, 22, 1),
-       /*.step=*/loom_value_facts_exact_i64(-4)},
+       /*.step=*/loom_value_facts_exact_i64(-4), /*.bit_count=*/0},
       &facts));
   EXPECT_TRUE(loom_value_facts_query_vector_integer_bounds(
       &table.context, facts, /*maximum_lane_count=*/4, &lower, &upper));
@@ -879,7 +997,7 @@ TEST_F(FactTableTest, VectorIntegerBoundsSummarizeIotas) {
   IREE_ASSERT_OK(loom_value_facts_make_vector_iota(
       &table.context,
       {/*.base=*/loom_value_facts_exact_i64(INT64_MAX),
-       /*.step=*/loom_value_facts_exact_i64(1)},
+       /*.step=*/loom_value_facts_exact_i64(1), /*.bit_count=*/0},
       &facts));
   EXPECT_FALSE(loom_value_facts_query_vector_integer_bounds(
       &table.context, facts, /*maximum_lane_count=*/2, &lower, &upper));

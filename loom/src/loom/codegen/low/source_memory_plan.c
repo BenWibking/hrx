@@ -83,14 +83,18 @@ static bool loom_low_source_memory_access_exact_i64_at(
 }
 
 static bool loom_low_source_memory_access_offset_facts_are_identity_iota(
-    const loom_fact_context_t* context, loom_value_facts_t facts) {
+    const loom_fact_context_t* context, loom_value_facts_t facts,
+    uint32_t lane_count) {
   loom_value_fact_vector_iota_t iota = {0};
   if (loom_value_facts_query_vector_iota(context, facts, &iota)) {
     int64_t base = 0;
     int64_t step = 0;
+    int64_t lower = 0;
+    int64_t upper = 0;
     return loom_low_source_memory_access_exact_i64(iota.base, &base) &&
            loom_low_source_memory_access_exact_i64(iota.step, &step) &&
-           base == 0 && step == 1;
+           base == 0 && step == 1 &&
+           loom_value_fact_vector_iota_bounds(iota, lane_count, &lower, &upper);
   }
 
   loom_value_fact_small_static_lanes_t lanes = {0};
@@ -110,14 +114,15 @@ static bool loom_low_source_memory_access_offset_facts_are_identity_iota(
 
 static loom_low_source_memory_vector_offset_kind_t
 loom_low_source_memory_access_vector_offset_kind(
-    const loom_value_fact_table_t* fact_table, loom_value_id_t offset_value) {
+    const loom_value_fact_table_t* fact_table, loom_value_id_t offset_value,
+    uint32_t lane_count) {
   if (offset_value == LOOM_VALUE_ID_INVALID) {
     return LOOM_LOW_SOURCE_MEMORY_VECTOR_OFFSET_NONE;
   }
   const loom_value_facts_t facts =
       loom_value_fact_table_lookup(fact_table, offset_value);
   return loom_low_source_memory_access_offset_facts_are_identity_iota(
-             &fact_table->context, facts)
+             &fact_table->context, facts, lane_count)
              ? LOOM_LOW_SOURCE_MEMORY_VECTOR_OFFSET_IDENTITY_IOTA
              : LOOM_LOW_SOURCE_MEMORY_VECTOR_OFFSET_OTHER;
 }
@@ -1833,7 +1838,8 @@ bool loom_low_source_memory_access_plan_build(
     loom_low_source_memory_access_retain_semantics(access, out_plan);
     out_plan->vector_offset_kind =
         loom_low_source_memory_access_vector_offset_kind(
-            fact_table, loom_memory_access_offsets(access));
+            fact_table, loom_memory_access_offsets(access),
+            out_plan->vector_lane_count);
   }
   return built;
 }
