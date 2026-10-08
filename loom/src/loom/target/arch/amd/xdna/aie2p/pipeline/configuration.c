@@ -166,6 +166,21 @@ static iree_status_t loom_aie2p_native_config_reset_core(
       operands, IREE_ARRAYSIZE(operands), loom_named_attr_slice_empty());
 }
 
+static iree_status_t loom_aie2p_native_config_set_lock(
+    loom_aie2p_native_configuration_t* config, loom_xdna_tile_coordinate_t tile,
+    uint16_t lock, uint32_t value) {
+  // The semaphore value occupies the complete writable register. A direct
+  // write establishes its state without a redundant register read.
+  return loom_aie2p_native_config_write(
+      config,
+      loom_xdna_register_field_address_admitted(
+          config->context->family,
+          LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE, tile,
+          &lock),
+      loom_xdna_register_field_encode_admitted(
+          LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE, value));
+}
+
 static iree_status_t loom_aie2p_native_config_routes(
     loom_aie2p_native_configuration_t* config) {
   const loom_aie2p_native_context_t* context = config->context;
@@ -521,11 +536,8 @@ static iree_status_t loom_aie2p_native_config_communicate(
         }
         // Each endpoint acts once and has one cursor owner. No second producer
         // can race this ready-credit update with another publication.
-        IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
-            config, tile,
-            LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
-            &channel->ready_lock, 1, acquire ? 0 : 1,
-            AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
+        IREE_RETURN_IF_ERROR(loom_aie2p_native_config_set_lock(
+            config, tile, channel->ready_lock, acquire ? 0 : 1));
         break;
       }
     }
@@ -656,34 +668,26 @@ iree_status_t loom_aie2p_native_emit_configuration(
         channel->cursor.writer.worker != UINT32_MAX &&
         context->workers[channel->cursor.writer.worker].execution ==
             LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION;
-    IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
-        &config, tile, LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
-        &channel->free_lock, 1, channel->source->capacity - reserve_initial,
-        AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
-    IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
-        &config, tile, LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
-        &channel->ready_lock, 1, 0,
-        AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
+    IREE_RETURN_IF_ERROR(loom_aie2p_native_config_set_lock(
+        &config, tile, channel->free_lock,
+        channel->source->capacity - reserve_initial));
+    IREE_RETURN_IF_ERROR(loom_aie2p_native_config_set_lock(
+        &config, tile, channel->ready_lock, 0));
   }
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
     const loom_aie2p_native_worker_t* worker = &context->workers[i];
     if (worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CORE) {
-      IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
-          &config, worker->tile->coordinate,
-          LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
-          &worker->completion_lock, 1, 0,
-          AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
+      IREE_RETURN_IF_ERROR(loom_aie2p_native_config_set_lock(
+          &config, worker->tile->coordinate, worker->completion_lock, 0));
     }
     for (const loom_aie2p_native_transfer_t* transfer = worker->transfers;
          transfer; transfer = transfer->next) {
       if (!transfer->path->ingress) {
         continue;
       }
-      IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
-          &config, transfer->path->local->coordinate,
-          LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
-          &transfer->completion_lock, 1, 0,
-          AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
+      IREE_RETURN_IF_ERROR(loom_aie2p_native_config_set_lock(
+          &config, transfer->path->local->coordinate, transfer->completion_lock,
+          0));
     }
   }
   // Every semaphore is initialized before any worker can produce a credit.
