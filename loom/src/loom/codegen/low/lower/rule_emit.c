@@ -290,8 +290,6 @@ static iree_status_t loom_low_lower_rule_materialize_descriptor_operands(
 
 static iree_status_t loom_low_lower_rule_build_result_types(
     loom_low_lower_context_t* context,
-    const loom_low_lower_rule_set_t* rule_set,
-    const loom_low_lower_rule_emit_state_t* state,
     const loom_low_lower_resolved_emit_t* resolved_emit,
     loom_type_t** out_result_types) {
   *out_result_types = NULL;
@@ -304,19 +302,9 @@ static iree_status_t loom_low_lower_rule_build_result_types(
       context, emit->result_ref_count, sizeof(*result_types),
       (void**)&result_types));
   for (uint16_t i = 0; i < emit->result_ref_count; ++i) {
-    if (resolved_emit->result_type_mask & (1u << i)) {
-      result_types[i] = loom_type_table_get(
-          &context->module->types,
-          loom_low_lower_resolved_emit_result_type_id(resolved_emit, i));
-    } else {
-      const loom_low_lower_value_ref_t* value_ref =
-          &rule_set->value_refs[emit->result_type.value_ref_start + i];
-      IREE_ASSERT_EQ(value_ref->kind, LOOM_LOW_LOWER_VALUE_REF_TEMPORARY);
-      IREE_ASSERT_LT(value_ref->index, state->temporary_count);
-      const loom_value_id_t low_value_id = state->temporaries[value_ref->index];
-      IREE_ASSERT_NE(low_value_id, LOOM_VALUE_ID_INVALID);
-      result_types[i] = loom_module_value_type(context->module, low_value_id);
-    }
+    result_types[i] = loom_type_table_get(
+        &context->module->types,
+        loom_low_lower_resolved_emit_result_type_id(resolved_emit, i));
   }
   *out_result_types = result_types;
   return iree_ok_status();
@@ -435,7 +423,7 @@ static iree_status_t loom_low_lower_rule_emit_descriptor_const(
   IREE_ASSERT_EQ(emit->result_ref_count, 1);
   loom_type_t* result_types = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_result_types(
-      context, rule_set, state, resolved_emit, &result_types));
+      context, resolved_emit, &result_types));
 
   const loom_named_attr_slice_t attrs =
       loom_low_lower_resolved_emit_attributes(resolved_emit);
@@ -478,7 +466,7 @@ static iree_status_t loom_low_lower_rule_emit_descriptor_op(
 
   loom_type_t* result_types = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_result_types(
-      context, rule_set, state, resolved_emit, &result_types));
+      context, resolved_emit, &result_types));
 
   const loom_named_attr_slice_t attrs =
       loom_low_lower_resolved_emit_attributes(resolved_emit);
@@ -506,26 +494,6 @@ static iree_status_t loom_low_lower_rule_emit_descriptor_op(
                                           emit, low_results.values);
 }
 
-// Changes a carrier width only when doing so cannot silently invent or discard
-// a semantic register value type. An unchanged width preserves the complete
-// type; a changed carrier-only type remains carrier-only. Typed width changes
-// require a target-owned relation and are rejected by the caller.
-static bool loom_low_lower_rule_try_register_type_with_unit_count(
-    loom_type_t type, uint32_t unit_count, loom_type_t* out_type) {
-  *out_type = loom_type_none();
-  IREE_ASSERT(loom_low_type_is_register(type));
-  IREE_ASSERT_GT(unit_count, 0);
-  if (unit_count == loom_low_register_type_unit_count(type)) {
-    *out_type = type;
-    return true;
-  }
-  if (loom_type_register_has_value_type(type)) {
-    return false;
-  }
-  *out_type = loom_low_register_carrier_type_with_unit_count(type, unit_count);
-  return true;
-}
-
 static iree_status_t loom_low_lower_rule_emit_register_slice(
     loom_low_lower_context_t* context,
     const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
@@ -540,21 +508,9 @@ static iree_status_t loom_low_lower_rule_emit_register_slice(
   IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_low_operands(
       context, rule_set, source_op, state, resolved_emit, NULL, NULL,
       &low_operands));
-  loom_type_t result_type = loom_type_none();
-  if (emit->payload.structural.unit_count != 0) {
-    const loom_type_t source_type = loom_module_value_type(
-        loom_low_lower_context_module(context), low_operands[0]);
-    if (!loom_low_lower_rule_try_register_type_with_unit_count(
-            source_type, emit->payload.structural.unit_count, &result_type)) {
-      return loom_low_lower_emit_register_width_relation_unsupported(
-          context, source_op, source_type, emit->payload.structural.unit_count);
-    }
-  } else {
-    loom_type_t* result_types = NULL;
-    IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_result_types(
-        context, rule_set, state, resolved_emit, &result_types));
-    result_type = result_types[0];
-  }
+  const loom_type_t result_type = loom_type_table_get(
+      &context->module->types,
+      loom_low_lower_resolved_emit_result_type_id(resolved_emit, 0));
 
   loom_op_t* slice_op = NULL;
   IREE_RETURN_IF_ERROR(
@@ -582,7 +538,7 @@ static iree_status_t loom_low_lower_rule_emit_register_concat(
       &low_operands));
   loom_type_t* result_types = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_result_types(
-      context, rule_set, state, resolved_emit, &result_types));
+      context, resolved_emit, &result_types));
 
   loom_op_t* concat_op = NULL;
   IREE_RETURN_IF_ERROR(
@@ -610,7 +566,7 @@ static iree_status_t loom_low_lower_rule_emit_register_copy(
       &low_operands));
   loom_type_t* result_types = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_result_types(
-      context, rule_set, state, resolved_emit, &result_types));
+      context, resolved_emit, &result_types));
 
   loom_op_t* copy_op = NULL;
   IREE_RETURN_IF_ERROR(loom_low_copy_build(
@@ -637,7 +593,7 @@ static iree_status_t loom_low_lower_rule_emit_register_move(
       &low_operands));
   loom_type_t* result_types = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_result_types(
-      context, rule_set, state, resolved_emit, &result_types));
+      context, resolved_emit, &result_types));
 
   loom_op_t* move_op = NULL;
   IREE_RETURN_IF_ERROR(loom_low_move_build(
@@ -742,7 +698,7 @@ static iree_status_t loom_low_lower_rule_emit_descriptor_op_first_lane(
 
   loom_type_t* result_types = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_result_types(
-      context, rule_set, state, resolved_emit, &result_types));
+      context, resolved_emit, &result_types));
   IREE_ASSERT(loom_low_type_is_register(result_types[0]));
   IREE_ASSERT_EQ(loom_low_register_type_unit_count(result_types[0]), 1);
 
@@ -802,7 +758,7 @@ static iree_status_t loom_low_lower_rule_emit_descriptor_op_per_lane(
 
   loom_type_t* result_types = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_result_types(
-      context, rule_set, state, resolved_emit, &result_types));
+      context, resolved_emit, &result_types));
 
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_lower_context_descriptor_set(context);
@@ -1077,7 +1033,7 @@ static iree_status_t loom_low_lower_rule_emit_descriptor_op_per_lane_sequence(
     }
     loom_type_t* emit_result_types = NULL;
     IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_result_types(
-        context, rule_set, state, resolved_emit, &emit_result_types));
+        context, resolved_emit, &emit_result_types));
     result_types[sequence_ordinal] = emit_result_types[0];
     IREE_ASSERT(loom_low_type_is_register(result_types[sequence_ordinal]));
     attrs[sequence_ordinal] =

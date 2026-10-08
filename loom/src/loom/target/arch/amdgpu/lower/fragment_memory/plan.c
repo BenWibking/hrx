@@ -1869,9 +1869,17 @@ static iree_status_t loom_amdgpu_fragment_memory_select(
 iree_status_t loom_amdgpu_select_vector_fragment_load_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_fragment_memory_plan_t* out_plan, bool* out_selected) {
-  return loom_amdgpu_fragment_memory_select(
+  IREE_RETURN_IF_ERROR(loom_amdgpu_fragment_memory_select(
       context, source_op, LOOM_LOW_SOURCE_MEMORY_OPERATION_LOAD, out_plan,
-      out_selected);
+      out_selected));
+  if (*out_selected) {
+    return loom_low_lower_plan_value_type(
+        context, out_plan->payload,
+        loom_low_register_type(
+            loom_low_lower_context_descriptor_set(context)->stable_id,
+            LOOM_AMDGPU_REG_CLASS_ID_VGPR, out_plan->payload_register_count));
+  }
+  return iree_ok_status();
 }
 
 iree_status_t loom_amdgpu_select_vector_fragment_store_plan(

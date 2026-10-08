@@ -63,6 +63,11 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_index_cast_plan_t* out_plan, bool* out_selected);
 
+// Publishes the cast's selected width in its actual source or conversion bank.
+iree_status_t loom_amdgpu_finalize_index_cast_plan(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_index_cast_plan_t* plan);
+
 // Lowers an AMDGPU index.cast plan.
 iree_status_t loom_amdgpu_lower_index_cast(
     loom_low_lower_context_t* context, const loom_op_t* source_op,

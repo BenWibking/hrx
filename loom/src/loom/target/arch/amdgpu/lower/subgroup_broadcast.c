@@ -138,7 +138,16 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_broadcast_plan(
   IREE_RETURN_IF_ERROR(loom_amdgpu_context_value_prefers_vgpr(
       context, out_plan->result, &out_plan->result_in_vgpr));
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          (out_plan->strategy ==
+               LOOM_AMDGPU_SUBGROUP_BROADCAST_STRATEGY_BPERMUTE ||
+           out_plan->result_in_vgpr)
+              ? LOOM_AMDGPU_REG_CLASS_ID_VGPR
+              : LOOM_AMDGPU_REG_CLASS_ID_SGPR,
+          register_count));
 }
 
 iree_status_t loom_amdgpu_select_kernel_subgroup_broadcast_first_plan(
@@ -179,7 +188,13 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_broadcast_first_plan(
   IREE_RETURN_IF_ERROR(loom_amdgpu_context_value_prefers_vgpr(
       context, out_plan->result, &out_plan->result_in_vgpr));
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          out_plan->result_in_vgpr ? LOOM_AMDGPU_REG_CLASS_ID_VGPR
+                                   : LOOM_AMDGPU_REG_CLASS_ID_SGPR,
+          register_count));
 }
 
 static iree_status_t loom_amdgpu_emit_subgroup_readfirstlane_register(

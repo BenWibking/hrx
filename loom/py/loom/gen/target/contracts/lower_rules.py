@@ -331,6 +331,7 @@ def _generate_source(
             [
                 [
                     f".can_materialize = {materializer.can_materialize}",
+                    f".result_type = {materializer.result_type}",
                     f".materialize = {materializer.materialize}",
                 ]
                 for materializer in source_contract.materializers

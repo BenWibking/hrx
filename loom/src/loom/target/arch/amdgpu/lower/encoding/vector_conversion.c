@@ -781,6 +781,14 @@ loom_amdgpu_vector_16bit_float_conversion_plan_from_accepted_op(
   return iree_ok_status();
 }
 
+static bool loom_amdgpu_vector_16bit_float_fptrunc_has_storage_origin(
+    const loom_amdgpu_vector_16bit_float_conversion_plan_t* plan) {
+  return plan->kind == LOOM_AMDGPU_VECTOR_16BIT_FLOAT_CONVERSION_KIND_FPTRUNC &&
+         plan->source_element_type == plan->result_element_type &&
+         loom_scalar_type_set_contains(LOOM_SCALAR_TYPE_SET_16BIT_FLOAT,
+                                       plan->result_element_type);
+}
+
 iree_status_t loom_amdgpu_select_vector_16bit_float_conversion_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_vector_16bit_float_conversion_plan_t* out_plan,
@@ -840,6 +848,18 @@ iree_status_t loom_amdgpu_select_vector_16bit_float_conversion_plan(
             out_plan));
   }
   return iree_ok_status();
+}
+
+iree_status_t loom_amdgpu_finalize_vector_16bit_float_conversion_plan(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_vector_16bit_float_conversion_plan_t* plan) {
+  const loom_type_t result_type =
+      loom_amdgpu_vector_16bit_float_fptrunc_has_storage_origin(plan)
+          ? loom_low_lower_value_binding_type(context, plan->storage_source)
+          : loom_low_register_type(
+                loom_low_lower_context_descriptor_set(context)->stable_id,
+                LOOM_AMDGPU_REG_CLASS_ID_VGPR, plan->result_register_count);
+  return loom_low_lower_plan_value_type(context, plan->result, result_type);
 }
 
 iree_string_view_t loom_amdgpu_vector_16bit_float_conversion_plan_key(
@@ -1033,14 +1053,6 @@ static iree_status_t loom_amdgpu_lower_vector_f32_to_packed_bf16(
   return loom_amdgpu_bind_low_register_range(context, source_op, plan->result,
                                              packed_registers,
                                              plan->result_register_count);
-}
-
-static bool loom_amdgpu_vector_16bit_float_fptrunc_has_storage_origin(
-    const loom_amdgpu_vector_16bit_float_conversion_plan_t* plan) {
-  return plan->kind == LOOM_AMDGPU_VECTOR_16BIT_FLOAT_CONVERSION_KIND_FPTRUNC &&
-         plan->source_element_type == plan->result_element_type &&
-         loom_scalar_type_set_contains(LOOM_SCALAR_TYPE_SET_16BIT_FLOAT,
-                                       plan->result_element_type);
 }
 
 static iree_status_t loom_amdgpu_materialize_fp8_encode_f32_lane(

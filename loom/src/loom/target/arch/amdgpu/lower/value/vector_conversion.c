@@ -167,6 +167,29 @@ iree_status_t loom_amdgpu_select_vector_extract_plan(
   return iree_ok_status();
 }
 
+iree_status_t loom_amdgpu_finalize_vector_extract_plan(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_vector_extract_plan_t* plan) {
+  if (plan->dynamic_index == LOOM_VALUE_ID_INVALID) {
+    return iree_ok_status();
+  }
+  const bool aliases_source =
+      plan->lane_count == 1 &&
+      !iree_any_bit_set(plan->flags,
+                        LOOM_AMDGPU_VECTOR_EXTRACT_FLAG_SIGN_EXTEND);
+  const uint16_t register_class =
+      iree_any_bit_set(plan->flags, LOOM_AMDGPU_VECTOR_EXTRACT_FLAG_MASK)
+          ? LOOM_AMDGPU_REG_CLASS_ID_SGPR
+          : LOOM_AMDGPU_REG_CLASS_ID_VGPR;
+  const loom_type_t result_type =
+      aliases_source
+          ? loom_low_lower_value_binding_type(context, plan->source)
+          : loom_low_register_type(
+                loom_low_lower_context_descriptor_set(context)->stable_id,
+                register_class, plan->result_register_count);
+  return loom_low_lower_plan_value_type(context, plan->result, result_type);
+}
+
 enum {
   LOOM_AMDGPU_VECTOR_CONVERSION_LANE_RULE_SIGN_EXTEND_SOURCE = 1u << 0,
   LOOM_AMDGPU_VECTOR_CONVERSION_LANE_RULE_SOURCE_WIDER_THAN_RESULT = 1u << 1,

@@ -1231,6 +1231,62 @@ iree_status_t loom_amdgpu_preselect_vector_construct_plan(
       /*require_fma_mix=*/true, out_plan);
 }
 
+iree_status_t loom_amdgpu_finalize_vector_construct_plan(
+    loom_low_lower_context_t* context, loom_low_lower_plan_t plan) {
+  const loom_amdgpu_vector_construct_plan_header_t* header = plan.target_data;
+  loom_value_id_t result = LOOM_VALUE_ID_INVALID;
+  uint16_t register_class = LOOM_AMDGPU_REG_CLASS_ID_VGPR;
+  uint32_t unit_count = 0;
+  switch (header->kind) {
+    case LOOM_AMDGPU_VECTOR_CONSTRUCT_SOURCE_KIND_VECTOR_IOTA: {
+      const loom_amdgpu_vector_iota_plan_t* iota = plan.target_data;
+      result = iota->result;
+      unit_count = iota->lane_count;
+      break;
+    }
+    case LOOM_AMDGPU_VECTOR_CONSTRUCT_SOURCE_KIND_VECTOR_FROM_ELEMENTS:
+    case LOOM_AMDGPU_VECTOR_CONSTRUCT_SOURCE_KIND_VECTOR_SPLAT: {
+      const loom_amdgpu_vector_from_elements_plan_t* vector = plan.target_data;
+      result = vector->result;
+      unit_count = vector->register_count;
+      if (vector->storage_kind == LOOM_AMDGPU_VECTOR_STORAGE_KIND_I1_MASK ||
+          vector->storage_kind == LOOM_AMDGPU_VECTOR_STORAGE_KIND_FULL_32BIT ||
+          vector->storage_kind == LOOM_AMDGPU_VECTOR_STORAGE_KIND_FULL_64BIT) {
+        unit_count = 0;
+        for (uint32_t i = 0; i < vector->element_count; ++i) {
+          const loom_type_t element_type = loom_low_lower_value_binding_type(
+              context, vector->payload.elements[i]);
+          unit_count += loom_low_register_type_unit_count(element_type);
+          if (vector->storage_kind == LOOM_AMDGPU_VECTOR_STORAGE_KIND_I1_MASK) {
+            register_class = loom_low_register_type_class_id(element_type);
+          }
+        }
+      }
+      break;
+    }
+    case LOOM_AMDGPU_VECTOR_CONSTRUCT_SOURCE_KIND_VECTOR_INSERT: {
+      const loom_amdgpu_vector_insert_plan_t* insert = plan.target_data;
+      result = insert->result;
+      unit_count = insert->register_count;
+      if (insert->element_type == LOOM_SCALAR_TYPE_I1) {
+        register_class = LOOM_AMDGPU_REG_CLASS_ID_SGPR;
+      } else if (insert->lane_count > 1 && insert->lane_bit_count >= 32) {
+        register_class = loom_low_register_type_class_id(
+            loom_low_lower_value_binding_type(context, insert->dest));
+      }
+      break;
+    }
+    case LOOM_AMDGPU_VECTOR_CONSTRUCT_SOURCE_KIND_NONE:
+      IREE_ASSERT_UNREACHABLE("selected vector construction kind");
+      IREE_BUILTIN_UNREACHABLE();
+  }
+  return loom_low_lower_plan_value_type(
+      context, result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          register_class, unit_count));
+}
+
 static iree_status_t loom_amdgpu_lower_vector_iota(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_vector_iota_plan_t* plan) {

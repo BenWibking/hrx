@@ -854,6 +854,13 @@ iree_status_t loom_amdgpu_select_vector_packed_fmaf_plan(
       &kAmdgpuPackedTernarySelectionRows
           [LOOM_AMDGPU_PACKED_TERNARY_FMAF_ROW_OFFSET],
       LOOM_AMDGPU_PACKED_TERNARY_FMAF_ROW_COUNT, out_plan);
+  if (*out_selected) {
+    return loom_low_lower_plan_value_type(
+        context, out_plan->result,
+        loom_low_register_type(
+            loom_low_lower_context_descriptor_set(context)->stable_id,
+            LOOM_AMDGPU_REG_CLASS_ID_VGPR, out_plan->register_count));
+  }
   return iree_ok_status();
 }
 
@@ -865,6 +872,13 @@ iree_status_t loom_amdgpu_select_vector_packed_fmai_plan(
       &kAmdgpuPackedTernarySelectionRows
           [LOOM_AMDGPU_PACKED_TERNARY_FMAI_ROW_OFFSET],
       LOOM_AMDGPU_PACKED_TERNARY_FMAI_ROW_COUNT, out_plan);
+  if (*out_selected) {
+    return loom_low_lower_plan_value_type(
+        context, out_plan->result,
+        loom_low_register_type(
+            loom_low_lower_context_descriptor_set(context)->stable_id,
+            LOOM_AMDGPU_REG_CLASS_ID_VGPR, out_plan->register_count));
+  }
   return iree_ok_status();
 }
 
@@ -940,7 +954,11 @@ iree_status_t loom_amdgpu_select_scalar_fmaf_mix_plan(
       .source_kinds = {source_kinds[0], source_kinds[1], source_kinds[2]},
   };
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_VGPR, 1));
 }
 
 iree_status_t loom_amdgpu_select_scalar_mulf_mix_plan(
@@ -1008,6 +1026,11 @@ iree_status_t loom_amdgpu_select_scalar_mulf_mix_plan(
       .lane_count = 1,
   };
   *out_selected = true;
+  IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_VGPR, out_plan->lane_count)));
   return loom_amdgpu_emit_mulf_mix_operand_form_diagnostic(context, source_op,
                                                            out_plan);
 }
@@ -1116,6 +1139,11 @@ iree_status_t loom_amdgpu_select_vector_mulf_mix_plan(
       .lane_count = lane_count,
   };
   *out_selected = true;
+  IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_VGPR, out_plan->lane_count)));
   return loom_amdgpu_emit_mulf_mix_operand_form_diagnostic(context, source_op,
                                                            out_plan);
 }

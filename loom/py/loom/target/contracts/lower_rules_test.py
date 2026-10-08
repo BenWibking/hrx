@@ -1470,6 +1470,7 @@ def test_compile_lower_rule_set_tracks_materialized_source_identity() -> None:
     materializer = ValueMaterializer(
         name="test_materializer",
         can_materialize="test_can_materialize",
+        result_type="test_materialized_type",
         materialize="test_materialize",
         header="test/materialize.h",
     )

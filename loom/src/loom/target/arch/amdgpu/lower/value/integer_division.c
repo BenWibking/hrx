@@ -118,6 +118,20 @@ iree_status_t loom_amdgpu_select_unsigned_i64_division_plan(
   return iree_ok_status();
 }
 
+iree_status_t loom_amdgpu_finalize_unsigned_i64_division_plan(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_unsigned_i64_division_plan_t* plan) {
+  loom_type_t result_type =
+      loom_low_lower_value_binding_type(context, plan->source);
+  if (plan->register_class_id == LOOM_AMDGPU_REG_CLASS_ID_VGPR) {
+    result_type = loom_low_register_type(
+        loom_low_lower_context_descriptor_set(context)->stable_id,
+        LOOM_AMDGPU_REG_CLASS_ID_VGPR,
+        loom_low_register_type_unit_count(result_type));
+  }
+  return loom_low_lower_plan_value_type(context, plan->result, result_type);
+}
+
 iree_status_t loom_amdgpu_low_legality_verify_unsigned_i64_division(
     const loom_target_low_legality_provider_t* provider,
     loom_target_low_legality_context_t* context, const loom_op_t* op,

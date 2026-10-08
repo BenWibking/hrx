@@ -29,9 +29,8 @@ typedef struct loom_low_lower_resolved_emit_t {
   loom_low_lower_resolved_descriptor_t descriptor;
   // Source access semantics for this memory packet; zero for address setup.
   loom_memory_access_flags_t access_flags;
-  // Result carriers resolved from source values, type patterns, or descriptors.
-  // Unset results derive their type from an earlier rule-local temporary or
-  // from an explicit register-slice width.
+  // Result carriers resolved from source values, type patterns, descriptors,
+  // and rule-local transfers. Elided recipes have no result payload.
   uint8_t result_type_mask;
   // Fact-derived source references retained after attributes and result types.
   // Bits address operand refs; set bits have packed value IDs.
@@ -43,6 +42,11 @@ typedef struct loom_low_lower_resolved_emit_t {
   // descriptor identity without executable payloads.
   uint32_t data_offset;
 } loom_low_lower_resolved_emit_t;
+
+// Preserves semantic register types at unchanged widths. A carrier-only type
+// can change width; a semantic width conversion requires a target relation.
+bool loom_low_lower_rule_try_register_type_with_unit_count(
+    loom_type_t type, uint32_t unit_count, loom_type_t* out_type);
 
 // Returns the attributes selected for this emit row, in generated table order.
 static inline loom_named_attr_slice_t loom_low_lower_resolved_emit_attributes(

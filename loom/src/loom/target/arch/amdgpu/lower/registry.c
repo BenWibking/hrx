@@ -1795,6 +1795,71 @@ static iree_status_t loom_amdgpu_describe_plan(
   return iree_ok_status();
 }
 
+static iree_status_t loom_amdgpu_finalize_plan(
+    void* user_data, loom_low_lower_context_t* context,
+    const loom_op_t* source_op, loom_low_lower_plan_t plan) {
+  (void)user_data;
+  switch (plan.id) {
+    case LOOM_OP_INDEX_CAST:
+      return loom_amdgpu_finalize_index_cast_plan(
+          context, (const loom_amdgpu_index_cast_plan_t*)plan.target_data);
+    case LOOM_OP_SCALAR_DIVUI:
+    case LOOM_OP_SCALAR_REMUI:
+      return loom_amdgpu_finalize_unsigned_i64_division_plan(
+          context,
+          (const loom_amdgpu_unsigned_i64_division_plan_t*)plan.target_data);
+    case LOOM_OP_SCALAR_TRUNCI:
+    case LOOM_OP_SCALAR_EXTF:
+    case LOOM_OP_SCALAR_FPTRUNC:
+    case LOOM_OP_SCALAR_EXTSI:
+    case LOOM_OP_SCALAR_EXTUI:
+    case LOOM_OP_SCALAR_SITOFP:
+    case LOOM_OP_SCALAR_UITOFP:
+    case LOOM_OP_SCALAR_FPTOSI:
+    case LOOM_OP_SCALAR_FPTOUI:
+    case LOOM_OP_SCALAR_BITCAST:
+      return loom_amdgpu_finalize_scalar_conversion_plan(
+          context,
+          (const loom_amdgpu_scalar_conversion_plan_t*)plan.target_data);
+    case LOOM_OP_VECTOR_EXTRACT:
+      return loom_amdgpu_finalize_vector_extract_plan(
+          context, (const loom_amdgpu_vector_extract_plan_t*)plan.target_data);
+    case LOOM_OP_VECTOR_IOTA:
+    case LOOM_OP_VECTOR_FROM_ELEMENTS:
+    case LOOM_OP_VECTOR_SPLAT:
+    case LOOM_OP_VECTOR_INSERT:
+      return loom_amdgpu_finalize_vector_construct_plan(context, plan);
+    case LOOM_OP_VECTOR_EXTF:
+    case LOOM_OP_VECTOR_FPTRUNC:
+    case LOOM_OP_VECTOR_DECODE:
+    case LOOM_OP_VECTOR_ENCODE:
+      return loom_amdgpu_finalize_vector_16bit_float_conversion_plan(
+          context, (const loom_amdgpu_vector_16bit_float_conversion_plan_t*)
+                       plan.target_data);
+    case LOOM_OP_VECTOR_CONCAT:
+    case LOOM_OP_VECTOR_TRANSPOSE:
+    case LOOM_OP_VECTOR_SLICE:
+    case LOOM_OP_VECTOR_DEINTERLEAVE:
+    case LOOM_OP_VECTOR_INTERLEAVE:
+    case LOOM_OP_VECTOR_SHUFFLE:
+      return loom_amdgpu_finalize_vector_structural_plan(context, source_op,
+                                                         plan);
+    case LOOM_OP_VECTOR_TRANSFORM:
+      return loom_amdgpu_finalize_vector_transform_plan(
+          context,
+          (const loom_amdgpu_vector_transform_plan_t*)plan.target_data);
+    case LOOM_OP_VECTOR_TABLE_LOOKUP:
+      return loom_amdgpu_finalize_vector_table_lookup_plan(
+          context, (const loom_amdgpu_table_lookup_plan_t*)plan.target_data);
+    case LOOM_OP_VECTOR_FRAGMENT_REPACK:
+      return loom_amdgpu_finalize_vector_fragment_repack_plan(
+          context, source_op,
+          (const loom_amdgpu_fragment_repack_plan_t*)plan.target_data);
+    default:
+      return iree_ok_status();
+  }
+}
+
 static iree_status_t loom_amdgpu_emit_op(void* user_data,
                                          loom_low_lower_context_t* context,
                                          const loom_op_t* source_op,
@@ -1887,6 +1952,7 @@ static const loom_low_lower_policy_t kAmdgpuLowLowerPolicy = {
     .select_op = {.fn = loom_amdgpu_select_op, .user_data = NULL},
     .mark_plan_storage_demands = {.fn = loom_amdgpu_mark_plan_storage_demands,
                                   .user_data = NULL},
+    .finalize_plan = {.fn = loom_amdgpu_finalize_plan},
     .describe_plan = {.fn = loom_amdgpu_describe_plan, .user_data = NULL},
     .emit_op = {.fn = loom_amdgpu_emit_op, .user_data = NULL},
     .finalize_module = {.fn = loom_amdgpu_finalize_module, .user_data = NULL},

@@ -641,6 +641,17 @@ iree_status_t loom_amdgpu_select_scalar_conversion_plan(
   return loom_low_lower_plan_value_type(context, out_plan->result, result_type);
 }
 
+iree_status_t loom_amdgpu_finalize_scalar_conversion_plan(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_scalar_conversion_plan_t* plan) {
+  if (plan->kind != LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS) {
+    return iree_ok_status();
+  }
+  return loom_low_lower_plan_value_type(
+      context, plan->result,
+      loom_low_lower_value_binding_type(context, plan->source));
+}
+
 iree_status_t loom_amdgpu_low_legality_verify_scalar_conversion(
     const loom_target_low_legality_provider_t* provider,
     loom_target_low_legality_context_t* context, const loom_op_t* op,

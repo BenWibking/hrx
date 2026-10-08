@@ -200,6 +200,20 @@ iree_status_t loom_aie2p_select_shuffle_plan(loom_low_lower_context_t* context,
   return iree_ok_status();
 }
 
+iree_status_t loom_aie2p_finalize_shuffle_plan(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_low_lower_plan_t plan) {
+  const loom_aie2p_shuffle_plan_t* shuffle_plan =
+      (const loom_aie2p_shuffle_plan_t*)plan.target_data;
+  if (!loom_aie2p_shuffle_is_identity(shuffle_plan)) {
+    return iree_ok_status();
+  }
+  return loom_low_lower_plan_value_type(
+      context, loom_vector_shuffle_result(source_op),
+      loom_low_lower_value_binding_type(context,
+                                        loom_vector_shuffle_source(source_op)));
+}
+
 void loom_aie2p_mark_shuffle_plan_demands(loom_low_lower_context_t* context,
                                           const loom_op_t* source_op,
                                           loom_low_lower_plan_t plan) {

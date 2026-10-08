@@ -129,7 +129,11 @@ iree_status_t loom_amdgpu_select_vector_dotf_plan(
   out_plan->init_kind = init_kind;
   out_plan->tied_accumulate_descriptor_ref = tied_accumulate_descriptor_ref;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_VGPR, 1));
 }
 
 static iree_status_t loom_amdgpu_dotf_emit_lane_op(

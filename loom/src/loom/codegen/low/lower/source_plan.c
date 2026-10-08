@@ -1105,6 +1105,17 @@ static bool loom_low_lower_selected_plan_preserves_volatile_memory(
   return false;
 }
 
+static void loom_low_lower_planning_scope_begin(
+    loom_low_lower_context_t* context) {
+  context->planning_arena_active = true;
+}
+
+static void loom_low_lower_planning_scope_end(
+    loom_low_lower_context_t* context) {
+  context->planning_arena_active = false;
+  iree_arena_reset(&context->planning_arena);
+}
+
 static iree_status_t loom_low_lower_finalize_selected_plans(
     loom_low_lower_context_t* context) {
   const loom_low_lower_source_plan_t* source_plan =
@@ -1113,8 +1124,11 @@ static iree_status_t loom_low_lower_finalize_selected_plans(
     loom_low_lower_selected_plan_t* selected_plan =
         &source_plan->selected_plans[i];
     if (selected_plan->rule != NULL) {
-      IREE_RETURN_IF_ERROR(
-          loom_low_lower_rule_plan_finalize(context, selected_plan));
+      loom_low_lower_planning_scope_begin(context);
+      iree_status_t status =
+          loom_low_lower_rule_plan_finalize(context, selected_plan);
+      loom_low_lower_planning_scope_end(context);
+      IREE_RETURN_IF_ERROR(status);
       if (context->result->error_count != 0) {
         return iree_ok_status();
       }
@@ -1132,6 +1146,17 @@ static iree_status_t loom_low_lower_finalize_selected_plans(
       }
       IREE_RETURN_IF_ERROR(
           loom_low_lower_plan_value_type(context, result, result_type));
+    } else if (selected_plan->kind == LOOM_LOW_LOWER_SELECTED_PLAN_CALLBACK &&
+               !iree_any_bit_set(selected_plan->flags,
+                                 LOOM_LOW_LOWER_SELECTED_PLAN_ELIDED |
+                                     LOOM_LOW_LOWER_SELECTED_PLAN_CLAIMED) &&
+               context->policy->finalize_plan.fn != NULL) {
+      IREE_RETURN_IF_ERROR(context->policy->finalize_plan.fn(
+          context->policy->finalize_plan.user_data, context,
+          selected_plan->source_op, selected_plan->data.target_plan));
+      if (context->result->error_count != 0) {
+        return iree_ok_status();
+      }
     }
     if (!loom_low_lower_selected_plan_preserves_volatile_memory(
             context->module, selected_plan)) {
@@ -1542,17 +1567,6 @@ static iree_status_t loom_low_lower_plan_op(
     return iree_ok_status();
   }
   return loom_low_lower_emit_no_target_contract(context, source_op);
-}
-
-static void loom_low_lower_planning_scope_begin(
-    loom_low_lower_context_t* context) {
-  context->planning_arena_active = true;
-}
-
-static void loom_low_lower_planning_scope_end(
-    loom_low_lower_context_t* context) {
-  context->planning_arena_active = false;
-  iree_arena_reset(&context->planning_arena);
 }
 
 static iree_status_t loom_low_lower_plan_region(

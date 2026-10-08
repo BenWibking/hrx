@@ -139,6 +139,11 @@ iree_status_t loom_amdgpu_select_vector_bitpack_plan(
           loom_low_lower_context_descriptor_set(context),
           &out_plan->i8_permute);
     }
+    return loom_low_lower_plan_value_type(
+        context, out_plan->result,
+        loom_low_register_type(
+            loom_low_lower_context_descriptor_set(context)->stable_id,
+            LOOM_AMDGPU_REG_CLASS_ID_VGPR, out_plan->result_register_count));
   }
   return iree_ok_status();
 }
@@ -159,6 +164,11 @@ iree_status_t loom_amdgpu_select_vector_bitunpack_plan(
           loom_low_lower_context_descriptor_set(context),
           &out_plan->i8_permute);
     }
+    return loom_low_lower_plan_value_type(
+        context, out_plan->result,
+        loom_low_register_type(
+            loom_low_lower_context_descriptor_set(context)->stable_id,
+            LOOM_AMDGPU_REG_CLASS_ID_VGPR, out_plan->result_register_count));
   }
   return iree_ok_status();
 }

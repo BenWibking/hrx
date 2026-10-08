@@ -745,6 +745,20 @@ typedef struct loom_low_lower_select_op_callback_t {
   void* user_data;
 } loom_low_lower_select_op_callback_t;
 
+typedef iree_status_t (*loom_low_lower_finalize_plan_fn_t)(
+    void* user_data, loom_low_lower_context_t* context,
+    const loom_op_t* source_op, loom_low_lower_plan_t plan);
+
+typedef struct loom_low_lower_finalize_plan_callback_t {
+  // Completes operand-dependent decisions for one selected, live target plan.
+  // The shared planner calls this in definition order before Low creation;
+  // source bindings contain actual producer carriers, and facts remain live.
+  // The callback consumes its retained plan without traversing source IR.
+  loom_low_lower_finalize_plan_fn_t fn;
+  // Caller-owned payload passed to |fn|.
+  void* user_data;
+} loom_low_lower_finalize_plan_callback_t;
+
 typedef iree_status_t (*loom_low_lower_emit_op_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
     const loom_op_t* source_op, loom_low_lower_plan_t plan);
@@ -936,6 +950,8 @@ typedef struct loom_low_lower_policy_t {
   // Optional target-owned source storage demand marker for callback-selected
   // plans. Missing preserves the conservative all-operands behavior.
   loom_low_lower_mark_plan_storage_demands_callback_t mark_plan_storage_demands;
+  // Optional completion of selected plans after producer carriers are known.
+  loom_low_lower_finalize_plan_callback_t finalize_plan;
   // Optional target-owned callback plan description for compile reports.
   loom_low_lower_describe_plan_callback_t describe_plan;
   // Optional target-owned emitter for plans selected by |select_op|.

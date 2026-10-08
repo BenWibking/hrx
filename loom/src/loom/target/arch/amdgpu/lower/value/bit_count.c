@@ -253,7 +253,7 @@ iree_status_t loom_amdgpu_select_scalar_cttz_plan(
       .flags = flags,
   };
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(context, result, result_low_type);
 }
 
 iree_status_t loom_amdgpu_low_legality_verify_scalar_cttz(

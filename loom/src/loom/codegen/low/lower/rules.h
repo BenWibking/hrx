@@ -142,10 +142,18 @@ typedef iree_status_t (*loom_low_lower_materialize_value_fn_t)(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value_id, loom_value_id_t* out_low_value_id);
 
+// Returns the exact carrier produced by a selected materializer. Source
+// producers have published their bindings; this query does not emit or choose
+// a preferred source mapping.
+typedef loom_type_t (*loom_low_lower_materialized_value_type_fn_t)(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value_id);
+
 typedef struct loom_low_lower_value_materializer_t {
   // Selection-time predicate proving this materializer can handle the source
   // value without emitting IR.
   loom_low_lower_can_materialize_value_fn_t can_materialize;
+  // Native operand type selected before materialization begins.
+  loom_low_lower_materialized_value_type_fn_t result_type;
   // Emission-time callback that returns the low value used by descriptor ops.
   loom_low_lower_materialize_value_fn_t materialize;
 } loom_low_lower_value_materializer_t;

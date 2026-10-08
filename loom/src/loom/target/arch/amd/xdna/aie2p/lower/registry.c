@@ -276,6 +276,16 @@ static iree_status_t loom_aie2p_describe_plan(
   return iree_ok_status();
 }
 
+static iree_status_t loom_aie2p_finalize_plan(void* user_data,
+                                              loom_low_lower_context_t* context,
+                                              const loom_op_t* source_op,
+                                              loom_low_lower_plan_t plan) {
+  (void)user_data;
+  return loom_aie2p_shuffle_plan_isa(plan)
+             ? loom_aie2p_finalize_shuffle_plan(context, source_op, plan)
+             : iree_ok_status();
+}
+
 static iree_status_t loom_aie2p_emit_op(void* user_data,
                                         loom_low_lower_context_t* context,
                                         const loom_op_t* source_op,
@@ -384,6 +394,7 @@ static const loom_low_lower_policy_t kAie2pCoreLowLowerPolicy = {
             .user_data = NULL,
         },
     .describe_plan = {.fn = loom_aie2p_describe_plan, .user_data = NULL},
+    .finalize_plan = {.fn = loom_aie2p_finalize_plan},
     .emit_op = {.fn = loom_aie2p_emit_op, .user_data = NULL},
     .finalize_module = {.fn = loom_aie2p_finalize_module, .user_data = NULL},
 };

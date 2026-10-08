@@ -530,6 +530,26 @@ iree_status_t loom_amdgpu_select_vector_table_lookup_plan(
   return iree_ok_status();
 }
 
+iree_status_t loom_amdgpu_finalize_vector_table_lookup_plan(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_table_lookup_plan_t* plan) {
+  const bool is_ladder =
+      plan->strategy == LOOM_AMDGPU_TABLE_LOOKUP_STRATEGY_F32_LADDER;
+  loom_type_t result_type = loom_low_register_type(
+      loom_low_lower_context_descriptor_set(context)->stable_id,
+      LOOM_AMDGPU_REG_CLASS_ID_VGPR,
+      is_ladder ? plan->result_lane_count : plan->index_register_count);
+  // A singleton table bypasses the comparison ladder and reuses its carrier.
+  if (is_ladder && plan->table_lane_count == 1) {
+    result_type = loom_low_lower_value_binding_type(context, plan->table);
+    if (plan->result_lane_count != 1) {
+      result_type = loom_low_register_carrier_type_with_unit_count(
+          result_type, plan->result_lane_count);
+    }
+  }
+  return loom_low_lower_plan_value_type(context, plan->result, result_type);
+}
+
 static bool loom_amdgpu_table_lookup_strategy_descriptors_present(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_amdgpu_table_lookup_strategy_row_t* row) {

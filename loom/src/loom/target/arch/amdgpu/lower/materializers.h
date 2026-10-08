@@ -16,6 +16,26 @@
 extern "C" {
 #endif
 
+// Preserves VGPR carriers and projects SGPR tuples into equally wide VGPRs.
+loom_type_t loom_amdgpu_materialized_vgpr_register_type(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value);
+
+// Applies the active target's scalar-source limit to a binary VOP3 RHS.
+loom_type_t loom_amdgpu_materialized_vop3_binary_rhs_type(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value);
+
+// Exposes the address's low word in a VGPR.
+loom_type_t loom_amdgpu_materialized_vgpr_address_type(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value);
+
+// Exposes the address's low word in an SGPR.
+loom_type_t loom_amdgpu_materialized_sgpr_address_type(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value);
+
+// Native predicates carry an EXEC-width mask in an SGPR pair.
+loom_type_t loom_amdgpu_materialized_native_i1_mask_type(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value);
+
 // Returns true when the source value has an SGPR or VGPR register mapping
 // whose bits can be consumed by a VGPR operand.
 iree_status_t loom_amdgpu_value_can_materialize_as_vgpr_registers(

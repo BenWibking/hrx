@@ -241,7 +241,11 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_active_mask_plan(
   out_plan->mask_bit_count = mask_bit_count;
   out_plan->wavefront_size = wavefront_size;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, mask,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_SGPR, mask_bit_count / 32));
 }
 
 iree_status_t loom_amdgpu_select_kernel_subgroup_ballot_plan(
@@ -282,7 +286,11 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_ballot_plan(
   out_plan->mask_bit_count = mask_bit_count;
   out_plan->wavefront_size = wavefront_size;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, mask,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_SGPR, mask_bit_count / 32));
 }
 
 iree_status_t loom_amdgpu_select_kernel_subgroup_vote_any_plan(
@@ -317,7 +325,11 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_vote_any_plan(
   out_plan->result = loom_kernel_subgroup_vote_any_result(source_op);
   out_plan->wavefront_size = wavefront_size;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_SCC, 1));
 }
 
 iree_status_t loom_amdgpu_select_kernel_subgroup_vote_all_plan(
@@ -353,7 +365,11 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_vote_all_plan(
   out_plan->result = loom_kernel_subgroup_vote_all_result(source_op);
   out_plan->wavefront_size = wavefront_size;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_SCC, 1));
 }
 
 static iree_status_t loom_amdgpu_emit_subgroup_exec_mask(

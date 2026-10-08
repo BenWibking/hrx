@@ -1229,6 +1229,15 @@ iree_status_t loom_amdgpu_select_atomic_plan(
   IREE_RETURN_IF_ERROR(loom_amdgpu_plan_atomic_constant_payloads(
       context, &atomic_source, &out_plan->constant_payloads));
   *out_selected = true;
+  if (atomic_source.result != LOOM_VALUE_ID_INVALID) {
+    return loom_low_lower_plan_value_type(
+        context, atomic_source.result,
+        loom_low_register_type(
+            loom_low_lower_context_descriptor_set(context)->stable_id,
+            LOOM_AMDGPU_REG_CLASS_ID_VGPR,
+            loom_amdgpu_atomic_source_payload_register_count(
+                &out_plan->source)));
+  }
   return iree_ok_status();
 }
 

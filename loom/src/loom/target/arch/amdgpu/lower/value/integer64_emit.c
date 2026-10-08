@@ -61,9 +61,11 @@ iree_status_t loom_amdgpu_emit_i64_from_i32(loom_low_lower_context_t* context,
 iree_status_t loom_amdgpu_lower_index_cast(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_index_cast_plan_t* plan) {
-  const loom_type_t result_type = loom_low_register_type(
-      loom_low_lower_context_descriptor_set(context)->stable_id,
-      plan->result_register_class, plan->result_unit_count);
+  if (plan->kind == LOOM_AMDGPU_INDEX_CAST_KIND_DIAGNOSTIC_REJECTED) {
+    return iree_ok_status();
+  }
+  const loom_type_t result_type =
+      loom_low_lower_value_binding_type(context, plan->result);
   switch (plan->kind) {
     case LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS_TO_VGPR:
     case LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS: {

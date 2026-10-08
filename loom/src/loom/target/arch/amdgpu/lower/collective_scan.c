@@ -262,7 +262,11 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_scan_plan(
   out_plan->wavefront_size = wavefront_size;
   out_plan->active_lane_count = wavefront_size;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_VGPR, register_count));
 }
 
 iree_status_t loom_amdgpu_select_kernel_workgroup_scan_plan(
@@ -415,7 +419,11 @@ iree_status_t loom_amdgpu_select_kernel_workgroup_scan_plan(
   out_plan->flat_workgroup_size = shape.flat_workgroup_size;
   out_plan->scratch_byte_length = shape.scratch_byte_length;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_VGPR, register_count));
 }
 
 static iree_status_t loom_amdgpu_emit_subgroup_combine(

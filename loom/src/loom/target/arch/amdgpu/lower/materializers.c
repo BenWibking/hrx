@@ -15,6 +15,55 @@
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
 #include "loom/target/arch/amdgpu/target_info_defs.h"
 
+loom_type_t loom_amdgpu_materialized_vgpr_register_type(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value) {
+  const loom_type_t type =
+      loom_low_lower_value_binding_type(context, source_value);
+  if (loom_low_register_type_class_id(type) == LOOM_AMDGPU_REG_CLASS_ID_VGPR) {
+    return type;
+  }
+  return loom_low_register_type(
+      loom_low_lower_context_descriptor_set(context)->stable_id,
+      LOOM_AMDGPU_REG_CLASS_ID_VGPR, loom_low_register_type_unit_count(type));
+}
+
+loom_type_t loom_amdgpu_materialized_vop3_binary_rhs_type(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value) {
+  const loom_amdgpu_descriptor_set_info_t* info =
+      loom_amdgpu_target_info_descriptor_set_at(
+          loom_low_lower_context_descriptor_set(context)
+              ->descriptor_set_ordinal);
+  if (loom_amdgpu_descriptor_set_info_has_flags(
+          info, LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOP3_TWO_SCALAR_SOURCES)) {
+    return loom_low_lower_value_binding_type(context, source_value);
+  }
+  return loom_amdgpu_materialized_vgpr_register_type(context, source_value);
+}
+
+loom_type_t loom_amdgpu_materialized_vgpr_address_type(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value) {
+  (void)source_value;
+  return loom_low_register_type(
+      loom_low_lower_context_descriptor_set(context)->stable_id,
+      LOOM_AMDGPU_REG_CLASS_ID_VGPR, 1);
+}
+
+loom_type_t loom_amdgpu_materialized_sgpr_address_type(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value) {
+  (void)source_value;
+  return loom_low_register_type(
+      loom_low_lower_context_descriptor_set(context)->stable_id,
+      LOOM_AMDGPU_REG_CLASS_ID_SGPR, 1);
+}
+
+loom_type_t loom_amdgpu_materialized_native_i1_mask_type(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value) {
+  (void)source_value;
+  return loom_low_register_type(
+      loom_low_lower_context_descriptor_set(context)->stable_id,
+      LOOM_AMDGPU_REG_CLASS_ID_SGPR, 2);
+}
+
 static bool loom_amdgpu_low_type_can_materialize_as_vgpr_registers(
     loom_low_lower_context_t* context, loom_type_t low_type) {
   const uint32_t unit_count = loom_low_register_type_unit_count(low_type);

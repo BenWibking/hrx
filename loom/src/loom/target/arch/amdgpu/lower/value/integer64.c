@@ -1195,6 +1195,23 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
   return iree_ok_status();
 }
 
+iree_status_t loom_amdgpu_finalize_index_cast_plan(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_index_cast_plan_t* plan) {
+  if (plan->kind == LOOM_AMDGPU_INDEX_CAST_KIND_DIAGNOSTIC_REJECTED) {
+    return iree_ok_status();
+  }
+  const uint16_t register_class =
+      plan->kind == LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS
+          ? loom_low_register_type_class_id(
+                loom_low_lower_value_binding_type(context, plan->source))
+          : plan->result_register_class;
+  const loom_type_t result_type = loom_low_register_type(
+      loom_low_lower_context_descriptor_set(context)->stable_id, register_class,
+      plan->result_unit_count);
+  return loom_low_lower_plan_value_type(context, plan->result, result_type);
+}
+
 iree_status_t loom_amdgpu_select_index_cmp_i64_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_i64_compare_plan_t* out_plan, bool* out_selected) {
@@ -1241,7 +1258,7 @@ iree_status_t loom_amdgpu_select_index_cmp_i64_plan(
 
   *out_plan = plan;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(context, result, result_low_type);
 }
 
 static iree_status_t loom_amdgpu_scalar_i64_compare_operand_can_lower(
@@ -1318,7 +1335,7 @@ iree_status_t loom_amdgpu_select_scalar_cmpi_i64_plan(
 
   *out_plan = plan;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(context, result, result_low_type);
 }
 
 static bool loom_amdgpu_scalar_i64_alu_descriptors_supported(
@@ -1660,7 +1677,13 @@ iree_status_t loom_amdgpu_select_address_i64_alu_plan(
           },
   };
   *out_selected = true;
-  return iree_ok_status();
+  const loom_type_t result_type = loom_low_register_type(
+      loom_low_lower_context_descriptor_set(context)->stable_id,
+      loom_amdgpu_address_i64_alu_kind_uses_vgpr(kind)
+          ? LOOM_AMDGPU_REG_CLASS_ID_VGPR
+          : LOOM_AMDGPU_REG_CLASS_ID_SGPR,
+      2);
+  return loom_low_lower_plan_value_type(context, result, result_type);
 }
 
 iree_status_t loom_amdgpu_low_legality_verify_address_i64_alu(
@@ -1877,7 +1900,7 @@ iree_status_t loom_amdgpu_select_scalar_i64_alu_plan(
         loom_value_fact_table_lookup(fact_table, rhs), 1);
   }
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(context, result, result_low_type);
 }
 
 iree_status_t loom_amdgpu_select_scalar_i64_ctpop_plan(
@@ -1932,7 +1955,7 @@ iree_status_t loom_amdgpu_select_scalar_i64_ctpop_plan(
           (uint8_t)loom_low_register_type_unit_count(result_low_type),
   };
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(context, result, result_low_type);
 }
 
 iree_status_t loom_amdgpu_low_legality_verify_scalar_i64_alu(
