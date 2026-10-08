@@ -770,6 +770,44 @@ static iree_status_t loom_amdgpu_wait_plan_visit_effect_dependency_link(
   return iree_ok_status();
 }
 
+static iree_status_t loom_amdgpu_wait_plan_visit_memory_completion_edge(
+    loom_amdgpu_wait_plan_builder_t* builder,
+    const loom_low_schedule_memory_completion_edge_t* edge) {
+  const loom_low_schedule_table_t* schedule = builder->schedule;
+  IREE_ASSERT_LT(edge->producer_effect_use, schedule->effect_use_count);
+  IREE_ASSERT_LT(edge->consumer_effect_use, schedule->effect_use_count);
+  const loom_low_schedule_effect_use_t* producer =
+      &schedule->effect_uses[edge->producer_effect_use];
+  const loom_low_schedule_effect_use_t* consumer =
+      &schedule->effect_uses[edge->consumer_effect_use];
+  IREE_ASSERT((producer->kind == LOOM_LOW_EFFECT_KIND_READ &&
+               consumer->kind == LOOM_LOW_EFFECT_KIND_WRITE) ||
+              (producer->kind == LOOM_LOW_EFFECT_KIND_WRITE &&
+               consumer->kind == LOOM_LOW_EFFECT_KIND_READ));
+  IREE_ASSERT_NE(producer->block_index, consumer->block_index);
+  if (loom_amdgpu_wait_plan_node_forwards_dependencies(builder,
+                                                       consumer->node_index)) {
+    return iree_ok_status();
+  }
+
+  uint32_t counter_mask = 0;
+  if (producer->counter_id == LOOM_AMDGPU_WAIT_COUNTER_NONE) {
+    const loom_amdgpu_wait_frontier_node_t* producer_node =
+        &builder->classification.frontier_nodes[producer->node_index];
+    counter_mask = producer->kind == LOOM_LOW_EFFECT_KIND_READ
+                       ? producer_node->read_counter_mask
+                       : producer_node->write_counter_mask;
+  } else {
+    counter_mask = loom_amdgpu_wait_counter_mask(producer->counter_id);
+  }
+  if (counter_mask == 0) {
+    return iree_ok_status();
+  }
+  return loom_amdgpu_wait_plan_append_dependency_link(
+      builder, producer->node_index, consumer->node_index, counter_mask,
+      LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT);
+}
+
 static bool loom_amdgpu_wait_plan_has_trans_result_state(
     const loom_amdgpu_wait_plan_builder_t* builder) {
   return loom_amdgpu_trans_result_window_is_initialized(
@@ -1025,6 +1063,11 @@ static iree_status_t loom_amdgpu_wait_plan_build_dependency_links(
         builder,
         loom_low_schedule_dependency_range_at(
             &schedule->dependencies, schedule->effect_dependencies, i)));
+  }
+  for (iree_host_size_t i = 0; i < schedule->memory_completion_edge_count;
+       ++i) {
+    IREE_RETURN_IF_ERROR(loom_amdgpu_wait_plan_visit_memory_completion_edge(
+        builder, &schedule->memory_completion_edges[i]));
   }
   // Physical reuse closes the same completion epoch as a payload consumer.
   // Carry the allocator's exact release points into loop analysis before it

@@ -574,7 +574,8 @@ class PacketPlanFixture {
     frame_options.schedule_pair_affinities = pair_affinities;
     frame_options.schedule_structural_state_reads = structural_state_reads;
     frame_options.schedule_flags =
-        LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES;
+        LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES |
+        LOOM_LOW_SCHEDULE_FLAG_RETAIN_ACYCLIC_MEMORY_COMPLETIONS;
     frame_options.allocation_flags =
         LOOM_LOW_ALLOCATION_FLAG_RETAIN_COALESCED_INCOMING_INDEX |
         LOOM_LOW_ALLOCATION_FLAG_RETAIN_STORAGE_RELEASE_ACTION_INDEX;

@@ -137,6 +137,8 @@ loom_cc_library(
     "graph.c"
     "graph.h"
     "json.c"
+    "memory_completion.c"
+    "memory_completion.h"
     "pressure.c"
     "pressure.h"
     "pressure_alias.c"
@@ -234,6 +236,36 @@ loom_cc_test(
     loom::ir
     loom::target::test::descriptors
     loom::util::cfg_graph
+    loom::util::segmented_storage
+)
+
+loom_cc_test(
+  NAME
+    memory_completion_test
+  SRCS
+    "context.h"
+    "memory_completion.h"
+    "memory_completion_test.cc"
+    "setup_order.h"
+    "storage_lifetime.h"
+    "storage_relation_index.h"
+  DEPS
+    ::dependency_index
+    ::resource_calendar
+    ::schedule
+    iree::base
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::analysis::liveness
+    loom::codegen::low::function
+    loom::codegen::low::memory_access
+    loom::codegen::low::representation_binding
+    loom::codegen::low::storage_relation
+    loom::codegen::low::target_binding
+    loom::ir
+    loom::util::cfg_graph
+    loom::util::cfg_graph_test_util
     loom::util::segmented_storage
 )
 
