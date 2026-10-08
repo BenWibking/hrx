@@ -192,9 +192,15 @@ int main(int argc, char** argv) {
   };
 #if IREE_TEST_LOOM_HAVE_VM
   loom_vm_testbench_t vm_testbench;
-  loom_vm_testbench_initialize(native_target_environment,
-                               configuration.cleanup_pattern_provider_set,
-                               iree_allocator_system(), &vm_testbench);
+  status = loom_vm_testbench_initialize(target_environment,
+                                        iree_allocator_system(), &vm_testbench);
+  if (!iree_status_is_ok(status)) {
+    iree_status_fprint(stderr, status);
+    iree_status_free(status);
+    loom_vm_testbench_deinitialize(&vm_testbench);
+    loomc_target_environment_release(target_environment);
+    return 1;
+  }
   configuration.function_call_provider.fn =
       loom_vm_testbench_invocation_provider;
   configuration.function_call_provider.user_data = &vm_testbench;

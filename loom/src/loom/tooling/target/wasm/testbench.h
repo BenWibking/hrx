@@ -12,6 +12,7 @@
 #include "iree/base/api.h"
 #include "loom/error/source.h"
 #include "loom/target/provider.h"
+#include "loom/tooling/testbench/compiled_provider.h"
 #include "loom/tooling/testbench/scenario/executor.h"
 
 #ifdef __cplusplus
@@ -53,9 +54,11 @@ void loom_wasm_testbench_initialize(
 // Every prepared product owns an independently compiled and instantiated
 // module. Product preparation finishes before trial-local values exist.
 loom_testbench_execution_profile_t loom_wasm_testbench_execution_profile(
-    void* user_data, const loom_source_table_resolver_t* sources,
+    void* user_data, const loom_testbench_compilation_t* compilation,
+    const loom_source_table_resolver_t* sources,
     const loom_tooling_config_set_t* config_set,
-    loom_diagnostic_sink_t diagnostic_sink);
+    loom_diagnostic_sink_t diagnostic_sink,
+    loom_testbench_compile_result_callback_t result_callback);
 
 #ifdef __cplusplus
 }  // extern "C"

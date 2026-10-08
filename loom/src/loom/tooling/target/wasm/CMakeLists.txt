@@ -56,6 +56,7 @@ loom_cc_library(
     loom::target::selection
     loom::tooling::compile::pipeline
     loom::tooling::config
+    loom::tooling::testbench::compiled_provider
     loom::tooling::testbench::scenario::executor
   PUBLIC
 )

@@ -18,8 +18,10 @@ loom_cc_library(
     "xfail.c"
   DEPS
     iree::base
+    loom::binding::c::loomc
     loom::error::diagnostic
     loom::error::error_defs
+    loom::tooling::cli::loomc_result
     loom::tooling::testbench::api
     loom::tooling::testbench::expectation
     loom::util::json
@@ -43,6 +45,7 @@ loom_cc_library(
     loom::binding::c::loomc
     loom::sanitizer::options
     loom::tooling::cli::help
+    loom::tooling::cli::loomc_options
     loom::tooling::cli::loomc_result
     loom::tooling::config
     loom::tooling::execution::hal::device_provider
@@ -52,6 +55,7 @@ loom_cc_library(
     loom::tooling::input::flags
     loom::tooling::input::loomc
     loom::tooling::io::file
+    loom::tooling::testbench::compiled_provider
     loom::tooling::testbench::device_event
     loom::tooling::testbench::executor
     loom::tooling::testbench::invocation

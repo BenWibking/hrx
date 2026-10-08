@@ -9,11 +9,12 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include "loom/target/configured/compiler_provider_set.h"
 #include "loom/tooling/execution/hal/device_provider.h"
 #include "loom/tooling/input/configured.h"
 #include "loom/tools/iree-benchmark-loom/main.h"
 #include "loom/transforms/cleanup/configured.h"
+#include "loomc/iree.h"
+#include "loomc/target/configured.h"
 
 #ifndef IREE_BENCHMARK_LOOM_HAVE_AMDGPU
 #define IREE_BENCHMARK_LOOM_HAVE_AMDGPU 0
@@ -21,6 +22,9 @@
 #ifndef IREE_BENCHMARK_LOOM_HAVE_SPIRV
 #define IREE_BENCHMARK_LOOM_HAVE_SPIRV 0
 #endif  // IREE_BENCHMARK_LOOM_HAVE_SPIRV
+#ifndef IREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX
+#define IREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX 0
+#endif  // IREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX
 #ifndef IREE_BENCHMARK_LOOM_HAVE_VM
 #define IREE_BENCHMARK_LOOM_HAVE_VM 0
 #endif  // IREE_BENCHMARK_LOOM_HAVE_VM
@@ -36,6 +40,9 @@
 #include "loom/tooling/target/spirv/device_provider.h"
 #include "loom/tooling/target/spirv/testbench_requirements.h"
 #endif  // IREE_BENCHMARK_LOOM_HAVE_SPIRV
+#if IREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX
+#include "loom/import/cxx/tooling/loomc_input.h"
+#endif  // IREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX
 #if IREE_BENCHMARK_LOOM_HAVE_VM
 #include "loom/tooling/target/vm/testbench.h"
 #endif  // IREE_BENCHMARK_LOOM_HAVE_VM
@@ -51,6 +58,28 @@ static const loom_device_provider_t* const kIreeBenchmarkLoomDeviceProviders[] =
 #endif  // IREE_BENCHMARK_LOOM_HAVE_SPIRV
 };
 #endif  // IREE_BENCHMARK_LOOM_HAVE_ANY_DEVICE_PROVIDER
+
+#if IREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX
+static iree_status_t iree_benchmark_loom_import_source(
+    void* user_data, iree_string_view_t format,
+    iree_string_view_t input_options,
+    const loom_tooling_source_path_options_t* source_path_options,
+    loomc_context_t* context, loomc_workspace_t* workspace,
+    const loomc_source_t* source, iree_arena_block_pool_t* block_pool,
+    iree_allocator_t host_allocator, loomc_module_t** out_module,
+    loomc_result_t** out_result) {
+  (void)user_data;
+  if (iree_string_view_equal(format, IREE_SV("cxx"))) {
+    return loom_cxx_input_import_loomc(
+        context, workspace, source, input_options, source_path_options,
+        block_pool, host_allocator, out_module, out_result);
+  }
+  return iree_make_status(
+      IREE_STATUS_UNIMPLEMENTED,
+      "input format '%.*s' has no LoomC importer linked into this runner",
+      (int)format.size, format.data);
+}
+#endif  // IREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX
 
 static const loom_device_provider_registry_t
     kIreeBenchmarkLoomDeviceProviderRegistry = {
@@ -116,9 +145,10 @@ static iree_status_t iree_benchmark_loom_populate_requirement_providers(
 }
 
 int main(int argc, char** argv) {
-  loom_target_environment_t environment;
-  iree_status_t status = loom_target_environment_initialize(
-      loom_configured_compiler_provider_set(), &environment);
+  loomc_target_environment_t* target_environment = NULL;
+  iree_status_t status =
+      iree_status_from_loomc(loomc_target_environment_create_configured(
+          loomc_allocator_system(), &target_environment));
   if (!iree_status_is_ok(status)) {
     iree_status_fprint(stderr, status);
     iree_status_free(status);
@@ -128,7 +158,10 @@ int main(int argc, char** argv) {
   iree_benchmark_loom_configuration_t configuration = {
       .input_providers = loom_configured_input_providers(),
       .tool_name = "iree-benchmark-loom",
-      .target_environment = &environment,
+      .target_environment = target_environment,
+#if IREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX
+      .import = iree_benchmark_loom_import_source,
+#endif  // IREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX
       .cleanup_pattern_provider_set =
           loom_cleanup_configured_pattern_provider_set(),
       .device_provider_registry = &kIreeBenchmarkLoomDeviceProviderRegistry,
@@ -139,9 +172,15 @@ int main(int argc, char** argv) {
   };
 #if IREE_BENCHMARK_LOOM_HAVE_VM
   loom_vm_testbench_t vm_testbench;
-  loom_vm_testbench_initialize(configuration.target_environment,
-                               configuration.cleanup_pattern_provider_set,
-                               iree_allocator_system(), &vm_testbench);
+  status = loom_vm_testbench_initialize(target_environment,
+                                        iree_allocator_system(), &vm_testbench);
+  if (!iree_status_is_ok(status)) {
+    iree_status_fprint(stderr, status);
+    iree_status_free(status);
+    loom_vm_testbench_deinitialize(&vm_testbench);
+    loomc_target_environment_release(target_environment);
+    return 1;
+  }
   configuration.function_call_provider =
       (loom_testbench_function_call_provider_callback_t){
           .fn = loom_vm_testbench_invocation_provider,
@@ -152,6 +191,6 @@ int main(int argc, char** argv) {
 #if IREE_BENCHMARK_LOOM_HAVE_VM
   loom_vm_testbench_deinitialize(&vm_testbench);
 #endif  // IREE_BENCHMARK_LOOM_HAVE_VM
-  loom_target_environment_deinitialize(&environment);
+  loomc_target_environment_release(target_environment);
   return exit_code;
 }

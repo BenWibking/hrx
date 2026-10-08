@@ -41,15 +41,9 @@ loom_cc_library(
     iree::hal
     iree::vm
     iree::vm::bytecode::module
-    loom::compile::request
-    loom::error::error_defs
-    loom::error::source
-    loom::target::arch::vm::provider
-    loom::target::entry_selection
-    loom::target::provider
-    loom::tooling::compile::pipeline
-    loom::tooling::config
-    loom::tooling::testbench::invocation
+    loom::binding::c::loomc
+    loom::binding::c::target::vm
+    loom::tooling::testbench::compiled_provider
     loom::tooling::testbench::scenario::executor
   PUBLIC
 )

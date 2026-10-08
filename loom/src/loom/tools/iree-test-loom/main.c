@@ -17,6 +17,7 @@
 #include "iree/io/stdio_stream.h"
 #include "loom/sanitizer/options.h"
 #include "loom/tooling/cli/help.h"
+#include "loom/tooling/cli/loomc_options.h"
 #include "loom/tooling/cli/loomc_result.h"
 #include "loom/tooling/config/config.h"
 #include "loom/tooling/execution/hal/scenario_profile.h"
@@ -877,8 +878,11 @@ int iree_test_loom_main(int argc, char** argv,
   iree_allocator_t allocator = iree_allocator_system();
   loom_tooling_config_set_t config_set;
   loom_tooling_config_set_initialize(allocator, &config_set);
+  loomc_config_binding_t* config_bindings = NULL;
+  loomc_config_options_t config_options = {0};
   loomc_context_t* compiler_context = NULL;
   loomc_workspace_t* compiler_workspace = NULL;
+  loomc_compiler_t* compiler = NULL;
   loomc_module_t* module = NULL;
   loomc_module_interop_view_t module_view = {0};
   loom_run_session_t session = {0};
@@ -964,6 +968,10 @@ int iree_test_loom_main(int argc, char** argv,
     status = iree_test_loom_append_config_files(&config_set, allocator);
   }
   if (iree_status_is_ok(status)) {
+    status = loom_tooling_cli_make_loomc_config_options(
+        &config_set, allocator, &config_bindings, &config_options);
+  }
+  if (iree_status_is_ok(status)) {
     status = loom_sanitizer_options_parse_checks(
         iree_make_cstring_view(FLAG_sanitizer), IREE_SV("--sanitizer"),
         &sanitizer_options);
@@ -997,6 +1005,11 @@ int iree_test_loom_main(int argc, char** argv,
     status = iree_status_from_loomc(loomc_workspace_create(
         /*options=*/NULL, loomc_allocator_from_iree(allocator),
         &compiler_workspace));
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_status_from_loomc(
+        loomc_compiler_create(compiler_context, /*options=*/NULL,
+                              loomc_allocator_from_iree(allocator), &compiler));
   }
   if (iree_status_is_ok(status)) {
     loom_run_session_options_t session_options = {0};
@@ -1095,6 +1108,16 @@ int iree_test_loom_main(int argc, char** argv,
         &scenario_execution_options);
     const loom_testbench_case_plan_t** selected_cases = NULL;
     loom_testbench_case_plan_list_t selected = {0};
+    const loom_testbench_compilation_t compilation = {
+        .compiler = compiler,
+        .workspace = compiler_workspace,
+        .module = module,
+        .config = &config_options,
+    };
+    const loom_testbench_compile_result_callback_t compile_result_callback = {
+        .fn = iree_test_loom_diagnostic_capture_loomc_result,
+        .user_data = &diagnostic_capture,
+    };
     if (iree_status_is_ok(status)) {
       status = iree_arena_allocate_array(&plan_arena, module_plan.case_count,
                                          sizeof(*selected_cases),
@@ -1112,22 +1135,24 @@ int iree_test_loom_main(int argc, char** argv,
       if (configuration->function_call_provider.fn) {
         execution_options.invocation.function_call =
             configuration->function_call_provider.fn(
-                configuration->function_call_provider.user_data, selected,
-                &run_module.sources.table, &config_set);
+                configuration->function_call_provider.user_data, &compilation,
+                selected, compile_result_callback);
       }
       if (configuration->scenario_target_profile.fn != NULL) {
         scenario_execution_options.target =
             configuration->scenario_target_profile.fn(
-                configuration->scenario_target_profile.user_data,
+                configuration->scenario_target_profile.user_data, &compilation,
                 &run_module.sources.table, &config_set,
-                iree_test_loom_diagnostic_capture_sink(&diagnostic_capture));
+                iree_test_loom_diagnostic_capture_sink(&diagnostic_capture),
+                compile_result_callback);
       }
       if (configuration->scenario_oracle_profile.fn != NULL) {
         scenario_execution_options.oracle =
             configuration->scenario_oracle_profile.fn(
-                configuration->scenario_oracle_profile.user_data,
+                configuration->scenario_oracle_profile.user_data, &compilation,
                 &run_module.sources.table, &config_set,
-                iree_test_loom_diagnostic_capture_sink(&diagnostic_capture));
+                iree_test_loom_diagnostic_capture_sink(&diagnostic_capture),
+                compile_result_callback);
       }
     }
     execution_options.materializer.host_allocator = allocator;
@@ -1396,8 +1421,10 @@ int iree_test_loom_main(int argc, char** argv,
   }
   loom_run_session_deinitialize(&session);
   loomc_module_release(module);
+  loomc_compiler_release(compiler);
   loomc_workspace_release(compiler_workspace);
   loomc_context_release(compiler_context);
+  iree_allocator_free(allocator, config_bindings);
   iree_test_loom_xfail_list_deinitialize(&xfails, allocator);
 
   IREE_TRACE_ZONE_END(z0);

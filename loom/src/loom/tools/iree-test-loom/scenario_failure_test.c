@@ -191,12 +191,16 @@ static iree_status_t iree_test_loom_scenario_failure_prepare(
 
 static loom_testbench_execution_profile_t
 iree_test_loom_scenario_failure_bind_profile(
-    void* user_data, const loom_source_table_resolver_t* sources,
+    void* user_data, const loom_testbench_compilation_t* compilation,
+    const loom_source_table_resolver_t* sources,
     const loom_tooling_config_set_t* config_set,
-    loom_diagnostic_sink_t diagnostic_sink) {
+    loom_diagnostic_sink_t diagnostic_sink,
+    loom_testbench_compile_result_callback_t result_callback) {
+  (void)compilation;
   (void)sources;
   (void)config_set;
   (void)diagnostic_sink;
+  (void)result_callback;
   iree_test_loom_scenario_failure_profile_t* profile =
       (iree_test_loom_scenario_failure_profile_t*)user_data;
   return (loom_testbench_execution_profile_t){

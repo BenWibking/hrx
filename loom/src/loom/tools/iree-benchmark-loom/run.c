@@ -13,9 +13,12 @@
 #include "iree/base/internal/arena.h"
 #include "loom/ir/module.h"
 #include "loom/target/reporting/artifact_manifest.h"
+#include "loom/tooling/cli/loomc_options.h"
+#include "loom/tooling/cli/loomc_result.h"
 #include "loom/tooling/compile/options.h"
 #include "loom/tooling/compile/report_capture.h"
 #include "loom/tooling/config/config.h"
+#include "loom/tooling/input/loomc.h"
 #include "loom/tooling/io/file.h"
 #include "loom/tooling/testbench/device_event.h"
 #include "loom/tooling/testbench/executor.h"
@@ -30,7 +33,8 @@
 #include "loom/tools/iree-benchmark-loom/session.h"
 #include "loom/tools/iree-benchmark-loom/work_execution.h"
 #include "loom/tools/iree-benchmark-loom/work_plan.h"
-#include "loom/verify/verify.h"
+#include "loomc/interop.h"
+#include "loomc/iree.h"
 
 static iree_status_t iree_benchmark_loom_compile_report_options_initialize(
     const iree_benchmark_loom_options_t* options,
@@ -90,6 +94,13 @@ static iree_status_t iree_benchmark_loom_append_config_files(
         config_set, paths.values[i], allocator));
   }
   return iree_ok_status();
+}
+
+static iree_status_t iree_benchmark_loom_print_compile_result(
+    void* user_data, const loomc_result_t* result) {
+  (void)user_data;
+  bool succeeded = false;
+  return loom_tooling_cli_print_loomc_result(stderr, result, &succeeded);
 }
 
 static bool iree_benchmark_loom_compare_selects_benchmark(
@@ -198,11 +209,18 @@ iree_status_t iree_benchmark_loom_run_file(
   loom_tooling_config_set_t config_set;
   loom_tooling_config_set_initialize(allocator, &config_set);
   normalized_benchmark_options.config_set = &config_set;
+  loomc_config_binding_t* config_bindings = NULL;
+  loomc_config_options_t config_options = {0};
   const iree_string_view_t input_path = options->input_path;
   const bool compare_requested =
       !iree_string_view_is_empty(benchmark_options->compare);
 
   iree_io_file_contents_t* contents = NULL;
+  loomc_context_t* compiler_context = NULL;
+  loomc_workspace_t* compiler_workspace = NULL;
+  loomc_compiler_t* compiler = NULL;
+  loomc_module_t* module = NULL;
+  loomc_module_interop_view_t module_view = {0};
   loom_run_session_t session = {0};
   loom_run_module_t run_module = {0};
   iree_benchmark_loom_artifact_bundle_t artifact_bundle = {0};
@@ -245,6 +263,10 @@ iree_status_t iree_benchmark_loom_run_file(
     status = iree_benchmark_loom_append_config_files(
         &config_set, benchmark_options->config_files, allocator);
   }
+  if (iree_status_is_ok(status)) {
+    status = loom_tooling_cli_make_loomc_config_options(
+        &config_set, allocator, &config_bindings, &config_options);
+  }
   loom_compile_report_capture_options_t compile_report_options = {0};
   if (iree_status_is_ok(status)) {
     status = iree_benchmark_loom_compile_report_options_initialize(
@@ -268,6 +290,33 @@ iree_status_t iree_benchmark_loom_run_file(
     }
   }
 
+  if (iree_status_is_ok(status)) {
+    const loomc_context_target_options_t target_options = {
+        .type = LOOMC_STRUCTURE_TYPE_CONTEXT_TARGET_OPTIONS,
+        .structure_size = sizeof(target_options),
+        .target_environment = options->configuration->target_environment,
+    };
+    const loomc_context_options_t context_options = {
+        .type = LOOMC_STRUCTURE_TYPE_CONTEXT_OPTIONS,
+        .structure_size = sizeof(context_options),
+        .next = options->configuration->target_environment != NULL
+                    ? &target_options
+                    : NULL,
+    };
+    status = iree_status_from_loomc(loomc_context_create(
+        &context_options, loomc_allocator_from_iree(allocator),
+        &compiler_context));
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_status_from_loomc(loomc_workspace_create(
+        /*options=*/NULL, loomc_allocator_from_iree(allocator),
+        &compiler_workspace));
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_status_from_loomc(
+        loomc_compiler_create(compiler_context, /*options=*/NULL,
+                              loomc_allocator_from_iree(allocator), &compiler));
+  }
   if (iree_status_is_ok(status)) {
     status = iree_benchmark_loom_session_initialize(options->configuration,
                                                     allocator, &session);
@@ -329,50 +378,61 @@ iree_status_t iree_benchmark_loom_run_file(
     }
   }
   if (iree_status_is_ok(status)) {
-    loom_run_module_parse_options_t parse_options = {0};
-    loom_run_module_parse_options_initialize(&parse_options);
-    parse_options.input = benchmark_options->input;
-    parse_options.filename = filename;
-    parse_options.source = source;
-    parse_options.diagnostic_sink = (loom_diagnostic_sink_t){
-        .fn = iree_benchmark_loom_diagnostic_capture_sink,
-        .user_data = &source_diagnostics,
+    const loom_tooling_loomc_input_options_t admission_options = {
+        .providers = options->configuration->input_providers,
+        .input = benchmark_options->input,
+        .path = input_path,
+        .source = source,
+        .import = options->configuration->import,
+        .import_user_data = options->configuration->import_user_data,
     };
-    status = loom_run_module_parse(&session, &parse_options, &run_module);
-    if (!iree_status_is_ok(status) && source_diagnostics.error_count != 0) {
-      // The diagnostic sink owns the input rejection evidence; the status only
-      // carries the same non-infrastructure failure.
-      iree_status_free(status);
+    loomc_result_t* result = NULL;
+    status = loom_tooling_input_admit_loomc_module(
+        &admission_options, compiler_context, compiler_workspace,
+        loom_run_session_block_pool(&session), &module, &result, allocator);
+    if (iree_status_is_ok(status)) {
+      status = iree_benchmark_loom_diagnostic_capture_loomc_result(
+          &source_diagnostics, result);
+    }
+    if (iree_status_is_ok(status) && !loomc_result_succeeded(result)) {
       status = iree_benchmark_loom_event_sink_emit_failure(
           event_sink, &run_identity, IREE_SV("parse"), IREE_SV("diagnostics"),
           IREE_SV("input module has parse errors"), &source_diagnostics);
       ++failure_count;
       exit_code = 1;
     }
+    loomc_result_release(result);
   }
 
   if (iree_status_is_ok(status) && failure_count == 0) {
     iree_benchmark_loom_diagnostic_capture_deinitialize(&source_diagnostics);
     iree_benchmark_loom_diagnostic_capture_initialize(allocator,
                                                       &source_diagnostics);
-    loom_verify_options_t verify_options = {0};
-    verify_options.sink = (loom_diagnostic_sink_t){
-        .fn = iree_benchmark_loom_diagnostic_capture_sink,
-        .user_data = &source_diagnostics,
-    };
-    verify_options.max_errors = 20;
-    verify_options.source_resolver =
-        loom_run_module_source_resolver(&run_module);
-    loom_verify_result_t verify_result = {0};
-    status =
-        loom_verify_module(run_module.module, &verify_options, &verify_result);
-    if (iree_status_is_ok(status) && verify_result.error_count != 0) {
+    loomc_result_t* result = NULL;
+    status = iree_status_from_loomc(loomc_module_get_interop_view(
+        module, loomc_allocator_from_iree(allocator), &module_view, &result));
+    if (iree_status_is_ok(status)) {
+      status = iree_benchmark_loom_diagnostic_capture_loomc_result(
+          &source_diagnostics, result);
+    }
+    if (iree_status_is_ok(status) && !loomc_result_succeeded(result)) {
       status = iree_benchmark_loom_event_sink_emit_failure(
           event_sink, &run_identity, IREE_SV("verify"), IREE_SV("diagnostics"),
           IREE_SV("input module failed verification"), &source_diagnostics);
       ++failure_count;
       exit_code = 1;
     }
+    loomc_result_release(result);
+  }
+
+  if (iree_status_is_ok(status) && failure_count == 0) {
+    // Native planning and HAL/Wasm execution inspect this exact-version view.
+    // The public module owns its IR and source snapshots for the full run.
+    run_module = (loom_run_module_t){
+        .module = (loom_module_t*)module_view.module,
+        .filename = filename,
+        .sources = {.table = *module_view.source_table},
+    };
   }
 
   if (iree_status_is_ok(status) && failure_count == 0) {
@@ -441,6 +501,15 @@ iree_status_t iree_benchmark_loom_run_file(
       }
     }
 
+    const loom_testbench_compilation_t compilation = {
+        .compiler = compiler,
+        .workspace = compiler_workspace,
+        .module = module,
+        .config = &config_options,
+    };
+    const loom_testbench_compile_result_callback_t compile_result_callback = {
+        .fn = iree_benchmark_loom_print_compile_result,
+    };
     const loom_testbench_function_call_provider_callback_t function_calls =
         options->configuration->function_call_provider;
     if (iree_status_is_ok(status) && failure_count == 0 && function_calls.fn) {
@@ -465,10 +534,10 @@ iree_status_t iree_benchmark_loom_run_file(
         }
         if (selected_case_count != 0) {
           execution_options.invocation.function_call = function_calls.fn(
-              function_calls.user_data,
+              function_calls.user_data, &compilation,
               (loom_testbench_case_plan_list_t){.values = selected_cases,
                                                 .count = selected_case_count},
-              &run_module.sources.table, &config_set);
+              compile_result_callback);
         }
       }
     }
@@ -604,7 +673,6 @@ iree_status_t iree_benchmark_loom_run_file(
   }
   iree_arena_deinitialize(&execution_arena);
   iree_arena_deinitialize(&plan_arena);
-  loom_run_module_deinitialize(&run_module);
   iree_benchmark_loom_hal_context_deinitialize(&hal_context);
   if (device_event_capture_initialized) {
     loom_testbench_device_event_capture_deinitialize(&device_event_capture);
@@ -614,6 +682,11 @@ iree_status_t iree_benchmark_loom_run_file(
   iree_benchmark_loom_artifact_bundle_deinitialize(&artifact_bundle);
   iree_io_file_contents_free(contents);
   loom_run_session_deinitialize(&session);
+  loomc_module_release(module);
+  loomc_compiler_release(compiler);
+  loomc_workspace_release(compiler_workspace);
+  loomc_context_release(compiler_context);
+  iree_allocator_free(allocator, config_bindings);
 
   out_result->exit_code = exit_code;
   return status;

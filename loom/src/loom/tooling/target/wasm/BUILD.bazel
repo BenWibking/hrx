@@ -58,6 +58,7 @@ loom_cc_library(
         "//loom/src/loom/target/emit/wasm:module_compiler",
         "//loom/src/loom/tooling/compile:pipeline",
         "//loom/src/loom/tooling/config",
+        "//loom/src/loom/tooling/testbench:compiled_provider",
         "//loom/src/loom/tooling/testbench/scenario:executor",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
