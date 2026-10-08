@@ -104,23 +104,6 @@ static loom_symbolic_proof_result_t loom_symbolic_expr_prove_le_by_facts(
   return LOOM_SYMBOLIC_PROOF_UNKNOWN;
 }
 
-static bool loom_symbolic_expr_accumulate_checked(int64_t term_min,
-                                                  int64_t term_max,
-                                                  int64_t* inout_min,
-                                                  int64_t* inout_max) {
-  int64_t new_min = 0;
-  int64_t new_max = 0;
-  if (!iree_checked_add_i64(*inout_min, term_min, &new_min)) {
-    return false;
-  }
-  if (!iree_checked_add_i64(*inout_max, term_max, &new_max)) {
-    return false;
-  }
-  *inout_min = new_min;
-  *inout_max = new_max;
-  return true;
-}
-
 static loom_value_facts_t loom_symbolic_expr_intersect_integer_facts(
     loom_value_facts_t lhs, loom_value_facts_t rhs) {
   if (loom_value_facts_is_unknown(lhs) || loom_value_facts_is_float(lhs)) {
@@ -159,59 +142,57 @@ static iree_status_t loom_symbolic_expr_term_facts(
   return iree_ok_status();
 }
 
-static void loom_symbolic_expr_mul_interval_bound(int64_t lhs, int64_t rhs,
-                                                  int64_t* out_product) {
-  if (iree_checked_mul_i64(lhs, rhs, out_product)) {
-    return;
-  }
-  *out_product = (lhs < 0) != (rhs < 0) ? INT64_MIN : INT64_MAX;
-}
+enum loom_symbolic_expr_interval_flag_bits_e {
+  LOOM_SYMBOLIC_EXPR_INTERVAL_MINIMUM_KNOWN = 1u << 0,
+  LOOM_SYMBOLIC_EXPR_INTERVAL_MAXIMUM_KNOWN = 1u << 1,
+};
+typedef uint8_t loom_symbolic_expr_interval_flags_t;
+
+typedef struct loom_symbolic_expr_term_interval_t {
+  // Minimum value the scaled term can contribute, when representable.
+  int64_t minimum;
+  // Maximum value the scaled term can contribute, when representable.
+  int64_t maximum;
+  // Identifies which endpoints are finite, representable bounds.
+  loom_symbolic_expr_interval_flags_t flags;
+} loom_symbolic_expr_term_interval_t;
 
 static iree_status_t loom_symbolic_expr_term_interval(
     loom_symbolic_expr_context_t* context, const loom_symbolic_term_t term,
-    int64_t* out_min, int64_t* out_max, bool* out_known) {
-  *out_known = false;
+    loom_symbolic_expr_term_interval_t* out_interval) {
+  *out_interval = (loom_symbolic_expr_term_interval_t){0};
   loom_value_facts_t facts = {0};
   IREE_RETURN_IF_ERROR(loom_symbolic_expr_term_facts(context, term, &facts));
   if (loom_value_facts_is_unknown(facts) || loom_value_facts_is_float(facts)) {
     return iree_ok_status();
   }
-  int64_t lower_product = 0;
-  int64_t upper_product = 0;
-  if (term.coefficient >= 0) {
-    loom_symbolic_expr_mul_interval_bound(term.coefficient, facts.range_lo,
-                                          &lower_product);
-    loom_symbolic_expr_mul_interval_bound(term.coefficient, facts.range_hi,
-                                          &upper_product);
-  } else {
-    loom_symbolic_expr_mul_interval_bound(term.coefficient, facts.range_hi,
-                                          &lower_product);
-    loom_symbolic_expr_mul_interval_bound(term.coefficient, facts.range_lo,
-                                          &upper_product);
+  int64_t lower_bound = facts.range_lo;
+  int64_t upper_bound = facts.range_hi;
+  if (term.coefficient < 0) {
+    lower_bound = facts.range_hi;
+    upper_bound = facts.range_lo;
   }
-  *out_min = lower_product;
-  *out_max = upper_product;
-  *out_known = true;
+  // These are mathematical proof terms, not machine arithmetic. Saturating an
+  // oversized term before another term or constant cancels it can prove a
+  // false inequality even when both original expressions are representable.
+  if (iree_checked_mul_i64(term.coefficient, lower_bound,
+                           &out_interval->minimum)) {
+    out_interval->flags |= LOOM_SYMBOLIC_EXPR_INTERVAL_MINIMUM_KNOWN;
+  }
+  if (iree_checked_mul_i64(term.coefficient, upper_bound,
+                           &out_interval->maximum)) {
+    out_interval->flags |= LOOM_SYMBOLIC_EXPR_INTERVAL_MAXIMUM_KNOWN;
+  }
   return iree_ok_status();
 }
-
-typedef struct loom_symbolic_expr_term_interval_t {
-  // Minimum value the scaled term can contribute.
-  int64_t minimum;
-  // Maximum value the scaled term can contribute.
-  int64_t maximum;
-  // True when minimum/maximum are known for this term.
-  bool known;
-} loom_symbolic_expr_term_interval_t;
 
 static iree_status_t loom_symbolic_expr_build_term_intervals(
     loom_symbolic_expr_context_t* context, const loom_symbolic_term_t* terms,
     iree_host_size_t term_count,
     loom_symbolic_expr_term_interval_t* out_intervals) {
   for (iree_host_size_t i = 0; i < term_count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_symbolic_expr_term_interval(
-        context, terms[i], &out_intervals[i].minimum, &out_intervals[i].maximum,
-        &out_intervals[i].known));
+    IREE_RETURN_IF_ERROR(
+        loom_symbolic_expr_term_interval(context, terms[i], &out_intervals[i]));
   }
   return iree_ok_status();
 }
@@ -347,22 +328,30 @@ static iree_status_t loom_symbolic_expr_prove_le_linear(
 
   int64_t minimum = constant;
   int64_t maximum = constant;
+  bool minimum_known = true;
+  bool maximum_known = true;
   for (iree_host_size_t i = 0; i < term_count; ++i) {
-    int64_t term_minimum = 0;
-    int64_t term_maximum = 0;
-    bool term_interval_known = false;
-    IREE_RETURN_IF_ERROR(loom_symbolic_expr_term_interval(
-        context, terms[i], &term_minimum, &term_maximum, &term_interval_known));
-    if (!term_interval_known ||
-        !loom_symbolic_expr_accumulate_checked(term_minimum, term_maximum,
-                                               &minimum, &maximum)) {
+    loom_symbolic_expr_term_interval_t interval;
+    IREE_RETURN_IF_ERROR(
+        loom_symbolic_expr_term_interval(context, terms[i], &interval));
+    minimum_known =
+        minimum_known &&
+        iree_any_bit_set(interval.flags,
+                         LOOM_SYMBOLIC_EXPR_INTERVAL_MINIMUM_KNOWN) &&
+        iree_checked_add_i64(minimum, interval.minimum, &minimum);
+    maximum_known =
+        maximum_known &&
+        iree_any_bit_set(interval.flags,
+                         LOOM_SYMBOLIC_EXPR_INTERVAL_MAXIMUM_KNOWN) &&
+        iree_checked_add_i64(maximum, interval.maximum, &maximum);
+    if (!minimum_known && !maximum_known) {
       *out_result = LOOM_SYMBOLIC_PROOF_UNKNOWN;
       return iree_ok_status();
     }
   }
-  if (maximum <= 0) {
+  if (maximum_known && maximum <= 0) {
     *out_result = LOOM_SYMBOLIC_PROOF_TRUE;
-  } else if (minimum > 0) {
+  } else if (minimum_known && minimum > 0) {
     *out_result = LOOM_SYMBOLIC_PROOF_FALSE;
   } else {
     *out_result = LOOM_SYMBOLIC_PROOF_UNKNOWN;
@@ -1042,16 +1031,15 @@ static void loom_symbolic_expr_residual_interval_excluding_pair(
     iree_host_size_t second_index, int64_t constant, int64_t* out_maximum,
     bool* out_known) {
   *out_known = false;
-  int64_t minimum = constant;
   int64_t maximum = constant;
   for (iree_host_size_t i = 0; i < term_count; ++i) {
     if (i == first_index || i == second_index) {
       continue;
     }
     const loom_symbolic_expr_term_interval_t* interval = &intervals[i];
-    if (!interval->known ||
-        !loom_symbolic_expr_accumulate_checked(
-            interval->minimum, interval->maximum, &minimum, &maximum)) {
+    if (!iree_any_bit_set(interval->flags,
+                          LOOM_SYMBOLIC_EXPR_INTERVAL_MAXIMUM_KNOWN) ||
+        !iree_checked_add_i64(maximum, interval->maximum, &maximum)) {
       return;
     }
   }
