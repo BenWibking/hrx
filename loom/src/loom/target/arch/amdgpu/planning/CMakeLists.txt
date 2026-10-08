@@ -521,11 +521,13 @@ loom_cc_test(
     loom::codegen::low::immediates
     loom::codegen::low::schedule
     loom::ir
+    loom::ops::cache
     loom::ops::low
     loom::target::arch::amdgpu::descriptors::low_registry
     loom::target::arch::amdgpu::facts
     loom::target::arch::amdgpu::refs::target_refs
     loom::target::arch::amdgpu::target_info
+    loom::util::cfg_graph_test_util
   LABELS
     "iree-build-requirement=loom.target.arch.amdgpu"
 )

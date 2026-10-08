@@ -186,6 +186,12 @@ static void loom_amdgpu_wait_classification_classify_effects(
           break;
         }
         node_state->flags |= LOOM_AMDGPU_WAIT_NODE_STATE_DEPENDENCY_READ;
+        if (!iree_any_bit_set(
+                effect->flags,
+                LOOM_LOW_SCHEDULE_EFFECT_USE_FLAG_REFINED_MEMORY)) {
+          node_state->flags |=
+              LOOM_AMDGPU_WAIT_NODE_STATE_UNREFINED_MEMORY_READ;
+        }
         frontier_node->read_space_flags |=
             loom_amdgpu_wait_memory_space_flag(effect->memory_space);
         const uint32_t counter_mask =
@@ -219,6 +225,12 @@ static void loom_amdgpu_wait_classification_classify_effects(
           break;
         }
         node_state->flags |= LOOM_AMDGPU_WAIT_NODE_STATE_DEPENDENCY_WRITE;
+        if (!iree_any_bit_set(
+                effect->flags,
+                LOOM_LOW_SCHEDULE_EFFECT_USE_FLAG_REFINED_MEMORY)) {
+          node_state->flags |=
+              LOOM_AMDGPU_WAIT_NODE_STATE_UNREFINED_MEMORY_WRITE;
+        }
         frontier_node->write_space_flags |=
             loom_amdgpu_wait_memory_space_flag(effect->memory_space);
         const uint32_t counter_mask =
@@ -482,6 +494,24 @@ static void loom_amdgpu_wait_classification_finish_nodes(
       node_state->flags |= LOOM_AMDGPU_WAIT_NODE_STATE_TRANSCENDENTAL;
     }
     const loom_amdgpu_wait_node_state_flags_t flags = node_state->flags;
+    if (node->descriptor != NULL &&
+        !iree_any_bit_set(node->op->instance_flags,
+                          LOOM_MEMORY_ACCESS_FLAG_VOLATILE)) {
+      if (iree_any_bit_set(flags,
+                           LOOM_AMDGPU_WAIT_NODE_STATE_DEPENDENCY_READ) &&
+          !iree_any_bit_set(
+              flags, LOOM_AMDGPU_WAIT_NODE_STATE_UNREFINED_MEMORY_READ)) {
+        frontier_node->flags |=
+            LOOM_AMDGPU_WAIT_FRONTIER_NODE_FLAG_REFINED_READ;
+      }
+      if (iree_any_bit_set(flags,
+                           LOOM_AMDGPU_WAIT_NODE_STATE_DEPENDENCY_WRITE) &&
+          !iree_any_bit_set(
+              flags, LOOM_AMDGPU_WAIT_NODE_STATE_UNREFINED_MEMORY_WRITE)) {
+        frontier_node->flags |=
+            LOOM_AMDGPU_WAIT_FRONTIER_NODE_FLAG_REFINED_WRITE;
+      }
+    }
     const bool has_generic_counter_effect = iree_any_bit_set(
         flags, LOOM_AMDGPU_WAIT_NODE_STATE_GENERIC_COUNTER_EFFECT);
     if (has_generic_counter_effect) {

@@ -15,15 +15,17 @@
 #include "loom/codegen/low/immediates.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
+#include "loom/ops/cache.h"
 #include "loom/target/arch/amdgpu/descriptors/low_registry.h"
 #include "loom/target/arch/amdgpu/facts.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
+#include "loom/util/cfg_graph_test_util.h"
 
 namespace loom {
 namespace {
 
 // The planner consumes scheduled descriptor facts and dependency edges, not
-// source IR or assembly. These single-block fixtures keep the independent
+// source IR or assembly. These compact fixtures keep the independent
 // issue-limit and memory-completion inputs explicit.
 class AmdgpuWaitPlanTest : public ::testing::Test {
  protected:
@@ -184,6 +186,89 @@ class AmdgpuWaitPlanTest : public ::testing::Test {
     ++schedule_.effect_dependencies.count;
   }
 
+  void MemoryCompletion(uint32_t producer_effect, uint32_t consumer_effect) {
+    memory_completions_.push_back({producer_effect, consumer_effect});
+    schedule_.memory_completion_edges = memory_completions_.data();
+    schedule_.memory_completion_edge_count = memory_completions_.size();
+  }
+
+  struct CrossBlockMemoryFixture {
+    uint32_t producer_node;
+    uint32_t consumer_node;
+    uint32_t producer_effect;
+    uint32_t consumer_effect;
+  };
+
+  void ConfigureRefinedAcyclicMemory(const testing::CfgGraph& graph,
+                                     CrossBlockMemoryFixture* out_fixture) {
+    const uint32_t producer_effect = static_cast<uint32_t>(effects_.size());
+    AppendImmediate(LOOM_AMDGPU_DESCRIPTOR_REF_GLOBAL_STORE_B32,
+                    IREE_SV("scope"), LOOM_CACHE_SCOPE_DEVICE);
+    const uint32_t producer_node = static_cast<uint32_t>(nodes_.size() - 1);
+    IREE_ASSERT_EQ(effects_.size(), producer_effect + 1);
+    effects_[producer_effect].flags |=
+        LOOM_LOW_SCHEDULE_EFFECT_USE_FLAG_REFINED_MEMORY;
+
+    loom_region_t* body = loom_low_func_def_body(schedule_.function_op);
+    loom_block_t* successor = nullptr;
+    IREE_ASSERT_OK(loom_region_append_block(module_, body, &successor));
+    loom_op_t* branch = nullptr;
+    IREE_ASSERT_OK(loom_low_br_build(&builder_, successor, nullptr, 0,
+                                     LOOM_LOCATION_UNKNOWN, &branch));
+    loom_low_schedule_node_t branch_node = {};
+    branch_node.op = branch;
+    branch_node.block_index = 0;
+    branch_node.source_ordinal = nodes_.size();
+    branch_node.scheduled_ordinal = 1;
+    branch_node.kind = LOOM_LOW_SCHEDULE_NODE_TERMINATOR;
+    branch_node.traits = branch->traits;
+    nodes_.push_back(branch_node);
+
+    loom_builder_set_block(&builder_, successor);
+    const uint32_t consumer_effect = static_cast<uint32_t>(effects_.size());
+    const iree_host_size_t consumer_hazard = hazards_.size();
+    Tensor();
+    const uint32_t consumer_node = static_cast<uint32_t>(nodes_.size() - 1);
+    nodes_[consumer_node].block_index = 1;
+    nodes_[consumer_node].scheduled_ordinal = 0;
+    for (iree_host_size_t i = consumer_effect; i < effects_.size(); ++i) {
+      effects_[i].block_index = 1;
+      effects_[i].scheduled_ordinal = 0;
+      effects_[i].flags |= LOOM_LOW_SCHEDULE_EFFECT_USE_FLAG_REFINED_MEMORY;
+    }
+    for (iree_host_size_t i = consumer_hazard; i < hazards_.size(); ++i) {
+      hazards_[i].block_index = 1;
+      hazards_[i].scheduled_ordinal = 0;
+    }
+
+    FinalizeSchedule();
+    nodes_.back().block_index = 1;
+    nodes_.back().scheduled_ordinal = 1;
+    blocks_.resize(2);
+    blocks_[0] = {
+        /*.block=*/block_.block,
+        /*.node_start=*/producer_node,
+        /*.node_count=*/2,
+        /*.scheduled_node_start=*/0,
+        /*.scheduled_node_count=*/2,
+    };
+    blocks_[1] = {
+        /*.block=*/successor,
+        /*.node_start=*/consumer_node,
+        /*.node_count=*/2,
+        /*.scheduled_node_start=*/2,
+        /*.scheduled_node_count=*/2,
+    };
+    schedule_.blocks = blocks_.data();
+    schedule_.block_count = blocks_.size();
+    schedule_.cfg_graph = *graph.get();
+    schedule_.nodes = nodes_.data();
+    schedule_.effect_uses = effects_.data();
+    schedule_.hazard_uses = hazards_.data();
+    *out_fixture = {producer_node, consumer_node, producer_effect,
+                    consumer_effect};
+  }
+
   void FinalizeSchedule() {
     loom_op_t* return_op = nullptr;
     IREE_ASSERT_OK(loom_low_return_build(&builder_, nullptr, 0,
@@ -207,6 +292,8 @@ class AmdgpuWaitPlanTest : public ::testing::Test {
     schedule_.scheduled_node_count = order_.size();
     schedule_.effect_uses = effects_.data();
     schedule_.effect_use_count = effects_.size();
+    schedule_.memory_completion_edges = memory_completions_.data();
+    schedule_.memory_completion_edge_count = memory_completions_.size();
     schedule_.hazard_uses = hazards_.data();
     schedule_.hazard_use_count = hazards_.size();
   }
@@ -351,12 +438,16 @@ class AmdgpuWaitPlanTest : public ::testing::Test {
   loom_amdgpu_target_facts_t facts_ = {};
   // Single straight-line block under test.
   loom_low_schedule_block_t block_ = {};
+  // Multi-block schedule storage used by control-flow fixtures.
+  std::vector<loom_low_schedule_block_t> blocks_;
   // Descriptor nodes in scheduled order.
   std::vector<loom_low_schedule_node_t> nodes_;
   // Node indices retained for the result's borrowed schedule.
   std::vector<uint32_t> order_;
   // Descriptor memory and counter effects.
   std::vector<loom_low_schedule_effect_use_t> effects_;
+  // Exact cross-block memory completions retained by the generic scheduler.
+  std::vector<loom_low_schedule_memory_completion_edge_t> memory_completions_;
   // Descriptor counter hazards.
   std::vector<loom_low_schedule_hazard_use_t> hazards_;
   // Immutable input assembled before the planner call.
@@ -410,6 +501,85 @@ TEST_F(AmdgpuWaitPlanTest, DependencyCompletionAlsoSatisfiesTheIssueBound) {
   Build();
   ASSERT_EQ(plan_.action_count, 1u);
   ExpectAction(0, 1, 0, LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT);
+}
+
+TEST_F(AmdgpuWaitPlanTest, RefinedCrossBlockMemoryOmitsDisjointWait) {
+  testing::CfgGraph graph({{1}, {}});
+  CrossBlockMemoryFixture fixture = {};
+  ConfigureRefinedAcyclicMemory(graph, &fixture);
+  IREE_ASSERT_OK(BuildPlan());
+  for (iree_host_size_t i = 0; i < plan_.action_count; ++i) {
+    const loom_amdgpu_wait_plan_action_t& action = plan_.actions[i];
+    EXPECT_FALSE(action.reason == LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT &&
+                 action.consumer_node == fixture.consumer_node);
+  }
+}
+
+TEST_F(AmdgpuWaitPlanTest, RefinedCrossBlockMemoryWaitsForExactCompletion) {
+  testing::CfgGraph graph({{1}, {}});
+  CrossBlockMemoryFixture fixture = {};
+  ConfigureRefinedAcyclicMemory(graph, &fixture);
+  MemoryCompletion(fixture.producer_effect, fixture.consumer_effect);
+  IREE_ASSERT_OK(BuildPlan());
+  iree_host_size_t matching_action_count = 0;
+  for (iree_host_size_t i = 0; i < plan_.action_count; ++i) {
+    const loom_amdgpu_wait_plan_action_t& action = plan_.actions[i];
+    if (action.reason != LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT ||
+        action.consumer_node != fixture.consumer_node) {
+      continue;
+    }
+    ++matching_action_count;
+    EXPECT_EQ(action.producer_node, fixture.producer_node);
+    EXPECT_EQ(action.counter_id, LOOM_AMDGPU_WAIT_COUNTER_VMEM_STORE);
+    EXPECT_EQ(action.target_count, 0);
+  }
+  EXPECT_EQ(matching_action_count, 1u);
+}
+
+TEST_F(AmdgpuWaitPlanTest, MixedConsumerEffectsRemainConservative) {
+  testing::CfgGraph graph({{1}, {}});
+  CrossBlockMemoryFixture fixture = {};
+  ConfigureRefinedAcyclicMemory(graph, &fixture);
+  loom_low_schedule_effect_use_t unrefined_read =
+      effects_[fixture.consumer_effect];
+  unrefined_read.flags = 0;
+  effects_.push_back(unrefined_read);
+  schedule_.effect_uses = effects_.data();
+  schedule_.effect_use_count = effects_.size();
+
+  IREE_ASSERT_OK(BuildPlan());
+  iree_host_size_t matching_action_count = 0;
+  for (iree_host_size_t i = 0; i < plan_.action_count; ++i) {
+    const loom_amdgpu_wait_plan_action_t& action = plan_.actions[i];
+    if (action.reason != LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT ||
+        action.consumer_node != fixture.consumer_node) {
+      continue;
+    }
+    ++matching_action_count;
+    EXPECT_EQ(action.producer_node, UINT32_MAX);
+    EXPECT_EQ(action.counter_id, LOOM_AMDGPU_WAIT_COUNTER_VMEM_STORE);
+    EXPECT_EQ(action.target_count, 0);
+  }
+  EXPECT_EQ(matching_action_count, 1u);
+}
+
+TEST_F(AmdgpuWaitPlanTest, BackedgeMemoryRemainsConservative) {
+  testing::CfgGraph graph({{1}, {0}});
+  CrossBlockMemoryFixture fixture = {};
+  ConfigureRefinedAcyclicMemory(graph, &fixture);
+  IREE_ASSERT_OK(BuildPlan());
+  iree_host_size_t matching_action_count = 0;
+  for (iree_host_size_t i = 0; i < plan_.action_count; ++i) {
+    const loom_amdgpu_wait_plan_action_t& action = plan_.actions[i];
+    if (action.reason != LOOM_AMDGPU_WAIT_PLAN_REASON_MEMORY_EFFECT ||
+        action.consumer_node != fixture.producer_node) {
+      continue;
+    }
+    ++matching_action_count;
+    EXPECT_EQ(action.counter_id, LOOM_AMDGPU_WAIT_COUNTER_TENSOR);
+    EXPECT_EQ(action.target_count, 0);
+  }
+  EXPECT_EQ(matching_action_count, 1u);
 }
 
 TEST_F(AmdgpuWaitPlanTest, PartialWaitCompletesAnOlderTransfer) {
