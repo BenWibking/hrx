@@ -21,6 +21,16 @@
           "run": {
             "tool": "loom-opt",
             "args": [
+              "{tmp}/direct.loom",
+              "--pipeline=prepared-low",
+              "--output={tmp}/direct-resumed.loom"
+            ]
+          }
+        },
+        {
+          "run": {
+            "tool": "loom-opt",
+            "args": [
               "{tmp}/trace/ir/000000-after-aie2p-lower-pipeline.loom",
               "--pass=symbol-dce",
               "--output={tmp}/live.loom"
