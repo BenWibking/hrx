@@ -2635,11 +2635,20 @@ TEST(ReplayExecuteTest, ExecutesRecordedCommandBufferTransfers) {
       /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-      command_buffer, IREE_HAL_EXECUTION_STAGE_TRANSFER,
-      IREE_HAL_EXECUTION_STAGE_TRANSFER, IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
-      /*memory_barrier_count=*/1, &transfer_barrier,
-      /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr));
+  const iree_hal_execution_barrier_t execution_barrier = {
+      /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+      /*.effects=*/
+      {IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM |
+       IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM},
+      /*.memory_barrier_count=*/1,
+      /*.memory_barriers=*/&transfer_barrier,
+      /*.buffer_barrier_count=*/0,
+      /*.buffer_barriers=*/nullptr,
+  };
+  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(command_buffer,
+                                                           &execution_barrier));
   const uint8_t update_data[8] = {
       0xE0, 0x20, 0x21, 0x22, 0x23, 0xE1, 0xE2, 0xE3,
   };
@@ -2667,6 +2676,14 @@ TEST(ReplayExecuteTest, ExecutesRecordedCommandBufferTransfers) {
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
+  uint8_t actual[16] = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_read(buffer, 0, actual, sizeof(actual)));
+  const uint8_t expected[16] = {
+      0xCD, 0xCD, 0xCD, 0xCD, 0x20, 0x21, 0x22, 0x23,
+      0xCD, 0xCD, 0xCD, 0xCD, 0xCD, 0xCD, 0xCD, 0xCD,
+  };
+  EXPECT_EQ(memcmp(actual, expected, sizeof(actual)), 0);
+
   iree_hal_semaphore_release(semaphore);
   iree_hal_command_buffer_release(command_buffer);
   iree_hal_buffer_release(buffer);
@@ -2674,6 +2691,30 @@ TEST(ReplayExecuteTest, ExecutesRecordedCommandBufferTransfers) {
   IREE_ASSERT_OK(iree_hal_replay_recorder_close(recorder));
   iree_hal_device_group_release(wrapped_group);
   iree_hal_device_group_release(source_group);
+
+  // Replay captures the chosen semantics, not process-local contract keys.
+  const auto contents = GetCapturedFileContents(storage);
+  iree_hal_replay_file_header_t header;
+  iree_host_size_t offset = 0;
+  IREE_ASSERT_OK(iree_hal_replay_file_parse_header(contents, &header, &offset));
+  size_t captured_barrier_count = 0;
+  while (offset < contents.data_length) {
+    iree_hal_replay_file_record_t record;
+    IREE_ASSERT_OK(
+        iree_hal_replay_file_parse_record(contents, offset, &record, &offset));
+    if (record.header.payload_type !=
+        IREE_HAL_REPLAY_PAYLOAD_TYPE_COMMAND_BUFFER_EXECUTION_BARRIER) {
+      continue;
+    }
+    iree_hal_replay_command_buffer_execution_barrier_payload_t payload;
+    ASSERT_GE(record.payload.data_length, sizeof(payload));
+    memcpy(&payload, record.payload.data, sizeof(payload));
+    EXPECT_EQ(payload.flags,
+              IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
+                  IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE);
+    ++captured_barrier_count;
+  }
+  EXPECT_EQ(captured_barrier_count, 1u);
 
   iree_hal_device_group_t* replay_group = CreateTaskDeviceGroup();
   iree_hal_replay_execute_options_t options =

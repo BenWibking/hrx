@@ -1127,11 +1127,17 @@ iree_hal_replay_plan_execute_command_buffer_execution_barrier(
         IREE_HAL_REPLAY_OBJECT_TYPE_COMMAND_BUFFER, &command_buffer_entry);
   }
   if (iree_status_is_ok(status)) {
+    const iree_hal_execution_barrier_t execution_barrier = {
+        .source_stage_mask = barrier->source_stage_mask,
+        .target_stage_mask = barrier->target_stage_mask,
+        .flags = barrier->flags,
+        .memory_barrier_count = barrier->memory_barrier_count,
+        .memory_barriers = memory_barriers,
+        .buffer_barrier_count = barrier->buffer_barrier_count,
+        .buffer_barriers = buffer_barriers,
+    };
     status = iree_hal_command_buffer_execution_barrier(
-        command_buffer_entry->value.command_buffer, barrier->source_stage_mask,
-        barrier->target_stage_mask, barrier->flags,
-        barrier->memory_barrier_count, memory_barriers,
-        barrier->buffer_barrier_count, buffer_barriers);
+        command_buffer_entry->value.command_buffer, &execution_barrier);
   }
   if (buffer_barriers_allocated) {
     iree_allocator_free(executor->host_allocator, buffer_barriers);

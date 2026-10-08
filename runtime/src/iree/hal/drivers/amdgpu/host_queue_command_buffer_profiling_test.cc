@@ -363,11 +363,18 @@ TEST_F(HostQueueCommandBufferProfilingTest,
       /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_READ,
   };
+  const iree_hal_execution_barrier_t execution_barrier = {
+      /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+      /*.effects=*/{},
+      /*.memory_barrier_count=*/1,
+      /*.memory_barriers=*/&transfer_to_transfer_barrier,
+      /*.buffer_barrier_count=*/0,
+      /*.buffer_barriers=*/nullptr,
+  };
   IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-      fixture.command_buffer, IREE_HAL_EXECUTION_STAGE_TRANSFER,
-      IREE_HAL_EXECUTION_STAGE_TRANSFER, IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
-      /*memory_barrier_count=*/1, &transfer_to_transfer_barrier,
-      /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr));
+      fixture.command_buffer, &execution_barrier));
   IREE_ASSERT_OK(iree_hal_command_buffer_copy_buffer(
       fixture.command_buffer,
       iree_hal_make_buffer_ref(fixture.input_buffer, 2 * sizeof(uint32_t),
@@ -379,11 +386,18 @@ TEST_F(HostQueueCommandBufferProfilingTest,
       /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_DISPATCH_READ,
   };
+  const iree_hal_execution_barrier_t dispatch_dependency = {
+      /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
+      /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+      /*.effects=*/{},
+      /*.memory_barrier_count=*/1,
+      /*.memory_barriers=*/&transfer_to_dispatch_barrier,
+      /*.buffer_barrier_count=*/0,
+      /*.buffer_barriers=*/nullptr,
+  };
   IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-      fixture.command_buffer, IREE_HAL_EXECUTION_STAGE_TRANSFER,
-      IREE_HAL_EXECUTION_STAGE_DISPATCH, IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
-      /*memory_barrier_count=*/1, &transfer_to_dispatch_barrier,
-      /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr));
+      fixture.command_buffer, &dispatch_dependency));
   IREE_ASSERT_OK(AppendTwoDispatchOperations(&fixture));
   IREE_ASSERT_OK(iree_hal_command_buffer_end(fixture.command_buffer));
 

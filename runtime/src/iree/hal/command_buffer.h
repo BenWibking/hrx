@@ -15,6 +15,7 @@
 #include "iree/hal/atomic.h"
 #include "iree/hal/buffer.h"
 #include "iree/hal/executable.h"
+#include "iree/hal/memory_scope.h"
 #include "iree/hal/queue.h"
 #include "iree/hal/resource.h"
 
@@ -252,6 +253,28 @@ typedef struct iree_hal_buffer_barrier_t {
   // The barrier will apply to the entire physical device allocation.
   iree_hal_buffer_ref_t buffer_ref;
 } iree_hal_buffer_barrier_t;
+
+// One local execution and memory dependency. Visibility effects come from a
+// prepared memory transition query and may be combined across buffers at this
+// boundary. Execution ordering remains explicit even when effects are empty.
+typedef struct iree_hal_execution_barrier_t {
+  // Earlier local stages; zero contributes no source execution dependency.
+  iree_hal_execution_stage_t source_stage_mask;
+  // Later local stages; zero contributes no target execution dependency.
+  iree_hal_execution_stage_t target_stage_mask;
+  // Explicit minimum semantics independent of prepared transition queries.
+  iree_hal_execution_barrier_flags_t flags;
+  // Combined global visibility actions for this local queue executor.
+  iree_hal_memory_effects_t effects;
+  // Number of global access dependencies.
+  iree_host_size_t memory_barrier_count;
+  // Borrowed global access dependencies consumed during recording.
+  const iree_hal_memory_barrier_t* memory_barriers;
+  // Number of buffer access dependencies.
+  iree_host_size_t buffer_barrier_count;
+  // Borrowed buffer access dependencies consumed during recording.
+  const iree_hal_buffer_barrier_t* buffer_barriers;
+} iree_hal_execution_barrier_t;
 
 // Bitfield indicating advice for implementations managing a buffer.
 typedef uint64_t iree_hal_memory_advise_flags_t;
@@ -521,22 +544,23 @@ IREE_API_EXPORT iree_status_t iree_hal_command_buffer_end_debug_group(
 // barrier. One or more memory or buffer barriers can be specified to indicate
 // between which stages or buffers the dependencies exist.
 //
-// |flags| specifies minimum cache-coherence semantics. Implementations may
-// provide stronger visibility when that is inherent in their memory model.
+// |barrier->flags| specifies minimum cache-coherence semantics. Implementations
+// may provide stronger visibility when that is inherent in their memory model.
 // IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE imports writes from the
 // system coherence domain before target-scope accesses, while
 // IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE publishes source-scope
 // writes to that domain. HOST source and target stages imply the corresponding
 // acquire-system and release-system semantics, respectively.
+//
+// Prepared global queue effects are resolved while recording and compose with
+// the explicit minimum flags. No table or scope is retained or queried during
+// submission. Unqualified effects fail with IREE_STATUS_UNAVAILABLE. Host,
+// program, and resource actions cannot be represented by this global barrier
+// and fail with IREE_STATUS_UNIMPLEMENTED. An empty effect elides cache work,
+// while the descriptor's execution and access dependencies remain in force.
 IREE_API_EXPORT iree_status_t iree_hal_command_buffer_execution_barrier(
     iree_hal_command_buffer_t* command_buffer,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers);
+    const iree_hal_execution_barrier_t* barrier);
 
 // Waits until the atomic value at |target_ref| satisfies |params.condition|.
 //
@@ -706,15 +730,11 @@ typedef struct iree_hal_command_buffer_vtable_t {
   iree_status_t(IREE_API_PTR* end_debug_group)(
       iree_hal_command_buffer_t* command_buffer);
 
+  // Receives global prepared effects resolved into minimum flags; effects is
+  // empty and all referenced descriptor storage is borrowed for this call.
   iree_status_t(IREE_API_PTR* execution_barrier)(
       iree_hal_command_buffer_t* command_buffer,
-      iree_hal_execution_stage_t source_stage_mask,
-      iree_hal_execution_stage_t target_stage_mask,
-      iree_hal_execution_barrier_flags_t flags,
-      iree_host_size_t memory_barrier_count,
-      const iree_hal_memory_barrier_t* memory_barriers,
-      iree_host_size_t buffer_barrier_count,
-      const iree_hal_buffer_barrier_t* buffer_barriers);
+      const iree_hal_execution_barrier_t* barrier);
 
   iree_status_t(IREE_API_PTR* atomic_wait)(
       iree_hal_command_buffer_t* command_buffer,

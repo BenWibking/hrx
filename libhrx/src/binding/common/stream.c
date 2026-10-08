@@ -1679,11 +1679,16 @@ static iree_status_t iree_hal_streaming_record_dispatch_locked(
                         IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
     };
     timing_step_ns = timing_barrier_ns ? hrx_launch_timing_now_ns() : 0;
-    status = iree_hal_command_buffer_execution_barrier(
-        stream->command_buffer,
-        IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER,
-        IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER,
-        IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, 1, &memory_barrier, 0, NULL);
+    const iree_hal_execution_barrier_t execution_barrier = {
+        .source_stage_mask = IREE_HAL_EXECUTION_STAGE_DISPATCH |
+                             IREE_HAL_EXECUTION_STAGE_TRANSFER,
+        .target_stage_mask = IREE_HAL_EXECUTION_STAGE_DISPATCH |
+                             IREE_HAL_EXECUTION_STAGE_TRANSFER,
+        .memory_barrier_count = 1,
+        .memory_barriers = &memory_barrier,
+    };
+    status = iree_hal_command_buffer_execution_barrier(stream->command_buffer,
+                                                       &execution_barrier);
     if (timing_barrier_ns) {
       *timing_barrier_ns += hrx_launch_timing_now_ns() - timing_step_ns;
     }

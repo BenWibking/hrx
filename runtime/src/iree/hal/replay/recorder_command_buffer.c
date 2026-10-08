@@ -226,22 +226,16 @@ static iree_status_t iree_hal_replay_recorder_command_buffer_end_debug_group(
 
 static iree_status_t iree_hal_replay_recorder_command_buffer_execution_barrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers) {
+    const iree_hal_execution_barrier_t* barrier) {
   iree_hal_replay_recorder_command_buffer_t* command_buffer =
       iree_hal_replay_recorder_command_buffer_cast(base_command_buffer);
   iree_hal_replay_command_buffer_execution_barrier_payload_t payload;
   memset(&payload, 0, sizeof(payload));
-  payload.source_stage_mask = source_stage_mask;
-  payload.target_stage_mask = target_stage_mask;
-  payload.flags = flags;
-  payload.memory_barrier_count = memory_barrier_count;
-  payload.buffer_barrier_count = buffer_barrier_count;
+  payload.source_stage_mask = barrier->source_stage_mask;
+  payload.target_stage_mask = barrier->target_stage_mask;
+  payload.flags = barrier->flags;
+  payload.memory_barrier_count = barrier->memory_barrier_count;
+  payload.buffer_barrier_count = barrier->buffer_barrier_count;
 
   iree_hal_replay_memory_barrier_payload_t* memory_payloads = NULL;
   iree_host_size_t memory_payloads_size = 0;
@@ -250,8 +244,8 @@ static iree_status_t iree_hal_replay_recorder_command_buffer_execution_barrier(
   iree_hal_buffer_barrier_t* base_buffer_barriers = NULL;
   iree_hal_buffer_t** temporary_buffers = NULL;
   iree_status_t status = iree_ok_status();
-  if (memory_barrier_count) {
-    if (IREE_UNLIKELY(!iree_host_size_checked_mul(memory_barrier_count,
+  if (barrier->memory_barrier_count) {
+    if (IREE_UNLIKELY(!iree_host_size_checked_mul(barrier->memory_barrier_count,
                                                   sizeof(*memory_payloads),
                                                   &memory_payloads_size))) {
       status = iree_make_status(
@@ -264,22 +258,24 @@ static iree_status_t iree_hal_replay_recorder_command_buffer_execution_barrier(
                                 memory_payloads_size, (void**)&memory_payloads);
     }
     if (iree_status_is_ok(status)) {
-      for (iree_host_size_t i = 0; i < memory_barrier_count; ++i) {
-        memory_payloads[i].source_scope = memory_barriers[i].source_scope;
-        memory_payloads[i].target_scope = memory_barriers[i].target_scope;
+      for (iree_host_size_t i = 0; i < barrier->memory_barrier_count; ++i) {
+        memory_payloads[i].source_scope =
+            barrier->memory_barriers[i].source_scope;
+        memory_payloads[i].target_scope =
+            barrier->memory_barriers[i].target_scope;
       }
     }
   }
-  if (iree_status_is_ok(status) && buffer_barrier_count) {
+  if (iree_status_is_ok(status) && barrier->buffer_barrier_count) {
     iree_host_size_t base_buffer_barriers_size = 0;
     iree_host_size_t temporary_buffers_size = 0;
-    if (IREE_UNLIKELY(!iree_host_size_checked_mul(buffer_barrier_count,
+    if (IREE_UNLIKELY(!iree_host_size_checked_mul(barrier->buffer_barrier_count,
                                                   sizeof(*buffer_payloads),
                                                   &buffer_payloads_size) ||
-                      !iree_host_size_checked_mul(buffer_barrier_count,
+                      !iree_host_size_checked_mul(barrier->buffer_barrier_count,
                                                   sizeof(*base_buffer_barriers),
                                                   &base_buffer_barriers_size) ||
-                      !iree_host_size_checked_mul(buffer_barrier_count,
+                      !iree_host_size_checked_mul(barrier->buffer_barrier_count,
                                                   sizeof(*temporary_buffers),
                                                   &temporary_buffers_size))) {
       status = iree_make_status(
@@ -303,13 +299,18 @@ static iree_status_t iree_hal_replay_recorder_command_buffer_execution_barrier(
     }
     if (iree_status_is_ok(status)) {
       memset(temporary_buffers, 0, temporary_buffers_size);
-      memcpy(base_buffer_barriers, buffer_barriers, base_buffer_barriers_size);
+      memcpy(base_buffer_barriers, barrier->buffer_barriers,
+             base_buffer_barriers_size);
       for (iree_host_size_t i = 0;
-           i < buffer_barrier_count && iree_status_is_ok(status); ++i) {
-        buffer_payloads[i].source_scope = buffer_barriers[i].source_scope;
-        buffer_payloads[i].target_scope = buffer_barriers[i].target_scope;
+           i < barrier->buffer_barrier_count && iree_status_is_ok(status);
+           ++i) {
+        buffer_payloads[i].source_scope =
+            barrier->buffer_barriers[i].source_scope;
+        buffer_payloads[i].target_scope =
+            barrier->buffer_barriers[i].target_scope;
         iree_hal_replay_recorder_buffer_ref_make_payload(
-            buffer_barriers[i].buffer_ref, &buffer_payloads[i].buffer_ref);
+            barrier->buffer_barriers[i].buffer_ref,
+            &buffer_payloads[i].buffer_ref);
         if (base_buffer_barriers[i].buffer_ref.buffer) {
           status = iree_hal_replay_recorder_buffer_unwrap_for_call(
               base_buffer_barriers[i].buffer_ref.buffer,
@@ -335,18 +336,17 @@ static iree_status_t iree_hal_replay_recorder_command_buffer_execution_barrier(
         &pending_record);
   }
   if (iree_status_is_ok(status)) {
+    iree_hal_execution_barrier_t base_barrier = *barrier;
+    base_barrier.buffer_barriers = base_buffer_barriers;
     status = iree_hal_replay_recorder_end_operation_with_payload(
         &pending_record,
         iree_hal_command_buffer_execution_barrier(
-            command_buffer->base_command_buffer, source_stage_mask,
-            target_stage_mask, flags, memory_barrier_count, memory_barriers,
-            buffer_barrier_count,
-            base_buffer_barriers ? base_buffer_barriers : buffer_barriers),
+            command_buffer->base_command_buffer, &base_barrier),
         IREE_ARRAYSIZE(iovecs), iovecs);
   }
 
   if (temporary_buffers) {
-    for (iree_host_size_t i = 0; i < buffer_barrier_count; ++i) {
+    for (iree_host_size_t i = 0; i < barrier->buffer_barrier_count; ++i) {
       iree_hal_replay_recorder_buffer_release_temporary(temporary_buffers[i]);
     }
   }

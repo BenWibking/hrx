@@ -231,13 +231,19 @@ iree_status_t hrx_graph_record_node_barrier(
 
   if (has_hazard) {
     const iree_hal_memory_barrier_t memory_barrier = {
-        .source_scope = IREE_HAL_MEMORY_ACCESS_ALL,
-        .target_scope = IREE_HAL_MEMORY_ACCESS_ALL,
+        .source_scope = IREE_HAL_ACCESS_SCOPE_MEMORY_READ |
+                        IREE_HAL_ACCESS_SCOPE_MEMORY_WRITE,
+        .target_scope = IREE_HAL_ACCESS_SCOPE_MEMORY_READ |
+                        IREE_HAL_ACCESS_SCOPE_MEMORY_WRITE,
+    };
+    const iree_hal_execution_barrier_t execution_barrier = {
+        .source_stage_mask = IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
+        .target_stage_mask = IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE,
+        .memory_barrier_count = 1,
+        .memory_barriers = &memory_barrier,
     };
     IREE_RETURN_IF_ERROR(iree_hal_command_buffer_execution_barrier(
-        command_buffer, IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
-        IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE,
-        IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, 1, &memory_barrier, 0, NULL));
+        command_buffer, &execution_barrier));
     hrx_graph_barrier_state_reset(state);
     *out_did_barrier = true;
   }

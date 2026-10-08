@@ -444,15 +444,20 @@ TEST_F(PM4CommandDispatchTest, DynamicParametersObservePriorDispatch) {
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_INDIRECT_COMMAND_READ |
           IREE_HAL_ACCESS_SCOPE_MEMORY_READ,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-      command_buffer,
-      /*source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH |
+  const iree_hal_execution_barrier_t execution_barrier = {
+      /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH |
           IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
-      /*target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_PROCESS |
+      /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_PROCESS |
           IREE_HAL_EXECUTION_STAGE_DISPATCH,
-      IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, /*memory_barrier_count=*/1,
-      &memory_barrier, /*buffer_barrier_count=*/0,
-      /*buffer_barriers=*/NULL));
+      /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+      /*.effects=*/{},
+      /*.memory_barrier_count=*/1,
+      /*.memory_barriers=*/&memory_barrier,
+      /*.buffer_barrier_count=*/0,
+      /*.buffer_barriers=*/NULL,
+  };
+  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(command_buffer,
+                                                           &execution_barrier));
   iree_hal_buffer_ref_t output_ref =
       iree_hal_make_buffer_ref(output_buffer, /*offset=*/0, kOutputByteLength);
   const iree_hal_buffer_ref_list_t consumer_bindings = {

@@ -1265,11 +1265,17 @@ static iree_status_t iree_hal_replay_executor_command_buffer_execution_barrier(
         IREE_HAL_REPLAY_OBJECT_TYPE_COMMAND_BUFFER, &command_buffer_entry);
   }
   if (iree_status_is_ok(status)) {
+    const iree_hal_execution_barrier_t execution_barrier = {
+        .source_stage_mask = payload.source_stage_mask,
+        .target_stage_mask = payload.target_stage_mask,
+        .flags = payload.flags,
+        .memory_barrier_count = (iree_host_size_t)payload.memory_barrier_count,
+        .memory_barriers = memory_barriers,
+        .buffer_barrier_count = (iree_host_size_t)payload.buffer_barrier_count,
+        .buffer_barriers = buffer_barriers,
+    };
     status = iree_hal_command_buffer_execution_barrier(
-        command_buffer_entry->value.command_buffer, payload.source_stage_mask,
-        payload.target_stage_mask, payload.flags,
-        (iree_host_size_t)payload.memory_barrier_count, memory_barriers,
-        (iree_host_size_t)payload.buffer_barrier_count, buffer_barriers);
+        command_buffer_entry->value.command_buffer, &execution_barrier);
   }
   if (buffer_barriers_allocated) {
     iree_allocator_free(executor->host_allocator, buffer_barriers);

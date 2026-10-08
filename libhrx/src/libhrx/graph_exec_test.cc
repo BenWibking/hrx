@@ -65,27 +65,21 @@ static void BarrierSpyDestroy(iree_hal_command_buffer_t* base_command_buffer) {}
 
 static iree_status_t BarrierSpyExecutionBarrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    iree_hal_execution_stage_t source_stage,
-    iree_hal_execution_stage_t target_stage,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers) {
+    const iree_hal_execution_barrier_t* barrier) {
   auto* command_buffer =
       reinterpret_cast<BarrierSpyCommandBuffer*>(base_command_buffer);
   if (command_buffer->failure_code != IREE_STATUS_OK) {
     return iree_make_status(command_buffer->failure_code);
   }
   ++command_buffer->barrier_count;
-  command_buffer->source_stage = source_stage;
-  command_buffer->target_stage = target_stage;
-  command_buffer->flags = flags;
-  command_buffer->memory_barrier_count = memory_barrier_count;
-  if (memory_barrier_count > 0) {
-    command_buffer->memory_barrier = memory_barriers[0];
+  command_buffer->source_stage = barrier->source_stage_mask;
+  command_buffer->target_stage = barrier->target_stage_mask;
+  command_buffer->flags = barrier->flags;
+  command_buffer->memory_barrier_count = barrier->memory_barrier_count;
+  if (barrier->memory_barrier_count > 0) {
+    command_buffer->memory_barrier = barrier->memory_barriers[0];
   }
-  command_buffer->buffer_barrier_count = buffer_barrier_count;
+  command_buffer->buffer_barrier_count = barrier->buffer_barrier_count;
   return iree_ok_status();
 }
 
@@ -222,10 +216,12 @@ TEST_F(GraphBarrierTest, BarrierUsesRetireIssueAndAllMemoryScopes) {
             IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE);
   EXPECT_EQ(command_buffer_.flags, IREE_HAL_EXECUTION_BARRIER_FLAG_NONE);
   EXPECT_EQ(command_buffer_.memory_barrier_count, 1u);
-  EXPECT_EQ(command_buffer_.memory_barrier.source_scope,
-            IREE_HAL_MEMORY_ACCESS_ALL);
-  EXPECT_EQ(command_buffer_.memory_barrier.target_scope,
-            IREE_HAL_MEMORY_ACCESS_ALL);
+  EXPECT_EQ(
+      command_buffer_.memory_barrier.source_scope,
+      IREE_HAL_ACCESS_SCOPE_MEMORY_READ | IREE_HAL_ACCESS_SCOPE_MEMORY_WRITE);
+  EXPECT_EQ(
+      command_buffer_.memory_barrier.target_scope,
+      IREE_HAL_ACCESS_SCOPE_MEMORY_READ | IREE_HAL_ACCESS_SCOPE_MEMORY_WRITE);
   EXPECT_EQ(command_buffer_.buffer_barrier_count, 0u);
 }
 

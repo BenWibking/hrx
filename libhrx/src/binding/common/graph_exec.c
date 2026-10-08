@@ -1589,13 +1589,18 @@ static iree_status_t iree_hal_streaming_graph_record_dependency_barrier(
                       IREE_HAL_ACCESS_SCOPE_ATOMIC_READ |
                       IREE_HAL_ACCESS_SCOPE_ATOMIC_WRITE,
   };
-  return iree_hal_command_buffer_execution_barrier(
-      command_buffer,
-      IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER |
-          IREE_HAL_EXECUTION_STAGE_ATOMIC,
-      IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER |
-          IREE_HAL_EXECUTION_STAGE_ATOMIC,
-      IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, 1, &memory_barrier, 0, NULL);
+  const iree_hal_execution_barrier_t execution_barrier = {
+      .source_stage_mask = IREE_HAL_EXECUTION_STAGE_DISPATCH |
+                           IREE_HAL_EXECUTION_STAGE_TRANSFER |
+                           IREE_HAL_EXECUTION_STAGE_ATOMIC,
+      .target_stage_mask = IREE_HAL_EXECUTION_STAGE_DISPATCH |
+                           IREE_HAL_EXECUTION_STAGE_TRANSFER |
+                           IREE_HAL_EXECUTION_STAGE_ATOMIC,
+      .memory_barrier_count = 1,
+      .memory_barriers = &memory_barrier,
+  };
+  return iree_hal_command_buffer_execution_barrier(command_buffer,
+                                                   &execution_barrier);
 }
 
 // Helper to record nodes from a partition into a command buffer.

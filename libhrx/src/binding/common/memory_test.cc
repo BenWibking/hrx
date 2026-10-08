@@ -24,31 +24,17 @@ static std::atomic<bool> g_fail_next_memory_barrier = false;
 
 extern "C" iree_status_t __real_iree_hal_command_buffer_execution_barrier(
     iree_hal_command_buffer_t* command_buffer,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers);
+    const iree_hal_execution_barrier_t* barrier);
 
 extern "C" iree_status_t __wrap_iree_hal_command_buffer_execution_barrier(
     iree_hal_command_buffer_t* command_buffer,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers) {
+    const iree_hal_execution_barrier_t* barrier) {
   if (g_fail_next_memory_barrier.exchange(false, std::memory_order_acq_rel)) {
     return iree_make_status(IREE_STATUS_ABORTED,
                             "injected post-copy barrier failure");
   }
-  return __real_iree_hal_command_buffer_execution_barrier(
-      command_buffer, source_stage_mask, target_stage_mask, flags,
-      memory_barrier_count, memory_barriers, buffer_barrier_count,
-      buffer_barriers);
+  return __real_iree_hal_command_buffer_execution_barrier(command_buffer,
+                                                          barrier);
 }
 
 #endif  // IREE_PLATFORM_LINUX

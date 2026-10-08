@@ -271,27 +271,61 @@ IREE_API_EXPORT iree_status_t iree_hal_command_buffer_end_debug_group(
 
 IREE_API_EXPORT iree_status_t iree_hal_command_buffer_execution_barrier(
     iree_hal_command_buffer_t* command_buffer,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers) {
+    const iree_hal_execution_barrier_t* barrier) {
   IREE_ASSERT_ARGUMENT(command_buffer);
+  IREE_ASSERT_ARGUMENT(barrier);
+  IREE_ASSERT_ARGUMENT(!barrier->memory_barrier_count ||
+                       barrier->memory_barriers);
+  IREE_ASSERT_ARGUMENT(!barrier->buffer_barrier_count ||
+                       barrier->buffer_barriers);
+  if (IREE_UNLIKELY(!iree_hal_memory_effects_is_supported(barrier->effects))) {
+    return iree_make_status(IREE_STATUS_UNAVAILABLE,
+                            "memory transition is not qualified");
+  }
+  const uint32_t global_effects = IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM |
+                                  IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM;
+  if (IREE_UNLIKELY(barrier->effects.bits & ~global_effects)) {
+    return iree_make_status(
+        IREE_STATUS_UNIMPLEMENTED,
+        "execution barrier requires global queue effects; host, program, "
+        "and resource actions require their qualified executor and operands");
+  }
+  const iree_hal_execution_barrier_flags_t supported_flags =
+      IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
+      IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
+  if (IREE_UNLIKELY(barrier->flags & ~supported_flags)) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "unsupported execution barrier flags: 0x%016" PRIx64,
+        barrier->flags & ~supported_flags);
+  }
   IREE_TRACE_ZONE_BEGIN(z0);
   IF_VALIDATING(command_buffer, {
     IREE_RETURN_AND_END_ZONE_IF_ERROR(
-        z0,
-        iree_hal_command_buffer_execution_barrier_validation(
-            command_buffer, VALIDATION_STATE(command_buffer), source_stage_mask,
-            target_stage_mask, flags, memory_barrier_count, memory_barriers,
-            buffer_barrier_count, buffer_barriers));
+        z0, iree_hal_command_buffer_execution_barrier_validation(
+                command_buffer, VALIDATION_STATE(command_buffer), barrier));
   });
-  iree_status_t status = _VTABLE_DISPATCH(command_buffer, execution_barrier)(
-      command_buffer, source_stage_mask, target_stage_mask, flags,
-      memory_barrier_count, memory_barriers, buffer_barrier_count,
-      buffer_barriers);
+
+  // Global prepared actions and explicit minimum flags have identical native
+  // semantics. Resolve once at recording so native programs and replay retain
+  // only the chosen actions, with no contract dependency at submission.
+  iree_hal_execution_barrier_t resolved = *barrier;
+  if (iree_any_bit_set(barrier->effects.bits,
+                       IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM)) {
+    resolved.flags |= IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
+  }
+  if (iree_any_bit_set(barrier->effects.bits,
+                       IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM)) {
+    resolved.flags |= IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE;
+  }
+  resolved.effects.bits = 0;
+  iree_status_t status = iree_ok_status();
+  if (resolved.source_stage_mask || resolved.target_stage_mask ||
+      resolved.flags || resolved.memory_barrier_count ||
+      resolved.buffer_barrier_count) {
+    status = _VTABLE_DISPATCH(command_buffer, execution_barrier)(command_buffer,
+                                                                 &resolved);
+  }
   IREE_TRACE_ZONE_END(z0);
   return status;
 }

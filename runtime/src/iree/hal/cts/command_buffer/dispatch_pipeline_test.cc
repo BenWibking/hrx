@@ -98,14 +98,22 @@ class DispatchPipelineTest : public CtsTestBase<> {
             IREE_HAL_ACCESS_SCOPE_MEMORY_WRITE,
         IREE_HAL_ACCESS_SCOPE_DISPATCH_READ | IREE_HAL_ACCESS_SCOPE_MEMORY_READ,
     };
-    IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-        cmd,
-        IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER |
+    const iree_hal_execution_barrier_t execution_barrier = {
+        /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH |
+            IREE_HAL_EXECUTION_STAGE_TRANSFER |
             IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
-        IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE |
+        /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE |
             IREE_HAL_EXECUTION_STAGE_DISPATCH |
             IREE_HAL_EXECUTION_STAGE_TRANSFER,
-        IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, 1, &memory_barrier, 0, nullptr));
+        /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+        /*.effects=*/{},
+        /*.memory_barrier_count=*/1,
+        /*.memory_barriers=*/&memory_barrier,
+        /*.buffer_barrier_count=*/0,
+        /*.buffer_barriers=*/nullptr,
+    };
+    IREE_ASSERT_OK(
+        iree_hal_command_buffer_execution_barrier(cmd, &execution_barrier));
   }
 
   iree_hal_executable_t* executable_ = nullptr;

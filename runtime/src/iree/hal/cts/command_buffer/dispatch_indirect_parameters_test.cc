@@ -150,18 +150,23 @@ class DispatchIndirectParametersTest : public CtsTestBase<> {
             IREE_HAL_ACCESS_SCOPE_DISPATCH_READ |
             IREE_HAL_ACCESS_SCOPE_MEMORY_READ,
     };
-    IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-        command_buffer,
-        /*source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH |
+    const iree_hal_execution_barrier_t execution_barrier = {
+        /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH |
             IREE_HAL_EXECUTION_STAGE_TRANSFER |
             IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
-        /*target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE |
+        /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE |
             IREE_HAL_EXECUTION_STAGE_COMMAND_PROCESS |
             IREE_HAL_EXECUTION_STAGE_DISPATCH |
             IREE_HAL_EXECUTION_STAGE_TRANSFER,
-        IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, /*memory_barrier_count=*/1,
-        /*memory_barriers=*/&memory_barrier,
-        /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr));
+        /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+        /*.effects=*/{},
+        /*.memory_barrier_count=*/1,
+        /*.memory_barriers=*/&memory_barrier,
+        /*.buffer_barrier_count=*/0,
+        /*.buffer_barriers=*/nullptr,
+    };
+    IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
+        command_buffer, &execution_barrier));
   }
 
   void SubmitAndCheck(iree_hal_command_buffer_t* command_buffer,

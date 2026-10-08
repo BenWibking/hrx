@@ -2036,6 +2036,15 @@ static void iree_hal_vulkan_command_buffer_record_execution_barrier_native(
               ? VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT
               : 0,
   };
+  // A global cache action still covers local commands when the caller adds no
+  // separate stage dependency. Preserve that local domain before adding HOST
+  // stages for the remote side of the visibility handoff.
+  if (release_system_scope && !barrier.source_stage_mask) {
+    barrier.source_stage_mask = IREE_HAL_EXECUTION_STAGE_COMMAND_PROCESS;
+  }
+  if (acquire_system_scope && !barrier.target_stage_mask) {
+    barrier.target_stage_mask = IREE_HAL_EXECUTION_STAGE_COMMAND_PROCESS;
+  }
   if (acquire_system_scope) {
     barrier.source_stage_mask |= IREE_HAL_EXECUTION_STAGE_HOST;
     barrier.source_access_mask |= VK_ACCESS_2_HOST_WRITE_BIT;
@@ -2854,32 +2863,11 @@ static iree_status_t iree_hal_vulkan_command_buffer_end_debug_group(
 
 static iree_status_t iree_hal_vulkan_command_buffer_execution_barrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers) {
-  (void)memory_barriers;
-  (void)buffer_barriers;
+    const iree_hal_execution_barrier_t* barrier) {
   iree_hal_vulkan_command_buffer_t* command_buffer =
       iree_hal_vulkan_command_buffer_cast(base_command_buffer);
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_command_buffer_validate_recording_state(
       command_buffer, IREE_SV("execution_barrier")));
-  const iree_hal_execution_barrier_flags_t supported_flags =
-      IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
-      IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
-  if (flags & ~supported_flags) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "unsupported Vulkan command buffer execution "
-                            "barrier flags: 0x%016" PRIx64,
-                            flags & ~supported_flags);
-  }
-  if (source_stage_mask == 0 && target_stage_mask == 0 &&
-      memory_barrier_count == 0 && buffer_barrier_count == 0) {
-    return iree_ok_status();
-  }
 
   iree_host_size_t record_length = 0;
   iree_host_size_t payload_offset = 0;
@@ -2892,11 +2880,11 @@ static iree_status_t iree_hal_vulkan_command_buffer_execution_barrier(
       record_length, payload_offset, /*out_command=*/NULL, &payload);
   iree_hal_vulkan_command_execution_barrier_t* execution_barrier =
       (iree_hal_vulkan_command_execution_barrier_t*)payload;
-  execution_barrier->source_stage_mask = source_stage_mask;
-  execution_barrier->target_stage_mask = target_stage_mask;
-  execution_barrier->flags = flags;
-  execution_barrier->memory_barrier_count = memory_barrier_count;
-  execution_barrier->buffer_barrier_count = buffer_barrier_count;
+  execution_barrier->source_stage_mask = barrier->source_stage_mask;
+  execution_barrier->target_stage_mask = barrier->target_stage_mask;
+  execution_barrier->flags = barrier->flags;
+  execution_barrier->memory_barrier_count = barrier->memory_barrier_count;
+  execution_barrier->buffer_barrier_count = barrier->buffer_barrier_count;
   return iree_ok_status();
 }
 

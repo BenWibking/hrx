@@ -36,11 +36,16 @@ static iree_status_t iree_hal_streaming_command_buffer_barrier(
                       IREE_HAL_ACCESS_SCOPE_TRANSFER_READ |
                       IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
   };
-  return iree_hal_command_buffer_execution_barrier(
-      command_buffer,
-      IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER,
-      IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER,
-      IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, 1, &memory_barrier, 0, NULL);
+  const iree_hal_execution_barrier_t execution_barrier = {
+      .source_stage_mask =
+          IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      .target_stage_mask =
+          IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      .memory_barrier_count = 1,
+      .memory_barriers = &memory_barrier,
+  };
+  return iree_hal_command_buffer_execution_barrier(command_buffer,
+                                                   &execution_barrier);
 }
 
 typedef struct iree_hal_streaming_host_memcpy_callback_data_t {

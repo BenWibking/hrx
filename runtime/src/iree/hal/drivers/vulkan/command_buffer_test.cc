@@ -349,13 +349,19 @@ TEST_F(VulkanCommandBufferTest, SystemScopeUsesHostMemoryDomain) {
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_DISPATCH_READ,
   };
   IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-      command_buffer.get(), IREE_HAL_EXECUTION_STAGE_DISPATCH,
-      IREE_HAL_EXECUTION_STAGE_DISPATCH,
-      IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
+  const iree_hal_execution_barrier_t execution_barrier = {
+      /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
+      /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
+      /*.flags=*/IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
           IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE,
-      /*memory_barrier_count=*/1, &memory_barrier,
-      /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr));
+      /*.effects=*/{},
+      /*.memory_barrier_count=*/1,
+      /*.memory_barriers=*/&memory_barrier,
+      /*.buffer_barrier_count=*/0,
+      /*.buffer_barriers=*/nullptr,
+  };
+  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(command_buffer.get(),
+                                                           &execution_barrier));
   IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
 
   NativeReplayCapture capture;
@@ -388,6 +394,58 @@ TEST_F(VulkanCommandBufferTest, SystemScopeUsesHostMemoryDomain) {
       0u);
   EXPECT_NE(capture.memory_barriers[0].dstStageMask &
                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            0u);
+  EXPECT_NE(
+      capture.memory_barriers[0].dstStageMask & VK_PIPELINE_STAGE_2_HOST_BIT,
+      0u);
+  EXPECT_NE(
+      capture.memory_barriers[0].dstAccessMask & VK_ACCESS_2_HOST_READ_BIT, 0u);
+  g_native_replay_capture = nullptr;
+}
+
+TEST_F(VulkanCommandBufferTest,
+       GlobalActionsWithoutStageDependenciesCoverLocalCommands) {
+  CommandBufferPtr command_buffer = CreateCommandBuffer();
+  ASSERT_NE(command_buffer, nullptr);
+
+  IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
+  iree_hal_execution_barrier_t execution_barrier = {};
+  execution_barrier.effects.bits = IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM |
+                                   IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM;
+  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(command_buffer.get(),
+                                                           &execution_barrier));
+  IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
+
+  NativeReplayCapture capture;
+  g_native_replay_capture = &capture;
+  iree_hal_vulkan_device_syms_t syms = MakeNativeReplaySyms();
+  iree_hal_vulkan_debug_utils_t debug_utils = {};
+  iree_hal_vulkan_builtins_t builtins = {};
+  iree_hal_buffer_binding_table_t binding_table =
+      iree_hal_buffer_binding_table_empty();
+  VkDevice logical_device =
+      reinterpret_cast<VkDevice>(static_cast<uintptr_t>(0x1234));
+  VkCommandBuffer native_command_buffer =
+      reinterpret_cast<VkCommandBuffer>(static_cast<uintptr_t>(0x5678));
+
+  IREE_ASSERT_OK(iree_hal_vulkan_command_buffer_record_native(
+      command_buffer.get(), &syms, logical_device, &debug_utils, &builtins,
+      native_command_buffer, /*usage_flags=*/0, VK_NULL_HANDLE, binding_table,
+      /*bda_publication=*/nullptr, /*bda_binding_cache=*/nullptr,
+      /*profile_marker=*/nullptr, iree_allocator_system()));
+
+  EXPECT_EQ(capture.pipeline_barrier_count, 1);
+  EXPECT_NE(capture.memory_barriers[0].srcStageMask &
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            0u);
+  EXPECT_NE(
+      capture.memory_barriers[0].srcStageMask & VK_PIPELINE_STAGE_2_HOST_BIT,
+      0u);
+  EXPECT_NE(
+      capture.memory_barriers[0].srcAccessMask & VK_ACCESS_2_HOST_WRITE_BIT,
+      0u);
+  EXPECT_NE(capture.memory_barriers[0].dstStageMask &
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
             0u);
   EXPECT_NE(
       capture.memory_barriers[0].dstStageMask & VK_PIPELINE_STAGE_2_HOST_BIT,

@@ -81,13 +81,7 @@ iree_status_t iree_hal_command_buffer_end_debug_group_validation(
 iree_status_t iree_hal_command_buffer_execution_barrier_validation(
     iree_hal_command_buffer_t* command_buffer,
     iree_hal_command_buffer_validation_state_t* validation_state,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers);
+    const iree_hal_execution_barrier_t* barrier);
 
 iree_status_t iree_hal_command_buffer_atomic_wait_validation(
     iree_hal_command_buffer_t* command_buffer,
