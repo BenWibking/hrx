@@ -69,11 +69,13 @@ _REGISTER_WIDTH_BITS = {
 }
 
 _REGISTER_PART_WIDTH_BITS = {
+    "amdgpu.sgpr.low16": 16,
+    "amdgpu.sgpr.high16": 16,
     "amdgpu.vgpr.low16": 16,
     "amdgpu.vgpr.high16": 16,
 }
 
-AMDGPU_D16_PARTIAL_REGISTER_SIZE_REASON = "d16-instruction-uses-half-vgpr-lane"
+AMDGPU_D16_PARTIAL_REGISTER_SIZE_REASON = "d16-instruction-uses-half-register"
 AMDGPU_D16_PARTIAL_REGISTER_ADDRESSABLE_UNIT_COUNT = 128
 
 

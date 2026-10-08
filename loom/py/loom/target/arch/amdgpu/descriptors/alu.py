@@ -2270,7 +2270,14 @@ def _v_bfe_offset_0_width_inline_low16_overlay(
             AmdgpuOperandOverlay("VDST", _vgpr_result()),
             AmdgpuOperandOverlay(
                 "SRC0",
-                _vgpr_operand("value", register_part=_REG_PART_VGPR_LOW16),
+                Operand(
+                    "value",
+                    OperandRole.OPERAND,
+                    (
+                        replace(_SGPR_ALT[0], register_part=_REG_PART_SGPR_LOW16),
+                        replace(_VGPR_ALT[0], register_part=_REG_PART_VGPR_LOW16),
+                    ),
+                ),
                 size_exception_reason=_D16_PARTIAL_REGISTER_SIZE_REASON,
             ),
         ),
