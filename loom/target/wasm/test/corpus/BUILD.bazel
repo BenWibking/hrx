@@ -108,10 +108,14 @@ _KERNEL_SOURCES = [
 ]
 
 _SCENARIO_KERNEL_SOURCES = [
+    "control/branch/cfg.loom",
     "control/branch/half.loom",
+    "control/loop/callable.loom",
+    "control/loop/count.loom",
     "control/loop/rotation/offsets.loom",
     "control/loop/rotation/values.loom",
     "control/loop/rotation/views.loom",
+    "control/loop/wide_index_recurrence.loom",
     "kernel/subgroup/match.loom",
     "kernel/subgroup/shuffle_participation.loom",
     "kernel/subgroup/transport.loom",

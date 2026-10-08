@@ -3,6 +3,11 @@ kernel.def @unsigned_empty_loop() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%output: buffer) {
+  func.call @compute_unsigned_empty_loop(%output) : (buffer)
+  kernel.return
+}
+
+func.def device inline @compute_unsigned_empty_loop(%output: buffer) {
   %begin = index.constant -1 : index
   %end = index.constant 4 : index
   %step = index.constant 1 : index
@@ -23,15 +28,7 @@ kernel.def @unsigned_empty_loop() {
   cfg.br ^header(%next: index, %next_count: i32)
 ^exit:
   view.store %count, %output_view[%position] : i32, view<1xi32>
-  kernel.return
-}
-
-check.case public @unsigned_empty_loop_case {
-  %actual = check.generate.fill value(-1) : tensor<1xi32>
-  %expected = check.generate.fill value(0) : tensor<1xi32>
-  kernel.launch @unsigned_empty_loop(%actual) : (tensor<1xi32>)
-  check.expect.equal actual(%actual) expected(%expected) : tensor<1xi32>
-  check.return
+  func.return
 }
 
 // Signed -1 reaches four after five increments.
@@ -39,6 +36,11 @@ kernel.def @signed_negative_loop() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%output: buffer) {
+  func.call @compute_signed_negative_loop(%output) : (buffer)
+  kernel.return
+}
+
+func.def device inline @compute_signed_negative_loop(%output: buffer) {
   %begin = index.constant -1 : index
   %end = index.constant 4 : index
   %step = index.constant 1 : index
@@ -59,15 +61,7 @@ kernel.def @signed_negative_loop() {
   cfg.br ^header(%next: index, %next_count: i32)
 ^exit:
   view.store %count, %output_view[%position] : i32, view<1xi32>
-  kernel.return
-}
-
-check.case public @signed_negative_loop_case {
-  %actual = check.generate.fill value(-1) : tensor<1xi32>
-  %expected = check.generate.fill value(5) : tensor<1xi32>
-  kernel.launch @signed_negative_loop(%actual) : (tensor<1xi32>)
-  check.expect.equal actual(%actual) expected(%expected) : tensor<1xi32>
-  check.return
+  func.return
 }
 
 // A fixed-width unsigned counter crosses its signed boundary without wrapping.
@@ -75,6 +69,11 @@ kernel.def @unsigned_sign_crossing_loop() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%output: buffer) {
+  func.call @compute_unsigned_sign_crossing_loop(%output) : (buffer)
+  kernel.return
+}
+
+func.def device inline @compute_unsigned_sign_crossing_loop(%output: buffer) {
   %begin = scalar.constant 2147483646 : i32
   %end = scalar.constant -2147483645 : i32
   %step = scalar.constant 2 : i32
@@ -95,15 +94,7 @@ kernel.def @unsigned_sign_crossing_loop() {
   cfg.br ^header(%next: i32, %next_count: i32)
 ^exit:
   view.store %count, %output_view[%position] : i32, view<1xi32>
-  kernel.return
-}
-
-check.case public @unsigned_sign_crossing_loop_case {
-  %actual = check.generate.fill value(-1) : tensor<1xi32>
-  %expected = check.generate.fill value(3) : tensor<1xi32>
-  kernel.launch @unsigned_sign_crossing_loop(%actual) : (tensor<1xi32>)
-  check.expect.equal actual(%actual) expected(%expected) : tensor<1xi32>
-  check.return
+  func.return
 }
 
 // A true guard exits immediately; the comparison is not a continuation test.
@@ -111,6 +102,11 @@ kernel.def @inverted_loop_guard() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%output: buffer) {
+  func.call @compute_inverted_loop_guard(%output) : (buffer)
+  kernel.return
+}
+
+func.def device inline @compute_inverted_loop_guard(%output: buffer) {
   %begin = index.constant 0 : index
   %end = index.constant 4 : index
   %step = index.constant 1 : index
@@ -131,15 +127,7 @@ kernel.def @inverted_loop_guard() {
   cfg.br ^header(%next: index, %next_count: i32)
 ^exit:
   view.store %count, %output_view[%position] : i32, view<1xi32>
-  kernel.return
-}
-
-check.case public @inverted_loop_guard_case {
-  %actual = check.generate.fill value(-1) : tensor<1xi32>
-  %expected = check.generate.fill value(0) : tensor<1xi32>
-  kernel.launch @inverted_loop_guard(%actual) : (tensor<1xi32>)
-  check.expect.equal actual(%actual) expected(%expected) : tensor<1xi32>
-  check.return
+  func.return
 }
 
 // A signed carried counter needs the initializer's lower bound as well as the
@@ -148,6 +136,11 @@ kernel.def @carried_counter_store() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%output: buffer) {
+  func.call @compute_carried_counter_store(%output) : (buffer)
+  kernel.return
+}
+
+func.def device inline @compute_carried_counter_store(%output: buffer) {
   %loop_begin = index.constant 0 : index
   %step = index.constant 1 : index
   %end = index.constant 4 : index
@@ -165,13 +158,65 @@ kernel.def @carried_counter_store() {
   %next = index.add %position, %step : index
   cfg.br ^header(%next: index)
 ^exit:
-  kernel.return
+  func.return
 }
 
-check.case public @carried_counter_store_case {
-  %actual = check.generate.fill value(-1) : tensor<4xi32>
-  %expected = check.generate.iota offset(0) step(1) : tensor<4xi32>
-  kernel.launch @carried_counter_store(%actual) : (tensor<4xi32>)
-  check.expect.equal actual(%actual) expected(%expected) : tensor<4xi32>
+func.def @unsigned_empty_loop_oracle(%output: buffer) {
+  func.call @compute_unsigned_empty_loop(%output) : (buffer)
+  func.return
+}
+
+func.def @signed_negative_loop_oracle(%output: buffer) {
+  func.call @compute_signed_negative_loop(%output) : (buffer)
+  func.return
+}
+
+func.def @unsigned_sign_crossing_loop_oracle(%output: buffer) {
+  func.call @compute_unsigned_sign_crossing_loop(%output) : (buffer)
+  func.return
+}
+
+func.def @inverted_loop_guard_oracle(%output: buffer) {
+  func.call @compute_inverted_loop_guard(%output) : (buffer)
+  func.return
+}
+
+func.def @carried_counter_store_oracle(%output: buffer) {
+  func.call @compute_carried_counter_store(%output) : (buffer)
+  func.return
+}
+
+check.scenario @explicit_loop_count_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %unsigned_empty = check.generate.fill value(-1) : tensor<1xi32>
+    check.compare<@unsigned_empty_loop, @unsigned_empty_loop_oracle>(%unsigned_empty) : (tensor<1xi32>) -> () {
+      check.expect.bitwise actual(%unsigned_empty) expected(%unsigned_empty) : tensor<1xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %signed_negative = check.generate.fill value(-1) : tensor<1xi32>
+    check.compare<@signed_negative_loop, @signed_negative_loop_oracle>(%signed_negative) : (tensor<1xi32>) -> () {
+      check.expect.bitwise actual(%signed_negative) expected(%signed_negative) : tensor<1xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %unsigned_crossing = check.generate.fill value(-1) : tensor<1xi32>
+    check.compare<@unsigned_sign_crossing_loop, @unsigned_sign_crossing_loop_oracle>(%unsigned_crossing) : (tensor<1xi32>) -> () {
+      check.expect.bitwise actual(%unsigned_crossing) expected(%unsigned_crossing) : tensor<1xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %inverted_guard = check.generate.fill value(-1) : tensor<1xi32>
+    check.compare<@inverted_loop_guard, @inverted_loop_guard_oracle>(%inverted_guard) : (tensor<1xi32>) -> () {
+      check.expect.bitwise actual(%inverted_guard) expected(%inverted_guard) : tensor<1xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %carried_storage = check.generate.fill value(-1) : tensor<12xi32>
+    %carried_output = check.tensor.view %carried_storage offset(16) : tensor<12xi32> -> tensor<4xi32>
+    check.compare<@carried_counter_store, @carried_counter_store_oracle>(%carried_output) : (tensor<4xi32>) -> () {
+      check.expect.bitwise actual(%carried_storage) expected(%carried_storage) : tensor<12xi32>
+    }
+  }
   check.return
 }
