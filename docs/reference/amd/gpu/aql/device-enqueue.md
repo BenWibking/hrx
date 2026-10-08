@@ -257,14 +257,28 @@ above does not establish error propagation through this source discrepancy.
 [State type][devenq] [Status comparisons][scheduler]
 
 START is sampled when scheduling the child, END when a later pass joins its
-execution, and COMPLETE after descendants finish. These are scheduler samples,
-not packet-processor start/end timestamps. The source scales
-`__builtin_readcyclecounter()` by the integer host factor
-`(1000 * 1024) / maxEngineClockFrequency`, then shifts right by 10. A zero
-reported maximum leaves the zero-initialized factor. That arithmetic alone
-does not establish the builtin's clock domain, frequency stability or accuracy;
-the intervals also include scheduling gaps. [Sampling][scheduler]
-[Scale construction][launch] [Native profiling](profiling.md)
+execution, and COMPLETE after descendants finish. These scheduler-observed
+intervals include scheduling gaps. For a raw `__builtin_readcyclecounter()`
+sample `C`, the source stores `(C * eng_clk) >> 10`, using unsigned 64-bit
+arithmetic. CLR sets `eng_clk` to integer `(1000 * 1024) / F`, where `F` is
+`HSA_AMD_AGENT_INFO_MAX_CLOCK_FREQUENCY` in MHz. A zero reported maximum
+leaves the zero-initialized factor. This is a reciprocal of the reported
+maximum, not a measurement of the running shader clock. [Sampling][scheduler]
+[Scale construction][launch] [Frequency query][clock-query]
+[Property units][clock-units]
+
+The compiler's [shader-cycle selection](../observability.md#shader-cycle-counters)
+includes zero-extended 20-bit values and 64-bit shader counters. RDNA3/3.5,
+RDNA4 and CDNA5 define those shader counters for deltas within one wave,
+with unsynchronized SIMD epochs. START and END here belong to separate
+scheduler dispatches. Both duration writers subtract the already scaled
+timestamps; neither reconstructs narrow-counter rollover or reconciles
+epochs. Consequently the cited implementation does not establish portable
+cross-pass elapsed time on those clock contracts. Selecting a fixed-frequency
+counter would also require its own frequency conversion. [Actual
+subtractions][scheduler] [Immediate capture][events]
+[Clock domains](../observability.md#shader-realtime-and-frequency)
+[Packet-processor profiling](profiling.md)
 
 `capture_event_profiling_info` stores an output pointer in the event. If its
 acquire load already observes CL_COMPLETE, the calling workitem writes both
@@ -352,3 +366,5 @@ virtual-pool replacement protocol. [CLR teardown][retirement]
 [event-status]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/clr/rocclr/platform/command.cpp#L110-L178
 [native-inactivate]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_aql_queue.cpp#L737-L746
 [barrier-header]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L71-L74
+[clock-query]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/clr/rocclr/device/rocm/rocdevice.cpp#L1186-L1196
+[clock-units]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L732-L736

@@ -24,7 +24,7 @@ resource-lifetime protocol.
 | [SDMA](sdma/README.md) | Transfer-engine operations and signaling protocols. |
 | [Programming recipes](recipes/README.md) | Host/device, cross-engine, and local-memory producer/consumer flows. |
 | [CPU, GPU and NPU interop](../interop/README.md) | External sharing, directed device handoffs, resident pipelines and storage reuse. |
-| [Timing and counters](observability.md) | Clock domains, timestamp conversion, counter ownership, and profiling interference. |
+| [Timing and counters](observability.md) | Shader cycles (`SHADER_CYCLES`, `S_MEMTIME`), fixed-frequency `REALTIME`, timestamp conversion, counter ownership, and profiling interference. |
 
 Compiler target, physical graphics/compute IP, SDMA IP, firmware, and native
 transport identify different parts of a programming contract. The operation

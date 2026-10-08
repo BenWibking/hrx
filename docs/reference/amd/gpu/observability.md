@@ -15,6 +15,8 @@ state.
 | SDMA global timestamp | GET_GLOBAL writes a raw timestamp. PAL orders preceding transfer work before its timestamp operation; host visibility and command storage lifetime remain separate obligations. |
 | AQL-carried CP timestamp | A native vendor IB executes a clock copy, with explicit virtual-XCC selection where needed and a native carrier completion. |
 | AQL dispatch profiling | A profiling-enabled queue captures start/end in the dispatch's native completion signal. That storage remains owned until the result is read. |
+| Shader cycle counter | A wave samples core cycles through the target's scalar-memory, shader-register or dedicated counter instruction. Width and SIMD epoch determine which samples can be compared. |
+| Shader realtime counter | A wave samples a fixed-frequency clock through S_MEMREALTIME or a returned REALTIME message. The result's readiness, frequency and correlation remain separate contracts. |
 | Programmable counters | A collection observes a specified event across selected hardware instances and a defined counting interval. |
 | Host timing | A host clock measures publication, submission through observed completion, or another explicitly bounded host interval. |
 
@@ -101,6 +103,85 @@ variation and reads through GC instance 0. Neither a compiler target nor one
 physical package establishes per-XCC or cross-partition calibration. [ROCr
 frequency][rocr-frequency] · [Translation][rocr-clocks] · [Partition-aware
 reader][partition-clock]
+
+### Shader cycle counters
+
+Clang lowers `__builtin_readcyclecounter()` and
+`__builtin_readsteadycounter()` to separate LLVM intrinsics. Their AMDGPU
+patterns select different clock sources. The following table describes the
+cited compiler's cycle-counter representations and feature predicates;
+instruction availability alone does not select a pattern when predicates
+overlap. [Frontend][counter-builtins] [Cycle and steady patterns][counter-patterns]
+[Target features][counter-features]
+
+| Cycle-counter mechanism | Predicate and target evidence | Returned representation |
+| --- | --- | --- |
+| `S_MEMTIME` | `HasSMemTimeInst`; SI, CI, VI, GFX9 and GFX10 base feature sets include it. | 64-bit scalar-memory result. The GCN3 instruction description identifies shader core clocks. |
+| `S_GETREG_B32 HW_REG_SHADER_CYCLES` | `HasShaderCyclesRegister`; GFX11 common features include it, including GFX11.5 and GFX11.7 inheritance. | Bits 0–19 of the counter, with an explicitly zero high DWORD in the 64-bit LLVM result. |
+| `GET_SHADERCYCLESHILO` | `HasShaderCyclesHiLoRegisters`; the ordinary GFX12 feature set includes it. | Three 32-bit reads of HI, LO, HI, assembled into a 64-bit result as described below. |
+| `S_GET_SHADER_CYCLES_U64` | `HasSGetShaderCyclesInst`, implemented as `HasGFX1250Insts`; the GFX12.50 feature set includes it. | One 64-bit shader-cycle read. |
+
+[Older features][counter-old-features] [GFX11 features][counter-gfx11-features]
+[GFX12 features][counter-gfx12-features] [GFX12.50 features][counter-gfx1250-features]
+[Register width encoding][counter-hwreg] [HI/LO pseudo][counter-hilo-pseudo]
+[Dedicated instruction][counter-direct] [Dedicated predicate][counter-direct-predicate]
+[Subtarget method][counter-direct-method]
+[GCN3 instruction, p. 12-56][gcn3-cycle]
+
+The compiler's expected-output fixture selects `S_MEMTIME` for its GFX10.3
+case even though that target also advertises the shader-cycle register. It
+selects the direct 64-bit instruction for GFX12.50 despite that target also
+advertising HI/LO registers. Those expectations cover both SelectionDAG and
+GlobalISel. A feature list alone cannot resolve these overlaps. GFX13 also
+declares `FeatureGFX1250Insts` alongside `FeatureShaderCyclesRegister`; the
+listed fixture contains no GFX13 case. [Expected selections][counter-fixture]
+[GFX10 inheritance][counter-gfx10-features] [GFX10.3 overlap][counter-gfx103-features]
+[GFX13 declarations][counter-gfx13-features]
+
+RDNA3 and RDNA3.5 describe `SHADER_CYCLES` as a 20-bit counter whose epochs
+are not synchronized between SIMDs. Their stated use is a time delta within
+one wave. For an interval shorter than one counter period in that domain,
+raw subtraction modulo `2^20` handles a single wrap; zero-extending each
+sample to 64 bits does not change the modulus. Separate dispatches do not
+inherit one wave's counter epoch. [RDNA3 §3.4.10][rdna3-time]
+[RDNA3.5 §3.4.10][rdna35-time]
+
+RDNA4 and CDNA5 widen the shader counter to 64 bits but retain the same
+within-wave restriction. RDNA4 recommends reading HI, LO, HI and repeating
+the reads if the high halves differ. The cited compiler's HI/LO expansion
+instead returns `HI2:LO1` when the highs agree and `HI2:0` otherwise; its
+stated intent is a value attained during the three-read interval. This
+expansion performs no retry. Neither algorithm establishes a common epoch
+between SIMDs. [RDNA4 §3.4.11][rdna4-time] [CDNA5 §3.4.11][cdna5-time]
+[Compiler expansion][counter-hilo-expand]
+
+### Shader realtime and frequency
+
+The steady-counter pattern uses `S_MEMREALTIME` under `HasSMemRealTime`,
+present in VI, GFX9 and GFX10 base features. For its `isGFX11Plus` predicate,
+the compiler uses `S_SENDMSG_RTN_B64` with `MSG_RTN_GET_REALTIME` (`0x83`).
+The RDNA3 manual pairs that instruction with `S_WAITCNT LGKMcnt == 0`;
+RDNA4 uses `S_WAIT_KMcnt == 0`. These waits make the returned register value
+ready; they do not join arbitrary shader work or publish a result to another
+actor. [Patterns][counter-patterns] [Older features][counter-old-features]
+[Generation predicate][counter-steady-predicate] [RDNA3 §3.4.10][rdna3-time]
+[RDNA4 §3.4.11.1][rdna4-time]
+
+GCN3 defines `S_MEMREALTIME` as independent of core-frequency and power-mode
+changes. The RDNA3, RDNA3.5 and RDNA4 manuals identify realtime as the
+clock-generator source for comparisons between waves or SIMDs, including
+idle intervals. Their typical 100 MHz rate is not a device-specific frequency
+query or a host-clock correlation. Core-cycle counts, this fixed-frequency
+source and native packet timestamps retain their own conversion inputs.
+[GCN3 §7.2.6][gcn3-realtime] [RDNA3 time][rdna3-time]
+[RDNA3.5 time][rdna35-time] [RDNA4 time][rdna4-time]
+
+`HSA_AMD_AGENT_INFO_MAX_CLOCK_FREQUENCY` reports the agent's maximum clock
+in MHz. It does not report an observed shader rate or the realtime frequency.
+The [OpenCL child scheduler](aql/device-enqueue.md#events-clocks-and-final-users)
+uses that maximum to scale cycle-counter samples from separate scheduler
+passes. Frequency scaling alone cannot repair counter rollover or unrelated
+SIMD epochs. [HSA property][shader-max-frequency]
 
 ## Counter ownership and interpretation
 
@@ -346,3 +427,28 @@ Return to the [GPU index](README.md) or [primary source map](../sources.md).
 [pal-counter-halves]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9PerfExperiment.cpp#L3948-L3964
 [pmc-clocks]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocprofiler-sdk/source/docs/how-to/using-rocprofv3.rst#L31-L39
 [counter-services]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocprofiler-sdk/source/docs/api-reference/counter_collection_services.rst#L10-L82
+[counter-builtins]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/clang/lib/CodeGen/CGBuiltin.cpp#L4135-L4142
+[counter-patterns]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/SMInstructions.td#L1096-L1124
+[counter-features]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/AMDGPU.td#L1262-L1274
+[counter-old-features]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/AMDGPU.td#L1715-L1845
+[counter-gfx11-features]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/AMDGPU.td#L2303-L2417
+[counter-gfx12-features]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/AMDGPU.td#L2419-L2488
+[counter-gfx1250-features]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/AMDGPU.td#L2490-L2581
+[counter-hwreg]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/SIInstrInfo.td#L1835-L1859
+[counter-hilo-pseudo]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/SIInstructions.td#L466-L472
+[counter-direct]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/SOPInstructions.td#L1771-L1775
+[counter-direct-predicate]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/AMDGPU.td#L3263-L3265
+[counter-direct-method]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/GCNSubtarget.h#L748-L749
+[counter-fixture]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/test/CodeGen/AMDGPU/readcyclecounter.ll#L1-L72
+[counter-gfx10-features]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/AMDGPU.td#L2216-L2225
+[counter-gfx103-features]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/AMDGPU.td#L2260-L2299
+[counter-gfx13-features]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/AMDGPU.td#L2720-L2736
+[counter-hilo-expand]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/SIISelLowering.cpp#L7267-L7304
+[counter-steady-predicate]: https://github.com/ROCm/llvm-project/blob/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/llvm/lib/Target/AMDGPU/AMDGPU.td#L3095-L3097
+[shader-max-frequency]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L732-L736
+[gcn3-cycle]: https://gpuopen.com/download/AMD_GCN3_Instruction_Set_Architecture_rev1.1.pdf#page=162
+[gcn3-realtime]: https://gpuopen.com/download/AMD_GCN3_Instruction_Set_Architecture_rev1.1.pdf#page=65
+[rdna3-time]: https://gpuopen.com/download/rdna3-shader-instruction-set-architecture-feb-2023.pdf#page=36
+[rdna35-time]: https://gpuopen.com/download/rdna35_instruction_set_architecture.pdf#page=36
+[rdna4-time]: https://gpuopen.com/download/rdna4-instruction-set-architecture.pdf#page=40
+[cdna5-time]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf#page=37
