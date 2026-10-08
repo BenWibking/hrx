@@ -125,41 +125,27 @@ arithmetic. Each row invokes a complete public compiler boundary:
 | Phase | Timed operation |
 | --- | --- |
 | `Import` | Preprocess, parse, type-check, and import source to verified High IR. |
+| `SourceToPreparedLow` | Import source and compile that module through prepared Low IR in one workspace. |
 | `CloneHigh` | Clone a setup-imported High module into the invocation workspace. |
 | `SourceLow` | Clone High IR and run the source-low target pipeline. |
 | `PreparedLow` | Clone High IR and run the complete prepared-low target pipeline. |
+| `HighToHsaco` | Clone High IR, compile it through prepared Low IR, emit HSACO, and validate the ELF artifact. |
 | `ClonePreparedLow` | Clone setup-prepared Low IR with its retained specialization facts. |
 | `EmitPreparedLow` | Clone prepared Low IR, emit HSACO, and validate the ELF artifact. |
 
 The lowering and emission rows include their required fresh-module clone. The
-clone-only rows expose that floor. `SourceLow` and `PreparedLow` are independent
-cumulative compilations, while `EmitPreparedLow` starts from retained prepared
-IR, so phase times are not additive reconstructions of `SourceToHsaco`.
+clone-only rows expose that floor. `SourceToPreparedLow` and `HighToHsaco`
+preserve each cumulative boundary in one workspace. `SourceLow`, `PreparedLow`,
+and `EmitPreparedLow` isolate their inputs with retained templates, so those
+phase times are not additive reconstructions of `SourceToHsaco`.
 Validation, result construction, teardown, and arena reuse remain owned by the
 public operation that performs them.
 
 The routed Q4_K/Q8_1 source supplies input size 4096 through an ordinary
-`config.def` and compiles its complete 768-channel kernel for `gfx1250`. An
-optimized run on an AMD Ryzen Threadripper 3970X on 2026-10-08 measured these
-median wall times over seven 100-iteration repetitions:
-
-| Public boundary | Routed Q4_K/Q8_1 SwiGLU |
-| --- | ---: |
-| Import to verified High IR | 6.085 ms |
-| Clone High IR | 95.8 us |
-| Through source-low | 5.108 ms |
-| Through prepared-low | 5.036 ms |
-| Clone prepared Low IR | 98.4 us |
-| Emit prepared Low IR to HSACO | 3.638 ms |
-| Complete source to HSACO | 16.241 ms |
-
-The benchmark lease was held, CPU scaling and ASLR were disabled, and process
-startup was outside timing. The complete row's repetition coefficient of
-variation was 2.8%. Warmed iterations allocated no new workspace blocks. Seven
-one-iteration cold-workspace repetitions allocated fifteen 128 KiB blocks, or
-1.875 MiB. Their 14.821 ms median had 5.8% variation, so the row is retained as
-first-growth allocation evidence rather than a latency comparison. The input
-source is 11,350 bytes and the emitted HSACO is 9,216 bytes.
+`config.def` and compiles its complete 768-channel kernel for `gfx1250`.
+`Import`, `SourceToPreparedLow`, and `SourceToHsaco` form cumulative boundaries
+whose differences provide an additive production-path breakdown. Clone-based
+phase probes remain diagnostic controls and are not additive.
 
 `ConfiguredWorkgroupStorage` measures a specialization-first kernel whose C++
 source declares a constrained stage count, uses that value to size aligned

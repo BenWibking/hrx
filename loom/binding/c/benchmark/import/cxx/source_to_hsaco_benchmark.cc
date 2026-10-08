@@ -31,9 +31,11 @@ struct CxxKernel {
 
 enum class CxxJitPhase {
   kImport,
+  kSourceToPreparedLow,
   kCloneHigh,
   kSourceLow,
   kPreparedLow,
+  kHighToHsaco,
   kClonePreparedLow,
   kEmitPreparedLow,
 };
@@ -222,7 +224,8 @@ class CxxJitPhaseScenario final : public CxxSourceScenarioBase {
             ? LOOMC_TARGET_PIPELINE_KIND_SOURCE_LOW
             : LOOMC_TARGET_PIPELINE_KIND_PREPARED_LOW;
     IREE_RETURN_IF_ERROR(SetUpSource(worker_count, pipeline_kind));
-    if (phase_ == CxxJitPhase::kImport) {
+    if (phase_ == CxxJitPhase::kImport ||
+        phase_ == CxxJitPhase::kSourceToPreparedLow) {
       return iree_ok_status();
     }
 
@@ -244,8 +247,12 @@ class CxxJitPhaseScenario final : public CxxSourceScenarioBase {
     (void)job_ordinal;
     WorkspacePtr& workspace = workspace_at(worker_ordinal);
     ModulePtr module;
-    if (phase_ == CxxJitPhase::kImport) {
+    if (phase_ == CxxJitPhase::kImport ||
+        phase_ == CxxJitPhase::kSourceToPreparedLow) {
       IREE_RETURN_IF_ERROR(ImportSource(workspace, &module));
+      if (phase_ == CxxJitPhase::kSourceToPreparedLow) {
+        IREE_RETURN_IF_ERROR(CompileSource(workspace, module));
+      }
     } else {
       const loomc_module_t* template_module = UsesPreparedTemplate()
                                                   ? prepared_template_.get()
@@ -255,6 +262,9 @@ class CxxJitPhaseScenario final : public CxxSourceScenarioBase {
       if (phase_ == CxxJitPhase::kSourceLow ||
           phase_ == CxxJitPhase::kPreparedLow) {
         IREE_RETURN_IF_ERROR(CompileSource(workspace, module));
+      } else if (phase_ == CxxJitPhase::kHighToHsaco) {
+        IREE_RETURN_IF_ERROR(CompileSource(workspace, module));
+        IREE_RETURN_IF_ERROR(EmitHsaco(workspace, module));
       } else if (phase_ == CxxJitPhase::kEmitPreparedLow) {
         IREE_RETURN_IF_ERROR(EmitHsaco(workspace, module));
       }
@@ -336,9 +346,11 @@ void RegisterCxxJitPhaseBenchmarks(const char* kernel_name,
                                    const CxxKernel* kernel) {
   constexpr CxxJitPhaseRegistration kPhases[] = {
       {CxxJitPhase::kImport, "Import"},
+      {CxxJitPhase::kSourceToPreparedLow, "SourceToPreparedLow"},
       {CxxJitPhase::kCloneHigh, "CloneHigh"},
       {CxxJitPhase::kSourceLow, "SourceLow"},
       {CxxJitPhase::kPreparedLow, "PreparedLow"},
+      {CxxJitPhase::kHighToHsaco, "HighToHsaco"},
       {CxxJitPhase::kClonePreparedLow, "ClonePreparedLow"},
       {CxxJitPhase::kEmitPreparedLow, "EmitPreparedLow"},
   };
