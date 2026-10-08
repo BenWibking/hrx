@@ -8,49 +8,6 @@
 
 #include "iree/base/bitfield.h"
 #include "loom/codegen/low/allocation/move_topology.h"
-#include "loom/codegen/low/packet.h"
-#include "loom/ops/low/ops.h"
-
-static bool loom_amdgpu_structural_packet_branch_falls_through(
-    const loom_low_schedule_table_t* schedule,
-    const loom_low_schedule_node_t* node, const loom_block_t* destination) {
-  const uint32_t destination_block_index =
-      loom_low_packet_block_index(schedule, destination);
-  return destination_block_index != LOOM_LOW_PACKET_INDEX_NONE &&
-         destination_block_index == node->block_index + 1;
-}
-
-static uint64_t loom_amdgpu_structural_packet_control_transfer_count(
-    const loom_low_schedule_table_t* schedule,
-    const loom_low_schedule_node_t* node) {
-  const loom_op_t* op = node->op;
-  if (loom_low_return_isa(op)) {
-    return 1;
-  }
-  if (loom_low_br_isa(op)) {
-    return loom_amdgpu_structural_packet_branch_falls_through(
-               schedule, node, loom_low_br_dest(op))
-               ? 0
-               : 1;
-  }
-  if (!loom_low_cond_br_isa(op)) {
-    return 0;
-  }
-
-  const loom_block_t* true_destination = loom_low_cond_br_true_dest(op);
-  const loom_block_t* false_destination = loom_low_cond_br_false_dest(op);
-  const bool true_fallthrough =
-      loom_amdgpu_structural_packet_branch_falls_through(schedule, node,
-                                                         true_destination);
-  if (true_destination == false_destination) {
-    return true_fallthrough ? 0 : 1;
-  }
-  const bool false_fallthrough =
-      loom_amdgpu_structural_packet_branch_falls_through(schedule, node,
-                                                         false_destination);
-  return true_fallthrough || false_fallthrough ? 1 : 2;
-}
-
 static void loom_amdgpu_structural_packet_analyze_move_range(
     loom_low_move_range_t move_range,
     loom_amdgpu_structural_packet_info_t* out_info) {

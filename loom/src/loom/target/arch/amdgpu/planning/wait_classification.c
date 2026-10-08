@@ -337,35 +337,6 @@ static bool loom_amdgpu_wait_classification_descriptor_writes_exec(
   return false;
 }
 
-static bool
-loom_amdgpu_wait_classification_structural_node_implicitly_drains_xcnt(
-    const loom_low_schedule_table_t* schedule,
-    const loom_low_schedule_node_t* node) {
-  const loom_op_t* op = node->op;
-  if (op == NULL) {
-    return false;
-  }
-  if (loom_low_return_isa(op)) {
-    return true;
-  }
-  if (loom_low_br_isa(op)) {
-    const uint32_t destination_block_index =
-        loom_low_packet_block_index(schedule, loom_low_br_dest(op));
-    return destination_block_index != node->block_index + 1;
-  }
-  if (loom_low_cond_br_isa(op)) {
-    const loom_block_t* true_dest = loom_low_cond_br_true_dest(op);
-    const loom_block_t* false_dest = loom_low_cond_br_false_dest(op);
-    if (true_dest != false_dest) {
-      return true;
-    }
-    const uint32_t destination_block_index =
-        loom_low_packet_block_index(schedule, true_dest);
-    return destination_block_index != node->block_index + 1;
-  }
-  return false;
-}
-
 static void loom_amdgpu_wait_classification_finish_nodes(
     const loom_low_schedule_table_t* schedule,
     const loom_low_allocation_table_t* allocation,
@@ -466,8 +437,8 @@ static void loom_amdgpu_wait_classification_finish_nodes(
     if (supports_xcnt &&
         (iree_any_bit_set(descriptor_traits,
                           LOOM_AMDGPU_DESCRIPTOR_TRAIT_XCNT_IMPLICIT_DRAIN) ||
-         loom_amdgpu_wait_classification_structural_node_implicitly_drains_xcnt(
-             schedule, node))) {
+         loom_amdgpu_structural_packet_control_transfer_count(schedule, node) !=
+             0)) {
       node_state->flags |= LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_IMPLICIT_DRAIN;
       node_state->implicit_wait_counter_mask |= LOOM_AMDGPU_WAIT_COUNTER_MASK_X;
     }

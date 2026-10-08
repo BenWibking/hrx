@@ -699,6 +699,8 @@ loom_cc_library(
   SRCS
     "storage_lease.c"
   DEPS
+    ::structural_packet
+    ::wait_counters
     iree::base
     loom::codegen::low::storage_lease
     loom::target::arch::amdgpu::target_info_defs

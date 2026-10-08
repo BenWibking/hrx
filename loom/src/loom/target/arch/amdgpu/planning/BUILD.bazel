@@ -596,6 +596,8 @@ loom_cc_library(
     hdrs = ["storage_lease.h"],
     visibility = _AMDGPU_ROOT_VISIBILITY + _AMDGPU_NATIVE_PLANNING_VISIBILITY,
     deps = [
+        ":structural_packet",
+        ":wait_counters",
         "//loom/src/loom/codegen/low:storage_lease",
         "//loom/src/loom/target/arch/amdgpu:target_info_defs",
         "//runtime/src/iree/base",
