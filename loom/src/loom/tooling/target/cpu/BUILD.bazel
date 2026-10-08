@@ -10,6 +10,11 @@ load(
     "loom_cc_library",
     "loom_config_compatible_with",
 )
+load(
+    "//loom/build_tools/bazel:defs.bzl",
+    "loom_execution_profile",
+    "loom_test",
+)
 
 package(
     default_visibility = ["//visibility:public"],
@@ -32,16 +37,21 @@ loom_cc_library(
     ],
 )
 
+_X86_TASK_HARDWARE_PROFILE = loom_execution_profile(
+    name = "x86_task_hardware",
+    executor = "hardware",
+    runner_args = ["--device=task"],
+    target_class = "cpu",
+    target_family = "x86",
+)
+
 # Copied C++ array records cross a native call and preserve independent storage
 # through the public task HAL runner.
-iree_executable_test(
+loom_test(
     name = "array_records_test",
-    src = "//loom/src/loom/tools/iree-test-loom",
-    args = [
-        "$(rootpath //loom/src/loom/import/cxx/test:array_records_module)",
-        "--device=task",
-    ],
-    data = ["//loom/src/loom/import/cxx/test:array_records_module"],
+    benchmark_smoke = False,
+    execution_profiles = [_X86_TASK_HARDWARE_PROFILE],
+    module = "//loom/src/loom/import/cxx/test:array_records_module",
     target_compatible_with = loom_config_compatible_with([
         "//loom/config/import:cxx",
         "//loom/config/target/arch:x86",
