@@ -17,6 +17,7 @@ loom_corpus_sources(
   SRCS
     "address/address.loom"
     "address/biased_offsets.loom"
+    "address/carrier_casts.loom"
     "address/tiled_channel.loom"
     "atomic/float64.loom"
     "atomic/i32.loom"
@@ -37,7 +38,6 @@ loom_corpus_sources(
     "view/scalar_exchange.loom"
     "view/selected_crops.loom"
     "view/selection.loom"
-    "address/carrier_casts.loom"
     "address/carrier_loops.loom"
     "address/generic.loom"
     "address/integer_casts.loom"

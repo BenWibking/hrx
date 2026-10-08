@@ -14,6 +14,7 @@ MEMORY_CORPUS = loom_corpus_manifest(
     scenario_srcs = [
         "address/address.loom",
         "address/biased_offsets.loom",
+        "address/carrier_casts.loom",
         "address/tiled_channel.loom",
         "atomic/float64.loom",
         "atomic/i32.loom",
@@ -36,7 +37,6 @@ MEMORY_CORPUS = loom_corpus_manifest(
         "view/selection.loom",
     ],
     legacy_case_srcs = [
-        "address/carrier_casts.loom",
         "address/carrier_loops.loom",
         "address/generic.loom",
         "address/integer_casts.loom",
