@@ -48,12 +48,8 @@ struct loom_boundary_projection_loop_t {
   loom_loop_like_t loop;
   // Original condition-region terminator, or NULL for counted loops.
   loom_op_t* condition_terminator;
-  // Condition terminator operands retained before its construction use ends.
-  loom_value_id_t* condition_operands;
   // Original body-region terminator.
   loom_op_t* body_terminator;
-  // Body terminator operands retained before its construction use ends.
-  loom_value_id_t* body_operands;
   // Original body/result columns in source order.
   loom_boundary_projection_loop_result_state_t* result_states;
   // Prefix offsets from source result columns to final physical ordinals.

@@ -142,15 +142,6 @@ iree_status_t loom_boundary_projection_collect_loop(
   loom_region_t* body_region = loom_loop_like_body(loop);
   loom_block_t* body_entry = loom_region_entry_block(body_region);
   loop_plan->body_terminator = body_entry->last_op;
-  if (loop_plan->body_terminator->operand_count != 0) {
-    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-        plan->arena, loop_plan->body_terminator->operand_count,
-        sizeof(*loop_plan->body_operands), (void**)&loop_plan->body_operands));
-    memcpy(loop_plan->body_operands,
-           loom_op_const_operands(loop_plan->body_terminator),
-           loop_plan->body_terminator->operand_count *
-               sizeof(*loop_plan->body_operands));
-  }
   const uint16_t body_state_offset =
       loom_loop_like_iv(loop) == LOOM_VALUE_ID_INVALID ? 0 : 1;
   IREE_ASSERT_EQ(body_entry->arg_count,
@@ -158,16 +149,6 @@ iree_status_t loom_boundary_projection_collect_loop(
 
   if (condition_loop) {
     loop_plan->condition_terminator = condition_entry->last_op;
-    if (loop_plan->condition_terminator->operand_count != 0) {
-      IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-          plan->arena, loop_plan->condition_terminator->operand_count,
-          sizeof(*loop_plan->condition_operands),
-          (void**)&loop_plan->condition_operands));
-      memcpy(loop_plan->condition_operands,
-             loom_op_const_operands(loop_plan->condition_terminator),
-             loop_plan->condition_terminator->operand_count *
-                 sizeof(*loop_plan->condition_operands));
-    }
   }
 
   for (uint16_t i = 0; i < loop_plan->result_count; ++i) {
@@ -438,9 +419,11 @@ iree_status_t loom_boundary_projection_plan_loops(
 
     const loom_value_slice_t initial_values =
         loom_loop_like_iter_args(loop->loop);
-    const loom_value_id_t* backedge_values = loop->body_operands;
+    const loom_value_id_t* backedge_values =
+        loom_op_const_operands(loop->body_terminator);
     const loom_value_id_t* condition_values =
-        condition_loop ? loop->condition_operands : NULL;
+        condition_loop ? loom_op_const_operands(loop->condition_terminator)
+                       : NULL;
     for (uint16_t i = 0; i < loop->result_count; ++i) {
       loom_boundary_projection_loop_result_state_t* state =
           &loop->result_states[i];
@@ -1046,6 +1029,8 @@ static iree_status_t loom_boundary_projection_build_loop_terminators(
   }
 
   if (loop->condition_terminator) {
+    const loom_value_id_t* condition_operands =
+        loom_op_const_operands(loop->condition_terminator);
     const loom_builder_ip_t saved = loom_builder_enter_region(
         &plan->rewriter.builder, replacement->loop.op,
         loom_loop_like_condition_region(replacement->loop));
@@ -1057,7 +1042,7 @@ static iree_status_t loom_boundary_projection_build_loop_terminators(
       const uint16_t offset = loop->result_offsets[i];
       if (!loom_boundary_projection_loop_result_is_selected(function, state)) {
         state_values[offset] = loom_boundary_projection_resolve_value(
-            function, loop->condition_operands[1 + i]);
+            function, condition_operands[1 + i]);
         continue;
       }
       const loom_boundary_projection_slot_t* candidate =
@@ -1071,7 +1056,7 @@ static iree_status_t loom_boundary_projection_build_loop_terminators(
     IREE_RETURN_IF_ERROR(loom_boundary_projection_build_loop_terminator(
         plan, function, replacement->loop.op,
         loom_loop_like_condition_region(replacement->loop),
-        loop->condition_terminator, loop->condition_operands,
+        loop->condition_terminator, condition_operands,
         /*state_operand_offset=*/1, state_values, loop->final_result_count,
         out_condition_terminator));
   } else {
@@ -1083,6 +1068,8 @@ static iree_status_t loom_boundary_projection_build_loop_terminators(
       loom_builder_enter_region(&plan->rewriter.builder, replacement->loop.op,
                                 loom_loop_like_body(replacement->loop));
   iree_status_t status = iree_ok_status();
+  const loom_value_id_t* body_operands =
+      loom_op_const_operands(loop->body_terminator);
   if (loop->condition_terminator) {
     final_backedge_count = loop->final_header_count;
     for (uint16_t i = 0; i < loop->header_count && iree_status_is_ok(status);
@@ -1091,8 +1078,8 @@ static iree_status_t loom_boundary_projection_build_loop_terminators(
           &loop->header_states[i];
       const uint16_t offset = loop->header_offsets[i];
       if (!loom_boundary_projection_loop_header_is_selected(function, state)) {
-        state_values[offset] = loom_boundary_projection_resolve_value(
-            function, loop->body_operands[i]);
+        state_values[offset] =
+            loom_boundary_projection_resolve_value(function, body_operands[i]);
         continue;
       }
       const loom_boundary_projection_slot_t* candidate =
@@ -1108,8 +1095,8 @@ static iree_status_t loom_boundary_projection_build_loop_terminators(
           &loop->result_states[i];
       const uint16_t offset = loop->result_offsets[i];
       if (!loom_boundary_projection_loop_result_is_selected(function, state)) {
-        state_values[offset] = loom_boundary_projection_resolve_value(
-            function, loop->body_operands[i]);
+        state_values[offset] =
+            loom_boundary_projection_resolve_value(function, body_operands[i]);
         continue;
       }
       const loom_boundary_projection_slot_t* candidate =
@@ -1124,7 +1111,7 @@ static iree_status_t loom_boundary_projection_build_loop_terminators(
   return loom_boundary_projection_build_loop_terminator(
       plan, function, replacement->loop.op,
       loom_loop_like_body(replacement->loop), loop->body_terminator,
-      loop->body_operands,
+      body_operands,
       /*state_operand_offset=*/0, state_values, final_backedge_count,
       out_body_terminator);
 }
@@ -1366,12 +1353,13 @@ static iree_status_t loom_boundary_projection_open_loop(
                                  : LOOM_LOCATION_UNKNOWN;
   const loom_location_id_t body_location = loop->body_terminator->location;
 
-  // Retained recipes own every outgoing state value needed to finish the new
-  // terminators. Retire the original terminators before destination
-  // realization so eliminative rules can remove complete source chains. The
-  // replacement regions remain in their normal construction interval until
-  // dominated child loops have published the component definitions those
-  // recipes reference.
+  // Retained recipes and the immutable original terminator payloads provide
+  // every outgoing state value needed to finish the replacement terminators.
+  // Retire the original terminators before destination realization so
+  // eliminative rules can remove complete source chains. The replacement
+  // regions remain in their normal construction interval until dominated
+  // child loops have published the component definitions those recipes
+  // reference.
   if (loop->condition_terminator) {
     IREE_RETURN_IF_ERROR(
         loom_rewriter_erase(&plan->rewriter, loop->condition_terminator));
