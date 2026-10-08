@@ -336,6 +336,33 @@ def test_integer_extrema_rules_prefer_encoded_constants() -> None:
         )
 
 
+def test_scalar_i32_bitwise_rules_prefer_encoded_constants() -> None:
+    compiled = _compiled_integer_rules()
+
+    for source_op, suffix in (
+        (scalar_bitwise.scalar_andi, "and_b32"),
+        (scalar_bitwise.scalar_ori, "or_b32"),
+        (scalar_bitwise.scalar_xori, "xor_b32"),
+    ):
+        descriptor_sequences = tuple(
+            _rule_descriptor_keys(compiled, rule)
+            for rule in _rules_for_source_op(compiled, source_op)
+            if set(_rule_type_patterns(compiled, rule)) == {Scalar("i32")}
+        )
+        assert descriptor_sequences == (
+            (f"amdgpu.s_{suffix}.rhs_inline",),
+            (f"amdgpu.s_{suffix}.rhs_inline",),
+            (f"amdgpu.s_{suffix}.lit",),
+            (f"amdgpu.s_{suffix}.lit",),
+            (f"amdgpu.v_{suffix}.src0_inline",),
+            (f"amdgpu.v_{suffix}.src0_inline",),
+            (f"amdgpu.v_{suffix}.lit",),
+            (f"amdgpu.v_{suffix}.lit",),
+            (f"amdgpu.s_{suffix}",),
+            (f"amdgpu.v_{suffix}",),
+        )
+
+
 def test_packed_i16_arithmetic_rules_try_native_pk_ops_before_word_ops() -> None:
     compiled = _compiled_arithmetic_rules()
 

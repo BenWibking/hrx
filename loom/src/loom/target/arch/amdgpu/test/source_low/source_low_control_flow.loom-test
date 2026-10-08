@@ -1297,8 +1297,8 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @uniform
   %min_i8 = global_load_i8_saddr %initial_sum, %104 {offset = 7}
   %scale_u = v_and_b32_lit %scale_i8, 255
   %min_u = v_and_b32_lit %min_i8, 255
-  %scale$108 = v_and_b32_lit %scale_u, 63
-  %min$109 = v_and_b32_lit %min_u, 63
+  %scale$108 = v_and_b32_src0_inline %scale_u, 63
+  %min$109 = v_and_b32_src0_inline %min_u, 63
   low.br ^_bb5(%scale$108: reg<amdgpu.vgpr>, %min$109: reg<amdgpu.vgpr>)
 ^_bb4:
   %111 = slice %input_view[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
@@ -1318,7 +1318,7 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @uniform
   %low = v_and_b32_lit %low_i8, 255
   %mid = v_and_b32_lit %mid_i8, 255
   %high = v_and_b32_lit %high_i8, 255
-  %scale_low = v_and_b32_lit %high, 15
+  %scale_low = v_and_b32_src0_inline %high, 15
   %scale_hi0 = v_and_b32_lit %low, 192
   %scale_hi = v_lshrrev_b32_src0_inline %scale_hi0, 2
   %scale$146 = v_or_b32 %scale_low, %scale_hi
@@ -1366,8 +1366,8 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @diverge
   %code = slice %values[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
   %selector = slice %values[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
   %high_shifted = v_lshrrev_b32_src0_inline %code, 4
-  %low = v_and_b32_lit %code, 15
-  %high = v_and_b32_lit %high_shifted, 15
+  %low = v_and_b32_src0_inline %code, 15
+  %high = v_and_b32_src0_inline %high_shifted, 15
   %23 = v_mov_b32_copy %limit
   %cond = v_cmp_lt_i32 %selector, %23
   %selected = v_cndmask_b32 %low, %high, %cond
