@@ -125,6 +125,7 @@ _SCENARIO_KERNEL_SOURCES = [
     "memory/address/scaling.loom",
     "memory/address/selection.loom",
     "memory/address/signed_terms.loom",
+    "memory/address/table_index.loom",
     "memory/address/uniform_add.loom",
     "memory/address/widening.loom",
     "memory/atomic/i32.loom",

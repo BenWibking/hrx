@@ -22,6 +22,7 @@ MEMORY_CORPUS = loom_corpus_manifest(
         "address/scaling.loom",
         "address/selection.loom",
         "address/signed_terms.loom",
+        "address/table_index.loom",
         "address/tiled_channel.loom",
         "address/uniform_add.loom",
         "address/widening.loom",
@@ -47,7 +48,6 @@ MEMORY_CORPUS = loom_corpus_manifest(
     ],
     legacy_case_srcs = [
         "address/generic.loom",
-        "address/table_index.loom",
         "atomic/add_f32_subnormals.loom",
         "atomic/float_bitwise.loom",
         "atomic/float_extrema.loom",

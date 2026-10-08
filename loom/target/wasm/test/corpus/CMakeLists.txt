@@ -907,6 +907,8 @@ loom_corpus_test(
     "Wasm has no kernel execution model."
     "memory/address/signed_terms.loom"
     "Wasm has no kernel execution model."
+    "memory/address/table_index.loom"
+    "Wasm has no kernel execution model."
     "memory/address/uniform_add.loom"
     "Wasm has no kernel execution model."
     "memory/address/widening.loom"
