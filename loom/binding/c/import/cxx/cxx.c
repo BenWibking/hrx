@@ -6,6 +6,8 @@
 
 #include "loomc/import/cxx.h"
 
+#include <string.h>
+
 #include "context.h"
 #include "diagnostic.h"
 #include "loom/import/cxx/import.h"
@@ -31,6 +33,17 @@ IREE_STATIC_ASSERT_ENUM_EQ(
     LOOM_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES,
     "public no-builtin-includes flag matches the native importer");
 
+typedef struct loomc_cxx_source_path_t {
+  // Next unique physical path mapped by this invocation.
+  struct loomc_cxx_source_path_t* next;
+  // Physical identity used by the frontend and include lookup.
+  iree_string_view_t path;
+  // Logical identity retained by diagnostics and the output module.
+  iree_string_view_t identifier;
+  // True when this physical source contributed retained module state.
+  bool is_admitted;
+} loomc_cxx_source_path_t;
+
 // Invocation-local adaptation; no frontend state escapes the native import.
 typedef struct loomc_cxx_invocation_t {
   // Result receiving copied diagnostics and their source contents.
@@ -39,6 +52,16 @@ typedef struct loomc_cxx_invocation_t {
   loomc_cxx_source_provider_t provider;
   // Most recent provider reference, valid until the next callback or teardown.
   loomc_source_t* provided_source;
+  // Public module receiving exact source snapshots.
+  loomc_module_t* module;
+  // Optional caller policy mapping physical paths to logical identities.
+  loomc_cxx_source_path_mapper_t source_path_mapper;
+  // Temporary storage for copied physical and logical source identities.
+  iree_arena_allocator_t source_path_arena;
+  // Whether |source_path_arena| was initialized for an active mapper.
+  bool source_path_arena_initialized;
+  // Unique source paths already mapped by this invocation.
+  loomc_cxx_source_path_t* source_paths;
 } loomc_cxx_invocation_t;
 
 static loomc_status_t loomc_cxx_validate_string(loomc_string_view_t value) {
@@ -47,6 +70,113 @@ static loomc_status_t loomc_cxx_validate_string(loomc_string_view_t value) {
                              "C/C++ option string has length but no data");
   }
   return loomc_ok_status();
+}
+
+static iree_status_t loomc_cxx_copy_source_path(iree_arena_allocator_t* arena,
+                                                iree_string_view_t value,
+                                                iree_string_view_t* out_value) {
+  iree_host_size_t allocation_size = 0;
+  if (!iree_host_size_checked_add(value.size, 1, &allocation_size)) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "C/C++ source path length overflow");
+  }
+  char* storage = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate(arena, allocation_size, (void**)&storage));
+  if (value.size != 0) {
+    memcpy(storage, value.data, value.size);
+  }
+  storage[value.size] = 0;
+  *out_value = iree_make_string_view(storage, value.size);
+  return iree_ok_status();
+}
+
+static iree_status_t loomc_cxx_map_source_path(
+    loomc_cxx_invocation_t* invocation, iree_string_view_t path,
+    iree_string_view_t* out_identifier) {
+  *out_identifier = path;
+  if (invocation->source_path_mapper.fn == NULL ||
+      iree_string_view_is_empty(path)) {
+    return iree_ok_status();
+  }
+  for (loomc_cxx_source_path_t* entry = invocation->source_paths; entry != NULL;
+       entry = entry->next) {
+    if (iree_string_view_equal(entry->path, path)) {
+      *out_identifier = entry->identifier;
+      return iree_ok_status();
+    }
+  }
+
+  loomc_string_view_t mapped = loomc_string_view_empty();
+  IREE_RETURN_IF_ERROR(iree_status_from_loomc(invocation->source_path_mapper.fn(
+      invocation->source_path_mapper.user_data,
+      loomc_string_view_from_iree(path), &mapped)));
+  IREE_RETURN_IF_ERROR(
+      iree_status_from_loomc(loomc_cxx_validate_string(mapped)));
+
+  loomc_cxx_source_path_t* entry = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate(&invocation->source_path_arena,
+                                           sizeof(*entry), (void**)&entry));
+  IREE_RETURN_IF_ERROR(loomc_cxx_copy_source_path(
+      &invocation->source_path_arena, path, &entry->path));
+  IREE_RETURN_IF_ERROR(loomc_cxx_copy_source_path(
+      &invocation->source_path_arena, iree_string_view_from_loomc(mapped),
+      &entry->identifier));
+  entry->is_admitted = false;
+  entry->next = invocation->source_paths;
+  invocation->source_paths = entry;
+  *out_identifier = entry->identifier;
+  return iree_ok_status();
+}
+
+static iree_status_t loomc_cxx_admit_source_path(
+    loomc_cxx_invocation_t* invocation, iree_string_view_t path,
+    iree_string_view_t* out_identifier) {
+  IREE_RETURN_IF_ERROR(
+      loomc_cxx_map_source_path(invocation, path, out_identifier));
+  if (invocation->source_path_mapper.fn == NULL ||
+      iree_string_view_is_empty(path)) {
+    return iree_ok_status();
+  }
+  loomc_cxx_source_path_t* admitted_path = NULL;
+  for (loomc_cxx_source_path_t* entry = invocation->source_paths; entry != NULL;
+       entry = entry->next) {
+    if (iree_string_view_equal(entry->path, path)) {
+      admitted_path = entry;
+    } else if (entry->is_admitted &&
+               iree_string_view_equal(entry->identifier, *out_identifier)) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "C/C++ source path mapping gives distinct sources '%.*s' and "
+          "'%.*s' the same identifier '%.*s'",
+          (int)entry->path.size, entry->path.data, (int)path.size, path.data,
+          (int)out_identifier->size,
+          out_identifier->data ? out_identifier->data : "");
+    }
+  }
+  IREE_ASSERT(admitted_path);
+  admitted_path->is_admitted = true;
+  return iree_ok_status();
+}
+
+static iree_status_t loomc_cxx_map_source_range(
+    loomc_cxx_invocation_t* invocation, const loom_source_range_t* source,
+    loom_source_range_t* out_range) {
+  *out_range = *source;
+  return loomc_cxx_map_source_path(invocation, source->filename,
+                                   &out_range->filename);
+}
+
+static iree_status_t loomc_cxx_rewrite_module_source_paths(
+    loomc_cxx_invocation_t* invocation, loom_module_t* module) {
+  for (iree_host_size_t i = 0; i < module->sources.count; ++i) {
+    iree_string_view_t identifier = iree_string_view_empty();
+    IREE_RETURN_IF_ERROR(loomc_cxx_admit_source_path(
+        invocation, module->sources.entries[i], &identifier));
+    IREE_RETURN_IF_ERROR(loomc_cxx_copy_source_path(
+        &module->arena, identifier, &module->sources.entries[i]));
+  }
+  return iree_ok_status();
 }
 
 static loomc_status_t loomc_cxx_copy_strings(loomc_host_size_t count,
@@ -180,8 +310,26 @@ static iree_status_t loomc_cxx_provide_source(void* user_data,
 static iree_status_t loomc_cxx_capture_diagnostic(
     void* user_data, const loom_diagnostic_t* diagnostic) {
   loomc_cxx_invocation_t* invocation = (loomc_cxx_invocation_t*)user_data;
+  loom_diagnostic_t mapped = *diagnostic;
+  IREE_RETURN_IF_ERROR(loomc_cxx_map_source_range(
+      invocation, &diagnostic->origin, &mapped.origin));
+  IREE_RETURN_IF_ERROR(loomc_cxx_map_source_range(
+      invocation, &diagnostic->source_location, &mapped.source_location));
+  IREE_ASSERT(diagnostic->related_location_count <=
+              LOOM_DIAGNOSTIC_MAX_RELATED_LOCATIONS);
+  loom_diagnostic_related_location_t
+      related_locations[LOOM_DIAGNOSTIC_MAX_RELATED_LOCATIONS];
+  for (iree_host_size_t i = 0; i < diagnostic->related_location_count; ++i) {
+    related_locations[i] = diagnostic->related_locations[i];
+    IREE_RETURN_IF_ERROR(loomc_cxx_map_source_range(
+        invocation, &diagnostic->related_locations[i].source_location,
+        &related_locations[i].source_location));
+  }
+  if (diagnostic->related_location_count != 0) {
+    mapped.related_locations = related_locations;
+  }
   return iree_status_from_loomc(
-      loomc_result_add_loom_diagnostic(invocation->result, NULL, diagnostic,
+      loomc_result_add_loom_diagnostic(invocation->result, NULL, &mapped,
                                        /*type_printer=*/NULL));
 }
 
@@ -189,9 +337,12 @@ static iree_status_t loomc_cxx_capture_source(void* user_data,
                                               loom_source_id_t source_id,
                                               iree_string_view_t filename,
                                               iree_string_view_t source) {
-  loomc_module_t* module = (loomc_module_t*)user_data;
-  return iree_status_from_loomc(
-      loomc_module_insert_source_snapshot(module, source_id, filename, source));
+  loomc_cxx_invocation_t* invocation = (loomc_cxx_invocation_t*)user_data;
+  iree_string_view_t identifier = iree_string_view_empty();
+  IREE_RETURN_IF_ERROR(
+      loomc_cxx_admit_source_path(invocation, filename, &identifier));
+  return iree_status_from_loomc(loomc_module_insert_source_snapshot(
+      invocation->module, source_id, identifier, source));
 }
 
 loomc_status_t loomc_module_import_cxx(
@@ -221,12 +372,19 @@ loomc_status_t loomc_module_import_cxx(
     status = loomc_module_create_empty(context, workspace, allocator, &module);
   }
   if (loomc_status_is_ok(status)) {
+    invocation.module = module;
+    if (options && options->source_path_mapper.fn) {
+      invocation.source_path_mapper = options->source_path_mapper;
+      iree_arena_initialize(loomc_module_block_pool(module),
+                            &invocation.source_path_arena);
+      invocation.source_path_arena_initialized = true;
+    }
     native_options.diagnostic_sink =
         (loom_diagnostic_sink_t){loomc_cxx_capture_diagnostic, &invocation};
     if (loomc_context_source_retention(context) ==
         LOOMC_SOURCE_RETENTION_EXACT) {
       native_options.source_observer =
-          (loom_cxx_source_observer_t){loomc_cxx_capture_source, module};
+          (loom_cxx_source_observer_t){loomc_cxx_capture_source, &invocation};
     }
     loomc_target_pass_environment_initialize_text_asm_environment(
         loomc_context_target_pass_environment(context),
@@ -243,6 +401,11 @@ loomc_status_t loomc_module_import_cxx(
         loomc_context_loom_context(context), loomc_module_block_pool(module),
         &native_options, iree_allocator_from_loomc(allocator),
         &internal_module));
+  }
+  if (loomc_status_is_ok(status) && internal_module &&
+      invocation.source_path_mapper.fn) {
+    status = loomc_status_from_iree(
+        loomc_cxx_rewrite_module_source_paths(&invocation, internal_module));
   }
   if (loomc_status_is_ok(status)) {
     if (internal_module) {
@@ -263,6 +426,9 @@ loomc_status_t loomc_module_import_cxx(
     invocation.result = NULL;
   }
   loom_module_free(internal_module);
+  if (invocation.source_path_arena_initialized) {
+    iree_arena_deinitialize(&invocation.source_path_arena);
+  }
   loomc_module_release(module);
   loomc_result_release(invocation.result);
   loomc_source_release(invocation.provided_source);

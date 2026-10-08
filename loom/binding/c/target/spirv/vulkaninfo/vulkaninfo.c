@@ -15,7 +15,6 @@
 #include "result.h"
 
 enum {
-  LOOMC_SPIRV_VULKANINFO_FEATURE_FACT_CAPACITY = 32,
   LOOMC_SPIRV_VULKANINFO_LIMIT_FACT_CAPACITY = 16,
   LOOMC_SPIRV_VULKANINFO_ENVIRONMENT_FACT_CAPACITY = 4,
 };
@@ -28,8 +27,7 @@ typedef struct loomc_spirv_vulkaninfo_import_t {
   loomc_result_t* result;
 
   // Feature facts normalized from recognized Vulkan fields.
-  loomc_spirv_feature_fact_t
-      feature_facts[LOOMC_SPIRV_VULKANINFO_FEATURE_FACT_CAPACITY];
+  loomc_spirv_feature_fact_t feature_facts[LOOMC_SPIRV_FEATURE_COUNT];
 
   // Number of entries in feature_facts.
   loomc_host_size_t feature_fact_count;
@@ -53,6 +51,25 @@ typedef struct loomc_spirv_vulkaninfo_first_member_state_t {
   // Captured member value.
   iree_string_view_t value;
 } loomc_spirv_vulkaninfo_first_member_state_t;
+
+typedef struct loomc_spirv_vulkaninfo_flag_state_t {
+  // Vulkan Profiles flag spelling to find.
+  iree_string_view_t flag;
+
+  // Whether the flag was present in the array.
+  bool found;
+} loomc_spirv_vulkaninfo_flag_state_t;
+
+typedef struct loomc_spirv_vulkaninfo_feature_field_t {
+  // Vulkan feature-struct field name.
+  const char* field_name;
+
+  // Public SPIR-V feature represented by the field.
+  loomc_spirv_feature_t feature;
+
+  // Stable provenance for the imported field.
+  const char* provenance;
+} loomc_spirv_vulkaninfo_feature_field_t;
 
 static const char* loomc_spirv_vulkaninfo_string_data(
     loomc_string_view_t value) {
@@ -227,8 +244,26 @@ static loomc_status_t loomc_spirv_vulkaninfo_add_feature_fact(
       state == LOOMC_TARGET_FACT_STATE_UNKNOWN) {
     return loomc_ok_status();
   }
-  if (import->feature_fact_count >=
-      LOOMC_SPIRV_VULKANINFO_FEATURE_FACT_CAPACITY) {
+  for (loomc_host_size_t i = 0; i < import->feature_fact_count; ++i) {
+    const loomc_spirv_feature_fact_t* existing = &import->feature_facts[i];
+    if (existing->feature != feature) {
+      continue;
+    }
+    if (existing->state == state) {
+      return loomc_ok_status();
+    }
+    return loomc_spirv_vulkaninfo_fail_iree_status(
+        import,
+        iree_make_status(
+            IREE_STATUS_INVALID_ARGUMENT,
+            "vulkaninfo sources '%.*s' and '%.*s' disagree on SPIR-V "
+            "feature %u",
+            (int)existing->provenance.size,
+            loomc_spirv_vulkaninfo_string_data(existing->provenance),
+            (int)provenance.size,
+            loomc_spirv_vulkaninfo_string_data(provenance), (unsigned)feature));
+  }
+  if (import->feature_fact_count >= LOOMC_SPIRV_FEATURE_COUNT) {
     return loomc_make_status(LOOMC_STATUS_RESOURCE_EXHAUSTED,
                              "too many vulkaninfo SPIR-V feature facts");
   }
@@ -239,6 +274,19 @@ static loomc_status_t loomc_spirv_vulkaninfo_add_feature_fact(
           .provenance = provenance,
       };
   return loomc_ok_status();
+}
+
+static loomc_target_fact_state_t loomc_spirv_vulkaninfo_and_fact_states(
+    loomc_target_fact_state_t lhs, loomc_target_fact_state_t rhs) {
+  if (lhs == LOOMC_TARGET_FACT_STATE_FALSE ||
+      rhs == LOOMC_TARGET_FACT_STATE_FALSE) {
+    return LOOMC_TARGET_FACT_STATE_FALSE;
+  }
+  if (lhs == LOOMC_TARGET_FACT_STATE_TRUE &&
+      rhs == LOOMC_TARGET_FACT_STATE_TRUE) {
+    return LOOMC_TARGET_FACT_STATE_TRUE;
+  }
+  return LOOMC_TARGET_FACT_STATE_UNKNOWN;
 }
 
 static loomc_status_t loomc_spirv_vulkaninfo_add_limit_fact(
@@ -282,10 +330,10 @@ static loomc_status_t loomc_spirv_vulkaninfo_add_environment_fact(
   return loomc_ok_status();
 }
 
-static loomc_status_t loomc_spirv_vulkaninfo_add_bool_feature(
+static loomc_status_t loomc_spirv_vulkaninfo_read_bool_feature(
     loomc_spirv_vulkaninfo_import_t* import, iree_string_view_t object,
-    iree_string_view_t key, loomc_spirv_feature_t feature,
-    loomc_string_view_t provenance) {
+    iree_string_view_t key, loomc_target_fact_state_t* out_state) {
+  *out_state = LOOMC_TARGET_FACT_STATE_UNKNOWN;
   if (!loomc_result_succeeded(import->result) ||
       iree_string_view_is_empty(object)) {
     return loomc_ok_status();
@@ -300,18 +348,177 @@ static loomc_status_t loomc_spirv_vulkaninfo_add_bool_feature(
     return loomc_ok_status();
   }
   if (iree_string_view_equal(value, IREE_SV("true"))) {
-    return loomc_spirv_vulkaninfo_add_feature_fact(
-        import, feature, LOOMC_TARGET_FACT_STATE_TRUE, provenance);
+    *out_state = LOOMC_TARGET_FACT_STATE_TRUE;
+    return loomc_ok_status();
   }
   if (iree_string_view_equal(value, IREE_SV("false"))) {
-    return loomc_spirv_vulkaninfo_add_feature_fact(
-        import, feature, LOOMC_TARGET_FACT_STATE_FALSE, provenance);
+    *out_state = LOOMC_TARGET_FACT_STATE_FALSE;
+    return loomc_ok_status();
   }
   return loomc_spirv_vulkaninfo_fail_iree_status(
       import,
       iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                        "vulkaninfo feature '%.*s' must be boolean or null",
                        (int)key.size, key.data));
+}
+
+static loomc_status_t loomc_spirv_vulkaninfo_add_bool_feature(
+    loomc_spirv_vulkaninfo_import_t* import, iree_string_view_t object,
+    iree_string_view_t key, loomc_spirv_feature_t feature,
+    loomc_string_view_t provenance) {
+  loomc_target_fact_state_t state = LOOMC_TARGET_FACT_STATE_UNKNOWN;
+  LOOMC_RETURN_IF_ERROR(
+      loomc_spirv_vulkaninfo_read_bool_feature(import, object, key, &state));
+  return loomc_spirv_vulkaninfo_add_feature_fact(import, feature, state,
+                                                 provenance);
+}
+
+static loomc_status_t loomc_spirv_vulkaninfo_add_bool_pair_feature(
+    loomc_spirv_vulkaninfo_import_t* import, iree_string_view_t object,
+    iree_string_view_t lhs_key, iree_string_view_t rhs_key,
+    loomc_spirv_feature_t feature, loomc_string_view_t provenance) {
+  loomc_target_fact_state_t lhs_state = LOOMC_TARGET_FACT_STATE_UNKNOWN;
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_read_bool_feature(
+      import, object, lhs_key, &lhs_state));
+  loomc_target_fact_state_t rhs_state = LOOMC_TARGET_FACT_STATE_UNKNOWN;
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_read_bool_feature(
+      import, object, rhs_key, &rhs_state));
+  return loomc_spirv_vulkaninfo_add_feature_fact(
+      import, feature,
+      loomc_spirv_vulkaninfo_and_fact_states(lhs_state, rhs_state), provenance);
+}
+
+static loomc_status_t loomc_spirv_vulkaninfo_flag_visitor(
+    void* user_data, iree_host_size_t index, iree_json_value_type_t type,
+    iree_string_view_t value) {
+  (void)index;
+  loomc_spirv_vulkaninfo_flag_state_t* state =
+      (loomc_spirv_vulkaninfo_flag_state_t*)user_data;
+  if (type != IREE_JSON_VALUE_TYPE_STRING) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "Vulkan Profiles flag arrays require strings");
+  }
+  state->found |= iree_string_view_equal(value, state->flag);
+  return iree_ok_status();
+}
+
+static loomc_status_t loomc_spirv_vulkaninfo_read_flag_feature(
+    loomc_spirv_vulkaninfo_import_t* import, iree_string_view_t object,
+    iree_string_view_t key, iree_string_view_t flag,
+    loomc_target_fact_state_t* out_state) {
+  *out_state = LOOMC_TARGET_FACT_STATE_UNKNOWN;
+  if (!loomc_result_succeeded(import->result) ||
+      iree_string_view_is_empty(object)) {
+    return loomc_ok_status();
+  }
+  iree_string_view_t array = iree_string_view_empty();
+  LOOMC_RETURN_IF_ERROR(
+      loomc_spirv_vulkaninfo_try_lookup_array(import, object, key, &array));
+  if (iree_string_view_is_empty(array)) {
+    return loomc_ok_status();
+  }
+  loomc_spirv_vulkaninfo_flag_state_t state = {
+      .flag = flag,
+  };
+  iree_status_t status = iree_json_enumerate_array_typed(
+      array, loomc_spirv_vulkaninfo_flag_visitor, &state);
+  if (!iree_status_is_ok(status)) {
+    return loomc_spirv_vulkaninfo_fail_iree_status(import, status);
+  }
+  *out_state = state.found ? LOOMC_TARGET_FACT_STATE_TRUE
+                           : LOOMC_TARGET_FACT_STATE_FALSE;
+  return loomc_ok_status();
+}
+
+static loomc_status_t loomc_spirv_vulkaninfo_add_subgroup_features(
+    loomc_spirv_vulkaninfo_import_t* import, iree_string_view_t object,
+    iree_string_view_t key, loomc_string_view_t provenance) {
+  loomc_target_fact_state_t basic_state = LOOMC_TARGET_FACT_STATE_UNKNOWN;
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_read_flag_feature(
+      import, object, key, IREE_SV("VK_SUBGROUP_FEATURE_BASIC_BIT"),
+      &basic_state));
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_feature_fact(
+      import, LOOMC_SPIRV_FEATURE_GROUP_NON_UNIFORM, basic_state, provenance));
+  loomc_target_fact_state_t ballot_state = LOOMC_TARGET_FACT_STATE_UNKNOWN;
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_read_flag_feature(
+      import, object, key, IREE_SV("VK_SUBGROUP_FEATURE_BALLOT_BIT"),
+      &ballot_state));
+  return loomc_spirv_vulkaninfo_add_feature_fact(
+      import, LOOMC_SPIRV_FEATURE_GROUP_NON_UNIFORM_BALLOT,
+      loomc_spirv_vulkaninfo_and_fact_states(basic_state, ballot_state),
+      provenance);
+}
+
+static loomc_status_t loomc_spirv_vulkaninfo_add_float32_denorm_feature(
+    loomc_spirv_vulkaninfo_import_t* import, iree_string_view_t object,
+    loomc_string_view_t provenance) {
+  loomc_target_fact_state_t preserve_state = LOOMC_TARGET_FACT_STATE_UNKNOWN;
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_read_bool_feature(
+      import, object, IREE_SV("shaderDenormPreserveFloat32"), &preserve_state));
+  if (preserve_state == LOOMC_TARGET_FACT_STATE_UNKNOWN) {
+    return loomc_ok_status();
+  }
+
+  iree_string_view_t independence = iree_string_view_empty();
+  iree_status_t status = loomc_spirv_vulkaninfo_try_lookup(
+      object, IREE_SV("denormBehaviorIndependence"), &independence);
+  if (!iree_status_is_ok(status)) {
+    return loomc_spirv_vulkaninfo_fail_iree_status(import, status);
+  }
+  if (preserve_state == LOOMC_TARGET_FACT_STATE_FALSE) {
+    return loomc_spirv_vulkaninfo_add_feature_fact(
+        import, LOOMC_SPIRV_FEATURE_FLOAT32_DENORM_PRESERVE,
+        LOOMC_TARGET_FACT_STATE_FALSE, provenance);
+  }
+  if (iree_string_view_is_empty(independence) ||
+      loomc_spirv_vulkaninfo_is_null(independence)) {
+    return loomc_ok_status();
+  }
+  const bool independent =
+      iree_string_view_equal(
+          independence,
+          IREE_SV("VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_32_BIT_ONLY")) ||
+      iree_string_view_equal(
+          independence,
+          IREE_SV("VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_32_BIT_ONLY_KHR")) ||
+      iree_string_view_equal(
+          independence, IREE_SV("VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_ALL")) ||
+      iree_string_view_equal(
+          independence,
+          IREE_SV("VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_ALL_KHR"));
+  const bool none =
+      iree_string_view_equal(
+          independence,
+          IREE_SV("VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE")) ||
+      iree_string_view_equal(
+          independence,
+          IREE_SV("VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE_KHR"));
+  if (!independent && !none) {
+    return loomc_spirv_vulkaninfo_fail_iree_status(
+        import,
+        iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                         "vulkaninfo denormBehaviorIndependence '%.*s' is "
+                         "invalid",
+                         (int)independence.size, independence.data));
+  }
+  return loomc_spirv_vulkaninfo_add_feature_fact(
+      import, LOOMC_SPIRV_FEATURE_FLOAT32_DENORM_PRESERVE,
+      independent ? LOOMC_TARGET_FACT_STATE_TRUE
+                  : LOOMC_TARGET_FACT_STATE_FALSE,
+      provenance);
+}
+
+static loomc_status_t loomc_spirv_vulkaninfo_add_feature_fields(
+    loomc_spirv_vulkaninfo_import_t* import, iree_string_view_t object,
+    const loomc_spirv_vulkaninfo_feature_field_t* fields,
+    loomc_host_size_t field_count) {
+  for (loomc_host_size_t i = 0; i < field_count; ++i) {
+    const loomc_spirv_vulkaninfo_feature_field_t* field = &fields[i];
+    LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_bool_feature(
+        import, object, iree_make_cstring_view(field->field_name),
+        field->feature, loomc_make_cstring_view(field->provenance)));
+  }
+  return loomc_ok_status();
 }
 
 static loomc_status_t loomc_spirv_vulkaninfo_parse_uint64(
@@ -646,7 +853,8 @@ static loomc_status_t loomc_spirv_vulkaninfo_lookup_feature_struct(
 static loomc_status_t loomc_spirv_vulkaninfo_import_limits(
     loomc_spirv_vulkaninfo_import_t* import,
     iree_string_view_t physical_properties,
-    iree_string_view_t vulkan11_properties) {
+    iree_string_view_t vulkan11_properties,
+    iree_string_view_t subgroup_properties) {
   iree_string_view_t limits = iree_string_view_empty();
   LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_try_lookup_object(
       import, physical_properties, IREE_SV("limits"), &limits));
@@ -682,11 +890,118 @@ static loomc_status_t loomc_spirv_vulkaninfo_import_limits(
       import, limits, IREE_SV("maxComputeWorkGroupCount"), 2,
       LOOMC_SPIRV_LIMIT_MAX_WORKGROUP_COUNT_Z,
       loomc_make_cstring_view("vulkaninfo:maxComputeWorkGroupCount[2]")));
+  const iree_string_view_t subgroup_limit_properties =
+      !iree_string_view_is_empty(vulkan11_properties) ? vulkan11_properties
+                                                      : subgroup_properties;
   return loomc_spirv_vulkaninfo_add_limit(
-      import, vulkan11_properties, IREE_SV("subgroupSize"),
+      import, subgroup_limit_properties, IREE_SV("subgroupSize"),
       LOOMC_SPIRV_LIMIT_SUBGROUP_SIZE,
       loomc_make_cstring_view("vulkaninfo:subgroupSize"));
 }
+
+static loomc_status_t loomc_spirv_vulkaninfo_import_feature_properties(
+    loomc_spirv_vulkaninfo_import_t* import,
+    iree_string_view_t vulkan11_properties,
+    iree_string_view_t subgroup_properties,
+    iree_string_view_t vulkan12_properties,
+    iree_string_view_t float_controls_properties) {
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_subgroup_features(
+      import, vulkan11_properties, IREE_SV("subgroupSupportedOperations"),
+      loomc_make_cstring_view("vulkaninfo:subgroupSupportedOperations")));
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_subgroup_features(
+      import, subgroup_properties, IREE_SV("supportedOperations"),
+      loomc_make_cstring_view("vulkaninfo:supportedOperations")));
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_float32_denorm_feature(
+      import, vulkan12_properties,
+      loomc_make_cstring_view(
+          "vulkaninfo:VkPhysicalDeviceVulkan12Properties.float32Denorm")));
+  return loomc_spirv_vulkaninfo_add_float32_denorm_feature(
+      import, float_controls_properties,
+      loomc_make_cstring_view(
+          "vulkaninfo:VkPhysicalDeviceFloatControlsProperties.float32Denorm"));
+}
+
+static const loomc_spirv_vulkaninfo_feature_field_t
+    kLoomcSpirvVulkaninfoAtomicInt64Fields[] = {
+        {
+            .field_name = "shaderBufferInt64Atomics",
+            .feature = LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_INT64_ATOMICS,
+            .provenance = "vulkaninfo:shaderBufferInt64Atomics",
+        },
+        {
+            .field_name = "shaderSharedInt64Atomics",
+            .feature = LOOMC_SPIRV_FEATURE_WORKGROUP_INT64_ATOMICS,
+            .provenance = "vulkaninfo:shaderSharedInt64Atomics",
+        },
+};
+
+static const loomc_spirv_vulkaninfo_feature_field_t
+    kLoomcSpirvVulkaninfoAtomicFloatFields[] = {
+        {
+            .field_name = "shaderBufferFloat32Atomics",
+            .feature = LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT32_ATOMICS,
+            .provenance = "vulkaninfo:shaderBufferFloat32Atomics",
+        },
+        {
+            .field_name = "shaderSharedFloat32Atomics",
+            .feature = LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT32_ATOMICS,
+            .provenance = "vulkaninfo:shaderSharedFloat32Atomics",
+        },
+        {
+            .field_name = "shaderBufferFloat32AtomicAdd",
+            .feature = LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT32_ATOMIC_ADD,
+            .provenance = "vulkaninfo:shaderBufferFloat32AtomicAdd",
+        },
+        {
+            .field_name = "shaderSharedFloat32AtomicAdd",
+            .feature = LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT32_ATOMIC_ADD,
+            .provenance = "vulkaninfo:shaderSharedFloat32AtomicAdd",
+        },
+        {
+            .field_name = "shaderBufferFloat64Atomics",
+            .feature = LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT64_ATOMICS,
+            .provenance = "vulkaninfo:shaderBufferFloat64Atomics",
+        },
+        {
+            .field_name = "shaderSharedFloat64Atomics",
+            .feature = LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT64_ATOMICS,
+            .provenance = "vulkaninfo:shaderSharedFloat64Atomics",
+        },
+        {
+            .field_name = "shaderBufferFloat64AtomicAdd",
+            .feature = LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT64_ATOMIC_ADD,
+            .provenance = "vulkaninfo:shaderBufferFloat64AtomicAdd",
+        },
+        {
+            .field_name = "shaderSharedFloat64AtomicAdd",
+            .feature = LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT64_ATOMIC_ADD,
+            .provenance = "vulkaninfo:shaderSharedFloat64AtomicAdd",
+        },
+};
+
+static const loomc_spirv_vulkaninfo_feature_field_t
+    kLoomcSpirvVulkaninfoAtomicFloat2Fields[] = {
+        {
+            .field_name = "shaderBufferFloat16Atomics",
+            .feature = LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT16_ATOMICS,
+            .provenance = "vulkaninfo:shaderBufferFloat16Atomics",
+        },
+        {
+            .field_name = "shaderSharedFloat16Atomics",
+            .feature = LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT16_ATOMICS,
+            .provenance = "vulkaninfo:shaderSharedFloat16Atomics",
+        },
+        {
+            .field_name = "shaderBufferFloat16AtomicAdd",
+            .feature = LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT16_ATOMIC_ADD,
+            .provenance = "vulkaninfo:shaderBufferFloat16AtomicAdd",
+        },
+        {
+            .field_name = "shaderSharedFloat16AtomicAdd",
+            .feature = LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT16_ATOMIC_ADD,
+            .provenance = "vulkaninfo:shaderSharedFloat16AtomicAdd",
+        },
+};
 
 static loomc_status_t loomc_spirv_vulkaninfo_import_features_from_structs(
     loomc_spirv_vulkaninfo_import_t* import, iree_string_view_t features,
@@ -729,6 +1044,26 @@ static loomc_status_t loomc_spirv_vulkaninfo_import_features_from_structs(
       import, features, extended_features,
       IREE_SV("VkPhysicalDeviceCooperativeVectorFeaturesNV"),
       &cooperative_vector_features));
+  iree_string_view_t atomic_int64_features = iree_string_view_empty();
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_lookup_feature_struct(
+      import, features, extended_features,
+      IREE_SV("VkPhysicalDeviceShaderAtomicInt64Features"),
+      &atomic_int64_features));
+  iree_string_view_t memory_model_features = iree_string_view_empty();
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_lookup_feature_struct(
+      import, features, extended_features,
+      IREE_SV("VkPhysicalDeviceVulkanMemoryModelFeatures"),
+      &memory_model_features));
+  iree_string_view_t atomic_float_features = iree_string_view_empty();
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_lookup_feature_struct(
+      import, features, extended_features,
+      IREE_SV("VkPhysicalDeviceShaderAtomicFloatFeaturesEXT"),
+      &atomic_float_features));
+  iree_string_view_t atomic_float2_features = iree_string_view_empty();
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_lookup_feature_struct(
+      import, features, extended_features,
+      IREE_SV("VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT"),
+      &atomic_float2_features));
 
   LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_bool_feature(
       import, core_features, IREE_SV("shaderFloat64"),
@@ -785,10 +1120,39 @@ static loomc_status_t loomc_spirv_vulkaninfo_import_features_from_structs(
       import, cooperative_vector_features, IREE_SV("cooperativeVector"),
       LOOMC_SPIRV_FEATURE_COOPERATIVE_VECTOR_NV,
       loomc_make_cstring_view("vulkaninfo:cooperativeVector")));
-  return loomc_spirv_vulkaninfo_add_bool_feature(
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_bool_feature(
       import, cooperative_vector_features, IREE_SV("cooperativeVectorTraining"),
       LOOMC_SPIRV_FEATURE_COOPERATIVE_VECTOR_TRAINING_NV,
-      loomc_make_cstring_view("vulkaninfo:cooperativeVectorTraining"));
+      loomc_make_cstring_view("vulkaninfo:cooperativeVectorTraining")));
+
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_feature_fields(
+      import, vulkan12_features, kLoomcSpirvVulkaninfoAtomicInt64Fields,
+      sizeof(kLoomcSpirvVulkaninfoAtomicInt64Fields) /
+          sizeof(kLoomcSpirvVulkaninfoAtomicInt64Fields[0])));
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_feature_fields(
+      import, atomic_int64_features, kLoomcSpirvVulkaninfoAtomicInt64Fields,
+      sizeof(kLoomcSpirvVulkaninfoAtomicInt64Fields) /
+          sizeof(kLoomcSpirvVulkaninfoAtomicInt64Fields[0])));
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_bool_pair_feature(
+      import, vulkan12_features, IREE_SV("vulkanMemoryModel"),
+      IREE_SV("vulkanMemoryModelDeviceScope"),
+      LOOMC_SPIRV_FEATURE_VULKAN_MEMORY_MODEL_DEVICE_SCOPE,
+      loomc_make_cstring_view(
+          "vulkaninfo:vulkanMemoryModel+vulkanMemoryModelDeviceScope")));
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_bool_pair_feature(
+      import, memory_model_features, IREE_SV("vulkanMemoryModel"),
+      IREE_SV("vulkanMemoryModelDeviceScope"),
+      LOOMC_SPIRV_FEATURE_VULKAN_MEMORY_MODEL_DEVICE_SCOPE,
+      loomc_make_cstring_view(
+          "vulkaninfo:vulkanMemoryModel+vulkanMemoryModelDeviceScope")));
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_feature_fields(
+      import, atomic_float_features, kLoomcSpirvVulkaninfoAtomicFloatFields,
+      sizeof(kLoomcSpirvVulkaninfoAtomicFloatFields) /
+          sizeof(kLoomcSpirvVulkaninfoAtomicFloatFields[0])));
+  return loomc_spirv_vulkaninfo_add_feature_fields(
+      import, atomic_float2_features, kLoomcSpirvVulkaninfoAtomicFloat2Fields,
+      sizeof(kLoomcSpirvVulkaninfoAtomicFloat2Fields) /
+          sizeof(kLoomcSpirvVulkaninfoAtomicFloat2Fields[0]));
 }
 
 static loomc_status_t loomc_spirv_vulkaninfo_import_device(
@@ -814,11 +1178,26 @@ static loomc_status_t loomc_spirv_vulkaninfo_import_device(
   LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_try_lookup_object(
       import, properties, IREE_SV("VkPhysicalDeviceVulkan11Properties"),
       &vulkan11_properties));
+  iree_string_view_t subgroup_properties = iree_string_view_empty();
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_try_lookup_object(
+      import, properties, IREE_SV("VkPhysicalDeviceSubgroupProperties"),
+      &subgroup_properties));
+  iree_string_view_t vulkan12_properties = iree_string_view_empty();
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_try_lookup_object(
+      import, properties, IREE_SV("VkPhysicalDeviceVulkan12Properties"),
+      &vulkan12_properties));
+  iree_string_view_t float_controls_properties = iree_string_view_empty();
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_try_lookup_object(
+      import, properties, IREE_SV("VkPhysicalDeviceFloatControlsProperties"),
+      &float_controls_properties));
   LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_add_api_version(
       import, physical_properties, IREE_SV("apiVersion"),
       loomc_make_cstring_view("vulkaninfo:apiVersion")));
   LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_import_limits(
-      import, physical_properties, vulkan11_properties));
+      import, physical_properties, vulkan11_properties, subgroup_properties));
+  LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_import_feature_properties(
+      import, vulkan11_properties, subgroup_properties, vulkan12_properties,
+      float_controls_properties));
 
   iree_string_view_t features = iree_string_view_empty();
   LOOMC_RETURN_IF_ERROR(loomc_spirv_vulkaninfo_try_lookup_object(

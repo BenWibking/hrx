@@ -174,6 +174,26 @@ TEST(ErrorDefsTest, DomainNames) {
   EXPECT_STREQ(loom_error_domain_name(LOOM_ERROR_DOMAIN_EXPECT), "EXPECT");
 }
 
+TEST(ErrorDefsTest, ParsesCanonicalRefs) {
+  loom_error_ref_t ref = LOOM_ERROR_REF_NONE;
+  EXPECT_TRUE(loom_error_ref_parse(IREE_SV("TYPE/001"), &ref));
+  EXPECT_EQ(ref, LOOM_ERROR_REF(LOOM_ERROR_DOMAIN_TYPE, 1));
+  EXPECT_TRUE(loom_error_ref_parse(IREE_SV("EXPECT/002"), &ref));
+  EXPECT_EQ(ref, LOOM_ERROR_REF(LOOM_ERROR_DOMAIN_EXPECT, 2));
+}
+
+TEST(ErrorDefsTest, RejectsInvalidRefs) {
+  loom_error_ref_t ref = LOOM_ERROR_REF(LOOM_ERROR_DOMAIN_TYPE, 1);
+  EXPECT_FALSE(loom_error_ref_parse(IREE_SV("TYPE/1"), &ref));
+  EXPECT_EQ(ref, LOOM_ERROR_REF_NONE);
+  EXPECT_FALSE(loom_error_ref_parse(IREE_SV("type/001"), &ref));
+  EXPECT_FALSE(loom_error_ref_parse(IREE_SV("TYPE/000"), &ref));
+  EXPECT_FALSE(loom_error_ref_parse(IREE_SV("TYPE/1024"), &ref));
+  EXPECT_FALSE(loom_error_ref_parse(IREE_SV("UNKNOWN/001"), &ref));
+  EXPECT_FALSE(loom_error_ref_parse(IREE_SV("TYPE/001/tail"), &ref));
+  EXPECT_FALSE(loom_error_ref_parse(IREE_SV("TYPE/001"), nullptr));
+}
+
 TEST(ErrorDefsTest, EmitterNames) {
   EXPECT_STREQ(loom_emitter_name(LOOM_EMITTER_VERIFIER), "verifier");
   EXPECT_STREQ(loom_emitter_name(LOOM_EMITTER_PARSER), "parser");

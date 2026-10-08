@@ -6,59 +6,69 @@
 
 // HAL kernel-launch bridge for Loom check testbench actual-candidate execution.
 //
-// This layer is target-neutral: tools inject an execution session with its
-// composed target environment and linked device providers, while this bridge
-// owns HAL runtime selection, candidate compilation, dispatch input conversion,
-// and the callback shape used by the testbench executor.
+// This layer is target-neutral: tools inject a public target environment and
+// linked HAL target providers, while this bridge owns HAL runtime selection,
+// candidate compilation, dispatch input conversion, and the callback shape
+// used by the testbench executor.
 
 #ifndef LOOM_TOOLING_EXECUTION_HAL_TESTBENCH_ACTUAL_H_
 #define LOOM_TOOLING_EXECUTION_HAL_TESTBENCH_ACTUAL_H_
 
 #include "iree/base/api.h"
 #include "iree/hal/api.h"
-#include "loom/analysis/kernel_launch_config.h"
-#include "loom/pass/pipeline_snapshot.h"
-#include "loom/sanitizer/options.h"
-#include "loom/target/provider.h"
-#include "loom/tooling/compile/options.h"
-#include "loom/tooling/compile/pipeline.h"
-#include "loom/tooling/execution/hal/candidate.h"
-#include "loom/tooling/execution/hal/device_provider.h"
+#include "loom/ir/module.h"
+#include "loom/target/types.h"
 #include "loom/tooling/execution/hal/invocation.h"
 #include "loom/tooling/execution/hal/runtime.h"
-#include "loom/tooling/execution/session.h"
+#include "loom/tooling/testbench/compiled_provider.h"
 #include "loom/tooling/testbench/invocation.h"
-#include "loom/tooling/testbench/requirements.h"
 #include "loom/tooling/testbench/testbench.h"
 #include "loom/tooling/testbench/value_materializer.h"
+#include "loomc/compile.h"
+#include "loomc/launch_config.h"
+#include "loomc/sanitizer.h"
+#include "loomc/target/iree_hal.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct loom_tooling_config_set_t loom_tooling_config_set_t;
+// Connects one command-line HAL driver to its public compiler target adapter.
+typedef struct loom_run_hal_target_route_t {
+  // Canonical IREE HAL driver name accepted in a device URI.
+  iree_string_view_t driver_name;
+  // Public adapter that selects a compiler profile from the live device.
+  const loomc_iree_hal_target_provider_t* provider;
+} loom_run_hal_target_route_t;
 
 typedef struct loom_run_hal_testbench_context_t {
-  // Linked device-provider registry selected by the tool binary.
-  const loom_device_provider_registry_t* device_provider_registry;
+  // Public target environment composed by the final tool binary.
+  loomc_target_environment_t* target_environment;
+  // Driver-to-target routes linked into the final tool binary.
+  const loom_run_hal_target_route_t* target_routes;
+  // Number of entries in |target_routes|.
+  iree_host_size_t target_route_count;
+  // Route selected by the explicit device URI, once known.
+  const loom_run_hal_target_route_t* selected_target_route;
   // Host allocator used for runtime and candidate storage.
   iree_allocator_t host_allocator;
   // Device event sink used when initializing |runtime|.
   iree_hal_device_event_sink_t device_event_sink;
   // HAL runtime services required by every module added to this context.
   iree_hal_device_runtime_feature_flags_t runtime_features;
-  // Selected provider for the active device.
-  const loom_device_provider_t* device_provider;
+  // HAL driver parsed from the single active --device URI.
+  iree_string_view_t driver_name;
   // Shared HAL runtime used by kernel launches.
   loom_run_hal_runtime_t runtime;
   // True when |runtime| owns initialized HAL state.
   bool runtime_initialized;
 } loom_run_hal_testbench_context_t;
 
-// Initializes a HAL testbench context with a linked device-provider registry.
+// Initializes a HAL testbench context with linked public target routes.
 void loom_run_hal_testbench_context_initialize(
-    const loom_device_provider_registry_t* device_provider_registry,
-    iree_allocator_t host_allocator,
+    loomc_target_environment_t* target_environment,
+    const loom_run_hal_target_route_t* target_routes,
+    iree_host_size_t target_route_count, iree_allocator_t host_allocator,
     loom_run_hal_testbench_context_t* out_context);
 
 // Sets the device event sink used by future HAL runtime initialization.
@@ -73,21 +83,35 @@ void loom_run_hal_testbench_context_set_device_event_sink(
 // module added afterward must require only services already provisioned by the
 // active device.
 iree_status_t loom_run_hal_testbench_context_add_module_runtime_requirements(
-    loom_run_hal_testbench_context_t* context, const loom_module_t* module,
-    const loom_sanitizer_options_t* sanitizer_options);
+    loom_run_hal_testbench_context_t* context, const loomc_module_t* module,
+    const loomc_sanitizer_options_t* sanitizer_options);
 
 // Releases HAL runtime resources owned by |context|.
 void loom_run_hal_testbench_context_deinitialize(
     loom_run_hal_testbench_context_t* context);
 
-// Validates an explicit --device selection against the linked providers.
-// Empty selection remains lazy and does not initialize a HAL runtime.
+// Parses an explicit --device selection. Empty selection remains lazy and does
+// not initialize a HAL runtime.
 iree_status_t loom_run_hal_testbench_context_validate_explicit_device(
     loom_run_hal_testbench_context_t* context);
 
-// Selects a linked device provider and initializes the HAL runtime on demand.
+// Initializes the selected HAL runtime on demand.
 iree_status_t loom_run_hal_testbench_context_ensure_runtime(
     loom_run_hal_testbench_context_t* context);
+
+// Selects one compiler profile and exact loader target for the live device.
+// The caller owns the returned result and target profile according to the
+// public LoomC contracts.
+iree_status_t loom_run_hal_testbench_context_select_target(
+    loom_run_hal_testbench_context_t* context, loomc_string_view_t identifier,
+    loomc_target_profile_t* target_profile,
+    loomc_iree_hal_target_selection_t* out_selection,
+    loomc_result_t** out_result);
+
+// Converts a rejected public compiler result to a failed-precondition status.
+// The first error diagnostic supplies the message when one is available.
+iree_status_t loom_run_hal_testbench_require_successful_result(
+    const loomc_result_t* result, iree_string_view_t fallback_message);
 
 // Returns host-visible fixture parameters for CPU generation and observations.
 // HAL execution stages fixtures into device-local memory around kernel
@@ -108,77 +132,85 @@ iree_status_t loom_run_hal_testbench_count_kernel_launches(
 typedef struct loom_run_hal_testbench_actual_provider_options_t {
   // Shared HAL context used to prepare and dispatch the candidate.
   loom_run_hal_testbench_context_t* context;
-  // Execution session used to clone and compile the private module copy.
-  loom_run_session_t* session;
-  // Canonical parsed module that owns |kernel_launch|. Borrowed through
-  // provider deinitialization.
-  const loom_run_module_t* run_module;
-  // User-selected pass pipeline.
-  iree_string_view_t pipeline;
-  // Optional explicit `family:selector` compiler target.
-  iree_string_view_t target;
-  // Sanitizer checks inserted by the target pipeline.
-  loom_sanitizer_options_t sanitizer;
-  // Config bindings materialized into the private compile copy.
-  const loom_tooling_config_set_t* config_set;
+  // Public compiler services and configuration for private module clones.
+  const loom_testbench_compilation_t* compilation;
+  // Public source module compiled by this provider. Defaults to the module in
+  // |compilation| and may name an exact-version tooling-generated derivative.
+  const loomc_module_t* module;
+  // Native read-only projection of |module| owning |kernel_launch|.
+  const loom_module_t* native_module;
+  // Optional prepared pass program. NULL selects the target default.
+  const loomc_pass_program_t* pass_program;
+  // Optional caller-selected target profile validated against the live device.
+  loomc_target_profile_t* requested_target_profile;
+  // Optional sanitizer policy for the target default pass program.
+  const loomc_sanitizer_options_t* sanitizer;
   // Kernel launch selected from the owning check.case.
   const loom_testbench_invocation_plan_t* kernel_launch;
-  // Diagnostic sink used while lowering and emitting the candidate.
-  loom_diagnostic_sink_t diagnostic_sink;
-  // Maximum diagnostics to emit before stopping. Zero uses the default.
-  uint32_t max_errors;
-  // Optional caller-owned structured compile report to populate.
-  loom_target_compile_report_t* report;
-  // Optional debug artifacts requested from the selected backend.
-  loom_compile_artifact_flags_t artifact_flags;
-  // Optional artifact manifest requested from the selected backend.
-  loom_compile_artifact_manifest_options_t artifact_manifest;
+  // Observer receiving each public target-selection and compilation result.
+  loom_testbench_compile_result_callback_t result_callback;
+  // Optional compile report request.
+  loomc_compile_report_options_t compile_report;
+  // Optional artifact manifest request.
+  loomc_artifact_manifest_options_t artifact_manifest;
+  // Target-side artifact classes requested by the caller.
+  loomc_emit_artifact_flags_t emit_artifact_flags;
 } loom_run_hal_testbench_actual_provider_options_t;
+
+typedef struct loom_run_hal_testbench_compile_artifacts_t {
+  // Loadable target executable returned by compilation.
+  const loomc_artifact_t* executable;
+  // Compiled host launch-configuration program.
+  const loomc_artifact_t* launch_config;
+  // Optional requested JSON or text compile report.
+  const loomc_artifact_t* compile_report;
+  // Optional requested JSON artifact manifest.
+  const loomc_artifact_t* artifact_manifest;
+  // Optional target-owned textual listing.
+  const loomc_artifact_t* target_listing;
+} loom_run_hal_testbench_compile_artifacts_t;
 
 typedef struct loom_run_hal_testbench_actual_provider_t {
   // Shared HAL context used to prepare and dispatch the candidate.
   loom_run_hal_testbench_context_t* context;
-  // Execution session used to clone and compile the private module copy.
-  loom_run_session_t* session;
-  // Canonical parsed module that owns |kernel_launch|. Borrowed through
-  // provider deinitialization.
-  const loom_run_module_t* run_module;
-  // User-selected pass pipeline.
-  iree_string_view_t pipeline;
-  // Selected named pipeline closure retained across deferred compilation.
-  loom_pass_pipeline_snapshot_t pipeline_snapshot;
-  // Optional explicit `family:selector` compiler target.
-  iree_string_view_t target;
-  // Sanitizer checks inserted by the target pipeline.
-  loom_sanitizer_options_t sanitizer;
-  // Config bindings materialized into the private compile copy.
-  const loom_tooling_config_set_t* config_set;
+  // Public compiler services and configuration for private module clones.
+  const loom_testbench_compilation_t* compilation;
+  // Public source module compiled by this provider.
+  const loomc_module_t* module;
+  // Native read-only projection of |module| owning |kernel_launch|.
+  const loom_module_t* native_module;
+  // Optional prepared pass program. NULL selects the target default.
+  const loomc_pass_program_t* pass_program;
+  // Optional caller-selected target profile validated against the live device.
+  loomc_target_profile_t* requested_target_profile;
+  // Optional sanitizer policy for the target default pass program.
+  const loomc_sanitizer_options_t* sanitizer;
   // Kernel launch selected from the owning check.case.
   const loom_testbench_invocation_plan_t* kernel_launch;
-  // Diagnostic sink used while lowering and emitting the candidate.
-  loom_diagnostic_sink_t diagnostic_sink;
-  // Maximum diagnostics to emit before stopping. Zero uses the default.
-  uint32_t max_errors;
-  // Optional caller-owned structured compile report to populate.
-  loom_target_compile_report_t* report;
-  // Optional debug artifacts requested from the selected backend.
-  loom_compile_artifact_flags_t artifact_flags;
-  // Optional artifact manifest requested from the selected backend.
-  loom_compile_artifact_manifest_options_t artifact_manifest;
-  // Private compile module owned by this provider.
-  loom_run_module_t compile_module;
-  // Compiler-produced host launch program retained for repeated evaluation.
-  loom_module_t* launch_config_module;
-  // Exported function bound from |launch_config_module|.
-  loom_kernel_launch_config_function_t launch_config_function;
-  // Reusable fact storage for launch-function evaluation.
-  loom_pass_value_fact_owner_t launch_config_fact_owner;
+  // Observer receiving each public target-selection and compilation result.
+  loom_testbench_compile_result_callback_t result_callback;
+  // Optional compile report request.
+  loomc_compile_report_options_t compile_report;
+  // Optional artifact manifest request.
+  loomc_artifact_manifest_options_t artifact_manifest;
+  // Target-side artifact classes requested by the caller.
+  loomc_emit_artifact_flags_t emit_artifact_flags;
+  // Selected public target profile retained through provider teardown.
+  loomc_target_profile_t* selected_target_profile;
+  // Native target snapshot borrowed from |selected_target_profile|.
+  const loom_target_snapshot_t* target_snapshot;
+  // Exact live-device executable target paired with the emitted bytes.
+  const iree_hal_executable_target_t* executable_target;
+  // Public compiler result retained for artifact and diagnostic lifetimes.
+  loomc_result_t* compiler_result;
+  // Selected result-owned artifacts.
+  loom_run_hal_testbench_compile_artifacts_t artifacts;
+  // Loaded compiler-produced launch program retained for evaluation.
+  loomc_launch_config_program_t* launch_config_program;
+  // Exported function bound from |launch_config_program|.
+  loomc_launch_config_function_t launch_config_function;
   // Reusable raw workload argument bits used during launch evaluation.
   uint64_t* workload_argument_bits;
-  // Backend-produced HAL executable candidate.
-  loom_run_hal_candidate_t candidate;
-  // Target selected before the compile pipeline runs.
-  loom_device_target_t compile_device_target;
   // Prepared executable retained for correctness and benchmark dispatches.
   loom_run_hal_prepared_candidate_t prepared_candidate;
   // Allocator-owned reflected logical parameter layout for the prepared
@@ -190,9 +222,7 @@ typedef struct loom_run_hal_testbench_actual_provider_t {
   // Dispatch options derived from the compiled source entry.
   loom_run_hal_invocation_options_t invocation_options;
   // Most recently evaluated compiled launch configuration.
-  loom_kernel_launch_config_t resolved_launch_config;
-  // Compiler products retained through artifact emission.
-  loom_compile_pipeline_result_t pipeline_result;
+  loomc_launch_config_t resolved_launch_config;
   // Product stage that rejected the compile, when |compile_rejected| is true.
   iree_string_view_t compile_failure_stage;
   // Stable diagnostic category for |compile_rejected|.
@@ -208,18 +238,8 @@ typedef struct loom_run_hal_testbench_actual_provider_t {
   // True when compile completed with product diagnostics instead of an
   // infrastructure failure.
   bool compile_rejected;
-  // True when |compile_module| has been initialized.
-  bool compile_module_initialized;
-  // True when |launch_config_fact_owner| has been initialized.
-  bool launch_config_evaluation_initialized;
-  // True when |candidate| has been initialized.
-  bool candidate_initialized;
-  // True when |compile_device_target| owns provider-selected target storage.
-  bool owns_compile_device_target;
   // True when |prepared_candidate| has been initialized.
   bool prepared_candidate_initialized;
-  // True when HAL candidate emission populated the caller's compile report.
-  bool compile_report_available;
 } loom_run_hal_testbench_actual_provider_t;
 
 typedef struct loom_run_hal_testbench_actual_sequence_execution_t
@@ -228,29 +248,26 @@ typedef struct loom_run_hal_testbench_actual_sequence_execution_t
 typedef struct loom_run_hal_testbench_actual_sequence_options_t {
   // Shared HAL context used to prepare and dispatch all actual candidates.
   loom_run_hal_testbench_context_t* context;
-  // Execution session used to clone and compile each private module copy.
-  loom_run_session_t* session;
-  // Canonical parsed module that owns |case_plan|. Borrowed through sequence
-  // deinitialization.
-  const loom_run_module_t* run_module;
-  // User-selected pass pipeline.
-  iree_string_view_t pipeline;
-  // Optional explicit `family:selector` compiler target.
-  iree_string_view_t target;
-  // Sanitizer checks inserted by the target pipeline.
-  loom_sanitizer_options_t sanitizer;
-  // Config bindings materialized into each private compile copy.
-  const loom_tooling_config_set_t* config_set;
+  // Public compiler services and configuration for private module clones.
+  const loom_testbench_compilation_t* compilation;
+  // Native read-only projection of |compilation->module| owning |case_plan|.
+  const loom_module_t* native_module;
+  // Optional prepared pass program. NULL selects the target default.
+  const loomc_pass_program_t* pass_program;
+  // Optional caller-selected target profile validated against the live device.
+  loomc_target_profile_t* requested_target_profile;
+  // Optional sanitizer policy for the target default pass program.
+  const loomc_sanitizer_options_t* sanitizer;
   // Case plan whose kernel launches are executed by the sequence.
   const loom_testbench_case_plan_t* case_plan;
-  // Diagnostic sink used while lowering and emitting candidates.
-  loom_diagnostic_sink_t diagnostic_sink;
-  // Maximum diagnostics to emit before stopping. Zero uses the default.
-  uint32_t max_errors;
-  // Optional debug artifacts requested from the selected backend.
-  loom_compile_artifact_flags_t artifact_flags;
-  // Optional artifact manifest requested from the selected backend.
-  loom_compile_artifact_manifest_options_t artifact_manifest;
+  // Observer receiving each public target-selection and compilation result.
+  loom_testbench_compile_result_callback_t result_callback;
+  // Optional compile report request.
+  loomc_compile_report_options_t compile_report;
+  // Optional artifact manifest request.
+  loomc_artifact_manifest_options_t artifact_manifest;
+  // Target-side artifact classes requested by the caller.
+  loomc_emit_artifact_flags_t emit_artifact_flags;
 } loom_run_hal_testbench_actual_sequence_options_t;
 
 typedef struct loom_run_hal_testbench_actual_sequence_t {

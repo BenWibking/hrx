@@ -11,40 +11,6 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
-    options
-  HDRS
-    "options.h"
-  SRCS
-    "options.c"
-  DEPS
-    iree::base
-    loom::error::diagnostic
-    loom::error::source
-    loom::ir
-    loom::target::pipeline_options
-    loom::target::reporting::artifact_manifest
-    loom::target::reporting::report
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
-    report_capture
-  HDRS
-    "report_capture.h"
-  SRCS
-    "report_capture.c"
-  DEPS
-    ::options
-    iree::base
-    loom::target::reporting::format
-    loom::target::reporting::report
-    loom::tooling::config
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
     pipeline
   HDRS
     "pipeline.h"
@@ -77,19 +43,6 @@ loom_cc_library(
     loom::transforms::cleanup::patterns
     loom::verify
   PUBLIC
-)
-
-loom_cc_test(
-  NAME
-    report_capture_test
-  SRCS
-    "report_capture_test.cc"
-  DEPS
-    ::options
-    ::report_capture
-    iree::base
-    iree::testing::gtest
-    iree::testing::gtest_main
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

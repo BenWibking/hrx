@@ -124,11 +124,14 @@ static loomc_status_t loomc_link_index_validate_source_options(
   if (options == NULL) {
     return loomc_ok_status();
   }
-  if (options->role > LOOMC_LINK_PROVIDER_ROLE_LIBRARY) {
-    return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
-                             "unknown link provider role");
+  switch (options->role) {
+    case LOOMC_LINK_PROVIDER_ROLE_INPUT:
+    case LOOMC_LINK_PROVIDER_ROLE_LIBRARY:
+      return loomc_ok_status();
+    default:
+      return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
+                               "unknown link provider role");
   }
-  return loomc_ok_status();
 }
 
 static void loomc_link_index_block_pool_release(
@@ -205,6 +208,7 @@ static loom_link_provider_role_t loomc_link_provider_role_to_loom(
     case LOOMC_LINK_PROVIDER_ROLE_LIBRARY:
       return LOOM_LINK_PROVIDER_ROLE_LIBRARY;
   }
+  IREE_ASSERT_UNREACHABLE("unknown public link provider role");
   return LOOM_LINK_PROVIDER_ROLE_INPUT;
 }
 

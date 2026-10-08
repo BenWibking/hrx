@@ -15,13 +15,121 @@ const TYPE_I32 = 0x7f;
 const TYPE_I64 = 0x7e;
 const TYPE_F32 = 0x7d;
 const TYPE_F64 = 0x7c;
+const FUNCTION_TYPE = 0x60;
+const SECTION_TYPE = 1;
+const SECTION_FUNCTION = 3;
+const SECTION_EXPORT = 7;
+const EXPORT_KIND_FUNCTION = 0;
+const MODULE_FLAG_HAS_MEMORY = 1;
 const PAGE_SIZE = 65536;
 const REGION_STRIDE = 12;
-const TYPE_STRIDE = 4;
+const U32_SIZE = 4;
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 const emptyBytes = new Uint8Array();
+
+// WebAssembly.Module has already validated the binary before this projection
+// runs. Only the three sections needed to recover one exported function's
+// physical signature are decoded here; instruction bodies are never visited.
+function readU32(bytes, cursor) {
+  let value = 0;
+  let shift = 0;
+  while (true) {
+    const byte = bytes[cursor.position++];
+    value |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) {
+      return value >>> 0;
+    }
+    shift += 7;
+  }
+}
+
+function readValueTypes(bytes, cursor) {
+  const count = readU32(bytes, cursor);
+  const types = bytes.slice(cursor.position, cursor.position + count);
+  cursor.position += count;
+  return types;
+}
+
+function readExportedFunctionType(moduleBytes, functionName) {
+  const cursor = {position: 8};
+  let functionTypes = null;
+  let functionTypeIndices = null;
+  let functionIndex = null;
+  while (cursor.position < moduleBytes.length) {
+    const sectionId = moduleBytes[cursor.position++];
+    const sectionLength = readU32(moduleBytes, cursor);
+    const sectionEnd = cursor.position + sectionLength;
+    if (sectionId === SECTION_TYPE) {
+      const count = readU32(moduleBytes, cursor);
+      functionTypes = new Array(count);
+      for (let i = 0; i < count; ++i) {
+        const form = moduleBytes[cursor.position++];
+        if (form !== FUNCTION_TYPE) {
+          throw new Error(
+              `type ${i} has unsupported form 0x${form.toString(16)}`);
+        }
+        functionTypes[i] = {
+          parameters: readValueTypes(moduleBytes, cursor),
+          results: readValueTypes(moduleBytes, cursor),
+        };
+      }
+    } else if (sectionId === SECTION_FUNCTION) {
+      const count = readU32(moduleBytes, cursor);
+      functionTypeIndices = new Uint32Array(count);
+      for (let i = 0; i < count; ++i) {
+        functionTypeIndices[i] = readU32(moduleBytes, cursor);
+      }
+    } else if (sectionId === SECTION_EXPORT) {
+      const count = readU32(moduleBytes, cursor);
+      for (let i = 0; i < count; ++i) {
+        const nameLength = readU32(moduleBytes, cursor);
+        const nameEnd = cursor.position + nameLength;
+        const name = textDecoder.decode(
+            moduleBytes.subarray(cursor.position, nameEnd));
+        cursor.position = nameEnd;
+        const kind = moduleBytes[cursor.position++];
+        const index = readU32(moduleBytes, cursor);
+        if (name === functionName) {
+          if (kind !== EXPORT_KIND_FUNCTION) {
+            throw new Error(`module export '${functionName}' is not a function`);
+          }
+          functionIndex = index;
+        }
+      }
+    }
+    cursor.position = sectionEnd;
+  }
+
+  if (functionIndex === null) {
+    throw new Error(`module has no function export '${functionName}'`);
+  }
+  if (functionTypeIndices === null ||
+      functionIndex >= functionTypeIndices.length) {
+    throw new Error(`module export '${functionName}' has no defined function`);
+  }
+  const typeIndex = functionTypeIndices[functionIndex];
+  if (functionTypes === null || typeIndex >= functionTypes.length) {
+    throw new Error(`module export '${functionName}' has no function type`);
+  }
+  const functionType = functionTypes[typeIndex];
+  for (const [name, types] of [
+    ['parameter', functionType.parameters],
+    ['result', functionType.results],
+  ]) {
+    for (let i = 0; i < types.length; ++i) {
+      const type = types[i];
+      if (type !== TYPE_I32 && type !== TYPE_I64 && type !== TYPE_F32 &&
+          type !== TYPE_F64) {
+        throw new Error(
+            `${name} ${i} has non-callable WebAssembly type 0x${
+                type.toString(16)}`);
+      }
+    }
+  }
+  return functionType;
+}
 
 export function createImports(context) {
   const products = [null];
@@ -66,22 +174,13 @@ export function createImports(context) {
     return textDecoder.decode(readBytes(pointer, length, label));
   }
 
-  function readTypes(pointer, count, label) {
-    count >>>= 0;
+  function writeTypes(pointer, types, label) {
     refreshOuterMemory();
     pointer = requireRange(
-        pointer, count * TYPE_STRIDE, outerBytes.length, label);
-    const types = new Uint8Array(count);
-    for (let i = 0; i < count; ++i) {
-      const type = outerView.getUint32(pointer + i * TYPE_STRIDE, true);
-      if (type !== TYPE_I32 && type !== TYPE_I64 && type !== TYPE_F32 &&
-          type !== TYPE_F64) {
-        throw new Error(`${label} contains non-callable WebAssembly type 0x${
-            type.toString(16)}`);
-      }
-      types[i] = type;
+        pointer, types.length * U32_SIZE, outerBytes.length, label);
+    for (let i = 0; i < types.length; ++i) {
+      outerView.setUint32(pointer + i * U32_SIZE, types[i], true);
     }
-    return types;
   }
 
   function retainProduct(product) {
@@ -180,36 +279,54 @@ export function createImports(context) {
   return {
     module_load(
         modulePointer, moduleLength, functionNamePointer, functionNameLength,
-        memoryNamePointer, memoryNameLength, parameterTypesPointer,
-        parameterCount, resultTypesPointer, resultCount) {
+        parameterTypesPointer, parameterCount, resultTypesPointer,
+        resultCount, flagsPointer) {
       try {
         moduleLength >>>= 0;
         functionNameLength >>>= 0;
-        memoryNameLength >>>= 0;
         parameterCount >>>= 0;
         resultCount >>>= 0;
         const moduleBytes = readBytes(modulePointer, moduleLength, 'module');
         const functionName = readString(
             functionNamePointer, functionNameLength, 'function export name');
-        const memoryName = readString(
-            memoryNamePointer, memoryNameLength, 'memory export name');
-        const parameterTypes =
-            readTypes(parameterTypesPointer, parameterCount, 'parameter types');
-        const resultTypes =
-            readTypes(resultTypesPointer, resultCount, 'result types');
         const module = new WebAssembly.Module(moduleBytes);
+        if (WebAssembly.Module.imports(module).length !== 0) {
+          throw new Error('hosted WebAssembly modules cannot have imports');
+        }
+        const functionType = readExportedFunctionType(
+            moduleBytes, functionName);
+        const parameterTypes = functionType.parameters;
+        const resultTypes = functionType.results;
+        if (parameterTypes.length !== parameterCount ||
+            resultTypes.length !== resultCount) {
+          throw new Error(
+              `module export '${functionName}' changes its source signature ` +
+              `from ${parameterCount}/${resultCount} values to ` +
+              `${parameterTypes.length}/${resultTypes.length} physical values`);
+        }
         const instance = new WebAssembly.Instance(module, {});
         const callable = instance.exports[functionName];
         if (typeof callable !== 'function') {
           throw new Error(`module export '${functionName}' is not a function`);
         }
-        const memory =
-            memoryName.length === 0 ? null : instance.exports[memoryName];
-        if (memoryName.length !== 0 &&
-            !(memory instanceof WebAssembly.Memory)) {
+        const memoryExports = WebAssembly.Module.exports(module).filter(
+            descriptor => descriptor.kind === 'memory');
+        if (memoryExports.length > 1) {
           throw new Error(
-              `module export '${memoryName}' is not WebAssembly memory`);
+              'hosted WebAssembly module exports multiple memories');
         }
+        const memory = memoryExports.length === 0 ?
+            null : instance.exports[memoryExports[0].name];
+        if (memory !== null && !(memory instanceof WebAssembly.Memory)) {
+          throw new Error('module memory export is not WebAssembly memory');
+        }
+        writeTypes(parameterTypesPointer, parameterTypes, 'parameter types');
+        writeTypes(resultTypesPointer, resultTypes, 'result types');
+        refreshOuterMemory();
+        flagsPointer = requireRange(
+            flagsPointer, U32_SIZE, outerBytes.length, 'module flags');
+        outerView.setUint32(
+            flagsPointer, memory === null ? 0 : MODULE_FLAG_HAS_MEMORY, true);
         lastError = emptyBytes;
         return retainProduct({
           callable,
@@ -229,10 +346,12 @@ export function createImports(context) {
     module_call(
         handle, argumentsPointer, resultsPointer, regionsPointer, regionCount) {
       let product;
+      let transferredRegionCount = 0;
       try {
         regionCount >>>= 0;
         refreshOuterMemory();
         product = requireProduct(handle);
+        transferredRegionCount = product.memory === null ? 0 : regionCount;
         argumentsPointer = requireRange(
             argumentsPointer, product.parameterTypes.length * 8,
             outerBytes.length, 'argument bits');
@@ -240,15 +359,11 @@ export function createImports(context) {
             resultsPointer, product.resultTypes.length * 8, outerBytes.length,
             'result bits');
         regionsPointer = requireRange(
-            regionsPointer, regionCount * REGION_STRIDE, outerBytes.length,
-            'memory region descriptors');
-        if (regionCount !== 0 && product.memory === null) {
-          throw new Error(
-              'memory regions require an exported WebAssembly memory');
-        }
+            regionsPointer, transferredRegionCount * REGION_STRIDE,
+            outerBytes.length, 'memory region descriptors');
 
         let requiredMemoryLength = 0;
-        for (let i = 0; i < regionCount; ++i) {
+        for (let i = 0; i < transferredRegionCount; ++i) {
           const descriptor = regionsPointer + i * REGION_STRIDE;
           const address = outerView.getUint32(descriptor, true);
           const dataPointer = outerView.getUint32(descriptor + 4, true);
@@ -268,8 +383,8 @@ export function createImports(context) {
               requiredMemoryLength - product.memory.buffer.byteLength;
           product.memory.grow(Math.ceil(missing / PAGE_SIZE));
         }
-        if (regionCount !== 0) {
-          copyRoots(product, regionsPointer, regionCount, true);
+        if (transferredRegionCount !== 0) {
+          copyRoots(product, regionsPointer, transferredRegionCount, true);
         }
         for (let i = 0; i < product.parameterTypes.length; ++i) {
           product.arguments[i] = decodeArgument(
@@ -287,8 +402,9 @@ export function createImports(context) {
       } catch (error) {
         storeError(error);
         try {
-          if (regionCount !== 0) {
-            copyRoots(product, regionsPointer, regionCount, false);
+          if (transferredRegionCount !== 0) {
+            copyRoots(
+                product, regionsPointer, transferredRegionCount, false);
           }
         } catch (copyError) {
           storeError(copyError);
@@ -312,8 +428,8 @@ export function createImports(context) {
               product.resultTypes.length === 1 ? returnValue : returnValues[i];
           encodeResult(product.resultTypes[i], value, resultsPointer + i * 8);
         }
-        if (regionCount !== 0) {
-          copyRoots(product, regionsPointer, regionCount, false);
+        if (transferredRegionCount !== 0) {
+          copyRoots(product, regionsPointer, transferredRegionCount, false);
         }
         lastError = emptyBytes;
         return OUTCOME_OK;

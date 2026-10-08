@@ -7,6 +7,7 @@
 #include "loom/tools/loom-check/compile.h"
 
 #include "loom/testing/test_file.h"
+#include "loom/tooling/io/source_path.h"
 #include "loom/tools/loom-check/compile_diagnostics.h"
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loomc/artifact.h"
@@ -84,12 +85,10 @@ iree_status_t loom_check_compile_session_select_target_profile(
 }
 
 static iree_status_t loom_check_compile_append_result(
-    loom_check_diagnostic_collector_t* collector,
-    const loom_input_request_t* input_request, const loomc_result_t* result,
+    loom_check_diagnostic_collector_t* collector, const loomc_result_t* result,
     bool* out_succeeded) {
   *out_succeeded = loomc_result_succeeded(result);
-  return loom_check_compile_append_result_diagnostics(
-      collector, result, &input_request->source_path_options);
+  return loom_check_compile_append_result_diagnostics(collector, result);
 }
 
 static iree_status_t loom_check_compile_admit_module(
@@ -143,6 +142,14 @@ static iree_status_t loom_check_compile_admit_module(
   loomc_module_t* module = NULL;
   loomc_result_t* result = NULL;
   loomc_source_t* source = NULL;
+  char* source_identifier_storage = NULL;
+  if (iree_status_is_ok(status) &&
+      (provider == &loom_input_text_provider ||
+       provider == &loom_input_bytecode_provider)) {
+    status = loom_tooling_source_path_remap(
+        source_identifier, &input_request->source_path_options, host_allocator,
+        &source_identifier, &source_identifier_storage);
+  }
   if (iree_status_is_ok(status)) {
     const loomc_source_options_t source_options = {
         .type = LOOMC_STRUCTURE_TYPE_SOURCE_OPTIONS,
@@ -165,8 +172,9 @@ static iree_status_t loom_check_compile_admit_module(
     } else if (session->provider != NULL && session->provider->import != NULL) {
       status = session->provider->import(
           session->provider->import_user_data, provider->name, input_options,
-          session->context, session->workspace, source, block_pool,
-          host_allocator, &module, &result);
+          &input_request->source_path_options, session->context,
+          session->workspace, source, block_pool, host_allocator, &module,
+          &result);
     } else {
       status = iree_make_status(
           IREE_STATUS_UNIMPLEMENTED,
@@ -176,8 +184,7 @@ static iree_status_t loom_check_compile_admit_module(
   }
   bool admitted = false;
   if (iree_status_is_ok(status)) {
-    status = loom_check_compile_append_result(collector, input_request, result,
-                                              &admitted);
+    status = loom_check_compile_append_result(collector, result, &admitted);
   }
   if (iree_status_is_ok(status) && admitted) {
     *out_module = module;
@@ -186,6 +193,7 @@ static iree_status_t loom_check_compile_admit_module(
   loomc_result_release(result);
   loomc_module_release(module);
   loomc_source_release(source);
+  iree_allocator_free(host_allocator, source_identifier_storage);
   iree_string_builder_deinitialize(&stripped_source);
   return status;
 }
@@ -194,8 +202,7 @@ static iree_status_t loom_check_compile_artifact_module(
     loom_check_compile_session_t* session,
     const loomc_pass_program_t* pass_program, loomc_module_t* module,
     const loomc_compile_artifact_options_t* options,
-    loom_check_diagnostic_collector_t* collector,
-    const loom_input_request_t* input_request, iree_allocator_t allocator,
+    loom_check_diagnostic_collector_t* collector, iree_allocator_t allocator,
     loomc_result_t** out_result) {
   *out_result = NULL;
   loomc_result_t* result = NULL;
@@ -204,8 +211,7 @@ static iree_status_t loom_check_compile_artifact_module(
       loomc_allocator_from_iree(allocator), &result));
   bool compiled = false;
   if (iree_status_is_ok(status)) {
-    status = loom_check_compile_append_result(collector, input_request, result,
-                                              &compiled);
+    status = loom_check_compile_append_result(collector, result, &compiled);
   }
   if (iree_status_is_ok(status) && compiled) {
     *out_result = result;
@@ -219,7 +225,6 @@ static iree_status_t loom_check_compile_get_artifact_pass_program(
     loom_check_compile_session_t* session,
     const loom_check_compile_artifact_options_t* options,
     loom_check_diagnostic_collector_t* collector,
-    const loom_input_request_t* input_request,
     const loomc_pass_program_t** out_pass_program) {
   *out_pass_program = NULL;
   const loomc_allocator_t allocator =
@@ -248,8 +253,8 @@ static iree_status_t loom_check_compile_get_artifact_pass_program(
             &operation_result));
     bool prepared = false;
     if (iree_status_is_ok(status)) {
-      status = loom_check_compile_append_result(collector, input_request,
-                                                operation_result, &prepared);
+      status = loom_check_compile_append_result(collector, operation_result,
+                                                &prepared);
     }
     loomc_result_release(operation_result);
     if (!prepared) {
@@ -279,8 +284,7 @@ iree_status_t loom_check_compile_artifact(
   const loomc_pass_program_t* pass_program = NULL;
   if (iree_status_is_ok(status) && module != NULL) {
     status = loom_check_compile_get_artifact_pass_program(
-        session, options, request->diagnostic_collector, request->input_request,
-        &pass_program);
+        session, options, request->diagnostic_collector, &pass_program);
   }
 
   loomc_target_profile_t* target_profile = NULL;
@@ -308,8 +312,7 @@ iree_status_t loom_check_compile_artifact(
   if (iree_status_is_ok(status) && pass_program != NULL) {
     status = loom_check_compile_artifact_module(
         session, pass_program, module, &compile_options,
-        request->diagnostic_collector, request->input_request,
-        request->host_allocator, &result);
+        request->diagnostic_collector, request->host_allocator, &result);
   }
   if (iree_status_is_ok(status) && result != NULL) {
     const loomc_artifact_t* artifact = loomc_result_artifact_at(result, 0);
@@ -360,7 +363,7 @@ iree_status_t loom_check_execute_compile(
     };
     status = loom_check_compile_artifact_module(
         options->session, /*pass_program=*/NULL, module, &compile_options,
-        &collector, input_request, allocator, &operation_result);
+        &collector, allocator, &operation_result);
   }
   loomc_result_release(operation_result);
   loomc_module_release(module);

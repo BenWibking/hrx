@@ -12,7 +12,6 @@
 #include "iree/base/api.h"
 #include "iree/hal/api.h"
 #include "iree/tooling/value_io.h"
-#include "loom/target/types.h"
 #include "loom/tooling/execution/hal/artifact.h"
 #include "loom/tooling/execution/hal/runtime.h"
 
@@ -74,8 +73,6 @@ typedef struct loom_run_hal_invocation_plan_t {
 } loom_run_hal_invocation_plan_t;
 
 typedef struct loom_run_hal_prepared_candidate_t {
-  // Target-neutral bundle resolved for |executable|, when available.
-  const loom_target_bundle_t* target_bundle;
   // Prepared HAL executable retained for repeated dispatches.
   iree_hal_executable_t* executable;
 } loom_run_hal_prepared_candidate_t;

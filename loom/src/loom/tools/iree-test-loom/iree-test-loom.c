@@ -9,10 +9,13 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include "loom/target/configured/compiler_provider_set.h"
+#include "loom/tooling/execution/hal/testbench_actual.h"
 #include "loom/tooling/input/configured.h"
+#include "loom/tooling/input/loomc_configured.h"
 #include "loom/tools/iree-test-loom/main.h"
 #include "loom/transforms/cleanup/configured.h"
+#include "loomc/iree.h"
+#include "loomc/target/configured.h"
 
 #ifndef IREE_TEST_LOOM_HAVE_AMDGPU
 #define IREE_TEST_LOOM_HAVE_AMDGPU 0
@@ -36,15 +39,15 @@
    IREE_TEST_LOOM_HAVE_TASK)
 
 #if IREE_TEST_LOOM_HAVE_AMDGPU
-#include "loom/tooling/target/amdgpu/device_provider.h"
 #include "loom/tooling/target/amdgpu/testbench_requirements.h"
+#include "loomc/target/amdgpu/iree_hal.h"
 #endif  // IREE_TEST_LOOM_HAVE_AMDGPU
 #if IREE_TEST_LOOM_HAVE_SPIRV
-#include "loom/tooling/target/spirv/device_provider.h"
 #include "loom/tooling/target/spirv/testbench_requirements.h"
+#include "loomc/target/spirv/iree_hal.h"
 #endif  // IREE_TEST_LOOM_HAVE_SPIRV
 #if IREE_TEST_LOOM_HAVE_TASK
-#include "loom/tooling/target/cpu/task_device.h"
+#include "loomc/target/cpu/iree_hal.h"
 #endif  // IREE_TEST_LOOM_HAVE_TASK
 #if IREE_TEST_LOOM_HAVE_VM
 #include "loom/tooling/target/vm/testbench.h"
@@ -106,48 +109,48 @@ static iree_status_t iree_test_loom_populate_requirement_providers(
 }
 
 int main(int argc, char** argv) {
-  loom_target_environment_t environment;
-  iree_status_t status = loom_target_environment_initialize(
-      loom_configured_compiler_provider_set(), &environment);
+  loomc_target_environment_t* target_environment = NULL;
+  iree_status_t status =
+      iree_status_from_loomc(loomc_target_environment_create_configured(
+          loomc_allocator_system(), &target_environment));
   if (!iree_status_is_ok(status)) {
     iree_status_fprint(stderr, status);
     iree_status_free(status);
     return 1;
   }
-
-#if IREE_TEST_LOOM_HAVE_TASK
-  loom_task_device_provider_t task_provider;
-  loom_task_device_provider_initialize(&environment, &task_provider);
-#endif  // IREE_TEST_LOOM_HAVE_TASK
 #if IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
-  const loom_device_provider_t* device_providers[] = {
+  const loom_run_hal_target_route_t hal_target_routes[] = {
 #if IREE_TEST_LOOM_HAVE_AMDGPU
-      &loom_amdgpu_device_provider,
+      {
+          .driver_name = IREE_SV("amdgpu"),
+          .provider = loomc_amdgpu_iree_hal_target_provider(),
+      },
 #endif  // IREE_TEST_LOOM_HAVE_AMDGPU
 #if IREE_TEST_LOOM_HAVE_SPIRV
-      &loom_spirv_vulkan_device_provider,
+      {
+          .driver_name = IREE_SV("vulkan"),
+          .provider = loomc_spirv_iree_hal_target_provider(),
+      },
 #endif  // IREE_TEST_LOOM_HAVE_SPIRV
 #if IREE_TEST_LOOM_HAVE_TASK
-      &task_provider.base,
+      {
+          .driver_name = IREE_SV("task"),
+          .provider = loomc_cpu_iree_hal_target_provider(),
+      },
 #endif  // IREE_TEST_LOOM_HAVE_TASK
   };
 #endif  // IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
-  const loom_device_provider_registry_t device_registry = {
-#if IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
-      .providers = device_providers,
-      .provider_count = IREE_ARRAYSIZE(device_providers),
-#else
-      .providers = NULL,
-      .provider_count = 0,
-#endif  // IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
-  };
   iree_test_loom_configuration_t configuration = {
       .input_providers = loom_configured_input_providers(),
       .tool_name = "iree-test-loom",
-      .target_environment = &environment,
+      .target_environment = target_environment,
+      .import = loom_configured_input_loomc_importer(),
       .cleanup_pattern_provider_set =
           loom_cleanup_configured_pattern_provider_set(),
-      .device_provider_registry = &device_registry,
+#if IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
+      .hal_target_routes = hal_target_routes,
+      .hal_target_route_count = IREE_ARRAYSIZE(hal_target_routes),
+#endif  // IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
       .populate_requirement_providers =
           {
               .fn = iree_test_loom_populate_requirement_providers,
@@ -155,9 +158,15 @@ int main(int argc, char** argv) {
   };
 #if IREE_TEST_LOOM_HAVE_VM
   loom_vm_testbench_t vm_testbench;
-  loom_vm_testbench_initialize(configuration.target_environment,
-                               configuration.cleanup_pattern_provider_set,
-                               iree_allocator_system(), &vm_testbench);
+  status = loom_vm_testbench_initialize(target_environment,
+                                        iree_allocator_system(), &vm_testbench);
+  if (!iree_status_is_ok(status)) {
+    iree_status_fprint(stderr, status);
+    iree_status_free(status);
+    loom_vm_testbench_deinitialize(&vm_testbench);
+    loomc_target_environment_release(target_environment);
+    return 1;
+  }
   configuration.function_call_provider.fn =
       loom_vm_testbench_invocation_provider;
   configuration.function_call_provider.user_data = &vm_testbench;
@@ -170,9 +179,18 @@ int main(int argc, char** argv) {
 #endif  // IREE_TEST_LOOM_HAVE_VM
 #if IREE_TEST_LOOM_HAVE_WASM && defined(IREE_PLATFORM_WASM)
   loom_wasm_testbench_t wasm_testbench;
-  loom_wasm_testbench_initialize(configuration.target_environment,
-                                 configuration.cleanup_pattern_provider_set,
-                                 iree_allocator_system(), &wasm_testbench);
+  status = loom_wasm_testbench_initialize(
+      target_environment, iree_allocator_system(), &wasm_testbench);
+  if (!iree_status_is_ok(status)) {
+    iree_status_fprint(stderr, status);
+    iree_status_free(status);
+    loom_wasm_testbench_deinitialize(&wasm_testbench);
+#if IREE_TEST_LOOM_HAVE_VM
+    loom_vm_testbench_deinitialize(&vm_testbench);
+#endif  // IREE_TEST_LOOM_HAVE_VM
+    loomc_target_environment_release(target_environment);
+    return 1;
+  }
   configuration.scenario_target_profile.fn =
       loom_wasm_testbench_execution_profile;
   configuration.scenario_target_profile.user_data = &wasm_testbench;
@@ -181,6 +199,9 @@ int main(int argc, char** argv) {
 #if IREE_TEST_LOOM_HAVE_VM
   loom_vm_testbench_deinitialize(&vm_testbench);
 #endif  // IREE_TEST_LOOM_HAVE_VM
-  loom_target_environment_deinitialize(&environment);
+#if IREE_TEST_LOOM_HAVE_WASM && defined(IREE_PLATFORM_WASM)
+  loom_wasm_testbench_deinitialize(&wasm_testbench);
+#endif  // IREE_TEST_LOOM_HAVE_WASM && IREE_PLATFORM_WASM
+  loomc_target_environment_release(target_environment);
   return exit_code;
 }

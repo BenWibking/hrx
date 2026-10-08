@@ -97,15 +97,25 @@ iree_status_t EmitFakeArtifact(const loom_target_emit_request_t* request,
   }
   static const char kManifestJson[] =
       "{\"kind\":\"loom.artifact_manifest\",\"mode\":\"summary\"}";
+  static const char kTargetListing[] = "fake target listing\n";
   static const uint8_t kContents[] = {0x7F, 'L', 'O', 'M'};
   out_artifact->target_artifact_format = LOOM_TARGET_ARTIFACT_FORMAT_ELF;
+  IREE_RETURN_IF_ERROR(CreateFakeArtifactContents(
+      iree_make_const_byte_span(kContents, sizeof(kContents)),
+      request->allocator, &out_artifact->contents));
+  if (iree_any_bit_set(request->flags,
+                       LOOM_TARGET_EMIT_REQUEST_FLAG_TARGET_LISTING)) {
+    iree_status_t status = CreateFakeArtifactContents(
+        iree_make_const_byte_span(kTargetListing, sizeof(kTargetListing) - 1),
+        request->allocator, &out_artifact->target_listing_contents);
+    if (!iree_status_is_ok(status)) {
+      loom_target_emit_artifact_release(out_artifact);
+      return status;
+    }
+    out_artifact->target_listing_format = IREE_SV("fake-assembly");
+  }
   if (request->artifact_manifest.mode ==
       LOOM_TARGET_ARTIFACT_MANIFEST_MODE_NONE) {
-    iree_byte_sequence_t* contents = nullptr;
-    IREE_RETURN_IF_ERROR(CreateFakeArtifactContents(
-        iree_make_const_byte_span(kContents, sizeof(kContents)),
-        request->allocator, &contents));
-    out_artifact->contents = contents;
     *out_emitted = true;
     return iree_ok_status();
   }
@@ -115,25 +125,18 @@ iree_status_t EmitFakeArtifact(const loom_target_emit_request_t* request,
       request->allocator, sizeof(*storage), (void**)&storage));
   *storage = {};
   storage->allocator = request->allocator;
-  iree_byte_sequence_t* contents = nullptr;
   iree_status_t status = CreateFakeArtifactContents(
-      iree_make_const_byte_span(kContents, sizeof(kContents)),
-      request->allocator, &contents);
-  if (iree_status_is_ok(status)) {
-    status = CreateFakeArtifactContents(
-        iree_make_const_byte_span(kManifestJson, sizeof(kManifestJson) - 1),
-        request->allocator, &storage->sidecar.contents);
-  }
+      iree_make_const_byte_span(kManifestJson, sizeof(kManifestJson) - 1),
+      request->allocator, &storage->sidecar.contents);
   if (!iree_status_is_ok(status)) {
-    iree_byte_sequence_release(contents);
     iree_byte_sequence_release(storage->sidecar.contents);
     FakeArtifactSidecarStorageRelease(storage);
+    loom_target_emit_artifact_release(out_artifact);
     return status;
   }
   storage->sidecar.kind =
       LOOM_TARGET_EMIT_SIDECAR_ARTIFACT_KIND_ARTIFACT_MANIFEST;
   storage->sidecar.identifier = request->artifact_manifest.identifier;
-  out_artifact->contents = contents;
   out_artifact->sidecars = &storage->sidecar;
   out_artifact->sidecar_count = 1;
   out_artifact->storage = storage;
@@ -683,6 +686,40 @@ TEST(TargetTest, EmitSelectsOnlyLinkedEmitterWhenFormatOmitted) {
   EXPECT_EQ(ToString(artifact->contents), std::string("\x7F"
                                                       "LOM",
                                                       4));
+}
+
+TEST(TargetTest, EmitReturnsRequestedTargetListing) {
+  const loom_target_provider_t* providers[] = {
+      &kFakeElfProvider,
+  };
+  loom_target_provider_set_t provider_set =
+      loom_target_provider_set_make(providers, IREE_ARRAYSIZE(providers));
+  TargetEnvironmentPtr target_environment =
+      CreateTargetEnvironmentFromProviderSet(&provider_set);
+  ContextPtr context = CreateContext();
+  WorkspacePtr workspace = CreateWorkspace();
+  ModulePtr module =
+      CreateIdentityModule(context.get(), workspace.get(), "entry");
+
+  loomc_emit_options_t options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
+      /*.structure_size=*/sizeof(options),
+      /*.next=*/nullptr,
+      /*.artifact_format=*/loomc_string_view_empty(),
+      /*.identifier=*/loomc_make_cstring_view("candidate.bin"),
+      /*.artifact_flags=*/LOOMC_EMIT_ARTIFACT_FLAG_TARGET_LISTING,
+  };
+  ResultPtr result = EmitModule(target_environment.get(), workspace.get(),
+                                module.get(), &options);
+  ExpectSucceededResult(result.get());
+  ASSERT_EQ(loomc_result_artifact_count(result.get()), 2u);
+
+  const loomc_artifact_t* listing = loomc_result_artifact_at(result.get(), 1);
+  ASSERT_NE(listing, nullptr);
+  EXPECT_EQ(listing->kind, LOOMC_ARTIFACT_KIND_TEXT);
+  EXPECT_EQ(ToString(listing->format), "fake-assembly");
+  EXPECT_EQ(ToString(listing->identifier), "candidate.bin.listing");
+  EXPECT_EQ(ToString(listing->contents), "fake target listing\n");
 }
 
 TEST(TargetTest, EmitPreservesSemanticRejectionWithoutInventingDiagnostic) {

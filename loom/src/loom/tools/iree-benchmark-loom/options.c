@@ -14,7 +14,6 @@
 
 #include "iree/base/tooling/flags.h"
 #include "loom/sanitizer/options.h"
-#include "loom/tooling/compile/report_capture.h"
 #include "loom/tooling/input/flags.h"
 #include "loom/tooling/testbench/testbench.h"
 #include "loom/tools/iree-benchmark-loom/module_query.h"

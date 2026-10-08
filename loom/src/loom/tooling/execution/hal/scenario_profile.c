@@ -17,6 +17,8 @@
 #include "loom/ops/kernel/ops.h"
 #include "loom/ops/op_defs.h"
 #include "loom/tooling/execution/hal/testbench_staging.h"
+#include "loomc/interop.h"
+#include "loomc/iree.h"
 
 typedef struct loom_run_hal_testbench_scenario_product_t {
   // Host allocator owning this product.
@@ -24,8 +26,8 @@ typedef struct loom_run_hal_testbench_scenario_product_t {
   // Authored scenario subject accepted by this product.
   const loom_testbench_invocation_plan_t* subject;
   // Target-only module clone containing a generated function adapter.
-  loom_run_module_t adapted_run_module;
-  // Synthetic kernel invocation owned with |adapted_run_module|.
+  loomc_module_t* adapted_module;
+  // Synthetic kernel invocation owned with |adapted_module|.
   loom_testbench_invocation_plan_t adapted_invocation;
   // Eagerly compiled ordinary HAL kernel product.
   loom_run_hal_testbench_actual_provider_t provider;
@@ -64,11 +66,13 @@ static iree_status_t loom_run_hal_testbench_scenario_emit_unsupported_results(
   loom_source_range_t source_location = {
       .provenance = LOOM_SOURCE_PROVENANCE_UNAVAILABLE_SOURCE,
   };
-  const loom_run_module_t* run_module = profile->provider_options.run_module;
-  if (run_module != NULL && invocation->op != NULL) {
-    loom_source_resolve(loom_run_module_source_resolver(run_module),
-                        invocation->module, invocation->op->location,
-                        &source_location);
+  if (profile->source_table != NULL && invocation->op != NULL) {
+    loom_source_resolve(
+        (loom_source_resolver_t){
+            .fn = loom_source_table_resolve,
+            .user_data = (void*)profile->source_table,
+        },
+        invocation->module, invocation->op->location, &source_location);
   }
   const loom_diagnostic_t diagnostic = {
       .severity = LOOM_DIAGNOSTIC_ERROR,
@@ -79,8 +83,8 @@ static iree_status_t loom_run_hal_testbench_scenario_emit_unsupported_results(
       .origin = source_location,
       .source_location = source_location,
   };
-  IREE_RETURN_IF_ERROR(loom_diagnostic_emit(
-      &profile->provider_options.diagnostic_sink, &diagnostic));
+  IREE_RETURN_IF_ERROR(
+      loom_diagnostic_emit(&profile->diagnostic_sink, &diagnostic));
   return iree_make_status(
       IREE_STATUS_FAILED_PRECONDITION,
       "HAL scenario profile cannot transport invocation results");
@@ -156,7 +160,7 @@ static void loom_run_hal_testbench_scenario_product_destroy(void* user_data) {
       (loom_run_hal_testbench_scenario_product_t*)user_data;
   const iree_allocator_t host_allocator = product->host_allocator;
   loom_run_hal_testbench_actual_provider_deinitialize(&product->provider);
-  loom_run_module_deinitialize(&product->adapted_run_module);
+  loomc_module_release(product->adapted_module);
   iree_allocator_free(host_allocator, product);
 }
 
@@ -430,7 +434,7 @@ static iree_status_t loom_run_hal_testbench_scenario_remap_predicates(
 
 static iree_status_t loom_run_hal_testbench_scenario_build_function_adapter(
     loom_run_hal_testbench_scenario_product_t* product,
-    loom_run_session_t* session, const loom_run_module_t* source_run_module,
+    const loom_run_hal_testbench_actual_provider_options_t* provider_options,
     const loom_testbench_invocation_plan_t* invocation) {
   if (invocation->workload_count != 0) {
     return iree_make_status(
@@ -445,11 +449,19 @@ static iree_status_t loom_run_hal_testbench_scenario_build_function_adapter(
 
   iree_string_view_t function_name = iree_string_view_empty();
   IREE_RETURN_IF_ERROR(loom_run_hal_testbench_scenario_symbol_name_from_ref(
-      source_run_module->module, invocation->callee_ref, &function_name));
-  IREE_RETURN_IF_ERROR(loom_run_module_clone(session, source_run_module,
-                                             (iree_string_view_list_t){0},
-                                             &product->adapted_run_module));
-  loom_module_t* module = product->adapted_run_module.module;
+      provider_options->native_module, invocation->callee_ref, &function_name));
+  IREE_RETURN_IF_ERROR(iree_status_from_loomc(loomc_module_clone(
+      provider_options->module, provider_options->compilation->workspace,
+      loomc_allocator_from_iree(product->host_allocator),
+      &product->adapted_module)));
+  const loomc_module_mutable_interop_view_t mutable_view =
+      loomc_module_get_mutable_interop_view(product->adapted_module);
+  if (mutable_view.module == NULL) {
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "scenario adapter module does not contain exact-version native IR");
+  }
+  loom_module_t* module = mutable_view.module;
 
   loom_symbol_ref_t function_ref = loom_symbol_ref_null();
   loom_func_like_t function = {0};
@@ -598,8 +610,8 @@ static iree_status_t loom_run_hal_testbench_scenario_product_prepare(
                                                                     invocation);
   }
 
-  if (profile->provider_options.run_module == NULL ||
-      profile->provider_options.run_module->module != invocation->module) {
+  if (profile->provider_options.native_module == NULL ||
+      profile->provider_options.native_module != invocation->module) {
     return iree_make_status(
         IREE_STATUS_FAILED_PRECONDITION,
         "HAL scenario profile is not bound to the invocation module");
@@ -617,10 +629,10 @@ static iree_status_t loom_run_hal_testbench_scenario_product_prepare(
   iree_status_t status = iree_ok_status();
   if (invocation->kind == LOOM_TESTBENCH_INVOCATION_FUNCTION_CALL) {
     status = loom_run_hal_testbench_scenario_build_function_adapter(
-        product, provider_options.session, provider_options.run_module,
-        invocation);
+        product, &provider_options, invocation);
     if (iree_status_is_ok(status)) {
-      provider_options.run_module = &product->adapted_run_module;
+      provider_options.module = product->adapted_module;
+      provider_options.native_module = product->adapted_invocation.module;
       provider_options.kernel_launch = &product->adapted_invocation;
     }
   } else {
@@ -658,10 +670,14 @@ static iree_status_t loom_run_hal_testbench_scenario_product_prepare(
 void loom_run_hal_testbench_scenario_profile_initialize(
     iree_string_view_t name,
     const loom_run_hal_testbench_actual_provider_options_t* provider_options,
+    const loom_source_table_resolver_t* source_table,
+    loom_diagnostic_sink_t diagnostic_sink,
     loom_run_hal_testbench_scenario_profile_t* out_profile) {
   *out_profile = (loom_run_hal_testbench_scenario_profile_t){
       .name = name,
       .provider_options = *provider_options,
+      .source_table = source_table,
+      .diagnostic_sink = diagnostic_sink,
   };
   out_profile->provider_options.kernel_launch = NULL;
 }

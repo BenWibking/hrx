@@ -286,6 +286,24 @@ struct HeaderCache {
   }
 };
 
+struct PrefixSourcePathMapper {
+  // Storage reused after the importer has copied each callback result.
+  std::string identifier;
+
+  static loomc_status_t Map(void* user_data, loomc_string_view_t path,
+                            loomc_string_view_t* out_identifier) {
+    auto& self = *static_cast<PrefixSourcePathMapper*>(user_data);
+    self.identifier = "/logical";
+    if (path.size == 0 || path.data[0] != '/') {
+      self.identifier += '/';
+    }
+    self.identifier += ToString(path);
+    *out_identifier =
+        loomc_make_string_view(self.identifier.data(), self.identifier.size());
+    return loomc_ok_status();
+  }
+};
+
 TEST_F(CxxTest, OptionsAndSharedIncludeProviderAcrossWorkers) {
   HeaderCache cache;
   auto source = Source("unit.cpp",
@@ -360,6 +378,53 @@ TEST_F(CxxTest, HeaderDiagnosticSurvivesProviderDestruction) {
   EXPECT_EQ(ToString(loomc_source_identifier(diagnostic->range.source)),
             "/headers/helper.h");
   EXPECT_EQ(Contents(diagnostic->range.source), expected);
+}
+
+TEST_F(CxxTest, SourcePathMapperPreservesPhysicalIncludeLookup) {
+  HeaderCache cache;
+  const std::string expected = "static int broken() { return missing; }";
+  cache.header = Source("/headers/helper.h", expected.c_str());
+  auto source = Source("unit.cpp",
+                       "#include <helper.h>\n"
+                       "int entry() { return broken(); }");
+  auto path = loomc_make_cstring_view("/headers");
+  PrefixSourcePathMapper mapper;
+  loomc_cxx_import_options_t options = {};
+  options.source_provider = {HeaderCache::Resolve, &cache};
+  options.source_path_mapper = {PrefixSourcePathMapper::Map, &mapper};
+  options.include_paths = &path;
+  options.include_path_count = 1;
+  LOOMC_ASSERT_OK(Import(source.get(), &options));
+  ASSERT_FALSE(loomc_result_succeeded(result_.get()));
+  ASSERT_GT(loomc_result_diagnostic_count(result_.get()), 0u);
+  const auto* diagnostic = loomc_result_diagnostic_at(result_.get(), 0);
+  EXPECT_EQ(ToString(loomc_source_identifier(diagnostic->range.source)),
+            "/logical/headers/helper.h");
+  EXPECT_EQ(Contents(diagnostic->range.source), expected);
+  EXPECT_EQ(cache.hits, 1u);
+}
+
+TEST_F(CxxTest, SourcePathMapperCannotMergeDistinctSources) {
+  HeaderCache cache;
+  cache.header =
+      Source("/headers/helper.h", "static int helper() { return 1; }");
+  auto source = Source("unit.cpp",
+                       "#include <helper.h>\n"
+                       "int entry() { return helper(); }");
+  auto path = loomc_make_cstring_view("/headers");
+  loomc_cxx_import_options_t options = {};
+  options.source_provider = {HeaderCache::Resolve, &cache};
+  options.source_path_mapper.fn = [](void*, loomc_string_view_t,
+                                     loomc_string_view_t* out_identifier) {
+    *out_identifier = loomc_make_cstring_view("merged.cpp");
+    return loomc_ok_status();
+  };
+  options.include_paths = &path;
+  options.include_path_count = 1;
+  LOOMC_ASSERT_STATUS_IS(LOOMC_STATUS_INVALID_ARGUMENT,
+                         Import(source.get(), &options));
+  EXPECT_EQ(module_, nullptr);
+  EXPECT_EQ(result_, nullptr);
 }
 
 TEST_F(CxxTest, InvalidOptionsClearOutputs) {

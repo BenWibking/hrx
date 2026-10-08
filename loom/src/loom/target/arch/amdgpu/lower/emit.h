@@ -220,6 +220,11 @@ iree_status_t loom_amdgpu_emit_vgpr_b32_copy(loom_low_lower_context_t* context,
                                              loom_value_id_t low_source,
                                              loom_value_id_t* out_value);
 
+// Returns true when |low_value| is an SGPR or VGPR value whose defining
+// descriptor writes only the low 16-bit register part.
+bool loom_amdgpu_low_value_defines_register_low16(
+    loom_low_lower_context_t* context, loom_value_id_t low_value);
+
 // Returns true when |low_value| is a VGPR value whose defining descriptor
 // writes only the low 16-bit register part.
 bool loom_amdgpu_low_value_defines_vgpr_low16(loom_low_lower_context_t* context,

@@ -18,7 +18,7 @@ enum {
 
 static_assert(sizeof(loom_wasm_host_memory_region_t) == 12,
               "host memory region ABI must remain stable on wasm32");
-static_assert(sizeof(loom_wasm_value_type_t) == 4,
+static_assert(sizeof(loom_wasm_host_value_type_t) == 4,
               "host value type ABI must remain stable on wasm32");
 static_assert(offsetof(loom_wasm_host_memory_region_t, address) == 0,
               "host memory region address offset must remain stable");
@@ -32,9 +32,9 @@ __attribute__((import_module("loom_wasm_host"),
 loom_wasm_host_import_module_load(
     const uint8_t* module_data, uint32_t module_length,
     const char* function_name, uint32_t function_name_length,
-    const char* memory_name, uint32_t memory_name_length,
-    const loom_wasm_value_type_t* parameter_types, uint32_t parameter_count,
-    const loom_wasm_value_type_t* result_types, uint32_t result_count);
+    loom_wasm_host_value_type_t* out_parameter_types, uint32_t parameter_count,
+    loom_wasm_host_value_type_t* out_result_types, uint32_t result_count,
+    loom_wasm_host_module_flags_t* out_flags);
 
 __attribute__((import_module("loom_wasm_host"),
                import_name("module_call"))) extern uint32_t
@@ -56,13 +56,15 @@ __attribute__((import_module("loom_wasm_host"),
                import_name("error_copy"))) extern uint32_t
 loom_wasm_host_import_error_copy(char* buffer, uint32_t capacity);
 
-static bool loom_wasm_host_type_is_callable(loom_wasm_value_type_t type) {
-  return type == LOOM_WASM_VALUE_TYPE_I32 || type == LOOM_WASM_VALUE_TYPE_I64 ||
-         type == LOOM_WASM_VALUE_TYPE_F32 || type == LOOM_WASM_VALUE_TYPE_F64;
+static bool loom_wasm_host_type_is_callable(loom_wasm_host_value_type_t type) {
+  return type == LOOM_WASM_HOST_VALUE_TYPE_I32 ||
+         type == LOOM_WASM_HOST_VALUE_TYPE_I64 ||
+         type == LOOM_WASM_HOST_VALUE_TYPE_F32 ||
+         type == LOOM_WASM_HOST_VALUE_TYPE_F64;
 }
 
 static iree_status_t loom_wasm_host_validate_type_list(
-    const loom_wasm_value_type_t* types, uint32_t type_count,
+    const loom_wasm_host_value_type_t* types, uint32_t type_count,
     const char* list_name) {
   if (type_count != 0 && types == NULL) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
@@ -107,15 +109,13 @@ static iree_status_t loom_wasm_host_copy_error(
 
 iree_status_t loom_wasm_host_module_load(
     iree_const_byte_span_t module_data, iree_string_view_t function_export_name,
-    iree_string_view_t memory_export_name,
-    const loom_wasm_function_type_t* function_type,
+    uint32_t parameter_count, loom_wasm_host_value_type_t* out_parameter_types,
+    uint32_t result_count, loom_wasm_host_value_type_t* out_result_types,
     loom_wasm_host_module_t* out_module) {
-  IREE_ASSERT_ARGUMENT(function_type);
   IREE_ASSERT_ARGUMENT(out_module);
   *out_module = (loom_wasm_host_module_t){0};
   if (module_data.data_length > UINT32_MAX ||
-      function_export_name.size > UINT32_MAX ||
-      memory_export_name.size > UINT32_MAX) {
+      function_export_name.size > UINT32_MAX) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "Wasm host module metadata exceeds u32");
   }
@@ -127,17 +127,18 @@ iree_status_t loom_wasm_host_module_load(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "Wasm host function export name is required");
   }
-  IREE_RETURN_IF_ERROR(loom_wasm_host_validate_type_list(
-      function_type->parameters, function_type->parameter_count, "parameter"));
-  IREE_RETURN_IF_ERROR(loom_wasm_host_validate_type_list(
-      function_type->results, function_type->result_count, "result"));
+  if ((parameter_count != 0 && out_parameter_types == NULL) ||
+      (result_count != 0 && out_result_types == NULL)) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "Wasm host physical type storage is incomplete");
+  }
 
+  loom_wasm_host_module_flags_t flags = 0;
   const uint32_t handle = loom_wasm_host_import_module_load(
       module_data.data, (uint32_t)module_data.data_length,
       function_export_name.data, (uint32_t)function_export_name.size,
-      memory_export_name.data, (uint32_t)memory_export_name.size,
-      function_type->parameters, function_type->parameter_count,
-      function_type->results, function_type->result_count);
+      out_parameter_types, parameter_count, out_result_types, result_count,
+      &flags);
   if (handle == 0) {
     const iree_allocator_t allocator = iree_allocator_system();
     char* message_storage = NULL;
@@ -149,15 +150,34 @@ iree_status_t loom_wasm_host_module_load(
     iree_allocator_free(allocator, message_storage);
     return status;
   }
-  *out_module = (loom_wasm_host_module_t){
-      .handle = handle,
-      .parameter_count = function_type->parameter_count,
-      .result_count = function_type->result_count,
-      .flags = iree_string_view_is_empty(memory_export_name)
-                   ? 0
-                   : LOOM_WASM_HOST_MODULE_FLAG_HAS_MEMORY,
-  };
-  return iree_ok_status();
+
+  const loom_wasm_host_module_flags_t known_flags =
+      LOOM_WASM_HOST_MODULE_FLAG_HAS_MEMORY;
+  iree_status_t status =
+      iree_any_bit_set(flags, ~known_flags)
+          ? iree_make_status(IREE_STATUS_DATA_LOSS,
+                             "WebAssembly host returned unknown flags 0x%08X",
+                             (unsigned)flags)
+          : iree_ok_status();
+  if (iree_status_is_ok(status)) {
+    status = loom_wasm_host_validate_type_list(out_parameter_types,
+                                               parameter_count, "parameter");
+  }
+  if (iree_status_is_ok(status)) {
+    status = loom_wasm_host_validate_type_list(out_result_types, result_count,
+                                               "result");
+  }
+  if (iree_status_is_ok(status)) {
+    *out_module = (loom_wasm_host_module_t){
+        .handle = handle,
+        .parameter_count = parameter_count,
+        .result_count = result_count,
+        .flags = flags,
+    };
+  } else {
+    loom_wasm_host_import_module_release(handle);
+  }
+  return status;
 }
 
 void loom_wasm_host_module_release(loom_wasm_host_module_t* module) {
@@ -193,7 +213,6 @@ iree_status_t loom_wasm_host_module_call(
         IREE_STATUS_INVALID_ARGUMENT,
         "Wasm host call provides roots to a module without memory");
   }
-
   const uint32_t outcome = loom_wasm_host_import_module_call(
       module->handle, argument_bits, result_bits, regions,
       (uint32_t)region_count);
@@ -224,8 +243,8 @@ iree_status_t loom_wasm_host_module_call(
 
 iree_status_t loom_wasm_host_module_load(
     iree_const_byte_span_t module_data, iree_string_view_t function_export_name,
-    iree_string_view_t memory_export_name,
-    const loom_wasm_function_type_t* function_type,
+    uint32_t parameter_count, loom_wasm_host_value_type_t* out_parameter_types,
+    uint32_t result_count, loom_wasm_host_value_type_t* out_result_types,
     loom_wasm_host_module_t* out_module) {
   IREE_ASSERT_ARGUMENT(out_module);
   *out_module = (loom_wasm_host_module_t){0};

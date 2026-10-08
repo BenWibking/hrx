@@ -11,6 +11,7 @@
 
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
+#include "loom/tooling/io/source_path.h"
 #include "loomc/import/cxx.h"
 
 #ifdef __cplusplus
@@ -24,6 +25,7 @@ extern "C" {
 iree_status_t loom_cxx_input_import_loomc(
     loomc_context_t* context, loomc_workspace_t* workspace,
     const loomc_source_t* source, iree_string_view_t input_options,
+    const loom_tooling_source_path_options_t* source_path_options,
     iree_arena_block_pool_t* block_pool, iree_allocator_t host_allocator,
     loomc_module_t** out_module, loomc_result_t** out_result);
 

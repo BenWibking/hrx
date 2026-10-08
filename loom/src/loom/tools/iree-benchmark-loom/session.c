@@ -6,6 +6,8 @@
 
 #include "loom/tools/iree-benchmark-loom/session.h"
 
+#include "loomc/interop.h"
+
 iree_status_t iree_benchmark_loom_session_initialize(
     const iree_benchmark_loom_configuration_t* configuration,
     iree_allocator_t host_allocator, loom_run_session_t* out_session) {
@@ -14,8 +16,9 @@ iree_status_t iree_benchmark_loom_session_initialize(
   loom_run_session_options_t session_options = {0};
   loom_run_session_options_initialize(&session_options);
   session_options.host_allocator = host_allocator;
-  session_options.input_providers = configuration->input_providers;
-  session_options.target_environment = configuration->target_environment;
+  session_options.target_environment =
+      loomc_target_environment_get_interop_view(
+          configuration->target_environment);
   session_options.cleanup_pattern_provider_set =
       configuration->cleanup_pattern_provider_set;
   return loom_run_session_initialize(&session_options, out_session);

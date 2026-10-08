@@ -25,6 +25,9 @@
 #include "loom/tools/iree-benchmark-loom/options.h"
 #include "loom/tools/iree-benchmark-loom/profile_report.h"
 #include "loom/util/json.h"
+#include "loomc/artifact_manifest.h"
+#include "loomc/compile_report.h"
+#include "loomc/iree.h"
 
 static iree_string_view_t iree_benchmark_loom_selected_device_uri(
     const iree_benchmark_loom_hal_context_t* context) {
@@ -32,8 +35,8 @@ static iree_string_view_t iree_benchmark_loom_selected_device_uri(
   if (device_uris.count == 1) {
     return device_uris.values[0];
   }
-  if (context->execution.device_provider != NULL) {
-    return context->execution.device_provider->driver_name;
+  if (!iree_string_view_is_empty(context->execution.driver_name)) {
+    return context->execution.driver_name;
   }
   return iree_string_view_empty();
 }
@@ -364,10 +367,13 @@ iree_status_t iree_benchmark_loom_write_hal_context_identity_fields_json(
       object, IREE_SV("device_uri"),
       iree_benchmark_loom_selected_device_uri(context)));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      object, IREE_SV("driver"),
-      context->execution.device_provider->driver_name));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      object, IREE_SV("provider"), context->execution.device_provider->name));
+      object, IREE_SV("driver"), context->execution.driver_name));
+  if (context->execution.selected_target_route != NULL) {
+    IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+        object, IREE_SV("provider"),
+        iree_string_view_from_loomc(
+            context->execution.selected_target_route->provider->name)));
+  }
   if (context->execution.runtime_initialized &&
       context->execution.runtime.device != NULL) {
     IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
@@ -1557,17 +1563,33 @@ iree_status_t iree_benchmark_loom_write_hal_timing_interpretation_json(
   return loom_json_object_end(&object);
 }
 
+static iree_status_t iree_benchmark_loom_write_artifact_segment(
+    void* user_data, iree_const_byte_span_t segment) {
+  return loom_output_stream_write(
+      (loom_output_stream_t*)user_data,
+      iree_make_string_view((const char*)segment.data, segment.data_length));
+}
+
 static iree_status_t iree_benchmark_loom_write_compile_report_field_json(
-    const loom_compile_report_capture_t* compile_report_capture,
-    loom_json_object_writer_t* object) {
-  if (compile_report_capture == NULL ||
-      !loom_compile_report_capture_is_enabled(compile_report_capture)) {
+    const loomc_artifact_t* compile_report, loom_json_object_writer_t* object) {
+  if (compile_report == NULL) {
     return iree_ok_status();
+  }
+  const iree_string_view_t format =
+      iree_string_view_from_loomc(compile_report->format);
+  if (!iree_string_view_equal(
+          format, IREE_SV(LOOMC_ARTIFACT_FORMAT_COMPILE_REPORT_JSON))) {
+    return iree_make_status(IREE_STATUS_INTERNAL,
+                            "compiler returned non-JSON compile report");
   }
   IREE_RETURN_IF_ERROR(
       loom_json_object_begin_field(object, IREE_SV("compile_report")));
-  return loom_compile_report_capture_append_json(compile_report_capture,
-                                                 object->stream);
+  const iree_byte_sequence_segment_callback_t callback = {
+      .fn = iree_benchmark_loom_write_artifact_segment,
+      .user_data = object->stream,
+  };
+  return iree_byte_sequence_enumerate(
+      iree_byte_sequence_from_loomc(compile_report->contents), callback);
 }
 
 static iree_status_t iree_benchmark_loom_append_candidate_artifact_stem(
@@ -1619,17 +1641,6 @@ static iree_status_t iree_benchmark_loom_append_artifact_extension(
   return iree_benchmark_loom_append_sanitized_path_component(format, leaf);
 }
 
-static iree_status_t iree_benchmark_loom_append_target_artifact_extension(
-    loom_target_artifact_format_t format, iree_string_view_t fallback_extension,
-    iree_string_builder_t* leaf) {
-  iree_string_view_t format_name = iree_string_view_empty();
-  if (format != LOOM_TARGET_ARTIFACT_FORMAT_UNKNOWN) {
-    format_name = loom_target_artifact_format_name(format);
-  }
-  return iree_benchmark_loom_append_artifact_extension(
-      format_name, fallback_extension, leaf);
-}
-
 static iree_status_t iree_benchmark_loom_write_candidate_byte_artifact(
     iree_benchmark_loom_artifact_bundle_t* bundle,
     iree_benchmark_loom_bundle_file_kind_t kind, iree_string_view_t directory,
@@ -1669,26 +1680,6 @@ static iree_status_t iree_benchmark_loom_write_candidate_byte_artifact(
   return status;
 }
 
-static iree_status_t iree_benchmark_loom_find_artifact_manifest_sidecar(
-    const loom_target_emit_artifact_t* artifact,
-    const loom_target_emit_sidecar_artifact_t** out_sidecar) {
-  *out_sidecar = NULL;
-  for (iree_host_size_t i = 0; i < artifact->sidecar_count; ++i) {
-    const loom_target_emit_sidecar_artifact_t* sidecar = &artifact->sidecars[i];
-    if (sidecar->kind !=
-        LOOM_TARGET_EMIT_SIDECAR_ARTIFACT_KIND_ARTIFACT_MANIFEST) {
-      continue;
-    }
-    if (*out_sidecar != NULL) {
-      return iree_make_status(
-          IREE_STATUS_INVALID_ARGUMENT,
-          "candidate emitted multiple artifact manifest sidecars");
-    }
-    *out_sidecar = sidecar;
-  }
-  return iree_ok_status();
-}
-
 iree_status_t iree_benchmark_loom_write_compiled_artifacts(
     const iree_benchmark_loom_run_identity_t* run,
     const iree_benchmark_loom_candidate_identity_t* candidate,
@@ -1697,49 +1688,51 @@ iree_status_t iree_benchmark_loom_write_compiled_artifacts(
   iree_benchmark_loom_artifact_bundle_t* bundle =
       provider->context->artifact_bundle;
   if (!iree_benchmark_loom_artifact_bundle_wants_debug_artifacts(bundle) ||
-      !provider->execution.candidate_initialized ||
-      !provider->execution.candidate.compiled) {
+      provider->execution.artifacts.executable == NULL) {
     return iree_ok_status();
   }
 
   iree_string_builder_t leaf;
   iree_string_builder_initialize(allocator, &leaf);
-  const loom_target_emit_artifact_t* artifact =
-      &provider->execution.candidate.artifact;
+  const loomc_artifact_t* executable = provider->execution.artifacts.executable;
   iree_status_t status = iree_benchmark_loom_append_candidate_artifact_stem(
       run, candidate, provider, &leaf);
   if (iree_status_is_ok(status)) {
     status = iree_string_builder_append_cstring(&leaf, "_target");
   }
   if (iree_status_is_ok(status)) {
-    status = iree_benchmark_loom_append_target_artifact_extension(
-        artifact->target_artifact_format, IREE_SV("bin"), &leaf);
+    status = iree_benchmark_loom_append_artifact_extension(
+        iree_string_view_from_loomc(executable->format), IREE_SV("bin"), &leaf);
   }
   if (iree_status_is_ok(status)) {
     status = iree_benchmark_loom_write_candidate_byte_artifact(
         bundle, IREE_BENCHMARK_LOOM_BUNDLE_FILE_TARGET_ARTIFACT,
         bundle->target_artifact_dir, iree_string_builder_view(&leaf),
-        artifact->contents, allocator, &provider->target_artifact_path_storage,
+        iree_byte_sequence_from_loomc(executable->contents), allocator,
+        &provider->target_artifact_path_storage,
         &provider->target_artifact_path);
   }
 
+  const loomc_artifact_t* target_listing =
+      provider->execution.artifacts.target_listing;
   iree_string_builder_reset(&leaf);
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && target_listing != NULL) {
     status = iree_benchmark_loom_append_candidate_artifact_stem(
         run, candidate, provider, &leaf);
   }
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && target_listing != NULL) {
     status = iree_string_builder_append_cstring(&leaf, "_target_listing");
   }
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && target_listing != NULL) {
     status = iree_benchmark_loom_append_artifact_extension(
-        artifact->target_listing_format, IREE_SV("txt"), &leaf);
+        iree_string_view_from_loomc(target_listing->format), IREE_SV("txt"),
+        &leaf);
   }
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && target_listing != NULL) {
     status = iree_benchmark_loom_write_candidate_byte_artifact(
         bundle, IREE_BENCHMARK_LOOM_BUNDLE_FILE_TARGET_LISTING,
         bundle->target_listing_dir, iree_string_builder_view(&leaf),
-        artifact->target_listing_contents, allocator,
+        iree_byte_sequence_from_loomc(target_listing->contents), allocator,
         &provider->target_listing_path_storage, &provider->target_listing_path);
   }
 
@@ -1755,15 +1748,12 @@ iree_status_t iree_benchmark_loom_write_compiled_artifacts(
     status = iree_benchmark_loom_write_candidate_byte_artifact(
         bundle, IREE_BENCHMARK_LOOM_BUNDLE_FILE_HAL_EXECUTABLE,
         bundle->hal_executable_dir, iree_string_builder_view(&leaf),
-        artifact->contents, allocator, &provider->hal_executable_path_storage,
-        &provider->hal_executable_path);
+        iree_byte_sequence_from_loomc(executable->contents), allocator,
+        &provider->hal_executable_path_storage, &provider->hal_executable_path);
   }
 
-  const loom_target_emit_sidecar_artifact_t* artifact_manifest = NULL;
-  if (iree_status_is_ok(status)) {
-    status = iree_benchmark_loom_find_artifact_manifest_sidecar(
-        artifact, &artifact_manifest);
-  }
+  const loomc_artifact_t* artifact_manifest =
+      provider->execution.artifacts.artifact_manifest;
   iree_string_builder_reset(&leaf);
   if (iree_status_is_ok(status) && artifact_manifest != NULL) {
     status = iree_benchmark_loom_append_artifact_manifest_leaf(run, candidate,
@@ -1773,7 +1763,7 @@ iree_status_t iree_benchmark_loom_write_compiled_artifacts(
     status = iree_benchmark_loom_write_candidate_byte_artifact(
         bundle, IREE_BENCHMARK_LOOM_BUNDLE_FILE_ARTIFACT_MANIFEST,
         bundle->artifact_manifest_dir, iree_string_builder_view(&leaf),
-        artifact_manifest->contents, allocator,
+        iree_byte_sequence_from_loomc(artifact_manifest->contents), allocator,
         &provider->artifact_manifest_path_storage,
         &provider->artifact_manifest_path);
   }
@@ -1790,7 +1780,7 @@ static iree_status_t iree_benchmark_loom_append_compile_report_artifact_json(
     iree_string_builder_t* output) {
   iree_string_view_t entry_symbol = iree_string_view_empty();
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_module_symbol_name_from_ref(
-      provider->execution.run_module->module,
+      provider->execution.native_module,
       provider->execution.kernel_launch->callee_ref, &entry_symbol));
 
   loom_output_stream_t stream;
@@ -1831,7 +1821,7 @@ static iree_status_t iree_benchmark_loom_append_compile_report_artifact_json(
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_diagnostic_capture_fields_json(
       &provider->diagnostics, &object));
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_compile_report_field_json(
-      &provider->compile_report_capture, &object));
+      provider->execution.artifacts.compile_report, &object));
   IREE_RETURN_IF_ERROR(loom_json_object_end(&object));
   IREE_RETURN_IF_ERROR(loom_output_stream_write_cstring(&stream, "\n"));
   return iree_ok_status();
@@ -1844,9 +1834,7 @@ iree_status_t iree_benchmark_loom_write_compile_report_artifact(
     const loom_testbench_case_plan_t* case_plan,
     iree_benchmark_loom_hal_actual_provider_t* provider,
     iree_allocator_t allocator) {
-  if (!provider->execution.compile_report_available ||
-      !loom_compile_report_capture_is_enabled(
-          &provider->compile_report_capture) ||
+  if (provider->execution.artifacts.compile_report == NULL ||
       !iree_string_view_is_empty(provider->compile_report_artifact_path)) {
     return iree_ok_status();
   }
@@ -2129,7 +2117,7 @@ iree_status_t iree_benchmark_loom_write_benchmark_evidence_fields_json(
         policy, benchmark_result, object->stream));
   }
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_compile_report_field_json(
-      benchmark_result->compile_report_capture, object));
+      benchmark_result->compile_report, object));
   if (benchmark_result->has_failure) {
     IREE_RETURN_IF_ERROR(
         loom_json_object_begin_field(object, IREE_SV("failure")));
@@ -2295,7 +2283,7 @@ iree_status_t iree_benchmark_loom_append_compile_row(
     iree_string_builder_t* compile_output) {
   iree_string_view_t entry_symbol = iree_string_view_empty();
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_module_symbol_name_from_ref(
-      provider->execution.run_module->module,
+      provider->execution.native_module,
       provider->execution.kernel_launch->callee_ref, &entry_symbol));
 
   loom_output_stream_t stream;
@@ -2338,10 +2326,8 @@ iree_status_t iree_benchmark_loom_append_compile_row(
       &object, IREE_SV("target_listing_path"), provider->target_listing_path));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
       &object, IREE_SV("hal_executable_path"), provider->hal_executable_path));
-  if (provider->execution.compile_report_available) {
-    IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_compile_report_field_json(
-        &provider->compile_report_capture, &object));
-  }
+  IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_compile_report_field_json(
+      provider->execution.artifacts.compile_report, &object));
   IREE_RETURN_IF_ERROR(loom_json_object_end(&object));
   IREE_RETURN_IF_ERROR(loom_output_stream_write_cstring(&stream, "\n"));
   return iree_ok_status();

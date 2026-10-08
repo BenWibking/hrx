@@ -41,7 +41,7 @@ func.def @constant_bits() -> (i32, i64, i64, i32) {
 
 // Observes scalar arithmetic and the full family of ordinary call signatures
 // without exposing any trial values to target specialization.
-func.def @call_value_observations(%a: i64, %b: i64, %c: i64, %word_output: buffer, %wide_output: buffer) {
+func.def export("call_value_artifact") @call_value_observations(%a: i64, %b: i64, %c: i64, %word_output: buffer, %wide_output: buffer) {
   %a_word = scalar.trunci %a : i64 to i32
   %b_word = scalar.trunci %b : i64 to i32
   %c_word = scalar.trunci %c : i64 to i32

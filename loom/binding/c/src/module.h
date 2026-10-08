@@ -124,6 +124,11 @@ LOOMC_API_PRIVATE loomc_status_t loomc_module_replace_source_table(
 LOOMC_API_PRIVATE void loomc_module_clear_sources(
     loomc_module_t* module, const loom_module_t* internal_module);
 
+// Establishes target-independent structural input invariants. Diagnostics mark
+// |result| failed; status is reserved for infrastructure failures.
+LOOMC_API_PRIVATE loomc_status_t
+loomc_module_verify_structural(loomc_module_t* module, loomc_result_t* result);
+
 // Establishes structural and target-Low input invariants before compilation or
 // direct emission. Other target environments are checked without retaining
 // their lifetime. Diagnostics mark |result| failed; status is reserved for

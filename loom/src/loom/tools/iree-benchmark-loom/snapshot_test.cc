@@ -6,16 +6,31 @@
 
 #include "loom/tools/iree-benchmark-loom/snapshot.h"
 
+#include <memory>
+
 #include "iree/base/internal/json.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 #include "loom/tools/iree-benchmark-loom/hal_actual.h"
 #include "loom/tools/iree-benchmark-loom/launch_evidence.h"
+#include "loomc/compile_report.h"
+#include "loomc/iree.h"
 
 namespace loom {
 namespace {
 
 static const loom_sanitizer_options_t kNoSanitizer = {};
+
+using ByteSequencePtr = std::unique_ptr<loomc_byte_sequence_t,
+                                        decltype(&loomc_byte_sequence_release)>;
+
+static ByteSequencePtr CopyByteSequence(iree_string_view_t source) {
+  loomc_byte_sequence_t* sequence = nullptr;
+  IREE_EXPECT_OK(iree_status_from_loomc(loomc_byte_sequence_create_copy(
+      loomc_make_byte_span(source.data, source.size), loomc_allocator_system(),
+      &sequence)));
+  return ByteSequencePtr(sequence, loomc_byte_sequence_release);
+}
 
 static iree_string_view_t SnapshotJson(
     iree_benchmark_loom_snapshot_sink_t* snapshot,
@@ -121,15 +136,14 @@ TEST(BenchmarkSnapshotSinkTest, AggregatesDeduplicatedWorkItems) {
       /*.workload_value_count=*/IREE_ARRAYSIZE(workload_values),
       /*.launch_config=*/
       {
-          /*.fields=*/
-          LOOM_KERNEL_LAUNCH_CONFIG_FIELD_FLAG_WORKGROUP_COUNT |
-              LOOM_KERNEL_LAUNCH_CONFIG_FIELD_FLAG_WORKGROUP_SIZE |
-              LOOM_KERNEL_LAUNCH_CONFIG_FIELD_FLAG_WORKGROUP_CLUSTER_SIZE |
-              LOOM_KERNEL_LAUNCH_CONFIG_FIELD_FLAG_SUBGROUP_SIZE,
+          /*.type=*/LOOMC_STRUCTURE_TYPE_LAUNCH_CONFIG,
+          /*.structure_size=*/sizeof(loomc_launch_config_t),
+          /*.next=*/nullptr,
           /*.workgroup_count=*/{64, 2, 1},
           /*.workgroup_size=*/{64, 1, 1},
           /*.workgroup_cluster_size=*/{2, 1, 1},
           /*.subgroup_size=*/32,
+          /*.workgroup_storage_bytes=*/0,
       },
   };
   iree_benchmark_loom_launch_evidence_t launch_evidence = {
@@ -475,32 +489,17 @@ TEST(BenchmarkSnapshotSinkTest, IncludesRequestedCompileReport) {
   iree_benchmark_loom_event_sink_t event_sink = {};
   iree_benchmark_loom_snapshot_event_sink_initialize(&snapshot, &event_sink);
 
-  loom_compile_report_capture_options_t capture_options = {};
-  loom_compile_report_capture_options_initialize(&capture_options);
-  capture_options.sink_format = LOOM_COMPILE_REPORT_SINK_FORMAT_JSON;
-  capture_options.detail_mode = LOOM_TARGET_COMPILE_REPORT_FORMAT_MODE_SUMMARY;
-  loom_compile_report_capture_t capture = {};
-  loom_compile_report_capture_initialize(&capture_options, allocator, &capture);
-  capture.report.artifact_kind =
-      LOOM_TARGET_COMPILE_ARTIFACT_KIND_TARGET_ARTIFACT;
-  capture.report.detail_flags =
-      LOOM_TARGET_COMPILE_REPORT_DETAIL_WORKLOAD |
-      LOOM_TARGET_COMPILE_REPORT_DETAIL_DYNAMIC_INSTRUCTION_MIX;
-  capture.report.dynamic_instruction_mix.memory_read_byte_count = 12;
-  capture.report.dynamic_instruction_mix.memory_write_byte_count = 4;
-  capture.report.dynamic_instruction_mix.global_load_count = 3;
-  capture.report.dynamic_instruction_mix.global_store_count = 1;
-  capture.report.workload.flags =
-      LOOM_TARGET_COMPILE_REPORT_WORKLOAD_WORKGROUP_SIZE |
-      LOOM_TARGET_COMPILE_REPORT_WORKLOAD_WORKGROUP_COUNT |
-      LOOM_TARGET_COMPILE_REPORT_WORKLOAD_FLAT_WORKGROUP_SIZE |
-      LOOM_TARGET_COMPILE_REPORT_WORKLOAD_DISPATCH_WORKGROUP_COUNT |
-      LOOM_TARGET_COMPILE_REPORT_WORKLOAD_DISPATCH_WORKITEM_COUNT;
-  capture.report.workload.workgroup_size = {4, 1, 1};
-  capture.report.workload.workgroup_count = {2, 1, 1};
-  capture.report.workload.flat_workgroup_size = 4;
-  capture.report.workload.dispatch_workgroup_count = 2;
-  capture.report.workload.dispatch_workitem_count = 8;
+  const iree_string_view_t compile_report_json = IREE_SV(
+      R"({"artifact_kind":"target-artifact","economics":{"memory":{"per_workitem_issued":{"read_bytes":12,"write_bytes":4,"global_load_count":3,"global_store_count":1},"dispatch_issued":{"read_bytes":96,"write_bytes":32,"global_load_count":24,"global_store_count":8}}}})");
+  ByteSequencePtr compile_report_contents =
+      CopyByteSequence(compile_report_json);
+  const loomc_artifact_t compile_report_artifact = {
+      /*.kind=*/LOOMC_ARTIFACT_KIND_REPORT,
+      /*.format=*/
+      loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_COMPILE_REPORT_JSON),
+      /*.identifier=*/loomc_make_cstring_view("compile_report"),
+      /*.contents=*/compile_report_contents.get(),
+  };
 
   iree_benchmark_loom_run_identity_t run = {};
   run.run_id = IREE_SV("run");
@@ -526,7 +525,7 @@ TEST(BenchmarkSnapshotSinkTest, IncludesRequestedCompileReport) {
   result.timing.mean_ns = 10.0;
   result.timing.p50_ns = 10;
   result.timing.p90_ns = 10;
-  result.compile_report_capture = &capture;
+  result.compile_report = &compile_report_artifact;
 
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_run(
       &event_sink, &run, /*dry_run=*/false, &kNoSanitizer));
@@ -578,7 +577,6 @@ TEST(BenchmarkSnapshotSinkTest, IncludesRequestedCompileReport) {
       IREE_SV("8")));
 
   iree_string_builder_deinitialize(&output);
-  loom_compile_report_capture_deinitialize(&capture);
   iree_benchmark_loom_snapshot_sink_deinitialize(&snapshot);
 }
 

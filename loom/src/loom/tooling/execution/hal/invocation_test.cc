@@ -342,7 +342,6 @@ TEST_F(HalInvocationTest,
        DispatchBatchRejectsZeroDispatchCountBeforeDeviceUse) {
   loom_run_hal_runtime_t runtime = {};
   loom_run_hal_prepared_candidate_t candidate = {
-      /*.target_bundle=*/{},
       /*.executable=*/reinterpret_cast<iree_hal_executable_t*>(1),
   };
   loom_run_hal_invocation_plan_t plan = {};
@@ -360,60 +359,6 @@ TEST_F(HalInvocationTest,
 
   candidate.executable = nullptr;
   loom_run_hal_dispatch_batch_deinitialize(&batch);
-  loom_run_hal_invocation_plan_deinitialize(&plan);
-}
-
-TEST_F(HalInvocationTest,
-       DispatchPlanRejectsTargetLimitViolationBeforeDeviceUse) {
-  static const loom_target_snapshot_t snapshot = {
-      /*.name=*/IREE_SVL("test-snapshot"),
-      /*.codegen_format=*/{},
-      /*.artifact_format=*/{},
-      /*.default_pointer_bitwidth=*/{},
-      /*.index_bitwidth=*/{},
-      /*.offset_bitwidth=*/{},
-      /*.max_workgroup_size=*/{},
-      /*.max_flat_workgroup_size=*/{},
-      /*.max_workgroup_storage_bytes=*/{},
-      /*.subgroup_size=*/{},
-      /*.max_grid_size=*/{},
-      /*.max_flat_grid_size=*/{},
-      /*.max_workgroup_count=*/{/*.x=*/4, /*.y=*/4, /*.z=*/4},
-  };
-  static const loom_target_export_plan_t export_plan = {
-      /*.name=*/IREE_SVL("test-export"),
-      /*.export_symbol=*/{},
-      /*.calling_convention=*/{},
-      /*.abi_kind=*/LOOM_TARGET_ABI_HAL_KERNEL,
-      /*.linkage=*/{},
-      /*.hal_kernel=*/
-      {
-          /*.required_workgroup_size=*/{/*.x=*/0, /*.y=*/0, /*.z=*/0},
-      },
-  };
-  static const loom_target_bundle_t target_bundle = {
-      /*.name=*/IREE_SVL("test-bundle"),
-      /*.snapshot=*/&snapshot,
-      /*.export_plan=*/&export_plan,
-  };
-
-  loom_run_hal_runtime_t runtime = {};
-  loom_run_hal_prepared_candidate_t candidate = {
-      /*.target_bundle=*/&target_bundle,
-      /*.executable=*/reinterpret_cast<iree_hal_executable_t*>(1),
-  };
-  loom_run_hal_invocation_plan_t plan = {};
-  loom_run_hal_invocation_plan_initialize(&plan);
-  plan.options.workgroup_count[0] = 5;
-
-  loom_run_hal_iteration_t iteration = {};
-  IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_OUT_OF_RANGE,
-      loom_run_hal_invocation_dispatch_plan(
-          &runtime, &candidate, &plan, iree_allocator_system(), &iteration));
-
-  candidate.executable = nullptr;
-  loom_run_hal_iteration_deinitialize(&iteration);
   loom_run_hal_invocation_plan_deinitialize(&plan);
 }
 

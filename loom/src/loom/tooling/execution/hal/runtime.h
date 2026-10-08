@@ -59,6 +59,11 @@ iree_status_t loom_run_hal_runtime_initialize(
     const loom_run_hal_runtime_options_t* options, iree_allocator_t allocator,
     loom_run_hal_runtime_t* out_runtime);
 
+// Returns the physical devices served by the provisioned dispatch queue.
+iree_hal_physical_device_affinity_t
+loom_run_hal_runtime_dispatch_physical_device_affinity(
+    const loom_run_hal_runtime_t* runtime);
+
 // Releases all resources owned by |runtime|.
 void loom_run_hal_runtime_deinitialize(loom_run_hal_runtime_t* runtime);
 

@@ -250,7 +250,7 @@ static iree_status_t loom_amdgpu_extract_vgpr_bitfield(
       mode == LOOM_AMDGPU_BITFIELD_EXTRACT_MODE_SIGN_EXTEND;
   const bool source_defines_low16 =
       bit_offset == 0 && bit_count <= 16 &&
-      loom_amdgpu_low_value_defines_vgpr_low16(context, low_source);
+      loom_amdgpu_low_value_defines_register_low16(context, low_source);
   if (source_defines_low16) {
     const loom_amdgpu_vgpr_bfe_extract_flags_t bfe_flags =
         LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_SOURCE_LOW16 |

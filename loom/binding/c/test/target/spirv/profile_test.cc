@@ -682,6 +682,61 @@ TEST(TargetSpirvProfileTest, CreatesPresetProfileAndQueriesRows) {
   LOOMC_EXPECT_STATUS_IS(LOOMC_STATUS_OUT_OF_RANGE, extension_status);
 }
 
+TEST(TargetSpirvProfileTest, AcceptsEveryExtendedCompilerFeature) {
+  TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
+  const loomc_spirv_feature_t features[] = {
+      LOOMC_SPIRV_FEATURE_FLOAT16,
+      LOOMC_SPIRV_FEATURE_FLOAT64,
+      LOOMC_SPIRV_FEATURE_VULKAN_MEMORY_MODEL_DEVICE_SCOPE,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_INT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_INT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT16_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT16_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT16_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT16_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT32_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT32_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT32_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT32_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT64_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT64_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_FLOAT32_DENORM_PRESERVE,
+      LOOMC_SPIRV_FEATURE_GROUP_NON_UNIFORM_BALLOT,
+  };
+  loomc_spirv_feature_fact_t facts[sizeof(features) / sizeof(features[0])] = {};
+  for (size_t i = 0; i < sizeof(features) / sizeof(features[0]); ++i) {
+    facts[i] = {
+        /*.feature=*/features[i],
+        /*.state=*/LOOMC_TARGET_FACT_STATE_TRUE,
+        /*.provenance=*/loomc_make_cstring_view("programmatic-profile"),
+    };
+  }
+  loomc_spirv_profile_options_t options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_SPIRV_PROFILE_OPTIONS,
+      /*.structure_size=*/sizeof(options),
+      /*.next=*/nullptr,
+      /*.identifier=*/loomc_make_cstring_view("all-compiler-features"),
+      /*.preset=*/LOOMC_SPIRV_PROFILE_PRESET_VULKAN_1_3_BDA,
+      /*.feature_facts=*/facts,
+      /*.feature_fact_count=*/sizeof(facts) / sizeof(facts[0]),
+      /*.limit_facts=*/nullptr,
+      /*.limit_fact_count=*/0,
+      /*.environment_facts=*/nullptr,
+      /*.environment_fact_count=*/0,
+  };
+  TargetProfilePtr profile =
+      CreateSpirvProfile(target_environment.get(), &options);
+
+  for (loomc_spirv_feature_t feature : features) {
+    loomc_target_fact_state_t state = LOOMC_TARGET_FACT_STATE_UNKNOWN;
+    LOOMC_EXPECT_OK(loomc_spirv_target_profile_query_feature(profile.get(),
+                                                             feature, &state));
+    EXPECT_EQ(state, LOOMC_TARGET_FACT_STATE_TRUE);
+  }
+}
+
 TEST(TargetSpirvProfileTest, RefinesPresetWithExplicitTrueFact) {
   TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
   loomc_spirv_feature_fact_t facts[] = {

@@ -409,6 +409,93 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @partial
 
 // ====
 
+amdgpu.target<gfx1151> @target
+
+func.def target(@target) @uniform_partial_i16_extui_gfx1151(%input: i32) -> (i32) {
+  %value = scalar.bitcast %input : i32 to f32
+  %half = scalar.fptrunc %value : f32 to f16
+  %bits = scalar.bitcast %half : f16 to i16
+  %result = scalar.extui %bits : i16 to i32
+  func.return %result : i32
+}
+
+// ----
+low.func.def target<amdgpu.rdna3_5.core>(@target) abi(hal_kernel) @uniform_partial_i16_extui_gfx1151(%value: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %bits = s_cvt_f16_f32 %value
+  %result = v_bfe_u32_offset_0_width_inline_low16 %bits
+  return %result
+}
+
+// ====
+
+amdgpu.target<gfx1200> @target
+
+func.def target(@target) @uniform_partial_i16_extui_gfx1200(%input: i32) -> (i32) {
+  %value = scalar.bitcast %input : i32 to f32
+  %half = scalar.fptrunc %value : f32 to f16
+  %bits = scalar.bitcast %half : f16 to i16
+  %result = scalar.extui %bits : i16 to i32
+  func.return %result : i32
+}
+
+// ----
+low.func.def target<amdgpu.rdna4.core>(@target) abi(hal_kernel) @uniform_partial_i16_extui_gfx1200(%value: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %bits = s_cvt_f16_f32 %value
+  %result = v_bfe_u32_offset_0_width_inline_low16 %bits
+  return %result
+}
+
+// ====
+
+amdgpu.target<gfx1151> @target
+
+func.def target(@target) @uniform_partial_i16_consumers(%input: i32) -> (i32, i32, i64, i64, f32, f32) {
+  %value = scalar.bitcast %input : i32 to f32
+  %half = scalar.fptrunc %value : f32 to f16
+  %bits = scalar.bitcast %half : f16 to i16
+  %signed32 = scalar.extsi %bits : i16 to i32
+  %unsigned32 = scalar.extui %bits : i16 to i32
+  %signed64 = scalar.extsi %bits : i16 to i64
+  %unsigned64 = scalar.extui %bits : i16 to i64
+  %signed_float = scalar.sitofp %bits : i16 to f32
+  %unsigned_float = scalar.uitofp %bits : i16 to f32
+  func.return %signed32, %unsigned32, %signed64, %unsigned64, %signed_float, %unsigned_float : i32, i32, i64, i64, f32, f32
+}
+
+// ----
+low.func.def target<amdgpu.rdna3_5.core>(@target) abi(hal_kernel) @uniform_partial_i16_consumers(%value: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) asm {
+  %half = s_cvt_f16_f32 %value
+  %signed32 = v_bfe_i32_offset_0_width_inline_low16 %half
+  %unsigned32 = v_and_b32_lit %signed32, 65535
+  %26 = v_ashrrev_i32_src0_inline %signed32, 31
+  %signed64 = concat(%signed32, %26) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %29 = v_mov_b32 0
+  %unsigned64 = concat(%unsigned32, %29) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %signed_float = v_cvt_f32_i32 %signed32
+  %unsigned_float = v_cvt_f32_u32 %unsigned32
+  return %signed32, %unsigned32, %signed64, %unsigned64, %signed_float, %unsigned_float
+}
+
+// ====
+
+amdgpu.target<gfx1151> @target
+
+func.def target(@target) @uniform_partial_i16_transport(%input: i32) -> (i16) {
+  %value = scalar.bitcast %input : i32 to f32
+  %half = scalar.fptrunc %value : f32 to f16
+  %bits = scalar.bitcast %half : f16 to i16
+  func.return %bits : i16
+}
+
+// ----
+low.func.def target<amdgpu.rdna3_5.core>(@target) abi(hal_kernel) @uniform_partial_i16_transport(%value: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %bits = s_cvt_f16_f32 %value
+  %8 = v_bfe_u32_offset_0_width_inline_low16 %bits
+  return %8
+}
+
+// ====
+
 amdgpu.target<gfx1250> @target
 
 func.def target(@target) @partial_i8_extensions(%input: f32) -> (i32, i32) {

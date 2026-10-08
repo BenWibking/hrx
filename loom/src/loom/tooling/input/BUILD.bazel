@@ -50,6 +50,37 @@ loom_cc_library(
     ],
 )
 
+loom_cc_library(
+    name = "loomc",
+    srcs = ["loomc.c"],
+    hdrs = ["loomc.h"],
+    deps = [
+        ":input",
+        "//loom/binding/c:loomc",
+        "//loom/src/loom/tooling/io:file",
+        "//loom/src/loom/tooling/io:source_path",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
+    name = "loomc_configured",
+    srcs = ["loomc_configured.c"],
+    hdrs = ["loomc_configured.h"],
+    defines = iree_select({
+        "//loom/config/import:cxx": ["LOOM_TOOLING_INPUT_LOOMC_CONFIGURED_HAVE_CXX=1"],
+        "//conditions:default": [],
+    }),
+    deps = [":loomc"] + iree_select({
+        "//loom/config/import:cxx": [
+            "//loom/src/loom/import/cxx/tooling:loomc_input",
+            "//runtime/src/iree/base",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
 loom_cc_test(
     name = "input_test",
     srcs = ["input_test.cc"],

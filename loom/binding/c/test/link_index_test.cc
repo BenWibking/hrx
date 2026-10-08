@@ -114,6 +114,24 @@ TEST(LinkIndexTest, RejectsInvalidBlockSizes) {
   EXPECT_EQ(builder, nullptr);
 }
 
+TEST(LinkIndexTest, RejectsUnknownProviderRole) {
+  ContextPtr context = CreateContext();
+  BuilderPtr builder = CreateBuilder(context.get());
+  SourcePtr source = CreateTextSource("input.loom", R"(
+func.def public @entry() {
+  func.return
+}
+)");
+  const loomc_link_index_source_options_t options = {
+      /*.provider_name=*/loomc_string_view_empty(),
+      /*.role=*/static_cast<loomc_link_provider_role_t>(-1),
+  };
+  LOOMC_EXPECT_STATUS_IS(
+      LOOMC_STATUS_INVALID_ARGUMENT,
+      loomc_link_index_builder_add_source(builder.get(), source.get(), &options,
+                                          /*out_slot=*/nullptr));
+}
+
 std::vector<uint8_t> WriteBytecodeModule(const char* source_text) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_arena_block_pool_t block_pool;

@@ -28,18 +28,6 @@ _EMIT_AMDGPU_CHECK_DEPS = iree_select({
     "//conditions:default": [],
 })
 
-_IMPORT_CXX_COPTS = iree_select({
-    "//loom/config/import:cxx": ["-DLOOM_CHECK_HAVE_IMPORT_CXX=1"],
-    "//conditions:default": [],
-})
-
-_IMPORT_CXX_DEPS = iree_select({
-    "//loom/config/import:cxx": [
-        "//loom/src/loom/import/cxx/tooling:loomc_input",
-    ],
-    "//conditions:default": [],
-})
-
 _TARGET_SPIRV_CHECK_COPTS = iree_select({
     "//loom/config/target/arch:spirv": [
         "-DLOOM_CHECK_HAVE_TARGET_SPIRV=1",
@@ -133,7 +121,6 @@ _TARGET_XDNA_CHECK_DEPS = iree_select({
 })
 
 _LOOM_CHECK_PROVIDER_COPTS = (
-    _IMPORT_CXX_COPTS +
     _EMIT_AMDGPU_CHECK_COPTS +
     _TARGET_SPIRV_CHECK_COPTS +
     _EMIT_SPIRV_CHECK_COPTS +
@@ -145,7 +132,6 @@ _LOOM_CHECK_PROVIDER_COPTS = (
 )
 
 _LOOM_CHECK_PROVIDER_DEPS = (
-    _IMPORT_CXX_DEPS +
     _EMIT_AMDGPU_CHECK_DEPS +
     _TARGET_SPIRV_CHECK_DEPS +
     _EMIT_SPIRV_CHECK_DEPS +
@@ -423,6 +409,7 @@ loom_cc_library(
         "//loom/binding/c:loomc",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/testing:test_file",
+        "//loom/src/loom/tooling/cli:loomc_diagnostic_json",
         "//loom/src/loom/tooling/input",
         "//loom/src/loom/tooling/io:source_path",
         "//loom/src/loom/util:json",
@@ -585,6 +572,7 @@ loom_cc_binary(
         "//loom/src/loom/target/arch/cmd/check:check_provider",
         "//loom/src/loom/target/configured:compiler_provider_set",
         "//loom/src/loom/tooling/input:configured",
+        "//loom/src/loom/tooling/input:loomc_configured",
         "//runtime/src/iree/base",
     ] + _LOOM_CHECK_PROVIDER_DEPS,
 )
@@ -602,6 +590,7 @@ loom_cc_binary(
         "//loom/src/loom/target/arch/cmd/check:check_provider",
         "//loom/src/loom/target/configured:compiler_provider_set",
         "//loom/src/loom/tooling/input:configured",
+        "//loom/src/loom/tooling/input:loomc_configured",
         "//runtime/src/iree/base",
     ] + _LOOM_CHECK_PROVIDER_DEPS,
 )

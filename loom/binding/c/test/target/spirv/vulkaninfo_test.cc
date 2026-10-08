@@ -181,12 +181,21 @@ TEST(TargetSpirvVulkaninfoTest, ImportsGpuinfoProfileWrapper) {
             }
           },
           "VkPhysicalDeviceVulkan11Properties": {
-            "subgroupSize": 32
+            "subgroupSize": 32,
+            "subgroupSupportedOperations": [
+              "VK_SUBGROUP_FEATURE_BASIC_BIT",
+              "VK_SUBGROUP_FEATURE_BALLOT_BIT"
+            ]
+          },
+          "VkPhysicalDeviceVulkan12Properties": {
+            "denormBehaviorIndependence":
+              "VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_32_BIT_ONLY",
+            "shaderDenormPreserveFloat32": true
           }
         },
         "features": {
           "VkPhysicalDeviceFeatures": {
-            "shaderFloat64": false,
+            "shaderFloat64": true,
             "shaderInt16": true,
             "shaderInt64": true
           },
@@ -194,13 +203,33 @@ TEST(TargetSpirvVulkaninfoTest, ImportsGpuinfoProfileWrapper) {
             "shaderFloat16": true,
             "shaderInt8": true,
             "storageBuffer8BitAccess": true,
-            "bufferDeviceAddress": true
+            "bufferDeviceAddress": true,
+            "vulkanMemoryModel": true,
+            "vulkanMemoryModelDeviceScope": true,
+            "shaderBufferInt64Atomics": true,
+            "shaderSharedInt64Atomics": true
           },
           "VkPhysicalDevice16BitStorageFeatures": {
             "storageBuffer16BitAccess": true
           },
           "VkPhysicalDeviceCooperativeMatrixFeaturesKHR": {
             "cooperativeMatrix": true
+          },
+          "VkPhysicalDeviceShaderAtomicFloatFeaturesEXT": {
+            "shaderBufferFloat32Atomics": true,
+            "shaderSharedFloat32Atomics": true,
+            "shaderBufferFloat32AtomicAdd": true,
+            "shaderSharedFloat32AtomicAdd": true,
+            "shaderBufferFloat64Atomics": true,
+            "shaderSharedFloat64Atomics": true,
+            "shaderBufferFloat64AtomicAdd": true,
+            "shaderSharedFloat64AtomicAdd": true
+          },
+          "VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT": {
+            "shaderBufferFloat16Atomics": true,
+            "shaderSharedFloat16Atomics": true,
+            "shaderBufferFloat16AtomicAdd": true,
+            "shaderSharedFloat16AtomicAdd": true
           },
           "UnexpectedFutureFeatureStruct": {
             "surprise": true
@@ -238,12 +267,34 @@ TEST(TargetSpirvVulkaninfoTest, ImportsGpuinfoProfileWrapper) {
   ExpectFeatureState(profile.get(), LOOMC_SPIRV_FEATURE_FLOAT16,
                      LOOMC_TARGET_FACT_STATE_TRUE);
   ExpectFeatureState(profile.get(), LOOMC_SPIRV_FEATURE_FLOAT64,
-                     LOOMC_TARGET_FACT_STATE_FALSE);
+                     LOOMC_TARGET_FACT_STATE_TRUE);
   ExpectFeatureState(profile.get(),
                      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_16BIT_ACCESS,
                      LOOMC_TARGET_FACT_STATE_TRUE);
   ExpectFeatureState(profile.get(), LOOMC_SPIRV_FEATURE_COOPERATIVE_MATRIX_KHR,
                      LOOMC_TARGET_FACT_STATE_TRUE);
+  const loomc_spirv_feature_t extended_features[] = {
+      LOOMC_SPIRV_FEATURE_VULKAN_MEMORY_MODEL_DEVICE_SCOPE,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_INT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_INT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT16_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT16_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT16_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT16_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT32_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT32_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT32_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT32_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT64_ATOMICS,
+      LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT64_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT64_ATOMIC_ADD,
+      LOOMC_SPIRV_FEATURE_FLOAT32_DENORM_PRESERVE,
+      LOOMC_SPIRV_FEATURE_GROUP_NON_UNIFORM_BALLOT,
+  };
+  for (loomc_spirv_feature_t feature : extended_features) {
+    ExpectFeatureState(profile.get(), feature, LOOMC_TARGET_FACT_STATE_TRUE);
+  }
 
   ExpectLimitValue(profile.get(), LOOMC_SPIRV_LIMIT_MAX_WORKGROUP_SIZE_X,
                    LOOMC_TARGET_FACT_STATE_TRUE, 256);
