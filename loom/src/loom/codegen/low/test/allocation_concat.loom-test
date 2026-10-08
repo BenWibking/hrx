@@ -177,3 +177,32 @@ CHECK: *"spill_count":0,*
 CHECK: *"name":"tuple"*"base":2,"count":4}*
 CHECK: *"name":"low"*"base":0,"count":2}*
 CHECK: *"name":"result"*"base":2,"count":4}*
+
+// ====
+
+// RUN: emit low-allocation-query @retained_source_reserves_edge_destination_once assignment-count values=%lhs,%rhs,%keep,%part,%sum,%pair,%state
+
+test.target<low_core> @target
+
+// The retained source reserves the edge destination first. The other source
+// cannot alias its destination unit while lhs is live, and must not reserve the
+// already assigned destination again.
+low.func.def target<test.low.core>(@target) @retained_source_reserves_edge_destination_once(%lhs: reg<test.i32>, %rhs: reg<test.i32>) -> (reg<test.i32 x2>, reg<test.i32>, reg<test.i32>) asm {
+  %keep = test.add.i32 %lhs, %lhs
+  %part = test.mul.i32 %rhs, %rhs
+  %sum = test.add.i32 %lhs, %rhs
+  %pair = concat(%part, %keep) : (reg<test.i32>, reg<test.i32>) -> reg<test.i32 x2>
+  low.br ^join(%pair: reg<test.i32 x2>)
+^join(%state: reg<test.i32 x2>):
+  return %state, %keep, %sum
+}
+
+// ----
+assignments: 7
+value %lhs: test.i32 -> target_id[0:1]
+value %rhs: test.i32 -> target_id[1:1]
+value %keep: test.i32 -> target_id[2:1]
+value %part: test.i32 -> target_id[3:1]
+value %sum: test.i32 -> target_id[4:1]
+value %pair: test.i32 -> target_id[3:2]
+value %state: test.i32 -> target_id[0:2]
