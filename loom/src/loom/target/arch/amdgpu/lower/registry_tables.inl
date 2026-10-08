@@ -11,7 +11,7 @@ static const loom_amdgpu_lower_dispatch_row_t
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_INDEX_CONSTANT)] =
             LOOM_AMDGPU_VALUE_DATA_STORAGE_ROW(
                 LOOM_OP_INDEX_CONSTANT, loom_amdgpu_constant_plan_t,
-                loom_amdgpu_select_index_constant_dispatch,
+                loom_amdgpu_select_constant_dispatch,
                 loom_amdgpu_emit_constant_dispatch, NULL,
                 LOOM_AMDGPU_STORAGE_NONE),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_INDEX_CAST)] =
@@ -76,7 +76,7 @@ static const loom_amdgpu_lower_dispatch_row_t
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_CONSTANT)] =
             LOOM_AMDGPU_VALUE_DATA_STORAGE_ROW(
                 LOOM_OP_SCALAR_CONSTANT, loom_amdgpu_constant_plan_t,
-                loom_amdgpu_select_scalar_constant_dispatch,
+                loom_amdgpu_select_constant_dispatch,
                 loom_amdgpu_emit_constant_dispatch, NULL,
                 LOOM_AMDGPU_STORAGE_NONE),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_ADDI)] =
@@ -405,7 +405,7 @@ static const loom_amdgpu_lower_dispatch_row_t
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_VECTOR_CONSTANT)] =
             LOOM_AMDGPU_VALUE_DATA_STORAGE_ROW(
                 LOOM_OP_VECTOR_CONSTANT, loom_amdgpu_constant_plan_t,
-                loom_amdgpu_select_vector_constant_dispatch,
+                loom_amdgpu_select_constant_dispatch,
                 loom_amdgpu_emit_constant_dispatch, NULL,
                 LOOM_AMDGPU_STORAGE_NONE),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_VECTOR_IOTA)] =

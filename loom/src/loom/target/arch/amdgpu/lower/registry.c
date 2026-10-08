@@ -273,17 +273,9 @@ static iree_status_t loom_amdgpu_emit_vector_construct_dispatch(
   return loom_amdgpu_lower_vector_construct_op(context, source_op, plan);
 }
 
-LOOM_AMDGPU_DEFINE_DATA_SELECT(loom_amdgpu_select_index_constant_dispatch,
+LOOM_AMDGPU_DEFINE_DATA_SELECT(loom_amdgpu_select_constant_dispatch,
                                loom_amdgpu_constant_plan_t,
-                               loom_amdgpu_select_index_constant_plan)
-
-LOOM_AMDGPU_DEFINE_DATA_SELECT(loom_amdgpu_select_scalar_constant_dispatch,
-                               loom_amdgpu_constant_plan_t,
-                               loom_amdgpu_select_scalar_constant_plan)
-
-LOOM_AMDGPU_DEFINE_DATA_SELECT(loom_amdgpu_select_vector_constant_dispatch,
-                               loom_amdgpu_constant_plan_t,
-                               loom_amdgpu_select_vector_constant_plan)
+                               loom_amdgpu_select_constant_plan)
 
 LOOM_AMDGPU_DEFINE_DATA_EMIT(loom_amdgpu_emit_constant_dispatch,
                              loom_amdgpu_constant_plan_t,

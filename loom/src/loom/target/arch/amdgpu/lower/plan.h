@@ -56,6 +56,8 @@ typedef struct loom_amdgpu_constant_plan_t {
   uint32_t register_count;
   // Immediate bit patterns emitted into selected result registers.
   uint32_t bit_patterns[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];
+  // Interned Low result carrier selected before source analysis retires.
+  loom_type_id_t result_type;
   // Boolean payload for i1 constants.
   bool i1_value;
 } loom_amdgpu_constant_plan_t;
