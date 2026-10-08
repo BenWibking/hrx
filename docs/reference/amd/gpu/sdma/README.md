@@ -16,6 +16,7 @@ depend on the engine generation and native transport.
 | [Broadcast and multicast](fanout.md) | `COPY_LINEAR_BROADCAST` / `COPY_BROADCAST_LINEAR`, `COPY_MULTICAST`, fused wait/signal blocks, destination pairing, and joins across copy engines. |
 | [Batch composition](fanout.md#batch-composition-and-descriptor-ownership) | `hsa_amd_memory_async_batch_copy`: operation/entry/packet counts, agent and engine grouping, descriptor-control propagation and per-operation completion ownership. |
 | [Rectangular copy](rectangular-copy.md) | `COPY_LINEAR_SUBWIN` / `COPY_LINEAR_RECT`: element units, row/slice pitches, subwindow layouts, tiling and geometry-specific cache controls. |
+| [Image transfers](images.md) | `COPY_TILED_SUBWIN` / `COPY_T2T_SUBWIN`: native surface and mip operands, metadata layouts, compression admission, staged transfers and temporary-storage reuse. |
 | [Constant fill](fill.md) | `CONST_FILL` / `CONSTANT_FILL`: legacy and DWORD count forms, chunk limits, cache/compression fields, caller selection and completion. |
 | [Inline data writes](write.md) | `WRITE_LINEAR` / `WRITE_UNTILED` / legacy `DMA_PACKET_WRITE`: direct versus minus-one counts, policy layouts, metadata/control callers, inline versus uploaded input and final storage use. |
 | [Ordering](ordering.md) | `NOP` / legacy `DMA_PACKET_NOP`: counted bodies, firmware burst selection, framing versus transfer drains, temporary-buffer reuse, overlap and NPD. |

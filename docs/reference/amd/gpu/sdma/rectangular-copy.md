@@ -312,7 +312,9 @@ compressed-source/destination flags. Its one-dimensional GFX12 COPY_LINEAR
 builder has a separate conditional metadata DWORD. RADV's tiled-subwindow
 path likewise has explicit DCC selection and generation-specific metadata
 operands. Those metadata protocols do not follow from the ordinary linear
-subwindow header or its element size. [Typed-buffer contract][pal-api]
+subwindow header or its element size. The [image-transfer chapter](images.md)
+describes those tiled operands, actual compression admission and staged-copy
+ownership. [Typed-buffer contract][pal-api]
 [Common flags][pal-caller] [GFX12 typed builder][pal12-build]
 [GFX12 linear metadata][pal12-linear-meta] [RADV tiled metadata][mesa-tiled-meta]
 

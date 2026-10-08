@@ -203,21 +203,29 @@ for outstanding work. [Native command storage][mesa-command-storage]
 
 ### PAL metadata and separately embedded updates
 
-PAL GFX10's inline builder is selected for image DCC state metadata. Its
-caller requires tracking metadata, a non-decompressed layout and permission
-under `waSdmaPreventCompressedSurfUse`. It copies a zero-initialized 16-byte
-record with `isCompressed=1`: four DWORDs `[1, 0, 0, 0]`, count field 3,
-eight command DWORDs total. The local record can expire once copied into the
-command stream; the destination is part of the image's bound memory.
-[Inline builder][pal-builder] [Selected caller][pal-metadata]
+PAL GFX10 contains a conditional inline write for image DCC state metadata.
+Its caller requires tracking metadata, a non-decompressed color layout and
+permission under `waSdmaPreventCompressedSurfUse`. At the cited revision,
+the image-layout producer excludes `LayoutDmaEngine` from both compressed
+color-state maps, and the copy API requires the actual engine bit in the
+supplied layout. A valid ordinary DMA layout therefore does not select this
+write. The [image-transfer admission rules](images.md#metadata-address-paths)
+connect that producer and caller contract to the conditional builder.
+[Inline builder][pal-builder] [Conditional caller][pal-metadata]
+
+When selected, the builder copies a zero-initialized 16-byte record with
+`isCompressed=1`: four DWORDs `[1, 0, 0, 0]`, count field 3, eight command
+DWORDs total. The local record can expire once copied into the command
+stream; the destination is part of the image's bound memory.
 [Record layout][pal-metadata-record] [Bound destination][pal-metadata-address]
 
-That update follows selected compressed-destination image copies. Later
-decompression can use the state as a graphics predicate; its compute path
-is separate. Both the image and the necessary producer/consumer dependency
-outlive the inline record's host capture. PAL GFX12's declaration supplies
-the layout above, while its ordinary update API uses the distinct path below.
-[Copy caller][pal-metadata-copy] [Decompression consumer][pal-metadata-consumer]
+The conditional callsites follow destination image copies. Decompression
+can consume this state as a graphics predicate; its compute path is
+separate. That consumer does not establish reachability of the DMA write.
+Both image storage and producer/consumer dependencies outlive the inline
+record's host capture. PAL GFX12's ordinary update API uses the distinct
+path below. [Conditional copy caller][pal-metadata-copy]
+[Decompression consumer][pal-metadata-consumer]
 
 Both GFX10 and GFX12 `CmdUpdateMemory` copy host values into GPU embedded
 storage, then submit COPY packets from it. Their public contract names
