@@ -201,11 +201,15 @@ static iree_status_t iree_hal_vulkan_slab_pool_query_owner(
     families = IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY;
   }
 
-  // Native storage supports the ordinary Vulkan execution ABI independently
+  // Native storage supports both storage and uniform bindings independently
   // of public family permissions, including a scope requesting only a native
-  // address. The same translation is used when the provider allocates a slab.
+  // address. Uniform usage makes Vulkan include its uniform-buffer alignment
+  // in the native requirements even when the public scope only grants
+  // transfers; storage-buffer alignment alone can be smaller.
+  // The provider uses these same usage bits when allocating each slab.
   const iree_hal_buffer_usage_t native_usage =
-      usage | IREE_HAL_BUFFER_USAGE_STORAGE;
+      usage | IREE_HAL_BUFFER_USAGE_STORAGE |
+      IREE_HAL_BUFFER_USAGE_DISPATCH_UNIFORM_READ;
   const VkBufferCreateInfo create_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .size = 4,
