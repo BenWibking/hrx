@@ -62,6 +62,12 @@ def test_uniform_shifts_cover_constant_and_runtime_counts_for_all_lane_widths():
         assert range_guard.field == "rhs"
         assert (range_guard.minimum, range_guard.maximum) == (0, bit_count - 1)
         constant = any(guard.kind is GuardKind.VALUE_EXACT_I64 for guard in rule.guards)
+        if constant:
+            assert rule.guards[0].kind is GuardKind.VALUE_EXACT_I64
+        else:
+            assert rule.guards[0].value_ref == ValueRef.uniform_element_origin_operand(
+                "rhs"
+            )
         actual.add((bit_count, operations[rule.source_op], constant))
         final = rule.emit[-1]
         assert (

@@ -76,6 +76,8 @@ def uniform_shift_rules() -> Iterable[DescriptorRule]:
                     source_op=source_op,
                     descriptor=descriptor,
                     guards=(
+                        # Reject varying counts before testing packet shapes.
+                        count_guard,
                         *(
                             Guard.value_type(field, vector_type)
                             for field in ("lhs", "rhs", "result")
@@ -84,7 +86,6 @@ def uniform_shift_rules() -> Iterable[DescriptorRule]:
                         # scalar legalization uses an I32 carrier. Restrict the
                         # native selection to their common valid count domain.
                         Guard.value_i64_range("rhs", 0, bit_count - 1),
-                        count_guard,
                     ),
                     emit=(
                         *setup,

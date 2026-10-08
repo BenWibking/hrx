@@ -225,12 +225,13 @@ def _immediate_shift_rules(
                     # One immediate instruction wins over either count setup.
                     priority=2,
                     guards=(
+                        # Reject varying counts before testing packet shapes.
+                        Guard.value_exact_i64("rhs"),
                         *_typed_guards(
                             ("lhs", "rhs", "result"),
                             _full_vector_type(family.element, width),
                         ),
                         Guard.value_i64_range("rhs", 0, family.element.bit_width - 1),
-                        Guard.value_exact_i64("rhs"),
                     ),
                     emit=(
                         _op_emit(
@@ -282,14 +283,15 @@ def _avx2_uniform_shift_rules(
                     source_op=_INTEGER_SOURCE_OPS[family.source_operation],
                     descriptor=descriptor,
                     guards=(
+                        # Reject absent scalar origins before packet shapes.
+                        Guard.uniform_element_origin_type(
+                            "rhs", Scalar(family.element.name)
+                        ),
                         *_typed_guards(
                             ("lhs", "rhs", "result"),
                             _full_vector_type(family.element, width),
                         ),
                         Guard.value_i64_range("rhs", 0, bit_width - 1),
-                        Guard.uniform_element_origin_type(
-                            "rhs", Scalar(family.element.name)
-                        ),
                     ),
                     emit=(
                         *normalization,

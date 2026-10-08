@@ -101,6 +101,7 @@ def test_uniform_shift_rules_cover_native_types_widths_and_count_forms() -> None
                 )
             )
             if immediate:
+                assert rule.guards[0].kind == GuardKind.VALUE_EXACT_I64
                 assert len(rule.emit) == 1
                 assert rule.priority == 2
             else:
@@ -108,6 +109,7 @@ def test_uniform_shift_rules_cover_native_types_widths_and_count_forms() -> None
                 origin_guard = next(
                     guard for guard in rule.guards if guard.value_ref == origin
                 )
+                assert rule.guards[0] == origin_guard
                 assert origin_guard.type_pattern == Scalar(
                     f"i{count_range.maximum + 1}"
                 )
