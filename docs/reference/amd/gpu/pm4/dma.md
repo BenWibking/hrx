@@ -465,6 +465,11 @@ submission path, including the separately described MEC completion question.
 [RADV prefetch][m-prefetch] [RADV drain][m-dma-callers] [RADV end][m-end]
 [RadeonSI end][m-si-end]
 
+[Translation and shader warmup](translation.md) separates this payload
+prefetch from `PRIME_UTCL2`. It also follows RADV's upload dependency and
+post-dispatch prefetch ordering: issuing a warmup request does not publish
+new code or retire the shader allocation.
+
 ## Cache routes and architecture differences
 
 GFX10/GFX11 ordinary CP copies generally route through L2. On GFX12, the same

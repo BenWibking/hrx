@@ -49,6 +49,7 @@ trailer. [Compute postamble][postamble]
 | [Completion publication](release.md) | RELEASE_MEM fields, confirmation and interrupt selectors, legacy EVENT_WRITE_EOP/EOS, event/clock/value owners and storage retirement. |
 | [Atomic operations](atomics.md) | TC integer operations, returned values, command modes, participant domains and cache/retirement contracts. |
 | [Cache control](cache.md) | Acquire/release fields, native-generation differences, ranges, scopes, recorded BLT/cache history and complete visibility sequences. |
+| [Address translation](translation.md) | PRIME_UTCL2 warmup and INVALIDATE_TLBS fields; actual shader-prefetch callers, page-table publication, KIQ/MES selection, acknowledgments and mapping retirement. |
 | [Compiled dispatch](dispatch.md) | Executable backing, register and argument ABI, DISPATCH_DIRECT and initiator field families, offset/partial-group geometry, GFX12 distribution controls, MEM_ORDERED mode, runtime state and completion. |
 | [Shader register transport](registers.md) | SET_SH_REG, SET_SH_REG_INDEX, PAIRS/PACKED forms, LOAD_SH_REG and LOAD_SH_REG_INDEX; engine and firmware selection, field units, inline copies, borrowed inputs and context lifetime. |
 | [Compute affinity and queue priority](../scheduling.md) | `COMPUTE_STATIC_THREAD_MGMT_SE*`, KMD mask composition, per-SE preambles and the distinct KFD queue controls. |

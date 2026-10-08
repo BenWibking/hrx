@@ -7,6 +7,12 @@ separate parts of that dependency. `ACQUIRE_MEM` supplies cache actions at the
 command processor; `RELEASE_MEM` can perform cache actions after a pipeline
 event and then publish a completion value.
 
+These payload-cache actions are separate from
+[translation priming and invalidation](translation.md). `PRIME_UTCL2` warms
+translations for an existing mapping; the native VM owner orders page-table
+updates and its selected TLB invalidation. Neither substitutes for the data
+producer's release or the consumer's acquire described here.
+
 This chapter follows ordinary compute callers in PAL, Mesa and ROCr, with
 native Linux emitters for GC9.4.3/4 and GC12.1. GFX10/GFX11, PAL's GFX12,
 and GC12.1 have different field meanings despite sharing the opcodes. The
