@@ -34,6 +34,7 @@ iree_py_library(
     "packed_dot.py"
     "packet_conversion.py"
     "packet_memory.py"
+    "packet_program.py"
     "predicate_concat.py"
     "reduction.py"
     "scalar_program.py"
