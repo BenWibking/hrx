@@ -356,7 +356,7 @@ class Pm4SdmaStreamingTest : public Pm4SdmaTest {
         }
         pm4.BindCompute(program,
                         arguments.device_address + page * sizeof(uint32_t));
-        pm4.DispatchWave32(kGridSize, 1, 1);
+        pm4.Dispatch(program, kGridSize, 1, 1);
         pm4.ReleaseSystem32(progress + kComputeCompleteByteOffset, token);
         ASSERT_LE(pm4.word_count(), kPm4SlotWords);
         while (pm4.word_count() < kPm4SlotWords) {

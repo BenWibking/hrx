@@ -87,6 +87,13 @@ static bool loom_wasm_type_is_v128_register(loom_type_t type) {
   }
 }
 
+static bool loom_wasm_source_function_vector_carrier_supported(
+    void* user_data, const loom_module_t* module, loom_type_t source_type) {
+  (void)user_data;
+  (void)module;
+  return loom_wasm_type_is_v128_register(source_type);
+}
+
 static iree_status_t loom_wasm_make_i32_register_type(
     loom_low_lower_context_t* context, loom_type_t* out_type) {
   return loom_low_lower_make_register_type(
@@ -168,6 +175,11 @@ static const loom_low_lower_policy_t kWasmLowLowerPolicy = {
     .map_argument = {.fn = loom_wasm_map_argument, .user_data = NULL},
     .source_type_supported = {.fn = loom_wasm_source_type_supported,
                               .user_data = NULL},
+    .source_function_vector_carrier_supported =
+        {
+            .fn = loom_wasm_source_function_vector_carrier_supported,
+            .user_data = NULL,
+        },
     .contract = LOOM_WASM_CONTRACT,
 };
 

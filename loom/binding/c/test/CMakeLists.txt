@@ -40,6 +40,19 @@ endif()
 
 loom_cc_test(
   NAME
+    interop_test
+  SRCS
+    "interop_test.cc"
+  DEPS
+    ::test_util
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::binding::c::interop
+    loom::binding::c::loomc
+)
+
+loom_cc_test(
+  NAME
     base_test
   SRCS
     "base_test.cc"

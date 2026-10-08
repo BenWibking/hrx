@@ -39,12 +39,26 @@ provide exact search terms within the tree.
 | Task | Starting points |
 | --- | --- |
 | Identify the compiler target, physical GC or SDMA IP, and native transport | [Architecture identity and discovery](gpu/architectures.md). |
+| Select a legal wave32 or wave64 program mode | [Wavefront modes and target restrictions](gpu/architectures.md#wavefront-modes), [PM4 launch and waves-per-workgroup policy](gpu/pm4/dispatch.md#register-binding-and-launch). |
+| Select eligible compute resources and queue priority | [CU/WGP affinity, harvested SE/SH/XCC mapping, `COMPUTE_STATIC_THREAD_MGMT_SE*` and native priority translation](gpu/scheduling.md). |
+| Join workgroups inside a cooperative dispatch | [Shared cooperative queues, `ALLOC_QUEUE_GWS`, occupancy and grid barrier memory scopes](gpu/cooperative.md). |
+| Share input traffic across a workgroup cluster | [CDNA5 cluster geometry, `CLUSTER_LOAD`, multicast masks, completion and LDS reuse](gpu/clusters.md). |
 | Reserve, publish and reuse queue storage | [PM4 ring frontiers](gpu/pm4/publication.md), [AQL header and doorbell publication](gpu/aql/publication.md), [SDMA reservation and ordered commit](gpu/sdma/publication.md). |
+| Populate an AQL metadata-prefetch ring | [Paired slots, four headers, kernarg preload and `CP_HQD_KD_CNTL`](gpu/aql/metadata.md). |
+| Wake a host when GPU work changes a signal | [Native mailbox/event representation, interrupt decoding and check-to-sleep ordering](gpu/notifications.md). |
+| Submit Windows GPU work and observe native completion | [WDDM command acceptance, `RingBufferFenceRelease`, monitored fences and native GPU waits](gpu/wddm.md). |
 | Launch a compiled GPU program | [PM4 `SET_SH_REG` and `DISPATCH_DIRECT`](gpu/pm4/dispatch.md), [AQL kernel dispatch and descriptors](gpu/aql/dispatch.md). |
 | Bind shared workgroup storage | [PM4 `LDS_SIZE`](gpu/pm4/lds.md), [AQL group storage](gpu/aql/dispatch.md#static-and-dynamic-group-storage). |
+| Stream tensor tiles through LDS | [TDM descriptor fields, stride units, padding and row gather/scatter](gpu/tensor-memory.md), [asynchronous completion and ready/empty slot reuse](gpu/async-memory.md). |
+| Size and reclaim private scratch backing | [AQL `COMPUTE_TMPRING_SIZE`, physical slots and firmware ownership](gpu/aql/scratch.md). |
+| Size compute context-save storage and preserve suspended work | [CWSR, `ctx_save_restore_size`, per-XCC headers and native removal](gpu/context-save.md). |
 | Determine which agents can access a memory pool | [Pool grain, per-agent access and SVM host access](gpu/recipes/host-device.md#pool-grain-agent-access-and-svm). |
+| Interpret SVM prefetch completion and reuse its resources | [Page residency and native results](gpu/recipes/host-device.md#prefetch-completion-and-page-residency), [accepted work and signal reuse](gpu/recipes/host-device.md#accepted-work-and-signal-reuse). |
 | Make a producer's writes visible to its consumer | [GPU cache controls](gpu/pm4/cache.md), [CPU/GPU handoffs](gpu/recipes/host-device.md), [all six CPU/GPU/NPU directions](interop/README.md). |
+| Retain repeatedly used GPU data in cache | [Temporal hints, persisting-size requests, native admission and HIP access windows](gpu/cache-residency.md). |
+| Consume inbound RDMA writes | [Host visibility, `hipDeviceFlushGPUDirectRDMAWrites`, HDP mapping and independent GPU acquisition](interop/rdma.md). |
 | Copy or fill memory and wait for completion | [SDMA packet index](gpu/sdma/README.md), [PM4 `DMA_DATA`](gpu/pm4/dma.md), [SDMA upload → AQL dispatch → SDMA download](gpu/recipes/README.md#sdma-upload-aql-dispatch-and-sdma-download). |
+| Reuse host input after an upload | [Source consumption, `hipMemcpySrcAccessOrder`, staging lifetime and destination completion](gpu/recipes/host-device.md#source-consumption-and-copy-completion). |
 | Replace or reuse commands and executable storage | [PM4 indirect buffers](gpu/pm4/command-buffers.md), [AQL command carriers](gpu/aql/transfers.md), [AQL executable lifetime](gpu/aql/dispatch.md#executable-publication-and-final-use), [SDMA command buffers](gpu/sdma/command-buffers.md). |
 | Configure an NPU transfer or split/join flow | [Tile DMA descriptors and task tokens](xdna/dma.md), [stream switches and multicast](xdna/interconnects.md), [pipeline ownership](interop/pipelines.md). |
 | Exchange resident GPU/NPU payloads and return credits | [GPU/NPU ready and completion edges](gpu/recipes/gpu-npu.md#resident-programs-and-per-generation-ownership), [slot generations and drain](interop/pipelines.md). |

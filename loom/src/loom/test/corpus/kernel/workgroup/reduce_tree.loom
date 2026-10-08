@@ -1,3 +1,106 @@
+// Serially sums every scalar input element and broadcasts the result across
+// the output span. Leader-only and all-lane target kernels share this oracle.
+func.def @workgroup_tree_float_sum_oracle(%input: buffer, %output: buffer) {
+  %input_length = buffer.length %input
+  %bounded_input_length = index.assume %input_length [range(%input_length, 0, 9223372036854775807)] : offset
+  %input_bytes = index.cast %bounded_input_length : offset to index
+  %element_bytes = index.constant 4 : index
+  %unbounded_element_count = index.div %input_bytes, %element_bytes : index
+  %element_count = index.assume %unbounded_element_count [range(%unbounded_element_count, 1, 9223372036854775807)] : index
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %input[%base] : buffer -> view<[%element_count]xf32>
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %initial_sum = scalar.constant 0.0 : f32
+  %sum = scf.for %position = [%begin to %element_count step %step](%accumulator = %initial_sum : f32) -> (f32) {
+    %bounded_position = index.assume %position [range(%position, 0, 9223372036854775807)] : index
+    %value = view.load %input_view[%bounded_position] : view<[%element_count]xf32> -> f32
+    %next = scalar.addf %accumulator, %value : f32
+    scf.yield %next : f32
+  }
+  %output_length = buffer.length %output
+  buffer.fill %sum, %output[%base], %output_length : f32
+  func.return
+}
+
+// Computes unsigned minimum directly from the integer source values.
+func.def @workgroup_tree_unsigned_min_oracle(%input: buffer, %output: buffer) {
+  %input_length = buffer.length %input
+  %bounded_input_length = index.assume %input_length [range(%input_length, 0, 9223372036854775807)] : offset
+  %input_bytes = index.cast %bounded_input_length : offset to index
+  %element_bytes = index.constant 4 : index
+  %unbounded_element_count = index.div %input_bytes, %element_bytes : index
+  %element_count = index.assume %unbounded_element_count [range(%unbounded_element_count, 1, 9223372036854775807)] : index
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %input[%base] : buffer -> view<[%element_count]xi32>
+  %begin = index.constant 1 : index
+  %step = index.constant 1 : index
+  %first = view.load %input_view[0] : view<[%element_count]xi32> -> i32
+  %minimum = scf.for %position = [%begin to %element_count step %step](%current = %first : i32) -> (i32) {
+    %bounded_position = index.assume %position [range(%position, 0, 9223372036854775807)] : index
+    %value = view.load %input_view[%bounded_position] : view<[%element_count]xi32> -> i32
+    %next = scalar.minui %current, %value : i32
+    scf.yield %next : i32
+  }
+  %output_length = buffer.length %output
+  buffer.fill %minimum, %output[%base], %output_length : i32
+  func.return
+}
+
+// Sums the two vector positions independently with scalar arithmetic and
+// broadcasts the pair to every output row.
+func.def @workgroup_tree_vector_sum_oracle(%input: buffer, %output: buffer) {
+  %input_length = buffer.length %input
+  %bounded_input_length = index.assume %input_length [range(%input_length, 0, 9223372036854775807)] : offset
+  %input_bytes = index.cast %bounded_input_length : offset to index
+  %row_bytes = index.constant 8 : index
+  %row_count = index.div %input_bytes, %row_bytes : index
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %input[%base] : buffer -> view<[%row_count]x2xf32>
+  %output_view = buffer.view %output[%base] : buffer -> view<[%row_count]x2xf32>
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %initial_sum = scalar.constant 0.0 : f32
+  %left_sum, %right_sum = scf.for %row = [%begin to %row_count step %step](%left = %initial_sum : f32, %right = %initial_sum : f32) -> (f32, f32) {
+    %bounded_row = index.assume %row [range(%row, 0, 9223372036854775807)] : index
+    %left_value = view.load %input_view[%bounded_row, 0] : view<[%row_count]x2xf32> -> f32
+    %right_value = view.load %input_view[%bounded_row, 1] : view<[%row_count]x2xf32> -> f32
+    %next_left = scalar.addf %left, %left_value : f32
+    %next_right = scalar.addf %right, %right_value : f32
+    scf.yield %next_left, %next_right : f32, f32
+  }
+  %pair = vector.from_elements %left_sum, %right_sum : vector<2xf32>
+  scf.for %row = [%begin to %row_count step %step] {
+    %bounded_row = index.assume %row [range(%row, 0, 9223372036854775807)] : index
+    vector.store %pair, %output_view[%bounded_row, 0] : vector<2xf32>, view<[%row_count]x2xf32>
+  }
+  func.return
+}
+
+// Computes numeric maximum serially from the scalar source values.
+func.def @workgroup_tree_maxnum_oracle(%input: buffer, %output: buffer) {
+  %input_length = buffer.length %input
+  %bounded_input_length = index.assume %input_length [range(%input_length, 0, 9223372036854775807)] : offset
+  %input_bytes = index.cast %bounded_input_length : offset to index
+  %element_bytes = index.constant 4 : index
+  %unbounded_element_count = index.div %input_bytes, %element_bytes : index
+  %element_count = index.assume %unbounded_element_count [range(%unbounded_element_count, 1, 9223372036854775807)] : index
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %input[%base] : buffer -> view<[%element_count]xf32>
+  %begin = index.constant 1 : index
+  %step = index.constant 1 : index
+  %first = view.load %input_view[0] : view<[%element_count]xf32> -> f32
+  %maximum = scf.for %position = [%begin to %element_count step %step](%current = %first : f32) -> (f32) {
+    %bounded_position = index.assume %position [range(%position, 0, 9223372036854775807)] : index
+    %value = view.load %input_view[%bounded_position] : view<[%element_count]xf32> -> f32
+    %next = scalar.maxnumf %current, %value : f32
+    scf.yield %next : f32
+  }
+  %output_length = buffer.length %output
+  buffer.fill %maximum, %output[%base], %output_length : f32
+  func.return
+}
+
 kernel.def @workgroup_tree_float_leader() {
   %unit = index.constant 1 : index
   %size = index.constant 256 : index
@@ -17,12 +120,15 @@ kernel.def @workgroup_tree_float_leader() {
   kernel.return
 }
 
-check.case public @workgroup_tree_float_leader_case {
-  %input = check.generate.iota offset(1.0) step(1.0) : tensor<256xf32>
-  %output = check.generate.fill value(-1.0) : tensor<1xf32>
-  %expected = check.generate.fill value(32896.0) : tensor<1xf32>
-  kernel.launch @workgroup_tree_float_leader(%input, %output) : (tensor<256xf32>, tensor<1xf32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<1xf32>
+check.scenario @workgroup_tree_float_leader_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(1.0) step(1.0) : tensor<256xf32>
+    %output = check.generate.fill value(-1.0) : tensor<1xf32>
+    check.compare<@workgroup_tree_float_leader, @workgroup_tree_float_sum_oracle>(%input, %output) : (tensor<256xf32>, tensor<1xf32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<256xf32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1xf32>
+    }
+  }
   check.return
 }
 
@@ -45,12 +151,24 @@ kernel.def @workgroup_tree_integer_leader() {
   kernel.return
 }
 
-check.case public @workgroup_tree_integer_leader_case {
-  %input = check.generate.iota offset(-2147483393) step(-1) : tensor<256xi32>
-  %output = check.generate.fill value(-1) : tensor<1xi32>
-  %expected = check.generate.fill value(-2147483648) : tensor<1xi32>
-  kernel.launch @workgroup_tree_integer_leader(%input, %output) : (tensor<256xi32>, tensor<1xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<1xi32>
+check.scenario @workgroup_tree_integer_leader_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-2147483393) step(-1) : tensor<256xi32>
+    %output = check.generate.fill value(-1) : tensor<1xi32>
+    check.compare<@workgroup_tree_integer_leader, @workgroup_tree_unsigned_min_oracle>(%input, %output) : (tensor<256xi32>, tensor<1xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<256xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1xi32>
+    }
+  }
+  // Alternating all-ones and one exercises the signed/unsigned boundary.
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-1) step(2) period(2) : tensor<256xi32>
+    %output = check.generate.fill value(-1) : tensor<1xi32>
+    check.compare<@workgroup_tree_integer_leader, @workgroup_tree_unsigned_min_oracle>(%input, %output) : (tensor<256xi32>, tensor<1xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<256xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1xi32>
+    }
+  }
   check.return
 }
 
@@ -69,12 +187,15 @@ kernel.def @workgroup_tree_vector_all() {
   kernel.return
 }
 
-check.case public @workgroup_tree_vector_all_case {
-  %input = check.generate.iota offset(1.0) step(1.0) : tensor<256x2xf32>
-  %output = check.generate.fill value(-1.0) : tensor<256x2xf32>
-  %expected = check.generate.iota offset(65536.0) step(256.0) period(2) : tensor<256x2xf32>
-  kernel.launch @workgroup_tree_vector_all(%input, %output) : (tensor<256x2xf32>, tensor<256x2xf32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<256x2xf32>
+check.scenario @workgroup_tree_vector_all_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(1.0) step(1.0) : tensor<256x2xf32>
+    %output = check.generate.fill value(-1.0) : tensor<256x2xf32>
+    check.compare<@workgroup_tree_vector_all, @workgroup_tree_vector_sum_oracle>(%input, %output) : (tensor<256x2xf32>, tensor<256x2xf32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<256x2xf32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<256x2xf32>
+    }
+  }
   check.return
 }
 
@@ -97,12 +218,15 @@ kernel.def @workgroup_tree_three_waves() {
   kernel.return
 }
 
-check.case public @workgroup_tree_three_waves_case {
-  %input = check.generate.iota offset(1.0) step(1.0) : tensor<96xf32>
-  %output = check.generate.fill value(-1.0) : tensor<1xf32>
-  %expected = check.generate.fill value(4656.0) : tensor<1xf32>
-  kernel.launch @workgroup_tree_three_waves(%input, %output) : (tensor<96xf32>, tensor<1xf32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<1xf32>
+check.scenario @workgroup_tree_three_waves_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(1.0) step(1.0) : tensor<96xf32>
+    %output = check.generate.fill value(-1.0) : tensor<1xf32>
+    check.compare<@workgroup_tree_three_waves, @workgroup_tree_float_sum_oracle>(%input, %output) : (tensor<96xf32>, tensor<1xf32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<96xf32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1xf32>
+    }
+  }
   check.return
 }
 
@@ -125,12 +249,15 @@ kernel.def @workgroup_tree_row_exchange() {
   kernel.return
 }
 
-check.case public @workgroup_tree_row_exchange_case {
-  %input = check.generate.iota offset(1.0) step(1.0) : tensor<1024xf32>
-  %output = check.generate.fill value(-1.0) : tensor<1xf32>
-  %expected = check.generate.fill value(1024.0) : tensor<1xf32>
-  kernel.launch @workgroup_tree_row_exchange(%input, %output) : (tensor<1024xf32>, tensor<1xf32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<1xf32>
+check.scenario @workgroup_tree_row_exchange_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(1.0) step(1.0) : tensor<1024xf32>
+    %output = check.generate.fill value(-1.0) : tensor<1xf32>
+    check.compare<@workgroup_tree_row_exchange, @workgroup_tree_maxnum_oracle>(%input, %output) : (tensor<1024xf32>, tensor<1xf32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1024xf32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1xf32>
+    }
+  }
   check.return
 }
 
@@ -149,20 +276,14 @@ kernel.def @workgroup_tree_float_all() {
   kernel.return
 }
 
-check.case public @workgroup_tree_float_all_case {
-  %input = check.generate.iota offset(1.0) step(1.0) : tensor<256xf32>
-  %output = check.generate.fill value(-1.0) : tensor<256xf32>
-  %expected = check.generate.fill value(32896.0) : tensor<256xf32>
-  kernel.launch @workgroup_tree_float_all(%input, %output) : (tensor<256xf32>, tensor<256xf32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<256xf32>
-  check.return
-}
-
-check.case public @workgroup_tree_integer_unsigned_boundary_case {
-  %input = check.generate.iota offset(-1) step(2) period(2) : tensor<256xi32>
-  %output = check.generate.fill value(-1) : tensor<1xi32>
-  %expected = check.generate.fill value(1) : tensor<1xi32>
-  kernel.launch @workgroup_tree_integer_leader(%input, %output) : (tensor<256xi32>, tensor<1xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<1xi32>
+check.scenario @workgroup_tree_float_all_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(1.0) step(1.0) : tensor<256xf32>
+    %output = check.generate.fill value(-1.0) : tensor<256xf32>
+    check.compare<@workgroup_tree_float_all, @workgroup_tree_float_sum_oracle>(%input, %output) : (tensor<256xf32>, tensor<256xf32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<256xf32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<256xf32>
+    }
+  }
   check.return
 }

@@ -35,13 +35,17 @@ loom_cc_library(
     srcs = ["combine_patterns.c"],
     hdrs = ["combine_patterns.h"],
     deps = [
+        "//loom/src/loom/analysis:symbolic_expr",
         "//loom/src/loom/ir",
+        "//loom/src/loom/ops/index:comparison",
         "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/vector",
         "//loom/src/loom/rewrite:pattern_registry",
         "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/transforms/cleanup:patterns",
         "//loom/src/loom/transforms/conversion:chain",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal",
     ],
 )
 
@@ -209,6 +213,18 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "reduction_legalization",
+    srcs = ["reduction_legalization.c"],
+    hdrs = ["reduction_legalization.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/vector",
+        "//loom/src/loom/rewrite:rewriter",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "table_legalization",
     srcs = ["table_legalization.c"],
     hdrs = ["table_legalization.h"],
@@ -241,6 +257,7 @@ loom_cc_library(
     srcs = ["target_legalization.c"],
     hdrs = ["target_legalization.h"],
     deps = [
+        ":reduction_legalization",
         ":to_scalar",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/kernel",

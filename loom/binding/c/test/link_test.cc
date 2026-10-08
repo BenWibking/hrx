@@ -278,8 +278,10 @@ ContextPtr CreateContext(loomc_target_environment_t* target_environment) {
 
 TargetEnvironmentPtr CreateFakeTargetEnvironment() {
   loomc_target_environment_t* target_environment = nullptr;
-  loomc_status_t status = loomc_target_environment_create_from_provider_set(
-      &kFakeTargetProviderSet, loomc_allocator_system(), &target_environment);
+  loomc_status_t status =
+      loomc_target_environment_create_from_provider_set_internal(
+          &kFakeTargetProviderSet, loomc_allocator_system(),
+          &target_environment);
   LOOMC_EXPECT_OK(status);
   return TargetEnvironmentPtr(target_environment);
 }
@@ -815,6 +817,248 @@ func.def public @unused_library(%x: i32) -> (i32) {
       context.get(), workspace.get(), bytecode_path.path());
   VerifyLinkedCallerModule(bytecode_path_module.get());
   EXPECT_TRUE(bytecode_path.Remove());
+}
+
+TEST(LinkTest, LinksMaterializedModulesWithoutSerialization) {
+  static constexpr char kHarnessSource[] = R"(
+func.decl @identity(%x: i32) -> (i32)
+
+func.def public @caller(%x: i32) -> (i32) {
+  %y = func.call @identity(%x) : (i32) -> (i32)
+  func.return %y : i32
+}
+
+func.def public @unused_harness(%x: i32) -> (i32) {
+  func.return %x : i32
+}
+)";
+  static constexpr char kLibrarySource[] = R"(
+func.def public @identity(%x: i32) -> (i32) {
+  func.return %x : i32
+}
+
+func.def public @unused_library(%x: i32) -> (i32) {
+  func.return %x : i32
+}
+)";
+  for (loomc_source_retention_t source_retention : {
+           LOOMC_SOURCE_RETENTION_EXACT,
+           LOOMC_SOURCE_RETENTION_METADATA_ONLY,
+       }) {
+    SCOPED_TRACE(source_retention);
+    ContextPtr context = CreateContext(source_retention);
+    WorkspacePtr input_workspace = CreateWorkspace();
+    SourcePtr harness_source =
+        CreateTextSource("materialized_harness.loom", kHarnessSource);
+    SourcePtr library_source =
+        CreateTextSource("materialized_library.loom", kLibrarySource);
+    ModulePtr harness_module = DeserializeModuleFromSource(
+        context.get(), input_workspace.get(), harness_source.get());
+    ModulePtr library_module = DeserializeModuleFromSource(
+        context.get(), input_workspace.get(), library_source.get());
+
+    const loomc_link_module_provider_t module_providers[] = {
+        {
+            /*.module=*/harness_module.get(),
+            /*.provider_name=*/loomc_make_cstring_view("harness"),
+            /*.role=*/LOOMC_LINK_PROVIDER_ROLE_INPUT,
+        },
+        {
+            /*.module=*/library_module.get(),
+            /*.provider_name=*/loomc_make_cstring_view("library"),
+            /*.role=*/LOOMC_LINK_PROVIDER_ROLE_LIBRARY,
+        },
+    };
+    const loomc_string_view_t roots[] = {
+        loomc_make_cstring_view("@caller"),
+    };
+    loomc_link_options_t options = {};
+    options.type = LOOMC_STRUCTURE_TYPE_LINK_OPTIONS;
+    options.structure_size = sizeof(options);
+    options.mode = LOOMC_LINK_MODE_LINK;
+    options.root_symbols = roots;
+    options.root_symbol_count = IREE_ARRAYSIZE(roots);
+    options.module_providers = module_providers;
+    options.module_provider_count = IREE_ARRAYSIZE(module_providers);
+
+    LinkerPtr linker = CreateLinker(context.get());
+    WorkspacePtr link_workspace = CreateWorkspace();
+    ResultPtr result;
+    ModulePtr module = LinkIndex(linker.get(), link_workspace.get(), nullptr,
+                                 &options, &result);
+    ASSERT_TRUE(loomc_result_succeeded(result.get()));
+    ASSERT_NE(module.get(), nullptr);
+
+    harness_module.reset();
+    library_module.reset();
+    harness_source.reset();
+    library_source.reset();
+    input_workspace.reset();
+    link_workspace.reset();
+
+    VerifyLinkedCallerModule(module.get());
+    const loom_module_t* internal_module =
+        loomc_module_const_loom_module(module.get());
+    for (const char* symbol_name : {"caller", "identity"}) {
+      const loom_symbol_t* symbol =
+          FindModuleSymbol(internal_module, symbol_name);
+      ASSERT_NE(symbol, nullptr);
+      loom_source_range_t range = {};
+      ASSERT_TRUE(loom_source_resolve(
+          loomc_module_source_resolver(module.get()), internal_module,
+          symbol->defining_op->location, &range));
+      EXPECT_EQ(std::string(range.filename.data, range.filename.size),
+                strcmp(symbol_name, "caller") == 0
+                    ? "materialized_harness.loom"
+                    : "materialized_library.loom");
+      if (source_retention == LOOMC_SOURCE_RETENTION_EXACT) {
+        EXPECT_EQ(range.provenance, LOOM_SOURCE_PROVENANCE_EXACT_SOURCE);
+        EXPECT_EQ(std::string(range.source.data, range.source.size),
+                  strcmp(symbol_name, "caller") == 0 ? kHarnessSource
+                                                     : kLibrarySource);
+      } else {
+        EXPECT_EQ(range.provenance, LOOM_SOURCE_PROVENANCE_UNAVAILABLE_SOURCE);
+        EXPECT_EQ(range.source.size, 0u);
+      }
+    }
+  }
+}
+
+TEST(LinkTest, LinksMaterializedInputAgainstFrozenLibraryIndex) {
+  ContextPtr context = CreateContext();
+  WorkspacePtr input_workspace = CreateWorkspace();
+  SourcePtr harness_source = CreateTextSource("live_harness.loom", R"(
+func.decl @identity(%x: i32) -> (i32)
+
+func.def public @caller(%x: i32) -> (i32) {
+  %y = func.call @identity(%x) : (i32) -> (i32)
+  func.return %y : i32
+}
+)");
+  ModulePtr harness_module = DeserializeModuleFromSource(
+      context.get(), input_workspace.get(), harness_source.get());
+
+  BuilderPtr library_builder = CreateBuilder(context.get());
+  SourcePtr library_source = CreateTextSource("frozen_library.loom", R"(
+func.def public @identity(%x: i32) -> (i32) {
+  func.return %x : i32
+}
+)");
+  AddSource(library_builder.get(), library_source.get(), "library",
+            LOOMC_LINK_PROVIDER_ROLE_LIBRARY);
+  LinkIndexPtr library_index;
+  FinishIndex(library_builder.get(), &library_index);
+
+  const loomc_link_module_provider_t module_provider = {
+      /*.module=*/harness_module.get(),
+      /*.provider_name=*/loomc_make_cstring_view("harness"),
+      /*.role=*/LOOMC_LINK_PROVIDER_ROLE_INPUT,
+  };
+  const loomc_string_view_t roots[] = {
+      loomc_make_cstring_view("@caller"),
+  };
+  loomc_link_options_t options = {};
+  options.type = LOOMC_STRUCTURE_TYPE_LINK_OPTIONS;
+  options.structure_size = sizeof(options);
+  options.mode = LOOMC_LINK_MODE_LINK;
+  options.root_symbols = roots;
+  options.root_symbol_count = IREE_ARRAYSIZE(roots);
+  options.module_providers = &module_provider;
+  options.module_provider_count = 1;
+
+  LinkerPtr linker = CreateLinker(context.get());
+  WorkspacePtr link_workspace = CreateWorkspace();
+  ResultPtr result;
+  ModulePtr module = LinkIndex(linker.get(), link_workspace.get(),
+                               library_index.get(), &options, &result);
+  ASSERT_TRUE(loomc_result_succeeded(result.get()));
+  ASSERT_NE(module.get(), nullptr);
+
+  harness_module.reset();
+  harness_source.reset();
+  input_workspace.reset();
+  library_index.reset();
+  library_builder.reset();
+  library_source.reset();
+  link_workspace.reset();
+
+  VerifyLinkedCallerModule(module.get());
+  const loom_module_t* internal_module =
+      loomc_module_const_loom_module(module.get());
+  for (const char* symbol_name : {"caller", "identity"}) {
+    const loom_symbol_t* symbol =
+        FindModuleSymbol(internal_module, symbol_name);
+    ASSERT_NE(symbol, nullptr);
+    loom_source_range_t range = {};
+    ASSERT_TRUE(loom_source_resolve(loomc_module_source_resolver(module.get()),
+                                    internal_module,
+                                    symbol->defining_op->location, &range));
+    EXPECT_EQ(std::string(range.filename.data, range.filename.size),
+              strcmp(symbol_name, "caller") == 0 ? "live_harness.loom"
+                                                 : "frozen_library.loom");
+  }
+}
+
+TEST(LinkTest, MaterializedModuleProvidersValidateCompositionBoundary) {
+  ContextPtr context = CreateContext();
+  WorkspacePtr workspace = CreateWorkspace();
+  SourcePtr source = CreateTextSource("input.loom", R"(
+func.def public @entry(%x: i32) -> (i32) {
+  func.return %x : i32
+}
+)");
+  ModulePtr module =
+      DeserializeModuleFromSource(context.get(), workspace.get(), source.get());
+  LinkerPtr linker = CreateLinker(context.get());
+
+  loomc_link_options_t options = {};
+  options.type = LOOMC_STRUCTURE_TYPE_LINK_OPTIONS;
+  options.structure_size = sizeof(options);
+  options.module_provider_count = 1;
+  loomc_module_t* output_module = reinterpret_cast<loomc_module_t*>(1);
+  loomc_result_t* result = reinterpret_cast<loomc_result_t*>(1);
+  LOOMC_EXPECT_STATUS_IS(LOOMC_STATUS_INVALID_ARGUMENT,
+                         loomc_link_module(linker.get(), workspace.get(),
+                                           &options, &output_module, &result));
+  EXPECT_EQ(output_module, nullptr);
+  EXPECT_EQ(result, nullptr);
+
+  ContextPtr other_context = CreateContext();
+  WorkspacePtr other_workspace = CreateWorkspace();
+  ModulePtr other_module = DeserializeModuleFromSource(
+      other_context.get(), other_workspace.get(), source.get());
+  loomc_link_module_provider_t module_provider = {
+      /*.module=*/other_module.get(),
+      /*.provider_name=*/loomc_make_cstring_view("other"),
+      /*.role=*/LOOMC_LINK_PROVIDER_ROLE_INPUT,
+  };
+  options.module_providers = &module_provider;
+  LOOMC_EXPECT_STATUS_IS(LOOMC_STATUS_INVALID_ARGUMENT,
+                         loomc_link_module(linker.get(), workspace.get(),
+                                           &options, &output_module, &result));
+  EXPECT_EQ(output_module, nullptr);
+  EXPECT_EQ(result, nullptr);
+
+  module_provider.module = module.get();
+  module_provider.role = static_cast<loomc_link_provider_role_t>(-1);
+  LOOMC_EXPECT_STATUS_IS(LOOMC_STATUS_INVALID_ARGUMENT,
+                         loomc_link_module(linker.get(), workspace.get(),
+                                           &options, &output_module, &result));
+  EXPECT_EQ(output_module, nullptr);
+  EXPECT_EQ(result, nullptr);
+
+  module_provider.role = LOOMC_LINK_PROVIDER_ROLE_INPUT;
+  BuilderPtr input_builder = CreateBuilder(context.get());
+  AddSource(input_builder.get(), source.get(), "frozen-input",
+            LOOMC_LINK_PROVIDER_ROLE_INPUT);
+  LinkIndexPtr input_index;
+  FinishIndex(input_builder.get(), &input_index);
+  options.link_index = input_index.get();
+  LOOMC_EXPECT_STATUS_IS(LOOMC_STATUS_INVALID_ARGUMENT,
+                         loomc_link_module(linker.get(), workspace.get(),
+                                           &options, &output_module, &result));
+  EXPECT_EQ(output_module, nullptr);
+  EXPECT_EQ(result, nullptr);
 }
 
 TEST(LinkTest, PartialLinksAreReusableAndOrderInvariant) {

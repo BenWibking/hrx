@@ -70,6 +70,7 @@ TEST_F(Pm4DispatchTest, ExecutesImmutableIndirectBufferAcrossEpochs) {
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {kernel.workgroup_size(), 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(kernel.executable,
@@ -83,7 +84,7 @@ TEST_F(Pm4DispatchTest, ExecutesImmutableIndirectBufferAcrossEpochs) {
   Pm4CommandWriter indirect(expected_indirect.data(), *pm4_profile_);
   indirect.SystemBarrier();
   indirect.BindCompute(program, arguments->device_address);
-  indirect.DispatchWave32(kGridSize, 1, 1);
+  indirect.Dispatch(program, kGridSize, 1, 1);
   indirect.SystemBarrier();
   // The immutable IB reads its completion epoch separately from the shader's
   // kernarg ABI. Completion is part of the IB on both publication transports.
@@ -361,6 +362,7 @@ TEST_F(Pm4DispatchTest, RebuildsIndirectBufferAfterCompletion) {
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {kernel.workgroup_size(), 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(kernel.executable,
@@ -388,7 +390,7 @@ TEST_F(Pm4DispatchTest, RebuildsIndirectBufferAfterCompletion) {
     indirect.SystemBarrier();
     indirect.BindCompute(
         program, arguments->device_address + epoch * kArgumentByteStride);
-    indirect.DispatchWave32(kGridSizes[epoch], 1, 1);
+    indirect.Dispatch(program, kGridSizes[epoch], 1, 1);
     indirect.SystemBarrier();
     indirect.WriteData32(completion->device_address, epoch + 1);
     indirect.PadToEightWords();

@@ -365,6 +365,11 @@ loom_liveness_operation_span_t loom_liveness_operation_span(
 loom_value_ordinal_t loom_liveness_operation_use_ordinal(
     const loom_liveness_analysis_t* analysis, uint32_t use_index);
 
+// Returns the block-local live segment containing one retained semantic
+// operation use. The returned index addresses |analysis->segments| directly.
+uint32_t loom_liveness_operation_use_segment_index(
+    const loom_liveness_analysis_t* analysis, uint32_t use_index);
+
 // Returns true when the retained direct use includes an SSA reference embedded
 // in an operand or result type. Direct operation-use ranges remain distinct by
 // value; this preserves additional read provenance without duplicating rows.

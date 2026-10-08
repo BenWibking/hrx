@@ -841,6 +841,12 @@ typedef struct loom_low_lower_policy_t {
   // report carrier failures.
   loom_target_source_vector_carrier_supported_callback_t
       source_vector_carrier_supported;
+  // Optionally reports the source-vector carrier domain accepted at function
+  // ABI boundaries. Missing uses |source_vector_carrier_supported|. Targets
+  // may admit transient aggregate shapes that legalization must eliminate
+  // while retaining a narrower callable ABI.
+  loom_target_source_vector_carrier_supported_callback_t
+      source_function_vector_carrier_supported;
   // Optionally maps concrete source SSA values to target-low register types
   // when type alone does not determine the target register class.
   loom_low_lower_map_value_callback_t map_value;

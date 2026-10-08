@@ -10,9 +10,9 @@
 #define LOOM_TOOLS_IREE_BENCHMARK_LOOM_LAUNCH_EVIDENCE_H_
 
 #include "iree/base/api.h"
-#include "loom/analysis/kernel_launch_config.h"
 #include "loom/ir/scalar_type.h"
 #include "loom/util/json.h"
+#include "loomc/launch_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,7 +40,7 @@ typedef struct iree_benchmark_loom_launch_record_t {
   // Number of entries in |workload_values|.
   iree_host_size_t workload_value_count;
   // Fully evaluated compiled launch configuration for this workload.
-  loom_kernel_launch_config_t launch_config;
+  loomc_launch_config_t launch_config;
 } iree_benchmark_loom_launch_record_t;
 
 typedef struct iree_benchmark_loom_launch_evidence_t {

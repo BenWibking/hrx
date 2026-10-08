@@ -15,6 +15,7 @@ iree_c_embed_data(
     kernels
   SRCS
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/aiter_swiglu_f16.cxx"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/configured_workgroup_storage.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/flash_attention.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/llama_rms_norm.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/mxfp_group_dot.cxx"
@@ -83,6 +84,8 @@ loom_cc_benchmark(
     loom::binding::c::import::cxx
     loom::binding::c::loomc
     loom::binding::c::target::amdgpu
+  ARGS
+    "--benchmark_min_time=1x"
   TESTONLY
 )
 endif()

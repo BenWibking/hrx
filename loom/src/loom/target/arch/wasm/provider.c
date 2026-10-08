@@ -148,7 +148,7 @@ const loom_target_provider_t loom_wasm_target_provider = {
     .profile_type = &kProfileType,
     .select_profile = loom_wasm_select_profile,
     .materialize_definition = loom_wasm_materialize_definition,
-    .select_low_call_policy = loom_target_select_low_call_policy_direct,
+    .select_call_policy = loom_target_select_call_policy_direct,
     .register_context = loom_wasm_ops_register_dialect,
     .initialize_low_descriptor_registry =
         loom_wasm_low_descriptor_registry_initialize,

@@ -24,6 +24,21 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    call_abi
+  HDRS
+    "call_abi.h"
+  SRCS
+    "call_abi.c"
+  DEPS
+    ::register_classes
+    loom::ir
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     math_policy
   HDRS
     "math_policy.h"
@@ -143,10 +158,12 @@ loom_cc_library(
   SRCS
     "provider.c"
   DEPS
+    ::call_abi
     ::legalization
     ::math_policy
     ::pass_registry
     iree::base
+    iree::base::cpu_data
     loom::ir
     loom::pass::builder
     loom::target::arch::x86::descriptors::low_registry
@@ -155,6 +172,23 @@ loom_cc_library(
     loom::target::arch::x86::records::target_records
     loom::target::provider
   PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_test(
+  NAME
+    provider_test
+  SRCS
+    "provider_test.cc"
+  DEPS
+    ::provider
+    iree::base::cpu_data
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::x86::ops
+  LABELS
+    "iree-build-requirement=loom.target.arch.x86"
 )
 endif()
 

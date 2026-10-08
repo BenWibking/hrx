@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // One invocation owns every GPU access in the finite request/response service.
 // Arithmetic is modulo 2^32. The caller owns disjoint, 64-byte-aligned request
 // and response allocations, startup (separate allocation), control (256 bytes),

@@ -14,13 +14,16 @@
 #include "iree/testing/status_matchers.h"
 #include "loom/error/error_defs.h"
 #include "loom/ir/context.h"
-#include "loom/target/low_descriptor_registry_core_test.h"
 #include "loom/target/provider.h"
-#include "loom/target/test/lower.h"
+#include "loom/target/test/provider.h"
 #include "loom/testing/context.h"
 #include "loom/testing/test_file.h"
+#include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/diagnostics.h"
+#include "loom/tools/loom-check/source_low.h"
 #include "loom/transforms/cleanup/configured.h"
+#include "loomc/interop.h"
+#include "loomc/iree.h"
 
 namespace loom {
 namespace {
@@ -56,28 +59,8 @@ iree_status_t RegisterTestContext(void* user_data, loom_context_t* context) {
   return loom_testing_context_register_all_dialects(context);
 }
 
-void InitializeTestLowDescriptorRegistryForProvider(
-    loom_target_low_descriptor_registry_t* out_registry) {
-  loom_target_core_test_low_descriptor_registry_initialize(out_registry);
-}
-
-void InitializeTestLowLowerPolicyRegistryForProvider(
-    loom_low_lower_policy_registry_t* out_registry) {
-  loom_test_low_lower_policy_registry_initialize(out_registry);
-}
-
-const loom_target_provider_t kTestTargetProvider = {
-    /*.profile_type=*/{},
-    /*.materialize_definition=*/{},
-    /*.register_context=*/{},
-    /*.initialize_low_descriptor_registry=*/
-    InitializeTestLowDescriptorRegistryForProvider,
-    /*.initialize_low_lower_policy_registry=*/
-    InitializeTestLowLowerPolicyRegistryForProvider,
-};
-
 const loom_target_provider_t* const kTestTargetProviders[] = {
-    &kTestTargetProvider,
+    &loom_test_target_provider,
 };
 
 bool TestRequirementProviderMatches(
@@ -185,6 +168,7 @@ const loom_check_emit_provider_t kTestEmitProvider = {
 };
 
 const loom_check_emit_provider_t* const kTestEmitProviders[] = {
+    &loom_check_source_low_emit_provider,
     &kTestEmitProvider,
 };
 
@@ -231,12 +215,28 @@ class ExecuteTest : public ::testing::Test {
                                      &block_pool_);
     target_provider_set_ = loom_target_provider_set_make(
         kTestTargetProviders, IREE_ARRAYSIZE(kTestTargetProviders));
-    IREE_ASSERT_OK(loom_target_environment_initialize(&target_provider_set_,
-                                                      &target_environment_));
+    loomc_target_environment_t* public_target_environment = nullptr;
+    IREE_ASSERT_OK(iree_status_from_loomc(
+        loomc_target_environment_create_from_provider_set(
+            &target_provider_set_, loomc_allocator_system(),
+            &public_target_environment)));
+    target_environment_ =
+        loomc_target_environment_get_interop_view(public_target_environment);
     execute_environment_ = kExecuteTestEnvironment;
-    execute_environment_.target_environment = &target_environment_;
+    execute_environment_.target_environment = target_environment_;
+    compile_session_ = {
+        /*.provider=*/nullptr,
+        /*.host_allocator=*/iree_allocator_system(),
+        /*.target_environment=*/public_target_environment,
+    };
+    execute_environment_.compile_session = &compile_session_;
+    execute_environment_.emit_providers = {
+        /*.providers=*/kTestEmitProviders,
+        /*.provider_count=*/IREE_ARRAYSIZE(kTestEmitProviders),
+    };
     provider_environment_ = kExecuteTestProviderEnvironment;
-    provider_environment_.target_environment = &target_environment_;
+    provider_environment_.target_environment = target_environment_;
+    provider_environment_.compile_session = &compile_session_;
     loom_context_initialize(iree_allocator_system(), &context_);
     IREE_ASSERT_OK(loom_check_context_register_and_finalize(
         &execute_environment_, &context_));
@@ -244,7 +244,7 @@ class ExecuteTest : public ::testing::Test {
 
   void TearDown() override {
     loom_context_deinitialize(&context_);
-    loom_target_environment_deinitialize(&target_environment_);
+    loom_check_compile_session_deinitialize(&compile_session_);
     iree_arena_block_pool_deinitialize(&block_pool_);
   }
 
@@ -336,7 +336,8 @@ class ExecuteTest : public ::testing::Test {
   iree_arena_block_pool_t block_pool_;
   loom_context_t context_;
   loom_target_provider_set_t target_provider_set_;
-  loom_target_environment_t target_environment_;
+  const loom_target_environment_t* target_environment_;
+  loom_check_compile_session_t compile_session_;
   loom_check_environment_t execute_environment_;
   loom_check_environment_t provider_environment_;
 };

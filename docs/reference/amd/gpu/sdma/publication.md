@@ -8,12 +8,23 @@ transfer and its memory effects. ROCr's direct KFD queues and Linux's scheduled
 IB queues have different publication owners. [ROCr publication][blit-publish]
 [Linux ring commit][kernel-commit]
 
+[Queue context](context.md) connects the KFD ring and control mappings to
+the selected MQD, loader and scheduler. Its family tables distinguish the
+legacy 32-bit pointer consumers from the modern 64-bit producer below.
+
+[Device-generated commands](device-publication.md) use these same native byte
+frontiers with a shader as publisher. That path adds GPUVM notification reach,
+shader command visibility, lane progress and downstream payload credits to the
+queue's ordinary reservation and retirement rules.
+
 ## Transport and pointer units
 
 The direct path described here is ROCr's KFD SDMA producer for its selected
 GFX9–GFX12 ISA branches. The runtime chooses packet/cache variants by ISA and
-transport; these predicates are not native SDMA IP numbers. Linux separately
-implements the scheduled SDMA4.4.2 and SDMA6.x ring interfaces.
+transport; these predicates are not native SDMA IP numbers. Linux's
+[scheduled IB backends](command-buffers.md#native-generation-and-transport)
+are selected by native SDMA IP. The kernel pointer examples here use its
+SDMA4.4.2 and SDMA6.x ring interfaces.
 [ROCr selection][blit-selection] [SDMA4.4.2 pointers][pointers442]
 [SDMA6.x pointers][pointers6]
 
@@ -114,8 +125,10 @@ Submission-size padding is separate from wrapping:
 
 For this padding, ROCr clears the bytes and writes a burst-NOP header with
 `(padding_bytes / 4 - 1) << 16`. The count therefore describes the following
-DWORDs, not bytes. The wrap tail instead remains a sequence of zero DWORD
-NOPs. These are the producer's framing choices; they do not establish an
+DWORDs, not bytes; [NOP representation and firmware selection](ordering.md#nop-representation-and-framing)
+distinguish that field from caller-specific framing requirements. The wrap
+tail instead remains a sequence of zero DWORD NOPs. These are the producer's
+framing choices; they do not establish an
 additional payload dependency. [Minimum-size predicate][blit-minimum]
 [Padding calculation][blit-reserve] [Padding encoding][blit-completion]
 
@@ -164,6 +177,10 @@ loader does not explicitly write the poll-address registers. Complete command
 bytes precede the canonical WPTR update. [v9 MQD][mqd9] [v11 MQD][mqd11]
 [GC9.4.3 load][load943] [GFX11 load][load11]
 [Wrapper comment and indices][queue-indices]
+
+The [context family and consumer tables](context.md#installation-and-write-pointer-consumers)
+extend this distinction through CIK, VI, v9, v10, v11, v12 and v12_1,
+including MES's separate process-VA and MC-address WPTR inputs.
 
 Command publication and payload cache maintenance solve different problems.
 An in-stream cache command already depends on successful command fetch.

@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""Independent raw-bit oracles for native BF16 matrix transposition."""
+"""Independent raw-bit oracles for native and residual transposition."""
 
 import struct
 import sys
@@ -46,11 +46,12 @@ SPECIAL_BITS = (
 )
 
 
-def transpose(words):
-    result = [0] * 64
-    for row in range(8):
-        for column in range(8):
-            result[8 * column + row] = words[8 * row + column]
+def transpose(values, row_count, column_count):
+    assert len(values) == row_count * column_count
+    result = [0] * len(values)
+    for row in range(row_count):
+        for column in range(column_count):
+            result[row_count * column + row] = values[column_count * row + column]
     return result
 
 
@@ -79,10 +80,10 @@ def main():
         expected = []
         for start in range(0, len(words), 64):
             packet = words[start : start + 64]
-            result = transpose(packet)
+            result = transpose(packet, 8, 8)
             # Check the scalar coordinate oracle independently of its loops.
             assert result == [packet[(lane % 8) * 8 + lane // 8] for lane in range(64)]
-            assert transpose(result) == packet
+            assert transpose(result, 8, 8) == packet
             expected.extend(result)
         source = struct.pack(f"<{len(words)}H", *words)
         result = struct.pack(f"<{len(expected)}H", *expected)
@@ -92,6 +93,25 @@ def main():
         )
     (directory / "output.bin").write_bytes(
         head_guard + bytes([0x5A]) * (1056 * 128) + tail_guard
+    )
+
+    residual_records = []
+    residual_expected = []
+    for bit in range(7):
+        record = [0x81 + bit if lane & (1 << bit) else 0 for lane in range(128)]
+        ordinary = transpose(record, 8, 16)
+        predicate = transpose([int(value != 0) for value in record], 8, 16)
+        assert transpose(ordinary, 16, 8) == record
+        residual_records.extend(record)
+        residual_expected.extend((*ordinary, *predicate))
+    (directory / "residual-input.bin").write_bytes(
+        head_guard + bytes(residual_records) + tail_guard
+    )
+    (directory / "residual-expected.bin").write_bytes(
+        head_guard + bytes(residual_expected) + tail_guard
+    )
+    (directory / "residual-output.bin").write_bytes(
+        head_guard + bytes([0x5A]) * len(residual_expected) + tail_guard
     )
 
 

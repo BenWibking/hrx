@@ -42,6 +42,7 @@ from loom.target.arch.spirv.atomic import (  # noqa: E402
     float_atomic_cas_strategies,
     float_atomic_descriptor_key,
 )
+from loom.target.arch.spirv.barrier import CONTROL_BARRIER_CASES  # noqa: E402
 from loom.target.arch.spirv.builtins import (  # noqa: E402
     BUILTIN_DIMENSIONS,
     BUILTIN_INDEX_QUERIES,
@@ -326,20 +327,16 @@ class _PacketRow:
 
 
 def _control_barrier_rows() -> list[_PacketRow]:
-    memory_semantics = "LOOM_SPIRV_MEMORY_SEMANTICS_ACQUIRE_RELEASE_MASK | LOOM_SPIRV_MEMORY_SEMANTICS_WORKGROUP_MEMORY_MASK"
     return [
         _PacketRow(
-            f"spirv.op_control_barrier.{scope}.workgroup.acq_rel",
+            case.descriptor_key,
             opcode="LOOM_SPIRV_OP_CONTROL_BARRIER",
             form="LOOM_SPIRV_PACKET_FORM_CONTROL_BARRIER",
-            execution_scope=scope_enum,
-            memory_scope="LOOM_SPIRV_SCOPE_WORKGROUP",
-            memory_semantics=memory_semantics,
+            execution_scope=case.scope.execution_scope,
+            memory_scope=case.scope.memory_scope,
+            memory_semantics=case.memory_semantics,
         )
-        for scope, scope_enum in (
-            ("subgroup", "LOOM_SPIRV_SCOPE_SUBGROUP"),
-            ("workgroup", "LOOM_SPIRV_SCOPE_WORKGROUP"),
-        )
+        for case in CONTROL_BARRIER_CASES
     ]
 
 

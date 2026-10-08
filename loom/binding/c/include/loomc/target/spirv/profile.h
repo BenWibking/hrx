@@ -140,8 +140,59 @@ typedef enum loomc_spirv_feature_e {
   /// Core subgroup operations and subgroup memory scope.
   LOOMC_SPIRV_FEATURE_GROUP_NON_UNIFORM = 16,
 
+  /// Vulkan memory-model Device scope support.
+  LOOMC_SPIRV_FEATURE_VULKAN_MEMORY_MODEL_DEVICE_SCOPE = 17,
+
+  /// 64-bit integer atomics in storage-buffer memory.
+  LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_INT64_ATOMICS = 18,
+
+  /// 64-bit integer atomics in workgroup memory.
+  LOOMC_SPIRV_FEATURE_WORKGROUP_INT64_ATOMICS = 19,
+
+  /// 16-bit floating-point basic atomics in storage-buffer memory.
+  LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT16_ATOMICS = 20,
+
+  /// 16-bit floating-point basic atomics in workgroup memory.
+  LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT16_ATOMICS = 21,
+
+  /// 16-bit floating-point atomic add in storage-buffer memory.
+  LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT16_ATOMIC_ADD = 22,
+
+  /// 16-bit floating-point atomic add in workgroup memory.
+  LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT16_ATOMIC_ADD = 23,
+
+  /// 32-bit floating-point basic atomics in storage-buffer memory.
+  LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT32_ATOMICS = 24,
+
+  /// 32-bit floating-point basic atomics in workgroup memory.
+  LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT32_ATOMICS = 25,
+
+  /// 32-bit floating-point atomic add in storage-buffer memory.
+  LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT32_ATOMIC_ADD = 26,
+
+  /// 32-bit floating-point atomic add in workgroup memory.
+  LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT32_ATOMIC_ADD = 27,
+
+  /// 64-bit floating-point basic atomics in storage-buffer memory.
+  LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT64_ATOMICS = 28,
+
+  /// 64-bit floating-point basic atomics in workgroup memory.
+  LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT64_ATOMICS = 29,
+
+  /// 64-bit floating-point atomic add in storage-buffer memory.
+  LOOMC_SPIRV_FEATURE_STORAGE_BUFFER_FLOAT64_ATOMIC_ADD = 30,
+
+  /// 64-bit floating-point atomic add in workgroup memory.
+  LOOMC_SPIRV_FEATURE_WORKGROUP_FLOAT64_ATOMIC_ADD = 31,
+
+  /// F32 DenormPreserve independent of other floating-point widths.
+  LOOMC_SPIRV_FEATURE_FLOAT32_DENORM_PRESERVE = 32,
+
+  /// Subgroup ballot operations.
+  LOOMC_SPIRV_FEATURE_GROUP_NON_UNIFORM_BALLOT = 33,
+
   /// Number of public SPIR-V feature identifiers.
-  LOOMC_SPIRV_FEATURE_COUNT = 17,
+  LOOMC_SPIRV_FEATURE_COUNT = 34,
 } loomc_spirv_feature_t;
 
 /// Bitset of `loomc_spirv_feature_t` values.

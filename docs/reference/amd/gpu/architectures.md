@@ -17,14 +17,61 @@ compiler-target-shaped `gfx_target_version` metadata. For example:
 | 9.4.2 | 90010 | gfx90a |
 | 9.4.3 / 9.4.4 | 90402 | gfx942 |
 | 9.5.0 | 90500 | gfx950 |
+| 12.1.0 | 120500 | gfx1250 |
 
-[KFD translation][kfd-targets]
+[KFD GFX9 translation][kfd-targets] [KFD GC12.1 translation][kfd-gfx1250]
 
 The similarly spelled physical 9.4.2 and compiler gfx942 therefore identify
 different devices. ROCr's ISA registry and LLVM's target/ABI tables describe
 the executable side of this mapping. Linux separately selects SDMA backends
 from native SDMA IP. [ROCr ISA registry][isa] [LLVM ABI][llvm] [SDMA
 discovery][sdma]
+
+### CDNA5 and gfx1250
+
+ROCm's TheRock target registry identifies `gfx1250` with CDNA5 Instinct
+products. LLVM's cited target table leaves the product name unspecified under
+its GFX12 heading. The compiler number therefore does not make this an RDNA4
+device, and Linux's physical GC12.1.0 remains a separate identifier.
+[Product mapping][cdna5-target] [Build target][cdna5-build-target]
+[LLVM target table][llvm-gfx1250]
+
+The [CDNA5 ISA guide][cdna5-isa] describes WGP execution, named and cluster
+barriers, and separate asynchronous-memory and tensor-transfer waits. Its
+Chapter 1 explicitly limits execution to wave32 despite references to wave64
+elsewhere in the manual. Those references do not establish another supported
+mode. [Wave-mode restriction, 27 July 2026][cdna5-wave-mode]
+The [shader-memory chapter](shader-memory.md) retains LLVM's GFX125x predicates
+for compiler sequences. Native queue admission and PM4/SDMA layouts still come
+from their engine and transport sources.
+
+### Wavefront modes
+
+A compiled program selects a wavefront width supported by its target. The
+workgroup dimensions describe how many workitems execute that program; they
+do not select its wave size. LLVM's target features distinguish fixed-width
+families from families that support both widths:
+
+| Compiler target family | Supported wavefront widths |
+| --- | --- |
+| GFX6–GFX9, including CDNA1–4 `gfx908`, `gfx90a`, `gfx942` and `gfx950` | 64 only. [Generation features][llvm-gcn-waves] |
+| GFX10.1 / GFX10.3 | 32 and 64. [Target table][llvm-gfx10-waves] |
+| GFX11.0 / GFX11.5 / GFX11.7 | 32 and 64. [Target table][llvm-gfx11-waves] |
+| GFX12.0 `gfx1200` / `gfx1201` | 32 and 64. [Target table][llvm-gfx12-waves] |
+| GFX12.5 `gfx1250` / `gfx1251` | 32 only. [Shared feature set][llvm-gfx125-waves] [gfx1251 inheritance][llvm-gfx1251-waves] |
+
+LLVM's AMDGCN feature parser defaults a target supporting both modes to wave32
+when neither mode is explicitly selected. For a fixed-width target, it rejects
+enabling the other width or disabling the native width. A compiler default
+and the set of supported modes are therefore separate facts.
+[Feature selection and validation][llvm-wave-selection]
+
+The compiled wave size travels with the executable's resource requirements.
+A [raw PM4 launch](pm4/dispatch.md#register-binding-and-launch) realizes that
+mode along with the program binding and workgroup geometry. Changing only a
+dispatch bit does not adapt the executable to another wave size. The mode
+table also supplies no native queue-admission or packet-layout rule; those
+remain properties of the engine and transport.
 
 ### Discovering the native SDMA IP
 
@@ -56,10 +103,11 @@ source-visible families:
 | GFX6 | Legacy SI command and transfer representations. |
 | GFX7–8 | Graphics/compute completion packets, older cache controls, and indirect dispatch. |
 | GFX9 graphics and APUs | Physical/compiler mapping, scalar/L2 policy, coherent host paths. |
-| CDNA gfx908/gfx90a/gfx942/gfx950 | SDMA generation, XCC/L2 topology, scratch state, atomic routes, and local/peer cache policy. |
+| CDNA1–4 gfx908/gfx90a/gfx942/gfx950 | SDMA generation, XCC/L2 topology, scratch state, atomic routes, and local/peer cache policy. |
 | GFX10.1 / GFX10.3 | GCR controls, CP-DMA ordering, and firmware-conditioned completion. |
 | GFX11.0 / GFX11.5 | Wave32 dispatch, compute queue setup, native SDMA IP, and completion/cache fields. |
-| GFX12 | Cache routing, revised packet fields, system-memory routing, and dispatch distribution. |
+| GFX12.0 | Cache routing, revised packet fields, system-memory routing, and dispatch distribution. |
+| CDNA5 gfx1250 / physical GC12.1.0 | WGP cache scope, asynchronous/tensor completion, workgroup clusters, and separately versioned native packet layouts. |
 
 These groups are navigation aids. Exact predicates remain beside the affected
 operation: a source comparison such as ISA minor >= 5 is a runtime selection
@@ -81,9 +129,10 @@ describe their own fetch, chaining and retirement rules. A shared packet body
 does not make the surrounding transports interchangeable.
 
 Windows WDDM has native submission, monitored-fence, mapping, residency, and
-destruction contracts. Those contracts belong to the Windows queue owner; a
-Linux doorbell/write-pointer sequence supplies no Windows submission rule. The
-[source map](../sources.md) identifies the native driver and ABI evidence.
+destruction contracts. The [Windows transport chapter](wddm.md) distinguishes
+context submission with a separate signal from hardware-queue progress and
+native GPU-fence capabilities. A Linux doorbell/write-pointer sequence supplies
+no Windows submission or retirement rule.
 
 ### KFD queue storage
 
@@ -103,6 +152,11 @@ reference plus a queue reference on its VM mapping. [Creation caller][queue-crea
 | Compute context-save storage | The control-stack size matches topology, and the save-area size meets its minimum. The acquired extent includes per-XCC debug storage and the queue's XCC count. This resource has the separate SVM path below. |
 
 [Resource acquisition][queue-resources]
+
+The [compute context-save chapter](context-save.md) details `cwsr_size`,
+`ctl_stack_size`, per-XCC strides and the combined debugger area. Its
+save/resume sequence distinguishes native handler installation, queue-owned
+backing and the dispatch resources that unfinished waves still reference.
 
 The `enable_mes` queue-initialization path additionally requires the write
 pointer's BO to belong to the queue's AMDGPU device and maps that BO into
@@ -146,6 +200,19 @@ describe the corresponding command and completion owners.
 [Native reference release][queue-release]
 
 [kfd-targets]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_device.c#L335-L355
+[kfd-gfx1250]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_device.c#L464-L475
+[cdna5-target]: https://github.com/ROCm/TheRock/blob/1cc8ec570e9f5c720de9ce52dc485228c2df0274/build_tools/hack/env_check/AMDGPU_LLVM_TARGET.py#L56-L61
+[cdna5-build-target]: https://github.com/ROCm/TheRock/blob/1cc8ec570e9f5c720de9ce52dc485228c2df0274/cmake/therock_amdgpu_targets.cmake#L245-L246
+[llvm-gfx1250]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L653-L694
+[cdna5-isa]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf
+[cdna5-wave-mode]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf#page=12
+[llvm-gcn-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/AMDGPU.td#L1656-L1731
+[llvm-gfx10-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L501-L562
+[llvm-gfx11-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L564-L652
+[llvm-gfx12-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L654-L668
+[llvm-gfx125-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/AMDGPU.td#L2428-L2444
+[llvm-gfx1251-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/AMDGPU.td#L2586-L2588
+[llvm-wave-selection]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/TargetParser/AMDGPUTargetParser.cpp#L647-L703
 [isa]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/isa.cpp
 [llvm]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst
 [sdma]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.c#L2785-L2836

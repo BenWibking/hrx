@@ -12,6 +12,7 @@
 #include "iree/io/stream.h"
 #include "loom/codegen/low/frame.h"
 #include "loom/target/emit/native/object.h"
+#include "loom/target/emit/native/x86/abi.h"
 #include "loom/target/emit/native/x86/encoding.h"
 
 #ifdef __cplusplus
@@ -51,6 +52,13 @@ typedef struct loom_x86_function_t {
   uint16_t saved_registers;
   // True when the function may leave the upper state of YMM/ZMM0-15 dirty.
   bool may_dirty_upper_vector_state;
+  // True when the public result occupies live YMM/ZMM0-15 upper state.
+  bool has_upper_vector_result;
+  // Instruction ordinals of calls that admit VZEROUPPER immediately before
+  // CALL because no register argument occupies live YMM/ZMM0-15 upper state.
+  const uint32_t* upper_vector_call_cleanup_indices;
+  // Number of entries in |upper_vector_call_cleanup_indices|.
+  iree_host_size_t upper_vector_call_cleanup_count;
   // Fixed stack allocation after callee saves. Byte emission consumes these
   // concrete adjustments without computing alignment or selecting scratch.
   struct {
@@ -67,21 +75,31 @@ typedef struct loom_x86_function_t {
       // Caller-clobbered register used before invocation transport.
       uint8_t scratch_register;
     } realignment;
+    // True when RBP retains the post-save RSP for incoming SIMD stack values.
+    bool has_frame_pointer;
   } stack;
 } loom_x86_function_t;
 
-// Materializes native instructions from an accepted allocated scalar frame.
-// SysV result transport uses RAX. The caller already applied the entry ABI and
-// reserved RSP. Stack, scratch, and private storage share the native stack;
-// workgroup storage has no ordinary host-function ABI. Call permutations and
-// clobbers come from the shared allocation. Unsupported authored instructions
-// emit diagnostics and leave |out_accepted| false. Status failures describe
-// allocation or diagnostic-sink failures.
-iree_status_t loom_x86_function_prepare(const loom_low_emission_frame_t* frame,
-                                        iree_diagnostic_emitter_t emitter,
-                                        iree_arena_allocator_t* arena,
-                                        bool* out_accepted,
-                                        loom_x86_function_t* out_function);
+// Returns the allocator reservations needed by the native function envelope.
+// Descriptor fragments without GPR values need no reservation: the envelope
+// may still address RSP/RBP directly because those registers cannot be assigned
+// from the fragment's value classes.
+iree_host_size_t loom_x86_function_reserved_ranges(
+    const loom_x86_function_abi_t* function_abi,
+    loom_low_allocation_reserved_range_t out_ranges[3]);
+
+// Materializes native instructions from an accepted allocated Low frame. The
+// retained SysV plan supplies entry, call, and result transport. Stack,
+// scratch, and private storage share the native stack; workgroup storage has no
+// ordinary host-function ABI. Unsupported authored instructions emit
+// diagnostics and leave |out_accepted| false. Status failures describe
+// allocation, output, or diagnostic-sink failures.
+iree_status_t loom_x86_function_prepare(
+    const loom_low_emission_frame_t* frame,
+    const loom_x86_function_abi_t* function_abi,
+    const loom_x86_module_abi_t* module_abi, iree_diagnostic_emitter_t emitter,
+    iree_arena_allocator_t* arena, bool* out_accepted,
+    loom_x86_function_t* out_function);
 
 // Encodes the prepared envelope and instructions, then resolves branch fields
 // against the retained block map. Requires a writable, seekable stream. This

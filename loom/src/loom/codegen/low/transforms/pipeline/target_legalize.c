@@ -1774,6 +1774,8 @@ static iree_status_t loom_low_target_legalize_verify_final(
       .type_supported = state->selection->policy->source_type_supported,
       .source_vector_carrier_supported =
           state->selection->policy->source_vector_carrier_supported,
+      .source_function_vector_carrier_supported =
+          state->selection->policy->source_function_vector_carrier_supported,
       .structural_legality_flags =
           LOOM_TARGET_LOW_STRUCTURAL_LEGALITY_ALLOW_SOURCE_SCF |
           LOOM_TARGET_LOW_STRUCTURAL_LEGALITY_ALLOW_SOURCE_CFG,
@@ -1786,6 +1788,39 @@ static iree_status_t loom_low_target_legalize_verify_final(
   state->use_final_rejections = false;
   *out_error_count = result.error_count;
   return status;
+}
+
+static bool loom_low_target_legalize_function_has_source_vector_carriers(
+    const loom_module_t* module, loom_func_like_t function,
+    const loom_low_lower_policy_t* policy) {
+  loom_target_source_vector_carrier_supported_callback_t callback =
+      policy->source_function_vector_carrier_supported;
+  if (callback.fn == NULL) {
+    callback = policy->source_vector_carrier_supported;
+  }
+  if (callback.fn == NULL) {
+    return true;
+  }
+
+  uint16_t argument_count = 0;
+  const loom_value_id_t* argument_ids =
+      loom_func_like_arg_ids(function, &argument_count);
+  for (uint16_t i = 0; i < argument_count; ++i) {
+    const loom_type_t type = loom_module_value_type(module, argument_ids[i]);
+    if (loom_type_is_vector(type) &&
+        !callback.fn(callback.user_data, module, type)) {
+      return false;
+    }
+  }
+  const loom_value_id_t* result_ids = loom_op_const_results(function.op);
+  for (uint16_t i = 0; i < function.op->result_count; ++i) {
+    const loom_type_t type = loom_module_value_type(module, result_ids[i]);
+    if (loom_type_is_vector(type) &&
+        !callback.fn(callback.user_data, module, type)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 static iree_status_t loom_low_target_legalize_function(
@@ -1844,6 +1879,9 @@ static iree_status_t loom_low_target_legalize_function(
       .vector_packet_policy = selection->policy->vector_packet_policy,
       .source_vector_carrier_supported =
           selection->policy->source_vector_carrier_supported,
+      .source_function_has_unsupported_vector_carrier =
+          !loom_low_target_legalize_function_has_source_vector_carriers(
+              module, selection->func, selection->policy),
       .mode = pass_state->mode,
       .policy = pass_state->policy,
       .fact_table = fact_table,

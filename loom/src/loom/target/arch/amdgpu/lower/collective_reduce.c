@@ -713,9 +713,9 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_reduce_plan(
   }
 
   IREE_RETURN_IF_ERROR(loom_amdgpu_select_subgroup_reduce_crosslane_kind(
-      context, wavefront_size, active_lane_count, kind, payload_kind,
-      &out_plan->dpp_descriptor, &out_plan->dpp_combine_descriptor,
-      &out_plan->permlanex16_descriptor, &out_plan->crosslane_kind));
+      context, active_lane_count, kind, payload_kind, &out_plan->dpp_descriptor,
+      &out_plan->dpp_combine_descriptor, &out_plan->permlanex16_descriptor,
+      &out_plan->crosslane_kind));
   if (publication_kind ==
           LOOM_AMDGPU_SUBGROUP_REDUCE_PUBLICATION_SCALAR_BROADCAST &&
       out_plan->crosslane_kind !=
@@ -838,13 +838,12 @@ iree_status_t loom_amdgpu_select_kernel_workgroup_reduce_plan(
   const uint32_t per_wave_active_lane_count =
       is_multi_wave ? partition_wavefront_size : shape.flat_workgroup_size;
   IREE_RETURN_IF_ERROR(loom_amdgpu_select_subgroup_reduce_crosslane_kind(
-      context, partition_wavefront_size, per_wave_active_lane_count, kind,
-      payload_kind, &out_plan->dpp_descriptor,
-      &out_plan->dpp_combine_descriptor, &out_plan->permlanex16_descriptor,
-      &out_plan->crosslane.per_wave));
+      context, per_wave_active_lane_count, kind, payload_kind,
+      &out_plan->dpp_descriptor, &out_plan->dpp_combine_descriptor,
+      &out_plan->permlanex16_descriptor, &out_plan->crosslane.per_wave));
   out_plan->crosslane.cross_wave =
       loom_amdgpu_subgroup_reduce_choose_crosslane_kind(
-          partition_wavefront_size, shape.wave_count, &out_plan->dpp_descriptor,
+          shape.wave_count, &out_plan->dpp_descriptor,
           &out_plan->dpp_combine_descriptor, &out_plan->permlanex16_descriptor);
 
   uint32_t identity_bits = 0;

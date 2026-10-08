@@ -95,11 +95,13 @@ lifecycle. [Profiling update][enable] · [KFD PMC admission][pmc-admission]
 
 ## Clock domains and partitions
 
-`GpuAgent::TranslateTime` translates the end first so a resampling step does
-not change scale midway through an interval. It rejects invalid raw values,
-limits extrapolation, updates correlated samples, and handles drift. GPU
-wallclock frequency comes separately from topology `WallClockKHz` or a driver
-query; it is not the instantaneous shader operating frequency.
+`GpuAgent::TranslateTime` translates the end first to reduce clock-measurement
+jitter. Each scalar conversion locks the correlated clock state separately;
+the pair has no shared calibration snapshot. The pair wrapper rejects invalid
+raw values, while the scalar converter limits extrapolation, updates samples,
+and handles drift. GPU wallclock frequency comes separately from topology
+`WallClockKHz` or a driver query; it is not the instantaneous shader operating
+frequency.
 [Translation][translate] · [Frequency initialization][frequency]
 
 The Windows path also retains an offset when a converted AQL timestamp appears
@@ -126,6 +128,10 @@ ROCr gates metadata prefetch on an explicit request, KFD capability, and a
 compiler target with major 12 and minor at least 5. Its metadata service is
 separate from signal timestamp storage and the profiling-enable property.
 [Metadata predicate][metadata] · [Queue property][queue-abi]
+
+The copied completion `event_id` in a [metadata record](metadata.md#version-00-record-representation)
+is a native notification identifier. It is neither a dispatch timestamp nor
+the completion counter; their storage and observation remain separate.
 
 An embedded PM4 clock command and a separately scheduled PM4 queue also have
 different dependency graphs. Publishing work to separate queues in host order

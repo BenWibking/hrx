@@ -16,7 +16,9 @@
 #include "loom/ir/types.h"
 #include "loom/ops/scf/ops.h"
 #include "loom/ops/test/ops.h"
+#include "loom/rewrite/materialize.h"
 #include "loom/rewrite/rewriter.h"
+#include "loom/util/fact_loop.h"
 #include "loom/verify/verify.h"
 
 namespace loom {
@@ -746,6 +748,119 @@ TEST_F(LoopLikeReplacementTest, CompletesInnerLoopAgainstPreparedOuterBody) {
   loom_rewriter_deinitialize(&rewriter);
   Erase(outer_source);
   FinishAndVerify();
+}
+
+TEST_F(LoopLikeReplacementTest, CountedFactsTrackBoundReplacementAndCloning) {
+  const loom_value_id_t lower = BuildIndex(0);
+  const loom_value_id_t upper = BuildIndex(8);
+  const loom_value_id_t same_range_upper = BuildIndex(8);
+  const loom_value_id_t shorter_upper = BuildIndex(4);
+  const loom_value_id_t step = BuildIndex(1);
+  loom_op_t* loop = nullptr;
+  IREE_ASSERT_OK(loom_scf_for_build(
+      &builder_, /*build_flags=*/0, lower, upper, step,
+      /*iter_args=*/nullptr, /*iter_args_count=*/0, /*result_types=*/nullptr,
+      /*tied_results=*/nullptr, /*tied_result_count=*/0, LOOM_VALUE_ID_INVALID,
+      LOOM_VALUE_ID_INVALID, /*unroll_policy=*/0,
+      LOOM_SCF_FOR_UNROLL_SCHEDULE_INTERLEAVED, LOOM_LOCATION_UNKNOWN, &loop));
+  BuildScfYield(loop, loom_scf_for_body(loop), nullptr, 0);
+  FinishAndVerify();
+
+  loom_value_fact_table_t facts;
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&facts, &scratch_arena_, 0));
+  IREE_ASSERT_OK(loom_value_fact_table_compute(
+      &facts, module_, loom_func_like_cast(module_, function_)));
+  loom_rewriter_t rewriter;
+  loom_rewriter_initialize(&rewriter, module_, &scratch_arena_);
+  IREE_ASSERT_OK(loom_rewriter_enable_worklist(&rewriter));
+  loom_rewriter_attach_value_facts(&rewriter, &facts);
+  const loom_value_id_t induction =
+      loom_block_arg_id(loom_region_entry_block(loom_scf_for_body(loop)), 0);
+  const auto* domain = loom_value_fact_table_lookup_counted_loop_domain(
+      &facts, module_, induction);
+  ASSERT_NE(domain, nullptr);
+  EXPECT_EQ(domain->lower_bound, lower);
+  EXPECT_EQ(domain->upper_bound, upper);
+  EXPECT_EQ(domain->step, step);
+  EXPECT_EQ(
+      loom_value_fact_table_lookup_counted_loop_domain(&facts, module_, upper),
+      nullptr);
+
+  // A semantic bound change publishes new identities immediately, even when
+  // its numeric facts and every loop result remain identical.
+  IREE_ASSERT_OK(
+      loom_rewriter_set_operand(&rewriter, loop, 1, same_range_upper));
+  EXPECT_EQ(domain->upper_bound, same_range_upper);
+  EXPECT_EQ(loom_value_fact_table_lookup(&facts, induction).range_hi, 7);
+  IREE_ASSERT_OK(loom_rewriter_set_operand(&rewriter, loop, 1, shorter_upper));
+  EXPECT_EQ(domain->upper_bound, shorter_upper);
+  EXPECT_EQ(loom_value_fact_table_lookup(&facts, induction).range_hi, 3);
+  IREE_ASSERT_OK(loom_rewriter_set_operand(&rewriter, loop, 0, step));
+  IREE_ASSERT_OK(loom_rewriter_set_operand(&rewriter, loop, 2, shorter_upper));
+  EXPECT_EQ(domain->lower_bound, step);
+  EXPECT_EQ(domain->step, shorter_upper);
+
+  loom_ir_remap_options_t options = {
+      /*.allow_unmapped_values=*/true,
+  };
+  loom_ir_remap_t remap;
+  IREE_ASSERT_OK(loom_ir_remap_initialize(module_, module_, &scratch_arena_,
+                                          &options, &remap));
+  IREE_ASSERT_OK(loom_ir_remap_map_value(&remap, shorter_upper, upper));
+  loom_builder_set_before(&rewriter.builder, loop);
+  loom_op_t* cloned = nullptr;
+  IREE_ASSERT_OK(loom_ir_clone_op(&rewriter.builder, loop, &remap, &cloned));
+  const loom_value_id_t cloned_induction =
+      loom_block_arg_id(loom_region_entry_block(loom_scf_for_body(cloned)), 0);
+  const auto* cloned_domain = loom_value_fact_table_lookup_counted_loop_domain(
+      &facts, module_, cloned_induction);
+  ASSERT_NE(cloned_domain, nullptr);
+  EXPECT_NE(cloned_domain, domain);
+  EXPECT_EQ(cloned_domain->lower_bound, step);
+  EXPECT_EQ(cloned_domain->upper_bound, upper);
+  EXPECT_EQ(cloned_domain->step, upper);
+  EXPECT_EQ(domain->upper_bound, shorter_upper);
+
+  // Reordering the owner keeps its body identities; deleting the source does
+  // not disturb the clone's separately published domain.
+  IREE_ASSERT_OK(loom_rewriter_move_before(&rewriter, loop, cloned));
+  EXPECT_EQ(loom_value_fact_table_lookup_counted_loop_domain(&facts, module_,
+                                                             induction),
+            domain);
+  IREE_ASSERT_OK(loom_rewriter_erase(&rewriter, loop));
+  EXPECT_EQ(loom_value_fact_table_lookup_counted_loop_domain(&facts, module_,
+                                                             cloned_induction),
+            cloned_domain);
+  loom_rewriter_deinitialize(&rewriter);
+
+  loom_value_fact_table_clear_scope(&facts);
+  EXPECT_FALSE(facts.has_counted_loop_domains);
+  EXPECT_EQ(loom_value_fact_table_lookup_counted_loop_domain(&facts, module_,
+                                                             cloned_induction),
+            nullptr);
+  IREE_ASSERT_OK(loom_value_fact_table_compute(
+      &facts, module_, loom_func_like_cast(module_, function_)));
+  const auto* rebuilt = loom_value_fact_table_lookup_counted_loop_domain(
+      &facts, module_, cloned_induction);
+  ASSERT_NE(rebuilt, nullptr);
+  EXPECT_EQ(rebuilt->lower_bound, step);
+  EXPECT_EQ(rebuilt->upper_bound, upper);
+  EXPECT_EQ(rebuilt->step, upper);
+
+  // Splicing the body into its parent is the structural part of SCF-to-CFG.
+  // Its argument is no longer an intrinsic counted IV; the CFG guard owns
+  // any subsequent proof of the moved block's range.
+  loom_rewriter_initialize(&rewriter, module_, &scratch_arena_);
+  loom_rewriter_attach_value_facts(&rewriter, &facts);
+  loom_block_t* moved_entry = nullptr;
+  IREE_ASSERT_OK(loom_rewriter_move_region_blocks(
+      &rewriter, loom_scf_for_body(cloned), cloned, function_body_, 1,
+      function_, &moved_entry));
+  EXPECT_EQ(loom_block_arg_id(moved_entry, 0), cloned_induction);
+  EXPECT_EQ(loom_value_fact_table_lookup_counted_loop_domain(&facts, module_,
+                                                             cloned_induction),
+            nullptr);
+  loom_rewriter_deinitialize(&rewriter);
 }
 
 }  // namespace

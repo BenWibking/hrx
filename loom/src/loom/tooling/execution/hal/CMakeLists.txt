@@ -161,24 +161,6 @@ loom_cc_library(
   DEPS
     iree::base
     iree::hal
-    loom::target::types
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
-    device_provider
-  HDRS
-    "device_provider.h"
-  SRCS
-    "device_provider.c"
-  DEPS
-    ::runtime
-    iree::base
-    iree::hal
-    loom::target::profile
-    loom::target::provider
-    loom::target::selection
   PUBLIC
 )
 
@@ -204,23 +186,6 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
-    candidate
-  HDRS
-    "candidate.h"
-  SRCS
-    "candidate.c"
-  DEPS
-    ::device_provider
-    iree::base
-    loom::target::entry_selection
-    loom::target::provider
-    loom::tooling::compile::options
-    loom::tooling::execution::session
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
     invocation
   HDRS
     "invocation.h"
@@ -232,8 +197,6 @@ loom_cc_library(
     iree::base
     iree::hal
     iree::tooling::value_io
-    loom::target::launch
-    loom::target::types
   PUBLIC
 )
 
@@ -260,41 +223,22 @@ loom_cc_library(
     "testbench_actual.c"
   DEPS
     ::artifact
-    ::candidate
-    ::device_provider
     ::invocation
     ::runtime
     ::testbench_staging
     iree::base
     iree::hal
     iree::tooling::device_util
-    loom::analysis::kernel_launch_config
-    loom::analysis::symbol_facts
-    loom::codegen::low::launch_config_program
-    loom::error::diagnostic
+    loom::binding::c::interop
+    loom::binding::c::loomc
+    loom::binding::c::target::iree_hal
     loom::ir
-    loom::ir::facts
-    loom::link::linker
-    loom::ops::func_symbol_facts
-    loom::ops::kernel
-    loom::ops::op_defs
-    loom::ops::special_values
-    loom::ops::target
-    loom::pass::pipeline_snapshot
-    loom::sanitizer::options
-    loom::target::provider
+    loom::target::profile
     loom::target::types
-    loom::tooling::compile::options
-    loom::tooling::compile::pipeline
-    loom::tooling::compile::report_capture
-    loom::tooling::config
-    loom::tooling::execution::session
-    loom::tooling::testbench
     loom::tooling::testbench::api
+    loom::tooling::testbench::compiled_provider
     loom::tooling::testbench::invocation
-    loom::tooling::testbench::requirements
     loom::tooling::testbench::value_materializer
-    loom::util::fact_table
   PUBLIC
 )
 
@@ -311,6 +255,8 @@ loom_cc_library(
     ::testbench_staging
     iree::base
     iree::hal
+    loom::binding::c::interop
+    loom::binding::c::loomc
     loom::error::diagnostic
     loom::error::error_defs
     loom::error::source
@@ -363,41 +309,6 @@ endif()
 
 loom_cc_test(
   NAME
-    device_provider_test
-  SRCS
-    "device_provider_test.cc"
-  DEPS
-    ::artifact
-    ::device_provider
-    ::runtime
-    iree::base
-    iree::hal
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::target::profile
-    loom::target::provider
-)
-
-loom_cc_test(
-  NAME
-    candidate_test
-  SRCS
-    "candidate_test.cc"
-  DEPS
-    ::candidate
-    iree::base
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::target::low_descriptor_registry_core_test
-    loom::target::profile
-    loom::target::provider
-    loom::target::types
-    loom::testing::byte_sequence
-    loom::tooling::execution::session
-)
-
-loom_cc_test(
-  NAME
     benchmark_test
   SRCS
     "benchmark_test.cc"
@@ -419,7 +330,6 @@ loom_cc_test(
     iree::base
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::target::types
 )
 
 loom_cc_test(
@@ -428,31 +338,16 @@ loom_cc_test(
   SRCS
     "testbench_actual_test.cc"
   DEPS
-    ::invocation
     ::testbench_actual
     iree::base
     iree::base::internal::arena
     iree::hal::testing::mock_device
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::format::text::parser
-    loom::ir
-    loom::link::linker
-    loom::ops::check
-    loom::ops::func
-    loom::ops::index
-    loom::ops::kernel
-    loom::ops::pass
-    loom::ops::test
-    loom::target::facts
-    loom::target::low_descriptor_registry_core_test
-    loom::target::profile
-    loom::target::provider
-    loom::testing::module_ptr
-    loom::tooling::execution::session
+    loom::binding::c::interop
+    loom::binding::c::loomc
     loom::tooling::testbench
     loom::tooling::testbench::api
-    loom::transforms::cleanup::configured
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

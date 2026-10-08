@@ -247,6 +247,7 @@ loom_cc_library(
     loom::target::legalization
     loom::transforms::scalar::target_legalization
     loom::transforms::vector::packet_legalization
+    loom::transforms::vector::reduction_legalization
     loom::transforms::vector::shape_legalization
     loom::transforms::vector::table_legalization
     loom::transforms::vector::target_legalization
@@ -453,6 +454,7 @@ loom_cc_library(
     "lower/matrix.h"
     "lower/rodata.h"
     "lower/shuffle.h"
+    "lower/transpose.h"
     "lower/vector_packet.h"
   TEXTUAL_HDRS
     "${IREE_BINARY_DIR}/loom/src/loom/target/arch/amd/xdna/aie2p/contracts/core_index.inl"
@@ -463,6 +465,7 @@ loom_cc_library(
     "lower/registry.c"
     "lower/rodata.c"
     "lower/shuffle.c"
+    "lower/transpose.c"
     "lower/vector_packet.c"
   DEPS
     ::core_descriptors
@@ -604,6 +607,7 @@ loom_cc_library(
     loom::ops::low
     loom::ops::op_defs
     loom::target::reporting::report
+    loom::tools::loom-check::compile
     loom::tools::loom-check::execute
     loom::tools::loom-check::provider
   PUBLIC
@@ -625,6 +629,7 @@ loom_cc_binary(
 )
 endif()
 
+if(LOOM_TARGET_ARCH_XDNA)
 iree_py_test(
   NAME
     interleave_family_test
@@ -643,7 +648,9 @@ iree_py_test(
   TIMEOUT
     60
 )
+endif()
 
+if(LOOM_TARGET_ARCH_XDNA)
 iree_py_test(
   NAME
     interleave_family_exhaustive_test
@@ -665,6 +672,52 @@ iree_py_test(
   TIMEOUT
     60
 )
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+iree_py_test(
+  NAME
+    transpose_family_test
+  MAIN
+    "test/transpose_family_test.py"
+  SRCS
+    "test/transpose_family_test.py"
+  ARGS
+    "{{$<TARGET_FILE:loom::target::arch::amd::xdna::aie2p::loom-check>}}"
+  DATA
+    "loom::target::arch::amd::xdna::aie2p::loom-check"
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  TIMEOUT
+    60
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+iree_py_test(
+  NAME
+    transpose_family_exhaustive_test
+  MAIN
+    "test/transpose_family_test.py"
+  SRCS
+    "test/transpose_family_test.py"
+  ARGS
+    "{{$<TARGET_FILE:loom::target::arch::amd::xdna::aie2p::loom-check>}}"
+    "--exhaustive"
+  DATA
+    "loom::target::arch::amd::xdna::aie2p::loom-check"
+  LABELS
+    "manual"
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  TIMEOUT
+    300
+)
+endif()
 
 if(LOOM_TARGET_ARCH_XDNA)
 loom_check_test_suite(
@@ -866,10 +919,12 @@ loom_check_test_suite(
     "test/source_low/vector_slice.loom-test"
     "test/source_low/vector_splat.loom-test"
     "test/source_low/vector_structural.loom-test"
+    "test/source_low/vector_transpose.loom-test"
     "test/target_legalize_report.loom-test"
     "test/vector_float_extrema.loom-test"
     "test/vector_insert_packetization.loom-test"
     "test/vector_memory_packetization.loom-test"
+    "test/vector_reduce_axes.loom-test"
   RUNNER
     ::loom-check
   TEST_NAME_PREFIX_TO_STRIP

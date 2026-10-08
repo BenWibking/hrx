@@ -49,6 +49,10 @@ typedef loom_target_residency_view_t (
 typedef struct loom_low_emission_frame_options_t {
   // Descriptor registry available to scheduling and allocation.
   const loom_low_descriptor_registry_t* descriptor_registry;
+  // Optional already resolved function target. This carries producer-owned
+  // descriptor/profile facts directly into the model without resolving them a
+  // second time. When present, |function_target_facts| is ignored.
+  const loom_low_resolved_target_t* resolved_target;
   // Optional borrowed invocation-refined facts for the function. These facts
   // already include the function contract and remain immutable for the build.
   // When omitted, frame construction resolves the target from authored IR.
@@ -90,8 +94,13 @@ typedef struct loom_low_emission_frame_options_t {
   const loom_low_allocation_abi_location_t* allocation_entry_locations;
   // Number of entries in |allocation_entry_locations|.
   iree_host_size_t allocation_entry_location_count;
+  // Borrowed outgoing locations indexed by function result, passed unchanged
+  // through allocation repair. These constrain exits, not SSA lifetimes.
+  const loom_low_allocation_abi_location_t* allocation_exit_locations;
+  // Number of entries in |allocation_exit_locations|.
+  iree_host_size_t allocation_exit_location_count;
   // Callee convention facts consumed before allocation in every repair round.
-  loom_low_call_contract_query_t call_contracts;
+  loom_low_call_contract_provider_t call_contracts;
   // Storage spaces supported by synchronous final transport in this emitter.
   // This does not authorize hiding asynchronous target instructions in moves.
   loom_low_storage_space_set_t synchronous_storage_spaces;
@@ -148,8 +157,10 @@ typedef struct loom_low_emission_frame_t {
 typedef struct loom_low_emission_frame_lower_spill_traffic_result_t {
   // Number of user-facing diagnostics emitted while lowering spill traffic.
   uint32_t error_count;
-  // Scratch-arena-owned value IDs that the lowered traffic requires in
-  // registers during subsequent allocation rounds.
+  // Scratch-arena-owned value IDs that target lowering creates or newly
+  // exposes and requires in registers during subsequent allocation rounds.
+  // This includes replacement sources used when materializing block arguments.
+  // The frame retains the original spill-plan values independently.
   const loom_value_id_t* required_register_value_ids;
   // Number of entries in |required_register_value_ids|.
   iree_host_size_t required_register_value_count;
@@ -157,6 +168,9 @@ typedef struct loom_low_emission_frame_lower_spill_traffic_result_t {
 
 // Target callback that rewrites structural low.spill/low.reload traffic into
 // target packets before the next emission-frame scheduling/allocation round.
+// Every register value created by the rewrite and every preexisting replacement
+// source exposed by it must be returned as a required-register value. This
+// prevents target spill traffic from recursively becoming spill traffic.
 typedef iree_status_t (*loom_low_emission_frame_lower_spill_traffic_fn_t)(
     void* user_data, loom_module_t* module, loom_op_t* low_func_op,
     iree_diagnostic_emitter_t emitter, iree_arena_allocator_t* arena,
@@ -202,6 +216,10 @@ iree_status_t loom_low_emission_frame_build(
 // Static storage reservations first move to the entry prefix in declaration
 // order. Repair appends new reservations so target-lowered offsets stay stable.
 // Each iteration materializes the accepted allocation snapshot as a batch.
+// Materialized plan values enter a monotonic required-register set, and target
+// lowering extends that set with its traffic values. Each batch therefore
+// retires distinct spillable program values; an unsatisfiable required set is
+// reported by allocation instead of by an arbitrary iteration ceiling.
 // Individual plan traffic is recomputed from the current IR while consuming
 // that batch because earlier spill rewrites can make later allocation-time
 // traffic predictions stale.

@@ -29,6 +29,13 @@ interface-version check belongs to the pinned runtime implementation, separate
 from the native command format. [UAPI fields][uapi]
 [Allocation and exhaustion][allocation] [ROCr version gate][version]
 
+This explicit-engine normalization occurs in HWS creation before MQD-manager
+selection. The cited no-HWS creator selects its manager first and recognizes
+only SDMA/SDMA_XGMI in its SDMA allocation branch. The
+[queue-context installation flow](context.md#installation-and-write-pointer-consumers)
+describes that source distinction; a public queue-type enum or interface
+version alone does not establish identical routing under every scheduler.
+
 Engine indices and masks have different representations.
 `recommended_sdma_engine_id_mask` is a bit set: bit `e` recommends native engine
 ID `e`. For example, mask `0x4` names engine 2, not engine 4. ROCr's internal
@@ -58,8 +65,8 @@ belongs to that KFD context, independently of the SDMA engine ID.
 [Internal type enum][queue-types] [Queue input translation][queue-input]
 
 These values establish queue class and GPU ownership, not physical engine
-affinity. Explicit-engine construction is normalized to ordinary or xGMI type
-by the allocator, and the attributes expose neither `sdma_engine_id` nor the
+affinity. HWS explicit-engine construction is normalized to ordinary or xGMI
+type by the allocator, and the attributes expose neither `sdma_engine_id` nor the
 original explicit-engine request. The internal type enum also differs from
 the CREATE_QUEUE command-format input: PM4 and AQL compute requests both
 become internal COMPUTE type 0, with their format stored separately. Sysfs

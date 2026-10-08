@@ -20,7 +20,12 @@
 #include "libamdf/cts/gpu/kernels/resident_exchange_kernels.h"
 #include "libamdf/cts/gpu/kernels/resident_npu_initiated.h"
 #include "libamdf/cts/gpu/kernels/resident_npu_initiated_kernels.h"
+#include "libamdf/cts/gpu/kernels/resident_npu_sdma.h"
+#include "libamdf/cts/gpu/kernels/resident_npu_sdma_kernels.h"
 #include "libamdf/cts/gpu/pm4/encoding/commands.h"
+#include "libamdf/cts/gpu/sdma/encoding/commands.h"
+#include "libamdf/cts/gpu/util/command_fixture.h"
+#include "libamdf/cts/gpu/util/user_queue.h"
 #include "libamdf/cts/interop/gpu/xdna/recipes/device_fixture.h"
 #include "libamdf/cts/interop/gpu/xdna/recipes/pm4_queue.h"
 #include "libamdf/cts/interop/gpu/xdna/recipes/resident_transaction.h"
@@ -44,7 +49,13 @@ constexpr uint32_t kSlotSeedStep = 0x9E3779B9u;
 enum class LaunchOrder { kGpuFirst, kNpuFirst };
 enum class Participants { kBoth, kGpu, kNpu };
 // Window and NPU-initiated schedules use one worker; held schedules use two.
-enum class ServiceSchedule { kWindow, kHoldFirst, kHoldSecond, kNpuInitiated };
+enum class ServiceSchedule {
+  kWindow,
+  kHoldFirst,
+  kHoldSecond,
+  kNpuInitiated,
+  kNpuSdma
+};
 enum BufferOrdinal : size_t {
   kStartup,
   kControl,
@@ -87,8 +98,9 @@ struct ExchangePlan {
                : 1u;
   }
   bool npu_initiated() const {
-    return schedule == ServiceSchedule::kNpuInitiated;
+    return schedule == ServiceSchedule::kNpuInitiated || npu_sdma();
   }
+  bool npu_sdma() const { return schedule == ServiceSchedule::kNpuSdma; }
   uint32_t held_channel() const {
     return schedule == ServiceSchedule::kHoldSecond ? 1u : 0u;
   }
@@ -102,10 +114,11 @@ struct ExchangePlan {
     return service_count() == 1 ? round_count : round_count + 2;
   }
   uint32_t record_header_word_count() const {
-    return service_count() == 1 ? 4u : 5u;
+    return npu_sdma() ? 8u : (service_count() == 1 ? 4u : 5u);
   }
   uint32_t record_byte_length() const {
-    return 4 * record_header_word_count() + shape.byte_length();
+    return 4 * record_header_word_count() +
+           shape.byte_length() * (npu_sdma() ? 2u : 1u);
   }
   uint32_t slot_count() const { return service_count() * shape.credit_count; }
 };
@@ -132,6 +145,23 @@ void CheckBytes(std::span<const uint8_t> actual,
       << "byte " << std::distance(actual.begin(), mismatch.first);
 }
 
+// Queue-managed global transitions have no hidden host or range operation.
+void CheckQueueTransition(const amdf_cache_transition_t& transition,
+                          amdf_cache_operation_t operation) {
+  const bool required = operation != AMDF_CACHE_OPERATION_NONE;
+  ASSERT_EQ(transition.kind, required ? AMDF_CACHE_TRANSITION_KIND_GLOBAL
+                                      : AMDF_CACHE_TRANSITION_KIND_NONE);
+  ASSERT_EQ(transition.executor, required
+                                     ? AMDF_CACHE_TRANSITION_EXECUTOR_QUEUE
+                                     : AMDF_CACHE_TRANSITION_EXECUTOR_NONE);
+  ASSERT_EQ(transition.operation, operation);
+  ASSERT_EQ(transition.host_operation, AMDF_HOST_CACHE_OPERATION_NONE);
+  ASSERT_EQ(transition.host_instruction, AMDF_HOST_CACHE_INSTRUCTION_NONE);
+  ASSERT_EQ(transition.host_fence_before, AMDF_HOST_CACHE_FENCE_NONE);
+  ASSERT_EQ(transition.host_fence_after, AMDF_HOST_CACHE_FENCE_NONE);
+  ASSERT_EQ(transition.range_granularity, 0u);
+}
+
 struct JointBuffer {
   // Host-only source owner, retained until a native registration is removed.
   CtsMappedMemory source;
@@ -145,6 +175,22 @@ struct JointBuffer {
   std::vector<uint8_t> expected;
 };
 
+enum SdmaBufferOrdinal : size_t {
+  kSdmaSource,
+  kSdmaDestination,
+  kSdmaCompletion,
+  kSdmaBufferCount,
+};
+
+struct SdmaBuffer {
+  // GPU-only native allocation and its explicit host view.
+  CtsMappedMemory memory;
+  // GPU base address, including the leading guard.
+  uint64_t address = 0;
+  // Complete oracle, including every guard and allocation padding byte.
+  std::vector<uint8_t> expected;
+};
+
 class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
  protected:
   ResidentGpuXdnaTest()
@@ -155,13 +201,21 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     // A failed publication or join does not establish cancellation. Preserve
     // every owner if either accepted participant still has an unproven last
     // use.
-    if (gpu_pending_ || npu_pending_) {
+    if (gpu_pending_ || npu_pending_ || sdma_.pending) {
       ADD_FAILURE()
           << "resident participants did not establish terminal retirement";
       return;
     }
     if (!gpu_queue_.Release(api_) || !execution_.Release(api_, xdna_api_)) {
       return;
+    }
+    if (!sdma_.queue.Release(api_)) {
+      return;
+    }
+    for (auto& buffer : sdma_.buffers) {
+      if (!buffer.memory.Release(api_)) {
+        return;
+      }
     }
     if (!arguments_.Release(api_) || !code_.Release(api_) ||
         !records_.Release(api_) || !completion_.Release(api_)) {
@@ -177,6 +231,180 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
         return;
       }
     }
+  }
+
+  amdf_status_t MatchSdmaEndpoint(amdf_endpoint_t* endpoint,
+                                  bool* out_matches) {
+    auto status = GpuXdnaDeviceFixture::MatchGpuEndpoint(endpoint, out_matches);
+    if (!amdf_status_is_ok(status) || !*out_matches) {
+      return status;
+    }
+    const GpuQueueRequirements requirements = {
+        .command_type = AMDF_QUEUE_COMMAND_TYPE_GPU_SDMA,
+        .roles = AMDF_QUEUE_ROLE_TRANSFER,
+        .user_queue_capabilities = AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER,
+    };
+    return FindGpuQueueFamily(api_, endpoint, requirements, &sdma_.family,
+                              out_matches);
+  }
+
+  void QuerySdmaPair(const amdf_memory_site_t& producer,
+                     const amdf_memory_site_t& consumer,
+                     amdf_memory_pair_info_t& pair) {
+    pair.type = AMDF_STRUCTURE_TYPE_MEMORY_PAIR_INFO;
+    pair.structure_size = sizeof(pair);
+    ASSERT_EQ(api_->memory_query_pair_info(&producer, &consumer, &pair),
+              AMDF_STATUS_OK);
+    ASSERT_NE(pair.flags & AMDF_MEMORY_PAIR_FLAG_SHARED_BACKING_REACHABLE, 0u);
+  }
+
+  void ResolveSdmaTransition(const amdf_cache_transition_t& transition,
+                             amdf_cache_operation_t operation, uint32_t bit) {
+    const bool required = transition.kind != AMDF_CACHE_TRANSITION_KIND_NONE;
+    ASSERT_NO_FATAL_FAILURE(CheckQueueTransition(
+        transition, required ? operation : AMDF_CACHE_OPERATION_NONE));
+    if (required) {
+      ASSERT_NE(
+          sdma_.family.format_features & AMDF_GPU_SDMA_FORMAT_FEATURE_USER_GCR,
+          0u);
+      ASSERT_NE(sdma_.family.cache_operations & (UINT64_C(1) << operation), 0u);
+      ASSERT_NE(sdma_.family.cache_transition_kinds &
+                    AMDF_CACHE_TRANSITION_KINDS_GLOBAL,
+                0u);
+      sdma_.cache_flags |= bit;
+    }
+  }
+
+  void PrepareSdma(const ExchangePlan& plan) {
+    ASSERT_NO_FATAL_FAILURE(
+        sdma_.queue.Initialize(api_, gpu_api_, device_, sdma_.family,
+                               AMDF_QUEUE_PRODUCER_MODE_SINGLE, {},
+                               AMDF_USER_QUEUE_CAPABILITY_HOST_PRODUCER |
+                                   AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER));
+    const auto capacity = sdma_.queue.producer.info.ring_byte_length;
+    ASSERT_GE(capacity, 4096u);
+    ASSERT_LE(capacity, UINT64_C(1) << 32);
+    ASSERT_EQ(capacity & (capacity - 1), 0u);
+    sdma_.expected_ring.assign(capacity / sizeof(uint32_t), 0);
+    sdma_.source_stride =
+        (2 * kPayloadByteOffset + plan.shape.byte_length() + 63) &
+        ~uint64_t{63};
+    const std::array<uint64_t, kSdmaBufferCount> lengths = {
+        8 * sdma_.source_stride,
+        2 * kPayloadByteOffset + plan.shape.byte_length(),
+        3 * kPayloadByteOffset};
+    for (size_t i = 0; i < sdma_.buffers.size(); ++i) {
+      auto& buffer = sdma_.buffers[i];
+      amdf_cache_transition_t release = {};
+      ASSERT_NO_FATAL_FAILURE(CreateShaderMemory(
+          i == kSdmaSource ? AMDF_MEMORY_ACCESS_READ
+                           : AMDF_MEMORY_ACCESS_READ | AMDF_MEMORY_ACCESS_WRITE,
+          lengths[i], buffer.memory, buffer.address, release));
+      buffer.expected.assign(buffer.memory.bytes().size(), 0x75u - 17u * i);
+      if (i == kSdmaSource) {
+        for (uint32_t page = 0; page < 8; ++page) {
+          for (uint32_t word = 0; word < plan.shape.word_count; ++word) {
+            StoreU32(buffer.expected,
+                     page * sdma_.source_stride + kPayloadByteOffset + word * 4,
+                     0x31415927u + page * 0x243f6a89u + word * 0x1020305u);
+          }
+        }
+      } else if (i == kSdmaCompletion) {
+        StoreU32(buffer.expected, kPayloadByteOffset, 0);
+      }
+      std::copy(buffer.expected.begin(), buffer.expected.end(),
+                buffer.memory.bytes().begin());
+      ASSERT_EQ(HostTransition(buffer.memory, release), AMDF_STATUS_OK);
+    }
+    const auto& source = sdma_.buffers[kSdmaSource].memory;
+    const auto& destination = sdma_.buffers[kSdmaDestination].memory;
+    amdf_memory_pair_info_t ingress = {};
+    amdf_memory_pair_info_t copied = {};
+    ASSERT_NO_FATAL_FAILURE(
+        QuerySdmaPair(source.HostSite(),
+                      source.DeviceSite(0, sdma_.family.ordinal), ingress));
+    ASSERT_NO_FATAL_FAILURE(
+        QuerySdmaPair(destination.DeviceSite(0, sdma_.family.ordinal),
+                      destination.DeviceSite(0, gpu_family_.ordinal), copied));
+    ASSERT_NO_FATAL_FAILURE(
+        CheckQueueTransition(ingress.release, AMDF_CACHE_OPERATION_NONE));
+    ASSERT_NO_FATAL_FAILURE(CheckQueueTransition(
+        copied.acquire, AMDF_CACHE_OPERATION_ACQUIRE_FROM_SYSTEM));
+    ASSERT_NO_FATAL_FAILURE(ResolveSdmaTransition(
+        ingress.acquire, AMDF_CACHE_OPERATION_ACQUIRE_FROM_SYSTEM, 1u));
+    ASSERT_NO_FATAL_FAILURE(ResolveSdmaTransition(
+        copied.release, AMDF_CACHE_OPERATION_RELEASE_TO_SYSTEM, 2u));
+    std::array<uint32_t, 11> encoding;
+    SdmaCommandWriter writer(encoding.data(), sdma_.family.format_features);
+    writer.CopyLinear(
+        sdma_.buffers[kSdmaSource].address + kPayloadByteOffset,
+        sdma_.buffers[kSdmaDestination].address + kPayloadByteOffset, 4);
+    writer.Fence32(sdma_.buffers[kSdmaCompletion].address + kPayloadByteOffset,
+                   1);
+    ASSERT_EQ(writer.word_count(), encoding.size());
+    sdma_.copy_control = encoding[2];
+    sdma_.fence_header = encoding[7];
+    RecordProperty("resident_sdma_family", sdma_.family.ordinal);
+    RecordProperty("resident_sdma_cache_flags", sdma_.cache_flags);
+    RecordProperty("resident_sdma_ring_byte_length", std::to_string(capacity));
+  }
+
+  void PredictSdmaCopy(const ExchangePlan& plan, uint32_t generation,
+                       uint32_t request, size_t record_offset) {
+    const bool produces_return = generation <= plan.round_count;
+    const uint32_t page = produces_return ? request & 7u : 0u;
+    const uint32_t word_count =
+        produces_return
+            ? 1u + std::min((request >> 8) & 1023u, plan.shape.word_count - 1u)
+            : 0u;
+    const auto& source = sdma_.buffers[kSdmaSource];
+    auto& destination = sdma_.buffers[kSdmaDestination];
+    if (produces_return) {
+      const size_t source_offset =
+          page * sdma_.source_stride + kPayloadByteOffset;
+      std::copy_n(source.expected.begin() + source_offset, word_count * 4,
+                  destination.expected.begin() + kPayloadByteOffset);
+      StoreU32(sdma_.buffers[kSdmaCompletion].expected, kPayloadByteOffset,
+               generation);
+      const uint64_t capacity = sdma_.queue.producer.info.ring_byte_length;
+      const uint64_t chain_bytes = 44 + ((sdma_.cache_flags & 1) ? 20 : 0) +
+                                   ((sdma_.cache_flags & 2) ? 20 : 0);
+      uint64_t offset = sdma_.frontier % capacity;
+      if (capacity - offset < chain_bytes) {
+        std::fill(sdma_.expected_ring.begin() + offset / 4,
+                  sdma_.expected_ring.end(), 0);
+        sdma_.frontier += capacity - offset;
+        offset = 0;
+      }
+      SdmaCommandWriter writer(sdma_.expected_ring.data() + offset / 4,
+                               sdma_.family.format_features);
+      if (sdma_.cache_flags & 1) {
+        writer.AcquireFromSystem();
+      }
+      writer.CopyLinear(source.address + source_offset,
+                        destination.address + kPayloadByteOffset,
+                        word_count * 4);
+      if (sdma_.cache_flags & 2) {
+        writer.ReleaseToSystem();
+      }
+      writer.Fence32(
+          sdma_.buffers[kSdmaCompletion].address + kPayloadByteOffset,
+          generation);
+      EXPECT_EQ(writer.word_count() * 4, chain_bytes);
+      sdma_.frontier += chain_bytes;
+      sdma_.selected_pages |= 1u << page;
+      sdma_.short_copy_count += word_count < plan.shape.word_count;
+    }
+    StoreU32(expected_records_, record_offset + 8, page);
+    StoreU32(expected_records_, record_offset + 12, word_count);
+    StoreU32(expected_records_, record_offset + 16,
+             static_cast<uint32_t>(sdma_.frontier));
+    StoreU32(expected_records_, record_offset + 20,
+             static_cast<uint32_t>(sdma_.frontier >> 32));
+    std::copy_n(destination.expected.begin() + kPayloadByteOffset,
+                plan.shape.byte_length(),
+                expected_records_.begin() + record_offset + 32 +
+                    plan.shape.byte_length());
   }
 
   void PrepareBuffers(amdf_memory_profile_roles_t role,
@@ -374,10 +602,11 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
   void PrepareGpu(const ExchangePlan& plan) {
     const auto shape = plan.shape;
     const bool independent = plan.service_count() == 2;
-    const auto& products = plan.npu_initiated()
-                               ? kernels::resident_npu_initiated::kKernels
-                           : independent ? kernels::resident_channels::kKernels
-                                         : kernels::resident_exchange::kKernels;
+    const auto& products =
+        plan.npu_sdma()        ? kernels::resident_npu_sdma::kKernels
+        : plan.npu_initiated() ? kernels::resident_npu_initiated::kKernels
+        : independent          ? kernels::resident_channels::kKernels
+                               : kernels::resident_exchange::kKernels;
     const auto* selected = products.Find(gpu_endpoint_info_);
     ASSERT_NE(selected, nullptr)
         << "missing compiled resident kernel for endpoint";
@@ -389,6 +618,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
         product.program.resource2,
         product.program.resource3,
         product.group_segment_byte_length,
+        product.wavefront_size,
         {product.required_workgroup_size[0], product.required_workgroup_size[1],
          product.required_workgroup_size[2]}};
     const uint64_t entry_offset = product.entry_byte_offset;
@@ -424,7 +654,37 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
         argument_address, release));
     ASSERT_EQ(argument_address % product.arguments.alignment, 0u);
     original_arguments_.assign(arguments_.bytes().size(), 0);
-    if (plan.npu_initiated()) {
+    if (plan.npu_sdma()) {
+      const auto& mapping = sdma_.queue.producer.info;
+      const uint64_t destination =
+          sdma_.buffers[kSdmaDestination].address + kPayloadByteOffset;
+      const uint64_t completion =
+          sdma_.buffers[kSdmaCompletion].address + kPayloadByteOffset;
+      const kernels::resident_npu_sdma::Arguments arguments = {
+          .request = buffers_[kRequest].gpu_address,
+          .response = buffers_[kResponse].gpu_address,
+          .startup = buffers_[kStartup].gpu_address,
+          .control = buffers_[kControl].gpu_address,
+          .records = records_address + kPayloadByteOffset,
+          .ring = mapping.ring_address,
+          .read_index = mapping.read_index_address,
+          .write_index = mapping.write_index_address,
+          .notification = mapping.doorbell_address,
+          .destination = destination,
+          .completion = completion,
+          .source_address = sdma_.buffers[kSdmaSource].address,
+          .destination_address = destination,
+          .completion_address = completion,
+          .capacity = mapping.ring_byte_length,
+          .source_stride = sdma_.source_stride,
+          .round_count = plan.round_count,
+          .payload_word_count = shape.word_count,
+          .payload_word_offset = shape.word_offset,
+          .copy_control = sdma_.copy_control,
+          .fence_header = sdma_.fence_header,
+          .cache_flags = sdma_.cache_flags};
+      std::memcpy(original_arguments_.data(), &arguments, sizeof(arguments));
+    } else if (plan.npu_initiated()) {
       const NpuInitiatedArguments arguments = {
           buffers_[kRequest].gpu_address,
           buffers_[kResponse].gpu_address,
@@ -485,7 +745,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     Pm4CommandWriter writer(gpu_commands_.data(), *pm4_profile_);
     writer.SystemBarrier();
     writer.BindCompute(program, argument_address);
-    writer.DispatchWave32(1, 1, 1);
+    writer.Dispatch(program, 1, 1, 1);
     writer.SystemBarrier();
     gpu_command_word_count_ = writer.word_count();
     RecordProperty("resident_gpu_target", product.target);
@@ -590,16 +850,26 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
       StoreU32(expected_records_, record_offset, generation);
       StoreU32(expected_records_, record_offset + 4,
                produces_return ? generation : 0);
+      if (plan.npu_sdma()) {
+        PredictSdmaCopy(plan, generation, words[0], record_offset);
+      }
       uint32_t sum = 0;
       for (uint32_t i = 0; i < shape.word_count; ++i) {
         const uint32_t value = words[i];
         const size_t payload_offset =
             kPayloadByteOffset + shape.byte_offset() + i * 4;
-        StoreU32(expected_records_, record_offset + 16 + i * 4, value);
+        StoreU32(expected_records_,
+                 record_offset + 4 * plan.record_header_word_count() + i * 4,
+                 value);
         StoreU32(buffers_[kResponse].expected, payload_offset, value);
         sum += value;
         if (produces_return) {
-          const uint32_t returned = 3u * value + generation;
+          const uint32_t returned =
+              plan.npu_sdma()
+                  ? 3u * LoadU32(sdma_.buffers[kSdmaDestination].expected,
+                                 kPayloadByteOffset + i * 4) +
+                        value + generation
+                  : 3u * value + generation;
           StoreU32(buffers_[kRequest].expected, payload_offset, returned);
           words[i] = returned + 257u * (generation + 1u) + 17u * i;
         }
@@ -623,6 +893,9 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
            ExchangeShape shape = {16, 16},
            ServiceSchedule schedule = ServiceSchedule::kWindow) {
     const ExchangePlan plan{shape, round_count, seed, schedule};
+    ASSERT_GE(shape.word_count, 1u);
+    ASSERT_LE(shape.word_count, 1024u);
+    ASSERT_TRUE(shape.word_offset == 1 || shape.word_offset == 16);
     if (plan.service_count() == 2) {
       ASSERT_EQ(shape.credit_count, 1u);
       ASSERT_GE(round_count, 1u);
@@ -639,6 +912,9 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     if (IsSkipped()) {
       return;
     }
+    if (plan.npu_sdma()) {
+      ASSERT_NO_FATAL_FAILURE(PrepareSdma(plan));
+    }
     ASSERT_NO_FATAL_FAILURE(PrepareGpu(plan));
     if (HasFailure()) {
       return;
@@ -646,7 +922,8 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     RecordProperty("resident_round_count", plan.record_count());
     RecordProperty("resident_service_count", plan.service_count());
     RecordProperty("resident_schedule",
-                   plan.npu_initiated()                      ? "npu-initiated"
+                   plan.npu_sdma()                           ? "npu-sdma"
+                   : plan.npu_initiated()                    ? "npu-initiated"
                    : schedule == ServiceSchedule::kWindow    ? "credit-window"
                    : schedule == ServiceSchedule::kHoldFirst ? "hold-first"
                                                              : "hold-second");
@@ -689,6 +966,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
           api_, gpu_api_,
           std::span(gpu_commands_).first(gpu_command_word_count_), 1);
       gpu_pending_ = gpu_submit_result;
+      sdma_.pending = plan.npu_sdma() && gpu_pending_;
     };
     if (participants == Participants::kGpu) {
       submit_gpu();
@@ -736,6 +1014,14 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
         return;
       }
       npu_pending_ = false;
+    }
+    if (sdma_.pending) {
+      // GPU completion establishes the last notification. Native consumption
+      // separately retires every command byte before mapping/backing release.
+      const auto frontier =
+          GpuLoadAcquire<uint64_t>(sdma_.queue.host.write_index_address);
+      ASSERT_NO_FATAL_FAILURE(sdma_.queue.WaitConsumed(api_, frontier));
+      sdma_.pending = false;
     }
     EXPECT_TRUE(gpu_submit_result);
     EXPECT_EQ(npu_submit_status, AMDF_STATUS_OK);
@@ -803,6 +1089,29 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
       RecordProperty("resident_round_trip_end_clock_ticks", end_ticks);
     }
     CheckBytes(records_.bytes(), expected_records_);
+    if (plan.npu_sdma()) {
+      EXPECT_EQ(GpuLoadAcquire<uint64_t>(sdma_.queue.host.write_index_address),
+                sdma_.frontier);
+      EXPECT_EQ(GpuLoadAcquire<uint64_t>(sdma_.queue.host.read_index_address),
+                sdma_.frontier);
+      CheckBytes(
+          {reinterpret_cast<const uint8_t*>(sdma_.queue.host.ring_address),
+           sdma_.queue.host.ring_byte_length},
+          {reinterpret_cast<const uint8_t*>(sdma_.expected_ring.data()),
+           sdma_.expected_ring.size() * sizeof(uint32_t)});
+      for (auto& buffer : sdma_.buffers) {
+        ASSERT_EQ(HostTransition(buffer.memory, buffer.memory.host.invalidate),
+                  AMDF_STATUS_OK);
+        CheckBytes(buffer.memory.bytes(), buffer.expected);
+      }
+      RecordProperty("resident_sdma_command_bytes",
+                     std::to_string(sdma_.frontier));
+      RecordProperty(
+          "resident_sdma_ring_wraps",
+          std::to_string(sdma_.frontier / sdma_.queue.host.ring_byte_length));
+      RecordProperty("resident_sdma_source_page_mask", sdma_.selected_pages);
+      RecordProperty("resident_sdma_short_copy_count", sdma_.short_copy_count);
+    }
     for (size_t i = 0; i < buffers_.size(); ++i) {
       SCOPED_TRACE(i);
       auto& buffer = buffers_[i];
@@ -829,6 +1138,33 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
   }
 
  private:
+  // Optional GPU-owned transfer resources; all are absent outside SDMA cases.
+  struct {
+    // Family selected passively before borrowing the cached device.
+    amdf_queue_family_info_t family = {};
+    // Native SDMA queue and host/device producer borrows.
+    GpuUserQueue queue;
+    // An accepted GPU producer may still publish or leave commands unretired.
+    bool pending = false;
+    // Immutable sources, copied payload and FENCE generation with guards.
+    std::array<SdmaBuffer, kSdmaBufferCount> buffers;
+    // Cold-selected invariant COPY word from the family encoder.
+    uint32_t copy_control = 0;
+    // Cold-selected FENCE header from the same encoder.
+    uint32_t fence_header = 0;
+    // Queried SDMA acquire/release operations, bits 0 and 1.
+    uint32_t cache_flags = 0;
+    // Byte distance between the eight guarded source pages.
+    uint64_t source_stride = 0;
+    // CPU oracle's complete published byte frontier including padding.
+    uint64_t frontier = 0;
+    // CPU reconstruction of the final ring, including unused/padded words.
+    std::vector<uint32_t> expected_ring;
+    // Source pages appearing in the checked transcript, one bit per page.
+    uint32_t selected_pages = 0;
+    // Prefix copies that preserve an earlier destination tail.
+    uint32_t short_copy_count = 0;
+  } sdma_;
   // Joint records and their independent native backing owners.
   std::array<JointBuffer, kBufferCount> buffers_;
   // Prospective and checked concrete publication contracts for joint backing.
@@ -985,6 +1321,49 @@ std::string NpuInitiatedBackingCaseName(
 
 INSTANTIATE_TEST_SUITE_P(NpuInitiatedAndBacking, ResidentNpuInitiatedTest,
                          ::testing::ValuesIn(NpuInitiatedBackingCases()),
+                         NpuInitiatedBackingCaseName);
+
+class ResidentNpuSdmaTest
+    : public ResidentGpuXdnaTest,
+      public ::testing::WithParamInterface<NpuInitiatedCase> {
+ protected:
+  amdf_status_t MatchGpuEndpoint(amdf_endpoint_t* endpoint,
+                                 bool* out_matches) override {
+    return MatchSdmaEndpoint(endpoint, out_matches);
+  }
+};
+
+TEST_P(ResidentNpuSdmaTest, CopiesFeedTheNextNpuRequest) {
+  const auto& parameters = GetParam();
+  // The page-sized shape starts with a full copy; the others start with one
+  // word. Subsequent page/length choices depend on the actual returned data.
+  const uint32_t seed =
+      parameters.word_count == 1024 ? 0x0003FE06u : 0xFFFFFFFEu;
+  const auto order =
+      parameters.participants == Participants::kGpu   ? LaunchOrder::kGpuFirst
+      : parameters.participants == Participants::kNpu ? LaunchOrder::kNpuFirst
+                                                      : parameters.order;
+  Run(parameters.role, parameters.round_count, seed, order,
+      parameters.participants, {parameters.word_count, parameters.word_offset},
+      ServiceSchedule::kNpuSdma);
+}
+
+std::vector<NpuInitiatedCase> NpuSdmaCases() {
+  auto cases = NpuInitiatedBackingCases();
+  for (const auto& anchor : {NpuInitiatedCase{17, 16, Participants::kGpu},
+                             NpuInitiatedCase{17, 16, Participants::kNpu},
+                             NpuInitiatedCase{0, 16, Participants::kBoth},
+                             NpuInitiatedCase{1, 1, Participants::kBoth},
+                             NpuInitiatedCase{1, 16, Participants::kBoth},
+                             NpuInitiatedCase{17, 1, Participants::kBoth},
+                             NpuInitiatedCase{17, 16, Participants::kBoth}}) {
+    cases.push_back(anchor);
+  }
+  return cases;
+}
+
+INSTANTIATE_TEST_SUITE_P(NpuSdma, ResidentNpuSdmaTest,
+                         ::testing::ValuesIn(NpuSdmaCases()),
                          NpuInitiatedBackingCaseName);
 
 uint32_t SeedForPeerCause(uint32_t peer_cause) {

@@ -194,6 +194,65 @@ TEST(LoomcAmdgpuIreeHalTargetTest, CreatesExactProfileFromHalTarget) {
             LOOMC_AMDGPU_TARGET_FEATURE_UNSUPPORTED);
 }
 
+TEST(LoomcAmdgpuIreeHalTargetTest,
+     FallsBackToGenericWhenExactTargetIsNotModeled) {
+  const TestTarget targets[] = {
+      {IREE_SV("gfx9999"), 1, IREE_HAL_EXECUTABLE_TARGET_KIND_EXACT},
+      {IREE_SV("gfx11-generic"), 1, IREE_HAL_EXECUTABLE_TARGET_KIND_GENERIC},
+  };
+  DeviceSpecPtr device_spec;
+  IREE_ASSERT_OK(
+      CreateAmdgpuDeviceSpec(targets, IREE_ARRAYSIZE(targets), &device_spec));
+  FakeHalDevice device = {};
+  InitializeFakeDevice(device_spec.get(), &device);
+  TargetEnvironmentPtr target_environment = CreateAmdgpuTargetEnvironment();
+  loomc_result_t* result = nullptr;
+  const iree_hal_executable_target_t* executable_target = nullptr;
+  TargetProfilePtr profile = SelectTargetFromHal(
+      target_environment.get(), &device, /*physical_device_affinity=*/0,
+      &result, &executable_target);
+  ResultPtr result_ptr(result);
+
+  ASSERT_NE(profile.get(), nullptr);
+  ASSERT_NE(executable_target, nullptr);
+  EXPECT_TRUE(iree_string_view_equal(executable_target->target_key,
+                                     IREE_SV("gfx11-generic")));
+  ExpectSucceededResult(result_ptr.get());
+  loomc_amdgpu_target_identity_t identity = {};
+  LOOMC_EXPECT_OK(
+      loomc_amdgpu_target_profile_query_identity(profile.get(), &identity));
+  EXPECT_EQ(ToString(identity.target), "gfx11-generic");
+}
+
+TEST(LoomcAmdgpuIreeHalTargetTest, PrefersModeledExactTargetOverGeneric) {
+  const TestTarget targets[] = {
+      {IREE_SV("gfx11-generic"), 1, IREE_HAL_EXECUTABLE_TARGET_KIND_GENERIC},
+      {IREE_SV("gfx1151"), 1, IREE_HAL_EXECUTABLE_TARGET_KIND_EXACT},
+  };
+  DeviceSpecPtr device_spec;
+  IREE_ASSERT_OK(
+      CreateAmdgpuDeviceSpec(targets, IREE_ARRAYSIZE(targets), &device_spec));
+  FakeHalDevice device = {};
+  InitializeFakeDevice(device_spec.get(), &device);
+  TargetEnvironmentPtr target_environment = CreateAmdgpuTargetEnvironment();
+  loomc_result_t* result = nullptr;
+  const iree_hal_executable_target_t* executable_target = nullptr;
+  TargetProfilePtr profile = SelectTargetFromHal(
+      target_environment.get(), &device, /*physical_device_affinity=*/0,
+      &result, &executable_target);
+  ResultPtr result_ptr(result);
+
+  ASSERT_NE(profile.get(), nullptr);
+  ASSERT_NE(executable_target, nullptr);
+  EXPECT_TRUE(iree_string_view_equal(executable_target->target_key,
+                                     IREE_SV("gfx1151")));
+  ExpectSucceededResult(result_ptr.get());
+  loomc_amdgpu_target_identity_t identity = {};
+  LOOMC_EXPECT_OK(
+      loomc_amdgpu_target_profile_query_identity(profile.get(), &identity));
+  EXPECT_EQ(ToString(identity.target), "gfx1151");
+}
+
 TEST(LoomcAmdgpuIreeHalTargetTest, PreservesStructuredAmdhsaFeatureModes) {
   const TestTarget targets[] = {
       {IREE_SV("gfx942:sramecc+:xnack-"), 1,
@@ -244,7 +303,7 @@ TEST(LoomcAmdgpuIreeHalTargetTest,
       loomc_result_diagnostic_at(result_ptr.get(), 0);
   ASSERT_NE(diagnostic, nullptr);
   EXPECT_THAT(ToString(diagnostic->message),
-              ::testing::HasSubstr("uses a generic compiler key"));
+              ::testing::HasSubstr("kind does not match its target key"));
 }
 
 TEST(LoomcAmdgpuIreeHalTargetTest,

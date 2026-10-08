@@ -30,6 +30,7 @@ iree_c_embed_data(
     testonly = True,
     srcs = [
         "//loom/src/loom/import/cxx/test:aiter_swiglu_f16.cxx",
+        "//loom/src/loom/import/cxx/test:configured_workgroup_storage.cxx",
         "//loom/src/loom/import/cxx/test:flash_attention.cxx",
         "//loom/src/loom/import/cxx/test:llama_rms_norm.cxx",
         "//loom/src/loom/import/cxx/test:mxfp_group_dot.cxx",
@@ -75,6 +76,7 @@ loom_cc_benchmark(
 loom_cc_benchmark(
     name = "source_to_hsaco_benchmark",
     srcs = ["source_to_hsaco_benchmark.cc"],
+    args = ["--benchmark_min_time=1x"],
     target_compatible_with = _AMDGPU_COMPATIBLE_WITH,
     deps = [
         ":kernels",

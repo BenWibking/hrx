@@ -124,6 +124,11 @@ typedef struct loom_target_legalization_context_t {
   // scalar fallback must not.
   loom_target_source_vector_carrier_supported_callback_t
       source_vector_carrier_supported;
+  // True when the source function signature contains a vector outside the
+  // target's callable carrier domain. Reference fallback leaves the body
+  // intact so final legality can diagnose the boundary without first
+  // expanding it.
+  bool source_function_has_unsupported_vector_carrier;
   // Source value facts visible to legalizers.
   const loom_value_fact_table_t* fact_table;
   // Analyzed view-region table visible to legalizers.

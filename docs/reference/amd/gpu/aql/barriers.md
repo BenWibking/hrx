@@ -94,6 +94,10 @@ reserved fields. A native handle identifies the ABI block; the surrounding
 ROCr signal object has additional ownership and runtime metadata. [Native
 layout][signal] · [ROCr object conversion][convert]
 
+The [native notification chapter](../notifications.md) traces the separate
+event mailbox, interrupt decoding and sleeping host wait. A native event wake
+does not replace the signal comparison or the payload acquire.
+
 Initializing only the signal value does not create that surrounding runtime
 object. Likewise, a host value store does not promise to clear all other
 native fields. Rearming a retained signal updates its value under the
@@ -118,6 +122,26 @@ acquire then supplies the payload visibility boundary matching the producers'
 releases. HSA scheduling requires dependencies not to occupy the resources
 needed to make the prerequisite work progress. [HSA §§2.9.8, 2.10, 3.3.8][hsa]
 
+For `N` producers, partition the dependencies into `ceil(N / 5)` consecutive
+AND packets, null-fill unused slots in the final packet, and place `C` after
+the last packet. Each AND holds back later launches even with its header
+barrier bit clear, so reaching `C` joins every group. Each dependency remains
+zero until the AND naming it completes. Retaining every signal until `C`
+completes supplies one reuse boundary for all groups. With matching releases,
+mappings and scopes, `C`'s acquire supplies payload visibility after the full
+join. [HSA §§2.9.8, 3.3.8][hsa]
+
+CLR's `VirtualGPU::dispatchBarrierPacket` uses this grouping for
+`Barriers().WaitingSignal()`. It fills `dep_signal[i % 5]`, emits a full AND
+while more dependencies remain, and finally emits the last group. Each
+emission clears all five fields before the next group is populated. Its
+header-barrier and fence choices are separate runtime policy.
+[CLR dependency grouping][clr-and-groups]
+
+Consecutive OR packets instead compose an AND of OR groups: each group needs
+one satisfied member before `C` can launch. Nonwinning producers retain their
+independent completion and storage-lifetime obligations. [HSA §2.9.9][hsa]
+
 The lifetime graph has more edges than the producer completion graph:
 
 | Storage | Final user in this graph |
@@ -138,35 +162,19 @@ The same reasoning applies to a host-gated consumer. If `AND(S, G)` waits on a
 completed producer signal `S` and a host gate `G` that is still nonzero, the
 intermediate, consumer arguments, dependency signals, and executable remain
 owned by the pending graph. A separate workset can be reused after its own
-terminal join without releasing any of those resources. Retaining a queue's
-scratch backing through queue destruction is a further queue-level obligation;
-it is not inferred from completion of one workset. See [private
-storage](dispatch.md#private-storage).
+terminal join without releasing any of those resources. A queue retains its
+scratch backing until the matching firmware return protocol or native queue
+destruction relinquishes it; completion of one workset does not establish
+that queue-level transition. See [scratch storage and reclamation](scratch.md).
 
 ## AMD BARRIER_VALUE epochs
 
 AMD's vendor-specific BARRIER_VALUE packet uses format 2 and applies only to
 AMD kernel-dispatch agents. It compares `(signal_value & mask)` with a signed
-64-bit value using an HSA signal condition. A null dependency is satisfied.
+64-bit value using EQ, NE, LT or GTE. A null dependency is satisfied. The
+[signal-value wait chapter](value-waits.md) gives the complete layout, runtime
+selection, stream-operation lowering and signal/value-address distinction.
 [Extension contract][vendor]
-
-| Byte offset | Field |
-| --- | --- |
-| 0 | Standard 16-bit header with vendor-specific type 0. |
-| 2 | 8-bit AMD format, 2. |
-| 3–7 | Reserved. |
-| 8 | Dependency signal handle. |
-| 16 | Signed 64-bit comparison value. |
-| 24 | Signed 64-bit comparison mask. |
-| 32 | 32-bit HSA condition; LT has value 2 in this enumeration. |
-| 36–55 | Reserved. |
-| 56 | Completion signal handle. |
-
-CLR enables this path for `(major == 9 && minor == 0 && stepping == 10)` or
-`(major == 9 && minor >= 4 && stepping in {0, 1, 2})` at the cited revision.
-That is a consumer predicate, not a definition of every firmware implementing
-the extension. Its packet builder supplies the native comparison fields.
-[Selection predicate][clr-target] · [Builder and caller][clr-packet]
 
 A descending positive epoch can avoid host rearming between dependent
 dispatches. With a retained signal initially `E`, a producer completion
@@ -177,6 +185,10 @@ and the next comparison must refer to the next intended epoch. Signed
 comparison, finite range, and signal lifetime are part of this construction;
 it supplies no rule for wraparound or resets. [Extension comparison][vendor] ·
 [Completion and fence phases][hsa]
+
+The [producer/waiter sequence](value-waits.md#producer-waiter-and-final-reuse)
+connects that epoch to payload visibility, terminal completion and the final
+users of the signal and executable.
 
 Return to [AQL](README.md) or the [primary source map](../../sources.md).
 
@@ -193,5 +205,4 @@ Return to [AQL](README.md) or the [primary source map](../../sources.md).
 [convert]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/inc/signal.h#L295-L325
 [host-signal]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/default_signal.cpp#L51-L75
 [vendor]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L123-L229
-[clr-target]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/clr/rocclr/device/rocm/rocsettings.cpp#L148-L153
-[clr-packet]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L2234-L2309
+[clr-and-groups]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L2168-L2230

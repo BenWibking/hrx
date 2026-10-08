@@ -10,73 +10,81 @@
 #include "iree/vm/bytecode/module.h"
 #include "iree/vm/execution.h"
 #include "iree/vm/sync.h"
-#include "loom/compile/request.h"
-#include "loom/error/error_defs.h"
-#include "loom/error/source.h"
-#include "loom/target/arch/vm/provider.h"
-#include "loom/target/entry_selection.h"
-#include "loom/tooling/compile/pipeline.h"
-#include "loom/tooling/config/config.h"
+#include "loomc/artifact.h"
+#include "loomc/iree.h"
+#include "loomc/target/vm.h"
 
-void loom_vm_testbench_initialize(
-    const loom_target_environment_t* target_environment,
-    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
+static void loom_vm_testbench_initialize_storage(
     iree_allocator_t host_allocator, loom_vm_testbench_t* out_testbench) {
   *out_testbench = (loom_vm_testbench_t){
-      .target_environment = target_environment,
-      .cleanup_pattern_provider_set = cleanup_pattern_provider_set,
-      .diagnostic_sink = {.fn = loom_diagnostic_stderr_sink},
       .host_allocator = host_allocator,
   };
+}
+
+iree_status_t loom_vm_testbench_initialize(
+    loomc_target_environment_t* target_environment,
+    iree_allocator_t host_allocator, loom_vm_testbench_t* out_testbench) {
+  loom_vm_testbench_initialize_storage(host_allocator, out_testbench);
+  return iree_status_from_loomc(loomc_target_profile_select(
+      target_environment, loomc_make_cstring_view("vm:core"),
+      loomc_allocator_from_iree(host_allocator),
+      &out_testbench->target_profile));
 }
 
 void loom_vm_testbench_deinitialize(loom_vm_testbench_t* testbench) {
   iree_vm_invocation_free(testbench->invocation);
   iree_vm_process_release(testbench->process);
   iree_allocator_free(testbench->host_allocator, testbench->arguments);
+  iree_allocator_free(testbench->host_allocator,
+                      testbench->compile_failure_storage);
+  loomc_target_profile_release(testbench->target_profile);
   memset(testbench, 0, sizeof(*testbench));
 }
 
-typedef struct loom_vm_testbench_pipeline_diagnostic_capture_t {
-  // First error definition emitted while running the compile pipeline.
-  const loom_error_def_t* error;
-  // Source-attributing diagnostic sink receiving every record.
-  loom_diagnostic_sink_t downstream;
-} loom_vm_testbench_pipeline_diagnostic_capture_t;
-
-static iree_status_t loom_vm_testbench_capture_pipeline_diagnostic(
-    void* user_data, const loom_diagnostic_t* diagnostic) {
-  loom_vm_testbench_pipeline_diagnostic_capture_t* capture = user_data;
-  if (capture->error == NULL && diagnostic->severity == LOOM_DIAGNOSTIC_ERROR) {
-    capture->error = diagnostic->error;
+static iree_status_t loom_vm_testbench_record_compile_rejection(
+    loom_vm_testbench_t* testbench, const loomc_result_t* result) {
+  const loomc_diagnostic_t* diagnostic = NULL;
+  for (loomc_host_size_t i = 0; i < loomc_result_diagnostic_count(result);
+       ++i) {
+    const loomc_diagnostic_t* candidate = loomc_result_diagnostic_at(result, i);
+    if (candidate->severity == LOOMC_DIAGNOSTIC_SEVERITY_ERROR) {
+      diagnostic = candidate;
+      break;
+    }
   }
-  return loom_diagnostic_emit(&capture->downstream, diagnostic);
-}
-
-typedef struct loom_vm_testbench_emission_diagnostic_capture_t {
-  // First error definition emitted while producing VM bytecode.
-  const loom_error_def_t* error;
-  // Source-attributing diagnostic emitter receiving every record.
-  iree_diagnostic_emitter_t downstream;
-} loom_vm_testbench_emission_diagnostic_capture_t;
-
-static iree_status_t loom_vm_testbench_capture_emission_diagnostic(
-    void* user_data, const loom_diagnostic_emission_t* emission) {
-  loom_vm_testbench_emission_diagnostic_capture_t* capture = user_data;
-  if (capture->error == NULL &&
-      loom_error_def_severity(emission->error) == LOOM_DIAGNOSTIC_ERROR) {
-    capture->error = emission->error;
-  }
-  return iree_diagnostic_emit(capture->downstream, emission);
-}
-
-static void loom_vm_testbench_record_compile_rejection(
-    loom_vm_testbench_t* testbench, iree_string_view_t stage,
-    iree_string_view_t kind, iree_string_view_t message) {
   testbench->compile_rejected = true;
-  testbench->compile_failure_stage = stage;
-  testbench->compile_failure_kind = kind;
-  testbench->compile_failure_message = message;
+  testbench->compile_failure_stage = IREE_SV("compile");
+  if (diagnostic == NULL) {
+    testbench->compile_failure_kind = IREE_SV("rejected");
+    testbench->compile_failure_message =
+        IREE_SV("VM compilation rejected the source module");
+    return iree_ok_status();
+  }
+
+  iree_string_view_t kind = iree_string_view_from_loomc(diagnostic->code);
+  if (iree_string_view_is_empty(kind)) {
+    kind = IREE_SV("rejected");
+  }
+  iree_string_view_t message = iree_string_view_from_loomc(diagnostic->message);
+  if (iree_string_view_is_empty(message)) {
+    message = IREE_SV("VM compilation rejected the source module");
+  }
+  iree_host_size_t storage_size = 0;
+  if (!iree_host_size_checked_add(kind.size, message.size, &storage_size)) {
+    return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                            "VM compile diagnostic is too large");
+  }
+  IREE_RETURN_IF_ERROR(
+      iree_allocator_malloc(testbench->host_allocator, storage_size,
+                            (void**)&testbench->compile_failure_storage));
+  memcpy(testbench->compile_failure_storage, kind.data, kind.size);
+  memcpy(testbench->compile_failure_storage + kind.size, message.data,
+         message.size);
+  testbench->compile_failure_kind =
+      iree_make_string_view(testbench->compile_failure_storage, kind.size);
+  testbench->compile_failure_message = iree_make_string_view(
+      testbench->compile_failure_storage + kind.size, message.size);
+  return iree_ok_status();
 }
 
 // The compiler copy and all compiler scratch die before the runtime sees the
@@ -84,37 +92,61 @@ static void loom_vm_testbench_record_compile_rejection(
 static void loom_vm_testbench_select_invocation_root(
     const loom_module_t* source,
     const loom_testbench_invocation_plan_t* invocation,
-    iree_string_view_t* roots, iree_host_size_t* inout_max_arguments,
+    loomc_string_view_t* roots, iree_host_size_t* inout_max_arguments,
     iree_host_size_t* inout_max_results) {
   *inout_max_arguments =
       iree_max(*inout_max_arguments, invocation->input_count);
   *inout_max_results = iree_max(*inout_max_results, invocation->result_count);
-  roots[invocation->callee_ref.symbol_id] = loom_string_table_get(
-      &source->strings,
-      source->symbols.entries[invocation->callee_ref.symbol_id].name_id);
+  roots[invocation->callee_ref.symbol_id] =
+      loomc_string_view_from_iree(loom_string_table_get(
+          &source->strings,
+          source->symbols.entries[invocation->callee_ref.symbol_id].name_id));
+}
+
+static iree_status_t loom_vm_testbench_select_artifact(
+    const loomc_result_t* result, const loomc_artifact_t** out_artifact) {
+  *out_artifact = NULL;
+  for (loomc_host_size_t i = 0; i < loomc_result_artifact_count(result); ++i) {
+    const loomc_artifact_t* artifact = loomc_result_artifact_at(result, i);
+    if (artifact->kind != LOOMC_ARTIFACT_KIND_EXECUTABLE ||
+        !loomc_string_view_equal(
+            artifact->format,
+            loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_VM))) {
+      continue;
+    }
+    if (*out_artifact != NULL) {
+      return iree_make_status(
+          IREE_STATUS_INTERNAL,
+          "VM compilation returned more than one executable artifact");
+    }
+    *out_artifact = artifact;
+  }
+  return *out_artifact != NULL
+             ? iree_ok_status()
+             : iree_make_status(
+                   IREE_STATUS_INTERNAL,
+                   "VM compilation returned no executable artifact");
 }
 
 static iree_status_t loom_vm_testbench_compile(
     loom_vm_testbench_t* testbench, const loom_module_t* source,
     const loom_testbench_invocation_plan_t* product_invocation,
     iree_byte_span_t* out_contents) {
-  iree_arena_block_pool_t pool;
-  iree_arena_block_pool_initialize(32 * 1024, testbench->host_allocator, &pool);
-  iree_arena_allocator_t arena;
-  iree_arena_initialize(&pool, &arena);
-  const loom_target_profile_t* profile = NULL;
-  iree_status_t status =
-      loom_vm_target_provider.select_profile(IREE_SV("core"), &profile);
-  iree_string_view_t* roots = NULL;
+  *out_contents = iree_byte_span_empty();
+  loomc_string_view_t* roots = NULL;
   iree_host_size_t root_count = 0;
   iree_host_size_t max_arguments = 0;
   iree_host_size_t max_results = 0;
-  if (iree_status_is_ok(status)) {
-    status = iree_arena_allocate_array(&arena, source->symbols.count,
-                                       sizeof(*roots), (void**)&roots);
+  iree_status_t status = iree_ok_status();
+  if (source->symbols.count != 0) {
+    status = iree_allocator_malloc_array(testbench->host_allocator,
+                                         source->symbols.count, sizeof(*roots),
+                                         (void**)&roots);
   }
   if (iree_status_is_ok(status)) {
-    memset(roots, 0, source->symbols.count * sizeof(*roots));
+    if (source->symbols.count != 0) {
+      memset(roots, 0, source->symbols.count * sizeof(*roots));
+    }
     if (product_invocation != NULL) {
       loom_vm_testbench_select_invocation_root(
           source, product_invocation, roots, &max_arguments, &max_results);
@@ -140,128 +172,63 @@ static iree_status_t loom_vm_testbench_compile(
       }
     }
     for (iree_host_size_t i = 0; i < source->symbols.count; ++i) {
-      if (!iree_string_view_is_empty(roots[i])) {
+      if (!loomc_string_view_is_empty(roots[i])) {
         roots[root_count++] = roots[i];
       }
     }
   }
 
-  loom_compile_request_t compile_request = {0};
+  loomc_module_t* module = NULL;
   if (iree_status_is_ok(status)) {
-    status = loom_compile_request_resolve(
-        source,
-        &(loom_compile_request_options_t){
-            .roots = {.count = root_count, .values = roots},
-            .target_profile = profile,
-        },
-        testbench->target_environment, &arena, &compile_request);
+    status = iree_status_from_loomc(loomc_module_clone(
+        testbench->compilation.module, testbench->compilation.workspace,
+        loomc_allocator_from_iree(testbench->host_allocator), &module));
   }
-  loom_source_table_projection_t sources = {.table = *testbench->sources,
-                                            .arena = &arena};
-  loom_module_t* module = NULL;
-  loom_target_specialization_request_list_t target_specializations = {0};
-  if (iree_status_is_ok(status)) {
-    status = loom_compile_request_materialize(
-        &compile_request, testbench->target_environment, NULL, source,
-        LOOM_COMPILE_REQUEST_SOURCE_BORROWED, &sources, &arena, &pool, &module,
-        &target_specializations, &(uint32_t){0});
-  }
-  if (iree_status_is_ok(status)) {
-    loom_tooling_config_materialize_result_t result;
-    status = loom_tooling_config_materialize_module(
-        module,
-        &(loom_tooling_config_materialize_options_t){
-            .config_set = testbench->config_set,
-        },
-        &pool, &result);
-  }
-  loom_target_low_descriptor_registry_t registry = {0};
-  if (iree_status_is_ok(status)) {
-    registry = loom_target_environment_low_descriptor_registry(
-        testbench->target_environment);
-  }
-  loom_compile_pipeline_result_t pipeline = {0};
-  loom_compile_pipeline_options_t options;
-  loom_compile_pipeline_options_initialize(&options);
-  options.target_environment = testbench->target_environment;
-  options.source_resolver = (loom_source_resolver_t){
-      .fn = loom_source_table_resolve, .user_data = &sources.table};
-  options.target_specializations = target_specializations;
-  if (compile_request.target_emitter != NULL) {
-    options.target_pipeline_options =
-        compile_request.target_emitter->default_pipeline_options;
-  }
-  options.cleanup_pattern_provider_set =
-      testbench->cleanup_pattern_provider_set;
-  loom_vm_testbench_pipeline_diagnostic_capture_t pipeline_diagnostic = {
-      .downstream = testbench->diagnostic_sink,
+
+  const loomc_emit_options_t emit_options = {
+      .type = LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
+      .structure_size = sizeof(emit_options),
+      .artifact_format = loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_VM),
   };
-  options.diagnostic_sink = (loom_diagnostic_sink_t){
-      .fn = loom_vm_testbench_capture_pipeline_diagnostic,
-      .user_data = &pipeline_diagnostic,
+  const loomc_compile_artifact_options_t compile_options = {
+      .type = LOOMC_STRUCTURE_TYPE_COMPILE_ARTIFACT_OPTIONS,
+      .structure_size = sizeof(compile_options),
+      .roots = roots,
+      .root_count = root_count,
+      .target_profile = testbench->target_profile,
+      .config = testbench->compilation.config,
+      .emit_options = &emit_options,
   };
+  loomc_result_t* result = NULL;
   if (iree_status_is_ok(status)) {
-    status = loom_compile_run_pipeline(module, &options, &pool, &pipeline);
-    if (iree_status_is_ok(status) && pipeline.pass.error_count) {
-      IREE_ASSERT(pipeline_diagnostic.error != NULL);
-      loom_vm_testbench_record_compile_rejection(
-          testbench, IREE_SV("pipeline"),
-          iree_make_cstring_view(loom_error_def_id(pipeline_diagnostic.error)),
-          iree_make_cstring_view(
-              loom_error_def_summary(pipeline_diagnostic.error)));
-    }
+    status = iree_status_from_loomc(loomc_compile_artifact(
+        testbench->compilation.compiler, testbench->compilation.workspace,
+        /*pass_program=*/NULL, module, &compile_options,
+        loomc_allocator_from_iree(testbench->host_allocator), &result));
   }
-  options.diagnostic_sink = pipeline_diagnostic.downstream;
-  loom_target_emit_artifact_t artifact = {0};
-  bool artifact_emitted = false;
-  loom_vm_testbench_emission_diagnostic_capture_t emission_diagnostic = {0};
+  if (iree_status_is_ok(status)) {
+    status = loom_testbench_observe_compile_result(testbench->result_callback,
+                                                   result);
+  }
+  if (iree_status_is_ok(status) && !loomc_result_succeeded(result)) {
+    status = loom_vm_testbench_record_compile_rejection(testbench, result);
+  }
+  const loomc_artifact_t* artifact = NULL;
   if (iree_status_is_ok(status) && !testbench->compile_rejected) {
-    const loom_target_entry_options_t entry_options = {
-        .diagnostic_sink = options.diagnostic_sink,
-        .source_resolver = options.source_resolver,
-        .max_errors = options.max_errors,
-    };
-    loom_target_entry_diagnostic_emitter_t entry_emitter = {0};
-    loom_target_entry_diagnostic_emitter_initialize(
-        module, &entry_options, LOOM_EMITTER_VERIFIER, &entry_emitter);
-    emission_diagnostic.downstream = loom_target_entry_emitter(&entry_emitter);
-    const loom_target_emit_request_t emit_request = {
-        .target_environment = testbench->target_environment,
-        .low_descriptor_registry = &registry.registry,
-        .module = module,
-        .function_versions = &pipeline.function_versions.list,
-        .identifier = compile_request.target_emitter->default_identifier,
-        .diagnostic_emitter =
-            {
-                .fn = loom_vm_testbench_capture_emission_diagnostic,
-                .user_data = &emission_diagnostic,
-            },
-        .max_errors = options.max_errors,
-        .scratch_arena = &arena,
-        .allocator = testbench->host_allocator,
-    };
-    status = compile_request.target_emitter->emit(&emit_request,
-                                                  &artifact_emitted, &artifact);
+    status = loom_vm_testbench_select_artifact(result, &artifact);
   }
-  if (iree_status_is_ok(status) && !testbench->compile_rejected &&
-      !artifact_emitted) {
-    if (emission_diagnostic.error != NULL) {
-      loom_vm_testbench_record_compile_rejection(
-          testbench, IREE_SV("emission"),
-          iree_make_cstring_view(loom_error_def_id(emission_diagnostic.error)),
-          iree_make_cstring_view(
-              loom_error_def_summary(emission_diagnostic.error)));
-    } else {
-      loom_vm_testbench_record_compile_rejection(
-          testbench, IREE_SV("emission"), IREE_SV("rejected"),
-          IREE_SV("VM artifact emission rejected the compiled module"));
+  if (iree_status_is_ok(status) && artifact != NULL) {
+    loomc_byte_span_t cloned_contents = loomc_byte_span_empty();
+    status = iree_status_from_loomc(loomc_byte_sequence_clone(
+        artifact->contents,
+        loomc_allocator_from_iree(testbench->host_allocator),
+        &cloned_contents));
+    if (iree_status_is_ok(status)) {
+      *out_contents = iree_make_byte_span((uint8_t*)cloned_contents.data,
+                                          cloned_contents.data_length);
     }
   }
-  if (iree_status_is_ok(status) && artifact_emitted) {
-    status = iree_byte_sequence_clone(artifact.contents,
-                                      testbench->host_allocator, out_contents);
-  }
-  if (iree_status_is_ok(status) && artifact_emitted) {
+  if (iree_status_is_ok(status) && artifact != NULL) {
     iree_host_size_t total_size = 0;
     iree_host_size_t results_offset = 0;
     iree_host_size_t argument_buffers_offset = 0;
@@ -290,11 +257,10 @@ static iree_status_t loom_vm_testbench_compile(
       *out_contents = iree_byte_span_empty();
     }
   }
-  loom_target_emit_artifact_release(&artifact);
-  loom_compile_pipeline_result_deinitialize(&pipeline);
-  loom_module_free(module);
-  iree_arena_deinitialize(&arena);
-  iree_arena_block_pool_deinitialize(&pool);
+  loomc_result_release(result);
+  loomc_module_release(module);
+  loomc_workspace_trim(testbench->compilation.workspace);
+  iree_allocator_free(testbench->host_allocator, roots);
   return status;
 }
 
@@ -806,12 +772,11 @@ static iree_status_t loom_vm_testbench_product_prepare(
   loom_vm_testbench_t* product = NULL;
   IREE_RETURN_IF_ERROR(iree_allocator_malloc(host_allocator, sizeof(*product),
                                              (void**)&product));
-  loom_vm_testbench_initialize(parent->target_environment,
-                               parent->cleanup_pattern_provider_set,
-                               host_allocator, product);
-  product->sources = parent->sources;
-  product->config_set = parent->config_set;
-  product->diagnostic_sink = parent->diagnostic_sink;
+  loom_vm_testbench_initialize_storage(host_allocator, product);
+  product->compilation = parent->compilation;
+  product->result_callback = parent->result_callback;
+  product->target_profile = parent->target_profile;
+  loomc_target_profile_retain(product->target_profile);
   iree_status_t status =
       loom_vm_testbench_prepare(product, invocation->module, invocation);
   if (iree_status_is_ok(status) && product->compile_rejected) {
@@ -837,20 +802,14 @@ static iree_status_t loom_vm_testbench_product_prepare(
   return iree_ok_status();
 }
 
-static void loom_vm_testbench_bind_compilation_inputs(
-    loom_vm_testbench_t* testbench, const loom_source_table_resolver_t* sources,
-    const loom_tooling_config_set_t* config_set) {
-  testbench->sources = sources;
-  testbench->config_set = config_set;
-}
-
 loom_testbench_invocation_provider_t loom_vm_testbench_invocation_provider(
-    void* user_data, loom_testbench_case_plan_list_t cases,
-    const loom_source_table_resolver_t* sources,
-    const loom_tooling_config_set_t* config_set) {
+    void* user_data, const loom_testbench_compilation_t* compilation,
+    loom_testbench_case_plan_list_t cases,
+    loom_testbench_compile_result_callback_t result_callback) {
   loom_vm_testbench_t* testbench = user_data;
+  testbench->compilation = *compilation;
+  testbench->result_callback = result_callback;
   testbench->cases = cases;
-  loom_vm_testbench_bind_compilation_inputs(testbench, sources, config_set);
   return (loom_testbench_invocation_provider_t){
       .invoke = loom_vm_testbench_invoke,
       .query_issue = loom_vm_testbench_query_issue,
@@ -859,12 +818,17 @@ loom_testbench_invocation_provider_t loom_vm_testbench_invocation_provider(
 }
 
 loom_testbench_execution_profile_t loom_vm_testbench_execution_profile(
-    void* user_data, const loom_source_table_resolver_t* sources,
+    void* user_data, const loom_testbench_compilation_t* compilation,
+    const loom_source_table_resolver_t* sources,
     const loom_tooling_config_set_t* config_set,
-    loom_diagnostic_sink_t diagnostic_sink) {
+    loom_diagnostic_sink_t diagnostic_sink,
+    loom_testbench_compile_result_callback_t result_callback) {
+  (void)sources;
+  (void)config_set;
+  (void)diagnostic_sink;
   loom_vm_testbench_t* testbench = user_data;
-  loom_vm_testbench_bind_compilation_inputs(testbench, sources, config_set);
-  testbench->diagnostic_sink = diagnostic_sink;
+  testbench->compilation = *compilation;
+  testbench->result_callback = result_callback;
   return (loom_testbench_execution_profile_t){
       .name = IREE_SV("vm:core"),
       .prepare = loom_vm_testbench_product_prepare,

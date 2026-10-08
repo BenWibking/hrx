@@ -9,11 +9,7 @@
 
 #include "iree/hal/api.h"
 #include "loom/ir/module.h"
-#include "loom/target/provider.h"
 #include "loom/tools/iree-test-loom/main.h"
-
-static const loom_target_provider_set_t
-    kIreeTestLoomScenarioFailureProviderSet = {0};
 
 typedef struct iree_test_loom_scenario_failure_profile_t {
   // Stable diagnostic name for the profile.
@@ -195,12 +191,16 @@ static iree_status_t iree_test_loom_scenario_failure_prepare(
 
 static loom_testbench_execution_profile_t
 iree_test_loom_scenario_failure_bind_profile(
-    void* user_data, const loom_source_table_resolver_t* sources,
+    void* user_data, const loom_testbench_compilation_t* compilation,
+    const loom_source_table_resolver_t* sources,
     const loom_tooling_config_set_t* config_set,
-    loom_diagnostic_sink_t diagnostic_sink) {
+    loom_diagnostic_sink_t diagnostic_sink,
+    loom_testbench_compile_result_callback_t result_callback) {
+  (void)compilation;
   (void)sources;
   (void)config_set;
   (void)diagnostic_sink;
+  (void)result_callback;
   iree_test_loom_scenario_failure_profile_t* profile =
       (iree_test_loom_scenario_failure_profile_t*)user_data;
   return (loom_testbench_execution_profile_t){
@@ -211,15 +211,6 @@ iree_test_loom_scenario_failure_bind_profile(
 }
 
 int main(int argc, char** argv) {
-  loom_target_environment_t environment;
-  iree_status_t status = loom_target_environment_initialize(
-      &kIreeTestLoomScenarioFailureProviderSet, &environment);
-  if (!iree_status_is_ok(status)) {
-    iree_status_fprint(stderr, status);
-    iree_status_free(status);
-    return 1;
-  }
-
   iree_test_loom_scenario_failure_profile_t target = {
       .name = IREE_SV("controlled-target"),
       .inject_failures = true,
@@ -230,7 +221,6 @@ int main(int argc, char** argv) {
   };
   const iree_test_loom_configuration_t configuration = {
       .tool_name = "iree-test-loom-scenario-failure-test",
-      .target_environment = &environment,
       .scenario_target_profile =
           {
               .fn = iree_test_loom_scenario_failure_bind_profile,
@@ -242,7 +232,5 @@ int main(int argc, char** argv) {
               .user_data = &oracle,
           },
   };
-  const int exit_code = iree_test_loom_main(argc, argv, &configuration);
-  loom_target_environment_deinitialize(&environment);
-  return exit_code;
+  return iree_test_loom_main(argc, argv, &configuration);
 }

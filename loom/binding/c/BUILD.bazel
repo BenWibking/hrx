@@ -72,6 +72,10 @@ LOOMC_TARGET_AMDGPU_IREE_HAL_PUBLIC_HDRS = [
     "include/loomc/target/amdgpu/iree_hal.h",
 ]
 
+LOOMC_TARGET_CPU_IREE_HAL_PUBLIC_HDRS = [
+    "include/loomc/target/cpu/iree_hal.h",
+]
+
 LOOMC_TARGET_XDNA_PUBLIC_HDRS = [
     "include/loomc/target/amd/xdna.h",
     "include/loomc/target/amd/xdna/base.h",
@@ -129,6 +133,7 @@ exports_files(
     LOOMC_TARGET_AMDGPU_PUBLIC_HDRS +
     LOOMC_TARGET_CMD_PUBLIC_HDRS +
     LOOMC_TARGET_CONFIGURED_PUBLIC_HDRS +
+    LOOMC_TARGET_CPU_IREE_HAL_PUBLIC_HDRS +
     LOOMC_TARGET_IREE_HAL_PUBLIC_HDRS +
     LOOMC_TARGET_SPIRV_PUBLIC_HDRS +
     LOOMC_TARGET_SPIRV_IREE_HAL_PUBLIC_HDRS +
@@ -143,6 +148,7 @@ exports_files(
 loom_cc_library(
     name = "loomc",
     srcs = [
+        "include/loomc/interop.h",
         "src/artifact.c",
         "src/artifact_manifest.c",
         "src/base.c",
@@ -155,6 +161,7 @@ loom_cc_library(
         "src/context.c",
         "src/diagnostic.c",
         "src/emit.c",
+        "src/interop.c",
         "src/launch_config.c",
         "src/link.c",
         "src/link_dependency.c",
@@ -272,6 +279,20 @@ loom_cc_library(
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/io:file_handle",
         "//runtime/src/iree/io:stream",
+    ],
+)
+
+loom_cc_library(
+    name = "interop",
+    hdrs = ["include/loomc/interop.h"],
+    includes = ["include"],
+    deps = [
+        ":loomc",
+        "//loom/src/loom/error:source",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/target:pipeline",
+        "//loom/src/loom/target:provider",
+        "//loom/src/loom/target/reporting:report",
     ],
 )
 

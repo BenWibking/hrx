@@ -225,35 +225,29 @@ modular comparison. Storage remains live through its final waiter.
 
 ### Publication inside a GPU shader
 
-LLVM's GFX10/GFX11 memory model separates per-CU vector L0, shader-array L1
-and agent L2. L2 coherence with external agents depends on the target and
-mapping; a mapped bypass route is another possibility. VMEM completion is
-reported to the issuing wave. A barrier among waves does not replace their
-required memory completion operations. [Shader hierarchy and ordering][shader-model]
+The [shader memory chapter](../shader-memory.md) separates instruction
+completion, payload visibility and fresh control observation across GPU
+families. A SYSTEM-scope shader operation still depends on the native mapping
+and the NPU's external-memory path. A barrier among waves does not replace
+their required memory completion operations.
 
 For a cooperating workgroup publishing one generation, the ownership
 composition is: each contributing wave completes the required payload
-stores/release, the waves rendezvous, and the designated publisher writes
-the control value. A workgroup rendezvous does not join other workgroups;
-their contributions need an additional explicit join. The mapping must
-already supply the external observer's required cache behavior. An uncached
+stores/release, the waves rendezvous, and the designated publisher performs
+the outward release before writing the control value. A workgroup rendezvous
+does not join other workgroups; their contributions need an additional
+explicit join. The mapping must already supply the external observer's
+required cache behavior. An uncached
 payload route removes a cache obligation only for that route; it does not
 remove store completion or the contributor join.
-[Wave completion][shader-model] [Workgroup barriers][workgroup-barrier]
+[Wave completion and workgroup joins](../shader-memory.md#wait-counters-and-participating-waves)
 
-The consumer similarly distinguishes a fresh control load from payload
-acquisition. LLVM's GFX10/GFX11 sequence for a GLOBAL atomic acquire load at
-AGENT or SYSTEM scope waits for the buffer/global load, then invalidates
-GL1/GL0 before subsequent payload loads. GFX11 uses `glc=1` for that load;
-GFX10 additionally uses `dlc=1`. The sequence assumes the surrounding memory
-model's admitted atomic access and valid L2 route. A fresh control word cannot
-invalidate independently cached payload by itself.
-[Acquire sequence][shader-acquire]
-
-Scalar loads have a different compiler premise: the ordinary scalar path
-assumes the memory remains unchanged during the dispatch. A mutable
-resident control queue cannot inherit that invariant merely because its
-address is uniform across lanes. [Scalar-memory premise][shader-model]
+The consumer's [acquire sequence](../shader-memory.md#global-release-and-acquire-sequences)
+covers independently cached payload after observing control. Every shader
+reader needs the corresponding visibility path; one lane's fresh control
+word does not supply it to all other waves. Mutable resident control and
+payload also retain their own access policy when their addresses are uniform.
+[Scalar-memory premise](../shader-memory.md#scalar-loads-and-per-access-cache-policy)
 
 ### Output DMA and a ready flag
 
@@ -359,6 +353,3 @@ that those users have released their memory.
 [axi-atomicity]: https://documentation-service.arm.com/static/5f915bbcf86e16515cdc3b23#page=96
 [array-interface]: https://docs.amd.com/r/en-US/am027-versal-aie-ml-v2/AIE-ML-v2-Array-Interface
 [array-memory]: https://docs.amd.com/r/en-US/am027-versal-aie-ml-v2/AIE-ML-v2-Memory-Module
-[shader-model]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L13564-L13695
-[shader-acquire]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L13905-L13932
-[workgroup-barrier]: ../pm4/lds.md#execution-and-synchronization

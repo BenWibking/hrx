@@ -171,6 +171,26 @@ _Q8S32_VARIANTS = {
     },
 }
 
+_CONFIGURED_WORKGROUP_STORAGE_VARIANTS = {
+    "four_stages": {
+        "case": "configured_workgroup_four_stages",
+        "configs": {"test.buffer.stage_count": "4"},
+    },
+    "one_stage": {
+        "case": "configured_workgroup_one_stage",
+        "configs": {"test.buffer.stage_count": "1"},
+    },
+}
+
+loom_test(
+    name = "configured_workgroup_storage_test",
+    benchmark_smoke = False,
+    execution_profiles = _EXECUTION_PROFILES,
+    module = "//loom/src/loom/import/cxx/test:configured_workgroup_storage_module",
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+    variants = _CONFIGURED_WORKGROUP_STORAGE_VARIANTS,
+)
+
 loom_test(
     name = "q8s32_specialization_test",
     srcs = [
@@ -385,6 +405,22 @@ iree_execution_test_suite(
     ]),
     tools = {
         "loom-compile": "//loom/src/loom/tools/loom-compile",
+        "loom-import-cxx": "//loom/src/loom/tools/loom-import-cxx",
+    },
+)
+
+iree_execution_test_suite(
+    name = "configured_workgroup_storage_specialization_test",
+    data = ["//loom/src/loom/import/cxx/test:configured_workgroup_storage.cxx"],
+    manifests = ["configured_workgroup_storage.test.json"],
+    tags = ["hostonly"],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/import:cxx",
+        "//loom/config/target:amdgpu_artifacts",
+    ]),
+    tools = {
+        "loom-compile": "//loom/src/loom/tools/loom-compile",
+        "loom-format": "//loom/src/loom/tools/loom-format",
         "loom-import-cxx": "//loom/src/loom/tools/loom-import-cxx",
     },
 )

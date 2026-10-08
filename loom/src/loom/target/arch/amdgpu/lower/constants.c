@@ -216,15 +216,8 @@ bool loom_amdgpu_source_lane_as_u32_bits(
 
   loom_value_fact_vector_iota_t iota = {0};
   if (loom_value_facts_query_vector_iota(&fact_table->context, facts, &iota)) {
-    int64_t base = 0;
-    int64_t step = 0;
-    int64_t delta = 0;
-    int64_t value = 0;
-    return loom_value_facts_as_exact_i64(iota.base, &base) &&
-           loom_value_facts_as_exact_i64(iota.step, &step) &&
-           iree_checked_mul_i64((int64_t)lane, step, &delta) &&
-           iree_checked_add_i64(base, delta, &value) &&
-           loom_amdgpu_i64_value_as_u32_bits(value, out_bits);
+    return loom_amdgpu_value_facts_as_u32_bits(
+        loom_value_fact_vector_iota_element(iota, lane), out_bits);
   }
 
   return loom_amdgpu_value_facts_as_u32_bits(facts, out_bits);

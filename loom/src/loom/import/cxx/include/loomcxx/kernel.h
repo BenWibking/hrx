@@ -8,6 +8,7 @@
 #define LOOMCXX_KERNEL_H_
 
 #include <loomcxx/atomic.h>
+#include <loomcxx/buffer.h>
 
 // Fixed launch geometry belongs on the entry with
 // loom::workgroup_size(x, y, z) and loom::workgroup_count(x, y, z).
@@ -202,14 +203,6 @@ template <class T>
 template <class T>
 [[loom::op("kernel.subgroup.broadcast.first")]] T subgroup_broadcast_first(
     T value);
-
-// Memory spaces ordered by an execution barrier.
-enum class memory_space {
-  // Device-visible global storage.
-  global = 1,
-  // Storage shared by invocations within a workgroup.
-  workgroup = 2,
-};
 
 // Rendezvous of all invocations in Scope (subgroup or workgroup) with memory
 // ordering in Space. Global memory accepts acquire, release, or acq_rel;

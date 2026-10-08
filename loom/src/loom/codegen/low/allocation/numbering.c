@@ -306,7 +306,7 @@ static void loom_low_numbering_constrain_blocks(
     }
     const loom_low_allocation_assignment_t* argument =
         &allocation->assignments[assignment_index];
-    loom_low_numbering_anchor_range(state, argument->descriptor_reg_class_id,
+    loom_low_numbering_anchor_range(state, entry->descriptor_reg_class_id,
                                     entry->location_kind, entry->location_base,
                                     argument->location_count);
   }

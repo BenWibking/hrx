@@ -8,9 +8,10 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 load("//libamdf/build_tools/bazel:cc.bzl", "amdf_cc_library")
 load("//libamdf/build_tools/bazel:cc_test.bzl", "amdf_cc_test")
 load("//libamdf/build_tools/bazel:cts_gpu_kernel.bzl", "amdf_cts_gpu_kernel_set")
+load("//libamdf/build_tools/bazel:cts_gpu_targets.bzl", "AMDF_CTS_GPU_DUAL_WAVE_CONFIGS", "AMDF_CTS_GPU_DUAL_WAVE_TARGETS", "AMDF_CTS_GPU_KERNEL_TARGETS", "AMDF_CTS_GPU_PM4_TARGETS")
 load("//libamdf/requirements:package_policy.bzl", "apply_amdf_target_policy")
 load("//loom/build_tools/amdgpu:descriptor_sets.bzl", "loom_amdgpu_selected_descriptor_set_values")
-load("//loom/build_tools/amdgpu:target_config.bzl", "LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITIES", "LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_TARGET", "LOOM_AMDGPU_SUPPORTED_TARGETS")
+load("//loom/build_tools/amdgpu:target_config.bzl", "LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITIES", "LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_TARGET")
 load("//loom/build_tools/bazel:build_defs.bzl", "loom_config_compatible_with")
 load("//loom/build_tools/bazel:defs.bzl", "loom_library", "loom_target_profile")
 
@@ -24,6 +25,8 @@ exports_files([
     "byte_copy_unaligned.loom",
     "completed_tick.cxx",
     "completed_tick.loom",
+    "device_sdma.loom",
+    "device_sdma_batched.loom",
     "file_demand.cxx",
     "file_demand.loom",
     "file_exchange.cxx",
@@ -39,6 +42,8 @@ exports_files([
     "resident_channels.loom",
     "resident_exchange.loom",
     "resident_npu_initiated.loom",
+    "resident_npu_sdma.loom",
+    "sdma_copy.loom",
     "transform.loom",
     "transform_alternate.loom",
 ])
@@ -50,23 +55,12 @@ py_binary(
     visibility = ["//libamdf:__subpackages__"],
 )
 
-# Every exact physical selector, including encoding overlays, shares the same
-# authored kernels. Generic code-object processors are not physical endpoints.
-_KERNEL_TARGETS = sorted([
-    target
-    for target in LOOM_AMDGPU_SUPPORTED_TARGETS
-    if not target.endswith("-generic")
-])
-
-# Resident exchange programs are submitted through the RDNA PM4 path.
-_RDNA_KERNEL_TARGETS = [target for target in _KERNEL_TARGETS if not target.startswith("gfx9")]
-
 _CXX_COMPATIBILITY = loom_config_compatible_with(["//loom/config/import:cxx"])
 
 _KERNEL_TARGETS_BY_CAPABILITY = {
     capability: [
         target
-        for target in _KERNEL_TARGETS
+        for target in AMDF_CTS_GPU_KERNEL_TARGETS
         if LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_TARGET[target] == capability
     ]
     for capability in LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITIES
@@ -106,7 +100,7 @@ loom_library(
         }),
         visibility = ["//visibility:private"],
     )
-    for target in _KERNEL_TARGETS
+    for target in AMDF_CTS_GPU_KERNEL_TARGETS
 ]
 
 amdf_cc_library(
@@ -130,6 +124,37 @@ amdf_cc_library(
 )
 
 amdf_cc_library(
+    name = "device_sdma",
+    testonly = True,
+    hdrs = ["device_sdma.h"],
+)
+
+amdf_cts_gpu_kernel_set(
+    name = "device_sdma_kernels",
+    srcs = [
+        "device_sdma.loom",
+        "sdma_copy.loom",
+    ],
+    entry_point = "device_sdma",
+    namespace = "kernels::device_sdma",
+    targets = AMDF_CTS_GPU_KERNEL_TARGETS,
+)
+
+amdf_cc_library(
+    name = "device_sdma_batched",
+    testonly = True,
+    hdrs = ["device_sdma_batched.h"],
+)
+
+amdf_cts_gpu_kernel_set(
+    name = "device_sdma_batched_kernels",
+    srcs = ["device_sdma_batched.loom"],
+    entry_point = "device_sdma_batched",
+    namespace = "kernels::device_sdma_batched",
+    targets = AMDF_CTS_GPU_KERNEL_TARGETS,
+)
+
+amdf_cc_library(
     name = "byte_copy_unaligned",
     testonly = True,
     hdrs = ["byte_copy_unaligned.h"],
@@ -140,7 +165,7 @@ amdf_cts_gpu_kernel_set(
     srcs = ["byte_copy_unaligned.loom"],
     entry_point = "byte_copy_unaligned",
     namespace = "kernels::byte_copy_unaligned",
-    targets = _KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_KERNEL_TARGETS,
 )
 
 amdf_cc_library(
@@ -154,7 +179,7 @@ amdf_cts_gpu_kernel_set(
     srcs = ["pattern_fill_unaligned.loom"],
     entry_point = "pattern_fill_unaligned",
     namespace = "kernels::pattern_fill_unaligned",
-    targets = _KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_KERNEL_TARGETS,
 )
 
 amdf_cts_gpu_kernel_set(
@@ -162,7 +187,7 @@ amdf_cts_gpu_kernel_set(
     srcs = ["transform.loom"],
     entry_point = "aql_transform",
     namespace = "kernels::transform",
-    targets = _KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_KERNEL_TARGETS,
 )
 
 amdf_cts_gpu_kernel_set(
@@ -170,7 +195,7 @@ amdf_cts_gpu_kernel_set(
     srcs = ["transform_alternate.loom"],
     entry_point = "aql_transform",
     namespace = "kernels::transform_alternate",
-    targets = _KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_KERNEL_TARGETS,
 )
 
 amdf_cts_gpu_kernel_set(
@@ -182,7 +207,7 @@ amdf_cts_gpu_kernel_set(
     entry_point = "resident_exchange",
     namespace = "kernels::resident_exchange",
     target_compatible_with = _COMPLETED_TICK_COMPATIBILITY,
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
 )
 
 amdf_cts_gpu_kernel_set(
@@ -192,7 +217,7 @@ amdf_cts_gpu_kernel_set(
     inputopts = ["cxx:root=file_exchange"],
     namespace = "kernels::file_exchange_cxx",
     target_compatible_with = _CXX_COMPATIBILITY,
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
 )
 
 amdf_cc_library(
@@ -206,7 +231,7 @@ amdf_cts_gpu_kernel_set(
     srcs = ["file_exchange.loom"],
     entry_point = "file_exchange",
     namespace = "kernels::file_exchange",
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
 )
 
 amdf_cts_gpu_kernel_set(
@@ -216,7 +241,7 @@ amdf_cts_gpu_kernel_set(
     inputopts = ["cxx:root=file_gather"],
     namespace = "kernels::file_gather_cxx",
     target_compatible_with = _CXX_COMPATIBILITY,
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
 )
 
 amdf_cc_library(
@@ -230,7 +255,7 @@ amdf_cts_gpu_kernel_set(
     srcs = ["file_gather.loom"],
     entry_point = "file_gather",
     namespace = "kernels::file_gather",
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
 )
 
 amdf_cts_gpu_kernel_set(
@@ -240,7 +265,7 @@ amdf_cts_gpu_kernel_set(
     inputopts = ["cxx:root=file_latency"],
     namespace = "kernels::file_latency_cxx",
     target_compatible_with = _CXX_COMPLETED_TICK_COMPATIBILITY,
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
     deps = [":completed_tick_cxx"],
 )
 
@@ -259,7 +284,7 @@ amdf_cts_gpu_kernel_set(
     entry_point = "file_latency",
     namespace = "kernels::file_latency",
     target_compatible_with = _COMPLETED_TICK_COMPATIBILITY,
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
 )
 
 amdf_cc_library(
@@ -275,7 +300,7 @@ amdf_cts_gpu_kernel_set(
     inputopts = ["cxx:root=file_demand"],
     namespace = "kernels::file_demand_cxx",
     target_compatible_with = _CXX_COMPLETED_TICK_COMPATIBILITY,
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
     deps = [":completed_tick_cxx"],
 )
 
@@ -288,7 +313,7 @@ amdf_cts_gpu_kernel_set(
     entry_point = "file_demand",
     namespace = "kernels::file_demand",
     target_compatible_with = _COMPLETED_TICK_COMPATIBILITY,
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
 )
 
 amdf_cts_gpu_kernel_set(
@@ -300,7 +325,7 @@ amdf_cts_gpu_kernel_set(
     entry_point = "resident_channels",
     namespace = "kernels::resident_channels",
     target_compatible_with = _COMPLETED_TICK_COMPATIBILITY,
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
 )
 
 amdf_cts_gpu_kernel_set(
@@ -312,7 +337,26 @@ amdf_cts_gpu_kernel_set(
     entry_point = "resident_npu_initiated",
     namespace = "kernels::resident_npu_initiated",
     target_compatible_with = _COMPLETED_TICK_COMPATIBILITY,
-    targets = _RDNA_KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
+)
+
+amdf_cc_library(
+    name = "resident_npu_sdma",
+    testonly = True,
+    hdrs = ["resident_npu_sdma.h"],
+)
+
+amdf_cts_gpu_kernel_set(
+    name = "resident_npu_sdma_kernels",
+    srcs = [
+        "completed_tick.loom",
+        "resident_npu_sdma.loom",
+        "sdma_copy.loom",
+    ],
+    entry_point = "resident_npu_sdma",
+    namespace = "kernels::resident_npu_sdma",
+    target_compatible_with = _COMPLETED_TICK_COMPATIBILITY,
+    targets = AMDF_CTS_GPU_PM4_TARGETS,
 )
 
 amdf_cts_gpu_kernel_set(
@@ -320,7 +364,7 @@ amdf_cts_gpu_kernel_set(
     srcs = ["geometry_ids.loom"],
     entry_point = "geometry_ids",
     namespace = "kernels::geometry_ids",
-    targets = _KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_KERNEL_TARGETS,
 )
 
 amdf_cc_library(
@@ -334,7 +378,40 @@ amdf_cts_gpu_kernel_set(
     srcs = ["lds_exchange.loom"],
     entry_point = "lds_exchange",
     namespace = "kernels::lds_exchange",
-    targets = _KERNEL_TARGETS,
+    target_srcs = {
+        target: "targets/" + target + "/default.loom"
+        for target in AMDF_CTS_GPU_KERNEL_TARGETS
+    },
+    targets = AMDF_CTS_GPU_KERNEL_TARGETS,
+)
+
+amdf_cts_gpu_kernel_set(
+    name = "lds_exchange_wave64_kernels",
+    srcs = ["lds_exchange.loom"],
+    entry_point = "lds_exchange",
+    namespace = "kernels::lds_exchange_wave64",
+    target_srcs = {
+        target: "targets/" + target + "/wave64.loom"
+        for target in AMDF_CTS_GPU_DUAL_WAVE_TARGETS
+    },
+    targets = AMDF_CTS_GPU_DUAL_WAVE_TARGETS,
+)
+
+amdf_cc_library(
+    name = "lds_wave_mode_cases",
+    testonly = True,
+    srcs = ["lds_wave_mode_test.cc"],
+    target_compatible_with = select({
+        config: []
+        for config in AMDF_CTS_GPU_DUAL_WAVE_CONFIGS
+    } | {"//conditions:default": ["@platforms//:incompatible"]}),
+    deps = [
+        ":lds_exchange",
+        ":lds_exchange_wave64_kernels",
+        ":product_test",
+        "//third_party:google_test",
+    ],
+    alwayslink = True,
 )
 
 amdf_cc_test(
@@ -343,6 +420,10 @@ amdf_cc_test(
     deps = [
         ":byte_copy_unaligned",
         ":byte_copy_unaligned_kernels",
+        ":device_sdma",
+        ":device_sdma_batched",
+        ":device_sdma_batched_kernels",
+        ":device_sdma_kernels",
         ":geometry_ids",
         ":geometry_ids_kernels",
         ":kernel",
@@ -358,7 +439,10 @@ amdf_cc_test(
         ":transform_kernels",
         "//third_party:google_test",
         "//third_party:google_test_main",
-    ],
+    ] + select({
+        config: [":lds_wave_mode_cases"]
+        for config in AMDF_CTS_GPU_DUAL_WAVE_CONFIGS
+    } | {"//conditions:default": []}),
 )
 
 amdf_cc_library(
@@ -391,6 +475,8 @@ amdf_cc_test(
         ":resident_exchange_kernels",
         ":resident_npu_initiated",
         ":resident_npu_initiated_kernels",
+        ":resident_npu_sdma",
+        ":resident_npu_sdma_kernels",
         "//third_party:google_test",
         "//third_party:google_test_main",
     ],
@@ -407,7 +493,7 @@ amdf_cts_gpu_kernel_set(
     srcs = ["private_roundtrip.loom"],
     entry_point = "private_roundtrip",
     namespace = "kernels::private_roundtrip",
-    targets = _KERNEL_TARGETS,
+    targets = AMDF_CTS_GPU_KERNEL_TARGETS,
 )
 
 _KERNEL_POLICY = apply_amdf_target_policy({})

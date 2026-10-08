@@ -34,8 +34,15 @@ follow HSA §§2.9.1–2, 2.9.6, 2.9.8–9 and 3.3.3.1. [Specification][hsa]
 | Chapter | Native contract |
 | --- | --- |
 | [Publication and doorbells](publication.md) | Ring representation, reservation, atomic publication, notification, native mappings, and slot versus task ownership. |
-| [Barriers and signals](barriers.md) | Header ordering, AGENT/SYSTEM fences, AND/OR dependencies, native signal storage, and AMD BARRIER_VALUE epochs. |
+| [Metadata-prefetch rings](metadata.md) | Paired 256-byte records, four-header publication, kernarg preload, launch descriptors, `CP_HQD_KD_CNTL`, and native backing ownership. |
+| [Barriers and signals](barriers.md) | Header ordering, AGENT/SYSTEM fences, AND/OR dependencies, and native signal storage. |
+| [Signal-value waits](value-waits.md) | AMD BARRIER_VALUE fields, EQ/NE/LT/GTE, masked stream waits, signal/value-address ownership, and descending epochs. |
+| [Native signals and host notification](../notifications.md) | USER signal fields, KFD event ages, host wait registration, per-engine interrupts and final notification ownership. |
 | [Kernel dispatch](dispatch.md) | Packet geometry, compiler descriptors, argument fetches, private/group resources, and executable publication. |
+| [Device-enqueued kernels](device-enqueue.md) | OpenCL runtime handles, software queue/wrapper states, `__amd_scheduler_rocm`, child AQL and self-relaunch, descendant/event ownership and final scheduler users. |
+| [Compute affinity and queue priority](../scheduling.md) | HSA/CLR CU and WGP masks, KFD topology mapping, native priority translation and live-queue transitions. |
+| [Cooperative execution and grid synchronization](../cooperative.md) | `HSA_QUEUE_TYPE_COOPERATIVE`, shared queue ownership, native GWS admission and in-shader grid barriers. |
+| [Scratch storage and reclamation](scratch.md) | `COMPUTE_TMPRING_SIZE`, wave32/wave64 and per-XCC sizing, `USE_SCRATCH_ONCE`, firmware growth requests, and asynchronous last-use cutoffs. |
 | [Carried memory operations](transfers.md) | AMD vendor-format-1 PM4 indirection, confirmed data movement, virtual-XCC routing, and command-storage lifetime. |
 | [Profiling](profiling.md) | Dispatch timestamp capture, command-processor clocks, counter injection, result ownership, and profiling-tail completion. |
 

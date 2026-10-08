@@ -124,6 +124,16 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "compiled_provider",
+    hdrs = ["compiled_provider.h"],
+    deps = [
+        ":invocation",
+        "//loom/binding/c:loomc",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "expectation",
     srcs = ["expectation.c"],
     hdrs = ["expectation.h"],

@@ -8,11 +8,12 @@ when both eventually copy numeric values into memory.
 
 ## Timestamp stage and representation
 
-PAL's compute timestamp caller selects COPY_DATA for CP stages and RELEASE_MEM
-when the requested stage includes compute shaders or bottom-of-pipe. It handles
-outstanding CP DMA separately. Mesa likewise uses COPY_DATA at top-of-pipe and
-an EOP timestamp event for later stages. A CP sample placed after a dispatch
-packet need not follow completion of that asynchronous shader.
+PAL's GFX10/GFX11 compute timestamp caller selects COPY_DATA for CP stages
+and RELEASE_MEM when the requested stage includes compute shaders or
+bottom-of-pipe. It handles outstanding CP DMA separately. Mesa likewise uses
+COPY_DATA at top-of-pipe and an EOP timestamp event for later stages. A CP
+sample placed after a dispatch packet need not follow completion of that
+asynchronous shader.
 [PAL stage selection][pal-stage] [Mesa stage selection][mesa-stage]
 
 | Mechanism | Native fields and meaning |
@@ -50,7 +51,7 @@ scheduling remain inside it. [Stage selection][pal-stage]
 
 PAL's timing-only `GpaSession` allocates the begin/end slots together and
 records the configured pre-sample in `BeginSample`. For a top-of-pipe begin
-and compute-shader end, the command and observation sequence is:
+and compute-shader end, the following sequence traces its GFX11 compute path:
 
 ```text
 publish executable, arguments, inputs and command storage
@@ -106,6 +107,70 @@ It is not an isolated shader instruction duration. Host end-to-end timing adds
 submission and completion observation; submit-only timing deliberately excludes
 completion from the interval. Each observation site needs its own stated
 boundary.
+
+## GFX12 timestamp confirmation
+
+The [release selectors](release.md#confirmation-and-notification-selectors)
+separate producing a clock sample from confirming its write or interrupting an
+observer. The following path deliberately defers confirmation.
+
+PAL's GFX12 compute timestamp caller retains stage selection and the CP-DMA
+join, but defers write confirmation. CP-stage `COPY_DATA` uses GPU-clock
+source 9, destination 2 (`tc_l2`), 64-bit count and `WR_CONFIRM=0`.
+Its word-1 control value is `0x00010209`; the selected source/destination
+temporal hints are zero. CS/bottom-stage `RELEASE_MEM` samples use
+`BOTTOM_OF_PIPE_TS` and GPU-clock data with `noConfirmWr=true`, leaving
+`INT_SEL=0`. The universal command-buffer caller makes the same confirmation
+choice. These are different selections from the older confirmed samples above.
+[Compute timestamp caller][pal12-timestamp-caller]
+[Universal timestamp caller][pal12-timestamp-universal]
+[COPY_DATA fields][pal12-timestamp-copy-fields]
+[COPY_DATA builder][pal12-timestamp-copy]
+[Release confirmation][pal12-timestamp-release]
+
+The public timestamp API requires the matching source-stage flags and
+`CoherTimestamp` access. GFX12 barrier planning keeps that access as a separate
+timestamp-completion requirement, alongside the cache mask. Its confirmation
+helper emits a confirmed EOP GPU-clock write to private scratch, followed by
+a confirmed one-DWORD `WRITE_DATA` to the same scratch address. PAL attributes
+these to confirmation of the EOP and CP write paths. The scratch value is not
+the user's timestamp or a readiness flag: the command allocator provides an
+eight-byte, eight-byte-aligned slot whose content is otherwise ignored.
+[Timestamp API][pal12-timestamp-api] [Separate requirement][pal12-timestamp-requirement]
+[Confirmation sequence][pal12-timestamp-sync]
+[WRITE_DATA confirmation][pal12-timestamp-write]
+[Scratch owner][pal12-timestamp-scratch]
+
+For a compute-stage timestamp consumed by a shader, an ordinary combined
+buffer barrier declares `CS/CoherTimestamp → CS/CoherShaderRead`. The
+bypass-to-shader transition requests GL2 writeback/invalidation and K$/V$
+invalidation. The timestamp requirement promotes the CS join to EOP. On the
+compute engine the resulting source sequence is:
+
+```text
+unconfirmed timestamp store into the result slot
+  → confirmed EOP clock store and confirmed DWORD store into private scratch
+  → EOP release carrying data-cache actions and a private fence value
+  → equality wait on that fence → consuming shader
+```
+
+The timestamp result, helper scratch and completion fence are distinct storage
+roles. A CPU/memory destination can omit the GL2 actions under PAL's bypass
+classification while retaining confirmation and the execution join. Later
+host observation and storage reuse still require the mapping, completion and
+retirement contract; the unconfirmed sample alone supplies none of those.
+[Access and cache planning][pal12-timestamp-requirement]
+[Event selection][pal12-timestamp-events]
+[Confirmation before dependency][pal12-timestamp-combined]
+[Compute fence and wait][pal12-timestamp-eop]
+
+`CoherCp` is a distinct access bit. The shared `GpaSession::End` caller uses
+it in the session flow above and therefore does not directly request this
+dedicated timestamp helper; its GFX12 compute lowering still includes an EOP
+fence and wait. That source path does not replace the timestamp API's explicit
+`CoherTimestamp` contract or establish that packet retirement makes an
+unconfirmed sample ready. [Access definitions][pal12-timestamp-access]
+[Session caller][session-end] [Compute EOP join][pal12-timestamp-eop]
 
 ## Clock units and host correlation
 
@@ -217,3 +282,17 @@ profiling-domain distinctions belong to [observability](../observability.md).
 [profiler-owner]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_chardev.c#L3333-L3415
 [queue-update]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_device_queue_manager.c#L331-L352
 [process-cleanup]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_process.c#L1177-L1185
+[pal12-timestamp-caller]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L197-L256
+[pal12-timestamp-universal]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12UniversalCmdBuffer.cpp#L5853-L5913
+[pal12-timestamp-copy-fields]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_f32_mec_pm4_packets.h#L665-L766
+[pal12-timestamp-copy]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12CmdUtil.cpp#L2280-L2312
+[pal12-timestamp-release]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12CmdUtil.cpp#L1852-L1887
+[pal12-timestamp-api]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/inc/core/palCmdBuffer.h#L4025-L4048
+[pal12-timestamp-requirement]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L375-L485
+[pal12-timestamp-sync]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L92-L119
+[pal12-timestamp-write]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12CmdUtil.cpp#L2109-L2138
+[pal12-timestamp-scratch]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdBuffer.cpp#L464-L477
+[pal12-timestamp-events]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L166-L204
+[pal12-timestamp-combined]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L1199-L1204
+[pal12-timestamp-eop]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L1721-L1784
+[pal12-timestamp-access]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/inc/core/palCmdBuffer.h#L319-L355

@@ -559,7 +559,9 @@ vector_iota = Op(
         "logical row-major order of the result shape; result lane ordinal i "
         "contains base + i * step. The result element type must be index or a "
         "non-i1 integer payload, and base/step must be scalar values with the "
-        "same element type. Dynamic result extents are allowed: the result "
+        "same element type. Fixed-width integer coordinates use modular "
+        "multiply/add in that type; index coordinates follow index arithmetic. "
+        "Dynamic result extents are allowed: the result "
         "type supplies the lane count symbolically and later specialization "
         "fixes the concrete number of produced coordinates."
     ),
@@ -594,10 +596,13 @@ vector_mask_range = Op(
     "vector.mask.range",
     group=vector_ops,
     doc=(
-        "Construct an i1 tail mask from an explicit scalar coordinate range. "
+        "Construct an i1 lane mask from an explicit scalar coordinate range. "
         "For logical lane ordinal i, the lane is true when "
         "lower_bound + i * step is strictly less than upper_bound using the "
-        "coordinate domain's signed ordering. The bracketed syntax mirrors "
+        "coordinate domain's signed ordering. Fixed-width coordinates use "
+        "modular multiply/add in that type, so wrapping can produce a "
+        "non-prefix mask. Index coordinates follow index arithmetic. "
+        "The bracketed syntax mirrors "
         "scf.for ranges because the same inclusive-lower, exclusive-upper "
         "semantics are being tested; the result vector type supplies the "
         "number and shape of lanes to test."

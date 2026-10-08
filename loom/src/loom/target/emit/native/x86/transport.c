@@ -227,3 +227,101 @@ void loom_x86_transport_select_storage(
   out_instruction->encoding_id = loom_x86_transport_vector_encoding(
       is_store ? 0x91 : 0x90, 0, true, false, 0);
 }
+
+void loom_x86_transport_select_storage_register(
+    loom_x86_storage_transfer_t transfer, uint16_t storage_reg_class_id,
+    uint16_t register_reg_class_id, uint32_t register_location,
+    uint8_t base_register, int32_t displacement,
+    loom_x86_transport_instruction_t* out_instruction) {
+  const loom_x86_register_class_t storage_class =
+      loom_x86_logical_register_class(storage_reg_class_id);
+  const loom_x86_register_class_t register_class =
+      loom_x86_logical_register_class(register_reg_class_id);
+  if (storage_class == register_class) {
+    loom_x86_transport_select_storage(transfer, register_reg_class_id,
+                                      register_location, base_register,
+                                      displacement, out_instruction);
+    return;
+  }
+  IREE_ASSERT_EQ(storage_class, LOOM_X86_REGISTER_CLASS_GPR32);
+  IREE_ASSERT_EQ(register_class, LOOM_X86_REGISTER_CLASS_XMM);
+
+  *out_instruction = (loom_x86_transport_instruction_t){0};
+  const bool is_store = transfer == LOOM_X86_STORAGE_TRANSFER_STORE;
+  const uint8_t reg =
+      loom_x86_transport_register(register_reg_class_id, register_location);
+  out_instruction->operands.immediate = displacement;
+  if (is_store) {
+    out_instruction->operands.inputs[0] = reg;
+    out_instruction->operands.inputs[1] = base_register;
+    out_instruction->encoding_format_id = LOOM_X86_TRANSPORT_RECIPE_STORE;
+  } else {
+    out_instruction->operands.result = reg;
+    out_instruction->operands.inputs[0] = base_register;
+    out_instruction->encoding_format_id = LOOM_X86_TRANSPORT_RECIPE_LOAD;
+  }
+  out_instruction->encoding_id = loom_x86_transport_vector_encoding(
+      is_store ? 0x7e : 0x6e, 1, false, reg >= 16, 0);
+}
+
+bool loom_x86_transport_select_abi_storage(
+    loom_x86_storage_transfer_t transfer, uint16_t descriptor_reg_class_id,
+    uint16_t byte_length, uint32_t register_location, uint8_t base_register,
+    int32_t displacement, loom_x86_transport_instruction_t* out_instruction) {
+  const uint32_t register_byte_length =
+      loom_x86_transport_byte_length(descriptor_reg_class_id);
+  if (byte_length == register_byte_length) {
+    loom_x86_transport_select_storage(transfer, descriptor_reg_class_id,
+                                      register_location, base_register,
+                                      displacement, out_instruction);
+    return true;
+  }
+  const loom_x86_register_class_t register_class =
+      loom_x86_logical_register_class(descriptor_reg_class_id);
+  if (register_class == LOOM_X86_REGISTER_CLASS_GPR32 &&
+      (byte_length == 1 || byte_length == 2)) {
+    *out_instruction = (loom_x86_transport_instruction_t){0};
+    const bool is_store = transfer == LOOM_X86_STORAGE_TRANSFER_STORE;
+    const uint8_t reg =
+        loom_x86_transport_register(descriptor_reg_class_id, register_location);
+    out_instruction->operands.immediate = displacement;
+    if (is_store) {
+      out_instruction->operands.inputs[0] = reg;
+      out_instruction->operands.inputs[1] = base_register;
+      out_instruction->encoding_format_id = LOOM_X86_ENCODING_FORM_STORE;
+      out_instruction->encoding_id = byte_length == 1
+                                         ? 0x88 | LOOM_X86_ENCODING_BYTE
+                                         : 0x89 | LOOM_X86_ENCODING_OPERAND_16;
+    } else {
+      out_instruction->operands.result = reg;
+      out_instruction->operands.inputs[0] = base_register;
+      out_instruction->gpr_writes = (uint16_t)(1u << reg);
+      out_instruction->encoding_format_id = LOOM_X86_ENCODING_FORM_LOAD;
+      out_instruction->encoding_id =
+          LOOM_X86_ENCODING_OPCODE_0F | (byte_length == 1 ? 0xb6 : 0xb7) |
+          (byte_length == 1 ? LOOM_X86_ENCODING_BYTE : 0);
+    }
+    return true;
+  }
+  if (register_class != LOOM_X86_REGISTER_CLASS_XMM ||
+      (byte_length != 4 && byte_length != 8)) {
+    return false;
+  }
+  *out_instruction = (loom_x86_transport_instruction_t){0};
+  const bool is_store = transfer == LOOM_X86_STORAGE_TRANSFER_STORE;
+  const uint8_t reg =
+      loom_x86_transport_register(descriptor_reg_class_id, register_location);
+  out_instruction->operands.immediate = displacement;
+  if (is_store) {
+    out_instruction->operands.inputs[0] = reg;
+    out_instruction->operands.inputs[1] = base_register;
+    out_instruction->encoding_format_id = LOOM_X86_TRANSPORT_RECIPE_STORE;
+  } else {
+    out_instruction->operands.result = reg;
+    out_instruction->operands.inputs[0] = base_register;
+    out_instruction->encoding_format_id = LOOM_X86_TRANSPORT_RECIPE_LOAD;
+  }
+  out_instruction->encoding_id = loom_x86_transport_vector_encoding(
+      is_store ? 0x11 : 0x10, byte_length == 4 ? 2 : 3, false, reg >= 16, 0);
+  return true;
+}

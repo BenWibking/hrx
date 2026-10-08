@@ -18,6 +18,7 @@
 
 #include "loom/import/cxx/binding/assembly.h"
 #include "loom/import/cxx/binding/atomic.h"
+#include "loom/import/cxx/binding/buffer.h"
 #include "loom/import/cxx/binding/check.h"
 #include "loom/import/cxx/binding/decode.h"
 #include "loom/import/cxx/binding/encoding.h"
@@ -77,10 +78,10 @@ class Intrinsics {
   };
   using Binding =
       std::variant<ScalarBinding, ShapedIntrinsic, EncodingIntrinsic,
-                   DecodeIntrinsic, ViewIntrinsic, AtomicIntrinsic,
-                   FenceIntrinsic, SubgroupIntrinsic, BarrierIntrinsic,
-                   TargetIntrinsic, AssemblyIntrinsic, TemplateApplyIntrinsic,
-                   CheckIntrinsic>;
+                   DecodeIntrinsic, BufferIntrinsic, ViewIntrinsic,
+                   AtomicIntrinsic, FenceIntrinsic, SubgroupIntrinsic,
+                   BarrierIntrinsic, TargetIntrinsic, AssemblyIntrinsic,
+                   TemplateApplyIntrinsic, CheckIntrinsic>;
 
   Intrinsics(cxx::TranslationUnit& unit, Diagnostics& diagnostics, Types& types,
              Locations& locations, SymbolNames& names,

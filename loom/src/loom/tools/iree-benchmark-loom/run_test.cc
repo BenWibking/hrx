@@ -13,7 +13,6 @@
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 #include "iree/testing/temp_file.h"
-#include "loom/target/provider.h"
 
 namespace loom {
 namespace {
@@ -62,22 +61,7 @@ static void ExpectJsonRowKind(const std::string& row,
   EXPECT_TRUE(iree_string_view_equal(actual_kind, expected_kind));
 }
 
-class BenchmarkRunTest : public ::testing::Test {
- protected:
-  void SetUp() override {
-    IREE_ASSERT_OK(loom_target_environment_initialize(&target_provider_set_,
-                                                      &target_environment_));
-  }
-
-  void TearDown() override {
-    loom_target_environment_deinitialize(&target_environment_);
-  }
-
-  loom_target_provider_set_t target_provider_set_ = {};
-  loom_target_environment_t target_environment_ = {};
-};
-
-TEST_F(BenchmarkRunTest, RunsFileThroughCallerOwnedSink) {
+TEST(BenchmarkRunTest, RunsFileThroughCallerOwnedSink) {
   iree::testing::TempFilePath input_path("loom-benchmark-run", ".loom");
   std::ofstream input_file(input_path.path());
   input_file << R"(
@@ -107,7 +91,6 @@ check.benchmark<@sampled_choice> @sampled_choice_value7 {value = 7}
   event_sink.user_data = &collector;
   iree_benchmark_loom_configuration_t configuration = {};
   configuration.tool_name = "iree-benchmark-loom-test";
-  configuration.target_environment = &target_environment_;
   iree_benchmark_loom_file_run_options_t run_options = {};
   run_options.configuration = &configuration;
   run_options.benchmark_options = &benchmark_options;
@@ -138,7 +121,7 @@ check.benchmark<@sampled_choice> @sampled_choice_value7 {value = 7}
   EXPECT_EQ(collector.events[5].summary.correctness_failed_sample_count, 0u);
 }
 
-TEST_F(BenchmarkRunTest, WritesJsonlOutputThroughConfiguredSink) {
+TEST(BenchmarkRunTest, WritesJsonlOutputThroughConfiguredSink) {
   iree::testing::TempFilePath input_path("loom-benchmark-run-jsonl", ".loom");
   std::ofstream input_file(input_path.path());
   input_file << R"(
@@ -165,7 +148,6 @@ check.benchmark<@sampled_choice> @sampled_choice_value7 {value = 7}
 
   iree_benchmark_loom_configuration_t configuration = {};
   configuration.tool_name = "iree-benchmark-loom-test";
-  configuration.target_environment = &target_environment_;
   iree_benchmark_loom_file_run_options_t run_options = {};
   run_options.configuration = &configuration;
   run_options.benchmark_options = &benchmark_options;

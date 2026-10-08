@@ -6,8 +6,14 @@ through `loomc_module_import_cxx`. The no-use cases share one BF16 function
 body while adding one facade or facade combination: `<stdfloat>`,
 `<loomcxx/numeric.h>`, `<loomcxx/vector.h>`,
 `<loomcxx/encoding_type.h>`, `<loomcxx/encoding.h>`,
-`<loomcxx/predicate.h>`, `<loomcxx/kernel.h>`, or the kernel and predicate
-facades together. Comparing them with `NoIncludes` isolates header cost.
+`<loomcxx/view.h>`, `<loomcxx/predicate.h>`, `<loomcxx/kernel.h>`, or the kernel
+and predicate facades together. Comparing them with `NoIncludes` isolates
+header cost.
+`RankTwoView` imports a dynamic-row, static-column view through a dense layout.
+`RankThreeStorageView` composes a rank-three layout with an FP8 schema and loads
+through the resulting physical-storage view. Together they retain the ordinary
+view path as a control while tracking the higher-rank type and overflow-dimension
+storage added for model-weight authoring.
 
 `Q8S32Providers` imports the checked Q8S32 provider translation unit used by
 the target specialization tests. Its user header is served through the public
@@ -108,6 +114,88 @@ validates the artifact, and releases the module and results. The context,
 compiler, prepared pipeline, target profile, config module, source handle, and
 workspace are reused. Process startup and setup are outside timing. One warmup
 compilation precedes measurement; parsed C++ ASTs are not cached.
+
+The `CxxJitPhase` rows attribute this endpoint with two maintained sources:
+llama.cpp RMSNorm provides a small ordinary kernel, while the MXFP8 group dot
+exercises storage encodings, narrow-float conversion, vectors, reductions, and
+target-specific lowering. Each row invokes a complete public compiler boundary:
+
+| Phase | Timed operation |
+| --- | --- |
+| `Import` | Preprocess, parse, type-check, and import source to verified High IR. |
+| `CloneHigh` | Clone a setup-imported High module into the invocation workspace. |
+| `SourceLow` | Clone High IR and run the source-low target pipeline. |
+| `PreparedLow` | Clone High IR and run the complete prepared-low target pipeline. |
+| `ClonePreparedLow` | Clone setup-prepared Low IR with its retained specialization facts. |
+| `EmitPreparedLow` | Clone prepared Low IR, emit HSACO, and validate the ELF artifact. |
+
+The lowering and emission rows include their required fresh-module clone. The
+clone-only rows expose that floor. `SourceLow` and `PreparedLow` are independent
+cumulative compilations, while `EmitPreparedLow` starts from retained prepared
+IR, so phase times are not additive reconstructions of `SourceToHsaco`.
+Validation, result construction, teardown, and arena reuse remain owned by the
+public operation that performs them.
+
+`ConfiguredWorkgroupStorage` measures a specialization-first kernel whose C++
+source declares a constrained stage count, uses that value to size aligned
+workgroup storage and a dynamic view, and carries the value through a loop. The
+benchmark supplies four stages through a `config.def`; it does not rewrite or
+reparse the source. A short optimized run on an AMD Ryzen AI Max+ 395 on
+2026-10-08 measured these medians over seven 100-iteration repetitions:
+
+| Public boundary | Configured workgroup storage |
+| --- | ---: |
+| Import to verified High IR | 3.55 ms |
+| Clone High IR | 12.9 us |
+| Through source-low | 0.362 ms |
+| Through prepared-low | 0.397 ms |
+| Clone prepared Low IR | 9.24 us |
+| Emit prepared Low IR to HSACO | 84.1 us |
+| Complete source to HSACO | 4.17 ms |
+
+The benchmark lease was held and the complete row had a 5.2% repetition
+coefficient of variation. Seven one-iteration cold-workspace repetitions had a
+4.26 ms median and allocated eleven 128 KiB workspace blocks, or 1.375 MiB.
+Warmed iterations reused those blocks. The emitted HSACO is 9,208 bytes.
+
+The same imported module was also compiled with stage counts one and four and
+compared with static High IR controls in which only the stage count was an
+ordinary constant. Each specialization produced byte-for-byte identical HSACO
+to its static control, including these resource and code properties:
+
+| Stage count | Exact LDS | Instructions | Code bytes | SGPRs | VGPRs | Occupancy |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 128 bytes | 19 | 100 | 4 | 3 | 100% |
+| 4 | 512 bytes | 30 | 148 | 4 | 5 | 100% |
+
+Configuration therefore changes the storage plan and specialized loop body
+without leaving configuration machinery or a runtime-sized allocation in the
+native artifact.
+
+An optimized 2026-10-08 run on an AMD Ryzen AI Max+ 395 measured these warmed
+medians. Phase rows used seven 100-iteration repetitions and complete rows used
+fifteen 50-iteration repetitions under the benchmark lease with no process
+allocator override.
+
+| Public boundary | llama.cpp RMSNorm | MXFP8 group dot |
+| --- | ---: | ---: |
+| Import to verified High IR | 3.221 ms | 4.101 ms |
+| Clone High IR | 22.7 us | 8.42 us |
+| Through source-low | 1.439 ms | 0.233 ms |
+| Through prepared-low | 1.614 ms | 0.291 ms |
+| Clone prepared Low IR | 33.6 us | 33.4 us |
+| Emit prepared Low IR to HSACO | 0.807 ms | 0.689 ms |
+| Complete source to HSACO | 6.443 ms | 5.509 ms |
+
+`SourceToHsacoColdWorkspace` skips scenario warmup and forces one compilation
+per repetition. Context, compiler, target, pass-program, source, and config
+setup remain outside timing, while the invocation workspace starts unused. Its
+allocation counters therefore report the first compilation's arena growth
+instead of mixing first-growth and reuse in one sample.
+All fifteen one-iteration repetitions reported twelve 128 KiB blocks for
+RMSNorm and eight blocks for MXFP8. Cold-workspace latency varied by 8.0% and
+6.3%, respectively, so it is compared as a repeated distribution rather than a
+single-sample threshold.
 
 Build an optimized executable before collecting numbers:
 

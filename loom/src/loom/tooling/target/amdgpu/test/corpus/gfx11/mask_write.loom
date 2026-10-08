@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // Wave64 masks are replaced with wide scalar offsets across a block boundary.
 // Check both the lane selection and the high word of the address arithmetic.
 amdgpu.target<gfx11-generic> @target {subgroup_size = 64}

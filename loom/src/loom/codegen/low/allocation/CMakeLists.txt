@@ -57,6 +57,7 @@ loom_cc_test(
     iree::testing::gtest_main
     loom::codegen::low::builder
     loom::codegen::low::placement
+    loom::codegen::low::storage_identity
     loom::ir
     loom::ops::low
     loom::target::registers
@@ -607,13 +608,16 @@ loom_cc_library(
     "storage_lease.c"
   DEPS
     ::assignment
+    ::live_range
     ::storage
     ::storage_lease_index
     ::table
+    ::unit_liveness
     iree::base
     iree::base::internal::arena
     loom::analysis::liveness
     loom::codegen::low::descriptors
+    loom::codegen::low::placement
     loom::codegen::low::storage_lease
     loom::ir
   PUBLIC
@@ -639,9 +643,11 @@ loom_cc_test(
   DEPS
     ::storage_lease
     ::storage_lease_index
+    ::unit_liveness
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::codegen::low::placement
     loom::ir
 )
 
@@ -885,6 +891,7 @@ loom_cc_library(
     ::assignment
     ::assignment_map
     ::move
+    ::unit_liveness
     ::write_interference_flow
     iree::base
     iree::base::internal::arena
@@ -909,6 +916,7 @@ loom_cc_test(
   DEPS
     ::placement
     ::target_constraints
+    ::unit_liveness_builder
     ::write_interference
     iree::base::internal::arena
     iree::testing::gtest
@@ -917,6 +925,7 @@ loom_cc_test(
     loom::codegen::low::builder
     loom::codegen::low::placement
     loom::codegen::low::read_retention
+    loom::codegen::low::storage_identity
     loom::ir
     loom::ops::low
     loom::target::registers
@@ -948,9 +957,30 @@ loom_cc_library(
     "unit_liveness.c"
   DEPS
     ::assignment
+    ::live_range
+    ::storage
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::liveness
+    loom::codegen::low::descriptors
+    loom::codegen::low::placement
+    loom::ir
+    loom::target::registers
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    unit_liveness_builder
+  HDRS
+    "unit_liveness_builder.h"
+  SRCS
+    "unit_liveness_builder.c"
+  DEPS
     ::call
     ::live_range
     ::storage
+    ::unit_liveness
     ::write_interference
     iree::base
     iree::base::internal::arena
@@ -990,6 +1020,7 @@ loom_cc_test(
   DEPS
     ::destructive_reuse
     ::unit_liveness
+    ::unit_liveness_builder
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
@@ -1003,6 +1034,7 @@ loom_cc_test(
     "unit_liveness_test.cc"
   DEPS
     ::unit_liveness
+    ::unit_liveness_builder
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main

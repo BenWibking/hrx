@@ -93,6 +93,26 @@ iree_status_t loom_vector_memory_mask_bounds_analyze(
     return iree_ok_status();
   }
 
+  const loom_value_id_t lower = loom_vector_mask_range_lower_bound(mask_op);
+  const loom_scalar_type_t coordinate_type =
+      loom_type_element_type(loom_module_value_type(module, lower));
+  if (coordinate_type != LOOM_SCALAR_TYPE_INDEX) {
+    const loom_value_fact_vector_iota_t coordinates = {
+        .base = loom_value_fact_table_lookup(fact_table, lower),
+        .step = step_facts,
+        .bit_count = (uint8_t)loom_scalar_type_bitwidth(coordinate_type),
+    };
+    int64_t minimum = 0;
+    int64_t maximum = 0;
+    if (!loom_value_fact_vector_iota_bounds(
+            coordinates,
+            loom_value_fact_table_maximum_element_count(
+                fact_table, loom_module_value_type(module, mask_value_id)),
+            &minimum, &maximum)) {
+      return iree_ok_status();
+    }
+  }
+
   IREE_RETURN_IF_ERROR(loom_symbolic_expr_from_value(
       expression_context, loom_vector_mask_range_lower_bound(mask_op),
       &out_bounds->lower_bound));

@@ -52,6 +52,8 @@ typedef enum loom_amdgpu_descriptor_trait_bit_e {
   LOOM_AMDGPU_DESCRIPTOR_TRAIT_ADDRESS_SOURCE_RETAINED = 1u << 12,
   // Descriptor is a PERMLANE lane-crossing packet.
   LOOM_AMDGPU_DESCRIPTOR_TRAIT_PERMLANE = 1u << 13,
+  // Descriptor writes architectural EXEC state.
+  LOOM_AMDGPU_DESCRIPTOR_TRAIT_WRITES_EXEC = 1u << 14,
 } loom_amdgpu_descriptor_trait_bit_t;
 typedef uint32_t loom_amdgpu_descriptor_traits_t;
 

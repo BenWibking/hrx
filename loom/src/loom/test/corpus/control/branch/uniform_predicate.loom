@@ -9,10 +9,15 @@ kernel.def @uniform_predicate_control() {
   %width = index.constant 64 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%width, %unit, %unit) : index
 } launch(%start: index, %end: index, %rounds: index, %mode: i32, %input: buffer, %output: buffer) {
+  %lane = kernel.workitem.id<x> : index
+  func.call @compute_uniform_predicate_control(%start, %end, %rounds, %mode, %input, %output, %lane) : (index, index, index, i32, buffer, buffer, index)
+  kernel.return
+}
+
+func.def device inline @compute_uniform_predicate_control(%start: index, %end: index, %rounds: index, %mode: i32, %input: buffer, %output: buffer, %lane: index) {
   %first = index.assume %start [range(%start, 0, 64)] : index
   %limit = index.assume %end [range(%end, 0, 64)] : index
   %count = index.assume %rounds [range(%rounds, 0, 16)] : index
-  %lane = kernel.workitem.id<x> : index
   %number = index.cast %lane : index to i32
   %begin = index.constant 0 : index
   %step = index.constant 1 : index
@@ -50,110 +55,97 @@ kernel.def @uniform_predicate_control() {
   }
   %result = scf.select %active, %sum, %untouched : i32
   view.store %result, %out[%lane] : i32, view<64xi32>
-  kernel.return
+  func.return
 }
 
-check.case public @uniform_predicate_control_empty {
-  %start = check.literal value(0) : index
-  %end = check.literal value(0) : index
-  %rounds = check.literal value(5) : index
-  %mode = check.literal value(3) : i32
-  %input = check.generate.iota offset(-2) step(3) : tensor<1xi32>
-  %actual = check.generate.fill value(-12345) : tensor<64xi32>
-  kernel.launch @uniform_predicate_control(%start, %end, %rounds, %mode, %input, %actual) : (index, index, index, i32, tensor<1xi32>, tensor<64xi32>)
-  %suffix = check.tensor.view %actual offset(0) : tensor<64xi32> -> tensor<64xi32>
-  %expected_suffix = check.generate.iota offset(-700) step(0) : tensor<64xi32>
-  check.expect.equal actual(%suffix) expected(%expected_suffix) : tensor<64xi32>
-  check.return
+func.def @uniform_predicate_control_oracle(%start: index, %end: index, %rounds: index, %mode: i32, %input: buffer, %output: buffer) {
+  %begin = index.constant 0 : index
+  %width = index.constant 64 : index
+  %step = index.constant 1 : index
+  scf.for %lane = [%begin to %width step %step] {
+    func.call @compute_uniform_predicate_control(%start, %end, %rounds, %mode, %input, %output, %lane) : (index, index, index, i32, buffer, buffer, index)
+  }
+  func.return
 }
 
-check.case public @uniform_predicate_control_zero_rounds {
-  %start = check.literal value(17) : index
-  %end = check.literal value(53) : index
-  %rounds = check.literal value(0) : index
-  %mode = check.literal value(3) : i32
-  %input = check.generate.iota offset(-2) step(3) : tensor<1xi32>
-  %actual = check.generate.fill value(-12345) : tensor<64xi32>
-  kernel.launch @uniform_predicate_control(%start, %end, %rounds, %mode, %input, %actual) : (index, index, index, i32, tensor<1xi32>, tensor<64xi32>)
-  %prefix = check.tensor.view %actual offset(0) : tensor<64xi32> -> tensor<17xi32>
-  %expected_prefix = check.generate.iota offset(-700) step(0) : tensor<17xi32>
-  check.expect.equal actual(%prefix) expected(%expected_prefix) : tensor<17xi32>
-  %active = check.tensor.view %actual offset(68) : tensor<64xi32> -> tensor<36xi32>
-  %expected_active = check.generate.iota offset(0) step(0) : tensor<36xi32>
-  check.expect.equal actual(%active) expected(%expected_active) : tensor<36xi32>
-  %suffix = check.tensor.view %actual offset(212) : tensor<64xi32> -> tensor<11xi32>
-  %expected_suffix = check.generate.iota offset(-700) step(0) : tensor<11xi32>
-  check.expect.equal actual(%suffix) expected(%expected_suffix) : tensor<11xi32>
-  check.return
-}
-
-check.case public @uniform_predicate_control_false {
-  %start = check.literal value(17) : index
-  %end = check.literal value(53) : index
-  %rounds = check.literal value(5) : index
-  %mode = check.literal value(0) : i32
-  %input = check.generate.iota offset(-2) step(3) : tensor<1xi32>
-  %actual = check.generate.fill value(-12345) : tensor<64xi32>
-  kernel.launch @uniform_predicate_control(%start, %end, %rounds, %mode, %input, %actual) : (index, index, index, i32, tensor<1xi32>, tensor<64xi32>)
-  %prefix = check.tensor.view %actual offset(0) : tensor<64xi32> -> tensor<17xi32>
-  %expected_prefix = check.generate.iota offset(-700) step(0) : tensor<17xi32>
-  check.expect.equal actual(%prefix) expected(%expected_prefix) : tensor<17xi32>
-  %active = check.tensor.view %actual offset(68) : tensor<64xi32> -> tensor<36xi32>
-  %expected_active = check.generate.iota offset(-15) step(0) : tensor<36xi32>
-  check.expect.equal actual(%active) expected(%expected_active) : tensor<36xi32>
-  %suffix = check.tensor.view %actual offset(212) : tensor<64xi32> -> tensor<11xi32>
-  %expected_suffix = check.generate.iota offset(-700) step(0) : tensor<11xi32>
-  check.expect.equal actual(%suffix) expected(%expected_suffix) : tensor<11xi32>
-  check.return
-}
-
-check.case public @uniform_predicate_control_mixed {
-  %start = check.literal value(17) : index
-  %end = check.literal value(53) : index
-  %rounds = check.literal value(5) : index
-  %mode = check.literal value(3) : i32
-  %input = check.generate.iota offset(-2) step(3) : tensor<36xi32>
-  %actual = check.generate.fill value(-12345) : tensor<64xi32>
-  kernel.launch @uniform_predicate_control(%start, %end, %rounds, %mode, %input, %actual) : (index, index, index, i32, tensor<36xi32>, tensor<64xi32>)
-  %prefix = check.tensor.view %actual offset(0) : tensor<64xi32> -> tensor<17xi32>
-  %expected_prefix = check.generate.iota offset(-700) step(0) : tensor<17xi32>
-  check.expect.equal actual(%prefix) expected(%expected_prefix) : tensor<17xi32>
-  %active = check.tensor.view %actual offset(68) : tensor<64xi32> -> tensor<36xi32>
-  %expected_active = check.generate.iota offset(39) step(12) : tensor<36xi32>
-  check.expect.equal actual(%active) expected(%expected_active) : tensor<36xi32>
-  %suffix = check.tensor.view %actual offset(212) : tensor<64xi32> -> tensor<11xi32>
-  %expected_suffix = check.generate.iota offset(-700) step(0) : tensor<11xi32>
-  check.expect.equal actual(%suffix) expected(%expected_suffix) : tensor<11xi32>
-  check.return
-}
-
-check.case public @uniform_predicate_control_upper_half {
-  %start = check.literal value(32) : index
-  %end = check.literal value(64) : index
-  %rounds = check.literal value(2) : index
-  %mode = check.literal value(5) : i32
-  %input = check.generate.iota offset(-2) step(3) : tensor<32xi32>
-  %actual = check.generate.fill value(-12345) : tensor<64xi32>
-  kernel.launch @uniform_predicate_control(%start, %end, %rounds, %mode, %input, %actual) : (index, index, index, i32, tensor<32xi32>, tensor<64xi32>)
-  %prefix = check.tensor.view %actual offset(0) : tensor<64xi32> -> tensor<32xi32>
-  %expected_prefix = check.generate.iota offset(-700) step(0) : tensor<32xi32>
-  check.expect.equal actual(%prefix) expected(%expected_prefix) : tensor<32xi32>
-  %active = check.tensor.view %actual offset(128) : tensor<64xi32> -> tensor<32xi32>
-  %expected_active = check.generate.iota offset(60) step(8) : tensor<32xi32>
-  check.expect.equal actual(%active) expected(%expected_active) : tensor<32xi32>
-  check.return
-}
-
-check.case public @uniform_predicate_control_full {
-  %start = check.literal value(0) : index
-  %end = check.literal value(64) : index
-  %rounds = check.literal value(3) : index
-  %mode = check.literal value(2) : i32
-  %input = check.generate.iota offset(-2) step(3) : tensor<64xi32>
-  %actual = check.generate.fill value(-12345) : tensor<64xi32>
-  kernel.launch @uniform_predicate_control(%start, %end, %rounds, %mode, %input, %actual) : (index, index, index, i32, tensor<64xi32>, tensor<64xi32>)
-  %active = check.tensor.view %actual offset(0) : tensor<64xi32> -> tensor<64xi32>
-  %expected_active = check.generate.iota offset(-7) step(8) : tensor<64xi32>
-  check.expect.equal actual(%active) expected(%expected_active) : tensor<64xi32>
+check.scenario @uniform_predicate_control_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %start = check.literal value(0) : index
+    %end = check.literal value(0) : index
+    %rounds = check.literal value(5) : index
+    %mode = check.literal value(3) : i32
+    %input = check.generate.iota offset(-2) step(3) : tensor<1xi32>
+    %storage = check.generate.fill value(-12345) : tensor<72xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<72xi32> -> tensor<64xi32>
+    check.compare<@uniform_predicate_control, @uniform_predicate_control_oracle>(%start, %end, %rounds, %mode, %input, %output) : (index, index, index, i32, tensor<1xi32>, tensor<64xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<72xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %start = check.literal value(17) : index
+    %end = check.literal value(53) : index
+    %rounds = check.literal value(0) : index
+    %mode = check.literal value(3) : i32
+    %input = check.generate.iota offset(-2) step(3) : tensor<1xi32>
+    %storage = check.generate.fill value(-12345) : tensor<72xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<72xi32> -> tensor<64xi32>
+    check.compare<@uniform_predicate_control, @uniform_predicate_control_oracle>(%start, %end, %rounds, %mode, %input, %output) : (index, index, index, i32, tensor<1xi32>, tensor<64xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<72xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %start = check.literal value(17) : index
+    %end = check.literal value(53) : index
+    %rounds = check.literal value(5) : index
+    %mode = check.literal value(0) : i32
+    %input = check.generate.iota offset(-2) step(3) : tensor<1xi32>
+    %storage = check.generate.fill value(-12345) : tensor<72xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<72xi32> -> tensor<64xi32>
+    check.compare<@uniform_predicate_control, @uniform_predicate_control_oracle>(%start, %end, %rounds, %mode, %input, %output) : (index, index, index, i32, tensor<1xi32>, tensor<64xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<72xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %start = check.literal value(17) : index
+    %end = check.literal value(53) : index
+    %rounds = check.literal value(5) : index
+    %mode = check.literal value(3) : i32
+    %input = check.generate.iota offset(-2) step(3) : tensor<36xi32>
+    %storage = check.generate.fill value(-12345) : tensor<72xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<72xi32> -> tensor<64xi32>
+    check.compare<@uniform_predicate_control, @uniform_predicate_control_oracle>(%start, %end, %rounds, %mode, %input, %output) : (index, index, index, i32, tensor<36xi32>, tensor<64xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<36xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<72xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %start = check.literal value(32) : index
+    %end = check.literal value(64) : index
+    %rounds = check.literal value(2) : index
+    %mode = check.literal value(5) : i32
+    %input = check.generate.iota offset(-2) step(3) : tensor<32xi32>
+    %storage = check.generate.fill value(-12345) : tensor<72xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<72xi32> -> tensor<64xi32>
+    check.compare<@uniform_predicate_control, @uniform_predicate_control_oracle>(%start, %end, %rounds, %mode, %input, %output) : (index, index, index, i32, tensor<32xi32>, tensor<64xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<72xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %start = check.literal value(0) : index
+    %end = check.literal value(64) : index
+    %rounds = check.literal value(3) : index
+    %mode = check.literal value(2) : i32
+    %input = check.generate.iota offset(-2) step(3) : tensor<64xi32>
+    %storage = check.generate.fill value(-12345) : tensor<72xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<72xi32> -> tensor<64xi32>
+    check.compare<@uniform_predicate_control, @uniform_predicate_control_oracle>(%start, %end, %rounds, %mode, %input, %output) : (index, index, index, i32, tensor<64xi32>, tensor<64xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<72xi32>
+    }
+  }
   check.return
 }

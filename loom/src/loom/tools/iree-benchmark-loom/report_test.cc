@@ -16,26 +16,25 @@
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 #include "iree/testing/temp_file.h"
+#include "loom/tools/iree-benchmark-loom/hal_actual.h"
 #include "loom/tools/iree-benchmark-loom/launch_evidence.h"
 #include "loom/tools/iree-benchmark-loom/manifest.h"
+#include "loomc/artifact_manifest.h"
+#include "loomc/compile_report.h"
+#include "loomc/iree.h"
 
 namespace loom {
 namespace {
 
-using ByteSequencePtr = std::unique_ptr<iree_byte_sequence_t,
-                                        decltype(&iree_byte_sequence_release)>;
+using ByteSequencePtr = std::unique_ptr<loomc_byte_sequence_t,
+                                        decltype(&loomc_byte_sequence_release)>;
 
-static iree_status_t CloneByteSpanToSequence(
-    iree_const_byte_span_t source, iree_allocator_t allocator,
-    iree_byte_sequence_t** out_sequence) {
-  *out_sequence = nullptr;
-  void* data = nullptr;
-  IREE_RETURN_IF_ERROR(iree_allocator_clone(allocator, source, &data));
-  iree_byte_span_t contents = iree_make_byte_span(data, source.data_length);
-  iree_status_t status = iree_byte_sequence_create_from_span_move(
-      &contents, allocator, out_sequence);
-  iree_allocator_free(allocator, contents.data);
-  return status;
+static ByteSequencePtr CopyByteSequence(iree_string_view_t source) {
+  loomc_byte_sequence_t* sequence = nullptr;
+  IREE_EXPECT_OK(iree_status_from_loomc(loomc_byte_sequence_create_copy(
+      loomc_make_byte_span(source.data, source.size), loomc_allocator_system(),
+      &sequence)));
+  return ByteSequencePtr(sequence, loomc_byte_sequence_release);
 }
 
 static iree_string_view_t ParseJsonDocument(iree_string_view_t json) {
@@ -293,56 +292,17 @@ TEST(BenchmarkReportTest, WritesHalProfileErrorWithStatusCodeFields) {
 
 TEST(BenchmarkReportTest, WritesCanonicalCompileReportTree) {
   iree_allocator_t allocator = iree_allocator_system();
-  loom_compile_report_capture_options_t capture_options = {};
-  loom_compile_report_capture_options_initialize(&capture_options);
-  capture_options.sink_format = LOOM_COMPILE_REPORT_SINK_FORMAT_JSON;
-  capture_options.detail_mode = LOOM_TARGET_COMPILE_REPORT_FORMAT_MODE_SUMMARY;
-  loom_compile_report_capture_t capture = {};
-  loom_compile_report_capture_initialize(&capture_options, allocator, &capture);
-
-  loom_target_compile_report_t* report = &capture.report;
-  report->artifact_kind = LOOM_TARGET_COMPILE_ARTIFACT_KIND_TARGET_ARTIFACT;
-  report->backend_name = IREE_SV("test-hal");
-  report->target_family_name = IREE_SV("test");
-  report->target_key = IREE_SV("test-target");
-  report->function_name = IREE_SV("candidate_kernel");
-  const loom_target_compile_report_target_capability_row_t capability_row = {
-      /*.function_name=*/report->function_name,
-      /*.target_family_name=*/report->target_family_name,
-      /*.namespace_name=*/IREE_SV("test"),
-      /*.key=*/IREE_SV("matrix_feature_profile"),
-      /*.value_kind=*/LOOM_TARGET_COMPILE_REPORT_CAPABILITY_VALUE_STRING,
-      /*.value_u64=*/0,
-      /*.value_string=*/IREE_SV("test-profile"),
+  const iree_string_view_t compile_report_json = IREE_SV(
+      R"({"artifact_kind":"target-artifact","status":{"code":0,"name":"OK"},"backend":"test-hal","target_family":"test","target_key":"test-target","function":"candidate_kernel","schedule":{"node_count":31,"register_pressure_peak_live_units":128},"static_instruction_mix":{"descriptor_count":11,"vector_alu_count":9,"local_memory_count":4},"allocation":{"spill_count":2,"materialized_spill_storage_count":4,"materialized_spill_storage_bytes":40,"materialized_spill_store_count":5,"materialized_spill_store_bytes":50,"materialized_reload_count":6,"materialized_reload_bytes":60,"storage_lease_count":11,"storage_release_action_count":4},"emission":{"code_byte_count":148},"memory":{"private_bytes":64,"local_bytes":256},"target_capability_rows":{"count":1,"rows":[{"namespace":"test","key":"matrix_feature_profile","value_string":"test-profile"}]}})");
+  ByteSequencePtr compile_report_contents =
+      CopyByteSequence(compile_report_json);
+  const loomc_artifact_t compile_report_artifact = {
+      /*.kind=*/LOOMC_ARTIFACT_KIND_REPORT,
+      /*.format=*/
+      loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_COMPILE_REPORT_JSON),
+      /*.identifier=*/loomc_make_cstring_view("compile_report"),
+      /*.contents=*/compile_report_contents.get(),
   };
-  IREE_ASSERT_OK(loom_target_compile_report_record_target_capability_row(
-      report, &capability_row));
-  loom_target_compile_report_record_status(report, IREE_STATUS_OK);
-  loom_target_compile_report_record_schedule(
-      report, /*node_count=*/31, /*scheduled_node_count=*/29,
-      /*dependency_count=*/17, /*scope_count=*/0, /*resource_use_count=*/13,
-      /*hazard_gap_count=*/7, /*model_summary_count=*/5,
-      /*pressure_summary_count=*/3, /*peak_live_units=*/128);
-  loom_target_compile_report_static_instruction_mix_t mix = {};
-  mix.descriptor_count = 11;
-  mix.vector_alu_count = 9;
-  mix.local_memory_count = 4;
-  loom_target_compile_report_record_static_instruction_mix(report, &mix);
-  loom_target_compile_report_record_allocation(
-      report, /*assignment_count=*/23, /*spill_count=*/2,
-      /*spill_plan_count=*/1, /*coalesced_copy_count=*/8,
-      /*materialized_copy_count=*/3, /*storage_lease_count=*/11,
-      /*storage_lease_instance_count=*/9,
-      /*storage_release_action_count=*/4);
-  loom_target_compile_report_record_allocation_materialization(
-      report, /*spill_storage_count=*/4, /*spill_storage_bytes=*/40,
-      /*spill_store_count=*/5, /*spill_store_bytes=*/50, /*reload_count=*/6,
-      /*reload_bytes=*/60);
-  loom_target_compile_report_record_emission(report, /*instruction_count=*/37,
-                                             /*code_byte_count=*/148,
-                                             /*code_storage_byte_count=*/160);
-  loom_target_compile_report_record_memory(report, /*private_memory_bytes=*/64,
-                                           /*local_memory_bytes=*/256);
 
   loom_testbench_benchmark_plan_t benchmark_plan = {};
   benchmark_plan.name = IREE_SV("kernel_latency");
@@ -361,7 +321,7 @@ TEST(BenchmarkReportTest, WritesCanonicalCompileReportTree) {
   result.timing.mean_ns = 10.0;
   result.timing.p50_ns = 10;
   result.timing.p90_ns = 10;
-  result.compile_report_capture = &capture;
+  result.compile_report = &compile_report_artifact;
 
   iree_string_builder_t builder;
   iree_string_builder_initialize(allocator, &builder);
@@ -457,7 +417,6 @@ TEST(BenchmarkReportTest, WritesCanonicalCompileReportTree) {
                           IREE_SV("test-profile"));
 
   iree_string_builder_deinitialize(&builder);
-  loom_compile_report_capture_deinitialize(&capture);
 }
 
 TEST(BenchmarkReportTest, WritesHalTimingCountsAndWarnings) {
@@ -627,15 +586,14 @@ TEST(BenchmarkReportTest, WritesExactWorkloadAndResolvedLaunchConfig) {
       /*.workload_value_count=*/IREE_ARRAYSIZE(workload_values),
       /*.launch_config=*/
       {
-          /*.fields=*/
-          LOOM_KERNEL_LAUNCH_CONFIG_FIELD_FLAG_WORKGROUP_COUNT |
-              LOOM_KERNEL_LAUNCH_CONFIG_FIELD_FLAG_WORKGROUP_SIZE |
-              LOOM_KERNEL_LAUNCH_CONFIG_FIELD_FLAG_WORKGROUP_CLUSTER_SIZE |
-              LOOM_KERNEL_LAUNCH_CONFIG_FIELD_FLAG_SUBGROUP_SIZE,
+          /*.type=*/LOOMC_STRUCTURE_TYPE_LAUNCH_CONFIG,
+          /*.structure_size=*/sizeof(loomc_launch_config_t),
+          /*.next=*/nullptr,
           /*.workgroup_count=*/{65, 2, 1},
           /*.workgroup_size=*/{64, 1, 1},
           /*.workgroup_cluster_size=*/{2, 1, 1},
           /*.subgroup_size=*/32,
+          /*.workgroup_storage_bytes=*/0,
       },
   };
   iree_benchmark_loom_launch_evidence_t launch_evidence = {
@@ -903,24 +861,29 @@ TEST(BenchmarkReportTest, WritesArtifactManifestSidecarPath) {
 
   iree_benchmark_loom_hal_context_t context = {};
   context.artifact_bundle = &bundle;
+  context.execution.host_allocator = iree_allocator_system();
   const char kManifestJson[] = "{\"kind\":\"loom.artifact_manifest\"}";
-  iree_byte_sequence_t* manifest_sequence = nullptr;
-  IREE_ASSERT_OK(CloneByteSpanToSequence(
-      iree_make_const_byte_span(kManifestJson, sizeof(kManifestJson) - 1),
-      iree_allocator_system(), &manifest_sequence));
-  ByteSequencePtr manifest_sequence_owner(manifest_sequence,
-                                          iree_byte_sequence_release);
-  loom_target_emit_sidecar_artifact_t sidecar = {};
-  sidecar.kind = LOOM_TARGET_EMIT_SIDECAR_ARTIFACT_KIND_ARTIFACT_MANIFEST;
-  sidecar.identifier = IREE_SV("artifact_manifest");
-  sidecar.contents = manifest_sequence;
+  ByteSequencePtr manifest_contents =
+      CopyByteSequence(iree_make_cstring_view(kManifestJson));
+  const loomc_artifact_t manifest_artifact = {
+      /*.kind=*/LOOMC_ARTIFACT_KIND_REPORT,
+      /*.format=*/
+      loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_ARTIFACT_MANIFEST_JSON),
+      /*.identifier=*/loomc_make_cstring_view("artifact_manifest"),
+      /*.contents=*/manifest_contents.get(),
+  };
+  ByteSequencePtr executable_contents = CopyByteSequence(IREE_SV("exe"));
+  const loomc_artifact_t executable_artifact = {
+      /*.kind=*/LOOMC_ARTIFACT_KIND_EXECUTABLE,
+      /*.format=*/loomc_make_cstring_view("test-executable"),
+      /*.identifier=*/loomc_make_cstring_view("module.bin"),
+      /*.contents=*/executable_contents.get(),
+  };
 
   iree_benchmark_loom_hal_actual_provider_t provider = {};
   provider.context = &context;
-  provider.execution.candidate_initialized = true;
-  provider.execution.candidate.compiled = true;
-  provider.execution.candidate.artifact.sidecars = &sidecar;
-  provider.execution.candidate.artifact.sidecar_count = 1;
+  provider.execution.artifacts.executable = &executable_artifact;
+  provider.execution.artifacts.artifact_manifest = &manifest_artifact;
 
   iree_benchmark_loom_run_identity_t run = {};
   run.run_id = IREE_SV("run");
@@ -940,12 +903,12 @@ TEST(BenchmarkReportTest, WritesArtifactManifestSidecarPath) {
   EXPECT_NE(manifest_path.find("_artifact_manifest.json"), std::string::npos);
   std::ifstream manifest_file(manifest_path);
   ASSERT_TRUE(manifest_file.is_open());
-  std::string manifest_contents((std::istreambuf_iterator<char>(manifest_file)),
-                                std::istreambuf_iterator<char>());
-  EXPECT_EQ(manifest_contents, kManifestJson);
+  std::string manifest_file_contents(
+      (std::istreambuf_iterator<char>(manifest_file)),
+      std::istreambuf_iterator<char>());
+  EXPECT_EQ(manifest_file_contents, kManifestJson);
 
-  iree_allocator_free(iree_allocator_system(),
-                      provider.artifact_manifest_path_storage);
+  iree_benchmark_loom_hal_actual_provider_deinitialize(&provider);
   iree_benchmark_loom_artifact_bundle_deinitialize(&bundle);
 }
 

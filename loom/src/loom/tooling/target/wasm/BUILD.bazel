@@ -38,7 +38,6 @@ loom_cc_library(
     hdrs = ["host.h"],
     deps = [
         ":host_js",
-        "//loom/src/loom/target/emit/wasm:program",
         "//runtime/src/iree/base",
     ],
 )
@@ -50,17 +49,11 @@ loom_cc_library(
     visibility = ["//loom/src/loom/tools/iree-test-loom:__pkg__"],
     deps = [
         ":host",
-        "//loom/src/loom/compile:request",
-        "//loom/src/loom/error:source",
-        "//loom/src/loom/target:entry_selection",
-        "//loom/src/loom/target:provider",
-        "//loom/src/loom/target:selection",
-        "//loom/src/loom/target/emit/wasm:module_compiler",
-        "//loom/src/loom/tooling/compile:pipeline",
-        "//loom/src/loom/tooling/config",
+        "//loom/binding/c:loomc",
+        "//loom/binding/c/target/wasm",
+        "//loom/src/loom/tooling/testbench:compiled_provider",
         "//loom/src/loom/tooling/testbench/scenario:executor",
         "//runtime/src/iree/base",
-        "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/hal",
     ],
 )

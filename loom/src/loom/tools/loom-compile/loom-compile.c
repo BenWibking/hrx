@@ -13,6 +13,7 @@
 #include "loom/sanitizer/options.h"
 #include "loom/tooling/cli/help.h"
 #include "loom/tooling/cli/loomc_options.h"
+#include "loom/tooling/cli/loomc_result.h"
 #include "loom/tooling/config/config.h"
 #include "loom/tooling/io/file.h"
 #include "loom/tooling/io/source_path.h"
@@ -99,87 +100,6 @@ static iree_string_view_t loom_compile_input_identifier(
     iree_string_view_t input_path) {
   return loom_tooling_file_path_is_stdio(input_path) ? IREE_SV("<stdin>")
                                                      : input_path;
-}
-
-static const char* loom_compile_diagnostic_severity_name(
-    loomc_diagnostic_severity_t severity) {
-  switch (severity) {
-    case LOOMC_DIAGNOSTIC_SEVERITY_NOTE:
-      return "note";
-    case LOOMC_DIAGNOSTIC_SEVERITY_WARNING:
-      return "warning";
-    case LOOMC_DIAGNOSTIC_SEVERITY_ERROR:
-      return "error";
-    default:
-      return "diagnostic";
-  }
-}
-
-static void loom_compile_print_source_range(FILE* file,
-                                            const loomc_source_range_t* range) {
-  if (!range || !range->source) {
-    return;
-  }
-  const loomc_string_view_t identifier = loomc_source_identifier(range->source);
-  if (loomc_string_view_is_empty(identifier)) {
-    return;
-  }
-  fprintf(file, "%.*s", (int)identifier.size, identifier.data);
-  if (range->start_line != 0) {
-    fprintf(file, ":%u", range->start_line);
-    if (range->start_column != 0) {
-      fprintf(file, ":%u", range->start_column);
-    }
-  }
-  fputs(": ", file);
-}
-
-static void loom_compile_print_diagnostic(
-    FILE* file, const loomc_diagnostic_t* diagnostic) {
-  if (!loomc_string_view_is_empty(diagnostic->formatted_text)) {
-    fwrite(diagnostic->formatted_text.data, 1, diagnostic->formatted_text.size,
-           file);
-    return;
-  }
-  loom_compile_print_source_range(file, &diagnostic->range);
-  fprintf(file, "%s",
-          loom_compile_diagnostic_severity_name(diagnostic->severity));
-  if (!loomc_string_view_is_empty(diagnostic->code)) {
-    fprintf(file, " [%.*s]", (int)diagnostic->code.size, diagnostic->code.data);
-  }
-  fprintf(file, ": %.*s\n", (int)diagnostic->message.size,
-          diagnostic->message.data);
-  for (loomc_host_size_t i = 0; i < diagnostic->related_location_count; ++i) {
-    const loomc_diagnostic_related_location_t* related =
-        &diagnostic->related_locations[i];
-    loom_compile_print_source_range(file, &related->range);
-    fprintf(file, "note: %.*s\n", (int)related->label.size,
-            related->label.data);
-  }
-  if (diagnostic->related_location_omitted_count != 0) {
-    fprintf(
-        file, "note: %zu additional related location%s omitted\n",
-        (size_t)diagnostic->related_location_omitted_count,
-        diagnostic->related_location_omitted_count == 1 ? " was" : "s were");
-  }
-}
-
-static iree_status_t loom_compile_print_result(const loomc_result_t* result,
-                                               bool* out_succeeded) {
-  for (loomc_host_size_t i = 0; i < loomc_result_diagnostic_count(result);
-       ++i) {
-    const loomc_diagnostic_t* diagnostic =
-        loomc_result_diagnostic_at(result, i);
-    if (diagnostic) {
-      loom_compile_print_diagnostic(stderr, diagnostic);
-    }
-  }
-  if (ferror(stderr)) {
-    return iree_make_status(IREE_STATUS_UNKNOWN,
-                            "failed to write compiler diagnostics");
-  }
-  *out_succeeded = loomc_result_succeeded(result);
-  return iree_ok_status();
 }
 
 static iree_status_t loom_compile_parse_report_options(
@@ -374,43 +294,6 @@ static iree_status_t loom_compile_load_source(
   return iree_status_from_loomc(loomc_source_create_from_path(
       loomc_string_view_from_iree(input_path), &options,
       loomc_allocator_from_iree(allocator), out_source));
-}
-
-static bool loom_compile_pipeline_is_default(iree_string_view_t pipeline) {
-  pipeline = iree_string_view_trim(pipeline);
-  return iree_string_view_is_empty(pipeline) ||
-         iree_string_view_equal(pipeline, IREE_SV("default"));
-}
-
-static iree_status_t loom_compile_prepare_pass_program(
-    loomc_context_t* context, loomc_module_t* module,
-    iree_allocator_t allocator, loomc_pass_program_t** out_pass_program,
-    loomc_result_t** out_result) {
-  *out_pass_program = NULL;
-  *out_result = NULL;
-  const iree_string_view_t pipeline =
-      iree_string_view_trim(iree_make_cstring_view(FLAG_pipeline));
-  if (loom_compile_pipeline_is_default(pipeline)) {
-    return iree_ok_status();
-  }
-  const loomc_pass_program_options_t options = {
-      .type = LOOMC_STRUCTURE_TYPE_PASS_PROGRAM_OPTIONS,
-      .structure_size = sizeof(options),
-      .identifier = loomc_make_cstring_view("loom-compile pipeline"),
-  };
-  if (iree_string_view_equal(pipeline, IREE_SV("none"))) {
-    return iree_status_from_loomc(loomc_pass_program_create_empty(
-        context, &options, loomc_allocator_from_iree(allocator),
-        out_pass_program));
-  }
-  if (pipeline.data[0] == '@') {
-    return iree_status_from_loomc(loomc_pass_program_create_from_module_symbol(
-        module, loomc_string_view_from_iree(pipeline), &options,
-        loomc_allocator_from_iree(allocator), out_pass_program, out_result));
-  }
-  return iree_status_from_loomc(loomc_pass_program_create_from_pipeline_text(
-      context, loomc_string_view_from_iree(pipeline), &options,
-      loomc_allocator_from_iree(allocator), out_pass_program, out_result));
 }
 
 static loomc_status_t loom_compile_trace_write(void* user_data,
@@ -704,7 +587,7 @@ int main(int argc, char** argv) {
   const iree_string_view_t pipeline =
       iree_string_view_trim(iree_make_cstring_view(FLAG_pipeline));
   if (iree_status_is_ok(status) && sanitizer_enabled &&
-      !loom_compile_pipeline_is_default(pipeline)) {
+      !loom_tooling_cli_pipeline_uses_default(pipeline)) {
     status = iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
         "--sanitizer and --sanitizer-reporting require --pipeline=default");
@@ -787,7 +670,8 @@ int main(int argc, char** argv) {
   }
   if (iree_status_is_ok(status)) {
     bool parse_succeeded = false;
-    status = loom_compile_print_result(result, &parse_succeeded);
+    status =
+        loom_tooling_cli_print_loomc_result(stderr, result, &parse_succeeded);
     if (iree_status_is_ok(status) && !parse_succeeded) {
       exit_code = 1;
     }
@@ -803,12 +687,14 @@ int main(int argc, char** argv) {
         &target_profile));
   }
   if (iree_status_is_ok(status) && exit_code == 0) {
-    status = loom_compile_prepare_pass_program(context, module, allocator,
-                                               &pass_program, &result);
+    status = loom_tooling_cli_prepare_loomc_pass_program(
+        context, module, iree_make_cstring_view(FLAG_pipeline),
+        IREE_SV("loom-compile pipeline"), &pass_program, &result, allocator);
   }
   if (iree_status_is_ok(status) && result) {
     bool preparation_succeeded = false;
-    status = loom_compile_print_result(result, &preparation_succeeded);
+    status = loom_tooling_cli_print_loomc_result(stderr, result,
+                                                 &preparation_succeeded);
     if (iree_status_is_ok(status) && !preparation_succeeded) {
       exit_code = 1;
     }
@@ -884,7 +770,8 @@ int main(int argc, char** argv) {
 
   if (iree_status_is_ok(status) && exit_code == 0) {
     bool compile_succeeded = false;
-    status = loom_compile_print_result(result, &compile_succeeded);
+    status =
+        loom_tooling_cli_print_loomc_result(stderr, result, &compile_succeeded);
     loom_compile_artifacts_t artifacts = {0};
     if (iree_status_is_ok(status)) {
       status = loom_compile_select_artifacts(result, &artifacts);

@@ -10,18 +10,19 @@
 #define LOOM_TOOLS_IREE_BENCHMARK_LOOM_CONFIGURATION_H_
 
 #include "iree/base/api.h"
-#include "loom/tooling/execution/session.h"
-#include "loom/tooling/testbench/invocation.h"
+#include "loom/tooling/input/loomc.h"
+#include "loom/tooling/testbench/compiled_provider.h"
 #include "loom/tooling/testbench/requirements.h"
+#include "loomc/target.h"
+#include "loomc/target/iree_hal.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct loom_device_provider_registry_t loom_device_provider_registry_t;
 typedef struct loom_run_hal_testbench_context_t
     loom_run_hal_testbench_context_t;
-typedef struct loom_target_environment_t loom_target_environment_t;
+typedef struct loom_run_hal_target_route_t loom_run_hal_target_route_t;
 typedef struct loom_cleanup_pattern_provider_set_t
     loom_cleanup_pattern_provider_set_t;
 
@@ -45,12 +46,18 @@ typedef struct iree_benchmark_loom_configuration_t {
   loom_input_provider_list_t input_providers;
   // Null-terminated executable name used in help and diagnostics.
   const char* tool_name;
-  // Target environment composed from linked compiler providers.
-  const loom_target_environment_t* target_environment;
+  // Public target environment composed from linked compiler providers.
+  loomc_target_environment_t* target_environment;
+  // Optional foreign-source importer dispatch.
+  loom_tooling_input_import_loomc_fn_t import;
+  // Opaque state forwarded to |import|.
+  void* import_user_data;
   // Cleanup rewrite providers linked into this runner.
   const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set;
-  // Device provider registry linked into this runner.
-  const loom_device_provider_registry_t* device_provider_registry;
+  // HAL driver-to-compiler-target routes linked into the final binary.
+  const loom_run_hal_target_route_t* hal_target_routes;
+  // Number of entries in |hal_target_routes|.
+  iree_host_size_t hal_target_route_count;
   // Binds ordinary function calls once for all cases in the parsed module.
   loom_testbench_function_call_provider_callback_t function_call_provider;
   // Appends target-specific requirement providers linked into this runner.

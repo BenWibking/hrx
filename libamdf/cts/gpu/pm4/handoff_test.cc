@@ -96,6 +96,7 @@ TEST_F(Pm4DispatchTest, CoherentSystemShaderHandoffAcrossQueues) {
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {kernel.workgroup_size(), 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(kernel.executable,
@@ -148,7 +149,7 @@ TEST_F(Pm4DispatchTest, CoherentSystemShaderHandoffAcrossQueues) {
   for (uint32_t epoch = 0; epoch < kCounts.size(); ++epoch) {
     produce.SystemBarrier();
     produce.BindCompute(program, arguments->device_address);
-    produce.DispatchWave32(kGridSize, 1, 1);
+    produce.Dispatch(program, kGridSize, 1, 1);
     produce.SystemBarrier();
     produce.WriteData32(control->device_address + kGateWord * 4, epoch + 1);
     produce.WriteData32(control->device_address + kProducerCompletionWord * 4,
@@ -163,7 +164,7 @@ TEST_F(Pm4DispatchTest, CoherentSystemShaderHandoffAcrossQueues) {
     // visible; it is not the control cell's fresh-polling mechanism.
     consume.SystemBarrier();
     consume.BindCompute(program, arguments->device_address + kArgumentStride);
-    consume.DispatchWave32(kGridSize, 1, 1);
+    consume.Dispatch(program, kGridSize, 1, 1);
     consume.SystemBarrier();
     consume.WriteData32(control->device_address + kConsumerCompletionWord * 4,
                         epoch + 1);

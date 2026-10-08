@@ -538,7 +538,9 @@ static iree_status_t loom_target_low_legality_verify_registered_type(
 
 static iree_status_t loom_target_low_legality_verify_type(
     loom_target_low_legality_context_t* context, const loom_op_t* op,
-    loom_type_t type) {
+    loom_type_t type,
+    loom_target_source_vector_carrier_supported_callback_t
+        vector_carrier_supported) {
   if (loom_type_is_scalar(type)) {
     return loom_target_low_legality_verify_scalar_type(context, op, type);
   }
@@ -563,10 +565,9 @@ static iree_status_t loom_target_low_legality_verify_type(
       return loom_target_low_legality_emit_type_constraint(
           context, op, type, IREE_SV("vector.lane_count_u32"));
     }
-    if (context->options->source_vector_carrier_supported.fn != NULL &&
-        !context->options->source_vector_carrier_supported.fn(
-            context->options->source_vector_carrier_supported.user_data,
-            context->module, type)) {
+    if (vector_carrier_supported.fn != NULL &&
+        !vector_carrier_supported.fn(vector_carrier_supported.user_data,
+                                     context->module, type)) {
       return loom_target_low_legality_emit_type_constraint(
           context, op, type, IREE_SV("vector.target_carrier"));
     }
@@ -584,22 +585,27 @@ static iree_status_t loom_target_low_legality_verify_type(
 
 static iree_status_t loom_target_low_legality_verify_value(
     loom_target_low_legality_context_t* context, const loom_op_t* op,
-    loom_value_id_t value_id) {
+    loom_value_id_t value_id,
+    loom_target_source_vector_carrier_supported_callback_t
+        vector_carrier_supported) {
   const loom_type_t type = loom_module_value_type(context->module, value_id);
-  return loom_target_low_legality_verify_type(context, op, type);
+  return loom_target_low_legality_verify_type(context, op, type,
+                                              vector_carrier_supported);
 }
 
 static iree_status_t loom_target_low_legality_verify_op_value_types(
     loom_target_low_legality_context_t* context, const loom_op_t* op) {
   const loom_value_id_t* operands = loom_op_const_operands(op);
   for (uint16_t i = 0; i < op->operand_count; ++i) {
-    IREE_RETURN_IF_ERROR(
-        loom_target_low_legality_verify_value(context, op, operands[i]));
+    IREE_RETURN_IF_ERROR(loom_target_low_legality_verify_value(
+        context, op, operands[i],
+        context->options->source_vector_carrier_supported));
   }
   const loom_value_id_t* results = loom_op_const_results(op);
   for (uint16_t i = 0; i < op->result_count; ++i) {
-    IREE_RETURN_IF_ERROR(
-        loom_target_low_legality_verify_value(context, op, results[i]));
+    IREE_RETURN_IF_ERROR(loom_target_low_legality_verify_value(
+        context, op, results[i],
+        context->options->source_vector_carrier_supported));
   }
   return iree_ok_status();
 }
@@ -914,18 +920,27 @@ static iree_status_t loom_target_low_legality_walk_op(
 
 static iree_status_t loom_target_low_legality_verify_function_signature(
     loom_target_low_legality_context_t* context) {
+  loom_target_source_vector_carrier_supported_callback_t
+      vector_carrier_supported =
+          context->options->source_function_vector_carrier_supported;
+  if (vector_carrier_supported.fn == NULL) {
+    vector_carrier_supported =
+        context->options->source_vector_carrier_supported;
+  }
   uint16_t argument_count = 0;
   const loom_value_id_t* argument_ids =
       loom_func_like_arg_ids(context->function, &argument_count);
   for (uint16_t i = 0; i < argument_count; ++i) {
     IREE_RETURN_IF_ERROR(loom_target_low_legality_verify_value(
-        context, context->function.op, argument_ids[i]));
+        context, context->function.op, argument_ids[i],
+        vector_carrier_supported));
   }
   const loom_value_id_t* result_ids =
       loom_op_const_results(context->function.op);
   for (uint16_t i = 0; i < context->function.op->result_count; ++i) {
     IREE_RETURN_IF_ERROR(loom_target_low_legality_verify_value(
-        context, context->function.op, result_ids[i]));
+        context, context->function.op, result_ids[i],
+        vector_carrier_supported));
   }
   return iree_ok_status();
 }

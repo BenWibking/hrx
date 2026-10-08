@@ -55,3 +55,41 @@ void loom_tooling_cli_make_loomc_sanitizer_options(
           (loomc_sanitizer_reporting_mode_t)options->reporting_mode,
   };
 }
+
+bool loom_tooling_cli_pipeline_uses_default(iree_string_view_t pipeline) {
+  pipeline = iree_string_view_trim(pipeline);
+  return iree_string_view_is_empty(pipeline) ||
+         iree_string_view_equal(pipeline, IREE_SV("default"));
+}
+
+iree_status_t loom_tooling_cli_prepare_loomc_pass_program(
+    loomc_context_t* context, const loomc_module_t* module,
+    iree_string_view_t pipeline, iree_string_view_t identifier,
+    loomc_pass_program_t** out_pass_program, loomc_result_t** out_result,
+    iree_allocator_t host_allocator) {
+  *out_pass_program = NULL;
+  *out_result = NULL;
+  pipeline = iree_string_view_trim(pipeline);
+  if (loom_tooling_cli_pipeline_uses_default(pipeline)) {
+    return iree_ok_status();
+  }
+  const loomc_pass_program_options_t options = {
+      .type = LOOMC_STRUCTURE_TYPE_PASS_PROGRAM_OPTIONS,
+      .structure_size = sizeof(options),
+      .identifier = loomc_string_view_from_iree(identifier),
+  };
+  if (iree_string_view_equal(pipeline, IREE_SV("none"))) {
+    return iree_status_from_loomc(loomc_pass_program_create_empty(
+        context, &options, loomc_allocator_from_iree(host_allocator),
+        out_pass_program));
+  }
+  if (pipeline.data[0] == '@') {
+    return iree_status_from_loomc(loomc_pass_program_create_from_module_symbol(
+        module, loomc_string_view_from_iree(pipeline), &options,
+        loomc_allocator_from_iree(host_allocator), out_pass_program,
+        out_result));
+  }
+  return iree_status_from_loomc(loomc_pass_program_create_from_pipeline_text(
+      context, loomc_string_view_from_iree(pipeline), &options,
+      loomc_allocator_from_iree(host_allocator), out_pass_program, out_result));
+}

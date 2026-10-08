@@ -293,7 +293,7 @@ iree_status_t loom_amdgpu_normalize_narrow_integer(
           LOOM_AMDGPU_BITFIELD_EXTRACT_MODE_SIGN_EXTEND, lane_type,
           out_low_result);
     case LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED:
-      if (loom_amdgpu_low_value_defines_vgpr_low16(context, low_source)) {
+      if (loom_amdgpu_low_value_defines_register_low16(context, low_source)) {
         return loom_amdgpu_extract_register_bitfield(
             context, source_op, low_source, /*bit_offset=*/0, source_bit_count,
             LOOM_AMDGPU_BITFIELD_EXTRACT_MODE_ZERO_EXTEND, lane_type,

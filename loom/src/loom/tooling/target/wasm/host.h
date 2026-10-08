@@ -10,11 +10,18 @@
 #define LOOM_TOOLING_TARGET_WASM_HOST_H_
 
 #include "iree/base/api.h"
-#include "loom/target/emit/wasm/program.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// Physical WebAssembly value types callable through the JavaScript host.
+typedef enum loom_wasm_host_value_type_e {
+  LOOM_WASM_HOST_VALUE_TYPE_I32 = 0x7F,
+  LOOM_WASM_HOST_VALUE_TYPE_I64 = 0x7E,
+  LOOM_WASM_HOST_VALUE_TYPE_F32 = 0x7D,
+  LOOM_WASM_HOST_VALUE_TYPE_F64 = 0x7C,
+} loom_wasm_host_value_type_t;
 
 typedef enum loom_wasm_host_module_flag_bits_e {
   // The loaded module exposes linear memory for root transport.
@@ -32,7 +39,7 @@ typedef struct loom_wasm_host_module_t {
   uint32_t parameter_count;
   // Physical result count returned by the selected export.
   uint32_t result_count;
-  // Capabilities established while loading the module.
+  // Capabilities established from the instantiated module.
   loom_wasm_host_module_flags_t flags;
 } loom_wasm_host_module_t;
 
@@ -48,14 +55,15 @@ typedef struct loom_wasm_host_memory_region_t {
 
 // Instantiates |module_data| once and retains |function_export_name|.
 //
-// The physical signature describes how raw scalar bits cross the JavaScript
-// WebAssembly call boundary. v128 parameters and results are rejected because
-// JavaScript cannot call them directly. A non-empty |memory_export_name| must
-// resolve to WebAssembly.Memory and enables memory-region transport.
+// The host reads the selected export's physical signature from the canonical
+// WebAssembly binary and writes it to the caller-owned type arrays. Parameter
+// and result counts must match the expected source arity. v128 parameters and
+// results are rejected because JavaScript cannot call them directly. An
+// exported WebAssembly memory is retained automatically for region transport.
 iree_status_t loom_wasm_host_module_load(
     iree_const_byte_span_t module_data, iree_string_view_t function_export_name,
-    iree_string_view_t memory_export_name,
-    const loom_wasm_function_type_t* function_type,
+    uint32_t parameter_count, loom_wasm_host_value_type_t* out_parameter_types,
+    uint32_t result_count, loom_wasm_host_value_type_t* out_result_types,
     loom_wasm_host_module_t* out_module);
 
 // Releases the host-owned module instance and resets |module|.
@@ -67,8 +75,9 @@ void loom_wasm_host_module_release(loom_wasm_host_module_t* module);
 //
 // Scalar payloads use their raw low bits in physical signature order; i32/f32
 // occupy 32 bits and i64/f64 occupy all 64 bits. Every region describes a
-// complete allocation root. Roots are copied into the nested memory before the
-// call and copied back afterward, including when the function traps.
+// complete allocation root. When the module exports memory, roots are copied
+// into it before the call and copied back afterward, including when the
+// function traps.
 iree_status_t loom_wasm_host_module_call(
     const loom_wasm_host_module_t* module, const uint64_t* argument_bits,
     uint64_t* result_bits, iree_host_size_t region_count,

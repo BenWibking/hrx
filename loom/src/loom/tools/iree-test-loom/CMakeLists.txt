@@ -11,41 +11,6 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
-    library_linker
-  HDRS
-    "library_linker.h"
-  SRCS
-    "library_linker.c"
-  DEPS
-    iree::base
-    loom::error::source
-    loom::link::linker
-    loom::tooling::execution::session
-    loom::tooling::io::file
-  PUBLIC
-)
-
-loom_cc_test(
-  NAME
-    library_linker_test
-  SRCS
-    "library_linker_test.cc"
-  DEPS
-    ::library_linker
-    iree::base
-    iree::testing::gtest
-    iree::testing::gtest_main
-    iree::testing::temp_file
-    loom::error::source
-    loom::target::provider
-    loom::tooling::execution::session
-    loom::tooling::io::file
-  LABELS
-    "requires-filesystem"
-)
-
-loom_cc_library(
-  NAME
     xfail
   HDRS
     "xfail.h"
@@ -53,8 +18,10 @@ loom_cc_library(
     "xfail.c"
   DEPS
     iree::base
+    loom::binding::c::loomc
     loom::error::diagnostic
     loom::error::error_defs
+    loom::tooling::cli::loomc_result
     loom::tooling::testbench::api
     loom::tooling::testbench::expectation
     loom::util::json
@@ -69,22 +36,26 @@ loom_cc_library(
   SRCS
     "main.c"
   DEPS
-    ::library_linker
     ::xfail
     iree::base
     iree::base::internal::path
     iree::base::tooling::flags
     iree::io::stream
+    loom::binding::c::interop
+    loom::binding::c::loomc
+    loom::binding::c::target::iree_hal
     loom::sanitizer::options
-    loom::target::provider
     loom::tooling::cli::help
+    loom::tooling::cli::loomc_options
+    loom::tooling::cli::loomc_result
     loom::tooling::config
-    loom::tooling::execution::hal::device_provider
     loom::tooling::execution::hal::scenario_profile
     loom::tooling::execution::hal::testbench_actual
     loom::tooling::execution::session
     loom::tooling::input::flags
+    loom::tooling::input::loomc
     loom::tooling::io::file
+    loom::tooling::testbench::compiled_provider
     loom::tooling::testbench::device_event
     loom::tooling::testbench::executor
     loom::tooling::testbench::invocation
@@ -96,7 +67,6 @@ loom_cc_library(
     loom::tooling::testbench::scenario::values
     loom::util::json
     loom::util::stream
-    loom::verify
   PUBLIC
 )
 
@@ -118,11 +88,11 @@ if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK)
 endif()
 set(_iree_test_loom_platform_deps "")
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
-  list(APPEND _iree_test_loom_platform_deps loom::tooling::target::amdgpu::device_provider)
+  list(APPEND _iree_test_loom_platform_deps loom::binding::c::target::amdgpu::iree_hal)
   list(APPEND _iree_test_loom_platform_deps loom::tooling::target::amdgpu::testbench_requirements)
 endif()
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
-  list(APPEND _iree_test_loom_platform_deps loom::tooling::target::spirv::device_provider)
+  list(APPEND _iree_test_loom_platform_deps loom::binding::c::target::spirv::iree_hal)
   list(APPEND _iree_test_loom_platform_deps loom::tooling::target::spirv::testbench_requirements)
 endif()
 if(LOOM_TARGET_ARCH_VM)
@@ -132,7 +102,7 @@ if(LOOM_TARGET_ARCH_WASM)
   list(APPEND _iree_test_loom_platform_deps loom::tooling::target::wasm::testbench)
 endif()
 if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK)
-  list(APPEND _iree_test_loom_platform_deps loom::tooling::target::cpu::task_device)
+  list(APPEND _iree_test_loom_platform_deps loom::binding::c::target::cpu::iree_hal)
 endif()
 loom_cc_binary(
   NAME
@@ -144,9 +114,11 @@ loom_cc_binary(
   DEPS
     ::main
     iree::base
-    loom::target::configured::compiler_provider_set
-    loom::target::provider
+    loom::binding::c::loomc
+    loom::binding::c::target::configured
+    loom::tooling::execution::hal::testbench_actual
     loom::tooling::input::configured
+    loom::tooling::input::loomc_configured
     loom::transforms::cleanup::configured
     ${_iree_test_loom_platform_deps}
 )
@@ -161,7 +133,6 @@ loom_cc_binary(
     iree::base
     iree::hal
     loom::ir
-    loom::target::provider
     loom::tooling::testbench::scenario::executor
   TESTONLY
 )

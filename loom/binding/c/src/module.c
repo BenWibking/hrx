@@ -617,6 +617,19 @@ void loomc_module_clear_sources(loomc_module_t* module,
   module->sources.table.module = internal_module;
 }
 
+loomc_status_t loomc_module_verify_structural(loomc_module_t* module,
+                                              loomc_result_t* result) {
+  if (module->verification.structural) {
+    return loomc_ok_status();
+  }
+  LOOMC_RETURN_IF_ERROR(loomc_result_verify_loom_module(
+      module->module, loomc_module_source_resolver(module), result));
+  if (loomc_result_succeeded(result)) {
+    module->verification.structural = true;
+  }
+  return loomc_ok_status();
+}
+
 loomc_status_t loomc_module_verify(
     loomc_module_t* module,
     const loomc_target_environment_t* target_environment,
@@ -627,13 +640,9 @@ loomc_status_t loomc_module_verify(
     return loomc_ok_status();
   }
 
-  if (!module->verification.structural) {
-    LOOMC_RETURN_IF_ERROR(loomc_result_verify_loom_module(
-        module->module, loomc_module_source_resolver(module), result));
-    if (!loomc_result_succeeded(result)) {
-      return loomc_ok_status();
-    }
-    module->verification.structural = true;
+  LOOMC_RETURN_IF_ERROR(loomc_module_verify_structural(module, result));
+  if (!loomc_result_succeeded(result)) {
+    return loomc_ok_status();
   }
 
   const loomc_target_pass_environment_t* pass_environment =

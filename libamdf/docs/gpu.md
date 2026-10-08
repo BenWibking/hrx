@@ -55,6 +55,31 @@ addresses. These addresses remain stable for the mapping lifetime. Queue
 creation belongs to device or execution-stream preparation; dispatch publication
 reuses its established storage.
 
+### Device-produced SDMA
+
+An SDMA family with `AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER` can establish
+publication by its owning GPU. The caller includes that bit in
+`required_capabilities` when creating the queue, then calls
+`user_queue_map(queue, owning_device, ...)`. Queue creation owns the GPU
+notification mapping; the producer mapping borrows it. Creation fails if it
+cannot establish the requested capability. Mapping a host-only queue later
+does not add device publication, and a different GPU requires its own supported
+mapping rather than reusing the owner's addresses.
+
+The device reserves available ring bytes, writes complete packets, and makes
+those writes visible at system scope before publishing WPTR. It then writes
+the same monotonic byte frontier to the write-only 64-bit doorbell, with system
+release ordering. Acquiring RPTR permits command storage reuse. Copy completion,
+payload cache transitions and downstream-reader retirement are separate
+dependencies; RPTR alone does not establish them.
+
+The caller owns packet generation, resource credits and scheduling. A running
+shader can select source/destination ranges, generate a copy and consume its
+completion without a libamdf or CPU call for each transfer. The producer stops
+using every mapped address before releasing its mapping. Queue destruction
+then retires the native queue before releasing its notification and command
+storage, following the same terminal cleanup contract as host publication.
+
 ### AQL packets and signals
 
 AQL format 1 exposes native 64-byte packet slots with 64-bit packet indices.

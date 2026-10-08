@@ -54,6 +54,13 @@ struct amdf_gpu_umd_user_queue_t {
   void* doorbell_mapping;
   // Exact 64-bit doorbell selected within `doorbell_mapping`.
   volatile uint64_t* doorbell;
+  // Optional GPU notification storage established only at queue creation.
+  struct {
+    // Complete process-slice GPU view, or NULL when not requested.
+    amdf_gpu_kfd_doorbell_t* native;
+    // Exact queue notification address within the GPU view.
+    uint64_t address;
+  } device_doorbell;
   // KFD queue identifier, valid after native creation succeeds.
   uint32_t queue_identifier;
   // Whether construction acquired a native queue, including identifier zero.
@@ -179,6 +186,12 @@ static amdf_status_t amdf_gpu_kfd_user_queue_release_storage(
     status = amdf_gpu_kfd_user_queue_buffer_destroy(
         queue, &queue->retirement_flush_trigger);
   }
+  if (amdf_status_is_ok(status) && queue->device_doorbell.native != NULL) {
+    status = queue->native_api->device_doorbell_destroy(
+        queue->native_api->user_data, queue->device_doorbell.native);
+    // This native owner is consumed even on a terminal cleanup error.
+    queue->device_doorbell.native = NULL;
+  }
   if (queue->doorbell_mapping != NULL) {
     if (amdf_status_is_ok(status)) {
       status = queue->native_api->doorbell_unmap(
@@ -211,6 +224,10 @@ static amdf_status_t amdf_gpu_kfd_user_queue_release_storage(
 static void amdf_gpu_kfd_user_queue_abandon(amdf_gpu_umd_user_queue_t* queue) {
   // Native queue addresses refer only to separate backing, never this metadata.
   // Preserve all remaining mappings when final release cannot prove retirement.
+  if (queue->device_doorbell.native != NULL) {
+    queue->native_api->device_doorbell_abandon(queue->native_api->user_data,
+                                               queue->device_doorbell.native);
+  }
   amdf_gpu_kfd_buffer_t* buffers[] = {
       queue->ring.native,
       queue->control.native,
@@ -439,6 +456,19 @@ amdf_status_t amdf_gpu_umd_user_queue_create(
     }
   }
 
+  if (amdf_status_is_ok(status) &&
+      (create_info->required_capabilities &
+       AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER) != 0) {
+    uint64_t device_address = 0;
+    status = queue->native_api->device_doorbell_create(
+        queue->native_api->user_data, device,
+        queue->plan.doorbell.mapping_byte_length,
+        &queue->device_doorbell.native, &device_address);
+    if (amdf_status_is_ok(status)) {
+      queue->device_doorbell.address = device_address + doorbell_byte_offset;
+    }
+  }
+
   if (amdf_status_is_ok(status)) {
     queue->doorbell = (volatile uint64_t*)((uint8_t*)queue->doorbell_mapping +
                                            doorbell_byte_offset);
@@ -447,7 +477,10 @@ amdf_status_t amdf_gpu_umd_user_queue_create(
             {
                 .words = {device->topology.gpu_id, (uintptr_t)queue},
             },
-        .capabilities = queue->plan.family.user_queue_capabilities,
+        .capabilities = AMDF_USER_QUEUE_CAPABILITY_HOST_PRODUCER |
+                        (queue->device_doorbell.native != NULL
+                             ? AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER
+                             : 0),
         .ring_byte_length = queue->plan.ring.primary_byte_length,
         .metadata_ring_byte_length = queue->plan.ring.metadata_byte_length,
     };
@@ -469,24 +502,35 @@ amdf_status_t amdf_gpu_umd_user_queue_map(
   if (queue == NULL || out_mapping == NULL || out_result == NULL) {
     return amdf_make_api_status(AMDF_STATUS_CODE_INVALID_ARGUMENT);
   }
-  if (producer_device != NULL) {
+  if (producer_device != NULL && (producer_device != queue->device ||
+                                  queue->device_doorbell.native == NULL)) {
     return amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED);
   }
+  const bool device_producer = producer_device != NULL;
   const amdf_gpu_umd_user_queue_mapping_result_t result = {
-      .ring_address = (uintptr_t)((uint8_t*)queue->ring.host_pointer +
-                                  queue->plan.ring.primary_byte_offset),
+      .ring_address = (device_producer ? queue->ring.device_address
+                                       : (uintptr_t)queue->ring.host_pointer) +
+                      queue->plan.ring.primary_byte_offset,
       .read_index_address =
-          (uintptr_t)amdf_gpu_kfd_user_queue_read_index(queue),
+          device_producer
+              ? queue->control.device_address +
+                    queue->plan.control.read_index_byte_offset
+              : (uintptr_t)amdf_gpu_kfd_user_queue_read_index(queue),
       .write_index_address =
-          (uintptr_t)amdf_gpu_kfd_user_queue_write_index(queue),
-      .doorbell_address = (uintptr_t)queue->doorbell,
+          device_producer
+              ? queue->control.device_address +
+                    queue->plan.control.write_index_byte_offset
+              : (uintptr_t)amdf_gpu_kfd_user_queue_write_index(queue),
+      .doorbell_address = device_producer ? queue->device_doorbell.address
+                                          : (uintptr_t)queue->doorbell,
       .index_bits = queue->plan.control.index_bit_count,
       .doorbell_bits = queue->plan.doorbell.bit_count,
       .metadata_ring_address =
           queue->plan.ring.metadata_byte_length == 0
               ? 0
-              : (uintptr_t)((uint8_t*)queue->ring.host_pointer +
-                            queue->plan.ring.metadata_byte_offset),
+              : (device_producer ? queue->ring.device_address
+                                 : (uintptr_t)queue->ring.host_pointer) +
+                    queue->plan.ring.metadata_byte_offset,
   };
   // The public mapping owns the borrow; the queue already owns every mapping.
   *out_mapping = (amdf_gpu_umd_user_queue_mapping_t*)queue;

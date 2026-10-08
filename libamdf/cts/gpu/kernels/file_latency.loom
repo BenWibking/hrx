@@ -1,6 +1,3 @@
-// Copyright 2026 The IREE Authors
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // A finite completion-driven owner measures response-dependent lookups or
 // read/write/reload chains. Each stream owns two guard-separated payloads.
 // A completion immediately admits its own successor; streams have no join.

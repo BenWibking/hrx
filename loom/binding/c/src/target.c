@@ -23,7 +23,7 @@ struct loomc_target_environment_t {
   // Allocator used to release target-environment storage.
   loomc_allocator_t allocator;
 
-  // Prepared target provider composition.
+  // Prepared target provider composition owned by this handle.
   loom_target_environment_t environment;
 
   // Prepared immutable pass capability tables over environment.
@@ -235,7 +235,7 @@ static void loomc_target_profile_destroy_owned(
   target_profile_destroy(target_profile, allocator);
 }
 
-loomc_status_t loomc_target_environment_create_from_provider_set(
+loomc_status_t loomc_target_environment_create_from_provider_set_internal(
     const loom_target_provider_set_t* provider_set, loomc_allocator_t allocator,
     loomc_target_environment_t** out_target_environment) {
   if (out_target_environment == NULL) {

@@ -41,6 +41,17 @@ _SPIRV_VULKAN_HAL_COMPATIBLE_WITH = loom_config_compatible_with([
 
 _SPIRV_CHECK_VISIBILITY = ["//loom/src/loom/tools/loom-check:__pkg__"]
 
+_CONFIGURED_WORKGROUP_STORAGE_VARIANTS = {
+    "four_stages": {
+        "case": "configured_workgroup_four_stages",
+        "configs": {"test.buffer.stage_count": "4"},
+    },
+    "one_stage": {
+        "case": "configured_workgroup_one_stage",
+        "configs": {"test.buffer.stage_count": "1"},
+    },
+}
+
 loom_cc_library(
     name = "loom_check",
     srcs = ["check/loom_check.c"],
@@ -66,93 +77,17 @@ loom_cc_library(
 )
 
 loom_cc_library(
-    name = "device_provider",
-    srcs = ["device_provider.c"],
-    hdrs = ["device_provider.h"],
-    target_compatible_with = _SPIRV_VULKAN_HAL_COMPATIBLE_WITH,
-    deps = [
-        ":vulkan_profile",
-        "//loom/src/loom/target/arch/spirv:facts",
-        "//loom/src/loom/target/arch/spirv:profile",
-        "//loom/src/loom/target/emit/spirv:module_compiler",
-        "//loom/src/loom/tooling/execution/hal:device_provider",
-        "//loom/src/loom/tooling/execution/hal:runtime",
-        "//runtime/src/iree/base",
-    ],
-)
-
-loom_cc_library(
     name = "testbench_requirements",
     srcs = ["testbench_requirements.c"],
     hdrs = ["testbench_requirements.h"],
     target_compatible_with = LOOM_SPIRV_VULKAN_COMPATIBLE_WITH,
     deps = [
-        ":vulkan_profile",
+        "//loom/binding/c:loomc",
+        "//loom/binding/c/target/spirv",
         "//loom/src/loom/tooling/execution/hal:testbench_actual",
         "//loom/src/loom/tooling/testbench:requirements",
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal/drivers/vulkan:device_spec",
-    ],
-)
-
-loom_cc_library(
-    name = "vulkan_profile",
-    srcs = ["vulkan_profile.c"],
-    hdrs = ["vulkan_profile.h"],
-    target_compatible_with = LOOM_SPIRV_VULKAN_COMPATIBLE_WITH,
-    deps = [
-        "//loom/src/loom/target:types",
-        "//loom/src/loom/target/arch/spirv:cooperative_properties",
-        "//loom/src/loom/target/arch/spirv:features",
-        "//loom/src/loom/target/arch/spirv:profile",
-        "//loom/src/loom/target/arch/spirv/records:target_records",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/hal",
-        "//runtime/src/iree/hal/drivers/vulkan",
-        "//runtime/src/iree/hal/drivers/vulkan:api",
-        "//runtime/src/iree/hal/drivers/vulkan:device_spec",
-        "//third_party:vulkan_headers",
-    ],
-)
-
-loom_cc_test(
-    name = "device_provider_test",
-    srcs = ["device_provider_test.cc"],
-    target_compatible_with = _SPIRV_VULKAN_HAL_COMPATIBLE_WITH,
-    deps = [
-        ":device_provider",
-        ":vulkan_profile",
-        "//loom/src/loom/target/arch/spirv:features",
-        "//loom/src/loom/target/arch/spirv:profile",
-        "//loom/src/loom/tooling/execution/hal:runtime",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/hal",
-        "//runtime/src/iree/hal/drivers/vulkan:device_spec",
-        "//runtime/src/iree/hal/utils:device_spec_builder",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
-        "//third_party:vulkan_headers",
-    ],
-)
-
-loom_cc_test(
-    name = "vulkan_profile_test",
-    srcs = ["vulkan_profile_test.cc"],
-    target_compatible_with = LOOM_SPIRV_VULKAN_COMPATIBLE_WITH,
-    deps = [
-        ":vulkan_profile",
-        "//loom/src/loom/target:types",
-        "//loom/src/loom/target/arch/spirv:cooperative_properties",
-        "//loom/src/loom/target/arch/spirv:features",
-        "//loom/src/loom/target/arch/spirv:profile",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/hal",
-        "//runtime/src/iree/hal/drivers/vulkan:api",
-        "//runtime/src/iree/hal/drivers/vulkan:device_spec",
-        "//runtime/src/iree/hal/utils:device_spec_builder",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
-        "//third_party:vulkan_headers",
     ],
 )
 
@@ -161,6 +96,15 @@ loom_test(
     srcs = ["test/spirv_vulkan_hal_actual.loom"],
     compile_targets = ["//loom/target/spirv:vulkan1.3+bda"],
     execution_profiles = [SPIRV_VULKAN_EXPLICIT_TARGET_HARDWARE_PROFILE],
+)
+
+loom_test(
+    name = "cxx_configured_workgroup_storage_test",
+    benchmark_smoke = False,
+    execution_profiles = [SPIRV_VULKAN_HARDWARE_PROFILE],
+    module = "//loom/src/loom/import/cxx/test:configured_workgroup_storage_module",
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+    variants = _CONFIGURED_WORKGROUP_STORAGE_VARIANTS,
 )
 
 [

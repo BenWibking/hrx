@@ -55,6 +55,31 @@ void ExpectStorage(loom_x86_storage_transfer_t transfer,
   ExpectBytes(instruction, bytes);
 }
 
+void ExpectStorageRegister(loom_x86_storage_transfer_t transfer,
+                           uint16_t storage_class, uint16_t register_class,
+                           uint32_t reg, uint8_t base, int32_t displacement,
+                           std::initializer_list<uint8_t> bytes) {
+  loom_x86_transport_instruction_t instruction;
+  loom_x86_transport_select_storage_register(transfer, storage_class,
+                                             register_class, reg, base,
+                                             displacement, &instruction);
+  EXPECT_EQ(instruction.gpr_writes, 0);
+  ExpectBytes(instruction, bytes);
+}
+
+void ExpectAbiStorage(loom_x86_storage_transfer_t transfer,
+                      uint16_t register_class, uint16_t byte_length,
+                      uint32_t reg, uint8_t base, int32_t displacement,
+                      std::initializer_list<uint8_t> bytes,
+                      uint16_t gpr_writes = 0) {
+  loom_x86_transport_instruction_t instruction;
+  ASSERT_TRUE(loom_x86_transport_select_abi_storage(
+      transfer, register_class, byte_length, reg, base, displacement,
+      &instruction));
+  EXPECT_EQ(instruction.gpr_writes, gpr_writes);
+  ExpectBytes(instruction, bytes);
+}
+
 bool IsSimd(uint16_t register_class) {
   return register_class == LOOM_X86_REGISTER_CLASS_XMM ||
          register_class == LOOM_X86_REGISTER_CLASS_YMM ||
@@ -225,6 +250,45 @@ TEST(TransportTest, StackTransfersCoverVectorAndMaskFamilies) {
                 0, {0xc4, 0xe1, 0xf8, 0x90, 0x0c, 0x24});
   ExpectStorage(LOOM_X86_STORAGE_TRANSFER_STORE, LOOM_X86_REGISTER_CLASS_K, 0,
                 4, 0, {0xc4, 0xe1, 0xf8, 0x91, 0x0c, 0x24});
+}
+
+TEST(TransportTest, CrossClassStorageUsesCarrierWidth) {
+  ExpectStorageRegister(
+      LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_GPR32,
+      LOOM_X86_REGISTER_CLASS_XMM, 1, 4, 0, {0xc5, 0xf9, 0x6e, 0x0c, 0x24});
+  ExpectStorageRegister(
+      LOOM_X86_STORAGE_TRANSFER_STORE, LOOM_X86_REGISTER_CLASS_GPR32,
+      LOOM_X86_REGISTER_CLASS_XMM, 1, 4, 0, {0xc5, 0xf9, 0x7e, 0x0c, 0x24});
+}
+
+TEST(TransportTest, AbiStackTransfersCoverScalarWidths) {
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_LOAD,
+                   LOOM_X86_REGISTER_CLASS_GPR32, 1, 7, 4, 8,
+                   {0x40, 0x0f, 0xb6, 0x7c, 0x24, 0x08}, 1u << 7);
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_STORE,
+                   LOOM_X86_REGISTER_CLASS_GPR32, 1, 7, 4, 8,
+                   {0x40, 0x88, 0x7c, 0x24, 0x08});
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_LOAD,
+                   LOOM_X86_REGISTER_CLASS_GPR32, 2, 9, 5, 16,
+                   {0x44, 0x0f, 0xb7, 0x4d, 0x10}, 1u << 9);
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_STORE,
+                   LOOM_X86_REGISTER_CLASS_GPR32, 2, 9, 5, 16,
+                   {0x66, 0x44, 0x89, 0x4d, 0x10});
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_XMM,
+                   4, 1, 4, 0, {0xc5, 0xfa, 0x10, 0x0c, 0x24});
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_STORE, LOOM_X86_REGISTER_CLASS_XMM,
+                   4, 1, 4, 0, {0xc5, 0xfa, 0x11, 0x0c, 0x24});
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_XMM,
+                   8, 9, 12, 64, {0xc4, 0x41, 0x7b, 0x10, 0x4c, 0x24, 0x40});
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_STORE, LOOM_X86_REGISTER_CLASS_XMM,
+                   8, 9, 12, 64, {0xc4, 0x41, 0x7b, 0x11, 0x4c, 0x24, 0x40});
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_XMM,
+                   16, 1, 4, 0, {0xc5, 0xf8, 0x10, 0x0c, 0x24});
+
+  loom_x86_transport_instruction_t instruction;
+  EXPECT_FALSE(loom_x86_transport_select_abi_storage(
+      LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_XMM, 2, 1, 4, 0,
+      &instruction));
 }
 
 }  // namespace

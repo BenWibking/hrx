@@ -9,25 +9,6 @@
 
 iree_add_all_subdirs()
 
-if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK)
-loom_cc_library(
-  NAME
-    task_device
-  HDRS
-    "task_device.h"
-  SRCS
-    "task_device.c"
-  DEPS
-    iree::base
-    iree::hal
-    iree::hal::drivers::task::device_spec
-    loom::target::selection
-    loom::tooling::execution::hal::device_provider
-    loom::tooling::execution::hal::runtime
-  PUBLIC
-)
-endif()
-
 if(LOOM_IMPORT_CXX AND IREE_ARCH STREQUAL "x86_64")
 if(LOOM_TARGET_ARCH_X86 AND LOOM_TARGET_ARCH_VM AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF)
 loom_execution_test(

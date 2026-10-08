@@ -4,8 +4,6 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/codegen/low/allocation/unit_liveness.h"
-
 #include <array>
 #include <tuple>
 
@@ -13,6 +11,7 @@
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 #include "loom/analysis/liveness.h"
+#include "loom/codegen/low/allocation/unit_liveness_builder.h"
 #include "loom/codegen/low/builder.h"
 #include "loom/ir/context.h"
 #include "loom/ir/local_value_domain.h"
@@ -1091,7 +1090,7 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
   const loom_value_id_t value_ids[] = {0, 1, 2, 3, 4, 5};
   const uint32_t interval_indices[] = {0, 1, 2, 3, 4, 5};
   const loom_liveness_interval_t intervals[] = {
-      RegisterInterval(0, 0, 13, 1),  RegisterInterval(1, 3, 5, 1),
+      RegisterInterval(0, 0, 13, 1),  RegisterInterval(1, 4, 5, 1),
       RegisterInterval(2, 8, 10, 1),  RegisterInterval(3, 13, 13, 1),
       RegisterInterval(4, 15, 17, 1), RegisterInterval(5, 17, 19, 1),
   };
@@ -1104,7 +1103,7 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
   blocks[3].start_point = 15;
   blocks[3].end_point = 19;
   const loom_liveness_segment_t segments[] = {
-      {0, 3}, {6, 8}, {11, 13}, {3, 5}, {8, 10}, {15, 17}, {17, 19},
+      {0, 3}, {6, 8}, {11, 13}, {4, 5}, {8, 10}, {15, 17}, {17, 19},
   };
   const loom_liveness_segment_range_t ranges[] = {
       {0, 3}, {3, 1}, {4, 1}, {5, 0}, {5, 1}, {6, 1},
@@ -1118,19 +1117,28 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
 
   // The second result has a storage use beyond its semantic end, and the
   // source at ordinal four has incomplete edge storage. The unused third result
-  // still writes its physical destination at point 13.
+  // still writes its physical destination at point 13. A prior physical read
+  // extends the first source segment through point 3; tied retention must
+  // preserve that refined table and use it to bridge the result starting at
+  // point 4.
   loom_low_allocation_unit_liveness_value_t values[] = {
-      {0, 0}, {1, 3}, {2, 8}, {3, 13}, {4, 15}, {5, 17}};
-  uint32_t starts[] = {0, 3, 8, 13, 15, 17};
+      {0, 0}, {1, 4}, {2, 8}, {3, 13}, {4, 15}, {5, 17}};
+  uint32_t starts[] = {0, 4, 8, 13, 15, 17};
   uint32_t ends[] = {13, 5, 11, 14, 17, 19};
   uint64_t incomplete[] = {(1u << 2) | (1u << 4)};
+  std::array<loom_liveness_segment_t, IREE_ARRAYSIZE(segments)>
+      storage_segments;
+  for (iree_host_size_t i = 0; i < storage_segments.size(); ++i) {
+    storage_segments[i] = segments[i];
+  }
+  storage_segments[0].end_point = 4;
   loom_low_allocation_unit_liveness_t unit_liveness = {};
   unit_liveness.values = values;
   unit_liveness.start_points = starts;
   unit_liveness.end_points = ends;
   unit_liveness.point_count = IREE_ARRAYSIZE(starts);
   unit_liveness.values_with_incomplete_storage_segments = {6, incomplete};
-  unit_liveness.storage_segments.entries = segments;
+  unit_liveness.storage_segments.entries = storage_segments.data();
   loom_low_placement_relation_t relations[4] = {};
   for (uint32_t i = 0; i < IREE_ARRAYSIZE(relations); ++i) {
     relations[i].source_ordinal = i < 3 ? 0 : 4;
@@ -1165,6 +1173,7 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
   EXPECT_EQ(reservations[0].end_point, 5u);
   EXPECT_EQ(reservations[1].start_point, 6u);
   EXPECT_EQ(reservations[1].end_point, 14u);
+  EXPECT_EQ(unit_liveness.storage_segments.entries[0].end_point, 4u);
   EXPECT_EQ(ends[0], 14u);
   EXPECT_EQ(ends[4], 19u);
   EXPECT_EQ(

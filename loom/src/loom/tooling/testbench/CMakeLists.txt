@@ -139,6 +139,18 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    compiled_provider
+  HDRS
+    "compiled_provider.h"
+  DEPS
+    ::invocation
+    iree::base
+    loom::binding::c::loomc
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     expectation
   HDRS
     "expectation.h"

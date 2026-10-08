@@ -239,6 +239,16 @@ func.def @linear(%a: i32, %b: i32) -> (i32) {
             FindValueOrdinal(analysis, args[1]));
   EXPECT_EQ(loom_liveness_operation_use_ordinal(&analysis, 4),
             FindValueOrdinal(analysis, sum));
+  for (uint32_t use_index = 0; use_index < analysis.operation_use_count;
+       ++use_index) {
+    const loom_value_ordinal_t value_ordinal =
+        loom_liveness_operation_use_ordinal(&analysis, use_index);
+    const loom_liveness_segment_range_t range =
+        loom_liveness_segment_range_for_value_ordinal(&analysis, value_ordinal);
+    ASSERT_EQ(range.count, 1u);
+    EXPECT_EQ(loom_liveness_operation_use_segment_index(&analysis, use_index),
+              range.start);
+  }
 }
 
 TEST_F(LivenessTest, OperationRowsFollowAcceptedOrder) {
@@ -381,6 +391,28 @@ func.def @cfg_select(%cond: i1, %a: i32, %b: i32) -> (i32) {
   EXPECT_TRUE(ContainsValue(else_block.live_in_values, else_block.live_in_count,
                             args[2]));
   EXPECT_EQ(join_block.live_in_count, 0u);
+
+  const auto expect_branch_use_segment = [&](const auto& block,
+                                             loom_value_id_t value) {
+    const loom_liveness_operation_point_t* branch =
+        loom_liveness_operation_at(&analysis, block.operation_start);
+    ASSERT_EQ(branch->direct_use_count, 1u);
+    const uint32_t use_index = branch->use_start;
+    const loom_value_ordinal_t value_ordinal =
+        loom_liveness_operation_use_ordinal(&analysis, use_index);
+    ASSERT_EQ(analysis.value_ids[value_ordinal], value);
+    const loom_liveness_segment_range_t range =
+        loom_liveness_segment_range_for_value_ordinal(&analysis, value_ordinal);
+    ASSERT_EQ(range.count, 2u);
+    const uint32_t segment_index =
+        loom_liveness_operation_use_segment_index(&analysis, use_index);
+    EXPECT_EQ(segment_index, range.start + 1u);
+    EXPECT_LE(analysis.segments[segment_index].start_point,
+              branch->start_point);
+    EXPECT_GT(analysis.segments[segment_index].end_point, branch->start_point);
+  };
+  expect_branch_use_segment(then_block, args[1]);
+  expect_branch_use_segment(else_block, args[2]);
 }
 
 class LivenessStorageTest : public LivenessTest {

@@ -151,12 +151,11 @@ TEST_F(LowEmissionFrameTest, StorageLeaseFrameRetainsValueProducers) {
       /*.query=*/
       [](void* user_data, const loom_low_schedule_table_t* schedule,
          const loom_low_schedule_node_t* node,
-         loom_low_storage_lease_emit_fn_t emit, void* emit_user_data) {
+         const loom_low_storage_lease_query_sink_t* sink) {
         (void)user_data;
         (void)schedule;
         (void)node;
-        (void)emit;
-        (void)emit_user_data;
+        (void)sink;
         return iree_ok_status();
       },
   };
@@ -182,6 +181,182 @@ TEST_F(LowEmissionFrameTest, StorageLeaseFrameRetainsValueProducers) {
   EXPECT_EQ(
       loom_low_schedule_value_producer_node(&frame.schedule, result_ordinal),
       static_cast<uint32_t>(load_node - frame.schedule.nodes));
+}
+
+TEST_F(LowEmissionFrameTest, CallTransportRetainsBoundaryRegisterClasses) {
+  ModulePtr module = ParseModule(R"(
+low.func.decl target<test.low.core> @callee(%value: reg<test.pressure.alias32>) -> (reg<test.pressure.alias32>)
+
+low.func.def target<test.low.core> @caller(%value: reg<test.pressure.alias32>) -> (reg<test.pressure.alias32>) asm {
+  %result = low.func.call @callee(%value) : (reg<test.pressure.alias32>) -> (reg<test.pressure.alias32>)
+  return %result
+}
+)");
+  const loom_low_descriptor_set_t* descriptors =
+      loom_test_low_core_descriptor_set();
+  uint16_t boundary_class = LOOM_LOW_REG_CLASS_NONE;
+  ASSERT_TRUE(loom_low_descriptor_set_lookup_register_class(
+      descriptors, IREE_SV("test.pressure.alias64"), &boundary_class, nullptr));
+  const loom_low_allocation_abi_location_t arguments[] = {{
+      /*.location_kind=*/LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+      /*.descriptor_reg_class_id=*/boundary_class,
+      /*.location_base=*/7,
+  }};
+  const loom_low_allocation_abi_location_t results[] = {{
+      /*.location_kind=*/LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+      /*.descriptor_reg_class_id=*/boundary_class,
+      /*.location_base=*/6,
+  }};
+  loom_low_call_contract_t contract = {};
+  contract.arguments = arguments;
+  contract.argument_count = IREE_ARRAYSIZE(arguments);
+  contract.results = results;
+  contract.result_count = IREE_ARRAYSIZE(results);
+  loom_low_emission_frame_options_t options = {};
+  options.descriptor_registry = &registry_.registry;
+  options.schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_SOURCE_PRIORITY;
+  options.call_contracts.query = [](void* user_data, loom_symbol_ref_t callee) {
+    (void)callee;
+    return static_cast<const loom_low_call_contract_t*>(user_data);
+  };
+  options.call_contracts.user_data = &contract;
+  loom_low_emission_frame_t frame = {};
+  bool accepted = false;
+  IREE_ASSERT_OK(loom_low_emission_frame_build(
+      module.get(), loom_block_op(loom_module_block(module.get()), 1), &options,
+      &arena_, &frame, &accepted));
+  ASSERT_TRUE(accepted);
+  ASSERT_EQ(frame.allocation.error_count, 0u);
+  ASSERT_EQ(frame.allocation.call_move_count, 1u);
+  const loom_low_allocation_call_moves_t& call = frame.allocation.call_moves[0];
+  ASSERT_EQ(call.arguments.count, 1u);
+  ASSERT_EQ(call.results.count, 1u);
+  const loom_low_move_t& argument =
+      frame.allocation.moves[call.arguments.start];
+  EXPECT_EQ(argument.source.descriptor_reg_class_id,
+            TEST_LOW_CORE_REG_CLASS_ID_TEST_PRESSURE_ALIAS32);
+  EXPECT_EQ(argument.destination.descriptor_reg_class_id, boundary_class);
+  EXPECT_EQ(argument.destination.location, 7u);
+  const loom_low_move_t& result = frame.allocation.moves[call.results.start];
+  EXPECT_EQ(result.source.descriptor_reg_class_id, boundary_class);
+  EXPECT_EQ(result.source.location, 6u);
+  EXPECT_EQ(result.destination.descriptor_reg_class_id,
+            TEST_LOW_CORE_REG_CLASS_ID_TEST_PRESSURE_ALIAS32);
+}
+
+TEST_F(LowEmissionFrameTest, ExitTransportRetainsParallelBoundaryMoves) {
+  ModulePtr module = ParseModule(R"(
+low.func.def target<test.low.core> @pair(%first: reg<test.pressure.alias32>, %second: reg<test.pressure.alias32>) -> (reg<test.pressure.alias32>, reg<test.pressure.alias32>) asm {
+  return %first, %second
+}
+)");
+  const loom_low_descriptor_set_t* descriptors =
+      loom_test_low_core_descriptor_set();
+  uint16_t boundary_class = LOOM_LOW_REG_CLASS_NONE;
+  ASSERT_TRUE(loom_low_descriptor_set_lookup_register_class(
+      descriptors, IREE_SV("test.pressure.alias64"), &boundary_class, nullptr));
+  const loom_low_allocation_abi_location_t results[] = {
+      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, boundary_class, 7},
+      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, boundary_class, 6},
+  };
+  loom_op_t* function = loom_block_op(loom_module_block(module.get()), 0);
+  loom_block_t* body =
+      loom_region_entry_block(loom_low_func_def_body(function));
+  const loom_low_allocation_fixed_value_t fixed_values[] = {
+      {body->arg_ids[0], LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, 6, 1},
+      {body->arg_ids[1], LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, 7, 1},
+  };
+  loom_low_emission_frame_options_t options = {};
+  options.descriptor_registry = &registry_.registry;
+  options.schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_SOURCE_PRIORITY;
+  options.allocation_fixed_values = fixed_values;
+  options.allocation_fixed_value_count = IREE_ARRAYSIZE(fixed_values);
+  options.allocation_exit_locations = results;
+  options.allocation_exit_location_count = IREE_ARRAYSIZE(results);
+  options.synchronous_storage_spaces = LOOM_LOW_STORAGE_SPACE_SET_STACK;
+  loom_low_emission_frame_t frame = {};
+  bool accepted = false;
+  IREE_ASSERT_OK(loom_low_emission_frame_build(module.get(), function, &options,
+                                               &arena_, &frame, &accepted));
+  ASSERT_TRUE(accepted);
+  ASSERT_EQ(frame.allocation.error_count, 0u);
+  ASSERT_EQ(frame.allocation.exit_move_count, 1u);
+  const loom_low_allocation_exit_moves_t& exit = frame.allocation.exit_moves[0];
+  EXPECT_EQ(exit.result_count, 2u);
+  uint32_t registers[16] = {};
+  registers[6] = 0x11111111u;
+  registers[7] = 0x22222222u;
+  uint32_t move_storage[1] = {};
+  for (iree_host_size_t i = 0; i < exit.results.count; ++i) {
+    const loom_low_move_t& move =
+        frame.allocation.moves[exit.results.start + i];
+    const uint32_t value =
+        move.source.location_kind == LOOM_LOW_ALLOCATION_LOCATION_MOVE_STORAGE
+            ? move_storage[move.source.location]
+            : registers[move.source.location];
+    if (move.destination.location_kind ==
+        LOOM_LOW_ALLOCATION_LOCATION_MOVE_STORAGE) {
+      move_storage[move.destination.location] = value;
+    } else {
+      registers[move.destination.location] = value;
+    }
+  }
+  EXPECT_EQ(registers[7], 0x11111111u);
+  EXPECT_EQ(registers[6], 0x22222222u);
+}
+
+TEST_F(LowEmissionFrameTest, CommonCallClobbersProtectCallerValues) {
+  ModulePtr module = ParseModule(R"(
+low.func.decl target<test.low.core> @callee()
+
+low.func.def target<test.low.core> @caller(%value: reg<test.pressure.alias32>) -> (reg<test.pressure.alias32>) asm {
+  low.func.call @callee() : ()
+  return %value
+}
+)");
+  const loom_low_descriptor_set_t* descriptor_set =
+      loom_test_low_core_descriptor_set();
+  const loom_low_call_clobber_t common_clobber = {
+      /*.register_class=*/TEST_LOW_CORE_REG_CLASS_ID_TEST_PRESSURE_ALIAS32,
+      /*.location=*/0,
+      /*.count=*/
+      descriptor_set
+          ->reg_classes[TEST_LOW_CORE_REG_CLASS_ID_TEST_PRESSURE_ALIAS32]
+          .allocatable_count,
+  };
+  struct CallContracts {
+    loom_low_call_contract_t contract;
+    loom_low_call_clobber_list_t common_clobbers;
+  } call_contracts = {
+      /*.contract=*/{},
+      /*.common_clobbers=*/{&common_clobber, 1},
+  };
+  loom_low_emission_frame_options_t options = {};
+  options.descriptor_registry = &registry_.registry;
+  options.schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_SOURCE_PRIORITY;
+  options.call_contracts.query =
+      [](void* user_data,
+         loom_symbol_ref_t callee) -> const loom_low_call_contract_t* {
+    (void)callee;
+    return &static_cast<CallContracts*>(user_data)->contract;
+  };
+  options.call_contracts.query_common_clobbers =
+      [](void* user_data, const loom_low_descriptor_set_t* descriptor_set) {
+        (void)descriptor_set;
+        return static_cast<CallContracts*>(user_data)->common_clobbers;
+      };
+  options.call_contracts.user_data = &call_contracts;
+  loom_low_emission_frame_t frame = {};
+  bool accepted = false;
+  IREE_ASSERT_OK(loom_low_emission_frame_build(
+      module.get(), loom_block_op(loom_module_block(module.get()), 1), &options,
+      &arena_, &frame, &accepted));
+  ASSERT_TRUE(accepted);
+  ASSERT_EQ(frame.allocation.error_count, 0u);
+  ASSERT_EQ(frame.allocation.assignment_count, 1u);
+  EXPECT_EQ(frame.allocation.assignments[0].location_kind,
+            LOOM_LOW_ALLOCATION_LOCATION_SPILL_SLOT);
+  EXPECT_EQ(frame.allocation.spill_count, 1u);
 }
 
 TEST_F(LowEmissionFrameTest, ReusedRegisterWaitsForPreviousPhysicalRead) {

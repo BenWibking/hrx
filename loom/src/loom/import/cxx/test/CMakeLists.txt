@@ -31,6 +31,8 @@ loom_check_test_suite(
     "bitcast_invalid.cxx-test"
     "boolean_storage.cxx-test"
     "boolean_storage_cleanup.cxx-test"
+    "buffer_alloca.cxx-test"
+    "buffer_alloca_invalid.cxx-test"
     "check.cxx-test"
     "check_close.cxx-test"
     "check_close_invalid.cxx-test"
@@ -146,6 +148,7 @@ loom_check_test_suite(
     "vectors.cxx-test"
     "vectors_invalid.cxx-test"
     "view_values.cxx-test"
+    "view_values_invalid.cxx-test"
     "volatile.cxx-test"
     "volatile_invalid.cxx-test"
     "volatile_views.cxx-test"
@@ -1296,6 +1299,15 @@ loom_test_module(
   SRCS
     "record_memory.cxx"
     "record_memory_kernels.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    configured_workgroup_storage_module
+  SRCS
+    "configured_workgroup_storage.cxx"
 )
 endif()
 

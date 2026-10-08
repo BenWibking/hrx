@@ -11,7 +11,7 @@
 
 #include "amdf/gpu.h"
 
-// Generation-dependent fields for ordinary RDNA compute commands. Selection
+// Generation-dependent fields for ordinary PM4 compute commands. Selection
 // occurs before native activation; queue and backing capabilities are separate.
 struct Pm4CommandProfile {
   // Whole-cache release/acquire GCR after compute completion, including I$.
@@ -24,6 +24,8 @@ struct Pm4CommandProfile {
   uint32_t resource3_register;
   // Unshifted mask of RSRC3.INST_PREF_SIZE, whose unit is 128 bytes.
   uint32_t instruction_prefetch_mask;
+  // Physical wave64 execution support in addition to the baseline wave32 mode.
+  bool supports_wave64;
 
   // Returns a static profile for a supported physical target, or null.
   static const Pm4CommandProfile* Find(const amdf_gpu_endpoint_info_t& info);

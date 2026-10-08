@@ -100,6 +100,27 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_cc_library(
   NAME
+    buffer
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "buffer.h"
+  SRCS
+    "buffer.cc"
+  DEPS
+    iree::third_party::cxx_parser
+    loom::import::cxx::source::error
+    loom::import::cxx::value::storage
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
     assumptions
   CXX_STANDARD
     23
@@ -424,6 +445,7 @@ loom_cc_library(
     loom::ops::encoding
     loom::ops::index
     loom::ops::op_defs
+    loom::ops::scalar
     loom::ops::view
   PUBLIC
 )
@@ -517,6 +539,7 @@ loom_cc_library(
   DEPS
     ::assembly
     ::atomic
+    ::buffer
     ::check
     ::decode
     ::encoding

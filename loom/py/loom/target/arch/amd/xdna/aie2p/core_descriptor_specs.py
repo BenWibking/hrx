@@ -1021,6 +1021,19 @@ _BASE_DESCRIPTOR_SPECS = (
     ),
     _DescriptorSpec(
         "VMOV_alu_mv_mv_x",
+        f"{_TARGET_KEY}.move.vector512.to.accumulator512.low",
+        "register.move.vector512.to.accumulator512.low",
+        "II_VMOV_alu_mv_mv_x_eBMLL_eXe",
+        storage_overrides=(("dst", "eBMLL"), ("src", "VEC256")),
+        asm_mnemonic="vmov.vector512.to.accumulator512.low",
+        rematerializable=True,
+        encoding_adapter_overrides=(
+            ("dst", "LOOM_eBMLL_OP_mMvBMXDst"),
+            ("src", "LOOM_mXm_OP_mMvBMXSrc"),
+        ),
+    ),
+    _DescriptorSpec(
+        "VMOV_alu_mv_mv_x",
         f"{_TARGET_KEY}.move.accumulator512.to.vector512",
         "register.move.accumulator512.to.vector512",
         "II_VMOV_alu_mv_mv_x_eXe_eBMLL",
@@ -1086,6 +1099,25 @@ _BASE_DESCRIPTOR_SPECS = (
         ),
         asm_mnemonic="vadd.f32x64",
     ),
+    # F32 arithmetic writes the complete DM accumulator. Packet forms constrain
+    # only the observed low-quarter inputs while retaining the full destination
+    # so allocation accounts for every clobbered accumulator quarter.
+    _DescriptorSpec(
+        "VADD_f_vmac_cm2_add_reg",
+        f"{_TARGET_KEY}.add.f32x16.configured",
+        "floating.add.f32x16.configured",
+        "II_VADD_f_vmac_cm2_add_reg",
+        storage_overrides=(
+            ("dst", "mBMs"),
+            ("acc1", "eBMLL"),
+            ("acc2", "eBMLL"),
+        ),
+        encoding_adapter_overrides=(
+            ("acc1", "LOOM_eBMLL_eDM"),
+            ("acc2", "LOOM_eBMLL_eDM"),
+        ),
+        asm_mnemonic="vadd.f32x16",
+    ),
     _DescriptorSpec(
         "VSUB_f_vmac_cm2_add_reg",
         f"{_TARGET_KEY}.sub.f32x64.configured",
@@ -1097,6 +1129,22 @@ _BASE_DESCRIPTOR_SPECS = (
             ("acc2", "mBMs"),
         ),
         asm_mnemonic="vsub.f32x64",
+    ),
+    _DescriptorSpec(
+        "VSUB_f_vmac_cm2_add_reg",
+        f"{_TARGET_KEY}.sub.f32x16.configured",
+        "floating.sub.f32x16.configured",
+        "II_VSUB_f_vmac_cm2_add_reg",
+        storage_overrides=(
+            ("dst", "mBMs"),
+            ("acc1", "eBMLL"),
+            ("acc2", "eBMLL"),
+        ),
+        encoding_adapter_overrides=(
+            ("acc1", "LOOM_eBMLL_eDM"),
+            ("acc2", "LOOM_eBMLL_eDM"),
+        ),
+        asm_mnemonic="vsub.f32x16",
     ),
     _DescriptorSpec(
         "VNEG_f",

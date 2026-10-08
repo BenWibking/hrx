@@ -126,9 +126,9 @@
         "contains": [
           "\"category\":\"compile_rejected\"",
           "\"provider\":\"vm\"",
-          "\"stage\":\"pipeline\"",
-          "\"kind\":\"ERR_LOWERING_036\"",
-          "Math legalization policy rejected an operation."
+          "\"stage\":\"compile\"",
+          "\"kind\":\"LOWERING/036\"",
+          "legalize-math policy vm-math rejected scalar.sinf"
         ]
       }
     },

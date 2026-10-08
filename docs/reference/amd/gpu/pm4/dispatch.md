@@ -10,8 +10,11 @@ arguments. [Pipeline and user-data binding][pal-program-bind]
 
 ## Applicability and executable ownership
 
-The register and GCR discussion below follows GFX10/GFX11 compute sources,
-with GFX11 instruction-prefetch details identified explicitly. The Linux
+The compiled-register and GCR examples below follow GFX10/GFX11 compute
+sources, with GFX11 instruction-prefetch details identified explicitly. The
+dispatch packet and control tables separately identify older layouts, GFX12
+graphics/compute paths and physical GC12.1 fields. A common opcode does not
+make those register layouts or engine policies interchangeable. The Linux
 GC9.4.3 trap example describes a different native context and is not a claim
 that an RDNA launch can be copied to CDNA. A native [AQL dispatch](../aql/README.md)
 consumes a descriptor through a different firmware interface; PM4 carried by an
@@ -61,10 +64,13 @@ shader-visible grid-size inputs.
 
 ## Register binding and launch
 
-SET_SH_REG uses opcode `0x76`. Its register operand is a DWORD offset from
-`0x2c00`; the compute shader type is selected in the header. The following
-intervals are the ordinary GFX11 compute binding surface, not a requirement to
-overwrite all neighboring queue-context registers. [Register map][pal-registers]
+PAL's SET_SH_REG builder uses opcode `0x76` and a DWORD register offset from
+`0x2c00`, passing `ShaderCompute` through its shared header builder. The
+[register-transport chapter](registers.md) separates the engine-specific header
+views, indexed and pair forms, memory-backed loads and their lifetimes. The
+following intervals are the ordinary GFX11 compute binding surface, not a
+requirement to overwrite all neighboring queue-context registers.
+[Register map][pal-registers]
 [Packet construction][pal-set] [Compute binding][pal-binding]
 
 | Register interval | Meaning |
@@ -90,44 +96,277 @@ Those enables belong to native queue/profiling policy. Linux's MQD initializer
 also establishes unordered dispatch and other queue context. A shader binding
 is not authority to replace these fields. [GFX11 MQD initialization][linux-mqd]
 
-DISPATCH_DIRECT is opcode `0x15`, five DWORDs: header, X/Y/Z dimensions and
-DISPATCH_INITIATOR. `USE_THREAD_DIMENSIONS` distinguishes workitem dimensions
-from workgroup counts. `FORCE_START_AT_000` selects a zero start;
-`CS_W32_EN` must agree with the program's wave mode. PAL disables predication
-on the compute engine and supplies independent tunneling/preemption controls.
-Its builder sets ORDER_MODE for unordered asynchronous-compute launch; RADV
-has a distinct ordered-dispatch path that clears it. Neither choice is a
-shader-completion or payload-visibility operation. [PAL direct dispatch][pal-dispatch]
-[RADV dispatch policy][mesa-dispatch]
+The bound program's wave size must be legal for its
+[target family](../architectures.md#wavefront-modes). For example, GFX11 supports
+wave32 and wave64; GFX12.5 supports only wave32. The source-specific initiator
+layouts below do not extend either mode availability or packet layout to
+another target. `CS_W32_EN` realizes the compiled mode; changing that bit does not
+convert an executable between widths.
 
-Word 4 of `DISPATCH_DIRECT` carries `COMPUTE_DISPATCH_INITIATOR`. The
-ordinary PAL builder initializes it to zero and fills these controls from its
-launch arguments and compute-engine policy. Bit positions below follow the
-GFX10/GFX11 register definition; the final row is explicitly GFX11.
-[Initiator layout][pal-initiator] [Direct-dispatch builder][pal-dispatch]
+PAL derives SIMD_DEST_CNTL from whether
+`ceil(workgroup_x * workgroup_y * workgroup_z / wavefront_size)` is a multiple
+of four, with settings that can override the choice. Thus a 128-workitem group
+contains four wave32 waves or two wave64 waves; changing programs can change
+this policy even when the workgroup dimensions stay the same. The wave size
+used here and in the dispatch initiator belongs to the newly bound program.
+This scheduling policy is separate from LDS allocation and does not make
+dispatch packets synchronous. [Resource-limit derivation][pal-limits]
 
-| Word 4 bit | Field | Value supplied by the ordinary builder |
+## Dispatch packets and launch controls
+
+The ordinary `DISPATCH_DIRECT` packet, opcode `0x15`, has five DWORDs in
+PAL's MEC, ME and PFP definitions. All payload words are 32 bits:
+
+| Word | Representation |
+| --- | --- |
+| 0 | Type-3 header: type 3 in bits 31:30, count 3 in bits 29:16 and opcode in bits 15:8. Low header controls have engine-specific views. |
+| 1, 2, 3 | `dim_x`, `dim_y`, `dim_z`; units and start/end interpretation follow the selected launch mode. |
+| 4 | `dispatch_initiator`, containing `COMPUTE_DISPATCH_INITIATOR`. |
+
+[Merged MEC view][pal-direct-fields] [Merged ME view][pal-me-direct-fields]
+[GFX12 MEC view][pal12-direct-fields] [GFX12 PFP view][pal12-pfp-direct-fields]
+
+Direct dimensions are copied into command storage during recording. That
+captures those scalar values, not the executable, arguments or payload to
+which the live registers refer. Their backing remains independently owned
+through the last dispatch using it; the command allocation follows its native
+submission owner's retirement protocol. [Packet construction][pal-dispatch]
+[Command lifetime](command-buffers.md)
+
+PAL's direct builders pass `ShaderCompute` to their shared header builder,
+giving ordinary unpredicated header `0xc0031502`, even though the generated
+MEC header names its low byte reserved. Compute callers disable the packet
+predicate and use a separate `COND_EXEC` when conditional execution is needed.
+Graphics callers can supply the packet predicate. These are actual emitter
+conventions, not evidence that all low-bit combinations are interchangeable.
+[Direct builder][pal-dispatch] [GFX12 builder][pal12-direct]
+[Compute caller][pal12-compute-dispatch] [Header views](registers.md#inline-consecutive-writes)
+[Conditional execution](conditional.md)
+
+### Initiator field family
+
+The following fields share positions in the cited Mesa GFX6–GFX12 register
+databases, PAL merged/GFX12 definitions and Linux native register masks, with
+the GC12.1 naming and width differences called out explicitly. Their presence
+in a definition establishes representation; the caller policies below identify
+which combinations are actually emitted.
+[Mesa legacy layout][mesa-initiator6] [Mesa GFX9/CDNA layout][mesa-initiator940]
+[PAL merged layout][pal-initiator] [PAL GFX12 layout][pal12-initiator]
+[GC12.1 layout][linux-initiator121]
+
+| Bit(s) | Field | Meaning and source boundary |
 | --- | --- | --- |
-| 0 | `COMPUTE_SHADER_EN` | 1 to enable the compute dispatch. |
-| 2 | `FORCE_START_AT_000` | Select zero start coordinates when requested. |
-| 5 | `USE_THREAD_DIMENSIONS` | 1 for workitem dimensions; 0 for workgroup counts. |
-| 6 | `ORDER_MODE` | 1 for PAL's unordered asynchronous-compute policy. |
-| 13 | `TUNNEL_ENABLE` | The caller's tunneling selection. |
-| 15 | `CS_W32_EN` | 1 for a wave32 program; 0 for wave64. |
-| 17, GFX11 | `DISABLE_DISP_PREMPT_EN` | Set by the builder's disable-partial-preemption request. |
+| 0 | `COMPUTE_SHADER_EN` | Enables the dispatch. Ordinary builders set 1. |
+| 1 | `PARTIAL_TG_EN` | Enables the programmed partial-group dimensions; used by Mesa's partial final-group paths. |
+| 2 | `FORCE_START_AT_000` | Overrides `COMPUTE_START_X/Y/Z` with zero. Offset launches leave this clear. |
+| 3 | `ORDERED_APPEND_ENBL` | The Sea Islands guide associates this with generated wave identities for ordered append. The inspected ordinary builders leave it clear. |
+| 4 | `ORDERED_APPEND_MODE` | The legacy guide distinguishes per-wave identity (0) from per-workgroup identity (1). A zero in an ordinary builder does not enable ordered append. |
+| 5 | `USE_THREAD_DIMENSIONS` | Supplies workitem dimensions for hardware group/partial-dimension calculation instead of ordinary workgroup dimensions. |
+| 6; GC12.1 7:6 | `ORDER_MODE` | The older one-bit form selects ordered (0) or unordered (1) wave launch. GC12.1's public mask is two bits; the one-bit interpretation does not define its additional encodings. |
+| 10 | `SCALAR_L1_INV_VOL`; GC12.1 `SCALAR_L0_INV` | The legacy guide specifies volatile scalar-cache invalidation for the dispatch. The newer name alone does not establish an equivalent cache protocol. |
+| 11 | `VECTOR_L1_INV_VOL`; GC12.1 `VECTOR_L0_INV` | The legacy guide specifies volatile vector-cache invalidation on participating CUs. These controls do not describe producer completion or a full payload release/acquire. |
+| 14 | `RESTORE` | The legacy guide assigns this to internal context-switch restore logic; ordinary dispatch builders leave it clear. |
 
-The other modes and reserved bits remain zero in this builder. Tunneling and
-preemption choices belong to the native launch policy; neither is derived from
-workgroup dimensions. This table describes the cited ordinary path, not every
-ordered-append or alternate-engine dispatch mode.
+[Sea Islands register guide, revision 1.0, pp. 196–197][cik-dispatch]
+[RadeonSI geometry and control construction][mesa-si-controls]
 
-PAL derives SIMD_DEST_CNTL from whether the rounded waves per workgroup are a
-multiple of four, with settings that can override the choice. This scheduling
-policy is separate from LDS allocation and does not make dispatch packets
-synchronous. [Resource-limit derivation][pal-limits]
+The remaining field positions vary by source family:
+
+| Source family | Additional declared fields; unlisted positions are unnamed in that source |
+| --- | --- |
+| Mesa GFX6, GFX7, GFX8 and GFX8.1; corresponding Linux GCA masks | Bits 9:7 `DISPATCH_CACHE_CNTL`, bit 12 `DATA_ATC`. Bit 13 and bits 31:15 are unnamed. The legacy guide assigns bits 9, 8 and 7 to scalar-L1, L2 and vector-L1 disable controls, respectively. |
+| Mesa GFX9 and GFX940; Linux GC9 masks | Bits 9:7 are unnamed and bit 12 is explicitly `RESERVED`; no wave32 or tunnel field. |
+| Mesa GFX10/GFX10.3 and Linux GC10.1/10.3 | Add bit 13 `TUNNEL_ENABLE` and bit 15 `CS_W32_EN`; bit 12 remains reserved. |
+| Mesa GFX11/GFX11.5, PAL's GFX11 overlay and Linux GC11 masks | Add bit 16 `AMP_SHADER_EN` and bit 17 `DISABLE_DISP_PREMPT_EN`; bits 31:18 remain unnamed. |
+| Mesa GFX12 and Linux GC12.0 | Bit 12 becomes `PING_PONG_EN`; add bit 18 `INTERLEAVE_2D_EN` and bits 31:29 `TTRACE_QUEUE_ID`. |
+| PAL GFX12 | Also names bit 19 `WGS_DISPATCH`, absent from the cited Mesa GFX12 and GC12.0 views. |
+| Linux GC12.1.0 | Adds bit 20 `CLUSTER_EN` as well as bit 19 `WGS_DISPATCH`; changes `ORDER_MODE` and the cache-field names as above. Bits 9:8 and 28:21 remain unnamed. |
+
+[GFX6–8 register masks][linux-initiator8] [GFX9 masks][linux-initiator9]
+[GFX10 masks][linux-initiator10] [GFX11 masks][linux-initiator11]
+[GC12.0 masks][linux-initiator120] [Mesa GFX12 layout][mesa-initiator12]
+[PAL GFX12 layout][pal12-initiator] [GC12.1 layout][linux-initiator121]
+
+`AMP_SHADER_EN` belongs to the task/amplification dispatch path, which also
+has task-ring operands and a graphics consumer. Its presence in the shared
+initiator does not make a normal compute launch a task/mesh dispatch.
+`WGS_DISPATCH`, `TTRACE_QUEUE_ID`, `DATA_ATC` and the GC12.1 extended modes have
+no ordinary software-selected semantics established by the cited direct and
+indirect callers. A named bit is not a complete programming sequence.
+[Task dispatch construction][pal-task-dispatch] [Cluster execution](../clusters.md)
+
+### Dimensions, starts and partial workgroups
+
+`COMPUTE_START_X/Y/Z` and `COMPUTE_DIM_X/Y/Z` are 32-bit coordinates. PAL's
+ordinary offset caller writes `START=offset`, clears `FORCE_START_AT_000`
+and emits `DIM=offset+launchSize`. The packet carries end coordinates, while
+the separate `logicalSize` goes to shader-ABI setup. For example, X start 3
+and five launched groups produce packet X value 8. RADV independently adds
+nonzero base offsets to its launch counts. Shader-visible logical dimensions
+and the packet's end coordinates are therefore separate inputs.
+[PAL offset caller][pal-offset] [GFX12 offset caller][pal12-offset]
+[RADV base and geometry handling][mesa-geometry]
+
+The local group registers use the following representation. The source fields
+are encoding capacities, not maximum legal workgroup sizes:
+
+| Register view | Low 16 bits | High 16 bits |
+| --- | --- | --- |
+| GFX6–GFX11 `COMPUTE_NUM_THREAD_X/Y/Z` | Bits 15:0 `NUM_THREAD_FULL`. | Bits 31:16 `NUM_THREAD_PARTIAL`. |
+| GFX12 `COMPUTE_NUM_THREAD_X/Y` | Bits 12:0 `NUM_THREAD_FULL`; bits 15:13 `INTERLEAVE_BITS_X` or `INTERLEAVE_BITS_Y`. | Bits 31:16 `NUM_THREAD_PARTIAL`. |
+| GFX12 `COMPUTE_NUM_THREAD_Z` | Bits 15:0 `NUM_THREAD_FULL`. | Bits 31:16 `NUM_THREAD_PARTIAL`. |
+
+[Mesa legacy dimensions][mesa-initiator6] [GFX12 dimensions][mesa-dimensions12]
+
+For a direct unaligned launch, RADV rounds each workitem extent up to a group
+count, programs the ordinary full size and the final group's remainder, and
+sets `PARTIAL_TG_EN`. An exactly divisible dimension uses the full size as
+its remainder, not zero. Its offsets must be divisible by local group sizes
+before conversion to group coordinates. RadeonSI similarly replaces zero
+`last_block` components with full sizes when another component needs a
+partial group. The executable must permit partial groups: encoding a remainder
+does not remove a compiled uniform-workgroup requirement or change its
+barrier contract. [RADV conversion][mesa-geometry] [RadeonSI final groups][mesa-si-controls]
+[Executable geometry](../aql/dispatch.md#arguments-geometry-and-initial-registers)
+
+The workitem-dimension path is distinct: the WDDM builder supplies its workitem
+grid with `USE_THREAD_DIMENSIONS=1`, whereas PAL's ordinary compute command
+uses group counts. RADV's indirect unaligned path also sets the workitem bit.
+RADV has another direct conversion for `CHIP_ICELAND` or `CHIP_TONGA` on its
+compute queue. That workaround predicate differs from the GFX7-only
+32-byte indirect-address repair. [WDDM launch][dxg-launch]
+[PAL compute launch][pal12-compute-dispatch] [RADV indirect path][mesa-dispatch]
+[Separate device predicates][mesa-geometry-bugs]
+
+## Launch policy and engine selection
+
+Launch order, preemption, workgroup distribution and shader completion have
+different owners:
+
+| Caller | Selected launch controls |
+| --- | --- |
+| PAL ordinary direct and MEC indirect | Initialize the initiator to zero, then set enable, start/thread mode, compiled wave mode, tunneling and partial-preemption policy. Set `ORDER_MODE=1`. Graphics-indirect builders instead leave `ORDER_MODE=0`. |
+| RADV ordinary compute | Default unordered launch only for `gfx_level >= GFX7 && (family < CHIP_GFX940 || has_graphics)`, then clear it for an explicitly ordered dispatch. Set tunneling for GFX10+; its comment attributes effective high-priority-queue permission to KMD. Its task initiator separately disables partial preemption. |
+| RadeonSI ordinary compute | Uses the same generation/graphics predicate for unordered launch, additionally requiring no ordered-atomic-add shader. Compiled wave size selects `CS_W32_EN`. |
+| WDDM `BuildDispatch` | Sets enable, force-zero-start and workitem dimensions, plus compiled wave32 mode. It does not inherit PAL's unordered or tunneling defaults. |
+
+[PAL direct][pal-dispatch] [PAL graphics indirect][pal-indirect-policies]
+[PAL MEC indirect][pal-mec-dispatch]
+[RADV defaults][mesa-launch-defaults] [RADV dispatch override][mesa-dispatch]
+[RadeonSI controls][mesa-si-controls] [WDDM launch][dxg-launch]
+
+PAL's partial-preemption input originates in
+`ComputePipelineCreateInfo::disablePartialDispatchPreemption`. Its API
+describes workgroup-level preemption when CWSR is unavailable and why
+interdependent workgroups may require this selection. The pipeline retains
+the client flag and compute callers forward it. The older builder ORs bit 17
+through a constant, without a GFX11 guard, even though its generated register
+names that bit in a GFX11 overlay and parameter comments mention GFX10.
+The exact emitter and API policy establish this distinction; the overlay is
+not an exhaustive firmware-admission predicate. GFX12's builder names the bit
+directly. Universal-queue direct and offset callers pass false in both PAL
+families; graphics-indirect has no partial-preemption input. The pipeline flag
+therefore does not apply to every caller of the shared direct builder.
+[Universal GFX10/GFX11 callers][pal-universal-preempt]
+[Universal GFX12 caller][pal12-universal-preempt]
+[Earlier offset caller][pal-universal-offset-preempt]
+[GFX12 offset caller][pal12-offset-interleave]
+[Client contract][pal-preempt-api] [Stored policy][pal-preempt-owner]
+[Bit constant][pal-preempt-bit] [GFX12 builder][pal12-direct]
+
+This flag does not disable operating-system timeouts or grant a dispatch an
+unbounded lifetime. CWSR and queue scheduling remain native context contracts.
+Likewise, `ORDER_MODE` orders wave launch rather than publishing one shader's
+stores to another; the execution/cache dependency below is still necessary.
+[Context save](../context-save.md) [Scheduling](../scheduling.md)
+
+### GFX12 distribution controls
+
+GFX12 has two different interleaves. `COMPUTE_NUM_THREAD_X/Y.INTERLEAVE_BITS_*`
+describes thread tiling within a workgroup. RadeonSI selects `(1,1)` for
+`DERIVATIVE_GROUP_QUADS`, giving a 2×2 tile. For `DERIVATIVE_GROUP_NONE` it
+chooses among 8×8, 4×8, 4×4 and 2×2 according to divisible local dimensions;
+`DERIVATIVE_GROUP_LINEAR` leaves those fields clear. This is distinct
+from `COMPUTE_DISPATCH_INTERLEAVE`, which distributes groups across shader
+engines. [RadeonSI tiling][mesa-si-interleave]
+
+| `COMPUTE_DISPATCH_INTERLEAVE` bits | GFX11 name | GFX12 name and PAL representation |
+| --- | --- | --- |
+| 9:0 | `INTERLEAVE` | `INTERLEAVE_1D`, thread count for the selected one-dimensional policy. |
+| 19:16 | Unnamed | `INTERLEAVE_2D_X_SIZE`, log2 of groups along X in the selected subgrid. |
+| 27:24 | Unnamed | `INTERLEAVE_2D_Y_SIZE`, log2 of groups along Y in the selected subgrid. |
+| 15:10, 23:20, 31:28 | Unnamed | Unnamed. |
+
+[Register layouts][pal12-initiator] [GFX11 register][pal11-interleave]
+[PAL interleave construction][pal12-interleave-build]
+
+For GFX11, PAL selects default 64 or explicit 64/128/256/512, with 1 for
+`Disable`; a device setting can override the client choice. Its conversion
+is explicitly guarded by `IsGfx11`, independently of the source directory's
+`gfx9` name. [GFX11 selection][pal11-interleave-policy]
+
+PAL's explicit one-dimensional selections emit 64, 128, 256 or 512 threads;
+its `Disable` choice emits 1. RadeonSI's comment instead lists 0 as disabled,
+while its ordinary default emits 256. These source choices do not establish
+that 0 and 1 are interchangeable. PAL's default two-dimensional choice derives
+a power-of-two group subgrid from local dimensions, limits its area to 16
+groups and has a distinct `PAL_BUILD_NAVI48 && isNavi48` branch for 2D groups.
+An explicit client selection and the default-derived pattern have different
+fallback policies. [PAL construction][pal12-interleave-build]
+[RadeonSI policy][mesa-si-interleave]
+
+PAL's GFX12 compute callers pass both ping-pong and 2D interleave as false,
+with comments identifying ACE incompatibility. On the graphics queue,
+`ValidateDispatchPalAbi` can replace a default 2D pattern with 1D for indirect
+dispatches when its setting disallows them, or for small direct dispatches.
+The small-dispatch predicate compares logical X/Y sizes against configured
+minima and their product against the selected subgrid area. Explicit client
+patterns do not use those default-only tests. [Compute path][pal12-compute-dispatch]
+[Graphics selection][pal12-interleave-select]
+
+For offset launches, PAL also requires X/Y offsets aligned to the selected
+group subgrid. With 2D enabled, it writes `START_X/Y=offset >> log2(subgrid)`;
+Z is unchanged, while packet dimensions still use `offset+launchSize`.
+Misaligned offsets select the ordinary 1D form. This mode-specific conversion
+is why a 2D launch cannot simply reuse ordinary start coordinates.
+[Offset conversion][pal12-offset-interleave]
+
+`PING_PONG_EN` reverses group walk order in PAL's builder contract. PAL's
+graphics caller honors the pipeline's reverse-order request, can alternate
+recorded dispatches from a command-buffer flag, and has separate force-on/off
+settings. Offset dispatches leave it clear. RadeonSI alternates it only on
+its graphics queue, without partial groups or an ordered-atomic-add shader.
+It does not enable its 2D-dispatch selection: that block is compiled out in
+the cited revision. Thread tiling and ping-pong can therefore be active there
+without selecting either interleaved dispatch opcode.
+[PAL walk policy][pal12-ping-pong] [RadeonSI active and disabled paths][mesa-si-interleave]
+
+PAL's builders require `PARTIAL_TG_EN=0` and `USE_THREAD_DIMENSIONS=0` for
+ping-pong; 2D dispatch additionally requires `ORDERED_APPEND_ENBL=0`.
+These distribution controls provide neither execution dependencies nor a
+measured speedup by themselves. [Builder constraints][pal12-direct]
+
+### Interleaved direct packet views
+
+`DISPATCH_DIRECT_INTERLEAVED`, opcode `0xa7`, has distinct GFX12 source
+representations. PAL's actual builder selects the PFP form:
+
+| View | Header and payload words |
+| --- | --- |
+| PFP, five DWORDs | Word 0 type-3/count 3; words 1–3 32-bit X/Y/Z dimensions; word 4 initiator. |
+| ME, seven DWORDs | Word 0 type-3/count 5; word 1 `dim_z`; words 2–3 `prescale_dim_x/y`; words 4–5 `dim_x/y`; word 6 initiator. Every payload word is 32 bits. |
+
+[PFP definition][pal12-pfp-interleaved] [ME definition][pal12-me-interleaved]
+[Actual builder][pal12-direct] [Opcodes][pal12-dispatch-opcodes]
+
+The ME structure is not the layout written by that caller. The public
+definitions and PFP producer do not establish an application-visible sequence
+for authoring the ME prescale operands. The [indirect chapter](indirect.md#interleaved-indirect-packet-views)
+records the analogous `0xa8` distinction, including its different field widths.
 
 ## Shader wait-counter mode: MEM_ORDERED
 
+In the GFX10–GFX11 `vmcnt`/`vscnt` model,
 `COMPUTE_PGM_RSRC1.MEM_ORDERED`, bit 30, controls how a wave's vector-memory
 wait counters account for completed instructions. The compiled waits and the
 bound register must agree about this mode. LLVM's descriptor table describes
@@ -163,10 +402,24 @@ labels this field GFX10–GFX12, and PAL's GFX12 register definition retains bit
 30. LLVM's GFX12 memory-model chapter instead describes separate load, store,
 sample and BVH counters, with completion ordered within each type. Mesa excludes
 GFX12 from its `MEM_ORDERED` setting and tracks sample and BVH waits separately
-there. These sources establish the field representation and Mesa's selection
-policy; they do not establish the effect of changing the bit on GFX12.
+there.
 [GFX12 register][pal-gfx12-mem-ordered] [GFX12 wait model][llvm-gfx12-waits]
 [Separate wait events][mesa-gfx12-waits]
+
+AMD's RDNA4 ISA guide, dated 7 April 2025, independently describes those
+separate counters in §5.7 and Table 26. It distinguishes counter retirement
+from memory order: loads can write VGPRs out of order while their counter
+reports completion in order; stores to different addresses need not preserve
+issue order. For stores, `STOREcnt` decrements after the write reaches the
+memory-hierarchy level selected by `SCOPE`.
+Global invalidation uses `LOADcnt`, while global writeback and
+writeback/invalidation use `STOREcnt`; issuing the cache instruction alone
+does not establish its completion. [RDNA4 dependency rules, pp. 51–55][rdna4-waits]
+
+Section 5.7 does not define `MEM_ORDERED` bit 30.
+The named field, separate-counter model and Mesa's selection policy therefore
+remain distinct evidence; they do not establish the effect of changing the
+bit on GFX12.
 
 ## Runtime trap and context state
 
@@ -199,6 +452,10 @@ path can establish a deployment-specific first-level handler. Nonzero
 topology without reporting whether a handler is installed. Debugger and
 exception policy require their own process owner information.
 [CWSR parameter][linux-cwsr-enable] [Storage calculation][linux-cwsr-size]
+
+The [context-save storage contract](../context-save.md) explains the native
+capacity calculation, per-XCC layout and MQD frontiers. It also separates
+saved-wave inspection, dispatch completion and final queue removal.
 
 ROCr's native vendor-1 AQL wrapper copies PM4 bytes and supplies completion;
 its CPU implementation does not merge shader resource fields. The separate
@@ -247,6 +504,9 @@ write a known completion value while writeback/invalidation covers shader
 L1/L2 clients. Its generic compute builder chooses BOTTOM_OF_PIPE_TS, end-of-
 pipe index 5, TC/L2 destination and write confirmation without an interrupt.
 [Queue postamble][pal-postamble] [Release builder][pal-eop]
+
+[Completion publication](release.md) describes the full field and selector
+families, native generation differences, event/notification owners and reuse.
 
 The GFX10/GFX11 MEC form has eight DWORDs:
 
@@ -336,3 +596,48 @@ join/writeback sequence.
 [pal-gfx12-mem-ordered]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_registers.h#L2486-L2508
 [mesa-gfx12-waits]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/44cc4ca677a4752a10c14194289bde5a6468675e/src/amd/compiler/aco_insert_waitcnt.cpp#L40-L71
 [llvm-gfx12-waits]: https://github.com/llvm/llvm-project/blob/6dfe1677ab8dffbc6ec13d53a1e0215d75147689/llvm/docs/AMDGPUUsage.rst#L15482-L15492
+[rdna4-waits]: https://gpuopen.com/download/rdna4-instruction-set-architecture.pdf#page=61
+[pal-direct-fields]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_f32_mec_pm4_packets.h#L921-L954
+[pal12-direct-fields]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_f32_mec_pm4_packets.h#L847-L882
+[pal12-direct]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12CmdUtil.cpp#L964-L1024
+[pal12-compute-dispatch]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L1436-L1595
+[pal12-initiator]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_registers.h#L2299-L2346
+[mesa-si-controls]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/gfx/si_compute.c#L628-L674
+[pal-task-dispatch]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9CmdUtil.cpp#L2173-L2226
+[pal-offset]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9ComputeCmdBuffer.cpp#L310-L366
+[pal12-offset]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L1533-L1595
+[mesa-geometry]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_cmd_buffer.c#L15151-L15251
+[mesa-geometry-bugs]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/common/ac_gpu_info.c#L1021-L1037
+[pal-indirect-policies]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9CmdUtil.cpp#L1275-L1301
+[mesa-launch-defaults]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_device.c#L1640-L1660
+[pal-preempt-api]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/inc/core/palPipeline.h#L320-L329
+[pal-preempt-owner]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/computePipeline.cpp#L61-L75
+[pal-preempt-bit]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9Chip.h#L614-L617
+[mesa-si-interleave]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/gfx/si_compute.c#L666-L743
+[pal12-interleave-build]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12PipelineChunkCs.cpp#L104-L273
+[pal12-interleave-select]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12UniversalCmdBuffer.cpp#L4157-L4215
+[pal12-offset-interleave]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12UniversalCmdBuffer.cpp#L4584-L4671
+[pal12-ping-pong]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12UniversalCmdBuffer.cpp#L4434-L4468
+[pal12-pfp-interleaved]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_f32_pfp_pm4_packets.h#L1049-L1082
+[pal12-me-interleaved]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_f32_me_pm4_packets.h#L837-L882
+[mesa-initiator6]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/registers/gfx6.json#L7822-L7843
+[mesa-initiator940]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/registers/gfx940.json#L2476-L2490
+[mesa-initiator12]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/registers/gfx12.json#L10517-L10537
+[mesa-dimensions12]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/registers/gfx12.json#L10557-L10576
+[cik-dispatch]: https://www.x.org/docs/AMD/old/CIK_3D_registers_v2.pdf#page=196
+[linux-initiator121]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/include/asic_reg/gc/gc_12_1_0_sh_mask.h#L9553-L9590
+[linux-initiator8]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_1_sh_mask.h#L8789-L8812
+[linux-initiator9]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/include/asic_reg/gc/gc_9_4_3_sh_mask.h#L13195-L13216
+[linux-initiator10]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_3_0_sh_mask.h#L15370-L15395
+[linux-initiator11]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/include/asic_reg/gc/gc_11_5_0_sh_mask.h#L11385-L11414
+[linux-initiator120]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/include/asic_reg/gc/gc_12_0_0_sh_mask.h#L7351-L7384
+[pal12-dispatch-opcodes]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_pm4_it_opcodes.h#L176-L177
+[pal-me-direct-fields]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_f32_me_pm4_packets.h#L915-L948
+[pal12-pfp-direct-fields]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_f32_pfp_pm4_packets.h#L1013-L1046
+[pal-mec-dispatch]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9CmdUtil.cpp#L1538-L1572
+[dxg-launch]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/libhsakmt/src/dxg/wddm/cmd_util.cpp#L283-L298
+[pal-universal-preempt]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9UniversalCmdBuffer.cpp#L3494-L3503
+[pal12-universal-preempt]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12UniversalCmdBuffer.cpp#L4511-L4518
+[pal11-interleave]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_registers.h#L4643-L4652
+[pal-universal-offset-preempt]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9UniversalCmdBuffer.cpp#L3593-L3602
+[pal11-interleave-policy]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AbiToPipelineRegisters.h#L1782-L1852

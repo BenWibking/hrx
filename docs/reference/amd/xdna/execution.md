@@ -90,6 +90,18 @@ different owners. A command count in the submission envelope is not a tile
 workgroup count, and a copied envelope does not permit the caller to overwrite
 the instruction bytes that firmware will fetch.
 
+ELF packaging retains the controller program's dialect. AIEBU's AIE2
+transaction and assembly inputs both produce AIE2 ELF, while its AIE2PS
+assembly input selects a separate encoder and ELF output type. The former
+blob writer selects OS/ABI `0x45`; the latter non-configuration writer selects
+the legacy group OS/ABI `0x46`. Their shared container format does not make
+their instructions interchangeable or establish native firmware admission.
+In particular, an AIE2 `TCT` transaction differs from CERT's `WAIT_TCTS` in
+encoding and scheduling. [Input and output selection][controller-formats]
+[AIE2 blob writer][aie2-writer] [AIE2PS blob writer][aie2ps-writer]
+[ELF platform identities][elf-platform-identities]
+[Controller task waits](dma.md#controller-task-wait-protocols)
+
 ## Host-memory translation and page pinning
 
 Linux shared virtual addressing (SVA) binds an XDNA client to the process's
@@ -370,3 +382,7 @@ clock domain, frequency history and reset epoch.
 [compaction-selection]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/mm/compaction.c#L1096-L1103
 [mmu-notifiers]: https://www.kernel.org/doc/html/latest/mm/mmu_notifier.html
 [ubuf-registration]: https://github.com/amd/xdna-driver/blob/8dfda66f67a84aecf26cf68336efc9e4cc1756c3/drivers/accel/amdxdna/amdxdna_ubuf.c#L344-L365
+[controller-formats]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/src/cpp/assembler/aiebu_assembler.cpp#L65-L92
+[aie2-writer]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/src/cpp/elf/aie2/aie2_blob_elfwriter.h#L12-L25
+[aie2ps-writer]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/src/cpp/elf/aie2ps/aie2ps_elfwriter.h#L12-L27
+[elf-platform-identities]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/src/cpp/elf/aie_elf_constants.h#L11-L29

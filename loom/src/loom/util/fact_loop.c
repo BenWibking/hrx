@@ -161,6 +161,13 @@ iree_status_t loom_value_fact_table_seed_loop_iv_arg(
                                                   step, &iv_facts);
   loom_value_id_t iv_id =
       loom_block_arg_id(block, loop.vtable->iv_block_arg_index);
+  IREE_RETURN_IF_ERROR(loom_value_fact_table_set_counted_loop_domain(
+      table, body, iv_id,
+      (loom_loop_domain_t){
+          .lower_bound = loom_loop_like_lower_bound(loop),
+          .upper_bound = loom_loop_like_upper_bound(loop),
+          .step = loom_loop_like_step(loop),
+      }));
   return loom_value_fact_table_define(table, iv_id, iv_facts);
 }
 

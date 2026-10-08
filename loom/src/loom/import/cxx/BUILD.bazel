@@ -18,6 +18,7 @@ exports_files([
     "include/hip/hip_fp16.h",
     "include/hip/hip_runtime.h",
     "include/loomcxx/atomic.h",
+    "include/loomcxx/buffer.h",
     "include/loomcxx/check.h",
     "include/loomcxx/encoding.h",
     "include/loomcxx/encoding_type.h",

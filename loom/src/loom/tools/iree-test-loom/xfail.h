@@ -15,6 +15,7 @@
 #include "loom/tooling/testbench/expectation.h"
 #include "loom/tooling/testbench/testbench.h"
 #include "loom/util/json.h"
+#include "loomc/result.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -113,6 +114,10 @@ void iree_test_loom_diagnostic_capture_begin(
 // Returns a diagnostic sink that records stable identities and writes stderr.
 loom_diagnostic_sink_t iree_test_loom_diagnostic_capture_sink(
     iree_test_loom_diagnostic_capture_t* capture);
+
+// Captures stable identities from and prints one public compiler result.
+iree_status_t iree_test_loom_diagnostic_capture_loomc_result(
+    void* user_data, const loomc_result_t* result);
 
 // Captures stable identities from an expectation report.
 void iree_test_loom_capture_expectation_report(

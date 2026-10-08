@@ -339,4 +339,41 @@ StorageAllocation Storage::allocate(const cxx::Type* type,
   return {{root, base}, view};
 }
 
+Pointer Storage::allocate_elements(const cxx::Type* element_type,
+                                   loom_value_id_t element_count,
+                                   const cxx::Type* element_count_type,
+                                   loom_value_fact_memory_space_t memory_space,
+                                   int64_t explicit_alignment,
+                                   cxx::AST* owner) {
+  auto element_bytes = types_.storage_size(element_type, owner);
+  auto* layout = unit_.control()->memoryLayout();
+  auto alignment = layout->alignmentOf(element_type);
+  if (!alignment) {
+    diagnostics_.reject(unit_, owner, "unknown object alignment");
+  }
+
+  auto source = locations_.get(owner);
+  auto wide_count =
+      scalars_.convert(element_count, element_count_type,
+                       unit_.control()->getUnsignedLongLongIntType(), owner);
+  loom_op_t* op;
+  check(loom_index_cast_build(
+      &builder_, wide_count, loom_type_scalar(LOOM_SCALAR_TYPE_I64),
+      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX), source, &op));
+  auto count = loom_op_results(op)[0];
+  auto stride =
+      scalars_.integer(element_bytes, LOOM_SCALAR_TYPE_OFFSET, source);
+  check(loom_index_scale_build(&builder_, count, stride,
+                               loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET),
+                               source, &op));
+  auto byte_length = loom_op_results(op)[0];
+  check(loom_buffer_alloca_build(
+      &builder_, memory_space,
+      std::max<int64_t>(*alignment, explicit_alignment), byte_length,
+      loom_type_buffer(), source, &op));
+  auto root = loom_op_results(op)[0];
+  auto base = scalars_.integer(0, LOOM_SCALAR_TYPE_OFFSET, source);
+  return {root, base};
+}
+
 }  // namespace loom::cxx_import

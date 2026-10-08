@@ -18,12 +18,13 @@
 #include "loom/sanitizer/options.h"
 #include "loom/tooling/cli/help.h"
 #include "loom/tooling/cli/loomc_options.h"
+#include "loom/tooling/cli/loomc_result.h"
 #include "loom/tooling/config/config.h"
 #include "loom/tooling/execution/hal/invocation.h"
 #include "loom/tooling/execution/hal/runtime.h"
 #include "loom/tooling/input/flags.h"
+#include "loom/tooling/input/loomc.h"
 #include "loom/tooling/io/file.h"
-#include "loom/tooling/io/source_path.h"
 #include "loomc/launch_config.h"
 
 IREE_FLAG(string, pipeline, "default",
@@ -200,12 +201,6 @@ IREE_FLAG_CALLBACK_NAMED(
     "Appends an expected HAL binding after dispatch. When present, one "
     "expected binding must be provided for every input binding.");
 
-static bool iree_run_loom_pipeline_is_default(iree_string_view_t pipeline) {
-  pipeline = iree_string_view_trim(pipeline);
-  return iree_string_view_is_empty(pipeline) ||
-         iree_string_view_equal(pipeline, IREE_SV("default"));
-}
-
 static iree_status_t iree_run_loom_parse_workgroup_count(
     iree_string_view_t value, uint32_t* out_workgroup_count) {
   iree_string_view_t remaining = value;
@@ -297,111 +292,6 @@ static iree_status_t iree_run_loom_append_config_options(
   return iree_ok_status();
 }
 
-static const char* iree_run_loom_diagnostic_severity_name(
-    loomc_diagnostic_severity_t severity) {
-  switch (severity) {
-    case LOOMC_DIAGNOSTIC_SEVERITY_NOTE:
-      return "note";
-    case LOOMC_DIAGNOSTIC_SEVERITY_WARNING:
-      return "warning";
-    case LOOMC_DIAGNOSTIC_SEVERITY_ERROR:
-      return "error";
-    default:
-      return "diagnostic";
-  }
-}
-
-static iree_status_t iree_run_loom_print_source_range(
-    FILE* file, const loomc_source_range_t* range,
-    const loom_tooling_source_path_options_t* source_path_options,
-    iree_allocator_t allocator) {
-  if (range == NULL || range->source == NULL) {
-    return iree_ok_status();
-  }
-  const iree_string_view_t identifier =
-      iree_string_view_from_loomc(loomc_source_identifier(range->source));
-  if (iree_string_view_is_empty(identifier)) {
-    return iree_ok_status();
-  }
-  iree_string_view_t remapped_identifier = iree_string_view_empty();
-  char* remapped_storage = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_tooling_source_path_remap(identifier, source_path_options, allocator,
-                                     &remapped_identifier, &remapped_storage));
-  fprintf(file, "%.*s", (int)remapped_identifier.size,
-          remapped_identifier.data);
-  iree_allocator_free(allocator, remapped_storage);
-  if (range->start_line != 0) {
-    fprintf(file, ":%u", range->start_line);
-    if (range->start_column != 0) {
-      fprintf(file, ":%u", range->start_column);
-    }
-  }
-  fputs(": ", file);
-  return iree_ok_status();
-}
-
-static iree_status_t iree_run_loom_print_diagnostic(
-    FILE* file, const loomc_diagnostic_t* diagnostic,
-    const loom_tooling_source_path_options_t* source_path_options,
-    iree_allocator_t allocator) {
-  if (source_path_options->prefix_maps.count == 0 &&
-      !loomc_string_view_is_empty(diagnostic->formatted_text)) {
-    fwrite(diagnostic->formatted_text.data, 1, diagnostic->formatted_text.size,
-           file);
-    return iree_ok_status();
-  }
-  IREE_RETURN_IF_ERROR(iree_run_loom_print_source_range(
-      file, &diagnostic->range, source_path_options, allocator));
-  fprintf(file, "%s",
-          iree_run_loom_diagnostic_severity_name(diagnostic->severity));
-  if (!loomc_string_view_is_empty(diagnostic->code)) {
-    fprintf(file, " [%.*s]", (int)diagnostic->code.size, diagnostic->code.data);
-  }
-  fprintf(file, ": %.*s\n", (int)diagnostic->message.size,
-          diagnostic->message.data);
-  for (loomc_host_size_t i = 0; i < diagnostic->related_location_count; ++i) {
-    const loomc_diagnostic_related_location_t* related =
-        &diagnostic->related_locations[i];
-    IREE_RETURN_IF_ERROR(iree_run_loom_print_source_range(
-        file, &related->range, source_path_options, allocator));
-    fprintf(file, "note: %.*s\n", (int)related->label.size,
-            related->label.data);
-  }
-  if (diagnostic->related_location_omitted_count != 0) {
-    fprintf(
-        file, "note: %zu additional related location%s omitted\n",
-        (size_t)diagnostic->related_location_omitted_count,
-        diagnostic->related_location_omitted_count == 1 ? " was" : "s were");
-  }
-  return iree_ok_status();
-}
-
-static iree_status_t iree_run_loom_print_result(
-    const loomc_result_t* result,
-    const loom_tooling_source_path_options_t* source_path_options,
-    iree_allocator_t allocator, bool* out_succeeded) {
-  if (result == NULL) {
-    return iree_make_status(IREE_STATUS_INTERNAL,
-                            "compiler operation returned no result");
-  }
-  for (loomc_host_size_t i = 0; i < loomc_result_diagnostic_count(result);
-       ++i) {
-    const loomc_diagnostic_t* diagnostic =
-        loomc_result_diagnostic_at(result, i);
-    if (diagnostic != NULL) {
-      IREE_RETURN_IF_ERROR(iree_run_loom_print_diagnostic(
-          stderr, diagnostic, source_path_options, allocator));
-    }
-  }
-  if (ferror(stderr)) {
-    return iree_make_status(IREE_STATUS_UNKNOWN,
-                            "failed to write compiler diagnostics");
-  }
-  *out_succeeded = loomc_result_succeeded(result);
-  return iree_ok_status();
-}
-
 static iree_status_t iree_run_loom_clone_string(iree_string_view_t value,
                                                 iree_allocator_t allocator,
                                                 iree_string_view_t* out_value,
@@ -423,12 +313,12 @@ static iree_status_t iree_run_loom_clone_string(iree_string_view_t value,
   return iree_ok_status();
 }
 
-static iree_status_t iree_run_loom_select_kernel(
-    const loomc_module_t* module,
-    const loom_tooling_source_path_options_t* source_path_options,
-    iree_allocator_t allocator, iree_string_view_t* out_root,
-    char** out_root_storage, iree_string_view_t* out_export,
-    char** out_export_storage) {
+static iree_status_t iree_run_loom_select_kernel(const loomc_module_t* module,
+                                                 iree_allocator_t allocator,
+                                                 iree_string_view_t* out_root,
+                                                 char** out_root_storage,
+                                                 iree_string_view_t* out_export,
+                                                 char** out_export_storage) {
   *out_root = iree_string_view_empty();
   *out_root_storage = NULL;
   *out_export = iree_string_view_empty();
@@ -456,8 +346,8 @@ static iree_status_t iree_run_loom_select_kernel(
         module, &query_options, loomc_allocator_from_iree(allocator), 0, NULL,
         &function_count, &query_result)));
     bool query_succeeded = false;
-    iree_status_t status = iree_run_loom_print_result(
-        query_result, source_path_options, allocator, &query_succeeded);
+    iree_status_t status = loom_tooling_cli_print_loomc_result(
+        stderr, query_result, &query_succeeded);
     loomc_result_release(query_result);
     if (!iree_status_is_ok(status)) {
       return status;
@@ -478,8 +368,8 @@ static iree_status_t iree_run_loom_select_kernel(
         function_count, functions, &function_count, &query_result));
     query_succeeded = false;
     if (iree_status_is_ok(status)) {
-      status = iree_run_loom_print_result(query_result, source_path_options,
-                                          allocator, &query_succeeded);
+      status = loom_tooling_cli_print_loomc_result(stderr, query_result,
+                                                   &query_succeeded);
     }
     loomc_result_release(query_result);
     iree_host_size_t kernel_count = 0;
@@ -528,134 +418,6 @@ static iree_status_t iree_run_loom_select_kernel(
     *out_root_storage = NULL;
   }
   return status;
-}
-
-static iree_status_t iree_run_loom_prepare_pass_program(
-    loomc_context_t* context, loomc_module_t* module,
-    iree_allocator_t allocator, loomc_pass_program_t** out_pass_program,
-    loomc_result_t** out_result) {
-  *out_pass_program = NULL;
-  *out_result = NULL;
-  const iree_string_view_t pipeline =
-      iree_string_view_trim(iree_make_cstring_view(FLAG_pipeline));
-  if (iree_run_loom_pipeline_is_default(pipeline)) {
-    return iree_ok_status();
-  }
-  const loomc_pass_program_options_t options = {
-      .type = LOOMC_STRUCTURE_TYPE_PASS_PROGRAM_OPTIONS,
-      .structure_size = sizeof(options),
-      .identifier = loomc_make_cstring_view("iree-run-loom pipeline"),
-  };
-  if (iree_string_view_equal(pipeline, IREE_SV("none"))) {
-    return iree_status_from_loomc(loomc_pass_program_create_empty(
-        context, &options, loomc_allocator_from_iree(allocator),
-        out_pass_program));
-  }
-  if (pipeline.data[0] == '@') {
-    return iree_status_from_loomc(loomc_pass_program_create_from_module_symbol(
-        module, loomc_string_view_from_iree(pipeline), &options,
-        loomc_allocator_from_iree(allocator), out_pass_program, out_result));
-  }
-  return iree_status_from_loomc(loomc_pass_program_create_from_pipeline_text(
-      context, loomc_string_view_from_iree(pipeline), &options,
-      loomc_allocator_from_iree(allocator), out_pass_program, out_result));
-}
-
-static iree_status_t iree_run_loom_admit_source(
-    const iree_run_loom_configuration_t* configuration,
-    const loom_input_options_t* input_options, iree_string_view_t input_path,
-    iree_string_view_t source_contents, loomc_context_t* context,
-    loomc_workspace_t* workspace, iree_arena_block_pool_t* block_pool,
-    iree_allocator_t allocator, loomc_source_t** out_source,
-    loomc_module_t** out_module, loomc_result_t** out_result) {
-  *out_source = NULL;
-  *out_module = NULL;
-  *out_result = NULL;
-  const iree_string_view_t physical_identifier =
-      loom_tooling_file_path_is_stdio(input_path) ? IREE_SV("<stdin>")
-                                                  : input_path;
-  const loom_input_provider_t* provider = NULL;
-  IREE_RETURN_IF_ERROR(loom_input_provider_select(
-      configuration->input_providers, input_options->format,
-      physical_identifier, &provider));
-  iree_string_view_t provider_options = iree_string_view_empty();
-  IREE_RETURN_IF_ERROR(loom_input_options_for_provider(
-      input_options->provider_options, provider->name, &provider_options));
-
-  loomc_source_format_t source_format = LOOMC_SOURCE_FORMAT_UNKNOWN;
-  if (provider == &loom_input_text_provider) {
-    source_format = LOOMC_SOURCE_FORMAT_TEXT;
-  } else if (provider == &loom_input_bytecode_provider) {
-    source_format = LOOMC_SOURCE_FORMAT_BYTECODE;
-  }
-  const loomc_source_options_t source_options = {
-      .type = LOOMC_STRUCTURE_TYPE_SOURCE_OPTIONS,
-      .structure_size = sizeof(source_options),
-      .format = source_format,
-      .identifier = loomc_string_view_from_iree(physical_identifier),
-      .contents = loomc_byte_span_from_iree(iree_make_const_byte_span(
-          source_contents.data, source_contents.size)),
-      .storage = LOOMC_SOURCE_STORAGE_BORROWED,
-  };
-  loomc_source_t* source = NULL;
-  IREE_RETURN_IF_ERROR(iree_status_from_loomc(loomc_source_create(
-      &source_options, loomc_allocator_from_iree(allocator), &source)));
-
-  iree_status_t status = iree_ok_status();
-  if (provider == &loom_input_text_provider ||
-      provider == &loom_input_bytecode_provider) {
-    if (!iree_string_view_is_empty(provider_options)) {
-      status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                                "%.*s input does not accept input options",
-                                (int)provider->name.size, provider->name.data);
-    }
-    iree_string_view_t logical_identifier = physical_identifier;
-    char* logical_identifier_storage = NULL;
-    if (iree_status_is_ok(status)) {
-      status = loom_tooling_source_path_remap(
-          physical_identifier, &input_options->source_path_options, allocator,
-          &logical_identifier, &logical_identifier_storage);
-    }
-    const loomc_module_deserialize_options_t deserialize_options = {
-        .type = LOOMC_STRUCTURE_TYPE_MODULE_DESERIALIZE_OPTIONS,
-        .structure_size = sizeof(deserialize_options),
-        .format = source_format,
-        .identifier = loomc_string_view_from_iree(logical_identifier),
-    };
-    if (iree_status_is_ok(status)) {
-      status = iree_status_from_loomc(loomc_module_deserialize_from_source(
-          context, workspace, source, &deserialize_options,
-          loomc_allocator_from_iree(allocator), out_module, out_result));
-    }
-    iree_allocator_free(allocator, logical_identifier_storage);
-  } else if (configuration->import != NULL) {
-    status =
-        configuration->import(configuration->import_user_data, provider->name,
-                              provider_options, context, workspace, source,
-                              block_pool, allocator, out_module, out_result);
-  } else {
-    status = iree_make_status(
-        IREE_STATUS_UNIMPLEMENTED,
-        "input format '%.*s' has no LoomC importer linked into this runner",
-        (int)provider->name.size, provider->name.data);
-  }
-  if (iree_status_is_ok(status)) {
-    *out_source = source;
-  } else {
-    loomc_source_release(source);
-  }
-  return status;
-}
-
-static iree_hal_physical_device_affinity_t
-iree_run_loom_dispatch_physical_device_affinity(
-    const loom_run_hal_runtime_t* runtime) {
-  const iree_hal_device_queue_spec_t* queue_spec =
-      iree_hal_device_spec_queues(iree_hal_device_spec(runtime->device));
-  const iree_hal_queue_family_ordinal_t family_ordinal =
-      iree_hal_queue_family_ordinal(
-          iree_hal_queue_family(runtime->dispatch_queue));
-  return queue_spec->families[family_ordinal].physical_device_affinity;
 }
 
 typedef struct iree_run_loom_artifacts_t {
@@ -852,7 +614,6 @@ int iree_run_loom_main(int argc, char** argv,
   loomc_context_t* context = NULL;
   loomc_workspace_t* workspace = NULL;
   loomc_compiler_t* compiler = NULL;
-  loomc_source_t* source = NULL;
   loomc_module_t* module = NULL;
   loomc_pass_program_t* pass_program = NULL;
   loomc_target_profile_t* requested_target_profile = NULL;
@@ -939,7 +700,7 @@ int iree_run_loom_main(int argc, char** argv,
   const iree_string_view_t pipeline =
       iree_string_view_trim(iree_make_cstring_view(FLAG_pipeline));
   if (iree_status_is_ok(status) && sanitizer_enabled &&
-      !iree_run_loom_pipeline_is_default(pipeline)) {
+      !loom_tooling_cli_pipeline_uses_default(pipeline)) {
     status = iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
         "--sanitizer and --sanitizer-reporting require --pipeline=default");
@@ -986,15 +747,21 @@ int iree_run_loom_main(int argc, char** argv,
         loom_tooling_read_input_file(input_path, allocator, &input_contents);
   }
   if (iree_status_is_ok(status)) {
-    status = iree_run_loom_admit_source(
-        configuration, &input_options, input_path,
-        loom_tooling_file_contents_string_view(input_contents), context,
-        workspace, &block_pool, allocator, &source, &module, &result);
+    const loom_tooling_loomc_input_options_t admission_options = {
+        .providers = configuration->input_providers,
+        .input = input_options,
+        .path = input_path,
+        .source = loom_tooling_file_contents_string_view(input_contents),
+        .import = configuration->import,
+        .import_user_data = configuration->import_user_data,
+    };
+    status = loom_tooling_input_admit_loomc_module(&admission_options, context,
+                                                   workspace, &block_pool,
+                                                   &module, &result, allocator);
   }
   if (iree_status_is_ok(status)) {
     bool admitted = false;
-    status = iree_run_loom_print_result(
-        result, &input_options.source_path_options, allocator, &admitted);
+    status = loom_tooling_cli_print_loomc_result(stderr, result, &admitted);
     if (iree_status_is_ok(status) && !admitted) {
       exit_code = 1;
     }
@@ -1003,17 +770,16 @@ int iree_run_loom_main(int argc, char** argv,
   }
   if (iree_status_is_ok(status) && exit_code == 0) {
     status = iree_run_loom_select_kernel(
-        module, &input_options.source_path_options, allocator, &root,
-        &root_storage, &export_name, &export_storage);
+        module, allocator, &root, &root_storage, &export_name, &export_storage);
   }
   if (iree_status_is_ok(status) && exit_code == 0) {
-    status = iree_run_loom_prepare_pass_program(context, module, allocator,
-                                                &pass_program, &result);
+    status = loom_tooling_cli_prepare_loomc_pass_program(
+        context, module, iree_make_cstring_view(FLAG_pipeline),
+        IREE_SV("iree-run-loom pipeline"), &pass_program, &result, allocator);
   }
   if (iree_status_is_ok(status) && result != NULL) {
     bool prepared = false;
-    status = iree_run_loom_print_result(
-        result, &input_options.source_path_options, allocator, &prepared);
+    status = loom_tooling_cli_print_loomc_result(stderr, result, &prepared);
     if (iree_status_is_ok(status) && !prepared) {
       exit_code = 1;
     }
@@ -1054,7 +820,7 @@ int iree_run_loom_main(int argc, char** argv,
         .identifier = loomc_make_cstring_view("iree-run-loom live device"),
         .device = runtime.device,
         .physical_device_affinity =
-            iree_run_loom_dispatch_physical_device_affinity(&runtime),
+            loom_run_hal_runtime_dispatch_physical_device_affinity(&runtime),
         .target_profile = requested_target_profile,
         .providers = configuration->hal_target_providers,
         .provider_count = configuration->hal_target_provider_count,
@@ -1068,8 +834,7 @@ int iree_run_loom_main(int argc, char** argv,
   }
   if (iree_status_is_ok(status) && result != NULL) {
     bool selected = false;
-    status = iree_run_loom_print_result(
-        result, &input_options.source_path_options, allocator, &selected);
+    status = loom_tooling_cli_print_loomc_result(stderr, result, &selected);
     if (iree_status_is_ok(status) && !selected) {
       exit_code = 1;
     }
@@ -1110,8 +875,7 @@ int iree_run_loom_main(int argc, char** argv,
   iree_run_loom_artifacts_t artifacts = {0};
   if (iree_status_is_ok(status) && exit_code == 0) {
     bool compiled = false;
-    status = iree_run_loom_print_result(
-        result, &input_options.source_path_options, allocator, &compiled);
+    status = loom_tooling_cli_print_loomc_result(stderr, result, &compiled);
     if (iree_status_is_ok(status)) {
       status = iree_run_loom_select_artifacts(result, &artifacts);
     }
@@ -1225,7 +989,6 @@ int iree_run_loom_main(int argc, char** argv,
   loomc_target_profile_release(requested_target_profile);
   loomc_pass_program_release(pass_program);
   loomc_module_release(module);
-  loomc_source_release(source);
   loomc_compiler_release(compiler);
   loomc_workspace_release(workspace);
   loomc_context_release(context);

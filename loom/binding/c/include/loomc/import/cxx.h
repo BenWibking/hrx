@@ -76,6 +76,36 @@ typedef struct loomc_cxx_source_provider_t {
   void* user_data;
 } loomc_cxx_source_provider_t;
 
+/// Maps a physical frontend path to the logical source identifier retained in
+/// diagnostics and imported modules.
+///
+/// The physical path remains the identity used for include lookup. Returning
+/// the same logical identifier for distinct physical sources is invalid.
+///
+/// @param user_data Caller state from the mapper descriptor.
+/// @param path Physical frontend path borrowed for this callback.
+/// @param out_identifier Receives the logical diagnostic/module identity.
+/// @return OK when the path was mapped, or a mapping failure status.
+///
+/// @lifetime
+/// The returned identifier must remain valid until the next mapper callback.
+/// The importer copies it before another callback can occur.
+///
+/// @thread_safety
+/// Calls are synchronous and sequential within one import. A mapper shared by
+/// concurrent imports must synchronize its own mutable state.
+typedef loomc_status_t(LOOMC_API_PTR* loomc_cxx_source_path_mapper_fn_t)(
+    void* user_data, loomc_string_view_t path,
+    loomc_string_view_t* out_identifier);
+
+/// Optional logical-identity mapper for retained frontend source paths.
+typedef struct loomc_cxx_source_path_mapper_t {
+  /// Callback, or NULL to retain physical frontend paths unchanged.
+  loomc_cxx_source_path_mapper_fn_t fn;
+  /// Caller-owned state borrowed until import returns.
+  void* user_data;
+} loomc_cxx_source_path_mapper_t;
+
 /// Preprocessor definition applied after the frontend's predefined macros.
 typedef struct loomc_cxx_define_t {
   /// Macro name, including parameters for a function-like macro.
@@ -106,6 +136,8 @@ typedef struct loomc_cxx_import_options_t {
   loomc_cxx_import_flags_t flags;
   /// Optional include provider; embedded headers are resolved separately.
   loomc_cxx_source_provider_t source_provider;
+  /// Optional mapping from physical paths to retained logical identities.
+  loomc_cxx_source_path_mapper_t source_path_mapper;
   /// User include directories, searched after quoted local includes.
   const loomc_string_view_t* include_paths;
   /// Number of user include directories.

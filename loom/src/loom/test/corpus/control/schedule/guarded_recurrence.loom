@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // Serial, pipelined, and pipelined-unrolled schedules evaluate each guarded
 // recurrence in one checked program. Each iteration queues its predicate with
 // its guarded payload; a separate guarded recurrence consumes both later. The
@@ -163,6 +157,104 @@ kernel.def @guarded_varying_variants() {
   kernel.return
 }
 
+// The VM oracle evaluates the same guarded reduction serially without schedule annotations.
+func.def @guarded_variants_oracle(%row_count: index, %flag_buffer: buffer, %value_buffer: buffer, %output_buffer: buffer) {
+  %count = index.assume %row_count [range(%row_count, 0, 16)] : index
+  %begin = index.constant 0 : index
+  %lane_count = index.constant 2 : index
+  %step = index.constant 1 : index
+  %threshold = scalar.constant 0 : i32
+  %initial = scalar.constant 0.0 : f32
+  %base = index.constant 0 : offset
+  %pipelined_offset = index.constant 2 : index
+  %unrolled_offset = index.constant 4 : index
+  %flags = buffer.view %flag_buffer[%base] : buffer -> view<16x17xi32>
+  %values = buffer.view %value_buffer[%base] : buffer -> view<16x17xf32>
+  %output = buffer.view %output_buffer[%base] : buffer -> view<6xf32>
+  scf.for %lane = [%begin to %lane_count step %step] {
+    %sum = scf.for %row = [%begin to %count step %step](%accumulator = %initial : f32) -> (f32) {
+      %flag = view.load %flags[%row, %lane] : view<16x17xi32> -> i32
+      %valid = scalar.cmpi sgt, %flag, %threshold : i32
+      %next = scf.if %valid -> (f32) {
+        %value = view.load %values[%row, %lane] : view<16x17xf32> -> f32
+        %updated = scalar.addf %accumulator, %value : f32
+        scf.yield %updated : f32
+      } else {
+        scf.yield %accumulator : f32
+      }
+      scf.yield %next : f32
+    }
+    %pipelined_position = index.add %lane, %pipelined_offset : index
+    %unrolled_position = index.add %lane, %unrolled_offset : index
+    view.store %sum, %output[%lane] : f32, view<6xf32>
+    view.store %sum, %output[%pipelined_position] : f32, view<6xf32>
+    view.store %sum, %output[%unrolled_position] : f32, view<6xf32>
+  }
+  func.return
+}
+
+check.scenario @guarded_uniform_values {
+  // Exercise every legal row count with alternating lane predicates.
+  check.trial[17](%row_count: index, %entropy: check.entropy) {
+    %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
+    %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
+    %output = check.generate.fill value(-1.0) : tensor<6xf32>
+    check.compare<@guarded_uniform_variants, @guarded_variants_oracle>(%row_count, %flags, %values, %output) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>) -> () {
+      check.expect.close actual(%output) expected(%output) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %row_count = check.literal value(16) : index
+    %flags = check.generate.fill value(-1) : tensor<16x17xi32>
+    %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
+    %output = check.generate.fill value(-1.0) : tensor<6xf32>
+    check.compare<@guarded_uniform_variants, @guarded_variants_oracle>(%row_count, %flags, %values, %output) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>) -> () {
+      check.expect.close actual(%output) expected(%output) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %row_count = check.literal value(16) : index
+    %flags = check.generate.fill value(1) : tensor<16x17xi32>
+    %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
+    %output = check.generate.fill value(-1.0) : tensor<6xf32>
+    check.compare<@guarded_uniform_variants, @guarded_variants_oracle>(%row_count, %flags, %values, %output) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>) -> () {
+      check.expect.close actual(%output) expected(%output) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
+    }
+  }
+  check.return
+}
+
+check.scenario @guarded_varying_values {
+  // Exercise every legal row count with alternating lane predicates.
+  check.trial[17](%row_count: index, %entropy: check.entropy) {
+    %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
+    %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
+    %output = check.generate.fill value(-1.0) : tensor<6xf32>
+    check.compare<@guarded_varying_variants, @guarded_variants_oracle>(%row_count, %flags, %values, %output) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>) -> () {
+      check.expect.close actual(%output) expected(%output) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %row_count = check.literal value(16) : index
+    %flags = check.generate.fill value(-1) : tensor<16x17xi32>
+    %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
+    %output = check.generate.fill value(-1.0) : tensor<6xf32>
+    check.compare<@guarded_varying_variants, @guarded_variants_oracle>(%row_count, %flags, %values, %output) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>) -> () {
+      check.expect.close actual(%output) expected(%output) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %row_count = check.literal value(16) : index
+    %flags = check.generate.fill value(1) : tensor<16x17xi32>
+    %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
+    %output = check.generate.fill value(-1.0) : tensor<6xf32>
+    check.compare<@guarded_varying_variants, @guarded_variants_oracle>(%row_count, %flags, %values, %output) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>) -> () {
+      check.expect.close actual(%output) expected(%output) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
+    }
+  }
+  check.return
+}
+
 kernel.def @guarded_state_variants() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
@@ -196,6 +288,104 @@ kernel.def @guarded_state_variants() {
   kernel.return
 }
 
+func.def @guarded_state_oracle(%row_count: index, %initial_bits: i32, %flag_buffer: buffer, %value_buffer: buffer, %sum_buffer: buffer, %last_buffer: buffer) {
+  %count = index.assume %row_count [range(%row_count, 0, 16)] : index
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %threshold = scalar.constant 0 : i32
+  %initial = scalar.bitcast %initial_bits : i32 to f32
+  %base = index.constant 0 : offset
+  %flags = buffer.view %flag_buffer[%base] : buffer -> view<16xi32>
+  %values = buffer.view %value_buffer[%base] : buffer -> view<16xf32>
+  %sum_output = buffer.view %sum_buffer[%base] : buffer -> view<3xf32>
+  %last_output = buffer.view %last_buffer[%base] : buffer -> view<3xf32>
+  %sum, %last = scf.for %row = [%begin to %count step %step](%accumulator = %initial : f32, %selected = %initial : f32) -> (f32, f32) {
+    %flag = view.load %flags[%row] : view<16xi32> -> i32
+    %valid = scalar.cmpi sgt, %flag, %threshold : i32
+    %next_sum, %next_last = scf.if %valid -> (f32, f32) {
+      %value = view.load %values[%row] : view<16xf32> -> f32
+      %updated = scalar.addf %accumulator, %value : f32
+      scf.yield %updated, %value : f32, f32
+    } else {
+      scf.yield %accumulator, %selected : f32, f32
+    }
+    scf.yield %next_sum, %next_last : f32, f32
+  }
+  view.store %sum, %sum_output[0] : f32, view<3xf32>
+  view.store %sum, %sum_output[1] : f32, view<3xf32>
+  view.store %sum, %sum_output[2] : f32, view<3xf32>
+  view.store %last, %last_output[0] : f32, view<3xf32>
+  view.store %last, %last_output[1] : f32, view<3xf32>
+  view.store %last, %last_output[2] : f32, view<3xf32>
+  func.return
+}
+
+check.scenario @guarded_state_values {
+  // Source order distinguishes the strict recurrence from reassociation.
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %row_count = check.literal value(3) : index
+    %initial = check.literal value(0) : i32
+    %flags = check.generate.fill value(1) : tensor<16xi32>
+    %values = check.generate.iota offset(16777216.0) step(-16777215.0) : tensor<16xf32>
+    %sum = check.generate.fill value(nan) : tensor<3xf32>
+    %last = check.generate.fill value(nan) : tensor<3xf32>
+    check.compare<@guarded_state_variants, @guarded_state_oracle>(%row_count, %initial, %flags, %values, %sum, %last) : (index, i32, tensor<16xi32>, tensor<16xf32>, tensor<3xf32>, tensor<3xf32>) -> () {
+      check.expect.bitwise actual(%sum) expected(%sum) : tensor<3xf32>
+      check.expect.bitwise actual(%last) expected(%last) : tensor<3xf32>
+    }
+  }
+  // Skipped updates must forward both carried values without loading payloads.
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %row_count = check.literal value(9) : index
+    %initial = check.literal value(-2147483648) : i32
+    %flags = check.generate.fill value(-1) : tensor<16xi32>
+    %values = check.generate.fill value(nan) : tensor<1xf32>
+    %sum = check.generate.fill value(1.0) : tensor<3xf32>
+    %last = check.generate.fill value(1.0) : tensor<3xf32>
+    check.compare<@guarded_state_variants, @guarded_state_oracle>(%row_count, %initial, %flags, %values, %sum, %last) : (index, i32, tensor<16xi32>, tensor<1xf32>, tensor<3xf32>, tensor<3xf32>) -> () {
+      check.expect.bitwise actual(%sum) expected(%sum) : tensor<3xf32>
+      check.expect.bitwise actual(%last) expected(%last) : tensor<3xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %row_count = check.literal value(7) : index
+    %initial = check.literal value(2143289344) : i32
+    %flags = check.generate.fill value(-1) : tensor<16xi32>
+    %values = check.generate.fill value(1.0) : tensor<1xf32>
+    %sum = check.generate.fill value(0.0) : tensor<3xf32>
+    %last = check.generate.fill value(0.0) : tensor<3xf32>
+    check.compare<@guarded_state_variants, @guarded_state_oracle>(%row_count, %initial, %flags, %values, %sum, %last) : (index, i32, tensor<16xi32>, tensor<1xf32>, tensor<3xf32>, tensor<3xf32>) -> () {
+      check.expect.bitwise actual(%sum) expected(%sum) : tensor<3xf32>
+      check.expect.bitwise actual(%last) expected(%last) : tensor<3xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %row_count = check.literal value(5) : index
+    %initial = check.literal value(0) : i32
+    %flags = check.generate.fill value(1) : tensor<16xi32>
+    %values = check.generate.fill value(inf) : tensor<16xf32>
+    %sum = check.generate.fill value(nan) : tensor<3xf32>
+    %last = check.generate.fill value(nan) : tensor<3xf32>
+    check.compare<@guarded_state_variants, @guarded_state_oracle>(%row_count, %initial, %flags, %values, %sum, %last) : (index, i32, tensor<16xi32>, tensor<16xf32>, tensor<3xf32>, tensor<3xf32>) -> () {
+      check.expect.bitwise actual(%sum) expected(%sum) : tensor<3xf32>
+      check.expect.bitwise actual(%last) expected(%last) : tensor<3xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %row_count = check.literal value(5) : index
+    %initial = check.literal value(2139095040) : i32
+    %flags = check.generate.fill value(1) : tensor<16xi32>
+    %values = check.generate.fill value(-inf) : tensor<16xf32>
+    %sum = check.generate.fill value(0.0) : tensor<3xf32>
+    %last = check.generate.fill value(0.0) : tensor<3xf32>
+    check.compare<@guarded_state_variants, @guarded_state_oracle>(%row_count, %initial, %flags, %values, %sum, %last) : (index, i32, tensor<16xi32>, tensor<16xf32>, tensor<3xf32>, tensor<3xf32>) -> () {
+      check.expect.close actual(%sum) expected(%sum) atol(0.0) rtol(0.0) nan(same) : tensor<3xf32>
+      check.expect.bitwise actual(%last) expected(%last) : tensor<3xf32>
+    }
+  }
+  check.return
+}
+
 kernel.def @segmented_guarded_read_ahead_variants() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
@@ -221,309 +411,78 @@ kernel.def @segmented_guarded_read_ahead_variants() {
   kernel.return
 }
 
-// Lane 0 sums odd rows: 17*m*m + m, where m=floor(N/2).
-// Lane 1 sums even rows: 17*k*(k-1) + 2*k, where k=ceil(N/2).
-// This closed form is independent of the loop/pipeline implementation.
-check.case @predicate_queue_n0 {
-  %count = check.literal value(0) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(0.0) step(0.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
+// The VM oracle preserves segment and element order without pipelined read-ahead.
+func.def @segmented_guarded_read_ahead_oracle(%flag_buffer: buffer, %value_buffer: buffer, %output_buffer: buffer, %length: index) {
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %segment_count = index.constant 8 : index
+  %segment_length = index.constant 64 : index
+  %end = index.assume %length [range(%length, 0, 64)] : index
+  %threshold = scalar.constant 0 : i32
+  %initial = scalar.constant 0.0 : f32
+  %base_offset = index.constant 0 : offset
+  %flags = buffer.view %flag_buffer[%base_offset] : buffer -> view<32768xi32>
+  %values = buffer.view %value_buffer[%base_offset] : buffer -> view<32768xf32>
+  %output = buffer.view %output_buffer[%base_offset] : buffer -> view<3xf32>
+  %result = scf.for %segment = [%begin to %segment_count step %step](%accumulator = %initial : f32) -> (f32) {
+    %base = index.mul %segment, %segment_length : index
+    %partial = scf.for %i = [%begin to %end step %step](%sum = %accumulator : f32) -> (f32) {
+      %position = index.add %base, %i : index
+      %flag = view.load %flags[%position] : view<32768xi32> -> i32
+      %valid = scalar.cmpi sgt, %flag, %threshold : i32
+      %next = scf.if %valid -> (f32) {
+        %value = view.load %values[%position] : view<32768xf32> -> f32
+        %updated = scalar.addf %sum, %value : f32
+        scf.yield %updated : f32
+      } else {
+        scf.yield %sum : f32
+      }
+      scf.yield %next : f32
+    }
+    scf.yield %partial : f32
+  }
+  view.store %result, %output[0] : f32, view<3xf32>
+  view.store %result, %output[1] : f32, view<3xf32>
+  view.store %result, %output[2] : f32, view<3xf32>
+  func.return
 }
 
-check.case @predicate_queue_n1 {
-  %count = check.literal value(1) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(0.0) step(2.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_n2 {
-  %count = check.literal value(2) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(18.0) step(-16.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_n3 {
-  %count = check.literal value(3) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(18.0) step(20.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_n4 {
-  %count = check.literal value(4) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(70.0) step(-32.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_n5 {
-  %count = check.literal value(5) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(70.0) step(38.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_n7 {
-  %count = check.literal value(7) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(156.0) step(56.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_n8 {
-  %count = check.literal value(8) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(276.0) step(-64.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_n9 {
-  %count = check.literal value(9) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(276.0) step(74.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_n15 {
-  %count = check.literal value(15) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(840.0) step(128.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_n16 {
-  %count = check.literal value(16) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(1096.0) step(-128.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_all_masked {
-  %count = check.literal value(16) : index
-  %flags = check.generate.fill value(-1) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(0.0) step(0.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-check.case @predicate_queue_all_active {
-  %count = check.literal value(16) : index
-  %flags = check.generate.fill value(1) : tensor<16x17xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<16x17xf32>
-  %uniform = check.generate.fill value(-1.0) : tensor<6xf32>
-  %varying = check.generate.fill value(-1.0) : tensor<6xf32>
-  %expected = check.generate.iota offset(2056.0) step(16.0) period(2) : tensor<6xf32>
-  kernel.launch @guarded_uniform_variants(%count, %flags, %values, %uniform) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  kernel.launch @guarded_varying_variants(%count, %flags, %values, %varying) : (index, tensor<16x17xi32>, tensor<16x17xf32>, tensor<6xf32>)
-  check.expect.close actual(%uniform) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.expect.close actual(%varying) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<6xf32>
-  check.return
-}
-
-// Eight segments preserve independent live predicate queues while each
-// schedule evaluates the same guarded reduction.
-check.case @segmented_predicate_queues_n0 {
-  %count = check.literal value(0) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<32768xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<32768xf32>
-  %actual = check.generate.fill value(-1.0) : tensor<3xf32>
-  %expected = check.generate.fill value(0.0) : tensor<3xf32>
-  kernel.launch @segmented_guarded_read_ahead_variants(%flags, %values, %actual, %count) : (tensor<32768xi32>, tensor<32768xf32>, tensor<3xf32>, index)
-  check.expect.close actual(%actual) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<3xf32>
-  check.return
-}
-
-check.case @segmented_predicate_queues_n3 {
-  %count = check.literal value(3) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<32768xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<32768xf32>
-  %actual = check.generate.fill value(-1.0) : tensor<3xf32>
-  %expected = check.generate.fill value(1808.0) : tensor<3xf32>
-  kernel.launch @segmented_guarded_read_ahead_variants(%flags, %values, %actual, %count) : (tensor<32768xi32>, tensor<32768xf32>, tensor<3xf32>, index)
-  check.expect.close actual(%actual) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<3xf32>
-  check.return
-}
-
-check.case @segmented_predicate_queues_n7 {
-  %count = check.literal value(7) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<32768xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<32768xf32>
-  %actual = check.generate.fill value(-1.0) : tensor<3xf32>
-  %expected = check.generate.fill value(5472.0) : tensor<3xf32>
-  kernel.launch @segmented_guarded_read_ahead_variants(%flags, %values, %actual, %count) : (tensor<32768xi32>, tensor<32768xf32>, tensor<3xf32>, index)
-  check.expect.close actual(%actual) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<3xf32>
-  check.return
-}
-
-check.case @segmented_predicate_queues_n64 {
-  %count = check.literal value(64) : index
-  %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<32768xi32>
-  %values = check.generate.iota offset(1.0) step(1.0) : tensor<32768xf32>
-  %actual = check.generate.fill value(-1.0) : tensor<3xf32>
-  %expected = check.generate.fill value(65792.0) : tensor<3xf32>
-  kernel.launch @segmented_guarded_read_ahead_variants(%flags, %values, %actual, %count) : (tensor<32768xi32>, tensor<32768xf32>, tensor<3xf32>, index)
-  check.expect.close actual(%actual) expected(%expected) atol(0.0) rtol(0.0) nan(same) : tensor<3xf32>
-  check.return
-}
-
-// The strict recurrence must retain source order: (2^24 + 1) - (2^24 - 2)
-// rounds to 2, while reassociating the final two terms produces 3.
-check.case @guarded_state_strict_cancellation {
-  %count = check.literal value(3) : index
-  %initial = check.literal value(0) : i32
-  %flags = check.generate.fill value(1) : tensor<16xi32>
-  %values = check.generate.iota offset(16777216.0) step(-16777215.0) : tensor<16xf32>
-  %sum = check.generate.fill value(nan) : tensor<3xf32>
-  %last = check.generate.fill value(nan) : tensor<3xf32>
-  %expected_sum = check.generate.fill value(2.0) : tensor<3xf32>
-  %expected_last = check.generate.fill value(-16777214.0) : tensor<3xf32>
-  kernel.launch @guarded_state_variants(%count, %initial, %flags, %values, %sum, %last) : (index, i32, tensor<16xi32>, tensor<16xf32>, tensor<3xf32>, tensor<3xf32>)
-  check.expect.bitwise actual(%sum) expected(%expected_sum) : tensor<3xf32>
-  check.expect.bitwise actual(%last) expected(%expected_last) : tensor<3xf32>
-  check.return
-}
-
-// A skipped update forwards both carried values exactly. The one-element input
-// also makes every payload address after the first invalid under access checks.
-check.case @guarded_state_skipped_negative_zero {
-  %count = check.literal value(9) : index
-  %initial = check.literal value(-2147483648) : i32
-  %flags = check.generate.fill value(-1) : tensor<16xi32>
-  %values = check.generate.fill value(nan) : tensor<1xf32>
-  %sum = check.generate.fill value(1.0) : tensor<3xf32>
-  %last = check.generate.fill value(1.0) : tensor<3xf32>
-  %expected = check.generate.fill value(-0.0) : tensor<3xf32>
-  kernel.launch @guarded_state_variants(%count, %initial, %flags, %values, %sum, %last) : (index, i32, tensor<16xi32>, tensor<1xf32>, tensor<3xf32>, tensor<3xf32>)
-  check.expect.bitwise actual(%sum) expected(%expected) : tensor<3xf32>
-  check.expect.bitwise actual(%last) expected(%expected) : tensor<3xf32>
-  check.return
-}
-
-check.case @guarded_state_skipped_nan {
-  %count = check.literal value(7) : index
-  %initial = check.literal value(2143289344) : i32
-  %flags = check.generate.fill value(-1) : tensor<16xi32>
-  %values = check.generate.fill value(1.0) : tensor<1xf32>
-  %sum = check.generate.fill value(0.0) : tensor<3xf32>
-  %last = check.generate.fill value(0.0) : tensor<3xf32>
-  %expected = check.generate.fill value(nan) : tensor<3xf32>
-  kernel.launch @guarded_state_variants(%count, %initial, %flags, %values, %sum, %last) : (index, i32, tensor<16xi32>, tensor<1xf32>, tensor<3xf32>, tensor<3xf32>)
-  check.expect.bitwise actual(%sum) expected(%expected) : tensor<3xf32>
-  check.expect.bitwise actual(%last) expected(%expected) : tensor<3xf32>
-  check.return
-}
-
-check.case @guarded_state_active_infinity {
-  %count = check.literal value(5) : index
-  %initial = check.literal value(0) : i32
-  %flags = check.generate.fill value(1) : tensor<16xi32>
-  %values = check.generate.fill value(inf) : tensor<16xf32>
-  %sum = check.generate.fill value(nan) : tensor<3xf32>
-  %last = check.generate.fill value(nan) : tensor<3xf32>
-  %expected = check.generate.fill value(inf) : tensor<3xf32>
-  kernel.launch @guarded_state_variants(%count, %initial, %flags, %values, %sum, %last) : (index, i32, tensor<16xi32>, tensor<16xf32>, tensor<3xf32>, tensor<3xf32>)
-  check.expect.bitwise actual(%sum) expected(%expected) : tensor<3xf32>
-  check.expect.bitwise actual(%last) expected(%expected) : tensor<3xf32>
-  check.return
-}
-
-check.case @guarded_state_active_nan {
-  %count = check.literal value(5) : index
-  %initial = check.literal value(2139095040) : i32
-  %flags = check.generate.fill value(1) : tensor<16xi32>
-  %values = check.generate.fill value(-inf) : tensor<16xf32>
-  %sum = check.generate.fill value(0.0) : tensor<3xf32>
-  %last = check.generate.fill value(0.0) : tensor<3xf32>
-  %expected_sum = check.generate.fill value(nan) : tensor<3xf32>
-  %expected_last = check.generate.fill value(-inf) : tensor<3xf32>
-  kernel.launch @guarded_state_variants(%count, %initial, %flags, %values, %sum, %last) : (index, i32, tensor<16xi32>, tensor<16xf32>, tensor<3xf32>, tensor<3xf32>)
-  check.expect.close actual(%sum) expected(%expected_sum) atol(0.0) rtol(0.0) nan(same) : tensor<3xf32>
-  check.expect.bitwise actual(%last) expected(%expected_last) : tensor<3xf32>
+check.scenario @segmented_guarded_read_ahead_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %length = check.literal value(0) : index
+    %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<32768xi32>
+    %values = check.generate.iota offset(1.0) step(1.0) : tensor<32768xf32>
+    %output = check.generate.fill value(-1.0) : tensor<3xf32>
+    check.compare<@segmented_guarded_read_ahead_variants, @segmented_guarded_read_ahead_oracle>(%flags, %values, %output, %length) : (tensor<32768xi32>, tensor<32768xf32>, tensor<3xf32>, index) -> () {
+      check.expect.close actual(%output) expected(%output) atol(0.0) rtol(0.0) nan(same) : tensor<3xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %length = check.literal value(3) : index
+    %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<32768xi32>
+    %values = check.generate.iota offset(1.0) step(1.0) : tensor<32768xf32>
+    %output = check.generate.fill value(-1.0) : tensor<3xf32>
+    check.compare<@segmented_guarded_read_ahead_variants, @segmented_guarded_read_ahead_oracle>(%flags, %values, %output, %length) : (tensor<32768xi32>, tensor<32768xf32>, tensor<3xf32>, index) -> () {
+      check.expect.close actual(%output) expected(%output) atol(0.0) rtol(0.0) nan(same) : tensor<3xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %length = check.literal value(7) : index
+    %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<32768xi32>
+    %values = check.generate.iota offset(1.0) step(1.0) : tensor<32768xf32>
+    %output = check.generate.fill value(-1.0) : tensor<3xf32>
+    check.compare<@segmented_guarded_read_ahead_variants, @segmented_guarded_read_ahead_oracle>(%flags, %values, %output, %length) : (tensor<32768xi32>, tensor<32768xf32>, tensor<3xf32>, index) -> () {
+      check.expect.close actual(%output) expected(%output) atol(0.0) rtol(0.0) nan(same) : tensor<3xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %length = check.literal value(64) : index
+    %flags = check.generate.iota offset(-1) step(2) period(2) : tensor<32768xi32>
+    %values = check.generate.iota offset(1.0) step(1.0) : tensor<32768xf32>
+    %output = check.generate.fill value(-1.0) : tensor<3xf32>
+    check.compare<@segmented_guarded_read_ahead_variants, @segmented_guarded_read_ahead_oracle>(%flags, %values, %output, %length) : (tensor<32768xi32>, tensor<32768xf32>, tensor<3xf32>, index) -> () {
+      check.expect.close actual(%output) expected(%output) atol(0.0) rtol(0.0) nan(same) : tensor<3xf32>
+    }
+  }
   check.return
 }

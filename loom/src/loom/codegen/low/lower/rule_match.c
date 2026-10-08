@@ -396,23 +396,13 @@ static bool loom_low_lower_rule_integer_element_range_facts(
     return true;
   }
 
-  loom_value_fact_vector_iota_t iota = {0};
   uint64_t lane_count = 0;
-  int64_t base = 0;
-  int64_t step = 0;
-  if (loom_value_facts_query_vector_iota(&fact_table->context, facts, &iota) &&
-      loom_type_static_element_count(type, &lane_count) && lane_count > 0 &&
-      loom_value_facts_as_exact_i64(iota.base, &base) &&
-      loom_value_facts_as_exact_i64(iota.step, &step) &&
-      lane_count <= (uint64_t)INT64_MAX) {
-    int64_t final_delta = 0;
-    int64_t final_value = 0;
-    if (!iree_checked_mul_i64((int64_t)(lane_count - 1), step, &final_delta) ||
-        !iree_checked_add_i64(base, final_delta, &final_value)) {
-      return false;
-    }
-    *out_facts = loom_value_facts_make(iree_min(base, final_value),
-                                       iree_max(base, final_value), 1);
+  int64_t lower = 0;
+  int64_t upper = 0;
+  if (loom_type_static_element_count(type, &lane_count) && lane_count > 0 &&
+      loom_value_facts_query_vector_integer_bounds(
+          &fact_table->context, facts, lane_count, &lower, &upper)) {
+    *out_facts = loom_value_facts_make(lower, upper, 1);
     return true;
   }
 

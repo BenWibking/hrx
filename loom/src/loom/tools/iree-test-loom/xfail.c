@@ -6,53 +6,22 @@
 
 #include "loom/tools/iree-test-loom/xfail.h"
 
-#include <stdio.h>
 #include <string.h>
+
+#include "loom/tooling/cli/loomc_result.h"
+#include "loomc/iree.h"
 
 static iree_status_t iree_test_loom_parse_diagnostic_ref(
     iree_string_view_t value, loom_error_ref_t* out_ref) {
-  *out_ref = LOOM_ERROR_REF_NONE;
-  iree_string_view_t domain_text = iree_string_view_empty();
-  iree_string_view_t code_text = iree_string_view_empty();
-  if (iree_string_view_split(value, '/', &domain_text, &code_text) < 0 ||
-      iree_string_view_is_empty(domain_text) ||
-      iree_string_view_is_empty(code_text)) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "expected diagnostic identity DOMAIN/NNN, got "
-                            "'%.*s'",
-                            (int)value.size, value.data);
-  }
-
-  loom_error_domain_t domain = LOOM_ERROR_DOMAIN_COUNT_;
-  if (!loom_error_domain_from_name(domain_text, &domain)) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "unknown diagnostic domain '%.*s'",
-                            (int)domain_text.size, domain_text.data);
-  }
-  uint32_t code = 0;
-  if (!iree_string_view_atoi_uint32_base(code_text, 10, &code) || code == 0 ||
-      code > LOOM_ERROR_REF_CODE_MASK) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "invalid diagnostic code '%.*s'",
-                            (int)code_text.size, code_text.data);
-  }
-  char canonical_code[6] = {0};
-  const int canonical_code_length =
-      snprintf(canonical_code, sizeof(canonical_code), "%03u", code);
-  if (canonical_code_length < 0 ||
-      !iree_string_view_equal(
-          code_text,
-          iree_make_string_view(canonical_code, canonical_code_length))) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "diagnostic code must use canonical zero-padded "
-                            "spelling, got '%.*s'",
-                            (int)code_text.size, code_text.data);
+  if (!loom_error_ref_parse(value, out_ref)) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "expected canonical diagnostic identity DOMAIN/NNN, got '%.*s'",
+        (int)value.size, value.data);
   }
   // Target diagnostics live in optional catalog shards that the test runner
   // does not own. Execution still fails loud for an unknown identity because
   // no emitted diagnostic can match the parsed reference.
-  const loom_error_ref_t ref = LOOM_ERROR_REF(domain, code);
-  *out_ref = ref;
   return iree_ok_status();
 }
 
@@ -265,6 +234,33 @@ loom_diagnostic_sink_t iree_test_loom_diagnostic_capture_sink(
       .fn = iree_test_loom_capture_diagnostic,
       .user_data = capture,
   };
+}
+
+iree_status_t iree_test_loom_diagnostic_capture_loomc_result(
+    void* user_data, const loomc_result_t* result) {
+  iree_test_loom_diagnostic_capture_t* capture = user_data;
+  for (loomc_host_size_t i = 0; i < loomc_result_diagnostic_count(result);
+       ++i) {
+    const loomc_diagnostic_t* diagnostic =
+        loomc_result_diagnostic_at(result, i);
+    if (diagnostic->severity != LOOMC_DIAGNOSTIC_SEVERITY_ERROR) {
+      continue;
+    }
+    loom_error_ref_t ref = LOOM_ERROR_REF_NONE;
+    if (!loom_error_ref_parse(iree_string_view_from_loomc(diagnostic->code),
+                              &ref)) {
+      continue;
+    }
+    if (!loom_error_ref_is_set(capture->first_error_ref)) {
+      capture->first_error_ref = ref;
+    }
+    if (capture->active_xfail != NULL &&
+        iree_test_loom_xfail_accepts_diagnostic(capture->active_xfail, ref)) {
+      capture->matched_expected_diagnostic = true;
+    }
+  }
+  bool succeeded = false;
+  return loom_tooling_cli_print_loomc_result(stderr, result, &succeeded);
 }
 
 void iree_test_loom_capture_expectation_report(

@@ -6,12 +6,17 @@
 
 #include "loom/transforms/vector/combine_patterns.h"
 
+#include "iree/base/internal/math.h"
+#include "loom/analysis/symbolic_expr_proof.h"
+#include "loom/ir/attribute.h"
 #include "loom/ir/module.h"
+#include "loom/ops/index/carrier.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/vector/construction.h"
 #include "loom/ops/vector/ops.h"
 #include "loom/ops/vector/table.h"
 #include "loom/rewrite/rewriter.h"
+#include "loom/transforms/cleanup/patterns.h"
 #include "loom/transforms/conversion/chain.h"
 
 static loom_op_t* loom_vector_combine_defining_op(
@@ -309,7 +314,98 @@ static iree_status_t loom_vector_table_lookup_to_shuffle_pattern(
   return loom_vector_table_lookup_to_shuffle(op, rewriter, out_changed);
 }
 
+static iree_status_t loom_vector_mask_range_relations_pattern(
+    const loom_rewrite_pattern_t* pattern, void* context, loom_op_t* op,
+    loom_rewriter_t* rewriter, bool* out_changed) {
+  (void)pattern;
+  *out_changed = false;
+  const loom_value_id_t lower = loom_vector_mask_range_lower_bound(op);
+  const loom_type_t coordinate_type =
+      loom_module_value_type(rewriter->module, lower);
+  const loom_scalar_type_t element_type =
+      loom_type_element_type(coordinate_type);
+  int32_t bit_count = loom_scalar_type_bitwidth(element_type);
+  if (element_type == LOOM_SCALAR_TYPE_INDEX) {
+    bit_count = loom_index_target_carrier_bitwidth(
+        &rewriter->fact_table->context, element_type);
+    if (bit_count <= 0) {
+      return iree_ok_status();
+    }
+  }
+  const loom_type_t result_type = loom_module_value_type(
+      rewriter->module, loom_vector_mask_range_result(op));
+  const uint64_t maximum_lane_count =
+      loom_value_fact_table_maximum_element_count(rewriter->fact_table,
+                                                  result_type);
+  if (maximum_lane_count == 0) {
+    return iree_ok_status();
+  }
+  const loom_value_fact_vector_iota_t coordinates = {
+      .base = loom_rewriter_value_facts(rewriter, lower),
+      .step =
+          loom_rewriter_value_facts(rewriter, loom_vector_mask_range_step(op)),
+      .bit_count = (uint8_t)bit_count,
+  };
+  int64_t minimum = 0;
+  int64_t maximum = 0;
+  if (!loom_value_fact_vector_iota_bounds(coordinates, maximum_lane_count,
+                                          &minimum, &maximum)) {
+    return iree_ok_status();
+  }
+  // The bounds query checked both deltas before adding them to the base.
+  const int64_t minimum_delta = minimum - coordinates.base.range_lo;
+  const int64_t maximum_delta = maximum - coordinates.base.range_hi;
+  loom_cleanup_pattern_context_t* cleanup =
+      (loom_cleanup_pattern_context_t*)context;
+  loom_symbolic_expr_context_t* expressions =
+      cleanup->symbolic_expression_context;
+  loom_symbolic_expr_t base = {0};
+  loom_symbolic_expr_t bound = {0};
+  IREE_RETURN_IF_ERROR(
+      loom_symbolic_expr_from_value(expressions, lower, &base));
+  IREE_RETURN_IF_ERROR(loom_symbolic_expr_from_value(
+      expressions, loom_vector_mask_range_upper_bound(op), &bound));
+
+  loom_symbolic_proof_result_t proof = LOOM_SYMBOLIC_PROOF_UNKNOWN;
+  loom_symbolic_expr_t extreme = base;
+  extreme.facts = loom_value_facts_unknown();
+  if (iree_checked_add_i64(base.constant, maximum_delta, &extreme.constant) &&
+      iree_checked_add_i64(extreme.constant, 1, &extreme.constant)) {
+    IREE_RETURN_IF_ERROR(loom_symbolic_expr_prove_le_with_active_facts(
+        expressions, &extreme, &bound, &proof));
+  }
+  const bool all_true = proof == LOOM_SYMBOLIC_PROOF_TRUE;
+  if (!all_true) {
+    proof = LOOM_SYMBOLIC_PROOF_UNKNOWN;
+    if (iree_checked_add_i64(base.constant, minimum_delta, &extreme.constant)) {
+      IREE_RETURN_IF_ERROR(loom_symbolic_expr_prove_le_with_active_facts(
+          expressions, &bound, &extreme, &proof));
+    }
+  }
+  if (proof != LOOM_SYMBOLIC_PROOF_TRUE) {
+    return iree_ok_status();
+  }
+  loom_builder_set_before(&rewriter->builder, op);
+  const loom_value_id_t checkpoint = loom_rewriter_value_checkpoint(rewriter);
+  loom_op_t* replacement_op = NULL;
+  IREE_RETURN_IF_ERROR(
+      loom_vector_constant_build(&rewriter->builder, loom_attr_bool(all_true),
+                                 result_type, op->location, &replacement_op));
+  const loom_value_id_t replacement =
+      loom_vector_constant_result(replacement_op);
+  IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
+      rewriter, op, &replacement, 1, checkpoint));
+  IREE_RETURN_IF_ERROR(
+      loom_vector_combine_replace_with_value(rewriter, op, replacement));
+  *out_changed = true;
+  return iree_ok_status();
+}
+
 static const loom_rewrite_pattern_t kVectorSourceCombinePatterns[] = {
+    {
+        .root_kind = LOOM_OP_VECTOR_MASK_RANGE,
+        .match_and_rewrite = loom_vector_mask_range_relations_pattern,
+    },
     {
         .root_kind = LOOM_OP_VECTOR_EXTF,
         .match_and_rewrite = loom_vector_extf_chain_pattern,

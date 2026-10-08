@@ -83,7 +83,9 @@ loom_cc_library(
     iree::tooling::device_util
     iree::tooling::profile::counter
     iree::tooling::profile::summary
-    loom::analysis::kernel_launch_config
+    loom::binding::c::interop
+    loom::binding::c::loomc
+    loom::binding::c::target::iree_hal
     loom::error::diagnostic
     loom::error::json_sink
     loom::error::renderer
@@ -91,17 +93,14 @@ loom_cc_library(
     loom::ir::facts
     loom::ops::special_values
     loom::sanitizer::options
-    loom::target::reporting::artifact_manifest
     loom::tooling::cli::help
-    loom::tooling::compile::options
-    loom::tooling::compile::pipeline
-    loom::tooling::compile::report_capture
+    loom::tooling::cli::loomc_diagnostic_json
+    loom::tooling::cli::loomc_options
+    loom::tooling::cli::loomc_result
     loom::tooling::config
     loom::tooling::execution::benchmark
     loom::tooling::execution::hal::artifact
     loom::tooling::execution::hal::benchmark
-    loom::tooling::execution::hal::candidate
-    loom::tooling::execution::hal::device_provider
     loom::tooling::execution::hal::invocation
     loom::tooling::execution::hal::runtime
     loom::tooling::execution::hal::scenario_profile
@@ -109,9 +108,11 @@ loom_cc_library(
     loom::tooling::execution::session
     loom::tooling::input
     loom::tooling::input::flags
+    loom::tooling::input::loomc
     loom::tooling::io::file
     loom::tooling::testbench
     loom::tooling::testbench::api
+    loom::tooling::testbench::compiled_provider
     loom::tooling::testbench::device_event
     loom::tooling::testbench::executor
     loom::tooling::testbench::invocation
@@ -124,7 +125,6 @@ loom_cc_library(
     loom::tooling::testbench::value_materializer
     loom::util::json
     loom::util::stream
-    loom::verify
   PUBLIC
 )
 
@@ -200,6 +200,8 @@ loom_cc_test(
     iree::base::internal::json
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::binding::c::interop
+    loom::binding::c::loomc
 )
 
 loom_cc_test(
@@ -214,6 +216,8 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     iree::testing::temp_file
+    loom::binding::c::interop
+    loom::binding::c::loomc
 )
 
 loom_cc_test(
@@ -228,7 +232,6 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     iree::testing::temp_file
-    loom::target::provider
 )
 
 set(_iree_benchmark_loom_platform_copts "")
@@ -243,11 +246,11 @@ if(LOOM_TARGET_ARCH_VM)
 endif()
 set(_iree_benchmark_loom_platform_deps "")
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
-  list(APPEND _iree_benchmark_loom_platform_deps loom::tooling::target::amdgpu::device_provider)
+  list(APPEND _iree_benchmark_loom_platform_deps loom::binding::c::target::amdgpu::iree_hal)
   list(APPEND _iree_benchmark_loom_platform_deps loom::tooling::target::amdgpu::testbench_requirements)
 endif()
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
-  list(APPEND _iree_benchmark_loom_platform_deps loom::tooling::target::spirv::device_provider)
+  list(APPEND _iree_benchmark_loom_platform_deps loom::binding::c::target::spirv::iree_hal)
   list(APPEND _iree_benchmark_loom_platform_deps loom::tooling::target::spirv::testbench_requirements)
 endif()
 if(LOOM_TARGET_ARCH_VM)
@@ -263,10 +266,11 @@ loom_cc_binary(
   DEPS
     ::main
     iree::base
-    loom::target::configured::compiler_provider_set
-    loom::tooling::execution::hal::artifact
-    loom::tooling::execution::hal::device_provider
+    loom::binding::c::loomc
+    loom::binding::c::target::configured
+    loom::tooling::execution::hal::testbench_actual
     loom::tooling::input::configured
+    loom::tooling::input::loomc_configured
     loom::transforms::cleanup::configured
     ${_iree_benchmark_loom_platform_deps}
 )

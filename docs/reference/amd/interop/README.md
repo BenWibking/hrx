@@ -68,6 +68,8 @@ concurrent access patterns are possible. [Host/array maintenance](cpu-npu.md)
 | Subject | Reference |
 | --- | --- |
 | Shared allocation setup and external APIs | [External memory and synchronization](external-memory.md): DMA-BUF, Vulkan, Windows and D3D12 ownership. |
+| External-device writes into GPU memory | [Inbound RDMA visibility](rdma.md): `hipDeviceFlushGPUDirectRDMAWrites`, native HDP mapping, producer completion and consumer acquisition. |
+| Stream work crossing execution engines | [Prior-work publication](../gpu/recipes/host-device.md#publishing-prior-stream-work-to-another-executor): completion signals for SVM operations and payload ordering before a batch control store. |
 | Whole graphs and resident rings | [Heterogeneous pipelines](pipelines.md): finite completion, per-generation credits, split/join, progress, drain and timing. |
 | GPU upload, compute and readback | [Engine composition](../gpu/recipes/README.md#sdma-upload-aql-dispatch-and-sdma-download), [local-memory staging](../gpu/recipes/local-memory.md), and [PM4/SDMA handoffs](../gpu/recipes/pm4-sdma.md). |
 | Peer GPU movement | [Peer-agent handoff](../gpu/recipes/host-device.md#peer-gpu-handoff): direct access, copy routes, directed pool access and per-device cache scopes. |

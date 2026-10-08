@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // Header state carries only the counter. Each condition evaluation computes a
 // wider body/result tuple containing the counter and a payload. The body uses
 // that payload and returns only the next counter to the header; the final false
@@ -12,6 +6,11 @@ kernel.def @condition_counter_store() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%output: buffer) {
+  func.call @compute_condition_counter_store(%output) : (buffer)
+  kernel.return
+}
+
+func.def device inline @compute_condition_counter_store(%output: buffer) {
   %begin = index.constant 0 : index
   %step = index.constant 1 : index
   %end = index.constant 4 : index
@@ -37,22 +36,7 @@ kernel.def @condition_counter_store() {
   %terminal_counter = index.cast %terminal : index to i32
   %exit_value = scalar.addi %terminal_counter, %terminal_payload : i32
   view.store %exit_value, %exit_view[0] : i32, view<1xi32>
-  kernel.return
-}
-
-check.case public @condition_counter_store_case {
-  %actual = check.generate.fill value(-1) : tensor<10xi32>
-  kernel.launch @condition_counter_store(%actual) : (tensor<10xi32>)
-  %body = check.tensor.view %actual offset(0) : tensor<10xi32> -> tensor<4xi32>
-  %headers = check.tensor.view %actual offset(16) : tensor<10xi32> -> tensor<5xi32>
-  %expected_body = check.generate.iota offset(17) step(1) : tensor<4xi32>
-  %expected_headers = check.generate.iota offset(17) step(1) : tensor<5xi32>
-  check.expect.equal actual(%body) expected(%expected_body) : tensor<4xi32>
-  check.expect.equal actual(%headers) expected(%expected_headers) : tensor<5xi32>
-  %exit = check.tensor.view %actual offset(36) : tensor<10xi32> -> tensor<1xi32>
-  %expected_exit = check.generate.fill value(25) : tensor<1xi32>
-  check.expect.equal actual(%exit) expected(%expected_exit) : tensor<1xi32>
-  check.return
+  func.return
 }
 
 // An empty body still executes its initial condition-region effects and
@@ -61,6 +45,11 @@ kernel.def @condition_counter_empty() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%output: buffer) {
+  func.call @compute_condition_counter_empty(%output) : (buffer)
+  kernel.return
+}
+
+func.def device inline @compute_condition_counter_empty(%output: buffer) {
   %begin = index.constant 4 : index
   %step = index.constant 1 : index
   %end = index.constant 4 : index
@@ -86,22 +75,7 @@ kernel.def @condition_counter_empty() {
   }
   %exit_value = index.cast %terminal : index to i32
   view.store %exit_value, %exit_view[0] : i32, view<1xi32>
-  kernel.return
-}
-
-check.case public @condition_counter_empty_case {
-  %actual = check.generate.fill value(-1) : tensor<10xi32>
-  kernel.launch @condition_counter_empty(%actual) : (tensor<10xi32>)
-  %unchanged = check.tensor.view %actual offset(0) : tensor<10xi32> -> tensor<8xi32>
-  %terminal = check.tensor.view %actual offset(32) : tensor<10xi32> -> tensor<1xi32>
-  %expected_unchanged = check.generate.fill value(-1) : tensor<8xi32>
-  %expected_terminal = check.generate.fill value(21) : tensor<1xi32>
-  check.expect.equal actual(%unchanged) expected(%expected_unchanged) : tensor<8xi32>
-  check.expect.equal actual(%terminal) expected(%expected_terminal) : tensor<1xi32>
-  %exit = check.tensor.view %actual offset(36) : tensor<10xi32> -> tensor<1xi32>
-  %expected_exit = check.generate.fill value(4) : tensor<1xi32>
-  check.expect.equal actual(%exit) expected(%expected_exit) : tensor<1xi32>
-  check.return
+  func.return
 }
 
 // The row and column loops prove a flattened footprint through a runtime
@@ -110,6 +84,11 @@ kernel.def @condition_counter_nested() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%output: buffer, %enabled: i1) {
+  func.call @compute_condition_counter_nested(%output, %enabled) : (buffer, i1)
+  kernel.return
+}
+
+func.def device inline @compute_condition_counter_nested(%output: buffer, %enabled: i1) {
   %begin = index.constant 0 : index
   %step = index.constant 1 : index
   %rows = index.constant 3 : index
@@ -138,25 +117,7 @@ kernel.def @condition_counter_nested() {
     %next_row = index.add %row, %step : index
     scf.yield %next_row : index
   }
-  kernel.return
-}
-
-check.case public @condition_counter_nested_enabled {
-  %actual = check.generate.fill value(-1) : tensor<12xi32>
-  %enabled = check.literal value(true) : i1
-  %expected = check.generate.iota offset(0) step(1) : tensor<12xi32>
-  kernel.launch @condition_counter_nested(%actual, %enabled) : (tensor<12xi32>, i1)
-  check.expect.equal actual(%actual) expected(%expected) : tensor<12xi32>
-  check.return
-}
-
-check.case public @condition_counter_nested_disabled {
-  %actual = check.generate.fill value(-1) : tensor<12xi32>
-  %enabled = check.literal value(false) : i1
-  %expected = check.generate.fill value(-1) : tensor<12xi32>
-  kernel.launch @condition_counter_nested(%actual, %enabled) : (tensor<12xi32>, i1)
-  check.expect.equal actual(%actual) expected(%expected) : tensor<12xi32>
-  check.return
+  func.return
 }
 
 // Keep a native-width offset recurrence coherent across the condition and body
@@ -165,6 +126,11 @@ kernel.def @condition_wide_recurrence() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%output: buffer, %initial: offset, %iteration_count_input: index) {
+  func.call @compute_condition_wide_recurrence(%output, %initial, %iteration_count_input) : (buffer, offset, index)
+  kernel.return
+}
+
+func.def device inline @compute_condition_wide_recurrence(%output: buffer, %initial: offset, %iteration_count_input: index) {
   %iteration_count = index.assume %iteration_count_input [range(%iteration_count_input, 0, 3)] : index
   %c0 = index.constant 0 : index
   %c1 = index.constant 1 : index
@@ -182,17 +148,7 @@ kernel.def @condition_wide_recurrence() {
   }
   %wide_value = index.cast %final_value : offset to i64
   view.store %wide_value, %result_view[0] : i64, view<1xi64>
-  kernel.return
-}
-
-check.case public @condition_wide_recurrence_case {
-  %initial = check.literal value(103) : offset
-  %iteration_count = check.literal value(3) : index
-  %actual = check.generate.fill value(-1) : tensor<1xi64>
-  %expected = check.generate.fill value(100) : tensor<1xi64>
-  kernel.launch @condition_wide_recurrence(%actual, %initial, %iteration_count) : (tensor<1xi64>, offset, index)
-  check.expect.equal actual(%actual) expected(%expected) : tensor<1xi64>
-  check.return
+  func.return
 }
 
 // Crop a strided view in every condition evaluation, including the final
@@ -201,6 +157,11 @@ kernel.def @condition_view() {
   %c1 = index.constant 1 : index
   kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%c1, %c1, %c1) : index
 } launch(%input: buffer, %output: buffer, %count: index) {
+  func.call @compute_condition_view(%input, %output, %count) : (buffer, buffer, index)
+  kernel.return
+}
+
+func.def device inline @compute_condition_view(%input: buffer, %output: buffer, %count: index) {
   %iterations = index.assume %count [range(%count, 0, 3)] : index
   %c0 = index.constant 0 : index
   %c1 = index.constant 1 : index
@@ -238,70 +199,7 @@ kernel.def @condition_view() {
   }
   view.store %sum, %destination[0] : i32, view<2xi32>
   view.store %final, %destination[1] : i32, view<2xi32>
-  kernel.return
-}
-
-check.case public @condition_view_0 {
-  %count = check.literal value(0) : index
-  %input = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %input_expected = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %output = check.generate.fill value(-99) : tensor<4xi32>
-  kernel.launch @condition_view(%input, %output, %count) : (tensor<68xi32>, tensor<4xi32>, index)
-  %sum = check.tensor.view %output offset(4) : tensor<4xi32> -> tensor<1xi32>
-  %final = check.tensor.view %output offset(8) : tensor<4xi32> -> tensor<1xi32>
-  %expected_sum = check.generate.fill value(0) : tensor<1xi32>
-  %expected_final = check.generate.fill value(110) : tensor<1xi32>
-  check.expect.bitwise actual(%sum) expected(%expected_sum) : tensor<1xi32>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi32>
-  %prefix = check.tensor.view %output offset(0) : tensor<4xi32> -> tensor<1xi32>
-  %suffix = check.tensor.view %output offset(12) : tensor<4xi32> -> tensor<1xi32>
-  %guard = check.generate.fill value(-99) : tensor<1xi32>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%input) expected(%input_expected) : tensor<68xi32>
-  check.return
-}
-
-check.case public @condition_view_1 {
-  %count = check.literal value(1) : index
-  %input = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %input_expected = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %output = check.generate.fill value(-99) : tensor<4xi32>
-  kernel.launch @condition_view(%input, %output, %count) : (tensor<68xi32>, tensor<4xi32>, index)
-  %sum = check.tensor.view %output offset(4) : tensor<4xi32> -> tensor<1xi32>
-  %final = check.tensor.view %output offset(8) : tensor<4xi32> -> tensor<1xi32>
-  %expected_sum = check.generate.fill value(110) : tensor<1xi32>
-  %expected_final = check.generate.fill value(118) : tensor<1xi32>
-  check.expect.bitwise actual(%sum) expected(%expected_sum) : tensor<1xi32>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi32>
-  %prefix = check.tensor.view %output offset(0) : tensor<4xi32> -> tensor<1xi32>
-  %suffix = check.tensor.view %output offset(12) : tensor<4xi32> -> tensor<1xi32>
-  %guard = check.generate.fill value(-99) : tensor<1xi32>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%input) expected(%input_expected) : tensor<68xi32>
-  check.return
-}
-
-check.case public @condition_view_3 {
-  %count = check.literal value(3) : index
-  %input = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %input_expected = check.generate.iota offset(100) step(1) : tensor<68xi32>
-  %output = check.generate.fill value(-99) : tensor<4xi32>
-  kernel.launch @condition_view(%input, %output, %count) : (tensor<68xi32>, tensor<4xi32>, index)
-  %sum = check.tensor.view %output offset(4) : tensor<4xi32> -> tensor<1xi32>
-  %final = check.tensor.view %output offset(8) : tensor<4xi32> -> tensor<1xi32>
-  %expected_sum = check.generate.fill value(354) : tensor<1xi32>
-  %expected_final = check.generate.fill value(134) : tensor<1xi32>
-  check.expect.bitwise actual(%sum) expected(%expected_sum) : tensor<1xi32>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi32>
-  %prefix = check.tensor.view %output offset(0) : tensor<4xi32> -> tensor<1xi32>
-  %suffix = check.tensor.view %output offset(12) : tensor<4xi32> -> tensor<1xi32>
-  %guard = check.generate.fill value(-99) : tensor<1xi32>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%input) expected(%input_expected) : tensor<68xi32>
-  check.return
+  func.return
 }
 
 // Each lane starts at its lane index and stops at the first nonpositive input
@@ -313,6 +211,11 @@ kernel.def @condition_guarded_load() {
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%size, %unit, %unit) : index
 } launch(%input: buffer, %output: buffer) {
   %lane = kernel.workitem.id<x> : index
+  func.call @compute_condition_guarded_load(%input, %output, %lane) : (buffer, buffer, index)
+  kernel.return
+}
+
+func.def device inline @compute_condition_guarded_load(%input: buffer, %output: buffer, %lane: index) {
   %length = index.constant 37 : index
   %input_base = index.constant 0 : offset
   %input_view = buffer.view %input[%input_base] : buffer -> view<37xi32>
@@ -336,35 +239,7 @@ kernel.def @condition_guarded_load() {
   %output_view = buffer.view %output[%output_base] : buffer -> view<64xi32>
   %terminal_i32 = index.cast %terminal : index to i32
   view.store %terminal_i32, %output_view[%lane] : i32, view<64xi32>
-  kernel.return
-}
-
-check.case public @condition_guarded_load_case {
-  %input = check.generate.iota offset(12) step(-1) period(13) : tensor<37xi32>
-  %input_expected = check.generate.iota offset(12) step(-1) period(13) : tensor<37xi32>
-  %output = check.generate.fill value(-99) : tensor<66xi32>
-  kernel.launch @condition_guarded_load(%input, %output) : (tensor<37xi32>, tensor<66xi32>)
-
-  %first = check.tensor.view %output offset(4) : tensor<66xi32> -> tensor<13xi32>
-  %second = check.tensor.view %output offset(56) : tensor<66xi32> -> tensor<13xi32>
-  %bounded = check.tensor.view %output offset(108) : tensor<66xi32> -> tensor<11xi32>
-  %outside = check.tensor.view %output offset(152) : tensor<66xi32> -> tensor<27xi32>
-  %expected_first = check.generate.fill value(12) : tensor<13xi32>
-  %expected_second = check.generate.fill value(25) : tensor<13xi32>
-  %expected_bounded = check.generate.fill value(37) : tensor<11xi32>
-  %expected_outside = check.generate.iota offset(37) step(1) : tensor<27xi32>
-  check.expect.bitwise actual(%first) expected(%expected_first) : tensor<13xi32>
-  check.expect.bitwise actual(%second) expected(%expected_second) : tensor<13xi32>
-  check.expect.bitwise actual(%bounded) expected(%expected_bounded) : tensor<11xi32>
-  check.expect.bitwise actual(%outside) expected(%expected_outside) : tensor<27xi32>
-
-  %prefix = check.tensor.view %output offset(0) : tensor<66xi32> -> tensor<1xi32>
-  %suffix = check.tensor.view %output offset(260) : tensor<66xi32> -> tensor<1xi32>
-  %guard = check.generate.fill value(-99) : tensor<1xi32>
-  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
-  check.expect.bitwise actual(%input) expected(%input_expected) : tensor<37xi32>
-  check.return
+  func.return
 }
 
 // Predicate results retain each retired lane's final value whether the
@@ -376,6 +251,11 @@ kernel.def @condition_lane_predicates() {
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%size, %unit, %unit) : index
 } launch(%output: buffer) {
   %lane = kernel.workitem.id<x> : index
+  func.call @compute_condition_lane_predicates(%output, %lane) : (buffer, index)
+  kernel.return
+}
+
+func.def device inline @compute_condition_lane_predicates(%output: buffer, %lane: index) {
   %c0 = index.constant 0 : index
   %c1 = index.constant 1 : index
   %end = index.add %lane, %c1 : index
@@ -423,17 +303,176 @@ kernel.def @condition_lane_predicates() {
   view.store %recurrence_word, %output_view[1, %lane] : i32, view<4x64xi32>
   view.store %vector_true_word, %output_view[2, %lane] : i32, view<4x64xi32>
   view.store %vector_false_word, %output_view[3, %lane] : i32, view<4x64xi32>
-  kernel.return
+  func.return
 }
 
-check.case public @condition_lane_predicates_case {
-  %actual = check.generate.fill value(0) : tensor<4x64xi32>
-  kernel.launch @condition_lane_predicates(%actual) : (tensor<4x64xi32>)
-  %actual_true_rows = check.tensor.view %actual offset(0) : tensor<4x64xi32> -> tensor<3x64xi32>
-  %actual_false_row = check.tensor.view %actual offset(768) : tensor<4x64xi32> -> tensor<1x64xi32>
-  %expected_true_rows = check.generate.fill value(1) : tensor<3x64xi32>
-  %expected_false_row = check.generate.fill value(0) : tensor<1x64xi32>
-  check.expect.equal actual(%actual_true_rows) expected(%expected_true_rows) : tensor<3x64xi32>
-  check.expect.equal actual(%actual_false_row) expected(%expected_false_row) : tensor<1x64xi32>
+func.def @condition_counter_store_oracle(%output: buffer) {
+  func.call @compute_condition_counter_store(%output) : (buffer)
+  func.return
+}
+
+func.def @condition_counter_empty_oracle(%output: buffer) {
+  func.call @compute_condition_counter_empty(%output) : (buffer)
+  func.return
+}
+
+func.def @condition_counter_nested_oracle(%output: buffer, %enabled: i1) {
+  func.call @compute_condition_counter_nested(%output, %enabled) : (buffer, i1)
+  func.return
+}
+
+func.def @condition_wide_recurrence_oracle(%output: buffer, %initial: offset, %iteration_count: index) {
+  func.call @compute_condition_wide_recurrence(%output, %initial, %iteration_count) : (buffer, offset, index)
+  func.return
+}
+
+func.def @condition_view_oracle(%input: buffer, %output: buffer, %count: index) {
+  func.call @compute_condition_view(%input, %output, %count) : (buffer, buffer, index)
+  func.return
+}
+
+func.def @condition_guarded_load_oracle(%input: buffer, %output: buffer) {
+  %begin = index.constant 0 : index
+  %end = index.constant 64 : index
+  %step = index.constant 1 : index
+  scf.for %lane = [%begin to %end step %step] {
+    func.call @compute_condition_guarded_load(%input, %output, %lane) : (buffer, buffer, index)
+  }
+  func.return
+}
+
+// Model the vector-carried target predicates as separate scalar flags so the
+// VM oracle does not depend on the target's vector representation.
+func.def @condition_lane_predicates_oracle(%output: buffer) {
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  %width = index.constant 64 : index
+  %false = scalar.constant false : i1
+  %base = index.constant 0 : offset
+  %output_view = buffer.view %output[%base] : buffer -> view<4x64xi32>
+  scf.for %lane = [%c0 to %width step %c1] {
+    %end = index.add %lane, %c1 : index
+    %condition_i, %condition_result = scf.while(%i = %c0 : index) -> (index, i1) {
+      %continue = index.cmp ult, %i, %end : index
+      %at_end = index.cmp eq, %i, %end : index
+      scf.condition %continue, %i, %at_end : i1, index, i1
+    } do(%body_i: index, %body_result: i1) {
+      %next = index.add %body_i, %c1 : index
+      scf.yield %next : index
+    }
+    %recurrence_i, %recurrence_result = scf.while(%i = %c0 : index, %flag = %false : i1) -> (index, i1) {
+      %continue = index.cmp ult, %i, %end : index
+      scf.condition %continue, %i, %flag : i1, index, i1
+    } do(%body_i: index, %body_flag: i1) {
+      %next = index.add %body_i, %c1 : index
+      %at_end = index.cmp eq, %next, %end : index
+      scf.yield %next, %at_end : index, i1
+    }
+    %vector_i, %vector_true, %vector_false = scf.while(%i = %c0 : index, %true_flag = %false : i1, %false_flag = %false : i1) -> (index, i1, i1) {
+      %continue = index.cmp ult, %i, %end : index
+      scf.condition %continue, %i, %true_flag, %false_flag : i1, index, i1, i1
+    } do(%body_i: index, %body_true: i1, %body_false: i1) {
+      %next = index.add %body_i, %c1 : index
+      %at_end = index.cmp eq, %next, %end : index
+      %before_end = index.cmp ult, %next, %end : index
+      scf.yield %next, %at_end, %before_end : index, i1, i1
+    }
+    %condition_word = scalar.extui %condition_result : i1 to i32
+    %recurrence_word = scalar.extui %recurrence_result : i1 to i32
+    %vector_true_word = scalar.extui %vector_true : i1 to i32
+    %vector_false_word = scalar.extui %vector_false : i1 to i32
+    view.store %condition_word, %output_view[0, %lane] : i32, view<4x64xi32>
+    view.store %recurrence_word, %output_view[1, %lane] : i32, view<4x64xi32>
+    view.store %vector_true_word, %output_view[2, %lane] : i32, view<4x64xi32>
+    view.store %vector_false_word, %output_view[3, %lane] : i32, view<4x64xi32>
+  }
+  func.return
+}
+
+check.scenario @condition_counter_store_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %storage = check.generate.fill value(-1) : tensor<18xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<18xi32> -> tensor<10xi32>
+    check.compare<@condition_counter_store, @condition_counter_store_oracle>(%output) : (tensor<10xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<18xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario @condition_counter_empty_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %storage = check.generate.fill value(-1) : tensor<18xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<18xi32> -> tensor<10xi32>
+    check.compare<@condition_counter_empty, @condition_counter_empty_oracle>(%output) : (tensor<10xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<18xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario @condition_counter_nested_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %enabled = check.literal value(false) : i1
+    %storage = check.generate.fill value(-1) : tensor<20xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<20xi32> -> tensor<12xi32>
+    check.compare<@condition_counter_nested, @condition_counter_nested_oracle>(%output, %enabled) : (tensor<12xi32>, i1) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<20xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %enabled = check.literal value(true) : i1
+    %storage = check.generate.fill value(-1) : tensor<20xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<20xi32> -> tensor<12xi32>
+    check.compare<@condition_counter_nested, @condition_counter_nested_oracle>(%output, %enabled) : (tensor<12xi32>, i1) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<20xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario @condition_wide_recurrence_values {
+  check.trial[4](%iteration_count: index, %entropy: check.entropy) {
+    %initial = check.literal value(103) : offset
+    %storage = check.generate.fill value(-1) : tensor<9xi64>
+    %output = check.tensor.view %storage offset(32) : tensor<9xi64> -> tensor<1xi64>
+    check.compare<@condition_wide_recurrence, @condition_wide_recurrence_oracle>(%output, %initial, %iteration_count) : (tensor<1xi64>, offset, index) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<9xi64>
+    }
+  }
+  check.return
+}
+
+check.scenario @condition_view_values {
+  check.trial[4](%count: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(100) step(1) : tensor<68xi32>
+    %output = check.generate.fill value(-99) : tensor<4xi32>
+    check.compare<@condition_view, @condition_view_oracle>(%input, %output, %count) : (tensor<68xi32>, tensor<4xi32>, index) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<68xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<4xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario @condition_guarded_load_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(12) step(-1) period(13) : tensor<37xi32>
+    %output = check.generate.fill value(-99) : tensor<66xi32>
+    check.compare<@condition_guarded_load, @condition_guarded_load_oracle>(%input, %output) : (tensor<37xi32>, tensor<66xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<37xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<66xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario @condition_lane_predicate_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %output = check.generate.fill value(0) : tensor<4x64xi32>
+    check.compare<@condition_lane_predicates, @condition_lane_predicates_oracle>(%output) : (tensor<4x64xi32>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<4x64xi32>
+    }
+  }
   check.return
 }

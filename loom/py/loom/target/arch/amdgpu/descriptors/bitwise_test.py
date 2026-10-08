@@ -8,7 +8,12 @@
 
 import pytest
 
-from loom.target.arch.amdgpu.descriptors import _REG_PART_VGPR_LOW16
+from loom.target.arch.amdgpu.descriptors import (
+    _REG_PART_SGPR_LOW16,
+    _REG_PART_VGPR_LOW16,
+    _REG_SGPR,
+    _REG_VGPR,
+)
 from loom.target.arch.amdgpu.descriptors.api import (
     _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS,
 )
@@ -54,7 +59,13 @@ def test_low16_bitfield_extracts_cover_signedness_and_widths(
     result = descriptor.operands[0].descriptor_operand
     source = descriptor.operands[1].descriptor_operand
     assert result.reg_alts[0].register_part is None
-    assert source.reg_alts[0].register_part == _REG_PART_VGPR_LOW16
+    assert {
+        alternative.reg_class: alternative.register_part
+        for alternative in source.reg_alts
+    } == {
+        _REG_SGPR: _REG_PART_SGPR_LOW16,
+        _REG_VGPR: _REG_PART_VGPR_LOW16,
+    }
 
     offset, width = descriptor.immediates
     assert offset.field_name == "offset"

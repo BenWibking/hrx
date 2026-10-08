@@ -1436,6 +1436,8 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
         .type_supported = context.policy->source_type_supported,
         .source_vector_carrier_supported =
             context.policy->source_vector_carrier_supported,
+        .source_function_vector_carrier_supported =
+            context.policy->source_function_vector_carrier_supported,
         .structural_legality_flags =
             loom_low_lower_source_plan_uses_structured_control_flow(&context)
                 ? LOOM_TARGET_LOW_STRUCTURAL_LEGALITY_ALLOW_SOURCE_SCF

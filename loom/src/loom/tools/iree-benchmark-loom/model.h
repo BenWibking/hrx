@@ -11,7 +11,6 @@
 
 #include "iree/base/api.h"
 #include "iree/hal/api.h"
-#include "loom/tooling/compile/report_capture.h"
 #include "loom/tooling/execution/hal/benchmark.h"
 #include "loom/tooling/execution/hal/testbench_actual.h"
 #include "loom/tooling/testbench/executor.h"
@@ -19,12 +18,12 @@
 #include "loom/tools/iree-benchmark-loom/output.h"
 #include "loom/util/json.h"
 #include "loom/util/stream.h"
+#include "loomc/artifact.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct loom_tooling_config_set_t loom_tooling_config_set_t;
 typedef struct iree_benchmark_loom_launch_evidence_t
     iree_benchmark_loom_launch_evidence_t;
 
@@ -165,8 +164,8 @@ typedef struct iree_benchmark_loom_benchmark_result_t {
   iree_host_size_t diagnostic_remark_count;
   // JSON array entries for structured diagnostics associated with the failure.
   iree_string_view_t diagnostic_json;
-  // Captured structured compile report for the benchmark candidate.
-  const loom_compile_report_capture_t* compile_report_capture;
+  // Public structured compile-report artifact for the benchmark candidate.
+  const loomc_artifact_t* compile_report;
   // Sidecar compile report artifact path for debug/full bundles, if any.
   iree_string_view_t compile_report_artifact_path;
   // Sidecar artifact manifest path for debug/full bundles, if any.
@@ -216,8 +215,6 @@ typedef struct iree_benchmark_loom_hal_context_t {
   const iree_benchmark_loom_configuration_t* configuration;
   // Optional artifact bundle receiving HAL profile artifact references.
   iree_benchmark_loom_artifact_bundle_t* artifact_bundle;
-  // Config bindings materialized into HAL actual candidate compile copies.
-  const loom_tooling_config_set_t* config_set;
   // Shared HAL runtime and artifact-provider state.
   loom_run_hal_testbench_context_t execution;
 } iree_benchmark_loom_hal_context_t;
@@ -231,8 +228,6 @@ typedef struct iree_benchmark_loom_hal_actual_provider_t {
   iree_string_view_t artifact_path_suffix;
   // Structured diagnostics emitted while compiling this candidate.
   iree_benchmark_loom_diagnostic_capture_t diagnostics;
-  // Structured compile report populated while emitting this candidate.
-  loom_compile_report_capture_t compile_report_capture;
   // Borrowed view into |compile_report_artifact_path_storage|.
   iree_string_view_t compile_report_artifact_path;
   // Owned debug/full bundle compile-report artifact path.

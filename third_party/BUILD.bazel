@@ -150,6 +150,20 @@ alias(
 )
 
 alias(
+    name = "mimalloc",
+    actual = "@mimalloc",
+    visibility = [":runtime_users"],
+)
+
+# Executable link policy selects the C++ ABI adapter through --custom_malloc.
+# Every cc_binary is therefore a potential configured consumer.
+alias(
+    name = "mimalloc_new_delete",
+    actual = "//build_tools/third_party/mimalloc:new_delete",
+    visibility = ["//visibility:public"],
+)
+
+alias(
     name = "zstd",
     actual = "//build_tools/third_party/zstd",
     visibility = [":libhrx_users"],

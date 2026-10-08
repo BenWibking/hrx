@@ -17,6 +17,7 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "benchmark/benchmark.h"
@@ -25,7 +26,7 @@
 #include "loom/analysis/liveness.h"
 #include "loom/codegen/low/allocation.h"
 #include "loom/codegen/low/allocation/placement.h"
-#include "loom/codegen/low/allocation/unit_liveness.h"
+#include "loom/codegen/low/allocation/unit_liveness_builder.h"
 #include "loom/codegen/low/placement.h"
 #include "loom/codegen/low/schedule/run.h"
 #include "loom/codegen/low/storage_lease.h"
@@ -117,6 +118,7 @@ enum class Shape {
   kFutureFixed,
   kReservedPrefix,
   kLeasedPrefix,
+  kLeasedAliasTree,
 };
 enum class Phase {
   kModel,
@@ -265,6 +267,46 @@ std::string MakeSource(uint32_t chain_length, uint32_t component_count,
                 std::to_string(i) + "\n";
     }
     return source + "  return %result" + std::to_string(count - 1u) + "\n}\n";
+  }
+  if (shape == Shape::kLeasedAliasTree) {
+    Require(width == 1, "Leased-alias shape requires scalar registers");
+    const uint32_t count = chain_length * component_count;
+    Require(count >= 2 && (count & (count - 1u)) == 0,
+            "Leased-alias shape requires a power-of-two leaf count");
+    std::string source =
+        "test.target<low_core> @target\n"
+        "low.func.def schedule(locked) target<test.low.core>(@target) "
+        "@kernel() -> (reg<test.i32 x" +
+        std::to_string(count) + ">) asm {\n";
+    std::vector<std::string> values;
+    values.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+      const std::string value = "%leased" + std::to_string(i);
+      source +=
+          "  " + value + " = test.const.issued.i32 " + std::to_string(i) + "\n";
+      source += "  test.leased.consume.i32 " + value + "\n";
+      values.push_back(value);
+    }
+    uint32_t level = 0;
+    uint32_t result_width = 1;
+    while (values.size() > 1) {
+      std::vector<std::string> next_values;
+      next_values.reserve(values.size() / 2);
+      for (uint32_t i = 0; i < values.size(); i += 2) {
+        const std::string result =
+            "%alias" + std::to_string(level) + "_" + std::to_string(i / 2);
+        source += "  " + result + " = concat(" + values[i] + ", " +
+                  values[i + 1] + ") : (reg<test.i32 x" +
+                  std::to_string(result_width) + ">, reg<test.i32 x" +
+                  std::to_string(result_width) + ">) -> reg<test.i32 x" +
+                  std::to_string(result_width * 2u) + ">\n";
+        next_values.push_back(result);
+      }
+      values = std::move(next_values);
+      result_width *= 2u;
+      ++level;
+    }
+    return source + "  return " + values.front() + "\n}\n";
   }
   if (shape == Shape::kLoopRelocation) {
     std::string source =
@@ -635,7 +677,7 @@ class AllocationBenchmark {
     if (phase_ != Phase::kModel) {
       InitializeModel(&base_arena_, &model_);
     }
-    if (shape == Shape::kLeasedPrefix) {
+    if (shape == Shape::kLeasedPrefix || shape == Shape::kLeasedAliasTree) {
       loom_low_schedule_options_t schedule_options = {};
       schedule_options.flags =
           LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES;
@@ -653,21 +695,21 @@ class AllocationBenchmark {
     }
     if (phase_ == Phase::kPlacement || phase_ == Phase::kUnitLiveness) {
       IREE_CHECK_OK(loom_liveness_analyze_local_value_domain_with_dataflow(
-          &model_.value_domain, &model_.liveness_dataflow,
+          &model_.context.value_domain, &model_.liveness_dataflow,
           loom_liveness_order_empty(), &base_arena_, &liveness_));
     }
     if (phase_ == Phase::kUnitLiveness) {
       loom_low_placement_preference_index_t preferences = {};
       loom_low_allocation_target_constraints_t constraints = {};
       IREE_CHECK_OK(loom_low_allocation_target_constraints_initialize(
-          module_, function_, &model_.target, nullptr, 0,
+          module_, function_, &model_.context.target, nullptr, 0,
           reserved_ranges_.data(), reserved_ranges_.size(), {}, &base_arena_,
           &constraints));
       IREE_CHECK_OK(loom_low_allocation_placement_build(
-          &constraints, model_.body, &model_.value_domain, &liveness_,
-          fixed_values_.data(), fixed_values_.size(),
-          loom_low_placement_pair_use_list_empty(), {}, &base_arena_,
-          &base_arena_, &placement_, &preferences));
+          &constraints, model_.context.body, &model_.context.value_domain,
+          model_.context.storage_origins, &liveness_, fixed_values_.data(),
+          fixed_values_.size(), loom_low_placement_pair_use_list_empty(), {},
+          &base_arena_, &base_arena_, &placement_, &preferences));
     }
   }
 
@@ -692,12 +734,12 @@ class AllocationBenchmark {
     if (phase_ == Phase::kModel) {
       loom_low_function_model_t model = {};
       InitializeModel(&arena, &model);
-      result.value_count = model.value_domain.value_count;
+      result.value_count = model.context.value_domain.value_count;
       loom_low_function_model_deinitialize(&model);
     } else if (phase_ == Phase::kLiveness) {
       loom_liveness_analysis_t liveness = {};
       IREE_CHECK_OK(loom_liveness_analyze_local_value_domain_with_dataflow(
-          &model_.value_domain, &model_.liveness_dataflow,
+          &model_.context.value_domain, &model_.liveness_dataflow,
           loom_liveness_order_empty(), &arena, &liveness));
       result.value_count = liveness.value_count;
       benchmark::DoNotOptimize(liveness.intervals);
@@ -706,14 +748,14 @@ class AllocationBenchmark {
       loom_low_placement_preference_index_t preferences = {};
       loom_low_allocation_target_constraints_t constraints = {};
       IREE_CHECK_OK(loom_low_allocation_target_constraints_initialize(
-          module_, function_, &model_.target, nullptr, 0,
+          module_, function_, &model_.context.target, nullptr, 0,
           reserved_ranges_.data(), reserved_ranges_.size(), {}, &arena,
           &constraints));
       IREE_CHECK_OK(loom_low_allocation_placement_build(
-          &constraints, model_.body, &model_.value_domain, &liveness_,
-          fixed_values_.data(), fixed_values_.size(),
-          loom_low_placement_pair_use_list_empty(), {}, &arena, &arena,
-          &placement, &preferences));
+          &constraints, model_.context.body, &model_.context.value_domain,
+          model_.context.storage_origins, &liveness_, fixed_values_.data(),
+          fixed_values_.size(), loom_low_placement_pair_use_list_empty(), {},
+          &arena, &arena, &placement, &preferences));
       result.value_count = placement.value_count;
       benchmark::DoNotOptimize(placement.relations);
     } else if (phase_ == Phase::kUnitLiveness) {
@@ -721,8 +763,9 @@ class AllocationBenchmark {
       iree_arena_initialize(&analysis_pool_, &decision_arena);
       loom_low_allocation_unit_liveness_t unit_liveness = {};
       IREE_CHECK_OK(loom_low_allocation_unit_liveness_initialize(
-          &model_.target, &placement_, &model_.value_domain, &liveness_,
-          &model_.cfg_graph, {}, &arena, &decision_arena, &unit_liveness));
+          &model_.context.target, &placement_, &model_.context.value_domain,
+          &liveness_, &model_.cfg_graph, {}, &arena, &decision_arena,
+          &unit_liveness));
       result.value_count = liveness_.value_count;
       benchmark::DoNotOptimize(unit_liveness.end_points);
       iree_arena_deinitialize(&decision_arena);
@@ -741,7 +784,7 @@ class AllocationBenchmark {
           loom_low_allocate_function(&model_, &options, &arena, &allocation));
       Require(allocation.error_count == 0, "Allocation failed");
       Require(allocation.spill_count == 0, "Unexpected spill");
-      result.value_count = model_.value_domain.value_count;
+      result.value_count = model_.context.value_domain.value_count;
       result.copy_count = allocation.copy_decision_count;
       result.materialized_copy_count = allocation.materialized_copy_count;
       result.storage_lease_count = allocation.storage_lease_instance_count;
@@ -840,7 +883,7 @@ class AllocationBenchmark {
     IREE_CHECK_OK(loom_low_function_model_initialize(
         module_, function_, nullptr, &registry_.registry, {},
         LOOM_LOW_FUNCTION_MODEL_FLAG_REGION_TREE, arena, model));
-    Require(model->error_count == 0, "Function model failed");
+    Require(model->context.error_count == 0, "Function model failed");
   }
 
   // Shipping compiler boundary measured by each Run invocation.
@@ -955,7 +998,8 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
   if (phase == Phase::kAllocation) {
     const uint32_t expected_copy_count =
         shape == Shape::kTied || shape == Shape::kLoopRelocation ||
-                shape == Shape::kMoveScratch || shape == Shape::kLeasedPrefix
+                shape == Shape::kMoveScratch || shape == Shape::kLeasedPrefix ||
+                shape == Shape::kLeasedAliasTree
             ? 0
             : chain_length * component_count *
                   (shape == Shape::kBranch ? 2 : 1);
@@ -978,6 +1022,15 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
               "Leased prefix requested an unexpected early release");
       Require(result.assigned_target_id_extent == count + 1u,
               "Leased prefix did not retain its physical locations");
+    }
+    if (shape == Shape::kLeasedAliasTree) {
+      const uint64_t count = chain_length * component_count;
+      Require(result.storage_lease_count == count,
+              "Leased-alias storage leases were not materialized");
+      Require(result.storage_release_action_count == 0,
+              "Identity aliases requested artificial early releases");
+      Require(result.assigned_target_id_extent == count,
+              "Leased-alias tree did not retain its leaf storage");
     }
   }
   state.counters["value_count"] = result.value_count;
@@ -1009,7 +1062,8 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
   for (auto shape :
        {Shape::kLinear, Shape::kLoop, Shape::kLoopRelocation,
         Shape::kMoveScratch, Shape::kBranch, Shape::kTied, Shape::kFanout,
-        Shape::kFutureFixed, Shape::kReservedPrefix, Shape::kLeasedPrefix}) {
+        Shape::kFutureFixed, Shape::kReservedPrefix, Shape::kLeasedPrefix,
+        Shape::kLeasedAliasTree}) {
     for (auto phase : {Phase::kModel, Phase::kLiveness, Phase::kPlacement,
                        Phase::kUnitLiveness, Phase::kAllocation}) {
       if (shape == Shape::kLoopRelocation && phase != Phase::kAllocation) {
@@ -1024,7 +1078,8 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
       if (shape == Shape::kReservedPrefix && phase != Phase::kAllocation) {
         continue;
       }
-      if (shape == Shape::kLeasedPrefix && phase != Phase::kAllocation) {
+      if ((shape == Shape::kLeasedPrefix || shape == Shape::kLeasedAliasTree) &&
+          phase != Phase::kAllocation) {
         continue;
       }
       const std::string name =
@@ -1038,7 +1093,8 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
                       : shape == Shape::kFanout         ? "fanout/"
                       : shape == Shape::kFutureFixed    ? "future_fixed/"
                       : shape == Shape::kReservedPrefix ? "reserved_prefix/"
-                                                        : "leased_prefix/") +
+                      : shape == Shape::kLeasedPrefix ? "leased_prefix/"
+                                                      : "leased_alias_tree/") +
           (phase == Phase::kModel          ? "model"
            : phase == Phase::kLiveness     ? "liveness"
            : phase == Phase::kPlacement    ? "placement"
@@ -1075,7 +1131,7 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
         }
         continue;
       }
-      if (shape == Shape::kLeasedPrefix) {
+      if (shape == Shape::kLeasedPrefix || shape == Shape::kLeasedAliasTree) {
         for (int64_t count : {32, 64, 128, 256, 512, 1024, 2048}) {
           registration->Args({count, 1, 1});
         }

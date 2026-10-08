@@ -133,6 +133,11 @@ const char* loom_error_domain_name(loom_error_domain_t domain);
 bool loom_error_domain_from_name(iree_string_view_t name,
                                  loom_error_domain_t* out_domain);
 
+// Parses the canonical stable identity DOMAIN/NNN into a packed reference.
+// Returns false and clears |out_ref| when the domain, code, or spelling is
+// invalid. Codes use at least three zero-padded decimal digits.
+bool loom_error_ref_parse(iree_string_view_t value, loom_error_ref_t* out_ref);
+
 // Returns the emitter name string (e.g., "verifier", "parser").
 const char* loom_emitter_name(loom_emitter_t emitter);
 

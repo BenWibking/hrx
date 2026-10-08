@@ -57,7 +57,7 @@ typedef struct loomc_target_pass_environment_t {
 
 // Creates a public target environment from an internal provider set.
 LOOMC_API_PRIVATE loomc_status_t
-loomc_target_environment_create_from_provider_set(
+loomc_target_environment_create_from_provider_set_internal(
     const loom_target_provider_set_t* provider_set, loomc_allocator_t allocator,
     loomc_target_environment_t** out_target_environment);
 

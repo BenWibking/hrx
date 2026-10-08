@@ -17,6 +17,7 @@
 #include "loom/target/arch/amd/xdna/aie2p/vector_carrier.h"
 #include "loom/transforms/scalar/target_legalization.h"
 #include "loom/transforms/vector/packet_legalization.h"
+#include "loom/transforms/vector/reduction_legalization.h"
 #include "loom/transforms/vector/shape_legalization.h"
 #include "loom/transforms/vector/table_legalization.h"
 #include "loom/transforms/vector/target_legalization.h"
@@ -574,13 +575,18 @@ static iree_status_t loom_aie2p_legalize_vector_reduce_axes(
   if (!loom_aie2p_legalizer_descriptor_set_is_core(context->descriptor_set)) {
     return iree_ok_status();
   }
-  if (!loom_target_legalization_op_has_source_vector_carriers(context, op)) {
+  if (context->source_function_has_unsupported_vector_carrier ||
+      !loom_target_legalization_op_has_source_vector_carriers(context, op)) {
     return iree_ok_status();
   }
 
   bool rewritten = false;
-  IREE_RETURN_IF_ERROR(loom_vector_reduce_axes_to_scalar_rewrite_op(
-      context->pass, context->rewriter, op, &rewritten));
+  IREE_RETURN_IF_ERROR(loom_vector_reduce_axes_to_vector_rewrite_op(
+      context->rewriter, op, &rewritten));
+  if (!rewritten) {
+    IREE_RETURN_IF_ERROR(loom_vector_reduce_axes_to_scalar_rewrite_op(
+        context->pass, context->rewriter, op, &rewritten));
+  }
   if (rewritten) {
     out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
   }

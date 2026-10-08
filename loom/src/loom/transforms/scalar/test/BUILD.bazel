@@ -16,5 +16,6 @@ loom_check_test_suite(
     srcs = [
         "narrowing.loom-test",
         "narrowing_phases.loom-test",
+        "symbolic_comparison.loom-test",
     ],
 )

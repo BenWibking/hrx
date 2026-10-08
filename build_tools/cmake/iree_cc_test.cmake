@@ -140,6 +140,7 @@ function(iree_cc_test)
     PUBLIC
       ${_RULE_DEPS}
       ${IREE_DEFAULT_LINK_LIBRARIES}
+      ${IREE_DEFAULT_EXECUTABLE_LINK_LIBRARIES}
   )
 
   # Add all IREE targets to a folder in the IDE for organization.

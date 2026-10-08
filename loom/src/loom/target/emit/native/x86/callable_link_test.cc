@@ -6,8 +6,12 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 
 #include "iree/testing/gtest.h"
+
+using I32x8 = int32_t __attribute__((vector_size(32)));
+using F16 = _Float16;
 
 // These definitions are linked directly from the object emitted by Loom in a
 // separate build action. The compiler process exits before the link begins.
@@ -22,6 +26,11 @@ extern "C" uint64_t load_word(uint64_t unused, const uint64_t* input,
 extern "C" uint64_t add_word(uint32_t word, uint64_t bias);
 extern "C" uint32_t divide_mix(uint64_t unused_first, uint64_t unused_second,
                                uint32_t word);
+extern "C" uint64_t stored_pair(uint64_t first, uint64_t second);
+extern "C" uint32_t stored_eleven32(uint32_t v0, uint32_t v1, uint32_t v2,
+                                    uint32_t v3, uint32_t v4, uint32_t v5,
+                                    uint32_t v6, uint32_t v7, uint32_t v8,
+                                    uint32_t v9, uint32_t v10);
 extern "C" uint32_t replace_narrow(uint8_t* bytes, uint16_t* words,
                                    uint64_t index, uint32_t replacement);
 extern "C" uint64_t high_mix(uint64_t unused, uint64_t factor, uint64_t word);
@@ -43,14 +52,84 @@ extern "C" void add_i32x4(const int32_t* lhs, const int32_t* rhs,
 extern "C" void add_constant_i32x4(const int32_t* input, int32_t* output);
 extern "C" void reverse_i8x32_lanes(const uint8_t* input, uint8_t* output);
 extern "C" void spill_i8x32(const uint8_t* input, uint8_t* output);
+extern "C" void write_mixed_results(const int32_t* input,
+                                    int32_t* vector_output,
+                                    uint64_t* scalar_output);
 extern "C" void avx512_select_i32x16(const int32_t* scalar, const int32_t* lhs,
                                      const int32_t* rhs,
                                      const int32_t* fallback, int32_t* output);
 extern "C" void avx512_reverse_i32x16(const int32_t* input, int32_t* output);
 extern "C" void avx512_reduce_f32x16(const float* values, const float* bias,
                                      const float* initial, float* output);
+extern "C" void call_vector_mix(uint64_t* output, I32x8 v0, uint64_t g0,
+                                I32x8 v1, uint64_t g1, I32x8 v2, uint64_t g2,
+                                I32x8 v3, uint64_t g3, I32x8 v4, uint64_t g4,
+                                I32x8 v5, uint64_t g5, I32x8 v6, uint64_t g6,
+                                I32x8 v7, I32x8 v8);
+extern "C" void native_vector_mix(uint64_t* output, I32x8 v0, uint64_t g0,
+                                  I32x8 v1, uint64_t g1, I32x8 v2, uint64_t g2,
+                                  I32x8 v3, uint64_t g3, I32x8 v4, uint64_t g4,
+                                  I32x8 v5, uint64_t g5, I32x8 v6, uint64_t g6,
+                                  I32x8 v7, I32x8 v8) {
+  const I32x8 vectors[] = {v0, v1, v2, v3, v4, v5, v6, v7, v8};
+  size_t output_index = 0;
+  for (const I32x8& vector : vectors) {
+    for (size_t lane = 0; lane < 8; ++lane) {
+      output[output_index++] = static_cast<uint32_t>(vector[lane]);
+    }
+  }
+  const uint64_t scalars[] = {g0, g1, g2, g3, g4, g5, g6};
+  for (uint64_t scalar : scalars) {
+    output[output_index++] = scalar;
+  }
+}
+extern "C" void call_scalar_stack(double* output, float f0, double d0, float f1,
+                                  double d1, float f2, double d2, float f3,
+                                  double d3, float f4, double d4);
+extern "C" void native_scalar_stack(double* output, float f0, double d0,
+                                    float f1, double d1, float f2, double d2,
+                                    float f3, double d3, float f4, double d4) {
+  output[0] = f0;
+  output[1] = d0;
+  output[2] = f1;
+  output[3] = d1;
+  output[4] = f2;
+  output[5] = d2;
+  output[6] = f3;
+  output[7] = d3;
+  output[8] = f4;
+  output[9] = d4;
+}
+extern "C" float identity_f32(float value);
+extern "C" double identity_f64(double value);
+extern "C" uint32_t widen_i1(bool value);
+extern "C" uint32_t widen_i8(uint8_t value);
+extern "C" uint32_t widen_i16(uint16_t value);
+extern "C" uint32_t call_narrow_i1(uint32_t value);
+extern "C" uint32_t call_narrow_i8(uint32_t value);
+extern "C" uint32_t call_narrow_i16(uint32_t value);
+extern "C" bool native_narrow_i1(uint32_t value) { return value != 0; }
+extern "C" uint8_t native_narrow_i8(uint32_t value) {
+  return static_cast<uint8_t>(value);
+}
+extern "C" uint16_t native_narrow_i16(uint32_t value) {
+  return static_cast<uint16_t>(value);
+}
+extern "C" F16 identity_f16(F16 value);
+extern "C" I32x8 identity_i32x8(I32x8 value);
+extern "C" I32x8 identity_packed_i32x8(I32x8 value);
+extern "C" I32x8 call_identity_packed_i32x8(I32x8 value);
+extern "C" void call_f16_stack(uint16_t* output, F16 v0, F16 v1, F16 v2, F16 v3,
+                               F16 v4, F16 v5, F16 v6, F16 v7, F16 v8);
+extern "C" void native_f16_stack(uint16_t* output, F16 v0, F16 v1, F16 v2,
+                                 F16 v3, F16 v4, F16 v5, F16 v6, F16 v7,
+                                 F16 v8) {
+  const F16 values[] = {v0, v1, v2, v3, v4, v5, v6, v7, v8};
+  std::memcpy(output, values, sizeof(values));
+}
 
 extern "C" uint64_t call_pair(uint64_t, uint64_t);
+extern "C" void write_narrow_triplet(uint32_t*, uint32_t);
 extern "C" uint64_t incoming_eight(uint64_t, uint64_t, uint64_t, uint64_t,
                                    uint64_t, uint64_t, uint64_t, uint64_t);
 extern "C" uint64_t recursive_sum(uint64_t);
@@ -194,6 +273,22 @@ TEST(NativeCallableTest, Avx2VectorFunctionUsesOrdinaryCLinkage) {
   EXPECT_EQ(spilled, bytes);
 }
 
+TEST(NativeCallableTest, MixedPrivateResultsOverflowIndependentBanks) {
+  std::array<int32_t, 24> input;
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = static_cast<int32_t>(1000 + i);
+  }
+  std::array<int32_t, 24> vectors = {};
+  std::array<uint64_t, 3> scalars = {};
+  write_mixed_results(input.data(), vectors.data(), scalars.data());
+  for (size_t i = 0; i < 8; ++i) {
+    EXPECT_EQ(vectors[i], input[16 + i]);
+    EXPECT_EQ(vectors[8 + i], input[i]);
+    EXPECT_EQ(vectors[16 + i], input[8 + i]);
+  }
+  EXPECT_EQ(scalars, (std::array<uint64_t, 3>{43, 17, 29}));
+}
+
 TEST(NativeCallableTest, Avx512CoreUsesOrdinaryCLinkage) {
   if (!__builtin_cpu_supports("avx512f") ||
       !__builtin_cpu_supports("avx512bw") ||
@@ -277,6 +372,11 @@ TEST(NativeCallableTest, StackStorageAndAllocationSpills) {
     ASSERT_EQ(pressure32(narrow.data()), narrow_sum);
     ASSERT_EQ(storage_spaces(wide[0], narrow[0]),
               wide[0] ^ (wide[0] + 258) ^ narrow[0]);
+    ASSERT_EQ(stored_pair(wide[0], wide[1]), wide[0] - wide[1]);
+    ASSERT_EQ(stored_eleven32(narrow[0], narrow[1], narrow[2], narrow[3],
+                              narrow[4], narrow[5], narrow[6], narrow[7],
+                              narrow[8], narrow[9], narrow[10]),
+              narrow[0] ^ narrow[10]);
     ASSERT_EQ(local_pair(wide[0], wide[1], 0), wide[0]);
     ASSERT_EQ(local_pair(wide[0], wide[1], 1), wide[1]);
   }
@@ -299,6 +399,16 @@ TEST(NativeCallableTest, CompleteCallOwnsItsOverflowAndAlignedLocal) {
       const uint64_t second = y + 23 * y + 33 * x + 19 * 9;
       EXPECT_EQ(call_pair(x, y), first + second + (x ^ y));
     }
+  }
+}
+
+TEST(NativeCallableTest, NestedPrivateCallsReturnRegisterAndOverflowValues) {
+  for (uint32_t value : {0u, 1u, 0x12345678u, 0xffffffffu}) {
+    std::array<uint32_t, 3> output = {};
+    write_narrow_triplet(output.data(), value);
+    EXPECT_EQ(output[0], value != 0 ? 1u : 0u);
+    EXPECT_EQ(output[1], value != 0 ? value & UINT8_MAX : 0x5au);
+    EXPECT_EQ(output[2], value != 0 ? value & UINT16_MAX : 0xa55au);
   }
 }
 
@@ -353,6 +463,102 @@ TEST(NativeCallableTest, CallsPreserveLoopState) {
       expected += 37 * (seed + i) + 19 * expected;
     }
     EXPECT_EQ(call_loop(seed, count), expected);
+  }
+}
+
+TEST(NativeCallableTest, IndependentIntegerAndSseArgumentBanks) {
+  I32x8 vectors[9];
+  for (size_t vector_index = 0; vector_index < 9; ++vector_index) {
+    for (size_t lane = 0; lane < 8; ++lane) {
+      vectors[vector_index][lane] =
+          static_cast<int32_t>(vector_index * 100 + lane);
+    }
+  }
+  const uint64_t scalars[] = {
+      UINT64_C(0x1111222233334444), UINT64_C(0x5555666677778888),
+      UINT64_C(0x9999aaaabbbbcccc), UINT64_C(0xddddeeeeffff0000),
+      UINT64_C(0x0123456789abcdef), UINT64_C(0xfedcba9876543210),
+      UINT64_C(0x0f1e2d3c4b5a6978),
+  };
+  std::array<uint64_t, 79> output = {};
+  call_vector_mix(output.data(), vectors[0], scalars[0], vectors[1], scalars[1],
+                  vectors[2], scalars[2], vectors[3], scalars[3], vectors[4],
+                  scalars[4], vectors[5], scalars[5], vectors[6], scalars[6],
+                  vectors[7], vectors[8]);
+  size_t output_index = 0;
+  for (const I32x8& vector : vectors) {
+    for (size_t lane = 0; lane < 8; ++lane) {
+      EXPECT_EQ(output[output_index++], static_cast<uint32_t>(vector[lane]));
+    }
+  }
+  for (uint64_t scalar : scalars) {
+    EXPECT_EQ(output[output_index++], scalar);
+  }
+}
+
+TEST(NativeCallableTest, ScalarSseStackArgumentsAndReturns) {
+  const float floats[] = {1.25f, -2.5f, 3.75f, -4.125f, 5.5f};
+  const double doubles[] = {11.125, -22.25, 33.5, -44.75, 55.875};
+  double output[10] = {};
+  call_scalar_stack(output, floats[0], doubles[0], floats[1], doubles[1],
+                    floats[2], doubles[2], floats[3], doubles[3], floats[4],
+                    doubles[4]);
+  for (size_t i = 0; i < 5; ++i) {
+    EXPECT_EQ(output[2 * i], floats[i]);
+    EXPECT_EQ(output[2 * i + 1], doubles[i]);
+  }
+  EXPECT_FLOAT_EQ(identity_f32(-123.75f), -123.75f);
+  EXPECT_DOUBLE_EQ(identity_f64(0x1.23456789abcdep+27), 0x1.23456789abcdep+27);
+}
+
+TEST(NativeCallableTest, NarrowIntegerBoundariesNormalizeCarriers) {
+  EXPECT_EQ(widen_i1(false), 0u);
+  EXPECT_EQ(widen_i1(true), 1u);
+  EXPECT_EQ(widen_i8(0xa5), 0xa5u);
+  EXPECT_EQ(widen_i16(0xa55a), 0xa55au);
+
+  for (uint32_t value : {0u, 1u, 0x12345678u, 0xffffffffu}) {
+    EXPECT_EQ(call_narrow_i1(value), value != 0 ? 1u : 0u);
+    EXPECT_EQ(call_narrow_i8(value), value & UINT8_MAX);
+    EXPECT_EQ(call_narrow_i16(value), value & UINT16_MAX);
+  }
+}
+
+TEST(NativeCallableTest, HalfPrecisionCrossClassRegistersAndStack) {
+  static_assert(sizeof(F16) == sizeof(uint16_t));
+  const std::array<uint16_t, 9> input_bits = {
+      0x0000, 0x8000, 0x3c00, 0xc100, 0x3555, 0x7bff, 0x0400, 0x7c01, 0xfc01,
+  };
+  std::array<F16, 9> values;
+  std::memcpy(values.data(), input_bits.data(), sizeof(input_bits));
+  std::array<uint16_t, 9> output_bits = {};
+  call_f16_stack(output_bits.data(), values[0], values[1], values[2], values[3],
+                 values[4], values[5], values[6], values[7], values[8]);
+  EXPECT_EQ(output_bits, input_bits);
+  for (size_t i = 0; i < values.size(); ++i) {
+    const F16 returned = identity_f16(values[i]);
+    uint16_t returned_bits = 0;
+    std::memcpy(&returned_bits, &returned, sizeof(returned_bits));
+    EXPECT_EQ(returned_bits, input_bits[i]);
+  }
+}
+
+TEST(NativeCallableTest, VectorReturnUsesSseBank) {
+  I32x8 input;
+  for (size_t i = 0; i < 8; ++i) {
+    input[i] = static_cast<int32_t>(i * 101 - 303);
+  }
+  const I32x8 output = identity_i32x8(input);
+  for (size_t i = 0; i < 8; ++i) {
+    EXPECT_EQ(output[i], input[i]);
+  }
+  const I32x8 packed_output = identity_packed_i32x8(input);
+  for (size_t i = 0; i < 8; ++i) {
+    EXPECT_EQ(packed_output[i], input[i]);
+  }
+  const I32x8 packed_call_output = call_identity_packed_i32x8(input);
+  for (size_t i = 0; i < 8; ++i) {
+    EXPECT_EQ(packed_call_output[i], input[i]);
   }
 }
 

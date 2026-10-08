@@ -381,7 +381,7 @@
         "contains": [
           "--device=loom-unavailable",
           "not available in this Loom installation",
-          "no linked device provider"
+          "no linked LoomC target adapter"
         ]
       }
     }

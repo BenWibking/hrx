@@ -359,6 +359,7 @@ loom_cc_library(
   SRCS
     "wait_classification.c"
   DEPS
+    ::storage_lease
     ::structural_packet
     ::wait_completion
     ::wait_frontier
@@ -546,6 +547,7 @@ loom_cc_test(
   SRCS
     "wait_plan_test.cc"
   DEPS
+    ::storage_lease
     ::wait_plan
     iree::base::internal::arena
     iree::testing::gtest
@@ -553,6 +555,7 @@ loom_cc_test(
     loom::codegen::low::builder
     loom::codegen::low::immediates
     loom::codegen::low::schedule
+    loom::codegen::low::storage_lease
     loom::ir
     loom::ops::cache
     loom::ops::low
@@ -699,8 +702,12 @@ loom_cc_library(
   SRCS
     "storage_lease.c"
   DEPS
+    ::structural_packet
+    ::wait_counters
     iree::base
     loom::codegen::low::storage_lease
+    loom::target::arch::amdgpu::refs::target_refs
+    loom::target::arch::amdgpu::target_info
     loom::target::arch::amdgpu::target_info_defs
   PUBLIC
 )

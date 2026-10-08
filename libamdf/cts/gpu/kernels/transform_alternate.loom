@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // The argument and access contract matches transform.loom, with a distinct
 // multiplier so either program remains valid during completed executable reuse.
 kernel.def export("aql_transform") @aql_transform(%groups_x: index) {

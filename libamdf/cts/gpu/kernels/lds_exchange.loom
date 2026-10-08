@@ -1,13 +1,9 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+target.decl @cts_kernel_target
 
 // Each complete 128-lane group exchanges tagged words between partner lanes in
 // different waves through 512 fixed LDS bytes. Each output pair contains the
 // exchanged word and an independently tagged global workitem position.
-kernel.def export("lds_exchange") @lds_exchange(%groups_x: index) {
+kernel.def target(@cts_kernel_target) export("lds_exchange") @lds_exchange(%groups_x: index) {
   %unit = index.constant 1 : index
   %width = index.constant 128 : index
   kernel.launch.config workgroups(%groups_x, %unit, %unit) workgroup_size(%width, %unit, %unit) : index

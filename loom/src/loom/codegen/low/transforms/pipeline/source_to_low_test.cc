@@ -68,16 +68,17 @@ static iree_status_t CollectDiagnosticEmission(
   return iree_ok_status();
 }
 
-static loom_target_low_call_policy_t RequireInlineLowCalls(
-    const loom_resolved_target_t* resolved_target) {
+static loom_target_call_policy_t RequireInlineSemanticCalls(
+    const loom_resolved_target_t* resolved_target, const loom_module_t* module,
+    loom_call_like_kind_t kind, loom_call_like_t call,
+    loom_func_like_t callee) {
   (void)resolved_target;
-  return LOOM_TARGET_LOW_CALL_POLICY_REQUIRE_INLINE;
-}
-
-static loom_target_low_call_policy_t PreserveDirectLowCalls(
-    const loom_resolved_target_t* resolved_target) {
-  (void)resolved_target;
-  return LOOM_TARGET_LOW_CALL_POLICY_DIRECT;
+  (void)module;
+  (void)call;
+  (void)callee;
+  return kind == LOOM_CALL_LIKE_KIND_SEMANTIC
+             ? LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE
+             : LOOM_TARGET_CALL_POLICY_DIRECT;
 }
 
 static const loom_low_descriptor_set_provider_t
@@ -778,7 +779,7 @@ TEST_F(LowLowerPassTest, InvokeNormalizesToDirectLowCallWithPolicyPreserved) {
   EXPECT_EQ(loom_low_func_call_callee(call_op).symbol_id, helper_ref.symbol_id);
 
   loom_target_provider_t direct_provider = {};
-  direct_provider.select_low_call_policy = PreserveDirectLowCalls;
+  direct_provider.select_call_policy = loom_target_select_call_policy_direct;
   loom_target_function_version_t entry_version = {};
   entry_version.base.type = &loom_target_function_version_type;
   entry_version.base.function = entry;
@@ -940,9 +941,10 @@ TEST_F(LowLowerPassTest, LowCallPolicyIsSelectedPerCallerProvider) {
       "}\n"));
 
   loom_target_provider_t require_inline_provider = {};
-  require_inline_provider.select_low_call_policy = RequireInlineLowCalls;
+  require_inline_provider.select_call_policy =
+      loom_target_select_call_policy_require_inline;
   loom_target_provider_t direct_provider = {};
-  direct_provider.select_low_call_policy = PreserveDirectLowCalls;
+  direct_provider.select_call_policy = loom_target_select_call_policy_direct;
 
   const loom_symbol_ref_t required_caller_ref =
       FindSymbolRef(module.get(), IREE_SV("required_caller"));
@@ -985,6 +987,60 @@ TEST_F(LowLowerPassTest, LowCallPolicyIsSelectedPerCallerProvider) {
       loom_region_entry_block(loom_func_like_body(direct_caller));
   ASSERT_NE(direct_entry, nullptr);
   EXPECT_TRUE(loom_low_func_call_isa(direct_entry->first_op));
+}
+
+TEST_F(LowLowerPassTest, CallPolicyDistinguishesSemanticAndLowStages) {
+  ModulePtr module = Parse(
+      IREE_SV("func.def @source_helper(%value: i32) -> (i32) {\n"
+              "  func.return %value : i32\n"
+              "}\n"
+              "func.def public @source_caller(%value: i32) -> (i32) {\n"
+              "  %result = func.call @source_helper(%value) : (i32) -> (i32)\n"
+              "  func.return %result : i32\n"
+              "}\n"
+              "low.func.def target<test.low.core> @low_helper(\n"
+              "    %value: reg<test.i32>) -> (reg<test.i32>) {\n"
+              "  low.return %value : reg<test.i32>\n"
+              "}\n"
+              "low.func.def public target<test.low.core> @low_caller(\n"
+              "    %value: reg<test.i32>) -> (reg<test.i32>) {\n"
+              "  %result = low.func.call @low_helper(%value) : "
+              "(reg<test.i32>) -> (reg<test.i32>)\n"
+              "  low.return %result : reg<test.i32>\n"
+              "}\n"));
+
+  loom_target_provider_t provider = {};
+  provider.select_call_policy = RequireInlineSemanticCalls;
+
+  const loom_symbol_ref_t source_caller_ref =
+      FindSymbolRef(module.get(), IREE_SV("source_caller"));
+  const loom_symbol_ref_t low_caller_ref =
+      FindSymbolRef(module.get(), IREE_SV("low_caller"));
+  loom_target_function_version_t source_caller_version = {};
+  source_caller_version.base.type = &loom_target_function_version_type;
+  source_caller_version.base.function = loom_func_like_cast(
+      module.get(),
+      module->symbols.entries[source_caller_ref.symbol_id].defining_op);
+  source_caller_version.resolved_target.provider = &provider;
+  loom_target_function_version_t low_caller_version = {};
+  low_caller_version.base.type = &loom_target_function_version_type;
+  low_caller_version.base.function = loom_func_like_cast(
+      module.get(),
+      module->symbols.entries[low_caller_ref.symbol_id].defining_op);
+  low_caller_version.resolved_target.provider = &provider;
+  loom_function_version_t* function_version_values[] = {
+      &source_caller_version.base,
+      &low_caller_version.base,
+  };
+  const loom_function_version_list_t function_versions = {
+      /*.values=*/function_version_values,
+      /*.count=*/IREE_ARRAYSIZE(function_version_values),
+  };
+
+  IREE_ASSERT_OK(RunInlineCallables(module.get(), &function_versions,
+                                    IREE_SV("policy=target")));
+  EXPECT_FALSE(HasSymbol(module.get(), IREE_SV("source_helper")));
+  EXPECT_TRUE(HasSymbol(module.get(), IREE_SV("low_helper")));
 }
 
 }  // namespace

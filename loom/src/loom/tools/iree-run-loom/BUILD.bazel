@@ -32,20 +32,6 @@ _AMDGPU_EXECUTE_DEPS = iree_select({
     "//conditions:default": [],
 })
 
-_IMPORT_CXX_COPTS = iree_select({
-    "//loom/config/import:cxx": [
-        "-DIREE_RUN_LOOM_HAVE_IMPORT_CXX=1",
-    ],
-    "//conditions:default": [],
-})
-
-_IMPORT_CXX_DEPS = iree_select({
-    "//loom/config/import:cxx": [
-        "//loom/src/loom/import/cxx/tooling:loomc_input",
-    ],
-    "//conditions:default": [],
-})
-
 _SPIRV_VULKAN_EXECUTE_COPTS = iree_select({
     "//loom/config/execute:spirv_vulkan_hal": [
         "-DIREE_RUN_LOOM_HAVE_SPIRV=1",
@@ -60,13 +46,9 @@ _SPIRV_VULKAN_EXECUTE_DEPS = iree_select({
     "//conditions:default": [],
 })
 
-_IREE_RUN_LOOM_EXECUTE_COPTS = (
-    _AMDGPU_EXECUTE_COPTS + _IMPORT_CXX_COPTS + _SPIRV_VULKAN_EXECUTE_COPTS
-)
+_IREE_RUN_LOOM_EXECUTE_COPTS = _AMDGPU_EXECUTE_COPTS + _SPIRV_VULKAN_EXECUTE_COPTS
 
-_IREE_RUN_LOOM_EXECUTE_DEPS = (
-    _AMDGPU_EXECUTE_DEPS + _IMPORT_CXX_DEPS + _SPIRV_VULKAN_EXECUTE_DEPS
-)
+_IREE_RUN_LOOM_EXECUTE_DEPS = _AMDGPU_EXECUTE_DEPS + _SPIRV_VULKAN_EXECUTE_DEPS
 
 loom_cc_library(
     name = "main",
@@ -82,13 +64,14 @@ loom_cc_library(
         "//loom/src/loom/sanitizer:options",
         "//loom/src/loom/tooling/cli:help",
         "//loom/src/loom/tooling/cli:loomc_options",
+        "//loom/src/loom/tooling/cli:loomc_result",
         "//loom/src/loom/tooling/config",
         "//loom/src/loom/tooling/execution/hal:invocation",
         "//loom/src/loom/tooling/execution/hal:runtime",
         "//loom/src/loom/tooling/input",
         "//loom/src/loom/tooling/input:flags",
+        "//loom/src/loom/tooling/input:loomc",
         "//loom/src/loom/tooling/io:file",
-        "//loom/src/loom/tooling/io:source_path",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/base/tooling:flags",
@@ -105,6 +88,7 @@ loom_cc_binary(
         ":main",
         "//loom/binding/c/target/configured",
         "//loom/src/loom/tooling/input:configured",
+        "//loom/src/loom/tooling/input:loomc_configured",
         "//runtime/src/iree/base",
     ] + _IREE_RUN_LOOM_EXECUTE_DEPS,
 )

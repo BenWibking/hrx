@@ -96,6 +96,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::binding::c::import::cxx
     loom::binding::c::loomc
+    loom::tooling::io::source_path
   PUBLIC
 )
 endif()

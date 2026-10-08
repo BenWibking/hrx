@@ -68,6 +68,22 @@ TEST(AqlEncodingTest, BarrierAndAllowsNullDependenciesAndCompletion) {
   EXPECT_EQ(packet, expected);
 }
 
+TEST(AqlEncodingTest, BarrierOrReadinessHasNoImplicitFence) {
+  const auto packet =
+      aql::Barrier(aql::BarrierType::kOr, aql::HeaderBarrier::kDisabled, 0,
+                   {UINT64_C(0x2345678998765400), UINT64_C(0x3456789aa9876500),
+                    UINT64_C(0x456789abba987600), UINT64_C(0x56789abccba98700),
+                    UINT64_C(0x6789abcddcba9800)},
+                   {aql::FenceScope::kNone, aql::FenceScope::kNone});
+  // HSA System Architecture 1.2 tables 2-4 and 2-10: OR=5, independent
+  // NONE scopes, five complete handles and a null completion handle.
+  const aql::Packet expected = {0x0005,     0,          0x98765400, 0x23456789,
+                                0xa9876500, 0x3456789a, 0xba987600, 0x456789ab,
+                                0xcba98700, 0x56789abc, 0xdcba9800, 0x6789abcd,
+                                0,          0,          0,          0};
+  EXPECT_EQ(packet, expected);
+}
+
 TEST(AqlEncodingTest, DependencyBarrierHasNoAdditionalCacheScopes) {
   const auto packet =
       aql::Barrier(aql::BarrierType::kAnd, aql::HeaderBarrier::kDisabled, 0,

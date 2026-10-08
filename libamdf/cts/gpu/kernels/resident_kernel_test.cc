@@ -19,6 +19,8 @@
 #include "libamdf/cts/gpu/kernels/resident_exchange_kernels.h"
 #include "libamdf/cts/gpu/kernels/resident_npu_initiated.h"
 #include "libamdf/cts/gpu/kernels/resident_npu_initiated_kernels.h"
+#include "libamdf/cts/gpu/kernels/resident_npu_sdma.h"
+#include "libamdf/cts/gpu/kernels/resident_npu_sdma_kernels.h"
 
 namespace {
 
@@ -106,6 +108,15 @@ TEST(KernelTest, ResidentChannelProductsPreserveTheCallerContract) {
 
 TEST(KernelTest, ResidentNpuInitiatedProductsPreserveTheCallerContract) {
   namespace protocol = kernels::resident_npu_initiated;
+  CheckResidentProducts(
+      protocol::kKernels, protocol::kArgumentByteOffsets,
+      protocol::kArgumentByteLengths, protocol::kArgumentValueKinds,
+      protocol::kArgumentByteLength, sizeof(protocol::Arguments),
+      alignof(protocol::Arguments), 0);
+}
+
+TEST(KernelTest, ResidentNpuSdmaProductsPreserveTheCallerContract) {
+  namespace protocol = kernels::resident_npu_sdma;
   CheckResidentProducts(
       protocol::kKernels, protocol::kArgumentByteOffsets,
       protocol::kArgumentByteLengths, protocol::kArgumentValueKinds,

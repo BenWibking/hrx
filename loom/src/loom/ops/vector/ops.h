@@ -354,7 +354,7 @@ iree_status_t loom_vector_splat_facts(
     const loom_value_facts_t* operand_facts,
     loom_value_facts_t* result_facts);
 
-// LOOM_OP_VECTOR_IOTA: Construct a vector of lane-coordinate values. Lane order is the logical row-major order of the result shape; result lane ordinal i contains base + i * step. The result element type must be index or a non-i1 integer payload, and base/step must be scalar values with the same element type. Dynamic result extents are allowed: the result type supplies the lane count symbolically and later specialization fixes the concrete number of produced coordinates.
+// LOOM_OP_VECTOR_IOTA: Construct a vector of lane-coordinate values. Lane order is the logical row-major order of the result shape; result lane ordinal i contains base + i * step. The result element type must be index or a non-i1 integer payload, and base/step must be scalar values with the same element type. Fixed-width integer coordinates use modular multiply/add in that type; index coordinates follow index arithmetic. Dynamic result extents are allowed: the result type supplies the lane count symbolically and later specialization fixes the concrete number of produced coordinates.
 // %lanes = vector.iota %c0 step %c1 : vector<16xindex>
 LOOM_DEFINE_ISA(loom_vector_iota_isa, LOOM_OP_VECTOR_IOTA)
 LOOM_DEFINE_OPERAND(loom_vector_iota_base, 0)
@@ -374,7 +374,7 @@ iree_status_t loom_vector_iota_facts(
     const loom_value_facts_t* operand_facts,
     loom_value_facts_t* result_facts);
 
-// LOOM_OP_VECTOR_MASK_RANGE: Construct an i1 tail mask from an explicit scalar coordinate range. For logical lane ordinal i, the lane is true when lower_bound + i * step is strictly less than upper_bound using the coordinate domain's signed ordering. The bracketed syntax mirrors scf.for ranges because the same inclusive-lower, exclusive-upper semantics are being tested; the result vector type supplies the number and shape of lanes to test.
+// LOOM_OP_VECTOR_MASK_RANGE: Construct an i1 lane mask from an explicit scalar coordinate range. For logical lane ordinal i, the lane is true when lower_bound + i * step is strictly less than upper_bound using the coordinate domain's signed ordering. Fixed-width coordinates use modular multiply/add in that type, so wrapping can produce a non-prefix mask. Index coordinates follow index arithmetic. The bracketed syntax mirrors scf.for ranges because the same inclusive-lower, exclusive-upper semantics are being tested; the result vector type supplies the number and shape of lanes to test.
 // %mask = vector.mask.range [%iv to %n step %c1] : index -> vector<16xi1>
 LOOM_DEFINE_ISA(loom_vector_mask_range_isa, LOOM_OP_VECTOR_MASK_RANGE)
 LOOM_DEFINE_OPERAND(loom_vector_mask_range_lower_bound, 0)

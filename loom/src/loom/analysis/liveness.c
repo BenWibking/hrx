@@ -51,6 +51,9 @@ struct loom_liveness_operation_table_t {
   loom_segmented_storage_t points;
   // Stable local value ordinals grouped by operation and semantic-use kind.
   loom_segmented_storage_t uses;
+  // Per-use ordinals in each value's segment range for multi-block regions.
+  // NULL for single-block regions.
+  const uint16_t* use_value_segment_ordinals;
   // Bitset of direct uses that include an operand/result type reference.
   const uint64_t* type_reference_words;
 };
@@ -113,6 +116,13 @@ typedef struct loom_liveness_point_shape_t {
   uint32_t operation_count;
 } loom_liveness_point_shape_t;
 
+typedef struct loom_liveness_block_stream_ends_t {
+  // Exclusive semantic operation-use count after the top-level block.
+  uint32_t operation_use_end;
+  // Exclusive sparse-segment count after the top-level block.
+  uint32_t segment_end;
+} loom_liveness_block_stream_ends_t;
+
 typedef struct loom_liveness_build_state_t {
   // Module containing the analyzed region.
   loom_module_t* module;
@@ -142,6 +152,9 @@ typedef struct loom_liveness_build_state_t {
   uint32_t* segment_start_points;
   // Mutable block-local segment ends indexed by value ordinal.
   uint32_t* segment_end_points;
+  // Exclusive operation-use and segment stream ends by top-level block. NULL
+  // when the analyzed region has at most one block.
+  loom_liveness_block_stream_ends_t* block_stream_ends;
   // Value ordinals touched in the current top-level block.
   loom_value_ordinal_t* touched_segment_value_ordinals;
   // Number of initialized entries in |touched_segment_value_ordinals|.
@@ -372,6 +385,11 @@ static iree_status_t loom_liveness_initialize_segment_scratch(
       state->scratch_arena, state->value_count,
       sizeof(*state->touched_segment_value_ordinals),
       (void**)&state->touched_segment_value_ordinals));
+  if (state->region->block_count > 1) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        state->scratch_arena, state->region->block_count,
+        sizeof(*state->block_stream_ends), (void**)&state->block_stream_ends));
+  }
   for (iree_host_size_t i = 0; i < state->value_count; ++i) {
     state->segment_start_points[i] = UINT32_MAX;
     state->segment_end_points[i] = UINT32_MAX;
@@ -386,18 +404,31 @@ static void loom_liveness_begin_block_segments(
 }
 
 static iree_status_t loom_liveness_finish_block_segments(
-    loom_liveness_build_state_t* state) {
+    loom_liveness_build_state_t* state, uint16_t block_index) {
   state->collecting_segments = false;
   for (iree_host_size_t i = 0; i < state->touched_segment_value_count; ++i) {
     const loom_value_ordinal_t value_ordinal =
         state->touched_segment_value_ordinals[i];
-    IREE_RETURN_IF_ERROR(loom_liveness_append_segment(
-        state, value_ordinal, state->segment_start_points[value_ordinal],
-        state->segment_end_points[value_ordinal]));
+    const uint32_t start_point = state->segment_start_points[value_ordinal];
+    const uint32_t end_point = state->segment_end_points[value_ordinal];
+    if (start_point < end_point) {
+      IREE_RETURN_IF_ERROR(loom_liveness_append_segment(
+          state, value_ordinal, start_point, end_point));
+    }
     state->segment_start_points[value_ordinal] = UINT32_MAX;
     state->segment_end_points[value_ordinal] = UINT32_MAX;
   }
   state->touched_segment_value_count = 0;
+  if (state->block_stream_ends != NULL) {
+    if (state->segments.count > UINT32_MAX) {
+      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                              "liveness segment count exceeds uint32_t");
+    }
+    state->block_stream_ends[block_index] = (loom_liveness_block_stream_ends_t){
+        .operation_use_end = (uint32_t)state->operation_use_count,
+        .segment_end = (uint32_t)state->segments.count,
+    };
+  }
   return iree_ok_status();
 }
 
@@ -526,7 +557,7 @@ static iree_status_t loom_liveness_initialize_operations(
   IREE_RETURN_IF_ERROR(iree_arena_allocate(state->result_arena,
                                            sizeof(*state->operations),
                                            (void**)&state->operations));
-  state->operations->type_reference_words = NULL;
+  *state->operations = (loom_liveness_operation_table_t){0};
   loom_segmented_storage_initialize(
       iree_min(state->operation_capacity,
                LOOM_LIVENESS_OPERATIONS_PER_SEGMENT) *
@@ -899,7 +930,8 @@ static iree_status_t loom_liveness_finalize_intervals(
                               "liveness block operation shape changed while "
                               "finalizing intervals");
     }
-    IREE_RETURN_IF_ERROR(loom_liveness_finish_block_segments(state));
+    IREE_RETURN_IF_ERROR(
+        loom_liveness_finish_block_segments(state, (uint16_t)block_index));
   }
   IREE_ASSERT_EQ(state->operation_count, state->operation_capacity);
   return iree_ok_status();
@@ -1283,18 +1315,79 @@ static iree_status_t loom_liveness_finalize_segment_array(
       iree_arena_allocate_array(state->result_arena, state->value_count,
                                 sizeof(*ranges), (void**)&ranges));
   memset(ranges, 0, state->value_count * sizeof(*ranges));
-  for (const loom_liveness_segment_chunk_t* chunk = state->segments.head; chunk;
-       chunk = chunk->next) {
-    const iree_host_size_t count =
-        chunk->next
-            ? LOOM_LIVENESS_SEGMENTS_PER_CHUNK
-            : (state->segments.count - 1u) % LOOM_LIVENESS_SEGMENTS_PER_CHUNK +
-                  1u;
-    for (iree_host_size_t i = 0; i < count; ++i) {
-      const loom_value_ordinal_t value_ordinal = chunk->values[i].value_ordinal;
-      IREE_ASSERT_LT(value_ordinal, state->value_count);
-      IREE_ASSERT_NE(ranges[value_ordinal].count, UINT32_MAX);
-      ++ranges[value_ordinal].count;
+
+  if (state->block_stream_ends == NULL) {
+    for (const loom_liveness_segment_chunk_t* chunk = state->segments.head;
+         chunk; chunk = chunk->next) {
+      const iree_host_size_t count =
+          chunk->next ? LOOM_LIVENESS_SEGMENTS_PER_CHUNK
+                      : (state->segments.count - 1u) %
+                                LOOM_LIVENESS_SEGMENTS_PER_CHUNK +
+                            1u;
+      for (iree_host_size_t i = 0; i < count; ++i) {
+        const loom_value_ordinal_t value_ordinal =
+            chunk->values[i].value_ordinal;
+        IREE_ASSERT_LT(value_ordinal, state->value_count);
+        IREE_ASSERT_NE(ranges[value_ordinal].count, UINT32_MAX);
+        ++ranges[value_ordinal].count;
+      }
+    }
+  } else {
+    uint16_t* use_segment_ordinals = NULL;
+    if (state->operation_use_count > 0) {
+      IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+          state->result_arena, state->operation_use_count,
+          sizeof(*use_segment_ordinals), (void**)&use_segment_ordinals));
+    }
+    const loom_liveness_segment_chunk_t* segment_chunk = state->segments.head;
+    iree_host_size_t segment_chunk_index = 0;
+    iree_host_size_t segment_index = 0;
+    uint32_t use_index = 0;
+    for (uint16_t block_index = 0; block_index < state->region->block_count;
+         ++block_index) {
+      const loom_liveness_block_stream_ends_t stream_ends =
+          state->block_stream_ends[block_index];
+      while (use_index < stream_ends.operation_use_end) {
+        const uint32_t use_segment_index =
+            use_index >> LOOM_LIVENESS_OPERATION_USE_SEGMENT_SHIFT;
+        const uint32_t use_segment_offset =
+            use_index & LOOM_LIVENESS_OPERATION_USE_SEGMENT_MASK;
+        const loom_liveness_operation_use_segment_t* use_segment =
+            (const loom_liveness_operation_use_segment_t*)
+                loom_segmented_storage_const_segment(&state->operations->uses,
+                                                     use_segment_index);
+        const uint32_t span_count = iree_min(
+            stream_ends.operation_use_end - use_index,
+            LOOM_LIVENESS_OPERATION_USES_PER_SEGMENT - use_segment_offset);
+        for (uint32_t i = 0; i < span_count; ++i) {
+          const loom_value_ordinal_t value_ordinal =
+              use_segment->ordinals[use_segment_offset + i];
+          IREE_ASSERT_LT(ranges[value_ordinal].count, UINT16_MAX);
+          use_segment_ordinals[use_index + i] =
+              (uint16_t)ranges[value_ordinal].count;
+        }
+        use_index += span_count;
+      }
+
+      IREE_ASSERT_LE(stream_ends.segment_end, state->segments.count);
+      while (segment_index < stream_ends.segment_end) {
+        IREE_ASSERT(segment_chunk);
+        const loom_value_ordinal_t value_ordinal =
+            segment_chunk->values[segment_chunk_index].value_ordinal;
+        IREE_ASSERT_LT(value_ordinal, state->value_count);
+        IREE_ASSERT_NE(ranges[value_ordinal].count, UINT32_MAX);
+        ++ranges[value_ordinal].count;
+        ++segment_index;
+        if (++segment_chunk_index == LOOM_LIVENESS_SEGMENTS_PER_CHUNK) {
+          segment_chunk = segment_chunk->next;
+          segment_chunk_index = 0;
+        }
+      }
+    }
+    IREE_ASSERT_EQ(use_index, state->operation_use_count);
+    IREE_ASSERT_EQ(segment_index, state->segments.count);
+    if (use_segment_ordinals != NULL) {
+      state->operations->use_value_segment_ordinals = use_segment_ordinals;
     }
   }
 
@@ -1644,6 +1737,24 @@ loom_value_ordinal_t loom_liveness_operation_use_ordinal(
   IREE_ASSERT_ARGUMENT(analysis->operations);
   return loom_liveness_operation_use_table_ordinal(analysis->operations,
                                                    use_index);
+}
+
+uint32_t loom_liveness_operation_use_segment_index(
+    const loom_liveness_analysis_t* analysis, uint32_t use_index) {
+  IREE_ASSERT_ARGUMENT(analysis);
+  IREE_ASSERT_LT(use_index, analysis->operation_use_count);
+  IREE_ASSERT_ARGUMENT(analysis->operations);
+  const loom_value_ordinal_t value_ordinal =
+      loom_liveness_operation_use_table_ordinal(analysis->operations,
+                                                use_index);
+  const loom_liveness_segment_range_t range =
+      analysis->value_segment_ranges[value_ordinal];
+  uint16_t range_ordinal = 0;
+  if (analysis->operations->use_value_segment_ordinals != NULL) {
+    range_ordinal = analysis->operations->use_value_segment_ordinals[use_index];
+  }
+  IREE_ASSERT_LT(range_ordinal, range.count);
+  return range.start + range_ordinal;
 }
 
 bool loom_liveness_operation_use_has_type_reference(

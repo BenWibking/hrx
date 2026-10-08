@@ -267,6 +267,7 @@ _PACKET_LANE_DESCRIPTOR_KEYS = frozenset(
         "max.signed.i16x32",
         "max.unsigned.i16x32",
         "min.unsigned.i16x32",
+        "narrow.2x.c-to-x.signed.configured",
         "narrow.2x.c-to-x.unsigned.configured",
         "or.bits512",
         "predicate.complete.zero.high32",
@@ -274,7 +275,12 @@ _PACKET_LANE_DESCRIPTOR_KEYS = frozenset(
         "select.i32x16.mask64",
         "sub.i16x32",
         "sub.i32x16",
+        "widen.2x.w-to-b.signed.configured",
+        "widen.2x.w-to-b.unsigned.configured",
+        "widen.2x.x-to-c.signed.configured",
         "widen.2x.x-to-c.unsigned.configured",
+        "widen.4x.w-to-c.signed.configured",
+        "widen.4x.w-to-c.unsigned.configured",
     }
 )
 
@@ -316,19 +322,39 @@ def _evaluate_packet_lane_descriptor(
         return operands["storage"]
     if descriptor_key in ("select.i16x32.mask64", "select.i32x16.mask64"):
         return operands["s2"] if operands["sel"] else operands["s1"]
-    if descriptor_key == "widen.2x.x-to-c.unsigned.configured":
-        if state["saturation"] == 0:
-            assert state["ups-mode"] == 1
-            return (operands["src"] & 0xFFFFFFFF) << operands["su"]
-        assert state["saturation"] == 1
-        assert state["ups-mode"] == 0
-        assert operands["su"] == 0
-        return operands["src"] & 0xFFFF
-    if descriptor_key == "narrow.2x.c-to-x.unsigned.configured":
+    if descriptor_key.startswith("widen.2x.x-to-c."):
+        if state["saturation"] == 1:
+            assert state["ups-mode"] == 0
+            assert operands["su"] == 0
+            return operands["src"] & 0xFFFF
+        assert state["saturation"] == 0
+        assert state["ups-mode"] == 1
+        value = operands["src"] & 0xFFFFFFFF
+        if ".signed." in descriptor_key:
+            value = _s32(value)
+        return value << operands["su"]
+    if descriptor_key.startswith("narrow.2x.c-to-x."):
         assert state["rounding"] == 0
         assert state["saturation"] == 0
         assert state["srs-mode"] == 1
-        return (operands["src"] >> operands["su"]) & 0xFFFFFFFF
+        value = operands["src"]
+        if ".unsigned." in descriptor_key:
+            value &= (1 << 64) - 1
+        return (value >> operands["su"]) & 0xFFFFFFFF
+    if descriptor_key.startswith(("widen.2x.w-to-b.", "widen.4x.w-to-c.")):
+        if state["saturation"] == 1:
+            assert state["ups-mode"] == 0
+            assert operands["su"] == 0
+            return operands["src"] & 0xFFFF
+        assert state["saturation"] == 0
+        assert state["ups-mode"] == 0
+        assert operands["su"] == 0
+        input_bits = 16 if descriptor_key.startswith("widen.2x.") else 8
+        input_mask = (1 << input_bits) - 1
+        value = operands["src"] & input_mask
+        if ".signed." in descriptor_key and value & (1 << (input_bits - 1)):
+            value -= 1 << input_bits
+        return value & 0xFFFFFFFF
     raise AssertionError(f"unmodeled packet lane descriptor {descriptor_key}")
 
 
@@ -399,6 +425,20 @@ def _evaluate_packet_lane(
             elif descriptor_key in _PACKET_LANE_DESCRIPTOR_KEYS:
                 value = _evaluate_packet_lane_descriptor(
                     descriptor_key, operands, state
+                )
+            elif descriptor_key == "accumulator.clear.f32x64":
+                value = 0
+            elif descriptor_key in (
+                "add.f32x16.configured",
+                "add.f32x64.configured",
+                "sub.f32x16.configured",
+                "sub.f32x64.configured",
+            ):
+                assert operands["acc"] == 60
+                lhs = _bits_float(operands["acc1"])
+                rhs = _bits_float(operands["acc2"])
+                value = _float_bits(
+                    lhs + rhs if descriptor_key.startswith("add.") else lhs - rhs
                 )
             elif descriptor_key.startswith("move."):
                 value = operands["src"]
@@ -991,12 +1031,16 @@ def _reference_bf16_fptosi_recipe(input_bits: int) -> int:
     return -(2**31) if minimum else result
 
 
-def _rule(report_key: str) -> DescriptorRule:
-    return next(
+def _rule(report_key: str, source_op: Op | None = None) -> DescriptorRule:
+    matches = [
         rule
         for rule in AIE2P_CONVERSION_RULES
-        if isinstance(rule, DescriptorRule) and rule.report_key == report_key
-    )
+        if isinstance(rule, DescriptorRule)
+        and rule.report_key == report_key
+        and (source_op is None or rule.source_op is source_op)
+    ]
+    assert len(matches) == 1
+    return matches[0]
 
 
 def _integer_conversion_case(
@@ -1050,14 +1094,14 @@ def test_conversion_programs_are_valid_compact_descriptor_data() -> None:
         rule.emit_count > 0 or rule.alias_ref_count == 1 for rule in compiled.rules
     )
 
-    for report_key in (
-        "native_signed_i8_to_binary32",
-        "native_signed_i16_to_binary32",
-        "native_signed_i32_to_binary32",
-        "native_unsigned_i8_to_binary32",
-        "native_unsigned_i16_to_binary32",
+    for report_key, source_op in (
+        ("exact_signed_i8_to_binary32", scalar_conversion.scalar_sitofp),
+        ("exact_signed_i16_to_binary32", scalar_conversion.scalar_sitofp),
+        ("exact_signed_i32_to_binary32", scalar_conversion.scalar_sitofp),
+        ("exact_unsigned_i8_to_binary32", scalar_conversion.scalar_uitofp),
+        ("exact_unsigned_i16_to_binary32", scalar_conversion.scalar_uitofp),
     ):
-        rule = _rule(report_key)
+        rule = _rule(report_key, source_op)
         assert rule.emit[-2].descriptor.key == (
             "amd.xdna.aie2p.constant.i32.fx2flt-scale"
         )
@@ -2200,8 +2244,14 @@ def test_binary32_to_integer_programs_match_truncation_oracles() -> None:
 
 
 def _assert_small_integer_to_f32_oracles(bit_width: int, values: Iterable[int]) -> None:
-    signed_rule = _rule(f"native_signed_i{bit_width}_to_binary32")
-    unsigned_rule = _rule(f"native_unsigned_i{bit_width}_to_binary32")
+    signed_rule = _rule(
+        f"exact_signed_i{bit_width}_to_binary32",
+        scalar_conversion.scalar_sitofp,
+    )
+    unsigned_rule = _rule(
+        f"exact_unsigned_i{bit_width}_to_binary32",
+        scalar_conversion.scalar_uitofp,
+    )
     sign_bit = 1 << (bit_width - 1)
     modulus = 1 << bit_width
     for bits in values:
@@ -2217,7 +2267,7 @@ def test_integer_to_f32_programs_match_binary32_boundary_oracle() -> None:
             values.update(_encoding_neighbors(center, bit_width))
         _assert_small_integer_to_f32_oracles(bit_width, values)
 
-    signed_i32 = _rule("native_signed_i32_to_binary32")
+    signed_i32 = _rule("exact_signed_i32_to_binary32", scalar_conversion.scalar_sitofp)
     values = {
         0,
         1,
@@ -2242,7 +2292,9 @@ def test_integer_to_f32_programs_match_binary32_boundary_oracle() -> None:
     for value in values:
         assert _evaluate(signed_i32, _u32(value)) == _float_bits(float(value))
 
-    unsigned_i32 = _rule("exact_unsigned_i32_to_binary32")
+    unsigned_i32 = _rule(
+        "exact_unsigned_i32_to_binary32", scalar_conversion.scalar_uitofp
+    )
     unsigned_values = {
         0,
         1,
@@ -2266,10 +2318,115 @@ def test_integer_to_f32_programs_match_binary32_boundary_oracle() -> None:
         assert _evaluate(unsigned_i32, value) == _float_bits(float(value))
 
 
+def _packet_integer_to_f32_rule(bit_width: int, *, signed: bool) -> DescriptorRule:
+    source_op = vector.vector_sitofp if signed else vector.vector_uitofp
+    signedness = "signed" if signed else "unsigned"
+    return _rule(
+        f"exact_{signedness}_i{bit_width}_to_binary32",
+        source_op,
+    )
+
+
+def _integer_packet_rounding_values(bit_width: int) -> set[int]:
+    mask = (1 << bit_width) - 1
+    sign_bit = 1 << (bit_width - 1)
+    values: set[int] = set()
+    for center in (0, 1, sign_bit, sign_bit - 1, mask):
+        values.update(_encoding_neighbors(center, bit_width))
+    for exponent in range(bit_width):
+        power = 1 << exponent
+        values.update(_encoding_neighbors(power, bit_width))
+        values.update(_encoding_neighbors((-power) & mask, bit_width))
+    if bit_width == 32:
+        # Exercise both sides of even and odd F32 midpoint ties in every
+        # binade where integer conversion rounds away low bits.
+        for exponent in range(24, 32):
+            spacing = 1 << (exponent - 23)
+            half_spacing = spacing // 2
+            for significand in range(4):
+                midpoint = (1 << exponent) + significand * spacing + half_spacing
+                if midpoint <= mask:
+                    values.update(_encoding_neighbors(midpoint, bit_width))
+                negative_midpoint = (-midpoint) & mask
+                values.update(_encoding_neighbors(negative_midpoint, bit_width))
+    return values
+
+
+def test_integer_to_f32_packet_family_is_complete_and_compact() -> None:
+    for signed in (False, True):
+        for bit_width in (8, 16, 32):
+            rule = _packet_integer_to_f32_rule(bit_width, signed=signed)
+            guarded_types = {
+                guard.field: guard.type_pattern
+                for guard in rule.guards
+                if guard.type_pattern is not None
+            }
+            input_type = guarded_types["input"]
+            result_type = guarded_types["result"]
+            assert input_type.element == f"i{bit_width}"
+            assert input_type.minimum_static_elements == 1
+            assert input_type.maximum_static_elements == 16
+            assert result_type.element == "f32"
+            assert result_type.minimum_static_elements == 1
+            assert result_type.maximum_static_elements == 16
+
+            descriptor_keys = [
+                emit.descriptor.key
+                for emit in rule.emit
+                if isinstance(emit, EmitDescriptorOp)
+            ]
+            assert "amd.xdna.aie2p.extract.i32.immediate" not in descriptor_keys
+            assert "amd.xdna.aie2p.insert.i32.register" not in descriptor_keys
+            assert "amd.xdna.aie2p.convert.signed.i32.to.f32" not in descriptor_keys
+            assert "amd.xdna.aie2p.accumulator.clear.f32x64" not in descriptor_keys
+            assert (
+                "amd.xdna.aie2p.move.vector512.to.accumulator512" not in descriptor_keys
+            )
+            assert not any(isinstance(emit, EmitRegisterConcat) for emit in rule.emit)
+            assert descriptor_keys.count(
+                "amd.xdna.aie2p.move.vector512.to.accumulator512.low"
+            ) == (4 if bit_width == 32 else 2)
+            assert descriptor_keys.count("amd.xdna.aie2p.sub.f32x16.configured") == (
+                2 if bit_width == 32 else 1
+            )
+            assert descriptor_keys.count("amd.xdna.aie2p.add.f32x64.configured") == (
+                1 if bit_width == 32 else 0
+            )
+            assert len(rule.emit) <= 33
+
+
+def test_integer_to_f32_packet_programs_match_rounding_boundaries() -> None:
+    for bit_width in (8, 16, 32):
+        signed_rule = _packet_integer_to_f32_rule(bit_width, signed=True)
+        unsigned_rule = _packet_integer_to_f32_rule(bit_width, signed=False)
+        sign_bit = 1 << (bit_width - 1)
+        modulus = 1 << bit_width
+        for bits in _integer_packet_rounding_values(bit_width):
+            signed_value = bits - modulus if bits & sign_bit else bits
+            assert _evaluate_packet_lane(signed_rule, bits) == _float_bits(
+                float(signed_value)
+            )
+            assert _evaluate_packet_lane(unsigned_rule, bits) == _float_bits(
+                float(bits)
+            )
+
+
 @pytest.mark.exhaustive
 def test_small_integer_to_f32_programs_match_exhaustive_oracles() -> None:
     for bit_width in (8, 16):
         _assert_small_integer_to_f32_oracles(bit_width, range(1 << bit_width))
+        signed_packet = _packet_integer_to_f32_rule(bit_width, signed=True)
+        unsigned_packet = _packet_integer_to_f32_rule(bit_width, signed=False)
+        sign_bit = 1 << (bit_width - 1)
+        modulus = 1 << bit_width
+        for bits in range(modulus):
+            signed_value = bits - modulus if bits & sign_bit else bits
+            assert _evaluate_packet_lane(signed_packet, bits) == _float_bits(
+                float(signed_value)
+            )
+            assert _evaluate_packet_lane(unsigned_packet, bits) == _float_bits(
+                float(bits)
+            )
 
 
 def _assert_16bit_float_widening_oracles(values: Iterable[int]) -> None:

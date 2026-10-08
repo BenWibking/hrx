@@ -116,6 +116,42 @@ no runtime ELF parser or descriptor patching.
 
 ### Private memory, geometry and transfers
 
+[device_sdma.loom](device_sdma.loom) generates SDMA COPY/FENCE packets from one
+running workitem. Source page, destination slot and length depend on the
+previous copied payload. The [caller](../recipes/device_sdma_test.cc) supplies
+queue addresses, family-selected packet fields and queried cache requirements;
+the shader owns command generation, ring-padding NOPs, publication, copy
+completion and subsequent payload consumption. Its 72-word rows preserve the
+selection state, command frontier and all 64 destination words, including the
+untouched tail of shorter copies. The [typed ABI](device_sdma.h) separates
+opaque buffer bindings from numeric addresses encoded into packets. This
+program uses the complete physical kernel target matrix and no private or
+workgroup storage. The serial publication, retirement and data-acquire
+sequence lives in [sdma_copy.loom](sdma_copy.loom), shared with the NPU-driven
+program below.
+
+[device_sdma_batched.loom](device_sdma_batched.loom) uses the same packet and
+publication contract with independently bounded command bytes and destination
+slots. Its [typed ABI](device_sdma_batched.h) adds batch size, payload credits
+and an admission-statistics output. The publisher fills until admission stops,
+publishes its complete prefix, and cooperatively consumes one result before
+trying to append again. An 80-word transcript preserves the actual reservation
+frontiers and payload ownership alongside each copied result. Completion uses
+a monotonic generation comparison because a batch can pass several FENCE
+values between observations. The next batch's seed derives from actual copied
+data. This program also uses the complete physical target matrix without
+private or workgroup storage.
+
+[resident_npu_sdma.loom](resident_npu_sdma.loom) consumes NPU-computed transfer
+requests. Its source page and copy prefix vary with the NPU payload. The GPU
+publishes SDMA, acquires every destination word and returns values derived from
+actual copied data to the NPU. A closing request proves the NPU consumed the
+last return. The [typed ABI](resident_npu_sdma.h) carries the borrowed queue
+mapping and live GPU-only allocation addresses; its compiled products use the
+same physical RDNA matrix and zero-scratch PM4 contract as the other resident
+programs. The [composed recipe](../../interop/gpu/xdna/recipes/README.md#npu-selected-sdma-transfers)
+owns startup, both native joins and complete backing/ring/transcript checks.
+
 [private_roundtrip.loom](private_roundtrip.loom) initializes nine volatile private
 words per workitem, then reads them in a runtime-selected permutation into
 global output. The [fixed-scratch case](../aql/private_test.cc) uses its
@@ -152,6 +188,26 @@ and take dynamic X/Y group counts as workload inputs. Their six device
 arguments retain 36 semantic bytes; callers initialize the complete 64-byte
 slot, check the compiler's rounded segment fits, and copy only typed fields.
 Alignment padding never becomes another argument or uninitialized input.
+
+### LDS and wave modes
+
+[lds_exchange.loom](lds_exchange.loom) exchanges tagged words between the two
+halves of a 128-workitem group through 512 bytes of fixed LDS. Its partner
+mapping crosses a wave boundary in both wave32 and wave64. The default catalog
+retains every physical target's ordinary width, including the GFX9 AQL products.
+An alternate catalog supplies wave64 on targets that support both widths.
+Both catalogs link the same authored body with small physical target records
+under `targets/`; target records are ordinary Loom source inputs, not patched
+kernel descriptors.
+
+The [PM4 mode-switch cases](../pm4/wave_mode_test.cc) publish one finite stream
+with wave32, wave64, then wave32 dispatches. The direct case supplies workitem
+counts; the indirect case reads immutable workgroup-count tuples. Each stage
+has distinct arguments and output, and the caller checks the complete outputs,
+guards, arguments, code and command bytes before releasing their native owners.
+The CPU observes only final completion. Alternate case libraries are selected
+with their compiled products, preserving the ordinary corpus in wave32-only
+and GFX9-only configurations.
 
 ## AQL publication and observation
 

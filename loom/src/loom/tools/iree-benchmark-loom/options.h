@@ -21,8 +21,6 @@
 extern "C" {
 #endif
 
-typedef struct loom_tooling_config_set_t loom_tooling_config_set_t;
-
 typedef enum iree_benchmark_loom_artifact_bundle_policy_e {
   // Artifact bundling is disabled.
   IREE_BENCHMARK_LOOM_ARTIFACT_BUNDLE_POLICY_NONE = 0,
@@ -90,8 +88,6 @@ typedef struct iree_benchmark_loom_options_t {
   iree_string_view_list_t config_assignments;
   // Config object file paths parsed from repeated --config-file=path flags.
   iree_string_view_list_t config_files;
-  // Materialized config set owned by the active benchmark run.
-  const loom_tooling_config_set_t* config_set;
   // Explicit result output path, or empty to use stdout or bundle defaults.
   iree_string_view_t output;
   // Selected result output format.

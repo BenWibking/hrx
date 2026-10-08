@@ -276,7 +276,7 @@ iree_status_t loom_native_module_check_calls(
 
 static iree_status_t loom_native_module_function(
     const loom_target_emit_request_t* request, const loom_target_entry_t* entry,
-    const loom_native_module_elf_target_t* target,
+    const loom_native_module_elf_target_t* target, const void* target_context,
     const uint32_t* symbol_indices, iree_host_size_t section_index,
     loom_native_module_fixups_t* fixups, bool* out_accepted,
     loom_native_section_contribution_t* out_section) {
@@ -290,9 +290,9 @@ static iree_status_t loom_native_module_function(
   // instruction preparation storage is bounded by the largest function.
   iree_arena_allocator_t function_arena;
   iree_arena_initialize(request->scratch_arena->block_pool, &function_arena);
-  iree_status_t status =
-      target->emit_function(request, entry, symbol_indices, section_index,
-                            fixups, &function_arena, stream, out_accepted);
+  iree_status_t status = target->emit_function(
+      request, entry, target_context, symbol_indices, section_index, fixups,
+      &function_arena, stream, out_accepted);
   iree_arena_deinitialize(&function_arena);
   const iree_host_size_t length =
       (iree_host_size_t)iree_io_stream_length(stream);
@@ -362,6 +362,12 @@ static iree_status_t loom_native_module_build_artifact(
       },
       &diagnostics, IREE_SV("native artifact"), request->scratch_arena,
       &accepted, &entries));
+  if (!accepted || diagnostics.error_count) {
+    return iree_ok_status();
+  }
+  void* target_context = NULL;
+  IREE_RETURN_IF_ERROR(target->prepare_module(
+      request, &entries, request->scratch_arena, &accepted, &target_context));
   if (!accepted || diagnostics.error_count) {
     return iree_ok_status();
   }
@@ -477,16 +483,13 @@ static iree_status_t loom_native_module_build_artifact(
     if (!iree_status_is_ok(status) || !accepted) {
       continue;
     }
-    if (loom_low_func_decl_isa(entries.values[i].func.op)) {
-      status =
-          target->check_declaration(request, &entries.values[i], &accepted);
-    } else {
+    if (!loom_low_func_decl_isa(entries.values[i].func.op)) {
       const iree_host_size_t section_index =
           symbols[i].section_contribution_index;
       const iree_host_size_t first_fixup = fixups.count;
       status = loom_native_module_function(
-          request, &entries.values[i], target, symbol_indices, section_index,
-          &fixups, &accepted, &sections[section_index]);
+          request, &entries.values[i], target, target_context, symbol_indices,
+          section_index, &fixups, &accepted, &sections[section_index]);
       symbols[i].size = sections[section_index].contents.data_length;
       // The prepared fixups are the exact referenced symbols. Unused imports
       // remain legal; a self-contained image requires definitions only for

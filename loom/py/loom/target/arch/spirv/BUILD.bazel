@@ -73,6 +73,31 @@ iree_py_library(
     ],
 )
 
+iree_py_library(
+    name = "barrier",
+    srcs = [
+        "__init__.py",
+        "barrier.py",
+    ],
+)
+
+iree_py_test(
+    name = "barrier_test",
+    size = "small",
+    srcs = [
+        "barrier_test.py",
+        "//loom/py/loom/tools:pytest_style_runner.py",
+    ],
+    args = ["loom.target.arch.spirv.barrier_test"],
+    main = "pytest_style_runner.py",
+    deps = [
+        ":barrier",
+        ":descriptors",
+        "//loom/py/loom/dialect/kernel",
+        "//loom/py/loom/target:low_descriptors",
+    ],
+)
+
 iree_py_test(
     name = "atomic_test",
     size = "small",
@@ -112,6 +137,7 @@ iree_py_library(
     ],
     deps = [
         ":atomic",
+        ":barrier",
         ":builtins",
         ":cooperative_matrix",
         ":extended_math",
@@ -152,6 +178,7 @@ iree_py_test(
     main = "pytest_style_runner.py",
     deps = [
         ":atomic",
+        ":barrier",
         ":builtins",
         ":cooperative_matrix",
         ":descriptors",

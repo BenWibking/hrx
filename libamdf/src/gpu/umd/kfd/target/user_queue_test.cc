@@ -202,6 +202,9 @@ TEST(KfdTargetUserQueueTest, SdmaFormatsFollowExactIndependentEngineIp) {
     const auto& plan = plans.values[0];
     EXPECT_EQ(plan.family.command_type, AMDF_QUEUE_COMMAND_TYPE_GPU_SDMA);
     EXPECT_EQ(plan.family.format_features, test.features);
+    EXPECT_EQ(plan.family.user_queue_capabilities,
+              AMDF_USER_QUEUE_CAPABILITY_HOST_PRODUCER |
+                  AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER);
     const bool user_gcr =
         (test.features & AMDF_GPU_SDMA_FORMAT_FEATURE_USER_GCR) != 0;
     EXPECT_EQ(plan.family.roles,

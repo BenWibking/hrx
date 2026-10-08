@@ -67,6 +67,10 @@ The [KFD queue-storage contract](../architectures.md#kfd-queue-storage) also
 requires the ring and control words to resolve through native BO mappings.
 The separate SVM context-save path does not extend to the ring.
 
+The [compute queue context](../queue-context.md) supplies the native MQD/HQD
+representation, ring-base encoding, direct pointer restoration and scheduled
+CP/MES consumers. Those native settings surround the producer protocol below.
+
 `BaseQueue::PlacePacket` separates construction from publication. Let `C` be
 ring capacity in DWORDs, `R` the reported modulo RPTR, `W` the producer's
 pending modulo position, and `N` the packet size. It leaves one DWORD unused:
@@ -244,7 +248,14 @@ compute doorbell store is 32 bits.
 
 ### A complete Mesa compute submission
 
-Mesa's ordinary compute producer performs the following sequence:
+Mesa selects this producer when `AMD_USERQ` is enabled, the native per-IP
+`userq_ip_mask` includes compute, and DRM minor version is at least 65.
+`AMD_USERQ` defaults to false; Mesa removes SDMA from the mask and rejects a
+nonzero remaining mask below that version. The following sequence assumes a
+matching USERQ ABI; the cited Linux and Mesa revisions have distinct version
+and layout contracts, described under
+[native and firmware applicability](#native-and-firmware-applicability).
+[Mesa selection][mesa-userq-selection] [Submission selection][mesa-submit-selection]
 
 1. Finalize the separately owned IB. Collect explicit synchronization objects,
    the latest relevant VM-update timeline point and shared-BO dependencies.
@@ -309,6 +320,13 @@ DRM userq path is available.
 [GFX11 registration][linux-userq-gfx11] [GFX12 registration][linux-userq-gfx12]
 [Native mask][linux-userq-mask] [Reported fields][drm-ip-info]
 
+That Linux revision advertises DRM 3.64.0. Even when it reports a nonzero
+GFX/compute userq mask, this is below Mesa's minimum minor version for the
+opt-in path. These exact source revisions therefore do not select that path
+together through the cited version gate.
+[Driver version][linux-drm-version] [Driver registration][linux-drm-driver]
+[Mesa selection][mesa-userq-selection]
+
 The cited Mesa and Linux snapshots also have different USERQ_SIGNAL
 declarations: Mesa includes a trailing `syncobj_points` pointer and a 64-bit
 `num_syncobj_handles`; Linux's structure lacks that pointer and uses a 16-bit
@@ -334,11 +352,16 @@ The source flows above supply different observations for these boundaries.
 PAL's retained-command reset contract explicitly requires that a buffer is
 neither queued nor executing and that every other command buffer which
 referenced it through `CmdExecuteNestedCmdBuffers` has also been reset.
-Automatic allocator reuse instead uses root generation and submit/done
-tracking. These distinctions explain why a completed submission permits a
+With automatic reuse and busy tracking enabled, root generation and
+submit/done counts determine allocator idleness. Setting
+`disableBusyChunkTracking` instead makes the client responsible for final GPU
+use before returning chunks; the allocator's idle query then supplies no
+independent completion check. Without automatic reuse, allocator reset owns
+recycling. These distinctions explain why a completed submission permits a
 controlled CPU rebuild, while an advanced RPTR or an accepted submission alone
-does not. [Client reset contract][pal-reset]
-[Automatic idle tracking][pal-idle] [Allocator reuse][pal-reuse]
+does not. [Client reset contract][pal-reset] [Allocator modes][pal-allocator-modes]
+[Tracker selection][pal-tracker-selection] [Idle tracking][pal-idle]
+[Allocator reuse][pal-reuse]
 
 [Command-buffer ownership](command-buffers.md) covers the entry/return and
 mutable-IB protocols. [Cross-queue handoff](handoff.md) covers dependent payload
@@ -393,6 +416,8 @@ publish command bytes that the CP was already allowed to fetch.
 [mesa-userq-create]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/winsys/amdgpu/drm/amdgpu_userq.c#L201-L262
 [linux-userq-doorbell]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_userq.c#L467-L524
 [mesa-userq-submit]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/winsys/amdgpu/drm/amdgpu_cs.cpp#L1636-L1751
+[mesa-userq-selection]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/common/ac_gpu_info.c#L1493-L1507
+[mesa-submit-selection]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/winsys/amdgpu/drm/amdgpu_cs.cpp#L2352-L2360
 [mesa-userq-body]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/winsys/amdgpu/drm/amdgpu_cs.cpp#L1516-L1607
 [mesa-fence-wait]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/winsys/amdgpu/drm/amdgpu_cs.cpp#L216-L242
 [linux-userq-destroy]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_userq.c#L537-L580
@@ -402,8 +427,12 @@ publish command bytes that the CP was already allowed to fetch.
 [linux-userq-gfx11]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/gfx_v11_0.c#L1649-L1676
 [linux-userq-gfx12]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/gfx_v12_0.c#L1435-L1449
 [linux-userq-mask]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_userq.c#L39-L49
+[linux-drm-version]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c#L130-L132
+[linux-drm-driver]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c#L3109-L3136
 [mesa-userq-signal-abi]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/include/drm-uapi/amdgpu_drm.h#L459-L502
 [linux-userq-signal-abi]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/include/uapi/drm/amdgpu_drm.h#L468-L507
 [pal-reset]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/inc/core/palCmdBuffer.h#L2244-L2306
-[pal-idle]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/cmdStreamAllocation.cpp#L470-L479
+[pal-idle]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/cmdStreamAllocation.cpp#L466-L479
+[pal-allocator-modes]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/inc/core/palCmdAllocator.h#L43-L70
+[pal-tracker-selection]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/cmdAllocator.cpp#L93-L118
 [pal-reuse]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/cmdAllocator.cpp#L703-L739

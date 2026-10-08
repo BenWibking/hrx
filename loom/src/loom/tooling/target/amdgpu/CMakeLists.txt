@@ -9,27 +9,6 @@
 
 iree_add_all_subdirs()
 
-if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
-loom_cc_library(
-  NAME
-    device_provider
-  HDRS
-    "device_provider.h"
-  SRCS
-    "device_provider.c"
-  DEPS
-    iree::base
-    iree::hal
-    loom::target::arch::amdgpu::facts
-    loom::target::arch::amdgpu::profile
-    loom::target::arch::amdgpu::target_info
-    loom::target::emit::native::amdgpu::hal_kernel_library
-    loom::tooling::execution::hal::device_provider
-    loom::tooling::execution::hal::runtime
-  PUBLIC
-)
-endif()
-
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 loom_cc_library(
   NAME
@@ -40,34 +19,13 @@ loom_cc_library(
     "testbench_requirements.c"
   DEPS
     iree::base
+    loom::binding::c::interop
+    loom::binding::c::loomc
     loom::target::arch::amdgpu::profile
     loom::target::arch::amdgpu::target_info_defs
     loom::tooling::execution::hal::testbench_actual
     loom::tooling::testbench::requirements
   PUBLIC
-)
-endif()
-
-if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
-loom_cc_test(
-  NAME
-    device_provider_test
-  SRCS
-    "device_provider_test.cc"
-  DEPS
-    ::device_provider
-    iree::base
-    iree::hal
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::target::arch::amdgpu::artifact_key
-    loom::target::arch::amdgpu::facts
-    loom::target::arch::amdgpu::profile
-    loom::target::arch::amdgpu::target_info
-    loom::tooling::execution::hal::runtime
-  LABELS
-    "iree-build-requirement=loom.target.arch.amdgpu"
-    "iree-build-requirement=loom.emit.amdgpu"
 )
 endif()
 

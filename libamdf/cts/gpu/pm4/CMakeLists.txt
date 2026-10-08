@@ -40,15 +40,47 @@ iree_cc_library(
 )
 endif()
 
+if(AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND (LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA3_CORE OR LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA3_5_CORE OR LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_CORE OR LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4M_CORE))
+iree_cc_library(
+  NAME
+    wave_mode_cases
+  SRCS
+    "wave_mode_test.cc"
+  DEPS
+    ::dispatch_fixture
+    amdf::headers
+    iree::third_party::google_test
+    libamdf::cts::gpu::kernels::lds_exchange
+    libamdf::cts::gpu::kernels::lds_exchange_kernels
+    libamdf::cts::gpu::kernels::lds_exchange_wave64_kernels
+  TESTONLY
+  ALWAYSLINK
+  PUBLIC
+)
+endif()
+
 if(IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Windows"))
+set(_pm4_cases_platform_deps "")
+if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA3_CORE)
+  list(APPEND _pm4_cases_platform_deps ::wave_mode_cases)
+elseif(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA3_5_CORE)
+  list(APPEND _pm4_cases_platform_deps ::wave_mode_cases)
+elseif(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_CORE)
+  list(APPEND _pm4_cases_platform_deps ::wave_mode_cases)
+elseif(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4M_CORE)
+  list(APPEND _pm4_cases_platform_deps ::wave_mode_cases)
+endif()
 iree_cc_library(
   NAME
     pm4_cases
   SRCS
     "atomic_store_test.cc"
+    "branch_test.cc"
     "command_buffer_test.cc"
+    "conditional_test.cc"
     "copy_test.cc"
     "dispatch_test.cc"
+    "dma_test.cc"
     "handoff_test.cc"
     "indirect_test.cc"
     "lds_test.cc"
@@ -67,6 +99,7 @@ iree_cc_library(
     libamdf::cts::gpu::kernels::transform_kernels
     libamdf::cts::gpu::pm4::encoding::commands
     libamdf::cts::gpu::util::command_fixture
+    ${_pm4_cases_platform_deps}
   TESTONLY
   ALWAYSLINK
   PUBLIC

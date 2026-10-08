@@ -53,23 +53,41 @@ kernel.def @subword_cmpxchg_i8() {
   kernel.return
 }
 
-check.case public @subword_cmpxchg_values_i8 {
-  %output = check.generate.fill value(0) : tensor<4x65xi8>
-  %guards = check.generate.fill value(0) : tensor<2xi8>
-  kernel.launch @subword_cmpxchg_i8(%output, %guards) : (tensor<4x65xi8>, tensor<2xi8>)
-  %old = check.tensor.view %output offset(0) : tensor<4x65xi8> -> tensor<65xi8>
-  %expected_old = check.generate.fill value(-128) : tensor<65xi8>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<65xi8>
-  %second = check.tensor.view %output offset(65) : tensor<4x65xi8> -> tensor<65xi8>
-  %expected_second = check.generate.fill value(71) : tensor<65xi8>
-  check.expect.bitwise actual(%second) expected(%expected_second) : tensor<65xi8>
-  %expected_final = check.generate.iota offset(72) step(-1) period(2) : tensor<65xi8>
-  %failed = check.tensor.view %output offset(130) : tensor<4x65xi8> -> tensor<65xi8>
-  check.expect.bitwise actual(%failed) expected(%expected_final) : tensor<65xi8>
-  %final = check.tensor.view %output offset(195) : tensor<4x65xi8> -> tensor<65xi8>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<65xi8>
-  %expected_guard = check.generate.fill value(77) : tensor<2xi8>
-  check.expect.bitwise actual(%guards) expected(%expected_guard) : tensor<2xi8>
+func.def @subword_cmpxchg_i8_oracle(%output: buffer, %guard_output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 65 : index
+  %pair_size = index.constant 2 : index
+  %step = index.constant 1 : index
+  %results = buffer.view %output[%base] : buffer -> view<4x65xi8>
+  %guards = buffer.view %guard_output[%base] : buffer -> view<2xi8>
+  %initial = scalar.constant -128 : i8
+  %replacement = scalar.constant 71 : i8
+  %next = scalar.constant 72 : i8
+  %guard = scalar.constant 77 : i8
+  scf.for %lane = [%begin to %end step %step] {
+    %parity = index.rem %lane, %pair_size : index
+    %even = index.cmp eq, %parity, %begin : index
+    %final = scf.select %even, %next, %replacement : i8
+    view.store %initial, %results[0, %lane] : i8, view<4x65xi8>
+    view.store %replacement, %results[1, %lane] : i8, view<4x65xi8>
+    view.store %final, %results[2, %lane] : i8, view<4x65xi8>
+    view.store %final, %results[3, %lane] : i8, view<4x65xi8>
+  }
+  view.store %guard, %guards[0] : i8, view<2xi8>
+  view.store %guard, %guards[1] : i8, view<2xi8>
+  func.return
+}
+
+check.scenario @subword_cmpxchg_values_i8 {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %output = check.generate.fill value(0) : tensor<4x65xi8>
+    %guards = check.generate.fill value(0) : tensor<2xi8>
+    check.compare<@subword_cmpxchg_i8, @subword_cmpxchg_i8_oracle>(%output, %guards) : (tensor<4x65xi8>, tensor<2xi8>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<4x65xi8>
+      check.expect.bitwise actual(%guards) expected(%guards) : tensor<2xi8>
+    }
+  }
   check.return
 }
 
@@ -128,23 +146,41 @@ kernel.def @subword_cmpxchg_i16() {
   kernel.return
 }
 
-check.case public @subword_cmpxchg_values_i16 {
-  %output = check.generate.fill value(0) : tensor<4x65xi16>
-  %guards = check.generate.fill value(0) : tensor<2xi16>
-  kernel.launch @subword_cmpxchg_i16(%output, %guards) : (tensor<4x65xi16>, tensor<2xi16>)
-  %old = check.tensor.view %output offset(0) : tensor<4x65xi16> -> tensor<65xi16>
-  %expected_old = check.generate.fill value(-32768) : tensor<65xi16>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<65xi16>
-  %second = check.tensor.view %output offset(130) : tensor<4x65xi16> -> tensor<65xi16>
-  %expected_second = check.generate.fill value(71) : tensor<65xi16>
-  check.expect.bitwise actual(%second) expected(%expected_second) : tensor<65xi16>
-  %expected_final = check.generate.iota offset(72) step(-1) period(2) : tensor<65xi16>
-  %failed = check.tensor.view %output offset(260) : tensor<4x65xi16> -> tensor<65xi16>
-  check.expect.bitwise actual(%failed) expected(%expected_final) : tensor<65xi16>
-  %final = check.tensor.view %output offset(390) : tensor<4x65xi16> -> tensor<65xi16>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<65xi16>
-  %expected_guard = check.generate.fill value(77) : tensor<2xi16>
-  check.expect.bitwise actual(%guards) expected(%expected_guard) : tensor<2xi16>
+func.def @subword_cmpxchg_i16_oracle(%output: buffer, %guard_output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 65 : index
+  %pair_size = index.constant 2 : index
+  %step = index.constant 1 : index
+  %results = buffer.view %output[%base] : buffer -> view<4x65xi16>
+  %guards = buffer.view %guard_output[%base] : buffer -> view<2xi16>
+  %initial = scalar.constant -32768 : i16
+  %replacement = scalar.constant 71 : i16
+  %next = scalar.constant 72 : i16
+  %guard = scalar.constant 77 : i16
+  scf.for %lane = [%begin to %end step %step] {
+    %parity = index.rem %lane, %pair_size : index
+    %even = index.cmp eq, %parity, %begin : index
+    %final = scf.select %even, %next, %replacement : i16
+    view.store %initial, %results[0, %lane] : i16, view<4x65xi16>
+    view.store %replacement, %results[1, %lane] : i16, view<4x65xi16>
+    view.store %final, %results[2, %lane] : i16, view<4x65xi16>
+    view.store %final, %results[3, %lane] : i16, view<4x65xi16>
+  }
+  view.store %guard, %guards[0] : i16, view<2xi16>
+  view.store %guard, %guards[1] : i16, view<2xi16>
+  func.return
+}
+
+check.scenario @subword_cmpxchg_values_i16 {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %output = check.generate.fill value(0) : tensor<4x65xi16>
+    %guards = check.generate.fill value(0) : tensor<2xi16>
+    check.compare<@subword_cmpxchg_i16, @subword_cmpxchg_i16_oracle>(%output, %guards) : (tensor<4x65xi16>, tensor<2xi16>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<4x65xi16>
+      check.expect.bitwise actual(%guards) expected(%guards) : tensor<2xi16>
+    }
+  }
   check.return
 }
 
@@ -193,37 +229,48 @@ kernel.def @subword_global_cmpxchg_i8() {
   kernel.return
 }
 
-check.case public @subword_global_cmpxchg_values_i8 {
-  %global_storage = check.generate.fill value(77) : tensor<197xi8>
-  %generic_storage = check.generate.fill value(77) : tensor<197xi8>
-  %global_cells = check.tensor.view %global_storage offset(1) : tensor<197xi8> -> tensor<195xi8>
-  %generic_cells = check.tensor.view %generic_storage offset(1) : tensor<197xi8> -> tensor<195xi8>
-  %output = check.generate.fill value(0) : tensor<4x195xi8>
-  kernel.launch @subword_global_cmpxchg_i8(%global_cells, %generic_cells, %output) : (tensor<195xi8>, tensor<195xi8>, tensor<4x195xi8>)
-  %global_old = check.tensor.view %output offset(0) : tensor<4x195xi8> -> tensor<195xi8>
-  %generic_old = check.tensor.view %output offset(195) : tensor<4x195xi8> -> tensor<195xi8>
-  %generic_second = check.tensor.view %output offset(390) : tensor<4x195xi8> -> tensor<195xi8>
-  %global_second = check.tensor.view %output offset(585) : tensor<4x195xi8> -> tensor<195xi8>
-  %expected_old = check.generate.fill value(77) : tensor<195xi8>
-  check.expect.bitwise actual(%global_old) expected(%expected_old) : tensor<195xi8>
-  check.expect.bitwise actual(%generic_old) expected(%expected_old) : tensor<195xi8>
-  %expected_second = check.generate.fill value(71) : tensor<195xi8>
-  check.expect.bitwise actual(%generic_second) expected(%expected_second) : tensor<195xi8>
-  %expected_global_second = check.generate.iota offset(72) step(5) period(2) : tensor<195xi8>
-  check.expect.bitwise actual(%global_second) expected(%expected_global_second) : tensor<195xi8>
-  %expected_global = check.generate.iota offset(72) step(1) period(2) : tensor<195xi8>
-  %expected_generic = check.generate.iota offset(72) step(-1) period(2) : tensor<195xi8>
-  check.expect.bitwise actual(%global_cells) expected(%expected_global) : tensor<195xi8>
-  check.expect.bitwise actual(%generic_cells) expected(%expected_generic) : tensor<195xi8>
-  %global_prefix = check.tensor.view %global_storage offset(0) : tensor<197xi8> -> tensor<1xi8>
-  %global_suffix = check.tensor.view %global_storage offset(196) : tensor<197xi8> -> tensor<1xi8>
-  %generic_prefix = check.tensor.view %generic_storage offset(0) : tensor<197xi8> -> tensor<1xi8>
-  %generic_suffix = check.tensor.view %generic_storage offset(196) : tensor<197xi8> -> tensor<1xi8>
-  %guard = check.generate.fill value(77) : tensor<1xi8>
-  check.expect.bitwise actual(%global_prefix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%global_suffix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%generic_prefix) expected(%guard) : tensor<1xi8>
-  check.expect.bitwise actual(%generic_suffix) expected(%guard) : tensor<1xi8>
+func.def @subword_global_cmpxchg_i8_oracle(%global_storage: buffer, %generic_storage: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 195 : index
+  %pair_size = index.constant 2 : index
+  %step = index.constant 1 : index
+  %global = buffer.view %global_storage[%base] : buffer -> view<195xi8>
+  %generic = buffer.view %generic_storage[%base] : buffer -> view<195xi8>
+  %results = buffer.view %output[%base] : buffer -> view<4x195xi8>
+  %initial = scalar.constant 77 : i8
+  %replacement = scalar.constant 71 : i8
+  %next = scalar.constant 72 : i8
+  %last = scalar.constant 73 : i8
+  scf.for %lane = [%begin to %end step %step] {
+    %parity = index.rem %lane, %pair_size : index
+    %even = index.cmp eq, %parity, %begin : index
+    %global_second = scf.select %even, %next, %initial : i8
+    %global_final = scf.select %even, %next, %last : i8
+    %generic_final = scf.select %even, %next, %replacement : i8
+    view.store %initial, %results[0, %lane] : i8, view<4x195xi8>
+    view.store %initial, %results[1, %lane] : i8, view<4x195xi8>
+    view.store %replacement, %results[2, %lane] : i8, view<4x195xi8>
+    view.store %global_second, %results[3, %lane] : i8, view<4x195xi8>
+    view.store %global_final, %global[%lane] : i8, view<195xi8>
+    view.store %generic_final, %generic[%lane] : i8, view<195xi8>
+  }
+  func.return
+}
+
+check.scenario @subword_global_cmpxchg_values_i8 {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %global_storage = check.generate.fill value(77) : tensor<197xi8>
+    %generic_storage = check.generate.fill value(77) : tensor<197xi8>
+    %global_cells = check.tensor.view %global_storage offset(1) : tensor<197xi8> -> tensor<195xi8>
+    %generic_cells = check.tensor.view %generic_storage offset(1) : tensor<197xi8> -> tensor<195xi8>
+    %output = check.generate.fill value(0) : tensor<4x195xi8>
+    check.compare<@subword_global_cmpxchg_i8, @subword_global_cmpxchg_i8_oracle>(%global_cells, %generic_cells, %output) : (tensor<195xi8>, tensor<195xi8>, tensor<4x195xi8>) -> () {
+      check.expect.bitwise actual(%global_storage) expected(%global_storage) : tensor<197xi8>
+      check.expect.bitwise actual(%generic_storage) expected(%generic_storage) : tensor<197xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<4x195xi8>
+    }
+  }
   check.return
 }
 
@@ -272,36 +319,47 @@ kernel.def @subword_global_cmpxchg_i16() {
   kernel.return
 }
 
-check.case public @subword_global_cmpxchg_values_i16 {
-  %global_storage = check.generate.fill value(77) : tensor<197xi16>
-  %generic_storage = check.generate.fill value(77) : tensor<197xi16>
-  %global_cells = check.tensor.view %global_storage offset(2) : tensor<197xi16> -> tensor<195xi16>
-  %generic_cells = check.tensor.view %generic_storage offset(2) : tensor<197xi16> -> tensor<195xi16>
-  %output = check.generate.fill value(0) : tensor<4x195xi16>
-  kernel.launch @subword_global_cmpxchg_i16(%global_cells, %generic_cells, %output) : (tensor<195xi16>, tensor<195xi16>, tensor<4x195xi16>)
-  %global_old = check.tensor.view %output offset(0) : tensor<4x195xi16> -> tensor<195xi16>
-  %generic_old = check.tensor.view %output offset(390) : tensor<4x195xi16> -> tensor<195xi16>
-  %generic_second = check.tensor.view %output offset(780) : tensor<4x195xi16> -> tensor<195xi16>
-  %global_second = check.tensor.view %output offset(1170) : tensor<4x195xi16> -> tensor<195xi16>
-  %expected_old = check.generate.fill value(77) : tensor<195xi16>
-  check.expect.bitwise actual(%global_old) expected(%expected_old) : tensor<195xi16>
-  check.expect.bitwise actual(%generic_old) expected(%expected_old) : tensor<195xi16>
-  %expected_second = check.generate.fill value(71) : tensor<195xi16>
-  check.expect.bitwise actual(%generic_second) expected(%expected_second) : tensor<195xi16>
-  %expected_global_second = check.generate.iota offset(72) step(5) period(2) : tensor<195xi16>
-  check.expect.bitwise actual(%global_second) expected(%expected_global_second) : tensor<195xi16>
-  %expected_global = check.generate.iota offset(72) step(1) period(2) : tensor<195xi16>
-  %expected_generic = check.generate.iota offset(72) step(-1) period(2) : tensor<195xi16>
-  check.expect.bitwise actual(%global_cells) expected(%expected_global) : tensor<195xi16>
-  check.expect.bitwise actual(%generic_cells) expected(%expected_generic) : tensor<195xi16>
-  %global_prefix = check.tensor.view %global_storage offset(0) : tensor<197xi16> -> tensor<1xi16>
-  %global_suffix = check.tensor.view %global_storage offset(392) : tensor<197xi16> -> tensor<1xi16>
-  %generic_prefix = check.tensor.view %generic_storage offset(0) : tensor<197xi16> -> tensor<1xi16>
-  %generic_suffix = check.tensor.view %generic_storage offset(392) : tensor<197xi16> -> tensor<1xi16>
-  %guard = check.generate.fill value(77) : tensor<1xi16>
-  check.expect.bitwise actual(%global_prefix) expected(%guard) : tensor<1xi16>
-  check.expect.bitwise actual(%global_suffix) expected(%guard) : tensor<1xi16>
-  check.expect.bitwise actual(%generic_prefix) expected(%guard) : tensor<1xi16>
-  check.expect.bitwise actual(%generic_suffix) expected(%guard) : tensor<1xi16>
+func.def @subword_global_cmpxchg_i16_oracle(%global_storage: buffer, %generic_storage: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 195 : index
+  %pair_size = index.constant 2 : index
+  %step = index.constant 1 : index
+  %global = buffer.view %global_storage[%base] : buffer -> view<195xi16>
+  %generic = buffer.view %generic_storage[%base] : buffer -> view<195xi16>
+  %results = buffer.view %output[%base] : buffer -> view<4x195xi16>
+  %initial = scalar.constant 77 : i16
+  %replacement = scalar.constant 71 : i16
+  %next = scalar.constant 72 : i16
+  %last = scalar.constant 73 : i16
+  scf.for %lane = [%begin to %end step %step] {
+    %parity = index.rem %lane, %pair_size : index
+    %even = index.cmp eq, %parity, %begin : index
+    %global_second = scf.select %even, %next, %initial : i16
+    %global_final = scf.select %even, %next, %last : i16
+    %generic_final = scf.select %even, %next, %replacement : i16
+    view.store %initial, %results[0, %lane] : i16, view<4x195xi16>
+    view.store %initial, %results[1, %lane] : i16, view<4x195xi16>
+    view.store %replacement, %results[2, %lane] : i16, view<4x195xi16>
+    view.store %global_second, %results[3, %lane] : i16, view<4x195xi16>
+    view.store %global_final, %global[%lane] : i16, view<195xi16>
+    view.store %generic_final, %generic[%lane] : i16, view<195xi16>
+  }
+  func.return
+}
+
+check.scenario @subword_global_cmpxchg_values_i16 {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %global_storage = check.generate.fill value(77) : tensor<197xi16>
+    %generic_storage = check.generate.fill value(77) : tensor<197xi16>
+    %global_cells = check.tensor.view %global_storage offset(2) : tensor<197xi16> -> tensor<195xi16>
+    %generic_cells = check.tensor.view %generic_storage offset(2) : tensor<197xi16> -> tensor<195xi16>
+    %output = check.generate.fill value(0) : tensor<4x195xi16>
+    check.compare<@subword_global_cmpxchg_i16, @subword_global_cmpxchg_i16_oracle>(%global_cells, %generic_cells, %output) : (tensor<195xi16>, tensor<195xi16>, tensor<4x195xi16>) -> () {
+      check.expect.bitwise actual(%global_storage) expected(%global_storage) : tensor<197xi16>
+      check.expect.bitwise actual(%generic_storage) expected(%generic_storage) : tensor<197xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<4x195xi16>
+    }
+  }
   check.return
 }

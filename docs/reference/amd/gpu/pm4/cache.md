@@ -7,6 +7,12 @@ separate parts of that dependency. `ACQUIRE_MEM` supplies cache actions at the
 command processor; `RELEASE_MEM` can perform cache actions after a pipeline
 event and then publish a completion value.
 
+These payload-cache actions are separate from
+[translation priming and invalidation](translation.md). `PRIME_UTCL2` warms
+translations for an existing mapping; the native VM owner orders page-table
+updates and its selected TLB invalidation. Neither substitutes for the data
+producer's release or the consumer's acquire described here.
+
 This chapter follows ordinary compute callers in PAL, Mesa and ROCr, with
 native Linux emitters for GC9.4.3/4 and GC12.1. GFX10/GFX11, PAL's GFX12,
 and GC12.1 have different field meanings despite sharing the opcodes. The
@@ -94,6 +100,98 @@ the cache operations remain after DMA completion so an unfinished copy cannot
 make GL2 stale again after it was refreshed.
 [Shader cache conditions][pal12-front-end] [Deferred DMA release][pal12-deferred-dma]
 [DMA acquire and cache planning][pal12-acquire-dma]
+
+### Recorded execution and cache history
+
+A barrier recorder needs information about earlier work as well as the two
+access masks of the current transition. PAL retains separate summaries for
+execution and cache effects of its internal copy, clear and resolve operations
+(BLTs). These describe the command sequence being recorded, including possible
+earlier work on the same queue. They are neither CPU observations of current
+hardware activity nor a per-allocation access history.
+[State definitions][pal-history-state] [Initial state][pal-history-reset]
+
+| Recorded fact | PAL state | Consequence for GFX12 barrier planning |
+| --- | --- | --- |
+| A compute BLT may still execute | `csBltActive` | Expands a generic BLT source stage to `PipelineStageCs`. |
+| A compute BLT may have left dirty shader data | `csWriteCachesDirty` | Generic BLT access masks retain shader read/write categories even after execution is joined. |
+| An asynchronous CP-DMA BLT may still execute | `cpBltActive` | Buffer/global barriers can require a CP-DMA join. Image barriers use a different producer path. |
+| CP writes may have made shader GL2 stale | `cpMemoryWriteL2CacheStale` | Buffer/global copy sources retain the bypass-GL2 memory category. |
+| Work from an earlier command buffer may still execute | `prevCmdBufActive` | A covering EOP wait establishes the recorded previous-work join. |
+
+[Stage normalization][pal12-stage-history] [Access normalization][pal12-normalize]
+[EOP state update][pal12-token-history]
+
+`GfxCmdBuffer::ResetState` starts compute-BLT activity and dirty-cache state
+set: starting a new recording does not make earlier shaders idle or their
+data clean. It also starts the older direct/indirect metadata histories set.
+The GFX12 path initially assumes CP writes can have made GL2 stale; the older
+path instead assumes dirty CP-written cache data through `cpWriteCachesDirty`.
+The recorded release-token counters restart at zero, and the first covering
+compute-execution fence thresholds become one.
+[Reset defaults][pal-history-reset] [Fence thresholds][pal-history-fences]
+
+CP-DMA activity starts clear under PAL's command-buffer postamble contract.
+That premise has an owner: its GFX12 compute postamble drains active CP DMA,
+while the universal postamble performs that drain only for a non-nested
+buffer. An independent raw command stream has to supply its own
+[DMA join](dma.md#mec-completion-discrepancy-and-ordinary-caller). Resetting host
+bookkeeping does not perform the join, cache maintenance or
+[command-storage retirement](command-buffers.md#cpu-rebuild-after-completed-use).
+[Compute postamble][pal12-history-compute-tail]
+[Universal postamble][pal12-history-universal-tail]
+
+The producers and waits update different parts of this history:
+
+1. Restoring state after internal compute BLTs, with
+   `trackBltActiveFlags` enabled, marks both compute activity and dirty shader
+   data. It records the next EOP and next `CS_DONE` token values as the earliest
+   fences that can cover those BLTs. An older release cannot cover a later BLT.
+   [Compute producer][pal-history-compute-producer]
+   [Threshold update][pal-history-fences]
+2. GFX12 `CopyMemoryCp` emits asynchronous `DMA_DATA` and marks both CP-DMA
+   activity and potentially stale GL2. Joining that DMA clears its activity
+   and retires the current CP-DMA token; the setter leaves cache history alone.
+   This CP engine is separate from an [SDMA queue](../sdma/README.md).
+   [Copy producer][pal12-history-copy] [Activity setter][pal-history-cp-retire]
+3. Split `IssueAcquireSync` merges the unretired tokens to wait for. At ME or
+   PFP, a waited EOP retires previous-command-buffer activity; compute-BLT
+   activity clears only if a waited EOP or `CS_DONE` reaches its respective
+   latest covering threshold. These execution updates leave
+   `csWriteCachesDirty` and `cpMemoryWriteL2CacheStale` unchanged, even when
+   this acquire also emits cache operations.
+   [Token selection][pal12-token-selection]
+   [Covered execution][pal12-token-history] [Cache emission][pal12-acquire-tail]
+
+The GFX12 combined `IssueReleaseThenAcquireSync` has explicit, broader
+conditions for forgetting cache history. Its predicates use the original
+requested cache mask, before actions are distributed between release and
+acquire packets:
+
+| History cleared | Complete cache-mask requirement | Execution requirement |
+| --- | --- | --- |
+| `csWriteCachesDirty` | `SyncGl2WbInv \| SyncGlkInv \| SyncGlvInv` | Acquire point is ME/PFP and compute-BLT activity is clear. |
+| `cpMemoryWriteL2CacheStale` | `SyncGl2Inv \| SyncGlkInv \| SyncGlvInv` | CP-DMA activity is clear; this state update is outside the ME/PFP guard. |
+
+[Mask predicates][pal12-history-clear-mask] [State updates][pal12-history-clear]
+
+These are PAL's criteria for clearing a command-buffer-wide summary. A narrower
+operation can satisfy a particular producer/consumer edge while leaving that
+summary conservative. The table does not establish that every edge needs all
+of those cache actions. Execution retirement, cache visibility and storage
+reuse each retain their own condition.
+
+Nested recording also carries history across the composition boundary.
+The shared compute `LeakNestedCmdBufferState` copies the callee's final CS/CP
+activity, CS/CP dirty-cache and CP-stale-GL2 flags into the caller. The universal
+variant additionally copies graphics activity/cache state and the three
+metadata histories. These are assignments of the nested recorder's final
+summary. In the GFX12 compute caller, recording the nested execution separately
+tracks command and embedded-data owners before absorbing that summary.
+The flag transfer itself supplies no command-memory retirement observation.
+[Compute state transfer][pal-history-nested-compute]
+[Universal state transfer][pal-history-nested-universal]
+[Nested command owners][pal12-history-nested-owner]
 
 ## Ordinary ACQUIRE_MEM representation
 
@@ -196,6 +294,10 @@ GC12.1's repurposed vector-writeback bit. [GFX10/GFX11 sequence][pal-acquire]
 
 ## RELEASE_MEM cache actions
 
+[Completion publication](release.md) owns the complete packet, event/data
+selectors, write confirmation and notification. The cache fields below belong
+to that release sequence and retain their native generation's meanings.
+
 `RELEASE_MEM`, opcode `0x49`, inserts an event whose cache actions precede its
 completion publication. Emitting the packet does not make subsequent command
 processing wait for that publication. A dependent stream still needs the
@@ -249,6 +351,85 @@ repurposed bit 24. Clearing it because an older GFX12 path omits scalar
 writeback would discard a different cache action. The Linux fence also owns
 its event, temporal hint, interrupt and destination policy; those fields do
 not come from the acquire mask. [GC12.1 fence][linux121-fence]
+
+### Placement in complete barriers
+
+PAL's GFX10/GFX11 `SelectReleaseMemCaches` partitions requested actions by packet
+representation: GL2 writeback/invalidation and M$/GL1/V$ invalidation fit in
+release; GFX11 also takes K$ writeback/invalidation. I$ invalidation remains
+for acquire. The helper itself issues no dependency wait. Its callers use
+that partition differently. [Action selection][pal-release-select]
+
+| PAL caller | Action placement and completion |
+| --- | --- |
+| `IssueReleaseSync` | Requires the entire split-release cache set to fit in release. Cache work plus a selected event promotes notification to EOP. With cache work but no event, the token path uses cache-only acquire and produces no completion token. |
+| `ComputeCmdBuffer::WriteWaitEop` | Emits the representable release actions, waits on its owned fence, then acquires any remaining actions. |
+| `IssueReleaseThenAcquireSync` | A late-acquire optimization moves actions to an existing EOP release only if all fit. Any remainder restores the original acquire mask and moves cache work to ME after the producer wait. |
+
+[Split-release requirement][pal-release-requirement]
+[Cache-only token path][pal-release-cache-only]
+[Compute EOP owner][pal-compute-eop-partition]
+[Combined placement][pal-combined-partition]
+
+The performance-experiment caller's `SyncGlxWbInvAll` request exposes a GFX10
+ordering question. The compute EOP helper places GL2 writeback in release and
+K$ writeback in the later acquire, with no second GL2 writeback in that helper.
+The sources supply no dirty-K$ premise reconciling that order with PAL's
+lower-to-outer writeback rule above. This emitted sequence alone does not
+establish a general scalar-to-system release.
+[All-cache caller][pal-perf-all-caches] [Compute EOP owner][pal-compute-eop-partition]
+[Acquire sequencing][pal-acquire]
+
+For an ordinary non-PWS compute buffer edge from shader write to shader read,
+the combined path joins CS execution and then invalidates shader-source caches.
+The separate split path publishes a release token and waits for it before the
+consumer invalidations. Both retain the execution edge before cache work.
+The selected CS-idle operation has its own
+[firmware predicate](memory-commands.md#compute-completion-and-firmware).
+[Buffer cache planning][pal-transitions] [Combined wait][pal-join]
+[Split wait][pal-split-acquire]
+
+These barrier callers request whole-range operations even for buffer barriers;
+the acquire builder's ranged mode is a separate facility. Deferring a CP-DMA
+token also defers its cache actions until the DMA join.
+[Caller inputs][pal-cache-caller-inputs] [Deferred DMA][pal-cache-deferred-dma]
+
+### GFX12 complete barriers
+
+PAL's GFX12 cache flags contain GL2 writeback/invalidation and K$/V$/I$
+invalidation. Release represents the four data-cache actions; I$ invalidation
+requires acquire. K$ writeback is absent from this planner under the compiler
+premise above. This GFX12 policy does not describe GC12.1's vector-writeback
+field. [GFX12 flag set][pal12-complete-flags]
+[Release selection][pal12-complete-select]
+
+| GFX12 caller | Action placement and completion |
+| --- | --- |
+| Split token release/acquire to a compute consumer | Cache actions plus a selected stage event promote release to EOP. The non-PWS acquire joins the token before its remaining cache work. With no release event, cache-only work supplies no stage-completion token. |
+| Combined compute barrier with EOP completion | `WriteWaitEop` puts data-cache actions in release and waits on its owned fence, then emits any remaining acquire actions. |
+| Combined compute barrier with CS-only completion | `CS_PARTIAL_FLUSH` joins the shader stage before a cache-only acquire. |
+| Combined graphics PWS barrier | Requested data-cache work moves into the release; the matching counter acquire waits at the selected stage without repeating it. |
+| EOP-only destination | Required cache work can be emitted in a release without an immediate acquire wait. That emission is not a CPU completion observation. |
+
+[Split release][pal12-complete-release] [Split acquire][pal12-token-wait]
+[Compute EOP owner][pal12-complete-eop] [Combined callers][pal12-complete-combined]
+
+The pinned source contains an I$ assertion disagreement. `SelectReleaseMemCaches`
+asserts that no actions remain, describing I$ invalidation as preamble-only.
+`PerfExperiment::WriteWaitIdle(flushCaches=true)` instead passes
+`SyncGlxWbInvAll` (`0x1f`) through the compute EOP helper: release consumes
+`0x0f`, leaving I$ invalidation (`0x10`). The caller contains a trailing acquire
+for that remainder, but the selector assertion contradicts its real input.
+This source inconsistency establishes no hardware restriction on I$ invalidation.
+[Selector assertion][pal12-complete-select] [All-cache caller][pal12-complete-all]
+[Remainder handling][pal12-complete-eop]
+
+Timestamp writes add a separate dependency even when no GCR action is needed.
+The GFX12 recorder preserves `CoherTimestamp` as a confirmation requirement,
+inserts its write-confirmation sequence, and promotes an otherwise non-EOP
+producer join to EOP. Its
+[timestamp flow](timing.md#gfx12-timestamp-confirmation) supplies the complete
+caller and storage contract. [Timestamp event promotion][pal12-complete-events]
 
 ## Metadata and source disagreements
 
@@ -357,6 +538,29 @@ ordinary GLM invalidation and the disputed `GLM_WB` bit.
 [BLT history and exemptions][pal-metadata-blit-history]
 [Original-mask requirement][pal-metadata-transition]
 
+### Metadata history accumulation and clearing
+
+PAL retains three separate facts:
+`csBltDirectWriteMisalignedMdDirty`,
+`csBltIndirectWriteMisalignedMdDirty` and
+`gfxBltDirectWriteMisalignedMdDirty`. Their setters accumulate with OR, so a
+later operation without misaligned metadata cannot erase an earlier write.
+The conservative recording reset starts both compute histories set and, on a
+graphics-capable command buffer, the graphics history too.
+[History setters][pal-metadata-history] [Reset defaults][pal-history-reset]
+
+In its GFX10/GFX11 barrier implementation, both split acquire and combined
+release/acquire call `ClearBltWriteMisalignMdState` when the requested cache
+mask includes GL2 writeback and invalidation. The helper retains each bit while
+its associated BLT engine remains active and clears it only once that activity
+has been joined. Thus neither GL2 maintenance without the producer join nor
+the producer join without GL2 maintenance forgets the metadata obligation.
+The ordinary dirty-cache flags and GLM invalidation have separate meanings.
+[Split-acquire clear][pal-metadata-history-acquire]
+[Combined-barrier mask][pal-metadata-history-mask]
+[Combined-barrier clear][pal-metadata-history-combined]
+[Per-engine clearing][pal-metadata-history]
+
 ## Graphics PWS
 
 Graphics PWS acquire uses 128-byte GCR base/size units and a 25-bit high-size
@@ -365,6 +569,17 @@ to PFP or ME when cache work is attached; Mesa asserts that GCR has no effect
 at the other PWS stages. These fields and counters belong to the graphics
 pipeline. [PAL PWS acquire][pal-pws] [Mesa PWS acquire][mesa-pws-acquire]
 [GFX11 ME size fields][pal-me-sizes]
+
+PAL `c5e800072a32` has the same source inconsistency in its GFX10/GFX11
+and GFX12 stage selection:
+`AcquirePoint` contains PFP=0, ME=1, PRE_DEPTH=2 and EOP=3, while
+`GetReleaseEvents` indexes a seven-entry stage-mask table. Indices 2 and 3
+therefore select masks whose comments name PRE_SHADER and PRE_DEPTH. Later
+conditionals further adjust the event set. These actual indices and predicates
+describe the pinned implementation; the table comments do not establish
+hardware stage ordering. [Acquire-point enum][pal-acquire-point-enum]
+[Indexed release masks][pal-release-stage-masks]
+[GFX12 enum][pal12-complete-points] [GFX12 release masks][pal12-complete-events]
 
 ### Consumer stage and deferred waits
 
@@ -578,6 +793,10 @@ all-XCC broadcast or the firmware expansion of AQL fences.
 [gfx942 cache model][cdna-llvm-model] [SYSTEM shader acquire][cdna-llvm-acquire]
 [SYSTEM shader release][cdna-llvm-release] [Native ring/XCC owner][cdna-ring-xcc]
 
+The [shader memory chapter](../shader-memory.md#global-release-and-acquire-sequences)
+gives the release/acquire instruction sequences and their scope, counter and
+workgroup-mode conditions across these shader families.
+
 An SDMA or CPU observer therefore needs the release, completion and acquire
 operations of its actual access path. HDP handles a host-aperture boundary;
 it does not substitute for shader TC maintenance. Conversely, an EOP control
@@ -712,6 +931,22 @@ the address being in host or device memory. [Programming recipes](../recipes/REA
 [pal12-front-end]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L435-L465
 [pal12-deferred-dma]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L713-L725
 [pal12-acquire-dma]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L955-L985
+[pal-history-state]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdBuffer.h#L164-L198
+[pal-history-reset]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdBuffer.cpp#L265-L317
+[pal-history-fences]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdBuffer.h#L611-L625
+[pal-history-compute-producer]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdBuffer.cpp#L1313-L1328
+[pal-history-cp-retire]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdBuffer.h#L563-L584
+[pal-history-nested-compute]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/computeCmdBuffer.cpp#L160-L181
+[pal-history-nested-universal]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/universalCmdBuffer.cpp#L962-L976
+[pal12-stage-history]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L251-L290
+[pal12-history-compute-tail]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L946-L980
+[pal12-history-universal-tail]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12UniversalCmdBuffer.cpp#L351-L375
+[pal12-history-copy]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L1605-L1640
+[pal12-token-selection]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L990-L1012
+[pal12-token-history]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L1071-L1098
+[pal12-history-clear-mask]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L1131-L1147
+[pal12-history-clear]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L1347-L1379
+[pal12-history-nested-owner]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L632-L672
 [pal-metadata-layout]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9Image.cpp#L3391-L3409
 [pal-metadata-finalize]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9Image.cpp#L918-L924
 [pal-metadata-range]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9Image.cpp#L3317-L3332
@@ -723,3 +958,24 @@ the address being in host or device memory. [Programming recipes](../recipes/REA
 [pal-metadata-blit-history]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L219-L258
 [pal-metadata-inputs]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9Barrier.h#L330-L355
 [pal-metadata-blit]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L969-L982
+[pal-metadata-history]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdBuffer.h#L591-L609
+[pal-metadata-history-acquire]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1797-L1800
+[pal-metadata-history-mask]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1815-L1831
+[pal-metadata-history-combined]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L2081-L2111
+[pal-release-requirement]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1331-L1372
+[pal-release-cache-only]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1513-L1536
+[pal-compute-eop-partition]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9ComputeCmdBuffer.cpp#L1779-L1834
+[pal-perf-all-caches]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9PerfExperiment.cpp#L4099-L4119
+[pal-combined-partition]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1834-L1872
+[pal-cache-caller-inputs]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L2393-L2429
+[pal-cache-deferred-dma]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1630-L1647
+[pal-acquire-point-enum]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9Chip.h#L713-L720
+[pal-release-stage-masks]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L437-L531
+[pal12-complete-flags]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Chip.h#L294-L311
+[pal12-complete-select]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12CmdUtil.cpp#L1803-L1827
+[pal12-complete-release]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L701-L896
+[pal12-complete-eop]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L1721-L1784
+[pal12-complete-combined]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L1199-L1347
+[pal12-complete-all]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12PerfExperiment.cpp#L3408-L3421
+[pal12-complete-events]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L123-L204
+[pal12-complete-points]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Chip.h#L375-L382
