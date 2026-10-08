@@ -15,7 +15,6 @@
 
 #include <stdint.h>
 
-#include "loom/analysis/view_regions.h"
 #include "loom/codegen/low/lower/lower.h"
 #include "loom/codegen/low/representation_plan.h"
 #include "loom/codegen/low/source_memory_plan.h"
@@ -2177,10 +2176,10 @@ typedef struct loom_amdgpu_tensor_load_plan_t {
   loom_low_lower_resolved_descriptor_t descriptor;
   // Descriptor row used to move each uniform D-group lane into an SGPR.
   loom_low_lower_resolved_descriptor_t readfirstlane_descriptor;
-  // Canonical global-read region, borrowed until source lowering finishes.
-  const loom_view_region_t* source_region;
-  // Canonical LDS-write region, borrowed until source lowering finishes.
-  const loom_view_region_t* dest_region;
+  // Optional global-read envelope retained independently of view analysis.
+  const loom_low_memory_relative_interval_t* source_interval;
+  // Optional LDS-write envelope retained independently of view analysis.
+  const loom_low_memory_relative_interval_t* dest_interval;
   // Source values materialized as the packet's D0 through D3 SGPR groups.
   loom_value_id_t dgroups[LOOM_AMDGPU_TENSOR_DGROUP_CAPACITY];
   // Number of populated D-group source values.
