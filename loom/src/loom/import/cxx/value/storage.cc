@@ -368,7 +368,7 @@ Pointer Storage::allocate_elements(const cxx::Type* element_type,
                                source, &op));
   auto byte_length = loom_op_results(op)[0];
   check(loom_buffer_alloca_build(
-      &builder_, memory_space,
+      &builder_, /*build_flags=*/0, memory_space, LOOM_VALUE_ID_INVALID,
       std::max<int64_t>(*alignment, explicit_alignment), byte_length,
       loom_type_buffer(), source, &op));
   auto root = loom_op_results(op)[0];

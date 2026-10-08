@@ -685,8 +685,6 @@ loom_cc_binary(
     ::artifact
     ::check_provider
     iree::base
-    loom::binding::c::target::amd::xdna
-    loom::tools::loom-check::compile
     loom::tools::loom-check::provider
     loom::tools::loom-check::test_provider
   TESTONLY

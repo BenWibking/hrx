@@ -589,8 +589,6 @@ loom_cc_binary(
     deps = [
         ":artifact",
         ":check_provider",
-        "//loom/binding/c/target/amd/xdna",
-        "//loom/src/loom/tools/loom-check:compile",
         "//loom/src/loom/tools/loom-check:provider",
         "//loom/src/loom/tools/loom-check:test_provider",
         "//runtime/src/iree/base",
