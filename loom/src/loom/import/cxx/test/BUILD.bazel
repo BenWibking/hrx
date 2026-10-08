@@ -17,6 +17,7 @@ package(
 exports_files([
     "aiter_swiglu_f16.cxx",
     "check_records.cxx",
+    "configured_workgroup_storage.cxx",
     "flash_attention.cxx",
     "llama_rms_norm.cxx",
     "mxfp_group_dot.cxx",
@@ -493,6 +494,7 @@ loom_test_module(
         target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
     )
     for source in [
+        "configured_workgroup_storage",
         "mxfp_group_dot",
         "packed_byte_arithmetic",
         "packed_float16_conversion",

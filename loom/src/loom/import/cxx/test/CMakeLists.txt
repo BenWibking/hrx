@@ -1305,6 +1305,15 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
+    configured_workgroup_storage_module
+  SRCS
+    "configured_workgroup_storage.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
     mxfp_group_dot_module
   SRCS
     "mxfp_group_dot.cxx"

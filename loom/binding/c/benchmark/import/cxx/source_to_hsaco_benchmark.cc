@@ -25,6 +25,8 @@ struct CxxKernel {
   const char* root;
   // Concrete AMDGPU profile used for lowering and code object emission.
   const char* target;
+  // Additional definitions satisfying source-owned configuration declarations.
+  const char* config_definitions = nullptr;
 };
 
 enum class CxxJitPhase {
@@ -100,6 +102,9 @@ class CxxSourceScenarioBase : public TargetCompileScenario {
       config += "config.def @" + std::string(kernel_.root) +
                 ".workgroup_count." + "xyz"[axis] + " = " +
                 (axis == 0 ? "3" : "1") + " : index\n";
+    }
+    if (kernel_.config_definitions) {
+      config += kernel_.config_definitions;
     }
     IREE_RETURN_IF_ERROR(CreateWorkspace(/*block_size=*/0, &setup_workspace_));
     return CreateTextModule(context_.get(), setup_workspace_.get(),
@@ -307,6 +312,12 @@ constexpr CxxKernel kMxfp4 = {"mxfp_group_dot.cxx", "mxfp4_decode_dot",
                               "gfx1250"};
 constexpr CxxKernel kMxfp8 = {"mxfp_group_dot.cxx", "mxfp8_decode_dot",
                               "gfx1250"};
+constexpr CxxKernel kConfiguredWorkgroupStorage = {
+    "configured_workgroup_storage.cxx",
+    "configured_workgroup_storage",
+    "gfx1151",
+    "config.def @test.buffer.stage_count = 4 : i32\n",
+};
 
 struct CxxJitPhaseRegistration {
   // Phase supplied to the benchmark scenario.
@@ -343,6 +354,8 @@ void RegisterCxxJitPhaseBenchmarks(const char* kernel_name,
 [[maybe_unused]] const bool kCxxJitPhasesRegistered = [] {
   RegisterCxxJitPhaseBenchmarks("RmsNorm", &kRmsNorm);
   RegisterCxxJitPhaseBenchmarks("Mxfp8Gfx1250", &kMxfp8);
+  RegisterCxxJitPhaseBenchmarks("ConfiguredWorkgroupStorage",
+                                &kConfiguredWorkgroupStorage);
   return true;
 }();
 
@@ -356,11 +369,18 @@ BENCHMARK_CAPTURE(SourceToHsaco, Mxfp4Gfx1250, &kMxfp4)
     ->Unit(::benchmark::kMicrosecond);
 BENCHMARK_CAPTURE(SourceToHsaco, Mxfp8Gfx1250, &kMxfp8)
     ->Unit(::benchmark::kMicrosecond);
+BENCHMARK_CAPTURE(SourceToHsaco, ConfiguredWorkgroupStorage,
+                  &kConfiguredWorkgroupStorage)
+    ->Unit(::benchmark::kMicrosecond);
 
 BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, RmsNorm, &kRmsNorm)
     ->Unit(::benchmark::kMicrosecond)
     ->Iterations(1);
 BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, Mxfp8Gfx1250, &kMxfp8)
+    ->Unit(::benchmark::kMicrosecond)
+    ->Iterations(1);
+BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, ConfiguredWorkgroupStorage,
+                  &kConfiguredWorkgroupStorage)
     ->Unit(::benchmark::kMicrosecond)
     ->Iterations(1);
 
