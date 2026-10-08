@@ -44,6 +44,7 @@ loom_cc_test(
         "//loom/src/loom/codegen/low:frame",
         "//loom/src/loom/codegen/low:placement",
         "//loom/src/loom/codegen/low/allocation:assignment",
+        "//loom/src/loom/target/test:descriptors",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
