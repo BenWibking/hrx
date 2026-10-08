@@ -1,0 +1,256 @@
+// Observe correctly rounded f64 results, including signed zero. NaN payloads
+// and signs are unspecified; retain the quiet bit so signaling results fail.
+// CDNA f64 sqrt requires reciprocal-root refinement; hardware SQRT is approximate.
+// Execute on CDNA3; the build also qualifies the same program for CDNA4.
+kernel.def @sqrt_float64() {
+  %one = index.constant 1 : index
+  %width = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%width, %one, %one) : index
+} launch(%input: buffer, %output: buffer) {
+  %lane = kernel.workitem.id<x> : index
+  %base = index.constant 0 : offset
+  %inputs = buffer.view %input[%base] : buffer -> view<64xi64>
+  %outputs = buffer.view %output[%base] : buffer -> view<64xi64>
+  %bits = view.load %inputs[%lane] : view<64xi64> -> i64
+  %value = scalar.bitcast %bits : i64 to f64
+  %root = scalar.sqrtf %value : f64
+  %bits_out = scalar.bitcast %root : f64 to i64
+  %is_nan = scalar.cmpf uno, %root, %root : f64
+  %quiet_bit = scalar.constant 2251799813685248 : i64
+  %exponent = scalar.constant 9218868437227405312 : i64
+  %quiet = scalar.andi %bits_out, %quiet_bit : i64
+  %nan_tag = scalar.ori %quiet, %exponent : i64
+  %observed = scf.select %is_nan, %nan_tag, %bits_out : i64
+  view.store %observed, %outputs[%lane] : i64, view<64xi64>
+  kernel.return
+}
+
+check.case @sqrt_float64_positive_zero {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(0) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(0) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_negative_zero {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(-9223372036854775808) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(-9223372036854775808) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_one_hundred {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(4636737291354636288) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(4621819117588971520) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_one_twenty_five {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(4638496509959077888) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(4622483589873660370) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_one_fifty {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(4639481672377565184) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(4623084318737787258) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_one_seventy_five {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(4640361281679785984) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(4623636745941399332) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_irrational {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(4611686018427387904) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(4609047870845172685) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_minimum_subnormal {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(1) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(2188749418902061056) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_next_subnormal {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(2) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(2190614870947216333) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_maximum_subnormal {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(4503599627370495) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(2305843009213693951) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_minimum_normal {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(4503599627370496) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(2305843009213693952) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_maximum_normal {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(9218868437227405311) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(6913025428013711359) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_below_scaling_threshold {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(1152921504606846975) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(2879665613934902220) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_scaling_threshold {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(1152921504606846976) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(2879665613934902221) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_above_scaling_threshold {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(1152921504606846977) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(2879665613934902221) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_positive_infinity {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(9218868437227405312) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(9218868437227405312) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_negative_infinity {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(-4503599627370496) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(9221120237041090560) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_negative_one {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(-4616189618054758400) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(9221120237041090560) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_negative_subnormal {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(-9223372036854775807) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(9221120237041090560) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_quiet_nan {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(9221120237041090851) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(9221120237041090560) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_signaling_nan {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.fill value(9218868437227405603) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  %expected = check.generate.fill value(9221120237041090560) : tensor<64xi64>
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+// Alternate scaling and special-value decisions within the same wave.
+check.case @sqrt_float64_mixed_scaling {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.iota offset(1) step(4607182418800017407) period(2) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  %expected = check.generate.iota offset(2188749418902061056) step(2418432999897956352) period(2) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  check.expect.equal actual(%actual) expected(%expected) : tensor<64xi64>
+  check.return
+}
+
+check.case @sqrt_float64_mixed_zero_infinity {
+  check.requires<hal.amdgpu.descriptor_set> {descriptor_set = "amdgpu.cdna3.core"}
+  %input = check.generate.iota offset(0) step(9218868437227405312) period(2) : tensor<64xi64>
+  %actual = check.generate.fill value(-1) : tensor<64xi64>
+  kernel.launch @sqrt_float64(%input, %actual) : (tensor<64xi64>, tensor<64xi64>)
+  check.expect.equal actual(%actual) expected(%input) : tensor<64xi64>
+  check.return
+}
