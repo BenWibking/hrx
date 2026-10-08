@@ -178,4 +178,23 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_test(
+  NAME
+    cfg_simplify_test
+  SRCS
+    "cfg_simplify_test.cc"
+  DEPS
+    ::cfg_simplify
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::format::text::parser
+    loom::ir
+    loom::ops::cfg
+    loom::ops::scalar
+    loom::ops::test
+    loom::pass::value_facts
+    loom::util::fact_table
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

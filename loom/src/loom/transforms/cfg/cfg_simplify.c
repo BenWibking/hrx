@@ -1852,7 +1852,9 @@ iree_status_t loom_cfg_simplify_run(loom_pass_t* pass, loom_module_t* module,
     loom_pass_mark_changed(pass);
   }
   loom_rewriter_deinitialize(&rewriter);
-  loom_pass_value_fact_owner_invalidate(pass->value_facts);
+  if (any_changed || !iree_status_is_ok(status)) {
+    loom_pass_value_fact_owner_invalidate(pass->value_facts);
+  }
   loom_local_value_domain_release(&state.value_domain);
   iree_arena_deinitialize(&analysis_arena);
   return status;
