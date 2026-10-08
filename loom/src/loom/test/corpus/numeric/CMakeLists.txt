@@ -77,6 +77,7 @@ loom_corpus_sources(
     "vector/insertion.loom"
     "vector/integer_bitwise.loom"
     "vector/integer_comparison.loom"
+    "vector/integer_shifts.loom"
     "vector/integer_widening.loom"
     "vector/interleave.loom"
     "vector/lanes.loom"
