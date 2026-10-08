@@ -1123,6 +1123,15 @@ static iree_status_t loom_boundary_projection_replace_functions(
 
 iree_status_t loom_boundary_projection_apply(
     loom_boundary_projection_plan_t* plan) {
+  // Snapshot original definitions before the batch creates any value, so every
+  // recorded replacement lies outside the correspondence source domain.
+  for (iree_host_size_t i = 0; i < plan->function_count; ++i) {
+    if (!plan->functions[i].selected) {
+      continue;
+    }
+    IREE_RETURN_IF_ERROR(loom_boundary_projection_initialize_remap(
+        plan, &plan->functions[i].correspondence));
+  }
   for (iree_host_size_t i = 0; i < plan->function_count; ++i) {
     if (!plan->functions[i].selected) {
       continue;

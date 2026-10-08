@@ -21,6 +21,7 @@
 #include "loom/ops/op_defs.h"
 #include "loom/pass/types.h"
 #include "loom/pass/value_facts.h"
+#include "loom/rewrite/remap.h"
 #include "loom/rewrite/rewriter.h"
 #include "loom/target/function_version.h"
 #include "loom/transforms/boundary/projection_rule.h"
@@ -179,6 +180,12 @@ struct loom_boundary_projection_function_t {
   loom_boundary_projection_block_t* blocks;
   // Number of rewritten blocks.
   iree_host_size_t block_count;
+  // Canonical correspondence from original definitions to the values that
+  // replaced them during the atomic application phase. Empty until
+  // application begins; each replacement records the definitions it retires.
+  // Retained source recipes resolve their logical value IDs through this map
+  // because use replacement in live IR does not update IDs stored in recipes.
+  loom_ir_remap_t correspondence;
   // LoopLike recurrence plans in operation postorder.
   loom_boundary_projection_loop_t* loops;
   // Number of populated loop plans.
@@ -247,6 +254,21 @@ iree_status_t loom_boundary_projection_plan_prepare(
 
 // Finds a function-local projection candidate by semantic value identity.
 iree_host_size_t loom_boundary_projection_slot_index(
+    const loom_boundary_projection_function_t* function,
+    loom_value_id_t value_id);
+
+// Records that |replacement| now defines the program value previously defined
+// by |original| in |function|'s application batch.
+iree_status_t loom_boundary_projection_record_replacement(
+    loom_boundary_projection_function_t* function, loom_value_id_t original,
+    loom_value_id_t replacement);
+
+// Returns the value currently defining |value_id| after the replacements
+// recorded so far in |function|'s application batch, or |value_id| when none
+// replaced it. Rules call this when materializing a retained source recipe
+// that names a logical value, so a recipe planned against an original
+// definition observes the replacement installed by an earlier rewrite.
+loom_value_id_t loom_boundary_projection_resolve_value(
     const loom_boundary_projection_function_t* function,
     loom_value_id_t value_id);
 

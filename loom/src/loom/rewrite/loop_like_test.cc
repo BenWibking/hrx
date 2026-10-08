@@ -513,5 +513,240 @@ TEST_F(LoopLikeReplacementTest,
   FinishAndVerify();
 }
 
+TEST_F(LoopLikeReplacementTest, PreparesDetachedEndpointsBeforeCompletion) {
+  const loom_type_t f32 = loom_type_scalar(LOOM_SCALAR_TYPE_F32);
+  const loom_type_t index = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+  const loom_value_id_t rows = BuildIndex(8);
+  const loom_type_t dependent_type = loom_type_shaped_1d(
+      LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_F32, loom_dim_pack_dynamic(rows), 0);
+  const loom_value_id_t dependent =
+      BuildConstant(loom_attr_f64(0.0), dependent_type);
+  const loom_value_id_t first = BuildConstant(loom_attr_f64(1.0), f32);
+  const loom_value_id_t condition = BuildConstant(
+      loom_attr_bool(true), loom_type_scalar(LOOM_SCALAR_TYPE_I1));
+  loom_value_id_t source_initial[] = {first, dependent, rows};
+  loom_value_id_t source_identities[2 * IREE_ARRAYSIZE(source_initial)] = {};
+  IREE_ASSERT_OK(loom_builder_reserve_values(
+      &builder_, IREE_ARRAYSIZE(source_identities), source_identities));
+  const loom_type_t source_header_types[] = {
+      f32,
+      loom_type_shaped_1d(LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_F32,
+                          loom_dim_pack_dynamic(source_identities[2]), 0),
+      index,
+  };
+  const loom_value_id_t* source_results =
+      source_identities + IREE_ARRAYSIZE(source_initial);
+  const loom_type_t source_result_types[] = {
+      f32,
+      loom_type_shaped_1d(LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_F32,
+                          loom_dim_pack_dynamic(source_results[2]), 0),
+      index,
+  };
+  loom_op_t* source = nullptr;
+  IREE_ASSERT_OK(loom_scf_while_build(
+      &builder_, source_initial, IREE_ARRAYSIZE(source_initial),
+      source_header_types, source_result_types,
+      IREE_ARRAYSIZE(source_result_types), /*tied_results=*/nullptr,
+      /*tied_result_count=*/0, LOOM_LOCATION_UNKNOWN, &source));
+  loom_block_t* source_condition =
+      loom_region_entry_block(loom_scf_while_before(source));
+  loom_builder_ip_t saved = loom_builder_enter_region(
+      &builder_, source, loom_scf_while_before(source));
+  loom_op_t* source_condition_op = nullptr;
+  IREE_ASSERT_OK(
+      loom_scf_condition_build(&builder_, condition, source_condition->arg_ids,
+                               source_condition->arg_count,
+                               LOOM_LOCATION_UNKNOWN, &source_condition_op));
+  loom_builder_restore(&builder_, saved);
+  loom_block_t* source_body =
+      loom_region_entry_block(loom_scf_while_after(source));
+  BuildScfYield(source, loom_scf_while_after(source), source_body->arg_ids,
+                source_body->arg_count);
+
+  loom_value_id_t target_identities[2 * IREE_ARRAYSIZE(source_initial)] = {};
+  IREE_ASSERT_OK(loom_builder_reserve_values(
+      &builder_, IREE_ARRAYSIZE(target_identities), target_identities));
+  const loom_type_t target_header_types[] = {
+      f32,
+      loom_type_shaped_1d(LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_F32,
+                          loom_dim_pack_dynamic(target_identities[2]), 0),
+      index,
+  };
+  const loom_value_id_t* target_results =
+      target_identities + IREE_ARRAYSIZE(source_initial);
+  const loom_type_t target_result_types[] = {
+      f32,
+      loom_type_shaped_1d(LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_F32,
+                          loom_dim_pack_dynamic(target_results[2]), 0),
+      index,
+  };
+  const uint16_t offsets[] = {0, 1, 2, 3};
+  const loom_loop_like_replacement_state_t target_state = {
+      /*.initial_values=*/{nullptr, (uint16_t)IREE_ARRAYSIZE(source_initial)},
+      /*.header_types=*/target_header_types,
+      /*.source_header_offsets=*/offsets,
+      /*.result_types=*/target_result_types,
+      /*.result_count=*/(uint16_t)IREE_ARRAYSIZE(target_result_types),
+      /*.source_result_offsets=*/offsets,
+  };
+  const uint32_t first_use_count = loom_module_value(module_, first)->use_count;
+  loom_loop_like_replacement_t replacement = {};
+  IREE_ASSERT_OK(loom_loop_like_prepare_replacement(
+      &builder_, loom_loop_like_cast(module_, source), &target_state,
+      &scratch_arena_, &replacement));
+
+  // Preparation defines every endpoint and releases the reservation without
+  // publishing the operation or registering operand uses.
+  loom_op_t* target = replacement.loop.op;
+  EXPECT_EQ(target->parent_block, nullptr);
+  EXPECT_EQ(builder_.reserved_value_count, 0u);
+  EXPECT_EQ(loom_module_value(module_, first)->use_count, first_use_count);
+  for (uint16_t i = 0; i < replacement.results.count; ++i) {
+    EXPECT_EQ(replacement.results.values[i], target_results[i]);
+    EXPECT_EQ(
+        loom_value_def_op(loom_module_value(module_, target_results[i])),
+        target);
+  }
+  for (uint16_t i = 0; i < replacement.condition_state.count; ++i) {
+    EXPECT_EQ(replacement.condition_state.values[i], target_identities[i]);
+    EXPECT_EQ(loom_value_def_block(
+                  loom_module_value(module_, target_identities[i])),
+              replacement.condition_entry);
+  }
+  for (uint16_t i = 0; i < replacement.body_state.count; ++i) {
+    EXPECT_EQ(loom_value_def_block(loom_module_value(
+                  module_, replacement.body_state.values[i])),
+              replacement.body_entry);
+  }
+  EXPECT_EQ(loom_type_dim_value_id_at(
+                loom_module_value_type(module_, replacement.body_state.values[1]),
+                0),
+            replacement.body_state.values[2]);
+
+  loom_builder_set_before(&builder_, source);
+  const loom_value_slice_t initial = {
+      source_initial, (uint16_t)IREE_ARRAYSIZE(source_initial)};
+  IREE_ASSERT_OK(
+      loom_loop_like_complete_replacement(&builder_, &replacement, initial));
+  EXPECT_EQ(target->parent_block, loom_region_entry_block(function_body_));
+  EXPECT_EQ(target->next_op, source);
+  EXPECT_EQ(target->parent_op, function_);
+  EXPECT_EQ(loom_module_value(module_, first)->use_count, first_use_count + 1);
+  EXPECT_EQ(loom_loop_like_iter_args(replacement.loop).values[0], first);
+
+  saved = loom_builder_enter_region(
+      &builder_, target, loom_loop_like_condition_region(replacement.loop));
+  loom_op_t* target_condition_op = nullptr;
+  IREE_ASSERT_OK(loom_scf_condition_build(
+      &builder_, condition, replacement.condition_state.values,
+      replacement.condition_state.count, LOOM_LOCATION_UNKNOWN,
+      &target_condition_op));
+  loom_builder_restore(&builder_, saved);
+  BuildScfYield(target, loom_loop_like_body(replacement.loop),
+                replacement.body_state.values, replacement.body_state.count);
+  Erase(source);
+  FinishAndVerify();
+}
+
+// An inner loop initialized from its enclosing loop's body argument is rebuilt
+// before the enclosing loop. The outer replacement is prepared first, so the
+// inner replacement can name the outer body argument while the outer operation
+// is still detached; completing and populating the outer replacement restores
+// dominance.
+TEST_F(LoopLikeReplacementTest, CompletesInnerLoopAgainstPreparedOuterBody) {
+  const loom_type_t f32 = loom_type_scalar(LOOM_SCALAR_TYPE_F32);
+  const loom_value_id_t first = BuildConstant(loom_attr_f64(1.0), f32);
+  const loom_value_id_t condition = BuildConstant(
+      loom_attr_bool(true), loom_type_scalar(LOOM_SCALAR_TYPE_I1));
+  auto build_condition = [&](loom_op_t* loop) {
+    loom_region_t* region = loom_scf_while_before(loop);
+    loom_block_t* entry = loom_region_entry_block(region);
+    const loom_builder_ip_t saved =
+        loom_builder_enter_region(&builder_, loop, region);
+    loom_op_t* op = nullptr;
+    IREE_ASSERT_OK(loom_scf_condition_build(&builder_, condition,
+                                            entry->arg_ids, entry->arg_count,
+                                            LOOM_LOCATION_UNKNOWN, &op));
+    loom_builder_restore(&builder_, saved);
+  };
+  auto prepare = [&](loom_op_t* source, loom_loop_like_replacement_t* out) {
+    loom_value_id_t identities[2] = {};
+    IREE_ASSERT_OK(loom_builder_reserve_values(&builder_, 2, identities));
+    const uint16_t offsets[] = {0, 1};
+    const loom_loop_like_replacement_state_t state = {
+        /*.initial_values=*/{nullptr, 1},
+        /*.header_types=*/&f32,
+        /*.source_header_offsets=*/offsets,
+        /*.result_types=*/&f32,
+        /*.result_count=*/1,
+        /*.source_result_offsets=*/offsets,
+    };
+    IREE_ASSERT_OK(loom_loop_like_prepare_replacement(
+        &builder_, loom_loop_like_cast(module_, source), &state,
+        &scratch_arena_, out));
+  };
+
+  loom_op_t* outer_source = nullptr;
+  IREE_ASSERT_OK(loom_scf_while_build(
+      &builder_, &first, 1, &f32, &f32, 1, /*tied_results=*/nullptr,
+      /*tied_result_count=*/0, LOOM_LOCATION_UNKNOWN, &outer_source));
+  build_condition(outer_source);
+  loom_region_t* outer_source_body = loom_scf_while_after(outer_source);
+  const loom_value_id_t outer_body_value =
+      loom_block_arg_id(loom_region_entry_block(outer_source_body), 0);
+  loom_builder_ip_t saved =
+      loom_builder_enter_region(&builder_, outer_source, outer_source_body);
+  loom_op_t* inner_source = nullptr;
+  IREE_ASSERT_OK(loom_scf_while_build(
+      &builder_, &outer_body_value, 1, &f32, &f32, 1,
+      /*tied_results=*/nullptr, /*tied_result_count=*/0,
+      LOOM_LOCATION_UNKNOWN, &inner_source));
+  loom_builder_restore(&builder_, saved);
+  build_condition(inner_source);
+  loom_region_t* inner_source_body = loom_scf_while_after(inner_source);
+  BuildScfYield(inner_source, inner_source_body,
+                loom_region_entry_block(inner_source_body)->arg_ids, 1);
+  BuildScfYield(outer_source, outer_source_body, loom_op_results(inner_source),
+                1);
+
+  loom_loop_like_replacement_t outer = {};
+  prepare(outer_source, &outer);
+  loom_loop_like_replacement_t inner = {};
+  prepare(inner_source, &inner);
+
+  // Complete the inner replacement first. Its initializer is the prepared outer
+  // body argument, whose owner is not yet part of the program.
+  loom_builder_set_before(&builder_, inner_source);
+  IREE_ASSERT_OK(loom_loop_like_complete_replacement(
+      &builder_, &inner, (loom_value_slice_t){outer.body_state.values, 1}));
+  EXPECT_EQ(outer.loop.op->parent_block, nullptr);
+  EXPECT_EQ(loom_module_value(module_, outer.body_state.values[0])->use_count,
+            1u);
+  build_condition(inner.loop.op);
+  BuildScfYield(inner.loop.op, loom_loop_like_body(inner.loop),
+                inner.body_state.values, 1);
+  loom_rewriter_t rewriter = {};
+  loom_rewriter_initialize(&rewriter, module_, &scratch_arena_);
+  IREE_ASSERT_OK(loom_rewriter_replace_all_uses_with(
+      &rewriter, loom_op_results(inner_source)[0], inner.results.values[0]));
+  IREE_ASSERT_OK(loom_rewriter_erase(&rewriter, inner_source));
+
+  loom_builder_set_before(&builder_, outer_source);
+  loom_value_id_t outer_initial[] = {first};
+  IREE_ASSERT_OK(loom_loop_like_complete_replacement(
+      &builder_, &outer, (loom_value_slice_t){outer_initial, 1}));
+  build_condition(outer.loop.op);
+  BuildScfYield(outer.loop.op, loom_loop_like_body(outer.loop),
+                inner.results.values, 1);
+  loom_op_t* outer_target_yield =
+      loom_region_entry_block(loom_loop_like_body(outer.loop))->last_op;
+  IREE_ASSERT_OK(
+      loom_rewriter_move_before(&rewriter, inner.loop.op, outer_target_yield));
+  EXPECT_EQ(inner.loop.op->parent_op, outer.loop.op);
+  loom_rewriter_deinitialize(&rewriter);
+  Erase(outer_source);
+  FinishAndVerify();
+}
+
 }  // namespace
 }  // namespace loom
