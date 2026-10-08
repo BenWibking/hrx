@@ -1481,6 +1481,7 @@ loom_corpus_test(
     "numeric/vector/reductions.loom"
     "numeric/vector/selection.loom"
     "control/branch/guards.loom"
+    "control/branch/publication.loom"
     "control/branch/structured.loom"
     "control/branch/uniform_predicate.loom"
     "control/loop/condition.loom"
@@ -1560,7 +1561,11 @@ loom_corpus_test(
   EXCLUDES
     "control/branch/cfg.loom"
     "SPIR-V requires structured control flow."
+    "control/branch/effects.loom"
+    "SPIR-V requires structured control flow."
     "control/branch/half.loom"
+    "SPIR-V requires structured control flow."
+    "control/branch/results.loom"
     "SPIR-V requires structured control flow."
     "control/loop/callable.loom"
     "SPIR-V requires structured control flow."
@@ -2076,11 +2081,6 @@ loom_corpus_test(
     "kernel/workgroup/loop_state.loom"
     "kernel/workgroup/reduce_partial.loom"
     "kernel/workgroup/reduce_tree.loom"
-  EXCLUDES
-    "control/branch/effects.loom"
-    "SPIR-V requires structured control flow."
-    "control/branch/results.loom"
-    "SPIR-V requires structured control flow."
   XFAILS
     "kernel/subgroup/active_predicate.loom"
     "@votes_ignore_inactive_lanes"

@@ -13,8 +13,11 @@ CONTROL_CORPUS = loom_corpus_manifest(
     package = "//loom/src/loom/test/corpus/control",
     scenario_srcs = [
         "branch/cfg.loom",
+        "branch/effects.loom",
         "branch/guards.loom",
         "branch/half.loom",
+        "branch/publication.loom",
+        "branch/results.loom",
         "branch/structured.loom",
         "branch/uniform_predicate.loom",
         "loop/callable.loom",
@@ -31,8 +34,6 @@ CONTROL_CORPUS = loom_corpus_manifest(
         "schedule/unroll_scope.loom",
     ],
     legacy_case_srcs = [
-        "branch/effects.loom",
-        "branch/results.loom",
         "loop/carried_lane_liveness.loom",
         "loop/sequential_slices.loom",
         "schedule/guarded_recurrence.loom",

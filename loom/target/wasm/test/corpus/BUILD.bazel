@@ -15,6 +15,7 @@ _KERNEL_SOURCES = [
     "control/branch/effects.loom",
     "control/branch/guards.loom",
     "control/branch/half.loom",
+    "control/branch/publication.loom",
     "control/branch/results.loom",
     "control/branch/uniform_predicate.loom",
     "control/loop/callable.loom",
@@ -109,8 +110,11 @@ _KERNEL_SOURCES = [
 
 _SCENARIO_KERNEL_SOURCES = [
     "control/branch/cfg.loom",
+    "control/branch/effects.loom",
     "control/branch/guards.loom",
     "control/branch/half.loom",
+    "control/branch/publication.loom",
+    "control/branch/results.loom",
     "control/branch/uniform_predicate.loom",
     "control/loop/callable.loom",
     "control/loop/condition.loom",
