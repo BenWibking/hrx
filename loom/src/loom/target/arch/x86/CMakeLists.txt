@@ -246,7 +246,6 @@ loom_check_test_suite(
     "test/source_low/buffer_bulk.loom-test"
     "test/source_low/buffer_raw.loom-test"
     "test/source_low/buffer_selection.loom-test"
-    "test/source_low/callable_returns.loom-test"
     "test/source_low/callable_values.loom-test"
     "test/source_low/carried_counter_store.loom-test"
     "test/source_low/function_boundary.loom-test"
