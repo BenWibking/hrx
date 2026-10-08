@@ -1,0 +1,59 @@
+// Copyright 2026 The IREE Authors
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+x86.target<avx512> @target
+
+global.rodata.def @reverse_i32x16_control = align(64) bytes("0f0000000e0000000d0000000c0000000b0000000a00000009000000080000000700000006000000050000000400000003000000020000000100000000000000")
+
+// Exercises ZMM construction and arithmetic, K-register comparison and logic,
+// masked selection, and deliberately unaligned stack transport.
+low.func.def public target<x86.avx512.core>(@target) abi(object_function) @avx512_select_i32x16(%scalar: reg<x86.gpr64>, %lhs: reg<x86.gpr64>, %rhs: reg<x86.gpr64>, %fallback: reg<x86.gpr64>, %output: reg<x86.gpr64>) asm {
+  %slot = storage {byte_alignment = 1, byte_length = 67} : low.storage<stack>
+  %scalar_value = mov.load.gpr32 %scalar {disp32 = 0}
+  %splat = vpbroadcastd %scalar_value
+  %lhs_value = vmovdqu32.load %lhs {disp32 = 0}
+  %rhs_value = vmovdqu32.load %rhs {disp32 = 0}
+  %fallback_value = vmovdqu32.load %fallback {disp32 = 0}
+  %sum = vpaddd %lhs_value, %splat
+  %greater = vpcmpd %sum, %rhs_value, 6
+  %equal = vpcmpd %rhs_value, %fallback_value, 0
+  %condition = korq %greater, %equal
+  %selected = vpblendmd %condition, %sum, %fallback_value
+  low.spill %selected, %slot {offset = 3} : reg<x86.zmm>, low.storage<stack>
+  %restored = low.reload %slot {offset = 3} : low.storage<stack> -> reg<x86.zmm>
+  vmovdqu32.store %restored, %output {disp32 = 0}
+  return
+}
+
+// Exercises retained read-only data and a full-register ZMM permutation.
+low.func.def public target<x86.avx512.core>(@target) abi(object_function) @avx512_reverse_i32x16(%input: reg<x86.gpr64>, %output: reg<x86.gpr64>) asm {
+  %value = vmovdqu32.load %input {disp32 = 0}
+  %control = avx512.vmovdqu64.rodata.zmm @reverse_i32x16_control
+  %reversed = avx512.vpermd.zmm %value, %control
+  vmovdqu32.store %reversed, %output {disp32 = 0}
+  return
+}
+
+// Exercises full-width floating arithmetic and the reassociated ZMM-to-XMM
+// reduction path. The caller observes lane zero of the final XMM store.
+low.func.def public target<x86.avx512.core>(@target) abi(object_function) @avx512_reduce_f32x16(%values: reg<x86.gpr64>, %bias: reg<x86.gpr64>, %initial: reg<x86.gpr64>, %output: reg<x86.gpr64>) asm {
+  %values_vector = vmovdqu32.load %values {disp32 = 0}
+  %bias_vector = vmovdqu32.load %bias {disp32 = 0}
+  %initial_vector = vmovdqu32.load.xmm %initial {disp32 = 0}
+  %biased = vaddps %values_vector, %bias_vector
+  %shuffle0 = vshufi64x2 %biased, %biased, 78
+  %sum0 = vaddps %biased, %shuffle0
+  %shuffle1 = vshufi64x2 %sum0, %sum0, 177
+  %sum1 = vaddps %sum0, %shuffle1
+  %shuffle2 = vpsrldq.zmm %sum1, 8
+  %sum2 = vaddps %sum1, %shuffle2
+  %shuffle3 = vpsrldq.zmm %sum2, 4
+  %sum3 = vaddps %sum2, %shuffle3
+  %scalar_sum = vextractf32x4.xmm %sum3, 0
+  %result = vaddss.xmm %initial_vector, %scalar_sum
+  vmovdqu32.store.xmm %result, %output {disp32 = 0}
+  return
+}
