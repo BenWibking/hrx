@@ -16,6 +16,7 @@ loom_cc_library(
     "call_predicates.h"
     "context.h"
     "contract_query.h"
+    "contract_selection.h"
     "execution.h"
     "function_boundary.h"
     "function_storage.h"
@@ -40,6 +41,7 @@ loom_cc_library(
     "call_predicates.c"
     "context.c"
     "contract_query.c"
+    "contract_selection.c"
     "execution.c"
     "function_boundary.c"
     "function_storage.c"
@@ -382,6 +384,21 @@ loom_cc_test(
     loom::ops::test
     loom::ops::vector
     loom::util::fact_table
+)
+
+loom_cc_test(
+  NAME
+    contract_selection_test
+  SRCS
+    "contract_selection_test.cc"
+  DEPS
+    ::lower
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::scalar
+    loom::ops::vector
 )
 
 loom_cc_test(

@@ -261,11 +261,16 @@ static loomc_status_t loomc_compile_run_pass_program(
           : NULL,
       &capture);
   loom_codegen_pass_environment_storage_t codegen_environment_storage = {0};
-  loom_pass_environment_t pass_environment =
+  const loom_pass_environment_t pass_environment =
       loomc_codegen_pass_environment_storage_initialize(
           target_pass_environment,
           loomc_context_cleanup_pattern_registry(compiler->context),
-          function_version_owner, compile_report, &codegen_environment_storage);
+          function_version_owner,
+          launch_config_program != NULL
+              ? loom_kernel_launch_config_program_capability(
+                    launch_config_program)
+              : NULL,
+          compile_report, &codegen_environment_storage);
   loom_target_pass_predicate_provider_storage_t predicate_storage = {0};
   loom_pass_predicate_provider_t predicate_provider = {0};
   if (loomc_context_target_pass_environment(compiler->context) != NULL) {
@@ -273,17 +278,6 @@ static loomc_status_t loomc_compile_run_pass_program(
         loomc_workspace_block_pool(workspace), &predicate_storage);
     predicate_provider =
         loom_target_pass_predicate_provider(&predicate_storage);
-  }
-  const loom_pass_environment_capability_t* extended_capabilities
-      [IREE_ARRAYSIZE(codegen_environment_storage.capabilities) + 1];
-  if (launch_config_program != NULL) {
-    for (iree_host_size_t i = 0; i < pass_environment.capability_count; ++i) {
-      extended_capabilities[i] = pass_environment.capabilities[i];
-    }
-    extended_capabilities[pass_environment.capability_count] =
-        loom_kernel_launch_config_program_capability(launch_config_program);
-    pass_environment = loom_pass_environment_make(
-        extended_capabilities, pass_environment.capability_count + 1);
   }
   loomc_pass_trace_state_t pass_trace_state = {0};
   loom_pass_trace_t* pass_trace = NULL;
@@ -1062,9 +1056,10 @@ loomc_status_t loomc_compile_artifact(
     status = loomc_status_from_iree(loom_compile_request_materialize(
         &request,
         loomc_target_environment_loom_target_environment(target_environment),
-        &entry_options, &sources, function_versions->arena,
-        loomc_module_block_pool(module), &internal_module,
-        &target_specializations, &error_count));
+        &entry_options, internal_module,
+        LOOM_COMPILE_REQUEST_SOURCE_TRANSFERRED, &sources,
+        function_versions->arena, loomc_module_block_pool(module),
+        &internal_module, &target_specializations, &error_count));
     loomc_status_t source_status = loomc_module_replace_source_table(
         module, internal_module, &sources.table);
     if (!loomc_status_is_ok(source_status)) {

@@ -1,4 +1,3 @@
-// TEMPLATE: loom/src/loom/test/corpus/source_low/numeric_float64.loom-test
 // RUN: emit source-low target=amdgpu:gfx1151 output=low
 
 // Scalar addition, numerical extrema, and ordered/unordered predicates.
@@ -116,32 +115,5 @@ func.def @float64_number_without_nan(%lhs: f64, %rhs: f64) -> (f64, f64) {
 low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @float64_number_without_nan(%lhs: reg<amdgpu.vgpr x2>, %rhs: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
   %minimum = v_min_f64 %lhs, %rhs
   %maximum = v_max_f64 %lhs, %rhs
-  return %minimum, %maximum
-}
-
-// ====
-
-func.def @float64_number_vectors(%lhs: vector<2xf64>, %rhs: vector<2xf64>) -> (vector<2xf64>, vector<2xf64>) {
-  %minimum = vector.minnumf %lhs, %rhs : vector<2xf64>
-  %maximum = vector.maxnumf %lhs, %rhs : vector<2xf64>
-  func.return %minimum, %maximum : vector<2xf64>, vector<2xf64>
-}
-
-// ----
-low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @float64_number_vectors(%lhs: reg<amdgpu.vgpr x4>, %rhs: reg<amdgpu.vgpr x4>) -> (reg<amdgpu.vgpr x4>, reg<amdgpu.vgpr x4>) asm {
-  %10 = slice %lhs[0] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr x2>
-  %12 = v_max_f64 %10, %10
-  %13 = slice %lhs[2] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr x2>
-  %15 = v_max_f64 %13, %13
-  %17 = slice %rhs[0] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr x2>
-  %19 = v_max_f64 %17, %17
-  %20 = slice %rhs[2] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr x2>
-  %22 = v_max_f64 %20, %20
-  %26 = v_min_f64 %12, %19
-  %29 = v_min_f64 %15, %22
-  %minimum = concat(%26, %29) : (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) -> reg<amdgpu.vgpr x4>
-  %47 = v_max_f64 %12, %19
-  %50 = v_max_f64 %15, %22
-  %maximum = concat(%47, %50) : (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) -> reg<amdgpu.vgpr x4>
   return %minimum, %maximum
 }

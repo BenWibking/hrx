@@ -95,7 +95,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(f"{flag_name} has {len(paths)} values for {family_count} contract fragments")
 
     compiled_fragments = {}
-    lower_rule_keys = set()
     for (
         contract_fragment,
         contract_header,
@@ -126,8 +125,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             fragment,
             compiled=lower_rules,
         )
-        compiled_fragments[registration.key] = (fragment, generated_contract.compiled)
-        lower_rule_keys.add(fragment.name)
+        compiled_fragments[registration.key] = (
+            fragment,
+            generated_contract.compiled,
+            lower_rules,
+        )
         for path, contents in (
             (contract_header, generated_contract.header),
             (contract_source, generated_contract.source),
@@ -137,6 +139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             write_text_file(path, contents)
     index_sources = []
     initializer_names = set()
+    selection_blob_symbols = {}
     for specification in args.contract_index:
         name, separator, keys = specification.partition(":")
         if not separator or not keys or name in initializer_names:
@@ -155,9 +158,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     dialect_ops=dialect_ops,
                     lower_rules=lower_rules,
                 )
-                compiled_fragments[registration.key] = (fragment, generated.compiled)
+                compiled_fragments[registration.key] = (
+                    fragment,
+                    generated.compiled,
+                    None,
+                )
             fragments.append(compiled_fragments[registration.key])
-        index_sources.append(generate_contract_index(name, fragments, lower_rule_keys))
+        index_sources.append(generate_contract_index(name, fragments, selection_blob_symbols))
     if args.index_output:
         write_text_file(args.index_output, "\n".join(index_sources))
     return 0

@@ -40,7 +40,7 @@ const loom_target_contract_index_t kIndex = {
     kTestDialectId, IREE_ARRAYSIZE(kDialects),
     kDialects,      IREE_ARRAYSIZE(kCases),
     kCases,         IREE_ARRAYSIZE(kBindings),
-    kBindings,
+    kBindings,      nullptr,
 };
 
 TEST(TargetContractQueryEnvironmentTest, MissingAllocatorReturnsNull) {
@@ -126,6 +126,7 @@ TEST(TargetContractIndexTest, LookupKindIgnoresUncoveredDialectSlot) {
           &kIndex, LOOM_OP_KIND(kTestDialectId - 1, 0));
 
   EXPECT_TRUE(loom_target_contract_op_entry_is_empty(entry));
+  EXPECT_EQ(entry.case_start, LOOM_TARGET_CONTRACT_ROW_NONE);
   EXPECT_TRUE(loom_target_contract_op_entry_is_empty(
       loom_target_contract_index_lookup_kind(
           &kIndex, LOOM_OP_KIND(kTestDialectId + 1, 0))));

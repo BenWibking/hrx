@@ -18,6 +18,8 @@ namespace {
 struct DiagnosticCapture {
   // Number of diagnostic emissions captured.
   int emission_count = 0;
+  // Module associated with the diagnostic emission.
+  const loom_module_t* module = nullptr;
   // Operation associated with the diagnostic emission.
   const loom_op_t* op = nullptr;
   // Structured diagnostic definition that was emitted.
@@ -60,6 +62,7 @@ class PassInterpreterTest : public PassTestHarness {
       void* user_data, const loom_diagnostic_emission_t* emission) {
     DiagnosticCapture* capture = static_cast<DiagnosticCapture*>(user_data);
     ++capture->emission_count;
+    capture->module = emission->module;
     capture->op = emission->op;
     capture->error = emission->error;
     capture->param_count = emission->param_count;
@@ -661,14 +664,17 @@ TEST_F(PassInterpreterTest, ExposesDecodedOptionsToPassInstance) {
 }
 
 TEST_F(PassInterpreterTest, PropagatesDescriptorCallbackFailure) {
-  loom_module_t* module =
+  loom_module_t* pipeline_module =
       Parse(IREE_SV("pass.pipeline<module> @pipeline pipeline {\n"
                     "  test.fail\n"
                     "}\n"));
-  ASSERT_NE(module, nullptr);
+  ASSERT_NE(pipeline_module, nullptr);
+  loom_module_t* target_module = AllocateModule(IREE_SV("target"));
+  ASSERT_NE(target_module, nullptr);
 
   PassProgramStorage storage;
-  IREE_ASSERT_OK(Compile(module, Pipeline(module, 0), &storage.program));
+  IREE_ASSERT_OK(
+      Compile(pipeline_module, Pipeline(pipeline_module, 0), &storage.program));
 
   loom_test_pass_trace_t trace = {};
   DiagnosticCapture diagnostic_capture;
@@ -678,15 +684,17 @@ TEST_F(PassInterpreterTest, PropagatesDescriptorCallbackFailure) {
                                      /*.user_data=*/&diagnostic_capture,
                                  });
   loom_pass_run_result_t result = {};
-  IREE_EXPECT_STATUS_IS(IREE_STATUS_INTERNAL,
-                        loom_pass_interpreter_run_module(
-                            &storage.program, module, &options, &result));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INTERNAL,
+      loom_pass_interpreter_run_module(&storage.program, target_module,
+                                       &options, &result));
   EXPECT_EQ(trace.fail_invocation_count, 1);
   EXPECT_EQ(diagnostic_capture.emission_count, 1);
   ASSERT_NE(diagnostic_capture.error, nullptr);
   EXPECT_EQ(loom_error_def_domain(diagnostic_capture.error),
             LOOM_ERROR_DOMAIN_STRUCTURE);
   EXPECT_EQ(loom_error_def_code(diagnostic_capture.error), 28);
+  EXPECT_EQ(diagnostic_capture.module, pipeline_module);
   EXPECT_EQ(diagnostic_capture.op, storage.program.instructions[0].source.op);
   ASSERT_EQ(diagnostic_capture.param_count, 4);
   EXPECT_EQ(diagnostic_capture.params[0].kind, LOOM_PARAM_STRING);

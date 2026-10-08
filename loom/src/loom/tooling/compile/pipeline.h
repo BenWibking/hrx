@@ -18,6 +18,7 @@
 #include "loom/error/diagnostic.h"
 #include "loom/error/source.h"
 #include "loom/ir/ir.h"
+#include "loom/pass/environment.h"
 #include "loom/pass/interpreter.h"
 #include "loom/pass/trace.h"
 #include "loom/target/pipeline.h"
@@ -46,9 +47,6 @@ typedef enum loom_compile_default_pipeline_e {
   // Build the full prepared target-low pipeline including target ABI/resource
   // materialization and packetization preparation.
   LOOM_COMPILE_DEFAULT_PIPELINE_PREPARED_LOW = 3,
-  // Normalize target source and expand resolvable authoring templates while
-  // retaining source kernel launch regions and device bodies.
-  LOOM_COMPILE_DEFAULT_PIPELINE_EXPANDED_SOURCE = 4,
 } loom_compile_default_pipeline_t;
 
 typedef struct loom_compile_pipeline_options_t {
@@ -85,6 +83,10 @@ typedef struct loom_compile_pipeline_options_t {
   loom_target_compile_report_t* report;
   // Optional caller-owned trace configuration for selected pass boundaries.
   const loom_pass_trace_options_t* trace_options;
+
+  // Optional compiler-owned launch-config capability populated by
+  // source-to-Low.
+  const loom_pass_environment_capability_t* launch_config_capability;
 } loom_compile_pipeline_options_t;
 
 // Compiler products retained after running a compile pipeline.
@@ -111,12 +113,6 @@ void loom_compile_pipeline_options_initialize(
 // Releases compiler products owned by |result|.
 void loom_compile_pipeline_result_deinitialize(
     loom_compile_pipeline_result_t* result);
-
-// Returns true when |pipeline| disables pass execution.
-bool loom_compile_pipeline_is_disabled(iree_string_view_t pipeline);
-
-// Returns true when |pipeline| requests the configured default pipeline.
-bool loom_compile_pipeline_is_default(iree_string_view_t pipeline);
 
 // Returns true when |pipeline| names an authored pass.pipeline symbol.
 bool loom_compile_pipeline_is_named(iree_string_view_t pipeline);

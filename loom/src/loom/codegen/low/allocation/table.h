@@ -252,7 +252,10 @@ typedef struct loom_low_allocation_table_t {
     // descriptor register class ID. Excludes the descriptor's ABI-fixed range,
     // which does not consume allocatable register resources.
     const uint32_t* ends_by_reg_class;
-    // Number of entries in |ends_by_reg_class|.
+    // Maximum one-past-last assignment or move location within each descriptor
+    // register class's ABI-fixed range. Zero denotes an unused fixed range.
+    const uint32_t* fixed_ends_by_reg_class;
+    // Number of entries in both extent arrays.
     iree_host_size_t count;
   } physical_extents;
   // Assignment indices by liveness local value ordinal. Entries without an

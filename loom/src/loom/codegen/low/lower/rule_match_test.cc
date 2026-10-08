@@ -70,6 +70,25 @@ TEST(LowLowerSourceMemoryMatchTest, SelectsExactRejectionReason) {
       &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
   EXPECT_EQ(diagnostic_index,
             100 + LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_VECTOR_LANE_COUNT);
+
+  context.vector_lane_projection = {
+      /*.source_lane_count=*/2,
+      /*.projected_lane_count=*/1,
+  };
+  EXPECT_TRUE(loom_low_lower_rule_source_memory_matches(
+      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+  access.minimum_alignment = 2;
+  EXPECT_FALSE(loom_low_lower_rule_source_memory_matches(
+      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+  EXPECT_EQ(diagnostic_index,
+            100 + LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_MINIMUM_ALIGNMENT);
+  access.minimum_alignment = 4;
+  context.vector_lane_projection.source_lane_count = 3;
+  EXPECT_FALSE(loom_low_lower_rule_source_memory_matches(
+      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+  EXPECT_EQ(diagnostic_index,
+            100 + LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_VECTOR_LANE_COUNT);
+  context.vector_lane_projection = {};
   access.vector_lane_count = 1;
 
   access.minimum_alignment = 2;
@@ -213,15 +232,16 @@ class LowLowerRuleMatchTest : public ::testing::Test {
     }
 
     loom_low_lower_guard_t guard = {};
+    loom_low_lower_guard_payload_t guard_payload = {};
     const loom_low_lower_guard_ref_t guard_ref = 0;
     if (reject_related_guard) {
       guard.kind = LOOM_LOW_LOWER_GUARD_INSTANCE_FLAGS_HAS_ALL;
       guard.diagnostic_index = 0;
-      guard.payload.u64 = UINT64_MAX;
+      guard.payload_ordinal = 1;
+      guard_payload.u64 = UINT64_MAX;
       source_node.guard_count = 1;
     }
     loom_low_lower_rule_t rule = {};
-    rule.source_op_kind = source_op->kind;
     rule.source_node_span = LOOM_LOW_LOWER_SOURCE_NODE_SPAN(0, 1);
     const loom_low_lower_rule_span_t span = {
         /*.source_op_kind=*/source_op->kind,
@@ -238,6 +258,8 @@ class LowLowerRuleMatchTest : public ::testing::Test {
     rule_set.source_nodes = &source_node;
     rule_set.source_node_count = 1;
     if (reject_related_guard) {
+      rule_set.guard_payloads = &guard_payload;
+      rule_set.guard_payload_count = 1;
       rule_set.guards = &guard;
       rule_set.guard_count = 1;
       rule_set.guard_refs = &guard_ref;
@@ -272,7 +294,6 @@ class LowLowerRuleMatchTest : public ::testing::Test {
     loom_low_lower_value_ref_t value_ref = {};
     value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_OPERAND;
     loom_low_lower_rule_t rule = {};
-    rule.source_op_kind = source_op->kind;
     rule.guard_count = 1;
     const loom_low_lower_rule_span_t span = {
         /*.source_op_kind=*/source_op->kind,
@@ -332,22 +353,23 @@ TEST_F(LowLowerRuleMatchTest, MatchesValueWithNoDynamicallyLaterUses) {
 
 TEST_F(LowLowerRuleMatchTest, SelectsFirstMatchAndResetsReusedSelection) {
   loom_low_lower_guard_t guards[2] = {};
+  loom_low_lower_guard_payload_t guard_payloads[2] = {};
   guards[0].kind = LOOM_LOW_LOWER_GUARD_ATTR_I64_RANGE;
-  guards[0].attr_index = 0;
+  guards[0].selector.attribute.attr_index = 0;
   guards[0].diagnostic_index = 0;
-  guards[0].payload.i64_range.minimum = 0;
-  guards[0].payload.i64_range.maximum = 3;
+  guards[0].payload_ordinal = 1;
+  guard_payloads[0].i64_range.minimum = 0;
+  guard_payloads[0].i64_range.maximum = 3;
   guards[1].kind = LOOM_LOW_LOWER_GUARD_ATTR_I64_RANGE;
-  guards[1].attr_index = 0;
+  guards[1].selector.attribute.attr_index = 0;
   guards[1].diagnostic_index = 1;
-  guards[1].payload.i64_range.minimum = 4;
-  guards[1].payload.i64_range.maximum = 8;
+  guards[1].payload_ordinal = 2;
+  guard_payloads[1].i64_range.minimum = 4;
+  guard_payloads[1].i64_range.maximum = 8;
   const loom_low_lower_guard_ref_t guard_refs[] = {0, 1};
   loom_low_lower_rule_t rules[2] = {};
-  rules[0].source_op_kind = LOOM_OP_INDEX_CONSTANT;
   rules[0].guard_start = 0;
   rules[0].guard_count = 1;
-  rules[1].source_op_kind = LOOM_OP_INDEX_CONSTANT;
   rules[1].guard_start = 1;
   rules[1].guard_count = 1;
   const loom_low_lower_rule_span_t span = {
@@ -360,6 +382,8 @@ TEST_F(LowLowerRuleMatchTest, SelectsFirstMatchAndResetsReusedSelection) {
   rule_set.span_count = 1;
   rule_set.rules = rules;
   rule_set.rule_count = IREE_ARRAYSIZE(rules);
+  rule_set.guard_payloads = guard_payloads;
+  rule_set.guard_payload_count = IREE_ARRAYSIZE(guard_payloads);
   rule_set.guards = guards;
   rule_set.guard_count = IREE_ARRAYSIZE(guards);
   rule_set.guard_refs = guard_refs;
@@ -401,13 +425,14 @@ TEST_F(LowLowerRuleMatchTest, SelectsFirstMatchAndResetsReusedSelection) {
 
 TEST_F(LowLowerRuleMatchTest, MatchesBiasedPowersWithoutSignedOverflow) {
   loom_low_lower_guard_t guard = {};
+  loom_low_lower_guard_payload_t guard_payload = {};
   guard.kind = LOOM_LOW_LOWER_GUARD_VALUE_EXACT_POWER_OF_TWO_I64;
   guard.diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
+  guard.payload_ordinal = 1;
   const loom_low_lower_guard_ref_t guard_ref = 0;
   loom_low_lower_value_ref_t value_ref = {};
   value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_RESULT;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = LOOM_OP_INDEX_CONSTANT;
   rule.guard_count = 1;
   const loom_low_lower_rule_span_t span = {
       /*.source_op_kind=*/LOOM_OP_INDEX_CONSTANT,
@@ -419,6 +444,8 @@ TEST_F(LowLowerRuleMatchTest, MatchesBiasedPowersWithoutSignedOverflow) {
   rule_set.span_count = 1;
   rule_set.rules = &rule;
   rule_set.rule_count = 1;
+  rule_set.guard_payloads = &guard_payload;
+  rule_set.guard_payload_count = 1;
   rule_set.guards = &guard;
   rule_set.guard_count = 1;
   rule_set.guard_refs = &guard_ref;
@@ -456,7 +483,7 @@ TEST_F(LowLowerRuleMatchTest, MatchesBiasedPowersWithoutSignedOverflow) {
     IREE_ASSERT_OK(loom_value_fact_table_define(
         &facts, loom_index_constant_result(op),
         loom_value_facts_exact_i64(test_case.value)));
-    guard.payload.addend = test_case.addend;
+    guard_payload.addend = test_case.addend;
     loom_low_lower_rule_match_context_t match_context = {};
     match_context.module = module_;
     match_context.fact_table = &facts;
@@ -517,7 +544,6 @@ TEST_F(LowLowerRuleMatchTest, MatchesCompleteStorageOperandSchema) {
   loom_low_lower_value_ref_t value_ref = {};
   value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_RESULT;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = LOOM_OP_SCALAR_CONSTANT;
   rule.guard_count = 1;
   const loom_low_lower_rule_span_t span = {
       /*.source_op_kind=*/LOOM_OP_SCALAR_CONSTANT,
@@ -556,9 +582,7 @@ TEST_F(LowLowerRuleMatchTest, MatchesCompleteStorageOperandSchema) {
 
 TEST_F(LowLowerRuleMatchTest, ContractQueriesMaySelectContractOnlyRules) {
   loom_low_lower_rule_t rules[2] = {};
-  rules[0].source_op_kind = LOOM_OP_INDEX_CONSTANT;
   rules[0].flags = LOOM_LOW_LOWER_RULE_FLAG_CONTRACT_ONLY;
-  rules[1].source_op_kind = LOOM_OP_INDEX_CONSTANT;
   const loom_low_lower_rule_span_t span = {
       /*.source_op_kind=*/LOOM_OP_INDEX_CONSTANT,
       /*.rule_start=*/0,

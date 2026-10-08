@@ -16,6 +16,7 @@
 #include "loom/codegen/low/allocation/loop_edge_relocation.h"
 #include "loom/codegen/low/allocation/numbering.h"
 #include "loom/codegen/low/allocation/packet_move.h"
+#include "loom/codegen/low/allocation/placement.h"
 #include "loom/codegen/low/allocation/storage_lease.h"
 #include "loom/codegen/low/allocation/target_constraints.h"
 #include "loom/codegen/low/allocation/unit_liveness.h"
@@ -120,23 +121,32 @@ static iree_status_t loom_low_allocation_repair_fragmentation(
   scratch_target_constraints.error_count = 0;
   scratch_target_constraints.failure = (loom_low_allocation_failure_t){0};
   scratch_target_constraints.max_assigned_location_end_by_reg_class = NULL;
+  scratch_target_constraints.max_fixed_location_end_by_reg_class = NULL;
 
   iree_status_t status = iree_ok_status();
   const iree_host_size_t reg_class_count =
       state->target.descriptor_set->reg_class_count;
   if (reg_class_count != 0) {
-    status = iree_arena_allocate_array(
-        &scratch_arena, reg_class_count,
-        sizeof(
-            *scratch_target_constraints.max_assigned_location_end_by_reg_class),
-        (void**)&scratch_target_constraints
-            .max_assigned_location_end_by_reg_class);
+    iree_host_size_t location_end_count = 0;
+    if (!iree_host_size_checked_mul(reg_class_count, 2, &location_end_count)) {
+      status =
+          iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                           "register-class extent table exceeds host size");
+    }
+    uint32_t* location_ends = NULL;
     if (iree_status_is_ok(status)) {
-      memset(scratch_target_constraints.max_assigned_location_end_by_reg_class,
-             0,
-             reg_class_count *
-                 sizeof(*scratch_target_constraints
-                             .max_assigned_location_end_by_reg_class));
+      status = iree_arena_allocate_array(
+          &scratch_arena, location_end_count,
+          sizeof(*scratch_target_constraints
+                      .max_assigned_location_end_by_reg_class),
+          (void**)&location_ends);
+    }
+    if (iree_status_is_ok(status)) {
+      memset(location_ends, 0, location_end_count * sizeof(*location_ends));
+      scratch_target_constraints.max_assigned_location_end_by_reg_class =
+          location_ends;
+      scratch_target_constraints.max_fixed_location_end_by_reg_class =
+          location_ends + reg_class_count;
     }
   }
 
@@ -174,6 +184,8 @@ static iree_status_t loom_low_allocation_repair_fragmentation(
       state->target_constraints.failure = (loom_low_allocation_failure_t){0};
       state->target_constraints.max_assigned_location_end_by_reg_class =
           scratch_target_constraints.max_assigned_location_end_by_reg_class;
+      state->target_constraints.max_fixed_location_end_by_reg_class =
+          scratch_target_constraints.max_fixed_location_end_by_reg_class;
       state->storage_leases = scratch_storage_leases;
       state->interval_assignment = scratch_result;
     }
@@ -499,10 +511,11 @@ iree_status_t loom_low_allocate_function(
     const loom_low_placement_pair_use_list_t placement_pair_uses =
         options->schedule != NULL ? options->schedule->placement_pair_uses
                                   : loom_low_placement_pair_use_list_empty();
-    status = loom_low_placement_analyze_region(
-        model->module, state.body, state.target.descriptor_set, value_domain,
-        &state.liveness, placement_pair_uses, options->instruction_preferences,
-        arena, &decision_arena, &state.placement, &state.preferences);
+    status = loom_low_allocation_placement_build(
+        &state.target_constraints, state.body, value_domain, &state.liveness,
+        options->fixed_values, options->fixed_value_count, placement_pair_uses,
+        options->instruction_preferences, arena, &decision_arena,
+        &state.placement, &state.preferences);
   }
   if (iree_status_is_ok(status) && state.target_constraints.error_count == 0) {
     status = loom_low_allocation_unit_liveness_initialize(
@@ -524,10 +537,9 @@ iree_status_t loom_low_allocate_function(
         &state.unit_liveness, &state.placement);
   }
   if (iree_status_is_ok(status) && state.target_constraints.error_count == 0) {
-    status = loom_low_allocation_target_constraints_resolve_fixed_values(
-        &state.target_constraints, &state.liveness, value_domain,
-        &state.unit_liveness, &state.placement, options->fixed_values,
-        options->fixed_value_count, arena);
+    status = loom_low_allocation_target_constraints_finalize_fixed_values(
+        &state.target_constraints, &state.liveness, &state.unit_liveness,
+        arena);
   }
   if (iree_status_is_ok(status) && state.target_constraints.error_count == 0) {
     for (iree_host_size_t i = 0; i < state.target_constraints.fixed_value_count;
@@ -668,6 +680,9 @@ iree_status_t loom_low_allocate_function(
                 .ends_by_reg_class =
                     state.target_constraints
                         .max_assigned_location_end_by_reg_class,
+                .fixed_ends_by_reg_class =
+                    state.target_constraints
+                        .max_fixed_location_end_by_reg_class,
                 .count = state.target.descriptor_set->reg_class_count,
             },
         .assignment_indices_by_value_ordinal =

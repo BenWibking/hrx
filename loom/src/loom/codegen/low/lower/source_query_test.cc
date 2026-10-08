@@ -290,13 +290,13 @@ TEST_F(LowLowerSourceQueryTest, RejectedNativeCandidateAllowsFollowingRule) {
   loom_low_lower_value_ref_t value_ref = {};
   value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_RESULT;
   loom_low_lower_guard_t guard = {};
+  loom_low_lower_guard_payload_t guard_payload = {};
   guard.kind = LOOM_LOW_LOWER_GUARD_LOW_VALUE_REGISTER_UNIT_COUNT;
-  guard.payload.u64 = 1;
+  guard.payload_ordinal = 1;
+  guard_payload.u64 = 1;
   const loom_low_lower_guard_ref_t guard_ref = 0;
   loom_low_lower_rule_t rules[2] = {};
-  rules[0].source_op_kind = constant->kind;
   rules[0].guard_count = 1;
-  rules[1].source_op_kind = constant->kind;
   const loom_low_lower_rule_span_t span = {constant->kind, 0, 2};
   loom_low_lower_rule_set_t rule_set = {};
   rule_set.spans = &span;
@@ -305,6 +305,8 @@ TEST_F(LowLowerSourceQueryTest, RejectedNativeCandidateAllowsFollowingRule) {
   rule_set.rule_count = IREE_ARRAYSIZE(rules);
   rule_set.value_refs = &value_ref;
   rule_set.value_ref_count = 1;
+  rule_set.guard_payloads = &guard_payload;
+  rule_set.guard_payload_count = 1;
   rule_set.guards = &guard;
   rule_set.guard_count = 1;
   rule_set.guard_refs = &guard_ref;

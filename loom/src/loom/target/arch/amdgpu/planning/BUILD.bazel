@@ -316,11 +316,14 @@ loom_cc_library(
         ":wait_frontier",
         ":wait_packet_tables",
         "//loom/src/loom/codegen/low:descriptors",
+        "//loom/src/loom/codegen/low:memory_access",
         "//loom/src/loom/codegen/low:packet",
         "//loom/src/loom/codegen/low/allocation:table",
         "//loom/src/loom/codegen/low/schedule",
+        "//loom/src/loom/ops:cache",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target/arch/amdgpu:facts",
+        "//loom/src/loom/target/arch/amdgpu:target_info",
         "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
@@ -328,12 +331,70 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "sgpr_read_hazard",
+    srcs = ["sgpr_read_hazard.c"],
+    hdrs = ["sgpr_read_hazard.h"],
+    deps = [
+        "//loom/src/loom/codegen/low:allocation",
+        "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "sgpr_read_hazard_test",
+    srcs = ["sgpr_read_hazard_test.cc"],
+    deps = [
+        ":sgpr_read_hazard",
+        "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
+    name = "trans_result_window",
+    srcs = ["trans_result_window.c"],
+    hdrs = ["trans_result_window.h"],
+    deps = [
+        "//loom/src/loom/codegen/low:allocation",
+        "//loom/src/loom/target/arch/amdgpu:target_info_defs",
+        "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "trans_result_window_test",
+    srcs = ["trans_result_window_test.cc"],
+    deps = [
+        ":trans_result_window",
+        "//loom/src/loom/target/arch/amdgpu:target_info_defs",
+        "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "wait_plan",
-    srcs = ["wait_plan.c"],
-    hdrs = ["wait_plan.h"],
+    srcs = [
+        "wait_actions.c",
+        "wait_plan.c",
+    ],
+    hdrs = [
+        "wait_actions.h",
+        "wait_plan.h",
+    ],
     visibility = _AMDGPU_ROOT_VISIBILITY + _AMDGPU_LOWER_VISIBILITY,
     deps = [
         ":address_state",
+        ":sgpr_read_hazard",
+        ":trans_result_window",
         ":wait_classification",
         ":wait_completion",
         ":wait_counters",
@@ -357,6 +418,18 @@ loom_cc_library(
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
         "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "wait_actions_test",
+    srcs = ["wait_actions_test.cc"],
+    target_compatible_with = loom_amdgpu_descriptor_set_compatible_with(_DESCRIPTOR_SET_GFX125X),
+    deps = [
+        ":wait_plan",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
@@ -452,6 +525,7 @@ loom_cc_library(
         ":descriptor_semantics",
         ":matrix_coexecution",
         ":structural_packet",
+        ":trans_result_window",
         ":wait_packets",
         "//loom/src/loom/codegen/low:allocation",
         "//loom/src/loom/codegen/low:diagnostics",

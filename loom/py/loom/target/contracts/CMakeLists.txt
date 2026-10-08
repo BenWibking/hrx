@@ -30,6 +30,7 @@ iree_py_library(
     "memory_spaces.py"
     "patterns.py"
     "rules.py"
+    "selection.py"
     "source.py"
     "source_memory.py"
     "templates.py"
@@ -49,6 +50,7 @@ iree_py_test(
     "compile_test.py"
     "lower_rules_test.py"
     "schema_test.py"
+    "selection_test.py"
     "source_memory_test.py"
     "templates_test.py"
     "../../tools/pytest_style_runner.py"
@@ -56,6 +58,7 @@ iree_py_test(
     "loom.target.contracts.compile_test"
     "loom.target.contracts.lower_rules_test"
     "loom.target.contracts.schema_test"
+    "loom.target.contracts.selection_test"
     "loom.target.contracts.source_memory_test"
     "loom.target.contracts.templates_test"
   DEPS

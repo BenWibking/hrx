@@ -16,7 +16,6 @@
 #include "loom/target/arch/cmd/lower/program_plan.h"
 #include "loom/target/arch/cmd/lower/program_plan_index.h"
 #include "loom/target/arch/cmd/program.h"
-#include "loom/tooling/compile/pipeline.h"
 #include "loom/tools/loom-check/diagnostics.h"
 
 typedef struct loom_cmd_program_plan_check_options_t {
@@ -256,65 +255,42 @@ static iree_status_t loom_cmd_program_plan_check_emit_provider_execute(
   IREE_RETURN_IF_ERROR(
       loom_cmd_program_plan_check_parse_options(request, &options));
 
-  loom_compile_pipeline_options_t pipeline_options = {0};
-  loom_compile_pipeline_options_initialize(&pipeline_options);
-  pipeline_options.default_pipeline =
-      LOOM_COMPILE_DEFAULT_PIPELINE_EXPANDED_SOURCE;
-  pipeline_options.target_environment =
-      request->environment->target_environment;
-  pipeline_options.cleanup_pattern_provider_set =
-      request->environment->cleanup_pattern_provider_set;
-  pipeline_options.diagnostic_sink =
-      (loom_diagnostic_sink_t){.fn = loom_check_diagnostic_collector_sink,
-                               .user_data = request->diagnostic_collector};
-  pipeline_options.source_resolver = request->source_resolver;
-  pipeline_options.max_errors = 20;
-
-  loom_compile_pipeline_result_t pipeline_result = {0};
-  iree_status_t status =
-      loom_compile_run_pipeline(request->module, &pipeline_options,
-                                request->block_pool, &pipeline_result);
+  loom_symbol_ref_t* source_root_refs = NULL;
+  iree_status_t status = loom_cmd_program_plan_check_resolve_roots(
+      request->module, &options, request->case_arena, &source_root_refs);
   loom_cmd_program_plan_t plan = {0};
   bool plan_valid = false;
-  if (iree_status_is_ok(status) && pipeline_result.pass.error_count == 0) {
-    loom_symbol_ref_t* source_root_refs = NULL;
-    status = loom_cmd_program_plan_check_resolve_roots(
-        request->module, &options, request->case_arena, &source_root_refs);
-    if (iree_status_is_ok(status)) {
-      loom_check_diagnostic_emitter_capture_t capture = {
-          .diagnostic_collector = request->diagnostic_collector,
-          .module = request->module,
-          .source_resolver = request->source_resolver,
-          .emitter = LOOM_EMITTER_PASS,
-      };
-      status = loom_cmd_program_plan_check_build_from_roots(
-          request->module, source_root_refs, options.root_count,
-          request->case_arena, request->block_pool, request->host_allocator,
-          request->environment->cleanup_pattern_provider_set,
-          (iree_diagnostic_emitter_t){
-              .fn = loom_check_diagnostic_emitter_capture_emit,
-              .user_data = &capture,
-          },
-          &plan_valid, &plan);
-      if (iree_status_is_ok(status) && !plan_valid &&
-          capture.emission_count == 0) {
-        status = iree_make_status(
-            IREE_STATUS_INTERNAL,
-            "command program planning failed without a diagnostic");
-      }
+  if (iree_status_is_ok(status)) {
+    loom_check_diagnostic_emitter_capture_t capture = {
+        .diagnostic_collector = request->diagnostic_collector,
+        .module = request->module,
+        .source_resolver = request->source_resolver,
+        .emitter = LOOM_EMITTER_PASS,
+    };
+    status = loom_cmd_program_plan_check_build_from_roots(
+        request->module, source_root_refs, options.root_count,
+        request->case_arena, request->block_pool, request->host_allocator,
+        request->environment->cleanup_pattern_provider_set,
+        (iree_diagnostic_emitter_t){
+            .fn = loom_check_diagnostic_emitter_capture_emit,
+            .user_data = &capture,
+        },
+        &plan_valid, &plan);
+    if (iree_status_is_ok(status) && !plan_valid &&
+        capture.emission_count == 0) {
+      status = iree_make_status(
+          IREE_STATUS_INTERNAL,
+          "command program planning failed without a diagnostic");
     }
   }
-  if (iree_status_is_ok(status) && pipeline_result.pass.error_count == 0 &&
-      plan_valid) {
+  if (iree_status_is_ok(status) && plan_valid) {
     status = loom_cmd_program_plan_check_roundtrip_artifacts(
         &plan, request->host_allocator);
   }
-  if (iree_status_is_ok(status) && pipeline_result.pass.error_count == 0 &&
-      plan_valid) {
+  if (iree_status_is_ok(status) && plan_valid) {
     status = loom_cmd_program_plan_check_print_roots(request, &plan);
   }
   loom_cmd_program_plan_deinitialize(&plan);
-  loom_compile_pipeline_result_deinitialize(&pipeline_result);
   return status;
 }
 

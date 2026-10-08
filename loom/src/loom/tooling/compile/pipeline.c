@@ -64,12 +64,12 @@ void loom_compile_pipeline_result_deinitialize(
   *result = (loom_compile_pipeline_result_t){0};
 }
 
-bool loom_compile_pipeline_is_disabled(iree_string_view_t pipeline) {
+static bool loom_compile_pipeline_is_disabled(iree_string_view_t pipeline) {
   pipeline = iree_string_view_trim(pipeline);
   return iree_string_view_equal(pipeline, IREE_SV("none"));
 }
 
-bool loom_compile_pipeline_is_default(iree_string_view_t pipeline) {
+static bool loom_compile_pipeline_is_default(iree_string_view_t pipeline) {
   pipeline = iree_string_view_trim(pipeline);
   return iree_string_view_is_empty(pipeline) ||
          iree_string_view_equal(pipeline, IREE_SV("default"));
@@ -80,30 +80,11 @@ bool loom_compile_pipeline_is_named(iree_string_view_t pipeline) {
   return iree_string_view_starts_with_char(pipeline, '@');
 }
 
-static iree_status_t loom_compile_pipeline_registry_initialize(
-    const loom_target_environment_t* target_environment,
-    loom_pass_registry_storage_t* out_storage,
-    const loom_pass_registry_t** out_registry) {
-  const loom_pass_registry_t* registries[] = {
-      loom_pass_builtin_registry(),
-      loom_target_environment_pass_registry(target_environment),
-  };
-  IREE_RETURN_IF_ERROR(loom_pass_registry_storage_initialize_from_registries(
-      registries, IREE_ARRAYSIZE(registries), out_storage));
-  *out_registry = loom_pass_registry_storage_registry(out_storage);
-  return iree_ok_status();
-}
-
 static iree_status_t loom_compile_build_default_pipeline(
     loom_module_t* pipeline_module,
     const loom_compile_pipeline_options_t* options,
     loom_pass_environment_t pass_environment, loom_op_t** out_pipeline_op) {
   switch (options->default_pipeline) {
-    case LOOM_COMPILE_DEFAULT_PIPELINE_EXPANDED_SOURCE:
-      return loom_target_pipeline_build_to_expanded_source(
-          pipeline_module, IREE_SV("__loom_compile_default"),
-          &options->target_pipeline_options, options->target_environment,
-          pass_environment, out_pipeline_op);
     case LOOM_COMPILE_DEFAULT_PIPELINE_SOURCE_LOW:
       return loom_target_pipeline_build_to_source_low(
           pipeline_module, IREE_SV("__loom_compile_default"),
@@ -134,8 +115,6 @@ static iree_status_t loom_compile_build_default_pipeline(
 static iree_string_view_t loom_compile_default_pipeline_stage_name(
     loom_compile_default_pipeline_t default_pipeline) {
   switch (default_pipeline) {
-    case LOOM_COMPILE_DEFAULT_PIPELINE_EXPANDED_SOURCE:
-      return IREE_SV("expanded-source");
     case LOOM_COMPILE_DEFAULT_PIPELINE_SOURCE_LOW:
       return IREE_SV("source-low");
     case LOOM_COMPILE_DEFAULT_PIPELINE_SOURCE_LOW_ARTIFACTS:
@@ -286,9 +265,11 @@ iree_status_t loom_compile_run_pipeline(
   }
 
   loom_pass_registry_storage_t pass_registry_storage = {0};
-  const loom_pass_registry_t* pass_registry = NULL;
-  status = loom_compile_pipeline_registry_initialize(
-      options->target_environment, &pass_registry_storage, &pass_registry);
+  status = loom_pass_registry_storage_initialize_with_builtins(
+      loom_target_environment_pass_registry(options->target_environment),
+      &pass_registry_storage);
+  const loom_pass_registry_t* pass_registry =
+      loom_pass_registry_storage_registry(&pass_registry_storage);
 
   const loom_low_lower_policy_registry_t low_lower_policy_registry =
       loom_target_environment_low_lower_policy_registry(
@@ -356,12 +337,15 @@ iree_status_t loom_compile_run_pipeline(
       .cleanup_pattern_registry =
           loom_cleanup_pattern_registry_storage_registry(
               &cleanup_pattern_registry_storage),
+      .launch_config_capability = options->launch_config_capability,
   };
+  const loom_pass_environment_t pass_environment =
+      loom_codegen_pass_environment_storage_initialize_mutable(
+          &environment_options, &out_result->function_versions,
+          &codegen_environment_storage);
   loom_pass_tool_run_options_t run_options = {
       .registry = pass_registry,
-      .environment = loom_codegen_pass_environment_storage_initialize_mutable(
-          &environment_options, &out_result->function_versions,
-          &codegen_environment_storage),
+      .environment = pass_environment,
       .function_versions = &out_result->function_versions.list,
       .predicate_provider =
           loom_target_pass_predicate_provider(&predicate_storage),
