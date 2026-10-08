@@ -19,12 +19,12 @@ typedef struct loom_aie2p_native_endpoint_t {
   loom_symbol_ref_t base;
   // Backing buffer address, defined in the worker entry block.
   loom_value_id_t buffer;
-  // Mutable state indices for directions owned by this worker. One-slot
-  // channels use zero displacement and require no threaded state.
+  // Mutable state indices for directions owned by this worker. Fixed-slot
+  // endpoints use zero displacement and require no threaded state.
   struct {
-    // Current read byte offset; used only by an owned multi-slot acquire.
+    // Current read byte offset; used only by an advancing owned acquire.
     iree_host_size_t reader;
-    // Current write byte offset; used only by an owned multi-slot reserve.
+    // Current write byte offset; used only by an advancing owned reserve.
     iree_host_size_t writer;
   } cursor;
   // Native consuming-credit acquire helper, created on first use.
@@ -156,7 +156,8 @@ static iree_status_t loom_aie2p_native_channel_action(
           loom_aie2p_native_invoke(builder, *acquire, NULL, 0, NULL, NULL));
       record = emitter->origin;
       const loom_aie2p_native_channel_t* physical = endpoint->access->channel;
-      if (physical->source->capacity > 1) {
+      if ((write ? physical->cursor.writer : physical->cursor.reader)
+              .advances) {
         const iree_host_size_t cursor =
             write ? endpoint->cursor.writer : endpoint->cursor.reader;
         record = state[cursor];
@@ -223,7 +224,8 @@ static iree_status_t loom_aie2p_native_channel_action(
   }
   const uint32_t credits =
       emitter->worker->completion
-          .credits[action - emitter->worker->channels.actions];
+          .actions[action - emitter->worker->channels.actions]
+          .credits;
   if (!credits) {
     return iree_ok_status();
   }
@@ -323,15 +325,15 @@ iree_status_t loom_aie2p_native_emit_worker(
         loom_aie2p_native_invoke(&rewriter->builder, endpoint->base, NULL, 0,
                                  &buffer_type, &endpoint->buffer));
     const loom_aie2p_native_channel_t* channel = endpoint->access->channel;
-    if (channel->source->capacity > 1) {
-      if (channel->cursor.reader == worker_index) {
-        endpoint->cursor.reader = state_count;
-        state[state_count++] = emitter.origin;
-      }
-      if (channel->cursor.writer == worker_index) {
-        endpoint->cursor.writer = state_count;
-        state[state_count++] = emitter.origin;
-      }
+    if (channel->cursor.reader.worker == worker_index &&
+        channel->cursor.reader.advances) {
+      endpoint->cursor.reader = state_count;
+      state[state_count++] = emitter.origin;
+    }
+    if (channel->cursor.writer.worker == worker_index &&
+        channel->cursor.writer.advances) {
+      endpoint->cursor.writer = state_count;
+      state[state_count++] = emitter.origin;
     }
   }
   loom_type_t* carriers = NULL;

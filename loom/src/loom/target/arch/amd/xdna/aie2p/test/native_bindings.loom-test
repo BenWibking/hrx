@@ -1,19 +1,20 @@
 // RUN: emit source-low output=low
 
 // Invocation binding patches dedicated Shim descriptors directly for constant
-// external offsets. The fixed local slot is encoded in descriptor initialization,
-// leaving only queue issue and completion in the worker's DMA helpers.
+// external offsets. Each direction admits one record from a two-slot channel.
+// The fixed local slot is encoded in descriptor initialization, leaving only
+// queue issue and completion in the worker's DMA helpers.
 aie2p.target<array> @device {device_profile = "amd.xdna.strix.17f0_10"}
 
 pipeline.def<kernel> public retain target(@device) @copy_record() run(%input: buffer, %output: buffer) {
   %source, %destination = buffer.assume.alignment %input, %output {minimum_alignment = 4} : buffer, buffer
   %memory = pipeline.memory<workgroup>[0, 2] : pool
-  %bytes = index.constant 4 : offset
+  %bytes = index.constant 8 : offset
   %origin = index.constant 0 : offset
-  %slots = index.constant 1 : index
+  %slots = index.constant 2 : index
   %storage = buffer.alloca<workgroup> pool(%memory) align(4) %bytes : buffer
-  %records = buffer.view %storage[%origin] : buffer -> view<1x1xi32>
-  %channel = channel.bind<fifo> %records, %slots : view<1x1xi32>, index -> channel<tile<1xi32>>
+  %records = buffer.view %storage[%origin] : buffer -> view<2x1xi32>
+  %channel = channel.bind<fifo> %records, %slots : view<2x1xi32>, index -> channel<tile<1xi32>>
   pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
     %external_input = buffer.view %source[%origin] : buffer -> view<1xi32>
     %write, %record = channel.reserve %channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
@@ -79,7 +80,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@__aie2p_worker_helper_10) @__
   %72 = constant 2 : reg<aie2p.config.scalar : i64>
   write.mask32 %68, %72, %72
   program.load %70, %72, @__pipeline_worker_0
-  %79 = constant 4 : reg<aie2p.config.scalar : i64>
+  %79 = constant 8 : reg<aie2p.config.scalar : i64>
   data.reserve %70, %72, %70, %79
   %80 = constant 126976 : reg<aie2p.config.scalar : i64>
   %81 = constant 3072 : reg<aie2p.config.scalar : i64>
@@ -207,7 +208,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@__aie2p_worker_helper_10) @__
   write.address %213, %212
   %214 = constant 2224128 : reg<aie2p.config.scalar : i64>
   %215 = constant 63 : reg<aie2p.config.scalar : i64>
-  write.mask32 %214, %215, %197
+  write.mask32 %214, %215, %202
   %217 = constant 2224144 : reg<aie2p.config.scalar : i64>
   write.mask32 %217, %215, %196
   %220 = constant 2224160 : reg<aie2p.config.scalar : i64>

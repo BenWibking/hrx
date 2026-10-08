@@ -42,7 +42,7 @@ static iree_status_t loom_aie2p_native_dma_local_word(
   IREE_RETURN_IF_ERROR(
       loom_index_add_build(builder, loom_index_constant_result(base),
                            projection, offset_type, location, &address));
-  if (transfer->local_channel->source->capacity > 1) {
+  if (transfer->record_dynamic) {
     // The consuming channel rewrite substitutes the record's byte offset in
     // this expression before any source analysis resumes.
     IREE_RETURN_IF_ERROR(loom_index_add_build(
@@ -83,7 +83,7 @@ static iree_status_t loom_aie2p_native_dma_submit_helper(
       &transfer->external_view->begin_byte_offset);
   const bool projection_dynamic = !loom_symbolic_expr_is_constant(
       &transfer->local_view->projection_byte_offset);
-  const bool record_dynamic = transfer->local_channel->source->capacity > 1;
+  const bool record_dynamic = transfer->record_dynamic;
   loom_type_t types[2];
   iree_host_size_t argument_count = 0;
   if (external_dynamic) {
@@ -249,7 +249,7 @@ iree_status_t loom_aie2p_native_emit_transfers(
                                    LOOM_LOCATION_UNKNOWN, &narrowed));
       arguments[argument_count++] = loom_op_results(narrowed)[0];
     }
-    if (transfer->local_channel->source->capacity > 1 ||
+    if (transfer->record_dynamic ||
         !loom_symbolic_expr_is_constant(
             &transfer->local_view->projection_byte_offset)) {
       IREE_RETURN_IF_ERROR(loom_aie2p_native_dma_local_word(

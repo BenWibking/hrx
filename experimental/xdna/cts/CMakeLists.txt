@@ -40,6 +40,7 @@ loom_kernel_binary(
   SRCS
     "testdata/pipeline_completion.loom"
   ROOTS
+    "@single_admission"
     "@projected_single_slot"
     "@projected_ring"
     "@reordered_publication"
@@ -62,6 +63,7 @@ loom_kernel_binary(
   SRCS
     "testdata/pipeline_completion.loom"
   ROOTS
+    "@single_admission"
     "@projected_single_slot"
     "@projected_ring"
     "@reordered_publication"

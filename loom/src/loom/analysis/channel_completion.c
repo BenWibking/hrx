@@ -15,6 +15,8 @@ typedef struct loom_channel_completion_endpoint_t {
   const loom_channel_identity_t* channel;
   // True for the producer's publication frontier; false for reclamation.
   bool producer;
+  // Upper bound on admissions over reachable execution paths.
+  uint32_t maximum_admissions;
 } loom_channel_completion_endpoint_t;
 
 typedef struct loom_channel_completion_record_t {
@@ -117,12 +119,12 @@ iree_status_t loom_channel_completion_analyze(
   if (!plan->action_count) {
     return iree_ok_status();
   }
-  uint32_t* credits = NULL;
+  loom_channel_completion_action_t* actions = NULL;
   uint32_t* action_endpoints = NULL;
   loom_channel_completion_endpoint_t* endpoints = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      arena, plan->action_count, sizeof(*credits), (void**)&credits));
-  memset(credits, 0, plan->action_count * sizeof(*credits));
+      arena, plan->action_count, sizeof(*actions), (void**)&actions));
+  memset(actions, 0, plan->action_count * sizeof(*actions));
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(arena, plan->action_count,
                                                  sizeof(*action_endpoints),
                                                  (void**)&action_endpoints));
@@ -176,6 +178,17 @@ iree_status_t loom_channel_completion_analyze(
     while (action_index < plan->action_count &&
            plan->actions[action_index].op->parent_block ==
                graph->blocks[b].block) {
+      const loom_op_t* op = plan->actions[action_index].op;
+      if (graph->blocks[b].reachable &&
+          (loom_channel_reserve_isa(op) || loom_channel_acquire_isa(op))) {
+        uint32_t* bound =
+            &endpoints[action_endpoints[action_index]].maximum_admissions;
+        if (graph->blocks[b].component_is_cyclic) {
+          *bound = UINT32_MAX;
+        } else if (*bound != UINT32_MAX) {
+          ++*bound;
+        }
+      }
       ++action_index;
     }
     blocks[b].actions.end = action_index;
@@ -195,8 +208,8 @@ iree_status_t loom_channel_completion_analyze(
     for (iree_host_size_t i = block->actions.begin; i < block->actions.end;
          ++i) {
       if (!loom_channel_completion_apply(&plan->actions[i], action_endpoints[i],
-                                         endpoints, &current, &credits[i],
-                                         out_completion)) {
+                                         endpoints, &current,
+                                         &actions[i].credits, out_completion)) {
         return iree_ok_status();
       }
     }
@@ -264,6 +277,10 @@ iree_status_t loom_channel_completion_analyze(
       }
     }
   }
-  out_completion->credits = credits;
+  for (iree_host_size_t i = 0; i < plan->action_count; ++i) {
+    actions[i].maximum_admissions =
+        endpoints[action_endpoints[i]].maximum_admissions;
+  }
+  out_completion->actions = actions;
   return iree_ok_status();
 }

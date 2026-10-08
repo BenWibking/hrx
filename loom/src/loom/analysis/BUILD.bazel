@@ -738,6 +738,25 @@ loom_cc_library(
 )
 
 loom_cc_test(
+    name = "channel_completion_test",
+    srcs = ["channel_completion_test.cc"],
+    deps = [
+        ":channel_completion",
+        ":channel_plan",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:type_registry",
+        "//loom/src/loom/ops/cfg",
+        "//loom/src/loom/ops/channel",
+        "//loom/src/loom/ops/func",
+        "//loom/src/loom/util:cfg_graph",
+        "//loom/src/loom/verify",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
     name = "channel_plan_test",
     srcs = ["channel_plan_test.cc"],
     deps = [

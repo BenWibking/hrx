@@ -30,6 +30,8 @@ typedef struct loom_aie2p_native_borrow_t {
   const loom_aie2p_native_channel_t* channel;
   // Owned read/write that becomes the slot's physical pointer.
   loom_value_id_t record;
+  // The direction's invocation can advance beyond the initial physical slot.
+  bool record_dynamic;
 } loom_aie2p_native_borrow_t;
 
 static bool loom_aie2p_native_descriptor(
@@ -264,7 +266,9 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
         &source->value_domain, results[wait ? 0 : 1]);
     borrows[ordinal] = (loom_aie2p_native_borrow_t){
         .channel = &context->channels[bound - realization->resources.channels],
-        .record = wait ? loom_channel_wait_read(action->op) : results[0]};
+        .record = wait ? loom_channel_wait_read(action->op) : results[0],
+        .record_dynamic = bound->capacity > 1 &&
+                          source->completion.actions[j].maximum_admissions > 1};
   }
   uint8_t next_control = 0;
   bool has_egress = false;
@@ -443,7 +447,8 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
           .external_view = external_view,
           .local_view = local_view,
           .local_channel = borrow.channel,
-          .local_record = borrow.record};
+          .local_record = borrow.record,
+          .record_dynamic = borrow.record_dynamic};
       *tail = selected;
       tail = &selected->next;
       iree_string_view_t reason;
@@ -459,7 +464,7 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
       }
       // Each transfer site owns its descriptors. A fixed slot and projection
       // need no per-issue address patch, even when the site repeats in a loop.
-      if (borrow.channel->source->capacity == 1 &&
+      if (!borrow.record_dynamic &&
           loom_symbolic_expr_is_constant(&local_view->projection_byte_offset)) {
         const uint32_t address =
             borrow.channel->byte_offset +

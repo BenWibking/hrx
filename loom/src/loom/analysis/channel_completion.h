@@ -26,20 +26,30 @@ typedef enum loom_channel_completion_requirement_e {
   LOOM_CHANNEL_COMPLETION_REQUIREMENT_REUSE,
 } loom_channel_completion_requirement_t;
 
+// Endpoint activity retained at each source action's protocol and direction.
+typedef struct loom_channel_completion_action_t {
+  // Number of consecutive records made available by each source action.
+  // Non-completions have zero.
+  uint32_t credits;
+  // Conservative bound on admissions by this endpoint during one invocation.
+  // A cyclic admission has UINT32_MAX; acyclic sites each contribute one.
+  // Zero or one proves that this endpoint never advances beyond its first slot.
+  uint32_t maximum_admissions;
+} loom_channel_completion_action_t;
+
 // Completion of a contiguous FIFO prefix, in owned-record coordinates.
 // This is a realization proof, not a restriction on valid channel programs.
 typedef struct loom_channel_completion_t {
-  // Number of consecutive records made available by each source action.
-  // Indexed exactly like channel_plan.actions; non-completions have zero.
-  // Valid only when requirement is NONE.
-  const uint32_t* credits;
+  // Indexed exactly like channel_plan.actions; valid when requirement is NONE.
+  const loom_channel_completion_action_t* actions;
   // Capability required when aggregate prefix credits cannot implement source.
   loom_channel_completion_requirement_t requirement;
   // Action or control edge exposing that requirement, or NULL on success.
   const loom_op_t* op;
 } loom_channel_completion_t;
 
-// Computes FIFO publication/reclamation frontiers for one immutable worker.
+// Computes FIFO publication/reclamation frontiers and admission bounds for one
+// immutable worker invocation starting at each endpoint's initial slot.
 // The acquired value domain, channel actions and CFG are retained by the same
 // owner. Source ownership has already established distinct live obligations.
 // Each direction has one cursor owner; selection establishes this separately.
@@ -61,7 +71,7 @@ typedef struct loom_channel_completion_t {
 // Status carries allocation failure. Requirements describe valid source needing
 // another realization. No target diagnostics or source mutations occur here.
 // No-action workers allocate nothing. Other state lives in arena through the
-// consuming rewrite; emission uses the direct action-indexed credit table.
+// consuming rewrite; emission uses the direct action-indexed result table.
 iree_status_t loom_channel_completion_analyze(
     const loom_channel_plan_t* plan, const loom_cfg_graph_t* graph,
     iree_arena_allocator_t* arena, loom_channel_completion_t* out_completion);

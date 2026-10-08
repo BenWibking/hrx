@@ -833,6 +833,26 @@ loom_cc_library(
 
 loom_cc_test(
   NAME
+    channel_completion_test
+  SRCS
+    "channel_completion_test.cc"
+  DEPS
+    ::channel_completion
+    ::channel_plan
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::cfg
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::type_registry
+    loom::util::cfg_graph
+    loom::verify
+)
+
+loom_cc_test(
+  NAME
     channel_plan_test
   SRCS
     "channel_plan_test.cc"

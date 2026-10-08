@@ -91,6 +91,11 @@ TEST_F(XdnaPipelineCompletionTest, PublishesReservationOrder) {
   CheckPipeline(IREE_SV("reordered_publication"), results);
 }
 
+TEST_F(XdnaPipelineCompletionTest, UsesFirstSlotOfMultiSlotChannel) {
+  constexpr std::array<uint32_t, 1> results = {13};
+  CheckPipeline(IREE_SV("single_admission"), results);
+}
+
 TEST_F(XdnaPipelineCompletionTest, RetainsEarlierReadThroughDma) {
   constexpr std::array<uint32_t, 1> results = {0};
   CheckPipeline(IREE_SV("reordered_retirement"), results);

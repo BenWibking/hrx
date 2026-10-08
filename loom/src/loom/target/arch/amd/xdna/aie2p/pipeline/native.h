@@ -12,6 +12,14 @@
 #include "loom/target/arch/amd/xdna/aie2p/pipeline/worker.h"
 #include "loom/transforms/pipeline/realization.h"
 
+// One endpoint's admitted cursor behavior for this execution occurrence.
+typedef struct loom_aie2p_native_cursor_t {
+  // Strand owning the cursor, or UINT32_MAX until selected.
+  uint32_t worker;
+  // Multiple admissions can select different physical slots.
+  bool advances;
+} loom_aie2p_native_cursor_t;
+
 // Physical FIFO state. Addresses select storage; identity selects the protocol.
 typedef struct loom_aie2p_native_channel_t {
   // Source channel occurrence retaining geometry and identity.
@@ -29,12 +37,12 @@ typedef struct loom_aie2p_native_channel_t {
   uint16_t free_lock;
   // Semaphore containing published record credits.
   uint16_t ready_lock;
-  // Single cursor owner in each direction, or UINT32_MAX until selected.
+  // Single cursor owner and slot movement in each direction.
   struct {
     // Strand advancing the read cursor.
-    uint32_t reader;
+    loom_aie2p_native_cursor_t reader;
     // Strand advancing the write cursor.
-    uint32_t writer;
+    loom_aie2p_native_cursor_t writer;
   } cursor;
 } loom_aie2p_native_channel_t;
 
@@ -161,6 +169,8 @@ typedef struct loom_aie2p_native_transfer_t {
   const loom_aie2p_native_channel_t* local_channel;
   // Read/write capability carrying the record's byte offset after realization.
   loom_value_id_t local_record;
+  // This transfer's endpoint can select more than the initial physical slot.
+  bool record_dynamic;
   // Selected ordinary helper that submits both endpoint descriptors.
   loom_symbol_ref_t submit;
   // Selected ordinary helper that observes endpoint completion.

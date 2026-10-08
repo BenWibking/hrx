@@ -6,6 +6,50 @@
 
 aie2p.target<array> @npu
 
+// Each two-slot endpoint admits only one record. Transfers therefore use fixed
+// descriptor addresses even though storage has room for a second record.
+// Distinct nonzero local origins exercise descriptor initialization on both
+// DMA directions while ingress and egress alias the same external buffer.
+pipeline.def<kernel> public retain target(@npu) @single_admission() run(%output_arg: buffer) {
+  %external = buffer.assume.alignment %output_arg {minimum_alignment = 4} : buffer
+  %memory = pipeline.memory<workgroup>[0, 3] : pool
+  %capacity = index.constant 2 : index
+  %storage_bytes = index.constant 24 : offset
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %storage_bytes : buffer
+  %input_offset = index.constant 4 : offset
+  %output_offset = index.constant 16 : offset
+  %input_slots = buffer.view %storage[%input_offset] : buffer -> view<2x1xi32>
+  %output_slots = buffer.view %storage[%output_offset] : buffer -> view<2x1xi32>
+  %input = channel.bind<fifo> %input_slots, %capacity : view<2x1xi32>, index -> channel<tile<1xi32>>
+  %output = channel.bind<fifo> %output_slots, %capacity : view<2x1xi32>, index -> channel<tile<1xi32>>
+
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %origin = index.constant 0 : offset
+    %external_value = buffer.view %external[%origin] : buffer -> view<1xi32>
+    %write, %incoming = channel.reserve %input : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %ingress = kernel.async.copy %external_value to %incoming {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %ingress_group = kernel.async.group %ingress : kernel.async.token -> kernel.async.group
+    kernel.async.wait %ingress_group {newer_groups = 0} : kernel.async.group
+    channel.publish %write : write<tile<1xi32>>
+    %read, %outgoing = channel.acquire %output : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    %egress = kernel.async.copy %outgoing to %external_value {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %egress_group = kernel.async.group %egress : kernel.async.token -> kernel.async.group
+    kernel.async.wait %egress_group {newer_groups = 0} : kernel.async.group
+    channel.release %read : read<tile<1xi32>>
+  }
+
+  pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
+    %read, %incoming = channel.acquire %input : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    %value = view.load %incoming[0] : view<1xi32> -> i32
+    channel.release %read : read<tile<1xi32>>
+    %mask = scalar.constant -1 : i32
+    %inverted = scalar.xori %value, %mask : i32
+    %write, %outgoing = channel.reserve %output : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    view.store %inverted, %outgoing[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+}
+
 // Read different projections from each retained record. The nonzero storage
 // origin separates the slot address from the memory owner's aperture. Capacity
 // one keeps that address fixed; capacity three rotates it while the dynamic
