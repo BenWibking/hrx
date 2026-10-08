@@ -314,6 +314,31 @@ const loom_target_facts_t* loom_low_lower_context_target_facts(
   return context->options->target_facts;
 }
 
+const loom_target_workgroup_size_t* loom_low_lower_context_workgroup_size(
+    const loom_low_lower_context_t* context) {
+  if (iree_any_bit_set(context->result->static_launch_config_flags,
+                       LOOM_LOW_LOWER_STATIC_LAUNCH_CONFIG_WORKGROUP_SIZE)) {
+    return &context->result->static_workgroup_size;
+  }
+  const loom_target_bundle_t* bundle = loom_low_lower_context_bundle(context);
+  if (bundle->export_plan->abi_kind != LOOM_TARGET_ABI_HAL_KERNEL) {
+    return NULL;
+  }
+  const loom_target_workgroup_size_t* size =
+      &bundle->export_plan->hal_kernel.required_workgroup_size;
+  return size->x || size->y || size->z ? size : NULL;
+}
+
+const loom_target_workgroup_cluster_size_t*
+loom_low_lower_context_workgroup_cluster_size(
+    const loom_low_lower_context_t* context) {
+  return iree_any_bit_set(
+             context->result->static_launch_config_flags,
+             LOOM_LOW_LOWER_STATIC_LAUNCH_CONFIG_WORKGROUP_CLUSTER_SIZE)
+             ? &context->result->static_workgroup_cluster_size
+             : NULL;
+}
+
 const loom_low_descriptor_set_t* loom_low_lower_context_descriptor_set(
     const loom_low_lower_context_t* context) {
   return context->descriptor_set;

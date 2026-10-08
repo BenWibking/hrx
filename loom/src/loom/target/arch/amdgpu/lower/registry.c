@@ -419,8 +419,7 @@ static iree_status_t loom_amdgpu_emit_preamble_dispatch(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_lower_dispatch_row_t* row, loom_low_lower_plan_t plan) {
   (void)row;
-  (void)plan;
-  return loom_amdgpu_lower_preamble_op(context, source_op);
+  return loom_amdgpu_lower_preamble_op(context, source_op, plan);
 }
 
 static iree_status_t loom_amdgpu_select_kernel_barrier_dispatch(

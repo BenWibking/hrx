@@ -1160,6 +1160,18 @@ const loom_target_bundle_t* loom_low_lower_context_bundle(
 const loom_target_facts_t* loom_low_lower_context_target_facts(
     const loom_low_lower_context_t* context);
 
+// Returns the workgroup dimensions retained from source launch facts, or the
+// selected HAL ABI's required dimensions when source facts do not specify them.
+// NULL means no fixed dimensions. The result outlives source analysis storage.
+const loom_target_workgroup_size_t* loom_low_lower_context_workgroup_size(
+    const loom_low_lower_context_t* context);
+
+// Returns the retained nontrivial source cluster size, or NULL for an ordinary
+// dispatch. This lookup never reopens source launch-config analysis.
+const loom_target_workgroup_cluster_size_t*
+loom_low_lower_context_workgroup_cluster_size(
+    const loom_low_lower_context_t* context);
+
 // Returns the selected target bundle key used in generated diagnostics.
 iree_string_view_t loom_low_lower_context_target_key(
     const loom_low_lower_context_t* context);

@@ -243,6 +243,7 @@ loom_cc_library(
     "sync.c"
     "system_memory.c"
     "table.c"
+    "topology.c"
     "types.c"
     "value/bit_count.c"
     "value/integer64.c"
