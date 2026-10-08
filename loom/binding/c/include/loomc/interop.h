@@ -78,6 +78,17 @@ LOOMC_API_EXPORT const loom_target_environment_t*
 loomc_target_environment_get_interop_view(
     const loomc_target_environment_t* target_environment);
 
+/// Returns the immutable native profile owned by a public target handle.
+///
+/// @param target_profile Target profile to inspect. May be `NULL`.
+/// @return Borrowed native profile, or `NULL` when the input is `NULL`.
+///
+/// @lifetime
+/// The returned pointer remains valid until `target_profile` is released.
+LOOMC_API_EXPORT const loom_target_profile_t*
+loomc_target_profile_get_interop_view(
+    const loomc_target_profile_t* target_profile);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

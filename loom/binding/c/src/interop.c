@@ -54,3 +54,8 @@ const loom_target_environment_t* loomc_target_environment_get_interop_view(
     const loomc_target_environment_t* target_environment) {
   return loomc_target_environment_loom_target_environment(target_environment);
 }
+
+const loom_target_profile_t* loomc_target_profile_get_interop_view(
+    const loomc_target_profile_t* target_profile) {
+  return loomc_target_profile_loom_target_profile(target_profile);
+}
