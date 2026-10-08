@@ -453,6 +453,7 @@ loom_cc_library(
     "lower/matrix.h"
     "lower/rodata.h"
     "lower/shuffle.h"
+    "lower/transpose.h"
     "lower/vector_packet.h"
   TEXTUAL_HDRS
     "${IREE_BINARY_DIR}/loom/src/loom/target/arch/amd/xdna/aie2p/contracts/core_index.inl"
@@ -463,6 +464,7 @@ loom_cc_library(
     "lower/registry.c"
     "lower/rodata.c"
     "lower/shuffle.c"
+    "lower/transpose.c"
     "lower/vector_packet.c"
   DEPS
     ::core_descriptors
@@ -671,6 +673,51 @@ iree_py_test(
 endif()
 
 if(LOOM_TARGET_ARCH_XDNA)
+iree_py_test(
+  NAME
+    transpose_family_test
+  MAIN
+    "test/transpose_family_test.py"
+  SRCS
+    "test/transpose_family_test.py"
+  ARGS
+    "{{$<TARGET_FILE:loom::target::arch::amd::xdna::aie2p::loom-check>}}"
+  DATA
+    "loom::target::arch::amd::xdna::aie2p::loom-check"
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  TIMEOUT
+    60
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+iree_py_test(
+  NAME
+    transpose_family_exhaustive_test
+  MAIN
+    "test/transpose_family_test.py"
+  SRCS
+    "test/transpose_family_test.py"
+  ARGS
+    "{{$<TARGET_FILE:loom::target::arch::amd::xdna::aie2p::loom-check>}}"
+    "--exhaustive"
+  DATA
+    "loom::target::arch::amd::xdna::aie2p::loom-check"
+  LABELS
+    "manual"
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  TIMEOUT
+    300
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
 loom_check_test_suite(
   NAME
     loom_check_file_test
@@ -870,6 +917,7 @@ loom_check_test_suite(
     "test/source_low/vector_slice.loom-test"
     "test/source_low/vector_splat.loom-test"
     "test/source_low/vector_structural.loom-test"
+    "test/source_low/vector_transpose.loom-test"
     "test/target_legalize_report.loom-test"
     "test/vector_float_extrema.loom-test"
     "test/vector_insert_packetization.loom-test"

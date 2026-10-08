@@ -344,16 +344,6 @@ CHECK: return %result
 
 // ====
 
-func.def @f32x2x4_transpose(%values: vector<2x4xf32>) -> (vector<4x2xf32>) {
-  %result = vector.transpose<[1, 0]> %values : vector<2x4xf32> -> vector<4x2xf32>
-  func.return %result : vector<4x2xf32>
-}
-
-// ----
-CHECK: return %result
-
-// ====
-
 func.def @f32x2x2x2_extract_static(%values: vector<2x2x2xf32>) -> (f32) {
   %result = vector.extract %values[1, 0, 1] : vector<2x2x2xf32> -> f32
   func.return %result : f32
@@ -372,41 +362,3 @@ func.def @f32x2x2x2_from_elements(%e0: f32, %e1: f32, %e2: f32, %e3: f32, %e4: f
 
 // ----
 CHECK: return %result
-
-// ====
-
-func.def @f32x2x2x2_transpose(%values: vector<2x2x2xf32>) -> (vector<2x2x2xf32>) {
-  %result = vector.transpose<[2, 0, 1]> %values : vector<2x2x2xf32> -> vector<2x2x2xf32>
-  func.return %result : vector<2x2x2xf32>
-}
-
-// ----
-CHECK: return %result
-
-// ====
-
-func.def @f32x4x4_transpose(%values: vector<4x4xf32>) -> (vector<4x4xf32>) {
-  %result = vector.transpose<[1, 0]> %values : vector<4x4xf32> -> vector<4x4xf32>
-  func.return %result : vector<4x4xf32>
-}
-
-// ----
-CHECK: * = mova.i32 34
-CHECK: %result = vshuffle *
-CHECK: return %result
-CHECK-NOT: *vextract*
-CHECK-NOT: *vinsert*
-
-// ====
-
-func.def @i32x4x4_transpose(%values: vector<4x4xi32>) -> (vector<4x4xi32>) {
-  %result = vector.transpose<[1, 0]> %values : vector<4x4xi32> -> vector<4x4xi32>
-  func.return %result : vector<4x4xi32>
-}
-
-// ----
-CHECK: * = mova.i32 34
-CHECK: %result = vshuffle *
-CHECK: return %result
-CHECK-NOT: *vextract*
-CHECK-NOT: *vinsert*

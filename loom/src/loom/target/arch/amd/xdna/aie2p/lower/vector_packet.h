@@ -37,6 +37,11 @@ typedef struct loom_aie2p_vector_packet_emitter_t {
   loom_value_id_t one_bytes;
 } loom_aie2p_vector_packet_emitter_t;
 
+enum {
+  // Maximum packet count in any admitted AIE2P vector carrier.
+  LOOM_AIE2P_VECTOR_PACKET_MAX_COUNT = 4,
+};
+
 // Initializes an emitter for 512-bit X-packet operations and carrier
 // conversions. Initialization creates types and strings but emits no IR.
 iree_status_t loom_aie2p_vector_packet_emitter_initialize(
@@ -100,6 +105,20 @@ iree_status_t loom_aie2p_vector_packet_write_native(
     loom_aie2p_vector_packet_emitter_t* emitter,
     loom_aie2p_vector_carrier_kind_t carrier_kind,
     loom_value_id_t vector_packet, loom_value_id_t* out_packet);
+
+// Binds ordered native packets as one complete result carrier. Packets beyond
+// |logical_packet_count| duplicate the final logical packet; those carrier
+// lanes are outside the source value's observable domain.
+iree_status_t loom_aie2p_vector_packet_bind_native_packets(
+    loom_aie2p_vector_packet_emitter_t* emitter,
+    loom_aie2p_vector_carrier_t carrier, uint8_t logical_packet_count,
+    loom_value_id_t* native_packets, loom_value_id_t result_value);
+
+// Converts ordered X packets to |carrier| and binds the complete result value.
+iree_status_t loom_aie2p_vector_packet_bind_vector_packets(
+    loom_aie2p_vector_packet_emitter_t* emitter,
+    loom_aie2p_vector_carrier_t carrier, uint8_t logical_packet_count,
+    const loom_value_id_t* vector_packets, loom_value_id_t result_value);
 
 #ifdef __cplusplus
 }  // extern "C"

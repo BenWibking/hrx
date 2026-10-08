@@ -11,12 +11,6 @@ from loom.target.arch.amd.xdna.aie2p.contracts.structural import (
     _ACCUMULATOR_BITCAST_TYPE_GROUPS,
     _F32X32_ACCUMULATOR,
     _I1_VECTOR,
-    _I8_4X4_VECTOR,
-    _I8_DEINTERLEAVE_CONTROLS,
-    _I16_F16_BF16_8X8_VECTOR,
-    _I16_TRANSPOSE_8X8_CONTROLS,
-    _I32_F32_4X4_VECTOR,
-    _I32_F32_TRANSPOSE_4X4_CONTROL,
     _ORDINARY_1024_BITCAST_TYPES,
     _PACKED_VECTOR_ELEMENT_TYPES,
     _PREDICATE_VECTOR,
@@ -485,110 +479,6 @@ def test_split_carrier_concat_covers_each_binary_input_partition() -> None:
             )
         }
         assert isinstance(wide_narrow_rule.emit[-1], EmitRegisterConcat)
-
-
-def test_i32_f32_4x4_transpose_uses_native_shuffle_mode() -> None:
-    rule = next(
-        rule
-        for rule in AIE2P_STRUCTURAL_RULES
-        if isinstance(rule, DescriptorRule)
-        and rule.source_op is vector.vector_transpose
-        and Guard.value_type("source", _I32_F32_4X4_VECTOR) in rule.guards
-    )
-
-    assert [
-        emit.descriptor.key for emit in rule.emit if isinstance(emit, EmitDescriptorOp)
-    ] == [
-        "amd.xdna.aie2p.constant.i32.mova",
-        "amd.xdna.aie2p.shuffle.x.configured",
-    ]
-    assert rule.emit[0].immediates == {"i": _I32_F32_TRANSPOSE_4X4_CONTROL}
-
-
-def test_i8_4x4_transpose_deinterleaves_columns_and_packs_low_bytes() -> None:
-    rule = next(
-        rule
-        for rule in AIE2P_STRUCTURAL_RULES
-        if isinstance(rule, DescriptorRule)
-        and rule.source_op is vector.vector_transpose
-        and Guard.value_type("source", _I8_4X4_VECTOR) in rule.guards
-    )
-    emits = [emit for emit in rule.emit if isinstance(emit, EmitDescriptorOp)]
-    assert [emit.descriptor.key for emit in emits] == [
-        "amd.xdna.aie2p.constant.i32.mova",
-        "amd.xdna.aie2p.constant.i32.mova",
-        *(["amd.xdna.aie2p.shuffle.x.configured"] * 6),
-        *(["amd.xdna.aie2p.constant.i32.mova"] * 4),
-        *(["amd.xdna.aie2p.shift.bytes.x.configured"] * 6),
-    ]
-    assert [emit.immediates for emit in emits[:2]] == [
-        {"i": mode} for mode in _I8_DEINTERLEAVE_CONTROLS
-    ]
-    assert [emit.results["dst"].field for emit in emits[2:8]] == [
-        "even",
-        "odd",
-        "column0",
-        "column2",
-        "column1",
-        "column3",
-    ]
-    assert [emit.operands["s1"].field for emit in emits[4:8]] == [
-        "even",
-        "even",
-        "odd",
-        "odd",
-    ]
-    assert [emit.immediates for emit in emits[8:12]] == [
-        {"i": byte_count} for byte_count in (4, 60, 8, 56)
-    ]
-    assert emits[13].operands["s2"].field == "column1"
-    assert emits[15].operands["s2"].field == "column3"
-    assert emits[17].operands["s2"].field == "columns23"
-    assert emits[17].results["d"] == ValueRef.result("result")
-
-
-def test_16bit_8x8_transpose_preserves_both_full_carrier_halves() -> None:
-    assert _I16_F16_BF16_8X8_VECTOR == Vector(("i16", "f16", "bf16"), dims=(8, 8))
-    rule = next(
-        rule
-        for rule in AIE2P_STRUCTURAL_RULES
-        if isinstance(rule, DescriptorRule)
-        and rule.source_op is vector.vector_transpose
-        and Guard.value_type("source", _I16_F16_BF16_8X8_VECTOR) in rule.guards
-    )
-    assert rule.guards == (
-        Guard.value_type("source", _I16_F16_BF16_8X8_VECTOR),
-        Guard.value_type("result", _I16_F16_BF16_8X8_VECTOR),
-        Guard.i64_array_count("permutation", 2),
-        Guard.i64_array_element_range("permutation", 0, 1, 1),
-        Guard.i64_array_element_range("permutation", 1, 0, 0),
-    )
-    assert len(rule.emit) == 7
-    low, high = rule.emit[:2]
-    assert isinstance(low, EmitRegisterSlice)
-    assert isinstance(high, EmitRegisterSlice)
-    assert low.source.field == high.source.field == "source"
-    assert (low.unit_offset, low.unit_count) == (0, 2)
-    assert (high.unit_offset, high.unit_count) == (2, 2)
-    assert _I16_TRANSPOSE_8X8_CONTROLS == (52, 53)
-    assert [
-        (operand.field_name, operand.unit_count) for operand in rule.descriptor.operands
-    ] == [("dst", 2), ("s1", 2), ("s2", 2), ("mod", 1)]
-    for index, mode in enumerate(_I16_TRANSPOSE_8X8_CONTROLS):
-        constant, shuffle = rule.emit[2 + 2 * index : 4 + 2 * index]
-        assert constant.descriptor.key == "amd.xdna.aie2p.constant.i32.mova"
-        assert constant.immediates == {"i": mode}
-        assert shuffle.descriptor.key == "amd.xdna.aie2p.shuffle.x.configured"
-        assert shuffle.operands["s1"] == low.result
-        assert shuffle.operands["s2"] == high.result
-        assert shuffle.operands["mod"] == constant.results["dst"]
-    joined = rule.emit[-1]
-    assert isinstance(joined, EmitRegisterConcat)
-    assert tuple(joined.sources) == (
-        rule.emit[3].results["dst"],
-        rule.emit[5].results["dst"],
-    )
-    assert joined.result.field == "result"
 
 
 def test_wide_bitcast_aliases_preserve_ordinary_y_carriers() -> None:
