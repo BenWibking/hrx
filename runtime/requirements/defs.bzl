@@ -19,6 +19,20 @@ HAL_AMDGPU = build_requirement(
     cmake_condition = "IREE_HAL_DRIVER_AMDGPU",
 )
 
+HAL_EXECUTABLE_LOADER_EMBEDDED_ELF = build_requirement(
+    id = "runtime.hal.executable_loader.embedded_elf",
+    label = Label("//runtime/requirements:hal_executable_loader_embedded_elf"),
+    enabled_by = Label("//runtime/config/hal:executable_loader_embedded_elf"),
+    cmake_condition = "IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF",
+)
+
+HAL_TASK = build_requirement(
+    id = "runtime.hal.task",
+    label = Label("//runtime/requirements:hal_task"),
+    enabled_by = Label("//runtime/config/hal:driver_task"),
+    cmake_condition = "IREE_HAL_DRIVER_TASK",
+)
+
 HAL_VULKAN = build_requirement(
     id = "runtime.hal.vulkan",
     label = Label("//runtime/requirements:hal_vulkan"),
@@ -49,6 +63,8 @@ WEBGPU_DEVICE_RESOURCE = run_requirement(
 
 REQUIREMENTS = [
     HAL_AMDGPU,
+    HAL_EXECUTABLE_LOADER_EMBEDDED_ELF,
+    HAL_TASK,
     HAL_VULKAN,
     HAL_WEBGPU,
     AMDGPU_RESOURCE,
