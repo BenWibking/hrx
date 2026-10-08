@@ -33,6 +33,24 @@ endif()
 if(AMDF_BUILD AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND AMDF_FAMILY_XDNA AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA)
 iree_cc_library(
   NAME
+    resident_memory
+  HDRS
+    "resident_memory.h"
+  SRCS
+    "resident_memory.cc"
+  DEPS
+    ::device_fixture
+    amdf::headers
+    iree::third_party::google_test
+    libamdf::cts::util::mapped_memory
+  TESTONLY
+  PUBLIC
+)
+endif()
+
+if(AMDF_BUILD AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND AMDF_FAMILY_XDNA AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA)
+iree_cc_library(
+  NAME
     resident_transaction
   HDRS
     "resident_transaction.h"
@@ -76,6 +94,7 @@ iree_cc_library(
   DEPS
     ::device_fixture
     ::pm4_queue
+    ::resident_memory
     ::resident_transaction
     amdf::headers
     iree::third_party::google_test
@@ -100,6 +119,8 @@ iree_cc_library(
     libamdf::cts::xdna::programs::resident_channels
     libamdf::cts::xdna::programs::resident_exchange
     libamdf::cts::xdna::programs::resident_npu_initiated
+    libamdf::cts::xdna::programs::resident_split_response
+    libamdf::cts::xdna::programs::resident_terminal_relay
     libamdf::cts::xdna::util::executable
     libamdf::cts::xdna::util::execution
   TESTONLY

@@ -42,15 +42,31 @@ struct ResidentNpuAddresses {
 // The final acknowledgement has its own line in the control allocation.
 inline constexpr uint32_t kResidentFinalAckByteOffset = 192;
 
+// Complete response DMA ownership for the corresponding authored service.
+enum class ResidentResponsePath {
+  // Payload and ready form one S2MM1 descriptor chain.
+  kChained,
+  // S2MM0 writes payload; S2MM1 acquires its lock before writing ready.
+  kPayload0Ready1,
+  // S2MM1 writes payload; S2MM0 acquires its lock before writing ready.
+  kPayload1Ready0,
+};
+
 // Builds one native transaction around an already loaded and bound establishing
-// invocation. The admitted compiler product owns DMA0, shim BDs 0/1, compute
-// BDs 0..3 and vertical lane 0. The service uses direct Core0 scalar streams,
-// shim DMA1, BDs 2..5 per first slot and 6..9 per second slot, startup BD10,
-// final ACK BD15, vertical lane 1 and shim packet arbiter 1. The worker
-// consumes a fresh final GPU ACK, ceases custom submissions, then writes its
-// ordinary terminal record before returning. ABORT writes that same terminal
-// record without submitting any request/response task. The compiler's terminal
-// S2MM0 token must precede the appended DMA1 idle polls.
+// invocation. The admitted compiler product owns configuration MM2S0, its
+// terminal output's S2MM0, shim BDs 0/1, compute BDs 0..3 and vertical lane 0.
+// The service uses direct Core0 scalar streams, shim MM2S1, BDs 2..5 per first
+// slot and 6..9 per second slot, startup BD10, final ACK BD15, vertical lane 1
+// and shim packet arbiter 1. Chained responses use S2MM1. Split responses own
+// both S2MM channels and require the compiler terminal output in another
+// column. They leave payload and ready as independent tasks, ordered by shim
+// lock0; the immutable worker configuration chooses which task is armed first.
+//
+// The worker consumes a fresh final GPU ACK, ceases custom submissions, then
+// writes its ordinary terminal record before returning. ABORT writes that same
+// terminal record without submitting any request/response task. The compiler's
+// terminal S2MM0 token in the terminal output's column must precede the
+// appended idle polls for MM2S1 and every service-owned S2MM channel.
 //
 // This is cold command construction, not publication or submission. Invocation
 // records are copied unchanged after binding; only the outer header's size and
@@ -60,11 +76,14 @@ inline constexpr uint32_t kResidentFinalAckByteOffset = 192;
 // borrows its old contents. No compiler container parsing is performed here.
 // Payload length is a nonzero multiple of four bytes and matches the immutable
 // service configuration's word count. Slot count matches its credit count.
-// Services are in logical column order and cover the invocation's complete
-// partition. Each column owns its descriptors, routes and final DMA drain.
+// Services occupy consecutive logical columns starting at zero within the
+// invocation's complete partition. Each service column owns its descriptors,
+// routes and final DMA drain. Additional columns and their completion paths
+// belong entirely to the compiler invocation.
 ::testing::AssertionResult BuildResidentTransaction(
     std::span<const uint8_t> invocation,
     std::span<const ResidentNpuAddresses> services,
-    uint32_t payload_byte_length, std::vector<uint8_t>* output);
+    uint32_t payload_byte_length, ResidentResponsePath response_path,
+    std::vector<uint8_t>* output);
 
 #endif  // AMDF_CTS_INTEROP_GPU_XDNA_RECIPES_RESIDENT_TRANSACTION_H_
