@@ -740,7 +740,7 @@ def _vector_multiply_bf16_origins_to_bf16_rule(
             rhs_scalar=ValueRef.exact_uniform_element_origin_operand("rhs"),
             result=ValueRef.result("result", source_node="narrow"),
         ),
-        report_key=f"exact_bf16_vector_scalar_product_to_bf16_x{lane_count}",
+        report_key="exact_bf16_vector_scalar_product_to_bf16",
     )
 
 

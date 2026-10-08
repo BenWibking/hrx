@@ -35,6 +35,7 @@ iree_py_library(
     "packet_conversion.py"
     "packet_memory.py"
     "packet_program.py"
+    "power_of_two_scale.py"
     "predicate_concat.py"
     "reduction.py"
     "scalar_program.py"
@@ -131,6 +132,27 @@ iree_py_test(
     loom::py::loom::dialect::scf::scf
     loom::py::loom::dialect::vector::vector
     loom::py::loom::dialect::view::view
+    loom::py::loom::target::contracts::contracts
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  TIMEOUT
+    60
+)
+
+iree_py_test(
+  NAME
+    power_of_two_scale_test
+  MAIN
+    "../../../../../../tools/pytest_style_runner.py"
+  SRCS
+    "power_of_two_scale_test.py"
+    "../../../../../../tools/pytest_style_runner.py"
+  ARGS
+    "loom.target.arch.amd.xdna.aie2p.contracts.power_of_two_scale_test"
+  DEPS
+    loom::py::loom::target::arch::amd::xdna::aie2p::contracts::contracts
     loom::py::loom::target::contracts::contracts
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"

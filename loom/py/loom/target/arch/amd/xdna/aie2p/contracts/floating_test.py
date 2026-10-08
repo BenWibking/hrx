@@ -38,7 +38,8 @@ def _bf16_vector_scalar_product_rule(lane_count: int = 16):
         rule
         for rule in AIE2P_FLOATING_RULES
         if rule.source_op is vector.vector_mulf
-        and rule.report_key == f"exact_bf16_vector_scalar_product_to_bf16_x{lane_count}"
+        and rule.report_key == "exact_bf16_vector_scalar_product_to_bf16"
+        and rule.guards[0].type_pattern == Vector("f32", lanes=lane_count)
     )
 
 

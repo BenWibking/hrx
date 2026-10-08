@@ -18,6 +18,7 @@ from loom.target.contracts import (
     DescriptorEmitForm,
     DescriptorResultType,
     EmitDescriptorOp,
+    ValueProject,
     ValueRef,
     descriptor_by_key,
 )
@@ -50,14 +51,14 @@ class PacketProgram:
     def constant(
         self,
         name: str,
-        value: int,
+        value: int | ValueProject,
         *,
         descriptor_key: str | None = None,
     ) -> ValueRef:
         if descriptor_key is None:
             descriptor_key = (
                 "amd.xdna.aie2p.constant.i32.short"
-                if -1024 <= value <= 1023
+                if isinstance(value, int) and -1024 <= value <= 1023
                 else "amd.xdna.aie2p.constant.i32"
             )
         result = self.temporary(name)
@@ -117,13 +118,14 @@ class PacketProgram:
     def splat(
         self,
         name: str,
-        value: int,
+        value: int | ValueProject,
         *,
         element_bits: int | None = None,
+        descriptor_key: str | None = None,
     ) -> ValueRef:
         if element_bits is None:
             element_bits = self.element_bits
-        scalar = self.constant(f"{name}_scalar", value)
+        scalar = self.constant(f"{name}_scalar", value, descriptor_key=descriptor_key)
         return self.operation(
             name,
             f"splat.i{element_bits}x{512 // element_bits}",
@@ -220,6 +222,23 @@ class PacketProgram:
         return self._complete_comparison(
             name,
             f"cmp.ge.unsigned.i{element_bits}x{512 // element_bits}.el.low32",
+            s1=lhs,
+            s2=rhs,
+        )
+
+    def compare_signed_less_than(
+        self,
+        name: str,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        *,
+        element_bits: int | None = None,
+    ) -> ValueRef:
+        if element_bits is None:
+            element_bits = self.element_bits
+        return self._complete_comparison(
+            name,
+            f"cmp.lt.signed.i{element_bits}x{512 // element_bits}.el.low32",
             s1=lhs,
             s2=rhs,
         )
