@@ -7,7 +7,7 @@
 // A single-unit condition stays live while loop-carried eight-unit aggregates
 // and four-unit load pairs compete for one 52-unit register bank. The summary
 // tracks the zero-spill contract without pinning an exact coloring.
-// RUN: emit low-allocation @loop_fragmentation test.i32=52
+// RUN: emit low-allocation-query @loop_fragmentation spill-count test.i32=52
 
 test.target<low_core> @test_target
 
@@ -36,24 +36,14 @@ low.func.def target<test.low.core>(@test_target) @loop_fragmentation(%pointer: r
 }
 
 // ----
-low-allocation @loop_fragmentation
-target: test_target
-descriptor_set: test.low.core
-mode: virtual
-assignments: 25
-remarks: 0
 spills: 0
-copies: coalesced=0 materialized=0
-classes:
-  test.i32: assignments=24 units=161 target_ids=49 physical=0 spill_slots=0 unassigned=0
-  test.ptr: assignments=1 units=1 target_ids=1 physical=0 spill_slots=0 unassigned=0
 
 // ====
 
 // At 41 units the loop still needs one wide spill. Packing the scalar above
 // the wide live ranges removes its spill without eliminating the wide spill.
 // The retained plan stores and reloads only the eight-unit rhs value.
-// RUN: with-checks emit low-allocation-json @partial_fragmentation_repair test.i32=41
+// RUN: emit low-allocation-query @partial_fragmentation_repair spill-count spill-plans=%rhs1 test.i32=41
 
 test.target<low_core> @test_target
 
@@ -82,14 +72,14 @@ low.func.def target<test.low.core>(@test_target) @partial_fragmentation_repair(%
 }
 
 // ----
-CHECK: *"spill_count":1,"spill_plan_count":1,*
-CHECK: *"spill_plans":[*"name":"rhs1"*"byte_size":32,"byte_alignment":16,"store_count":1,"reload_count":1}],*
+spills: 1
+spill %rhs1: private[0] bytes=32 align=16 stores=1 reloads=1
 
 // ====
 
 // A wide reload and its slice identities share physical storage. Semantic
 // pressure exceeds five units, but the wide value and live scalar fit together.
-// RUN: with-checks emit low-allocation @shared_reload_with_live_scalar test.i32=5
+// RUN: emit low-allocation-query @shared_reload_with_live_scalar spill-count test.i32=5
 
 test.target<low_core> @target
 
@@ -112,13 +102,13 @@ low.func.def target<test.low.core>(@target) @shared_reload_with_live_scalar(%blo
 }
 
 // ----
-CHECK: spills: 0
+spills: 0
 
 // ====
 
 // Four registers cannot hold the tuple and live scalar together. The packing
 // retry retains the ordinary spill plan when it cannot reduce spill traffic.
-// RUN: with-checks emit low-allocation @shared_reload_exceeds_capacity test.i32=4
+// RUN: emit low-allocation-query @shared_reload_exceeds_capacity spill-count test.i32=4
 
 test.target<low_core> @target
 
@@ -141,13 +131,13 @@ low.func.def target<test.low.core>(@target) @shared_reload_exceeds_capacity(%blo
 }
 
 // ----
-CHECK: spills: 2
+spills: 2
 
 // ====
 
 // Both store operands must stay in registers. Fragmentation can fail first-fit
 // before it produces any spill plan, but five registers still suffice.
-// RUN: with-checks emit low-allocation @required_tuple test.i32=5
+// RUN: emit low-allocation-query @required_tuple assignment-count spill-count test.i32=5
 
 test.target<low_core> @target
 
@@ -159,12 +149,12 @@ low.func.def target<test.low.core>(@target) @required_tuple(%scalar: reg<test.i3
 }
 
 // ----
-CHECK: assignments: 2
-CHECK: spills: 0
+assignments: 2
+spills: 0
 
 // ====
 
-// RUN: emit low-allocation-json @required_tuple_shortage test.i32=4 output=none
+// RUN: emit low-allocation-query @required_tuple_shortage test.i32=4
 
 test.target<low_core> @target
 
@@ -176,11 +166,9 @@ low.func.def target<test.low.core>(@target) @required_tuple_shortage(%scalar: re
   return
 }
 
-// ----
-
 // ====
 
-// RUN: with-checks emit low-allocation-json @required_tuple_uses_unaligned_gap test.i32=5 fixed=%scalar:target_id:0:1
+// RUN: emit low-allocation-query @required_tuple_uses_unaligned_gap values=%wide test.i32=5 fixed=%scalar:target_id:0:1
 
 test.target<low_core> @target
 
@@ -192,5 +180,4 @@ low.func.def target<test.low.core>(@target) @required_tuple_uses_unaligned_gap(%
 }
 
 // ----
-CHECK: *"spill_count":0,*
-CHECK: *"name":"wide"*"location":{"kind":"target_id","base":1,"count":4}*
+value %wide: test.i32 -> target_id[1:4]
