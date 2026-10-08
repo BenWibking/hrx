@@ -844,11 +844,6 @@ iree_status_t loom_amdgpu_lower_scalar_i64_alu(
 iree_status_t loom_amdgpu_lower_scalar_i64_ctpop(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_scalar_i64_ctpop_plan_t* plan) {
-  loom_type_t result_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(context, source_op,
-                                                   plan->result, &result_type));
-  const uint32_t result_unit_count =
-      loom_low_register_type_unit_count(result_type);
   loom_value_id_t low_count = LOOM_VALUE_ID_INVALID;
   loom_value_id_t low_zero = LOOM_VALUE_ID_INVALID;
   switch (plan->kind) {
@@ -870,7 +865,7 @@ iree_status_t loom_amdgpu_lower_scalar_i64_ctpop(
           IREE_ARRAYSIZE(operands), loom_named_attr_slice_empty(), &sgpr_type,
           1, &count_op));
       low_count = loom_value_slice_get(loom_low_op_results(count_op), 0);
-      if (result_unit_count == 2) {
+      if (plan->result_unit_count == 2) {
         IREE_RETURN_IF_ERROR(loom_amdgpu_emit_const_u32(
             context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_MOV_B32, 0,
             sgpr_type, &low_zero));
@@ -905,7 +900,7 @@ iree_status_t loom_amdgpu_lower_scalar_i64_ctpop(
             context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_V_BCNT_U32_B32,
             high_source_half, low_count, vgpr_type, &low_count));
       }
-      if (result_unit_count == 2) {
+      if (plan->result_unit_count == 2) {
         IREE_RETURN_IF_ERROR(loom_amdgpu_emit_const_u32(
             context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_V_MOV_B32, 0,
             vgpr_type, &low_zero));
@@ -917,16 +912,13 @@ iree_status_t loom_amdgpu_lower_scalar_i64_ctpop(
       return iree_ok_status();
   }
 
-  if (result_unit_count == 1) {
+  if (plan->result_unit_count == 1) {
     return loom_low_lower_bind_value(context, plan->result, low_count);
   }
   const loom_value_id_t low_halves[] = {
       low_count,
       low_zero,
   };
-  loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_build_low_register_range(
-      context, source_op, low_halves, IREE_ARRAYSIZE(low_halves), result_type,
-      &low_result));
-  return loom_low_lower_bind_value(context, plan->result, low_result);
+  return loom_amdgpu_bind_low_register_range(
+      context, source_op, plan->result, low_halves, IREE_ARRAYSIZE(low_halves));
 }

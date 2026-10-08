@@ -1235,9 +1235,9 @@ static iree_status_t loom_amdgpu_lower_vector_iota(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_vector_iota_plan_t* plan) {
   if (!loom_amdgpu_vector_iota_plan_is_dynamic(plan)) {
-    loom_type_t result_type = loom_type_none();
-    IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
-        context, source_op, plan->result, &result_type));
+    const loom_type_t result_type = loom_low_register_type(
+        loom_low_lower_context_descriptor_set(context)->stable_id,
+        LOOM_AMDGPU_REG_CLASS_ID_VGPR, plan->lane_count);
     return loom_amdgpu_bind_register_u32_lane_constants(
         context, source_op, plan->result, result_type, &plan->descriptor,
         plan->imm32_attr_name_id, plan->lane_bit_patterns, plan->lane_count);
@@ -1451,9 +1451,9 @@ static iree_status_t loom_amdgpu_lower_vector_from_packed_integer_elements(
           "AMDGPU packed integer vector constant lowering requires v_mov_b32");
       IREE_BUILTIN_UNREACHABLE();
     }
-    loom_type_t result_type = loom_type_none();
-    IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
-        context, source_op, plan->result, &result_type));
+    const loom_type_t result_type =
+        loom_low_register_carrier_type_with_unit_count(lane_type,
+                                                       plan->register_count);
     return loom_amdgpu_bind_register_u32_lane_constants(
         context, source_op, plan->result, result_type, &descriptor,
         imm32_attr_name_id, plan->payload.packed_register_bit_patterns,

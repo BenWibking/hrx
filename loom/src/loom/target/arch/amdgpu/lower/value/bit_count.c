@@ -247,6 +247,8 @@ iree_status_t loom_amdgpu_select_scalar_cttz_plan(
       .source = source,
       .result = result,
       .kind = kind,
+      .result_unit_count =
+          (uint8_t)loom_low_register_type_unit_count(result_low_type),
       .semantic_bit_width = semantic_bit_width,
       .flags = flags,
   };
@@ -375,11 +377,6 @@ static iree_status_t loom_amdgpu_emit_scalar_cttz_vgpr_b64(
 iree_status_t loom_amdgpu_lower_scalar_cttz(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_scalar_cttz_plan_t* plan) {
-  loom_type_t result_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(context, source_op,
-                                                   plan->result, &result_type));
-  const uint32_t result_unit_count =
-      loom_low_register_type_unit_count(result_type);
   const bool use_vgpr = plan->kind == LOOM_AMDGPU_SCALAR_CTTZ_KIND_VGPR_B32 ||
                         plan->kind == LOOM_AMDGPU_SCALAR_CTTZ_KIND_VGPR_B64;
 
@@ -414,7 +411,7 @@ iree_status_t loom_amdgpu_lower_scalar_cttz(
     }
   }
 
-  if (result_unit_count == 1) {
+  if (plan->result_unit_count == 1) {
     return loom_low_lower_bind_value(context, plan->result, low_count);
   }
   loom_value_id_t low_zero = LOOM_VALUE_ID_INVALID;
@@ -427,9 +424,6 @@ iree_status_t loom_amdgpu_lower_scalar_cttz(
       low_count,
       low_zero,
   };
-  loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_build_low_register_range(
-      context, source_op, low_halves, IREE_ARRAYSIZE(low_halves), result_type,
-      &low_result));
-  return loom_low_lower_bind_value(context, plan->result, low_result);
+  return loom_amdgpu_bind_low_register_range(
+      context, source_op, plan->result, low_halves, IREE_ARRAYSIZE(low_halves));
 }

@@ -483,13 +483,15 @@ typedef struct loom_amdgpu_scalar_i64_alu_plan_t {
   } operands;
 } loom_amdgpu_scalar_i64_alu_plan_t;
 
-typedef enum loom_amdgpu_scalar_i64_ctpop_kind_e {
+typedef uint8_t loom_amdgpu_scalar_i64_ctpop_kind_t;
+
+enum loom_amdgpu_scalar_i64_ctpop_kind_e {
   LOOM_AMDGPU_SCALAR_I64_CTPOP_KIND_NONE = 0,
   LOOM_AMDGPU_SCALAR_I64_CTPOP_KIND_SGPR_B32 = 1,
   LOOM_AMDGPU_SCALAR_I64_CTPOP_KIND_SGPR_B64 = 2,
   LOOM_AMDGPU_SCALAR_I64_CTPOP_KIND_VGPR_B32 = 3,
   LOOM_AMDGPU_SCALAR_I64_CTPOP_KIND_VGPR_B64 = 4,
-} loom_amdgpu_scalar_i64_ctpop_kind_t;
+};
 
 typedef struct loom_amdgpu_scalar_i64_ctpop_plan_t {
   // Source 64-bit integer whose set bits are counted.
@@ -498,15 +500,22 @@ typedef struct loom_amdgpu_scalar_i64_ctpop_plan_t {
   loom_value_id_t result;
   // Register-bank-specific population-count strategy.
   loom_amdgpu_scalar_i64_ctpop_kind_t kind;
+  // Selected result width after range-based integer narrowing.
+  uint8_t result_unit_count;
 } loom_amdgpu_scalar_i64_ctpop_plan_t;
 
-typedef enum loom_amdgpu_scalar_cttz_kind_e {
+static_assert(sizeof(loom_amdgpu_scalar_i64_ctpop_plan_t) == 12,
+              "population-count plans must stay cache dense");
+
+typedef uint8_t loom_amdgpu_scalar_cttz_kind_t;
+
+enum loom_amdgpu_scalar_cttz_kind_e {
   LOOM_AMDGPU_SCALAR_CTTZ_KIND_NONE = 0,
   LOOM_AMDGPU_SCALAR_CTTZ_KIND_SGPR_B32 = 1,
   LOOM_AMDGPU_SCALAR_CTTZ_KIND_SGPR_B64 = 2,
   LOOM_AMDGPU_SCALAR_CTTZ_KIND_VGPR_B32 = 3,
   LOOM_AMDGPU_SCALAR_CTTZ_KIND_VGPR_B64 = 4,
-} loom_amdgpu_scalar_cttz_kind_t;
+};
 
 typedef uint8_t loom_amdgpu_scalar_cttz_flags_t;
 
@@ -520,11 +529,16 @@ typedef struct loom_amdgpu_scalar_cttz_plan_t {
   loom_value_id_t result;
   // Register-bank and physical-width lowering strategy.
   loom_amdgpu_scalar_cttz_kind_t kind;
+  // Selected result width after range-based integer narrowing.
+  uint8_t result_unit_count;
   // Declared source width governing the zero result.
   uint8_t semantic_bit_width;
   // Fact-derived lowering properties.
   loom_amdgpu_scalar_cttz_flags_t flags;
 } loom_amdgpu_scalar_cttz_plan_t;
+
+static_assert(sizeof(loom_amdgpu_scalar_cttz_plan_t) == 12,
+              "trailing-zero-count plans must stay cache dense");
 
 typedef enum loom_amdgpu_scalar_conversion_kind_e {
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NONE = 0,

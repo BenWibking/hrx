@@ -1928,6 +1928,8 @@ iree_status_t loom_amdgpu_select_scalar_i64_ctpop_plan(
       .source = source,
       .result = result,
       .kind = kind,
+      .result_unit_count =
+          (uint8_t)loom_low_register_type_unit_count(result_low_type),
   };
   *out_selected = true;
   return iree_ok_status();

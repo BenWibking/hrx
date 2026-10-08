@@ -436,8 +436,10 @@ iree_status_t loom_amdgpu_lower_kernel_subgroup_shuffle(
 
   loom_type_t valid_type = loom_type_none();
   if (plan->valid != LOOM_VALUE_ID_INVALID) {
-    IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(context, source_op,
-                                                     plan->valid, &valid_type));
+    // Participation is an EXEC-shaped mask even on wave32 targets.
+    valid_type = loom_low_register_type(
+        loom_low_lower_context_descriptor_set(context)->stable_id,
+        LOOM_AMDGPU_REG_CLASS_ID_SGPR, 2);
   }
 
   loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
