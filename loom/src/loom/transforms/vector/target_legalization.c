@@ -14,6 +14,7 @@
 #include "loom/ops/scf/ops.h"
 #include "loom/ops/vector/memory.h"
 #include "loom/ops/vector/ops.h"
+#include "loom/transforms/vector/reduction_legalization.h"
 #include "loom/transforms/vector/to_scalar.h"
 #include "loom/util/numeric_format.h"
 
@@ -61,9 +62,17 @@ static iree_status_t loom_vector_legalize_reduce_axes(
   *out_result = (loom_target_legalizer_result_t){
       .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
   };
+  if (context->source_function_has_unsupported_vector_carrier ||
+      !loom_target_legalization_op_has_source_vector_carriers(context, op)) {
+    return iree_ok_status();
+  }
   bool rewritten = false;
-  IREE_RETURN_IF_ERROR(loom_vector_reduce_axes_to_scalar_rewrite_op(
-      context->pass, context->rewriter, op, &rewritten));
+  IREE_RETURN_IF_ERROR(loom_vector_reduce_axes_to_vector_rewrite_op(
+      context->rewriter, op, &rewritten));
+  if (!rewritten) {
+    IREE_RETURN_IF_ERROR(loom_vector_reduce_axes_to_scalar_rewrite_op(
+        context->pass, context->rewriter, op, &rewritten));
+  }
   if (rewritten) {
     *out_result = (loom_target_legalizer_result_t){
         .action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN,

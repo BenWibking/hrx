@@ -343,27 +343,9 @@ func.def @i32x2x3_reduce_columns(%values: vector<2x3xi32>, %init: vector<3xi32>)
 
 // ----
 low.func.def target<amd.xdna.aie2p.core> abi(object_function) @i32x2x3_reduce_columns(%values: reg<aie2p.vec256 x2>, %init: reg<aie2p.vec256 x2>) -> (reg<aie2p.vec256 x2>) asm {
-  %38 = vextract.32.imm %init, 0
-  %39 = vextract.32.imm %values, 0
-  %40 = add.rr %38, %39
-  %41 = vextract.32.imm %values, 3
-  %42 = add.rr %40, %41
-  %43 = vextract.32.imm %init, 1
-  %44 = vextract.32.imm %values, 1
-  %45 = add.rr %43, %44
-  %46 = vextract.32.imm %values, 4
-  %47 = add.rr %45, %46
-  %48 = vextract.32.imm %init, 2
-  %49 = vextract.32.imm %values, 2
-  %50 = add.rr %48, %49
-  %51 = vextract.32.imm %values, 5
-  %52 = add.rr %50, %51
-  %53 = vbcst.32 %42
-  %54 = mov.short 1
-  %55 = copy %54 : reg<aie2p.er> -> reg<aie2p.mr29_insert>
-  %56 = vinsert.32.reg %53, %55, %47
-  %57 = mov.short 2
-  %58 = copy %57 : reg<aie2p.er> -> reg<aie2p.mr29_insert>
-  %result = vinsert.32.reg %56, %58, %52
+  %12 = mova.i32 12
+  %13 = vshift %values, %values, %12
+  %14 = vadd.32 %values, %13
+  %result = vadd.32 %init, %14
   return %result
 }

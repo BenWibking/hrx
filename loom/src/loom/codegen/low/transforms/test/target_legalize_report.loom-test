@@ -58,6 +58,34 @@ CHECK: COMPILE-REPORT: target_legalization[*] * source_op=vector.reduce.axes mod
 
 test.target<low_core> @test_target
 
+func.def target(@test_target) @records_static_partial_reduce_axes_vector_rewrite(%values: vector<2x3xi32>, %init: vector<3xi32>) -> (vector<3xi32>) {
+  %result = vector.reduce.axes<addi> %values, %init axes [0] : vector<2x3xi32>, vector<3xi32>
+  func.return %result : vector<3xi32>
+}
+
+// ----
+CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=1 scalarized=0 target_rewritten=0 reference_rewritten=1 deferred=0 invalid_ir=0 unsupported=0 unhandled=0 rows=1 *
+CHECK: COMPILE-REPORT: target_legalization[*] function=records_static_partial_reduce_axes_vector_rewrite source_op=vector.reduce.axes * action=rewritten outcome=reference-fallback * legalizer=vector strategy=reference * scalarized=false *
+
+// ====
+// RUN: with-checks compile-report target-legalize
+
+test.target<low_core> @test_target
+
+func.def target(@test_target) @records_dynamic_partial_reduce_axes_scalar_rewrite(%m: index, %n: index, %values: vector<[%m]x[%n]xi32>, %init: vector<[%m]xi32>) -> (vector<[%m]xi32>) {
+  %result = vector.reduce.axes<addi> %values, %init axes [1] : vector<[%m]x[%n]xi32>, vector<[%m]xi32>
+  func.return %result : vector<[%m]xi32>
+}
+
+// ----
+CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=1 scalarized=1 target_rewritten=0 reference_rewritten=1 deferred=0 invalid_ir=0 unsupported=0 unhandled=0 rows=1 *
+CHECK: COMPILE-REPORT: target_legalization[*] function=records_dynamic_partial_reduce_axes_scalar_rewrite source_op=vector.reduce.axes * action=rewritten outcome=reference-fallback * legalizer=vector strategy=reference * scalarized=true *
+
+// ====
+// RUN: with-checks compile-report target-legalize
+
+test.target<low_core> @test_target
+
 func.def target(@test_target) @records_decode_reference_rewrite(%payload: vector<2xf8E4M3>, %scale: vector<1xf32>) -> (vector<2xf32>) {
   %schema = encoding.define #encoding.f8e4m3fn<affine=scale_only, payload_elements=2, scale_format=f32, scale_group_elements=2, scale_operands=1, scale_topology=block_1d> : encoding<schema>
   %decoded = vector.decode %payload using %schema {scale = %scale : vector<1xf32>} : vector<2xf8E4M3>, encoding<schema> -> vector<2xf32>

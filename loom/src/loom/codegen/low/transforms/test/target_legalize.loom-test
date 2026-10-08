@@ -692,3 +692,22 @@ func.def target(@test_target) @register_lookup_reference(%table: vector<4xi32>, 
   %result = vector.from_elements %6, %9 : vector<2xi32>
   func.return %result : vector<2xi32>
 }
+
+// ====
+// RUN: pass target-legalize{mode=final},dce,canonicalize
+
+test.target<low_core> @test_target
+
+// An empty reduced dimension contributes no terms, so the supplied vector
+// accumulator is the result.
+func.def target(@test_target) @empty_partial_reduction(%values: vector<0x3xi32>, %init: vector<3xi32>) -> (vector<3xi32>) {
+  %result = vector.reduce.axes<addi> %values, %init axes [0] : vector<0x3xi32>, vector<3xi32>
+  func.return %result : vector<3xi32>
+}
+
+// ----
+test.target<low_core> @test_target
+
+func.def target(@test_target) @empty_partial_reduction(%values: vector<0x3xi32>, %init: vector<3xi32>) -> (vector<3xi32>) {
+  func.return %init : vector<3xi32>
+}
