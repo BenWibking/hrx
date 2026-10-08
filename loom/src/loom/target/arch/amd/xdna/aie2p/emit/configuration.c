@@ -91,7 +91,7 @@ static iree_status_t loom_aie2p_configuration_schedule(
       version ? version->function_target_facts : NULL,
       request->low_descriptor_registry, request->diagnostic_emitter, 0,
       request->scratch_arena, &model);
-  emitter->error_count += model.error_count;
+  emitter->error_count += model.context.error_count;
   if (iree_status_is_ok(status) && !emitter->error_count) {
     const loom_low_schedule_options_t options = {
         .emitter = request->diagnostic_emitter,
