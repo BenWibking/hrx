@@ -179,11 +179,12 @@ bool IsAddressRangeValid(uint64_t address, uint64_t byte_length) {
     uint32_t payload_byte_length, std::vector<uint8_t>* output) {
   if (invocation.size() < kTransactionHeaderByteLength || invocation[0] != 0 ||
       invocation[1] != 1 || invocation[2] != 4 || invocation[3] != 6 ||
-      services.empty() || services.size() > 8 ||
-      invocation[4] != services.size() || invocation[5] != 1 ||
+      invocation[4] == 0 || invocation[4] > 8 || services.empty() ||
+      services.size() > invocation[4] || invocation[5] != 1 ||
       LoadU32(invocation, 12) != invocation.size()) {
     return ::testing::AssertionFailure()
-           << "Expected a complete AIE2P transaction 0.1 matching the services";
+           << "Expected a complete AIE2P transaction 0.1 containing the "
+              "service columns";
   }
   uint32_t added_operation_count = 0;
   uint32_t added_byte_length = 0;

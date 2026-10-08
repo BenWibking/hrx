@@ -50,7 +50,8 @@ inline constexpr uint32_t kResidentFinalAckByteOffset = 192;
 // consumes a fresh final GPU ACK, ceases custom submissions, then writes its
 // ordinary terminal record before returning. ABORT writes that same terminal
 // record without submitting any request/response task. The compiler's terminal
-// S2MM0 token must precede the appended DMA1 idle polls.
+// S2MM0 token in the terminal output's column must precede the appended DMA1
+// idle polls.
 //
 // This is cold command construction, not publication or submission. Invocation
 // records are copied unchanged after binding; only the outer header's size and
@@ -60,8 +61,10 @@ inline constexpr uint32_t kResidentFinalAckByteOffset = 192;
 // borrows its old contents. No compiler container parsing is performed here.
 // Payload length is a nonzero multiple of four bytes and matches the immutable
 // service configuration's word count. Slot count matches its credit count.
-// Services are in logical column order and cover the invocation's complete
-// partition. Each column owns its descriptors, routes and final DMA drain.
+// Services occupy consecutive logical columns starting at zero within the
+// invocation's complete partition. Each service column owns its descriptors,
+// routes and final DMA drain. Additional columns and their completion paths
+// belong entirely to the compiler invocation.
 ::testing::AssertionResult BuildResidentTransaction(
     std::span<const uint8_t> invocation,
     std::span<const ResidentNpuAddresses> services,

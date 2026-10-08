@@ -153,6 +153,29 @@ two-credit exchanges of 1, 16, or 1024 words. Each slot's complete extent is
 rounded up to 64 bytes; the oracle checks inter-slot padding, unused slots,
 outer guards and allocation padding as well as the complete transcript.
 
+### Terminal relay
+
+`TerminalRelay` and `TerminalRelayTwoCredits` reuse the credit-window GPU
+program and resident NPU service with a different terminal route. The service
+occupies column zero; a second worker in column one receives its complete
+sixteen-word terminal record and copies it to the ordinary terminal binding.
+Configuration and custom request/response DMA remain in column zero, while
+the compiler's terminal S2MM0 task and completion token belong to column one.
+
+The context spans both columns but contains only one custom service. The
+transaction composer configures and drains that service's DMA1 resources,
+preserving the entire compiler invocation and the relay's lifecycle. The relay
+runs only after the service returns following final GPU acknowledgement or
+prestart ABORT. Native completion includes the terminal transfer and custom
+DMA idle observations; core/context teardown remains a separate ownership
+step.
+
+The startup, payload and abort matrices cover the same one- and two-credit
+shapes as the direct terminal path. They retain its complete payload,
+transcript, terminal-record, guard and immutable-storage oracle. The host
+still performs one startup decision and final joins without participating in
+the repeated exchanges or the terminal relay.
+
 ### Independent workers
 
 `ResidentGpuXdnaTest.RegisteredIndependentChannels` gives two NPU workers

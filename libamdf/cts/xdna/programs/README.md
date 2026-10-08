@@ -49,7 +49,7 @@ shim DMA. A separate startup decision permits RUN or prestart ABORT. A final
 GPU acknowledgement ends custom traffic before the ordinary 64-byte terminal
 record reports completion.
 
-The source has two array roots sharing the same worker: `resident_service_array`
+The source has three array roots sharing the same service: `resident_service_array`
 places one worker in column zero; `resident_channels_array` places independent workers
 in columns zero and one. The latter exposes four complete 64-byte bindings in
 configuration-zero, terminal-zero, configuration-one, terminal-one order.
@@ -57,6 +57,14 @@ Each worker retains its own configuration, local rings and shim resources.
 The caller supplies a matching context width and composes the disjoint custom
 routes and descriptors around the bound establishing invocation. The ordinary
 terminal waits precede the caller's final custom DMA idle observations.
+
+`resident_terminal_relay_array` keeps one service in column zero and routes its
+complete terminal record through a second worker in column one. The relay
+copies all sixteen words to its ordinary output. Its column owns the terminal
+S2MM0 task and completion token, while configuration input and custom traffic
+remain in column zero. The array retains two 64-byte host bindings and needs
+a two-column context. Normal completion, zero work and prestart ABORT use the
+same terminal route; no host action relays the record between workers.
 
 [resident_npu_initiated.loom](resident_npu_initiated.loom) starts from an
 NPU-produced payload and transforms each actual GPU return into the next NPU

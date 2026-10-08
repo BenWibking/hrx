@@ -32,6 +32,7 @@
 #include "libamdf/cts/xdna/programs/resident_channels.h"
 #include "libamdf/cts/xdna/programs/resident_exchange.h"
 #include "libamdf/cts/xdna/programs/resident_npu_initiated.h"
+#include "libamdf/cts/xdna/programs/resident_terminal_relay.h"
 #include "libamdf/cts/xdna/util/executable.h"
 #include "libamdf/cts/xdna/util/execution.h"
 
@@ -48,9 +49,11 @@ constexpr uint32_t kSlotSeedStep = 0x9E3779B9u;
 
 enum class LaunchOrder { kGpuFirst, kNpuFirst };
 enum class Participants { kBoth, kGpu, kNpu };
-// Window and NPU-initiated schedules use one worker; held schedules use two.
+// Window and NPU-initiated schedules use one service; held schedules use two.
+// The relayed window adds a worker that owns only the terminal output.
 enum class ServiceSchedule {
   kWindow,
+  kRelayedWindow,
   kHoldFirst,
   kHoldSecond,
   kNpuInitiated,
@@ -96,6 +99,9 @@ struct ExchangePlan {
                    schedule == ServiceSchedule::kHoldSecond
                ? 2u
                : 1u;
+  }
+  uint32_t logical_column_count() const {
+    return schedule == ServiceSchedule::kRelayedWindow ? 2u : service_count();
   }
   bool npu_initiated() const {
     return schedule == ServiceSchedule::kNpuInitiated || npu_sdma();
@@ -533,7 +539,9 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     const auto shape = plan.shape;
     const iree_file_toc_t* image = nullptr;
     const auto* images =
-        plan.npu_initiated() ? amdf_cts_xdna_resident_npu_initiated_create()
+        plan.schedule == ServiceSchedule::kRelayedWindow
+            ? amdf_cts_xdna_resident_terminal_relay_create()
+        : plan.npu_initiated() ? amdf_cts_xdna_resident_npu_initiated_create()
         : plan.service_count() == 2 ? amdf_cts_xdna_resident_channels_create()
                                     : amdf_cts_xdna_resident_exchange_create();
     const std::string_view target = xdna_endpoint_info_.target_id;
@@ -551,7 +559,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     XdnaExecutable executable;
     ASSERT_TRUE(executable.Initialize(
         {reinterpret_cast<const uint8_t*>(image->data), image->size},
-        xdna_endpoint_info_, xdna_device_info_, plan.service_count(),
+        xdna_endpoint_info_, xdna_device_info_, plan.logical_column_count(),
         std::span(binding_accesses).first(2 * plan.service_count())));
     std::vector<uint8_t> storage(executable.allocation_byte_length());
     executable.Load(storage);
@@ -586,9 +594,10 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
         &commands));
     ASSERT_LE(commands.size(),
               xdna_device_info_.instruction.maximum_byte_length);
-    ASSERT_NO_FATAL_FAILURE(execution_.Prepare(
-        api_, xdna_api_, xdna_device_, xdna_family_, plan.service_count(),
-        commands, executable.allocation_alignment()));
+    ASSERT_NO_FATAL_FAILURE(
+        execution_.Prepare(api_, xdna_api_, xdna_device_, xdna_family_,
+                           plan.logical_column_count(), commands,
+                           executable.allocation_alignment()));
     ASSERT_EQ(
         api_->host_mapping_cache_control(
             execution_.instructions.mapping, AMDF_HOST_CACHE_OPERATION_FLUSH, 0,
@@ -921,9 +930,13 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     }
     RecordProperty("resident_round_count", plan.record_count());
     RecordProperty("resident_service_count", plan.service_count());
+    RecordProperty("resident_logical_column_count",
+                   plan.logical_column_count());
     RecordProperty("resident_schedule",
-                   plan.npu_sdma()                           ? "npu-sdma"
-                   : plan.npu_initiated()                    ? "npu-initiated"
+                   plan.npu_sdma()        ? "npu-sdma"
+                   : plan.npu_initiated() ? "npu-initiated"
+                   : schedule == ServiceSchedule::kRelayedWindow
+                       ? "relayed-credit-window"
                    : schedule == ServiceSchedule::kWindow    ? "credit-window"
                    : schedule == ServiceSchedule::kHoldFirst ? "hold-first"
                                                              : "hold-second");
@@ -1374,7 +1387,9 @@ uint32_t SeedForPeerCause(uint32_t peer_cause) {
 }
 
 const char* ScheduleCaseSuffix(ServiceSchedule schedule) {
-  return schedule == ServiceSchedule::kWindow      ? ""
+  return schedule == ServiceSchedule::kWindow ||
+                 schedule == ServiceSchedule::kRelayedWindow
+             ? ""
          : schedule == ServiceSchedule::kHoldFirst ? "HoldFirst"
                                                    : "HoldSecond";
 }
@@ -1388,7 +1403,7 @@ struct ExchangeCase {
   uint32_t round_count;
   // Maximum requests admitted before waiting for a response.
   uint32_t credit_count;
-  // Shared credit window or independent worker placement.
+  // Resident service topology and terminal-output route.
   ServiceSchedule schedule = ServiceSchedule::kWindow;
 };
 
@@ -1400,7 +1415,8 @@ TEST_P(ResidentExchangeTest, CausalRoundTrip) {
   const auto& parameters = GetParam();
   // Both seeds exercise unsigned wrapping without an identity first request.
   uint32_t seed = parameters.round_count == 1 ? UINT32_MAX : 0x7FFFFF00u;
-  if (parameters.schedule != ServiceSchedule::kWindow) {
+  if (parameters.schedule == ServiceSchedule::kHoldFirst ||
+      parameters.schedule == ServiceSchedule::kHoldSecond) {
     seed = SeedForPeerCause(parameters.round_count == 17 ? 0xFFFFFFFEu : seed);
   }
   Run(parameters.role, parameters.round_count, seed, parameters.order,
@@ -1409,13 +1425,14 @@ TEST_P(ResidentExchangeTest, CausalRoundTrip) {
 }
 
 std::vector<ExchangeCase> ExchangeCases(
-    uint32_t credit_count, std::span<const uint32_t> round_counts) {
+    uint32_t credit_count, std::span<const uint32_t> round_counts,
+    ServiceSchedule schedule = ServiceSchedule::kWindow) {
   std::vector<ExchangeCase> cases;
   for (amdf_memory_profile_roles_t role :
        {AMDF_MEMORY_PROFILE_ROLE_CREATE, AMDF_MEMORY_PROFILE_ROLE_REGISTER}) {
     for (auto order : {LaunchOrder::kGpuFirst, LaunchOrder::kNpuFirst}) {
       for (uint32_t round_count : round_counts) {
-        cases.push_back({role, order, round_count, credit_count});
+        cases.push_back({role, order, round_count, credit_count, schedule});
       }
     }
   }
@@ -1458,6 +1475,18 @@ INSTANTIATE_TEST_SUITE_P(IndependentChannelsAndBacking, ResidentExchangeTest,
                          ::testing::ValuesIn(IndependentExchangeCases()),
                          ExchangeCaseName);
 
+INSTANTIATE_TEST_SUITE_P(
+    TerminalRelay, ResidentExchangeTest,
+    ::testing::ValuesIn(ExchangeCases(1, std::array{0u, 1u, 257u},
+                                      ServiceSchedule::kRelayedWindow)),
+    ExchangeCaseName);
+
+INSTANTIATE_TEST_SUITE_P(TerminalRelayTwoCredits, ResidentExchangeTest,
+                         ::testing::ValuesIn(ExchangeCases(
+                             2, std::array{0u, 1u, 2u, 3u, 17u, 257u, 258u},
+                             ServiceSchedule::kRelayedWindow)),
+                         ExchangeCaseName);
+
 struct PrestartAbortCase {
   // Advertised construction role for the accepted participant's joint backing.
   amdf_memory_profile_roles_t role;
@@ -1465,7 +1494,7 @@ struct PrestartAbortCase {
   Participants participant;
   // Number of paired slots prepared before the partial startup.
   uint32_t credit_count;
-  // Shared credit window or independent worker placement.
+  // Resident service topology and terminal-output route.
   ServiceSchedule schedule = ServiceSchedule::kWindow;
 };
 
@@ -1482,12 +1511,14 @@ TEST_P(ResidentPrestartAbortTest, DrainsWithoutPeer) {
       {16, 16, parameters.credit_count}, parameters.schedule);
 }
 
-std::vector<PrestartAbortCase> PrestartAbortCases(uint32_t credit_count) {
+std::vector<PrestartAbortCase> PrestartAbortCases(
+    uint32_t credit_count,
+    ServiceSchedule schedule = ServiceSchedule::kWindow) {
   std::vector<PrestartAbortCase> cases;
   for (amdf_memory_profile_roles_t role :
        {AMDF_MEMORY_PROFILE_ROLE_CREATE, AMDF_MEMORY_PROFILE_ROLE_REGISTER}) {
     for (auto participant : {Participants::kGpu, Participants::kNpu}) {
-      cases.push_back({role, participant, credit_count});
+      cases.push_back({role, participant, credit_count, schedule});
     }
   }
   return cases;
@@ -1529,12 +1560,22 @@ INSTANTIATE_TEST_SUITE_P(IndependentChannelsAndBacking,
                          ::testing::ValuesIn(IndependentPrestartAbortCases()),
                          PrestartAbortCaseName);
 
+INSTANTIATE_TEST_SUITE_P(
+    TerminalRelay, ResidentPrestartAbortTest,
+    ::testing::ValuesIn(PrestartAbortCases(1, ServiceSchedule::kRelayedWindow)),
+    PrestartAbortCaseName);
+
+INSTANTIATE_TEST_SUITE_P(
+    TerminalRelayTwoCredits, ResidentPrestartAbortTest,
+    ::testing::ValuesIn(PrestartAbortCases(2, ServiceSchedule::kRelayedWindow)),
+    PrestartAbortCaseName);
+
 struct PayloadCase {
   // Advertised construction role for the complete joint slot backing.
   amdf_memory_profile_roles_t role;
   // Actual payload extent and placement relative to its generation word.
   ExchangeShape shape;
-  // Shared credit window or independent worker placement.
+  // Resident service topology and terminal-output route.
   ServiceSchedule schedule = ServiceSchedule::kWindow;
 };
 
@@ -1544,21 +1585,24 @@ class ResidentPayloadTest : public ResidentGpuXdnaTest,
 
 TEST_P(ResidentPayloadTest, PublishesCompleteResponse) {
   const auto& parameters = GetParam();
-  const uint32_t seed = parameters.schedule == ServiceSchedule::kWindow
-                            ? 0xFFFFFFFEu
-                            : SeedForPeerCause(0xFFFFFFFEu);
+  const bool independent = parameters.schedule == ServiceSchedule::kHoldFirst ||
+                           parameters.schedule == ServiceSchedule::kHoldSecond;
+  const uint32_t seed =
+      independent ? SeedForPeerCause(0xFFFFFFFEu) : 0xFFFFFFFEu;
   Run(parameters.role, 17, seed, LaunchOrder::kNpuFirst, Participants::kBoth,
       parameters.shape, parameters.schedule);
 }
 
-std::vector<PayloadCase> PayloadCases(uint32_t credit_count,
-                                      std::span<const uint32_t> word_counts) {
+std::vector<PayloadCase> PayloadCases(
+    uint32_t credit_count, std::span<const uint32_t> word_counts,
+    ServiceSchedule schedule = ServiceSchedule::kWindow) {
   std::vector<PayloadCase> cases;
   for (amdf_memory_profile_roles_t role :
        {AMDF_MEMORY_PROFILE_ROLE_CREATE, AMDF_MEMORY_PROFILE_ROLE_REGISTER}) {
     for (uint32_t word_count : word_counts) {
       for (uint32_t word_offset : {1u, 16u}) {
-        cases.push_back({role, {word_count, word_offset, credit_count}});
+        cases.push_back(
+            {role, {word_count, word_offset, credit_count}, schedule});
       }
     }
   }
@@ -1607,5 +1651,17 @@ INSTANTIATE_TEST_SUITE_P(IndependentChannelsPayloadAndBacking,
                          ResidentPayloadTest,
                          ::testing::ValuesIn(IndependentPayloadCases()),
                          PayloadCaseName);
+
+INSTANTIATE_TEST_SUITE_P(TerminalRelay, ResidentPayloadTest,
+                         ::testing::ValuesIn(PayloadCases(
+                             1, std::array{1u, 4u, 15u, 16u, 17u, 64u, 1024u},
+                             ServiceSchedule::kRelayedWindow)),
+                         PayloadCaseName);
+
+INSTANTIATE_TEST_SUITE_P(
+    TerminalRelayTwoCredits, ResidentPayloadTest,
+    ::testing::ValuesIn(PayloadCases(2, std::array{1u, 16u, 1024u},
+                                     ServiceSchedule::kRelayedWindow)),
+    PayloadCaseName);
 
 }  // namespace
