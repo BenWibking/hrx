@@ -1423,7 +1423,11 @@ loom_low_allocation_coalescing_assign_concat_source_relation(
     *out_result = LOOM_LOW_ALLOCATION_CONCAT_SOURCE_RESULT_DEFERRED;
     return iree_ok_status();
   }
-  if (can_reserve_destination && has_retained_source) {
+  // An earlier source of the same assembly may already have reserved the
+  // destination. Appending it again would publish a second assignment for the
+  // destination value.
+  if (can_reserve_destination && has_retained_source &&
+      destination_assignment == NULL) {
     loom_low_allocation_class_capacity_t capacity = {0};
     IREE_RETURN_IF_ERROR(
         loom_low_allocation_target_constraints_interval_capacity(
