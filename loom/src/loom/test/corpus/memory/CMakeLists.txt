@@ -23,6 +23,7 @@ loom_corpus_sources(
     "address/integer_casts.loom"
     "address/integer_terms.loom"
     "address/narrow.loom"
+    "address/runtime_factors.loom"
     "address/scaling.loom"
     "address/selection.loom"
     "address/signed_terms.loom"

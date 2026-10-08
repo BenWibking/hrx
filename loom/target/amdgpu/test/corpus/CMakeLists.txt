@@ -413,6 +413,7 @@ loom_corpus_test(
     "memory/address/integer_casts.loom"
     "memory/address/integer_terms.loom"
     "memory/address/narrow.loom"
+    "memory/address/runtime_factors.loom"
     "memory/address/scaling.loom"
     "memory/address/selection.loom"
     "memory/address/signed_terms.loom"
