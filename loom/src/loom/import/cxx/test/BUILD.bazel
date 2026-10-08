@@ -44,6 +44,8 @@ loom_check_test_suite(
         "bitcast_invalid.cxx-test",
         "boolean_storage.cxx-test",
         "boolean_storage_cleanup.cxx-test",
+        "buffer_alloca.cxx-test",
+        "buffer_alloca_invalid.cxx-test",
         "check.cxx-test",
         "check_close.cxx-test",
         "check_close_invalid.cxx-test",
