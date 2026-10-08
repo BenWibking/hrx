@@ -112,13 +112,15 @@ loom_low_lower_rule_materialize_source_memory_complete_byte_offset(
     const loom_low_source_memory_access_plan_t* source_memory_access,
     loom_value_id_t* out_value_id);
 
-// Materializes the complete target address selected by a source-memory plan.
+// Materializes the complete target address using its planned semantic
+// coordinate carrier. Descriptor register widths alone do not encode typed
+// coordinates.
 iree_status_t loom_low_lower_rule_materialize_source_memory_address(
     loom_low_lower_context_t* context,
     const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
     const loom_low_lower_source_memory_t* source_memory,
     const loom_low_source_memory_access_plan_t* source_memory_access,
-    loom_value_id_t* out_value_id);
+    loom_type_t coordinate_type, loom_value_id_t* out_value_id);
 
 #ifdef __cplusplus
 }  // extern "C"

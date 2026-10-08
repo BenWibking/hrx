@@ -12,6 +12,9 @@
 #include "loom/target/abi/task/state_layout.h"
 
 typedef struct loom_low_task_kernel_imports_t {
+  // Native index carrier shared by invocation-constant imports. None until the
+  // first builtin is selected; emission never requests a new type mapping.
+  loom_type_t index_type;
   // First source query for each builtin, retained during operation selection.
   // NULL entries require no import. Preamble emission binds these values once;
   // all other queries alias the corresponding canonical source value.
@@ -49,6 +52,14 @@ iree_status_t loom_low_task_select_kernel_builtin(
   IREE_RETURN_IF_ERROR(loom_low_lower_get_or_allocate_target_state(
       context, &loom_low_task_kernel_imports_key, sizeof(*imports),
       (void**)&imports));
+  if (loom_type_kind(imports->index_type) == LOOM_TYPE_NONE) {
+    IREE_RETURN_IF_ERROR(loom_low_lower_map_type(
+        context, source_op, loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+        &imports->index_type));
+    if (loom_type_kind(imports->index_type) == LOOM_TYPE_NONE) {
+      return iree_ok_status();
+    }
+  }
   if (!imports->sources[id]) {
     imports->sources[id] = source_op;
   }
@@ -66,13 +77,6 @@ iree_status_t loom_low_task_emit_kernel_preamble(
     return iree_ok_status();
   }
   loom_module_t* module = loom_low_lower_context_module(context);
-  loom_type_t type;
-  IREE_RETURN_IF_ERROR(loom_low_lower_map_type(
-      context, loom_low_lower_context_source_function(context).op,
-      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX), &type));
-  if (loom_type_kind(type) == LOOM_TYPE_NONE) {
-    return iree_ok_status();
-  }
   iree_status_t status = iree_ok_status();
   for (unsigned i = 0;
        i < LOOM_TASK_BUILTIN_COUNT_ && iree_status_is_ok(status); ++i) {
@@ -87,7 +91,8 @@ iree_status_t loom_low_task_emit_kernel_preamble(
     if (iree_status_is_ok(status)) {
       status = loom_low_live_in_build(loom_low_lower_context_builder(context),
                                       0, name, loom_named_attr_slice_empty(),
-                                      type, source->location, &live_in);
+                                      imports->index_type, source->location,
+                                      &live_in);
     }
     if (iree_status_is_ok(status)) {
       status =

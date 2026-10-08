@@ -36,10 +36,11 @@ typedef struct loom_low_lower_resolved_emit_t {
   // Fact-derived source references retained after attributes and result types.
   // Bits address operand refs; set bits have packed value IDs.
   uint16_t source_value_mask;
-  // Byte offset from this row to attributes, canonical result type IDs, and
-  // fact-derived source values in that order. Zero for an empty payload. All
-  // rows and their aligned payloads share one function-arena allocation. Elided
-  // recipes retain descriptor identity without executable payloads.
+  // Byte offset from this row to attributes, canonical result type IDs,
+  // fact-derived source values, and an optional complete-address coordinate
+  // type ID, in that order. Zero for an empty payload. All rows and their
+  // aligned payloads share one function-arena allocation. Elided recipes retain
+  // descriptor identity without executable payloads.
   uint32_t data_offset;
 } loom_low_lower_resolved_emit_t;
 
@@ -83,6 +84,25 @@ static inline loom_value_id_t loom_low_lower_resolved_emit_source_value(
   const uint32_t preceding_mask = (UINT32_C(1) << reference_ordinal) - 1u;
   return source_values[iree_math_count_ones_u32(resolved->source_value_mask &
                                                 preceding_mask)];
+}
+
+// Returns the semantic coordinate carrier for a complete-address materializer.
+// The selected source-memory row establishes that this payload is present.
+static inline loom_type_id_t
+loom_low_lower_resolved_emit_address_coordinate_type_id(
+    const loom_low_lower_resolved_emit_t* resolved) {
+  const loom_named_attr_t* attributes =
+      (const loom_named_attr_t*)((const uint8_t*)resolved +
+                                 resolved->data_offset);
+  const loom_type_id_t* result_types =
+      (const loom_type_id_t*)(attributes + resolved->emit->attr_copy_count);
+  const loom_value_id_t* source_values =
+      (const loom_value_id_t*)(result_types + iree_math_count_ones_u32(
+                                                  resolved->result_type_mask));
+  const loom_type_id_t* coordinate_type =
+      (const loom_type_id_t*)(source_values + iree_math_count_ones_u32(
+                                                  resolved->source_value_mask));
+  return *coordinate_type;
 }
 
 // Finalizes a selected rule's descriptors, source access semantics, attributes,

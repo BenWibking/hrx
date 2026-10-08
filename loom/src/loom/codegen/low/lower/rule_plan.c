@@ -1058,13 +1058,33 @@ static iree_status_t loom_low_lower_rule_plan_result_types(
   return iree_ok_status();
 }
 
+static const loom_low_lower_source_memory_address_materializer_t*
+loom_low_lower_rule_emit_address_materializer(
+    const loom_low_lower_rule_set_t* rule_set,
+    const loom_low_lower_emit_t* emit) {
+  if (!emit->source_memory_ordinal) {
+    return NULL;
+  }
+  const loom_low_lower_source_memory_t* source_memory =
+      &rule_set->source_memories[emit->source_memory_ordinal - 1];
+  return source_memory->address_materializer_ordinal
+             ? loom_low_lower_rule_set_source_memory_address_materializer(
+                   rule_set, source_memory)
+             : NULL;
+}
+
 static uint32_t loom_low_lower_rule_emit_data_size(
+    const loom_low_lower_rule_set_t* rule_set,
     const loom_low_lower_emit_t* emit, uint8_t result_type_mask,
     uint16_t source_value_mask) {
   return (uint32_t)iree_host_align(
       emit->attr_copy_count * sizeof(loom_named_attr_t) +
           iree_math_count_ones_u32(result_type_mask) * sizeof(loom_type_id_t) +
-          iree_math_count_ones_u32(source_value_mask) * sizeof(loom_value_id_t),
+          iree_math_count_ones_u32(source_value_mask) *
+              sizeof(loom_value_id_t) +
+          (loom_low_lower_rule_emit_address_materializer(rule_set, emit)
+               ? sizeof(loom_type_id_t)
+               : 0),
       iree_alignof(loom_named_attr_t));
 }
 
@@ -1095,7 +1115,8 @@ iree_status_t loom_low_lower_rule_plan_finalize(
         rule_set, (uint16_t)(rule->action.emit_start + i));
     if (!elided) {
       allocation_size += loom_low_lower_rule_emit_data_size(
-          emit, loom_low_lower_rule_emit_result_type_mask(rule_set, emit),
+          rule_set, emit,
+          loom_low_lower_rule_emit_result_type_mask(rule_set, emit),
           loom_low_lower_rule_emit_source_value_mask(rule_set, emit));
     }
   }
@@ -1138,7 +1159,8 @@ iree_status_t loom_low_lower_rule_plan_finalize(
     resolved->source_value_mask =
         loom_low_lower_rule_emit_source_value_mask(rule_set, emit);
     const uint32_t data_size = loom_low_lower_rule_emit_data_size(
-        emit, resolved->result_type_mask, resolved->source_value_mask);
+        rule_set, emit, resolved->result_type_mask,
+        resolved->source_value_mask);
     if (data_size != 0) {
       resolved->data_offset = (uint32_t)(data - (uint8_t*)resolved);
     }
@@ -1169,6 +1191,24 @@ iree_status_t loom_low_lower_rule_plan_finalize(
       source_values[source_value_index++] =
           loom_low_lower_rule_plan_source_value(context, rule_set, &source,
                                                 ref_index);
+    }
+    const loom_low_lower_source_memory_address_materializer_t* materializer =
+        loom_low_lower_rule_emit_address_materializer(rule_set, emit);
+    if (materializer) {
+      const loom_scalar_type_t coordinate_type =
+          materializer->coordinate_type ==
+                  LOOM_LOW_LOWER_SOURCE_MEMORY_ADDRESS_COORDINATE_INDEX
+              ? LOOM_SCALAR_TYPE_INDEX
+              : LOOM_SCALAR_TYPE_OFFSET;
+      loom_type_t low_type = loom_type_none();
+      IREE_RETURN_IF_ERROR(loom_low_lower_map_type(
+          context, source_op, loom_type_scalar(coordinate_type), &low_type));
+      if (context->result->error_count != 0) {
+        return iree_ok_status();
+      }
+      IREE_RETURN_IF_ERROR(loom_module_intern_type_id(
+          context->module, low_type,
+          (loom_type_id_t*)(source_values + source_value_index)));
     }
     data += data_size;
   }

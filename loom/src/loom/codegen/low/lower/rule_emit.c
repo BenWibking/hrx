@@ -178,6 +178,10 @@ static iree_status_t loom_low_lower_rule_low_value(
       IREE_ASSERT_EQ(value_ref->materializer_index, 0);
       return loom_low_lower_rule_materialize_source_memory_address(
           context, rule_set, source_op, source_memory, source_memory_access,
+          loom_type_table_get(
+              &context->module->types,
+              loom_low_lower_resolved_emit_address_coordinate_type_id(
+                  resolved_emit)),
           out_low_value_id);
     }
     case LOOM_LOW_LOWER_VALUE_REF_SOURCE_MEMORY_ROOT:
