@@ -21,12 +21,12 @@
 static_assert(LOOM_LOW_SOURCE_MEMORY_DYNAMIC_REALIZATION_CAPACITY <= 8,
               "VADDR realization proofs must fit the retained mask");
 
-static_assert(2 * (LOOM_LOW_SOURCE_MEMORY_DYNAMIC_TERM_CAPACITY + 1) <= 64,
-              "memory operand forms must fit the retained word");
+static_assert(2 * (LOOM_LOW_SOURCE_MEMORY_DYNAMIC_TERM_CAPACITY + 1) < 64,
+              "memory operand forms must leave the high bit for literals");
 
 static loom_amdgpu_memory_dynamic_term_plan_t
 loom_amdgpu_plan_memory_dynamic_term(
-    const loom_value_fact_table_t* fact_table,
+    const loom_module_t* module, const loom_value_fact_table_t* fact_table,
     const loom_low_source_memory_dynamic_term_t* term) {
   const loom_value_facts_t index_facts =
       loom_value_fact_table_lookup(fact_table, term->index);
@@ -47,6 +47,13 @@ loom_amdgpu_plan_memory_dynamic_term(
             1);
     plan.operand_forms |= (uint64_t)form << (2 * (i + 1));
   }
+  int64_t literal = 0;
+  if (loom_amdgpu_type_is_address_scalar(
+          loom_module_value_type(module, term->index)) &&
+      loom_value_facts_as_exact_i64(index_facts, &literal) && literal >= 0 &&
+      literal <= UINT32_MAX) {
+    plan.operand_forms |= LOOM_AMDGPU_MEMORY_DYNAMIC_TERM_INDEX_LITERAL;
+  }
   return plan;
 }
 
@@ -66,18 +73,19 @@ iree_status_t loom_amdgpu_plan_memory_dynamic_terms(
       context, count * sizeof(*plans), (void**)&plans));
   const loom_value_fact_table_t* fact_table =
       loom_low_lower_context_fact_table(context);
+  const loom_module_t* module = loom_low_lower_context_module(context);
   uint32_t index = 0;
   for (uint8_t i = 0; i < source->dynamic_term_count; ++i) {
     plans[index++] = loom_amdgpu_plan_memory_dynamic_term(
-        fact_table, &source->dynamic_terms[i]);
+        module, fact_table, &source->dynamic_terms[i]);
   }
   for (uint8_t i = 0; i < source->dynamic_realization_count; ++i) {
     plans[index++] = loom_amdgpu_plan_memory_dynamic_term(
-        fact_table, &source->dynamic_realizations[i].term);
+        module, fact_table, &source->dynamic_realizations[i].term);
   }
   if (source->retained_component.term) {
     plans[index] = loom_amdgpu_plan_memory_dynamic_term(
-        fact_table, source->retained_component.term);
+        module, fact_table, source->retained_component.term);
   }
   *out_plans = plans;
   return iree_ok_status();
@@ -94,9 +102,10 @@ iree_status_t loom_amdgpu_plan_memory_term_sequence(
       context, sequence->count * sizeof(*plans), (void**)&plans));
   const loom_value_fact_table_t* fact_table =
       loom_low_lower_context_fact_table(context);
+  const loom_module_t* module = loom_low_lower_context_module(context);
   for (uint8_t i = 0; i < sequence->count; ++i) {
-    plans[i] =
-        loom_amdgpu_plan_memory_dynamic_term(fact_table, sequence->terms[i]);
+    plans[i] = loom_amdgpu_plan_memory_dynamic_term(module, fact_table,
+                                                    sequence->terms[i]);
     sequence->plans[i] = &plans[i];
   }
   return iree_ok_status();
@@ -358,13 +367,33 @@ static iree_status_t loom_amdgpu_lookup_memory_u32_operand(
       out_low_value);
 }
 
+// Reuse an existing VGPR carrier. Otherwise the retained literal avoids an
+// SGPR-to-VGPR copy, without querying the source's numeric facts again.
+static iree_status_t loom_amdgpu_emit_memory_vgpr_index(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t index, const loom_amdgpu_memory_dynamic_term_plan_t* plan,
+    loom_value_id_t* out_low_value) {
+  const uint32_t literal = (uint32_t)plan->index_minimum;
+  const void* materialization = NULL;
+  if (iree_any_bit_set(plan->operand_forms,
+                       LOOM_AMDGPU_MEMORY_DYNAMIC_TERM_INDEX_LITERAL) &&
+      !loom_amdgpu_low_type_is_register_class(
+          context, loom_low_lower_value_binding_type(context, index),
+          LOOM_AMDGPU_REG_CLASS_ID_VGPR)) {
+    materialization = &literal;
+  }
+  return loom_amdgpu_emit_prepared_vgpr_address(context, source_op, index,
+                                                materialization, out_low_value);
+}
+
 static iree_status_t loom_amdgpu_emit_memory_u32_product(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_low_source_memory_dynamic_term_t* term,
+    const loom_amdgpu_memory_dynamic_term_plan_t* plan,
     loom_value_id_t* out_low_product) {
   if (term->stride_value_count == 0) {
-    return loom_amdgpu_lookup_or_materialize_vgpr_address(
-        context, source_op, term->index, out_low_product);
+    return loom_amdgpu_emit_memory_vgpr_index(context, source_op, term->index,
+                                              plan, out_low_product);
   }
   const loom_module_t* module = loom_low_lower_context_module(context);
   loom_value_id_t low_product = LOOM_VALUE_ID_INVALID;
@@ -502,10 +531,10 @@ static iree_status_t loom_amdgpu_try_emit_memory_vaddr_affine_terms(
     }
 
     loom_value_id_t low_index = LOOM_VALUE_ID_INVALID;
-    IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_address(
-        context, source_op, term->index, &low_index));
     const loom_amdgpu_memory_dynamic_term_plan_t* term_plan =
         sequence->plans[i];
+    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_vgpr_index(
+        context, source_op, term->index, term_plan, &low_index));
     const loom_value_facts_t index_facts = loom_value_facts_make(
         term_plan->index_minimum, term_plan->index_maximum, 1);
     if (group_ordinal == group_count) {
@@ -618,7 +647,7 @@ iree_status_t loom_amdgpu_emit_memory_vaddr(
       const loom_low_source_memory_dynamic_term_t* term = sequence->terms[i];
       loom_value_id_t low_offset = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_u32_product(
-          context, source_op, term, &low_offset));
+          context, source_op, term, sequence->plans[i], &low_offset));
       if (term->byte_stride != 1) {
         // The selected address form proves the complete offset fits u32.
         // Scaling by the coefficient's low word therefore preserves signed
@@ -964,7 +993,8 @@ static iree_status_t loom_amdgpu_emit_memory_flat_wide_dynamic_term(
 // high word of the resulting flat-address term is zero.
 static iree_status_t loom_amdgpu_emit_memory_flat_bounded_u32_dynamic_term(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
-    const loom_low_source_memory_dynamic_term_t* term, loom_type_t vgpr_type,
+    const loom_low_source_memory_dynamic_term_t* term,
+    const loom_amdgpu_memory_dynamic_term_plan_t* plan, loom_type_t vgpr_type,
     loom_value_id_t* out_low_lo, loom_value_id_t* out_low_hi,
     bool* out_emitted) {
   *out_emitted = false;
@@ -974,8 +1004,8 @@ static iree_status_t loom_amdgpu_emit_memory_flat_bounded_u32_dynamic_term(
   }
 
   loom_value_id_t low_offset = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_u32_product(context, source_op,
-                                                           term, &low_offset));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_u32_product(
+      context, source_op, term, plan, &low_offset));
   if (term->byte_stride != 1) {
     IREE_ASSERT(term->byte_stride > 0 && term->byte_stride <= UINT32_MAX);
     IREE_RETURN_IF_ERROR(loom_amdgpu_emit_vgpr_scale_u32(
@@ -1012,14 +1042,14 @@ static iree_status_t loom_amdgpu_emit_memory_flat_dynamic_term(
 
   bool emitted_bounded_u32 = false;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_flat_bounded_u32_dynamic_term(
-      context, source_op, term, vgpr_type, out_low_lo, out_low_hi,
+      context, source_op, term, plan, vgpr_type, out_low_lo, out_low_hi,
       &emitted_bounded_u32));
   if (emitted_bounded_u32) {
     return iree_ok_status();
   }
 
-  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_address(
-      context, source_op, term->index, &low_index));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_vgpr_index(
+      context, source_op, term->index, plan, &low_index));
   const bool signed_index = plan->index_minimum < 0;
   if (term->byte_stride == 1) {
     *out_low_lo = low_index;

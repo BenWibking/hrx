@@ -445,26 +445,6 @@ iree_status_t loom_amdgpu_emit_prepared_vgpr_address(
   IREE_BUILTIN_UNREACHABLE();
 }
 
-iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_address(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source_value, loom_value_id_t* out_low_value) {
-  const loom_type_t source_type = loom_module_value_type(
-      loom_low_lower_context_module(context), source_value);
-  int64_t value = 0;
-  if (!loom_amdgpu_type_is_i1(source_type) &&
-      !loom_amdgpu_low_type_is_register_class(
-          context, loom_low_lower_value_binding_type(context, source_value),
-          LOOM_AMDGPU_REG_CLASS_ID_VGPR) &&
-      loom_amdgpu_value_as_address_constant(context, source_value, &value) &&
-      value >= 0 && value <= UINT32_MAX) {
-    const uint32_t bits = (uint32_t)value;
-    return loom_amdgpu_emit_prepared_vgpr_address(
-        context, source_op, source_value, &bits, out_low_value);
-  }
-  return loom_amdgpu_emit_prepared_vgpr_address(
-      context, source_op, source_value, NULL, out_low_value);
-}
-
 iree_status_t loom_amdgpu_lookup_or_materialize_sgpr_address(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, loom_value_id_t* out_low_value) {

@@ -1385,12 +1385,17 @@ typedef enum loom_amdgpu_memory_scalar_offset_placement_e {
   LOOM_AMDGPU_MEMORY_SCALAR_OFFSET_PLACEMENT_BASE = 1,
 } loom_amdgpu_memory_scalar_offset_placement_t;
 
+// The high bit of a term's packed operand forms permits using index_minimum as
+// an exact u32 address literal when its source carrier is not already a VGPR.
+#define LOOM_AMDGPU_MEMORY_DYNAMIC_TERM_INDEX_LITERAL (UINT64_C(1) << 63)
+
 typedef struct loom_amdgpu_memory_dynamic_term_plan_t {
   // Inclusive unscaled index lower bound used by affine address grouping.
   int64_t index_minimum;
   // Inclusive unscaled index upper bound used by affine address grouping.
   int64_t index_maximum;
-  // Two-bit operand forms: index first, then dynamic stride operands.
+  // Two-bit operand forms: index first, then dynamic stride operands. The
+  // INDEX_LITERAL bit retains an optional exact address materialization.
   uint64_t operand_forms;
 } loom_amdgpu_memory_dynamic_term_plan_t;
 

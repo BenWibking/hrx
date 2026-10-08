@@ -136,13 +136,6 @@ iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_i64(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, loom_value_id_t* out_low_value);
 
-// Looks up an address scalar or canonical integer term and returns its low
-// 32 bits in one VGPR, projecting predicates to zero/one and materializing
-// constants and uniform values when required.
-iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_address(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source_value, loom_value_id_t* out_low_value);
-
 // Looks up a uniform address scalar or canonical integer term and returns its
 // low 32-bit SGPR unit, projecting predicates to zero/one.
 iree_status_t loom_amdgpu_lookup_or_materialize_sgpr_address(
