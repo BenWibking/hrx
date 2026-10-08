@@ -8,19 +8,19 @@
 
 #include "gtest/gtest.h"
 
-void GpuUserQueue::Initialize(const amdf_api_t* api,
-                              const amdf_gpu_api_t* gpu_api,
-                              amdf_device_t* device,
-                              const amdf_queue_family_info_t& family,
-                              amdf_queue_producer_mode_t producer_mode,
-                              const amdf_gpu_queue_scratch_t& scratch) {
+void GpuUserQueue::Initialize(
+    const amdf_api_t* api, const amdf_gpu_api_t* gpu_api, amdf_device_t* device,
+    const amdf_queue_family_info_t& family,
+    amdf_queue_producer_mode_t producer_mode,
+    const amdf_gpu_queue_scratch_t& scratch,
+    amdf_user_queue_capabilities_t required_capabilities) {
   amdf_gpu_user_queue_create_info_t create = {};
   create.type = AMDF_STRUCTURE_TYPE_GPU_USER_QUEUE_CREATE_INFO;
   create.structure_size = sizeof(create);
   create.queue_family_ordinal = family.ordinal;
   create.priority = AMDF_QUEUE_PRIORITY_NORMAL;
   create.producer_mode = producer_mode;
-  create.required_capabilities = AMDF_USER_QUEUE_CAPABILITY_HOST_PRODUCER;
+  create.required_capabilities = required_capabilities;
   create.scratch = scratch;
   ASSERT_EQ(gpu_api->user_queue_create(device, &create, &queue),
             AMDF_STATUS_OK);
@@ -33,6 +33,7 @@ void GpuUserQueue::Initialize(const amdf_api_t* api,
   ASSERT_EQ(info.format_features, family.format_features);
   ASSERT_EQ(info.producer_mode, producer_mode);
   ASSERT_EQ(info.priority, AMDF_QUEUE_PRIORITY_NORMAL);
+  ASSERT_EQ(info.capabilities & required_capabilities, required_capabilities);
   ASSERT_EQ(api->user_queue_map(queue, nullptr, &mapping), AMDF_STATUS_OK);
   host.type = AMDF_STRUCTURE_TYPE_USER_QUEUE_MAPPING_INFO;
   host.structure_size = sizeof(host);
@@ -55,9 +56,44 @@ void GpuUserQueue::Initialize(const amdf_api_t* api,
   ASSERT_EQ(host.doorbell_address % sizeof(uint64_t), 0u);
   ASSERT_EQ(GpuLoadAcquire<uint64_t>(host.read_index_address), 0u);
   ASSERT_EQ(GpuLoadAcquire<uint64_t>(host.write_index_address), 0u);
+  if ((required_capabilities & AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER) !=
+      0) {
+    ASSERT_EQ(api->user_queue_map(queue, device, &producer.mapping),
+              AMDF_STATUS_OK);
+    producer.info.type = AMDF_STRUCTURE_TYPE_USER_QUEUE_MAPPING_INFO;
+    producer.info.structure_size = sizeof(producer.info);
+    ASSERT_EQ(
+        api->user_queue_mapping_query_info(producer.mapping, &producer.info),
+        AMDF_STATUS_OK);
+    ASSERT_TRUE(
+        amdf_queue_id_is_equal(&producer.info.queue_id, &info.queue_id));
+    ASSERT_EQ(producer.info.queue_reset_epoch, info.reset_epoch);
+    ASSERT_EQ(producer.info.command_type, info.command_type);
+    ASSERT_EQ(producer.info.format_version, info.format_version);
+    ASSERT_EQ(producer.info.format_features, info.format_features);
+    ASSERT_EQ(producer.info.ring_byte_length, info.ring_byte_length);
+    ASSERT_EQ(producer.info.index_bits, 64u);
+    ASSERT_EQ(producer.info.doorbell_bits, 64u);
+    ASSERT_NE(producer.info.ring_address, 0u);
+    ASSERT_NE(producer.info.read_index_address, 0u);
+    ASSERT_NE(producer.info.write_index_address, 0u);
+    ASSERT_NE(producer.info.doorbell_address, 0u);
+    ASSERT_EQ(producer.info.read_index_address % sizeof(uint64_t), 0u);
+    ASSERT_EQ(producer.info.write_index_address % sizeof(uint64_t), 0u);
+    ASSERT_EQ(producer.info.doorbell_address % sizeof(uint64_t), 0u);
+  }
 }
 
 bool GpuUserQueue::Release(const amdf_api_t* api) {
+  if (producer.mapping != nullptr) {
+    const amdf_status_t status =
+        api->user_queue_mapping_destroy(producer.mapping);
+    EXPECT_EQ(status, AMDF_STATUS_OK);
+    if (!amdf_status_is_ok(status)) {
+      return false;
+    }
+    producer.mapping = nullptr;
+  }
   if (mapping != nullptr) {
     const amdf_status_t status = api->user_queue_mapping_destroy(mapping);
     EXPECT_EQ(status, AMDF_STATUS_OK);

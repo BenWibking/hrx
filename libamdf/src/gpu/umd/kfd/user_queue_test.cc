@@ -173,6 +173,42 @@ struct FakeNativeState {
     return AMDF_STATUS_OK;
   }
 
+  static amdf_status_t DeviceDoorbellCreate(
+      void* user_data, amdf_gpu_umd_device_t*, size_t byte_length,
+      amdf_gpu_kfd_doorbell_t** out_doorbell, uint64_t* out_device_address) {
+    auto* self = static_cast<FakeNativeState*>(user_data);
+    ++self->device_doorbell.create_count;
+    EXPECT_EQ(byte_length, 8192u);
+    if (self->FailCreationOperation()) {
+      return self->creation_failure;
+    }
+    self->device_doorbell.live = true;
+    *out_doorbell =
+        reinterpret_cast<amdf_gpu_kfd_doorbell_t*>(&self->device_doorbell);
+    *out_device_address = UINT64_C(0x50000000);
+    return AMDF_STATUS_OK;
+  }
+
+  static amdf_status_t DeviceDoorbellDestroy(
+      void* user_data, amdf_gpu_kfd_doorbell_t* doorbell) {
+    auto* self = static_cast<FakeNativeState*>(user_data);
+    EXPECT_EQ(doorbell, reinterpret_cast<amdf_gpu_kfd_doorbell_t*>(
+                            &self->device_doorbell));
+    EXPECT_EQ(self->queue_destroy_count, 1);
+    EXPECT_EQ(self->destroyed_buffer_indices, (std::vector<size_t>{2}));
+    ++self->device_doorbell.destroy_count;
+    if (amdf_status_is_ok(self->device_doorbell.destroy_status)) {
+      self->device_doorbell.live = false;
+    }
+    return self->device_doorbell.destroy_status;
+  }
+
+  static void DeviceDoorbellAbandon(void* user_data, amdf_gpu_kfd_doorbell_t*) {
+    auto* self = static_cast<FakeNativeState*>(user_data);
+    EXPECT_TRUE(self->device_doorbell.live);
+    ++self->device_doorbell.abandon_count;
+  }
+
   void Reset() {
     for (FakeBuffer& buffer : buffers) {
       buffer = {};
@@ -194,6 +230,7 @@ struct FakeNativeState {
     doorbell_map_count = 0;
     doorbell_unmap_count = 0;
     doorbell_unmap_status = AMDF_STATUS_OK;
+    device_doorbell = {};
     vm_fault = {};
     observed_create = {};
     observed_aql_descriptor = {};
@@ -231,6 +268,19 @@ struct FakeNativeState {
   int doorbell_map_count = 0;
   int doorbell_unmap_count = 0;
   amdf_status_t doorbell_unmap_status = AMDF_STATUS_OK;
+  // Queue-owned GPU view, independent of the host notification view.
+  struct {
+    // Optional native construction attempts.
+    uint32_t create_count = 0;
+    // Consuming native release attempts.
+    uint32_t destroy_count = 0;
+    // Metadata-only abandonment after failed queue retirement.
+    uint32_t abandon_count = 0;
+    // Terminal native cleanup result.
+    amdf_status_t destroy_status = AMDF_STATUS_OK;
+    // Whether the modeled native allocation remains mapped.
+    bool live = false;
+  } device_doorbell;
   // Per-render-VM observation supplied by the native dependency.
   struct {
     // Number of native fault queries performed.
@@ -396,6 +446,9 @@ class KfdUserQueueTest : public ::testing::Test {
       .queue_destroy = FakeNativeState::QueueDestroy,
       .doorbell_map = FakeNativeState::DoorbellMap,
       .doorbell_unmap = FakeNativeState::DoorbellUnmap,
+      .device_doorbell_create = FakeNativeState::DeviceDoorbellCreate,
+      .device_doorbell_destroy = FakeNativeState::DeviceDoorbellDestroy,
+      .device_doorbell_abandon = FakeNativeState::DeviceDoorbellAbandon,
       .vm_fault_query = FakeNativeState::VmFaultQuery,
   };
   amdf_gpu_umd_device_t device_ = {};
@@ -616,6 +669,7 @@ TEST_F(KfdUserQueueTest, PublishesExactSdmaQueueAndHostMapping) {
   EXPECT_TRUE(amdf_queue_id_is_valid(&queue_result_.queue_id));
   EXPECT_EQ(queue_result_.capabilities,
             AMDF_USER_QUEUE_CAPABILITY_HOST_PRODUCER);
+  EXPECT_EQ(native_state_.device_doorbell.create_count, 0u);
   EXPECT_EQ(queue_result_.ring_byte_length, 4096u);
   EXPECT_EQ(queue_result_.metadata_ring_byte_length, 0u);
   ASSERT_EQ(native_state_.LiveBufferCount(), 3u);
@@ -681,6 +735,125 @@ TEST_F(KfdUserQueueTest, PublishesExactSdmaQueueAndHostMapping) {
   queue_ = nullptr;
   EXPECT_EQ(native_state_.destroyed_buffer_indices,
             (std::vector<size_t>{2, 1, 0}));
+}
+
+TEST_F(KfdUserQueueTest, DevicePublicationRequiresCreationRequest) {
+  CreateQueue(AMDF_QUEUE_COMMAND_TYPE_GPU_SDMA);
+  auto* const sentinel =
+      reinterpret_cast<amdf_gpu_umd_user_queue_mapping_t*>(uintptr_t{1});
+  auto* mapping = sentinel;
+  amdf_gpu_umd_user_queue_mapping_result_t result;
+  std::memset(&result, 0xA5, sizeof(result));
+  const auto original = result;
+  EXPECT_EQ(amdf_gpu_umd_user_queue_map(queue_, &device_, &mapping, &result),
+            amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED));
+  EXPECT_EQ(mapping, sentinel);
+  EXPECT_EQ(std::memcmp(&result, &original, sizeof(result)), 0);
+  EXPECT_EQ(native_state_.device_doorbell.create_count, 0u);
+}
+
+TEST_F(KfdUserQueueTest, BorrowsExactOwnerDeviceAddressesUntilQueueRelease) {
+  auto create = MakeCreateInfo(AMDF_QUEUE_COMMAND_TYPE_GPU_SDMA);
+  create.required_capabilities |= AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER;
+  ASSERT_EQ(amdf_gpu_umd_user_queue_create(&device_, &create, &queue_,
+                                           &queue_result_),
+            AMDF_STATUS_OK);
+  EXPECT_EQ(queue_result_.capabilities, create.required_capabilities);
+  ASSERT_EQ(amdf_gpu_umd_user_queue_map(queue_, &device_, &mapping_,
+                                        &mapping_result_),
+            AMDF_STATUS_OK);
+  EXPECT_EQ(mapping_result_.ring_address,
+            native_state_.buffers[0].device_address);
+  EXPECT_EQ(mapping_result_.read_index_address,
+            native_state_.buffers[1].device_address);
+  EXPECT_EQ(mapping_result_.write_index_address,
+            native_state_.buffers[1].device_address + 64);
+  EXPECT_EQ(mapping_result_.doorbell_address, UINT64_C(0x50000080));
+  EXPECT_EQ(mapping_result_.index_bits, 64u);
+  EXPECT_EQ(mapping_result_.doorbell_bits, 64u);
+  EXPECT_EQ(mapping_result_.metadata_ring_address, 0u);
+
+  amdf_gpu_umd_device_t other_device = device_;
+  auto* rejected_mapping = mapping_;
+  auto rejected_result = mapping_result_;
+  EXPECT_EQ(amdf_gpu_umd_user_queue_map(queue_, &other_device,
+                                        &rejected_mapping, &rejected_result),
+            amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED));
+  EXPECT_EQ(rejected_mapping, mapping_);
+  EXPECT_EQ(
+      std::memcmp(&rejected_result, &mapping_result_, sizeof(rejected_result)),
+      0);
+
+  EXPECT_EQ(amdf_gpu_umd_user_queue_mapping_destroy(mapping_), AMDF_STATUS_OK);
+  mapping_ = nullptr;
+  EXPECT_EQ(native_state_.device_doorbell.destroy_count, 0u);
+  EXPECT_TRUE(native_state_.device_doorbell.live);
+  MapQueue();
+  EXPECT_EQ(
+      mapping_result_.ring_address,
+      reinterpret_cast<uintptr_t>(native_state_.buffers[0].storage.data()));
+  EXPECT_EQ(native_state_.device_doorbell.create_count, 1u);
+  EXPECT_EQ(amdf_gpu_umd_user_queue_mapping_destroy(mapping_), AMDF_STATUS_OK);
+  mapping_ = nullptr;
+  EXPECT_EQ(amdf_gpu_umd_user_queue_destroy(queue_), AMDF_STATUS_OK);
+  queue_ = nullptr;
+  EXPECT_EQ(native_state_.device_doorbell.destroy_count, 1u);
+  EXPECT_FALSE(native_state_.device_doorbell.live);
+  EXPECT_EQ(native_state_.device_doorbell.abandon_count, 0u);
+  EXPECT_EQ(native_state_.LiveBufferCount(), 0u);
+}
+
+TEST_F(KfdUserQueueTest, DeviceConstructionHasNoPartialCapabilityResult) {
+  auto create = MakeCreateInfo(AMDF_QUEUE_COMMAND_TYPE_GPU_SDMA);
+  create.required_capabilities |= AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER;
+  for (int failed_operation = 1; failed_operation <= 6; ++failed_operation) {
+    SCOPED_TRACE(failed_operation);
+    native_state_.Reset();
+    native_state_.failed_creation_operation = failed_operation;
+    auto* const sentinel =
+        reinterpret_cast<amdf_gpu_umd_user_queue_t*>(uintptr_t{1});
+    auto* output = sentinel;
+    amdf_gpu_umd_user_queue_result_t result;
+    std::memset(&result, 0xA5, sizeof(result));
+    const auto original = result;
+    EXPECT_EQ(
+        amdf_gpu_umd_user_queue_create(&device_, &create, &output, &result),
+        native_state_.creation_failure);
+    EXPECT_EQ(output, sentinel);
+    EXPECT_EQ(std::memcmp(&result, &original, sizeof(result)), 0);
+    EXPECT_EQ(native_state_.LiveBufferCount(), 0u);
+    EXPECT_FALSE(native_state_.device_doorbell.live);
+    EXPECT_EQ(native_state_.queue_destroy_count, failed_operation >= 5 ? 1 : 0);
+  }
+}
+
+TEST_F(KfdUserQueueTest, DeviceViewFollowsTerminalQueueOwnership) {
+  for (int failure_stage : {0, 1, 2}) {
+    SCOPED_TRACE(failure_stage);
+    native_state_.Reset();
+    auto create = MakeCreateInfo(AMDF_QUEUE_COMMAND_TYPE_GPU_SDMA);
+    create.required_capabilities |= AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER;
+    ASSERT_EQ(amdf_gpu_umd_user_queue_create(&device_, &create, &queue_,
+                                             &queue_result_),
+              AMDF_STATUS_OK);
+    const auto failure = amdf_make_status(AMDF_STATUS_DOMAIN_ERRNO, EIO);
+    if (failure_stage == 0) {
+      native_state_.queue_destroy_status = failure;
+    } else if (failure_stage == 1) {
+      native_state_.failed_buffer_destroy_call = 1;
+      native_state_.buffer_destroy_failure = failure;
+    } else {
+      native_state_.device_doorbell.destroy_status = failure;
+    }
+    EXPECT_EQ(amdf_gpu_umd_user_queue_destroy(queue_), failure);
+    queue_ = nullptr;
+    EXPECT_EQ(native_state_.device_doorbell.destroy_count,
+              failure_stage == 2 ? 1u : 0u);
+    EXPECT_EQ(native_state_.device_doorbell.abandon_count,
+              failure_stage == 2 ? 0u : 1u);
+    EXPECT_TRUE(native_state_.device_doorbell.live);
+    EXPECT_EQ(native_state_.doorbell_unmap_count, 0);
+  }
 }
 
 TEST_F(KfdUserQueueTest, RejectsUnsupportedQueueWithoutPublishingOutputs) {

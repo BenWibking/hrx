@@ -34,6 +34,7 @@ iree_cc_library(
     recipes_cases
   SRCS
     "copy_dispatch_test.cc"
+    "device_sdma_test.cc"
     "memory_pair_test.cc"
     "pm4_sdma_streaming_test.cc"
     "pm4_sdma_test.cc"
@@ -42,6 +43,10 @@ iree_cc_library(
     amdf::headers
     iree::third_party::google_test
     libamdf::cts::gpu::aql::dispatch_fixture
+    libamdf::cts::gpu::kernels::device_sdma
+    libamdf::cts::gpu::kernels::device_sdma_batched
+    libamdf::cts::gpu::kernels::device_sdma_batched_kernels
+    libamdf::cts::gpu::kernels::device_sdma_kernels
     libamdf::cts::gpu::kernels::transform
     libamdf::cts::gpu::kernels::transform_kernels
     libamdf::cts::gpu::pm4::command_fixture

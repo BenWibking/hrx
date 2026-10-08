@@ -24,6 +24,8 @@ exports_files([
     "byte_copy_unaligned.loom",
     "completed_tick.cxx",
     "completed_tick.loom",
+    "device_sdma.loom",
+    "device_sdma_batched.loom",
     "file_demand.cxx",
     "file_demand.loom",
     "file_exchange.cxx",
@@ -39,6 +41,8 @@ exports_files([
     "resident_channels.loom",
     "resident_exchange.loom",
     "resident_npu_initiated.loom",
+    "resident_npu_sdma.loom",
+    "sdma_copy.loom",
     "transform.loom",
     "transform_alternate.loom",
 ])
@@ -127,6 +131,37 @@ amdf_cc_library(
     name = "transform",
     testonly = True,
     hdrs = ["transform.h"],
+)
+
+amdf_cc_library(
+    name = "device_sdma",
+    testonly = True,
+    hdrs = ["device_sdma.h"],
+)
+
+amdf_cts_gpu_kernel_set(
+    name = "device_sdma_kernels",
+    srcs = [
+        "device_sdma.loom",
+        "sdma_copy.loom",
+    ],
+    entry_point = "device_sdma",
+    namespace = "kernels::device_sdma",
+    targets = _KERNEL_TARGETS,
+)
+
+amdf_cc_library(
+    name = "device_sdma_batched",
+    testonly = True,
+    hdrs = ["device_sdma_batched.h"],
+)
+
+amdf_cts_gpu_kernel_set(
+    name = "device_sdma_batched_kernels",
+    srcs = ["device_sdma_batched.loom"],
+    entry_point = "device_sdma_batched",
+    namespace = "kernels::device_sdma_batched",
+    targets = _KERNEL_TARGETS,
 )
 
 amdf_cc_library(
@@ -315,6 +350,25 @@ amdf_cts_gpu_kernel_set(
     targets = _RDNA_KERNEL_TARGETS,
 )
 
+amdf_cc_library(
+    name = "resident_npu_sdma",
+    testonly = True,
+    hdrs = ["resident_npu_sdma.h"],
+)
+
+amdf_cts_gpu_kernel_set(
+    name = "resident_npu_sdma_kernels",
+    srcs = [
+        "completed_tick.loom",
+        "resident_npu_sdma.loom",
+        "sdma_copy.loom",
+    ],
+    entry_point = "resident_npu_sdma",
+    namespace = "kernels::resident_npu_sdma",
+    target_compatible_with = _COMPLETED_TICK_COMPATIBILITY,
+    targets = _RDNA_KERNEL_TARGETS,
+)
+
 amdf_cts_gpu_kernel_set(
     name = "geometry_ids_kernels",
     srcs = ["geometry_ids.loom"],
@@ -343,6 +397,10 @@ amdf_cc_test(
     deps = [
         ":byte_copy_unaligned",
         ":byte_copy_unaligned_kernels",
+        ":device_sdma",
+        ":device_sdma_batched",
+        ":device_sdma_batched_kernels",
+        ":device_sdma_kernels",
         ":geometry_ids",
         ":geometry_ids_kernels",
         ":kernel",
@@ -391,6 +449,8 @@ amdf_cc_test(
         ":resident_exchange_kernels",
         ":resident_npu_initiated",
         ":resident_npu_initiated_kernels",
+        ":resident_npu_sdma",
+        ":resident_npu_sdma_kernels",
         "//third_party:google_test",
         "//third_party:google_test_main",
     ],

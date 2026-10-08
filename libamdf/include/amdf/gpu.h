@@ -197,6 +197,14 @@ enum amdf_gpu_pm4_format_feature_bits_e {
 /// are dword-aligned and never straddle ring wrap. NOP dwords have value zero.
 /// Optional commands and field layouts use the reported format features.
 /// Kernel publication accepts an immutable dword-aligned command stream.
+/// Device publication requires command stores to be visible at system scope
+/// before the write index is published; a device-scope release alone does not
+/// establish SDMA fetch visibility. The write index and doorbell use aligned
+/// 64-bit system-scope release stores. The doorbell is write-only and never
+/// accessed with a load or read-modify-write. Acquiring the read index at
+/// system scope permits command storage reuse, not payload reuse or copy
+/// completion. Payload release/acquire and its completion signal remain
+/// separate edges.
 #define AMDF_GPU_SDMA_QUEUE_FORMAT_VERSION_1 1u
 
 /// Native SDMA encoding features reported in `format_features`.
@@ -371,6 +379,10 @@ typedef struct amdf_gpu_user_queue_create_info_t {
   /// Reserved for compatible growth and must be zero.
   uint32_t reserved;
   /// Direct producer capabilities that creation must achieve.
+  /// Optional device publication must be requested here; mapping does not
+  /// upgrade a queue's achieved capabilities. A family capability describes
+  /// what creation supports, while user_queue_query_info reports what this
+  /// queue established. SDMA device publication supports the exact owning GPU.
   amdf_user_queue_capabilities_t required_capabilities;
   /// Requested power-of-two primary ring capacity, or zero for the default.
   uint64_t ring_byte_length;

@@ -40,7 +40,7 @@ void GpuWaitEqual(uint64_t address, T value) {
   }
 }
 
-// Case-owned native queue and its host producer view. Packet encoding, index
+// Case-owned native queue and its producer views. Packet encoding, index
 // units, completion and cache operations belong to the individual engine case.
 struct GpuUserQueue {
   GpuUserQueue() = default;
@@ -49,7 +49,9 @@ struct GpuUserQueue {
   void Initialize(const amdf_api_t* api, const amdf_gpu_api_t* gpu_api,
                   amdf_device_t* device, const amdf_queue_family_info_t& family,
                   amdf_queue_producer_mode_t producer_mode,
-                  const amdf_gpu_queue_scratch_t& scratch);
+                  const amdf_gpu_queue_scratch_t& scratch,
+                  amdf_user_queue_capabilities_t required_capabilities =
+                      AMDF_USER_QUEUE_CAPABILITY_HOST_PRODUCER);
   bool Release(const amdf_api_t* api);
 
   // Publishes an already-written PM4/SDMA stream, with the engine's index
@@ -66,6 +68,13 @@ struct GpuUserQueue {
   amdf_user_queue_info_t info = {};
   // Borrowed producer addresses valid until mapping is destroyed.
   amdf_user_queue_mapping_info_t host = {};
+  // Optional exact-owning-GPU view, retired before its queue can be destroyed.
+  struct {
+    // Borrow released only after the case's device publisher has stopped.
+    amdf_user_queue_mapping_t* mapping = nullptr;
+    // GPU addresses, independent of the host mapping's virtual addresses.
+    amdf_user_queue_mapping_info_t info = {};
+  } producer;
 };
 
 #endif  // AMDF_CTS_GPU_UTIL_USER_QUEUE_H_

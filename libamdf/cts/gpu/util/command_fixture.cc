@@ -37,6 +37,9 @@ amdf_status_t FindGpuQueueFamily(const amdf_api_t* api,
             requirements.cache_operations &&
         (family.cache_transition_kinds & requirements.cache_transition_kinds) ==
             requirements.cache_transition_kinds &&
+        (family.user_queue_capabilities &
+         requirements.user_queue_capabilities) ==
+            requirements.user_queue_capabilities &&
         SelectGpuHostPublication(family, requirements.publication_modes) != 0) {
       *out_family = family;
       matches = true;
@@ -92,13 +95,15 @@ void GpuCommandTest::CreateQueue(GpuUserQueue** out_queue,
   CreateQueue(family_, out_queue, producer_mode, scratch);
 }
 
-void GpuCommandTest::CreateQueue(const amdf_queue_family_info_t& family,
-                                 GpuUserQueue** out_queue,
-                                 amdf_queue_producer_mode_t producer_mode,
-                                 const amdf_gpu_queue_scratch_t& scratch) {
+void GpuCommandTest::CreateQueue(
+    const amdf_queue_family_info_t& family, GpuUserQueue** out_queue,
+    amdf_queue_producer_mode_t producer_mode,
+    const amdf_gpu_queue_scratch_t& scratch,
+    amdf_user_queue_capabilities_t required_capabilities) {
   auto& queue = queues_.emplace_back();
   ASSERT_NO_FATAL_FAILURE(queue.Initialize(api_, gpu_api_, device_, family,
-                                           producer_mode, scratch));
+                                           producer_mode, scratch,
+                                           required_capabilities));
   *out_queue = &queue;
 }
 

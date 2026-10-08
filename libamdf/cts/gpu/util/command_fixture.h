@@ -29,6 +29,8 @@ struct GpuQueueRequirements {
   // Native publication modes the caller can use without changing the case.
   amdf_queue_publication_modes_t publication_modes =
       AMDF_QUEUE_PUBLICATION_MODE_USER;
+  // Optional direct producer capabilities required before native activation.
+  amdf_user_queue_capabilities_t user_queue_capabilities = 0;
 };
 
 // Queries one passive endpoint without acquiring a native device. Success
@@ -63,7 +65,9 @@ class GpuCommandTest : public GpuDeviceFixture {
                    GpuUserQueue** out_queue,
                    amdf_queue_producer_mode_t producer_mode =
                        AMDF_QUEUE_PRODUCER_MODE_SINGLE,
-                   const amdf_gpu_queue_scratch_t& scratch = {});
+                   const amdf_gpu_queue_scratch_t& scratch = {},
+                   amdf_user_queue_capabilities_t required_capabilities =
+                       AMDF_USER_QUEUE_CAPABILITY_HOST_PRODUCER);
   void CreateQueue(GpuCommandQueue** out_queue);
   void CreateQueue(const amdf_queue_family_info_t& family,
                    GpuCommandQueue** out_queue);
