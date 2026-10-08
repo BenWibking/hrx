@@ -576,6 +576,7 @@ iree_py_test(
     args = ["$(location :loom-check)"],
     data = [":loom-check"],
     main = "test/transpose_family_test.py",
+    target_compatible_with = _XDNA_TARGET_COMPATIBLE_WITH,
 )
 
 iree_py_test(
@@ -589,6 +590,7 @@ iree_py_test(
     data = [":loom-check"],
     main = "test/transpose_family_test.py",
     tags = ["manual"],
+    target_compatible_with = _XDNA_TARGET_COMPATIBLE_WITH,
 )
 
 loom_check_test_suite(
