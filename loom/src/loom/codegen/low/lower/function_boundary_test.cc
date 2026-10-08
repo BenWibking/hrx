@@ -295,8 +295,20 @@ TEST_F(LowLowerFunctionBoundaryTest,
   SetValueName(loom_op_const_results(source_op)[0], IREE_SV("output"));
   SetArgumentPredicate(source_declaration, source_arguments[0]);
 
-  IREE_ASSERT_OK(loom_low_lower_declaration(module_, source_declaration,
-                                            &options_, &result_));
+  const iree_host_size_t value_count = module_->values.count;
+  const loom_low_lower_declaration_plan_t* plan = nullptr;
+  IREE_ASSERT_OK(loom_low_lower_plan_declaration(module_, source_declaration,
+                                                 &options_, &analysis_arena_,
+                                                 &result_, &plan));
+  ASSERT_EQ(result_.error_count, 0u);
+  ASSERT_NE(plan, nullptr);
+  EXPECT_EQ(result_.low_func_op, nullptr);
+  EXPECT_EQ(module_->values.count, value_count);
+  EXPECT_EQ(module_->symbols.entries[symbol.symbol_id].defining_op, source_op);
+  EXPECT_TRUE(loom_type_equal(
+      loom_module_value_type(module_, source_arguments[0]), i32_type));
+
+  IREE_ASSERT_OK(loom_low_lower_emit_declaration(module_, plan, &result_));
   ASSERT_EQ(result_.error_count, 0u);
   ASSERT_NE(result_.descriptor_set, nullptr);
   ASSERT_NE(result_.low_func_op, nullptr);

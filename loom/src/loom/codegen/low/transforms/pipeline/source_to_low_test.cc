@@ -798,6 +798,34 @@ TEST_F(LowLowerPassTest, InvokeNormalizesToDirectLowCallWithPolicyPreserved) {
   EXPECT_TRUE(HasSymbol(module.get(), IREE_SV("helper")));
 }
 
+TEST_F(LowLowerPassTest, DeclarationRejectionPreservesEarlierSourceSymbols) {
+  ModulePtr module =
+      Parse(IREE_SV("test.target<low_core> @target\n"
+                    "func.decl target(@target) @valid(%input: i32) -> (i32)\n"
+                    "func.decl target(@target) @unsupported(%input: f64)\n"));
+  const loom_symbol_ref_t valid_ref =
+      FindSymbolRef(module.get(), IREE_SV("valid"));
+  const loom_symbol_ref_t unsupported_ref =
+      FindSymbolRef(module.get(), IREE_SV("unsupported"));
+  const loom_op_t* valid =
+      module->symbols.entries[valid_ref.symbol_id].defining_op;
+  const loom_op_t* unsupported =
+      module->symbols.entries[unsupported_ref.symbol_id].defining_op;
+  const iree_host_size_t initial_value_count = module->values.count;
+  const uint32_t op_count = loom_module_block(module.get())->op_count;
+
+  DiagnosticEmissionCollector collector;
+  IREE_ASSERT_OK(RunSourceToLow(&policy_registry_, module.get(), &collector));
+  EXPECT_EQ(collector.count, 1);
+  EXPECT_EQ(module->values.count, initial_value_count);
+  EXPECT_EQ(loom_module_block(module.get())->op_count, op_count);
+  EXPECT_EQ(module->symbols.entries[valid_ref.symbol_id].defining_op, valid);
+  EXPECT_EQ(module->symbols.entries[unsupported_ref.symbol_id].defining_op,
+            unsupported);
+  EXPECT_FALSE(iree_any_bit_set(valid->flags, LOOM_OP_FLAG_DEAD));
+  EXPECT_FALSE(iree_any_bit_set(unsupported->flags, LOOM_OP_FLAG_DEAD));
+}
+
 TEST_F(LowLowerPassTest,
        RepresentationProjectionRefreshesDescriptorTraitsAndSummaries) {
   ModulePtr module =
@@ -806,8 +834,14 @@ TEST_F(LowLowerPassTest,
                     "  %result = low.op<test.projectable_effect.i32>(%input) : "
                     "(reg<test.i32>) -> reg<test.i32>\n"
                     "  low.return %result : reg<test.i32>\n"
-                    "}\n"));
+                    "}\n"
+                    "low.func.decl target<test.low.core> @project_import("
+                    "%input: reg<test.i32>) -> (reg<test.i32>)\n"));
 
+  const loom_symbol_ref_t import_ref =
+      FindSymbolRef(module.get(), IREE_SV("project_import"));
+  const loom_func_like_t import = loom_func_like_cast(
+      module.get(), module->symbols.entries[import_ref.symbol_id].defining_op);
   const loom_symbol_ref_t function_ref =
       FindSymbolRef(module.get(), IREE_SV("project_effect"));
   loom_func_like_t function = loom_func_like_cast(
@@ -850,14 +884,44 @@ TEST_F(LowLowerPassTest,
 
   iree_arena_allocator_t arena;
   iree_arena_initialize(&block_pool_, &arena);
-  bool valid = false;
-  bool changed = false;
-  IREE_ASSERT_OK(loom_low_project_function_representation(
+  const loom_string_id_t authored_contract =
+      loom_func_like_repr_contract(function);
+  const loom_type_t authored_argument_type =
+      loom_block_arg_type(module.get(), loom_region_entry_block(body), 0);
+  const uint32_t authored_descriptor = loom_low_op_descriptor(packet);
+  const loom_low_representation_projection_plan_t* plan = nullptr;
+  IREE_ASSERT_OK(loom_low_plan_function_representation(
       module.get(), function, &target_facts, &projection_registry.registry,
-      iree_diagnostic_emitter_t{}, &arena, &valid, &changed));
+      iree_diagnostic_emitter_t{}, &arena, &plan));
+  ASSERT_NE(plan, nullptr);
+  const loom_low_representation_projection_plan_t* import_plan = nullptr;
+  IREE_ASSERT_OK(loom_low_plan_function_representation(
+      module.get(), import, &target_facts, &projection_registry.registry,
+      iree_diagnostic_emitter_t{}, &arena, &import_plan));
+  ASSERT_NE(import_plan, nullptr);
+  EXPECT_TRUE(loom_type_equal(
+      loom_module_value_type(module.get(),
+                             loom_low_func_decl_args(import.op).values[0]),
+      authored_argument_type));
+  EXPECT_EQ(loom_func_like_repr_contract(import), authored_contract);
+  EXPECT_EQ(loom_func_like_repr_contract(function), authored_contract);
+  EXPECT_EQ(loom_low_op_descriptor(packet), authored_descriptor);
+  EXPECT_TRUE(loom_type_equal(
+      loom_block_arg_type(module.get(), loom_region_entry_block(body), 0),
+      authored_argument_type));
+  EXPECT_TRUE(iree_any_bit_set(packet->traits, LOOM_TRAIT_UNKNOWN_EFFECTS));
+  EXPECT_TRUE(loom_region_has_read_effects(body));
+  EXPECT_TRUE(loom_region_has_write_effects(body));
+  EXPECT_FALSE(loom_region_has_convergent_effects(body));
+
+  bool changed = false;
+  IREE_ASSERT_OK(
+      loom_low_apply_function_representation(module.get(), plan, &changed));
+  EXPECT_TRUE(changed);
+  IREE_ASSERT_OK(loom_low_apply_function_representation(module.get(),
+                                                        import_plan, &changed));
   iree_arena_deinitialize(&arena);
 
-  EXPECT_TRUE(valid);
   EXPECT_TRUE(changed);
   EXPECT_FALSE(iree_any_bit_set(packet->traits, LOOM_TRAIT_UNKNOWN_EFFECTS));
   EXPECT_TRUE(iree_any_bit_set(packet->traits, LOOM_TRAIT_CONVERGENT));
@@ -874,6 +938,17 @@ TEST_F(LowLowerPassTest,
       target_descriptor_set, IREE_SV("test.projectable_effect.i32"));
   ASSERT_NE(target_ordinal, LOOM_LOW_DESCRIPTOR_ORDINAL_NONE);
   EXPECT_EQ(loom_low_op_descriptor(packet), target_ordinal);
+  EXPECT_EQ(loom_func_like_repr_contract(import),
+            loom_func_like_repr_contract(function));
+  EXPECT_TRUE(loom_type_equal(
+      loom_module_value_type(module.get(),
+                             loom_low_func_decl_args(import.op).values[0]),
+      loom_block_arg_type(module.get(), loom_region_entry_block(body), 0)));
+  EXPECT_TRUE(loom_type_equal(
+      loom_module_value_type(module.get(),
+                             loom_low_func_decl_results(import.op).values[0]),
+      loom_module_value_type(
+          module.get(), loom_low_func_def_results(function.op).values[0])));
 }
 
 TEST_F(LowLowerPassTest, InlineRetainsCalleeWithImmutableFunctionVersion) {

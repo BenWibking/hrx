@@ -47,6 +47,13 @@ typedef struct loom_low_source_to_low_parse_context_t {
   loom_low_source_to_low_pass_state_t* state;
 } loom_low_source_to_low_parse_context_t;
 
+typedef struct loom_low_source_declaration_plan_t {
+  // Source selection whose concrete version is updated after publication.
+  const loom_low_source_selection_t* selection;
+  // Validated declaration boundary, owned by the module planning arena.
+  const loom_low_lower_declaration_plan_t* declaration;
+} loom_low_source_declaration_plan_t;
+
 static iree_status_t loom_low_source_to_low_record_target_specialization(
     loom_target_compile_report_t* compile_report,
     const loom_low_source_selection_t* selection) {
@@ -339,27 +346,38 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
         module, &selection_options, &selection_arena, &target_function_list);
   }
   bool emitted_error_diagnostics = false;
+  const loom_low_representation_projection_plan_t** projection_plans = NULL;
+  iree_host_size_t projection_count = 0;
+  iree_host_size_t projection_capacity = 0;
+  loom_low_source_declaration_plan_t* declaration_plans = NULL;
+  iree_host_size_t planned_declaration_count = 0;
+  iree_host_size_t declaration_capacity = 0;
   for (iree_host_size_t i = 0;
        i < target_function_list.count && iree_status_is_ok(status) &&
        !emitted_error_diagnostics;
        ++i) {
     const loom_low_source_selection_t* selection =
         &target_function_list.values[i];
-    if (!loom_low_func_def_isa(selection->func.op)) {
+    if (!loom_low_func_def_isa(selection->func.op) &&
+        !loom_low_func_decl_isa(selection->func.op)) {
       continue;
     }
-    bool projection_valid = false;
-    bool projection_changed = false;
-    status = loom_low_project_function_representation(
+    const loom_low_representation_projection_plan_t* projection_plan = NULL;
+    status = loom_low_plan_function_representation(
         module, selection->func, selection->target_facts, descriptor_registry,
-        pass->diagnostic_emitter, &selection_arena, &projection_valid,
-        &projection_changed);
-    if (iree_status_is_ok(status) && !projection_valid) {
+        pass->diagnostic_emitter, &selection_arena, &projection_plan);
+    if (iree_status_is_ok(status) && projection_plan == NULL) {
       ++statistics->errors;
       emitted_error_diagnostics = true;
     }
-    if (projection_changed) {
-      loom_pass_mark_changed(pass);
+    if (iree_status_is_ok(status) && !emitted_error_diagnostics) {
+      status = iree_arena_grow_array(
+          &selection_arena, projection_count, projection_count + 1,
+          sizeof(*projection_plans), &projection_capacity,
+          (void**)&projection_plans);
+    }
+    if (iree_status_is_ok(status) && !emitted_error_diagnostics) {
+      projection_plans[projection_count++] = projection_plan;
     }
   }
   for (iree_host_size_t i = 0;
@@ -401,8 +419,10 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
         .module_state = module_state,
     };
     loom_low_lower_result_t lower_result = {0};
-    status = loom_low_lower_declaration(module, selection->func, &lower_options,
-                                        &lower_result);
+    const loom_low_lower_declaration_plan_t* declaration_plan = NULL;
+    status = loom_low_lower_plan_declaration(module, selection->func,
+                                             &lower_options, &selection_arena,
+                                             &lower_result, &declaration_plan);
     statistics->errors += (int64_t)lower_result.error_count;
     statistics->remarks += (int64_t)lower_result.remark_count;
     if (iree_status_is_ok(status) && lower_result.error_count > 0) {
@@ -411,10 +431,43 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
       break;
     }
     if (iree_status_is_ok(status)) {
-      IREE_ASSERT(lower_result.low_func_op != NULL);
-      if (selection->version_handle != NULL) {
+      status = iree_arena_grow_array(
+          &selection_arena, planned_declaration_count,
+          planned_declaration_count + 1, sizeof(*declaration_plans),
+          &declaration_capacity, (void**)&declaration_plans);
+    }
+    if (iree_status_is_ok(status)) {
+      declaration_plans[planned_declaration_count++] =
+          (loom_low_source_declaration_plan_t){
+              .selection = selection,
+              .declaration = declaration_plan,
+          };
+    }
+    loom_low_lower_result_deinitialize(&lower_result);
+  }
+  for (iree_host_size_t i = 0;
+       i < projection_count && iree_status_is_ok(status) &&
+       !emitted_error_diagnostics;
+       ++i) {
+    bool changed = false;
+    status = loom_low_apply_function_representation(module, projection_plans[i],
+                                                    &changed);
+    if (changed) {
+      loom_pass_mark_changed(pass);
+    }
+  }
+  for (iree_host_size_t i = 0;
+       i < planned_declaration_count && iree_status_is_ok(status) &&
+       !emitted_error_diagnostics;
+       ++i) {
+    const loom_low_source_declaration_plan_t* plan = &declaration_plans[i];
+    loom_low_lower_result_t lower_result = {0};
+    status = loom_low_lower_emit_declaration(module, plan->declaration,
+                                             &lower_result);
+    if (iree_status_is_ok(status)) {
+      if (plan->selection->version_handle != NULL) {
         loom_function_version_update(
-            selection->version_handle,
+            plan->selection->version_handle,
             loom_func_like_cast(module, lower_result.low_func_op));
       }
       ++declaration_count;

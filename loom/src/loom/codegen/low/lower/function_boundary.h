@@ -19,8 +19,8 @@
 // references after those bindings exist.
 //
 // Function declarations use the same type and metadata mapping without a body.
-// They are lowered independently by the module source-to-Low pass before
-// function definitions.
+// Their retained boundaries let the module owner validate declarations before
+// publishing any replacement symbol.
 
 #ifndef LOOM_CODEGEN_LOW_LOWER_FUNCTION_BOUNDARY_H_
 #define LOOM_CODEGEN_LOW_LOWER_FUNCTION_BOUNDARY_H_
@@ -107,15 +107,28 @@ iree_status_t loom_low_lower_function_boundary_remap_predicates(
 iree_status_t loom_low_lower_function_boundary_emit_resource_imports(
     loom_low_lower_context_t* context);
 
-// Lowers one target-bound function declaration into a low.func.decl.
+typedef struct loom_low_lower_declaration_plan_t
+    loom_low_lower_declaration_plan_t;
+
+// Plans one target-bound declaration's native signature and ABI layout without
+// changing its source operation or symbol. The plan belongs to |arena| and
+// borrows the immutable source declaration. Construction analyses are released
+// before returning. Diagnostics populate |out_result| and leave |out_plan|
+// NULL.
+iree_status_t loom_low_lower_plan_declaration(
+    loom_module_t* module, loom_func_like_t source_declaration,
+    const loom_low_lower_options_t* options, iree_arena_allocator_t* arena,
+    loom_low_lower_result_t* out_result,
+    const loom_low_lower_declaration_plan_t** out_plan);
+
+// Publishes a planned low.func.decl without consulting target policy or facts.
 //
 // The emitted low declaration preserves source symbol identity and callable
-// metadata and maps its signature through |options->policy|. Runtime imports
-// record the policy import kind and resolved code symbol. Ordinary declarations
-// remain unresolved Loom symbols for a subsequent IR link.
-iree_status_t loom_low_lower_declaration(
-    loom_module_t* module, loom_func_like_t source_declaration,
-    const loom_low_lower_options_t* options,
+// metadata. Runtime imports record the policy import kind and resolved code
+// symbol. Ordinary declarations remain unresolved Loom symbols for a subsequent
+// IR link. Only allocation failure can interrupt execution of the plan.
+iree_status_t loom_low_lower_emit_declaration(
+    loom_module_t* module, const loom_low_lower_declaration_plan_t* plan,
     loom_low_lower_result_t* out_result);
 
 #ifdef __cplusplus
