@@ -766,6 +766,27 @@ void loom_value_fact_table_undefine(loom_value_fact_table_t* table,
   }
 }
 
+uint64_t loom_value_fact_table_maximum_element_count(
+    const loom_value_fact_table_t* table, loom_type_t type) {
+  uint64_t count = 1;
+  for (uint8_t axis = 0; axis < loom_type_rank(type); ++axis) {
+    int64_t extent = 0;
+    if (loom_type_dim_is_dynamic_at(type, axis)) {
+      const loom_value_facts_t facts = loom_value_fact_table_lookup(
+          table, loom_type_dim_value_id_at(type, axis));
+      if (!loom_value_facts_as_non_negative_i64_maximum(facts, &extent)) {
+        return UINT64_MAX;
+      }
+    } else {
+      extent = loom_type_dim_static_size_at(type, axis);
+    }
+    if (!iree_checked_mul_u64(count, (uint64_t)extent, &count)) {
+      return UINT64_MAX;
+    }
+  }
+  return count;
+}
+
 bool loom_value_fact_table_values_equal(const loom_value_fact_table_t* table,
                                         loom_value_id_t lhs,
                                         loom_value_id_t rhs) {

@@ -198,54 +198,23 @@ static loom_value_facts_t loom_vector_attr_element_facts(
   return loom_value_facts_exact_i64(loom_attr_as_i64(attr));
 }
 
-static bool loom_vector_mask_range_exact_lane(int64_t lower_bound,
-                                              int64_t upper_bound, int64_t step,
-                                              uint64_t lane_ordinal,
-                                              bool* out_value) {
-  if (lane_ordinal > (uint64_t)INT64_MAX) {
-    return false;
-  }
-  int64_t lane_delta = 0;
-  if (!iree_checked_mul_i64((int64_t)lane_ordinal, step, &lane_delta)) {
-    return false;
-  }
-  int64_t lane_value = 0;
-  if (!iree_checked_add_i64(lower_bound, lane_delta, &lane_value)) {
-    return false;
-  }
-  *out_value = lane_value < upper_bound;
-  return true;
-}
-
 static iree_status_t loom_vector_mask_range_exact_static_facts(
-    loom_fact_context_t* context, uint64_t lane_count, int64_t lower_bound,
-    int64_t upper_bound, int64_t step, loom_value_facts_t* out_facts,
-    bool* out_handled) {
+    loom_fact_context_t* context, uint64_t lane_count,
+    loom_value_fact_vector_iota_t coordinates, int64_t upper_bound,
+    loom_value_facts_t* out_facts, bool* out_handled) {
   *out_handled = true;
   if (lane_count == 0) {
     return loom_value_facts_make_uniform_element(
         context, loom_value_facts_exact_i64(0), out_facts);
   }
 
-  bool first_value = false;
-  if (!loom_vector_mask_range_exact_lane(lower_bound, upper_bound, step, 0,
-                                         &first_value)) {
-    *out_facts = loom_value_facts_unknown();
-    return iree_ok_status();
-  }
-
-  bool last_value = first_value;
-  if (lane_count > 1) {
-    if (!loom_vector_mask_range_exact_lane(lower_bound, upper_bound, step,
-                                           lane_count - 1, &last_value)) {
-      *out_facts = loom_value_facts_unknown();
-      return iree_ok_status();
-    }
-  }
-
-  if (first_value == last_value) {
+  int64_t minimum = 0;
+  int64_t maximum = 0;
+  if (loom_value_fact_vector_iota_bounds(coordinates, lane_count, &minimum,
+                                         &maximum) &&
+      (maximum < upper_bound || minimum >= upper_bound)) {
     return loom_value_facts_make_uniform_element(
-        context, loom_value_facts_exact_i64(first_value ? 1 : 0), out_facts);
+        context, loom_value_facts_exact_i64(maximum < upper_bound), out_facts);
   }
 
   if (lane_count > LOOM_VALUE_FACT_SMALL_STATIC_LANE_LIMIT) {
@@ -254,14 +223,19 @@ static iree_status_t loom_vector_mask_range_exact_static_facts(
   }
 
   loom_value_facts_t lanes[LOOM_VALUE_FACT_SMALL_STATIC_LANE_LIMIT] = {{0}};
+  bool all_equal = true;
   for (uint64_t i = 0; i < lane_count; ++i) {
-    bool lane_value = false;
-    if (!loom_vector_mask_range_exact_lane(lower_bound, upper_bound, step, i,
-                                           &lane_value)) {
+    int64_t coordinate = 0;
+    if (!loom_value_facts_as_exact_i64(
+            loom_value_fact_vector_iota_element(coordinates, i), &coordinate)) {
       *out_facts = loom_value_facts_unknown();
       return iree_ok_status();
     }
-    lanes[i] = loom_value_facts_exact_i64(lane_value ? 1 : 0);
+    lanes[i] = loom_value_facts_exact_i64(coordinate < upper_bound);
+    all_equal &= lanes[i].range_lo == lanes[0].range_lo;
+  }
+  if (all_equal) {
+    return loom_value_facts_make_uniform_element(context, lanes[0], out_facts);
   }
 
   loom_value_fact_small_static_lanes_t lane_slice = {
@@ -272,44 +246,29 @@ static iree_status_t loom_vector_mask_range_exact_static_facts(
                                                   out_facts);
 }
 
-static iree_status_t loom_vector_mask_range_bounded_static_facts(
+static iree_status_t loom_vector_mask_range_bounded_facts(
     loom_fact_context_t* context, uint64_t lane_count,
-    loom_value_facts_t lower_bound, loom_value_facts_t upper_bound,
-    loom_value_facts_t step, loom_value_facts_t* out_facts, bool* out_handled) {
+    loom_value_fact_vector_iota_t coordinates, loom_value_facts_t upper_bound,
+    loom_value_facts_t* out_facts, bool* out_handled) {
   *out_handled = false;
   if (lane_count == 0) {
     *out_handled = true;
     return loom_value_facts_make_uniform_element(
         context, loom_value_facts_exact_i64(0), out_facts);
   }
-  if (lane_count - 1 > (uint64_t)INT64_MAX ||
-      loom_value_facts_is_float(lower_bound) ||
-      loom_value_facts_is_float(upper_bound) ||
-      loom_value_facts_is_float(step)) {
+  int64_t minimum = 0;
+  int64_t maximum = 0;
+  if (!loom_value_fact_vector_iota_bounds(coordinates, lane_count, &minimum,
+                                          &maximum)) {
     return iree_ok_status();
   }
-
-  int64_t maximum_lane_delta = 0;
-  int64_t maximum_step = iree_max(step.range_hi, 0);
-  int64_t maximum_lane_value = 0;
-  if (iree_checked_mul_i64((int64_t)(lane_count - 1), maximum_step,
-                           &maximum_lane_delta) &&
-      iree_checked_add_i64(lower_bound.range_hi, maximum_lane_delta,
-                           &maximum_lane_value) &&
-      maximum_lane_value < upper_bound.range_lo) {
+  if (maximum < upper_bound.range_lo) {
     *out_handled = true;
     return loom_value_facts_make_uniform_element(
         context, loom_value_facts_exact_i64(1), out_facts);
   }
 
-  int64_t minimum_lane_delta = 0;
-  int64_t minimum_step = iree_min(step.range_lo, 0);
-  int64_t minimum_lane_value = 0;
-  if (iree_checked_mul_i64((int64_t)(lane_count - 1), minimum_step,
-                           &minimum_lane_delta) &&
-      iree_checked_add_i64(lower_bound.range_lo, minimum_lane_delta,
-                           &minimum_lane_value) &&
-      minimum_lane_value >= upper_bound.range_hi) {
+  if (minimum >= upper_bound.range_hi) {
     *out_handled = true;
     return loom_value_facts_make_uniform_element(
         context, loom_value_facts_exact_i64(0), out_facts);
@@ -2264,6 +2223,15 @@ iree_status_t loom_vector_mask_range_facts(
     loom_value_facts_t* result_facts) {
   loom_type_t result_type =
       loom_module_value_type(module, loom_vector_mask_range_result(op));
+  const loom_scalar_type_t coordinate_type = loom_type_element_type(
+      loom_module_value_type(module, loom_vector_mask_range_lower_bound(op)));
+  const loom_value_fact_vector_iota_t coordinates = {
+      .base = operand_facts[0],
+      .step = operand_facts[2],
+      .bit_count = coordinate_type == LOOM_SCALAR_TYPE_INDEX
+                       ? 0
+                       : (uint8_t)loom_scalar_type_bitwidth(coordinate_type),
+  };
   uint64_t lane_count = 0;
   bool has_static_lane_count =
       loom_type_static_element_count(result_type, &lane_count);
@@ -2276,8 +2244,7 @@ iree_status_t loom_vector_mask_range_facts(
     if (has_static_lane_count) {
       bool handled = false;
       IREE_RETURN_IF_ERROR(loom_vector_mask_range_exact_static_facts(
-          context, lane_count, operand_facts[0].range_lo,
-          operand_facts[1].range_lo, operand_facts[2].range_lo,
+          context, lane_count, coordinates, operand_facts[1].range_lo,
           &result_facts[0], &handled));
       if (handled) {
         return iree_ok_status();
@@ -2287,22 +2254,24 @@ iree_status_t loom_vector_mask_range_facts(
     int64_t lower_bound = operand_facts[0].range_lo;
     int64_t upper_bound = operand_facts[1].range_lo;
     int64_t step = operand_facts[2].range_lo;
-    if ((step >= 0 && lower_bound >= upper_bound) ||
-        (step <= 0 && lower_bound < upper_bound)) {
+    if ((coordinates.bit_count == 0 || step == 0) &&
+        ((step >= 0 && lower_bound >= upper_bound) ||
+         (step <= 0 && lower_bound < upper_bound))) {
       return loom_value_facts_make_uniform_element(
           context,
           loom_value_facts_exact_i64(lower_bound < upper_bound ? 1 : 0),
           &result_facts[0]);
     }
   }
-  if (has_static_lane_count) {
-    bool handled = false;
-    IREE_RETURN_IF_ERROR(loom_vector_mask_range_bounded_static_facts(
-        context, lane_count, operand_facts[0], operand_facts[1],
-        operand_facts[2], &result_facts[0], &handled));
-    if (handled) {
-      return iree_ok_status();
-    }
+  bool handled = false;
+  IREE_RETURN_IF_ERROR(loom_vector_mask_range_bounded_facts(
+      context,
+      has_static_lane_count ? lane_count
+                            : loom_value_fact_table_maximum_element_count(
+                                  context->table, result_type),
+      coordinates, operand_facts[1], &result_facts[0], &handled));
+  if (handled) {
+    return iree_ok_status();
   }
   loom_value_fact_vector_prefix_mask_t mask = {
       .lower_bound = operand_facts[0],

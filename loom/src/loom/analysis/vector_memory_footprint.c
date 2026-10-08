@@ -1064,26 +1064,11 @@ static bool loom_vector_memory_footprint_offset_bounds_from_facts(
     return false;
   }
 
-  uint64_t maximum_lane_count = UINT64_MAX;
-  if (!loom_type_dim_is_dynamic_at(offsets_type, 0)) {
-    int64_t lane_count = loom_type_dim_static_size_at(offsets_type, 0);
-    if (lane_count >= 0) {
-      maximum_lane_count = (uint64_t)lane_count;
-    }
-  } else {
-    loom_value_facts_t count_facts = loom_value_fact_table_lookup(
-        state->fact_table, loom_type_dim_value_id_at(offsets_type, 0));
-    int64_t lane_count_upper = 0;
-    if (loom_value_facts_is_positive(count_facts) &&
-        loom_value_facts_as_non_negative_i64_maximum(count_facts,
-                                                     &lane_count_upper)) {
-      maximum_lane_count = (uint64_t)lane_count_upper;
-    }
-  }
-
   return loom_value_facts_query_vector_integer_bounds(
-      &state->fact_table->context, facts, maximum_lane_count, out_lower,
-      out_upper);
+      &state->fact_table->context, facts,
+      loom_value_fact_table_maximum_element_count(state->fact_table,
+                                                  offsets_type),
+      out_lower, out_upper);
 }
 
 static bool loom_vector_memory_footprint_value_defines_iota(

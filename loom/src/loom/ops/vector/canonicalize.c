@@ -114,13 +114,14 @@ static bool loom_vector_value_is_unit_stride_iota(
         !loom_vector_exact_i64_facts_match(iota.step, 1)) {
       return false;
     }
-    uint64_t lane_count = 0;
     int64_t lower = 0;
     int64_t upper = 0;
     return iota.bit_count == 0 ||
-           (loom_type_static_element_count(vector_type, &lane_count) &&
-            loom_value_fact_vector_iota_bounds(iota, lane_count, &lower,
-                                               &upper));
+           loom_value_fact_vector_iota_bounds(
+               iota,
+               loom_value_fact_table_maximum_element_count(rewriter->fact_table,
+                                                           vector_type),
+               &lower, &upper);
   }
 
   loom_value_fact_small_static_lanes_t lanes = {0};

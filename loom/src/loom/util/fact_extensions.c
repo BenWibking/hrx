@@ -978,6 +978,9 @@ bool loom_value_fact_vector_iota_bounds(loom_value_fact_vector_iota_t iota,
     *out_upper = -1;
     return true;
   }
+  if (loom_value_facts_is_exact(iota.step) && iota.step.range_lo == 0) {
+    maximum_lane_count = 1;
+  }
   if (maximum_lane_count == UINT64_MAX || maximum_lane_count - 1 > INT64_MAX) {
     return false;
   }

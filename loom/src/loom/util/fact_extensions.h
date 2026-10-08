@@ -91,7 +91,9 @@ typedef struct loom_value_fact_vector_iota_t {
   uint8_t bit_count;
 } loom_value_fact_vector_iota_t;
 
-// Vector value is a prefix mask produced by vector.mask.range.
+// Vector value is a range mask produced by vector.mask.range. These operand
+// facts do not establish a prefix: fixed-width coordinate arithmetic may wrap,
+// and a negative step can produce a suffix instead.
 typedef struct loom_value_fact_vector_prefix_mask_t {
   // Facts for the first tested coordinate.
   loom_value_facts_t lower_bound;
