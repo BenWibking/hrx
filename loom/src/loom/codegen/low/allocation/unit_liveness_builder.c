@@ -119,6 +119,8 @@ typedef struct loom_low_allocation_unit_use_index_t {
   loom_low_call_clobber_list_t common_call_clobbers;
   // Arena owning all temporary use records.
   iree_arena_allocator_t* arena;
+  // Arena retaining physical-read refinements through scratch release.
+  iree_arena_allocator_t* decision_arena;
   // First use record per allocation unit; NULL when no CFG refinement is
   // needed.
   uint32_t* heads;
@@ -128,6 +130,12 @@ typedef struct loom_low_allocation_unit_use_index_t {
   iree_host_size_t count;
   // Allocated entry capacity.
   iree_host_size_t capacity;
+  // Semantic segments extended through a target instruction's read phase.
+  iree_bitmap_t refined_storage_segments;
+  // Values physically read by the current target instruction.
+  iree_bitmap_t physical_read_values;
+  // Number of values marked in |physical_read_values|.
+  iree_host_size_t physical_read_value_count;
   // Top-level block whose actual uses are being collected.
   uint16_t block_index;
 } loom_low_allocation_unit_use_index_t;
@@ -144,6 +152,7 @@ static iree_status_t loom_low_allocation_unit_use_index_initialize(
     loom_low_allocation_unit_liveness_t* unit_liveness,
     loom_low_call_contract_provider_t call_contracts,
     iree_host_size_t multi_unit_value_count, iree_arena_allocator_t* arena,
+    iree_arena_allocator_t* decision_arena,
     loom_low_allocation_unit_use_index_t* out_index) {
   *out_index = (loom_low_allocation_unit_use_index_t){
       .unit_liveness = unit_liveness,
@@ -151,6 +160,7 @@ static iree_status_t loom_low_allocation_unit_use_index_initialize(
       .liveness = liveness,
       .call_contracts = call_contracts,
       .arena = arena,
+      .decision_arena = decision_arena,
   };
   if (multi_unit_value_count == 0 || liveness->block_count < 2 ||
       cfg_graph->edge_count == 0) {
@@ -161,6 +171,46 @@ static iree_status_t loom_low_allocation_unit_use_index_initialize(
       (void**)&out_index->heads));
   memset(out_index->heads, 0xFF,
          unit_liveness->point_count * sizeof(*out_index->heads));
+  return iree_ok_status();
+}
+
+static iree_status_t loom_low_allocation_unit_use_index_refine_storage_segment(
+    loom_low_allocation_unit_use_index_t* index, uint32_t segment_index) {
+  if (index->refined_storage_segments.words == NULL) {
+    const iree_host_size_t word_count =
+        iree_bitmap_calculate_words(index->liveness->segment_count);
+    uint64_t* words = NULL;
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        index->decision_arena, word_count, sizeof(*words), (void**)&words));
+    memset(words, 0, word_count * sizeof(*words));
+    index->refined_storage_segments = (iree_bitmap_t){
+        .bit_count = index->liveness->segment_count,
+        .words = words,
+    };
+  }
+  iree_bitmap_set(index->refined_storage_segments, segment_index);
+  return iree_ok_status();
+}
+
+static iree_status_t loom_low_allocation_unit_use_index_mark_physical_read(
+    loom_low_allocation_unit_use_index_t* index,
+    loom_value_ordinal_t value_ordinal) {
+  if (index->physical_read_values.words == NULL) {
+    const iree_host_size_t word_count =
+        iree_bitmap_calculate_words(index->liveness->value_count);
+    uint64_t* words = NULL;
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        index->arena, word_count, sizeof(*words), (void**)&words));
+    memset(words, 0, word_count * sizeof(*words));
+    index->physical_read_values = (iree_bitmap_t){
+        .bit_count = index->liveness->value_count,
+        .words = words,
+    };
+  }
+  if (!iree_bitmap_test(index->physical_read_values, value_ordinal)) {
+    iree_bitmap_set(index->physical_read_values, value_ordinal);
+    ++index->physical_read_value_count;
+  }
   return iree_ok_status();
 }
 
@@ -239,10 +289,11 @@ static iree_status_t loom_low_allocation_unit_use_index_extend_boundaries(
         for (iree_host_size_t predecessor_index = 0;
              predecessor_index < predecessors.count; ++predecessor_index) {
           const uint16_t predecessor = predecessors.values[predecessor_index];
+          const uint32_t predecessor_end_point =
+              liveness->blocks[predecessor].end_point + 1u;
           unit_liveness->end_points[unit] =
-              iree_max(unit_liveness->end_points[unit],
-                       liveness->blocks[predecessor].end_point + 1u);
-          if (unit_liveness->end_points[unit] > interval->end_point) {
+              iree_max(unit_liveness->end_points[unit], predecessor_end_point);
+          if (predecessor_end_point > interval->end_point) {
             iree_bitmap_set(
                 unit_liveness->values_with_incomplete_storage_segments, value);
           }
@@ -256,6 +307,29 @@ static iree_status_t loom_low_allocation_unit_use_index_extend_boundaries(
         }
       }
     }
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_low_allocation_unit_liveness_record_unit_use_at_point(
+    loom_low_allocation_unit_use_index_t* unit_use_index,
+    const loom_liveness_interval_t* interval, uint32_t unit_point_start,
+    uint32_t unit_offset, uint32_t unit_count, uint32_t point) {
+  loom_low_allocation_unit_liveness_t* unit_liveness =
+      unit_use_index->unit_liveness;
+  const uint32_t end_point = point + 1u;
+  for (uint32_t i = 0; i < unit_count; ++i) {
+    const iree_host_size_t unit_end_point_index =
+        (iree_host_size_t)unit_point_start + unit_offset + i;
+    uint32_t* unit_end_point = &unit_liveness->end_points[unit_end_point_index];
+    if (*unit_end_point < end_point) {
+      *unit_end_point = end_point;
+    }
+  }
+  if (unit_use_index->heads != NULL && interval->unit_count > 1) {
+    return loom_low_allocation_unit_use_index_record(
+        unit_use_index, interval->definition_point,
+        (iree_host_size_t)unit_point_start + unit_offset, unit_count);
   }
   return iree_ok_status();
 }
@@ -300,20 +374,9 @@ static iree_status_t loom_low_allocation_unit_liveness_note_unit_use_at_point(
     iree_bitmap_set(unit_liveness->values_with_incomplete_storage_segments,
                     value_ordinal);
   }
-  for (uint32_t i = 0; i < unit_count; ++i) {
-    const iree_host_size_t unit_end_point_index =
-        (iree_host_size_t)unit_point_start + unit_offset + i;
-    uint32_t* unit_end_point = &unit_liveness->end_points[unit_end_point_index];
-    if (*unit_end_point < end_point) {
-      *unit_end_point = end_point;
-    }
-  }
-  if (unit_use_index->heads != NULL && interval->unit_count > 1) {
-    return loom_low_allocation_unit_use_index_record(
-        unit_use_index, interval->definition_point,
-        (iree_host_size_t)unit_point_start + unit_offset, unit_count);
-  }
-  return iree_ok_status();
+  return loom_low_allocation_unit_liveness_record_unit_use_at_point(
+      unit_use_index, interval, unit_point_start, unit_offset, unit_count,
+      point);
 }
 
 static iree_status_t
@@ -333,6 +396,40 @@ loom_low_allocation_unit_liveness_note_value_ordinal_use_at_point(
   return loom_low_allocation_unit_liveness_note_unit_use_at_point(
       unit_use_index, liveness, value_ordinal, /*unit_offset=*/0,
       interval->unit_count, point);
+}
+
+// Extends a whole-value read into an instruction's target-visible read phase.
+// Its semantic use identifies the exact sparse segment whose endpoint may need
+// one additional program point; all other sparse gaps remain valid.
+static iree_status_t
+loom_low_allocation_unit_liveness_note_value_ordinal_physical_read(
+    loom_low_allocation_unit_use_index_t* unit_use_index,
+    const loom_liveness_analysis_t* liveness,
+    loom_value_ordinal_t value_ordinal, uint32_t segment_index,
+    uint32_t semantic_point) {
+  const loom_liveness_interval_t* interval =
+      loom_liveness_interval_for_value_ordinal(liveness, value_ordinal);
+  IREE_ASSERT(interval);
+  if (!loom_low_allocation_live_range_interval_is_allocatable(interval)) {
+    return iree_ok_status();
+  }
+  const loom_liveness_segment_t* segment = &liveness->segments[segment_index];
+  IREE_ASSERT_LE(segment->start_point, semantic_point);
+  IREE_ASSERT_LT(semantic_point, segment->end_point);
+  const uint32_t physical_point = semantic_point + 1u;
+  if (physical_point == segment->end_point) {
+    IREE_RETURN_IF_ERROR(
+        loom_low_allocation_unit_use_index_refine_storage_segment(
+            unit_use_index, segment_index));
+  }
+
+  const uint32_t unit_point_start =
+      loom_low_allocation_unit_liveness_point_start_for_value_ordinal(
+          unit_use_index->unit_liveness, liveness, value_ordinal);
+  IREE_ASSERT_NE(unit_point_start, UINT32_MAX);
+  return loom_low_allocation_unit_liveness_record_unit_use_at_point(
+      unit_use_index, interval, unit_point_start, /*unit_offset=*/0,
+      interval->unit_count, physical_point);
 }
 
 static iree_status_t loom_low_allocation_unit_liveness_note_value_use_at_point(
@@ -648,15 +745,13 @@ static bool loom_low_allocation_unit_liveness_op_ties_result_to_operand(
 }
 
 static iree_status_t
-loom_low_allocation_unit_liveness_note_early_clobber_operand_uses(
+loom_low_allocation_unit_liveness_mark_early_clobber_operand_reads(
     loom_low_allocation_unit_use_index_t* unit_use_index,
     const loom_local_value_domain_t* value_domain,
     const loom_liveness_analysis_t* liveness, const loom_op_t* op,
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_descriptor_t* descriptor,
-    uint16_t early_clobber_result_index, uint32_t clobber_point) {
-  loom_low_allocation_unit_liveness_t* unit_liveness =
-      unit_use_index->unit_liveness;
+    uint16_t early_clobber_result_index) {
   const loom_value_id_t* operands = loom_op_const_operands(op);
   for (uint16_t i = descriptor->result_count; i < descriptor->operand_count;
        ++i) {
@@ -684,11 +779,8 @@ loom_low_allocation_unit_liveness_note_early_clobber_operand_uses(
             value_domain, liveness, operands[operand_index], &value_ordinal)) {
       continue;
     }
-    iree_bitmap_set(unit_liveness->values_with_incomplete_storage_segments,
-                    value_ordinal);
-    IREE_RETURN_IF_ERROR(
-        loom_low_allocation_unit_liveness_note_value_ordinal_use_at_point(
-            unit_use_index, liveness, value_ordinal, clobber_point));
+    IREE_RETURN_IF_ERROR(loom_low_allocation_unit_use_index_mark_physical_read(
+        unit_use_index, value_ordinal));
   }
   return iree_ok_status();
 }
@@ -787,11 +879,9 @@ static iree_status_t loom_low_allocation_unit_liveness_note_instruction_effects(
         }
         const loom_value_ordinal_t ordinal =
             loom_local_value_domain_ordinal(value_domain, value);
-        iree_bitmap_set(unit_liveness->values_with_incomplete_storage_segments,
-                        ordinal);
         IREE_RETURN_IF_ERROR(
-            loom_low_allocation_unit_liveness_note_value_ordinal_use_at_point(
-                unit_use_index, liveness, ordinal, clobber_point));
+            loom_low_allocation_unit_use_index_mark_physical_read(
+                unit_use_index, ordinal));
       }
     }
     if (operand->source_value_index != LOOM_LOW_ID_NONE ||
@@ -837,10 +927,39 @@ static iree_status_t loom_low_allocation_unit_liveness_note_instruction_effects(
       continue;
     }
     IREE_RETURN_IF_ERROR(
-        loom_low_allocation_unit_liveness_note_early_clobber_operand_uses(
+        loom_low_allocation_unit_liveness_mark_early_clobber_operand_reads(
             unit_use_index, value_domain, liveness, op, descriptor_set,
-            descriptor, constraint->lhs_operand_index, clobber_point));
+            descriptor, constraint->lhs_operand_index));
   }
+  return iree_ok_status();
+}
+
+static iree_status_t
+loom_low_allocation_unit_liveness_apply_instruction_physical_reads(
+    loom_low_allocation_unit_use_index_t* unit_use_index,
+    const loom_liveness_analysis_t* liveness,
+    const loom_liveness_operation_point_t* operation_point) {
+  if (unit_use_index->physical_read_value_count == 0) {
+    return iree_ok_status();
+  }
+  for (uint32_t i = 0; i < operation_point->direct_use_count; ++i) {
+    const uint32_t use_index = operation_point->use_start + i;
+    const loom_value_ordinal_t value_ordinal =
+        loom_liveness_operation_use_ordinal(liveness, use_index);
+    if (!iree_bitmap_test(unit_use_index->physical_read_values,
+                          value_ordinal)) {
+      continue;
+    }
+    const uint32_t segment_index =
+        loom_liveness_operation_use_segment_index(liveness, use_index);
+    IREE_RETURN_IF_ERROR(
+        loom_low_allocation_unit_liveness_note_value_ordinal_physical_read(
+            unit_use_index, liveness, value_ordinal, segment_index,
+            operation_point->start_point));
+    iree_bitmap_reset(unit_use_index->physical_read_values, value_ordinal);
+    --unit_use_index->physical_read_value_count;
+  }
+  IREE_ASSERT_EQ(unit_use_index->physical_read_value_count, 0);
   return iree_ok_status();
 }
 
@@ -1003,8 +1122,12 @@ static iree_status_t loom_low_allocation_unit_liveness_note_operation_unit_uses(
       }
     }
   }
-  return loom_low_allocation_unit_liveness_note_instruction_effects(
-      unit_use_index, target, value_domain, liveness, operation_point, arena);
+  IREE_RETURN_IF_ERROR(
+      loom_low_allocation_unit_liveness_note_instruction_effects(
+          unit_use_index, target, value_domain, liveness, operation_point,
+          arena));
+  return loom_low_allocation_unit_liveness_apply_instruction_physical_reads(
+      unit_use_index, liveness, operation_point);
 }
 
 static iree_status_t
@@ -1157,6 +1280,32 @@ static iree_status_t loom_low_allocation_unit_liveness_note_block_uses(
   return iree_ok_status();
 }
 
+static iree_status_t
+loom_low_allocation_unit_liveness_apply_storage_segment_refinements(
+    const loom_low_allocation_unit_use_index_t* unit_use_index,
+    const loom_liveness_analysis_t* liveness,
+    iree_arena_allocator_t* result_arena,
+    loom_low_allocation_unit_liveness_t* unit_liveness) {
+  if (unit_use_index->refined_storage_segments.words == NULL) {
+    return iree_ok_status();
+  }
+  loom_liveness_segment_t* segments = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(result_arena, liveness->segment_count,
+                                sizeof(*segments), (void**)&segments));
+  memcpy(segments, liveness->segments,
+         liveness->segment_count * sizeof(*segments));
+  for (iree_host_size_t i = 0; i < liveness->segment_count; ++i) {
+    if (!iree_bitmap_test(unit_use_index->refined_storage_segments, i)) {
+      continue;
+    }
+    IREE_ASSERT_NE(segments[i].end_point, UINT32_MAX);
+    ++segments[i].end_point;
+  }
+  unit_liveness->storage_segments.entries = segments;
+  return iree_ok_status();
+}
+
 iree_status_t loom_low_allocation_unit_liveness_initialize(
     const loom_low_resolved_target_t* target,
     const loom_low_placement_table_t* placement,
@@ -1283,7 +1432,7 @@ iree_status_t loom_low_allocation_unit_liveness_initialize(
   loom_low_allocation_unit_use_index_t unit_use_index;
   iree_status_t status = loom_low_allocation_unit_use_index_initialize(
       cfg_graph, liveness, out_unit_liveness, call_contracts,
-      multi_unit_value_count, result_arena, &unit_use_index);
+      multi_unit_value_count, result_arena, decision_arena, &unit_use_index);
   loom_low_allocation_edge_use_index_t edge_use_index;
   if (iree_status_is_ok(status)) {
     status = loom_low_allocation_edge_use_index_initialize(
@@ -1299,6 +1448,11 @@ iree_status_t loom_low_allocation_unit_liveness_initialize(
         &unit_use_index, liveness, out_unit_liveness);
   }
   iree_arena_checkpoint_restore(&scratch_checkpoint);
+  if (iree_status_is_ok(status)) {
+    status =
+        loom_low_allocation_unit_liveness_apply_storage_segment_refinements(
+            &unit_use_index, liveness, result_arena, out_unit_liveness);
+  }
   if (iree_status_is_ok(status)) {
     loom_low_allocation_clobber_sort(out_unit_liveness->clobbers.entries,
                                      out_unit_liveness->clobbers.count);
@@ -1352,7 +1506,7 @@ static void loom_low_allocation_unit_liveness_contribute_segments(
   const loom_liveness_segment_t* segments = NULL;
   uint32_t count = range.count;
   if (count != 0) {
-    segments = &liveness->segments[range.start];
+    segments = &unit_liveness->storage_segments.entries[range.start];
   } else {
     // A result with early-clobber/edge storage or no semantic uses still
     // reserves its concrete writes. Preserve its initial per-unit hull.
@@ -1484,7 +1638,7 @@ static iree_status_t loom_low_allocation_unit_liveness_build_storage_segments(
   loom_liveness_segment_t* segments = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       result_arena, segment_count, sizeof(*segments), (void**)&segments));
-  memcpy(segments, liveness->segments,
+  memcpy(segments, unit_liveness->storage_segments.entries,
          liveness->segment_count * sizeof(*segments));
   loom_liveness_segment_range_t* ranges = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
