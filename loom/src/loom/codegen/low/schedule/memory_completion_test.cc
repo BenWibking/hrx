@@ -81,9 +81,9 @@ class MemoryCompletionTest : public ::testing::Test {
   iree_arena_allocator_t arena_;
   iree_arena_allocator_t scratch_arena_;
   loom_low_memory_access_map_t* memory_accesses_ = nullptr;
-  std::array<loom_op_t, 8> ops_ = {};
-  std::array<loom_low_schedule_node_t, 8> nodes_ = {};
-  std::array<loom_low_schedule_effect_use_t, 8> effects_ = {};
+  std::array<loom_op_t, 66> ops_ = {};
+  std::array<loom_low_schedule_node_t, 66> nodes_ = {};
+  std::array<loom_low_schedule_effect_use_t, 66> effects_ = {};
   uint32_t effect_count_ = 0;
   loom_low_schedule_build_state_t state_ = {};
 };
@@ -108,6 +108,24 @@ TEST_F(MemoryCompletionTest, AliasingForwardEffectsRetainExactCompletion) {
   uint32_t consumer = 0;
   AddEffect(0, LOOM_LOW_EFFECT_KIND_WRITE, Access(1), &producer);
   AddEffect(1, LOOM_LOW_EFFECT_KIND_READ, Access(1), &consumer);
+
+  Analyze(graph.get());
+
+  ASSERT_EQ(state_.memory_completion_edge_count, 1u);
+  EXPECT_EQ(state_.memory_completion_edges[0].producer_effect_use, producer);
+  EXPECT_EQ(state_.memory_completion_edges[0].consumer_effect_use, consumer);
+}
+
+TEST_F(MemoryCompletionTest, ForwardEffectsCrossBitmapWordBoundaries) {
+  testing::CfgGraph graph({{1}, {2}, {}});
+  uint32_t unused = 0;
+  for (uint32_t alias_root_id = 1; alias_root_id <= 64; ++alias_root_id) {
+    AddEffect(0, LOOM_LOW_EFFECT_KIND_WRITE, Access(alias_root_id), &unused);
+  }
+  uint32_t producer = 0;
+  uint32_t consumer = 0;
+  AddEffect(1, LOOM_LOW_EFFECT_KIND_WRITE, Access(65), &producer);
+  AddEffect(2, LOOM_LOW_EFFECT_KIND_READ, Access(65), &consumer);
 
   Analyze(graph.get());
 

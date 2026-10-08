@@ -119,13 +119,11 @@ static iree_status_t loom_low_schedule_consume_memory_frontier(
 
 static void loom_low_schedule_union_forward_memory_frontiers(
     const loom_cfg_graph_t* graph, uint16_t block_index,
-    iree_host_size_t frontier_row_word_count,
-    iree_host_size_t active_word_count, uint64_t* read_frontiers,
+    const iree_host_size_t* frontier_row_offsets, uint64_t* read_frontiers,
     uint64_t* write_frontiers) {
-  uint64_t* target_reads =
-      read_frontiers + block_index * frontier_row_word_count;
-  uint64_t* target_writes =
-      write_frontiers + block_index * frontier_row_word_count;
+  const iree_host_size_t target_offset = frontier_row_offsets[block_index];
+  uint64_t* target_reads = read_frontiers + target_offset;
+  uint64_t* target_writes = write_frontiers + target_offset;
   const loom_cfg_edge_index_span_t incoming_edges =
       loom_cfg_graph_predecessor_edges(graph, block_index);
   for (iree_host_size_t i = 0; i < incoming_edges.count; ++i) {
@@ -134,11 +132,13 @@ static void loom_low_schedule_union_forward_memory_frontiers(
     if (edge->source_block_index >= block_index) {
       continue;
     }
-    const uint64_t* source_reads =
-        read_frontiers + edge->source_block_index * frontier_row_word_count;
-    const uint64_t* source_writes =
-        write_frontiers + edge->source_block_index * frontier_row_word_count;
-    for (iree_host_size_t word_index = 0; word_index < active_word_count;
+    const iree_host_size_t source_offset =
+        frontier_row_offsets[edge->source_block_index];
+    const iree_host_size_t source_word_count =
+        frontier_row_offsets[edge->source_block_index + 1] - source_offset;
+    const uint64_t* source_reads = read_frontiers + source_offset;
+    const uint64_t* source_writes = write_frontiers + source_offset;
+    for (iree_host_size_t word_index = 0; word_index < source_word_count;
          ++word_index) {
       target_reads[word_index] |= source_reads[word_index];
       target_writes[word_index] |= source_writes[word_index];
@@ -192,15 +192,37 @@ iree_status_t loom_low_schedule_build_acyclic_memory_completions(
   }
   IREE_ASSERT_EQ(refined_ordinal, refined_effect_count);
 
-  const iree_host_size_t frontier_word_count = iree_host_size_ceil_div(
-      refined_effect_count, LOOM_LOW_SCHEDULE_MEMORY_COMPLETION_BITS_PER_WORD);
-  iree_host_size_t frontier_state_count = 0;
-  if (!iree_host_size_checked_mul(state->cfg_graph->block_count,
-                                  frontier_word_count, &frontier_state_count)) {
-    return iree_make_status(
-        IREE_STATUS_RESOURCE_EXHAUSTED,
-        "low schedule memory-completion frontier exceeds host size");
+  iree_host_size_t* frontier_row_offsets = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      state->scratch_arena, state->cfg_graph->block_count + 1,
+      sizeof(*frontier_row_offsets), (void**)&frontier_row_offsets));
+  frontier_row_offsets[0] = 0;
+  iree_host_size_t effect_use_index = 0;
+  refined_ordinal = 0;
+  for (uint16_t block_index = 0; block_index < state->cfg_graph->block_count;
+       ++block_index) {
+    while (effect_use_index < state->effect_use_count &&
+           state->effect_uses[effect_use_index].block_index == block_index) {
+      refined_ordinal +=
+          iree_any_bit_set(state->effect_uses[effect_use_index].flags,
+                           LOOM_LOW_SCHEDULE_EFFECT_USE_FLAG_REFINED_MEMORY);
+      ++effect_use_index;
+    }
+    const iree_host_size_t row_word_count = iree_host_size_ceil_div(
+        refined_ordinal, LOOM_LOW_SCHEDULE_MEMORY_COMPLETION_BITS_PER_WORD);
+    if (!iree_host_size_checked_add(frontier_row_offsets[block_index],
+                                    row_word_count,
+                                    &frontier_row_offsets[block_index + 1])) {
+      return iree_make_status(
+          IREE_STATUS_RESOURCE_EXHAUSTED,
+          "low schedule memory-completion frontier exceeds host size");
+    }
   }
+  IREE_ASSERT_EQ(effect_use_index, state->effect_use_count);
+  IREE_ASSERT_EQ(refined_ordinal, refined_effect_count);
+
+  const iree_host_size_t frontier_state_count =
+      frontier_row_offsets[state->cfg_graph->block_count];
   uint64_t* read_frontiers = NULL;
   uint64_t* write_frontiers = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
@@ -215,7 +237,7 @@ iree_status_t loom_low_schedule_build_acyclic_memory_completions(
   loom_low_schedule_memory_completion_edge_t* scratch_edges = NULL;
   iree_host_size_t scratch_edge_count = 0;
   iree_host_size_t scratch_edge_capacity = 0;
-  iree_host_size_t effect_use_index = 0;
+  effect_use_index = 0;
   refined_ordinal = 0;
   for (uint16_t block_index = 0; block_index < state->cfg_graph->block_count;
        ++block_index) {
@@ -236,14 +258,13 @@ iree_status_t loom_low_schedule_build_acyclic_memory_completions(
       continue;
     }
 
-    const iree_host_size_t active_word_count = iree_host_size_ceil_div(
-        refined_ordinal, LOOM_LOW_SCHEDULE_MEMORY_COMPLETION_BITS_PER_WORD);
     loom_low_schedule_union_forward_memory_frontiers(
-        state->cfg_graph, block_index, frontier_word_count, active_word_count,
-        read_frontiers, write_frontiers);
-    uint64_t* block_reads = read_frontiers + block_index * frontier_word_count;
-    uint64_t* block_writes =
-        write_frontiers + block_index * frontier_word_count;
+        state->cfg_graph, block_index, frontier_row_offsets, read_frontiers,
+        write_frontiers);
+    const iree_host_size_t block_frontier_offset =
+        frontier_row_offsets[block_index];
+    uint64_t* block_reads = read_frontiers + block_frontier_offset;
+    uint64_t* block_writes = write_frontiers + block_frontier_offset;
     for (iree_host_size_t node_effect_start = block_effect_start;
          node_effect_start < effect_use_index;) {
       const uint32_t node_index =
