@@ -67,6 +67,12 @@ iree_status_t loom_aie2p_vector_packet_emit_constant(
     loom_aie2p_vector_packet_emitter_t* emitter, uint32_t descriptor_ordinal,
     int64_t value, loom_type_t result_type, loom_value_id_t* out_result);
 
+// Materializes a 64-lane byte selector from |mask|. A set bit selects the
+// corresponding lane from the second VSEL source.
+iree_status_t loom_aie2p_vector_packet_emit_byte_selector(
+    loom_aie2p_vector_packet_emitter_t* emitter, uint64_t mask,
+    loom_value_id_t* out_selector);
+
 // Extracts one native packet from a complete low carrier value.
 iree_status_t loom_aie2p_vector_packet_read_native(
     loom_aie2p_vector_packet_emitter_t* emitter, loom_value_id_t low_value,

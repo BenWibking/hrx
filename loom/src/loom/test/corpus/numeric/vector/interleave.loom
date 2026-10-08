@@ -75,6 +75,47 @@ func.def @packed_byte_even_odd_bias_oracle(%input: buffer, %output: buffer) {
   func.return
 }
 
+// Uses a non-power-of-two row width and crosses the 512-bit packet boundary.
+// This keeps whole 21-byte rows observable through both structural operations.
+func.def @irregular_byte_row_bias(%input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %input_bytes = buffer.view %input[%base] : buffer -> view<6x21xi8>
+  %output_bytes = buffer.view %output[%base] : buffer -> view<6x21xi8>
+  %packet = vector.load %input_bytes[%begin, %begin] : view<6x21xi8> -> vector<6x21xi8>
+  %even, %odd = vector.deinterleave<0> %packet : vector<6x21xi8> -> vector<3x21xi8>, vector<3x21xi8>
+  %even_bias = vector.constant 17 : vector<3x21xi8>
+  %odd_bias = vector.constant -29 : vector<3x21xi8>
+  %biased_even = vector.addi %even, %even_bias : vector<3x21xi8>
+  %biased_odd = vector.addi %odd, %odd_bias : vector<3x21xi8>
+  %result = vector.interleave<0> %biased_even, %biased_odd : vector<3x21xi8>, vector<3x21xi8> -> vector<6x21xi8>
+  vector.store %result, %output_bytes[%begin, %begin] : vector<6x21xi8>, view<6x21xi8>
+  func.return
+}
+
+func.def @irregular_byte_row_bias_oracle(%input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 126 : index
+  %step = index.constant 1 : index
+  %row_width = index.constant 21 : index
+  %pair_width = index.constant 2 : index
+  %even_bias = scalar.constant 17 : i8
+  %odd_bias = scalar.constant -29 : i8
+  %input_bytes = buffer.view %input[%base] : buffer -> view<126xi8>
+  %output_bytes = buffer.view %output[%base] : buffer -> view<126xi8>
+  scf.for %i = [%begin to %end step %step] {
+    %row = index.div %i, %row_width : index
+    %parity = index.rem %row, %pair_width : index
+    %is_odd = index.cmp ne, %parity, %begin : index
+    %bias = scf.select %is_odd, %odd_bias, %even_bias : i8
+    %value = view.load %input_bytes[%i] : view<126xi8> -> i8
+    %result = scalar.addi %value, %bias : i8
+    view.store %result, %output_bytes[%i] : i8, view<126xi8>
+  }
+  func.return
+}
+
 check.scenario @packed_byte_even_odd_bias_values {
   check.trial[1](%trial: index, %entropy: check.entropy) {
     %input = check.generate.iota offset(-128) step(1) period(256) : tensor<64xi8>
@@ -93,6 +134,19 @@ check.scenario @packed_byte_even_odd_bias_values {
     check.compare<@packed_byte_even_odd_bias, @packed_byte_even_odd_bias_oracle>(%input, %output) : (tensor<64xi8>, tensor<64xi8>) -> () {
       check.expect.bitwise actual(%input) expected(%input) : tensor<64xi8>
       check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<72xi8>
+    }
+  }
+  check.return
+}
+
+check.scenario @irregular_byte_row_bias_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-128) step(2) period(256) : tensor<126xi8>
+    %output_storage = check.generate.fill value(83) : tensor<134xi8>
+    %output = check.tensor.view %output_storage offset(4) : tensor<134xi8> -> tensor<126xi8>
+    check.compare<@irregular_byte_row_bias, @irregular_byte_row_bias_oracle>(%input, %output) : (tensor<126xi8>, tensor<126xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<126xi8>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<134xi8>
     }
   }
   check.return

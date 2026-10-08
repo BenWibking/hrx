@@ -6,6 +6,8 @@
 
 #include "loom/target/arch/amd/xdna/aie2p/lower/vector_packet.h"
 
+#include <limits.h>
+
 #include "loom/ops/low/ops.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
 
@@ -106,6 +108,44 @@ iree_status_t loom_aie2p_vector_packet_emit_constant(
       result_type, emitter->source_op->location, &low_op));
   *out_result = loom_low_const_result(low_op);
   return iree_ok_status();
+}
+
+static int64_t loom_aie2p_vector_packet_signed_i32_bits(uint32_t value) {
+  return value <= INT32_MAX ? (int64_t)value
+                            : (int64_t)value - (INT64_C(1) << 32);
+}
+
+iree_status_t loom_aie2p_vector_packet_emit_byte_selector(
+    loom_aie2p_vector_packet_emitter_t* emitter, uint64_t mask,
+    loom_value_id_t* out_selector) {
+  const uint32_t low_word = (uint32_t)mask;
+  IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_emit_constant(
+      emitter, AIE2P_CORE_DESCRIPTOR_REF_CONSTANT_I32_PREDICATE_LOW32,
+      loom_aie2p_vector_packet_signed_i32_bits(low_word),
+      emitter->predicate_type, out_selector));
+
+  const uint32_t high_word = (uint32_t)(mask >> 32);
+  uint32_t descriptor_ordinal =
+      AIE2P_CORE_DESCRIPTOR_REF_PREDICATE_COMPLETE_ZERO_HIGH32;
+  int64_t immediate_value = 0;
+  if (high_word != 0) {
+    descriptor_ordinal =
+        AIE2P_CORE_DESCRIPTOR_REF_PREDICATE_COMPLETE_CONSTANT_HIGH32;
+    immediate_value = loom_aie2p_vector_packet_signed_i32_bits(high_word);
+  }
+  const loom_named_attr_t immediate = {
+      .name_id = emitter->scalar_immediate_name,
+      .value = loom_attr_i64(immediate_value),
+  };
+  const loom_tied_result_t tied_result = {
+      .result_index = 0,
+      .operand_index = 0,
+  };
+  const loom_value_id_t low_selector = *out_selector;
+  return loom_aie2p_vector_packet_emit_descriptor_op(
+      emitter, descriptor_ordinal, &low_selector, 1,
+      loom_make_named_attr_slice(&immediate, 1), emitter->predicate_type,
+      &tied_result, 1, out_selector);
 }
 
 static iree_status_t loom_aie2p_vector_packet_ensure_boolean_bytes(

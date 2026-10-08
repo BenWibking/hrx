@@ -40,7 +40,6 @@ from loom.target.arch.amd.xdna.aie2p.contracts.reduction import (
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.structural import (
     _ACCUMULATOR_BITCAST_TYPE_GROUPS,
-    _I8_DEINTERLEAVE_CONTROLS,
     _PREDICATE_VECTOR,
     _WIDE_VECTOR_BITCAST_TYPES,
     AIE2P_STRUCTURAL_RULES,
@@ -1036,37 +1035,6 @@ def test_core_contract_closes_scalar_and_vector_families() -> None:
     assert bf16_outer_product.emit[9].immediates == {
         "i": _BF16_OUTER_PRODUCT_MULTIPLY_CONTROL
     }
-
-    deinterleave_rules = [
-        rule for rule in rules if rule.source_op is vector.vector_deinterleave
-    ]
-    assert len(deinterleave_rules) == 1
-    deinterleave = deinterleave_rules[0]
-    assert deinterleave.descriptor.key == "amd.xdna.aie2p.shuffle.x.configured"
-    assert [emit.descriptor.key for emit in deinterleave.emit] == [
-        "amd.xdna.aie2p.constant.i32.mova",
-        "amd.xdna.aie2p.shuffle.x.configured",
-        "amd.xdna.aie2p.constant.i32.mova",
-        "amd.xdna.aie2p.shuffle.x.configured",
-    ]
-    shuffles = tuple(
-        emit
-        for emit in deinterleave.emit
-        if emit.descriptor.key == "amd.xdna.aie2p.shuffle.x.configured"
-    )
-    assert tuple(emit.results["dst"].field for emit in shuffles) == (
-        "results",
-        "results",
-    )
-    assert tuple(emit.results["dst"].element for emit in shuffles) == (0, 1)
-    assert (
-        tuple(
-            emit.immediates["i"]
-            for emit in deinterleave.emit
-            if emit.descriptor.key == "amd.xdna.aie2p.constant.i32.mova"
-        )
-        == _I8_DEINTERLEAVE_CONTROLS
-    )
 
     f32_add_rules = [rule for rule in rules if rule.source_op is vector.vector_addf]
     assert len(f32_add_rules) == 2

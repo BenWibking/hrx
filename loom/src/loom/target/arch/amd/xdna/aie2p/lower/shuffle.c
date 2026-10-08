@@ -336,37 +336,17 @@ static iree_status_t loom_aie2p_shuffle_emit_broadcast(
 static iree_status_t loom_aie2p_shuffle_emit_selector(
     loom_aie2p_shuffle_emit_state_t* state, uint64_t mask,
     loom_value_id_t* out_selector) {
-  const uint32_t low_word = (uint32_t)mask;
-  IREE_RETURN_IF_ERROR(loom_aie2p_shuffle_emit_constant(
-      state, AIE2P_CORE_DESCRIPTOR_REF_CONSTANT_I32_PREDICATE_LOW32,
-      loom_aie2p_shuffle_signed_i32_bits(low_word),
-      state->packet_emitter.predicate_type, out_selector));
-  if (state->plan->element_bit_count != 1 &&
-      state->plan->element_bit_count != 8) {
-    return iree_ok_status();
+  if (state->plan->element_bit_count == 1 ||
+      state->plan->element_bit_count == 8) {
+    return loom_aie2p_vector_packet_emit_byte_selector(&state->packet_emitter,
+                                                       mask, out_selector);
   }
 
-  const uint32_t high_word = (uint32_t)(mask >> 32);
-  uint32_t descriptor_ordinal =
-      AIE2P_CORE_DESCRIPTOR_REF_PREDICATE_COMPLETE_ZERO_HIGH32;
-  loom_named_attr_t immediate = loom_aie2p_shuffle_immediate_attr(
-      state->packet_emitter.scalar_immediate_name, 0);
-  if (high_word != 0) {
-    descriptor_ordinal =
-        AIE2P_CORE_DESCRIPTOR_REF_PREDICATE_COMPLETE_CONSTANT_HIGH32;
-    immediate = loom_aie2p_shuffle_immediate_attr(
-        state->packet_emitter.scalar_immediate_name,
-        loom_aie2p_shuffle_signed_i32_bits(high_word));
-  }
-  const loom_tied_result_t tied_result = {
-      .result_index = 0,
-      .operand_index = 0,
-  };
-  const loom_value_id_t low_selector = *out_selector;
-  return loom_aie2p_shuffle_emit_descriptor_op(
-      state, descriptor_ordinal, &low_selector, 1,
-      loom_make_named_attr_slice(&immediate, 1),
-      state->packet_emitter.predicate_type, &tied_result, 1, out_selector);
+  const uint32_t low_word = (uint32_t)mask;
+  return loom_aie2p_shuffle_emit_constant(
+      state, AIE2P_CORE_DESCRIPTOR_REF_CONSTANT_I32_PREDICATE_LOW32,
+      loom_aie2p_shuffle_signed_i32_bits(low_word),
+      state->packet_emitter.predicate_type, out_selector);
 }
 
 static uint64_t loom_aie2p_shuffle_selector_lane_mask(uint8_t element_bit_count,
