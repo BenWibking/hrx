@@ -19,7 +19,7 @@ from loom.target.arch.amd.xdna.aie2p.contracts.conversion import (
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.packet_program import (
     PacketProgram,
-    shift_i32_packet,
+    shift_integer_packet_fixed,
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.scalar_program import ScalarProgram
 from loom.target.contracts import (
@@ -364,7 +364,7 @@ def _packet_variable_shift(
 ) -> ValueRef:
     shifted = value
     for bit, inactive in conditions:
-        candidate = shift_i32_packet(
+        candidate = shift_integer_packet_fixed(
             program,
             f"{name}_by_{bit}",
             shifted,
@@ -389,7 +389,7 @@ def _packet_round_shift(
     )
     quotient_lsb = _packet_bits(program, "round_quotient_lsb", "and", quotient, one)
     power = _packet_variable_shift(program, "round_power", one, conditions, left=True)
-    half = shift_i32_packet(program, "round_half", power, -1)
+    half = shift_integer_packet_fixed(program, "round_half", power, -1)
     bias_base = _packet_binary(program, "round_bias_base", "sub", half, one)
     bias = _packet_binary(program, "round_bias", "add", bias_base, quotient_lsb)
     biased_value = _packet_binary(program, "round_biased_value", "add", value, bias)
@@ -404,7 +404,7 @@ def _packet_f32_parts(
 ) -> tuple[ValueRef, ValueRef, ValueRef]:
     absolute_mask = program.splat("absolute_mask", _F32_ABSOLUTE_MASK)
     magnitude = _packet_bits(program, "magnitude", "and", value, absolute_mask)
-    encoded_exponent = shift_i32_packet(
+    encoded_exponent = shift_integer_packet_fixed(
         program, "encoded_exponent", magnitude, -_F32_MANTISSA_BITS
     )
     fraction_mask = program.splat("fraction_mask", _F32_FRACTION_MASK)
@@ -500,11 +500,11 @@ def _emit_packet_f32_negative_scale(
     )
     underflow = _packet_round_shift(program, significand, round_shift, one, bit_values)
 
-    exponent_delta = shift_i32_packet(
+    exponent_delta = shift_integer_packet_fixed(
         program, "exponent_delta", distance, _F32_MANTISSA_BITS
     )
     normal = _packet_binary(program, "normal", "sub", magnitude, exponent_delta)
-    normal_threshold_exponent = shift_i32_packet(
+    normal_threshold_exponent = shift_integer_packet_fixed(
         program,
         "normal_threshold_exponent",
         distance_plus_one,
@@ -532,7 +532,9 @@ def _emit_packet_f32_nonnegative_scale(
         needs_shift = program.compare_unsigned_less_than(
             f"normalize_by_{bit}", normalized, threshold
         )
-        candidate = shift_i32_packet(program, f"normalized_by_{bit}", normalized, bit)
+        candidate = shift_integer_packet_fixed(
+            program, f"normalized_by_{bit}", normalized, bit
+        )
         normalized = program.select(
             f"normalized_selected_{bit}", candidate, normalized, needs_shift
         )
@@ -601,7 +603,7 @@ def _emit_packet_f32_nonnegative_scale(
     )
     underflow = _packet_round_shift(program, significand, round_shift, one, bit_values)
 
-    exponent_bits = shift_i32_packet(
+    exponent_bits = shift_integer_packet_fixed(
         program, "exponent_bits", result_exponent, _F32_MANTISSA_BITS
     )
     result_fraction = _packet_bits(

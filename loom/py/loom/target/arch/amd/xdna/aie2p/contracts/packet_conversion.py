@@ -24,7 +24,7 @@ from loom.target.arch.amd.xdna.aie2p.contracts.f32_accumulator import (
 from loom.target.arch.amd.xdna.aie2p.contracts.packet_program import (
     IntegerSignedness,
     PacketProgram,
-    shift_i32_packet,
+    shift_integer_packet_fixed,
 )
 from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
     AIE2P_CORE_DESCRIPTOR_SET,
@@ -1229,7 +1229,7 @@ def _integer_to_f32_packet_rule(
         # final addition performs exactly the rounding required by the source
         # i32-to-F32 conversion, including signed cancellation and midpoint
         # ties across the full input domain.
-        high = shift_i32_packet(
+        high = shift_integer_packet_fixed(
             packet,
             "high",
             input_value,
@@ -1587,7 +1587,7 @@ def _float16_chunk_to_f32(
     position_shift = _F32_PACKET_FORMAT.mantissa_bits - source_format.mantissa_bits
     prefix = f"chunk_{chunk_index}"
     sign = program.binary(f"{prefix}_sign", "and.bits512", source, state.sign_mask)
-    sign = shift_i32_packet(
+    sign = shift_integer_packet_fixed(
         program,
         f"{prefix}_positioned_sign",
         sign,
@@ -1597,7 +1597,7 @@ def _float16_chunk_to_f32(
         f"{prefix}_payload", "and.bits512", source, state.nonsign_mask
     )
 
-    positioned_payload = shift_i32_packet(
+    positioned_payload = shift_integer_packet_fixed(
         program, f"{prefix}_positioned_payload", payload, position_shift
     )
     normal = program.binary(
@@ -1624,7 +1624,7 @@ def _float16_chunk_to_f32(
             payload,
             threshold,
         )
-        positioned = shift_i32_packet(
+        positioned = shift_integer_packet_fixed(
             program,
             f"{prefix}_subnormal_{normalization_shift}_positioned",
             payload,
@@ -1867,7 +1867,7 @@ def _f32_chunk_to_float16(
         element_bits=result_format.bit_width,
     )
 
-    shifted_nan_payload = shift_i32_packet(
+    shifted_nan_payload = shift_integer_packet_fixed(
         program, f"{prefix}_nan_payload_shifted", fraction, -mantissa_shift
     )
     program.state("saturation", 1)
