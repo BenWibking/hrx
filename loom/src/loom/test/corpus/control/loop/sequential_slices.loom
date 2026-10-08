@@ -34,11 +34,11 @@ kernel.def @sequential_loop_slices() {
   %unit = index.constant 1 : index
   %width = index.constant 64 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%width, %unit, %unit) : index
-} launch(%counts: buffer, %output: buffer, %length: i32) {
+} launch(%counts: buffer, %output: buffer, %length: index) {
   %output_byte_offset = index.constant 0 : offset
   %workitem_id_x = kernel.workitem.id<x> : index
   %lane = index.cast %workitem_id_x : index to i32
-  %active_lane = scalar.cmpi ult, %lane, %length : i32
+  %active_lane = index.cmp ult, %workitem_id_x, %length : index
   scf.if %active_lane {
     %lane_wide = scalar.extui %lane : i32 to i64
     %byte_shift = scalar.constant 2 : i64
@@ -79,22 +79,19 @@ kernel.def @sequential_loop_slices() {
   kernel.return
 }
 
-// The closed-form reference has no loops or pointer helper calls. For count n,
-// the first loop yields n*(n+1)/2 and n. The second loop's condition performs
-// max(n,1) increments, while its body executes max(n-1,0) times.
-kernel.def @sequential_loop_reference() {
-  %unit = index.constant 1 : index
-  %width = index.constant 64 : index
-  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%width, %unit, %unit) : index
-} launch(%counts: buffer, %output: buffer, %length: i32) {
-  %lane = kernel.workitem.id<x> : index
-  %lane_integer = index.cast %lane : index to i32
-  %active = scalar.cmpi ult, %lane_integer, %length : i32
-  scf.if %active {
-    %base = index.constant 0 : offset
-    %counts_view = buffer.view %counts[%base] : buffer -> view<64xi32>
-    %output_view = buffer.view %output[%base] : buffer -> view<640xi32>
-    %count = view.load %counts_view[%lane] : view<64xi32> -> i32
+// For count n, the first loop yields n*(n+1)/2 and n. The second loop's
+// condition performs max(n,1) increments, while its body executes max(n-1,0)
+// times.
+func.def @sequential_loop_slices_oracle(%counts: buffer, %output: buffer, %length: index) {
+  %bounded_length = index.assume %length [range(%length, 0, 65)] : index
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %counts_view = buffer.view %counts[%base] : buffer -> view<64xi32>
+  %output_view = buffer.view %output[%base] : buffer -> view<640xi32>
+  scf.for %lane = [%begin to %bounded_length step %step] {
+    %bounded_lane = index.assume %lane [range(%lane, 0, 63)] : index
+    %count = view.load %counts_view[%bounded_lane] : view<64xi32> -> i32
     %c1 = scalar.constant 1 : i32
     %c0 = scalar.constant 0 : i32
     %successor = scalar.addi %count, %c1 : i32
@@ -105,7 +102,7 @@ kernel.def @sequential_loop_reference() {
     %predecessor = scalar.subi %count, %c1 : i32
     %body_count = scf.select %nonempty, %predecessor, %c0 : i32
     %record_width = index.constant 10 : index
-    %record = index.mul %lane, %record_width : index
+    %record = index.mul %bounded_lane, %record_width : index
     %index_slot_delta = index.constant 1 : index
     %condition_slot_delta = index.constant 6 : index
     %body_slot_delta = index.constant 7 : index
@@ -117,53 +114,19 @@ kernel.def @sequential_loop_reference() {
     view.store %condition_count, %output_view[%condition_slot] : i32, view<640xi32>
     view.store %body_count, %output_view[%body_slot] : i32, view<640xi32>
   }
-  kernel.return
+  func.return
 }
 
-check.case public @sequential_loop_slices_length_0 {
-  %length = check.literal value(0) : i32
-  %counts_storage = check.generate.iota offset(-16) step(1) : tensor<96xi32>
-  %counts = check.tensor.view %counts_storage offset(64) : tensor<96xi32> -> tensor<64xi32>
-  %actual_storage = check.generate.fill value(-123) : tensor<672xi32>
-  %actual = check.tensor.view %actual_storage offset(64) : tensor<672xi32> -> tensor<640xi32>
-  kernel.launch @sequential_loop_slices(%counts, %actual, %length) : (tensor<64xi32>, tensor<640xi32>, i32)
-  %expected_storage = check.generate.fill value(-123) : tensor<672xi32>
-  %expected = check.tensor.view %expected_storage offset(64) : tensor<672xi32> -> tensor<640xi32>
-  kernel.launch @sequential_loop_reference(%counts, %expected, %length) : (tensor<64xi32>, tensor<640xi32>, i32)
-  check.expect.bitwise actual(%actual_storage) expected(%expected_storage) : tensor<672xi32>
-  %original_counts = check.generate.iota offset(-16) step(1) : tensor<96xi32>
-  check.expect.bitwise actual(%counts_storage) expected(%original_counts) : tensor<96xi32>
-  check.return
-}
-
-check.case public @sequential_loop_slices_length_37 {
-  %length = check.literal value(37) : i32
-  %counts_storage = check.generate.iota offset(-16) step(1) : tensor<96xi32>
-  %counts = check.tensor.view %counts_storage offset(64) : tensor<96xi32> -> tensor<64xi32>
-  %actual_storage = check.generate.fill value(-123) : tensor<672xi32>
-  %actual = check.tensor.view %actual_storage offset(64) : tensor<672xi32> -> tensor<640xi32>
-  kernel.launch @sequential_loop_slices(%counts, %actual, %length) : (tensor<64xi32>, tensor<640xi32>, i32)
-  %expected_storage = check.generate.fill value(-123) : tensor<672xi32>
-  %expected = check.tensor.view %expected_storage offset(64) : tensor<672xi32> -> tensor<640xi32>
-  kernel.launch @sequential_loop_reference(%counts, %expected, %length) : (tensor<64xi32>, tensor<640xi32>, i32)
-  check.expect.bitwise actual(%actual_storage) expected(%expected_storage) : tensor<672xi32>
-  %original_counts = check.generate.iota offset(-16) step(1) : tensor<96xi32>
-  check.expect.bitwise actual(%counts_storage) expected(%original_counts) : tensor<96xi32>
-  check.return
-}
-
-check.case public @sequential_loop_slices_length_64 {
-  %length = check.literal value(64) : i32
-  %counts_storage = check.generate.iota offset(-16) step(1) : tensor<96xi32>
-  %counts = check.tensor.view %counts_storage offset(64) : tensor<96xi32> -> tensor<64xi32>
-  %actual_storage = check.generate.fill value(-123) : tensor<672xi32>
-  %actual = check.tensor.view %actual_storage offset(64) : tensor<672xi32> -> tensor<640xi32>
-  kernel.launch @sequential_loop_slices(%counts, %actual, %length) : (tensor<64xi32>, tensor<640xi32>, i32)
-  %expected_storage = check.generate.fill value(-123) : tensor<672xi32>
-  %expected = check.tensor.view %expected_storage offset(64) : tensor<672xi32> -> tensor<640xi32>
-  kernel.launch @sequential_loop_reference(%counts, %expected, %length) : (tensor<64xi32>, tensor<640xi32>, i32)
-  check.expect.bitwise actual(%actual_storage) expected(%expected_storage) : tensor<672xi32>
-  %original_counts = check.generate.iota offset(-16) step(1) : tensor<96xi32>
-  check.expect.bitwise actual(%counts_storage) expected(%original_counts) : tensor<96xi32>
+check.scenario @sequential_loop_slice_values {
+  check.trial[65](%length: index, %entropy: check.entropy) {
+    %counts_storage = check.generate.iota offset(-16) step(1) : tensor<96xi32>
+    %counts = check.tensor.view %counts_storage offset(64) : tensor<96xi32> -> tensor<64xi32>
+    %output_storage = check.generate.fill value(-123) : tensor<672xi32>
+    %output = check.tensor.view %output_storage offset(64) : tensor<672xi32> -> tensor<640xi32>
+    check.compare<@sequential_loop_slices, @sequential_loop_slices_oracle>(%counts, %output, %length) : (tensor<64xi32>, tensor<640xi32>, index) -> () {
+      check.expect.bitwise actual(%counts_storage) expected(%counts_storage) : tensor<96xi32>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<672xi32>
+    }
+  }
   check.return
 }

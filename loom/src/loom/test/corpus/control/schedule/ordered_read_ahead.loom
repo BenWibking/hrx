@@ -46,6 +46,67 @@ template.def<@ordered_read_ahead_rows> @ordered_read_ahead_rows_impl(%input: buf
   template.return
 }
 
+// Reconstructs each lane's mirrored stripe reads in serial row order without
+// shared storage, barriers, pipelining, or unrolling.
+func.def @ordered_read_ahead_rows_oracle(%input: buffer, %output: buffer, %end: index) {
+  %bounded_end = index.assume %end [range(%end, 0, 4)] : index
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  %width = index.constant 128 : index
+  %tile = index.constant 256 : index
+  %last = index.constant 127 : index
+  %origin = index.constant 0 : offset
+  %source = buffer.view %input[%origin] : buffer -> view<1024xi32>
+  %destination = buffer.view %output[%origin] : buffer -> view<128xi32>
+  %identity = scalar.constant 0 : i32
+  scf.for %lane = [%c0 to %width step %c1] {
+    %peer = index.sub %last, %lane : index
+    %second_peer = index.add %peer, %width : index
+    %result = scf.for %row = [%c0 to %bounded_end step %c1](%sum = %identity : i32) -> (i32) {
+      %row_base = index.mul %row, %tile : index
+      %first_address = index.add %row_base, %peer : index
+      %second_address = index.add %row_base, %second_peer : index
+      %first = view.load %source[%first_address] : view<1024xi32> -> i32
+      %second = view.load %source[%second_address] : view<1024xi32> -> i32
+      %pair = scalar.addi %first, %second : i32
+      %next = scalar.addi %sum, %pair : i32
+      scf.yield %next : i32
+    }
+    view.store %result, %destination[%lane] : i32, view<128xi32>
+  }
+  func.return
+}
+
+func.def @ordered_rows_0_oracle(%input: buffer, %output: buffer) {
+  %end = index.constant 0 : index
+  func.call @ordered_read_ahead_rows_oracle(%input, %output, %end) : (buffer, buffer, index)
+  func.return
+}
+
+func.def @ordered_rows_1_oracle(%input: buffer, %output: buffer) {
+  %end = index.constant 1 : index
+  func.call @ordered_read_ahead_rows_oracle(%input, %output, %end) : (buffer, buffer, index)
+  func.return
+}
+
+func.def @ordered_rows_2_oracle(%input: buffer, %output: buffer) {
+  %end = index.constant 2 : index
+  func.call @ordered_read_ahead_rows_oracle(%input, %output, %end) : (buffer, buffer, index)
+  func.return
+}
+
+func.def @ordered_rows_3_oracle(%input: buffer, %output: buffer) {
+  %end = index.constant 3 : index
+  func.call @ordered_read_ahead_rows_oracle(%input, %output, %end) : (buffer, buffer, index)
+  func.return
+}
+
+func.def @ordered_rows_4_oracle(%input: buffer, %output: buffer) {
+  %end = index.constant 4 : index
+  func.call @ordered_read_ahead_rows_oracle(%input, %output, %end) : (buffer, buffer, index)
+  func.return
+}
+
 kernel.def @ordered_rows_0_depth_2() {
   %unit = index.constant 1 : index
   %width = index.constant 128 : index
@@ -58,12 +119,17 @@ kernel.def @ordered_rows_0_depth_2() {
   kernel.return
 }
 
-check.case @ordered_rows_0_depth_2_case {
-  %input = check.generate.iota offset(1) step(1) : tensor<1024xi32>
-  %output = check.generate.fill value(37) : tensor<128xi32>
-  %expected = check.generate.iota offset(0) step(0) : tensor<128xi32>
-  kernel.launch @ordered_rows_0_depth_2(%input, %output) : (tensor<1024xi32>, tensor<128xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<128xi32>
+check.scenario @ordered_rows_0_depth_2_values {
+  check.trial[4](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-2147483648 to 2147483647) : tensor<1024xi32>
+    %output_storage = check.generate.fill value(-123) : tensor<136xi32>
+    %output = check.tensor.view %output_storage offset(16) : tensor<136xi32> -> tensor<128xi32>
+    check.compare<@ordered_rows_0_depth_2, @ordered_rows_0_oracle>(%input, %output) : (tensor<1024xi32>, tensor<128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1024xi32>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<136xi32>
+    }
+  }
   check.return
 }
 
@@ -79,12 +145,17 @@ kernel.def @ordered_rows_1_depth_3() {
   kernel.return
 }
 
-check.case @ordered_rows_1_depth_3_case {
-  %input = check.generate.iota offset(1) step(1) : tensor<1024xi32>
-  %output = check.generate.fill value(37) : tensor<128xi32>
-  %expected = check.generate.iota offset(384) step(-2) : tensor<128xi32>
-  kernel.launch @ordered_rows_1_depth_3(%input, %output) : (tensor<1024xi32>, tensor<128xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<128xi32>
+check.scenario @ordered_rows_1_depth_3_values {
+  check.trial[4](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-2147483648 to 2147483647) : tensor<1024xi32>
+    %output_storage = check.generate.fill value(-123) : tensor<136xi32>
+    %output = check.tensor.view %output_storage offset(16) : tensor<136xi32> -> tensor<128xi32>
+    check.compare<@ordered_rows_1_depth_3, @ordered_rows_1_oracle>(%input, %output) : (tensor<1024xi32>, tensor<128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1024xi32>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<136xi32>
+    }
+  }
   check.return
 }
 
@@ -100,12 +171,17 @@ kernel.def @ordered_rows_2_depth_2() {
   kernel.return
 }
 
-check.case @ordered_rows_2_depth_2_case {
-  %input = check.generate.iota offset(1) step(1) : tensor<1024xi32>
-  %output = check.generate.fill value(37) : tensor<128xi32>
-  %expected = check.generate.iota offset(1280) step(-4) : tensor<128xi32>
-  kernel.launch @ordered_rows_2_depth_2(%input, %output) : (tensor<1024xi32>, tensor<128xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<128xi32>
+check.scenario @ordered_rows_2_depth_2_values {
+  check.trial[4](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-2147483648 to 2147483647) : tensor<1024xi32>
+    %output_storage = check.generate.fill value(-123) : tensor<136xi32>
+    %output = check.tensor.view %output_storage offset(16) : tensor<136xi32> -> tensor<128xi32>
+    check.compare<@ordered_rows_2_depth_2, @ordered_rows_2_oracle>(%input, %output) : (tensor<1024xi32>, tensor<128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1024xi32>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<136xi32>
+    }
+  }
   check.return
 }
 
@@ -121,12 +197,17 @@ kernel.def @ordered_rows_2_depth_3() {
   kernel.return
 }
 
-check.case @ordered_rows_2_depth_3_case {
-  %input = check.generate.iota offset(1) step(1) : tensor<1024xi32>
-  %output = check.generate.fill value(37) : tensor<128xi32>
-  %expected = check.generate.iota offset(1280) step(-4) : tensor<128xi32>
-  kernel.launch @ordered_rows_2_depth_3(%input, %output) : (tensor<1024xi32>, tensor<128xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<128xi32>
+check.scenario @ordered_rows_2_depth_3_values {
+  check.trial[4](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-2147483648 to 2147483647) : tensor<1024xi32>
+    %output_storage = check.generate.fill value(-123) : tensor<136xi32>
+    %output = check.tensor.view %output_storage offset(16) : tensor<136xi32> -> tensor<128xi32>
+    check.compare<@ordered_rows_2_depth_3, @ordered_rows_2_oracle>(%input, %output) : (tensor<1024xi32>, tensor<128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1024xi32>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<136xi32>
+    }
+  }
   check.return
 }
 
@@ -142,12 +223,17 @@ kernel.def @ordered_rows_3_depth_3() {
   kernel.return
 }
 
-check.case @ordered_rows_3_depth_3_case {
-  %input = check.generate.iota offset(1) step(1) : tensor<1024xi32>
-  %output = check.generate.fill value(37) : tensor<128xi32>
-  %expected = check.generate.iota offset(2688) step(-6) : tensor<128xi32>
-  kernel.launch @ordered_rows_3_depth_3(%input, %output) : (tensor<1024xi32>, tensor<128xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<128xi32>
+check.scenario @ordered_rows_3_depth_3_values {
+  check.trial[4](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-2147483648 to 2147483647) : tensor<1024xi32>
+    %output_storage = check.generate.fill value(-123) : tensor<136xi32>
+    %output = check.tensor.view %output_storage offset(16) : tensor<136xi32> -> tensor<128xi32>
+    check.compare<@ordered_rows_3_depth_3, @ordered_rows_3_oracle>(%input, %output) : (tensor<1024xi32>, tensor<128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1024xi32>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<136xi32>
+    }
+  }
   check.return
 }
 
@@ -163,12 +249,17 @@ kernel.def @ordered_rows_4_depth_1() {
   kernel.return
 }
 
-check.case @ordered_rows_4_depth_1_case {
-  %input = check.generate.iota offset(1) step(1) : tensor<1024xi32>
-  %output = check.generate.fill value(37) : tensor<128xi32>
-  %expected = check.generate.iota offset(4608) step(-8) : tensor<128xi32>
-  kernel.launch @ordered_rows_4_depth_1(%input, %output) : (tensor<1024xi32>, tensor<128xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<128xi32>
+check.scenario @ordered_rows_4_depth_1_values {
+  check.trial[4](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-2147483648 to 2147483647) : tensor<1024xi32>
+    %output_storage = check.generate.fill value(-123) : tensor<136xi32>
+    %output = check.tensor.view %output_storage offset(16) : tensor<136xi32> -> tensor<128xi32>
+    check.compare<@ordered_rows_4_depth_1, @ordered_rows_4_oracle>(%input, %output) : (tensor<1024xi32>, tensor<128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1024xi32>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<136xi32>
+    }
+  }
   check.return
 }
 
@@ -184,12 +275,17 @@ kernel.def @ordered_rows_4_depth_2() {
   kernel.return
 }
 
-check.case @ordered_rows_4_depth_2_case {
-  %input = check.generate.iota offset(1) step(1) : tensor<1024xi32>
-  %output = check.generate.fill value(37) : tensor<128xi32>
-  %expected = check.generate.iota offset(4608) step(-8) : tensor<128xi32>
-  kernel.launch @ordered_rows_4_depth_2(%input, %output) : (tensor<1024xi32>, tensor<128xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<128xi32>
+check.scenario @ordered_rows_4_depth_2_values {
+  check.trial[4](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-2147483648 to 2147483647) : tensor<1024xi32>
+    %output_storage = check.generate.fill value(-123) : tensor<136xi32>
+    %output = check.tensor.view %output_storage offset(16) : tensor<136xi32> -> tensor<128xi32>
+    check.compare<@ordered_rows_4_depth_2, @ordered_rows_4_oracle>(%input, %output) : (tensor<1024xi32>, tensor<128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1024xi32>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<136xi32>
+    }
+  }
   check.return
 }
 
@@ -205,11 +301,16 @@ kernel.def @ordered_rows_4_depth_3_unroll_2() {
   kernel.return
 }
 
-check.case @ordered_rows_4_depth_3_unroll_2_case {
-  %input = check.generate.iota offset(1) step(1) : tensor<1024xi32>
-  %output = check.generate.fill value(37) : tensor<128xi32>
-  %expected = check.generate.iota offset(4608) step(-8) : tensor<128xi32>
-  kernel.launch @ordered_rows_4_depth_3_unroll_2(%input, %output) : (tensor<1024xi32>, tensor<128xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<128xi32>
+check.scenario @ordered_rows_4_depth_3_unroll_2_values {
+  check.trial[4](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-2147483648 to 2147483647) : tensor<1024xi32>
+    %output_storage = check.generate.fill value(-123) : tensor<136xi32>
+    %output = check.tensor.view %output_storage offset(16) : tensor<136xi32> -> tensor<128xi32>
+    check.compare<@ordered_rows_4_depth_3_unroll_2, @ordered_rows_4_oracle>(%input, %output) : (tensor<1024xi32>, tensor<128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1024xi32>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<136xi32>
+    }
+  }
   check.return
 }

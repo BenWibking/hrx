@@ -566,7 +566,7 @@ _SPIRV_EXECUTION_XFAILS = {
 # These records are valid when the device supports them; unsupported devices must
 # still reject them with the exact target diagnostic.
 _SPIRV_EXECUTION_ALLOWED_FAILURES = {
-    "control/loop/carried_lane_liveness.loom:@loop_carried_lane_liveness_case": "TARGET/003",
+    "control/loop/carried_lane_liveness.loom:@loop_carried_lane_liveness_values": "TARGET/003",
     "memory/atomic/float64.loom:@atomic_f64_random_values": "TARGET/002,TARGET/003",
     "memory/atomic/float64.loom:@atomic_f64_special_values": "TARGET/002,TARGET/003",
     "memory/atomic/float64_contention.loom:@contended_atomic_f64_values": "TARGET/002,TARGET/003",
