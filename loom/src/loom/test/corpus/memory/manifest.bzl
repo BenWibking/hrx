@@ -16,6 +16,7 @@ MEMORY_CORPUS = loom_corpus_manifest(
         "address/biased_offsets.loom",
         "address/carrier_casts.loom",
         "address/carrier_loops.loom",
+        "address/generic.loom",
         "address/integer_casts.loom",
         "address/integer_terms.loom",
         "address/narrow.loom",
@@ -47,7 +48,6 @@ MEMORY_CORPUS = loom_corpus_manifest(
         "view/selection.loom",
     ],
     legacy_case_srcs = [
-        "address/generic.loom",
         "atomic/add_f32_subnormals.loom",
         "atomic/float_bitwise.loom",
         "atomic/float_extrema.loom",

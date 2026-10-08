@@ -111,44 +111,97 @@ kernel.def @generic_narrow_half_store() {
   kernel.return
 }
 
-check.case public @generic_memory_values {
-  %input = check.generate.iota offset(4294967296) step(3) : tensor<66xi64>
-  %output = check.generate.fill value(-1) : tensor<66xi64>
-  kernel.launch @generic_copy_i64(%input, %output) : (tensor<66xi64>, tensor<66xi64>)
-  %actual = check.tensor.view %output offset(8) : tensor<66xi64> -> tensor<64xi64>
-  %expected = check.tensor.view %input offset(16) : tensor<66xi64> -> tensor<64xi64>
-  check.expect.bitwise actual(%actual) expected(%expected) : tensor<64xi64>
-  %prefix = check.tensor.view %output offset(0) : tensor<66xi64> -> tensor<1xi64>
-  %suffix = check.tensor.view %output offset(520) : tensor<66xi64> -> tensor<1xi64>
-  %untouched = check.generate.fill value(-1) : tensor<1xi64>
-  check.expect.bitwise actual(%prefix) expected(%untouched) : tensor<1xi64>
-  check.expect.bitwise actual(%suffix) expected(%untouched) : tensor<1xi64>
+func.def @generic_copy_i64_oracle(%input: buffer, %output: buffer) {
+  %source_origin = index.constant 16 : offset
+  %target_origin = index.constant 8 : offset
+  %source_view = buffer.view %input[%source_origin] : buffer -> view<64xi64>
+  %target_view = buffer.view %output[%target_origin] : buffer -> view<64xi64>
+  %begin = index.constant 0 : index
+  %end = index.constant 64 : index
+  %step = index.constant 1 : index
+  scf.for %lane = [%begin to %end step %step] {
+    %value = view.load %source_view[%lane] : view<64xi64> -> i64
+    view.store %value, %target_view[%lane] : i64, view<64xi64>
+  }
+  func.return
+}
+
+check.scenario @generic_memory_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(4294967296) step(3) : tensor<66xi64>
+    %output = check.generate.fill value(-1) : tensor<66xi64>
+    check.compare<@generic_copy_i64, @generic_copy_i64_oracle>(%input, %output) : (tensor<66xi64>, tensor<66xi64>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<66xi64>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<66xi64>
+    }
+  }
   check.return
 }
 
-check.case public @generic_vector_values {
-  %input = check.generate.iota offset(-19088743) step(123) : tensor<4xi32>
-  %output = check.generate.fill value(0) : tensor<4xi32>
-  kernel.launch @generic_copy_vector(%input, %output) : (tensor<4xi32>, tensor<4xi32>)
-  check.expect.bitwise actual(%output) expected(%input) : tensor<4xi32>
+func.def @generic_copy_vector_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %source_view = buffer.view %input[%origin] : buffer -> view<4xi32>
+  %target_view = buffer.view %output[%origin] : buffer -> view<4xi32>
+  %begin = index.constant 0 : index
+  %end = index.constant 4 : index
+  %step = index.constant 1 : index
+  scf.for %lane = [%begin to %end step %step] {
+    %value = view.load %source_view[%lane] : view<4xi32> -> i32
+    view.store %value, %target_view[%lane] : i32, view<4xi32>
+  }
+  func.return
+}
+
+check.scenario @generic_vector_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-19088743) step(123) : tensor<4xi32>
+    %output = check.generate.fill value(0) : tensor<4xi32>
+    check.compare<@generic_copy_vector, @generic_copy_vector_oracle>(%input, %output) : (tensor<4xi32>, tensor<4xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<4xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<4xi32>
+    }
+  }
   check.return
 }
 
-check.case public @generic_half_values {
-  %input = check.generate.fill value(-3.25) : tensor<32769xf16>
-  %output = check.generate.fill value(0.0) : tensor<1xf16>
-  kernel.launch @generic_copy_half(%input, %output) : (tensor<32769xf16>, tensor<1xf16>)
-  %expected = check.generate.fill value(-3.25) : tensor<1xf16>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<1xf16>
+func.def @generic_copy_half_oracle(%input: buffer, %output: buffer) {
+  %source_origin = index.constant 65536 : offset
+  %target_origin = index.constant 0 : offset
+  %source_view = buffer.view %input[%source_origin] : buffer -> view<1xf16>
+  %target_view = buffer.view %output[%target_origin] : buffer -> view<1xf16>
+  %value = view.load %source_view[0] : view<1xf16> -> f16
+  view.store %value, %target_view[0] : f16, view<1xf16>
+  func.return
+}
+
+check.scenario @generic_half_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(-3.25) : tensor<32769xf16>
+    %output = check.generate.fill value(0.0) : tensor<1xf16>
+    check.compare<@generic_copy_half, @generic_copy_half_oracle>(%input, %output) : (tensor<32769xf16>, tensor<1xf16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32769xf16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1xf16>
+    }
+  }
   check.return
 }
 
-check.case public @generic_narrow_half_values {
-  %input = check.literal value(-3.25) : f32
-  %output = check.generate.fill value(0.0) : tensor<1xf16>
-  kernel.launch @generic_narrow_half_store(%output, %input) : (tensor<1xf16>, f32)
-  %expected = check.generate.fill value(-3.25) : tensor<1xf16>
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<1xf16>
+func.def @generic_narrow_half_store_oracle(%output: buffer, %input: f32) {
+  %origin = index.constant 0 : offset
+  %target_view = buffer.view %output[%origin] : buffer -> view<1xf16>
+  %half = scalar.fptrunc %input : f32 to f16
+  view.store %half, %target_view[0] : f16, view<1xf16>
+  func.return
+}
+
+check.scenario @generic_narrow_half_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.literal value(-3.25) : f32
+    %output = check.generate.fill value(0.0) : tensor<1xf16>
+    check.compare<@generic_narrow_half_store, @generic_narrow_half_store_oracle>(%output, %input) : (tensor<1xf16>, f32) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1xf16>
+    }
+  }
   check.return
 }
 
@@ -215,60 +268,115 @@ kernel.def @generic_workgroup_publication() {
   kernel.return
 }
 
-check.case public @generic_workgroup_publication_values {
-  %signal = check.generate.fill value(0) : tensor<1xi64>
-  %payload = check.generate.fill value(-1) : tensor<1xi32>
-  %output = check.generate.fill value(-1) : tensor<32xi32>
-  kernel.launch @generic_workgroup_publication(%signal, %payload, %output) : (tensor<1xi64>, tensor<1xi32>, tensor<32xi32>)
-  %global_values = check.tensor.view %output offset(0) : tensor<32xi32> -> tensor<16xi32>
-  %local_values = check.tensor.view %output offset(64) : tensor<32xi32> -> tensor<16xi32>
-  %expected = check.generate.iota offset(65536) step(1) : tensor<16xi32>
-  check.expect.bitwise actual(%global_values) expected(%expected) : tensor<16xi32>
-  check.expect.bitwise actual(%local_values) expected(%expected) : tensor<16xi32>
+func.def @generic_workgroup_publication_oracle(%signal: buffer, %payload: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %flag = buffer.view %signal[%origin] : buffer -> view<1xi64>
+  %global = buffer.view %payload[%origin] : buffer -> view<1xi32>
+  %results = buffer.view %output[%origin] : buffer -> view<32xi32>
+  %bias = scalar.constant 65536 : i32
+  %begin = index.constant 0 : index
+  %end = index.constant 16 : index
+  %step = index.constant 1 : index
+  scf.for %iteration = [%begin to %end step %step] {
+    %ordinal = index.cast %iteration : index to i32
+    %value = scalar.addi %ordinal, %bias : i32
+    %local_index = index.add %iteration, %end : index
+    view.store %value, %global[0] : i32, view<1xi32>
+    view.store %value, %results[%iteration] : i32, view<32xi32>
+    view.store %value, %results[%local_index] : i32, view<32xi32>
+  }
+  %acknowledged = scalar.constant 0 : i64
+  view.store %acknowledged, %flag[0] : i64, view<1xi64>
+  func.return
+}
+
+check.scenario @generic_workgroup_publication_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %signal = check.generate.fill value(0) : tensor<1xi64>
+    %payload = check.generate.fill value(-1) : tensor<1xi32>
+    %output = check.generate.fill value(-1) : tensor<32xi32>
+    check.compare<@generic_workgroup_publication, @generic_workgroup_publication_oracle>(%signal, %payload, %output) : (tensor<1xi64>, tensor<1xi32>, tensor<32xi32>) -> () {
+      check.expect.bitwise actual(%signal) expected(%signal) : tensor<1xi64>
+      check.expect.bitwise actual(%payload) expected(%payload) : tensor<1xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<32xi32>
+    }
+  }
   check.return
 }
 
-check.case public @generic_atomic_indexed_values {
-  %storage = check.generate.fill value(10) : tensor<16450xi32>
-  %output = check.generate.fill value(-1) : tensor<128xi32>
-  %start = check.literal value(1) : i32
-  kernel.launch @generic_atomic_indexed_i32(%storage, %output, %start) : (tensor<16450xi32>, tensor<128xi32>, i32)
-  %add_values = check.tensor.view %output offset(0) : tensor<128xi32> -> tensor<64xi32>
-  %cas_values = check.tensor.view %output offset(256) : tensor<128xi32> -> tensor<64xi32>
-  %expected_add = check.generate.fill value(13) : tensor<64xi32>
-  %expected_cas = check.generate.fill value(18) : tensor<64xi32>
-  check.expect.bitwise actual(%add_values) expected(%expected_add) : tensor<64xi32>
-  check.expect.bitwise actual(%cas_values) expected(%expected_cas) : tensor<64xi32>
-  %updated = check.tensor.view %storage offset(65540) : tensor<16450xi32> -> tensor<64xi32>
-  %expected_updated = check.generate.fill value(21) : tensor<64xi32>
-  check.expect.bitwise actual(%updated) expected(%expected_updated) : tensor<64xi32>
-  %prefix = check.tensor.view %storage offset(65536) : tensor<16450xi32> -> tensor<1xi32>
-  %suffix = check.tensor.view %storage offset(65796) : tensor<16450xi32> -> tensor<1xi32>
-  %untouched = check.generate.fill value(10) : tensor<1xi32>
-  check.expect.bitwise actual(%prefix) expected(%untouched) : tensor<1xi32>
-  check.expect.bitwise actual(%suffix) expected(%untouched) : tensor<1xi32>
+func.def @generic_atomic_indexed_i32_oracle(%storage: buffer, %output: buffer, %start: i32) {
+  %origin = index.constant 65536 : offset
+  %result_origin = index.constant 0 : offset
+  %words = buffer.view %storage[%origin] : buffer -> view<66xi32>
+  %results = buffer.view %output[%result_origin] : buffer -> view<128xi32>
+  %uniform_input = index.cast %start : i32 to index
+  %uniform = index.assume %uniform_input [range(%uniform_input, 0, 2)] : index
+  %half = index.constant 64 : index
+  %contribution = scalar.constant 3 : i32
+  %increment = scalar.constant 5 : i32
+  %expected = scalar.constant 18 : i32
+  %replacement = scalar.constant 21 : i32
+  %begin = index.constant 0 : index
+  %end = index.constant 64 : index
+  %step = index.constant 1 : index
+  scf.for %lane = [%begin to %end step %step] {
+    %position = index.add %uniform, %lane : index
+    %second = index.add %lane, %half : index
+    %current = view.load %words[%position] : view<66xi32> -> i32
+    %old_add = scalar.addi %current, %contribution : i32
+    %old_cas = scalar.addi %old_add, %increment : i32
+    %matches = scalar.cmpi eq, %old_cas, %expected : i32
+    %updated = scf.select %matches, %replacement, %old_cas : i32
+    view.store %updated, %words[%position] : i32, view<66xi32>
+    view.store %old_add, %results[%lane] : i32, view<128xi32>
+    view.store %old_cas, %results[%second] : i32, view<128xi32>
+  }
+  func.return
+}
+
+check.scenario @generic_atomic_indexed_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %storage = check.generate.fill value(10) : tensor<16450xi32>
+    %output = check.generate.fill value(-1) : tensor<128xi32>
+    %start = check.literal value(1) : i32
+    check.compare<@generic_atomic_indexed_i32, @generic_atomic_indexed_i32_oracle>(%storage, %output, %start) : (tensor<16450xi32>, tensor<128xi32>, i32) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<16450xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<128xi32>
+    }
+  }
   check.return
 }
 
-check.case public @generic_atomic_uniform_values {
-  %storage = check.generate.fill value(10) : tensor<10xi64>
-  %output = check.generate.fill value(-1) : tensor<2xi64>
-  %position = check.literal value(3) : i32
-  kernel.launch @generic_atomic_uniform_i64(%storage, %output, %position) : (tensor<10xi64>, tensor<2xi64>, i32)
-  %add_value = check.tensor.view %output offset(0) : tensor<2xi64> -> tensor<1xi64>
-  %cas_value = check.tensor.view %output offset(8) : tensor<2xi64> -> tensor<1xi64>
-  %expected_add = check.generate.fill value(4294967306) : tensor<1xi64>
-  %expected_cas = check.generate.fill value(8589934602) : tensor<1xi64>
-  check.expect.bitwise actual(%add_value) expected(%expected_add) : tensor<1xi64>
-  check.expect.bitwise actual(%cas_value) expected(%expected_cas) : tensor<1xi64>
-  %updated = check.tensor.view %storage offset(40) : tensor<10xi64> -> tensor<1xi64>
-  %expected_updated = check.generate.fill value(99) : tensor<1xi64>
-  check.expect.bitwise actual(%updated) expected(%expected_updated) : tensor<1xi64>
-  %prefix = check.tensor.view %storage offset(0) : tensor<10xi64> -> tensor<5xi64>
-  %suffix = check.tensor.view %storage offset(48) : tensor<10xi64> -> tensor<4xi64>
-  %untouched_prefix = check.generate.fill value(10) : tensor<5xi64>
-  %untouched_suffix = check.generate.fill value(10) : tensor<4xi64>
-  check.expect.bitwise actual(%prefix) expected(%untouched_prefix) : tensor<5xi64>
-  check.expect.bitwise actual(%suffix) expected(%untouched_suffix) : tensor<4xi64>
+func.def @generic_atomic_uniform_i64_oracle(%storage: buffer, %output: buffer, %position: i32) {
+  %origin = index.constant 16 : offset
+  %result_origin = index.constant 0 : offset
+  %words = buffer.view %storage[%origin] : buffer -> view<8xi64>
+  %results = buffer.view %output[%result_origin] : buffer -> view<2xi64>
+  %index_input = index.cast %position : i32 to index
+  %index = index.assume %index_input [range(%index_input, 0, 7)] : index
+  %increment = scalar.constant 4294967296 : i64
+  %expected = scalar.constant 8589934602 : i64
+  %replacement = scalar.constant 99 : i64
+  %current = view.load %words[%index] : view<8xi64> -> i64
+  %old_add = scalar.addi %current, %increment : i64
+  %old_cas = scalar.addi %old_add, %increment : i64
+  %matches = scalar.cmpi eq, %old_cas, %expected : i64
+  %updated = scf.select %matches, %replacement, %old_cas : i64
+  view.store %updated, %words[%index] : i64, view<8xi64>
+  view.store %old_add, %results[0] : i64, view<2xi64>
+  view.store %old_cas, %results[1] : i64, view<2xi64>
+  func.return
+}
+
+check.scenario @generic_atomic_uniform_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %storage = check.generate.fill value(10) : tensor<10xi64>
+    %output = check.generate.fill value(-1) : tensor<2xi64>
+    %position = check.literal value(3) : i32
+    check.compare<@generic_atomic_uniform_i64, @generic_atomic_uniform_i64_oracle>(%storage, %output, %position) : (tensor<10xi64>, tensor<2xi64>, i32) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<10xi64>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi64>
+    }
+  }
   check.return
 }
