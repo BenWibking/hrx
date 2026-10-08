@@ -51,6 +51,8 @@ typedef struct loom_low_allocation_build_state_t {
   loom_low_placement_preference_index_t preferences;
   // Mutable per-allocation-unit live end points.
   loom_low_allocation_unit_liveness_t unit_liveness;
+  // Structural content identity shared by all assignment attempts.
+  loom_low_allocation_storage_identity_t storage_identity;
   // Completed interval assignment, spill plan, and remark rows.
   loom_low_allocation_interval_assignment_result_t interval_assignment;
   // Mutable low.copy decision plan being built.
@@ -153,7 +155,7 @@ static iree_status_t loom_low_allocation_repair_fragmentation(
   if (iree_status_is_ok(status)) {
     status = loom_low_allocation_storage_lease_state_initialize(
         &state->options->storage_leases, state->module, state->function_op,
-        value_domain, &state->liveness,
+        value_domain, &state->liveness, &state->storage_identity,
         state->unit_liveness.storage_segments.entries, &scratch_arena,
         &scratch_storage_leases);
   }
@@ -518,6 +520,11 @@ iree_status_t loom_low_allocate_function(
         &state.unit_liveness, &state.liveness, &state.placement, arena);
   }
   if (iree_status_is_ok(status) && state.target_constraints.error_count == 0) {
+    status = loom_low_allocation_storage_identity_initialize(
+        &options->storage_leases, &state.placement, &state.unit_liveness,
+        &decision_arena, &state.storage_identity);
+  }
+  if (iree_status_is_ok(status) && state.target_constraints.error_count == 0) {
     loom_low_allocation_unit_liveness_propagate_storage_relations(
         &state.unit_liveness, &state.placement);
   }
@@ -544,7 +551,7 @@ iree_status_t loom_low_allocate_function(
   if (iree_status_is_ok(status) && state.target_constraints.error_count == 0) {
     status = loom_low_allocation_storage_lease_state_initialize(
         &options->storage_leases, model->module, model->function_op,
-        value_domain, &state.liveness,
+        value_domain, &state.liveness, &state.storage_identity,
         state.unit_liveness.storage_segments.entries, arena,
         &state.storage_leases);
   }

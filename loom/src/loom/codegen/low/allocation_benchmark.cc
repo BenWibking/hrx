@@ -17,6 +17,7 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "benchmark/benchmark.h"
@@ -117,6 +118,7 @@ enum class Shape {
   kFutureFixed,
   kReservedPrefix,
   kLeasedPrefix,
+  kLeasedAliasTree,
 };
 enum class Phase {
   kModel,
@@ -265,6 +267,46 @@ std::string MakeSource(uint32_t chain_length, uint32_t component_count,
                 std::to_string(i) + "\n";
     }
     return source + "  return %result" + std::to_string(count - 1u) + "\n}\n";
+  }
+  if (shape == Shape::kLeasedAliasTree) {
+    Require(width == 1, "Leased-alias shape requires scalar registers");
+    const uint32_t count = chain_length * component_count;
+    Require(count >= 2 && (count & (count - 1u)) == 0,
+            "Leased-alias shape requires a power-of-two leaf count");
+    std::string source =
+        "test.target<low_core> @target\n"
+        "low.func.def schedule(locked) target<test.low.core>(@target) "
+        "@kernel() -> (reg<test.i32 x" +
+        std::to_string(count) + ">) asm {\n";
+    std::vector<std::string> values;
+    values.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+      const std::string value = "%leased" + std::to_string(i);
+      source +=
+          "  " + value + " = test.const.issued.i32 " + std::to_string(i) + "\n";
+      source += "  test.leased.consume.i32 " + value + "\n";
+      values.push_back(value);
+    }
+    uint32_t level = 0;
+    uint32_t result_width = 1;
+    while (values.size() > 1) {
+      std::vector<std::string> next_values;
+      next_values.reserve(values.size() / 2);
+      for (uint32_t i = 0; i < values.size(); i += 2) {
+        const std::string result =
+            "%alias" + std::to_string(level) + "_" + std::to_string(i / 2);
+        source += "  " + result + " = concat(" + values[i] + ", " +
+                  values[i + 1] + ") : (reg<test.i32 x" +
+                  std::to_string(result_width) + ">, reg<test.i32 x" +
+                  std::to_string(result_width) + ">) -> reg<test.i32 x" +
+                  std::to_string(result_width * 2u) + ">\n";
+        next_values.push_back(result);
+      }
+      values = std::move(next_values);
+      result_width *= 2u;
+      ++level;
+    }
+    return source + "  return " + values.front() + "\n}\n";
   }
   if (shape == Shape::kLoopRelocation) {
     std::string source =
@@ -635,7 +677,7 @@ class AllocationBenchmark {
     if (phase_ != Phase::kModel) {
       InitializeModel(&base_arena_, &model_);
     }
-    if (shape == Shape::kLeasedPrefix) {
+    if (shape == Shape::kLeasedPrefix || shape == Shape::kLeasedAliasTree) {
       loom_low_schedule_options_t schedule_options = {};
       schedule_options.flags =
           LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES;
@@ -955,7 +997,8 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
   if (phase == Phase::kAllocation) {
     const uint32_t expected_copy_count =
         shape == Shape::kTied || shape == Shape::kLoopRelocation ||
-                shape == Shape::kMoveScratch || shape == Shape::kLeasedPrefix
+                shape == Shape::kMoveScratch || shape == Shape::kLeasedPrefix ||
+                shape == Shape::kLeasedAliasTree
             ? 0
             : chain_length * component_count *
                   (shape == Shape::kBranch ? 2 : 1);
@@ -978,6 +1021,15 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
               "Leased prefix requested an unexpected early release");
       Require(result.assigned_target_id_extent == count + 1u,
               "Leased prefix did not retain its physical locations");
+    }
+    if (shape == Shape::kLeasedAliasTree) {
+      const uint64_t count = chain_length * component_count;
+      Require(result.storage_lease_count == count,
+              "Leased-alias storage leases were not materialized");
+      Require(result.storage_release_action_count == 0,
+              "Identity aliases requested artificial early releases");
+      Require(result.assigned_target_id_extent == count,
+              "Leased-alias tree did not retain its leaf storage");
     }
   }
   state.counters["value_count"] = result.value_count;
@@ -1009,7 +1061,8 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
   for (auto shape :
        {Shape::kLinear, Shape::kLoop, Shape::kLoopRelocation,
         Shape::kMoveScratch, Shape::kBranch, Shape::kTied, Shape::kFanout,
-        Shape::kFutureFixed, Shape::kReservedPrefix, Shape::kLeasedPrefix}) {
+        Shape::kFutureFixed, Shape::kReservedPrefix, Shape::kLeasedPrefix,
+        Shape::kLeasedAliasTree}) {
     for (auto phase : {Phase::kModel, Phase::kLiveness, Phase::kPlacement,
                        Phase::kUnitLiveness, Phase::kAllocation}) {
       if (shape == Shape::kLoopRelocation && phase != Phase::kAllocation) {
@@ -1024,7 +1077,8 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
       if (shape == Shape::kReservedPrefix && phase != Phase::kAllocation) {
         continue;
       }
-      if (shape == Shape::kLeasedPrefix && phase != Phase::kAllocation) {
+      if ((shape == Shape::kLeasedPrefix || shape == Shape::kLeasedAliasTree) &&
+          phase != Phase::kAllocation) {
         continue;
       }
       const std::string name =
@@ -1038,7 +1092,8 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
                       : shape == Shape::kFanout         ? "fanout/"
                       : shape == Shape::kFutureFixed    ? "future_fixed/"
                       : shape == Shape::kReservedPrefix ? "reserved_prefix/"
-                                                        : "leased_prefix/") +
+                      : shape == Shape::kLeasedPrefix ? "leased_prefix/"
+                                                      : "leased_alias_tree/") +
           (phase == Phase::kModel          ? "model"
            : phase == Phase::kLiveness     ? "liveness"
            : phase == Phase::kPlacement    ? "placement"
@@ -1075,7 +1130,7 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
         }
         continue;
       }
-      if (shape == Shape::kLeasedPrefix) {
+      if (shape == Shape::kLeasedPrefix || shape == Shape::kLeasedAliasTree) {
         for (int64_t count : {32, 64, 128, 256, 512, 1024, 2048}) {
           registration->Args({count, 1, 1});
         }

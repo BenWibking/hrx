@@ -610,10 +610,12 @@ loom_cc_library(
     ::storage
     ::storage_lease_index
     ::table
+    ::unit_liveness
     iree::base
     iree::base::internal::arena
     loom::analysis::liveness
     loom::codegen::low::descriptors
+    loom::codegen::low::placement
     loom::codegen::low::storage_lease
     loom::ir
   PUBLIC
@@ -639,9 +641,11 @@ loom_cc_test(
   DEPS
     ::storage_lease
     ::storage_lease_index
+    ::unit_liveness
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::codegen::low::placement
     loom::ir
 )
 
