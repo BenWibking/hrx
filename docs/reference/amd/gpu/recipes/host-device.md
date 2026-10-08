@@ -204,23 +204,15 @@ directed handoffs into a reusable slot; the [pipeline
 recipe](../../interop/pipelines.md#resident-execution-and-slot-generations)
 also covers generation arithmetic, multiple readers and native drain.
 
-The shader acquire is more than a fresh control load. LLVM's GFX10/GFX11
-GLOBAL atomic acquire-load mapping at AGENT/SYSTEM scope uses `glc=1`
-(`dlc=1` additionally on GFX10), waits for the load with `s_waitcnt vmcnt(0)`,
-then invalidates GL1 and GL0 before subsequent payload loads. This sequence
-assumes the target's admitted atomic access and L2 coherence or bypass route.
-Invalidation after a polling loop cannot repair a loop that never observes
-the control update. [Acquire sequence][shader-acquire]
-[Hierarchy and mapping premises][shader-model]
-
-The ordinary scalar-load path assumes its data remains unchanged during the
-dispatch. Lane-uniform addresses do not give mutable control or payload that
-property. Immutable kernarg pointer values can point to separately synchronized
-mutable data. A publishing wave's wait counts also cover its own accesses;
-other contributing waves or workgroups require a join. LLVM's release sequence
-orders preceding loads as well as stores, which matters when the publication
-returns credit for completed reads. [Scalar-memory premise][shader-model]
-[Release sequence][shader-release]
+The [shader memory chapter](../shader-memory.md) gives the per-family
+release/acquire instructions and their native mapping assumptions. A fresh
+control load and payload acquisition are separate obligations; invalidation
+after a polling loop cannot repair a loop that never observes the update.
+Its [scalar-memory discussion](../shader-memory.md#scalar-loads-and-per-access-cache-policy)
+also explains why a uniform address does not make mutable resident data
+dispatch-immutable. Returning input credit orders completed reads as well as
+writes, and a publisher joins all contributing waves before its outward
+release.
 
 ## CPU publication and device cache operations
 
@@ -265,6 +257,190 @@ trailer. Their [command-buffer completion](../pm4/command-buffers.md) and
 [cache protocols](../pm4/cache.md) remain part of the flow even when payload
 and control use the same physical allocation kind.
 
+## Publishing prior stream work to another executor
+
+A runtime stream can span a compute queue, a transfer engine and host-serviced
+memory operations. A dependency passed between those executors must cover the
+work being handed off. Reading the runtime's most recent signal is insufficient
+when earlier dispatches have not yet been attached to that signal. The
+operation producing completion also supplies the release scope needed by the
+payload's next observer.
+
+CLR's SVM submission path makes this boundary explicit. Before obtaining the
+wait list for prefetch or discard, it calls
+`releaseGpuMemoryFence(kSkipCpuWait)`. Pending dispatches, dirty fence state or
+external dependencies cause that helper to submit a BARRIER_AND using SYSTEM
+acquire and release scopes. The barrier receives a completion signal from the
+queue tracker. The helper skips its final CPU completion wait; it still emits
+the device dependency when needed. [CLR barrier header][clr-barrier-header]
+[Prior-work publication][clr-release-fence] [Signal attachment][clr-barrier]
+
+`WaitingSignal(HwQueueEngine::Unknown)` then obtains dependencies for the
+native operation. It considers the tracked current signal and external
+signals, appending positive-valued tracked dependencies or waiting for them on
+the CPU according to a runtime setting. Separately added raw dependencies are
+appended without that filter. Consequently, the skip-wait argument above is
+not a promise that every surrounding path is host-nonblocking. The native
+SVM APIs receive dependency signals, ranges and completion storage, but no
+HIP stream from which they could reconstruct missing dispatch dependencies.
+[Wait-list construction][clr-wait-list] [Prefetch contract][svm-prefetch]
+[Discard contract][svm-discard]
+
+| Operation | Dependency and completion flow at the cited CLR revision |
+| --- | --- |
+| One SVM prefetch | Under the HMM support predicate, publish prior work, obtain the wait list, initialize completion to 1 and pass both to `hsa_amd_svm_prefetch_async`. |
+| A batch of SVM prefetches | Publish prior work once, give each prefetch the same wait list and initialize the shared completion count to the number of requests. Each accepted prefetch owns one completion decrement. |
+| A batch of SVM discards | Publish prior work, pass the wait list to one `hsa_amd_svm_discard_batch_async` call and initialize its completion to 1 for the whole batch. |
+
+[Prefetch callers][clr-prefetch] · [Discard caller][clr-discard]
+
+ROCr's prefetch owner waits for each dependency to equal zero before invoking
+the native SVM operation; its asynchronous handler supplies the completion
+decrement. Its discard owner separately joins the supplied dependencies and
+decrements completion once after visiting the ranges. Neither owner can order
+a dispatch omitted from those dependencies. Signal storage and terminal values
+remain stable through all their waiters, including consumers that have not yet
+reached the dependency. [Prefetch owner][svm-prefetch-owner]
+[Discard owner][svm-discard-owner] [Signal lifetime](../aql/barriers.md)
+
+These are memory-management operations with their own admission rules. The
+discard API requires XNACK and reserved, unregistered SVM address ranges; it
+does not accept every GPU buffer. The callers request SYSTEM scope for
+subsequent work, independently of the preceding-work dependency. This is CLR
+runtime policy at `105dd4ff35798f95646353bc08f6c885416ae17e`, not an HDP flush
+or an extension of SVM operations to other allocation classes.
+[Discard admission][svm-discard-admission] [Range checks][svm-discard-ranges]
+[Following-work scope][clr-prefetch]
+
+### Prefetch completion and page residency
+
+SVM prefetch in this ROCr path is a host-serviced memory-management operation.
+The accepted callback waits for its dependencies, requests
+`HSA_SVM_ATTR_PREFETCH_LOC` through the native KFD ioctl, and then updates its
+completion signal. The callback owns a range and destination node, not a
+user-submitted SDMA packet. Linux's migration implementation submits its own
+copies and waits for their final DMA fence before finalizing the migrated
+pages. API-level asynchrony therefore does not establish a device-only
+execution path. [ROCr callback][svm-prefetch-owner]
+[Native request][svm-native-request] [Migration copy wait][svm-copy-wait]
+[Page finalization][svm-page-finalization]
+
+Native request success and physical residency also differ. In Linux
+`fe2ec83746e501645709761605c2464a44fd2929`,
+`svm_range_best_prefetch_location` can select CPU memory for a GPU request.
+Its conditions include `apu_prefer_gtt` and access by GPUs outside the
+destination's XGMI hive. With XNACK enabled, that topology check uses the
+ACCESS_IN_PLACE set; with XNACK disabled, it uses both ACCESS and
+ACCESS_IN_PLACE. This is a placement decision for that range and process,
+not a GPU-architecture-wide prohibition. [Placement selection][svm-placement]
+
+The migration code permits only a subset of a range's pages to migrate.
+`svm_range_trigger_migration` also returns zero after its GPU-directed
+migration attempt even when that attempt returns an error; it records the
+outcome separately in `migrated`. Its CPU-directed branch propagates the
+migration result. The enclosing attribute operation can report later mapping
+errors after earlier changes have taken effect. Its source explicitly
+describes that state as partially completed, without a guaranteed rollback.
+Consequently, a successful request is neither proof of whole-range GPU
+residency nor a promise that residency remains fixed for subsequent work.
+[Partial page migration][svm-page-finalization]
+[Migration result handling][svm-migration-result]
+[Attribute update and mapping][svm-attribute-update]
+[Later eviction][svm-eviction]
+
+Acceptance, callback completion and native success also have distinct
+meanings. The prefetch header specifies a negative completion value on an
+asynchronous error, while the cited callback asserts native success and then
+performs its normal decrement. With assertions disabled, that path does not
+translate a failing native result into the declared negative value. The
+discard callback similarly warns on native-operation errors and still
+decrements completion. This source discrepancy limits the error information
+carried by those counters; the prior-work dependency does not repair it.
+[Prefetch result contract][svm-prefetch] [Native result handling][svm-prefetch-owner]
+[Discard result handling][svm-discard-owner]
+
+The two ROCr discard operations have different contents-preservation
+semantics. `hsa_amd_svm_discard_batch_async` optionally requests CPU prefetch
+and then uses `MADV_FREE`. The combined
+`hsa_amd_svm_discard_and_prefetch_batch_async` uses `MADV_DONTNEED` before
+requesting GPU prefetch. Each owner performs one completion decrement for its
+entire range list; the combined owner also only warns on native errors.
+Neither is a preserving copy operation, and neither counter reports a
+per-range outcome. [Discard owner][svm-discard-owner]
+[Combined discard and prefetch][svm-discard-prefetch-owner]
+
+### Accepted work and signal reuse
+
+HIP's `hipMemPrefetchBatchAsync` validates and copies the range, size and
+destination arrays into an owned command before enqueueing it. CLR later
+submits those ranges as independent ROCr prefetch calls sharing a completion
+signal. Up-front argument validation does not make that sequence one atomic
+native admission: each prefetch constructs its own asynchronous operation,
+and resource allocation remains fallible. [HIP admission][hip-prefetch-batch]
+[Command storage][clr-prefetch-command] [CLR submissions][clr-prefetch]
+[ROCr operation storage][svm-operation-storage]
+[Resource failure translation][svm-api-errors]
+
+An accepted prefetch keeps its completion update until its callback runs.
+Changing the completion value does not cancel that callback: asynchronous
+registration monitors the dependency signal and retains that monitored
+signal, while the operation separately stores its completion handle. The
+callback receives no HIP batch state through which it could observe a later
+member's submission failure. [Operation storage][svm-operation-storage]
+[Dependency registration][svm-handler-registration]
+[Callback retirement][svm-handler-retirement]
+
+At ROCm systems `105dd4ff35798f95646353bc08f6c885416ae17e`, CLR responds to
+a prefetch submission error with `ResetCurrentSignal`, which writes zero to
+the shared completion and moves its tracker back. That branch supplies no
+join for earlier accepted members. If such members remain outstanding,
+the written zero cannot establish their completion. The signal pool also has
+object-reference and reuse checks. Those checks do not turn that store into
+cancellation or prove the end of the accepted callbacks.
+This is a discrepancy in the cited owner's failure path, not a hardware
+retirement rule. [Batch submission failure][clr-prefetch]
+[Tracker reset][clr-signal-reset] [Signal reuse checks][clr-signal-reuse]
+
+A composed owner therefore needs distinct evidence for submission acceptance,
+operation outcome and the final use of borrowed storage. Rejecting one member
+leaves earlier accepted members' obligations intact. A terminal error value
+can report failure without proving that other members sharing the signal
+have stopped using it. The completion storage remains live through its last
+writer and waiter, and the referenced ranges remain live through their final
+native and device users. [Prefetch result contract][svm-prefetch]
+[Accepted callback][svm-prefetch-owner]
+[Signal lifetime](../aql/barriers.md#native-signal-storage-and-last-consumers)
+
+### A visible control store still needs its producing payload
+
+The same distinction appears in CLR's batch-memory blit. A control store can
+be visible to another agent while an earlier dispatch's payload remains in
+the producer's cache. `submitBatchMemoryOperation` requests SYSTEM scope
+before launching the blit, so ordering covers the preceding stream work as
+well as the control operation. [Batch caller][clr-batch-memory]
+
+`addSystemScope()` marks the next packet for SYSTEM scope and invalidates the
+runtime's remembered fence state. `adjustHeader()` consumes that request and
+sets both acquire and release scopes on the dispatch header; the invalid
+remembered state prevents its consecutive-SYSTEM optimization from removing
+this transition. The ordinary AQL submission path applies that header before
+publishing the packet. [Scope request][clr-scope-request]
+[Header transformation][clr-scope-header] [Submission owner][clr-submit]
+
+The batch blit uses one work-item, which walks the parameter array in order.
+That ordering is local to the batch; it does not extend a store's shader
+memory scope to earlier dispatches by itself. Parameter storage comes from
+the ordinary kernarg pool or the graph's retained kernarg storage when
+capturing packets. The control address and any payload remain borrowed until
+their independent consumers finish. [Blit construction][clr-batch-blit]
+[Sequential kernel][clr-batch-kernel]
+
+For a native equivalent, the producer join and outward payload release
+precede publication of the ready value, and the consumer's wait precedes
+payload acquisition. The exact packet or shader sequence comes from the
+participating memory paths. [Shader release and acquire](../shader-memory.md#global-release-and-acquire-sequences)
+[PM4 handoff](../pm4/handoff.md) [Inbound RDMA visibility](../../interop/rdma.md)
+
 ## Mapping is not an execution handoff
 
 PAL permits an allocation to remain CPU-mapped while GPU command buffers
@@ -305,6 +481,12 @@ system DRAM. Linux's native aperture-access helper orders its CPU writes
 before an HDP flush; for reads it invalidates HDP before reading where that
 operation applies. HDP maintenance covers this host path and does not replace
 shader-cache release/acquire. [Aperture access][aperture]
+
+Inbound writes from an external device have a separate producer-completion
+boundary. HIP exposes a host HDP visibility operation, while the consumer's
+execution dependency and cache acquisition remain explicit. Its support
+queries, native mapping lifetime and observer scopes are described in
+[inbound RDMA visibility](../../interop/rdma.md).
 
 The architecture and transport predicates matter. Linux bypasses its ordinary
 HDP flush and invalidate paths for an APU outside passthrough under
@@ -349,6 +531,73 @@ update, so its storage cannot be destroyed during the leader's last read.
 [Copy dependency restriction][async-copy]
 [Completion and notification][sdma-notification]
 [Gang-signal final use][sdma-gang]
+
+## Source consumption and copy completion
+
+A staged upload has three distinct storage lifetimes: the original CPU input,
+the staging range read by the transfer, and the GPU destination. Capturing the
+input into independently owned staging ends the original source's borrow. The
+staging range stays borrowed through the transfer; the destination stays
+borrowed through its downstream consumers. A path that completes the capture
+before API return permits early reuse of the original input without implying
+destination readiness.
+
+HIP's `hipMemcpySrcAccessOrder` enum describes these source-access policies:
+
+| Value | Source-access semantics described by the enum |
+| --- | --- |
+| `hipMemcpySrcAccessOrderStream` (`1`) | Source access follows stream order; API return supplies no source-completion boundary. |
+| `hipMemcpySrcAccessOrderDuringApiCall` (`2`) | Access may occur outside stream order, but all source accesses finish before API return. |
+| `hipMemcpySrcAccessOrderAny` (`3`) | Access may occur outside stream order and after API return; this permits reordering without requiring it. |
+
+[Access-order definition][hip-source-order]
+
+At ROCm systems revision `105dd4ff35`, the public `hipMemcpyBatchAsync`
+declaration marks its attribute-array parameters unsupported, while the
+implementation accepts these three access-order values and translates them
+into copy metadata. The enum describes the requested semantics; the public
+declaration and accepted implementation paths disagree about attribute support.
+[Public declaration][hip-batch-declaration]
+[Attribute validation][hip-batch-validation] [Metadata translation][hip-copy-metadata]
+
+The pageable host-to-device path implements `DuringApiCall` capture in both
+dispatch modes. With queued dispatch, `EnqueueBatchCommands` copies input bytes
+into vectors owned by `BatchWriteMemoryCommand` before enqueueing. With direct
+dispatch, `Command::enqueue` calls the backend inline, and `WriteBufferBatch`
+disables host pinning for this access order. `getBuffer` then supplies staging,
+and CPU copies consume the original input before the API returns successfully.
+Device work uses that staging afterward. Stream order alone does not protect
+input that this path may capture before its preceding producer completes.
+[Snapshot owner][hip-batch-enqueue] [Command storage][clr-write-command]
+[Direct dispatch][clr-command-enqueue] [Staging selection][clr-batch-write]
+[Buffer selection][clr-staging-buffer]
+
+Registered host/device and device/device operands instead take
+`BatchCopyMemoryCommand`. The same classification admits supported swap and
+indirect modes and rejects them for pageable transfers. Its `copyBufferBatch`
+path carries preceding stream dependencies to the engines and joins their
+completion signals, but selects no source snapshot or CPU completion wait from
+`srcAccessOrder`. The device-side join orders subsequent work; it does not
+consume the current source on the API thread. Thus this implementation does
+not establish the enum's early-retirement contract for mapped operands merely
+by accepting `DuringApiCall`. [Operand classification][hip-batch-classification]
+[Mapped copy path][clr-batch-copy] [Device completion join][clr-batch-copy-join]
+
+For a caller-owned staging flow, the reusable boundaries are explicit:
+
+1. The CPU obtains ready input and copies it into an available staging range.
+   Completion of that CPU copy permits reuse of the original input.
+2. The CPU publishes staging to the transfer engine with the required memory
+   visibility and execution dependency.
+3. Transfer completion ends the staging borrow and makes the destination ready
+   for a dependent consumer with the matching acquire operation.
+4. The final destination consumer completes before that destination is reused.
+
+When a transfer reads registered input directly, there is no independent
+snapshot to return that first credit: the original allocation remains the
+device's source until it has finished reading it. An
+[indirect copy](../sdma/indirect-copy.md) also has
+address-slot lifetimes distinct from the payloads those slots select.
 
 ## Peer GPU handoff
 
@@ -471,10 +720,53 @@ can erase the very completion that consumer still needs to observe.
 [dmabuf-cpu]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/include/uapi/linux/dma-buf.h#L26-L85
 [dmabuf-begin]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_dma_buf.c#L280-L319
 [dmabuf-import]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_dma_buf.c#L415-L446
-[shader-model]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L13564-L13695
-[shader-acquire]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L13906-L13932
-[shader-release]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L14367-L14414
 [sdma-notification]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp#L614-L649
 [sdma-gang]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp#L589-L612
 [gfx942-model]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L11263-L11333
 [peer-access]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L2580-L2647
+[clr-barrier-header]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L71-L74
+[clr-release-fence]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L2362-L2380
+[clr-barrier]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L2183-L2231
+[clr-wait-list]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L888-L953
+[svm-prefetch]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L4240-L4266
+[svm-discard]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L4268-L4307
+[clr-prefetch]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L3247-L3331
+[clr-discard]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L3335-L3369
+[svm-prefetch-owner]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L3865-L3905
+[svm-discard-owner]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L4035-L4118
+[svm-discard-admission]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/hsa_ext_amd.cpp#L2224-L2248
+[svm-discard-ranges]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L3965-L3990
+[clr-batch-memory]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L4368-L4387
+[clr-scope-request]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.hpp#L653-L656
+[clr-scope-header]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L1624-L1654
+[clr-submit]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L1523-L1574
+[clr-batch-blit]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L3615-L3652
+[clr-batch-kernel]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/blitcl.cpp#L230-L256
+[svm-native-request]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/libhsakmt/src/svm.c#L38-L115
+[svm-copy-wait]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_migrate.c#L184-L211
+[svm-page-finalization]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_migrate.c#L426-L471
+[svm-placement]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_svm.c#L3501-L3582
+[svm-migration-result]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_svm.c#L3608-L3639
+[svm-attribute-update]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_svm.c#L3801-L3892
+[svm-eviction]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_svm.c#L3641-L3737
+[svm-discard-prefetch-owner]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L4120-L4239
+[hip-prefetch-batch]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_hmm.cpp#L566-L688
+[clr-prefetch-command]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/platform/command.hpp#L2285-L2311
+[svm-operation-storage]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L3768-L3790
+[svm-api-errors]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/hsa_ext_amd.cpp#L221-L245
+[svm-handler-registration]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L965-L988
+[svm-handler-retirement]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L2030-L2045
+[clr-signal-reset]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L997-L1002
+[clr-signal-reuse]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L779-L805
+[hip-source-order]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/hip/include/hip/driver_types.h#L469-L493
+[hip-batch-declaration]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/hip/include/hip/hip_runtime_api.h#L6344-L6361
+[hip-batch-validation]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_memory.cpp#L3245-L3314
+[hip-copy-metadata]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_memory.cpp#L2902-L2959
+[hip-batch-enqueue]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_memory.cpp#L2961-L3011
+[clr-write-command]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/platform/command.hpp#L1324-L1364
+[clr-command-enqueue]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/platform/command.cpp#L382-L446
+[clr-batch-write]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L2918-L3028
+[clr-staging-buffer]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L1043-L1084
+[hip-batch-classification]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_memory.cpp#L3103-L3186
+[clr-batch-copy]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L3160-L3280
+[clr-batch-copy-join]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L3750-L3816

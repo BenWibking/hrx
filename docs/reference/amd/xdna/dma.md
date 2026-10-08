@@ -9,9 +9,10 @@ use of transferred data are separate events.
 
 ## Architecture and address spaces
 
-This chapter describes the AIE2P property tables in the AMD AI Engine driver
-and the MLIR-AIE `NPU2` target, which selects the `AIE2p` architecture. The
-Versal AIE-ML v2 Architecture Manual, AM027 revision 1.1 (October 23, 2025),
+The descriptor and array-task descriptions use the AIE2P property tables in
+the AMD AI Engine driver and the MLIR-AIE `NPU2` target, which selects the
+`AIE2p` architecture. The Versal AIE-ML v2 Architecture Manual, AM027 revision
+1.1 (October 23, 2025),
 provides the corresponding tile and array-interface descriptions. Its Versal
 NoC and programmable-logic integration does not establish the Ryzen NPU's
 external-memory coherence or address translation. Those belong to the native
@@ -326,16 +327,6 @@ provides a finite shim-DMA owner flow using the AIE2P target above.
    [SAXPY readback][saxpy-readback] [Tensor readback][tensor-readback]
    [XRT transport synchronization][xrt-sync]
 
-At the controller-command layer, a BD write is a firmware `BLOCKWRITE`
-transaction (opcode 1); task publication is `WRITE` (opcode 0). The await
-becomes `TCT` (opcode `0x80`), four DWORDs long: word 1 is its 16-byte operation
-size, word 2 contains direction `[7:0]`, row `[15:8]` and column `[23:16]`,
-and word 3 contains row count `[15:8]`, column count `[23:16]` and channel
-`[31:24]`. This task await uses a one-row, one-column region. The compiler
-explicitly distinguishes this firmware transaction numbering from an older
-driver transaction enum. [Transaction opcodes][txn-opcodes]
-[Transaction encoding][txn-encoding] [Controller translation][txn-lowering]
-
 The example's default worker is repeated: `Worker` wraps its body in a
 `range_(sys.maxsize)` loop unless configured otherwise. Returning this finite
 output therefore does not stop the worker or release the local cyclic DMA,
@@ -343,6 +334,92 @@ lock and route program. Replacing that resident program requires the separate
 worker/channel quiescence protocol described in
 [native execution](execution.md#placement-and-program-quiescence).
 [Worker repetition][worker-default] [Worker body lowering][worker-loop]
+
+## Controller task-wait protocols
+
+An array DMA completion token and the controller instruction that waits for
+it have separate representations. The AIE2 transaction stream used in the
+IRON flow above and the AIE2PS CERT control-code ISA each name a TCT wait,
+but encode and schedule it differently. AIEBU selects separate assembler
+pipelines for them. Its AIE2 assembly path produces the same transaction
+binary consumed by its AIE2 blob encoder; the AIE2PS path uses the CERT
+encoder. [Assembler selection][controller-selection]
+
+### AIE2 transaction wait
+
+At the transaction layer, a BD write is `BLOCKWRITE` (opcode 1); task
+publication is `WRITE` (opcode 0). The output await becomes `TCT` (opcode
+`0x80`), four DWORDs long:
+
+| Word | Field | Meaning |
+| --- | --- | --- |
+| 0 | `[7:0]` | `TCT` opcode, `0x80`. |
+| 1 | `[31:0]` | Operation size in bytes, 16. |
+| 2 | `[7:0]`, `[15:8]`, `[23:16]` | DMA direction, starting row, starting column. |
+| 3 | `[15:8]`, `[23:16]`, `[31:24]` | Row count, column count, channel. |
+
+The cited emitter initializes the other fields to zero. The SAXPY task await
+selects a one-row, one-column region. These row and column counts describe
+the selected region; they are not CERT's `target_tcts` operand. MLIR-AIE
+distinguishes this firmware transaction numbering from an older driver
+transaction enum. AIEBU's `XAIE_IO_CUSTOM_OP_TCT` assembler also
+packs the same direction, location, extent and channel fields.
+[Transaction opcodes][txn-opcodes] [Transaction encoding][txn-encoding]
+[Controller translation][txn-lowering] [AIEBU transaction packing][aiebu-tct]
+
+### AIE2PS CERT wait ownership
+
+AIEBU's AIE2PS specification describes CERT as a MicroBlaze controller running
+a cooperative job interpreter. A control page contains jobs and associated
+data. Several jobs can be admitted while one waits for a dependency; yielding
+that job is distinct from preempting an array worker.
+[CERT execution model][cert-model]
+
+The specification separates these completion owners:
+
+| Instruction | Completion owned by the instruction |
+| --- | --- |
+| `WRITE_32`, opcode `0x05` | A synchronous write through the controller's AXI-MM store port. It does not use the controller DMA. |
+| `UC_DMA_WRITE_DES`, opcode `0x01` | Admission of a controller-DMA transfer from a control-page descriptor, returning a wait handle. Admission is not transfer completion. |
+| `WAIT_UC_DMA`, opcode `0x02` | Completion of the controller-DMA transfer named by that handle. A blocked job yields until it completes. |
+| `UC_DMA_WRITE_DES_SYNC`, opcode `0x09` | Combined controller-DMA admission and completion wait. |
+| `WAIT_TCTS`, opcode `0x06` | Receipt of the requested number of tokens from the selected shim or memory-tile DMA actor. |
+
+[Register-write contract][cert-write] [Controller-DMA handles][cert-dma]
+[Combined controller-DMA wait][cert-dma-sync] [Array-token wait][cert-tct]
+
+CERT's `WAIT_TCTS` occupies eight bytes: opcode at byte 0, zero padding at
+byte 1, a 16-bit `tile_id` at bytes 2–3, an 8-bit `actor_id` at byte 4,
+zero padding at byte 5, an 8-bit `target_tcts` at byte 6, and zero padding at
+byte 7. Multibyte operands are little-endian. Tokens must be enabled for the
+submitted tasks and routed to the waiting controller. While the count is
+unsatisfied, other unblocked jobs can execute. The specification allows
+different jobs to enqueue tasks but assigns `WAIT_TCTS` to one waiting job;
+a request for more tokens than the submitted tasks produce cannot complete.
+[Operand encoding][cert-encoding] [Padding][cert-padding]
+[Operand decoder][cert-decoder] [Token ownership][cert-tct]
+
+The controller's DMA can program array registers containing a payload DMA's
+descriptors. In the documented `UC_DMA_BD` form, the remote address names an
+array register, the local address names control-page data, and the length
+counts registers. Finishing that programming transfer does not finish the
+payload transfer those registers describe. AIEBU's assembly example makes
+the two dependencies explicit: [Controller-DMA descriptor][cert-bd]
+
+1. A configuration job transfers descriptor words and waits with
+   `WAIT_UC_DMA`.
+2. A local job barrier lets the submitting job continue after configuration.
+3. That job writes the array task queue and then uses `WAIT_TCTS` to join
+   the enabled completion token from that task.
+
+[Two-job configure/start/wait example][cert-flow]
+
+These are controller- and array-operation contracts. A subsequent publication
+to another device still needs the appropriate external-memory ordering,
+control access and consumer acquire described in the
+[GPU/NPU handoff](../gpu/recipes/gpu-npu.md#output-dma-and-a-ready-flag).
+The CERT synchronous-write wording does not specify the earlier AIE2P shim
+lock-release point or the Ryzen/GPU common observation point.
 
 ## Final use and architecture boundaries
 
@@ -449,6 +526,18 @@ observer requirements separately.
 [txn-opcodes]: https://github.com/Xilinx/mlir-aie/blob/41fa359ea1f66f7e5c572f8d0cc8c7646262adf5/include/aie/Runtime/TxnEncoding.h#L25-L62
 [txn-encoding]: https://github.com/Xilinx/mlir-aie/blob/41fa359ea1f66f7e5c572f8d0cc8c7646262adf5/include/aie/Runtime/TxnEncoding.h#L139-L200
 [txn-lowering]: https://github.com/Xilinx/mlir-aie/blob/41fa359ea1f66f7e5c572f8d0cc8c7646262adf5/lib/Targets/AIETargetNPU.cpp#L62-L94
+[controller-selection]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/src/cpp/assembler/assembler.cpp#L157-L188
+[aiebu-tct]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/src/cpp/preprocessor/aie2/aie2_asm_preprocessor_input.cpp#L389-L438
+[cert-model]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/specification/aie2ps/isa-spec.md#L1-L78
+[cert-encoding]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/specification/aie2ps/isa-spec.md#L67-L73
+[cert-padding]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/specification/aie2ps/isa-spec.md#L171-L173
+[cert-decoder]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/specification/aie2ps/isa_defines.h#L125-L132
+[cert-write]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/specification/aie2ps/isa-spec.yaml#L184-L201
+[cert-dma]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/specification/aie2ps/isa-spec.md#L251-L283
+[cert-dma-sync]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/specification/aie2ps/isa-spec.md#L357-L366
+[cert-tct]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/specification/aie2ps/isa-spec.md#L313-L330
+[cert-bd]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/specification/aie2ps/isa-spec.md#L1205-L1218
+[cert-flow]: https://github.com/Xilinx/aiebu/blob/e82e28cbb237dcfd6c3029d85dc604515367ee24/test/aie2ps-ctrlcode/basic/ctrlcode.asm#L1-L17
 [worker-default]: https://github.com/Xilinx/mlir-aie/blob/41fa359ea1f66f7e5c572f8d0cc8c7646262adf5/python/iron/worker.py#L42-L60
 [worker-loop]: https://github.com/Xilinx/mlir-aie/blob/41fa359ea1f66f7e5c572f8d0cc8c7646262adf5/python/iron/worker.py#L240-L267
 [task-applicability]: https://github.com/Xilinx/aie-codegen/blob/2855a032366e3d19dab893e7c263b14bb920cd64/src/dma/xaie_dma.c#L2460-L2483

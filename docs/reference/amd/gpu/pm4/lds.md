@@ -84,12 +84,41 @@ the separate shader-completion and memory-visibility protocol described in
 
 ## Rebinding resource sizes
 
-PAL's automatic HSA dispatch path retains an LDS override and grows it when
-the computed requirement exceeds the bound size. Mesa's variable-size path
-re-emits resource state when the program or requested shared size changes,
-including smaller requests. Both consume compiler metadata but own their
-launch-state policy independently. [PAL retained override][pal-rebind]
-[Mesa rebinding][mesa-rebind]
+PAL separates the selected pipeline's resource state from an override retained
+within its current binding. `GfxCmdBuffer::CmdBindPipeline` replaces the
+dynamic compute settings with the new bind request. In the older register
+path, `PipelineChunkCs::WriteShCommands` starts from that pipeline's immutable
+register state, applies the current overrides and emits `COMPUTE_PGM_RSRC2`
+and `COMPUTE_RESOURCE_LIMITS`. GFX12 emits its selected register array directly,
+or a local copy with dynamic overrides. A new binding with no LDS override
+therefore restores that program's fixed request, including a smaller request;
+it does not inherit the preceding program's largest LDS setting.
+[Bind-state owner][pal-bind-state] [Older binding][pal-full-bind]
+[Older resource writes][pal-resource-writes] [GFX12 binding][pal12-full-bind]
+
+While the same HSA binding remains active, PAL's automatic argument-realization
+path grows its retained override when the computed LDS requirement exceeds
+the bound size. Both the older and GFX12 paths make that comparison. This is
+distinct from selecting a new pipeline and its bind settings. Mesa's
+variable-size path re-emits resource state when the program or requested
+shared size changes, including smaller requests. These are runtime policies
+over the launch-state representation. [PAL retained override][pal-rebind]
+[GFX12 retained override][pal12-rebind] [Mesa rebinding][mesa-rebind]
+
+With [conditional command flow](conditional.md#structured-control-flow-and-ownership),
+each selected path establishes the resource state consumed by its dispatches.
+A join cannot infer live state from the last arm recorded by the CPU: that
+arm might never execute. PAL disables its register-write optimizer when
+recording conditionals or loops because the optimizer does not model those
+paths. [Conditional state][pal-control-flow] [Loop state][pal-loop-control-flow]
+
+Resource binding and payload synchronization remain separate. The cited PAL
+bind writers emit register and optional prefetch commands without inserting
+a general shader drain. Dependencies supply the completion and visibility
+needed by a successor's reads; a changed LDS field is neither such a dependency
+nor a way to resize already executing workgroups. The successor's LDS has its
+own workgroup lifetime. [Binding][pal-full-bind] [GFX12 binding][pal12-full-bind]
+[Group lifetime][llvm-lifetime]
 
 A completed-use CPU rebuild may change the arguments and allocation request
 only after prior users have finished. A GPU command stream may bind distinct
@@ -109,4 +138,11 @@ are different properties.
 [pal-limits]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9PipelineChunkCs.cpp#L301-L345
 [pal-arguments]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdBuffer.cpp#L2457-L2493
 [pal-rebind]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9ComputeCmdBuffer.cpp#L772-L807
+[pal-bind-state]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdBuffer.cpp#L1407-L1422
+[pal-full-bind]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9PipelineChunkCs.cpp#L680-L750
+[pal-resource-writes]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9PipelineChunkCs.cpp#L770-L833
+[pal12-full-bind]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12PipelineChunkCs.cpp#L862-L911
+[pal12-rebind]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L1272-L1291
+[pal-control-flow]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdStream.cpp#L251-L291
+[pal-loop-control-flow]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdStream.cpp#L344-L361
 [mesa-rebind]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/gfx/si_compute.c#L293-L325
