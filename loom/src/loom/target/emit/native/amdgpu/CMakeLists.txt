@@ -367,16 +367,15 @@ loom_cc_benchmark(
     iree::base
     iree::base::internal::arena
     iree::testing::benchmark_main
+    loom::binding::c::interop
+    loom::binding::c::loomc
+    loom::binding::c::target::amdgpu
     loom::codegen::low::frame
     loom::codegen::low::function
     loom::codegen::low::target_binding
-    loom::codegen::low::text_asm
     loom::codegen::low::verify
-    loom::error::diagnostic
-    loom::format::text::parser
     loom::ir
     loom::ops::low
-    loom::ops::op_registry
     loom::target::arch::amdgpu::hal::kernel_abi
     loom::target::arch::amdgpu::planning::address_state
     loom::target::arch::amdgpu::planning::descriptor_semantics
@@ -385,11 +384,8 @@ loom_cc_benchmark(
     loom::target::arch::amdgpu::planning::placement
     loom::target::arch::amdgpu::planning::storage_lease
     loom::target::arch::amdgpu::planning::vopd_plan
-    loom::target::arch::amdgpu::provider
     loom::target::low_descriptor_registry
     loom::target::provider
-    loom::tooling::compile::pipeline
-    loom::transforms::cleanup::configured
   TESTONLY
   LABELS
     "iree-build-requirement=loom.target.arch.amdgpu"
@@ -712,6 +708,9 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::analysis::symbol_facts
+    loom::binding::c::interop
+    loom::binding::c::loomc
+    loom::binding::c::target::amdgpu
     loom::codegen::low::text_asm
     loom::error::error_defs
     loom::format::text::parser
@@ -728,7 +727,6 @@ loom_cc_test(
     loom::target::arch::amdgpu::matrix::contract
     loom::target::arch::amdgpu::planning::wait_counters
     loom::target::arch::amdgpu::profile
-    loom::target::arch::amdgpu::provider
     loom::target::arch::amdgpu::records::target_records
     loom::target::arch::amdgpu::target_info
     loom::target::emit::native::elf
@@ -736,9 +734,8 @@ loom_cc_test(
     loom::target::function_contract
     loom::target::function_version
     loom::target::profile
+    loom::target::provider
     loom::testing::diagnostic_matchers
-    loom::tooling::compile::pipeline
-    loom::transforms::cleanup::configured
   LABELS
     "iree-build-requirement=loom.target.arch.amdgpu"
     "iree-build-requirement=loom.emit.amdgpu"

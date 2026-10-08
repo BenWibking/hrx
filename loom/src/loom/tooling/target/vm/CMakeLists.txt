@@ -100,22 +100,17 @@ loom_cc_test(
     iree::testing::gtest_main
     iree::vm
     iree::vm::bytecode::module
-    loom::format::bytecode::reader
+    loom::binding::c::loomc
+    loom::binding::c::target::vm
     loom::format::bytecode::writer
     loom::format::location
     loom::ir
-    loom::link::linker
     loom::ops::func
     loom::ops::func::location_capture
     loom::ops::func::location_capture_test_data
     loom::ops::op_defs
     loom::ops::op_registry
-    loom::target::emit::vm::module_compiler
-    loom::target::provider
-    loom::target::selection
-    loom::tooling::compile::pipeline
     loom::tooling::input
-    loom::transforms::cleanup::configured
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
 )
@@ -185,16 +180,10 @@ loom_cc_test(
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::codegen::low::text_asm
-    loom::ir
-    loom::ops::func
-    loom::ops::op_registry
+    loom::binding::c::interop
+    loom::binding::c::loomc
+    loom::binding::c::target::vm
     loom::target::emit::vm::module_compiler
-    loom::target::provider
-    loom::target::selection
-    loom::tooling::compile::pipeline
-    loom::tooling::input
-    loom::transforms::cleanup::configured
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
 )
