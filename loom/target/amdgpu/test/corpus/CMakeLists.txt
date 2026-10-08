@@ -431,6 +431,7 @@ loom_corpus_test(
     "memory/atomic/float_extrema.loom"
     "memory/atomic/global_add_f32.loom"
     "memory/atomic/i32.loom"
+    "memory/atomic/i64.loom"
     "memory/atomic/narrow/float.loom"
     "memory/buffer/allocation_freshness.loom"
     "memory/buffer/boundaries.loom"
@@ -709,7 +710,6 @@ loom_corpus_test(
     "kernel"
     "function"
   SOURCES
-    "memory/atomic/i64.loom"
     "memory/atomic/narrow/cmpxchg.loom"
     "memory/atomic/narrow/contention.loom"
     "memory/atomic/narrow/observations.loom"

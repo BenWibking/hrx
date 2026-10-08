@@ -35,6 +35,7 @@ MEMORY_CORPUS = loom_corpus_manifest(
         "atomic/float_extrema.loom",
         "atomic/global_add_f32.loom",
         "atomic/i32.loom",
+        "atomic/i64.loom",
         "atomic/narrow/float.loom",
         "buffer/allocation_freshness.loom",
         "buffer/boundaries.loom",
@@ -70,7 +71,6 @@ MEMORY_CORPUS = loom_corpus_manifest(
         "view/window_walk.loom",
     ],
     legacy_case_srcs = [
-        "atomic/i64.loom",
         "atomic/narrow/cmpxchg.loom",
         "atomic/narrow/contention.loom",
         "atomic/narrow/observations.loom",

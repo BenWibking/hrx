@@ -982,6 +982,8 @@ loom_corpus_test(
     "Wasm has no kernel execution model."
     "memory/atomic/i32.loom"
     "Wasm has no kernel execution model."
+    "memory/atomic/i64.loom"
+    "Wasm has no kernel execution model."
     "memory/atomic/narrow/float.loom"
     "Wasm has no kernel execution model."
     "memory/packed/alignment.loom"
