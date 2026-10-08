@@ -129,6 +129,7 @@ iree_executable_test(
 iree_executable_test(
     name = "cross_package_executable_wrapper_test",
     src = "//build_tools/bazel/test/executable_fixture:binary",
+    args = ["'argument with spaces'"],
 )
 
 iree_executable_alias(
@@ -136,6 +137,12 @@ iree_executable_alias(
     testonly = True,
     src = "//build_tools/bazel/test/executable_fixture:binary",
     tags = ["manual"],
+)
+
+iree_executable_test(
+    name = "nested_executable_wrapper_test",
+    src = ":cross_package_executable_alias_fixture",
+    args = ["'argument with spaces'"],
 )
 
 iree_cc_benchmark(
