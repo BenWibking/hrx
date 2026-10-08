@@ -28,6 +28,7 @@ loom_generated_cc_library(
     name = "vector",
     srcs = [
         "canonicalize.c",
+        "combining.c",
         "construction.c",
         "facts.c",
         "fragment.c",
@@ -39,6 +40,7 @@ loom_generated_cc_library(
         "verify.c",
     ],
     hdrs = [
+        "combining.h",
         "construction.h",
         "fragment.h",
         "memory.h",

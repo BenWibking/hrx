@@ -83,53 +83,30 @@ func.def target(@test_target) @scalar_narrow_float_signs(%fp8_magnitude: f8E5M2,
 
 // ====
 
+// RUN: with-checks compile-report target-legalize{mode=eager,policy=reference-only},dce
+
 test.target<low_core> @test_target
 
-func.def target(@test_target) @vector_narrow_float_signs(%fp8_magnitude: vector<4xf8E4M3>, %fp8_sign: vector<4xf8E4M3>, %bf16_magnitude: vector<3xbf16>, %bf16_sign: vector<3xbf16>) -> (vector<4xf8E4M3>, vector<4xf8E4M3>, vector<4xf8E4M3>, vector<3xbf16>, vector<3xbf16>, vector<3xbf16>) {
+// Source sign rewrites preserve vector shape. Their generated bitwise combines
+// may independently take the requested reference path at the fixed point.
+func.def target(@test_target) @vector_fp8_signs(%fp8_magnitude: vector<4xf8E4M3>, %fp8_sign: vector<4xf8E4M3>) -> (vector<4xf8E4M3>, vector<4xf8E4M3>, vector<4xf8E4M3>) {
   %fp8_absolute = vector.absf %fp8_magnitude : vector<4xf8E4M3>
   %fp8_negated = vector.negf %fp8_magnitude : vector<4xf8E4M3>
   %fp8_copied = vector.copysignf %fp8_magnitude, %fp8_sign : vector<4xf8E4M3>
+  func.return %fp8_absolute, %fp8_negated, %fp8_copied : vector<4xf8E4M3>, vector<4xf8E4M3>, vector<4xf8E4M3>
+}
+
+func.def target(@test_target) @vector_bf16_signs(%bf16_magnitude: vector<3xbf16>, %bf16_sign: vector<3xbf16>) -> (vector<3xbf16>, vector<3xbf16>, vector<3xbf16>) {
   %bf16_absolute = vector.absf %bf16_magnitude : vector<3xbf16>
   %bf16_negated = vector.negf %bf16_magnitude : vector<3xbf16>
   %bf16_copied = vector.copysignf %bf16_magnitude, %bf16_sign : vector<3xbf16>
-  func.return %fp8_absolute, %fp8_negated, %fp8_copied, %bf16_absolute, %bf16_negated, %bf16_copied : vector<4xf8E4M3>, vector<4xf8E4M3>, vector<4xf8E4M3>, vector<3xbf16>, vector<3xbf16>, vector<3xbf16>
+  func.return %bf16_absolute, %bf16_negated, %bf16_copied : vector<3xbf16>, vector<3xbf16>, vector<3xbf16>
 }
 
 // ----
-test.target<low_core> @test_target
-
-func.def target(@test_target) @vector_narrow_float_signs(%fp8_magnitude: vector<4xf8E4M3>, %fp8_sign: vector<4xf8E4M3>, %bf16_magnitude: vector<3xbf16>, %bf16_sign: vector<3xbf16>) -> (vector<4xf8E4M3>, vector<4xf8E4M3>, vector<4xf8E4M3>, vector<3xbf16>, vector<3xbf16>, vector<3xbf16>) {
-  %44 = vector.bitcast %fp8_magnitude : vector<4xf8E4M3> to vector<4xi8>
-  %45 = vector.constant 127 : vector<4xi8>
-  %46 = vector.andi %44, %45 : vector<4xi8>
-  %fp8_absolute = vector.bitcast %46 : vector<4xi8> to vector<4xf8E4M3>
-  %40 = vector.bitcast %fp8_magnitude : vector<4xf8E4M3> to vector<4xi8>
-  %41 = vector.constant -128 : vector<4xi8>
-  %42 = vector.xori %40, %41 : vector<4xi8>
-  %fp8_negated = vector.bitcast %42 : vector<4xi8> to vector<4xf8E4M3>
-  %32 = vector.bitcast %fp8_magnitude : vector<4xf8E4M3> to vector<4xi8>
-  %33 = vector.bitcast %fp8_sign : vector<4xf8E4M3> to vector<4xi8>
-  %34 = vector.constant 127 : vector<4xi8>
-  %35 = vector.andi %32, %34 : vector<4xi8>
-  %36 = vector.constant -128 : vector<4xi8>
-  %37 = vector.andi %33, %36 : vector<4xi8>
-  %38 = vector.ori %35, %37 : vector<4xi8>
-  %fp8_copied = vector.bitcast %38 : vector<4xi8> to vector<4xf8E4M3>
-  %28 = vector.bitcast %bf16_magnitude : vector<3xbf16> to vector<3xi16>
-  %29 = vector.constant 32767 : vector<3xi16>
-  %30 = vector.andi %28, %29 : vector<3xi16>
-  %bf16_absolute = vector.bitcast %30 : vector<3xi16> to vector<3xbf16>
-  %24 = vector.bitcast %bf16_magnitude : vector<3xbf16> to vector<3xi16>
-  %25 = vector.constant -32768 : vector<3xi16>
-  %26 = vector.xori %24, %25 : vector<3xi16>
-  %bf16_negated = vector.bitcast %26 : vector<3xi16> to vector<3xbf16>
-  %16 = vector.bitcast %bf16_magnitude : vector<3xbf16> to vector<3xi16>
-  %17 = vector.bitcast %bf16_sign : vector<3xbf16> to vector<3xi16>
-  %18 = vector.constant 32767 : vector<3xi16>
-  %19 = vector.andi %16, %18 : vector<3xi16>
-  %20 = vector.constant -32768 : vector<3xi16>
-  %21 = vector.andi %17, %20 : vector<3xi16>
-  %22 = vector.ori %19, %21 : vector<3xi16>
-  %bf16_copied = vector.bitcast %22 : vector<3xi16> to vector<3xbf16>
-  func.return %fp8_absolute, %fp8_negated, %fp8_copied, %bf16_absolute, %bf16_negated, %bf16_copied : vector<4xf8E4M3>, vector<4xf8E4M3>, vector<4xf8E4M3>, vector<3xbf16>, vector<3xbf16>, vector<3xbf16>
-}
+CHECK: COMPILE-REPORT: target_legalization[*] function=vector_fp8_signs source_op=vector.absf * action=rewritten * legalizer=math strategy=reference * scalarized=false *
+CHECK: COMPILE-REPORT: target_legalization[*] function=vector_fp8_signs source_op=vector.negf * action=rewritten * legalizer=math strategy=reference * scalarized=false *
+CHECK: COMPILE-REPORT: target_legalization[*] function=vector_fp8_signs source_op=vector.copysignf * action=rewritten * legalizer=math strategy=reference * scalarized=false *
+CHECK: COMPILE-REPORT: target_legalization[*] function=vector_bf16_signs source_op=vector.absf * action=rewritten * legalizer=math strategy=reference * scalarized=false *
+CHECK: COMPILE-REPORT: target_legalization[*] function=vector_bf16_signs source_op=vector.negf * action=rewritten * legalizer=math strategy=reference * scalarized=false *
+CHECK: COMPILE-REPORT: target_legalization[*] function=vector_bf16_signs source_op=vector.copysignf * action=rewritten * legalizer=math strategy=reference * scalarized=false *

@@ -226,6 +226,21 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    reduction_legalization
+  HDRS
+    "reduction_legalization.h"
+  SRCS
+    "reduction_legalization.c"
+  DEPS
+    iree::base
+    loom::ir
+    loom::ops::vector
+    loom::rewrite::rewriter
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     table_legalization
   HDRS
     "table_legalization.h"
@@ -266,6 +281,7 @@ loom_cc_library(
   SRCS
     "target_legalization.c"
   DEPS
+    ::reduction_legalization
     ::to_scalar
     iree::base
     loom::ir

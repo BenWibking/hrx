@@ -247,6 +247,7 @@ loom_cc_library(
     loom::target::legalization
     loom::transforms::scalar::target_legalization
     loom::transforms::vector::packet_legalization
+    loom::transforms::vector::reduction_legalization
     loom::transforms::vector::shape_legalization
     loom::transforms::vector::table_legalization
     loom::transforms::vector::target_legalization
@@ -922,6 +923,7 @@ loom_check_test_suite(
     "test/vector_float_extrema.loom-test"
     "test/vector_insert_packetization.loom-test"
     "test/vector_memory_packetization.loom-test"
+    "test/vector_reduce_axes.loom-test"
   RUNNER
     ::loom-check
   TEST_NAME_PREFIX_TO_STRIP
