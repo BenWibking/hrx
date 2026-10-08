@@ -1480,7 +1480,9 @@ loom_corpus_test(
     "numeric/vector/packed_selection.loom"
     "numeric/vector/reductions.loom"
     "numeric/vector/selection.loom"
+    "control/branch/guards.loom"
     "control/branch/structured.loom"
+    "control/branch/uniform_predicate.loom"
     "control/loop/condition.loom"
     "control/loop/rotation/offsets.loom"
     "control/loop/rotation/values.loom"
@@ -2046,8 +2048,6 @@ loom_corpus_test(
     "kernel"
     "function"
   SOURCES
-    "control/branch/guards.loom"
-    "control/branch/uniform_predicate.loom"
     "control/loop/carried_lane_liveness.loom"
     "control/loop/sequential_slices.loom"
     "control/schedule/guarded_recurrence.loom"

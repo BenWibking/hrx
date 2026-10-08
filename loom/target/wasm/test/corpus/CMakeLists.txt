@@ -875,7 +875,11 @@ loom_corpus_test(
   EXCLUDES
     "control/branch/cfg.loom"
     "Wasm has no kernel execution model."
+    "control/branch/guards.loom"
+    "Wasm has no kernel execution model."
     "control/branch/half.loom"
+    "Wasm has no kernel execution model."
+    "control/branch/uniform_predicate.loom"
     "Wasm has no kernel execution model."
     "control/loop/callable.loom"
     "Wasm has no kernel execution model."
