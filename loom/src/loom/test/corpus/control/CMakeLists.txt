@@ -25,19 +25,19 @@ loom_corpus_sources(
     "loop/rotation/values.loom"
     "loop/rotation/views.loom"
     "loop/scalar_state.loom"
+    "loop/termination.loom"
     "loop/vector_recurrence.loom"
     "loop/wide_index_recurrence.loom"
     "schedule/address_domains.loom"
+    "schedule/unroll_scope.loom"
     "branch/effects.loom"
     "branch/guards.loom"
     "branch/results.loom"
     "branch/uniform_predicate.loom"
     "loop/carried_lane_liveness.loom"
     "loop/sequential_slices.loom"
-    "loop/termination.loom"
     "schedule/guarded_recurrence.loom"
     "schedule/ordered_read_ahead.loom"
-    "schedule/unroll_scope.loom"
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###
