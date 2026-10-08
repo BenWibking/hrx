@@ -391,8 +391,7 @@ iree_status_t loom_amdgpu_fragment_memory_report_bank_service(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_low_descriptor_t* descriptor,
     const loom_amdgpu_matrix_fragment_layout_t* layout,
-    const loom_amdgpu_fragment_memory_plan_t* plan,
-    const loom_amdgpu_fragment_memory_packet_plan_t* packet,
+    const loom_amdgpu_fragment_memory_plan_t* plan, uint16_t register_index,
     uint16_t element_index,
     const loom_amdgpu_fragment_memory_packet_offset_t* runtime_offset,
     loom_low_lower_memory_bank_service_report_t* out_report) {
@@ -424,7 +423,7 @@ iree_status_t loom_amdgpu_fragment_memory_report_bank_service(
   }
 
   uint64_t packet_byte_offset =
-      plan->address_layout.register_byte_offsets[packet->register_index];
+      plan->address_layout.register_byte_offsets[register_index];
   if (element_index != 0) {
     packet_byte_offset += (uint64_t)element_index *
                           plan->address_layout.packed_element_byte_stride;

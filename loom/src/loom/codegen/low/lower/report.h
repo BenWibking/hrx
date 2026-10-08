@@ -86,9 +86,10 @@ iree_status_t loom_low_lower_memory_report_row_populate_source_interval(
     const loom_low_source_memory_access_plan_t* source_plan,
     loom_low_lower_memory_report_row_t* row);
 
-// Records an emitted source-memory packet report row.
+// Records a complete planned source-memory row while reporting is enabled.
+// Execution frequency is supplied by the owning selection row.
 iree_status_t loom_low_lower_record_memory_report_row(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_low_lower_context_t* context,
     const loom_low_lower_memory_report_row_t* row);
 
 #ifdef __cplusplus

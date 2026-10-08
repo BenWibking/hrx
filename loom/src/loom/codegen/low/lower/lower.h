@@ -772,14 +772,18 @@ typedef struct loom_low_lower_plan_report_t {
   loom_scalar_type_t native_transition_destination_type;
 } loom_low_lower_plan_report_t;
 
-typedef void (*loom_low_lower_describe_plan_fn_t)(
+typedef iree_status_t (*loom_low_lower_describe_plan_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
-    const loom_op_t* source_op, loom_low_lower_plan_t plan,
+    const loom_op_t* source_op, loom_low_lower_plan_t plan, bool is_elided,
+    uint64_t execution_count_plus_one,
     loom_low_lower_plan_report_t* out_report);
 
 typedef struct loom_low_lower_describe_plan_callback_t {
-  // Optional callback describing one target-owned plan for production compile
-  // reports. All returned data must remain borrowed/static.
+  // Optional callback projecting one finalized target plan into compile reports
+  // before emission. Execution frequency is shared with the selection row;
+  // detail rows may be allocated through the context. Elided plans retain
+  // selection descriptions but issue no memory accesses. Returned
+  // description fields must refer to registry-owned data, not analysis scratch.
   loom_low_lower_describe_plan_fn_t fn;
   // Caller-owned payload passed to |fn|.
   void* user_data;

@@ -250,12 +250,14 @@ static void loom_aie2p_mark_plan_storage_demands(
   }
 }
 
-static void loom_aie2p_describe_plan(void* user_data,
-                                     loom_low_lower_context_t* context,
-                                     const loom_op_t* source_op,
-                                     loom_low_lower_plan_t plan,
-                                     loom_low_lower_plan_report_t* out_report) {
+static iree_status_t loom_aie2p_describe_plan(
+    void* user_data, loom_low_lower_context_t* context,
+    const loom_op_t* source_op, loom_low_lower_plan_t plan, bool is_elided,
+    uint64_t execution_count_plus_one,
+    loom_low_lower_plan_report_t* out_report) {
   (void)user_data;
+  (void)is_elided;
+  (void)execution_count_plus_one;
   if (loom_aie2p_matrix_plan_isa(plan)) {
     loom_aie2p_describe_matrix_plan(context, source_op, plan, out_report);
   } else if (loom_aie2p_interleave_plan_isa(plan)) {
@@ -271,6 +273,7 @@ static void loom_aie2p_describe_plan(void* user_data,
   } else {
     IREE_ASSERT_UNREACHABLE("AIE2P report has unknown plan kind");
   }
+  return iree_ok_status();
 }
 
 static iree_status_t loom_aie2p_emit_op(void* user_data,

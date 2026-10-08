@@ -166,6 +166,8 @@ static iree_status_t loom_low_lower_report_prepare_selected_plan(
       .execution_count_plus_one =
           LOOM_LOW_LOWER_REPORT_EXECUTION_COUNT_PLUS_ONE_UNKNOWN,
   };
+  IREE_RETURN_IF_ERROR(loom_low_lower_source_op_execution_count_plus_one(
+      context, selected_plan->source_op, &row.execution_count_plus_one));
   if (selected_plan->kind == LOOM_LOW_LOWER_SELECTED_PLAN_CALLBACK ||
       selected_plan->kind == LOOM_LOW_LOWER_SELECTED_PLAN_DESCRIPTOR_MATRIX) {
     row.plan_id = selected_plan->data.target_plan.id;
@@ -216,10 +218,12 @@ static iree_status_t loom_low_lower_report_prepare_selected_plan(
        selected_plan->kind == LOOM_LOW_LOWER_SELECTED_PLAN_DESCRIPTOR_MATRIX) &&
       context->policy->describe_plan.fn != NULL) {
     loom_low_lower_plan_report_t plan_report = {0};
-    context->policy->describe_plan.fn(context->policy->describe_plan.user_data,
-                                      context, selected_plan->source_op,
-                                      selected_plan->data.target_plan,
-                                      &plan_report);
+    IREE_RETURN_IF_ERROR(context->policy->describe_plan.fn(
+        context->policy->describe_plan.user_data, context,
+        selected_plan->source_op, selected_plan->data.target_plan,
+        iree_any_bit_set(selected_plan->flags,
+                         LOOM_LOW_LOWER_SELECTED_PLAN_ELIDED),
+        row.execution_count_plus_one, &plan_report));
     row.plan_key = plan_report.plan_key;
     if (plan_report.native_contraction_facts != NULL) {
       row.native_contraction_facts = plan_report.native_contraction_facts;
@@ -230,8 +234,6 @@ static iree_status_t loom_low_lower_report_prepare_selected_plan(
     row.native_transition_destination_type =
         plan_report.native_transition_destination_type;
   }
-  IREE_RETURN_IF_ERROR(loom_low_lower_source_op_execution_count_plus_one(
-      context, selected_plan->source_op, &row.execution_count_plus_one));
   return loom_low_lower_report_row_list_append(&result->report_rows,
                                                result->report_allocator, &row);
 }
@@ -585,15 +587,9 @@ iree_status_t loom_low_lower_source_op_execution_count_plus_one(
 }
 
 iree_status_t loom_low_lower_record_memory_report_row(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_low_lower_context_t* context,
     const loom_low_lower_memory_report_row_t* row) {
-  if (!loom_low_lower_context_wants_report_rows(context)) {
-    return iree_ok_status();
-  }
-  loom_low_lower_memory_report_row_t counted_row = *row;
-  IREE_RETURN_IF_ERROR(loom_low_lower_source_op_execution_count_plus_one(
-      context, source_op, &counted_row.execution_count_plus_one));
   return loom_low_lower_memory_report_row_list_append(
       &context->result->memory_report_rows,
-      context->result->memory_report_row_allocator, &counted_row);
+      context->result->memory_report_row_allocator, row);
 }

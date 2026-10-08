@@ -13,7 +13,6 @@
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/cache.h"
-#include "loom/ops/encoding/operand.h"
 #include "loom/ops/encoding/storage.h"
 #include "loom/ops/low/ops.h"
 #include "loom/ops/vector/ops.h"
@@ -21,166 +20,12 @@
 #include "loom/target/arch/amdgpu/lower/constants.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/memory.h"
-#include "loom/target/arch/amdgpu/lower/memory_bank_service.h"
 #include "loom/target/arch/amdgpu/lower/memory_coherence.h"
 #include "loom/target/arch/amdgpu/lower/memory_ordering.h"
 #include "loom/target/arch/amdgpu/lower/system_memory.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
 #include "loom/target/arch/amdgpu/lower/value/integer64.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
-#include "loom/util/numeric_format.h"
-
-static uint32_t loom_amdgpu_memory_report_positive_u32(int64_t value) {
-  return value > 0 && value <= UINT32_MAX ? (uint32_t)value : 0;
-}
-
-static uint32_t loom_amdgpu_memory_report_dynamic_stride_bytes(
-    const loom_low_source_memory_access_plan_t* source) {
-  return source->dynamic_term_count == 1
-             ? loom_amdgpu_memory_report_positive_u32(
-                   source->dynamic_terms[0].byte_stride)
-             : 0;
-}
-
-static iree_string_view_t loom_amdgpu_memory_report_storage_name(
-    loom_encoding_operand_parameter_t parameter, uint64_t value,
-    uint64_t omitted_value) {
-  if (value == omitted_value) {
-    return iree_string_view_empty();
-  }
-  return loom_encoding_operand_fact_name(parameter, value);
-}
-
-static void loom_amdgpu_memory_report_row_set_storage_schema(
-    const loom_value_fact_storage_schema_t* schema,
-    loom_low_lower_memory_report_row_t* row) {
-  if (schema == NULL || loom_value_fact_encoded_operand_schema_is_unknown(
-                            schema->encoded_operand)) {
-    return;
-  }
-  const loom_value_fact_encoded_operand_schema_t encoded =
-      schema->encoded_operand;
-  row->storage_element_format = loom_amdgpu_memory_report_storage_name(
-      LOOM_ENCODING_OPERAND_PARAMETER_ELEMENT_FORMAT, encoded.element_format,
-      LOOM_VALUE_FACT_NUMERIC_FORMAT_NONE);
-  row->storage_scale_format = loom_amdgpu_memory_report_storage_name(
-      LOOM_ENCODING_OPERAND_PARAMETER_SCALE_FORMAT, encoded.scale_format,
-      LOOM_VALUE_FACT_NUMERIC_FORMAT_NONE);
-  row->storage_secondary_scale_format = loom_amdgpu_memory_report_storage_name(
-      LOOM_ENCODING_OPERAND_PARAMETER_SECONDARY_SCALE_FORMAT,
-      encoded.secondary_scale_format, LOOM_VALUE_FACT_NUMERIC_FORMAT_NONE);
-  row->storage_payload_packing = loom_amdgpu_memory_report_storage_name(
-      LOOM_ENCODING_OPERAND_PARAMETER_PAYLOAD_PACKING, encoded.payload_packing,
-      LOOM_VALUE_FACT_PAYLOAD_PACKING_UNKNOWN);
-  row->storage_scale_topology = loom_amdgpu_memory_report_storage_name(
-      LOOM_ENCODING_OPERAND_PARAMETER_SCALE_TOPOLOGY, encoded.scale_topology,
-      LOOM_VALUE_FACT_SCALE_TOPOLOGY_NONE);
-  row->storage_affine_policy = loom_amdgpu_memory_report_storage_name(
-      LOOM_ENCODING_OPERAND_PARAMETER_AFFINE, encoded.affine_policy,
-      LOOM_VALUE_FACT_AFFINE_POLICY_NONE);
-  row->storage_rounding_policy = loom_amdgpu_memory_report_storage_name(
-      LOOM_ENCODING_OPERAND_PARAMETER_ROUNDING, encoded.rounding_policy,
-      LOOM_VALUE_FACT_ROUNDING_POLICY_NONE);
-  row->storage_codebook_policy = loom_amdgpu_memory_report_storage_name(
-      LOOM_ENCODING_OPERAND_PARAMETER_CODEBOOK, encoded.codebook_policy,
-      LOOM_VALUE_FACT_CODEBOOK_POLICY_NONE);
-  row->storage_sparsity_policy = loom_amdgpu_memory_report_storage_name(
-      LOOM_ENCODING_OPERAND_PARAMETER_SPARSITY, encoded.sparsity_policy,
-      LOOM_VALUE_FACT_SPARSITY_POLICY_NONE);
-}
-
-void loom_amdgpu_memory_report_row_populate_storage_schema(
-    loom_low_lower_context_t* context,
-    const loom_low_source_memory_access_plan_t* source,
-    loom_low_lower_memory_report_row_t* row) {
-  if (!loom_low_lower_context_wants_report_rows(context) ||
-      source->view_value_id == LOOM_VALUE_ID_INVALID) {
-    return;
-  }
-  const loom_module_t* module = loom_low_lower_context_module(context);
-  const loom_type_t view_type =
-      loom_module_value_type(module, source->view_value_id);
-  const loom_value_fact_table_t* fact_table =
-      loom_low_lower_context_fact_table(context);
-  const loom_fact_context_t* fact_context =
-      fact_table != NULL ? &fact_table->context : NULL;
-  loom_value_fact_storage_schema_t storage_schema = {0};
-  if (loom_encoding_query_type_storage_schema(fact_context, module, view_type,
-                                              &storage_schema)) {
-    loom_amdgpu_memory_report_row_set_storage_schema(&storage_schema, row);
-  }
-  if (iree_string_view_is_empty(row->storage_element_format)) {
-    const loom_value_fact_numeric_format_flags_t element_format =
-        loom_numeric_format_from_scalar_type(loom_type_element_type(view_type));
-    row->storage_element_format = loom_amdgpu_memory_report_storage_name(
-        LOOM_ENCODING_OPERAND_PARAMETER_ELEMENT_FORMAT, element_format,
-        LOOM_VALUE_FACT_NUMERIC_FORMAT_NONE);
-  }
-}
-
-static iree_status_t loom_amdgpu_record_memory_packet_report(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    const loom_amdgpu_memory_packet_plan_t* packet) {
-  const loom_low_source_memory_access_plan_t* source = &packet->access.source;
-  if (!loom_low_lower_context_wants_report_rows(context)) {
-    return iree_ok_status();
-  }
-
-  const loom_low_descriptor_set_t* descriptor_set =
-      loom_low_lower_context_descriptor_set(context);
-  const loom_low_descriptor_memory_effect_summary_t issued =
-      loom_low_descriptor_memory_effect_summary(descriptor_set,
-                                                packet->access.descriptor);
-  const iree_string_view_t packet_key = loom_low_descriptor_set_string(
-      descriptor_set, packet->access.descriptor->key_string_ref);
-  const loom_low_source_memory_operation_kind_t operation_kind =
-      source->operation_kind;
-  iree_string_view_t fallback_reason = iree_string_view_empty();
-  if (source->memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) {
-    fallback_reason = loom_amdgpu_memory_ds_addtid_reason_key(
-        descriptor_set, loom_low_lower_context_module(context),
-        loom_low_lower_context_source_function(context),
-        loom_low_lower_context_bundle(context), &packet->access,
-        operation_kind);
-  }
-  loom_low_lower_memory_report_row_t row = {
-      .function_name = loom_low_lower_context_function_name(context),
-      .source_op_name =
-          loom_op_name(loom_low_lower_context_module(context), source_op),
-      .source_op_kind = source_op->kind,
-      .source_root_name = loom_module_value_name(
-          loom_low_lower_context_module(context), source->root_value_id),
-      .source_root_argument_index =
-          loom_low_lower_source_memory_root_argument_index(context, source),
-      .memory_space = loom_amdgpu_memory_space_name(source->memory_space),
-      .operation_kind = loom_amdgpu_memory_operation_name(operation_kind),
-      .packet_key = packet_key,
-      .address_form =
-          loom_amdgpu_memory_address_form_name(packet->access.address_form),
-      .dynamic_term_kind =
-          loom_amdgpu_memory_access_dynamic_term_kind_name(&packet->access),
-      .fallback_reason = fallback_reason,
-      .static_offset_bytes = source->static_byte_offset,
-      .element_byte_count = source->element_byte_count,
-      .vector_lane_count = source->vector_lane_count,
-      .issued_read_byte_count = issued.read_byte_count,
-      .issued_write_byte_count = issued.write_byte_count,
-      .issued_read_unknown_width_count = issued.read_unknown_width_count,
-      .issued_write_unknown_width_count = issued.write_unknown_width_count,
-      .dynamic_stride_bytes =
-          loom_amdgpu_memory_report_dynamic_stride_bytes(source),
-      .vector_lane_stride_bytes = loom_amdgpu_memory_report_positive_u32(
-          source->vector_lane_byte_stride),
-  };
-  loom_amdgpu_memory_report_row_populate_storage_schema(context, source, &row);
-  IREE_RETURN_IF_ERROR(loom_amdgpu_memory_report_bank_service(
-      context, source_op, packet->access.descriptor, source,
-      &row.bank_service));
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_memory_report_row_populate_source_interval(context, source,
-                                                                &row));
-  return loom_low_lower_record_memory_report_row(context, source_op, &row);
-}
 
 static iree_status_t loom_amdgpu_emit_memory_packet(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
@@ -196,10 +41,9 @@ static iree_status_t loom_amdgpu_emit_memory_packet(
       packet->access.source.access_flags, operands, operand_count, attrs,
       result_types, result_count, /*tied_results=*/NULL,
       /*tied_result_count=*/0, source_op->location, out_op));
-  IREE_RETURN_IF_ERROR(loom_low_lower_record_memory_packet(
+  return loom_low_lower_record_memory_packet(
       context, *out_op, packet->access.descriptor, &packet->access.source,
-      loom_value_facts_exact_i64(0)));
-  return loom_amdgpu_record_memory_packet_report(context, source_op, packet);
+      loom_value_facts_exact_i64(0));
 }
 
 static iree_status_t loom_amdgpu_memory_payload_low_type(
