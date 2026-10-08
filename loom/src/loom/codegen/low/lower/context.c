@@ -679,14 +679,6 @@ iree_status_t loom_low_lower_interpose_entry_block(
   return iree_ok_status();
 }
 
-iree_status_t loom_low_lower_append_low_block(loom_low_lower_context_t* context,
-                                              loom_block_t** out_block) {
-  *out_block = NULL;
-  loom_region_t* low_body = loom_low_lower_context_low_body(context);
-  IREE_ASSERT(low_body != NULL);
-  return loom_region_append_block(context->module, low_body, out_block);
-}
-
 static uint16_t loom_low_lower_source_block_index(
     loom_low_lower_context_t* context, const loom_block_t* source_block) {
   loom_region_t* source_body = loom_func_like_body(context->source_function);
@@ -699,27 +691,12 @@ static uint16_t loom_low_lower_source_block_index(
   return source_index;
 }
 
-iree_status_t loom_low_lower_lookup_successor_dest(
-    loom_low_lower_context_t* context, const loom_op_t* source_terminator,
-    uint8_t successor_index, loom_block_t** out_low_dest) {
-  *out_low_dest = NULL;
-  IREE_ASSERT(source_terminator != NULL);
-  IREE_ASSERT_LT(successor_index, source_terminator->successor_count);
-
-  const uint16_t source_index = loom_low_lower_source_block_index(
-      context, source_terminator->parent_block);
-  const loom_low_lower_successor_interpositions_t* interpositions =
-      &context->lowering.successor_interpositions[source_index];
-  if (interpositions->low_dests != NULL &&
-      interpositions->low_dests[successor_index] != NULL) {
-    *out_low_dest = interpositions->low_dests[successor_index];
-    return iree_ok_status();
-  }
-
-  loom_block_t* const* source_successors =
-      loom_op_const_successors(source_terminator);
-  return loom_low_lower_lookup_block(
-      context, source_successors[successor_index], out_low_dest);
+loom_block_t* loom_low_lower_lookup_successor_dest(
+    const loom_low_lower_context_t* context, const loom_op_t* source_terminator,
+    uint8_t successor_index) {
+  return loom_low_lower_control_block(
+      context, loom_low_lower_control_successor(context, source_terminator,
+                                                successor_index));
 }
 
 bool loom_low_lower_source_op_is_callable_exit(
@@ -809,67 +786,6 @@ iree_status_t loom_low_lower_remap_successor_args(
   *out_low_args =
       (loom_value_slice_t){.values = low_args, .count = low_arg_count};
   return iree_ok_status();
-}
-
-iree_status_t loom_low_lower_interpose_successor_dest(
-    loom_low_lower_context_t* context, const loom_op_t* source_terminator,
-    uint8_t successor_index, loom_block_t* interposed_low_block,
-    loom_block_t** out_previous_low_dest) {
-  *out_previous_low_dest = NULL;
-  IREE_ASSERT(source_terminator != NULL);
-  IREE_ASSERT_LT(successor_index, source_terminator->successor_count);
-  IREE_ASSERT(interposed_low_block != NULL);
-  loom_block_t* previous_low_dest = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_successor_dest(
-      context, source_terminator, successor_index, &previous_low_dest));
-  IREE_ASSERT_EQ(previous_low_dest->arg_count, interposed_low_block->arg_count);
-
-  const uint16_t source_index = loom_low_lower_source_block_index(
-      context, source_terminator->parent_block);
-  loom_low_lower_successor_interpositions_t* interpositions =
-      &context->lowering.successor_interpositions[source_index];
-  if (interpositions->low_dests == NULL) {
-    IREE_ASSERT_EQ(interpositions->low_dest_count, 0);
-    interpositions->low_dest_count = source_terminator->successor_count;
-    IREE_RETURN_IF_ERROR(loom_low_lower_allocate_function_array(
-        context, interpositions->low_dest_count,
-        sizeof(*interpositions->low_dests),
-        (void**)&interpositions->low_dests));
-    memset(interpositions->low_dests, 0,
-           interpositions->low_dest_count * sizeof(*interpositions->low_dests));
-  }
-  IREE_ASSERT_EQ(interpositions->low_dest_count,
-                 source_terminator->successor_count);
-  interpositions->low_dests[successor_index] = interposed_low_block;
-  *out_previous_low_dest = previous_low_dest;
-  return iree_ok_status();
-}
-
-iree_status_t loom_low_lower_set_branch_plan(loom_low_lower_context_t* context,
-                                             const loom_op_t* source_terminator,
-                                             loom_low_lower_plan_t plan) {
-  IREE_ASSERT(source_terminator != NULL);
-  IREE_ASSERT_FALSE(loom_low_lower_plan_is_empty(plan));
-  const uint16_t source_index = loom_low_lower_source_block_index(
-      context, source_terminator->parent_block);
-  loom_low_lower_plan_t* branch_plan =
-      &context->lowering.branch_plans[source_index];
-  IREE_ASSERT(loom_low_lower_plan_is_empty(*branch_plan));
-  *branch_plan = plan;
-  return iree_ok_status();
-}
-
-bool loom_low_lower_lookup_branch_plan(loom_low_lower_context_t* context,
-                                       const loom_op_t* source_terminator,
-                                       loom_low_lower_plan_t* out_plan) {
-  *out_plan = loom_low_lower_plan_empty();
-  if (source_terminator == NULL || context->lowering.branch_plans == NULL) {
-    return false;
-  }
-  const uint16_t source_index = loom_low_lower_source_block_index(
-      context, source_terminator->parent_block);
-  *out_plan = context->lowering.branch_plans[source_index];
-  return !loom_low_lower_plan_is_empty(*out_plan);
 }
 
 iree_status_t loom_low_lower_lookup_block(loom_low_lower_context_t* context,

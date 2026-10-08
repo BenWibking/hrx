@@ -15,7 +15,7 @@
 extern "C" {
 #endif
 
-// Plans divergent branch expansion before the source body is emitted. Source
+// Plans divergent branch expansion before any Low IR is constructed. Source
 // distribution facts distinguish divergent predicates from uniform predicates
 // whose other uses require native mask storage.
 iree_status_t loom_amdgpu_prepare_branch(

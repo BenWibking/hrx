@@ -8,9 +8,11 @@
 
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
+#include "loom/codegen/low/lower/control_plan.h"
 #include "loom/codegen/low/testing/source_workload.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
+#include "loom/ops/cfg/ops.h"
 #include "loom/ops/func/ops.h"
 #include "loom/ops/low/ops.h"
 #include "loom/ops/scalar/ops.h"
@@ -46,6 +48,19 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     iree_host_size_t plan_count = 0;
     bool overflow = false;
     SourcePlanObservation source_plan;
+    struct {
+      // Planned blocks carrying the same tuple through two nested rewrites.
+      loom_low_lower_block_ref_t first = 0;
+      // Final effective source-edge destination.
+      loom_low_lower_block_ref_t second = 0;
+      // Authored destination reached after both interpositions.
+      loom_low_lower_block_ref_t destination = 0;
+      // Number of callbacks observed before any Low construction.
+      unsigned planning_count = 0;
+      // Injects a target constraint rejection after a complete topology plan.
+      bool reject = false;
+    } control;
+
     // Type mapping must finish before selected and structural plans execute.
     struct {
       // Original test-target mapper delegated to by the observer.
@@ -125,6 +140,39 @@ class LowLowerSourcePlanTest : public ::testing::Test {
           /*.user_data=*/nullptr,
       };
 
+  static iree_status_t PlanControl(void* user_data,
+                                   loom_low_lower_context_t* context,
+                                   const loom_op_t* source_op,
+                                   iree_arena_allocator_t* scratch_arena) {
+    auto& control = static_cast<PlanObserver*>(user_data)->control;
+    ++control.planning_count;
+    EXPECT_EQ(loom_low_lower_context_low_function(context), nullptr);
+    control.destination =
+        loom_low_lower_control_successor(context, source_op, 0);
+    IREE_RETURN_IF_ERROR(loom_low_lower_control_add_block(
+        context, control.destination, control.destination, &control.first));
+    // Copying a synthetic signature must retain the canonical source tuple.
+    IREE_RETURN_IF_ERROR(loom_low_lower_control_add_block(
+        context, control.first, control.first, &control.second));
+    loom_low_lower_block_ref_t previous = 0;
+    IREE_RETURN_IF_ERROR(loom_low_lower_control_interpose_successor(
+        context, source_op, 0, control.first, &previous));
+    EXPECT_EQ(previous, control.destination);
+    IREE_RETURN_IF_ERROR(loom_low_lower_control_interpose_successor(
+        context, source_op, 0, control.second, &previous));
+    EXPECT_EQ(previous, control.first);
+    EXPECT_EQ(loom_low_lower_control_argument_count(context, control.second),
+              1u);
+    EXPECT_TRUE(loom_type_equal(
+        loom_low_lower_control_argument_type(context, control.second, 0),
+        loom_low_lower_control_argument_type(context, control.destination, 0)));
+    if (control.reject) {
+      return loom_low_lower_emit_branch_constraint(
+          context, source_op, IREE_SV("test_control_constraint"));
+    }
+    return iree_ok_status();
+  }
+
   static iree_status_t ObservePlan(void* user_data,
                                    loom_low_lower_context_t* context) {
     auto* observer = static_cast<PlanObserver*>(user_data);
@@ -141,6 +189,24 @@ class LowLowerSourcePlanTest : public ::testing::Test {
       observer->plans[i].source_order_matches =
           plan.source_op == observer->expected_source_ops[i];
       observer->plans[i].elided = plan.elided;
+    }
+    if (observer->control.first) {
+      loom_builder_t* builder = loom_low_lower_context_builder(context);
+      const loom_builder_ip_t saved_ip = loom_builder_save(builder);
+      const loom_low_lower_block_ref_t blocks[] = {
+          observer->control.second, observer->control.first,
+          observer->control.destination};
+      iree_status_t status = iree_ok_status();
+      for (unsigned i = 0; i < 2 && iree_status_is_ok(status); ++i) {
+        loom_block_t* block = loom_low_lower_control_block(context, blocks[i]);
+        loom_builder_set_block(builder, block);
+        loom_op_t* branch = nullptr;
+        status = loom_low_br_build(
+            builder, loom_low_lower_control_block(context, blocks[i + 1]),
+            block->arg_ids, block->arg_count, LOOM_LOCATION_UNKNOWN, &branch);
+      }
+      loom_builder_restore(builder, saved_ip);
+      return status;
     }
     return iree_ok_status();
   }
@@ -260,6 +326,37 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     observer_.expected_source_ops[2] = result_op;
   }
 
+  void AddForwardingBlock() {
+    policy_.source_plan_observer = nullptr;
+    policy_.prepare_branch = {PlanControl, &observer_};
+    loom_region_t* body = loom_func_like_body(function_);
+    loom_block_t* entry = loom_region_entry_block(body);
+    loom_op_t* original_return = entry->last_op;
+    const loom_value_id_t result = loom_op_const_operands(original_return)[0];
+    const loom_type_t type = loom_module_value_type(module_, result);
+    loom_block_t* destination = nullptr;
+    IREE_ASSERT_OK(loom_region_append_block(module_, body, &destination));
+    loom_builder_t builder;
+    loom_builder_initialize(module_, &module_->arena, entry, &builder);
+    loom_builder_set_before(&builder, original_return);
+    loom_value_id_t argument = LOOM_VALUE_ID_INVALID;
+    IREE_ASSERT_OK(
+        loom_builder_define_block_arg(&builder, destination, type, &argument));
+    loom_op_t* branch = nullptr;
+    IREE_ASSERT_OK(loom_cfg_br_build(&builder, destination, &result, 1,
+                                     LOOM_LOCATION_UNKNOWN, &branch));
+    IREE_ASSERT_OK(loom_op_erase(module_, original_return));
+    loom_builder_set_block(&builder, destination);
+    loom_op_t* return_op = nullptr;
+    IREE_ASSERT_OK(loom_func_return_build(&builder, &argument, 1,
+                                          LOOM_LOCATION_UNKNOWN, &return_op));
+    IREE_ASSERT_OK(loom_value_fact_table_initialize(
+        &fact_table_, &analysis_arena_, module_->values.count));
+    fact_table_.context.target_facts = &target_facts_;
+    IREE_ASSERT_OK(
+        loom_value_fact_table_compute(&fact_table_, module_, function_));
+  }
+
   iree_arena_block_pool_t block_pool_;
   iree_arena_allocator_t analysis_arena_;
   loom_context_t context_;
@@ -314,6 +411,52 @@ TEST_F(LowLowerSourcePlanTest, PropagatesObserverEndFailureBeforeSelection) {
   EXPECT_FALSE(observer_.source_plan.invalid_lifecycle);
   EXPECT_FALSE(observer_.source_plan.selection_started);
   EXPECT_EQ(observer_.plan_count, 0u);
+}
+
+TEST_F(LowLowerSourcePlanTest,
+       PlansNestedBlockInterpositionsBeforeLowCreation) {
+  AddForwardingBlock();
+  IREE_ASSERT_OK(
+      loom_low_lower_function(module_, function_, &options_, &result_));
+  ASSERT_EQ(result_.error_count, 0u);
+  ASSERT_NE(result_.low_func_op, nullptr);
+  EXPECT_EQ(observer_.control.planning_count, 1u);
+  EXPECT_EQ(observer_.type_mapping.emission_queries, 0u);
+  const loom_region_t* body =
+      loom_func_like_body(loom_func_like_cast(module_, result_.low_func_op));
+  ASSERT_EQ(body->block_count, 4u);
+  // Before-placement and nested edge rewrites preserve the same linear chain.
+  for (uint16_t i = 0; i < 3; ++i) {
+    const loom_block_t* block = loom_region_const_block(body, i);
+    const loom_block_t* next = loom_region_const_block(body, i + 1);
+    const loom_op_t* branch = loom_block_const_last_op(block);
+    ASSERT_TRUE(loom_low_br_isa(branch));
+    EXPECT_EQ(loom_low_br_dest(branch), next);
+    EXPECT_EQ(loom_low_br_args(branch).count, 1u);
+    ASSERT_EQ(next->arg_count, 1u);
+    EXPECT_TRUE(loom_type_equal(
+        loom_module_value_type(module_, loom_low_br_args(branch).values[0]),
+        loom_block_arg_type(module_, next, 0)));
+  }
+}
+
+TEST_F(LowLowerSourcePlanTest, RejectsControlPlanWithoutPublishingBlocks) {
+  AddForwardingBlock();
+  observer_.control.reject = true;
+  options_.max_errors = 1;
+  const iree_host_size_t initial_value_count = module_->values.count;
+  const loom_region_t* source_body = loom_func_like_body(function_);
+  const loom_symbol_ref_t symbol = loom_func_like_callee(function_);
+  IREE_ASSERT_OK(
+      loom_low_lower_function(module_, function_, &options_, &result_));
+  EXPECT_EQ(result_.error_count, 1u);
+  EXPECT_EQ(result_.low_func_op, nullptr);
+  EXPECT_EQ(observer_.control.planning_count, 1u);
+  EXPECT_FALSE(observer_.type_mapping.emission_started);
+  EXPECT_EQ(module_->values.count, initial_value_count);
+  EXPECT_EQ(source_body->block_count, 2u);
+  EXPECT_EQ(module_->symbols.entries[symbol.symbol_id].defining_op,
+            function_.op);
 }
 
 TEST_F(LowLowerSourcePlanTest, RejectsHelperPreconditionBeforeLowConstruction) {

@@ -98,27 +98,14 @@ static loom_region_t* loom_low_lower_low_body(
 static iree_status_t loom_low_lower_map_blocks(
     loom_low_lower_context_t* context, loom_region_t* source_body) {
   loom_region_t* low_body = loom_low_lower_low_body(context);
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      &context->function_arena, source_body->block_count,
-      sizeof(*context->lowering.block_map),
-      (void**)&context->lowering.block_map));
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      &context->function_arena, source_body->block_count,
-      sizeof(*context->lowering.successor_interpositions),
-      (void**)&context->lowering.successor_interpositions));
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      &context->function_arena, source_body->block_count,
-      sizeof(*context->lowering.branch_plans),
-      (void**)&context->lowering.branch_plans));
+  const iree_host_size_t block_count =
+      loom_low_lower_control_block_count(context);
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(&context->function_arena, block_count,
+                                sizeof(*context->lowering.block_map),
+                                (void**)&context->lowering.block_map));
   memset(context->lowering.block_map, 0,
-         (iree_host_size_t)source_body->block_count *
-             sizeof(*context->lowering.block_map));
-  memset(context->lowering.successor_interpositions, 0,
-         (iree_host_size_t)source_body->block_count *
-             sizeof(*context->lowering.successor_interpositions));
-  for (uint16_t i = 0; i < source_body->block_count; ++i) {
-    context->lowering.branch_plans[i] = loom_low_lower_plan_empty();
-  }
+         block_count * sizeof(*context->lowering.block_map));
 
   for (uint16_t i = 0; i < source_body->block_count; ++i) {
     loom_block_t* source_block = loom_region_block(source_body, i);
@@ -156,7 +143,8 @@ static iree_status_t loom_low_lower_map_blocks(
           context, source_block->arg_ids[arg_index], low_arg));
     }
   }
-  return loom_low_lower_realizations_map_blocks(context);
+  IREE_RETURN_IF_ERROR(loom_low_lower_realizations_map_blocks(context));
+  return loom_low_lower_control_create_blocks(context);
 }
 
 static iree_status_t loom_low_lower_emit_preamble(
@@ -188,36 +176,6 @@ static iree_status_t loom_low_lower_emit_entry_setup(
   iree_status_t status = context->policy->emit_entry_setup.fn(
       context->policy->emit_entry_setup.user_data, context);
   loom_builder_restore(&context->builder, saved_ip);
-  return status;
-}
-
-static iree_status_t loom_low_lower_prepare_branches(
-    loom_low_lower_context_t* context, loom_region_t* source_body) {
-  if (context->policy->prepare_branch.fn == NULL) {
-    return iree_ok_status();
-  }
-
-  iree_arena_allocator_t analysis_arena;
-  iree_arena_initialize(context->module->arena.block_pool, &analysis_arena);
-  iree_status_t status = iree_ok_status();
-  for (uint16_t block_index = 0;
-       block_index < source_body->block_count && iree_status_is_ok(status);
-       ++block_index) {
-    const loom_block_t* source_block =
-        loom_region_block(source_body, block_index);
-    const loom_op_t* source_terminator = loom_block_const_last_op(source_block);
-    if (source_terminator == NULL || source_terminator->successor_count == 0) {
-      continue;
-    }
-    status = context->policy->prepare_branch.fn(
-        context->policy->prepare_branch.user_data, context, source_terminator,
-        &analysis_arena);
-    iree_arena_reset(&analysis_arena);
-    if (loom_low_lower_context_should_stop(context)) {
-      break;
-    }
-  }
-  iree_arena_deinitialize(&analysis_arena);
   return status;
 }
 
@@ -579,9 +537,8 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
                                            source_op->location, &low_fence_op);
     }
     case LOOM_OP_CFG_BR: {
-      loom_block_t* low_dest = NULL;
-      IREE_RETURN_IF_ERROR(loom_low_lower_lookup_successor_dest(
-          context, source_op, 0, &low_dest));
+      loom_block_t* low_dest =
+          loom_low_lower_lookup_successor_dest(context, source_op, 0);
       loom_value_slice_t args = loom_cfg_br_args(source_op);
       loom_value_slice_t low_args = {0};
       IREE_RETURN_IF_ERROR(
@@ -593,12 +550,10 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
                                low_args.count, source_op->location, &low_br_op);
     }
     case LOOM_OP_CFG_COND_BR: {
-      loom_block_t* low_true_dest = NULL;
-      IREE_RETURN_IF_ERROR(loom_low_lower_lookup_successor_dest(
-          context, source_op, 0, &low_true_dest));
-      loom_block_t* low_false_dest = NULL;
-      IREE_RETURN_IF_ERROR(loom_low_lower_lookup_successor_dest(
-          context, source_op, 1, &low_false_dest));
+      loom_block_t* low_true_dest =
+          loom_low_lower_lookup_successor_dest(context, source_op, 0);
+      loom_block_t* low_false_dest =
+          loom_low_lower_lookup_successor_dest(context, source_op, 1);
       bool condition = false;
       if (loom_low_lower_structural_branch_exact_bool(context, source_op,
                                                       &condition)) {
@@ -1430,6 +1385,9 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
     status = loom_low_lower_source_plan_build(&context, source_body);
   }
   if (iree_status_is_ok(status) && context.result->error_count == 0) {
+    status = loom_low_lower_control_plan_build(&context);
+  }
+  if (iree_status_is_ok(status) && context.result->error_count == 0) {
     loom_symbol_ref_t low_func_ref = loom_func_like_callee(source_function);
     loom_low_lower_emission_scope_begin(&context);
     status = loom_low_lower_function_boundary_create(&context, source_body,
@@ -1441,9 +1399,6 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
     }
     if (iree_status_is_ok(status) && context.result->error_count == 0) {
       status = loom_low_lower_function_boundary_remap_predicates(&context);
-    }
-    if (iree_status_is_ok(status) && context.result->error_count == 0) {
-      status = loom_low_lower_prepare_branches(&context, source_body);
     }
     if (iree_status_is_ok(status) && context.result->error_count == 0) {
       loom_low_lower_emission_scope_begin(&context);

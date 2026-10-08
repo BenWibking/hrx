@@ -30,8 +30,6 @@ struct loom_low_lower_realization_t {
   struct loom_low_lower_realization_t* next;
   // Next collision in the physical-identity table.
   struct loom_low_lower_realization_t* hash_next;
-  // Next supplemental argument belonging to the same loop header.
-  struct loom_low_lower_realization_t* argument_next;
   // Physical-identity hash retained for table growth.
   uint32_t hash;
   // Initial value produced at initial_anchor.
@@ -62,10 +60,8 @@ typedef struct loom_low_lower_realization_block_t {
   iree_host_size_t event_end;
   // Supplemental arguments owned by this source loop header.
   struct {
-    // First argument in preparation order.
-    loom_low_lower_realization_t* first;
-    // Last argument in preparation order.
-    loom_low_lower_realization_t* last;
+    // Indexed arguments in preparation order, borrowing canonical recipes.
+    loom_low_lower_realization_t** values;
     // Number of supplemental arguments, bounded by Low block construction.
     uint32_t count;
   } header;
@@ -700,13 +696,11 @@ iree_status_t loom_low_lower_realizations_finalize(
     ++event_count;
     loom_low_lower_realization_block_t* header =
         &state->blocks[value->loop->header->region_index];
-    if (header->header.last) {
-      header->header.last->argument_next = value;
-    } else {
-      header->header.first = value;
-    }
-    header->header.last = value;
     ++header->header.count;
+    if (header->header.count > UINT16_MAX - value->loop->header->arg_count) {
+      return loom_low_lower_emit_branch_constraint(
+          context, value->loop->entry, IREE_SV("block_argument_count_u16"));
+    }
   }
   IREE_RETURN_IF_ERROR(loom_low_lower_realizations_order_events(
       context, state->events, event_count));
@@ -723,8 +717,12 @@ iree_status_t loom_low_lower_realizations_finalize(
     if (loop->header == NULL) {
       continue;
     }
-    const loom_low_lower_realization_block_t* header =
+    loom_low_lower_realization_block_t* header =
         &state->blocks[loop->header->region_index];
+    IREE_RETURN_IF_ERROR(loom_low_lower_allocate_function_array(
+        context, header->header.count, sizeof(*header->header.values),
+        (void**)&header->header.values));
+    header->header.count = 0;
     const loom_op_t* edges[] = {loop->entry, loop->backedge};
     for (iree_host_size_t j = 0; j < IREE_ARRAYSIZE(edges); ++j) {
       loom_low_lower_realization_block_t* edge =
@@ -732,7 +730,34 @@ iree_status_t loom_low_lower_realizations_finalize(
       edge->edge_destination = header;
     }
   }
+  for (loom_low_lower_realization_t* value = state->first; value;
+       value = value->next) {
+    if (value->loop) {
+      loom_low_lower_realization_block_t* header =
+          &state->blocks[value->loop->header->region_index];
+      header->header.values[header->header.count++] = value;
+    }
+  }
   return iree_ok_status();
+}
+
+uint16_t loom_low_lower_realization_block_argument_count(
+    const loom_low_lower_context_t* context, const loom_block_t* source_block) {
+  const loom_low_lower_realizations_t* state =
+      context->lowering.source_plan.realizations;
+  return state && state->blocks
+             ? (uint16_t)state->blocks[source_block->region_index].header.count
+             : 0;
+}
+
+loom_type_t loom_low_lower_realization_block_argument_type(
+    const loom_low_lower_context_t* context, const loom_block_t* source_block,
+    uint16_t argument_index) {
+  const loom_low_lower_realizations_t* state =
+      context->lowering.source_plan.realizations;
+  return state->blocks[source_block->region_index]
+      .header.values[argument_index]
+      ->recipe.type;
 }
 
 iree_status_t loom_low_lower_realizations_map_blocks(
@@ -833,8 +858,8 @@ void loom_low_lower_realization_edge_values(
   const loom_low_lower_realization_block_t* destination =
       state->blocks[source_terminator->parent_block->region_index]
           .edge_destination;
-  for (const loom_low_lower_realization_t* value = destination->header.first;
-       value; value = value->argument_next) {
+  for (uint32_t i = 0; i < destination->header.count; ++i) {
+    const loom_low_lower_realization_t* value = destination->header.values[i];
     *values++ = source_terminator == value->loop->entry ? value->initial_value
                                                         : value->backedge_value;
   }

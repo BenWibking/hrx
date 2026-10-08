@@ -265,9 +265,9 @@ typedef iree_status_t (*loom_low_lower_prepare_branch_fn_t)(
     const loom_op_t* source_terminator, iree_arena_allocator_t* analysis_arena);
 
 typedef struct loom_low_lower_prepare_branch_callback_t {
-  // Optional callback invoked after source blocks have low blocks, before any
-  // source body operations are emitted. Targets use this to plan structural
-  // branch expansion and interpose low-only destination blocks. The analysis
+  // Optional callback invoked after source selection and before Low creation.
+  // Targets use the shared control plan to retain structural branch expansion
+  // and interpose planned destination blocks without mutating IR. The analysis
   // arena is reset immediately after each callback and must not back retained
   // plans, target state, or emitted IR.
   loom_low_lower_prepare_branch_fn_t fn;
@@ -1347,21 +1347,14 @@ iree_status_t loom_low_lower_interpose_entry_block(
     uint16_t target_arg_count,
     loom_low_lower_entry_interposition_t* out_interposition);
 
-// Appends a low-only block to the low function being emitted.
-//
-// This is for target control packets that need a dispatch/restore block with no
-// corresponding source block. Source block remapping remains fixed.
-iree_status_t loom_low_lower_append_low_block(loom_low_lower_context_t* context,
-                                              loom_block_t** out_block);
-
 // Looks up the effective low destination for one source terminator successor.
 //
 // This accounts for target interpositions registered by
-// loom_low_lower_interpose_successor_dest. Callers that are lowering structural
-// terminators should prefer this over raw block lookup.
-iree_status_t loom_low_lower_lookup_successor_dest(
-    loom_low_lower_context_t* context, const loom_op_t* source_terminator,
-    uint8_t successor_index, loom_block_t** out_low_dest);
+// loom_low_lower_control_interpose_successor. Callers that are lowering
+// structural terminators should prefer this over raw block lookup.
+loom_block_t* loom_low_lower_lookup_successor_dest(
+    const loom_low_lower_context_t* context, const loom_op_t* source_terminator,
+    uint8_t successor_index);
 
 // Maps one source successor payload to low values accepted by |low_dest|.
 //
@@ -1397,28 +1390,6 @@ iree_status_t loom_low_lower_materialize_structural_operand(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     iree_host_size_t operand_index, loom_value_id_t source_value_id,
     loom_type_t required_low_type, loom_value_id_t* inout_low_value_id);
-
-// Interposes a low-only destination block on one source successor edge.
-//
-// The new block receives the same edge payload as the source terminator edge:
-// no arguments for cfg.cond_br and the cfg.br payload for cfg.br.
-// |out_previous_low_dest| receives the effective destination that the
-// interposed block should eventually branch to when it wants to preserve the
-// original edge behavior.
-iree_status_t loom_low_lower_interpose_successor_dest(
-    loom_low_lower_context_t* context, const loom_op_t* source_terminator,
-    uint8_t successor_index, loom_block_t* interposed_low_block,
-    loom_block_t** out_previous_low_dest);
-
-// Records one target-owned structural branch plan for |source_terminator|.
-iree_status_t loom_low_lower_set_branch_plan(loom_low_lower_context_t* context,
-                                             const loom_op_t* source_terminator,
-                                             loom_low_lower_plan_t plan);
-
-// Looks up the target-owned structural branch plan for |source_terminator|.
-bool loom_low_lower_lookup_branch_plan(loom_low_lower_context_t* context,
-                                       const loom_op_t* source_terminator,
-                                       loom_low_lower_plan_t* out_plan);
 
 // Maps |source_type| through the active policy. Emits a diagnostic when the
 // policy returns no native mapping, leaving |out_low_type| as none.

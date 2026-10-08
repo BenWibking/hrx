@@ -17,6 +17,7 @@ loom_cc_library(
     "context.h"
     "contract_query.h"
     "contract_selection.h"
+    "control_plan.h"
     "execution.h"
     "function_boundary.h"
     "function_storage.h"
@@ -44,6 +45,7 @@ loom_cc_library(
     "context.c"
     "contract_query.c"
     "contract_selection.c"
+    "control_plan.c"
     "execution.c"
     "function_boundary.c"
     "function_storage.c"
@@ -294,6 +296,7 @@ loom_cc_test(
     iree::testing::gtest_main
     loom::codegen::low::testing::source_workload
     loom::ir
+    loom::ops::cfg
     loom::ops::func
     loom::ops::low
     loom::ops::scalar

@@ -21,6 +21,7 @@
 #include "loom/analysis/symbolic_expr.h"
 #include "loom/analysis/view_regions.h"
 #include "loom/codegen/low/builder.h"
+#include "loom/codegen/low/lower/control_plan.h"
 #include "loom/codegen/low/lower/execution.h"
 #include "loom/codegen/low/lower/function_boundary.h"
 #include "loom/codegen/low/lower/lower.h"
@@ -40,14 +41,6 @@ extern "C" {
 
 typedef struct loom_low_lower_rule_descriptor_map_t
     loom_low_lower_rule_descriptor_map_t;
-
-typedef struct loom_low_lower_successor_interpositions_t {
-  // Effective low destinations indexed by source terminator successor ordinal.
-  // NULL entries use the destination implied by the source successor block.
-  loom_block_t** low_dests;
-  // Number of entries in low_dests.
-  uint8_t low_dest_count;
-} loom_low_lower_successor_interpositions_t;
 
 typedef struct loom_low_lower_target_state_record_t {
   // Target-owned static key identifying this function-local state object.
@@ -95,12 +88,10 @@ typedef struct loom_low_lowering_frame_t {
   loom_low_lower_source_plan_t source_plan;
   // Source local value ordinal to emitted low value ID map.
   loom_value_id_t* value_map;
-  // Source block ordinal to emitted low block pointer map.
+  // Planned block bindings, with authored blocks first in source order.
   loom_block_t** block_map;
-  // Source block ordinal to per-successor low destination interpositions.
-  loom_low_lower_successor_interpositions_t* successor_interpositions;
-  // Source block ordinal to target branch plan selected after low blocks exist.
-  loom_low_lower_plan_t* branch_plans;
+  // Planned block topology and branch expansions, before Low construction.
+  loom_low_lower_control_plan_t* control_plan;
   // Callable signature, argument imports, and ABI layout retained for emission.
   loom_low_lower_function_boundary_t boundary;
   // Optional source selection and memory report analysis state.

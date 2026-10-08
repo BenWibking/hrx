@@ -161,6 +161,14 @@ iree_status_t loom_low_lower_realizations_finalize(
 iree_status_t loom_low_lower_realizations_map_blocks(
     loom_low_lower_context_t* context);
 
+// Indexed signature of the supplemental tuple retained for a top-level source
+// block. Control expansion consumes the same canonical recipes as emission.
+uint16_t loom_low_lower_realization_block_argument_count(
+    const loom_low_lower_context_t* context, const loom_block_t* source_block);
+loom_type_t loom_low_lower_realization_block_argument_type(
+    const loom_low_lower_context_t* context, const loom_block_t* source_block,
+    uint16_t argument_index);
+
 // Emits initializers at block entry and initializers/updates after an authored
 // operation. Both run inside the normal shared emission scratch lifetime.
 iree_status_t loom_low_lower_realizations_emit_entry(
