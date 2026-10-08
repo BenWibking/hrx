@@ -243,9 +243,6 @@ endif()
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
   list(APPEND _iree_benchmark_loom_platform_copts "-DIREE_BENCHMARK_LOOM_HAVE_SPIRV=1")
 endif()
-if(LOOM_IMPORT_CXX)
-  list(APPEND _iree_benchmark_loom_platform_copts "-DIREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX=1")
-endif()
 if(LOOM_TARGET_ARCH_VM)
   list(APPEND _iree_benchmark_loom_platform_copts "-DIREE_BENCHMARK_LOOM_HAVE_VM=1")
 endif()
@@ -257,9 +254,6 @@ endif()
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
   list(APPEND _iree_benchmark_loom_platform_deps loom::tooling::target::spirv::device_provider)
   list(APPEND _iree_benchmark_loom_platform_deps loom::tooling::target::spirv::testbench_requirements)
-endif()
-if(LOOM_IMPORT_CXX)
-  list(APPEND _iree_benchmark_loom_platform_deps loom::import::cxx::tooling::loomc_input)
 endif()
 if(LOOM_TARGET_ARCH_VM)
   list(APPEND _iree_benchmark_loom_platform_deps loom::tooling::target::vm::testbench)
@@ -279,6 +273,7 @@ loom_cc_binary(
     loom::tooling::execution::hal::artifact
     loom::tooling::execution::hal::device_provider
     loom::tooling::input::configured
+    loom::tooling::input::loomc_configured
     loom::transforms::cleanup::configured
     ${_iree_benchmark_loom_platform_deps}
 )

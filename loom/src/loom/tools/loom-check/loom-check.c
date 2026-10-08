@@ -10,25 +10,18 @@
 #include "loom/target/arch/cmd/check/provider.h"
 #include "loom/target/configured/compiler_provider_set.h"
 #include "loom/tooling/input/configured.h"
+#include "loom/tooling/input/loomc_configured.h"
 #include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/provider.h"
 
 #ifndef LOOM_CHECK_HAVE_TEST_PROVIDER
 #define LOOM_CHECK_HAVE_TEST_PROVIDER 0
 #endif  // LOOM_CHECK_HAVE_TEST_PROVIDER
-#ifndef LOOM_CHECK_HAVE_IMPORT_CXX
-#define LOOM_CHECK_HAVE_IMPORT_CXX 0
-#endif  // LOOM_CHECK_HAVE_IMPORT_CXX
-
 #if LOOM_CHECK_HAVE_TEST_PROVIDER
 #include "loom/tools/loom-check/test_provider.h"
 #else
 #include "loomc/target/configured.h"
 #endif  // LOOM_CHECK_HAVE_TEST_PROVIDER
-#if LOOM_CHECK_HAVE_IMPORT_CXX
-#include "loom/import/cxx/tooling/loomc_input.h"
-#endif  // LOOM_CHECK_HAVE_IMPORT_CXX
-
 #ifndef LOOM_CHECK_HAVE_EMIT_AMDGPU
 #define LOOM_CHECK_HAVE_EMIT_AMDGPU 0
 #endif  // LOOM_CHECK_HAVE_EMIT_AMDGPU
@@ -110,28 +103,6 @@ static const loom_check_provider_t* const kLoomCheckProviders[] = {
 #endif  // LOOM_CHECK_HAVE_TARGET_XDNA
 };
 
-#if LOOM_CHECK_HAVE_IMPORT_CXX
-static iree_status_t loom_check_import_source(
-    void* user_data, iree_string_view_t format,
-    iree_string_view_t input_options,
-    const loom_tooling_source_path_options_t* source_path_options,
-    loomc_context_t* context, loomc_workspace_t* workspace,
-    const loomc_source_t* source, iree_arena_block_pool_t* block_pool,
-    iree_allocator_t host_allocator, loomc_module_t** out_module,
-    loomc_result_t** out_result) {
-  (void)user_data;
-  if (iree_string_view_equal(format, IREE_SV("cxx"))) {
-    return loom_cxx_input_import_loomc(
-        context, workspace, source, input_options, source_path_options,
-        block_pool, host_allocator, out_module, out_result);
-  }
-  return iree_make_status(
-      IREE_STATUS_UNIMPLEMENTED,
-      "input format '%.*s' has no LoomC importer linked into this runner",
-      (int)format.size, format.data);
-}
-#endif  // LOOM_CHECK_HAVE_IMPORT_CXX
-
 int main(int argc, char** argv) {
   IREE_TRACE_APP_ENTER();
   IREE_TRACE_ZONE_BEGIN(z0);
@@ -141,9 +112,7 @@ int main(int argc, char** argv) {
 #else
       .create_target_environment = loomc_target_environment_create_configured,
 #endif  // LOOM_CHECK_HAVE_TEST_PROVIDER
-#if LOOM_CHECK_HAVE_IMPORT_CXX
-      .import = loom_check_import_source,
-#endif  // LOOM_CHECK_HAVE_IMPORT_CXX
+      .import = loom_configured_input_loomc_importer(),
   };
   const loom_check_provider_set_t provider_set = {
       .providers = kLoomCheckProviders,

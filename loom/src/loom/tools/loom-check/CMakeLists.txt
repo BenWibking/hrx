@@ -458,9 +458,6 @@ loom_cc_test(
 )
 
 set(_loom_check_platform_copts "")
-if(LOOM_IMPORT_CXX)
-  list(APPEND _loom_check_platform_copts "-DLOOM_CHECK_HAVE_IMPORT_CXX=1")
-endif()
 if(LOOM_EMIT_AMDGPU)
   list(APPEND _loom_check_platform_copts "-DLOOM_CHECK_HAVE_EMIT_AMDGPU=1")
 endif()
@@ -486,9 +483,6 @@ if(LOOM_TARGET_ARCH_XDNA)
   list(APPEND _loom_check_platform_copts "-DLOOM_CHECK_HAVE_TARGET_XDNA=1")
 endif()
 set(_loom_check_platform_deps "")
-if(LOOM_IMPORT_CXX)
-  list(APPEND _loom_check_platform_deps loom::import::cxx::tooling::loomc_input)
-endif()
 if(LOOM_EMIT_AMDGPU)
   list(APPEND _loom_check_platform_deps loom::target::arch::amdgpu::check::provider)
 endif()
@@ -528,13 +522,11 @@ loom_cc_binary(
     loom::target::arch::cmd::check::check_provider
     loom::target::configured::compiler_provider_set
     loom::tooling::input::configured
+    loom::tooling::input::loomc_configured
     ${_loom_check_platform_deps}
 )
 
 set(_loom_check_test_platform_copts "")
-if(LOOM_IMPORT_CXX)
-  list(APPEND _loom_check_test_platform_copts "-DLOOM_CHECK_HAVE_IMPORT_CXX=1")
-endif()
 if(LOOM_EMIT_AMDGPU)
   list(APPEND _loom_check_test_platform_copts "-DLOOM_CHECK_HAVE_EMIT_AMDGPU=1")
 endif()
@@ -560,9 +552,6 @@ if(LOOM_TARGET_ARCH_XDNA)
   list(APPEND _loom_check_test_platform_copts "-DLOOM_CHECK_HAVE_TARGET_XDNA=1")
 endif()
 set(_loom_check_test_platform_deps "")
-if(LOOM_IMPORT_CXX)
-  list(APPEND _loom_check_test_platform_deps loom::import::cxx::tooling::loomc_input)
-endif()
 if(LOOM_EMIT_AMDGPU)
   list(APPEND _loom_check_test_platform_deps loom::target::arch::amdgpu::check::provider)
 endif()
@@ -604,6 +593,7 @@ loom_cc_binary(
     loom::target::arch::cmd::check::check_provider
     loom::target::configured::compiler_provider_set
     loom::tooling::input::configured
+    loom::tooling::input::loomc_configured
     ${_loom_check_test_platform_deps}
   TESTONLY
 )

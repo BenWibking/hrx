@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 #include "loom/tooling/input/configured.h"
+#include "loom/tooling/input/loomc_configured.h"
 #include "loom/tools/iree-test-loom/main.h"
 #include "loom/transforms/cleanup/configured.h"
 #include "loomc/interop.h"
@@ -22,9 +23,6 @@
 #ifndef IREE_TEST_LOOM_HAVE_SPIRV
 #define IREE_TEST_LOOM_HAVE_SPIRV 0
 #endif  // IREE_TEST_LOOM_HAVE_SPIRV
-#ifndef IREE_TEST_LOOM_HAVE_IMPORT_CXX
-#define IREE_TEST_LOOM_HAVE_IMPORT_CXX 0
-#endif  // IREE_TEST_LOOM_HAVE_IMPORT_CXX
 #ifndef IREE_TEST_LOOM_HAVE_VM
 #define IREE_TEST_LOOM_HAVE_VM 0
 #endif  // IREE_TEST_LOOM_HAVE_VM
@@ -48,9 +46,6 @@
 #include "loom/tooling/target/spirv/device_provider.h"
 #include "loom/tooling/target/spirv/testbench_requirements.h"
 #endif  // IREE_TEST_LOOM_HAVE_SPIRV
-#if IREE_TEST_LOOM_HAVE_IMPORT_CXX
-#include "loom/import/cxx/tooling/loomc_input.h"
-#endif  // IREE_TEST_LOOM_HAVE_IMPORT_CXX
 #if IREE_TEST_LOOM_HAVE_TASK
 #include "loom/tooling/target/cpu/task_device.h"
 #endif  // IREE_TEST_LOOM_HAVE_TASK
@@ -76,28 +71,6 @@ static iree_status_t iree_test_loom_append_requirement_provider(
   return iree_ok_status();
 }
 #endif  // IREE_TEST_LOOM_HAVE_AMDGPU || IREE_TEST_LOOM_HAVE_SPIRV
-
-#if IREE_TEST_LOOM_HAVE_IMPORT_CXX
-static iree_status_t iree_test_loom_import_source(
-    void* user_data, iree_string_view_t format,
-    iree_string_view_t input_options,
-    const loom_tooling_source_path_options_t* source_path_options,
-    loomc_context_t* context, loomc_workspace_t* workspace,
-    const loomc_source_t* source, iree_arena_block_pool_t* block_pool,
-    iree_allocator_t host_allocator, loomc_module_t** out_module,
-    loomc_result_t** out_result) {
-  (void)user_data;
-  if (iree_string_view_equal(format, IREE_SV("cxx"))) {
-    return loom_cxx_input_import_loomc(
-        context, workspace, source, input_options, source_path_options,
-        block_pool, host_allocator, out_module, out_result);
-  }
-  return iree_make_status(
-      IREE_STATUS_UNIMPLEMENTED,
-      "input format '%.*s' has no LoomC importer linked into this runner",
-      (int)format.size, format.data);
-}
-#endif  // IREE_TEST_LOOM_HAVE_IMPORT_CXX
 
 static iree_status_t iree_test_loom_populate_requirement_providers(
     void* user_data, loom_run_hal_testbench_context_t* hal_context,
@@ -179,9 +152,7 @@ int main(int argc, char** argv) {
       .input_providers = loom_configured_input_providers(),
       .tool_name = "iree-test-loom",
       .target_environment = target_environment,
-#if IREE_TEST_LOOM_HAVE_IMPORT_CXX
-      .import = iree_test_loom_import_source,
-#endif  // IREE_TEST_LOOM_HAVE_IMPORT_CXX
+      .import = loom_configured_input_loomc_importer(),
       .cleanup_pattern_provider_set =
           loom_cleanup_configured_pattern_provider_set(),
       .device_provider_registry = &device_registry,

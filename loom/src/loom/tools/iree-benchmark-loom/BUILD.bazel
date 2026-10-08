@@ -49,20 +49,6 @@ _SPIRV_VULKAN_TARGET_DEPS = iree_select({
     "//conditions:default": [],
 })
 
-_IMPORT_CXX_COPTS = iree_select({
-    "//loom/config/import:cxx": [
-        "-DIREE_BENCHMARK_LOOM_HAVE_IMPORT_CXX=1",
-    ],
-    "//conditions:default": [],
-})
-
-_IMPORT_CXX_DEPS = iree_select({
-    "//loom/config/import:cxx": [
-        "//loom/src/loom/import/cxx/tooling:loomc_input",
-    ],
-    "//conditions:default": [],
-})
-
 _VM_TARGET_COPTS = iree_select({
     "//loom/config/target/arch:vm": ["-DIREE_BENCHMARK_LOOM_HAVE_VM=1"],
     "//conditions:default": [],
@@ -78,14 +64,12 @@ _VM_TARGET_DEPS = iree_select({
 _IREE_BENCHMARK_LOOM_TARGET_COPTS = (
     _AMDGPU_TARGET_COPTS +
     _SPIRV_VULKAN_TARGET_COPTS +
-    _IMPORT_CXX_COPTS +
     _VM_TARGET_COPTS
 )
 
 _IREE_BENCHMARK_LOOM_TARGET_DEPS = (
     _AMDGPU_TARGET_DEPS +
     _SPIRV_VULKAN_TARGET_DEPS +
-    _IMPORT_CXX_DEPS +
     _VM_TARGET_DEPS
 )
 
@@ -321,6 +305,7 @@ loom_cc_binary(
         "//loom/src/loom/tooling/execution/hal:artifact",
         "//loom/src/loom/tooling/execution/hal:device_provider",
         "//loom/src/loom/tooling/input:configured",
+        "//loom/src/loom/tooling/input:loomc_configured",
         "//loom/src/loom/transforms/cleanup:configured",
         "//runtime/src/iree/base",
     ] + _IREE_BENCHMARK_LOOM_TARGET_DEPS,
