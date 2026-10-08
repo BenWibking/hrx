@@ -21,11 +21,11 @@ loom_corpus_sources(
     "subgroup/transport_carrier.loom"
     "workgroup/predicate_insertion.loom"
     "workgroup/reduce_partial.loom"
+    "workgroup/reduce_tree.loom"
     "subgroup/active_predicate.loom"
     "subgroup/ballot.loom"
     "subgroup/shuffle_dynamic.loom"
     "workgroup/loop_state.loom"
-    "workgroup/reduce_tree.loom"
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

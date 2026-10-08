@@ -460,6 +460,7 @@ loom_corpus_test(
     "kernel/subgroup/transport_carrier.loom"
     "kernel/workgroup/predicate_insertion.loom"
     "kernel/workgroup/reduce_partial.loom"
+    "kernel/workgroup/reduce_tree.loom"
     "function/buffer/arguments.loom"
     "function/buffer/call_overflow.loom"
     "function/buffer/calls.loom"
@@ -718,7 +719,6 @@ loom_corpus_test(
     "kernel/subgroup/ballot.loom"
     "kernel/subgroup/shuffle_dynamic.loom"
     "kernel/workgroup/loop_state.loom"
-    "kernel/workgroup/reduce_tree.loom"
   RUNNER_ARGS
     "--device=amdgpu"
   LABELS
