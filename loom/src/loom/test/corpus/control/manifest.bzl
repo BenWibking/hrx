@@ -21,6 +21,7 @@ CONTROL_CORPUS = loom_corpus_manifest(
         "branch/structured.loom",
         "branch/uniform_predicate.loom",
         "loop/callable.loom",
+        "loop/carried_lane_liveness.loom",
         "loop/condition.loom",
         "loop/count.loom",
         "loop/rotation/offsets.loom",
@@ -36,7 +37,6 @@ CONTROL_CORPUS = loom_corpus_manifest(
         "schedule/unroll_scope.loom",
     ],
     legacy_case_srcs = [
-        "loop/carried_lane_liveness.loom",
         "schedule/ordered_read_ahead.loom",
     ],
 )

@@ -393,6 +393,7 @@ loom_corpus_test(
     "control/branch/structured.loom"
     "control/branch/uniform_predicate.loom"
     "control/loop/callable.loom"
+    "control/loop/carried_lane_liveness.loom"
     "control/loop/condition.loom"
     "control/loop/count.loom"
     "control/loop/rotation/offsets.loom"
@@ -695,7 +696,6 @@ loom_corpus_test(
     "kernel"
     "function"
   SOURCES
-    "control/loop/carried_lane_liveness.loom"
     "control/schedule/ordered_read_ahead.loom"
     "memory/atomic/add_f32_subnormals.loom"
     "memory/atomic/float_bitwise.loom"

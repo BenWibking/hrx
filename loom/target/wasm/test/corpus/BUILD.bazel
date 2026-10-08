@@ -117,6 +117,7 @@ _SCENARIO_KERNEL_SOURCES = [
     "control/branch/results.loom",
     "control/branch/uniform_predicate.loom",
     "control/loop/callable.loom",
+    "control/loop/carried_lane_liveness.loom",
     "control/loop/condition.loom",
     "control/loop/count.loom",
     "control/loop/rotation/offsets.loom",

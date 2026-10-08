@@ -1484,6 +1484,7 @@ loom_corpus_test(
     "control/branch/publication.loom"
     "control/branch/structured.loom"
     "control/branch/uniform_predicate.loom"
+    "control/loop/carried_lane_liveness.loom"
     "control/loop/condition.loom"
     "control/loop/rotation/offsets.loom"
     "control/loop/rotation/values.loom"
@@ -1956,6 +1957,9 @@ loom_corpus_test(
     "@vector_integer_reduction_values"
     "TARGET/093"
   ALLOWED_FAILURES
+    "control/loop/carried_lane_liveness.loom"
+    "@loop_carried_lane_liveness_values"
+    "TARGET/003"
     "memory/atomic/float64.loom"
     "@atomic_f64_random_values"
     "TARGET/002,TARGET/003"
@@ -2087,7 +2091,6 @@ loom_corpus_test(
     "kernel"
     "function"
   SOURCES
-    "control/loop/carried_lane_liveness.loom"
     "control/schedule/ordered_read_ahead.loom"
     "memory/atomic/add_f32_subnormals.loom"
     "memory/atomic/float_bitwise.loom"
@@ -2230,9 +2233,6 @@ loom_corpus_test(
     "@lds_publication_values_i64"
     "TARGET/032"
   ALLOWED_FAILURES
-    "control/loop/carried_lane_liveness.loom"
-    "@loop_carried_lane_liveness_case"
-    "TARGET/003"
     "memory/atomic/float64_contention.loom"
     "@contended_atomic_f64_values"
     "TARGET/002,TARGET/003"

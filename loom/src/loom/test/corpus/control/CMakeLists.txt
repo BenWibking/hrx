@@ -24,6 +24,7 @@ loom_corpus_sources(
     "branch/structured.loom"
     "branch/uniform_predicate.loom"
     "loop/callable.loom"
+    "loop/carried_lane_liveness.loom"
     "loop/condition.loom"
     "loop/count.loom"
     "loop/rotation/offsets.loom"
@@ -37,7 +38,6 @@ loom_corpus_sources(
     "schedule/address_domains.loom"
     "schedule/guarded_recurrence.loom"
     "schedule/unroll_scope.loom"
-    "loop/carried_lane_liveness.loom"
     "schedule/ordered_read_ahead.loom"
 )
 
