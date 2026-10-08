@@ -1,6 +1,3 @@
-// Copyright 2026 The IREE Authors
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // One finite owner services a sorted offered schedule, native completions and
 // ready readers without a batch join. Arrival precedes credit admission. A
 // key map coalesces immutable reads; KV chains have exclusive credits. The
