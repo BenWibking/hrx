@@ -34,3 +34,14 @@ low.func.def public target<x86.avx2.core> abi(object_function) @reverse_i8x32_la
   vmovdqu32.store.ymm %result, %output {disp32 = 0}
   return
 }
+
+// Deliberately unaligned authored storage proves that native stack traffic uses
+// the unaligned vector move family rather than relying on frame alignment.
+low.func.def public target<x86.avx2.core> abi(object_function) @spill_i8x32(%input: reg<x86.gpr64>, %output: reg<x86.gpr64>) asm {
+  %slot = storage {byte_alignment = 1, byte_length = 35} : low.storage<stack>
+  %value = vmovdqu32.load.ymm %input {disp32 = 0}
+  low.spill %value, %slot {offset = 3} : reg<x86.ymm>, low.storage<stack>
+  %restored = low.reload %slot {offset = 3} : low.storage<stack> -> reg<x86.ymm>
+  vmovdqu32.store.ymm %restored, %output {disp32 = 0}
+  return
+}

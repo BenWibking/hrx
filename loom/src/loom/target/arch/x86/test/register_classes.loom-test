@@ -91,6 +91,34 @@ low.func.def target<x86.avx512_packed_dot.core>(@x86_target) @x86_avx_vnni_low_s
 
 // ====
 
+// Eight masks cross the block boundary together. K is unspillable, so this
+// succeeds only when the complete abstract register set remains allocatable.
+// RUN: emit low-allocation-json @x86_avx512_eight_live_k_values output=none
+x86.target<avx512> @x86_target
+
+low.func.def target<x86.avx512.core>(@x86_target) @x86_avx512_eight_live_k_values(%lhs: reg<x86.xmm>, %rhs: reg<x86.xmm>) -> (reg<x86.k>) asm {
+  %mask0 = vpcmpd.xmm %lhs, %rhs, 0
+  %mask1 = vpcmpd.xmm %lhs, %rhs, 1
+  %mask2 = vpcmpd.xmm %lhs, %rhs, 2
+  %mask3 = vpcmpd.xmm %lhs, %rhs, 3
+  %mask4 = vpcmpd.xmm %lhs, %rhs, 4
+  %mask5 = vpcmpd.xmm %lhs, %rhs, 5
+  %mask6 = vpcmpd.xmm %lhs, %rhs, 6
+  %mask7 = vpcmpd.xmm %lhs, %rhs, 7
+  low.br ^join(%mask0: reg<x86.k>, %mask1: reg<x86.k>, %mask2: reg<x86.k>, %mask3: reg<x86.k>, %mask4: reg<x86.k>, %mask5: reg<x86.k>, %mask6: reg<x86.k>, %mask7: reg<x86.k>)
+^join(%value0: reg<x86.k>, %value1: reg<x86.k>, %value2: reg<x86.k>, %value3: reg<x86.k>, %value4: reg<x86.k>, %value5: reg<x86.k>, %value6: reg<x86.k>, %value7: reg<x86.k>):
+  %pair0 = kandq %value0, %value1
+  %pair1 = kandq %value2, %value3
+  %pair2 = kandq %value4, %value5
+  %pair3 = kandq %value6, %value7
+  %quad0 = kandq %pair0, %pair1
+  %quad1 = kandq %pair2, %pair3
+  %result = kandq %quad0, %quad1
+  return %result
+}
+
+// ====
+
 // RUN: emit low-allocation-json @x86_avx512_compare_retains_eighth_k_location output=none fixed=%mask:physical_register:7:1
 x86.target<avx512> @x86_target
 

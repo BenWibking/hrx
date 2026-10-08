@@ -54,11 +54,35 @@ loom_cc_test(
 )
 
 loom_cc_library(
+    name = "transport",
+    srcs = ["transport.c"],
+    hdrs = ["transport.h"],
+    deps = [
+        ":encoding",
+        "//loom/src/loom/target/arch/x86:register_classes",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_test(
+    name = "transport_test",
+    srcs = ["transport_test.cc"],
+    deps = [
+        ":encoding",
+        ":transport",
+        "//loom/src/loom/target/arch/x86:register_classes",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "function",
     srcs = ["function.c"],
     hdrs = ["function.h"],
     deps = [
         ":encoding",
+        ":transport",
         "//loom/src/loom/codegen/low:frame",
         "//loom/src/loom/codegen/low:packet",
         "//loom/src/loom/codegen/low:storage_layout",

@@ -42,6 +42,7 @@ extern "C" void add_i32x4(const int32_t* lhs, const int32_t* rhs,
                           int32_t* output);
 extern "C" void add_constant_i32x4(const int32_t* input, int32_t* output);
 extern "C" void reverse_i8x32_lanes(const uint8_t* input, uint8_t* output);
+extern "C" void spill_i8x32(const uint8_t* input, uint8_t* output);
 
 extern "C" uint64_t call_pair(uint64_t, uint64_t);
 extern "C" uint64_t incoming_eight(uint64_t, uint64_t, uint64_t, uint64_t,
@@ -181,6 +182,10 @@ TEST(NativeCallableTest, Avx2VectorFunctionUsesOrdinaryCLinkage) {
   for (size_t i = 0; i < reversed.size(); ++i) {
     EXPECT_EQ(reversed[i], 15 - i % 16 + i / 16 * 16);
   }
+
+  std::array<uint8_t, 32> spilled = {};
+  spill_i8x32(bytes.data(), spilled.data());
+  EXPECT_EQ(spilled, bytes);
 }
 
 TEST(NativeCallableTest, NarrowMemoryPreservesNeighbors) {

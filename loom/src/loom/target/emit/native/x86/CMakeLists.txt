@@ -41,6 +41,39 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    transport
+  HDRS
+    "transport.h"
+  SRCS
+    "transport.c"
+  DEPS
+    ::encoding
+    iree::base
+    loom::target::arch::x86::register_classes
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_test(
+  NAME
+    transport_test
+  SRCS
+    "transport_test.cc"
+  DEPS
+    ::encoding
+    ::transport
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::x86::register_classes
+  LABELS
+    "iree-build-requirement=loom.target.arch.x86"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     function
   HDRS
     "function.h"
@@ -48,6 +81,7 @@ loom_cc_library(
     "function.c"
   DEPS
     ::encoding
+    ::transport
     iree::base
     iree::base::internal
     iree::io::stream
