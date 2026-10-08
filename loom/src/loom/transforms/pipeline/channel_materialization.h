@@ -9,6 +9,7 @@
 
 #include "loom/analysis/channel_plan.h"
 #include "loom/rewrite/rewriter.h"
+#include "loom/util/cfg_graph.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -99,10 +100,12 @@ typedef struct loom_channel_materialization_options_t {
 // value domain stays acquired; queries are only for original source values.
 // Other source analyses are invalidated before this batch. Intermediate source
 // operations can still refer to carriers whose types have already changed.
-// Canonical CFG branches carry updated state through loops and reconvergence.
-// Conditional edges receive ordinary forwarding blocks, subsequently removable
-// by shared CFG simplification. Exit mechanics see the same path-specific
-// state. The common owner imposes no synchronization or global drain.
+// The retained CFG describes the original blocks and edges. Reachable blocks
+// with one predecessor inherit its SSA state directly; joins carry explicit
+// arguments through loops and reconvergence. Only conditional edges entering
+// those joins need forwarding blocks. Unreachable blocks retain explicit state
+// arguments. Exit mechanics see the same path-specific state. The common owner
+// imposes no synchronization or global drain.
 //
 // Source ownership and realization legality have already been established.
 // The caller owns callable signature conversion and dead channel-argument
@@ -110,6 +113,7 @@ typedef struct loom_channel_materialization_options_t {
 // is introduced to keep an erased protocol argument alive.
 iree_status_t loom_channel_materialize(
     loom_rewriter_t* rewriter, const loom_channel_plan_t* plan,
+    const loom_cfg_graph_t* graph,
     const loom_channel_materialization_options_t* options);
 
 #ifdef __cplusplus

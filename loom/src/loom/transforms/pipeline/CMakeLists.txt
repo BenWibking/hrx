@@ -51,6 +51,7 @@ loom_cc_library(
     loom::ops::func
     loom::rewrite::callable
     loom::rewrite::rewriter
+    loom::util::cfg_graph
   PUBLIC
 )
 
@@ -103,6 +104,7 @@ loom_cc_test(
     loom::ops::func
     loom::ops::type_registry
     loom::rewrite::rewriter
+    loom::util::cfg_graph
     loom::verify
 )
 

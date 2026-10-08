@@ -353,5 +353,6 @@ iree_status_t loom_aie2p_native_emit_worker(
       .emit = {.fn = loom_aie2p_native_channel_action,
                .exit = loom_aie2p_native_channel_exit,
                .user_data = &emitter}};
-  return loom_channel_materialize(rewriter, &source->channels, &options);
+  return loom_channel_materialize(rewriter, &source->channels, source->graph,
+                                  &options);
 }

@@ -121,6 +121,15 @@ typedef struct loom_channel_materialization_block_t {
   loom_op_t* terminator;
   // Mutable state after the most recently materialized action in this block.
   loom_value_id_t* state;
+  // Retained action interval in the source plan's block order.
+  struct {
+    // First action ordinal in this block.
+    iree_host_size_t begin;
+    // Exclusive end action ordinal.
+    iree_host_size_t end;
+  } actions;
+  // Incoming edges supply appended state instead of inheriting a predecessor.
+  bool has_state_arguments;
 } loom_channel_materialization_block_t;
 
 static bool loom_channel_materialization_erases_value(
@@ -138,14 +147,22 @@ static bool loom_channel_materialization_erases_value(
 
 static iree_status_t loom_channel_materialization_forward_state(
     loom_rewriter_t* rewriter, loom_region_t* region,
-    const loom_channel_plan_t* plan,
+    const loom_channel_plan_t* plan, const loom_cfg_graph_t* graph,
     const loom_channel_materialization_options_t* options,
-    const loom_channel_materialization_block_t* block,
-    iree_host_size_t state_count) {
+    const loom_channel_materialization_block_t* blocks, uint16_t block_index) {
+  const loom_channel_materialization_block_t* block = &blocks[block_index];
+  const iree_host_size_t state_count = options->state_count;
   loom_op_t* terminator = block->terminator;
   if (loom_cfg_br_isa(terminator) || loom_func_return_isa(terminator)) {
     const bool is_branch = loom_cfg_br_isa(terminator);
-    const iree_host_size_t appended_count = is_branch ? state_count : 0;
+    iree_host_size_t appended_count = 0;
+    if (is_branch) {
+      const iree_host_size_t destination =
+          loom_cfg_graph_block_index(graph, loom_cfg_br_dest(terminator));
+      if (blocks[destination].has_state_arguments) {
+        appended_count = state_count;
+      }
+    }
     loom_value_id_t* arguments = NULL;
     IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
         rewriter->arena, terminator->operand_count + appended_count,
@@ -180,11 +197,18 @@ static iree_status_t loom_channel_materialization_forward_state(
       return iree_ok_status();
     }
     // Flat source execution uses cfg.br and cfg.cond_br. The latter carries no
-    // argument payload, so each edge forwards its state through a plain branch.
+    // argument payload, so edges entering joins forward through a plain branch.
     IREE_ASSERT(loom_cfg_cond_br_isa(terminator));
     loom_block_t* edges[2];
+    bool changed = false;
     for (uint8_t i = 0; i < 2; ++i) {
       loom_block_t* destination = loom_op_successors(terminator)[i];
+      edges[i] = destination;
+      if (!blocks[loom_cfg_graph_block_index(graph, destination)]
+               .has_state_arguments) {
+        continue;
+      }
+      changed = true;
       IREE_RETURN_IF_ERROR(
           loom_region_append_block(rewriter->module, region, &edges[i]));
       loom_builder_set_block(&rewriter->builder, edges[i]);
@@ -193,6 +217,9 @@ static iree_status_t loom_channel_materialization_forward_state(
       IREE_RETURN_IF_ERROR(loom_cfg_br_build(&rewriter->builder, destination,
                                              block->state, state_count,
                                              terminator->location, &branch));
+    }
+    if (!changed) {
+      return iree_ok_status();
     }
     loom_builder_set_before(&rewriter->builder, terminator);
     loom_op_t* branch = NULL;
@@ -205,6 +232,7 @@ static iree_status_t loom_channel_materialization_forward_state(
 
 iree_status_t loom_channel_materialize(
     loom_rewriter_t* rewriter, const loom_channel_plan_t* plan,
+    const loom_cfg_graph_t* graph,
     const loom_channel_materialization_options_t* options) {
   loom_module_t* module = rewriter->module;
   loom_region_t* region = (loom_region_t*)plan->value_domain->region;
@@ -213,6 +241,12 @@ iree_status_t loom_channel_materialize(
   loom_channel_materialization_block_t* blocks = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       rewriter->arena, block_count, sizeof(*blocks), (void**)&blocks));
+  uint16_t* order = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      rewriter->arena, block_count, sizeof(*order), (void**)&order));
+  memcpy(order, graph->reverse_postorder.values,
+         graph->reverse_postorder.count * sizeof(*order));
+  iree_host_size_t order_count = graph->reverse_postorder.count;
   loom_value_id_t* states = NULL;
   if (state_count) {
     IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
@@ -220,13 +254,27 @@ iree_status_t loom_channel_materialize(
         (void**)&states));
     memcpy(states, options->initial_state, state_count * sizeof(*states));
   }
+  iree_host_size_t action_index = 0;
   for (uint16_t b = 0; b < block_count; ++b) {
     loom_block_t* block = region->blocks[b];
+    const loom_cfg_block_info_t* info = &graph->blocks[b];
+    if (!info->reachable) {
+      order[order_count++] = b;
+    }
     blocks[b] = (loom_channel_materialization_block_t){
         .block = block,
         .terminator = block->last_op,
         .state = state_count ? states + b * state_count : NULL,
+        .actions.begin = action_index,
+        .has_state_arguments =
+            b != 0 && state_count != 0 &&
+            (!info->reachable || info->predecessor_count != 1),
     };
+    while (action_index < plan->action_count &&
+           plan->actions[action_index].op->parent_block == block) {
+      ++action_index;
+    }
+    blocks[b].actions.end = action_index;
     for (uint16_t i = 0; i < block->arg_count; ++i) {
       const loom_value_id_t value = block->arg_ids[i];
       const loom_type_t carrier =
@@ -237,7 +285,7 @@ iree_status_t loom_channel_materialize(
             loom_rewriter_set_value_type(rewriter, value, carrier));
       }
     }
-    if (b == 0) {
+    if (!blocks[b].has_state_arguments) {
       continue;
     }
     for (iree_host_size_t i = 0; i < state_count; ++i) {
@@ -249,6 +297,7 @@ iree_status_t loom_channel_materialize(
       blocks[b].state[i] = argument;
     }
   }
+  IREE_ASSERT_EQ(action_index, plan->action_count);
   uint16_t maximum_results = 0;
   for (iree_host_size_t i = 0; i < plan->action_count; ++i) {
     maximum_results =
@@ -261,30 +310,40 @@ iree_status_t loom_channel_materialize(
   IREE_RETURN_IF_ERROR(
       iree_arena_allocate_array(rewriter->arena, plan->action_count,
                                 sizeof(*consumed_ops), (void**)&consumed_ops));
-  iree_host_size_t action_index = 0;
-  for (uint16_t b = 0; b < block_count; ++b) {
-    while (action_index < plan->action_count &&
-           plan->actions[action_index].op->parent_block == blocks[b].block) {
-      const loom_channel_plan_action_t* action = &plan->actions[action_index++];
+  for (iree_host_size_t position = 0; position < order_count; ++position) {
+    const uint16_t b = order[position];
+    if (state_count && b != 0 && !blocks[b].has_state_arguments) {
+      // A reachable single predecessor dominates this block and therefore
+      // precedes it in the retained reverse postorder, including inside loops.
+      const uint16_t predecessor =
+          graph->predecessor_indices[graph->blocks[b].predecessor_start];
+      memcpy(blocks[b].state, blocks[predecessor].state,
+             state_count * sizeof(*states));
+    }
+    for (iree_host_size_t i = blocks[b].actions.begin;
+         i < blocks[b].actions.end; ++i) {
+      const loom_channel_plan_action_t* action = &plan->actions[i];
       loom_builder_set_before(&rewriter->builder, action->op);
       const loom_value_id_t checkpoint =
           loom_rewriter_value_checkpoint(rewriter);
-      for (uint16_t i = 0; i < action->op->result_count; ++i) {
-        results[i] = LOOM_VALUE_ID_INVALID;
+      for (uint16_t result_index = 0; result_index < action->op->result_count;
+           ++result_index) {
+        results[result_index] = LOOM_VALUE_ID_INVALID;
       }
       IREE_RETURN_IF_ERROR(options->emit.fn(options->emit.user_data, rewriter,
                                             action, blocks[b].state,
                                             state_count, results));
       IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
           rewriter, action->op, results, action->op->result_count, checkpoint));
-      for (uint16_t i = 0; i < action->op->result_count; ++i) {
-        const loom_value_id_t value = loom_op_results(action->op)[i];
+      for (uint16_t result_index = 0; result_index < action->op->result_count;
+           ++result_index) {
+        const loom_value_id_t value = loom_op_results(action->op)[result_index];
         if (!loom_channel_materialization_erases_value(plan, options, value)) {
-          IREE_RETURN_IF_ERROR(
-              loom_rewriter_replace_all_uses_with(rewriter, value, results[i]));
+          IREE_RETURN_IF_ERROR(loom_rewriter_replace_all_uses_with(
+              rewriter, value, results[result_index]));
         }
       }
-      consumed_ops[action_index - 1] = action->op;
+      consumed_ops[i] = action->op;
     }
     if (options->emit.exit && loom_func_return_isa(blocks[b].terminator)) {
       loom_builder_set_before(&rewriter->builder, blocks[b].terminator);
@@ -293,9 +352,8 @@ iree_status_t loom_channel_materialize(
                                               blocks[b].state, state_count));
     }
     IREE_RETURN_IF_ERROR(loom_channel_materialization_forward_state(
-        rewriter, region, plan, options, &blocks[b], state_count));
+        rewriter, region, plan, graph, options, blocks, b));
   }
-  IREE_ASSERT_EQ(action_index, plan->action_count);
   IREE_RETURN_IF_ERROR(loom_rewriter_erase_closed_set(rewriter, consumed_ops,
                                                       plan->action_count));
   for (uint16_t b = 1; b < block_count; ++b) {

@@ -224,7 +224,11 @@ class ChannelMaterializationTest : public ::testing::Test {
         {Emit, boundary == Boundary::Execution ? Exit : nullptr, this}};
     loom_rewriter_t rewriter;
     loom_rewriter_initialize(&rewriter, module_, &arena_);
-    IREE_ASSERT_OK(loom_channel_materialize(&rewriter, &plan, &options));
+    loom_cfg_graph_t graph;
+    IREE_ASSERT_OK(loom_cfg_graph_build(module_, plan.value_domain->region,
+                                        &arena_, &graph));
+    IREE_ASSERT_OK(
+        loom_channel_materialize(&rewriter, &plan, &graph, &options));
     loom_rewriter_deinitialize(&rewriter);
   }
 
@@ -466,7 +470,7 @@ TEST_F(ChannelMaterializationTest, ClonedOccurrencesKeepLoopOwnershipSeparate) {
     const auto* final_publication = body->blocks[3]->first_op;
     ExpectCall(final_publication, publication_, {write});
     ExpectCall(final_publication->next_op, completion_,
-               {body->blocks[3]->arg_ids[0]});
+               {body->blocks[1]->arg_ids[1]});
     EXPECT_TRUE(loom_channel_reserve_isa(entry_->first_op));
     EXPECT_TRUE(loom_channel_publish_isa(repeat->first_op));
     EXPECT_EQ(loop->arg_ids[0], carried_write);
@@ -495,13 +499,14 @@ TEST_F(ChannelMaterializationTest, ReconvergenceRetainsEachPathsCursor) {
 
   const auto* decision = entry_->last_op;
   ASSERT_TRUE(loom_cfg_cond_br_isa(decision));
-  ExpectBranch(loom_op_const_successors(decision)[0], producing, initial_);
-  ExpectBranch(loom_op_const_successors(decision)[1], bypass, initial_);
-  ExpectCall(producing->first_op, admission_, {producing->arg_ids[0]});
-  ExpectCall(producing->first_op->next_op, publication_,
-             {producing->arg_ids[0]});
+  EXPECT_EQ(loom_op_const_successors(decision)[0], producing);
+  EXPECT_EQ(loom_op_const_successors(decision)[1], bypass);
+  EXPECT_EQ(producing->arg_count, 0u);
+  EXPECT_EQ(bypass->arg_count, 0u);
+  ExpectCall(producing->first_op, admission_, {initial_});
+  ExpectCall(producing->first_op->next_op, publication_, {initial_});
   ExpectBranch(producing, exit, loom_op_const_results(producing->first_op)[0]);
-  ExpectBranch(bypass, exit, bypass->arg_ids[0]);
+  ExpectBranch(bypass, exit, initial_);
   ExpectCall(exit->first_op, completion_, {exit->arg_ids[0]});
 }
 
@@ -522,11 +527,77 @@ TEST_F(ChannelMaterializationTest, LoopExitUsesTheCarriedCursor) {
   ExpectBranch(entry_, header, initial_);
   const auto* decision = header->last_op;
   ASSERT_TRUE(loom_cfg_cond_br_isa(decision));
-  ExpectBranch(loom_op_const_successors(decision)[0], body, header->arg_ids[0]);
-  ExpectBranch(loom_op_const_successors(decision)[1], exit, header->arg_ids[0]);
-  ExpectCall(body->first_op, admission_, {body->arg_ids[0]});
-  ExpectCall(body->first_op->next_op, publication_, {body->arg_ids[0]});
+  EXPECT_EQ(loom_op_const_successors(decision)[0], body);
+  EXPECT_EQ(loom_op_const_successors(decision)[1], exit);
+  EXPECT_EQ(body->arg_count, 0u);
+  EXPECT_EQ(exit->arg_count, 0u);
+  ExpectCall(body->first_op, admission_, {header->arg_ids[0]});
+  ExpectCall(body->first_op->next_op, publication_, {header->arg_ids[0]});
   ExpectBranch(body, header, loom_op_const_results(body->first_op)[0]);
+  ExpectCall(exit->first_op, completion_, {header->arg_ids[0]});
+}
+
+TEST_F(ChannelMaterializationTest, PhysicalBlockOrderDoesNotChangeCursorFlow) {
+  auto* exit = Block();
+  auto* producing = Block();
+  Branch(producing);
+  At(producing);
+  Publish(Reserve());
+  Branch(exit);
+  At(exit);
+  Return();
+  Materialize(Boundary::Execution);
+
+  EXPECT_EQ(producing->arg_count, 0u);
+  EXPECT_EQ(exit->arg_count, 0u);
+  ExpectCall(producing->first_op, admission_, {initial_});
+  ExpectCall(producing->first_op->next_op, publication_, {initial_});
+  ExpectCall(exit->first_op, completion_,
+             {loom_op_const_results(producing->first_op)[0]});
+}
+
+TEST_F(ChannelMaterializationTest, ConditionalBackedgeThreadsUpdatedCursor) {
+  auto* header = Block();
+  auto* exit = Block();
+  Branch(header);
+  At(header);
+  Publish(Reserve());
+  Choose(header, exit);
+  At(exit);
+  Return();
+  Materialize(Boundary::Execution);
+
+  ExpectBranch(entry_, header, initial_);
+  ExpectCall(header->first_op, admission_, {header->arg_ids[0]});
+  ExpectCall(header->first_op->next_op, publication_, {header->arg_ids[0]});
+  const auto next = loom_op_const_results(header->first_op)[0];
+  const auto* decision = header->last_op;
+  ASSERT_TRUE(loom_cfg_cond_br_isa(decision));
+  ExpectBranch(loom_op_const_successors(decision)[0], header, next);
+  EXPECT_EQ(loom_op_const_successors(decision)[1], exit);
+  EXPECT_EQ(exit->arg_count, 0u);
+  ExpectCall(exit->first_op, completion_, {next});
+}
+
+TEST_F(ChannelMaterializationTest, UnreachableCycleKeepsItsOwnCursor) {
+  Return();
+  auto* header = Block();
+  auto* exit = Block();
+  At(header);
+  Publish(Reserve());
+  Choose(header, exit);
+  At(exit);
+  Return();
+  Materialize(Boundary::Execution);
+
+  ExpectCall(entry_->first_op, completion_, {initial_});
+  ExpectCall(header->first_op, admission_, {header->arg_ids[0]});
+  ExpectCall(header->first_op->next_op, publication_, {header->arg_ids[0]});
+  const auto next = loom_op_const_results(header->first_op)[0];
+  const auto* decision = header->last_op;
+  ASSERT_TRUE(loom_cfg_cond_br_isa(decision));
+  ExpectBranch(loom_op_const_successors(decision)[0], header, next);
+  ExpectBranch(loom_op_const_successors(decision)[1], exit, next);
   ExpectCall(exit->first_op, completion_, {exit->arg_ids[0]});
 }
 
