@@ -57,10 +57,11 @@ static iree_status_t CreateSource(loomc_string_view_t identifier,
 
 class SourceToModuleScenario final : public CompileScenario {
  public:
-  explicit SourceToModuleScenario(const SourceToModuleInput& source)
-      : input_(source) {}
+  explicit SourceToModuleScenario(const SourceToModuleInput& source,
+                                  iree_host_size_t job_count = 1)
+      : input_(source), job_count_(job_count) {}
 
-  iree_host_size_t job_count() const override { return 1; }
+  iree_host_size_t job_count() const override { return job_count_; }
 
   iree_status_t SetUp(iree_host_size_t worker_count) override {
     IREE_RETURN_IF_ERROR(CompileScenario::SetUp(worker_count));
@@ -151,6 +152,8 @@ class SourceToModuleScenario final : public CompileScenario {
   SourcePtr source_;
   // Optional immutable user header returned by the source provider.
   SourcePtr header_;
+  // Number of independent imports submitted in each compile-pool batch.
+  iree_host_size_t job_count_ = 1;
 };
 
 std::unique_ptr<CompileScenario> CreateSourceToModuleScenario(
@@ -163,6 +166,18 @@ std::unique_ptr<CompileScenario> CreateSourceToModuleScenario(
 void SourceToModule(::benchmark::State& state,
                     const SourceToModuleInput* source) {
   RunCompileBenchmarkDirect(state, CreateSourceToModuleScenario, source);
+}
+
+std::unique_ptr<CompileScenario> CreateSourceToModuleThroughputScenario(
+    const ::benchmark::State& state, const void* user_data) {
+  const auto worker_count = static_cast<iree_host_size_t>(state.range(0));
+  return std::make_unique<SourceToModuleScenario>(
+      *static_cast<const SourceToModuleInput*>(user_data), worker_count);
+}
+
+void SourceToModuleThroughput(::benchmark::State& state,
+                              const SourceToModuleInput* source) {
+  RunCompileBenchmark(state, CreateSourceToModuleThroughputScenario, source);
 }
 
 constexpr SourceToModuleInput kNoIncludes = {SourceLanguage::kCxx, "", nullptr,
@@ -253,6 +268,14 @@ BENCHMARK_CAPTURE(SourceToModule, Q8S32Providers, &kQ8S32Providers)
     ->Unit(::benchmark::kMicrosecond);
 BENCHMARK_CAPTURE(SourceToModule, Q8S32AuthoredLoomProviders,
                   &kQ8S32AuthoredLoomProviders)
+    ->Unit(::benchmark::kMicrosecond);
+
+BENCHMARK_CAPTURE(SourceToModuleThroughput, Q8S32Providers, &kQ8S32Providers)
+    ->Arg(1)
+    ->Arg(2)
+    ->Arg(4)
+    ->Arg(8)
+    ->UseRealTime()
     ->Unit(::benchmark::kMicrosecond);
 
 }  // namespace
