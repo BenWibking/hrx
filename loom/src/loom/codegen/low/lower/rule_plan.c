@@ -307,7 +307,7 @@ static iree_status_t loom_low_lower_rule_project_read_only_data(
       const bool has_byte_length = iree_host_size_checked_mul(
           source_attr.count, element_byte_count, &byte_length);
       IREE_ASSERT(has_byte_length);
-      IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
+      IREE_RETURN_IF_ERROR(loom_low_lower_allocate_planning_array(
           context, source_attr.count, element_byte_count, (void**)&bytes));
       for (iree_host_size_t i = 0; i < source_attr.count; ++i) {
         const uint64_t value = (uint64_t)source_attr.i64_array[i];
@@ -327,7 +327,7 @@ static iree_status_t loom_low_lower_rule_project_read_only_data(
       const bool has_byte_length = iree_host_size_checked_mul(
           source_attr.count, bytes_per_lane, &byte_length);
       IREE_ASSERT(has_byte_length);
-      IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
+      IREE_RETURN_IF_ERROR(loom_low_lower_allocate_planning_array(
           context, byte_length, 1, (void**)&bytes));
       for (iree_host_size_t output_byte = 0; output_byte < byte_length;
            ++output_byte) {
@@ -348,7 +348,7 @@ static iree_status_t loom_low_lower_rule_project_read_only_data(
       IREE_ASSERT_EQ(source_attr.count % 2, 0u);
       IREE_ASSERT_LE(attr_copy->source_element_index, 1u);
       byte_length = source_attr.count;
-      IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
+      IREE_RETURN_IF_ERROR(loom_low_lower_allocate_planning_array(
           context, byte_length, 1, (void**)&bytes));
       const uint32_t byte_parity = attr_copy->source_element_index;
       for (iree_host_size_t output_word = 0;

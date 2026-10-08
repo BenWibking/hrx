@@ -42,12 +42,12 @@ func.def @normalize_truncated_narrow_addresses(%input: i32) -> (index, offset, i
 }
 
 // ----
-low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @normalize_truncated_narrow_addresses(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) asm {
-  %byte = v_mov_b32_copy %input
-  %byte_coordinate = v_mov_b32_sdwa %byte {dst_sel = 6, dst_unused = 0, src0_sel = 0, src0_sext = 1}
-  %byte_offset = v_and_b32_lit %byte, 255
-  %halfword_coordinate = v_mov_b32_sdwa %byte {dst_sel = 6, dst_unused = 0, src0_sel = 4, src0_sext = 1}
-  %halfword_offset = v_and_b32_lit %byte, 65535
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @normalize_truncated_narrow_addresses(%halfword: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) asm {
+  %16 = v_mov_b32_copy %halfword
+  %byte_coordinate = v_mov_b32_sdwa %16 {dst_sel = 6, dst_unused = 0, src0_sel = 0, src0_sext = 1}
+  %byte_offset = v_and_b32_lit %16, 255
+  %halfword_coordinate = v_mov_b32_sdwa %16 {dst_sel = 6, dst_unused = 0, src0_sel = 4, src0_sext = 1}
+  %halfword_offset = v_and_b32_lit %16, 65535
   return %byte_coordinate, %byte_offset, %halfword_coordinate, %halfword_offset
 }
 

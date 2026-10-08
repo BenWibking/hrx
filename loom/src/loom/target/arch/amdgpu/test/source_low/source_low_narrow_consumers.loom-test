@@ -11,9 +11,9 @@ func.def target(@target) @narrow_i8_extui_i32(%input: i32) -> (i32) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i8_extui_i32(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %small = v_mov_b32_copy %input
-  %wide = v_and_b32_lit %small, 255
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i8_extui_i32(%small: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %8 = v_mov_b32_copy %small
+  %wide = v_and_b32_lit %8, 255
   %11 = v_mov_b32 1
   %result = v_add_u32 %wide, %11
   return %result
@@ -32,9 +32,9 @@ func.def target(@target) @narrow_i8_extui_i64(%input: i32) -> (i64) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i8_extui_i64(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr x2>) asm {
-  %small = v_mov_b32_copy %input
-  %9 = v_and_b32_lit %small, 255
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i8_extui_i64(%small: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr x2>) asm {
+  %8 = v_mov_b32_copy %small
+  %9 = v_and_b32_lit %8, 255
   %10 = v_mov_b32 0
   %12 = s_mov_b32 1
   %13 = s_mov_b32 0
@@ -59,9 +59,9 @@ func.def target(@target) @narrow_i8_extsi_i32(%input: i32) -> (i32) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i8_extsi_i32(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %small = v_mov_b32_copy %input
-  %wide = v_bfe_i32_offset_width_inline %small {offset = 0, width = 8}
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i8_extsi_i32(%small: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %8 = v_mov_b32_copy %small
+  %wide = v_bfe_i32_offset_width_inline %8 {offset = 0, width = 8}
   %11 = v_mov_b32 1
   %result = v_add_u32 %wide, %11
   return %result
@@ -80,9 +80,9 @@ func.def target(@target) @narrow_i8_extsi_i64(%input: i32) -> (i64) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i8_extsi_i64(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr x2>) asm {
-  %small = v_mov_b32_copy %input
-  %9 = v_bfe_i32_offset_width_inline %small {offset = 0, width = 8}
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i8_extsi_i64(%small: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr x2>) asm {
+  %8 = v_mov_b32_copy %small
+  %9 = v_bfe_i32_offset_width_inline %8 {offset = 0, width = 8}
   %10 = v_ashrrev_i32_src0_inline %9, 31
   %12 = s_mov_b32 1
   %13 = s_mov_b32 0
@@ -107,9 +107,9 @@ func.def target(@target) @narrow_i16_extui_i32(%input: i32) -> (i32) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i16_extui_i32(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %small = v_mov_b32_copy %input
-  %wide = v_and_b32_lit %small, 65535
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i16_extui_i32(%small: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %8 = v_mov_b32_copy %small
+  %wide = v_and_b32_lit %8, 65535
   %11 = v_mov_b32 1
   %result = v_add_u32 %wide, %11
   return %result
@@ -128,9 +128,9 @@ func.def target(@target) @narrow_i16_extui_i64(%input: i32) -> (i64) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i16_extui_i64(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr x2>) asm {
-  %small = v_mov_b32_copy %input
-  %9 = v_and_b32_lit %small, 65535
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i16_extui_i64(%small: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr x2>) asm {
+  %8 = v_mov_b32_copy %small
+  %9 = v_and_b32_lit %8, 65535
   %10 = v_mov_b32 0
   %12 = s_mov_b32 1
   %13 = s_mov_b32 0
@@ -155,9 +155,9 @@ func.def target(@target) @narrow_i16_extsi_i32(%input: i32) -> (i32) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i16_extsi_i32(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %small = v_mov_b32_copy %input
-  %wide = v_bfe_i32_offset_width_inline %small {offset = 0, width = 16}
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i16_extsi_i32(%small: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %8 = v_mov_b32_copy %small
+  %wide = v_bfe_i32_offset_width_inline %8 {offset = 0, width = 16}
   %11 = v_mov_b32 1
   %result = v_add_u32 %wide, %11
   return %result
@@ -176,9 +176,9 @@ func.def target(@target) @narrow_i16_extsi_i64(%input: i32) -> (i64) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i16_extsi_i64(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr x2>) asm {
-  %small = v_mov_b32_copy %input
-  %9 = v_bfe_i32_offset_width_inline %small {offset = 0, width = 16}
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_i16_extsi_i64(%small: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr x2>) asm {
+  %8 = v_mov_b32_copy %small
+  %9 = v_bfe_i32_offset_width_inline %8 {offset = 0, width = 16}
   %10 = v_ashrrev_i32_src0_inline %9, 31
   %12 = s_mov_b32 1
   %13 = s_mov_b32 0
@@ -203,9 +203,9 @@ func.def target(@target) @narrow_comparison(%input: i32, %other: i32) -> (i32) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_comparison(%input: reg<amdgpu.sgpr>, %other: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %small = v_mov_b32_copy %input
-  %wide = v_bfe_i32_offset_width_inline %small {offset = 0, width = 16}
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_comparison(%small: reg<amdgpu.sgpr>, %other: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %11 = v_mov_b32_copy %small
+  %wide = v_bfe_i32_offset_width_inline %11 {offset = 0, width = 16}
   %13 = v_mov_b32_copy %other
   %result = v_min_i32 %wide, %13
   return %result

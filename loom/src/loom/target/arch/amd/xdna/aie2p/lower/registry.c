@@ -281,9 +281,13 @@ static iree_status_t loom_aie2p_finalize_plan(void* user_data,
                                               const loom_op_t* source_op,
                                               loom_low_lower_plan_t plan) {
   (void)user_data;
-  return loom_aie2p_shuffle_plan_isa(plan)
-             ? loom_aie2p_finalize_shuffle_plan(context, source_op, plan)
-             : iree_ok_status();
+  if (loom_aie2p_shuffle_plan_isa(plan)) {
+    return loom_aie2p_finalize_shuffle_plan(context, source_op, plan);
+  }
+  if (loom_aie2p_transpose_plan_isa(plan)) {
+    return loom_aie2p_finalize_transpose_plan(context, source_op, plan);
+  }
+  return iree_ok_status();
 }
 
 static iree_status_t loom_aie2p_emit_op(void* user_data,

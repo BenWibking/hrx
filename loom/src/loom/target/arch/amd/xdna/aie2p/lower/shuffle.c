@@ -172,25 +172,9 @@ iree_status_t loom_aie2p_select_shuffle_plan(loom_low_lower_context_t* context,
       context, sizeof(*retained_plan), (void**)&retained_plan));
   *retained_plan = matched_plan;
   if (!loom_aie2p_shuffle_is_identity(retained_plan)) {
-    uint16_t result_register_class = 0;
-    switch (retained_plan->carrier_kind) {
-      case LOOM_AIE2P_VECTOR_CARRIER_ORDINARY:
-        result_register_class = AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256;
-        break;
-      case LOOM_AIE2P_VECTOR_CARRIER_PREDICATE:
-        result_register_class = AIE2P_CORE_REG_CLASS_ID_AIE2P_ELPREDICATE;
-        break;
-      case LOOM_AIE2P_VECTOR_CARRIER_ACCUMULATOR:
-        result_register_class = AIE2P_CORE_REG_CLASS_ID_AIE2P_MBMS;
-        break;
-      case LOOM_AIE2P_VECTOR_CARRIER_NONE:
-      default:
-        IREE_ASSERT_UNREACHABLE("selected AIE2P shuffle carrier");
-        IREE_BUILTIN_UNREACHABLE();
-    }
     loom_type_t result_type = loom_type_none();
-    IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
-        context, result_register_class, retained_plan->carrier_unit_count,
+    IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
+        context, retained_plan->carrier_kind, retained_plan->carrier_unit_count,
         &result_type));
     IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
         context, loom_vector_shuffle_result(source_op), result_type));

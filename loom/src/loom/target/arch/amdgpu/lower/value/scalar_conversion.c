@@ -632,6 +632,13 @@ iree_status_t loom_amdgpu_select_scalar_conversion_plan(
     case LOOM_AMDGPU_SCALAR_CONVERSION_OP_COUNT_:
       break;
   }
+  if (out_plan->kind == LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT &&
+      out_plan->narrow_representation ==
+          LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_LOW_BITS) {
+    // Consumers require only the low payload bits, so no normalization or
+    // register-bank conversion is necessary.
+    out_plan->kind = LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS;
+  }
   if (out_plan->kind == LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS) {
     return iree_ok_status();
   }

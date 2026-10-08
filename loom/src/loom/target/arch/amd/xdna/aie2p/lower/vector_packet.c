@@ -17,7 +17,7 @@ uint8_t loom_aie2p_vector_packet_carrier_unit_count(
 }
 
 iree_status_t loom_aie2p_vector_packet_make_carrier_type(
-    loom_aie2p_vector_packet_emitter_t* emitter,
+    loom_low_lower_context_t* context,
     loom_aie2p_vector_carrier_kind_t carrier_kind, uint32_t unit_count,
     loom_type_t* out_type) {
   uint16_t register_class = 0;
@@ -36,8 +36,8 @@ iree_status_t loom_aie2p_vector_packet_make_carrier_type(
       IREE_ASSERT_UNREACHABLE("selected AIE2P vector carrier");
       break;
   }
-  return loom_low_lower_make_register_type(emitter->context, register_class,
-                                           unit_count, out_type);
+  return loom_low_lower_make_register_type(context, register_class, unit_count,
+                                           out_type);
 }
 
 iree_status_t loom_aie2p_vector_packet_emitter_initialize(
@@ -57,13 +57,13 @@ iree_status_t loom_aie2p_vector_packet_emitter_initialize(
   IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
       context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ER, 1, &out_emitter->scalar_type));
   IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
-      out_emitter, LOOM_AIE2P_VECTOR_CARRIER_ORDINARY, 2,
+      context, LOOM_AIE2P_VECTOR_CARRIER_ORDINARY, 2,
       &out_emitter->vector_type));
   IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
-      out_emitter, LOOM_AIE2P_VECTOR_CARRIER_PREDICATE, 1,
+      context, LOOM_AIE2P_VECTOR_CARRIER_PREDICATE, 1,
       &out_emitter->predicate_type));
   IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
-      out_emitter, LOOM_AIE2P_VECTOR_CARRIER_ACCUMULATOR, 1,
+      context, LOOM_AIE2P_VECTOR_CARRIER_ACCUMULATOR, 1,
       &out_emitter->accumulator_type));
   return loom_builder_intern_string(loom_low_lower_context_builder(context),
                                     IREE_SV("i"),
@@ -184,7 +184,7 @@ iree_status_t loom_aie2p_vector_packet_read_native(
 
   loom_type_t packet_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
-      emitter, carrier.kind, units_per_packet, &packet_type));
+      emitter->context, carrier.kind, units_per_packet, &packet_type));
   loom_op_t* slice_op = NULL;
   IREE_RETURN_IF_ERROR(loom_low_slice_build(
       loom_low_lower_context_builder(emitter->context), low_value,
@@ -289,7 +289,7 @@ iree_status_t loom_aie2p_vector_packet_bind_native_packets(
   if (physical_packet_count > 1) {
     loom_type_t result_type = loom_type_none();
     IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
-        emitter, carrier.kind, carrier.unit_count, &result_type));
+        emitter->context, carrier.kind, carrier.unit_count, &result_type));
     loom_op_t* concat_op = NULL;
     IREE_RETURN_IF_ERROR(loom_low_concat_build(
         loom_low_lower_context_builder(emitter->context), native_packets,

@@ -172,6 +172,14 @@ iree_status_t loom_aie2p_select_interleave_plan(
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
       context, sizeof(*retained_plan), (void**)&retained_plan));
   *retained_plan = matched_plan;
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
+      context, retained_plan->result_carrier_kind,
+      retained_plan->result_carrier_unit_count, &result_type));
+  for (uint16_t i = 0; i < source_op->result_count; ++i) {
+    IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+        context, loom_op_const_results(source_op)[i], result_type));
+  }
   *out_plan = loom_low_lower_plan_make(LOOM_AIE2P_INTERLEAVE_PLAN_NATIVE,
                                        retained_plan);
   return iree_ok_status();
