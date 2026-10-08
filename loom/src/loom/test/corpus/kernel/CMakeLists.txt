@@ -23,10 +23,10 @@ loom_corpus_sources(
     "subgroup/shuffle_participation.loom"
     "subgroup/transport.loom"
     "subgroup/transport_carrier.loom"
+    "workgroup/loop_state.loom"
     "workgroup/predicate_insertion.loom"
     "workgroup/reduce_partial.loom"
     "workgroup/reduce_tree.loom"
-    "workgroup/loop_state.loom"
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

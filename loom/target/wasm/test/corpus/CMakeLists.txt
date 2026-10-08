@@ -936,6 +936,8 @@ loom_corpus_test(
     "Wasm has no kernel execution model."
     "kernel/subgroup/transport_carrier.loom"
     "Wasm has no kernel execution model."
+    "kernel/workgroup/loop_state.loom"
+    "Wasm has no kernel execution model."
     "kernel/workgroup/predicate_insertion.loom"
     "Wasm has no kernel execution model."
     "kernel/workgroup/reduce_partial.loom"

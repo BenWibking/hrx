@@ -466,6 +466,7 @@ loom_corpus_test(
     "kernel/subgroup/shuffle_participation.loom"
     "kernel/subgroup/transport.loom"
     "kernel/subgroup/transport_carrier.loom"
+    "kernel/workgroup/loop_state.loom"
     "kernel/workgroup/predicate_insertion.loom"
     "kernel/workgroup/reduce_partial.loom"
     "kernel/workgroup/reduce_tree.loom"
@@ -720,7 +721,6 @@ loom_corpus_test(
     "memory/atomic/workgroup/global.loom"
     "memory/atomic/workgroup/observations.loom"
     "memory/atomic/workgroup/vector.loom"
-    "kernel/workgroup/loop_state.loom"
   RUNNER_ARGS
     "--device=amdgpu"
   LABELS

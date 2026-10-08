@@ -20,11 +20,10 @@ KERNEL_CORPUS = loom_corpus_manifest(
         "subgroup/shuffle_participation.loom",
         "subgroup/transport.loom",
         "subgroup/transport_carrier.loom",
+        "workgroup/loop_state.loom",
         "workgroup/predicate_insertion.loom",
         "workgroup/reduce_partial.loom",
         "workgroup/reduce_tree.loom",
     ],
-    legacy_case_srcs = [
-        "workgroup/loop_state.loom",
-    ],
+    legacy_case_srcs = [],
 )
