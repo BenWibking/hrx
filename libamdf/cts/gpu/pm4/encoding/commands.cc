@@ -45,12 +45,13 @@ void Pm4CommandWriter::BindCompute(const Pm4ComputeProgram& program,
   };
   SetComputeRegisters(0x2e12, resources, 2);
   SetComputeRegisters(profile_.resource3_register, &program.resource3, 1);
-  // PAL and Mesa's ordinary wave32 policy selects SIMD_DEST_CNTL when the
+  // PAL and Mesa's ordinary compute policy selects SIMD_DEST_CNTL when the
   // complete workgroup contains a multiple of four waves.
   const uint32_t workitem_count = program.workgroup_size[0] *
                                   program.workgroup_size[1] *
                                   program.workgroup_size[2];
-  const uint32_t wave_count = (workitem_count + 31u) / 32u;
+  const uint32_t wave_count =
+      (workitem_count + program.wavefront_size - 1u) / program.wavefront_size;
   const uint32_t resource_limits = wave_count % 4 == 0 ? (1u << 22) : 0;
   SetComputeRegisters(0x2e15, &resource_limits, 1);
   // The interval ends before native PIPELINESTAT_ENABLE/PERFCOUNT_ENABLE.
@@ -66,22 +67,26 @@ void Pm4CommandWriter::BindCompute(const Pm4ComputeProgram& program,
   SetComputeRegisters(0x2e40, arguments, 2);
 }
 
-void Pm4CommandWriter::DispatchWave32(uint32_t x, uint32_t y, uint32_t z) {
+void Pm4CommandWriter::Dispatch(const Pm4ComputeProgram& program, uint32_t x,
+                                uint32_t y, uint32_t z) {
   words_[word_count_++] = MakeHeader(0x15, 5) | (1 << 1);
   words_[word_count_++] = x;
   words_[word_count_++] = y;
   words_[word_count_++] = z;
-  // COMPUTE_SHADER_EN, FORCE_START_AT_000, USE_THREAD_DIMENSIONS, CS_W32_EN.
-  words_[word_count_++] = 0x8025;
+  // COMPUTE_SHADER_EN, FORCE_START_AT_000 and USE_THREAD_DIMENSIONS. CS_W32_EN
+  // follows the compiled program rather than the preceding dispatch.
+  words_[word_count_++] = 0x25 | (program.wavefront_size == 32 ? 0x8000 : 0);
 }
 
-void Pm4CommandWriter::DispatchIndirectWave32(uint64_t argument_address) {
+void Pm4CommandWriter::DispatchIndirect(const Pm4ComputeProgram& program,
+                                        uint64_t argument_address) {
   // The MEC form takes an absolute byte address, not a SET_BASE offset.
   words_[word_count_++] = MakeHeader(0x16, 4) | (1 << 1);
   words_[word_count_++] = static_cast<uint32_t>(argument_address);
   words_[word_count_++] = static_cast<uint32_t>(argument_address >> 32);
-  // COMPUTE_SHADER_EN, FORCE_START_AT_000, CS_W32_EN; dimensions are groups.
-  words_[word_count_++] = 0x8005;
+  // COMPUTE_SHADER_EN and FORCE_START_AT_000; dimensions are groups. CS_W32_EN
+  // uses the same compiled wave size as the complete binding.
+  words_[word_count_++] = 0x5 | (program.wavefront_size == 32 ? 0x8000 : 0);
 }
 
 void Pm4CommandWriter::CallIndirectBuffer(uint64_t buffer_address,
@@ -92,6 +97,46 @@ void Pm4CommandWriter::CallIndirectBuffer(uint64_t buffer_address,
   // PAL's ordinary MEC call sets VALID, with VMID and cache policy zero.
   // Policy zero is LRU on GFX11 and the regular temporal hint on GFX12+.
   words_[word_count_++] = word_count | (1u << 23);
+}
+
+void Pm4CommandWriter::ChainIndirectBuffer(const Pm4IndirectBuffer& successor) {
+  words_[word_count_++] = MakeHeader(0x3f, 4);
+  words_[word_count_++] = static_cast<uint32_t>(successor.address);
+  words_[word_count_++] = static_cast<uint32_t>(successor.address >> 32);
+  // MEC CHAIN and VALID, with zero VMID, policy and all reserved bits.
+  words_[word_count_++] = successor.word_count | (1u << 20) | (1u << 23);
+}
+
+void Pm4CommandWriter::BranchIndirectBuffer(uint64_t operand_address,
+                                            uint64_t reference, uint64_t mask,
+                                            Pm4MemoryComparison comparison,
+                                            const Pm4IndirectBuffer& pass,
+                                            const Pm4IndirectBuffer& fail) {
+  words_[word_count_++] = MakeHeader(0x3f, 14);
+  words_[word_count_++] = 2u | (static_cast<uint32_t>(comparison) << 8);
+  words_[word_count_++] = static_cast<uint32_t>(operand_address);
+  words_[word_count_++] = static_cast<uint32_t>(operand_address >> 32);
+  words_[word_count_++] = static_cast<uint32_t>(mask);
+  words_[word_count_++] = static_cast<uint32_t>(mask >> 32);
+  words_[word_count_++] = static_cast<uint32_t>(reference);
+  words_[word_count_++] = static_cast<uint32_t>(reference >> 32);
+  words_[word_count_++] = static_cast<uint32_t>(pass.address);
+  words_[word_count_++] = static_cast<uint32_t>(pass.address >> 32);
+  // These branch words have counts and default policies, not CHAIN/VALID bits.
+  words_[word_count_++] = pass.word_count;
+  words_[word_count_++] = static_cast<uint32_t>(fail.address);
+  words_[word_count_++] = static_cast<uint32_t>(fail.address >> 32);
+  words_[word_count_++] = fail.word_count;
+}
+
+void Pm4CommandWriter::ExecuteIfNonzero(uint64_t predicate_address,
+                                        uint32_t word_count) {
+  words_[word_count_++] = MakeHeader(0x22, 5);
+  words_[word_count_++] = static_cast<uint32_t>(predicate_address);
+  words_[word_count_++] = static_cast<uint32_t>(predicate_address >> 32);
+  // PAL's ordinary policy is zero: LRU on GFX11, regular temporal on GFX12+.
+  words_[word_count_++] = 0;
+  words_[word_count_++] = word_count;
 }
 
 void Pm4CommandWriter::AcquireMemory(uint32_t gcr) {
@@ -187,17 +232,28 @@ void Pm4CommandWriter::CopyData64(uint64_t source_address,
                                target_address, pm4::CopyDataWidth::k64Bit);
 }
 
-void Pm4CommandWriter::DmaCopyL2(uint64_t source_address,
-                                 uint64_t target_address,
-                                 uint32_t byte_length) {
+void Pm4CommandWriter::DmaCopy(uint64_t source_address, uint64_t target_address,
+                               uint32_t byte_length) {
   words_[word_count_++] = MakeHeader(0x50, 7);
-  // L2 source/destination, LRU policies and no PFP-layout CP_SYNC bit.
+  // TC_L2 source/destination, default policies and no PFP-layout CP_SYNC bit.
   words_[word_count_++] = (3u << 29) | (3u << 20);
   words_[word_count_++] = static_cast<uint32_t>(source_address);
   words_[word_count_++] = static_cast<uint32_t>(source_address >> 32);
   words_[word_count_++] = static_cast<uint32_t>(target_address);
   words_[word_count_++] = static_cast<uint32_t>(target_address >> 32);
   // Direct byte count and RAW_WAIT; incrementing addresses and DIS_WC=0.
+  words_[word_count_++] = byte_length | (1u << 30);
+}
+
+void Pm4CommandWriter::DmaFill32(uint64_t target_address, uint32_t pattern,
+                                 uint32_t byte_length) {
+  words_[word_count_++] = MakeHeader(0x50, 7);
+  // Immediate DWORD source and TC_L2 destination; reserved MEC fields clear.
+  words_[word_count_++] = (2u << 29) | (3u << 20);
+  words_[word_count_++] = pattern;
+  words_[word_count_++] = 0;
+  words_[word_count_++] = static_cast<uint32_t>(target_address);
+  words_[word_count_++] = static_cast<uint32_t>(target_address >> 32);
   words_[word_count_++] = byte_length | (1u << 30);
 }
 
@@ -266,8 +322,8 @@ void Pm4CommandWriter::CopyGpuClock64(uint64_t target_address) {
   word_count_ += pm4::CopyGpuClock64(words_ + word_count_, target_address);
 }
 
-void Pm4CommandWriter::PadToEightWords() {
-  size_t padding = 8 - word_count_ % 8;
+void Pm4CommandWriter::PadToEightWords(size_t trailing_word_count) {
+  size_t padding = 8 - (word_count_ + trailing_word_count) % 8;
   if (padding == 1) {
     padding += 8;
   }

@@ -58,7 +58,13 @@ TEST(Pm4EncodingTest, TargetProfilesEncodeCacheAndRegisterDifferences) {
     std::array<uint32_t, 69> words;
     words.fill(0x24681357);
     const Pm4ComputeProgram program = {
-        UINT64_C(0x0000123456789000), 0xe0af0000, 0x84, 0x30, 512, {128, 1, 1},
+        UINT64_C(0x0000123456789000),
+        0xe0af0000,
+        0x84,
+        0x30,
+        512,
+        32,
+        {128, 1, 1},
     };
     Pm4CommandWriter commands(words.data() + 1,
                               Profile(test.target[0], test.target[1]));
@@ -139,7 +145,7 @@ TEST(Pm4EncodingTest, ComputeBindingPreservesNativeContextRegisters) {
   std::array<uint32_t, 27> words = {};
   words.back() = 0x24681357;
   const Pm4ComputeProgram program = {
-      UINT64_C(0x0000123456789000), 0xe0af0000, 0x84, 0x20, 0, {64, 1, 1},
+      UINT64_C(0x0000123456789000), 0xe0af0000, 0x84, 0x20, 0, 32, {64, 1, 1},
   };
   Pm4CommandWriter commands(words.data(), Profile(11, 0));
   commands.BindCompute(program, UINT64_C(0x00003456789abc00));
@@ -162,7 +168,13 @@ TEST(Pm4EncodingTest, ComputeBindingRealizesStaticLdsAndFourWavePolicy) {
   std::array<uint32_t, 28> words;
   words.fill(0x24681357);
   const Pm4ComputeProgram program = {
-      UINT64_C(0x0000123456789000), 0xe0af0000, 0x84, 0x30, 512, {128, 1, 1},
+      UINT64_C(0x0000123456789000),
+      0xe0af0000,
+      0x84,
+      0x30,
+      512,
+      32,
+      {128, 1, 1},
   };
   Pm4CommandWriter commands(words.data() + 1, Profile(11, 0));
   commands.BindCompute(program, UINT64_C(0x00003456789abc00));
@@ -186,7 +198,13 @@ TEST(Pm4EncodingTest, ComputeBindingReplacesDynamicLdsRequirement) {
   std::array<uint32_t, 80> words;
   words.fill(0x24681357);
   Pm4ComputeProgram program = {
-      UINT64_C(0x0000123456789000), 0xe0af0000, 0x84, 0x30, 512, {128, 1, 1},
+      UINT64_C(0x0000123456789000),
+      0xe0af0000,
+      0x84,
+      0x30,
+      512,
+      32,
+      {128, 1, 1},
   };
   Pm4CommandWriter commands(words.data() + 1, Profile(11, 0));
   for (uint32_t group_byte_length : {1024u, 2048u, 1024u}) {
@@ -226,10 +244,16 @@ TEST(Pm4EncodingTest, ComputeBindingSwitchesImmutableProgramsAndRestoresState) {
   std::array<uint32_t, 80> words;
   words.fill(0x24681357);
   const Pm4ComputeProgram transform = {
-      UINT64_C(0x0000123456789000), 0xe0af0000, 0x84, 0x20, 0, {64, 1, 1},
+      UINT64_C(0x0000123456789000), 0xe0af0000, 0x84, 0x20, 0, 32, {64, 1, 1},
   };
   const Pm4ComputeProgram lds = {
-      UINT64_C(0x000023456789a000), 0xe0af0000, 0x84, 0x30, 512, {128, 1, 1},
+      UINT64_C(0x000023456789a000),
+      0xe0af0000,
+      0x84,
+      0x30,
+      512,
+      32,
+      {128, 1, 1},
   };
   Pm4CommandWriter commands(words.data() + 1, Profile(11, 0));
   commands.BindCompute(transform, UINT64_C(0x00003456789abc00));
@@ -264,34 +288,351 @@ TEST(Pm4EncodingTest, ComputeBindingSwitchesImmutableProgramsAndRestoresState) {
   EXPECT_EQ(words.back(), 0x24681357u);
 }
 
-TEST(Pm4EncodingTest, DirectWave32DispatchUsesCompleteThreadDimensions) {
-  std::array<uint32_t, 6> words = {};
-  words.back() = 0x24681357;
-  Pm4CommandWriter commands(words.data(), Profile(11, 0));
-  commands.DispatchWave32(1024, 1, 1);
-  const std::array<uint32_t, 5> expected = {
-      0xc0031502, 1024, 1, 1, 0x8025,
+TEST(Pm4EncodingTest, ComputeBindingCountsWavesAcrossAllWorkgroupDimensions) {
+  const struct {
+    // Compiled workitems per wave.
+    uint32_t wavefront_size;
+    // Complete local geometry, including partial final waves.
+    std::array<uint32_t, 3> workgroup_size;
+    // Literal SIMD_DEST_CNTL policy for this group and wave size.
+    uint32_t resource_limits;
+  } cases[] = {
+      {32, {1, 1, 1}, 0},           {32, {8, 4, 4}, 0x00400000},
+      {32, {97, 1, 1}, 0x00400000}, {32, {129, 1, 1}, 0},
+      {32, {8, 8, 4}, 0x00400000},  {64, {1, 1, 1}, 0},
+      {64, {8, 4, 4}, 0},           {64, {193, 1, 1}, 0x00400000},
+      {64, {257, 1, 1}, 0},         {64, {8, 8, 4}, 0x00400000},
   };
-  ASSERT_EQ(commands.word_count(), expected.size());
-  ExpectWords(words.data(), expected);
-  EXPECT_EQ(words.back(), 0x24681357u);
+  for (const auto& test : cases) {
+    SCOPED_TRACE(::testing::Message()
+                 << test.wavefront_size << ':' << test.workgroup_size[0] << 'x'
+                 << test.workgroup_size[1] << 'x' << test.workgroup_size[2]);
+    std::array<uint32_t, 28> words;
+    words.fill(0x24681357);
+    const Pm4ComputeProgram program = {
+        UINT64_C(0x0000123456789000),
+        0xe0af0000,
+        0x84,
+        0x30,
+        512,
+        test.wavefront_size,
+        {test.workgroup_size[0], test.workgroup_size[1],
+         test.workgroup_size[2]},
+    };
+    Pm4CommandWriter commands(words.data() + 1, Profile(11, 0));
+    commands.BindCompute(program, UINT64_C(0x00003456789abc00));
+    const std::array<uint32_t, 26> expected = {
+        0xc0027602,
+        0x20c,
+        0x34567890,
+        0x12,
+        0xc0027602,
+        0x212,
+        0xe0af0000,
+        0x8084,
+        0xc0017602,
+        0x228,
+        0x30,
+        0xc0017602,
+        0x215,
+        test.resource_limits,
+        0xc0067602,
+        0x204,
+        0,
+        0,
+        0,
+        test.workgroup_size[0],
+        test.workgroup_size[1],
+        test.workgroup_size[2],
+        0xc0027602,
+        0x240,
+        0x789abc00,
+        0x3456,
+    };
+    ASSERT_EQ(commands.word_count(), expected.size());
+    ExpectWords(words.data() + 1, expected);
+    EXPECT_EQ(words.front(), 0x24681357u);
+    EXPECT_EQ(words.back(), 0x24681357u);
+  }
 }
 
-TEST(Pm4EncodingTest, IndirectWave32DispatchUsesAbsoluteByteAddressAndGroups) {
-  std::array<uint32_t, 6> words;
-  words.fill(0x24681357u);
+TEST(Pm4EncodingTest, ComputeBindingRestoresWaveSizeSchedulingPolicy) {
+  std::array<uint32_t, 80> words;
+  words.fill(0x24681357);
+  Pm4ComputeProgram program = {
+      UINT64_C(0x0000123456789000),
+      0xe0af0000,
+      0x84,
+      0x30,
+      512,
+      32,
+      {128, 1, 1},
+  };
   Pm4CommandWriter commands(words.data() + 1, Profile(11, 0));
-  commands.DispatchIndirectWave32(UINT64_C(0x00000012abcd0100));
-  const std::array<uint32_t, 4> expected = {
-      0xc0021602,
-      0xabcd0100,
-      0x00000012,
-      0x8005,
+  for (uint32_t wavefront_size : {32u, 64u, 32u}) {
+    program.wavefront_size = wavefront_size;
+    commands.BindCompute(program, UINT64_C(0x00003456789abc00));
+  }
+  // The same 128-workitem group occupies four wave32s or two wave64s. Every
+  // complete binding replaces the scheduling policy, including restoration.
+  const std::array<uint32_t, 78> expected = {
+      0xc0027602, 0x20c,      0x34567890, 0x12,  0xc0027602, 0x212,
+      0xe0af0000, 0x8084,     0xc0017602, 0x228, 0x30,       0xc0017602,
+      0x215,      0x00400000, 0xc0067602, 0x204, 0,          0,
+      0,          128,        1,          1,     0xc0027602, 0x240,
+      0x789abc00, 0x3456,
+
+      0xc0027602, 0x20c,      0x34567890, 0x12,  0xc0027602, 0x212,
+      0xe0af0000, 0x8084,     0xc0017602, 0x228, 0x30,       0xc0017602,
+      0x215,      0,          0xc0067602, 0x204, 0,          0,
+      0,          128,        1,          1,     0xc0027602, 0x240,
+      0x789abc00, 0x3456,
+
+      0xc0027602, 0x20c,      0x34567890, 0x12,  0xc0027602, 0x212,
+      0xe0af0000, 0x8084,     0xc0017602, 0x228, 0x30,       0xc0017602,
+      0x215,      0x00400000, 0xc0067602, 0x204, 0,          0,
+      0,          128,        1,          1,     0xc0027602, 0x240,
+      0x789abc00, 0x3456,
   };
   ASSERT_EQ(commands.word_count(), expected.size());
   ExpectWords(words.data() + 1, expected);
   EXPECT_EQ(words.front(), 0x24681357u);
   EXPECT_EQ(words.back(), 0x24681357u);
+}
+
+TEST(Pm4EncodingTest, DispatchUsesCompiledWaveSizeAndPreservesCountUnits) {
+  constexpr std::array<std::array<uint32_t, 2>, 4> kTargets = {{
+      {11, 0},
+      {11, 5},
+      {11, 7},
+      {12, 0},
+  }};
+  const struct {
+    // Wave mode sequence exercises restoring either mode after its opposite.
+    std::array<uint32_t, 3> wavefront_sizes;
+    // Literal direct initiators, including USE_THREAD_DIMENSIONS.
+    std::array<uint32_t, 3> direct_initiators;
+    // Literal MEC indirect initiators with counts expressed in workgroups.
+    std::array<uint32_t, 3> indirect_initiators;
+  } cases[] = {
+      {{32, 64, 32}, {0x8025, 0x25, 0x8025}, {0x8005, 0x5, 0x8005}},
+      {{64, 32, 64}, {0x25, 0x8025, 0x25}, {0x5, 0x8005, 0x5}},
+  };
+  for (const auto& target : kTargets) {
+    SCOPED_TRACE(::testing::Message() << target[0] << '.' << target[1]);
+    for (const auto& test : cases) {
+      SCOPED_TRACE(test.wavefront_sizes[0]);
+      std::array<uint32_t, 29> words;
+      words.fill(0x24681357u);
+      Pm4CommandWriter commands(words.data() + 1,
+                                Profile(target[0], target[1]));
+      for (uint32_t wavefront_size : test.wavefront_sizes) {
+        const Pm4ComputeProgram program = {
+            UINT64_C(0x0000123456789000),
+            0xe0af0000,
+            0x84,
+            0x30,
+            512,
+            wavefront_size,
+            {128, 1, 1},
+        };
+        commands.Dispatch(program, 1024, 4, 2);
+        commands.DispatchIndirect(program, UINT64_C(0x00000012abcd0100));
+      }
+      const std::array<uint32_t, 27> expected = {
+          0xc0031502,
+          1024,
+          4,
+          2,
+          test.direct_initiators[0],
+          0xc0021602,
+          0xabcd0100,
+          0x12,
+          test.indirect_initiators[0],
+          0xc0031502,
+          1024,
+          4,
+          2,
+          test.direct_initiators[1],
+          0xc0021602,
+          0xabcd0100,
+          0x12,
+          test.indirect_initiators[1],
+          0xc0031502,
+          1024,
+          4,
+          2,
+          test.direct_initiators[2],
+          0xc0021602,
+          0xabcd0100,
+          0x12,
+          test.indirect_initiators[2],
+      };
+      ASSERT_EQ(commands.word_count(), expected.size());
+      ExpectWords(words.data() + 1, expected);
+      EXPECT_EQ(words.front(), 0x24681357u);
+      EXPECT_EQ(words.back(), 0x24681357u);
+    }
+  }
+}
+
+TEST(Pm4EncodingTest, Wave32OnlyProfilePreservesCountUnits) {
+  // GFX12.5 accepts wave32 programs only, so its compiled inputs cannot take
+  // part in the wave-mode restoration cases above.
+  std::array<uint32_t, 11> words;
+  words.fill(0x24681357u);
+  const Pm4ComputeProgram program = {
+      UINT64_C(0x0000123456789000),
+      0xe0af0000,
+      0x84,
+      0x30,
+      512,
+      32,
+      {128, 1, 1},
+  };
+  Pm4CommandWriter commands(words.data() + 1, Profile(12, 5));
+  commands.Dispatch(program, 1024, 4, 2);
+  commands.DispatchIndirect(program, UINT64_C(0x00000012abcd0100));
+  const std::array<uint32_t, 9> expected = {
+      0xc0031502, 1024, 4, 2, 0x8025, 0xc0021602, 0xabcd0100, 0x12, 0x8005,
+  };
+  ASSERT_EQ(commands.word_count(), expected.size());
+  ExpectWords(words.data() + 1, expected);
+  EXPECT_EQ(words.front(), 0x24681357u);
+  EXPECT_EQ(words.back(), 0x24681357u);
+}
+
+TEST(Pm4EncodingTest, ConditionalExecutionUsesDwordAddressAndDirectCount) {
+  constexpr std::array<std::array<uint32_t, 2>, 5> kTargets = {{
+      {11, 0},
+      {11, 5},
+      {11, 7},
+      {12, 0},
+      {12, 5},
+  }};
+  for (const auto& target : kTargets) {
+    SCOPED_TRACE(::testing::Message() << target[0] << '.' << target[1]);
+    for (uint32_t count : {0u, 5u, 31u, 37u, 0x2000u, 0x3fffu}) {
+      SCOPED_TRACE(count);
+      std::array<uint32_t, 12> words;
+      words.fill(0x24681357);
+      Pm4CommandWriter commands(words.data() + 1,
+                                Profile(target[0], target[1]));
+      commands.ExecuteIfNonzero(UINT64_C(0x0000123456789004), count);
+      commands.ExecuteIfNonzero(UINT64_C(0x0000abcd87654ffc), count);
+      // PAL's MEC layouts retain zero header flags and policy/reserved words.
+      // The count excludes each five-DWORD COND_EXEC packet itself.
+      const std::array<uint32_t, 10> expected = {
+          0xc0032200, 0x56789004, 0x1234, 0, count,
+          0xc0032200, 0x87654ffc, 0xabcd, 0, count,
+      };
+      ASSERT_EQ(commands.word_count(), expected.size());
+      ExpectWords(words.data() + 1, expected);
+      EXPECT_EQ(words.front(), 0x24681357u);
+      EXPECT_EQ(words.back(), 0x24681357u);
+    }
+  }
+}
+
+TEST(Pm4EncodingTest, ConditionalBranchesPreserveOperandAndBothTargets) {
+  constexpr std::array<std::array<uint32_t, 2>, 5> kTargets = {{
+      {11, 0},
+      {11, 5},
+      {11, 7},
+      {12, 0},
+      {12, 5},
+  }};
+  const struct {
+    // Native memory comparison requested by the caller.
+    Pm4MemoryComparison comparison;
+    // Literal if-then-else mode and function word from the MEC layout.
+    uint32_t control;
+  } cases[] = {
+      {Pm4MemoryComparison::kAlways, 0x002},
+      {Pm4MemoryComparison::kLess, 0x102},
+      {Pm4MemoryComparison::kLessOrEqual, 0x202},
+      {Pm4MemoryComparison::kEqual, 0x302},
+      {Pm4MemoryComparison::kNotEqual, 0x402},
+      {Pm4MemoryComparison::kGreaterOrEqual, 0x502},
+      {Pm4MemoryComparison::kGreater, 0x602},
+  };
+  for (const auto& target : kTargets) {
+    SCOPED_TRACE(::testing::Message() << target[0] << '.' << target[1]);
+    for (const auto& test : cases) {
+      SCOPED_TRACE(test.control);
+      for (uint32_t count : {1u, 0x20000u, 0xfffffu}) {
+        SCOPED_TRACE(count);
+        std::array<uint32_t, 20> words;
+        words.fill(0x24681357);
+        Pm4CommandWriter commands(words.data() + 1,
+                                  Profile(target[0], target[1]));
+        const Pm4IndirectBuffer pass = {UINT64_C(0x0000456789abcd04), count};
+        const Pm4IndirectBuffer fail = {UINT64_C(0x00006789abcdef08), 0x12345};
+        commands.BranchIndirectBuffer(
+            UINT64_C(0x0000123456789004), UINT64_C(0x8000000055aa55aa),
+            UINT64_C(0xff00ff0055aa55aa), test.comparison, pass, fail);
+        commands.ChainIndirectBuffer(pass);
+        const std::array<uint32_t, 18> expected = {
+            0xc00c3f00, test.control, 0x56789004,
+            0x1234,     0x55aa55aa,   0xff00ff00,
+            0x55aa55aa, 0x80000000,   0x89abcd04,
+            0x4567,     count,        0xabcdef08,
+            0x6789,     0x12345,      0xc0023f00,
+            0x89abcd04, 0x4567,       0x900000u | count,
+        };
+        ASSERT_EQ(commands.word_count(), expected.size());
+        ExpectWords(words.data() + 1, expected);
+        EXPECT_EQ(words.front(), 0x24681357u);
+        EXPECT_EQ(words.back(), 0x24681357u);
+      }
+    }
+  }
+}
+
+TEST(Pm4EncodingTest, AlignmentPaddingPrecedesTerminalPackets) {
+  // Eight prefix lengths cover every residue. Each literal row is the NOP
+  // length before an ordinary end, four-DWORD chain or fourteen-DWORD branch.
+  constexpr std::array<std::array<size_t, 3>, 8> kPadding = {{
+      {3, 7, 5},
+      {2, 6, 4},
+      {9, 5, 3},
+      {8, 4, 2},
+      {7, 3, 9},
+      {6, 2, 8},
+      {5, 9, 7},
+      {4, 8, 6},
+  }};
+  constexpr std::array<size_t, 3> kTrailers = {0, 4, 14};
+  constexpr std::array<uint32_t, 8> kNoopHeaders = {
+      0xc0001000, 0xc0011000, 0xc0021000, 0xc0031000,
+      0xc0041000, 0xc0051000, 0xc0061000, 0xc0071000,
+  };
+  const std::array<uint32_t, 8> payload = {};
+  for (size_t prefix = 0; prefix < kPadding.size(); ++prefix) {
+    for (size_t trailer = 0; trailer < kTrailers.size(); ++trailer) {
+      SCOPED_TRACE(::testing::Message() << prefix << ':' << kTrailers[trailer]);
+      std::array<uint32_t, 32> words;
+      words.fill(0x24681357);
+      Pm4CommandWriter commands(words.data() + 1, Profile(11, 0));
+      commands.WriteData(UINT64_C(0x0000123456789000), payload.data(),
+                         prefix + 1);
+      const size_t first_padding = commands.word_count();
+      ASSERT_EQ(first_padding, prefix + 5);
+      commands.PadToEightWords(kTrailers[trailer]);
+      const size_t padding = kPadding[prefix][trailer];
+      ASSERT_EQ(commands.word_count(), first_padding + padding);
+      EXPECT_EQ(words[1 + first_padding], kNoopHeaders[padding - 2]);
+      for (size_t word = 1; word < padding; ++word) {
+        EXPECT_EQ(words[1 + first_padding + word], 0u);
+      }
+      EXPECT_EQ((commands.word_count() + kTrailers[trailer]) % 8, 0u);
+      EXPECT_EQ(words.front(), 0x24681357u);
+      for (size_t word = 1 + commands.word_count(); word < words.size();
+           ++word) {
+        EXPECT_EQ(words[word], 0x24681357u);
+      }
+    }
+  }
 }
 
 TEST(Pm4EncodingTest, IndirectBufferCallUsesMecAddressAndDwordCount) {
@@ -394,23 +735,93 @@ TEST(Pm4EncodingTest, ConfirmedCopiesPreserveAddressesAndSelectWidth) {
 }
 
 TEST(Pm4EncodingTest, MecDmaCopyAndDrainKeepReservedControlsClear) {
-  std::array<uint32_t, 16> words;
-  words.fill(0x24681357);
-  Pm4CommandWriter commands(words.data() + 1, Profile(11, 0));
-  commands.DmaCopyL2(UINT64_C(0x1234567887654040), UINT64_C(0x2345678998765100),
-                     1024);
-  commands.WaitDma();
-  // RADV's real compute copy/drain uses a direct byte count with RAW_WAIT,
-  // enabled write confirmation and no PFP-layout CP_SYNC control.
-  const std::array<uint32_t, 14> expected = {
-      0xc0055000, 0x60300000, 0x87654040, 0x12345678, 0x98765100,
-      0x23456789, 0x40000400, 0xc0055000, 0,          0,
-      0,          0,          0,          0,
+  const struct {
+    // Direct positive byte count, including the native field maximum.
+    uint32_t byte_length;
+    // Literal RAW_WAIT plus byte-count encoding, independent of the writer.
+    uint32_t count_control;
+  } cases[] = {
+      {1, 0x40000001},     {3, 0x40000003},          {1024, 0x40000400},
+      {32736, 0x40007fe0}, {0x03ffffff, 0x43ffffff},
   };
-  ASSERT_EQ(commands.word_count(), expected.size());
-  ExpectWords(words.data() + 1, expected);
-  EXPECT_EQ(words.front(), 0x24681357u);
-  EXPECT_EQ(words.back(), 0x24681357u);
+  for (const auto& target : std::array<std::array<uint32_t, 2>, 5>{
+           {{11, 0}, {11, 5}, {11, 7}, {12, 0}, {12, 5}}}) {
+    for (const auto& test : cases) {
+      SCOPED_TRACE(::testing::Message() << target[0] << '.' << target[1]
+                                        << " byte_length=" << test.byte_length);
+      std::array<uint32_t, 16> words;
+      words.fill(0x24681357);
+      Pm4CommandWriter commands(words.data() + 1,
+                                Profile(target[0], target[1]));
+      commands.DmaCopy(UINT64_C(0x1234567887654043),
+                       UINT64_C(0x2345678998765105), test.byte_length);
+      commands.WaitDma();
+      // Full byte addresses, direct count, RAW_WAIT, enabled confirmation,
+      // and no PFP-layout CP_SYNC. The drain's complete body remains zero.
+      const std::array<uint32_t, 14> expected = {
+          0xc0055000,
+          0x60300000,
+          0x87654043,
+          0x12345678,
+          0x98765105,
+          0x23456789,
+          test.count_control,
+          0xc0055000,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+      };
+      ASSERT_EQ(commands.word_count(), expected.size());
+      ExpectWords(words.data() + 1, expected);
+      EXPECT_EQ(words.front(), 0x24681357u);
+      EXPECT_EQ(words.back(), 0x24681357u);
+    }
+  }
+}
+
+TEST(Pm4EncodingTest, MecDmaFillCarriesCompleteImmediatePattern) {
+  const struct {
+    // Positive DWORD-aligned direct count, including its representable limit.
+    uint32_t byte_length;
+    // Literal RAW_WAIT and count field, independent of the writer.
+    uint32_t count_control;
+  } counts[] = {
+      {4, 0x40000004},
+      {8, 0x40000008},
+      {32736, 0x40007fe0},
+      {0x03fffffc, 0x43fffffc},
+  };
+  constexpr uint32_t kPatterns[] = {0, 0xffffffff, 0x80000000,
+                                    1, 0x6d2ac491, 0xb730e85a};
+  for (const auto& target : std::array<std::array<uint32_t, 2>, 5>{
+           {{11, 0}, {11, 5}, {11, 7}, {12, 0}, {12, 5}}}) {
+    for (const auto& count : counts) {
+      for (uint32_t pattern : kPatterns) {
+        SCOPED_TRACE(::testing::Message()
+                     << target[0] << '.' << target[1] << " byte_length="
+                     << count.byte_length << " pattern=" << pattern);
+        std::array<uint32_t, 9> words;
+        words.fill(0x24681357);
+        Pm4CommandWriter commands(words.data() + 1,
+                                  Profile(target[0], target[1]));
+        commands.DmaFill32(UINT64_C(0x2345678998765104), pattern,
+                           count.byte_length);
+        // The complete immediate occupies source-low. Source-high and every
+        // reserved MEC control stay clear; the destination remains 64-bit.
+        const std::array<uint32_t, 7> expected = {
+            0xc0055000, 0x40300000,          pattern, 0, 0x98765104,
+            0x23456789, count.count_control,
+        };
+        ASSERT_EQ(commands.word_count(), expected.size());
+        ExpectWords(words.data() + 1, expected);
+        EXPECT_EQ(words.front(), 0x24681357u);
+        EXPECT_EQ(words.back(), 0x24681357u);
+      }
+    }
+  }
 }
 
 TEST(Pm4EncodingTest, SharedCopyDataPreservesFullPayloadAddresses) {
@@ -531,6 +942,49 @@ TEST(Pm4EncodingTest, MaskedMemoryWaitsKeepOrdinaryMecExecution) {
   ASSERT_EQ(commands.word_count(), expected.size());
   ExpectWords(words.data(), expected);
   EXPECT_EQ(words.back(), 0x24681357u);
+}
+
+TEST(Pm4EncodingTest, EveryMemoryComparisonPreservesBothPacketLayouts) {
+  const struct {
+    // Comparison requested by the caller.
+    Pm4MemoryComparison comparison;
+    // Literal MEC function and memory-space control word.
+    uint32_t control;
+  } cases[] = {
+      {Pm4MemoryComparison::kAlways, 0x10},
+      {Pm4MemoryComparison::kLess, 0x11},
+      {Pm4MemoryComparison::kLessOrEqual, 0x12},
+      {Pm4MemoryComparison::kEqual, 0x13},
+      {Pm4MemoryComparison::kNotEqual, 0x14},
+      {Pm4MemoryComparison::kGreaterOrEqual, 0x15},
+      {Pm4MemoryComparison::kGreater, 0x16},
+  };
+  const std::array<uint32_t, 2> targets[] = {
+      {11, 0}, {11, 5}, {11, 7}, {12, 0}, {12, 5}};
+  for (const auto& target : targets) {
+    SCOPED_TRACE(::testing::Message() << target[0] << '.' << target[1]);
+    for (const auto& test : cases) {
+      SCOPED_TRACE(test.control);
+      std::array<uint32_t, 18> words;
+      words.fill(0x24681357);
+      Pm4CommandWriter commands(words.data() + 1,
+                                Profile(target[0], target[1]));
+      commands.WaitMemory32(UINT64_C(0x0000123487654324), 0x00400000,
+                            test.comparison, 0x00ffff00);
+      commands.WaitMemory64(UINT64_C(0x00005678fedcba98),
+                            UINT64_C(0x0040000013570000), test.comparison,
+                            UINT64_C(0x00ffff00ffff0000));
+      const std::array<uint32_t, 16> expected = {
+          0xc0053c00,   test.control, 0x87654324, 0x00001234,
+          0x00400000,   0x00ffff00,   4,          0xc0079300,
+          test.control, 0xfedcba98,   0x00005678, 0x13570000,
+          0x00400000,   0xffff0000,   0x00ffff00, 4};
+      ASSERT_EQ(commands.word_count(), expected.size());
+      ExpectWords(words.data() + 1, expected);
+      EXPECT_EQ(words.front(), 0x24681357u);
+      EXPECT_EQ(words.back(), 0x24681357u);
+    }
+  }
 }
 
 TEST(Pm4EncodingTest, LessThanWaitsPreserveBothOperandWidths) {

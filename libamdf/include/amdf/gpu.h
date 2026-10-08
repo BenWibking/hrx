@@ -146,13 +146,17 @@ typedef struct amdf_gpu_device_info_t {
 ///
 /// The primary ring contains native type-3 PM4 packets. Transfer commands use
 /// six-dword COPY_DATA and WRITE_DATA with a four-dword prefix and payload.
-/// GFX11.5.1 MEC also supports seven-dword DMA_DATA incrementing L2 copies
-/// between owned coherent SYSTEM ranges, with a direct byte count and write
-/// confirmation. The caller follows each
-/// copy sequence with the zero-byte DMA_DATA drain, explicit cache work and
-/// a completion marker before releasing its operands; ring consumption alone
-/// does not complete a transfer. This does not admit PFP controls, other DMA
-/// selectors or DMA_DATA on kernel-publication or AQL-carried PM4 transports.
+/// Seven-dword MEC DMA_DATA copies use incrementing byte addresses, a direct
+/// byte count, TC_L2 source/destination selectors, RAW_WAIT and enabled write
+/// confirmation. TC_L2 routes through MALL on GFX12; the caller applies the
+/// reported cache-control encoding for the actual producer/consumer edge.
+/// Immediate-source DMA_DATA repeats a DWORD pattern over a DWORD-aligned
+/// destination and byte count, using the same destination and ordering
+/// controls. The pattern occupies source-low and source-high remains zero.
+/// Transfer sequences end with the zero-byte MEC DMA_DATA drain, explicit cache
+/// work and a completion marker before releasing their operands. Ring
+/// consumption alone does not complete a transfer. PFP-only controls and
+/// reserved MEC fields remain zero. AQL-carried PM4 uses a separate format.
 /// Cache-control encoding is described by the reported PM4 format features.
 /// Indices occupy naturally aligned 64-bit storage. The write index is a
 /// monotonic dword count; the native read index wraps at the ring capacity

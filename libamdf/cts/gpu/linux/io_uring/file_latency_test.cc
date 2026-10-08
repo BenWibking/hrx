@@ -319,7 +319,7 @@ class GpuFileLatencyTest : public GpuFileIoFixture,
                 GpuMemory* completion, Sample* sample) {
     commands->SystemBarrier();
     commands->BindCompute(program, arguments->device_address);
-    commands->DispatchWave32(1, 1, 1);
+    commands->Dispatch(program, 1, 1, 1);
     commands->SystemBarrier();
     commands->WriteData32(completion->device_address, 1);
     commands->PadToEightWords();
@@ -692,6 +692,7 @@ class GpuFileLatencyTest : public GpuFileIoFixture,
                                  kernel->program.resource2,
                                  kernel->program.resource3,
                                  kernel->group_segment_byte_length,
+                                 kernel->wavefront_size,
                                  {1, 1, 1}};
     ASSERT_NO_FATAL_FAILURE(PrepareProgram(kernel->executable,
                                            kernel->entry_byte_offset, &program,
@@ -1231,6 +1232,7 @@ class GpuFileDemandTest : public GpuFileLatencyTest {
                                  kernel->program.resource2,
                                  kernel->program.resource3,
                                  kernel->group_segment_byte_length,
+                                 kernel->wavefront_size,
                                  {1, 1, 1}};
     ASSERT_NO_FATAL_FAILURE(PrepareProgram(kernel->executable,
                                            kernel->entry_byte_offset, &program,
@@ -1343,7 +1345,7 @@ class GpuFileDemandTest : public GpuFileLatencyTest {
           background_commands.SystemBarrier();
           background_commands.BindCompute(program,
                                           background_arguments->device_address);
-          background_commands.DispatchWave32(1, 1, 1);
+          background_commands.Dispatch(program, 1, 1, 1);
           background_commands.SystemBarrier();
           background_commands.WriteData32(background_completion->device_address,
                                           1);

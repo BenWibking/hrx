@@ -38,11 +38,16 @@ struct SdmaCopyExtent {
   uint32_t depth;
 };
 
-// Full-width classic memory comparisons used by completion-value protocols.
-// Greater-or-equal alone does not provide a wrap-aware timeline comparison.
+// Classic memory comparisons used by completion-value protocols. Relational
+// comparisons alone do not provide a wrap-aware timeline protocol.
 enum class SdmaMemoryComparison : uint32_t {
+  kAlways = 0,
+  kLess = 1,
+  kLessOrEqual = 2,
   kEqual = 3,
+  kNotEqual = 4,
   kGreaterOrEqual = 5,
+  kGreater = 6,
 };
 
 // SDMA v1 transfer and timestamp commands on coherent system memory. No
@@ -82,12 +87,13 @@ class SdmaCommandWriter {
   void Fill32(uint64_t target, uint32_t pattern, uint32_t byte_length);
   // Writes an aligned coherent completion word after preceding transfers.
   void Fence32(uint64_t address, uint32_t value);
-  // Waits for an aligned coherent word using a full-width comparison. This
-  // POLL_REGMEM scope follows the family. The native retry-forever value leaves
-  // valid asynchronous work without a deadline.
+  // Waits for an aligned coherent word using a masked comparison. The reference
+  // value has no bits outside the mask. POLL_REGMEM scope follows the family;
+  // the native retry-forever value leaves valid work without a deadline.
   void WaitMemory32(
       uint64_t address, uint32_t value,
-      SdmaMemoryComparison comparison = SdmaMemoryComparison::kEqual);
+      SdmaMemoryComparison comparison = SdmaMemoryComparison::kEqual,
+      uint32_t mask = UINT32_MAX);
   // Writes the raw 64-bit global timestamp after earlier commands complete.
   // Scope follows the family, with a 32-byte-aligned caller-owned destination.
   // Clock conversion and timestamp-write completion are separate contracts.

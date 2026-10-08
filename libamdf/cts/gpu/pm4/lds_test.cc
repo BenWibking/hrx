@@ -71,6 +71,7 @@ TEST_F(Pm4LdsTest, StaticGroupMemoryExchangesAcrossWaves) {
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {kernel.workgroup_size(), 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(
@@ -174,7 +175,7 @@ TEST_F(Pm4LdsTest, StaticGroupMemoryExchangesAcrossWaves) {
 
     commands.SystemBarrier();
     commands.BindCompute(program, arguments->device_address);
-    commands.DispatchWave32(kGridSize, 1, 1);
+    commands.Dispatch(program, kGridSize, 1, 1);
     commands.SystemBarrier();
     commands.WriteData32(completion->device_address + kCompletionByteOffset,
                          epoch + 1);

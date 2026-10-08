@@ -129,6 +129,7 @@ class GpuXdnaRecipeTest : public GpuXdnaDeviceFixture {
         source.program.resource2,
         source.program.resource3,
         source.group_segment_byte_length,
+        source.wavefront_size,
         {source.required_workgroup_size[0], source.required_workgroup_size[1],
          source.required_workgroup_size[2]}};
     uint64_t code_address = 0;
@@ -307,7 +308,8 @@ class GpuXdnaRecipeTest : public GpuXdnaDeviceFixture {
       if (gpu_operation_ == GpuOperation::kShader && ordinal < 2) {
         ingress.BindCompute(shader_.program, shader_.argument_address +
                                                  ordinal * kArgumentStride);
-        ingress.DispatchWave32(shader_.source->workgroup_size(), 1, 1);
+        ingress.Dispatch(shader_.program, shader_.source->workgroup_size(), 1,
+                         1);
         continue;
       }
       for (size_t offset = 0; offset < kBindingByteLength;
@@ -326,7 +328,7 @@ class GpuXdnaRecipeTest : public GpuXdnaDeviceFixture {
     if (gpu_operation_ == GpuOperation::kShader) {
       egress.BindCompute(shader_.program,
                          shader_.argument_address + 2 * kArgumentStride);
-      egress.DispatchWave32(shader_.source->workgroup_size(), 1, 1);
+      egress.Dispatch(shader_.program, shader_.source->workgroup_size(), 1, 1);
       // Join shader stores before the independent TC/L2 guard readback.
       egress.SystemBarrier();
     }

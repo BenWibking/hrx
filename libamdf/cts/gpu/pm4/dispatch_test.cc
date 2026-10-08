@@ -51,6 +51,7 @@ TEST_F(Pm4DispatchTest, CoherentSystemPayloadChangesAcrossEpochs) {
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {kernel.workgroup_size(), 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(
@@ -95,7 +96,7 @@ TEST_F(Pm4DispatchTest, CoherentSystemPayloadChangesAcrossEpochs) {
 
     commands.SystemBarrier();
     commands.BindCompute(program, arguments->device_address);
-    commands.DispatchWave32(kGridSize, 1, 1);
+    commands.Dispatch(program, kGridSize, 1, 1);
     commands.SystemBarrier();
     // Monotonic completion values prevent a prior epoch from satisfying this
     // wait; the host never resets a value that the command processor writes.
@@ -175,6 +176,7 @@ TEST_F(Pm4DispatchTest, CoherentSystemProducerConsumerChainAcrossEpochs) {
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {kernel.workgroup_size(), 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(
@@ -245,12 +247,12 @@ TEST_F(Pm4DispatchTest, CoherentSystemProducerConsumerChainAcrossEpochs) {
 
     commands.SystemBarrier();
     commands.BindCompute(program, arguments->device_address);
-    commands.DispatchWave32(kGridSize, 1, 1);
+    commands.Dispatch(program, kGridSize, 1, 1);
     // The queue permits unordered dispatch. This explicit completion/cache
     // edge makes the producer's payload available before the consumer loads.
     commands.SystemBarrier();
     commands.BindCompute(program, arguments->device_address + kArgumentStride);
-    commands.DispatchWave32(kGridSize, 1, 1);
+    commands.Dispatch(program, kGridSize, 1, 1);
     // Independently drain both dispatches before host observation, even if the
     // middle dependency produces incorrect data. The confirmed marker follows
     // the final cache operations and is never reset by the host.
@@ -348,6 +350,7 @@ TEST_F(Pm4DispatchTest, CoherentSystemReleaseCompletesShaderAcrossEpochs) {
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {kernel.workgroup_size(), 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(
@@ -398,7 +401,7 @@ TEST_F(Pm4DispatchTest, CoherentSystemReleaseCompletesShaderAcrossEpochs) {
 
     commands.SystemBarrier();
     commands.BindCompute(program, arguments->device_address);
-    commands.DispatchWave32(kGridSize, 1, 1);
+    commands.Dispatch(program, kGridSize, 1, 1);
     // This bottom-of-pipe release publishes the shader's vector stores and
     // writes the known epoch. It is the sole payload-completion signal.
     commands.ReleaseSystem32(completion->device_address + kCompletionByteOffset,
@@ -496,6 +499,7 @@ TEST_F(Pm4DispatchTest, CoherentSystemShaderTimestampsAcrossEpochs) {
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {kernel.workgroup_size(), 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(
@@ -553,7 +557,7 @@ TEST_F(Pm4DispatchTest, CoherentSystemShaderTimestampsAcrossEpochs) {
     commands.SystemBarrier();
     commands.BindCompute(program, arguments->device_address);
     commands.CopyGpuClock64(control->device_address + kTimestampByteOffsets[0]);
-    commands.DispatchWave32(kGridSize, 1, 1);
+    commands.Dispatch(program, kGridSize, 1, 1);
     commands.ReleaseGpuClock64(control->device_address +
                                kTimestampByteOffsets[1]);
     // Join the timestamp release and publish its and the shader's stores.

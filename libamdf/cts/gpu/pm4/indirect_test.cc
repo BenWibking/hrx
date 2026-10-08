@@ -65,6 +65,7 @@ TEST_F(Pm4DispatchTest, SelectsImmutableIndirectWorkgroupCounts) {
                                kernel.program.resource2,
                                kernel.program.resource3,
                                kernel.group_segment_byte_length,
+                               kernel.wavefront_size,
                                {kernel.workgroup_size(), 1, 1}};
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(kernel.executable,
                                          kernel.entry_byte_offset, &program,
@@ -163,8 +164,8 @@ TEST_F(Pm4DispatchTest, SelectsImmutableIndirectWorkgroupCounts) {
 
     commands.SystemBarrier();
     commands.BindCompute(program, arguments->device_address);
-    commands.DispatchIndirectWave32(tuples->device_address +
-                                    kTupleByteOffsets[epoch]);
+    commands.DispatchIndirect(
+        program, tuples->device_address + kTupleByteOffsets[epoch]);
     commands.SystemBarrier();
     commands.WriteData32(completion->device_address + kCompletionByteOffset,
                          epoch + 1);
@@ -278,6 +279,7 @@ TEST_F(Pm4DispatchTest, ShaderProducedCountsControlIndirectDispatch) {
                                kernel.program.resource2,
                                kernel.program.resource3,
                                kernel.group_segment_byte_length,
+                               kernel.wavefront_size,
                                {kernel.workgroup_size(), 1, 1}};
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(kernel.executable,
                                          kernel.entry_byte_offset, &program,
@@ -411,12 +413,13 @@ TEST_F(Pm4DispatchTest, ShaderProducedCountsControlIndirectDispatch) {
     commands.BindCompute(program, arguments->device_address);
     // A complete workgroup executes; the shader's explicit count bounds its
     // three stores. This does not rely on hardware partial-group masking.
-    commands.DispatchWave32(kernel.workgroup_size(), 1, 1);
+    commands.Dispatch(program, kernel.workgroup_size(), 1, 1);
     // Complete and publish the shader stores before the MEC fetches counts.
     commands.SystemBarrier();
     commands.BindCompute(
         program, arguments->device_address + kConsumerArgumentByteOffset);
-    commands.DispatchIndirectWave32(tuple->device_address + kTupleByteOffset);
+    commands.DispatchIndirect(program,
+                              tuple->device_address + kTupleByteOffset);
     // This independent terminal drain joins both dispatches before host
     // observation, even if the middle edge yields the wrong finite result.
     commands.SystemBarrier();

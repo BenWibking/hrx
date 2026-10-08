@@ -13,15 +13,19 @@
 #include "libamdf/cts/gpu/pm4/encoding/profile.h"
 
 // Ordinary memory comparisons used by the CTS. These are the MEC
-// WAIT_REG_MEM/WAIT_REG_MEM64 function values, not host comparison opcodes.
+// WAIT_REG_MEM/WAIT_REG_MEM64 and COND_INDIRECT_BUFFER function values, not
+// host comparison opcodes.
 enum class Pm4MemoryComparison : uint32_t {
+  kAlways = 0,
   kLess = 1,
+  kLessOrEqual = 2,
   kEqual = 3,
   kNotEqual = 4,
   kGreaterOrEqual = 5,
+  kGreater = 6,
 };
 
-// Compiled RDNA wave32 program with no scratch or hidden runtime inputs. The
+// Compiled PM4 compute program with no scratch or hidden runtime inputs. The
 // caller supplies only a kernarg pointer; hardware supplies group/local IDs.
 struct Pm4ComputeProgram {
   // GPU entry address, aligned to 256 bytes and below the 48-bit program limit.
@@ -36,15 +40,26 @@ struct Pm4ComputeProgram {
   uint32_t resource3;
   // Total group-segment allocation in bytes, within the target's group limit.
   uint32_t group_segment_byte_length;
+  // Compiled workitems per wave (32 or 64), shared by binding and dispatch.
+  uint32_t wavefront_size;
   // Complete workgroup dimensions in workitems, matching the compiled program.
   uint32_t workgroup_size[3];
+};
+
+// One complete command block retained by the enclosing graph owner.
+struct Pm4IndirectBuffer {
+  // Four-byte-aligned GPU byte address of immutable executable backing.
+  uint64_t address;
+  // Positive direct DWORD count, at most 0xfffff, wholly within that backing.
+  uint32_t word_count;
 };
 
 // Encodes the selected RDNA compute recipe using PM4 format version 1.
 // Native callers admit the target and corresponding packet, transfer and
 // cache-control requirements before constructing a stream. Callers supply
 // sufficient storage and addresses aligned to four bytes for 32-bit operations
-// and eight bytes for 64-bit operations.
+// and eight bytes for 64-bit operations, except the explicitly documented
+// conditional-branch comparison address.
 class Pm4CommandWriter {
  public:
   Pm4CommandWriter(uint32_t* words, const Pm4CommandProfile& profile)
@@ -73,21 +88,44 @@ class Pm4CommandWriter {
   // Binds ordinary shader inputs without touching profiling, dispatch-pointer,
   // scratch or scheduler context. The caller separately publishes code/data.
   void BindCompute(const Pm4ComputeProgram& program, uint64_t kernarg_address);
-  // Direct wave32 launch in thread units, starting at zero with complete
-  // groups. Shader completion and memory visibility require an explicit
-  // subsequent completion/cache operation.
-  void DispatchWave32(uint32_t x, uint32_t y, uint32_t z);
-  // MEC wave32 launch from three uint32 workgroup counts at a four-byte-aligned
-  // GPU byte address. The caller publishes the complete tuple before fetch,
-  // retains it unchanged through its last consumer, supplies the shader ABI,
-  // and separately joins shader completion.
-  void DispatchIndirectWave32(uint64_t argument_address);
+  // Launches the bound program in thread units, starting at zero with complete
+  // groups. The program supplies the compiled wave size; shader completion and
+  // memory visibility require an explicit subsequent completion/cache
+  // operation.
+  void Dispatch(const Pm4ComputeProgram& program, uint32_t x, uint32_t y,
+                uint32_t z);
+  // MEC launch of the bound program from three uint32 workgroup counts at a
+  // four-byte-aligned GPU byte address. The caller publishes the complete tuple
+  // before fetch, retains it unchanged through its last consumer, supplies the
+  // shader ABI, and separately joins shader completion.
+  void DispatchIndirect(const Pm4ComputeProgram& program,
+                        uint64_t argument_address);
   // Calls one immutable first-level MEC command IB and returns to the ring.
   // The caller publishes 1..0xfffff DWORDs in four-byte-aligned owned
   // executable backing wholly below 2^48 before ring publication. Complete
   // backing stays immutable and retained through final use and checked queue
   // removal; return alone does not join shader completion.
   void CallIndirectBuffer(uint64_t buffer_address, uint32_t word_count);
+  // Continues at the same IB level, without saving a return address. Padding
+  // precedes this terminal packet. The enclosing owner retains the complete
+  // graph through native retirement, including its explicit continuations.
+  void ChainIndirectBuffer(const Pm4IndirectBuffer& successor);
+  // Terminal if-then-else branch comparing (memory & mask) with reference.
+  // The caller pre-masks reference: reference & ~mask is zero. This keeps the
+  // comparison equivalent on engines that also mask the reference. The writer
+  // preserves both fields unchanged. PAL accepts a four-byte-aligned, stable
+  // readable QWORD. Each selected block continues at the same IB level; no
+  // shader wait or cache action is implicit. Both blocks and their
+  // continuations remain owned.
+  void BranchIndirectBuffer(uint64_t operand_address, uint64_t reference,
+                            uint64_t mask, Pm4MemoryComparison comparison,
+                            const Pm4IndirectBuffer& pass,
+                            const Pm4IndirectBuffer& fail);
+  // Executes the next complete packet range only if the addressed DWORD is
+  // nonzero. The four-byte-aligned predicate is published and stable through
+  // sampling; word_count is the following range's direct DWORD count, at most
+  // 0x3fff. Sampling is neither a payload acquire nor shader completion.
+  void ExecuteIfNonzero(uint64_t predicate_address, uint32_t word_count);
   // Confirmed TC/L2 memory transfers; width does not imply atomicity. A 32-bit
   // source retains readable trailing backing for native reads beyond its DWORD.
   void CopyData32(uint64_t source_address, uint64_t target_address);
@@ -97,11 +135,20 @@ class Pm4CommandWriter {
   // a subsequent barrier and completion establish visibility and retirement.
   void AtomicStore32(uint64_t target_address, uint32_t value);
   void AtomicStore64(uint64_t target_address, uint64_t value);
-  // MEC incrementing L2 copy with RAW_WAIT and write confirmation.
+  // MEC incrementing copy through the native TC_L2 selectors, with RAW_WAIT
+  // and write confirmation. Those selectors route through MALL on GFX12.
   // The caller supplies a nonzero byte count within the native 26-bit field
   // and the selected transfer policy, then joins final use with WaitDma and
-  // explicit cache/marker work. The CTS currently selects 1024 bytes.
-  void DmaCopyL2(uint64_t source_address, uint64_t target_address,
+  // explicit cache/marker work. Source and destination need only byte
+  // alignment.
+  void DmaCopy(uint64_t source_address, uint64_t target_address,
+               uint32_t byte_length);
+  // Repeats an immediate DWORD through the native TC_L2 destination selector.
+  // The target and positive byte count are DWORD aligned; the count fits the
+  // native 26-bit field and selected transfer policy. RAW_WAIT and enabled
+  // write confirmation match DmaCopy; final use still needs WaitDma and
+  // explicit cache/marker work.
+  void DmaFill32(uint64_t target_address, uint32_t pattern,
                  uint32_t byte_length);
   // MEC zero-byte DMA drain, with all reserved fields clear.
   // This does not perform cache maintenance or publish a host marker.
@@ -123,7 +170,10 @@ class Pm4CommandWriter {
   // Samples the GPU clock at the command processor using confirmed COPY_DATA.
   // This is not shader completion, cache release, or a host-correlated time.
   void CopyGpuClock64(uint64_t target_address);
-  void PadToEightWords();
+  // Emits a complete NOP so this stream plus a following terminal packet is
+  // eight-DWORD aligned. The caller emits exactly trailing_word_count words
+  // afterward; zero pads the current stream normally.
+  void PadToEightWords(size_t trailing_word_count = 0);
   size_t word_count() const { return word_count_; }
 
  private:

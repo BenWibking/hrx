@@ -38,10 +38,11 @@ before the host observes the completion word. AQL polls the signal value after
 the command processor decrements it; PM4 and SDMA emit explicit completion
 writes. Read-index progress is checked separately before queue teardown.
 
-Kernel-published recipes wait on the exact native submission point. Their
-completion and retirement share that checked native wait, and their result
-records identify the publication mode. No payload maintenance is hidden in
-either transport helper.
+Kernel-published recipes retire the exact native submission point. Cases with
+an in-band completion marker observe payload before that native wait; cases
+without one use the native wait for completion as well. Their result records
+identify the publication mode. No payload maintenance is hidden in either
+transport helper.
 
 Completion occupies bytes disjoint from the copied or shader-produced payload.
 Host polling performs no cache maintenance. After observing completion, a
@@ -57,6 +58,21 @@ expose transfer-length mistakes. Ring reuse follows consumption; signal,
 descriptor, code and payload reuse follow their respective final users.
 Coherence does not create an execution dependency, and a host wake is not a
 retirement certificate.
+
+### Portable conditional-branch operands
+
+The PM4 conditional graph cases require `reference & ~mask == 0`. That
+precondition makes unsigned comparisons equivalent whether an engine masks
+only the memory operand or both memory and reference. The command writer
+preserves the supplied fields; it does not silently change the predicate.
+Every comparison function uses full, partial and zero masks, with changing
+ignored memory bits and a pre-masked reference.
+
+Native observations on tested gfx1100 and gfx1151 deployments distinguish
+the two mask behaviors when the reference has bits outside the mask. Such
+operands are outside this portable recipe. Neither a passing case under the
+precondition nor a compiler target name establishes arbitrary-reference
+semantics for another driver/firmware pairing.
 
 ## Required witnesses and deployment identity
 

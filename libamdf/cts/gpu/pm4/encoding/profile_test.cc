@@ -12,7 +12,7 @@
 
 namespace {
 
-TEST(Pm4ProfileTest, CoversTheRdnaPhysicalTargetFamilies) {
+TEST(Pm4ProfileTest, CoversThePm4PhysicalTargetFamilies) {
   constexpr std::array<std::array<uint32_t, 3>, 15> targets = {{
       {11, 0, 0},
       {11, 0, 1},
@@ -37,6 +37,7 @@ TEST(Pm4ProfileTest, CoversTheRdnaPhysicalTargetFamilies) {
     endpoint.gfx_ip = {target[0], target[1], target[2]};
     const auto* profile = Pm4CommandProfile::Find(endpoint);
     ASSERT_NE(profile, nullptr);
+    EXPECT_EQ(profile->supports_wave64, target[0] != 12 || target[1] != 5);
     // The gfx1250 instruction overlay does not change these PM4 registers.
     endpoint.asic_revision = 1;
     EXPECT_EQ(Pm4CommandProfile::Find(endpoint), profile);

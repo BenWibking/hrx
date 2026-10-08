@@ -455,6 +455,7 @@ void GpuFileIoFixture::Execute(const kernels::Kernel& kernel,
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {1, 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(
@@ -464,7 +465,7 @@ void GpuFileIoFixture::Execute(const kernels::Kernel& kernel,
   Pm4CommandWriter commands(queue->words().data(), *pm4_profile_);
   commands.SystemBarrier();
   commands.BindCompute(program, arguments->device_address);
-  commands.DispatchWave32(1, 1, 1);
+  commands.Dispatch(program, 1, 1, 1);
   commands.SystemBarrier();
   commands.WriteData32(completion->device_address, 1);
   commands.PadToEightWords();

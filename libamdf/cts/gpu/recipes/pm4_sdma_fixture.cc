@@ -205,6 +205,7 @@ void Pm4SdmaTest::PrepareCoherentHandoff(
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {static_cast<uint16_t>(kernel.workgroup_size()), 1, 1},
   };
   // Code uses the same cold READ|EXECUTE creation inputs.
