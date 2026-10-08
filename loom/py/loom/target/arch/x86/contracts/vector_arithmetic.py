@@ -29,13 +29,16 @@ from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_FMA_MNEMONICS,
     AVX2_INTEGER_BINARY_FAMILIES,
     AVX2_PAYLOAD_ELEMENT_NAMES,
+    AVX2_UNIFORM_SHIFT_FAMILIES,
     AVX2_VECTOR_BIT_WIDTHS,
     AVX512_BITWISE_FAMILIES,
     AVX512_FLOAT_BINARY_FAMILIES,
     AVX512_FLOAT_FMA_MNEMONICS,
     AVX512_INTEGER_BINARY_FAMILIES,
+    AVX512_UNIFORM_SHIFT_FAMILIES,
     AVX512_VECTOR_BIT_WIDTHS,
     AVX512VL_INTEGER_BINARY_FAMILIES,
+    AVX512VL_UNIFORM_SHIFT_FAMILIES,
     AVX512VL_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     VectorBinaryFamily,
@@ -44,8 +47,11 @@ from loom.target.arch.x86.vector_families import (
 from loom.target.contracts import (
     ContractCase,
     DescriptorEmitForm,
+    DescriptorResultType,
     DescriptorRule,
     Guard,
+    Scalar,
+    ValueProject,
     ValueRef,
     Vector,
 )
@@ -200,10 +206,124 @@ def vector_fma_family_rules(
     )
 
 
+def _immediate_shift_rules(
+    descriptor_lookup: _DescriptorLookup,
+    descriptor_key_prefix: str,
+    families: tuple[VectorBinaryFamily, ...],
+    vector_bit_widths: tuple[int, ...],
+) -> tuple[DescriptorRule, ...]:
+    rules: list[DescriptorRule] = []
+    for family in families:
+        for width in vector_bit_widths:
+            descriptor = descriptor_lookup(
+                f"{descriptor_key_prefix}.{family.mnemonic}.{_REGISTER_SUFFIXES[width]}"
+            )
+            rules.append(
+                DescriptorRule(
+                    source_op=_INTEGER_SOURCE_OPS[family.source_operation],
+                    descriptor=descriptor,
+                    # One immediate instruction wins over either count setup.
+                    priority=2,
+                    guards=(
+                        *_typed_guards(
+                            ("lhs", "rhs", "result"),
+                            _full_vector_type(family.element, width),
+                        ),
+                        Guard.value_i64_range("rhs", 0, family.element.bit_width - 1),
+                        Guard.value_exact_i64("rhs"),
+                    ),
+                    emit=(
+                        _op_emit(
+                            descriptor=descriptor,
+                            operands={"source": ValueRef.operand("lhs")},
+                            results={"dst": ValueRef.result("result")},
+                            immediates={"shift": ValueProject.exact_i64("rhs")},
+                        ),
+                    ),
+                )
+            )
+    return tuple(rules)
+
+
+def _avx2_uniform_shift_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    rules: list[DescriptorRule] = []
+    origin = ValueRef.uniform_element_origin_operand("rhs")
+    normalized = ValueRef.temporary("normalized_count")
+    count = ValueRef.temporary("count")
+    for family in AVX2_UNIFORM_SHIFT_FAMILIES:
+        bit_width = family.element.bit_width
+        # The ISA reads all 64 low count bits, not the logical I16. VMOVD
+        # clears the upper dword but requires an explicitly normalized word.
+        normalization = (
+            (
+                _op_emit(
+                    descriptor=descriptor_lookup("x86.scalar.movzx.u16.gpr32"),
+                    operands={"src": origin},
+                    results={"dst": normalized},
+                    result_types={"dst": Scalar("i32")},
+                ),
+            )
+            if bit_width == 16
+            else ()
+        )
+        move = descriptor_lookup(
+            "x86.avx2.vmovq.xmm.gpr64"
+            if bit_width == 64
+            else "x86.avx2.vmovd.xmm.gpr32"
+        )
+        for width in AVX2_VECTOR_BIT_WIDTHS:
+            descriptor = descriptor_lookup(
+                f"x86.avx2.{family.mnemonic}.count.{_REGISTER_SUFFIXES[width]}"
+            )
+            rules.append(
+                DescriptorRule(
+                    source_op=_INTEGER_SOURCE_OPS[family.source_operation],
+                    descriptor=descriptor,
+                    guards=(
+                        *_typed_guards(
+                            ("lhs", "rhs", "result"),
+                            _full_vector_type(family.element, width),
+                        ),
+                        Guard.value_i64_range("rhs", 0, bit_width - 1),
+                        Guard.uniform_element_origin_type(
+                            "rhs", Scalar(family.element.name)
+                        ),
+                    ),
+                    emit=(
+                        *normalization,
+                        _op_emit(
+                            descriptor=move,
+                            operands={"input": normalized if normalization else origin},
+                            results={"dst": count},
+                            result_types={"dst": DescriptorResultType()},
+                        ),
+                        _op_emit(
+                            descriptor=descriptor,
+                            operands={
+                                "source": ValueRef.operand("lhs"),
+                                "count": count,
+                            },
+                            results={"dst": ValueRef.result("result")},
+                        ),
+                    ),
+                )
+            )
+    return tuple(rules)
+
+
 def avx2_vector_arithmetic_rules(
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[ContractCase, ...]:
     return (
+        *_immediate_shift_rules(
+            descriptor_lookup,
+            "x86.avx2",
+            AVX2_UNIFORM_SHIFT_FAMILIES,
+            AVX2_VECTOR_BIT_WIDTHS,
+        ),
+        *_avx2_uniform_shift_rules(descriptor_lookup),
         *direct_vector_family_rules(
             descriptor_lookup,
             descriptor_key_prefix="x86.avx2",
@@ -231,6 +351,18 @@ def avx512_vector_arithmetic_rules(
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[ContractCase, ...]:
     return (
+        *_immediate_shift_rules(
+            descriptor_lookup,
+            "x86.avx512",
+            AVX512_UNIFORM_SHIFT_FAMILIES,
+            AVX512_VECTOR_BIT_WIDTHS,
+        ),
+        *_immediate_shift_rules(
+            descriptor_lookup,
+            "x86.avx512",
+            AVX512VL_UNIFORM_SHIFT_FAMILIES,
+            AVX512VL_VECTOR_BIT_WIDTHS,
+        ),
         *direct_vector_family_rules(
             descriptor_lookup,
             descriptor_key_prefix="x86.avx512",
@@ -244,6 +376,9 @@ def avx512_vector_arithmetic_rules(
             vector_bit_widths=AVX512VL_VECTOR_BIT_WIDTHS,
             integer_families=AVX512VL_INTEGER_BINARY_FAMILIES,
             float_families=(),
+            # AVX512 broadcasts a narrow GPR directly. Its word variable
+            # shifts avoid the AVX2 MOVZX + VMOVD count normalization.
+            priority=1,
         ),
         *_bitwise_vector_family_rules(
             descriptor_lookup,

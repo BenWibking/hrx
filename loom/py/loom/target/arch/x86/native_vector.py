@@ -47,6 +47,9 @@ _SHIFT_IMMEDIATE_2 = vector_encoding_recipe(
 _SHIFT_IMMEDIATE_3 = vector_encoding_recipe(
     _R.FIXED_3, _R.RESULT, _R.INPUT_0, _B.IMMEDIATE
 )
+_SHIFT_IMMEDIATE_4 = vector_encoding_recipe(
+    _R.FIXED_4, _R.RESULT, _R.INPUT_0, _B.IMMEDIATE
+)
 _SHIFT_IMMEDIATE_6 = vector_encoding_recipe(
     _R.FIXED_6, _R.RESULT, _R.INPUT_0, _B.IMMEDIATE
 )
@@ -1461,12 +1464,35 @@ VPSHUFLW = _instruction(
     _IMMEDIATES_5,
     _encoding(_VEX, _MAP_1, 3, 0, 0x70, (128,)),
 )
+VPSLLD = _instruction(
+    "vpslld",
+    _SHIFT_IMMEDIATE_6,
+    _OPERANDS_13,
+    _IMMEDIATES_5,
+    _encoding(_VEX, _MAP_1, 1, 0, 0x72, (128, 256)),
+    _encoding(_EVEX, _MAP_1, 1, 0, 0x72, (512,)),
+)
+VPSLLD_COUNT = _instruction(
+    "vpslld",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_1, 1, 0, 0xF2, (128, 256)),
+)
 VPSLLQ = _instruction(
     "vpsllq",
     _SHIFT_IMMEDIATE_6,
     _OPERANDS_13,
     _IMMEDIATES_5,
     _encoding(_VEX, _MAP_1, 1, 0, 0x73, (128, 256)),
+    _encoding(_EVEX, _MAP_1, 1, 1, 0x73, (512,)),
+)
+VPSLLQ_COUNT = _instruction(
+    "vpsllq",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_1, 1, 0, 0xF3, (128, 256)),
 )
 VPSLLVD = _instruction(
     "vpsllvd",
@@ -1497,6 +1523,51 @@ VPSLLW = _instruction(
     _OPERANDS_13,
     _IMMEDIATES_5,
     _encoding(_EVEX, _MAP_1, 1, 0, 0x71, (512,)),
+    _encoding(_VEX, _MAP_1, 1, 0, 0x71, (128, 256)),
+)
+VPSLLW_COUNT = _instruction(
+    "vpsllw",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_1, 1, 0, 0xF1, (128, 256)),
+)
+VPSRAD = _instruction(
+    "vpsrad",
+    _SHIFT_IMMEDIATE_4,
+    _OPERANDS_13,
+    _IMMEDIATES_5,
+    _encoding(_VEX, _MAP_1, 1, 0, 0x72, (128, 256)),
+    _encoding(_EVEX, _MAP_1, 1, 0, 0x72, (512,)),
+)
+VPSRAD_COUNT = _instruction(
+    "vpsrad",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_1, 1, 0, 0xE2, (128, 256)),
+)
+VPSRAQ = _instruction(
+    "vpsraq",
+    _SHIFT_IMMEDIATE_4,
+    _OPERANDS_13,
+    _IMMEDIATES_5,
+    _encoding(_EVEX, _MAP_1, 1, 1, 0x72, (128, 256, 512)),
+)
+VPSRAW = _instruction(
+    "vpsraw",
+    _SHIFT_IMMEDIATE_4,
+    _OPERANDS_13,
+    _IMMEDIATES_5,
+    _encoding(_VEX, _MAP_1, 1, 0, 0x71, (128, 256)),
+    _encoding(_EVEX, _MAP_1, 1, 0, 0x71, (512,)),
+)
+VPSRAW_COUNT = _instruction(
+    "vpsraw",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_1, 1, 0, 0xE1, (128, 256)),
 )
 VPSRAVD = _instruction(
     "vpsravd",
@@ -1520,6 +1591,21 @@ VPSRAVW = _instruction(
     _IMMEDIATES_0,
     _encoding(_EVEX, _MAP_2, 1, 1, 0x11, (128, 256, 512)),
 )
+VPSRLD = _instruction(
+    "vpsrld",
+    _SHIFT_IMMEDIATE_2,
+    _OPERANDS_13,
+    _IMMEDIATES_5,
+    _encoding(_VEX, _MAP_1, 1, 0, 0x72, (128, 256)),
+    _encoding(_EVEX, _MAP_1, 1, 0, 0x72, (512,)),
+)
+VPSRLD_COUNT = _instruction(
+    "vpsrld",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_1, 1, 0, 0xD2, (128, 256)),
+)
 VPSRLDQ = _instruction(
     "vpsrldq",
     _SHIFT_IMMEDIATE_3,
@@ -1534,6 +1620,14 @@ VPSRLQ = _instruction(
     _OPERANDS_13,
     _IMMEDIATES_5,
     _encoding(_VEX, _MAP_1, 1, 0, 0x73, (128, 256)),
+    _encoding(_EVEX, _MAP_1, 1, 1, 0x73, (512,)),
+)
+VPSRLQ_COUNT = _instruction(
+    "vpsrlq",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_1, 1, 0, 0xD3, (128, 256)),
 )
 VPSRLVD = _instruction(
     "vpsrlvd",
@@ -1564,6 +1658,14 @@ VPSRLW = _instruction(
     _OPERANDS_13,
     _IMMEDIATES_5,
     _encoding(_EVEX, _MAP_1, 1, 0, 0x71, (512,)),
+    _encoding(_VEX, _MAP_1, 1, 0, 0x71, (128, 256)),
+)
+VPSRLW_COUNT = _instruction(
+    "vpsrlw",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_1, 1, 0, 0xD1, (128, 256)),
 )
 VPSUBB = _instruction(
     "vpsubb",
@@ -1694,6 +1796,28 @@ VXORPS = _instruction(
 
 # Family-aligned facts are consumed with strict zip at descriptor construction.
 # The binding validates the mnemonic, operand/immediate shape, prefix, and width.
+AVX2_UNIFORM_SHIFT_IMMEDIATE = (
+    VPSLLW,
+    VPSLLD,
+    VPSLLQ,
+    VPSRAW,
+    VPSRAD,
+    VPSRLW,
+    VPSRLD,
+    VPSRLQ,
+)
+AVX2_UNIFORM_SHIFT_COUNT = (
+    VPSLLW_COUNT,
+    VPSLLD_COUNT,
+    VPSLLQ_COUNT,
+    VPSRAW_COUNT,
+    VPSRAD_COUNT,
+    VPSRLW_COUNT,
+    VPSRLD_COUNT,
+    VPSRLQ_COUNT,
+)
+AVX512_UNIFORM_SHIFT_IMMEDIATE = (*AVX2_UNIFORM_SHIFT_IMMEDIATE, VPSRAQ)
+
 AVX2_INTEGER_BINARY = (
     VPADDB,
     VPADDW,

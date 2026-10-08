@@ -147,6 +147,25 @@ AVX2_INTEGER_BINARY_FAMILIES = (
     VectorBinaryFamily("shrui", "vpsrlvq", "integer.shru", INTEGER_ELEMENTS[3]),
 )
 
+# Immediate and uniform-count shifts are distinct from per-lane variable shifts.
+AVX2_UNIFORM_SHIFT_FAMILIES = tuple(
+    VectorBinaryFamily(operation, f"{mnemonic}{suffix}", semantic, element)
+    for operation, mnemonic, semantic in (
+        ("shli", "vpsll", "integer.shl"),
+        ("shrsi", "vpsra", "integer.shrs"),
+        ("shrui", "vpsrl", "integer.shru"),
+    )
+    for element, suffix in zip(INTEGER_ELEMENTS[1:], ("w", "d", "q"), strict=True)
+    if not (operation == "shrsi" and element.bit_width == 64)
+)
+AVX512VL_UNIFORM_SHIFT_FAMILIES = (
+    VectorBinaryFamily("shrsi", "vpsraq", "integer.shrs", INTEGER_ELEMENTS[3]),
+)
+AVX512_UNIFORM_SHIFT_FAMILIES = (
+    *AVX2_UNIFORM_SHIFT_FAMILIES,
+    *AVX512VL_UNIFORM_SHIFT_FAMILIES,
+)
+
 # AVX-512BW extends the word variable shifts while AVX-512DQ completes the
 # native i64 multiply, extrema, and arithmetic-shift cells. Core AVX-512 has no
 # native byte-shift or byte-multiply forms, so those use a distinct composed

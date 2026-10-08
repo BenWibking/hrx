@@ -20,6 +20,7 @@ from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_FMA_MNEMONICS,
     AVX2_INTEGER_BINARY_FAMILIES,
     AVX2_INTEGER_COMPARE_MNEMONICS,
+    AVX2_UNIFORM_SHIFT_FAMILIES,
     AVX2_VECTOR_BIT_WIDTHS,
     AVX512_BITWISE_FAMILIES,
     AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
@@ -30,6 +31,7 @@ from loom.target.arch.x86.vector_families import (
     AVX512_INTEGER_COMPARE_MNEMONICS,
     AVX512_INTEGER_REDUCTION_FAMILIES,
     AVX512_SELECT_MNEMONICS,
+    AVX512_UNIFORM_SHIFT_FAMILIES,
     AVX512_VECTOR_BIT_WIDTHS,
     AVX512VL_INTEGER_BINARY_FAMILIES,
     AVX512VL_VECTOR_BIT_WIDTHS,
@@ -83,6 +85,7 @@ def test_avx2_direct_integer_matrix_matches_isa_families() -> None:
         (family.source_operation, family.element.name)
         for family in AVX2_INTEGER_BINARY_FAMILIES
     }
+
     assert cells == {
         *(
             (operation, element)
@@ -102,6 +105,75 @@ def test_avx2_direct_integer_matrix_matches_isa_families() -> None:
         ("shrui", "i32"),
         ("shrui", "i64"),
     }
+
+
+def test_uniform_shift_matrix_and_native_encodings() -> None:
+    expected = {
+        (operation, element)
+        for operation in ("shli", "shrsi", "shrui")
+        for element in ("i16", "i32", "i64")
+    }
+    assert {
+        (row.source_operation, row.element.name) for row in AVX2_UNIFORM_SHIFT_FAMILIES
+    } == expected - {("shrsi", "i64")}
+    assert {
+        (row.source_operation, row.element.name)
+        for row in AVX512_UNIFORM_SHIFT_FAMILIES
+    } == expected
+
+    # ISA opcode/group facts are independent of the family generator. Qword
+    # arithmetic immediate shifts share opcode 72 with dwords and set EVEX.W.
+    encodings = (
+        ("vpsllw", 0x71, 6, 0xF1),
+        ("vpslld", 0x72, 6, 0xF2),
+        ("vpsllq", 0x73, 6, 0xF3),
+        ("vpsraw", 0x71, 4, 0xE1),
+        ("vpsrad", 0x72, 4, 0xE2),
+        ("vpsrlw", 0x71, 2, 0xD1),
+        ("vpsrld", 0x72, 2, 0xD2),
+        ("vpsrlq", 0x73, 2, 0xD3),
+        ("vpsraq", 0x72, 4, None),
+    )
+    for profile, descriptor_set in (
+        ("avx2", X86_AVX2_DESCRIPTOR_SET),
+        ("avx512", X86_AVX512_CORE_DESCRIPTOR_SET),
+    ):
+        descriptors = {
+            descriptor.key: descriptor for descriptor in descriptor_set.descriptors
+        }
+        for mnemonic, opcode, group, count_opcode in encodings:
+            if profile == "avx2" and count_opcode is None:
+                continue
+            widths = (
+                (128, 256)
+                if profile == "avx2"
+                else ((128, 256, 512) if count_opcode is None else (512,))
+            )
+            for width in widths:
+                suffix = {128: "xmm", 256: "ymm", 512: "zmm"}[width]
+                prefix = f"x86.{profile}.{mnemonic}"
+                descriptor = descriptors[f"{prefix}.{suffix}"]
+                vector_length = {128: 0, 256: 1, 512: 2}[width]
+                flags = 0x500 | (vector_length << 14)
+                if profile == "avx512":
+                    flags |= 0x2000 | (0x1000 if mnemonic.endswith("q") else 0)
+                assert descriptor.encoding_id == flags | opcode
+                assert (
+                    descriptor.encoding_format_id
+                    == {2: 0x9105, 4: 0x9107, 6: 0x9108}[group]
+                )
+                if profile == "avx2":
+                    count_descriptor = descriptors[f"{prefix}.count.{suffix}"]
+                    assert count_descriptor.encoding_id == flags | count_opcode
+                    assert count_descriptor.encoding_format_id == 0x8210
+                    count_operand = next(
+                        operand
+                        for operand in count_descriptor.operands
+                        if operand.field_name == "count"
+                    )
+                    assert {
+                        alternative.reg_class for alternative in count_operand.reg_alts
+                    } == {"x86.xmm"}
 
 
 def test_avx2_float_and_compare_matrices_cover_every_native_element() -> None:

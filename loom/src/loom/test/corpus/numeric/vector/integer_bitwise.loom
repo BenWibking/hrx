@@ -170,14 +170,16 @@ func.def @uniform_byte_shifts(%trial: index, %input: buffer, %count_storage: buf
 func.def @uniform_word_shifts(%trial: index, %input: buffer, %count_storage: buffer, %output: buffer) {
   %ordinal = index.assume %trial [range(%trial, 0, 15)] : index
   %base = index.constant 0 : offset
-  %count_source = buffer.view %count_storage[%base] : buffer -> view<16xi16>
-  %loaded_count = view.load %count_source[%ordinal] : view<16xi16> -> i16
-  %mask = scalar.constant 15 : i16
-  %count = scalar.andi %loaded_count, %mask : i16
+  %count_source = buffer.view %count_storage[%base] : buffer -> view<16xi32>
+  %loaded_count = view.load %count_source[%ordinal] : view<16xi32> -> i32
+  // Truncation may retain unrelated upper bits in a wider physical carrier.
+  %narrow_count = scalar.trunci %loaded_count : i32 to i16
+  %count = scalar.assume %narrow_count [range(%narrow_count, 0, 15)] : i16
   %counts = vector.splat %count : vector<8xi16>
   %fixed_counts = vector.constant 4 : vector<8xi16>
-  %replacement = scalar.xori %count, %mask : i16
-  view.store %replacement, %count_source[%ordinal] : i16, view<16xi16>
+  %mask = scalar.constant 15 : i32
+  %replacement = scalar.xori %loaded_count, %mask : i32
+  view.store %replacement, %count_source[%ordinal] : i32, view<16xi32>
   %source = buffer.view %input[%base] : buffer -> view<8xi16>
   %destination = buffer.view %output[%base] : buffer -> view<48xi16>
   %values = vector.load %source[0] : view<8xi16> -> vector<8xi16>
@@ -273,12 +275,12 @@ check.scenario @uniform_word_shift_values {
   check.trial[16](%trial: index, %entropy: check.entropy) {
     %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
     %input = check.generate.random.uniform seed(%seed) range(-32768 to 32767) : tensor<8xi16>
-    %counts = check.generate.iota offset(0) step(1) : tensor<16xi16>
+    %counts = check.generate.iota offset(65536) step(1) : tensor<16xi32>
     %storage = check.generate.fill value(-123) : tensor<64xi16>
     %output = check.tensor.view %storage offset(16) : tensor<64xi16> -> tensor<48xi16>
-    check.compare<@uniform_word_shifts>(%trial, %input, %counts, %output) : (index, tensor<8xi16>, tensor<16xi16>, tensor<48xi16>) -> () {
+    check.compare<@uniform_word_shifts>(%trial, %input, %counts, %output) : (index, tensor<8xi16>, tensor<16xi32>, tensor<48xi16>) -> () {
       check.expect.bitwise actual(%input) expected(%input) : tensor<8xi16>
-      check.expect.bitwise actual(%counts) expected(%counts) : tensor<16xi16>
+      check.expect.bitwise actual(%counts) expected(%counts) : tensor<16xi32>
       check.expect.bitwise actual(%storage) expected(%storage) : tensor<64xi16>
     }
   }
