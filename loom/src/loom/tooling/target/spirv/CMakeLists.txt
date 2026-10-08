@@ -42,26 +42,6 @@ loom_cc_library(
 )
 endif()
 
-if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
-loom_cc_library(
-  NAME
-    device_provider
-  HDRS
-    "device_provider.h"
-  SRCS
-    "device_provider.c"
-  DEPS
-    ::vulkan_profile
-    iree::base
-    loom::target::arch::spirv::facts
-    loom::target::arch::spirv::profile
-    loom::target::emit::spirv::module_compiler
-    loom::tooling::execution::hal::device_provider
-    loom::tooling::execution::hal::runtime
-  PUBLIC
-)
-endif()
-
 if(IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
 loom_cc_library(
   NAME
@@ -71,87 +51,13 @@ loom_cc_library(
   SRCS
     "testbench_requirements.c"
   DEPS
-    ::vulkan_profile
     iree::base
     iree::hal::drivers::vulkan::device_spec
+    loom::binding::c::loomc
+    loom::binding::c::target::spirv
     loom::tooling::execution::hal::testbench_actual
     loom::tooling::testbench::requirements
   PUBLIC
-)
-endif()
-
-if(IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
-loom_cc_library(
-  NAME
-    vulkan_profile
-  HDRS
-    "vulkan_profile.h"
-  SRCS
-    "vulkan_profile.c"
-  DEPS
-    iree::base
-    iree::hal
-    iree::hal::drivers::vulkan
-    iree::hal::drivers::vulkan::api
-    iree::hal::drivers::vulkan::device_spec
-    iree::third_party::vulkan_headers
-    loom::target::arch::spirv::cooperative_properties
-    loom::target::arch::spirv::features
-    loom::target::arch::spirv::profile
-    loom::target::arch::spirv::records::target_records
-    loom::target::types
-  PUBLIC
-)
-endif()
-
-if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
-loom_cc_test(
-  NAME
-    device_provider_test
-  SRCS
-    "device_provider_test.cc"
-  DEPS
-    ::device_provider
-    ::vulkan_profile
-    iree::base
-    iree::hal
-    iree::hal::drivers::vulkan::device_spec
-    iree::hal::utils::device_spec_builder
-    iree::testing::gtest
-    iree::testing::gtest_main
-    iree::third_party::vulkan_headers
-    loom::target::arch::spirv::features
-    loom::target::arch::spirv::profile
-    loom::tooling::execution::hal::runtime
-  LABELS
-    "iree-build-requirement=loom.target.arch.spirv"
-    "iree-build-requirement=loom.emit.spirv"
-)
-endif()
-
-if(IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
-loom_cc_test(
-  NAME
-    vulkan_profile_test
-  SRCS
-    "vulkan_profile_test.cc"
-  DEPS
-    ::vulkan_profile
-    iree::base
-    iree::hal
-    iree::hal::drivers::vulkan::api
-    iree::hal::drivers::vulkan::device_spec
-    iree::hal::utils::device_spec_builder
-    iree::testing::gtest
-    iree::testing::gtest_main
-    iree::third_party::vulkan_headers
-    loom::target::arch::spirv::cooperative_properties
-    loom::target::arch::spirv::features
-    loom::target::arch::spirv::profile
-    loom::target::types
-  LABELS
-    "iree-build-requirement=loom.target.arch.spirv"
-    "iree-build-requirement=loom.emit.spirv"
 )
 endif()
 

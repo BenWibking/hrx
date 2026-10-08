@@ -421,13 +421,13 @@ static iree_status_t iree_test_loom_append_scenario_planning_issues(
 }
 
 static iree_status_t iree_test_loom_configure_hal_actual_sequence(
-    const iree_test_loom_configuration_t* configuration,
-    loom_run_session_t* session, const loom_run_module_t* run_module,
-    const loom_testbench_module_plan_t* module_plan,
+    const loom_testbench_compilation_t* compilation,
+    const loom_module_t* native_module,
     const loom_testbench_case_plan_t* case_plan,
-    const loom_tooling_config_set_t* config_set,
-    const loom_sanitizer_options_t* sanitizer_options,
-    loom_diagnostic_sink_t diagnostic_sink,
+    const loomc_pass_program_t* pass_program,
+    loomc_target_profile_t* requested_target_profile,
+    const loomc_sanitizer_options_t* sanitizer,
+    loom_testbench_compile_result_callback_t result_callback,
     loom_run_hal_testbench_context_t* hal_context,
     loom_testbench_case_execution_options_t* execution_options,
     loom_run_hal_testbench_actual_sequence_t* out_sequence) {
@@ -441,14 +441,13 @@ static iree_status_t iree_test_loom_configure_hal_actual_sequence(
 
   const loom_run_hal_testbench_actual_sequence_options_t sequence_options = {
       .context = hal_context,
-      .session = session,
-      .run_module = run_module,
-      .pipeline = iree_make_cstring_view(FLAG_pipeline),
-      .target = iree_make_cstring_view(FLAG_target),
-      .sanitizer = *sanitizer_options,
-      .config_set = config_set,
+      .compilation = compilation,
+      .native_module = native_module,
+      .pass_program = pass_program,
+      .requested_target_profile = requested_target_profile,
+      .sanitizer = sanitizer,
       .case_plan = case_plan,
-      .diagnostic_sink = diagnostic_sink,
+      .result_callback = result_callback,
   };
   IREE_RETURN_IF_ERROR(loom_run_hal_testbench_actual_sequence_initialize(
       &sequence_options, out_sequence));
@@ -459,13 +458,15 @@ static iree_status_t iree_test_loom_configure_hal_actual_sequence(
 
 static iree_status_t iree_test_loom_run_case_samples(
     const iree_test_loom_configuration_t* configuration,
-    loom_run_session_t* session, const loom_run_module_t* run_module,
+    const loom_testbench_compilation_t* compilation,
+    const loom_module_t* native_module,
     const loom_testbench_module_plan_t* module_plan,
     iree_host_size_t case_index,
     const loom_testbench_case_execution_options_t* base_execution_options,
-    const loom_tooling_config_set_t* config_set,
-    const loom_sanitizer_options_t* sanitizer_options,
-    loom_diagnostic_sink_t diagnostic_sink,
+    const loomc_pass_program_t* pass_program,
+    loomc_target_profile_t* requested_target_profile,
+    const loomc_sanitizer_options_t* sanitizer,
+    loom_testbench_compile_result_callback_t result_callback,
     iree_test_loom_diagnostic_capture_t* diagnostic_capture,
     loom_run_hal_testbench_context_t* hal_context,
     iree_arena_allocator_t* arena, loom_json_array_writer_t* samples,
@@ -516,9 +517,9 @@ static iree_status_t iree_test_loom_run_case_samples(
   bool hal_actual_sequence_initialized = false;
   if (iree_test_loom_case_has_kernel_launch(case_plan)) {
     status = iree_test_loom_configure_hal_actual_sequence(
-        configuration, session, run_module, module_plan, case_plan, config_set,
-        sanitizer_options, diagnostic_sink, hal_context, &execution_options,
-        &hal_actual_sequence);
+        compilation, native_module, case_plan, pass_program,
+        requested_target_profile, sanitizer, result_callback, hal_context,
+        &execution_options, &hal_actual_sequence);
     hal_actual_sequence_initialized = iree_status_is_ok(status);
     if (iree_status_is_ok(status)) {
       matmul_oracle_options.device_allocator =
@@ -884,10 +885,13 @@ int iree_test_loom_main(int argc, char** argv,
   loomc_workspace_t* compiler_workspace = NULL;
   loomc_compiler_t* compiler = NULL;
   loomc_module_t* module = NULL;
+  loomc_pass_program_t* pass_program = NULL;
+  loomc_target_profile_t* requested_target_profile = NULL;
   loomc_module_interop_view_t module_view = {0};
   loom_run_session_t session = {0};
   loom_run_module_t run_module = {0};
   loom_sanitizer_options_t sanitizer_options = {0};
+  loomc_sanitizer_options_t loomc_sanitizer_options = {0};
   loom_run_hal_testbench_context_t hal_context = {0};
   loom_run_hal_testbench_scenario_profile_t hal_scenario_profile = {0};
   iree_test_loom_xfail_list_t xfails = {0};
@@ -981,6 +985,20 @@ int iree_test_loom_main(int argc, char** argv,
         iree_make_cstring_view(FLAG_sanitizer_reporting),
         IREE_SV("--sanitizer-reporting"), &sanitizer_options.reporting_mode);
   }
+  const bool sanitizer_enabled =
+      loom_sanitizer_options_is_enabled(&sanitizer_options);
+  const iree_string_view_t pipeline =
+      iree_string_view_trim(iree_make_cstring_view(FLAG_pipeline));
+  if (iree_status_is_ok(status) && sanitizer_enabled &&
+      !loom_tooling_cli_pipeline_uses_default(pipeline)) {
+    status = iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "--sanitizer and --sanitizer-reporting require --pipeline=default");
+  }
+  if (iree_status_is_ok(status) && sanitizer_enabled) {
+    loom_tooling_cli_make_loomc_sanitizer_options(&sanitizer_options,
+                                                  &loomc_sanitizer_options);
+  }
 
   const loom_target_environment_t* native_target_environment =
       loomc_target_environment_get_interop_view(
@@ -1022,7 +1040,8 @@ int iree_test_loom_main(int argc, char** argv,
   }
   if (iree_status_is_ok(status)) {
     loom_run_hal_testbench_context_initialize(
-        configuration->device_provider_registry, allocator, &hal_context);
+        configuration->target_environment, configuration->hal_target_routes,
+        configuration->hal_target_route_count, allocator, &hal_context);
     status =
         loom_run_hal_testbench_context_validate_explicit_device(&hal_context);
   }
@@ -1078,9 +1097,30 @@ int iree_test_loom_main(int argc, char** argv,
         .sources = {.table = *module_view.source_table},
     };
   }
+  const iree_string_view_t requested_target =
+      iree_string_view_trim(iree_make_cstring_view(FLAG_target));
+  if (iree_status_is_ok(status) &&
+      !iree_string_view_is_empty(requested_target)) {
+    status = iree_status_from_loomc(loomc_target_profile_select(
+        configuration->target_environment,
+        loomc_string_view_from_iree(requested_target),
+        loomc_allocator_from_iree(allocator), &requested_target_profile));
+  }
+  if (iree_status_is_ok(status)) {
+    loomc_result_t* result = NULL;
+    status = loom_tooling_cli_prepare_loomc_pass_program(
+        compiler_context, module, pipeline, IREE_SV("iree-test-loom pipeline"),
+        &pass_program, &result, allocator);
+    if (iree_status_is_ok(status) && result != NULL) {
+      status = iree_test_loom_require_loomc_result(
+          result, IREE_SV("pass program preparation"));
+    }
+    loomc_result_release(result);
+  }
   if (iree_status_is_ok(status)) {
     status = loom_run_hal_testbench_context_add_module_runtime_requirements(
-        &hal_context, run_module.module, &sanitizer_options);
+        &hal_context, module,
+        sanitizer_enabled ? &loomc_sanitizer_options : NULL);
   }
 
   if (iree_status_is_ok(status)) {
@@ -1182,7 +1222,7 @@ int iree_test_loom_main(int argc, char** argv,
       }
     }
     if (iree_status_is_ok(status) && selected_scenario_count != 0 &&
-        hal_context.device_provider != NULL) {
+        !iree_string_view_is_empty(hal_context.driver_name)) {
       status = loom_run_hal_testbench_context_ensure_runtime(&hal_context);
       if (iree_status_is_ok(status)) {
         execution_options.materializer.device_allocator =
@@ -1193,20 +1233,21 @@ int iree_test_loom_main(int argc, char** argv,
         const loom_run_hal_testbench_actual_provider_options_t
             provider_options = {
                 .context = &hal_context,
-                .session = &session,
-                .run_module = &run_module,
-                .pipeline = iree_make_cstring_view(FLAG_pipeline),
-                .target = target,
-                .sanitizer = sanitizer_options,
-                .config_set = &config_set,
-                .diagnostic_sink =
-                    iree_test_loom_diagnostic_capture_sink(&diagnostic_capture),
+                .compilation = &compilation,
+                .module = module,
+                .native_module = run_module.module,
+                .pass_program = pass_program,
+                .requested_target_profile = requested_target_profile,
+                .sanitizer =
+                    sanitizer_enabled ? &loomc_sanitizer_options : NULL,
+                .result_callback = compile_result_callback,
             };
         loom_run_hal_testbench_scenario_profile_initialize(
-            iree_string_view_is_empty(target)
-                ? hal_context.device_provider->name
-                : target,
-            &provider_options, &hal_scenario_profile);
+            iree_string_view_is_empty(target) ? hal_context.driver_name
+                                              : target,
+            &provider_options, &run_module.sources.table,
+            iree_test_loom_diagnostic_capture_sink(&diagnostic_capture),
+            &hal_scenario_profile);
         scenario_execution_options.target =
             loom_run_hal_testbench_scenario_execution_profile(
                 &hal_scenario_profile);
@@ -1251,12 +1292,13 @@ int iree_test_loom_main(int argc, char** argv,
             &module_plan, case_plan, &planning_issues, &planning_issue_count);
       } else {
         status = iree_test_loom_run_case_samples(
-            configuration, &session, &run_module, &module_plan, case_index,
-            &execution_options, &config_set, &sanitizer_options,
-            iree_test_loom_diagnostic_capture_sink(&diagnostic_capture),
-            &diagnostic_capture, &hal_context, &execution_arena, &samples,
-            &skipped_cases, &sample_count, &failed_sample_count,
-            &skipped_case_count);
+            configuration, &compilation, run_module.module, &module_plan,
+            case_index, &execution_options, pass_program,
+            requested_target_profile,
+            sanitizer_enabled ? &loomc_sanitizer_options : NULL,
+            compile_result_callback, &diagnostic_capture, &hal_context,
+            &execution_arena, &samples, &skipped_cases, &sample_count,
+            &failed_sample_count, &skipped_case_count);
       }
       if (!iree_test_loom_xfail_try_accept_compile_failure(
               xfail, &diagnostic_capture, &status) &&
@@ -1420,6 +1462,8 @@ int iree_test_loom_main(int argc, char** argv,
     loom_testbench_device_event_capture_deinitialize(&device_event_capture);
   }
   loom_run_session_deinitialize(&session);
+  loomc_target_profile_release(requested_target_profile);
+  loomc_pass_program_release(pass_program);
   loomc_module_release(module);
   loomc_compiler_release(compiler);
   loomc_workspace_release(compiler_workspace);

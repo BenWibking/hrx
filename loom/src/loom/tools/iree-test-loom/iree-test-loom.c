@@ -9,11 +9,11 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#include "loom/tooling/execution/hal/testbench_actual.h"
 #include "loom/tooling/input/configured.h"
 #include "loom/tooling/input/loomc_configured.h"
 #include "loom/tools/iree-test-loom/main.h"
 #include "loom/transforms/cleanup/configured.h"
-#include "loomc/interop.h"
 #include "loomc/iree.h"
 #include "loomc/target/configured.h"
 
@@ -39,15 +39,15 @@
    IREE_TEST_LOOM_HAVE_TASK)
 
 #if IREE_TEST_LOOM_HAVE_AMDGPU
-#include "loom/tooling/target/amdgpu/device_provider.h"
 #include "loom/tooling/target/amdgpu/testbench_requirements.h"
+#include "loomc/target/amdgpu/iree_hal.h"
 #endif  // IREE_TEST_LOOM_HAVE_AMDGPU
 #if IREE_TEST_LOOM_HAVE_SPIRV
-#include "loom/tooling/target/spirv/device_provider.h"
 #include "loom/tooling/target/spirv/testbench_requirements.h"
+#include "loomc/target/spirv/iree_hal.h"
 #endif  // IREE_TEST_LOOM_HAVE_SPIRV
 #if IREE_TEST_LOOM_HAVE_TASK
-#include "loom/tooling/target/cpu/task_device.h"
+#include "loomc/target/cpu/iree_hal.h"
 #endif  // IREE_TEST_LOOM_HAVE_TASK
 #if IREE_TEST_LOOM_HAVE_VM
 #include "loom/tooling/target/vm/testbench.h"
@@ -118,35 +118,28 @@ int main(int argc, char** argv) {
     iree_status_free(status);
     return 1;
   }
-#if IREE_TEST_LOOM_HAVE_TASK
-  const loom_target_environment_t* native_target_environment =
-      loomc_target_environment_get_interop_view(target_environment);
-  loom_task_device_provider_t task_provider;
-  loom_task_device_provider_initialize(native_target_environment,
-                                       &task_provider);
-#endif  // IREE_TEST_LOOM_HAVE_TASK
 #if IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
-  const loom_device_provider_t* device_providers[] = {
+  const loom_run_hal_target_route_t hal_target_routes[] = {
 #if IREE_TEST_LOOM_HAVE_AMDGPU
-      &loom_amdgpu_device_provider,
+      {
+          .driver_name = IREE_SV("amdgpu"),
+          .provider = loomc_amdgpu_iree_hal_target_provider(),
+      },
 #endif  // IREE_TEST_LOOM_HAVE_AMDGPU
 #if IREE_TEST_LOOM_HAVE_SPIRV
-      &loom_spirv_vulkan_device_provider,
+      {
+          .driver_name = IREE_SV("vulkan"),
+          .provider = loomc_spirv_iree_hal_target_provider(),
+      },
 #endif  // IREE_TEST_LOOM_HAVE_SPIRV
 #if IREE_TEST_LOOM_HAVE_TASK
-      &task_provider.base,
+      {
+          .driver_name = IREE_SV("task"),
+          .provider = loomc_cpu_iree_hal_target_provider(),
+      },
 #endif  // IREE_TEST_LOOM_HAVE_TASK
   };
 #endif  // IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
-  const loom_device_provider_registry_t device_registry = {
-#if IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
-      .providers = device_providers,
-      .provider_count = IREE_ARRAYSIZE(device_providers),
-#else
-      .providers = NULL,
-      .provider_count = 0,
-#endif  // IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
-  };
   iree_test_loom_configuration_t configuration = {
       .input_providers = loom_configured_input_providers(),
       .tool_name = "iree-test-loom",
@@ -154,7 +147,10 @@ int main(int argc, char** argv) {
       .import = loom_configured_input_loomc_importer(),
       .cleanup_pattern_provider_set =
           loom_cleanup_configured_pattern_provider_set(),
-      .device_provider_registry = &device_registry,
+#if IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
+      .hal_target_routes = hal_target_routes,
+      .hal_target_route_count = IREE_ARRAYSIZE(hal_target_routes),
+#endif  // IREE_TEST_LOOM_HAVE_ANY_DEVICE_PROVIDER
       .populate_requirement_providers =
           {
               .fn = iree_test_loom_populate_requirement_providers,

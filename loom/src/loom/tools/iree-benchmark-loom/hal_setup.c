@@ -26,7 +26,6 @@ static iree_hal_buffer_params_t iree_benchmark_loom_device_local_buffer_params(
 
 static iree_status_t iree_benchmark_loom_initialize_sequence_compile_context(
     const iree_benchmark_loom_hal_setup_options_t* options,
-    const iree_benchmark_loom_hal_compile_item_t* compile_item,
     const iree_benchmark_loom_selected_benchmark_t* selection,
     iree_benchmark_loom_hal_compile_context_t* context) {
   const loom_testbench_case_plan_t* case_plan = selection->case_plan;
@@ -59,9 +58,8 @@ static iree_status_t iree_benchmark_loom_initialize_sequence_compile_context(
     context->execution_options.materializer.buffer_params =
         loom_run_hal_testbench_host_visible_buffer_params();
     status = iree_benchmark_loom_hal_actual_sequence_initialize(
-        options->hal_context, options->session, options->run_module,
-        options->benchmark_options, case_plan, options->compile_report_options,
-        options->artifact_manifest_options, &context->hal_sequence);
+        options->hal_context, options->compilation, case_plan,
+        &context->hal_sequence);
   }
   if (iree_status_is_ok(status)) {
     context->hal_sequence_initialized = true;
@@ -115,7 +113,6 @@ static iree_status_t iree_benchmark_loom_initialize_sequence_compile_context(
 
 static iree_status_t iree_benchmark_loom_initialize_single_compile_context(
     const iree_benchmark_loom_hal_setup_options_t* options,
-    const iree_benchmark_loom_hal_compile_item_t* compile_item,
     const iree_benchmark_loom_selected_benchmark_t* selection,
     iree_benchmark_loom_hal_compile_context_t* context) {
   const loom_testbench_invocation_plan_t* kernel_launch = NULL;
@@ -145,10 +142,8 @@ static iree_status_t iree_benchmark_loom_initialize_single_compile_context(
 
   if (iree_status_is_ok(status)) {
     iree_benchmark_loom_hal_actual_provider_initialize(
-        options->hal_context, options->session, options->run_module,
-        options->benchmark_options, kernel_launch, iree_string_view_empty(),
-        options->compile_report_options, options->artifact_manifest_options,
-        &context->hal_provider);
+        options->hal_context, options->compilation, kernel_launch,
+        iree_string_view_empty(), &context->hal_provider);
     context->hal_provider_initialized = true;
     context->execution_options.materializer.device_allocator =
         iree_hal_device_allocator(
@@ -209,10 +204,10 @@ iree_status_t iree_benchmark_loom_hal_compile_context_initialize(
   iree_status_t status = iree_ok_status();
   if (selection->case_plan->kernel_launch_count > 1) {
     status = iree_benchmark_loom_initialize_sequence_compile_context(
-        options, compile_item, selection, context);
+        options, selection, context);
   } else {
     status = iree_benchmark_loom_initialize_single_compile_context(
-        options, compile_item, selection, context);
+        options, selection, context);
   }
   if (iree_status_is_ok(status)) {
     context->initialized = true;
@@ -243,9 +238,7 @@ void iree_benchmark_loom_hal_compile_context_set_result_artifacts(
   }
   const iree_benchmark_loom_hal_actual_provider_t* provider =
       &context->hal_provider;
-  if (provider->execution.compile_report_available) {
-    result->compile_report_capture = &provider->compile_report_capture;
-  }
+  result->compile_report = provider->execution.artifacts.compile_report;
   result->compile_report_artifact_path = provider->compile_report_artifact_path;
   result->artifact_manifest_path = provider->artifact_manifest_path;
   result->target_artifact_path = provider->target_artifact_path;

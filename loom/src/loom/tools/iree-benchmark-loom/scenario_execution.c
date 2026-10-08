@@ -9,12 +9,14 @@
 #include <string.h>
 
 #include "iree/hal/api.h"
+#include "loom/error/diagnostic.h"
 #include "loom/tooling/execution/hal/scenario_profile.h"
 #include "loom/tooling/execution/hal/testbench_actual.h"
 #include "loom/tooling/testbench/scenario/entropy.h"
 #include "loom/tooling/testbench/scenario/executor.h"
 #include "loom/tooling/testbench/scenario/values.h"
 #include "loom/tools/iree-benchmark-loom/case_execution.h"
+#include "loom/tools/iree-benchmark-loom/hal_actual.h"
 
 struct iree_benchmark_loom_scenario_execution_t {
   // Borrowed run dependencies shared by every scenario work item.
@@ -100,20 +102,25 @@ static iree_status_t iree_benchmark_loom_scenario_ensure_profile(
       loom_run_hal_testbench_host_visible_buffer_params();
 
   const iree_string_view_t target = options->benchmark_options->target;
+  const iree_benchmark_loom_hal_compilation_options_t* compilation =
+      options->compilation;
   const loom_run_hal_testbench_actual_provider_options_t provider_options = {
       .context = &options->hal_context->execution,
-      .session = options->session,
-      .run_module = options->run_module,
-      .pipeline = options->benchmark_options->pipeline,
-      .target = target,
-      .sanitizer = options->benchmark_options->sanitizer,
-      .config_set = options->benchmark_options->config_set,
+      .compilation = compilation->compilation,
+      .module = compilation->compilation->module,
+      .native_module = compilation->native_module,
+      .pass_program = compilation->pass_program,
+      .requested_target_profile = compilation->requested_target_profile,
+      .sanitizer = compilation->sanitizer,
+      .result_callback = compilation->result_callback,
   };
   loom_run_hal_testbench_scenario_profile_initialize(
       iree_string_view_is_empty(target)
-          ? options->hal_context->execution.device_provider->name
+          ? options->hal_context->execution.driver_name
           : target,
-      &provider_options, &execution->profile);
+      &provider_options, compilation->source_table,
+      (loom_diagnostic_sink_t){.fn = loom_diagnostic_stderr_sink},
+      &execution->profile);
   loom_testbench_scenario_execution_options_initialize(
       &execution->scenario_options);
   execution->scenario_options.target =

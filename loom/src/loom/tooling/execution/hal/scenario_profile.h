@@ -10,6 +10,8 @@
 #ifndef LOOM_TOOLING_EXECUTION_HAL_SCENARIO_PROFILE_H_
 #define LOOM_TOOLING_EXECUTION_HAL_SCENARIO_PROFILE_H_
 
+#include "loom/error/diagnostic.h"
+#include "loom/error/source.h"
 #include "loom/tooling/execution/hal/testbench_actual.h"
 #include "loom/tooling/testbench/scenario/executor.h"
 
@@ -23,15 +25,21 @@ typedef struct loom_run_hal_testbench_scenario_profile_t {
   // Stable profile name surfaced in scenario results and diagnostics.
   iree_string_view_t name;
   // Provider options copied into each independently prepared HAL product. The
-  // run module and kernel launch may be replaced by a target-only function
-  // adapter during product preparation.
+  // module and kernel launch may be replaced by a target-only function adapter
+  // during product preparation.
   loom_run_hal_testbench_actual_provider_options_t provider_options;
+  // Exact source snapshots used by tooling-generated diagnostics.
+  const loom_source_table_resolver_t* source_table;
+  // Diagnostic sink for scenario adapter errors outside public compilation.
+  loom_diagnostic_sink_t diagnostic_sink;
 } loom_run_hal_testbench_scenario_profile_t;
 
 // Initializes a borrowing HAL scenario profile without compiling a product.
 void loom_run_hal_testbench_scenario_profile_initialize(
     iree_string_view_t name,
     const loom_run_hal_testbench_actual_provider_options_t* provider_options,
+    const loom_source_table_resolver_t* source_table,
+    loom_diagnostic_sink_t diagnostic_sink,
     loom_run_hal_testbench_scenario_profile_t* out_profile);
 
 // Returns the external execution profile backed by |profile|.

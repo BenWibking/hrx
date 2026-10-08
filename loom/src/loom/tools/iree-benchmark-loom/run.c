@@ -12,11 +12,8 @@
 
 #include "iree/base/internal/arena.h"
 #include "loom/ir/module.h"
-#include "loom/target/reporting/artifact_manifest.h"
 #include "loom/tooling/cli/loomc_options.h"
 #include "loom/tooling/cli/loomc_result.h"
-#include "loom/tooling/compile/options.h"
-#include "loom/tooling/compile/report_capture.h"
 #include "loom/tooling/config/config.h"
 #include "loom/tooling/input/loomc.h"
 #include "loom/tooling/io/file.h"
@@ -25,6 +22,7 @@
 #include "loom/tools/iree-benchmark-loom/comparison_execution.h"
 #include "loom/tools/iree-benchmark-loom/context.h"
 #include "loom/tools/iree-benchmark-loom/diagnostics.h"
+#include "loom/tools/iree-benchmark-loom/hal_actual.h"
 #include "loom/tools/iree-benchmark-loom/manifest.h"
 #include "loom/tools/iree-benchmark-loom/model.h"
 #include "loom/tools/iree-benchmark-loom/module_query.h"
@@ -38,33 +36,44 @@
 
 static iree_status_t iree_benchmark_loom_compile_report_options_initialize(
     const iree_benchmark_loom_options_t* options,
-    loom_compile_report_capture_options_t* out_options) {
-  loom_compile_report_capture_options_initialize(out_options);
-  IREE_RETURN_IF_ERROR(loom_compile_report_capture_options_parse_request(
-      options->compile_report, out_options));
-  if (out_options->sink_format == LOOM_COMPILE_REPORT_SINK_FORMAT_TEXT) {
+    loomc_compile_report_options_t* out_options) {
+  *out_options = (loomc_compile_report_options_t){
+      .type = LOOMC_STRUCTURE_TYPE_COMPILE_REPORT_OPTIONS,
+      .structure_size = sizeof(*out_options),
+      .format = LOOMC_COMPILE_REPORT_FORMAT_JSON,
+      .identifier = loomc_make_cstring_view("compile_report"),
+  };
+  if (iree_string_view_starts_with(options->compile_report, IREE_SV("text"))) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
         "iree-benchmark-loom emits structured JSON reports; use "
         "--compile-report=summary, details, json-summary, or json-details");
   }
-  return iree_ok_status();
+  return iree_status_from_loomc(loomc_compile_report_mode_parse(
+      loomc_string_view_from_iree(options->compile_report),
+      &out_options->mode));
 }
 
 static iree_status_t iree_benchmark_loom_artifact_manifest_options_initialize(
     const iree_benchmark_loom_options_t* options,
-    loom_compile_artifact_manifest_options_t* out_options) {
-  *out_options = (loom_compile_artifact_manifest_options_t){0};
-  IREE_RETURN_IF_ERROR(loom_target_artifact_manifest_mode_parse(
-      options->artifact_manifest, &out_options->mode));
-  if (out_options->mode != LOOM_TARGET_ARTIFACT_MANIFEST_MODE_NONE &&
+    loomc_artifact_manifest_options_t* out_options) {
+  *out_options = (loomc_artifact_manifest_options_t){
+      .type = LOOMC_STRUCTURE_TYPE_ARTIFACT_MANIFEST_OPTIONS,
+      .structure_size = sizeof(*out_options),
+      .identifier = loomc_make_cstring_view("artifact_manifest"),
+  };
+  IREE_RETURN_IF_ERROR(
+      iree_status_from_loomc(loomc_artifact_manifest_mode_parse(
+          loomc_string_view_from_iree(options->artifact_manifest),
+          &out_options->mode)));
+  if (out_options->mode != LOOMC_ARTIFACT_MANIFEST_MODE_NONE &&
       iree_string_view_is_empty(options->artifact_bundle_dir)) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
         "--artifact-manifest requires --artifact-bundle-dir so the manifest "
         "sidecars have a stable output location");
   }
-  if (out_options->mode != LOOM_TARGET_ARTIFACT_MANIFEST_MODE_NONE &&
+  if (out_options->mode != LOOMC_ARTIFACT_MANIFEST_MODE_NONE &&
       options->artifact_bundle_policy <
           IREE_BENCHMARK_LOOM_ARTIFACT_BUNDLE_POLICY_DEBUG) {
     return iree_make_status(
@@ -72,7 +81,6 @@ static iree_status_t iree_benchmark_loom_artifact_manifest_options_initialize(
         "--artifact-manifest requires --artifact-bundle-policy=debug or full "
         "so requested manifest sidecars are retained");
   }
-  out_options->identifier = IREE_SV("artifact_manifest");
   return iree_ok_status();
 }
 
@@ -208,7 +216,6 @@ iree_status_t iree_benchmark_loom_run_file(
   const iree_allocator_t allocator = options->host_allocator;
   loom_tooling_config_set_t config_set;
   loom_tooling_config_set_initialize(allocator, &config_set);
-  normalized_benchmark_options.config_set = &config_set;
   loomc_config_binding_t* config_bindings = NULL;
   loomc_config_options_t config_options = {0};
   const iree_string_view_t input_path = options->input_path;
@@ -220,6 +227,9 @@ iree_status_t iree_benchmark_loom_run_file(
   loomc_workspace_t* compiler_workspace = NULL;
   loomc_compiler_t* compiler = NULL;
   loomc_module_t* module = NULL;
+  loomc_pass_program_t* pass_program = NULL;
+  loomc_target_profile_t* requested_target_profile = NULL;
+  loomc_sanitizer_options_t loomc_sanitizer_options = {0};
   loomc_module_interop_view_t module_view = {0};
   loom_run_session_t session = {0};
   loom_run_module_t run_module = {0};
@@ -228,7 +238,6 @@ iree_status_t iree_benchmark_loom_run_file(
   iree_benchmark_loom_hal_context_t hal_context = {0};
   iree_benchmark_loom_hal_context_initialize(options->configuration, allocator,
                                              &hal_context);
-  hal_context.config_set = benchmark_options->config_set;
   loom_testbench_device_event_capture_t device_event_capture = {0};
   bool device_event_capture_initialized = false;
   iree_arena_allocator_t plan_arena;
@@ -255,6 +264,18 @@ iree_status_t iree_benchmark_loom_run_file(
   iree_status_t status =
       loom_run_hal_testbench_context_validate_explicit_device(
           &hal_context.execution);
+  const bool sanitizer_enabled =
+      loom_sanitizer_options_is_enabled(&benchmark_options->sanitizer);
+  if (iree_status_is_ok(status) && sanitizer_enabled &&
+      !loom_tooling_cli_pipeline_uses_default(benchmark_options->pipeline)) {
+    status = iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "--sanitizer and --sanitizer-reporting require --pipeline=default");
+  }
+  if (iree_status_is_ok(status) && sanitizer_enabled) {
+    loom_tooling_cli_make_loomc_sanitizer_options(&benchmark_options->sanitizer,
+                                                  &loomc_sanitizer_options);
+  }
   if (iree_status_is_ok(status)) {
     status = iree_benchmark_loom_append_config_assignments(
         &config_set, benchmark_options->config_assignments);
@@ -267,12 +288,12 @@ iree_status_t iree_benchmark_loom_run_file(
     status = loom_tooling_cli_make_loomc_config_options(
         &config_set, allocator, &config_bindings, &config_options);
   }
-  loom_compile_report_capture_options_t compile_report_options = {0};
+  loomc_compile_report_options_t compile_report_options = {0};
   if (iree_status_is_ok(status)) {
     status = iree_benchmark_loom_compile_report_options_initialize(
         benchmark_options, &compile_report_options);
   }
-  loom_compile_artifact_manifest_options_t artifact_manifest_options = {0};
+  loomc_artifact_manifest_options_t artifact_manifest_options = {0};
   if (iree_status_is_ok(status)) {
     status = iree_benchmark_loom_artifact_manifest_options_initialize(
         benchmark_options, &artifact_manifest_options);
@@ -435,10 +456,44 @@ iree_status_t iree_benchmark_loom_run_file(
     };
   }
 
+  const iree_string_view_t requested_target =
+      iree_string_view_trim(benchmark_options->target);
+  if (iree_status_is_ok(status) && failure_count == 0 &&
+      !iree_string_view_is_empty(requested_target)) {
+    status = iree_status_from_loomc(loomc_target_profile_select(
+        options->configuration->target_environment,
+        loomc_string_view_from_iree(requested_target),
+        loomc_allocator_from_iree(allocator), &requested_target_profile));
+  }
+  if (iree_status_is_ok(status) && failure_count == 0) {
+    iree_benchmark_loom_diagnostic_capture_deinitialize(&source_diagnostics);
+    iree_benchmark_loom_diagnostic_capture_initialize(allocator,
+                                                      &source_diagnostics);
+    loomc_result_t* result = NULL;
+    status = loom_tooling_cli_prepare_loomc_pass_program(
+        compiler_context, module, benchmark_options->pipeline,
+        IREE_SV("iree-benchmark-loom pipeline"), &pass_program, &result,
+        allocator);
+    if (iree_status_is_ok(status) && result != NULL) {
+      status = iree_benchmark_loom_diagnostic_capture_loomc_result(
+          &source_diagnostics, result);
+    }
+    if (iree_status_is_ok(status) && result != NULL &&
+        !loomc_result_succeeded(result)) {
+      status = iree_benchmark_loom_event_sink_emit_failure(
+          event_sink, &run_identity, IREE_SV("compile"),
+          IREE_SV("pipeline_diagnostics"),
+          IREE_SV("pass program preparation failed"), &source_diagnostics);
+      ++failure_count;
+      exit_code = 1;
+    }
+    loomc_result_release(result);
+  }
+
   if (iree_status_is_ok(status) && failure_count == 0) {
     status = loom_run_hal_testbench_context_add_module_runtime_requirements(
-        &hal_context.execution, run_module.module,
-        &benchmark_options->sanitizer);
+        &hal_context.execution, module,
+        sanitizer_enabled ? &loomc_sanitizer_options : NULL);
   }
 
   if (iree_status_is_ok(status) && failure_count == 0) {
@@ -510,6 +565,17 @@ iree_status_t iree_benchmark_loom_run_file(
     const loom_testbench_compile_result_callback_t compile_result_callback = {
         .fn = iree_benchmark_loom_print_compile_result,
     };
+    const iree_benchmark_loom_hal_compilation_options_t hal_compilation = {
+        .compilation = &compilation,
+        .native_module = run_module.module,
+        .source_table = &run_module.sources.table,
+        .pass_program = pass_program,
+        .requested_target_profile = requested_target_profile,
+        .sanitizer = sanitizer_enabled ? &loomc_sanitizer_options : NULL,
+        .result_callback = compile_result_callback,
+        .compile_report = compile_report_options,
+        .artifact_manifest = artifact_manifest_options,
+    };
     const loom_testbench_function_call_provider_callback_t function_calls =
         options->configuration->function_call_provider;
     if (iree_status_is_ok(status) && failure_count == 0 && function_calls.fn) {
@@ -575,10 +641,7 @@ iree_status_t iree_benchmark_loom_run_file(
                 .work_plan = &work_plan,
                 .benchmark_options = benchmark_options,
                 .hal_context = &hal_context,
-                .session = &session,
-                .run_module = &run_module,
-                .compile_report_options = &compile_report_options,
-                .artifact_manifest_options = &artifact_manifest_options,
+                .compilation = &hal_compilation,
                 .case_execution_options = &execution_options,
                 .execution_arena = &execution_arena,
                 .host_allocator = allocator,
@@ -621,10 +684,7 @@ iree_status_t iree_benchmark_loom_run_file(
               .work_plan = &work_plan,
               .benchmark_options = benchmark_options,
               .hal_context = &hal_context,
-              .session = &session,
-              .run_module = &run_module,
-              .compile_report_options = &compile_report_options,
-              .artifact_manifest_options = &artifact_manifest_options,
+              .compilation = &hal_compilation,
               .case_execution_options = &execution_options,
               .execution_arena = &execution_arena,
               .host_allocator = allocator,
@@ -682,6 +742,8 @@ iree_status_t iree_benchmark_loom_run_file(
   iree_benchmark_loom_artifact_bundle_deinitialize(&artifact_bundle);
   iree_io_file_contents_free(contents);
   loom_run_session_deinitialize(&session);
+  loomc_target_profile_release(requested_target_profile);
+  loomc_pass_program_release(pass_program);
   loomc_module_release(module);
   loomc_compiler_release(compiler);
   loomc_workspace_release(compiler_workspace);

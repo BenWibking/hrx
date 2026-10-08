@@ -136,6 +136,17 @@ iree_status_t loom_run_hal_runtime_initialize(
   return status;
 }
 
+iree_hal_physical_device_affinity_t
+loom_run_hal_runtime_dispatch_physical_device_affinity(
+    const loom_run_hal_runtime_t* runtime) {
+  const iree_hal_device_queue_spec_t* queue_spec =
+      iree_hal_device_spec_queues(iree_hal_device_spec(runtime->device));
+  const iree_hal_queue_family_ordinal_t family_ordinal =
+      iree_hal_queue_family_ordinal(
+          iree_hal_queue_family(runtime->dispatch_queue));
+  return queue_spec->families[family_ordinal].physical_device_affinity;
+}
+
 void loom_run_hal_runtime_deinitialize(loom_run_hal_runtime_t* runtime) {
   if (runtime == NULL) {
     return;

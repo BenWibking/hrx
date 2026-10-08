@@ -490,9 +490,7 @@ iree_status_t iree_benchmark_loom_run_hal_benchmark_sample(
   out_result->sample_ordinal = case_sample_ordinal;
   out_result->samples_per_iteration = 1;
 
-  if (provider->execution.compile_report_available) {
-    out_result->compile_report_capture = &provider->compile_report_capture;
-  }
+  out_result->compile_report = provider->execution.artifacts.compile_report;
   out_result->compile_report_artifact_path =
       provider->compile_report_artifact_path;
   out_result->artifact_manifest_path = provider->artifact_manifest_path;

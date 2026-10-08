@@ -420,17 +420,6 @@ static iree_status_t iree_run_loom_select_kernel(const loomc_module_t* module,
   return status;
 }
 
-static iree_hal_physical_device_affinity_t
-iree_run_loom_dispatch_physical_device_affinity(
-    const loom_run_hal_runtime_t* runtime) {
-  const iree_hal_device_queue_spec_t* queue_spec =
-      iree_hal_device_spec_queues(iree_hal_device_spec(runtime->device));
-  const iree_hal_queue_family_ordinal_t family_ordinal =
-      iree_hal_queue_family_ordinal(
-          iree_hal_queue_family(runtime->dispatch_queue));
-  return queue_spec->families[family_ordinal].physical_device_affinity;
-}
-
 typedef struct iree_run_loom_artifacts_t {
   // Loadable executable produced for the selected HAL target.
   const loomc_artifact_t* executable;
@@ -831,7 +820,7 @@ int iree_run_loom_main(int argc, char** argv,
         .identifier = loomc_make_cstring_view("iree-run-loom live device"),
         .device = runtime.device,
         .physical_device_affinity =
-            iree_run_loom_dispatch_physical_device_affinity(&runtime),
+            loom_run_hal_runtime_dispatch_physical_device_affinity(&runtime),
         .target_profile = requested_target_profile,
         .providers = configuration->hal_target_providers,
         .provider_count = configuration->hal_target_provider_count,

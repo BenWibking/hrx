@@ -7,7 +7,6 @@
 load("//build_tools/bazel:executable.bzl", "iree_executable_test")
 load(
     "//loom/build_tools/bazel:build_defs.bzl",
-    "loom_cc_library",
     "loom_config_compatible_with",
 )
 load(
@@ -31,21 +30,6 @@ package(
     default_visibility = ["//visibility:public"],
     features = ["layering_check"],
     licenses = ["notice"],  # Apache 2.0
-)
-
-loom_cc_library(
-    name = "task_device",
-    srcs = ["task_device.c"],
-    hdrs = ["task_device.h"],
-    target_compatible_with = loom_config_compatible_with(["//loom/config/execute:task_hal"]),
-    deps = [
-        "//loom/src/loom/target:selection",
-        "//loom/src/loom/tooling/execution/hal:device_provider",
-        "//loom/src/loom/tooling/execution/hal:runtime",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/hal",
-        "//runtime/src/iree/hal/drivers/task:device_spec",
-    ],
 )
 
 _X86_TASK_HARDWARE_PROFILE = loom_execution_profile(
