@@ -18,6 +18,8 @@ enum loom_check_test_allocation_option_flag_bits_e {
   LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_ASSIGNMENT_COUNT = 1u << 2,
   LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_SPILL_COUNT = 1u << 3,
   LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_COPY_COUNT = 1u << 4,
+  LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_FAILURE = 1u << 5,
+  LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_EDGE_MOVES = 1u << 6,
 };
 typedef uint32_t loom_check_test_allocation_option_flags_t;
 
@@ -131,6 +133,26 @@ static iree_status_t loom_check_test_allocation_parse_option(
           "duplicate low-allocation-query option 'copy-count'");
     }
     options->flags |= LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_COPY_COUNT;
+    return iree_ok_status();
+  }
+  if (iree_string_view_equal(token, IREE_SV("failure"))) {
+    if (iree_any_bit_set(options->flags,
+                         LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_FAILURE)) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "duplicate low-allocation-query option 'failure'");
+    }
+    options->flags |= LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_FAILURE;
+    return iree_ok_status();
+  }
+  if (iree_string_view_equal(token, IREE_SV("edge-moves"))) {
+    if (iree_any_bit_set(options->flags,
+                         LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_EDGE_MOVES)) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "duplicate low-allocation-query option 'edge-moves'");
+    }
+    options->flags |= LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_EDGE_MOVES;
     return iree_ok_status();
   }
 
@@ -294,6 +316,88 @@ static iree_string_view_t loom_check_test_allocation_copy_kind_name(
   }
 }
 
+static iree_string_view_t loom_check_test_allocation_failure_blocking_kind_name(
+    loom_low_allocation_failure_blocking_kind_t kind) {
+  switch (kind) {
+    case LOOM_LOW_ALLOCATION_FAILURE_BLOCKING_INTERVAL_EXCEEDS_BUDGET:
+      return IREE_SV("interval-exceeds-budget");
+    case LOOM_LOW_ALLOCATION_FAILURE_BLOCKING_ACTIVE_ASSIGNMENT:
+      return IREE_SV("active-assignment");
+    case LOOM_LOW_ALLOCATION_FAILURE_BLOCKING_LOCATION_CONSTRAINT:
+      return IREE_SV("location-constraint");
+    case LOOM_LOW_ALLOCATION_FAILURE_BLOCKING_NO_ASSIGNABLE_LOCATION:
+      return IREE_SV("no-assignable-location");
+    case LOOM_LOW_ALLOCATION_FAILURE_BLOCKING_UNKNOWN:
+    default:
+      return IREE_SV("unknown");
+  }
+}
+
+static iree_status_t loom_check_test_allocation_append_failure(
+    const loom_low_allocation_table_t* allocation,
+    iree_string_builder_t* builder) {
+  const loom_low_allocation_failure_t* failure = &allocation->failure;
+  if (!loom_low_allocation_failure_is_present(failure)) {
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "low-allocation-query requested a failure from a successful "
+        "allocation");
+  }
+  const iree_string_view_t blocking_kind =
+      loom_check_test_allocation_failure_blocking_kind_name(
+          failure->blocking_kind);
+  IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+      builder, "failure: %.*s kind=%.*s", (int)failure->failure_code.size,
+      failure->failure_code.data, (int)blocking_kind.size, blocking_kind.data));
+  if (failure->value_id != LOOM_VALUE_ID_INVALID) {
+    IREE_RETURN_IF_ERROR(
+        iree_string_builder_append_cstring(builder, " value="));
+    IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_value_reference(
+        allocation->module, failure->value_id, builder));
+  }
+  const loom_low_reg_class_t* register_class =
+      &allocation->target.descriptor_set
+           ->reg_classes[failure->descriptor_reg_class_id];
+  const iree_string_view_t register_class_name = loom_low_descriptor_set_string(
+      allocation->target.descriptor_set, register_class->name_string_ref);
+  IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+      builder,
+      " class=%.*s required=%" PRIu32 " budget=", (int)register_class_name.size,
+      register_class_name.data, failure->required_unit_count));
+  if (failure->budget_units == UINT32_MAX) {
+    IREE_RETURN_IF_ERROR(
+        iree_string_builder_append_cstring(builder, "unbounded"));
+  } else {
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+        builder, "%" PRIu32, failure->budget_units));
+  }
+  IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+      builder, " peak=%" PRIu32, failure->peak_live_units));
+  if (failure->location_base != UINT32_MAX && failure->location_count != 0) {
+    const iree_string_view_t location_kind =
+        loom_low_allocation_location_kind_name(failure->location_kind);
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+        builder, " location=%.*s[%" PRIu32 ":%" PRIu32 "]",
+        (int)location_kind.size, location_kind.data, failure->location_base,
+        failure->location_count));
+  }
+  IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "\n"));
+
+  if (failure->conflict_value_id == LOOM_VALUE_ID_INVALID) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(
+      iree_string_builder_append_cstring(builder, "conflict: "));
+  IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_value_reference(
+      allocation->module, failure->conflict_value_id, builder));
+  const iree_string_view_t conflict_location_kind =
+      loom_low_allocation_location_kind_name(failure->conflict_location_kind);
+  return iree_string_builder_append_format(
+      builder, " %.*s[%" PRIu32 ":%" PRIu32 "]\n",
+      (int)conflict_location_kind.size, conflict_location_kind.data,
+      failure->conflict_location_base, failure->conflict_location_count);
+}
+
 static iree_status_t loom_check_test_allocation_append_copy(
     const loom_low_allocation_table_t* allocation,
     iree_string_view_t result_selector, iree_string_builder_t* builder) {
@@ -406,6 +510,49 @@ static iree_status_t loom_check_test_allocation_append_selected_spill_plans(
   return iree_ok_status();
 }
 
+static iree_status_t loom_check_test_allocation_append_move_location(
+    const loom_low_allocation_table_t* allocation,
+    const loom_low_move_location_t* location, iree_string_builder_t* builder) {
+  const loom_low_reg_class_t* register_class =
+      &allocation->target.descriptor_set
+           ->reg_classes[location->descriptor_reg_class_id];
+  const iree_string_view_t register_class_name = loom_low_descriptor_set_string(
+      allocation->target.descriptor_set, register_class->name_string_ref);
+  const iree_string_view_t location_kind =
+      loom_low_allocation_location_kind_name(location->location_kind);
+  return iree_string_builder_append_format(
+      builder, "%.*s:%.*s[%" PRIu32 "]", (int)register_class_name.size,
+      register_class_name.data, (int)location_kind.size, location_kind.data,
+      location->location);
+}
+
+static iree_status_t loom_check_test_allocation_append_edge_moves(
+    const loom_low_allocation_table_t* allocation,
+    iree_string_builder_t* builder) {
+  if (allocation->edge_copy_group_count != 1) {
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "low-allocation-query edge-moves requires exactly one edge-copy "
+        "group; found %" PRIhsz,
+        allocation->edge_copy_group_count);
+  }
+  const loom_low_move_range_t moves =
+      allocation->edge_copy_groups[0].move_group.moves;
+  IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+      builder, "edge moves: %" PRIhsz "\n", moves.count));
+  for (iree_host_size_t i = 0; i < moves.count; ++i) {
+    const loom_low_move_t* move = &allocation->moves[moves.start + i];
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "move "));
+    IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_move_location(
+        allocation, &move->destination, builder));
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, " <- "));
+    IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_move_location(
+        allocation, &move->source, builder));
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "\n"));
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_check_test_allocation_execute(
     const loom_check_emit_provider_t* provider,
     const loom_check_emit_provider_request_t* request) {
@@ -426,17 +573,24 @@ static iree_status_t loom_check_test_allocation_execute(
       request, options.function_symbol_name, &frame_options,
       options.allocation_fixed_values.specs,
       options.allocation_fixed_values.count, NULL, &frame, &accepted));
-  if (request->diagnostic_collector != NULL &&
-      loom_check_diagnostic_collector_has_error(
-          request->diagnostic_collector)) {
+  const bool failure_requested = iree_any_bit_set(
+      options.flags, LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_FAILURE);
+  const bool has_error =
+      request->diagnostic_collector != NULL &&
+      loom_check_diagnostic_collector_has_error(request->diagnostic_collector);
+  if (has_error && !failure_requested) {
     return iree_ok_status();
   }
-  if (!accepted) {
+  if (!accepted && !failure_requested) {
     return iree_ok_status();
   }
 
   const loom_low_allocation_table_t* allocation = &frame.allocation;
   iree_string_builder_t* output = &request->result->actual_output;
+  if (failure_requested) {
+    IREE_RETURN_IF_ERROR(
+        loom_check_test_allocation_append_failure(allocation, output));
+  }
   if (iree_any_bit_set(
           options.flags,
           LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_ASSIGNMENT_COUNT)) {
@@ -454,7 +608,19 @@ static iree_status_t loom_check_test_allocation_execute(
         output, "copies: coalesced=%" PRIhsz " materialized=%" PRIhsz "\n",
         allocation->coalesced_copy_count, allocation->materialized_copy_count));
   }
+  if (iree_any_bit_set(options.flags,
+                       LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_EDGE_MOVES)) {
+    IREE_RETURN_IF_ERROR(
+        loom_check_test_allocation_append_edge_moves(allocation, output));
+  }
 
+  const bool has_value_queries =
+      !iree_string_view_is_empty(options.value_selectors) ||
+      !iree_string_view_is_empty(options.copy_result_selectors) ||
+      !iree_string_view_is_empty(options.spill_plan_selectors);
+  if (!has_value_queries) {
+    return iree_ok_status();
+  }
   loom_low_allocation_value_scratch_t value_scratch = {0};
   iree_status_t status =
       loom_low_allocation_acquire_value_scratch(allocation, &value_scratch);
@@ -483,6 +649,7 @@ static iree_status_t loom_check_test_allocation_append_names(
 
 const loom_check_emit_provider_t loom_check_test_allocation_provider = {
     .name = IREE_SVL("allocation-query"),
+    .flags = LOOM_CHECK_EMIT_PROVIDER_FLAG_COMPARE_ERROR_OUTPUT,
     .match = loom_check_test_allocation_matches,
     .execute = loom_check_test_allocation_execute,
     .append_names = loom_check_test_allocation_append_names,

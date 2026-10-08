@@ -114,7 +114,7 @@ static iree_status_t loom_vm_check_append_names(
 
 static const loom_check_emit_provider_t loom_vm_check_emit_provider = {
     .name = IREE_SVL("vm"),
-    .consumes_source = true,
+    .flags = LOOM_CHECK_EMIT_PROVIDER_FLAG_CONSUMES_SOURCE,
     .match = loom_vm_check_match,
     .execute = loom_vm_check_emit,
     .append_names = loom_vm_check_append_names,
