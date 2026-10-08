@@ -224,7 +224,8 @@ static iree_status_t loom_low_allocation_edge_copy_record_group(
   const loom_low_allocation_edge_copy_context_t* context = builder->context;
   return loom_low_allocation_move_plan_append_group(
       context->move_plan, operation_point->op, operation_point->start_point,
-      operation_point->end_point, builder->raw_move_count, &group->move_group);
+      operation_point->end_point, builder->raw_move_count, &group->move_group,
+      /*out_input_flags=*/NULL);
 }
 
 static iree_status_t loom_low_allocation_edge_copy_record_region(

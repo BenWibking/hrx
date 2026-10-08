@@ -171,14 +171,22 @@ typedef struct loom_low_allocation_edge_copy_group_t {
   loom_low_move_group_t move_group;
 } loom_low_allocation_edge_copy_group_t;
 
-// One maximal live run within a packet-local structural transfer.
+// The high bit of an exact packet-transfer relation index distinguishes a
+// materialized run from a forwarded run. Placement relation tables use the
+// remaining compact index domain.
+#define LOOM_LOW_ALLOCATION_PACKET_TRANSFER_MATERIALIZED_BIT \
+  UINT32_C(0x80000000)
+#define LOOM_LOW_ALLOCATION_PACKET_TRANSFER_RELATION_INDEX_MASK \
+  UINT32_C(0x7FFFFFFF)
+
+// One maximal live run within an exact packet-local structural transfer.
 //
 // The referenced placement relation owns the source/result value ordinals and
-// base unit offsets. This row retains the liveness and final-location split
-// established by allocation after those relations were constructed.
+// base unit offsets. Uniform groups retain no rows; this table exists only when
+// allocation split one group across forwarded, materialized, or dead units.
 typedef struct loom_low_allocation_packet_transfer_t {
-  // Index into the allocation's retained placement relation table.
-  uint32_t relation_index;
+  // Placement relation index with MATERIALIZED_BIT set for a physical copy.
+  uint32_t encoded_relation_index;
   // Unit offset within the placement relation.
   uint32_t relation_unit_offset;
   // Number of consecutive live units with the same transfer kind.
@@ -189,22 +197,52 @@ static_assert(
     sizeof(loom_low_allocation_packet_transfer_t) == 12,
     "packet transfer runs must retain their compact allocation shape");
 
+static inline uint32_t loom_low_allocation_packet_transfer_relation_index(
+    const loom_low_allocation_packet_transfer_t* transfer) {
+  return transfer->encoded_relation_index &
+         LOOM_LOW_ALLOCATION_PACKET_TRANSFER_RELATION_INDEX_MASK;
+}
+
+static inline bool loom_low_allocation_packet_transfer_is_materialized(
+    const loom_low_allocation_packet_transfer_t* transfer) {
+  return (transfer->encoded_relation_index &
+          LOOM_LOW_ALLOCATION_PACKET_TRANSFER_MATERIALIZED_BIT) != 0;
+}
+
+enum loom_low_allocation_packet_transfer_group_flag_bits_e {
+  // At least one result range forwards its source dependency.
+  LOOM_LOW_ALLOCATION_PACKET_TRANSFER_GROUP_FLAG_FORWARDED = 1u << 0,
+  // At least one result range is materialized by a physical move.
+  LOOM_LOW_ALLOCATION_PACKET_TRANSFER_GROUP_FLAG_MATERIALIZED = 1u << 1,
+  // The group indexes exact packet-transfer rows. Uniform groups omit them.
+  LOOM_LOW_ALLOCATION_PACKET_TRANSFER_GROUP_FLAG_EXACT = 1u << 2,
+};
+typedef uint8_t loom_low_allocation_packet_transfer_group_flags_t;
+
 // Final transfer facts for one packet-local parallel move operation.
 typedef struct loom_low_allocation_packet_move_group_t {
   // Source-order ordinal of the owning low.copy, low.move, low.slice, or
   // low.concat.
   uint32_t source_ordinal;
-  // Structural placement cause that produced the move group.
-  loom_low_placement_cause_t cause;
-  // First row in the allocation's packet-transfer table.
+  // First exact row in the allocation's packet-transfer table.
   uint32_t transfer_start;
-  // Forwarded rows at the beginning of the group's transfer range.
-  uint32_t forwarded_transfer_count;
-  // Materialized rows following the forwarded transfer rows.
-  uint32_t materialized_transfer_count;
+  // Number of exact rows, or zero for a uniform or dead group.
+  uint32_t transfer_count;
+  // Structural placement cause that produced the group.
+  loom_low_placement_cause_t cause;
+  // Forwarded, materialized, and exact-range facts for the group.
+  loom_low_allocation_packet_transfer_group_flags_t transfer_flags;
   // Final sequential physical moves emitted by the owning operation.
   loom_low_move_group_t move_group;
 } loom_low_allocation_packet_move_group_t;
+
+#if UINTPTR_MAX == UINT64_MAX
+static_assert(sizeof(loom_low_allocation_packet_move_group_t) == 48,
+              "packet transfer groups must retain their compact shape");
+#else
+static_assert(sizeof(loom_low_allocation_packet_move_group_t) == 32,
+              "packet transfer groups must retain their compact shape");
+#endif  // UINTPTR_MAX == UINT64_MAX
 
 // Call transport belongs to the call that consumes the arguments. Each range
 // indexes the allocation's common move table, after cycle resolution.

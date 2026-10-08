@@ -445,10 +445,11 @@ TEST_P(CompileReportLowTest, RecordsPressureSpillAndAllocationFailureRows) {
   const loom_low_allocation_packet_move_group_t packet_move_groups[] = {
       {
           /*.source_ordinal=*/0,
-          /*.cause=*/LOOM_LOW_PLACEMENT_CAUSE_LOW_COPY,
           /*.transfer_start=*/0,
-          /*.forwarded_transfer_count=*/0,
-          /*.materialized_transfer_count=*/1,
+          /*.transfer_count=*/0,
+          /*.cause=*/LOOM_LOW_PLACEMENT_CAUSE_LOW_COPY,
+          /*.transfer_flags=*/
+          LOOM_LOW_ALLOCATION_PACKET_TRANSFER_GROUP_FLAG_MATERIALIZED,
           /*.move_group=*/
           {
               /*.moves=*/

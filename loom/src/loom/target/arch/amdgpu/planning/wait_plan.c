@@ -515,7 +515,7 @@ static iree_status_t loom_amdgpu_wait_plan_ensure_dependency_visit_state(
   const loom_low_schedule_table_t* schedule = builder->schedule;
   const bool has_packet_transfers =
       builder->allocation != NULL &&
-      builder->allocation->packet_transfer_count != 0;
+      builder->allocation->packet_move_group_count != 0;
   if (schedule->value_count == 0 ||
       (builder->first_coalesced_incoming_copy_by_value_ordinal == NULL &&
        builder->classification.forwarding_node_count == 0 &&
@@ -625,21 +625,51 @@ static iree_status_t loom_amdgpu_wait_plan_push_coalesced_incoming_ranges(
 static iree_status_t loom_amdgpu_wait_plan_push_forwarded_packet_ranges(
     loom_amdgpu_wait_plan_builder_t* builder,
     const loom_low_allocation_packet_move_group_t* group,
+    uint32_t producer_node,
     const loom_amdgpu_wait_dependency_visit_range_t* range) {
   const loom_low_allocation_table_t* allocation = builder->allocation;
   const uint32_t requested_end = range->unit_offset + range->unit_count;
   const iree_host_size_t worklist_begin =
       builder->dependency_visit.worklist_count;
-  for (uint32_t i = 0; i < group->forwarded_transfer_count; ++i) {
+  const bool has_exact_ranges =
+      iree_any_bit_set(group->transfer_flags,
+                       LOOM_LOW_ALLOCATION_PACKET_TRANSFER_GROUP_FLAG_EXACT);
+  const loom_low_schedule_node_t* node =
+      &builder->schedule->nodes[producer_node];
+  IREE_ASSERT_EQ(node->result_count, 1u);
+  const loom_value_ordinal_t result_ordinal =
+      loom_low_schedule_node_const_result_ordinals(node)[0];
+  const loom_low_placement_relation_range_t relation_range =
+      loom_low_placement_relation_range_for_value_ordinal(
+          &allocation->placement, result_ordinal);
+  const uint32_t candidate_count =
+      has_exact_ranges ? group->transfer_count : relation_range.count;
+  for (uint32_t i = 0; i < candidate_count; ++i) {
     const loom_low_allocation_packet_transfer_t* transfer =
-        &allocation->packet_transfers[group->transfer_start + i];
-    IREE_ASSERT_LT(transfer->relation_index,
-                   allocation->placement.relation_count);
+        has_exact_ranges
+            ? &allocation->packet_transfers[group->transfer_start + i]
+            : NULL;
+    if (transfer != NULL &&
+        loom_low_allocation_packet_transfer_is_materialized(transfer)) {
+      continue;
+    }
+    const uint32_t relation_index =
+        transfer != NULL
+            ? loom_low_allocation_packet_transfer_relation_index(transfer)
+            : relation_range.start + i;
+    IREE_ASSERT_LT(relation_index, allocation->placement.relation_count);
     const loom_low_placement_relation_t* relation =
-        &allocation->placement.relations[transfer->relation_index];
+        &allocation->placement.relations[relation_index];
+    if (relation->op != node->op || relation->cause != group->cause) {
+      continue;
+    }
+    const uint32_t relation_unit_offset =
+        transfer != NULL ? transfer->relation_unit_offset : 0;
+    const uint32_t transfer_unit_count =
+        transfer != NULL ? transfer->unit_count : relation->unit_count;
     const uint32_t result_offset =
-        relation->result_unit_offset + transfer->relation_unit_offset;
-    const uint32_t result_end = result_offset + transfer->unit_count;
+        relation->result_unit_offset + relation_unit_offset;
+    const uint32_t result_end = result_offset + transfer_unit_count;
     const uint32_t intersection_begin =
         iree_max(range->unit_offset, result_offset);
     const uint32_t intersection_end = iree_min(requested_end, result_end);
@@ -648,7 +678,7 @@ static iree_status_t loom_amdgpu_wait_plan_push_forwarded_packet_ranges(
     }
     IREE_RETURN_IF_ERROR(loom_amdgpu_wait_plan_push_dependency_range(
         builder, relation->source_ordinal,
-        relation->source_unit_offset + transfer->relation_unit_offset +
+        relation->source_unit_offset + relation_unit_offset +
             (intersection_begin - result_offset),
         intersection_end - intersection_begin));
   }
@@ -705,7 +735,7 @@ static iree_status_t loom_amdgpu_wait_plan_traverse_dependency_links(
         loom_amdgpu_wait_plan_packet_transfer_group(builder, producer_node);
     if (packet_group != NULL) {
       IREE_RETURN_IF_ERROR(loom_amdgpu_wait_plan_push_forwarded_packet_ranges(
-          builder, packet_group, &range));
+          builder, packet_group, producer_node, &range));
       continue;
     }
 
@@ -786,25 +816,53 @@ loom_amdgpu_wait_plan_build_packet_transfer_dependency_links(
     loom_amdgpu_wait_plan_builder_t* builder, const uint32_t* producer_nodes,
     iree_host_size_t value_count, uint32_t consumer_node,
     const loom_low_allocation_packet_move_group_t* group) {
-  if (group->materialized_transfer_count == 0) {
+  if (!iree_any_bit_set(
+          group->transfer_flags,
+          LOOM_LOW_ALLOCATION_PACKET_TRANSFER_GROUP_FLAG_MATERIALIZED)) {
     return iree_ok_status();
   }
   IREE_ASSERT(builder->dependency_visit.value_epochs != NULL);
   loom_amdgpu_wait_dependency_visit_begin(&builder->dependency_visit);
   const loom_low_allocation_table_t* allocation = builder->allocation;
-  const uint32_t transfer_start =
-      group->transfer_start + group->forwarded_transfer_count;
-  for (uint32_t i = 0; i < group->materialized_transfer_count; ++i) {
+  const bool has_exact_ranges =
+      iree_any_bit_set(group->transfer_flags,
+                       LOOM_LOW_ALLOCATION_PACKET_TRANSFER_GROUP_FLAG_EXACT);
+  const loom_low_schedule_node_t* node =
+      &builder->schedule->nodes[consumer_node];
+  IREE_ASSERT_EQ(node->result_count, 1u);
+  const loom_value_ordinal_t result_ordinal =
+      loom_low_schedule_node_const_result_ordinals(node)[0];
+  const loom_low_placement_relation_range_t relation_range =
+      loom_low_placement_relation_range_for_value_ordinal(
+          &allocation->placement, result_ordinal);
+  const uint32_t candidate_count =
+      has_exact_ranges ? group->transfer_count : relation_range.count;
+  for (uint32_t i = 0; i < candidate_count; ++i) {
     const loom_low_allocation_packet_transfer_t* transfer =
-        &allocation->packet_transfers[transfer_start + i];
-    IREE_ASSERT_LT(transfer->relation_index,
-                   allocation->placement.relation_count);
+        has_exact_ranges
+            ? &allocation->packet_transfers[group->transfer_start + i]
+            : NULL;
+    if (transfer != NULL &&
+        !loom_low_allocation_packet_transfer_is_materialized(transfer)) {
+      continue;
+    }
+    const uint32_t relation_index =
+        transfer != NULL
+            ? loom_low_allocation_packet_transfer_relation_index(transfer)
+            : relation_range.start + i;
+    IREE_ASSERT_LT(relation_index, allocation->placement.relation_count);
     const loom_low_placement_relation_t* relation =
-        &allocation->placement.relations[transfer->relation_index];
+        &allocation->placement.relations[relation_index];
+    if (relation->op != node->op || relation->cause != group->cause) {
+      continue;
+    }
+    const uint32_t relation_unit_offset =
+        transfer != NULL ? transfer->relation_unit_offset : 0;
+    const uint32_t unit_count =
+        transfer != NULL ? transfer->unit_count : relation->unit_count;
     IREE_RETURN_IF_ERROR(loom_amdgpu_wait_plan_push_dependency_range(
         builder, relation->source_ordinal,
-        relation->source_unit_offset + transfer->relation_unit_offset,
-        transfer->unit_count));
+        relation->source_unit_offset + relation_unit_offset, unit_count));
   }
   loom_amdgpu_wait_dependency_visit_reverse(&builder->dependency_visit,
                                             /*begin=*/0);

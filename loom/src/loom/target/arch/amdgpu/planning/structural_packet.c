@@ -87,7 +87,9 @@ static void loom_amdgpu_structural_packet_analyze_packet_moves(
     out_info->flags |= LOOM_AMDGPU_STRUCTURAL_PACKET_FLAG_FORWARDS_DEPENDENCIES;
     return;
   }
-  if (group->forwarded_transfer_count != 0) {
+  if (iree_any_bit_set(
+          group->transfer_flags,
+          LOOM_LOW_ALLOCATION_PACKET_TRANSFER_GROUP_FLAG_FORWARDED)) {
     out_info->flags |= LOOM_AMDGPU_STRUCTURAL_PACKET_FLAG_FORWARDS_DEPENDENCIES;
   }
   if (group->move_group.moves.count != 0) {
