@@ -61,6 +61,7 @@ trailer. [Compute postamble][postamble]
 | [Cross-queue handoff](handoff.md) | Release, control signaling, wait, consumer acquire and last-use ownership. |
 | [Command-processor DMA](dma.md) | CP_DMA, DMA_DATA and DMA_DATA_FILL_MULTI fields; engine and count revisions, actual copy/fill/prefetch selection, completion, cache routing and source/destination lifetimes. |
 | [Timing](timing.md) | Sampling stage, timestamp visibility, clock domains and profiling ownership. |
+| [Pipeline-statistics queries](pipeline-statistics.md) | SAMPLE_PIPELINESTAT EVENT_WRITE, PIPELINESTAT_START/STOP, compute enable policy, counter records, availability, resolves and final storage users. |
 | [Performance counters](counters.md) | Event and instance selection, register fields, sample widths, collection sequencing and completed-use result ownership. |
 | [Performance queries](counter-queries.md) | RADV/Vulkan profiling locks, private submission serialization, counter-pass layout, result decoding and native clock-owner lifetime. |
 

@@ -8,8 +8,9 @@ establish those meanings or retire the command stream that produced it.
 This chapter follows PAL's GFX11 global-counter path and its `GpaSession`
 cumulative samples. The programming owner is a graphics or compute command
 stream; a DMA counter can observe an SDMA engine even though PM4 programs and
-reads it. Streaming performance monitoring, thread traces and pipeline-statistic
-queries have different representations. [Counter types][counter-types]
+reads it. Streaming performance monitoring, thread traces and
+[pipeline-statistics queries](pipeline-statistics.md) have different
+representations. [Counter types][counter-types]
 [Actual profiling caller][profiler-begin]
 
 [RADV performance queries](counter-queries.md) compose the same class of native
