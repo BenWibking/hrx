@@ -487,7 +487,9 @@ static loom_amdgpu_vopd_visible_packet_t loom_amdgpu_vopd_classify_packet(
                           LOOM_AMDGPU_VOPD_PACKET_FLAG_INSERTION_BLOCKED) &&
         iree_any_bit_set(
             visible.structural.flags,
-            LOOM_AMDGPU_STRUCTURAL_PACKET_FLAG_FORWARDS_DEPENDENCIES)) {
+            LOOM_AMDGPU_STRUCTURAL_PACKET_FLAG_FORWARDS_DEPENDENCIES) &&
+        !iree_any_bit_set(visible.structural.flags,
+                          LOOM_AMDGPU_STRUCTURAL_PACKET_FLAG_MATERIALIZES)) {
       *packet_flags |= LOOM_AMDGPU_VOPD_PACKET_FLAG_TRANSPARENT;
     }
   }

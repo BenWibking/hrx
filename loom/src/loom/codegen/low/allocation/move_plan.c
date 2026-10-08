@@ -298,11 +298,15 @@ void loom_low_allocation_move_plan_append_assignment(
 iree_status_t loom_low_allocation_move_plan_append_group(
     loom_low_allocation_move_plan_t* plan, const loom_op_t* owner_op,
     uint32_t read_point, uint32_t write_point, iree_host_size_t raw_move_count,
-    loom_low_move_group_t* out_group) {
+    loom_low_move_group_t* out_group,
+    loom_low_move_sequence_input_flags_t* out_input_flags) {
   *out_group = (loom_low_move_group_t){
       .moves.start = plan->move_count,
       .scratch_move_index_start = plan->scratch_move_index_count,
   };
+  if (out_input_flags != NULL) {
+    *out_input_flags = 0;
+  }
   if (raw_move_count == 0) {
     return iree_ok_status();
   }
@@ -327,11 +331,15 @@ iree_status_t loom_low_allocation_move_plan_append_group(
           },
   };
   iree_host_size_t move_count = 0;
+  loom_low_move_sequence_input_flags_t input_flags = 0;
   bool complete = false;
   IREE_RETURN_IF_ERROR(loom_low_move_sequence_resolve(
       &plan->sequence_scratch, raw_move_count, &options,
       plan->move_capacity - plan->move_count, &plan->moves[plan->move_count],
-      &move_count, &complete));
+      &move_count, &input_flags, &complete));
+  if (out_input_flags != NULL) {
+    *out_input_flags = input_flags;
+  }
   if (!complete) {
     return iree_ok_status();
   }

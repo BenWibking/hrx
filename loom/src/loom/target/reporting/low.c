@@ -240,6 +240,9 @@ static void loom_target_compile_report_record_packet_moves(
   for (iree_host_size_t i = 0; i < allocation->packet_move_group_count; ++i) {
     const loom_low_allocation_packet_move_group_t* group =
         &allocation->packet_move_groups[i];
+    if (group->move_group.moves.count == 0) {
+      continue;
+    }
     switch (group->cause) {
       case LOOM_LOW_PLACEMENT_CAUSE_LOW_COPY:
         ++copy_packet_count;

@@ -83,12 +83,19 @@ static void loom_amdgpu_structural_packet_analyze_packet_moves(
   const loom_low_allocation_packet_move_group_t* group =
       loom_low_allocation_find_packet_move_group_by_source_ordinal(
           allocation, source_ordinal);
-  if (group == NULL || group->move_group.moves.count == 0) {
+  if (group == NULL) {
     out_info->flags |= LOOM_AMDGPU_STRUCTURAL_PACKET_FLAG_FORWARDS_DEPENDENCIES;
     return;
   }
-  loom_amdgpu_structural_packet_analyze_move_range(group->move_group.moves,
-                                                   out_info);
+  if (iree_any_bit_set(
+          group->transfer_flags,
+          LOOM_LOW_ALLOCATION_PACKET_TRANSFER_GROUP_FLAG_FORWARDED)) {
+    out_info->flags |= LOOM_AMDGPU_STRUCTURAL_PACKET_FLAG_FORWARDS_DEPENDENCIES;
+  }
+  if (group->move_group.moves.count != 0) {
+    loom_amdgpu_structural_packet_analyze_move_range(group->move_group.moves,
+                                                     out_info);
+  }
 }
 
 loom_amdgpu_structural_packet_info_t loom_amdgpu_structural_packet_analyze(

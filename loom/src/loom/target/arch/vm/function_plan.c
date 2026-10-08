@@ -334,7 +334,7 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_vm_function_return(
   bool complete = false;
   IREE_RETURN_IF_ERROR(loom_low_move_sequence_resolve(
       scratch, direct_count, &options, IREE_ARRAYSIZE(moves), moves,
-      &move_count, &complete));
+      &move_count, /*out_input_flags=*/NULL, &complete));
   // Capacity covers the worst permutation and the temporary always resolves.
   IREE_ASSERT(complete);
   out_row->value_register_count_u16 =

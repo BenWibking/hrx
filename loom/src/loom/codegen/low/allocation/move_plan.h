@@ -127,10 +127,13 @@ void loom_low_allocation_move_plan_append_assignment(
 // required. |owner_op| supplies the diagnostic location. |read_point| and
 // |write_point| are the accepted liveness positions at which the transfer reads
 // and writes storage; both are zero for invocation entry transport.
+// When non-NULL, |out_input_flags| reports the identity and active input rows
+// already classified by move sequencing.
 iree_status_t loom_low_allocation_move_plan_append_group(
     loom_low_allocation_move_plan_t* plan, const loom_op_t* owner_op,
     uint32_t read_point, uint32_t write_point, iree_host_size_t raw_move_count,
-    loom_low_move_group_t* out_group);
+    loom_low_move_group_t* out_group,
+    loom_low_move_sequence_input_flags_t* out_input_flags);
 
 #ifdef __cplusplus
 }  // extern "C"

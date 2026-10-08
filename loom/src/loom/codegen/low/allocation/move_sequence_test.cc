@@ -204,7 +204,8 @@ std::vector<std::string> ResolveMoves(
     const loom_low_move_location_t* temporaries,
     iree_host_size_t temporary_count,
     const loom_low_descriptor_set_t* descriptor_set =
-        IndependentDescriptorSet()) {
+        IndependentDescriptorSet(),
+    loom_low_move_sequence_input_flags_t* out_input_flags = nullptr) {
   TestArena arena;
   loom_low_move_sequence_scratch_t scratch;
   IREE_EXPECT_OK(loom_low_move_sequence_scratch_initialize(
@@ -228,7 +229,7 @@ std::vector<std::string> ResolveMoves(
   bool complete = false;
   IREE_EXPECT_OK(loom_low_move_sequence_resolve(
       &scratch, move_count, &options, resolved_moves.size(),
-      resolved_moves.data(), &resolved_move_count, &complete));
+      resolved_moves.data(), &resolved_move_count, out_input_flags, &complete));
   EXPECT_TRUE(complete);
   std::vector<std::string> result;
   for (iree_host_size_t i = 0; i < resolved_move_count; ++i) {
@@ -254,6 +255,21 @@ TEST(LowMoveSequenceTest, SkipsAliasIdentityMoves) {
   EXPECT_TRUE(ResolveMoves(moves, IREE_ARRAYSIZE(moves), nullptr, 0,
                            AliasDescriptorSet())
                   .empty());
+}
+
+TEST(LowMoveSequenceTest, ReportsIdentityAndActiveInputs) {
+  const loom_low_move_t moves[] = {
+      Move(0, 0),
+      Move(1, 2),
+  };
+  loom_low_move_sequence_input_flags_t input_flags = 0;
+
+  ResolveMoves(moves, IREE_ARRAYSIZE(moves), nullptr, 0,
+               IndependentDescriptorSet(), &input_flags);
+
+  EXPECT_TRUE(iree_all_bits_set(input_flags,
+                                LOOM_LOW_MOVE_SEQUENCE_INPUT_FLAG_IDENTITY |
+                                    LOOM_LOW_MOVE_SEQUENCE_INPUT_FLAG_ACTIVE));
 }
 
 TEST(LowMoveSequenceTest, EmitsIndependentMovesInInputOrder) {
@@ -326,9 +342,9 @@ TEST(LowMoveSequenceTest, ReusesMemoryTemporaryAcrossCycles) {
   loom_low_move_t output[6] = {};
   iree_host_size_t count = 0;
   bool complete = false;
-  IREE_ASSERT_OK(loom_low_move_sequence_resolve(&scratch, 5, &options,
-                                                IREE_ARRAYSIZE(output), output,
-                                                &count, &complete));
+  IREE_ASSERT_OK(loom_low_move_sequence_resolve(
+      &scratch, 5, &options, IREE_ARRAYSIZE(output), output, &count,
+      /*out_input_flags=*/nullptr, &complete));
   ASSERT_TRUE(complete);
   ASSERT_EQ(count, 6u);
   EXPECT_EQ(resolver.call_count, 1u);
@@ -381,9 +397,9 @@ TEST(LowMoveSequenceTest, IdentityExcludesAliasedPhysicalScratch) {
   loom_low_move_t output[4] = {};
   iree_host_size_t output_count = 0;
   bool complete = false;
-  IREE_ASSERT_OK(loom_low_move_sequence_resolve(&scratch, 3, &options,
-                                                IREE_ARRAYSIZE(output), output,
-                                                &output_count, &complete));
+  IREE_ASSERT_OK(loom_low_move_sequence_resolve(
+      &scratch, 3, &options, IREE_ARRAYSIZE(output), output, &output_count,
+      /*out_input_flags=*/nullptr, &complete));
   EXPECT_FALSE(complete);
 }
 
@@ -406,9 +422,9 @@ TEST(LowMoveSequenceTest, AliasedCyclePreservesTransferWidths) {
     loom_low_move_t output[3] = {};
     iree_host_size_t count = 0;
     bool complete = false;
-    IREE_ASSERT_OK(loom_low_move_sequence_resolve(&scratch, 2, &options,
-                                                  IREE_ARRAYSIZE(output),
-                                                  output, &count, &complete));
+    IREE_ASSERT_OK(loom_low_move_sequence_resolve(
+        &scratch, 2, &options, IREE_ARRAYSIZE(output), output, &count,
+        /*out_input_flags=*/nullptr, &complete));
     ASSERT_TRUE(complete);
     ASSERT_EQ(count, IREE_ARRAYSIZE(output));
     uint64_t registers[] = {UINT64_C(0x0123456789abcdef),
@@ -449,9 +465,9 @@ TEST(LowMoveSequenceTest, TracksExplicitAtomicAliasesInLocationSet) {
   iree_host_size_t output_count = 0;
   bool complete = false;
 
-  IREE_ASSERT_OK(loom_low_move_sequence_resolve(&scratch, 2, &options,
-                                                IREE_ARRAYSIZE(output), output,
-                                                &output_count, &complete));
+  IREE_ASSERT_OK(loom_low_move_sequence_resolve(
+      &scratch, 2, &options, IREE_ARRAYSIZE(output), output, &output_count,
+      /*out_input_flags=*/nullptr, &complete));
 
   ASSERT_TRUE(complete);
   EXPECT_TRUE(resolver.occupancy_probe_result);
@@ -465,9 +481,9 @@ TEST(LowMoveSequenceTest, TracksExplicitAtomicAliasesInLocationSet) {
   const loom_low_move_location_t second_temporary = Location(0);
   resolver.locations = &second_temporary;
   resolver.occupancy_probe_result = true;
-  IREE_ASSERT_OK(loom_low_move_sequence_resolve(&scratch, 2, &options,
-                                                IREE_ARRAYSIZE(output), output,
-                                                &output_count, &complete));
+  IREE_ASSERT_OK(loom_low_move_sequence_resolve(
+      &scratch, 2, &options, IREE_ARRAYSIZE(output), output, &output_count,
+      /*out_input_flags=*/nullptr, &complete));
   ASSERT_TRUE(complete);
   EXPECT_FALSE(resolver.occupancy_probe_result);
 }
@@ -513,9 +529,9 @@ TEST(LowMoveSequenceTest, ReusesBoundedSolverStorageAcrossIncreasingGroups) {
     }
     iree_host_size_t output_count = 0;
     bool complete = false;
-    IREE_ASSERT_OK(loom_low_move_sequence_resolve(&scratch, count, &options,
-                                                  kCapacity, output,
-                                                  &output_count, &complete));
+    IREE_ASSERT_OK(loom_low_move_sequence_resolve(
+        &scratch, count, &options, kCapacity, output, &output_count,
+        /*out_input_flags=*/nullptr, &complete));
     ASSERT_TRUE(complete);
     ASSERT_EQ(output_count, count);
     for (uint32_t i = 0; i < count; ++i) {
@@ -556,7 +572,7 @@ TEST(LowMoveSequenceTest, ReusesBoundedCycleStorageAcrossClassesAndGroups) {
     bool complete = false;
     IREE_ASSERT_OK(loom_low_move_sequence_resolve(
         &scratch, count, &options, IREE_ARRAYSIZE(output), output,
-        &output_count, &complete));
+        &output_count, /*out_input_flags=*/nullptr, &complete));
     ASSERT_TRUE(complete);
     ASSERT_EQ(output_count, count + count / 2);
     uint32_t values[3][kCapacity + 1];

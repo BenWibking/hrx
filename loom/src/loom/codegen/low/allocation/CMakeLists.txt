@@ -1254,8 +1254,10 @@ loom_cc_library(
     "packet_move.c"
   DEPS
     ::assignment_map
+    ::live_range
     ::move_plan
     ::move_topology
+    ::storage
     ::table
     iree::base
     iree::base::internal::arena

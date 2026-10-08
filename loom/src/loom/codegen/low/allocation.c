@@ -238,7 +238,8 @@ static iree_status_t loom_low_allocation_build_entry_moves(
   }
   return loom_low_allocation_move_plan_append_group(
       &state->move_plan, state->function_op, /*read_point=*/0,
-      /*write_point=*/0, raw_move_count, &state->entry_moves);
+      /*write_point=*/0, raw_move_count, &state->entry_moves,
+      /*out_input_flags=*/NULL);
 }
 
 static const loom_low_allocation_assignment_t*
@@ -362,7 +363,7 @@ static iree_status_t loom_low_allocation_build_call_moves(
       // identities; other dying inputs are available for cycle scratch.
       IREE_RETURN_IF_ERROR(loom_low_allocation_move_plan_append_group(
           &state->move_plan, node->op, point->end_point, point->end_point,
-          raw_count, &group));
+          raw_count, &group, /*out_input_flags=*/NULL));
       *(side ? &call->results : &call->arguments) = group.moves;
     }
   }
@@ -704,6 +705,8 @@ iree_status_t loom_low_allocate_function(
             state.edge_copy_plan.first_coalesced_incoming_copy_by_value_ordinal,
         .edge_copy_groups = state.edge_copy_plan.groups,
         .edge_copy_group_count = state.edge_copy_plan.group_count,
+        .packet_transfers = state.packet_move_plan.transfers,
+        .packet_transfer_count = state.packet_move_plan.transfer_count,
         .packet_move_groups = state.packet_move_plan.groups,
         .packet_move_group_count = state.packet_move_plan.group_count,
         .call_moves = state.call_moves,
