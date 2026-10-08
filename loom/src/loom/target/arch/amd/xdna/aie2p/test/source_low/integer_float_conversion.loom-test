@@ -1,287 +1,268 @@
-// RUN: with-checks emit source-low target=amd.xdna.aie2p:core output=low
+// RUN: emit source-low target=amd.xdna.aie2p:core output=low
 
-func.def @sitofp_i8_bf16_4(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<4xi8>
-  %target = buffer.view %output[%base] : buffer -> view<4xbf16>
-  %value = vector.load %source[0] : view<4xi8> -> vector<4xi8>
-  %converted = vector.sitofp %value : vector<4xi8> to vector<4xbf16>
-  vector.store %converted, %target[0] : vector<4xbf16>, view<4xbf16>
-  func.return
+func.def @sitofp_i8x16(%input: vector<16xi8>) -> (vector<16xf32>) {
+  %result = vector.sitofp %input : vector<16xi8> to vector<16xf32>
+  func.return %result : vector<16xf32>
 }
 
 // ----
-CHECK: *convert.signed.i32.to.f32*
-CHECK: *st.s16 *, *, 6
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @sitofp_i8x16(%input: reg<aie2p.vec256 x2>) -> (reg<aie2p.vec256 x2>) asm {
+  %5 = slice %input[0] : reg<aie2p.vec256 x2> -> reg<aie2p.vec256>
+  %6 = mov.shift 0
+  set.saturation 0
+  set.ups-mode 0
+  %7 = vups.4x.w-to-c.signed %5, %6
+  %8 = slice %7[0] : reg<aie2p.mbms x2> -> reg<aie2p.mbms>
+  %9 = vmov.accumulator512.to.vector512 %8
+  %10 = mov.i32 1258356736
+  %11 = vbcst.32 %10
+  %12 = vadd.32 %9, %11
+  %13 = vmov.vector512.to.accumulator512.low %12
+  %14 = vmov.vector512.to.accumulator512.low %11
+  %15 = mova.i32 60
+  %16 = vsub.f32x16 %13, %14, %15
+  %17 = slice %16[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %result = vmov.accumulator512.to.vector512 %17
+  return %result
+}
 
 // ====
 
-func.def @uitofp_i8_f16_3(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<3xi8>
-  %target = buffer.view %output[%base] : buffer -> view<3xf16>
-  %value = vector.load %source[0] : view<3xi8> -> vector<3xi8>
-  %converted = vector.uitofp %value : vector<3xi8> to vector<3xf16>
-  vector.store %converted, %target[0] : vector<3xf16>, view<3xf16>
-  func.return
+func.def @uitofp_i8x15(%input: vector<15xi8>) -> (vector<15xf32>) {
+  %result = vector.uitofp %input : vector<15xi8> to vector<15xf32>
+  func.return %result : vector<15xf32>
 }
 
 // ----
-CHECK: *convert.signed.i32.to.f32*
-CHECK: *st.s16 *, *, 4
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @uitofp_i8x15(%input: reg<aie2p.vec256 x2>) -> (reg<aie2p.vec256 x2>) asm {
+  %5 = slice %input[0] : reg<aie2p.vec256 x2> -> reg<aie2p.vec256>
+  %6 = mov.shift 0
+  set.saturation 0
+  set.ups-mode 0
+  %7 = vups.4x.w-to-c.unsigned %5, %6
+  %8 = slice %7[0] : reg<aie2p.mbms x2> -> reg<aie2p.mbms>
+  %9 = vmov.accumulator512.to.vector512 %8
+  %10 = mov.i32 1258356736
+  %11 = vbcst.32 %10
+  %12 = vadd.32 %9, %11
+  %13 = vmov.vector512.to.accumulator512.low %12
+  %14 = vmov.vector512.to.accumulator512.low %11
+  %15 = mova.i32 60
+  %16 = vsub.f32x16 %13, %14, %15
+  %17 = slice %16[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %result = vmov.accumulator512.to.vector512 %17
+  return %result
+}
 
 // ====
 
-func.def @sitofp_i16_f16_1(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<1xi16>
-  %target = buffer.view %output[%base] : buffer -> view<1xf16>
-  %value = view.load %source[0] : view<1xi16> -> i16
-  %converted = scalar.sitofp %value : i16 to f16
-  view.store %converted, %target[0] : f16, view<1xf16>
-  func.return
+func.def @sitofp_i16x16(%input: vector<16xi16>) -> (vector<16xf32>) {
+  %result = vector.sitofp %input : vector<16xi16> to vector<16xf32>
+  func.return %result : vector<16xf32>
 }
 
 // ----
-CHECK: *convert.signed.i32.to.f32*
-CHECK: *st.s16 *, *, 0
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @sitofp_i16x16(%input: reg<aie2p.vec256 x2>) -> (reg<aie2p.vec256 x2>) asm {
+  %5 = slice %input[0] : reg<aie2p.vec256 x2> -> reg<aie2p.vec256>
+  %6 = mov.shift 0
+  set.saturation 0
+  set.ups-mode 0
+  %7 = vups.2x.w-to-b.signed %5, %6
+  %8 = vmov.accumulator512.to.vector512 %7
+  %9 = mov.i32 1258356736
+  %10 = vbcst.32 %9
+  %11 = vadd.32 %8, %10
+  %12 = vmov.vector512.to.accumulator512.low %11
+  %13 = vmov.vector512.to.accumulator512.low %10
+  %14 = mova.i32 60
+  %15 = vsub.f32x16 %12, %13, %14
+  %16 = slice %15[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %result = vmov.accumulator512.to.vector512 %16
+  return %result
+}
 
 // ====
 
-func.def @uitofp_i16_bf16_4(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<4xi16>
-  %target = buffer.view %output[%base] : buffer -> view<4xbf16>
-  %value = vector.load %source[0] : view<4xi16> -> vector<4xi16>
-  %converted = vector.uitofp %value : vector<4xi16> to vector<4xbf16>
-  vector.store %converted, %target[0] : vector<4xbf16>, view<4xbf16>
-  func.return
+func.def @uitofp_i16x15(%input: vector<15xi16>) -> (vector<15xf32>) {
+  %result = vector.uitofp %input : vector<15xi16> to vector<15xf32>
+  func.return %result : vector<15xf32>
 }
 
 // ----
-CHECK: *convert.signed.i32.to.f32*
-CHECK: *st.s16 *, *, 6
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @uitofp_i16x15(%input: reg<aie2p.vec256 x2>) -> (reg<aie2p.vec256 x2>) asm {
+  %5 = slice %input[0] : reg<aie2p.vec256 x2> -> reg<aie2p.vec256>
+  %6 = mov.shift 0
+  set.saturation 0
+  set.ups-mode 0
+  %7 = vups.2x.w-to-b.unsigned %5, %6
+  %8 = vmov.accumulator512.to.vector512 %7
+  %9 = mov.i32 1258356736
+  %10 = vbcst.32 %9
+  %11 = vadd.32 %8, %10
+  %12 = vmov.vector512.to.accumulator512.low %11
+  %13 = vmov.vector512.to.accumulator512.low %10
+  %14 = mova.i32 60
+  %15 = vsub.f32x16 %12, %13, %14
+  %16 = slice %15[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %result = vmov.accumulator512.to.vector512 %16
+  return %result
+}
 
 // ====
 
-func.def @sitofp_i32_f16_4(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<4xi32>
-  %target = buffer.view %output[%base] : buffer -> view<4xf16>
-  %value = vector.load %source[0] : view<4xi32> -> vector<4xi32>
-  %converted = vector.sitofp %value : vector<4xi32> to vector<4xf16>
-  vector.store %converted, %target[0] : vector<4xf16>, view<4xf16>
-  func.return
+func.def @sitofp_i32x16(%input: vector<16xi32>) -> (vector<16xf32>) {
+  %result = vector.sitofp %input : vector<16xi32> to vector<16xf32>
+  func.return %result : vector<16xf32>
 }
 
 // ----
-CHECK: *convert.signed.i32.to.f32*
-CHECK: *st.s16 *, *, 6
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @sitofp_i32x16(%input: reg<aie2p.vec256 x2>) -> (reg<aie2p.vec256 x2>) asm {
+  set.saturation 0
+  set.ups-mode 1
+  set.srs-mode 1
+  set.rounding 0
+  %5 = mov.shift 0
+  %6 = vups.2x.x-to-c.signed %input, %5
+  %7 = mov.shift 16
+  %8 = vsrs.2x.c-to-x.signed %6, %7
+  %9 = mov.i32 65535
+  %10 = vbcst.32 %9
+  %11 = vband %input, %10
+  %12 = mov.i32 1392574464
+  %13 = vbcst.32 %12
+  %14 = vadd.32 %8, %13
+  %15 = mov.i32 1258356736
+  %16 = vbcst.32 %15
+  %17 = vadd.32 %11, %16
+  %18 = vmov.vector512.to.accumulator512.low %14
+  %19 = vmov.vector512.to.accumulator512.low %13
+  %20 = mova.i32 60
+  %21 = vsub.f32x16 %18, %19, %20
+  %22 = vmov.vector512.to.accumulator512.low %17
+  %23 = vmov.vector512.to.accumulator512.low %16
+  %24 = vsub.f32x16 %22, %23, %20
+  %25 = vadd.f32x64 %21, %24, %20
+  %26 = slice %25[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %result = vmov.accumulator512.to.vector512 %26
+  return %result
+}
 
 // ====
 
-func.def @uitofp_i32_f16_1(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<1xi32>
-  %target = buffer.view %output[%base] : buffer -> view<1xf16>
-  %value = view.load %source[0] : view<1xi32> -> i32
-  %converted = scalar.uitofp %value : i32 to f16
-  view.store %converted, %target[0] : f16, view<1xf16>
-  func.return
+func.def @uitofp_i32x15(%input: vector<15xi32>) -> (vector<15xf32>) {
+  %result = vector.uitofp %input : vector<15xi32> to vector<15xf32>
+  func.return %result : vector<15xf32>
 }
 
 // ----
-CHECK: *convert.signed.i32.to.f32*
-CHECK: *st.s16 *, *, 0
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @uitofp_i32x15(%input: reg<aie2p.vec256 x2>) -> (reg<aie2p.vec256 x2>) asm {
+  set.saturation 0
+  set.ups-mode 1
+  set.srs-mode 1
+  set.rounding 0
+  %5 = mov.shift 0
+  %6 = vups.2x.x-to-c.unsigned %input, %5
+  %7 = mov.shift 16
+  %8 = vsrs.2x.c-to-x.unsigned %6, %7
+  %9 = mov.i32 65535
+  %10 = vbcst.32 %9
+  %11 = vband %input, %10
+  %12 = mov.i32 1392574464
+  %13 = vbcst.32 %12
+  %14 = vadd.32 %8, %13
+  %15 = mov.i32 1258356736
+  %16 = vbcst.32 %15
+  %17 = vadd.32 %11, %16
+  %18 = vmov.vector512.to.accumulator512.low %14
+  %19 = vmov.vector512.to.accumulator512.low %13
+  %20 = mova.i32 60
+  %21 = vsub.f32x16 %18, %19, %20
+  %22 = vmov.vector512.to.accumulator512.low %17
+  %23 = vmov.vector512.to.accumulator512.low %16
+  %24 = vsub.f32x16 %22, %23, %20
+  %25 = vadd.f32x64 %21, %24, %20
+  %26 = slice %25[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %result = vmov.accumulator512.to.vector512 %26
+  return %result
+}
 
 // ====
 
-func.def @fptosi_f16_i8_4(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<4xf16>
-  %target = buffer.view %output[%base] : buffer -> view<4xi8>
-  %value = vector.load %source[0] : view<4xf16> -> vector<4xf16>
-  %converted = vector.fptosi %value : vector<4xf16> to vector<4xi8>
-  vector.store %converted, %target[0] : vector<4xi8>, view<4xi8>
-  func.return
+func.def @sitofp_i32x17(%input: vector<17xi32>) -> (vector<17xf32>) {
+  %result = vector.sitofp %input : vector<17xi32> to vector<17xf32>
+  func.return %result : vector<17xf32>
 }
 
 // ----
-CHECK: *convert.round-nearest.f32.to.signed.i32*
-CHECK: *st.s8 *, *, 3
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @sitofp_i32x17(%input: reg<aie2p.vec256 x4>) -> (reg<aie2p.vec256 x4>) asm {
+  %10 = slice %input[0] : reg<aie2p.vec256 x4> -> reg<aie2p.vec256 x2>
+  set.saturation 0
+  set.ups-mode 1
+  set.srs-mode 1
+  set.rounding 0
+  %11 = mov.shift 0
+  %12 = vups.2x.x-to-c.signed %10, %11
+  %13 = mov.shift 16
+  %14 = vsrs.2x.c-to-x.signed %12, %13
+  %15 = mov.i32 65535
+  %16 = vbcst.32 %15
+  %17 = vband %10, %16
+  %18 = mov.i32 1392574464
+  %19 = vbcst.32 %18
+  %20 = vadd.32 %14, %19
+  %21 = mov.i32 1258356736
+  %22 = vbcst.32 %21
+  %23 = vadd.32 %17, %22
+  %24 = vmov.vector512.to.accumulator512.low %20
+  %25 = vmov.vector512.to.accumulator512.low %19
+  %26 = mova.i32 60
+  %27 = vsub.f32x16 %24, %25, %26
+  %28 = vmov.vector512.to.accumulator512.low %23
+  %29 = vmov.vector512.to.accumulator512.low %22
+  %30 = vsub.f32x16 %28, %29, %26
+  %31 = vadd.f32x64 %27, %30, %26
+  %32 = slice %31[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %33 = vmov.accumulator512.to.vector512 %32
+  %34 = slice %input[2] : reg<aie2p.vec256 x4> -> reg<aie2p.vec256 x2>
+  %36 = vups.2x.x-to-c.signed %34, %11
+  %38 = vsrs.2x.c-to-x.signed %36, %13
+  %41 = vband %34, %16
+  %44 = vadd.32 %38, %19
+  %47 = vadd.32 %41, %22
+  %48 = vmov.vector512.to.accumulator512.low %44
+  %51 = vsub.f32x16 %48, %25, %26
+  %52 = vmov.vector512.to.accumulator512.low %47
+  %54 = vsub.f32x16 %52, %29, %26
+  %55 = vadd.f32x64 %51, %54, %26
+  %56 = slice %55[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %57 = vmov.accumulator512.to.vector512 %56
+  %result = concat(%33, %57) : (reg<aie2p.vec256 x2>, reg<aie2p.vec256 x2>) -> reg<aie2p.vec256 x4>
+  return %result
+}
 
 // ====
 
-func.def @fptoui_f16_i16_1(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<1xf16>
-  %target = buffer.view %output[%base] : buffer -> view<1xi16>
-  %value = view.load %source[0] : view<1xf16> -> f16
-  %converted = scalar.fptoui %value : f16 to i16
-  view.store %converted, %target[0] : i16, view<1xi16>
-  func.return
+func.def @uitofp_i16_rank2(%input: vector<4x4xi16>) -> (vector<4x4xf32>) {
+  %result = vector.uitofp %input : vector<4x4xi16> to vector<4x4xf32>
+  func.return %result : vector<4x4xf32>
 }
 
 // ----
-CHECK: *convert.round-nearest.f32.to.signed.i32*
-CHECK: *st.s16 *, *, 0
-
-// ====
-
-func.def @fptosi_bf16_i16_3(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<3xbf16>
-  %target = buffer.view %output[%base] : buffer -> view<3xi16>
-  %value = vector.load %source[0] : view<3xbf16> -> vector<3xbf16>
-  %converted = vector.fptosi %value : vector<3xbf16> to vector<3xi16>
-  vector.store %converted, %target[0] : vector<3xi16>, view<3xi16>
-  func.return
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @uitofp_i16_rank2(%input: reg<aie2p.vec256 x2>) -> (reg<aie2p.vec256 x2>) asm {
+  %5 = slice %input[0] : reg<aie2p.vec256 x2> -> reg<aie2p.vec256>
+  %6 = mov.shift 0
+  set.saturation 0
+  set.ups-mode 0
+  %7 = vups.2x.w-to-b.unsigned %5, %6
+  %8 = vmov.accumulator512.to.vector512 %7
+  %9 = mov.i32 1258356736
+  %10 = vbcst.32 %9
+  %11 = vadd.32 %8, %10
+  %12 = vmov.vector512.to.accumulator512.low %11
+  %13 = vmov.vector512.to.accumulator512.low %10
+  %14 = mova.i32 60
+  %15 = vsub.f32x16 %12, %13, %14
+  %16 = slice %15[0] : reg<aie2p.mbms x4> -> reg<aie2p.mbms>
+  %result = vmov.accumulator512.to.vector512 %16
+  return %result
 }
-
-// ----
-CHECK: *convert.round-nearest.f32.to.signed.i32*
-CHECK: *st.s16 *, *, 4
-
-// ====
-
-func.def @fptoui_bf16_i32_4(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<4xbf16>
-  %target = buffer.view %output[%base] : buffer -> view<4xi32>
-  %value = vector.load %source[0] : view<4xbf16> -> vector<4xbf16>
-  %converted = vector.fptoui %value : vector<4xbf16> to vector<4xi32>
-  vector.store %converted, %target[0] : vector<4xi32>, view<4xi32>
-  func.return
-}
-
-// ----
-CHECK: *convert.round-nearest.f32.to.signed.i32*
-CHECK: *st *, *, 12
-
-// ====
-
-func.def @sitofp_i8_f8E4M3_4(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<4xi8>
-  %target = buffer.view %output[%base] : buffer -> view<4xf8E4M3>
-  %value = vector.load %source[0] : view<4xi8> -> vector<4xi8>
-  %converted = vector.sitofp %value : vector<4xi8> to vector<4xf8E4M3>
-  vector.store %converted, %target[0] : vector<4xf8E4M3>, view<4xf8E4M3>
-  func.return
-}
-
-// ----
-CHECK: *convert.signed.i32.to.f32*
-CHECK: *st.s8 *, *, 3
-
-// ====
-
-func.def @uitofp_i16_f8E5M2_3(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<3xi16>
-  %target = buffer.view %output[%base] : buffer -> view<3xf8E5M2>
-  %value = vector.load %source[0] : view<3xi16> -> vector<3xi16>
-  %converted = vector.uitofp %value : vector<3xi16> to vector<3xf8E5M2>
-  vector.store %converted, %target[0] : vector<3xf8E5M2>, view<3xf8E5M2>
-  func.return
-}
-
-// ----
-CHECK: *convert.signed.i32.to.f32*
-CHECK: *st.s8 *, *, 2
-
-// ====
-
-func.def @sitofp_i32_f8E4M3_1(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<1xi32>
-  %target = buffer.view %output[%base] : buffer -> view<1xf8E4M3>
-  %value = view.load %source[0] : view<1xi32> -> i32
-  %converted = scalar.sitofp %value : i32 to f8E4M3
-  view.store %converted, %target[0] : f8E4M3, view<1xf8E4M3>
-  func.return
-}
-
-// ----
-CHECK: *convert.signed.i32.to.f32*
-CHECK: *st.s8 *, *, 0
-
-// ====
-
-func.def @uitofp_i32_f8E5M2_1(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<1xi32>
-  %target = buffer.view %output[%base] : buffer -> view<1xf8E5M2>
-  %value = view.load %source[0] : view<1xi32> -> i32
-  %converted = scalar.uitofp %value : i32 to f8E5M2
-  view.store %converted, %target[0] : f8E5M2, view<1xf8E5M2>
-  func.return
-}
-
-// ----
-CHECK: *convert.signed.i32.to.f32*
-CHECK: *st.s8 *, *, 0
-
-// ====
-
-func.def @fptosi_f8E4M3_i16_1(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<1xf8E4M3>
-  %target = buffer.view %output[%base] : buffer -> view<1xi16>
-  %value = view.load %source[0] : view<1xf8E4M3> -> f8E4M3
-  %converted = scalar.fptosi %value : f8E4M3 to i16
-  view.store %converted, %target[0] : i16, view<1xi16>
-  func.return
-}
-
-// ----
-CHECK: *convert.round-nearest.f32.to.signed.i32*
-CHECK: *st.s16 *, *, 0
-
-// ====
-
-func.def @fptosi_f8E5M2_i32_4(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<4xf8E5M2>
-  %target = buffer.view %output[%base] : buffer -> view<4xi32>
-  %value = vector.load %source[0] : view<4xf8E5M2> -> vector<4xf8E5M2>
-  %converted = vector.fptosi %value : vector<4xf8E5M2> to vector<4xi32>
-  vector.store %converted, %target[0] : vector<4xi32>, view<4xi32>
-  func.return
-}
-
-// ----
-CHECK: *convert.round-nearest.f32.to.signed.i32*
-CHECK: *st *, *, 12
-
-// ====
-
-func.def @fptoui_f8E4M3_i8_4(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<4xf8E4M3>
-  %target = buffer.view %output[%base] : buffer -> view<4xi8>
-  %value = vector.load %source[0] : view<4xf8E4M3> -> vector<4xf8E4M3>
-  %converted = vector.fptoui %value : vector<4xf8E4M3> to vector<4xi8>
-  vector.store %converted, %target[0] : vector<4xi8>, view<4xi8>
-  func.return
-}
-
-// ----
-CHECK: *convert.round-nearest.f32.to.signed.i32*
-CHECK: *st.s8 *, *, 3
-
-// ====
-
-func.def @fptoui_f8E5M2_i16_1(%input: buffer, %output: buffer) {
-  %base = index.constant 0 : offset
-  %source = buffer.view %input[%base] : buffer -> view<1xf8E5M2>
-  %target = buffer.view %output[%base] : buffer -> view<1xi16>
-  %value = view.load %source[0] : view<1xf8E5M2> -> f8E5M2
-  %converted = scalar.fptoui %value : f8E5M2 to i16
-  view.store %converted, %target[0] : i16, view<1xi16>
-  func.return
-}
-
-// ----
-CHECK: *convert.round-nearest.f32.to.signed.i32*
-CHECK: *st.s16 *, *, 0
