@@ -423,6 +423,7 @@ loom_cc_library(
         "//loom/binding/c:loomc",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/testing:test_file",
+        "//loom/src/loom/tooling/cli:loomc_diagnostic_json",
         "//loom/src/loom/tooling/input",
         "//loom/src/loom/tooling/io:source_path",
         "//loom/src/loom/util:json",

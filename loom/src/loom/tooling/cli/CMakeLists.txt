@@ -50,4 +50,20 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_library(
+  NAME
+    loomc_diagnostic_json
+  HDRS
+    "loomc_diagnostic_json.h"
+  SRCS
+    "loomc_diagnostic_json.c"
+  DEPS
+    iree::base
+    loom::binding::c::loomc
+    loom::error::error_defs
+    loom::util::json
+    loom::util::stream
+  PUBLIC
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

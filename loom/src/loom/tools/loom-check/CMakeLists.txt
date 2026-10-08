@@ -299,6 +299,7 @@ loom_cc_library(
     loom::binding::c::loomc
     loom::error::error_defs
     loom::testing::test_file
+    loom::tooling::cli::loomc_diagnostic_json
     loom::tooling::input
     loom::tooling::io::source_path
     loom::util::json
