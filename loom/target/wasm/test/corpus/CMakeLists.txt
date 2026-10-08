@@ -879,6 +879,8 @@ loom_corpus_test(
     "Wasm has no kernel execution model."
     "control/loop/callable.loom"
     "Wasm has no kernel execution model."
+    "control/loop/condition.loom"
+    "Wasm has no kernel execution model."
     "control/loop/count.loom"
     "Wasm has no kernel execution model."
     "control/loop/rotation/offsets.loom"
