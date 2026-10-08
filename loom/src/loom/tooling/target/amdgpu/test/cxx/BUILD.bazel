@@ -171,6 +171,13 @@ _Q8S32_VARIANTS = {
     },
 }
 
+_Q4K_Q8_VARIANTS = {
+    "input512": {
+        "case": "q4k_q8_swiglu_values",
+        "configs": {"ffn_routed_gate_up.input_size": "512"},
+    },
+}
+
 _CONFIGURED_WORKGROUP_STORAGE_VARIANTS = {
     "four_stages": {
         "case": "configured_workgroup_four_stages",
@@ -362,6 +369,38 @@ loom_test(
     data = [":iq4xs_blocks_checks_gen"],
     execution_profiles = _EXECUTION_PROFILES,
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+)
+
+loom_generated_file_family(
+    name = "q4k_q8_swiglu_checks_gen",
+    testonly = True,
+    args = [
+        "kernel",
+        "--group=q4k_q8_swiglu",
+    ],
+    generator = "//loom/py/loom/gen/test:cxx_kernel_cases",
+    output_directories = ["q4k_q8_swiglu_arrays"],
+    output_flags = [
+        "--output",
+        "--arrays",
+    ],
+    outputs = [
+        "q4k_q8_swiglu_checks.loom",
+        "q4k_q8_swiglu_arrays",
+    ],
+)
+
+loom_test(
+    name = "q4k_q8_swiglu_test",
+    srcs = [
+        "q4k_q8_swiglu.cxx",
+        ":q4k_q8_swiglu_checks.loom",
+    ],
+    benchmark_smoke = False,
+    data = [":q4k_q8_swiglu_checks_gen"],
+    execution_profiles = _EXECUTION_PROFILES,
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+    variants = _Q4K_Q8_VARIANTS,
 )
 
 loom_generated_file_family(
