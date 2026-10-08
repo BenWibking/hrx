@@ -315,8 +315,9 @@ iree_status_t iree_hal_memory_tlsf_initialize(
   if (initial_capacity > (1u << 31)) {
     initial_capacity = UINT32_MAX;
   } else if (initial_capacity > 1) {
-    initial_capacity = 1u << (32 - iree_math_count_leading_zeros_u32(
-                                       (uint32_t)initial_capacity - 1));
+    initial_capacity = (iree_host_size_t)1
+                       << (32 - iree_math_count_leading_zeros_u32(
+                                    (uint32_t)initial_capacity - 1));
   }
 
   // Allocate block storage (overflow-checked array allocation).
