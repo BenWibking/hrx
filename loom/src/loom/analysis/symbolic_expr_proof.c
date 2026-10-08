@@ -8,6 +8,7 @@
 
 #include <string.h>
 
+#include "iree/base/internal/math.h"
 #include "loom/analysis/condition_facts.h"
 #include "loom/analysis/symbolic_projection.h"
 #include "loom/analysis/symbolic_value.h"
@@ -603,35 +604,54 @@ typedef struct loom_symbolic_expr_condition_relation_proof_t {
   iree_status_t status;
 } loom_symbolic_expr_condition_relation_proof_t;
 
-static bool loom_symbolic_expr_visit_condition_relation(
-    void* user_data, const loom_condition_integer_relation_t* relation) {
-  loom_symbolic_expr_condition_relation_proof_t* proof =
-      (loom_symbolic_expr_condition_relation_proof_t*)user_data;
-  loom_condition_integer_operand_t lower_operand = {0};
-  loom_condition_integer_operand_t upper_operand = {0};
-  bool strict = false;
-  if (!loom_symbolic_expr_condition_relation_upper_bound(
-          relation, &lower_operand, &upper_operand, &strict)) {
-    return true;
+// Removes query terms absent from the relation using their interval maximum.
+// Both lists are normalized by value ID, so the merge is linear in their size.
+static iree_status_t loom_symbolic_expr_condition_relation_residual(
+    loom_symbolic_expr_condition_relation_proof_t* proof,
+    const loom_symbolic_term_t* relation_terms,
+    iree_host_size_t relation_term_count, loom_symbolic_term_t* matching_terms,
+    iree_host_size_t* out_matching_count, int64_t* out_constant,
+    bool* out_known) {
+  *out_matching_count = 0;
+  *out_constant = proof->expression_constant;
+  *out_known = false;
+  iree_host_size_t relation_index = 0;
+  for (iree_host_size_t i = 0; i < proof->expression_term_count; ++i) {
+    const loom_symbolic_term_t term = proof->expression_terms[i];
+    while (relation_index < relation_term_count &&
+           relation_terms[relation_index].value_id < term.value_id) {
+      ++relation_index;
+    }
+    if (relation_index < relation_term_count &&
+        relation_terms[relation_index].value_id == term.value_id) {
+      matching_terms[(*out_matching_count)++] = term;
+      continue;
+    }
+    loom_symbolic_expr_term_interval_t interval;
+    IREE_RETURN_IF_ERROR(
+        loom_symbolic_expr_term_interval(proof->context, term, &interval));
+    if (!iree_any_bit_set(interval.flags,
+                          LOOM_SYMBOLIC_EXPR_INTERVAL_MAXIMUM_KNOWN) ||
+        !iree_checked_add_i64(*out_constant, interval.maximum, out_constant)) {
+      return iree_ok_status();
+    }
   }
+  *out_known = true;
+  return iree_ok_status();
+}
 
-  loom_symbolic_expr_t lower_expression = {0};
-  loom_symbolic_expr_t upper_expression = {0};
-  proof->status = loom_symbolic_expr_condition_operand_expression(
-      proof->context, lower_operand, &lower_expression);
-  if (!iree_status_is_ok(proof->status)) {
-    return false;
-  }
-  proof->status = loom_symbolic_expr_condition_operand_expression(
-      proof->context, upper_operand, &upper_expression);
-  if (!iree_status_is_ok(proof->status)) {
-    return false;
-  }
+// Matches one oriented LT, LE or EQ relation. Returns false after a proof or
+// allocation failure; otherwise the caller may try another retained relation.
+static bool loom_symbolic_expr_match_condition_relation(
+    loom_symbolic_expr_condition_relation_proof_t* proof,
+    const loom_symbolic_expr_t* lower_expression,
+    const loom_symbolic_expr_t* upper_expression,
+    loom_symbolic_integer_relation_t relation) {
   int64_t relation_constant = 0;
   iree_host_size_t relation_term_count = 0;
   bool relation_linear = false;
   proof->status = loom_symbolic_expr_normalize_difference_into_scratch(
-      proof->context, &lower_expression, &upper_expression, &relation_constant,
+      proof->context, lower_expression, upper_expression, &relation_constant,
       &relation_term_count, &relation_linear);
   if (!iree_status_is_ok(proof->status)) {
     return false;
@@ -646,6 +666,7 @@ static bool loom_symbolic_expr_visit_condition_relation(
 
   bool terms_match = false;
   int64_t multiplier = 0;
+  int64_t expression_constant = proof->expression_constant;
   proof->status = loom_symbolic_expr_terms_are_multiple(
       proof->context, proof->expression_terms, proof->expression_term_count,
       relation_terms, relation_term_count, /*positive_multiplier=*/true,
@@ -653,13 +674,34 @@ static bool loom_symbolic_expr_visit_condition_relation(
   if (!iree_status_is_ok(proof->status)) {
     return false;
   }
-  if (!terms_match && relation->relation == LOOM_SYMBOLIC_INTEGER_RELATION_EQ) {
+  if (!terms_match && relation == LOOM_SYMBOLIC_INTEGER_RELATION_EQ) {
     proof->status = loom_symbolic_expr_terms_are_multiple(
         proof->context, proof->expression_terms, proof->expression_term_count,
         relation_terms, relation_term_count,
         /*positive_multiplier=*/false, &terms_match, &multiplier);
     if (!iree_status_is_ok(proof->status)) {
       return false;
+    }
+  }
+  if (!terms_match && proof->expression_term_count > relation_term_count) {
+    loom_symbolic_term_t matching_terms[LOOM_SYMBOLIC_EXPR_DEFAULT_TERM_LIMIT];
+    iree_host_size_t matching_count = 0;
+    bool residual_known = false;
+    proof->status = loom_symbolic_expr_condition_relation_residual(
+        proof, relation_terms, relation_term_count, matching_terms,
+        &matching_count, &expression_constant, &residual_known);
+    if (!iree_status_is_ok(proof->status)) {
+      return false;
+    }
+    if (residual_known) {
+      terms_match = loom_symbolic_expr_terms_are_exact_multiple(
+          matching_terms, matching_count, relation_terms, relation_term_count,
+          /*positive_multiplier=*/true, &multiplier);
+      if (!terms_match && relation == LOOM_SYMBOLIC_INTEGER_RELATION_EQ) {
+        terms_match = loom_symbolic_expr_terms_are_exact_multiple(
+            matching_terms, matching_count, relation_terms, relation_term_count,
+            /*positive_multiplier=*/false, &multiplier);
+      }
     }
   }
   if (!terms_match) {
@@ -669,13 +711,165 @@ static bool loom_symbolic_expr_visit_condition_relation(
   int64_t residual_constant = 0;
   if (!iree_checked_mul_i64(relation_constant, multiplier,
                             &scaled_relation_constant) ||
-      !iree_checked_sub_i64(proof->expression_constant,
-                            scaled_relation_constant, &residual_constant)) {
+      !iree_checked_sub_i64(expression_constant, scaled_relation_constant,
+                            &residual_constant)) {
     return true;
   }
-  if (residual_constant <= (strict ? multiplier : 0)) {
+  if (residual_constant <=
+      (relation == LOOM_SYMBOLIC_INTEGER_RELATION_LT ? multiplier : 0)) {
     proof->result = LOOM_SYMBOLIC_PROOF_TRUE;
     return false;
+  }
+  return true;
+}
+
+static bool loom_symbolic_expr_scale_linear_view(
+    const loom_symbolic_expr_t* expression, int64_t multiplier,
+    loom_symbolic_term_t* term_storage, iree_host_size_t term_storage_capacity,
+    loom_symbolic_expr_t* out_expression) {
+  if (!loom_symbolic_expr_is_linear(expression) || multiplier <= 0 ||
+      expression->term_count > term_storage_capacity) {
+    return false;
+  }
+
+  int64_t constant = 0;
+  if (!iree_checked_mul_i64(expression->constant, multiplier, &constant)) {
+    return false;
+  }
+  for (iree_host_size_t i = 0; i < expression->term_count; ++i) {
+    int64_t coefficient = 0;
+    if (!iree_checked_mul_i64(expression->terms[i].coefficient, multiplier,
+                              &coefficient)) {
+      return false;
+    }
+    term_storage[i] = expression->terms[i];
+    term_storage[i].coefficient = coefficient;
+  }
+
+  loom_value_facts_t multiplier_facts = loom_value_facts_exact_i64(multiplier);
+  loom_value_facts_t facts = loom_value_facts_unknown();
+  loom_value_facts_muli(&expression->facts, &multiplier_facts, &facts);
+  *out_expression = (loom_symbolic_expr_t){
+      .constant = constant,
+      .terms = expression->term_count == 0 ? NULL : term_storage,
+      .term_count = expression->term_count,
+      .facts = facts,
+      .flags = LOOM_SYMBOLIC_EXPR_FLAG_LINEAR,
+  };
+  return true;
+}
+
+// For L + s <= R, with L=floor(NL/dL), R=floor(NR/dR), and s in {0,1},
+// dR*NL - dL*NR <= dR*(dL-1-s*dL). Ordinary expressions use divisor one.
+// The retained nonnegative projections establish floor semantics. This is a
+// one-way implication, so even an equality supplies inequalities, not a new
+// equality between the numerators. Periodic remainder digits stay opaque.
+static bool loom_symbolic_expr_match_projected_condition_relation(
+    loom_symbolic_expr_condition_relation_proof_t* proof,
+    const loom_symbolic_expr_t* lower_expression,
+    const loom_symbolic_expr_t* upper_expression,
+    loom_symbolic_integer_relation_t relation) {
+  if (proof->context->projections.count == 0) {
+    return true;
+  }
+  const loom_symbolic_expr_t* expressions[] = {lower_expression,
+                                               upper_expression};
+  loom_symbolic_expr_t numerators[2];
+  loom_symbolic_term_t numerator_terms[2];
+  int64_t divisors[] = {1, 1};
+  bool projected = false;
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(expressions); ++i) {
+    numerators[i] = *expressions[i];
+    const loom_symbolic_projection_t* projection =
+        loom_symbolic_expr_lookup_projection(proof->context, expressions[i]);
+    if (!projection || projection->modulus != 0) {
+      continue;
+    }
+    projected = true;
+    divisors[i] = projection->divisor;
+    numerator_terms[i] = (loom_symbolic_term_t){
+        .coefficient = projection->scale,
+        .value_id = projection->value_id,
+        .relation_value_id = projection->value_id,
+    };
+    numerators[i] = (loom_symbolic_expr_t){
+        .constant = projection->offset,
+        .terms = &numerator_terms[i],
+        .term_count = 1,
+        .facts = loom_value_facts_unknown(),
+        .flags = LOOM_SYMBOLIC_EXPR_FLAG_LINEAR,
+    };
+  }
+  if (!projected) {
+    return true;
+  }
+
+  int64_t offset =
+      relation == LOOM_SYMBOLIC_INTEGER_RELATION_LT ? 1 : 1 - divisors[0];
+  // Cancel shared denominator factors before cross multiplication. A relation
+  // with an ordinary operand already has coprime divisors and needs no GCD.
+  if (divisors[0] != 1 && divisors[1] != 1) {
+    const int64_t common_divisor = iree_math_gcd_i64(divisors[0], divisors[1]);
+    divisors[0] /= common_divisor;
+    divisors[1] /= common_divisor;
+  }
+  loom_symbolic_term_t scaled_terms[2][LOOM_SYMBOLIC_EXPR_DEFAULT_TERM_LIMIT];
+  loom_symbolic_expr_t scaled[2];
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(scaled); ++i) {
+    if (!loom_symbolic_expr_scale_linear_view(
+            &numerators[i], divisors[1 - i], scaled_terms[i],
+            IREE_ARRAYSIZE(scaled_terms[i]), &scaled[i])) {
+      return true;
+    }
+  }
+  if (!iree_checked_mul_i64(offset, divisors[1], &offset) ||
+      !iree_checked_add_i64(scaled[0].constant, offset, &scaled[0].constant)) {
+    return true;
+  }
+  return loom_symbolic_expr_match_condition_relation(
+      proof, &scaled[0], &scaled[1], LOOM_SYMBOLIC_INTEGER_RELATION_LE);
+}
+
+static bool loom_symbolic_expr_visit_condition_relation(
+    void* user_data, const loom_condition_integer_relation_t* relation) {
+  loom_symbolic_expr_condition_relation_proof_t* proof =
+      (loom_symbolic_expr_condition_relation_proof_t*)user_data;
+  loom_condition_integer_operand_t lower_operand = {0};
+  loom_condition_integer_operand_t upper_operand = {0};
+  bool strict = false;
+  if (!loom_symbolic_expr_condition_relation_upper_bound(
+          relation, &lower_operand, &upper_operand, &strict)) {
+    return true;
+  }
+  loom_symbolic_expr_t lower_expression = {0};
+  loom_symbolic_expr_t upper_expression = {0};
+  proof->status = loom_symbolic_expr_condition_operand_expression(
+      proof->context, lower_operand, &lower_expression);
+  if (!iree_status_is_ok(proof->status)) {
+    return false;
+  }
+  proof->status = loom_symbolic_expr_condition_operand_expression(
+      proof->context, upper_operand, &upper_expression);
+  if (!iree_status_is_ok(proof->status)) {
+    return false;
+  }
+  loom_symbolic_integer_relation_t normalized =
+      LOOM_SYMBOLIC_INTEGER_RELATION_LE;
+  if (strict) {
+    normalized = LOOM_SYMBOLIC_INTEGER_RELATION_LT;
+  } else if (relation->relation == LOOM_SYMBOLIC_INTEGER_RELATION_EQ) {
+    normalized = LOOM_SYMBOLIC_INTEGER_RELATION_EQ;
+  }
+  if (!loom_symbolic_expr_match_condition_relation(
+          proof, &lower_expression, &upper_expression, normalized) ||
+      !loom_symbolic_expr_match_projected_condition_relation(
+          proof, &lower_expression, &upper_expression, normalized)) {
+    return false;
+  }
+  if (normalized == LOOM_SYMBOLIC_INTEGER_RELATION_EQ) {
+    return loom_symbolic_expr_match_projected_condition_relation(
+        proof, &upper_expression, &lower_expression,
+        LOOM_SYMBOLIC_INTEGER_RELATION_LE);
   }
   return true;
 }
@@ -764,42 +958,6 @@ static iree_status_t loom_symbolic_expr_prove_le_by_condition_relations(
     *out_result = proof.result;
   }
   return proof.status;
-}
-
-static bool loom_symbolic_expr_scale_linear_view(
-    const loom_symbolic_expr_t* expression, int64_t multiplier,
-    loom_symbolic_term_t* term_storage, iree_host_size_t term_storage_capacity,
-    loom_symbolic_expr_t* out_expression) {
-  if (!loom_symbolic_expr_is_linear(expression) || multiplier <= 0 ||
-      expression->term_count > term_storage_capacity) {
-    return false;
-  }
-
-  int64_t constant = 0;
-  if (!iree_checked_mul_i64(expression->constant, multiplier, &constant)) {
-    return false;
-  }
-  for (iree_host_size_t i = 0; i < expression->term_count; ++i) {
-    int64_t coefficient = 0;
-    if (!iree_checked_mul_i64(expression->terms[i].coefficient, multiplier,
-                              &coefficient)) {
-      return false;
-    }
-    term_storage[i] = expression->terms[i];
-    term_storage[i].coefficient = coefficient;
-  }
-
-  loom_value_facts_t multiplier_facts = loom_value_facts_exact_i64(multiplier);
-  loom_value_facts_t facts = loom_value_facts_unknown();
-  loom_value_facts_muli(&expression->facts, &multiplier_facts, &facts);
-  *out_expression = (loom_symbolic_expr_t){
-      .constant = constant,
-      .terms = expression->term_count == 0 ? NULL : term_storage,
-      .term_count = expression->term_count,
-      .facts = facts,
-      .flags = LOOM_SYMBOLIC_EXPR_FLAG_LINEAR,
-  };
-  return true;
 }
 
 static void loom_symbolic_expr_residual_excluding_pair(
