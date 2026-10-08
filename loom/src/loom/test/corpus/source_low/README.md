@@ -26,8 +26,8 @@ registration. A mixed fixture excludes exact cases outside its assertion contrac
 in its file preamble:
 
 ```text
-// TEMPLATE: loom/src/loom/test/corpus/source_low/view_transport.loom-test
-// TEMPLATE-EXCLUDE: @correlated_cfg_rotation SPIR-V requires structured control flow.
+// TEMPLATE: loom/src/loom/test/corpus/source_low/math_contraction.loom-test
+// TEMPLATE-EXCLUDE: @scalar_explicit Scalar F32 multiply/FMA lowering is not implemented for this profile.
 ```
 
 `TEMPLATE-EXCLUDE` requires a reason and uses the same function-symbol identity
