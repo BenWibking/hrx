@@ -15,8 +15,8 @@
 #include "loom/codegen/low/lower/contract_query.h"
 #include "loom/codegen/low/lower/contract_selection.h"
 #include "loom/codegen/low/lower/function_boundary.h"
-#include "loom/codegen/low/lower/rule_emit.h"
 #include "loom/codegen/low/lower/rule_match.h"
+#include "loom/codegen/low/lower/rule_plan.h"
 #include "loom/codegen/low/lower/rule_source_memory.h"
 #include "loom/codegen/low/lower/rule_value.h"
 #include "loom/codegen/low/lower/source_call.h"
@@ -1120,13 +1120,20 @@ static bool loom_low_lower_selected_plan_preserves_volatile_memory(
   return false;
 }
 
-static iree_status_t loom_low_lower_validate_selected_plans(
+static iree_status_t loom_low_lower_finalize_selected_plans(
     loom_low_lower_context_t* context) {
   const loom_low_lower_source_plan_t* source_plan =
       &context->lowering.source_plan;
   for (iree_host_size_t i = 0; i < source_plan->selected_plan_count; ++i) {
-    const loom_low_lower_selected_plan_t* selected_plan =
+    loom_low_lower_selected_plan_t* selected_plan =
         &source_plan->selected_plans[i];
+    if (selected_plan->rule != NULL) {
+      IREE_RETURN_IF_ERROR(loom_low_lower_rule_set_resolve_emit_program(
+          context, selected_plan->rule_set_index, selected_plan->rule_set,
+          selected_plan->rule, selected_plan->source_op,
+          selected_plan->data.source_nodes, selected_plan->source_node_count,
+          selected_plan->source_memory_access, &selected_plan->resolved_emits));
+    }
     if (!loom_low_lower_selected_plan_preserves_volatile_memory(
             context->module, selected_plan)) {
       return loom_low_lower_emit_target_context_error(
@@ -1194,11 +1201,6 @@ static iree_status_t loom_low_lower_record_selected_rule_plan(
     *retained_source_memory_access = *source_memory_state->access_plan;
     source_memory_access = retained_source_memory_access;
   }
-  const loom_low_lower_resolved_emit_t* resolved_emits = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_lower_rule_set_resolve_emit_program(
-      context, rule_set_index, rule_set, rule_selection->rule,
-      source_memory_access ? source_memory_access->access_flags : 0,
-      &resolved_emits));
   const loom_op_t** retained_source_nodes = NULL;
   if (rule_selection->source_node_count > 1) {
     IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
@@ -1219,7 +1221,6 @@ static iree_status_t loom_low_lower_record_selected_rule_plan(
                    .rule_index = rule_selection->rule_index,
                    .rule_set = rule_set,
                    .rule = rule_selection->rule,
-                   .resolved_emits = resolved_emits,
                    .source_memory_access = source_memory_access,
                    .data.source_nodes = retained_source_nodes,
                });
@@ -1799,7 +1800,7 @@ iree_status_t loom_low_lower_source_plan_build(
   }
   if (iree_status_is_ok(status) &&
       !loom_low_lower_context_should_stop(context)) {
-    status = loom_low_lower_validate_selected_plans(context);
+    status = loom_low_lower_finalize_selected_plans(context);
   }
   if (iree_status_is_ok(status) && context->result->error_count == 0) {
     status = loom_low_lower_function_boundary_plan(context,

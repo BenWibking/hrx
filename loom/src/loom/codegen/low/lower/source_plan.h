@@ -79,9 +79,12 @@ typedef struct loom_low_lower_selected_plan_t {
   uint16_t rule_set_index;
   // Rule-table ordinal for table-driven selections.
   uint16_t rule_index;
-  // Rule set owning |rule|, or NULL for non-rule plans.
+  // Rule set owning |rule|, or NULL for non-rule plans and claimed
+  // placeholders.
   const loom_low_lower_rule_set_t* rule_set;
-  // Table rule selected during planning, or NULL for non-rule plans.
+  // Table rule selected during planning, or NULL for non-rule plans and claimed
+  // placeholders. An earlier selection claimed by a later rule retains its
+  // original recipe for reporting.
   const loom_low_lower_rule_t* rule;
   // Resolved emit rows for |rule|, or NULL for non-rule plans.
   const loom_low_lower_resolved_emit_t* resolved_emits;
