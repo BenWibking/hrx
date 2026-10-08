@@ -218,17 +218,20 @@ func.def @load_or_fallback(%input: buffer, %load: i1, %fallback: i32) -> (i32) {
 
 // ----
 low.func.def public target<x86.avx2.core> abi(object_function) abi_layout({signature = (buffer, i1, i32) -> (i32)}) @call_returned_value(%input: reg<x86.gpr64>, %load: reg<x86.gpr32>, %fallback: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
-  low.cond_br %load, ^_bb2, ^_bb1 : reg<x86.gpr32>
-^_bb1:
-  low.br ^_bb3(%fallback: reg<x86.gpr32>)
-^_bb2:
-  %value$20 = mov.load.gpr32 %input {disp32 = 0}
-  low.br ^_bb3(%value$20: reg<x86.gpr32>)
-^_bb3(%value$19: reg<x86.gpr32>):
+  %value = low.func.call @load_or_fallback(%input, %load, %fallback) : (reg<x86.gpr64>, reg<x86.gpr32>, reg<x86.gpr32>) -> (reg<x86.gpr32>)
   %increment = mov.imm32 1
-  %22 = copy %value$19 : reg<x86.gpr32> -> reg<x86.gpr32>
-  %result = add.gpr32 %22, %increment
+  %20 = copy %value : reg<x86.gpr32> -> reg<x86.gpr32>
+  %result = add.gpr32 %20, %increment
   return %result
+}
+
+low.func.def target<x86.avx2.core> abi_layout({signature = (buffer, i1, i32) -> (i32)}) @load_or_fallback(%input: reg<x86.gpr64>, %load: reg<x86.gpr32>, %fallback: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
+  low.cond_br %load, ^loaded, ^argument : reg<x86.gpr32>
+^argument:
+  return %fallback
+^loaded:
+  %value = mov.load.gpr32 %input {disp32 = 0}
+  return %value
 }
 
 // ====

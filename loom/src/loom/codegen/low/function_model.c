@@ -8,8 +8,9 @@
 
 #include "loom/codegen/low/function.h"
 
-iree_status_t loom_low_function_model_initialize(
+static iree_status_t loom_low_function_model_initialize_impl(
     loom_module_t* module, const loom_op_t* low_func_op,
+    const loom_low_resolved_target_t* resolved_target,
     const loom_target_facts_t* function_target_facts,
     const loom_low_descriptor_registry_t* descriptor_registry,
     iree_diagnostic_emitter_t emitter, loom_low_function_model_flags_t flags,
@@ -25,11 +26,15 @@ iree_status_t loom_low_function_model_initialize(
   };
   IREE_ASSERT(out_model->body != NULL);
 
-  loom_symbol_fact_table_t symbol_facts = {0};
-  loom_symbol_fact_table_initialize(&symbol_facts, arena);
-  IREE_RETURN_IF_ERROR(loom_low_resolve_function_target(
-      module, &symbol_facts, low_func_op, function_target_facts,
-      descriptor_registry, emitter, &out_model->target));
+  if (resolved_target != NULL) {
+    out_model->target = *resolved_target;
+  } else {
+    loom_symbol_fact_table_t symbol_facts = {0};
+    loom_symbol_fact_table_initialize(&symbol_facts, arena);
+    IREE_RETURN_IF_ERROR(loom_low_resolve_function_target(
+        module, &symbol_facts, low_func_op, function_target_facts,
+        descriptor_registry, emitter, &out_model->target));
+  }
   if (out_model->target.descriptor_set == NULL) {
     out_model->error_count = 1;
     return iree_ok_status();
@@ -71,6 +76,27 @@ iree_status_t loom_low_function_model_initialize(
     return status;
   }
   return iree_ok_status();
+}
+
+iree_status_t loom_low_function_model_initialize(
+    loom_module_t* module, const loom_op_t* low_func_op,
+    const loom_target_facts_t* function_target_facts,
+    const loom_low_descriptor_registry_t* descriptor_registry,
+    iree_diagnostic_emitter_t emitter, loom_low_function_model_flags_t flags,
+    iree_arena_allocator_t* arena, loom_low_function_model_t* out_model) {
+  return loom_low_function_model_initialize_impl(
+      module, low_func_op, NULL, function_target_facts, descriptor_registry,
+      emitter, flags, arena, out_model);
+}
+
+iree_status_t loom_low_function_model_initialize_resolved(
+    loom_module_t* module, const loom_op_t* low_func_op,
+    const loom_low_resolved_target_t* resolved_target,
+    loom_low_function_model_flags_t flags, iree_arena_allocator_t* arena,
+    loom_low_function_model_t* out_model) {
+  return loom_low_function_model_initialize_impl(
+      module, low_func_op, resolved_target, NULL, NULL,
+      (iree_diagnostic_emitter_t){0}, flags, arena, out_model);
 }
 
 void loom_low_function_model_deinitialize(loom_low_function_model_t* model) {

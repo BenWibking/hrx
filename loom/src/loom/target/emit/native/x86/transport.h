@@ -60,6 +60,24 @@ void loom_x86_transport_select_storage(
     uint32_t register_location, uint8_t base_register, int32_t displacement,
     loom_x86_transport_instruction_t* out_instruction);
 
+// Selects one load or store between a storage representation and a physical
+// register representation. Equal classes use ordinary storage transport;
+// GPR32 storage and XMM registers use a four-byte VMOVD transfer. Verified
+// allocation plans contain no other cross-class storage pairs.
+void loom_x86_transport_select_storage_register(
+    loom_x86_storage_transfer_t transfer, uint16_t storage_reg_class_id,
+    uint16_t register_reg_class_id, uint32_t register_location,
+    uint8_t base_register, int32_t displacement,
+    loom_x86_transport_instruction_t* out_instruction);
+
+// Selects one platform-ABI load or store. |byte_length| may be narrower than
+// the register class for scalar SSE values; full-width values use the ordinary
+// storage transport. Returns false when the pair has no SysV transport form.
+bool loom_x86_transport_select_abi_storage(
+    loom_x86_storage_transfer_t transfer, uint16_t descriptor_reg_class_id,
+    uint16_t byte_length, uint32_t register_location, uint8_t base_register,
+    int32_t displacement, loom_x86_transport_instruction_t* out_instruction);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

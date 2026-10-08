@@ -39,14 +39,27 @@ func.def public @call_vector_result(%input: i32, %lane: index) -> (i32) where [r
   %c2 = scalar.constant 2 : i32
   %c3 = scalar.constant 3 : i32
   %values = vector.from_elements %input, %c1, %c2, %c3 : vector<4xi32>
-  %result = func.call @select_lane(%values, %lane) : (vector<4xi32>, index) -> (i32)
+  %result = func.call inline @select_lane(%values, %lane) : (vector<4xi32>, index) -> (i32)
   func.return %result : i32
 }
 
 func.def @select_lane(%values: vector<4xi32>, %lane: index) -> (i32) where [range(%lane, 0, 3)] {
-  // ERROR@+1: TARGET/004 {op_name="vector.extract", subject_role="operand_segment", subject_name="indices", constraint_key="operand_segment_count", expected_count="0"}
   %result = vector.extract %values[%lane] : vector<4xi32> -> i32
   func.return %result : i32
+}
+
+// ----
+low.func.def public target<wasm.core.simd128> abi(wasm_function) @call_vector_result(%input: reg<wasm.i32>, %lane: reg<wasm.i32>) -> (reg<wasm.i32>) where [range(%lane, 0, 3)] asm {
+  %c1 = i32.const 1
+  %c2 = i32.const 2
+  %c3 = i32.const 3
+  %32 = i32.eq %lane, %c3
+  %34 = i32.eq %lane, %c2
+  %36 = i32.eq %lane, %c1
+  %37 = i32.select %c1, %input, %36
+  %38 = i32.select %c2, %37, %34
+  %result = i32.select %c3, %38, %32
+  return %result
 }
 
 // ====

@@ -152,7 +152,7 @@ static iree_status_t loom_amdgpu_provider_select_profile(
 const loom_target_provider_t loom_amdgpu_target_provider = {
     .profile_type = &loom_amdgpu_target_profile_type,
     .materialize_definition = loom_amdgpu_target_materialize_definition,
-    .select_low_call_policy = loom_target_select_low_call_policy_require_inline,
+    .select_call_policy = loom_target_select_call_policy_require_inline,
     .loop_predicate_carrier = LOOM_TARGET_LOOP_PREDICATE_CARRIER_I32,
     .loop_predicate_max_vector_element_count =
         LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES,

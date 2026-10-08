@@ -8,6 +8,7 @@
 
 #include "loom/ir/module.h"
 #include "loom/pass/builder.h"
+#include "loom/target/arch/x86/call_abi.h"
 #include "loom/target/arch/x86/descriptors/low_registry.h"
 #include "loom/target/arch/x86/legalization.h"
 #include "loom/target/arch/x86/lower/lower.h"
@@ -144,13 +145,34 @@ static const loom_target_legalizer_provider_t* kLoomX86LegalizerProviders[] = {
     &loom_x86_target_legalizer_provider_storage,
 };
 
-static loom_target_low_call_policy_t loom_x86_select_low_call_policy(
-    const loom_resolved_target_t* resolved_target) {
-  // Native callable emission implements the scalar profile's SysV contract.
-  // Vector profiles still require inlining to resolve their value carriers.
-  return resolved_target->facts->selector == LOOM_X86_TARGET_KIND_SCALAR
-             ? LOOM_TARGET_LOW_CALL_POLICY_DIRECT
-             : LOOM_TARGET_LOW_CALL_POLICY_REQUIRE_INLINE;
+static loom_target_call_policy_t loom_x86_select_call_policy(
+    const loom_resolved_target_t* resolved_target, const loom_module_t* module,
+    loom_call_like_kind_t kind, loom_call_like_t call,
+    loom_func_like_t callee) {
+  (void)resolved_target;
+  (void)call;
+  if (kind != LOOM_CALL_LIKE_KIND_SEMANTIC || !loom_func_like_isa(callee)) {
+    return LOOM_TARGET_CALL_POLICY_DIRECT;
+  }
+  if (callee.op->result_count > 1) {
+    return LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE;
+  }
+  uint16_t argument_count = 0;
+  const loom_value_id_t* arguments =
+      loom_func_like_arg_ids(callee, &argument_count);
+  const loom_value_id_t* results = loom_op_const_results(callee.op);
+  const iree_host_size_t value_count =
+      (iree_host_size_t)argument_count + callee.op->result_count;
+  for (iree_host_size_t i = 0; i < value_count; ++i) {
+    const loom_value_id_t value =
+        i < argument_count ? arguments[i] : results[i - argument_count];
+    loom_x86_call_abi_classification_t classification;
+    if (!loom_x86_call_abi_classify_source_type(
+            loom_module_value_type(module, value), &classification)) {
+      return LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE;
+    }
+  }
+  return LOOM_TARGET_CALL_POLICY_DIRECT;
 }
 
 static iree_status_t loom_x86_build_kernel_cleanup(loom_builder_t* builder,
@@ -217,7 +239,7 @@ const loom_target_provider_t loom_x86_target_provider = {
     .select_profile = loom_x86_select_profile,
     .select_cpu_profile = loom_x86_select_cpu_profile,
     .materialize_definition = loom_x86_materialize_definition,
-    .select_low_call_policy = loom_x86_select_low_call_policy,
+    .select_call_policy = loom_x86_select_call_policy,
     .register_context = loom_x86_ops_register_dialect,
     .initialize_low_descriptor_registry =
         loom_x86_low_descriptor_registry_initialize,

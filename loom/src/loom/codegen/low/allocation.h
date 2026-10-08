@@ -63,7 +63,7 @@ typedef struct loom_low_allocation_options_t {
   // Number of entries in |entry_locations|, at most the formal argument count.
   iree_host_size_t entry_location_count;
   // Physical call effects resolved from retained target convention bindings.
-  loom_low_call_contract_query_t call_contracts;
+  loom_low_call_contract_provider_t call_contracts;
   // Proven synchronous boundary storage for this immutable function snapshot.
   const loom_low_storage_transport_t* storage_transport;
   // Spaces the consumer can access synchronously within final move groups.

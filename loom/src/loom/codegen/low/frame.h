@@ -49,6 +49,10 @@ typedef loom_target_residency_view_t (
 typedef struct loom_low_emission_frame_options_t {
   // Descriptor registry available to scheduling and allocation.
   const loom_low_descriptor_registry_t* descriptor_registry;
+  // Optional already resolved function target. This carries producer-owned
+  // descriptor/profile facts directly into the model without resolving them a
+  // second time. When present, |function_target_facts| is ignored.
+  const loom_low_resolved_target_t* resolved_target;
   // Optional borrowed invocation-refined facts for the function. These facts
   // already include the function contract and remain immutable for the build.
   // When omitted, frame construction resolves the target from authored IR.
@@ -91,7 +95,7 @@ typedef struct loom_low_emission_frame_options_t {
   // Number of entries in |allocation_entry_locations|.
   iree_host_size_t allocation_entry_location_count;
   // Callee convention facts consumed before allocation in every repair round.
-  loom_low_call_contract_query_t call_contracts;
+  loom_low_call_contract_provider_t call_contracts;
   // Storage spaces supported by synchronous final transport in this emitter.
   // This does not authorize hiding asynchronous target instructions in moves.
   loom_low_storage_space_set_t synchronous_storage_spaces;

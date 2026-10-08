@@ -46,6 +46,17 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "call_abi",
+    srcs = ["call_abi.c"],
+    hdrs = ["call_abi.h"],
+    visibility = _X86_LOWER_VISIBILITY + _X86_NATIVE_VISIBILITY,
+    deps = [
+        ":register_classes",
+        "//loom/src/loom/ir",
+    ],
+)
+
+loom_cc_library(
     name = "math_policy",
     srcs = ["math_policy.c"],
     hdrs = ["math_policy.h"],
@@ -135,6 +146,7 @@ loom_cc_library(
     hdrs = ["provider.h"],
     visibility = _X86_PROVIDER_VISIBILITY,
     deps = [
+        ":call_abi",
         ":legalization",
         ":math_policy",
         ":pass_registry",
@@ -146,6 +158,16 @@ loom_cc_library(
         "//loom/src/loom/target/arch/x86/ops",
         "//loom/src/loom/target/arch/x86/records:target_records",
         "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_test(
+    name = "provider_test",
+    srcs = ["provider_test.cc"],
+    deps = [
+        ":provider",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 

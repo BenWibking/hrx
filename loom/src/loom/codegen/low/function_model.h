@@ -76,6 +76,15 @@ iree_status_t loom_low_function_model_initialize(
     iree_diagnostic_emitter_t emitter, loom_low_function_model_flags_t flags,
     iree_arena_allocator_t* arena, loom_low_function_model_t* out_model);
 
+// Initializes a model from a producer-owned target binding without repeating
+// function target or descriptor resolution. |resolved_target| is copied into
+// the model and its borrowed contents must outlive the model.
+iree_status_t loom_low_function_model_initialize_resolved(
+    loom_module_t* module, const loom_op_t* low_func_op,
+    const loom_low_resolved_target_t* resolved_target,
+    loom_low_function_model_flags_t flags, iree_arena_allocator_t* arena,
+    loom_low_function_model_t* out_model);
+
 // Releases the module value-ordinal scratch map owned by |model|.
 void loom_low_function_model_deinitialize(loom_low_function_model_t* model);
 

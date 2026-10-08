@@ -145,7 +145,7 @@ iree_status_t loom_low_allocation_unit_liveness_initialize(
     const loom_low_placement_table_t* placement,
     const loom_local_value_domain_t* value_domain,
     const loom_liveness_analysis_t* liveness, const loom_cfg_graph_t* cfg_graph,
-    loom_low_call_contract_query_t call_contracts,
+    loom_low_call_contract_provider_t call_contracts,
     iree_arena_allocator_t* result_arena,
     iree_arena_allocator_t* decision_arena,
     loom_low_allocation_unit_liveness_t* out_unit_liveness);

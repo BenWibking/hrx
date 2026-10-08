@@ -130,9 +130,32 @@ stack: 8 bytes, alignment 8
 
 // ====
 
+// Every SysV SIMD and mask register is volatile. The profile-wide ZMM range
+// aliases this live YMM value, while the K range includes the rotated K0 slot.
+// Both values therefore require retained stack storage across the call.
+// RUN: emit x86-frame @vector_call_clobbers
+x86.target<avx512> @target
+
+low.func.decl target<x86.avx512.core>(@target) @volatile_callee(%output: reg<x86.gpr64>) -> (reg<x86.gpr64>)
+
+low.func.def target<x86.avx512.core>(@target) @vector_call_clobbers(%input: reg<x86.gpr64>, %output: reg<x86.gpr64>) asm {
+  %vector = vmovdqu32.load.ymm %input {disp32 = 0}
+  %returned_output = low.func.call @volatile_callee(%output) : (reg<x86.gpr64>) -> (reg<x86.gpr64>)
+  vmovdqu32.store.ymm %vector, %returned_output {disp32 = 0}
+  return
+}
+
+// ----
+callee-preserved: none
+stack: 40 bytes, alignment 16
+upper-state-call-cleanups: 1
+upper-state-cleanup: vzeroupper
+
+// ====
+
 // Allocation-authored copies use the same class-pair selector as cycle and
-// edge transport. Fixed locations force one real copy in every SIMD/K class.
-// RUN: emit x86-frame @vector_copies fixed=%xmm:physical_register:9:1 fixed=%xmm_copy:physical_register:10:1 fixed=%ymm:physical_register:11:1 fixed=%ymm_copy:physical_register:12:1 fixed=%zmm:physical_register:17:1 fixed=%zmm_copy:physical_register:18:1 fixed=%mask:physical_register:7:1 fixed=%mask_copy:physical_register:0:1
+// edge transport. Fixed locations force one real copy at every SIMD width.
+// RUN: emit x86-frame @vector_copies fixed=%xmm:physical_register:9:1 fixed=%xmm_copy:physical_register:10:1 fixed=%ymm:physical_register:11:1 fixed=%ymm_copy:physical_register:12:1 fixed=%zmm:physical_register:17:1 fixed=%zmm_copy:physical_register:18:1
 x86.target<avx512> @target
 
 low.func.def target<x86.avx512.core>(@target) @vector_copies(%input: reg<x86.gpr64>, %output: reg<x86.gpr64>) asm {
@@ -158,6 +181,22 @@ upper-state-cleanup: vzeroupper
 
 // ====
 
+// A half-precision value crosses the platform boundary in XMM while its Low
+// carrier occupies four-byte GPR storage. With no physical GPR32 capacity, the
+// entry and return both exercise direct cross-class storage transport.
+// RUN: emit x86-frame @stored_half x86.gpr32=0
+x86.target<avx2> @target
+
+low.func.def target<x86.avx2.core>(@target) abi_layout({signature = (f16) -> (f16)}) @stored_half(%value: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
+  return %value
+}
+
+// ----
+callee-preserved: none
+stack: 8 bytes, alignment 8
+
+// ====
+
 // The common frame preserves the union of registers written on both exits.
 // RUN: emit x86-frame @two_returns fixed=%condition:physical_register:0:1 fixed=%left:physical_register:3:1 fixed=%right:physical_register:12:1
 x86.target<scalar> @target
@@ -178,9 +217,9 @@ callee-preserved: rbx, r12
 
 // ====
 
-// Reading an incoming callee-preserved register does not require saving it.
-// Return transport writes the caller-saved RAX instead.
-// RUN: emit x86-frame @read_only fixed=%input:physical_register:3:1
+// A coalesced SysV RDI entry needs no transport write. Return transport writes
+// the caller-saved RAX instead.
+// RUN: emit x86-frame @read_only fixed=%input:physical_register:7:1
 x86.target<scalar> @target
 
 low.func.def target<x86.scalar.core>(@target) @read_only(%input: reg<x86.gpr64>) -> (reg<x86.gpr64>) asm {

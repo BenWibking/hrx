@@ -277,7 +277,9 @@ typedef struct loom_low_allocation_unit_use_index_t {
   // Canonical definition and block-boundary points, borrowed for construction.
   const loom_liveness_analysis_t* liveness;
   // Retained call effects, borrowed while collecting instruction uses.
-  loom_low_call_contract_query_t call_contracts;
+  loom_low_call_contract_provider_t call_contracts;
+  // Caller-profile effects shared by every retained call.
+  loom_low_call_clobber_list_t common_call_clobbers;
   // Arena owning all temporary use records.
   iree_arena_allocator_t* arena;
   // First use record per allocation unit; NULL when no CFG refinement is
@@ -303,7 +305,7 @@ static bool loom_low_allocation_unit_use_is_defined_in_block(
 static iree_status_t loom_low_allocation_unit_use_index_initialize(
     const loom_cfg_graph_t* cfg_graph, const loom_liveness_analysis_t* liveness,
     loom_low_allocation_unit_liveness_t* unit_liveness,
-    loom_low_call_contract_query_t call_contracts,
+    loom_low_call_contract_provider_t call_contracts,
     iree_host_size_t multi_unit_value_count, iree_arena_allocator_t* arena,
     loom_low_allocation_unit_use_index_t* out_index) {
   *out_index = (loom_low_allocation_unit_use_index_t){
@@ -854,6 +856,23 @@ loom_low_allocation_unit_liveness_note_early_clobber_operand_uses(
   return iree_ok_status();
 }
 
+static iree_status_t loom_low_allocation_unit_liveness_note_call_clobbers(
+    loom_low_allocation_unit_liveness_t* unit_liveness,
+    const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_call_clobber_list_t* clobbers, uint32_t point,
+    iree_arena_allocator_t* arena) {
+  for (iree_host_size_t c = 0; c < clobbers->count; ++c) {
+    const loom_low_call_clobber_t* clobber = &clobbers->values[c];
+    for (uint32_t unit = 0; unit < clobber->count; ++unit) {
+      IREE_RETURN_IF_ERROR(loom_low_allocation_unit_liveness_note_clobber(
+          unit_liveness, descriptor_set, clobber->register_class,
+          clobber->location + unit, point,
+          /*permits_definition=*/true, arena));
+    }
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_low_allocation_unit_liveness_note_instruction_effects(
     loom_low_allocation_unit_use_index_t* unit_use_index,
     const loom_low_resolved_target_t* target,
@@ -865,20 +884,26 @@ static iree_status_t loom_low_allocation_unit_liveness_note_instruction_effects(
       unit_use_index->unit_liveness;
   const loom_op_t* op = operation_point->op;
   if (!loom_low_op_isa(op) && !loom_low_const_isa(op)) {
-    const loom_low_call_contract_query_t call_contracts =
-        unit_use_index->call_contracts;
-    if (call_contracts.fn && loom_low_func_call_isa(op)) {
-      const loom_low_call_contract_t* contract = call_contracts.fn(
-          call_contracts.user_data, loom_low_func_call_callee(op));
-      for (iree_host_size_t c = 0; contract && c < contract->clobbers.count;
-           ++c) {
-        const loom_low_call_clobber_t* clobber = &contract->clobbers.values[c];
-        for (uint32_t unit = 0; unit < clobber->count; ++unit) {
-          IREE_RETURN_IF_ERROR(loom_low_allocation_unit_liveness_note_clobber(
-              unit_liveness, target->descriptor_set, clobber->register_class,
-              clobber->location + unit, operation_point->end_point,
-              /*permits_definition=*/true, arena));
-        }
+    if (loom_low_func_call_isa(op)) {
+      loom_low_call_contract_provider_t* call_contracts =
+          &unit_use_index->call_contracts;
+      if (call_contracts->query_common_clobbers) {
+        unit_use_index->common_call_clobbers =
+            call_contracts->query_common_clobbers(call_contracts->user_data,
+                                                  target->descriptor_set);
+        call_contracts->query_common_clobbers = NULL;
+      }
+      IREE_RETURN_IF_ERROR(loom_low_allocation_unit_liveness_note_call_clobbers(
+          unit_liveness, target->descriptor_set,
+          &unit_use_index->common_call_clobbers, operation_point->end_point,
+          arena));
+      if (call_contracts->query) {
+        const loom_low_call_contract_t* contract = call_contracts->query(
+            call_contracts->user_data, loom_low_func_call_callee(op));
+        IREE_RETURN_IF_ERROR(
+            loom_low_allocation_unit_liveness_note_call_clobbers(
+                unit_liveness, target->descriptor_set, &contract->clobbers,
+                operation_point->end_point, arena));
       }
     }
     return iree_ok_status();
@@ -1300,7 +1325,7 @@ iree_status_t loom_low_allocation_unit_liveness_initialize(
     const loom_low_placement_table_t* placement,
     const loom_local_value_domain_t* value_domain,
     const loom_liveness_analysis_t* liveness, const loom_cfg_graph_t* cfg_graph,
-    loom_low_call_contract_query_t call_contracts,
+    loom_low_call_contract_provider_t call_contracts,
     iree_arena_allocator_t* result_arena,
     iree_arena_allocator_t* decision_arena,
     loom_low_allocation_unit_liveness_t* out_unit_liveness) {
