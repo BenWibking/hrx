@@ -388,6 +388,12 @@ iree_status_t loom_low_lower_source_memory_observe(
   record->available = loom_low_source_memory_access_plan_build(
       view_regions, source_op, &record->access, &record->diagnostic);
   if (record->available) {
+    if (loom_memory_access_isa(
+            loom_memory_access_cast(context->module, source_op))) {
+      IREE_RETURN_IF_ERROR(loom_low_lower_memory_origin_plan(
+          loom_low_lower_context_symbolic_expr_context(context),
+          &record->access, &context->function_arena, &record->origin));
+    }
     record->invariant_term_mask =
         loom_low_lower_memory_invariant_terms(context, record);
     loom_low_lower_memory_component_select(builder, record,
@@ -444,8 +450,8 @@ iree_status_t loom_low_lower_source_memory_prepare(
   return status;
 }
 
-void loom_low_lower_source_memory_select_op(loom_low_lower_context_t* context,
-                                            const loom_op_t* source_op) {
+void loom_low_lower_source_memory_enter_op(loom_low_lower_context_t* context,
+                                           const loom_op_t* source_op) {
   loom_low_lower_source_plan_t* plan = &context->lowering.source_plan;
   const loom_low_lower_source_memory_record_t* record = plan->memory.cursor;
   plan->memory.current = NULL;

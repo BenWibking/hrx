@@ -985,6 +985,7 @@ static iree_status_t loom_low_lower_emit_selected_plan(
 
 static iree_status_t loom_low_lower_emit_source_op(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
+  loom_low_lower_source_memory_enter_op(context, source_op);
   if (context->lowering.source_plan.selected_plan_emit_index <
           context->lowering.source_plan.selected_plan_count &&
       context->lowering.source_plan
@@ -1059,6 +1060,8 @@ static iree_status_t loom_low_lower_emit_region_ops(
 
 static iree_status_t loom_low_lower_emit_body(loom_low_lower_context_t* context,
                                               loom_region_t* source_body) {
+  context->lowering.source_plan.memory.cursor =
+      context->lowering.source_plan.memory.first;
   loom_region_t* low_body = loom_low_lower_low_body(context);
   loom_builder_ip_t saved_ip = loom_builder_enter_region(
       &context->builder, context->low_func_op, low_body);

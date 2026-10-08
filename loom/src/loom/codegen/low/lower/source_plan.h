@@ -156,9 +156,9 @@ typedef struct loom_low_lower_source_plan_t {
   struct {
     // First retained access in shared source traversal order.
     loom_low_lower_source_memory_record_t* first;
-    // Next access to consume during per-operation selection.
+    // Next access to consume during selection or emission.
     const loom_low_lower_source_memory_record_t* cursor;
-    // Access visible to the current observer or selector, or NULL.
+    // Access visible to the current observer, selector, or emitter, or NULL.
     const loom_low_lower_source_memory_record_t* current;
   } memory;
   // Selected plans in source traversal order.

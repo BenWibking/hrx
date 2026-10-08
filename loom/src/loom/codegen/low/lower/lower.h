@@ -24,6 +24,7 @@
 #include "loom/analysis/symbolic_expr.h"
 #include "loom/codegen/low/descriptors.h"
 #include "loom/codegen/low/lower/function_storage.h"
+#include "loom/codegen/low/lower/memory_effects.h"
 #include "loom/codegen/low/lower/module_state.h"
 #include "loom/codegen/low/lower/report.h"
 #include "loom/codegen/low/lower/visibility.h"
@@ -1146,21 +1147,6 @@ uint32_t loom_low_lower_context_error_count(
 loom_target_low_legality_diagnostic_flags_t
 loom_low_lower_context_diagnostic_flags(
     const loom_low_lower_context_t* context);
-
-// Retains a producer-owned footprint for one exact descriptor effect. The
-// result owns a deep copy in the module arena; source analysis may then expire.
-iree_status_t loom_low_lower_record_memory_effect(
-    loom_low_lower_context_t* context, const loom_op_t* low_op,
-    uint16_t effect_ordinal, const loom_low_memory_access_summary_t* summary);
-
-// Records one packet whose memory effects all use |source_plan|'s address.
-// The caller has selected actual packet geometry; additional_offset bounds
-// runtime packet coordinates not present in the canonical source plan.
-iree_status_t loom_low_lower_record_memory_packet(
-    loom_low_lower_context_t* context, const loom_op_t* low_op,
-    const loom_low_descriptor_t* descriptor,
-    const loom_low_source_memory_access_plan_t* source_plan,
-    loom_value_facts_t additional_offset);
 
 // Returns true when the caller requested source-low detail report rows.
 bool loom_low_lower_context_wants_report_rows(

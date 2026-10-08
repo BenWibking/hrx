@@ -4,7 +4,119 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+#include "loom/codegen/low/lower/memory_effects.h"
+
 #include "loom/codegen/low/lower/context.h"
+
+struct loom_low_lower_memory_origin_t {
+  // Common workgroup translation with independently retained expression
+  // storage.
+  loom_symbolic_expr_t uniform;
+  // Envelope for terms that cannot cancel across different participants.
+  loom_value_facts_t varying;
+};
+
+iree_status_t loom_low_lower_memory_origin_plan(
+    loom_symbolic_expr_context_t* expressions,
+    const loom_low_source_memory_access_plan_t* source_plan,
+    iree_arena_allocator_t* arena,
+    const loom_low_lower_memory_origin_t** out_origin) {
+  *out_origin = NULL;
+  if (source_plan->dynamic_term_count == 0 ||
+      source_plan->root_value_id == LOOM_VALUE_ID_INVALID ||
+      source_plan->root_uniform_scope <
+          LOOM_VALUE_FACT_UNIFORM_SCOPE_WORKGROUP ||
+      source_plan->vector_offset_kind ==
+          LOOM_LOW_SOURCE_MEMORY_VECTOR_OFFSET_OTHER) {
+    return iree_ok_status();
+  }
+  loom_symbolic_expr_t uniform;
+  loom_symbolic_expr_constant(0, &uniform);
+  loom_value_facts_t varying = loom_value_facts_exact_i64(0);
+  for (uint8_t i = 0; i < source_plan->dynamic_term_count; ++i) {
+    const loom_low_source_memory_dynamic_term_t* term =
+        &source_plan->dynamic_terms[i];
+    const loom_value_facts_t facts =
+        loom_value_fact_table_lookup(expressions->fact_table, term->index);
+    if (term->stride_value_count == 0 &&
+        loom_value_facts_is_workgroup_uniform(facts)) {
+      loom_symbolic_expr_t value;
+      IREE_RETURN_IF_ERROR(
+          loom_symbolic_expr_from_value(expressions, term->index, &value));
+      IREE_RETURN_IF_ERROR(loom_symbolic_expr_mul_i64(
+          expressions, &value, term->byte_stride, &value));
+      IREE_RETURN_IF_ERROR(
+          loom_symbolic_expr_add(expressions, &uniform, &value, &uniform));
+    } else {
+      loom_value_facts_addi(&varying, &term->byte_facts, &varying);
+    }
+  }
+  loom_low_lower_memory_origin_t* origin = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate(arena, sizeof(*origin), (void**)&origin));
+  IREE_RETURN_IF_ERROR(
+      loom_symbolic_expr_clone(&uniform, arena, &origin->uniform));
+  origin->varying = varying;
+  *out_origin = origin;
+  return iree_ok_status();
+}
+
+bool loom_low_lower_memory_packet_interval(
+    const loom_low_lower_memory_origin_t* origin,
+    const loom_low_source_memory_access_plan_t* source_plan,
+    loom_value_facts_t additional_offset,
+    loom_low_memory_relative_interval_t* out_interval,
+    int64_t* out_lane_byte_count) {
+  *out_interval = (loom_low_memory_relative_interval_t){0};
+  *out_lane_byte_count = 0;
+  if (source_plan->root_value_id == LOOM_VALUE_ID_INVALID ||
+      source_plan->root_uniform_scope <
+          LOOM_VALUE_FACT_UNIFORM_SCOPE_WORKGROUP ||
+      source_plan->vector_offset_kind ==
+          LOOM_LOW_SOURCE_MEMORY_VECTOR_OFFSET_OTHER) {
+    return false;
+  }
+  int64_t lane_begin = 0, lane_end = 0;
+  int64_t lane_bytes = 0;
+  if (!loom_low_source_memory_access_plan_lane_byte_envelope(
+          source_plan, &lane_begin, &lane_end) ||
+      !iree_checked_sub_i64(lane_end, lane_begin, &lane_bytes)) {
+    return false;
+  }
+  int64_t root_relative_byte_offset = 0;
+  if (!iree_checked_sub_i64(source_plan->static_byte_offset,
+                            source_plan->physical_root_byte_offset,
+                            &root_relative_byte_offset)) {
+    return false;
+  }
+  loom_low_memory_relative_interval_t relative = {
+      .storage_id = source_plan->root_value_id,
+      .disjoint_storage_ordinal =
+          source_plan->alias_scope_id != LOOM_VALUE_FACT_ALIAS_SCOPE_ID_NONE
+              ? source_plan->alias_scope_id + 1u
+              : 0,
+  };
+  loom_value_facts_t varying = additional_offset;
+  if (source_plan->dynamic_term_count != 0) {
+    relative.origin = origin->uniform;
+    loom_value_facts_addi(&varying, &origin->varying, &varying);
+  } else {
+    loom_symbolic_expr_constant(0, &relative.origin);
+  }
+  // Static instruction coordinates translate the envelope, leaving the
+  // canonical origin and any periodic relationship shared by all packets.
+  if (!iree_checked_add_i64(varying.range_lo, lane_begin, &relative.lower) ||
+      !iree_checked_add_i64(varying.range_hi, lane_end, &relative.upper) ||
+      !iree_checked_add_i64(relative.lower, root_relative_byte_offset,
+                            &relative.lower) ||
+      !iree_checked_add_i64(relative.upper, root_relative_byte_offset,
+                            &relative.upper)) {
+    return false;
+  }
+  *out_interval = relative;
+  *out_lane_byte_count = lane_bytes;
+  return true;
+}
 
 iree_status_t loom_low_lower_record_memory_effect(
     loom_low_lower_context_t* context, const loom_op_t* low_op,
@@ -57,77 +169,20 @@ static iree_status_t loom_low_lower_record_memory_packet_effects(
   return iree_ok_status();
 }
 
-// Reduce participant-varying contributions to an envelope while retaining
-// correlations only between workgroup-uniform values. A lane's SSA identity
-// never licenses canceling the value observed by another lane.
 iree_status_t loom_low_lower_record_memory_packet(
     loom_low_lower_context_t* context, const loom_op_t* low_op,
     const loom_low_descriptor_t* descriptor,
     const loom_low_source_memory_access_plan_t* source_plan,
     loom_value_facts_t additional_offset) {
-  const loom_low_memory_access_source_flags_t source_flags =
-      loom_low_source_memory_access_plan_source_flags(source_plan);
-  if (source_plan->root_value_id == LOOM_VALUE_ID_INVALID ||
-      source_plan->root_uniform_scope <
-          LOOM_VALUE_FACT_UNIFORM_SCOPE_WORKGROUP ||
-      source_plan->vector_offset_kind ==
-          LOOM_LOW_SOURCE_MEMORY_VECTOR_OFFSET_OTHER) {
-    return loom_low_lower_record_memory_packet_effects(
-        context, low_op, descriptor, source_flags, NULL, 0);
-  }
-  int64_t lane_begin = 0, lane_end = 0;
-  if (!loom_low_source_memory_access_plan_lane_byte_envelope(
-          source_plan, &lane_begin, &lane_end)) {
-    return loom_low_lower_record_memory_packet_effects(
-        context, low_op, descriptor, source_flags, NULL, 0);
-  }
-  int64_t lane_bytes = 0;
-  if (!iree_checked_sub_i64(lane_end, lane_begin, &lane_bytes)) {
-    return loom_low_lower_record_memory_packet_effects(
-        context, low_op, descriptor, source_flags, NULL, 0);
-  }
-  loom_low_memory_relative_interval_t relative = {
-      .scope = context->source_function.op,
-      .storage_id = source_plan->root_value_id,
-      .disjoint_storage_ordinal =
-          source_plan->alias_scope_id != LOOM_VALUE_FACT_ALIAS_SCOPE_ID_NONE
-              ? source_plan->alias_scope_id + 1u
-              : 0,
-  };
-  int64_t root_relative_byte_offset = 0;
-  if (!iree_checked_sub_i64(source_plan->static_byte_offset,
-                            source_plan->physical_root_byte_offset,
-                            &root_relative_byte_offset)) {
-    return loom_low_lower_record_memory_packet_effects(
-        context, low_op, descriptor, source_flags, NULL, 0);
-  }
-  loom_symbolic_expr_constant(root_relative_byte_offset, &relative.origin);
-  loom_value_facts_t varying = additional_offset;
-  loom_symbolic_expr_context_t* expressions =
-      loom_low_lower_context_symbolic_expr_context(context);
-  for (uint8_t i = 0; i < source_plan->dynamic_term_count; ++i) {
-    const loom_low_source_memory_dynamic_term_t* term =
-        &source_plan->dynamic_terms[i];
-    const loom_value_facts_t facts =
-        loom_value_fact_table_lookup(context->lowering.fact_table, term->index);
-    if (term->stride_value_count == 0 &&
-        loom_value_facts_is_workgroup_uniform(facts)) {
-      loom_symbolic_expr_t value;
-      IREE_RETURN_IF_ERROR(
-          loom_symbolic_expr_from_value(expressions, term->index, &value));
-      IREE_RETURN_IF_ERROR(loom_symbolic_expr_mul_i64(
-          expressions, &value, term->byte_stride, &value));
-      IREE_RETURN_IF_ERROR(loom_symbolic_expr_add(expressions, &relative.origin,
-                                                  &value, &relative.origin));
-    } else {
-      loom_value_facts_addi(&varying, &term->byte_facts, &varying);
-    }
-  }
-  if (!iree_checked_add_i64(varying.range_lo, lane_begin, &relative.lower) ||
-      !iree_checked_add_i64(varying.range_hi, lane_end, &relative.upper)) {
-    return loom_low_lower_record_memory_packet_effects(
-        context, low_op, descriptor, source_flags, NULL, 0);
-  }
+  const loom_low_lower_memory_origin_t* origin =
+      context->lowering.source_plan.memory.current->origin;
+  loom_low_memory_relative_interval_t relative;
+  int64_t lane_byte_count = 0;
+  const bool has_interval = loom_low_lower_memory_packet_interval(
+      origin, source_plan, additional_offset, &relative, &lane_byte_count);
+  relative.scope = context->source_function.op;
   return loom_low_lower_record_memory_packet_effects(
-      context, low_op, descriptor, source_flags, &relative, lane_bytes);
+      context, low_op, descriptor,
+      loom_low_source_memory_access_plan_source_flags(source_plan),
+      has_interval ? &relative : NULL, lane_byte_count);
 }

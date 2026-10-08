@@ -23,6 +23,32 @@
 namespace loom {
 namespace {
 
+TEST_F(SymbolicExprTest, CloneRetainsTermsAndPeriodicProof) {
+  const auto value = DefineI64Value();
+  const auto periodic_value = DefineI64Value();
+  loom_symbolic_expr_t expression;
+  loom_symbolic_expr_t periodic;
+  IREE_ASSERT_OK(
+      loom_symbolic_expr_from_value(&expression_context_, value, &expression));
+  IREE_ASSERT_OK(loom_symbolic_expr_from_value(&expression_context_,
+                                               periodic_value, &periodic));
+  IREE_ASSERT_OK(loom_symbolic_congruence_restrict(
+      &expression_context_, &periodic, 256, &expression));
+  loom_symbolic_expr_t retained;
+  IREE_ASSERT_OK(
+      loom_symbolic_expr_clone(&expression, &module_->arena, &retained));
+  ASSERT_NE(retained.terms, expression.terms);
+  ASSERT_NE(retained.congruence, expression.congruence);
+  ASSERT_NE(retained.congruence->expression.terms,
+            expression.congruence->expression.terms);
+  iree_arena_reset(&analysis_arena_);
+  ASSERT_EQ(retained.term_count, 1);
+  EXPECT_EQ(retained.terms[0].value_id, value);
+  EXPECT_EQ(retained.congruence->modulus, 256);
+  ASSERT_EQ(retained.congruence->expression.term_count, 1);
+  EXPECT_EQ(retained.congruence->expression.terms[0].value_id, periodic_value);
+}
+
 TEST_F(SymbolicExprTest, UnknownValueIsMemoizedLinearTerm) {
   loom_value_id_t value_id = DefineIndexValue();
 

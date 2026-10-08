@@ -1567,7 +1567,7 @@ static iree_status_t loom_low_lower_plan_region(
     loom_block_for_each_op(block, op) {
       const bool is_callable_exit =
           loom_low_lower_source_op_is_callable_exit(context, op);
-      loom_low_lower_source_memory_select_op(context, op);
+      loom_low_lower_source_memory_enter_op(context, op);
       loom_low_lower_planning_scope_begin(context);
       iree_status_t status = loom_low_lower_plan_op(
           context, op, &consumption_query, is_callable_exit);
@@ -1685,7 +1685,7 @@ static iree_status_t loom_low_lower_refine_plan_region(
     loom_block_for_each_op(block, op) {
       const bool is_callable_exit =
           loom_low_lower_source_op_is_callable_exit(context, op);
-      loom_low_lower_source_memory_select_op(context, op);
+      loom_low_lower_source_memory_enter_op(context, op);
 
       if (*inout_previous_plan_index < previous_plan_count &&
           source_plan->selected_plans[*inout_previous_plan_index].source_op ==

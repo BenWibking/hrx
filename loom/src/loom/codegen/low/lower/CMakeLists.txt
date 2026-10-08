@@ -22,6 +22,7 @@ loom_cc_library(
     "function_boundary.h"
     "function_storage.h"
     "lower.h"
+    "memory_effects.h"
     "module_state.h"
     "participation.h"
     "realization.h"
@@ -283,6 +284,23 @@ loom_cc_test(
     loom::target::test::lower
     loom::target::test::target_record_table
     loom::util::fact_table
+)
+
+loom_cc_test(
+  NAME
+    memory_effects_test
+  SRCS
+    "memory_effects_test.cc"
+  DEPS
+    ::lower
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::analysis::symbolic_expr
+    loom::analysis::symbolic_expr_test_fixture
+    loom::codegen::low::memory_access
+    loom::codegen::low::source_memory_plan
+    loom::ir::facts
 )
 
 loom_cc_test(
