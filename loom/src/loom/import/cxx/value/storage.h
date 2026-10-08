@@ -123,6 +123,16 @@ class Storage {
   StorageAllocation allocate(const cxx::Type* type,
                              loom_value_fact_memory_space_t memory_space,
                              int64_t explicit_alignment, cxx::AST* owner);
+  // Allocates a runtime number of admitted objects and returns its typed source
+  // pointer representation. The logical element count remains distinct from
+  // its physical byte stride until index.scale forms the allocation extent.
+  // Dynamic allocations do not enter the fixed-declaration projection cache;
+  // their root facts own the runtime extent.
+  Pointer allocate_elements(const cxx::Type* element_type,
+                            loom_value_id_t element_count,
+                            const cxx::Type* element_count_type,
+                            loom_value_fact_memory_space_t memory_space,
+                            int64_t explicit_alignment, cxx::AST* owner);
 
  private:
   StorageProjection subobject(StorageProjection base, uint64_t byte_offset,

@@ -136,6 +136,42 @@ IR, so phase times are not additive reconstructions of `SourceToHsaco`.
 Validation, result construction, teardown, and arena reuse remain owned by the
 public operation that performs them.
 
+`ConfiguredWorkgroupStorage` measures a specialization-first kernel whose C++
+source declares a constrained stage count, uses that value to size aligned
+workgroup storage and a dynamic view, and carries the value through a loop. The
+benchmark supplies four stages through a `config.def`; it does not rewrite or
+reparse the source. A short optimized run on an AMD Ryzen AI Max+ 395 on
+2026-10-08 measured these medians over seven 100-iteration repetitions:
+
+| Public boundary | Configured workgroup storage |
+| --- | ---: |
+| Import to verified High IR | 3.55 ms |
+| Clone High IR | 12.9 us |
+| Through source-low | 0.362 ms |
+| Through prepared-low | 0.397 ms |
+| Clone prepared Low IR | 9.24 us |
+| Emit prepared Low IR to HSACO | 84.1 us |
+| Complete source to HSACO | 4.17 ms |
+
+The benchmark lease was held and the complete row had a 5.2% repetition
+coefficient of variation. Seven one-iteration cold-workspace repetitions had a
+4.26 ms median and allocated eleven 128 KiB workspace blocks, or 1.375 MiB.
+Warmed iterations reused those blocks. The emitted HSACO is 9,208 bytes.
+
+The same imported module was also compiled with stage counts one and four and
+compared with static High IR controls in which only the stage count was an
+ordinary constant. Each specialization produced byte-for-byte identical HSACO
+to its static control, including these resource and code properties:
+
+| Stage count | Exact LDS | Instructions | Code bytes | SGPRs | VGPRs | Occupancy |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 128 bytes | 19 | 100 | 4 | 3 | 100% |
+| 4 | 512 bytes | 30 | 148 | 4 | 5 | 100% |
+
+Configuration therefore changes the storage plan and specialized loop body
+without leaving configuration machinery or a runtime-sized allocation in the
+native artifact.
+
 An optimized 2026-10-08 run on an AMD Ryzen AI Max+ 395 measured these warmed
 medians. Phase rows used seven 100-iteration repetitions and complete rows used
 fifteen 50-iteration repetitions under the benchmark lease with no process

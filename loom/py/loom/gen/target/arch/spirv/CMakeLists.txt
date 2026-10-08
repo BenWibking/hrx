@@ -105,6 +105,7 @@ iree_py_library(
     loom::py::loom::gen::support::support
     loom::py::loom::target::low_descriptors
     loom::py::loom::target::arch::spirv::atomic
+    loom::py::loom::target::arch::spirv::barrier
     loom::py::loom::target::arch::spirv::builtins
     loom::py::loom::target::arch::spirv::cooperative_matrix
     loom::py::loom::target::arch::spirv::descriptors
@@ -133,6 +134,7 @@ iree_py_test(
     "loom.gen.target.arch.spirv.spirv_packet_rows_test"
   DEPS
     loom::py::loom::gen::target::arch::spirv::packet_rows
+    loom::py::loom::target::arch::spirv::barrier
     loom::py::loom::target::arch::spirv::extended_math
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"

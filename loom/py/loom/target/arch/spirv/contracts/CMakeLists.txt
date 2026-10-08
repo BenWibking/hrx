@@ -36,6 +36,7 @@ iree_py_library(
     loom::py::loom::dialect::view::view
     loom::py::loom::error::error
     loom::py::loom::target::arch::spirv::atomic
+    loom::py::loom::target::arch::spirv::barrier
     loom::py::loom::target::arch::spirv::builtins
     loom::py::loom::target::arch::spirv::cooperative_matrix
     loom::py::loom::target::arch::spirv::descriptors

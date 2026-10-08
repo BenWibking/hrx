@@ -41,6 +41,17 @@ _SPIRV_VULKAN_HAL_COMPATIBLE_WITH = loom_config_compatible_with([
 
 _SPIRV_CHECK_VISIBILITY = ["//loom/src/loom/tools/loom-check:__pkg__"]
 
+_CONFIGURED_WORKGROUP_STORAGE_VARIANTS = {
+    "four_stages": {
+        "case": "configured_workgroup_four_stages",
+        "configs": {"test.buffer.stage_count": "4"},
+    },
+    "one_stage": {
+        "case": "configured_workgroup_one_stage",
+        "configs": {"test.buffer.stage_count": "1"},
+    },
+}
+
 loom_cc_library(
     name = "loom_check",
     srcs = ["check/loom_check.c"],
@@ -85,6 +96,15 @@ loom_test(
     srcs = ["test/spirv_vulkan_hal_actual.loom"],
     compile_targets = ["//loom/target/spirv:vulkan1.3+bda"],
     execution_profiles = [SPIRV_VULKAN_EXPLICIT_TARGET_HARDWARE_PROFILE],
+)
+
+loom_test(
+    name = "cxx_configured_workgroup_storage_test",
+    benchmark_smoke = False,
+    execution_profiles = [SPIRV_VULKAN_HARDWARE_PROFILE],
+    module = "//loom/src/loom/import/cxx/test:configured_workgroup_storage_module",
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+    variants = _CONFIGURED_WORKGROUP_STORAGE_VARIANTS,
 )
 
 [

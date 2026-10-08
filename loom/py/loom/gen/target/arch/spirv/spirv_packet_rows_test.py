@@ -31,6 +31,7 @@ from loom.target.arch.spirv.atomic import (
     atomic_descriptor_key,
     float_atomic_descriptor_key,
 )
+from loom.target.arch.spirv.barrier import CONTROL_BARRIER_CASES
 from loom.target.arch.spirv.builtins import (
     BUILTIN_DIMENSIONS,
     BUILTIN_INDEX_QUERIES,
@@ -99,6 +100,18 @@ def test_subgroup_ballot_row_carries_the_subgroup_execution_scope() -> None:
     assert row.group_operation_scope == "LOOM_SPIRV_SCOPE_SUBGROUP"
     generated = _generated_row(generate_tables(), row.descriptor_key)
     assert ".payload.group_non_uniform.execution_scope = LOOM_SPIRV_SCOPE_SUBGROUP" in generated
+
+
+def test_generation_emits_the_complete_control_barrier_family() -> None:
+    rows = {row.descriptor_key: row for row in _packet_rows() if row.descriptor_key.startswith("spirv.op_control_barrier.")}
+    assert set(rows) == {case.descriptor_key for case in CONTROL_BARRIER_CASES}
+    for case in CONTROL_BARRIER_CASES:
+        row = rows[case.descriptor_key]
+        assert row.opcode == "LOOM_SPIRV_OP_CONTROL_BARRIER"
+        assert row.form == "LOOM_SPIRV_PACKET_FORM_CONTROL_BARRIER"
+        assert row.execution_scope == case.scope.execution_scope
+        assert row.memory_scope == case.scope.memory_scope
+        assert row.memory_semantics == case.memory_semantics
 
 
 def _packet_value_types(row: _PacketRow) -> tuple[str, ...]:

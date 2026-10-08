@@ -134,6 +134,7 @@ void Intrinsics::declaration(cxx::FunctionSymbol* function,
       // validation. Retain the complete descriptor until those are known.
     } else if (selected->arguments.size() != 1 ||
                (!ViewIntrinsic::supports(selected->arguments[0]->name()) &&
+                !BufferIntrinsic::supports(selected->arguments[0]->name()) &&
                 !DecodeIntrinsic::supports(selected->arguments[0]->name()) &&
                 !AtomicIntrinsic::supports(selected->arguments[0]->name()) &&
                 !FenceIntrinsic::supports(selected->arguments[0]->name()) &&
@@ -210,6 +211,10 @@ Intrinsics::Binding Intrinsics::resolve(cxx::FunctionSymbol* function,
   if (auto atomic = AtomicIntrinsic::resolve(unit_, diagnostics_, types_,
                                              function, attribute, owner)) {
     return *atomic;
+  }
+  if (auto buffer = BufferIntrinsic::resolve(unit_, diagnostics_, types_,
+                                             function, attribute, owner)) {
+    return *buffer;
   }
   if (auto fence = FenceIntrinsic::resolve(unit_, diagnostics_, function,
                                            attribute, owner)) {
@@ -382,6 +387,9 @@ IntrinsicCallResult Intrinsics::call(const Binding& admitted,
   }
   if (auto* encoding = std::get_if<EncodingIntrinsic>(binding)) {
     return {encoding->call(arguments, arena, builder, location)};
+  }
+  if (auto* buffer = std::get_if<BufferIntrinsic>(binding)) {
+    return {buffer->call(arguments, storage, owner)};
   }
   if (auto* view = std::get_if<ViewIntrinsic>(binding)) {
     return {view->call(arguments, types_, arena, storage, owner, builder,
