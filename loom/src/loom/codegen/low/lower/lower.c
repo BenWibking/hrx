@@ -1180,8 +1180,8 @@ static iree_status_t loom_low_lower_record_static_launch_config(
   return iree_ok_status();
 }
 
-// Plans own stable storage addresses used by selected target payloads. The
-// context and every construction analysis remain phase-local stack state.
+// Plans borrow stable storage from the caller owning the lowering transaction.
+// The context and every construction analysis remain phase-local stack state.
 struct loom_low_lower_function_plan_t {
   // Source module; same-function source IR stays alive until this plan
   // executes.
@@ -1195,8 +1195,8 @@ struct loom_low_lower_function_plan_t {
   const loom_low_descriptor_set_t* descriptor_set;
   // Retained selected decisions, source ordinals, and emission bindings.
   loom_low_lowering_frame_t frame;
-  // Stable arena backing plans and target payloads until this plan is released.
-  iree_arena_allocator_t arena;
+  // Caller-owned arena backing this plan and every retained target payload.
+  iree_arena_allocator_t* arena;
 };
 
 static iree_status_t loom_low_lower_function_plan_build(
@@ -1376,8 +1376,8 @@ iree_status_t loom_low_lower_plan_function(
       .module = module,
       .source_function = source_function,
       .options = *options,
+      .arena = arena,
   };
-  iree_arena_initialize(module->arena.block_pool, &plan->arena);
   const loom_region_descriptor_t* source_body_descriptor =
       loom_func_like_body_region_descriptor(module, source_function);
   plan->frame.source_callable_exit_kind = source_body_descriptor->terminator;
@@ -1387,7 +1387,7 @@ iree_status_t loom_low_lower_plan_function(
       .options = options,
       .policy = options->policy,
       .result = out_result,
-      .function_arena = &plan->arena,
+      .function_arena = plan->arena,
       .fact_table = options->fact_table,
       .module_state = options->module_state,
       .lowering = &plan->frame,
@@ -1405,8 +1405,6 @@ iree_status_t loom_low_lower_plan_function(
     // its accounting cursor from the completed output rows.
     plan->frame.report = (loom_low_lower_report_state_t){0};
     *out_plan = plan;
-  } else {
-    iree_arena_deinitialize(&plan->arena);
   }
   return status;
 }
@@ -1473,7 +1471,7 @@ iree_status_t loom_low_lower_emit_function(loom_low_lower_function_plan_t* plan,
       .policy = plan->options.policy,
       .descriptor_set = plan->descriptor_set,
       .result = result,
-      .function_arena = &plan->arena,
+      .function_arena = plan->arena,
       .module_state = plan->options.module_state,
       .lowering = &plan->frame,
   };
@@ -1481,14 +1479,6 @@ iree_status_t loom_low_lower_emit_function(loom_low_lower_function_plan_t* plan,
   iree_status_t status = loom_low_lower_function_plan_execute(&context);
   loom_local_value_domain_release(&plan->frame.value_domain);
   return status;
-}
-
-void loom_low_lower_function_plan_deinitialize(
-    loom_low_lower_function_plan_t* plan) {
-  if (plan == NULL) {
-    return;
-  }
-  iree_arena_deinitialize(&plan->arena);
 }
 
 iree_status_t loom_low_lower_function(loom_module_t* module,
@@ -1503,7 +1493,6 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
   if (iree_status_is_ok(status) && plan != NULL) {
     status = loom_low_lower_emit_function(plan, out_result);
   }
-  loom_low_lower_function_plan_deinitialize(plan);
   iree_arena_deinitialize(&arena);
   return status;
 }

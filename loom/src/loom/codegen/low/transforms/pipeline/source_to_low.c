@@ -585,11 +585,8 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
       }
       ++function_count;
     }
-    loom_low_lower_function_plan_deinitialize(plan->function);
-    plan->function = NULL;
   }
   for (iree_host_size_t i = 0; i < planned_function_count; ++i) {
-    loom_low_lower_function_plan_deinitialize(function_plans[i].function);
     loom_low_lower_result_deinitialize(&function_plans[i].result);
   }
   if (iree_status_is_ok(status) && !emitted_error_diagnostics) {

@@ -682,6 +682,12 @@ TEST_F(LowLowerSourcePlanTest,
   const loom_symbol_ref_t first_symbol = loom_func_like_callee(first_function);
   iree_arena_allocator_t plan_arena;
   iree_arena_initialize(&block_pool_, &plan_arena);
+  const auto observe_arena =
+      +[](void* user_data, loom_low_lower_context_t* context) {
+        EXPECT_EQ(loom_low_lower_context_function_arena(context), user_data);
+        return iree_ok_status();
+      };
+  policy_.entry_setup = {observe_arena, observe_arena, &plan_arena};
   loom_low_lower_function_plan_t* first_plan = nullptr;
   IREE_ASSERT_OK(loom_low_lower_plan_function(
       module_, first_function, &options_, &plan_arena, &result_, &first_plan));
@@ -716,8 +722,6 @@ TEST_F(LowLowerSourcePlanTest,
   EXPECT_TRUE(loom_low_func_def_isa(
       module_->symbols.entries[second_symbol.symbol_id].defining_op));
   EXPECT_EQ(result_.error_count + second_result.error_count, 0u);
-  loom_low_lower_function_plan_deinitialize(second_plan);
-  loom_low_lower_function_plan_deinitialize(first_plan);
   loom_low_lower_result_deinitialize(&second_result);
   iree_arena_deinitialize(&plan_arena);
 }

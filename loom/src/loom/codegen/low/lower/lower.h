@@ -1106,8 +1106,10 @@ typedef struct loom_low_lower_function_plan_t loom_low_lower_function_plan_t;
 // may release source facts and plan other functions after this returns.
 //
 // User rejection emits diagnostics and returns a NULL plan. |arena| owns the
-// plan record; its retained storage must be released with plan_deinitialize.
-// A successful plan and its report rows in |out_result| have the same lifetime.
+// plan and all retained payloads; its address and storage must remain valid
+// through execution. Plans sharing a transaction can share this arena without
+// reserving a separate block per function. Report rows in |out_result| are
+// separately owned and released with result_deinitialize.
 iree_status_t loom_low_lower_plan_function(
     loom_module_t* module, loom_func_like_t source_function,
     const loom_low_lower_options_t* options, iree_arena_allocator_t* arena,
@@ -1122,10 +1124,6 @@ iree_status_t loom_low_lower_plan_function(
 // failures and never changes the diagnostic error count.
 iree_status_t loom_low_lower_emit_function(loom_low_lower_function_plan_t* plan,
                                            loom_low_lower_result_t* result);
-
-// Releases retained plan storage after execution or cancellation. Accepts NULL.
-void loom_low_lower_function_plan_deinitialize(
-    loom_low_lower_function_plan_t* plan);
 
 // Lowers one body-backed FuncLike source callable into a target-low function in
 // place. Kernel definitions retain their target-low kernel ABI; other FuncLike
