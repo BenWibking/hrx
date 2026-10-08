@@ -110,6 +110,8 @@ if(IREE_ALLOCATOR_SYSTEM STREQUAL "mimalloc")
       allocator_mimalloc_test
     SRCS
       "allocator_mimalloc_test.cc"
+    CXX_FEATURES
+      exceptions
     DEPS
       ::base
       iree::testing::gtest

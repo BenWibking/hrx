@@ -170,8 +170,12 @@ set(IREE_DEP_MIMALLOC_URLS
 set(IREE_DEP_MIMALLOC_SHA256 "3b4a15153a59905995f7070296ed604bb5ccc00cabb8b93446931aff77224d47")
 set(IREE_DEP_MIMALLOC_STRIP_PREFIX "mimalloc-3.5.3")
 set(IREE_DEP_MIMALLOC_BUILD_FILE "//build_tools/third_party/mimalloc:mimalloc.BUILD.bazel")
-set(IREE_DEP_MIMALLOC_PATCHES "")
-set(IREE_DEP_MIMALLOC_PATCH_ARGS "")
+set(IREE_DEP_MIMALLOC_PATCHES
+  "//build_tools/third_party/mimalloc:c_new_handler.patch"
+)
+set(IREE_DEP_MIMALLOC_PATCH_ARGS
+  "-p1"
+)
 
 set(IREE_DEP_RDMA_CORE_HEADERS_KIND "http_archive")
 set(IREE_DEP_RDMA_CORE_HEADERS_OWNER "shared")

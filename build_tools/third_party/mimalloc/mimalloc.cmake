@@ -6,6 +6,7 @@
 
 include(iree_third_party_helpers)
 
+set(_IREE_MIMALLOC_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}")
 set(IREE_ALLOCATOR_MIMALLOC_DEPS iree::third_party::mimalloc)
 
 function(iree_configure_mimalloc)
@@ -82,4 +83,28 @@ function(iree_configure_mimalloc)
     EXPORT_SET
       Runtime
   )
+
+  # Global C++ allocation is a final executable ABI concern. Keep the adapter
+  # separate from the C allocator core so pure C links do not acquire a C++
+  # runtime dependency and every process still contains only one mimalloc
+  # implementation.
+  add_library(iree_mimalloc_new_delete STATIC
+    "${_IREE_MIMALLOC_CMAKE_DIR}/new_delete.cc"
+  )
+  target_compile_features(iree_mimalloc_new_delete PRIVATE cxx_std_17)
+  target_link_libraries(iree_mimalloc_new_delete PRIVATE
+    iree::third_party::mimalloc
+  )
+  set_target_properties(iree_mimalloc_new_delete PROPERTIES
+    INTERPROCEDURAL_OPTIMIZATION OFF
+    POSITION_INDEPENDENT_CODE ON
+  )
+  if(MSVC)
+    target_compile_options(iree_mimalloc_new_delete PRIVATE /EHsc)
+  else()
+    target_compile_options(iree_mimalloc_new_delete PRIVATE -fexceptions)
+  endif()
+
+  iree_add_alias_library(iree::third_party::mimalloc_new_delete
+    iree_mimalloc_new_delete)
 endfunction()

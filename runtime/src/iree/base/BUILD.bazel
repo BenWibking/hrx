@@ -81,6 +81,10 @@ iree_runtime_cc_library(
 iree_runtime_cc_test(
     name = "allocator_mimalloc_test",
     srcs = ["allocator_mimalloc_test.cc"],
+    cxxopts = select({
+        "@platforms//os:windows": ["/EHsc"],
+        "//conditions:default": ["-fexceptions"],
+    }),
     target_compatible_with = iree_select({
         "//runtime/config/base:allocator_system_mimalloc": [],
         "//conditions:default": ["@platforms//:incompatible"],
