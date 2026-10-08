@@ -98,10 +98,10 @@ TEST(TransportTest, CompleteDescriptorRegisterClassPairMatrix) {
   static const RegisterClassLocation classes[] = {
       {LOOM_X86_REGISTER_CLASS_GPR32, 1, 2},
       {LOOM_X86_REGISTER_CLASS_GPR64, 1, 2},
-      {X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RAX, 0, 0},
-      {X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RDX, 2, 2},
-      {X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_ECX, 1, 1},
-      {X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RCX, 1, 1},
+      {X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RAX, 0, 0},
+      {X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RDX, 2, 2},
+      {X86_AVX512_FEATURES_CORE_REG_CLASS_ID_ECX, 1, 1},
+      {X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RCX, 1, 1},
       {LOOM_X86_REGISTER_CLASS_XMM, 1, 2},
       {LOOM_X86_REGISTER_CLASS_YMM, 1, 2},
       {LOOM_X86_REGISTER_CLASS_ZMM, 1, 2},
@@ -148,18 +148,18 @@ TEST(TransportTest, RegisterNumbersAndStorageWidthsCoverEveryClass) {
   EXPECT_EQ(loom_x86_transport_byte_length(LOOM_X86_REGISTER_CLASS_YMM), 32u);
   EXPECT_EQ(loom_x86_transport_byte_length(LOOM_X86_REGISTER_CLASS_ZMM), 64u);
   EXPECT_EQ(loom_x86_transport_byte_length(LOOM_X86_REGISTER_CLASS_K), 8u);
-  EXPECT_EQ(loom_x86_transport_byte_length(
-                X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RAX),
-            8u);
-  EXPECT_EQ(loom_x86_transport_byte_length(
-                X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RDX),
-            8u);
-  EXPECT_EQ(loom_x86_transport_byte_length(
-                X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_ECX),
-            4u);
-  EXPECT_EQ(loom_x86_transport_byte_length(
-                X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RCX),
-            8u);
+  EXPECT_EQ(
+      loom_x86_transport_byte_length(X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RAX),
+      8u);
+  EXPECT_EQ(
+      loom_x86_transport_byte_length(X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RDX),
+      8u);
+  EXPECT_EQ(
+      loom_x86_transport_byte_length(X86_AVX512_FEATURES_CORE_REG_CLASS_ID_ECX),
+      4u);
+  EXPECT_EQ(
+      loom_x86_transport_byte_length(X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RCX),
+      8u);
 }
 
 TEST(TransportTest, RegisterTransfersUseExactWidthAndDirection) {

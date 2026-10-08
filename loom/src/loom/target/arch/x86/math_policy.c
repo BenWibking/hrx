@@ -107,11 +107,11 @@ static const loom_target_math_policy_registry_entry_t kX86MathPolicyEntries[] =
          /*.policy=*/&kX86Avx512MathPolicy},
         {/*.contract_set_key=*/IREE_SVL("x86.avx2.core"),
          /*.policy=*/&kX86MathPolicy},
-        {/*.contract_set_key=*/IREE_SVL("x86.avx2_packed_dot.core"),
+        {/*.contract_set_key=*/IREE_SVL("x86.avx2_features.core"),
          /*.policy=*/&kX86MathPolicy},
         {/*.contract_set_key=*/IREE_SVL("x86.packed_dot.core"),
          /*.policy=*/&kX86MathPolicy},
-        {/*.contract_set_key=*/IREE_SVL("x86.avx512_packed_dot.core"),
+        {/*.contract_set_key=*/IREE_SVL("x86.avx512_features.core"),
          /*.policy=*/&kX86Avx512MathPolicy},
 };
 

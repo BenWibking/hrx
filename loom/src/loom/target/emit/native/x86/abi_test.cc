@@ -20,10 +20,10 @@
 #include "loom/ops/target/ops.h"
 #include "loom/target/arch/x86/descriptors/avx10_2_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx2_descriptors.h"
-#include "loom/target/arch/x86/descriptors/avx2_packed_dot_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx2_features_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_bf16_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_descriptors.h"
-#include "loom/target/arch/x86/descriptors/avx512_packed_dot_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx512_features_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_vnni_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx_vnni_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx_vnni_int16_descriptors.h"
@@ -73,9 +73,9 @@ static const ProfileExpectation kProfiles[] = {
      /*.vector_register_count=*/16,
      /*.mask_register_count=*/0},
     {/*.name=*/"avx2_packed_dot",
-     /*.descriptor_key=*/"x86.avx2_packed_dot.core",
+     /*.descriptor_key=*/"x86.avx2_features.core",
      /*.carrier=*/"ymm",
-     /*.provider=*/loom_x86_avx2_packed_dot_core_descriptor_set,
+     /*.provider=*/loom_x86_avx2_features_core_descriptor_set,
      /*.vector_register_class=*/LOOM_X86_REGISTER_CLASS_YMM,
      /*.vector_register_count=*/16,
      /*.mask_register_count=*/0},
@@ -94,9 +94,9 @@ static const ProfileExpectation kProfiles[] = {
      /*.vector_register_count=*/32,
      /*.mask_register_count=*/0},
     {/*.name=*/"avx512_packed_dot",
-     /*.descriptor_key=*/"x86.avx512_packed_dot.core",
+     /*.descriptor_key=*/"x86.avx512_features.core",
      /*.carrier=*/"zmm",
-     /*.provider=*/loom_x86_avx512_packed_dot_core_descriptor_set,
+     /*.provider=*/loom_x86_avx512_features_core_descriptor_set,
      /*.vector_register_class=*/LOOM_X86_REGISTER_CLASS_ZMM,
      /*.vector_register_count=*/32,
      /*.mask_register_count=*/8},
@@ -148,10 +148,10 @@ static const loom_low_descriptor_set_provider_t kDescriptorSetProviders[] = {
     loom_x86_scalar_core_descriptor_set,
     loom_x86_simd128_core_descriptor_set,
     loom_x86_avx2_core_descriptor_set,
-    loom_x86_avx2_packed_dot_core_descriptor_set,
+    loom_x86_avx2_features_core_descriptor_set,
     loom_x86_avx512_core_descriptor_set,
     loom_x86_packed_dot_core_descriptor_set,
-    loom_x86_avx512_packed_dot_core_descriptor_set,
+    loom_x86_avx512_features_core_descriptor_set,
     loom_x86_avx512_vnni_core_descriptor_set,
     loom_x86_avx512_bf16_core_descriptor_set,
     loom_x86_avx_vnni_core_descriptor_set,

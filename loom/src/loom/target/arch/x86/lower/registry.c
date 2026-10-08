@@ -383,7 +383,7 @@ static iree_status_t loom_x86_map_avx2_argument(
                                 source_type, &out_argument->abi_type);
 }
 
-static iree_status_t loom_x86_map_avx512_packed_dot_type(
+static iree_status_t loom_x86_map_avx512_features_type(
     void* user_data, loom_low_lower_context_t* context,
     const loom_op_t* source_op, loom_type_t source_type,
     loom_type_t* out_low_type) {
@@ -396,7 +396,7 @@ static iree_status_t loom_x86_map_avx512_packed_dot_type(
                                   out_low_type);
 }
 
-static iree_status_t loom_x86_map_avx512_packed_dot_value(
+static iree_status_t loom_x86_map_avx512_features_value(
     void* user_data, loom_low_lower_context_t* context,
     const loom_op_t* source_op, loom_value_id_t source_value_id,
     loom_type_t source_type, loom_type_t* out_low_type) {
@@ -405,11 +405,11 @@ static iree_status_t loom_x86_map_avx512_packed_dot_value(
                                      source_value_id, source_type,
                                      out_low_type);
   }
-  return loom_x86_map_avx512_packed_dot_type(user_data, context, source_op,
-                                             source_type, out_low_type);
+  return loom_x86_map_avx512_features_type(user_data, context, source_op,
+                                           source_type, out_low_type);
 }
 
-static iree_status_t loom_x86_map_avx512_packed_dot_argument(
+static iree_status_t loom_x86_map_avx512_features_argument(
     void* user_data, loom_low_lower_context_t* context,
     const loom_op_t* source_function_op, uint16_t source_argument_index,
     loom_value_id_t source_argument_id,
@@ -422,9 +422,9 @@ static iree_status_t loom_x86_map_avx512_packed_dot_argument(
       .abi_type = loom_type_none(),
       .resource_source_type = loom_type_none(),
   };
-  return loom_x86_map_avx512_packed_dot_type(user_data, context,
-                                             source_function_op, source_type,
-                                             &out_argument->abi_type);
+  return loom_x86_map_avx512_features_type(user_data, context,
+                                           source_function_op, source_type,
+                                           &out_argument->abi_type);
 }
 
 static bool loom_x86_abi_type_has_default_boundary(loom_type_t type) {
@@ -564,8 +564,8 @@ static const loom_low_lower_policy_t kX86Avx2LowLowerPolicy = {
     .contract = LOOM_X86_AVX2_CONTRACT,
 };
 
-static const loom_low_lower_policy_t kX86Avx2PackedDotLowLowerPolicy = {
-    .name = IREE_SVL("x86-avx2-packed-dot-low-lower"),
+static const loom_low_lower_policy_t kX86Avx2FeaturesLowLowerPolicy = {
+    .name = IREE_SVL("x86-avx2-features-low-lower"),
     .function_storage = {kX86FunctionStorage,
                          IREE_ARRAYSIZE(kX86FunctionStorage)},
     .error_catalog = &loom_error_catalog_core,
@@ -587,7 +587,7 @@ static const loom_low_lower_policy_t kX86Avx2PackedDotLowLowerPolicy = {
             .query = loom_x86_descriptor_matrix_query,
         },
     .source_plan_observer = &loom_x86_avx2_predicate_representation_observer,
-    .contract = LOOM_X86_AVX512_PACKED_DOT_CONTRACT,
+    .contract = LOOM_X86_AVX2_FEATURES_CONTRACT,
 };
 
 static const loom_low_lower_policy_t kX86ScalarLowLowerPolicy = {
@@ -624,8 +624,8 @@ static const loom_low_lower_policy_t kX86PackedDotLowLowerPolicy = {
     .contract = LOOM_X86_PACKED_DOT_CONTRACT,
 };
 
-static const loom_low_lower_policy_t kX86Avx512PackedDotLowLowerPolicy = {
-    .name = IREE_SVL("x86-avx512-packed-dot-low-lower"),
+static const loom_low_lower_policy_t kX86Avx512FeaturesLowLowerPolicy = {
+    .name = IREE_SVL("x86-avx512-features-low-lower"),
     .function_storage = {kX86FunctionStorage,
                          IREE_ARRAYSIZE(kX86FunctionStorage)},
     .error_catalog = &loom_error_catalog_core,
@@ -634,12 +634,11 @@ static const loom_low_lower_policy_t kX86Avx512PackedDotLowLowerPolicy = {
     .preselect_op = {.fn = loom_low_task_select_kernel_builtin},
     .emit_op = {.fn = loom_low_task_emit_kernel_builtin},
     .query_op_contract = {.fn = loom_low_task_query_kernel_builtin},
-    .map_type = {.fn = loom_x86_map_avx512_packed_dot_type, .user_data = NULL},
-    .map_value = {.fn = loom_x86_map_avx512_packed_dot_value,
-                  .user_data = NULL},
+    .map_type = {.fn = loom_x86_map_avx512_features_type, .user_data = NULL},
+    .map_value = {.fn = loom_x86_map_avx512_features_value, .user_data = NULL},
     .map_contract_value = {.fn = loom_x86_map_avx512_contract_value,
                            .user_data = NULL},
-    .map_argument = {.fn = loom_x86_map_avx512_packed_dot_argument,
+    .map_argument = {.fn = loom_x86_map_avx512_features_argument,
                      .user_data = NULL},
     .descriptor_matrix =
         {
@@ -647,7 +646,7 @@ static const loom_low_lower_policy_t kX86Avx512PackedDotLowLowerPolicy = {
             .query = loom_x86_descriptor_matrix_query,
         },
     .source_plan_observer = &loom_x86_avx512_predicate_representation_observer,
-    .contract = LOOM_X86_AVX512_PACKED_DOT_CONTRACT,
+    .contract = LOOM_X86_AVX512_FEATURES_CONTRACT,
 };
 
 const loom_low_lower_policy_t* loom_x86_avx512_low_lower_policy(void) {
@@ -678,8 +677,8 @@ void loom_x86_low_lower_policy_registry_initialize(
           .policy = &kX86Avx2LowLowerPolicy,
       },
       {
-          .contract_set_key = IREE_SVL("x86.avx2_packed_dot.core"),
-          .policy = &kX86Avx2PackedDotLowLowerPolicy,
+          .contract_set_key = IREE_SVL("x86.avx2_features.core"),
+          .policy = &kX86Avx2FeaturesLowLowerPolicy,
       },
       {
           .contract_set_key = IREE_SVL("x86.avx512.core"),
@@ -714,8 +713,8 @@ void loom_x86_low_lower_policy_registry_initialize(
           .policy = &kX86PackedDotLowLowerPolicy,
       },
       {
-          .contract_set_key = IREE_SVL("x86.avx512_packed_dot.core"),
-          .policy = &kX86Avx512PackedDotLowLowerPolicy,
+          .contract_set_key = IREE_SVL("x86.avx512_features.core"),
+          .policy = &kX86Avx512FeaturesLowLowerPolicy,
       },
   };
   loom_low_lower_policy_registry_initialize_from_entries(

@@ -13,10 +13,10 @@
 #include "loom/codegen/low/builder.h"
 #include "loom/target/arch/x86/descriptors/avx10_2_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx2_descriptors.h"
-#include "loom/target/arch/x86/descriptors/avx2_packed_dot_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx2_features_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_bf16_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_descriptors.h"
-#include "loom/target/arch/x86/descriptors/avx512_packed_dot_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx512_features_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_vnni_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx_vnni_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx_vnni_int16_descriptors.h"
@@ -93,8 +93,7 @@ TEST(X86RegisterClassesTest, ViewsPreserveRegisterVocabularyAndCapacity) {
       {loom_x86_simd128_core_descriptor_set(), {16, 16, 16, 0, 0, 0}},
       {loom_x86_avx2_core_descriptor_set(), {16, 16, 16, 16, 0, 0}},
       {loom_x86_avx512_core_descriptor_set(), {16, 16, 32, 32, 32, 8}},
-      {loom_x86_avx512_packed_dot_core_descriptor_set(),
-       {16, 16, 32, 32, 32, 8}},
+      {loom_x86_avx512_features_core_descriptor_set(), {16, 16, 32, 32, 32, 8}},
       {loom_x86_packed_dot_core_descriptor_set(), {0, 0, 32, 32, 32, 0}},
       {loom_x86_avx512_vnni_core_descriptor_set(), {0, 0, 32, 32, 32, 0}},
       {loom_x86_avx512_bf16_core_descriptor_set(), {0, 0, 32, 32, 32, 0}},
@@ -108,7 +107,7 @@ TEST(X86RegisterClassesTest, ViewsPreserveRegisterVocabularyAndCapacity) {
       LOOM_X86_REGISTER_CLASS_XMM,   LOOM_X86_REGISTER_CLASS_YMM,
       LOOM_X86_REGISTER_CLASS_ZMM,   LOOM_X86_REGISTER_CLASS_K,
   };
-  const auto* storage = loom_x86_avx512_packed_dot_core_descriptor_set();
+  const auto* storage = loom_x86_avx512_features_core_descriptor_set();
   for (const Case& test_case : cases) {
     const auto* descriptor_set = test_case.descriptor_set;
     SCOPED_TRACE(ToString(loom_low_descriptor_set_string(
@@ -158,7 +157,7 @@ TEST(X86RegisterClassesTest, CountClassesAliasTheSamePhysicalRegister) {
            loom_x86_simd128_core_descriptor_set(),
            loom_x86_avx2_core_descriptor_set(),
            loom_x86_avx512_core_descriptor_set(),
-           loom_x86_avx512_packed_dot_core_descriptor_set(),
+           loom_x86_avx512_features_core_descriptor_set(),
        }) {
     SCOPED_TRACE(ToString(loom_low_descriptor_set_string(
         descriptor_set, descriptor_set->key_string_ref)));
@@ -206,13 +205,13 @@ TEST(X86RegisterClassesTest, VexRowsImportedIntoWideViewsStayLow16) {
                           IREE_SV("x86.avx512.vpaddd.zmm"), IREE_SV("dst"),
                           LOOM_LOW_OPERAND_ADDRESS_MAP_DIRECT, 0);
 
-  const loom_low_descriptor_set_t* avx512_packed_dot_descriptor_set =
-      loom_x86_avx512_packed_dot_core_descriptor_set();
-  ExpectOperandAddressMap(avx512_packed_dot_descriptor_set,
+  const loom_low_descriptor_set_t* avx512_features_descriptor_set =
+      loom_x86_avx512_features_core_descriptor_set();
+  ExpectOperandAddressMap(avx512_features_descriptor_set,
                           IREE_SV("x86.avx_vnni.vpdpbusd.ymm"), IREE_SV("dst"),
                           LOOM_LOW_OPERAND_ADDRESS_MAP_LOW_SUBSET, 16);
   ExpectOperandAddressMap(
-      avx512_packed_dot_descriptor_set, IREE_SV("x86.avx512_vnni.vpdpbusd.zmm"),
+      avx512_features_descriptor_set, IREE_SV("x86.avx512_vnni.vpdpbusd.zmm"),
       IREE_SV("dst"), LOOM_LOW_OPERAND_ADDRESS_MAP_DIRECT, 0);
 }
 
@@ -277,9 +276,9 @@ TEST(X86RegisterClassesTest,
 
 TEST(X86RegisterClassesTest, SparseCompositeViewUsesSharedStorageOrdinals) {
   const loom_low_descriptor_set_t* descriptor_set =
-      loom_x86_avx2_packed_dot_core_descriptor_set();
+      loom_x86_avx2_features_core_descriptor_set();
   const loom_low_descriptor_set_t* storage =
-      loom_x86_avx512_packed_dot_core_descriptor_set();
+      loom_x86_avx512_features_core_descriptor_set();
 
   EXPECT_EQ(descriptor_set->descriptors, storage->descriptors);
   EXPECT_EQ(descriptor_set->descriptor_views, storage->descriptor_views);
