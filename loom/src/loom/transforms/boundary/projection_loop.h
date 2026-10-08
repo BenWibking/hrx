@@ -9,6 +9,7 @@
 #ifndef LOOM_TRANSFORMS_BOUNDARY_PROJECTION_LOOP_H_
 #define LOOM_TRANSFORMS_BOUNDARY_PROJECTION_LOOP_H_
 
+#include "loom/rewrite/loop_like.h"
 #include "loom/transforms/boundary/projection_plan.h"
 
 #ifdef __cplusplus
@@ -66,6 +67,10 @@ struct loom_boundary_projection_loop_t {
   uint16_t header_count;
   // Number of final physical condition-header values.
   uint16_t final_header_count;
+  // Detached replacement whose endpoints hold the final identities bound into
+  // selected candidates. Prepared for every selected loop before any loop is
+  // populated; the operation is NULL until preparation.
+  loom_loop_like_replacement_t replacement;
   // Whether at least one header or result column remains selected.
   bool selected;
 };
@@ -96,7 +101,23 @@ iree_status_t loom_boundary_projection_finalize_loops(
     loom_boundary_projection_plan_t* plan,
     loom_boundary_projection_function_t* function);
 
-// Rebuilds retained selected loops in operation postorder.
+// Rebuilds retained selected loops in two phases.
+//
+// Preparation creates a detached replacement for every selected loop and binds
+// each selected candidate to its final endpoint identities. No initial value or
+// outgoing source recipe is materialized, no use is replaced, and no original
+// operation is erased while preparing. Population then completes each prepared
+// replacement in operation postorder: source recipes that name another loop's
+// candidate read an identity bound during preparation, regardless of which
+// loop is populated first.
+//
+// Between the phases and while an inner loop is populated before its
+// enclosing loop, the inner replacement may use an argument owned by the
+// still-detached enclosing replacement. Completing the enclosing loop moves the
+// inner operation into that argument's region. Only builder and rewriter
+// bookkeeping observes this interval: the boundary rewriter carries no fact
+// table, so finalization callbacks only enqueue operations. Ownership and
+// dominance hold again once every prepared loop is installed.
 iree_status_t loom_boundary_projection_apply_loops(
     loom_boundary_projection_plan_t* plan,
     loom_boundary_projection_function_t* function);

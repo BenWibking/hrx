@@ -288,7 +288,9 @@ static iree_status_t loom_layout_projection_materialize_source(
         &source_plan->components[component];
     switch (projection->kind) {
       case LOOM_LAYOUT_PROJECTION_COMPONENT_VALUE:
-        out_component_values[component] = projection->value.value_id;
+        out_component_values[component] =
+            loom_boundary_projection_resolve_value(function,
+                                                   projection->value.value_id);
         break;
       case LOOM_LAYOUT_PROJECTION_COMPONENT_CONSTANT: {
         loom_builder_ip_t saved_ip = loom_builder_save(&plan->rewriter.builder);

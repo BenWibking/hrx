@@ -387,10 +387,10 @@ kernel.def target(@carrier_target) @recurring_predicate() {
   %c0 = index.constant 0 : index
   %c1 = index.constant 1 : index
   %disabled = scalar.constant false : i1
-  %15 = scalar.constant 1 : i32
-  %16 = scalar.constant 0 : i32
-  %17 = scf.select %disabled, %15, %16 : i32
-  %terminal, %last_word = scf.while(%i = %c0 : index, %flag_word = %17 : i32) -> (index, i32) {
+  %21 = scalar.constant 1 : i32
+  %22 = scalar.constant 0 : i32
+  %23 = scf.select %disabled, %21, %22 : i32
+  %terminal, %last_word = scf.while(%i = %c0 : index, %flag_word = %23 : i32) -> (index, i32) {
     %27 = scalar.constant 0 : i32
     %flag = scalar.cmpi ne, %flag_word, %27 : i32
     %continue = index.cmp ult, %i, %limit : index
@@ -454,10 +454,10 @@ kernel.def target(@carrier_target) @recurring_predicate_vector() {
   %c0 = index.constant 0 : index
   %c1 = index.constant 1 : index
   %disabled = vector.constant false : vector<1x2xi1>
-  %17 = vector.constant 1 : vector<1x2xi32>
-  %18 = vector.constant 0 : vector<1x2xi32>
-  %19 = vector.select %disabled, %17, %18 : vector<1x2xi32>
-  %terminal, %last_word = scf.while(%i = %c0 : index, %flags_word = %19 : vector<1x2xi32>) -> (index, vector<1x2xi32>) {
+  %23 = vector.constant 1 : vector<1x2xi32>
+  %24 = vector.constant 0 : vector<1x2xi32>
+  %25 = vector.select %disabled, %23, %24 : vector<1x2xi32>
+  %terminal, %last_word = scf.while(%i = %c0 : index, %flags_word = %25 : vector<1x2xi32>) -> (index, vector<1x2xi32>) {
     %29 = vector.constant 0 : vector<1x2xi32>
     %flags = vector.cmpi ne, %flags_word, %29 : vector<1x2xi32> -> vector<1x2xi1>
     %continue = index.cmp ult, %i, %limit : index
@@ -507,10 +507,10 @@ func.def public target(@carrier_target) @predicate_vector_carrier_bound() {
   %c1 = index.constant 1 : index
   %within_bound = vector.constant false : vector<4x8xi1>
   %above_bound = vector.constant false : vector<3x11xi1>
-  %9 = vector.constant 1 : vector<4x8xi32>
-  %10 = vector.constant 0 : vector<4x8xi32>
-  %11 = vector.select %within_bound, %9, %10 : vector<4x8xi32>
-  %within_result_word, %above_result = scf.for %i = [%c0 to %c1 step %c1](%within_word = %11 : vector<4x8xi32>, %above = %above_bound : vector<3x11xi1>) -> (vector<4x8xi32>, vector<3x11xi1>) {
+  %14 = vector.constant 1 : vector<4x8xi32>
+  %15 = vector.constant 0 : vector<4x8xi32>
+  %16 = vector.select %within_bound, %14, %15 : vector<4x8xi32>
+  %within_result_word, %above_result = scf.for %i = [%c0 to %c1 step %c1](%within_word = %16 : vector<4x8xi32>, %above = %above_bound : vector<3x11xi1>) -> (vector<4x8xi32>, vector<3x11xi1>) {
     %17 = vector.constant 0 : vector<4x8xi32>
     %within = vector.cmpi ne, %within_word, %17 : vector<4x8xi32> -> vector<4x8xi1>
     scf.yield %within_word, %above : vector<4x8xi32>, vector<3x11xi1>
@@ -543,10 +543,10 @@ test.target<low_core> @carrier_target
 func.def public target(@carrier_target) @unknown_predicate_uses_word(%limit: index, %seed: i1) -> (i1) {
   %c0 = index.constant 0 : index
   %c1 = index.constant 1 : index
-  %8 = scalar.constant 1 : i32
-  %9 = scalar.constant 0 : i32
-  %10 = scf.select %seed, %8, %9 : i32
-  %last_word = scf.for %i = [%c0 to %limit step %c1](%flag_word = %10 : i32) -> (i32) {
+  %11 = scalar.constant 1 : i32
+  %12 = scalar.constant 0 : i32
+  %13 = scf.select %seed, %11, %12 : i32
+  %last_word = scf.for %i = [%c0 to %limit step %c1](%flag_word = %13 : i32) -> (i32) {
     %14 = scalar.constant 0 : i32
     %flag = scalar.cmpi ne, %flag_word, %14 : i32
     scf.yield %flag_word : i32
@@ -600,3 +600,547 @@ func.def public target(@carrier_target) @reports_predicate_loop(%limit: index, %
 // ----
 CHECK: *"loops-rewritten":1,*
 CHECK: *"loop-predicate-projections":2,"loop-predicate-components":2,*
+
+// ====
+
+// An inner loop starts from the outer loop's projected body argument and the
+// outer backedge yields the inner loop's projected result. Both carriers must
+// exist before either transport edge is built, so each edge forwards the other
+// loop's word directly.
+// RUN: pass specialize-target-callgraph,project-loop-boundary-representations
+
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @nested_predicate() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %initial = index.cmp ne, %lane, %zero : index
+  %outer_result = scf.while(%outer_flag = %initial : i1) -> (i1) {
+    scf.condition %outer_flag, %outer_flag : i1, i1
+  } do(%outer_body_flag: i1) {
+    %inner_result = scf.while(%inner_flag = %outer_body_flag : i1) -> (i1) {
+      scf.condition %inner_flag, %inner_flag : i1, i1
+    } do(%inner_body_flag: i1) {
+      scf.yield %inner_body_flag : i1
+    }
+    scf.yield %inner_result : i1
+  }
+  test.use %outer_result : i1
+  kernel.return
+}
+
+// ----
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @nested_predicate() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %initial = index.cmp ne, %lane, %zero : index
+  %23 = scalar.constant 1 : i32
+  %24 = scalar.constant 0 : i32
+  %25 = scf.select %initial, %23, %24 : i32
+  %outer_result_word = scf.while(%outer_flag_word = %25 : i32) -> (i32) {
+    %26 = scalar.constant 0 : i32
+    %outer_flag = scalar.cmpi ne, %outer_flag_word, %26 : i32
+    scf.condition %outer_flag, %outer_flag_word : i1, i32
+  } do(%outer_body_flag_word: i32) {
+    %28 = scalar.constant 0 : i32
+    %outer_body_flag = scalar.cmpi ne, %outer_body_flag_word, %28 : i32
+    %inner_result_word = scf.while(%inner_flag_word = %outer_body_flag_word : i32) -> (i32) {
+      %17 = scalar.constant 0 : i32
+      %inner_flag = scalar.cmpi ne, %inner_flag_word, %17 : i32
+      scf.condition %inner_flag, %inner_flag_word : i1, i32
+    } do(%inner_body_flag_word: i32) {
+      %19 = scalar.constant 0 : i32
+      %inner_body_flag = scalar.cmpi ne, %inner_body_flag_word, %19 : i32
+      scf.yield %inner_body_flag_word : i32
+    }
+    %21 = scalar.constant 0 : i32
+    %inner_result = scalar.cmpi ne, %inner_result_word, %21 : i32
+    scf.yield %inner_result_word : i32
+  }
+  %30 = scalar.constant 0 : i32
+  %outer_result = scalar.cmpi ne, %outer_result_word, %30 : i32
+  test.use %outer_result : i1
+  kernel.return
+}
+
+// ====
+
+// The integrator's rejection flag: an outer counted loop hands its carried
+// flag unchanged to an inner retry loop, and no loop condition reads it.
+// RUN: pass specialize-target-callgraph,project-loop-boundary-representations
+
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @carried_rejection_flag() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %one = index.constant 1 : index
+  %steps = index.constant 4 : index
+  %accepted = scalar.constant false : i1
+  %retry_first = scalar.constant true : i1
+  %last = scf.for %step = [%zero to %steps step %one](%reject = %accepted : i1) -> (i1) {
+    %attempt_reject, %attempt_retry = scf.while(%current_reject = %reject : i1, %retry = %retry_first : i1) -> (i1, i1) {
+      scf.condition %retry, %current_reject, %retry : i1, i1, i1
+    } do(%body_reject: i1, %body_retry: i1) {
+      test.use %body_reject : i1
+      %again = index.cmp ult, %step, %lane : index
+      scf.yield %again, %again : i1, i1
+    }
+    scf.yield %attempt_reject : i1
+  }
+  test.use %last : i1
+  kernel.return
+}
+
+// ----
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @carried_rejection_flag() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %one = index.constant 1 : index
+  %steps = index.constant 4 : index
+  %accepted = scalar.constant false : i1
+  %retry_first = scalar.constant true : i1
+  %48 = scalar.constant 1 : i32
+  %49 = scalar.constant 0 : i32
+  %50 = scf.select %accepted, %48, %49 : i32
+  %last_word = scf.for %step = [%zero to %steps step %one](%reject_word = %50 : i32) -> (i32) {
+    %51 = scalar.constant 0 : i32
+    %reject = scalar.cmpi ne, %reject_word, %51 : i32
+    %27 = scalar.constant 1 : i32
+    %28 = scalar.constant 0 : i32
+    %29 = scf.select %retry_first, %27, %28 : i32
+    %attempt_reject_word, %attempt_retry_word = scf.while(%current_reject_word = %reject_word : i32, %retry_word = %29 : i32) -> (i32, i32) {
+      %36 = scalar.constant 0 : i32
+      %current_reject = scalar.cmpi ne, %current_reject_word, %36 : i32
+      %38 = scalar.constant 0 : i32
+      %retry = scalar.cmpi ne, %retry_word, %38 : i32
+      scf.condition %retry, %current_reject_word, %retry_word : i1, i32, i32
+    } do(%body_reject_word: i32, %body_retry_word: i32) {
+      %40 = scalar.constant 0 : i32
+      %body_reject = scalar.cmpi ne, %body_reject_word, %40 : i32
+      %42 = scalar.constant 0 : i32
+      %body_retry = scalar.cmpi ne, %body_retry_word, %42 : i32
+      test.use %body_reject : i1
+      %again = index.cmp ult, %step, %lane : index
+      %30 = scalar.constant 1 : i32
+      %31 = scalar.constant 0 : i32
+      %32 = scf.select %again, %30, %31 : i32
+      %33 = scalar.constant 1 : i32
+      %34 = scalar.constant 0 : i32
+      %35 = scf.select %again, %33, %34 : i32
+      scf.yield %32, %35 : i32, i32
+    }
+    %46 = scalar.constant 0 : i32
+    %attempt_retry = scalar.cmpi ne, %attempt_retry_word, %46 : i32
+    %44 = scalar.constant 0 : i32
+    %attempt_reject = scalar.cmpi ne, %attempt_reject_word, %44 : i32
+    scf.yield %attempt_reject_word : i32
+  }
+  %53 = scalar.constant 0 : i32
+  %last = scalar.cmpi ne, %last_word, %53 : i32
+  test.use %last : i1
+  kernel.return
+}
+
+// ====
+
+// Three nested loops each start from the enclosing body flag and return their
+// result through the enclosing backedge.
+// RUN: pass specialize-target-callgraph,project-loop-boundary-representations
+
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @three_level_predicate() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %initial = index.cmp ne, %lane, %zero : index
+  %outer_result = scf.while(%outer_flag = %initial : i1) -> (i1) {
+    scf.condition %outer_flag, %outer_flag : i1, i1
+  } do(%outer_body_flag: i1) {
+    %middle_result = scf.while(%middle_flag = %outer_body_flag : i1) -> (i1) {
+      scf.condition %middle_flag, %middle_flag : i1, i1
+    } do(%middle_body_flag: i1) {
+      %inner_result = scf.while(%inner_flag = %middle_body_flag : i1) -> (i1) {
+        scf.condition %inner_flag, %inner_flag : i1, i1
+      } do(%inner_body_flag: i1) {
+        scf.yield %inner_body_flag : i1
+      }
+      scf.yield %inner_result : i1
+    }
+    scf.yield %middle_result : i1
+  }
+  test.use %outer_result : i1
+  kernel.return
+}
+
+// ----
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @three_level_predicate() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %initial = index.cmp ne, %lane, %zero : index
+  %35 = scalar.constant 1 : i32
+  %36 = scalar.constant 0 : i32
+  %37 = scf.select %initial, %35, %36 : i32
+  %outer_result_word = scf.while(%outer_flag_word = %37 : i32) -> (i32) {
+    %38 = scalar.constant 0 : i32
+    %outer_flag = scalar.cmpi ne, %outer_flag_word, %38 : i32
+    scf.condition %outer_flag, %outer_flag_word : i1, i32
+  } do(%outer_body_flag_word: i32) {
+    %40 = scalar.constant 0 : i32
+    %outer_body_flag = scalar.cmpi ne, %outer_body_flag_word, %40 : i32
+    %middle_result_word = scf.while(%middle_flag_word = %outer_body_flag_word : i32) -> (i32) {
+      %29 = scalar.constant 0 : i32
+      %middle_flag = scalar.cmpi ne, %middle_flag_word, %29 : i32
+      scf.condition %middle_flag, %middle_flag_word : i1, i32
+    } do(%middle_body_flag_word: i32) {
+      %31 = scalar.constant 0 : i32
+      %middle_body_flag = scalar.cmpi ne, %middle_body_flag_word, %31 : i32
+      %inner_result_word = scf.while(%inner_flag_word = %middle_body_flag_word : i32) -> (i32) {
+        %23 = scalar.constant 0 : i32
+        %inner_flag = scalar.cmpi ne, %inner_flag_word, %23 : i32
+        scf.condition %inner_flag, %inner_flag_word : i1, i32
+      } do(%inner_body_flag_word: i32) {
+        %25 = scalar.constant 0 : i32
+        %inner_body_flag = scalar.cmpi ne, %inner_body_flag_word, %25 : i32
+        scf.yield %inner_body_flag_word : i32
+      }
+      %27 = scalar.constant 0 : i32
+      %inner_result = scalar.cmpi ne, %inner_result_word, %27 : i32
+      scf.yield %inner_result_word : i32
+    }
+    %33 = scalar.constant 0 : i32
+    %middle_result = scalar.cmpi ne, %middle_result_word, %33 : i32
+    scf.yield %middle_result_word : i32
+  }
+  %42 = scalar.constant 0 : i32
+  %outer_result = scalar.cmpi ne, %outer_result_word, %42 : i32
+  test.use %outer_result : i1
+  kernel.return
+}
+
+// ====
+
+// The first loop's projected result initializes a later sibling loop.
+// RUN: pass specialize-target-callgraph,project-loop-boundary-representations
+
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @sibling_predicate() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %initial = index.cmp ne, %lane, %zero : index
+  %first_result = scf.while(%first_flag = %initial : i1) -> (i1) {
+    scf.condition %first_flag, %first_flag : i1, i1
+  } do(%first_body_flag: i1) {
+    scf.yield %first_body_flag : i1
+  }
+  %second_result = scf.while(%second_flag = %first_result : i1) -> (i1) {
+    scf.condition %second_flag, %second_flag : i1, i1
+  } do(%second_body_flag: i1) {
+    scf.yield %second_body_flag : i1
+  }
+  test.use %second_result : i1
+  kernel.return
+}
+
+// ----
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @sibling_predicate() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %initial = index.cmp ne, %lane, %zero : index
+  %17 = scalar.constant 1 : i32
+  %18 = scalar.constant 0 : i32
+  %19 = scf.select %initial, %17, %18 : i32
+  %first_result_word = scf.while(%first_flag_word = %19 : i32) -> (i32) {
+    %20 = scalar.constant 0 : i32
+    %first_flag = scalar.cmpi ne, %first_flag_word, %20 : i32
+    scf.condition %first_flag, %first_flag_word : i1, i32
+  } do(%first_body_flag_word: i32) {
+    %22 = scalar.constant 0 : i32
+    %first_body_flag = scalar.cmpi ne, %first_body_flag_word, %22 : i32
+    scf.yield %first_body_flag_word : i32
+  }
+  %24 = scalar.constant 0 : i32
+  %first_result = scalar.cmpi ne, %first_result_word, %24 : i32
+  %second_result_word = scf.while(%second_flag_word = %first_result_word : i32) -> (i32) {
+    %26 = scalar.constant 0 : i32
+    %second_flag = scalar.cmpi ne, %second_flag_word, %26 : i32
+    scf.condition %second_flag, %second_flag_word : i1, i32
+  } do(%second_body_flag_word: i32) {
+    %28 = scalar.constant 0 : i32
+    %second_body_flag = scalar.cmpi ne, %second_body_flag_word, %28 : i32
+    scf.yield %second_body_flag_word : i32
+  }
+  %30 = scalar.constant 0 : i32
+  %second_result = scalar.cmpi ne, %second_result_word, %30 : i32
+  test.use %second_result : i1
+  kernel.return
+}
+
+// ====
+
+// A uniform result of the first loop stays direct while its divergent sibling
+// column is projected. The later loop's divergent flag starts from that uniform
+// result, so its initial conversion must read the first loop's replacement
+// result rather than the retired original.
+// RUN: pass specialize-target-callgraph,project-loop-boundary-representations
+
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @replaced_uniform_source() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %divergent = index.cmp ne, %lane, %zero : index
+  %enter = scalar.constant true : i1
+  %stop = scalar.constant false : i1
+  %lane_flag, %uniform_flag = scf.while(%first_lane = %divergent : i1, %first_uniform = %enter : i1) -> (i1, i1) {
+    scf.condition %first_uniform, %first_lane, %first_uniform : i1, i1, i1
+  } do(%body_lane: i1, %body_uniform: i1) {
+    scf.yield %body_lane, %stop : i1, i1
+  }
+  %second_result = scf.while(%second_flag = %uniform_flag : i1) -> (i1) {
+    scf.condition %second_flag, %second_flag : i1, i1
+  } do(%second_body_flag: i1) {
+    %next = index.cmp ne, %lane, %zero : index
+    scf.yield %next : i1
+  }
+  test.use %lane_flag, %second_result : i1, i1
+  kernel.return
+}
+
+// ----
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @replaced_uniform_source() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %divergent = index.cmp ne, %lane, %zero : index
+  %enter = scalar.constant true : i1
+  %stop = scalar.constant false : i1
+  %26 = scalar.constant 1 : i32
+  %27 = scalar.constant 0 : i32
+  %28 = scf.select %divergent, %26, %27 : i32
+  %lane_flag_word, %uniform_flag = scf.while(%first_lane_word = %28 : i32, %first_uniform = %enter : i1) -> (i32, i1) {
+    %29 = scalar.constant 0 : i32
+    %first_lane = scalar.cmpi ne, %first_lane_word, %29 : i32
+    scf.condition %first_uniform, %first_lane_word, %first_uniform : i1, i32, i1
+  } do(%body_lane_word: i32, %body_uniform: i1) {
+    %31 = scalar.constant 0 : i32
+    %body_lane = scalar.cmpi ne, %body_lane_word, %31 : i32
+    scf.yield %body_lane_word, %stop : i32, i1
+  }
+  %33 = scalar.constant 0 : i32
+  %lane_flag = scalar.cmpi ne, %lane_flag_word, %33 : i32
+  %35 = scalar.constant 1 : i32
+  %36 = scalar.constant 0 : i32
+  %37 = scf.select %uniform_flag, %35, %36 : i32
+  %second_result_word = scf.while(%second_flag_word = %37 : i32) -> (i32) {
+    %41 = scalar.constant 0 : i32
+    %second_flag = scalar.cmpi ne, %second_flag_word, %41 : i32
+    scf.condition %second_flag, %second_flag_word : i1, i32
+  } do(%second_body_flag_word: i32) {
+    %43 = scalar.constant 0 : i32
+    %second_body_flag = scalar.cmpi ne, %second_body_flag_word, %43 : i32
+    %next = index.cmp ne, %lane, %zero : index
+    %38 = scalar.constant 1 : i32
+    %39 = scalar.constant 0 : i32
+    %40 = scf.select %next, %38, %39 : i32
+    scf.yield %40 : i32
+  }
+  %45 = scalar.constant 0 : i32
+  %second_result = scalar.cmpi ne, %second_result_word, %45 : i32
+  test.use %lane_flag, %second_result : i1, i1
+  kernel.return
+}
+
+// ====
+
+// Projected predicate state and unprojected index state cross both nested
+// transport edges together. The condition header and result tuples differ in
+// order, so header and result offsets are mapped independently.
+// RUN: pass specialize-target-callgraph,project-loop-boundary-representations
+
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @mixed_nested_state() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %step = index.constant 1 : index
+  %initial = index.cmp ne, %lane, %zero : index
+  %outer_count, %outer_result = scf.while(%outer_flag = %initial : i1, %outer_i = %zero : index) -> (index, i1) {
+    scf.condition %outer_flag, %outer_i, %outer_flag : i1, index, i1
+  } do(%outer_body_i: index, %outer_body_flag: i1) {
+    %inner_count, %inner_result = scf.while(%inner_flag = %outer_body_flag : i1, %inner_i = %outer_body_i : index) -> (index, i1) {
+      scf.condition %inner_flag, %inner_i, %inner_flag : i1, index, i1
+    } do(%inner_body_i: index, %inner_body_flag: i1) {
+      %inner_next = index.add %inner_body_i, %step : index
+      scf.yield %inner_body_flag, %inner_next : i1, index
+    }
+    scf.yield %inner_result, %inner_count : i1, index
+  }
+  test.use %outer_count, %outer_result : index, i1
+  kernel.return
+}
+
+// ----
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @mixed_nested_state() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %step = index.constant 1 : index
+  %initial = index.cmp ne, %lane, %zero : index
+  %37 = scalar.constant 1 : i32
+  %38 = scalar.constant 0 : i32
+  %39 = scf.select %initial, %37, %38 : i32
+  %outer_count, %outer_result_word = scf.while(%outer_flag_word = %39 : i32, %outer_i = %zero : index) -> (index, i32) {
+    %40 = scalar.constant 0 : i32
+    %outer_flag = scalar.cmpi ne, %outer_flag_word, %40 : i32
+    scf.condition %outer_flag, %outer_i, %outer_flag_word : i1, index, i32
+  } do(%outer_body_i: index, %outer_body_flag_word: i32) {
+    %42 = scalar.constant 0 : i32
+    %outer_body_flag = scalar.cmpi ne, %outer_body_flag_word, %42 : i32
+    %inner_count, %inner_result_word = scf.while(%inner_flag_word = %outer_body_flag_word : i32, %inner_i = %outer_body_i : index) -> (index, i32) {
+      %31 = scalar.constant 0 : i32
+      %inner_flag = scalar.cmpi ne, %inner_flag_word, %31 : i32
+      scf.condition %inner_flag, %inner_i, %inner_flag_word : i1, index, i32
+    } do(%inner_body_i: index, %inner_body_flag_word: i32) {
+      %33 = scalar.constant 0 : i32
+      %inner_body_flag = scalar.cmpi ne, %inner_body_flag_word, %33 : i32
+      %inner_next = index.add %inner_body_i, %step : index
+      scf.yield %inner_body_flag_word, %inner_next : i32, index
+    }
+    %35 = scalar.constant 0 : i32
+    %inner_result = scalar.cmpi ne, %inner_result_word, %35 : i32
+    scf.yield %inner_result_word, %inner_count : i32, index
+  }
+  %44 = scalar.constant 0 : i32
+  %outer_result = scalar.cmpi ne, %outer_result_word, %44 : i32
+  test.use %outer_count, %outer_result : index, i1
+  kernel.return
+}
+
+// ====
+
+// Counted loops carry the same nested predicate recurrence through positional
+// header, body, and result tuples.
+// RUN: pass specialize-target-callgraph,project-loop-boundary-representations
+
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @nested_counted_predicate() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %one = index.constant 1 : index
+  %steps = index.constant 4 : index
+  %initial = index.cmp ne, %lane, %zero : index
+  %outer_result = scf.for %outer = [%zero to %steps step %one](%outer_flag = %initial : i1) -> (i1) {
+    %inner_result = scf.for %inner = [%zero to %steps step %one](%inner_flag = %outer_flag : i1) -> (i1) {
+      %next = index.cmp ult, %inner, %lane : index
+      %merged = scalar.xori %inner_flag, %next : i1
+      scf.yield %merged : i1
+    }
+    scf.yield %inner_result : i1
+  }
+  test.use %outer_result : i1
+  kernel.return
+}
+
+// ----
+test.target<low_core> @carrier_target {abi = hal_kernel, subgroup_size = 64}
+
+kernel.def target(@carrier_target) @nested_counted_predicate() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch() {
+  %lane = kernel.subgroup.lane.id : index
+  %zero = index.constant 0 : index
+  %one = index.constant 1 : index
+  %steps = index.constant 4 : index
+  %initial = index.cmp ne, %lane, %zero : index
+  %28 = scalar.constant 1 : i32
+  %29 = scalar.constant 0 : i32
+  %30 = scf.select %initial, %28, %29 : i32
+  %outer_result_word = scf.for %outer = [%zero to %steps step %one](%outer_flag_word = %30 : i32) -> (i32) {
+    %31 = scalar.constant 0 : i32
+    %outer_flag = scalar.cmpi ne, %outer_flag_word, %31 : i32
+    %inner_result_word = scf.for %inner = [%zero to %steps step %one](%inner_flag_word = %outer_flag_word : i32) -> (i32) {
+      %24 = scalar.constant 0 : i32
+      %inner_flag = scalar.cmpi ne, %inner_flag_word, %24 : i32
+      %next = index.cmp ult, %inner, %lane : index
+      %merged = scalar.xori %inner_flag, %next : i1
+      %21 = scalar.constant 1 : i32
+      %22 = scalar.constant 0 : i32
+      %23 = scf.select %merged, %21, %22 : i32
+      scf.yield %23 : i32
+    }
+    %26 = scalar.constant 0 : i32
+    %inner_result = scalar.cmpi ne, %inner_result_word, %26 : i32
+    scf.yield %inner_result_word : i32
+  }
+  %33 = scalar.constant 0 : i32
+  %outer_result = scalar.cmpi ne, %outer_result_word, %33 : i32
+  test.use %outer_result : i1
+  kernel.return
+}

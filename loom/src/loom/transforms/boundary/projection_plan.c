@@ -870,6 +870,26 @@ iree_host_size_t loom_boundary_projection_slot_index(
              : IREE_HOST_SIZE_MAX;
 }
 
+iree_status_t loom_boundary_projection_record_replacement(
+    loom_boundary_projection_function_t* function, loom_value_id_t original,
+    loom_value_id_t replacement) {
+  IREE_ASSERT_NE(replacement, LOOM_VALUE_ID_INVALID);
+  return loom_ir_remap_map_value(&function->correspondence, original,
+                                 replacement);
+}
+
+loom_value_id_t loom_boundary_projection_resolve_value(
+    const loom_boundary_projection_function_t* function,
+    loom_value_id_t value_id) {
+  // Replacement values are created by the batch and lie outside the snapshot,
+  // so a lookup chain ends after one step.
+  loom_value_id_t replacement = LOOM_VALUE_ID_INVALID;
+  return loom_ir_remap_try_lookup_value(&function->correspondence, value_id,
+                                        &replacement)
+             ? replacement
+             : value_id;
+}
+
 iree_status_t loom_boundary_projection_add_dependency(
     loom_boundary_projection_plan_t* plan,
     loom_boundary_projection_function_t* function, iree_host_size_t source,

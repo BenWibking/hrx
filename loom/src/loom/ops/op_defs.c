@@ -2133,16 +2133,16 @@ static iree_status_t loom_builder_validate_operand_segments(
   return iree_ok_status();
 }
 
-static iree_status_t loom_builder_allocate_op_storage(
+static iree_status_t loom_builder_allocate_unlinked_op_storage(
     loom_builder_t* builder, loom_op_kind_t kind, uint16_t operand_count,
     const uint16_t* operand_segment_counts, uint8_t operand_segment_count,
     uint16_t result_count, uint8_t successor_count, uint8_t region_count,
     uint16_t tied_result_count, uint8_t attribute_count,
     loom_location_id_t location, loom_op_t** out_op) {
   *out_op = NULL;
-  if (!builder->ip.block || !builder->module) {
+  if (!builder->module) {
     return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "builder has no insertion block or module");
+                            "builder has no module");
   }
   const loom_op_vtable_t* vtable =
       loom_context_resolve_op(builder->module->context, kind);
@@ -2203,16 +2203,54 @@ static iree_status_t loom_builder_allocate_op_storage(
            operand_segment_counts_size);
   }
 
-  if (!builder->ip.before_op) {
-    IREE_RETURN_IF_ERROR(
-        loom_block_append_op(builder->module, builder->ip.block, op));
-  } else {
-    IREE_RETURN_IF_ERROR(loom_block_insert_before_op(
-        builder->module, builder->ip.block, builder->ip.before_op, op));
-  }
-
   *out_op = op;
   return iree_ok_status();
+}
+
+iree_status_t loom_builder_insert_op(loom_builder_t* builder, loom_op_t* op) {
+  if (!builder->ip.block || !builder->module) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "builder has no insertion block or module");
+  }
+  op->parent_op = builder->ip.parent_op;
+  if (!builder->ip.before_op) {
+    return loom_block_append_op(builder->module, builder->ip.block, op);
+  }
+  return loom_block_insert_before_op(builder->module, builder->ip.block,
+                                     builder->ip.before_op, op);
+}
+
+static iree_status_t loom_builder_allocate_op_storage(
+    loom_builder_t* builder, loom_op_kind_t kind, uint16_t operand_count,
+    const uint16_t* operand_segment_counts, uint8_t operand_segment_count,
+    uint16_t result_count, uint8_t successor_count, uint8_t region_count,
+    uint16_t tied_result_count, uint8_t attribute_count,
+    loom_location_id_t location, loom_op_t** out_op) {
+  *out_op = NULL;
+  if (!builder->ip.block || !builder->module) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "builder has no insertion block or module");
+  }
+  loom_op_t* op = NULL;
+  IREE_RETURN_IF_ERROR(loom_builder_allocate_unlinked_op_storage(
+      builder, kind, operand_count, operand_segment_counts,
+      operand_segment_count, result_count, successor_count, region_count,
+      tied_result_count, attribute_count, location, &op));
+  IREE_RETURN_IF_ERROR(loom_builder_insert_op(builder, op));
+  *out_op = op;
+  return iree_ok_status();
+}
+
+iree_status_t loom_builder_allocate_detached_op(
+    loom_builder_t* builder, loom_op_kind_t kind, uint16_t operand_count,
+    const uint16_t* operand_segment_counts, uint8_t operand_segment_count,
+    uint16_t result_count, uint8_t successor_count, uint8_t region_count,
+    uint16_t tied_result_count, uint8_t attribute_count,
+    loom_location_id_t location, loom_op_t** out_op) {
+  return loom_builder_allocate_unlinked_op_storage(
+      builder, kind, operand_count, operand_segment_counts,
+      operand_segment_count, result_count, successor_count, region_count,
+      tied_result_count, attribute_count, location, out_op);
 }
 
 iree_status_t loom_builder_allocate_op(
@@ -2945,27 +2983,25 @@ void loom_module_link_symbol_defining_op(loom_module_t* module, loom_op_t* op,
   }
 }
 
-iree_status_t loom_builder_finalize_op(loom_builder_t* builder, loom_op_t* op) {
-  // Verify reserved values were fully consumed.
-  if (builder->reserved_value_count > 0) {
-    if (builder->reserved_value_next != builder->reserved_value_count) {
-      iree_host_size_t consumed = builder->reserved_value_next;
-      iree_host_size_t reserved = builder->reserved_value_count;
-      builder->reserved_value_ids = NULL;
-      builder->reserved_value_count = 0;
-      builder->reserved_value_next = 0;
-      return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                              "reserved %" PRIhsz
-                              " value(s) but op consumed %" PRIhsz,
-                              reserved, consumed);
-    }
-    builder->reserved_value_ids = NULL;
-    builder->reserved_value_count = 0;
-    builder->reserved_value_next = 0;
+iree_status_t loom_builder_release_reserved_values(loom_builder_t* builder) {
+  if (builder->reserved_value_count == 0) {
+    return iree_ok_status();
   }
+  const iree_host_size_t consumed = builder->reserved_value_next;
+  const iree_host_size_t reserved = builder->reserved_value_count;
+  builder->reserved_value_ids = NULL;
+  builder->reserved_value_count = 0;
+  builder->reserved_value_next = 0;
+  if (consumed != reserved) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "reserved %" PRIhsz
+                            " value(s) but op consumed %" PRIhsz,
+                            reserved, consumed);
+  }
+  return iree_ok_status();
+}
 
-  IREE_RETURN_IF_ERROR(loom_op_record_operand_uses(builder->module, op));
-  // Set the def pointer on each result value.
+void loom_builder_bind_op_results(loom_builder_t* builder, loom_op_t* op) {
   loom_value_id_t* results = loom_op_results(op);
   for (uint16_t i = 0; i < op->result_count; ++i) {
     if (results[i] != LOOM_VALUE_ID_INVALID) {
@@ -2973,6 +3009,12 @@ iree_status_t loom_builder_finalize_op(loom_builder_t* builder, loom_op_t* op) {
           loom_value_def_make_op(op, i);
     }
   }
+}
+
+iree_status_t loom_builder_finalize_op(loom_builder_t* builder, loom_op_t* op) {
+  IREE_RETURN_IF_ERROR(loom_builder_release_reserved_values(builder));
+  IREE_RETURN_IF_ERROR(loom_op_record_operand_uses(builder->module, op));
+  loom_builder_bind_op_results(builder, op);
   // Result type uses are installed when values are defined or their types
   // change. Finalization only assigns the operation definition site.
   IREE_RETURN_IF_ERROR(
