@@ -19,6 +19,7 @@
 #include "loom/error/error_catalog.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
+#include "loom/ops/global/ops.h"
 #include "loom/ops/low/ops.h"
 #include "loom/ops/low/schedule_scope.h"
 #include "loom/target/function_version.h"
@@ -207,6 +208,13 @@ static iree_string_view_t loom_low_verify_string_or_empty(
     return iree_string_view_empty();
   }
   return loom_string_table_get(&module->strings, string_id);
+}
+
+static iree_string_view_t loom_low_verify_symbol_name(
+    const loom_module_t* module, const loom_symbol_t* symbol) {
+  const iree_string_view_t name =
+      loom_low_verify_string_or_empty(module, symbol->name_id);
+  return iree_string_view_is_empty(name) ? IREE_SV("<unnamed>") : name;
 }
 
 static iree_string_view_t loom_low_verify_descriptor_op_name(
@@ -658,6 +666,58 @@ static bool loom_low_immediate_has_default(
                           LOOM_LOW_IMMEDIATE_FLAG_DEFAULT_VALUE);
 }
 
+static iree_status_t loom_low_verify_read_only_data_immediate(
+    loom_low_function_verify_state_t* function_state, const loom_op_t* op,
+    uint16_t attrs_attr_index, loom_symbol_ref_t ref) {
+  loom_low_verify_state_t* state = function_state->state;
+  const loom_diagnostic_field_ref_t field_ref = loom_diagnostic_field_ref(
+      LOOM_DIAGNOSTIC_FIELD_ATTRIBUTE, attrs_attr_index);
+  if (ref.module_id != 0) {
+    const loom_diagnostic_param_t params[] = {
+        loom_param_with_field_ref(loom_param_u32(ref.module_id), field_ref),
+    };
+    return loom_low_verify_emit(state, op, LOOM_ERR_SYMBOL_004, params,
+                                IREE_ARRAYSIZE(params), NULL, 0);
+  }
+  if (ref.symbol_id >= state->module->symbols.count) {
+    const loom_diagnostic_param_t params[] = {
+        loom_param_with_field_ref(loom_param_u32(ref.symbol_id), field_ref),
+        loom_param_u32((uint32_t)state->module->symbols.count),
+    };
+    return loom_low_verify_emit(state, op, LOOM_ERR_SYMBOL_001, params,
+                                IREE_ARRAYSIZE(params), NULL, 0);
+  }
+
+  const loom_symbol_t* symbol = &state->module->symbols.entries[ref.symbol_id];
+  if (symbol->definition == NULL || symbol->defining_op == NULL) {
+    const loom_diagnostic_param_t params[] = {
+        loom_param_with_field_ref(loom_param_string(loom_low_verify_symbol_name(
+                                      state->module, symbol)),
+                                  field_ref),
+    };
+    return loom_low_verify_emit(state, op, LOOM_ERR_SYMBOL_002, params,
+                                IREE_ARRAYSIZE(params), NULL, 0);
+  }
+  if (loom_global_rodata_def_isa(symbol->defining_op)) {
+    return iree_ok_status();
+  }
+
+  const loom_diagnostic_param_t params[] = {
+      loom_param_with_field_ref(
+          loom_param_string(loom_low_verify_symbol_name(state->module, symbol)),
+          field_ref),
+      loom_param_string(loom_op_name(state->module, symbol->defining_op)),
+      loom_param_string(IREE_SV("global.rodata.def")),
+  };
+  const loom_diagnostic_related_op_t related_ops[] = {{
+      .label = IREE_SV("defined here"),
+      .op = symbol->defining_op,
+  }};
+  return loom_low_verify_emit(state, op, LOOM_ERR_SYMBOL_003, params,
+                              IREE_ARRAYSIZE(params), related_ops,
+                              IREE_ARRAYSIZE(related_ops));
+}
+
 static iree_status_t loom_low_verify_descriptor_immediate_attr(
     loom_low_function_verify_state_t* function_state, const loom_op_t* op,
     iree_string_view_t descriptor_key, uint16_t descriptor_attr_index,
@@ -681,6 +741,11 @@ static iree_status_t loom_low_verify_descriptor_immediate_attr(
       if (attr->value.kind == LOOM_ATTR_SYMBOL &&
           iree_all_bits_set(immediate->flags,
                             LOOM_LOW_IMMEDIATE_FLAG_SYMBOLIC)) {
+        if (iree_any_bit_set(immediate->flags,
+                             LOOM_LOW_IMMEDIATE_FLAG_READ_ONLY_DATA)) {
+          return loom_low_verify_read_only_data_immediate(
+              function_state, op, attrs_attr_index, attr->value.symbol);
+        }
         return iree_ok_status();
       }
       if (attr->value.kind != LOOM_ATTR_I64) {

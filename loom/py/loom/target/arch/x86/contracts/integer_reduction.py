@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""AVX2 full-register integer reduction families."""
+"""x86 full-register integer reduction families."""
 
 from __future__ import annotations
 
@@ -15,10 +15,15 @@ from loom.target.arch.x86.contracts.rule_builders import (
 from loom.target.arch.x86.contracts.rule_builders import (
     emit_descriptor_op as _op_emit,
 )
+from loom.target.arch.x86.contracts.rule_builders import (
+    zmm_reduction_emit_chain as _zmm_reduction_emit_chain,
+)
 from loom.target.arch.x86.vector_families import (
     AVX2_INTEGER_REDUCTION_FAMILIES,
-    AVX2_LANE_FAMILIES,
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_INTEGER_REDUCTION_FAMILIES,
+    AVX512_VECTOR_BIT_WIDTHS,
+    X86_LANE_FAMILIES,
     VectorBinaryFamily,
 )
 from loom.target.contracts import (
@@ -32,16 +37,21 @@ from loom.target.contracts import (
 )
 from loom.target.low_descriptors import Descriptor
 
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm"}
-_LANE_MNEMONICS = {
-    row.element_bit_width: (row.extract_mnemonic, row.insert_mnemonic)
-    for row in AVX2_LANE_FAMILIES
+_BROADCAST_MNEMONICS = {
+    8: "vpbroadcastb",
+    16: "vpbroadcastw",
+    32: "vpbroadcastd",
+    64: "vpbroadcastq",
+}
+_EXTRACT_MNEMONICS = {
+    row.element_bit_width: row.extract_mnemonic for row in X86_LANE_FAMILIES
 }
 
 
 def _integer_reduction_rule(
     row: VectorBinaryFamily,
     vector_bit_width: int,
+    descriptor_prefix: str,
     descriptor_lookup: _DescriptorLookup,
 ) -> DescriptorRule:
     element_bit_width = row.element.bit_width
@@ -50,10 +60,12 @@ def _integer_reduction_rule(
         lanes=vector_bit_width // element_bit_width,
     )
     scalar_type = Scalar(row.element.name)
-    combine = descriptor_lookup(f"x86.avx2.{row.mnemonic}.xmm")
-    shift = descriptor_lookup("x86.avx2.vpsrldq.xmm")
+    combine_register_suffix = "zmm" if vector_bit_width == 512 else "xmm"
+    combine = descriptor_lookup(
+        f"{descriptor_prefix}.{row.mnemonic}.{combine_register_suffix}"
+    )
     emits: list[EmitDescriptorOp] = []
-    dependencies: list[Descriptor] = [shift]
+    dependencies: list[Descriptor] = []
     reduced = ValueRef.operand("input")
     if vector_bit_width == 256:
         extract_half = descriptor_lookup("x86.avx2.vextractf128.xmm.ymm")
@@ -86,38 +98,57 @@ def _integer_reduction_rule(
             )
         )
         reduced = half_sum
-
-    shift_bytes = 8
-    reduction_ordinal = 0
-    while shift_bytes >= element_bit_width // 8:
-        shifted = ValueRef.temporary(f"shifted{reduction_ordinal}")
-        next_reduced = ValueRef.temporary(f"reduced{reduction_ordinal}")
-        emits.extend(
-            (
-                _op_emit(
-                    descriptor=shift,
-                    operands={"source": reduced},
-                    results={"dst": shifted},
-                    result_types={"dst": DescriptorResultType()},
-                    immediates={"bytes": shift_bytes},
-                ),
-                _op_emit(
-                    descriptor=combine,
-                    operands={"lhs": reduced, "rhs": shifted},
-                    results={"dst": next_reduced},
-                    result_types={"dst": DescriptorResultType()},
-                ),
-            )
+    elif vector_bit_width == 512:
+        reduction_emits, reduced, reduction_dependencies = _zmm_reduction_emit_chain(
+            reduced,
+            combine,
+            element_bit_width,
+            descriptor_lookup,
         )
-        reduced = next_reduced
-        reduction_ordinal += 1
-        shift_bytes //= 2
+        emits.extend(reduction_emits)
+        dependencies.extend(reduction_dependencies)
 
-    move_init = descriptor_lookup(
-        "x86.avx2.vmovq.xmm.gpr64"
-        if element_bit_width == 64
-        else "x86.avx2.vmovd.xmm.gpr32"
-    )
+    if vector_bit_width != 512:
+        shift = descriptor_lookup("x86.avx2.vpsrldq.xmm")
+        dependencies.append(shift)
+        shift_bytes = 8
+        reduction_ordinal = 0
+        while shift_bytes >= element_bit_width // 8:
+            shifted = ValueRef.temporary(f"shifted{reduction_ordinal}")
+            next_reduced = ValueRef.temporary(f"reduced{reduction_ordinal}")
+            emits.extend(
+                (
+                    _op_emit(
+                        descriptor=shift,
+                        operands={"source": reduced},
+                        results={"dst": shifted},
+                        result_types={"dst": DescriptorResultType()},
+                        immediates={"bytes": shift_bytes},
+                    ),
+                    _op_emit(
+                        descriptor=combine,
+                        operands={"lhs": reduced, "rhs": shifted},
+                        results={"dst": next_reduced},
+                        result_types={"dst": DescriptorResultType()},
+                    ),
+                )
+            )
+            reduced = next_reduced
+            reduction_ordinal += 1
+            shift_bytes //= 2
+
+    if vector_bit_width == 512:
+        move_init = descriptor_lookup(
+            f"x86.avx512.{_BROADCAST_MNEMONICS[element_bit_width]}.zmm"
+        )
+        init_operand_name = "value"
+    else:
+        move_init = descriptor_lookup(
+            "x86.avx2.vmovq.xmm.gpr64"
+            if element_bit_width == 64
+            else "x86.avx2.vmovd.xmm.gpr32"
+        )
+        init_operand_name = "input"
     dependencies.append(move_init)
     init_vector = ValueRef.temporary("init_vector")
     with_init = ValueRef.temporary("with_init")
@@ -125,7 +156,7 @@ def _integer_reduction_rule(
         (
             _op_emit(
                 descriptor=move_init,
-                operands={"input": ValueRef.operand("init")},
+                operands={init_operand_name: ValueRef.operand("init")},
                 results={"dst": init_vector},
                 result_types={"dst": DescriptorResultType()},
             ),
@@ -138,7 +169,22 @@ def _integer_reduction_rule(
         )
     )
 
-    extract_mnemonic, _ = _LANE_MNEMONICS[element_bit_width]
+    if vector_bit_width == 512:
+        extract_quarter = descriptor_lookup("x86.avx512.vextractf32x4.xmm.zmm")
+        dependencies.append(extract_quarter)
+        extracted = ValueRef.temporary("extracted")
+        emits.append(
+            _op_emit(
+                descriptor=extract_quarter,
+                operands={"source": with_init},
+                results={"dst": extracted},
+                result_types={"dst": DescriptorResultType()},
+                immediates={"lane": 0},
+            )
+        )
+        with_init = extracted
+
+    extract_mnemonic = _EXTRACT_MNEMONICS[element_bit_width]
     extract = descriptor_lookup(
         f"x86.avx2.{extract_mnemonic}.gpr{max(32, element_bit_width)}.xmm"
     )
@@ -173,7 +219,28 @@ def avx2_integer_reduction_rules(
 ) -> tuple[DescriptorRule, ...]:
     """Generates every natively composable AVX2 integer reduction."""
     return tuple(
-        _integer_reduction_rule(row, vector_bit_width, descriptor_lookup)
+        _integer_reduction_rule(
+            row,
+            vector_bit_width,
+            "x86.avx2",
+            descriptor_lookup,
+        )
         for row in AVX2_INTEGER_REDUCTION_FAMILIES
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+    )
+
+
+def avx512_integer_reduction_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Generates every natively composable AVX-512 integer reduction."""
+    return tuple(
+        _integer_reduction_rule(
+            row,
+            vector_bit_width,
+            "x86.avx512",
+            descriptor_lookup,
+        )
+        for row in AVX512_INTEGER_REDUCTION_FAMILIES
+        for vector_bit_width in AVX512_VECTOR_BIT_WIDTHS
     )

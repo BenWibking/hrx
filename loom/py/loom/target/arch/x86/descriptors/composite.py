@@ -20,15 +20,7 @@ _X86_DESCRIPTOR_SET_COMPONENTS = tuple[tuple[DescriptorSet, frozenset[str]], ...
 
 
 _X86_AVX512_PACKED_DOT_COMPONENTS: _X86_DESCRIPTOR_SET_COMPONENTS = (
-    (
-        X86_AVX512_CORE_DESCRIPTOR_SET,
-        frozenset(
-            (
-                "x86.avx512.vpdpbusd.zmm",
-                "x86.avx512.vdpbf16ps.zmm",
-            )
-        ),
-    ),
+    (X86_AVX512_CORE_DESCRIPTOR_SET, frozenset()),
     *(
         (descriptor_set, frozenset())
         for descriptor_set in X86_PACKED_DOT_FEATURE_DESCRIPTOR_SETS

@@ -150,6 +150,10 @@ static iree_status_t loom_x86_loom_check_emit_frame(
         register_names[function.stack.realignment.scratch_register],
         function.stack.realignment.saved_pointer_offset));
   }
+  if (function.may_dirty_upper_vector_state) {
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(
+        builder, "upper-state-cleanup: vzeroupper\n"));
+  }
   return iree_ok_status();
 }
 
@@ -177,6 +181,9 @@ static iree_status_t loom_x86_loom_check_emit_provider_execute(
       .schedule_strategy = options.schedule_strategy,
       .allocation_budgets = options.allocation_budgets,
       .allocation_budget_count = options.allocation_budget_count,
+      .synchronous_storage_spaces = LOOM_LOW_STORAGE_SPACE_SET_STACK |
+                                    LOOM_LOW_STORAGE_SPACE_SET_PRIVATE |
+                                    LOOM_LOW_STORAGE_SPACE_SET_SCRATCH,
       .allocation_reserved_ranges = &stack_pointer,
       .allocation_reserved_range_count = 1,
   };

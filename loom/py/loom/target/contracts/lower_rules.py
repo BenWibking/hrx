@@ -2145,6 +2145,42 @@ class _LowerRuleSetCompiler:
                 source_element_bit_width=project.count,
                 literal_i64=project.literal_i64,
             )
+        if project.kind == AttrProjectKind.I64_ARRAY_READ_ONLY_ELEMENTS:
+            if project.bit_width is None:
+                raise ValueError(
+                    f"{source_op.name}: read-only element projection needs a bit width"
+                )
+            return LowerAttrCopy(
+                kind=LowerAttrCopyKind.I64_ARRAY_READ_ONLY_ELEMENTS,
+                target_name=target_name,
+                source_attr_index=source_attr_index,
+                source_element_bit_width=project.bit_width,
+            )
+        if project.kind == AttrProjectKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT:
+            if project.bytes_per_lane is None or project.count is None:
+                raise ValueError(
+                    f"{source_op.name}: read-only byte-segment projection needs "
+                    "bytes_per_lane/count"
+                )
+            return LowerAttrCopy(
+                kind=LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT,
+                target_name=target_name,
+                source_attr_index=source_attr_index,
+                source_element_count=project.bytes_per_lane,
+                source_element_bit_width=project.count,
+                literal_i64=project.literal_i64,
+            )
+        if project.kind == AttrProjectKind.I64_ARRAY_READ_ONLY_BYTE_WORDS:
+            if project.element is None:
+                raise ValueError(
+                    f"{source_op.name}: read-only byte-word projection needs parity"
+                )
+            return LowerAttrCopy(
+                kind=LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_WORDS,
+                target_name=target_name,
+                source_attr_index=source_attr_index,
+                source_element_index=project.element,
+            )
         if project.kind == AttrProjectKind.I64_ARRAY_PACK_ELEMENTS:
             if (
                 project.element is None

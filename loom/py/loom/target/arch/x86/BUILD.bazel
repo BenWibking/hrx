@@ -37,6 +37,18 @@ iree_py_library(
 )
 
 iree_py_library(
+    name = "native_vector",
+    srcs = [
+        "native_vector.py",
+        "vector_encoding.py",
+    ],
+    deps = [
+        ":package_init",
+        "//loom/py/loom/target:low_descriptors",
+    ],
+)
+
+iree_py_library(
     name = "dialect",
     srcs = ["dialect.py"],
     deps = [
@@ -61,6 +73,7 @@ iree_py_library(
         "descriptors/simd128.py",
     ],
     deps = [
+        ":native_vector",
         ":target_info",
         ":vector_families",
         "//loom/py/loom/target:low_descriptors",

@@ -93,12 +93,14 @@ loom_cc_library(
     loom::error::error_defs
     loom::ir
     loom::ir::facts
+    loom::ir::symbol_map
     loom::ops::atomic
     loom::ops::buffer
     loom::ops::callable_effects
     loom::ops::cfg
     loom::ops::encoding
     loom::ops::func_symbol_facts
+    loom::ops::global
     loom::ops::index
     loom::ops::kernel
     loom::ops::low

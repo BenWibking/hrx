@@ -8,19 +8,34 @@ from loom.dialect.scalar import arithmetic as scalar_arithmetic
 from loom.dialect.scalar import math as scalar_math
 from loom.dialect.vector import defs as vector
 from loom.target.arch.x86.contracts.avx2 import X86_AVX2_CONTRACT_FRAGMENT
-from loom.target.arch.x86.descriptors import X86_AVX2_DESCRIPTOR_SET
+from loom.target.arch.x86.contracts.avx512 import X86_AVX512_CONTRACT_FRAGMENT
+from loom.target.arch.x86.descriptors import (
+    X86_AVX2_DESCRIPTOR_SET,
+    X86_AVX512_CORE_DESCRIPTOR_SET,
+)
 from loom.target.arch.x86.vector_families import (
-    AVX2_FLOAT_EXTREMA_OPERATIONS,
     AVX2_FLOAT_REDUCTION_OPERATIONS,
     AVX2_INTEGER_REDUCTION_FAMILIES,
-    AVX2_LANE_FAMILIES,
     AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
+    AVX2_PAYLOAD_ELEMENT_NAMES,
     AVX2_SCALAR_FLOAT_BINARY_FAMILIES,
     AVX2_SCALAR_FLOAT_FMA_MNEMONICS,
     AVX2_SHUFFLE_FAMILIES,
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_BITWISE_FAMILIES,
+    AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
+    AVX512_FLOAT_BINARY_FAMILIES,
+    AVX512_FLOAT_FMA_MNEMONICS,
+    AVX512_INTEGER_BINARY_FAMILIES,
+    AVX512_INTEGER_REDUCTION_FAMILIES,
+    AVX512_VECTOR_BIT_WIDTHS,
+    AVX512VL_INTEGER_BINARY_FAMILIES,
+    AVX512VL_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
+    FLOAT_EXTREMA_OPERATIONS,
     INTEGER_ELEMENTS,
+    STORAGE_ELEMENTS,
+    X86_LANE_FAMILIES,
 )
 from loom.target.contracts import (
     DescriptorRule,
@@ -117,7 +132,7 @@ def test_avx2_lane_movement_covers_every_payload_type_and_width() -> None:
             Scalar(row.element_names),
             (0, vector_bit_width // row.element_bit_width - 1),
         )
-        for row in AVX2_LANE_FAMILIES
+        for row in X86_LANE_FAMILIES
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
         for source_op in (vector.vector_extract, vector.vector_insert)
     }
@@ -145,6 +160,54 @@ def test_avx2_lane_movement_covers_every_payload_type_and_width() -> None:
             (lane, lane),
         )
         for lane in range(2)
+    )
+    actual = {
+        (
+            rule.source_op.name,
+            _value_type_guard(
+                rule, "source" if rule.source_op is vector.vector_extract else "dest"
+            ),
+            _value_type_guard(
+                rule, "result" if rule.source_op is vector.vector_extract else "value"
+            ),
+            _static_index_range(rule),
+        )
+        for rule in rules
+    }
+    assert actual == expected
+    assert len(rules) == len(expected)
+
+
+def test_avx512_lane_movement_covers_every_zmm_payload_type() -> None:
+    rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+        and case.source_op in (vector.vector_extract, vector.vector_insert)
+        and _value_type_guard(
+            case, "result" if case.source_op is vector.vector_extract else "value"
+        )
+        != Scalar("i1")
+    )
+    expected = {
+        (
+            source_op.name,
+            Vector(row.element_names, lanes=512 // row.element_bit_width),
+            Scalar(row.element_names),
+            (0, 512 // row.element_bit_width - 1),
+        )
+        for row in X86_LANE_FAMILIES
+        for source_op in (vector.vector_extract, vector.vector_insert)
+    }
+    expected.update(
+        (
+            source_op.name,
+            Vector(element_name, lanes=512 // element_bit_width),
+            Scalar(element_name),
+            (0, 512 // element_bit_width - 1),
+        )
+        for element_name, element_bit_width in (("f32", 32), ("f64", 64))
+        for source_op in (vector.vector_extract, vector.vector_insert)
     )
     actual = {
         (
@@ -192,6 +255,31 @@ def test_avx2_shuffles_cover_every_payload_type_and_width() -> None:
     } <= descriptor_keys
 
 
+def test_avx512_shuffles_cover_every_payload_type() -> None:
+    rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule) and case.source_op is vector.vector_shuffle
+    )
+    expected = {
+        Vector(family.element_names, lanes=512 // family.element_bit_width)
+        for family in AVX2_SHUFFLE_FAMILIES
+    }
+    assert {_value_type_guard(rule, "result") for rule in rules} == expected
+    assert len(rules) == len(expected)
+    descriptor_keys = {
+        descriptor.key for descriptor in X86_AVX512_CORE_DESCRIPTOR_SET.descriptors
+    }
+    assert {
+        "x86.avx512.vmovdqu64.rodata.zmm",
+        "x86.avx512.vpermd.zmm",
+        "x86.avx512.vpermq.zmm",
+        "x86.avx512.vpermw.zmm",
+        "x86.avx512.vpsllw.zmm",
+        "x86.avx512.vpsrlw.zmm",
+    } <= descriptor_keys
+
+
 def test_avx2_float_bitcasts_cover_every_storage_family_and_width() -> None:
     rules = tuple(
         case
@@ -228,6 +316,162 @@ def test_avx2_float_bitcasts_cover_every_storage_family_and_width() -> None:
     }
     assert actual == expected
     assert len(rules) == len(expected)
+
+
+def test_avx512_construction_covers_every_zmm_payload_type() -> None:
+    descriptor_rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+    )
+    payload_elements = (*INTEGER_ELEMENTS, *STORAGE_ELEMENTS, *FLOAT_ELEMENTS)
+    expected_constant_types = {
+        Vector(element.name, lanes=vector_bit_width // element.bit_width)
+        for element in payload_elements
+        for vector_bit_width in AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS
+    }
+    constant_rules = tuple(
+        rule
+        for rule in descriptor_rules
+        if rule.source_op is vector.vector_constant
+        and rule.descriptor.key.startswith("x86.avx512.vpbroadcast")
+    )
+    assert {_value_type_guard(rule, "result") for rule in constant_rules} == (
+        expected_constant_types
+    )
+    assert len(constant_rules) == len(expected_constant_types)
+
+    splat_rules = tuple(
+        rule
+        for rule in descriptor_rules
+        if rule.source_op is vector.vector_splat
+        and rule.descriptor.key.startswith(
+            ("x86.avx512.vpbroadcast", "x86.avx512.vbroadcast")
+        )
+    )
+    expected_splat_types = {
+        *(
+            Vector(element.name, lanes=vector_bit_width // element.bit_width)
+            for element in (*INTEGER_ELEMENTS, *STORAGE_ELEMENTS)
+            for vector_bit_width in AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS
+        ),
+        *(
+            Vector(element.name, lanes=512 // element.bit_width)
+            for element in FLOAT_ELEMENTS
+        ),
+    }
+    assert {_value_type_guard(rule, "result") for rule in splat_rules} == (
+        expected_splat_types
+    )
+    assert len(splat_rules) == len(expected_splat_types)
+
+    bitcast_rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, ValueAliasRule) and case.source_op is vector.vector_bitcast
+    )
+    expected_bitcasts = {
+        (source_type, result_type)
+        for float_elements, integer_element, element_bit_width in (
+            (("f8E4M3", "f8E5M2"), "i8", 8),
+            (("f16", "bf16"), "i16", 16),
+            (("f32",), "i32", 32),
+            (("f64",), "i64", 64),
+        )
+        for lane_count in (512 // element_bit_width,)
+        for source_type, result_type in (
+            (
+                Vector(float_elements, lanes=lane_count),
+                Vector(integer_element, lanes=lane_count),
+            ),
+            (
+                Vector(integer_element, lanes=lane_count),
+                Vector(float_elements, lanes=lane_count),
+            ),
+        )
+    }
+    assert {
+        (
+            _value_type_guard(rule, "input"),
+            _value_type_guard(rule, "result"),
+        )
+        for rule in bitcast_rules
+    } == expected_bitcasts
+    assert len(bitcast_rules) == len(expected_bitcasts)
+
+
+def test_avx512_arithmetic_covers_every_native_family() -> None:
+    rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+    )
+    register_suffixes = {128: "xmm", 256: "ymm", 512: "zmm"}
+    expected_direct = {
+        (
+            f"x86.avx512.{family.mnemonic}.zmm",
+            Vector(family.element.name, lanes=512 // family.element.bit_width),
+        )
+        for family in (*AVX512_INTEGER_BINARY_FAMILIES, *AVX512_FLOAT_BINARY_FAMILIES)
+    } | {
+        (
+            f"x86.avx512.{family.mnemonic}.{register_suffixes[vector_bit_width]}",
+            Vector(
+                family.element.name,
+                lanes=vector_bit_width // family.element.bit_width,
+            ),
+        )
+        for family in AVX512VL_INTEGER_BINARY_FAMILIES
+        for vector_bit_width in AVX512VL_VECTOR_BIT_WIDTHS
+    }
+    direct_descriptor_keys = {descriptor_key for descriptor_key, _ in expected_direct}
+    actual_direct = {
+        (rule.descriptor.key, _value_type_guard(rule, "result"))
+        for rule in rules
+        if rule.source_op is not vector.vector_reduce
+        and rule.descriptor.key in direct_descriptor_keys
+    }
+    assert actual_direct == expected_direct
+    assert len(actual_direct) == len(expected_direct)
+
+    expected_fma = {
+        (
+            mnemonic,
+            Vector(element.name, lanes=512 // element.bit_width),
+        )
+        for element in FLOAT_ELEMENTS
+        for mnemonic in (AVX512_FLOAT_FMA_MNEMONICS[element.name],)
+    }
+    actual_fma = {
+        (rule.descriptor.mnemonic, _value_type_guard(rule, "result"))
+        for rule in rules
+        if rule.source_op is vector.vector_fmaf
+        and rule.descriptor.key.startswith("x86.avx512.")
+    }
+    assert actual_fma == expected_fma
+    assert len(actual_fma) == len(expected_fma)
+
+    bitwise_rules = tuple(
+        rule
+        for rule in rules
+        if rule.source_op is not vector.vector_reduce
+        and rule.descriptor.key
+        in {f"x86.avx512.{mnemonic}.zmm" for _, mnemonic, _ in AVX512_BITWISE_FAMILIES}
+        and _value_type_guard(rule, "result") != Vector("i1", lanes=64)
+    )
+    assert {
+        (rule.source_op.name, rule.descriptor.mnemonic) for rule in bitwise_rules
+    } == {
+        (f"vector.{source_operation}", mnemonic)
+        for source_operation, mnemonic, _ in AVX512_BITWISE_FAMILIES
+    }
+    assert {_value_type_guard(rule, "result") for rule in bitwise_rules} == {
+        Vector(
+            AVX2_PAYLOAD_ELEMENT_NAMES,
+            minimum_lanes=2,
+            maximum_lanes=max(AVX512_VECTOR_BIT_WIDTHS) // 8,
+        )
+    }
 
 
 def test_avx2_iotas_cover_every_integer_element_and_width() -> None:
@@ -272,34 +516,96 @@ def test_avx2_iotas_cover_every_integer_element_and_width() -> None:
     )
 
 
-def test_avx2_float_extrema_cover_every_semantic_and_width() -> None:
+def test_avx512_iotas_cover_every_zmm_integer_element() -> None:
+    rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule) and case.source_op is vector.vector_iota
+    )
+    actual = {
+        (
+            _value_type_guard(rule, "base"),
+            _value_type_guard(rule, "result"),
+            rule.priority,
+        )
+        for rule in rules
+    }
+    expected = {
+        (
+            Scalar(element.name),
+            Vector(element.name, lanes=512 // element.bit_width),
+            priority,
+        )
+        for element in INTEGER_ELEMENTS
+        for priority in (0, 1)
+    }
+    assert actual == expected
+    assert len(rules) == len(expected)
+    assert all(
+        any(
+            guard.kind == GuardKind.VALUE_I64_RANGE
+            and guard.field == "step"
+            and guard.minimum == 1
+            and guard.maximum == 1
+            for guard in rule.guards
+        )
+        for rule in rules
+        if rule.priority == 1
+    )
+
+
+def test_float_extrema_cover_every_semantic_and_width() -> None:
     vector_source_operations = {
         vector.vector_minimumf: "minimumf",
         vector.vector_maximumf: "maximumf",
         vector.vector_minnumf: "minnumf",
         vector.vector_maxnumf: "maxnumf",
     }
-    actual_vectors = {
-        (
-            vector_source_operations[rule.source_op],
-            _value_type_guard(rule, "result"),
+    for fragment, vector_bit_widths in (
+        (X86_AVX2_CONTRACT_FRAGMENT, AVX2_VECTOR_BIT_WIDTHS),
+        (X86_AVX512_CONTRACT_FRAGMENT, AVX512_VECTOR_BIT_WIDTHS),
+    ):
+        extrema_rules = tuple(
+            rule
+            for rule in fragment.cases
+            if isinstance(rule, DescriptorRule)
+            and rule.source_op in vector_source_operations
         )
-        for rule in X86_AVX2_CONTRACT_FRAGMENT.cases
-        if isinstance(rule, DescriptorRule)
-        and rule.source_op in vector_source_operations
-    }
-    assert actual_vectors == {
-        (
-            operation,
-            Vector(
-                element.name,
-                lanes=vector_bit_width // element.bit_width,
-            ),
+        assert {
+            (
+                vector_source_operations[rule.source_op],
+                _value_type_guard(rule, "result"),
+            )
+            for rule in extrema_rules
+        } == {
+            (
+                operation,
+                Vector(
+                    element.name,
+                    lanes=vector_bit_width // element.bit_width,
+                ),
+            )
+            for operation in FLOAT_EXTREMA_OPERATIONS
+            for element in FLOAT_ELEMENTS
+            for vector_bit_width in vector_bit_widths
+        }
+        priorities_by_cell = {}
+        for rule in extrema_rules:
+            key = (rule.source_op, _value_type_guard(rule, "result"))
+            priorities_by_cell.setdefault(key, set()).add(rule.priority)
+        assert {
+            frozenset(priorities) for priorities in priorities_by_cell.values()
+        } == {frozenset((0, 1))}
+        fast_rules = tuple(rule for rule in extrema_rules if rule.priority == 1)
+        assert all(
+            {
+                guard.enum_keyword
+                for guard in rule.guards
+                if guard.kind == GuardKind.INSTANCE_FLAGS_HAS_ALL
+            }
+            == {"nnan", "nsz"}
+            for rule in fast_rules
         )
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
-        for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-    }
 
     scalar_source_operations = {
         scalar_arithmetic.scalar_minimumf: "minimumf",
@@ -318,23 +624,24 @@ def test_avx2_float_extrema_cover_every_semantic_and_width() -> None:
     }
     assert actual_scalars == {
         (operation, Scalar(element.name))
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
+        for operation in FLOAT_EXTREMA_OPERATIONS
         for element in FLOAT_ELEMENTS
     }
 
-    extrema_rules = tuple(
+    scalar_extrema_rules = tuple(
         rule
         for rule in X86_AVX2_CONTRACT_FRAGMENT.cases
         if isinstance(rule, DescriptorRule)
-        and rule.source_op in (*vector_source_operations, *scalar_source_operations)
+        and rule.source_op in scalar_source_operations
     )
-    rule_counts = {}
-    for rule in extrema_rules:
+    priorities_by_cell = {}
+    for rule in scalar_extrema_rules:
         key = (rule.source_op, _value_type_guard(rule, "result"))
-        rule_counts[key] = rule_counts.get(key, 0) + 1
-    assert set(rule_counts.values()) == {2}
-    fast_rules = tuple(rule for rule in extrema_rules if rule.priority == 1)
-    assert len(fast_rules) * 2 == len(extrema_rules)
+        priorities_by_cell.setdefault(key, set()).add(rule.priority)
+    assert {frozenset(priorities) for priorities in priorities_by_cell.values()} == {
+        frozenset((0, 1))
+    }
+    fast_rules = tuple(rule for rule in scalar_extrema_rules if rule.priority == 1)
     assert all(
         {
             guard.enum_keyword
@@ -346,168 +653,193 @@ def test_avx2_float_extrema_cover_every_semantic_and_width() -> None:
     )
 
 
-def test_avx2_integer_reductions_cover_every_native_combine_family() -> None:
-    rules = tuple(
-        rule
-        for rule in X86_AVX2_CONTRACT_FRAGMENT.cases
-        if isinstance(rule, DescriptorRule) and rule.source_op is vector.vector_reduce
-    )
-    integer_operations = {
-        row.source_operation for row in AVX2_INTEGER_REDUCTION_FAMILIES
-    }
-    integer_rules = tuple(
-        rule
-        for rule in rules
-        if any(
-            guard.kind == GuardKind.ENUM_ATTR_EQUALS
-            and guard.field == "kind"
-            and guard.enum_keyword in integer_operations
-            for guard in rule.guards
-        )
-    )
-    actual = {
+def test_integer_reductions_cover_every_native_combine_family() -> None:
+    for fragment, families, vector_bit_widths in (
         (
-            operation,
-            _value_type_guard(rule, "input"),
-        )
-        for rule in integer_rules
-        for operation in (
-            next(
-                guard.enum_keyword
+            X86_AVX2_CONTRACT_FRAGMENT,
+            AVX2_INTEGER_REDUCTION_FAMILIES,
+            AVX2_VECTOR_BIT_WIDTHS,
+        ),
+        (
+            X86_AVX512_CONTRACT_FRAGMENT,
+            AVX512_INTEGER_REDUCTION_FAMILIES,
+            AVX512_VECTOR_BIT_WIDTHS,
+        ),
+    ):
+        expected = {
+            (
+                row.source_operation,
+                Vector(
+                    row.element.name,
+                    lanes=vector_bit_width // row.element.bit_width,
+                ),
+            )
+            for row in families
+            for vector_bit_width in vector_bit_widths
+        }
+        expected_operations = {row.source_operation for row in families}
+        integer_rules = tuple(
+            rule
+            for rule in fragment.cases
+            if isinstance(rule, DescriptorRule)
+            and rule.source_op is vector.vector_reduce
+            and any(
+                guard.kind == GuardKind.ENUM_ATTR_EQUALS
+                and guard.field == "kind"
+                and guard.enum_keyword in expected_operations
                 for guard in rule.guards
-                if guard.kind == GuardKind.ENUM_ATTR_EQUALS and guard.field == "kind"
-            ),
+            )
         )
-    }
-    expected = {
-        (
-            row.source_operation,
-            Vector(
-                row.element.name,
-                lanes=vector_bit_width // row.element.bit_width,
-            ),
-        )
-        for row in AVX2_INTEGER_REDUCTION_FAMILIES
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-    }
-    assert actual == expected
-    assert len(integer_rules) == len(expected)
+        actual = {
+            (
+                next(
+                    guard.enum_keyword
+                    for guard in rule.guards
+                    if guard.kind == GuardKind.ENUM_ATTR_EQUALS
+                    and guard.field == "kind"
+                ),
+                _value_type_guard(rule, "input"),
+            )
+            for rule in integer_rules
+        }
+        assert actual == expected
+        assert len(integer_rules) == len(expected)
 
 
-def test_avx2_float_reductions_and_dots_cover_both_types_and_widths() -> None:
-    reduction_rules = tuple(
-        rule
-        for rule in X86_AVX2_CONTRACT_FRAGMENT.cases
-        if isinstance(rule, DescriptorRule)
-        and rule.source_op is vector.vector_reduce
-        and any(
-            guard.kind == GuardKind.ENUM_ATTR_EQUALS
-            and guard.enum_keyword in AVX2_FLOAT_REDUCTION_OPERATIONS
-            for guard in rule.guards
+def test_float_reductions_and_dots_cover_both_types_and_all_widths() -> None:
+    for fragment, vector_bit_widths in (
+        (X86_AVX2_CONTRACT_FRAGMENT, AVX2_VECTOR_BIT_WIDTHS),
+        (X86_AVX512_CONTRACT_FRAGMENT, AVX512_VECTOR_BIT_WIDTHS),
+    ):
+        reduction_rules = tuple(
+            rule
+            for rule in fragment.cases
+            if isinstance(rule, DescriptorRule)
+            and rule.source_op is vector.vector_reduce
+            and any(
+                guard.kind == GuardKind.ENUM_ATTR_EQUALS
+                and guard.enum_keyword in AVX2_FLOAT_REDUCTION_OPERATIONS
+                for guard in rule.guards
+            )
         )
-    )
-    packed_reduction_rules = tuple(
-        rule
-        for rule in reduction_rules
-        if next(
-            guard.enum_keyword
-            for guard in rule.guards
-            if guard.kind == GuardKind.ENUM_ATTR_EQUALS
-        )
-        in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
-    )
-    packed_expected = {
-        (
-            operation,
-            Vector(
-                element.name,
-                lanes=vector_bit_width // element.bit_width,
-            ),
-            fastmath_guard,
-        )
-        for operation in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
-        for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-        for fastmath_guard in (
-            GuardKind.INSTANCE_FLAGS_HAS_NONE,
-            GuardKind.INSTANCE_FLAGS_HAS_ALL,
-        )
-    }
-    assert {
-        (
-            next(
+        packed_reduction_rules = tuple(
+            rule
+            for rule in reduction_rules
+            if next(
                 guard.enum_keyword
                 for guard in rule.guards
                 if guard.kind == GuardKind.ENUM_ATTR_EQUALS
-            ),
-            _value_type_guard(rule, "input"),
-            next(
-                guard.kind
-                for guard in rule.guards
-                if guard.kind
-                in (
-                    GuardKind.INSTANCE_FLAGS_HAS_ALL,
-                    GuardKind.INSTANCE_FLAGS_HAS_NONE,
-                )
-            ),
+            )
+            in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
         )
-        for rule in packed_reduction_rules
-    } == packed_expected
-    assert len(packed_reduction_rules) == len(packed_expected)
+        assert len(packed_reduction_rules) == (
+            len(AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS)
+            * len(FLOAT_ELEMENTS)
+            * len(vector_bit_widths)
+            * 2
+        )
+        assert {
+            (
+                next(
+                    guard.enum_keyword
+                    for guard in rule.guards
+                    if guard.kind == GuardKind.ENUM_ATTR_EQUALS
+                ),
+                _value_type_guard(rule, "input"),
+                next(
+                    guard.kind
+                    for guard in rule.guards
+                    if guard.kind
+                    in (
+                        GuardKind.INSTANCE_FLAGS_HAS_ALL,
+                        GuardKind.INSTANCE_FLAGS_HAS_NONE,
+                    )
+                ),
+            )
+            for rule in packed_reduction_rules
+        } == {
+            (
+                operation,
+                Vector(
+                    element.name,
+                    lanes=vector_bit_width // element.bit_width,
+                ),
+                fastmath_guard,
+            )
+            for operation in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
+            for element in FLOAT_ELEMENTS
+            for vector_bit_width in vector_bit_widths
+            for fastmath_guard in (
+                GuardKind.INSTANCE_FLAGS_HAS_NONE,
+                GuardKind.INSTANCE_FLAGS_HAS_ALL,
+            )
+        }
 
-    fast_extrema_rules = tuple(
-        rule
-        for rule in reduction_rules
-        if next(
-            guard.enum_keyword
-            for guard in rule.guards
-            if guard.kind == GuardKind.ENUM_ATTR_EQUALS
-        )
-        in AVX2_FLOAT_EXTREMA_OPERATIONS
-    )
-    fast_extrema_expected = {
-        (
-            operation,
-            Vector(
-                element.name,
-                lanes=vector_bit_width // element.bit_width,
-            ),
-            frozenset(("reassoc", "nnan", "nsz")),
-        )
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
-        for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-    }
-    assert {
-        (
-            next(
+        fast_extrema_rules = tuple(
+            rule
+            for rule in reduction_rules
+            if next(
                 guard.enum_keyword
                 for guard in rule.guards
                 if guard.kind == GuardKind.ENUM_ATTR_EQUALS
-            ),
-            _value_type_guard(rule, "input"),
-            frozenset(
-                guard.enum_keyword
-                for guard in rule.guards
-                if guard.kind == GuardKind.INSTANCE_FLAGS_HAS_ALL
-            ),
+            )
+            in FLOAT_EXTREMA_OPERATIONS
         )
-        for rule in fast_extrema_rules
-    } == fast_extrema_expected
-    assert len(fast_extrema_rules) == len(fast_extrema_expected)
+        assert len(fast_extrema_rules) == (
+            len(FLOAT_EXTREMA_OPERATIONS) * len(FLOAT_ELEMENTS) * len(vector_bit_widths)
+        )
+        assert {
+            (
+                next(
+                    guard.enum_keyword
+                    for guard in rule.guards
+                    if guard.kind == GuardKind.ENUM_ATTR_EQUALS
+                ),
+                _value_type_guard(rule, "input"),
+                frozenset(
+                    guard.enum_keyword
+                    for guard in rule.guards
+                    if guard.kind == GuardKind.INSTANCE_FLAGS_HAS_ALL
+                ),
+            )
+            for rule in fast_extrema_rules
+        } == {
+            (
+                operation,
+                Vector(
+                    element.name,
+                    lanes=vector_bit_width // element.bit_width,
+                ),
+                frozenset(("reassoc", "nnan", "nsz")),
+            )
+            for operation in FLOAT_EXTREMA_OPERATIONS
+            for element in FLOAT_ELEMENTS
+            for vector_bit_width in vector_bit_widths
+        }
 
-    dot_rules = tuple(
-        rule
-        for rule in X86_AVX2_CONTRACT_FRAGMENT.cases
-        if isinstance(rule, DescriptorRule) and rule.source_op is vector.vector_dotf
-    )
-    dot_expected = {
-        Vector(
-            element.name,
-            lanes=vector_bit_width // element.bit_width,
+        dot_rules = tuple(
+            rule
+            for rule in fragment.cases
+            if isinstance(rule, DescriptorRule) and rule.source_op is vector.vector_dotf
         )
-        for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-    }
-    assert {_value_type_guard(rule, "lhs") for rule in dot_rules} == dot_expected
-    assert len(dot_rules) == len(dot_expected)
+        assert len(dot_rules) == len(FLOAT_ELEMENTS) * len(vector_bit_widths)
+        assert {
+            (
+                _value_type_guard(rule, "lhs"),
+                _value_type_guard(rule, "rhs"),
+                _value_type_guard(rule, "init"),
+                _value_type_guard(rule, "result"),
+            )
+            for rule in dot_rules
+        } == {
+            (vector_type, vector_type, scalar_type, scalar_type)
+            for element in FLOAT_ELEMENTS
+            for vector_bit_width in vector_bit_widths
+            for vector_type in (
+                Vector(
+                    element.name,
+                    lanes=vector_bit_width // element.bit_width,
+                ),
+            )
+            for scalar_type in (Scalar(element.name),)
+        }

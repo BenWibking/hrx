@@ -41,6 +41,39 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    transport
+  HDRS
+    "transport.h"
+  SRCS
+    "transport.c"
+  DEPS
+    ::encoding
+    iree::base
+    loom::target::arch::x86::register_classes
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_test(
+  NAME
+    transport_test
+  SRCS
+    "transport_test.cc"
+  DEPS
+    ::encoding
+    ::transport
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::x86::register_classes
+  LABELS
+    "iree-build-requirement=loom.target.arch.x86"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     function
   HDRS
     "function.h"
@@ -48,6 +81,7 @@ loom_cc_library(
     "function.c"
   DEPS
     ::encoding
+    ::transport
     iree::base
     iree::base::internal
     iree::io::stream
@@ -183,12 +217,52 @@ loom_generated_file(
 endif()
 
 if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_generated_file(
+  NAME
+    vector_callable_object
+  GENERATOR
+    loom::tools::loom-compile::loom-compile
+  OUTPUT
+    "vector_callable.o"
+  OUTPUT_FLAG
+    "--output="
+  ARGS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/vector_callable.loom"
+    "--target=x86:avx2"
+  INPUTS
+    "test/vector_callable.loom"
+  TESTONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_generated_file(
+  NAME
+    avx512_callable_object
+  GENERATOR
+    loom::tools::loom-compile::loom-compile
+  OUTPUT
+    "avx512_callable.o"
+  OUTPUT_FLAG
+    "--output="
+  ARGS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/avx512_callable.loom"
+    "--target=x86:avx512"
+  INPUTS
+    "test/avx512_callable.loom"
+  TESTONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 loom_cc_test(
   NAME
     callable_link_test
   SRCS
+    "avx512_callable.o"
     "callable.o"
     "callable_link_test.cc"
+    "vector_callable.o"
   DEPS
     iree::testing::gtest
     iree::testing::gtest_main

@@ -87,6 +87,9 @@ class LowerAttrCopyKind(Enum):
     VALUE_TYPE_STATIC_DIM_LOW_BITS_MASK = "value_type_static_dim_low_bits_mask"
     I64_ARRAY_LANE_BYTE = "i64_array_lane_byte"
     I64_ARRAY_SHUFFLE_MASK_CHUNK = "i64_array_shuffle_mask_chunk"
+    I64_ARRAY_READ_ONLY_ELEMENTS = "i64_array_read_only_elements"
+    I64_ARRAY_READ_ONLY_BYTE_SEGMENT = "i64_array_read_only_byte_segment"
+    I64_ARRAY_READ_ONLY_BYTE_WORDS = "i64_array_read_only_byte_words"
     SOURCE_MEMORY_STATIC_BYTE_OFFSET = "source_memory_static_byte_offset"
     SOURCE_MEMORY_STATIC_BYTE_OFFSET_PLUS_LITERAL = (
         "source_memory_static_byte_offset_plus_literal"

@@ -26,7 +26,7 @@ extern "C" {
 #endif
 
 // ABI version for descriptor sets consumed by this header.
-#define LOOM_LOW_DESCRIPTOR_SET_ABI_VERSION 51u
+#define LOOM_LOW_DESCRIPTOR_SET_ABI_VERSION 52u
 
 // Sentinel for absent target-family or descriptor-set stable IDs.
 #define LOOM_LOW_STABLE_ID_NONE UINT64_C(0)
@@ -234,6 +234,8 @@ typedef uint16_t loom_low_immediate_flags_t;
 #define LOOM_LOW_IMMEDIATE_FLAG_RELATIVE ((uint16_t)1u << 1)
 // Immediate may be omitted from packet attributes and uses default_value.
 #define LOOM_LOW_IMMEDIATE_FLAG_DEFAULT_VALUE ((uint16_t)1u << 2)
+// Symbolic form names a module-local global.rodata.def payload.
+#define LOOM_LOW_IMMEDIATE_FLAG_READ_ONLY_DATA ((uint16_t)1u << 3)
 
 typedef enum loom_low_effect_kind_e {
   // Unknown or uninitialized effect kind.

@@ -23,17 +23,6 @@
 #include "loom/target/arch/x86/lower/predicate_representation.h"
 #include "loom/target/arch/x86/register_classes.h"
 
-static bool loom_x86_type_is_avx512_predicate(loom_type_t type) {
-  if (!loom_type_is_vector(type) || loom_type_rank(type) != 1 ||
-      !loom_type_is_all_static(type) ||
-      loom_type_element_type(type) != LOOM_SCALAR_TYPE_I1) {
-    return false;
-  }
-  const int64_t lane_count = loom_type_dim_static_size_at(type, 0);
-  return lane_count == 2 || lane_count == 4 || lane_count == 8 ||
-         lane_count == 16 || lane_count == 32 || lane_count == 64;
-}
-
 static bool loom_x86_vector_element_bit_width(loom_scalar_type_t scalar_type,
                                               uint32_t* out_bit_width) {
   static const loom_scalar_type_set_t kRegisterElementTypes =
@@ -183,8 +172,8 @@ static bool loom_x86_avx2_register_class_for_source_type(
 
 static bool loom_x86_avx512_register_class_for_source_type(
     loom_type_t source_type, loom_x86_register_class_t* out_register_class) {
-  if (loom_x86_type_is_avx512_predicate(source_type)) {
-    *out_register_class = LOOM_X86_REGISTER_CLASS_K;
+  if (loom_x86_avx512_predicate_register_class(
+          source_type, LOOM_LOW_REPRESENTATION_ID_NONE, out_register_class)) {
     return true;
   }
   if (loom_x86_avx2_register_class_for_source_type(source_type,
@@ -249,6 +238,25 @@ static iree_status_t loom_x86_map_avx2_value(void* user_data,
   return iree_ok_status();
 }
 
+static iree_status_t loom_x86_map_avx512_value(
+    void* user_data, loom_low_lower_context_t* context,
+    const loom_op_t* source_op, loom_value_id_t source_value_id,
+    loom_type_t source_type, loom_type_t* out_low_type) {
+  if (!loom_x86_avx512_predicate_type(source_type, NULL)) {
+    return loom_x86_map_avx512_type(user_data, context, source_op, source_type,
+                                    out_low_type);
+  }
+  loom_low_representation_id_t representation = LOOM_LOW_REPRESENTATION_ID_NONE;
+  loom_low_lower_representation_lookup_if_ready(context, source_value_id,
+                                                &representation);
+  loom_x86_register_class_t register_class = 0;
+  if (loom_x86_avx512_predicate_register_class(source_type, representation,
+                                               &register_class)) {
+    return loom_x86_make_register_type(context, register_class, out_low_type);
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_x86_map_avx2_contract_value(
     void* user_data,
     const loom_target_contract_query_environment_t* environment,
@@ -268,6 +276,31 @@ static iree_status_t loom_x86_map_avx2_contract_value(
   loom_x86_register_class_t register_class = 0;
   if (loom_x86_avx2_predicate_register_class(source_type, representation,
                                              &register_class)) {
+    *out_mapped_value =
+        loom_low_lower_rule_mapped_value_register(register_class, 1);
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_x86_map_avx512_contract_value(
+    void* user_data,
+    const loom_target_contract_query_environment_t* environment,
+    const loom_op_t* source_op, loom_value_id_t source_value_id,
+    loom_low_lower_rule_mapped_value_t* out_mapped_value) {
+  (void)user_data;
+  (void)source_op;
+  *out_mapped_value = loom_low_lower_rule_mapped_value_none();
+  const loom_type_t source_type =
+      loom_module_value_type(environment->module, source_value_id);
+  if (!loom_x86_avx512_predicate_type(source_type, NULL)) {
+    return iree_ok_status();
+  }
+  loom_low_representation_id_t representation = LOOM_LOW_REPRESENTATION_ID_NONE;
+  IREE_RETURN_IF_ERROR(loom_low_lower_representation_query_lookup(
+      environment, source_value_id, &representation));
+  loom_x86_register_class_t register_class = 0;
+  if (loom_x86_avx512_predicate_register_class(source_type, representation,
+                                               &register_class)) {
     *out_mapped_value =
         loom_low_lower_rule_mapped_value_register(register_class, 1);
   }
@@ -361,6 +394,19 @@ static iree_status_t loom_x86_map_avx512_packed_dot_type(
   }
   return loom_x86_map_avx512_type(user_data, context, source_op, source_type,
                                   out_low_type);
+}
+
+static iree_status_t loom_x86_map_avx512_packed_dot_value(
+    void* user_data, loom_low_lower_context_t* context,
+    const loom_op_t* source_op, loom_value_id_t source_value_id,
+    loom_type_t source_type, loom_type_t* out_low_type) {
+  if (loom_x86_avx512_predicate_type(source_type, NULL)) {
+    return loom_x86_map_avx512_value(user_data, context, source_op,
+                                     source_value_id, source_type,
+                                     out_low_type);
+  }
+  return loom_x86_map_avx512_packed_dot_type(user_data, context, source_op,
+                                             source_type, out_low_type);
 }
 
 static iree_status_t loom_x86_map_avx512_packed_dot_argument(
@@ -487,9 +533,13 @@ static const loom_low_lower_policy_t kX86Avx512LowLowerPolicy = {
     .emit_op = {.fn = loom_low_task_emit_kernel_builtin},
     .query_op_contract = {.fn = loom_low_task_query_kernel_builtin},
     .map_type = {.fn = loom_x86_map_avx512_type, .user_data = NULL},
+    .map_value = {.fn = loom_x86_map_avx512_value, .user_data = NULL},
+    .map_contract_value = {.fn = loom_x86_map_avx512_contract_value,
+                           .user_data = NULL},
     .map_argument = {.fn = loom_x86_map_avx512_argument, .user_data = NULL},
     .source_type_supported = {.fn = loom_x86_source_type_supported,
                               .user_data = NULL},
+    .source_plan_observer = &loom_x86_avx512_predicate_representation_observer,
     .contract = LOOM_X86_AVX512_CONTRACT,
 };
 
@@ -559,6 +609,10 @@ static const loom_low_lower_policy_t kX86Avx512PackedDotLowLowerPolicy = {
     .emit_op = {.fn = loom_low_task_emit_kernel_builtin},
     .query_op_contract = {.fn = loom_low_task_query_kernel_builtin},
     .map_type = {.fn = loom_x86_map_avx512_packed_dot_type, .user_data = NULL},
+    .map_value = {.fn = loom_x86_map_avx512_packed_dot_value,
+                  .user_data = NULL},
+    .map_contract_value = {.fn = loom_x86_map_avx512_contract_value,
+                           .user_data = NULL},
     .map_argument = {.fn = loom_x86_map_avx512_packed_dot_argument,
                      .user_data = NULL},
     .descriptor_matrix =
@@ -566,6 +620,7 @@ static const loom_low_lower_policy_t kX86Avx512PackedDotLowLowerPolicy = {
             .options = loom_x86_descriptor_matrix_options,
             .query = loom_x86_descriptor_matrix_query,
         },
+    .source_plan_observer = &loom_x86_avx512_predicate_representation_observer,
     .contract = LOOM_X86_AVX512_PACKED_DOT_CONTRACT,
 };
 

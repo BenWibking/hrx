@@ -97,6 +97,149 @@ static void loom_x86_encode_predicate(
       result);
 }
 
+static uint8_t loom_x86_select_vector_register(
+    uint8_t selector, const loom_x86_encoding_operands_t* operands) {
+  if (selector == LOOM_X86_VECTOR_REGISTER_RESULT) {
+    return operands->result;
+  }
+  if (selector <= LOOM_X86_VECTOR_REGISTER_INPUT_2) {
+    return operands->inputs[selector - 1];
+  }
+  if (selector == LOOM_X86_VECTOR_REGISTER_NONE) {
+    return 0;
+  }
+  return (uint8_t)(selector - 3 +
+                   (selector == LOOM_X86_VECTOR_REGISTER_FIXED_6));
+}
+
+static void loom_x86_encode_vector_prefix(
+    loom_x86_encoded_instruction_t* instruction, uint16_t encoding_id,
+    uint8_t reg, uint8_t vvvv, uint8_t rm, uint8_t index, bool has_index,
+    bool memory, uint8_t mask) {
+  const uint8_t map = (encoding_id >> 8) & 3;
+  const uint8_t mandatory_prefix = (encoding_id >> 10) & 3;
+  const uint8_t w = (encoding_id >> 12) & 1;
+  const bool evex = (encoding_id >> 13) & 1;
+  const uint8_t vector_length = encoding_id >> 14;
+  if (evex) {
+    const uint8_t x =
+        memory ? (has_index ? (index >> 3) & 1 : 0) : (rm >> 4) & 1;
+    const uint8_t b = (rm >> 3) & 1;
+    loom_x86_encode_byte(instruction, 0x62);
+    loom_x86_encode_byte(instruction, ((~(reg >> 3) & 1) << 7) |
+                                          ((~x & 1) << 6) | ((~b & 1) << 5) |
+                                          ((~(reg >> 4) & 1) << 4) | map);
+    loom_x86_encode_byte(
+        instruction, (w << 7) | ((~vvvv & 15) << 3) | 0x04 | mandatory_prefix);
+    loom_x86_encode_byte(
+        instruction, (vector_length << 5) | ((~(vvvv >> 4) & 1) << 3) | mask);
+    return;
+  }
+
+  const uint8_t r = (reg >> 3) & 1;
+  const uint8_t x = has_index ? (index >> 3) & 1 : 0;
+  const uint8_t b = (rm >> 3) & 1;
+  if (map == 1 && !w && !x && !b) {
+    loom_x86_encode_byte(instruction, 0xc5);
+    loom_x86_encode_byte(instruction, ((~r & 1) << 7) | ((~vvvv & 15) << 3) |
+                                          (vector_length << 2) |
+                                          mandatory_prefix);
+    return;
+  }
+  loom_x86_encode_byte(instruction, 0xc4);
+  loom_x86_encode_byte(
+      instruction, ((~r & 1) << 7) | ((~x & 1) << 6) | ((~b & 1) << 5) | map);
+  loom_x86_encode_byte(instruction, (w << 7) | ((~vvvv & 15) << 3) |
+                                        (vector_length << 2) |
+                                        mandatory_prefix);
+}
+
+static void loom_x86_encode_vector_memory(
+    loom_x86_encoded_instruction_t* instruction, uint8_t reg, uint8_t base,
+    uint8_t index, bool has_index, uint8_t scale, int32_t displacement,
+    bool evex, bool full_vector_tuple, uint8_t vector_length) {
+  int32_t encoded_displacement = displacement;
+  bool compressed = false;
+  if (evex && full_vector_tuple) {
+    const int32_t tuple_scale = 16 << vector_length;
+    if (displacement % tuple_scale == 0) {
+      const int32_t quotient = displacement / tuple_scale;
+      if (quotient >= INT8_MIN && quotient <= INT8_MAX) {
+        encoded_displacement = quotient;
+        compressed = true;
+      }
+    }
+  }
+  uint8_t displacement_length = 4;
+  if (displacement == 0 && (base & 7) != 5) {
+    displacement_length = 0;
+  } else if (encoded_displacement >= INT8_MIN &&
+             encoded_displacement <= INT8_MAX &&
+             (!evex || !full_vector_tuple || compressed)) {
+    displacement_length = 1;
+  }
+  const uint8_t mode = displacement_length == 0   ? 0
+                       : displacement_length == 1 ? 0x40
+                                                  : 0x80;
+  const bool has_sib = has_index || (base & 7) == 4;
+  loom_x86_encode_byte(instruction,
+                       mode | ((reg & 7) << 3) | (has_sib ? 4 : (base & 7)));
+  if (has_sib) {
+    loom_x86_encode_byte(instruction, (scale << 6) |
+                                          ((has_index ? index & 7 : 4) << 3) |
+                                          (base & 7));
+  }
+  loom_x86_encode_integer(instruction, (uint32_t)encoded_displacement,
+                          displacement_length);
+}
+
+static void loom_x86_encode_vector_instruction(
+    uint16_t encoding_format_id, uint16_t encoding_id,
+    const loom_x86_encoding_operands_t* operands,
+    loom_x86_encoded_instruction_t* instruction) {
+  const loom_x86_vector_encoding_behavior_t behavior =
+      (loom_x86_vector_encoding_behavior_t)((encoding_format_id >> 12) & 7);
+  const bool memory = behavior >= LOOM_X86_VECTOR_ENCODING_LOAD;
+  uint8_t middle_selector = (encoding_format_id >> 4) & 15;
+  const bool full_vector_tuple = memory && (middle_selector & 8);
+  if (full_vector_tuple) {
+    middle_selector &= 7;
+  }
+  const uint8_t reg =
+      loom_x86_select_vector_register(encoding_format_id & 15, operands);
+  const uint8_t middle =
+      loom_x86_select_vector_register(middle_selector, operands);
+  uint8_t rm =
+      loom_x86_select_vector_register((encoding_format_id >> 8) & 15, operands);
+  const bool has_index =
+      memory && middle_selector != LOOM_X86_VECTOR_REGISTER_NONE;
+  const uint8_t vvvv = memory ? 0 : middle;
+  if (behavior == LOOM_X86_VECTOR_ENCODING_RIP_LOAD) {
+    rm = 5;
+  }
+  const uint8_t mask =
+      behavior == LOOM_X86_VECTOR_ENCODING_EVEX_MASK ? operands->inputs[0] : 0;
+  loom_x86_encode_vector_prefix(instruction, encoding_id, reg, vvvv, rm, middle,
+                                has_index, memory, mask);
+  loom_x86_encode_byte(instruction, (uint8_t)encoding_id);
+  if (behavior == LOOM_X86_VECTOR_ENCODING_RIP_LOAD) {
+    loom_x86_encode_byte(instruction, ((reg & 7) << 3) | 5);
+    loom_x86_encode_integer(instruction, 0, 4);
+  } else if (memory) {
+    loom_x86_encode_vector_memory(instruction, reg, rm, middle, has_index,
+                                  operands->scale, (int32_t)operands->immediate,
+                                  (encoding_id >> 13) & 1, full_vector_tuple,
+                                  encoding_id >> 14);
+  } else {
+    loom_x86_encode_byte(instruction, 0xc0 | ((reg & 7) << 3) | (rm & 7));
+  }
+  if (behavior == LOOM_X86_VECTOR_ENCODING_BLEND_MASK) {
+    loom_x86_encode_byte(instruction, operands->inputs[2] << 4);
+  } else if (behavior == LOOM_X86_VECTOR_ENCODING_IMMEDIATE) {
+    loom_x86_encode_byte(instruction, (uint8_t)operands->immediate);
+  }
+}
+
 uint16_t loom_x86_encoding_gpr_writes(
     loom_x86_encoding_form_t form,
     const loom_x86_encoding_operands_t* operands) {
@@ -120,11 +263,18 @@ uint16_t loom_x86_encoding_gpr_writes(
 }
 
 void loom_x86_encode_instruction(
-    loom_x86_encoding_form_t form, uint16_t encoding_id,
+    uint16_t encoding_format_id, uint16_t encoding_id,
     const loom_x86_encoding_operands_t* operands,
     loom_x86_encoded_instruction_t* out_instruction) {
   loom_x86_encoded_instruction_t* instruction = out_instruction;
   instruction->length = 0;
+  if (encoding_format_id & LOOM_X86_ENCODING_FORMAT_VECTOR) {
+    loom_x86_encode_vector_instruction(encoding_format_id, encoding_id,
+                                       operands, instruction);
+    return;
+  }
+  const loom_x86_encoding_form_t form =
+      (loom_x86_encoding_form_t)encoding_format_id;
   uint8_t result = operands->result;
   uint8_t lhs = operands->inputs[0];
   uint8_t rhs = operands->inputs[1];

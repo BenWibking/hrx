@@ -20,7 +20,12 @@ from loom.target.contracts.descriptors import (
 )
 from loom.target.contracts.kinds import SourceValueKind
 from loom.target.contracts.source import ValueRef, _require_attr, _require_value
-from loom.target.low_descriptors import Descriptor, DescriptorSet, ImmediateKind
+from loom.target.low_descriptors import (
+    Descriptor,
+    DescriptorSet,
+    ImmediateFlag,
+    ImmediateKind,
+)
 
 _I64_MIN = -(2**63)
 _I64_MAX = 2**63 - 1
@@ -40,6 +45,9 @@ class AttrProjectKind(Enum):
     I64_ARRAY_ELEMENT_REMAINDER = "i64_array_element_remainder"
     I64_ARRAY_LANE_BYTE_OFFSET = "i64_array_lane_byte_offset"
     I64_ARRAY_SHUFFLE_MASK_CHUNK = "i64_array_shuffle_mask_chunk"
+    I64_ARRAY_READ_ONLY_ELEMENTS = "i64_array_read_only_elements"
+    I64_ARRAY_READ_ONLY_BYTE_SEGMENT = "i64_array_read_only_byte_segment"
+    I64_ARRAY_READ_ONLY_BYTE_WORDS = "i64_array_read_only_byte_words"
     I64_ARRAY_PACK_ELEMENTS = "i64_array_pack_elements"
     ATTRS_PACK_CONSECUTIVE = "attrs_pack_consecutive"
     I64_LOW_BIT_MASK = "i64_low_bit_mask"
@@ -281,6 +289,52 @@ class AttrProject:
         )
 
     @classmethod
+    def i64_array_read_only_elements(
+        cls,
+        source_attr: str,
+        *,
+        bit_width: int,
+    ) -> Self:
+        """Encodes every array element as one little-endian integer."""
+        return cls(
+            kind=AttrProjectKind.I64_ARRAY_READ_ONLY_ELEMENTS,
+            source_attr=source_attr,
+            bit_width=bit_width,
+        )
+
+    @classmethod
+    def i64_array_read_only_byte_segment(
+        cls,
+        source_attr: str,
+        *,
+        bytes_per_lane: int,
+        source_byte_offset: int,
+        source_byte_count: int = 16,
+    ) -> Self:
+        """Encodes byte selectors relative to one fixed source segment."""
+        return cls(
+            kind=AttrProjectKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT,
+            source_attr=source_attr,
+            bytes_per_lane=bytes_per_lane,
+            literal_i64=source_byte_offset,
+            count=source_byte_count,
+        )
+
+    @classmethod
+    def i64_array_read_only_byte_words(
+        cls,
+        source_attr: str,
+        *,
+        byte_parity: int,
+    ) -> Self:
+        """Encodes byte selectors as word indices and 0/8-bit shifts."""
+        return cls(
+            kind=AttrProjectKind.I64_ARRAY_READ_ONLY_BYTE_WORDS,
+            source_attr=source_attr,
+            element=byte_parity,
+        )
+
+    @classmethod
     def attrs_pack_consecutive(
         cls,
         source_attr: str,
@@ -396,6 +450,7 @@ class AttrProject:
             AttrProjectKind.I64_ARRAY_ELEMENT_REMAINDER,
             AttrProjectKind.I64_ARRAY_LANE_BYTE_OFFSET,
             AttrProjectKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
+            AttrProjectKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT,
             AttrProjectKind.I64_LITERAL_MINUS_ATTR,
             AttrProjectKind.I64_LITERAL_MINUS_ATTRS,
             AttrProjectKind.I64_ATTR_MINUS_LITERAL,
@@ -567,6 +622,16 @@ class AttrProject:
                 f"{source_op.name}: {subject} source attr '{self.source_attr}' "
                 "must be an i64_array attr"
             )
+        read_only_data_kinds = (
+            AttrProjectKind.I64_ARRAY_READ_ONLY_ELEMENTS,
+            AttrProjectKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT,
+            AttrProjectKind.I64_ARRAY_READ_ONLY_BYTE_WORDS,
+        )
+        if self.kind in read_only_data_kinds:
+            self._validate_read_only_data(
+                source_op, descriptor, bound_immediate_name, subject
+            )
+            return
         if self.kind in (
             AttrProjectKind.I64_ARRAY_ELEMENT,
             AttrProjectKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,
@@ -638,6 +703,49 @@ class AttrProject:
             )
         for name in self.target_names:
             _require_immediate(descriptor, name, subject)
+
+    def _validate_read_only_data(
+        self,
+        source_op: Op,
+        descriptor: Descriptor,
+        bound_immediate_name: str | None,
+        subject: str,
+    ) -> None:
+        if bound_immediate_name is None:
+            raise ValueError(
+                f"{source_op.name}: {subject} must bind one descriptor immediate"
+            )
+        immediate = _require_immediate(descriptor, bound_immediate_name, subject)
+        if ImmediateFlag.READ_ONLY_DATA not in immediate.flags:
+            raise ValueError(
+                f"{source_op.name}: {subject} descriptor immediate "
+                f"'{bound_immediate_name}' must reference read-only data"
+            )
+        if self.kind == AttrProjectKind.I64_ARRAY_READ_ONLY_ELEMENTS:
+            if self.bit_width not in (8, 16, 32, 64):
+                raise ValueError(
+                    f"{source_op.name}: {subject} element bit width must be "
+                    "8, 16, 32, or 64"
+                )
+        elif self.kind == AttrProjectKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT:
+            if self.bytes_per_lane is None or self.count is None:
+                raise ValueError(
+                    f"{source_op.name}: {subject} needs bytes_per_lane/count"
+                )
+            if self.literal_i64 < 0:
+                raise ValueError(
+                    f"{source_op.name}: {subject} source byte offset must be "
+                    "non-negative"
+                )
+            if self.count > 128:
+                raise ValueError(
+                    f"{source_op.name}: {subject} source byte count must fit "
+                    "the byte-selector domain"
+                )
+        elif self.element not in (0, 1):
+            raise ValueError(
+                f"{source_op.name}: {subject} byte parity must be zero or one"
+            )
 
     def _validate_enum_remap(
         self,

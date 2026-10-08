@@ -1259,6 +1259,16 @@ def validate_immediate_encoding(descriptor: Descriptor, immediate: Immediate) ->
         raise ValueError(f"descriptor '{descriptor.key}' immediate '{immediate.field_name}' encoding slices cover 0x{covered_bits:x} instead of 0x{expected_bits:x}")
 
 
+def validate_immediate_flags(descriptor: Descriptor, immediate: Immediate) -> None:
+    if ImmediateFlag.READ_ONLY_DATA not in immediate.flags:
+        return
+    description = f"descriptor '{descriptor.key}' immediate '{immediate.field_name}'"
+    if immediate.kind is not ImmediateKind.ORDINAL:
+        raise ValueError(f"{description} marks read-only data on a non-ordinal")
+    if ImmediateFlag.SYMBOLIC not in immediate.flags:
+        raise ValueError(f"{description} marks read-only data without symbolic")
+
+
 def hazard_reference_count(hazard: Hazard) -> int:
     return sum(reference is not None for reference in (hazard.resource, hazard.counter_id, hazard.target_id))
 

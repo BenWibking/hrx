@@ -11,6 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 AVX2_VECTOR_BIT_WIDTHS = (128, 256)
+AVX512_VECTOR_BIT_WIDTHS = (512,)
+AVX512VL_VECTOR_BIT_WIDTHS = AVX2_VECTOR_BIT_WIDTHS
+AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS = (
+    *AVX2_VECTOR_BIT_WIDTHS,
+    *AVX512_VECTOR_BIT_WIDTHS,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +78,7 @@ STORAGE_ELEMENTS = (
     VectorElement("bf16", 16),
 )
 
-AVX2_LANE_FAMILIES = (
+X86_LANE_FAMILIES = (
     VectorLaneFamily(
         8,
         ("i8", "f8E4M3", "f8E5M2"),
@@ -138,6 +144,43 @@ AVX2_INTEGER_BINARY_FAMILIES = (
     VectorBinaryFamily("shrui", "vpsrlvq", "integer.shru", INTEGER_ELEMENTS[3]),
 )
 
+# AVX-512BW extends the word variable shifts while AVX-512DQ completes the
+# native i64 multiply, extrema, and arithmetic-shift cells. Core AVX-512 has no
+# native byte-shift or byte-multiply forms, so those use a distinct composed
+# lowering mechanism.
+AVX512_INTEGER_BINARY_FAMILIES = (
+    *AVX2_INTEGER_BINARY_FAMILIES,
+    VectorBinaryFamily("muli", "vpmullq", "integer.mul", INTEGER_ELEMENTS[3]),
+    *(
+        VectorBinaryFamily(source_operation, mnemonic, semantic, INTEGER_ELEMENTS[3])
+        for source_operation, mnemonic, semantic in (
+            ("minsi", "vpminsq", "integer.mins"),
+            ("maxsi", "vpmaxsq", "integer.maxs"),
+            ("minui", "vpminuq", "integer.minu"),
+            ("maxui", "vpmaxuq", "integer.maxu"),
+        )
+    ),
+    *(
+        VectorBinaryFamily(source_operation, mnemonic, semantic, INTEGER_ELEMENTS[1])
+        for source_operation, mnemonic, semantic in (
+            ("shli", "vpsllvw", "integer.shl"),
+            ("shrsi", "vpsravw", "integer.shrs"),
+            ("shrui", "vpsrlvw", "integer.shru"),
+        )
+    ),
+    VectorBinaryFamily("shrsi", "vpsravq", "integer.shrs", INTEGER_ELEMENTS[3]),
+)
+
+_AVX2_INTEGER_BINARY_KEYS = frozenset(
+    (family.source_operation, family.element.name)
+    for family in AVX2_INTEGER_BINARY_FAMILIES
+)
+AVX512VL_INTEGER_BINARY_FAMILIES = tuple(
+    family
+    for family in AVX512_INTEGER_BINARY_FAMILIES
+    if (family.source_operation, family.element.name) not in _AVX2_INTEGER_BINARY_KEYS
+)
+
 AVX2_FLOAT_BINARY_FAMILIES = tuple(
     VectorBinaryFamily(source_operation, f"v{stem}{suffix}", semantic, element)
     for source_operation, stem, semantic in (
@@ -148,6 +191,8 @@ AVX2_FLOAT_BINARY_FAMILIES = tuple(
     )
     for element, suffix in zip(FLOAT_ELEMENTS, ("ps", "pd"), strict=True)
 )
+
+AVX512_FLOAT_BINARY_FAMILIES = AVX2_FLOAT_BINARY_FAMILIES
 
 AVX2_SCALAR_FLOAT_BINARY_FAMILIES = tuple(
     VectorBinaryFamily(source_operation, f"v{stem}{suffix}", semantic, element)
@@ -166,6 +211,14 @@ AVX2_BITWISE_FAMILIES = (
     ("xori", "vpxor", "bits.xor"),
 )
 
+# The EVEX dword forms operate on the complete 512-bit payload regardless of
+# the source element interpretation.
+AVX512_BITWISE_FAMILIES = (
+    ("andi", "vpandd", "bits.and"),
+    ("ori", "vpord", "bits.or"),
+    ("xori", "vpxord", "bits.xor"),
+)
+
 AVX2_INTEGER_REDUCTION_FAMILIES = (
     *(
         row
@@ -175,6 +228,19 @@ AVX2_INTEGER_REDUCTION_FAMILIES = (
     *(
         VectorBinaryFamily(source_operation, mnemonic, semantic, element)
         for source_operation, mnemonic, semantic in AVX2_BITWISE_FAMILIES
+        for element in INTEGER_ELEMENTS
+    ),
+)
+
+AVX512_INTEGER_REDUCTION_FAMILIES = (
+    *(
+        row
+        for row in AVX512_INTEGER_BINARY_FAMILIES
+        if row.source_operation in ("addi", "muli", "minsi", "maxsi", "minui", "maxui")
+    ),
+    *(
+        VectorBinaryFamily(source_operation, mnemonic, semantic, element)
+        for source_operation, mnemonic, semantic in AVX512_BITWISE_FAMILIES
         for element in INTEGER_ELEMENTS
     ),
 )
@@ -194,19 +260,41 @@ AVX2_FLOAT_FMA_MNEMONICS = {
     "f64": "vfmadd231pd",
 }
 
+AVX512_FLOAT_FMA_MNEMONICS = AVX2_FLOAT_FMA_MNEMONICS
+
+AVX512_INTEGER_COMPARE_MNEMONICS = {
+    element.name: (f"vpcmp{suffix}", f"vpcmpu{suffix}")
+    for element, suffix in zip(INTEGER_ELEMENTS, ("b", "w", "d", "q"), strict=True)
+}
+
+AVX512_FLOAT_COMPARE_MNEMONICS = AVX2_FLOAT_COMPARE_MNEMONICS
+
+AVX512_SELECT_MNEMONICS = {
+    **{
+        element.name: f"vpblendm{suffix}"
+        for element, suffix in zip(INTEGER_ELEMENTS, ("b", "w", "d", "q"), strict=True)
+    },
+    **{
+        element.name: f"vpblendm{suffix}"
+        for element, suffix in zip(STORAGE_ELEMENTS, ("b", "b", "w", "w"), strict=True)
+    },
+    "f32": "vblendmps",
+    "f64": "vblendmpd",
+}
+
 AVX2_SCALAR_FLOAT_FMA_MNEMONICS = {
     "f32": "vfmadd231ss",
     "f64": "vfmadd231sd",
 }
 
-AVX2_FLOAT_EXTREMA_OPERATIONS = (
+FLOAT_EXTREMA_OPERATIONS = (
     "minimumf",
     "maximumf",
     "minnumf",
     "maxnumf",
 )
 
-AVX2_FLOAT_EXTREMA_MNEMONICS = {
+FLOAT_EXTREMA_MNEMONICS = {
     "minimumf": {"f32": "vminps", "f64": "vminpd"},
     "maximumf": {"f32": "vmaxps", "f64": "vmaxpd"},
     "minnumf": {"f32": "vminps", "f64": "vminpd"},
@@ -224,7 +312,7 @@ AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS = ("addf", "mulf")
 
 AVX2_FLOAT_REDUCTION_OPERATIONS = (
     *AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
-    *AVX2_FLOAT_EXTREMA_OPERATIONS,
+    *FLOAT_EXTREMA_OPERATIONS,
 )
 
 AVX2_PAYLOAD_ELEMENT_NAMES = tuple(
@@ -249,10 +337,29 @@ def validate_vector_families() -> None:
         element.name for element in FLOAT_ELEMENTS
     }:
         raise ValueError("AVX2 floating comparison rows must cover every float element")
-    if set(AVX2_FLOAT_EXTREMA_MNEMONICS) != set(AVX2_FLOAT_EXTREMA_OPERATIONS):
-        raise ValueError("AVX2 packed extrema rows must cover every float semantic")
-    if set(AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS) != set(AVX2_FLOAT_EXTREMA_OPERATIONS):
+    if set(FLOAT_EXTREMA_MNEMONICS) != set(FLOAT_EXTREMA_OPERATIONS):
+        raise ValueError("packed extrema rows must cover every float semantic")
+    if set(AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS) != set(FLOAT_EXTREMA_OPERATIONS):
         raise ValueError("AVX2 scalar extrema rows must cover every float semantic")
+    avx512_keys = [
+        (family.source_operation, family.element.name)
+        for family in AVX512_INTEGER_BINARY_FAMILIES
+    ]
+    if len(avx512_keys) != len(set(avx512_keys)):
+        raise ValueError("duplicate AVX-512 source-operation and element family")
+    if {
+        (family.source_operation, family.element.name)
+        for family in AVX512VL_INTEGER_BINARY_FAMILIES
+    } != set(avx512_keys) - _AVX2_INTEGER_BINARY_KEYS:
+        raise ValueError("AVX-512VL rows must contain exactly the non-AVX2 cells")
+    if set(AVX512_INTEGER_COMPARE_MNEMONICS) != {
+        element.name for element in INTEGER_ELEMENTS
+    }:
+        raise ValueError(
+            "AVX-512 integer comparison rows must cover every integer element"
+        )
+    if set(AVX512_SELECT_MNEMONICS) != set(AVX2_PAYLOAD_ELEMENT_NAMES):
+        raise ValueError("AVX-512 select rows must cover every payload element")
 
 
 validate_vector_families()

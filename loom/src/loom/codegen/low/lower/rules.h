@@ -318,6 +318,15 @@ enum loom_low_lower_attr_copy_kind_e {
   // Packs eight byte selectors for one PSHUFB source segment. Selectors outside
   // the segment use the high-bit zeroing form.
   LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_SHUFFLE_MASK_CHUNK = 40,
+  // Interns all i64_array elements as fixed-width little-endian data and emits
+  // the reserved read-only data symbol.
+  LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_READ_ONLY_ELEMENTS = 41,
+  // Interns byte selectors relative to one fixed source segment and emits the
+  // reserved read-only data symbol.
+  LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_READ_ONLY_BYTE_SEGMENT = 42,
+  // Interns one parity of byte selectors as word indices plus 0/8-bit shifts
+  // and emits the reserved read-only data symbol.
+  LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_READ_ONLY_BYTE_WORDS = 43,
   // Maximum attribute-copy kind plus one.
   LOOM_LOW_LOWER_ATTR_COPY_COUNT_,
 };
@@ -328,10 +337,11 @@ static_assert(LOOM_LOW_LOWER_ATTR_COPY_COUNT_ <= UINT8_MAX,
 typedef struct loom_low_lower_attr_copy_t {
   // Literal value emitted by I64_LITERAL rows, byte offset used by
   // I64_ARRAY_LANE_BYTE rows, source segment offset used by
-  // SHUFFLE_MASK_CHUNK rows, or divisor used by SOURCE_MEMORY quotient and
-  // remainder rows, divisor used by I64_ARRAY_ELEMENT quotient and remainder
-  // rows, the width adjustment for divisor magic projections, or the low 63
-  // bits of a packed enum-remap table.
+  // SHUFFLE_MASK_CHUNK and READ_ONLY_BYTE_SEGMENT rows, divisor used by
+  // SOURCE_MEMORY quotient and remainder rows, divisor used by
+  // I64_ARRAY_ELEMENT quotient and remainder rows, the width adjustment for
+  // divisor magic projections, or the low 63 bits of a packed enum-remap
+  // table.
   int64_t literal_i64;
   // Rule-set string reference for the target low packet attribute name.
   loom_string_ref_t target_name_string_ref;
@@ -343,9 +353,9 @@ typedef struct loom_low_lower_attr_copy_t {
     // Second source value-ref row consumed by two-value projections.
     uint16_t other_value_ref_index;
   };
-  // First source i64_array element ordinal, i32 word ordinal, or shaped
-  // dimension ordinal consumed by the projection row, or high 16 bits of the
-  // packed enum-remap upper word.
+  // First source i64_array element ordinal, byte parity, i32 word ordinal, or
+  // shaped dimension ordinal consumed by the projection row, or high 16 bits
+  // of the packed enum-remap upper word.
   uint16_t source_element_index;
   // Source value-ref table row consumed by value projection rows.
   uint16_t value_ref_index;
@@ -354,11 +364,13 @@ typedef struct loom_low_lower_attr_copy_t {
   // Primary source op attribute ordinal consumed by projection rows.
   uint8_t source_attr_index;
   // Number of source elements consumed by PACK_ELEMENTS rows, byte stride used
-  // by I64_ARRAY_LANE_BYTE and SHUFFLE_MASK_CHUNK rows, scale used by
-  // VALUE_TYPE rows, or source enum case span used by ENUM_REMAP rows.
+  // by I64_ARRAY_LANE_BYTE, SHUFFLE_MASK_CHUNK, and READ_ONLY_BYTE_SEGMENT
+  // rows, scale used by VALUE_TYPE rows, or source enum case span used by
+  // ENUM_REMAP rows.
   uint8_t source_element_count;
-  // Bit width of each packed source element, enum-remap value, or source byte
-  // segment length for SHUFFLE_MASK_CHUNK rows.
+  // Bit width of each packed or read-only source element, enum-remap value, or
+  // source byte segment length for SHUFFLE_MASK_CHUNK and
+  // READ_ONLY_BYTE_SEGMENT rows.
   uint8_t source_element_bit_width;
   // Low bit position of the projected or packed value in the emitted i64.
   uint8_t target_bit_offset;

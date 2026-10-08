@@ -1236,6 +1236,7 @@ loom_cc_library(
     loom::error::emitter
     loom::error::error_defs
     loom::ir
+    loom::ops::global
     loom::ops::low
     loom::target::function_version
     loom::target::registers

@@ -2523,7 +2523,8 @@ static iree_status_t loom_low_verify_immediate(
   IREE_RETURN_IF_ERROR(loom_low_verify_known_flags(
       immediate->flags,
       LOOM_LOW_IMMEDIATE_FLAG_SYMBOLIC | LOOM_LOW_IMMEDIATE_FLAG_RELATIVE |
-          LOOM_LOW_IMMEDIATE_FLAG_DEFAULT_VALUE,
+          LOOM_LOW_IMMEDIATE_FLAG_DEFAULT_VALUE |
+          LOOM_LOW_IMMEDIATE_FLAG_READ_ONLY_DATA,
       "immediate", immediate_index));
   IREE_RETURN_IF_ERROR(loom_low_verify_required_string(
       descriptor_set, immediate->field_name_string_ref,
@@ -2537,6 +2538,21 @@ static iree_status_t loom_low_verify_immediate(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "low immediate %" PRIu32 " has invalid kind %u",
                             immediate_index, (unsigned)immediate->kind);
+  }
+  if (iree_any_bit_set(immediate->flags,
+                       LOOM_LOW_IMMEDIATE_FLAG_READ_ONLY_DATA)) {
+    if (immediate->kind != LOOM_LOW_IMMEDIATE_KIND_ORDINAL) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "low read-only-data immediate %" PRIu32
+                              " is not ordinal",
+                              immediate_index);
+    }
+    if (!iree_any_bit_set(immediate->flags, LOOM_LOW_IMMEDIATE_FLAG_SYMBOLIC)) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "low read-only-data immediate %" PRIu32
+                              " is not symbolic",
+                              immediate_index);
+    }
   }
   if (immediate->kind == LOOM_LOW_IMMEDIATE_KIND_ENUM) {
     if (immediate->enum_domain_id == LOOM_LOW_ENUM_DOMAIN_NONE) {

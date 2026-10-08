@@ -154,8 +154,10 @@ def integer_vector_constant_rule(
     lane_type: TypePattern,
     element_bit_width: int,
     move_descriptor: Descriptor,
-    lane_move_descriptor: Descriptor,
+    lane_move_descriptor: Descriptor | None,
     broadcast_descriptor: Descriptor,
+    *,
+    priority: int = 0,
 ) -> DescriptorRule:
     """Constructs a uniform integer vector from one exact element value."""
     if element_bit_width not in (8, 16, 32, 64):
@@ -180,7 +182,7 @@ def integer_vector_constant_rule(
                 (2 ** (element_bit_width - 1)) - 1,
             ),
         ),
-        0,
+        priority,
     )
 
 
@@ -217,23 +219,30 @@ def i64_vector_constant_rule(
 def integer_vector_splat_rule(
     scalar_type: TypePattern,
     result_type: TypePattern,
-    lane_move_descriptor: Descriptor,
+    lane_move_descriptor: Descriptor | None,
     broadcast_descriptor: Descriptor,
     *,
     broadcast_operand: str,
     broadcast_immediates: dict[str, int] | None = None,
     lane_type: TypePattern | None = None,
+    priority: int = 0,
 ) -> DescriptorRule:
-    """Broadcasts an integer scalar through an XMM low-lane transfer."""
-    scalar = ValueRef.temporary("scalar")
-    return DescriptorRule(
-        source_op=vector.vector_splat,
-        descriptor=broadcast_descriptor,
-        guards=(
-            Guard.value_type("scalar", scalar_type),
-            Guard.value_type("result", result_type),
-        ),
-        emit=(
+    """Broadcasts an integer scalar directly or through an XMM transfer."""
+    if lane_move_descriptor is None:
+        emits = (
+            EmitDescriptorOp(
+                descriptor=broadcast_descriptor,
+                operands={broadcast_operand: ValueRef.operand("scalar")},
+                results={"dst": ValueRef.result("result")},
+                immediates=(
+                    {} if broadcast_immediates is None else broadcast_immediates
+                ),
+                form=DescriptorEmitForm.OP,
+            ),
+        )
+    else:
+        scalar = ValueRef.temporary("scalar")
+        emits = (
             EmitDescriptorOp(
                 descriptor=lane_move_descriptor,
                 operands={"input": ValueRef.operand("scalar")},
@@ -250,7 +259,16 @@ def integer_vector_splat_rule(
                 ),
                 form=DescriptorEmitForm.OP,
             ),
+        )
+    return DescriptorRule(
+        source_op=vector.vector_splat,
+        descriptor=broadcast_descriptor,
+        guards=(
+            Guard.value_type("scalar", scalar_type),
+            Guard.value_type("result", result_type),
         ),
+        emit=emits,
+        priority=priority,
     )
 
 
@@ -452,8 +470,10 @@ def floating_vector_constant_bits_rule(
     lane_type: TypePattern,
     element_type: str,
     move_descriptor: Descriptor,
-    lane_move_descriptor: Descriptor,
+    lane_move_descriptor: Descriptor | None,
     broadcast_descriptor: Descriptor,
+    *,
+    priority: int = 0,
 ) -> DescriptorRule:
     """Constructs a uniform float vector from exact element-format bits."""
     if element_type in ("f8E4M3", "f8E5M2", "f16", "bf16"):
@@ -485,7 +505,7 @@ def floating_vector_constant_bits_rule(
             Guard.attr_kind("value", "f64"),
             Guard.value_exact_float("result"),
         ),
-        0,
+        priority,
     )
 
 
