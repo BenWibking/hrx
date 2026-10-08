@@ -176,3 +176,20 @@ func.def @unaligned_store_i64x8(%value: vector<8xi64>, %output: buffer) {
 // ----
 CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=1 scalarized=1 target_rewritten=1 reference_rewritten=0 deferred=0 invalid_ir=0 unsupported=0 unhandled=0 rows=1 *
 CHECK: COMPILE-REPORT: target_legalization[0] function=unaligned_store_i64x8 source_op=vector.store * action=rewritten * legalizer=aie2p strategy=target * scalarized=true *
+
+// ====
+
+// RUN: with-checks compile-report target=amd.xdna.aie2p:core target-legalize{mode=final}
+
+// Scalar conversion creates a vector.from_elements that crosses the 512-bit
+// packet boundary. The generated operation remains accounted under this
+// authored rewrite instead of acquiring an independent report row.
+func.def @packetizes_generated_operation(%input: vector<17xi32>) -> (vector<17xf32>) {
+  %result = vector.sitofp %input : vector<17xi32> to vector<17xf32>
+  func.return %result : vector<17xf32>
+}
+
+// ----
+CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=1 scalarized=1 target_rewritten=1 reference_rewritten=0 deferred=0 invalid_ir=0 unsupported=0 unhandled=0 rows=1 *
+CHECK: COMPILE-REPORT: target_legalization[0] function=packetizes_generated_operation source_op=vector.sitofp * action=rewritten * legalizer=aie2p strategy=target * scalarized=true *
+CHECK-NOT: COMPILE-REPORT: target_legalization[*] * source_op=vector.from_elements *

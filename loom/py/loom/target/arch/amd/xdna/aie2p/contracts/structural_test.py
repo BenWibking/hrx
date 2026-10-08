@@ -7,9 +7,6 @@
 """Tests for AMD XDNA AIE2P structural vector contracts."""
 
 from loom.dialect.vector import defs as vector
-from loom.target.arch.amd.xdna.aie2p.contracts.data_path import (
-    I8_INTERLEAVE_CONTROL,
-)
 from loom.target.arch.amd.xdna.aie2p.contracts.structural import (
     _ACCUMULATOR_BITCAST_TYPE_GROUPS,
     _F32X32_ACCUMULATOR,
@@ -17,7 +14,6 @@ from loom.target.arch.amd.xdna.aie2p.contracts.structural import (
     _I8_4X4_VECTOR,
     _I8_DEINTERLEAVE_CONTROLS,
     _I16_F16_BF16_8X8_VECTOR,
-    _I16_INTERLEAVE_CONTROL,
     _I16_TRANSPOSE_8X8_CONTROLS,
     _I32_F32_4X4_VECTOR,
     _I32_F32_TRANSPOSE_4X4_CONTROL,
@@ -765,54 +761,3 @@ def test_f32x32_bitcasts_move_each_unit_across_register_files() -> None:
             == "amd.xdna.aie2p.move.vector512.to.accumulator512"
             for index in (1, 3)
         )
-
-
-def test_16bit_interleave_uses_alternating_native_shuffle() -> None:
-    input_type = Vector(("i16", "f16", "bf16"), lanes=16)
-    rule = next(
-        rule
-        for rule in AIE2P_STRUCTURAL_RULES
-        if isinstance(rule, DescriptorRule)
-        and rule.source_op is vector.vector_interleave
-        and Guard.value_type("even", input_type) in rule.guards
-    )
-    assert len(rule.emit) == 2
-    assert rule.emit[0].immediates == {"i": _I16_INTERLEAVE_CONTROL}
-    assert _I16_INTERLEAVE_CONTROL == 18
-    assert rule.emit[1].descriptor.key == "amd.xdna.aie2p.shuffle.x.configured"
-    assert rule.emit[1].operands["s1"].field == "even"
-    assert rule.emit[1].operands["s2"].field == "odd"
-    assert Guard.i64_range("axis", 0, 0) in rule.guards
-
-
-def test_partial_byte_interleave_uses_low_native_shuffle() -> None:
-    input_type = Vector(
-        ("i8", "f8E4M3", "f8E5M2"),
-        minimum_lanes=1,
-        maximum_lanes=32,
-    )
-    result_type = Vector(
-        ("i8", "f8E4M3", "f8E5M2"),
-        minimum_lanes=2,
-        maximum_lanes=64,
-    )
-    rule = next(
-        rule
-        for rule in AIE2P_STRUCTURAL_RULES
-        if isinstance(rule, DescriptorRule)
-        and rule.source_op is vector.vector_interleave
-        and Guard.value_type("even", input_type) in rule.guards
-    )
-
-    assert rule.guards == (
-        Guard.value_type("even", input_type),
-        Guard.value_type("odd", input_type),
-        Guard.value_type("result", result_type),
-        Guard.i64_range("axis", 0, 0),
-    )
-    assert len(rule.emit) == 2
-    assert rule.emit[0].immediates == {"i": I8_INTERLEAVE_CONTROL}
-    assert I8_INTERLEAVE_CONTROL == 20
-    assert rule.emit[1].descriptor.key == "amd.xdna.aie2p.shuffle.x.configured"
-    assert rule.emit[1].operands["s1"].field == "even"
-    assert rule.emit[1].operands["s2"].field == "odd"

@@ -18,9 +18,6 @@ from loom.target.arch.amd.xdna.aie2p.contracts.carrier import (
     concat_x_carriers_emits,
     concat_x_carriers_with_controls_emits,
 )
-from loom.target.arch.amd.xdna.aie2p.contracts.data_path import (
-    I8_INTERLEAVE_CONTROL,
-)
 from loom.target.arch.amd.xdna.aie2p.contracts.predicate_concat import (
     AIE2P_PREDICATE_CONCAT_RULES,
 )
@@ -47,8 +44,6 @@ from loom.target.contracts import (
 )
 from loom.target.low_descriptors import Descriptor
 
-_I8X32_VECTOR = Vector("i8", lanes=32)
-_I8X64_VECTOR = Vector("i8", lanes=64)
 _I8_4X4_VECTOR = Vector("i8", dims=(4, 4))
 _I1_VECTOR = Vector("i1", minimum_lanes=1, maximum_lanes=64)
 _WIDE_PREDICATE_VECTOR = Vector("i1", minimum_lanes=65, maximum_lanes=128)
@@ -191,9 +186,6 @@ _WIDE_VECTOR_EXTRACT_SPECS = (
 # 512-bit source. Each logical 32-byte result retains the target's 512-bit X
 # carrier, with the remaining lanes outside the source vector's value domain.
 _I8_DEINTERLEAVE_CONTROLS = (0, 1)
-
-# T16_2x32_lo interleaves the low sixteen 16-bit lanes of two X carriers.
-_I16_INTERLEAVE_CONTROL = 18
 
 # AIE2P's T32_4x4 VSHUFFLE mode transposes the sixteen 32-bit lanes carried
 # by one X register.
@@ -440,87 +432,6 @@ def _wide_vector_extract_dynamic_rule(
             ),
         ),
         emit=tuple(emits),
-    )
-
-
-def _vector_deinterleave_i8x64_rule() -> DescriptorRule:
-    control_constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
-    shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
-
-    emits = []
-    for result_index, result_name in enumerate(("even", "odd")):
-        control_name = f"{result_name}_control"
-        emits.extend(
-            (
-                EmitDescriptorOp(
-                    descriptor=control_constant,
-                    results={"dst": ValueRef.temporary(control_name)},
-                    result_types={"dst": DescriptorResultType()},
-                    immediates={"i": _I8_DEINTERLEAVE_CONTROLS[result_index]},
-                    form=DescriptorEmitForm.CONST,
-                ),
-                EmitDescriptorOp(
-                    descriptor=shuffle,
-                    operands={
-                        "s1": ValueRef.operand("source"),
-                        "s2": ValueRef.operand("source"),
-                        "mod": ValueRef.temporary(control_name),
-                    },
-                    results={"dst": ValueRef.result("results", element=result_index)},
-                    form=DescriptorEmitForm.OP,
-                ),
-            )
-        )
-
-    return DescriptorRule(
-        source_op=vector.vector_deinterleave,
-        descriptor=shuffle,
-        guards=(
-            Guard.value_type("source", _I8X64_VECTOR),
-            Guard.value_type("results", _I8X32_VECTOR),
-            Guard.attr_kind("axis", "i64"),
-            Guard.i64_range("axis", 0, 0),
-        ),
-        emit=tuple(emits),
-    )
-
-
-def _vector_interleave_rule(
-    input_type: TypePattern,
-    result_type: TypePattern,
-    control_value: int,
-) -> DescriptorRule:
-    constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
-    shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
-    control = ValueRef.temporary("control")
-    return DescriptorRule(
-        source_op=vector.vector_interleave,
-        descriptor=shuffle,
-        guards=(
-            Guard.value_type("even", input_type),
-            Guard.value_type("odd", input_type),
-            Guard.value_type("result", result_type),
-            Guard.i64_range("axis", 0, 0),
-        ),
-        emit=(
-            EmitDescriptorOp(
-                descriptor=constant,
-                results={"dst": control},
-                result_types={"dst": DescriptorResultType()},
-                immediates={"i": control_value},
-                form=DescriptorEmitForm.CONST,
-            ),
-            EmitDescriptorOp(
-                descriptor=shuffle,
-                operands={
-                    "s1": ValueRef.operand("even"),
-                    "s2": ValueRef.operand("odd"),
-                    "mod": control,
-                },
-                results={"dst": ValueRef.result("result")},
-                form=DescriptorEmitForm.OP,
-            ),
-        ),
     )
 
 
@@ -1636,25 +1547,6 @@ AIE2P_STRUCTURAL_RULES = (
             element_byte_count,
             wide_lane_maximum,
         )
-    ),
-    _vector_deinterleave_i8x64_rule(),
-    _vector_interleave_rule(
-        Vector(
-            ("i8", "f8E4M3", "f8E5M2"),
-            minimum_lanes=1,
-            maximum_lanes=32,
-        ),
-        Vector(
-            ("i8", "f8E4M3", "f8E5M2"),
-            minimum_lanes=2,
-            maximum_lanes=64,
-        ),
-        I8_INTERLEAVE_CONTROL,
-    ),
-    _vector_interleave_rule(
-        Vector(("i16", "f16", "bf16"), lanes=16),
-        Vector(("i16", "f16", "bf16"), lanes=32),
-        _I16_INTERLEAVE_CONTROL,
     ),
     _vector_transpose_i8_4x4_rule(),
     _vector_transpose_i32_f32_4x4_rule(),

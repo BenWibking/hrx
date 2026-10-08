@@ -448,18 +448,22 @@ loom_cc_library(
     lower
   HDRS
     "lower/gather.h"
+    "lower/interleave.h"
     "lower/lower.h"
     "lower/matrix.h"
     "lower/rodata.h"
     "lower/shuffle.h"
+    "lower/vector_packet.h"
   TEXTUAL_HDRS
     "${IREE_BINARY_DIR}/loom/src/loom/target/arch/amd/xdna/aie2p/contracts/core_index.inl"
   SRCS
     "lower/gather.c"
+    "lower/interleave.c"
     "lower/matrix.c"
     "lower/registry.c"
     "lower/rodata.c"
     "lower/shuffle.c"
+    "lower/vector_packet.c"
   DEPS
     ::core_descriptors
     ::gather
@@ -620,6 +624,47 @@ loom_cc_binary(
   TESTONLY
 )
 endif()
+
+iree_py_test(
+  NAME
+    interleave_family_test
+  MAIN
+    "test/interleave_family_test.py"
+  SRCS
+    "test/interleave_family_test.py"
+  ARGS
+    "{{$<TARGET_FILE:loom::target::arch::amd::xdna::aie2p::loom-check>}}"
+  DATA
+    "loom::target::arch::amd::xdna::aie2p::loom-check"
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  TIMEOUT
+    60
+)
+
+iree_py_test(
+  NAME
+    interleave_family_exhaustive_test
+  MAIN
+    "test/interleave_family_test.py"
+  SRCS
+    "test/interleave_family_test.py"
+  ARGS
+    "{{$<TARGET_FILE:loom::target::arch::amd::xdna::aie2p::loom-check>}}"
+    "--exhaustive"
+  DATA
+    "loom::target::arch::amd::xdna::aie2p::loom-check"
+  LABELS
+    "manual"
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  TIMEOUT
+    60
+)
 
 if(LOOM_TARGET_ARCH_XDNA)
 loom_check_test_suite(
@@ -809,6 +854,7 @@ loom_check_test_suite(
     "test/source_low/vector_dot_interleave.loom-test"
     "test/source_low/vector_float_comparison.loom-test"
     "test/source_low/vector_index_conversion.loom-test"
+    "test/source_low/vector_interleave.loom-test"
     "test/source_low/vector_large_insert.loom-test"
     "test/source_low/vector_mask_select.loom-test"
     "test/source_low/vector_memory.loom-test"
