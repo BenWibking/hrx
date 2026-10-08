@@ -16,6 +16,7 @@ from loom.target.arch.spirv.atomic import (
     float_atomic_cas_strategies,
     float_atomic_descriptor_key,
 )
+from loom.target.arch.spirv.barrier import CONTROL_BARRIER_CASES
 from loom.target.arch.spirv.builtins import (
     BUILTIN_DIMENSIONS,
     BUILTIN_INDEX_QUERIES,
@@ -84,6 +85,7 @@ from loom.target.low_descriptors import (
     EffectFlag,
     EffectKind,
     InstructionClass,
+    MemorySpace,
 )
 
 
@@ -102,16 +104,27 @@ def test_bfloat16_float32_conversions_are_bidirectional() -> None:
     assert narrowing.feature_bits == feature_bits_value(("bfloat16_type_khr",))
 
 
-def test_control_barriers_classify_both_execution_scopes() -> None:
+def test_control_barrier_descriptors_cover_the_complete_source_family() -> None:
     descriptors = {
         descriptor.key: descriptor
         for descriptor in SPIRV_LOGICAL_CORE_DESCRIPTOR_SET.descriptors
+        if descriptor.key.startswith("spirv.op_control_barrier.")
     }
-    workgroup = descriptors["spirv.op_control_barrier.workgroup.workgroup.acq_rel"]
-    subgroup = descriptors["spirv.op_control_barrier.subgroup.workgroup.acq_rel"]
-    assert workgroup.effects == subgroup.effects
-    assert InstructionClass.EXECUTION_BARRIER in workgroup.instruction_classes
-    assert InstructionClass.EXECUTION_BARRIER in subgroup.instruction_classes
+    assert set(descriptors) == {case.descriptor_key for case in CONTROL_BARRIER_CASES}
+    for case in CONTROL_BARRIER_CASES:
+        descriptor = descriptors[case.descriptor_key]
+        expected_memory_space = {
+            "global": MemorySpace.GLOBAL,
+            "workgroup": MemorySpace.WORKGROUP,
+        }[case.memory_space.source_keyword]
+        assert descriptor.effects[0].kind is EffectKind.BARRIER
+        assert descriptor.effects[0].memory_space is expected_memory_space
+        assert descriptor.effects[0].flags == (
+            EffectFlag.ORDERED,
+            EffectFlag.DEPENDENCY,
+        )
+        assert descriptor.effects[1].kind is EffectKind.CONVERGENT
+        assert InstructionClass.EXECUTION_BARRIER in descriptor.instruction_classes
 
 
 def test_subgroup_lane_builtin_requires_group_non_uniform() -> None:

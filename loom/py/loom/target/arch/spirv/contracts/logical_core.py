@@ -25,6 +25,10 @@ from loom.dialect.vector import defs as vector
 from loom.dialect.view import ALL_VIEW_OPS
 from loom.dialect.view import defs as view
 from loom.dsl import Op
+from loom.target.arch.spirv.barrier import (
+    CONTROL_BARRIER_CASES,
+    ControlBarrierCase,
+)
 from loom.target.arch.spirv.builtins import (
     BUILTIN_DIMENSIONS,
     BUILTIN_INDEX_QUERIES,
@@ -1329,25 +1333,22 @@ def _storage_buffer_rules() -> tuple[ContractCase, ...]:
     return tuple(rules)
 
 
-def _control_barrier_rule(scope: str) -> DescriptorRule:
-    descriptor = _descriptor(f"spirv.op_control_barrier.{scope}.workgroup.acq_rel")
+def _control_barrier_rule(case: ControlBarrierCase) -> DescriptorRule:
+    descriptor = _descriptor(case.descriptor_key)
     return DescriptorRule(
         source_op=kernel.kernel_barrier,
         descriptor=descriptor,
         guards=(
-            Guard.enum_attr_equals("memory_space", "workgroup"),
-            Guard.enum_attr_equals("ordering", "acq_rel"),
-            Guard.enum_attr_equals("scope", scope),
+            Guard.enum_attr_equals("memory_space", case.memory_space.source_keyword),
+            Guard.enum_attr_equals("ordering", case.ordering.source_keyword),
+            Guard.enum_attr_equals("scope", case.scope.source_keyword),
         ),
         emit=(_descriptor_emit(descriptor=descriptor),),
     )
 
 
 def _control_barrier_rules() -> tuple[DescriptorRule, ...]:
-    return (
-        _control_barrier_rule("subgroup"),
-        _control_barrier_rule("workgroup"),
-    )
+    return tuple(_control_barrier_rule(case) for case in CONTROL_BARRIER_CASES)
 
 
 _INTEGER_BINARY_SOURCE_OPS = {

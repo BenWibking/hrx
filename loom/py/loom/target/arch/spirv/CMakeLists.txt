@@ -66,6 +66,37 @@ iree_py_library(
     loom::py::loom::target::arch::spirv::features
 )
 
+iree_py_library(
+  NAME
+    barrier
+  SRCS
+    "__init__.py"
+    "barrier.py"
+)
+
+iree_py_test(
+  NAME
+    barrier_test
+  MAIN
+    "../../../tools/pytest_style_runner.py"
+  SRCS
+    "barrier_test.py"
+    "../../../tools/pytest_style_runner.py"
+  ARGS
+    "loom.target.arch.spirv.barrier_test"
+  DEPS
+    loom::py::loom::target::arch::spirv::barrier
+    loom::py::loom::target::arch::spirv::descriptors
+    loom::py::loom::dialect::kernel::kernel
+    loom::py::loom::target::low_descriptors
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  TIMEOUT
+    60
+)
+
 iree_py_test(
   NAME
     atomic_test
@@ -115,6 +146,7 @@ iree_py_library(
     "descriptors.py"
   DEPS
     loom::py::loom::target::arch::spirv::atomic
+    loom::py::loom::target::arch::spirv::barrier
     loom::py::loom::target::arch::spirv::builtins
     loom::py::loom::target::arch::spirv::cooperative_matrix
     loom::py::loom::target::arch::spirv::extended_math
@@ -156,6 +188,7 @@ iree_py_test(
     "loom.target.arch.spirv.descriptors_test"
   DEPS
     loom::py::loom::target::arch::spirv::atomic
+    loom::py::loom::target::arch::spirv::barrier
     loom::py::loom::target::arch::spirv::builtins
     loom::py::loom::target::arch::spirv::cooperative_matrix
     loom::py::loom::target::arch::spirv::descriptors

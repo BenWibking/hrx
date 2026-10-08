@@ -34,6 +34,10 @@ from loom.target.arch.spirv.atomic import (
     float_atomic_descriptor_key,
     float_atomic_native_feature_bits,
 )
+from loom.target.arch.spirv.barrier import (
+    CONTROL_BARRIER_CASES,
+    ControlBarrierCase,
+)
 from loom.target.arch.spirv.builtins import (
     BUILTIN_DIMENSIONS,
     BUILTIN_INDEX_QUERIES,
@@ -1308,18 +1312,21 @@ def _workgroup_descriptors() -> tuple[Descriptor, ...]:
     return tuple(descriptors)
 
 
-def _control_barrier_descriptor(execution_scope: str) -> Descriptor:
-    key = f"spirv.op_control_barrier.{execution_scope}.workgroup.acq_rel"
+def _control_barrier_descriptor(case: ControlBarrierCase) -> Descriptor:
+    memory_space = {
+        "global": MemorySpace.GLOBAL,
+        "workgroup": MemorySpace.WORKGROUP,
+    }[case.memory_space.source_keyword]
     return Descriptor(
-        key=key,
-        mnemonic=f"OpControlBarrier.{execution_scope}.workgroup.acq_rel",
-        semantic_tag=key,
+        key=case.descriptor_key,
+        mnemonic=case.mnemonic,
+        semantic_tag=case.descriptor_key,
         instruction_classes=(InstructionClass.EXECUTION_BARRIER,),
         operands=(),
         effects=(
             Effect(
                 EffectKind.BARRIER,
-                memory_space=MemorySpace.WORKGROUP,
+                memory_space=memory_space,
                 flags=(EffectFlag.ORDERED, EffectFlag.DEPENDENCY),
             ),
             Effect(
@@ -1334,10 +1341,7 @@ def _control_barrier_descriptor(execution_scope: str) -> Descriptor:
 
 
 def _control_barrier_descriptors() -> tuple[Descriptor, ...]:
-    return (
-        _control_barrier_descriptor("subgroup"),
-        _control_barrier_descriptor("workgroup"),
-    )
+    return tuple(_control_barrier_descriptor(case) for case in CONTROL_BARRIER_CASES)
 
 
 def _cooperative_matrix_load_descriptor(
