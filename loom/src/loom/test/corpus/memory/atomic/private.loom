@@ -1,3 +1,9 @@
+// Copyright 2026 The IREE Authors
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 kernel.def @private_cmpxchg() {
   %unit = index.constant 1 : index
   %width = index.constant 128 : index
@@ -31,16 +37,55 @@ kernel.def @private_cmpxchg() {
   kernel.return
 }
 
-check.case public @private_bitwise_compare {
-  %input = check.generate.fill value(2139169605) : tensor<128xi32>
-  %output = check.generate.fill value(0) : tensor<3x128xi32>
-  kernel.launch @private_cmpxchg(%input, %output) : (tensor<128xi32>, tensor<3x128xi32>)
-  %old = check.tensor.view %output offset(0) : tensor<3x128xi32> -> tensor<256xi32>
-  %expected_old = check.generate.fill value(2139169605) : tensor<256xi32>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<256xi32>
-  %final = check.tensor.view %output offset(1024) : tensor<3x128xi32> -> tensor<128xi32>
-  %expected_final = check.generate.fill value(-2147483648) : tensor<128xi32>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<128xi32>
+func.def @private_cmpxchg_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 128 : index
+  %step = index.constant 1 : index
+  %source = buffer.view %input[%origin] : buffer -> view<128xi32>
+  %results = buffer.view %output[%origin] : buffer -> view<3x128xi32>
+  %different = scalar.constant 2143363909 : i32
+  %matching = scalar.constant 2139169605 : i32
+  %replacement = scalar.constant -2147483648 : i32
+  scf.for %lane = [%begin to %end step %step] {
+    %initial = view.load %source[%lane] : view<128xi32> -> i32
+    %failed_matches = scalar.cmpi eq, %initial, %different : i32
+    %after_failed = scf.select %failed_matches, %replacement, %initial : i32
+    %succeeded_matches = scalar.cmpi eq, %after_failed, %matching : i32
+    %final = scf.select %succeeded_matches, %replacement, %after_failed : i32
+    view.store %initial, %results[0, %lane] : i32, view<3x128xi32>
+    view.store %after_failed, %results[1, %lane] : i32, view<3x128xi32>
+    view.store %final, %results[2, %lane] : i32, view<3x128xi32>
+  }
+  func.return
+}
+
+check.scenario @private_bitwise_compare {
+  check.trial[8](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-2147483648 to 2147483647) : tensor<128xi32>
+    %output = check.generate.fill value(0) : tensor<3x128xi32>
+    check.compare<@private_cmpxchg, @private_cmpxchg_oracle>(%input, %output) : (tensor<128xi32>, tensor<3x128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<128xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<3x128xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(2139169605) : tensor<128xi32>
+    %output = check.generate.fill value(0) : tensor<3x128xi32>
+    check.compare<@private_cmpxchg, @private_cmpxchg_oracle>(%input, %output) : (tensor<128xi32>, tensor<3x128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<128xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<3x128xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(2143363909) : tensor<128xi32>
+    %output = check.generate.fill value(0) : tensor<3x128xi32>
+    check.compare<@private_cmpxchg, @private_cmpxchg_oracle>(%input, %output) : (tensor<128xi32>, tensor<3x128xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<128xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<3x128xi32>
+    }
+  }
   check.return
 }
 
@@ -115,46 +160,61 @@ kernel.def @private_integer_updates() {
   kernel.return
 }
 
-check.case public @private_integer_results {
-  %input = check.generate.fill value(-17) : tensor<128xi64>
-  %output = check.generate.fill value(0) : tensor<21x128xi64>
-  kernel.launch @private_integer_updates(%input, %output) : (tensor<128xi64>, tensor<21x128xi64>)
-  %old = check.tensor.view %output offset(0) : tensor<21x128xi64> -> tensor<1280xi64>
-  %expected_old = check.generate.fill value(-17) : tensor<1280xi64>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<1280xi64>
-  %final_xchgi = check.tensor.view %output offset(10240) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_xchgi = check.generate.fill value(5) : tensor<128xi64>
-  check.expect.bitwise actual(%final_xchgi) expected(%expected_xchgi) : tensor<128xi64>
-  %final_addi = check.tensor.view %output offset(11264) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_addi = check.generate.fill value(-12) : tensor<128xi64>
-  check.expect.bitwise actual(%final_addi) expected(%expected_addi) : tensor<128xi64>
-  %final_subi = check.tensor.view %output offset(12288) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_subi = check.generate.fill value(-22) : tensor<128xi64>
-  check.expect.bitwise actual(%final_subi) expected(%expected_subi) : tensor<128xi64>
-  %final_andi = check.tensor.view %output offset(13312) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_andi = check.generate.fill value(5) : tensor<128xi64>
-  check.expect.bitwise actual(%final_andi) expected(%expected_andi) : tensor<128xi64>
-  %final_ori = check.tensor.view %output offset(14336) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_ori = check.generate.fill value(-17) : tensor<128xi64>
-  check.expect.bitwise actual(%final_ori) expected(%expected_ori) : tensor<128xi64>
-  %final_xori = check.tensor.view %output offset(15360) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_xori = check.generate.fill value(-22) : tensor<128xi64>
-  check.expect.bitwise actual(%final_xori) expected(%expected_xori) : tensor<128xi64>
-  %final_minsi = check.tensor.view %output offset(16384) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_minsi = check.generate.fill value(-17) : tensor<128xi64>
-  check.expect.bitwise actual(%final_minsi) expected(%expected_minsi) : tensor<128xi64>
-  %final_maxsi = check.tensor.view %output offset(17408) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_maxsi = check.generate.fill value(5) : tensor<128xi64>
-  check.expect.bitwise actual(%final_maxsi) expected(%expected_maxsi) : tensor<128xi64>
-  %final_minui = check.tensor.view %output offset(18432) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_minui = check.generate.fill value(5) : tensor<128xi64>
-  check.expect.bitwise actual(%final_minui) expected(%expected_minui) : tensor<128xi64>
-  %final_maxui = check.tensor.view %output offset(19456) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_maxui = check.generate.fill value(-17) : tensor<128xi64>
-  check.expect.bitwise actual(%final_maxui) expected(%expected_maxui) : tensor<128xi64>
-  %reduced = check.tensor.view %output offset(20480) : tensor<21x128xi64> -> tensor<128xi64>
-  %expected_reduced = check.generate.fill value(-22) : tensor<128xi64>
-  check.expect.bitwise actual(%reduced) expected(%expected_reduced) : tensor<128xi64>
+func.def @private_integer_updates_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 128 : index
+  %step = index.constant 1 : index
+  %source = buffer.view %input[%origin] : buffer -> view<128xi64>
+  %results = buffer.view %output[%origin] : buffer -> view<21x128xi64>
+  %update = scalar.constant 5 : i64
+  scf.for %lane = [%begin to %end step %step] {
+    %initial = view.load %source[%lane] : view<128xi64> -> i64
+    %add = scalar.addi %initial, %update : i64
+    %sub = scalar.subi %initial, %update : i64
+    %and = scalar.andi %initial, %update : i64
+    %or = scalar.ori %initial, %update : i64
+    %xor = scalar.xori %initial, %update : i64
+    %signed_min = scalar.minsi %initial, %update : i64
+    %signed_max = scalar.maxsi %initial, %update : i64
+    %unsigned_min = scalar.minui %initial, %update : i64
+    %unsigned_max = scalar.maxui %initial, %update : i64
+    %reduced = scalar.subi %unsigned_max, %update : i64
+    view.store %initial, %results[0, %lane] : i64, view<21x128xi64>
+    view.store %initial, %results[1, %lane] : i64, view<21x128xi64>
+    view.store %initial, %results[2, %lane] : i64, view<21x128xi64>
+    view.store %initial, %results[3, %lane] : i64, view<21x128xi64>
+    view.store %initial, %results[4, %lane] : i64, view<21x128xi64>
+    view.store %initial, %results[5, %lane] : i64, view<21x128xi64>
+    view.store %initial, %results[6, %lane] : i64, view<21x128xi64>
+    view.store %initial, %results[7, %lane] : i64, view<21x128xi64>
+    view.store %initial, %results[8, %lane] : i64, view<21x128xi64>
+    view.store %initial, %results[9, %lane] : i64, view<21x128xi64>
+    view.store %update, %results[10, %lane] : i64, view<21x128xi64>
+    view.store %add, %results[11, %lane] : i64, view<21x128xi64>
+    view.store %sub, %results[12, %lane] : i64, view<21x128xi64>
+    view.store %and, %results[13, %lane] : i64, view<21x128xi64>
+    view.store %or, %results[14, %lane] : i64, view<21x128xi64>
+    view.store %xor, %results[15, %lane] : i64, view<21x128xi64>
+    view.store %signed_min, %results[16, %lane] : i64, view<21x128xi64>
+    view.store %signed_max, %results[17, %lane] : i64, view<21x128xi64>
+    view.store %unsigned_min, %results[18, %lane] : i64, view<21x128xi64>
+    view.store %unsigned_max, %results[19, %lane] : i64, view<21x128xi64>
+    view.store %reduced, %results[20, %lane] : i64, view<21x128xi64>
+  }
+  func.return
+}
+
+check.scenario @private_integer_results {
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-9223372036854775808 to 9223372036854775807) : tensor<128xi64>
+    %output = check.generate.fill value(0) : tensor<21x128xi64>
+    check.compare<@private_integer_updates, @private_integer_updates_oracle>(%input, %output) : (tensor<128xi64>, tensor<21x128xi64>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<128xi64>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<21x128xi64>
+    }
+  }
   check.return
 }
 
@@ -270,58 +330,67 @@ kernel.def @private_carriers() {
   kernel.return
 }
 
-check.case public @private_carrier_results {
-  %input = check.generate.fill value(1) : tensor<128xi64>
-  %output = check.generate.fill value(0) : tensor<16x128xi64>
-  kernel.launch @private_carriers(%input, %output) : (tensor<128xi64>, tensor<16x128xi64>)
-  %result_0 = check.tensor.view %output offset(0) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_0 = check.generate.fill value(1) : tensor<128xi64>
-  check.expect.bitwise actual(%result_0) expected(%expected_0) : tensor<128xi64>
-  %result_1 = check.tensor.view %output offset(1024) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_1 = check.generate.fill value(1) : tensor<128xi64>
-  check.expect.bitwise actual(%result_1) expected(%expected_1) : tensor<128xi64>
-  %result_2 = check.tensor.view %output offset(2048) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_2 = check.generate.fill value(1) : tensor<128xi64>
-  check.expect.bitwise actual(%result_2) expected(%expected_2) : tensor<128xi64>
-  %result_3 = check.tensor.view %output offset(3072) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_3 = check.generate.fill value(1) : tensor<128xi64>
-  check.expect.bitwise actual(%result_3) expected(%expected_3) : tensor<128xi64>
-  %result_4 = check.tensor.view %output offset(4096) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_4 = check.generate.fill value(127) : tensor<128xi64>
-  check.expect.bitwise actual(%result_4) expected(%expected_4) : tensor<128xi64>
-  %result_5 = check.tensor.view %output offset(5120) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_5 = check.generate.fill value(32767) : tensor<128xi64>
-  check.expect.bitwise actual(%result_5) expected(%expected_5) : tensor<128xi64>
-  %result_6 = check.tensor.view %output offset(6144) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_6 = check.generate.fill value(2) : tensor<128xi64>
-  check.expect.bitwise actual(%result_6) expected(%expected_6) : tensor<128xi64>
-  %result_7 = check.tensor.view %output offset(7168) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_7 = check.generate.fill value(2) : tensor<128xi64>
-  check.expect.bitwise actual(%result_7) expected(%expected_7) : tensor<128xi64>
-  %result_8 = check.tensor.view %output offset(8192) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_8 = check.generate.fill value(2) : tensor<128xi64>
-  check.expect.bitwise actual(%result_8) expected(%expected_8) : tensor<128xi64>
-  %result_9 = check.tensor.view %output offset(9216) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_9 = check.generate.fill value(2) : tensor<128xi64>
-  check.expect.bitwise actual(%result_9) expected(%expected_9) : tensor<128xi64>
-  %result_10 = check.tensor.view %output offset(10240) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_10 = check.generate.fill value(-127) : tensor<128xi64>
-  check.expect.bitwise actual(%result_10) expected(%expected_10) : tensor<128xi64>
-  %result_11 = check.tensor.view %output offset(11264) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_11 = check.generate.fill value(-32767) : tensor<128xi64>
-  check.expect.bitwise actual(%result_11) expected(%expected_11) : tensor<128xi64>
-  %old_f8e4m3 = check.tensor.view %output offset(12288) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_old_f8e4m3 = check.generate.fill value(1) : tensor<128xi64>
-  check.expect.bitwise actual(%old_f8e4m3) expected(%expected_old_f8e4m3) : tensor<128xi64>
-  %final_f8e4m3 = check.tensor.view %output offset(13312) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_final_f8e4m3 = check.generate.fill value(2) : tensor<128xi64>
-  check.expect.bitwise actual(%final_f8e4m3) expected(%expected_final_f8e4m3) : tensor<128xi64>
-  %old_f8e5m2 = check.tensor.view %output offset(14336) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_old_f8e5m2 = check.generate.fill value(1) : tensor<128xi64>
-  check.expect.bitwise actual(%old_f8e5m2) expected(%expected_old_f8e5m2) : tensor<128xi64>
-  %final_f8e5m2 = check.tensor.view %output offset(15360) : tensor<16x128xi64> -> tensor<128xi64>
-  %expected_final_f8e5m2 = check.generate.fill value(2) : tensor<128xi64>
-  check.expect.bitwise actual(%final_f8e5m2) expected(%expected_final_f8e5m2) : tensor<128xi64>
+// The directed input is the minimum positive bit pattern for every floating
+// carrier. Integer bit arithmetic independently models exact gradual underflow.
+func.def @private_carriers_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 128 : index
+  %step = index.constant 1 : index
+  %source = buffer.view %input[%origin] : buffer -> view<128xi64>
+  %results = buffer.view %output[%origin] : buffer -> view<16x128xi64>
+  %initial_i8 = scalar.constant 127 : i8
+  %initial_i16 = scalar.constant 32767 : i16
+  scf.for %lane = [%begin to %end step %step] {
+    %bits_i64 = view.load %source[%lane] : view<128xi64> -> i64
+    %bits_i32 = scalar.trunci %bits_i64 : i64 to i32
+    %bits_i16 = scalar.trunci %bits_i64 : i64 to i16
+    %bits_i8 = scalar.trunci %bits_i64 : i64 to i8
+    %old_i16 = scalar.extui %bits_i16 : i16 to i64
+    %old_i32 = scalar.extui %bits_i32 : i32 to i64
+    %old_i8 = scalar.extui %bits_i8 : i8 to i64
+    %final_f64 = scalar.addi %bits_i64, %bits_i64 : i64
+    %final_i32_bits = scalar.addi %bits_i32, %bits_i32 : i32
+    %final_i32 = scalar.extui %final_i32_bits : i32 to i64
+    %final_i16_bits = scalar.addi %bits_i16, %bits_i16 : i16
+    %final_i16 = scalar.extui %final_i16_bits : i16 to i64
+    %final_i8_bits = scalar.addi %bits_i8, %bits_i8 : i8
+    %final_i8 = scalar.extui %final_i8_bits : i8 to i64
+    %integer_i8 = scalar.addi %initial_i8, %final_i8_bits : i8
+    %integer_i8_wide = scalar.extsi %integer_i8 : i8 to i64
+    %integer_i16 = scalar.addi %initial_i16, %final_i16_bits : i16
+    %integer_i16_wide = scalar.extsi %integer_i16 : i16 to i64
+    view.store %old_i16, %results[0, %lane] : i64, view<16x128xi64>
+    view.store %old_i16, %results[1, %lane] : i64, view<16x128xi64>
+    view.store %old_i32, %results[2, %lane] : i64, view<16x128xi64>
+    view.store %bits_i64, %results[3, %lane] : i64, view<16x128xi64>
+    %initial_i8_wide = scalar.extsi %initial_i8 : i8 to i64
+    %initial_i16_wide = scalar.extsi %initial_i16 : i16 to i64
+    view.store %initial_i8_wide, %results[4, %lane] : i64, view<16x128xi64>
+    view.store %initial_i16_wide, %results[5, %lane] : i64, view<16x128xi64>
+    view.store %final_i16, %results[6, %lane] : i64, view<16x128xi64>
+    view.store %final_i16, %results[7, %lane] : i64, view<16x128xi64>
+    view.store %final_i32, %results[8, %lane] : i64, view<16x128xi64>
+    view.store %final_f64, %results[9, %lane] : i64, view<16x128xi64>
+    view.store %integer_i8_wide, %results[10, %lane] : i64, view<16x128xi64>
+    view.store %integer_i16_wide, %results[11, %lane] : i64, view<16x128xi64>
+    view.store %old_i8, %results[12, %lane] : i64, view<16x128xi64>
+    view.store %final_i8, %results[13, %lane] : i64, view<16x128xi64>
+    view.store %old_i8, %results[14, %lane] : i64, view<16x128xi64>
+    view.store %final_i8, %results[15, %lane] : i64, view<16x128xi64>
+  }
+  func.return
+}
+
+check.scenario @private_carrier_results {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(1) : tensor<128xi64>
+    %output = check.generate.fill value(0) : tensor<16x128xi64>
+    check.compare<@private_carriers, @private_carriers_oracle>(%input, %output) : (tensor<128xi64>, tensor<16x128xi64>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<128xi64>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<16x128xi64>
+    }
+  }
   check.return
 }
 
@@ -381,28 +450,86 @@ kernel.def @private_vector_updates() {
   kernel.return
 }
 
-check.case public @private_vector_results {
-  %input = check.generate.fill value(1) : tensor<128x2xi16>
-  %output = check.generate.fill value(0) : tensor<5x128x2xi16>
-  kernel.launch @private_vector_updates(%input, %output) : (tensor<128x2xi16>, tensor<5x128x2xi16>)
-  // Pack each pair of halfword payloads into one integer. Even and odd
-  // invocations observe [3, 2]/[2, 3], [4, 11]/[11, 4], [5, 3]/[3, 5],
-  // [5, 7]/[7, 5], then [7, 7]/[9, 5] after the duplicate updates.
-  %old = check.tensor.view %output offset(0) : tensor<5x128x2xi16> -> tensor<128xi32>
-  %expected_old = check.generate.iota offset(131075) step(65535) period(2) : tensor<128xi32>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<128xi32>
-  %masked = check.tensor.view %output offset(512) : tensor<5x128x2xi16> -> tensor<128xi32>
-  %expected_masked = check.generate.iota offset(720900) step(-458745) period(2) : tensor<128xi32>
-  check.expect.bitwise actual(%masked) expected(%expected_masked) : tensor<128xi32>
-  %observed = check.tensor.view %output offset(1024) : tensor<5x128x2xi16> -> tensor<128xi32>
-  %expected_observed = check.generate.iota offset(196613) step(131070) period(2) : tensor<128xi32>
-  check.expect.bitwise actual(%observed) expected(%expected_observed) : tensor<128xi32>
-  %final = check.tensor.view %output offset(1536) : tensor<5x128x2xi16> -> tensor<128xi32>
-  %expected_final = check.generate.iota offset(458757) step(-131070) period(2) : tensor<128xi32>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<128xi32>
-  %accumulated = check.tensor.view %output offset(2048) : tensor<5x128x2xi16> -> tensor<128xi32>
-  %expected_accumulated = check.generate.iota offset(458759) step(-131070) period(2) : tensor<128xi32>
-  check.expect.bitwise actual(%accumulated) expected(%expected_accumulated) : tensor<128xi32>
+func.def @private_vector_updates_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 128 : index
+  %pair = index.constant 2 : index
+  %step = index.constant 1 : index
+  %source = buffer.view %input[%origin] : buffer -> view<128x2xi16>
+  %results = buffer.view %output[%origin] : buffer -> view<5x128x2xi16>
+  %inactive_delta = scalar.constant 0.0 : f16
+  %passthrough_bits = scalar.constant 11 : i16
+  %passthrough = scalar.bitcast %passthrough_bits : i16 to f16
+  %expected_bits = scalar.constant 3 : i16
+  %replacement_bits = scalar.constant 7 : i16
+  scf.for %lane = [%begin to %end step %step] {
+    %first_bits = view.load %source[%lane, 0] : view<128x2xi16> -> i16
+    %second_bits = view.load %source[%lane, 1] : view<128x2xi16> -> i16
+    %first = scalar.bitcast %first_bits : i16 to f16
+    %second = scalar.bitcast %second_bits : i16 to f16
+    %first_twice = scalar.addf %first, %first : f16
+    %second_twice = scalar.addf %second, %second : f16
+    %first_thrice = scalar.addf %first_twice, %first : f16
+    %second_thrice = scalar.addf %second_twice, %second : f16
+    %parity = index.rem %lane, %pair : index
+    %even = index.cmp eq, %parity, %begin : index
+    %old_first = scf.select %even, %first_thrice, %first_twice : f16
+    %old_second = scf.select %even, %second_twice, %second_thrice : f16
+    %updated_first = scalar.addf %old_first, %first : f16
+    %updated_second = scalar.addf %old_second, %second : f16
+    %masked_first = scf.select %even, %updated_first, %passthrough : f16
+    %masked_second = scf.select %even, %passthrough, %updated_second : f16
+    %first_delta = scf.select %even, %first, %inactive_delta : f16
+    %second_delta = scf.select %even, %inactive_delta, %second : f16
+    %observed_first = scalar.addf %updated_first, %first_delta : f16
+    %observed_second = scalar.addf %updated_second, %second_delta : f16
+    %observed_first_bits = scalar.bitcast %observed_first : f16 to i16
+    %observed_second_bits = scalar.bitcast %observed_second : f16 to i16
+    %first_matches = scalar.cmpi eq, %observed_first_bits, %expected_bits : i16
+    %second_matches = scalar.cmpi eq, %observed_second_bits, %expected_bits : i16
+    %final_first_bits = scf.select %first_matches, %replacement_bits, %observed_first_bits : i16
+    %final_second_bits = scf.select %second_matches, %replacement_bits, %observed_second_bits : i16
+    %final_first = scalar.bitcast %final_first_bits : i16 to f16
+    %first_accumulated = scalar.addf %final_first, %first : f16
+    %accumulated = scalar.addf %first_accumulated, %second : f16
+    %accumulated_bits = scalar.bitcast %accumulated : f16 to i16
+    %old_first_bits = scalar.bitcast %old_first : f16 to i16
+    %old_second_bits = scalar.bitcast %old_second : f16 to i16
+    %masked_first_bits = scalar.bitcast %masked_first : f16 to i16
+    %masked_second_bits = scalar.bitcast %masked_second : f16 to i16
+    view.store %old_first_bits, %results[0, %lane, 0] : i16, view<5x128x2xi16>
+    view.store %old_second_bits, %results[0, %lane, 1] : i16, view<5x128x2xi16>
+    view.store %masked_first_bits, %results[1, %lane, 0] : i16, view<5x128x2xi16>
+    view.store %masked_second_bits, %results[1, %lane, 1] : i16, view<5x128x2xi16>
+    view.store %observed_first_bits, %results[2, %lane, 0] : i16, view<5x128x2xi16>
+    view.store %observed_second_bits, %results[2, %lane, 1] : i16, view<5x128x2xi16>
+    view.store %final_first_bits, %results[3, %lane, 0] : i16, view<5x128x2xi16>
+    view.store %final_second_bits, %results[3, %lane, 1] : i16, view<5x128x2xi16>
+    view.store %accumulated_bits, %results[4, %lane, 0] : i16, view<5x128x2xi16>
+    view.store %final_second_bits, %results[4, %lane, 1] : i16, view<5x128x2xi16>
+  }
+  func.return
+}
+
+check.scenario @private_vector_results {
+  check.trial[8](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(1 to 32) : tensor<128x2xi16>
+    %output = check.generate.fill value(0) : tensor<5x128x2xi16>
+    check.compare<@private_vector_updates, @private_vector_updates_oracle>(%input, %output) : (tensor<128x2xi16>, tensor<5x128x2xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<128x2xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<5x128x2xi16>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(1) : tensor<128x2xi16>
+    %output = check.generate.fill value(0) : tensor<5x128x2xi16>
+    check.compare<@private_vector_updates, @private_vector_updates_oracle>(%input, %output) : (tensor<128x2xi16>, tensor<5x128x2xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<128x2xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<5x128x2xi16>
+    }
+  }
   check.return
 }
 
@@ -431,16 +558,46 @@ kernel.def @private_half_number() {
   kernel.return
 }
 
-check.case public @private_half_number_snan {
-  %input = check.generate.fill value(31745) : tensor<1xi16>
-  %output = check.generate.fill value(0) : tensor<2xi16>
-  kernel.launch @private_half_number(%input, %output) : (tensor<1xi16>, tensor<2xi16>)
-  %old = check.tensor.view %output offset(0) : tensor<2xi16> -> tensor<1xi16>
-  %expected_old = check.generate.fill value(31745) : tensor<1xi16>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<1xi16>
-  %final = check.tensor.view %output offset(2) : tensor<2xi16> -> tensor<1xi16>
-  %expected_final = check.generate.fill value(15360) : tensor<1xi16>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi16>
+func.def @private_half_number_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %source = buffer.view %input[%origin] : buffer -> view<1xi16>
+  %results = buffer.view %output[%origin] : buffer -> view<2xi16>
+  %bits = view.load %source[0] : view<1xi16> -> i16
+  %initial = scalar.bitcast %bits : i16 to f16
+  %update = scalar.constant 1.0 : f16
+  %final = scalar.minnumf %initial, %update : f16
+  %final_bits = scalar.bitcast %final : f16 to i16
+  view.store %bits, %results[0] : i16, view<2xi16>
+  view.store %final_bits, %results[1] : i16, view<2xi16>
+  func.return
+}
+
+check.scenario @private_half_number_values {
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-32768 to 32767) : tensor<1xi16>
+    %output = check.generate.fill value(0) : tensor<2xi16>
+    check.compare<@private_half_number, @private_half_number_oracle>(%input, %output) : (tensor<1xi16>, tensor<2xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi16>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(31745) : tensor<1xi16>
+    %output = check.generate.fill value(0) : tensor<2xi16>
+    check.compare<@private_half_number, @private_half_number_oracle>(%input, %output) : (tensor<1xi16>, tensor<2xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi16>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(1) : tensor<1xi16>
+    %output = check.generate.fill value(0) : tensor<2xi16>
+    check.compare<@private_half_number, @private_half_number_oracle>(%input, %output) : (tensor<1xi16>, tensor<2xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi16>
+    }
+  }
   check.return
 }
 
@@ -503,63 +660,59 @@ kernel.def @private_float8_compare() {
   kernel.return
 }
 
-check.case public @private_float8_negative_matches {
-  %input = check.generate.iota offset(-128) step(1) : tensor<256xi8>
-  %comparisons = check.generate.iota offset(-128) step(1) period(128) : tensor<256xi8>
-  %choice = check.literal value(1) : i32
-  %output = check.generate.fill value(-85) : tensor<6x256xi8>
-  kernel.launch @private_float8_compare(%input, %comparisons, %choice, %output) : (tensor<256xi8>, tensor<256xi8>, i32, tensor<6x256xi8>)
-  %old_e4 = check.tensor.view %output offset(0) : tensor<6x256xi8> -> tensor<256xi8>
-  check.expect.bitwise actual(%old_e4) expected(%input) : tensor<256xi8>
-  %matched_e4 = check.tensor.view %output offset(256) : tensor<6x256xi8> -> tensor<128xi8>
-  %expected_match_e4 = check.generate.fill value(56) : tensor<128xi8>
-  check.expect.bitwise actual(%matched_e4) expected(%expected_match_e4) : tensor<128xi8>
-  %unmatched_e4 = check.tensor.view %output offset(384) : tensor<6x256xi8> -> tensor<128xi8>
-  %expected_unmatched_e4 = check.generate.iota offset(0) step(1) : tensor<128xi8>
-  check.expect.bitwise actual(%unmatched_e4) expected(%expected_unmatched_e4) : tensor<128xi8>
-  %selected_e4 = check.tensor.view %output offset(512) : tensor<6x256xi8> -> tensor<256xi8>
-  check.expect.bitwise actual(%selected_e4) expected(%input) : tensor<256xi8>
-  %old_e5 = check.tensor.view %output offset(768) : tensor<6x256xi8> -> tensor<256xi8>
-  check.expect.bitwise actual(%old_e5) expected(%input) : tensor<256xi8>
-  %matched_e5 = check.tensor.view %output offset(1024) : tensor<6x256xi8> -> tensor<128xi8>
-  %expected_match_e5 = check.generate.fill value(60) : tensor<128xi8>
-  check.expect.bitwise actual(%matched_e5) expected(%expected_match_e5) : tensor<128xi8>
-  %unmatched_e5 = check.tensor.view %output offset(1152) : tensor<6x256xi8> -> tensor<128xi8>
-  %expected_unmatched_e5 = check.generate.iota offset(0) step(1) : tensor<128xi8>
-  check.expect.bitwise actual(%unmatched_e5) expected(%expected_unmatched_e5) : tensor<128xi8>
-  %selected_e5 = check.tensor.view %output offset(1280) : tensor<6x256xi8> -> tensor<256xi8>
-  check.expect.bitwise actual(%selected_e5) expected(%input) : tensor<256xi8>
-  check.return
+func.def @private_float8_compare_oracle(%input: buffer, %comparisons: buffer, %choice: i32, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 256 : index
+  %step = index.constant 1 : index
+  %source = buffer.view %input[%origin] : buffer -> view<256xi8>
+  %expected_source = buffer.view %comparisons[%origin] : buffer -> view<256xi8>
+  %results = buffer.view %output[%origin] : buffer -> view<6x256xi8>
+  %threshold = scalar.constant 0 : i32
+  %replacement_e4 = scalar.constant 56 : i8
+  %replacement_e5 = scalar.constant 60 : i8
+  %choose_initial = scalar.cmpi ne, %choice, %threshold : i32
+  scf.for %lane = [%begin to %end step %step] {
+    %initial = view.load %source[%lane] : view<256xi8> -> i8
+    %expected = view.load %expected_source[%lane] : view<256xi8> -> i8
+    %matches = scalar.cmpi eq, %initial, %expected : i8
+    %final_e4 = scf.select %matches, %replacement_e4, %initial : i8
+    %selected_e4 = scf.select %choose_initial, %initial, %replacement_e4 : i8
+    %final_e5 = scf.select %matches, %replacement_e5, %initial : i8
+    %selected_e5 = scf.select %choose_initial, %initial, %replacement_e5 : i8
+    view.store %initial, %results[0, %lane] : i8, view<6x256xi8>
+    view.store %final_e4, %results[1, %lane] : i8, view<6x256xi8>
+    view.store %selected_e4, %results[2, %lane] : i8, view<6x256xi8>
+    view.store %initial, %results[3, %lane] : i8, view<6x256xi8>
+    view.store %final_e5, %results[4, %lane] : i8, view<6x256xi8>
+    view.store %selected_e5, %results[5, %lane] : i8, view<6x256xi8>
+  }
+  func.return
 }
 
-check.case public @private_float8_positive_matches {
-  %input = check.generate.iota offset(-128) step(1) : tensor<256xi8>
-  %comparisons = check.generate.iota offset(0) step(1) period(128) : tensor<256xi8>
-  %choice = check.literal value(0) : i32
-  %output = check.generate.fill value(-85) : tensor<6x256xi8>
-  kernel.launch @private_float8_compare(%input, %comparisons, %choice, %output) : (tensor<256xi8>, tensor<256xi8>, i32, tensor<6x256xi8>)
-  %old_e4 = check.tensor.view %output offset(0) : tensor<6x256xi8> -> tensor<256xi8>
-  check.expect.bitwise actual(%old_e4) expected(%input) : tensor<256xi8>
-  %matched_e4 = check.tensor.view %output offset(384) : tensor<6x256xi8> -> tensor<128xi8>
-  %expected_match_e4 = check.generate.fill value(56) : tensor<128xi8>
-  check.expect.bitwise actual(%matched_e4) expected(%expected_match_e4) : tensor<128xi8>
-  %unmatched_e4 = check.tensor.view %output offset(256) : tensor<6x256xi8> -> tensor<128xi8>
-  %expected_unmatched_e4 = check.generate.iota offset(-128) step(1) : tensor<128xi8>
-  check.expect.bitwise actual(%unmatched_e4) expected(%expected_unmatched_e4) : tensor<128xi8>
-  %selected_e4 = check.tensor.view %output offset(512) : tensor<6x256xi8> -> tensor<256xi8>
-  %expected_selection_e4 = check.generate.fill value(56) : tensor<256xi8>
-  check.expect.bitwise actual(%selected_e4) expected(%expected_selection_e4) : tensor<256xi8>
-  %old_e5 = check.tensor.view %output offset(768) : tensor<6x256xi8> -> tensor<256xi8>
-  check.expect.bitwise actual(%old_e5) expected(%input) : tensor<256xi8>
-  %matched_e5 = check.tensor.view %output offset(1152) : tensor<6x256xi8> -> tensor<128xi8>
-  %expected_match_e5 = check.generate.fill value(60) : tensor<128xi8>
-  check.expect.bitwise actual(%matched_e5) expected(%expected_match_e5) : tensor<128xi8>
-  %unmatched_e5 = check.tensor.view %output offset(1024) : tensor<6x256xi8> -> tensor<128xi8>
-  %expected_unmatched_e5 = check.generate.iota offset(-128) step(1) : tensor<128xi8>
-  check.expect.bitwise actual(%unmatched_e5) expected(%expected_unmatched_e5) : tensor<128xi8>
-  %selected_e5 = check.tensor.view %output offset(1280) : tensor<6x256xi8> -> tensor<256xi8>
-  %expected_selection_e5 = check.generate.fill value(60) : tensor<256xi8>
-  check.expect.bitwise actual(%selected_e5) expected(%expected_selection_e5) : tensor<256xi8>
+check.scenario @private_float8_compare_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-128) step(1) : tensor<256xi8>
+    %comparisons = check.generate.iota offset(-128) step(1) period(128) : tensor<256xi8>
+    %choice = check.literal value(1) : i32
+    %output = check.generate.fill value(-85) : tensor<6x256xi8>
+    check.compare<@private_float8_compare, @private_float8_compare_oracle>(%input, %comparisons, %choice, %output) : (tensor<256xi8>, tensor<256xi8>, i32, tensor<6x256xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<256xi8>
+      check.expect.bitwise actual(%comparisons) expected(%comparisons) : tensor<256xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<6x256xi8>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-128) step(1) : tensor<256xi8>
+    %comparisons = check.generate.iota offset(0) step(1) period(128) : tensor<256xi8>
+    %choice = check.literal value(0) : i32
+    %output = check.generate.fill value(-85) : tensor<6x256xi8>
+    check.compare<@private_float8_compare, @private_float8_compare_oracle>(%input, %comparisons, %choice, %output) : (tensor<256xi8>, tensor<256xi8>, i32, tensor<6x256xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<256xi8>
+      check.expect.bitwise actual(%comparisons) expected(%comparisons) : tensor<256xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<6x256xi8>
+    }
+  }
   check.return
 }
 
@@ -588,29 +741,46 @@ kernel.def @private_bf16_number() {
   kernel.return
 }
 
-check.case public @private_bf16_number_snan {
-  %input = check.generate.fill value(32641) : tensor<1xi16>
-  %output = check.generate.fill value(0) : tensor<2xi16>
-  kernel.launch @private_bf16_number(%input, %output) : (tensor<1xi16>, tensor<2xi16>)
-  %old = check.tensor.view %output offset(0) : tensor<2xi16> -> tensor<1xi16>
-  %expected_old = check.generate.fill value(32641) : tensor<1xi16>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<1xi16>
-  %final = check.tensor.view %output offset(2) : tensor<2xi16> -> tensor<1xi16>
-  %expected_final = check.generate.fill value(16256) : tensor<1xi16>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi16>
-  check.return
+func.def @private_bf16_number_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %source = buffer.view %input[%origin] : buffer -> view<1xi16>
+  %results = buffer.view %output[%origin] : buffer -> view<2xi16>
+  %bits = view.load %source[0] : view<1xi16> -> i16
+  %initial = scalar.bitcast %bits : i16 to bf16
+  %update = scalar.constant 1.0 : bf16
+  %final = scalar.minnumf %initial, %update : bf16
+  %final_bits = scalar.bitcast %final : bf16 to i16
+  view.store %bits, %results[0] : i16, view<2xi16>
+  view.store %final_bits, %results[1] : i16, view<2xi16>
+  func.return
 }
 
-check.case public @private_bf16_number_subnormal {
-  %input = check.generate.fill value(1) : tensor<1xi16>
-  %output = check.generate.fill value(0) : tensor<2xi16>
-  kernel.launch @private_bf16_number(%input, %output) : (tensor<1xi16>, tensor<2xi16>)
-  %old = check.tensor.view %output offset(0) : tensor<2xi16> -> tensor<1xi16>
-  %expected_old = check.generate.fill value(1) : tensor<1xi16>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<1xi16>
-  %final = check.tensor.view %output offset(2) : tensor<2xi16> -> tensor<1xi16>
-  %expected_final = check.generate.fill value(1) : tensor<1xi16>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi16>
+check.scenario @private_bf16_number_values {
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-32768 to 32767) : tensor<1xi16>
+    %output = check.generate.fill value(0) : tensor<2xi16>
+    check.compare<@private_bf16_number, @private_bf16_number_oracle>(%input, %output) : (tensor<1xi16>, tensor<2xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi16>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(32641) : tensor<1xi16>
+    %output = check.generate.fill value(0) : tensor<2xi16>
+    check.compare<@private_bf16_number, @private_bf16_number_oracle>(%input, %output) : (tensor<1xi16>, tensor<2xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi16>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(1) : tensor<1xi16>
+    %output = check.generate.fill value(0) : tensor<2xi16>
+    check.compare<@private_bf16_number, @private_bf16_number_oracle>(%input, %output) : (tensor<1xi16>, tensor<2xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi16>
+    }
+  }
   check.return
 }
 
@@ -637,29 +807,46 @@ kernel.def @private_f8e4m3_number() {
   kernel.return
 }
 
-check.case public @private_f8e4m3_number_nan {
-  %input = check.generate.fill value(127) : tensor<1xi8>
-  %output = check.generate.fill value(0) : tensor<2xi8>
-  kernel.launch @private_f8e4m3_number(%input, %output) : (tensor<1xi8>, tensor<2xi8>)
-  %old = check.tensor.view %output offset(0) : tensor<2xi8> -> tensor<1xi8>
-  %expected_old = check.generate.fill value(127) : tensor<1xi8>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<1xi8>
-  %final = check.tensor.view %output offset(1) : tensor<2xi8> -> tensor<1xi8>
-  %expected_final = check.generate.fill value(56) : tensor<1xi8>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi8>
-  check.return
+func.def @private_f8e4m3_number_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %source = buffer.view %input[%origin] : buffer -> view<1xi8>
+  %results = buffer.view %output[%origin] : buffer -> view<2xi8>
+  %bits = view.load %source[0] : view<1xi8> -> i8
+  %initial = scalar.bitcast %bits : i8 to f8E4M3
+  %update = scalar.constant 1.0 : f8E4M3
+  %final = scalar.minnumf %initial, %update : f8E4M3
+  %final_bits = scalar.bitcast %final : f8E4M3 to i8
+  view.store %bits, %results[0] : i8, view<2xi8>
+  view.store %final_bits, %results[1] : i8, view<2xi8>
+  func.return
 }
 
-check.case public @private_f8e4m3_number_subnormal {
-  %input = check.generate.fill value(1) : tensor<1xi8>
-  %output = check.generate.fill value(0) : tensor<2xi8>
-  kernel.launch @private_f8e4m3_number(%input, %output) : (tensor<1xi8>, tensor<2xi8>)
-  %old = check.tensor.view %output offset(0) : tensor<2xi8> -> tensor<1xi8>
-  %expected_old = check.generate.fill value(1) : tensor<1xi8>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<1xi8>
-  %final = check.tensor.view %output offset(1) : tensor<2xi8> -> tensor<1xi8>
-  %expected_final = check.generate.fill value(1) : tensor<1xi8>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi8>
+check.scenario @private_f8e4m3_number_values {
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-128 to 127) : tensor<1xi8>
+    %output = check.generate.fill value(0) : tensor<2xi8>
+    check.compare<@private_f8e4m3_number, @private_f8e4m3_number_oracle>(%input, %output) : (tensor<1xi8>, tensor<2xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi8>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(127) : tensor<1xi8>
+    %output = check.generate.fill value(0) : tensor<2xi8>
+    check.compare<@private_f8e4m3_number, @private_f8e4m3_number_oracle>(%input, %output) : (tensor<1xi8>, tensor<2xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi8>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(1) : tensor<1xi8>
+    %output = check.generate.fill value(0) : tensor<2xi8>
+    check.compare<@private_f8e4m3_number, @private_f8e4m3_number_oracle>(%input, %output) : (tensor<1xi8>, tensor<2xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi8>
+    }
+  }
   check.return
 }
 
@@ -686,28 +873,45 @@ kernel.def @private_f8e5m2_number() {
   kernel.return
 }
 
-check.case public @private_f8e5m2_number_snan {
-  %input = check.generate.fill value(125) : tensor<1xi8>
-  %output = check.generate.fill value(0) : tensor<2xi8>
-  kernel.launch @private_f8e5m2_number(%input, %output) : (tensor<1xi8>, tensor<2xi8>)
-  %old = check.tensor.view %output offset(0) : tensor<2xi8> -> tensor<1xi8>
-  %expected_old = check.generate.fill value(125) : tensor<1xi8>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<1xi8>
-  %final = check.tensor.view %output offset(1) : tensor<2xi8> -> tensor<1xi8>
-  %expected_final = check.generate.fill value(60) : tensor<1xi8>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi8>
-  check.return
+func.def @private_f8e5m2_number_oracle(%input: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %source = buffer.view %input[%origin] : buffer -> view<1xi8>
+  %results = buffer.view %output[%origin] : buffer -> view<2xi8>
+  %bits = view.load %source[0] : view<1xi8> -> i8
+  %initial = scalar.bitcast %bits : i8 to f8E5M2
+  %update = scalar.constant 1.0 : f8E5M2
+  %final = scalar.minnumf %initial, %update : f8E5M2
+  %final_bits = scalar.bitcast %final : f8E5M2 to i8
+  view.store %bits, %results[0] : i8, view<2xi8>
+  view.store %final_bits, %results[1] : i8, view<2xi8>
+  func.return
 }
 
-check.case public @private_f8e5m2_number_subnormal {
-  %input = check.generate.fill value(1) : tensor<1xi8>
-  %output = check.generate.fill value(0) : tensor<2xi8>
-  kernel.launch @private_f8e5m2_number(%input, %output) : (tensor<1xi8>, tensor<2xi8>)
-  %old = check.tensor.view %output offset(0) : tensor<2xi8> -> tensor<1xi8>
-  %expected_old = check.generate.fill value(1) : tensor<1xi8>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<1xi8>
-  %final = check.tensor.view %output offset(1) : tensor<2xi8> -> tensor<1xi8>
-  %expected_final = check.generate.fill value(1) : tensor<1xi8>
-  check.expect.bitwise actual(%final) expected(%expected_final) : tensor<1xi8>
+check.scenario @private_f8e5m2_number_values {
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-128 to 127) : tensor<1xi8>
+    %output = check.generate.fill value(0) : tensor<2xi8>
+    check.compare<@private_f8e5m2_number, @private_f8e5m2_number_oracle>(%input, %output) : (tensor<1xi8>, tensor<2xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi8>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(125) : tensor<1xi8>
+    %output = check.generate.fill value(0) : tensor<2xi8>
+    check.compare<@private_f8e5m2_number, @private_f8e5m2_number_oracle>(%input, %output) : (tensor<1xi8>, tensor<2xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi8>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.fill value(1) : tensor<1xi8>
+    %output = check.generate.fill value(0) : tensor<2xi8>
+    check.compare<@private_f8e5m2_number, @private_f8e5m2_number_oracle>(%input, %output) : (tensor<1xi8>, tensor<2xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1xi8>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xi8>
+    }
+  }
   check.return
 }

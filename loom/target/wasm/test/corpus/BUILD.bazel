@@ -166,6 +166,7 @@ _SCENARIO_KERNEL_SOURCES = [
     "memory/atomic/narrow/cmpxchg.loom",
     "memory/atomic/narrow/contention.loom",
     "memory/atomic/narrow/float.loom",
+    "memory/atomic/private.loom",
     "memory/atomic/workgroup/cmpxchg.loom",
     "memory/atomic/workgroup/vector.loom",
     "memory/packed/alignment.loom",
