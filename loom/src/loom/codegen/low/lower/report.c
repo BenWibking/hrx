@@ -209,6 +209,8 @@ iree_status_t loom_low_lower_report_record_selected_plan(
   } else if (selected_plan->kind ==
              LOOM_LOW_LOWER_SELECTED_PLAN_FUNCTION_STORAGE) {
     row.plan_key = IREE_SV("function-storage.alloca");
+  } else if (selected_plan->kind == LOOM_LOW_LOWER_SELECTED_PLAN_INVOKE) {
+    row.plan_key = IREE_SV("call.invoke");
   }
   if ((selected_plan->kind == LOOM_LOW_LOWER_SELECTED_PLAN_CALLBACK ||
        selected_plan->kind == LOOM_LOW_LOWER_SELECTED_PLAN_DESCRIPTOR_MATRIX) &&

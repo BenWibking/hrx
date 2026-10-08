@@ -173,6 +173,7 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     policy_.source_plan_observer = &source_plan_observer_;
     policy_.emit_preamble.fn = ObservePlan;
     policy_.emit_preamble.user_data = &observer_;
+    options_.target_ref = loom_symbol_ref_null();
     options_.target_facts = &target_facts_;
     options_.descriptor_registry = &descriptor_registry_.registry;
     options_.policy = &policy_;
@@ -187,13 +188,12 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     iree_arena_block_pool_deinitialize(&block_pool_);
   }
 
-  void BuildFunction() {
+  void BuildFunction(iree_string_view_t name = IREE_SV("plan")) {
     loom_builder_t module_builder;
     loom_builder_initialize(module_, &module_->arena,
                             loom_module_block(module_), &module_builder);
     loom_string_id_t name_id = LOOM_STRING_ID_INVALID;
-    IREE_ASSERT_OK(
-        loom_builder_intern_string(&module_builder, IREE_SV("plan"), &name_id));
+    IREE_ASSERT_OK(loom_builder_intern_string(&module_builder, name, &name_id));
     uint16_t symbol_id = LOOM_SYMBOL_ID_INVALID;
     IREE_ASSERT_OK(loom_module_add_symbol(module_, name_id, &symbol_id));
     const loom_symbol_ref_t symbol = {
@@ -314,6 +314,70 @@ TEST_F(LowLowerSourcePlanTest, PropagatesObserverEndFailureBeforeSelection) {
   EXPECT_FALSE(observer_.source_plan.invalid_lifecycle);
   EXPECT_FALSE(observer_.source_plan.selection_started);
   EXPECT_EQ(observer_.plan_count, 0u);
+}
+
+TEST_F(LowLowerSourcePlanTest, RejectsHelperPreconditionBeforeLowConstruction) {
+  // Produce a real native helper through the same lowering interface, then
+  // give its first argument a precondition the new caller cannot establish.
+  IREE_ASSERT_OK(
+      loom_low_lower_function(module_, function_, &options_, &result_));
+  ASSERT_EQ(result_.error_count, 0u);
+  const loom_func_like_t helper =
+      loom_func_like_cast(module_, result_.low_func_op);
+  const loom_symbol_ref_t helper_ref = loom_func_like_callee(helper);
+  const loom_value_id_t helper_argument =
+      loom_region_entry_arg_id(loom_func_like_body(helper), 0);
+  loom_predicate_t* predicate = nullptr;
+  IREE_ASSERT_OK(iree_arena_allocate(&module_->arena, sizeof(*predicate),
+                                     reinterpret_cast<void**>(&predicate)));
+  *predicate = {};
+  predicate->kind = LOOM_PREDICATE_GE;
+  predicate->arg_count = 2;
+  predicate->arg_tags[0] = LOOM_PRED_ARG_VALUE;
+  predicate->arg_tags[1] = LOOM_PRED_ARG_CONST;
+  predicate->args[0] = helper_argument;
+  IREE_ASSERT_OK(loom_op_set_attr(module_, helper.op,
+                                  helper.vtable->predicates_attr_index,
+                                  loom_attr_predicate_list(predicate, 1)));
+  loom_low_lower_result_deinitialize(&result_);
+  result_ = {};
+  observer_.type_mapping.emission_started = false;
+  observer_.plan_count = 0;
+  policy_.source_plan_observer = nullptr;
+  options_.max_errors = 1;
+
+  BuildFunction(IREE_SV("caller"));
+  loom_block_t* entry = loom_region_entry_block(loom_func_like_body(function_));
+  loom_builder_t builder;
+  loom_builder_initialize(module_, &module_->arena, entry, &builder);
+  loom_builder_set_before(&builder, entry->last_op);
+  const loom_type_t i32_type = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
+  loom_op_t* invoke = nullptr;
+  IREE_ASSERT_OK(loom_low_invoke_build(
+      &builder, /*build_flags=*/0, /*purity=*/0, /*inline_policy=*/0,
+      helper_ref, entry->arg_ids, entry->arg_count, &i32_type, 1,
+      /*tied_results=*/nullptr, /*tied_result_count=*/0, LOOM_LOCATION_UNKNOWN,
+      &invoke));
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(
+      &fact_table_, &analysis_arena_, module_->values.count));
+  fact_table_.context.target_facts = &target_facts_;
+  IREE_ASSERT_OK(
+      loom_value_fact_table_compute(&fact_table_, module_, function_));
+
+  const iree_host_size_t value_count = module_->values.count;
+  const uint32_t op_count = entry->op_count;
+  const loom_symbol_ref_t caller_ref = loom_func_like_callee(function_);
+  IREE_ASSERT_OK(
+      loom_low_lower_function(module_, function_, &options_, &result_));
+  EXPECT_EQ(result_.error_count, 1u);
+  EXPECT_EQ(result_.low_func_op, nullptr);
+  EXPECT_FALSE(observer_.type_mapping.emission_started);
+  EXPECT_EQ(module_->values.count, value_count);
+  EXPECT_EQ(entry->op_count, op_count);
+  EXPECT_EQ(module_->symbols.entries[caller_ref.symbol_id].defining_op,
+            function_.op);
+  EXPECT_EQ(module_->symbols.entries[helper_ref.symbol_id].defining_op,
+            helper.op);
 }
 
 TEST_F(LowLowerSourcePlanTest,

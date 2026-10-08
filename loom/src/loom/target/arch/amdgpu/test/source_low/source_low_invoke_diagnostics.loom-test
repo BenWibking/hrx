@@ -36,10 +36,10 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) @wide_helper(%value: reg
   return %value
 }
 
-func.def target(@target) @wrong_operand_type(%value: vector<1xi32>) -> (vector<1xi32>) {
+func.def target(@target) @wrong_operand_type(%value: vector<1xi32>) -> (vector<2xi32>) {
   // ERROR@+1: TARGET/074 {callee_name="wide_helper", value_kind="operand", actual_type="reg<amdgpu.vgpr>", expected_type="reg<amdgpu.vgpr x2>"}
-  %result = low.invoke @wide_helper(%value) : (vector<1xi32>) -> (vector<1xi32>)
-  func.return %result : vector<1xi32>
+  %result = low.invoke @wide_helper(%value) : (vector<1xi32>) -> (vector<2xi32>)
+  func.return %result : vector<2xi32>
 }
 
 // ====

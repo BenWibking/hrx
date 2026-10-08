@@ -89,7 +89,6 @@ static bool loom_low_lower_op_is_structural(
     case LOOM_OP_BUFFER_ASSUME_SAME_ROOT:
     case LOOM_OP_CFG_BR:
     case LOOM_OP_CFG_COND_BR:
-    case LOOM_OP_LOW_INVOKE:
     case LOOM_OP_SCF_FOR:
     case LOOM_OP_SCF_IF:
     case LOOM_OP_SCF_WHILE:
@@ -717,7 +716,8 @@ static bool loom_low_lower_selected_plan_storage_required(
 static bool loom_low_lower_can_elide_selected_plan(
     const loom_low_lower_context_t* context,
     const loom_low_lower_selected_plan_t* selected_plan) {
-  return !loom_low_lower_selected_plan_storage_required(context, selected_plan);
+  return selected_plan->kind != LOOM_LOW_LOWER_SELECTED_PLAN_INVOKE &&
+         !loom_low_lower_selected_plan_storage_required(context, selected_plan);
 }
 
 static void loom_low_lower_mark_selected_plan_storage_demands(
@@ -736,6 +736,10 @@ static void loom_low_lower_mark_selected_plan_storage_demands(
       break;
     case LOOM_LOW_LOWER_SELECTED_PLAN_FUNCTION_STORAGE:
       // The selected plan retains the extent; no source operand is emitted.
+      break;
+    case LOOM_LOW_LOWER_SELECTED_PLAN_INVOKE:
+      loom_low_lower_require_source_operands_storage(context,
+                                                     selected_plan->source_op);
       break;
   }
 }
@@ -1423,6 +1427,23 @@ static iree_status_t loom_low_lower_plan_op(
     return iree_ok_status();
   }
   if (loom_low_lower_try_record_claimed_source_plan(context, source_op)) {
+    return iree_ok_status();
+  }
+
+  if (loom_low_invoke_isa(source_op)) {
+    const loom_low_lower_source_invoke_plan_t* plan = NULL;
+    IREE_RETURN_IF_ERROR(
+        loom_low_lower_source_invoke_plan(context, source_op, &plan));
+    if (plan != NULL) {
+      loom_low_lower_record_selected_plan(
+          context, (loom_low_lower_selected_plan_t){
+                       .source_op = source_op,
+                       .kind = LOOM_LOW_LOWER_SELECTED_PLAN_INVOKE,
+                       .rule_set_index = UINT16_MAX,
+                       .rule_index = UINT16_MAX,
+                       .data.invoke = plan,
+                   });
+    }
     return iree_ok_status();
   }
 

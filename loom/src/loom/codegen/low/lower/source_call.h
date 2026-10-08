@@ -16,6 +16,9 @@
 extern "C" {
 #endif
 
+typedef struct loom_low_lower_source_invoke_plan_t
+    loom_low_lower_source_invoke_plan_t;
+
 // Returns true when |source_op| is a direct semantic CallLike operation owned
 // by common source-to-Low lowering. Callable operands and results must occupy
 // the complete flat operation boundary.
@@ -26,11 +29,19 @@ bool loom_low_lower_source_call_is_structural(const loom_module_t* module,
 iree_status_t loom_low_lower_source_call(loom_low_lower_context_t* context,
                                          const loom_op_t* source_op);
 
-// Normalizes a source-typed low.invoke into a register-typed low.func.call.
-// Target selection has already projected the callee representation into the
-// caller's exact Low contract before function lowering begins.
-iree_status_t loom_low_lower_source_invoke(loom_low_lower_context_t* context,
-                                           const loom_op_t* source_op);
+// Resolves a low.invoke helper contract, checks result carriers, and proves its
+// preconditions. Retained predicates preserve each formal's operand position;
+// emission does not borrow the helper's signature or source body. Selection has
+// already projected the helper into the caller's exact Low contract.
+iree_status_t loom_low_lower_source_invoke_plan(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    const loom_low_lower_source_invoke_plan_t** out_plan);
+
+// Normalizes low.invoke using the retained helper contract. Operand carriers
+// are checked against the produced Low values before constructing the call.
+iree_status_t loom_low_lower_source_invoke(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    const loom_low_lower_source_invoke_plan_t* plan);
 
 #ifdef __cplusplus
 }  // extern "C"

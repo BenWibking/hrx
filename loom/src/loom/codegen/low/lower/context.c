@@ -406,7 +406,8 @@ loom_low_lower_selected_plan_view_t loom_low_lower_context_selected_plan_view(
       .source_op = selected_plan->source_op,
       .plan = selected_plan->kind == LOOM_LOW_LOWER_SELECTED_PLAN_RULE ||
                       selected_plan->kind ==
-                          LOOM_LOW_LOWER_SELECTED_PLAN_FUNCTION_STORAGE
+                          LOOM_LOW_LOWER_SELECTED_PLAN_FUNCTION_STORAGE ||
+                      selected_plan->kind == LOOM_LOW_LOWER_SELECTED_PLAN_INVOKE
                   ? loom_low_lower_plan_empty()
                   : selected_plan->data.target_plan,
       .elided = iree_any_bit_set(selected_plan->flags,

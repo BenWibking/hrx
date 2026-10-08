@@ -573,8 +573,6 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
           context, loom_buffer_assume_same_root_buffer(source_op),
           loom_buffer_assume_same_root_result(source_op));
     }
-    case LOOM_OP_LOW_INVOKE:
-      return loom_low_lower_source_invoke(context, source_op);
     case LOOM_OP_SCF_SCHEDULE_FENCE: {
       loom_op_t* low_fence_op = NULL;
       return loom_low_schedule_fence_build(&context->builder,
@@ -1011,6 +1009,9 @@ static iree_status_t loom_low_lower_emit_selected_plan(
              LOOM_LOW_LOWER_SELECTED_PLAN_FUNCTION_STORAGE) {
     IREE_RETURN_IF_ERROR(loom_low_lower_function_storage_emit(
         context, source_op, selected_plan.data.function_storage));
+  } else if (selected_plan.kind == LOOM_LOW_LOWER_SELECTED_PLAN_INVOKE) {
+    IREE_RETURN_IF_ERROR(loom_low_lower_source_invoke(
+        context, source_op, selected_plan.data.invoke));
   } else {
     IREE_ASSERT_FALSE(
         loom_low_lower_plan_is_empty(selected_plan.data.target_plan));

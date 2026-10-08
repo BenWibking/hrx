@@ -13,9 +13,15 @@
 #include "loom/ir/module.h"
 #include "loom/ops/func_symbol_facts.h"
 #include "loom/ops/low/ops.h"
-#include "loom/rewrite/remap.h"
 #include "loom/target/facts.h"
 #include "loom/target/function_contract.h"
+
+// Canonical argument type IDs followed by result type IDs immediately follow
+// this header. The source invocation owns both tuple arities.
+struct loom_low_lower_source_invoke_plan_t {
+  // Proved preconditions and their parameter correspondence, if present.
+  const loom_low_call_argument_contract_t* argument_contract;
+};
 
 bool loom_low_lower_source_call_is_structural(const loom_module_t* module,
                                               const loom_op_t* source_op) {
@@ -181,8 +187,7 @@ static iree_status_t loom_low_source_call_resolve_callee_target(
   }
 
   loom_symbol_fact_table_t symbol_facts = {0};
-  loom_symbol_fact_table_initialize(
-      &symbol_facts, loom_low_lower_context_emission_arena(context));
+  loom_symbol_fact_table_initialize(&symbol_facts, &context->planning_arena);
   const loom_symbol_facts_base_t* base_facts = NULL;
   IREE_RETURN_IF_ERROR(loom_symbol_fact_table_lookup_ref(
       &symbol_facts, context->module, callee_ref, &base_facts));
@@ -198,8 +203,7 @@ static iree_status_t loom_low_source_call_resolve_callee_target(
   bool target_valid = true;
   IREE_RETURN_IF_ERROR(loom_target_function_contract_resolve_facts(
       context->module, &symbol_facts, function_facts, context->options->emitter,
-      loom_low_lower_context_emission_arena(context), &target_valid,
-      out_callee_target_facts));
+      &context->planning_arena, &target_valid, out_callee_target_facts));
   if (!target_valid) {
     *out_callee_descriptor_set = NULL;
     if (!loom_low_lower_context_should_stop(context)) {
@@ -229,8 +233,10 @@ static iree_status_t loom_low_source_call_map_result_type(
       context, source_op, LOOM_ERR_TARGET_027, params, IREE_ARRAYSIZE(params));
 }
 
-iree_status_t loom_low_lower_source_invoke(loom_low_lower_context_t* context,
-                                           const loom_op_t* source_op) {
+iree_status_t loom_low_lower_source_invoke_plan(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    const loom_low_lower_source_invoke_plan_t** out_plan) {
+  *out_plan = NULL;
   loom_module_t* module = loom_low_lower_context_module(context);
   const loom_symbol_ref_t callee_ref = loom_low_invoke_callee(source_op);
   const iree_string_view_t callee_name =
@@ -304,63 +310,87 @@ iree_status_t loom_low_lower_source_invoke(loom_low_lower_context_t* context,
         source_results.count, callee_results.count);
   }
 
+  loom_low_lower_source_invoke_plan_t* plan = NULL;
+  IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
+      context,
+      sizeof(*plan) +
+          ((iree_host_size_t)callee_argument_count + source_results.count) *
+              sizeof(loom_type_id_t),
+      (void**)&plan));
+  loom_type_id_t* type_ids = (loom_type_id_t*)(plan + 1);
+  for (uint16_t i = 0; i < callee_argument_count; ++i) {
+    IREE_RETURN_IF_ERROR(loom_module_intern_type_id(
+        module, loom_module_value_type(module, callee_arguments[i]),
+        &type_ids[i]));
+  }
+
+  for (uint16_t i = 0; i < source_results.count; ++i) {
+    loom_type_t result_type = loom_type_none();
+    IREE_RETURN_IF_ERROR(loom_low_source_call_map_result_type(
+        context, source_op, source_results.values[i], &result_type));
+    if (loom_type_kind(result_type) == LOOM_TYPE_NONE) {
+      return iree_ok_status();
+    }
+    const loom_type_t expected_type =
+        loom_module_value_type(module, callee_results.values[i]);
+    if (!loom_type_equal(result_type, expected_type)) {
+      return loom_low_source_call_emit_type_error(
+          context, source_op, callee_name, IREE_SV("result"), result_type,
+          expected_type);
+    }
+    IREE_RETURN_IF_ERROR(loom_module_intern_type_id(
+        module, result_type, &type_ids[callee_argument_count + i]));
+  }
+
+  IREE_RETURN_IF_ERROR(loom_low_plan_call_argument_contract(
+      context, source_op, callee_name, callee, callee_arguments,
+      callee_argument_count, source_operands, &plan->argument_contract));
+  if (context->result->error_count == 0) {
+    *out_plan = plan;
+  }
+  return iree_ok_status();
+}
+
+iree_status_t loom_low_lower_source_invoke(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    const loom_low_lower_source_invoke_plan_t* plan) {
+  loom_module_t* module = context->module;
+  const loom_symbol_ref_t callee_ref = loom_low_invoke_callee(source_op);
+  const loom_value_slice_t source_operands =
+      loom_low_invoke_operands(source_op);
+  const loom_value_slice_t source_results = loom_low_invoke_results(source_op);
+  const loom_type_id_t* type_ids = (const loom_type_id_t*)(plan + 1);
   loom_value_id_t* low_operands = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
-      context, callee_argument_count, sizeof(*low_operands),
+      context, source_operands.count, sizeof(*low_operands),
       (void**)&low_operands));
-  for (uint16_t i = 0; i < callee_argument_count; ++i) {
+  for (uint16_t i = 0; i < source_operands.count; ++i) {
     IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
         context, source_operands.values[i], &low_operands[i]));
     const loom_type_t actual_type =
         loom_module_value_type(module, low_operands[i]);
     const loom_type_t expected_type =
-        loom_module_value_type(module, callee_arguments[i]);
+        loom_type_table_get(&module->types, type_ids[i]);
     if (!loom_type_equal(actual_type, expected_type)) {
       return loom_low_source_call_emit_type_error(
-          context, source_op, callee_name, IREE_SV("operand"), actual_type,
-          expected_type);
+          context, source_op,
+          loom_low_source_call_symbol_name(module, callee_ref),
+          IREE_SV("operand"), actual_type, expected_type);
     }
+    IREE_RETURN_IF_ERROR(loom_low_lower_materialize_structural_operand(
+        context, source_op, i, source_operands.values[i], expected_type,
+        &low_operands[i]));
   }
 
+  IREE_RETURN_IF_ERROR(loom_low_materialize_call_argument_contract(
+      context, source_op, plan->argument_contract, low_operands));
   loom_type_t* result_types = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
       context, source_results.count, sizeof(*result_types),
       (void**)&result_types));
   for (uint16_t i = 0; i < source_results.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_low_source_call_map_result_type(
-        context, source_op, source_results.values[i], &result_types[i]));
-    if (loom_type_kind(result_types[i]) == LOOM_TYPE_NONE) {
-      return iree_ok_status();
-    }
-    const loom_type_t expected_type =
-        loom_module_value_type(module, callee_results.values[i]);
-    if (!loom_type_equal(result_types[i], expected_type)) {
-      return loom_low_source_call_emit_type_error(
-          context, source_op, callee_name, IREE_SV("result"), result_types[i],
-          expected_type);
-    }
-  }
-
-  loom_ir_remap_t remap = {0};
-  IREE_RETURN_IF_ERROR(loom_ir_remap_initialize(
-      module, module, loom_low_lower_context_emission_arena(context), NULL,
-      &remap));
-  for (uint16_t i = 0; i < callee_argument_count; ++i) {
-    const loom_type_t expected_type =
-        loom_module_value_type(module, callee_arguments[i]);
-    IREE_RETURN_IF_ERROR(loom_low_lower_materialize_structural_operand(
-        context, source_op, i, source_operands.values[i], expected_type,
-        &low_operands[i]));
-    IREE_RETURN_IF_ERROR(
-        loom_ir_remap_map_value(&remap, callee_arguments[i], low_operands[i]));
-  }
-
-  IREE_RETURN_IF_ERROR(loom_low_materialize_call_argument_contract(
-      context, source_op, callee_name, callee, callee_arguments,
-      callee_argument_count, source_operands, &remap));
-  for (uint16_t i = 0; i < callee_argument_count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_ir_remap_resolve_value(
-        &remap, callee_arguments[i], &low_operands[i]));
+    result_types[i] = loom_type_table_get(&module->types,
+                                          type_ids[source_operands.count + i]);
   }
 
   loom_low_func_call_build_flags_t build_flags = 0;
@@ -375,7 +405,7 @@ iree_status_t loom_low_lower_source_invoke(loom_low_lower_context_t* context,
   loom_op_t* call_op = NULL;
   IREE_RETURN_IF_ERROR(loom_low_func_call_build(
       loom_low_lower_context_builder(context), build_flags, purity,
-      inline_policy, callee_ref, low_operands, callee_argument_count,
+      inline_policy, callee_ref, low_operands, source_operands.count,
       result_types, source_results.count, loom_op_tied_results(source_op),
       source_op->tied_result_count, source_op->location, &call_op));
 
