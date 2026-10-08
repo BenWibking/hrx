@@ -1,0 +1,28 @@
+// RUN: emit source-low output=low
+
+// The composite contract retains the ordinary narrow scalar carrier when the
+// native FP16 feature is absent.
+x86.target<avx512_packed_dot> @target {contract_feature_bits = 0, contract_set_key = "x86.avx512_features.core"}
+
+func.def target(@target) @identity_without_fp16(%value: f16) -> (f16) {
+  func.return %value : f16
+}
+
+// ----
+low.func.def target<x86.avx512_features.core>(@target) abi(object_function) abi_layout({signature = (f16) -> (f16)}) @identity_without_fp16(%value: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
+  return %value
+}
+
+// ====
+
+// Native scalar FP16 instructions consume and produce the low XMM lane.
+x86.target<avx512_packed_dot> @target {contract_feature_bits = 128, contract_set_key = "x86.avx512_features.core"}
+
+func.def target(@target) @identity_with_fp16(%value: f16) -> (f16) {
+  func.return %value : f16
+}
+
+// ----
+low.func.def target<x86.avx512_features.core>(@target) abi(object_function) abi_layout({signature = (f16) -> (f16)}) @identity_with_fp16(%value: reg<x86.xmm>) -> (reg<x86.xmm>) asm {
+  return %value
+}

@@ -303,6 +303,7 @@ loom_check_test_suite(
     "test/source_low/source_low_avx2_reductions.loom-test"
     "test/source_low/source_low_avx512_families.loom-test"
     "test/source_low/source_low_avx512_float_semantics.loom-test"
+    "test/source_low/source_low_avx512_fp16.loom-test"
     "test/source_low/source_low_avx512_packed_dot.loom-test"
     "test/source_low/source_low_avx512_predicates.loom-test"
     "test/source_low/source_low_avx512_reductions.loom-test"

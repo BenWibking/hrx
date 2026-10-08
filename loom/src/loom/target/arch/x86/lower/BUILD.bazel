@@ -42,6 +42,7 @@ loom_cc_library(
         "//loom/src/loom/ops/low",
         "//loom/src/loom/ops/vector",
         "//loom/src/loom/target/abi/task:parameter_layout",
+        "//loom/src/loom/target/arch/x86:feature_bits",
         "//loom/src/loom/target/arch/x86:packed_dot_contract",
         "//loom/src/loom/target/arch/x86:packed_dot_contract_projection",
         "//loom/src/loom/target/arch/x86:register_classes",
