@@ -25,6 +25,10 @@ package(
     licenses = ["notice"],  # Apache 2.0
 )
 
+_XDNA_TARGET_COMPATIBLE_WITH = loom_config_compatible_with([
+    "//loom/config/target/arch:xdna",
+])
+
 _XDNA_IMAGE_COMPATIBLE_WITH = loom_config_compatible_with([
     "//loom/config/target:xdna_artifacts",
 ]) + loom_config_compatible_with([
@@ -546,6 +550,7 @@ iree_py_test(
     args = ["$(location :loom-check)"],
     data = [":loom-check"],
     main = "test/interleave_family_test.py",
+    target_compatible_with = _XDNA_TARGET_COMPATIBLE_WITH,
 )
 
 iree_py_test(
@@ -559,6 +564,7 @@ iree_py_test(
     data = [":loom-check"],
     main = "test/interleave_family_test.py",
     tags = ["manual"],
+    target_compatible_with = _XDNA_TARGET_COMPATIBLE_WITH,
 )
 
 loom_check_test_suite(

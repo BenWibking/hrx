@@ -625,6 +625,7 @@ loom_cc_binary(
 )
 endif()
 
+if(LOOM_TARGET_ARCH_XDNA)
 iree_py_test(
   NAME
     interleave_family_test
@@ -643,7 +644,9 @@ iree_py_test(
   TIMEOUT
     60
 )
+endif()
 
+if(LOOM_TARGET_ARCH_XDNA)
 iree_py_test(
   NAME
     interleave_family_exhaustive_test
@@ -665,6 +668,7 @@ iree_py_test(
   TIMEOUT
     60
 )
+endif()
 
 if(LOOM_TARGET_ARCH_XDNA)
 loom_check_test_suite(
