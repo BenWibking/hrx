@@ -126,13 +126,12 @@ void FunctionContracts::declaration(
 
   auto parameters = function->parameters();
   Contract contract;
-  auto collect = [&](this auto&& collect,
-                     cxx::ExpressionAST* condition) -> void {
+  auto collect = [&](auto&& self, cxx::ExpressionAST* condition) -> void {
     auto* binary =
         cxx::ast_cast<cxx::BinaryExpressionAST>(unwrap_expression(condition));
     if (binary && !binary->symbol && binary->op == cxx::TokenKind::T_AMP_AMP) {
-      collect(binary->leftExpression);
-      collect(binary->rightExpression);
+      self(self, binary->leftExpression);
+      self(self, binary->rightExpression);
       return;
     }
     if (auto requirement =
@@ -179,7 +178,7 @@ void FunctionContracts::declaration(
       contract.predicates.push_back(std::move(predicate));
     }
   };
-  collect(expression);
+  collect(collect, expression);
 
   auto previous = contracts_.find(function->canonical());
   if (previous == contracts_.end()) {
