@@ -522,7 +522,13 @@ iree_status_t loom_amdgpu_select_vector_conversion_plan(
   *out_selected = loom_amdgpu_select_vector_conversion_plan_for_op(
       loom_low_lower_context_module(context),
       loom_low_lower_context_descriptor_set(context), source_op, out_plan);
-  return iree_ok_status();
+  if (!*out_selected) {
+    return iree_ok_status();
+  }
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_range_type(
+      context, out_plan->result_register_count, &result_type));
+  return loom_low_lower_plan_value_type(context, out_plan->result, result_type);
 }
 
 iree_status_t loom_amdgpu_low_legality_verify_vector_conversion(

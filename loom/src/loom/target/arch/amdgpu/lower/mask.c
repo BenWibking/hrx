@@ -371,6 +371,22 @@ static bool loom_amdgpu_select_scalar_splat_condition(
   return true;
 }
 
+static iree_status_t loom_amdgpu_publish_select_carrier(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_vector_select_plan_t* plan) {
+  const bool scalar_carrier =
+      plan->payload_kind == LOOM_AMDGPU_SELECT_PAYLOAD_KIND_I1_MASK ||
+      plan->condition_kind == LOOM_AMDGPU_SELECT_CONDITION_KIND_SCC ||
+      plan->condition_kind == LOOM_AMDGPU_SELECT_CONDITION_KIND_SGPR_BOOL;
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
+      context,
+      scalar_carrier ? LOOM_AMDGPU_REG_CLASS_ID_SGPR
+                     : LOOM_AMDGPU_REG_CLASS_ID_VGPR,
+      plan->lane_count, &result_type));
+  return loom_low_lower_plan_value_type(context, plan->result, result_type);
+}
+
 iree_status_t loom_amdgpu_select_vector_select_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_vector_select_plan_t* out_plan, bool* out_selected) {
@@ -473,7 +489,7 @@ iree_status_t loom_amdgpu_select_vector_select_plan(
         context, allows_lane_immediates, out_plan));
   }
   *out_selected = true;
-  return iree_ok_status();
+  return loom_amdgpu_publish_select_carrier(context, out_plan);
 }
 
 iree_status_t loom_amdgpu_low_legality_verify_vector_select(
@@ -758,7 +774,7 @@ static iree_status_t loom_amdgpu_select_scf_select_i1_mask_plan(
   }
   *out_plan = plan;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_amdgpu_publish_select_carrier(context, out_plan);
 }
 
 iree_status_t loom_amdgpu_select_scf_select_plan(
@@ -847,7 +863,7 @@ iree_status_t loom_amdgpu_select_scf_select_plan(
         .registers_per_condition_lane = 1,
     };
     *out_selected = true;
-    return iree_ok_status();
+    return loom_amdgpu_publish_select_carrier(context, out_plan);
   }
 
   const bool condition_is_mask = loom_amdgpu_low_type_is_register_class_count(
@@ -880,7 +896,7 @@ iree_status_t loom_amdgpu_select_scf_select_plan(
   IREE_RETURN_IF_ERROR(
       loom_amdgpu_select_data_lanes(context, allows_lane_immediates, out_plan));
   *out_selected = true;
-  return iree_ok_status();
+  return loom_amdgpu_publish_select_carrier(context, out_plan);
 }
 
 static iree_status_t loom_amdgpu_slice_lane_if_needed(

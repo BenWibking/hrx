@@ -632,11 +632,13 @@ iree_status_t loom_amdgpu_select_scalar_conversion_plan(
     case LOOM_AMDGPU_SCALAR_CONVERSION_OP_COUNT_:
       break;
   }
+  if (out_plan->kind == LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS) {
+    return iree_ok_status();
+  }
   loom_type_t result_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
       context, source_op, out_plan->result, &result_type));
-  return loom_module_intern_type_id(loom_low_lower_context_module(context),
-                                    result_type, &out_plan->result_type);
+  return loom_low_lower_plan_value_type(context, out_plan->result, result_type);
 }
 
 iree_status_t loom_amdgpu_low_legality_verify_scalar_conversion(
@@ -982,12 +984,12 @@ iree_status_t loom_amdgpu_lower_integer_to_predicate(
 iree_status_t loom_amdgpu_lower_scalar_conversion(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_scalar_conversion_plan_t* plan) {
-  const loom_type_t result_type = loom_type_table_get(
-      &loom_low_lower_context_module(context)->types, plan->result_type);
+  if (plan->kind == LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS) {
+    return loom_low_lower_bind_value_alias(context, plan->source, plan->result);
+  }
+  const loom_type_t result_type =
+      loom_low_lower_value_binding_type(context, plan->result);
   switch (plan->kind) {
-    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS:
-      return loom_low_lower_bind_value_alias(context, plan->source,
-                                             plan->result);
     case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_INTEGER_TO_PREDICATE:
       return loom_amdgpu_lower_integer_to_predicate(
           context, source_op, plan->source, plan->result, result_type);
@@ -1134,6 +1136,7 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
           plan->narrow_representation, &low_result));
       return loom_low_lower_bind_value(context, plan->result, low_result);
     }
+    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS:
     case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NONE:
       break;
   }

@@ -300,7 +300,10 @@ static iree_status_t loom_amdgpu_select_vector_compare_plan(
   };
   IREE_RETURN_IF_ERROR(loom_amdgpu_select_compare_lanes(context, out_plan));
   *out_selected = true;
-  return iree_ok_status();
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_range_type(
+      context, lhs_lane_count * 2, &result_type));
+  return loom_low_lower_plan_value_type(context, result, result_type);
 }
 
 iree_status_t loom_amdgpu_select_vector_cmpi_plan(
@@ -514,7 +517,10 @@ iree_status_t loom_amdgpu_select_vector_float_classification_plan(
       .form = form,
   };
   *out_selected = true;
-  return iree_ok_status();
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_range_type(
+      context, input_storage.element_count * 2, &result_type));
+  return loom_low_lower_plan_value_type(context, result, result_type);
 }
 
 static_assert((uint8_t)LOOM_SCALAR_CMPF_PREDICATE_OLT ==
@@ -773,7 +779,10 @@ static iree_status_t loom_amdgpu_select_clampf_fallback_plan(
       context, source_op, out_plan));
   IREE_RETURN_IF_ERROR(loom_amdgpu_select_clampf_literals(context, out_plan));
   *out_selected = true;
-  return iree_ok_status();
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_range_type(
+      context, out_plan->lane_count, &result_type));
+  return loom_low_lower_plan_value_type(context, out_plan->result, result_type);
 }
 
 iree_status_t loom_amdgpu_select_scalar_clampf_plan(

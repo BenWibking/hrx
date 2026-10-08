@@ -566,8 +566,6 @@ typedef struct loom_amdgpu_scalar_conversion_plan_t {
   loom_value_id_t source;
   // Result value receiving the converted payload.
   loom_value_id_t result;
-  // Selected native destination carrier, independent of source fact lifetime.
-  loom_type_id_t result_type;
   // Lowering strategy selected for the source/result type pair.
   loom_amdgpu_scalar_conversion_kind_t kind;
   // Static source integer payload bit count, or zero for non-integer sources.
