@@ -150,7 +150,7 @@ iree_status_t loom_amdgpu_lower_index_cast(
     }
     case LOOM_AMDGPU_INDEX_CAST_KIND_NORMALIZING_NARROW: {
       loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_i32(
+      IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_registers(
           context, source_op, plan->source, &low_source));
       const loom_module_t* module = loom_low_lower_context_module(context);
       const loom_scalar_type_t result_scalar_type =

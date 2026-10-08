@@ -724,7 +724,8 @@ iree_status_t loom_amdgpu_lower_kernel_subgroup_scan(
 
   loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_collective_lookup_payload(
-      context, source_op, plan->value, plan->payload_kind, &low_value));
+      context, source_op, plan->value, plan->payload_kind,
+      plan->payload_materialization, &low_value));
 
   loom_value_id_t result_registers[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];
   for (uint32_t i = 0; i < plan->register_count; ++i) {
@@ -809,7 +810,8 @@ iree_status_t loom_amdgpu_lower_kernel_workgroup_scan(
 
   loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_collective_lookup_payload(
-      context, source_op, plan->value, plan->payload_kind, &low_value));
+      context, source_op, plan->value, plan->payload_kind,
+      plan->payload_materialization, &low_value));
 
   loom_value_id_t source_registers[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];
   loom_value_id_t result_registers[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];

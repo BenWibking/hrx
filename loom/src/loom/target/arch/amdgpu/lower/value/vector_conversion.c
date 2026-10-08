@@ -934,7 +934,7 @@ static iree_status_t loom_amdgpu_lower_dynamic_predicate_extract(
   loom_type_t index_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_type(context, &index_type));
   loom_value_id_t index = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_i32(
+  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_registers(
       context, source_op, plan->dynamic_index, &index));
 
   loom_value_id_t selected = LOOM_VALUE_ID_INVALID;
@@ -1004,7 +1004,7 @@ static iree_status_t loom_amdgpu_lower_dynamic_vector_extract(
   }
 
   loom_value_id_t index_lane = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_i32(
+  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_registers(
       context, source_op, plan->dynamic_index, &index_lane));
   for (uint32_t i = 1; i < plan->lane_count; ++i) {
     loom_value_id_t ordinal = LOOM_VALUE_ID_INVALID;

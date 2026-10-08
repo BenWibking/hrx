@@ -353,82 +353,6 @@ iree_status_t loom_amdgpu_lookup_or_materialize_i1_integer(
   return iree_ok_status();
 }
 
-iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_i32(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source_value, loom_value_id_t* out_low_value) {
-  *out_low_value = LOOM_VALUE_ID_INVALID;
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
-
-  const loom_module_t* module = loom_low_lower_context_module(context);
-  const loom_type_t low_type = loom_module_value_type(module, low_value);
-  const bool is_vgpr = loom_amdgpu_low_type_is_register_class(
-      context, low_type, LOOM_AMDGPU_REG_CLASS_ID_VGPR);
-  if (is_vgpr) {
-    *out_low_value = low_value;
-    return iree_ok_status();
-  }
-
-  int64_t value = 0;
-  if (loom_amdgpu_value_as_i32_constant(context, source_value, &value)) {
-    loom_type_t vgpr_type = loom_type_none();
-    IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_type(context, &vgpr_type));
-    return loom_amdgpu_emit_const_u32(
-        context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_V_MOV_B32,
-        (uint32_t)(int32_t)value, vgpr_type, out_low_value);
-  }
-
-  const bool is_sgpr = loom_amdgpu_low_type_is_register_class(
-      context, low_type, LOOM_AMDGPU_REG_CLASS_ID_SGPR);
-  if (is_sgpr) {
-    return loom_amdgpu_materialize_low_vgpr_b32_registers(
-        context, source_op, low_value, out_low_value);
-  }
-
-  IREE_ASSERT_UNREACHABLE(
-      "AMDGPU i32 VGPR materializer selected an unsupported low value");
-  IREE_BUILTIN_UNREACHABLE();
-}
-
-iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_f32(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source_value, loom_value_id_t* out_low_value) {
-  *out_low_value = LOOM_VALUE_ID_INVALID;
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
-
-  const loom_module_t* module = loom_low_lower_context_module(context);
-  const loom_type_t low_type = loom_module_value_type(module, low_value);
-  const bool is_vgpr = loom_amdgpu_low_type_is_register_class(
-      context, low_type, LOOM_AMDGPU_REG_CLASS_ID_VGPR);
-  if (is_vgpr) {
-    *out_low_value = low_value;
-    return iree_ok_status();
-  }
-
-  uint32_t bit_pattern = 0;
-  if (loom_amdgpu_value_as_f32_constant(context, source_value, &bit_pattern)) {
-    loom_type_t vgpr_type = loom_type_none();
-    IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_type(context, &vgpr_type));
-    return loom_amdgpu_emit_const_u32(context, source_op,
-                                      LOOM_AMDGPU_DESCRIPTOR_REF_V_MOV_B32,
-                                      bit_pattern, vgpr_type, out_low_value);
-  }
-
-  const bool is_sgpr = loom_amdgpu_low_type_is_register_class(
-      context, low_type, LOOM_AMDGPU_REG_CLASS_ID_SGPR);
-  if (is_sgpr) {
-    return loom_amdgpu_materialize_low_vgpr_b32_registers(
-        context, source_op, low_value, out_low_value);
-  }
-
-  IREE_ASSERT_UNREACHABLE(
-      "AMDGPU f32 VGPR materializer selected an unsupported low value");
-  IREE_BUILTIN_UNREACHABLE();
-}
-
 iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_i64(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, loom_value_id_t* out_low_value) {
@@ -689,14 +613,4 @@ iree_status_t loom_amdgpu_emit_prepared_native_i1_mask(
 
   return loom_amdgpu_materialize_low_native_i1_mask(context, source_op,
                                                     low_value, out_low_value);
-}
-
-iree_status_t loom_amdgpu_lookup_or_materialize_native_i1_mask(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source_value, loom_value_id_t* out_low_value) {
-  const void* plan = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_amdgpu_prepare_native_i1_mask(context, source_value, &plan));
-  return loom_amdgpu_emit_prepared_native_i1_mask(
-      context, source_op, source_value, plan, out_low_value);
 }

@@ -569,6 +569,8 @@ typedef struct loom_amdgpu_scalar_conversion_plan_t {
   loom_value_id_t source;
   // Result value receiving the converted payload.
   loom_value_id_t result;
+  // Optional literal recipe for the selected source-to-VGPR conversion.
+  const void* source_materialization;
   // Lowering strategy selected for the source/result type pair.
   loom_amdgpu_scalar_conversion_kind_t kind;
   // Static source integer payload bit count, or zero for non-integer sources.
@@ -1032,6 +1034,8 @@ typedef enum loom_amdgpu_subgroup_reduce_publication_kind_e {
 typedef struct loom_amdgpu_subgroup_reduce_plan_t {
   // Source value reduced across subgroup lanes.
   loom_value_id_t value;
+  // Optional literal recipe for the scalar integer payload's VGPR carrier.
+  const void* payload_materialization;
   // Descriptor row selected for each native cross-lane read.
   loom_low_lower_resolved_descriptor_t bpermute_descriptor;
   // Descriptor row selected for all-lane DPP row moves.
@@ -1152,6 +1156,8 @@ typedef struct loom_amdgpu_workgroup_collective_cross_wave_descriptors_t {
 typedef struct loom_amdgpu_workgroup_reduce_plan_t {
   // Source value reduced across workgroup lanes.
   loom_value_id_t value;
+  // Optional literal recipe for the scalar integer payload's VGPR carrier.
+  const void* payload_materialization;
   // Descriptor row selected for each native cross-lane read.
   loom_low_lower_resolved_descriptor_t bpermute_descriptor;
   // Descriptor row selected for all-lane DPP row moves.
@@ -1200,6 +1206,8 @@ typedef struct loom_amdgpu_workgroup_reduce_plan_t {
 typedef struct loom_amdgpu_subgroup_scan_plan_t {
   // Source value scanned across subgroup lanes.
   loom_value_id_t value;
+  // Optional literal recipe for the scalar integer payload's VGPR carrier.
+  const void* payload_materialization;
   // Descriptor row selected for each native cross-lane read.
   loom_low_lower_resolved_descriptor_t bpermute_descriptor;
   // Descriptor row selected for each native lane combine.
@@ -1229,6 +1237,8 @@ typedef struct loom_amdgpu_subgroup_scan_plan_t {
 typedef struct loom_amdgpu_workgroup_scan_plan_t {
   // Source value scanned across workgroup lanes.
   loom_value_id_t value;
+  // Optional literal recipe for the scalar integer payload's VGPR carrier.
+  const void* payload_materialization;
   // Descriptor row selected for each native cross-lane read.
   loom_low_lower_resolved_descriptor_t bpermute_descriptor;
   // Descriptor row selected for each native lane combine.

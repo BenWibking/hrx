@@ -39,10 +39,10 @@ iree_status_t loom_amdgpu_select_scalar_conversion_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_scalar_conversion_plan_t* out_plan, bool* out_selected);
 
-// Publishes an identity conversion's actual source carrier.
+// Publishes identity carriers and retains selected source materializations.
 iree_status_t loom_amdgpu_finalize_scalar_conversion_plan(
     loom_low_lower_context_t* context,
-    const loom_amdgpu_scalar_conversion_plan_t* plan);
+    loom_amdgpu_scalar_conversion_plan_t* plan);
 
 // Retains bit zero of an integer source in the result's planned predicate
 // representation: SCC, a durable SGPR Boolean, or a native lane mask.

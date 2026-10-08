@@ -45,6 +45,7 @@
 #include "loom/target/arch/amdgpu/lower/bitpack.h"
 #include "loom/target/arch/amdgpu/lower/buffer.h"
 #include "loom/target/arch/amdgpu/lower/buffer_descriptor.h"
+#include "loom/target/arch/amdgpu/lower/collective_payload.h"
 #include "loom/target/arch/amdgpu/lower/compare.h"
 #include "loom/target/arch/amdgpu/lower/constants.h"
 #include "loom/target/arch/amdgpu/lower/control.h"
@@ -1856,11 +1857,15 @@ static iree_status_t loom_amdgpu_finalize_plan(
     case LOOM_OP_SCALAR_FPTOUI:
     case LOOM_OP_SCALAR_BITCAST:
       return loom_amdgpu_finalize_scalar_conversion_plan(
-          context,
-          (const loom_amdgpu_scalar_conversion_plan_t*)plan.target_data);
+          context, (loom_amdgpu_scalar_conversion_plan_t*)plan.target_data);
     case LOOM_OP_VECTOR_EXTRACT:
       return loom_amdgpu_finalize_vector_extract_plan(
           context, (const loom_amdgpu_vector_extract_plan_t*)plan.target_data);
+    case LOOM_OP_KERNEL_SUBGROUP_REDUCE:
+    case LOOM_OP_KERNEL_WORKGROUP_REDUCE:
+    case LOOM_OP_KERNEL_SUBGROUP_SCAN:
+    case LOOM_OP_KERNEL_WORKGROUP_SCAN:
+      return loom_amdgpu_finalize_collective_payload(context, plan);
     case LOOM_OP_VECTOR_IOTA:
     case LOOM_OP_VECTOR_FROM_ELEMENTS:
     case LOOM_OP_VECTOR_SPLAT:
