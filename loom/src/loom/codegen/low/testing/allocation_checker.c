@@ -756,12 +756,10 @@ static bool loom_low_allocation_checker_unit_alias_is_authorized(
                                                         result, source)) {
       continue;
     }
-    const loom_liveness_interval_t* result_interval =
-        loom_liveness_interval_for_value_ordinal(&checker->allocation->liveness,
-                                                 relation->result_ordinal);
-    if (overlap.start_point < result_interval->start_point) {
-      continue;
-    }
+    // A coalesced structural destination can reserve its source storage before
+    // its semantic definition. The retained relation authorizes that physical
+    // reservation; destructive successor writes below still bound how long the
+    // original contents remain observable.
     for (uint32_t unit = 0; unit < relation->unit_count; ++unit) {
       // A copy's bit identity ends when either value is overwritten. Mandatory
       // storage identity continues, but cannot authorize aliases of old bits.

@@ -237,6 +237,18 @@ TEST_F(AllocationCheckerTest, EarlyAcquisitionConflictsBeforeDefinition) {
             LOOM_LOW_ALLOCATION_CHECK_VIOLATION_STORAGE_CONFLICT);
 }
 
+TEST_F(AllocationCheckerTest, AcceptsAliasReservationBeforeSemanticDefinition) {
+  intervals_[1].start_point = 2;
+  assignments_[1].start_point = unit_start_points_[1] = 0;
+  assignments_[1].location_base = assignments_[0].location_base;
+  loom_low_placement_relation_t relation =
+      MakeAliasRelation(1, 0, LOOM_LOW_PLACEMENT_RELATION_FLAG_PREFERRED);
+  relation.cause = LOOM_LOW_PLACEMENT_CAUSE_LOW_BRANCH;
+  frame_.allocation.placement.relations = &relation;
+  frame_.allocation.placement.relation_count = 1;
+  EXPECT_EQ(Check().violation_count, 0u);
+}
+
 TEST_F(AllocationCheckerTest, RejectsOverlappingLiveAssignments) {
   assignments_[1].location_base = assignments_[0].location_base;
   const loom_low_allocation_check_result_t result = Check();
