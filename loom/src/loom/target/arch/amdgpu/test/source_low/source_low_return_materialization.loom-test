@@ -1,4 +1,3 @@
-// TEMPLATE: loom/src/loom/test/corpus/source_low/callable_returns.loom-test
 // RUN: emit source-low target=amdgpu:gfx1151 output=low
 
 // Return representation depends on all paths, regardless of block layout.
@@ -90,38 +89,6 @@ low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @return_wide_loaded_or_
 
 // ====
 
-func.def @return_wide_argument_or_loaded(%input: buffer, %load: i1, %fallback: i64) -> (i64) {
-  %origin = index.constant 0 : offset
-  %view = buffer.view %input[%origin] : buffer -> view<1xi64>
-  cfg.cond_br %load, ^loaded, ^argument
-^argument:
-  func.return %fallback : i64
-^loaded:
-  %value = view.load %view[0] : view<1xi64> -> i64
-  func.return %value : i64
-}
-
-// ----
-low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @return_wide_argument_or_loaded(%load: reg<amdgpu.sgpr>, %fallback: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.vgpr x2>) asm {
-  %view = resource<hal_binding> {extent = 8, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
-  %11 = s_mov_b32 0
-  %12 = s_cmp_lg_i32 %load, %11
-  low.cond_br %12, ^loaded, ^argument : reg<amdgpu.scc>
-^argument:
-  %13 = slice %fallback[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %14 = v_mov_b32_copy %13
-  %15 = slice %fallback[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %16 = v_mov_b32_copy %15
-  %17 = concat(%14, %16) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  return %17
-^loaded:
-  %18 = v_mov_b32 0
-  %value = global_load_b64_saddr %18, %view
-  return %value
-}
-
-// ====
-
 // Each result position has its own carrier, including unchanged uniform data.
 func.def @return_mixed_values(%input: buffer, %load: i1, %integer: i32, %real: f32, %tag: i32) -> (i32, f32, i32) {
   %origin = index.constant 0 : offset
@@ -150,27 +117,6 @@ low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @return_mixed_values(%l
   %loaded_integer = global_load_b32_saddr %24, %reals
   %loaded_real = global_load_b32_saddr %24, %reals {offset = 4}
   return %loaded_integer, %loaded_real, %tag
-}
-
-// ====
-
-func.def @return_uniform_values(%choose: i1, %first: i32, %second: i32) -> (i32, i32) {
-  cfg.cond_br %choose, ^original, ^swapped
-^original:
-  func.return %first, %second : i32, i32
-^swapped:
-  func.return %second, %first : i32, i32
-}
-
-// ----
-low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @return_uniform_values(%choose: reg<amdgpu.sgpr>, %first: reg<amdgpu.sgpr>, %second: reg<amdgpu.sgpr>) -> (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) asm {
-  %10 = s_mov_b32 0
-  %11 = s_cmp_lg_i32 %choose, %10
-  low.cond_br %11, ^original, ^swapped : reg<amdgpu.scc>
-^original:
-  return %first, %second
-^swapped:
-  return %second, %first
 }
 
 // ====
@@ -292,73 +238,6 @@ low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @return_selected_buffer
   %34 = v_cndmask_b32 %33, %31, %positive
   %selected = concat(%29, %34) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
   return %selected
-}
-
-// ====
-
-// Targets with direct calls retain this helper boundary; inline-only targets
-// still exercise the same returned values through their normal inliner.
-func.def public @call_returned_value(%input: buffer, %load: i1, %fallback: i32) -> (i32) {
-  %value = func.call @load_or_fallback(%input, %load, %fallback) : (buffer, i1, i32) -> (i32)
-  %increment = scalar.constant 1 : i32
-  %result = scalar.addi %value, %increment : i32
-  func.return %result : i32
-}
-
-func.def @load_or_fallback(%input: buffer, %load: i1, %fallback: i32) -> (i32) {
-  cfg.cond_br %load, ^loaded, ^argument
-^argument:
-  func.return %fallback : i32
-^loaded:
-  %origin = index.constant 0 : offset
-  %view = buffer.view %input[%origin] : buffer -> view<1xi32>
-  %value = view.load %view[0] : view<1xi32> -> i32
-  func.return %value : i32
-}
-
-// ----
-low.func.def public target<amdgpu.rdna3_5.core> abi(hal_kernel) @call_returned_value(%load: reg<amdgpu.sgpr>, %fallback: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %view = resource<hal_binding> {extent = 4, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
-  %20 = s_mov_b32 0
-  %21 = s_cmp_lg_i32 %load, %20
-  low.cond_br %21, ^_bb2, ^_bb1 : reg<amdgpu.scc>
-^_bb1:
-  %22 = v_mov_b32_copy %fallback
-  low.br ^_bb3(%22: reg<amdgpu.vgpr>)
-^_bb2:
-  %23 = v_mov_b32 0
-  %value$24 = global_load_b32_saddr %23, %view
-  low.br ^_bb3(%value$24: reg<amdgpu.vgpr>)
-^_bb3(%value$18: reg<amdgpu.vgpr>):
-  %26 = v_mov_b32 1
-  %result = v_add_u32 %value$18, %26
-  return %result
-}
-
-// ====
-
-func.def @return_uniform_predicate(%choose: i1, %fallback: i1, %input: i32) -> (i1) {
-  cfg.cond_br %choose, ^compare, ^argument
-^argument:
-  func.return %fallback : i1
-^compare:
-  %threshold = scalar.constant 0 : i32
-  %positive = scalar.cmpi slt, %threshold, %input : i32
-  func.return %positive : i1
-}
-
-// ----
-low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @return_uniform_predicate(%choose: reg<amdgpu.sgpr>, %fallback: reg<amdgpu.sgpr>, %input: reg<amdgpu.sgpr>) -> (reg<amdgpu.sgpr>) asm {
-  %11 = s_mov_b32 0
-  %12 = s_cmp_lg_i32 %choose, %11
-  low.cond_br %12, ^compare, ^argument : reg<amdgpu.scc>
-^argument:
-  return %fallback
-^compare:
-  %positive = s_cmp_gt_i32 %input, %11
-  %16 = s_mov_b32 1
-  %17 = s_cselect_b32 %16, %11, %positive
-  return %17
 }
 
 // ====

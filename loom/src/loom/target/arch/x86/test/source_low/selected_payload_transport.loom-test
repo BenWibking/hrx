@@ -1,4 +1,3 @@
-// TEMPLATE: loom/src/loom/test/corpus/source_low/selected_payload_transport.loom-test
 // RUN: pass target=x86:avx2 source-to-low
 
 func.def public @selected_truncated(%input: vector<4xi32>, %left: i64, %right: i64) -> (i32) {
@@ -126,49 +125,6 @@ low.func.def public target<x86.avx2.core> abi(object_function) abi_layout({signa
 
 // ====
 
-func.def public @uniform_selected_truncated(%value: i32, %left: i64, %right: i64) -> (i32) {
-  %threshold = scalar.constant 0 : i32
-  %condition = scalar.cmpi sgt, %value, %threshold : i32
-  %selected = scf.select %condition, %left, %right : i64
-  %payload = scalar.trunci %selected : i64 to i32
-  cfg.br ^forward(%payload: i32)
-^forward(%carried: i32):
-  func.return %carried : i32
-}
-
-// ----
-low.func.def public target<x86.avx2.core> abi(object_function) @uniform_selected_truncated(%value: reg<x86.gpr32>, %left: reg<x86.gpr64>, %right: reg<x86.gpr64>) -> (reg<x86.gpr32>) asm {
-  %condition = cmp.sgt.imm.gpr32 %value, 0
-  %15 = copy %right : reg<x86.gpr64> -> reg<x86.gpr64>
-  %selected = select.gpr64 %condition, %left, %15
-  %payload = mov.trunc.gpr32.gpr64 %selected
-  low.br ^forward(%payload: reg<x86.gpr32>)
-^forward(%carried: reg<x86.gpr32>):
-  return %carried
-}
-
-// ====
-
-func.def public @independent_assumption_payload(%input: vector<4xi32>, %left: i32, %right: i32, %scalar: i32) -> (i32) {
-  %value = vector.extract %input[0] : vector<4xi32> -> i32
-  %threshold = scalar.constant 0 : i32
-  %condition = scalar.cmpi sgt, %value, %threshold : i32
-  %selected = scf.select %condition, %left, %right : i32
-  %payload, %bounded = scalar.assume %scalar, %selected [range(%selected, 0, 42)] : i32, i32
-  cfg.br ^forward(%payload: i32)
-^forward(%carried: i32):
-  func.return %carried : i32
-}
-
-// ----
-low.func.def public target<x86.avx2.core> abi(object_function) abi_layout({signature = (vector<4xi32>, i32, i32, i32) -> (i32)}) @independent_assumption_payload(%input: reg<x86.xmm>, %left: reg<x86.gpr32>, %right: reg<x86.gpr32>, %payload: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
-  low.br ^forward(%payload: reg<x86.gpr32>)
-^forward(%carried: reg<x86.gpr32>):
-  return %carried
-}
-
-// ====
-
 func.def public @selected_assumption_payload(%input: vector<4xi32>, %left: i32, %right: i32, %scalar: i32) -> (i32) {
   %value = vector.extract %input[0] : vector<4xi32> -> i32
   %threshold = scalar.constant 0 : i32
@@ -187,60 +143,6 @@ low.func.def public target<x86.avx2.core> abi(object_function) abi_layout({signa
   %20 = copy %right : reg<x86.gpr32> -> reg<x86.gpr32>
   %bounded = select.gpr32 %condition, %left, %20
   low.br ^forward(%bounded: reg<x86.gpr32>)
-^forward(%carried: reg<x86.gpr32>):
-  return %carried
-}
-
-// ====
-
-func.def public @independent_transformed_assumption_payload(%input: vector<4xi32>, %left: i32, %right: i32, %scalar: i32) -> (i32) {
-  %value = vector.extract %input[0] : vector<4xi32> -> i32
-  %threshold = scalar.constant 0 : i32
-  %condition = scalar.cmpi sgt, %value, %threshold : i32
-  %selected = scf.select %condition, %left, %right : i32
-  %payload, %bounded = scalar.assume %scalar, %selected [range(%selected, 0, 42)] : i32, i32
-  %increment = scalar.constant 3 : i32
-  %transformed = scalar.addi %payload, %increment : i32
-  cfg.br ^forward(%transformed: i32)
-^forward(%carried: i32):
-  func.return %carried : i32
-}
-
-// ----
-low.func.def public target<x86.avx2.core> abi(object_function) abi_layout({signature = (vector<4xi32>, i32, i32, i32) -> (i32)}) @independent_transformed_assumption_payload(%input: reg<x86.xmm>, %left: reg<x86.gpr32>, %right: reg<x86.gpr32>, %payload: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
-  %increment = mov.imm32 3
-  %21 = copy %payload : reg<x86.gpr32> -> reg<x86.gpr32>
-  %transformed = add.gpr32 %21, %increment
-  low.br ^forward(%transformed: reg<x86.gpr32>)
-^forward(%carried: reg<x86.gpr32>):
-  return %carried
-}
-
-// ====
-
-func.def public @selected_transformed_assumption_payload(%input: vector<4xi32>, %left: i32, %right: i32, %scalar: i32) -> (i32) {
-  %value = vector.extract %input[0] : vector<4xi32> -> i32
-  %threshold = scalar.constant 0 : i32
-  %condition = scalar.cmpi sgt, %value, %threshold : i32
-  %selected = scf.select %condition, %left, %right : i32
-  %payload, %bounded = scalar.assume %scalar, %selected [range(%selected, 0, 42)] : i32, i32
-  %increment = scalar.constant 3 : i32
-  %transformed = scalar.addi %bounded, %increment : i32
-  cfg.br ^forward(%transformed: i32)
-^forward(%carried: i32):
-  func.return %carried : i32
-}
-
-// ----
-low.func.def public target<x86.avx2.core> abi(object_function) abi_layout({signature = (vector<4xi32>, i32, i32, i32) -> (i32)}) @selected_transformed_assumption_payload(%input: reg<x86.xmm>, %left: reg<x86.gpr32>, %right: reg<x86.gpr32>, %payload: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
-  %value = vpextrd.xmm %input, 0
-  %condition = cmp.sgt.imm.gpr32 %value, 0
-  %22 = copy %right : reg<x86.gpr32> -> reg<x86.gpr32>
-  %bounded = select.gpr32 %condition, %left, %22
-  %increment = mov.imm32 3
-  %25 = copy %bounded : reg<x86.gpr32> -> reg<x86.gpr32>
-  %transformed = add.gpr32 %25, %increment
-  low.br ^forward(%transformed: reg<x86.gpr32>)
 ^forward(%carried: reg<x86.gpr32>):
   return %carried
 }

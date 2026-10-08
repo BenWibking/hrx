@@ -1,4 +1,3 @@
-// TEMPLATE: loom/src/loom/test/corpus/source_low/selected_payload_transport.loom-test
 // RUN: pass target=amdgpu:gfx11-generic source-to-low
 
 func.def public @selected_truncated(%input: vector<4xi32>, %left: i64, %right: i64) -> (i32) {
