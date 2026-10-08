@@ -31,6 +31,7 @@
 #include "loom/pass/tooling.h"
 #include "loom/pass/trace.h"
 #include "loom/target/configured/provider_set.h"
+#include "loom/target/function_version_projection.h"
 #include "loom/target/pipeline.h"
 #include "loom/target/predicate.h"
 #include "loom/target/provider.h"
@@ -910,6 +911,27 @@ static iree_status_t loom_opt_run_shared_compile_pipeline(
   return status;
 }
 
+typedef struct loom_opt_snapshot_state_t {
+  // Live target versions whose contracts must survive serialized snapshots.
+  const loom_function_version_list_t* function_versions;
+  // Storage for the short-lived, self-contained module projection.
+  iree_arena_block_pool_t* block_pool;
+} loom_opt_snapshot_state_t;
+
+static iree_status_t loom_opt_project_snapshot(
+    void* user_data, const loom_module_t* source_module,
+    loom_module_t** out_projected_module) {
+  *out_projected_module = NULL;
+  const loom_opt_snapshot_state_t* state =
+      (const loom_opt_snapshot_state_t*)user_data;
+  if (state->function_versions->count == 0) {
+    return iree_ok_status();
+  }
+  return loom_target_function_versions_project_module(
+      source_module, state->function_versions, state->block_pool,
+      source_module->allocator, NULL, out_projected_module);
+}
+
 static iree_status_t loom_opt_run_passes(
     const loom_target_low_descriptor_registry_t* low_registry,
     const loom_target_environment_t* target_environment,
@@ -965,6 +987,17 @@ static iree_status_t loom_opt_run_passes(
   loom_function_version_owner_t function_versions;
   loom_function_version_owner_initialize(&function_version_arena,
                                          &function_versions);
+  loom_opt_snapshot_state_t snapshot_state = {
+      .function_versions = &function_versions.list,
+      .block_pool = block_pool,
+  };
+  if (trace_ptr) {
+    loom_pass_trace_bind_snapshot_projector(
+        trace_ptr, (loom_pass_trace_snapshot_projector_t){
+                       .project = loom_opt_project_snapshot,
+                       .user_data = &snapshot_state,
+                   });
+  }
   loom_target_legalizer_registry_storage_t legalizer_registry_storage = {0};
   iree_status_t status = loom_low_legalizer_registry_storage_initialize(
       legalizer_provider_list, iree_arena_allocator(&function_version_arena),
@@ -1027,6 +1060,15 @@ static iree_status_t loom_opt_run_passes(
           out_result);
     }
     iree_string_builder_deinitialize(&pipeline_builder);
+  }
+  if (iree_status_is_ok(status) && out_result->error_count == 0) {
+    loom_module_t* projected_module = NULL;
+    status =
+        loom_opt_project_snapshot(&snapshot_state, module, &projected_module);
+    if (iree_status_is_ok(status) && projected_module) {
+      run_module->module = projected_module;
+      loom_module_free(module);
+    }
   }
   loom_target_legalizer_registry_storage_deinitialize(
       &legalizer_registry_storage);
