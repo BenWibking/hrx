@@ -67,17 +67,19 @@ def test_arithmetic_generator_covers_fma_mix_descriptor_lattice() -> None:
 def test_arithmetic_generator_covers_packed_ternary_descriptor_candidates() -> None:
     arrays = amdgpu_arithmetic_candidates._PACKED_TERNARY_DESCRIPTOR_CANDIDATE_ARRAYS
 
-    assert [len(array.candidates) for array in arrays] == [2, 1, 2, 2]
+    assert [len(array.candidates) for array in arrays] == [2, 1, 1, 2, 2]
     assert arrays[0].candidates[0].descriptor_key == "amdgpu.v_pk_fmac_f16"
     assert arrays[0].candidates[0].source_permutation == (2, 0, 1)
     assert arrays[0].candidates[0].flags == ("LOOM_AMDGPU_PACKED_TERNARY_FLAG_TIED_ACCUMULATOR",)
-    assert arrays[1].candidates[0].descriptor_key == "amdgpu.v_pk_fma_f32"
-    assert arrays[1].candidates[0].packet_unit_count == 2
-    assert [candidate.descriptor_key for candidate in arrays[2].candidates] == [
+    assert arrays[1].candidates[0].descriptor_key == "amdgpu.v_pk_fma_bf16"
+    assert arrays[1].candidates[0].packet_unit_count == 1
+    assert arrays[2].candidates[0].descriptor_key == "amdgpu.v_pk_fma_f32"
+    assert arrays[2].candidates[0].packet_unit_count == 2
+    assert [candidate.descriptor_key for candidate in arrays[3].candidates] == [
         "amdgpu.v_pk_mad_i16",
         "amdgpu.v_pk_mad_u16",
     ]
-    assert [candidate.descriptor_key for candidate in arrays[3].candidates] == [
+    assert [candidate.descriptor_key for candidate in arrays[4].candidates] == [
         "amdgpu.v_pk_mad_u16",
         "amdgpu.v_pk_mad_i16",
     ]

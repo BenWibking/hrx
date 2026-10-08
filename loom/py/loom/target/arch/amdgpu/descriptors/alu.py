@@ -4501,6 +4501,16 @@ def _v_fmac_f64_overlay() -> AmdgpuDescriptorOverlay:
     )
 
 
+_V_PK_HIGH_SELECTOR_IMMEDIATE = Immediate(
+    "op_sel_hi",
+    ImmediateKind.UNSIGNED,
+    flags=(ImmediateFlag.DEFAULT_VALUE,),
+    bit_width=3,
+    unsigned_max=7,
+    default_value=7,
+)
+
+
 def _v_pk_ternary_overlay(
     *,
     descriptor_key: str,
@@ -4533,7 +4543,26 @@ def _v_pk_ternary_overlay(
             AmdgpuOperandOverlay("SRC2", _sgpr_vgpr_operand("c", units=units)),
         ),
         operand_forms=operand_forms,
-        fixed_encoding_fields=(("OP_SEL_HI", 0x7),),
+        immediate_fields=("OP_SEL_HI",) if units == 1 else (),
+        immediates=(_V_PK_HIGH_SELECTOR_IMMEDIATE,) if units == 1 else (),
+        fixed_encoding_fields=(("OP_SEL_HI", 0x7),) if units != 1 else (),
+        asm_forms=(
+            _asm(
+                results=("dst",),
+                operands=("a", "b", "c"),
+                immediates=("op_sel_hi",),
+                named_immediates=True,
+                native_assembly_values=(
+                    _native_result("dst"),
+                    _native_operand("a"),
+                    _native_operand("b"),
+                    _native_operand("c"),
+                    _native_amdgpu_named_bit_list_immediate("op_sel_hi", 3),
+                ),
+            )
+            if units == 1
+            else None
+        ),
         flags=(DescriptorFlag.DEAD_REMOVABLE,),
     )
 
@@ -4578,12 +4607,20 @@ def _v_pk_with_op_sel_hi_field(
                 replaced_field = True
             else:
                 fixed_encoding_fields.append((field, value))
-        if not replaced_field:
+        immediate_fields = tuple(
+            op_sel_hi_field if field == "OP_SEL_HI" else field
+            for field in overlay.immediate_fields
+        )
+        if not replaced_field and "OP_SEL_HI" not in overlay.immediate_fields:
             raise ValueError(
                 f"packed overlay '{overlay.descriptor_key}' has no OP_SEL_HI field"
             )
         rewritten_overlays.append(
-            replace(overlay, fixed_encoding_fields=tuple(fixed_encoding_fields))
+            replace(
+                overlay,
+                fixed_encoding_fields=tuple(fixed_encoding_fields),
+                immediate_fields=immediate_fields,
+            )
         )
     return tuple(rewritten_overlays)
 
@@ -4607,6 +4644,7 @@ def _v_pk_ternary_literal_overlay(
     literal_field = ""
     operands = [AmdgpuOperandOverlay("VDST", _vgpr_result(units=units))]
     asm_operands = []
+    native_values = [_native_result("dst")]
     for (
         source_name,
         xml_field_name,
@@ -4615,8 +4653,10 @@ def _v_pk_ternary_literal_overlay(
     ) in _V_PK_TERNARY_SOURCES:
         if source_name == literal_source:
             literal_field = xml_field_name
+            native_values.append(_native_i64_immediate("imm32"))
             continue
         asm_operands.append(operand_name)
+        native_values.append(_native_operand(operand_name))
         operands.append(
             AmdgpuOperandOverlay(
                 xml_field_name, operand_builder(operand_name, units=units)
@@ -4633,16 +4673,21 @@ def _v_pk_ternary_literal_overlay(
         semantic_tag=semantic_tag,
         schedule_class=_SCHEDULE_VALU,
         operands=tuple(operands),
-        asm_forms=_asm(
-            results=("dst",),
-            operands=tuple(asm_operands),
-            immediates=("imm32",),
+        asm_forms=(
+            AsmForm(
+                native_assembly_mnemonic=mnemonic,
+                results=("dst",),
+                operands=tuple(asm_operands),
+                immediates=(AsmImmediate("imm32"),),
+                native_assembly_values=(
+                    *native_values,
+                    _native_amdgpu_named_bit_list_immediate("op_sel_hi", 3),
+                ),
+            ),
         ),
-        immediates=(_LITERAL_U32_IMMEDIATE,),
-        fixed_encoding_fields=(
-            ("OP_SEL_HI", 0x7),
-            (literal_field, _predefined("SRC_LITERAL", "OPR_SRC")),
-        ),
+        immediate_fields=("OP_SEL_HI", "LITERAL"),
+        immediates=(_V_PK_HIGH_SELECTOR_IMMEDIATE, _LITERAL_U32_IMMEDIATE),
+        fixed_encoding_fields=((literal_field, _predefined("SRC_LITERAL", "OPR_SRC")),),
         flags=(DescriptorFlag.DEAD_REMOVABLE,),
     )
 

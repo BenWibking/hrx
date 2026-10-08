@@ -4198,7 +4198,14 @@ def test_packed_fma_mad_descriptors_pin_lane_container_widths() -> None:
             assert tuple(
                 operand.descriptor_operand.unit_count for operand in descriptor.operands
             ) == (1, 1, 1, 1)
-            assert descriptor.fixed_encoding_fields == ((op_sel_hi_field, 0x7),)
+            assert descriptor.fixed_encoding_fields == ()
+            assert descriptor.immediate_fields == (op_sel_hi_field,)
+            selector = descriptor.immediates[0]
+            assert selector.field_name == "op_sel_hi"
+            assert selector.bit_width == 3
+            assert selector.unsigned_max == 7
+            assert selector.default_value == 7
+            assert selector.flags == (ImmediateFlag.DEFAULT_VALUE,)
 
     cdna_descriptor_sets = (_gfx940_core_overlays(), _gfx950_core_overlays())
     for descriptor_set in cdna_descriptor_sets:
@@ -4269,7 +4276,14 @@ def test_gfx125x_packed_bf16_descriptors_are_arch_scoped() -> None:
     assert tuple(
         operand.descriptor_operand.unit_count for operand in fma_descriptor.operands
     ) == (1, 1, 1, 1)
-    assert fma_descriptor.fixed_encoding_fields == (("OPSEL_HI", 0x7),)
+    assert fma_descriptor.fixed_encoding_fields == ()
+    assert fma_descriptor.immediate_fields == ("OPSEL_HI",)
+    selector = fma_descriptor.immediates[0]
+    assert selector.field_name == "op_sel_hi"
+    assert selector.bit_width == 3
+    assert selector.unsigned_max == 7
+    assert selector.default_value == 7
+    assert selector.flags == (ImmediateFlag.DEFAULT_VALUE,)
 
 
 def test_gfx125x_packed_fp8_to_f16_sources_use_low_half_window() -> None:
@@ -4513,12 +4527,14 @@ def test_packed_fma_mad_rdna_literal_forms_cover_source_positions() -> None:
                 )
                 assert tuple(
                     immediate.field_name for immediate in literal_descriptor.immediates
-                ) == ("imm32",)
-                assert literal_descriptor.fixed_encoding_fields[0] == (
+                ) == ("op_sel_hi", "imm32")
+                assert literal_descriptor.immediate_fields == (
                     op_sel_hi_field,
-                    0x7,
+                    "LITERAL",
                 )
-                fixed_field, fixed_value = literal_descriptor.fixed_encoding_fields[1]
+                assert literal_descriptor.immediates[0] == descriptor.immediates[0]
+                assert len(literal_descriptor.fixed_encoding_fields) == 1
+                fixed_field, fixed_value = literal_descriptor.fixed_encoding_fields[0]
                 assert fixed_field == literal_field
                 assert isinstance(fixed_value, AmdgpuOperandPredefinedValueRef)
                 assert fixed_value.value_name == "SRC_LITERAL"

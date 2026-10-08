@@ -142,6 +142,15 @@ _PACKED_TERNARY_DESCRIPTOR_CANDIDATE_ARRAYS = (
         ),
     ),
     _PackedTernaryDescriptorCandidateArray(
+        array_name="kLoomAmdgpuPackedFmafBF16DescriptorCandidates",
+        count_name="kLoomAmdgpuPackedFmafBF16DescriptorCandidateCount",
+        candidates=(
+            _PackedTernaryDescriptorCandidate(
+                descriptor_key="amdgpu.v_pk_fma_bf16",
+            ),
+        ),
+    ),
+    _PackedTernaryDescriptorCandidateArray(
         array_name="kLoomAmdgpuPackedFmafF32DescriptorCandidates",
         count_name="kLoomAmdgpuPackedFmafF32DescriptorCandidateCount",
         candidates=(

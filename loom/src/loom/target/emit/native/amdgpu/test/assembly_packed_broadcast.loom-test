@@ -47,3 +47,54 @@ low.func.def target<amdgpu.cdna3.core>(@target) @fma(%multiplicand: reg<amdgpu.v
 0xD3B00000
 0x04120500
 0xBF810000
+
+// ====
+
+// A literal source retains the independent high-half selector bits.
+// RUN: emit amdgpu-assembly @half_literal strategy=source waits=none fixed=%factor:physical_register:0:1 fixed=%values:physical_register:2:1
+
+amdgpu.target<gfx1100> @target
+
+low.func.def target<amdgpu.rdna3.core>(@target) @half_literal(%factor: reg<amdgpu.vgpr>, %values: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %result = v_pk_fma_f16_src2_lit %factor, %values, 13653 {op_sel_hi = 2}
+  return %result
+}
+
+// ----
+  v_pk_fma_f16 v0, v0, v2, 13653 op_sel_hi:[0,1,0]
+  s_endpgm
+
+// ====
+
+// RDNA4 encodes the same authored selector with a different machine field.
+// RUN: emit amdgpu-native-words @unsigned_literal strategy=source waits=none fixed=%values:physical_register:2:1 fixed=%addend:physical_register:4:1
+
+amdgpu.target<gfx1200> @target
+
+low.func.def target<amdgpu.rdna4.core>(@target) @unsigned_literal(%values: reg<amdgpu.vgpr>, %addend: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %result = v_pk_mad_u16_src1_lit %values, %addend, 13653 {op_sel_hi = 1}
+  return %result
+}
+
+// ----
+0xCC090000
+0x0C11FF02
+0x00003555
+0xBFB00000
+
+// ====
+
+// BF16 shares the one-dword selector contract on profiles with native support.
+// RUN: emit amdgpu-native-words @brain_fma strategy=source waits=none fixed=%factor:physical_register:0:1 fixed=%values:physical_register:2:1 fixed=%addend:physical_register:4:1
+
+amdgpu.target<gfx1250> @target
+
+low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @brain_fma(%factor: reg<amdgpu.vgpr>, %values: reg<amdgpu.vgpr>, %addend: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %result = v_pk_fma_bf16 %factor, %values, %addend {op_sel_hi = 2}
+  return %result
+}
+
+// ----
+0xCC110000
+0x14120500
+0xBFB00000

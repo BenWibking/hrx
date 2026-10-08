@@ -86,6 +86,15 @@ enum {
   kLoomAmdgpuPackedFmafF16DescriptorCandidateCount = 2u,
 };
 
+// Descriptor candidates for packed bf16 vector.fmaf packets.
+extern const loom_amdgpu_packed_ternary_descriptor_candidate_t
+    kLoomAmdgpuPackedFmafBF16DescriptorCandidates[];
+
+// Number of packed bf16 vector.fmaf descriptor candidates.
+enum {
+  kLoomAmdgpuPackedFmafBF16DescriptorCandidateCount = 1u,
+};
+
 // Descriptor candidates for packed f32 vector.fmaf packets.
 extern const loom_amdgpu_packed_ternary_descriptor_candidate_t
     kLoomAmdgpuPackedFmafF32DescriptorCandidates[];

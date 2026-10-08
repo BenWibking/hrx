@@ -141,3 +141,451 @@ check.scenario @broadcast_fma_values {
   }
   check.return
 }
+
+// F16 broadcasts use the same source-mask matrix. The input magnitudes
+// stay between 1/4 and 4, so F64 represents each product and sum exactly;
+// only the final narrowing rounds. The oracle shares no packed arithmetic.
+func.def inline @fma_f16_masks(%a: vector<8xf16>, %b: vector<8xf16>, %c: vector<8xf16>, %x: f16, %y: f16, %z: f16, %output: view<64x128xf16>, %lane: index, %column: index) {
+  %xs = vector.splat %x : vector<8xf16>
+  %ys = vector.splat %y : vector<8xf16>
+  %zs = vector.splat %z : vector<8xf16>
+  %result0 = vector.fmaf %a, %b, %c : vector<8xf16>
+  %offset0 = index.constant 0 : index
+  %column0 = index.add %column, %offset0 : index
+  vector.store %result0, %output[%lane, %column0] : vector<8xf16>, view<64x128xf16>
+  %result1 = vector.fmaf %xs, %b, %c : vector<8xf16>
+  %offset1 = index.constant 8 : index
+  %column1 = index.add %column, %offset1 : index
+  vector.store %result1, %output[%lane, %column1] : vector<8xf16>, view<64x128xf16>
+  %result2 = vector.fmaf %a, %ys, %c : vector<8xf16>
+  %offset2 = index.constant 16 : index
+  %column2 = index.add %column, %offset2 : index
+  vector.store %result2, %output[%lane, %column2] : vector<8xf16>, view<64x128xf16>
+  %result3 = vector.fmaf %xs, %ys, %c : vector<8xf16>
+  %offset3 = index.constant 24 : index
+  %column3 = index.add %column, %offset3 : index
+  vector.store %result3, %output[%lane, %column3] : vector<8xf16>, view<64x128xf16>
+  %result4 = vector.fmaf %a, %b, %zs : vector<8xf16>
+  %offset4 = index.constant 32 : index
+  %column4 = index.add %column, %offset4 : index
+  vector.store %result4, %output[%lane, %column4] : vector<8xf16>, view<64x128xf16>
+  %result5 = vector.fmaf %xs, %b, %zs : vector<8xf16>
+  %offset5 = index.constant 40 : index
+  %column5 = index.add %column, %offset5 : index
+  vector.store %result5, %output[%lane, %column5] : vector<8xf16>, view<64x128xf16>
+  %result6 = vector.fmaf %a, %ys, %zs : vector<8xf16>
+  %offset6 = index.constant 48 : index
+  %column6 = index.add %column, %offset6 : index
+  vector.store %result6, %output[%lane, %column6] : vector<8xf16>, view<64x128xf16>
+  %result7 = vector.fmaf %xs, %ys, %zs : vector<8xf16>
+  %offset7 = index.constant 56 : index
+  %column7 = index.add %column, %offset7 : index
+  vector.store %result7, %output[%lane, %column7] : vector<8xf16>, view<64x128xf16>
+  func.return
+}
+
+kernel.def @broadcast_fma_f16() {
+  %c1 = index.constant 1 : index
+  %width = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%width, %c1, %c1) : index
+} launch(%input: buffer, %parameters: buffer, %output: buffer) {
+  %source, %uniform_source, %destination = buffer.assume.noalias %input, %parameters, %output : buffer, buffer, buffer
+  %base = index.constant 0 : offset
+  %lane = kernel.workitem.id<x> : index
+  %values = buffer.view %source[%base] : buffer -> view<64x27xf16>
+  %scalars = buffer.view %uniform_source[%base] : buffer -> view<3xf16>
+  %results = buffer.view %destination[%base] : buffer -> view<64x128xf16>
+  %a = vector.load %values[%lane, 0] : view<64x27xf16> -> vector<8xf16>
+  %b = vector.load %values[%lane, 8] : view<64x27xf16> -> vector<8xf16>
+  %c = vector.load %values[%lane, 16] : view<64x27xf16> -> vector<8xf16>
+  %x = view.load %values[%lane, 24] : view<64x27xf16> -> f16
+  %y = view.load %values[%lane, 25] : view<64x27xf16> -> f16
+  %z = view.load %values[%lane, 26] : view<64x27xf16> -> f16
+  %ux = view.load %scalars[0] : view<3xf16> -> f16
+  %uy = view.load %scalars[1] : view<3xf16> -> f16
+  %uz = view.load %scalars[2] : view<3xf16> -> f16
+  %varying_column = index.constant 0 : index
+  %uniform_column = index.constant 64 : index
+  func.call @fma_f16_masks(%a, %b, %c, %x, %y, %z, %results, %lane, %varying_column) : (vector<8xf16>, vector<8xf16>, vector<8xf16>, f16, f16, f16, view<64x128xf16>, index, index)
+  func.call @fma_f16_masks(%a, %b, %c, %ux, %uy, %uz, %results, %lane, %uniform_column) : (vector<8xf16>, vector<8xf16>, vector<8xf16>, f16, f16, f16, view<64x128xf16>, index, index)
+  kernel.return
+}
+
+func.def @broadcast_fma_f16_oracle(%input: buffer, %parameters: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %values = buffer.view %input[%base] : buffer -> view<64x27xf16>
+  %scalars = buffer.view %parameters[%base] : buffer -> view<3xf16>
+  %results = buffer.view %output[%base] : buffer -> view<64x128xf16>
+  %ux = view.load %scalars[0] : view<3xf16> -> f16
+  %uy = view.load %scalars[1] : view<3xf16> -> f16
+  %uz = view.load %scalars[2] : view<3xf16> -> f16
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  %c2 = index.constant 2 : index
+  %c8 = index.constant 8 : index
+  %c16 = index.constant 16 : index
+  %c64 = index.constant 64 : index
+  %c0_i32 = scalar.constant 0 : i32
+  %first_bit = scalar.constant 1 : i32
+  %second_bit = scalar.constant 2 : i32
+  %third_bit = scalar.constant 4 : i32
+  scf.for %lane = [%c0 to %c64 step %c1] {
+    %x = view.load %values[%lane, 24] : view<64x27xf16> -> f16
+    %y = view.load %values[%lane, 25] : view<64x27xf16> -> f16
+    %z = view.load %values[%lane, 26] : view<64x27xf16> -> f16
+    scf.for %uniform = [%c0 to %c2 step %c1] {
+      %is_uniform = index.cmp ne, %uniform, %c0 : index
+      %scalar_a = scf.select %is_uniform, %ux, %x : f16
+      %scalar_b = scf.select %is_uniform, %uy, %y : f16
+      %scalar_c = scf.select %is_uniform, %uz, %z : f16
+      %group_base = index.mul %uniform, %c64 : index
+      scf.for %mask = [%c0 to %c8 step %c1] {
+        %mask_word = index.cast %mask : index to i32
+        %a_bit = scalar.andi %mask_word, %first_bit : i32
+        %b_bit = scalar.andi %mask_word, %second_bit : i32
+        %c_bit = scalar.andi %mask_word, %third_bit : i32
+        %broadcast_a = scalar.cmpi ne, %a_bit, %c0_i32 : i32
+        %broadcast_b = scalar.cmpi ne, %b_bit, %c0_i32 : i32
+        %broadcast_c = scalar.cmpi ne, %c_bit, %c0_i32 : i32
+        %mask_base = index.mul %mask, %c8 : index
+        %result_base = index.add %group_base, %mask_base : index
+        scf.for %component = [%c0 to %c8 step %c1] {
+          %b_index = index.add %component, %c8 : index
+          %c_index = index.add %component, %c16 : index
+          %vector_a = view.load %values[%lane, %component] : view<64x27xf16> -> f16
+          %vector_b = view.load %values[%lane, %b_index] : view<64x27xf16> -> f16
+          %vector_c = view.load %values[%lane, %c_index] : view<64x27xf16> -> f16
+          %a = scf.select %broadcast_a, %scalar_a, %vector_a : f16
+          %b = scf.select %broadcast_b, %scalar_b, %vector_b : f16
+          %c = scf.select %broadcast_c, %scalar_c, %vector_c : f16
+          %wide_a = scalar.extf %a : f16 to f64
+          %wide_b = scalar.extf %b : f16 to f64
+          %wide_c = scalar.extf %c : f16 to f64
+          %wide_result = scalar.fmaf %wide_a, %wide_b, %wide_c : f64
+          %result = scalar.fptrunc %wide_result : f64 to f16
+          %column = index.add %result_base, %component : index
+          view.store %result, %results[%lane, %column] : f16, view<64x128xf16>
+        }
+      }
+    }
+  }
+  func.return
+}
+
+check.scenario @broadcast_fma_f16_values {
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %input_entropy = check.entropy.fork %entropy name("input") : check.entropy
+    %parameter_entropy = check.entropy.fork %entropy name("parameters") : check.entropy
+    %input_seed = check.entropy.read %input_entropy[%trial] : check.entropy -> i64
+    %parameter_seed = check.entropy.read %parameter_entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%input_seed) range(-4.0 to -0.25) : tensor<64x27xf16>
+    %parameters = check.generate.random.uniform seed(%parameter_seed) range(0.25 to 2.0) : tensor<3xf16>
+    %storage = check.generate.fill value(-123.5) : tensor<8196xf16>
+    %output = check.tensor.view %storage offset(4) : tensor<8196xf16> -> tensor<64x128xf16>
+    check.compare<@broadcast_fma_f16, @broadcast_fma_f16_oracle>(%input, %parameters, %output) : (tensor<64x27xf16>, tensor<3xf16>, tensor<64x128xf16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64x27xf16>
+      check.expect.bitwise actual(%parameters) expected(%parameters) : tensor<3xf16>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<8196xf16>
+    }
+  }
+  check.return
+}
+
+// BF16 broadcasts use the same source-mask matrix. The input magnitudes
+// stay between 1/4 and 4, so F64 represents each product and sum exactly;
+// only the final narrowing rounds. The oracle shares no packed arithmetic.
+func.def inline @fma_bf16_masks(%a: vector<8xbf16>, %b: vector<8xbf16>, %c: vector<8xbf16>, %x: bf16, %y: bf16, %z: bf16, %output: view<64x128xbf16>, %lane: index, %column: index) {
+  %xs = vector.splat %x : vector<8xbf16>
+  %ys = vector.splat %y : vector<8xbf16>
+  %zs = vector.splat %z : vector<8xbf16>
+  %result0 = vector.fmaf %a, %b, %c : vector<8xbf16>
+  %offset0 = index.constant 0 : index
+  %column0 = index.add %column, %offset0 : index
+  vector.store %result0, %output[%lane, %column0] : vector<8xbf16>, view<64x128xbf16>
+  %result1 = vector.fmaf %xs, %b, %c : vector<8xbf16>
+  %offset1 = index.constant 8 : index
+  %column1 = index.add %column, %offset1 : index
+  vector.store %result1, %output[%lane, %column1] : vector<8xbf16>, view<64x128xbf16>
+  %result2 = vector.fmaf %a, %ys, %c : vector<8xbf16>
+  %offset2 = index.constant 16 : index
+  %column2 = index.add %column, %offset2 : index
+  vector.store %result2, %output[%lane, %column2] : vector<8xbf16>, view<64x128xbf16>
+  %result3 = vector.fmaf %xs, %ys, %c : vector<8xbf16>
+  %offset3 = index.constant 24 : index
+  %column3 = index.add %column, %offset3 : index
+  vector.store %result3, %output[%lane, %column3] : vector<8xbf16>, view<64x128xbf16>
+  %result4 = vector.fmaf %a, %b, %zs : vector<8xbf16>
+  %offset4 = index.constant 32 : index
+  %column4 = index.add %column, %offset4 : index
+  vector.store %result4, %output[%lane, %column4] : vector<8xbf16>, view<64x128xbf16>
+  %result5 = vector.fmaf %xs, %b, %zs : vector<8xbf16>
+  %offset5 = index.constant 40 : index
+  %column5 = index.add %column, %offset5 : index
+  vector.store %result5, %output[%lane, %column5] : vector<8xbf16>, view<64x128xbf16>
+  %result6 = vector.fmaf %a, %ys, %zs : vector<8xbf16>
+  %offset6 = index.constant 48 : index
+  %column6 = index.add %column, %offset6 : index
+  vector.store %result6, %output[%lane, %column6] : vector<8xbf16>, view<64x128xbf16>
+  %result7 = vector.fmaf %xs, %ys, %zs : vector<8xbf16>
+  %offset7 = index.constant 56 : index
+  %column7 = index.add %column, %offset7 : index
+  vector.store %result7, %output[%lane, %column7] : vector<8xbf16>, view<64x128xbf16>
+  func.return
+}
+
+kernel.def @broadcast_fma_bf16() {
+  %c1 = index.constant 1 : index
+  %width = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%width, %c1, %c1) : index
+} launch(%input: buffer, %parameters: buffer, %output: buffer) {
+  %source, %uniform_source, %destination = buffer.assume.noalias %input, %parameters, %output : buffer, buffer, buffer
+  %base = index.constant 0 : offset
+  %lane = kernel.workitem.id<x> : index
+  %values = buffer.view %source[%base] : buffer -> view<64x27xbf16>
+  %scalars = buffer.view %uniform_source[%base] : buffer -> view<3xbf16>
+  %results = buffer.view %destination[%base] : buffer -> view<64x128xbf16>
+  %a = vector.load %values[%lane, 0] : view<64x27xbf16> -> vector<8xbf16>
+  %b = vector.load %values[%lane, 8] : view<64x27xbf16> -> vector<8xbf16>
+  %c = vector.load %values[%lane, 16] : view<64x27xbf16> -> vector<8xbf16>
+  %x = view.load %values[%lane, 24] : view<64x27xbf16> -> bf16
+  %y = view.load %values[%lane, 25] : view<64x27xbf16> -> bf16
+  %z = view.load %values[%lane, 26] : view<64x27xbf16> -> bf16
+  %ux = view.load %scalars[0] : view<3xbf16> -> bf16
+  %uy = view.load %scalars[1] : view<3xbf16> -> bf16
+  %uz = view.load %scalars[2] : view<3xbf16> -> bf16
+  %varying_column = index.constant 0 : index
+  %uniform_column = index.constant 64 : index
+  func.call @fma_bf16_masks(%a, %b, %c, %x, %y, %z, %results, %lane, %varying_column) : (vector<8xbf16>, vector<8xbf16>, vector<8xbf16>, bf16, bf16, bf16, view<64x128xbf16>, index, index)
+  func.call @fma_bf16_masks(%a, %b, %c, %ux, %uy, %uz, %results, %lane, %uniform_column) : (vector<8xbf16>, vector<8xbf16>, vector<8xbf16>, bf16, bf16, bf16, view<64x128xbf16>, index, index)
+  kernel.return
+}
+
+func.def @broadcast_fma_bf16_oracle(%input: buffer, %parameters: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %values = buffer.view %input[%base] : buffer -> view<64x27xbf16>
+  %scalars = buffer.view %parameters[%base] : buffer -> view<3xbf16>
+  %results = buffer.view %output[%base] : buffer -> view<64x128xbf16>
+  %ux = view.load %scalars[0] : view<3xbf16> -> bf16
+  %uy = view.load %scalars[1] : view<3xbf16> -> bf16
+  %uz = view.load %scalars[2] : view<3xbf16> -> bf16
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  %c2 = index.constant 2 : index
+  %c8 = index.constant 8 : index
+  %c16 = index.constant 16 : index
+  %c64 = index.constant 64 : index
+  %c0_i32 = scalar.constant 0 : i32
+  %first_bit = scalar.constant 1 : i32
+  %second_bit = scalar.constant 2 : i32
+  %third_bit = scalar.constant 4 : i32
+  scf.for %lane = [%c0 to %c64 step %c1] {
+    %x = view.load %values[%lane, 24] : view<64x27xbf16> -> bf16
+    %y = view.load %values[%lane, 25] : view<64x27xbf16> -> bf16
+    %z = view.load %values[%lane, 26] : view<64x27xbf16> -> bf16
+    scf.for %uniform = [%c0 to %c2 step %c1] {
+      %is_uniform = index.cmp ne, %uniform, %c0 : index
+      %scalar_a = scf.select %is_uniform, %ux, %x : bf16
+      %scalar_b = scf.select %is_uniform, %uy, %y : bf16
+      %scalar_c = scf.select %is_uniform, %uz, %z : bf16
+      %group_base = index.mul %uniform, %c64 : index
+      scf.for %mask = [%c0 to %c8 step %c1] {
+        %mask_word = index.cast %mask : index to i32
+        %a_bit = scalar.andi %mask_word, %first_bit : i32
+        %b_bit = scalar.andi %mask_word, %second_bit : i32
+        %c_bit = scalar.andi %mask_word, %third_bit : i32
+        %broadcast_a = scalar.cmpi ne, %a_bit, %c0_i32 : i32
+        %broadcast_b = scalar.cmpi ne, %b_bit, %c0_i32 : i32
+        %broadcast_c = scalar.cmpi ne, %c_bit, %c0_i32 : i32
+        %mask_base = index.mul %mask, %c8 : index
+        %result_base = index.add %group_base, %mask_base : index
+        scf.for %component = [%c0 to %c8 step %c1] {
+          %b_index = index.add %component, %c8 : index
+          %c_index = index.add %component, %c16 : index
+          %vector_a = view.load %values[%lane, %component] : view<64x27xbf16> -> bf16
+          %vector_b = view.load %values[%lane, %b_index] : view<64x27xbf16> -> bf16
+          %vector_c = view.load %values[%lane, %c_index] : view<64x27xbf16> -> bf16
+          %a = scf.select %broadcast_a, %scalar_a, %vector_a : bf16
+          %b = scf.select %broadcast_b, %scalar_b, %vector_b : bf16
+          %c = scf.select %broadcast_c, %scalar_c, %vector_c : bf16
+          %wide_a = scalar.extf %a : bf16 to f64
+          %wide_b = scalar.extf %b : bf16 to f64
+          %wide_c = scalar.extf %c : bf16 to f64
+          %wide_result = scalar.fmaf %wide_a, %wide_b, %wide_c : f64
+          %result = scalar.fptrunc %wide_result : f64 to bf16
+          %column = index.add %result_base, %component : index
+          view.store %result, %results[%lane, %column] : bf16, view<64x128xbf16>
+        }
+      }
+    }
+  }
+  func.return
+}
+
+check.scenario @broadcast_fma_bf16_values {
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %input_entropy = check.entropy.fork %entropy name("input") : check.entropy
+    %parameter_entropy = check.entropy.fork %entropy name("parameters") : check.entropy
+    %input_seed = check.entropy.read %input_entropy[%trial] : check.entropy -> i64
+    %parameter_seed = check.entropy.read %parameter_entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%input_seed) range(-4.0 to -0.25) : tensor<64x27xbf16>
+    %parameters = check.generate.random.uniform seed(%parameter_seed) range(0.25 to 2.0) : tensor<3xbf16>
+    %storage = check.generate.fill value(-123.5) : tensor<8196xbf16>
+    %output = check.tensor.view %storage offset(4) : tensor<8196xbf16> -> tensor<64x128xbf16>
+    check.compare<@broadcast_fma_bf16, @broadcast_fma_bf16_oracle>(%input, %parameters, %output) : (tensor<64x27xbf16>, tensor<3xbf16>, tensor<64x128xbf16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64x27xbf16>
+      check.expect.bitwise actual(%parameters) expected(%parameters) : tensor<3xbf16>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<8196xbf16>
+    }
+  }
+  check.return
+}
+
+// I16 broadcasts cover every source mask and wrapping arithmetic. The oracle
+// widens signed inputs to I32, where the product and sum cannot overflow, then
+// truncates once to recover the low sixteen result bits.
+func.def inline @fma_i16_masks(%a: vector<8xi16>, %b: vector<8xi16>, %c: vector<8xi16>, %x: i16, %y: i16, %z: i16, %output: view<64x128xi16>, %lane: index, %column: index) {
+  %xs = vector.splat %x : vector<8xi16>
+  %ys = vector.splat %y : vector<8xi16>
+  %zs = vector.splat %z : vector<8xi16>
+  %result0 = vector.fmai %a, %b, %c : vector<8xi16>
+  %offset0 = index.constant 0 : index
+  %column0 = index.add %column, %offset0 : index
+  vector.store %result0, %output[%lane, %column0] : vector<8xi16>, view<64x128xi16>
+  %result1 = vector.fmai %xs, %b, %c : vector<8xi16>
+  %offset1 = index.constant 8 : index
+  %column1 = index.add %column, %offset1 : index
+  vector.store %result1, %output[%lane, %column1] : vector<8xi16>, view<64x128xi16>
+  %result2 = vector.fmai %a, %ys, %c : vector<8xi16>
+  %offset2 = index.constant 16 : index
+  %column2 = index.add %column, %offset2 : index
+  vector.store %result2, %output[%lane, %column2] : vector<8xi16>, view<64x128xi16>
+  %result3 = vector.fmai %xs, %ys, %c : vector<8xi16>
+  %offset3 = index.constant 24 : index
+  %column3 = index.add %column, %offset3 : index
+  vector.store %result3, %output[%lane, %column3] : vector<8xi16>, view<64x128xi16>
+  %result4 = vector.fmai %a, %b, %zs : vector<8xi16>
+  %offset4 = index.constant 32 : index
+  %column4 = index.add %column, %offset4 : index
+  vector.store %result4, %output[%lane, %column4] : vector<8xi16>, view<64x128xi16>
+  %result5 = vector.fmai %xs, %b, %zs : vector<8xi16>
+  %offset5 = index.constant 40 : index
+  %column5 = index.add %column, %offset5 : index
+  vector.store %result5, %output[%lane, %column5] : vector<8xi16>, view<64x128xi16>
+  %result6 = vector.fmai %a, %ys, %zs : vector<8xi16>
+  %offset6 = index.constant 48 : index
+  %column6 = index.add %column, %offset6 : index
+  vector.store %result6, %output[%lane, %column6] : vector<8xi16>, view<64x128xi16>
+  %result7 = vector.fmai %xs, %ys, %zs : vector<8xi16>
+  %offset7 = index.constant 56 : index
+  %column7 = index.add %column, %offset7 : index
+  vector.store %result7, %output[%lane, %column7] : vector<8xi16>, view<64x128xi16>
+  func.return
+}
+
+kernel.def @broadcast_fma_i16() {
+  %c1 = index.constant 1 : index
+  %width = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%width, %c1, %c1) : index
+} launch(%input: buffer, %parameters: buffer, %output: buffer) {
+  %source, %uniform_source, %destination = buffer.assume.noalias %input, %parameters, %output : buffer, buffer, buffer
+  %base = index.constant 0 : offset
+  %lane = kernel.workitem.id<x> : index
+  %values = buffer.view %source[%base] : buffer -> view<64x27xi16>
+  %scalars = buffer.view %uniform_source[%base] : buffer -> view<3xi16>
+  %results = buffer.view %destination[%base] : buffer -> view<64x128xi16>
+  %a = vector.load %values[%lane, 0] : view<64x27xi16> -> vector<8xi16>
+  %b = vector.load %values[%lane, 8] : view<64x27xi16> -> vector<8xi16>
+  %c = vector.load %values[%lane, 16] : view<64x27xi16> -> vector<8xi16>
+  %x = view.load %values[%lane, 24] : view<64x27xi16> -> i16
+  %y = view.load %values[%lane, 25] : view<64x27xi16> -> i16
+  %z = view.load %values[%lane, 26] : view<64x27xi16> -> i16
+  %ux = view.load %scalars[0] : view<3xi16> -> i16
+  %uy = view.load %scalars[1] : view<3xi16> -> i16
+  %uz = view.load %scalars[2] : view<3xi16> -> i16
+  %varying_column = index.constant 0 : index
+  %uniform_column = index.constant 64 : index
+  func.call @fma_i16_masks(%a, %b, %c, %x, %y, %z, %results, %lane, %varying_column) : (vector<8xi16>, vector<8xi16>, vector<8xi16>, i16, i16, i16, view<64x128xi16>, index, index)
+  func.call @fma_i16_masks(%a, %b, %c, %ux, %uy, %uz, %results, %lane, %uniform_column) : (vector<8xi16>, vector<8xi16>, vector<8xi16>, i16, i16, i16, view<64x128xi16>, index, index)
+  kernel.return
+}
+
+func.def @broadcast_fma_i16_oracle(%input: buffer, %parameters: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %values = buffer.view %input[%base] : buffer -> view<64x27xi16>
+  %scalars = buffer.view %parameters[%base] : buffer -> view<3xi16>
+  %results = buffer.view %output[%base] : buffer -> view<64x128xi16>
+  %ux = view.load %scalars[0] : view<3xi16> -> i16
+  %uy = view.load %scalars[1] : view<3xi16> -> i16
+  %uz = view.load %scalars[2] : view<3xi16> -> i16
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  %c2 = index.constant 2 : index
+  %c8 = index.constant 8 : index
+  %c16 = index.constant 16 : index
+  %c64 = index.constant 64 : index
+  %c0_i32 = scalar.constant 0 : i32
+  %first_bit = scalar.constant 1 : i32
+  %second_bit = scalar.constant 2 : i32
+  %third_bit = scalar.constant 4 : i32
+  scf.for %lane = [%c0 to %c64 step %c1] {
+    %x = view.load %values[%lane, 24] : view<64x27xi16> -> i16
+    %y = view.load %values[%lane, 25] : view<64x27xi16> -> i16
+    %z = view.load %values[%lane, 26] : view<64x27xi16> -> i16
+    scf.for %uniform = [%c0 to %c2 step %c1] {
+      %is_uniform = index.cmp ne, %uniform, %c0 : index
+      %scalar_a = scf.select %is_uniform, %ux, %x : i16
+      %scalar_b = scf.select %is_uniform, %uy, %y : i16
+      %scalar_c = scf.select %is_uniform, %uz, %z : i16
+      %group_base = index.mul %uniform, %c64 : index
+      scf.for %mask = [%c0 to %c8 step %c1] {
+        %mask_word = index.cast %mask : index to i32
+        %a_bit = scalar.andi %mask_word, %first_bit : i32
+        %b_bit = scalar.andi %mask_word, %second_bit : i32
+        %c_bit = scalar.andi %mask_word, %third_bit : i32
+        %broadcast_a = scalar.cmpi ne, %a_bit, %c0_i32 : i32
+        %broadcast_b = scalar.cmpi ne, %b_bit, %c0_i32 : i32
+        %broadcast_c = scalar.cmpi ne, %c_bit, %c0_i32 : i32
+        %mask_base = index.mul %mask, %c8 : index
+        %result_base = index.add %group_base, %mask_base : index
+        scf.for %component = [%c0 to %c8 step %c1] {
+          %b_index = index.add %component, %c8 : index
+          %c_index = index.add %component, %c16 : index
+          %vector_a = view.load %values[%lane, %component] : view<64x27xi16> -> i16
+          %vector_b = view.load %values[%lane, %b_index] : view<64x27xi16> -> i16
+          %vector_c = view.load %values[%lane, %c_index] : view<64x27xi16> -> i16
+          %a = scf.select %broadcast_a, %scalar_a, %vector_a : i16
+          %b = scf.select %broadcast_b, %scalar_b, %vector_b : i16
+          %c = scf.select %broadcast_c, %scalar_c, %vector_c : i16
+          %wide_a = scalar.extsi %a : i16 to i32
+          %wide_b = scalar.extsi %b : i16 to i32
+          %wide_c = scalar.extsi %c : i16 to i32
+          %product = scalar.muli %wide_a, %wide_b : i32
+          %sum = scalar.addi %product, %wide_c : i32
+          %result = scalar.trunci %sum : i32 to i16
+          %column = index.add %result_base, %component : index
+          view.store %result, %results[%lane, %column] : i16, view<64x128xi16>
+        }
+      }
+    }
+  }
+  func.return
+}
+
+check.scenario @broadcast_fma_i16_values {
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %input_entropy = check.entropy.fork %entropy name("input") : check.entropy
+    %parameter_entropy = check.entropy.fork %entropy name("parameters") : check.entropy
+    %input_seed = check.entropy.read %input_entropy[%trial] : check.entropy -> i64
+    %parameter_seed = check.entropy.read %parameter_entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%input_seed) range(-32768 to 32767) : tensor<64x27xi16>
+    %parameters = check.generate.random.uniform seed(%parameter_seed) range(-32768 to 32767) : tensor<3xi16>
+    %storage = check.generate.fill value(-123) : tensor<8196xi16>
+    %output = check.tensor.view %storage offset(4) : tensor<8196xi16> -> tensor<64x128xi16>
+    check.compare<@broadcast_fma_i16, @broadcast_fma_i16_oracle>(%input, %parameters, %output) : (tensor<64x27xi16>, tensor<3xi16>, tensor<64x128xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64x27xi16>
+      check.expect.bitwise actual(%parameters) expected(%parameters) : tensor<3xi16>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<8196xi16>
+    }
+  }
+  check.return
+}

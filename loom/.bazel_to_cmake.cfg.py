@@ -256,7 +256,9 @@ class LoomBuildFileFunctions(
             + ")\n\n"
         )
 
-    def loom_target_set(self, name, targets, allow_empty=False, **kwargs):
+    def loom_target_set(
+        self, name, targets, allow_empty=False, visibility=None, **kwargs
+    ):
         self._check_no_unhandled_kwargs("loom_target_set", kwargs)
         targets_block, variable_block = self._convert_platform_select_deps(
             name,
