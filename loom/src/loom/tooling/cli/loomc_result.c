@@ -1,0 +1,119 @@
+// Copyright 2026 The IREE Authors
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+#include "loom/tooling/cli/loomc_result.h"
+
+#include "loomc/iree.h"
+#include "loomc/source.h"
+
+static const char* loom_tooling_cli_diagnostic_severity_name(
+    loomc_diagnostic_severity_t severity) {
+  switch (severity) {
+    case LOOMC_DIAGNOSTIC_SEVERITY_NOTE:
+      return "note";
+    case LOOMC_DIAGNOSTIC_SEVERITY_WARNING:
+      return "warning";
+    case LOOMC_DIAGNOSTIC_SEVERITY_ERROR:
+      return "error";
+    default:
+      return "diagnostic";
+  }
+}
+
+static iree_status_t loom_tooling_cli_print_loomc_source_range(
+    FILE* file, const loomc_source_range_t* range,
+    const loom_tooling_source_path_options_t* source_path_options,
+    iree_allocator_t host_allocator) {
+  if (range == NULL || range->source == NULL) {
+    return iree_ok_status();
+  }
+  const iree_string_view_t identifier =
+      iree_string_view_from_loomc(loomc_source_identifier(range->source));
+  if (iree_string_view_is_empty(identifier)) {
+    return iree_ok_status();
+  }
+  iree_string_view_t display_identifier = identifier;
+  char* display_identifier_storage = NULL;
+  if (source_path_options != NULL) {
+    IREE_RETURN_IF_ERROR(loom_tooling_source_path_remap(
+        identifier, source_path_options, host_allocator, &display_identifier,
+        &display_identifier_storage));
+  }
+  fprintf(file, "%.*s", (int)display_identifier.size, display_identifier.data);
+  iree_allocator_free(host_allocator, display_identifier_storage);
+  if (range->start_line != 0) {
+    fprintf(file, ":%u", range->start_line);
+    if (range->start_column != 0) {
+      fprintf(file, ":%u", range->start_column);
+    }
+  }
+  fputs(": ", file);
+  return iree_ok_status();
+}
+
+static iree_status_t loom_tooling_cli_print_loomc_diagnostic(
+    FILE* file, const loomc_diagnostic_t* diagnostic,
+    const loom_tooling_source_path_options_t* source_path_options,
+    iree_allocator_t host_allocator) {
+  const bool requires_structured_rendering =
+      source_path_options != NULL &&
+      source_path_options->prefix_maps.count != 0;
+  if (!requires_structured_rendering &&
+      !loomc_string_view_is_empty(diagnostic->formatted_text)) {
+    fwrite(diagnostic->formatted_text.data, 1, diagnostic->formatted_text.size,
+           file);
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(loom_tooling_cli_print_loomc_source_range(
+      file, &diagnostic->range, source_path_options, host_allocator));
+  fprintf(file, "%s",
+          loom_tooling_cli_diagnostic_severity_name(diagnostic->severity));
+  if (!loomc_string_view_is_empty(diagnostic->code)) {
+    fprintf(file, " [%.*s]", (int)diagnostic->code.size, diagnostic->code.data);
+  }
+  fprintf(file, ": %.*s\n", (int)diagnostic->message.size,
+          diagnostic->message.data);
+  for (loomc_host_size_t i = 0; i < diagnostic->related_location_count; ++i) {
+    const loomc_diagnostic_related_location_t* related =
+        &diagnostic->related_locations[i];
+    IREE_RETURN_IF_ERROR(loom_tooling_cli_print_loomc_source_range(
+        file, &related->range, source_path_options, host_allocator));
+    fprintf(file, "note: %.*s\n", (int)related->label.size,
+            related->label.data);
+  }
+  if (diagnostic->related_location_omitted_count != 0) {
+    fprintf(
+        file, "note: %zu additional related location%s omitted\n",
+        (size_t)diagnostic->related_location_omitted_count,
+        diagnostic->related_location_omitted_count == 1 ? " was" : "s were");
+  }
+  return iree_ok_status();
+}
+
+iree_status_t loom_tooling_cli_print_loomc_result(
+    FILE* file, const loomc_result_t* result,
+    const loom_tooling_source_path_options_t* source_path_options,
+    bool* out_succeeded, iree_allocator_t host_allocator) {
+  if (result == NULL) {
+    return iree_make_status(IREE_STATUS_INTERNAL,
+                            "compiler operation returned no result");
+  }
+  for (loomc_host_size_t i = 0; i < loomc_result_diagnostic_count(result);
+       ++i) {
+    const loomc_diagnostic_t* diagnostic =
+        loomc_result_diagnostic_at(result, i);
+    if (diagnostic != NULL) {
+      IREE_RETURN_IF_ERROR(loom_tooling_cli_print_loomc_diagnostic(
+          file, diagnostic, source_path_options, host_allocator));
+    }
+  }
+  if (ferror(file)) {
+    return iree_make_status(IREE_STATUS_UNKNOWN,
+                            "failed to write compiler diagnostics");
+  }
+  *out_succeeded = loomc_result_succeeded(result);
+  return iree_ok_status();
+}

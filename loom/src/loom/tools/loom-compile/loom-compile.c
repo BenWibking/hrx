@@ -13,6 +13,7 @@
 #include "loom/sanitizer/options.h"
 #include "loom/tooling/cli/help.h"
 #include "loom/tooling/cli/loomc_options.h"
+#include "loom/tooling/cli/loomc_result.h"
 #include "loom/tooling/config/config.h"
 #include "loom/tooling/io/file.h"
 #include "loom/tooling/io/source_path.h"
@@ -99,87 +100,6 @@ static iree_string_view_t loom_compile_input_identifier(
     iree_string_view_t input_path) {
   return loom_tooling_file_path_is_stdio(input_path) ? IREE_SV("<stdin>")
                                                      : input_path;
-}
-
-static const char* loom_compile_diagnostic_severity_name(
-    loomc_diagnostic_severity_t severity) {
-  switch (severity) {
-    case LOOMC_DIAGNOSTIC_SEVERITY_NOTE:
-      return "note";
-    case LOOMC_DIAGNOSTIC_SEVERITY_WARNING:
-      return "warning";
-    case LOOMC_DIAGNOSTIC_SEVERITY_ERROR:
-      return "error";
-    default:
-      return "diagnostic";
-  }
-}
-
-static void loom_compile_print_source_range(FILE* file,
-                                            const loomc_source_range_t* range) {
-  if (!range || !range->source) {
-    return;
-  }
-  const loomc_string_view_t identifier = loomc_source_identifier(range->source);
-  if (loomc_string_view_is_empty(identifier)) {
-    return;
-  }
-  fprintf(file, "%.*s", (int)identifier.size, identifier.data);
-  if (range->start_line != 0) {
-    fprintf(file, ":%u", range->start_line);
-    if (range->start_column != 0) {
-      fprintf(file, ":%u", range->start_column);
-    }
-  }
-  fputs(": ", file);
-}
-
-static void loom_compile_print_diagnostic(
-    FILE* file, const loomc_diagnostic_t* diagnostic) {
-  if (!loomc_string_view_is_empty(diagnostic->formatted_text)) {
-    fwrite(diagnostic->formatted_text.data, 1, diagnostic->formatted_text.size,
-           file);
-    return;
-  }
-  loom_compile_print_source_range(file, &diagnostic->range);
-  fprintf(file, "%s",
-          loom_compile_diagnostic_severity_name(diagnostic->severity));
-  if (!loomc_string_view_is_empty(diagnostic->code)) {
-    fprintf(file, " [%.*s]", (int)diagnostic->code.size, diagnostic->code.data);
-  }
-  fprintf(file, ": %.*s\n", (int)diagnostic->message.size,
-          diagnostic->message.data);
-  for (loomc_host_size_t i = 0; i < diagnostic->related_location_count; ++i) {
-    const loomc_diagnostic_related_location_t* related =
-        &diagnostic->related_locations[i];
-    loom_compile_print_source_range(file, &related->range);
-    fprintf(file, "note: %.*s\n", (int)related->label.size,
-            related->label.data);
-  }
-  if (diagnostic->related_location_omitted_count != 0) {
-    fprintf(
-        file, "note: %zu additional related location%s omitted\n",
-        (size_t)diagnostic->related_location_omitted_count,
-        diagnostic->related_location_omitted_count == 1 ? " was" : "s were");
-  }
-}
-
-static iree_status_t loom_compile_print_result(const loomc_result_t* result,
-                                               bool* out_succeeded) {
-  for (loomc_host_size_t i = 0; i < loomc_result_diagnostic_count(result);
-       ++i) {
-    const loomc_diagnostic_t* diagnostic =
-        loomc_result_diagnostic_at(result, i);
-    if (diagnostic) {
-      loom_compile_print_diagnostic(stderr, diagnostic);
-    }
-  }
-  if (ferror(stderr)) {
-    return iree_make_status(IREE_STATUS_UNKNOWN,
-                            "failed to write compiler diagnostics");
-  }
-  *out_succeeded = loomc_result_succeeded(result);
-  return iree_ok_status();
 }
 
 static iree_status_t loom_compile_parse_report_options(
@@ -787,7 +707,9 @@ int main(int argc, char** argv) {
   }
   if (iree_status_is_ok(status)) {
     bool parse_succeeded = false;
-    status = loom_compile_print_result(result, &parse_succeeded);
+    status = loom_tooling_cli_print_loomc_result(stderr, result,
+                                                 /*source_path_options=*/NULL,
+                                                 &parse_succeeded, allocator);
     if (iree_status_is_ok(status) && !parse_succeeded) {
       exit_code = 1;
     }
@@ -808,7 +730,9 @@ int main(int argc, char** argv) {
   }
   if (iree_status_is_ok(status) && result) {
     bool preparation_succeeded = false;
-    status = loom_compile_print_result(result, &preparation_succeeded);
+    status = loom_tooling_cli_print_loomc_result(
+        stderr, result, /*source_path_options=*/NULL, &preparation_succeeded,
+        allocator);
     if (iree_status_is_ok(status) && !preparation_succeeded) {
       exit_code = 1;
     }
@@ -884,7 +808,9 @@ int main(int argc, char** argv) {
 
   if (iree_status_is_ok(status) && exit_code == 0) {
     bool compile_succeeded = false;
-    status = loom_compile_print_result(result, &compile_succeeded);
+    status = loom_tooling_cli_print_loomc_result(stderr, result,
+                                                 /*source_path_options=*/NULL,
+                                                 &compile_succeeded, allocator);
     loom_compile_artifacts_t artifacts = {0};
     if (iree_status_is_ok(status)) {
       status = loom_compile_select_artifacts(result, &artifacts);

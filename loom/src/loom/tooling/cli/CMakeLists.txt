@@ -37,4 +37,18 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_library(
+  NAME
+    loomc_result
+  HDRS
+    "loomc_result.h"
+  SRCS
+    "loomc_result.c"
+  DEPS
+    iree::base
+    loom::binding::c::loomc
+    loom::tooling::io::source_path
+  PUBLIC
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

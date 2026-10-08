@@ -33,3 +33,14 @@ loom_cc_library(
         "//runtime/src/iree/base",
     ],
 )
+
+loom_cc_library(
+    name = "loomc_result",
+    srcs = ["loomc_result.c"],
+    hdrs = ["loomc_result.h"],
+    deps = [
+        "//loom/binding/c:loomc",
+        "//loom/src/loom/tooling/io:source_path",
+        "//runtime/src/iree/base",
+    ],
+)

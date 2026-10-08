@@ -66,6 +66,23 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_library(
+  NAME
+    loomc
+  HDRS
+    "loomc.h"
+  SRCS
+    "loomc.c"
+  DEPS
+    ::input
+    iree::base
+    iree::base::internal::arena
+    loom::binding::c::loomc
+    loom::tooling::io::file
+    loom::tooling::io::source_path
+  PUBLIC
+)
+
 loom_cc_test(
   NAME
     input_test
