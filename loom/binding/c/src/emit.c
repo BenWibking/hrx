@@ -875,8 +875,8 @@ loomc_status_t loomc_emit_transaction_emit(
          binding != NULL && loomc_status_is_ok(status);
          binding = binding->next) {
       const loom_target_compile_report_config_binding_row_t row = {
-          .key = binding->binding.key,
-          .value = binding->binding.value,
+          .key = binding->key,
+          .value = binding->value,
       };
       status = loomc_status_from_iree(
           loom_target_compile_report_record_config_binding_row(

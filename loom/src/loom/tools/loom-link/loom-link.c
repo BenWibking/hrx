@@ -17,6 +17,9 @@
 #include "iree/io/vec_stream.h"
 #include "loom/codegen/low/repr.h"
 #include "loom/codegen/low/text_asm.h"
+#include "loom/config/application.h"
+#include "loom/config/text.h"
+#include "loom/config/text_binding.h"
 #include "loom/error/diagnostic.h"
 #include "loom/error/source.h"
 #include "loom/format/bytecode/writer.h"
@@ -167,7 +170,7 @@ typedef struct loom_link_cli_index_t {
 
 typedef struct loom_link_cli_prepare_state_t {
   // Compile-time configuration applied before each selection query.
-  const loom_tooling_config_set_t* config_set;
+  const loom_config_text_binding_set_t* config_set;
   // Configured target environment used to project the selected profile.
   const loom_target_environment_t* target_environment;
   // Homogeneous target profile applied to every kernel entry, if any.
@@ -285,33 +288,33 @@ static iree_status_t loom_link_cli_resolve_plan_mode(
 }
 
 static iree_status_t loom_link_cli_append_config_flags(
-    loom_tooling_config_set_t* config_set) {
+    loom_config_text_binding_set_t* config_set) {
   iree_flag_string_list_t assignments = FLAG_config_list();
   for (iree_host_size_t i = 0; i < assignments.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_assignment(
+    IREE_RETURN_IF_ERROR(loom_tooling_config_text_binding_set_append_assignment(
         config_set, assignments.values[i]));
   }
   return iree_ok_status();
 }
 
 static iree_status_t loom_link_cli_append_config_files(
-    loom_tooling_config_set_t* config_set, iree_allocator_t allocator) {
+    loom_config_text_binding_set_t* config_set, iree_allocator_t allocator) {
   iree_flag_string_list_t paths = FLAG_config_file_list();
   for (iree_host_size_t i = 0; i < paths.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_json_file(
+    IREE_RETURN_IF_ERROR(loom_tooling_config_text_binding_set_append_json_file(
         config_set, paths.values[i], allocator));
   }
   return iree_ok_status();
 }
 
 static iree_status_t loom_link_cli_materialize_config(
-    loom_module_t* module, const loom_tooling_config_set_t* config_set,
+    loom_module_t* module, const loom_config_text_binding_set_t* config_set,
     iree_arena_block_pool_t* block_pool) {
-  loom_tooling_config_materialize_options_t options;
-  loom_tooling_config_materialize_options_initialize(&options);
-  options.config_set = config_set;
-  return loom_tooling_config_materialize_module(module, &options, block_pool,
-                                                NULL);
+  loom_config_text_materialize_options_t options;
+  loom_config_text_materialize_options_initialize(&options);
+  options.binding_set = config_set;
+  return loom_config_text_materialize_module(module, &options, block_pool,
+                                             NULL);
 }
 
 static iree_status_t loom_link_cli_select_target(
@@ -1192,8 +1195,8 @@ int main(int argc, char** argv) {
 
   loom_context_t context = {0};
   bool context_initialized = false;
-  loom_tooling_config_set_t config_set;
-  loom_tooling_config_set_initialize(allocator, &config_set);
+  loom_config_text_binding_set_t config_set;
+  loom_config_text_binding_set_initialize(allocator, &config_set);
   const loom_target_profile_t* target_profile = NULL;
   loom_link_cli_input_t* inputs = NULL;
   iree_host_size_t input_count = 0;
@@ -1363,7 +1366,7 @@ int main(int argc, char** argv) {
   }
   if (iree_status_is_ok(status) && linked_module &&
       FLAG_require_resolved_config) {
-    status = loom_tooling_config_require_resolved_module(linked_module, NULL);
+    status = loom_config_require_resolved_module(linked_module, NULL);
   }
   if (iree_status_is_ok(status) && linked_module && FLAG_verify) {
     status = loom_link_cli_verify_output(loom_source_storage_resolver(&sources),
@@ -1393,7 +1396,7 @@ int main(int argc, char** argv) {
   loom_link_index_materialization_deinitialize(&materialization);
   loom_link_cli_index_deinitialize(&link_index, allocator);
   loom_link_cli_inputs_deinitialize(inputs, input_count, allocator);
-  loom_tooling_config_set_deinitialize(&config_set);
+  loom_config_text_binding_set_deinitialize(&config_set);
   if (context_initialized) {
     loom_context_deinitialize(&context);
   }

@@ -18,8 +18,6 @@
 extern "C" {
 #endif
 
-typedef struct loom_tooling_config_set_t loom_tooling_config_set_t;
-
 // Compiler inputs shared by independently prepared Wasm scenario products.
 //
 // Each product compiles and instantiates one ordinary function during scenario
@@ -51,7 +49,6 @@ void loom_wasm_testbench_deinitialize(loom_wasm_testbench_t* testbench);
 loom_testbench_execution_profile_t loom_wasm_testbench_execution_profile(
     void* user_data, const loom_testbench_compilation_t* compilation,
     const loom_source_table_resolver_t* sources,
-    const loom_tooling_config_set_t* config_set,
     loom_diagnostic_sink_t diagnostic_sink,
     loom_testbench_compile_result_callback_t result_callback);
 

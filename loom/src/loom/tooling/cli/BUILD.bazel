@@ -28,8 +28,8 @@ loom_cc_library(
     hdrs = ["loomc_options.h"],
     deps = [
         "//loom/binding/c:loomc",
+        "//loom/src/loom/config:text_binding",
         "//loom/src/loom/sanitizer:options",
-        "//loom/src/loom/tooling/config",
         "//runtime/src/iree/base",
     ],
 )

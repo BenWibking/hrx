@@ -10,8 +10,8 @@
 #define LOOM_TOOLING_CLI_LOOMC_OPTIONS_H_
 
 #include "iree/base/api.h"
+#include "loom/config/text_binding.h"
 #include "loom/sanitizer/options.h"
-#include "loom/tooling/config/config.h"
 #include "loomc/config.h"
 #include "loomc/pass.h"
 #include "loomc/sanitizer.h"
@@ -22,9 +22,9 @@ extern "C" {
 
 // Adapts an owned command-line config set to borrowed LoomC options. The
 // returned binding array is owned by |allocator| and must be freed by the
-// caller. Binding strings continue to borrow from |config_set|.
+// caller. Binding strings continue to borrow from |text_set|.
 iree_status_t loom_tooling_cli_make_loomc_config_options(
-    const loom_tooling_config_set_t* config_set, iree_allocator_t allocator,
+    const loom_config_text_binding_set_t* text_set, iree_allocator_t allocator,
     loomc_config_binding_t** out_bindings, loomc_config_options_t* out_options);
 
 // Adapts parsed command-line sanitizer options to the LoomC descriptor used by

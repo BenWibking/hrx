@@ -25,6 +25,9 @@ loom_cc_binary(
     loom::codegen::low::text_asm
     loom::codegen::low::verify
     loom::codegen::pass_environment
+    loom::config::application
+    loom::config::text
+    loom::config::text_binding
     loom::error::diagnostic
     loom::error::json_sink
     loom::error::source

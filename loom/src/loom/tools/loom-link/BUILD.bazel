@@ -22,6 +22,9 @@ loom_cc_binary(
     deps = [
         "//loom/src/loom/codegen/low:repr",
         "//loom/src/loom/codegen/low:text_asm",
+        "//loom/src/loom/config:application",
+        "//loom/src/loom/config:text",
+        "//loom/src/loom/config:text_binding",
         "//loom/src/loom/error:diagnostic",
         "//loom/src/loom/error:source",
         "//loom/src/loom/format/bytecode:writer",
