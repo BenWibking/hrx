@@ -65,31 +65,49 @@ struct loom_value_fact_exact_lane_origin_entry_t {
 static_assert(sizeof(loom_value_fact_exact_lane_origin_entry_t) == 16,
               "exact lane origin entries must remain compact");
 
-static iree_status_t loom_value_fact_table_ensure_capacity(
-    loom_value_fact_table_t* table, iree_host_size_t capacity) {
-  if (capacity <= table->capacity) {
+static iree_status_t loom_value_fact_table_ensure_range(
+    loom_value_fact_table_t* table, loom_value_id_t first_value_id,
+    iree_host_size_t end_value_id) {
+  if (first_value_id >= table->first_value_id &&
+      end_value_id <= table->first_value_id + table->capacity) {
     return iree_ok_status();
   }
   const iree_host_size_t old_capacity = table->capacity;
+  first_value_id &= ~UINT32_C(63);
+  if (old_capacity) {
+    first_value_id = iree_min(first_value_id, table->first_value_id);
+    end_value_id = iree_max(end_value_id, table->first_value_id + old_capacity);
+  }
+  const iree_host_size_t prefix_count =
+      old_capacity ? table->first_value_id - first_value_id : 0;
   iree_host_size_t new_capacity = old_capacity;
   loom_value_facts_t* entries = table->entries;
   IREE_RETURN_IF_ERROR(iree_arena_grow_array(
-      table->arena, old_capacity, capacity, sizeof(loom_value_facts_t),
-      &new_capacity, (void**)&entries));
-  memset(entries + old_capacity, 0,
-         (new_capacity - old_capacity) * sizeof(loom_value_facts_t));
+      table->arena, 0, end_value_id - first_value_id,
+      sizeof(loom_value_facts_t), &new_capacity, (void**)&entries));
+  memset(entries, 0, prefix_count * sizeof(*entries));
+  if (old_capacity) {
+    memcpy(entries + prefix_count, table->entries,
+           old_capacity * sizeof(*entries));
+  }
+  memset(entries + prefix_count + old_capacity, 0,
+         (new_capacity - prefix_count - old_capacity) * sizeof(*entries));
   iree_host_size_t old_word_count = (old_capacity + 63) / 64;
   iree_host_size_t word_count = (new_capacity + 63) / 64;
   uint64_t* touched_bits = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       table->arena, word_count, sizeof(*touched_bits), (void**)&touched_bits));
+  const iree_host_size_t prefix_word_count = prefix_count / 64;
+  memset(touched_bits, 0, prefix_word_count * sizeof(*touched_bits));
   if (old_word_count) {
-    memcpy(touched_bits, table->touched_bits,
+    memcpy(touched_bits + prefix_word_count, table->touched_bits,
            old_word_count * sizeof(*touched_bits));
   }
-  memset(touched_bits + old_word_count, 0,
-         (word_count - old_word_count) * sizeof(*touched_bits));
+  memset(touched_bits + prefix_word_count + old_word_count, 0,
+         (word_count - prefix_word_count - old_word_count) *
+             sizeof(*touched_bits));
   table->entries = entries;
+  table->first_value_id = first_value_id;
   table->capacity = new_capacity;
   table->touched_bits = touched_bits;
   return iree_ok_status();
@@ -197,7 +215,7 @@ loom_value_fact_table_ensure_contextual_query_origin_capacity(
 
 static iree_status_t loom_value_fact_table_allocate_initial_capacity(
     loom_value_fact_table_t* table, iree_host_size_t capacity) {
-  return loom_value_fact_table_ensure_capacity(table, capacity);
+  return loom_value_fact_table_ensure_range(table, 0, capacity);
 }
 
 static iree_status_t loom_value_fact_table_append_touched_value(
@@ -342,7 +360,8 @@ iree_status_t loom_value_fact_table_initialize_with_arenas(
 
 iree_status_t loom_value_fact_table_reserve(loom_value_fact_table_t* table,
                                             iree_host_size_t minimum_capacity) {
-  if (minimum_capacity <= table->capacity) {
+  if (minimum_capacity == 0 ||
+      (table->first_value_id == 0 && minimum_capacity <= table->capacity)) {
     return iree_ok_status();
   }
   iree_host_size_t capacity =
@@ -352,7 +371,7 @@ iree_status_t loom_value_fact_table_reserve(loom_value_fact_table_t* table,
       return iree_make_status(IREE_STATUS_OUT_OF_RANGE, "capacity overflow");
     }
   }
-  return loom_value_fact_table_ensure_capacity(table, capacity);
+  return loom_value_fact_table_ensure_range(table, 0, capacity);
 }
 
 void loom_value_fact_table_clear_scope(loom_value_fact_table_t* table) {
@@ -373,8 +392,9 @@ void loom_value_fact_table_clear_scope(loom_value_fact_table_t* table) {
   }
   for (iree_host_size_t i = 0; i < table->touched_count; ++i) {
     loom_value_id_t value_id = table->touched_values[i];
-    table->entries[value_id] = (loom_value_facts_t){0};
-    table->touched_bits[value_id / 64] &= ~(UINT64_C(1) << (value_id % 64));
+    const iree_host_size_t index = value_id - table->first_value_id;
+    table->entries[index] = (loom_value_facts_t){0};
+    table->touched_bits[index / 64] &= ~(UINT64_C(1) << (index % 64));
   }
   for (iree_host_size_t i = 0; i < table->uniform_element_origins.touched_count;
        ++i) {
@@ -875,16 +895,17 @@ iree_status_t loom_value_fact_table_define(loom_value_fact_table_t* table,
                                            loom_value_id_t value_id,
                                            loom_value_facts_t facts) {
   IREE_ASSERT_NE(facts.known_divisor, 0);
-  IREE_RETURN_IF_ERROR(loom_value_fact_table_ensure_capacity(
-      table, (iree_host_size_t)value_id + 1));
-  uint64_t touched_bit = UINT64_C(1) << (value_id % 64);
-  if (table->entries[value_id].known_divisor == 0 &&
-      !(table->touched_bits[value_id / 64] & touched_bit)) {
+  IREE_RETURN_IF_ERROR(loom_value_fact_table_ensure_range(
+      table, value_id, (iree_host_size_t)value_id + 1));
+  const iree_host_size_t index = value_id - table->first_value_id;
+  uint64_t touched_bit = UINT64_C(1) << (index % 64);
+  if (table->entries[index].known_divisor == 0 &&
+      !(table->touched_bits[index / 64] & touched_bit)) {
     IREE_RETURN_IF_ERROR(
         loom_value_fact_table_append_touched_value(table, value_id));
-    table->touched_bits[value_id / 64] |= touched_bit;
+    table->touched_bits[index / 64] |= touched_bit;
   }
-  table->entries[value_id] = facts;
+  table->entries[index] = facts;
   if ((iree_host_size_t)value_id + 1 > table->count) {
     table->count = (iree_host_size_t)value_id + 1;
   }
@@ -896,8 +917,10 @@ void loom_value_fact_table_undefine(loom_value_fact_table_t* table,
   if (table->layout_origins) {
     loom_value_fact_table_clear_layout_strides(table, value_id);
   }
-  if (value_id < table->capacity) {
-    table->entries[value_id] = (loom_value_facts_t){0};
+  const iree_host_size_t index =
+      (iree_host_size_t)value_id - table->first_value_id;
+  if (index < table->capacity) {
+    table->entries[index] = (loom_value_facts_t){0};
   }
   if (value_id < table->identities.capacity) {
     table->identities.entries[value_id] = LOOM_VALUE_ID_INVALID;
@@ -1730,17 +1753,18 @@ iree_status_t loom_value_fact_table_clone_values(
     const loom_value_id_t value_id = source_view.value_ids[i];
     IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_select_dependencies(
         target, source, value_id));
-    if (!loom_value_fact_table_has_entry(source, value_id)) {
+    loom_value_facts_t source_facts;
+    if (!loom_value_fact_table_try_lookup(source, value_id, &source_facts)) {
       continue;
     }
     loom_value_facts_t cloned_facts = loom_value_facts_unknown();
     if (module && value_id < module->values.count) {
       IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_fact_for_type(
           target, source, module, loom_module_value_type(module, value_id),
-          source->entries[value_id], &cloned_facts));
+          source_facts, &cloned_facts));
     } else {
       IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_fact(
-          target, source, source->entries[value_id], &cloned_facts));
+          target, source, source_facts, &cloned_facts));
     }
     IREE_RETURN_IF_ERROR(
         loom_value_fact_table_define(target, value_id, cloned_facts));

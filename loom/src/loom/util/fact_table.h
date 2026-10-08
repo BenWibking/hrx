@@ -4,18 +4,20 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-// Per-value fact table: dense array of loom_value_facts_t keyed by
+// Per-value fact table: dense range of loom_value_facts_t keyed by
 // loom_value_id_t. Arena-allocated. A zero-initialized table is valid (empty).
 //
 // Lookup always succeeds: returns unknown facts for undefined entries
 // or out-of-range value IDs. Undefined entries are detected by
-// known_divisor == 0 (valid facts always have known_divisor >= 1),
-// allowing O(1) initialization via memset(0).
+// known_divisor == 0 (valid facts always have known_divisor >= 1), so newly
+// allocated slots need only zero initialization.
 //
-// Define stores facts for a value ID, growing the dense value-entry array as
-// needed. Compute runs a forward pass over an explicit region tree, calling
-// each op's fact inference function to seed initial facts from constants and op
-// semantics.
+// Define stores facts for a value ID, growing the dense value-entry range as
+// needed. Lazy tables start at their first definition instead of allocating an
+// empty prefix for unrelated module values. Explicit capacity reservations
+// cover the zero-based domain. Compute runs a forward pass over a region tree,
+// calling each op's fact inference function to seed initial facts from
+// constants and op semantics.
 //
 // The table is a reusable component: borrowed by the rewriter for
 // canonicalization, owned by pass-scoped storage, and usable standalone for IPO
@@ -178,13 +180,17 @@ struct loom_value_fact_table_t {
   // Arena for scope-local extension payloads and inference scratch buffers.
   iree_arena_allocator_t* transient_arena;
 
-  // Dense fact entries indexed by value ID.
+  // Dense fact entries indexed by value ID minus first_value_id.
   loom_value_facts_t* entries;
+  // First value ID covered by entries, aligned to a touched-membership word.
+  // Lazy scopes omit the empty prefix preceding their first definition.
+  loom_value_id_t first_value_id;
   // Highest defined value ID plus one.
   iree_host_size_t count;
   // Allocated entry count.
   iree_host_size_t capacity;
-  // Scope membership bits, retained while a cyclic solve undefines entries.
+  // Scope membership bits indexed relative to first_value_id, retained while
+  // a cyclic solve undefines entries.
   uint64_t* touched_bits;
   // Value IDs touched in the scope, including temporarily undefined entries.
   loom_value_id_t* touched_values;
@@ -414,8 +420,8 @@ iree_status_t loom_value_fact_table_initialize_with_arenas(
     loom_value_fact_table_t* table, iree_arena_allocator_t* arena,
     iree_arena_allocator_t* transient_arena, iree_host_size_t initial_capacity);
 
-// Reserves at least |minimum_capacity| value entries, preserving defined facts
-// and touched membership. An existing capacity doubles until it covers the
+// Reserves entries for [0, |minimum_capacity|), preserving defined facts and
+// touched membership. An existing capacity doubles until it covers the
 // minimum, but only the final array is allocated. This retains growth headroom
 // without leaving intermediate arrays in the arena during batch population.
 // An empty table starts at the requested minimum. Does not populate entries.
@@ -431,8 +437,9 @@ void loom_value_fact_table_clear_scope(loom_value_fact_table_t* table);
 // Returns true when |value_id| has explicitly defined facts in |table|.
 static inline bool loom_value_fact_table_has_entry(
     const loom_value_fact_table_t* table, loom_value_id_t value_id) {
-  return value_id < table->capacity &&
-         table->entries[value_id].known_divisor != 0;
+  const iree_host_size_t index =
+      (iree_host_size_t)value_id - table->first_value_id;
+  return index < table->capacity && table->entries[index].known_divisor != 0;
 }
 
 // Looks up defined facts for a value in O(1). Returns false for undefined or
@@ -443,7 +450,7 @@ static inline bool loom_value_fact_table_try_lookup(
   if (!loom_value_fact_table_has_entry(table, value_id)) {
     return false;
   }
-  *out_facts = table->entries[value_id];
+  *out_facts = table->entries[value_id - table->first_value_id];
   return true;
 }
 
@@ -454,7 +461,7 @@ static inline loom_value_facts_t loom_value_fact_table_lookup(
   if (!loom_value_fact_table_has_entry(table, value_id)) {
     return loom_value_facts_unknown();
   }
-  return table->entries[value_id];
+  return table->entries[value_id - table->first_value_id];
 }
 
 // Returns a shaped type's maximum element count from its static dimensions and
