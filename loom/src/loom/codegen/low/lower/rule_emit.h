@@ -7,8 +7,11 @@
 // Generated source-to-Low rule emission.
 //
 // Emission consumes one rule selected during planning and its resolved Low
-// descriptors and attributes. It interprets the retained emit program into
-// target-Low operands, packets, result bindings, aliases, and elisions.
+// descriptors, attributes, source origins, and result carriers. It interprets
+// the retained emit program into target-Low operands, packets, result bindings,
+// aliases, and elisions. Source-origin and result-carrier selection are
+// complete before this interpreter runs; target materializers have their own
+// contracts.
 
 #ifndef LOOM_CODEGEN_LOW_LOWER_RULE_EMIT_H_
 #define LOOM_CODEGEN_LOW_LOWER_RULE_EMIT_H_

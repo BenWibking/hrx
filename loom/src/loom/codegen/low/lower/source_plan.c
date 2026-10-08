@@ -1128,11 +1128,11 @@ static iree_status_t loom_low_lower_finalize_selected_plans(
     loom_low_lower_selected_plan_t* selected_plan =
         &source_plan->selected_plans[i];
     if (selected_plan->rule != NULL) {
-      IREE_RETURN_IF_ERROR(loom_low_lower_rule_set_resolve_emit_program(
-          context, selected_plan->rule_set_index, selected_plan->rule_set,
-          selected_plan->rule, selected_plan->source_op,
-          selected_plan->data.source_nodes, selected_plan->source_node_count,
-          selected_plan->source_memory_access, &selected_plan->resolved_emits));
+      IREE_RETURN_IF_ERROR(
+          loom_low_lower_rule_plan_finalize(context, selected_plan));
+      if (context->result->error_count != 0) {
+        return iree_ok_status();
+      }
     }
     if (!loom_low_lower_selected_plan_preserves_volatile_memory(
             context->module, selected_plan)) {

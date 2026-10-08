@@ -46,7 +46,34 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     iree_host_size_t plan_count = 0;
     bool overflow = false;
     SourcePlanObservation source_plan;
+    // Type mapping must finish before the selected arithmetic plan executes.
+    struct {
+      // Original test-target mapper delegated to by the observer.
+      loom_low_lower_map_type_callback_t callback = {};
+      // Queries received before emission begins.
+      uint32_t planning_queries = 0;
+      // Queries received after emission begins.
+      uint32_t emission_queries = 0;
+      // True after the preamble observes the completed source plan.
+      bool emission_started = false;
+    } type_mapping;
   };
+
+  static iree_status_t ObserveTypeMapping(void* user_data,
+                                          loom_low_lower_context_t* context,
+                                          const loom_op_t* source_op,
+                                          loom_type_t source_type,
+                                          loom_type_t* out_low_type) {
+    auto* observer = static_cast<PlanObserver*>(user_data);
+    auto& mapping = observer->type_mapping;
+    if (mapping.emission_started) {
+      ++mapping.emission_queries;
+    } else {
+      ++mapping.planning_queries;
+    }
+    return mapping.callback.fn(mapping.callback.user_data, context, source_op,
+                               source_type, out_low_type);
+  }
 
   static iree_status_t BeginSourcePlanObservation(
       void* user_data, loom_low_lower_context_t* context,
@@ -101,6 +128,7 @@ class LowLowerSourcePlanTest : public ::testing::Test {
   static iree_status_t ObservePlan(void* user_data,
                                    loom_low_lower_context_t* context) {
     auto* observer = static_cast<PlanObserver*>(user_data);
+    observer->type_mapping.emission_started = true;
     observer->plan_count = loom_low_lower_context_selected_plan_count(context);
     if (observer->plan_count > IREE_ARRAYSIZE(observer->plans)) {
       observer->overflow = true;
@@ -138,6 +166,8 @@ class LowLowerSourcePlanTest : public ::testing::Test {
         loom_value_fact_table_compute(&fact_table_, module_, function_));
 
     policy_ = *loom_test_low_lower_policy();
+    observer_.type_mapping.callback = policy_.map_type;
+    policy_.map_type = {ObserveTypeMapping, &observer_};
     source_plan_observer_ = kSourcePlanObserver;
     source_plan_observer_.user_data = &observer_;
     policy_.source_plan_observer = &source_plan_observer_;
@@ -259,6 +289,8 @@ TEST_F(LowLowerSourcePlanTest,
   EXPECT_TRUE(observer_.plans[0].elided);
   EXPECT_FALSE(observer_.plans[1].elided);
   EXPECT_FALSE(observer_.plans[2].elided);
+  EXPECT_GT(observer_.type_mapping.planning_queries, 0u);
+  EXPECT_EQ(observer_.type_mapping.emission_queries, 0u);
 
   EXPECT_EQ(observer_.source_plan.phase, 2u);
   EXPECT_FALSE(observer_.source_plan.invalid_lifecycle);
