@@ -105,3 +105,32 @@ def test_byte_equality_is_an_immediate_free_simd_binary_operation():
     assert descriptor.encoding_id == 0xFD23
     assert not descriptor.immediates
     assert len(descriptor.operands) == 3
+
+
+def test_simd_shifts_have_one_i32_count_for_every_integer_lane_width():
+    descriptors = {
+        descriptor.key: descriptor
+        for descriptor in WASM_CORE_SIMD128_DESCRIPTOR_SET.descriptors
+    }
+    for shape, encodings in (
+        ("i8x16", (0xFD6B, 0xFD6C, 0xFD6D)),
+        ("i16x8", (0xFD8B, 0xFD8C, 0xFD8D)),
+        ("i32x4", (0xFDAB, 0xFDAC, 0xFDAD)),
+        ("i64x2", (0xFDCB, 0xFDCC, 0xFDCD)),
+    ):
+        for operation, encoding in zip(
+            ("shl", "shr_s", "shr_u"), encodings, strict=True
+        ):
+            descriptor = descriptors[f"wasm.{shape}.{operation}"]
+            assert descriptor.encoding_id == encoding
+            assert not descriptor.immediates
+            assert [operand.field_name for operand in descriptor.operands] == [
+                "dst",
+                "value",
+                "count",
+            ]
+            assert [
+                alternative.reg_class
+                for operand in descriptor.operands
+                for alternative in operand.reg_alts
+            ] == ["wasm.v128", "wasm.v128", "wasm.i32"]
