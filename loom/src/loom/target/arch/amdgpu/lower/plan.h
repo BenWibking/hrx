@@ -2079,11 +2079,20 @@ typedef struct loom_amdgpu_atomic_ordering_plan_t {
   iree_host_size_t post_atomic_visibility_packet_count;
 } loom_amdgpu_atomic_ordering_plan_t;
 
+typedef struct loom_amdgpu_atomic_constant_payloads_t {
+  // Exact scalar payload bits: update/expected first, replacement second.
+  uint64_t bits[2];
+  // Bit i is set when operand i has an exact scalar payload.
+  uint8_t operand_mask;
+} loom_amdgpu_atomic_constant_payloads_t;
+
 typedef struct loom_amdgpu_atomic_plan_t {
   // Target-independent source memory access plan being wrapped.
   loom_low_source_memory_access_plan_t source;
   // Retained operand decisions for all dynamic address alternatives.
   const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
+  // Optional exact scalar payloads retained before source facts retire.
+  const loom_amdgpu_atomic_constant_payloads_t* constant_payloads;
   // Source atomic operation form being lowered.
   loom_amdgpu_atomic_operation_kind_t operation_kind;
   // Selected target addressing form for the atomic packet.
