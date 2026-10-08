@@ -39,10 +39,10 @@ low.func.def target<amd.xdna.aie2p.core>(@core) abi(object_function) @reduce() a
 }
 
 // ----
-.text.reduce: address=0x00000000 bytes=24 initialized
-  4480c0800700640120000005981104080000000000000000
-.text.reduce: address=0x00000000 bytes=24 initialized
-  4480dff00700640120000005981104080000000000000000
+.text.reduce: address=0x00000000 bytes=22 initialized
+  6401200000054480c080070098110408000000000000
+.text.reduce: address=0x00000000 bytes=22 initialized
+  6401200000054480dff0070098110408000000000000
 .storage.reduce.private: address=0x00078040 bytes=64 reserved
 .storage.reduce.private: address=0x0007ffc0 bytes=64 reserved
 
