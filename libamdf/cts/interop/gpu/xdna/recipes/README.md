@@ -153,6 +153,37 @@ two-credit exchanges of 1, 16, or 1024 words. Each slot's complete extent is
 rounded up to 64 bytes; the oracle checks inter-slot padding, unused slots,
 outer guards and allocation padding as well as the complete transcript.
 
+### Separate GPU export and XDNA import
+
+`ImportedBacking/ResidentImportedExchangeTest` runs the resident exchange with
+two explicit memory owners per protocol buffer. A GPU-only system allocation
+exports a range as `DMA_BUF_FD` or `OPAQUE_FD`; the XDNA device imports that
+range into its own attachment. Transport and opaque provenance are matched
+against both devices' advertised profiles before allocation. The GPU source
+retains the sole public host mapping used for initialization and final checks.
+
+Concrete pair queries name the GPU source, imported NPU access and source host
+mapping independently. Physical backing identity and corresponding ranges are
+checked separately from the six directional cache contracts. The GPU address
+adds the export offset; the NPU's queried address already includes it. The
+logical protocol views preserve those coordinates without changing the actual
+host mapping's metadata or creating a second CPU view on the import.
+
+Each transport covers export at the source base and at an aligned interior
+offset, both launch orders, zero/one/17 exchanges, and either sole participant
+taking prestart ABORT. Two credits carry 1024-word payloads that share their
+first cache line with the generation word. The compiled programs, repeated
+protocol and terminal joins are the same as the joint-owner credit window.
+Allocation, export, import and pair queries occur only during cold setup.
+
+The independent oracle checks the complete GPU source, including unexported
+prefix/suffix, protocol guards, immutable configuration and every response in
+the GPU transcript. After both native uses retire, cleanup destroys the imported
+NPU owner before its GPU source mapping and backing. A failed import retains
+its external value for explicit release; a failed native join retains every
+reachable owner. A device without a matching import transport reports a
+capability skip, without substituting registration or copying the payload.
+
 ### Terminal relay
 
 `TerminalRelay` and `TerminalRelayTwoCredits` reuse the credit-window GPU

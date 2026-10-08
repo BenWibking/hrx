@@ -17,6 +17,10 @@
 #include "libamdf/cts/gpu/pm4/encoding/profile.h"
 #include "util/mapped_memory.h"
 
+// Checks every semantic cache-transition field without comparing ABI padding.
+void CheckGpuXdnaTransition(const amdf_cache_transition_t& actual,
+                            const amdf_cache_transition_t& expected);
+
 enum class GpuXdnaSite { kHost, kGpu, kXdna };
 
 struct GpuXdnaEdge {
