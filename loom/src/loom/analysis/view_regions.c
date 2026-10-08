@@ -1054,15 +1054,25 @@ static iree_status_t loom_view_region_analyze_operand_access(
                                      region->alias_scope_id,
                                      region->memory_space, flags);
   } else {
-    // Raw byte accesses and buffer aliases participate in the same root proof.
+    // Opaque storage capabilities can carry either buffer or view references.
+    // Their effects belong to the backing allocation, just like typed views.
+    const loom_value_facts_t facts =
+        loom_view_region_lookup_facts(table, operand);
+    const loom_fact_context_t* context =
+        &table->expression_context->fact_table->context;
     loom_value_fact_buffer_reference_t reference = {
         .root_value_id = operand,
         .alias_scope_id = LOOM_VALUE_FACT_ALIAS_SCOPE_ID_NONE,
         .memory_space = LOOM_VALUE_FACT_MEMORY_SPACE_UNKNOWN,
     };
-    (void)loom_value_facts_query_buffer_reference(
-        &table->expression_context->fact_table->context,
-        loom_view_region_lookup_facts(table, operand), &reference);
+    loom_value_fact_view_reference_t view;
+    if (!loom_value_facts_query_buffer_reference(context, facts, &reference) &&
+        loom_value_facts_query_view_reference(context, facts, &view)) {
+      reference.root_value_id =
+          loom_value_fact_view_reference_resolve_root_value(view, operand);
+      reference.alias_scope_id = view.alias_scope_id;
+      reference.memory_space = view.memory_space;
+    }
     loom_view_region_add_root_access(
         table,
         loom_value_fact_buffer_reference_resolve_root_value(reference, operand),
