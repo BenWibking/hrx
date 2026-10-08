@@ -16,9 +16,9 @@ class MemoryScopeTest : public ::testing::Test {
   void SetUp() override {
     const iree_hal_buffer_binding_layout_t layout = {};
     IREE_ASSERT_OK(iree_hal_memory_contract_create(
-        this, 7, &layout, iree_allocator_system(), &contract_));
+        this, 8, &layout, iree_allocator_system(), &contract_));
     contract_->host.access = IREE_HAL_MEMORY_ACCESS_ALL;
-    // Sites 2/3 and 4/5 represent two families. Site 6 is excluded.
+    // Sites 2/3 and 4/5 represent two families. Sites 6/7 are excluded.
     for (uint32_t id = 2; id < 6; ++id) {
       contract_->scopes[id].interfaces = 1u << IREE_HAL_BUFFER_INTERFACE_HOST;
       contract_->scopes[id].usage = IREE_HAL_BUFFER_USAGE_STORAGE;
@@ -70,7 +70,7 @@ TEST_F(MemoryScopeTest, PublicPreparationChecksDomainRoleAndLocalSide) {
   contract_->scopes[2].usage = IREE_HAL_BUFFER_USAGE_STORAGE_READ;
   contract_->scopes[4].usage = IREE_HAL_BUFFER_USAGE_STORAGE_WRITE;
   iree_hal_memory_transition_pair_t pair;
-  for (auto producer : {scope(1), scope(2), scope(6), scope(7),
+  for (auto producer : {scope(1), scope(2), scope(6), scope(8),
                         iree_hal_memory_scope_t{&pair, 3}}) {
     IREE_EXPECT_STATUS_IS(IREE_STATUS_PERMISSION_DENIED,
                           iree_hal_memory_transition_prepare_pair(
@@ -197,6 +197,12 @@ TEST_F(MemoryScopeTest, CapturesNativeHostActionsAndAtomicFabricReach) {
   EXPECT_EQ(info.release.executor,
             IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API);
   EXPECT_EQ(info.release.range_granularity, 64u);
+  const auto* release_recipe = iree_hal_memory_transition_recipe(
+      table(), pair, IREE_HAL_MEMORY_TRANSITION_RELEASE);
+  ASSERT_NE(release_recipe, nullptr);
+  ASSERT_EQ(release_recipe->operation_count, 1u);
+  EXPECT_EQ(release_recipe->operations[0].executor,
+            IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API);
   EXPECT_EQ(info.atomic_reach.scope_32, IREE_HAL_ATOMIC_REACH_FABRIC);
   EXPECT_EQ(info.atomic_reach.scope_64, IREE_HAL_ATOMIC_REACH_DEVICE);
   EXPECT_EQ(info.estimated_fixed_cost_nanoseconds, 731u);
@@ -213,6 +219,54 @@ TEST_F(MemoryScopeTest, CapturesNativeHostActionsAndAtomicFabricReach) {
       table(), scope(0), scope(1), IREE_HAL_MEMORY_TRANSITION_ACQUIRE, &pair));
   EXPECT_EQ(iree_hal_memory_transition_query_info(table(), pair).acquire.kind,
             IREE_HAL_MEMORY_TRANSITION_KIND_UNKNOWN);
+  const auto* acquire_recipe = iree_hal_memory_transition_recipe(
+      table(), pair, IREE_HAL_MEMORY_TRANSITION_ACQUIRE);
+  ASSERT_NE(acquire_recipe, nullptr);
+  // All applicable producers require the same action, captured just once.
+  EXPECT_EQ(acquire_recipe->operation_count, 1u);
+  EXPECT_EQ(acquire_recipe->operations[0].range_granularity, 64u);
+  EXPECT_EQ(acquire_recipe->operations[0].host.instruction,
+            IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLFLUSHOPT);
+}
+
+TEST_F(MemoryScopeTest, WildcardComposesResourcesWithoutLosingNativeActions) {
+  IREE_ASSERT_OK(iree_hal_memory_contract_initialize_transitions(
+      contract_,
+      [](void* user_data, uint32_t producer, uint32_t consumer,
+         iree_hal_memory_pair_info_t* out_info) -> iree_status_t {
+        IREE_RETURN_IF_ERROR(
+            CoherentPair(nullptr, producer, consumer, out_info));
+        if (producer == 1 && consumer != 1) {
+          out_info->release.kind = IREE_HAL_MEMORY_TRANSITION_KIND_RANGE;
+          out_info->release.operation =
+              IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_FLUSH;
+          out_info->release.executor =
+              consumer < 4 ? IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_DIRECT
+                           : IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API;
+          out_info->release.range_granularity = consumer < 4 ? 64 : 4096;
+          if (consumer < 4) {
+            out_info->release.host.instruction =
+                IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLFLUSH;
+            out_info->release.host.fence_after =
+                IREE_HAL_HOST_CACHE_FENCE_X86_MFENCE;
+          }
+        }
+        return iree_ok_status();
+      },
+      nullptr));
+  iree_hal_memory_transition_pair_t pair;
+  IREE_ASSERT_OK(iree_hal_memory_transition_prepare_pair(
+      table(), scope(1), scope(0), IREE_HAL_MEMORY_TRANSITION_RELEASE, &pair));
+  const auto* recipe = iree_hal_memory_transition_recipe(
+      table(), pair, IREE_HAL_MEMORY_TRANSITION_RELEASE);
+  ASSERT_NE(recipe, nullptr);
+  ASSERT_EQ(recipe->operation_count, 2u);
+  EXPECT_EQ(recipe->operations[0].executor,
+            IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_DIRECT);
+  EXPECT_EQ(recipe->operations[0].range_granularity, 64u);
+  EXPECT_EQ(recipe->operations[1].executor,
+            IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API);
+  EXPECT_EQ(recipe->operations[1].range_granularity, 4096u);
 }
 
 TEST_F(MemoryScopeTest, NativeQueryFailureDoesNotPublishPartialTable) {

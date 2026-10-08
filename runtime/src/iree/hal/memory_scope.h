@@ -371,9 +371,11 @@ typedef struct iree_hal_memory_transition_recipe_info_t {
   iree_hal_memory_transition_executor_t executor;
   // Semantic operation independent of native packet encodings.
   iree_hal_memory_transition_operation_t operation;
-  // Coverage in absolute native bytes; zero for a non-ranged action.
+  // Coverage in absolute native bytes; zero for a non-ranged action. Direct
+  // host instructions use the qualified power-of-two cache-line size.
   iree_device_size_t range_granularity;
-  // Direct host emission contract; NONE fields for other executors.
+  // Direct host emission contract, qualified for the executing CPU's ISA;
+  // NONE fields for other executors.
   struct {
     // Instruction applied to every covered cache line.
     iree_hal_host_cache_instruction_t instruction;
@@ -418,6 +420,27 @@ typedef struct iree_hal_memory_pair_info_t {
   uint64_t estimated_fixed_cost_nanoseconds;
 } iree_hal_memory_pair_info_t;
 
+// Immutable resource actions captured by the memory contract. Exact pairs
+// normally have one operation; a wildcard can compose several compatible
+// operations during construction. Recording copies the selected operations or
+// keeps their owner alive under its established resource lifetime policy.
+typedef struct iree_hal_memory_transition_recipe_t {
+  // Number of prepared native actions; no list is constructed at query time.
+  iree_host_size_t operation_count;
+  // Borrowed actions, valid for the lifetime of the captured contract.
+  const iree_hal_memory_transition_recipe_info_t* operations;
+} iree_hal_memory_transition_recipe_t;
+
+// Resolves a prepared side's resource actions by fixed indices. NULL means no
+// resource recipe is available; the side's effects distinguish a global/no-op
+// action from an unsupported relation. The prepared key belongs to this table's
+// sealed group. A recipe is fixed for indirect operands when recording; a
+// later binding cannot change its executor or protocol.
+IREE_API_EXPORT const iree_hal_memory_transition_recipe_t*
+iree_hal_memory_transition_recipe(iree_hal_memory_transition_table_t table,
+                                  iree_hal_memory_transition_pair_t pair,
+                                  iree_hal_memory_transition_action_t action);
+
 // Exact-pair metadata for informed scheduling, inspection and compiler
 // emission. Wildcards have no fabricated single-operation summary and return
 // UNKNOWN metadata; their constituent exact pairs remain individually
@@ -425,6 +448,29 @@ typedef struct iree_hal_memory_pair_info_t {
 IREE_API_EXPORT iree_hal_memory_pair_info_t
 iree_hal_memory_transition_query_info(iree_hal_memory_transition_table_t table,
                                       iree_hal_memory_transition_pair_t pair);
+
+typedef struct iree_hal_buffer_mapping_transition_t {
+  // Actual mapping, borrowed through this synchronous host operation.
+  iree_hal_buffer_mapping_t* mapping;
+  // First requested byte relative to the mapping.
+  iree_device_size_t offset;
+  // Requested byte length, or WHOLE_BUFFER for the remaining mapped extent.
+  iree_device_size_t length;
+  // Exact prepared host actions. Covered absolute cache lines must be owned
+  // throughout the operation, including any bytes outside the logical range.
+  const iree_hal_memory_transition_recipe_t* recipe;
+} iree_hal_buffer_mapping_transition_t;
+
+// Executes explicit host maintenance on the calling executor without waiting
+// for a device. HOST_API invokes the mapping's native operation even on
+// CPU-coherent memory. Async callers place this operation on their existing
+// task/host-callback graph; this creates no worker, mapping, or allocation.
+// Input validation precedes execution. A later native failure can follow
+// successful earlier actions; the caller propagates it without publishing a
+// success dependency. No allocation owner is retained or consumed.
+IREE_API_EXPORT iree_status_t iree_hal_buffer_mapping_memory_barrier(
+    iree_hal_memory_effects_t effects, iree_host_size_t mapping_count,
+    const iree_hal_buffer_mapping_transition_t* mappings);
 
 //===----------------------------------------------------------------------===//
 // Contract construction

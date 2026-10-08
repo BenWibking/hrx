@@ -10,6 +10,10 @@
 #include "iree/hal/device_group.h"
 #include "iree/hal/pool.h"
 
+#if defined(IREE_ARCH_X86_64) || defined(IREE_ARCH_X86_32)
+#include <immintrin.h>
+#endif  // IREE_ARCH_X86_*
+
 IREE_API_EXPORT iree_status_t iree_hal_device_group_resolve_memory_scope(
     const iree_hal_device_group_t* group, iree_hal_memory_site_t site,
     iree_hal_memory_scope_t* out_scope) {
@@ -227,11 +231,20 @@ iree_hal_pool_transition_table(const iree_hal_pool_t* pool) {
   return (iree_hal_memory_transition_table_t){pool->memory_contract};
 }
 
+typedef struct iree_hal_memory_pair_record_t {
+  // Complete native qualification for an exact pair.
+  iree_hal_memory_pair_info_t info;
+  // Release and acquire recipes borrowing their corresponding info fields.
+  iree_hal_memory_transition_recipe_t recipes[2];
+} iree_hal_memory_pair_record_t;
+
 // One allocation holds the cold cell indices and interned exact-pair records.
 // Index zero is the all-unknown record, including for wildcard/padding cells.
 struct iree_hal_memory_transition_details_t {
-  // Interned records following the indices in this allocation.
-  iree_hal_memory_pair_info_t* infos;
+  // Interned exact-pair descriptions and their resource recipes.
+  iree_hal_memory_pair_record_t* records;
+  // Release and acquire recipes per local site, with composed inline actions.
+  iree_hal_memory_transition_recipe_t* wildcards;
   // Exact-pair record index per flattened transition cell.
   uint32_t indices[];
 };
@@ -335,8 +348,32 @@ iree_hal_memory_transition_query_info(iree_hal_memory_transition_table_t table,
                                       iree_hal_memory_transition_pair_t pair) {
   const iree_hal_memory_transition_details_t* details =
       table.contract->transition_details;
-  return details ? details->infos[details->indices[pair.cell_index]]
+  return details ? details->records[details->indices[pair.cell_index]].info
                  : (iree_hal_memory_pair_info_t){0};
+}
+
+IREE_API_EXPORT const iree_hal_memory_transition_recipe_t*
+iree_hal_memory_transition_recipe(iree_hal_memory_transition_table_t table,
+                                  iree_hal_memory_transition_pair_t pair,
+                                  iree_hal_memory_transition_action_t action) {
+  const iree_hal_memory_transition_details_t* details =
+      table.contract->transition_details;
+  if (!details) {
+    return NULL;
+  }
+  const uint32_t shift = table.contract->transition_row_shift;
+  const uint32_t producer = pair.cell_index >> shift;
+  const uint32_t consumer = pair.cell_index & ((1u << shift) - 1);
+  const iree_hal_memory_transition_recipe_t* recipe = NULL;
+  if (consumer == 0 && action == IREE_HAL_MEMORY_TRANSITION_RELEASE) {
+    recipe = &details->wildcards[producer * 2];
+  } else if (producer == 0 && action == IREE_HAL_MEMORY_TRANSITION_ACQUIRE) {
+    recipe = &details->wildcards[consumer * 2 + 1];
+  } else {
+    recipe =
+        &details->records[details->indices[pair.cell_index]].recipes[action];
+  }
+  return recipe->operation_count ? recipe : NULL;
 }
 
 //===----------------------------------------------------------------------===//
@@ -451,28 +488,95 @@ static void iree_hal_memory_transition_join_wildcards(
   }
 }
 
+// Captures wildcard resource lists once. Native ownership is an exact peer
+// protocol, so it cannot be joined without a backend-qualified composition.
+static iree_host_size_t iree_hal_memory_transition_compose_wildcards(
+    const iree_hal_memory_contract_t* contract, uint64_t* cells,
+    const uint32_t* indices, const iree_hal_memory_pair_info_t* infos,
+    iree_hal_memory_transition_recipe_t* recipes,
+    iree_hal_memory_transition_recipe_info_t* operations) {
+  iree_host_size_t operation_count = 0;
+  const uint32_t shift = contract->transition_row_shift;
+  for (uint32_t local = 1; local < contract->scope_count; ++local) {
+    for (uint32_t action = 0; action < 2; ++action) {
+      const uint32_t cell_index = action ? local : local << shift;
+      const uint32_t bits = (uint32_t)(cells[cell_index] >> (action * 32));
+      if (!(bits & IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS) ||
+          (bits & IREE_HAL_MEMORY_EFFECT_UNSUPPORTED)) {
+        continue;
+      }
+      if (bits & IREE_HAL_MEMORY_EFFECT_NATIVE_OWNERSHIP) {
+        cells[cell_index] |= (uint64_t)IREE_HAL_MEMORY_EFFECT_UNSUPPORTED
+                             << (action * 32);
+        continue;
+      }
+      iree_hal_memory_transition_recipe_info_t* local_operations =
+          &operations[operation_count];
+      iree_host_size_t local_count = 0;
+      for (uint32_t remote = 1; remote < contract->scope_count; ++remote) {
+        const uint32_t exact_index =
+            action ? (remote << shift) + local : (local << shift) + remote;
+        if (!((cells[exact_index] >> (action * 32)) &
+              IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS)) {
+          continue;
+        }
+        const iree_hal_memory_pair_info_t* pair = &infos[indices[exact_index]];
+        const iree_hal_memory_transition_recipe_info_t* info =
+            action ? &pair->acquire : &pair->release;
+        iree_host_size_t i = 0;
+        while (i < local_count &&
+               !iree_hal_memory_recipe_info_equal(&local_operations[i], info)) {
+          ++i;
+        }
+        if (i == local_count) {
+          local_operations[local_count++] = *info;
+        }
+      }
+      recipes[local * 2 + action] = (iree_hal_memory_transition_recipe_t){
+          .operation_count = local_count,
+          .operations = local_operations,
+      };
+      operation_count += local_count;
+    }
+  }
+  return operation_count;
+}
+
 IREE_API_EXPORT iree_status_t iree_hal_memory_contract_initialize_transitions(
     iree_hal_memory_contract_t* contract, iree_hal_memory_pair_query_fn_t query,
     void* user_data) {
   const uint32_t cell_count = contract->scope_count
                               << contract->transition_row_shift;
   iree_host_size_t total_size = 0;
+  iree_host_size_t indices_offset = 0;
   iree_host_size_t cells_offset = 0;
   iree_host_size_t infos_offset = 0;
+  iree_host_size_t wildcards_offset = 0;
+  iree_host_size_t operations_offset = 0;
   IREE_RETURN_IF_ERROR(IREE_STRUCT_LAYOUT(
-      sizeof(iree_hal_memory_transition_details_t), &total_size,
-      IREE_STRUCT_FIELD_FAM(cell_count, uint32_t),
+      0, &total_size, IREE_STRUCT_FIELD(cell_count, uint32_t, &indices_offset),
       IREE_STRUCT_FIELD_ALIGNED(cell_count, uint64_t, iree_alignof(uint64_t),
                                 &cells_offset),
       IREE_STRUCT_FIELD_ALIGNED(cell_count, iree_hal_memory_pair_info_t,
                                 iree_alignof(iree_hal_memory_pair_info_t),
-                                &infos_offset)));
-  iree_hal_memory_transition_details_t* scratch = NULL;
+                                &infos_offset),
+      IREE_STRUCT_ARRAY_FIELD(contract->scope_count, 2,
+                              iree_hal_memory_transition_recipe_t,
+                              &wildcards_offset),
+      IREE_STRUCT_ARRAY_FIELD(cell_count, 2,
+                              iree_hal_memory_transition_recipe_info_t,
+                              &operations_offset)));
+  uint8_t* scratch = NULL;
   IREE_RETURN_IF_ERROR(iree_allocator_malloc(contract->host_allocator,
                                              total_size, (void**)&scratch));
-  uint64_t* cells = (uint64_t*)((uint8_t*)scratch + cells_offset);
-  scratch->infos =
-      (iree_hal_memory_pair_info_t*)((uint8_t*)scratch + infos_offset);
+  uint32_t* indices = (uint32_t*)(scratch + indices_offset);
+  uint64_t* cells = (uint64_t*)(scratch + cells_offset);
+  iree_hal_memory_pair_info_t* infos =
+      (iree_hal_memory_pair_info_t*)(scratch + infos_offset);
+  iree_hal_memory_transition_recipe_t* wildcards =
+      (iree_hal_memory_transition_recipe_t*)(scratch + wildcards_offset);
+  iree_hal_memory_transition_recipe_info_t* operations =
+      (iree_hal_memory_transition_recipe_info_t*)(scratch + operations_offset);
   memcpy(cells, contract->transitions, cell_count * sizeof(*cells));
 
   uint32_t info_count = 1;  // Record zero is the unqualified description.
@@ -493,45 +597,287 @@ IREE_API_EXPORT iree_status_t iree_hal_memory_contract_initialize_transitions(
       status = query(user_data, producer, consumer, &info);
       if (iree_status_is_ok(status)) {
         uint32_t index = 0;
-        while (index < info_count && !iree_hal_memory_pair_info_equal(
-                                         &scratch->infos[index], &info)) {
+        while (index < info_count &&
+               !iree_hal_memory_pair_info_equal(&infos[index], &info)) {
           ++index;
         }
         if (index == info_count) {
-          scratch->infos[info_count++] = info;
+          infos[info_count++] = info;
         }
         const uint32_t cell_index =
             (producer << contract->transition_row_shift) + consumer;
-        scratch->indices[cell_index] = index;
+        indices[cell_index] = index;
         cells[cell_index] = iree_hal_memory_pair_encode(&info);
       }
     }
   }
 
+  iree_host_size_t operation_count = 0;
+  if (iree_status_is_ok(status)) {
+    iree_hal_memory_transition_join_wildcards(contract, cells);
+    operation_count = iree_hal_memory_transition_compose_wildcards(
+        contract, cells, indices, infos, wildcards, operations);
+  }
   iree_hal_memory_transition_details_t* details = NULL;
   if (iree_status_is_ok(status)) {
     status = IREE_STRUCT_LAYOUT(
         sizeof(*details), &total_size,
         IREE_STRUCT_FIELD_FAM(cell_count, uint32_t),
-        IREE_STRUCT_FIELD_ALIGNED(info_count, iree_hal_memory_pair_info_t,
-                                  iree_alignof(iree_hal_memory_pair_info_t),
-                                  &infos_offset));
+        IREE_STRUCT_FIELD_ALIGNED(info_count, iree_hal_memory_pair_record_t,
+                                  iree_alignof(iree_hal_memory_pair_record_t),
+                                  &infos_offset),
+        IREE_STRUCT_ARRAY_FIELD(contract->scope_count, 2,
+                                iree_hal_memory_transition_recipe_t,
+                                &wildcards_offset),
+        IREE_STRUCT_FIELD(operation_count,
+                          iree_hal_memory_transition_recipe_info_t,
+                          &operations_offset));
   }
   if (iree_status_is_ok(status)) {
     status = iree_allocator_malloc(contract->host_allocator, total_size,
                                    (void**)&details);
   }
   if (iree_status_is_ok(status)) {
-    details->infos =
-        (iree_hal_memory_pair_info_t*)((uint8_t*)details + infos_offset);
-    memcpy(details->indices, scratch->indices,
-           cell_count * sizeof(*details->indices));
-    memcpy(details->infos, scratch->infos,
-           info_count * sizeof(*details->infos));
-    iree_hal_memory_transition_join_wildcards(contract, cells);
+    details->records =
+        (iree_hal_memory_pair_record_t*)((uint8_t*)details + infos_offset);
+    details->wildcards =
+        (iree_hal_memory_transition_recipe_t*)((uint8_t*)details +
+                                               wildcards_offset);
+    iree_hal_memory_transition_recipe_info_t* captured_operations =
+        (iree_hal_memory_transition_recipe_info_t*)((uint8_t*)details +
+                                                    operations_offset);
+    memcpy(details->indices, indices, cell_count * sizeof(*indices));
+    memcpy(captured_operations, operations,
+           operation_count * sizeof(*operations));
+    for (uint32_t i = 0; i < info_count; ++i) {
+      iree_hal_memory_pair_record_t* record = &details->records[i];
+      record->info = infos[i];
+      const uint64_t cell = iree_hal_memory_pair_encode(&record->info);
+      for (uint32_t action = 0; action < 2; ++action) {
+        const uint32_t bits = (uint32_t)(cell >> (action * 32));
+        if ((bits & IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS) &&
+            !(bits & IREE_HAL_MEMORY_EFFECT_UNSUPPORTED)) {
+          record->recipes[action] = (iree_hal_memory_transition_recipe_t){
+              .operation_count = 1,
+              .operations =
+                  action ? &record->info.acquire : &record->info.release,
+          };
+        }
+      }
+    }
+    for (uint32_t i = 0; i < contract->scope_count * 2; ++i) {
+      if (!wildcards[i].operation_count) {
+        continue;
+      }
+      details->wildcards[i] = (iree_hal_memory_transition_recipe_t){
+          .operation_count = wildcards[i].operation_count,
+          .operations =
+              captured_operations + (wildcards[i].operations - operations),
+      };
+    }
     contract->transition_details = details;
     memcpy(contract->transitions, cells, cell_count * sizeof(*cells));
   }
   iree_allocator_free(contract->host_allocator, scratch);
+  return status;
+}
+
+//===----------------------------------------------------------------------===//
+// Explicit host mapping transitions
+//===----------------------------------------------------------------------===//
+
+static iree_status_t iree_hal_buffer_mapping_transition_validate(
+    const iree_hal_buffer_mapping_transition_t* transition,
+    uint32_t* out_effect_bits) {
+  *out_effect_bits = 0;
+  if (!transition->mapping || !transition->mapping->buffer ||
+      !transition->recipe) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "host transition requires a live mapping and recipe");
+  }
+  const iree_hal_buffer_mapping_t* mapping = transition->mapping;
+  iree_device_size_t offset = 0;
+  iree_device_size_t length = 0;
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_calculate_range(
+      0, mapping->contents.data_length, transition->offset, transition->length,
+      &offset, &length));
+  if (length && !mapping->contents.data) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "host transition mapping is not committed");
+  }
+  if (offset > UINTPTR_MAX - (uintptr_t)mapping->contents.data ||
+      length > UINTPTR_MAX - ((uintptr_t)mapping->contents.data + offset)) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "host transition address range overflows");
+  }
+  for (iree_host_size_t i = 0; i < transition->recipe->operation_count; ++i) {
+    const iree_hal_memory_transition_recipe_info_t* info =
+        &transition->recipe->operations[i];
+    if (info->executor != IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API &&
+        info->executor != IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_DIRECT) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "transition recipe does not execute on the host");
+    }
+#if !defined(IREE_ARCH_X86_64) && !defined(IREE_ARCH_X86_32)
+    if (info->executor == IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_DIRECT) {
+      return iree_make_status(IREE_STATUS_UNAVAILABLE,
+                              "direct host cache recipe requires an x86 host");
+    }
+#endif  // !IREE_ARCH_X86_*
+    iree_hal_memory_access_t access = IREE_HAL_MEMORY_ACCESS_NONE;
+    if (info->operation == IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_FLUSH) {
+      access = IREE_HAL_MEMORY_ACCESS_WRITE;
+    } else if (info->operation ==
+               IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_INVALIDATE) {
+      access = IREE_HAL_MEMORY_ACCESS_READ;
+    } else {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "transition recipe is not host cache maintenance");
+    }
+    IREE_RETURN_IF_ERROR(
+        iree_hal_buffer_validate_access(mapping->impl.allowed_access, access));
+    *out_effect_bits |= iree_hal_memory_transition_encode_effects(info);
+  }
+  return iree_ok_status();
+}
+
+#if defined(IREE_ARCH_X86_64) || defined(IREE_ARCH_X86_32)
+
+static void iree_hal_memory_transition_host_fence(
+    iree_hal_host_cache_fence_t fence) {
+  switch (fence) {
+    case IREE_HAL_HOST_CACHE_FENCE_NONE:
+      break;
+    case IREE_HAL_HOST_CACHE_FENCE_X86_SFENCE:
+      _mm_sfence();
+      break;
+    case IREE_HAL_HOST_CACHE_FENCE_X86_MFENCE:
+      _mm_mfence();
+      break;
+    default:
+      IREE_ASSERT_UNREACHABLE("unqualified host cache fence");
+      break;
+  }
+}
+
+static void iree_hal_memory_transition_host_direct(
+    const iree_hal_memory_transition_recipe_info_t* info, const void* pointer,
+    iree_device_size_t length) {
+  if (!length) {
+    return;
+  }
+  iree_hal_memory_transition_host_fence(info->host.fence_before);
+  if (info->host.instruction == IREE_HAL_HOST_CACHE_INSTRUCTION_NONE) {
+    iree_hal_memory_transition_host_fence(info->host.fence_after);
+    return;
+  }
+  // The native producer qualifies the instruction for the host and supplies
+  // its power-of-two cache-line granularity. Range validation above established
+  // the inclusive last address; rounding down avoids an end-address overflow.
+  const uintptr_t mask = (uintptr_t)info->range_granularity - 1;
+  const uintptr_t first = (uintptr_t)pointer & ~mask;
+  const uintptr_t last = ((uintptr_t)pointer + length - 1) & ~mask;
+  for (uintptr_t line = first;; line += info->range_granularity) {
+    switch (info->host.instruction) {
+      case IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLFLUSH:
+        _mm_clflush((const void*)line);
+        break;
+      case IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLFLUSHOPT:
+#if defined(IREE_COMPILER_MSVC)
+        _mm_clflushopt((void*)line);
+#else
+        __asm__ volatile("clflushopt (%0)" : : "r"(line) : "memory");
+#endif  // IREE_COMPILER_MSVC
+        break;
+      case IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLWB:
+#if defined(IREE_COMPILER_MSVC)
+        _mm_clwb((void*)line);
+#else
+        __asm__ volatile("clwb (%0)" : : "r"(line) : "memory");
+#endif  // IREE_COMPILER_MSVC
+        break;
+      default:
+        IREE_ASSERT_UNREACHABLE("unqualified host cache instruction");
+        break;
+    }
+    if (line == last) {
+      break;
+    }
+  }
+  iree_hal_memory_transition_host_fence(info->host.fence_after);
+}
+
+#endif  // IREE_ARCH_X86_*
+
+IREE_API_EXPORT iree_status_t iree_hal_buffer_mapping_memory_barrier(
+    iree_hal_memory_effects_t effects, iree_host_size_t mapping_count,
+    const iree_hal_buffer_mapping_transition_t* mappings) {
+  if (!iree_hal_memory_effects_is_supported(effects)) {
+    return iree_make_status(
+        IREE_STATUS_UNAVAILABLE,
+        "host transition is not qualified for this backing");
+  }
+  const uint32_t supported_bits = IREE_HAL_MEMORY_EFFECT_HOST_FLUSH |
+                                  IREE_HAL_MEMORY_EFFECT_HOST_INVALIDATE |
+                                  IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS;
+  if (effects.bits & ~supported_bits) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "host barrier cannot execute queue/program effects");
+  }
+  if (mapping_count && !mappings) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "host barrier requires its mapping array");
+  }
+  uint32_t covered_bits = 0;
+  for (iree_host_size_t i = 0; i < mapping_count; ++i) {
+    uint32_t bits = 0;
+    IREE_RETURN_IF_ERROR(
+        iree_hal_buffer_mapping_transition_validate(&mappings[i], &bits));
+    covered_bits |= bits;
+  }
+  if (covered_bits != effects.bits) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "host barrier recipes do not cover its effects");
+  }
+
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, mapping_count);
+  iree_status_t status = iree_ok_status();
+  for (iree_host_size_t i = 0; i < mapping_count && iree_status_is_ok(status);
+       ++i) {
+    const iree_hal_buffer_mapping_transition_t* transition = &mappings[i];
+    const iree_device_size_t length =
+        transition->length == IREE_HAL_WHOLE_BUFFER
+            ? transition->mapping->contents.data_length - transition->offset
+            : transition->length;
+    for (iree_host_size_t j = 0;
+         j < transition->recipe->operation_count && iree_status_is_ok(status);
+         ++j) {
+      const iree_hal_memory_transition_recipe_info_t* info =
+          &transition->recipe->operations[j];
+      if (info->executor == IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API) {
+        if (info->operation ==
+            IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_FLUSH) {
+          status = iree_hal_buffer_mapping_flush_range(
+              transition->mapping, transition->offset, length);
+        } else {
+          status = iree_hal_buffer_mapping_invalidate_range(
+              transition->mapping, transition->offset, length);
+        }
+      } else {
+#if defined(IREE_ARCH_X86_64) || defined(IREE_ARCH_X86_32)
+        if (length) {
+          iree_hal_memory_transition_host_direct(
+              info, transition->mapping->contents.data + transition->offset,
+              length);
+        }
+#endif  // IREE_ARCH_X86_*
+      }
+    }
+  }
+  IREE_TRACE_ZONE_END(z0);
   return status;
 }
