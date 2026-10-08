@@ -15,12 +15,17 @@ from types import TracebackType
 from loom.gen.target.arch.x86 import x86_descriptors
 from loom.gen.target.low import compiler
 from loom.target.arch.x86 import descriptors as x86_descriptor_data
+from loom.target.arch.x86 import native_vector
 from loom.target.arch.x86.target_info import (
     sorted_descriptor_set_infos,
     x86_descriptor_set_info_by_generator_target,
     x86_descriptor_set_ordinal,
 )
-from loom.target.low_descriptors import Constraint, ConstraintKind, ImmediateKind, OperandFlag, OperandRole, RegClassFlag
+from loom.target.arch.x86.vector_encoding import (
+    VECTOR_ENCODING_FORMAT_MARKER,
+    VectorEncodingPrefix,
+)
+from loom.target.low_descriptors import Constraint, ConstraintKind, ImmediateKind, OperandAddressMapKind, OperandFlag, OperandRole, RegClassFlag
 
 
 class _RaisesValueError:
@@ -103,13 +108,40 @@ def test_scalar_physical_ownership_is_shared_by_core_profiles() -> None:
         assert OperandFlag.STATE_WRITE in operands["low"].flags
 
 
-def test_native_fact_gap_is_exactly_the_vector_matrix() -> None:
-    descriptor_set = x86_descriptor_data.X86_AVX512_PACKED_DOT_DESCRIPTOR_SET
-    missing_native_facts = tuple(descriptor for descriptor in descriptor_set.descriptors if descriptor.encoding_format_id == 0)
-    assert len(descriptor_set.descriptors) == 513
-    assert len(missing_native_facts) == 416
-    assert all(descriptor.operands for descriptor in missing_native_facts)
-    assert all(any(alternative.reg_class in {"x86.xmm", "x86.ymm", "x86.zmm", "x86.k"} for operand in descriptor.operands for alternative in operand.reg_alts) for descriptor in missing_native_facts)
+def test_native_facts_cover_core_profiles() -> None:
+    for descriptor_set in (
+        x86_descriptor_data.X86_AVX2_DESCRIPTOR_SET,
+        x86_descriptor_data.X86_AVX512_CORE_DESCRIPTOR_SET,
+    ):
+        assert all(descriptor.encoding_format_id for descriptor in descriptor_set.descriptors)
+
+    core_keys = {descriptor.key for descriptor in x86_descriptor_data.X86_AVX512_CORE_DESCRIPTOR_SET.descriptors}
+    missing_composite_facts = {descriptor.key for descriptor in x86_descriptor_data.X86_AVX512_PACKED_DOT_DESCRIPTOR_SET.descriptors if not descriptor.encoding_format_id}
+    assert missing_composite_facts.isdisjoint(core_keys)
+
+
+def test_native_vector_binding_rejects_cross_wired_facts() -> None:
+    descriptors = {descriptor.key: descriptor for descriptor in x86_descriptor_data.X86_AVX2_DESCRIPTOR_SET.descriptors}
+    to_gpr = descriptors["x86.avx2.vmovd.gpr32.xmm"]
+    to_xmm = descriptors["x86.avx2.vmovd.xmm.gpr32"]
+    with _RaisesValueError(r"native operand shape mismatch"):
+        native_vector.VMOVD_TO_GPR32.bind(to_xmm, VectorEncodingPrefix.VEX)
+    assert to_gpr.encoding_format_id & VECTOR_ENCODING_FORMAT_MARKER
+
+
+def test_explicit_writemasks_use_seven_location_window() -> None:
+    descriptors = x86_descriptor_data.X86_AVX512_CORE_DESCRIPTOR_SET.descriptors
+    k_operands = tuple((descriptor, operand) for descriptor in descriptors for operand in descriptor.operands if any(alternative.reg_class == "x86.k" for alternative in operand.reg_alts))
+    assert len({descriptor.key for descriptor, _ in k_operands}) == 65
+
+    explicit_writemasks = tuple((descriptor, operand) for descriptor, operand in k_operands if operand.address_map_kind is OperandAddressMapKind.LOW_SUBSET)
+    assert len(explicit_writemasks) == 18
+    assert all(operand.field_name == "mask" for _, operand in explicit_writemasks)
+    assert all(operand.addressable_unit_count == 7 for _, operand in explicit_writemasks)
+
+    other_k_operands = tuple(operand for _, operand in k_operands if operand.address_map_kind is not OperandAddressMapKind.LOW_SUBSET)
+    assert len(other_k_operands) == 53
+    assert all(operand.address_map_kind is OperandAddressMapKind.DIRECT and operand.addressable_unit_count == 0 for operand in other_k_operands)
 
 
 def test_narrow_memory_widths_are_independent_of_scalar_carriers() -> None:

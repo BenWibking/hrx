@@ -8,6 +8,10 @@
 
 from __future__ import annotations
 
+from loom.target.arch.x86.vector_encoding import (
+    VectorEncodingPrefix,
+    VectorMachineInstruction,
+)
 from loom.target.low_descriptors import (
     Descriptor,
     DescriptorFlag,
@@ -60,6 +64,8 @@ def memory_descriptors(
     store_schedule_class: str,
     assembly_suffix: str,
     encoding_ids: tuple[int, int] | None = None,
+    vector_instructions: tuple[VectorMachineInstruction, ...] | None = None,
+    vector_prefix: VectorEncodingPrefix | None = None,
 ) -> tuple[Descriptor, ...]:
     """Declares static/indexed loads followed by static/indexed stores."""
     register_alternatives = (RegClassAlt(register_class),)
@@ -124,4 +130,13 @@ def memory_descriptors(
                     flags=(DescriptorFlag.SIDE_EFFECTING,),
                 )
             )
-    return tuple(descriptors)
+    if vector_instructions is None:
+        return tuple(descriptors)
+    if vector_prefix is None or len(vector_instructions) != len(descriptors):
+        raise ValueError("vector memory descriptors require complete native facts")
+    return tuple(
+        instruction.bind(descriptor, vector_prefix)
+        for descriptor, instruction in zip(
+            descriptors, vector_instructions, strict=True
+        )
+    )

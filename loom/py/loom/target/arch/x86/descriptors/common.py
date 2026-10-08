@@ -273,6 +273,10 @@ def _k_operand(field_name: str) -> Operand:
     return Operand(field_name, OperandRole.OPERAND, _K_ALT)
 
 
+def _evex_writemask_operand(field_name: str = "mask") -> Operand:
+    return _low_subset_operand(_k_operand(field_name), 7)
+
+
 _DISP32_IMMEDIATE = Immediate(
     "disp32",
     ImmediateKind.SIGNED,
@@ -712,7 +716,7 @@ def _vector_mask_select_descriptor(
         semantic_tag=semantic_tag,
         operands=(
             _vector_result(vector_bit_width),
-            _k_operand("mask"),
+            _evex_writemask_operand(),
             _vector_operand(vector_bit_width, "true_value"),
             _vector_operand(vector_bit_width, "false_value"),
         ),

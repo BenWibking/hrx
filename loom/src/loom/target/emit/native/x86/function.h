@@ -22,11 +22,12 @@ typedef struct loom_x86_instruction_t {
   // Fully allocated operands; branch displacement is resolved during layout.
   loom_x86_encoding_operands_t operands;
   // Shared CFG block ordinal for branches, module symbol ID for calls and
-  // symbolic addresses, or UINT32_MAX without a reference. The form determines
-  // the namespace; this has no effect on instruction size or register use.
+  // symbolic addresses, or UINT32_MAX without a reference. The encoding format
+  // determines the namespace; this has no effect on instruction size or
+  // register use.
   uint32_t reference;
-  // Native operand/encoding form.
-  uint16_t form;
+  // Native scalar form or packed vector recipe.
+  uint16_t encoding_format_id;
   // Immutable opcode fields from the descriptor.
   uint16_t encoding_id;
 } loom_x86_instruction_t;

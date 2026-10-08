@@ -38,6 +38,10 @@ extern "C" uint32_t pressure32(const uint32_t* values);
 extern "C" uint64_t storage_spaces(uint64_t input, uint32_t word);
 extern "C" uint64_t local_pair(uint64_t first, uint64_t second, uint64_t index);
 extern "C" uint32_t sum_previous_instances(uint64_t count);
+extern "C" void add_i32x4(const int32_t* lhs, const int32_t* rhs,
+                          int32_t* output);
+extern "C" void add_constant_i32x4(const int32_t* input, int32_t* output);
+extern "C" void reverse_i8x32_lanes(const uint8_t* input, uint8_t* output);
 
 extern "C" uint64_t call_pair(uint64_t, uint64_t);
 extern "C" uint64_t incoming_eight(uint64_t, uint64_t, uint64_t, uint64_t,
@@ -154,6 +158,28 @@ TEST(NativeCallableTest, OrdinaryCLinkage) {
       second = sum;
     }
     ASSERT_EQ(recurrence(a, b, i % 23), first);
+  }
+}
+
+TEST(NativeCallableTest, Avx2VectorFunctionUsesOrdinaryCLinkage) {
+  const std::array<int32_t, 4> lhs = {INT32_MIN, -2, 3, INT32_MAX};
+  const std::array<int32_t, 4> rhs = {-1, 5, 7, 1};
+  std::array<int32_t, 4> output = {};
+  add_i32x4(lhs.data(), rhs.data(), output.data());
+  EXPECT_EQ(output, (std::array<int32_t, 4>{INT32_MAX, 3, 10, INT32_MIN}));
+
+  const std::array<int32_t, 4> input = {4, 7, -100, -1};
+  add_constant_i32x4(input.data(), output.data());
+  EXPECT_EQ(output, (std::array<int32_t, 4>{5, 2, 0, INT32_MAX}));
+
+  std::array<uint8_t, 32> bytes = {};
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    bytes[i] = static_cast<uint8_t>(i);
+  }
+  std::array<uint8_t, 32> reversed = {};
+  reverse_i8x32_lanes(bytes.data(), reversed.data());
+  for (size_t i = 0; i < reversed.size(); ++i) {
+    EXPECT_EQ(reversed[i], 15 - i % 16 + i / 16 * 16);
   }
 }
 

@@ -141,14 +141,17 @@ realignment: r11, saved RSP at +8
 
 // ====
 
-// RUN: emit x86-frame @vector_load
+// Vector register ordinals never enter the callee-preserved GPR mask.
+// RUN: emit x86-frame @vector_load fixed=%value:physical_register:15:1
 x86.target<avx2> @target
 
-low.func.def target<x86.avx2.core>(@target) @vector_load(%pointer: reg<x86.gpr64>) -> (reg<x86.xmm>) asm {
-  // ERROR@+1: X86/005 {operation_name="vmovdqu32"}
+low.func.def target<x86.avx2.core>(@target) @vector_load(%pointer: reg<x86.gpr64>) asm {
   %value = vmovdqu32.load.xmm %pointer {disp32 = 0}
-  return %value
+  return
 }
+
+// ----
+callee-preserved: none
 
 // ====
 

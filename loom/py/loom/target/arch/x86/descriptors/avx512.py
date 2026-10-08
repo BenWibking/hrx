@@ -10,6 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loom.target.arch.x86 import native_vector as native
+from loom.target.arch.x86.vector_encoding import (
+    VectorEncodingPrefix,
+    VectorMachineInstruction,
+)
 from loom.target.arch.x86.vector_families import (
     AVX512_BITWISE_FAMILIES,
     AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
@@ -119,6 +124,18 @@ from .scalar import X86_SCALAR_DESCRIPTOR_SET
 _REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
 
 
+def _evex_descriptor(
+    descriptor: Descriptor, instruction: VectorMachineInstruction
+) -> Descriptor:
+    return instruction.bind(descriptor, VectorEncodingPrefix.EVEX)
+
+
+def _vex_descriptor(
+    descriptor: Descriptor, instruction: VectorMachineInstruction
+) -> Descriptor:
+    return instruction.bind(descriptor, VectorEncodingPrefix.VEX)
+
+
 def _direct_broadcast_asm_mnemonic(
     mnemonic: str,
     element_bit_width: int,
@@ -135,28 +152,35 @@ def _zmm_widen_descriptor(
     mnemonic: str,
     source_bit_width: int,
     result_element_bit_width: int,
+    instruction: VectorMachineInstruction,
 ) -> Descriptor:
     source_suffix = _REGISTER_SUFFIXES[source_bit_width]
-    return Descriptor(
-        key=f"x86.avx512.{mnemonic}.zmm.{source_suffix}",
-        mnemonic=mnemonic,
-        semantic_tag=(
-            f"integer.extui.i8x{512 // result_element_bit_width}."
-            f"i{result_element_bit_width}x{512 // result_element_bit_width}"
+    return _evex_descriptor(
+        Descriptor(
+            key=f"x86.avx512.{mnemonic}.zmm.{source_suffix}",
+            mnemonic=mnemonic,
+            semantic_tag=(
+                f"integer.extui.i8x{512 // result_element_bit_width}."
+                f"i{result_element_bit_width}x{512 // result_element_bit_width}"
+            ),
+            operands=(_zmm_result(), _vector_operand(source_bit_width, "source")),
+            asm_forms=_asm(
+                mnemonic=f"avx512.{mnemonic}.zmm.{source_suffix}",
+                results=("dst",),
+                operands=("source",),
+            ),
+            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
-        operands=(_zmm_result(), _vector_operand(source_bit_width, "source")),
-        asm_forms=_asm(
-            mnemonic=f"avx512.{mnemonic}.zmm.{source_suffix}",
-            results=("dst",),
-            operands=("source",),
-        ),
-        schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
-        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        instruction,
     )
 
 
 def _predicate_conversion_descriptor(
-    lane_count: int, *, mask_to_carrier: bool
+    lane_count: int,
+    instruction: VectorMachineInstruction,
+    *,
+    mask_to_carrier: bool,
 ) -> Descriptor:
     carrier_bit_width, element_suffix = {
         2: (128, "q"),
@@ -170,40 +194,45 @@ def _predicate_conversion_descriptor(
     mnemonic = (
         f"vpmovm2{element_suffix}" if mask_to_carrier else f"vpmov{element_suffix}2m"
     )
-    return Descriptor(
-        key=(
-            f"x86.avx512.{mnemonic}.{register_suffix}.k"
-            if mask_to_carrier
-            else f"x86.avx512.{mnemonic}.k.{register_suffix}"
-        ),
-        mnemonic=mnemonic,
-        semantic_tag=(
-            f"mask.expand.i1x{lane_count}"
-            if mask_to_carrier
-            else f"mask.compress.i1x{lane_count}"
-        ),
-        operands=(
-            (_vector_result(carrier_bit_width), _k_operand("source"))
-            if mask_to_carrier
-            else (_k_result(), _vector_operand(carrier_bit_width, "source"))
-        ),
-        asm_forms=_asm(
-            mnemonic=(
-                f"avx512.{mnemonic}.{register_suffix}.k"
+    return _evex_descriptor(
+        Descriptor(
+            key=(
+                f"x86.avx512.{mnemonic}.{register_suffix}.k"
                 if mask_to_carrier
-                else f"avx512.{mnemonic}.k.{register_suffix}"
+                else f"x86.avx512.{mnemonic}.k.{register_suffix}"
             ),
-            results=("dst",),
-            operands=("source",),
+            mnemonic=mnemonic,
+            semantic_tag=(
+                f"mask.expand.i1x{lane_count}"
+                if mask_to_carrier
+                else f"mask.compress.i1x{lane_count}"
+            ),
+            operands=(
+                (_vector_result(carrier_bit_width), _k_operand("source"))
+                if mask_to_carrier
+                else (_k_result(), _vector_operand(carrier_bit_width, "source"))
+            ),
+            asm_forms=_asm(
+                mnemonic=(
+                    f"avx512.{mnemonic}.{register_suffix}.k"
+                    if mask_to_carrier
+                    else f"avx512.{mnemonic}.k.{register_suffix}"
+                ),
+                results=("dst",),
+                operands=("source",),
+            ),
+            schedule_class=_SCHEDULE_MASK,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
-        schedule_class=_SCHEDULE_MASK,
-        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        instruction,
     )
 
 
-def _mask_move_descriptor(*, mask_to_gpr: bool) -> Descriptor:
+def _mask_move_descriptor(
+    instruction: VectorMachineInstruction, *, mask_to_gpr: bool
+) -> Descriptor:
     asm_mnemonic = "avx512.kmovq.gpr64.k" if mask_to_gpr else "avx512.kmovq.k.gpr64"
-    return Descriptor(
+    descriptor = Descriptor(
         key=("x86.avx512.kmovq.gpr64.k" if mask_to_gpr else "x86.avx512.kmovq.k.gpr64"),
         mnemonic="kmovq",
         semantic_tag="mask.move.i64",
@@ -220,6 +249,7 @@ def _mask_move_descriptor(*, mask_to_gpr: bool) -> Descriptor:
         schedule_class=_SCHEDULE_MASK,
         flags=(DescriptorFlag.DEAD_REMOVABLE,),
     )
+    return instruction.bind(descriptor, VectorEncodingPrefix.VEX)
 
 
 X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
@@ -576,381 +606,501 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
     ),
     descriptors=(
         *X86_AVX2_DESCRIPTORS,
-        Descriptor(
-            key="x86.avx512.vextractf32x4.xmm.zmm",
-            mnemonic="vextractf32x4",
-            semantic_tag="float.extract.f32x16.quarter",
-            operands=(_xmm_result(), _zmm_operand("source")),
-            immediates=(_LANE_I32X4_IMMEDIATE,),
-            asm_forms=_asm(
-                mnemonic="vextractf32x4.xmm",
-                results=("dst",),
-                operands=("source",),
-                immediates=("lane",),
-            ),
-            schedule_class=_SCHEDULE_VECTOR_F32_ZMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        Descriptor(
-            key="x86.avx512.vinsertf32x4.zmm.xmm",
-            mnemonic="vinsertf32x4",
-            semantic_tag="bits.insert.128.zmm",
-            operands=(
-                _zmm_result(),
-                _zmm_operand("dest"),
-                _xmm_operand("value"),
-            ),
-            immediates=(_LANE_I32X4_IMMEDIATE,),
-            asm_forms=_asm(
-                mnemonic="vinsertf32x4.zmm.xmm",
-                results=("dst",),
-                operands=("dest", "value"),
-                immediates=("lane",),
-            ),
-            schedule_class=_SCHEDULE_VECTOR_F32_ZMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        Descriptor(
-            key="x86.avx512.vextracti64x4.ymm.zmm",
-            mnemonic="vextracti64x4",
-            semantic_tag="bits.extract.256.zmm",
-            operands=(_vector_result(256), _zmm_operand("source")),
-            immediates=(_TWO_LANE_IMMEDIATE,),
-            asm_forms=_asm(
-                mnemonic="vextracti64x4.ymm",
-                results=("dst",),
-                operands=("source",),
-                immediates=("lane",),
-            ),
-            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        Descriptor(
-            key="x86.avx512.vinserti64x4.zmm.ymm",
-            mnemonic="vinserti64x4",
-            semantic_tag="bits.insert.256.zmm",
-            operands=(
-                _zmm_result(),
-                _zmm_operand("dest"),
-                _vector_operand(256, "value"),
-            ),
-            immediates=(_TWO_LANE_IMMEDIATE,),
-            asm_forms=_asm(
-                mnemonic="vinserti64x4.zmm.ymm",
-                results=("dst",),
-                operands=("dest", "value"),
-                immediates=("lane",),
-            ),
-            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        Descriptor(
-            key="x86.avx512.vpmovwb.ymm.zmm",
-            mnemonic="vpmovwb",
-            semantic_tag="integer.trunci.i16x32.i8x32",
-            operands=(_vector_result(256), _zmm_operand("source")),
-            asm_forms=_asm(
-                mnemonic="avx512.vpmovwb.ymm.zmm",
-                results=("dst",),
-                operands=("source",),
-            ),
-            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        Descriptor(
-            key="x86.avx512.vshufi64x2.zmm",
-            mnemonic="vshufi64x2",
-            semantic_tag="bits.shuffle.i64x8",
-            operands=(
-                _zmm_result(),
-                _zmm_operand("lhs"),
-                _zmm_operand("rhs"),
-            ),
-            immediates=(
-                Immediate(
-                    "control",
-                    ImmediateKind.UNSIGNED,
-                    bit_width=8,
-                    unsigned_max=255,
-                ),
-            ),
-            asm_forms=_asm(
-                results=("dst",),
-                operands=("lhs", "rhs"),
-                immediates=("control",),
-            ),
-            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        Descriptor(
-            key="x86.avx512.vpsrldq.zmm",
-            mnemonic="vpsrldq",
-            semantic_tag="bits.shift_right_bytes.v512x128",
-            operands=(_zmm_result(), _zmm_operand("source")),
-            immediates=(
-                Immediate(
-                    "bytes",
-                    ImmediateKind.UNSIGNED,
-                    bit_width=8,
-                    unsigned_max=255,
-                ),
-            ),
-            asm_forms=_asm(
-                mnemonic="vpsrldq.zmm",
-                results=("dst",),
-                operands=("source",),
-                immediates=("bytes",),
-            ),
-            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        *(
-            _vector_splat_descriptor(
-                vector_bit_width=vector_bit_width,
-                key=(f"x86.avx512.{mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}"),
-                mnemonic=mnemonic,
-                semantic_tag=(f"bits.splat.{element_bit_width}.v{vector_bit_width}"),
-                operand=(
-                    _gpr64_operand("value")
-                    if element_bit_width == 64
-                    else _gpr32_operand("value")
-                ),
-                schedule_class=_vector_i32_schedule_class(vector_bit_width),
-                asm_mnemonic=_direct_broadcast_asm_mnemonic(
-                    mnemonic,
-                    element_bit_width,
-                    vector_bit_width,
-                ),
-            )
-            for element_bit_width, mnemonic in (
-                (8, "vpbroadcastb"),
-                (16, "vpbroadcastw"),
-                (32, "vpbroadcastd"),
-                (64, "vpbroadcastq"),
-            )
-            for vector_bit_width in AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS
-        ),
-        *(
-            _vector_splat_descriptor(
-                vector_bit_width=512,
-                key=f"x86.avx512.{mnemonic}.zmm",
-                mnemonic=mnemonic,
-                semantic_tag=(f"float.splat.{element.name}x{element.lane_count(512)}"),
-                operand=_xmm_operand("value"),
-                schedule_class=_SCHEDULE_VECTOR_F32_ZMM,
-            )
-            for element, mnemonic in zip(
-                FLOAT_ELEMENTS,
-                ("vbroadcastss", "vbroadcastsd"),
-                strict=True,
-            )
-        ),
-        _vector_zero_descriptor(
-            vector_bit_width=512,
-            key="x86.avx512.vxorps.zero.zmm",
-        ),
-        *(
-            _zmm_widen_descriptor(mnemonic, source_bit_width, element_bit_width)
-            for mnemonic, source_bit_width, element_bit_width in (
-                ("vpmovzxbw", 256, 16),
-                ("vpmovzxbd", 128, 32),
-                ("vpmovzxbq", 128, 64),
-            )
-        ),
-        *(
-            _vector_i32_binary_descriptor(
-                vector_bit_width=vector_bit_width,
-                key=(
-                    f"x86.avx512.{family.mnemonic}."
-                    f"{_REGISTER_SUFFIXES[vector_bit_width]}"
-                ),
-                mnemonic=family.mnemonic,
-                semantic_tag=(
-                    f"{family.semantic}.{family.element.name}x"
-                    f"{family.element.lane_count(vector_bit_width)}"
-                ),
-            )
-            for family in AVX512VL_INTEGER_BINARY_FAMILIES
-            for vector_bit_width in AVX512VL_VECTOR_BIT_WIDTHS
-        ),
-        *(
-            _vector_i32_binary_descriptor(
-                vector_bit_width=512,
-                key=f"x86.avx512.{family.mnemonic}.zmm",
-                mnemonic=family.mnemonic,
-                semantic_tag=(
-                    f"{family.semantic}.{family.element.name}x"
-                    f"{family.element.lane_count(512)}"
-                ),
-            )
-            for family in AVX512_INTEGER_BINARY_FAMILIES
-        ),
-        *(
-            _vector_i32_binary_descriptor(
-                vector_bit_width=512,
-                key=f"x86.avx512.{mnemonic}.zmm",
-                mnemonic=mnemonic,
-                semantic_tag=f"{semantic}.v512",
-            )
-            for _, mnemonic, semantic in AVX512_BITWISE_FAMILIES
-        ),
-        *(
+        _evex_descriptor(
             Descriptor(
-                key=f"x86.avx512.{mnemonic}.zmm",
-                mnemonic=mnemonic,
-                semantic_tag=f"bits.shuffle.i{element_bit_width}x{lane_count}",
+                key="x86.avx512.vextractf32x4.xmm.zmm",
+                mnemonic="vextractf32x4",
+                semantic_tag="float.extract.f32x16.quarter",
+                operands=(_xmm_result(), _zmm_operand("source")),
+                immediates=(_LANE_I32X4_IMMEDIATE,),
+                asm_forms=_asm(
+                    mnemonic="vextractf32x4.xmm",
+                    results=("dst",),
+                    operands=("source",),
+                    immediates=("lane",),
+                ),
+                schedule_class=_SCHEDULE_VECTOR_F32_ZMM,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            native.VEXTRACTF32X4,
+        ),
+        _evex_descriptor(
+            Descriptor(
+                key="x86.avx512.vinsertf32x4.zmm.xmm",
+                mnemonic="vinsertf32x4",
+                semantic_tag="bits.insert.128.zmm",
                 operands=(
                     _zmm_result(),
-                    _zmm_operand("source"),
-                    _zmm_operand("control"),
+                    _zmm_operand("dest"),
+                    _xmm_operand("value"),
                 ),
+                immediates=(_LANE_I32X4_IMMEDIATE,),
                 asm_forms=_asm(
-                    mnemonic=f"avx512.{mnemonic}.zmm",
+                    mnemonic="vinsertf32x4.zmm.xmm",
                     results=("dst",),
-                    operands=("source", "control"),
+                    operands=("dest", "value"),
+                    immediates=("lane",),
+                ),
+                schedule_class=_SCHEDULE_VECTOR_F32_ZMM,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            native.VINSERTF32X4,
+        ),
+        _evex_descriptor(
+            Descriptor(
+                key="x86.avx512.vextracti64x4.ymm.zmm",
+                mnemonic="vextracti64x4",
+                semantic_tag="bits.extract.256.zmm",
+                operands=(_vector_result(256), _zmm_operand("source")),
+                immediates=(_TWO_LANE_IMMEDIATE,),
+                asm_forms=_asm(
+                    mnemonic="vextracti64x4.ymm",
+                    results=("dst",),
+                    operands=("source",),
+                    immediates=("lane",),
                 ),
                 schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
                 flags=(DescriptorFlag.DEAD_REMOVABLE,),
-            )
-            for mnemonic, element_bit_width, lane_count in (
-                ("vpermw", 16, 32),
-                ("vpermd", 32, 16),
-                ("vpermq", 64, 8),
-            )
+            ),
+            native.VEXTRACTI64X4,
         ),
-        *(
+        _evex_descriptor(
             Descriptor(
-                key=f"x86.avx512.{mnemonic}.zmm",
-                mnemonic=mnemonic,
-                semantic_tag=f"integer.{semantic}.i16x32",
-                operands=(_zmm_result(), _zmm_operand("source")),
+                key="x86.avx512.vinserti64x4.zmm.ymm",
+                mnemonic="vinserti64x4",
+                semantic_tag="bits.insert.256.zmm",
+                operands=(
+                    _zmm_result(),
+                    _zmm_operand("dest"),
+                    _vector_operand(256, "value"),
+                ),
+                immediates=(_TWO_LANE_IMMEDIATE,),
+                asm_forms=_asm(
+                    mnemonic="vinserti64x4.zmm.ymm",
+                    results=("dst",),
+                    operands=("dest", "value"),
+                    immediates=("lane",),
+                ),
+                schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            native.VINSERTI64X4,
+        ),
+        _evex_descriptor(
+            Descriptor(
+                key="x86.avx512.vpmovwb.ymm.zmm",
+                mnemonic="vpmovwb",
+                semantic_tag="integer.trunci.i16x32.i8x32",
+                operands=(_vector_result(256), _zmm_operand("source")),
+                asm_forms=_asm(
+                    mnemonic="avx512.vpmovwb.ymm.zmm",
+                    results=("dst",),
+                    operands=("source",),
+                ),
+                schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            native.VPMOVWB,
+        ),
+        _evex_descriptor(
+            Descriptor(
+                key="x86.avx512.vshufi64x2.zmm",
+                mnemonic="vshufi64x2",
+                semantic_tag="bits.shuffle.i64x8",
+                operands=(
+                    _zmm_result(),
+                    _zmm_operand("lhs"),
+                    _zmm_operand("rhs"),
+                ),
                 immediates=(
                     Immediate(
-                        "shift",
+                        "control",
                         ImmediateKind.UNSIGNED,
                         bit_width=8,
                         unsigned_max=255,
                     ),
                 ),
                 asm_forms=_asm(
-                    mnemonic=f"avx512.{mnemonic}.zmm",
                     results=("dst",),
-                    operands=("source",),
-                    immediates=("shift",),
+                    operands=("lhs", "rhs"),
+                    immediates=("control",),
                 ),
                 schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
                 flags=(DescriptorFlag.DEAD_REMOVABLE,),
-            )
-            for mnemonic, semantic in (
-                ("vpsllw", "shl"),
-                ("vpsrlw", "shru"),
-            )
-        ),
-        Descriptor(
-            key="x86.avx512.vmovdqu64.rodata.zmm",
-            mnemonic="vmovdqu64",
-            semantic_tag="memory.load.rodata.v512",
-            operands=(_zmm_result(),),
-            immediates=(_READ_ONLY_DATA_IMMEDIATE,),
-            asm_forms=_asm(
-                mnemonic="avx512.vmovdqu64.rodata.zmm",
-                results=("dst",),
-                immediates=("data",),
             ),
-            schedule_class=_SCHEDULE_MEMORY_LOAD_ZMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            native.VSHUFI64X2,
         ),
-        *(
-            _vector_f32_binary_descriptor(
-                vector_bit_width=512,
-                key=f"x86.avx512.{family.mnemonic}.zmm",
-                mnemonic=family.mnemonic,
-                semantic_tag=(
-                    f"{family.semantic}.{family.element.name}x"
-                    f"{family.element.lane_count(512)}"
+        _evex_descriptor(
+            Descriptor(
+                key="x86.avx512.vpsrldq.zmm",
+                mnemonic="vpsrldq",
+                semantic_tag="bits.shift_right_bytes.v512x128",
+                operands=(_zmm_result(), _zmm_operand("source")),
+                immediates=(
+                    Immediate(
+                        "bytes",
+                        ImmediateKind.UNSIGNED,
+                        bit_width=8,
+                        unsigned_max=255,
+                    ),
                 ),
-            )
-            for family in AVX512_FLOAT_BINARY_FAMILIES
-        ),
-        *(
-            _vector_f32_binary_descriptor(
-                vector_bit_width=512,
-                key=f"x86.avx512.{mnemonic}.zmm",
-                mnemonic=mnemonic,
-                semantic_tag=(
-                    f"float.fast_extrema.{element.name}x{element.lane_count(512)}"
+                asm_forms=_asm(
+                    mnemonic="vpsrldq.zmm",
+                    results=("dst",),
+                    operands=("source",),
+                    immediates=("bytes",),
                 ),
-            )
-            for element in FLOAT_ELEMENTS
-            for mnemonic in (
-                FLOAT_EXTREMA_MNEMONICS["minimumf"][element.name],
-                FLOAT_EXTREMA_MNEMONICS["maximumf"][element.name],
-            )
+                schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            native.VPSRLDQ,
         ),
         *(
-            _vector_fma_descriptor(
-                vector_bit_width=512,
-                key=f"x86.avx512.{AVX512_FLOAT_FMA_MNEMONICS[element.name]}.zmm",
-                mnemonic=AVX512_FLOAT_FMA_MNEMONICS[element.name],
-                semantic_tag=(f"float.fma.{element.name}x{element.lane_count(512)}"),
-            )
-            for element in FLOAT_ELEMENTS
-        ),
-        *(
-            _vector_mask_compare_descriptor(
-                vector_bit_width=vector_bit_width,
-                key=f"x86.avx512.{mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}",
-                mnemonic=mnemonic,
-                semantic_tag=(
-                    f"integer.cmp.{signedness}.{element.name}x"
-                    f"{element.lane_count(vector_bit_width)}"
+            _evex_descriptor(
+                _vector_splat_descriptor(
+                    vector_bit_width=vector_bit_width,
+                    key=(
+                        f"x86.avx512.{mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}"
+                    ),
+                    mnemonic=mnemonic,
+                    semantic_tag=(
+                        f"bits.splat.{element_bit_width}.v{vector_bit_width}"
+                    ),
+                    operand=(
+                        _gpr64_operand("value")
+                        if element_bit_width == 64
+                        else _gpr32_operand("value")
+                    ),
+                    schedule_class=_vector_i32_schedule_class(vector_bit_width),
+                    asm_mnemonic=_direct_broadcast_asm_mnemonic(
+                        mnemonic,
+                        element_bit_width,
+                        vector_bit_width,
+                    ),
                 ),
+                instruction,
             )
-            for vector_bit_width in (128, 256, 512)
-            for element in INTEGER_ELEMENTS
-            for mnemonic, signedness in zip(
-                AVX512_INTEGER_COMPARE_MNEMONICS[element.name],
-                ("signed", "unsigned"),
+            for (element_bit_width, mnemonic), instruction in zip(
+                (
+                    (8, "vpbroadcastb"),
+                    (16, "vpbroadcastw"),
+                    (32, "vpbroadcastd"),
+                    (64, "vpbroadcastq"),
+                ),
+                native.AVX512_GPR_BROADCAST,
+                strict=True,
+            )
+            for vector_bit_width in AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS
+        ),
+        *(
+            _evex_descriptor(
+                _vector_splat_descriptor(
+                    vector_bit_width=512,
+                    key=f"x86.avx512.{mnemonic}.zmm",
+                    mnemonic=mnemonic,
+                    semantic_tag=(
+                        f"float.splat.{element.name}x{element.lane_count(512)}"
+                    ),
+                    operand=_xmm_operand("value"),
+                    schedule_class=_SCHEDULE_VECTOR_F32_ZMM,
+                ),
+                instruction,
+            )
+            for element, mnemonic, instruction in zip(
+                FLOAT_ELEMENTS,
+                ("vbroadcastss", "vbroadcastsd"),
+                (native.VBROADCASTSS, native.VBROADCASTSD),
+                strict=True,
+            )
+        ),
+        _evex_descriptor(
+            _vector_zero_descriptor(
+                vector_bit_width=512,
+                key="x86.avx512.vxorps.zero.zmm",
+            ),
+            native.VXORPS,
+        ),
+        *(
+            _zmm_widen_descriptor(
+                mnemonic, source_bit_width, element_bit_width, instruction
+            )
+            for mnemonic, source_bit_width, element_bit_width, instruction in (
+                ("vpmovzxbw", 256, 16, native.VPMOVZXBW),
+                ("vpmovzxbd", 128, 32, native.VPMOVZXBD),
+                ("vpmovzxbq", 128, 64, native.VPMOVZXBQ),
+            )
+        ),
+        *(
+            _evex_descriptor(
+                _vector_i32_binary_descriptor(
+                    vector_bit_width=vector_bit_width,
+                    key=(
+                        f"x86.avx512.{family.mnemonic}."
+                        f"{_REGISTER_SUFFIXES[vector_bit_width]}"
+                    ),
+                    mnemonic=family.mnemonic,
+                    semantic_tag=(
+                        f"{family.semantic}.{family.element.name}x"
+                        f"{family.element.lane_count(vector_bit_width)}"
+                    ),
+                ),
+                instruction,
+            )
+            for family, instruction in zip(
+                AVX512VL_INTEGER_BINARY_FAMILIES,
+                native.AVX512VL_INTEGER_BINARY,
+                strict=True,
+            )
+            for vector_bit_width in AVX512VL_VECTOR_BIT_WIDTHS
+        ),
+        *(
+            _evex_descriptor(
+                _vector_i32_binary_descriptor(
+                    vector_bit_width=512,
+                    key=f"x86.avx512.{family.mnemonic}.zmm",
+                    mnemonic=family.mnemonic,
+                    semantic_tag=(
+                        f"{family.semantic}.{family.element.name}x"
+                        f"{family.element.lane_count(512)}"
+                    ),
+                ),
+                instruction,
+            )
+            for family, instruction in zip(
+                AVX512_INTEGER_BINARY_FAMILIES,
+                native.AVX512_INTEGER_BINARY,
                 strict=True,
             )
         ),
         *(
-            _vector_mask_compare_descriptor(
-                vector_bit_width=vector_bit_width,
-                key=(
-                    f"x86.avx512.{AVX512_FLOAT_COMPARE_MNEMONICS[element.name]}."
-                    f"{_REGISTER_SUFFIXES[vector_bit_width]}"
+            _evex_descriptor(
+                _vector_i32_binary_descriptor(
+                    vector_bit_width=512,
+                    key=f"x86.avx512.{mnemonic}.zmm",
+                    mnemonic=mnemonic,
+                    semantic_tag=f"{semantic}.v512",
                 ),
-                mnemonic=AVX512_FLOAT_COMPARE_MNEMONICS[element.name],
-                semantic_tag=(
-                    f"float.cmp.{element.name}x{element.lane_count(vector_bit_width)}"
-                ),
+                instruction,
             )
-            for vector_bit_width in (128, 256, 512)
-            for element in FLOAT_ELEMENTS
+            for (_, mnemonic, semantic), instruction in zip(
+                AVX512_BITWISE_FAMILIES, native.AVX512_BITWISE, strict=True
+            )
         ),
         *(
-            _vector_mask_select_descriptor(
-                vector_bit_width=vector_bit_width,
-                key=f"x86.avx512.{mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}",
-                mnemonic=mnemonic,
-                semantic_tag=f"bits.select.{mnemonic}.v{vector_bit_width}",
-                schedule_class=(
-                    {
-                        128: _SCHEDULE_VECTOR_F32_XMM,
-                        256: _SCHEDULE_VECTOR_F32_YMM,
-                        512: _SCHEDULE_VECTOR_F32_ZMM,
-                    }[vector_bit_width]
-                    if mnemonic.startswith("vblend")
-                    else {
-                        128: _SCHEDULE_VECTOR_I32_XMM,
-                        256: _SCHEDULE_VECTOR_I32_YMM,
-                        512: _SCHEDULE_VECTOR_I32_ZMM,
-                    }[vector_bit_width]
+            _evex_descriptor(
+                Descriptor(
+                    key=f"x86.avx512.{mnemonic}.zmm",
+                    mnemonic=mnemonic,
+                    semantic_tag=f"bits.shuffle.i{element_bit_width}x{lane_count}",
+                    operands=(
+                        _zmm_result(),
+                        _zmm_operand("source"),
+                        _zmm_operand("control"),
+                    ),
+                    asm_forms=_asm(
+                        mnemonic=f"avx512.{mnemonic}.zmm",
+                        results=("dst",),
+                        operands=("source", "control"),
+                    ),
+                    schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+                    flags=(DescriptorFlag.DEAD_REMOVABLE,),
                 ),
+                instruction,
+            )
+            for mnemonic, element_bit_width, lane_count, instruction in (
+                ("vpermw", 16, 32, native.VPERMW),
+                ("vpermd", 32, 16, native.VPERMD),
+                ("vpermq", 64, 8, native.VPERMQ_VECTOR_BINARY),
+            )
+        ),
+        *(
+            _evex_descriptor(
+                Descriptor(
+                    key=f"x86.avx512.{mnemonic}.zmm",
+                    mnemonic=mnemonic,
+                    semantic_tag=f"integer.{semantic}.i16x32",
+                    operands=(_zmm_result(), _zmm_operand("source")),
+                    immediates=(
+                        Immediate(
+                            "shift",
+                            ImmediateKind.UNSIGNED,
+                            bit_width=8,
+                            unsigned_max=255,
+                        ),
+                    ),
+                    asm_forms=_asm(
+                        mnemonic=f"avx512.{mnemonic}.zmm",
+                        results=("dst",),
+                        operands=("source",),
+                        immediates=("shift",),
+                    ),
+                    schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+                    flags=(DescriptorFlag.DEAD_REMOVABLE,),
+                ),
+                instruction,
+            )
+            for mnemonic, semantic, instruction in (
+                ("vpsllw", "shl", native.VPSLLW),
+                ("vpsrlw", "shru", native.VPSRLW),
+            )
+        ),
+        _evex_descriptor(
+            Descriptor(
+                key="x86.avx512.vmovdqu64.rodata.zmm",
+                mnemonic="vmovdqu64",
+                semantic_tag="memory.load.rodata.v512",
+                operands=(_zmm_result(),),
+                immediates=(_READ_ONLY_DATA_IMMEDIATE,),
+                asm_forms=_asm(
+                    mnemonic="avx512.vmovdqu64.rodata.zmm",
+                    results=("dst",),
+                    immediates=("data",),
+                ),
+                schedule_class=_SCHEDULE_MEMORY_LOAD_ZMM,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            native.VMOVDQU64,
+        ),
+        *(
+            _evex_descriptor(
+                _vector_f32_binary_descriptor(
+                    vector_bit_width=512,
+                    key=f"x86.avx512.{family.mnemonic}.zmm",
+                    mnemonic=family.mnemonic,
+                    semantic_tag=(
+                        f"{family.semantic}.{family.element.name}x"
+                        f"{family.element.lane_count(512)}"
+                    ),
+                ),
+                instruction,
+            )
+            for family, instruction in zip(
+                AVX512_FLOAT_BINARY_FAMILIES,
+                native.AVX2_FLOAT_BINARY,
+                strict=True,
+            )
+        ),
+        *(
+            _evex_descriptor(
+                _vector_f32_binary_descriptor(
+                    vector_bit_width=512,
+                    key=f"x86.avx512.{mnemonic}.zmm",
+                    mnemonic=mnemonic,
+                    semantic_tag=(
+                        f"float.fast_extrema.{element.name}x{element.lane_count(512)}"
+                    ),
+                ),
+                instruction,
+            )
+            for element, instructions in zip(
+                FLOAT_ELEMENTS,
+                (native.AVX2_FLOAT_EXTREMA[:2], native.AVX2_FLOAT_EXTREMA[2:]),
+                strict=True,
+            )
+            for mnemonic, instruction in zip(
+                (
+                    FLOAT_EXTREMA_MNEMONICS["minimumf"][element.name],
+                    FLOAT_EXTREMA_MNEMONICS["maximumf"][element.name],
+                ),
+                instructions,
+                strict=True,
+            )
+        ),
+        *(
+            _evex_descriptor(
+                _vector_fma_descriptor(
+                    vector_bit_width=512,
+                    key=(f"x86.avx512.{AVX512_FLOAT_FMA_MNEMONICS[element.name]}.zmm"),
+                    mnemonic=AVX512_FLOAT_FMA_MNEMONICS[element.name],
+                    semantic_tag=(
+                        f"float.fma.{element.name}x{element.lane_count(512)}"
+                    ),
+                ),
+                instruction,
+            )
+            for element, instruction in zip(
+                FLOAT_ELEMENTS, native.AVX2_FLOAT_FMA, strict=True
+            )
+        ),
+        *(
+            _evex_descriptor(
+                _vector_mask_compare_descriptor(
+                    vector_bit_width=vector_bit_width,
+                    key=(
+                        f"x86.avx512.{mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}"
+                    ),
+                    mnemonic=mnemonic,
+                    semantic_tag=(
+                        f"integer.cmp.{signedness}.{element.name}x"
+                        f"{element.lane_count(vector_bit_width)}"
+                    ),
+                ),
+                instruction,
             )
             for vector_bit_width in (128, 256, 512)
-            for mnemonic in dict.fromkeys(AVX512_SELECT_MNEMONICS.values())
+            for element, instructions in zip(
+                INTEGER_ELEMENTS, native.AVX512_INTEGER_COMPARE, strict=True
+            )
+            for mnemonic, signedness, instruction in zip(
+                AVX512_INTEGER_COMPARE_MNEMONICS[element.name],
+                ("signed", "unsigned"),
+                instructions,
+                strict=True,
+            )
+        ),
+        *(
+            _evex_descriptor(
+                _vector_mask_compare_descriptor(
+                    vector_bit_width=vector_bit_width,
+                    key=(
+                        f"x86.avx512."
+                        f"{AVX512_FLOAT_COMPARE_MNEMONICS[element.name]}."
+                        f"{_REGISTER_SUFFIXES[vector_bit_width]}"
+                    ),
+                    mnemonic=AVX512_FLOAT_COMPARE_MNEMONICS[element.name],
+                    semantic_tag=(
+                        f"float.cmp.{element.name}x"
+                        f"{element.lane_count(vector_bit_width)}"
+                    ),
+                ),
+                instruction,
+            )
+            for vector_bit_width in (128, 256, 512)
+            for element, instruction in zip(
+                FLOAT_ELEMENTS, native.AVX512_FLOAT_COMPARE, strict=True
+            )
+        ),
+        *(
+            _evex_descriptor(
+                _vector_mask_select_descriptor(
+                    vector_bit_width=vector_bit_width,
+                    key=(
+                        f"x86.avx512.{mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}"
+                    ),
+                    mnemonic=mnemonic,
+                    semantic_tag=f"bits.select.{mnemonic}.v{vector_bit_width}",
+                    schedule_class=(
+                        {
+                            128: _SCHEDULE_VECTOR_F32_XMM,
+                            256: _SCHEDULE_VECTOR_F32_YMM,
+                            512: _SCHEDULE_VECTOR_F32_ZMM,
+                        }[vector_bit_width]
+                        if mnemonic.startswith("vblend")
+                        else {
+                            128: _SCHEDULE_VECTOR_I32_XMM,
+                            256: _SCHEDULE_VECTOR_I32_YMM,
+                            512: _SCHEDULE_VECTOR_I32_ZMM,
+                        }[vector_bit_width]
+                    ),
+                ),
+                instruction,
+            )
+            for vector_bit_width in (128, 256, 512)
+            for mnemonic, instruction in zip(
+                dict.fromkeys(AVX512_SELECT_MNEMONICS.values()),
+                native.AVX512_SELECT,
+                strict=True,
+            )
         ),
         *memory_descriptors(
             key_prefix="x86.avx512",
@@ -963,42 +1113,61 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             load_schedule_class=_SCHEDULE_MEMORY_LOAD_ZMM,
             store_schedule_class=_SCHEDULE_MEMORY_STORE_ZMM,
             assembly_suffix="",
+            vector_instructions=native.VECTOR_MEMORY,
+            vector_prefix=VectorEncodingPrefix.EVEX,
         ),
         *(
             _predicate_conversion_descriptor(
-                lane_count, mask_to_carrier=mask_to_carrier
+                lane_count,
+                instruction,
+                mask_to_carrier=mask_to_carrier,
             )
-            for lane_count in (2, 4, 8, 16, 32, 64)
-            for mask_to_carrier in (False, True)
+            for lane_count, instructions in zip(
+                (2, 4, 8, 16, 32, 64),
+                native.AVX512_PREDICATE_CONVERSION,
+                strict=True,
+            )
+            for mask_to_carrier, instruction in zip(
+                (False, True), instructions, strict=True
+            )
         ),
-        _mask_move_descriptor(mask_to_gpr=False),
-        _mask_move_descriptor(mask_to_gpr=True),
-        Descriptor(
-            key="x86.avx512.kandq",
-            mnemonic="kandq",
-            semantic_tag="mask.and.i64",
-            operands=(_k_result(), _k_operand("lhs"), _k_operand("rhs")),
-            asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
-            schedule_class=_SCHEDULE_MASK,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        _mask_move_descriptor(native.KMOVQ_FROM_GPR64, mask_to_gpr=False),
+        _mask_move_descriptor(native.KMOVQ_TO_GPR64, mask_to_gpr=True),
+        _vex_descriptor(
+            Descriptor(
+                key="x86.avx512.kandq",
+                mnemonic="kandq",
+                semantic_tag="mask.and.i64",
+                operands=(_k_result(), _k_operand("lhs"), _k_operand("rhs")),
+                asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
+                schedule_class=_SCHEDULE_MASK,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            native.KANDQ,
         ),
-        Descriptor(
-            key="x86.avx512.korq",
-            mnemonic="korq",
-            semantic_tag="mask.or.i64",
-            operands=(_k_result(), _k_operand("lhs"), _k_operand("rhs")),
-            asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
-            schedule_class=_SCHEDULE_MASK,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        _vex_descriptor(
+            Descriptor(
+                key="x86.avx512.korq",
+                mnemonic="korq",
+                semantic_tag="mask.or.i64",
+                operands=(_k_result(), _k_operand("lhs"), _k_operand("rhs")),
+                asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
+                schedule_class=_SCHEDULE_MASK,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            native.KORQ,
         ),
-        Descriptor(
-            key="x86.avx512.kxorq",
-            mnemonic="kxorq",
-            semantic_tag="mask.xor.i64",
-            operands=(_k_result(), _k_operand("lhs"), _k_operand("rhs")),
-            asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
-            schedule_class=_SCHEDULE_MASK,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        _vex_descriptor(
+            Descriptor(
+                key="x86.avx512.kxorq",
+                mnemonic="kxorq",
+                semantic_tag="mask.xor.i64",
+                operands=(_k_result(), _k_operand("lhs"), _k_operand("rhs")),
+                asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
+                schedule_class=_SCHEDULE_MASK,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            native.KXORQ,
         ),
     ),
 )

@@ -1,0 +1,36 @@
+// Copyright 2026 The IREE Authors
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+// Native SIMD functions use the platform pointer ABI. Vector values stay
+// inside the function while loads, arithmetic, and stores use descriptor-owned
+// VEX facts.
+global.rodata.def @addends = align(16) bytes("01000000fbffffff6400000000000080")
+
+global.rodata.def @reverse_lanes = align(32) bytes("0f0e0d0c0b0a090807060504030201000f0e0d0c0b0a09080706050403020100")
+
+low.func.def public target<x86.avx2.core> abi(object_function) @add_i32x4(%lhs: reg<x86.gpr64>, %rhs: reg<x86.gpr64>, %output: reg<x86.gpr64>) asm {
+  %lhs_vector = vmovdqu32.load.xmm %lhs {disp32 = 0}
+  %rhs_vector = vmovdqu32.load.xmm %rhs {disp32 = 0}
+  %sum = vpaddd.xmm %lhs_vector, %rhs_vector
+  vmovdqu32.store.xmm %sum, %output {disp32 = 0}
+  return
+}
+
+low.func.def public target<x86.avx2.core> abi(object_function) @add_constant_i32x4(%input: reg<x86.gpr64>, %output: reg<x86.gpr64>) asm {
+  %input_vector = vmovdqu32.load.xmm %input {disp32 = 0}
+  %constant = avx2.vmovdqu.rodata.xmm @addends
+  %sum = vpaddd.xmm %input_vector, %constant
+  vmovdqu32.store.xmm %sum, %output {disp32 = 0}
+  return
+}
+
+low.func.def public target<x86.avx2.core> abi(object_function) @reverse_i8x32_lanes(%input: reg<x86.gpr64>, %output: reg<x86.gpr64>) asm {
+  %input_vector = vmovdqu32.load.ymm %input {disp32 = 0}
+  %control = avx2.vmovdqu.rodata.ymm @reverse_lanes
+  %result = vpshufb.ymm %input_vector, %control
+  vmovdqu32.store.ymm %result, %output {disp32 = 0}
+  return
+}

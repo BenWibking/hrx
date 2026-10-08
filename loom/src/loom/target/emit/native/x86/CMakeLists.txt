@@ -183,12 +183,32 @@ loom_generated_file(
 endif()
 
 if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_generated_file(
+  NAME
+    vector_callable_object
+  GENERATOR
+    loom::tools::loom-compile::loom-compile
+  OUTPUT
+    "vector_callable.o"
+  OUTPUT_FLAG
+    "--output="
+  ARGS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/vector_callable.loom"
+    "--target=x86:avx2"
+  INPUTS
+    "test/vector_callable.loom"
+  TESTONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 loom_cc_test(
   NAME
     callable_link_test
   SRCS
     "callable.o"
     "callable_link_test.cc"
+    "vector_callable.o"
   DEPS
     iree::testing::gtest
     iree::testing::gtest_main

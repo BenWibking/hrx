@@ -210,6 +210,26 @@ TEST(X86RegisterClassesTest, VexRowsImportedIntoWideViewsStayLow16) {
       IREE_SV("dst"), LOOM_LOW_OPERAND_ADDRESS_MAP_DIRECT, 0);
 }
 
+TEST(X86RegisterClassesTest, ExplicitWritemasksUseSevenLocationWindow) {
+  const loom_low_descriptor_set_t* descriptor_set =
+      loom_x86_avx512_core_descriptor_set();
+  ExpectOperandAddressMap(descriptor_set, IREE_SV("x86.avx512.vpblendmd.xmm"),
+                          IREE_SV("mask"),
+                          LOOM_LOW_OPERAND_ADDRESS_MAP_LOW_SUBSET, 7);
+  ExpectOperandAddressMap(descriptor_set, IREE_SV("x86.avx512.vpcmpd.xmm"),
+                          IREE_SV("dst"), LOOM_LOW_OPERAND_ADDRESS_MAP_DIRECT,
+                          0);
+  ExpectOperandAddressMap(descriptor_set, IREE_SV("x86.avx512.vpmovm2d.xmm.k"),
+                          IREE_SV("source"),
+                          LOOM_LOW_OPERAND_ADDRESS_MAP_DIRECT, 0);
+  ExpectOperandAddressMap(descriptor_set, IREE_SV("x86.avx512.kmovq.k.gpr64"),
+                          IREE_SV("dst"), LOOM_LOW_OPERAND_ADDRESS_MAP_DIRECT,
+                          0);
+  ExpectOperandAddressMap(descriptor_set, IREE_SV("x86.avx512.kandq"),
+                          IREE_SV("lhs"), LOOM_LOW_OPERAND_ADDRESS_MAP_DIRECT,
+                          0);
+}
+
 TEST(X86RegisterClassesTest,
      PackedDotFeatureViewsExposeTheirDescriptorFamilies) {
   const loom_low_descriptor_set_t* avx512_vnni_descriptor_set =

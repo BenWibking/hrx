@@ -88,3 +88,24 @@ low.func.def target<x86.avx512_packed_dot.core>(@x86_target) @x86_avx_vnni_low_s
   %dot = avx_vnni.vpdpbusd.ymm %acc_copy, %lhs, %rhs
   return %dot
 }
+
+// ====
+
+// RUN: emit low-allocation-json @x86_avx512_compare_retains_eighth_k_location output=none fixed=%mask:physical_register:7:1
+x86.target<avx512> @x86_target
+
+low.func.def target<x86.avx512.core>(@x86_target) @x86_avx512_compare_retains_eighth_k_location(%lhs: reg<x86.xmm>, %rhs: reg<x86.xmm>) -> (reg<x86.k>) asm {
+  %mask = vpcmpd.xmm %lhs, %rhs, 1
+  return %mask
+}
+
+// ====
+
+// RUN: emit low-allocation-json @x86_avx512_writemask_rejects_eighth_k_location output=none fixed=%mask:physical_register:7:1
+x86.target<avx512> @x86_target
+
+// ERROR@+1: BACKEND/022 {function_name="x86_avx512_writemask_rejects_eighth_k_location", request_kind="fixed_value", register_class="x86.k", location_base="7", allocation_capacity="7"}
+low.func.def target<x86.avx512.core>(@x86_target) @x86_avx512_writemask_rejects_eighth_k_location(%mask: reg<x86.k>, %true_value: reg<x86.xmm>, %false_value: reg<x86.xmm>) -> (reg<x86.xmm>) asm {
+  %selected = vpblendmd.xmm %mask, %true_value, %false_value
+  return %selected
+}
