@@ -61,32 +61,64 @@ kernel.def @global_atomic_cmpxchg_i64() {
   kernel.return
 }
 
-check.case public @global_atomic_reduce_add_f32_case {
-  %output = check.generate.fill value(1.0) : tensor<1xf32>
-  %expected = check.generate.fill value(9.0) : tensor<1xf32>
-  kernel.launch @global_atomic_reduce_add_f32(%output) : (tensor<1xf32>)
-  check.expect.bitwise actual(%output) expected(%expected) : tensor<1xf32>
-  check.return
+// Contention has one deterministic final sum, independent of invocation order.
+func.def @global_atomic_reduce_add_f32_oracle(%output: buffer) {
+  %base = index.constant 0 : offset
+  %result = buffer.view %output[%base] : buffer -> view<1xf32>
+  %final_value = scalar.constant 9.0 : f32
+  view.store %final_value, %result[0] : f32, view<1xf32>
+  func.return
 }
 
-check.case public @global_atomic_rmw_add_f32_case {
-  %accumulator = check.generate.fill value(1.0) : tensor<1xf32>
-  %old_sum = check.generate.fill value(0.0) : tensor<1xf32>
-  %expected_accumulator = check.generate.fill value(9.0) : tensor<1xf32>
-  %expected_old_sum = check.generate.fill value(36.0) : tensor<1xf32>
-  kernel.launch @global_atomic_rmw_add_f32(%accumulator, %old_sum) : (tensor<1xf32>, tensor<1xf32>)
-  check.expect.bitwise actual(%accumulator) expected(%expected_accumulator) : tensor<1xf32>
-  check.expect.bitwise actual(%old_sum) expected(%expected_old_sum) : tensor<1xf32>
-  check.return
+// The returned tickets are a permutation with a deterministic sum.
+func.def @global_atomic_rmw_add_f32_oracle(%accumulator: buffer, %old_sum: buffer) {
+  %base = index.constant 0 : offset
+  %accumulator_view = buffer.view %accumulator[%base] : buffer -> view<1xf32>
+  %old_sum_view = buffer.view %old_sum[%base] : buffer -> view<1xf32>
+  %final_value = scalar.constant 9.0 : f32
+  %ticket_sum = scalar.constant 36.0 : f32
+  view.store %final_value, %accumulator_view[0] : f32, view<1xf32>
+  view.store %ticket_sum, %old_sum_view[0] : f32, view<1xf32>
+  func.return
 }
 
-check.case public @global_atomic_cmpxchg_i64_case {
-  %value = check.generate.fill value(7) : tensor<1xi64>
-  %old_value = check.generate.fill value(0) : tensor<1xi64>
-  %expected_value = check.generate.fill value(9) : tensor<1xi64>
-  %expected_old_value = check.generate.fill value(7) : tensor<1xi64>
-  kernel.launch @global_atomic_cmpxchg_i64(%value, %old_value) : (tensor<1xi64>, tensor<1xi64>)
-  check.expect.bitwise actual(%value) expected(%expected_value) : tensor<1xi64>
-  check.expect.bitwise actual(%old_value) expected(%expected_old_value) : tensor<1xi64>
+// The scalar oracle models a successful compare-exchange without atomics.
+func.def @global_atomic_cmpxchg_i64_oracle(%value: buffer, %old_value: buffer) {
+  %base = index.constant 0 : offset
+  %value_view = buffer.view %value[%base] : buffer -> view<1xi64>
+  %old_value_view = buffer.view %old_value[%base] : buffer -> view<1xi64>
+  %expected = scalar.constant 7 : i64
+  %replacement = scalar.constant 9 : i64
+  %current = view.load %value_view[0] : view<1xi64> -> i64
+  %matches = scalar.cmpi eq, %current, %expected : i64
+  %next = scf.select %matches, %replacement, %current : i64
+  view.store %next, %value_view[0] : i64, view<1xi64>
+  view.store %current, %old_value_view[0] : i64, view<1xi64>
+  func.return
+}
+
+check.scenario @global_atomic_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %output = check.generate.fill value(1.0) : tensor<1xf32>
+    check.compare<@global_atomic_reduce_add_f32, @global_atomic_reduce_add_f32_oracle>(%output) : (tensor<1xf32>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %accumulator = check.generate.fill value(1.0) : tensor<1xf32>
+    %old_sum = check.generate.fill value(0.0) : tensor<1xf32>
+    check.compare<@global_atomic_rmw_add_f32, @global_atomic_rmw_add_f32_oracle>(%accumulator, %old_sum) : (tensor<1xf32>, tensor<1xf32>) -> () {
+      check.expect.bitwise actual(%accumulator) expected(%accumulator) : tensor<1xf32>
+      check.expect.bitwise actual(%old_sum) expected(%old_sum) : tensor<1xf32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %value = check.generate.fill value(7) : tensor<1xi64>
+    %old_value = check.generate.fill value(0) : tensor<1xi64>
+    check.compare<@global_atomic_cmpxchg_i64, @global_atomic_cmpxchg_i64_oracle>(%value, %old_value) : (tensor<1xi64>, tensor<1xi64>) -> () {
+      check.expect.bitwise actual(%value) expected(%value) : tensor<1xi64>
+      check.expect.bitwise actual(%old_value) expected(%old_value) : tensor<1xi64>
+    }
+  }
   check.return
 }
