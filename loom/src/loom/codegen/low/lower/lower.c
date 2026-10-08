@@ -886,7 +886,7 @@ static iree_status_t loom_low_lower_emit_descriptor_matrix_vector_mma(
 
   const loom_value_id_t result = loom_vector_mma_result(source_op);
   const loom_type_t result_low_type =
-      loom_type_table_get(&context->module->types, plan->result_type);
+      loom_low_lower_value_binding_type(context, result);
 
   loom_value_id_t* operands = NULL;
   iree_host_size_t operand_count = 0;

@@ -38,8 +38,6 @@ typedef struct loom_low_lower_function_storage_config_t {
 
 // Function-arena-owned decision consumed directly by Low construction.
 typedef struct loom_low_lower_function_storage_plan_t {
-  // Concrete native address type selected with the space mapping.
-  loom_type_t address_type;
   // Proven finite maximum byte length of the source allocation.
   int64_t byte_length;
   // Source-required power-of-two base alignment.
@@ -66,8 +64,8 @@ iree_status_t loom_low_lower_function_storage_select(
     bool* out_selected,
     const loom_low_lower_function_storage_plan_t** out_plan);
 
-// Emits the retained reservation/address pair and binds the source buffer.
-// No extent operand is materialized or queried during emission.
+// Emits the retained reservation/address pair using the source buffer's
+// selected binding type. No extent operand is queried during emission.
 iree_status_t loom_low_lower_function_storage_emit(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_low_lower_function_storage_plan_t* plan);

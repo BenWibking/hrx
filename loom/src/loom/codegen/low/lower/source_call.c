@@ -17,8 +17,8 @@
 #include "loom/target/facts.h"
 #include "loom/target/function_contract.h"
 
-// Canonical argument type IDs followed by result type IDs immediately follow
-// this header. The source invocation owns both tuple arities.
+// Canonical argument type IDs immediately follow this header. The invocation
+// owns their arity; result carriers live in its canonical value bindings.
 struct loom_low_lower_source_invoke_plan_t {
   // Proved preconditions and their parameter correspondence, if present.
   const loom_low_call_argument_contract_t* argument_contract;
@@ -325,10 +325,7 @@ iree_status_t loom_low_lower_source_invoke_plan(
 
   loom_low_lower_source_invoke_plan_t* plan = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
-      context,
-      sizeof(*plan) +
-          ((iree_host_size_t)callee_argument_count + source_results.count) *
-              sizeof(loom_type_id_t),
+      context, sizeof(*plan) + callee_argument_count * sizeof(loom_type_id_t),
       (void**)&plan));
   loom_type_id_t* type_ids = (loom_type_id_t*)(plan + 1);
   for (uint16_t i = 0; i < callee_argument_count; ++i) {
@@ -358,8 +355,8 @@ iree_status_t loom_low_lower_source_invoke_plan(
           context, source_op, callee_name, IREE_SV("result"), result_type,
           expected_type);
     }
-    IREE_RETURN_IF_ERROR(loom_module_intern_type_id(
-        module, result_type, &type_ids[callee_argument_count + i]));
+    IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+        context, source_results.values[i], result_type));
   }
 
   IREE_RETURN_IF_ERROR(loom_low_plan_call_argument_contract(
@@ -409,8 +406,8 @@ iree_status_t loom_low_lower_source_invoke(
       context, source_results.count, sizeof(*result_types),
       (void**)&result_types));
   for (uint16_t i = 0; i < source_results.count; ++i) {
-    result_types[i] = loom_type_table_get(&module->types,
-                                          type_ids[source_operands.count + i]);
+    result_types[i] =
+        loom_low_lower_value_binding_type(context, source_results.values[i]);
   }
 
   loom_low_func_call_build_flags_t build_flags = 0;
