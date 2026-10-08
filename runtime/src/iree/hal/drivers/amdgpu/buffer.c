@@ -281,8 +281,17 @@ iree_hal_amdgpu_atomic_memory_cell_flags_t
 iree_hal_amdgpu_buffer_atomic_memory_cells(iree_hal_buffer_t* base_buffer) {
   const iree_hal_buffer_t* buffer =
       iree_hal_amdgpu_buffer_resolve_native(base_buffer);
-  return buffer ? iree_hal_amdgpu_buffer_native(buffer)->atomic_memory_cells
-                : IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_NONE;
+  if (!buffer) {
+    return IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_NONE;
+  }
+  if (iree_hal_amdgpu_buffer_isa(iree_hal_buffer_allocated_buffer(buffer))) {
+    return iree_hal_amdgpu_buffer_native(buffer)->atomic_memory_cells;
+  }
+  const iree_hal_buffer_memory_view_t view =
+      iree_hal_buffer_memory_view(buffer);
+  return view.backing ? iree_hal_amdgpu_atomic_memory_collapse_capabilities(
+                            view.backing->atomic_operations)
+                      : IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_NONE;
 }
 
 bool iree_hal_amdgpu_buffer_uses_release_callback(

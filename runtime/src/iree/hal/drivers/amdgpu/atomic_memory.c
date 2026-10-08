@@ -355,3 +355,27 @@ iree_hal_amdgpu_atomic_memory_expand_capabilities(
               : IREE_HAL_ATOMIC_OPERATION_FLAG_NONE,
   };
 }
+
+iree_hal_amdgpu_atomic_memory_cell_flags_t
+iree_hal_amdgpu_atomic_memory_collapse_capabilities(
+    iree_hal_atomic_operation_capabilities_t capabilities) {
+  iree_hal_amdgpu_atomic_memory_cell_flags_t cells =
+      IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_NONE;
+  if (iree_all_bits_set(capabilities.device_scope_32,
+                        IREE_HAL_ATOMIC_OPERATION_FLAGS_ALL)) {
+    cells |= IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_DEVICE_SCOPE_32;
+  }
+  if (iree_all_bits_set(capabilities.device_scope_64,
+                        IREE_HAL_ATOMIC_OPERATION_FLAGS_ALL)) {
+    cells |= IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_DEVICE_SCOPE_64;
+  }
+  if (iree_all_bits_set(capabilities.system_scope_32,
+                        IREE_HAL_ATOMIC_OPERATION_FLAGS_ALL)) {
+    cells |= IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_SYSTEM_SCOPE_32;
+  }
+  if (iree_all_bits_set(capabilities.system_scope_64,
+                        IREE_HAL_ATOMIC_OPERATION_FLAGS_ALL)) {
+    cells |= IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_SYSTEM_SCOPE_64;
+  }
+  return cells;
+}
