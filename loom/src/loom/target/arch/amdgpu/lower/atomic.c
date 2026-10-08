@@ -17,6 +17,7 @@
 #include "loom/ops/view/ops.h"
 #include "loom/target/arch/amdgpu/lower/atomic_ordering.h"
 #include "loom/target/arch/amdgpu/lower/atomic_subword.h"
+#include "loom/target/arch/amdgpu/lower/buffer_descriptor.h"
 #include "loom/target/arch/amdgpu/lower/candidates/atomic_candidates.h"
 #include "loom/target/arch/amdgpu/lower/constants.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
@@ -1391,7 +1392,8 @@ iree_status_t loom_amdgpu_lower_atomic(loom_low_lower_context_t* context,
   loom_value_id_t low_descriptor = LOOM_VALUE_ID_INVALID;
   if (loom_amdgpu_atomic_uses_buffer_resource(plan)) {
     IREE_RETURN_IF_ERROR(loom_amdgpu_emit_hal_buffer_descriptor(
-        context, source_op, low_resource, &access.source, &low_descriptor));
+        context, source_op, low_resource, &access.source, plan->buffer_extent,
+        &low_descriptor));
   }
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_atomic_pre_ordering(context, source_op,
                                                             &plan->ordering));

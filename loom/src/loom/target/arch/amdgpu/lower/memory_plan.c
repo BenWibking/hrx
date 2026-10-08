@@ -10,6 +10,7 @@
 #include "loom/ir/module.h"
 #include "loom/target/arch/amdgpu/facts.h"
 #include "loom/target/arch/amdgpu/lower/address_realization.h"
+#include "loom/target/arch/amdgpu/lower/buffer_descriptor.h"
 #include "loom/target/arch/amdgpu/lower/constants.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/memory.h"
@@ -140,6 +141,7 @@ static iree_status_t loom_amdgpu_select_memory_plan(
       context, &selection.packets[0].access.source, &dynamic_term_plans));
   for (uint32_t i = 0; i < selection.packet_count; ++i) {
     retained_plan->packets[i] = selection.packets[i];
+    retained_plan->packets[i].access.buffer_extent = NULL;
     retained_plan->packets[i].access.dynamic_term_plans = dynamic_term_plans;
     retained_plan->packets[i].constant_words = NULL;
     if (stored_value != LOOM_VALUE_ID_INVALID) {
@@ -164,4 +166,22 @@ iree_status_t loom_amdgpu_select_memory_store_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_low_lower_plan_t* out_plan) {
   return loom_amdgpu_select_memory_plan(context, source_op, out_plan);
+}
+
+iree_status_t loom_amdgpu_finalize_memory_plan(
+    loom_low_lower_context_t* context, loom_amdgpu_memory_access_plan_t* plan) {
+  const loom_amdgpu_buffer_extent_plan_t* buffer_extent = NULL;
+  const loom_amdgpu_memory_access_t* first = &plan->packets[0].access;
+  if ((first->address_form == LOOM_AMDGPU_MEMORY_ADDRESS_FORM_DEFAULT ||
+       first->address_form ==
+           LOOM_AMDGPU_MEMORY_ADDRESS_FORM_BUFFER_OFF_ZERO) &&
+      first->source.memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP &&
+      first->source.memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE) {
+    IREE_RETURN_IF_ERROR(loom_amdgpu_plan_buffer_extent(context, &first->source,
+                                                        &buffer_extent));
+  }
+  for (uint32_t i = 0; i < plan->packet_count; ++i) {
+    plan->packets[i].access.buffer_extent = buffer_extent;
+  }
+  return iree_ok_status();
 }

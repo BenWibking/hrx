@@ -34,6 +34,9 @@
 extern "C" {
 #endif
 
+typedef struct loom_amdgpu_buffer_extent_plan_t
+    loom_amdgpu_buffer_extent_plan_t;
+
 typedef struct loom_low_lower_realization_t loom_low_lower_realization_t;
 
 typedef enum loom_amdgpu_constant_plan_kind_e {
@@ -1384,6 +1387,8 @@ typedef struct loom_amdgpu_memory_dynamic_term_plan_t {
 typedef struct loom_amdgpu_memory_access_t {
   // Target-independent source memory access plan being wrapped.
   loom_low_source_memory_access_plan_t source;
+  // Optional view-derived descriptor bound; explicit resource extents win.
+  const loom_amdgpu_buffer_extent_plan_t* buffer_extent;
   // Retained operand decisions in canonical-term, realization, then optional
   // retained-component order. NULL when the source has no dynamic terms.
   const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
@@ -1613,6 +1618,8 @@ typedef struct loom_amdgpu_fragment_memory_plan_t {
   loom_amdgpu_matrix_fragment_layout_kind_t layout_kind;
   // Target-independent source view access plan.
   loom_low_source_memory_access_plan_t source;
+  // Optional view-derived descriptor bound; explicit resource extents win.
+  const loom_amdgpu_buffer_extent_plan_t* buffer_extent;
   // Retained operand decisions for canonical scalar-base address terms.
   const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
   // Retained full-width origin partition; zero for narrow-only addressing.
@@ -1859,6 +1866,8 @@ typedef struct loom_amdgpu_atomic_constant_payloads_t {
 typedef struct loom_amdgpu_atomic_plan_t {
   // Target-independent source memory access plan being wrapped.
   loom_low_source_memory_access_plan_t source;
+  // Optional view-derived descriptor bound; explicit resource extents win.
+  const loom_amdgpu_buffer_extent_plan_t* buffer_extent;
   // Retained operand decisions for all dynamic address alternatives.
   const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
   // Optional exact scalar payloads retained before source facts retire.

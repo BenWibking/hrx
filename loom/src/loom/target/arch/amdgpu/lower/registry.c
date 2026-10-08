@@ -44,6 +44,7 @@
 #include "loom/target/arch/amdgpu/lower/async.h"
 #include "loom/target/arch/amdgpu/lower/bitpack.h"
 #include "loom/target/arch/amdgpu/lower/buffer.h"
+#include "loom/target/arch/amdgpu/lower/buffer_descriptor.h"
 #include "loom/target/arch/amdgpu/lower/compare.h"
 #include "loom/target/arch/amdgpu/lower/constants.h"
 #include "loom/target/arch/amdgpu/lower/control.h"
@@ -1800,6 +1801,41 @@ static iree_status_t loom_amdgpu_finalize_plan(
     const loom_op_t* source_op, loom_low_lower_plan_t plan) {
   (void)user_data;
   switch (plan.id) {
+    case LOOM_OP_BUFFER_LOAD_I8_U:
+    case LOOM_OP_BUFFER_STORE_I8:
+    case LOOM_OP_VIEW_ATOMIC_LOAD:
+    case LOOM_OP_VIEW_ATOMIC_STORE:
+    case LOOM_OP_VIEW_LOAD:
+    case LOOM_OP_VIEW_STORE:
+    case LOOM_OP_VECTOR_LOAD:
+    case LOOM_OP_VECTOR_STORE:
+      return loom_amdgpu_finalize_memory_plan(
+          context, (loom_amdgpu_memory_access_plan_t*)plan.target_data);
+    case LOOM_OP_VIEW_ATOMIC_REDUCE:
+    case LOOM_OP_VIEW_ATOMIC_RMW:
+    case LOOM_OP_VIEW_ATOMIC_CMPXCHG:
+    case LOOM_OP_VECTOR_ATOMIC_REDUCE:
+    case LOOM_OP_VECTOR_ATOMIC_RMW: {
+      loom_amdgpu_atomic_plan_t* atomic =
+          (loom_amdgpu_atomic_plan_t*)plan.target_data;
+      if (atomic->source.memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL &&
+          atomic->address_form == LOOM_AMDGPU_MEMORY_ADDRESS_FORM_DEFAULT) {
+        return loom_amdgpu_plan_buffer_extent(context, &atomic->source,
+                                              &atomic->buffer_extent);
+      }
+      return iree_ok_status();
+    }
+    case LOOM_OP_VECTOR_FRAGMENT_LOAD:
+    case LOOM_OP_VECTOR_FRAGMENT_STORE: {
+      loom_amdgpu_fragment_memory_plan_t* fragment =
+          (loom_amdgpu_fragment_memory_plan_t*)plan.target_data;
+      if (fragment->source.memory_space ==
+          LOOM_VALUE_FACT_MEMORY_SPACE_DESCRIPTOR) {
+        return loom_amdgpu_plan_buffer_extent(context, &fragment->source,
+                                              &fragment->buffer_extent);
+      }
+      return iree_ok_status();
+    }
     case LOOM_OP_INDEX_CAST:
       return loom_amdgpu_finalize_index_cast_plan(
           context, (const loom_amdgpu_index_cast_plan_t*)plan.target_data);

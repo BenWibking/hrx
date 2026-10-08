@@ -13,6 +13,7 @@
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/low/ops.h"
+#include "loom/target/arch/amdgpu/lower/buffer_descriptor.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/memory.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
@@ -61,7 +62,8 @@ iree_status_t loom_amdgpu_fragment_memory_packet_resource(
   }
 
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_hal_buffer_descriptor(
-      context, source_op, low_binding, &plan->source, out_low_packet_resource));
+      context, source_op, low_binding, &plan->source, plan->buffer_extent,
+      out_low_packet_resource));
   loom_type_t sgpr_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_type(context, &sgpr_type));
   return loom_amdgpu_emit_const_u32(context, source_op,

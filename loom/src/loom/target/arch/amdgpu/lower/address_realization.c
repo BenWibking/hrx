@@ -13,6 +13,7 @@
 #include "loom/codegen/low/lower/source_memory.h"
 #include "loom/ops/low/ops.h"
 #include "loom/target/arch/amdgpu/buffer_resource.h"
+#include "loom/target/arch/amdgpu/lower/buffer_descriptor.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/fragment_memory/address.h"
 #include "loom/target/arch/amdgpu/lower/memory.h"
@@ -287,8 +288,9 @@ static iree_status_t loom_amdgpu_initialize_descriptor_root(
   IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
       context, loom_low_source_memory_access_base_view_value_id(source),
       &binding));
-  return loom_amdgpu_emit_hal_buffer_descriptor(context, source_op, binding,
-                                                source, out_value);
+  // Shared descriptor selection requires a fixed explicit resource extent.
+  return loom_amdgpu_emit_hal_buffer_descriptor(
+      context, source_op, binding, source, /*plan=*/NULL, out_value);
 }
 
 static iree_status_t loom_amdgpu_initialize_descriptor_offset(
