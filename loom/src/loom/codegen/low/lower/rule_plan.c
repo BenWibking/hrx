@@ -1039,12 +1039,13 @@ static loom_type_t loom_low_lower_rule_plan_operand_type(
   return loom_low_lower_value_binding_type(context, value);
 }
 
-static iree_status_t loom_low_lower_rule_plan_result_types(
+static iree_status_t loom_low_lower_rule_plan_carriers(
     loom_low_lower_context_t* context,
     const loom_low_lower_rule_set_t* rule_set,
     const loom_low_lower_rule_source_t* source,
     const loom_low_lower_resolved_emit_t* resolved,
-    loom_type_id_t* temporary_types, loom_type_id_t* result_type_ids) {
+    loom_type_id_t* temporary_types, loom_type_id_t* copy_type_ids,
+    loom_type_id_t* result_type_ids) {
   const loom_low_lower_emit_t* emit = resolved->emit;
   const bool explicit_slice =
       emit->kind == LOOM_LOW_LOWER_EMIT_REGISTER_SLICE &&
@@ -1056,14 +1057,37 @@ static iree_status_t loom_low_lower_rule_plan_result_types(
   const bool sequences_lanes =
       emit->kind == LOOM_LOW_LOWER_EMIT_DESCRIPTOR_OP_PER_LANE_SEQUENCE;
   loom_type_t operand_types[7];
-  if (explicit_slice || expands_lanes || accumulates_lanes) {
+  const bool needs_all_operands =
+      explicit_slice || expands_lanes || accumulates_lanes;
+  if (needs_all_operands || emit->copy_operand_mask) {
+    uint16_t copy_index = 0;
     for (uint16_t i = 0; i < emit->operand_ref_count; ++i) {
+      const bool copies_operand = (emit->copy_operand_mask & (1u << i)) != 0;
+      if (!needs_all_operands && !copies_operand) {
+        continue;
+      }
       operand_types[i] = loom_low_lower_rule_plan_operand_type(
           context, rule_set, source, resolved, i, temporary_types);
-      if (emit->copy_operand_mask & (1u << i)) {
+      if (copies_operand) {
+        // A sequence consumes lane-local operands; other forms copy the
+        // aggregate before any slicing. Preserve that order in the plan.
+        if (sequences_lanes) {
+          const uint32_t lane_units =
+              loom_low_lower_rule_descriptor_packet_operand(
+                  context->descriptor_set, resolved->descriptor.descriptor, i)
+                  ->unit_count;
+          const loom_type_t source_type = operand_types[i];
+          if (!loom_low_lower_rule_try_register_type_with_unit_count(
+                  source_type, lane_units, &operand_types[i])) {
+            return loom_low_lower_emit_register_width_relation_unsupported(
+                context, source->source_op, source_type, lane_units);
+          }
+        }
         IREE_RETURN_IF_ERROR(loom_low_lower_rule_descriptor_copy_operand_type(
             context, resolved->descriptor.descriptor, i, operand_types[i],
             &operand_types[i]));
+        IREE_RETURN_IF_ERROR(loom_module_intern_type_id(
+            context->module, operand_types[i], &copy_type_ids[copy_index++]));
       }
     }
   }
@@ -1208,6 +1232,8 @@ static uint32_t loom_low_lower_rule_emit_data_size(
   return (uint32_t)iree_host_align(
       emit->attr_copy_count * sizeof(loom_named_attr_t) +
           loom_low_lower_rule_read_only_attributes_size(emit) +
+          iree_math_count_ones_u32(emit->copy_operand_mask) *
+              sizeof(loom_type_id_t) +
           iree_math_count_ones_u32(result_type_mask) * sizeof(loom_type_id_t) +
           iree_math_count_ones_u32(source_value_mask) *
               sizeof(loom_value_id_t) +
@@ -1274,10 +1300,10 @@ iree_status_t loom_low_lower_rule_plan_finalize(
         (void**)&temporary_types));
   }
   // Table counts bound a rule to 65535 emits with at most 31 attributes and
-  // three result carriers and seven source references each. Read-only
-  // attributes add at most 32 u32 words per row. The allocation and
-  // row-relative offsets fit in u32. Payload alignment permits the next row to
-  // carry named attributes.
+  // three result carriers, seven copied carriers, and seven source references
+  // each. Read-only attributes add at most 32 u32 words per row. The allocation
+  // and row-relative offsets fit in u32. Payload alignment permits the next row
+  // to carry named attributes.
   const uint32_t rows_size = (uint32_t)iree_host_align(
       rule->emit_count * sizeof(loom_low_lower_resolved_emit_t),
       iree_alignof(loom_named_attr_t));
@@ -1349,9 +1375,11 @@ iree_status_t loom_low_lower_rule_plan_finalize(
           emit->source_memory_ordinal ? source_memory_access : NULL,
           (loom_named_attr_t*)data, read_only_attributes));
     }
-    loom_type_id_t* result_types =
+    loom_type_id_t* copy_types =
         (loom_type_id_t*)(attribute_payload_end +
                           loom_low_lower_rule_read_only_attributes_size(emit));
+    loom_type_id_t* result_types =
+        copy_types + iree_math_count_ones_u32(emit->copy_operand_mask);
     loom_value_id_t* source_values =
         (loom_value_id_t*)(result_types + iree_math_count_ones_u32(
                                               resolved->result_type_mask));
@@ -1366,8 +1394,9 @@ iree_status_t loom_low_lower_rule_plan_finalize(
           loom_low_lower_rule_plan_source_value(context, rule_set, &source,
                                                 ref_index);
     }
-    IREE_RETURN_IF_ERROR(loom_low_lower_rule_plan_result_types(
-        context, rule_set, &source, resolved, temporary_types, result_types));
+    IREE_RETURN_IF_ERROR(loom_low_lower_rule_plan_carriers(
+        context, rule_set, &source, resolved, temporary_types, copy_types,
+        result_types));
     if (context->result->error_count != 0) {
       return iree_ok_status();
     }

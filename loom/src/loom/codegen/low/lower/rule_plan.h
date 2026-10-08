@@ -45,11 +45,11 @@ typedef struct loom_low_lower_resolved_emit_t {
   // Bits address operand refs; set bits have packed value IDs.
   uint16_t source_value_mask;
   // Byte offset from this row to attributes, optional read-only attribute IDs,
-  // canonical result type IDs, fact-derived source values, and an optional
-  // complete-address coordinate type ID, in that order. Zero for an empty
-  // payload. All rows and their aligned payloads share one function-arena
-  // allocation. Elided recipes retain descriptor identity without executable
-  // payloads.
+  // copied operand type IDs, canonical result type IDs, fact-derived source
+  // values, and an optional complete-address coordinate type ID, in that order.
+  // Zero for an empty payload. All rows and their aligned payloads share one
+  // function-arena allocation. Elided recipes retain descriptor identity
+  // without executable payloads.
   uint32_t data_offset;
 } loom_low_lower_resolved_emit_t;
 
@@ -93,8 +93,10 @@ loom_low_lower_resolved_emit_read_only_attributes(
                                                             loom_named_attr_t));
 }
 
-// Returns the packed canonical result carriers following attribute payloads.
-static inline const loom_type_id_t* loom_low_lower_resolved_emit_result_types(
+// Returns the packed copy carriers following attribute payloads. Static copy
+// bits select their operand ordinals; no storage is reserved for other
+// operands.
+static inline const loom_type_id_t* loom_low_lower_resolved_emit_copy_types(
     const loom_low_lower_resolved_emit_t* resolved) {
   return (const loom_type_id_t*)((const uint8_t*)resolved +
                                  resolved->data_offset +
@@ -102,6 +104,13 @@ static inline const loom_type_id_t* loom_low_lower_resolved_emit_result_types(
                                      sizeof(loom_named_attr_t) +
                                  loom_low_lower_rule_read_only_attributes_size(
                                      resolved->emit));
+}
+
+// Returns the packed canonical result carriers following operand copy types.
+static inline const loom_type_id_t* loom_low_lower_resolved_emit_result_types(
+    const loom_low_lower_resolved_emit_t* resolved) {
+  return loom_low_lower_resolved_emit_copy_types(resolved) +
+         iree_math_count_ones_u32(resolved->emit->copy_operand_mask);
 }
 
 // Returns the canonical carrier ID for a result fixed by planning.

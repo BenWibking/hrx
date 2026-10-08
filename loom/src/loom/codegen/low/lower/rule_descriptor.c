@@ -39,7 +39,7 @@ iree_status_t loom_low_lower_rule_descriptor_result_type(
                                            operand->unit_count, out_type);
 }
 
-static const loom_low_operand_t* loom_low_lower_rule_descriptor_packet_operand(
+const loom_low_operand_t* loom_low_lower_rule_descriptor_packet_operand(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_descriptor_t* descriptor, uint16_t operand_index) {
   const uint32_t operand_end =

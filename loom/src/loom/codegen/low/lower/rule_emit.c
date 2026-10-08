@@ -269,24 +269,16 @@ static iree_status_t loom_low_lower_rule_copy_low_operands(
   if (emit->copy_operand_mask == 0) {
     return iree_ok_status();
   }
-  IREE_ASSERT_LE(emit->operand_ref_count, 16);
-  const uint16_t valid_operand_mask =
-      emit->operand_ref_count == 16
-          ? UINT16_MAX
-          : (uint16_t)(((uint16_t)1u << emit->operand_ref_count) - 1u);
-  IREE_ASSERT_FALSE(
-      iree_any_bit_set(emit->copy_operand_mask, (uint16_t)~valid_operand_mask));
-  for (uint16_t i = 0; i < emit->operand_ref_count; ++i) {
-    const uint16_t operand_bit = (uint16_t)((uint16_t)1u << i);
-    if (!iree_any_bit_set(emit->copy_operand_mask, operand_bit)) {
-      continue;
-    }
-    const loom_type_t source_type = loom_module_value_type(
-        loom_low_lower_context_module(context), low_operands[i]);
-    loom_type_t copy_type = loom_type_none();
-    IREE_RETURN_IF_ERROR(loom_low_lower_rule_descriptor_copy_operand_type(
-        context, resolved_emit->descriptor.descriptor, i, source_type,
-        &copy_type));
+  const loom_type_id_t* copy_types =
+      loom_low_lower_resolved_emit_copy_types(resolved_emit);
+  uint16_t remaining_mask = emit->copy_operand_mask;
+  uint16_t copy_index = 0;
+  while (remaining_mask) {
+    const uint16_t i =
+        (uint16_t)iree_math_count_trailing_zeros_u32(remaining_mask);
+    remaining_mask &= (uint16_t)(remaining_mask - 1u);
+    const loom_type_t copy_type =
+        loom_type_table_get(&context->module->types, copy_types[copy_index++]);
     loom_op_t* copy_op = NULL;
     IREE_RETURN_IF_ERROR(loom_low_copy_build(
         loom_low_lower_context_builder(context), low_operands[i], false,

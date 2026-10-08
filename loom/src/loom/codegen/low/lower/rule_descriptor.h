@@ -22,6 +22,12 @@ const loom_low_operand_t* loom_low_lower_rule_descriptor_result_operand(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_descriptor_t* descriptor, uint16_t result_index);
 
+// Returns the trusted descriptor row for an SSA packet operand ordinal.
+// Descriptor-only state and immediate rows do not consume these ordinals.
+const loom_low_operand_t* loom_low_lower_rule_descriptor_packet_operand(
+    const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_descriptor_t* descriptor, uint16_t operand_index);
+
 // Materializes the register type declared by one trusted descriptor result.
 iree_status_t loom_low_lower_rule_descriptor_result_type(
     loom_low_lower_context_t* context, const loom_low_descriptor_t* descriptor,
