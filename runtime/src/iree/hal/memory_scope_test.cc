@@ -60,6 +60,9 @@ TEST_F(MemoryScopeTest, UnknownIsNotCoherent) {
   auto transition = Query(2, 4, IREE_HAL_MEMORY_TRANSITION_RELEASE);
   EXPECT_FALSE(iree_hal_memory_effects_is_supported(transition.release));
   EXPECT_FALSE(iree_hal_memory_effects_is_supported(transition.acquire));
+  const uint32_t unsupported = IREE_HAL_MEMORY_EFFECT_UNSUPPORTED;
+  EXPECT_EQ(transition.release.bits, unsupported);
+  EXPECT_EQ(transition.acquire.bits, unsupported);
   EXPECT_EQ(sizeof(iree_hal_memory_transition_t), 8u);
   EXPECT_EQ(sizeof(iree_hal_memory_transition_pair_t), 4u);
   EXPECT_EQ(reinterpret_cast<uintptr_t>(contract_->transitions) % 8, 0u);

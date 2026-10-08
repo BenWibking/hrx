@@ -64,6 +64,14 @@ IREE_API_EXPORT iree_status_t iree_hal_device_group_resolve_memory_scope(
   return iree_ok_status();
 }
 
+// Each half converts to unsigned 32 bits before widening. Microsoft enum
+// representation can otherwise sign-extend high-bit effect flags into the
+// other half of the cell.
+static uint64_t iree_hal_memory_transition_pack_effects(uint32_t release,
+                                                        uint32_t acquire) {
+  return (uint64_t)release | ((uint64_t)acquire << 32);
+}
+
 IREE_API_EXPORT iree_status_t iree_hal_memory_contract_create(
     const void* domain, uint32_t scope_count,
     const iree_hal_buffer_binding_layout_t* binding_layout,
@@ -107,9 +115,8 @@ IREE_API_EXPORT iree_status_t iree_hal_memory_contract_create(
   }
   contract->binding_layout = *binding_layout;
   contract->binding_layout.types = binding_types;
-  const uint64_t unsupported =
-      (uint64_t)IREE_HAL_MEMORY_EFFECT_UNSUPPORTED |
-      ((uint64_t)IREE_HAL_MEMORY_EFFECT_UNSUPPORTED << 32);
+  const uint64_t unsupported = iree_hal_memory_transition_pack_effects(
+      IREE_HAL_MEMORY_EFFECT_UNSUPPORTED, IREE_HAL_MEMORY_EFFECT_UNSUPPORTED);
   for (uint32_t i = 0; i < cell_count; ++i) {
     contract->transitions[i] = unsupported;
   }
@@ -425,12 +432,12 @@ static uint64_t iree_hal_memory_pair_encode(
     const iree_hal_memory_pair_info_t* info) {
   if (!iree_any_bit_set(info->flags,
                         IREE_HAL_MEMORY_PAIR_SHARED_BACKING_REACHABLE)) {
-    return (uint64_t)IREE_HAL_MEMORY_EFFECT_UNSUPPORTED |
-           ((uint64_t)IREE_HAL_MEMORY_EFFECT_UNSUPPORTED << 32);
+    return iree_hal_memory_transition_pack_effects(
+        IREE_HAL_MEMORY_EFFECT_UNSUPPORTED, IREE_HAL_MEMORY_EFFECT_UNSUPPORTED);
   }
-  return (uint64_t)iree_hal_memory_transition_encode_effects(&info->release) |
-         ((uint64_t)iree_hal_memory_transition_encode_effects(&info->acquire)
-          << 32);
+  return iree_hal_memory_transition_pack_effects(
+      iree_hal_memory_transition_encode_effects(&info->release),
+      iree_hal_memory_transition_encode_effects(&info->acquire));
 }
 
 static bool iree_hal_memory_recipe_info_equal(
@@ -471,9 +478,8 @@ static void iree_hal_memory_transition_join_wildcards(
           release |= (uint32_t)cells[(local << shift) + remote];
         }
       }
-      cells[local << shift] =
-          (uint64_t)release |
-          ((uint64_t)IREE_HAL_MEMORY_EFFECT_UNSUPPORTED << 32);
+      cells[local << shift] = iree_hal_memory_transition_pack_effects(
+          release, IREE_HAL_MEMORY_EFFECT_UNSUPPORTED);
     }
     if (iree_hal_memory_scope_can_read(contract, local)) {
       uint32_t acquire = 0;
@@ -482,8 +488,8 @@ static void iree_hal_memory_transition_join_wildcards(
           acquire |= (uint32_t)(cells[(remote << shift) + local] >> 32);
         }
       }
-      cells[local] = (uint64_t)IREE_HAL_MEMORY_EFFECT_UNSUPPORTED |
-                     ((uint64_t)acquire << 32);
+      cells[local] = iree_hal_memory_transition_pack_effects(
+          IREE_HAL_MEMORY_EFFECT_UNSUPPORTED, acquire);
     }
   }
 }
@@ -506,7 +512,8 @@ static iree_host_size_t iree_hal_memory_transition_compose_wildcards(
         continue;
       }
       if (bits & IREE_HAL_MEMORY_EFFECT_NATIVE_OWNERSHIP) {
-        cells[cell_index] |= (uint64_t)IREE_HAL_MEMORY_EFFECT_UNSUPPORTED
+        cells[cell_index] |= iree_hal_memory_transition_pack_effects(
+                                 IREE_HAL_MEMORY_EFFECT_UNSUPPORTED, 0)
                              << (action * 32);
         continue;
       }
