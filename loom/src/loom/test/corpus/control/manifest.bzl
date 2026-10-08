@@ -34,9 +34,8 @@ CONTROL_CORPUS = loom_corpus_manifest(
         "loop/wide_index_recurrence.loom",
         "schedule/address_domains.loom",
         "schedule/guarded_recurrence.loom",
+        "schedule/ordered_read_ahead.loom",
         "schedule/unroll_scope.loom",
     ],
-    legacy_case_srcs = [
-        "schedule/ordered_read_ahead.loom",
-    ],
+    legacy_case_srcs = [],
 )

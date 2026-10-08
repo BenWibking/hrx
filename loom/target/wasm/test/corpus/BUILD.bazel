@@ -127,6 +127,7 @@ _SCENARIO_KERNEL_SOURCES = [
     "control/loop/termination.loom",
     "control/loop/wide_index_recurrence.loom",
     "control/schedule/guarded_recurrence.loom",
+    "control/schedule/ordered_read_ahead.loom",
     "control/schedule/unroll_scope.loom",
     "kernel/subgroup/match.loom",
     "kernel/subgroup/shuffle_participation.loom",

@@ -37,8 +37,8 @@ loom_corpus_sources(
     "loop/wide_index_recurrence.loom"
     "schedule/address_domains.loom"
     "schedule/guarded_recurrence.loom"
-    "schedule/unroll_scope.loom"
     "schedule/ordered_read_ahead.loom"
+    "schedule/unroll_scope.loom"
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###
