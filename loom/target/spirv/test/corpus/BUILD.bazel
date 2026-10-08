@@ -128,7 +128,9 @@ _EXPLICIT_CFG_KERNELS = [
 
 _EXPLICIT_CFG_SCENARIOS = [
     "control/branch/cfg.loom",
+    "control/branch/effects.loom",
     "control/branch/half.loom",
+    "control/branch/results.loom",
     "control/loop/callable.loom",
     "control/loop/count.loom",
     "control/loop/wide_index_recurrence.loom",
