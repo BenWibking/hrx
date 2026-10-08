@@ -4,15 +4,14 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/tools/loom-check/test_allocation_provider.h"
-
 #include <inttypes.h>
 
 #include "loom/codegen/low/allocation.h"
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loom/tools/loom-check/low_emit.h"
+#include "loom/tools/loom-check/test/low/providers.h"
 
-enum loom_check_test_allocation_option_flag_bits_e {
+enum loom_check_test_low_allocation_option_flag_bits_e {
   LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_HAS_STRATEGY = 1u << 0,
   LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_HAS_DIAGNOSTICS = 1u << 1,
   LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_ASSIGNMENT_COUNT = 1u << 2,
@@ -21,9 +20,9 @@ enum loom_check_test_allocation_option_flag_bits_e {
   LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_FAILURE = 1u << 5,
   LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_EDGE_MOVES = 1u << 6,
 };
-typedef uint32_t loom_check_test_allocation_option_flags_t;
+typedef uint32_t loom_check_test_low_allocation_option_flags_t;
 
-typedef struct loom_check_test_allocation_options_t {
+typedef struct loom_check_test_low_allocation_options_t {
   // Module-local target-low function symbol selected by the RUN line.
   iree_string_view_t function_symbol_name;
   // Comma-separated authored values whose locations are requested.
@@ -44,17 +43,17 @@ typedef struct loom_check_test_allocation_options_t {
   // Fixed low allocation requests parsed from the RUN line.
   loom_check_low_emit_fixed_value_spec_list_t allocation_fixed_values;
   // Presence of unique options and requested aggregate observations.
-  loom_check_test_allocation_option_flags_t flags;
-} loom_check_test_allocation_options_t;
+  loom_check_test_low_allocation_option_flags_t flags;
+} loom_check_test_low_allocation_options_t;
 
-static bool loom_check_test_allocation_matches(
+static bool loom_check_test_low_allocation_matches(
     const loom_check_emit_provider_t* provider,
     iree_string_view_t target_name) {
   (void)provider;
   return iree_string_view_equal(target_name, IREE_SV("low-allocation-query"));
 }
 
-static bool loom_check_test_allocation_consume_selector(
+static bool loom_check_test_low_allocation_consume_selector(
     iree_string_view_t* list, iree_string_view_t* out_selector) {
   if (iree_string_view_is_empty(*list)) {
     return false;
@@ -64,7 +63,7 @@ static bool loom_check_test_allocation_consume_selector(
   return true;
 }
 
-static iree_status_t loom_check_test_allocation_validate_selector_list(
+static iree_status_t loom_check_test_low_allocation_validate_selector_list(
     iree_string_view_t option_name, iree_string_view_t value) {
   if (iree_string_view_is_empty(value)) {
     return iree_make_status(
@@ -75,7 +74,7 @@ static iree_status_t loom_check_test_allocation_validate_selector_list(
   iree_string_view_t remaining = value;
   while (!iree_string_view_is_empty(remaining)) {
     iree_string_view_t selector = iree_string_view_empty();
-    loom_check_test_allocation_consume_selector(&remaining, &selector);
+    loom_check_test_low_allocation_consume_selector(&remaining, &selector);
     if (!iree_string_view_starts_with(selector, IREE_SV("%")) ||
         selector.size == 1) {
       return iree_make_status(
@@ -88,7 +87,8 @@ static iree_status_t loom_check_test_allocation_validate_selector_list(
   return iree_ok_status();
 }
 
-static iree_status_t loom_check_test_allocation_parse_unique_selector_option(
+static iree_status_t
+loom_check_test_low_allocation_parse_unique_selector_option(
     iree_string_view_t name, iree_string_view_t value,
     iree_string_view_t* out_selectors) {
   if (!iree_string_view_is_empty(*out_selectors)) {
@@ -97,13 +97,14 @@ static iree_status_t loom_check_test_allocation_parse_unique_selector_option(
                             (int)name.size, name.data);
   }
   IREE_RETURN_IF_ERROR(
-      loom_check_test_allocation_validate_selector_list(name, value));
+      loom_check_test_low_allocation_validate_selector_list(name, value));
   *out_selectors = value;
   return iree_ok_status();
 }
 
-static iree_status_t loom_check_test_allocation_parse_option(
-    iree_string_view_t token, loom_check_test_allocation_options_t* options) {
+static iree_status_t loom_check_test_low_allocation_parse_option(
+    iree_string_view_t token,
+    loom_check_test_low_allocation_options_t* options) {
   if (iree_string_view_equal(token, IREE_SV("assignment-count"))) {
     if (iree_any_bit_set(
             options->flags,
@@ -162,15 +163,15 @@ static iree_status_t loom_check_test_allocation_parse_option(
   name = iree_string_view_trim(name);
   value = iree_string_view_trim(value);
   if (iree_string_view_equal(name, IREE_SV("values"))) {
-    return loom_check_test_allocation_parse_unique_selector_option(
+    return loom_check_test_low_allocation_parse_unique_selector_option(
         name, value, &options->value_selectors);
   }
   if (iree_string_view_equal(name, IREE_SV("copies"))) {
-    return loom_check_test_allocation_parse_unique_selector_option(
+    return loom_check_test_low_allocation_parse_unique_selector_option(
         name, value, &options->copy_result_selectors);
   }
   if (iree_string_view_equal(name, IREE_SV("spill-plans"))) {
-    return loom_check_test_allocation_parse_unique_selector_option(
+    return loom_check_test_low_allocation_parse_unique_selector_option(
         name, value, &options->spill_plan_selectors);
   }
   if (iree_string_view_equal(name, IREE_SV("strategy"))) {
@@ -205,10 +206,10 @@ static iree_status_t loom_check_test_allocation_parse_option(
       &options->allocation_budget_count, &options->allocation_fixed_values);
 }
 
-static iree_status_t loom_check_test_allocation_parse_options(
+static iree_status_t loom_check_test_low_allocation_parse_options(
     const loom_check_emit_provider_request_t* request,
-    loom_check_test_allocation_options_t* out_options) {
-  *out_options = (loom_check_test_allocation_options_t){
+    loom_check_test_low_allocation_options_t* out_options) {
+  *out_options = (loom_check_test_low_allocation_options_t){
       .schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_SOURCE_PRIORITY,
   };
   IREE_RETURN_IF_ERROR(loom_check_low_emit_fixed_value_spec_list_initialize(
@@ -236,14 +237,14 @@ static iree_status_t loom_check_test_allocation_parse_options(
     token = iree_string_view_trim(token);
     if (!iree_string_view_is_empty(token)) {
       IREE_RETURN_IF_ERROR(
-          loom_check_test_allocation_parse_option(token, out_options));
+          loom_check_test_low_allocation_parse_option(token, out_options));
     }
     option_text = iree_string_view_trim(option_text);
   }
   return iree_ok_status();
 }
 
-static iree_status_t loom_check_test_allocation_resolve_selector(
+static iree_status_t loom_check_test_low_allocation_resolve_selector(
     const loom_low_allocation_table_t* allocation, iree_string_view_t selector,
     loom_value_id_t* out_value_id) {
   const iree_string_view_t value_name =
@@ -265,7 +266,7 @@ static iree_status_t loom_check_test_allocation_resolve_selector(
   return iree_ok_status();
 }
 
-static iree_status_t loom_check_test_allocation_append_value_reference(
+static iree_status_t loom_check_test_low_allocation_append_value_reference(
     const loom_module_t* module, loom_value_id_t value_id,
     iree_string_builder_t* builder) {
   const iree_string_view_t value_name =
@@ -277,11 +278,11 @@ static iree_status_t loom_check_test_allocation_append_value_reference(
   return iree_string_builder_append_format(builder, "%%%" PRIu32, value_id);
 }
 
-static iree_status_t loom_check_test_allocation_append_value(
+static iree_status_t loom_check_test_low_allocation_append_value(
     const loom_low_allocation_table_t* allocation, iree_string_view_t selector,
     iree_string_builder_t* builder) {
   loom_value_id_t value_id = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_check_test_allocation_resolve_selector(
+  IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_resolve_selector(
       allocation, selector, &value_id));
   const loom_low_allocation_assignment_t* assignment =
       loom_low_allocation_try_map_active_value_assignment(allocation, value_id,
@@ -304,7 +305,7 @@ static iree_status_t loom_check_test_allocation_append_value(
       assignment->location_base, assignment->location_count);
 }
 
-static iree_string_view_t loom_check_test_allocation_copy_kind_name(
+static iree_string_view_t loom_check_test_low_allocation_copy_kind_name(
     loom_low_allocation_copy_kind_t kind) {
   switch (kind) {
     case LOOM_LOW_ALLOCATION_COPY_COALESCED:
@@ -316,7 +317,8 @@ static iree_string_view_t loom_check_test_allocation_copy_kind_name(
   }
 }
 
-static iree_string_view_t loom_check_test_allocation_failure_blocking_kind_name(
+static iree_string_view_t
+loom_check_test_low_allocation_failure_blocking_kind_name(
     loom_low_allocation_failure_blocking_kind_t kind) {
   switch (kind) {
     case LOOM_LOW_ALLOCATION_FAILURE_BLOCKING_INTERVAL_EXCEEDS_BUDGET:
@@ -333,7 +335,7 @@ static iree_string_view_t loom_check_test_allocation_failure_blocking_kind_name(
   }
 }
 
-static iree_status_t loom_check_test_allocation_append_failure(
+static iree_status_t loom_check_test_low_allocation_append_failure(
     const loom_low_allocation_table_t* allocation,
     iree_string_builder_t* builder) {
   const loom_low_allocation_failure_t* failure = &allocation->failure;
@@ -344,7 +346,7 @@ static iree_status_t loom_check_test_allocation_append_failure(
         "allocation");
   }
   const iree_string_view_t blocking_kind =
-      loom_check_test_allocation_failure_blocking_kind_name(
+      loom_check_test_low_allocation_failure_blocking_kind_name(
           failure->blocking_kind);
   IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
       builder, "failure: %.*s kind=%.*s", (int)failure->failure_code.size,
@@ -352,7 +354,7 @@ static iree_status_t loom_check_test_allocation_append_failure(
   if (failure->value_id != LOOM_VALUE_ID_INVALID) {
     IREE_RETURN_IF_ERROR(
         iree_string_builder_append_cstring(builder, " value="));
-    IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_value_reference(
+    IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_append_value_reference(
         allocation->module, failure->value_id, builder));
   }
   const loom_low_reg_class_t* register_class =
@@ -388,7 +390,7 @@ static iree_status_t loom_check_test_allocation_append_failure(
   }
   IREE_RETURN_IF_ERROR(
       iree_string_builder_append_cstring(builder, "conflict: "));
-  IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_value_reference(
+  IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_append_value_reference(
       allocation->module, failure->conflict_value_id, builder));
   const iree_string_view_t conflict_location_kind =
       loom_low_allocation_location_kind_name(failure->conflict_location_kind);
@@ -398,11 +400,11 @@ static iree_status_t loom_check_test_allocation_append_failure(
       failure->conflict_location_base, failure->conflict_location_count);
 }
 
-static iree_status_t loom_check_test_allocation_append_copy(
+static iree_status_t loom_check_test_low_allocation_append_copy(
     const loom_low_allocation_table_t* allocation,
     iree_string_view_t result_selector, iree_string_builder_t* builder) {
   loom_value_id_t result_value_id = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_check_test_allocation_resolve_selector(
+  IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_resolve_selector(
       allocation, result_selector, &result_value_id));
   const loom_low_allocation_copy_decision_t* selected = NULL;
   for (iree_host_size_t i = 0; i < allocation->copy_decision_count; ++i) {
@@ -427,22 +429,22 @@ static iree_status_t loom_check_test_allocation_append_copy(
   }
 
   IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "copy "));
-  IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_value_reference(
+  IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_append_value_reference(
       allocation->module, selected->source_value_id, builder));
   IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, " -> "));
-  IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_value_reference(
+  IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_append_value_reference(
       allocation->module, selected->result_value_id, builder));
   const iree_string_view_t kind =
-      loom_check_test_allocation_copy_kind_name(selected->kind);
+      loom_check_test_low_allocation_copy_kind_name(selected->kind);
   return iree_string_builder_append_format(builder, ": %.*s\n", (int)kind.size,
                                            kind.data);
 }
 
-static iree_status_t loom_check_test_allocation_append_spill_plan(
+static iree_status_t loom_check_test_low_allocation_append_spill_plan(
     const loom_low_allocation_table_t* allocation, iree_string_view_t selector,
     iree_string_builder_t* builder) {
   loom_value_id_t value_id = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_check_test_allocation_resolve_selector(
+  IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_resolve_selector(
       allocation, selector, &value_id));
   const loom_low_allocation_spill_plan_t* selected = NULL;
   for (iree_host_size_t i = 0; i < allocation->spill_plan_count; ++i) {
@@ -477,40 +479,43 @@ static iree_status_t loom_check_test_allocation_append_spill_plan(
       selected->store_count, selected->reload_count);
 }
 
-static iree_status_t loom_check_test_allocation_append_selected_values(
+static iree_status_t loom_check_test_low_allocation_append_selected_values(
     const loom_low_allocation_table_t* allocation, iree_string_view_t selectors,
     iree_string_builder_t* builder) {
   iree_string_view_t selector = iree_string_view_empty();
-  while (loom_check_test_allocation_consume_selector(&selectors, &selector)) {
-    IREE_RETURN_IF_ERROR(
-        loom_check_test_allocation_append_value(allocation, selector, builder));
-  }
-  return iree_ok_status();
-}
-
-static iree_status_t loom_check_test_allocation_append_selected_copies(
-    const loom_low_allocation_table_t* allocation, iree_string_view_t selectors,
-    iree_string_builder_t* builder) {
-  iree_string_view_t selector = iree_string_view_empty();
-  while (loom_check_test_allocation_consume_selector(&selectors, &selector)) {
-    IREE_RETURN_IF_ERROR(
-        loom_check_test_allocation_append_copy(allocation, selector, builder));
-  }
-  return iree_ok_status();
-}
-
-static iree_status_t loom_check_test_allocation_append_selected_spill_plans(
-    const loom_low_allocation_table_t* allocation, iree_string_view_t selectors,
-    iree_string_builder_t* builder) {
-  iree_string_view_t selector = iree_string_view_empty();
-  while (loom_check_test_allocation_consume_selector(&selectors, &selector)) {
-    IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_spill_plan(
+  while (
+      loom_check_test_low_allocation_consume_selector(&selectors, &selector)) {
+    IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_append_value(
         allocation, selector, builder));
   }
   return iree_ok_status();
 }
 
-static iree_status_t loom_check_test_allocation_append_move_location(
+static iree_status_t loom_check_test_low_allocation_append_selected_copies(
+    const loom_low_allocation_table_t* allocation, iree_string_view_t selectors,
+    iree_string_builder_t* builder) {
+  iree_string_view_t selector = iree_string_view_empty();
+  while (
+      loom_check_test_low_allocation_consume_selector(&selectors, &selector)) {
+    IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_append_copy(
+        allocation, selector, builder));
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_check_test_low_allocation_append_selected_spill_plans(
+    const loom_low_allocation_table_t* allocation, iree_string_view_t selectors,
+    iree_string_builder_t* builder) {
+  iree_string_view_t selector = iree_string_view_empty();
+  while (
+      loom_check_test_low_allocation_consume_selector(&selectors, &selector)) {
+    IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_append_spill_plan(
+        allocation, selector, builder));
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_check_test_low_allocation_append_move_location(
     const loom_low_allocation_table_t* allocation,
     const loom_low_move_location_t* location, iree_string_builder_t* builder) {
   const loom_low_reg_class_t* register_class =
@@ -526,7 +531,7 @@ static iree_status_t loom_check_test_allocation_append_move_location(
       location->location);
 }
 
-static iree_status_t loom_check_test_allocation_append_edge_moves(
+static iree_status_t loom_check_test_low_allocation_append_edge_moves(
     const loom_low_allocation_table_t* allocation,
     iree_string_builder_t* builder) {
   if (allocation->edge_copy_group_count != 1) {
@@ -543,23 +548,23 @@ static iree_status_t loom_check_test_allocation_append_edge_moves(
   for (iree_host_size_t i = 0; i < moves.count; ++i) {
     const loom_low_move_t* move = &allocation->moves[moves.start + i];
     IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "move "));
-    IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_move_location(
+    IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_append_move_location(
         allocation, &move->destination, builder));
     IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, " <- "));
-    IREE_RETURN_IF_ERROR(loom_check_test_allocation_append_move_location(
+    IREE_RETURN_IF_ERROR(loom_check_test_low_allocation_append_move_location(
         allocation, &move->source, builder));
     IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "\n"));
   }
   return iree_ok_status();
 }
 
-static iree_status_t loom_check_test_allocation_execute(
+static iree_status_t loom_check_test_low_allocation_execute(
     const loom_check_emit_provider_t* provider,
     const loom_check_emit_provider_request_t* request) {
   (void)provider;
-  loom_check_test_allocation_options_t options;
+  loom_check_test_low_allocation_options_t options;
   IREE_RETURN_IF_ERROR(
-      loom_check_test_allocation_parse_options(request, &options));
+      loom_check_test_low_allocation_parse_options(request, &options));
 
   const loom_low_emission_frame_options_t frame_options = {
       .schedule_strategy = options.schedule_strategy,
@@ -589,7 +594,7 @@ static iree_status_t loom_check_test_allocation_execute(
   iree_string_builder_t* output = &request->result->actual_output;
   if (failure_requested) {
     IREE_RETURN_IF_ERROR(
-        loom_check_test_allocation_append_failure(allocation, output));
+        loom_check_test_low_allocation_append_failure(allocation, output));
   }
   if (iree_any_bit_set(
           options.flags,
@@ -611,7 +616,7 @@ static iree_status_t loom_check_test_allocation_execute(
   if (iree_any_bit_set(options.flags,
                        LOOM_CHECK_TEST_ALLOCATION_OPTION_FLAG_EDGE_MOVES)) {
     IREE_RETURN_IF_ERROR(
-        loom_check_test_allocation_append_edge_moves(allocation, output));
+        loom_check_test_low_allocation_append_edge_moves(allocation, output));
   }
 
   const bool has_value_queries =
@@ -625,32 +630,32 @@ static iree_status_t loom_check_test_allocation_execute(
   iree_status_t status =
       loom_low_allocation_acquire_value_scratch(allocation, &value_scratch);
   if (iree_status_is_ok(status)) {
-    status = loom_check_test_allocation_append_selected_values(
+    status = loom_check_test_low_allocation_append_selected_values(
         allocation, options.value_selectors, output);
   }
   if (iree_status_is_ok(status)) {
-    status = loom_check_test_allocation_append_selected_copies(
+    status = loom_check_test_low_allocation_append_selected_copies(
         allocation, options.copy_result_selectors, output);
   }
   if (iree_status_is_ok(status)) {
-    status = loom_check_test_allocation_append_selected_spill_plans(
+    status = loom_check_test_low_allocation_append_selected_spill_plans(
         allocation, options.spill_plan_selectors, output);
   }
   loom_low_allocation_release_value_scratch(&value_scratch);
   return status;
 }
 
-static iree_status_t loom_check_test_allocation_append_names(
+static iree_status_t loom_check_test_low_allocation_append_names(
     const loom_check_emit_provider_t* provider,
     iree_string_builder_t* builder) {
   (void)provider;
   return iree_string_builder_append_cstring(builder, "low-allocation-query");
 }
 
-const loom_check_emit_provider_t loom_check_test_allocation_provider = {
+const loom_check_emit_provider_t loom_check_test_low_allocation_provider = {
     .name = IREE_SVL("allocation-query"),
     .flags = LOOM_CHECK_EMIT_PROVIDER_FLAG_COMPARE_ERROR_OUTPUT,
-    .match = loom_check_test_allocation_matches,
-    .execute = loom_check_test_allocation_execute,
-    .append_names = loom_check_test_allocation_append_names,
+    .match = loom_check_test_low_allocation_matches,
+    .execute = loom_check_test_low_allocation_execute,
+    .append_names = loom_check_test_low_allocation_append_names,
 };
