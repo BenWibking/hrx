@@ -92,6 +92,9 @@ typedef enum loom_amdgpu_mask_select_recipe_e {
   LOOM_AMDGPU_MASK_SELECT_MERGE = 8,
 } loom_amdgpu_mask_select_recipe_t;
 
+// Sparse ordered lane recipes retained only for immediates or equal inputs.
+typedef struct loom_amdgpu_select_lane_plan_t loom_amdgpu_select_lane_plan_t;
+
 typedef struct loom_amdgpu_vector_select_plan_t {
   // Source condition selecting true lanes.
   loom_value_id_t condition;
@@ -111,6 +114,13 @@ typedef struct loom_amdgpu_vector_select_plan_t {
   loom_amdgpu_cndmask_b32_descriptors_t cndmask_descriptors;
   // Additional emission state selected by payload_kind.
   union {
+    // Register data uses ordinary selects except for these selected lanes.
+    struct {
+      // Function-plan-owned recipes, sorted by physical register lane.
+      const loom_amdgpu_select_lane_plan_t* lanes;
+      // Number of retained lane recipes; zero requires no allocation.
+      uint8_t lane_count;
+    } data;
     // Boolean payloads combine native per-workitem masks.
     struct {
       // Descriptor row selected to read EXEC for i1 mask selection.
@@ -154,8 +164,6 @@ typedef struct loom_amdgpu_vector_select_plan_t {
   uint32_t lane_count;
   // Number of selected register units controlled by one vector mask lane.
   uint32_t registers_per_condition_lane;
-  // True when cndmask literal/inline operand forms can be selected per lane.
-  bool allow_lane_immediates;
 } loom_amdgpu_vector_select_plan_t;
 
 static_assert(sizeof(loom_amdgpu_vector_select_plan_t) == 144,
