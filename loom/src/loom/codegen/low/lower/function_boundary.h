@@ -12,9 +12,10 @@
 // with physical representation planning refine those joins after their plan is
 // solved so exit values and the callable signature consume one retained
 // decision.
-// Definition creation materializes the target-Low callable, entry binding
-// connects direct arguments, resource emission materializes arguments omitted
-// from the direct ABI, and predicate remapping translates source value
+// Boundary planning retains the final signature and ABI layout before any Low
+// operation is created. Definition creation materializes that boundary, entry
+// binding connects direct arguments, resource emission materializes arguments
+// omitted from the direct ABI, and predicate remapping translates source value
 // references after those bindings exist.
 //
 // Function declarations use the same type and metadata mapping without a body.
@@ -29,6 +30,23 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct loom_low_lower_function_boundary_t {
+  // Source argument ABI mappings, in source argument order. Declarations have
+  // no resource imports and retain only their direct signature below.
+  loom_low_lower_abi_argument_t* argument_map;
+  // Number of entries in argument_map.
+  uint16_t argument_map_count;
+  // Number of direct arguments in the retained Low signature.
+  uint16_t argument_count;
+  // Direct argument types retained in the function arena.
+  loom_type_t* argument_types;
+  // Result carriers joined during source planning, in source result order.
+  // None until an exit is observed or result mapping is finalized.
+  loom_type_t* result_types;
+  // Canonical module-owned ABI layout selected from the final signature.
+  loom_named_attr_slice_t abi_layout;
+} loom_low_lower_function_boundary_t;
 
 // Queries the native ABI representation of a source function argument without
 // emitting diagnostics or recording a required boundary mapping. An unsupported
@@ -58,6 +76,13 @@ iree_status_t loom_low_lower_function_boundary_observe_exit(
 // without exiting paths retains the target mapping of its declared types.
 iree_status_t loom_low_lower_function_boundary_finalize(
     loom_low_lower_context_t* context);
+
+// Retains the definition's final direct signature and ABI layout. Result
+// carriers must have been finalized by source planning. Target layout checks
+// report authored-input rejection here; temporary callback storage belongs to
+// scratch_arena and may be released before definition creation.
+iree_status_t loom_low_lower_function_boundary_plan(
+    loom_low_lower_context_t* context, iree_arena_allocator_t* scratch_arena);
 
 // Creates the target-Low function or kernel definition for the mapped source
 // callable. The definition is inserted immediately before the source op and

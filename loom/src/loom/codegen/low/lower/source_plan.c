@@ -1801,6 +1801,10 @@ iree_status_t loom_low_lower_source_plan_build(
       !loom_low_lower_context_should_stop(context)) {
     status = loom_low_lower_validate_selected_plans(context);
   }
+  if (iree_status_is_ok(status) && context->result->error_count == 0) {
+    status = loom_low_lower_function_boundary_plan(context,
+                                                   &context->planning_arena);
+  }
   iree_arena_deinitialize(&context->planning_arena);
   return status;
 }

@@ -22,6 +22,7 @@
 #include "loom/analysis/view_regions.h"
 #include "loom/codegen/low/builder.h"
 #include "loom/codegen/low/lower/execution.h"
+#include "loom/codegen/low/lower/function_boundary.h"
 #include "loom/codegen/low/lower/lower.h"
 #include "loom/codegen/low/lower/report.h"
 #include "loom/codegen/low/lower/rules.h"
@@ -100,14 +101,8 @@ typedef struct loom_low_lowering_frame_t {
   loom_low_lower_successor_interpositions_t* successor_interpositions;
   // Source block ordinal to target branch plan selected after low blocks exist.
   loom_low_lower_plan_t* branch_plans;
-  // Source function argument ABI mappings.
-  loom_low_lower_abi_argument_t* argument_map;
-  // Number of entries in argument_map.
-  uint16_t argument_map_count;
-  // Callable result carriers joined during source planning, in source result
-  // order. None until a return is observed or the boundary is finalized.
-  // Function-arena storage is retained through definition and return emission.
-  loom_type_t* result_types;
+  // Callable signature, argument imports, and ABI layout retained for emission.
+  loom_low_lower_function_boundary_t boundary;
   // Optional source selection and memory report analysis state.
   loom_low_lower_report_state_t report;
   // Descriptor set used to build rule_descriptor_maps.

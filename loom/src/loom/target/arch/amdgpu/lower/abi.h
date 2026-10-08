@@ -29,7 +29,8 @@ iree_status_t loom_amdgpu_map_abi_layout(
     void* user_data, loom_low_lower_context_t* context,
     loom_low_lower_abi_layout_kind_t layout_kind, const loom_type_t* arg_types,
     iree_host_size_t arg_count, const loom_type_t* result_types,
-    iree_host_size_t result_count, loom_named_attr_slice_t* out_abi_layout);
+    iree_host_size_t result_count, iree_arena_allocator_t* scratch_arena,
+    loom_named_attr_slice_t* out_abi_layout);
 
 #ifdef __cplusplus
 }  // extern "C"

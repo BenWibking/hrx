@@ -614,7 +614,7 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
     loom_value_id_t* low_values = NULL;
     IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
         context, source_op, values, source_op->operand_count,
-        context->lowering.result_types, &low_values));
+        context->lowering.boundary.result_types, &low_values));
     loom_op_t* low_return_op = NULL;
     return loom_low_return_build(&context->builder, low_values,
                                  source_op->operand_count, source_op->location,

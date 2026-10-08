@@ -338,14 +338,17 @@ typedef iree_status_t (*loom_low_lower_map_abi_layout_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
     loom_low_lower_abi_layout_kind_t layout_kind, const loom_type_t* arg_types,
     iree_host_size_t arg_count, const loom_type_t* result_types,
-    iree_host_size_t result_count, loom_named_attr_slice_t* out_abi_layout);
+    iree_host_size_t result_count, iree_arena_allocator_t* scratch_arena,
+    loom_named_attr_slice_t* out_abi_layout);
 
 typedef struct loom_low_lower_map_abi_layout_callback_t {
-  // Optional callback invoked once while building a low boundary op. The
-  // callback returns target-owned structured ABI layout facts; the low op
-  // builder canonicalizes and copies the returned slice into the module arena.
-  // A source rejection emits a lowering diagnostic and returns OK; boundary
-  // creation stops before constructing the replacement operation.
+  // Optional callback invoked once during boundary planning, after signature
+  // carriers are final and before creating Low IR. The callback returns ABI
+  // layout facts in scratch_arena or module storage. The shared boundary
+  // planner canonicalizes the result into module storage before releasing
+  // scratch. A source rejection emits a lowering diagnostic and returns OK.
+  // Status is reserved for infrastructure failures such as allocation or
+  // diagnostic IO.
   loom_low_lower_map_abi_layout_fn_t fn;
   // Caller-owned payload passed to |fn|.
   void* user_data;
