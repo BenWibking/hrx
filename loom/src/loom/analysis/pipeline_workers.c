@@ -7,7 +7,9 @@
 #include "loom/analysis/pipeline_workers.h"
 
 #include "loom/error/error_catalog.h"
+#include "loom/ops/cfg/ops.h"
 #include "loom/ops/func/ops.h"
+#include "loom/ops/kernel/ops.h"
 #include "loom/ops/pipeline/ops.h"
 #include "loom/ops/type_registry.h"
 #include "loom/util/fact_cfg.h"
@@ -61,6 +63,100 @@ loom_pipeline_worker_lookup_incoming(
     }
   }
   return NULL;
+}
+
+typedef struct loom_pipeline_transport_block_t {
+  // Canonical asynchronous stream in this block, or NULL.
+  const loom_kernel_async_stream_t* stream;
+  // First channel action in this block's contiguous source-order span.
+  iree_host_size_t channel_begin;
+  // Number of channel actions in the span.
+  iree_host_size_t channel_count;
+} loom_pipeline_transport_block_t;
+
+static iree_status_t loom_pipeline_worker_transport(
+    loom_module_t* module, iree_arena_allocator_t* arena,
+    loom_pipeline_worker_t* worker) {
+  const loom_cfg_graph_t* graph = worker->graph;
+  if (graph->has_cycles || !worker->asynchronous.streams) {
+    return iree_ok_status();
+  }
+  for (iree_host_size_t i = 0; i < graph->reverse_postorder.count; ++i) {
+    if (graph->blocks[graph->reverse_postorder.values[i]].successor_count > 1) {
+      return iree_ok_status();
+    }
+  }
+  loom_pipeline_transport_block_t* blocks;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, graph->block_count, sizeof(*blocks), (void**)&blocks));
+  memset(blocks, 0, graph->block_count * sizeof(*blocks));
+  iree_host_size_t capacity = worker->channels.action_count;
+  for (iree_host_size_t i = 0; i < worker->channels.action_count; ++i) {
+    loom_pipeline_transport_block_t* block =
+        &blocks[worker->channels.actions[i].op->parent_block->region_index];
+    if (block->channel_count++ == 0) {
+      block->channel_begin = i;
+    }
+  }
+  for (const loom_kernel_async_stream_t* stream = worker->asynchronous.streams;
+       stream; stream = stream->next) {
+    blocks[stream->block->region_index].stream = stream;
+    capacity += stream->transfer_count + stream->wait_count;
+  }
+  loom_pipeline_transport_step_t* steps;
+  const loom_kernel_async_stream_t** streams;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, capacity, sizeof(*steps), (void**)&steps));
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, graph->block_count, sizeof(*streams), (void**)&streams));
+  iree_host_size_t count = 0, stream_count = 0;
+  for (iree_host_size_t b = 0; b < graph->reverse_postorder.count; ++b) {
+    const uint16_t block_index = graph->reverse_postorder.values[b];
+    const loom_pipeline_transport_block_t* block = &blocks[block_index];
+    const loom_kernel_async_stream_t* stream = block->stream;
+    if (stream) {
+      streams[stream_count++] = stream;
+    }
+    iree_host_size_t channel = block->channel_begin, transfer = 0, wait = 0;
+    const iree_host_size_t channel_end = channel + block->channel_count;
+    for (const loom_op_t* op = graph->blocks[block_index].block->first_op; op;
+         op = op->next_op) {
+      if (channel < channel_end && worker->channels.actions[channel].op == op) {
+        steps[count++] = (loom_pipeline_transport_step_t){
+            .op = op,
+            .kind = LOOM_PIPELINE_TRANSPORT_STEP_CHANNEL,
+            .source.channel = &worker->channels.actions[channel++]};
+      } else if (stream && transfer < stream->transfer_count &&
+                 stream->transfers[transfer].request.op == op) {
+        steps[count++] = (loom_pipeline_transport_step_t){
+            .op = op,
+            .kind = LOOM_PIPELINE_TRANSPORT_STEP_TRANSFER,
+            .source.transfer = &stream->transfers[transfer++]};
+      } else if (stream && wait < stream->wait_count &&
+                 stream->waits[wait] == op) {
+        steps[count++] = (loom_pipeline_transport_step_t){
+            .op = op, .kind = LOOM_PIPELINE_TRANSPORT_STEP_WAIT};
+        ++wait;
+      } else if (!loom_func_return_isa(op) &&
+                 !loom_kernel_async_group_isa(op) && !loom_cfg_br_isa(op)) {
+        const loom_trait_flags_t traits = loom_op_effective_traits(module, op);
+        if (!iree_any_bit_set(traits, LOOM_TRAIT_PURE) ||
+            loom_traits_may_read(traits) || loom_traits_may_write(traits) ||
+            iree_any_bit_set(
+                traits, LOOM_TRAIT_OBSERVABLE_EFFECT | LOOM_TRAIT_CONVERGENT)) {
+          return iree_ok_status();
+        }
+      }
+    }
+  }
+  if (stream_count == 0) {
+    return iree_ok_status();
+  }
+  worker->transport = (loom_pipeline_transport_t){.steps = steps,
+                                                  .count = count,
+                                                  .streams = streams,
+                                                  .stream_count = stream_count};
+  return iree_ok_status();
 }
 
 static iree_status_t loom_pipeline_worker_build(
@@ -196,6 +292,9 @@ static iree_status_t loom_pipeline_worker_build(
     };
     status = loom_kernel_async_legality_analyze_function(
         module, worker->function, &options, arena, &worker->asynchronous);
+    if (iree_status_is_ok(status) && worker->asynchronous.error_count == 0) {
+      status = loom_pipeline_worker_transport(module, arena, worker);
+    }
   }
   loom_local_value_domain_release(&worker->value_domain);
   if (!iree_status_is_ok(status)) {

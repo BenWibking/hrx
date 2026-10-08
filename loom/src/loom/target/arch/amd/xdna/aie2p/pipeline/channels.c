@@ -267,6 +267,9 @@ iree_status_t loom_aie2p_native_emit_worker(
   context->code.diagnostic_emitter = context->pass->diagnostic_emitter;
   const loom_pipeline_worker_t* source = &realization->workers[worker_index];
   const loom_aie2p_native_worker_t* worker = &context->workers[worker_index];
+  if (worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+    return iree_ok_status();
+  }
   loom_aie2p_native_channel_emitter_t emitter = {
       .context = context,
       .resources = &realization->resources,

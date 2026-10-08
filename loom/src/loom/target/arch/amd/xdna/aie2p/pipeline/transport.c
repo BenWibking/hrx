@@ -237,6 +237,8 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
       loom_region_entry_block(loom_func_like_body(realization->function));
   const loom_pipeline_worker_t* source = &realization->workers[i];
   loom_aie2p_native_worker_t* worker = &context->workers[i];
+  const bool configuration =
+      worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION;
   loom_aie2p_native_queue_t* queues;
   uint8_t* controls;
   loom_aie2p_native_borrow_t* borrows;
@@ -272,9 +274,17 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
   }
   uint8_t next_control = 0;
   bool has_egress = false;
+  iree_host_size_t transport_step = 0;
   loom_aie2p_native_transfer_t** tail = &worker->transfers;
-  for (const loom_kernel_async_stream_t* stream = source->asynchronous.streams;
-       stream; stream = stream->next) {
+  iree_host_size_t stream_index = 0;
+  for (const loom_kernel_async_stream_t* stream =
+           configuration ? source->transport.streams[0]
+                         : source->asynchronous.streams;
+       stream;
+       stream = configuration ? (++stream_index < source->transport.stream_count
+                                     ? source->transport.streams[stream_index]
+                                     : NULL)
+                              : stream->next) {
     for (iree_host_size_t j = 0; j < stream->transfer_count; ++j) {
       const loom_kernel_async_transfer_t* transfer = &stream->transfers[j];
       const loom_movement_request_t* request = &transfer->request;
@@ -345,7 +355,7 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
         if (*local_engine ==
                 local_tile->facts->dma.channel_count_per_direction ||
             *shim_engine == shim->facts->dma.channel_count_per_direction ||
-            (!ingress && has_egress)) {
+            (!ingress && has_egress && !configuration)) {
           return loom_aie2p_native_reject(
               context, request->op,
               IREE_SV("an independent DMA engine pair and one external "
@@ -385,7 +395,7 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
         loom_aie2p_native_tile_t* destinations[] = {local_tile, shim};
         uint8_t* packets[] = {&queue->path->control.local,
                               &queue->path->control.shim};
-        for (unsigned k = 0; k < 2; ++k) {
+        for (unsigned k = 0; !configuration && k < 2; ++k) {
           const iree_host_size_t tile_index = destinations[k] - context->tiles;
           if (controls[tile_index] == UINT8_MAX) {
             if (next_control == 4 ||
@@ -404,11 +414,14 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
         if (!ingress) {
           has_egress = true;
           queue->path->completion_packet =
-              next_controller[shim->coordinate.column]++;
+              configuration ? 0 : next_controller[shim->coordinate.column]++;
           if (!loom_aie2p_native_packet_route(
                   context, next_source, shim->coordinate,
-                  LOOM_XDNA_STREAM_PORT_TILE_CONTROL, worker->tile->coordinate,
-                  LOOM_XDNA_STREAM_PORT_CORE, queue->path->completion_packet)) {
+                  LOOM_XDNA_STREAM_PORT_TILE_CONTROL,
+                  configuration ? shim->coordinate : worker->tile->coordinate,
+                  configuration ? LOOM_XDNA_STREAM_PORT_SOUTH
+                                : LOOM_XDNA_STREAM_PORT_CORE,
+                  queue->path->completion_packet)) {
             return loom_aie2p_native_reject(
                 context, request->op,
                 IREE_SV("an independent external-completion return route"));
@@ -475,9 +488,11 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
       }
       if (ingress) {
         selected->completion_lock = local_tile->next_lock++;
-        IREE_RETURN_IF_ERROR(loom_xdna_array_form_lock_selector(
-            context->family, worker->tile->coordinate, local_tile->coordinate,
-            selected->completion_lock, &selected->completion_selector));
+        if (!configuration) {
+          IREE_RETURN_IF_ERROR(loom_xdna_array_form_lock_selector(
+              context->family, worker->tile->coordinate, local_tile->coordinate,
+              selected->completion_lock, &selected->completion_selector));
+        }
         selected->local_words[5] |=
             loom_xdna_register_field_encode_admitted(
                 LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_RELEASE_ID,
@@ -485,6 +500,30 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
             loom_xdna_register_field_encode_admitted(
                 LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_RELEASE_VALUE,
                 1);
+      }
+      if (configuration) {
+        while (source->transport.steps[transport_step].op != request->op) {
+          ++transport_step;
+        }
+        const loom_op_t* preceding =
+            transport_step ? source->transport.steps[transport_step - 1].op
+                           : NULL;
+        if (!ingress && preceding && loom_channel_acquire_isa(preceding) &&
+            transport_step + 1 < source->transport.count &&
+            source->transport.steps[transport_step + 1].op == completion &&
+            loom_op_const_results(preceding)[0] == borrow.record) {
+          selected->admission = preceding;
+          selected->local_words[5] |=
+              loom_xdna_register_field_encode_admitted(
+                  LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_ACQUIRE_ID,
+                  borrow.channel->ready_lock) |
+              loom_xdna_register_field_encode_admitted(
+                  LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_ACQUIRE_VALUE,
+                  -1) |
+              loom_xdna_register_field_encode_admitted(
+                  LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_ACQUIRE_ENABLE,
+                  1);
+        }
       }
       if (!loom_symbolic_expr_is_constant(&external_view->begin_byte_offset)) {
         IREE_RETURN_IF_ERROR(loom_source_storage_packing_reserve(

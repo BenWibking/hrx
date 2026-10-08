@@ -6,6 +6,7 @@
 
 #include "loom/ir/intern_table.h"
 #include "loom/ir/structural_hash.h"
+#include "loom/ops/channel/ops.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/configuration_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/ops/target.h"
 #include "loom/target/arch/amd/xdna/aie2p/pipeline/native.h"
@@ -413,6 +414,125 @@ static iree_status_t loom_aie2p_native_config_bindings(
   return iree_ok_status();
 }
 
+static iree_status_t loom_aie2p_native_config_submit(
+    loom_aie2p_native_configuration_t* config,
+    const loom_aie2p_native_transfer_t* transfer) {
+  const loom_aie2p_native_dma_path_t* path = transfer->path;
+  const loom_xdna_register_field_id_t local_queue =
+      path->ingress
+          ? LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_CHANNEL_S2MM_START_QUEUE_START_BD_ID
+          : LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_CHANNEL_MM2S_START_QUEUE_START_BD_ID;
+  const loom_xdna_register_field_id_t shim_queue =
+      path->ingress
+          ? LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_CHANNEL_MM2S_TASK_QUEUE_START_BD_ID
+          : LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_CHANNEL_S2MM_TASK_QUEUE_START_BD_ID;
+  const uint32_t local_task = loom_xdna_register_field_encode_admitted(
+      local_queue, transfer->local_descriptor);
+  uint32_t shim_task = loom_xdna_register_field_encode_admitted(
+      shim_queue, transfer->shim_descriptor);
+  if (!path->ingress) {
+    shim_task |= loom_xdna_register_field_encode_admitted(
+        LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_CHANNEL_S2MM_TASK_QUEUE_ENABLE_TOKEN_ISSUE,
+        1);
+  }
+  const uint16_t local_engine = path->local_engine;
+  const uint16_t shim_engine = path->shim_engine;
+  const uint64_t local_address = loom_xdna_register_field_address_admitted(
+      config->context->family, local_queue, path->local->coordinate,
+      &local_engine);
+  const uint64_t shim_address = loom_xdna_register_field_address_admitted(
+      config->context->family, shim_queue, path->shim->coordinate,
+      &shim_engine);
+  // Enqueue the receiver before the sender, as in core-issued movement.
+  IREE_RETURN_IF_ERROR(loom_aie2p_native_config_write(
+      config, path->ingress ? local_address : shim_address,
+      path->ingress ? local_task : shim_task));
+  return loom_aie2p_native_config_write(
+      config, path->ingress ? shim_address : local_address,
+      path->ingress ? shim_task : local_task);
+}
+
+static iree_status_t loom_aie2p_native_config_communicate(
+    loom_aie2p_native_configuration_t* config,
+    const loom_pipeline_realization_t* realization,
+    iree_host_size_t worker_index) {
+  const loom_aie2p_native_context_t* context = config->context;
+  const loom_pipeline_worker_t* source = &realization->workers[worker_index];
+  const loom_aie2p_native_worker_t* worker = &context->workers[worker_index];
+  const loom_aie2p_native_transfer_t* issue = worker->transfers;
+  const loom_aie2p_native_transfer_t* complete = worker->transfers;
+  for (iree_host_size_t i = 0; i < source->transport.count; ++i) {
+    const loom_pipeline_transport_step_t* step = &source->transport.steps[i];
+    switch (step->kind) {
+      case LOOM_PIPELINE_TRANSPORT_STEP_TRANSFER: {
+        IREE_RETURN_IF_ERROR(loom_aie2p_native_config_submit(config, issue));
+        issue = issue->next;
+        break;
+      }
+      case LOOM_PIPELINE_TRANSPORT_STEP_WAIT:
+        while (complete && complete->completion == step->op) {
+          const loom_aie2p_native_dma_path_t* path = complete->path;
+          if (path->ingress) {
+            IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
+                config, path->local->coordinate,
+                LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
+                &complete->completion_lock, 1, 1,
+                AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WAIT_MASK32));
+          } else {
+            const uint64_t values[] = {path->shim->coordinate.column,
+                                       path->shim->coordinate.row,
+                                       LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY,
+                                       path->shim_engine,
+                                       1,
+                                       1};
+            IREE_RETURN_IF_ERROR(loom_aie2p_native_config_op(
+                config,
+                AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_DMA_WAIT,
+                values, IREE_ARRAYSIZE(values), loom_named_attr_slice_empty()));
+          }
+          complete = complete->next;
+        }
+        break;
+      case LOOM_PIPELINE_TRANSPORT_STEP_CHANNEL: {
+        // Initial free credit cannot block and final reclamation has no later
+        // admission observing it. Readiness is still an explicit source edge.
+        if (!loom_channel_acquire_isa(step->op) &&
+            !loom_channel_publish_isa(step->op)) {
+          break;
+        }
+        if (issue && issue->admission == step->op) {
+          break;
+        }
+        const loom_pipeline_resource_channel_t* binding =
+            loom_pipeline_resources_lookup_channel(
+                &realization->resources,
+                step->source.channel->channel->value_id);
+        const loom_aie2p_native_channel_t* channel =
+            &context->channels[binding - realization->resources.channels];
+        const loom_xdna_tile_coordinate_t tile =
+            context->pool_tiles[channel->pool_index]->coordinate;
+        const bool acquire = loom_channel_acquire_isa(step->op);
+        if (acquire) {
+          IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
+              config, tile,
+              LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
+              &channel->ready_lock, 1, 1,
+              AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WAIT_MASK32));
+        }
+        // Each endpoint acts once and has one cursor owner. No second producer
+        // can race this ready-credit update with another publication.
+        IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
+            config, tile,
+            LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
+            &channel->ready_lock, 1, acquire ? 0 : 1,
+            AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
+        break;
+      }
+    }
+  }
+  return iree_ok_status();
+}
+
 iree_status_t loom_aie2p_native_emit_configuration(
     void* user_data, loom_rewriter_t* rewriter,
     const loom_pipeline_realization_t* realization) {
@@ -480,6 +600,9 @@ iree_status_t loom_aie2p_native_emit_configuration(
                             loom_low_func_def_body(initialize));
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
     const loom_aie2p_native_worker_t* worker = &context->workers[i];
+    if (worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+      continue;
+    }
     IREE_RETURN_IF_ERROR(
         loom_aie2p_native_config_reset_core(&config, worker->tile->coordinate));
     const uint64_t position[] = {worker->tile->coordinate.column,
@@ -526,9 +649,16 @@ iree_status_t loom_aie2p_native_emit_configuration(
     const loom_aie2p_native_channel_t* channel = &context->channels[i];
     const loom_xdna_tile_coordinate_t tile =
         context->pool_tiles[channel->pool_index]->coordinate;
+    // A communication-only writer reserves its sole record from the initial
+    // credit. Debit it here so a core reader's final release cannot overflow
+    // the semaphore even when the channel starts at its maximum capacity.
+    const bool reserve_initial =
+        channel->cursor.writer.worker != UINT32_MAX &&
+        context->workers[channel->cursor.writer.worker].execution ==
+            LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION;
     IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
         &config, tile, LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
-        &channel->free_lock, 1, channel->source->capacity,
+        &channel->free_lock, 1, channel->source->capacity - reserve_initial,
         AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
     IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
         &config, tile, LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
@@ -537,11 +667,13 @@ iree_status_t loom_aie2p_native_emit_configuration(
   }
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
     const loom_aie2p_native_worker_t* worker = &context->workers[i];
-    IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
-        &config, worker->tile->coordinate,
-        LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
-        &worker->completion_lock, 1, 0,
-        AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
+    if (worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CORE) {
+      IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
+          &config, worker->tile->coordinate,
+          LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
+          &worker->completion_lock, 1, 0,
+          AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
+    }
     for (const loom_aie2p_native_transfer_t* transfer = worker->transfers;
          transfer; transfer = transfer->next) {
       if (!transfer->path->ingress) {
@@ -557,6 +689,10 @@ iree_status_t loom_aie2p_native_emit_configuration(
   // Every semaphore is initialized before any worker can produce a credit.
   // Ingress completions can belong to a neighboring worker's memory tile.
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
+    if (context->workers[i].execution ==
+        LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+      continue;
+    }
     const loom_xdna_tile_coordinate_t tile =
         context->workers[i].tile->coordinate;
     IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
@@ -568,6 +704,16 @@ iree_status_t loom_aie2p_native_emit_configuration(
   }
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
     const loom_aie2p_native_worker_t* worker = &context->workers[i];
+    if (worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+      IREE_RETURN_IF_ERROR(
+          loom_aie2p_native_config_communicate(&config, realization, i));
+    }
+  }
+  for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
+    const loom_aie2p_native_worker_t* worker = &context->workers[i];
+    if (worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+      continue;
+    }
     IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
         &config, worker->tile->coordinate,
         LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_LOCK_VALUE_VALUE,
@@ -575,6 +721,10 @@ iree_status_t loom_aie2p_native_emit_configuration(
         AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WAIT_MASK32));
   }
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
+    if (context->workers[i].execution ==
+        LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+      continue;
+    }
     const loom_xdna_tile_coordinate_t tile =
         context->workers[i].tile->coordinate;
     IREE_RETURN_IF_ERROR(loom_aie2p_native_config_reset_core(&config, tile));
@@ -582,6 +732,13 @@ iree_status_t loom_aie2p_native_emit_configuration(
   IREE_RETURN_IF_ERROR(loom_aie2p_worker_return(&config.builder, NULL, 0));
 
   IREE_RETURN_IF_ERROR(loom_rewriter_erase(rewriter, realization->function.op));
+  for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
+    if (context->workers[i].execution ==
+        LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+      IREE_RETURN_IF_ERROR(
+          loom_rewriter_erase(rewriter, realization->workers[i].function.op));
+    }
+  }
   loom_op_t* entry;
   IREE_RETURN_IF_ERROR(loom_aie2p_native_config_function(
       &config, entry_symbol, visibility, retain, &entry));

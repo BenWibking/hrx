@@ -39,6 +39,41 @@ typedef struct loom_pipeline_worker_axis_t {
   uint64_t stride;
 } loom_pipeline_worker_axis_t;
 
+typedef enum loom_pipeline_transport_step_kind_e {
+  LOOM_PIPELINE_TRANSPORT_STEP_CHANNEL,
+  LOOM_PIPELINE_TRANSPORT_STEP_TRANSFER,
+  LOOM_PIPELINE_TRANSPORT_STEP_WAIT,
+} loom_pipeline_transport_step_kind_t;
+
+// An observable step in a straight-line communication-only invocation. Pure
+// address calculations remain represented by the movement endpoint facts.
+typedef struct loom_pipeline_transport_step_t {
+  // Source effect and its position in the invocation's sequential order.
+  const loom_op_t* op;
+  // Which retained communication plan supplies this step's operands.
+  loom_pipeline_transport_step_kind_t kind;
+  // Canonical action or movement, borrowed through physical selection.
+  union {
+    // Channel obligation established by membership analysis.
+    const loom_channel_plan_action_t* channel;
+    // Borrowed movement established by asynchronous-access analysis.
+    const loom_kernel_async_transfer_t* transfer;
+  } source;
+} loom_pipeline_transport_step_t;
+
+typedef struct loom_pipeline_transport_t {
+  // All observable effects, in execution order; NULL when ordinary execution
+  // is required. This does not select a device engine or relax any ordering.
+  const loom_pipeline_transport_step_t* steps;
+  // Number of steps in the complete invocation.
+  iree_host_size_t count;
+  // Borrowed movement streams in CFG execution order, independent of block
+  // storage order. Each stream completes its groups before the next block.
+  const loom_kernel_async_stream_t* const* streams;
+  // Number of movement-bearing blocks on the execution chain.
+  iree_host_size_t stream_count;
+} loom_pipeline_transport_t;
+
 typedef struct loom_pipeline_worker_t {
   // Authored strand and its ordinary call, borrowed through consuming rewrite.
   const loom_pipeline_resource_strand_t* source;
@@ -64,6 +99,9 @@ typedef struct loom_pipeline_worker_t {
   loom_channel_completion_t completion;
   // Borrowed asynchronous movement and its admitted group completion edges.
   loom_kernel_async_legality_result_t asynchronous;
+  // Complete communication-only execution when no residual effects or control
+  // require a processor. Physical owners consume this instead of walking IR.
+  loom_pipeline_transport_t transport;
   // CFG topology retained for scheduling and handoff analysis.
   const loom_cfg_graph_t* graph;
 } loom_pipeline_worker_t;

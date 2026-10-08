@@ -933,7 +933,9 @@ loom_cc_library(
     loom::error::emitter
     loom::error::error_defs
     loom::ir
+    loom::ops::cfg
     loom::ops::func
+    loom::ops::kernel
     loom::ops::pipeline
     loom::ops::type_registry
     loom::util::cfg_graph

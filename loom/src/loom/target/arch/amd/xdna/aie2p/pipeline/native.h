@@ -16,6 +16,8 @@
 typedef struct loom_aie2p_native_cursor_t {
   // Strand owning the cursor, or UINT32_MAX until selected.
   uint32_t worker;
+  // Retained invocation admission bound, independent of physical slot count.
+  uint32_t maximum_admissions;
   // Multiple admissions can select different physical slots.
   bool advances;
 } loom_aie2p_native_cursor_t;
@@ -140,6 +142,8 @@ typedef struct loom_aie2p_native_transfer_t {
   const loom_kernel_async_transfer_t* source;
   // Wait that retires this transfer's group.
   const loom_op_t* completion;
+  // Read admission fused into this descriptor's ready-credit acquire, or NULL.
+  const loom_op_t* admission;
   // Admitted engine pair and physical routes.
   loom_aie2p_native_dma_path_t* path;
   // Caller buffer ordinal supplying the external base.
@@ -177,9 +181,16 @@ typedef struct loom_aie2p_native_transfer_t {
   loom_symbol_ref_t wait;
 } loom_aie2p_native_transfer_t;
 
+typedef enum loom_aie2p_native_execution_e {
+  LOOM_AIE2P_NATIVE_EXECUTION_CORE,
+  LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION,
+} loom_aie2p_native_execution_t;
+
 typedef struct loom_aie2p_native_worker_t {
-  // Physical core executing this independent occurrence.
+  // Authored location used for physical access and route selection.
   loom_aie2p_native_tile_t* tile;
+  // Engine implementing the strand; only CORE occupies instruction memory.
+  loom_aie2p_native_execution_t execution;
   // Semaphore released at the complete worker exit.
   uint16_t completion_lock;
   // Worker-visible selector of its completion semaphore.

@@ -21,15 +21,18 @@ pipeline.def<kernel> public retain target(@device) @overlapping_workers() run() 
   %storage = buffer.alloca<workgroup> pool(%memory) align(4) %bytes : buffer
   %records = buffer.view %storage[%origin] : buffer -> view<2x1xi32>
   %channel = channel.bind<fifo> %records, %slots : view<2x1xi32>, index -> channel<tile<1xi32>>
+  %other_storage = buffer.alloca<workgroup> pool(%memory) align(4) %bytes : buffer
+  %other_records = buffer.view %other_storage[%origin] : buffer -> view<2x1xi32>
+  %other_channel = channel.bind<fifo> %other_records, %slots : view<2x1xi32>, index -> channel<tile<1xi32>>
   pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
     %write, %record = channel.reserve %channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
     %value = scalar.constant 42 : i32
     view.store %value, %record[0] : i32, view<1xi32>
     channel.publish %write : write<tile<1xi32>>
   }
-  // ERROR@+1: XDNA/051 {requirement="an independently assigned compute tile for each strand"}
+  // ERROR@+1: XDNA/051 {requirement="an independently assigned compute tile for each instruction-executing strand"}
   pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
-    %write, %record = channel.reserve %channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %write, %record = channel.reserve %other_channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
     %value = scalar.constant 42 : i32
     view.store %value, %record[0] : i32, view<1xi32>
     channel.publish %write : write<tile<1xi32>>

@@ -191,6 +191,61 @@ static iree_status_t loom_aie2p_native_select_channel_accesses(
   return iree_ok_status();
 }
 
+static bool loom_aie2p_native_can_configure(
+    const loom_aie2p_native_context_t* context,
+    const loom_pipeline_realization_t* realization,
+    const loom_pipeline_worker_t* worker) {
+  if (!worker->transport.steps) {
+    return false;
+  }
+  // One admission at each private endpoint makes its initial free credit
+  // unconditional and its final reclamation unobservable. Publication and
+  // external-write completion remain explicit ordered effects.
+  for (iree_host_size_t i = 0; i < worker->binding_count; ++i) {
+    const loom_aie2p_native_channel_t* channel =
+        &context->channels[worker->bindings[i].channel -
+                           realization->resources.channels];
+    if (channel->cursor.reader.maximum_admissions > 1 ||
+        channel->cursor.writer.maximum_admissions > 1) {
+      return false;
+    }
+  }
+  for (const loom_kernel_async_stream_t* stream = worker->asynchronous.streams;
+       stream; stream = stream->next) {
+    for (iree_host_size_t i = 0; i < stream->transfer_count; ++i) {
+      const loom_movement_request_t* request = &stream->transfers[i].request;
+      if (request->kind != LOOM_MOVEMENT_KIND_KERNEL_ASYNC_COPY ||
+          !((request->source.memory_space ==
+                 LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL &&
+             request->dest.memory_space ==
+                 LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) ||
+            (request->source.memory_space ==
+                 LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP &&
+             request->dest.memory_space ==
+                 LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL))) {
+        return false;
+      }
+      const loom_view_region_t* source;
+      const loom_view_region_t* destination;
+      loom_view_region_table_try_lookup(
+          &worker->asynchronous.movement.view_regions, request->source.value_id,
+          &source);
+      loom_view_region_table_try_lookup(
+          &worker->asynchronous.movement.view_regions, request->dest.value_id,
+          &destination);
+      const bool ingress =
+          request->source.memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL;
+      const loom_view_region_t* external = ingress ? source : destination;
+      const loom_view_region_t* local = ingress ? destination : source;
+      if (!loom_symbolic_expr_is_constant(&external->begin_byte_offset) ||
+          !loom_symbolic_expr_is_constant(&local->projection_byte_offset)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 static iree_status_t loom_aie2p_native_select(
     void* user_data, loom_module_t* module,
     const loom_pipeline_realization_t* realization, bool* out_valid) {
@@ -240,25 +295,12 @@ static iree_status_t loom_aie2p_native_select(
     loom_aie2p_native_tile_t* tile =
         &context->tiles[source->axes[0].origin * context->family->row_count +
                         source->axes[1].origin];
-    if (tile->facts->kind != LOOM_XDNA_TILE_KIND_COMPUTE || tile->has_worker) {
+    if (tile->facts->kind != LOOM_XDNA_TILE_KIND_COMPUTE) {
       return loom_aie2p_native_reject(
           context, source->source->declaration,
-          IREE_SV("an independently assigned compute tile for each strand"));
+          IREE_SV("a compute-tile execution location"));
     }
-    if (tile->next_lock == tile->facts->lock_count) {
-      return loom_aie2p_native_reject(
-          context, source->source->declaration,
-          IREE_SV("one semaphore for worker completion"));
-    }
-    tile->has_worker = true;
-    context->workers[i] = (loom_aie2p_native_worker_t){
-        .tile = tile, .completion_lock = tile->next_lock++};
-    IREE_RETURN_IF_ERROR(loom_xdna_array_form_lock_selector(
-        context->family, tile->coordinate, tile->coordinate,
-        context->workers[i].completion_lock,
-        &context->workers[i].completion_selector));
-    IREE_RETURN_IF_ERROR(loom_aie2p_native_select_channel_accesses(
-        context, realization, source, &context->workers[i]));
+    context->workers[i] = (loom_aie2p_native_worker_t){.tile = tile};
     if (source->completion.requirement !=
         LOOM_CHANNEL_COMPLETION_REQUIREMENT_NONE) {
       static const iree_string_view_t requirements[] = {
@@ -299,6 +341,8 @@ static iree_status_t loom_aie2p_native_select(
         }
         *cursor = (loom_aie2p_native_cursor_t){
             .worker = (uint32_t)i,
+            .maximum_admissions =
+                source->completion.actions[j].maximum_admissions,
             .advances = channel->source->capacity > 1 &&
                         source->completion.actions[j].maximum_admissions > 1};
       }
@@ -312,6 +356,44 @@ static iree_status_t loom_aie2p_native_select(
             IREE_SV("a completed FIFO prefix within semaphore credit range"));
       }
     }
+  }
+  // The invocation command stream is one sequential engine. Selecting at most
+  // one strand preserves concurrency between independently authored strands.
+  // Every other strand retains its own execution engine.
+  bool configuration_used = false;
+  for (iree_host_size_t i = 0; i < worker_count; ++i) {
+    loom_pipeline_worker_t* source = &realization->workers[i];
+    loom_aie2p_native_worker_t* worker = &context->workers[i];
+    bool configure = false;
+    if (!configuration_used && source->transport.steps) {
+      loom_local_value_domain_restore(&source->value_domain);
+      configure = loom_aie2p_native_can_configure(context, realization, source);
+      loom_local_value_domain_release(&source->value_domain);
+    }
+    if (configure) {
+      worker->execution = LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION;
+      configuration_used = true;
+      continue;
+    }
+    loom_aie2p_native_tile_t* tile = worker->tile;
+    if (tile->has_worker) {
+      return loom_aie2p_native_reject(
+          context, source->source->declaration,
+          IREE_SV("an independently assigned compute tile for each "
+                  "instruction-executing strand"));
+    }
+    if (tile->next_lock == tile->facts->lock_count) {
+      return loom_aie2p_native_reject(
+          context, source->source->declaration,
+          IREE_SV("one semaphore for worker completion"));
+    }
+    tile->has_worker = true;
+    worker->completion_lock = tile->next_lock++;
+    IREE_RETURN_IF_ERROR(loom_xdna_array_form_lock_selector(
+        context->family, tile->coordinate, tile->coordinate,
+        worker->completion_lock, &worker->completion_selector));
+    IREE_RETURN_IF_ERROR(loom_aie2p_native_select_channel_accesses(
+        context, realization, source, worker));
   }
   IREE_RETURN_IF_ERROR(
       loom_aie2p_native_select_transfers(context, realization, out_valid));
