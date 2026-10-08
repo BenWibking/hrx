@@ -6,8 +6,9 @@
 
 // Source-to-Low lowering report construction.
 //
-// Reports are an optional cold path layered over the normal lowering walk.
-// Selection rows describe the plan chosen for each source op, while memory
+// Reports are an optional cold path layered over the normal lowering plan.
+// Selection rows are constructed from finalized decisions before emission;
+// instruction counts are execution outcomes populated afterward. Memory
 // rows retain target-provided packet geometry and source interval evidence.
 // Row storage is owned by loom_low_lower_result_t and remains valid until the
 // result is deinitialized. Per-function analysis state is arena-backed and
@@ -28,6 +29,7 @@ typedef struct loom_low_lower_memory_expression_entry_t
 typedef struct loom_low_lower_memory_report_row_t
     loom_low_lower_memory_report_row_t;
 typedef struct loom_low_lower_result_t loom_low_lower_result_t;
+typedef struct loom_low_lower_report_row_vec_t loom_low_lower_report_row_vec_t;
 typedef struct loom_low_lower_participation_state_t
     loom_low_lower_participation_state_t;
 typedef struct loom_low_lower_selected_plan_t loom_low_lower_selected_plan_t;
@@ -39,6 +41,10 @@ typedef struct loom_op_t loom_op_t;
 typedef struct loom_low_lower_report_state_t {
   // Number of operations finalized by the function's emission builder.
   uint64_t emitted_op_count;
+  // Planned selection row block receiving the next emission outcome.
+  loom_low_lower_report_row_vec_t* selection_cursor;
+  // Next row within |selection_cursor|, excluding claimed source operations.
+  iree_host_size_t selection_index;
   // Optional execution evidence for the current immutable source snapshot.
   loom_low_lower_participation_state_t* participation;
   // Interned symbolic byte expressions used by memory interval rows.
@@ -56,12 +62,16 @@ void loom_low_lower_report_initialize(loom_low_lower_context_t* context);
 // Releases all report row storage owned by |result|.
 void loom_low_lower_result_deinitialize(loom_low_lower_result_t* result);
 
-// Records the report row for one source lowering plan after emission.
-// The caller must have enabled report rows in the lowering options.
-iree_status_t loom_low_lower_report_record_selected_plan(
-    loom_low_lower_context_t* context,
-    const loom_low_lower_selected_plan_t* selected_plan,
-    uint32_t emitted_low_op_count);
+// Projects finalized source plans and their execution evidence into report
+// rows. No row storage or report-only analysis is created when reports are
+// disabled.
+iree_status_t loom_low_lower_report_prepare(loom_low_lower_context_t* context);
+
+// Records an actual instruction count in the next planned selection row.
+// Claimed operations have no row; elided operations consume a row with count
+// zero.
+void loom_low_lower_report_record_emission(loom_low_lower_context_t* context,
+                                           uint32_t emitted_low_op_count);
 
 // Returns exact source execution evidence for an operation when loop and CFG
 // facts can prove it without target execution.

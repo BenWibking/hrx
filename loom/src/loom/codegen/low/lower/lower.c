@@ -601,8 +601,7 @@ static iree_status_t loom_low_lower_emit_elided_selected_plan(
         loom_low_lower_elide_value(context, source_results[i]));
   }
   if (!iree_allocator_is_null(context->options->report_allocator)) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_report_record_selected_plan(
-        context, selected_plan, /*emitted_low_op_count=*/0));
+    loom_low_lower_report_record_emission(context, /*emitted_low_op_count=*/0);
   }
   return iree_ok_status();
 }
@@ -979,8 +978,7 @@ static iree_status_t loom_low_lower_emit_selected_plan(
     const uint64_t emitted_op_count =
         context->lowering.report.emitted_op_count - before_op_count;
     IREE_ASSERT_LE(emitted_op_count, UINT32_MAX);
-    IREE_RETURN_IF_ERROR(loom_low_lower_report_record_selected_plan(
-        context, &selected_plan, (uint32_t)emitted_op_count));
+    loom_low_lower_report_record_emission(context, (uint32_t)emitted_op_count);
   }
   return iree_ok_status();
 }
@@ -1386,6 +1384,9 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
   }
   if (iree_status_is_ok(status) && context.result->error_count == 0) {
     status = loom_low_lower_control_plan_build(&context);
+  }
+  if (iree_status_is_ok(status) && context.result->error_count == 0) {
+    status = loom_low_lower_report_prepare(&context);
   }
   if (iree_status_is_ok(status) && context.result->error_count == 0) {
     loom_symbol_ref_t low_func_ref = loom_func_like_callee(source_function);

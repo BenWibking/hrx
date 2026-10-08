@@ -24,6 +24,24 @@ namespace {
 
 class LowLowerReportTest : public ::testing::Test {
  protected:
+  static iree_status_t ObservePlannedRows(void* user_data,
+                                          loom_low_lower_context_t* context) {
+    auto* test = static_cast<LowLowerReportTest*>(user_data);
+    // Selection and source-frequency evidence precede the first instruction.
+    EXPECT_EQ(test->result_.selected_source_op_count, 1u);
+    EXPECT_EQ(test->result_.emitted_low_op_count, 0u);
+    EXPECT_EQ(test->result_.report_rows.count, 1u);
+    if (test->result_.report_rows.head) {
+      const loom_low_lower_report_row_t& row =
+          loom_low_lower_report_row_vec_const_rows(
+              test->result_.report_rows.head)[0];
+      EXPECT_EQ(row.execution_count_plus_one, 2u);
+      EXPECT_EQ(row.emitted_low_op_count, 0u);
+      EXPECT_EQ(row.source_op_kind, LOOM_OP_SCALAR_ADDI);
+    }
+    return iree_ok_status();
+  }
+
   void SetUp() override {
     iree_arena_block_pool_initialize(4096, iree_allocator_system(),
                                      &block_pool_);
@@ -44,6 +62,7 @@ class LowLowerReportTest : public ::testing::Test {
     IREE_ASSERT_OK(
         loom_value_fact_table_compute(&fact_table_, module_, function_));
 
+    options_.target_ref = loom_symbol_ref_null();
     options_.target_facts = &target_facts_;
     options_.descriptor_registry = &descriptor_registry_.registry;
     options_.policy = loom_test_low_lower_policy();
@@ -113,6 +132,9 @@ class LowLowerReportTest : public ::testing::Test {
 };
 
 TEST_F(LowLowerReportTest, CapturesAndReleasesSelectionRows) {
+  loom_low_lower_policy_t policy = *options_.policy;
+  policy.emit_preamble = {ObservePlannedRows, this};
+  options_.policy = &policy;
   options_.report_allocator = iree_allocator_system();
   IREE_ASSERT_OK(
       loom_low_lower_function(module_, function_, &options_, &result_));
