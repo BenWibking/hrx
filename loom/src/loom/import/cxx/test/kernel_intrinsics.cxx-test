@@ -2,14 +2,16 @@
 // Kernel-only intrinsics remain available in nested kernel control flow.
 // Barriers have no kernel ancestor requirement and may live in helpers.
 #include <loomcxx/kernel.h>
-static void synchronize() { loom::workgroup_barrier(); }
+static void synchronize() { loom::kernel::workgroup::barrier(); }
 [[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void entry(unsigned* coordinates, float* output, float value) {
-  unsigned lane = loom::workitem_id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
   if (lane < 32) {
-    coordinates[lane] = loom::workgroup_id.x + loom::workgroup_size.x +
-                        loom::workgroup_count.x + loom::subgroup_size();
-    output[lane] = loom::shuffle_xor(value, 1, 32);
+    coordinates[lane] = loom::kernel::workgroup::id.x +
+                        loom::kernel::workgroup::size.x +
+                        loom::kernel::workgroup::count.x +
+                        loom::kernel::subgroup::size();
+    output[lane] = loom::kernel::subgroup::shuffle_xor(value, 1, 32);
   }
   synchronize();
 }
@@ -61,16 +63,16 @@ func.def @synchronize() {
 // Required-inline helpers defer placement until their kernel use is expanded.
 #include <loomcxx/kernel.h>
 [[loom::force_inline]] static unsigned topology() {
-  return loom::workitem_id.x + loom::workgroup_id.x +
-         loom::workgroup_size.x + loom::workgroup_count.x +
-         loom::subgroup_size();
+  return loom::kernel::workitem::id.x + loom::kernel::workgroup::id.x +
+         loom::kernel::workgroup::size.x + loom::kernel::workgroup::count.x +
+         loom::kernel::subgroup::size();
 }
 [[loom::device, loom::force_inline]] static float exchange(float value) {
-  return loom::shuffle_xor(value, 1, 32);
+  return loom::kernel::subgroup::shuffle_xor(value, 1, 32);
 }
 [[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void entry(unsigned* coordinates, float* output, float value) {
-  unsigned lane = loom::workitem_id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
   coordinates[lane] = topology();
   output[lane] = exchange(value);
 }

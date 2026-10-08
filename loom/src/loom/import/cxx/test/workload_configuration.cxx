@@ -16,7 +16,8 @@ static loom::kernel::configuration configure_copy(unsigned item_count) {
                                                       const float* input,
                                                       float* output) {
   unsigned item =
-      loom::workgroup_id.x * loom::workgroup_size.x + loom::workitem_id.x;
+      loom::kernel::workgroup::id.x * loom::kernel::workgroup::size.x +
+      loom::kernel::workitem::id.x;
   if (item < item_count) {
     output[item] = input[item];
   }

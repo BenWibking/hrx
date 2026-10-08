@@ -23,7 +23,7 @@ q8s32_specialize(
     [[loom::noalias, loom::assume_aligned(64)]] float* output) {
   float result = q8s32_project(q8s32_input_capacity, weights[0], weights[1],
                                activations[0], activations[1], *scale);
-  if (loom::subgroup_lane_id() == 0) {
+  if (loom::kernel::subgroup::lane_id() == 0) {
     *output = result;
   }
 }

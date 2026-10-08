@@ -31,7 +31,7 @@ extern const unsigned stage_count;
 [[loom::kernel, loom::workgroup_size(kWorkgroupSize, 1, 1),
   loom::workgroup_count(1, 1, 1)]]
 void configured_workgroup_storage(unsigned* output) {
-  unsigned lane = loom::workitem_id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
   auto* stages =
       loom::buffer::alloca<unsigned, loom::memory_space::workgroup, 64>(
           stage_count * kWorkgroupSize);
@@ -42,7 +42,7 @@ void configured_workgroup_storage(unsigned* output) {
     store_stage(stage_view, stage, lane);
   }
   unsigned final_stage_base = (stage_count - 1u) * kWorkgroupSize;
-  loom::workgroup_barrier();
+  loom::kernel::workgroup::barrier();
   output[lane] = loom::view::load(stage_view, final_stage_base + lane);
 }
 

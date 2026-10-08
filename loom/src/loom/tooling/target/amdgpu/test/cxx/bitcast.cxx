@@ -19,7 +19,7 @@ using Floats4 = float __attribute__((ext_vector_type(4)));
 
 [[loom::kernel, loom::workgroup_size(32, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void scale_packed_fp8(const unsigned* input, unsigned* output, float factor) {
-  unsigned lane = loom::workitem_id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
   auto packed = __builtin_bit_cast(Float8x4, input[lane]);
   auto wide = __builtin_convertvector(packed, Floats4);
   auto scaled = __builtin_convertvector(wide * factor, Float8x4);
@@ -28,7 +28,7 @@ void scale_packed_fp8(const unsigned* input, unsigned* output, float factor) {
 
 [[loom::kernel, loom::workgroup_size(32, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void packed_bytes(const unsigned* input, unsigned* output) {
-  unsigned lane = loom::workitem_id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
   auto bytes = __builtin_bit_cast(Bytes4, input[lane]);
   // Reorder and add distinct lane values so a round-trip identity cannot hide
   // a disagreement about the source byte order or carry between byte lanes.
@@ -39,7 +39,7 @@ void packed_bytes(const unsigned* input, unsigned* output) {
 [[loom::kernel, loom::workgroup_size(32, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void floating_payloads(const unsigned* input, Float8x4* fp8, BFloat8x4* bf8,
                        Halves2* half, BFloats2* bfloat, float* scalar) {
-  unsigned lane = loom::workitem_id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
   const unsigned bits = input[lane];
   fp8[lane] = __builtin_bit_cast(Float8x4, bits);
   bf8[lane] = __builtin_bit_cast(BFloat8x4, bits);
@@ -53,7 +53,7 @@ void floating_payloads(const unsigned* input, Float8x4* fp8, BFloat8x4* bf8,
 void floating_to_words(const Float8x4* fp8, const BFloat8x4* bf8,
                        const Halves2* half, const BFloats2* bfloat,
                        const float* scalar, unsigned* output) {
-  unsigned lane = loom::workitem_id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
   output[lane] = __builtin_bit_cast(unsigned, fp8[lane]);
   output[32 + lane] = __builtin_bit_cast(unsigned, bf8[lane]);
   output[64 + lane] = __builtin_bit_cast(unsigned, half[lane]);

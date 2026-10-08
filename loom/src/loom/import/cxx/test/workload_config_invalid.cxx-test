@@ -135,7 +135,7 @@ struct malformed_dimensions {
 };
 struct [[loom::launch_config]] malformed_configuration {
   malformed_dimensions workgroup_count;
-  loom::uint3 workgroup_size;
+  loom::kernel::uint3 workgroup_size;
 };
 static malformed_configuration malformed() {
   return {{1, 1, 1}, {1, 1, 1}};

@@ -53,12 +53,12 @@ static void copy_observations(Input* input, Output* output, unsigned count,
 [[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void volatile_memory(const volatile unsigned* input, volatile unsigned* output,
                      unsigned count) {
-  copy_observations(input, output, count, loom::workitem_id.x);
+  copy_observations(input, output, count, loom::kernel::workitem::id.x);
 }
 
 [[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void ordinary_memory(const unsigned* input, unsigned* output, unsigned count) {
-  copy_observations(input, output, count, loom::workitem_id.x);
+  copy_observations(input, output, count, loom::kernel::workitem::id.x);
 }
 
 using Words = unsigned __attribute__((vector_size(16)));
@@ -89,7 +89,7 @@ void volatile_vectors(const volatile Words* input, volatile Words* output) {
 [[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void volatile_shared(const unsigned* input, unsigned* output) {
   [[loom::workgroup]] volatile unsigned table[64];
-  unsigned lane = loom::workitem_id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
   // Each invocation owns its element, so no cross-invocation ordering is
   // needed.
   table[lane] = input[lane];

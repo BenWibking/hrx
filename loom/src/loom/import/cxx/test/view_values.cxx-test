@@ -44,7 +44,7 @@ void repack(const float* input, float* output, unsigned rows,
   if (rows > 3) {
     selected = tail;
   }
-  auto column = loom::workitem_id.x;
+  auto column = loom::kernel::workitem::id.x;
   float value = loom::view::load(selected, 0, column);
   loom::view::store(value, destination, 0, column);
 }

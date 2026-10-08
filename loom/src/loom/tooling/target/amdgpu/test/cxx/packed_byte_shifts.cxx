@@ -12,7 +12,8 @@ using SignedBytes8 = signed char __attribute__((ext_vector_type(8)));
 // Distinct neighboring bytes exercise both physical words at every shift count.
 [[loom::kernel, loom::workgroup_size(32, 1, 1), loom::workgroup_count(8, 1, 1)]]
 void packed_byte_shifts(const Bytes8* input, Bytes8* output) {
-  unsigned index = loom::workgroup_id.x * 32 + loom::workitem_id.x;
+  unsigned index =
+      loom::kernel::workgroup::id.x * 32 + loom::kernel::workitem::id.x;
   Bytes8 values = input[index];
   [[loom::unroll(8)]]
   for (unsigned amount = 0; amount < 8; ++amount) {

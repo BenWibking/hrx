@@ -37,8 +37,8 @@ static float group_scale(const IQ4XSBlock* block, unsigned group) {
   loom::workgroup_count(64, 1, 1)]]
 void decode_iq4xs(const IQ4XSBlock* blocks, const signed char* codebook,
                   float* output) {
-  unsigned group_index = loom::workgroup_id.x;
-  unsigned lane = loom::workitem_id.x;
+  unsigned group_index = loom::kernel::workgroup::id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
   auto* block = &blocks[group_index / 8];
   unsigned group = group_index % 8;
   unsigned packed = block->quants[group * 16 + lane % 16];
@@ -63,8 +63,8 @@ void decode_iq4xs_packed(
     [[loom::noalias]] const IQ4XSBlock* blocks,
     [[loom::noalias, loom::assume_aligned(64)]] const Codebook16* codebook,
     [[loom::noalias]] Float4* output) {
-  unsigned block_index = loom::workgroup_id.x;
-  unsigned lane = loom::workitem_id.x;
+  unsigned block_index = loom::kernel::workgroup::id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
   auto* block = &blocks[block_index];
   unsigned group = lane / 4;
   unsigned chunk = lane % 4;
@@ -82,8 +82,8 @@ void decode_iq4xs_packed(
 // bits and neighboring records. Each byte has exactly one writing workitem.
 [[loom::kernel, loom::workgroup_size(32, 1, 1), loom::workgroup_count(8, 1, 1)]]
 void update_iq4xs(IQ4XSBlock* blocks) {
-  auto* block = &blocks[loom::workgroup_id.x];
-  unsigned lane = loom::workitem_id.x;
+  auto* block = &blocks[loom::kernel::workgroup::id.x];
+  unsigned lane = loom::kernel::workitem::id.x;
   for (unsigned index = 0; index < 4; ++index) {
     block->quants[lane * 4 + index] ^= 0x11;
   }

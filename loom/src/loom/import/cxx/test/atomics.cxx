@@ -119,16 +119,16 @@ void atomic_unsigned(unsigned* storage, unsigned* output) {
 [[loom::kernel, loom::workgroup_size(32, 1, 1), loom::workgroup_count(8, 1, 1)]]
 void atomic_workgroup_tickets(unsigned* counts, unsigned* slots) {
   [[loom::workgroup]] unsigned counter[1];
-  unsigned lane = loom::workitem_id.x;
-  unsigned group = loom::workgroup_id.x;
+  unsigned lane = loom::kernel::workitem::id.x;
+  unsigned group = loom::kernel::workgroup::id.x;
   if (lane == 0) {
     counter[0] = 0;
   }
-  loom::workgroup_barrier();
+  loom::kernel::workgroup::barrier();
   unsigned ticket =
       rmw<kind::addi, ordering::relaxed, scope::workgroup>(1u, &counter[0]);
   slots[group * 32 + ticket + 1] = 1;
-  loom::workgroup_barrier();
+  loom::kernel::workgroup::barrier();
   if (lane == 0) {
     counts[group + 1] = counter[0];
   }
