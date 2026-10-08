@@ -251,6 +251,20 @@ def _exact_float_diagnostic(field: str) -> DiagnosticRef:
     return _named_constraint_diagnostic("value_fact", field, "exact_float")
 
 
+def _exact_power_of_two_float_diagnostic(
+    field: str,
+    minimum_exponent: int,
+    maximum_exponent: int,
+) -> DiagnosticRef:
+    return _range_constraint_diagnostic(
+        "value_fact",
+        field,
+        "exact_power_of_two_float_exponent",
+        minimum_exponent,
+        maximum_exponent,
+    )
+
+
 def _not_nan_diagnostic(field: str) -> DiagnosticRef:
     return _named_constraint_diagnostic("value_fact", field, "not_nan")
 

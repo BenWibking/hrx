@@ -62,6 +62,7 @@ _GUARD_VALUE_REF_KINDS = frozenset(
         GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
         GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
         GuardKind.VALUE_EXACT_FLOAT,
+        GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT,
         GuardKind.VALUE_NOT_NAN,
         GuardKind.VALUE_I64_RANGE,
         GuardKind.VALUE_I64_RANGE_LE,
@@ -127,6 +128,8 @@ _ATTR_COPY_VALUE_REF_KINDS = frozenset(
         LowerAttrCopyKind.VALUE_FLOAT_AS_F32_I32,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I64,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I32_WORD,
+        LowerAttrCopyKind.VALUE_FLOAT_POWER_OF_TWO_EXPONENT,
+        LowerAttrCopyKind.VALUE_FLOAT_POWER_OF_TWO_NEGATED_EXPONENT,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_LOW_BITS_MASK,
@@ -683,6 +686,7 @@ def guard_payload_row(row: LowerGuard) -> list[str]:
         GuardKind.I64_ARRAY_ELEMENT_RANGE,
         GuardKind.I64_ARRAY_ELEMENTS_RANGE,
         GuardKind.VALUE_I64_RANGE,
+        GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT,
         GuardKind.TARGET_SUBGROUP_SIZE_RANGE,
     ):
         return [f".i64_range = {{.minimum = {_c_i64_literal(row.minimum_i64)}, .maximum = {_c_i64_literal(row.maximum_i64)}}}"]

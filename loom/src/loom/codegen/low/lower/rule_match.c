@@ -625,6 +625,26 @@ static bool loom_low_lower_rule_value_facts_exact_float(
   return loom_value_facts_as_exact_float(scalar_type, facts, &value);
 }
 
+static bool loom_low_lower_rule_value_facts_exact_power_of_two_float(
+    const loom_low_lower_rule_match_context_t* match_context,
+    const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
+    uint16_t value_ref_index, int64_t minimum_exponent,
+    int64_t maximum_exponent) {
+  const loom_value_id_t value_id = loom_low_lower_rule_source_value(
+      match_context->module, rule_set, source_op, value_ref_index);
+  loom_value_facts_t facts = loom_value_facts_unknown();
+  if (!loom_low_lower_rule_float_immediate_facts(
+          match_context->module, match_context->fact_table, value_id, &facts)) {
+    return false;
+  }
+  const loom_scalar_type_t scalar_type = loom_type_element_type(
+      loom_module_value_type(match_context->module, value_id));
+  int32_t exponent = 0;
+  return loom_value_facts_as_exact_power_of_two_float(scalar_type, facts,
+                                                      &exponent) &&
+         exponent >= minimum_exponent && exponent <= maximum_exponent;
+}
+
 static bool loom_low_lower_rule_value_facts_float_equals(
     const loom_low_lower_rule_match_context_t* match_context,
     const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
@@ -1145,6 +1165,15 @@ static iree_status_t loom_low_lower_rule_guard_matches(
           match_context, rule_set, source_op,
           guard->selector.value.value_ref_index);
       return iree_ok_status();
+    case LOOM_LOW_LOWER_GUARD_VALUE_EXACT_POWER_OF_TWO_FLOAT: {
+      const loom_low_lower_guard_payload_t* payload =
+          loom_low_lower_rule_set_guard_payload(rule_set, guard);
+      *out_matches = loom_low_lower_rule_value_facts_exact_power_of_two_float(
+          match_context, rule_set, source_op,
+          guard->selector.value.value_ref_index, payload->i64_range.minimum,
+          payload->i64_range.maximum);
+      return iree_ok_status();
+    }
     case LOOM_LOW_LOWER_GUARD_VALUE_NOT_NAN: {
       const loom_value_id_t value_id = loom_low_lower_rule_source_value(
           match_context->module, rule_set, source_op,

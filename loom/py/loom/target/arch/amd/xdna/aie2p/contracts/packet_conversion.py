@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import product
-from typing import Literal
 
 from loom.dialect.encoding import defs as encoding
 from loom.dialect.vector import defs as vector
@@ -21,6 +20,11 @@ from loom.target.arch.amd.xdna.aie2p.contracts.data_path import (
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.f32_accumulator import (
     F32AccumulatorProgram,
+)
+from loom.target.arch.amd.xdna.aie2p.contracts.packet_program import (
+    IntegerSignedness,
+    PacketProgram,
+    shift_i32_packet,
 )
 from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
     AIE2P_CORE_DESCRIPTOR_SET,
@@ -49,8 +53,6 @@ FLOAT_PACKET_LANE_COUNTS = (16, 32)
 # Packed i4 byte counts consumed by native VUNPACK forms. Each input byte
 # produces two sign- or zero-extended i8 lanes.
 I4_UNPACK_SOURCE_LANE_COUNTS = (32, 64)
-
-_IntegerSignedness = Literal["signed", "unsigned"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -949,253 +951,6 @@ def _exact_vector(element: str, element_count: int) -> Vector:
     return Vector(element, lanes=element_count)
 
 
-class _PacketProgram:
-    """Builds lane-wise descriptor programs over one X carrier."""
-
-    def __init__(self, element_bits: int, temporary_prefix: str = "") -> None:
-        if element_bits not in (16, 32):
-            raise ValueError("packet program element width must be 16 or 32")
-        self.emits: list[ContractEmit] = []
-        self.element_bits = element_bits
-        self.temporary_prefix = temporary_prefix
-        # Constants already materialized in the shift-register class.
-        self.shift_values: dict[int, ValueRef] = {}
-        # Last emitted value of each persistent instruction-state field.
-        self.state_values: dict[str, int] = {}
-
-    def temporary(self, name: str) -> ValueRef:
-        return ValueRef.temporary(f"{self.temporary_prefix}{name}")
-
-    def constant(
-        self,
-        name: str,
-        value: int,
-        *,
-        descriptor_key: str | None = None,
-    ) -> ValueRef:
-        if descriptor_key is None:
-            descriptor_key = (
-                "amd.xdna.aie2p.constant.i32.short"
-                if -1024 <= value <= 1023
-                else "amd.xdna.aie2p.constant.i32"
-            )
-        result = self.temporary(name)
-        self.emits.append(
-            EmitDescriptorOp(
-                descriptor=_descriptor(descriptor_key),
-                results={"dst": result},
-                result_types={"dst": DescriptorResultType()},
-                immediates={"i": value},
-                form=DescriptorEmitForm.CONST,
-            )
-        )
-        return result
-
-    def operation(
-        self,
-        name: str | None,
-        descriptor_key: str,
-        result_field: str,
-        *,
-        immediates: dict[str, int] | None = None,
-        copy_operands: tuple[str, ...] = (),
-        **operands: ValueRef,
-    ) -> ValueRef:
-        result = ValueRef.result("result") if name is None else self.temporary(name)
-        self.emits.append(
-            EmitDescriptorOp(
-                descriptor=_descriptor(f"amd.xdna.aie2p.{descriptor_key}"),
-                operands=operands,
-                results={result_field: result},
-                result_types=(
-                    None if name is None else {result_field: DescriptorResultType()}
-                ),
-                immediates={} if immediates is None else immediates,
-                form=DescriptorEmitForm.OP,
-                copy_operands=copy_operands,
-            )
-        )
-        return result
-
-    def state(self, descriptor_key: str, value: int) -> None:
-        """Sets one instruction-state field consumed by later descriptors."""
-
-        if self.state_values.get(descriptor_key) == value:
-            return
-        self.emits.append(
-            EmitDescriptorOp(
-                descriptor=_descriptor(
-                    f"amd.xdna.aie2p.state.{descriptor_key}.immediate"
-                ),
-                immediates={"i": value},
-                form=DescriptorEmitForm.OP,
-            )
-        )
-        self.state_values[descriptor_key] = value
-
-    def splat(
-        self,
-        name: str,
-        value: int,
-        *,
-        element_bits: int | None = None,
-    ) -> ValueRef:
-        if element_bits is None:
-            element_bits = self.element_bits
-        scalar = self.constant(f"{name}_scalar", value)
-        return self.operation(
-            name,
-            f"splat.i{element_bits}x{512 // element_bits}",
-            "dst",
-            src=scalar,
-        )
-
-    def shift(self, value: int) -> ValueRef:
-        """Returns one shared shift-register constant for |value|."""
-
-        shift = self.shift_values.get(value)
-        if shift is None:
-            shift = self.constant(
-                f"shift_{value}",
-                value,
-                descriptor_key="amd.xdna.aie2p.constant.i32.shift",
-            )
-            self.shift_values[value] = shift
-        return shift
-
-    def binary(
-        self,
-        name: str,
-        descriptor_key: str,
-        lhs: ValueRef,
-        rhs: ValueRef,
-    ) -> ValueRef:
-        return self.operation(name, descriptor_key, "d", s1=lhs, s2=rhs)
-
-    def _complete_comparison(
-        self,
-        name: str,
-        descriptor_key: str,
-        **operands: ValueRef,
-    ) -> ValueRef:
-        """Completes one low-half comparison into an X-sized predicate."""
-
-        low = self.operation(f"{name}_low", descriptor_key, "cmp", **operands)
-        result = self.temporary(name)
-        self.emits.append(
-            EmitDescriptorOp(
-                descriptor=_descriptor("amd.xdna.aie2p.predicate.complete.zero.high32"),
-                operands={"storage": low},
-                results={"dst": result},
-                result_types={"dst": DescriptorResultType()},
-                immediates={"i": 0},
-                form=DescriptorEmitForm.OP,
-            )
-        )
-        return result
-
-    def compare_zero(
-        self,
-        name: str,
-        value: ValueRef,
-        *,
-        element_bits: int | None = None,
-    ) -> ValueRef:
-        if element_bits is None:
-            element_bits = self.element_bits
-        return self._complete_comparison(
-            name,
-            f"cmp.eqz.i{element_bits}x{512 // element_bits}.el.low32",
-            s2=value,
-        )
-
-    def compare_unsigned_less_than(
-        self,
-        name: str,
-        lhs: ValueRef,
-        rhs: ValueRef,
-        *,
-        element_bits: int | None = None,
-    ) -> ValueRef:
-        if element_bits is None:
-            element_bits = self.element_bits
-        return self._complete_comparison(
-            name,
-            f"cmp.lt.unsigned.i{element_bits}x{512 // element_bits}.el.low32",
-            s1=lhs,
-            s2=rhs,
-        )
-
-    def compare_unsigned_greater_equal(
-        self,
-        name: str,
-        lhs: ValueRef,
-        rhs: ValueRef,
-        *,
-        element_bits: int | None = None,
-    ) -> ValueRef:
-        if element_bits is None:
-            element_bits = self.element_bits
-        return self._complete_comparison(
-            name,
-            f"cmp.ge.unsigned.i{element_bits}x{512 // element_bits}.el.low32",
-            s1=lhs,
-            s2=rhs,
-        )
-
-    def select(
-        self,
-        name: str | None,
-        true_value: ValueRef,
-        false_value: ValueRef,
-        condition: ValueRef,
-        *,
-        element_bits: int | None = None,
-    ) -> ValueRef:
-        if element_bits is None:
-            element_bits = self.element_bits
-        return self.operation(
-            name,
-            f"select.i{element_bits}x{512 // element_bits}.mask64",
-            "d",
-            s1=false_value,
-            s2=true_value,
-            sel=condition,
-        )
-
-
-def _shift_i32_packet(
-    program: _PacketProgram,
-    name: str,
-    source: ValueRef,
-    amount: int,
-    *,
-    signedness: _IntegerSignedness = "unsigned",
-) -> ValueRef:
-    """Shifts one i32 packet by a fixed signed amount without scalar lanes."""
-
-    if not -31 <= amount <= 31:
-        raise ValueError("i32 packet shift must fit the native shift interval")
-    program.state("saturation", 0)
-    program.state("ups-mode", 1)
-    program.state("srs-mode", 1)
-    program.state("rounding", 0)
-    wide = program.operation(
-        f"{name}_wide",
-        f"widen.2x.x-to-c.{signedness}.configured",
-        "dst",
-        src=source,
-        su=program.shift(max(amount, 0)),
-    )
-    return program.operation(
-        name,
-        f"narrow.2x.c-to-x.{signedness}.configured",
-        "dst",
-        src=wide,
-        su=program.shift(max(-amount, 0)),
-    )
-
-
 def integer_widen_state_emits(
     ups_mode: int,
 ) -> tuple[ValueRef, tuple[ContractEmit, ...]]:
@@ -1515,7 +1270,7 @@ def _integer_shift_rule(
 
 def _widen_integer_packet_to_i32(
     input_element: str,
-    signedness: _IntegerSignedness,
+    signedness: IntegerSignedness,
     source: ValueRef,
 ) -> tuple[ValueRef, tuple[ContractEmit, ...]]:
     """Widens one partial X-carried integer packet to sixteen i32 lanes."""
@@ -1564,7 +1319,7 @@ def _widen_integer_packet_to_i32(
 def _integer_to_f32_packet_rule(
     source_op: Op,
     input_element: str,
-    signedness: _IntegerSignedness,
+    signedness: IntegerSignedness,
 ) -> DescriptorRule:
     """Converts one integer packet to correctly rounded binary32 lanes."""
 
@@ -1575,7 +1330,7 @@ def _integer_to_f32_packet_rule(
             input_element, signedness, input_value
         )
 
-    packet = _PacketProgram(32, temporary_prefix="integer_to_f32_")
+    packet = PacketProgram(32, temporary_prefix="integer_to_f32_")
     accumulator = F32AccumulatorProgram(temporary_prefix="integer_to_f32_")
     if input_element != "i32":
         # The interior mantissa leaves the complete signed or unsigned i8/i16
@@ -1598,7 +1353,7 @@ def _integer_to_f32_packet_rule(
         # final addition performs exactly the rounding required by the source
         # i32-to-F32 conversion, including signed cancellation and midpoint
         # ties across the full input domain.
-        high = _shift_i32_packet(
+        high = shift_i32_packet(
             packet,
             "high",
             input_value,
@@ -1943,7 +1698,7 @@ class _Float16NarrowingState:
 
 
 def _float16_chunk_to_f32(
-    program: _PacketProgram,
+    program: PacketProgram,
     source: ValueRef,
     chunk_index: int,
     *,
@@ -1956,7 +1711,7 @@ def _float16_chunk_to_f32(
     position_shift = _F32_PACKET_FORMAT.mantissa_bits - source_format.mantissa_bits
     prefix = f"chunk_{chunk_index}"
     sign = program.binary(f"{prefix}_sign", "and.bits512", source, state.sign_mask)
-    sign = _shift_i32_packet(
+    sign = shift_i32_packet(
         program,
         f"{prefix}_positioned_sign",
         sign,
@@ -1966,7 +1721,7 @@ def _float16_chunk_to_f32(
         f"{prefix}_payload", "and.bits512", source, state.nonsign_mask
     )
 
-    positioned_payload = _shift_i32_packet(
+    positioned_payload = shift_i32_packet(
         program, f"{prefix}_positioned_payload", payload, position_shift
     )
     normal = program.binary(
@@ -1993,7 +1748,7 @@ def _float16_chunk_to_f32(
             payload,
             threshold,
         )
-        positioned = _shift_i32_packet(
+        positioned = shift_i32_packet(
             program,
             f"{prefix}_subnormal_{normalization_shift}_positioned",
             payload,
@@ -2044,7 +1799,7 @@ def _float16_to_f32_emits(
 
     if source_format.bit_width != 16:
         raise ValueError("software float widening requires a 16-bit source")
-    program = _PacketProgram(32, f"{source_format.element}_widen_")
+    program = PacketProgram(32, f"{source_format.element}_widen_")
     program.state("saturation", 1)
     program.state("ups-mode", 0)
     chunks = _float_source_i32_chunks(program, source_format, rule_shape)
@@ -2129,7 +1884,7 @@ def _float16_to_f32_vector_rule(
 
 
 def _f32_chunk_to_float16(
-    program: _PacketProgram,
+    program: PacketProgram,
     source: ValueRef,
     chunk_index: int,
     *,
@@ -2236,7 +1991,7 @@ def _f32_chunk_to_float16(
         element_bits=result_format.bit_width,
     )
 
-    shifted_nan_payload = _shift_i32_packet(
+    shifted_nan_payload = shift_i32_packet(
         program, f"{prefix}_nan_payload_shifted", fraction, -mantissa_shift
     )
     program.state("saturation", 1)
@@ -2294,7 +2049,7 @@ def _f32_to_float16_emits(
 
     if result_format.bit_width != 16:
         raise ValueError("software float narrowing requires a 16-bit result")
-    program = _PacketProgram(32, f"{result_format.element}_narrow_")
+    program = PacketProgram(32, f"{result_format.element}_narrow_")
     chunks = _float_source_i32_chunks(program, _F32_PACKET_FORMAT, rule_shape)
     program.state("saturation", 1)
     program.state("rounding", BF16_CONVERSION_ROUNDING)
@@ -2394,7 +2149,7 @@ def _fp8_to_bf16_emits(
 ) -> _Float8WidenProgram:
     """Widens up to thirty-two FP8 lanes into exact BF16 bit patterns."""
 
-    program = _PacketProgram(16, temporary_prefix)
+    program = PacketProgram(16, temporary_prefix)
     if source is None:
         source = ValueRef.operand("input")
     zero = program.operation("zero", "sub.i8x64", "d", s1=source, s2=source)
@@ -2553,7 +2308,7 @@ def _e8m0_scale_bf16_group_emits(
 
     if scale_byte_ordinal < 0 or scale_byte_ordinal > 3:
         raise ValueError("E8M0 scale byte ordinal must be in [0, 3]")
-    program = _PacketProgram(16, temporary_prefix)
+    program = PacketProgram(16, temporary_prefix)
 
     scale_word = program.operation(
         "scale_word",
@@ -3001,7 +2756,7 @@ def _mxfp4_e2m1_to_bf16_components(
 ) -> _MxBf16PayloadProgram:
     """Expands thirty-two unpacked E2M1 lanes into BF16 components."""
 
-    program = _PacketProgram(16, temporary_prefix)
+    program = PacketProgram(16, temporary_prefix)
     zero = program.operation("zero", "sub.i8x64", "d", s1=source, s2=source)
     interleave_control = program.constant(
         "interleave_control",
@@ -3222,7 +2977,7 @@ def _fp8_narrow_state_emits(
 
 
 def _float_source_i32_chunks(
-    program: _PacketProgram,
+    program: PacketProgram,
     source_format: FloatPacketFormat,
     rule_shape: FloatPacketRuleShape,
 ) -> tuple[ValueRef, ...]:
@@ -3312,7 +3067,7 @@ def _float_source_i32_chunks(
 
 
 def _i32_packet_accumulator(
-    program: _PacketProgram,
+    program: PacketProgram,
     name: str,
     source: ValueRef,
 ) -> tuple[ValueRef, ValueRef]:
@@ -3337,7 +3092,7 @@ def _i32_packet_accumulator(
 
 
 def _round_i32_packet_to_i16(
-    program: _PacketProgram,
+    program: PacketProgram,
     name: str,
     accumulator: ValueRef,
     filler: ValueRef,
@@ -3391,7 +3146,7 @@ type _Float8NarrowingStrategy = _DirectFloat8Narrowing | _RebiasedFloat8Narrowin
 
 
 def _float_chunk_to_fp8_i16(
-    program: _PacketProgram,
+    program: PacketProgram,
     source: ValueRef,
     source_format: FloatPacketFormat,
     fp8_format: Float8PacketFormat,
@@ -3543,7 +3298,7 @@ def _float_to_fp8_emits(
 ) -> tuple[ContractEmit, ...]:
     """Narrows up to thirty-two floating lanes into exact FP8 packets."""
 
-    program = _PacketProgram(32, "fp8_narrow_")
+    program = PacketProgram(32, "fp8_narrow_")
     program.emits.extend(_fp8_narrow_state_emits(source_format))
     chunks = _float_source_i32_chunks(program, source_format, rule_shape)
 

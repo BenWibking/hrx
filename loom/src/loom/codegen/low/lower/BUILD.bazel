@@ -237,6 +237,7 @@ loom_cc_test(
         "//loom/src/loom/analysis:consumption",
         "//loom/src/loom/codegen/low/testing:source_workload",
         "//loom/src/loom/ir",
+        "//loom/src/loom/ir:facts",
         "//loom/src/loom/ops/index",
         "//loom/src/loom/ops/scalar",
         "//loom/src/loom/util:fact_table",

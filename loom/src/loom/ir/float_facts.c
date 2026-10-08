@@ -167,6 +167,23 @@ bool loom_value_facts_as_exact_float(loom_scalar_type_t scalar_type,
   return true;
 }
 
+bool loom_value_facts_as_exact_power_of_two_float(
+    loom_scalar_type_t scalar_type, loom_value_facts_t facts,
+    int32_t* out_exponent) {
+  double value = 0.0;
+  if (!loom_value_facts_as_exact_float(scalar_type, facts, &value) ||
+      !isfinite(value) || value == 0.0) {
+    return false;
+  }
+  int exponent = 0;
+  const double fraction = frexp(fabs(value), &exponent);
+  if (fraction != 0.5) {
+    return false;
+  }
+  *out_exponent = (int32_t)(exponent - 1);
+  return true;
+}
+
 bool loom_value_facts_as_float_range(loom_scalar_type_t scalar_type,
                                      loom_value_facts_t facts, double* out_lo,
                                      double* out_hi) {

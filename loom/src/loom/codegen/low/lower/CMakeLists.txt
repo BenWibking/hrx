@@ -228,6 +228,7 @@ loom_cc_test(
     loom::analysis::consumption
     loom::codegen::low::testing::source_workload
     loom::ir
+    loom::ir::facts
     loom::ops::index
     loom::ops::scalar
     loom::util::fact_table
