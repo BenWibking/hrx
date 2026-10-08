@@ -28,11 +28,15 @@
 #include "loom/tools/iree-benchmark-loom/module_query.h"
 #include "loom/tools/iree-benchmark-loom/output.h"
 #include "loom/tools/iree-benchmark-loom/output_sink.h"
-#include "loom/tools/iree-benchmark-loom/session.h"
 #include "loom/tools/iree-benchmark-loom/work_execution.h"
 #include "loom/tools/iree-benchmark-loom/work_plan.h"
 #include "loomc/interop.h"
 #include "loomc/iree.h"
+
+enum {
+  // Total bytes retained per runner scratch arena block.
+  IREE_BENCHMARK_LOOM_BLOCK_POOL_BLOCK_SIZE = 128 * 1024,
+};
 
 static iree_status_t iree_benchmark_loom_compile_report_options_initialize(
     const iree_benchmark_loom_options_t* options,
@@ -231,8 +235,11 @@ iree_status_t iree_benchmark_loom_run_file(
   loomc_target_profile_t* requested_target_profile = NULL;
   loomc_sanitizer_options_t loomc_sanitizer_options = {0};
   loomc_module_interop_view_t module_view = {0};
-  loom_run_session_t session = {0};
-  loom_run_module_t run_module = {0};
+  const loom_module_t* native_module = NULL;
+  const loom_source_table_resolver_t* source_table = NULL;
+  iree_arena_block_pool_t block_pool;
+  iree_arena_block_pool_initialize(IREE_BENCHMARK_LOOM_BLOCK_POOL_BLOCK_SIZE,
+                                   allocator, &block_pool);
   iree_benchmark_loom_artifact_bundle_t artifact_bundle = {0};
   iree_benchmark_loom_file_provider_t file_provider = {0};
   iree_benchmark_loom_hal_context_t hal_context = {0};
@@ -338,10 +345,6 @@ iree_status_t iree_benchmark_loom_run_file(
         loomc_compiler_create(compiler_context, /*options=*/NULL,
                               loomc_allocator_from_iree(allocator), &compiler));
   }
-  if (iree_status_is_ok(status)) {
-    status = iree_benchmark_loom_session_initialize(options->configuration,
-                                                    allocator, &session);
-  }
   const iree_string_view_t filename =
       (iree_string_view_is_empty(input_path) ||
        iree_string_view_equal(input_path, IREE_SV("-")))
@@ -409,8 +412,8 @@ iree_status_t iree_benchmark_loom_run_file(
     };
     loomc_result_t* result = NULL;
     status = loom_tooling_input_admit_loomc_module(
-        &admission_options, compiler_context, compiler_workspace,
-        loom_run_session_block_pool(&session), &module, &result, allocator);
+        &admission_options, compiler_context, compiler_workspace, &block_pool,
+        &module, &result, allocator);
     if (iree_status_is_ok(status)) {
       status = iree_benchmark_loom_diagnostic_capture_loomc_result(
           &source_diagnostics, result);
@@ -449,11 +452,8 @@ iree_status_t iree_benchmark_loom_run_file(
   if (iree_status_is_ok(status) && failure_count == 0) {
     // Native planning and HAL/Wasm execution inspect this exact-version view.
     // The public module owns its IR and source snapshots for the full run.
-    run_module = (loom_run_module_t){
-        .module = (loom_module_t*)module_view.module,
-        .filename = filename,
-        .sources = {.table = *module_view.source_table},
-    };
+    native_module = module_view.module;
+    source_table = module_view.source_table;
   }
 
   const iree_string_view_t requested_target =
@@ -497,14 +497,13 @@ iree_status_t iree_benchmark_loom_run_file(
   }
 
   if (iree_status_is_ok(status) && failure_count == 0) {
-    iree_arena_initialize(loom_run_session_block_pool(&session), &plan_arena);
-    iree_arena_initialize(loom_run_session_block_pool(&session),
-                          &execution_arena);
+    iree_arena_initialize(&block_pool, &plan_arena);
+    iree_arena_initialize(&block_pool, &execution_arena);
     loom_testbench_plan_options_t plan_options = {0};
     loom_testbench_plan_options_initialize(&plan_options);
     plan_options.max_samples_per_case = benchmark_options->max_samples_per_case;
     loom_testbench_module_plan_t module_plan = {0};
-    status = loom_testbench_plan_module(run_module.module, &plan_options,
+    status = loom_testbench_plan_module(native_module, &plan_options,
                                         &plan_arena, &module_plan);
     if (iree_status_is_ok(status)) {
       planned_case_count = module_plan.case_count;
@@ -567,8 +566,8 @@ iree_status_t iree_benchmark_loom_run_file(
     };
     const iree_benchmark_loom_hal_compilation_options_t hal_compilation = {
         .compilation = &compilation,
-        .native_module = run_module.module,
-        .source_table = &run_module.sources.table,
+        .native_module = native_module,
+        .source_table = source_table,
         .pass_program = pass_program,
         .requested_target_profile = requested_target_profile,
         .sanitizer = sanitizer_enabled ? &loomc_sanitizer_options : NULL,
@@ -741,7 +740,7 @@ iree_status_t iree_benchmark_loom_run_file(
   iree_benchmark_loom_file_provider_deinitialize(&file_provider);
   iree_benchmark_loom_artifact_bundle_deinitialize(&artifact_bundle);
   iree_io_file_contents_free(contents);
-  loom_run_session_deinitialize(&session);
+  iree_arena_block_pool_deinitialize(&block_pool);
   loomc_target_profile_release(requested_target_profile);
   loomc_pass_program_release(pass_program);
   loomc_module_release(module);

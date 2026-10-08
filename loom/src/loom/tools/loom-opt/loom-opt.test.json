@@ -47,6 +47,94 @@
       }
     },
     {
+      "name": "reads bytecode from stdin by magic",
+      "steps": [
+        {
+          "name": "encode",
+          "run": {
+            "tool": "loom-format",
+            "args": ["--from=text", "--to=bc"]
+          },
+          "stdin": {
+            "text": "func.def @bytecode_identity(%value: i32) -> (i32) {\n  func.return %value : i32\n}\n"
+          },
+          "stdout": {"non_empty": true},
+          "stderr": {"empty": true}
+        },
+        {
+          "name": "optimize",
+          "run": {
+            "tool": "loom-opt"
+          },
+          "stdin": {"step_stdout": "encode"},
+          "stdout": {
+            "contains": [
+              "func.def @bytecode_identity(%value: i32) -> (i32) {",
+              "func.return %value : i32"
+            ]
+          },
+          "stderr": {"empty": true}
+        }
+      ]
+    },
+    {
+      "name": "writes parse failures as one JSONL diagnostic",
+      "run": {
+        "tool": "loom-opt",
+        "args": ["--diagnostic-format=json"]
+      },
+      "stdin": {
+        "text": "func.def @bad( {\n"
+      },
+      "exit": 1,
+      "stdout": {"empty": true},
+      "stderr": {
+        "contains": [
+          {
+            "regex": "^\\{\"severity\":\"error\".*\"message\":\"unexpected token.*\".*\\}$"
+          }
+        ],
+        "not_contains": ["INVALID_ARGUMENT", "stack:"]
+      }
+    },
+    {
+      "name": "writes verifier failures as one JSONL diagnostic",
+      "run": {
+        "tool": "loom-opt",
+        "args": ["--diagnostic-format=json"]
+      },
+      "stdin": {
+        "text": "func.def @bad() -> (i32) {\n  func.return\n}\n"
+      },
+      "exit": 1,
+      "stdout": {"empty": true},
+      "stderr": {
+        "contains": [
+          {
+            "regex": "^\\{\"severity\":\"error\".*\"emitter\":\"verifier\".*\"message\":\"yield has 0 operands, expected 1\".*\\}$"
+          }
+        ],
+        "not_contains": ["INVALID_ARGUMENT", "stack:"]
+      }
+    },
+    {
+      "name": "skips verification when requested",
+      "run": {
+        "tool": "loom-opt",
+        "args": ["--verify=false"]
+      },
+      "stdin": {
+        "text": "func.def @unverified() -> (i32) {\n  func.return\n}\n"
+      },
+      "stdout": {
+        "contains": [
+          "func.def @unverified() -> (i32) {",
+          "func.return"
+        ]
+      },
+      "stderr": {"empty": true}
+    },
+    {
       "name": "runs canonicalize and dce pipeline",
       "run": {
         "tool": "loom-opt",

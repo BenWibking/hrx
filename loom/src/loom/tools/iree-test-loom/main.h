@@ -10,7 +10,6 @@
 #define LOOM_TOOLS_IREE_TEST_LOOM_MAIN_H_
 
 #include "iree/base/api.h"
-#include "loom/tooling/execution/session.h"
 #include "loom/tooling/input/loomc.h"
 #include "loom/tooling/testbench/compiled_provider.h"
 #include "loom/tooling/testbench/requirements.h"
@@ -25,8 +24,6 @@ extern "C" {
 typedef struct loom_run_hal_testbench_context_t
     loom_run_hal_testbench_context_t;
 typedef struct loom_run_hal_target_route_t loom_run_hal_target_route_t;
-typedef struct loom_cleanup_pattern_provider_set_t
-    loom_cleanup_pattern_provider_set_t;
 typedef struct loom_tooling_config_set_t loom_tooling_config_set_t;
 
 // Appends target-linked requirement providers to |providers|.
@@ -71,8 +68,6 @@ typedef struct iree_test_loom_configuration_t {
   loom_tooling_input_import_loomc_fn_t import;
   // Opaque state forwarded to |import|.
   void* import_user_data;
-  // Cleanup rewrite providers linked into this runner.
-  const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set;
   // HAL driver-to-compiler-target routes linked into the final binary.
   const loom_run_hal_target_route_t* hal_target_routes;
   // Number of entries in |hal_target_routes|.
