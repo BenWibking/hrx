@@ -7,6 +7,7 @@ depend on the engine generation and native transport.
 | Topic | Mechanisms |
 | --- | --- |
 | [Engine selection](engine-selection.md) | Ordinary/xGMI queue pools, directed engine masks, copy executors, runtime blit/native engine identities, read-only queue observations, and topology routing. |
+| [Queue context](context.md) | KFD MQD families, `RB_CNTL`, ring and pointer units, doorbell offsets, manual/HWS/MES installation, WPTR polling and retained storage. |
 | [Queue publication](publication.md) | Byte frontiers, reservation and ordered commit, wrap/padding, native visibility and storage ownership. |
 | [Device-generated commands](device-publication.md) | GPUVM doorbells, shader-authored packets, pre-WPTR visibility, lane progress, and separate command/payload credits. |
 | [Linear copy](copy.md) | `COPY_LINEAR` / legacy `DMA_PACKET_COPY`: complete source layouts, metadata and policy selection, native count families, exact byte extents, chunking and storage ownership. |

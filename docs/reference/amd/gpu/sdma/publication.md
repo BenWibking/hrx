@@ -8,6 +8,10 @@ transfer and its memory effects. ROCr's direct KFD queues and Linux's scheduled
 IB queues have different publication owners. [ROCr publication][blit-publish]
 [Linux ring commit][kernel-commit]
 
+[Queue context](context.md) connects the KFD ring and control mappings to
+the selected MQD, loader and scheduler. Its family tables distinguish the
+legacy 32-bit pointer consumers from the modern 64-bit producer below.
+
 [Device-generated commands](device-publication.md) use these same native byte
 frontiers with a shader as publisher. That path adds GPUVM notification reach,
 shader command visibility, lane progress and downstream payload credits to the
@@ -173,6 +177,10 @@ loader does not explicitly write the poll-address registers. Complete command
 bytes precede the canonical WPTR update. [v9 MQD][mqd9] [v11 MQD][mqd11]
 [GC9.4.3 load][load943] [GFX11 load][load11]
 [Wrapper comment and indices][queue-indices]
+
+The [context family and consumer tables](context.md#installation-and-write-pointer-consumers)
+extend this distinction through CIK, VI, v9, v10, v11, v12 and v12_1,
+including MES's separate process-VA and MC-address WPTR inputs.
 
 Command publication and payload cache maintenance solve different problems.
 An in-stream cache command already depends on successful command fetch.
