@@ -127,6 +127,14 @@ iree_status_t loom_cfg_forward_empty_blocks(
     }
     const loom_op_t* branch = block->last_op;
     loom_block_t* destination = loom_op_successors(branch)[0];
+    // A multi-predecessor gateway keeps one structural edge into a cycle.
+    // Forwarding it would turn each predecessor into an independent entry or
+    // backedge and destroy the reducible single-gateway shape established by
+    // structured control-flow lowering.
+    if (graph->blocks[i].predecessor_count > 1 &&
+        graph->blocks[destination->region_index].is_dfs_backedge_target) {
+      continue;
+    }
     if (destination->arg_count != 0) {
       payloads[i] = branch;
       has_forwarding = true;
