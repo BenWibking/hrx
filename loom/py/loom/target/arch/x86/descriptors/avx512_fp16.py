@@ -40,6 +40,7 @@ from .avx512 import X86_AVX512_CORE_DESCRIPTOR_SET
 from .common import (
     _SCHEDULE_VECTOR_F32_XMM,
     _asm,
+    _descriptor_support_tables,
     _scalar_float_binary_descriptor,
     _vector_f32_binary_descriptor,
     _vector_f32_schedule_class,
@@ -325,37 +326,11 @@ def _descriptors() -> tuple[Descriptor, ...]:
 
 
 _FP16_DESCRIPTORS = _descriptors()
-_FP16_SCHEDULE_NAMES = frozenset(
-    schedule_name
-    for descriptor in _FP16_DESCRIPTORS
-    for schedule_name in (descriptor.schedule_class, *descriptor.schedule_alternatives)
-)
-_FP16_SCHEDULE_CLASSES = tuple(
-    schedule
-    for schedule in X86_AVX512_CORE_DESCRIPTOR_SET.schedule_classes
-    if schedule.name in _FP16_SCHEDULE_NAMES
-)
-_FP16_RESOURCE_NAMES = frozenset(
-    issue_use.resource
-    for schedule in _FP16_SCHEDULE_CLASSES
-    for issue_use in schedule.issue_uses
-) | frozenset(
-    hazard.resource
-    for schedule in _FP16_SCHEDULE_CLASSES
-    for hazard in schedule.hazards
-    if hazard.resource is not None
-)
-_FP16_REG_CLASS_NAMES = frozenset(
-    alternative.reg_class
-    for descriptor in _FP16_DESCRIPTORS
-    for operand in descriptor.operands
-    for alternative in operand.reg_alts
-    if alternative.reg_class is not None
-) | frozenset(
-    delta.reg_class
-    for schedule in _FP16_SCHEDULE_CLASSES
-    for delta in schedule.pressure_deltas
-)
+(
+    _FP16_REG_CLASSES,
+    _FP16_RESOURCES,
+    _FP16_SCHEDULE_CLASSES,
+) = _descriptor_support_tables(_FP16_DESCRIPTORS, X86_AVX512_CORE_DESCRIPTOR_SET)
 
 
 X86_AVX512_FP16_DESCRIPTOR_SET = DescriptorSet(
@@ -373,16 +348,8 @@ X86_AVX512_FP16_DESCRIPTOR_SET = DescriptorSet(
     c_enum_prefix="X86_AVX512_FP16_CORE",
     generator_version=1,
     supports_native_scheduling=True,
-    reg_classes=tuple(
-        reg_class
-        for reg_class in X86_AVX512_CORE_DESCRIPTOR_SET.reg_classes
-        if reg_class.name in _FP16_REG_CLASS_NAMES
-    ),
-    resources=tuple(
-        resource
-        for resource in X86_AVX512_CORE_DESCRIPTOR_SET.resources
-        if resource.name in _FP16_RESOURCE_NAMES
-    ),
+    reg_classes=_FP16_REG_CLASSES,
+    resources=_FP16_RESOURCES,
     schedule_classes=_FP16_SCHEDULE_CLASSES,
     descriptors=_FP16_DESCRIPTORS,
 )

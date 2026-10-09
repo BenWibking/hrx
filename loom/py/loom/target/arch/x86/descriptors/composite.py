@@ -15,6 +15,7 @@ from loom.target.low_descriptors import Descriptor, DescriptorSet
 from .avx2 import X86_AVX2_DESCRIPTOR_SET
 from .avx512 import X86_AVX512_CORE_DESCRIPTOR_SET
 from .avx512_fp16 import X86_AVX512_FP16_DESCRIPTOR_SET
+from .avx_ne_convert import X86_AVX_NE_CONVERT_DESCRIPTOR_SET
 from .common import _T, _qualify_packed_dot_descriptor_asm_forms
 from .packed_dot import (
     X86_AVX_VNNI_DESCRIPTOR_SET,
@@ -28,6 +29,7 @@ _X86_DESCRIPTOR_SET_COMPONENTS = tuple[tuple[DescriptorSet, frozenset[str]], ...
 
 _X86_AVX512_FEATURE_COMPONENTS: _X86_DESCRIPTOR_SET_COMPONENTS = (
     (X86_AVX512_CORE_DESCRIPTOR_SET, frozenset()),
+    (X86_AVX_NE_CONVERT_DESCRIPTOR_SET, frozenset()),
     (X86_AVX512_FP16_DESCRIPTOR_SET, frozenset()),
     *(
         (descriptor_set, frozenset())
@@ -37,6 +39,7 @@ _X86_AVX512_FEATURE_COMPONENTS: _X86_DESCRIPTOR_SET_COMPONENTS = (
 
 _X86_AVX2_FEATURE_COMPONENTS: _X86_DESCRIPTOR_SET_COMPONENTS = (
     (X86_AVX2_DESCRIPTOR_SET, frozenset()),
+    (X86_AVX_NE_CONVERT_DESCRIPTOR_SET, frozenset()),
     (X86_AVX_VNNI_DESCRIPTOR_SET, frozenset()),
     (X86_AVX_VNNI_INT8_DESCRIPTOR_SET, frozenset()),
     (X86_AVX_VNNI_INT16_DESCRIPTOR_SET, frozenset()),

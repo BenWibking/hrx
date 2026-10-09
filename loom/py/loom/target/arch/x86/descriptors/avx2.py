@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 from loom.target.arch.x86 import native_vector as native
@@ -44,7 +43,6 @@ from loom.target.low_descriptors import (
     IssueUse,
     LatencyKind,
     ModelQuality,
-    Operand,
     RegClass,
     RegClassFlag,
     Resource,
@@ -84,13 +82,13 @@ from .common import (
     _gpr32_result,
     _gpr64_operand,
     _gpr64_result,
-    _low_subset_operand,
     _scalar_float_binary_descriptor,
     _vector_lane_units,
     _vector_operand,
     _vector_result,
     _vector_splat_descriptor,
     _vector_zero_descriptor,
+    _vex_descriptor,
     _xmm_operand,
     _xmm_result,
 )
@@ -100,8 +98,6 @@ from .scalar import (
     X86_SCALAR_PREFIX_DESCRIPTORS,
     X86_SCALAR_SUFFIX_DESCRIPTORS,
 )
-
-_X86_VEX_ADDRESSABLE_REGISTER_COUNT = 16
 
 _VECTOR_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm"}
 _VECTOR_INTEGER_SCHEDULE_CLASSES = {
@@ -368,22 +364,6 @@ def _vector_widen_descriptor(
         ),
         instruction,
     )
-
-
-def _vex_operand(operand: Operand) -> Operand:
-    if any(reg_alt.reg_class in (_REG_XMM, _REG_YMM) for reg_alt in operand.reg_alts):
-        return _low_subset_operand(operand, _X86_VEX_ADDRESSABLE_REGISTER_COUNT)
-    return operand
-
-
-def _vex_descriptor(
-    descriptor: Descriptor, instruction: VectorMachineInstruction
-) -> Descriptor:
-    descriptor = replace(
-        descriptor,
-        operands=tuple(_vex_operand(operand) for operand in descriptor.operands),
-    )
-    return instruction.bind(descriptor, VectorEncodingPrefix.VEX)
 
 
 _X86_AVX2_VECTOR_DESCRIPTORS = (

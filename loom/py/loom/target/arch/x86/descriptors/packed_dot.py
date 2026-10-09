@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
 
 from loom.target.arch.x86 import native_vector as native
@@ -46,8 +45,8 @@ from .common import (
     _SCHEDULE_VECTOR_DOT_XMM,
     _SCHEDULE_VECTOR_DOT_YMM,
     _SCHEDULE_VECTOR_DOT_ZMM,
-    _low_subset_operand,
     _packed_dot_descriptor,
+    _restrict_vex_registers,
     _vector_lane_units,
 )
 
@@ -63,7 +62,6 @@ _PACKED_DOT_VECTOR_WIDTH_TO_SCHEDULE = {
     256: _SCHEDULE_VECTOR_DOT_YMM,
     512: _SCHEDULE_VECTOR_DOT_ZMM,
 }
-_X86_VEX_ADDRESSABLE_REGISTER_COUNT = 16
 _X86_VEX_PACKED_DOT_FAMILIES = frozenset(
     (
         FAMILY_AVX_VNNI,
@@ -164,13 +162,7 @@ def _packed_dot_target_descriptor(
         qualify_asm_mnemonic=qualify_asm_mnemonic,
     )
     if descriptor_data.family in _X86_VEX_PACKED_DOT_FAMILIES:
-        descriptor = replace(
-            descriptor,
-            operands=tuple(
-                _low_subset_operand(operand, _X86_VEX_ADDRESSABLE_REGISTER_COUNT)
-                for operand in descriptor.operands
-            ),
-        )
+        descriptor = _restrict_vex_registers(descriptor)
     if descriptor_data.family == FAMILY_AVX_VNNI_INT8:
         try:
             instruction = _AVX_VNNI_INT8_INSTRUCTIONS[descriptor_data.mnemonic]
