@@ -77,14 +77,13 @@ static iree_status_t loom_low_lower_participation_initialize(
 iree_status_t loom_low_lower_source_subgroup_participation(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_low_lower_participation_t* out_participation) {
-  loom_low_lower_participation_state_t* state =
-      context->lowering->report.participation;
+  loom_low_lower_participation_state_t* state = context->report.participation;
   if (!state) {
     IREE_RETURN_IF_ERROR(iree_arena_allocate(&context->analysis_arena,
                                              sizeof(*state), (void**)&state));
     IREE_RETURN_IF_ERROR(
         loom_low_lower_participation_initialize(context, state));
-    context->lowering->report.participation = state;
+    context->report.participation = state;
   }
   if (source_op->parent_block->parent_region ==
       loom_func_like_body(context->source_function)) {

@@ -75,7 +75,7 @@ static iree_status_t loom_low_lowering_frame_initialize_value_ordinals(
   // conversion, so nested source-region values must be ordinal-addressable even
   // when the final source-to-low boundary expects CFG.
   return loom_local_value_domain_acquire_for_region_tree(
-      context->module, source_body, context->function_arena,
+      context->module, source_body, &context->analysis_arena,
       &context->lowering->value_domain);
 }
 
@@ -95,12 +95,10 @@ static iree_status_t loom_low_lower_map_blocks(
   loom_region_t* low_body = loom_low_lower_low_body(context);
   const iree_host_size_t block_count =
       loom_low_lower_control_block_count(context);
-  IREE_RETURN_IF_ERROR(
-      iree_arena_allocate_array(context->function_arena, block_count,
-                                sizeof(*context->lowering->block_map),
-                                (void**)&context->lowering->block_map));
-  memset(context->lowering->block_map, 0,
-         block_count * sizeof(*context->lowering->block_map));
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      &context->emission_arena, block_count, sizeof(*context->block_map),
+      (void**)&context->block_map));
+  memset(context->block_map, 0, block_count * sizeof(*context->block_map));
 
   for (uint16_t i = 0; i < source_body->block_count; ++i) {
     loom_block_t* source_block = loom_region_block(source_body, i);
@@ -112,13 +110,13 @@ static iree_status_t loom_low_lower_map_blocks(
           loom_region_append_block(context->module, low_body, &low_block));
     }
     low_block->label_id = source_block->label_id;
-    context->lowering->block_map[i] = low_block;
+    context->block_map[i] = low_block;
   }
 
   for (uint16_t block_index = 0; block_index < source_body->block_count;
        ++block_index) {
     loom_block_t* source_block = loom_region_block(source_body, block_index);
-    loom_block_t* low_block = context->lowering->block_map[block_index];
+    loom_block_t* low_block = context->block_map[block_index];
     if (block_index == 0) {
       IREE_RETURN_IF_ERROR(
           loom_low_lower_function_boundary_bind_entry_arguments(
@@ -935,7 +933,7 @@ static iree_status_t loom_low_lower_emit_selected_plan(
   }
   const bool report_allocator_provided =
       !iree_allocator_is_null(context->options->report_allocator);
-  const uint64_t before_op_count = context->lowering->report.emitted_op_count;
+  const uint64_t before_op_count = context->report.emitted_op_count;
   if (selected_plan.kind == LOOM_LOW_LOWER_SELECTED_PLAN_RULE) {
     IREE_ASSERT(selected_plan.rule_set != NULL);
     IREE_ASSERT(selected_plan.rule != NULL);
@@ -968,7 +966,7 @@ static iree_status_t loom_low_lower_emit_selected_plan(
   }
   if (report_allocator_provided) {
     const uint64_t emitted_op_count =
-        context->lowering->report.emitted_op_count - before_op_count;
+        context->report.emitted_op_count - before_op_count;
     IREE_ASSERT_LE(emitted_op_count, UINT32_MAX);
     loom_low_lower_report_record_emission(context, (uint32_t)emitted_op_count);
   }
@@ -1010,7 +1008,7 @@ static iree_status_t loom_low_lower_emit_region_ops(
     loom_block_t* source_block = loom_region_block(source_region, block_index);
     if (map_source_blocks) {
       loom_builder_set_block(&context->builder,
-                             context->lowering->block_map[block_index]);
+                             context->block_map[block_index]);
     } else if (block_index != 0) {
       IREE_ASSERT_UNREACHABLE(
           "structured source region with multiple blocks reached target-low "
@@ -1392,16 +1390,28 @@ iree_status_t loom_low_lower_plan_function(
   context.storage_access =
       options->storage_access ? options->storage_access : &storage_access;
   iree_status_t status = loom_low_lower_function_plan_build(&context);
-  loom_local_value_domain_release(&plan->frame.value_domain);
+  loom_local_value_domain_t* domain = &plan->frame.value_domain;
+  if (iree_status_is_ok(status) && out_result->error_count == 0 &&
+      domain->value_count != 0) {
+    // Construction can grow the domain in scratch. Retain only its completed
+    // ordinal sequence, preserving every assignment without another IR walk.
+    loom_value_id_t* value_ids = NULL;
+    status = iree_arena_allocate_array(arena, domain->value_count,
+                                       sizeof(*value_ids), (void**)&value_ids);
+    if (iree_status_is_ok(status)) {
+      memcpy(value_ids, domain->value_ids,
+             domain->value_count * sizeof(*value_ids));
+      domain->value_ids = value_ids;
+      domain->value_capacity = domain->value_count;
+    }
+  }
+  loom_local_value_domain_release(domain);
   iree_arena_deinitialize(&context.analysis_arena);
   if (iree_status_is_ok(status) && out_result->error_count == 0) {
     plan->descriptor_set = context.descriptor_set;
     plan->options.fact_table = NULL;
     plan->options.storage_access = NULL;
     plan->options.representation_projections = NULL;
-    // Report construction may borrow source facts. Emission initializes only
-    // its accounting cursor from the completed output rows.
-    plan->frame.report = (loom_low_lower_report_state_t){0};
     *out_plan = plan;
   }
   return status;

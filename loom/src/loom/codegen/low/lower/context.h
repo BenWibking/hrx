@@ -83,14 +83,10 @@ typedef struct loom_low_lowering_frame_t {
   loom_low_lower_source_plan_t source_plan;
   // Source ordinal to selected type, replaced in place by the emitted value.
   loom_low_lower_value_binding_t* value_bindings;
-  // Planned block bindings, with authored blocks first in source order.
-  loom_block_t** block_map;
   // Planned block topology and branch expansions, before Low construction.
   loom_low_lower_control_plan_t* control_plan;
   // Callable signature, argument imports, and ABI layout retained for emission.
   loom_low_lower_function_boundary_t boundary;
-  // Optional source selection and memory report analysis state.
-  loom_low_lower_report_state_t report;
   // Descriptor set used to build rule_descriptor_maps.
   const loom_low_descriptor_set_t* rule_descriptor_map_set;
   // Per-policy-rule-set descriptor-ref to descriptor-row maps.
@@ -139,8 +135,11 @@ struct loom_low_lower_context_t {
   iree_arena_allocator_t planning_arena;
   // True only while a source-op planning callback may request scratch storage.
   bool planning_arena_active;
-  // Arena reset after each bounded low-IR emission scope.
+  // Active function emission storage, with transient callback scratch after
+  // its block bindings. Released when this function finishes emitting.
   iree_arena_allocator_t emission_arena;
+  // Function-owned emission storage preceding the active callback scratch.
+  iree_arena_checkpoint_t emission_checkpoint;
   // True only while a low-IR builder callback may request emission storage.
   bool emission_arena_active;
   // Module-scope state shared by source-to-low calls in the current module
@@ -148,6 +147,10 @@ struct loom_low_lower_context_t {
   loom_low_lower_module_state_t* module_state;
   // Plan-owned frame; its address remains stable between planning and emission.
   loom_low_lowering_frame_t* lowering;
+  // Active phase reporting scratch; completed report rows belong to result.
+  loom_low_lower_report_state_t report;
+  // Emission-owned block bindings in planned order; absent during planning.
+  loom_block_t** block_map;
   // Builder used while emitting the low function.
   loom_builder_t builder;
   // Emitted target-low function operation, or NULL before emission starts.

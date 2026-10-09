@@ -846,8 +846,8 @@ iree_status_t loom_low_lower_realizations_map_blocks(
     if (value->loop) {
       IREE_RETURN_IF_ERROR(loom_builder_define_block_arg(
           &context->builder,
-          context->lowering->block_map[value->loop->header->region_index],
-          value->type, &value->state.values.header));
+          context->block_map[value->loop->header->region_index], value->type,
+          &value->state.values.header));
     }
   }
   return iree_ok_status();

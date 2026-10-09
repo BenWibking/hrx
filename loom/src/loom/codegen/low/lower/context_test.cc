@@ -92,6 +92,27 @@ TEST_F(LowLowerContextTest, EmissionScopeReleasesScratchStorage) {
   EXPECT_EQ(context_.emission_arena.used_allocation_size, 0u);
   EXPECT_EQ(context_.emission_arena.total_allocation_size, 0u);
   EXPECT_EQ(context_.emission_arena.block_head, nullptr);
+
+  // Function-wide block bindings precede scratch and survive every callback.
+  uint32_t* bindings = nullptr;
+  IREE_ASSERT_OK(
+      iree_arena_allocate_array(&context_.emission_arena, 2, sizeof(*bindings),
+                                reinterpret_cast<void**>(&bindings)));
+  bindings[0] = 17;
+  bindings[1] = 29;
+  const auto retained_used = context_.emission_arena.used_allocation_size;
+  const auto retained_reserved = context_.emission_arena.total_allocation_size;
+  for (int i = 0; i < 2; ++i) {
+    loom_low_lower_emission_scope_begin(&context_);
+    IREE_ASSERT_OK(loom_low_lower_allocate_emission_array(
+        &context_, /*count=*/4096, /*element_size=*/sizeof(uint32_t),
+        &storage));
+    loom_low_lower_emission_scope_end(&context_);
+    EXPECT_EQ(bindings[0], 17u);
+    EXPECT_EQ(bindings[1], 29u);
+    EXPECT_EQ(context_.emission_arena.used_allocation_size, retained_used);
+    EXPECT_EQ(context_.emission_arena.total_allocation_size, retained_reserved);
+  }
 }
 
 }  // namespace

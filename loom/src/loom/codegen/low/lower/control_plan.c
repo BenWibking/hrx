@@ -320,7 +320,7 @@ iree_status_t loom_low_lower_control_materialize_operand(
 
 loom_block_t* loom_low_lower_control_block(
     const loom_low_lower_context_t* context, loom_low_lower_block_ref_t block) {
-  return block ? context->lowering->block_map[block - 1] : NULL;
+  return block ? context->block_map[block - 1] : NULL;
 }
 
 iree_status_t loom_low_lower_control_create_blocks(
@@ -346,7 +346,7 @@ iree_status_t loom_low_lower_control_create_blocks(
     if (!iree_status_is_ok(status)) {
       break;
     }
-    context->lowering->block_map[source_count + i] = block;
+    context->block_map[source_count + i] = block;
     const loom_block_t* signature =
         loom_low_lower_control_block(context, recipe->signature);
     const uint16_t argument_count = signature ? signature->arg_count : 0;

@@ -458,12 +458,14 @@ iree_arena_allocator_t* loom_low_lower_context_emission_arena(
 }
 
 void loom_low_lower_emission_scope_begin(loom_low_lower_context_t* context) {
+  context->emission_checkpoint =
+      iree_arena_checkpoint_save(&context->emission_arena);
   context->emission_arena_active = true;
 }
 
 void loom_low_lower_emission_scope_end(loom_low_lower_context_t* context) {
   context->emission_arena_active = false;
-  iree_arena_reset(&context->emission_arena);
+  iree_arena_checkpoint_restore(&context->emission_checkpoint);
 }
 
 loom_low_lower_module_state_t* loom_low_lower_context_module_state(
@@ -621,8 +623,7 @@ iree_status_t loom_low_lower_interpose_entry_block(
         "source-to-low entry interposition requires the end of the physical "
         "entry block");
   }
-  if (context->lowering->block_map == NULL ||
-      context->lowering->block_map[0] != setup_block) {
+  if (context->block_map == NULL || context->block_map[0] != setup_block) {
     return iree_make_status(
         IREE_STATUS_FAILED_PRECONDITION,
         "source-to-low entry block has already been interposed");
@@ -684,7 +685,7 @@ iree_status_t loom_low_lower_interpose_entry_block(
   }
   IREE_ASSERT_EQ(direct_argument_index, forwarded_arg_count);
 
-  context->lowering->block_map[0] = body_block;
+  context->block_map[0] = body_block;
   *out_interposition = (loom_low_lower_entry_interposition_t){
       .setup_block = setup_block,
       .body_block = body_block,
@@ -795,8 +796,8 @@ iree_status_t loom_low_lower_lookup_block(loom_low_lower_context_t* context,
   *out_low_block = NULL;
   const uint16_t source_index =
       loom_low_lower_source_block_index(context, source_block);
-  IREE_ASSERT(context->lowering->block_map[source_index] != NULL);
-  *out_low_block = context->lowering->block_map[source_index];
+  IREE_ASSERT(context->block_map[source_index] != NULL);
+  *out_low_block = context->block_map[source_index];
   return iree_ok_status();
 }
 
