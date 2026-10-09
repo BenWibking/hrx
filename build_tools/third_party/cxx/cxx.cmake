@@ -24,7 +24,11 @@ function(iree_configure_cxx)
     "${_cxx_source_dir}/src/parser")
   target_compile_features(iree_cxx_parser PRIVATE cxx_std_23)
   target_compile_definitions(iree_cxx_parser PUBLIC CXX_VERSION="1.2.0")
-  set_target_properties(iree_cxx_parser PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  # The parser uses headers, not C++ modules requiring dependency scans; some
+  # toolchains (e.g. ROCm's LLVM) ship no clang-scan-deps.
+  set_target_properties(iree_cxx_parser PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    CXX_SCAN_FOR_MODULES OFF)
   if(MSVC)
     target_compile_options(iree_cxx_parser PRIVATE /EHsc /GR)
   else()
