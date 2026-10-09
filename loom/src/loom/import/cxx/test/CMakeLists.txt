@@ -759,25 +759,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_generated_file(
   NAME
-    shaped_intrinsics_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "shaped_intrinsics_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/shaped_intrinsics.cxx"
-  INPUTS
-    "shaped_intrinsics.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
     structured_continue_cases_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -937,34 +918,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_test_module(
   NAME
-    shaped_intrinsics_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/shaped_intrinsics_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/shaped_intrinsics.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    shaped_intrinsics_test_execute_vm_reference_test
-  MODULE
-    "::shaped_intrinsics_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
     structured_continue_test_module
   SRCS
     "${CMAKE_CURRENT_BINARY_DIR}/structured_continue_cases.cxx"
@@ -1040,6 +993,26 @@ loom_execution_test(
     "::increment_values_module"
   RUNNER_ARGS
     "--case=increment_values_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    shaped_intrinsics_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::shaped_intrinsics_module"
+  RUNNER_ARGS
+    "--case=shaped_intrinsics_functions"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
     "loom-execution-profile=vm_reference"
@@ -1404,25 +1377,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_generated_file_family(
   NAME
-    shaped_intrinsics_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "shaped_intrinsics_checks.loom"
-    "shaped_intrinsics_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=shaped_intrinsics"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
     short_circuit_checks_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -1604,21 +1558,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
-    shaped_intrinsics_module
-  SRCS
-    "shaped_intrinsics.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/shaped_intrinsics_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/shaped_intrinsics_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/shaped_intrinsics_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
     short_circuit_module
   SRCS
     "short_circuit.cxx"
@@ -1733,6 +1672,16 @@ loom_test_module(
   SRCS
     "scheduled_sum.cxx"
     "scheduled_sum.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    shaped_intrinsics_module
+  SRCS
+    "shaped_intrinsics.cxx"
+    "shaped_intrinsics.loom"
 )
 endif()
 

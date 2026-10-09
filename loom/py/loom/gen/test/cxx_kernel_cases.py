@@ -480,72 +480,6 @@ def record_functions():
     )
 
 
-def shaped_intrinsic_values():
-    lookups = []
-    for value in [0, 0x80000000, 0xFFFFFFFF]:
-        table = [value, 1, 0xFFFFFFFF, 0x80000000, *range(4, 16)]
-        for index in range(16):
-            lookups.extend(([value, index, lane], table[[index, 15 - index, 0, 15][lane]]) for lane in range(4))
-    dots = []
-    rhs = [-128, 127, -1, 1, 127, -128, 1, -1, -3, 5, -7, 11, 127, 127, 127, 127]
-    for value in [0, 1, 127, 128, 255, 511]:
-        lhs = [value & 255, 255, 128, 127, 0, 1, 255, 128, 23, 45, 67, 89, 255, 255, 255, 255]
-        for initial in [0, 0x7FFFFFFF, -0x80000000]:
-            accumulators = [initial, -1, 0x7FFFFFFF, -0x80000000]
-            for lane in range(4):
-                product = sum(lhs[index] * rhs[index] for index in range(4 * lane, 4 * lane + 4))
-                dots.append(([value, initial, lane], accumulators[lane] + product))
-    return function_cases("lookup_lane", [32, 32, 32], 32, lookups) + "\n" + function_cases("dot_lane", [32, 32, 32], 32, dots)
-
-
-def register_lookup(arrays, *, floating=False):
-    name = "register_lookup_float" if floating else "register_lookup"
-    table = (
-        [0, 0x80000000, 0x7FC12345, 0x7F800000, 0xFF800000, 1, 0x80000001, 0x3F800000, 0xBF800000, 0x3F000000, 0x40000000, 0xC0000000, 0x7F7FFFFF, 0x00800000, 0x007FFFFF, 0xFFC12345]
-        if floating
-        else [signed_bits(0x9E3779B9 * index + 0x80000000, 32) for index in range(16)]
-    )
-    table = [signed_bits(value, 32) for value in table]
-    cases = []
-    for count in [0, 1, 4, 7]:
-        indices = [(index * 11 + 15) % 16 for index in range(max(4, count * 4))]
-        expected = [table[index] for index in indices[: count * 4]]
-        case = Case(arrays, f"{name}_{count}", "i32", len(expected))
-        case.array("table", table)
-        case.array("indices", indices)
-        case.scalar("count", count, "i32")
-        case.launch(name, "%table, %indices, %output, %count", f"tensor<16xi32>, tensor<{len(indices)}xi32>, tensor<{len(expected)}xi32>, i32")
-        cases.append(case.finish(expected))
-    return f"kernel.decl @{name}() launch(%table: buffer, %indices: buffer, %output: buffer, %count: i32)\n\n" + "\n".join(cases)
-
-
-def mixed_dot(arrays):
-    cases = []
-    for count in [0, 1, 3, 9]:
-        lhs = [([0, 127, 128, 255][index % 4] + index // 4) & 255 for index in range(max(16, count * 16))]
-        rhs = [(255 - index * 17) & 255 for index in range(len(lhs))]
-        accumulators = [[0, 0x7FFFFFFF, -0x80000000, -1][index % 4] for index in range(max(4, count * 4))]
-        expected = []
-        for group in range(count):
-            for lhs_signed, rhs_signed in [(True, True), (False, True), (True, False), (False, False)]:
-                for lane in range(4):
-                    products = []
-                    for index in range(16 * group + 4 * lane, 16 * group + 4 * lane + 4):
-                        a = signed_bits(lhs[index], 8) if lhs_signed else lhs[index]
-                        b = signed_bits(rhs[index], 8) if rhs_signed else rhs[index]
-                        products.append(a * b)
-                    expected.append(signed_bits(accumulators[4 * group + lane] + sum(products), 32))
-        case = Case(arrays, f"mixed_dot_{count}", "i32", len(expected))
-        for name, values in [("lhs", lhs), ("rhs", rhs)]:
-            packed = struct.unpack(f"<{len(values) // 4}i", bytes(values))
-            case.array(name, packed)
-        case.array("acc", accumulators)
-        case.scalar("count", count, "i32")
-        case.launch("mixed_dot", "%lhs, %rhs, %acc, %output, %count", f"tensor<{len(lhs) // 4}xi32>, tensor<{len(rhs) // 4}xi32>, tensor<{len(accumulators)}xi32>, tensor<{len(expected)}xi32>, i32")
-        cases.append(case.finish(expected))
-    return "kernel.decl @mixed_dot() launch(%lhs: buffer, %rhs: buffer, %acc: buffer, %output: buffer, %count: i32)\n\n" + "\n".join(cases)
-
-
 def launch_grid(kernel, x, y=1, z=1):
     return "".join(f"config.def @{kernel}.workgroup_count.{axis} = {count} : index\n" for axis, count in zip("xyz", (x, y, z), strict=True)) + "\n"
 
@@ -875,7 +809,6 @@ KERNEL_GROUPS = {
     "packed_byte_shifts": packed_byte_shifts,
     "pointer_walk": pointer_walk,
     "q4k_q8_swiglu": q4k_q8_swiglu,
-    "shaped_intrinsics": lambda arrays: register_lookup(arrays) + "\n" + register_lookup(arrays, floating=True) + "\n" + mixed_dot(arrays),
     "short_circuit": short_circuit,
     "structured_continue": lambda arrays: "\n".join(reference(arrays) for reference in (continue_values, continue_scheduled, continue_copy, continue_pointers, continue_vectors)),
     "vector_depth": lambda arrays: vector_depth(arrays) + "\n" + vector_depth_span(arrays),
@@ -889,7 +822,6 @@ HOST_REFERENCES = {
     "integer_functions.cxx": integer_functions,
     "record_values.cxx": record_functions,
     "schedule_values.cxx": schedule_functions,
-    "shaped_intrinsics.cxx": shaped_intrinsic_values,
     "structured_continue.cxx": continue_functions,
 }
 
