@@ -931,11 +931,12 @@ def test_scalar_and_can_preserve_its_nonzero_condition() -> None:
 def test_trans_descriptors_use_descriptor_specific_schedule_classes() -> None:
     overlays = {
         overlay.descriptor_key: overlay
-        for overlay in _gfx11_core_overlays()
+        for builder in _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS.values()
+        for overlay in builder.overlay_rows()
         if overlay.descriptor_key in _AMDGPU_TRANS_DESCRIPTOR_KEYS
     }
 
-    assert tuple(overlays) == _AMDGPU_TRANS_DESCRIPTOR_KEYS
+    assert set(overlays) == set(_AMDGPU_TRANS_DESCRIPTOR_KEYS)
     for descriptor_key, overlay in overlays.items():
         assert overlay.schedule_class == _amdgpu_trans_schedule_class_name(
             descriptor_key
