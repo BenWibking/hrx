@@ -149,7 +149,21 @@ from loom.target.contracts.source_memory import (
     SourceMemoryConstraint,
 )
 from loom.target.contracts.temporary_allocation import allocate_temporary_slots
-from loom.target.low_descriptors import ConstraintKind, Descriptor
+from loom.target.low_descriptors import ConstraintKind, Descriptor, ImmediateKind
+
+
+def _lower_literal_immediate(
+    descriptor: Descriptor, target_name: str, value: int
+) -> int:
+    """Converts a validated immediate literal to generated int64_t storage."""
+
+    immediate = _require_immediate(descriptor, target_name, "literal immediate")
+    if immediate.kind is ImmediateKind.UNSIGNED and value > (1 << 63) - 1:
+        # Low attributes and generated rule rows store immediate payloads in
+        # int64_t. Full-width unsigned immediates preserve the same bits using
+        # the signed two's-complement representation consumed by C verification.
+        return value - (1 << 64)
+    return value
 
 
 def _emit_operand_value_refs(emit: ContractEmit) -> tuple[ValueRef, ...]:
@@ -2063,7 +2077,9 @@ class _LowerRuleSetCompiler:
                     LowerAttrCopy(
                         kind=LowerAttrCopyKind.I64_LITERAL,
                         target_name=target_name,
-                        literal_i64=binding,
+                        literal_i64=_lower_literal_immediate(
+                            emit.descriptor, target_name, binding
+                        ),
                     )
                 )
                 continue

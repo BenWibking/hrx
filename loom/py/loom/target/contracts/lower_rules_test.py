@@ -2538,6 +2538,62 @@ def test_compile_lower_rule_set_compiles_const_immediate_emit() -> None:
     assert compiled.attr_copies[0].literal_i64 == 0
 
 
+@pytest.mark.parametrize(
+    ("literal", "stored"),
+    [
+        (1 << 63, -(1 << 63)),
+        ((1 << 64) - 1, -1),
+    ],
+)
+def test_compile_lower_rule_set_preserves_full_width_unsigned_literal_bits(
+    literal: int, stored: int
+) -> None:
+    immediate = Immediate(
+        "bits",
+        ImmediateKind.UNSIGNED,
+        bit_width=64,
+        unsigned_max=(1 << 64) - 1,
+    )
+    descriptor = replace(
+        TEST_LOW_CONST_I32_DESCRIPTOR,
+        immediates=(immediate,),
+        asm_forms=(),
+    )
+    descriptor_set = replace(
+        TEST_LOW_CORE_DESCRIPTOR_SET,
+        descriptors=tuple(
+            descriptor
+            if existing_descriptor == TEST_LOW_CONST_I32_DESCRIPTOR
+            else existing_descriptor
+            for existing_descriptor in TEST_LOW_CORE_DESCRIPTOR_SET.descriptors
+        ),
+    )
+    table = ContractFragment(
+        name="test.full-width-unsigned-immediate",
+        descriptor_set=descriptor_set,
+        cases=[
+            DescriptorRule(
+                source_op=scalar_conversion.scalar_constant,
+                descriptor=descriptor,
+                guards=(Guard.value_type("result", Scalar("i32")),),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=descriptor,
+                        results={"dst": ValueRef.result("result")},
+                        immediates={"bits": literal},
+                    ),
+                ),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+
+    assert len(compiled.attr_copies) == 1
+    assert compiled.attr_copies[0].kind == LowerAttrCopyKind.I64_LITERAL
+    assert compiled.attr_copies[0].literal_i64 == stored
+
+
 def test_compile_lower_rule_set_keeps_operandless_op_emit() -> None:
     table = ContractFragment(
         name="test.operandless-op",
