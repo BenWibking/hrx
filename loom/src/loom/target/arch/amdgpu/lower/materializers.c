@@ -243,28 +243,6 @@ iree_status_t loom_amdgpu_value_can_materialize_as_vgpr_i64(
   return iree_ok_status();
 }
 
-iree_status_t loom_amdgpu_value_can_materialize_as_vgpr_f64(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t value_id, bool* out_can_materialize) {
-  *out_can_materialize = false;
-  if (!loom_amdgpu_type_is_f64(loom_module_value_type(
-          loom_low_lower_context_module(context), value_id))) {
-    return iree_ok_status();
-  }
-  loom_type_t low_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_map_value(context, source_op, value_id, &low_type));
-  if (loom_low_register_type_unit_count(low_type) != 2) {
-    return iree_ok_status();
-  }
-  *out_can_materialize =
-      loom_amdgpu_low_type_is_register_class(context, low_type,
-                                             LOOM_AMDGPU_REG_CLASS_ID_VGPR) ||
-      loom_amdgpu_low_type_is_register_class(context, low_type,
-                                             LOOM_AMDGPU_REG_CLASS_ID_SGPR);
-  return iree_ok_status();
-}
-
 iree_status_t loom_amdgpu_value_can_materialize_as_vgpr_address(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t value_id, bool* out_can_materialize) {
@@ -406,13 +384,6 @@ iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_i64(
   }
   return loom_amdgpu_materialize_low_vgpr_b32_registers(
       context, source_op, low_value, out_low_value);
-}
-
-iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_f64(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source_value, loom_value_id_t* out_low_value) {
-  return loom_amdgpu_lookup_or_materialize_vgpr_i64(
-      context, source_op, source_value, out_low_value);
 }
 
 iree_status_t loom_amdgpu_emit_prepared_vgpr_address(
