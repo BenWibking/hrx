@@ -20,6 +20,7 @@ from loom.target.arch.x86.descriptors import (
     X86_AVX512_FP16_DESCRIPTOR_SET,
 )
 from loom.target.arch.x86.vector_families import (
+    AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
     AVX512_FP16_FLOAT_BINARY_FAMILIES,
     AVX512_FP16_FLOAT_EXTREMA_MNEMONICS,
     AVX512_FP16_FLOAT_FMA_MNEMONIC,
@@ -94,6 +95,14 @@ def _register_class(rule: DescriptorRule, field: str) -> str | None:
 def _descriptor_keys(rule: DescriptorRule) -> tuple[str, ...]:
     return tuple(
         emit.descriptor.key for emit in rule.emit if isinstance(emit, EmitDescriptorOp)
+    )
+
+
+def _enum_keyword(rule: DescriptorRule, field: str) -> str:
+    return next(
+        guard.enum_keyword
+        for guard in rule.guards
+        if guard.kind == GuardKind.ENUM_ATTR_EQUALS and guard.field == field
     )
 
 
@@ -359,3 +368,94 @@ def test_extrema_cover_exact_and_native_fast_semantics() -> None:
         for register_suffix in _REGISTER_SUFFIXES.values()
     }
     assert {rule.descriptor.key for rule in fast_rules} == expected_fast_descriptors
+
+
+def test_reductions_preserve_fp16_accumulation_semantics() -> None:
+    rules = _rules_for(vector.vector_reduce)
+    packed_rules = tuple(
+        rule
+        for rule in rules
+        if _enum_keyword(rule, "kind") in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
+    )
+    assert {
+        (
+            _enum_keyword(rule, "kind"),
+            _value_type(rule, "input"),
+            next(
+                guard.kind
+                for guard in rule.guards
+                if guard.field == "fastmath" and guard.enum_keyword == "reassoc"
+            ),
+        )
+        for rule in packed_rules
+    } == {
+        (
+            operation,
+            Vector("f16", lanes=bit_width // 16),
+            reassociation_guard,
+        )
+        for operation in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
+        for bit_width in _REGISTER_SUFFIXES
+        for reassociation_guard in (
+            GuardKind.INSTANCE_FLAGS_HAS_NONE,
+            GuardKind.INSTANCE_FLAGS_HAS_ALL,
+        )
+    }
+    assert all(_value_type(rule, "init") == Scalar("f16") for rule in rules)
+    assert all(_value_type(rule, "result") == Scalar("f16") for rule in rules)
+
+    extrema_rules = tuple(
+        rule
+        for rule in rules
+        if _enum_keyword(rule, "kind") in FLOAT_EXTREMA_OPERATIONS
+    )
+    assert {
+        (_enum_keyword(rule, "kind"), _value_type(rule, "input"))
+        for rule in extrema_rules
+    } == {
+        (operation, Vector("f16", lanes=bit_width // 16))
+        for operation in FLOAT_EXTREMA_OPERATIONS
+        for bit_width in _REGISTER_SUFFIXES
+    }
+    assert all(
+        {
+            guard.enum_keyword
+            for guard in rule.guards
+            if guard.kind == GuardKind.INSTANCE_FLAGS_HAS_ALL
+        }
+        == {"reassoc", "nnan", "nsz"}
+        for rule in extrema_rules
+    )
+    assert all(
+        not any("vpermil" in key for key in _descriptor_keys(rule)) for rule in rules
+    )
+
+
+def test_dots_accumulate_with_ordered_scalar_fp16_fma() -> None:
+    rules = _rules_for(vector.vector_dotf)
+    assert {
+        (
+            _value_type(rule, "lhs"),
+            _value_type(rule, "rhs"),
+            _value_type(rule, "init"),
+            _value_type(rule, "result"),
+        )
+        for rule in rules
+    } == {
+        (
+            Vector("f16", lanes=bit_width // 16),
+            Vector("f16", lanes=bit_width // 16),
+            Scalar("f16"),
+            Scalar("f16"),
+        )
+        for bit_width in _REGISTER_SUFFIXES
+    }
+    assert all(
+        rule.descriptor.key
+        == f"x86.avx512_fp16.{AVX512_FP16_SCALAR_FLOAT_FMA_MNEMONIC}.xmm"
+        for rule in rules
+    )
+    assert all("x86.avx2.vpsrldq.xmm" in _descriptor_keys(rule) for rule in rules)
+    assert all(
+        not any("vpermil" in key for key in _descriptor_keys(rule)) for rule in rules
+    )

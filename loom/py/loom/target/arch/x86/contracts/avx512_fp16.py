@@ -30,6 +30,10 @@ from loom.target.arch.x86.contracts.constants import (
 from loom.target.arch.x86.contracts.floating_extrema import (
     avx512_fp16_float_extrema_rules,
 )
+from loom.target.arch.x86.contracts.floating_reduction import (
+    avx512_fp16_float_dot_rules,
+    avx512_fp16_float_reduction_rules,
+)
 from loom.target.arch.x86.contracts.lane_movement import (
     avx512_fp16_lane_movement_rules,
 )
@@ -276,6 +280,8 @@ def _cases() -> Sequence[ContractCase]:
         *_scalar_rules(),
         *_vector_rules(),
         *avx512_fp16_float_extrema_rules(_descriptor),
+        *avx512_fp16_float_reduction_rules(_descriptor),
+        *avx512_fp16_float_dot_rules(_descriptor),
         *_transport_rules(),
     )
 
