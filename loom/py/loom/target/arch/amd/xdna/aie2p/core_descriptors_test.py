@@ -1348,7 +1348,6 @@ def test_vector_multiply_descriptors_own_configuration_state() -> None:
         "aie2p.er",
     ]
     assert [operand.unit_count for operand in multiply.operands] == [1, 2, 2, 1]
-
     bf16_multiply = descriptors["amd.xdna.aie2p.multiply.bf16x32.configured"]
     assert [operand.field_name for operand in bf16_multiply.operands] == [
         "dst",
@@ -1819,6 +1818,23 @@ def test_vector_multiply_descriptors_own_configuration_state() -> None:
         for operand in unsigned_unpack.operands[2:]
     }
     assert unsigned_unpack_state["implicit_use_crunpacksize"] == ("aie2p.mcrunpacksize")
+
+
+def test_shift_distance_adjustment_defines_the_shift_register() -> None:
+    descriptors = {
+        descriptor.key: descriptor
+        for descriptor in AIE2P_CORE_DESCRIPTOR_SET.descriptors
+    }
+
+    adjustment = descriptors["amd.xdna.aie2p.add.i32.immediate.shift"]
+    assert adjustment.semantic_tag == "integer.add.i32"
+    assert [operand.field_name for operand in adjustment.operands] == ["dst", "s0"]
+    assert [operand.reg_alts[0].reg_class for operand in adjustment.operands] == [
+        "aie2p.es",
+        "aie2p.er",
+    ]
+    assert adjustment.asm_forms[0].mnemonic == "add.shift"
+    assert DescriptorFlag.SAFE_TO_SPECULATE in adjustment.flags
 
 
 def test_native_sticky_updates_are_distinct_from_replacement_writes() -> None:

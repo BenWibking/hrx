@@ -18,6 +18,7 @@ from loom.dialect.scalar import conversion as scalar_conversion
 from loom.dialect.scf import defs as scf
 from loom.dialect.vector import defs as vector
 from loom.dsl import Op
+from loom.target.arch.amd.xdna.aie2p.contracts.packet_program import PairPacketProgram
 from loom.target.arch.amd.xdna.aie2p.contracts.scalar_program import ScalarProgram
 from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
     AIE2P_CORE_DESCRIPTOR_SET,
@@ -50,11 +51,6 @@ _F64_VECTOR = Vector("f64", minimum_static_elements=1, maximum_static_elements=8
 _I64_PREDICATE_VECTOR = Vector(
     "i1", minimum_static_elements=1, maximum_static_elements=8
 )
-
-# VSHUFFLE modes selecting the low and high 32-bit words of each i64 lane.
-# Each result keeps its 512-bit X carrier; the first eight i32 lanes hold the
-# selected words and the remaining lanes are outside the logical value domain.
-_I64_DEINTERLEAVE_CONTROLS = (4, 5)
 
 
 class _PairVectorConstantCarrier(Enum):
@@ -670,40 +666,10 @@ def _pair_vector_deinterleave_emits() -> tuple[
     tuple[ValueRef, ValueRef],
     tuple[ValueRef, ValueRef],
 ]:
-    constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
-    shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
-    controls = tuple(
-        ValueRef.temporary(f"{name}_word_control") for name in ("low", "high")
-    )
-    emits: list[EmitDescriptorOp] = [
-        EmitDescriptorOp(
-            descriptor=constant,
-            results={"dst": control},
-            result_types={"dst": DescriptorResultType()},
-            immediates={"i": value},
-            form=DescriptorEmitForm.CONST,
-        )
-        for control, value in zip(controls, _I64_DEINTERLEAVE_CONTROLS, strict=True)
-    ]
-    words: dict[str, tuple[ValueRef, ValueRef]] = {}
-    for source_name in ("lhs", "rhs"):
-        source = ValueRef.operand(source_name)
-        source_words = tuple(
-            ValueRef.temporary(f"{source_name}_{word}_words")
-            for word in ("low", "high")
-        )
-        words[source_name] = source_words
-        for result, control in zip(source_words, controls, strict=True):
-            emits.append(
-                EmitDescriptorOp(
-                    descriptor=shuffle,
-                    operands={"s1": source, "s2": source, "mod": control},
-                    results={"dst": result},
-                    result_types={"dst": DescriptorResultType()},
-                    form=DescriptorEmitForm.OP,
-                )
-            )
-    return tuple(emits), words["lhs"], words["rhs"]
+    program = PairPacketProgram()
+    lhs_words = program.split_i64_words(ValueRef.operand("lhs"), "lhs")
+    rhs_words = program.split_i64_words(ValueRef.operand("rhs"), "rhs")
+    return tuple(program.emits), lhs_words, rhs_words
 
 
 def _pair_vector_word_equality(

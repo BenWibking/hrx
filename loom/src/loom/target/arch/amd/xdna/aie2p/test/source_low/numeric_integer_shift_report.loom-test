@@ -1,0 +1,15 @@
+// RUN: with-checks compile-report target=amd.xdna.aie2p:core source-to-low,low-dce
+
+func.def @integer_shift_strategies(%words: vector<16xi32>, %word_counts: vector<16xi32>, %wide: vector<8xi64>) -> (vector<16xi32>, vector<16xi32>, vector<8xi64>) {
+  %word_count = vector.constant 7 : vector<16xi32>
+  %wide_count = vector.constant 63 : vector<8xi64>
+  %uniform_words = vector.shli %words, %word_count : vector<16xi32>
+  %varying_words = vector.shrui %words, %word_counts : vector<16xi32>
+  %uniform_wide = vector.shrsi %wide, %wide_count : vector<8xi64>
+  func.return %uniform_words, %varying_words, %uniform_wide : vector<16xi32>, vector<16xi32>, vector<8xi64>
+}
+
+// ----
+CHECK: COMPILE-REPORT: source_low[*] function=integer_shift_strategies source_op=vector.shli selection=rule plan_key=integer_shift.uniform.accumulator *
+CHECK: COMPILE-REPORT: source_low[*] function=integer_shift_strategies source_op=vector.shrui selection=rule plan_key=integer_shift.varying.barrel *
+CHECK: COMPILE-REPORT: source_low[*] function=integer_shift_strategies source_op=vector.shrsi selection=rule plan_key=integer_shift.uniform.i64_words *

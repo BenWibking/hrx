@@ -108,6 +108,7 @@ _ADAPTER_ONLY_SCENARIOS = [
     "numeric/vector/insertion.loom",
     "numeric/vector/integer_bitwise.loom",
     "numeric/vector/integer_comparison.loom",
+    "numeric/vector/integer_shifts.loom",
     "numeric/vector/interleave.loom",
     "numeric/vector/lanes.loom",
     "numeric/vector/packed_arithmetic.loom",

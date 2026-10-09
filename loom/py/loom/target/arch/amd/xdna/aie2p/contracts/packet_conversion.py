@@ -24,7 +24,7 @@ from loom.target.arch.amd.xdna.aie2p.contracts.f32_accumulator import (
 from loom.target.arch.amd.xdna.aie2p.contracts.packet_program import (
     IntegerSignedness,
     PacketProgram,
-    shift_i32_packet,
+    shift_integer_packet_fixed,
 )
 from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
     AIE2P_CORE_DESCRIPTOR_SET,
@@ -40,7 +40,6 @@ from loom.target.contracts import (
     Guard,
     SourceNode,
     TypePattern,
-    ValueProject,
     ValueRef,
     Vector,
     descriptor_by_key,
@@ -391,48 +390,6 @@ class FloatPacketFormat:
         """Returns the normal encoding for an unbiased exponent."""
 
         return (unbiased_exponent + self.exponent_bias) << self.mantissa_bits
-
-
-@dataclass(frozen=True, slots=True)
-class IntegerShiftRuleShape:
-    """Logical lane interval realized by one physical i32 shift packet."""
-
-    # Native lane count shifted by the physical instruction sequence.
-    native_lane_count: int
-    # First logical lane count realized by this rule.
-    minimum_lane_count: int
-    # Last logical lane count realized by this rule.
-    maximum_lane_count: int
-
-    def __post_init__(self) -> None:
-        if not (
-            self.native_lane_count == 16
-            and 1
-            <= self.minimum_lane_count
-            <= self.maximum_lane_count
-            <= self.native_lane_count
-        ):
-            raise ValueError("integer shift logical lane interval is invalid")
-
-    @property
-    def vector_type(self) -> Vector:
-        """Source-visible packet type interval."""
-
-        if self.minimum_lane_count == self.maximum_lane_count:
-            return Vector("i32", lanes=self.minimum_lane_count)
-        return Vector(
-            "i32",
-            minimum_lanes=self.minimum_lane_count,
-            maximum_lanes=self.maximum_lane_count,
-        )
-
-    @property
-    def report_lane_range(self) -> str:
-        """Stable logical lane spelling used by compile reports."""
-
-        if self.minimum_lane_count == self.maximum_lane_count:
-            return str(self.minimum_lane_count)
-        return f"{self.minimum_lane_count}-{self.maximum_lane_count}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -935,13 +892,6 @@ INTEGER_TRUNCATION_RULE_SHAPES = tuple(
     for rule_shape in _integer_truncation_rule_shapes(instruction)
 )
 
-# Uniform i32 shifts widen through one physical sixteen-lane accumulator
-# packet. Lanes beyond a partial logical vector remain unobservable.
-INTEGER_SHIFT_RULE_SHAPES = (
-    IntegerShiftRuleShape(16, 16, 16),
-    IntegerShiftRuleShape(16, 1, 15),
-)
-
 
 def _descriptor(key: str) -> Descriptor:
     return descriptor_by_key(AIE2P_CORE_DESCRIPTOR_SET, key)
@@ -1194,80 +1144,6 @@ def integer_widen_rule(
     )
 
 
-def _integer_shift_rule(
-    source_op: Op, rule_shape: IntegerShiftRuleShape
-) -> DescriptorRule:
-    """Shifts uniform i32 packets through one accumulator widening."""
-
-    packet = rule_shape.vector_type
-    signedness = "signed" if source_op is vector.vector_shrsi else "unsigned"
-    widen = _descriptor(f"amd.xdna.aie2p.widen.2x.x-to-c.{signedness}.configured")
-    narrow = _descriptor(f"amd.xdna.aie2p.narrow.2x.c-to-x.{signedness}.configured")
-    shift_left = source_op is vector.vector_shli
-    distance = ValueProject.exact_i64("rhs")
-    return DescriptorRule(
-        source_op=source_op,
-        descriptor=widen,
-        guards=(
-            *(Guard.value_type(field, packet) for field in ("lhs", "rhs", "result")),
-            Guard.value_exact_i64("rhs"),
-            Guard.value_i64_range("rhs", 0, 31),
-        ),
-        emit=(
-            *(
-                EmitDescriptorOp(
-                    descriptor=_descriptor("amd.xdna.aie2p.constant.i32.shift"),
-                    results={"dst": ValueRef.temporary(name)},
-                    result_types={"dst": DescriptorResultType()},
-                    immediates={"i": amount},
-                    form=DescriptorEmitForm.CONST,
-                )
-                for name, amount in (
-                    ("upshift", distance if shift_left else 0),
-                    ("downshift", 0 if shift_left else distance),
-                )
-            ),
-            # Widen to i64 before shifting. Unsaturated SRS then selects the
-            # low i32 bits; floor rounding preserves arithmetic right shift.
-            *(
-                EmitDescriptorOp(
-                    descriptor=_descriptor(f"amd.xdna.aie2p.state.{name}.immediate"),
-                    immediates={"i": value},
-                    form=DescriptorEmitForm.OP,
-                )
-                for name, value in (
-                    ("saturation", 0),
-                    ("ups-mode", 1),
-                    ("srs-mode", 1),
-                    ("rounding", 0),
-                )
-            ),
-            EmitDescriptorOp(
-                descriptor=widen,
-                operands={
-                    "src": ValueRef.operand("lhs"),
-                    "su": ValueRef.temporary("upshift"),
-                },
-                results={"dst": ValueRef.temporary("wide")},
-                result_types={"dst": DescriptorResultType()},
-                form=DescriptorEmitForm.OP,
-            ),
-            EmitDescriptorOp(
-                descriptor=narrow,
-                operands={
-                    "src": ValueRef.temporary("wide"),
-                    "su": ValueRef.temporary("downshift"),
-                },
-                results={"dst": ValueRef.result("result")},
-                form=DescriptorEmitForm.OP,
-            ),
-        ),
-        report_key="native_"
-        + source_op.name.removeprefix("vector.")
-        + f"_i32x{rule_shape.report_lane_range}_uniform",
-    )
-
-
 def _widen_integer_packet_to_i32(
     input_element: str,
     signedness: IntegerSignedness,
@@ -1353,7 +1229,7 @@ def _integer_to_f32_packet_rule(
         # final addition performs exactly the rounding required by the source
         # i32-to-F32 conversion, including signed cancellation and midpoint
         # ties across the full input domain.
-        high = shift_i32_packet(
+        high = shift_integer_packet_fixed(
             packet,
             "high",
             input_value,
@@ -1711,7 +1587,7 @@ def _float16_chunk_to_f32(
     position_shift = _F32_PACKET_FORMAT.mantissa_bits - source_format.mantissa_bits
     prefix = f"chunk_{chunk_index}"
     sign = program.binary(f"{prefix}_sign", "and.bits512", source, state.sign_mask)
-    sign = shift_i32_packet(
+    sign = shift_integer_packet_fixed(
         program,
         f"{prefix}_positioned_sign",
         sign,
@@ -1721,7 +1597,7 @@ def _float16_chunk_to_f32(
         f"{prefix}_payload", "and.bits512", source, state.nonsign_mask
     )
 
-    positioned_payload = shift_i32_packet(
+    positioned_payload = shift_integer_packet_fixed(
         program, f"{prefix}_positioned_payload", payload, position_shift
     )
     normal = program.binary(
@@ -1748,7 +1624,7 @@ def _float16_chunk_to_f32(
             payload,
             threshold,
         )
-        positioned = shift_i32_packet(
+        positioned = shift_integer_packet_fixed(
             program,
             f"{prefix}_subnormal_{normalization_shift}_positioned",
             payload,
@@ -1991,7 +1867,7 @@ def _f32_chunk_to_float16(
         element_bits=result_format.bit_width,
     )
 
-    shifted_nan_payload = shift_i32_packet(
+    shifted_nan_payload = shift_integer_packet_fixed(
         program, f"{prefix}_nan_payload_shifted", fraction, -mantissa_shift
     )
     program.state("saturation", 1)
@@ -3701,11 +3577,6 @@ AIE2P_PACKET_CONVERSION_RULES = (
             (vector.vector_maxsi, vector.vector_minsi),
         )
         for value_fields in product(("lhs", "rhs"), repeat=2)
-    ),
-    *(
-        _integer_shift_rule(source_op, rule_shape)
-        for source_op in (vector.vector_shli, vector.vector_shrui, vector.vector_shrsi)
-        for rule_shape in INTEGER_SHIFT_RULE_SHAPES
     ),
     *(
         _integer_bitunpack_rule(source_op, source_kind, source_lane_count)
