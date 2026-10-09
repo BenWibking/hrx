@@ -414,3 +414,49 @@ void iree_clang_tidy_refcount_guarded_status_release(
         guarded_status_released_resource);
   }
 }
+
+// Releasing a lease changes the contents of caller-owned storage, not its
+// lifetime. A later acquire reuses the same storage and may require a guard.
+void iree_clang_tidy_lease_release(iree_clang_tidy_plain_allocated_t* lease);
+void iree_clang_tidy_lease_acquire(iree_clang_tidy_plain_allocated_t* lease);
+void iree_clang_tidy_lease_reuse(iree_clang_tidy_plain_allocated_t* lease) {
+  iree_clang_tidy_lease_release(lease);
+  iree_clang_tidy_lease_acquire(lease);
+  lease->payload = 1;
+  if (lease) {
+    iree_clang_tidy_lease_release(lease);
+  }
+}
+
+void iree_clang_tidy_lock_release(int* lock);
+void iree_clang_tidy_lock_reuse(int* lock) {
+  iree_clang_tidy_lock_release(lock);
+  *lock = 1;
+  iree_clang_tidy_lock_release(lock);
+}
+
+// Embedded refcounts have the same consumed-handle contract as direct anchors.
+void iree_clang_tidy_derived_release(
+    iree_clang_tidy_refcounted_with_base_t* resource);
+void iree_clang_tidy_derived_use_after_release(
+    iree_clang_tidy_refcounted_with_base_t* derived_resource) {
+  iree_clang_tidy_derived_release(derived_resource);
+  derived_resource->payload = 1;
+}
+
+// Incomplete and erased types still rely on the ownership naming contract.
+typedef struct iree_clang_tidy_opaque_t iree_clang_tidy_opaque_t;
+void iree_clang_tidy_opaque_release(iree_clang_tidy_opaque_t* resource);
+void iree_clang_tidy_opaque_observe(iree_clang_tidy_opaque_t* resource);
+void iree_clang_tidy_opaque_use_after_release(
+    iree_clang_tidy_opaque_t* opaque_resource) {
+  iree_clang_tidy_opaque_release(opaque_resource);
+  iree_clang_tidy_opaque_observe(opaque_resource);
+}
+
+void iree_clang_tidy_erased_release(void* resource);
+void iree_clang_tidy_erased_observe(void* resource);
+void iree_clang_tidy_erased_use_after_release(void* erased_resource) {
+  iree_clang_tidy_erased_release(erased_resource);
+  iree_clang_tidy_erased_observe(erased_resource);
+}
