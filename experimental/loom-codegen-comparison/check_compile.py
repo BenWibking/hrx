@@ -23,9 +23,12 @@ here = Path(__file__).resolve().parent
 importer, compiler = sys.argv[1:3]
 with tempfile.TemporaryDirectory(prefix='loom-chemistry-compile-') as work:
     module = Path(work) / 'chemistry.loom'
+    subprocess.run([sys.executable, str(here / 'generate.py'), f'--output-dir={work}'],
+                   check=True)
     subprocess.run([importer, f'--root=chemistry::{ROOT}', '--data-model=lp64',
-                    '--approximate-functions=false', f'--output={module}',
-                    str(here / 'reproducer.cpp')], check=True)
+                    '--approximate-functions=false', f'--I={here}',
+                    f'--output={module}', str(Path(work) / 'reproducer.cpp')],
+                   check=True)
     kernel = module.read_text().split(f'kernel.def @chemistry.{ROOT}()', 1)[1]
     size = re.search(r'workgroup_size\((%\S+),', kernel).group(1)
     assert f'{size} = index.constant {WORKGROUP_SIZE} : index' in kernel, size

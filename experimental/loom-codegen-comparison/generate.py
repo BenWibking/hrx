@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Specialize the pinned chemistry source; never rewrite floating expressions.
 
-The checked-in output is ordinary C++. Run this script after editing the
-translation rules, and --check in CI. Exact replacements fail on source drift.
+Writes reproducer.cpp, integrate.inc, and reference_kernels.inc to --output-dir.
+The output is ordinary C++ and is not checked in; builds and scripts generate
+it. Exact replacements fail on source drift.
 """
 import argparse
 import hashlib
@@ -419,7 +420,7 @@ for name in ('prepare_grid_timestep_kernel', 'advance_collapse_gridwide_kernel')
 parts.append('} // namespace chemistry\n')
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--check', action='store_true')
+parser.add_argument('--output-dir', type=Path, required=True)
 args = parser.parse_args()
 reference_kernels = ['// SPDX-License-Identifier: BSD-3-Clause\n// Generated original kernel bodies for serial-lane differential testing.\n']
 for name in ('prepare_grid_timestep_kernel', 'advance_collapse_gridwide_kernel'):
@@ -435,11 +436,8 @@ for name, content in [('reproducer.cpp', ''.join(parts)),
                       ('integrate.inc', solver_control)]:
     if name == 'reproducer.cpp':
         assert not re.search(r'\b(?:X|ydot|jac)\(', content), 'untranslated chemistry index'
-    path = HERE / name
     content = '\n'.join(line.rstrip() for line in content.splitlines()) + '\n'
-    if args.check:
-        assert path.read_text() == content, f'{name} is stale; run generate.py'
-    else:
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    path = args.output_dir / name
+    if not path.exists() or path.read_text() != content:
         path.write_text(content)
-if args.check:
-    assert not (HERE / 'layout.h').exists(), 'layout.h is obsolete'

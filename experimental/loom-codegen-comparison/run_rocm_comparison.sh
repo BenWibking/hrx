@@ -41,12 +41,13 @@ if [[ ! -x $importer || ! -x $compiler ]]; then
 fi
 
 mkdir -p -- "$work"
-python3 "$here/generate.py" --check
+generated="$work/generated"
+python3 "$here/generate.py" --output-dir="$generated"
 echo "Importing chemistry into Loom IR..."
 "$importer" --data-model=lp64 --approximate-functions=false \
   --root=chemistry::prepare_grid_timestep_kernel \
   --root=chemistry::advance_collapse_gridwide_kernel \
-  --output="$work/chemistry.loom" "$here/reproducer.cpp"
+  --I="$here" --output="$work/chemistry.loom" "$generated/reproducer.cpp"
 # The kernels take their workgroup count as compile-time config; match the
 # ceil(cells / 128) workgroups compare_rocm launches.
 # Match reference.cpp's default_grid_dim=64 and the comparison harness default.
@@ -84,6 +85,7 @@ fi
 echo "Compiling original HIP kernels and comparison harness..."
 "$hipcc" --offload-arch=gfx942 -std=c++20 -O3 -ffp-contract=off \
   -DPRIMORDIAL_ROS2S_ENABLE_HIP=1 -DPRIMORDIAL_ROS2S_NO_MAIN=1 \
+  -I "$generated" -I "$here" \
   "$here/compare_rocm.cpp" -o "$work/compare_rocm"
 
 echo "Running GPU correctness and performance comparison..."

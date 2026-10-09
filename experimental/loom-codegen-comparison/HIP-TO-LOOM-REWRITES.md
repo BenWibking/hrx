@@ -1,11 +1,11 @@
 # HIP to Loom f64 translation
 
 [generate.py](generate.py) extracts the device bodies from the pinned
-[reference.cpp](reference.cpp) and emits [reproducer.cpp](reproducer.cpp),
-[integrate.inc](integrate.inc), and [reference_kernels.inc](reference_kernels.inc).
-The source digest and exact-match replacements reject source drift. Keep the
-original HIP snapshot intact and edit the translation rules to change generated
-files.
+[reference.cpp](reference.cpp) and emits `reproducer.cpp`, `integrate.inc`, and
+`reference_kernels.inc` into the directory given by `--output-dir`; they are not
+checked in. The source digest and exact-match replacements reject source drift.
+Keep the original HIP snapshot intact and edit the translation rules to change
+generated files.
 
 The selected HIP path has 15 equations, 14 species, device redshift 30, LP64
 layout, and 128-thread blocks. The translation preserves chemistry coefficients,

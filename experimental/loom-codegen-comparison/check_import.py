@@ -9,10 +9,13 @@ here = Path(__file__).resolve().parent
 tool = sys.argv[1]
 with tempfile.TemporaryDirectory(prefix='loom-chemistry-import-') as work:
     output = Path(work) / 'chemistry.loom'
+    subprocess.run([sys.executable, str(here / 'generate.py'), f'--output-dir={work}'],
+                   check=True)
+    reproducer = Path(work) / 'reproducer.cpp'
     command = [tool, '--root=chemistry::prepare_grid_timestep_kernel',
                '--root=chemistry::advance_collapse_gridwide_kernel',
                '--data-model=lp64', '--approximate-functions=false',
-               f'--output={output}', str(here / 'reproducer.cpp')]
+               f'--I={here}', f'--output={output}', str(reproducer)]
     subprocess.run(command, check=True)
     ir = output.read_text()
     # sqrt stays a strict scalar operation; exp, log, and cbrt are f64_math.h
@@ -24,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='loom-chemistry-import-') as work:
     assert ir.count('kernel.def ') == 2
     for name in ('fjac', 'e', 'y', 'mass', 'ip'):
         assert f'%{name}_storage = buffer.alloca<private>' in ir, name
-    assert 'ScratchRecord* scratch' not in (here / 'reproducer.cpp').read_text()
+    assert 'ScratchRecord* scratch' not in reproducer.read_text()
     atomics = [line for line in ir.splitlines() if 'view.atomic.' in line]
     assert any('view.atomic.rmw<addi>' in line for line in atomics), atomics
     assert any('view.atomic.cmpxchg' in line for line in atomics), atomics
