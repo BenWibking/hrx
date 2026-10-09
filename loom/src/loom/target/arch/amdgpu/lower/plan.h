@@ -449,7 +449,11 @@ typedef struct loom_amdgpu_i64_compare_plan_t {
   loom_amdgpu_descriptor_ref_t combine_descriptor_ref;
   // True when low-lane comparison is guarded by high-lane equality.
   bool needs_high_equal;
+  // Pair transports, two bits each: lhs in bits 0-1, rhs in bits 2-3.
+  uint8_t operand_forms;
 } loom_amdgpu_i64_compare_plan_t;
+static_assert(sizeof(loom_amdgpu_i64_compare_plan_t) == 20,
+              "integer comparison plans must stay cache dense");
 
 typedef enum loom_amdgpu_scalar_i64_alu_kind_e {
   LOOM_AMDGPU_SCALAR_I64_ALU_KIND_NONE = 0,

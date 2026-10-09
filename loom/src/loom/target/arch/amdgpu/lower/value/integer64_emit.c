@@ -307,10 +307,12 @@ iree_status_t loom_amdgpu_lower_i64_compare(
   // needs a sign word even when the other operand has a wide address carrier.
   loom_value_id_t lhs = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_integer_operand(
-      context, source_op, plan->lhs, LOOM_AMDGPU_REG_CLASS_ID_VGPR, 2, &lhs));
+      context, source_op, plan->lhs, LOOM_AMDGPU_REG_CLASS_ID_VGPR,
+      (loom_amdgpu_integer_operand_form_t)(plan->operand_forms & 3), &lhs));
   loom_value_id_t rhs = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_integer_operand(
-      context, source_op, plan->rhs, LOOM_AMDGPU_REG_CLASS_ID_VGPR, 2, &rhs));
+      context, source_op, plan->rhs, LOOM_AMDGPU_REG_CLASS_ID_VGPR,
+      (loom_amdgpu_integer_operand_form_t)(plan->operand_forms >> 2), &rhs));
   loom_value_id_t lhs_lo = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(context, source_op, lhs, 0,
                                                   vgpr_type, &lhs_lo));

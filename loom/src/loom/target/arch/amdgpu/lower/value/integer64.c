@@ -1239,6 +1239,17 @@ iree_status_t loom_amdgpu_select_index_cmp_i64_plan(
       .lhs = loom_index_cmp_lhs(source_op),
       .rhs = loom_index_cmp_rhs(source_op),
       .result = result,
+      .operand_forms = loom_amdgpu_select_integer_operand_form(
+                           loom_value_fact_table_lookup(
+                               loom_low_lower_context_fact_table(context),
+                               loom_index_cmp_lhs(source_op)),
+                           2) |
+                       (loom_amdgpu_select_integer_operand_form(
+                            loom_value_fact_table_lookup(
+                                loom_low_lower_context_fact_table(context),
+                                loom_index_cmp_rhs(source_op)),
+                            2)
+                        << 2),
   };
   loom_scalar_cmpi_predicate_t predicate;
   if (!loom_amdgpu_index_cmp_predicate_to_scalar(
