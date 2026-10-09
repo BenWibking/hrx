@@ -79,6 +79,7 @@ loom_cc_library(
     srcs = ["math_policy.c"],
     hdrs = ["math_policy.h"],
     deps = [
+        ":feature_bits",
         "//loom/src/loom/target:math_policy",
         "//runtime/src/iree/base",
     ],

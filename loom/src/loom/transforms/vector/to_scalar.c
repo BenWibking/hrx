@@ -1369,6 +1369,8 @@ static iree_status_t loom_vector_to_scalar_run_with_lowerer(
           loom_target_math_pass_capability_from_pass(pass)),
       loom_target_facts_bundle(
           loom_target_function_version_target_facts(pass->function_version)));
+  rewriter.math_target_bundle = loom_target_facts_bundle(
+      loom_target_function_version_target_facts(pass->function_version));
   loom_value_fact_table_t* facts = NULL;
   iree_status_t status = loom_pass_value_facts_prepare(
       pass, module,

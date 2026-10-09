@@ -129,6 +129,8 @@ typedef struct loom_target_math_evaluation_t {
 } loom_target_math_evaluation_t;
 
 typedef struct loom_target_math_query_t {
+  // Resolved target bundle owning the policy decision.
+  const loom_target_bundle_t* target_bundle;
   // Semantic math operation requested by the source op.
   loom_target_math_op_t math_op;
   // Whether the source op computes one scalar lane or a vector of lanes.
@@ -167,7 +169,8 @@ typedef void (*loom_target_math_policy_query_fn_t)(
 // intersection of the two operations' permissions. This is an optimization
 // preference, not a legality query for an explicitly authored FMA.
 typedef bool (*loom_target_math_prefer_fma_fn_t)(
-    const loom_target_math_policy_t* policy, loom_type_t value_type,
+    const loom_target_math_policy_t* policy,
+    const loom_target_bundle_t* target_bundle, loom_type_t value_type,
     loom_target_math_fastmath_flags_t fastmath_flags);
 
 struct loom_target_math_policy_t {

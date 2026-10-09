@@ -61,6 +61,7 @@ loom_cc_library(
   SRCS
     "math_policy.c"
   DEPS
+    ::feature_bits
     iree::base
     loom::target::math_policy
   PUBLIC

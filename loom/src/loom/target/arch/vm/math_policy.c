@@ -97,9 +97,11 @@ static void loom_vm_math_policy_query(
 }
 
 static bool loom_vm_math_prefer_fma(
-    const loom_target_math_policy_t* policy, loom_type_t value_type,
+    const loom_target_math_policy_t* policy,
+    const loom_target_bundle_t* target_bundle, loom_type_t value_type,
     loom_target_math_fastmath_flags_t fastmath_flags) {
   (void)policy;
+  (void)target_bundle;
   (void)fastmath_flags;
   const loom_scalar_type_t element_type = loom_type_element_type(value_type);
   return loom_type_is_scalar(value_type) &&
