@@ -719,25 +719,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_generated_file(
   NAME
-    enum_values_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "enum_values_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/enum_values.cxx"
-  INPUTS
-    "enum_values.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
     increment_values_cases_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -974,34 +955,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_test_module(
   NAME
-    enum_values_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/enum_values_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/enum_values.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    enum_values_test_execute_vm_reference_test
-  MODULE
-    "::enum_values_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
     increment_values_test_module
   SRCS
     "${CMAKE_CURRENT_BINARY_DIR}/increment_values_cases.cxx"
@@ -1213,6 +1166,26 @@ loom_execution_test(
     vector_values_test_execute_vm_reference_test
   MODULE
     "::vector_values_test_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    enum_values_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::enum_values_module"
+  RUNNER_ARGS
+    "--case=enum_values"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
     "loom-execution-profile=vm_reference"
@@ -1474,25 +1447,6 @@ loom_generated_file_family(
   ARGS
     "kernel"
     "--group=early_returns"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
-    enum_values_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "enum_values_checks.loom"
-    "enum_values_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=enum_values"
   TESTONLY
 )
 endif()
@@ -1784,21 +1738,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
-    enum_values_module
-  SRCS
-    "enum_values.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/enum_values_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/enum_values_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/enum_values_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
     flash_attention_module
   SRCS
     "flash_attention.cxx"
@@ -1958,6 +1897,16 @@ loom_test_module(
     "${CMAKE_CURRENT_BINARY_DIR}/volatile_memory_checks.loom"
   INPUTOPTS
 
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    enum_values_module
+  SRCS
+    "enum_values.cxx"
+    "enum_values.loom"
 )
 endif()
 

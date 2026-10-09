@@ -186,13 +186,12 @@ loom_check_test_suite(
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
 )
 
-# Each source retains independent mathematical references and imports its
-# implementation through the same source path as handwritten check cases.
-_HOST_SOURCES = [
+# Generated host cases remain only while their source families migrate to
+# authored scenarios and independent Loom oracles.
+_GENERATED_HOST_SOURCES = [
     "assumptions.cxx",
     "comparison_functions.cxx",
     "constant_loops.cxx",
-    "enum_values.cxx",
     "increment_values.cxx",
     "integer_functions.cxx",
     "record_values.cxx",
@@ -201,6 +200,10 @@ _HOST_SOURCES = [
     "structured_continue.cxx",
     "vector_initializers.cxx",
     "vector_values.cxx",
+]
+
+_AUTHORED_HOST_SOURCES = [
+    "enum_values",
 ]
 
 _HOST_COMPATIBILITY = loom_config_compatible_with([
@@ -399,7 +402,7 @@ loom_test(
         output_flag = "--output",
         target_compatible_with = _HOST_COMPATIBILITY,
     )
-    for source in _HOST_SOURCES
+    for source in _GENERATED_HOST_SOURCES
 ]
 
 [
@@ -410,7 +413,19 @@ loom_test(
         execution_profiles = [VM_REFERENCE_PROFILE],
         target_compatible_with = _HOST_COMPATIBILITY,
     )
-    for source in _HOST_SOURCES
+    for source in _GENERATED_HOST_SOURCES
+]
+
+[
+    loom_test(
+        name = source + "_test",
+        benchmark_smoke = False,
+        case = source,
+        execution_profiles = [VM_REFERENCE_PROFILE],
+        module = ":" + source + "_module",
+        target_compatible_with = _HOST_COMPATIBILITY,
+    )
+    for source in _AUTHORED_HOST_SOURCES
 ]
 
 loom_check_test_suite(
@@ -515,7 +530,6 @@ _GENERATED_KERNEL_SOURCES = [
     "constant_loops",
     "control_flow",
     "early_returns",
-    "enum_values",
     "flash_attention",
     "increment_values",
     "llama_rms_norm",
@@ -530,6 +544,7 @@ _GENERATED_KERNEL_SOURCES = [
 ]
 
 _AUTHORED_KERNEL_SOURCES = [
+    "enum_values",
     "integer_increment",
     "record_values",
     "scheduled_sum",
@@ -595,6 +610,9 @@ test_suite(
     name = "functions_test",
     tests = [":pointer_origins_test"] + [
         ":" + source.removesuffix(".cxx") + "_test"
-        for source in _HOST_SOURCES
+        for source in _GENERATED_HOST_SOURCES
+    ] + [
+        ":" + source + "_test"
+        for source in _AUTHORED_HOST_SOURCES
     ],
 )
