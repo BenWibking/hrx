@@ -635,10 +635,17 @@ static iree_status_t loom_text_print_type_impl(
       return loom_print_descriptor_backed_type(type, module, stream, ctx);
     case LOOM_TYPE_BUFFER:
       return loom_output_stream_write_cstring(stream, "buffer");
-    case LOOM_TYPE_POOL: {
+    case LOOM_TYPE_POOL:
+      return loom_output_stream_write_cstring(stream, "pool");
+    case LOOM_TYPE_GROUP: {
       IREE_RETURN_IF_ERROR(
           loom_print_compact_shape_prefix(stream, loom_type_kind(type)));
-      IREE_RETURN_IF_ERROR(loom_print_dim(stream, type, 0, module, ctx));
+      for (uint8_t i = 0; i < loom_type_rank(type); ++i) {
+        if (i > 0) {
+          IREE_RETURN_IF_ERROR(loom_output_stream_write_cstring(stream, "x"));
+        }
+        IREE_RETURN_IF_ERROR(loom_print_dim(stream, type, i, module, ctx));
+      }
       return loom_output_stream_write_char(stream, '>');
     }
     case LOOM_TYPE_FUNCTION: {

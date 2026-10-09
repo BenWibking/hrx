@@ -56,7 +56,7 @@ loom_cc_test(
         ":request",
         "//loom/src/loom/format/text:parser",
         "//loom/src/loom/ir",
-        "//loom/src/loom/ops/target",
+        "//loom/src/loom/target/test:target_record_table",
         "//loom/src/loom/testing:context",
         "//loom/src/loom/testing:module_ptr",
         "//runtime/src/iree/base/internal:arena",

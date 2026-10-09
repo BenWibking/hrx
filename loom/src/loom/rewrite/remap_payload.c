@@ -20,7 +20,7 @@ static iree_status_t loom_ir_remap_leaf_type(loom_ir_remap_t* remap,
   loom_type_t target_type = source_type;
   bool needs_interned_payload = false;
   loom_overflow_dim_t target_overflow_dims[LOOM_TYPE_MAX_RANK] = {0};
-  if (loom_type_is_shaped(source_type) || loom_type_is_pool(source_type)) {
+  if (loom_type_has_dimensions(source_type)) {
     uint8_t rank = loom_type_rank(source_type);
     if (loom_type_has_inline_dims(source_type)) {
       for (uint8_t i = 0; i < rank; ++i) {

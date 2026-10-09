@@ -179,6 +179,106 @@ TEST_F(LowAllocationStorageLivenessIndexTest,
 }
 
 TEST_F(LowAllocationStorageLivenessIndexTest,
+       PreservesLongReservationsAcrossShorterAliasingSegments) {
+  loom_low_reg_class_t reg_classes[2] = {};
+  reg_classes[0].alias_set_id = 7;
+  reg_classes[1].alias_set_id = 7;
+  const loom_low_descriptor_set_t descriptor_set =
+      DescriptorSet(reg_classes, IREE_ARRAYSIZE(reg_classes));
+  const loom_liveness_segment_t segments[] = {{2, 4}, {8, 10}, {16, 18}};
+  uint32_t unit_start_points[] = {1, 2};
+  uint32_t unit_end_points[] = {14, 18};
+  loom_low_allocation_unit_liveness_t unit_liveness = UnitLiveness(
+      unit_start_points, unit_end_points, IREE_ARRAYSIZE(unit_end_points));
+  unit_liveness.storage_segments.entries = segments;
+
+  for (auto kind : {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+                    LOOM_LOW_ALLOCATION_LOCATION_TARGET_ID}) {
+    SCOPED_TRACE(kind);
+    loom_low_allocation_assignment_t assignments[] = {
+        Assignment(/*reg_class_id=*/0, /*location=*/8, /*unit_count=*/1,
+                   /*start_point=*/1, /*end_point=*/14,
+                   /*unit_point_start=*/0, kind),
+        Assignment(/*reg_class_id=*/1, /*location=*/8, /*unit_count=*/1,
+                   /*start_point=*/2, /*end_point=*/18,
+                   /*unit_point_start=*/1, kind),
+    };
+    assignments[1].liveness_segments = {0, IREE_ARRAYSIZE(segments)};
+    loom_low_allocation_storage_liveness_index_t index;
+    IREE_ASSERT_OK(loom_low_allocation_storage_liveness_index_initialize(
+        &descriptor_set, assignments, IREE_ARRAYSIZE(assignments),
+        &unit_liveness, &arena_, &index));
+    const loom_low_move_location_t alias = Location(
+        /*reg_class_id=*/1, /*location=*/8, kind);
+    for (uint32_t point = 0; point <= 19; ++point) {
+      SCOPED_TRACE(point);
+      // The latest start at 8 ends at 10, but the earlier reservation remains
+      // live through 13. Only the gap at 14..15 is actually free.
+      const bool expected =
+          (point >= 1 && point < 14) || (point >= 16 && point < 18);
+      EXPECT_EQ(loom_low_allocation_storage_liveness_index_is_live_at_point(
+                    &index, &alias, point),
+                expected);
+    }
+  }
+}
+
+TEST_F(LowAllocationStorageLivenessIndexTest,
+       IntersectsSparseReservationsWithRefinedUnits) {
+  loom_low_reg_class_t reg_classes[2] = {};
+  reg_classes[0].alias_set_id = 7;
+  reg_classes[1].alias_set_id = 7;
+  const loom_low_descriptor_set_t descriptor_set =
+      DescriptorSet(reg_classes, IREE_ARRAYSIZE(reg_classes));
+  const loom_liveness_segment_t segments[] = {
+      {4, 6}, {2, 4}, {6, 8}, {11, 16}, {18, 20},
+  };
+  uint32_t unit_start_points[] = {2, 7, 10, 8, 8};
+  uint32_t unit_end_points[] = {8, 20, 10, 10, 11};
+  loom_low_allocation_unit_liveness_t unit_liveness = UnitLiveness(
+      unit_start_points, unit_end_points, IREE_ARRAYSIZE(unit_end_points));
+  unit_liveness.storage_segments.entries = segments;
+
+  for (auto kind : {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+                    LOOM_LOW_ALLOCATION_LOCATION_TARGET_ID}) {
+    SCOPED_TRACE(kind);
+    loom_low_allocation_assignment_t assignments[] = {
+        Assignment(/*reg_class_id=*/0, /*location=*/10, /*unit_count=*/4,
+                   /*start_point=*/2, /*end_point=*/20,
+                   /*unit_point_start=*/0, kind),
+        Assignment(/*reg_class_id=*/1, /*location=*/11, /*unit_count=*/1,
+                   /*start_point=*/8, /*end_point=*/11,
+                   /*unit_point_start=*/4, kind),
+    };
+    assignments[0].liveness_segments = {1, 4};
+    loom_low_allocation_storage_liveness_index_t index;
+    IREE_ASSERT_OK(loom_low_allocation_storage_liveness_index_initialize(
+        &descriptor_set, assignments, IREE_ARRAYSIZE(assignments),
+        &unit_liveness, &arena_, &index));
+
+    for (uint32_t unit = 0; unit < 4; ++unit) {
+      SCOPED_TRACE(unit);
+      const loom_low_move_location_t alias = Location(
+          /*reg_class_id=*/1, /*location=*/10 + unit, kind);
+      for (uint32_t point = 0; point <= 21; ++point) {
+        SCOPED_TRACE(point);
+        const bool in_segment =
+            (point >= 2 && point < 4) || (point >= 6 && point < 8) ||
+            (point >= 11 && point < 16) || (point >= 18 && point < 20);
+        const bool refined_live =
+            point >= unit_start_points[unit] && point < unit_end_points[unit];
+        // The other assignment has no sparse range: its continuous lifetime
+        // fills this part of the second unit's hole without filling any other.
+        const bool continuous_live = unit == 1 && point >= 8 && point < 11;
+        EXPECT_EQ(loom_low_allocation_storage_liveness_index_is_live_at_point(
+                      &index, &alias, point),
+                  (in_segment && refined_live) || continuous_live);
+      }
+    }
+  }
+}
+
+TEST_F(LowAllocationStorageLivenessIndexTest,
        ResolvesExplicitRegisterAtomicAliases) {
   loom_low_reg_class_t reg_classes[2] = {};
   for (auto& reg_class : reg_classes) {
@@ -237,27 +337,37 @@ TEST_F(LowAllocationStorageLivenessIndexTest,
   descriptor_set.physical_register_view_unit_candidate_ordinals = view_units;
   descriptor_set.physical_register_view_unit_candidate_ordinal_count =
       IREE_ARRAYSIZE(view_units);
-  const loom_low_allocation_assignment_t assignment =
+  loom_low_allocation_assignment_t assignment =
       Assignment(/*reg_class_id=*/0, /*location=*/2, /*unit_count=*/2,
                  /*start_point=*/2, /*end_point=*/9,
                  /*unit_point_start=*/0);
   uint32_t unit_start_points[] = {2, 6};
   uint32_t unit_end_points[] = {5, 9};
-  const loom_low_allocation_unit_liveness_t unit_liveness = UnitLiveness(
+  loom_low_allocation_unit_liveness_t unit_liveness = UnitLiveness(
       unit_start_points, unit_end_points, IREE_ARRAYSIZE(unit_end_points));
-
-  loom_low_allocation_storage_liveness_index_t index;
-  IREE_ASSERT_OK(loom_low_allocation_storage_liveness_index_initialize(
-      &descriptor_set, &assignment, /*assignment_count=*/1, &unit_liveness,
-      &arena_, &index));
-
+  const loom_liveness_segment_t segments[] = {{2, 3}, {4, 7}, {8, 9}};
+  unit_liveness.storage_segments.entries = segments;
   const loom_low_move_location_t wide =
       Location(/*reg_class_id=*/1, /*location=*/2);
-  for (uint32_t point = 0; point < 11; ++point) {
-    SCOPED_TRACE(point);
-    EXPECT_EQ(loom_low_allocation_storage_liveness_index_is_live_at_point(
-                  &index, &wide, point),
-              (point >= 2 && point < 5) || (point >= 6 && point < 9));
+  for (uint32_t segment_count : {0u, 3u}) {
+    SCOPED_TRACE(segment_count);
+    assignment.liveness_segments = {0, segment_count};
+    loom_low_allocation_storage_liveness_index_t index;
+    IREE_ASSERT_OK(loom_low_allocation_storage_liveness_index_initialize(
+        &descriptor_set, &assignment, /*assignment_count=*/1, &unit_liveness,
+        &arena_, &index));
+
+    for (uint32_t point = 0; point < 11; ++point) {
+      SCOPED_TRACE(point);
+      const bool in_segment = segment_count == 0 || (point >= 2 && point < 3) ||
+                              (point >= 4 && point < 7) ||
+                              (point >= 8 && point < 9);
+      const bool refined_live =
+          (point >= 2 && point < 5) || (point >= 6 && point < 9);
+      EXPECT_EQ(loom_low_allocation_storage_liveness_index_is_live_at_point(
+                    &index, &wide, point),
+                in_segment && refined_live);
+    }
   }
 }
 

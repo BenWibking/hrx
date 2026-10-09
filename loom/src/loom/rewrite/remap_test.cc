@@ -201,7 +201,9 @@ TEST_F(RemapTest, SharedMixedTypeGraphUsesCallScopedScratch) {
   loom_string_id_t name;
   IREE_ASSERT_OK(
       loom_module_intern_string(source_, IREE_SV("container"), &name));
-  loom_type_t type = loom_type_pool(loom_dim_pack_dynamic(source_dimension));
+  loom_type_t type =
+      loom_type_shaped_1d(LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32,
+                          loom_dim_pack_dynamic(source_dimension), 0);
   constexpr int kDepth = 2048;
   for (int i = 0; i < kDepth; ++i) {
     switch (i % 4) {
@@ -277,9 +279,10 @@ TEST_F(RemapTest, SharedTypesFollowBindingsInstalledBetweenCalls) {
   const auto original = DefineValue(source_, index);
   const auto first = DefineValue(source_, index);
   const auto second = DefineValue(source_, index);
-  const auto pool = loom_type_pool(loom_dim_pack_dynamic(original));
+  const auto view = loom_type_shaped_1d(LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32,
+                                        loom_dim_pack_dynamic(original), 0);
   loom_type_t signature;
-  IREE_ASSERT_OK(loom_module_intern_function_type(source_, &pool, 1, &pool, 1,
+  IREE_ASSERT_OK(loom_module_intern_function_type(source_, &view, 1, &view, 1,
                                                   &signature));
   for (auto map_kind : {LOOM_IR_REMAP_VALUE_MAP_SPARSE,
                         LOOM_IR_REMAP_VALUE_MAP_SOURCE_INDEXED}) {
@@ -307,10 +310,12 @@ TEST_F(RemapTest, FailedTypeRemapCanBeRetriedAfterInstallingMissingBinding) {
   const auto first = DefineValue(source_, index);
   const auto second = DefineValue(source_, index);
   const auto target = DefineValue(target_, index);
-  loom_type_t first_type = loom_type_pool(loom_dim_pack_dynamic(first));
+  loom_type_t first_type = loom_type_shaped_1d(
+      LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32, loom_dim_pack_dynamic(first), 0);
   IREE_ASSERT_OK(loom_module_intern_function_type(source_, &first_type, 1,
                                                   &first_type, 1, &first_type));
-  const auto second_type = loom_type_pool(loom_dim_pack_dynamic(second));
+  const auto second_type = loom_type_shaped_1d(
+      LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32, loom_dim_pack_dynamic(second), 0);
   loom_type_t signature;
   IREE_ASSERT_OK(loom_module_intern_function_type(source_, &first_type, 1,
                                                   &second_type, 1, &signature));
@@ -332,7 +337,8 @@ TEST_F(RemapTest, FailedTypeRemapCanBeRetriedAfterInstallingMissingBinding) {
 TEST_F(RemapTest, AllocationFailuresReleaseTraversalAndPermitRetry) {
   const auto index = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
   const auto dimension = DefineValue(source_, index);
-  loom_type_t type = loom_type_pool(loom_dim_pack_dynamic(dimension));
+  loom_type_t type = loom_type_shaped_1d(LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32,
+                                         loom_dim_pack_dynamic(dimension), 0);
   for (int i = 0; i < 32; ++i) {
     IREE_ASSERT_OK(
         loom_module_intern_function_type(source_, &type, 1, &type, 1, &type));
@@ -429,13 +435,15 @@ TEST_F(RemapTest, TemporaryTypePayloadCanChangeBetweenCalls) {
   auto remap = InitializeRemap();
   IREE_ASSERT_OK(loom_ir_remap_map_value(&remap, first, target_first));
   IREE_ASSERT_OK(loom_ir_remap_map_value(&remap, second, target_second));
-  loom_type_t child = loom_type_pool(loom_dim_pack_dynamic(first));
+  loom_type_t child = loom_type_shaped_1d(LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32,
+                                          loom_dim_pack_dynamic(first), 0);
   const auto temporary = loom_type_dialect(name, 1, &child);
   loom_type_t result;
   IREE_ASSERT_OK(loom_ir_remap_type(&remap, temporary, &result));
   EXPECT_EQ(loom_type_dim_value_id_at(loom_type_dialect_params(result)[0], 0),
             target_first);
-  child = loom_type_pool(loom_dim_pack_dynamic(second));
+  child = loom_type_shaped_1d(LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32,
+                              loom_dim_pack_dynamic(second), 0);
   IREE_ASSERT_OK(loom_ir_remap_type(&remap, temporary, &result));
   EXPECT_EQ(loom_type_dim_value_id_at(loom_type_dialect_params(result)[0], 0),
             target_second);

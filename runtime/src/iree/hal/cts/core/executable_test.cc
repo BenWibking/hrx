@@ -202,7 +202,7 @@ TEST_P(ExecutableTest, LookupGlobalByName) {
   IREE_ASSERT_OK(iree_hal_queue_update(
       transfer_queue_, empty_wait, update_signal, &expected_value,
       /*source_offset=*/0, global_buffer, /*target_offset=*/0,
-      sizeof(expected_value), IREE_HAL_UPDATE_FLAG_NONE));
+      sizeof(expected_value), /*barriers=*/NULL, IREE_HAL_UPDATE_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       update_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -231,7 +231,7 @@ TEST_P(ExecutableTest, GlobalBufferVisibleToDispatch) {
   IREE_ASSERT_OK(iree_hal_queue_update(
       transfer_queue_, empty_wait, update_signal, &expected_value,
       /*source_offset=*/0, global_buffer, /*target_offset=*/0,
-      sizeof(expected_value), IREE_HAL_UPDATE_FLAG_NONE));
+      sizeof(expected_value), /*barriers=*/NULL, IREE_HAL_UPDATE_FLAG_NONE));
 
   Ref<iree_hal_buffer_t> output_buffer;
   IREE_ASSERT_OK(
@@ -261,7 +261,7 @@ TEST_P(ExecutableTest, GlobalBufferVisibleToDispatch) {
       dispatch_queue_, update_signal, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 

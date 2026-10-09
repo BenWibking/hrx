@@ -566,6 +566,8 @@ def _descriptor_trait_names(
         trait_names.append("LOOM_AMDGPU_DESCRIPTOR_TRAIT_ADDRESS_SOURCE_RETAINED")
     if _descriptor_writes_exec(descriptor):
         trait_names.append("LOOM_AMDGPU_DESCRIPTOR_TRAIT_WRITES_EXEC")
+    if descriptor.semantic_tag in ("float.add.pk2.f32", "float.mul.pk2.f32", "float.fma.pk2.f32"):
+        trait_names.append("LOOM_AMDGPU_DESCRIPTOR_TRAIT_PACKED_F32")
     return tuple(trait_names)
 
 

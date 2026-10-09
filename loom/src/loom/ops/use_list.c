@@ -249,41 +249,30 @@ iree_status_t loom_op_record_operand_uses(loom_module_t* module,
   return iree_ok_status();
 }
 
-iree_status_t loom_value_remove_use(loom_module_t* module,
-                                    loom_value_id_t value_id,
-                                    loom_op_t* user_op,
-                                    uint16_t operand_index) {
+void loom_value_remove_use(loom_module_t* module, loom_value_id_t value_id,
+                           loom_op_t* user_op, uint16_t operand_index) {
   loom_value_t* value = loom_module_value(module, value_id);
   loom_use_index_t* operand_use_indices = loom_op_operand_use_indices(user_op);
   loom_use_index_t use_index = operand_use_indices[operand_index];
   loom_use_t* uses = loom_value_uses_mutable(value);
-  if (use_index < value->use_count &&
-      loom_use_user_op(uses[use_index]) == user_op &&
-      loom_use_operand_index(uses[use_index]) == operand_index) {
-    if (loom_value_has_overflow_uses(value)) {
-      value->overflow_ownership_use_count -=
-          loom_use_flags(uses[use_index]) != 0;
-    }
-    // Swap with last and decrement. Update the moved user's backpointer so
-    // future removals stay O(1).
-    loom_use_index_t last_index = value->use_count - 1;
-    if (use_index != last_index) {
-      loom_use_t moved_use = uses[last_index];
-      uses[use_index] = moved_use;
-      loom_op_t* moved_user_op = loom_use_user_op(moved_use);
-      uint16_t moved_operand_index = loom_use_operand_index(moved_use);
-      loom_op_operand_use_indices(moved_user_op)[moved_operand_index] =
-          use_index;
-    }
-    operand_use_indices[operand_index] = LOOM_USE_INDEX_INVALID;
-    --value->use_count;
-    return iree_ok_status();
+  IREE_ASSERT(use_index < value->use_count &&
+              loom_use_user_op(uses[use_index]) == user_op &&
+              loom_use_operand_index(uses[use_index]) == operand_index);
+  if (loom_value_has_overflow_uses(value)) {
+    value->overflow_ownership_use_count -= loom_use_flags(uses[use_index]) != 0;
   }
-  iree_string_view_t op_name = loom_op_name(module, user_op);
-  return iree_make_status(IREE_STATUS_NOT_FOUND,
-                          "no matching use of value %%%u by %.*s operand %u",
-                          (unsigned)value_id, (int)op_name.size, op_name.data,
-                          (unsigned)operand_index);
+  // Swap with last and decrement. Update the moved user's backpointer so
+  // future removals stay O(1).
+  loom_use_index_t last_index = value->use_count - 1;
+  if (use_index != last_index) {
+    loom_use_t moved_use = uses[last_index];
+    uses[use_index] = moved_use;
+    loom_op_t* moved_user_op = loom_use_user_op(moved_use);
+    uint16_t moved_operand_index = loom_use_operand_index(moved_use);
+    loom_op_operand_use_indices(moved_user_op)[moved_operand_index] = use_index;
+  }
+  operand_use_indices[operand_index] = LOOM_USE_INDEX_INVALID;
+  --value->use_count;
 }
 
 iree_status_t loom_op_set_operand(loom_module_t* module, loom_op_t* op,
@@ -299,8 +288,7 @@ iree_status_t loom_op_set_operand(loom_module_t* module, loom_op_t* op,
     const loom_value_t* old_value = loom_module_value(module, old_value_id);
     flags = loom_use_flags(loom_value_uses(
         old_value)[loom_op_operand_use_indices(op)[operand_index]]);
-    IREE_RETURN_IF_ERROR(
-        loom_value_remove_use(module, old_value_id, op, operand_index));
+    loom_value_remove_use(module, old_value_id, op, operand_index);
   }
   operands[operand_index] = new_value_id;
   if (new_value_id != LOOM_VALUE_ID_INVALID) {

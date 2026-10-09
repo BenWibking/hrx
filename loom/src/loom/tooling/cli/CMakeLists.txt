@@ -32,8 +32,8 @@ loom_cc_library(
   DEPS
     iree::base
     loom::binding::c::loomc
+    loom::config::text_binding
     loom::sanitizer::options
-    loom::tooling::config
   PUBLIC
 )
 

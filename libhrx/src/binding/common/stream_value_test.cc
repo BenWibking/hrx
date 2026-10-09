@@ -713,7 +713,8 @@ TEST(StreamValueWaitLaneTest,
               IREE_HAL_ATOMIC_FLAG_SYSTEM_SCOPE,
           /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
           /*.condition=*/IREE_HAL_ATOMIC_WAIT_CONDITION_EQUAL,
-      }));
+      },
+      /*barriers=*/NULL));
   wait_submission_accepted = true;
 
   uint64_t value = UINT64_MAX;
@@ -759,7 +760,7 @@ TEST(StreamValueWaitLaneTest,
       foreign_signal_values};
   IREE_EXPECT_OK(iree_hal_queue_barrier(
       foreign_queue, iree_hal_semaphore_list_empty(), foreign_signal_list,
-      IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
   IREE_EXPECT_OK(iree_hal_semaphore_wait(foreign_completion, /*value=*/1,
                                          iree_infinite_timeout(),
                                          IREE_ASYNC_WAIT_FLAG_NONE));

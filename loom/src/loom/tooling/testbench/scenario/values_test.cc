@@ -189,7 +189,8 @@ TEST_F(ScenarioValuesTest, MaterializesIndependentPairedAliasGraphs) {
       LOOM_TESTBENCH_SCENARIO_TRIAL_REALIZATION_TARGET_AND_ORACLE,
       host_allocator_, &values));
   IREE_ASSERT_OK(loom_testbench_scenario_trial_values_materialize(
-      &options, &configuration, /*trial_ordinal=*/2, &values));
+      &options, /*generator_executor=*/nullptr, &configuration,
+      /*trial_ordinal=*/2, &values));
   EXPECT_TRUE(iree_all_bits_set(
       values.flags, LOOM_TESTBENCH_SCENARIO_VALUE_FLAG_MATERIALIZED |
                         LOOM_TESTBENCH_SCENARIO_VALUE_FLAG_HAS_ORACLE));
@@ -202,19 +203,21 @@ TEST_F(ScenarioValuesTest, MaterializesIndependentPairedAliasGraphs) {
   int64_t target_seed = 0;
   int64_t oracle_seed = 0;
   IREE_ASSERT_OK(loom_testbench_value_as_i64(
-      Lookup(&values.target, trial.value_sources[1].value_id), &target_seed));
+      Lookup(&values.target, trial.recipe_steps[1].value_source.value_id),
+      &target_seed));
   IREE_ASSERT_OK(loom_testbench_value_as_i64(
-      Lookup(&values.oracle, trial.value_sources[1].value_id), &oracle_seed));
+      Lookup(&values.oracle, trial.recipe_steps[1].value_source.value_id),
+      &oracle_seed));
   EXPECT_EQ(target_seed, oracle_seed);
 
   const loom_testbench_value_t* target_storage =
-      Lookup(&values.target, trial.value_sources[3].value_id);
+      Lookup(&values.target, trial.recipe_steps[3].value_source.value_id);
   const loom_testbench_value_t* target_tail =
-      Lookup(&values.target, trial.value_sources[4].value_id);
+      Lookup(&values.target, trial.recipe_steps[4].value_source.value_id);
   const loom_testbench_value_t* oracle_storage =
-      Lookup(&values.oracle, trial.value_sources[3].value_id);
+      Lookup(&values.oracle, trial.recipe_steps[3].value_source.value_id);
   const loom_testbench_value_t* oracle_tail =
-      Lookup(&values.oracle, trial.value_sources[4].value_id);
+      Lookup(&values.oracle, trial.recipe_steps[4].value_source.value_id);
   ASSERT_TRUE(loom_testbench_value_is_buffer(target_storage));
   ASSERT_TRUE(loom_testbench_value_is_buffer(target_tail));
   ASSERT_TRUE(loom_testbench_value_is_buffer(oracle_storage));
@@ -225,13 +228,13 @@ TEST_F(ScenarioValuesTest, MaterializesIndependentPairedAliasGraphs) {
   EXPECT_TRUE(oracle_storage->buffer_reference.is_traceable);
   EXPECT_TRUE(oracle_tail->buffer_reference.is_traceable);
   EXPECT_EQ(target_storage->buffer_reference.allocation_value_id,
-            trial.value_sources[3].value_id);
+            trial.recipe_steps[3].value_source.value_id);
   EXPECT_EQ(oracle_storage->buffer_reference.allocation_value_id,
-            trial.value_sources[3].value_id);
+            trial.recipe_steps[3].value_source.value_id);
   EXPECT_EQ(target_tail->buffer_reference.allocation_value_id,
-            trial.value_sources[3].value_id);
+            trial.recipe_steps[3].value_source.value_id);
   EXPECT_EQ(oracle_tail->buffer_reference.allocation_value_id,
-            trial.value_sources[3].value_id);
+            trial.recipe_steps[3].value_source.value_id);
   EXPECT_EQ(target_storage->buffer_reference.byte_offset, 0u);
   EXPECT_EQ(oracle_storage->buffer_reference.byte_offset, 0u);
   EXPECT_EQ(target_tail->buffer_reference.byte_offset, 8u);
@@ -282,16 +285,20 @@ TEST_F(ScenarioValuesTest, MaterializesIndependentPairedAliasGraphs) {
   EXPECT_EQ(report.failures[0].expectation, &action.expectations[1]);
 
   IREE_ASSERT_OK(loom_testbench_scenario_trial_values_materialize(
-      &options, &configuration, /*trial_ordinal=*/0, &values));
+      &options, /*generator_executor=*/nullptr, &configuration,
+      /*trial_ordinal=*/0, &values));
   int64_t other_seed = 0;
   IREE_ASSERT_OK(loom_testbench_value_as_i64(
-      Lookup(&values.target, trial.value_sources[1].value_id), &other_seed));
+      Lookup(&values.target, trial.recipe_steps[1].value_source.value_id),
+      &other_seed));
   EXPECT_NE(other_seed, target_seed);
   IREE_ASSERT_OK(loom_testbench_scenario_trial_values_materialize(
-      &options, &configuration, /*trial_ordinal=*/2, &values));
+      &options, /*generator_executor=*/nullptr, &configuration,
+      /*trial_ordinal=*/2, &values));
   int64_t repeated_seed = 0;
   IREE_ASSERT_OK(loom_testbench_value_as_i64(
-      Lookup(&values.target, trial.value_sources[1].value_id), &repeated_seed));
+      Lookup(&values.target, trial.recipe_steps[1].value_source.value_id),
+      &repeated_seed));
   EXPECT_EQ(repeated_seed, target_seed);
 
   loom_testbench_expectation_report_deinitialize(&report);
@@ -324,9 +331,11 @@ TEST_F(ScenarioValuesTest, InvokeMaterializesOnlyTargetValues) {
                                 LOOM_TESTBENCH_SCENARIO_VALUE_FLAG_HAS_ORACLE));
   EXPECT_EQ(values.oracle.slot_count, 0u);
   IREE_ASSERT_OK(loom_testbench_scenario_trial_values_materialize(
-      &options, &configuration, /*trial_ordinal=*/1, &values));
+      &options, /*generator_executor=*/nullptr, &configuration,
+      /*trial_ordinal=*/1, &values));
   EXPECT_TRUE(loom_testbench_value_table_contains(
-      &values.target, values.trial_plan->value_sources[0].value_id));
+      &values.target,
+      values.trial_plan->recipe_steps[0].value_source.value_id));
   EXPECT_EQ(values.oracle.slot_count, 0u);
 
   loom_testbench_scenario_trial_values_deinitialize(&values);

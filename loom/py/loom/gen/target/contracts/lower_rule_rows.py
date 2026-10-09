@@ -587,6 +587,7 @@ def guard_row(
         GuardKind.ENUM_ATTR_EQUALS,
         GuardKind.ENUM_ATTR_IN,
         GuardKind.I64_RANGE,
+        GuardKind.I64_ATTRS_SUM_EQUALS,
         GuardKind.OPERAND_SEGMENT_COUNT,
         GuardKind.I64_ARRAY_COUNT,
         GuardKind.I64_ARRAY_ELEMENT_RANGE,
@@ -611,6 +612,13 @@ def guard_row(
             fields,
             "selector.attribute.element_index",
             row.u64,
+            always=True,
+        )
+    elif row.kind == GuardKind.I64_ATTRS_SUM_EQUALS:
+        _append_field(
+            fields,
+            "selector.attribute.other_attr_index",
+            row.other_attr_index,
             always=True,
         )
     elif row.kind == GuardKind.VALUE_STORAGE_OPERAND_SCHEMA:
@@ -681,6 +689,8 @@ def guard_payload_row(row: LowerGuard) -> list[str]:
         return [f".u64 = {u64_payload}"]
     if row.kind == GuardKind.VALUE_EXACT_POWER_OF_TWO_I64:
         return [f".addend = {_c_i64_literal(row.addend)}"]
+    if row.kind == GuardKind.I64_ATTRS_SUM_EQUALS:
+        return [f".i64 = {_c_i64_literal(row.literal_i64)}"]
     if row.kind in (
         GuardKind.I64_RANGE,
         GuardKind.I64_ARRAY_ELEMENT_RANGE,

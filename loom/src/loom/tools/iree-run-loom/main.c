@@ -15,6 +15,7 @@
 #include "iree/base/tooling/flags.h"
 #include "iree/tooling/device_util.h"
 #include "iree/tooling/value_io.h"
+#include "loom/config/text_binding.h"
 #include "loom/sanitizer/options.h"
 #include "loom/tooling/cli/help.h"
 #include "loom/tooling/cli/loomc_options.h"
@@ -278,15 +279,15 @@ static iree_status_t iree_run_loom_parse_sanitizer_options(
 }
 
 static iree_status_t iree_run_loom_append_config_options(
-    loom_tooling_config_set_t* config_set, iree_allocator_t allocator) {
+    loom_config_text_binding_set_t* config_set, iree_allocator_t allocator) {
   const iree_flag_string_list_t files = FLAG_config_file_list();
   for (iree_host_size_t i = 0; i < files.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_json_file(
+    IREE_RETURN_IF_ERROR(loom_tooling_config_text_binding_set_append_json_file(
         config_set, files.values[i], allocator));
   }
   const iree_flag_string_list_t assignments = FLAG_config_list();
   for (iree_host_size_t i = 0; i < assignments.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_assignment(
+    IREE_RETURN_IF_ERROR(loom_tooling_config_text_binding_set_append_assignment(
         config_set, assignments.values[i]));
   }
   return iree_ok_status();
@@ -600,8 +601,8 @@ int iree_run_loom_main(int argc, char** argv,
 
   iree_arena_block_pool_t block_pool;
   iree_arena_block_pool_initialize(32 * 1024, allocator, &block_pool);
-  loom_tooling_config_set_t config_set;
-  loom_tooling_config_set_initialize(allocator, &config_set);
+  loom_config_text_binding_set_t config_set;
+  loom_config_text_binding_set_initialize(allocator, &config_set);
   loomc_config_binding_t* config_bindings = NULL;
   loomc_config_options_t config_options = {0};
   char* root_storage = NULL;
@@ -997,7 +998,7 @@ int iree_run_loom_main(int argc, char** argv,
   iree_allocator_free(allocator, export_storage);
   iree_allocator_free(allocator, root_storage);
   iree_allocator_free(allocator, config_bindings);
-  loom_tooling_config_set_deinitialize(&config_set);
+  loom_config_text_binding_set_deinitialize(&config_set);
   iree_arena_block_pool_deinitialize(&block_pool);
 
   IREE_TRACE_ZONE_END(z0);

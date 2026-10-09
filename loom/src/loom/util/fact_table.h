@@ -4,18 +4,20 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-// Per-value fact table: dense array of loom_value_facts_t keyed by
+// Per-value fact table: dense range of loom_value_facts_t keyed by
 // loom_value_id_t. Arena-allocated. A zero-initialized table is valid (empty).
 //
 // Lookup always succeeds: returns unknown facts for undefined entries
 // or out-of-range value IDs. Undefined entries are detected by
-// known_divisor == 0 (valid facts always have known_divisor >= 1),
-// allowing O(1) initialization via memset(0).
+// known_divisor == 0 (valid facts always have known_divisor >= 1), so newly
+// allocated slots need only zero initialization.
 //
-// Define stores facts for a value ID, growing the dense value-entry array as
-// needed. Compute runs a forward pass over an explicit region tree, calling
-// each op's fact inference function to seed initial facts from constants and op
-// semantics.
+// Define stores facts for a value ID, growing the dense value-entry range as
+// needed. Lazy tables start at their first definition instead of allocating an
+// empty prefix for unrelated module values. Explicit capacity reservations
+// cover the zero-based domain. Compute runs a forward pass over a region tree,
+// calling each op's fact inference function to seed initial facts from
+// constants and op semantics.
 //
 // The table is a reusable component: borrowed by the rewriter for
 // canonicalization, owned by pass-scoped storage, and usable standalone for IPO
@@ -141,6 +143,19 @@ struct loom_fact_context_t {
   // domains access family-owned data through their checked fact cast.
   const loom_target_facts_t* target_facts;
 
+  // Resolves an authored region target through its owner's symbol-fact cache.
+  // The returned immutable facts outlive this populated scope. Missing target
+  // definitions or an absent resolver leave an explicitly targeted region
+  // unbound. Region seeding projects the selected environment to its worker.
+  struct {
+    // Owner of the symbol-fact projection cache.
+    void* user_data;
+    // Projects a verified target reference; only allocation may fail.
+    iree_status_t (*fn)(void* user_data, const loom_module_t* module,
+                        loom_symbol_ref_t target,
+                        const loom_target_facts_t** out_facts);
+  } resolve_region_target;
+
   // Optional type-domain resolver installed by layers that own registered type
   // descriptors. The fact table itself intentionally does not depend on the
   // generated type registry; callers that can map |type| to a descriptor can
@@ -165,13 +180,17 @@ struct loom_value_fact_table_t {
   // Arena for scope-local extension payloads and inference scratch buffers.
   iree_arena_allocator_t* transient_arena;
 
-  // Dense fact entries indexed by value ID.
+  // Dense fact entries indexed by value ID minus first_value_id.
   loom_value_facts_t* entries;
+  // First value ID covered by entries, aligned to a touched-membership word.
+  // Lazy scopes omit the empty prefix preceding their first definition.
+  loom_value_id_t first_value_id;
   // Highest defined value ID plus one.
   iree_host_size_t count;
   // Allocated entry count.
   iree_host_size_t capacity;
-  // Scope membership bits, retained while a cyclic solve undefines entries.
+  // Scope membership bits indexed relative to first_value_id, retained while
+  // a cyclic solve undefines entries.
   uint64_t* touched_bits;
   // Value IDs touched in the scope, including temporarily undefined entries.
   loom_value_id_t* touched_values;
@@ -181,6 +200,17 @@ struct loom_value_fact_table_t {
   iree_host_size_t touched_capacity;
   // Context object passed to op-specific fact inference callbacks.
   loom_fact_context_t context;
+
+  // Immutable scope inputs supplied by a surrounding analysis. Opaque result
+  // definitions consult these instead of discarding call-boundary summaries.
+  struct {
+    // Borrowed source whose selected facts outlive this populated scope.
+    const loom_value_fact_table_t* table;
+    // Transient bitmap selecting source entries by module-local value ID.
+    uint64_t* selected_bits;
+    // Number of allocated words in selected_bits.
+    iree_host_size_t word_count;
+  } seeds;
 
   // Facts derived under path conditions require whole-scope invalidation after
   // edits. The incremental rewriter cannot maintain their guard dependencies.
@@ -215,8 +245,9 @@ struct loom_value_fact_table_t {
     iree_host_size_t count;
     // Number of published CFG snapshots, used to skip CFG-only rewrite work.
     iree_host_size_t cfg_count;
-    // Intrusive list of all entries for bucket-table rehashing.
-    loom_value_fact_region_entry_t* entries;
+    // True after encountering an independent execution target. Ordinary
+    // function inference bypasses per-operation region target lookup.
+    bool has_independent_targets;
   } regions;
 
   // Interned fact extension payloads. Extension IDs stored in
@@ -389,8 +420,8 @@ iree_status_t loom_value_fact_table_initialize_with_arenas(
     loom_value_fact_table_t* table, iree_arena_allocator_t* arena,
     iree_arena_allocator_t* transient_arena, iree_host_size_t initial_capacity);
 
-// Reserves at least |minimum_capacity| value entries, preserving defined facts
-// and touched membership. An existing capacity doubles until it covers the
+// Reserves entries for [0, |minimum_capacity|), preserving defined facts and
+// touched membership. An existing capacity doubles until it covers the
 // minimum, but only the final array is allocated. This retains growth headroom
 // without leaving intermediate arrays in the arena during batch population.
 // An empty table starts at the requested minimum. Does not populate entries.
@@ -406,8 +437,9 @@ void loom_value_fact_table_clear_scope(loom_value_fact_table_t* table);
 // Returns true when |value_id| has explicitly defined facts in |table|.
 static inline bool loom_value_fact_table_has_entry(
     const loom_value_fact_table_t* table, loom_value_id_t value_id) {
-  return value_id < table->capacity &&
-         table->entries[value_id].known_divisor != 0;
+  const iree_host_size_t index =
+      (iree_host_size_t)value_id - table->first_value_id;
+  return index < table->capacity && table->entries[index].known_divisor != 0;
 }
 
 // Looks up defined facts for a value in O(1). Returns false for undefined or
@@ -418,7 +450,7 @@ static inline bool loom_value_fact_table_try_lookup(
   if (!loom_value_fact_table_has_entry(table, value_id)) {
     return false;
   }
-  *out_facts = table->entries[value_id];
+  *out_facts = table->entries[value_id - table->first_value_id];
   return true;
 }
 
@@ -429,7 +461,7 @@ static inline loom_value_facts_t loom_value_fact_table_lookup(
   if (!loom_value_fact_table_has_entry(table, value_id)) {
     return loom_value_facts_unknown();
   }
-  return table->entries[value_id];
+  return table->entries[value_id - table->first_value_id];
 }
 
 // Returns a shaped type's maximum element count from its static dimensions and
@@ -472,6 +504,26 @@ loom_value_facts_t loom_value_fact_table_block_temporal_scope(
 // Consumes retained enclosing repetition and the block's own CFG component.
 // Missing context cannot prove single execution and returns true.
 bool loom_value_fact_table_block_may_repeat(
+    const loom_value_fact_table_t* table, const loom_block_t* block);
+
+// Publishes the root context before a region solve. The caller supplies the
+// enclosing target through context.target_facts; an independent target on
+// |parent_op|'s region descriptor takes precedence.
+iree_status_t loom_value_fact_table_seed_root_target_scope(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    const loom_region_t* region, const loom_op_t* parent_op);
+
+// Resolves direct child region targets once at their owning operation. Ordinary
+// structured regions inherit the operation's retained context; independently
+// executing regions use an explicit target or inherit the enclosing target
+// when their target attribute is absent, then project to its worker contract.
+iree_status_t loom_value_fact_table_seed_nested_target_scopes(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    const loom_op_t* op);
+
+// Returns the retained execution target of |block|. This lookup never walks
+// ancestors. Unregistered blocks in a mixed-target solve have no target facts.
+const loom_target_facts_t* loom_value_fact_table_block_target_facts(
     const loom_value_fact_table_t* table, const loom_block_t* block);
 
 // Publishes condition facts and their SSA mapping onto |region| arguments. The
@@ -688,6 +740,17 @@ iree_status_t loom_value_fact_table_clone_values(
     loom_value_fact_table_t* target, loom_value_fact_table_view_t source,
     const loom_module_t* module);
 
+// Imports selected inputs and retains their immutable source for opaque result
+// inference. Unlike an ordinary clone, this preserves external call summaries
+// when their local definition has no inference function, including recomputes
+// after cyclic solves undefine entries. The source and selected facts remain
+// valid and unchanged until target's scope is cleared. A caller that changes
+// the meaning of a seeded value must clear and rebuild the scope. Ordinary
+// semantic-preserving rewrites and type refinement retain the input contract.
+iree_status_t loom_value_fact_table_seed_values(
+    loom_value_fact_table_t* target, loom_value_fact_table_view_t source,
+    const loom_module_t* module);
+
 // Propagates SSA identities and retained materialization and contextual origins
 // through declared value-alias and fact-identity operations. Numeric facts are
 // computed separately. Identity changes set |inout_changed| when non-NULL
@@ -712,7 +775,8 @@ iree_status_t loom_value_fact_table_compute_op_and_report(
     const loom_op_t* op, bool* out_changed);
 
 // Computes nested regions using the already established function context.
-// Structured summaries own calls for their regions, including iterative solves.
+// Acyclic lexical descent retains continuations in transient storage. LoopLike
+// and CFG summaries own the iterative solves for their regions.
 iree_status_t loom_value_fact_table_compute_region_tree(
     loom_value_fact_table_t* table, const loom_module_t* module,
     loom_region_t* region, loom_op_t* parent_op);

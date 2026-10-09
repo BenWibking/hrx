@@ -122,7 +122,7 @@ TEST_F(MaterializeTest, ClonesOwnedDeclarationArguments) {
   IREE_ASSERT_OK(loom_module_add_symbol(target_, target_name, &target_symbol));
   const loom_type_t argument_types[] = {
       loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
-      loom_type_pool(loom_dim_pack_static(4)),
+      loom_type_group_1d(loom_dim_pack_static(4)),
   };
   loom_op_t* source_declaration = nullptr;
   IREE_ASSERT_OK(loom_test_decl_build(
@@ -134,7 +134,7 @@ TEST_F(MaterializeTest, ClonesOwnedDeclarationArguments) {
       loom_test_decl_args(source_declaration);
   IREE_ASSERT_OK(loom_module_set_value_type(
       source_, source_arguments.values[1],
-      loom_type_pool(loom_dim_pack_dynamic(source_arguments.values[0]))));
+      loom_type_group_1d(loom_dim_pack_dynamic(source_arguments.values[0]))));
 
   loom_op_t* target_constant = nullptr;
   IREE_ASSERT_OK(loom_test_constant_build(
@@ -167,7 +167,7 @@ TEST_F(MaterializeTest, ClonesOwnedDeclarationArguments) {
   }
   EXPECT_TRUE(loom_type_equal(
       loom_module_value_type(target_, target_arguments.values[1]),
-      loom_type_pool(loom_dim_pack_dynamic(target_arguments.values[0]))));
+      loom_type_group_1d(loom_dim_pack_dynamic(target_arguments.values[0]))));
   IREE_ASSERT_OK(loom_op_erase(target_, target_declaration));
   EXPECT_FALSE(loom_module_has_active_type_uses(target_));
   EXPECT_TRUE(loom_module_has_active_type_uses(source_));
@@ -229,7 +229,8 @@ TEST_F(MaterializeTest, ClonesSharedArgumentTypesWithTargetOwnedPayloads) {
   loom_value_id_t dimension;
   IREE_ASSERT_OK(loom_module_define_value(source_, index, &dimension));
   IREE_ASSERT_OK(loom_block_add_arg(source_, source_block, dimension));
-  loom_type_t type = loom_type_pool(loom_dim_pack_dynamic(dimension));
+  loom_type_t type = loom_type_shaped_1d(LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32,
+                                         loom_dim_pack_dynamic(dimension), 0);
   constexpr int kDepth = 64;
   for (int i = 0; i < kDepth; ++i) {
     IREE_ASSERT_OK(

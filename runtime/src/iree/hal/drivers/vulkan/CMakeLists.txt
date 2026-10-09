@@ -145,6 +145,7 @@ iree_cc_test(
   NAME
     command_buffer_test
   SRCS
+    "barrier.h"
     "command_buffer_test.cc"
   DEPS
     ::headers
@@ -152,6 +153,7 @@ iree_cc_test(
     iree::base
     iree::base::internal::arena
     iree::hal
+    iree::hal::drivers::vulkan::util::libvulkan
     iree::hal::testing::mock_device
     iree::testing::gtest
     iree::testing::gtest_main

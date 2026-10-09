@@ -172,6 +172,53 @@ def test_vector_contract_is_bound_into_the_shipping_fragment() -> None:
     )
 
 
+def test_vector_scale_uses_same_type_scalar_origins_on_either_side() -> None:
+    rules = [
+        case
+        for case in SPIRV_LOGICAL_CORE_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+        and case.descriptor.key.startswith("spirv.op_vector_times_scalar.")
+    ]
+    expected = {
+        (f"spirv.op_vector_times_scalar.v{lanes}{element}", broadcast)
+        for element in ("f16", "f32", "f64")
+        for lanes in (2, 3, 4)
+        for broadcast in ("lhs", "rhs")
+    }
+    actual = set()
+    for rule in rules:
+        assert rule.source_op is vector.vector_mulf
+        origin_guard = next(
+            guard
+            for guard in rule.guards
+            if guard.value_ref is not None
+            and guard.value_ref.kind == SourceValueKind.UNIFORM_ELEMENT_ORIGIN_OPERAND
+        )
+        broadcast = origin_guard.field
+        actual.add((rule.descriptor.key, broadcast))
+        emit = rule.emit[0]
+        assert emit.operands == {
+            "vector": ValueRef.operand("rhs" if broadcast == "lhs" else "lhs"),
+            "scalar": ValueRef.uniform_element_origin_operand(broadcast),
+        }
+        vector_guard = next(
+            guard
+            for guard in rule.guards
+            if guard.kind == GuardKind.VALUE_TYPE and guard.field == "result"
+        )
+        assert origin_guard.type_pattern == TypePattern.scalar(
+            vector_guard.type_pattern.element
+        )
+        availability = [
+            guard
+            for guard in rule.guards
+            if guard.kind == GuardKind.DESCRIPTOR_AVAILABLE
+        ]
+        assert bool(availability) == bool(rule.descriptor.feature_mask_words)
+    assert actual == expected
+    assert len(rules) == len(expected)
+
+
 def test_synthesized_results_preserve_exact_source_types() -> None:
     actual_types: Counter[tuple[str, str, TypePattern]] = Counter()
     for contract_case in SPIRV_ORDINARY_VECTOR_CONTRACT_CASES:
@@ -247,6 +294,7 @@ def test_shipping_float_arithmetic_covers_widths_lanes_and_capabilities() -> Non
         case
         for case in SPIRV_LOGICAL_CORE_CONTRACT_FRAGMENT.cases
         if case.source_op.name in operations
+        and not case.descriptor.key.startswith("spirv.op_vector_times_scalar.")
     ]
     actual = set()
     for rule in rules:

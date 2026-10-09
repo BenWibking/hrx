@@ -47,6 +47,7 @@ loom_cc_library(
     deps = [
         ":entropy",
         "//loom/src/loom/tooling/testbench",
+        "//loom/src/loom/tooling/testbench:invocation",
         "//loom/src/loom/tooling/testbench:value_materializer",
         "//runtime/src/iree/base",
     ],

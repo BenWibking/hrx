@@ -54,7 +54,7 @@ class SpirvArtifactExecutionTest : public CtsTestBase<> {
     IREE_ASSERT_OK(iree_hal_queue_dispatch(
         dispatch_queue_, iree_hal_semaphore_list_empty(), completion,
         executable_, function, iree_hal_make_static_dispatch_config(1, 1, 1),
-        constants, bindings, IREE_HAL_DISPATCH_FLAG_NONE));
+        constants, bindings, /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
     IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
         completion, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
   }
@@ -127,14 +127,14 @@ TEST_P(SpirvArtifactExecutionTest, DispatchesDistinctEntrySignatures) {
             dispatch_queue_, iree_hal_semaphore_list_empty(),
             iree_hal_semaphore_list_empty(), executable_, function,
             iree_hal_make_static_dispatch_config(1, 1, 1), wrong_constants,
-            correct_bindings, IREE_HAL_DISPATCH_FLAG_NONE));
+            correct_bindings, /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
     IREE_EXPECT_STATUS_IS(
         StatusCode::kInvalidArgument,
         iree_hal_queue_dispatch(
             dispatch_queue_, iree_hal_semaphore_list_empty(),
             iree_hal_semaphore_list_empty(), executable_, function,
             iree_hal_make_static_dispatch_config(1, 1, 1), correct_constants,
-            wrong_bindings, IREE_HAL_DISPATCH_FLAG_NONE));
+            wrong_bindings, /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   }
 }
 

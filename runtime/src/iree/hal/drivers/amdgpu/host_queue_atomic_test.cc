@@ -292,7 +292,8 @@ TEST_F(HostQueueAtomicTest,
                                                  /*.value=*/10,
                                                  /*.flags=*/atomic_flags,
                                                  /*.width=*/width,
-                                             });
+                                             },
+                                             /*barriers=*/NULL);
         }));
     IREE_RETURN_IF_ERROR(
         signal_and_wait([&](iree_hal_semaphore_list_t signal_list) {
@@ -304,7 +305,8 @@ TEST_F(HostQueueAtomicTest,
                   /*.flags=*/atomic_flags,
                   /*.width=*/width,
                   /*.operation=*/IREE_HAL_ATOMIC_RMW_OPERATION_ADD,
-              });
+              },
+              /*barriers=*/NULL);
         }));
 
     const iree_hal_atomic_wait_condition_t wait_conditions[] = {
@@ -325,7 +327,8 @@ TEST_F(HostQueueAtomicTest,
                     /*.flags=*/atomic_flags,
                     /*.width=*/width,
                     /*.condition=*/wait_conditions[i],
-                });
+                },
+                /*barriers=*/NULL);
           }));
     }
 
@@ -347,7 +350,8 @@ TEST_F(HostQueueAtomicTest,
                     /*.flags=*/atomic_flags,
                     /*.width=*/width,
                     /*.operation=*/rmw_operations[i],
-                });
+                },
+                /*barriers=*/NULL);
           }));
     }
     return iree_ok_status();
@@ -400,7 +404,8 @@ TEST_F(HostQueueAtomicTest, HostWaitForEarlierValueIgnoresLaterProducerEpoch) {
               IREE_HAL_ATOMIC_FLAG_SYSTEM_SCOPE,
           /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
           /*.condition=*/IREE_HAL_ATOMIC_WAIT_CONDITION_EQUAL,
-      }));
+      },
+      /*barriers=*/NULL));
 
   uint64_t second_value = 2;
   const iree_hal_semaphore_list_t second_signal_list = {
@@ -418,7 +423,8 @@ TEST_F(HostQueueAtomicTest, HostWaitForEarlierValueIgnoresLaterProducerEpoch) {
               IREE_HAL_ATOMIC_FLAG_SYSTEM_SCOPE,
           /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
           /*.condition=*/IREE_HAL_ATOMIC_WAIT_CONDITION_EQUAL,
-      }));
+      },
+      /*barriers=*/NULL));
 
   wait_values[0].store(1, std::memory_order_release);
   IREE_ASSERT_OK(iree_hal_semaphore_wait(timeline, first_value,
@@ -460,6 +466,16 @@ TEST_F(HostQueueAtomicTest, DirectWaitBeforeStoreOnIndependentQueue) {
       sizeof(storage),
       /*minimum_alignment=*/64, release_latch.callback(), buffer.out()));
 
+  const iree_hal_barrier_list_t empty = {};
+  iree_hal_barrier_t acquire = {};
+  acquire.flags = IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE;
+  const iree_hal_barrier_list_t acquire_list = {1, &acquire};
+  const iree_hal_queue_barriers_t wait_barriers = {&empty, &acquire_list};
+  iree_hal_barrier_t release = {};
+  release.flags = IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
+  const iree_hal_barrier_list_t release_list = {1, &release};
+  const iree_hal_queue_barriers_t store_barriers = {&release_list, &empty};
+
   Ref<iree_hal_semaphore_t> wait_completion;
   IREE_ASSERT_OK(
       CreateSemaphore(test_device.base_device(), wait_completion.out()));
@@ -476,11 +492,11 @@ TEST_F(HostQueueAtomicTest, DirectWaitBeforeStoreOnIndependentQueue) {
       (iree_hal_atomic_wait_params_t){
           /*.value=*/1,
           /*.mask=*/UINT32_MAX,
-          /*.flags=*/IREE_HAL_ATOMIC_FLAG_ACQUIRE |
-              IREE_HAL_ATOMIC_FLAG_SYSTEM_SCOPE,
+          /*.flags=*/IREE_HAL_ATOMIC_FLAG_SYSTEM_SCOPE,
           /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
           /*.condition=*/IREE_HAL_ATOMIC_WAIT_CONDITION_EQUAL,
-      }));
+      },
+      &wait_barriers));
 
   Ref<iree_hal_semaphore_t> store_completion;
   IREE_ASSERT_OK(
@@ -497,10 +513,10 @@ TEST_F(HostQueueAtomicTest, DirectWaitBeforeStoreOnIndependentQueue) {
       /*target_offset=*/0,
       (iree_hal_atomic_store_params_t){
           /*.value=*/1,
-          /*.flags=*/IREE_HAL_ATOMIC_FLAG_RELEASE |
-              IREE_HAL_ATOMIC_FLAG_SYSTEM_SCOPE,
+          /*.flags=*/IREE_HAL_ATOMIC_FLAG_SYSTEM_SCOPE,
           /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
-      }));
+      },
+      &store_barriers));
   buffer.reset();
 
   IREE_ASSERT_OK(iree_hal_semaphore_wait(wait_completion, wait_completion_value,
@@ -567,7 +583,8 @@ TEST_F(HostQueueAtomicTest, DeferredDirectOperationsRetainTarget) {
           /*.flags=*/atomic_flags,
           /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
           /*.condition=*/IREE_HAL_ATOMIC_WAIT_CONDITION_EQUAL,
-      }));
+      },
+      /*barriers=*/NULL));
   const iree_hal_semaphore_list_t store_signal_list = {
       /*.count=*/1,
       /*.semaphores=*/&completion_semaphores[1],
@@ -580,7 +597,8 @@ TEST_F(HostQueueAtomicTest, DeferredDirectOperationsRetainTarget) {
           /*.value=*/7,
           /*.flags=*/atomic_flags,
           /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
-      }));
+      },
+      /*barriers=*/NULL));
   const iree_hal_semaphore_list_t rmw_signal_list = {
       /*.count=*/1,
       /*.semaphores=*/&completion_semaphores[2],
@@ -594,7 +612,8 @@ TEST_F(HostQueueAtomicTest, DeferredDirectOperationsRetainTarget) {
           /*.flags=*/atomic_flags,
           /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
           /*.operation=*/IREE_HAL_ATOMIC_RMW_OPERATION_ADD,
-      }));
+      },
+      /*barriers=*/NULL));
 
   buffer.reset();
   EXPECT_EQ(release_latch.remaining(), 1);
@@ -663,7 +682,8 @@ TEST_F(HostQueueAtomicTest, DeferredDirectMisalignmentFailsAndQueueRecovers) {
           /*.flags=*/IREE_HAL_ATOMIC_FLAG_RELEASE |
               IREE_HAL_ATOMIC_FLAG_SYSTEM_SCOPE,
           /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
-      }));
+      },
+      /*barriers=*/NULL));
   misaligned_buffer.reset();
   EXPECT_EQ(misaligned_release_latch.remaining(), 1);
   IREE_ASSERT_OK(
@@ -703,7 +723,8 @@ TEST_F(HostQueueAtomicTest, DeferredDirectMisalignmentFailsAndQueueRecovers) {
           /*.flags=*/IREE_HAL_ATOMIC_FLAG_RELEASE |
               IREE_HAL_ATOMIC_FLAG_SYSTEM_SCOPE,
           /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
-      }));
+      },
+      /*barriers=*/NULL));
   IREE_ASSERT_OK(iree_hal_semaphore_wait(
       valid_completion, valid_completion_value, iree_infinite_timeout(),
       IREE_ASYNC_WAIT_FLAG_NONE));

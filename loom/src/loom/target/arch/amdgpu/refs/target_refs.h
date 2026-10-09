@@ -54,6 +54,9 @@ typedef enum loom_amdgpu_descriptor_trait_bit_e {
   LOOM_AMDGPU_DESCRIPTOR_TRAIT_PERMLANE = 1u << 13,
   // Descriptor writes architectural EXEC state.
   LOOM_AMDGPU_DESCRIPTOR_TRAIT_WRITES_EXEC = 1u << 14,
+  // Packed F32 arithmetic spells input register pairs even when both result
+  // lanes select the first dword. Physical read footprints remain independent.
+  LOOM_AMDGPU_DESCRIPTOR_TRAIT_PACKED_F32 = 1u << 15,
 } loom_amdgpu_descriptor_trait_bit_t;
 typedef uint32_t loom_amdgpu_descriptor_traits_t;
 

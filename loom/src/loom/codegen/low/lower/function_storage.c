@@ -38,6 +38,9 @@ iree_status_t loom_low_lower_function_storage_select(
     const loom_low_lower_function_storage_plan_t** out_plan) {
   *out_selected = false;
   *out_plan = NULL;
+  if (loom_buffer_alloca_pool(source_op) != LOOM_VALUE_ID_INVALID) {
+    return iree_ok_status();
+  }
   const loom_low_lower_function_storage_config_t* config =
       &context->policy->function_storage;
   const loom_value_fact_memory_space_t memory_space =

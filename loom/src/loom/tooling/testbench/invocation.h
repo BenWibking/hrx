@@ -4,7 +4,7 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-// Prepared invocation execution for check testbench cases.
+// Prepared invocation execution for check testbench programs.
 //
 // This layer resolves target/oracle providers once per planned case and then
 // executes the resulting direct callbacks against materialized values. It stays
@@ -73,15 +73,13 @@ typedef struct loom_testbench_invocation_provider_t {
   void* user_data;
 } loom_testbench_invocation_provider_t;
 
-// Cases selected by the runner for this execution, in runner-owned order.
-// Providers prepare only entries without planning issues; the runner reports
-// those issues instead of invoking the affected case.
-typedef struct loom_testbench_case_plan_list_t {
-  // Borrowed case plans. Multiple benchmarks may name the same case.
-  const loom_testbench_case_plan_t* const* values;
-  // Number of selected case plans.
+// Function invocations selected by the runner for one compiled provider.
+typedef struct loom_testbench_invocation_plan_list_t {
+  // Borrowed invocation plans in runner-owned order.
+  const loom_testbench_invocation_plan_t* const* values;
+  // Number of selected invocation plans.
   iree_host_size_t count;
-} loom_testbench_case_plan_list_t;
+} loom_testbench_invocation_plan_list_t;
 
 typedef struct loom_testbench_oracle_provider_t {
   // Stable provider name referenced by check.oracle.call.
@@ -133,11 +131,17 @@ void loom_testbench_invocation_options_initialize(
     loom_testbench_invocation_options_t* out_options);
 
 struct loom_testbench_prepared_invocation_t {
-  // Static case invocation plan.
+  // Static invocation plan.
   const loom_testbench_invocation_plan_t* plan;
   // Resolved provider for |plan|.
   loom_testbench_invocation_provider_t provider;
 };
+
+// Resolves the direct provider for one invocation plan.
+iree_status_t loom_testbench_prepare_invocation(
+    const loom_testbench_invocation_options_t* options,
+    const loom_testbench_invocation_plan_t* invocation,
+    loom_testbench_prepared_invocation_t* out_prepared);
 
 typedef struct loom_testbench_prepared_invocation_span_t {
   // First prepared invocation in this contiguous provider span.
@@ -205,6 +209,16 @@ iree_status_t loom_testbench_invocation_executor_initialize(
 // Releases all scratch storage owned by |executor|.
 void loom_testbench_invocation_executor_deinitialize(
     loom_testbench_invocation_executor_t* executor);
+
+// Clears provider issues recorded by prior invocations.
+void loom_testbench_invocation_executor_reset_issues(
+    loom_testbench_invocation_executor_t* executor);
+
+// Executes one prepared invocation against |table| using reusable scratch.
+iree_status_t loom_testbench_run_prepared_invocation(
+    loom_testbench_invocation_executor_t* executor,
+    const loom_testbench_prepared_invocation_t* prepared,
+    loom_testbench_value_table_t* table);
 
 // Executes all prepared invocations in source order against one sample.
 iree_status_t loom_testbench_run_case_invocations(

@@ -24,7 +24,8 @@ static iree_status_t loom_run_hal_testbench_staging_transfer(
   };
   iree_status_t status = iree_hal_queue_transfer(
       runtime->transfer_queue, iree_hal_semaphore_list_empty(),
-      signal_semaphore_list, staging->transfer_count, staging->transfers);
+      signal_semaphore_list, staging->transfer_count, staging->transfers,
+      /*barriers=*/NULL);
   if (iree_status_is_ok(status)) {
     status = loom_run_hal_semaphore_wait(completion, completion_value,
                                          iree_infinite_timeout(),

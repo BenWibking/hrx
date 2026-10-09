@@ -1138,9 +1138,11 @@ def _i32_bitfield_extract_rules(
     *,
     sgpr_descriptor_key: str,
     vgpr_descriptor_key: str,
+    top_aligned_vgpr_descriptor_key: str,
 ) -> tuple[DescriptorRule, ...]:
     sgpr_descriptor = _descriptor(sgpr_descriptor_key)
     vgpr_descriptor = _descriptor(vgpr_descriptor_key)
+    top_aligned_vgpr_descriptor = _descriptor(top_aligned_vgpr_descriptor_key)
     return (
         DescriptorRule(
             source_op=source_op,
@@ -1165,6 +1167,33 @@ def _i32_bitfield_extract_rules(
                             bit_width=16,
                         )
                     },
+                    form=DescriptorEmitForm.OP,
+                ),
+            ),
+        ),
+        DescriptorRule(
+            source_op=source_op,
+            descriptor=top_aligned_vgpr_descriptor,
+            guards=(
+                Guard.value_type("source", _I32),
+                Guard.value_type("result", _I32),
+                Guard.i64_attrs_sum_equals("offset", "width", 32),
+                Guard.i64_range("offset", 1, 31),
+                Guard.low_value_register_class("result", "amdgpu.vgpr"),
+                Guard.value_materializable("source", I32_VGPR_MATERIALIZER.name),
+                Guard.descriptor_available(top_aligned_vgpr_descriptor),
+            ),
+            emit=(
+                EmitDescriptorOp(
+                    descriptor=top_aligned_vgpr_descriptor,
+                    operands={
+                        "value": _materialized_operand(
+                            "source",
+                            I32_VGPR_MATERIALIZER,
+                        )
+                    },
+                    results={"dst": _RESULT},
+                    immediates={"imm32": AttrProject.direct("offset")},
                     form=DescriptorEmitForm.OP,
                 ),
             ),
@@ -1876,6 +1905,7 @@ def _rules() -> tuple[DescriptorRule, ...]:
             scalar_bitwise.scalar_bitfield_extracts,
             sgpr_descriptor_key="amdgpu.s_bfe_i32.lit",
             vgpr_descriptor_key="amdgpu.v_bfe_i32.offset_width_inline",
+            top_aligned_vgpr_descriptor_key="amdgpu.v_ashrrev_i32.src0_inline",
         )
     )
     rules.extend(
@@ -1883,6 +1913,7 @@ def _rules() -> tuple[DescriptorRule, ...]:
             scalar_bitwise.scalar_bitfield_extractu,
             sgpr_descriptor_key="amdgpu.s_bfe_u32.lit",
             vgpr_descriptor_key="amdgpu.v_bfe_u32.offset_width_inline",
+            top_aligned_vgpr_descriptor_key="amdgpu.v_lshrrev_b32.src0_inline",
         )
     )
     rules.extend(

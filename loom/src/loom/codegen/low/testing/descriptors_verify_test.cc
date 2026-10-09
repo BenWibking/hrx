@@ -71,6 +71,8 @@ struct TestTables {
   loom_low_descriptor_view_t descriptor_views[2];
   loom_low_descriptor_ref_t descriptor_refs[2];
   loom_low_asm_form_t asm_forms[2];
+  // Formatting layouts addressed independently of the sorted assembly forms.
+  loom_low_asm_layout_t asm_layouts[2];
   uint16_t asm_operand_indices[4];
   loom_low_asm_operand_segment_t asm_operand_segments[1];
   loom_low_asm_result_value_type_t asm_result_value_types[2];
@@ -248,6 +250,7 @@ void InitializeTestTables(TestTables* tables) {
   tables->set.descriptor_refs = tables->descriptor_refs;
   tables->set.descriptor_ref_count = IREE_ARRAYSIZE(tables->descriptor_refs);
   tables->set.asm_forms = tables->asm_forms;
+  tables->set.asm_layouts = tables->asm_layouts;
   tables->set.asm_operand_indices = tables->asm_operand_indices;
   tables->set.asm_operand_segments = tables->asm_operand_segments;
   tables->set.asm_result_value_types = tables->asm_result_value_types;
@@ -292,29 +295,32 @@ void AddAsmForms(TestTables* tables) {
   tables->asm_forms[0].native_assembly_mnemonic_string_ref =
       LOOM_STRING_REF_NONE;
   tables->asm_forms[0].descriptor_ordinal = 1;
-  tables->asm_forms[0].result_operand_index_start = 0;
-  tables->asm_forms[0].result_value_type_start =
+  tables->asm_forms[0].layout_index = 0;
+  tables->asm_layouts[0].result_operand_index_start = 0;
+  tables->asm_layouts[0].result_value_type_start =
       LOOM_LOW_ASM_RESULT_VALUE_TYPE_START_NONE;
-  tables->asm_forms[0].result_operand_index_count = 1;
-  tables->asm_forms[0].operand_index_start = 1;
-  tables->asm_forms[0].operand_index_count = 2;
-  tables->asm_forms[0].immediate_start = 0;
-  tables->asm_forms[0].immediate_count = 0;
+  tables->asm_layouts[0].result_operand_index_count = 1;
+  tables->asm_layouts[0].operand_index_start = 1;
+  tables->asm_layouts[0].operand_index_count = 2;
+  tables->asm_layouts[0].immediate_start = 0;
+  tables->asm_layouts[0].immediate_count = 0;
 
   tables->asm_forms[1].mnemonic_string_ref = TEST_STRING_REF(mnemonic_const);
   tables->asm_forms[1].native_assembly_mnemonic_string_ref =
       LOOM_STRING_REF_NONE;
   tables->asm_forms[1].descriptor_ordinal = 0;
-  tables->asm_forms[1].result_operand_index_start = 3;
-  tables->asm_forms[1].result_value_type_start =
+  tables->asm_forms[1].layout_index = 1;
+  tables->asm_layouts[1].result_operand_index_start = 3;
+  tables->asm_layouts[1].result_value_type_start =
       LOOM_LOW_ASM_RESULT_VALUE_TYPE_START_NONE;
-  tables->asm_forms[1].result_operand_index_count = 1;
-  tables->asm_forms[1].operand_index_start = 4;
-  tables->asm_forms[1].operand_index_count = 0;
-  tables->asm_forms[1].immediate_start = 0;
-  tables->asm_forms[1].immediate_count = 1;
+  tables->asm_layouts[1].result_operand_index_count = 1;
+  tables->asm_layouts[1].operand_index_start = 4;
+  tables->asm_layouts[1].operand_index_count = 0;
+  tables->asm_layouts[1].immediate_start = 0;
+  tables->asm_layouts[1].immediate_count = 1;
 
   tables->set.asm_form_count = IREE_ARRAYSIZE(tables->asm_forms);
+  tables->set.asm_layout_count = IREE_ARRAYSIZE(tables->asm_layouts);
   tables->set.asm_operand_index_count =
       IREE_ARRAYSIZE(tables->asm_operand_indices);
   tables->set.asm_immediate_count = IREE_ARRAYSIZE(tables->asm_immediates);
@@ -324,8 +330,8 @@ void AddAsmForms(TestTables* tables) {
 
 void AddAsmResultValueTypes(TestTables* tables) {
   AddAsmForms(tables);
-  tables->asm_forms[0].result_value_type_start = 0;
-  tables->asm_forms[1].result_value_type_start = 1;
+  tables->asm_layouts[0].result_value_type_start = 0;
+  tables->asm_layouts[1].result_value_type_start = 1;
   tables->asm_result_value_types[0].kind =
       LOOM_LOW_ASM_RESULT_VALUE_TYPE_KIND_SCALAR;
   tables->asm_result_value_types[0].element_type = LOOM_SCALAR_TYPE_I32;
@@ -1221,8 +1227,8 @@ TEST(LowDescriptorsTest, AcceptsTrailingVariadicOperandSegment) {
       LOOM_LOW_ASM_OPERAND_SEGMENT_DELIMITER_PAREN;
   tables.asm_operand_segments[0].flags =
       LOOM_LOW_ASM_OPERAND_SEGMENT_FLAG_VARIADIC;
-  tables.asm_forms[0].operand_segment_start = 0;
-  tables.asm_forms[0].operand_segment_count = 1;
+  tables.asm_layouts[0].operand_segment_start = 0;
+  tables.asm_layouts[0].operand_segment_count = 1;
   tables.set.asm_operand_segment_count = 1;
 
   IREE_EXPECT_OK(loom_low_descriptor_set_verify(&tables.set));
@@ -1797,8 +1803,10 @@ TEST(LowDescriptorsTest, AcceptsAsmFormsAndLookup) {
       loom_low_descriptor_set_asm_form_at(&tables.set, asm_form_ordinal);
   ASSERT_NE(asm_form, nullptr);
   EXPECT_EQ(asm_form->descriptor_ordinal, 1u);
-  EXPECT_EQ(asm_form->result_operand_index_count, 1u);
-  EXPECT_EQ(asm_form->operand_index_count, 2u);
+  const loom_low_asm_layout_t* layout =
+      &tables.set.asm_layouts[asm_form->layout_index];
+  EXPECT_EQ(layout->result_operand_index_count, 1u);
+  EXPECT_EQ(layout->operand_index_count, 2u);
 
   asm_form_ordinal =
       loom_low_descriptor_set_lookup_canonical_asm_form(&tables.set, 1);
@@ -1820,11 +1828,21 @@ TEST(LowDescriptorsTest, AcceptsAsmResultValueTypes) {
   IREE_ASSERT_OK(loom_low_descriptor_set_verify(&tables.set));
 }
 
+TEST(LowDescriptorsTest, RejectsAsmLayoutIndexOutOfRange) {
+  TestTables tables;
+  InitializeTestTables(&tables);
+  AddAsmForms(&tables);
+  tables.asm_forms[0].layout_index = tables.set.asm_layout_count;
+
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_OUT_OF_RANGE,
+                        loom_low_descriptor_set_verify(&tables.set));
+}
+
 TEST(LowDescriptorsTest, RejectsAsmResultValueTypeSpanOutOfRange) {
   TestTables tables;
   InitializeTestTables(&tables);
   AddAsmResultValueTypes(&tables);
-  tables.asm_forms[1].result_value_type_start = 2;
+  tables.asm_layouts[1].result_value_type_start = 2;
 
   IREE_EXPECT_STATUS_IS(IREE_STATUS_OUT_OF_RANGE,
                         loom_low_descriptor_set_verify(&tables.set));
@@ -1894,8 +1912,8 @@ TEST(LowDescriptorsTest, RejectsConstAsmFormWithOperands) {
   TestTables tables;
   InitializeTestTables(&tables);
   AddAsmForms(&tables);
-  tables.asm_forms[1].operand_index_start = 1;
-  tables.asm_forms[1].operand_index_count = 1;
+  tables.asm_layouts[1].operand_index_start = 1;
+  tables.asm_layouts[1].operand_index_count = 1;
 
   IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                         loom_low_descriptor_set_verify(&tables.set));

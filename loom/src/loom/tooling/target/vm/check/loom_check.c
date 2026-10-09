@@ -88,7 +88,8 @@ static iree_status_t loom_vm_check_emit(
   };
   loomc_source_t* artifact_source = NULL;
   iree_status_t status =
-      loom_check_compile_artifact(request, &compile_options, &artifact_source);
+      loom_check_compile_artifact(request, &compile_options, &artifact_source,
+                                  /*out_report_source=*/NULL);
   const loomc_byte_span_t source_contents =
       loomc_source_contents(artifact_source);
   const iree_const_byte_span_t contents = iree_make_const_byte_span(

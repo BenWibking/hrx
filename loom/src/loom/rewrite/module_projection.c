@@ -153,7 +153,6 @@ iree_status_t loom_ir_module_clone(
           : loom_string_table_get(&source_module->strings,
                                   source_module->name_id);
   const loom_module_size_hints_t hints = {
-      .value_count = 0,
       .string_count = target_string_capacity,
       .type_count = source_module->types.count,
       .encoding_count = source_module->encodings.count,

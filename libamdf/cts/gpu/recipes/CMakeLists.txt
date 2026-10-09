@@ -36,6 +36,7 @@ iree_cc_library(
     "copy_dispatch_test.cc"
     "device_sdma_test.cc"
     "memory_pair_test.cc"
+    "pm4_sdma_finite_test.cc"
     "pm4_sdma_streaming_test.cc"
     "pm4_sdma_test.cc"
   DEPS
@@ -46,7 +47,10 @@ iree_cc_library(
     libamdf::cts::gpu::kernels::device_sdma
     libamdf::cts::gpu::kernels::device_sdma_batched
     libamdf::cts::gpu::kernels::device_sdma_batched_kernels
+    libamdf::cts::gpu::kernels::device_sdma_consumer_kernels
     libamdf::cts::gpu::kernels::device_sdma_kernels
+    libamdf::cts::gpu::kernels::device_sdma_staged
+    libamdf::cts::gpu::kernels::device_sdma_transfer_kernels
     libamdf::cts::gpu::kernels::transform
     libamdf::cts::gpu::kernels::transform_kernels
     libamdf::cts::gpu::pm4::command_fixture

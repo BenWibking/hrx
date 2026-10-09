@@ -27,8 +27,8 @@ iree_hal_replay_file_range_t iree_hal_replay_dump_record_payload_range(
     iree_host_size_t record_offset) {
   iree_hal_replay_file_range_t range = iree_hal_replay_file_range_empty();
   range.offset = (uint64_t)record_offset + record->header.header_length;
-  range.length = record->header.payload_length;
-  range.uncompressed_length = record->header.payload_length;
+  range.length = record->payload.data_length;
+  range.uncompressed_length = record->payload.data_length;
   range.compression_type = IREE_HAL_REPLAY_COMPRESSION_TYPE_NONE;
   range.digest_type = IREE_HAL_REPLAY_DIGEST_TYPE_NONE;
   return range;
@@ -486,6 +486,7 @@ iree_status_t iree_hal_replay_dump_execution_barrier_layout(
     iree_host_size_t* out_buffer_barriers_size) {
   iree_host_size_t memory_barriers_size = 0;
   iree_host_size_t buffer_barriers_size = 0;
+  iree_host_size_t fixed_buffer_barriers_size = 0;
   if (payload->memory_barrier_count > IREE_HOST_SIZE_MAX ||
       payload->buffer_barrier_count > IREE_HOST_SIZE_MAX ||
       !iree_host_size_checked_mul(
@@ -495,7 +496,7 @@ iree_status_t iree_hal_replay_dump_execution_barrier_layout(
       !iree_host_size_checked_mul(
           (iree_host_size_t)payload->buffer_barrier_count,
           sizeof(iree_hal_replay_buffer_barrier_payload_t),
-          &buffer_barriers_size)) {
+          &fixed_buffer_barriers_size)) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "replay execution barrier payload count overflow");
   }
@@ -508,9 +509,56 @@ iree_status_t iree_hal_replay_dump_execution_barrier_layout(
                             "replay execution barrier payload length overflow");
   }
   *out_buffer_barriers_offset = offset;
+  buffer_barriers_size = fixed_buffer_barriers_size;
+  if (!iree_host_size_checked_add(offset, fixed_buffer_barriers_size,
+                                  &offset)) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "replay execution barrier payload length overflow");
+  }
+  if (iree_any_bit_set(
+          record->header.record_flags,
+          IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES)) {
+    iree_host_size_t recipe_size = 0;
+    if (!iree_host_size_checked_mul(
+            (iree_host_size_t)payload->buffer_barrier_count,
+            sizeof(iree_hal_replay_memory_transition_recipe_payload_t),
+            &recipe_size) ||
+        offset > record->payload.data_length ||
+        recipe_size > record->payload.data_length - offset) {
+      return iree_make_status(
+          IREE_STATUS_DATA_LOSS,
+          "replay execution barrier recipe descriptors are truncated");
+    }
+    iree_host_size_t operation_count = 0;
+    for (iree_host_size_t i = 0;
+         i < (iree_host_size_t)payload->buffer_barrier_count; ++i) {
+      iree_hal_replay_memory_transition_recipe_payload_t recipe;
+      memcpy(&recipe, record->payload.data + offset + i * sizeof(recipe),
+             sizeof(recipe));
+      if (!iree_host_size_checked_add(operation_count, recipe.operation_count,
+                                      &operation_count)) {
+        return iree_make_status(
+            IREE_STATUS_OUT_OF_RANGE,
+            "replay execution barrier recipe operation count overflow");
+      }
+    }
+    iree_host_size_t operation_size = 0;
+    if (!iree_host_size_checked_mul(
+            operation_count,
+            sizeof(iree_hal_replay_memory_transition_operation_payload_t),
+            &operation_size) ||
+        !iree_host_size_checked_add(buffer_barriers_size, recipe_size,
+                                    &buffer_barriers_size) ||
+        !iree_host_size_checked_add(buffer_barriers_size, operation_size,
+                                    &buffer_barriers_size) ||
+        !iree_host_size_checked_add(offset, recipe_size, &offset) ||
+        !iree_host_size_checked_add(offset, operation_size, &offset)) {
+      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                              "replay execution barrier recipe size overflow");
+    }
+  }
   *out_buffer_barriers_size = buffer_barriers_size;
-  if (!iree_host_size_checked_add(offset, buffer_barriers_size, &offset) ||
-      offset != record->payload.data_length) {
+  if (offset != record->payload.data_length) {
     return iree_make_status(IREE_STATUS_DATA_LOSS,
                             "replay execution barrier payload length mismatch");
   }

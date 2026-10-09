@@ -359,6 +359,7 @@ _OP_F32X4_REPLACE_LANE = _simd_encoding_id(0x20)
 _OP_F64X2_EXTRACT_LANE = _simd_encoding_id(0x21)
 _OP_F64X2_REPLACE_LANE = _simd_encoding_id(0x22)
 _OP_I8X16_EQ = _simd_encoding_id(0x23)
+_OP_I16X8_EQ = _simd_encoding_id(0x2D)
 _OP_I32X4_EQ = _simd_encoding_id(0x37)
 _OP_I32X4_NE = _simd_encoding_id(0x38)
 _OP_I32X4_LT_S = _simd_encoding_id(0x39)
@@ -386,6 +387,7 @@ _OP_F32X4_NEAREST = _simd_encoding_id(0x6A)
 _OP_I32X4_ADD = _simd_encoding_id(0xAE)
 _OP_I32X4_SUB = _simd_encoding_id(0xB1)
 _OP_I32X4_MUL = _simd_encoding_id(0xB5)
+_OP_I64X2_EQ = _simd_encoding_id(0xD6)
 _OP_F32X4_ABS = _simd_encoding_id(0xE0)
 _OP_F32X4_NEG = _simd_encoding_id(0xE1)
 _OP_F32X4_SQRT = _simd_encoding_id(0xE3)
@@ -1156,6 +1158,29 @@ WASM_CORE_SIMD128_DESCRIPTOR_SET = DescriptorSet(
             schedule_class=_SCHEDULE_SIMD_I32X4,
             flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
+        *(
+            Descriptor(
+                key=f"wasm.{shape}.{operation}",
+                mnemonic=f"{shape}.{operation}",
+                semantic_tag=f"vector.{operation}.{shape}",
+                encoding_id=_simd_encoding_id(base_opcode + opcode_offset),
+                operands=(
+                    _v128_result(),
+                    _v128_operand("value"),
+                    _i32_operand("count"),
+                ),
+                asm_forms=_asm(results=("dst",), operands=("value", "count")),
+                schedule_class=schedule,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            )
+            for shape, base_opcode, schedule in (
+                ("i8x16", 0x6B, _SCHEDULE_SIMD_I32X4),
+                ("i16x8", 0x8B, _SCHEDULE_SIMD_I32X4),
+                ("i32x4", 0xAB, _SCHEDULE_SIMD_I32X4),
+                ("i64x2", 0xCB, _SCHEDULE_SIMD_I64X2),
+            )
+            for opcode_offset, operation in enumerate(("shl", "shr_s", "shr_u"))
+        ),
         *_lane_descriptors(
             "i8x16",
             _i32_result(),
@@ -1218,25 +1243,27 @@ WASM_CORE_SIMD128_DESCRIPTOR_SET = DescriptorSet(
             _OP_F64X2_EXTRACT_LANE,
             _OP_F64X2_REPLACE_LANE,
         ),
-        Descriptor(
-            key="wasm.i8x16.eq",
-            mnemonic="i8x16.eq",
-            semantic_tag="vector.cmp.eq.i8x16",
-            encoding_id=_OP_I8X16_EQ,
-            operands=(_v128_result(), _v128_operand("lhs"), _v128_operand("rhs")),
-            asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
-            schedule_class=_SCHEDULE_SIMD_I32X4,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        Descriptor(
-            key="wasm.i32x4.eq",
-            mnemonic="i32x4.eq",
-            semantic_tag="vector.cmp.eq.i32x4",
-            encoding_id=_OP_I32X4_EQ,
-            operands=(_v128_result(), _v128_operand("lhs"), _v128_operand("rhs")),
-            asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
-            schedule_class=_SCHEDULE_SIMD_I32X4,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        *(
+            Descriptor(
+                key=f"wasm.{shape_name}.eq",
+                mnemonic=f"{shape_name}.eq",
+                semantic_tag=f"vector.cmp.eq.{shape_name}",
+                encoding_id=encoding_id,
+                operands=(
+                    _v128_result(),
+                    _v128_operand("lhs"),
+                    _v128_operand("rhs"),
+                ),
+                asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
+                schedule_class=schedule_class,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            )
+            for shape_name, encoding_id, schedule_class in (
+                ("i8x16", _OP_I8X16_EQ, _SCHEDULE_SIMD_I32X4),
+                ("i16x8", _OP_I16X8_EQ, _SCHEDULE_SIMD_I32X4),
+                ("i32x4", _OP_I32X4_EQ, _SCHEDULE_SIMD_I32X4),
+                ("i64x2", _OP_I64X2_EQ, _SCHEDULE_SIMD_I64X2),
+            )
         ),
         Descriptor(
             key="wasm.i32x4.ne",

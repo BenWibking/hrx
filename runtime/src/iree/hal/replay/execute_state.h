@@ -151,6 +151,23 @@ typedef struct iree_hal_replay_semaphore_list_storage_t {
   } allocated;
 } iree_hal_replay_semaphore_list_storage_t;
 
+// Native queue barriers reconstructed from a validated record extension.
+typedef struct iree_hal_replay_queue_barrier_storage_t {
+  // Queue operand referencing |lists|; NULL boundaries select defaults.
+  iree_hal_queue_barriers_t barriers;
+  // Before and after lists, respectively, referencing |allocation|.
+  iree_hal_barrier_list_t lists[2];
+  // Owned contiguous native descriptor storage.
+  void* allocation;
+} iree_hal_replay_queue_barrier_storage_t;
+
+// Resolves captured buffer ids and reconstructs the native descriptors. The
+// record's structural extents have already been validated by the file reader.
+iree_status_t iree_hal_replay_executor_make_queue_barriers(
+    iree_hal_replay_executor_t* executor,
+    const iree_hal_replay_file_record_t* record,
+    iree_hal_replay_queue_barrier_storage_t* out_storage);
+
 // Temporary HAL buffer reference list with inline storage.
 typedef struct iree_hal_replay_buffer_ref_list_storage_t {
   // HAL buffer ref list referencing |values|.

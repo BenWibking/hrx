@@ -63,7 +63,8 @@ bool loom_low_lower_rule_memory_space_matches(
     loom_low_lower_memory_space_mask_t memory_space_mask,
     loom_value_fact_memory_space_t memory_space);
 
-// Matches one generated source-memory row against a canonical access plan.
+// Matches one generated source-memory row's shape and address layout against
+// a canonical access plan, independently of address-width materialization.
 bool loom_low_lower_rule_source_memory_matches(
     const loom_low_lower_rule_match_context_t* match_context,
     const loom_low_lower_source_memory_t* source_memory,

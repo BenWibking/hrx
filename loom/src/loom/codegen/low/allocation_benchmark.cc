@@ -51,6 +51,24 @@ void Require(bool condition, const char* message) {
   }
 }
 
+bool ParseIndexedName(iree_string_view_t name, const char* prefix,
+                      uint32_t index_limit, uint32_t* out_index) {
+  const iree_host_size_t prefix_length = std::strlen(prefix);
+  if (name.size <= prefix_length ||
+      std::memcmp(name.data, prefix, prefix_length) != 0) {
+    return false;
+  }
+  uint32_t index = 0;
+  const auto parsed =
+      std::from_chars(name.data + prefix_length, name.data + name.size, index);
+  if (parsed.ec != std::errc{} || parsed.ptr != name.data + name.size ||
+      index >= index_limit) {
+    return false;
+  }
+  *out_index = index;
+  return true;
+}
+
 struct AllocationObserver {
   // Requested bytes currently owned through the observed allocator.
   uint64_t live_bytes = 0;
@@ -111,6 +129,7 @@ enum class Shape {
   kLinear,
   kLoop,
   kLoopRelocation,
+  kLoopRelocationQuery,
   kMoveScratch,
   kBranch,
   kTied,
@@ -308,7 +327,10 @@ std::string MakeSource(uint32_t chain_length, uint32_t component_count,
     }
     return source + "  return " + values.front() + "\n}\n";
   }
-  if (shape == Shape::kLoopRelocation) {
+  if (shape == Shape::kLoopRelocation || shape == Shape::kLoopRelocationQuery) {
+    const bool is_query_scaling = shape == Shape::kLoopRelocationQuery;
+    const uint32_t unrelated_count = is_query_scaling ? chain_length : 0;
+    const bool is_sparse_relocation = is_query_scaling || chain_length == 1;
     std::string source =
         "test.target<low_core> @target\n"
         "low.func.def target<test.low.core>(@target) @kernel("
@@ -317,13 +339,20 @@ std::string MakeSource(uint32_t chain_length, uint32_t component_count,
       source += ", %seed" + std::to_string(i) + ": reg<test.i32>";
     }
     source += ", %lhs: reg<test.i32>, %rhs: reg<test.i32>) -> (";
-    for (uint32_t i = 0; i < component_count; ++i) {
+    const uint32_t result_count =
+        component_count + (unrelated_count == 0 ? 0 : 1);
+    for (uint32_t i = 0; i < result_count; ++i) {
       if (i != 0) {
         source += ", ";
       }
       source += "reg<test.i32>";
     }
-    source += ") asm {\n  low.br ^loop(";
+    source += ") asm {\n";
+    for (uint32_t i = 0; i < unrelated_count; ++i) {
+      source += "  %unrelated" + std::to_string(i) + " = test.const.i32 " +
+                std::to_string(i) + "\n";
+    }
+    source += "  low.br ^loop(";
     for (uint32_t i = 0; i < component_count; ++i) {
       if (i != 0) {
         source += ", ";
@@ -340,7 +369,7 @@ std::string MakeSource(uint32_t chain_length, uint32_t component_count,
     source +=
         "):\n  low.cond_br %condition, ^body, ^exit : reg<test.i32>\n"
         "^body:\n";
-    if (chain_length == 1) {
+    if (is_sparse_relocation) {
       source +=
           "  %early0 = test.add.i32 %lhs, %rhs\n"
           "  %early1 = test.mul.i32 %early0, %rhs\n"
@@ -367,14 +396,14 @@ std::string MakeSource(uint32_t chain_length, uint32_t component_count,
     }
     for (uint32_t i = 0; i < component_count; ++i) {
       source += "  %next" + std::to_string(i);
-      if (chain_length == 1) {
+      if (is_sparse_relocation) {
         source += i % 2 == 0 ? " = test.mul.i32 %lhs, %rhs\n"
                              : " = test.add.i32 %lhs, %rhs\n";
       } else {
         source += " = test.add.i32 %state" + std::to_string(i) + ", %rhs\n";
       }
     }
-    if (chain_length == 1) {
+    if (is_sparse_relocation) {
       source += "  %sink = test.mul.i32 %acc" +
                 std::to_string(component_count - 1) + ", %rhs\n";
     } else {
@@ -388,12 +417,26 @@ std::string MakeSource(uint32_t chain_length, uint32_t component_count,
       }
       source += "%next" + std::to_string(i) + ": reg<test.i32>";
     }
-    source += ")\n^exit:\n  return ";
+    source += ")\n^exit:\n";
+    if (unrelated_count > 1) {
+      source += "  %fold0 = test.add.i32 %unrelated0, %unrelated1\n";
+      for (uint32_t i = 2; i < unrelated_count; ++i) {
+        source += "  %fold" + std::to_string(i - 1) + " = test.add.i32 %fold" +
+                  std::to_string(i - 2) + ", %unrelated" + std::to_string(i) +
+                  "\n";
+      }
+    }
+    source += "  return ";
     for (uint32_t i = 0; i < component_count; ++i) {
       if (i != 0) {
         source += ", ";
       }
       source += "%state" + std::to_string(i);
+    }
+    if (unrelated_count != 0) {
+      source += unrelated_count == 1
+                    ? ", %unrelated0"
+                    : ", %fold" + std::to_string(unrelated_count - 2);
     }
     return source + "\n}\n";
   }
@@ -547,13 +590,39 @@ class AllocationBenchmark {
     auto symbol = loom_module_find_symbol(module_, name);
     Require(symbol != LOOM_SYMBOL_ID_INVALID, "Kernel symbol missing");
     function_ = module_->symbols.entries[symbol].defining_op;
-    if (shape == Shape::kLoopRelocation) {
+    if (shape == Shape::kLoopRelocation ||
+        shape == Shape::kLoopRelocationQuery) {
       const loom_region_t* body = loom_low_func_def_body(function_);
       Require(body->block_count == 4, "Relocation loop shape changed");
       backedge_terminator_ =
           loom_block_const_last_op(loom_region_const_block(body, 2));
       Require(loom_low_br_isa(backedge_terminator_),
               "Relocation loop backedge missing");
+    }
+    if (shape == Shape::kLoopRelocationQuery) {
+      fixed_values_.reserve(chain_length * 2u - 1u);
+      for (loom_value_id_t value_id = 0; value_id < module_->values.count;
+           ++value_id) {
+        const iree_string_view_t name =
+            loom_module_value_name(module_, value_id);
+        uint32_t index = 0;
+        uint32_t location = 0;
+        if (ParseIndexedName(name, "unrelated", chain_length, &index)) {
+          location = 1024u + index;
+        } else if (ParseIndexedName(name, "fold", chain_length - 1u, &index)) {
+          location = 1024u + chain_length + index;
+        } else {
+          continue;
+        }
+        fixed_values_.push_back({
+            value_id,
+            LOOM_LOW_ALLOCATION_LOCATION_TARGET_ID,
+            location,
+            1,
+        });
+      }
+      Require(fixed_values_.size() == chain_length * 2u - 1u,
+              "Unrelated relocation values missing");
     }
     if (shape == Shape::kMoveScratch) {
       has_scratch_cycle_ = true;
@@ -998,13 +1067,15 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
   if (phase == Phase::kAllocation) {
     const uint32_t expected_copy_count =
         shape == Shape::kTied || shape == Shape::kLoopRelocation ||
+                shape == Shape::kLoopRelocationQuery ||
                 shape == Shape::kMoveScratch || shape == Shape::kLeasedPrefix ||
                 shape == Shape::kLeasedAliasTree
             ? 0
             : chain_length * component_count *
                   (shape == Shape::kBranch ? 2 : 1);
     Require(result.copy_count == expected_copy_count, "Copy decisions missing");
-    if (shape == Shape::kLoopRelocation) {
+    if (shape == Shape::kLoopRelocation ||
+        shape == Shape::kLoopRelocationQuery) {
       Require(result.backedge_move_count == 0,
               "Loop-edge relocation left branch copies");
     }
@@ -1059,14 +1130,17 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
 }
 
 [[maybe_unused]] const bool kBenchmarksRegistered = [] {
-  for (auto shape :
-       {Shape::kLinear, Shape::kLoop, Shape::kLoopRelocation,
-        Shape::kMoveScratch, Shape::kBranch, Shape::kTied, Shape::kFanout,
-        Shape::kFutureFixed, Shape::kReservedPrefix, Shape::kLeasedPrefix,
-        Shape::kLeasedAliasTree}) {
+  for (auto shape : {Shape::kLinear, Shape::kLoop, Shape::kLoopRelocation,
+                     Shape::kLoopRelocationQuery, Shape::kMoveScratch,
+                     Shape::kBranch, Shape::kTied, Shape::kFanout,
+                     Shape::kFutureFixed, Shape::kReservedPrefix,
+                     Shape::kLeasedPrefix, Shape::kLeasedAliasTree}) {
     for (auto phase : {Phase::kModel, Phase::kLiveness, Phase::kPlacement,
                        Phase::kUnitLiveness, Phase::kAllocation}) {
       if (shape == Shape::kLoopRelocation && phase != Phase::kAllocation) {
+        continue;
+      }
+      if (shape == Shape::kLoopRelocationQuery && phase != Phase::kAllocation) {
         continue;
       }
       if (shape == Shape::kMoveScratch && phase != Phase::kAllocation) {
@@ -1087,6 +1161,8 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
           std::string(shape == Shape::kLinear           ? "linear/"
                       : shape == Shape::kLoop           ? "loop/"
                       : shape == Shape::kLoopRelocation ? "loop_relocation/"
+                      : shape == Shape::kLoopRelocationQuery
+                          ? "loop_relocation_query/"
                       : shape == Shape::kMoveScratch    ? "move_scratch/"
                       : shape == Shape::kBranch         ? "branch/"
                       : shape == Shape::kTied           ? "tied/"
@@ -1103,13 +1179,26 @@ void RunBenchmark(benchmark::State& state, Shape shape, Phase phase) {
       auto* registration = benchmark::RegisterBenchmark(
           name.c_str(),
           [=](benchmark::State& state) { RunBenchmark(state, shape, phase); });
-      registration->ArgNames({"length", "components", "width"});
+      if (shape == Shape::kLoopRelocationQuery) {
+        registration->ArgNames({"unrelated", "candidates", "width"});
+      } else {
+        registration->ArgNames({"length", "components", "width"});
+      }
       if (shape == Shape::kLoopRelocation) {
         for (int64_t components : {32, 64, 128, 256, 512, 1024}) {
           registration->Args({1, components, 1});
         }
         for (int64_t components : {8, 16, 32, 64, 128, 256}) {
           registration->Args({components, components, 1});
+        }
+        continue;
+      }
+      if (shape == Shape::kLoopRelocationQuery) {
+        for (int64_t unrelated : {32, 64, 128, 256, 512, 1024, 2048, 4096}) {
+          registration->Args({unrelated, 4, 1});
+        }
+        for (int64_t candidates : {1, 2, 8, 16, 32, 64}) {
+          registration->Args({4096, candidates, 1});
         }
         continue;
       }

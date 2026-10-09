@@ -333,6 +333,9 @@ typedef enum loom_target_pipeline_phase_e {
   // Target-low preparation before the common cleanup and operand-form
   // selection immediately preceding emission.
   LOOM_TARGET_PIPELINE_PHASE_TARGET_LOW_PREPARATION = 4,
+  // Realize execution resources after lexical scheduling and strand outlining,
+  // before memory legalization consumes physical endpoint facts.
+  LOOM_TARGET_PIPELINE_PHASE_SOURCE_EXECUTION_REALIZATION = 5,
   LOOM_TARGET_PIPELINE_PHASE_COUNT_,
 } loom_target_pipeline_phase_t;
 

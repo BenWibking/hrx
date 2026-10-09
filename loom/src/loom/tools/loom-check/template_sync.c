@@ -231,7 +231,7 @@ static iree_status_t loom_check_template_sync_extract_case_metadata(
 
   iree_string_view_t key = iree_string_view_empty();
   iree_host_size_t func_like_count = 0;
-  iree_host_size_t public_func_like_count = 0;
+  iree_host_size_t entry_count = 0;
   if (iree_status_is_ok(status)) {
     for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
       const loom_symbol_t* symbol = &module->symbols.entries[i];
@@ -240,22 +240,22 @@ static iree_status_t loom_check_template_sync_extract_case_metadata(
         continue;
       }
       ++func_like_count;
-      const bool is_public =
-          iree_any_bit_set(symbol->flags, LOOM_SYMBOL_FLAG_PUBLIC);
-      public_func_like_count += is_public;
-      if (func_like_count == 1 || is_public) {
+      const bool is_entry =
+          iree_any_bit_set(symbol->flags, LOOM_SYMBOL_FLAG_PUBLIC) ||
+          loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_KERNEL_ENTRY);
+      entry_count += is_entry;
+      if (func_like_count == 1 || is_entry) {
         key = loom_string_table_get(&module->strings, symbol->name_id);
       }
     }
-    if (func_like_count == 0 ||
-        (func_like_count > 1 && public_func_like_count != 1) ||
+    if (func_like_count == 0 || (func_like_count > 1 && entry_count != 1) ||
         iree_string_view_is_empty(key)) {
       status = iree_make_status(
           IREE_STATUS_INVALID_ARGUMENT,
           "template synchronization requires one func-like definition or one "
-          "public entry with private helpers, got %" PRIhsz
-          " definitions and %" PRIhsz " public entries",
-          func_like_count, public_func_like_count);
+          "public function or kernel entry with private helpers, got %" PRIhsz
+          " definitions and %" PRIhsz " entries",
+          func_like_count, entry_count);
     }
   }
   if (iree_status_is_ok(status)) {

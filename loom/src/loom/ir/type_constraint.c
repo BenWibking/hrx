@@ -57,6 +57,7 @@ const char* loom_type_constraint_name(loom_type_constraint_t constraint) {
           "byte-addressable fixed-width integer or floating-point scalar",
       [LOOM_TYPE_CONSTRAINT_BYTE_PATTERN_ELEMENT] =
           "byte-addressable fixed-width integer or floating-point element type",
+      [LOOM_TYPE_CONSTRAINT_GROUP] = "group",
   };
   static_assert(IREE_ARRAYSIZE(names) == LOOM_TYPE_CONSTRAINT_COUNT_,
                 "constraint names out of sync with enum");
@@ -173,6 +174,8 @@ bool loom_type_satisfies_constraint(loom_type_t type,
       return loom_type_is_register(type);
     case LOOM_TYPE_CONSTRAINT_STORAGE:
       return loom_type_is_storage(type);
+    case LOOM_TYPE_CONSTRAINT_GROUP:
+      return loom_type_is_group(type);
     case LOOM_TYPE_CONSTRAINT_I1:
       return loom_type_is_scalar(type) &&
              loom_type_element_type(type) == LOOM_SCALAR_TYPE_I1;

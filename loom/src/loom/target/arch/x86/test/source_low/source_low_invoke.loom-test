@@ -19,7 +19,7 @@ low.func.def target<x86.scalar.core>(@target) @identity(%value: reg<x86.gpr32>) 
 }
 
 low.func.def target<x86.scalar.core>(@target) abi(object_function) @caller(%value: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
-  %result = low.func.call @identity(%value) : (reg<x86.gpr32>) -> (reg<x86.gpr32>)
+  %result = low.func.call pure @identity(%value) : (reg<x86.gpr32>) -> (reg<x86.gpr32>)
   return %result
 }
 
@@ -43,7 +43,7 @@ low.func.def target<x86.scalar.core>(@target) @identity(%value: reg<x86.gpr32>) 
 }
 
 low.func.def target<x86.scalar.core>(@target) abi(object_function) @noinline_caller(%value: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
-  %result = low.func.call noinline @identity(%value) : (reg<x86.gpr32>) -> (reg<x86.gpr32>)
+  %result = low.func.call pure noinline @identity(%value) : (reg<x86.gpr32>) -> (reg<x86.gpr32>)
   return %result
 }
 

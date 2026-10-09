@@ -14,6 +14,7 @@ loom_check_test_suite(
     test
   SRCS
     "callgraph_specialization.loom-test"
+    "strand_callgraph.loom-test"
 )
 
 loom_low_descriptor_cc_library(
@@ -49,6 +50,7 @@ loom_cc_library(
   DEPS
     iree::base
     loom::target::facts
+    loom::target::facts_builder
   PUBLIC
 )
 

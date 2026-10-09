@@ -177,6 +177,18 @@ iree_status_t iree_hal_cmd_build_update(iree_hal_cmd_block_builder_t* builder,
   return iree_ok_status();
 }
 
+iree_status_t iree_hal_cmd_build_fence(iree_hal_cmd_block_builder_t* builder,
+                                       iree_hal_atomic_flags_t atomic_flags) {
+  IREE_ASSERT_ARGUMENT(builder);
+  iree_hal_cmd_fence_t* command = NULL;
+  IREE_RETURN_IF_ERROR(iree_hal_cmd_block_builder_append_cmd(
+      builder, IREE_HAL_CMD_FENCE, IREE_HAL_CMD_FLAG_NONE, sizeof(*command),
+      /*fixup_count=*/0, /*binding_count=*/0,
+      /*tile_count=*/1, (void**)&command, /*out_fixups=*/NULL));
+  command->atomic_flags = atomic_flags;
+  return iree_ok_status();
+}
+
 //===----------------------------------------------------------------------===//
 // ATOMIC
 //===----------------------------------------------------------------------===//

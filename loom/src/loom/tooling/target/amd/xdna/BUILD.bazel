@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+load("//build_tools/testing:build_defs.bzl", "iree_execution_test_suite")
 load(
     "//loom/build_tools/bazel:build_defs.bzl",
     "loom_config_compatible_with",
@@ -19,6 +20,17 @@ package(
 _XDNA_COMPILE_COMPATIBLE_WITH = loom_config_compatible_with([
     "//loom/config/target:xdna_artifacts",
 ])
+
+iree_execution_test_suite(
+    name = "loom_opt_trace",
+    data = ["test/resident_publication.loom"],
+    manifests = ["test/loom-opt.test.json"],
+    tags = ["hostonly"],
+    target_compatible_with = _XDNA_COMPILE_COMPATIBLE_WITH,
+    tools = {
+        "loom-opt": "//loom/src/loom/tools/loom-opt",
+    },
+)
 
 loom_check_test(
     name = "assembly_lowering",

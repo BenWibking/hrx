@@ -3427,16 +3427,16 @@ TEST_F(ParserTest, UndefinedDimSecondPositionIsDistinct) {
   EXPECT_EQ(GetStringParam(diagnostics[0], 0), "BAD");
 }
 
-TEST_F(ParserTest, PoolDimReportsRealPosition) {
-  // pool<bad> — BARE_IDENT "bad" at column 26 (after "pool<").
-  // Line 2: %r = test.cast %x : pool<bad> to i32
-  //                              21   2526
+TEST_F(ParserTest, GroupDimReportsRealPosition) {
+  // group<bad> — BARE_IDENT "bad" at column 27 (after "group<").
+  // Line 2: %r = test.cast %x : group<bad> to i32
+  //                              21   2627
   const auto& diagnostics = ParseExpectErrors(
       "%x = test.constant 0 : i32\n"
-      "%r = test.cast %x : pool<bad> to i32\n");
+      "%r = test.cast %x : group<bad> to i32\n");
   ASSERT_GE(diagnostics.size(), 1u);
   EXPECT_EQ(diagnostics[0].origin_line, 2u);
-  EXPECT_EQ(diagnostics[0].origin_column, 26u);
+  EXPECT_EQ(diagnostics[0].origin_column, 27u);
 }
 
 //===----------------------------------------------------------------------===//

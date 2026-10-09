@@ -346,7 +346,7 @@ static iree_status_t loom_check_compile_select_source_function(
   }
 
   iree_host_size_t definition_count = 0;
-  iree_host_size_t public_count = 0;
+  iree_host_size_t entry_count = 0;
   for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
     const loom_symbol_t* symbol = &module->symbols.entries[i];
     const loom_func_like_t function =
@@ -355,20 +355,22 @@ static iree_status_t loom_check_compile_select_source_function(
       continue;
     }
     ++definition_count;
-    const bool is_public =
-        iree_any_bit_set(symbol->flags, LOOM_SYMBOL_FLAG_PUBLIC);
-    public_count += is_public;
-    if (definition_count == 1 || is_public) {
+    const bool is_entry =
+        iree_any_bit_set(symbol->flags, LOOM_SYMBOL_FLAG_PUBLIC) ||
+        loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_KERNEL_ENTRY);
+    entry_count += is_entry;
+    if (definition_count == 1 || is_entry) {
       function_name = loom_string_table_get(&module->strings, symbol->name_id);
     }
   }
-  if (definition_count == 0 || (definition_count > 1 && public_count != 1)) {
+  if (definition_count == 0 || (definition_count > 1 && entry_count != 1)) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
         "target compile option requires one function definition or one public "
-        "entry with private helpers; specify @function for an ambiguous "
-        "module (got %" PRIhsz " definitions and %" PRIhsz " public entries)",
-        definition_count, public_count);
+        "function or kernel entry with private helpers; specify @function for "
+        "an ambiguous module (got %" PRIhsz " definitions and %" PRIhsz
+        " entries)",
+        definition_count, entry_count);
   }
   *out_function_name = function_name;
   return iree_ok_status();
@@ -601,8 +603,11 @@ static iree_status_t loom_check_compile_get_artifact_pass_program(
 iree_status_t loom_check_compile_artifact(
     const loom_check_emit_provider_request_t* request,
     const loom_check_compile_artifact_options_t* options,
-    loomc_source_t** out_artifact_source) {
+    loomc_source_t** out_artifact_source, loomc_source_t** out_report_source) {
   *out_artifact_source = NULL;
+  if (out_report_source != NULL) {
+    *out_report_source = NULL;
+  }
   loom_check_compile_session_t* session = request->environment->compile_session;
   loomc_module_t* module = request->public_module;
   iree_status_t status = iree_ok_status();
@@ -623,6 +628,7 @@ iree_status_t loom_check_compile_artifact(
   const loomc_emit_options_t emit_options = {
       .type = LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
       .structure_size = sizeof(emit_options),
+      .next = options->report,
       .artifact_format = loomc_string_view_from_iree(options->artifact_format),
   };
   const loomc_string_view_t root = loomc_string_view_from_iree(options->root);
@@ -646,6 +652,20 @@ iree_status_t loom_check_compile_artifact(
         artifact, LOOMC_SOURCE_FORMAT_UNKNOWN,
         loomc_allocator_from_iree(request->host_allocator),
         out_artifact_source));
+  }
+  if (iree_status_is_ok(status) && result != NULL &&
+      out_report_source != NULL) {
+    for (loomc_host_size_t i = 1;
+         iree_status_is_ok(status) && i < loomc_result_artifact_count(result);
+         ++i) {
+      const loomc_artifact_t* artifact = loomc_result_artifact_at(result, i);
+      if (artifact->kind == LOOMC_ARTIFACT_KIND_REPORT) {
+        status = iree_status_from_loomc(loomc_artifact_create_source(
+            artifact, LOOMC_SOURCE_FORMAT_UNKNOWN,
+            loomc_allocator_from_iree(request->host_allocator),
+            out_report_source));
+      }
+    }
   }
 
   loomc_result_release(result);

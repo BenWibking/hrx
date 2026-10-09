@@ -149,6 +149,7 @@ loom_check_test_suite(
     "test/assembly_integer_add.loom-test"
     "test/assembly_integer_multiply.loom-test"
     "test/assembly_integer_subtract.loom-test"
+    "test/assembly_packed_broadcast.loom-test"
     "test/assembly_q8.loom-test"
     "test/assembly_vopd_profiles.loom-test"
     "test/assembly_wide_shifts.loom-test"

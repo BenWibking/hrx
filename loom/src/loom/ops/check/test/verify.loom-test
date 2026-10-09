@@ -97,11 +97,14 @@ func.decl @scenario_subject(%input: i32) -> (f32)
 
 func.decl @dependent_scenario_subject() -> (%width: index, vector<[%width]xf32>)
 
+func.decl @scenario_generator(%trial: index, %storage: buffer) -> (i32)
+
 kernel.decl @configured_subject(%workload: index) launch()
 
 check.scenario @valid_scenario configure[2](%configuration: index, %configuration_entropy: check.entropy) {
   check.trial[4](%trial: index, %entropy: check.entropy) {
-    %input = check.literal value(1) : i32
+    %storage = check.generate.fill value(0) : tensor<4xi32>
+    %input = check.generate<@scenario_generator>(%trial, %storage) : (index, tensor<4xi32>) -> (i32)
     check.compare<@scenario_subject>(%input) : (i32) -> [actual(%actual: f32), expected(%expected: f32)] {
       check.expect.close actual(%actual) expected(%expected) atol(0.0) rtol(0.0) nan(same) : f32
     }
@@ -119,6 +122,21 @@ check.scenario @valid_scenario configure[2](%configuration: index, %configuratio
 check.scenario @valid_configured_subject configure[2](%configuration: index, %configuration_entropy: check.entropy) {
   check.trial[4](%trial: index, %entropy: check.entropy) {
     check.invoke<@configured_subject>[%configuration]() : [index]() -> ()
+  }
+  check.return
+}
+
+// ====
+
+// Trial generators use their callable's complete typed signature.
+func.decl @typed_generator(%input: i32) -> (i32)
+
+check.scenario @wrong_generator_signature {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.literal value(1) : i32
+    // ERROR@+1: TYPE/001 "arguments[0]" "type annotation"
+    %generated = check.generate<@typed_generator>(%input) : (f32) -> (i32)
+    check.invoke<@scenario_subject>(%input) : (i32) -> (f32)
   }
   check.return
 }
@@ -322,8 +340,7 @@ kernel.decl @materialized_kernel() launch(%storage: buffer)
 
 command.program.decl @materialized_program(%configuration: index) launch(%storage: buffer)
 
-pipeline.def @materialized_pipeline(%configuration: index) launch(%storage: buffer) {
-  pipeline.return
+pipeline.def @materialized_pipeline(%configuration: index) run(%storage: buffer) {
 }
 
 check.scenario @materialized_products configure[2](%configuration: index, %configuration_entropy: check.entropy) {

@@ -18,6 +18,9 @@ static bool loom_amdgpu_select_buffer_alloca_plan_from_facts(
     const loom_value_fact_table_t* fact_table, const loom_op_t* source_op,
     loom_amdgpu_buffer_alloca_plan_t* out_plan) {
   *out_plan = (loom_amdgpu_buffer_alloca_plan_t){0};
+  if (loom_buffer_alloca_pool(source_op) != LOOM_VALUE_ID_INVALID) {
+    return false;
+  }
   const loom_value_fact_memory_space_t memory_space =
       loom_buffer_alloca_memory_space(source_op);
   switch (memory_space) {

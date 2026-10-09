@@ -98,6 +98,7 @@ iree_status_t loom_testbench_prepare_scenario_configuration(
   *out_prepared = (loom_testbench_prepared_scenario_configuration_t){
       .configuration = configuration,
       .mode = mode,
+      .function_call = options->function_call,
       .device_event_capture = options->device_event_capture,
       .host_allocator = host_allocator,
   };
@@ -185,6 +186,59 @@ static iree_status_t loom_testbench_scenario_allocate_value_matrix(
   }
   return loom_testbench_scenario_allocate_array(
       allocator, value_count, sizeof(**out_values), (void**)out_values);
+}
+
+static iree_status_t loom_testbench_scenario_prepare_generators(
+    loom_testbench_invocation_provider_t function_call,
+    const loom_testbench_trial_plan_t* trial, iree_allocator_t host_allocator,
+    loom_testbench_scenario_trial_executor_t* executor) {
+  iree_host_size_t generator_count = 0;
+  iree_host_size_t max_input_count = 0;
+  iree_host_size_t max_result_count = 0;
+  for (iree_host_size_t step_index = 0; step_index < trial->recipe_step_count;
+       ++step_index) {
+    const loom_testbench_trial_recipe_step_t* step =
+        &trial->recipe_steps[step_index];
+    if (step->kind != LOOM_TESTBENCH_TRIAL_RECIPE_STEP_GENERATOR) {
+      continue;
+    }
+    ++generator_count;
+    max_input_count = iree_max(max_input_count, step->generator.input_count);
+    max_result_count = iree_max(max_result_count, step->generator.result_count);
+  }
+  if (generator_count == 0) {
+    return iree_ok_status();
+  }
+
+  IREE_RETURN_IF_ERROR(loom_testbench_scenario_allocate_array(
+      host_allocator, generator_count, sizeof(*executor->prepared_generators),
+      (void**)&executor->prepared_generators));
+  const loom_testbench_invocation_options_t invocation_options = {
+      .function_call = function_call,
+  };
+  iree_host_size_t generator_index = 0;
+  for (iree_host_size_t step_index = 0; step_index < trial->recipe_step_count;
+       ++step_index) {
+    const loom_testbench_trial_recipe_step_t* step =
+        &trial->recipe_steps[step_index];
+    if (step->kind != LOOM_TESTBENCH_TRIAL_RECIPE_STEP_GENERATOR) {
+      continue;
+    }
+    IREE_RETURN_IF_ERROR(loom_testbench_prepare_invocation(
+        &invocation_options, &step->generator,
+        &executor->prepared_generators[generator_index++]));
+  }
+  IREE_ASSERT(generator_index == generator_count);
+
+  executor->generator_schedule = (loom_testbench_invocation_schedule_t){
+      .invocations = executor->prepared_generators,
+      .invocation_count = generator_count,
+      .max_input_count = max_input_count,
+      .max_result_count = max_result_count,
+  };
+  return loom_testbench_invocation_executor_initialize(
+      &executor->generator_schedule, host_allocator,
+      &executor->generator_executor);
 }
 
 static void loom_testbench_scenario_reset_values(
@@ -290,9 +344,15 @@ iree_status_t loom_testbench_scenario_trial_executor_initialize(
               : NULL,
       .batch_capacity = batch_capacity,
   };
-  iree_status_t status = loom_testbench_scenario_allocate_array(
-      out_executor->host_allocator, batch_capacity,
-      sizeof(*out_executor->trial_values), (void**)&out_executor->trial_values);
+  iree_status_t status = loom_testbench_scenario_prepare_generators(
+      prepared->function_call, prepared_trial->trial_plan,
+      out_executor->host_allocator, out_executor);
+  if (iree_status_is_ok(status)) {
+    status = loom_testbench_scenario_allocate_array(
+        out_executor->host_allocator, batch_capacity,
+        sizeof(*out_executor->trial_values),
+        (void**)&out_executor->trial_values);
+  }
   if (iree_status_is_ok(status) &&
       prepared->mode == LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_CORRECTNESS) {
     status = loom_testbench_scenario_allocate_array(
@@ -467,6 +527,11 @@ void loom_testbench_scenario_trial_executor_deinitialize(
   iree_allocator_free(executor->host_allocator, executor->expectation_reports);
   iree_allocator_free(executor->host_allocator, executor->results);
   iree_allocator_free(executor->host_allocator, executor->trial_values);
+  if (executor->generator_executor.schedule != NULL) {
+    loom_testbench_invocation_executor_deinitialize(
+        &executor->generator_executor);
+  }
+  iree_allocator_free(executor->host_allocator, executor->prepared_generators);
   *executor = (loom_testbench_scenario_trial_executor_t){0};
 }
 
@@ -559,8 +624,12 @@ static iree_status_t loom_testbench_scenario_materialize_trials(
   for (iree_host_size_t call_index = 0; call_index < trial_count;
        ++call_index) {
     IREE_RETURN_IF_ERROR(loom_testbench_scenario_trial_values_materialize(
-        &executor->materializer_options, executor->configuration,
-        first_trial_ordinal + call_index, &executor->trial_values[call_index]));
+        &executor->materializer_options,
+        executor->generator_schedule.invocation_count != 0
+            ? &executor->generator_executor
+            : NULL,
+        executor->configuration, first_trial_ordinal + call_index,
+        &executor->trial_values[call_index]));
   }
   return iree_ok_status();
 }
@@ -984,7 +1053,11 @@ iree_status_t loom_testbench_benchmark_scenario_trial(
   for (iree_host_size_t call_index = 0;
        iree_status_is_ok(status) && call_index < call_count; ++call_index) {
     status = loom_testbench_scenario_trial_values_materialize(
-        &executor->materializer_options, executor->configuration, trial_ordinal,
+        &executor->materializer_options,
+        executor->generator_schedule.invocation_count != 0
+            ? &executor->generator_executor
+            : NULL,
+        executor->configuration, trial_ordinal,
         &executor->trial_values[call_index]);
   }
   const loom_testbench_prepared_product_t* product =

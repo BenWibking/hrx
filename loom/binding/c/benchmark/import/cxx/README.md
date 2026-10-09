@@ -118,9 +118,12 @@ compilation precedes measurement; parsed C++ ASTs are not cached.
 The `CxxJitPhase` rows attribute this endpoint with maintained sources. llama.cpp
 RMSNorm provides a small ordinary kernel; the MXFP8 group dot exercises storage
 encodings, narrow-float conversion, vectors, reductions, and target-specific
-lowering; and the routed Q4_K/Q8_1 SwiGLU combines packed records, configuration,
-template application, integer dots, subgroup reductions, and nontrivial address
-arithmetic. Each row invokes a complete public compiler boundary:
+lowering; the routed IQ4_XS projection combines original-format nonlinear
+decode, dynamic schedules, workgroup staging, paired floating-point dots, and a
+fused SwiGLU epilogue; and the routed Q4_K/Q8_1 SwiGLU combines packed records,
+configuration, template application, integer dots, subgroup reductions, and
+nontrivial address arithmetic. Each row invokes a complete public compiler
+boundary:
 
 | Phase | Timed operation |
 | --- | --- |
@@ -143,6 +146,9 @@ public operation that performs them.
 
 The routed Q4_K/Q8_1 source supplies input size 4096 through an ordinary
 `config.def` and compiles its complete 768-channel kernel for `gfx1250`.
+The IQ4_XS source fixes its production 2,560-element by 640-channel top-10
+geometry in C++ and supplies four scheduling values through ordinary
+`config.def` operations before compiling for `gfx1151`.
 `Import`, `SourceToPreparedLow`, and `SourceToHsaco` form cumulative boundaries
 whose differences provide an additive production-path breakdown. Clone-based
 phase probes remain diagnostic controls and are not additive.

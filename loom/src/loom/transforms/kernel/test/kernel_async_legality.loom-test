@@ -137,6 +137,18 @@ func.def @rejects_completed_group_wait() {
 
 // ====
 
+func.def @rejects_nested_wait_of_completed_parent_group(%cond: i1) {
+  %group = kernel.async.group -> kernel.async.group
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  scf.if %cond {
+    // ERROR@+1: LOWERING/029 {op_name="kernel.async.wait", phase_name="kernel-async-legality"}
+    kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  }
+  func.return
+}
+
+// ====
+
 func.def @rejects_carried_group_use() {
   // ERROR@+1: LOWERING/023 {op_name="kernel.async.group", phase_name="kernel-async-legality"}
   %group = kernel.async.group -> kernel.async.group
@@ -182,6 +194,81 @@ func.def @allows_static_disjoint_pending_async_destinations(%input: buffer) {
   %group1 = kernel.async.group %copy1 : kernel.async.token -> kernel.async.group
   kernel.async.wait %group0 {newer_groups = 1} : kernel.async.group
   kernel.async.wait %group1 {newer_groups = 0} : kernel.async.group
+  func.return
+}
+
+// ====
+
+func.def @reuses_completed_slot_with_newer_transfer_pending(%input: buffer) -> (i32) {
+  %base = index.constant 0 : offset
+  %adjacent = index.constant 64 : offset
+  %bytes = index.constant 128 : offset
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%base] : buffer -> view<16xi32>
+  %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
+  %first_slot = buffer.view %scratch[%base] : buffer -> view<16xi32>
+  %second_slot = buffer.view %scratch[%adjacent] : buffer -> view<16xi32>
+  %first_copy = kernel.async.copy %source to %first_slot {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi32> to view<16xi32> -> kernel.async.token
+  %first_group = kernel.async.group %first_copy : kernel.async.token -> kernel.async.group
+  %second_copy = kernel.async.copy %source to %second_slot {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi32> to view<16xi32> -> kernel.async.token
+  %second_group = kernel.async.group %second_copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %first_group {newer_groups = 1} : kernel.async.group
+  %first = view.load %first_slot[0] : view<16xi32> -> i32
+  %third_copy = kernel.async.copy %source to %first_slot {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi32> to view<16xi32> -> kernel.async.token
+  %third_group = kernel.async.group %third_copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %second_group {newer_groups = 1} : kernel.async.group
+  %second = view.load %second_slot[0] : view<16xi32> -> i32
+  kernel.async.wait %third_group {newer_groups = 0} : kernel.async.group
+  %third = view.load %first_slot[0] : view<16xi32> -> i32
+  %partial = scalar.addi %first, %second : i32
+  %sum = scalar.addi %partial, %third : i32
+  func.return %sum : i32
+}
+
+// ====
+
+func.def @completed_prefix_preserves_newer_destination_hazard(%input: buffer) -> (i32) {
+  %base = index.constant 0 : offset
+  %adjacent = index.constant 64 : offset
+  %bytes = index.constant 128 : offset
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%base] : buffer -> view<16xi32>
+  %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
+  %first_slot = buffer.view %scratch[%base] : buffer -> view<16xi32>
+  %second_slot = buffer.view %scratch[%adjacent] : buffer -> view<16xi32>
+  %first_copy = kernel.async.copy %source to %first_slot {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi32> to view<16xi32> -> kernel.async.token
+  %first_group = kernel.async.group %first_copy : kernel.async.token -> kernel.async.group
+  %second_copy = kernel.async.copy %source to %second_slot {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi32> to view<16xi32> -> kernel.async.token
+  %second_group = kernel.async.group %second_copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %first_group {newer_groups = 1} : kernel.async.group
+  %first = view.load %first_slot[0] : view<16xi32> -> i32
+  // ERROR@+1: LOWERING/028 {op_name="view.load", phase_name="kernel-async-legality"}
+  %second = view.load %second_slot[0] : view<16xi32> -> i32
+  kernel.async.wait %second_group {newer_groups = 0} : kernel.async.group
+  %sum = scalar.addi %first, %second : i32
+  func.return %sum : i32
+}
+
+// ====
+
+func.def @completed_prefix_preserves_newer_source_hazard(%input: buffer) {
+  %base = index.constant 0 : offset
+  %adjacent = index.constant 64 : offset
+  %bytes = index.constant 128 : offset
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%base] : buffer -> view<16xi32>
+  %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
+  %first_slot = buffer.view %scratch[%base] : buffer -> view<16xi32>
+  %second_slot = buffer.view %scratch[%adjacent] : buffer -> view<16xi32>
+  %first_copy = kernel.async.copy %source to %first_slot {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi32> to view<16xi32> -> kernel.async.token
+  %first_group = kernel.async.group %first_copy : kernel.async.token -> kernel.async.group
+  %second_copy = kernel.async.copy %source to %second_slot {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi32> to view<16xi32> -> kernel.async.token
+  %second_group = kernel.async.group %second_copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %first_group {newer_groups = 1} : kernel.async.group
+  %first = view.load %first_slot[0] : view<16xi32> -> i32
+  // ERROR@+1: LOWERING/037 {op_name="view.store", phase_name="kernel-async-legality"}
+  view.store %first, %source[0] : i32, view<16xi32>
+  kernel.async.wait %second_group {newer_groups = 0} : kernel.async.group
   func.return
 }
 

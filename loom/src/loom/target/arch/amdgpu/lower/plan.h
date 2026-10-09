@@ -688,7 +688,8 @@ typedef struct loom_amdgpu_fma_mix_plan_t {
 } loom_amdgpu_fma_mix_plan_t;
 
 typedef struct loom_amdgpu_packed_ternary_plan_t {
-  // Packed vector values consumed in the selected descriptor's operand order.
+  // Scalar or packed values consumed in the selected descriptor's operand
+  // order.
   loom_value_id_t sources[LOOM_AMDGPU_PACKED_TERNARY_SOURCE_COUNT];
   // Packed vector result value.
   loom_value_id_t result;
@@ -696,7 +697,9 @@ typedef struct loom_amdgpu_packed_ternary_plan_t {
   loom_amdgpu_descriptor_ref_t descriptor_ref;
   // Flags describing selected descriptor packet semantics.
   loom_amdgpu_packed_ternary_flags_t flags;
-  // Number of 32-bit register units in each source and result vector.
+  // Sources whose scalar payload is reused by every packed result lane.
+  uint32_t broadcast_mask;
+  // Number of 32-bit register units in the result vector.
   uint32_t register_count;
   // Number of 32-bit register units consumed and produced by each packet.
   uint32_t packet_unit_count;

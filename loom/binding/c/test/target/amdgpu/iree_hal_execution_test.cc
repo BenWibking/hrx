@@ -335,7 +335,7 @@ void RunSparseByteOffsetExecution(
   uint64_t completion_value = 0;
   iree_status_t status = iree_hal_queue_transfer(
       execution.transfer_queue, iree_hal_semaphore_list_empty(), upload_signal,
-      IREE_ARRAYSIZE(uploads), uploads);
+      IREE_ARRAYSIZE(uploads), uploads, /*barriers=*/NULL);
   if (iree_status_is_ok(status)) {
     completion_value = upload_value;
     status = loomc::testing::target::DispatchIreeHalKernel(
@@ -346,7 +346,7 @@ void RunSparseByteOffsetExecution(
     completion_value = dispatch_value;
     status = iree_hal_queue_transfer(execution.transfer_queue, dispatch_signal,
                                      download_signal, IREE_ARRAYSIZE(downloads),
-                                     downloads);
+                                     downloads, /*barriers=*/NULL);
   }
   if (iree_status_is_ok(status)) {
     completion_value = download_value;

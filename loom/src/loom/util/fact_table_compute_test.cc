@@ -166,6 +166,55 @@ TEST_F(FactTableComputeTest, IdentityOnlyMutationReportsChangedFacts) {
       loom_value_fact_table_lookup(&table_, second_result)));
 }
 
+TEST_F(FactTableComputeTest, OpaqueDefinitionsRetainSelectedInputs) {
+  const loom_value_id_t storage = DefineValue(loom_type_pool());
+  loom_op_t* first = nullptr;
+  loom_op_t* second = nullptr;
+  IREE_ASSERT_OK(loom_test_read_resource_build(&builder_, storage, type_,
+                                               LOOM_LOCATION_UNKNOWN, &first));
+  IREE_ASSERT_OK(loom_test_read_resource_build(&builder_, storage, type_,
+                                               LOOM_LOCATION_UNKNOWN, &second));
+  const loom_value_id_t first_result = loom_test_read_resource_result(first);
+  const loom_value_id_t second_result = loom_test_read_resource_result(second);
+
+  loom_value_fact_table_t inputs;
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&inputs, &arena_, 0));
+  IREE_ASSERT_OK(loom_value_fact_table_define(
+      &inputs, first_result, loom_value_facts_make(16, 64, 16)));
+  IREE_ASSERT_OK(loom_value_fact_table_define(&inputs, second_result,
+                                              loom_value_facts_exact_i64(32)));
+  IREE_ASSERT_OK(loom_value_fact_table_seed_values(
+      &table_, {&inputs, &first_result, 1}, module_));
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op(&table_, module_, first));
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op(&table_, module_, second));
+  auto facts = loom_value_fact_table_lookup(&table_, first_result);
+  EXPECT_EQ(facts.range_lo, 16);
+  EXPECT_EQ(facts.range_hi, 64);
+  EXPECT_EQ(facts.known_divisor, 16);
+  EXPECT_FALSE(loom_value_facts_is_exact(
+      loom_value_fact_table_lookup(&table_, second_result)));
+
+  // Cyclic inference may undefine local entries before computing them again.
+  loom_value_fact_table_undefine(&table_, first_result);
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op(&table_, module_, first));
+  facts = loom_value_fact_table_lookup(&table_, first_result);
+  EXPECT_EQ(facts.range_lo, 16);
+  EXPECT_EQ(facts.range_hi, 64);
+  EXPECT_EQ(facts.known_divisor, 16);
+
+  loom_value_fact_table_clear_scope(&table_);
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op(&table_, module_, first));
+  EXPECT_NE(loom_value_fact_table_lookup(&table_, first_result).range_lo, 16);
+  IREE_ASSERT_OK(loom_value_fact_table_define(&inputs, first_result,
+                                              loom_value_facts_exact_i64(48)));
+  IREE_ASSERT_OK(loom_value_fact_table_seed_values(
+      &table_, {&inputs, &first_result, 1}, module_));
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op(&table_, module_, first));
+  facts = loom_value_fact_table_lookup(&table_, first_result);
+  EXPECT_TRUE(loom_value_facts_is_exact(facts));
+  EXPECT_EQ(facts.range_lo, 48);
+}
+
 TEST_F(FactTableComputeTest, BooleanBranchTruthIsRetainedByRegion) {
   loom_op_t* branch = nullptr;
   IREE_ASSERT_OK(loom_test_branch_build(

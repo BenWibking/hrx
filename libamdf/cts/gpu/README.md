@@ -149,6 +149,24 @@ host-independent batch advancement with shared or separate transfer queues.
 Queue count alone establishes neither physical engine assignment nor overlap
 between transfer and compute.
 
+The [finite-stream cases](recipes/pm4_sdma_finite_test.cc) record all commands
+for 64 graphs before publishing any queue. They reuse 1/2/4/8 input and output
+slots while retaining a distinct source and readback record for each graph.
+Separate upload/download queues, a shared queue alternating uploads and
+downloads, and a shared queue grouping them by available credits all use the
+same dataflow and full cache barriers. Per-slot compute completion protects
+input reuse; download completion protects output reuse. Shared ordering puts
+every required upload before the download that waits for its computation.
+
+The host snapshots every output after the final download, then independently
+joins producers and native consumption before resetting storage. Five streams
+per credit count cross every active command ring's wrap boundary. Complete
+backing and command-history checks include inactive payload slots and the
+idle second SDMA queue in shared layouts. These cases require host USER
+publication and 64 KiB command rings; they perform no mid-stream host refill
+or payload service. Their results establish correctness, not a performance
+ordering between transfer layouts.
+
 The [bounded streaming cases](recipes/pm4_sdma_streaming_test.cc) reuse
 1/2/4/8 payload slots across a longer sequence of graphs. They require mapped
 USER publication on one PM4 queue and two independent SDMA queues. The CPU
@@ -194,6 +212,25 @@ depend on earlier copied data. Empty work, credit and batch boundaries, repeated
 wrap and partial final batches share the same program. This exercises a
 cooperative publisher/consumer; it assumes no concurrent residency of separate
 GPU workgroups and has a single command publisher.
+
+The staged cases separate transfer publication from the compute consumer. A
+finite batch uses one AQL queue and one device-published SDMA queue. Each job
+runs three explicitly ordered dispatches: a GPU-selected upload, a
+multi-workgroup transform, and a GPU-published download. The upload's ordinary
+data descriptor carries the selected page, slot, length and transform input;
+the already-published AQL packets and arguments remain immutable. The next
+selection depends on the actual returned result. The host records the batch
+before publishing its first packet and joins only its final completion.
+
+SYSTEM and non-host-mapped LOCAL payloads have separate cases. Both use 1, 2
+or 4 reusable input/output pairs, row lengths of 68/264/288/6336 bytes, and
+block lengths of 4 KiB/17 KiB/72 KiB/1 MiB. Every job has a distinct full-slot
+readback so the oracle checks all processed words, preserved old tails and
+guards after each reuse. Row batches also cross SDMA ring wrap. The protocol
+requires no concurrently resident GPU controller: dispatch completion returns
+the payload to its next owner, while RPTR separately releases command bytes.
+The case establishes dependent data movement and consumption, without implying
+copy/compute overlap or a throughput result.
 
 The lifecycle cases exercise the same resource helper as the `DISABLED_`
 peer-device recreation scenarios, without creating extra devices. Recreation requires

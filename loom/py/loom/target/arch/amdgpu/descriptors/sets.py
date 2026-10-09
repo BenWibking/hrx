@@ -422,17 +422,21 @@ def _cdna_core_overlays(
         _v_fma_f64_neg_a_overlay(),
         _v_fma_f64_neg_a_one_overlay(),
         _v_pk_fmac_f16_overlay(),
-        _v_pk_fma_f16_overlay(),
-        _v_pk_add_f16_overlay(),
-        _v_pk_mul_f16_overlay(),
-        _v_pk_minnum_f16_overlay(),
-        _v_pk_maxnum_f16_overlay(),
-        *_v_pk_i16_binary_overlays(),
-        _v_pk_mad_i16_overlay(),
-        _v_pk_mad_u16_overlay(),
-        _v_pk_add_f32_overlay(),
-        _v_pk_mul_f32_overlay(),
-        _v_pk_fma_f32_overlay(),
+        *_v_pk_operand_overlays(
+            (
+                _v_pk_fma_f16_overlay(),
+                _v_pk_add_f16_overlay(),
+                _v_pk_mul_f16_overlay(),
+                _v_pk_minnum_f16_overlay(),
+                _v_pk_maxnum_f16_overlay(),
+                *_v_pk_i16_binary_overlays(),
+                _v_pk_mad_i16_overlay(),
+                _v_pk_mad_u16_overlay(),
+                _v_pk_add_f32_overlay(),
+                _v_pk_mul_f32_overlay(),
+                _v_pk_fma_f32_overlay(),
+            )
+        ),
         *_v_mad_mix_f32_overlays(op_sel_field="OP_SEL", op_sel_hi_field="OP_SEL_HI"),
         *_v_mad_mixlo_f16_overlays(op_sel_field="OP_SEL", op_sel_hi_field="OP_SEL_HI"),
         *_v_mad_mixhi_f16_overlays(op_sel_field="OP_SEL", op_sel_hi_field="OP_SEL_HI"),
@@ -1134,17 +1138,18 @@ def _gfx11_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         _v_fmamk_f32_overlay(),
         *_rdna_scalar_fma_overlays(),
         _v_pk_fmac_f16_overlay(),
-        _v_pk_fma_f16_overlay(include_literal_forms=True),
-        *_v_pk_fma_f16_literal_overlays(),
-        _v_pk_add_f16_overlay(),
-        _v_pk_mul_f16_overlay(),
-        _v_pk_minnum_f16_overlay(),
-        _v_pk_maxnum_f16_overlay(),
-        *_v_pk_i16_binary_overlays(),
-        _v_pk_mad_i16_overlay(include_literal_forms=True),
-        *_v_pk_mad_i16_literal_overlays(),
-        _v_pk_mad_u16_overlay(include_literal_forms=True),
-        *_v_pk_mad_u16_literal_overlays(),
+        *_v_pk_operand_overlays(
+            (
+                _v_pk_fma_f16_overlay(include_literal_forms=True),
+                _v_pk_add_f16_overlay(),
+                _v_pk_mul_f16_overlay(),
+                _v_pk_minnum_f16_overlay(),
+                _v_pk_maxnum_f16_overlay(),
+                *_v_pk_i16_binary_overlays(),
+                _v_pk_mad_i16_overlay(include_literal_forms=True),
+                _v_pk_mad_u16_overlay(include_literal_forms=True),
+            )
+        ),
         *_v_fma_mix_f32_overlays(op_sel_field="OP_SEL", op_sel_hi_field="OP_SEL_HI"),
         *_v_fma_mixlo_f16_overlays(op_sel_field="OP_SEL", op_sel_hi_field="OP_SEL_HI"),
         *_v_fma_mixhi_f16_overlays(op_sel_field="OP_SEL", op_sel_hi_field="OP_SEL_HI"),
@@ -1830,15 +1835,19 @@ def _rdna4m_minmax_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
     return (
         *numeric_f32_overlays,
         *numeric_scalar_overlays,
-        _v_pk_minnum_f16_overlay(
-            instruction_name="V_PK_MIN_NUM_F16", mnemonic="v_pk_min_num_f16"
-        ),
-        _v_pk_maxnum_f16_overlay(
-            instruction_name="V_PK_MAX_NUM_F16", mnemonic="v_pk_max_num_f16"
+        *_v_pk_operand_overlays(
+            (
+                _v_pk_minnum_f16_overlay(
+                    instruction_name="V_PK_MIN_NUM_F16", mnemonic="v_pk_min_num_f16"
+                ),
+                _v_pk_maxnum_f16_overlay(
+                    instruction_name="V_PK_MAX_NUM_F16", mnemonic="v_pk_max_num_f16"
+                ),
+                _v_pk_minimum_f16_overlay(),
+                _v_pk_maximum_f16_overlay(),
+            )
         ),
         *ieee_scalar_overlays,
-        _v_pk_minimum_f16_overlay(),
-        _v_pk_maximum_f16_overlay(),
         *ternary_overlays,
     )
 
@@ -1988,26 +1997,25 @@ def _rdna4_core_overlays(
         *_rdna_scalar_fma_overlays(),
         _v_pk_fmac_f16_overlay(),
         *_v_pk_with_op_sel_hi_field(
-            (
-                _v_pk_fma_f16_overlay(include_literal_forms=True),
-                *_v_pk_fma_f16_literal_overlays(),
-                _v_pk_add_f16_overlay(),
-                _v_pk_mul_f16_overlay(),
-                _v_pk_minnum_f16_overlay(
-                    instruction_name="V_PK_MIN_NUM_F16",
-                    mnemonic="v_pk_min_num_f16",
-                ),
-                _v_pk_maxnum_f16_overlay(
-                    instruction_name="V_PK_MAX_NUM_F16",
-                    mnemonic="v_pk_max_num_f16",
-                ),
-                _v_pk_minimum_f16_overlay(),
-                _v_pk_maximum_f16_overlay(),
-                *_v_pk_i16_binary_overlays(),
-                _v_pk_mad_i16_overlay(include_literal_forms=True),
-                *_v_pk_mad_i16_literal_overlays(),
-                _v_pk_mad_u16_overlay(include_literal_forms=True),
-                *_v_pk_mad_u16_literal_overlays(),
+            _v_pk_operand_overlays(
+                (
+                    _v_pk_fma_f16_overlay(include_literal_forms=True),
+                    _v_pk_add_f16_overlay(),
+                    _v_pk_mul_f16_overlay(),
+                    _v_pk_minnum_f16_overlay(
+                        instruction_name="V_PK_MIN_NUM_F16",
+                        mnemonic="v_pk_min_num_f16",
+                    ),
+                    _v_pk_maxnum_f16_overlay(
+                        instruction_name="V_PK_MAX_NUM_F16",
+                        mnemonic="v_pk_max_num_f16",
+                    ),
+                    _v_pk_minimum_f16_overlay(),
+                    _v_pk_maximum_f16_overlay(),
+                    *_v_pk_i16_binary_overlays(),
+                    _v_pk_mad_i16_overlay(include_literal_forms=True),
+                    _v_pk_mad_u16_overlay(include_literal_forms=True),
+                )
             ),
             "OPSEL_HI",
         ),
@@ -2354,10 +2362,12 @@ def _gfx125x_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         _v_cvt_pk_bf16_f32_overlay(),
         _v_cvt_pk_bf16_f32_dpp16_overlay(),
         *_v_pk_with_op_sel_hi_field(
-            (
-                _v_pk_add_bf16_overlay(),
-                _v_pk_mul_bf16_overlay(),
-                _v_pk_fma_bf16_overlay(),
+            _v_pk_operand_overlays(
+                (
+                    _v_pk_add_bf16_overlay(),
+                    _v_pk_mul_bf16_overlay(),
+                    _v_pk_fma_bf16_overlay(),
+                )
             ),
             "OPSEL_HI",
         ),

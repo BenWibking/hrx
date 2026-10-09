@@ -174,7 +174,7 @@ static iree_status_t loom_amdgpu_source_alloca_layout_record_allocation(
     IREE_RETURN_IF_ERROR(loom_source_storage_packing_create(
         loom_source_storage_packing_interference_callback_make(interference_fn,
                                                                layout),
-        layout->arena, &segment->packing));
+        NULL, 0, layout->arena, &segment->packing));
   }
   uint64_t byte_offset = 0;
   IREE_RETURN_IF_ERROR(loom_source_storage_packing_append(

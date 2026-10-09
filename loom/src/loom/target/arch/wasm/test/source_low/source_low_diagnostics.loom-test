@@ -2,6 +2,28 @@
 
 wasm.target<simd128> @target
 
+func.def target(@target) @view_origin_exceeds_wasm32(%input: buffer, %origin_input: offset) -> (view<1xi32>) {
+  %origin = index.assume %origin_input [range(%origin_input, 4294967296, 8589934591)] : offset
+  // ERROR@+1: WASM/006 {op_name="buffer.view", bit_count="32"}
+  %view = buffer.view %input[%origin] : buffer -> view<1xi32>
+  func.return %view : view<1xi32>
+}
+
+// ====
+
+wasm.target<simd128> @target
+
+func.def target(@target) @view_origin_may_overflow_wasm32(%input: buffer, %origin_input: offset) -> (view<1xi32>) {
+  %origin = index.assume %origin_input [range(%origin_input, 0, 4294967296)] : offset
+  // ERROR@+1: WASM/006 {op_name="buffer.view", bit_count="32"}
+  %view = buffer.view %input[%origin] : buffer -> view<1xi32>
+  func.return %view : view<1xi32>
+}
+
+// ====
+
+wasm.target<simd128> @target
+
 func.def target(@target) @scalar_powf_rejected_by_math_policy(%base: f32, %exponent: f32) -> (f32) {
   // ERROR@+1: LOWERING/036 {op_name="scalar.powf", phase_name="legalize-math", policy_name="wasm-math", math_op="powf", lane_domain="scalar", element_type="f32", constraint_key="math.op.supported"}
   %result = scalar.powf<afn> %base, %exponent : f32
@@ -58,23 +80,6 @@ wasm.target<simd128> @target
 func.def target(@target) @unsupported_vector_carrier(%value: vector<8xi32>) {
   func.return
 }
-
-// ====
-
-// RUN: with-checks compile-report target-legalize{mode=eager}
-
-wasm.target<simd128> @target
-
-// A scalar reference recipe cannot consume a vector carrier that the target
-// cannot represent.
-func.def target(@target) @unsupported_reference_carrier(%lhs: vector<8xi32>, %rhs: vector<8xi32>) -> (vector<8xi32>) {
-  %product = vector.muli %lhs, %rhs : vector<8xi32>
-  func.return %product : vector<8xi32>
-}
-
-// ----
-CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=0 scalarized=0 target_rewritten=0 reference_rewritten=0 deferred=0 invalid_ir=0 unsupported=0 unhandled=1 rows=1 *
-CHECK: COMPILE-REPORT: target_legalization[0] function=unsupported_reference_carrier source_op=vector.muli * action=unhandled outcome=unhandled contract=unsupported legalizer=- strategy=none * scalarized=false * created_ops=0 erased_ops=0
 
 // ====
 

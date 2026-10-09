@@ -550,6 +550,69 @@ TEST_F(FactTableTest, DefineWithinCapacityPreservesExistingEntries) {
   EXPECT_EQ(r100.range_lo, 30);
 }
 
+TEST_F(FactTableTest, LazyScopeOmitsUnrelatedValuePrefix) {
+  loom_value_fact_table_t table = {0};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&table, &arena_, 0));
+  constexpr loom_value_id_t kFirst = (1u << 20) + 63;
+  IREE_ASSERT_OK(loom_value_fact_table_define(&table, kFirst,
+                                              loom_value_facts_exact_i64(17)));
+  IREE_ASSERT_OK(loom_value_fact_table_define(&table, kFirst + 1,
+                                              loom_value_facts_exact_i64(19)));
+
+  EXPECT_LE(table.capacity, 128u);
+  EXPECT_EQ(loom_value_fact_table_lookup(&table, kFirst).range_lo, 17);
+  EXPECT_EQ(loom_value_fact_table_lookup(&table, kFirst + 1).range_lo, 19);
+  EXPECT_FALSE(loom_value_fact_table_has_entry(&table, 0));
+  EXPECT_FALSE(loom_value_fact_table_has_entry(&table, kFirst - 1));
+  EXPECT_FALSE(loom_value_fact_table_has_entry(&table, kFirst + 2));
+  EXPECT_EQ(table.touched_count, 2u);
+  EXPECT_EQ(table.count, kFirst + 2);
+
+  loom_value_fact_table_t cloned = {0};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&cloned, &arena_, 0));
+  const loom_value_id_t values[] = {kFirst, kFirst + 2};
+  IREE_ASSERT_OK(loom_value_fact_table_clone_values(
+      &cloned, {&table, values, IREE_ARRAYSIZE(values)}, nullptr));
+  EXPECT_EQ(loom_value_fact_table_lookup(&cloned, kFirst).range_lo, 17);
+  EXPECT_FALSE(loom_value_fact_table_has_entry(&cloned, kFirst + 1));
+  EXPECT_FALSE(loom_value_fact_table_has_entry(&cloned, kFirst + 2));
+  EXPECT_LE(cloned.capacity, 64u);
+}
+
+TEST_F(FactTableTest, RangeGrowthRetainsUndefinedMembershipAndScopeReuse) {
+  loom_value_fact_table_t table = {0};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&table, &arena_, 0));
+  IREE_ASSERT_OK(
+      loom_value_fact_table_define(&table, 257, loom_value_facts_exact_i64(7)));
+  IREE_ASSERT_OK(loom_value_fact_table_define(&table, 320,
+                                              loom_value_facts_exact_i64(11)));
+  loom_value_fact_table_undefine(&table, 320);
+  IREE_ASSERT_OK(loom_value_fact_table_define(&table, 191,
+                                              loom_value_facts_exact_i64(13)));
+  EXPECT_EQ(loom_value_fact_table_lookup(&table, 257).range_lo, 7);
+  EXPECT_EQ(loom_value_fact_table_lookup(&table, 191).range_lo, 13);
+  EXPECT_FALSE(loom_value_fact_table_has_entry(&table, 320));
+  EXPECT_EQ(table.touched_count, 3u);
+
+  IREE_ASSERT_OK(loom_value_fact_table_reserve(&table, 1024));
+  EXPECT_EQ(table.first_value_id, 0u);
+  IREE_ASSERT_OK(loom_value_fact_table_define(&table, 320,
+                                              loom_value_facts_exact_i64(23)));
+  EXPECT_EQ(table.touched_count, 3u);
+  EXPECT_EQ(loom_value_fact_table_lookup(&table, 257).range_lo, 7);
+  EXPECT_EQ(loom_value_fact_table_lookup(&table, 320).range_lo, 23);
+  EXPECT_EQ(loom_value_fact_table_lookup(&table, 191).range_lo, 13);
+
+  loom_value_fact_table_clear_scope(&table);
+  for (loom_value_id_t value : {191u, 257u, 320u}) {
+    EXPECT_FALSE(loom_value_fact_table_has_entry(&table, value));
+  }
+  IREE_ASSERT_OK(loom_value_fact_table_define(&table, 320,
+                                              loom_value_facts_exact_i64(29)));
+  EXPECT_EQ(table.touched_count, 1u);
+  EXPECT_EQ(loom_value_fact_table_lookup(&table, 320).range_lo, 29);
+}
+
 TEST_F(FactTableTest, DefineBeyondCapacityGrowsAndPreservesEntries) {
   loom_value_fact_table_t table = {0};
   IREE_ASSERT_OK(loom_value_fact_table_initialize(&table, &arena_, 2));

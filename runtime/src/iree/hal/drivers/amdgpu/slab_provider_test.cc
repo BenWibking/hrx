@@ -149,7 +149,7 @@ TEST_F(SlabProviderTest, CapturesAccessBeforeNativeAcquisition) {
     const uint32_t pattern = 0x12345678u;
     IREE_ASSERT_OK(iree_hal_queue_fill(
         queue, iree_hal_semaphore_list_empty(), filled, view, 0, 64, &pattern,
-        sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+        sizeof(pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
     IREE_ASSERT_OK(iree_hal_semaphore_list_wait(filled, iree_infinite_timeout(),
                                                 IREE_ASYNC_WAIT_FLAG_NONE));
     IREE_ASSERT_OK(iree_hsa_memory_copy(IREE_LIBHSA(&libhsa_), values.data(),

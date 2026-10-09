@@ -34,6 +34,7 @@
 #include "loom/pass/value_facts.h"
 #include "loom/rewrite/rewriter.h"
 #include "loom/target/condition.h"
+#include "loom/target/facts_builder.h"
 #include "loom/target/pass_environment.h"
 #include "loom/transforms/symbol/inline_callables.h"
 #include "loom/transforms/symbol/symbol_pruning.h"
@@ -294,6 +295,10 @@ typedef struct loom_template_selection_state_t {
   // Concrete symbol references for this module snapshot.
   loom_symbol_reference_table_t references;
 
+  // Lazily projected worker environments indexed by retained execution scope.
+  // Projection happens once per independent scope, even for many applications.
+  loom_template_applicability_target_t** worker_targets;
+
   // Symbol-pruning policy shared with the liveness root classifier.
   loom_symbol_pruning_options_t pruning_options;
 
@@ -374,8 +379,6 @@ typedef struct loom_template_selection_state_t {
   struct {
     // Function of the most recent fact acquisition, including value-only uses.
     loom_op_t* function;
-    // Target context used by that function's fact computation.
-    const loom_target_facts_t* target_facts;
     // Borrowed active fact scope, shared by all applications in the function.
     loom_value_fact_table_t* values;
     // Function-local value index borrowed by retained CFG relation tables.
@@ -494,7 +497,7 @@ static iree_status_t loom_template_selection_lookup_target_facts(
   return iree_ok_status();
 }
 
-static iree_status_t loom_template_selection_resolve_application_target(
+static iree_status_t loom_template_selection_resolve_function_target(
     loom_template_selection_state_t* state,
     const loom_symbol_liveness_contributor_context_t* context,
     loom_template_applicability_target_t* out_target) {
@@ -524,6 +527,50 @@ static iree_status_t loom_template_selection_resolve_application_target(
   }
   return loom_template_selection_lookup_target_facts(state, out_target->witness,
                                                      &out_target->facts);
+}
+
+static iree_status_t loom_template_selection_resolve_application_target(
+    loom_template_selection_state_t* state,
+    const loom_symbol_liveness_contributor_context_t* context,
+    loom_symbol_reference_execution_scope_id_t execution_scope,
+    loom_template_applicability_target_t* out_target) {
+  if (!execution_scope) {
+    return loom_template_selection_resolve_function_target(state, context,
+                                                           out_target);
+  }
+  if (state->worker_targets == NULL) {
+    IREE_RETURN_IF_ERROR(iree_allocator_malloc_array(
+        iree_arena_allocator(state->arena),
+        state->references.execution_targets.count,
+        sizeof(*state->worker_targets), (void**)&state->worker_targets));
+  }
+  loom_template_applicability_target_t** slot =
+      &state->worker_targets[execution_scope - 1];
+  if (*slot == NULL) {
+    IREE_RETURN_IF_ERROR(
+        iree_arena_allocate(state->arena, sizeof(**slot), (void**)slot));
+    loom_template_applicability_target_t* target = *slot;
+    *target = (loom_template_applicability_target_t){
+        .witness =
+            state->references.execution_targets.values[execution_scope - 1],
+    };
+    if (loom_symbol_ref_is_valid(target->witness)) {
+      IREE_RETURN_IF_ERROR(loom_template_selection_lookup_target_facts(
+          state, target->witness, &target->facts));
+    } else {
+      IREE_RETURN_IF_ERROR(loom_template_selection_resolve_function_target(
+          state, context, target));
+    }
+    const loom_target_facts_t* source = target->facts;
+    IREE_RETURN_IF_ERROR(loom_target_facts_builder_project_worker(
+        source, state->arena, &target->facts));
+    if (target->facts != source) {
+      // The device symbol is not an identity witness for its worker contract.
+      target->witness = loom_symbol_ref_null();
+    }
+  }
+  *out_target = **slot;
+  return iree_ok_status();
 }
 
 static iree_status_t loom_template_selection_append_report_detail(
@@ -766,7 +813,8 @@ static iree_status_t loom_template_selection_prepare_cfg_facts(
         state->module, entry->graph, value_facts, &builder.dominance,
         &state->application_scope.value_domain,
         &state->application_scope.value_identities,
-        value_facts->transient_arena, &entry->conditions);
+        /*anchor_provider=*/NULL, value_facts->transient_arena,
+        &entry->conditions);
   }
   if (iree_status_is_ok(status)) {
     state->application_scope.cfg_facts = builder.entries;
@@ -909,7 +957,6 @@ static void loom_template_selection_reset_application_scope(
     loom_template_selection_state_t* state) {
   loom_local_value_domain_release(&state->application_scope.value_domain);
   state->application_scope.function = NULL;
-  state->application_scope.target_facts = NULL;
   state->application_scope.values = NULL;
   state->application_scope.value_identities =
       (loom_cfg_value_identity_table_t){0};
@@ -920,7 +967,6 @@ static iree_status_t loom_template_selection_prepare_application_facts(
     loom_template_selection_state_t* state,
     const loom_symbol_liveness_contributor_context_t* context,
     const loom_op_t* apply_op,
-    const loom_template_applicability_target_t* apply_target,
     loom_template_decision_fact_requirements_t requirements,
     loom_template_applicability_facts_t* out_facts) {
   *out_facts = (loom_template_applicability_facts_t){0};
@@ -934,12 +980,16 @@ static iree_status_t loom_template_selection_prepare_application_facts(
       !loom_func_like_body(source_function)) {
     return iree_ok_status();
   }
-  if (state->application_scope.function != source_function.op ||
-      state->application_scope.target_facts != apply_target->facts) {
+  if (state->application_scope.function != source_function.op) {
+    // Captures keep the facts of their defining context. Region inference
+    // selects worker targets within this enclosing function's fact table.
+    loom_template_applicability_target_t function_target = {0};
+    IREE_RETURN_IF_ERROR(loom_template_selection_resolve_function_target(
+        state, context, &function_target));
     loom_template_selection_reset_application_scope(state);
     const loom_pass_value_fact_scope_t scope =
         loom_pass_value_fact_scope_function_for_target(source_function,
-                                                       apply_target->facts);
+                                                       function_target.facts);
     loom_value_fact_table_t* values = NULL;
     if (state->pass != NULL) {
       IREE_RETURN_IF_ERROR(loom_pass_value_facts_acquire(
@@ -949,7 +999,6 @@ static iree_status_t loom_template_selection_prepare_application_facts(
           state->value_fact_owner, state->module, scope, &values));
     }
     state->application_scope.function = source_function.op;
-    state->application_scope.target_facts = apply_target->facts;
     state->application_scope.values = values;
   }
   const loom_value_fact_table_t* table = state->application_scope.values;
@@ -1050,7 +1099,7 @@ static iree_status_t loom_template_selection_analyze_apply(
 
   loom_template_applicability_target_t apply_target = {0};
   IREE_RETURN_IF_ERROR(loom_template_selection_resolve_application_target(
-      state, context, &apply_target));
+      state, context, demand->execution_scope, &apply_target));
   const loom_template_decision_model_t* model =
       loom_template_decision_model_lookup(&state->decision_models, family);
 
@@ -1061,8 +1110,7 @@ static iree_status_t loom_template_selection_analyze_apply(
             : 0;
   if (fact_requirements != 0) {
     IREE_RETURN_IF_ERROR(loom_template_selection_prepare_application_facts(
-        state, context, apply_op, &apply_target, fact_requirements,
-        &application_facts));
+        state, context, apply_op, fact_requirements, &application_facts));
   }
   const loom_template_decision_site_t site = {
       .application_op = apply_op,
@@ -1119,7 +1167,8 @@ static iree_status_t loom_template_selection_analyze_apply(
 static iree_status_t loom_template_selection_analyze_exact_call(
     loom_template_selection_state_t* state,
     loom_symbol_liveness_contributor_context_t* context,
-    const loom_op_t* call_op, bool* out_eligible) {
+    const loom_symbol_reference_occurrence_t* occurrence, bool* out_eligible) {
+  const loom_op_t* call_op = occurrence->user_op;
   *out_eligible = false;
   ++state->statistics->exact_call_sites;
 
@@ -1128,7 +1177,7 @@ static iree_status_t loom_template_selection_analyze_exact_call(
       state->module, call_op, &state->fact_table, &call));
   loom_template_applicability_target_t apply_target = {0};
   IREE_RETURN_IF_ERROR(loom_template_selection_resolve_application_target(
-      state, context, &apply_target));
+      state, context, occurrence->execution_scope, &apply_target));
 
   loom_template_applicability_facts_t application_facts = {0};
   if (loom_template_applicability_requires_application_facts(
@@ -1136,7 +1185,7 @@ static iree_status_t loom_template_selection_analyze_exact_call(
       loom_template_applicability_requires_application_facts(
           call_op, &call.provider_contract, apply_target.facts)) {
     IREE_RETURN_IF_ERROR(loom_template_selection_prepare_application_facts(
-        state, context, call_op, &apply_target,
+        state, context, call_op,
         LOOM_TEMPLATE_DECISION_FACT_REQUIREMENT_VALUES |
             LOOM_TEMPLATE_DECISION_FACT_REQUIREMENT_PATH,
         &application_facts));
@@ -1173,17 +1222,18 @@ static iree_status_t loom_template_selection_analyze_exact_call(
 }
 
 static iree_status_t loom_template_selection_check_inline_eligibility(
-    void* user_data, loom_symbol_id_t source_symbol_id, loom_op_t* call_op,
+    void* user_data, const loom_symbol_reference_occurrence_t* occurrence,
     bool* out_eligible) {
   loom_template_selection_state_t* state = user_data;
   loom_symbol_liveness_contributor_context_t context = {
       .module = state->module,
       .references = &state->references,
       .arena = state->arena,
-      .source_symbol_id = source_symbol_id,
-      .source_symbol = &state->module->symbols.entries[source_symbol_id],
+      .source_symbol_id = occurrence->source_symbol_id,
+      .source_symbol =
+          &state->module->symbols.entries[occurrence->source_symbol_id],
   };
-  return loom_template_selection_analyze_exact_call(state, &context, call_op,
+  return loom_template_selection_analyze_exact_call(state, &context, occurrence,
                                                     out_eligible);
 }
 
@@ -1202,8 +1252,7 @@ static iree_status_t loom_template_selection_analyze_exact_calls(
     }
     bool eligible = false;
     IREE_RETURN_IF_ERROR(loom_template_selection_check_inline_eligibility(
-        state, occurrence->source_symbol_id, (loom_op_t*)occurrence->user_op,
-        &eligible));
+        state, occurrence, &eligible));
   }
   return iree_ok_status();
 }

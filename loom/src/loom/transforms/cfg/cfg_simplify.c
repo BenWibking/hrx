@@ -1648,33 +1648,8 @@ static iree_status_t loom_cfg_simplify_process_cfg_region(
   if (*out_changed) {
     return iree_ok_status();
   }
-  IREE_RETURN_IF_ERROR(loom_cfg_value_identity_table_update(
-      &state->value_identities, structure, state->dominance,
-      state->analysis_arena));
-  loom_cfg_condition_relation_table_t path_fact_table = {0};
-  IREE_RETURN_IF_ERROR(loom_cfg_condition_relation_table_compute(
-      state->module, graph, state->fact_table, state->dominance,
-      &state->value_domain, &state->value_identities, state->analysis_arena,
-      &path_fact_table));
-  IREE_RETURN_IF_ERROR(loom_cfg_simplify_thread_fact_known_branches(
-      state, graph, &path_fact_table, out_changed));
-  if (*out_changed) {
-    return iree_ok_status();
-  }
-  uint16_t branches_folded = 0;
-  IREE_RETURN_IF_ERROR(loom_cfg_fold_path_sensitive_branches(
-      state->rewriter, graph, &path_fact_table, &state->condition_query,
-      state->analysis_arena, &branches_folded));
-  if (branches_folded != 0) {
-    state->statistics->branches_folded += branches_folded;
-    *out_changed = true;
-    return iree_ok_status();
-  }
-  IREE_RETURN_IF_ERROR(loom_cfg_simplify_fold_path_sensitive_i1_ops(
-      state, graph, &path_fact_table, out_changed));
-  if (*out_changed) {
-    return iree_ok_status();
-  }
+  // Collapse structural forwarding before computing path relations that would
+  // be invalidated by those same edits.
   uint16_t fused_count = 0;
   IREE_RETURN_IF_ERROR(loom_cfg_fuse_single_predecessor_blocks(
       state->rewriter, graph, state->dominance, state->analysis_arena,
@@ -1695,6 +1670,33 @@ static iree_status_t loom_cfg_simplify_process_cfg_region(
     return iree_ok_status();
   }
 
+  IREE_RETURN_IF_ERROR(loom_cfg_value_identity_table_update(
+      &state->value_identities, structure, state->dominance,
+      state->analysis_arena));
+  loom_cfg_condition_relation_table_t path_fact_table = {0};
+  IREE_RETURN_IF_ERROR(loom_cfg_condition_relation_table_compute(
+      state->module, graph, state->fact_table, state->dominance,
+      &state->value_domain, &state->value_identities,
+      /*anchor_provider=*/NULL, state->analysis_arena, &path_fact_table));
+  IREE_RETURN_IF_ERROR(loom_cfg_simplify_thread_fact_known_branches(
+      state, graph, &path_fact_table, out_changed));
+  if (*out_changed) {
+    return iree_ok_status();
+  }
+  uint16_t branches_folded = 0;
+  IREE_RETURN_IF_ERROR(loom_cfg_fold_path_sensitive_branches(
+      state->rewriter, graph, &path_fact_table, &state->condition_query,
+      state->analysis_arena, &branches_folded));
+  if (branches_folded != 0) {
+    state->statistics->branches_folded += branches_folded;
+    *out_changed = true;
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(loom_cfg_simplify_fold_path_sensitive_i1_ops(
+      state, graph, &path_fact_table, out_changed));
+  if (*out_changed) {
+    return iree_ok_status();
+  }
   IREE_RETURN_IF_ERROR(
       loom_cfg_simplify_merge_equivalent_blocks(state, graph, out_changed));
   if (*out_changed) {
@@ -1799,8 +1801,13 @@ iree_status_t loom_cfg_simplify_run(loom_pass_t* pass, loom_module_t* module,
     loom_op_t* pending_op = NULL;
     while (iree_status_is_ok(status) &&
            (pending_op = loom_rewriter_pop(&rewriter)) != NULL) {
+      bool erased = false;
+      status = loom_rewriter_erase_if_dead(&rewriter, pending_op, &erased);
       bool folded = false;
-      status = loom_rewriter_try_fold(&rewriter, pending_op, &folded);
+      if (iree_status_is_ok(status) && !erased) {
+        status = loom_rewriter_try_fold(&rewriter, pending_op, &folded);
+      }
+      any_changed |= erased || folded;
     }
     if (!iree_status_is_ok(status)) {
       break;
@@ -1845,7 +1852,9 @@ iree_status_t loom_cfg_simplify_run(loom_pass_t* pass, loom_module_t* module,
     loom_pass_mark_changed(pass);
   }
   loom_rewriter_deinitialize(&rewriter);
-  loom_pass_value_fact_owner_invalidate(pass->value_facts);
+  if (any_changed || !iree_status_is_ok(status)) {
+    loom_pass_value_fact_owner_invalidate(pass->value_facts);
+  }
   loom_local_value_domain_release(&state.value_domain);
   iree_arena_deinitialize(&analysis_arena);
   return status;

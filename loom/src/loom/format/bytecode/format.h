@@ -342,7 +342,7 @@ typedef enum loom_bytecode_section_kind_e {
 //       0 = none, 1 = scalar, 2 = tile, 3 = tensor, 4 = unassigned,
 //       5 = function, 6 = dialect, 7 = encoding, 8 = pool,
 //       9 = vector, 10 = view, 11 = buffer, 12 = register,
-//       13 = storage, 14 = parameterized
+//       13 = storage, 14 = parameterized, 15 = group
 //     (SCALAR: [element_type: byte])
 //     (TILE/TENSOR/VECTOR/VIEW:
 //       [element_type: byte]
@@ -368,9 +368,12 @@ typedef enum loom_bytecode_section_kind_e {
 //       For each param: [type_index: varint])
 //     (ENCODING:
 //       [role: byte]                (loom_bytecode_encoding_role_t))
-//     (POOL:
-//       [is_dynamic: byte]          (0 = static, 1 = dynamic)
-//       (if static: [size: varint]) (block size in bytes))
+//     (POOL: no additional data)
+//     (GROUP:
+//       [rank: byte]
+//       For each dim (rank times):
+//         [is_dynamic: byte]        (0 = static, 1 = dynamic)
+//         (if static: [size: varint]))
 //     (REGISTER:
 //       [payload0: varint]          (target-owned register payload word)
 //       [payload1: varint]          (target-owned register payload word)
@@ -440,6 +443,10 @@ typedef enum loom_bytecode_section_kind_e {
 //     dimension, otherwise the scope-local SSA value number plus 1.
 //   POOL:
 //     Dynamic block-size SSA value number plus 1, or 0 if unbound.
+//   GROUP:
+//     rank, then is_dynamic and dimension_payload for each dimension. A
+//     static payload is its size. A dynamic payload is 0 for an unbound
+//     dimension, otherwise the scope-local SSA value number plus 1.
 //   FUNCTION:
 //     arg_count, result_count, then one child reference per argument/result.
 //     Each count is at most UINT16_MAX.
@@ -1058,6 +1065,7 @@ typedef enum loom_bytecode_type_kind_e {
   LOOM_BYTECODE_TYPE_STORAGE = 13,
   // Descriptor-backed type with stable named attribute parameter slots.
   LOOM_BYTECODE_TYPE_PARAMETERIZED = 14,
+  LOOM_BYTECODE_TYPE_GROUP = 15,
 } loom_bytecode_type_kind_t;
 
 // Encoding role byte in the TYPES section (ENCODING payload).

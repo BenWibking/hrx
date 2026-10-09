@@ -6,6 +6,24 @@
 
 #include "iree/hal/replay/format.h"
 
+IREE_API_EXPORT bool iree_hal_replay_operation_has_queue_barriers(
+    iree_hal_replay_operation_code_t operation_code) {
+  switch (operation_code) {
+    case IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_BARRIER:
+    case IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_DISPATCH:
+    case IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_TRANSFER:
+    case IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_READ:
+    case IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_WRITE:
+    case IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_ATOMIC_WAIT:
+    case IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_ATOMIC_STORE:
+    case IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_ATOMIC_RMW:
+    case IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_TIMESTAMP:
+      return true;
+    default:
+      return false;
+  }
+}
+
 IREE_API_EXPORT const char* iree_hal_replay_file_record_type_string(
     iree_hal_replay_file_record_type_t record_type) {
   switch (record_type) {

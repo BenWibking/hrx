@@ -136,6 +136,7 @@ void Intrinsics::declaration(cxx::FunctionSymbol* function,
                (!ViewIntrinsic::supports(selected->arguments[0]->name()) &&
                 !BufferIntrinsic::supports(selected->arguments[0]->name()) &&
                 !DecodeIntrinsic::supports(selected->arguments[0]->name()) &&
+                !FragmentIntrinsic::supports(selected->arguments[0]->name()) &&
                 !AtomicIntrinsic::supports(selected->arguments[0]->name()) &&
                 !FenceIntrinsic::supports(selected->arguments[0]->name()) &&
                 !BarrierIntrinsic::supports(selected->arguments[0]->name()) &&
@@ -189,6 +190,10 @@ Intrinsics::Binding Intrinsics::resolve(cxx::FunctionSymbol* function,
           unit_, diagnostics_, module_->context, function, attribute, owner)) {
     return EncodingIntrinsic::resolve(*encoding, unit_, diagnostics_, types_,
                                       function, module_, owner);
+  }
+  if (auto fragment = FragmentIntrinsic::resolve(
+          unit_, diagnostics_, types_, function, attribute, module_, owner)) {
+    return *fragment;
   }
   if (auto binding = CheckIntrinsic::resolve(
           unit_, diagnostics_, types_, launches_, function, attribute, owner)) {
@@ -385,6 +390,9 @@ IntrinsicCallResult Intrinsics::call(const Binding& admitted,
   if (auto* decode = std::get_if<DecodeIntrinsic>(binding)) {
     return {decode->call(arguments, builder, location)};
   }
+  if (auto* fragment = std::get_if<FragmentIntrinsic>(binding)) {
+    return {fragment->call(arguments, builder, location)};
+  }
   if (auto* encoding = std::get_if<EncodingIntrinsic>(binding)) {
     return {encoding->call(arguments, arena, builder, location)};
   }
@@ -416,18 +424,18 @@ IntrinsicCallResult Intrinsics::call(const Binding& admitted,
     return {
         application->call(arguments, types_, arena, owner, builder, location)};
   }
+  if (auto* shaped = std::get_if<ShapedIntrinsic>(binding)) {
+    return {Value(shaped->call(arguments, math_flags, builder, location))};
+  }
   std::array<loom_value_id_t, 8> inline_values;
   std::vector<loom_value_id_t> overflow;
   auto flattened = flatten(arguments, inline_values, overflow);
-  if (auto* scalar = std::get_if<ScalarBinding>(binding)) {
-    loom_op_t* op;
-    check(scalar->operation.scalar->build(
-        builder, scalar->operation.flags | math_flags, flattened.data(),
-        scalar->type, location, &op));
-    return {Value(loom_op_results(op)[0])};
-  }
-  const auto& shaped = std::get<ShapedIntrinsic>(admitted);
-  return {Value(shaped.call(flattened, math_flags, builder, location))};
+  const auto& scalar = std::get<ScalarBinding>(admitted);
+  loom_op_t* op;
+  check(scalar.operation.scalar->build(
+      builder, scalar.operation.flags | math_flags, flattened.data(),
+      scalar.type, location, &op));
+  return {Value(loom_op_results(op)[0])};
 }
 
 }  // namespace loom::cxx_import

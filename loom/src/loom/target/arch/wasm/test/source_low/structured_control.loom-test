@@ -14,11 +14,11 @@ func.def target(@target) @if_without_results(%control: i32, %limit: i32, %lhs: v
 }
 
 // ----
-low.func.def target<wasm.core.simd128>(@target) abi(wasm_function) @if_without_results(%control: reg<wasm.i32>, %limit: reg<wasm.i32>, %lhs: reg<wasm.v128>, %rhs: reg<wasm.v128>, %output_view: reg<wasm.i32>) asm {
+low.func.def target<wasm.core.simd128>(@target) abi(wasm_function) @if_without_results(%control: reg<wasm.i32>, %limit: reg<wasm.i32>, %lhs: reg<wasm.v128>, %rhs: reg<wasm.v128>, %output: reg<wasm.i32>) asm {
   %cond = i32.lt_u %control, %limit
   low.scf.if %cond {
     %sum = i32x4.add %lhs, %rhs
-    v128.store %output_view, %sum
+    v128.store %output, %sum
   }
   return
 }
@@ -63,10 +63,10 @@ func.def target(@target) @for_without_iter_args(%lo: index, %hi: index, %step: i
 }
 
 // ----
-low.func.def target<wasm.core.simd128>(@target) abi(wasm_function) @for_without_iter_args(%lo: reg<wasm.i32>, %hi: reg<wasm.i32>, %step: reg<wasm.i32>, %lhs: reg<wasm.v128>, %rhs: reg<wasm.v128>, %output_view: reg<wasm.i32>) asm {
+low.func.def target<wasm.core.simd128>(@target) abi(wasm_function) @for_without_iter_args(%lo: reg<wasm.i32>, %hi: reg<wasm.i32>, %step: reg<wasm.i32>, %lhs: reg<wasm.v128>, %rhs: reg<wasm.v128>, %output: reg<wasm.i32>) asm {
   low.scf.for signed [%lo to %hi step %step] do(%iv: reg<wasm.i32>) {
     %sum = i32x4.add %lhs, %rhs
-    v128.store %output_view, %sum
+    v128.store %output, %sum
   }
   return
 }
@@ -90,6 +90,41 @@ low.func.def target<wasm.core.simd128>(@target) abi(wasm_function) @for_with_ite
     low.scf.yield %next : reg<wasm.v128>
   }
   return %result
+}
+
+// ====
+
+wasm.target<simd128> @target
+
+func.def target(@target) @for_with_partial_integer_iter_arg(%lo: index, %hi: index, %step: index, %a: i32, %b: i32) -> (i32, i32) {
+  %initial = vector.from_elements %a, %b : vector<2xi32>
+  %result = scf.for %iv = [%lo to %hi step %step](%state = %initial : vector<2xi32>) -> (vector<2xi32>) {
+    %x = vector.extract %state[0] : vector<2xi32> -> i32
+    %y = vector.extract %state[1] : vector<2xi32> -> i32
+    %sum = scalar.addi %x, %y : i32
+    %next = vector.from_elements %y, %sum : vector<2xi32>
+    scf.yield %next : vector<2xi32>
+  }
+  %x = vector.extract %result[0] : vector<2xi32> -> i32
+  %y = vector.extract %result[1] : vector<2xi32> -> i32
+  func.return %x, %y : i32, i32
+}
+
+// ----
+low.func.def target<wasm.core.simd128>(@target) abi(wasm_function) @for_with_partial_integer_iter_arg(%lo: reg<wasm.i32>, %hi: reg<wasm.i32>, %step: reg<wasm.i32>, %a: reg<wasm.i32>, %b: reg<wasm.i32>) -> (reg<wasm.i32>, reg<wasm.i32>) asm {
+  %28 = i32x4.splat %a
+  %initial = i32x4.replace_lane %28, %b, 1
+  %result = low.scf.for signed [%lo to %hi step %step] iter_args(%initial: reg<wasm.v128>) -> (reg<wasm.v128>) do(%iv: reg<wasm.i32>, %state: reg<wasm.v128>) {
+    %x = i32x4.extract_lane %state, 0
+    %y = i32x4.extract_lane %state, 1
+    %sum = i32.add %x, %y
+    %36 = i32x4.splat %y
+    %next = i32x4.replace_lane %36, %sum, 1
+    low.scf.yield %next : reg<wasm.v128>
+  }
+  %x = i32x4.extract_lane %result, 0
+  %y = i32x4.extract_lane %result, 1
+  return %x, %y
 }
 
 // ====

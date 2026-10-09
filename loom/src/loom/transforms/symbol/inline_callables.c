@@ -453,10 +453,53 @@ static uint8_t loom_inline_effective_temperature(uint8_t callee_temperature,
   return call_temperature != 0 ? call_temperature : callee_temperature;
 }
 
+// Structural composition shares an invocation, but a child may still require
+// its own target environment or executable boundary. Keep that edge explicit
+// until its materialization owner can preserve the requirement. Unconstrained
+// children inherit the caller's environment and can be spliced directly.
+static bool loom_inline_composition_shares_context(
+    const loom_inline_callables_plan_t* state,
+    const loom_inline_plan_entry_t* entry) {
+  if (!loom_func_like_isa(entry->callee) ||
+      entry->source_symbol_id >= state->module->symbols.count) {
+    // Required-edge preflight owns missing callable definitions and owners.
+    return true;
+  }
+  const loom_inline_symbol_info_t* caller =
+      &state->symbols[entry->source_symbol_id];
+  const loom_symbol_ref_t callee_target = loom_func_like_target(entry->callee);
+  const loom_symbol_ref_t caller_target =
+      loom_func_like_target(caller->function);
+  if (loom_symbol_ref_is_valid(callee_target) &&
+      (callee_target.module_id != caller_target.module_id ||
+       callee_target.symbol_id != caller_target.symbol_id)) {
+    return false;
+  }
+  const loom_symbol_t* callee = state->symbols[entry->target_symbol_id].symbol;
+  const uint8_t carrier_attr_index =
+      loom_symbol_definition_product_carrier_attr_index(callee->definition);
+  if (carrier_attr_index == LOOM_ATTR_INDEX_NONE ||
+      loom_attr_is_absent(
+          loom_op_const_attrs(callee->defining_op)[carrier_attr_index])) {
+    return true;
+  }
+  return loom_symbol_definition_product_carrier(callee->definition,
+                                                callee->defining_op) ==
+         loom_symbol_definition_product_carrier(caller->symbol->definition,
+                                                caller->symbol->defining_op);
+}
+
 static void loom_inline_resolve_entry_policy(
     loom_inline_callables_plan_t* state, loom_inline_plan_entry_t* entry) {
   const loom_call_like_kind_t call_kind = loom_call_like_kind(entry->call);
-  if (call_kind == LOOM_CALL_LIKE_KIND_TEMPLATE) {
+  if (call_kind == LOOM_CALL_LIKE_KIND_COMPOSITION &&
+      !loom_inline_composition_shares_context(state, entry)) {
+    entry->action = LOOM_INLINE_PLAN_ACTION_KEEP;
+    ++state->statistics.kept_edges;
+    return;
+  }
+  if (call_kind == LOOM_CALL_LIKE_KIND_TEMPLATE ||
+      call_kind == LOOM_CALL_LIKE_KIND_COMPOSITION) {
     entry->effective_policy = LOOM_INLINE_POLICY_INLINE;
     entry->action = LOOM_INLINE_PLAN_ACTION_REQUIRED;
     ++state->statistics.required_edges;
@@ -595,9 +638,7 @@ static iree_status_t loom_inline_build_plan(
       const loom_inline_callables_eligibility_callback_t callback =
           state->options.template_eligibility;
       if (callback.fn) {
-        IREE_RETURN_IF_ERROR(callback.fn(callback.user_data,
-                                         entry->source_symbol_id,
-                                         entry->call_op, &eligible));
+        IREE_RETURN_IF_ERROR(callback.fn(callback.user_data, edge, &eligible));
       }
       if (!eligible) {
         ++state->statistics.kept_edges;
@@ -787,6 +828,7 @@ static loom_inline_blocker_t loom_inline_validate_call_kind(
   switch (loom_call_like_kind(entry->call)) {
     case LOOM_CALL_LIKE_KIND_SEMANTIC:
     case LOOM_CALL_LIKE_KIND_TEMPLATE:
+    case LOOM_CALL_LIKE_KIND_COMPOSITION:
       if (loom_func_like_isa(entry->callee)) {
         return LOOM_INLINE_BLOCKER_NONE;
       }

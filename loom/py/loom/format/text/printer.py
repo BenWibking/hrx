@@ -101,6 +101,7 @@ from loom.ir import (
     EncodingType,
     EnumArrayAttr,
     FunctionType,
+    GroupType,
     Module,
     NoneType,
     Operation,
@@ -135,6 +136,7 @@ _IR_TYPE_CLASSES = (
     DialectType,
     ParameterizedType,
     EncodingType,
+    GroupType,
     PoolType,
     NoneType,
 )
@@ -298,7 +300,9 @@ def print_type(
         case BufferType():
             return "buffer"
         case PoolType():
-            return _print_pool_type(
+            return "pool"
+        case GroupType():
+            return _print_group_type(
                 ir_type, _compact_shape_type_definition(ir_type), context
             )
         case FunctionType(arg_types=args, result_types=results):
@@ -352,7 +356,9 @@ def _compact_type_definition(
     return BUILTIN_TYPE_BY_PYTHON_TYPE.get(type(ir_type))
 
 
-def _compact_shape_type_definition(ir_type: ShapedType | PoolType) -> TypeDef:
+def _compact_shape_type_definition(
+    ir_type: ShapedType | GroupType,
+) -> TypeDef:
     """Resolves a compact shape representation to its declaration."""
 
     from loom.builtin_types import BUILTIN_COMPACT_SHAPE_TYPE_BY_KIND
@@ -556,22 +562,26 @@ def _print_shaped_type(
     return f"{type_def.name}<{inner}>"
 
 
-def _print_pool_type(
-    pool: PoolType,
+def _print_group_type(
+    group: GroupType,
     type_def: TypeDef,
     context: TypePrintContext | None = None,
 ) -> str:
-    """Print pool<[%block_size]> or pool<N>."""
-    match pool.block_size:
-        case StaticDim(size=size):
-            return f"{type_def.name}<{size}>"
-        case DynamicDim(value_id=value_id):
-            if value_id is not None:
-                dim_name = context.value_name(value_id) if context else f"%{value_id}"
-                return f"{type_def.name}<[{dim_name}]>"
-            return f"{type_def.name}<?>"
-        case _:
-            raise TypeError(f"unexpected dim type: {type(pool.block_size)}")
+    """Print a shaped communication group."""
+    dimensions: list[str] = []
+    for dimension in group.dims:
+        match dimension:
+            case StaticDim(size=size):
+                dimensions.append(str(size))
+            case DynamicDim(value_id=value_id):
+                if value_id is not None:
+                    name = context.value_name(value_id) if context else f"%{value_id}"
+                    dimensions.append(f"[{name}]")
+                else:
+                    dimensions.append("?")
+            case _:
+                raise TypeError(f"unexpected dim type: {type(dimension)}")
+    return f"{type_def.name}<{'x'.join(dimensions)}>"
 
 
 # ============================================================================

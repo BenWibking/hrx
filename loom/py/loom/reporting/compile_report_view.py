@@ -68,6 +68,10 @@ from loom.reporting.compile_report_native_layout import (
     build_native_layout_diff,
     build_native_layout_show,
 )
+from loom.reporting.compile_report_pipelines import (
+    append_pipeline_show_text,
+    build_pipeline_show,
+)
 from loom.reporting.compile_report_residency import (
     append_residency_diff_text,
     append_residency_show_text,
@@ -440,6 +444,9 @@ def build_compile_report_show(
     loop_pipelines = build_loop_pipeline_show(document)
     if loop_pipelines is not None:
         view["loop_pipelines"] = loop_pipelines
+    pipelines = build_pipeline_show(document)
+    if pipelines is not None:
+        view["pipelines"] = pipelines
     barriers = build_barrier_show(document)
     if barriers is not None:
         view["barriers"] = barriers
@@ -746,6 +753,9 @@ def format_compile_report_show_text(view: dict[str, object]) -> str:
     loop_pipelines = view.get("loop_pipelines")
     if isinstance(loop_pipelines, dict):
         append_loop_pipeline_show_text(lines, loop_pipelines)
+    pipelines = view.get("pipelines")
+    if isinstance(pipelines, dict):
+        append_pipeline_show_text(lines, pipelines)
     barriers = view.get("barriers")
     if isinstance(barriers, dict):
         append_barrier_show_text(lines, barriers)

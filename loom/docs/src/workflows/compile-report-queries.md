@@ -32,6 +32,7 @@ trace:
 | `allocation_high_water_rows.rows[]` and `spill_rows.rows[]` | Which placements and spill actions followed from that pressure? |
 | `source_low.rows[]`, `source_low.memory_rows[]`, and `source_low.selection_summaries.rows[]` | Which source operations selected each Low representation and memory route? |
 | `source_low.loop_pipelines.rows[]` and `source_low.loop_pipelines.stages[]` | Which loop policies ran, and which operations run ahead of the consumer? |
+| `pipeline_plans[]` | How much unique and replicated code does each resident pipeline use? Where do its workers and retained data live? |
 | `source_low.boundary_projections.rows[]` | Which loop-carried aggregates were decomposed, deliberately preserved, or rejected? |
 | `schedule_band_summary_rows.rows[]` | Which semantic instruction families occupy each schedule band? |
 | `wait_reason_summary_rows.rows[]` and `wait_action_rows.rows[]` | Why was each wait family required, and where was it placed? |

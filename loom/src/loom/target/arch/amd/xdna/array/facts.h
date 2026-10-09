@@ -121,6 +121,12 @@ typedef struct loom_xdna_tile_memory_facts_t {
   uint8_t bank_count;
 } loom_xdna_tile_memory_facts_t;
 
+// DMA transfer direction relative to local memory.
+typedef enum loom_xdna_dma_direction_e {
+  LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM = 1,
+  LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY = 2,
+} loom_xdna_dma_direction_t;
+
 // DMA feature bits shared by each tile engine.
 typedef enum loom_xdna_dma_feature_bit_e {
   LOOM_XDNA_DMA_FEATURE_COMPRESSION = 1u << 0,

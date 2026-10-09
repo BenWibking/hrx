@@ -68,8 +68,9 @@ class QueueAtomicTest : public CtsTestBase<> {
                                   iree_hal_atomic_store_params_t params) {
     SemaphoreList empty_wait;
     SemaphoreList signal(device_, {0}, {1});
-    iree_status_t status = iree_hal_queue_atomic_store(
-        atomic_queue_, empty_wait, signal, buffer, kTargetOffset, params);
+    iree_status_t status =
+        iree_hal_queue_atomic_store(atomic_queue_, empty_wait, signal, buffer,
+                                    kTargetOffset, params, /*barriers=*/NULL);
     if (iree_status_is_ok(status)) {
       status = iree_hal_semaphore_list_wait(signal, iree_infinite_timeout(),
                                             IREE_ASYNC_WAIT_FLAG_NONE);
@@ -81,8 +82,9 @@ class QueueAtomicTest : public CtsTestBase<> {
                                 iree_hal_atomic_rmw_params_t params) {
     SemaphoreList empty_wait;
     SemaphoreList signal(device_, {0}, {1});
-    iree_status_t status = iree_hal_queue_atomic_rmw(
-        atomic_queue_, empty_wait, signal, buffer, kTargetOffset, params);
+    iree_status_t status =
+        iree_hal_queue_atomic_rmw(atomic_queue_, empty_wait, signal, buffer,
+                                  kTargetOffset, params, /*barriers=*/NULL);
     if (iree_status_is_ok(status)) {
       status = iree_hal_semaphore_list_wait(signal, iree_infinite_timeout(),
                                             IREE_ASYNC_WAIT_FLAG_NONE);
@@ -94,8 +96,9 @@ class QueueAtomicTest : public CtsTestBase<> {
       iree_hal_buffer_t* buffer, iree_hal_atomic_wait_params_t params) {
     SemaphoreList empty_wait;
     SemaphoreList signal(device_, {0}, {1});
-    iree_status_t status = iree_hal_queue_atomic_wait(
-        atomic_queue_, empty_wait, signal, buffer, kTargetOffset, params);
+    iree_status_t status =
+        iree_hal_queue_atomic_wait(atomic_queue_, empty_wait, signal, buffer,
+                                   kTargetOffset, params, /*barriers=*/NULL);
     if (iree_status_is_ok(status)) {
       status = iree_hal_semaphore_list_wait(signal, iree_infinite_timeout(),
                                             IREE_ASYNC_WAIT_FLAG_NONE);
@@ -182,7 +185,8 @@ class QueueAtomicTest : public CtsTestBase<> {
                     /*.width=*/width,
                     /*.condition=*/IREE_HAL_ATOMIC_WAIT_CONDITION_EQUAL,
                     /*.target_error_mode=*/mode,
-                });
+                },
+                /*barriers=*/NULL);
             break;
           case AtomicKind::kStore:
             status = iree_hal_queue_atomic_store(
@@ -193,7 +197,8 @@ class QueueAtomicTest : public CtsTestBase<> {
                     /*.flags=*/IREE_HAL_ATOMIC_FLAG_RELEASE,
                     /*.width=*/width,
                     /*.target_error_mode=*/mode,
-                });
+                },
+                /*barriers=*/NULL);
             break;
           case AtomicKind::kRmw:
             status = iree_hal_queue_atomic_rmw(
@@ -206,7 +211,8 @@ class QueueAtomicTest : public CtsTestBase<> {
                     /*.width=*/width,
                     /*.operation=*/IREE_HAL_ATOMIC_RMW_OPERATION_ADD,
                     /*.target_error_mode=*/mode,
-                });
+                },
+                /*barriers=*/NULL);
             break;
         }
         if (iree_status_is_ok(status)) {

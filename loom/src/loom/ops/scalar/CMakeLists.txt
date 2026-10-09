@@ -91,4 +91,15 @@ loom_generated_cc_library(
     loom::util::predicate_facts
 )
 
+loom_cc_test(
+  NAME
+    compare_test
+  SRCS
+    "compare_test.cc"
+  DEPS
+    ::scalar
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

@@ -30,6 +30,10 @@ typedef struct loom_low_physical_component_t {
   uint32_t end;
   // Union rank, independent of the selected representative's candidate set.
   uint8_t rank;
+  // Atomic storage demand of this value's required tied component. Only its
+  // origin contributes; the origin's unit lifetime already retains every
+  // member.
+  uint16_t demand_units;
   // Candidate-set identity preserved by merges, then compacted to the index
   // of its distinct effective domain before the lifetime sweeps.
   iree_host_size_t domain;
@@ -191,8 +195,7 @@ typedef enum loom_low_physical_demand_scope_e {
   LOOM_LOW_PHYSICAL_DEMAND_SCOPE_EFFECTIVE_DOMAIN_AND_DESCENDANTS = 1,
 } loom_low_physical_demand_scope_t;
 
-static iree_status_t loom_low_physical_demand_tree_build(
-    const loom_low_descriptor_set_t* descriptor_set,
+static void loom_low_physical_demand_tree_build(
     const loom_liveness_analysis_t* liveness,
     loom_low_physical_component_t* components, uint32_t component_count,
     const iree_host_size_t* register_class_domains, const uint8_t* subsets,
@@ -205,6 +208,10 @@ static iree_status_t loom_low_physical_demand_tree_build(
   memset(demand_ends, 0, point_count * sizeof(*demand_ends));
   memset(demand_tree, 0, tree_count * sizeof(*demand_tree));
   for (uint32_t i = 0; i < component_count; ++i) {
+    const uint16_t units = components[i].demand_units;
+    if (units == 0) {
+      continue;
+    }
     const uint32_t root = loom_low_physical_component_find(components, i);
     const uint16_t class_id = liveness->intervals[components[i].interval_index]
                                   .value_class.register_class_id;
@@ -224,31 +231,22 @@ static iree_status_t loom_low_physical_demand_tree_build(
         demand_points, point_count, components[i].interval_start);
     const iree_host_size_t end = loom_low_physical_point_lower_bound(
         demand_points, point_count, components[i].interval_end);
-    const uint16_t units =
-        descriptor_set->reg_classes[class_id].physical_atomic_unit_count;
-    if (UINT64_MAX - demand_starts[start] < units ||
-        UINT64_MAX - demand_ends[end] < units) {
-      return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
-                              "physical domain demand overflow");
-    }
     demand_starts[start] += units;
     demand_ends[end] += units;
   }
+  // There is at most one component per uint32 value ordinal and each component
+  // contributes at most a uint16 count. The total demand is therefore below
+  // 2^48 and is representable throughout this sweep.
   uint64_t live_units = 0;
   for (iree_host_size_t i = 0; i < point_count; ++i) {
     IREE_ASSERT_GE(live_units, demand_ends[i]);
     live_units -= demand_ends[i];
-    if (UINT64_MAX - live_units < demand_starts[i]) {
-      return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
-                              "physical domain demand overflow");
-    }
     live_units += demand_starts[i];
     demand_tree[tree_base + i] = live_units;
   }
   for (iree_host_size_t i = tree_base - 1; i > 0; --i) {
     demand_tree[i] = iree_max(demand_tree[2 * i], demand_tree[2 * i + 1]);
   }
-  return iree_ok_status();
 }
 
 static bool loom_low_physical_interval_is_scalar(
@@ -414,13 +412,11 @@ static iree_status_t loom_low_physical_domains_build_preferences(
              atomic_word_count * sizeof(uint64_t));
       const loom_low_reg_class_t* reg_class =
           &descriptor_set->reg_classes[class_id];
-      iree_host_size_t candidate_unit_count = 0;
-      if (!iree_host_size_checked_mul(reg_class->allocatable_count,
-                                      reg_class->physical_atomic_unit_count,
-                                      &candidate_unit_count)) {
-        return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
-                                "physical candidate-unit index size overflow");
-      }
+      // Both factors are uint16, so their product fits every supported
+      // iree_host_size_t representation.
+      const iree_host_size_t candidate_unit_count =
+          (iree_host_size_t)reg_class->allocatable_count *
+          reg_class->physical_atomic_unit_count;
       IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
           arena, candidate_unit_count,
           sizeof(*candidate_units_by_class[class_id]),
@@ -485,6 +481,12 @@ static iree_status_t loom_low_physical_domains_build_preferences(
         .interval_end = end,
         .start = start,
         .end = end,
+        .demand_units =
+            placement->tied_storage_origins_by_value_ordinal == NULL ||
+                    placement->tied_storage_origins_by_value_ordinal[v] == v
+                ? descriptor_set->reg_classes[class_id]
+                      .physical_atomic_unit_count
+                : 0,
         .domain = class_id,
         .registers = class_words[class_id],
     };
@@ -789,12 +791,12 @@ static iree_status_t loom_low_physical_domains_build_preferences(
     if (!has_broader_domain) {
       continue;
     }
-    IREE_RETURN_IF_ERROR(loom_low_physical_demand_tree_build(
-        descriptor_set, liveness, components, component_count,
-        register_class_domains, subsets, domain_count, a,
+    loom_low_physical_demand_tree_build(
+        liveness, components, component_count, register_class_domains, subsets,
+        domain_count, a,
         LOOM_LOW_PHYSICAL_DEMAND_SCOPE_EFFECTIVE_DOMAIN_AND_DESCENDANTS,
         demand_points, point_count, tree_base, tree_count, demand_starts,
-        demand_ends, demand_tree));
+        demand_ends, demand_tree);
     for (iree_host_size_t i = 0; i < root_count; ++i) {
       const loom_low_physical_component_t* component = order[i];
       if (!subsets[a * domain_count + component->domain]) {
@@ -876,12 +878,11 @@ static iree_status_t loom_low_physical_domains_build_preferences(
     if (!has_narrower_domain) {
       continue;
     }
-    IREE_RETURN_IF_ERROR(loom_low_physical_demand_tree_build(
-        descriptor_set, liveness, components, component_count,
-        register_class_domains, subsets, domain_count, b,
-        LOOM_LOW_PHYSICAL_DEMAND_SCOPE_REGISTER_CLASS_DOMAIN, demand_points,
-        point_count, tree_base, tree_count, demand_starts, demand_ends,
-        demand_tree));
+    loom_low_physical_demand_tree_build(
+        liveness, components, component_count, register_class_domains, subsets,
+        domain_count, b, LOOM_LOW_PHYSICAL_DEMAND_SCOPE_REGISTER_CLASS_DOMAIN,
+        demand_points, point_count, tree_base, tree_count, demand_starts,
+        demand_ends, demand_tree);
     for (iree_host_size_t i = 0; i < root_count; ++i) {
       const loom_low_physical_component_t* component = order[i];
       if (component->domain != b) {

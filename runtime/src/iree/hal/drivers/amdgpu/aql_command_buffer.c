@@ -1150,32 +1150,18 @@ static iree_status_t iree_hal_amdgpu_aql_command_buffer_end_debug_group(
 // Barriers and Events
 //===----------------------------------------------------------------------===//
 
-static iree_status_t iree_hal_amdgpu_aql_command_buffer_execution_barrier(
+static iree_status_t iree_hal_amdgpu_aql_command_buffer_barrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers) {
-  const iree_hal_execution_barrier_flags_t supported_flags =
-      IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
-      IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
-  if (IREE_UNLIKELY(flags & ~supported_flags)) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "unsupported AMDGPU AQL execution barrier flags: 0x%016" PRIx64,
-        flags & ~supported_flags);
-  }
-
+    const iree_hal_barrier_t* barrier) {
   iree_hal_amdgpu_aql_command_buffer_t* command_buffer =
       iree_hal_amdgpu_aql_command_buffer_cast(base_command_buffer);
 
   const iree_hal_amdgpu_barrier_scopes_t scopes =
       iree_hal_amdgpu_barrier_resolve_scopes(
-          source_stage_mask, target_stage_mask, flags, memory_barrier_count,
-          memory_barriers, buffer_barrier_count, buffer_barriers);
+          barrier->source_stage_mask, barrier->target_stage_mask,
+          barrier->flags, barrier->memory_barrier_count,
+          barrier->memory_barriers, barrier->buffer_barrier_count,
+          barrier->buffer_barriers);
 
   iree_hal_amdgpu_command_buffer_command_header_t* header = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_aql_program_builder_append_command(
@@ -1185,13 +1171,14 @@ static iree_status_t iree_hal_amdgpu_aql_command_buffer_execution_barrier(
       /*binding_source_count=*/0, /*aql_packet_count=*/0,
       /*kernarg_length=*/0, &header, /*out_binding_sources=*/NULL));
 
-  iree_hal_amdgpu_command_buffer_barrier_command_t* barrier =
+  iree_hal_amdgpu_command_buffer_barrier_command_t* barrier_command =
       (iree_hal_amdgpu_command_buffer_barrier_command_t*)header;
-  barrier->acquire_scope = (uint8_t)scopes.acquire;
-  barrier->release_scope = (uint8_t)scopes.release;
-  barrier->barrier_flags = (uint16_t)flags;
+  barrier_command->acquire_scope = (uint8_t)scopes.acquire;
+  barrier_command->release_scope = (uint8_t)scopes.release;
+  barrier_command->barrier_flags = (uint16_t)barrier->flags;
   iree_hal_amdgpu_aql_program_builder_add_execution_dependency(
-      &command_buffer->builder, barrier->acquire_scope, barrier->release_scope);
+      &command_buffer->builder, barrier_command->acquire_scope,
+      barrier_command->release_scope);
   return iree_ok_status();
 }
 
@@ -3051,8 +3038,7 @@ static const iree_hal_command_buffer_vtable_t
         .begin_debug_group =
             iree_hal_amdgpu_aql_command_buffer_begin_debug_group,
         .end_debug_group = iree_hal_amdgpu_aql_command_buffer_end_debug_group,
-        .execution_barrier =
-            iree_hal_amdgpu_aql_command_buffer_execution_barrier,
+        .barrier = iree_hal_amdgpu_aql_command_buffer_barrier,
         .atomic_wait = iree_hal_amdgpu_aql_command_buffer_atomic_wait,
         .atomic_store = iree_hal_amdgpu_aql_command_buffer_atomic_store,
         .atomic_rmw = iree_hal_amdgpu_aql_command_buffer_atomic_rmw,

@@ -105,3 +105,49 @@ low.func.def target<amdgpu.rdna3.core>(@target) @flat_full_store_needs_both_part
   flat_store_b32 %address, %low
   return
 }
+
+// ====
+
+amdgpu.target<gfx1100> @target
+
+low.func.def target<amdgpu.rdna3.core>(@target) @packed_broadcast_parts(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) asm {
+  %half = v_cvt_f16_f32 %input
+  %sum = v_pk_fma_f16.broadcast_a_b_c %half, %half, %half
+  %product = v_pk_mul_f16.broadcast_rhs %sum, %half
+  %bits = v_pk_mad_i16.broadcast_a_b_c %half, %half, %half
+  return %product, %bits
+}
+
+// ====
+
+amdgpu.target<gfx1100> @target
+
+low.func.def target<amdgpu.rdna3.core>(@target) @nonbroadcast_source_needs_both_parts(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %half = v_cvt_f16_f32 %input
+  // ERROR@+1: DOMINANCE/011 "amdgpu.v_pk_mul_f16.broadcast_lhs" "rhs"
+  %product = v_pk_mul_f16.broadcast_lhs %half, %half
+  return %product
+}
+
+// ====
+
+amdgpu.target<gfx1200> @target
+
+low.func.def target<amdgpu.rdna4.core>(@target) @mixed_bank_broadcast_parts(%uniform: reg<amdgpu.sgpr>, %varying: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %uniform_half = s_cvt_f16_f32 %uniform
+  %varying_half = v_cvt_f16_f32 %varying
+  %sum = v_pk_add_f16.broadcast_lhs_rhs %uniform_half, %varying_half
+  %result = v_pk_fma_f16.broadcast_a_c %uniform_half, %sum, %varying_half
+  return %result
+}
+
+// ====
+
+amdgpu.target<gfx1250> @target
+
+low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @brain_broadcast_parts(%address: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %half = ds_load_u16_d16 %address
+  %sum = v_pk_fma_bf16.broadcast_a_b_c %half, %half, %half
+  %result = v_pk_mul_bf16.broadcast_rhs %sum, %half
+  return %result
+}

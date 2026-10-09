@@ -14,6 +14,7 @@
 #include "loom/target/reporting/report.h"
 #include "loom/tools/loom-check/execute.h"
 #include "loomc/compile.h"
+#include "loomc/compile_report.h"
 #include "loomc/sanitizer.h"
 #include "loomc/target.h"
 
@@ -84,6 +85,8 @@ typedef struct loom_check_compile_artifact_options_t {
   bool lower_source_to_low;
   // Source-to-Low control-flow shape when lowering source IR.
   loomc_target_control_flow_lowering_t control_flow_lowering;
+  // Optional public target emission report requested with the artifact.
+  const loomc_compile_report_options_t* report;
 } loom_check_compile_artifact_options_t;
 
 // Source-Low pass-program boundary selected by a checker provider.
@@ -166,10 +169,12 @@ iree_status_t loom_check_compile_with_native_module(
 // Compiles the request's admitted public module to one target artifact. Public
 // diagnostics are appended to |request->diagnostic_collector|. A successful
 // primary artifact is returned as an immutable source owned by the caller.
+// When requested, |out_report_source| receives the emitted compile report as a
+// second owned source. Both outputs remain NULL when compilation is rejected.
 iree_status_t loom_check_compile_artifact(
     const loom_check_emit_provider_request_t* request,
     const loom_check_compile_artifact_options_t* options,
-    loomc_source_t** out_artifact_source);
+    loomc_source_t** out_artifact_source, loomc_source_t** out_report_source);
 
 // Lowers the request's admitted public module through LoomC, then invokes
 // |consumer| on the successfully compiled module. User diagnostics suppress

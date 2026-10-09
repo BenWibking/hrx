@@ -29,7 +29,7 @@ loom_aie2p_array_tile_resources_t MakeResources(uint32_t* bank_cursors) {
 }
 
 loom_aie2p_array_compute_endpoint_request_t MakeRequest(
-    loom_aie2p_array_dma_direction_t direction) {
+    loom_xdna_dma_direction_t direction) {
   loom_aie2p_array_compute_endpoint_request_t request = {};
   request.coordinate = {0, 2};
   request.load_address_base = ComputeFacts()->memory.local_load_base;
@@ -43,7 +43,7 @@ TEST(Aie2pArrayChannelResourcesTest, ComputeProposalRetainsExactTransition) {
   uint32_t bank_cursors[4] = {0};
   loom_aie2p_array_tile_resources_t resources = MakeResources(bank_cursors);
   const loom_aie2p_array_compute_endpoint_request_t request =
-      MakeRequest(LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM);
+      MakeRequest(LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM);
   loom_aie2p_array_compute_endpoint_proposal_t proposal = {};
 
   EXPECT_EQ(loom_aie2p_array_channel_resources_propose_compute(
@@ -79,14 +79,14 @@ TEST(Aie2pArrayChannelResourcesTest,
   uint32_t bank_cursors[4] = {0};
   loom_aie2p_array_tile_resources_t resources = MakeResources(bank_cursors);
   const loom_aie2p_array_compute_endpoint_request_t source_request =
-      MakeRequest(LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM);
+      MakeRequest(LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM);
   loom_aie2p_array_compute_endpoint_proposal_t source = {};
   ASSERT_EQ(loom_aie2p_array_channel_resources_propose_compute(
                 &resources, /*predecessor=*/nullptr, &source_request, &source),
             LOOM_AIE2P_ARRAY_CHANNEL_RESOURCE_FAILURE_NONE);
 
   loom_aie2p_array_compute_endpoint_request_t receiver_request =
-      MakeRequest(LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY);
+      MakeRequest(LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY);
   receiver_request.loopback_source_dma_channel = source.dma_channel;
   receiver_request.flags =
       LOOM_AIE2P_ARRAY_COMPUTE_ENDPOINT_REQUEST_FLAG_REQUIRE_LOOPBACK;
@@ -121,7 +121,7 @@ TEST(Aie2pArrayChannelResourcesTest, LoopbackMismatchRejectsWithoutMutation) {
   uint32_t bank_cursors[4] = {0};
   loom_aie2p_array_tile_resources_t resources = MakeResources(bank_cursors);
   loom_aie2p_array_compute_endpoint_request_t request =
-      MakeRequest(LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY);
+      MakeRequest(LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY);
   request.loopback_source_dma_channel = 1;
   request.flags =
       LOOM_AIE2P_ARRAY_COMPUTE_ENDPOINT_REQUEST_FLAG_REQUIRE_LOOPBACK;
@@ -172,11 +172,10 @@ TEST(Aie2pArrayChannelResourcesTest, ShimProposalRetainsExactTransition) {
   resources.next_memory_to_stream_channel = 1;
   loom_aie2p_array_shim_endpoint_proposal_t proposal = {};
 
-  EXPECT_EQ(
-      loom_aie2p_array_channel_resources_propose_shim(
-          &resources, {3, 0}, LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM,
-          /*descriptor_count=*/2, &proposal),
-      LOOM_AIE2P_ARRAY_CHANNEL_RESOURCE_FAILURE_NONE);
+  EXPECT_EQ(loom_aie2p_array_channel_resources_propose_shim(
+                &resources, {3, 0}, LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM,
+                /*descriptor_count=*/2, &proposal),
+            LOOM_AIE2P_ARRAY_CHANNEL_RESOURCE_FAILURE_NONE);
   EXPECT_EQ(resources.next_memory_to_stream_channel, 1u);
   EXPECT_EQ(resources.next_stream_to_memory_channel, 0u);
   EXPECT_EQ(resources.next_buffer_descriptor, 7u);
@@ -199,11 +198,10 @@ TEST(Aie2pArrayChannelResourcesTest, ShimProposalRejectsWithoutMutation) {
       ShimFacts()->dma.channel_count_per_direction;
   loom_aie2p_array_shim_endpoint_proposal_t proposal = {};
 
-  EXPECT_EQ(
-      loom_aie2p_array_channel_resources_propose_shim(
-          &resources, {0, 0}, LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM,
-          /*descriptor_count=*/1, &proposal),
-      LOOM_AIE2P_ARRAY_CHANNEL_RESOURCE_FAILURE_DMA_CHANNEL);
+  EXPECT_EQ(loom_aie2p_array_channel_resources_propose_shim(
+                &resources, {0, 0}, LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM,
+                /*descriptor_count=*/1, &proposal),
+            LOOM_AIE2P_ARRAY_CHANNEL_RESOURCE_FAILURE_DMA_CHANNEL);
   EXPECT_EQ(resources.next_memory_to_stream_channel,
             ShimFacts()->dma.channel_count_per_direction);
   EXPECT_EQ(resources.next_buffer_descriptor, 0u);
@@ -211,11 +209,10 @@ TEST(Aie2pArrayChannelResourcesTest, ShimProposalRejectsWithoutMutation) {
   resources.next_memory_to_stream_channel = 0;
   resources.next_buffer_descriptor =
       ShimFacts()->dma.buffer_descriptor_count - 1u;
-  EXPECT_EQ(
-      loom_aie2p_array_channel_resources_propose_shim(
-          &resources, {0, 0}, LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM,
-          /*descriptor_count=*/2, &proposal),
-      LOOM_AIE2P_ARRAY_CHANNEL_RESOURCE_FAILURE_DMA_DESCRIPTORS);
+  EXPECT_EQ(loom_aie2p_array_channel_resources_propose_shim(
+                &resources, {0, 0}, LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM,
+                /*descriptor_count=*/2, &proposal),
+            LOOM_AIE2P_ARRAY_CHANNEL_RESOURCE_FAILURE_DMA_DESCRIPTORS);
   EXPECT_EQ(resources.next_memory_to_stream_channel, 0u);
   EXPECT_EQ(resources.next_buffer_descriptor,
             ShimFacts()->dma.buffer_descriptor_count - 1u);

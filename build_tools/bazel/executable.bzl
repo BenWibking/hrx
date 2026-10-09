@@ -66,14 +66,19 @@ _launcher_transition = transition(
     outputs = _LAUNCHER_CONFIGURATION.keys(),
 )
 
-def _wasi_transition_impl(_settings, attr):
+def _wasi_transition_impl(settings, attr):
     configuration = dict(_WASI_CONFIGURATION)
     configuration["//command_line_option:platforms"] = [attr.target_platform]
+    configuration["//command_line_option:features"] = [
+        feature
+        for feature in settings["//command_line_option:features"]
+        if feature in ["optimize_for_speed", "thin_lto_link", "-optimize_for_speed", "-thin_lto_link"]
+    ]
     return configuration
 
 _wasi_transition = transition(
     implementation = _wasi_transition_impl,
-    inputs = [],
+    inputs = ["//command_line_option:features"],
     outputs = _WASI_CONFIGURATION.keys(),
 )
 

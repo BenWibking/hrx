@@ -30,7 +30,7 @@ typedef iree_status_t (*loom_source_storage_packing_interference_fn_t)(
     loom_value_id_t rhs_root_value_id, bool* out_interferes);
 
 typedef struct loom_source_storage_packing_interference_callback_t {
-  // Callback invoked for each new/allocation-record pair considered.
+  // Callback invoked for source allocation pairs whose byte ranges overlap.
   loom_source_storage_packing_interference_fn_t fn;
   // Caller-owned state passed to |fn|.
   void* user_data;
@@ -53,10 +53,27 @@ typedef struct loom_source_storage_packing_requirement_t {
   uint64_t byte_alignment;
 } loom_source_storage_packing_requirement_t;
 
-// Creates an empty packing segment owned by |arena|.
+// A fixed byte range owned by another participant in the same backing store.
+// Transport descriptors, service state, and externally placed data can reserve
+// storage without inventing source allocation roots.
+typedef struct loom_source_storage_packing_range_t {
+  // First reserved byte relative to the backing store.
+  uint64_t byte_offset;
+  // Number of reserved bytes.
+  uint64_t byte_length;
+} loom_source_storage_packing_range_t;
+
+// Creates a packing segment owned by |arena|. Copies |reserved_ranges|, which
+// remain occupied for the segment's entire lifetime. Their ownership and
+// mutual compatibility are established by the caller; packing only excludes
+// their union. An empty interference callback keeps every source allocation
+// disjoint. Reserved ranges and subsequently placed allocations contribute to
+// the aggregate extent.
 iree_status_t loom_source_storage_packing_create(
     loom_source_storage_packing_interference_callback_t interference,
-    iree_arena_allocator_t* arena, loom_source_storage_packing_t** out_packing);
+    const loom_source_storage_packing_range_t* reserved_ranges,
+    iree_host_size_t reserved_range_count, iree_arena_allocator_t* arena,
+    loom_source_storage_packing_t** out_packing);
 
 // Appends one source allocation and returns its immutable packed byte offset.
 //
@@ -68,9 +85,25 @@ iree_status_t loom_source_storage_packing_create(
 // any interfering allocation already in |packing|. Noninterfering ranges may
 // overlap partially or completely. A failure leaves all previously published
 // offsets and the aggregate requirement unchanged.
+// Byte alignment is a verified nonzero power of two.
 iree_status_t loom_source_storage_packing_append(
     loom_source_storage_packing_t* packing, loom_value_id_t root_value_id,
     uint64_t byte_length, uint64_t byte_alignment, uint64_t* out_byte_offset);
+
+// Places one additional lifetime-long reservation at the lowest aligned free
+// offset. The range cannot overlap a source allocation, a fixed range, or any
+// earlier reservation. Invocation-long allocations, compiled worker storage,
+// and generated service state use this when no function-local interference
+// relation applies. Source correspondence stays with the owning construction;
+// no IR identity is synthesized. Previously published offsets remain unchanged.
+// Optional admitted excluded_ranges constrain only this placement, without
+// occupying storage for later allocations. Physical bank conflicts use these
+// temporary exclusions while sharing the same canonical backing allocation.
+iree_status_t loom_source_storage_packing_reserve(
+    loom_source_storage_packing_t* packing, uint64_t byte_length,
+    uint64_t byte_alignment,
+    const loom_source_storage_packing_range_t* excluded_ranges,
+    iree_host_size_t excluded_range_count, uint64_t* out_byte_offset);
 
 // Returns the aggregate extent and base alignment for |packing|.
 loom_source_storage_packing_requirement_t

@@ -229,6 +229,41 @@ TEST_F(ContractSelectionTest, SelectsExactEnumBitmap) {
             (std::vector<uint16_t>{100, 103, 133}));
 }
 
+TEST_F(ContractSelectionTest, SelectsProjectedOperandAndResultTypes) {
+  const loom_value_id_t value = loom_op_results(vector_op_)[0];
+  loom_op_t* add = nullptr;
+  IREE_ASSERT_OK(loom_vector_addi_build(
+      &builder_, /*instance_flags=*/0, value, value,
+      loom_module_value_type(module_, value), LOOM_LOCATION_UNKNOWN, &add));
+  for (uint32_t selector : {2u, 3u}) {
+    const uint32_t selection_data[] = {
+        1u | (2u << 16),
+        64u,
+        selector,
+        2u,
+        1u | (static_cast<uint32_t>(LOOM_OP_VECTOR_ADDI) << 16),
+        (2u << 28) | (LOOM_SCALAR_TYPE_I32 << 16) | 2u,
+        1u | (1u << 16),
+        (2u << 28) | (LOOM_SCALAR_TYPE_I32 << 16) | 4u,
+        2u | (1u << 16),
+        7u,
+        4u,
+        9u,
+    };
+    EXPECT_EQ(Iterate(selection_data,
+                      LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_CANDIDATES, add,
+                      {/*source_lane_count=*/4, /*projected_lane_count=*/2}),
+              (std::vector<uint16_t>{104}));
+    EXPECT_EQ(Iterate(selection_data,
+                      LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_CANDIDATES, add,
+                      {/*source_lane_count=*/8, /*projected_lane_count=*/2}),
+              (std::vector<uint16_t>{109}));
+    EXPECT_EQ(Iterate(selection_data,
+                      LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_CANDIDATES, add),
+              (std::vector<uint16_t>{109}));
+  }
+}
+
 TEST_F(ContractSelectionTest, UsesFallbackWhenExactKeyIsAbsent) {
   constexpr uint32_t kSelectionData[] = {
       1u | (1u << 16),

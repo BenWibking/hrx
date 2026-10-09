@@ -229,10 +229,17 @@ static iree_status_t loom_testbench_scenario_trial_plan_walk_values(
       callback, trial_plan->ordinal_value_id));
   IREE_RETURN_IF_ERROR(loom_testbench_value_callback_invoke(
       callback, trial_plan->entropy_value_id));
-  for (iree_host_size_t source_index = 0;
-       source_index < trial_plan->value_source_count; ++source_index) {
-    IREE_RETURN_IF_ERROR(loom_testbench_walk_value_source(
-        &trial_plan->value_sources[source_index], callback));
+  for (iree_host_size_t step_index = 0;
+       step_index < trial_plan->recipe_step_count; ++step_index) {
+    const loom_testbench_trial_recipe_step_t* step =
+        &trial_plan->recipe_steps[step_index];
+    if (step->kind == LOOM_TESTBENCH_TRIAL_RECIPE_STEP_VALUE_SOURCE) {
+      IREE_RETURN_IF_ERROR(
+          loom_testbench_walk_value_source(&step->value_source, callback));
+    } else if (step->kind == LOOM_TESTBENCH_TRIAL_RECIPE_STEP_GENERATOR) {
+      IREE_RETURN_IF_ERROR(
+          loom_testbench_walk_invocation(&step->generator, callback));
+    }
   }
   IREE_RETURN_IF_ERROR(
       loom_testbench_walk_invocation(&trial_plan->action.target, callback));
@@ -1338,7 +1345,7 @@ static iree_status_t loom_testbench_copy_buffer_view_to_params(
         options->transfer_queue, iree_hal_semaphore_list_empty(),
         signal_semaphore_list, iree_hal_buffer_view_buffer(source_buffer_view),
         0, iree_hal_buffer_view_buffer(target_buffer_view), 0,
-        iree_hal_buffer_view_byte_length(source_buffer_view),
+        iree_hal_buffer_view_byte_length(source_buffer_view), /*barriers=*/NULL,
         IREE_HAL_COPY_FLAG_NONE);
     if (iree_status_is_ok(status)) {
       status = iree_hal_semaphore_wait(completion_semaphore, completion_value,

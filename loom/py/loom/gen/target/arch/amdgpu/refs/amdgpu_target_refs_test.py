@@ -373,6 +373,21 @@ def test_descriptor_trait_names_classify_dpp_encoding_families() -> None:
         assert "LOOM_AMDGPU_DESCRIPTOR_TRAIT_DPP" in traits, format_name
 
 
+def test_descriptor_trait_names_classify_packed_f32_pair_spelling() -> None:
+    for semantic_tag, expected in (
+        ("float.add.pk2.f32", True),
+        ("float.mul.pk2.f32", True),
+        ("float.fma.pk2.f32", True),
+        ("float.fma.pk2.f16", False),
+        ("float.add.f32", False),
+        ("float.fma.mix.f32", False),
+    ):
+        descriptor_set = _descriptor_set(_descriptor("amdgpu.test", semantic_tag=semantic_tag))
+        context = amdgpu_target_refs._descriptor_trait_context(descriptor_set)
+        traits = amdgpu_target_refs._descriptor_trait_names(context, descriptor_set.descriptors[0])
+        assert ("LOOM_AMDGPU_DESCRIPTOR_TRAIT_PACKED_F32" in traits) == expected
+
+
 def test_descriptor_trait_names_classify_permlane_semantics() -> None:
     descriptor_set = _descriptor_set(
         _descriptor(

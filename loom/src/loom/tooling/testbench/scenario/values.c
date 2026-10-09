@@ -200,6 +200,7 @@ static loom_testbench_entropy_t loom_testbench_scenario_trial_entropy(
 
 static iree_status_t loom_testbench_scenario_materialize_trial_table(
     const loom_testbench_value_materializer_options_t* options,
+    loom_testbench_invocation_executor_t* generator_executor,
     const loom_testbench_scenario_configuration_values_t* configuration,
     const loom_testbench_trial_plan_t* trial,
     loom_testbench_entropy_t trial_entropy, iree_host_size_t trial_ordinal,
@@ -210,12 +211,54 @@ static iree_status_t loom_testbench_scenario_materialize_trial_table(
       table, trial->ordinal_value_id, trial_ordinal));
   IREE_RETURN_IF_ERROR(loom_testbench_scenario_assign_entropy(
       table, trial->entropy_value_id, trial_entropy));
-  return loom_testbench_materialize_value_sources(
-      options, trial->value_sources, trial->value_source_count, table);
+  if (generator_executor != NULL) {
+    loom_testbench_invocation_executor_reset_issues(generator_executor);
+  }
+  iree_host_size_t generator_index = 0;
+  for (iree_host_size_t step_index = 0; step_index < trial->recipe_step_count;
+       ++step_index) {
+    const loom_testbench_trial_recipe_step_t* step =
+        &trial->recipe_steps[step_index];
+    if (step->kind == LOOM_TESTBENCH_TRIAL_RECIPE_STEP_VALUE_SOURCE) {
+      IREE_RETURN_IF_ERROR(loom_testbench_materialize_value_sources(
+          options, &step->value_source, 1, table));
+      continue;
+    }
+    if (step->kind == LOOM_TESTBENCH_TRIAL_RECIPE_STEP_GENERATOR) {
+      if (generator_executor == NULL || generator_executor->schedule == NULL ||
+          generator_index >= generator_executor->schedule->invocation_count) {
+        return iree_make_status(
+            IREE_STATUS_FAILED_PRECONDITION,
+            "scenario generator invocation was not prepared");
+      }
+      IREE_RETURN_IF_ERROR(loom_testbench_run_prepared_invocation(
+          generator_executor,
+          &generator_executor->schedule->invocations[generator_index++],
+          table));
+      if (generator_executor->issue_count != 0) {
+        const loom_testbench_sample_issue_t* issue =
+            &generator_executor->issues[0];
+        return iree_make_status(
+            IREE_STATUS_FAILED_PRECONDITION,
+            "scenario generator failed in %.*s (%.*s): %.*s",
+            (int)issue->stage.size, issue->stage.data, (int)issue->kind.size,
+            issue->kind.data, (int)issue->message.size, issue->message.data);
+      }
+      continue;
+    }
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "invalid scenario recipe step kind %u",
+                            (unsigned)step->kind);
+  }
+  IREE_ASSERT(generator_executor == NULL ||
+              generator_index ==
+                  generator_executor->schedule->invocation_count);
+  return iree_ok_status();
 }
 
 iree_status_t loom_testbench_scenario_trial_values_materialize(
     const loom_testbench_value_materializer_options_t* options,
+    loom_testbench_invocation_executor_t* generator_executor,
     const loom_testbench_scenario_configuration_values_t* configuration,
     iree_host_size_t trial_ordinal,
     loom_testbench_scenario_trial_values_t* values) {
@@ -247,14 +290,14 @@ iree_status_t loom_testbench_scenario_trial_values_materialize(
           configuration, values->identity.trial_index, trial_ordinal);
 
   iree_status_t status = loom_testbench_scenario_materialize_trial_table(
-      options, configuration, trial, trial_entropy, trial_ordinal,
-      &values->target);
+      options, generator_executor, configuration, trial, trial_entropy,
+      trial_ordinal, &values->target);
   if (iree_status_is_ok(status) &&
       iree_any_bit_set(values->flags,
                        LOOM_TESTBENCH_SCENARIO_VALUE_FLAG_HAS_ORACLE)) {
     status = loom_testbench_scenario_materialize_trial_table(
-        options, configuration, trial, trial_entropy, trial_ordinal,
-        &values->oracle);
+        options, generator_executor, configuration, trial, trial_entropy,
+        trial_ordinal, &values->oracle);
   }
   if (iree_status_is_ok(status)) {
     values->flags |= LOOM_TESTBENCH_SCENARIO_VALUE_FLAG_MATERIALIZED;

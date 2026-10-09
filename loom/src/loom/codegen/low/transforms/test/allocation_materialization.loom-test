@@ -33,23 +33,21 @@ low.func.def public target<test.low.core>(@target) @identity_after_inlined_conti
 test.target<low_core> @target
 
 low.func.def public target<test.low.core>(@target) @identity_after_inlined_continuation(%choose: reg<test.i32>, %again: reg<test.i32>, %seed: reg<test.i32>) -> (reg<test.i32>) asm {
-  low.cond_br %choose, ^_bb4, ^_bb5 : reg<test.i32>
-^_bb6(%selected: reg<test.i32>):
+  low.cond_br %choose, ^_bb3, ^_bb4 : reg<test.i32>
+^_bb5(%selected: reg<test.i32>):
   %source = test.add.i32 %selected, %seed
   %identity = low.assume %source [] : reg<test.i32>
   low.br ^loop
 ^loop:
   %sum = test.add.i32 %identity, %seed
-  low.cond_br %again, ^backedge, ^returned : reg<test.i32>
-^backedge:
-  low.br ^loop
+  low.cond_br %again, ^loop, ^returned : reg<test.i32>
 ^returned:
   return %sum
+^_bb3:
+  low.br ^_bb5(%seed: reg<test.i32>)
 ^_bb4:
-  low.br ^_bb6(%seed: reg<test.i32>)
-^_bb5:
   %doubled = test.add.i32 %seed, %seed
-  low.br ^_bb6(%doubled: reg<test.i32>)
+  low.br ^_bb5(%doubled: reg<test.i32>)
 }
 
 // ====
@@ -172,6 +170,28 @@ low.func.def target<test.low.core>(@test_target) @block_arg_spill(%row: reg<test
   %out = test.add.i32 %sum, %10
   return %out
 }
+
+// ====
+
+// Each materialized spill rebuilds the complete allocation snapshot. The
+// per-attempt memory high-water must remain bounded across all three attempts.
+// RUN: pass-report low-materialize-allocation{budgets=test.i32=2}
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @reports_released_allocation_attempt_storage(%row: reg<test.i32>, %carry: reg<test.i32>) -> (reg<test.i32>) asm {
+  low.br ^late
+^late:
+  %late_state = test.const.i32 7
+  low.br ^join(%late_state: reg<test.i32>)
+^join(%state: reg<test.i32>):
+  %sum = test.add.i32 %row, %carry
+  %out = test.add.i32 %sum, %state
+  return %out
+}
+
+// ----
+{"invocations":[{"pass":"low-materialize-allocation","kind":"func","anchor":"func","pipeline":"__command_line","symbol":"reports_released_allocation_attempt_storage","instruction_index":1,"duration_ns":0,"changed":true,"status":{"code":0,"name":"OK"},"statistics":{"storage":2,"spills":2,"reloads":2,"rematerializations":0,"live_range_splits":0,"attempts":3,"attempt_arena_used_bytes_high_water":9664,"attempt_arena_owned_bytes_high_water":32768},"details":[]}]}
 
 // ====
 

@@ -95,6 +95,13 @@ drain. Zero returns and prestart ABORT issue no payload transfers. The
 [recipe](../../interop/gpu/xdna/recipes/README.md#npu-initiated-dataflow) specifies
 the complete recurrence, credit reuse and independent output checks.
 
+[resident_file_channel.loom](resident_file_channel.loom) uses that same
+NPU-initiated recurrence with a CPU peer performing actual file operations.
+It additionally accepts a negative errno in the peer generation word and
+returns a terminal error after draining its custom DMA traffic. The
+[Linux file-channel recipe](../linux/file_channel/README.md) owns cache-line
+publication, POSIX I/O, complete output checks and CPU/NPU comparisons.
+
 ## Building and inspecting images
 
 Enable `AMDF_BUILD`, `LOOM_BUILD` and `LOOM_TARGET_XDNA` in the repository

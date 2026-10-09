@@ -50,6 +50,7 @@ loom_cc_library(
     ::entropy
     iree::base
     loom::tooling::testbench
+    loom::tooling::testbench::invocation
     loom::tooling::testbench::value_materializer
   PUBLIC
 )

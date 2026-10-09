@@ -72,7 +72,8 @@ static iree_status_t NoopQueueAtomicWait(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_hal_atomic_wait_params_t params) {
+    iree_hal_atomic_wait_params_t params,
+    const iree_hal_queue_barriers_t* barriers) {
   return iree_ok_status();
 }
 
@@ -81,7 +82,8 @@ static iree_status_t NoopQueueAtomicStore(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_hal_atomic_store_params_t params) {
+    iree_hal_atomic_store_params_t params,
+    const iree_hal_queue_barriers_t* barriers) {
   return iree_ok_status();
 }
 
@@ -90,7 +92,8 @@ static iree_status_t NoopQueueAtomicRmw(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_hal_atomic_rmw_params_t params) {
+    iree_hal_atomic_rmw_params_t params,
+    const iree_hal_queue_barriers_t* barriers) {
   return iree_ok_status();
 }
 
@@ -240,17 +243,18 @@ class AtomicTargetValidationTest : public ::testing::Test {
       iree_status_code_t expected_status) {
     const iree_hal_semaphore_list_t empty = iree_hal_semaphore_list_empty();
     IREE_EXPECT_STATUS_IS(
-        expected_status,
-        iree_hal_queue_atomic_wait(&queue_, empty, empty, unaligned_buffer_, 0,
-                                   WaitParams(target_error_mode)));
+        expected_status, iree_hal_queue_atomic_wait(
+                             &queue_, empty, empty, unaligned_buffer_, 0,
+                             WaitParams(target_error_mode), /*barriers=*/NULL));
     IREE_EXPECT_STATUS_IS(
         expected_status,
         iree_hal_queue_atomic_store(&queue_, empty, empty, unaligned_buffer_, 0,
-                                    StoreParams(target_error_mode)));
-    IREE_EXPECT_STATUS_IS(
-        expected_status,
-        iree_hal_queue_atomic_rmw(&queue_, empty, empty, unaligned_buffer_, 0,
-                                  RmwParams(target_error_mode)));
+                                    StoreParams(target_error_mode),
+                                    /*barriers=*/NULL));
+    IREE_EXPECT_STATUS_IS(expected_status,
+                          iree_hal_queue_atomic_rmw(
+                              &queue_, empty, empty, unaligned_buffer_, 0,
+                              RmwParams(target_error_mode), /*barriers=*/NULL));
   }
 
   void ExpectDirectReferenceAlignmentStatus(
@@ -520,7 +524,8 @@ TEST_F(AtomicTargetValidationTest,
       IREE_STATUS_PERMISSION_DENIED,
       iree_hal_queue_atomic_store(
           &queue_, empty, empty, bad_usage_buffer, /*target_offset=*/0,
-          StoreParams(IREE_HAL_ATOMIC_TARGET_ERROR_MODE_INCOMPATIBLE)));
+          StoreParams(IREE_HAL_ATOMIC_TARGET_ERROR_MODE_INCOMPATIBLE),
+          /*barriers=*/NULL));
   iree_hal_buffer_release(bad_usage_buffer);
 
   const iree_hal_buffer_params_t bad_access_params = {
@@ -537,7 +542,8 @@ TEST_F(AtomicTargetValidationTest,
       IREE_STATUS_PERMISSION_DENIED,
       iree_hal_queue_atomic_store(
           &queue_, empty, empty, bad_access_buffer, /*target_offset=*/0,
-          StoreParams(IREE_HAL_ATOMIC_TARGET_ERROR_MODE_INCOMPATIBLE)));
+          StoreParams(IREE_HAL_ATOMIC_TARGET_ERROR_MODE_INCOMPATIBLE),
+          /*barriers=*/NULL));
   iree_hal_buffer_release(bad_access_buffer);
 }
 

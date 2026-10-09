@@ -66,8 +66,8 @@ iree_status_t loom_kernel_async_legality_run(loom_pass_t* pass,
   };
   loom_kernel_async_legality_result_t result = {0};
   if (iree_status_is_ok(status)) {
-    status = loom_kernel_async_legality_verify_function(module, function,
-                                                        &options, &result);
+    status = loom_kernel_async_legality_analyze_function(
+        module, function, &options, pass->arena, &result);
   }
   loom_local_value_domain_release(&value_domain);
   IREE_RETURN_IF_ERROR(status);

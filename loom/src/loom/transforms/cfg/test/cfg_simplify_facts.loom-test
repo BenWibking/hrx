@@ -28,19 +28,14 @@ func.def @changed_predecessor(%choose: i1, %left_value: i32, %right_value: i32) 
 
 // ----
 func.def @changed_predecessor(%choose: i1, %left_value: i32, %right_value: i32) -> (i32) {
-  %true = scalar.constant true : i1
   cfg.cond_br %choose, ^left, ^right
 ^left:
   test.use %left_value : i32
-  %left = index.constant 2 : index
   cfg.br ^join
 ^right:
   test.use %right_value : i32
-  %right = index.constant 2 : index
   cfg.br ^join
 ^join:
-  %expected = index.constant 2 : index
-  %matches = scalar.constant true : i1
   func.return %left_value : i32
 }
 
@@ -72,7 +67,6 @@ func.def @arithmetic_feedback(%again: i1, %good: i32, %bad: i32) -> (i32) {
 
 // ----
 func.def @arithmetic_feedback(%again: i1, %good: i32, %bad: i32) -> (i32) {
-  %true = scalar.constant true : i1
   %c0 = index.constant 0 : index
   %c2 = index.constant 2 : index
   %c9 = index.constant 9 : index
@@ -83,7 +77,6 @@ func.def @arithmetic_feedback(%again: i1, %good: i32, %bad: i32) -> (i32) {
   %next = index.add %carried, %c0 : index
   cfg.br ^header(%next: index)
 ^exit:
-  %matches = scalar.constant true : i1
   func.return %good : i32
 }
 
@@ -182,7 +175,6 @@ func.def @forwarding_cycle_after_edge_removal(%again: i1, %good: i32, %bad: i32)
 
 // ----
 func.def @forwarding_cycle_after_edge_removal(%again: i1, %good: i32, %bad: i32) -> (i32) {
-  %true = scalar.constant true : i1
   %c2 = index.constant 2 : index
   %c9 = index.constant 9 : index
   cfg.br ^header
@@ -192,7 +184,6 @@ func.def @forwarding_cycle_after_edge_removal(%again: i1, %good: i32, %bad: i32)
   test.use %c2 : index
   cfg.br ^header
 ^exit:
-  %matches = scalar.constant true : i1
   func.return %good : i32
 }
 
@@ -219,6 +210,7 @@ func.def @attribute_only_join(%offset: index, %choose: i1, %left_value: i32, %ri
 ^join(%joined: index):
   %expected = index.constant 2 : index
   %bounded = index.assume %offset [lt(%offset, %joined)] : index
+  test.use %bounded : index
   %matches = index.cmp slt, %bounded, %expected : index
   cfg.cond_br %matches, ^matched, ^mismatch
 ^matched:
@@ -229,7 +221,6 @@ func.def @attribute_only_join(%offset: index, %choose: i1, %left_value: i32, %ri
 
 // ----
 func.def @attribute_only_join(%offset: index, %choose: i1, %left_value: i32, %right_value: i32) -> (i32) {
-  %true = scalar.constant true : i1
   cfg.cond_br %choose, ^left, ^right
 ^left:
   test.use %left_value : i32
@@ -240,9 +231,8 @@ func.def @attribute_only_join(%offset: index, %choose: i1, %left_value: i32, %ri
   %right = index.constant 2 : index
   cfg.br ^join(%right: index)
 ^join(%joined: index):
-  %expected = index.constant 2 : index
   %bounded = index.assume %offset [lt(%offset, %joined)] : index
-  %matches = scalar.constant true : i1
+  test.use %bounded : index
   func.return %left_value : i32
 }
 
@@ -281,7 +271,6 @@ func.def @nested_branch_feedback(%choose: i1, %again: i1, %good: i32, %bad: i32)
 
 // ----
 func.def @nested_branch_feedback(%choose: i1, %again: i1, %good: i32, %bad: i32) -> (i32) {
-  %true = scalar.constant true : i1
   %c0 = index.constant 0 : index
   %c2 = index.constant 2 : index
   %c9 = index.constant 9 : index
@@ -297,7 +286,6 @@ func.def @nested_branch_feedback(%choose: i1, %again: i1, %good: i32, %bad: i32)
   }
   cfg.br ^header(%next: index)
 ^exit:
-  %matches = scalar.constant true : i1
   func.return %good : i32
 }
 
@@ -333,7 +321,6 @@ func.def @nested_loop_feedback(%limit: index, %again: i1, %good: i32, %bad: i32)
 
 // ----
 func.def @nested_loop_feedback(%limit: index, %again: i1, %good: i32, %bad: i32) -> (i32) {
-  %true = scalar.constant true : i1
   %c0 = index.constant 0 : index
   %c1 = index.constant 1 : index
   %c2 = index.constant 2 : index
@@ -348,6 +335,5 @@ func.def @nested_loop_feedback(%limit: index, %again: i1, %good: i32, %bad: i32)
   }
   cfg.br ^header(%next: index)
 ^exit:
-  %matches = scalar.constant true : i1
   func.return %good : i32
 }

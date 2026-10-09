@@ -27,6 +27,7 @@ iree_string_view_t loom_testbench_issue_kind_name(
       "unsupported_scenario_body_op",
       "unsupported_trial_body_op",
       "invalid_scenario_action",
+      "invalid_trial_generator",
   };
   if ((uint32_t)kind < IREE_ARRAYSIZE(kNames)) {
     return iree_make_cstring_view(kNames[(uint32_t)kind]);
@@ -71,6 +72,9 @@ static iree_string_view_t loom_testbench_issue_message(
     case LOOM_TESTBENCH_ISSUE_INVALID_SCENARIO_ACTION:
       return IREE_SV(
           "check.compare or check.invoke cannot be planned for execution");
+    case LOOM_TESTBENCH_ISSUE_INVALID_TRIAL_GENERATOR:
+      return IREE_SV(
+          "check.generate cannot be planned for trial recipe execution");
     case LOOM_TESTBENCH_ISSUE_NONE:
     default:
       return IREE_SV("unknown testbench planning issue");

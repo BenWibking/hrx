@@ -10,7 +10,13 @@ from itertools import permutations
 import pytest
 
 from loom.gen.target.low import compiler
+from loom.ir import ScalarTypeKind
 from loom.target.low_descriptors import (
+    AsmForm,
+    AsmImmediate,
+    AsmOperandSegment,
+    AsmOperandSegmentDelimiter,
+    AsmResultValueType,
     Constraint,
     ConstraintKind,
     DescriptorFlag,
@@ -25,6 +31,8 @@ from loom.target.low_descriptors import (
     LatencyKind,
     MemorySpace,
     ModelQuality,
+    NativeAsmValue,
+    NativeAsmValueKind,
     OperandForm,
     OperandFormMatch,
     OperandFormMatchKind,
@@ -462,12 +470,69 @@ def test_compiler_interns_exact_descriptor_and_asm_spans() -> None:
     add_copy_form = asm_forms_by_descriptor[1]
     const_form = asm_forms_by_descriptor[2]
     const_copy_form = asm_forms_by_descriptor[3]
-    assert add_form.result_index_start == add_copy_form.result_index_start
-    assert add_form.operand_index_start == add_copy_form.operand_index_start
-    assert const_form.result_index_start == const_copy_form.result_index_start
-    assert const_form.immediate_start == const_copy_form.immediate_start
+    assert add_form.layout_index == add_copy_form.layout_index
+    assert const_form.layout_index == const_copy_form.layout_index
+    assert add_form.layout_index != const_form.layout_index
+    assert len(compiled.asm_table_storage.layouts) == 2
     assert compiled.asm_table_storage.operand_indices == [0, 1, 2]
     assert len(compiled.asm_table_storage.immediates) == 1
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {},
+        {"results": ("carry", "dst")},
+        {"operands": ("rhs", "lhs")},
+        {"result_value_types": ()},
+        {"result_value_types": (AsmResultValueType(ScalarTypeKind.F32), None)},
+        {"operands": (), "operand_segments": (AsmOperandSegment(AsmOperandSegmentDelimiter.PAREN, ("lhs", "rhs")),)},
+        {"immediates": ()},
+        {"immediates": (AsmImmediate("i32_value", "constant"),)},
+        {"native_assembly_values": ()},
+        {"native_assembly_values": (NativeAsmValue(NativeAsmValueKind.MODIFIER_LITERAL, literal="mode:1"),)},
+        {"native_assembly_values": (NativeAsmValue(NativeAsmValueKind.OPERAND, field_name="rhs"), NativeAsmValue(NativeAsmValueKind.OPERAND, field_name="lhs"))},
+    ],
+)
+def test_assembly_layout_interning_preserves_every_projection(changes) -> None:
+    base = TEST_LOW_ADD_I32_DESCRIPTOR
+    form = AsmForm(
+        results=("dst", "carry"),
+        operands=("lhs", "rhs"),
+        result_value_types=(AsmResultValueType(ScalarTypeKind.I32), None),
+        immediates=(AsmImmediate("i32_value", "literal"),),
+        native_assembly_values=(NativeAsmValue(NativeAsmValueKind.OPERAND, field_name="lhs"), NativeAsmValue(NativeAsmValueKind.OPERAND, field_name="rhs")),
+    )
+    descriptors = tuple(
+        replace(
+            base,
+            key=f"test.layout.{ordinal}",
+            mnemonic=f"test.layout.{ordinal}",
+            operands=(base.operands[0], replace(base.operands[0], field_name="carry"), *base.operands[1:]),
+            immediates=TEST_LOW_CONST_I32_DESCRIPTOR.immediates,
+            asm_forms=(replace(form, native_assembly_mnemonic=f"native.layout.{ordinal}", **(changes if ordinal else {})),),
+        )
+        for ordinal in range(2)
+    )
+    compiled = compiler.compile_descriptor_set(replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=descriptors))
+    storage = compiled.asm_table_storage
+    first, second = compiled.asm_forms
+    assert (first.layout_index == second.layout_index) == (not changes)
+    assert len(storage.layouts) == (2 if changes else 1)
+    for asm_form in compiled.asm_forms:
+        layout = storage.layouts[asm_form.layout_index]
+        assert tuple(storage.operand_indices[layout.result_operand_index_start : layout.result_operand_index_start + layout.result_operand_index_count]) == asm_form.result_indices
+        assert tuple(storage.operand_indices[layout.operand_index_start : layout.operand_index_start + layout.operand_index_count]) == asm_form.operand_indices
+        assert tuple(storage.operand_segments[layout.operand_segment_start : layout.operand_segment_start + layout.operand_segment_count]) == asm_form.operand_segments
+        assert tuple(storage.immediates[layout.immediate_start : layout.immediate_start + layout.immediate_count]) == asm_form.immediates
+        assert tuple(storage.native_values[layout.native_assembly_value_start : layout.native_assembly_value_start + layout.native_assembly_value_count]) == asm_form.native_assembly_values
+        if layout.result_value_type_start is None:
+            assert not asm_form.result_value_types
+        else:
+            assert tuple(storage.result_value_types[layout.result_value_type_start : layout.result_value_type_start + layout.result_operand_index_count]) == asm_form.result_value_types
+    before = tuple(storage.layouts)
+    storage.append_forms(compiled.asm_forms)
+    assert tuple(storage.layouts) == before
 
 
 def test_physical_view_lookup_preserves_exact_class_and_unit_relations() -> None:
@@ -479,6 +544,63 @@ def test_physical_view_lookup_preserves_exact_class_and_unit_relations() -> None
             offset = class_id - lookup.class_base
             actual = ordinals[offset] if 0 <= offset < lookup.class_count else 0xFFFFFFFF
             assert actual == expected.get((physical_id, class_id), 0xFFFFFFFF)
+
+
+@pytest.mark.parametrize("change", ["none", "value", "kind", "source", "map_order"])
+def test_operand_form_interns_exact_predicates_and_maps(change: str) -> None:
+    base = TEST_LOW_ADD_I32_DESCRIPTOR
+    operands = (*base.operands, replace(base.operands[-1], field_name="extra"))
+    replacements = []
+    sources = []
+    for ordinal in range(2):
+        changed = ordinal == 1
+        matched_index = 2 if changed and change == "source" else 3
+        retained = [index for index in range(1, len(operands)) if index != matched_index]
+        if changed and change == "map_order":
+            retained.reverse()
+        replacement = replace(
+            base,
+            key=f"test.replacement.{ordinal}",
+            mnemonic=f"test.replacement.{ordinal}",
+            operands=(operands[0], *(operands[index] for index in retained)),
+            asm_forms=(),
+        )
+        match = OperandFormMatch(
+            source_operand=operands[matched_index].field_name,
+            match_kind=OperandFormMatchKind.ALL_EQUAL_EXACT_I64 if changed and change == "kind" else OperandFormMatchKind.ALL_EQUAL_I64,
+            match_i64=17 if changed and change == "value" else 0,
+        )
+        sources.append(
+            replace(
+                base,
+                key=f"test.source.{ordinal}",
+                mnemonic=f"test.source.{ordinal}",
+                operands=operands,
+                asm_forms=(),
+                operand_forms=(OperandForm(replacement_descriptor=replacement.key, matches=(match,)),),
+            )
+        )
+        replacements.append(replacement)
+    compiled = compiler.compile_descriptor_set(replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(*sources, *replacements)))
+    first, second = compiled.operand_forms
+    same_matches = change in ("none", "map_order")
+    same_map = change not in ("source", "map_order")
+    assert (first.match_start == second.match_start) == same_matches
+    assert (first.operand_map_start == second.operand_map_start) == same_map
+    assert len(compiled.operand_form_matches) == (1 if same_matches else 2)
+    assert len(compiled.operand_form_operand_indices) == (2 if same_map else 4)
+    for source, replacement, form in zip(sources, replacements, compiled.operand_forms, strict=True):
+        assert compiled.descriptors[form.replacement_descriptor_ordinal].key == replacement.key
+        assert form.match_count == 1
+        match = compiled.operand_form_matches[form.match_start]
+        authored_match = source.operand_forms[0].matches[0]
+        source_index = next(index for index, operand in enumerate(source.operands) if operand.field_name == authored_match.source_operand)
+        assert match.source_operand_index == source_index
+        assert match.source_packet_operand_index == source_index - 1
+        assert match.match_kind == authored_match.match_kind
+        assert match.match_i64 == authored_match.match_i64
+        expected_map = [next(index for index, operand in enumerate(source.operands[1:]) if operand.field_name == retained.field_name) for retained in replacement.operands[1:]]
+        assert compiled.operand_form_operand_indices[form.operand_map_start : form.operand_map_start + form.operand_map_count] == expected_map
 
 
 @pytest.mark.parametrize("change", ["none", "width", "space", "order"])

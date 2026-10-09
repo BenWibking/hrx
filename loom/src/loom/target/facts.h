@@ -102,6 +102,15 @@ typedef iree_status_t (*loom_target_fact_select_execution_fn_t)(
     const loom_target_facts_t* facts, iree_arena_allocator_t* arena,
     const loom_target_facts_t** out_facts);
 
+// Projects a device environment to the code contract for one independently
+// executing worker. Hardware identity and applicable constraints are retained;
+// container ABI and emission contracts do not become worker requirements.
+// Projection is idempotent and returns |facts| for an existing worker contract.
+// New immutable facts belong to |arena|. Only allocation may fail.
+typedef iree_status_t (*loom_target_fact_project_worker_fn_t)(
+    const loom_target_facts_t* facts, iree_arena_allocator_t* arena,
+    const loom_target_facts_t** out_facts);
+
 // Returns a concise identity name derived from structured target facts.
 //
 // This is presentation-only. Target compatibility, specialization, and
@@ -134,6 +143,10 @@ struct loom_target_fact_type_t {
   // Optional root-only execution choice policy. Fact projection and ordinary
   // cloning never select a mode for reusable source.
   loom_target_fact_select_execution_fn_t select_execution;
+
+  // Optional device-to-worker projection. Families whose device and worker
+  // environments coincide leave this NULL.
+  loom_target_fact_project_worker_fn_t project_worker;
 };
 
 // Typed target-neutral facts projected from available target information.

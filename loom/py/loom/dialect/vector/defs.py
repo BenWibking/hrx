@@ -805,6 +805,7 @@ vector_slice = Op(
     constraints=[SameElementType("source", "result")],
     verify="loom_vector_slice_verify",
     facts="loom_vector_slice_facts",
+    canonicalize="loom_vector_slice_canonicalize",
     traits=[PURE],
     format=[
         Ref("source"),

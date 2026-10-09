@@ -209,10 +209,9 @@ low.func.def target<amdgpu.cdna4.core>(@target) abi(hal_kernel) @gfx950_vector_d
   %222 = v_cndmask_b32 %217, %194, %221
   %223 = v_lshlrev_b32_src0_inline %222, 16
   %wide = concat(%199, %223) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  %scale_vector = concat(%scale, %scale) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  %scaled = v_pk_mul_f32 %wide, %scale_vector
-  %227 = slice %scaled[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %228 = slice %scaled[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %rounded = v_cvt_pk_bf16_f32 %227, %228
+  %scaled = v_pk_mul_f32.broadcast_rhs %wide, %scale
+  %226 = slice %scaled[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %227 = slice %scaled[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %rounded = v_cvt_pk_bf16_f32 %226, %227
   return %rounded
 }

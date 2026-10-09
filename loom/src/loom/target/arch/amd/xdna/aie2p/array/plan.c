@@ -779,7 +779,7 @@ static bool loom_aie2p_array_try_compute_endpoint(
 static bool loom_aie2p_array_select_compute_endpoint(
     loom_aie2p_array_plan_builder_t* builder,
     loom_xdna_tile_coordinate_t worker_coordinate,
-    loom_aie2p_array_dma_direction_t direction, uint8_t record_count,
+    loom_xdna_dma_direction_t direction, uint8_t record_count,
     uint32_t record_byte_length,
     const loom_aie2p_array_source_endpoint_t* source_endpoint,
     loom_aie2p_array_compute_endpoint_proposal_t* out_proposal) {
@@ -935,7 +935,7 @@ static uint32_t loom_aie2p_array_commit_shim_endpoint(
 
 static bool loom_aie2p_array_select_shim_endpoint(
     loom_aie2p_array_plan_builder_t* builder, uint16_t preferred_column,
-    loom_aie2p_array_dma_direction_t direction, uint16_t descriptor_count,
+    loom_xdna_dma_direction_t direction, uint16_t descriptor_count,
     loom_aie2p_array_shim_endpoint_proposal_t* out_proposal) {
   for (uint16_t distance = 0; distance < builder->family->column_count;
        ++distance) {
@@ -1002,7 +1002,7 @@ static loom_xdna_tile_coordinate_t loom_aie2p_array_channel_worker_coordinate(
 
 static iree_status_t loom_aie2p_array_admit_compute_endpoint_cardinality(
     loom_aie2p_array_plan_builder_t* builder, uint32_t channel_index,
-    loom_aie2p_array_dma_direction_t direction,
+    loom_xdna_dma_direction_t direction,
     loom_xdna_tile_coordinate_t worker_coordinate,
     loom_aie2p_array_physical_demands_t* demands,
     loom_aie2p_array_physical_cardinalities_t* cardinalities) {
@@ -1012,12 +1012,12 @@ static iree_status_t loom_aie2p_array_admit_compute_endpoint_cardinality(
                                        LOOM_XDNA_TILE_KIND_COMPUTE)
            ->array_resources;
   uint32_t* directional_channel_count =
-      direction == LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
+      direction == LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
           ? &demands->compute_memory_to_stream_channels
           : &demands->compute_stream_to_memory_channels;
   if (*directional_channel_count == totals->dma_channel_count_per_direction) {
     const iree_string_view_t reason =
-        direction == LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
+        direction == LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
             ? IREE_SV(
                   "the array has no remaining compute memory-to-stream DMA "
                   "channel")
@@ -1051,7 +1051,7 @@ static iree_status_t loom_aie2p_array_admit_compute_endpoint_cardinality(
 
 static iree_status_t loom_aie2p_array_admit_shim_endpoint_cardinality(
     loom_aie2p_array_plan_builder_t* builder, uint32_t channel_index,
-    loom_aie2p_array_dma_direction_t direction,
+    loom_xdna_dma_direction_t direction,
     loom_xdna_tile_coordinate_t worker_coordinate,
     loom_aie2p_array_physical_demands_t* demands,
     loom_aie2p_array_physical_cardinalities_t* cardinalities) {
@@ -1060,12 +1060,12 @@ static iree_status_t loom_aie2p_array_admit_shim_endpoint_cardinality(
                                        LOOM_XDNA_TILE_KIND_SHIM_NOC)
            ->array_resources;
   uint32_t* directional_channel_count =
-      direction == LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
+      direction == LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
           ? &demands->shim_memory_to_stream_channels
           : &demands->shim_stream_to_memory_channels;
   if (*directional_channel_count == totals->dma_channel_count_per_direction) {
     const iree_string_view_t reason =
-        direction == LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
+        direction == LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
             ? IREE_SV(
                   "the array has no remaining shim memory-to-stream DMA "
                   "channel")
@@ -1802,10 +1802,18 @@ static iree_status_t loom_aie2p_array_admit_binding_transfers(
         .completion_route_index = UINT32_MAX,
     };
     iree_string_view_t reason = iree_string_view_empty();
+    loom_storage_geometry_t geometry;
+    if (!loom_storage_geometry_query(&builder->facts.context, builder->module,
+                                     base_binding_endpoint->message_type,
+                                     &geometry)) {
+      return loom_aie2p_array_diagnose_binding_transfer(
+          builder, channel_index, binding_endpoint, base_binding_endpoint,
+          IREE_SV("the binding source must have exact extents and non-negative "
+                  "dense or strided address geometry"));
+    }
     if (!loom_aie2p_array_resolve_binding_transfer(
-            builder->module, &builder->facts, builder->family,
-            base_binding_endpoint->message_type, binding_endpoint->message_type,
-            binding_endpoint->binding_byte_offset,
+            &geometry, loom_type_rank(binding_endpoint->message_type),
+            builder->family, binding_endpoint->binding_byte_offset,
             binding_endpoint->binding_view_partitioned,
             binding_endpoint->partition_lane, channel->record_byte_length,
             channel->record_count, shim_dma_facts, binding_plan, &reason)) {
@@ -1830,12 +1838,12 @@ static iree_status_t loom_aie2p_array_plan_external_channel(
   const loom_aie2p_array_worker_t* worker =
       &builder->workers[worker_endpoint->owner_index];
 
-  const loom_aie2p_array_dma_direction_t compute_direction =
-      ingress ? LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY
-              : LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM;
-  const loom_aie2p_array_dma_direction_t shim_direction =
-      ingress ? LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
-              : LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY;
+  const loom_xdna_dma_direction_t compute_direction =
+      ingress ? LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY
+              : LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM;
+  const loom_xdna_dma_direction_t shim_direction =
+      ingress ? LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
+              : LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY;
   const loom_aie2p_array_channel_t* source_channel =
       loom_aie2p_array_source_channel(builder, channel_index);
 
@@ -2006,7 +2014,7 @@ static iree_status_t loom_aie2p_array_plan_routed_channel(
   if (owns_sender_dma) {
     if (!loom_aie2p_array_select_compute_endpoint(
             builder, sender_worker->coordinate,
-            LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM,
+            LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM,
             (uint8_t)channel->capacity, channel->record_byte_length,
             /*source_endpoint=*/NULL, &sender_proposal)) {
       return loom_aie2p_array_reject_channel_resources(
@@ -2030,9 +2038,8 @@ static iree_status_t loom_aie2p_array_plan_routed_channel(
   loom_aie2p_array_compute_endpoint_proposal_t receiver_proposal;
   if (!loom_aie2p_array_select_compute_endpoint(
           builder, receiver_worker->coordinate,
-          LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY,
-          (uint8_t)channel->capacity, channel->record_byte_length,
-          &source_endpoint, &receiver_proposal)) {
+          LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY, (uint8_t)channel->capacity,
+          channel->record_byte_length, &source_endpoint, &receiver_proposal)) {
     return loom_aie2p_array_reject_channel_resources(
         builder, channel_index, receiver_worker->coordinate,
         IREE_SV("no visible compute tile can host the receiving DMA endpoint, "
@@ -2204,27 +2211,23 @@ static iree_status_t loom_aie2p_array_admit_physical_cardinalities(
 
     if (owns_compute_memory_to_stream) {
       IREE_RETURN_IF_ERROR(loom_aie2p_array_admit_compute_endpoint_cardinality(
-          builder, channel_index,
-          LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM, sender_coordinate,
-          &demands, out_cardinalities));
+          builder, channel_index, LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM,
+          sender_coordinate, &demands, out_cardinalities));
     }
     if (builder->valid && owns_compute_stream_to_memory) {
       IREE_RETURN_IF_ERROR(loom_aie2p_array_admit_compute_endpoint_cardinality(
-          builder, channel_index,
-          LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY, receiver_coordinate,
-          &demands, out_cardinalities));
+          builder, channel_index, LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY,
+          receiver_coordinate, &demands, out_cardinalities));
     }
     if (builder->valid && owns_shim_memory_to_stream) {
       IREE_RETURN_IF_ERROR(loom_aie2p_array_admit_shim_endpoint_cardinality(
-          builder, channel_index,
-          LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM, receiver_coordinate,
-          &demands, out_cardinalities));
+          builder, channel_index, LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM,
+          receiver_coordinate, &demands, out_cardinalities));
     }
     if (builder->valid && owns_shim_stream_to_memory) {
       IREE_RETURN_IF_ERROR(loom_aie2p_array_admit_shim_endpoint_cardinality(
-          builder, channel_index,
-          LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY, sender_coordinate,
-          &demands, out_cardinalities));
+          builder, channel_index, LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY,
+          sender_coordinate, &demands, out_cardinalities));
     }
     if (builder->valid && owns_neighbor_ring) {
       IREE_RETURN_IF_ERROR(loom_aie2p_array_admit_neighbor_cardinality(

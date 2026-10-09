@@ -74,7 +74,7 @@ TEST_P(RegionRemovalAttributeTest, RejectsExternalReferenceBeforeMutation) {
   IREE_ASSERT_OK(loom_block_add_arg(module_, removed, width));
   loom_type_id_t type = LOOM_TYPE_ID_INVALID;
   IREE_ASSERT_OK(loom_module_intern_type_id(
-      module_, loom_type_pool(loom_dim_pack_dynamic(width)), &type));
+      module_, loom_type_group_1d(loom_dim_pack_dynamic(width)), &type));
   loom_predicate_t predicate = {LOOM_PREDICATE_EQ,
                                 2,
                                 {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST},
@@ -212,7 +212,7 @@ TEST_F(OpEraseTest, KernelDeclarationDropsBothOwnedSignatures) {
   const loom_symbol_ref_t callee = {0, symbol};
   const loom_type_t argument_types[] = {
       loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
-      loom_type_pool(loom_dim_pack_static(4)),
+      loom_type_group_1d(loom_dim_pack_static(4)),
   };
   loom_op_t* declaration = nullptr;
   IREE_ASSERT_OK(loom_kernel_decl_build(
@@ -233,7 +233,7 @@ TEST_F(OpEraseTest, KernelDeclarationDropsBothOwnedSignatures) {
     }
     IREE_ASSERT_OK(loom_module_set_value_type(
         module_, signature.values[1],
-        loom_type_pool(loom_dim_pack_dynamic(signature.values[0]))));
+        loom_type_group_1d(loom_dim_pack_dynamic(signature.values[0]))));
   }
   ASSERT_EQ(module_->type_uses.active_carrier_count, 2u);
   const iree_host_size_t arena_bytes = module_->arena.used_allocation_size;

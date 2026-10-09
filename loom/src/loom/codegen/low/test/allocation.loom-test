@@ -379,6 +379,66 @@ failure: parallel-move-no-scratch-unit kind=unknown class=test.phys required=1 b
 
 // ====
 
+// RUN: emit low-allocation-json @edge_cycle_uses_other_branch_hole test.phys=3 fixed=%lhs:physical_register:0:1 fixed=%rhs:physical_register:1:1 fixed=%other:physical_register:2:1 fixed=%dst_lhs:physical_register:1:1 fixed=%dst_rhs:physical_register:0:1
+
+// Register 2 is live toward exit, but available for cycle scratch on swap.
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @edge_cycle_uses_other_branch_hole(%condition: reg<test.i32>, %lhs: reg<test.phys>, %rhs: reg<test.phys>, %other: reg<test.phys>) -> (reg<test.phys>, reg<test.phys>) asm {
+  low.cond_br %condition, ^swap, ^exit : reg<test.i32>
+^swap:
+  low.br ^join(%lhs: reg<test.phys>, %rhs: reg<test.phys>)
+^join(%dst_lhs: reg<test.phys>, %dst_rhs: reg<test.phys>):
+  return %dst_lhs, %dst_rhs
+^exit:
+  return %other, %other
+}
+
+// ----
+{"format":"loom.low.allocation.v0","function":"edge_cycle_uses_other_branch_hole","target":"test_target","descriptor_set":"test.low.core","allocation_mode":"virtual","assignment_count":6,"remark_count":0,"copy_decision_count":0,"spill_count":0,"spill_plan_count":0,"coalesced_copy_count":0,"materialized_copy_count":0,"assignments":[{"index":0,"value":{"id":0,"name":"condition","type":"reg<test.i32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.i32"},"start_point":0,"end_point":1,"unit_count":1,"location":{"kind":"target_id","base":0,"count":1}},{"index":1,"value":{"id":1,"name":"lhs","type":"reg<test.phys>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.phys"},"start_point":0,"end_point":3,"unit_count":1,"location":{"kind":"physical_register","base":0,"count":1}},{"index":2,"value":{"id":2,"name":"rhs","type":"reg<test.phys>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.phys"},"start_point":0,"end_point":3,"unit_count":1,"location":{"kind":"physical_register","base":1,"count":1}},{"index":3,"value":{"id":3,"name":"other","type":"reg<test.phys>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.phys"},"start_point":0,"end_point":7,"unit_count":1,"location":{"kind":"physical_register","base":2,"count":1}},{"index":4,"value":{"id":6,"name":"dst_lhs","type":"reg<test.phys>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.phys"},"start_point":4,"end_point":5,"unit_count":1,"location":{"kind":"physical_register","base":1,"count":1}},{"index":5,"value":{"id":7,"name":"dst_rhs","type":"reg<test.phys>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.phys"},"start_point":4,"end_point":5,"unit_count":1,"location":{"kind":"physical_register","base":0,"count":1}}],"spill_plans":[],"copy_decisions":[],"remarks":[]}
+
+// ====
+
+// RUN: emit low-allocation-json @target_id_cycle_uses_other_branch_hole test.f32=3 fixed=%lhs:target_id:0:1 fixed=%rhs:target_id:1:1 fixed=%other:target_id:2:1 fixed=%dst_lhs:target_id:1:1 fixed=%dst_rhs:target_id:0:1
+
+// Target IDs share the same sparse-lifetime contract as physical registers.
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @target_id_cycle_uses_other_branch_hole(%condition: reg<test.i32>, %lhs: reg<test.f32>, %rhs: reg<test.f32>, %other: reg<test.f32>) -> (reg<test.f32>, reg<test.f32>) asm {
+  low.cond_br %condition, ^swap, ^exit : reg<test.i32>
+^swap:
+  low.br ^join(%lhs: reg<test.f32>, %rhs: reg<test.f32>)
+^join(%dst_lhs: reg<test.f32>, %dst_rhs: reg<test.f32>):
+  return %dst_lhs, %dst_rhs
+^exit:
+  return %other, %other
+}
+
+// ----
+{"format":"loom.low.allocation.v0","function":"target_id_cycle_uses_other_branch_hole","target":"test_target","descriptor_set":"test.low.core","allocation_mode":"virtual","assignment_count":6,"remark_count":0,"copy_decision_count":0,"spill_count":0,"spill_plan_count":0,"coalesced_copy_count":0,"materialized_copy_count":0,"assignments":[{"index":0,"value":{"id":0,"name":"condition","type":"reg<test.i32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.i32"},"start_point":0,"end_point":1,"unit_count":1,"location":{"kind":"target_id","base":0,"count":1}},{"index":1,"value":{"id":1,"name":"lhs","type":"reg<test.f32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.f32"},"start_point":0,"end_point":3,"unit_count":1,"location":{"kind":"target_id","base":0,"count":1}},{"index":2,"value":{"id":2,"name":"rhs","type":"reg<test.f32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.f32"},"start_point":0,"end_point":3,"unit_count":1,"location":{"kind":"target_id","base":1,"count":1}},{"index":3,"value":{"id":3,"name":"other","type":"reg<test.f32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.f32"},"start_point":0,"end_point":7,"unit_count":1,"location":{"kind":"target_id","base":2,"count":1}},{"index":4,"value":{"id":6,"name":"dst_lhs","type":"reg<test.f32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.f32"},"start_point":4,"end_point":5,"unit_count":1,"location":{"kind":"target_id","base":1,"count":1}},{"index":5,"value":{"id":7,"name":"dst_rhs","type":"reg<test.f32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.f32"},"start_point":4,"end_point":5,"unit_count":1,"location":{"kind":"target_id","base":0,"count":1}}],"spill_plans":[],"copy_decisions":[],"remarks":[]}
+
+// ====
+
+// RUN: emit low-allocation-json @explicit_cycle_uses_other_branch_hole test.explicit32=3 fixed=%lhs:physical_register:0:1 fixed=%rhs:physical_register:1:1 fixed=%other:physical_register:2:1 fixed=%dst_lhs:physical_register:1:1 fixed=%dst_rhs:physical_register:0:1
+
+// Explicit physical IDs map to atomic storage through the descriptor table.
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @explicit_cycle_uses_other_branch_hole(%condition: reg<test.i32>, %lhs: reg<test.explicit32>, %rhs: reg<test.explicit32>, %other: reg<test.explicit32>) -> (reg<test.explicit32>, reg<test.explicit32>) asm {
+  low.cond_br %condition, ^swap, ^exit : reg<test.i32>
+^swap:
+  low.br ^join(%lhs: reg<test.explicit32>, %rhs: reg<test.explicit32>)
+^join(%dst_lhs: reg<test.explicit32>, %dst_rhs: reg<test.explicit32>):
+  return %dst_lhs, %dst_rhs
+^exit:
+  return %other, %other
+}
+
+// ----
+{"format":"loom.low.allocation.v0","function":"explicit_cycle_uses_other_branch_hole","target":"test_target","descriptor_set":"test.low.core","allocation_mode":"virtual","assignment_count":6,"remark_count":0,"copy_decision_count":0,"spill_count":0,"spill_plan_count":0,"coalesced_copy_count":0,"materialized_copy_count":0,"assignments":[{"index":0,"value":{"id":0,"name":"condition","type":"reg<test.i32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.i32"},"start_point":0,"end_point":1,"unit_count":1,"location":{"kind":"target_id","base":0,"count":1}},{"index":1,"value":{"id":1,"name":"lhs","type":"reg<test.explicit32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.explicit32"},"start_point":0,"end_point":3,"unit_count":1,"location":{"kind":"physical_register","base":0,"count":1}},{"index":2,"value":{"id":2,"name":"rhs","type":"reg<test.explicit32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.explicit32"},"start_point":0,"end_point":3,"unit_count":1,"location":{"kind":"physical_register","base":1,"count":1}},{"index":3,"value":{"id":3,"name":"other","type":"reg<test.explicit32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.explicit32"},"start_point":0,"end_point":7,"unit_count":1,"location":{"kind":"physical_register","base":2,"count":1}},{"index":4,"value":{"id":6,"name":"dst_lhs","type":"reg<test.explicit32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.explicit32"},"start_point":4,"end_point":5,"unit_count":1,"location":{"kind":"physical_register","base":1,"count":1}},{"index":5,"value":{"id":7,"name":"dst_rhs","type":"reg<test.explicit32>"},"class":{"type_kind":12,"type_kind_name":"register","element_type":0,"element_type_name":null,"register_class":"test.explicit32"},"start_point":4,"end_point":5,"unit_count":1,"location":{"kind":"physical_register","base":0,"count":1}}],"spill_plans":[],"copy_decisions":[],"remarks":[]}
+
+// ====
+
 // RUN: emit low-allocation-query @structural_physical_span_rebased_at_capacity values=%wide,%tail,%packed fixed=%wide:physical_register:20:12 fixed=%tail:physical_register:0:1
 
 test.target<low_core> @test_target
@@ -1121,11 +1181,14 @@ spill %huge: private[4] bytes=20 align=16 stores=1 reloads=1
 
 // ====
 
-// RUN: emit low-allocation-query @loop_backedge_layout_recolors_shared_storage values=%seed0,%seed1,%state0,%state1,%next0,%next1
+// RUN: emit low-allocation-query @loop_backedge_layout_recolors_shared_storage values=%seed0,%seed1,%state0,%state1,%next0,%next1,%gap fixed=%gap:target_id:3:1
 
 test.target<low_core> @test_target
 
-low.func.def target<test.low.core>(@test_target) @loop_backedge_layout_recolors_shared_storage(%condition: reg<test.i32>, %seed0: reg<test.i32>, %seed1: reg<test.i32>, %lhs: reg<test.i32>, %rhs: reg<test.i32>) -> (reg<test.i32>, reg<test.i32>) asm {
+// %gap occupies the hole between the two queried loop-edge locations. The
+// header-local envelope may retain it, but exact overlap must exclude it from
+// relocation conflicts.
+low.func.def target<test.low.core>(@test_target) @loop_backedge_layout_recolors_shared_storage(%condition: reg<test.i32>, %seed0: reg<test.i32>, %seed1: reg<test.i32>, %lhs: reg<test.i32>, %rhs: reg<test.i32>, %gap: reg<test.i32>) -> (reg<test.i32>, reg<test.i32>, reg<test.i32>) asm {
   low.br ^loop(%seed0: reg<test.i32>, %seed1: reg<test.i32>)
 ^loop(%state0: reg<test.i32>, %state1: reg<test.i32>):
   low.cond_br %condition, ^body, ^exit : reg<test.i32>
@@ -1141,16 +1204,51 @@ low.func.def target<test.low.core>(@test_target) @loop_backedge_layout_recolors_
   %sink = test.mul.i32 %helper, %rhs
   low.br ^loop(%next0: reg<test.i32>, %next1: reg<test.i32>)
 ^exit:
-  return %state0, %state1
+  return %state0, %state1, %gap
 }
 
 // ----
 value %seed0: test.i32 -> target_id[0:1]
 value %seed1: test.i32 -> target_id[1:1]
 value %state0: test.i32 -> target_id[1:1]
-value %state1: test.i32 -> target_id[5:1]
+value %state1: test.i32 -> target_id[6:1]
 value %next0: test.i32 -> target_id[1:1]
-value %next1: test.i32 -> target_id[5:1]
+value %next1: test.i32 -> target_id[6:1]
+value %gap: test.i32 -> target_id[3:1]
+
+// ====
+
+// RUN: emit low-allocation-query @sequential_loop_relocation_rebuilds_queries values=%seed,%first_state,%first_next,%second_state,%second_next fixed=%seed:target_id:0:1 fixed=%first_next:target_id:5:1 fixed=%second_next:target_id:6:1
+
+test.target<low_core> @test_target
+
+// Relocating the first header changes the assignment that enters the second.
+// The second header must query that current assignment instead of a
+// function-wide snapshot from before the first relocation.
+low.func.def target<test.low.core>(@test_target) @sequential_loop_relocation_rebuilds_queries(%condition: reg<test.i32>, %seed: reg<test.i32>) -> (reg<test.i32>) asm {
+  low.br ^first_loop(%seed: reg<test.i32>)
+^first_loop(%first_state: reg<test.i32>):
+  low.cond_br %condition, ^first_body, ^first_exit : reg<test.i32>
+^first_body:
+  %first_next = test.const.i32 1
+  low.br ^first_loop(%first_next: reg<test.i32>)
+^first_exit:
+  low.br ^second_loop(%first_state: reg<test.i32>)
+^second_loop(%second_state: reg<test.i32>):
+  low.cond_br %condition, ^second_body, ^exit : reg<test.i32>
+^second_body:
+  %second_next = test.const.i32 2
+  low.br ^second_loop(%second_next: reg<test.i32>)
+^exit:
+  return %second_state
+}
+
+// ----
+value %seed: test.i32 -> target_id[0:1]
+value %first_state: test.i32 -> target_id[5:1]
+value %first_next: test.i32 -> target_id[5:1]
+value %second_state: test.i32 -> target_id[6:1]
+value %second_next: test.i32 -> target_id[6:1]
 
 // ====
 

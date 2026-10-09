@@ -103,6 +103,18 @@ def _i64_attr_range_diagnostic(
     )
 
 
+def _i64_attrs_sum_diagnostic(
+    field: str,
+    other_field: str,
+    value: int,
+) -> DiagnosticRef:
+    return _named_constraint_diagnostic(
+        "fields",
+        f"{field}+{other_field}",
+        f"i64_attrs_sum_equals.{value}",
+    )
+
+
 def _descriptor_available_diagnostic(descriptor: Descriptor) -> DiagnosticRef:
     return _named_constraint_diagnostic(
         "descriptor",

@@ -16,6 +16,7 @@ iree_py_library(
     "__init__.py"
     "contracts.py"
     "float_narrowing.py"
+    "vector_shifts.py"
   DEPS
     loom::py::loom::core
     loom::py::loom::dialect::index::index
@@ -38,6 +39,24 @@ iree_py_test(
     "../../../tools/pytest_style_runner.py"
   ARGS
     "loom.target.emit.wasm.contracts_test"
+  DEPS
+    loom::py::loom::target::emit::wasm::contracts
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+)
+
+iree_py_test(
+  NAME
+    vector_shifts_test
+  MAIN
+    "../../../tools/pytest_style_runner.py"
+  SRCS
+    "vector_shifts_test.py"
+    "../../../tools/pytest_style_runner.py"
+  ARGS
+    "loom.target.emit.wasm.vector_shifts_test"
   DEPS
     loom::py::loom::target::emit::wasm::contracts
   PACKAGE_DIRS

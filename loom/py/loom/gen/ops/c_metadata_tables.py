@@ -54,6 +54,7 @@ from loom.gen.ops.c_enums import (
 from loom.gen.ops.c_enums import error_ref_literal as _error_ref_literal
 from loom.gen.ops.c_names import COPYRIGHT
 from loom.gen.ops.c_names import c_dialect_enum as _c_dialect_enum
+from loom.gen.ops.c_names import c_dialect_include_path as _c_dialect_include_path
 from loom.gen.ops.c_names import c_encoding_enum_prefix as _c_encoding_enum_prefix
 from loom.gen.ops.c_names import (
     c_encoding_family_descriptor_name as _c_encoding_family_descriptor_name,
@@ -803,13 +804,14 @@ def generate_tables_c(
     encoding_families: Sequence[EncodingFamilyDef] = (),
     *,
     include_path: str | None = None,
+    referenced_ops: Sequence[Op] = (),
     emit_registration: bool = True,
     export_vtables: bool = False,
     private_header: bool = False,
 ) -> str:
     """Generates the tables.c file for a dialect (.rodata)."""
     lines: list[str] = []
-    ops_by_name = {op.name: op for op in ops}
+    ops_by_name = {op.name: op for op in (*referenced_ops, *ops)}
 
     lines.append(COPYRIGHT)
     lines.extend(line_comment_header("//", generator="loom.gen.ops.c_tables"))
@@ -820,6 +822,14 @@ def generate_tables_c(
         lines.append(f'#include "{include_path}/tables.h"')
     else:
         lines.append(f'#include "{include_path}/ops.h"')
+    reference_includes: set[str] = set()
+    for referenced_op in referenced_ops:
+        if referenced_op.group is None:
+            raise ValueError(f"Referenced op '{referenced_op.name}' requires its declaring dialect")
+        reference_path = _c_dialect_include_path(referenced_op.group)
+        if reference_path != include_path:
+            reference_includes.add(f'#include "{reference_path}/ops.h"')
+    lines.extend(sorted(reference_includes))
     if c_interfaces.target_like_bundle_table_symbols(ops):
         lines.append("")
         lines.append("#include <stddef.h>")
@@ -1051,7 +1061,17 @@ def generate_tables_c(
                 flags = " | ".join(region_flags) if region_flags else "0"
                 terminator = c_traits.region_terminator_kind(op, region_def, ops_by_name)
                 execution = c_traits.region_execution(op, region_def)
-                lines.append(f"    {{{terminator}, {implicit_terminator}, {flags}, {execution}}},")
+                execution_target = region_def.execution_target
+                target_index_plus_one = 0
+                if execution_target is not None:
+                    target_index = next((i for i, attr in enumerate(non_flags) if attr.name == execution_target), None)
+                    if target_index is None:
+                        raise ValueError(f"Op '{op.name}' region '{region_def.name}' execution_target '{execution_target}' does not name an attribute")
+                    target_attr = non_flags[target_index]
+                    if target_attr.attr_type != "symbol" or target_attr.symbol_ref is None or "target" not in target_attr.symbol_ref.interfaces:
+                        raise ValueError(f"Op '{op.name}' region '{region_def.name}' execution_target '{execution_target}' must reference a target symbol")
+                    target_index_plus_one = target_index + 1
+                lines.append(f"    {{{terminator}, {implicit_terminator}, {flags}, {execution}, {target_index_plus_one}}},")
             lines.append("};")
 
         # Constraint table.
@@ -1438,13 +1458,13 @@ def generate_sharded_tables_c(
     encoding_families: Sequence[EncodingFamilyDef] = (),
     *,
     include_path: str | None = None,
+    referenced_ops: Sequence[Op] = (),
 ) -> dict[str, str]:
     """Generates an aggregator plus category shards for one dialect."""
-    all_ops: list[Op] = []
+    all_ops = [op for _, category_ops in category_groups for op in category_ops]
     table_files: dict[str, str] = {}
     for category, category_ops in category_groups:
         shard_ops = list(category_ops)
-        all_ops.extend(shard_ops)
         if not shard_ops:
             continue
         category_key = category.key
@@ -1454,6 +1474,7 @@ def generate_sharded_tables_c(
             dialect_id,
             shard_ops,
             include_path=include_path,
+            referenced_ops=(*referenced_ops, *all_ops),
             emit_registration=False,
             export_vtables=True,
             private_header=True,

@@ -28,6 +28,7 @@ loom_check_test_suite(
     "cfg_simplify_facts.loom-test"
     "cfg_simplify_identities.loom-test"
     "cfg_simplify_scf_pipeline.loom-test"
+    "low_branches.loom-test"
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

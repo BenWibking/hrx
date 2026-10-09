@@ -29,6 +29,7 @@ static const loom_attr_descriptor_t kLookupParameters[] = {{
 static const loom_parameterized_type_descriptor_t kLookupDescriptor = {
     /*.name=*/LOOM_BSTRING_REF(11, "test.lookup"),
     /*.parameter_descriptors=*/kLookupParameters,
+    /*.fact_domain=*/nullptr,
     /*.ir_kind=*/LOOM_TYPE_PARAMETERIZED,
     /*.type_flags=*/0,
     /*.parameter_count=*/IREE_ARRAYSIZE(kLookupParameters),

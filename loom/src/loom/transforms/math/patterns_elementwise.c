@@ -398,32 +398,83 @@ static iree_status_t loom_math_legalize_build_silu_logistic(
 static iree_status_t loom_math_legalize_build_softplus_exp2(
     loom_builder_t* builder, loom_math_legalize_source_t* source,
     loom_math_legalize_value_t* out_value) {
-  loom_math_legalize_value_t log2_e = loom_math_evaluation_value_invalid();
+  // softplus(x) = max(x, 0) + log1p(exp(-abs(x))). The exponential cannot
+  // overflow, and its argument may become -infinity for a finite input.
+  // Reassociation would erase the rounding correction in (1 + t) - 1.
+  source->fastmath_flags &= ~(LOOM_TARGET_MATH_FASTMATH_FLAG_REASSOC |
+                              LOOM_TARGET_MATH_FASTMATH_FLAG_NINF);
+  loom_math_legalize_value_t negative_log2_e =
+      loom_math_evaluation_value_invalid();
   loom_math_legalize_value_t ln2 = loom_math_evaluation_value_invalid();
+  loom_math_legalize_value_t zero = loom_math_evaluation_value_invalid();
   loom_math_legalize_value_t one = loom_math_evaluation_value_invalid();
+  loom_math_legalize_value_t next_one = loom_math_evaluation_value_invalid();
+  loom_math_legalize_value_t magnitude = loom_math_evaluation_value_invalid();
   loom_math_legalize_value_t scaled = loom_math_evaluation_value_invalid();
   loom_math_legalize_value_t exponent = loom_math_evaluation_value_invalid();
   loom_math_legalize_value_t sum = loom_math_evaluation_value_invalid();
+  loom_math_legalize_value_t increment = loom_math_evaluation_value_invalid();
+  loom_math_legalize_value_t safe_increment =
+      loom_math_evaluation_value_invalid();
+  loom_math_legalize_value_t correction = loom_math_evaluation_value_invalid();
   loom_math_legalize_value_t log2_sum = loom_math_evaluation_value_invalid();
+  loom_math_legalize_value_t log_sum = loom_math_evaluation_value_invalid();
+  loom_math_legalize_value_t corrected = loom_math_evaluation_value_invalid();
+  loom_math_legalize_value_t tail = loom_math_evaluation_value_invalid();
+  loom_math_legalize_value_t positive = loom_math_evaluation_value_invalid();
+  loom_value_id_t has_increment = LOOM_VALUE_ID_INVALID;
+  loom_value_id_t is_nonnegative = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_math_legalize_build_constant(
-      builder, source, 1.44269504088896340736, &log2_e));
+      builder, source, -1.44269504088896340736, &negative_log2_e));
   IREE_RETURN_IF_ERROR(loom_math_legalize_build_constant(
       builder, source, 0.69314718055994530942, &ln2));
   IREE_RETURN_IF_ERROR(
+      loom_math_legalize_build_constant(builder, source, 0.0, &zero));
+  IREE_RETURN_IF_ERROR(
       loom_math_legalize_build_constant(builder, source, 1.0, &one));
+  IREE_RETURN_IF_ERROR(loom_math_legalize_build_constant(
+      builder, source, 1.00000011920928955078125, &next_one));
+  IREE_RETURN_IF_ERROR(loom_math_legalize_build_unary(
+      builder, source, LOOM_MATH_EVALUATION_UNARY_ABSF, &source->input,
+      &magnitude));
   IREE_RETURN_IF_ERROR(loom_math_legalize_build_binary(
-      builder, source, LOOM_MATH_EVALUATION_BINARY_MULF, &source->input,
-      &log2_e, &scaled));
+      builder, source, LOOM_MATH_EVALUATION_BINARY_MULF, &magnitude,
+      &negative_log2_e, &scaled));
   IREE_RETURN_IF_ERROR(loom_math_legalize_build_unary(
       builder, source, LOOM_MATH_EVALUATION_UNARY_EXP2F, &scaled, &exponent));
   IREE_RETURN_IF_ERROR(loom_math_legalize_build_binary(
       builder, source, LOOM_MATH_EVALUATION_BINARY_ADDF, &one, &exponent,
       &sum));
+  // For t in [0, 1], u = round(1 + t) is in [1, 2], so u - 1 is exact.
+  // log(u) * t / (u - 1) corrects the rounded increment. If u rounds to 1,
+  // log1p(t) rounds to t. Select a nonzero denominator before division so
+  // this path never evaluates 0/0, including at either input infinity.
+  IREE_RETURN_IF_ERROR(loom_math_legalize_build_binary(
+      builder, source, LOOM_MATH_EVALUATION_BINARY_SUBF, &sum, &one,
+      &increment));
+  IREE_RETURN_IF_ERROR(loom_math_evaluation_build_ordered_greater_equal(
+      source, &sum, &next_one, &has_increment));
+  IREE_RETURN_IF_ERROR(loom_math_evaluation_build_select(
+      source, has_increment, &increment, &one, &safe_increment));
+  IREE_RETURN_IF_ERROR(loom_math_legalize_build_division(
+      builder, source, &exponent, &safe_increment, &correction));
   IREE_RETURN_IF_ERROR(loom_math_legalize_build_unary(
       builder, source, LOOM_MATH_EVALUATION_UNARY_LOG2F, &sum, &log2_sum));
+  IREE_RETURN_IF_ERROR(loom_math_legalize_build_binary(
+      builder, source, LOOM_MATH_EVALUATION_BINARY_MULF, &log2_sum, &ln2,
+      &log_sum));
+  IREE_RETURN_IF_ERROR(loom_math_legalize_build_binary(
+      builder, source, LOOM_MATH_EVALUATION_BINARY_MULF, &log_sum, &correction,
+      &corrected));
+  IREE_RETURN_IF_ERROR(loom_math_evaluation_build_select(
+      source, has_increment, &corrected, &exponent, &tail));
+  IREE_RETURN_IF_ERROR(loom_math_evaluation_build_ordered_greater_equal(
+      source, &source->input, &zero, &is_nonnegative));
+  IREE_RETURN_IF_ERROR(loom_math_evaluation_build_select(
+      source, is_nonnegative, &source->input, &zero, &positive));
   return loom_math_legalize_build_binary(builder, source,
-                                         LOOM_MATH_EVALUATION_BINARY_MULF,
-                                         &log2_sum, &ln2, out_value);
+                                         LOOM_MATH_EVALUATION_BINARY_ADDF,
+                                         &positive, &tail, out_value);
 }
 
 static iree_status_t loom_math_legalize_build_gelu_tanh(

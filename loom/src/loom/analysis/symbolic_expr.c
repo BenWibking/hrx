@@ -72,8 +72,8 @@ static iree_status_t loom_symbolic_expr_resolve_value_ordinal(
     loom_symbolic_expr_context_t* context, loom_value_id_t value_id,
     loom_value_ordinal_t* out_value_ordinal) {
   if (context->value_domain != NULL) {
-    return loom_local_value_domain_register_value(
-        context->value_domain, context->arena, value_id, out_value_ordinal);
+    return loom_local_value_domain_register_value(context->value_domain,
+                                                  value_id, out_value_ordinal);
   }
   *out_value_ordinal = (loom_value_ordinal_t)value_id;
   return iree_ok_status();

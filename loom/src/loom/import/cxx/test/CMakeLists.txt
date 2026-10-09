@@ -84,6 +84,8 @@ loom_check_test_suite(
     "locations.cxx-test"
     "loops.cxx-test"
     "macro_operators.cxx-test"
+    "matrix_fragments.cxx-test"
+    "matrix_fragments_invalid.cxx-test"
     "mxfp_group_dot.cxx-test"
     "narrow_float_subtraction.cxx-test"
     "offsetof.cxx-test"
@@ -662,25 +664,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_generated_file(
   NAME
-    assumptions_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "assumptions_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/assumptions.cxx"
-  INPUTS
-    "assumptions.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
     comparison_functions_cases_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -712,44 +695,6 @@ loom_generated_file(
     "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/constant_loops.cxx"
   INPUTS
     "constant_loops.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
-    enum_values_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "enum_values_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/enum_values.cxx"
-  INPUTS
-    "enum_values.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
-    increment_values_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "increment_values_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/increment_values.cxx"
-  INPUTS
-    "increment_values.cxx"
   TESTONLY
 )
 endif()
@@ -890,34 +835,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_test_module(
   NAME
-    assumptions_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/assumptions_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/assumptions.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    assumptions_test_execute_vm_reference_test
-  MODULE
-    "::assumptions_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
     comparison_functions_test_module
   SRCS
     "${CMAKE_CURRENT_BINARY_DIR}/comparison_functions_cases.cxx"
@@ -961,62 +878,6 @@ loom_execution_test(
     constant_loops_test_execute_vm_reference_test
   MODULE
     "::constant_loops_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
-    enum_values_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/enum_values_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/enum_values.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    enum_values_test_execute_vm_reference_test
-  MODULE
-    "::enum_values_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
-    increment_values_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/increment_values_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/increment_values.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    increment_values_test_execute_vm_reference_test
-  MODULE
-    "::increment_values_test_module"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
     "loom-execution-profile=vm_reference"
@@ -1224,6 +1085,66 @@ endif()
 endif()
 
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    assumptions_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::assumptions_module"
+  RUNNER_ARGS
+    "--case=assumptions_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    enum_values_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::enum_values_module"
+  RUNNER_ARGS
+    "--case=enum_values_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    increment_values_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::increment_values_module"
+  RUNNER_ARGS
+    "--case=increment_values_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_check_test_suite(
   NAME
     vm_compiler_test
@@ -1405,25 +1326,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_generated_file_family(
   NAME
-    assumptions_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "assumptions_checks.loom"
-    "assumptions_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=assumptions"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
     constant_loops_checks_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -1481,25 +1383,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_generated_file_family(
   NAME
-    enum_values_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "enum_values_checks.loom"
-    "enum_values_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=enum_values"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
     flash_attention_checks_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -1512,44 +1395,6 @@ loom_generated_file_family(
   ARGS
     "kernel"
     "--group=flash_attention"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
-    increment_values_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "increment_values_checks.loom"
-    "increment_values_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=increment_values"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
-    integer_increment_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "integer_increment_checks.loom"
-    "integer_increment_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=integer_increment"
   TESTONLY
 )
 endif()
@@ -1588,44 +1433,6 @@ loom_generated_file_family(
   ARGS
     "kernel"
     "--group=pointer_walk"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
-    record_values_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "record_values_checks.loom"
-    "record_values_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=record_values"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
-    scheduled_sum_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "scheduled_sum_checks.loom"
-    "scheduled_sum_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=scheduled_sum"
   TESTONLY
 )
 endif()
@@ -1683,44 +1490,6 @@ loom_generated_file_family(
   ARGS
     "kernel"
     "--group=structured_continue"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
-    symbol_exports_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "symbol_exports_checks.loom"
-    "symbol_exports_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=symbol_exports"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
-    typed_views_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "typed_views_checks.loom"
-    "typed_views_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=typed_views"
   TESTONLY
 )
 endif()
@@ -1819,21 +1588,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
-    assumptions_module
-  SRCS
-    "assumptions.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/assumptions_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/assumptions_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/assumptions_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
     constant_loops_module
   SRCS
     "constant_loops.cxx"
@@ -1879,21 +1633,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
-    enum_values_module
-  SRCS
-    "enum_values.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/enum_values_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/enum_values_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/enum_values_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
     flash_attention_module
   SRCS
     "flash_attention.cxx"
@@ -1903,36 +1642,6 @@ loom_test_module(
     "${CMAKE_CURRENT_BINARY_DIR}/flash_attention_checks.loom"
   INPUTOPTS
     "cxx:approximate-functions=true"
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    increment_values_module
-  SRCS
-    "increment_values.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/increment_values_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/increment_values_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/increment_values_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    integer_increment_module
-  SRCS
-    "integer_increment.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/integer_increment_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/integer_increment_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/integer_increment_checks.loom"
-  INPUTOPTS
-
 )
 endif()
 
@@ -1961,36 +1670,6 @@ loom_test_module(
   DATA
     "${CMAKE_CURRENT_BINARY_DIR}/pointer_walk_arrays"
     "${CMAKE_CURRENT_BINARY_DIR}/pointer_walk_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    record_values_module
-  SRCS
-    "record_values.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/record_values_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/record_values_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/record_values_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    scheduled_sum_module
-  SRCS
-    "scheduled_sum.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/scheduled_sum_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/scheduled_sum_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/scheduled_sum_checks.loom"
   INPUTOPTS
 
 )
@@ -2036,36 +1715,6 @@ loom_test_module(
   DATA
     "${CMAKE_CURRENT_BINARY_DIR}/structured_continue_arrays"
     "${CMAKE_CURRENT_BINARY_DIR}/structured_continue_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    symbol_exports_module
-  SRCS
-    "symbol_exports.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/symbol_exports_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/symbol_exports_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/symbol_exports_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    typed_views_module
-  SRCS
-    "typed_views.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/typed_views_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/typed_views_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/typed_views_checks.loom"
   INPUTOPTS
 
 )
@@ -2128,6 +1777,86 @@ loom_test_module(
     "${CMAKE_CURRENT_BINARY_DIR}/volatile_memory_checks.loom"
   INPUTOPTS
 
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    assumptions_module
+  SRCS
+    "assumptions.cxx"
+    "assumptions.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    enum_values_module
+  SRCS
+    "enum_values.cxx"
+    "enum_values.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    increment_values_module
+  SRCS
+    "increment_values.cxx"
+    "increment_values.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    integer_increment_module
+  SRCS
+    "integer_increment.cxx"
+    "integer_increment.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    record_values_module
+  SRCS
+    "record_values.cxx"
+    "record_values.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    scheduled_sum_module
+  SRCS
+    "scheduled_sum.cxx"
+    "scheduled_sum.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    symbol_exports_module
+  SRCS
+    "symbol_exports.cxx"
+    "symbol_exports.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    typed_views_module
+  SRCS
+    "typed_views.cxx"
+    "typed_views.loom"
 )
 endif()
 

@@ -675,7 +675,7 @@ _STREAM_PORTS = (
             (StreamPort.WEST, 4),
             (StreamPort.NORTH, 4),
             (StreamPort.EAST, 4),
-            (StreamPort.TRACE, 1),
+            (StreamPort.TRACE, 2),
         ),
     ),
     *_stream_ranges(
@@ -721,7 +721,7 @@ _STREAM_PORTS = (
             (StreamPort.WEST, 4),
             (StreamPort.NORTH, 4),
             (StreamPort.EAST, 4),
-            (StreamPort.TRACE, 2),
+            (StreamPort.TRACE, 1),
         ),
     ),
 )

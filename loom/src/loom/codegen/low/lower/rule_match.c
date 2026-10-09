@@ -965,6 +965,29 @@ static iree_status_t loom_low_lower_rule_guard_matches(
                      value <= payload->i64_range.maximum;
       return iree_ok_status();
     }
+    case LOOM_LOW_LOWER_GUARD_ATTR_I64_SUM_EQ: {
+      const uint16_t attr_index = guard->selector.attribute.attr_index;
+      const uint16_t other_attr_index =
+          guard->selector.attribute.other_attr_index;
+      if (attr_index >= source_op->attribute_count ||
+          other_attr_index >= source_op->attribute_count) {
+        return iree_ok_status();
+      }
+      const loom_attribute_t attr = loom_op_const_attrs(source_op)[attr_index];
+      const loom_attribute_t other_attr =
+          loom_op_const_attrs(source_op)[other_attr_index];
+      if (attr.kind != LOOM_ATTR_I64 || other_attr.kind != LOOM_ATTR_I64) {
+        return iree_ok_status();
+      }
+      if ((other_attr.i64 > 0 && attr.i64 > INT64_MAX - other_attr.i64) ||
+          (other_attr.i64 < 0 && attr.i64 < INT64_MIN - other_attr.i64)) {
+        return iree_ok_status();
+      }
+      *out_matches =
+          attr.i64 + other_attr.i64 ==
+          loom_low_lower_rule_set_guard_payload(rule_set, guard)->i64;
+      return iree_ok_status();
+    }
     case LOOM_LOW_LOWER_GUARD_ATTR_I64_ARRAY_COUNT_EQ:
       if (guard->selector.attribute.attr_index >= source_op->attribute_count ||
           loom_op_const_attrs(source_op)[guard->selector.attribute.attr_index]
@@ -1105,26 +1128,12 @@ static iree_status_t loom_low_lower_rule_guard_matches(
       return iree_ok_status();
     }
     case LOOM_LOW_LOWER_GUARD_OPERAND_SEGMENT_COUNT_EQ: {
-      if (guard->selector.attribute.attr_index > source_op->operand_count) {
-        return iree_ok_status();
-      }
-      const loom_op_vtable_t* vtable = loom_context_resolve_op(
-          match_context->module->context, source_op->kind);
-      if (vtable == NULL) {
-        return iree_ok_status();
-      }
-      uint16_t segment_count = 0;
-      if (guard->selector.attribute.attr_index < vtable->fixed_operand_count) {
-        segment_count = 1;
-      } else if (guard->selector.attribute.attr_index ==
-                     vtable->fixed_operand_count &&
-                 iree_any_bit_set(vtable->vtable_flags,
-                                  LOOM_OP_VTABLE_VARIADIC_OPERANDS)) {
-        segment_count = (uint16_t)(source_op->operand_count -
-                                   guard->selector.attribute.attr_index);
-      }
+      const loom_op_vtable_t* vtable =
+          loom_op_vtable(match_context->module, source_op);
+      const loom_value_slice_t segment = loom_op_operand_field_span(
+          vtable, source_op, guard->selector.attribute.attr_index);
       *out_matches =
-          segment_count ==
+          segment.count ==
           loom_low_lower_rule_set_guard_payload(rule_set, guard)->u64;
       return iree_ok_status();
     }

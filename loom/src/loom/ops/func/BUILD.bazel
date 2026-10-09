@@ -43,6 +43,7 @@ _FUNC_VISIBILITY = [
     "//loom/src/loom/tools/loom-format:__pkg__",
     "//loom/src/loom/transforms/func:__pkg__",
     "//loom/src/loom/transforms/kernel:__pkg__",
+    "//loom/src/loom/transforms/pipeline:__pkg__",
     "//loom/src/loom/transforms/symbol:__pkg__",
 ]
 

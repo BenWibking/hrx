@@ -79,6 +79,8 @@ typedef enum loom_type_constraint_e {
   LOOM_TYPE_CONSTRAINT_BITWISE_ELEMENT,
   // Shaped type with an 8/16/32/64-bit integer or floating-point element type.
   LOOM_TYPE_CONSTRAINT_BYTE_PATTERN_ELEMENT,
+  // Shaped communication participant domain.
+  LOOM_TYPE_CONSTRAINT_GROUP,
   LOOM_TYPE_CONSTRAINT_COUNT_,
 } loom_type_constraint_t;
 

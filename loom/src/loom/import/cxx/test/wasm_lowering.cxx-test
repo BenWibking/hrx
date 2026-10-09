@@ -80,8 +80,8 @@ low.func.def target<wasm.core.simd128> @read_helper(%pointer: reg<wasm.i32>, %po
   return %136
 }
 
-low.func.def target<wasm.core.simd128> @read_view(%source: reg<wasm.i32>, %pointer_byte_offset: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %140 = i32.add %source, %pointer_byte_offset
+low.func.def target<wasm.core.simd128> @read_view(%pointer: reg<wasm.i32>, %pointer_byte_offset: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
+  %140 = i32.add %pointer, %pointer_byte_offset
   %141 = i32.load %140
   return %141
 }

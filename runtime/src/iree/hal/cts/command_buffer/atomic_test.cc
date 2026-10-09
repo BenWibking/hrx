@@ -94,8 +94,9 @@ class CommandBufferAtomicTest : public CtsTestBase<> {
         /*.flags=*/IREE_HAL_ATOMIC_FLAG_RELEASE,
         /*.width=*/width,
     };
-    iree_status_t status = iree_hal_queue_atomic_store(
-        atomic_queue_, empty_wait, signal, buffer, kTargetOffset, params);
+    iree_status_t status =
+        iree_hal_queue_atomic_store(atomic_queue_, empty_wait, signal, buffer,
+                                    kTargetOffset, params, /*barriers=*/NULL);
     if (iree_status_is_ok(status)) {
       status = iree_hal_semaphore_list_wait(signal, iree_infinite_timeout(),
                                             IREE_ASYNC_WAIT_FLAG_NONE);

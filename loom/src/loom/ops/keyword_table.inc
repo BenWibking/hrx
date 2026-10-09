@@ -72,6 +72,7 @@
     [LOOM_KW_CONFIG] = (const uint8_t*)"\x06" "config",
     [LOOM_KW_LAUNCH] = (const uint8_t*)"\x06" "launch",
     [LOOM_KW_WORKGROUPS] = (const uint8_t*)"\x0a" "workgroups",
+    [LOOM_KW_WORKERS] = (const uint8_t*)"\x07" "workers",
     [LOOM_KW_ABI_LAYOUT] = (const uint8_t*)"\x0a" "abi_layout",
     [LOOM_KW_EXTENT] = (const uint8_t*)"\x06" "extent",
     [LOOM_KW_MODULE] = (const uint8_t*)"\x06" "module",
@@ -94,3 +95,5 @@
     [LOOM_KW_LANGLE] = (const uint8_t*)"\x01" "<",
     [LOOM_KW_RANGLE] = (const uint8_t*)"\x01" ">",
     [LOOM_KW_CONFLICTS] = (const uint8_t*)"\x09" "conflicts",
+    [LOOM_KW_RUN] = (const uint8_t*)"\x03" "run",
+    [LOOM_KW_POOL] = (const uint8_t*)"\x04" "pool",

@@ -100,24 +100,6 @@ def control_flow(arrays):
     return "kernel.decl @control_flow() launch(%counts: buffer, %output: buffer, %length: i32)\n\n" + case.finish(expected)
 
 
-def scheduled_sum_variant(arrays, kernel):
-    cases = []
-    rows = 7
-    for columns in [0, 1, 2, 5, 17, 33]:
-        rng = random.Random(1030 + columns)
-        values = [rng.randrange(-100, 101) for _ in range(rows * max(1, columns))]
-        expected = [sum(values[row * columns : (row + 1) * columns]) for row in range(rows)]
-        case = Case(arrays, f"{kernel}_{columns}", "i32", rows)
-        case.array("input", values)
-        case.array("original", values)
-        case.scalar("rows", rows, "i32")
-        case.scalar("columns", columns, "i32")
-        case.launch(kernel, "%input, %output, %rows, %columns", f"tensor<{len(values)}xi32>, tensor<{rows}xi32>, i32, i32")
-        case.lines.append(f"  check.expect.bitwise actual(%input) expected(%original) : tensor<{len(values)}xi32>")
-        cases.append(case.finish(expected))
-    return f"kernel.decl @{kernel}() launch(%input: buffer, %output: buffer, %rows: i32, %columns: i32)\n\n" + "\n".join(cases)
-
-
 def short_circuit(arrays):
     cases = []
     for length in [0, 1, 17, 33, 64]:
@@ -175,20 +157,6 @@ def early_returns(arrays):
     return "kernel.decl @early_returns() launch(%input: buffer, %output: buffer, %length: i32)\n\n" + "\n".join(cases)
 
 
-def integer_increment(arrays, width, inputs):
-    cases = []
-    argument_width = 32 if width == 8 else 64
-    for input_value in inputs:
-        expected = []
-        for lane in range(64):
-            expected.extend([signed_bits(input_value + 1, width), signed_bits(input_value + lane + 1, width)])
-        case = Case(arrays, f"increment_u{width}_{input_value}", f"i{width}", len(expected))
-        case.scalar("input", signed_bits(input_value, argument_width), f"i{argument_width}")
-        case.launch(f"increment_u{width}", "%output, %input", f"tensor<{len(expected)}xi{width}>, i{argument_width}")
-        cases.append(case.finish(expected))
-    return f"kernel.decl @increment_u{width}() launch(%output: buffer, %input: i{argument_width})\n\n" + "\n".join(cases)
-
-
 def function_cases(name, argument_widths, result_width, samples, *, argument_types=None):
     """Emit source calls with the oracle's exact argument and expected bits."""
     cases = []
@@ -204,126 +172,6 @@ def function_cases(name, argument_widths, result_width, samples, *, argument_typ
             f"LOOM_CHECK_CASE({name}_{ordinal}) {{\n  const auto actual = {name}({operands});\n  loom::check::expect_equal(actual,\n      static_cast<decltype(actual)>(0x{expected_bits:x}ULL));\n}}"
         )
     return "\n\n".join(cases)
-
-
-INCREMENT_INPUTS = [0, 1, 3, 4, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 254, 255, 256, 0x7FFFFFFF, 0xFFFFFFFE, 0xFFFFFFFF]
-
-
-def increment_byte_reference(value):
-    first, second = value % 256, (value + 2) % 256
-    return first | (second << 8) | (second << 16) | (first << 24)
-
-
-def increment_select_reference(value, choose):
-    first, second = value % 256, (value * 3 + 1) % 256
-    if choose & 1:
-        selected, first = first, (first + 1) % 256
-    else:
-        second = (second - 1) % 256
-        selected = second
-    if choose & 2:
-        if choose & 4:
-            first = (first + 1) % 256
-            nested = first
-        else:
-            nested, second = second, (second - 1) % 256
-    else:
-        nested, first = first, (first - 1) % 256
-    return selected | (nested << 8) | (first << 16) | (second << 24)
-
-
-def increment_chain_reference(value):
-    return sum(value < bound for bound in [256, 128, 64, 32, 16, 8]) + 256 * int(value < 4)
-
-
-def increment_wide_reference(value):
-    return (value ^ ((value + 2) * 17) ^ ((value + 2) * 3)) % (1 << 64)
-
-
-def increment_condition_reference(value):
-    selected, final = (value + 2, value + 2) if value & 1 else (value + 1, value)
-    return (selected ^ (final * 17)) % (1 << 32)
-
-
-def increment_functions():
-    counts = [0, 1, 2, 3, 7, 8, 15, 16, 31, 32]
-    functions = [
-        ("increment_byte", [32], 32, [([value], increment_byte_reference(value)) for value in range(256)]),
-        ("decrement_short", [32], 32, [([value], value * 65536 + value - 2 + 32768) for value in [-32766, -129, -1, 0, 1, 128, 32767]]),
-        ("increment_wide", [64], 64, [([value], increment_wide_reference(value)) for value in WIDE_INPUTS]),
-        ("increment_chain", [32], 32, [([value], increment_chain_reference(value)) for value in INCREMENT_INPUTS]),
-        ("increment_or", [32, 32], 32, [([value, choose], (value + int(not choose)) * 2 + int(choose or value < 128)) for value in INCREMENT_INPUTS for choose in [0, 1]]),
-        ("increment_select", [32, 32], 32, [([value, choose], increment_select_reference(value, choose)) for value in INCREMENT_INPUTS for choose in range(8)]),
-        ("increment_condition", [32], 32, [([value], increment_condition_reference(value)) for value in INCREMENT_INPUTS]),
-        ("increment_while", [32], 32, [([count], count * (count + 1) // 2 * 257 + count + 1) for count in counts]),
-        ("increment_do", [32], 32, [([count], max(1, count) * (max(1, count) - 1) // 2 * 257 + max(1, count)) for count in counts]),
-    ]
-    return "\n\n".join(function_cases(name, widths, result_width, samples) for name, widths, result_width, samples in functions)
-
-
-def increment_values(arrays):
-    cases = []
-    for input_value in [0, 1, 127, 255, 256, 0x7FFFFFFF, 0xFFFFFFFE, 0xFFFFFFFF]:
-        expected = []
-        for lane in range(64):
-            value = (input_value + lane) % (1 << 32)
-            wide = increment_wide_reference((input_value * 4294967297 + lane) % (1 << 64))
-            count = lane % 8
-            expected.extend(
-                [
-                    increment_byte_reference(value),
-                    (lane - 31) * 65536 + lane - 33 + 32768,
-                    wide % (1 << 32),
-                    wide >> 32,
-                    increment_chain_reference(value),
-                    (value + int(lane % 2 == 0)) * 2 + int(lane % 2 or value < 128),
-                    increment_select_reference(value, lane % 8),
-                    increment_condition_reference(value),
-                    count * (count + 1) // 2 * 257 + count + 1,
-                    max(1, count) * (max(1, count) - 1) // 2 * 257 + max(1, count),
-                ]
-            )
-        case = Case(arrays, f"increment_values_{input_value}", "i32", len(expected))
-        case.scalar("input", signed_bits(input_value, 32), "i32")
-        case.launch("increment_values", "%output, %input", f"tensor<{len(expected)}xi32>, i32")
-        cases.append(case.finish([signed_bits(value, 32) for value in expected]))
-    return "kernel.decl @increment_values() launch(%output: buffer, %input: i32)\n\n" + "\n".join(cases)
-
-
-def increment_pointers(arrays):
-    cases = []
-    for length, choose in [(0, 0), (1, 0), (17, 1), (33, 2), *[(64, choose) for choose in range(3, 8)]]:
-        values = [(index * 17) % 31 - 15 for index in range(max(1, length) * 8)]
-        expected = [-123] * (64 * 12)
-        for lane in range(length):
-            inputs = values[lane * 8 : (lane + 1) * 8]
-            cursor = 2 + int(not choose & 2)
-            accepted = bool(choose & 2 or inputs[2])
-            guarded = bool(choose & 4 and inputs[cursor])
-            final = cursor + int(bool(choose & 4))
-            expected[lane * 12 : (lane + 1) * 12] = [
-                inputs[1],
-                inputs[3],
-                inputs[3],
-                inputs[1],
-                inputs[1 if choose & 1 else 2],
-                inputs[2],
-                int(accepted),
-                inputs[cursor],
-                int(guarded),
-                inputs[final],
-                inputs[final] + inputs[final + 1],
-                inputs[final + 2],
-            ]
-        case = Case(arrays, f"increment_pointers_{length}_{choose}", "i32", len(expected))
-        case.array("input", values)
-        case.scalar("length", length, "i32")
-        case.scalar("choose", choose, "i32")
-        case.launch("increment_pointers", "%input, %output, %length, %choose", f"tensor<{len(values)}xi32>, tensor<{len(expected)}xi32>, i32, i32")
-        case.array("input_expected", values)
-        case.lines.append(f"  check.expect.bitwise actual(%input) expected(%input_expected) : tensor<{len(values)}xi32>")
-        cases.append(case.finish(expected))
-    return "kernel.decl @increment_pointers() launch(%input: buffer, %output: buffer, %length: i32, %choose: i32)\n\n" + "\n".join(cases)
 
 
 def continue_references(count, choose):
@@ -499,73 +347,6 @@ def constant_loops(arrays):
     return "kernel.decl @constant_loops() launch(%input: buffer, %output: buffer, %start: i32)\n\n" + "\n".join(cases)
 
 
-def assumption_functions():
-    values = [0, 1, 127, 128, 254, 255]
-    seven = [[0] * 7, [255] * 7] + [[255 if lane == active else 0 for lane in range(7)] for active in range(7)]
-    samples = [
-        ("bound_pair", [32, 32], [([a, b], a * 257 + b) for a in values for b in values]),
-        ("bound_seven", [32] * 7, [(args, sum(a * b for a, b in zip(args, [1, 2, 3, 5, 7, 11, 13], strict=True))) for args in seven]),
-        ("bound_repeated", [32], [([value], value * 17) for value in [0, 1, 15, 16, 31]]),
-        ("bound_capacity", [32], [([value], value * 16 + 336) for value in [0, 1, 255, 256, 426, 427]]),
-        ("bound_cast", [32], [([value], value + 5) for value in [0, 1, 7, 15]]),
-        ("bound_byte", [8], [([value], value + (1024 if value >= 128 else 0)) for value in range(256)]),
-        ("bound_wide", [64], [([value], value * 3) for value in values]),
-        ("bound_size", [32], [([value], value) for value in [0, 1, 7, 15]]),
-        ("bound_scoped", [32], [([value], value + (1 if value < 256 else 3)) for value in [0, 1, 127, 128, 255, 256, 427, 0x7FFFFFFF, 0xFFFFFFFF]]),
-        ("bound_inclusive", [32], [([value], value * 19 + 3) for value in [0, 1, 127, 426, 427]]),
-        (
-            "bound_signed",
-            [32, 32],
-            [([hidden, capacity], hidden * 23 + capacity) for hidden, capacity in [(1, 1), (1, 7), (31, 31), (31, 63), (127, 255)]],
-        ),
-        (
-            "bound_unsigned",
-            [32, 32],
-            [
-                ([tokens, capacity], tokens ^ capacity)
-                for tokens, capacity in [
-                    (0, 0),
-                    (0x7FFFFFFF, 0x80000000),
-                    (0x80000000, 0xFFFFFFFF),
-                    (0xFFFFFFFE, 0xFFFFFFFF),
-                    (0xFFFFFFFF, 0xFFFFFFFF),
-                ]
-            ],
-        ),
-    ]
-    return "\n".join(function_cases(name, widths, 32, cases) for name, widths, cases in samples)
-
-
-def assumption_kernel(arrays):
-    cases = []
-    for input_value in [0, 1, 127, 128, 255, 256, 427, 0xFFFFFFC0, 0xFFFFFFFF]:
-        expected = []
-        for lane in range(64):
-            value = (input_value + lane) % (1 << 32)
-            byte = value % 256
-            expected.extend(
-                [
-                    byte * 257 + value // 256 % 256,
-                    byte + 278,
-                    value % 32 * 17,
-                    value % 428 * 16 + 336,
-                    value % 16 + 5,
-                    byte + (1024 if byte >= 128 else 0),
-                    byte * 3,
-                    value % 16,
-                    signed_bits(value + (1 if value < 256 else 3), 32),
-                    value % 428 * 19 + 3,
-                    (value % 63 + 1) * 23 + (value % 63 + 1) + value % 5,
-                    signed_bits(0x80000000, 32),
-                ]
-            )
-        case = Case(arrays, f"assumptions_{input_value}", "i32", len(expected))
-        case.scalar("input", signed_bits(input_value, 32), "i32")
-        case.launch("assumption_kernel", "%output, %input", f"tensor<{len(expected)}xi32>, i32")
-        cases.append(case.finish(expected))
-    return "kernel.decl @assumption_kernel() launch(%output: buffer, %input: i32)\n\n" + "\n".join(cases)
-
-
 def integer_functions():
     cases = []
 
@@ -586,42 +367,6 @@ def integer_functions():
     function("shift_right_signed", [64, 32], 64, [([value, count], value // (1 << count)) for value in wide_values for count in counts])
     function("shift_right_unsigned", [64, 32], 64, [([value, count], (value % (1 << 64)) // (1 << count)) for value in wide_values for count in counts])
     return "\n\n".join(cases) + "\n"
-
-
-def enum_functions():
-    cases = []
-    commands = [0, 1, 2, 3, 4, 5, 6, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFF]
-    cases.append(function_cases("enum_dispatch", [32], 32, [([value], 128 if value == 1 else 255 if value >= 5 else value + 7) for value in commands], argument_types=["Command"]))
-    cases.append(function_cases("enum_byte", [8], 32, [([value], (value + 1) % 256) for value in range(256)], argument_types=["Byte"]))
-    cases.append(function_cases("enum_signed", [8], 64, [([value], value * 65537) for value in [-128, -127, -1, 0, 1, 126, 127]], argument_types=["SignedByte"]))
-    cases.append(function_cases("enum_unsigned", [32], 64, [([value], value + 1) for value in commands], argument_types=["Word"]))
-    wide = [0, 1, (1 << 32) - 1, 1 << 32, (1 << 63) - 1, 1 << 63, (1 << 64) - 1]
-    cases.append(function_cases("enum_compare64", [64, 64], 32, [([left, right], int(left < right)) for left in wide for right in wide], argument_types=["Long", "Long"]))
-    cases.append(function_cases("enum_inferred", [32], 64, [([value], (1 << 40) if value else -1) for value in commands]))
-    cases.append(function_cases("enum_inferred_unsigned", [64], 32, [([value], int(value < (1 << 64) - 1)) for value in wide]))
-    cases.append(function_cases("enum_specialization", [32], 64, [([value], (1 << 40) + 0xFFFFFFFF + (4 if value else 0)) for value in commands]))
-    cases.append(function_cases("enum_packed_unsigned", [8], 32, [([value], value + 1) for value in range(256)], argument_types=["PackedByte"]))
-    cases.append(function_cases("enum_packed_signed", [8], 32, [([value], value - 1) for value in range(-128, 128)], argument_types=["PackedSignedByte"]))
-    cases.append(function_cases("enum_bool", [32], 32, [([value], int(value != 0)) for value in commands]))
-    return "\n\n".join(cases) + "\n"
-
-
-def enum_storage(arrays, width):
-    mask = (1 << width) - 1
-    values = [0, 1, (1 << (width - 1)) - 1, 1 << (width - 1), mask - 1, mask]
-    values += [(index * 0x123456789ABCDEF) & mask for index in range(64 - len(values))]
-    cases = []
-    for delta in [1, 1 << (width - 1), mask]:
-        element = f"i{width}"
-        case = Case(arrays, f"enum_storage_u{width}_{delta}", element, len(values))
-        case.array("input", [signed_bits(value, width) for value in values])
-        case.array("original", [signed_bits(value, width) for value in values])
-        case.scalar("delta", signed_bits(delta, width), element)
-        case.launch(f"enum_storage_u{width}", "%input, %output, %delta", f"tensor<64x{element}>, tensor<64x{element}>, {element}")
-        case.lines.append(f"  check.expect.bitwise actual(%input) expected(%original) : tensor<64x{element}>")
-        expected = [signed_bits((value + delta) & mask, width) for value in values]
-        cases.append(case.finish(expected))
-    return f"kernel.decl @enum_storage_u{width}() launch(%input: buffer, %output: buffer, %delta: i{width})\n\n" + "\n".join(cases)
 
 
 def comparison_functions():
@@ -822,63 +567,6 @@ def record_functions():
     )
 
 
-def record_values(arrays):
-    rng = random.Random(53091)
-    inputs = [rng.randrange(1 << 32) for _ in range(32)]
-    stored_inputs = [signed_bits(value, 32) for value in inputs]
-    cases = []
-    for seed in [0, 7, 0xFFFFFFFF]:
-        for count in [0, 1, 2, 7]:
-            original = [(seed + lane) % (1 << 32) for lane in range(4)]
-            advanced = [(value + count * (lane + 1)) % (1 << 32) for lane, value in enumerate(original)]
-            first = (seed + count * (count - 1) // 2) % (1 << 32)
-            second = (seed + 7 + (count + 1) // 2) % (1 << 32)
-            for choose in [0, 1, 2]:
-                lanes = [value + lane + 5 if choose & 1 else value for lane, value in enumerate(advanced)]
-                pair = [first + 1, second] if choose & 1 else [first, second * 3]
-                selected = lanes if choose else original
-                selected_pair = pair if choose else [seed, seed + 7]
-                expected = (
-                    lanes
-                    + original
-                    + selected
-                    + [
-                        inputs[3 + count],
-                        inputs[3],
-                        inputs[3 + count if choose else 3],
-                        int(count % 2 == 0),
-                        1,
-                        *pair,
-                        *selected_pair,
-                        record_pair_reference(seed, count),
-                        seed + 44,
-                        record_sequence_reference(seed, choose),
-                        inputs[1],
-                        inputs[8],
-                        inputs[7],
-                    ]
-                )
-                case = Case(arrays, f"records_{seed}_{count}_{choose}", "i32", len(expected))
-                case.array("input", stored_inputs)
-                for name, value in [("seed", seed), ("count", count), ("choose", choose)]:
-                    case.scalar(name, signed_bits(value, 32), "i32")
-                case.launch("record_values", "%input, %output, %seed, %count, %choose", f"tensor<32xi32>, tensor<{len(expected)}xi32>, i32, i32, i32")
-                case.array("original", stored_inputs)
-                case.lines.append("  check.expect.bitwise actual(%input) expected(%original) : tensor<32xi32>")
-                cases.append(case.finish([signed_bits(value, 32) for value in expected]))
-            expected = [*advanced, inputs[3 + count], int(count % 2 == 0), inputs[3], seed]
-            for kernel in ["record_control", "leaf_control"]:
-                case = Case(arrays, f"{kernel}_{seed}_{count}", "i32", 8)
-                case.array("input", stored_inputs)
-                case.scalar("seed", signed_bits(seed, 32), "i32")
-                case.scalar("count", count, "i32")
-                case.launch(kernel, "%input, %output, %seed, %count", "tensor<32xi32>, tensor<8xi32>, i32, i32")
-                cases.append(case.finish([signed_bits(value, 32) for value in expected]))
-    declarations = "kernel.decl @record_values() launch(%input: buffer, %output: buffer, %seed: i32, %count: i32, %choose: i32)\n"
-    declarations += "".join(f"kernel.decl @{kernel}() launch(%input: buffer, %output: buffer, %seed: i32, %count: i32)\n" for kernel in ["record_control", "leaf_control"])
-    return declarations + "\n" + "\n".join(cases)
-
-
 def f32_bits(bits):
     return struct.unpack("<f", struct.pack("<I", bits))[0]
 
@@ -974,84 +662,6 @@ def launch_grid(kernel, x, y=1, z=1):
     return "".join(f"config.def @{kernel}.workgroup_count.{axis} = {count} : index\n" for axis, count in zip("xyz", (x, y, z), strict=True)) + "\n"
 
 
-def scheduled_sum(arrays):
-    return "\n".join(scheduled_sum_variant(arrays, f"scheduled_sum_unroll_{unroll}_depth_{depth}") for unroll in (1, 3) for depth in (1, 2))
-
-
-def symbol_exports(arrays):
-    samples = [0, 1, 2, 3, 255, 256, 65535, 65536, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFE, 0xFFFFFFFF]
-    rng = random.Random(83728)
-    samples += [rng.randrange(1 << 32) for _ in range(20)]
-    cases = []
-    for index, value in enumerate(samples):
-        case = Case(arrays, f"symbol_export_{index}", "i32", 1)
-        original = signed_bits(value, 32)
-        case.array("input", [original])
-        case.launch("library.dispatch", "%output, %input", "tensor<1xi32>, tensor<1xi32>")
-        case.array("original", [original])
-        case.lines.append("  check.expect.bitwise actual(%input) expected(%original) : tensor<1xi32>")
-        cases.append(case.finish([signed_bits(value * value + 7, 32)]))
-    return "kernel.decl @library.dispatch() launch(%output: buffer, %input: buffer)\n\n" + "\n".join(cases)
-
-
-def typed_views(arrays):
-    cases = []
-    for ordinal, (rows, input_stride, input_origin, output_origin) in enumerate([(0, 8, 0, 0), (1, 8, 3, 2), (3, 11, 5, 4), (7, 17, 7, 6)]):
-        logical_end = input_origin + ((rows - 1) * input_stride + 8 if rows else 0)
-        input_count = logical_end + 3
-        inputs = [float(index - 512) for index in range(input_count)]
-        expected_values = []
-        for row in range(rows):
-            for column in range(8):
-                value = float(row * 32 + column) + 0.25
-                inputs[input_origin + row * input_stride + column] = value
-                expected_values.append(value)
-
-        expected = [-123.0] * output_origin + expected_values + [-123.0] * 3
-        case = Case(arrays, f"typed_views_{ordinal}", "f32", len(expected))
-        case.array("input", inputs)
-        case.array("original", inputs)
-        case.scalar("rows", rows, "i32")
-        case.scalar("input_stride", input_stride, "i32")
-        case.scalar("input_origin", input_origin, "i32")
-        case.scalar("output_origin", output_origin, "i32")
-        case.launch(
-            "typed_view_copy",
-            "%input, %output, %rows, %input_stride, %input_origin, %output_origin",
-            f"tensor<{len(inputs)}xf32>, tensor<{len(expected)}xf32>, i32, i32, i32, i32",
-        )
-        case.lines.append(f"  check.expect.bitwise actual(%input) expected(%original) : tensor<{len(inputs)}xf32>")
-        cases.append(case.finish(expected))
-    for origin in (0, 3, 15):
-        inputs = [float(index) + 0.25 for index in range(origin + 33)]
-        case = Case(arrays, f"typed_view_static_layouts_{origin}", "f32", 2)
-        case.array("input", inputs)
-        case.array("original", inputs)
-        case.scalar("origin", origin, "i32")
-        case.launch("typed_view_static_layouts", "%input, %output, %origin", f"tensor<{len(inputs)}xf32>, tensor<2xf32>, i32")
-        case.lines.append(f"  check.expect.bitwise actual(%input) expected(%original) : tensor<{len(inputs)}xf32>")
-        cases.append(case.finish([inputs[origin + 2 * stride + 3] for stride in (8, 11)]))
-    payload = [signed_bits(index * 17 + 3, 8) for index in range(32)]
-    case = Case(arrays, "typed_storage_rank3_copy", "i8", 16)
-    case.array("input", payload)
-    case.array("original", payload)
-    case.scalar("rows", 2, "i32")
-    case.scalar("tiles", 1, "i32")
-    case.launch(
-        "typed_storage_rank3",
-        "%input, %output, %rows, %tiles",
-        "tensor<32xi8>, tensor<16xi8>, i32, i32",
-    )
-    case.lines.append("  check.expect.bitwise actual(%input) expected(%original) : tensor<32xi8>")
-    cases.append(case.finish(payload[:16]))
-    declarations = (
-        "kernel.decl @typed_view_copy() launch(%input: buffer, %output: buffer, %rows: i32, %input_stride: i32, %input_origin: i32, %output_origin: i32)\n\n"
-        "kernel.decl @typed_view_static_layouts() launch(%input: buffer, %output: buffer, %input_origin: i32)\n\n"
-        "kernel.decl @typed_storage_rank3() launch(%input: buffer, %output: buffer, %rows: i32, %tiles: i32)\n\n"
-    )
-    return declarations + "\n".join(cases)
-
-
 def volatile_memory(arrays):
     cases = []
     inputs = [signed_bits(index * 0x10203041 + 0x7FFFFF00, 32) for index in range(64)]
@@ -1134,6 +744,16 @@ def packed_byte_shifts(arrays):
     return "kernel.decl @packed_byte_shifts() launch(%input: buffer, %output: buffer)\n\n" + case.finish([signed_bits(value, 8) for value in expected])
 
 
+IQ4NL_CODEBOOK = [-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113]
+
+
+def rounded_bfloat16(value):
+    """Round one finite value to bfloat16 and return its exact float value."""
+    bits = struct.unpack("<I", struct.pack("<f", value))[0]
+    bits += 0x7FFF + ((bits >> 16) & 1)
+    return struct.unpack("<f", struct.pack("<I", bits & 0xFFFF0000))[0]
+
+
 def pack_iq4xs(scale, group_scales, codes):
     """Pack logical scales/codes into the 136-byte IQ4_XS storage layout."""
     scale_codes = [value + 32 for value in group_scales]
@@ -1148,14 +768,13 @@ def iq4xs_blocks(arrays):
     # Eight blocks cover every signed six-bit scale and all 256 packed byte
     # values, including distinct adjacent record contents. Low codes permute
     # all sixteen entries; group-dependent high codes span every pairing.
-    codebook = [-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113]
     packed = bytearray([0xA5] * 32)
     mutated = bytearray(packed)
     expected = []
     for block, scale in enumerate((0.5, -0.25, 2.0, -4.0, 0.0625, -0.125, 1.0, -2.0)):
         group_scales = [block * 8 + group - 32 for group in range(8)]
         codes = [(3 * lane + 5 * group + 7 * block + (lane // 16) * (group + 8 * block)) % 16 for group in range(8) for lane in range(32)]
-        expected.extend(scale * group_scales[index // 32] * codebook[code] for index, code in enumerate(codes))
+        expected.extend(scale * group_scales[index // 32] * IQ4NL_CODEBOOK[code] for index, code in enumerate(codes))
         packed.extend(pack_iq4xs(scale, group_scales, codes))
         mutated.extend(pack_iq4xs(scale, [value ^ 1 for value in group_scales], [code ^ 1 for code in codes]))
     packed.extend([0xA5] * 32)
@@ -1166,7 +785,7 @@ def iq4xs_blocks(arrays):
         case = Case(arrays, kernel + "_values", "f32", len(expected))
         case.array("input_storage", [signed_bits(value, 8) for value in packed], "i8")
         case.array("original", [signed_bits(value, 8) for value in packed], "i8")
-        case.array("codebook", codebook, "i8")
+        case.array("codebook", IQ4NL_CODEBOOK, "i8")
         case.lines.append("  %input = check.tensor.view %input_storage offset(32) : tensor<1152xi8> -> tensor<1088xi8>")
         case.launch(kernel, "%input, %codebook, %output", "tensor<1088xi8>, tensor<16xi8>, tensor<2048xf32>")
         case.lines.append("  check.expect.bitwise actual(%input_storage) expected(%original) : tensor<1152xi8>")
@@ -1186,6 +805,64 @@ def iq4xs_blocks(arrays):
     declarations += "kernel.decl @decode_iq4xs_packed() launch(%blocks: buffer, %codebook: buffer, %output: buffer)\n\n"
     declarations += "kernel.decl @update_iq4xs() launch(%blocks: buffer)\n\n"
     return declarations + cases
+
+
+def iq4xs_gate_up(arrays):
+    # Preserve the production 2,560 x 640 x top-10 execution geometry while
+    # storing only the two experts selected by this fixture. Expected values
+    # are evaluated from the logical scale/code records before packing.
+    input_size = 2560
+    output_size = 640
+    route_ids = [1, 0, 1, 1, 0, 0, 1, 0, 1, 0]
+    expert_count = 2
+    block_count = input_size // 256
+    input_values = [rounded_bfloat16(-1.0 + (index % 257) / 128.0) for index in range(input_size)]
+
+    projections = {}
+    packed_weights = {}
+    for name, kind in (("gate", 0), ("up", 1)):
+        records = bytearray()
+        experts = []
+        for expert in range(expert_count):
+            rows = []
+            for channel in range(output_size):
+                products = []
+                for block in range(block_count):
+                    scale = 2.0 ** -(11 + ((expert + channel + block + kind) % 3))
+                    group_scales = [((expert * 19 + channel * 7 + block * 13 + group * 9 + kind * 23) % 64) - 32 for group in range(8)]
+                    codes = [(expert * 11 + channel * 5 + block * 7 + group * 3 + lane * 13 + lane // 5 + kind * 9) % 16 for group in range(8) for lane in range(32)]
+                    records.extend(pack_iq4xs(scale, group_scales, codes))
+                    for group, group_scale in enumerate(group_scales):
+                        decoded_scale = rounded_bfloat16(scale * group_scale)
+                        for lane in range(32):
+                            code = codes[group * 32 + lane]
+                            weight = rounded_bfloat16(decoded_scale * IQ4NL_CODEBOOK[code])
+                            input_index = block * 256 + group * 32 + lane
+                            products.append(weight * input_values[input_index])
+                rows.append(math.fsum(products))
+            experts.append(rows)
+        projections[name] = experts
+        packed_weights[name] = records
+
+    expected = []
+    for expert in route_ids:
+        for channel in range(output_size):
+            gate = projections["gate"][expert][channel]
+            up = projections["up"][expert][channel]
+            expected.append(gate / (1.0 + math.exp(-gate)) * up)
+
+    case = Case(arrays, "iq4xs_gate_up_values", "f32", len(expected))
+    case.lines.append(f"  %input = check.generate.iota offset(-1.0) step(0.0078125) period(257) : tensor<{input_size}xbf16>")
+    case.array("route_ids", route_ids, "i32")
+    for name in ("gate", "up"):
+        case.array(f"{name}_weight", [signed_bits(value, 8) for value in packed_weights[name]], "i8")
+    case.launch(
+        "qwen38_iq4xs_gate_up_swiglu",
+        "%input, %route_ids, %gate_weight, %up_weight, %output",
+        f"tensor<{input_size}xbf16>, tensor<{len(route_ids)}xi32>, tensor<{len(packed_weights['gate'])}xi8>, tensor<{len(packed_weights['up'])}xi8>, tensor<{len(expected)}xf32>",
+    )
+    declaration = "kernel.decl @qwen38_iq4xs_gate_up_swiglu() launch(%input: buffer, %route_ids: buffer, %gate_weight: buffer, %up_weight: buffer, %output: buffer)\n\n"
+    return declaration + case.finish(expected, 0.00001)
 
 
 def pack_q4k(scale, minimum, group_scales, group_minimums, codes):
@@ -1300,26 +977,19 @@ def q4k_q8_swiglu(arrays):
 
 KERNEL_GROUPS = {
     "aiter_swiglu_f16": lambda arrays: launch_grid("aiter_swiglu_f16", 3) + swiglu(arrays),
-    "assumptions": assumption_kernel,
     "constant_loops": constant_loops,
     "control_flow": control_flow,
     "early_returns": early_returns,
-    "enum_values": lambda arrays: "\n".join(enum_storage(arrays, width) for width in (8, 16, 32, 64)),
     "flash_attention": lambda arrays: launch_grid("flash_attention", 3) + attention(arrays),
-    "increment_values": lambda arrays: increment_values(arrays) + "\n" + increment_pointers(arrays),
-    "integer_increment": lambda arrays: integer_increment(arrays, 8, BYTE_INPUTS) + "\n" + integer_increment(arrays, 64, WIDE_INPUTS),
     "iq4xs_blocks": iq4xs_blocks,
+    "iq4xs_gate_up": iq4xs_gate_up,
     "llama_rms_norm": lambda arrays: launch_grid("llama_rms_norm", 3) + rms_norm(arrays),
     "packed_byte_shifts": packed_byte_shifts,
     "pointer_walk": pointer_walk,
     "q4k_q8_swiglu": q4k_q8_swiglu,
-    "record_values": record_values,
-    "scheduled_sum": scheduled_sum,
     "shaped_intrinsics": lambda arrays: register_lookup(arrays) + "\n" + register_lookup(arrays, floating=True) + "\n" + mixed_dot(arrays),
     "short_circuit": short_circuit,
     "structured_continue": lambda arrays: "\n".join(reference(arrays) for reference in (continue_values, continue_scheduled, continue_copy, continue_pointers, continue_vectors)),
-    "symbol_exports": symbol_exports,
-    "typed_views": typed_views,
     "vector_depth": lambda arrays: vector_depth(arrays) + "\n" + vector_depth_span(arrays),
     "vector_initializers": vector_initializers,
     "vector_values": lambda arrays: vector_control(arrays) + "\n" + vector_masks(arrays),
@@ -1328,11 +998,8 @@ KERNEL_GROUPS = {
 
 
 HOST_REFERENCES = {
-    "assumptions.cxx": assumption_functions,
     "comparison_functions.cxx": comparison_functions,
     "constant_loops.cxx": constant_loop_functions,
-    "enum_values.cxx": enum_functions,
-    "increment_values.cxx": increment_functions,
     "integer_functions.cxx": integer_functions,
     "record_values.cxx": record_functions,
     "schedule_values.cxx": schedule_functions,

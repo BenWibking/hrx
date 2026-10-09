@@ -24,9 +24,10 @@
 // The admitted subset is ELF32LE EM_AIE, AIE2P flags 3, metadata version 2 and
 // transaction encoding 0.1: one mutable COMMAND allocation, one allocation
 // use, one entry, no static relocations and caller-declared GLOBAL buffers.
-// Each buffer has a 64-byte minimum extent, four-byte alignment, zero logical
-// offset and DEVICE_VISIBLE | COHERENT usage; access matches the caller's
-// binding list. Dynamic relocations are declared eight-byte SHIM_ADDRESS
+// Each buffer has a 64-byte minimum extent, four-byte alignment and
+// DEVICE_VISIBLE | COHERENT usage; access matches the caller's binding list.
+// The caller uses logical offset zero, which the declared range must admit.
+// Dynamic relocations are declared eight-byte SHIM_ADDRESS
 // fields. Load ranges may alias source bytes and have explicit zero-fill tails.
 // Only invocation zero, which establishes the program's state, is exposed.
 //

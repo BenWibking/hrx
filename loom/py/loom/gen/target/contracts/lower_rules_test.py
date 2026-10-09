@@ -1387,6 +1387,22 @@ def test_guard_row_emits_portable_signed_i64_bounds() -> None:
     assert (".i64_range = {.minimum = (-INT64_C(2147483648)), .maximum = INT64_C(2147483647)}") in fields
 
 
+def test_guard_row_emits_i64_attr_sum_relation() -> None:
+    row = LowerGuard(
+        kind=GuardKind.I64_ATTRS_SUM_EQUALS,
+        attr_index=2,
+        other_attr_index=3,
+        literal_i64=-(1 << 63),
+    )
+
+    fields = guard_row({}, row, payload_ordinal=1)
+
+    assert ".selector.attribute.attr_index = 2" in fields
+    assert ".selector.attribute.other_attr_index = 3" in fields
+    assert ".payload_ordinal = 1" in fields
+    assert guard_payload_row(row) == [".i64 = INT64_MIN"]
+
+
 def test_guard_row_overlays_array_element_index_and_range() -> None:
     row = LowerGuard(
         kind=GuardKind.I64_ARRAY_ELEMENT_RANGE,

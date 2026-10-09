@@ -126,6 +126,17 @@ predictions. When the compiler cannot prove a complete subgroup, uniform
 dynamic base, uniform control, or packet width, the missing proof and its reason
 remain visible instead of manufacturing geometry.
 
+Resident pipelines have a physical inventory under **Pipeline**. It separates
+distinct compiled images from their loaded worker copies, and shows each
+worker's placement and program-memory capacity. AIE2P configuration reports
+include tile memory with no worker, such as SRAM holding retained records.
+Each memory row distinguishes reserved bytes, program data, occupied bytes,
+and the address extent. Occupancy counts overlapping reservations once; the
+extent includes alignment gaps and unused space before the final allocation.
+These facts are available when compiling source or resuming from configuration
+IR. Logical channel counts are shown only when their ownership evidence is
+available; an unavailable count does not mean zero channels.
+
 Explicit loop pipeline policies appear under **Source loop pipelines**. Each
 policy records its compiled function, loop ordinal, applied depth, queue shape,
 and ordinary read count. Detailed reports include each source operation's
@@ -459,6 +470,13 @@ counts SSA values, which can occupy several physical registers or share storage;
 it is not a physical register count. A single report establishes pipeline use
 and final resource consumption. A matched compilation and runtime comparison
 establishes the change in cost and performance.
+
+On AIE2P, `aie2p.code_headroom`, `aie2p.bank_pressure`, and
+`aie2p.local_memory_pressure` identify nearly full instruction memory, data
+banks, and local memory extents. The evidence names the worker or physical
+memory owner. Shared storage is counted once, including SRAM with no resident
+worker. These findings guide packing and lifetime experiments; they do not
+predict FIFO stalls or DMA overlap from static occupancy.
 
 On AMDGPU, `amdgpu.pipeline_copy_waits` identifies full global-load waits whose
 native consumers are materialized branch-payload copies. Its cited

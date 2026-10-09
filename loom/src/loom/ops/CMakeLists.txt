@@ -290,6 +290,7 @@ loom_cc_library(
     loom::ir
     loom::ops::buffer
     loom::ops::cfg
+    loom::ops::channel
     loom::ops::check
     loom::ops::command
     loom::ops::config

@@ -98,6 +98,8 @@ loom_check_test_suite(
         "locations.cxx-test",
         "loops.cxx-test",
         "macro_operators.cxx-test",
+        "matrix_fragments.cxx-test",
+        "matrix_fragments_invalid.cxx-test",
         "mxfp_group_dot.cxx-test",
         "narrow_float_subtraction.cxx-test",
         "offsetof.cxx-test",
@@ -186,14 +188,11 @@ loom_check_test_suite(
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
 )
 
-# Each source retains independent mathematical references and imports its
-# implementation through the same source path as handwritten check cases.
-_HOST_SOURCES = [
-    "assumptions.cxx",
+# Generated host cases remain only while their source families migrate to
+# authored scenarios and independent Loom oracles.
+_GENERATED_HOST_SOURCES = [
     "comparison_functions.cxx",
     "constant_loops.cxx",
-    "enum_values.cxx",
-    "increment_values.cxx",
     "integer_functions.cxx",
     "record_values.cxx",
     "schedule_values.cxx",
@@ -201,6 +200,12 @@ _HOST_SOURCES = [
     "structured_continue.cxx",
     "vector_initializers.cxx",
     "vector_values.cxx",
+]
+
+_AUTHORED_HOST_SOURCES = [
+    "assumptions",
+    "enum_values",
+    "increment_values",
 ]
 
 _HOST_COMPATIBILITY = loom_config_compatible_with([
@@ -399,7 +404,7 @@ loom_test(
         output_flag = "--output",
         target_compatible_with = _HOST_COMPATIBILITY,
     )
-    for source in _HOST_SOURCES
+    for source in _GENERATED_HOST_SOURCES
 ]
 
 [
@@ -410,7 +415,19 @@ loom_test(
         execution_profiles = [VM_REFERENCE_PROFILE],
         target_compatible_with = _HOST_COMPATIBILITY,
     )
-    for source in _HOST_SOURCES
+    for source in _GENERATED_HOST_SOURCES
+]
+
+[
+    loom_test(
+        name = source + "_test",
+        benchmark_smoke = False,
+        case = source + "_functions",
+        execution_profiles = [VM_REFERENCE_PROFILE],
+        module = ":" + source + "_module",
+        target_compatible_with = _HOST_COMPATIBILITY,
+    )
+    for source in _AUTHORED_HOST_SOURCES
 ]
 
 loom_check_test_suite(
@@ -509,29 +526,32 @@ loom_test_module(
 # A source file and its independent reference cases form one test module.
 # Kernel names, launch configuration, and schedule variants belong to those files.
 # Target packages select applicable modules and own their execution policy.
-_KERNEL_SOURCES = [
+_GENERATED_KERNEL_SOURCES = [
     "aiter_swiglu_f16",
-    "assumptions",
     "constant_loops",
     "control_flow",
     "early_returns",
-    "enum_values",
     "flash_attention",
-    "increment_values",
-    "integer_increment",
     "llama_rms_norm",
     "pointer_walk",
-    "record_values",
-    "scheduled_sum",
     "shaped_intrinsics",
     "short_circuit",
     "structured_continue",
-    "symbol_exports",
-    "typed_views",
     "vector_depth",
     "vector_initializers",
     "vector_values",
     "volatile_memory",
+]
+
+_AUTHORED_KERNEL_SOURCES = [
+    "assumptions",
+    "enum_values",
+    "increment_values",
+    "integer_increment",
+    "record_values",
+    "scheduled_sum",
+    "symbol_exports",
+    "typed_views",
 ]
 
 [
@@ -553,7 +573,7 @@ _KERNEL_SOURCES = [
             source + "_arrays",
         ],
     )
-    for source in _KERNEL_SOURCES
+    for source in _GENERATED_KERNEL_SOURCES
 ]
 
 [
@@ -571,13 +591,30 @@ _KERNEL_SOURCES = [
         ] else [],
         target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
     )
-    for source in _KERNEL_SOURCES
+    for source in _GENERATED_KERNEL_SOURCES
+]
+
+# Authored scenarios replace generated harnesses and payload files as each
+# kernel family migrates.
+[
+    loom_test_module(
+        name = source + "_module",
+        srcs = [
+            source + ".cxx",
+            source + ".loom",
+        ],
+        target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+    )
+    for source in _AUTHORED_KERNEL_SOURCES
 ]
 
 test_suite(
     name = "functions_test",
     tests = [":pointer_origins_test"] + [
         ":" + source.removesuffix(".cxx") + "_test"
-        for source in _HOST_SOURCES
+        for source in _GENERATED_HOST_SOURCES
+    ] + [
+        ":" + source + "_test"
+        for source in _AUTHORED_HOST_SOURCES
     ],
 )

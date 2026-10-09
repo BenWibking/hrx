@@ -242,6 +242,39 @@ func.def @invoke_source_signature(%value: f32) -> (i32) {
 
 // ====
 
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @record_storage(%pointer: reg<test.ptr>) -> (reg<test.ptr>) asm {
+  return %pointer
+}
+
+// A view's carrier is its storage root, not the address of its first element.
+// Passing it as a pointer would silently discard this nonzero byte offset.
+func.def @invoke_projected_view(%storage: buffer) -> (buffer) {
+  %offset = index.constant 64 : offset
+  %record = buffer.view %storage[%offset] : buffer -> view<16xi32>
+  // ERROR@+1: TYPE/003 {operand_name="operands", actual_type="view<16xi32>", expected_constraint="non-view source value; pass buffers and offsets explicitly"}
+  %value = low.invoke @record_storage(%record) : (view<16xi32>) -> (buffer)
+  func.return %value : buffer
+}
+
+// ====
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @return_storage(%pointer: reg<test.ptr>) -> (reg<test.ptr>) asm {
+  return %pointer
+}
+
+// A pointer result likewise does not describe a complete source view.
+func.def @invoke_view_result(%storage: buffer) -> (view<16xi32>) {
+  // ERROR@+1: TYPE/004 {result_name="results", actual_type="view<16xi32>", expected_constraint="non-view source value; return buffers and offsets explicitly"}
+  %record = low.invoke @return_storage(%storage) : (buffer) -> (view<16xi32>)
+  func.return %record : view<16xi32>
+}
+
+// ====
+
 func.decl @semantic(%arg: i32) -> (i32)
 
 func.def @invoke_non_low(%lhs: i32) -> (i32) {

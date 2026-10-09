@@ -259,7 +259,8 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
       const uint32_t pattern = 0xCAFE1000u + i;
       IREE_ASSERT_OK(iree_hal_queue_fill(
           queues_[1], allocated, filled, pending_buffers_[i], 0, kBlockSize,
-          &pattern, sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+          &pattern, sizeof(pattern), /*barriers=*/NULL,
+          IREE_HAL_FILL_FLAG_NONE));
       ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[i + 1], filled_value));
       std::array<uint32_t, kBlockSize / sizeof(uint32_t)> actual;
       IREE_ASSERT_OK(iree_hal_buffer_map_read(pending_buffers_[i], 0,
@@ -366,7 +367,7 @@ TEST_P(TaskQueueAllocaTest, SharedPoolResumesThroughNotificationOwner) {
     const uint32_t pattern = 0xBADC0000u + i;
     IREE_ASSERT_OK(iree_hal_queue_fill(
         queues_[i], allocated, filled, pending_buffers_[i], 0, kBlockSize,
-        &pattern, sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+        &pattern, sizeof(pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
     ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[i + 1], filled_value));
     iree_hal_buffer_mapping_t mapping = {};
     IREE_ASSERT_OK(iree_hal_buffer_map_range(
@@ -475,9 +476,9 @@ TEST_P(TaskQueueAllocaTest, SiblingPoolResumesThroughBackingNotificationOwner) {
   ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], allocated_value));
   EXPECT_EQ(iree_hal_buffer_memory_view(second).backing, backing);
   const uint32_t pattern = 0x1234CAFEu;
-  IREE_ASSERT_OK(iree_hal_queue_fill(queues_[1], allocated, filled, second, 0,
-                                     kBlockSize, &pattern, sizeof(pattern),
-                                     IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(iree_hal_queue_fill(
+      queues_[1], allocated, filled, second, 0, kBlockSize, &pattern,
+      sizeof(pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], filled_value));
   std::array<uint32_t, kBlockSize / sizeof(uint32_t)> actual;
   IREE_ASSERT_OK(
@@ -543,9 +544,9 @@ TEST_P(TaskQueueAllocaTest, CompletedDeallocationIsImmediatelyReusable) {
     const uint32_t pattern = 0x1234ABCDu;
     ++filled_value;
     iree_hal_semaphore_list_t filled = {1, &semaphores_[1], &filled_value};
-    IREE_ASSERT_OK(iree_hal_queue_fill(queues_[1], no_waits, filled, buffer, 0,
-                                       kBlockSize, &pattern, sizeof(pattern),
-                                       IREE_HAL_FILL_FLAG_NONE));
+    IREE_ASSERT_OK(iree_hal_queue_fill(
+        queues_[1], no_waits, filled, buffer, 0, kBlockSize, &pattern,
+        sizeof(pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
     ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], filled_value));
     iree_hal_buffer_mapping_t mapping = {};
     IREE_ASSERT_OK(iree_hal_buffer_map_range(
@@ -730,7 +731,7 @@ TEST_P(TaskQueueNativeRetirementTest, QueueBytesRetireOnCapturedOwner) {
   const uint32_t pattern = 0xC0FFEE12u;
   IREE_ASSERT_OK(iree_hal_queue_fill(
       queues_[0], allocated, filled, initial_buffers_[0], 0, kBlockSize,
-      &pattern, sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+      &pattern, sizeof(pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], filled_value));
   std::array<uint32_t, kBlockSize / sizeof(uint32_t)> actual;
   IREE_ASSERT_OK(iree_hal_buffer_map_read(initial_buffers_[0], 0, actual.data(),
@@ -879,7 +880,8 @@ TEST_P(TaskQueueNativeRetirementTest, CompletionCanDestroyItsPool) {
                                             &completed_value};
   IREE_ASSERT_OK(iree_hal_queue_fill(
       queues_[0], iree_hal_semaphore_list_empty(), filled, initial_buffers_[0],
-      0, kBlockSize, &pattern, sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+      0, kBlockSize, &pattern, sizeof(pattern), /*barriers=*/NULL,
+      IREE_HAL_FILL_FLAG_NONE));
 
   struct Completion {
     // Final pool reference, transferred to the accepted host call.

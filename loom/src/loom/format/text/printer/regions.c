@@ -8,8 +8,8 @@
 
 #include <stdio.h>
 
+#include "loom/format/block_order.h"
 #include "loom/format/text/printer/atoms.h"
-#include "loom/format/text/printer/block_order.h"
 #include "loom/format/text/printer/format.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
@@ -288,9 +288,10 @@ iree_status_t loom_print_block_label_line(loom_print_context_t* ctx,
 static iree_status_t loom_print_region_blocks(
     loom_print_context_t* ctx, const loom_region_t* region,
     const loom_region_descriptor_t* region_descriptor,
-    const loom_print_block_order_t* order, bool entry_args_declared_by_parent) {
+    const loom_format_block_order_t* order,
+    bool entry_args_declared_by_parent) {
   for (uint16_t position = 0; position < region->block_count; ++position) {
-    uint16_t block_index = loom_print_block_order_index(order, position);
+    uint16_t block_index = loom_format_block_order_index(order, position);
     const loom_block_t* block = loom_region_const_block(region, block_index);
     const bool entry_block = block_index == 0;
     const bool block_args_declared_by_parent =
@@ -347,12 +348,12 @@ iree_status_t loom_print_region_body(
     loom_print_context_t* ctx, const loom_region_t* region,
     const loom_region_descriptor_t* region_descriptor,
     bool entry_args_declared_by_parent) {
-  loom_print_block_order_t order = {0};
+  loom_format_block_order_t order = {0};
   IREE_RETURN_IF_ERROR(
-      loom_print_block_order_initialize(ctx->module, region, &order));
+      loom_format_block_order_initialize(ctx->module, region, &order));
   iree_status_t status = loom_print_region_blocks(
       ctx, region, region_descriptor, &order, entry_args_declared_by_parent);
-  loom_print_block_order_deinitialize(&order);
+  loom_format_block_order_deinitialize(&order);
   return status;
 }
 

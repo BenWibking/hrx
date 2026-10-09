@@ -46,8 +46,10 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     loom::analysis::conditioned_value_facts
+    loom::analysis::symbol_facts
     loom::ir
     loom::ops::op_defs
+    loom::ops::target
     loom::ops::type_registry
     loom::util::fact_table
   PUBLIC
@@ -361,6 +363,7 @@ loom_cc_library(
     loom::transforms::loop::loop_fusion
     loom::transforms::math::legalize
     loom::transforms::ownership::ownership_lifetime
+    loom::transforms::pipeline::outline
     loom::transforms::scf::scf_pipeline
     loom::transforms::scf::scf_to_cfg
     loom::transforms::scf::scf_unroll
@@ -423,6 +426,23 @@ loom_cc_test(
     loom::ops::op_defs
     loom::ops::test
     loom::pass::test::harness
+    loom::rewrite::rewriter
+)
+
+loom_cc_test(
+  NAME
+    target_scope_test
+  SRCS
+    "target_scope_test.cc"
+  DEPS
+    ::value_facts
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::op_registry
+    loom::ops::pipeline
+    loom::ops::target
+    loom::ops::test
     loom::rewrite::rewriter
 )
 

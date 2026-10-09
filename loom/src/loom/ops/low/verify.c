@@ -1591,6 +1591,29 @@ iree_status_t loom_low_func_call_verify(const loom_module_t* module,
 iree_status_t loom_low_invoke_verify(const loom_module_t* module,
                                      const loom_op_t* op,
                                      iree_diagnostic_emitter_t emitter) {
+  // Memory lowering carries view geometry separately from its storage-root
+  // register. A raw register call has no corresponding layout/offset binding.
+  const loom_value_slice_t operands = loom_low_invoke_operands(op);
+  for (uint16_t i = 0; i < operands.count; ++i) {
+    const loom_type_t type = loom_module_value_type(module, operands.values[i]);
+    if (loom_type_is_view(type)) {
+      return loom_low_emit_type_constraint_error(
+          op, LOOM_DIAGNOSTIC_FIELD_OPERAND, i, IREE_SV("operands"), type,
+          IREE_SV("non-view source value; pass buffers and offsets explicitly"),
+          emitter);
+    }
+  }
+  const loom_value_slice_t results = loom_low_invoke_results(op);
+  for (uint16_t i = 0; i < results.count; ++i) {
+    const loom_type_t type = loom_module_value_type(module, results.values[i]);
+    if (loom_type_is_view(type)) {
+      return loom_low_emit_type_constraint_error(
+          op, LOOM_DIAGNOSTIC_FIELD_RESULT, i, IREE_SV("results"), type,
+          IREE_SV(
+              "non-view source value; return buffers and offsets explicitly"),
+          emitter);
+    }
+  }
   loom_symbol_ref_t callee = loom_low_invoke_callee(op);
   const loom_symbol_t* symbol = loom_low_lookup_defined_symbol(module, callee);
   if (!symbol) {

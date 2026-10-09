@@ -151,24 +151,12 @@ static iree_status_t loom_vm_testbench_compile(
       loom_vm_testbench_select_invocation_root(
           source, product_invocation, roots, &max_arguments, &max_results);
     } else {
-      // The case planner owns invocation discovery. Its direct callees are the
-      // executable roots; authored public helpers are implementation
-      // dependencies within this independently compiled execution module.
-      for (iree_host_size_t i = 0; i < testbench->cases.count; ++i) {
-        const loom_testbench_case_plan_t* case_plan =
-            testbench->cases.values[i];
-        if (case_plan->issue_count) {
-          continue;
-        }
-        for (iree_host_size_t j = 0; j < case_plan->invocation_count; ++j) {
-          const loom_testbench_invocation_plan_t* call =
-              &case_plan->invocations[j];
-          if (call->kind != LOOM_TESTBENCH_INVOCATION_FUNCTION_CALL) {
-            continue;
-          }
-          loom_vm_testbench_select_invocation_root(
-              source, call, roots, &max_arguments, &max_results);
-        }
+      // The runner owns invocation discovery. Direct callees are executable
+      // roots; authored helpers are ordinary dependencies within this module.
+      for (iree_host_size_t i = 0; i < testbench->invocations.count; ++i) {
+        loom_vm_testbench_select_invocation_root(
+            source, testbench->invocations.values[i], roots, &max_arguments,
+            &max_results);
       }
     }
     for (iree_host_size_t i = 0; i < source->symbols.count; ++i) {
@@ -804,12 +792,12 @@ static iree_status_t loom_vm_testbench_product_prepare(
 
 loom_testbench_invocation_provider_t loom_vm_testbench_invocation_provider(
     void* user_data, const loom_testbench_compilation_t* compilation,
-    loom_testbench_case_plan_list_t cases,
+    loom_testbench_invocation_plan_list_t invocations,
     loom_testbench_compile_result_callback_t result_callback) {
   loom_vm_testbench_t* testbench = user_data;
   testbench->compilation = *compilation;
   testbench->result_callback = result_callback;
-  testbench->cases = cases;
+  testbench->invocations = invocations;
   return (loom_testbench_invocation_provider_t){
       .invoke = loom_vm_testbench_invoke,
       .query_issue = loom_vm_testbench_query_issue,
@@ -820,11 +808,9 @@ loom_testbench_invocation_provider_t loom_vm_testbench_invocation_provider(
 loom_testbench_execution_profile_t loom_vm_testbench_execution_profile(
     void* user_data, const loom_testbench_compilation_t* compilation,
     const loom_source_table_resolver_t* sources,
-    const loom_tooling_config_set_t* config_set,
     loom_diagnostic_sink_t diagnostic_sink,
     loom_testbench_compile_result_callback_t result_callback) {
   (void)sources;
-  (void)config_set;
   (void)diagnostic_sink;
   loom_vm_testbench_t* testbench = user_data;
   testbench->compilation = *compilation;

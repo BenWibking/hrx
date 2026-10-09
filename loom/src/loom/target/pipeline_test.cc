@@ -45,6 +45,10 @@ typedef struct PipelineRunCounts {
   int vector_memory_to_scalar = 0;
   // Lexical pass-run ordinal of vector-memory scalarization.
   int vector_memory_to_scalar_ordinal = 0;
+  // Lexical pass position of pipeline-only source preparation.
+  int pipeline_preparation_ordinal = 0;
+  // Lexical pass position of worker outlining.
+  int worker_outlining_ordinal = 0;
   // Number of source-loop unrolling pass runs.
   int source_loop_unrolling = 0;
   // Lexical pass-run ordinal of source-loop unrolling.
@@ -129,21 +133,36 @@ iree_status_t InspectPipelineRun(void* user_data, loom_op_t* op,
                                  loom_walk_result_t* out_result) {
   (void)context;
   *out_result = LOOM_WALK_CONTINUE;
+  PipelineRunCountContext* count_context =
+      static_cast<PipelineRunCountContext*>(user_data);
+  if (loom_pass_where_isa(op) &&
+      iree_string_view_equal(
+          loom_string_table_get(&count_context->module->strings,
+                                loom_pass_where_predicate(op)),
+          IREE_SV("op")) &&
+      iree_string_view_equal(
+          FindStringOption(count_context->module, loom_pass_where_attrs(op),
+                           IREE_SV("name")),
+          IREE_SV("pipeline.def"))) {
+    count_context->counts.pipeline_preparation_ordinal =
+        ++count_context->current_run_ordinal;
+    *out_result = LOOM_WALK_SKIP;
+    return iree_ok_status();
+  }
   if (!loom_pass_run_isa(op)) {
     return iree_ok_status();
   }
-
-  PipelineRunCountContext* count_context =
-      static_cast<PipelineRunCountContext*>(user_data);
   ++count_context->current_run_ordinal;
   PipelineRunCounts* counts = &count_context->counts;
   iree_string_view_t key = loom_string_table_get(
       &count_context->module->strings, loom_pass_run_key(op));
-  if (iree_string_view_equal(key, IREE_SV("select-templates")) &&
-      iree_string_view_equal(
-          FindStringOption(count_context->module, loom_pass_run_options(op),
-                           IREE_SV("mode")),
-          IREE_SV("final"))) {
+  if (iree_string_view_equal(key, IREE_SV("outline-pipeline-strands"))) {
+    counts->worker_outlining_ordinal = count_context->current_run_ordinal;
+  } else if (iree_string_view_equal(key, IREE_SV("select-templates")) &&
+             iree_string_view_equal(
+                 FindStringOption(count_context->module,
+                                  loom_pass_run_options(op), IREE_SV("mode")),
+                 IREE_SV("final"))) {
     ++counts->final_template_selection;
     counts->final_template_selection_ordinal =
         count_context->current_run_ordinal;
@@ -203,7 +222,8 @@ iree_status_t InspectPipelineRun(void* user_data, loom_op_t* op,
     counts->source_to_low_sanitizer_reporting =
         FindStringOption(count_context->module, loom_pass_run_options(op),
                          IREE_SV("sanitizer-reporting"));
-  } else if (iree_string_view_equal(key, IREE_SV("symbol-dce"))) {
+  } else if (iree_string_view_equal(key, IREE_SV("symbol-dce")) &&
+             counts->source_to_low != 0) {
     ++counts->symbol_dce;
     counts->symbol_dce_ordinal = count_context->current_run_ordinal;
   } else if (iree_string_view_equal(key,
@@ -309,6 +329,12 @@ TEST_F(TargetPipelineTest, ZeroChecksStillMaterializesAuthoredAssertions) {
   EXPECT_LT(counts.first_target_inlining_ordinal,
             counts.last_source_combination_ordinal);
   EXPECT_LT(counts.last_source_combination_ordinal,
+            counts.first_target_legalization_ordinal);
+  EXPECT_LT(counts.first_target_inlining_ordinal,
+            counts.pipeline_preparation_ordinal);
+  EXPECT_LT(counts.pipeline_preparation_ordinal,
+            counts.worker_outlining_ordinal);
+  EXPECT_LT(counts.worker_outlining_ordinal,
             counts.first_target_legalization_ordinal);
   EXPECT_EQ(counts.source_loop_unrolling, 1);
   EXPECT_EQ(counts.vector_bank_sroa, 1);

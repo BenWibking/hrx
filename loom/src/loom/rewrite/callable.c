@@ -1141,7 +1141,7 @@ static iree_status_t loom_callable_clone_remap_symbol(
 
 iree_status_t loom_callable_clone_definition(
     loom_builder_t* builder, loom_func_like_t source,
-    loom_symbol_ref_t target_ref, loom_ir_clone_observer_t clone_observer,
+    loom_symbol_ref_t target_ref, const loom_callable_clone_options_t* options,
     loom_func_like_t* out_cloned, iree_arena_allocator_t* scratch_arena) {
   *out_cloned = (loom_func_like_t){0};
   IREE_RETURN_IF_ERROR(
@@ -1168,7 +1168,13 @@ iree_status_t loom_callable_clone_definition(
       .remap_symbol = loom_ir_remap_symbol_callback_make(
           loom_callable_clone_remap_symbol, &symbol_state),
       .remap_same_module_symbols = true,
-      .clone_observer = clone_observer,
+      .clone_observer =
+          options ? options->observer : (loom_ir_clone_observer_t){0},
+      .op_projection =
+          {
+              .entries = options ? options->op_projection.entries : NULL,
+              .count = options ? options->op_projection.count : 0,
+          },
   };
   loom_ir_remap_t remap = {0};
   IREE_RETURN_IF_ERROR(loom_ir_remap_initialize(
@@ -1177,6 +1183,7 @@ iree_status_t loom_callable_clone_definition(
   loom_op_t* cloned_op = NULL;
   IREE_RETURN_IF_ERROR(
       loom_ir_clone_op(builder, source.op, &remap, &cloned_op));
+  IREE_ASSERT_EQ(remap.op_projection.cursor, remap.op_projection.count);
   loom_func_like_t cloned = loom_func_like_cast(builder->module, cloned_op);
   if (!loom_func_like_isa(cloned) || target_symbol->defining_op != cloned_op) {
     return iree_make_status(

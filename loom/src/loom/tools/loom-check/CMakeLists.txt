@@ -63,7 +63,6 @@ loom_cc_library(
     iree::io::stream
     loom::analysis::liveness
     loom::analysis::liveness_json
-    loom::analysis::pipeline_plan
     loom::analysis::storage_interference
     loom::binding::c::interop
     loom::binding::c::loomc
@@ -392,6 +391,7 @@ loom_cc_library(
     iree::base::internal::arena
     iree::base::tooling::flags
     loom::binding::c::loomc
+    loom::config::text_binding
     loom::sanitizer::options
     loom::tooling::cli::help
     loom::tooling::cli::loomc_options
@@ -432,6 +432,7 @@ loom_cc_library(
     ::provider
     iree::base
     loom::target::test::provider
+    loom::tools::loom-check::test::config::providers
     loom::tools::loom-check::test::low::providers
   TESTONLY
   PUBLIC

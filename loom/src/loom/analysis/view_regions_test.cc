@@ -16,6 +16,7 @@
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/buffer/ops.h"
+#include "loom/ops/channel/ops.h"
 #include "loom/ops/encoding/ops.h"
 #include "loom/ops/index/ops.h"
 #include "loom/ops/kernel/ops.h"
@@ -38,6 +39,7 @@ class ViewRegionsTest : public ::testing::Test {
 
     loom_context_initialize(iree_allocator_system(), &context_);
     RegisterDialect(LOOM_DIALECT_BUFFER, loom_buffer_dialect_vtables);
+    RegisterDialect(LOOM_DIALECT_CHANNEL, loom_channel_dialect_vtables);
     RegisterDialect(LOOM_DIALECT_ENCODING, loom_encoding_dialect_vtables);
     RegisterDialect(LOOM_DIALECT_INDEX, loom_index_dialect_vtables);
     RegisterDialect(LOOM_DIALECT_KERNEL, loom_kernel_dialect_vtables);
@@ -471,6 +473,63 @@ TEST_F(ViewRegionsTest, UnmodeledFencePreventsStorageStability) {
   EXPECT_EQ(loom_view_region_table_root_access_flags(&table, buffer),
             LOOM_VIEW_ACCESS_READ);
   EXPECT_FALSE(RootIsStable(&table, view));
+}
+
+TEST_F(ViewRegionsTest, ChannelCapabilityAccessesRetainBackingRoot) {
+  const loom_value_id_t buffer = DefineBufferArg();
+  const loom_value_id_t external =
+      BuildReadOnlyView(BuildNoAliasBuffer(DefineBufferArg()));
+  const loom_value_id_t unique =
+      BuildNoAliasBuffer(buffer, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP);
+  const loom_value_id_t layout = BuildDenseLayout();
+  const loom_value_id_t origin =
+      loom_index_constant_result(BuildOffsetConstant(0));
+  loom_op_t* storage;
+  IREE_ASSERT_OK(loom_buffer_view_build(&builder_, unique, origin,
+                                        ViewType2D(2, 4, layout),
+                                        LOOM_LOCATION_UNKNOWN, &storage));
+  loom_type_id_t payload;
+  IREE_ASSERT_OK(loom_module_intern_type_id(
+      module_,
+      loom_type_shaped_1d(LOOM_TYPE_TILE, LOOM_SCALAR_TYPE_F32,
+                          loom_dim_pack_static(4), 0),
+      &payload));
+  loom_type_t channel_type, read_type;
+  IREE_ASSERT_OK(loom_channel_type_make(module_, payload, &channel_type));
+  IREE_ASSERT_OK(loom_read_type_make(module_, 0, payload,
+                                     (loom_read_type_mode_t)0, &read_type));
+  const loom_value_id_t capacity =
+      loom_index_constant_result(BuildIndexConstant(2));
+  loom_op_t* binding;
+  IREE_ASSERT_OK(
+      loom_channel_bind_build(&builder_, LOOM_CHANNEL_BIND_DISCIPLINE_FIFO,
+                              loom_buffer_view_result(storage), capacity,
+                              channel_type, LOOM_LOCATION_UNKNOWN, &binding));
+  loom_op_t* accept;
+  IREE_ASSERT_OK(loom_channel_accept_build(
+      &builder_, 0, 0, loom_channel_bind_result(binding), read_type,
+      LOOM_LOCATION_UNKNOWN, &accept));
+  loom_op_t* release;
+  IREE_ASSERT_OK(loom_channel_release_build(&builder_,
+                                            loom_channel_accept_read(accept),
+                                            LOOM_LOCATION_UNKNOWN, &release));
+
+  loom_value_fact_table_t facts = {};
+  ComputeFacts(&facts);
+  loom_view_region_table_t table = {};
+  Analyze(&facts, &table);
+  EXPECT_EQ(loom_view_region_table_root_access_flags(&table, buffer),
+            LOOM_VIEW_ACCESS_READ | LOOM_VIEW_ACCESS_WRITE);
+  EXPECT_EQ(loom_view_region_table_root_access_flags(
+                &table, loom_channel_bind_result(binding)),
+            0);
+  EXPECT_EQ(loom_view_region_table_root_access_flags(
+                &table, loom_channel_accept_read(accept)),
+            0);
+  EXPECT_FALSE(RootIsStable(&table, loom_buffer_view_result(storage)));
+  // A standalone region cannot account for the other channel participant's
+  // external writes. A disjoint payload allocation does not close that scope.
+  EXPECT_FALSE(RootIsStable(&table, external));
 }
 
 TEST_F(ViewRegionsTest, RawByteWriteSharesTypedViewRoot) {
@@ -912,11 +971,13 @@ TEST_F(ViewRegionsTest, AllocationFreshnessRelationships) {
   loom_op_t* first_allocation = nullptr;
   loom_op_t* second_allocation = nullptr;
   IREE_ASSERT_OK(loom_buffer_alloca_build(
-      &builder_, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP, 64, bytes,
-      loom_type_buffer(), LOOM_LOCATION_UNKNOWN, &first_allocation));
+      &builder_, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
+      LOOM_VALUE_ID_INVALID, 64, bytes, loom_type_buffer(),
+      LOOM_LOCATION_UNKNOWN, &first_allocation));
   IREE_ASSERT_OK(loom_buffer_alloca_build(
-      &builder_, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP, 64, bytes,
-      loom_type_buffer(), LOOM_LOCATION_UNKNOWN, &second_allocation));
+      &builder_, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
+      LOOM_VALUE_ID_INVALID, 64, bytes, loom_type_buffer(),
+      LOOM_LOCATION_UNKNOWN, &second_allocation));
   const loom_value_id_t roots[] = {
       loom_buffer_alloca_result(first_allocation),
       loom_buffer_alloca_result(second_allocation),

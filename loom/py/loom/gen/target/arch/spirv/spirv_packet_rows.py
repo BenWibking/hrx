@@ -70,6 +70,7 @@ from loom.target.arch.spirv.ordinary_vector_conversion import (  # noqa: E402
 )
 from loom.target.arch.spirv.ordinary_vector_float import (  # noqa: E402
     ORDINARY_VECTOR_FLOAT_BINARY_INSTRUCTIONS,
+    ORDINARY_VECTOR_FLOAT_SCALE_INSTRUCTIONS,
 )
 from loom.target.arch.spirv.ordinary_vector_integer import (  # noqa: E402
     ORDINARY_VECTOR_INTEGER_INSTRUCTIONS,
@@ -123,7 +124,7 @@ from loom.target.low_descriptors import (  # noqa: E402
 
 _PACKET_MAX_OPERAND_COUNT = 4
 _PACKET_OPERAND_TYPE_CAPACITY = 3
-_FLOAT_BINARY_OPCODES = frozenset(row.opcode for row in FLOAT_BINARY_OPERATIONS)
+_FLOAT_BINARY_OPCODES = frozenset(row.opcode for row in (*FLOAT_BINARY_OPERATIONS, *ORDINARY_VECTOR_FLOAT_SCALE_INSTRUCTIONS))
 _FLOAT_CONVERSION_OPCODES = frozenset(
     {
         "LOOM_SPIRV_OP_F_CONVERT",
@@ -812,7 +813,7 @@ def _scalar_binary_row(scalar: ScalarAluType, operation: ScalarBinaryOperation) 
     return _PacketRow(
         f"spirv.op_{operation.descriptor_suffix}.{scalar.suffix}",
         opcode=operation.opcode,
-        form="LOOM_SPIRV_PACKET_FORM_BINARY_SAME_TYPE",
+        form="LOOM_SPIRV_PACKET_FORM_BINARY_LHS_TYPE",
         result_type=scalar_value,
         operand_types=(scalar_value, scalar_value),
         no_contraction=operation.opcode in _FLOAT_BINARY_OPCODES,
@@ -859,7 +860,7 @@ def _boolean_binary_row(operation: ScalarBinaryOperation) -> _PacketRow:
     return _PacketRow(
         f"spirv.op_{operation.descriptor_suffix}.bool",
         opcode=operation.opcode,
-        form="LOOM_SPIRV_PACKET_FORM_BINARY_SAME_TYPE",
+        form="LOOM_SPIRV_PACKET_FORM_BINARY_LHS_TYPE",
         result_type=bool_value,
         operand_types=(bool_value, bool_value),
     )
@@ -949,6 +950,7 @@ def _ordinary_vector_rows() -> list[_PacketRow]:
         for row in (
             *ORDINARY_VECTOR_INSTRUCTIONS,
             *ORDINARY_VECTOR_FLOAT_BINARY_INSTRUCTIONS,
+            *ORDINARY_VECTOR_FLOAT_SCALE_INSTRUCTIONS,
             *ORDINARY_VECTOR_INTEGER_INSTRUCTIONS,
             *ORDINARY_VECTOR_CONVERSION_INSTRUCTIONS,
             *ORDINARY_VECTOR_BIT_LAYOUT_INSTRUCTIONS,
@@ -1026,21 +1028,21 @@ def _coordinate_binary_rows() -> list[_PacketRow]:
         _PacketRow(
             "spirv.op_iadd.offset64",
             opcode="LOOM_SPIRV_OP_I_ADD",
-            form="LOOM_SPIRV_PACKET_FORM_BINARY_SAME_TYPE",
+            form="LOOM_SPIRV_PACKET_FORM_BINARY_LHS_TYPE",
             result_type=offset64_value,
             operand_types=(offset64_value, offset64_value),
         ),
         _PacketRow(
             "spirv.op_isub.offset64",
             opcode="LOOM_SPIRV_OP_I_SUB",
-            form="LOOM_SPIRV_PACKET_FORM_BINARY_SAME_TYPE",
+            form="LOOM_SPIRV_PACKET_FORM_BINARY_LHS_TYPE",
             result_type=offset64_value,
             operand_types=(offset64_value, offset64_value),
         ),
         _PacketRow(
             "spirv.op_imul.offset64",
             opcode="LOOM_SPIRV_OP_I_MUL",
-            form="LOOM_SPIRV_PACKET_FORM_BINARY_SAME_TYPE",
+            form="LOOM_SPIRV_PACKET_FORM_BINARY_LHS_TYPE",
             result_type=offset64_value,
             operand_types=(offset64_value, offset64_value),
         ),

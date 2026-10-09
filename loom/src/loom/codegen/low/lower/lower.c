@@ -1381,9 +1381,9 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
         .emitter = options->emitter,
         .phase_name = IREE_SV("source-low"),
     };
-    status = loom_kernel_async_legality_verify_function(module, source_function,
-                                                        &async_legality_options,
-                                                        &async_legality_result);
+    status = loom_kernel_async_legality_analyze_function(
+        module, source_function, &async_legality_options,
+        &context.function_arena, &async_legality_result);
   }
   if (iree_status_is_ok(status)) {
     out_result->error_count += async_legality_result.error_count;

@@ -1589,13 +1589,17 @@ static iree_status_t iree_hal_streaming_graph_record_dependency_barrier(
                       IREE_HAL_ACCESS_SCOPE_ATOMIC_READ |
                       IREE_HAL_ACCESS_SCOPE_ATOMIC_WRITE,
   };
-  return iree_hal_command_buffer_execution_barrier(
-      command_buffer,
-      IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER |
-          IREE_HAL_EXECUTION_STAGE_ATOMIC,
-      IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER |
-          IREE_HAL_EXECUTION_STAGE_ATOMIC,
-      IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, 1, &memory_barrier, 0, NULL);
+  const iree_hal_barrier_t execution_barrier = {
+      .source_stage_mask = IREE_HAL_EXECUTION_STAGE_DISPATCH |
+                           IREE_HAL_EXECUTION_STAGE_TRANSFER |
+                           IREE_HAL_EXECUTION_STAGE_ATOMIC,
+      .target_stage_mask = IREE_HAL_EXECUTION_STAGE_DISPATCH |
+                           IREE_HAL_EXECUTION_STAGE_TRANSFER |
+                           IREE_HAL_EXECUTION_STAGE_ATOMIC,
+      .memory_barrier_count = 1,
+      .memory_barriers = &memory_barrier,
+  };
+  return iree_hal_command_buffer_barrier(command_buffer, &execution_barrier);
 }
 
 // Helper to record nodes from a partition into a command buffer.
@@ -2363,8 +2367,9 @@ static iree_status_t iree_hal_streaming_graph_submit_block(
           block->type == IREE_HAL_STREAMING_GRAPH_BLOCK_TYPE_QUEUE_BARRIER
               ? ptrs->attrs->barrier.flags
               : IREE_HAL_QUEUE_BARRIER_FLAG_NONE;
-      status = iree_hal_queue_barrier(stream->queue, wait_semaphores,
-                                      signal_semaphores, flags);
+      status =
+          iree_hal_queue_barrier(stream->queue, wait_semaphores,
+                                 signal_semaphores, /*barriers=*/NULL, flags);
       break;
     }
     case IREE_HAL_STREAMING_GRAPH_BLOCK_TYPE_QUEUE_FILL:
@@ -2372,14 +2377,15 @@ static iree_status_t iree_hal_streaming_graph_submit_block(
           stream->queue, wait_semaphores, signal_semaphores,
           ptrs->attrs->fill.target_buffer, ptrs->attrs->fill.target_offset,
           ptrs->attrs->fill.length, &ptrs->attrs->fill.pattern,
-          ptrs->attrs->fill.pattern_length, ptrs->attrs->fill.flags);
+          ptrs->attrs->fill.pattern_length, /*barriers=*/NULL,
+          ptrs->attrs->fill.flags);
       break;
     case IREE_HAL_STREAMING_GRAPH_BLOCK_TYPE_QUEUE_COPY:
       status = iree_hal_queue_copy(
           stream->queue, wait_semaphores, signal_semaphores,
           ptrs->attrs->copy.source_buffer, ptrs->attrs->copy.source_offset,
           ptrs->attrs->copy.target_buffer, ptrs->attrs->copy.target_offset,
-          ptrs->attrs->copy.length, ptrs->attrs->copy.flags);
+          ptrs->attrs->copy.length, /*barriers=*/NULL, ptrs->attrs->copy.flags);
       break;
     case IREE_HAL_STREAMING_GRAPH_BLOCK_TYPE_QUEUE_DISPATCH: {
       iree_hal_queue_t* dispatch_queue = stream->queue;
@@ -2398,7 +2404,7 @@ static iree_status_t iree_hal_streaming_graph_submit_block(
           iree_hal_executable_function_from_index(
               (uint32_t)ptrs->attrs->dispatch.entry_point),
           ptrs->attrs->dispatch.config, ptrs->attrs->dispatch.constants,
-          bindings_list, ptrs->attrs->dispatch.flags);
+          bindings_list, /*barriers=*/NULL, ptrs->attrs->dispatch.flags);
       break;
     }
     case IREE_HAL_STREAMING_GRAPH_BLOCK_TYPE_QUEUE_EXECUTE:
@@ -2473,7 +2479,7 @@ static iree_status_t iree_hal_streaming_graph_exec_submit_blocks_locked(
         accepted_signals, &accepted_signal));
     iree_status_t status = iree_hal_queue_barrier(
         stream->queue, external_wait_semaphores, external_signal_semaphores,
-        IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
+        /*barriers=*/NULL, IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
     if (iree_status_is_ok(status)) {
       accepted_signal->semaphore = external_signal_semaphores.semaphores[0];
       accepted_signal->value = external_signal_semaphores.payload_values[0];

@@ -252,6 +252,7 @@ void iree_hal_amdgpu_host_queue_resolve_waits(
     iree_hal_amdgpu_host_queue_t* queue,
     const iree_hal_semaphore_list_t wait_semaphore_list,
     iree_hal_amdgpu_wait_resolution_t* out_resolution) {
+  out_resolution->payload_barriers = (iree_hal_amdgpu_queue_barriers_t){0};
   out_resolution->barrier_count = 0;
   out_resolution->needs_deferral = false;
   memset(out_resolution->reserved, 0, sizeof(out_resolution->reserved));

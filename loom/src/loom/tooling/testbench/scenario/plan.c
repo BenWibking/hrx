@@ -57,8 +57,8 @@ static void loom_testbench_count_trial_plan(
   const loom_op_t* op = NULL;
   loom_block_for_each_op(block, op) {
     ++counts->issue_capacity;
-    if (loom_testbench_is_value_source_op(op)) {
-      ++counts->value_source_count;
+    if (loom_testbench_is_value_source_op(op) || loom_check_generate_isa(op)) {
+      ++counts->recipe_step_count;
     } else if (loom_check_compare_isa(op)) {
       loom_testbench_count_comparison_plan(op, counts);
     }
@@ -196,6 +196,49 @@ static bool loom_testbench_plan_scenario_invocation(
   return true;
 }
 
+static bool loom_testbench_plan_trial_generator(
+    const loom_module_t* module, const loom_op_t* op,
+    loom_testbench_invocation_plan_t* out_invocation) {
+  if (!loom_check_generate_isa(op)) {
+    return false;
+  }
+  const loom_value_slice_t arguments = loom_check_generate_arguments(op);
+  const loom_value_slice_t results = loom_check_generate_results(op);
+  const loom_symbol_ref_t callee = loom_check_generate_callee(op);
+  const loom_symbol_t* symbol =
+      loom_testbench_scenario_symbol_from_ref(module, callee);
+  if (symbol == NULL ||
+      !loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_CALLABLE)) {
+    return false;
+  }
+  for (uint16_t i = 0; i < arguments.count; ++i) {
+    if (arguments.values[i] >= module->values.count) {
+      return false;
+    }
+  }
+  for (uint16_t i = 0; i < results.count; ++i) {
+    if (results.values[i] >= module->values.count) {
+      return false;
+    }
+  }
+  *out_invocation = (loom_testbench_invocation_plan_t){
+      .kind = LOOM_TESTBENCH_INVOCATION_FUNCTION_CALL,
+      .module = module,
+      .op = op,
+      .callee_ref = callee,
+      .provider_id = LOOM_STRING_ID_INVALID,
+      .provider = iree_string_view_empty(),
+      .attrs = loom_named_attr_slice_empty(),
+      .execution_epoch = LOOM_TESTBENCH_EXECUTION_EPOCH_INVALID,
+      .launch_schedule_depth = 0,
+      .input_value_ids = arguments.values,
+      .input_count = arguments.count,
+      .result_value_ids = results.values,
+      .result_count = results.count,
+  };
+  return true;
+}
+
 static void loom_testbench_plan_compare_expectations(
     const loom_module_t* module, iree_host_size_t scenario_index,
     loom_symbol_ref_t scenario_ref, const loom_op_t* compare_op,
@@ -304,8 +347,8 @@ static bool loom_testbench_plan_scenario_action(
 static void loom_testbench_plan_trial(
     const loom_module_t* module, iree_host_size_t scenario_index,
     loom_symbol_ref_t scenario_ref, const loom_op_t* trial_op,
-    loom_testbench_value_source_plan_t* value_sources,
-    iree_host_size_t* inout_value_source_count,
+    loom_testbench_trial_recipe_step_t* recipe_steps,
+    iree_host_size_t* inout_recipe_step_count,
     loom_testbench_expectation_plan_t* expectations,
     iree_host_size_t* inout_expectation_count, loom_testbench_issue_t* issues,
     iree_host_size_t issue_capacity, iree_host_size_t* inout_issue_count,
@@ -315,8 +358,8 @@ static void loom_testbench_plan_trial(
   out_trial->ordinal_value_id = LOOM_VALUE_ID_INVALID;
   out_trial->entropy_value_id = LOOM_VALUE_ID_INVALID;
   out_trial->issues = issues ? issues + *inout_issue_count : NULL;
-  out_trial->value_sources =
-      value_sources ? value_sources + *inout_value_source_count : NULL;
+  out_trial->recipe_steps =
+      recipe_steps ? recipe_steps + *inout_recipe_step_count : NULL;
   const int64_t trial_count = loom_check_trial_trial_count(trial_op);
   if (trial_count > 0 && (uint64_t)trial_count <= IREE_HOST_SIZE_MAX) {
     out_trial->trial_count = (iree_host_size_t)trial_count;
@@ -332,12 +375,27 @@ static void loom_testbench_plan_trial(
     const loom_op_t* op = NULL;
     loom_block_for_each_op(block, op) {
       if (loom_testbench_is_value_source_op(op)) {
-        loom_testbench_value_source_plan_t* source =
-            &value_sources[(*inout_value_source_count)++];
-        if (!loom_testbench_plan_value_source(module, op, source)) {
+        loom_testbench_trial_recipe_step_t* step =
+            &recipe_steps[(*inout_recipe_step_count)++];
+        step->kind = LOOM_TESTBENCH_TRIAL_RECIPE_STEP_VALUE_SOURCE;
+        if (!loom_testbench_plan_value_source(module, op,
+                                              &step->value_source)) {
           loom_testbench_append_scenario_issue(
               issues, issue_capacity, inout_issue_count,
               LOOM_TESTBENCH_ISSUE_INVALID_VALUE_SOURCE, scenario_index, op,
+              scenario_ref);
+        }
+        continue;
+      }
+      if (loom_check_generate_isa(op)) {
+        loom_testbench_trial_recipe_step_t* step =
+            &recipe_steps[(*inout_recipe_step_count)++];
+        step->kind = LOOM_TESTBENCH_TRIAL_RECIPE_STEP_GENERATOR;
+        if (!loom_testbench_plan_trial_generator(module, op,
+                                                 &step->generator)) {
+          loom_testbench_append_scenario_issue(
+              issues, issue_capacity, inout_issue_count,
+              LOOM_TESTBENCH_ISSUE_INVALID_TRIAL_GENERATOR, scenario_index, op,
               scenario_ref);
         }
         continue;
@@ -361,10 +419,10 @@ static void loom_testbench_plan_trial(
     }
   }
 
-  out_trial->value_source_count =
-      out_trial->value_sources ? (value_sources + *inout_value_source_count) -
-                                     out_trial->value_sources
-                               : 0;
+  out_trial->recipe_step_count =
+      out_trial->recipe_steps
+          ? (recipe_steps + *inout_recipe_step_count) - out_trial->recipe_steps
+          : 0;
   out_trial->issue_count =
       out_trial->issues ? (issues + *inout_issue_count) - out_trial->issues : 0;
 }
@@ -373,6 +431,8 @@ static void loom_testbench_plan_scenario(
     const loom_module_t* module, iree_host_size_t scenario_index,
     const loom_op_t* scenario_op, loom_testbench_trial_plan_t* trials,
     iree_host_size_t* inout_trial_count,
+    loom_testbench_trial_recipe_step_t* recipe_steps,
+    iree_host_size_t* inout_recipe_step_count,
     loom_testbench_value_source_plan_t* value_sources,
     iree_host_size_t* inout_value_source_count,
     loom_testbench_expectation_plan_t* expectations,
@@ -452,7 +512,7 @@ static void loom_testbench_plan_scenario(
       if (loom_check_trial_isa(op)) {
         loom_testbench_trial_plan_t* trial = &trials[(*inout_trial_count)++];
         loom_testbench_plan_trial(module, scenario_index, out_scenario->ref, op,
-                                  value_sources, inout_value_source_count,
+                                  recipe_steps, inout_recipe_step_count,
                                   expectations, inout_expectation_count, issues,
                                   issue_capacity, inout_issue_count, trial);
         continue;
@@ -494,6 +554,10 @@ iree_status_t loom_testbench_plan_scenarios(
   IREE_RETURN_IF_ERROR(loom_testbench_scenario_allocate_array(
       arena, counts->value_source_count, sizeof(*value_sources),
       (void**)&value_sources));
+  loom_testbench_trial_recipe_step_t* recipe_steps = NULL;
+  IREE_RETURN_IF_ERROR(loom_testbench_scenario_allocate_array(
+      arena, counts->recipe_step_count, sizeof(*recipe_steps),
+      (void**)&recipe_steps));
   loom_testbench_expectation_plan_t* expectations = NULL;
   IREE_RETURN_IF_ERROR(loom_testbench_scenario_allocate_array(
       arena, counts->expectation_count, sizeof(*expectations),
@@ -501,6 +565,7 @@ iree_status_t loom_testbench_plan_scenarios(
 
   iree_host_size_t scenario_count = 0;
   iree_host_size_t trial_count = 0;
+  iree_host_size_t recipe_step_count = 0;
   iree_host_size_t value_source_count = 0;
   iree_host_size_t expectation_count = 0;
   if (module->body != NULL && module->body->block_count != 0) {
@@ -512,15 +577,17 @@ iree_status_t loom_testbench_plan_scenarios(
         continue;
       }
       loom_testbench_plan_scenario(
-          module, scenario_count, op, trials, &trial_count, value_sources,
-          &value_source_count, expectations, &expectation_count, issues,
-          issue_capacity, inout_issue_count, &scenarios[scenario_count]);
+          module, scenario_count, op, trials, &trial_count, recipe_steps,
+          &recipe_step_count, value_sources, &value_source_count, expectations,
+          &expectation_count, issues, issue_capacity, inout_issue_count,
+          &scenarios[scenario_count]);
       ++scenario_count;
     }
   }
 
   IREE_ASSERT(scenario_count == counts->scenario_count);
   IREE_ASSERT(trial_count == counts->trial_count);
+  IREE_ASSERT(recipe_step_count == counts->recipe_step_count);
   IREE_ASSERT(value_source_count <= counts->value_source_count);
   IREE_ASSERT(expectation_count <= counts->expectation_count);
   *out_scenarios = scenarios;

@@ -114,6 +114,32 @@ endif()
 endif()
 
 if(LOOM_TARGET_ARCH_VM)
+loom_test_module(
+  NAME
+    view_bitcast_test_module
+  SRCS
+    "view_bitcast.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    view_bitcast_test_execute_vm_reference_test
+  MODULE
+    "::view_bitcast_test_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
 iree_execution_test_suite(
   NAME
     tools_test

@@ -188,6 +188,9 @@ enum loom_dominance_walk_scope_flag_bits_e {
   LOOM_DOMINANCE_WALK_SCOPE_FLAG_STATE_BARRIER = 1u << 0,
   // The enclosing operation hides values defined outside this region.
   LOOM_DOMINANCE_WALK_SCOPE_FLAG_ISOLATED = 1u << 1,
+  // The region executes in an independent target context. Lexical captures
+  // remain visible, but expressions cannot be reused from outside the region.
+  LOOM_DOMINANCE_WALK_SCOPE_FLAG_INDEPENDENT_EXECUTION = 1u << 2,
 };
 typedef uint8_t loom_dominance_walk_scope_flags_t;
 

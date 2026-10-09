@@ -349,9 +349,10 @@ static loom_value_facts_t loom_view_extent_max_index_facts(
   return loom_value_facts_make(lower_bound, upper_bound, 1);
 }
 
-static loom_value_facts_t loom_view_strided_footprint_facts(
+static loom_value_facts_t loom_view_suffix_footprint_facts(
     const loom_fact_context_t* context, const loom_module_t* module,
-    loom_type_t view_type, int64_t static_element_byte_count) {
+    loom_type_t view_type, uint8_t first_axis,
+    int64_t static_element_byte_count) {
   if (static_element_byte_count < 0) {
     return loom_view_nonnegative_unknown_facts();
   }
@@ -359,7 +360,7 @@ static loom_value_facts_t loom_view_strided_footprint_facts(
   uint8_t rank = loom_type_rank(view_type);
   loom_value_facts_t max_element_offset = loom_value_facts_exact_i64(0);
   bool may_be_empty = false;
-  for (uint8_t axis = 0; axis < rank; ++axis) {
+  for (uint8_t axis = first_axis; axis < rank; ++axis) {
     loom_value_facts_t extent = loom_view_dim_facts(context, view_type, axis);
     if (loom_value_facts_is_exact(extent) && extent.range_lo == 0) {
       return loom_value_facts_exact_i64(0);
@@ -402,8 +403,8 @@ static loom_value_facts_t loom_view_footprint_facts(
                                            static_element_byte_count);
   }
   if (layout.summary.kind == LOOM_VALUE_FACT_ADDRESS_LAYOUT_STRIDED) {
-    return loom_view_strided_footprint_facts(context, module, view_type,
-                                             static_element_byte_count);
+    return loom_view_suffix_footprint_facts(context, module, view_type, 0,
+                                            static_element_byte_count);
   }
   return loom_view_nonnegative_unknown_facts();
 }
@@ -536,6 +537,38 @@ static loom_value_fact_view_reference_t loom_view_default_view_reference(
   };
 }
 
+iree_status_t loom_view_reference_make_record(loom_fact_context_t* context,
+                                              const loom_module_t* module,
+                                              loom_value_id_t storage_value_id,
+                                              loom_value_facts_t storage_facts,
+                                              loom_type_t storage_type,
+                                              loom_value_facts_t* out) {
+  loom_value_fact_view_reference_t reference =
+      loom_view_default_view_reference(storage_value_id, storage_type);
+  (void)loom_value_facts_query_view_reference(context, storage_facts,
+                                              &reference);
+  reference.root_value_id = loom_value_fact_view_reference_resolve_root_value(
+      reference, storage_value_id);
+  const loom_value_facts_t last_slot = loom_view_extent_max_index_facts(
+      loom_view_dim_facts(context, storage_type, 0));
+  const loom_value_facts_t slot =
+      loom_value_facts_make(0, last_slot.range_hi, 1);
+  loom_value_facts_t stride = loom_value_facts_unknown();
+  loom_value_facts_t offset = loom_view_nonnegative_unknown_facts();
+  if (loom_view_axis_stride_facts(context, module, storage_type, 0, &stride)) {
+    offset = loom_view_scale_by_element_bytes(
+        loom_view_muli_nonnegative(slot, stride),
+        reference.static_element_byte_count);
+  }
+  reference.base_byte_offset =
+      loom_view_addi_nonnegative(reference.base_byte_offset, offset);
+  reference.minimum_alignment =
+      loom_view_alignment_from_offset_facts(reference.base_byte_offset);
+  reference.footprint_byte_length = loom_view_suffix_footprint_facts(
+      context, module, storage_type, 1, reference.static_element_byte_count);
+  return loom_value_facts_make_view_reference(context, reference, out);
+}
+
 iree_status_t loom_view_reference_make_buffer_view(
     loom_fact_context_t* context, const loom_module_t* module,
     loom_value_id_t buffer_value_id, loom_value_facts_t buffer_facts,
@@ -606,7 +639,7 @@ iree_status_t loom_view_reference_make_subview(
   return loom_value_facts_make_view_reference(context, view_reference, out);
 }
 
-iree_status_t loom_view_reference_make_refine(
+iree_status_t loom_view_reference_make_reinterpret(
     loom_fact_context_t* context, const loom_module_t* module,
     loom_value_id_t source_value_id, loom_value_facts_t source_facts,
     loom_type_t source_type, loom_type_t result_type, loom_value_facts_t* out) {

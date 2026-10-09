@@ -281,6 +281,7 @@ loom_cc_library(
         "//loom/src/loom/ops/index:op_defs",
         "//loom/src/loom/ops/scalar:op_defs",
         "//loom/src/loom/target:facts",
+        "//loom/src/loom/target:facts_builder",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
         "//runtime/src/iree/base/internal:arena",

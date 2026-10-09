@@ -46,6 +46,47 @@ loom_low_allocation_storage_liveness_unit_assignment(
   };
 }
 
+// Selects canonical physical segments intersecting one refined unit lifetime.
+// Assignments without sparse reservations contribute one continuous record;
+// that synthetic range is never used to index the physical segment table.
+static loom_liveness_segment_range_t
+loom_low_allocation_storage_liveness_unit_segments(
+    const loom_low_allocation_unit_liveness_t* unit_liveness,
+    const loom_low_allocation_assignment_t* assignment, uint32_t start_point,
+    uint32_t end_point) {
+  if (start_point >= end_point) {
+    return (loom_liveness_segment_range_t){0};
+  }
+  const loom_liveness_segment_range_t range = assignment->liveness_segments;
+  if (range.count == 0) {
+    return (loom_liveness_segment_range_t){.count = 1};
+  }
+  const loom_liveness_segment_t* segments =
+      unit_liveness->storage_segments.entries;
+  uint32_t begin = range.start;
+  uint32_t end = range.start + range.count;
+  while (begin < end) {
+    const uint32_t middle = begin + (end - begin) / 2u;
+    if (segments[middle].end_point <= start_point) {
+      begin = middle + 1u;
+    } else {
+      end = middle;
+    }
+  }
+  const uint32_t first = begin;
+  end = range.start + range.count;
+  while (begin < end) {
+    const uint32_t middle = begin + (end - begin) / 2u;
+    if (segments[middle].start_point < end_point) {
+      begin = middle + 1u;
+    } else {
+      end = middle;
+    }
+  }
+  return (loom_liveness_segment_range_t){.start = first,
+                                         .count = begin - first};
+}
+
 static iree_status_t loom_low_allocation_storage_liveness_count_records(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_allocation_assignment_t* assignments,
@@ -72,7 +113,10 @@ static iree_status_t loom_low_allocation_storage_liveness_count_records(
           loom_low_allocation_live_range_assignment_unit_end_point(
               unit_liveness->end_points, unit_liveness->point_count, assignment,
               unit_index);
-      if (start_point >= end_point) {
+      const loom_liveness_segment_range_t segments =
+          loom_low_allocation_storage_liveness_unit_segments(
+              unit_liveness, assignment, start_point, end_point);
+      if (segments.count == 0) {
         continue;
       }
       const loom_low_allocation_assignment_t unit_assignment =
@@ -81,8 +125,11 @@ static iree_status_t loom_low_allocation_storage_liveness_count_records(
       const uint32_t atomic_unit_count =
           loom_low_allocation_storage_assignment_atomic_unit_count(
               descriptor_set, &unit_assignment);
-      if (!iree_host_size_checked_add(out_record_counts[kind_ordinal],
-                                      atomic_unit_count,
+      iree_host_size_t unit_record_count = 0;
+      if (!iree_host_size_checked_mul(segments.count, atomic_unit_count,
+                                      &unit_record_count) ||
+          !iree_host_size_checked_add(out_record_counts[kind_ordinal],
+                                      unit_record_count,
                                       &out_record_counts[kind_ordinal])) {
         return iree_make_status(
             IREE_STATUS_RESOURCE_EXHAUSTED,
@@ -214,7 +261,10 @@ iree_status_t loom_low_allocation_storage_liveness_index_initialize(
           loom_low_allocation_live_range_assignment_unit_end_point(
               unit_liveness->end_points, unit_liveness->point_count, assignment,
               unit_index);
-      if (start_point >= end_point) {
+      const loom_liveness_segment_range_t segments =
+          loom_low_allocation_storage_liveness_unit_segments(
+              unit_liveness, assignment, start_point, end_point);
+      if (segments.count == 0) {
         continue;
       }
       const loom_low_allocation_assignment_t unit_assignment =
@@ -225,13 +275,28 @@ iree_status_t loom_low_allocation_storage_liveness_index_initialize(
               descriptor_set, &unit_assignment);
       for (uint32_t atomic_unit = 0; atomic_unit < atomic_unit_count;
            ++atomic_unit) {
-        loom_low_allocation_storage_lifetime_t* lifetime =
-            &out_index->lifetimes[record_cursors[kind_ordinal]++];
+        uint32_t storage_key = 0;
+        uint32_t location = 0;
         loom_low_allocation_storage_assignment_atomic_unit(
-            descriptor_set, &unit_assignment, atomic_unit,
-            &lifetime->storage_key, &lifetime->location);
-        lifetime->start_point = start_point;
-        lifetime->prefix_maximum_end_point = end_point;
+            descriptor_set, &unit_assignment, atomic_unit, &storage_key,
+            &location);
+        for (uint32_t segment_index = 0; segment_index < segments.count;
+             ++segment_index) {
+          loom_liveness_segment_t segment = {start_point, end_point};
+          if (assignment->liveness_segments.count != 0) {
+            segment = unit_liveness->storage_segments
+                          .entries[segments.start + segment_index];
+            segment.start_point = iree_max(segment.start_point, start_point);
+            segment.end_point = iree_min(segment.end_point, end_point);
+          }
+          out_index->lifetimes[record_cursors[kind_ordinal]++] =
+              (loom_low_allocation_storage_lifetime_t){
+                  .storage_key = storage_key,
+                  .location = location,
+                  .start_point = segment.start_point,
+                  .prefix_maximum_end_point = segment.end_point,
+              };
+        }
       }
     }
   }

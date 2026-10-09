@@ -114,8 +114,13 @@ enum loom_low_lower_value_ref_kind_e {
   LOOM_LOW_LOWER_VALUE_REF_EXACT_LANE_ORIGIN_OPERAND = 9,
   // Exact scalar origin shared by every element of source operand field
   // |index|, element |element_index|. Selection proves the indexed uniform
-  // origin is available before emission consumes it.
+  // origin is available before emission consumes it. The origin may precede
+  // an exact widening conversion and have a narrower element type.
   LOOM_LOW_LOWER_VALUE_REF_EXACT_UNIFORM_ELEMENT_ORIGIN_OPERAND = 10,
+  // Scalar of the operand's element type shared by every element of source
+  // operand field |index|, element |element_index|. This retains widening
+  // conversions when the consumer requires the current arithmetic precision.
+  LOOM_LOW_LOWER_VALUE_REF_UNIFORM_ELEMENT_ORIGIN_OPERAND = 11,
   // Maximum value-ref kind plus one.
   LOOM_LOW_LOWER_VALUE_REF_COUNT_,
 };
@@ -796,6 +801,8 @@ typedef enum loom_low_lower_guard_kind_e {
   // Source value facts must be an exact signed floating-point power of two
   // whose mathematical exponent is in the inclusive payload i64 range.
   LOOM_LOW_LOWER_GUARD_VALUE_EXACT_POWER_OF_TWO_FLOAT = 39,
+  // Two source i64 attributes must sum to payload.i64 without signed overflow.
+  LOOM_LOW_LOWER_GUARD_ATTR_I64_SUM_EQ = 40,
   // Maximum guard kind value plus one.
   LOOM_LOW_LOWER_GUARD_COUNT_,
 } loom_low_lower_guard_kind_t;
@@ -812,6 +819,8 @@ typedef union loom_low_lower_guard_payload_t {
   uint64_t u64;
   // Signed bias applied before testing an exact power of two.
   int64_t addend;
+  // Required signed integer value.
+  int64_t i64;
   // Inclusive signed range payload.
   struct {
     // Inclusive lower bound.
@@ -858,8 +867,13 @@ typedef struct loom_low_lower_guard_t {
     struct {
       // Source attribute or operand-segment ordinal.
       uint16_t attr_index;
-      // Source i64-array element ordinal used by element-range guards.
-      uint16_t element_index;
+      // Kind-selected second attribute or array-element ordinal.
+      union {
+        // Second source attribute ordinal used by pairwise attribute guards.
+        uint16_t other_attr_index;
+        // Source i64-array element ordinal used by element-range guards.
+        uint16_t element_index;
+      };
       // Reserved storage available to future attribute guards.
       uint16_t reserved;
     } attribute;
@@ -892,8 +906,10 @@ enum loom_low_lower_emit_kind_e {
   // Slices register-range operands at lane 0 and emits one descriptor-backed
   // low.op.
   LOOM_LOW_LOWER_EMIT_DESCRIPTOR_OP_FIRST_LANE = 3,
-  // Slices register-range operands by descriptor packet operand widths, emits
-  // one descriptor-backed low.op per source lane, and concatenates each result.
+  // Materializes operands once, slices register ranges by descriptor packet
+  // widths, emits one low.op per packet, and concatenates each result. A
+  // one-packet input is reused; aggregate inputs and results define the packet
+  // count. A one-packet result type inherits the aggregate input packet count.
   LOOM_LOW_LOWER_EMIT_DESCRIPTOR_OP_PER_LANE = 4,
   // Executes the final contiguous emit-program tail once per source lane,
   // slicing operands and typing lane-local temporaries by descriptor packet

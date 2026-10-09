@@ -70,6 +70,29 @@ TEST(XdnaArrayFactsTest, ExposesCompleteNpu2Topology) {
   EXPECT_EQ(tile->array_resources.dma_buffer_descriptor_count, 512u);
 }
 
+TEST(XdnaArrayFactsTest, ExposesTraceInputsForEachTileKind) {
+  const loom_xdna_array_family_t* family = loom_xdna_npu2_array_family();
+  const loom_xdna_stream_port_range_t* range =
+      loom_xdna_array_stream_port_range(family, LOOM_XDNA_TILE_KIND_COMPUTE,
+                                        LOOM_XDNA_STREAM_DIRECTION_SLAVE,
+                                        LOOM_XDNA_STREAM_PORT_TRACE);
+  ASSERT_NE(range, nullptr);
+  EXPECT_EQ(range->ordinal, 23u);
+  EXPECT_EQ(range->count, 2u);
+  range = loom_xdna_array_stream_port_range(family, LOOM_XDNA_TILE_KIND_MEMORY,
+                                            LOOM_XDNA_STREAM_DIRECTION_SLAVE,
+                                            LOOM_XDNA_STREAM_PORT_TRACE);
+  ASSERT_NE(range, nullptr);
+  EXPECT_EQ(range->ordinal, 17u);
+  EXPECT_EQ(range->count, 1u);
+  range = loom_xdna_array_stream_port_range(
+      family, LOOM_XDNA_TILE_KIND_SHIM_NOC, LOOM_XDNA_STREAM_DIRECTION_SLAVE,
+      LOOM_XDNA_STREAM_PORT_TRACE);
+  ASSERT_NE(range, nullptr);
+  EXPECT_EQ(range->ordinal, 22u);
+  EXPECT_EQ(range->count, 1u);
+}
+
 TEST(XdnaArrayFactsTest, CanonicalizesComputeNeighborAliases) {
   const loom_xdna_array_family_t* family = loom_xdna_npu2_array_family();
   loom_xdna_memory_placement_t west = {};

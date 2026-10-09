@@ -128,7 +128,7 @@ class QueueCooperativeDispatchTest : public CtsTestBase<> {
         iree_hal_executable_function_from_index(0),
         DispatchConfig(workgroup_count, dynamic_workgroup_local_memory),
         iree_make_const_byte_span(constants, sizeof(constants)), bindings,
-        IREE_HAL_DISPATCH_FLAG_COOPERATIVE));
+        /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_COOPERATIVE));
     IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
         completion, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 

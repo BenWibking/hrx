@@ -102,7 +102,8 @@ iree_status_t AmdgpuQueueExecutionResourceTest::ObserveExecutionUnitIds(
   IREE_RETURN_IF_ERROR(iree_hal_queue_dispatch(
       queue, iree_hal_semaphore_list_empty(), signal, executable_,
       iree_hal_executable_function_from_index(0), config,
-      iree_const_byte_span_empty(), bindings, IREE_HAL_DISPATCH_FLAG_NONE));
+      iree_const_byte_span_empty(), bindings, /*barriers=*/NULL,
+      IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_RETURN_IF_ERROR(iree_hal_semaphore_list_wait(
       signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 

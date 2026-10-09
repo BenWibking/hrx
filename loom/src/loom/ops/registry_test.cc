@@ -505,7 +505,9 @@ TEST(TypeRegistry, LookupBuiltinTypes) {
   desc = loom_type_registry_lookup(nullptr, iree_make_cstring_view("pool"));
   ASSERT_NE(desc, nullptr);
   EXPECT_EQ(desc->ir_kind, LOOM_TYPE_POOL);
-  EXPECT_EQ(desc->param_count, 1);
+  EXPECT_EQ(desc->param_count, 0);
+  EXPECT_EQ(desc->format_elements, nullptr);
+  EXPECT_EQ(desc->format_element_count, 0);
 
   desc = loom_type_registry_lookup(nullptr, iree_make_cstring_view("encoding"));
   ASSERT_NE(desc, nullptr);

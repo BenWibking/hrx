@@ -217,12 +217,15 @@ test.func @identity(%input: i32) -> (i32) {
   test.yield %input : i32
 }
 
+test.func @generate_input(%input: i64) -> (i64) {
+  test.yield %input : i64
+}
+
 kernel.decl @update(%workload: index) launch(%storage: buffer, %tail: buffer)
 
 command.program.decl @program(%configuration: index) launch(%storage: buffer)
 
-pipeline.def @pipeline(%configuration: index) launch(%storage: buffer) {
-  pipeline.return
+pipeline.def @pipeline(%configuration: index) run(%storage: buffer) {
 }
 
 check.scenario public @configured configure[2](%configuration: index, %configuration_entropy: check.entropy) {
@@ -231,6 +234,7 @@ check.scenario public @configured configure[2](%configuration: index, %configura
   check.trial[4](%trial: index, %entropy: check.entropy) {
     %input_stream = check.entropy.fork %entropy name("input") : check.entropy
     %input_word = check.entropy.read %input_stream[%trial] : check.entropy -> i64
+    %generated = check.generate<@generate_input>(%input_word) : (i64) -> (i64)
     %input = check.literal value(7) : i32
     check.compare<@identity>(%input) : (i32) -> [actual(%actual: i32), expected(%expected: i32)] {
       check.expect.equal actual(%actual) expected(%expected) : i32
@@ -277,12 +281,24 @@ check.benchmark<@configured> @configured_throughput
   ASSERT_EQ(scenario.trial_count, 4u);
   const loom_testbench_trial_plan_t& comparison_trial = scenario.trials[0];
   EXPECT_EQ(comparison_trial.trial_count, 4u);
-  ASSERT_EQ(comparison_trial.value_source_count, 3u);
-  EXPECT_EQ(comparison_trial.value_sources[0].kind,
+  ASSERT_EQ(comparison_trial.recipe_step_count, 4u);
+  EXPECT_EQ(comparison_trial.recipe_steps[0].kind,
+            LOOM_TESTBENCH_TRIAL_RECIPE_STEP_VALUE_SOURCE);
+  EXPECT_EQ(comparison_trial.recipe_steps[0].value_source.kind,
             LOOM_TESTBENCH_VALUE_SOURCE_ENTROPY_FORK);
-  EXPECT_EQ(comparison_trial.value_sources[1].kind,
+  EXPECT_EQ(comparison_trial.recipe_steps[1].kind,
+            LOOM_TESTBENCH_TRIAL_RECIPE_STEP_VALUE_SOURCE);
+  EXPECT_EQ(comparison_trial.recipe_steps[1].value_source.kind,
             LOOM_TESTBENCH_VALUE_SOURCE_ENTROPY_READ);
-  EXPECT_EQ(comparison_trial.value_sources[2].kind,
+  EXPECT_EQ(comparison_trial.recipe_steps[2].kind,
+            LOOM_TESTBENCH_TRIAL_RECIPE_STEP_GENERATOR);
+  EXPECT_EQ(comparison_trial.recipe_steps[2].generator.kind,
+            LOOM_TESTBENCH_INVOCATION_FUNCTION_CALL);
+  EXPECT_EQ(comparison_trial.recipe_steps[2].generator.input_count, 1u);
+  EXPECT_EQ(comparison_trial.recipe_steps[2].generator.result_count, 1u);
+  EXPECT_EQ(comparison_trial.recipe_steps[3].kind,
+            LOOM_TESTBENCH_TRIAL_RECIPE_STEP_VALUE_SOURCE);
+  EXPECT_EQ(comparison_trial.recipe_steps[3].value_source.kind,
             LOOM_TESTBENCH_VALUE_SOURCE_LITERAL);
   EXPECT_EQ(comparison_trial.action.kind,
             LOOM_TESTBENCH_SCENARIO_ACTION_COMPARE);
@@ -302,10 +318,14 @@ check.benchmark<@configured> @configured_throughput
 
   const loom_testbench_trial_plan_t& invoke_trial = scenario.trials[1];
   EXPECT_EQ(invoke_trial.trial_count, 2u);
-  ASSERT_EQ(invoke_trial.value_source_count, 2u);
-  EXPECT_EQ(invoke_trial.value_sources[0].kind,
+  ASSERT_EQ(invoke_trial.recipe_step_count, 2u);
+  EXPECT_EQ(invoke_trial.recipe_steps[0].kind,
+            LOOM_TESTBENCH_TRIAL_RECIPE_STEP_VALUE_SOURCE);
+  EXPECT_EQ(invoke_trial.recipe_steps[0].value_source.kind,
             LOOM_TESTBENCH_VALUE_SOURCE_FILL);
-  EXPECT_EQ(invoke_trial.value_sources[1].kind,
+  EXPECT_EQ(invoke_trial.recipe_steps[1].kind,
+            LOOM_TESTBENCH_TRIAL_RECIPE_STEP_VALUE_SOURCE);
+  EXPECT_EQ(invoke_trial.recipe_steps[1].value_source.kind,
             LOOM_TESTBENCH_VALUE_SOURCE_TENSOR_VIEW);
   EXPECT_EQ(invoke_trial.action.kind, LOOM_TESTBENCH_SCENARIO_ACTION_INVOKE);
   EXPECT_EQ(invoke_trial.action.target.kind,

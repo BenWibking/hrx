@@ -285,6 +285,12 @@ static bool loom_low_lower_rule_source_memory_address_matches(
     const loom_low_lower_source_memory_diagnostics_t* diagnostics,
     const loom_low_source_memory_access_plan_t* access,
     uint16_t* out_diagnostic_index) {
+  if (!loom_low_lower_rule_source_memory_byte_offset_matches(source_memory,
+                                                             access)) {
+    return loom_low_lower_rule_source_memory_reject(
+        diagnostics, LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_BYTE_OFFSET_WIDTH,
+        out_diagnostic_index);
+  }
   if (!loom_low_lower_rule_emit_materializes_source_memory_address(rule_set,
                                                                    emit)) {
     return true;
@@ -452,10 +458,6 @@ loom_low_lower_rule_source_memory_rejection_reason(
   if (!loom_low_lower_rule_source_memory_address_layout_matches(source_memory,
                                                                 access)) {
     return LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_ADDRESS_LAYOUT;
-  }
-  if (!loom_low_lower_rule_source_memory_byte_offset_matches(source_memory,
-                                                             access)) {
-    return LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_BYTE_OFFSET_WIDTH;
   }
   return LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_COUNT;
 }

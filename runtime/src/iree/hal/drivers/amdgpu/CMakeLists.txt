@@ -214,6 +214,7 @@ iree_cc_library(
   DEPS
     iree::base
     iree::base::internal
+    iree::base::threading
     iree::hal
     iree::hal::drivers::amdgpu::util::loaded_code_object
   PUBLIC
@@ -802,6 +803,7 @@ iree_cc_test(
   NAME
     host_queue_atomic_test
   SRCS
+    "buffer_test.cc"
     "host_queue_atomic_test.cc"
     "host_queue_command_buffer_packet.h"
     "host_queue_command_buffer_test_util.h"
@@ -1341,6 +1343,7 @@ iree_cc_test(
   DEPS
     ::amdgpu
     ::headers
+    iree::async
     iree::base
     iree::hal
     iree::hal::cts::util::test_base

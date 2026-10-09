@@ -14,8 +14,10 @@
 #include "iree/base/api.h"
 #include "iree/base/internal/atomics.h"
 #include "loom/codegen/low/verify.h"
+#include "loom/format/text/printer.h"
 #include "loom/ir/function_version.h"
 #include "loom/target/function_version_projection.h"
+#include "loom/util/stream.h"
 #include "loomc/iree.h"
 #include "result.h"
 #include "source.h"
@@ -703,17 +705,28 @@ void loomc_module_invalidate_compilation(loomc_module_t* module) {
       &module->compilation.arena, &module->compilation.function_versions);
 }
 
-static iree_status_t loomc_module_record_config_binding(
-    void* user_data, const loom_tooling_config_binding_t* binding) {
+static iree_status_t loomc_module_record_config_value(
+    void* user_data, const loom_config_applied_value_t* applied_value) {
   loomc_module_t* module = (loomc_module_t*)user_data;
-  return loomc_config_binding_list_append(&module->compilation.config_bindings,
-                                          binding, &module->compilation.arena);
+  iree_string_builder_t builder;
+  iree_string_builder_initialize(applied_value->module->allocator, &builder);
+  loom_output_stream_t stream;
+  loom_output_stream_for_builder(&builder, &stream);
+  iree_status_t status = loom_text_print_attribute(
+      &applied_value->value, applied_value->module, &stream);
+  if (iree_status_is_ok(status)) {
+    status = loomc_config_binding_list_append(
+        &module->compilation.config_bindings, applied_value->key,
+        iree_string_builder_view(&builder), &module->compilation.arena);
+  }
+  iree_string_builder_deinitialize(&builder);
+  return status;
 }
 
-loom_tooling_config_binding_sink_t loomc_module_config_binding_sink(
+loom_config_applied_value_sink_t loomc_module_config_applied_value_sink(
     loomc_module_t* module) {
-  return (loom_tooling_config_binding_sink_t){
-      .fn = loomc_module_record_config_binding,
+  return (loom_config_applied_value_sink_t){
+      .fn = loomc_module_record_config_value,
       .user_data = module,
   };
 }
@@ -791,7 +804,7 @@ loomc_status_t loomc_module_clone(const loomc_module_t* source_module,
            source_module->compilation.config_bindings.head;
        binding != NULL && loomc_status_is_ok(status); binding = binding->next) {
     status = loomc_status_from_iree(loomc_config_binding_list_append(
-        &module->compilation.config_bindings, &binding->binding,
+        &module->compilation.config_bindings, binding->key, binding->value,
         &module->compilation.arena));
   }
   if (loomc_status_is_ok(status)) {

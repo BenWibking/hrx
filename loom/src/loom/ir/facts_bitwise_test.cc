@@ -248,6 +248,30 @@ TEST(AndiTransfer, NegativeMaskPreservesNonnegativeBound) {
   EXPECT_EQ(output.known_divisor, 8);
 }
 
+TEST(AndiTransfer, LowMasksEliminateAlignedValues) {
+  for (int shift = 1; shift < 63; ++shift) {
+    const int64_t alignment = INT64_C(1) << shift;
+    loom_value_facts_t aligned =
+        loom_value_facts_make(INT64_MIN, INT64_MAX, alignment);
+    loom_value_facts_mark_lane_varying(&aligned);
+    const loom_value_facts_t mask = loom_value_facts_exact_i64(alignment - 1);
+    loom_value_facts_t result;
+    loom_value_facts_andi(&aligned, &mask, &result);
+    EXPECT_TRUE(loom_value_facts_is_zero(result));
+    EXPECT_TRUE(loom_value_facts_is_cluster_uniform(result));
+    loom_value_facts_andi(&mask, &aligned, &result);
+    EXPECT_TRUE(loom_value_facts_is_zero(result));
+
+    // Including the first possible bit permits a nonzero result.
+    const loom_value_facts_t inclusive_mask =
+        loom_value_facts_exact_i64(alignment);
+    loom_value_facts_andi(&aligned, &inclusive_mask, &result);
+    EXPECT_EQ(result.range_lo, 0);
+    EXPECT_EQ(result.range_hi, alignment);
+    EXPECT_FALSE(loom_value_facts_is_exact(result));
+  }
+}
+
 TEST(AndiTransfer, BoundedConcreteValuesSatisfyResultFacts) {
   std::vector<loom_value_facts_t> inputs;
   for (int64_t value = -16; value <= 16; ++value) {
@@ -492,7 +516,8 @@ TEST(BitwiseTransfer, RetainsDistributionAndLaneMaskIdentity) {
     loom_value_facts_t left = loom_value_facts_make(0, 255, 1);
     loom_value_facts_mark_workgroup_uniform(&left);
     loom_value_facts_mark_subgroup_lane_mask(&left);
-    loom_value_facts_t right = loom_value_facts_make(0, 256, 256);
+    // Overlapping possible bits keep each operation dependent on both inputs.
+    loom_value_facts_t right = loom_value_facts_make(0, 256, 128);
     loom_value_facts_mark_subgroup_uniform(&right);
     loom_value_facts_mark_subgroup_lane_mask(&right);
     loom_value_facts_t result;

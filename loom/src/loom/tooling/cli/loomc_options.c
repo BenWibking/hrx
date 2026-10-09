@@ -19,27 +19,27 @@ IREE_STATIC_ASSERT_ENUM_EQ(LOOM_SANITIZER_REPORTING_MODE_REPORT_ONLY,
                            "report-only sanitizer reporting modes must match");
 
 iree_status_t loom_tooling_cli_make_loomc_config_options(
-    const loom_tooling_config_set_t* config_set, iree_allocator_t allocator,
+    const loom_config_text_binding_set_t* text_set, iree_allocator_t allocator,
     loomc_config_binding_t** out_bindings,
     loomc_config_options_t* out_options) {
   *out_bindings = NULL;
   *out_options = (loomc_config_options_t){
       .flags = LOOMC_CONFIG_POLICY_FLAG_REQUIRE_RESOLVED,
   };
-  if (config_set->binding_count == 0) {
+  if (text_set->binding_count == 0) {
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(iree_allocator_malloc_array(
-      allocator, config_set->binding_count, sizeof(**out_bindings),
+      allocator, text_set->binding_count, sizeof(**out_bindings),
       (void**)out_bindings));
-  for (iree_host_size_t i = 0; i < config_set->binding_count; ++i) {
+  for (iree_host_size_t i = 0; i < text_set->binding_count; ++i) {
     (*out_bindings)[i] = (loomc_config_binding_t){
-        .key = loomc_string_view_from_iree(config_set->bindings[i].key),
-        .value = loomc_string_view_from_iree(config_set->bindings[i].value),
+        .key = loomc_string_view_from_iree(text_set->bindings[i].key),
+        .value = loomc_string_view_from_iree(text_set->bindings[i].value),
     };
   }
   out_options->bindings = *out_bindings;
-  out_options->binding_count = config_set->binding_count;
+  out_options->binding_count = text_set->binding_count;
   return iree_ok_status();
 }
 

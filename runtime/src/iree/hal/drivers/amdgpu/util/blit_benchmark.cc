@@ -218,7 +218,7 @@ class BlitBenchmark : public benchmark::Fixture {
     IREE_RETURN_IF_ERROR(iree_hal_queue_copy(
         queue_, iree_hal_semaphore_list_empty(), signal_semaphore_list,
         source_buffer_, source_offset_, target_buffer_, target_offset_, length_,
-        IREE_HAL_COPY_FLAG_NONE));
+        /*barriers=*/NULL, IREE_HAL_COPY_FLAG_NONE));
     return WaitForCompletion(payload_value);
   }
 
@@ -251,7 +251,7 @@ class BlitBenchmark : public benchmark::Fixture {
       IREE_RETURN_IF_ERROR(iree_hal_queue_copy(
           queue_, wait_semaphore_list, signal_semaphore_list, source_buffer_,
           source_offset_, target_buffer_, target_offset_, length_,
-          IREE_HAL_COPY_FLAG_NONE));
+          /*barriers=*/NULL, IREE_HAL_COPY_FLAG_NONE));
       payload_value = signal_payload_value;
     }
     completion_payload_value_ = payload_value;
@@ -273,7 +273,7 @@ class BlitBenchmark : public benchmark::Fixture {
     IREE_RETURN_IF_ERROR(iree_hal_queue_fill(
         queue_, iree_hal_semaphore_list_empty(), signal_semaphore_list,
         target_buffer, target_offset, length, pattern, pattern_length,
-        IREE_HAL_FILL_FLAG_NONE));
+        /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
     return WaitForCompletion(payload_value);
   }
 
@@ -311,7 +311,7 @@ class BlitBenchmark : public benchmark::Fixture {
       IREE_RETURN_IF_ERROR(iree_hal_queue_fill(
           queue_, wait_semaphore_list, signal_semaphore_list, target_buffer_,
           target_offset_, length_, &fill_pattern_, pattern_length_,
-          IREE_HAL_FILL_FLAG_NONE));
+          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
       payload_value = signal_payload_value;
     }
     completion_payload_value_ = payload_value;
@@ -330,7 +330,7 @@ class BlitBenchmark : public benchmark::Fixture {
     IREE_RETURN_IF_ERROR(iree_hal_queue_update(
         queue_, iree_hal_semaphore_list_empty(), signal_semaphore_list,
         update_source_.data(), (iree_host_size_t)source_offset_, target_buffer_,
-        target_offset_, length_, IREE_HAL_UPDATE_FLAG_NONE));
+        target_offset_, length_, /*barriers=*/NULL, IREE_HAL_UPDATE_FLAG_NONE));
     return WaitForCompletion(payload_value);
   }
 
@@ -363,7 +363,8 @@ class BlitBenchmark : public benchmark::Fixture {
       IREE_RETURN_IF_ERROR(iree_hal_queue_update(
           queue_, wait_semaphore_list, signal_semaphore_list,
           update_source_.data(), (iree_host_size_t)source_offset_,
-          target_buffer_, target_offset_, length_, IREE_HAL_UPDATE_FLAG_NONE));
+          target_buffer_, target_offset_, length_, /*barriers=*/NULL,
+          IREE_HAL_UPDATE_FLAG_NONE));
       payload_value = signal_payload_value;
     }
     completion_payload_value_ = payload_value;

@@ -85,7 +85,7 @@ loom_aie2p_array_channel_resources_propose_compute(
   }
 
   uint8_t* next_channel =
-      request->direction == LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
+      request->direction == LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
           ? &probe.next_memory_to_stream_channel
           : &probe.next_stream_to_memory_channel;
   if (iree_any_bit_set(
@@ -135,11 +135,11 @@ loom_aie2p_array_channel_resources_propose_compute(
 loom_aie2p_array_channel_resource_failure_t
 loom_aie2p_array_channel_resources_propose_shim(
     const loom_aie2p_array_tile_resources_t* resources,
-    loom_xdna_tile_coordinate_t coordinate,
-    loom_aie2p_array_dma_direction_t direction, uint16_t descriptor_count,
+    loom_xdna_tile_coordinate_t coordinate, loom_xdna_dma_direction_t direction,
+    uint16_t descriptor_count,
     loom_aie2p_array_shim_endpoint_proposal_t* out_proposal) {
   const uint8_t next_channel =
-      direction == LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
+      direction == LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
           ? resources->next_memory_to_stream_channel
           : resources->next_stream_to_memory_channel;
   if (next_channel >= resources->facts->dma.channel_count_per_direction) {
@@ -173,7 +173,7 @@ void loom_aie2p_array_channel_resources_commit_compute(
     const loom_aie2p_array_compute_endpoint_proposal_t* proposal,
     loom_aie2p_array_tile_resources_t* resources) {
   uint8_t* next_channel =
-      proposal->direction == LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
+      proposal->direction == LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
           ? &resources->next_memory_to_stream_channel
           : &resources->next_stream_to_memory_channel;
   *next_channel = proposal->dma_channel + 1u;
@@ -191,7 +191,7 @@ void loom_aie2p_array_channel_resources_commit_shim(
     const loom_aie2p_array_shim_endpoint_proposal_t* proposal,
     loom_aie2p_array_tile_resources_t* resources) {
   uint8_t* next_channel =
-      proposal->direction == LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
+      proposal->direction == LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
           ? &resources->next_memory_to_stream_channel
           : &resources->next_stream_to_memory_channel;
   *next_channel = proposal->dma_channel + 1u;

@@ -132,7 +132,8 @@ iree_status_t loom_buffer_alloca_facts(loom_fact_context_t* context,
     origin.kind = LOOM_VALUE_FACT_REFERENCE_ORIGIN_ALLOCATION;
   }
   loom_value_fact_buffer_reference_t reference = {
-      .maximum_byte_extent = loom_buffer_clamp_nonnegative(operand_facts[0]),
+      .maximum_byte_extent =
+          loom_buffer_clamp_nonnegative(operand_facts[op->operand_count - 1]),
       .minimum_alignment = base_alignment > 0 ? (uint64_t)base_alignment : 1,
       .memory_space = loom_buffer_alloca_memory_space(op),
       .root_value_id = loom_buffer_alloca_result(op),

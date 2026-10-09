@@ -265,7 +265,7 @@ static iree_status_t loom_type_propagator_register_value(
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(loom_local_value_domain_register_value(
-      &propagator->value_domain, propagator->arena, value_id, out_ordinal));
+      &propagator->value_domain, value_id, out_ordinal));
   return loom_type_propagator_ensure_ordinal_capacity(
       propagator, (iree_host_size_t)*out_ordinal + 1);
 }
@@ -435,8 +435,7 @@ loom_type_propagator_statistics_t loom_type_propagator_statistics(
 }
 
 static bool loom_type_propagator_type_has_refinement_surface(loom_type_t type) {
-  if ((loom_type_is_shaped(type) || loom_type_is_pool(type)) &&
-      !loom_type_is_all_static(type)) {
+  if (loom_type_has_dimensions(type) && !loom_type_is_all_static(type)) {
     return true;
   }
   if (loom_type_has_ssa_encoding(type)) {
@@ -711,6 +710,10 @@ loom_type_t loom_type_transfer_value_type(
     return loom_type_none();
   }
   return loom_type_propagator_value_type(context->propagator, value_id);
+}
+
+void loom_type_transfer_reject(loom_type_transfer_context_t* context) {
+  context->propagator->conflict = true;
 }
 
 iree_status_t loom_type_transfer_seed_candidate(

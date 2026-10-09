@@ -240,12 +240,12 @@ TEST_P(HeterogeneousSlabPoolTest, BothQueuesPublishSharedNativeStorage) {
       iree_hal_semaphore_list_t last_submitted = allocated;
       iree_status_t status =
           iree_hal_queue_upload(queues_[0], allocated, uploaded, input.data(),
-                                buffer, 0, sizeof(input));
+                                buffer, 0, sizeof(input), /*barriers=*/NULL);
       if (iree_status_is_ok(status)) {
         last_submitted = uploaded;
-        status =
-            iree_hal_queue_transfer(queues_[1], uploaded, transferred,
-                                    IREE_ARRAYSIZE(operations), operations);
+        status = iree_hal_queue_transfer(queues_[1], uploaded, transferred,
+                                         IREE_ARRAYSIZE(operations), operations,
+                                         /*barriers=*/NULL);
         if (iree_status_is_ok(status)) {
           last_submitted = transferred;
         }
@@ -271,20 +271,21 @@ TEST_P(HeterogeneousSlabPoolTest, BothQueuesPublishSharedNativeStorage) {
           iree_hal_executable_function_from_index(0),
           iree_hal_make_static_dispatch_config(1, 1, 1),
           iree_make_const_byte_span(constants, sizeof(constants)),
-          {IREE_ARRAYSIZE(refs), refs}, IREE_HAL_DISPATCH_FLAG_NONE));
+          {IREE_ARRAYSIZE(refs), refs}, /*barriers=*/NULL,
+          IREE_HAL_DISPATCH_FLAG_NONE));
       // Native atomic validation reads the producer's trailing capability
       // cells, which must survive a Task-owned transient just like addresses.
       iree_hal_atomic_store_params_t store = {};
       store.width = IREE_HAL_ATOMIC_WIDTH_32;
       store.value = 0x1234ABCD;
       SemaphoreList stored(devices_[1], {0}, {1});
-      IREE_ASSERT_OK(iree_hal_queue_atomic_store(queues_[1], executed, stored,
-                                                 buffer, 84, store));
+      IREE_ASSERT_OK(iree_hal_queue_atomic_store(
+          queues_[1], executed, stored, buffer, 84, store, /*barriers=*/NULL));
       std::array<uint32_t, 24> output = {};
       SemaphoreList downloaded(devices_[0], {0}, {1});
-      IREE_ASSERT_OK(iree_hal_queue_download(queues_[0], stored, downloaded,
-                                             buffer, 0, output.data(),
-                                             sizeof(output)));
+      IREE_ASSERT_OK(iree_hal_queue_download(
+          queues_[0], stored, downloaded, buffer, 0, output.data(),
+          sizeof(output), /*barriers=*/NULL));
       IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
           downloaded, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
       auto expected = input;
@@ -445,12 +446,13 @@ TEST_P(HeterogeneousSlabPoolTest, RejectedMixedDeallocaPreservesAllEpochs) {
       SemaphoreList filled(devices_[1], {0}, {1});
       IREE_ASSERT_OK(iree_hal_queue_fill(
           queues_[1], iree_hal_semaphore_list_empty(), filled, buffers[i], 0,
-          256, &pattern, sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+          256, &pattern, sizeof(pattern), /*barriers=*/NULL,
+          IREE_HAL_FILL_FLAG_NONE));
       std::array<uint32_t, 64> output = {};
       SemaphoreList downloaded(devices_[0], {0}, {1});
-      IREE_ASSERT_OK(iree_hal_queue_download(queues_[0], filled, downloaded,
-                                             buffers[i], 0, output.data(),
-                                             sizeof(output)));
+      IREE_ASSERT_OK(iree_hal_queue_download(
+          queues_[0], filled, downloaded, buffers[i], 0, output.data(),
+          sizeof(output), /*barriers=*/NULL));
       IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
           downloaded, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
       for (auto value : output) {
@@ -688,7 +690,7 @@ TEST_P(HeterogeneousSlabPoolTest, DispatchRequiresItsOwnFamilyGrants) {
               iree_hal_semaphore_list_empty(), executable_,
               iree_hal_executable_function_from_index(0), config,
               iree_make_const_byte_span(constants, sizeof(constants)),
-              {IREE_ARRAYSIZE(refs), refs}, flags));
+              {IREE_ARRAYSIZE(refs), refs}, /*barriers=*/NULL, flags));
     }
   }
 }

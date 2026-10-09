@@ -20,9 +20,7 @@ test.target<low_core> @test_target
 low.func.def target<test.low.core>(@test_target) @compacts_cyclic_equal_arguments_to_external(%again: reg<test.i32>, %seed: reg<test.i32>) -> (reg<test.i32>) asm {
   low.br ^loop
 ^loop:
-  low.cond_br %again, ^body, ^exit : reg<test.i32>
-^body:
-  low.br ^loop
+  low.cond_br %again, ^loop, ^exit : reg<test.i32>
 ^exit:
   %sum = test.add.i32 %seed, %seed
   return %sum

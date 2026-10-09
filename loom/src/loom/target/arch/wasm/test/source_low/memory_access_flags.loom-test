@@ -1,5 +1,5 @@
 // TEMPLATE: loom/src/loom/test/corpus/source_low/memory_access_flags.loom-test
-// RUN: with-checks emit source-low target=wasm:simd128 output=low
+// RUN: emit source-low target=wasm:simd128 output=low
 
 func.def @observe_unused(%input: buffer) {
   %base = index.constant 0 : offset
@@ -11,10 +11,11 @@ func.def @observe_unused(%input: buffer) {
 }
 
 // ----
-CHECK: %first = i32.load<volatile> %source
-CHECK: %second = i32.load<volatile> %source {offset = 4}
-CHECK: return
-CHECK-NOT: * = i32.load %*
+low.func.def target<wasm.core.simd128> abi(wasm_function) @observe_unused(%aligned: reg<wasm.i32>) asm {
+  %first = i32.load<volatile> %aligned
+  %second = i32.load<volatile> %aligned {offset = 4}
+  return
+}
 
 // ====
 
@@ -32,16 +33,25 @@ func.def @observe_vector(%input: buffer, %output: buffer) {
 }
 
 // ----
-CHECK: %109 = i32.load<volatile> %source
-CHECK: %124 = i32.load<volatile> %source {offset = 60}
-CHECK: %125 = i32.load<volatile> %source
-CHECK: %140 = i32.load<volatile> %source {offset = 60}
-CHECK: i32.store<volatile> %destination, %109
-CHECK: i32.store<volatile> %destination, %124 {offset = 60}
-CHECK: i32.store<volatile> %destination, %125 {offset = 64}
-CHECK: i32.store<volatile> %destination, %140 {offset = 124}
-CHECK-NOT: * = i32.load %*
-CHECK-NOT: i32.store %*
+low.func.def target<wasm.core.simd128> abi(wasm_function) @observe_vector(%source_aligned: reg<wasm.i32>, %destination_aligned: reg<wasm.i32>) asm {
+  %21 = v128.load<volatile> %source_aligned
+  %22 = v128.load<volatile> %source_aligned {offset = 16}
+  %23 = v128.load<volatile> %source_aligned {offset = 32}
+  %24 = v128.load<volatile> %source_aligned {offset = 48}
+  %25 = v128.load<volatile> %source_aligned
+  %26 = v128.load<volatile> %source_aligned {offset = 16}
+  %27 = v128.load<volatile> %source_aligned {offset = 32}
+  %28 = v128.load<volatile> %source_aligned {offset = 48}
+  v128.store<volatile> %destination_aligned, %21
+  v128.store<volatile> %destination_aligned, %22 {offset = 16}
+  v128.store<volatile> %destination_aligned, %23 {offset = 32}
+  v128.store<volatile> %destination_aligned, %24 {offset = 48}
+  v128.store<volatile> %destination_aligned, %25 {offset = 64}
+  v128.store<volatile> %destination_aligned, %26 {offset = 80}
+  v128.store<volatile> %destination_aligned, %27 {offset = 96}
+  v128.store<volatile> %destination_aligned, %28 {offset = 112}
+  return
+}
 
 // ====
 
@@ -57,12 +67,13 @@ func.def @observe_byte(%input: buffer, %output: buffer) {
 }
 
 // ----
-CHECK: %first = i32.load8_u<volatile> %source
-CHECK: %second = i32.load8_u<volatile> %source
-CHECK: i32.store8<volatile> %destination, %first
-CHECK: i32.store8<volatile> %destination, %second {offset = 1}
-CHECK-NOT: * = i32.load8_u %*
-CHECK-NOT: i32.store8 %*
+low.func.def target<wasm.core.simd128> abi(wasm_function) @observe_byte(%input: reg<wasm.i32>, %output: reg<wasm.i32>) asm {
+  %first = i32.load8_u<volatile> %input
+  %second = i32.load8_u<volatile> %input
+  i32.store8<volatile> %output, %first
+  i32.store8<volatile> %output, %second {offset = 1}
+  return
+}
 
 // ====
 
@@ -76,8 +87,9 @@ func.def @observe_dynamic_address(%input: buffer, %byte_offset: offset) -> (i32,
 }
 
 // ----
-CHECK: %13 = i32.add %source, %base
-CHECK: %first = i32.load<volatile> %13
-CHECK: %second = i32.load<volatile> %13 {offset = 4}
-CHECK: return %first, %second
-CHECK-NOT: * = i32.load %*
+low.func.def target<wasm.core.simd128> abi(wasm_function) @observe_dynamic_address(%aligned: reg<wasm.i32>, %base: reg<wasm.i32>) -> (reg<wasm.i32>, reg<wasm.i32>) asm {
+  %13 = i32.add %aligned, %base
+  %first = i32.load<volatile> %13
+  %second = i32.load<volatile> %13 {offset = 4}
+  return %first, %second
+}

@@ -37,11 +37,11 @@ cases added to the corpus. Excluding every case is an error; an entirely
 excluded corpus has no fixture. A target's dedicated rejection tests cover its
 architectural boundary.
 
-A case containing several functions has one public entry and private helpers.
-The entry identifies the case and receives the requested compiler profile;
-call-graph specialization supplies helper targets in compiler-owned function
-versions. Helpers remain part of the shared input, including when a target
-preserves their call boundaries. Compiler options preserve source visibility.
+A case containing several functions has one public function or kernel entry and
+private helpers. The entry identifies the case and receives the requested
+compiler profile; call-graph specialization supplies helper targets in
+compiler-owned function versions. Helpers remain part of the shared input,
+including when a target preserves their call boundaries. Compiler options preserve source visibility.
 
 Shared analysis and report semantics have focused tests beside the owning
 analysis or pass. The shared source-to-low tests use the backend-independent

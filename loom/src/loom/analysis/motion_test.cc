@@ -171,10 +171,9 @@ TEST_F(MotionTest, LocalClassificationSeparatesEraseRelocateAndSpeculate) {
                                           index_type, LOOM_LOCATION_UNKNOWN,
                                           &size_op));
   loom_op_t* alloc_op = nullptr;
-  IREE_ASSERT_OK(
-      loom_test_alloc_build(&builder_, loom_test_constant_result(size_op),
-                            loom_type_pool(loom_dim_pack_static(4096)),
-                            LOOM_LOCATION_UNKNOWN, &alloc_op));
+  IREE_ASSERT_OK(loom_test_alloc_build(
+      &builder_, loom_test_constant_result(size_op), loom_type_pool(),
+      LOOM_LOCATION_UNKNOWN, &alloc_op));
 
   loom_op_t* source_op = nullptr;
   IREE_ASSERT_OK(loom_test_constant_build(&builder_, loom_attr_i64(1),

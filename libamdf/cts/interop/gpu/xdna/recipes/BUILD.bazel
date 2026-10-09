@@ -51,14 +51,6 @@ amdf_cc_library(
 )
 
 amdf_cc_library(
-    name = "resident_transaction",
-    testonly = True,
-    srcs = ["resident_transaction.cc"],
-    hdrs = ["resident_transaction.h"],
-    deps = ["//third_party:google_test"],
-)
-
-amdf_cc_library(
     name = "pm4_queue",
     testonly = True,
     srcs = ["pm4_queue.cc"],
@@ -93,7 +85,6 @@ amdf_cts_test_suite(
         ":device_fixture",
         ":pm4_queue",
         ":resident_memory",
-        ":resident_transaction",
         "//libamdf/cts/gpu:gpu_device_fixture",
         "//libamdf/cts/gpu/kernels:resident_channels",
         "//libamdf/cts/gpu/kernels:resident_channels_kernels",
@@ -119,6 +110,7 @@ amdf_cts_test_suite(
         "//libamdf/cts/xdna/programs:resident_terminal_relay",
         "//libamdf/cts/xdna/util:executable",
         "//libamdf/cts/xdna/util:execution",
+        "//libamdf/cts/xdna/util:resident_transaction",
         "//third_party:google_test",
     ],
 )

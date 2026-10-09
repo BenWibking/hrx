@@ -45,7 +45,7 @@ loom_cc_test(
     iree::testing::gtest_main
     loom::format::text::parser
     loom::ir
-    loom::ops::target
+    loom::target::test::target_record_table
     loom::testing::context
     loom::testing::module_ptr
 )

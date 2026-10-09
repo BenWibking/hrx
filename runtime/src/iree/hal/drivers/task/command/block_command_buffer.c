@@ -659,35 +659,26 @@ static iree_status_t iree_hal_block_command_buffer_end_debug_group(
 // Barriers and events
 //===----------------------------------------------------------------------===//
 
-static iree_status_t iree_hal_block_command_buffer_execution_barrier(
+static iree_status_t iree_hal_block_command_buffer_barrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers) {
-  const iree_hal_execution_barrier_flags_t supported_flags =
-      IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
-      IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
-  if (IREE_UNLIKELY(flags & ~supported_flags)) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "unsupported task execution barrier flags: 0x%016" PRIx64,
-        flags & ~supported_flags);
-  }
-
+    const iree_hal_barrier_t* barrier) {
   iree_hal_block_command_buffer_t* command_buffer =
       iree_hal_block_command_buffer_cast(base_command_buffer);
-  // Block ISA barriers are global: all prior work in the region must complete
-  // before the next region begins. Fine-grained memory/buffer barriers are
-  // not applicable. Region publication uses release/acquire synchronization in
-  // the coherent host memory domain and already provides system visibility.
+  const iree_hal_atomic_flags_t atomic_flags =
+      iree_hal_task_barrier_resolve_atomic_flags(barrier);
   IREE_RETURN_IF_ERROR(iree_hal_block_command_buffer_profile_reserve_operations(
       command_buffer, command_buffer->profile.operations.count + 1));
   IREE_RETURN_IF_ERROR(
       iree_hal_cmd_block_builder_barrier(&command_buffer->builder));
+  if (atomic_flags != IREE_HAL_ATOMIC_FLAG_NONE) {
+    // Isolate the fence in one region. The block processor's region dependency
+    // aggregates prior worker writes into the fence and publishes its result to
+    // every worker entering the following region.
+    IREE_RETURN_IF_ERROR(
+        iree_hal_cmd_build_fence(&command_buffer->builder, atomic_flags));
+    IREE_RETURN_IF_ERROR(
+        iree_hal_cmd_block_builder_barrier(&command_buffer->builder));
+  }
   iree_hal_block_command_buffer_profile_append_barrier(command_buffer);
   return iree_ok_status();
 }
@@ -1003,7 +994,7 @@ static const iree_hal_command_buffer_vtable_t
         .end = iree_hal_block_command_buffer_end,
         .begin_debug_group = iree_hal_block_command_buffer_begin_debug_group,
         .end_debug_group = iree_hal_block_command_buffer_end_debug_group,
-        .execution_barrier = iree_hal_block_command_buffer_execution_barrier,
+        .barrier = iree_hal_block_command_buffer_barrier,
         .atomic_wait = iree_hal_block_command_buffer_atomic_wait,
         .atomic_store = iree_hal_block_command_buffer_atomic_store,
         .atomic_rmw = iree_hal_block_command_buffer_atomic_rmw,

@@ -29,7 +29,6 @@
 #include "libamdf/cts/interop/gpu/xdna/recipes/device_fixture.h"
 #include "libamdf/cts/interop/gpu/xdna/recipes/pm4_queue.h"
 #include "libamdf/cts/interop/gpu/xdna/recipes/resident_memory.h"
-#include "libamdf/cts/interop/gpu/xdna/recipes/resident_transaction.h"
 #include "libamdf/cts/xdna/programs/resident_channels.h"
 #include "libamdf/cts/xdna/programs/resident_exchange.h"
 #include "libamdf/cts/xdna/programs/resident_npu_initiated.h"
@@ -37,6 +36,7 @@
 #include "libamdf/cts/xdna/programs/resident_terminal_relay.h"
 #include "libamdf/cts/xdna/util/executable.h"
 #include "libamdf/cts/xdna/util/execution.h"
+#include "libamdf/cts/xdna/util/resident_transaction.h"
 
 namespace {
 

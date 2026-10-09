@@ -250,3 +250,95 @@ func.def @after_failed_type(%input: f32) -> (f32) {
   test.use %later_missing : f32
   func.return %input : f32
 }
+
+// ====
+// RUN: verify
+
+// An operation rejected earlier cannot become a loop's captured operand.
+func.def @failed_capture(%begin: index, %end: index, %step: index, %input: index) {
+  // ERROR@+1: PARSE/013 "unknown"
+  %bounded = index.assume %input [unknown(%input, 4)] : index
+  // ERROR@+1: PARSE/001 "bounded"
+  %result = scf.for %position = [%begin to %end step %step](%current = %bounded : index) -> (index) {
+    scf.yield %current : index
+  }
+  // ERROR@+1: PARSE/001 "later_missing"
+  test.use %later_missing : index
+  func.return
+}
+
+// ====
+// RUN: verify
+
+// Grouped binding operands stop at a missing value before consuming types.
+func.def @grouped_capture(%begin: index, %end: index, %step: index, %input: index) {
+  // ERROR@+1: PARSE/001 "missing"
+  %left, %right = scf.for %position = [%begin to %end step %step](%first = %input, %second = %missing : index, index) -> (index, index) {
+    scf.yield %first, %second : index, index
+  }
+  // ERROR@+1: PARSE/001 "later_missing"
+  test.use %later_missing : index
+  func.return
+}
+
+// ====
+// RUN: verify
+
+// A failed binding type must not produce a second type-mismatch diagnostic.
+func.def @capture_type(%begin: index, %end: index, %step: index, %input: view<4xf32>) {
+  // ERROR@+1: PARSE/001 "missing_extent"
+  %result = scf.for %position = [%begin to %end step %step](%current = %input : view<[%missing_extent]xf32>) -> (view<4xf32>) {
+    scf.yield %current : view<4xf32>
+  }
+  // ERROR@+1: PARSE/001 "later_missing"
+  test.use %later_missing : index
+  func.return
+}
+
+// ====
+// RUN: verify
+
+// A mismatch in a grouped type list terminates the failed operation's parse.
+func.def @grouped_capture_types(%begin: index, %end: index, %step: index, %input: f32) {
+  // ERROR@+1: TYPE/001
+  %left, %right = scf.for %position = [%begin to %end step %step](%first = %input, %second = %input : index, index) -> (index, index) {
+    scf.yield %first, %second : index, index
+  }
+  // ERROR@+1: PARSE/001 "later_missing"
+  test.use %later_missing : index
+  func.return
+}
+
+// ====
+// RUN: verify
+
+// Bindings with independent block-argument types also require valid operands.
+func.def @while_capture(%input: index) {
+  // ERROR@+1: PARSE/001 "missing"
+  %result = scf.while(%current = %missing : index) -> (index) {
+    %stop = scalar.constant false : i1
+    scf.condition %stop, %current : i1, index
+  } do(%value: index) {
+    scf.yield %value : index
+  }
+  // ERROR@+1: PARSE/001 "later_missing"
+  test.use %later_missing : index
+  func.return
+}
+
+// ====
+// RUN: verify
+
+// Duplicate binding names cannot create a partially initialized type list.
+func.def @duplicate_capture(%input: index) {
+  // ERROR@+1: PARSE/002 "current"
+  %left, %right = scf.while(%current = %input, %current = %input : index, index) -> (index, index) {
+    %stop = scalar.constant false : i1
+    scf.condition %stop, %current, %current : i1, index, index
+  } do(%first: index, %second: index) {
+    scf.yield %first, %second : index, index
+  }
+  // ERROR@+1: PARSE/001 "later_missing"
+  test.use %later_missing : index
+  func.return
+}

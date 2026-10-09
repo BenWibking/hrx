@@ -215,6 +215,7 @@ iree_py_library(
   DEPS
     loom::py::loom::gen::ops::c_tables
     loom::py::loom::dialect::kernel::kernel
+    loom::py::loom::dialect::pipeline::pipeline
     loom::py::loom::dialect::target::target
 )
 
@@ -258,6 +259,16 @@ iree_py_library(
   DEPS
     loom::py::loom::gen::ops::c_tables
     loom::py::loom::dialect::pool::pool
+)
+
+iree_py_library(
+  NAME
+    c_tables_channel_generator
+  MAIN_MODULE
+    "loom.gen.ops.c_tables"
+  DEPS
+    loom::py::loom::gen::ops::c_tables
+    loom::py::loom::dialect::channel::channel
 )
 
 iree_py_library(

@@ -243,6 +243,8 @@ class LowerGuard:
     value_ref_index: int = 0
     other_value_ref_index: int = 0
     attr_index: int = 0
+    # Second source attribute selected by pairwise attribute guards.
+    other_attr_index: int = 0
     type_pattern_index: int = 0
     diagnostic_index: int = 0xFFFF
     attr_kind: str | None = None
@@ -256,6 +258,8 @@ class LowerGuard:
     maximum_i64: int = 0
     # Signed bias applied before the exact-power-of-two predicate.
     addend: int = 0
+    # Exact signed payload carried by a kind-specific guard.
+    literal_i64: int = 0
 
 
 @dataclass(frozen=True, slots=True)

@@ -29,13 +29,12 @@ void loom_op_refresh_operand_ownership(loom_module_t* module,
 
 // Removes a use record: |user_op| no longer uses |value_id| at
 // |operand_index|. Reads the operand's retained use index, swaps with the last
-// entry, and updates the moved operand's index in O(1). Returns
-// IREE_STATUS_NOT_FOUND if the index does not name the matching entry.
+// entry, and updates the moved operand's index in O(1). The operand must retain
+// the exact use entry established by construction or a previous operand edit.
 // No overflow-to-inline transition (arena cannot free the overflow
 // array; loom_module_compute_uses handles repack).
-iree_status_t loom_value_remove_use(loom_module_t* module,
-                                    loom_value_id_t value_id,
-                                    loom_op_t* user_op, uint16_t operand_index);
+void loom_value_remove_use(loom_module_t* module, loom_value_id_t value_id,
+                           loom_op_t* user_op, uint16_t operand_index);
 
 // Changes an operand on an existing op, maintaining use lists. Removes
 // the use from the old value, writes the new value ID, and adds a use

@@ -779,7 +779,8 @@ static iree_status_t loom_stage_loop_carried_fragments_rewrite(
 
   loom_op_t* buffer_op = NULL;
   IREE_RETURN_IF_ERROR(loom_buffer_alloca_build(
-      &context->rewriter->builder, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
+      &context->rewriter->builder, /*build_flags=*/0,
+      LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP, LOOM_VALUE_ID_INVALID,
       /*base_alignment=*/16, byte_count_value, loom_type_buffer(), op->location,
       &buffer_op));
   loom_value_id_t buffer_value = loom_buffer_alloca_result(buffer_op);

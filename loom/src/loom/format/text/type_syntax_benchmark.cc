@@ -63,7 +63,7 @@ static constexpr std::array<const char*, 5> kShapedTypeNames = {
     "tile<8x8xf32, %layout>",
     "tensor<1x64x64xf16, %layout>",
     "view<1024x512xf8E4M3, %layout>",
-    "pool<4096>",
+    "group<8>",
 };
 
 static constexpr std::array<const char*, 4> kNativeDenseShapedTypeNames = {

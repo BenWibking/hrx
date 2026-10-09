@@ -26,6 +26,7 @@ from loom.target.arch.x86.vector_families import (
     AVX2_SCALAR_FLOAT_BINARY_FAMILIES,
     AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS,
     AVX2_SCALAR_FLOAT_FMA_MNEMONICS,
+    AVX2_UNIFORM_SHIFT_FAMILIES,
     AVX2_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     FLOAT_EXTREMA_MNEMONICS,
@@ -386,6 +387,65 @@ def _vex_descriptor(
 
 
 _X86_AVX2_VECTOR_DESCRIPTORS = (
+    *(
+        _vex_descriptor(
+            Descriptor(
+                key=f"x86.avx2.{family.mnemonic}.{register_suffix}",
+                mnemonic=family.mnemonic,
+                semantic_tag=f"{family.semantic}.{family.element.name}x{family.element.lane_count(vector_bit_width)}",
+                operands=(
+                    _vector_result(vector_bit_width),
+                    _vector_operand(vector_bit_width, "source"),
+                ),
+                immediates=(
+                    Immediate(
+                        "shift", ImmediateKind.UNSIGNED, bit_width=8, unsigned_max=255
+                    ),
+                ),
+                asm_forms=_asm(
+                    mnemonic=f"{family.mnemonic}.{register_suffix}",
+                    results=("dst",),
+                    operands=("source",),
+                    immediates=("shift",),
+                ),
+                schedule_class=_VECTOR_INTEGER_SCHEDULE_CLASSES[vector_bit_width],
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            instruction,
+        )
+        for family, instruction in zip(
+            AVX2_UNIFORM_SHIFT_FAMILIES,
+            native.AVX2_UNIFORM_SHIFT_IMMEDIATE,
+            strict=True,
+        )
+        for vector_bit_width, register_suffix in _VECTOR_REGISTER_SUFFIXES.items()
+    ),
+    *(
+        _vex_descriptor(
+            Descriptor(
+                key=f"x86.avx2.{family.mnemonic}.count.{register_suffix}",
+                mnemonic=family.mnemonic,
+                semantic_tag=f"{family.semantic}.{family.element.name}x{family.element.lane_count(vector_bit_width)}",
+                operands=(
+                    _vector_result(vector_bit_width),
+                    _vector_operand(vector_bit_width, "source"),
+                    _xmm_operand("count"),
+                ),
+                asm_forms=_asm(
+                    mnemonic=f"{family.mnemonic}.count.{register_suffix}",
+                    results=("dst",),
+                    operands=("source", "count"),
+                ),
+                schedule_class=_VECTOR_INTEGER_SCHEDULE_CLASSES[vector_bit_width],
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            ),
+            instruction,
+        )
+        for family, instruction in zip(
+            AVX2_UNIFORM_SHIFT_FAMILIES, native.AVX2_UNIFORM_SHIFT_COUNT, strict=True
+        )
+        for vector_bit_width, register_suffix in _VECTOR_REGISTER_SUFFIXES.items()
+    ),
     _vex_descriptor(
         Descriptor(
             key="x86.avx2.vmovd.gpr32.xmm",
@@ -449,81 +509,6 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
             flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
         native.VMOVQ_FROM_GPR64,
-    ),
-    _vex_descriptor(
-        Descriptor(
-            key="x86.avx2.vpsllq.xmm",
-            mnemonic="vpsllq",
-            semantic_tag="integer.shl.i64x2",
-            operands=(_xmm_result(), _xmm_operand("source")),
-            immediates=(
-                Immediate(
-                    "shift", ImmediateKind.UNSIGNED, bit_width=8, unsigned_max=255
-                ),
-            ),
-            asm_forms=_asm(
-                mnemonic="vpsllq.xmm",
-                results=("dst",),
-                operands=("source",),
-                immediates=("shift",),
-            ),
-            schedule_class=_SCHEDULE_VECTOR_I32_XMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        native.VPSLLQ,
-    ),
-    _vex_descriptor(
-        Descriptor(
-            key="x86.avx2.vpsllq.ymm",
-            mnemonic="vpsllq",
-            semantic_tag="integer.shl.i64x4",
-            operands=(_vector_result(256), _vector_operand(256, "source")),
-            immediates=(
-                Immediate(
-                    "shift", ImmediateKind.UNSIGNED, bit_width=8, unsigned_max=255
-                ),
-            ),
-            asm_forms=_asm(
-                mnemonic="vpsllq.ymm",
-                results=("dst",),
-                operands=("source",),
-                immediates=("shift",),
-            ),
-            schedule_class=_SCHEDULE_VECTOR_I32_YMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        native.VPSLLQ,
-    ),
-    *(
-        _vex_descriptor(
-            Descriptor(
-                key=f"x86.avx2.vpsrlq.{register_suffix}",
-                mnemonic="vpsrlq",
-                semantic_tag=f"integer.shru.i64x{vector_bit_width // 64}",
-                operands=(
-                    _vector_result(vector_bit_width),
-                    _vector_operand(vector_bit_width, "source"),
-                ),
-                immediates=(
-                    Immediate(
-                        "shift",
-                        ImmediateKind.UNSIGNED,
-                        bit_width=8,
-                        unsigned_max=255,
-                    ),
-                ),
-                asm_forms=_asm(
-                    mnemonic=f"vpsrlq.{register_suffix}",
-                    results=("dst",),
-                    operands=("source",),
-                    immediates=("shift",),
-                ),
-                schedule_class=_VECTOR_INTEGER_SCHEDULE_CLASSES[vector_bit_width],
-                flags=(DescriptorFlag.DEAD_REMOVABLE,),
-            ),
-            native.VPSRLQ,
-        )
-        for vector_bit_width, register_suffix in _VECTOR_REGISTER_SUFFIXES.items()
     ),
     _vex_descriptor(
         Descriptor(

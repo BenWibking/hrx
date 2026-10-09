@@ -131,6 +131,8 @@ _SPLIT_256BIT_VECTOR_LOAD_SHAPES = (
 _I32_MIN = -(2**31)
 _I32_MAX = (2**31) - 1
 
+# Local addresses can come from arguments, storage, or callable results.
+# Their memory space constrains the access; the defining operation does not.
 _MUTABLE_MEMORY_ROOTS = (
     (
         SourceMemoryRootKind.ANY,

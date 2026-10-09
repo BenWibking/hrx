@@ -83,6 +83,51 @@ TEST_F(SymbolicExprTest, LocalDomainRegistersHighIdsCreatedAfterAcquisition) {
   loom_local_value_domain_release(&value_domain);
 }
 
+TEST_F(SymbolicExprTest, BorrowedDomainOutlivesTemporaryQueryStorage) {
+  const loom_value_id_t initial =
+      loom_index_constant_result(BuildIndexConstant(7));
+  loom_local_value_domain_t value_domain = {};
+  IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region(
+      module_, module_->body, &analysis_arena_, &value_domain));
+  std::vector<loom_value_id_t> values = {initial};
+  for (uint32_t round = 0; round < 2; ++round) {
+    SCOPED_TRACE(round);
+    if (round != 0) {
+      loom_local_value_domain_restore(&value_domain);
+    }
+    const auto initial_capacity = value_domain.value_capacity;
+    iree_arena_allocator_t query_arena;
+    iree_arena_initialize(&block_pool_, &query_arena);
+    loom_symbolic_expr_context_t query = {};
+    loom_symbolic_expr_context_initialize(module_, &value_domain, &fact_table_,
+                                          &query_arena, &query);
+    for (iree_host_size_t i = 0; i <= initial_capacity; ++i) {
+      const loom_value_id_t value =
+          loom_index_constant_result(BuildIndexConstant(42 + i));
+      values.push_back(value);
+      loom_symbolic_expr_t expression = {};
+      IREE_EXPECT_OK(loom_symbolic_expr_from_value(&query, value, &expression));
+      EXPECT_TRUE(loom_symbolic_expr_is_constant(&expression));
+      EXPECT_EQ(expression.constant, 42 + i);
+    }
+    EXPECT_GT(value_domain.value_capacity, initial_capacity);
+    iree_arena_deinitialize(&query_arena);
+    iree_arena_block_pool_trim(&block_pool_);
+
+    EXPECT_EQ(value_domain.definition_count, 1u);
+    EXPECT_EQ(value_domain.value_count, values.size());
+    for (loom_value_ordinal_t i = 0; i < values.size(); ++i) {
+      EXPECT_EQ(loom_local_value_domain_ordinal(&value_domain, values[i]), i);
+      EXPECT_EQ(value_domain.value_ids[i], values[i]);
+    }
+    loom_local_value_domain_release(&value_domain);
+    for (auto value : values) {
+      EXPECT_EQ(loom_value_u32_scratch_load(&module_->scratch.values, value),
+                LOOM_VALUE_ORDINAL_INVALID);
+    }
+  }
+}
+
 TEST_F(SymbolicExprTest, ExactIntegerFactsFoldToConstant) {
   loom_value_id_t value_id = DefineIndexValue();
   DefineFacts(value_id, loom_value_facts_exact_i64(42));

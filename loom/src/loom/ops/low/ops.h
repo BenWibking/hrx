@@ -394,6 +394,7 @@ iree_status_t loom_low_func_call_build(
     iree_host_size_t tied_result_count,
     loom_location_id_t location,
     loom_op_t** out_op);
+iree_status_t loom_low_func_call_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
 loom_trait_flags_t loom_low_func_call_effective_traits(
     const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_low_func_call_verify(
@@ -511,7 +512,7 @@ iree_status_t loom_low_concat_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
 
-// LOOM_OP_LOW_INVOKE: Source-typed call edge to an explicitly selected target-Low function. Source-to-Low lowering maps the source operands and results to the helper register signature, proves the helper argument predicates, and normalizes the edge to low.func.call. Authored inline policy has the same meaning as on low.func.call; targets without a Low call ABI may require the normalized edge to inline before emission.
+// LOOM_OP_LOW_INVOKE: Source-typed call edge to an explicitly selected target-Low function. Source-to-Low lowering maps the source operands and results to the helper register signature, proves the helper argument predicates, and normalizes the edge to low.func.call. Each source value maps to one register-typed value. Views require storage and layout information beyond that carrier and are not accepted as operands or results; use a source helper taking views or pass buffers and offsets explicitly. Authored inline policy has the same meaning as on low.func.call; targets without a Low call ABI may require the normalized edge to inline before emission.
 // %result = low.invoke @extern_add(%lhs, %rhs) : (i32, i32) -> (i32)
 LOOM_DEFINE_ISA(loom_low_invoke_isa, LOOM_OP_LOW_INVOKE)
 LOOM_DEFINE_VARIADIC_OPERANDS(loom_low_invoke_operands, 0)
@@ -538,13 +539,14 @@ iree_status_t loom_low_invoke_build(
     iree_host_size_t tied_result_count,
     loom_location_id_t location,
     loom_op_t** out_op);
+iree_status_t loom_low_invoke_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
 loom_trait_flags_t loom_low_invoke_effective_traits(
     const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_low_invoke_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
 
-// LOOM_OP_LOW_STORAGE_RESERVE: Reserve target-low function-local storage and preserve its segment footprint.
+// LOOM_OP_LOW_STORAGE_RESERVE: Reserve target-low function-local storage and preserve its segment footprint. The result borrows storage owned by the execution frame and requires no explicit release.
 // %slot = low.storage.reserve {byte_alignment = 4, byte_length = 16} : low.storage<private>
 LOOM_DEFINE_ISA(loom_low_storage_reserve_isa, LOOM_OP_LOW_STORAGE_RESERVE)
 LOOM_DEFINE_RESULT(loom_low_storage_reserve_storage, 0)

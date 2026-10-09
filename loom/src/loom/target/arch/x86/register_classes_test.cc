@@ -53,11 +53,11 @@ void ExpectOperandAddressMap(const loom_low_descriptor_set_t* descriptor_set,
                              iree_string_view_t field_name,
                              loom_low_operand_address_map_kind_t expected_kind,
                              uint32_t expected_addressable_unit_count) {
-  const uint16_t descriptor_ordinal =
+  const uint32_t descriptor_ordinal =
       loom_low_descriptor_set_lookup_descriptor(descriptor_set, descriptor_key);
   ASSERT_NE(descriptor_ordinal, LOOM_LOW_DESCRIPTOR_ORDINAL_NONE)
       << ToString(descriptor_key);
-  ASSERT_LT(descriptor_ordinal, descriptor_set->descriptor_count);
+  ASSERT_LT(descriptor_ordinal, descriptor_set->descriptor_ordinal_count);
   const loom_low_descriptor_t& descriptor =
       descriptor_set->descriptors[descriptor_ordinal];
   ASSERT_LE((uint64_t)descriptor.operand_start + descriptor.operand_count,
@@ -297,12 +297,24 @@ TEST(X86RegisterClassesTest, SparseCompositeViewUsesSharedStorageOrdinals) {
             descriptor_set->descriptor_ordinal_count);
   EXPECT_LE(descriptor_set->descriptor_ordinal_count,
             storage->descriptor_ordinal_count);
+  uint32_t selected_count = 0;
+  for (uint32_t ordinal = 0; ordinal < descriptor_set->descriptor_ordinal_count;
+       ++ordinal) {
+    if (loom_low_descriptor_set_has_descriptor(descriptor_set, ordinal)) {
+      ++selected_count;
+    }
+  }
+  EXPECT_EQ(selected_count, descriptor_set->descriptor_count);
   ASSERT_LT(hidden_ordinal, descriptor_set->descriptor_ordinal_count);
   EXPECT_LT(hidden_ordinal, overlay_ordinal);
   EXPECT_FALSE(
       loom_low_descriptor_set_has_descriptor(descriptor_set, hidden_ordinal));
   EXPECT_TRUE(
       loom_low_descriptor_set_has_descriptor(descriptor_set, overlay_ordinal));
+  ASSERT_GE(overlay_ordinal, descriptor_set->descriptor_count);
+  ExpectOperandAddressMap(
+      descriptor_set, IREE_SV("x86.avx_vnni_int8.vpdpbssd.ymm"), IREE_SV("dst"),
+      LOOM_LOW_OPERAND_ADDRESS_MAP_LOW_SUBSET, 16);
 
   ExpectDescriptorMissing(descriptor_set, IREE_SV("x86.avx512.vaddps.zmm"));
   const uint32_t hidden_asm_form_ordinal =

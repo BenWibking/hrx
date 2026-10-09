@@ -535,10 +535,14 @@ static iree_status_t loom_cmd_program_plan_build_lower_plan(
       plan->host_allocator, bindings, binding_count, out_parameters,
       &parameter_layout));
   loom_cmd_transient_layout_t transient_layout = {0};
+  bool transient_valid = false;
   IREE_RETURN_IF_ERROR(loom_cmd_transient_layout_build(
       plan_module, root_program, source_facts, schedule,
-      parameter_layout.rebindable_binding_count, scratch_arena,
-      &transient_layout));
+      parameter_layout.rebindable_binding_count, diagnostic_emitter,
+      scratch_arena, &transient_layout, &transient_valid));
+  if (!transient_valid) {
+    return iree_ok_status();
+  }
   *out_transient = transient_layout.requirement;
 
   iree_host_size_t buffer_range_count = 0;

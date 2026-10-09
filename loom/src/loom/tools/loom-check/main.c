@@ -13,9 +13,11 @@
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
 #include "iree/base/tooling/flags.h"
+#include "loom/config/text_binding.h"
 #include "loom/sanitizer/options.h"
 #include "loom/tooling/cli/help.h"
 #include "loom/tooling/cli/loomc_options.h"
+#include "loom/tooling/config/config.h"
 #include "loom/tooling/context/context.h"
 #include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/file.h"
@@ -290,8 +292,6 @@ int loom_check_main(
       "              low-allocation, low-allocation-json, low-packet-json,\n"
       "              low-compile-report @function,\n"
       "              target-low-registry-manifest, and source-low.\n"
-      "              pipeline-plan @pipeline max-instances=<count> checks\n"
-      "              concrete pipeline planning diagnostics without a target.\n"
       "              source-low emits target-lowering\n"
       "              artifacts or pipeline text and accepts\n"
       "              @function target=family:selector for specialization,\n"
@@ -372,6 +372,7 @@ int loom_check_main(
       "    Lines are relative to the case input. Annotations target the main\n"
       "    source; diagnostics from included files retain their own identity.\n"
       "    Expected CHECK patterns may use CHECK: or // CHECK: spelling.\n"
+      "    CHECK-COUNT-N: requires exactly N matching output lines.\n"
       "\n"
       "Examples:\n"
       "  # Round-trip: print output must match input exactly.\n"
@@ -419,8 +420,8 @@ int loom_check_main(
   iree_arena_block_pool_t block_pool;
   iree_arena_block_pool_initialize(32 * 1024, host_allocator, &block_pool);
 
-  loom_tooling_config_set_t config_set;
-  loom_tooling_config_set_initialize(host_allocator, &config_set);
+  loom_config_text_binding_set_t config_set;
+  loom_config_text_binding_set_initialize(host_allocator, &config_set);
   loomc_config_binding_t* config_bindings = NULL;
   loomc_config_options_t config_options = {0};
   loomc_sanitizer_options_t loomc_sanitizer = {0};
@@ -480,13 +481,13 @@ int loom_check_main(
   }
   for (iree_host_size_t i = 0;
        iree_status_is_ok(status) && i < config_files.count; ++i) {
-    status = loom_tooling_config_set_append_json_file(
+    status = loom_tooling_config_text_binding_set_append_json_file(
         &config_set, config_files.values[i], host_allocator);
   }
   for (iree_host_size_t i = 0; iree_status_is_ok(status) && i < configs.count;
        ++i) {
-    status = loom_tooling_config_set_append_assignment(&config_set,
-                                                       configs.values[i]);
+    status = loom_tooling_config_text_binding_set_append_assignment(
+        &config_set, configs.values[i]);
   }
   if (iree_status_is_ok(status) && compile_enabled) {
     status = loom_check_compile_session_select_target_profile(
@@ -560,7 +561,7 @@ int loom_check_main(
   loomc_target_profile_release(target_profile);
   loom_check_compile_session_deinitialize(&compile_session);
   iree_allocator_free(host_allocator, config_bindings);
-  loom_tooling_config_set_deinitialize(&config_set);
+  loom_config_text_binding_set_deinitialize(&config_set);
   iree_arena_block_pool_deinitialize(&block_pool);
 
   if (had_error || fail_count > 0) {

@@ -25,6 +25,9 @@ loom_cc_binary(
     loom::codegen::low::text_asm
     loom::codegen::low::verify
     loom::codegen::pass_environment
+    loom::config::application
+    loom::config::text
+    loom::config::text_binding
     loom::error::diagnostic
     loom::error::json_sink
     loom::error::source
@@ -37,6 +40,7 @@ loom_cc_binary(
     loom::pass::tooling
     loom::pass::trace
     loom::target::configured::provider_set
+    loom::target::function_version_projection
     loom::target::math_policy
     loom::target::pipeline
     loom::target::predicate

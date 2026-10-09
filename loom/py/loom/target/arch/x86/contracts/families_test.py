@@ -42,6 +42,7 @@ from loom.target.contracts import (
     GuardKind,
     Scalar,
     ValueAliasRule,
+    ValueRef,
     Vector,
 )
 
@@ -65,6 +66,87 @@ def _static_index_range(rule: DescriptorRule) -> tuple[int, int]:
     assert guard.minimum is not None
     assert guard.maximum is not None
     return guard.minimum, guard.maximum
+
+
+def test_uniform_shift_rules_cover_native_types_widths_and_count_forms() -> None:
+    operations = {vector.vector_shli, vector.vector_shrsi, vector.vector_shrui}
+    for fragment, widths in (
+        (X86_AVX2_CONTRACT_FRAGMENT, (128, 256)),
+        (X86_AVX512_CONTRACT_FRAGMENT, (512,)),
+    ):
+        rules = tuple(
+            case
+            for case in fragment.cases
+            if isinstance(case, DescriptorRule)
+            and case.source_op in operations
+            and any(guard.kind == GuardKind.VALUE_I64_RANGE for guard in case.guards)
+        )
+        actual = set()
+        for rule in rules:
+            count_range = next(
+                guard
+                for guard in rule.guards
+                if guard.kind == GuardKind.VALUE_I64_RANGE
+            )
+            immediate = any(
+                guard.kind == GuardKind.VALUE_EXACT_I64 for guard in rule.guards
+            )
+            actual.add(
+                (
+                    rule.source_op,
+                    _value_type_guard(rule, "result"),
+                    count_range.minimum,
+                    count_range.maximum,
+                    immediate,
+                )
+            )
+            if immediate:
+                assert rule.guards[0].kind == GuardKind.VALUE_EXACT_I64
+                assert len(rule.emit) == 1
+                assert rule.priority == 2
+            else:
+                origin = ValueRef.uniform_element_origin_operand("rhs")
+                origin_guard = next(
+                    guard for guard in rule.guards if guard.value_ref == origin
+                )
+                assert rule.guards[0] == origin_guard
+                assert origin_guard.type_pattern == Scalar(
+                    f"i{count_range.maximum + 1}"
+                )
+                first = rule.emit[0]
+                if count_range.maximum == 15:
+                    assert first.descriptor.key == "x86.scalar.movzx.u16.gpr32"
+                    assert first.operands == {"src": origin}
+                    assert len(rule.emit) == 3
+                else:
+                    assert first.descriptor.key == (
+                        "x86.avx2.vmovq.xmm.gpr64"
+                        if count_range.maximum == 63
+                        else "x86.avx2.vmovd.xmm.gpr32"
+                    )
+                    assert first.operands == {"input": origin}
+                    assert len(rule.emit) == 2
+        expected = {
+            (operation, Vector(f"i{bits}", lanes=width // bits), 0, bits - 1, immediate)
+            for operation in operations
+            for bits in (16, 32, 64)
+            for width in widths
+            for immediate in (
+                (False, True) if fragment is X86_AVX2_CONTRACT_FRAGMENT else (True,)
+            )
+            if not (
+                fragment is X86_AVX2_CONTRACT_FRAGMENT
+                and operation is vector.vector_shrsi
+                and bits == 64
+            )
+        }
+        if fragment is X86_AVX512_CONTRACT_FRAGMENT:
+            expected.update(
+                (vector.vector_shrsi, Vector("i64", lanes=width // 64), 0, 63, True)
+                for width in (128, 256)
+            )
+        assert actual == expected
+        assert len(rules) == len(expected)
 
 
 def test_avx2_scalar_float_arithmetic_covers_f32_and_f64() -> None:

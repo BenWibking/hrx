@@ -278,42 +278,12 @@ TEST(PrintType, EncodingType) {
             "encoding<transform>");
 }
 
-TEST(PrintType, PoolStaticBlockSize) {
-  loom_type_t type = loom_type_pool(loom_dim_pack_static(65536));
-  EXPECT_EQ(print_type(type), "pool<65536>");
-}
-
-TEST(PrintType, PoolStaticSmallBlockSize) {
-  loom_type_t type = loom_type_pool(loom_dim_pack_static(4096));
-  EXPECT_EQ(print_type(type), "pool<4096>");
-}
-
-TEST(PrintType, PoolDynamicBlockSize) {
-  // Dynamic dims without module context print as [%?].
-  loom_type_t type = loom_type_pool(loom_dim_pack_dynamic(42));
-  EXPECT_EQ(print_type(type), "pool<[%?]>");
-}
-
-TEST(PrintType, PoolTypeKindCheck) {
-  loom_type_t type = loom_type_pool(loom_dim_pack_static(4096));
+TEST(PrintType, Pool) {
+  const loom_type_t type = loom_type_pool();
+  EXPECT_EQ(print_type(type), "pool");
   EXPECT_TRUE(loom_type_is_pool(type));
-  EXPECT_FALSE(loom_type_is_tile(type));
-  EXPECT_FALSE(loom_type_is_tensor(type));
-  EXPECT_FALSE(loom_type_is_scalar(type));
-}
-
-TEST(PrintType, PoolDimAccessor) {
-  loom_type_t type = loom_type_pool(loom_dim_pack_static(65536));
-  EXPECT_EQ(loom_type_rank(type), 1);
-  EXPECT_FALSE(loom_type_dim_is_dynamic_at(type, 0));
-  EXPECT_EQ(loom_type_dim_static_size_at(type, 0), 65536);
-}
-
-TEST(PrintType, PoolDynamicDimAccessor) {
-  loom_type_t type = loom_type_pool(loom_dim_pack_dynamic(7));
-  EXPECT_EQ(loom_type_rank(type), 1);
-  EXPECT_TRUE(loom_type_dim_is_dynamic_at(type, 0));
-  EXPECT_EQ(loom_type_dim_value_id_at(type, 0), 7u);
+  EXPECT_FALSE(loom_type_may_reference_values(type));
+  EXPECT_EQ(loom_type_rank(type), 0);
 }
 
 TEST(PrintType, UnknownTypeKindErrors) {

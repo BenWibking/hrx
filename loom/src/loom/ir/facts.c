@@ -1482,6 +1482,10 @@ void loom_value_facts_andi(const loom_value_facts_t* lhs,
     lo = 0;
     hi = iree_min(hi, rhs_hi);
   }
+  // Below the first possible set bit, the only multiple of divisor is zero.
+  if (lo == 0 && hi < divisor) {
+    hi = 0;
+  }
   *out = loom_value_facts_make(lo, hi, divisor);
   loom_value_facts_propagate_bitwise_flags(&lhs_facts, &rhs_facts, out);
 }

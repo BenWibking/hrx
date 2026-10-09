@@ -17,6 +17,7 @@ iree_py_library(
         "__init__.py",
         "contracts.py",
         "float_narrowing.py",
+        "vector_shifts.py",
     ],
     deps = [
         "//loom/py/loom:core",
@@ -38,6 +39,17 @@ iree_py_test(
         "//loom/py/loom/tools:pytest_style_runner.py",
     ],
     args = ["loom.target.emit.wasm.contracts_test"],
+    main = "pytest_style_runner.py",
+    deps = [":contracts"],
+)
+
+iree_py_test(
+    name = "vector_shifts_test",
+    srcs = [
+        "vector_shifts_test.py",
+        "//loom/py/loom/tools:pytest_style_runner.py",
+    ],
+    args = ["loom.target.emit.wasm.vector_shifts_test"],
     main = "pytest_style_runner.py",
     deps = [":contracts"],
 )

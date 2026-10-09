@@ -60,6 +60,7 @@ loom_cc_library(
     iree::base
     loom::ir
     loom::ops::scalar
+    loom::ops::vector
     loom::target::arch::wasm::descriptors
     loom::target::arch::wasm::descriptors::low_registry
     loom::target::arch::wasm::ops
@@ -68,6 +69,8 @@ loom_cc_library(
     loom::target::legalization
     loom::target::provider
     loom::transforms::scalar::target_legalization
+    loom::transforms::vector::packet_legalization
+    loom::transforms::vector::to_scalar
   PUBLIC
 )
 endif()
@@ -115,12 +118,13 @@ loom_check_test_suite(
     "test/source_low/numeric_index_operands.loom-test"
     "test/source_low/numeric_integer_division.loom-test"
     "test/source_low/numeric_integer_extrema.loom-test"
+    "test/source_low/numeric_integer_shift_report.loom-test"
+    "test/source_low/numeric_integer_shifts.loom-test"
     "test/source_low/numeric_integer_to_float.loom-test"
     "test/source_low/numeric_narrow_carriers.loom-test"
     "test/source_low/numeric_unsigned_remainder.loom-test"
     "test/source_low/numeric_vector_constants.loom-test"
     "test/source_low/numeric_vector_f32_values.loom-test"
-    "test/source_low/packed_memory_alignment.loom-test"
     "test/source_low/predicate_extract.loom-test"
     "test/source_low/selected_payload_transport.loom-test"
     "test/source_low/semantic_assertions.loom-test"
@@ -134,6 +138,11 @@ loom_check_test_suite(
     "test/source_low/structured_control.loom-test"
     "test/source_low/target_legalize_native_store.loom-test"
     "test/source_low/uniform_predicate_control.loom-test"
+    "test/source_low/uniform_shifts.loom-test"
+    "test/source_low/vector_from_elements.loom-test"
+    "test/source_low/vector_interleave.loom-test"
+    "test/source_low/view_bitcast.loom-test"
+    "test/source_low/view_carriers.loom-test"
   TEST_NAME_PREFIX_TO_STRIP
     "test/source_low/"
 )

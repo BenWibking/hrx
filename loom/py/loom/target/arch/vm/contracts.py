@@ -1150,7 +1150,10 @@ def _buffer_cases():
     yield DescriptorRule(
         source_op=buffer.buffer_alloca,
         descriptor=descriptor,
-        guards=(Guard.enum_attr_equals("memory_space", "private"),),
+        guards=(
+            Guard.operand_segment_count("pool", 0),
+            Guard.enum_attr_equals("memory_space", "private"),
+        ),
         emit=(
             EmitDescriptorOp(
                 descriptor=descriptor,
