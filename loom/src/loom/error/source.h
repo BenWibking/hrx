@@ -56,13 +56,15 @@ typedef struct loom_source_entry_t {
   iree_string_view_t filename;
 } loom_source_entry_t;
 
-// Borrowed source entries for loom_source_table_resolve. Entries need not be
-// dense or ordered by source ID. Linking projects IDs into the target module
-// before its locations are resolved against this table.
+// Borrowed source entries for loom_source_table_resolve. Entries are indexed
+// by source ID; missing snapshots have an invalid source ID. Linking projects
+// IDs into the target module before its locations are resolved against this
+// table.
 typedef struct loom_source_table_resolver_t {
   // Borrowed module whose source IDs identify these exact snapshots.
   const loom_module_t* module;
-  // Borrowed entries and their strings, live through the final resolution use.
+  // Source-ID-indexed borrowed entries and their strings, live through the
+  // final resolution use.
   const loom_source_entry_t* entries;
   // Number of entries, including any empty entries.
   iree_host_size_t count;
@@ -145,6 +147,12 @@ bool loom_source_table_resolve(void* user_data, const loom_module_t* module,
 // source resolves to source.size. This matches Loom text tokenizer coordinates.
 iree_host_size_t loom_source_byte_offset(iree_string_view_t source,
                                          uint32_t line, uint32_t column);
+
+// Computes a byte offset starting from |range| when the requested coordinate
+// follows its start. Coordinates before the range retain the same clamping
+// semantics as loom_source_byte_offset.
+iree_host_size_t loom_source_range_byte_offset(const loom_source_range_t* range,
+                                               uint32_t line, uint32_t column);
 
 #ifdef __cplusplus
 }  // extern "C"

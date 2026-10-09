@@ -56,44 +56,127 @@ bool loom_source_resolve(loom_source_resolver_t resolver,
   return true;
 }
 
+// Blocks are large enough for optimized compilers to vectorize newline
+// counting while keeping the terminal scalar search tightly bounded.
+#define LOOM_SOURCE_SCAN_BLOCK_SIZE 256u
+
+// Advances an exact source position monotonically to |line| and |column|.
+// Always leaves the cursor at the closest reachable position. Counting whole
+// blocks avoids rediscovering each byte serially while the terminal block and
+// UTF-8 column retain the tokenizer's exact coordinate semantics.
+static bool loom_source_advance_position(iree_string_view_t source,
+                                         uint32_t line, uint32_t column,
+                                         uint32_t* inout_line,
+                                         uint32_t* inout_column,
+                                         iree_host_size_t* inout_offset) {
+  uint32_t current_line = *inout_line;
+  uint32_t current_column = *inout_column;
+  iree_host_size_t offset = *inout_offset;
+  if (line == 0 || line < current_line ||
+      (line == current_line && column < current_column)) {
+    return false;
+  }
+
+  while (current_line < line && offset < source.size) {
+    const iree_host_size_t block_size = iree_min(
+        (iree_host_size_t)LOOM_SOURCE_SCAN_BLOCK_SIZE, source.size - offset);
+    uint32_t newline_count = 0;
+    for (iree_host_size_t i = 0; i < block_size; ++i) {
+      newline_count += source.data[offset + i] == '\n';
+    }
+    if (newline_count < line - current_line) {
+      current_line += newline_count;
+      offset += block_size;
+      continue;
+    }
+    const iree_host_size_t block_end = offset + block_size;
+    while (current_line < line && offset < block_end) {
+      if (source.data[offset++] == '\n') {
+        ++current_line;
+        current_column = 1;
+      }
+    }
+  }
+  if (current_line < line) {
+    offset = source.size;
+  } else {
+    while (current_column < column && offset < source.size &&
+           source.data[offset] != '\n') {
+      iree_unicode_utf8_decode(source, &offset);
+      ++current_column;
+    }
+  }
+
+  *inout_line = current_line;
+  *inout_column = current_column;
+  *inout_offset = iree_min(offset, source.size);
+  return current_line == line && current_column == column;
+}
+
 // Returns an exact position when present, while always publishing the clamped
 // byte offset used by source highlighting.
 static bool loom_source_find_position(iree_string_view_t source, uint32_t line,
                                       uint32_t column,
                                       iree_host_size_t* out_offset) {
+  uint32_t current_line = 1;
+  uint32_t current_column = 1;
+  iree_host_size_t offset = 0;
   if (line == 0) {
     *out_offset = 0;
     return false;
   }
-  // Scan newlines to find the byte offset of the start of |line|.
+  const bool is_exact = loom_source_advance_position(
+      source, line, column, &current_line, &current_column, &offset);
+  *out_offset = offset;
+  return is_exact;
+}
+
+// Resolves both ordered endpoints in one forward pass through the source.
+static bool loom_source_find_range(iree_string_view_t source,
+                                   uint32_t start_line, uint32_t start_column,
+                                   uint32_t end_line, uint32_t end_column,
+                                   iree_host_size_t* out_start,
+                                   iree_host_size_t* out_end) {
   uint32_t current_line = 1;
+  uint32_t current_column = 1;
   iree_host_size_t offset = 0;
-  while (current_line < line && offset < source.size) {
-    if (source.data[offset] == '\n') {
-      ++current_line;
-    }
-    ++offset;
-  }
-  if (current_line < line) {
-    *out_offset = source.size;
+  if (start_line == 0 ||
+      !loom_source_advance_position(source, start_line, start_column,
+                                    &current_line, &current_column, &offset)) {
+    *out_start = offset;
+    *out_end = offset;
     return false;
   }
-  // Walk UTF-8 codepoints to reach the target column (1-based).
-  // Column 1 means "start of line" = offset stays where it is.
-  uint32_t current_column = 1;
-  while (current_column < column && offset < source.size &&
-         source.data[offset] != '\n') {
-    iree_unicode_utf8_decode(source, &offset);
-    ++current_column;
+  *out_start = offset;
+  if (!loom_source_advance_position(source, end_line, end_column, &current_line,
+                                    &current_column, &offset)) {
+    *out_end = offset;
+    return false;
   }
-  *out_offset = iree_min(offset, source.size);
-  return offset <= source.size && current_column == column;
+  *out_end = offset;
+  return true;
 }
 
 iree_host_size_t loom_source_byte_offset(iree_string_view_t source,
                                          uint32_t line, uint32_t column) {
   iree_host_size_t offset;
   loom_source_find_position(source, line, column, &offset);
+  return offset;
+}
+
+iree_host_size_t loom_source_range_byte_offset(const loom_source_range_t* range,
+                                               uint32_t line, uint32_t column) {
+  uint32_t current_line = 1;
+  uint32_t current_column = 1;
+  iree_host_size_t offset = 0;
+  if (line > range->start_line ||
+      (line == range->start_line && column >= range->start_column)) {
+    current_line = range->start_line;
+    current_column = range->start_column;
+    offset = range->start;
+  }
+  loom_source_advance_position(range->source, line, column, &current_line,
+                               &current_column, &offset);
   return offset;
 }
 
@@ -260,33 +343,21 @@ bool loom_source_table_resolve(void* user_data, const loom_module_t* module,
     return false;
   }
 
-  // Owned tables are indexed by source ID. Preserve the general resolver
-  // contract for callers that provide unordered tables.
-  const loom_source_entry_t* source_entry = NULL;
-  if (entry->file.source_id < table->count &&
-      table->entries[entry->file.source_id].source_id ==
+  if (entry->file.source_id >= table->count ||
+      table->entries[entry->file.source_id].source_id !=
           entry->file.source_id) {
-    source_entry = &table->entries[entry->file.source_id];
-  } else {
-    for (iree_host_size_t i = 0; i < table->count; ++i) {
-      if (table->entries[i].source_id == entry->file.source_id) {
-        source_entry = &table->entries[i];
-        break;
-      }
-    }
-  }
-  if (!source_entry) {
     return false;
   }
+  const loom_source_entry_t* source_entry =
+      &table->entries[entry->file.source_id];
 
   // Only an ordered range actually present in the snapshot has exact spelling.
   // Explicit debug locations can name unavailable or out-of-snapshot positions.
   iree_host_size_t start_offset = 0, end_offset = 0;
-  if (!loom_source_find_position(source_entry->source, entry->file.start_line,
-                                 entry->file.start_col, &start_offset) ||
-      !loom_source_find_position(source_entry->source, entry->file.end_line,
-                                 entry->file.end_col, &end_offset) ||
-      end_offset < start_offset) {
+  if (!loom_source_find_range(source_entry->source, entry->file.start_line,
+                              entry->file.start_col, entry->file.end_line,
+                              entry->file.end_col, &start_offset,
+                              &end_offset)) {
     return false;
   }
 
