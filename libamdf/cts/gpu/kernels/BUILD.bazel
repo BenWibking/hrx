@@ -27,6 +27,7 @@ exports_files([
     "completed_tick.loom",
     "device_sdma.loom",
     "device_sdma_batched.loom",
+    "device_sdma_lookahead.loom",
     "device_sdma_staged.loom",
     "file_demand.cxx",
     "file_demand.loom",
@@ -154,6 +155,29 @@ amdf_cts_gpu_kernel_set(
     namespace = "kernels::device_sdma_batched",
     targets = AMDF_CTS_GPU_KERNEL_TARGETS,
 )
+
+amdf_cc_library(
+    name = "device_sdma_lookahead",
+    testonly = True,
+    hdrs = ["device_sdma_lookahead.h"],
+)
+
+[
+    amdf_cts_gpu_kernel_set(
+        name = "device_sdma_" + stage + "_kernels",
+        srcs = [
+            "device_sdma_lookahead.loom",
+            "sdma_copy.loom",
+        ],
+        entry_point = "device_sdma_" + stage,
+        namespace = "kernels::device_sdma_" + stage,
+        targets = AMDF_CTS_GPU_KERNEL_TARGETS,
+    )
+    for stage in [
+        "upload",
+        "reader",
+    ]
+]
 
 amdf_cc_library(
     name = "device_sdma_staged",
@@ -449,8 +473,11 @@ amdf_cc_test(
         ":device_sdma_batched_kernels",
         ":device_sdma_consumer_kernels",
         ":device_sdma_kernels",
+        ":device_sdma_lookahead",
+        ":device_sdma_reader_kernels",
         ":device_sdma_staged",
         ":device_sdma_transfer_kernels",
+        ":device_sdma_upload_kernels",
         ":geometry_ids",
         ":geometry_ids_kernels",
         ":kernel",
