@@ -115,6 +115,18 @@ iree_cc_test(
     iree::testing::gtest_main
 )
 
+iree_cc_binary_benchmark(
+  NAME
+    memory_scope_benchmark
+  SRCS
+    "memory_scope_benchmark.cc"
+  DEPS
+    ::hal
+    iree::testing::benchmark_main
+    iree::third_party::google_benchmark
+  TESTONLY
+)
+
 iree_cc_test(
   NAME
     atomic_test
