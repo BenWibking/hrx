@@ -9,7 +9,7 @@
 
 iree_add_all_subdirs()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA AND AMDF_FAMILY_XDNA)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND AMDF_FAMILY_XDNA AND LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
 iree_cc_library(
   NAME
     file_channel_cases
@@ -30,7 +30,7 @@ iree_cc_library(
 )
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA AND AMDF_FAMILY_XDNA)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND AMDF_FAMILY_XDNA AND LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
 amdf_cts_binary(
   NAME
     file_channel_dynamic_bin
@@ -45,7 +45,7 @@ amdf_cts_binary(
 )
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA AND AMDF_FAMILY_XDNA)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND AMDF_FAMILY_XDNA AND LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
 iree_native_test(
   NAME
     "file_channel_dynamic"
@@ -58,8 +58,6 @@ iree_native_test(
     "amdf::amdf"
   LABELS
     "iree-build-requirement=libamdf"
-    "iree-build-requirement=loom.target.arch.xdna"
-    "iree-build-requirement=loom.emit.xdna"
     "iree-build-requirement=libamdf.xdna"
     "iree-run-requirement=libamdf.resource.xdna"
     "runtime-resource=amd-xdna"
@@ -68,7 +66,7 @@ iree_native_test(
 )
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA AND AMDF_FAMILY_XDNA)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND AMDF_FAMILY_XDNA AND LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
 iree_native_test(
   NAME
     "file_channel_dynamic_instance"
@@ -81,8 +79,6 @@ iree_native_test(
     "amdf::amdf"
   LABELS
     "iree-build-requirement=libamdf"
-    "iree-build-requirement=loom.target.arch.xdna"
-    "iree-build-requirement=loom.emit.xdna"
     "iree-build-requirement=libamdf.xdna"
     "iree-run-requirement=libamdf.resource.xdna"
     "runtime-resource=amd-xdna"

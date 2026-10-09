@@ -124,7 +124,6 @@ PACKAGE_POLICIES = [
     package_policy(
         packages = [
             "libamdf/cts/interop/gpu/xdna/recipes",
-            "libamdf/cts/xdna/linux/file_channel",
             "libamdf/cts/xdna/programs",
             "libamdf/cts/xdna/recipes",
         ],
