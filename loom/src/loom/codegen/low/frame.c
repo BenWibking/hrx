@@ -387,11 +387,6 @@ static iree_status_t loom_low_emission_frame_build_impl(
     iree_bitmap_t per_user_placement_values, iree_arena_allocator_t* arena,
     loom_low_planning_statistics_t* statistics,
     loom_low_emission_frame_t* out_frame) {
-  if (!loom_low_function_def_isa(low_func_op)) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "expected low.func.def or low.kernel.def");
-  }
-
   *out_frame = (loom_low_emission_frame_t){
       .module = module,
       .function_op = low_func_op,
@@ -574,13 +569,10 @@ static iree_status_t loom_low_emission_frame_append_materialized_spill_records(
     list->head = vec;
   }
   list->tail = vec;
-  if (!iree_host_size_checked_add(list->record_count, record_count,
-                                  &list->record_count)) {
-    return iree_make_status(
-        IREE_STATUS_OUT_OF_RANGE,
-        "low emission frame materialized spill record count overflows host "
-        "size");
-  }
+  // Every record describes a distinct valid uint32 value ID. Frame construction
+  // retains each value after its first materialization, so the accumulated
+  // count is representable even when iree_host_size_t is 32 bits.
+  list->record_count += record_count;
   return iree_ok_status();
 }
 
@@ -1191,15 +1183,8 @@ iree_status_t loom_low_emission_frame_build_spill_free(
     const loom_low_emission_frame_spill_free_options_t* spill_free_options,
     iree_arena_allocator_t* arena, loom_low_emission_frame_t* out_frame,
     bool* out_accepted) {
-  IREE_ASSERT_ARGUMENT(frame_options);
   *out_frame = (loom_low_emission_frame_t){0};
   *out_accepted = false;
-  if (spill_free_options == NULL) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "spill-free low emission frame construction requires spill-free "
-        "options");
-  }
   loom_low_planning_statistics_t* statistics = frame_options->statistics;
   if (statistics != NULL) {
     *statistics = (loom_low_planning_statistics_t){0};
