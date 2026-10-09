@@ -71,6 +71,21 @@ _FILE_IO_DEPS = [
 ]
 
 amdf_cc_library(
+    name = "file_io_resources",
+    testonly = True,
+    srcs = ["file_io_resources.cc"],
+    hdrs = ["file_io_resources.h"],
+    target_compatible_with = _FILE_IO_HOST_COMPATIBILITY,
+    deps = [
+        "//libamdf/cts/gpu:gpu_device_fixture",
+        "//libamdf/cts/gpu/util:memory",
+        "//libamdf/cts/gpu/util:user_queue",
+        "//third_party:google_test",
+        "//third_party:linux_io_uapi",
+    ],
+)
+
+amdf_cc_library(
     name = "file_io_fixture",
     testonly = True,
     srcs = ["file_io_fixture.cc"],
@@ -80,6 +95,7 @@ amdf_cc_library(
         "@platforms//cpu:x86_64",
     ],
     deps = [
+        ":file_io_resources",
         "//libamdf/cts/gpu/kernels:kernel",
         "//libamdf/cts/gpu/pm4:dispatch_fixture",
         "//libamdf/cts/gpu/pm4/encoding:commands",

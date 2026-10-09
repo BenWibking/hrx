@@ -12,6 +12,26 @@ iree_add_all_subdirs()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 iree_cc_library(
   NAME
+    file_io_resources
+  HDRS
+    "file_io_resources.h"
+  SRCS
+    "file_io_resources.cc"
+  DEPS
+    $<BUILD_LOCAL_INTERFACE:iree::third_party::linux_io_uapi>
+    amdf::headers
+    iree::third_party::google_test
+    libamdf::cts::gpu::gpu_device_fixture
+    libamdf::cts::gpu::util::memory
+    libamdf::cts::gpu::util::user_queue
+  TESTONLY
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+iree_cc_library(
+  NAME
     file_io_fixture
   HDRS
     "file_io_fixture.h"
@@ -19,6 +39,7 @@ iree_cc_library(
     "file_io_fixture.cc"
   DEPS
     $<BUILD_LOCAL_INTERFACE:iree::third_party::linux_io_uapi>
+    ::file_io_resources
     amdf::headers
     iree::third_party::google_test
     libamdf::cts::gpu::kernels::kernel
