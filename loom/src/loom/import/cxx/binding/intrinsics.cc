@@ -136,6 +136,7 @@ void Intrinsics::declaration(cxx::FunctionSymbol* function,
                (!ViewIntrinsic::supports(selected->arguments[0]->name()) &&
                 !BufferIntrinsic::supports(selected->arguments[0]->name()) &&
                 !DecodeIntrinsic::supports(selected->arguments[0]->name()) &&
+                !FragmentIntrinsic::supports(selected->arguments[0]->name()) &&
                 !AtomicIntrinsic::supports(selected->arguments[0]->name()) &&
                 !FenceIntrinsic::supports(selected->arguments[0]->name()) &&
                 !BarrierIntrinsic::supports(selected->arguments[0]->name()) &&
@@ -189,6 +190,10 @@ Intrinsics::Binding Intrinsics::resolve(cxx::FunctionSymbol* function,
           unit_, diagnostics_, module_->context, function, attribute, owner)) {
     return EncodingIntrinsic::resolve(*encoding, unit_, diagnostics_, types_,
                                       function, module_, owner);
+  }
+  if (auto fragment = FragmentIntrinsic::resolve(
+          unit_, diagnostics_, types_, function, attribute, module_, owner)) {
+    return *fragment;
   }
   if (auto binding = CheckIntrinsic::resolve(
           unit_, diagnostics_, types_, launches_, function, attribute, owner)) {
@@ -384,6 +389,9 @@ IntrinsicCallResult Intrinsics::call(const Binding& admitted,
   const auto* binding = &admitted;
   if (auto* decode = std::get_if<DecodeIntrinsic>(binding)) {
     return {decode->call(arguments, builder, location)};
+  }
+  if (auto* fragment = std::get_if<FragmentIntrinsic>(binding)) {
+    return {fragment->call(arguments, builder, location)};
   }
   if (auto* encoding = std::get_if<EncodingIntrinsic>(binding)) {
     return {encoding->call(arguments, arena, builder, location)};

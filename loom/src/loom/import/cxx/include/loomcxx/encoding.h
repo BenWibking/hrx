@@ -11,22 +11,97 @@
 
 namespace loom::encoding {
 
-// Numeric formats for block scale operands. Enum names match the encoding
-// dialect; their C++ numeric values are independent of compiler ordinals.
-enum class numeric_format { e8m0, f16, bf16, f32 };
+// Numeric formats for encoded operands and their scale values. Enum names
+// match the encoding dialect; their C++ values are independent of compiler
+// ordinals.
+enum class numeric_format {
+  none,
+  f64,
+  f32,
+  tf32,
+  f16,
+  bf16,
+  i32,
+  u32,
+  i16,
+  u16,
+  i8,
+  u8,
+  i6,
+  u6,
+  i5,
+  u5,
+  i4,
+  u4,
+  i3,
+  u3,
+  i2,
+  u2,
+  i1,
+  u1,
+  f8e4m3,
+  f8e5m2,
+  f8e4m3fn,
+  f8e4m3fnuz,
+  f8e5m2fnuz,
+  e8m0,
+  bf8,
+  f6e3m2,
+  f6e2m3,
+  bf6,
+  f4e2m1,
+  ternary,
+  sign_bit,
+  codebook_index,
+  quant_i8,
+  quant_i6,
+  quant_i4,
+  bfp16ebs8,
+};
 
 // Physical ordering of encoded payload elements.
 enum class payload_packing {
   dense_lanes,
   little_endian_nibbles,
   big_endian_nibbles,
+  bitfield_stream,
+  bitplane_stream,
+  multi_stream,
+  base_n_packed,
+  codebook_indices,
+  target_fragment,
+  interleaved_scale_payload,
+  separate_scale_payload,
 };
 
 // Logical groups sharing an auxiliary scale.
-enum class scale_topology { none, tensor_global, group_1d, block_1d };
+enum class scale_topology {
+  none,
+  tensor_global,
+  row,
+  column,
+  channel,
+  group_1d,
+  block_1d,
+  block_2d,
+  subblock_in_superblock,
+  hierarchical,
+  per_token,
+  per_head,
+  per_page,
+  runtime_amax_derived,
+};
 
 // Affine interpretation applied after numeric decoding.
-enum class affine_policy { none, scale_only };
+enum class affine_policy {
+  none,
+  scale_only,
+  scale_plus_min,
+  scale_plus_zero_point,
+  scale_plus_bias,
+  super_scale_times_subscale,
+  sum_correction,
+};
 
 // E2M1 schema parameters, defaulting to one MXFP4 group of 32 values. Packed
 // word counts derive from the payload size unless overridden. Runtime scales

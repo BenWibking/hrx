@@ -7,7 +7,81 @@
 #ifndef LOOMCXX_VECTOR_H_
 #define LOOMCXX_VECTOR_H_
 
+#include <loomcxx/view.h>
+
 namespace loom::vector {
+
+namespace fragment {
+
+// Matrix operand interpretation attached to a physical vector. Names and
+// ordinals match vector.fragment's role parameter.
+enum class role : unsigned char { lhs = 0, rhs = 1, init = 2, result = 3 };
+
+// Logical two-dimensional matrix fragment shape. Values remain ordinary SSA
+// dimensions and may come from configs, target queries, or source arithmetic.
+struct shape {
+  loom::type::size_type rows;
+  loom::type::size_type columns;
+};
+
+// Independent matrix blocks followed by each block's two-dimensional shape.
+struct batched_shape {
+  loom::type::size_type blocks;
+  loom::type::size_type rows;
+  loom::type::size_type columns;
+};
+
+// Attaches a logical role and shape to an ordinary physical vector. Parameters
+// is a flat record whose field names identify explicit values such as schema,
+// scale, codebook, or sparsity.
+template <role Role, class Vector, class Shape>
+[[loom::op("vector.fragment")]] Vector attach(Vector data, Shape logical_shape);
+
+template <role Role, class Vector, class Shape, class Parameters>
+[[loom::op("vector.fragment")]] Vector attach(Vector data, Shape logical_shape,
+                                              Parameters parameters);
+
+// Reinterprets or converts one native fragment carrier for another role. The
+// result carrier is explicit because target providers own its physical shape.
+template <role Role, class Result, class Source, class Shape>
+[[loom::op("vector.fragment.repack")]] Result repack(Source source,
+                                                     Shape logical_shape);
+
+// Loads one target-shaped carrier at a full-rank logical origin. Auxiliary is
+// a flat record of named runtime values required by the view's storage schema.
+template <role Role, class Result, class T, loom::type::size_type... Extents,
+          loom::encoding::role EncodingRole, class Shape>
+[[loom::op("vector.fragment.load")]] Result load(
+    loom::type::view<loom::type::shape<Extents...>, T, EncodingRole> source,
+    loom::type::coordinates<sizeof...(Extents)> origin, Shape logical_shape);
+
+template <role Role, class Result, class T, loom::type::size_type... Extents,
+          loom::encoding::role EncodingRole, class Shape, class Auxiliary>
+[[loom::op("vector.fragment.load")]] Result load(
+    loom::type::view<loom::type::shape<Extents...>, T, EncodingRole> source,
+    loom::type::coordinates<sizeof...(Extents)> origin, Shape logical_shape,
+    Auxiliary auxiliary);
+
+// Stores one target-shaped carrier at a full-rank logical origin.
+template <role Role, class Vector, class T, loom::type::size_type... Extents,
+          loom::encoding::role EncodingRole, class Shape>
+[[loom::op("vector.fragment.store")]] void store(
+    Vector value,
+    loom::type::view<loom::type::shape<Extents...>, T, EncodingRole>
+        destination,
+    loom::type::coordinates<sizeof...(Extents)> origin, Shape logical_shape);
+
+}  // namespace fragment
+
+// Semantic permissions for matrix multiply-accumulate.
+enum class mma_flags : unsigned char { none = 0, saturate = 1 };
+
+// Multiplies logical lhs/rhs fragments and accumulates into init. Fragment
+// role, shape, schema, and dynamic parameters come from the operand facts.
+template <mma_flags Flags = mma_flags::none, class Left, class Right,
+          class Accumulator>
+[[loom::op("vector.mma")]] Accumulator mma(Left lhs, Right rhs,
+                                           Accumulator init);
 
 // Groups adjacent four-lane byte products into signed i32 accumulator lanes.
 // Each input lane's C++ signedness selects its interpretation, covering the
