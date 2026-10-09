@@ -117,7 +117,7 @@ TEST(BarrierTest, QueueBoundaryDefaultsCanBeReplacedIndependently) {
   EXPECT_EQ(native.after.release, IREE_HSA_FENCE_SCOPE_SYSTEM);
 
   iree_hal_barrier_t release = {};
-  release.effects.bits = IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM;
+  release.effects.bits = IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM;
   const iree_hal_barrier_list_t release_list = {1, &release};
   barriers = {&release_list, &empty};
   native = iree_hal_amdgpu_queue_barriers_resolve(&barriers);

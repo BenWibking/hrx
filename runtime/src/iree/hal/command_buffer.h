@@ -287,11 +287,11 @@ static inline iree_hal_barrier_flags_t iree_hal_barrier_resolve_flags(
     const iree_hal_barrier_t* barrier) {
   iree_hal_barrier_flags_t flags = barrier->flags;
   if (iree_any_bit_set(barrier->effects.bits,
-                       IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM)) {
+                       IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM)) {
     flags |= IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
   }
   if (iree_any_bit_set(barrier->effects.bits,
-                       IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM)) {
+                       IREE_HAL_MEMORY_EFFECT_GLOBAL_ACQUIRE_FROM_SYSTEM)) {
     flags |= IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE;
   }
   return flags;

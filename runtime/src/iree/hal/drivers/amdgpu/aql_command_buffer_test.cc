@@ -435,12 +435,11 @@ TEST_F(AqlCommandBufferTest,
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_UNAVAILABLE,
       iree_hal_command_buffer_barrier(command_buffer.get(), &barrier));
-  for (uint32_t bits : {uint32_t{IREE_HAL_MEMORY_EFFECT_PROGRAM_EXECUTOR |
-                                 IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM},
-                        uint32_t{IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS |
-                                 IREE_HAL_MEMORY_EFFECT_HOST_FLUSH},
-                        uint32_t{IREE_HAL_MEMORY_EFFECT_NATIVE_OWNERSHIP |
-                                 IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS}}) {
+  for (uint32_t bits :
+       {uint32_t{IREE_HAL_MEMORY_EFFECT_PROGRAM_EXECUTOR |
+                 IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM},
+        uint32_t{IREE_HAL_MEMORY_EFFECT_HOST_FLUSH},
+        uint32_t{IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM}}) {
     barrier.effects.bits = bits;
     IREE_EXPECT_STATUS_IS(
         IREE_STATUS_UNIMPLEMENTED,

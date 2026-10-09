@@ -220,15 +220,27 @@ typedef struct iree_hal_memory_effects_t {
 // of manufacturing these values. Resource and program requirements survive OR
 // combination so a global queue barrier cannot silently consume them.
 enum iree_hal_memory_effect_bits_e {
-  IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM = 1u << 0,
-  IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM = 1u << 1,
-  IREE_HAL_MEMORY_EFFECT_HOST_FLUSH = 1u << 2,
-  IREE_HAL_MEMORY_EFFECT_HOST_INVALIDATE = 1u << 3,
-  IREE_HAL_MEMORY_EFFECT_NATIVE_OWNERSHIP = 1u << 4,
+  // Release local writes across the complete native cache domain to system.
+  IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM = 1u << 0,
+  // Acquire system-visible writes across the complete native cache domain.
+  IREE_HAL_MEMORY_EFFECT_GLOBAL_ACQUIRE_FROM_SYSTEM = 1u << 1,
+  // Release writes covering each supplied buffer range.
+  IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM = 1u << 2,
+  // Acquire system writes covering each supplied buffer range.
+  IREE_HAL_MEMORY_EFFECT_RANGE_ACQUIRE_FROM_SYSTEM = 1u << 3,
+  // Flush each supplied host mapping range.
+  IREE_HAL_MEMORY_EFFECT_HOST_FLUSH = 1u << 4,
+  // Invalidate each supplied host mapping range.
+  IREE_HAL_MEMORY_EFFECT_HOST_INVALIDATE = 1u << 5,
+  // One or more effects must execute inside an engine program.
   IREE_HAL_MEMORY_EFFECT_PROGRAM_EXECUTOR = 1u << 29,
-  IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS = 1u << 30,
+  // The queried relation is not qualified.
   IREE_HAL_MEMORY_EFFECT_UNSUPPORTED = 1u << 31,
 };
+#define IREE_HAL_MEMORY_EFFECT_RESOURCE_MASK          \
+  (IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM |   \
+   IREE_HAL_MEMORY_EFFECT_RANGE_ACQUIRE_FROM_SYSTEM | \
+   IREE_HAL_MEMORY_EFFECT_HOST_FLUSH | IREE_HAL_MEMORY_EFFECT_HOST_INVALIDATE)
 
 static inline iree_hal_memory_effects_t iree_hal_memory_effects_combine(
     iree_hal_memory_effects_t lhs, iree_hal_memory_effects_t rhs) {
@@ -248,7 +260,7 @@ static inline bool iree_hal_memory_effects_is_empty(
 
 static inline bool iree_hal_memory_effects_requires_resources(
     iree_hal_memory_effects_t effects) {
-  return (effects.bits & IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS) != 0;
+  return (effects.bits & IREE_HAL_MEMORY_EFFECT_RESOURCE_MASK) != 0;
 }
 
 // Write-to-read visibility on corresponding bytes of one backing. An empty
@@ -339,7 +351,6 @@ typedef enum iree_hal_memory_transition_executor_e {
   IREE_HAL_MEMORY_TRANSITION_EXECUTOR_PROGRAM = 2,
   IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_DIRECT = 3,
   IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API = 4,
-  IREE_HAL_MEMORY_TRANSITION_EXECUTOR_EXTERNAL = 5,
 } iree_hal_memory_transition_executor_t;
 
 typedef enum iree_hal_memory_transition_operation_e {
@@ -348,7 +359,6 @@ typedef enum iree_hal_memory_transition_operation_e {
   IREE_HAL_MEMORY_TRANSITION_OPERATION_ACQUIRE_FROM_SYSTEM = 2,
   IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_FLUSH = 3,
   IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_INVALIDATE = 4,
-  IREE_HAL_MEMORY_TRANSITION_OPERATION_NATIVE_OWNERSHIP = 5,
 } iree_hal_memory_transition_operation_t;
 
 typedef enum iree_hal_host_cache_instruction_e {
@@ -425,8 +435,10 @@ typedef struct iree_hal_memory_pair_info_t {
 // operations during construction. Recording copies the selected operations or
 // keeps their owner alive under its established resource lifetime policy.
 typedef struct iree_hal_memory_transition_recipe_t {
+  // Combined resource effects fulfilled by the prepared native actions.
+  iree_hal_memory_effects_t effects;
   // Number of prepared native actions; no list is constructed at query time.
-  iree_host_size_t operation_count;
+  uint32_t operation_count;
   // Borrowed actions, valid for the lifetime of the captured contract.
   const iree_hal_memory_transition_recipe_info_t* operations;
 } iree_hal_memory_transition_recipe_t;

@@ -282,8 +282,9 @@ iree_hal_barrier_validate(const iree_hal_barrier_t* barrier) {
     return iree_make_status(IREE_STATUS_UNAVAILABLE,
                             "memory transition is not qualified");
   }
-  const uint32_t global_effects = IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM |
-                                  IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM;
+  const uint32_t global_effects =
+      IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM |
+      IREE_HAL_MEMORY_EFFECT_GLOBAL_ACQUIRE_FROM_SYSTEM;
   if (IREE_UNLIKELY(barrier->effects.bits & ~global_effects)) {
     return iree_make_status(
         IREE_STATUS_UNIMPLEMENTED,

@@ -393,14 +393,21 @@ static uint32_t iree_hal_memory_transition_encode_effects(
     return IREE_HAL_MEMORY_EFFECT_UNSUPPORTED;
   } else if (info->kind == IREE_HAL_MEMORY_TRANSITION_KIND_NONE) {
     return 0;
+  } else if (info->kind != IREE_HAL_MEMORY_TRANSITION_KIND_RANGE &&
+             info->kind != IREE_HAL_MEMORY_TRANSITION_KIND_GLOBAL) {
+    return IREE_HAL_MEMORY_EFFECT_UNSUPPORTED;
   }
   uint32_t bits = 0;
   switch (info->operation) {
     case IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM:
-      bits = IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM;
+      bits = info->kind == IREE_HAL_MEMORY_TRANSITION_KIND_RANGE
+                 ? IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM
+                 : IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM;
       break;
     case IREE_HAL_MEMORY_TRANSITION_OPERATION_ACQUIRE_FROM_SYSTEM:
-      bits = IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM;
+      bits = info->kind == IREE_HAL_MEMORY_TRANSITION_KIND_RANGE
+                 ? IREE_HAL_MEMORY_EFFECT_RANGE_ACQUIRE_FROM_SYSTEM
+                 : IREE_HAL_MEMORY_EFFECT_GLOBAL_ACQUIRE_FROM_SYSTEM;
       break;
     case IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_FLUSH:
       bits = IREE_HAL_MEMORY_EFFECT_HOST_FLUSH;
@@ -408,19 +415,8 @@ static uint32_t iree_hal_memory_transition_encode_effects(
     case IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_INVALIDATE:
       bits = IREE_HAL_MEMORY_EFFECT_HOST_INVALIDATE;
       break;
-    case IREE_HAL_MEMORY_TRANSITION_OPERATION_NATIVE_OWNERSHIP:
-      bits = IREE_HAL_MEMORY_EFFECT_NATIVE_OWNERSHIP;
-      break;
     default:
       return IREE_HAL_MEMORY_EFFECT_UNSUPPORTED;
-  }
-  if (info->kind == IREE_HAL_MEMORY_TRANSITION_KIND_RANGE ||
-      info->executor == IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_DIRECT ||
-      info->executor == IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API ||
-      info->executor == IREE_HAL_MEMORY_TRANSITION_EXECUTOR_EXTERNAL ||
-      info->operation ==
-          IREE_HAL_MEMORY_TRANSITION_OPERATION_NATIVE_OWNERSHIP) {
-    bits |= IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS;
   }
   if (info->executor == IREE_HAL_MEMORY_TRANSITION_EXECUTOR_PROGRAM) {
     bits |= IREE_HAL_MEMORY_EFFECT_PROGRAM_EXECUTOR;
@@ -494,8 +490,7 @@ static void iree_hal_memory_transition_join_wildcards(
   }
 }
 
-// Captures wildcard resource lists once. Native ownership is an exact peer
-// protocol, so it cannot be joined without a backend-qualified composition.
+// Captures wildcard resource lists once.
 static iree_host_size_t iree_hal_memory_transition_compose_wildcards(
     const iree_hal_memory_contract_t* contract, uint64_t* cells,
     const uint32_t* indices, const iree_hal_memory_pair_info_t* infos,
@@ -507,24 +502,22 @@ static iree_host_size_t iree_hal_memory_transition_compose_wildcards(
     for (uint32_t action = 0; action < 2; ++action) {
       const uint32_t cell_index = action ? local : local << shift;
       const uint32_t bits = (uint32_t)(cells[cell_index] >> (action * 32));
-      if (!(bits & IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS) ||
+      if (!iree_hal_memory_effects_requires_resources(
+              (iree_hal_memory_effects_t){bits}) ||
           (bits & IREE_HAL_MEMORY_EFFECT_UNSUPPORTED)) {
-        continue;
-      }
-      if (bits & IREE_HAL_MEMORY_EFFECT_NATIVE_OWNERSHIP) {
-        cells[cell_index] |= iree_hal_memory_transition_pack_effects(
-                                 IREE_HAL_MEMORY_EFFECT_UNSUPPORTED, 0)
-                             << (action * 32);
         continue;
       }
       iree_hal_memory_transition_recipe_info_t* local_operations =
           &operations[operation_count];
       iree_host_size_t local_count = 0;
+      uint32_t local_effects = 0;
       for (uint32_t remote = 1; remote < contract->scope_count; ++remote) {
         const uint32_t exact_index =
             action ? (remote << shift) + local : (local << shift) + remote;
-        if (!((cells[exact_index] >> (action * 32)) &
-              IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS)) {
+        const uint32_t exact_bits =
+            (uint32_t)(cells[exact_index] >> (action * 32));
+        if (!iree_hal_memory_effects_requires_resources(
+                (iree_hal_memory_effects_t){exact_bits})) {
           continue;
         }
         const iree_hal_memory_pair_info_t* pair = &infos[indices[exact_index]];
@@ -538,8 +531,10 @@ static iree_host_size_t iree_hal_memory_transition_compose_wildcards(
         if (i == local_count) {
           local_operations[local_count++] = *info;
         }
+        local_effects |= exact_bits & IREE_HAL_MEMORY_EFFECT_RESOURCE_MASK;
       }
       recipes[local * 2 + action] = (iree_hal_memory_transition_recipe_t){
+          .effects = {local_effects},
           .operation_count = local_count,
           .operations = local_operations,
       };
@@ -662,9 +657,11 @@ IREE_API_EXPORT iree_status_t iree_hal_memory_contract_initialize_transitions(
       const uint64_t cell = iree_hal_memory_pair_encode(&record->info);
       for (uint32_t action = 0; action < 2; ++action) {
         const uint32_t bits = (uint32_t)(cell >> (action * 32));
-        if ((bits & IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS) &&
+        if (iree_hal_memory_effects_requires_resources(
+                (iree_hal_memory_effects_t){bits}) &&
             !(bits & IREE_HAL_MEMORY_EFFECT_UNSUPPORTED)) {
           record->recipes[action] = (iree_hal_memory_transition_recipe_t){
+              .effects = {bits & IREE_HAL_MEMORY_EFFECT_RESOURCE_MASK},
               .operation_count = 1,
               .operations =
                   action ? &record->info.acquire : &record->info.release,
@@ -677,6 +674,7 @@ IREE_API_EXPORT iree_status_t iree_hal_memory_contract_initialize_transitions(
         continue;
       }
       details->wildcards[i] = (iree_hal_memory_transition_recipe_t){
+          .effects = wildcards[i].effects,
           .operation_count = wildcards[i].operation_count,
           .operations =
               captured_operations + (wildcards[i].operations - operations),
@@ -827,8 +825,7 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_mapping_memory_barrier(
         "host transition is not qualified for this backing");
   }
   const uint32_t supported_bits = IREE_HAL_MEMORY_EFFECT_HOST_FLUSH |
-                                  IREE_HAL_MEMORY_EFFECT_HOST_INVALIDATE |
-                                  IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS;
+                                  IREE_HAL_MEMORY_EFFECT_HOST_INVALIDATE;
   if (effects.bits & ~supported_bits) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,

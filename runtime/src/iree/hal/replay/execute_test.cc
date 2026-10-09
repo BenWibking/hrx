@@ -2534,7 +2534,7 @@ TEST(ReplayExecuteTest, ExecutesRecordedExactQueueTransfer) {
     iree_hal_barrier_t after = {};
     after.source_stage_mask = IREE_HAL_EXECUTION_STAGE_TRANSFER;
     after.target_stage_mask = IREE_HAL_EXECUTION_STAGE_HOST;
-    after.effects.bits = IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM;
+    after.effects.bits = IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM;
     after.buffer_barrier_count = 1;
     after.buffer_barriers = &range;
     const iree_hal_barrier_list_t after_list = {1, &after};
@@ -2702,8 +2702,8 @@ TEST(ReplayExecuteTest, ExecutesRecordedCommandBufferTransfers) {
       /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
       /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
       /*.effects=*/
-      {IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM |
-       IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM},
+      {IREE_HAL_MEMORY_EFFECT_GLOBAL_ACQUIRE_FROM_SYSTEM |
+       IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM},
       /*.memory_barrier_count=*/1,
       /*.memory_barriers=*/&transfer_barrier,
       /*.buffer_barrier_count=*/0,

@@ -130,7 +130,8 @@ TEST_F(MemoryScopeTest, WildcardsJoinOnlyTheApplicableDirection) {
   EXPECT_FALSE(iree_hal_memory_effects_is_supported(outgoing.release));
   EXPECT_FALSE(iree_hal_memory_effects_is_supported(outgoing.acquire));
   auto exact = Query(4, 2, IREE_HAL_MEMORY_TRANSITION_RELEASE);
-  EXPECT_EQ(exact.release.bits, IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM);
+  EXPECT_EQ(exact.release.bits,
+            IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM);
   EXPECT_TRUE(iree_hal_memory_effects_is_empty(exact.acquire));
 }
 
@@ -204,6 +205,7 @@ TEST_F(MemoryScopeTest, CapturesNativeHostActionsAndAtomicFabricReach) {
       table(), pair, IREE_HAL_MEMORY_TRANSITION_RELEASE);
   ASSERT_NE(release_recipe, nullptr);
   ASSERT_EQ(release_recipe->operation_count, 1u);
+  EXPECT_EQ(release_recipe->effects.bits, IREE_HAL_MEMORY_EFFECT_HOST_FLUSH);
   EXPECT_EQ(release_recipe->operations[0].executor,
             IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API);
   EXPECT_EQ(info.atomic_reach.scope_32, IREE_HAL_ATOMIC_REACH_FABRIC);
@@ -227,6 +229,8 @@ TEST_F(MemoryScopeTest, CapturesNativeHostActionsAndAtomicFabricReach) {
   ASSERT_NE(acquire_recipe, nullptr);
   // All applicable producers require the same action, captured just once.
   EXPECT_EQ(acquire_recipe->operation_count, 1u);
+  EXPECT_EQ(acquire_recipe->effects.bits,
+            IREE_HAL_MEMORY_EFFECT_HOST_INVALIDATE);
   EXPECT_EQ(acquire_recipe->operations[0].range_granularity, 64u);
   EXPECT_EQ(acquire_recipe->operations[0].host.instruction,
             IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLFLUSHOPT);
@@ -264,12 +268,52 @@ TEST_F(MemoryScopeTest, WildcardComposesResourcesWithoutLosingNativeActions) {
       table(), pair, IREE_HAL_MEMORY_TRANSITION_RELEASE);
   ASSERT_NE(recipe, nullptr);
   ASSERT_EQ(recipe->operation_count, 2u);
+  EXPECT_EQ(recipe->effects.bits, IREE_HAL_MEMORY_EFFECT_HOST_FLUSH);
   EXPECT_EQ(recipe->operations[0].executor,
             IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_DIRECT);
   EXPECT_EQ(recipe->operations[0].range_granularity, 64u);
   EXPECT_EQ(recipe->operations[1].executor,
             IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API);
   EXPECT_EQ(recipe->operations[1].range_granularity, 4096u);
+}
+
+TEST_F(MemoryScopeTest, WildcardKeepsGlobalAndRangeQueueActionsDistinct) {
+  IREE_ASSERT_OK(iree_hal_memory_contract_initialize_transitions(
+      contract_,
+      [](void* user_data, uint32_t producer, uint32_t consumer,
+         iree_hal_memory_pair_info_t* out_info) -> iree_status_t {
+        IREE_RETURN_IF_ERROR(
+            CoherentPair(nullptr, producer, consumer, out_info));
+        if (producer == 2) {
+          out_info->release.kind = consumer == 4
+                                       ? IREE_HAL_MEMORY_TRANSITION_KIND_GLOBAL
+                                       : IREE_HAL_MEMORY_TRANSITION_KIND_RANGE;
+          out_info->release.executor =
+              IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE;
+          out_info->release.operation =
+              IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM;
+          out_info->release.range_granularity = consumer == 4 ? 0 : 64;
+        }
+        return iree_ok_status();
+      },
+      nullptr));
+
+  iree_hal_memory_transition_pair_t pair;
+  IREE_ASSERT_OK(iree_hal_memory_transition_prepare_pair(
+      table(), scope(2), scope(0), IREE_HAL_MEMORY_TRANSITION_RELEASE, &pair));
+  const iree_hal_memory_effects_t effects =
+      iree_hal_memory_transition_query(table(), pair).release;
+  EXPECT_NE(effects.bits & IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM, 0u);
+  EXPECT_NE(effects.bits & IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM, 0u);
+  const auto* recipe = iree_hal_memory_transition_recipe(
+      table(), pair, IREE_HAL_MEMORY_TRANSITION_RELEASE);
+  ASSERT_NE(recipe, nullptr);
+  EXPECT_EQ(recipe->effects.bits,
+            IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM);
+  ASSERT_EQ(recipe->operation_count, 1u);
+  EXPECT_EQ(recipe->operations[0].kind, IREE_HAL_MEMORY_TRANSITION_KIND_RANGE);
+  EXPECT_EQ(recipe->operations[0].executor,
+            IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE);
 }
 
 TEST_F(MemoryScopeTest, NativeQueryFailureDoesNotPublishPartialTable) {
@@ -297,8 +341,8 @@ TEST_F(MemoryScopeTest, NativeQueryFailureDoesNotPublishPartialTable) {
 
 TEST(MemoryEffectsTest, CombinationPreservesAllRequiredExecutors) {
   iree_hal_memory_effects_t effects = {
-      IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM};
-  for (uint32_t bits : {IREE_HAL_MEMORY_EFFECT_RESOURCE_OPERANDS,
+      IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM};
+  for (uint32_t bits : {IREE_HAL_MEMORY_EFFECT_RANGE_ACQUIRE_FROM_SYSTEM,
                         IREE_HAL_MEMORY_EFFECT_PROGRAM_EXECUTOR,
                         IREE_HAL_MEMORY_EFFECT_UNSUPPORTED}) {
     effects = iree_hal_memory_effects_combine(effects, {bits});
@@ -307,6 +351,19 @@ TEST(MemoryEffectsTest, CombinationPreservesAllRequiredExecutors) {
   EXPECT_FALSE(iree_hal_memory_effects_is_supported(effects));
   EXPECT_TRUE(iree_hal_memory_effects_requires_resources(effects));
   EXPECT_NE(effects.bits & IREE_HAL_MEMORY_EFFECT_PROGRAM_EXECUTOR, 0u);
+}
+
+TEST(MemoryEffectsTest, CombinationPreservesGlobalAndRangeGranularity) {
+  const iree_hal_memory_effects_t global = {
+      IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM};
+  const iree_hal_memory_effects_t range = {
+      IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM};
+  const iree_hal_memory_effects_t combined =
+      iree_hal_memory_effects_combine(global, range);
+  EXPECT_NE(combined.bits & IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM,
+            0u);
+  EXPECT_NE(combined.bits & IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM, 0u);
+  EXPECT_TRUE(iree_hal_memory_effects_requires_resources(combined));
 }
 
 }  // namespace

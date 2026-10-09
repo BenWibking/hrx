@@ -50,7 +50,7 @@ TEST(QueueBarrierTest, ExplicitEmptyReplacesDefaultDependency) {
   EXPECT_TRUE(iree_hal_vulkan_barrier_is_empty(&native.after));
 
   iree_hal_barrier_t acquire = {};
-  acquire.effects.bits = IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM;
+  acquire.effects.bits = IREE_HAL_MEMORY_EFFECT_GLOBAL_ACQUIRE_FROM_SYSTEM;
   iree_hal_barrier_list_t list = {1, &acquire};
   barriers.after = &list;
   native = iree_hal_vulkan_queue_barriers_resolve(&barriers);
@@ -434,8 +434,9 @@ TEST_F(VulkanCommandBufferTest,
 
   IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
   iree_hal_barrier_t execution_barrier = {};
-  execution_barrier.effects.bits = IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM |
-                                   IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM;
+  execution_barrier.effects.bits =
+      IREE_HAL_MEMORY_EFFECT_GLOBAL_ACQUIRE_FROM_SYSTEM |
+      IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM;
   IREE_ASSERT_OK(iree_hal_command_buffer_barrier(command_buffer.get(),
                                                  &execution_barrier));
   IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
