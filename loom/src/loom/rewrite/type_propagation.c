@@ -265,7 +265,7 @@ static iree_status_t loom_type_propagator_register_value(
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(loom_local_value_domain_register_value(
-      &propagator->value_domain, propagator->arena, value_id, out_ordinal));
+      &propagator->value_domain, value_id, out_ordinal));
   return loom_type_propagator_ensure_ordinal_capacity(
       propagator, (iree_host_size_t)*out_ordinal + 1);
 }

@@ -79,7 +79,7 @@ iree_status_t loom_view_region_table_initialize(
     if (root != LOOM_VALUE_ID_INVALID) {
       loom_value_ordinal_t root_ordinal;
       IREE_RETURN_IF_ERROR(loom_local_value_domain_register_value(
-          value_domain, expression_context->arena, root, &root_ordinal));
+          value_domain, root, &root_ordinal));
     }
   }
   const iree_host_size_t value_count = value_domain->value_count;
