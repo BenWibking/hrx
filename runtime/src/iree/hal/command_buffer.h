@@ -249,9 +249,11 @@ typedef struct iree_hal_buffer_barrier_t {
   iree_hal_access_scope_t source_scope;
   // All access scopes following the barrier (inclusive).
   iree_hal_access_scope_t target_scope;
-  // Buffer the barrier is restricted to.
-  // The barrier will apply to the entire physical device allocation.
+  // Direct or indirect logical buffer range the barrier applies to.
   iree_hal_buffer_ref_t buffer_ref;
+  // Prepared ranged queue actions for this buffer range, or NULL when this is
+  // only an ordinary local access dependency. Recording copies all actions.
+  const iree_hal_memory_transition_recipe_t* recipe;
 } iree_hal_buffer_barrier_t;
 
 // One local execution and memory dependency. Visibility effects come from a
@@ -264,7 +266,7 @@ typedef struct iree_hal_barrier_t {
   iree_hal_execution_stage_t target_stage_mask;
   // Explicit minimum semantics independent of prepared transition queries.
   iree_hal_barrier_flags_t flags;
-  // Combined global visibility actions for this local queue executor.
+  // Combined visibility actions for this local queue executor.
   iree_hal_memory_effects_t effects;
   // Number of global access dependencies.
   iree_host_size_t memory_barrier_count;
@@ -574,11 +576,12 @@ IREE_API_EXPORT iree_status_t iree_hal_command_buffer_end_debug_group(
 // acquire-system and release-system semantics, respectively.
 //
 // Prepared global queue effects are resolved while recording and compose with
-// the explicit minimum flags. No table or scope is retained or queried during
-// submission. Unqualified effects fail with IREE_STATUS_UNAVAILABLE. Host,
-// program, and resource actions cannot be represented by this global barrier
-// and fail with IREE_STATUS_UNIMPLEMENTED. An empty effect elides cache work,
-// while the descriptor's execution and access dependencies remain in force.
+// the explicit minimum flags. Prepared ranged queue effects are correlated
+// with buffer barriers and copied by the accepting recorder. No table or scope
+// is retained or queried during submission. Unqualified effects fail with
+// IREE_STATUS_UNAVAILABLE; host and program actions require their qualified
+// executor and fail here with IREE_STATUS_UNIMPLEMENTED. An empty effect elides
+// cache work while execution and access dependencies remain in force.
 IREE_API_EXPORT iree_status_t
 iree_hal_command_buffer_barrier(iree_hal_command_buffer_t* command_buffer,
                                 const iree_hal_barrier_t* barrier);

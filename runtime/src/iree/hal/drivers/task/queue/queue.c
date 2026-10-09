@@ -38,41 +38,7 @@ static iree_hal_atomic_flags_t iree_hal_task_queue_resolve_barriers(
   }
   iree_hal_atomic_flags_t flags = IREE_HAL_ATOMIC_FLAG_NONE;
   for (iree_host_size_t i = 0; i < barriers->count; ++i) {
-    const iree_hal_barrier_t* barrier = &barriers->values[i];
-    iree_hal_barrier_flags_t barrier_flags =
-        iree_hal_barrier_resolve_flags(barrier);
-    if (iree_any_bit_set(barrier->source_stage_mask,
-                         IREE_HAL_EXECUTION_STAGE_HOST)) {
-      barrier_flags |= IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE;
-    }
-    if (iree_any_bit_set(barrier->target_stage_mask,
-                         IREE_HAL_EXECUTION_STAGE_HOST)) {
-      barrier_flags |= IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
-    }
-    if (iree_any_bit_set(barrier_flags,
-                         IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE)) {
-      flags |= IREE_HAL_ATOMIC_FLAG_ACQUIRE;
-    }
-    if (iree_any_bit_set(barrier_flags,
-                         IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE)) {
-      flags |= IREE_HAL_ATOMIC_FLAG_RELEASE;
-    }
-    for (iree_host_size_t j = 0; j < barrier->memory_barrier_count; ++j) {
-      if (barrier->memory_barriers[j].source_scope) {
-        flags |= IREE_HAL_ATOMIC_FLAG_RELEASE;
-      }
-      if (barrier->memory_barriers[j].target_scope) {
-        flags |= IREE_HAL_ATOMIC_FLAG_ACQUIRE;
-      }
-    }
-    for (iree_host_size_t j = 0; j < barrier->buffer_barrier_count; ++j) {
-      if (barrier->buffer_barriers[j].source_scope) {
-        flags |= IREE_HAL_ATOMIC_FLAG_RELEASE;
-      }
-      if (barrier->buffer_barriers[j].target_scope) {
-        flags |= IREE_HAL_ATOMIC_FLAG_ACQUIRE;
-      }
-    }
+    flags |= iree_hal_task_barrier_resolve_atomic_flags(&barriers->values[i]);
   }
   return flags;
 }

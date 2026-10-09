@@ -56,6 +56,42 @@ class MemoryScopeTest : public ::testing::Test {
   iree_hal_memory_contract_t* contract_ = nullptr;
 };
 
+TEST(MemoryTransitionRecipeTest, ValidatesEffectsAndQueueOperationShape) {
+  iree_hal_memory_transition_recipe_info_t operation = {
+      /*.kind=*/IREE_HAL_MEMORY_TRANSITION_KIND_RANGE,
+      /*.executor=*/IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE,
+      /*.operation=*/IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM,
+      /*.range_granularity=*/64,
+  };
+  iree_hal_memory_transition_recipe_t recipe = {
+      /*.effects=*/{IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM},
+      /*.operation_count=*/1,
+      /*.operations=*/&operation,
+  };
+  IREE_EXPECT_OK(iree_hal_memory_transition_recipe_validate(&recipe));
+
+  recipe.effects.bits = IREE_HAL_MEMORY_EFFECT_RANGE_ACQUIRE_FROM_SYSTEM;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        iree_hal_memory_transition_recipe_validate(&recipe));
+  recipe.effects.bits = IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM;
+  operation.kind = IREE_HAL_MEMORY_TRANSITION_KIND_GLOBAL;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        iree_hal_memory_transition_recipe_validate(&recipe));
+  operation.kind = IREE_HAL_MEMORY_TRANSITION_KIND_RANGE;
+  operation.host.instruction = IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLFLUSH;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        iree_hal_memory_transition_recipe_validate(&recipe));
+  operation.executor = IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_DIRECT;
+  operation.operation = IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_FLUSH;
+  recipe.effects.bits = IREE_HAL_MEMORY_EFFECT_HOST_FLUSH;
+  IREE_EXPECT_OK(iree_hal_memory_transition_recipe_validate(&recipe));
+  operation.host.instruction = (iree_hal_host_cache_instruction_t)0xFFFFFFFFu;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        iree_hal_memory_transition_recipe_validate(&recipe));
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        iree_hal_memory_transition_recipe_validate(nullptr));
+}
+
 TEST_F(MemoryScopeTest, UnknownIsNotCoherent) {
   auto transition = Query(2, 4, IREE_HAL_MEMORY_TRANSITION_RELEASE);
   EXPECT_FALSE(iree_hal_memory_effects_is_supported(transition.release));

@@ -634,6 +634,10 @@ static iree_status_t iree_hal_replay_recorder_target_operation_end(
       operation->record.metadata.record_flags |=
           IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS;
     }
+    if (operation->barriers.has_transition_recipes) {
+      operation->record.metadata.record_flags |=
+          IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES;
+    }
     status = iree_hal_replay_recorder_end_operation_with_payload(
         &operation->record, status, IREE_ARRAYSIZE(iovecs), iovecs);
   } else {
@@ -952,6 +956,10 @@ static iree_status_t iree_hal_replay_recorder_queue_dispatch(
       if (barrier_storage.payload.data_length) {
         pending_record.metadata.record_flags |=
             IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS;
+      }
+      if (barrier_storage.has_transition_recipes) {
+        pending_record.metadata.record_flags |=
+            IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES;
       }
       status = iree_hal_replay_recorder_end_operation_with_payload(
           &pending_record, status, IREE_ARRAYSIZE(iovecs), iovecs);
@@ -1684,6 +1692,10 @@ static iree_status_t iree_hal_replay_recorder_queue_transfer(
         pending_record.metadata.record_flags |=
             IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS;
       }
+      if (barrier_storage.has_transition_recipes) {
+        pending_record.metadata.record_flags |=
+            IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES;
+      }
       status = iree_hal_replay_recorder_end_operation_with_payload(
           &pending_record, status, IREE_ARRAYSIZE(iovecs), iovecs);
     } else {
@@ -1811,6 +1823,10 @@ static iree_status_t iree_hal_replay_recorder_queue_read(
         pending_record.metadata.record_flags |=
             IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS;
       }
+      if (barrier_storage.has_transition_recipes) {
+        pending_record.metadata.record_flags |=
+            IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES;
+      }
       status = iree_hal_replay_recorder_end_operation_with_payload(
           &pending_record, status, IREE_ARRAYSIZE(iovecs), iovecs);
     } else {
@@ -1926,6 +1942,10 @@ static iree_status_t iree_hal_replay_recorder_queue_write(
       if (barrier_storage.payload.data_length) {
         pending_record.metadata.record_flags |=
             IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS;
+      }
+      if (barrier_storage.has_transition_recipes) {
+        pending_record.metadata.record_flags |=
+            IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES;
       }
       status = iree_hal_replay_recorder_end_operation_with_payload(
           &pending_record, status, IREE_ARRAYSIZE(iovecs), iovecs);

@@ -60,6 +60,45 @@ TEST(BarrierTest, SystemFlagsWidenScopesIndependently) {
   EXPECT_EQ(scopes.release, IREE_HSA_FENCE_SCOPE_SYSTEM);
 }
 
+TEST(BarrierTest, RangedRecipesWidenSelectedScope) {
+  iree_hal_memory_transition_recipe_info_t operation = {
+      /*.kind=*/IREE_HAL_MEMORY_TRANSITION_KIND_RANGE,
+      /*.executor=*/IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE,
+      /*.operation=*/IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM,
+      /*.range_granularity=*/64,
+  };
+  iree_hal_memory_transition_recipe_t recipe = {
+      /*.effects=*/{IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM},
+      /*.operation_count=*/1,
+      /*.operations=*/&operation,
+  };
+  iree_hal_buffer_barrier_t buffer_barrier = {
+      /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_DISPATCH_WRITE,
+      /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_DISPATCH_READ,
+      /*.buffer_ref=*/{},
+      /*.recipe=*/&recipe,
+  };
+  iree_hal_amdgpu_barrier_scopes_t scopes =
+      iree_hal_amdgpu_barrier_resolve_scopes(
+          IREE_HAL_EXECUTION_STAGE_DISPATCH, IREE_HAL_EXECUTION_STAGE_DISPATCH,
+          IREE_HAL_BARRIER_FLAG_NONE,
+          /*memory_barrier_count=*/0, /*memory_barriers=*/nullptr,
+          /*buffer_barrier_count=*/1, &buffer_barrier);
+  EXPECT_EQ(scopes.acquire, IREE_HSA_FENCE_SCOPE_AGENT);
+  EXPECT_EQ(scopes.release, IREE_HSA_FENCE_SCOPE_SYSTEM);
+
+  operation.operation =
+      IREE_HAL_MEMORY_TRANSITION_OPERATION_ACQUIRE_FROM_SYSTEM;
+  recipe.effects.bits = IREE_HAL_MEMORY_EFFECT_RANGE_ACQUIRE_FROM_SYSTEM;
+  scopes = iree_hal_amdgpu_barrier_resolve_scopes(
+      IREE_HAL_EXECUTION_STAGE_DISPATCH, IREE_HAL_EXECUTION_STAGE_DISPATCH,
+      IREE_HAL_BARRIER_FLAG_NONE,
+      /*memory_barrier_count=*/0, /*memory_barriers=*/nullptr,
+      /*buffer_barrier_count=*/1, &buffer_barrier);
+  EXPECT_EQ(scopes.acquire, IREE_HSA_FENCE_SCOPE_SYSTEM);
+  EXPECT_EQ(scopes.release, IREE_HSA_FENCE_SCOPE_AGENT);
+}
+
 TEST(BarrierTest, HostStagesImplySystemScopes) {
   iree_hal_amdgpu_barrier_scopes_t scopes =
       iree_hal_amdgpu_barrier_resolve_scopes(

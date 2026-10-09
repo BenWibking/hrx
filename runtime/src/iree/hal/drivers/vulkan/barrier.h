@@ -37,15 +37,15 @@ typedef struct iree_hal_vulkan_queue_barriers_t {
   iree_hal_vulkan_barrier_t after;
 } iree_hal_vulkan_queue_barriers_t;
 
-// Resolves one validated HAL dependency. Buffer ranges are conservatively
-// promoted to global visibility by this backend.
+// Resolves stages and global visibility flags into one native dependency.
 iree_hal_vulkan_barrier_t iree_hal_vulkan_barrier_resolve(
     iree_hal_execution_stage_t source_stage_mask,
     iree_hal_execution_stage_t target_stage_mask,
     iree_hal_barrier_flags_t flags, bool has_memory_visibility);
 
-// Captures validated direct-operation boundaries. NULL boundaries select broad
-// system visibility; explicit empty lists produce empty native dependencies.
+// Captures validated direct-operation boundaries, conservatively promoting
+// buffer ranges to global visibility. NULL boundaries select broad system
+// visibility; explicit empty lists produce empty native dependencies.
 iree_hal_vulkan_queue_barriers_t iree_hal_vulkan_queue_barriers_resolve(
     const iree_hal_queue_barriers_t* barriers);
 
@@ -64,10 +64,20 @@ VkAccessFlags2 iree_hal_vulkan_barrier_source_access_mask(
 VkAccessFlags2 iree_hal_vulkan_barrier_target_access_mask(
     iree_hal_execution_stage_t stage_mask);
 
+// Maps explicit HAL access scopes to Vulkan synchronization2 access flags.
+VkAccessFlags2 iree_hal_vulkan_access_scope_mask(
+    iree_hal_access_scope_t access_scope);
+
 // Records |barrier| into |command_buffer|.
 void iree_hal_vulkan_barrier_record(const iree_hal_vulkan_device_syms_t* syms,
                                     VkCommandBuffer command_buffer,
                                     const iree_hal_vulkan_barrier_t* barrier);
+
+// Records |barrier| over one exact native buffer range.
+void iree_hal_vulkan_buffer_barrier_record(
+    const iree_hal_vulkan_device_syms_t* syms, VkCommandBuffer command_buffer,
+    const iree_hal_vulkan_barrier_t* barrier, VkBuffer buffer,
+    VkDeviceSize offset, VkDeviceSize length);
 
 #ifdef __cplusplus
 }  // extern "C"

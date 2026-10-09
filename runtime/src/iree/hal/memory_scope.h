@@ -443,6 +443,12 @@ typedef struct iree_hal_memory_transition_recipe_t {
   const iree_hal_memory_transition_recipe_info_t* operations;
 } iree_hal_memory_transition_recipe_t;
 
+// Validates a resource recipe at a public consumption boundary. Recipes may
+// contain ranged queue/program actions or host cache actions; global queue
+// actions have no resource operand and therefore no recipe.
+IREE_API_EXPORT iree_status_t iree_hal_memory_transition_recipe_validate(
+    const iree_hal_memory_transition_recipe_t* recipe);
+
 // Resolves a prepared side's resource actions by fixed indices. NULL means no
 // resource recipe is available; the side's effects distinguish a global/no-op
 // action from an unsupported relation. The prepared key belongs to this table's

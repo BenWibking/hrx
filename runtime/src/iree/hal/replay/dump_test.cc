@@ -1820,6 +1820,8 @@ TEST(ReplayDumpTest, QueueBarriersDistinguishDefaultAndExplicitEmpty) {
   };
   builder.Append(metadata, IREE_ARRAYSIZE(spans), spans);
   ++metadata.sequence_ordinal;
+  metadata.record_flags |=
+      IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES;
   iree_hal_replay_command_buffer_execution_barrier_payload_t action = {};
   action.source_stage_mask = IREE_HAL_EXECUTION_STAGE_TRANSFER;
   action.flags = IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
@@ -1830,11 +1832,23 @@ TEST(ReplayDumpTest, QueueBarriersDistinguishDefaultAndExplicitEmpty) {
   range.buffer_ref.buffer_id = 7;
   range.buffer_ref.offset = 6;
   range.buffer_ref.length = 4;
-  footer = {sizeof(action) + sizeof(range), 1, UINT64_MAX};
+  iree_hal_replay_memory_transition_recipe_payload_t recipe = {};
+  recipe.effects = IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM;
+  recipe.operation_count = 1;
+  iree_hal_replay_memory_transition_operation_payload_t transition = {};
+  transition.kind = IREE_HAL_MEMORY_TRANSITION_KIND_RANGE;
+  transition.executor = IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE;
+  transition.operation = IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM;
+  transition.range_granularity = 64;
+  footer = {
+      sizeof(action) + sizeof(range) + sizeof(recipe) + sizeof(transition), 1,
+      UINT64_MAX};
   iree_const_byte_span_t explicit_spans[] = {
       iree_make_const_byte_span(&operation, sizeof(operation)),
       iree_make_const_byte_span(&action, sizeof(action)),
       iree_make_const_byte_span(&range, sizeof(range)),
+      iree_make_const_byte_span(&recipe, sizeof(recipe)),
+      iree_make_const_byte_span(&transition, sizeof(transition)),
       iree_make_const_byte_span(&footer, sizeof(footer)),
   };
   builder.Append(metadata, IREE_ARRAYSIZE(explicit_spans), explicit_spans);
@@ -1846,6 +1860,10 @@ TEST(ReplayDumpTest, QueueBarriersDistinguishDefaultAndExplicitEmpty) {
       DumpReplayToString(MakeReplayFileContents(storage), &options, &output));
   EXPECT_THAT(output, HasSubstr("before=default after=[]"));
   EXPECT_THAT(output, HasSubstr("buffer_ref={buffer_id=7 offset=6 length=4"));
+  EXPECT_THAT(output,
+              HasSubstr("recipe={effects=0x00000004 operations=[{kind=2"));
+  EXPECT_THAT(output, HasSubstr("host_instruction=0 host_fence_before=0 "
+                                "host_fence_after=0"));
   options.format = IREE_HAL_REPLAY_DUMP_FORMAT_JSONL;
   output.clear();
   IREE_ASSERT_OK(
@@ -1853,6 +1871,11 @@ TEST(ReplayDumpTest, QueueBarriersDistinguishDefaultAndExplicitEmpty) {
   EXPECT_THAT(output, HasSubstr("\"before\":null,\"after\":[]"));
   EXPECT_THAT(output, HasSubstr("\"buffer_ref\":{\"buffer_id\":7,"));
   EXPECT_THAT(output, HasSubstr("\"offset\":6,\"length\":4"));
+  EXPECT_THAT(output, HasSubstr("\"recipe\":{\"effects\":4,"));
+  EXPECT_THAT(output, HasSubstr("\"range_granularity\":64"));
+  EXPECT_THAT(output, HasSubstr("\"host_instruction\":0,"));
+  EXPECT_THAT(output, HasSubstr("\"host_fence_before\":0,"));
+  EXPECT_THAT(output, HasSubstr("\"host_fence_after\":0"));
 }
 
 }  // namespace

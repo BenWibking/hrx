@@ -303,6 +303,7 @@ static uint32_t iree_hal_cmd_region_tile_count(
       case IREE_HAL_CMD_ATOMIC_WAIT:
       case IREE_HAL_CMD_ATOMIC_STORE:
       case IREE_HAL_CMD_ATOMIC_RMW:
+      case IREE_HAL_CMD_FENCE:
         tile_count += 1;
         break;
       default:
@@ -1207,6 +1208,17 @@ static bool iree_hal_cmd_claim_single_tile(iree_atomic_int64_t* tile_index,
   }
 }
 
+static uint32_t iree_hal_cmd_execute_fence(const iree_hal_cmd_fence_t* command,
+                                           iree_atomic_int64_t* tile_index,
+                                           int32_t region_epoch,
+                                           uint32_t worker_count) {
+  if (!iree_hal_cmd_claim_single_tile(tile_index, region_epoch, worker_count)) {
+    return 0;
+  }
+  iree_hal_task_atomic_fence(command->atomic_flags);
+  return 1;
+}
+
 // Executes an UPDATE command. Copies inline host data from .text to a device
 // buffer. UPDATE commands are at most one transfer tile because the inline
 // source payload is capped by the block ISA command size.
@@ -1424,6 +1436,11 @@ static uint32_t iree_hal_cmd_block_processor_process_region(
         tiles_completed += atomic_tiles;
         break;
       }
+      case IREE_HAL_CMD_FENCE:
+        tiles_completed += iree_hal_cmd_execute_fence(
+            (const iree_hal_cmd_fence_t*)cmd, tile_idx, region_epoch,
+            context->worker_count);
+        break;
       default: {
         iree_hal_cmd_block_processor_report_error(
             context,
@@ -1708,6 +1725,11 @@ static iree_status_t iree_hal_cmd_block_processor_execute_single_worker(
           *out_tiles_executed += tiles;
           break;
         }
+        case IREE_HAL_CMD_FENCE:
+          *out_tiles_executed += iree_hal_cmd_execute_fence(
+              (const iree_hal_cmd_fence_t*)cmd, /*tile_index=*/NULL,
+              /*region_epoch=*/0, /*worker_count=*/1);
+          break;
         case IREE_HAL_CMD_BARRIER: {
           // Single-worker: barriers are no-ops (execution is sequential).
           break;

@@ -122,6 +122,18 @@ TEST_P(TaskQueueTest, ExecutesBindingsWithDeclaredPermissions) {
       iree_hal_semaphore_create(device, IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY, 0,
                                 IREE_HAL_SEMAPHORE_FLAG_DEFAULT, &completion));
 
+  const iree_hal_memory_transition_recipe_info_t release_operation = {
+      /*.kind=*/IREE_HAL_MEMORY_TRANSITION_KIND_RANGE,
+      /*.executor=*/IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE,
+      /*.operation=*/IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM,
+      /*.range_granularity=*/64,
+  };
+  const iree_hal_memory_transition_recipe_t release_recipe = {
+      /*.effects=*/{IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM},
+      /*.operation_count=*/1,
+      /*.operations=*/&release_operation,
+  };
+
   for (iree_host_size_t binding_count : {0, 2}) {
     SCOPED_TRACE(binding_count);
     target.fill(0xA5);
@@ -137,6 +149,26 @@ TEST_P(TaskQueueTest, ExecutesBindingsWithDeclaredPermissions) {
         binding_count ? iree_hal_make_indirect_buffer_ref(1, 0, 16)
                       : iree_hal_make_buffer_ref(target_buffer, 0, 16),
         IREE_HAL_COPY_FLAG_NONE));
+    const iree_hal_buffer_ref_t barrier_ref =
+        binding_count ? iree_hal_make_indirect_buffer_ref(1, 0, 16)
+                      : iree_hal_make_buffer_ref(target_buffer, 0, 16);
+    const iree_hal_buffer_barrier_t buffer_barrier = {
+        /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
+        /*.target_scope=*/0,
+        /*.buffer_ref=*/barrier_ref,
+        /*.recipe=*/&release_recipe,
+    };
+    const iree_hal_barrier_t barrier = {
+        /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+        /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
+        /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
+        /*.effects=*/release_recipe.effects,
+        /*.memory_barrier_count=*/0,
+        /*.memory_barriers=*/nullptr,
+        /*.buffer_barrier_count=*/1,
+        /*.buffer_barriers=*/&buffer_barrier,
+    };
+    IREE_ASSERT_OK(iree_hal_command_buffer_barrier(command_buffer, &barrier));
     IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer));
     const iree_hal_buffer_binding_t binding_values[] = {
         {source_buffer, 0, 16},

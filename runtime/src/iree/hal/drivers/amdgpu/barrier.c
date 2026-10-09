@@ -54,6 +54,19 @@ iree_hal_amdgpu_barrier_scopes_t iree_hal_amdgpu_barrier_resolve_scopes(
     iree_hal_amdgpu_barrier_accumulate_access_scopes(
         buffer_barriers[i].source_scope, buffer_barriers[i].target_scope,
         &scopes);
+    const iree_hal_memory_transition_recipe_t* recipe =
+        buffer_barriers[i].recipe;
+    if (!recipe) {
+      continue;
+    }
+    for (uint32_t j = 0; j < recipe->operation_count; ++j) {
+      if (recipe->operations[j].operation ==
+          IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM) {
+        scopes.release = IREE_HSA_FENCE_SCOPE_SYSTEM;
+      } else {
+        scopes.acquire = IREE_HSA_FENCE_SCOPE_SYSTEM;
+      }
+    }
   }
 
   return scopes;

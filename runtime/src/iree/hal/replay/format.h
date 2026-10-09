@@ -22,9 +22,9 @@ extern "C" {
 // Major version of the IREE HAL replay file format.
 #define IREE_HAL_REPLAY_FILE_VERSION_MAJOR 9u
 
-// Minor version of the IREE HAL replay file format. Minor version 4 adds the
-// queue barrier record extension.
-#define IREE_HAL_REPLAY_FILE_VERSION_MINOR 4u
+// Minor version of the IREE HAL replay file format. Minor version 5 adds
+// explicit memory transition recipes to barrier records.
+#define IREE_HAL_REPLAY_FILE_VERSION_MINOR 5u
 
 // Minor version that first assigns atomic target-error mode payload bytes.
 #define IREE_HAL_REPLAY_ATOMIC_TARGET_ERROR_MODE_VERSION_MINOR 3u
@@ -65,6 +65,11 @@ enum iree_hal_replay_file_record_flag_bits_t {
   // iree_hal_replay_queue_barriers_footer_t. Readers must understand this flag
   // to execute the operation faithfully.
   IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS = 1u << 1,
+
+  // Every serialized barrier appends one transition recipe descriptor per
+  // buffer barrier followed by their flattened operation payloads. Readers
+  // must preserve these actions to replay heterogeneous visibility faithfully.
+  IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES = 1u << 2,
 };
 
 // Session-local HAL object kind.
@@ -908,6 +913,39 @@ typedef struct iree_hal_replay_buffer_barrier_payload_t {
   // Captured buffer reference the barrier applies to.
   iree_hal_replay_buffer_ref_payload_t buffer_ref;
 } iree_hal_replay_buffer_barrier_payload_t;
+
+// Payload describing the prepared memory transition recipe attached to one
+// captured buffer barrier. One descriptor is present for every buffer barrier
+// when MEMORY_TRANSITION_RECIPES is set, including empty recipes.
+typedef struct iree_hal_replay_memory_transition_recipe_payload_t {
+  // Combined semantic memory effect bits fulfilled by the operations.
+  uint32_t effects;
+  // Number of flattened operation payloads belonging to this recipe.
+  uint32_t operation_count;
+} iree_hal_replay_memory_transition_recipe_payload_t;
+static_assert(sizeof(iree_hal_replay_memory_transition_recipe_payload_t) == 8,
+              "memory transition replay recipes must be 8 bytes");
+
+// Payload describing one operation in a prepared memory transition recipe.
+typedef struct iree_hal_replay_memory_transition_operation_payload_t {
+  // Native byte granularity of the operation, or zero when not ranged.
+  uint64_t range_granularity;
+  // Qualified granularity kind.
+  uint32_t kind;
+  // Executor responsible for the operation.
+  uint32_t executor;
+  // Semantic memory transition operation.
+  uint32_t operation;
+  // Direct host cache instruction, or zero for non-host executors.
+  uint32_t host_instruction;
+  // Direct host fence preceding the operation.
+  uint32_t host_fence_before;
+  // Direct host fence following the operation.
+  uint32_t host_fence_after;
+} iree_hal_replay_memory_transition_operation_payload_t;
+static_assert(sizeof(iree_hal_replay_memory_transition_operation_payload_t) ==
+                  32,
+              "memory transition replay operations must be 32 bytes");
 
 // Payload describing a command buffer execution barrier request.
 typedef struct iree_hal_replay_command_buffer_execution_barrier_payload_t {

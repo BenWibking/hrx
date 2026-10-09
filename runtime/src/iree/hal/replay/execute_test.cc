@@ -2527,14 +2527,27 @@ TEST(ReplayExecuteTest, ExecutesRecordedExactQueueTransfer) {
   IREE_ASSERT_OK(iree_hal_buffer_subspan(
       target_buffer, 4, 8, iree_allocator_system(), &barrier_view));
   {
+    const iree_hal_memory_transition_recipe_info_t operation = {
+        /*.kind=*/IREE_HAL_MEMORY_TRANSITION_KIND_RANGE,
+        /*.executor=*/IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE,
+        /*.operation=*/IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM,
+        /*.range_granularity=*/64,
+    };
+    const iree_hal_memory_transition_recipe_t recipe = {
+        /*.effects=*/{IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM},
+        /*.operation_count=*/1,
+        /*.operations=*/&operation,
+    };
     iree_hal_buffer_barrier_t range = {};
     range.source_scope = IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE;
     range.target_scope = IREE_HAL_ACCESS_SCOPE_HOST_READ;
     range.buffer_ref = iree_hal_make_buffer_ref(barrier_view, 2, 4);
+    range.recipe = &recipe;
     iree_hal_barrier_t after = {};
     after.source_stage_mask = IREE_HAL_EXECUTION_STAGE_TRANSFER;
     after.target_stage_mask = IREE_HAL_EXECUTION_STAGE_HOST;
-    after.effects.bits = IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM;
+    after.effects.bits = IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM |
+                         IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM;
     after.buffer_barrier_count = 1;
     after.buffer_barriers = &range;
     const iree_hal_barrier_list_t after_list = {1, &after};
@@ -2573,6 +2586,8 @@ TEST(ReplayExecuteTest, ExecutesRecordedExactQueueTransfer) {
     found_transfer = true;
     EXPECT_TRUE(record.header.record_flags &
                 IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS);
+    EXPECT_TRUE(record.header.record_flags &
+                IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES);
     EXPECT_EQ(record.barriers.before.count, 0u);
     ASSERT_EQ(record.barriers.after.count, 1u);
     iree_hal_replay_command_buffer_execution_barrier_payload_t action;
@@ -2585,6 +2600,22 @@ TEST(ReplayExecuteTest, ExecutesRecordedExactQueueTransfer) {
     EXPECT_NE(range.buffer_ref.buffer_id, IREE_HAL_REPLAY_OBJECT_ID_NONE);
     EXPECT_EQ(range.buffer_ref.offset, 6u);
     EXPECT_EQ(range.buffer_ref.length, 4u);
+    iree_hal_replay_memory_transition_recipe_payload_t recipe;
+    memcpy(&recipe,
+           record.barriers.after.payload.data + sizeof(action) + sizeof(range),
+           sizeof(recipe));
+    EXPECT_EQ(recipe.effects, IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM);
+    ASSERT_EQ(recipe.operation_count, 1u);
+    iree_hal_replay_memory_transition_operation_payload_t operation;
+    memcpy(&operation,
+           record.barriers.after.payload.data + sizeof(action) + sizeof(range) +
+               sizeof(recipe),
+           sizeof(operation));
+    EXPECT_EQ(operation.kind, IREE_HAL_MEMORY_TRANSITION_KIND_RANGE);
+    EXPECT_EQ(operation.executor, IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE);
+    EXPECT_EQ(operation.operation,
+              IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM);
+    EXPECT_EQ(operation.range_granularity, 64u);
   }
   EXPECT_TRUE(found_transfer);
 

@@ -218,6 +218,12 @@ static iree_status_t iree_hal_webgpu_command_buffer_end_debug_group(
 static iree_status_t iree_hal_webgpu_command_buffer_barrier(
     iree_hal_command_buffer_t* base_command_buffer,
     const iree_hal_barrier_t* barrier) {
+  if (IREE_UNLIKELY(
+          iree_hal_memory_effects_requires_resources(barrier->effects))) {
+    return iree_make_status(
+        IREE_STATUS_UNIMPLEMENTED,
+        "WebGPU command buffers do not support ranged queue transitions");
+  }
   // WebGPU excludes simultaneous host and device access. Host/device ownership
   // transitions happen at queue submission and mapping boundaries, so the
   // ordinary barrier already covers every concurrently accessible agent.

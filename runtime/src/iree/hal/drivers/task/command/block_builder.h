@@ -244,6 +244,7 @@ iree_status_t iree_hal_cmd_block_builder_end(
 //               FILL/COPY: ceil(length / transfer tile length).
 //               UPDATE: 0 or 1 due to inline command payload size.
 //               ATOMIC_WAIT/STORE/RMW: 1.
+//               FENCE: 1.
 //
 // Returns a pointer to the command in the block via |out_cmd|. Header fields
 // (opcode, flags, size_qwords) are initialized. For DISPATCH commands,

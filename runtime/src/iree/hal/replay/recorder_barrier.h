@@ -24,6 +24,8 @@ typedef struct iree_hal_replay_recorder_barriers_t {
   iree_hal_barrier_list_t lists[2];
   // Serialized barrier lists followed by their footer, or empty for defaults.
   iree_const_byte_span_t payload;
+  // Whether serialized barriers append transition recipe payloads.
+  bool has_transition_recipes;
   // Whether all buffer references belong to this recording session.
   bool can_record;
   // Owned storage for rewritten descriptors and serialized bytes.

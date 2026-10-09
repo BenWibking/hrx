@@ -424,6 +424,127 @@ static uint32_t iree_hal_memory_transition_encode_effects(
   return bits;
 }
 
+IREE_API_EXPORT iree_status_t iree_hal_memory_transition_recipe_validate(
+    const iree_hal_memory_transition_recipe_t* recipe) {
+  if (IREE_UNLIKELY(!recipe || !recipe->operation_count ||
+                    !recipe->operations)) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "memory transition recipe is empty");
+  }
+  uint32_t effects = 0;
+  for (uint32_t i = 0; i < recipe->operation_count; ++i) {
+    const iree_hal_memory_transition_recipe_info_t* info =
+        &recipe->operations[i];
+    if (IREE_UNLIKELY(info->kind != IREE_HAL_MEMORY_TRANSITION_KIND_RANGE ||
+                      !info->range_granularity)) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "memory transition recipe is not ranged");
+    }
+    switch (info->executor) {
+      case IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE:
+      case IREE_HAL_MEMORY_TRANSITION_EXECUTOR_PROGRAM:
+        if (IREE_UNLIKELY(
+                (info->operation !=
+                     IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM &&
+                 info->operation !=
+                     IREE_HAL_MEMORY_TRANSITION_OPERATION_ACQUIRE_FROM_SYSTEM) ||
+                info->host.instruction !=
+                    IREE_HAL_HOST_CACHE_INSTRUCTION_NONE ||
+                info->host.fence_before != IREE_HAL_HOST_CACHE_FENCE_NONE ||
+                info->host.fence_after != IREE_HAL_HOST_CACHE_FENCE_NONE)) {
+          return iree_make_status(
+              IREE_STATUS_INVALID_ARGUMENT,
+              "queue/program recipe contains an invalid cache operation");
+        }
+        break;
+      case IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_DIRECT:
+        if (IREE_UNLIKELY(
+                !iree_device_size_is_power_of_two(info->range_granularity))) {
+          return iree_make_status(
+              IREE_STATUS_INVALID_ARGUMENT,
+              "direct host recipe requires a power-of-two range granularity");
+        }
+        if (IREE_UNLIKELY(
+                info->operation !=
+                    IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_FLUSH &&
+                info->operation !=
+                    IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_INVALIDATE)) {
+          return iree_make_status(
+              IREE_STATUS_INVALID_ARGUMENT,
+              "host recipe requires flush or invalidate operation");
+        }
+        switch (info->host.instruction) {
+          case IREE_HAL_HOST_CACHE_INSTRUCTION_NONE:
+          case IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLFLUSH:
+          case IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLFLUSHOPT:
+          case IREE_HAL_HOST_CACHE_INSTRUCTION_X86_CLWB:
+            break;
+          default:
+            return iree_make_status(
+                IREE_STATUS_INVALID_ARGUMENT,
+                "direct host recipe has an invalid cache instruction");
+        }
+        switch (info->host.fence_before) {
+          case IREE_HAL_HOST_CACHE_FENCE_NONE:
+          case IREE_HAL_HOST_CACHE_FENCE_X86_SFENCE:
+          case IREE_HAL_HOST_CACHE_FENCE_X86_MFENCE:
+            break;
+          default:
+            return iree_make_status(
+                IREE_STATUS_INVALID_ARGUMENT,
+                "direct host recipe has an invalid leading fence");
+        }
+        switch (info->host.fence_after) {
+          case IREE_HAL_HOST_CACHE_FENCE_NONE:
+          case IREE_HAL_HOST_CACHE_FENCE_X86_SFENCE:
+          case IREE_HAL_HOST_CACHE_FENCE_X86_MFENCE:
+            break;
+          default:
+            return iree_make_status(
+                IREE_STATUS_INVALID_ARGUMENT,
+                "direct host recipe has an invalid trailing fence");
+        }
+        break;
+      case IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API:
+        if (IREE_UNLIKELY(
+                info->operation !=
+                    IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_FLUSH &&
+                info->operation !=
+                    IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_INVALIDATE)) {
+          return iree_make_status(
+              IREE_STATUS_INVALID_ARGUMENT,
+              "host recipe requires flush or invalidate operation");
+        }
+        if (IREE_UNLIKELY(
+                info->host.instruction !=
+                    IREE_HAL_HOST_CACHE_INSTRUCTION_NONE ||
+                info->host.fence_before != IREE_HAL_HOST_CACHE_FENCE_NONE ||
+                info->host.fence_after != IREE_HAL_HOST_CACHE_FENCE_NONE)) {
+          return iree_make_status(
+              IREE_STATUS_INVALID_ARGUMENT,
+              "host API recipe contains direct cache instructions");
+        }
+        break;
+      default:
+        return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                                "memory transition recipe has no executor");
+    }
+    const uint32_t operation_effects =
+        iree_hal_memory_transition_encode_effects(info);
+    if (IREE_UNLIKELY(operation_effects & IREE_HAL_MEMORY_EFFECT_UNSUPPORTED)) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "memory transition recipe is not representable");
+    }
+    effects |= operation_effects & IREE_HAL_MEMORY_EFFECT_RESOURCE_MASK;
+  }
+  if (IREE_UNLIKELY(!effects || recipe->effects.bits != effects)) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "memory transition recipe effects do not match its operations");
+  }
+  return iree_ok_status();
+}
+
 static uint64_t iree_hal_memory_pair_encode(
     const iree_hal_memory_pair_info_t* info) {
   if (!iree_any_bit_set(info->flags,
@@ -701,6 +822,8 @@ static iree_status_t iree_hal_buffer_mapping_transition_validate(
         IREE_STATUS_INVALID_ARGUMENT,
         "host transition requires a live mapping and recipe");
   }
+  IREE_RETURN_IF_ERROR(
+      iree_hal_memory_transition_recipe_validate(transition->recipe));
   const iree_hal_buffer_mapping_t* mapping = transition->mapping;
   iree_device_size_t offset = 0;
   iree_device_size_t length = 0;

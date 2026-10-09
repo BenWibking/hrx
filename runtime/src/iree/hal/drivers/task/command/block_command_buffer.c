@@ -664,14 +664,21 @@ static iree_status_t iree_hal_block_command_buffer_barrier(
     const iree_hal_barrier_t* barrier) {
   iree_hal_block_command_buffer_t* command_buffer =
       iree_hal_block_command_buffer_cast(base_command_buffer);
-  // Block ISA barriers are global: all prior work in the region must complete
-  // before the next region begins. Fine-grained memory/buffer barriers are
-  // not applicable. Region publication uses release/acquire synchronization in
-  // the coherent host memory domain and already provides system visibility.
+  const iree_hal_atomic_flags_t atomic_flags =
+      iree_hal_task_barrier_resolve_atomic_flags(barrier);
   IREE_RETURN_IF_ERROR(iree_hal_block_command_buffer_profile_reserve_operations(
       command_buffer, command_buffer->profile.operations.count + 1));
   IREE_RETURN_IF_ERROR(
       iree_hal_cmd_block_builder_barrier(&command_buffer->builder));
+  if (atomic_flags != IREE_HAL_ATOMIC_FLAG_NONE) {
+    // Isolate the fence in one region. The block processor's region dependency
+    // aggregates prior worker writes into the fence and publishes its result to
+    // every worker entering the following region.
+    IREE_RETURN_IF_ERROR(
+        iree_hal_cmd_build_fence(&command_buffer->builder, atomic_flags));
+    IREE_RETURN_IF_ERROR(
+        iree_hal_cmd_block_builder_barrier(&command_buffer->builder));
+  }
   iree_hal_block_command_buffer_profile_append_barrier(command_buffer);
   return iree_ok_status();
 }

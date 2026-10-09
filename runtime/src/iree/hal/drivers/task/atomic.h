@@ -9,6 +9,7 @@
 
 #include "iree/base/api.h"
 #include "iree/hal/atomic.h"
+#include "iree/hal/command_buffer.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,13 @@ bool iree_hal_task_atomic_width_is_lock_free(iree_hal_atomic_width_t width);
 // atomic widths.
 iree_hal_atomic_capabilities_t iree_hal_task_atomic_capabilities(
     iree_hal_atomic_operation_flags_t allowed_operations);
+
+// Resolves one validated HAL barrier to the ordering required in the task
+// driver's coherent CPU memory domain. Ranged queue actions are conservatively
+// promoted to CPU-wide fences; non-coherent mappings use explicit host
+// maintenance instead.
+iree_hal_atomic_flags_t iree_hal_task_barrier_resolve_atomic_flags(
+    const iree_hal_barrier_t* barrier);
 
 // Applies acquire/release ordering at a coherent CPU execution boundary.
 // Empty flags require no fence. System and device scope share the CPU's

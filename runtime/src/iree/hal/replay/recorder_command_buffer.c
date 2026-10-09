@@ -246,6 +246,9 @@ static iree_status_t iree_hal_replay_recorder_command_buffer_barrier(
   if (iree_status_is_ok(status)) {
     if (!storage.can_record) {
       iree_hal_replay_recorder_mark_unsupported(&pending_record);
+    } else if (storage.has_transition_recipes) {
+      pending_record.metadata.record_flags |=
+          IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES;
     }
     status = iree_hal_command_buffer_barrier(
         command_buffer->base_command_buffer, storage.base.before->values);

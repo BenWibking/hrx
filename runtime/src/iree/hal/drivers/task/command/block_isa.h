@@ -50,6 +50,7 @@ typedef enum iree_hal_cmd_opcode_e {
   IREE_HAL_CMD_ATOMIC_WAIT = 7,   // Wait on an atomic buffer location.
   IREE_HAL_CMD_ATOMIC_STORE = 8,  // Atomically store to a buffer location.
   IREE_HAL_CMD_ATOMIC_RMW = 9,    // Atomically update a buffer location.
+  IREE_HAL_CMD_FENCE = 10,        // Apply CPU memory ordering.
 } iree_hal_cmd_opcode_t;
 
 typedef uint8_t iree_hal_cmd_flags_t;
@@ -580,6 +581,17 @@ typedef struct iree_hal_cmd_atomic_rmw_t {
 
 static_assert(sizeof(iree_hal_cmd_atomic_rmw_t) == 24,
               "atomic RMW command is 3 qwords");
+
+// FENCE: applies acquire/release ordering in the coherent CPU memory domain.
+// Recorders isolate this one-tile command in its own region so all preceding
+// work completes before the fence and all following work begins afterward.
+typedef struct iree_hal_cmd_fence_t {
+  iree_hal_cmd_header_t header;  // opcode=FENCE
+  // IREE_HAL_ATOMIC_FLAG_ACQUIRE/RELEASE mask.
+  iree_hal_atomic_flags_t atomic_flags;
+} iree_hal_cmd_fence_t;
+
+static_assert(sizeof(iree_hal_cmd_fence_t) == 8, "fence command is 1 qword");
 
 //===----------------------------------------------------------------------===//
 // BARRIER, BRANCH, RETURN commands

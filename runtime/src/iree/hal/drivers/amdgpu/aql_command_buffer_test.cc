@@ -338,6 +338,56 @@ TEST_F(AqlCommandBufferTest, SystemScopeBarrierWidensSelectedFence) {
   EXPECT_EQ(barrier->release_scope, IREE_HSA_FENCE_SCOPE_AGENT);
 }
 
+TEST_F(AqlCommandBufferTest, RangedRecipeWidensNativeFence) {
+  CommandBufferPtr command_buffer =
+      CreateCommandBufferWithMode(IREE_HAL_COMMAND_BUFFER_MODE_UNVALIDATED);
+  ASSERT_NE(command_buffer, nullptr);
+
+  const iree_hal_memory_transition_recipe_info_t operation = {
+      /*.kind=*/IREE_HAL_MEMORY_TRANSITION_KIND_RANGE,
+      /*.executor=*/IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE,
+      /*.operation=*/IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM,
+      /*.range_granularity=*/64,
+  };
+  const iree_hal_memory_transition_recipe_t recipe = {
+      /*.effects=*/{IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM},
+      /*.operation_count=*/1,
+      /*.operations=*/&operation,
+  };
+  const iree_hal_buffer_barrier_t buffer_barrier = {
+      /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_DISPATCH_WRITE,
+      /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_DISPATCH_READ,
+      /*.buffer_ref=*/{},
+      /*.recipe=*/&recipe,
+  };
+  const iree_hal_barrier_t execution_barrier = {
+      /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
+      /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
+      /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
+      /*.effects=*/recipe.effects,
+      /*.memory_barrier_count=*/0,
+      /*.memory_barriers=*/nullptr,
+      /*.buffer_barrier_count=*/1,
+      /*.buffer_barriers=*/&buffer_barrier,
+  };
+  IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer.get()));
+  IREE_ASSERT_OK(iree_hal_command_buffer_barrier(command_buffer.get(),
+                                                 &execution_barrier));
+  IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer.get()));
+
+  const iree_hal_amdgpu_aql_program_t* program =
+      iree_hal_amdgpu_aql_command_buffer_program(command_buffer.get());
+  ASSERT_NE(program->first_block, nullptr);
+  const auto* command =
+      iree_hal_amdgpu_command_buffer_block_commands_const(program->first_block);
+  ASSERT_EQ(command->opcode, IREE_HAL_AMDGPU_COMMAND_BUFFER_OPCODE_BARRIER);
+  const auto* barrier =
+      reinterpret_cast<const iree_hal_amdgpu_command_buffer_barrier_command_t*>(
+          command);
+  EXPECT_EQ(barrier->acquire_scope, IREE_HSA_FENCE_SCOPE_AGENT);
+  EXPECT_EQ(barrier->release_scope, IREE_HSA_FENCE_SCOPE_SYSTEM);
+}
+
 TEST_F(AqlCommandBufferTest, PreparedActionsBecomeSelfContainedNativeBarriers) {
   const iree_hal_buffer_binding_layout_t layout = {};
   iree_hal_memory_contract_t* contract = nullptr;
@@ -438,8 +488,7 @@ TEST_F(AqlCommandBufferTest,
   for (uint32_t bits :
        {uint32_t{IREE_HAL_MEMORY_EFFECT_PROGRAM_EXECUTOR |
                  IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM},
-        uint32_t{IREE_HAL_MEMORY_EFFECT_HOST_FLUSH},
-        uint32_t{IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM}}) {
+        uint32_t{IREE_HAL_MEMORY_EFFECT_HOST_FLUSH}}) {
     barrier.effects.bits = bits;
     IREE_EXPECT_STATUS_IS(
         IREE_STATUS_UNIMPLEMENTED,

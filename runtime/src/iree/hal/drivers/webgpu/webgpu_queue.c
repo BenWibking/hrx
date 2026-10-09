@@ -23,8 +23,30 @@
 // host mapping/unmapping, and file staging already establish the required
 // boundaries before signaling completion. Explicit queue barriers therefore
 // require no extra native command, and empty lists cannot elide that native
-// synchronization. The public HAL boundary rejects effects requiring external
-// resource or host actions this queue cannot execute.
+// synchronization. This backend rejects ranged actions that WebGPU cannot
+// encode without promoting their resource scope.
+
+static iree_status_t iree_hal_webgpu_queue_validate_barriers(
+    const iree_hal_queue_barriers_t* barriers) {
+  if (!barriers) {
+    return iree_ok_status();
+  }
+  const iree_hal_barrier_list_t* lists[2] = {barriers->before, barriers->after};
+  for (iree_host_size_t boundary = 0; boundary < 2; ++boundary) {
+    if (!lists[boundary]) {
+      continue;
+    }
+    for (iree_host_size_t i = 0; i < lists[boundary]->count; ++i) {
+      if (iree_hal_memory_effects_requires_resources(
+              lists[boundary]->values[i].effects)) {
+        return iree_make_status(
+            IREE_STATUS_UNIMPLEMENTED,
+            "WebGPU queues do not support ranged memory transitions");
+      }
+    }
+  }
+  return iree_ok_status();
+}
 
 //===----------------------------------------------------------------------===//
 // iree_hal_webgpu_queue_t
@@ -40,7 +62,7 @@ static iree_status_t iree_hal_webgpu_queue_barrier(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     const iree_hal_queue_barriers_t* barriers,
     iree_hal_queue_barrier_flags_t flags) {
-  (void)barriers;
+  IREE_RETURN_IF_ERROR(iree_hal_webgpu_queue_validate_barriers(barriers));
   (void)flags;
   return iree_hal_webgpu_queue_submit_execute(
       (iree_hal_webgpu_queue_t*)base_queue, wait_semaphore_list,
@@ -97,7 +119,7 @@ static iree_status_t iree_hal_webgpu_queue_dispatch(
     const iree_hal_buffer_ref_list_t bindings,
     const iree_hal_queue_barriers_t* barriers,
     iree_hal_dispatch_flags_t flags) {
-  (void)barriers;
+  IREE_RETURN_IF_ERROR(iree_hal_webgpu_queue_validate_barriers(barriers));
   return iree_hal_webgpu_queue_submit_dispatch(
       (iree_hal_webgpu_queue_t*)base_queue, wait_semaphore_list,
       signal_semaphore_list, executable, function, config, constants, bindings,
@@ -243,7 +265,7 @@ static iree_status_t iree_hal_webgpu_queue_read(
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
     iree_device_size_t length, const iree_hal_queue_barriers_t* barriers,
     iree_hal_read_flags_t flags) {
-  (void)barriers;
+  IREE_RETURN_IF_ERROR(iree_hal_webgpu_queue_validate_barriers(barriers));
   return iree_hal_webgpu_queue_submit_read(
       (iree_hal_webgpu_queue_t*)base_queue, wait_semaphore_list,
       signal_semaphore_list, source_file, source_offset, target_buffer,
@@ -258,7 +280,7 @@ static iree_status_t iree_hal_webgpu_queue_write(
     iree_hal_file_t* target_file, uint64_t target_offset,
     iree_device_size_t length, const iree_hal_queue_barriers_t* barriers,
     iree_hal_write_flags_t flags) {
-  (void)barriers;
+  IREE_RETURN_IF_ERROR(iree_hal_webgpu_queue_validate_barriers(barriers));
   return iree_hal_webgpu_queue_submit_write(
       (iree_hal_webgpu_queue_t*)base_queue, wait_semaphore_list,
       signal_semaphore_list, source_buffer, source_offset, target_file,

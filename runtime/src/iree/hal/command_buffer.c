@@ -282,14 +282,16 @@ iree_hal_barrier_validate(const iree_hal_barrier_t* barrier) {
     return iree_make_status(IREE_STATUS_UNAVAILABLE,
                             "memory transition is not qualified");
   }
-  const uint32_t global_effects =
+  const uint32_t queue_effects =
       IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM |
-      IREE_HAL_MEMORY_EFFECT_GLOBAL_ACQUIRE_FROM_SYSTEM;
-  if (IREE_UNLIKELY(barrier->effects.bits & ~global_effects)) {
+      IREE_HAL_MEMORY_EFFECT_GLOBAL_ACQUIRE_FROM_SYSTEM |
+      IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM |
+      IREE_HAL_MEMORY_EFFECT_RANGE_ACQUIRE_FROM_SYSTEM;
+  if (IREE_UNLIKELY(barrier->effects.bits & ~queue_effects)) {
     return iree_make_status(
         IREE_STATUS_UNIMPLEMENTED,
-        "barrier requires global queue effects; host, program, "
-        "and resource actions require their qualified executor and operands");
+        "barrier requires queue effects; host and program actions require "
+        "their qualified executor");
   }
   const iree_hal_barrier_flags_t supported_flags =
       IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
@@ -321,17 +323,40 @@ iree_hal_barrier_validate(const iree_hal_barrier_t* barrier) {
       IREE_HAL_ACCESS_SCOPE_MEMORY_WRITE | IREE_HAL_ACCESS_SCOPE_ATOMIC_READ |
       IREE_HAL_ACCESS_SCOPE_ATOMIC_WRITE;
   iree_hal_access_scope_t scopes = 0;
+  uint32_t recipe_effects = 0;
   for (iree_host_size_t i = 0; i < barrier->memory_barrier_count; ++i) {
     scopes |= barrier->memory_barriers[i].source_scope |
               barrier->memory_barriers[i].target_scope;
   }
   for (iree_host_size_t i = 0; i < barrier->buffer_barrier_count; ++i) {
-    scopes |= barrier->buffer_barriers[i].source_scope |
-              barrier->buffer_barriers[i].target_scope;
+    const iree_hal_buffer_barrier_t* buffer_barrier =
+        &barrier->buffer_barriers[i];
+    scopes |= buffer_barrier->source_scope | buffer_barrier->target_scope;
+    if (!buffer_barrier->recipe) {
+      continue;
+    }
+    IREE_RETURN_IF_ERROR(
+        iree_hal_memory_transition_recipe_validate(buffer_barrier->recipe));
+    for (uint32_t j = 0; j < buffer_barrier->recipe->operation_count; ++j) {
+      if (IREE_UNLIKELY(buffer_barrier->recipe->operations[j].executor !=
+                        IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE)) {
+        return iree_make_status(
+            IREE_STATUS_INVALID_ARGUMENT,
+            "buffer barrier recipe does not execute on a queue");
+      }
+    }
+    recipe_effects |= buffer_barrier->recipe->effects.bits;
   }
   if (IREE_UNLIKELY(scopes & ~supported_scopes)) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "unsupported barrier access scope");
+  }
+  const uint32_t required_recipe_effects =
+      barrier->effects.bits & IREE_HAL_MEMORY_EFFECT_RESOURCE_MASK;
+  if (IREE_UNLIKELY(recipe_effects != required_recipe_effects)) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "buffer barrier recipes do not cover the ranged queue effects");
   }
   return iree_ok_status();
 }
@@ -349,11 +374,11 @@ iree_hal_command_buffer_barrier(iree_hal_command_buffer_t* command_buffer,
   });
 
   // Global prepared actions and explicit minimum flags have identical native
-  // semantics. Resolve once at recording so native programs and replay retain
-  // only the chosen actions, with no contract dependency at submission.
+  // semantics. Resolve those once while preserving ranged effects and their
+  // copied buffer recipes for the native recorder.
   iree_hal_barrier_t resolved = *barrier;
   resolved.flags = iree_hal_barrier_resolve_flags(barrier);
-  resolved.effects.bits = 0;
+  resolved.effects.bits &= IREE_HAL_MEMORY_EFFECT_RESOURCE_MASK;
   iree_status_t status = iree_ok_status();
   if (resolved.source_stage_mask || resolved.target_stage_mask ||
       resolved.flags || resolved.memory_barrier_count ||
