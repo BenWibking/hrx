@@ -57,7 +57,10 @@ Value Initialization::value(const cxx::Type* type,
     return arena_.capture(*record, components);
   }
   const auto& partition = types_.partition(type, owner);
-  if (partition.kind == ValueKind::Encoding ||
+  if (partition.kind == ValueKind::Buffer ||
+      partition.kind == ValueKind::Index ||
+      partition.kind == ValueKind::OpaqueDialect ||
+      partition.kind == ValueKind::Encoding ||
       partition.kind == ValueKind::View ||
       partition.kind == ValueKind::Tensor) {
     if (elements && !elements->next &&
@@ -66,8 +69,7 @@ Value Initialization::value(const cxx::Type* type,
     }
     diagnostics_.reject(
         unit_, owner,
-        "encoding, view and tensor values require an operation result or a "
-        "copy");
+        "Loom source values require an operation result or a copy");
   }
   if (auto* vector = types_.vector(type)) {
     std::vector<loom_value_id_t> components;

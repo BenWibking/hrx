@@ -9,6 +9,19 @@
 
 namespace loom {
 
+namespace type {
+
+// A borrowed, zero-origin buffer root with source-visible element type T.
+// Unlike T*, this is one Loom buffer value and has no independent byte offset.
+// Form a typed view before accessing its storage.
+template <class T>
+class [[loom::type("buffer")]] buffer {
+  // Source object representation preserving ordinary trivial-copy semantics.
+  T* data_;
+};
+
+}  // namespace type
+
 // Storage domain attached to an allocated or externally supplied buffer root.
 // Target lowering decides which domains are legal for each program kind.
 enum class memory_space {

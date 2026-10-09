@@ -624,6 +624,31 @@ class CiTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "only supported for AMDGPU"):
             ci.steps_from_args(args)
 
+    def test_amdgpu_loom_importers_are_forwarded_to_configuration(self):
+        args = ci.parse_arguments(
+            [
+                "iree-bazel-amdgpu",
+                "--loom-importer",
+                "cxx",
+                "--loom-importer",
+                "mlir",
+            ]
+        )
+
+        steps = ci.steps_from_args(args)
+
+        configure_step = next(step for step in steps if step.name == "Configure Bazel")
+        self.assertIn(
+            "--//loom/config/import:enable=cxx,mlir",
+            configure_step.argv,
+        )
+
+    def test_loom_importer_rejected_by_non_amdgpu_command(self):
+        args = ci.parse_arguments(["iree-bazel-cpu", "--loom-importer", "cxx"])
+
+        with self.assertRaisesRegex(ValueError, "only supported for AMDGPU Bazel"):
+            ci.steps_from_args(args)
+
     def test_amdgpu_bazel_tests_pin_libhsa_from_rocm_root(self):
         args = ci.parse_arguments(
             [

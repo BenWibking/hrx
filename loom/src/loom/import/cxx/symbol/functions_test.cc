@@ -13,6 +13,7 @@
 #include <cxx/types.h>
 
 #include "loom/import/cxx/value/builder_test.h"
+#include "loom/ops/check/ops.h"
 #include "loom/ops/func/ops.h"
 #include "loom/ops/kernel/ops.h"
 
@@ -119,6 +120,56 @@ TEST_F(FunctionsTest,
   EXPECT_EQ(definition.return_type->kind(), cxx::TypeKind::kVoid);
   EXPECT_EQ(loom_region_entry_arg_count(definition.region), 1u);
   EXPECT_EQ(definition.source->symbol, functions.pending()[0]);
+}
+
+TEST_F(FunctionsTest, ConfiguredScenarioRetainsItsNativeRegionSignature) {
+  Source source(IREE_SV(R"(
+    namespace loom::type {
+    class [[loom::type("index")]] index {};
+    }
+    namespace loom::check {
+    using ordinal = loom::type::index;
+    class [[loom::type("check.entropy")]] entropy {};
+    }
+    [[loom::check_scenario(7)]]
+    void scenario(loom::check::ordinal configuration,
+                  loom::check::entropy entropy) {}
+  )"),
+                IREE_SV("scenario.cxx"), options());
+  Types types(source.unit(), source.diagnostics(), module_);
+  Locations locations(source.unit(), source.diagnostics(), module_);
+  SymbolNames names(source.unit(), source.diagnostics());
+  LaunchContracts launches(source.unit(), source.diagnostics());
+  FunctionContracts function_contracts(source.unit(), source.diagnostics());
+  Intrinsics intrinsics(source.unit(), source.diagnostics(), types, locations,
+                        names, launches, function_contracts, module_);
+  Scalars scalars(source.unit(), source.diagnostics(), types, locations,
+                  builder_);
+  Configs configs(source.unit(), source.diagnostics(), types, scalars,
+                  locations, names);
+  TargetDefinitions target_definitions(source.unit(), source.diagnostics(),
+                                       locations, names, module_);
+  TemplateDefinitions template_definitions(source.unit(), source.diagnostics());
+  Functions functions(source.unit(), source.diagnostics(), module_, intrinsics,
+                      launches, configs, function_contracts, target_definitions,
+                      template_definitions, names);
+
+  functions.select({});
+  ASSERT_EQ(functions.pending().size(), 1u);
+  auto defined =
+      functions.define(functions.pending()[0], types, locations, &builder_);
+  const auto& scenario = defined.body;
+  EXPECT_EQ(scenario.kind, FunctionKind::CheckScenario);
+  ASSERT_TRUE(loom_check_scenario_isa(scenario.operation));
+  EXPECT_EQ(loom_check_scenario_configuration_count(scenario.operation), 7);
+  EXPECT_EQ(scenario.region, loom_check_scenario_body(scenario.operation));
+  ASSERT_EQ(loom_region_entry_arg_count(scenario.region), 2u);
+  auto* block = loom_region_entry_block(scenario.region);
+  EXPECT_EQ(loom_type_element_type(
+                loom_module_value_type(module_, block->arg_ids[0])),
+            LOOM_SCALAR_TYPE_INDEX);
+  EXPECT_TRUE(
+      loom_type_is_dialect(loom_module_value_type(module_, block->arg_ids[1])));
 }
 
 }  // namespace

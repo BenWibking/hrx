@@ -685,11 +685,16 @@ def amdgpu_build_and_test_steps(
     ]
 
 
-def amdgpu_steps(targets: tuple[str, ...], target_selector: str) -> list[CiStep]:
+def amdgpu_steps(
+    targets: tuple[str, ...],
+    target_selector: str,
+    enabled_loom_importers: tuple[str, ...] | None = None,
+) -> list[CiStep]:
     return [
         bazel_configure_step(
             enabled_drivers=("amdgpu",),
             enabled_loom_targets=("amdgpu", "vm"),
+            enabled_loom_importers=enabled_loom_importers,
         ),
         *amdgpu_build_and_test_steps(
             targets,
@@ -1140,8 +1145,15 @@ def _steps_from_args(args: argparse.Namespace) -> list[CiStep]:
             "--amdgpu-target is only supported for AMDGPU and "
             "repository-integration CI commands"
         )
+    if args.loom_importer is not None and bazel_target_group != "amdgpu":
+        raise ValueError(
+            "--loom-importer is only supported for AMDGPU Bazel CI commands"
+        )
     amdgpu_target_selector = (
         args.amdgpu_target or ci_config.DEFAULT_AMDGPU_TARGET_SELECTOR
+    )
+    enabled_loom_importers = (
+        tuple(args.loom_importer) if args.loom_importer is not None else None
     )
 
     if args.command == CMAKE_SANITIZER_SMOKE_COMMAND:
@@ -1209,10 +1221,15 @@ def _steps_from_args(args: argparse.Namespace) -> list[CiStep]:
                 bazel_configure_step(
                     enabled_drivers=("amdgpu",),
                     enabled_loom_targets=("amdgpu", "vm"),
+                    enabled_loom_importers=enabled_loom_importers,
                 ),
                 *amdgpu_config_steps(targets, amdgpu_target_selector, sanitizer),
             ]
-        return amdgpu_steps(targets, amdgpu_target_selector)
+        return amdgpu_steps(
+            targets,
+            amdgpu_target_selector,
+            enabled_loom_importers=enabled_loom_importers,
+        )
     if bazel_target == "vulkan":
         return vulkan_steps(targets)
     raise ValueError(f"unknown Bazel CI target: {bazel_target}")
@@ -1442,6 +1459,15 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
             "Exact AMDGPU target or family selector for AMDGPU and "
             "repository-integration CI commands. "
             f"Defaults to {ci_config.DEFAULT_AMDGPU_TARGET_SELECTOR}."
+        ),
+    )
+    parser.add_argument(
+        "--loom-importer",
+        action="append",
+        choices=REPOSITORY_BUILD_LOOM_IMPORTERS,
+        help=(
+            "Loom importer to enable for AMDGPU Bazel CI commands. May be "
+            "specified more than once."
         ),
     )
     parser.add_argument(

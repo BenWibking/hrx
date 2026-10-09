@@ -52,6 +52,8 @@ loom_check_test_suite(
         "check_close_invalid.cxx-test",
         "check_records.cxx-test",
         "check_resources.cxx-test",
+        "check_scenarios.cxx-test",
+        "check_scenarios_invalid.cxx-test",
         "class_conversions.cxx-test",
         "class_conversions_invalid.cxx-test",
         "condition_declarations.cxx-test",
@@ -505,6 +507,7 @@ loom_test_module(
     )
     for source in [
         "configured_workgroup_storage",
+        "integer_increment",
         "mxfp_group_dot",
         "packed_byte_arithmetic",
         "packed_float16_conversion",
@@ -536,7 +539,6 @@ _AUTHORED_KERNEL_SOURCES = [
     "constant_loops",
     "enum_values",
     "increment_values",
-    "integer_increment",
     "record_values",
     "scheduled_sum",
     "shaped_intrinsics",

@@ -7,8 +7,11 @@
 #include "loom/import/cxx/symbol/functions.h"
 
 #include <cxx/ast.h>
+#include <cxx/ast_interpreter.h>
 #include <cxx/ast_rewriter.h>
 #include <cxx/attributes.h>
+#include <cxx/const_int.h>
+#include <cxx/control.h>
 #include <cxx/decl.h>
 #include <cxx/literals.h>
 #include <cxx/names.h>
@@ -16,7 +19,9 @@
 #include <cxx/types.h>
 #include <cxx/views/symbol_chain.h>
 
+#include <array>
 #include <cctype>
+#include <limits>
 
 #include "loom/import/cxx/source/attributes.h"
 #include "loom/import/cxx/source/error.h"
@@ -47,10 +52,16 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
       diagnostics_.reject(unit_, source, "check cases require a definition");
     }
   }
+  for (const auto& [function, scenario] : check_scenarios_) {
+    if (!definition(function)) {
+      diagnostics_.reject(unit_, scenario.source,
+                          "check scenarios require a definition");
+    }
+  }
   for (const auto& benchmark : benchmarks_) {
-    if (!is_check_case(benchmark.case_function)) {
+    if (!is_check_record(benchmark.record_function)) {
       diagnostics_.reject(unit_, benchmark.source,
-                          "check benchmark must reference a check case");
+                          "check benchmark must reference a check record");
     }
   }
   if (!roots.empty()) {
@@ -96,7 +107,7 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
           }
         }
       }
-      if (visible || is_check_case(symbol)) {
+      if (visible || is_check_record(symbol)) {
         exported_.insert(symbol);
         declare(symbol);
       }
@@ -112,6 +123,7 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
     if (annotated(provider.function, "kernel") ||
         annotated(provider.function, "op") ||
         annotated(provider.function, "check_case") ||
+        annotated(provider.function, "check_scenario") ||
         annotated(provider.function, "check_benchmark") ||
         launches_.is_configuration(provider.function)) {
       diagnostics_.reject(
@@ -125,10 +137,11 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
     }
     retain(body, source);
   }
-  // A case can only be selected as a root, never reached through a call.
-  // Reserve its public benchmark names before discovering private helpers.
+  // A check record can only be selected as a root, never reached through a
+  // call. Reserve its public benchmark names before discovering private
+  // helpers.
   for (const auto& benchmark : benchmarks_) {
-    if (callees_.contains(benchmark.case_function->canonical())) {
+    if (callees_.contains(benchmark.record_function->canonical())) {
       exported_.insert(benchmark.function);
       create_symbol(benchmark.function, benchmark.source);
     }
@@ -307,33 +320,72 @@ bool Functions::admit_declaration(
   visit_loom_attributes(
       unit_, attributes,
       [&](std::string_view name, cxx::AttributeAST* attribute) {
-        if (name != "check_case" && name != "check_benchmark") {
+        if (name != "check_case" && name != "check_scenario" &&
+            name != "check_benchmark") {
           return;
         }
         require_namespace_function();
         auto* signature = cxx::type_cast<cxx::FunctionType>(function->type());
         if (found || annotated(function, "kernel") ||
             annotated(function, "device") || annotated(function, "op") ||
-            signature->isVariadic() || !signature->parameterTypes().empty() ||
+            signature->isVariadic() ||
             signature->returnType()->kind() != cxx::TypeKind::kVoid) {
           diagnostics_.reject(
               unit_, owner,
-              "check declarations require one check annotation on void()");
+              "check declarations require one check annotation on a "
+              "non-variadic void function");
         }
         found = true;
         auto* clause = attribute->attributeArgumentClause;
         if (name == "check_case") {
-          if (clause) {
+          if (clause || !signature->parameterTypes().empty()) {
             diagnostics_.reject(unit_, attribute,
-                                "check_case takes no arguments");
+                                "check_case requires void() and no arguments");
           }
           check_cases_.try_emplace(function->canonical(), owner);
           return;
         }
+        if (name == "check_scenario") {
+          std::optional<int64_t> configuration_count;
+          auto* arguments = clause ? clause->expressionList : nullptr;
+          if (arguments) {
+            cxx::ASTInterpreter interpreter(&unit_);
+            auto value = !arguments->next
+                             ? interpreter.evaluate(arguments->value)
+                             : std::nullopt;
+            auto* count = value ? std::get_if<cxx::ConstInt>(&*value) : nullptr;
+            if (!count || count->isNegative() || count->isZero() ||
+                count->toUWide() > static_cast<cxx::ConstInt::UWide>(
+                                       std::numeric_limits<int64_t>::max())) {
+              diagnostics_.reject(
+                  unit_, attribute,
+                  "configured check_scenario requires one positive i64 "
+                  "configuration count");
+            }
+            configuration_count = static_cast<int64_t>(count->toUIntMax());
+          }
+          size_t expected_parameters = configuration_count ? 2 : 0;
+          if (signature->parameterTypes().size() != expected_parameters) {
+            diagnostics_.reject(
+                unit_, attribute,
+                configuration_count
+                    ? "configured check_scenario requires void(ordinal, "
+                      "entropy)"
+                    : "unconfigured check_scenario requires void()");
+          }
+          check_scenarios_.try_emplace(
+              function->canonical(),
+              CheckScenario{attribute, configuration_count});
+          return;
+        }
+        if (!signature->parameterTypes().empty()) {
+          diagnostics_.reject(unit_, attribute,
+                              "check_benchmark requires void()");
+        }
         if (function->declaration()) {
           diagnostics_.reject(unit_, owner,
                               "check benchmarks are declarations referencing a "
-                              "case, without a body");
+                              "record, without a body");
         }
         auto* arguments = clause ? clause->expressionList : nullptr;
         auto* id = arguments && !arguments->next
@@ -353,7 +405,7 @@ bool Functions::admit_declaration(
         if (!target) {
           diagnostics_.reject(unit_, attribute,
                               "check_benchmark requires one unambiguous check "
-                              "case function name");
+                              "record function name");
         }
         for (const auto& previous : benchmarks_) {
           if (previous.function->canonical() == function->canonical()) {
@@ -365,6 +417,7 @@ bool Functions::admit_declaration(
       });
   if (!found &&
       ((annotated(function, "check_case") && !is_check_case(function)) ||
+       annotated(function, "check_scenario") ||
        annotated(function, "check_benchmark"))) {
     require_namespace_function();
     diagnostics_.reject(unit_, owner,
@@ -435,10 +488,16 @@ bool Functions::is_check_case(cxx::FunctionSymbol* function) const {
   return check_cases_.contains(function->canonical());
 }
 
+bool Functions::is_check_record(cxx::FunctionSymbol* function) const {
+  auto* canonical = function->canonical();
+  return check_cases_.contains(canonical) ||
+         check_scenarios_.contains(canonical);
+}
+
 void Functions::build_benchmarks(Locations& locations,
                                  loom_builder_t* builder) {
   for (const auto& benchmark : benchmarks_) {
-    auto target = callees_.find(benchmark.case_function->canonical());
+    auto target = callees_.find(benchmark.record_function->canonical());
     if (target == callees_.end()) {
       continue;
     }
@@ -576,9 +635,12 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
   auto parameters = symbol->parameters();
   bool kernel = annotated(symbol, "kernel");
   bool check_case = is_check_case(symbol);
+  auto scenario = check_scenarios_.find(symbol->canonical());
+  bool check_scenario = scenario != check_scenarios_.end();
   auto* template_definition = template_definitions_.lookup(symbol);
   auto parameter_contracts = parameter_contracts_.get(symbol);
-  if (!kernel && !parameter_contracts.empty()) {
+  if (!kernel && !check_case && !check_scenario &&
+      !parameter_contracts.empty()) {
     for (const auto& contract : parameter_contracts) {
       if (contract.alignment.source) {
         diagnostics_.reject(
@@ -603,9 +665,9 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
   bool returns_void = signature->returnType()->kind() == cxx::TypeKind::kVoid;
   bool has_predicates = function_contracts_.has_predicates(symbol);
   bool has_requirements = function_contracts_.has_requirements(symbol);
-  if (check_case && has_predicates) {
+  if ((check_case || check_scenario) && has_predicates) {
     diagnostics_.reject(unit_, definition,
-                        "check cases cannot carry callable predicates");
+                        "check records cannot carry callable predicates");
   }
   if (has_requirements && !template_definition) {
     diagnostics_.reject(
@@ -631,7 +693,7 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
       launch_configuration =
           launches_.bind_configuration(configuration_symbol, types);
     }
-  } else if (!check_case) {
+  } else if (!check_case && !check_scenario) {
     std::vector<const cxx::Type*> sources;
     sources.reserve(parameters.size() + !returns_void);
     size_t argument_count = 0;
@@ -654,7 +716,7 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
   }
   loom_op_t* op;
   std::vector<loom_predicate_t> predicates;
-  if (!kernel && !check_case) {
+  if (!kernel && !check_case && !check_scenario) {
     predicates = function_contracts_.bind(
         symbol, types, callable_signature.identities,
         FunctionContractSignature::Flattened, definition);
@@ -664,6 +726,44 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
     check(loom_check_case_build(
         builder, LOOM_CHECK_CASE_BUILD_FLAG_HAS_VISIBILITY,
         LOOM_CHECK_VISIBILITY_PUBLIC, callees_.at(symbol->canonical()),
+        locations.get(definition), &op));
+  } else if (check_scenario) {
+    launches_.reject_ordinary_function(symbol);
+    std::array<loom_type_t, 2> configuration_arguments = {};
+    loom_check_scenario_build_flags_t flags =
+        LOOM_CHECK_SCENARIO_BUILD_FLAG_HAS_VISIBILITY;
+    int64_t configuration_count = 0;
+    size_t configuration_argument_count = 0;
+    if (scenario->second.configuration_count) {
+      if (parameters.size() != 2 ||
+          !types.is_index(parameters[0]->type(), definition)) {
+        diagnostics_.reject(unit_, scenario->second.source,
+                            "configured check_scenario first parameter must be "
+                            "loom::check::ordinal");
+      }
+      auto entropy_type = types.get(parameters[1]->type(), definition);
+      auto entropy_name = loom_type_is_dialect(entropy_type)
+                              ? loom_type_dialect_name_id(entropy_type)
+                              : LOOM_STRING_ID_INVALID;
+      if (entropy_name == LOOM_STRING_ID_INVALID ||
+          !iree_string_view_equal(
+              loom_string_table_get(&module_->strings, entropy_name),
+              IREE_SV("check.entropy"))) {
+        diagnostics_.reject(
+            unit_, scenario->second.source,
+            "configured check_scenario second parameter must be "
+            "loom::check::entropy");
+      }
+      flags |= LOOM_CHECK_SCENARIO_BUILD_FLAG_HAS_CONFIGURATION_COUNT;
+      configuration_count = *scenario->second.configuration_count;
+      configuration_arguments = {loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+                                 entropy_type};
+      configuration_argument_count = configuration_arguments.size();
+    }
+    check(loom_check_scenario_build(
+        builder, flags, LOOM_CHECK_VISIBILITY_PUBLIC,
+        callees_.at(symbol->canonical()), configuration_count,
+        configuration_arguments.data(), configuration_argument_count,
         locations.get(definition), &op));
   } else if (kernel) {
     if (!returns_void) {
@@ -761,6 +861,7 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
         predicates.data(), predicates.size(), locations.get(definition), &op));
   }
   auto* region = check_case            ? loom_check_case_body(op)
+                 : check_scenario      ? loom_check_scenario_body(op)
                  : kernel              ? loom_kernel_def_body(op)
                  : template_definition ? loom_template_def_body(op)
                                        : loom_func_def_body(op);
@@ -771,6 +872,7 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
       region,
       signature->returnType(),
       check_case            ? FunctionKind::CheckCase
+      : check_scenario      ? FunctionKind::CheckScenario
       : kernel              ? FunctionKind::Kernel
       : template_definition ? FunctionKind::TemplateDefinition
                             : FunctionKind::Ordinary,

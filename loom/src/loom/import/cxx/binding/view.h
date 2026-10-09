@@ -70,6 +70,8 @@ class ViewIntrinsic {
   const cxx::Type* result_source_type_ = nullptr;
   // Admitted encoding result for layout factories.
   const EncodingPartition* result_encoding_ = nullptr;
+  // Typed zero-origin buffer source for buffer.view, null for C++ pointers.
+  const BufferPartition* source_buffer_ = nullptr;
   // Admitted source view for subview/load/store.
   const ViewPartition* source_view_ = nullptr;
   // Admitted dependent result view for buffer.view/subview.

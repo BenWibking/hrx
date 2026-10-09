@@ -38,6 +38,8 @@ loom_check_test_suite(
     "check_close_invalid.cxx-test"
     "check_records.cxx-test"
     "check_resources.cxx-test"
+    "check_scenarios.cxx-test"
+    "check_scenarios_invalid.cxx-test"
     "class_conversions.cxx-test"
     "class_conversions_invalid.cxx-test"
     "condition_declarations.cxx-test"
@@ -1040,6 +1042,15 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
+    integer_increment_module
+  SRCS
+    "integer_increment.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
     mxfp_group_dot_module
   SRCS
     "mxfp_group_dot.cxx"
@@ -1452,16 +1463,6 @@ loom_test_module(
   SRCS
     "increment_values.cxx"
     "increment_values.loom"
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    integer_increment_module
-  SRCS
-    "integer_increment.cxx"
-    "integer_increment.loom"
 )
 endif()
 

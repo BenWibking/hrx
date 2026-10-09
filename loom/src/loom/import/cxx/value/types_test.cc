@@ -16,9 +16,73 @@
 
 #include "iree/testing/gtest.h"
 #include "loom/import/cxx/source/error.h"
+#include "loom/import/cxx/value/builder_test.h"
 
 namespace loom::cxx_import {
 namespace {
+
+using TypesWithModuleTest = ValueBuilderTest;
+
+TEST_F(TypesWithModuleTest, ProjectsSpecialAndRegisteredOpaqueHandles) {
+  Source source(IREE_SV(R"(
+    template<class T> struct [[loom::type("buffer")]] Buffer { T* data; };
+    using WordBuffer = Buffer<unsigned>;
+    struct [[loom::type("index")]] Index {
+      operator unsigned long long() const;
+    };
+    struct [[loom::type("check.entropy")]] Entropy {};
+    struct [[loom::type("buffer")]] MalformedBuffer {};
+    struct [[loom::type("unknown.value")]] Unknown {};
+  )"),
+                IREE_SV("dialect_types.cxx"), options());
+  Types types(source.unit(), source.diagnostics(), module_);
+  auto* owner = source.unit().ast();
+  auto source_type = [&](const char* name) {
+    return (*source.unit().globalScope()->find(name).begin())->type();
+  };
+
+  const auto& buffer = types.partition(source_type("WordBuffer"), owner);
+  ASSERT_EQ(buffer.kind, ValueKind::Buffer);
+  ASSERT_EQ(buffer.component_count, 1u);
+  EXPECT_EQ(loom_type_kind(types.get(source_type("WordBuffer"), owner)),
+            LOOM_TYPE_BUFFER);
+  EXPECT_EQ(types.unqualified(
+                static_cast<const BufferPartition&>(buffer).element_type),
+            source.unit().control()->getUnsignedIntType());
+  std::vector<loom_type_t> buffer_signature;
+  types.append(source_type("WordBuffer"), owner, buffer_signature);
+  ASSERT_EQ(buffer_signature.size(), 1u);
+  EXPECT_EQ(loom_type_kind(buffer_signature[0]), LOOM_TYPE_BUFFER);
+
+  const auto& index = types.partition(source_type("Index"), owner);
+  ASSERT_EQ(index.kind, ValueKind::Index);
+  ASSERT_EQ(index.component_count, 1u);
+  auto index_type = types.get(source_type("Index"), owner);
+  EXPECT_EQ(loom_type_element_type(index_type), LOOM_SCALAR_TYPE_INDEX);
+  EXPECT_TRUE(types.is_index(source_type("Index"), owner));
+  std::vector<loom_type_t> index_signature;
+  types.append(source_type("Index"), owner, index_signature);
+  ASSERT_EQ(index_signature.size(), 1u);
+  EXPECT_TRUE(loom_type_equal(index_signature[0], index_type));
+
+  const auto& entropy = types.partition(source_type("Entropy"), owner);
+  ASSERT_EQ(entropy.kind, ValueKind::OpaqueDialect);
+  ASSERT_EQ(entropy.component_count, 1u);
+  auto projected = types.get(source_type("Entropy"), owner);
+  ASSERT_TRUE(loom_type_is_dialect(projected));
+  EXPECT_TRUE(
+      types.is_opaque_dialect(source_type("Entropy"), "check.entropy", owner));
+  EXPECT_FALSE(
+      types.is_opaque_dialect(source_type("Entropy"), "async.token", owner));
+  std::vector<loom_type_t> signature;
+  types.append(source_type("Entropy"), owner, signature);
+  ASSERT_EQ(signature.size(), 1u);
+  EXPECT_TRUE(loom_type_equal(signature[0], projected));
+
+  EXPECT_THROW(types.get(source_type("MalformedBuffer"), owner),
+               SourceRejected);
+  EXPECT_THROW(types.get(source_type("Unknown"), owner), SourceRejected);
+}
 
 TEST(TypesTest, ProjectsTheConfiguredDataModelAndRetainsSignedness) {
   for (auto model : {LOOM_CXX_DATA_MODEL_LP64, LOOM_CXX_DATA_MODEL_LLP64,

@@ -18,6 +18,16 @@ using Layout = loom::type::encoding<loom::encoding::role::layout, 2>;
                                          Layout);
 
 // ====
+// A typed buffer's source element must match the view element.
+#include <loomcxx/view.h>
+using Buffer = loom::type::buffer<unsigned>;
+using View = loom::type::view<loom::type::shape<4>, float>;
+using Layout = loom::type::encoding<loom::encoding::role::layout, 1>;
+// ERROR@+1: LOWERING/059 "buffer.view source element type must match its result view"
+[[loom::op("buffer.view")]] View invalid(Buffer,
+                                         loom::detail::dimensions<0>, Layout);
+
+// ====
 // A subview preserves the source rank and encoding role.
 #include <loomcxx/view.h>
 using Matrix = loom::type::view<loom::type::shape<4, 4>, float>;
