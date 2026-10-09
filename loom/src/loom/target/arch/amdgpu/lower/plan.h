@@ -15,14 +15,16 @@
 
 #include <stdint.h>
 
-#include "loom/analysis/view_regions.h"
 #include "loom/codegen/low/lower/lower.h"
 #include "loom/codegen/low/representation_plan.h"
 #include "loom/codegen/low/source_memory_plan.h"
 #include "loom/ir/ir.h"
 #include "loom/ir/scalar_type.h"
 #include "loom/ops/kernel/ops.h"
+#include "loom/target/arch/amdgpu/lower/compare.h"
 #include "loom/target/arch/amdgpu/lower/kinds.h"
+#include "loom/target/arch/amdgpu/lower/mask.h"
+#include "loom/target/arch/amdgpu/lower/table.h"
 #include "loom/target/arch/amdgpu/matrix/contract.h"
 #include "loom/target/arch/amdgpu/planning/wait_counters.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
@@ -31,6 +33,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct loom_amdgpu_buffer_extent_plan_t
+    loom_amdgpu_buffer_extent_plan_t;
 
 typedef struct loom_low_lower_realization_t loom_low_lower_realization_t;
 
@@ -340,6 +345,8 @@ typedef struct loom_amdgpu_vector_16bit_float_conversion_plan_t {
   loom_amdgpu_vector_scale_materialization_kind_t scale_materialization_kind;
   // Strategy-specific data selected before emission.
   union {
+    // NaN-handling facts for standard F32-to-BF16 packing.
+    loom_value_fact_flags_t bf16_source_flags;
     // Packed FP4 decode strategy when strategy_kind is FP4_DECODE.
     loom_amdgpu_fp4_decode_plan_t fp4_decode;
     // Packed FP8 encode strategy when strategy_kind is FP8_ENCODE.
@@ -351,7 +358,9 @@ typedef struct loom_amdgpu_vector_16bit_float_conversion_plan_t {
 static_assert(sizeof(loom_amdgpu_vector_16bit_float_conversion_plan_t) == 136,
               "vector float conversion plans must stay cache dense");
 
-typedef enum loom_amdgpu_index_cast_kind_e {
+typedef uint8_t loom_amdgpu_index_cast_kind_t;
+
+enum loom_amdgpu_index_cast_kind_e {
   LOOM_AMDGPU_INDEX_CAST_KIND_NONE = 0,
   LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS = 1,
   LOOM_AMDGPU_INDEX_CAST_KIND_ZERO_EXTENDING_LOW_32 = 2,
@@ -362,17 +371,19 @@ typedef enum loom_amdgpu_index_cast_kind_e {
   LOOM_AMDGPU_INDEX_CAST_KIND_NARROWING_INTEGER = 7,
   LOOM_AMDGPU_INDEX_CAST_KIND_INTEGER_TO_PREDICATE = 8,
   LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS_TO_VGPR = 9,
-} loom_amdgpu_index_cast_kind_t;
+};
 
 typedef struct loom_amdgpu_index_cast_plan_t {
-  // Lowering strategy selected for the index cast.
-  loom_amdgpu_index_cast_kind_t kind;
   // Source value being cast.
   loom_value_id_t source;
   // Result value receiving the cast payload.
   loom_value_id_t result;
   // Descriptor materializing a zero high lane.
   loom_amdgpu_descriptor_ref_t conversion_descriptor_ref;
+  // Register bank selected for the result independently of source aliases.
+  uint16_t result_register_class;
+  // Lowering strategy selected for the index cast.
+  loom_amdgpu_index_cast_kind_t kind;
   // Selected result width, independent of storage retained by source aliases.
   uint8_t result_unit_count;
   // Source or result payload width for narrow integer conversions.
@@ -392,6 +403,15 @@ typedef enum loom_amdgpu_address_i64_alu_kind_e {
   LOOM_AMDGPU_ADDRESS_I64_ALU_KIND_SGPR_MUL_LO = 7,
 } loom_amdgpu_address_i64_alu_kind_t;
 
+// Selected numeric transport for a one- or two-word integer operand. Pair
+// forms preserve an existing pair and extend a single word as specified.
+typedef uint8_t loom_amdgpu_integer_operand_form_t;
+enum loom_amdgpu_integer_operand_form_e {
+  LOOM_AMDGPU_INTEGER_OPERAND_UNSIGNED_PAIR = 0,
+  LOOM_AMDGPU_INTEGER_OPERAND_SIGNED_PAIR = 1,
+  LOOM_AMDGPU_INTEGER_OPERAND_UNSIGNED_WORD = 2,
+};
+
 typedef struct loom_amdgpu_address_i64_alu_plan_t {
   // Left-hand address-domain value.
   loom_value_id_t lhs;
@@ -403,6 +423,15 @@ typedef struct loom_amdgpu_address_i64_alu_plan_t {
   loom_value_id_t result;
   // Lowering strategy selected for the full-width address operation.
   loom_amdgpu_address_i64_alu_kind_t kind;
+  // Numeric transports selected before source facts retire.
+  struct {
+    // Left-hand operand transport.
+    loom_amdgpu_integer_operand_form_t lhs;
+    // Right-hand operand transport; unused for the shift count.
+    loom_amdgpu_integer_operand_form_t rhs;
+    // Multiply-add addend transport.
+    loom_amdgpu_integer_operand_form_t addend;
+  } operands;
 } loom_amdgpu_address_i64_alu_plan_t;
 
 typedef struct loom_amdgpu_i64_compare_plan_t {
@@ -420,7 +449,11 @@ typedef struct loom_amdgpu_i64_compare_plan_t {
   loom_amdgpu_descriptor_ref_t combine_descriptor_ref;
   // True when low-lane comparison is guarded by high-lane equality.
   bool needs_high_equal;
+  // Pair transports, two bits each: lhs in bits 0-1, rhs in bits 2-3.
+  uint8_t operand_forms;
 } loom_amdgpu_i64_compare_plan_t;
+static_assert(sizeof(loom_amdgpu_i64_compare_plan_t) == 20,
+              "integer comparison plans must stay cache dense");
 
 typedef enum loom_amdgpu_scalar_i64_alu_kind_e {
   LOOM_AMDGPU_SCALAR_I64_ALU_KIND_NONE = 0,
@@ -450,15 +483,24 @@ typedef struct loom_amdgpu_scalar_i64_alu_plan_t {
   loom_amdgpu_scalar_i64_alu_kind_t kind;
   // Exact shift amount used by literal-shift lowering strategies.
   uint8_t shift_amount;
+  // Multiplication operand transports; other strategies use fixed pairs.
+  struct {
+    // Left-hand multiplicand transport.
+    loom_amdgpu_integer_operand_form_t lhs;
+    // Right-hand multiplicand transport.
+    loom_amdgpu_integer_operand_form_t rhs;
+  } operands;
 } loom_amdgpu_scalar_i64_alu_plan_t;
 
-typedef enum loom_amdgpu_scalar_i64_ctpop_kind_e {
+typedef uint8_t loom_amdgpu_scalar_i64_ctpop_kind_t;
+
+enum loom_amdgpu_scalar_i64_ctpop_kind_e {
   LOOM_AMDGPU_SCALAR_I64_CTPOP_KIND_NONE = 0,
   LOOM_AMDGPU_SCALAR_I64_CTPOP_KIND_SGPR_B32 = 1,
   LOOM_AMDGPU_SCALAR_I64_CTPOP_KIND_SGPR_B64 = 2,
   LOOM_AMDGPU_SCALAR_I64_CTPOP_KIND_VGPR_B32 = 3,
   LOOM_AMDGPU_SCALAR_I64_CTPOP_KIND_VGPR_B64 = 4,
-} loom_amdgpu_scalar_i64_ctpop_kind_t;
+};
 
 typedef struct loom_amdgpu_scalar_i64_ctpop_plan_t {
   // Source 64-bit integer whose set bits are counted.
@@ -467,15 +509,22 @@ typedef struct loom_amdgpu_scalar_i64_ctpop_plan_t {
   loom_value_id_t result;
   // Register-bank-specific population-count strategy.
   loom_amdgpu_scalar_i64_ctpop_kind_t kind;
+  // Selected result width after range-based integer narrowing.
+  uint8_t result_unit_count;
 } loom_amdgpu_scalar_i64_ctpop_plan_t;
 
-typedef enum loom_amdgpu_scalar_cttz_kind_e {
+static_assert(sizeof(loom_amdgpu_scalar_i64_ctpop_plan_t) == 12,
+              "population-count plans must stay cache dense");
+
+typedef uint8_t loom_amdgpu_scalar_cttz_kind_t;
+
+enum loom_amdgpu_scalar_cttz_kind_e {
   LOOM_AMDGPU_SCALAR_CTTZ_KIND_NONE = 0,
   LOOM_AMDGPU_SCALAR_CTTZ_KIND_SGPR_B32 = 1,
   LOOM_AMDGPU_SCALAR_CTTZ_KIND_SGPR_B64 = 2,
   LOOM_AMDGPU_SCALAR_CTTZ_KIND_VGPR_B32 = 3,
   LOOM_AMDGPU_SCALAR_CTTZ_KIND_VGPR_B64 = 4,
-} loom_amdgpu_scalar_cttz_kind_t;
+};
 
 typedef uint8_t loom_amdgpu_scalar_cttz_flags_t;
 
@@ -489,11 +538,16 @@ typedef struct loom_amdgpu_scalar_cttz_plan_t {
   loom_value_id_t result;
   // Register-bank and physical-width lowering strategy.
   loom_amdgpu_scalar_cttz_kind_t kind;
+  // Selected result width after range-based integer narrowing.
+  uint8_t result_unit_count;
   // Declared source width governing the zero result.
   uint8_t semantic_bit_width;
   // Fact-derived lowering properties.
   loom_amdgpu_scalar_cttz_flags_t flags;
 } loom_amdgpu_scalar_cttz_plan_t;
+
+static_assert(sizeof(loom_amdgpu_scalar_cttz_plan_t) == 12,
+              "trailing-zero-count plans must stay cache dense");
 
 typedef enum loom_amdgpu_scalar_conversion_kind_e {
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NONE = 0,
@@ -519,6 +573,8 @@ typedef struct loom_amdgpu_scalar_conversion_plan_t {
   loom_value_id_t source;
   // Result value receiving the converted payload.
   loom_value_id_t result;
+  // Optional literal recipe for the selected source-to-VGPR conversion.
+  const void* source_materialization;
   // Lowering strategy selected for the source/result type pair.
   loom_amdgpu_scalar_conversion_kind_t kind;
   // Static source integer payload bit count, or zero for non-integer sources.
@@ -530,6 +586,13 @@ typedef struct loom_amdgpu_scalar_conversion_plan_t {
   // Planned physical representation of a narrow source or result.
   loom_low_representation_id_t narrow_representation;
   union {
+    // Exact format and exceptional-value handling for scalar FP8 decoding.
+    struct {
+      // Exact source format accepted by the selected decoder.
+      loom_value_fact_numeric_format_flags_t source_format;
+      // Selected simplifications for the decoded value.
+      loom_amdgpu_fp8_decode_value_flags_t value_flags;
+    } fp8_decode;
     // Native packed FP8 encode strategy for an FP8-result truncation.
     loom_amdgpu_fp8_encode_plan_t fp8_encode;
     // Exact split-word strategy for narrowing an F64 source.
@@ -856,237 +919,6 @@ typedef struct loom_amdgpu_buffer_alloca_plan_t {
   loom_storage_space_t storage_space;
 } loom_amdgpu_buffer_alloca_plan_t;
 
-typedef enum loom_amdgpu_table_index_kind_e {
-  LOOM_AMDGPU_TABLE_INDEX_KIND_NONE = 0,
-  LOOM_AMDGPU_TABLE_INDEX_KIND_I32 = 1,
-  LOOM_AMDGPU_TABLE_INDEX_KIND_PACKED_I8 = 2,
-} loom_amdgpu_table_index_kind_t;
-
-typedef enum loom_amdgpu_table_lookup_strategy_e {
-  LOOM_AMDGPU_TABLE_LOOKUP_STRATEGY_NONE = 0,
-  LOOM_AMDGPU_TABLE_LOOKUP_STRATEGY_F32_LADDER = 1,
-  LOOM_AMDGPU_TABLE_LOOKUP_STRATEGY_PACKED_I8_PERMUTE = 2,
-  LOOM_AMDGPU_TABLE_LOOKUP_STRATEGY_PACKED_I8_U4_PERMUTE = 3,
-} loom_amdgpu_table_lookup_strategy_t;
-
-typedef struct loom_amdgpu_table_lookup_plan_t {
-  // Register table value selected by each index lane.
-  loom_value_id_t table;
-  // Index vector selecting dynamic table lanes, or invalid when all are static.
-  loom_value_id_t indices;
-  // Result vector receiving selected table lanes.
-  loom_value_id_t result;
-  // Selected lowering strategy.
-  loom_amdgpu_table_lookup_strategy_t strategy;
-  // Descriptor row selected for index-lane equality comparisons.
-  loom_low_lower_resolved_descriptor_t compare_register_descriptor;
-  // Optional descriptor row selected when the compare rhs ordinal is inline.
-  loom_low_lower_resolved_descriptor_t compare_src1_inline_descriptor;
-  // Descriptor row selected for register-register table lane selects.
-  loom_low_lower_resolved_descriptor_t select_register_descriptor;
-  // Optional descriptor row selected when the true table lane is a literal.
-  loom_low_lower_resolved_descriptor_t select_src1_literal_descriptor;
-  // Descriptor row selected for packed byte table permutation.
-  loom_low_lower_resolved_descriptor_t permute_descriptor;
-  // Selected index payload representation.
-  loom_amdgpu_table_index_kind_t index_kind;
-  // Static number of table lanes.
-  uint32_t table_lane_count;
-  // Number of 32-bit registers occupied by the table vector.
-  uint32_t table_register_count;
-  // Static number of result lanes.
-  uint32_t result_lane_count;
-  // Number of 32-bit registers occupied by the index vector.
-  uint32_t index_register_count;
-  // Selected table lane for each F32 result, or UINT8_MAX for a dynamic index.
-  uint8_t table_lane_indices[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];
-} loom_amdgpu_table_lookup_plan_t;
-
-typedef struct loom_amdgpu_vector_compare_plan_t {
-  // Left-hand payload vector value.
-  loom_value_id_t lhs;
-  // Right-hand payload vector value.
-  loom_value_id_t rhs;
-  // Descriptor row selected for the compare predicate.
-  loom_low_lower_resolved_descriptor_t descriptor;
-  // Optional descriptor row selected when the left-hand lane is inline.
-  loom_low_lower_resolved_descriptor_t src0_inline_descriptor;
-  // Optional descriptor row selected when the right-hand lane is inline.
-  loom_low_lower_resolved_descriptor_t src1_inline_descriptor;
-  // Result mask vector value.
-  loom_value_id_t result;
-  // Static number of payload and mask lanes compared.
-  uint32_t lane_count;
-} loom_amdgpu_vector_compare_plan_t;
-
-typedef enum loom_amdgpu_float_classification_form_e {
-  LOOM_AMDGPU_FLOAT_CLASSIFICATION_FORM_NONE = 0,
-  LOOM_AMDGPU_FLOAT_CLASSIFICATION_FORM_INLINE = 1,
-  LOOM_AMDGPU_FLOAT_CLASSIFICATION_FORM_LITERAL = 2,
-  LOOM_AMDGPU_FLOAT_CLASSIFICATION_FORM_REGISTER = 3,
-} loom_amdgpu_float_classification_form_t;
-
-typedef struct loom_amdgpu_vector_float_classification_plan_t {
-  // Floating-point payload vector being classified.
-  loom_value_id_t input;
-  // Descriptor selected for low halves or whole-width lanes.
-  loom_low_lower_resolved_descriptor_t low_descriptor;
-  // Descriptor selected for packed F16 high halves.
-  loom_low_lower_resolved_descriptor_t high_descriptor;
-  // Result mask vector receiving one native lane mask per input lane.
-  loom_value_id_t result;
-  // Exact ten-bit hardware class mask for the source operation.
-  uint32_t class_mask;
-  // Static number of logical input and result lanes.
-  uint32_t lane_count;
-  // Floating-point type carried by each logical input lane.
-  loom_scalar_type_t element_type;
-  // Selected class-mask operand representation.
-  loom_amdgpu_float_classification_form_t form;
-} loom_amdgpu_vector_float_classification_plan_t;
-
-typedef uint32_t loom_amdgpu_cndmask_b32_descriptor_flags_t;
-
-enum {
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_REGISTER = 1u << 0,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_INLINE = 1u << 1,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_INLINE = 1u << 2,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_LITERAL = 1u << 3,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_LITERAL = 1u << 4,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_LITERAL_SRC1_INLINE = 1u << 5,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_LITERAL_SRC0_INLINE = 1u << 6,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_ALL =
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_REGISTER |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_INLINE |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_INLINE |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_LITERAL |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_LITERAL |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_LITERAL_SRC1_INLINE |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_LITERAL_SRC0_INLINE,
-};
-
-typedef struct loom_amdgpu_cndmask_b32_descriptors_t {
-  // Descriptor row selected for register-register lane selects.
-  loom_low_lower_resolved_descriptor_t register_descriptor;
-  // Optional descriptor row selected when the false lane is an inline source.
-  loom_low_lower_resolved_descriptor_t src0_inline_descriptor;
-  // Optional descriptor row selected when the true lane is an inline source.
-  loom_low_lower_resolved_descriptor_t src1_inline_descriptor;
-  // Optional descriptor row selected when the false lane is a literal source.
-  loom_low_lower_resolved_descriptor_t src0_literal_descriptor;
-  // Optional descriptor row selected when the true lane is a literal source.
-  loom_low_lower_resolved_descriptor_t src1_literal_descriptor;
-  // Optional descriptor row selected when false is literal and true is inline.
-  loom_low_lower_resolved_descriptor_t src0_literal_src1_inline_descriptor;
-  // Optional descriptor row selected when true is literal and false is inline.
-  loom_low_lower_resolved_descriptor_t src1_literal_src0_inline_descriptor;
-} loom_amdgpu_cndmask_b32_descriptors_t;
-
-typedef enum loom_amdgpu_select_condition_kind_e {
-  LOOM_AMDGPU_SELECT_CONDITION_KIND_NONE = 0,
-  LOOM_AMDGPU_SELECT_CONDITION_KIND_SCC = 1,
-  LOOM_AMDGPU_SELECT_CONDITION_KIND_SCALAR_MASK = 2,
-  LOOM_AMDGPU_SELECT_CONDITION_KIND_VECTOR_MASK = 3,
-  LOOM_AMDGPU_SELECT_CONDITION_KIND_SGPR_BOOL = 4,
-} loom_amdgpu_select_condition_kind_t;
-
-typedef enum loom_amdgpu_select_payload_kind_e {
-  LOOM_AMDGPU_SELECT_PAYLOAD_KIND_NONE = 0,
-  LOOM_AMDGPU_SELECT_PAYLOAD_KIND_DATA = 1,
-  LOOM_AMDGPU_SELECT_PAYLOAD_KIND_I1_MASK = 2,
-  LOOM_AMDGPU_SELECT_PAYLOAD_KIND_PACKED_DATA = 3,
-} loom_amdgpu_select_payload_kind_t;
-
-typedef struct loom_amdgpu_vector_select_plan_t {
-  // Source condition selecting true lanes.
-  loom_value_id_t condition;
-  // Source vector used when the corresponding condition lane is true.
-  loom_value_id_t true_value;
-  // Source vector used when the corresponding condition lane is false.
-  loom_value_id_t false_value;
-  // Selected representation of the true/false/result payload.
-  loom_amdgpu_select_payload_kind_t payload_kind;
-  // Selected representation of the scalar or vector condition.
-  loom_amdgpu_select_condition_kind_t condition_kind;
-  // Descriptor row selected for SCC-controlled scalar selects.
-  loom_low_lower_resolved_descriptor_t scc_descriptor;
-  // Descriptor row rematerializing SCC from an SGPR boolean condition.
-  loom_low_lower_resolved_descriptor_t sgpr_bool_compare_descriptor;
-  // Descriptor rows selected for scalar-mask v_cndmask_b32 lane selects.
-  loom_amdgpu_cndmask_b32_descriptors_t cndmask_descriptors;
-  // Additional emission state selected by payload_kind.
-  union {
-    // Boolean payloads combine native per-workitem masks.
-    struct {
-      // Descriptor row selected to read EXEC for i1 mask selection.
-      loom_low_lower_resolved_descriptor_t exec_read_descriptor;
-      // Descriptor row selected to AND i1 mask payloads.
-      loom_low_lower_resolved_descriptor_t and_descriptor;
-      // Descriptor row selected to OR i1 mask payloads.
-      loom_low_lower_resolved_descriptor_t or_descriptor;
-      // Descriptor row selected to XOR i1 mask payloads.
-      loom_low_lower_resolved_descriptor_t xor_descriptor;
-    } mask;
-    // Independent element choices are merged into their packed payload words.
-    struct {
-      // Bitfield insertion with a literal mask when the target supports it.
-      loom_low_lower_resolved_descriptor_t merge_descriptor;
-      // Materializes an SGPR mask for a register-form merge; empty for
-      // literals.
-      loom_low_lower_resolved_descriptor_t mask_constant_descriptor;
-      // Interned immediate name used by mask constants.
-      loom_string_id_t imm32_attr_name_id;
-      // Number of logical payload elements, excluding physical tail padding.
-      uint32_t element_count;
-      // Number of bits selected by each independent predicate.
-      uint32_t element_bit_count;
-    } packed;
-  } payload;
-  // Result vector value.
-  loom_value_id_t result;
-  // Static number of selected 32-bit register units.
-  uint32_t lane_count;
-  // Number of selected register units controlled by one vector mask lane.
-  uint32_t registers_per_condition_lane;
-  // True when cndmask literal/inline operand forms can be selected per lane.
-  bool allow_lane_immediates;
-} loom_amdgpu_vector_select_plan_t;
-
-typedef enum loom_amdgpu_clampf_mode_e {
-  LOOM_AMDGPU_CLAMPF_MODE_NONE = 0,
-  LOOM_AMDGPU_CLAMPF_MODE_ORDERED = 1,
-  LOOM_AMDGPU_CLAMPF_MODE_NUMBER = 2,
-} loom_amdgpu_clampf_mode_t;
-
-typedef struct loom_amdgpu_clampf_plan_t {
-  // Source payload being clamped.
-  loom_value_id_t value;
-  // Source lower bound.
-  loom_value_id_t lower;
-  // Source upper bound.
-  loom_value_id_t upper;
-  // Selected clamp semantics with native AMDGPU packet support.
-  loom_amdgpu_clampf_mode_t mode;
-  // Descriptor row selected for the ordered lower-bound comparison.
-  loom_low_lower_resolved_descriptor_t lower_compare_descriptor;
-  // Descriptor row selected for the ordered upper-bound comparison.
-  loom_low_lower_resolved_descriptor_t upper_compare_descriptor;
-  // Descriptor rows selected for ordered-mode v_cndmask_b32 lane selects.
-  loom_amdgpu_cndmask_b32_descriptors_t select_descriptors;
-  // Descriptor row selected for register-register lower-bound maxnum.
-  loom_low_lower_resolved_descriptor_t lower_bound_register_descriptor;
-  // Optional descriptor row selected for literal lower-bound maxnum.
-  loom_low_lower_resolved_descriptor_t lower_bound_literal_descriptor;
-  // Descriptor row selected for register-register upper-bound minnum.
-  loom_low_lower_resolved_descriptor_t upper_bound_register_descriptor;
-  // Optional descriptor row selected for literal upper-bound minnum.
-  loom_low_lower_resolved_descriptor_t upper_bound_literal_descriptor;
-  // Result value.
-  loom_value_id_t result;
-  // Static number of f32 lanes lowered.
-  uint32_t lane_count;
-} loom_amdgpu_clampf_plan_t;
-
 typedef enum loom_amdgpu_subgroup_payload_kind_e {
   LOOM_AMDGPU_SUBGROUP_PAYLOAD_NONE = 0,
   LOOM_AMDGPU_SUBGROUP_PAYLOAD_I32_SCALAR = 1,
@@ -1206,6 +1038,8 @@ typedef enum loom_amdgpu_subgroup_reduce_publication_kind_e {
 typedef struct loom_amdgpu_subgroup_reduce_plan_t {
   // Source value reduced across subgroup lanes.
   loom_value_id_t value;
+  // Optional literal recipe for the scalar integer payload's VGPR carrier.
+  const void* payload_materialization;
   // Descriptor row selected for each native cross-lane read.
   loom_low_lower_resolved_descriptor_t bpermute_descriptor;
   // Descriptor row selected for all-lane DPP row moves.
@@ -1326,6 +1160,8 @@ typedef struct loom_amdgpu_workgroup_collective_cross_wave_descriptors_t {
 typedef struct loom_amdgpu_workgroup_reduce_plan_t {
   // Source value reduced across workgroup lanes.
   loom_value_id_t value;
+  // Optional literal recipe for the scalar integer payload's VGPR carrier.
+  const void* payload_materialization;
   // Descriptor row selected for each native cross-lane read.
   loom_low_lower_resolved_descriptor_t bpermute_descriptor;
   // Descriptor row selected for all-lane DPP row moves.
@@ -1374,6 +1210,8 @@ typedef struct loom_amdgpu_workgroup_reduce_plan_t {
 typedef struct loom_amdgpu_subgroup_scan_plan_t {
   // Source value scanned across subgroup lanes.
   loom_value_id_t value;
+  // Optional literal recipe for the scalar integer payload's VGPR carrier.
+  const void* payload_materialization;
   // Descriptor row selected for each native cross-lane read.
   loom_low_lower_resolved_descriptor_t bpermute_descriptor;
   // Descriptor row selected for each native lane combine.
@@ -1403,6 +1241,8 @@ typedef struct loom_amdgpu_subgroup_scan_plan_t {
 typedef struct loom_amdgpu_workgroup_scan_plan_t {
   // Source value scanned across workgroup lanes.
   loom_value_id_t value;
+  // Optional literal recipe for the scalar integer payload's VGPR carrier.
+  const void* payload_materialization;
   // Descriptor row selected for each native cross-lane read.
   loom_low_lower_resolved_descriptor_t bpermute_descriptor;
   // Descriptor row selected for each native lane combine.
@@ -1549,9 +1389,28 @@ typedef enum loom_amdgpu_memory_scalar_offset_placement_e {
   LOOM_AMDGPU_MEMORY_SCALAR_OFFSET_PLACEMENT_BASE = 1,
 } loom_amdgpu_memory_scalar_offset_placement_t;
 
+// The high bit of a term's packed operand forms permits using index_minimum as
+// an exact u32 address literal when its source carrier is not already a VGPR.
+#define LOOM_AMDGPU_MEMORY_DYNAMIC_TERM_INDEX_LITERAL (UINT64_C(1) << 63)
+
+typedef struct loom_amdgpu_memory_dynamic_term_plan_t {
+  // Inclusive unscaled index lower bound used by affine address grouping.
+  int64_t index_minimum;
+  // Inclusive unscaled index upper bound used by affine address grouping.
+  int64_t index_maximum;
+  // Two-bit operand forms: index first, then dynamic stride operands. The
+  // INDEX_LITERAL bit retains an optional exact address materialization.
+  uint64_t operand_forms;
+} loom_amdgpu_memory_dynamic_term_plan_t;
+
 typedef struct loom_amdgpu_memory_access_t {
   // Target-independent source memory access plan being wrapped.
   loom_low_source_memory_access_plan_t source;
+  // Optional view-derived descriptor bound; explicit resource extents win.
+  const loom_amdgpu_buffer_extent_plan_t* buffer_extent;
+  // Retained operand decisions in canonical-term, realization, then optional
+  // retained-component order. NULL when the source has no dynamic terms.
+  const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
   // Selected target addressing form for the memory packet.
   loom_amdgpu_memory_address_form_t address_form;
   // Target operand path selected for each source dynamic address term.
@@ -1603,6 +1462,9 @@ typedef struct loom_amdgpu_memory_packet_plan_t {
   // First byte moved in the packed source/result register payload. Packets at
   // offset 2 within a register complete the preceding zero-extended halfword.
   uint32_t payload_byte_offset;
+  // Exact store payload words, or NULL when the packet consumes its SSA value.
+  // When present, contains payload_register_count words in source order.
+  const uint32_t* constant_words;
 } loom_amdgpu_memory_packet_plan_t;
 
 // Immutable function-retained direct-memory packet plan.
@@ -1775,6 +1637,10 @@ typedef struct loom_amdgpu_fragment_memory_plan_t {
   loom_amdgpu_matrix_fragment_layout_kind_t layout_kind;
   // Target-independent source view access plan.
   loom_low_source_memory_access_plan_t source;
+  // Optional view-derived descriptor bound; explicit resource extents win.
+  const loom_amdgpu_buffer_extent_plan_t* buffer_extent;
+  // Retained operand decisions for canonical scalar-base address terms.
+  const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
   // Retained full-width origin partition; zero for narrow-only addressing.
   loom_amdgpu_fragment_memory_scalar_base_t scalar_base;
   // Whether every dynamic source-address term is subgroup-uniform.
@@ -2009,9 +1875,22 @@ typedef struct loom_amdgpu_atomic_ordering_plan_t {
   iree_host_size_t post_atomic_visibility_packet_count;
 } loom_amdgpu_atomic_ordering_plan_t;
 
+typedef struct loom_amdgpu_atomic_constant_payloads_t {
+  // Exact scalar payload bits: update/expected first, replacement second.
+  uint64_t bits[2];
+  // Bit i is set when operand i has an exact scalar payload.
+  uint8_t operand_mask;
+} loom_amdgpu_atomic_constant_payloads_t;
+
 typedef struct loom_amdgpu_atomic_plan_t {
   // Target-independent source memory access plan being wrapped.
   loom_low_source_memory_access_plan_t source;
+  // Optional view-derived descriptor bound; explicit resource extents win.
+  const loom_amdgpu_buffer_extent_plan_t* buffer_extent;
+  // Retained operand decisions for all dynamic address alternatives.
+  const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
+  // Optional exact scalar payloads retained before source facts retire.
+  const loom_amdgpu_atomic_constant_payloads_t* constant_payloads;
   // Source atomic operation form being lowered.
   loom_amdgpu_atomic_operation_kind_t operation_kind;
   // Selected target addressing form for the atomic packet.
@@ -2062,6 +1941,8 @@ typedef struct loom_amdgpu_prefetch_plan_t {
 typedef struct loom_amdgpu_async_gather_plan_t {
   // Source global-like view access transferred into LDS.
   loom_low_source_memory_access_plan_t source;
+  // Retained operand decisions for all source-address alternatives.
+  const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
   // Target operand path selected for each source dynamic address term.
   loom_amdgpu_memory_dynamic_index_kind_t
       source_dynamic_term_kinds[LOOM_LOW_SOURCE_MEMORY_DYNAMIC_TERM_CAPACITY];
@@ -2094,10 +1975,10 @@ typedef struct loom_amdgpu_tensor_load_plan_t {
   loom_low_lower_resolved_descriptor_t descriptor;
   // Descriptor row used to move each uniform D-group lane into an SGPR.
   loom_low_lower_resolved_descriptor_t readfirstlane_descriptor;
-  // Canonical global-read region, borrowed until source lowering finishes.
-  const loom_view_region_t* source_region;
-  // Canonical LDS-write region, borrowed until source lowering finishes.
-  const loom_view_region_t* dest_region;
+  // Optional global-read envelope retained independently of view analysis.
+  const loom_low_memory_relative_interval_t* source_interval;
+  // Optional LDS-write envelope retained independently of view analysis.
+  const loom_low_memory_relative_interval_t* dest_interval;
   // Source values materialized as the packet's D0 through D3 SGPR groups.
   loom_value_id_t dgroups[LOOM_AMDGPU_TENSOR_DGROUP_CAPACITY];
   // Number of populated D-group source values.

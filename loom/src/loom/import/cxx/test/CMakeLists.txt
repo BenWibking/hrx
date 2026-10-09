@@ -392,6 +392,16 @@ loom_test_module(
 )
 endif()
 
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    call_lifetimes_module
+  SRCS
+    "call_lifetimes_kernel.cxx"
+    "call_lifetimes_kernel.loom"
+)
+endif()
+
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_test_module(
   NAME

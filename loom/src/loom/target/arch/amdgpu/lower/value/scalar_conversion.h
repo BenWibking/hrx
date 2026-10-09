@@ -39,12 +39,17 @@ iree_status_t loom_amdgpu_select_scalar_conversion_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_scalar_conversion_plan_t* out_plan, bool* out_selected);
 
+// Publishes identity carriers and retains selected source materializations.
+iree_status_t loom_amdgpu_finalize_scalar_conversion_plan(
+    loom_low_lower_context_t* context,
+    loom_amdgpu_scalar_conversion_plan_t* plan);
+
 // Retains bit zero of an integer source in the result's planned predicate
 // representation: SCC, a durable SGPR Boolean, or a native lane mask.
 // Shared by scalar truncation and numeric index casts.
 iree_status_t loom_amdgpu_lower_integer_to_predicate(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source, loom_value_id_t result);
+    loom_value_id_t source, loom_value_id_t result, loom_type_t result_type);
 
 // Lowers an AMDGPU scalar conversion plan.
 iree_status_t loom_amdgpu_lower_scalar_conversion(

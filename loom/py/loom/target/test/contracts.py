@@ -708,8 +708,14 @@ TEST_LOW_CORE_CONTRACT_FRAGMENT = ContractFragment(
                 emit=(
                     EmitRegisterSlice(
                         source=ValueRef.operand("source"),
-                        result=ValueRef.result("result"),
+                        result=ValueRef.temporary("slice"),
                         unit_offset=unit_offset,
+                        unit_count=1,
+                    ),
+                    EmitRegisterMove(
+                        source=ValueRef.temporary("slice"),
+                        result=ValueRef.result("result"),
+                        result_type=ValueRef.temporary("slice"),
                     ),
                 ),
             )

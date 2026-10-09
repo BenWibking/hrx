@@ -6,6 +6,7 @@
 
 #include "loom/target/arch/amdgpu/lower/collective_payload.h"
 
+#include "loom/ops/kernel/ops.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/legality.h"
 #include "loom/target/arch/amdgpu/lower/sync.h"
@@ -132,18 +133,66 @@ bool loom_amdgpu_collective_resolve_workgroup_shape(
   return true;
 }
 
+iree_status_t loom_amdgpu_finalize_collective_payload(
+    loom_low_lower_context_t* context, loom_low_lower_plan_t plan) {
+  loom_value_id_t value = LOOM_VALUE_ID_INVALID;
+  loom_amdgpu_subgroup_payload_kind_t payload_kind;
+  const void** materialization = NULL;
+  switch (plan.id) {
+    case LOOM_OP_KERNEL_SUBGROUP_REDUCE: {
+      loom_amdgpu_subgroup_reduce_plan_t* reduce =
+          (loom_amdgpu_subgroup_reduce_plan_t*)plan.target_data;
+      value = reduce->value;
+      payload_kind = reduce->payload_kind;
+      materialization = &reduce->payload_materialization;
+      break;
+    }
+    case LOOM_OP_KERNEL_WORKGROUP_REDUCE: {
+      loom_amdgpu_workgroup_reduce_plan_t* reduce =
+          (loom_amdgpu_workgroup_reduce_plan_t*)plan.target_data;
+      value = reduce->value;
+      payload_kind = reduce->payload_kind;
+      materialization = &reduce->payload_materialization;
+      break;
+    }
+    case LOOM_OP_KERNEL_SUBGROUP_SCAN: {
+      loom_amdgpu_subgroup_scan_plan_t* scan =
+          (loom_amdgpu_subgroup_scan_plan_t*)plan.target_data;
+      value = scan->value;
+      payload_kind = scan->payload_kind;
+      materialization = &scan->payload_materialization;
+      break;
+    }
+    case LOOM_OP_KERNEL_WORKGROUP_SCAN: {
+      loom_amdgpu_workgroup_scan_plan_t* scan =
+          (loom_amdgpu_workgroup_scan_plan_t*)plan.target_data;
+      value = scan->value;
+      payload_kind = scan->payload_kind;
+      materialization = &scan->payload_materialization;
+      break;
+    }
+    default:
+      IREE_ASSERT_UNREACHABLE("expected an arithmetic collective plan");
+      IREE_BUILTIN_UNREACHABLE();
+  }
+  return payload_kind == LOOM_AMDGPU_SUBGROUP_PAYLOAD_I32_SCALAR
+             ? loom_amdgpu_prepare_vgpr_literal(context, value, materialization)
+             : iree_ok_status();
+}
+
 iree_status_t loom_amdgpu_collective_lookup_payload(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t value, loom_amdgpu_subgroup_payload_kind_t payload_kind,
-    loom_value_id_t* out_low_value) {
+    const void* materialization, loom_value_id_t* out_low_value) {
   switch (payload_kind) {
     case LOOM_AMDGPU_SUBGROUP_PAYLOAD_I32_SCALAR:
-      return loom_amdgpu_lookup_or_materialize_vgpr_i32(context, source_op,
-                                                        value, out_low_value);
+      return loom_amdgpu_emit_prepared_vgpr_value(
+          context, source_op, value, materialization, out_low_value);
     case LOOM_AMDGPU_SUBGROUP_PAYLOAD_F32_SCALAR:
     case LOOM_AMDGPU_SUBGROUP_PAYLOAD_I32_VECTOR:
     case LOOM_AMDGPU_SUBGROUP_PAYLOAD_F32_VECTOR:
-      return loom_low_lower_lookup_value(context, value, out_low_value);
+      *out_low_value = loom_low_lower_lookup_value(context, value);
+      return iree_ok_status();
     case LOOM_AMDGPU_SUBGROUP_PAYLOAD_NONE:
       break;
   }

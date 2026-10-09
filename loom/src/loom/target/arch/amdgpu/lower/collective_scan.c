@@ -262,7 +262,11 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_scan_plan(
   out_plan->wavefront_size = wavefront_size;
   out_plan->active_lane_count = wavefront_size;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_VGPR, register_count));
 }
 
 iree_status_t loom_amdgpu_select_kernel_workgroup_scan_plan(
@@ -415,7 +419,11 @@ iree_status_t loom_amdgpu_select_kernel_workgroup_scan_plan(
   out_plan->flat_workgroup_size = shape.flat_workgroup_size;
   out_plan->scratch_byte_length = shape.scratch_byte_length;
   *out_selected = true;
-  return iree_ok_status();
+  return loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_VGPR, register_count));
 }
 
 static iree_status_t loom_amdgpu_emit_subgroup_combine(
@@ -716,7 +724,8 @@ iree_status_t loom_amdgpu_lower_kernel_subgroup_scan(
 
   loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_collective_lookup_payload(
-      context, source_op, plan->value, plan->payload_kind, &low_value));
+      context, source_op, plan->value, plan->payload_kind,
+      plan->payload_materialization, &low_value));
 
   loom_value_id_t result_registers[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];
   for (uint32_t i = 0; i < plan->register_count; ++i) {
@@ -801,7 +810,8 @@ iree_status_t loom_amdgpu_lower_kernel_workgroup_scan(
 
   loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_collective_lookup_payload(
-      context, source_op, plan->value, plan->payload_kind, &low_value));
+      context, source_op, plan->value, plan->payload_kind,
+      plan->payload_materialization, &low_value));
 
   loom_value_id_t source_registers[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];
   loom_value_id_t result_registers[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];

@@ -605,7 +605,8 @@ static iree_status_t loom_x86_map_native_abi_layout(
     void* user_data, loom_low_lower_context_t* context,
     loom_low_lower_abi_layout_kind_t layout_kind, const loom_type_t* arg_types,
     iree_host_size_t arg_count, const loom_type_t* result_types,
-    iree_host_size_t result_count, loom_named_attr_slice_t* out_abi_layout) {
+    iree_host_size_t result_count, iree_arena_allocator_t* scratch_arena,
+    loom_named_attr_slice_t* out_abi_layout) {
   (void)user_data;
   (void)arg_types;
   (void)arg_count;
@@ -637,8 +638,8 @@ static iree_status_t loom_x86_map_native_abi_layout(
     return iree_ok_status();
   }
   loom_type_t* types = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
-      context, type_count, sizeof(*types), (void**)&types));
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      scratch_arena, type_count, sizeof(*types), (void**)&types));
   for (iree_host_size_t i = 0; i < type_count; ++i) {
     const loom_value_id_t value =
         i < argument_count ? arguments[i] : results[i - argument_count];
@@ -655,8 +656,7 @@ static iree_status_t loom_x86_map_native_abi_layout(
         module, function.op, types, argument_count,
         (iree_diagnostic_emitter_t){.fn = loom_x86_emit_abi_diagnostic,
                                     .user_data = context},
-        loom_low_lower_context_emission_arena(context), &accepted,
-        out_abi_layout);
+        scratch_arena, &accepted, out_abi_layout);
   }
   loom_type_t signature;
   IREE_RETURN_IF_ERROR(loom_module_intern_function_type(

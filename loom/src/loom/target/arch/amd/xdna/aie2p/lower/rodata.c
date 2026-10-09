@@ -59,6 +59,11 @@ iree_status_t loom_aie2p_select_rodata_plan(loom_low_lower_context_t* context,
   const loom_op_t* definition =
       module->symbols.entries[symbol.symbol_id].defining_op;
   if (loom_global_rodata_def_isa(definition)) {
+    loom_type_t result_type = loom_type_none();
+    IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
+        context, AIE2P_CORE_REG_CLASS_ID_AIE2P_EP, 1, &result_type));
+    IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+        context, loom_global_load_result(source_op).values[0], result_type));
     *out_plan = loom_low_lower_plan_make(LOOM_AIE2P_RODATA_PLAN_ADDRESS, NULL);
   }
   return iree_ok_status();

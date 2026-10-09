@@ -29,8 +29,7 @@ static iree_status_t loom_low_lower_calculate_block_execution_counts(
     return iree_ok_status();
   }
   const loom_value_fact_cfg_region_t* region =
-      loom_value_fact_table_lookup_cfg_region(context->lowering.fact_table,
-                                              body);
+      loom_value_fact_table_lookup_cfg_region(context->fact_table, body);
   const loom_cfg_loop_nest_t* loops = &region->loops;
   uint64_t* trip_counts = NULL;
   if (loops->loop_count > 0) {
@@ -40,8 +39,7 @@ static iree_status_t loom_low_lower_calculate_block_execution_counts(
   }
   for (iree_host_size_t i = 0; i < loops->loop_count; ++i) {
     const loom_loop_recurrence_facts_t recurrence =
-        loom_value_fact_induction_facts(context->lowering.fact_table,
-                                        context->module,
+        loom_value_fact_induction_facts(context->fact_table, context->module,
                                         &region->inductions[i]);
     if (!recurrence.trip_count_known) {
       return iree_ok_status();
@@ -66,7 +64,7 @@ static iree_status_t loom_low_lower_calculate_block_execution_counts(
           .is_modeled = loom_low_lower_execution_selector_is_modeled,
           .user_data = loops,
       },
-      &context->function_arena, &analysis->unmodeled_blocks));
+      &context->analysis_arena, &analysis->unmodeled_blocks));
   analysis->block_multipliers = multipliers;
   return iree_ok_status();
 }
@@ -74,7 +72,7 @@ static iree_status_t loom_low_lower_calculate_block_execution_counts(
 static iree_status_t loom_low_lower_initialize_block_execution_counts(
     loom_low_lower_context_t* context) {
   loom_low_lower_execution_counts_t* analysis =
-      &context->lowering.function_analysis.execution_counts;
+      &context->function_analysis.execution_counts;
   if (analysis->initialized) {
     return iree_ok_status();
   }
@@ -85,7 +83,7 @@ static iree_status_t loom_low_lower_initialize_block_execution_counts(
   }
   uint64_t* multipliers = NULL;
   IREE_RETURN_IF_ERROR(
-      iree_arena_allocate_array(&context->function_arena, body->block_count,
+      iree_arena_allocate_array(&context->analysis_arena, body->block_count,
                                 sizeof(*multipliers), (void**)&multipliers));
   iree_arena_allocator_t scratch_arena;
   iree_arena_initialize(context->module->arena.block_pool, &scratch_arena);
@@ -102,7 +100,7 @@ iree_status_t loom_low_lower_source_block_execution_counts(
     loom_low_lower_context_t* context, const uint64_t** out_counts) {
   *out_counts = NULL;
   loom_low_lower_execution_counts_t* analysis =
-      &context->lowering.function_analysis.execution_counts;
+      &context->function_analysis.execution_counts;
   IREE_RETURN_IF_ERROR(
       loom_low_lower_initialize_block_execution_counts(context));
   if (analysis->block_multipliers != NULL &&
@@ -121,7 +119,7 @@ iree_status_t loom_low_lower_source_block_execution_count(
   IREE_RETURN_IF_ERROR(
       loom_low_lower_initialize_block_execution_counts(context));
   const loom_low_lower_execution_counts_t* analysis =
-      &context->lowering.function_analysis.execution_counts;
+      &context->function_analysis.execution_counts;
   if (analysis->block_multipliers == NULL ||
       (analysis->unmodeled_blocks.bit_count != 0 &&
        iree_bitmap_test(analysis->unmodeled_blocks, block_index))) {

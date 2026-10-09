@@ -258,16 +258,6 @@ bool loom_amdgpu_memory_access_try_select_buffer(
     loom_amdgpu_memory_access_t* access,
     loom_amdgpu_memory_access_diagnostic_t* diagnostic);
 
-// Emits the target buffer descriptor consumed by MUBUF-style packets from a low
-// HAL binding pointer. When the low resource has no explicit extent,
-// |source_access| may provide source view facts used to derive the descriptor
-// range word.
-iree_status_t loom_amdgpu_emit_hal_buffer_descriptor(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t low_binding,
-    const loom_low_source_memory_access_plan_t* source_access,
-    loom_value_id_t* out_low_descriptor);
-
 // Builds descriptor offset and cache-policy attrs for a memory packet.
 iree_status_t loom_amdgpu_make_memory_attrs(
     loom_low_lower_context_t* context,
@@ -391,12 +381,6 @@ iree_status_t loom_amdgpu_record_memory_cache_policy_rejection_diagnostic(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_amdgpu_memory_access_t* access);
 
-// Populates optional source storage-schema fields on a memory report row.
-void loom_amdgpu_memory_report_row_populate_storage_schema(
-    loom_low_lower_context_t* context,
-    const loom_low_source_memory_access_plan_t* source,
-    loom_low_lower_memory_report_row_t* row);
-
 // Selects and retains an exact-sized AMDGPU source memory-load packet plan.
 iree_status_t loom_amdgpu_select_memory_load_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
@@ -406,6 +390,11 @@ iree_status_t loom_amdgpu_select_memory_load_plan(
 iree_status_t loom_amdgpu_select_memory_store_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_low_lower_plan_t* out_plan);
+
+// Completes descriptor bounds once all operand producers have selected their
+// actual carriers. Packet splits share one retained extent recipe.
+iree_status_t loom_amdgpu_finalize_memory_plan(
+    loom_low_lower_context_t* context, loom_amdgpu_memory_access_plan_t* plan);
 
 // Lowers a source memory-load op to an AMDGPU memory packet.
 iree_status_t loom_amdgpu_lower_memory_load(

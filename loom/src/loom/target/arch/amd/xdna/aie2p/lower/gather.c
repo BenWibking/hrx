@@ -25,27 +25,27 @@ typedef enum loom_aie2p_gather_plan_kind_e {
   LOOM_AIE2P_GATHER_PLAN_IMMUTABLE = 0x300,
 } loom_aie2p_gather_plan_kind_t;
 
-typedef struct loom_aie2p_gather_plan_t {
-  // Derived table copy selected for the AB pointer lanes.
-  loom_symbol_ref_t ab_symbol;
-  // Derived table copy selected for the CD pointer lanes.
-  loom_symbol_ref_t cd_symbol;
-  // Bit width selected by the source payload type.
-  uint8_t element_bit_count;
-} loom_aie2p_gather_plan_t;
-
 typedef struct loom_aie2p_gather_table_state_t {
-  // True once this original symbol has one reserved derived pair.
+  // True once this original symbol has one planned derived pair.
   bool initialized;
-  // Derived table copy used by the AB pointer lanes.
+  // Interned source name used to name the emitted pair.
+  iree_string_view_t source_name;
+  // Derived table copy used by the AB pointer lanes, null until emission.
   loom_symbol_ref_t ab_symbol;
-  // Derived table copy used by the CD pointer lanes.
+  // Derived table copy used by the CD pointer lanes, null until emission.
   loom_symbol_ref_t cd_symbol;
   // Copied block-replicated bytes shared by both derived definitions.
   iree_const_byte_span_t derived_contents;
   // Source location retained for both derived definitions.
   loom_location_id_t location;
 } loom_aie2p_gather_table_state_t;
+
+typedef struct loom_aie2p_gather_plan_t {
+  // Module-owned derived pair shared by all lookups of the same source table.
+  loom_aie2p_gather_table_state_t* table;
+  // Bit width selected by the source payload type.
+  uint8_t element_bit_count;
+} loom_aie2p_gather_plan_t;
 
 typedef struct loom_aie2p_gather_module_state_t {
   // Entries indexed by original module symbol ID.
@@ -182,14 +182,10 @@ static iree_status_t loom_aie2p_gather_get_or_create_table(
         module_state, match->source_contents, &table->derived_contents));
     const loom_symbol_t* source_symbol =
         &module->symbols.entries[match->source_symbol.symbol_id];
-    const iree_string_view_t source_name =
+    table->source_name =
         loom_string_table_get(&module->strings, source_symbol->name_id);
-    IREE_RETURN_IF_ERROR(loom_aie2p_gather_reserve_derived_symbol(
-        module, module_state, source_name, IREE_SV("$aie2p$lookup$ab"),
-        &table->ab_symbol));
-    IREE_RETURN_IF_ERROR(loom_aie2p_gather_reserve_derived_symbol(
-        module, module_state, source_name, IREE_SV("$aie2p$lookup$cd"),
-        &table->cd_symbol));
+    table->ab_symbol = loom_symbol_ref_null();
+    table->cd_symbol = loom_symbol_ref_null();
     table->location = source_op->location;
     table->initialized = true;
   }
@@ -223,10 +219,14 @@ iree_status_t loom_aie2p_select_gather_plan(loom_low_lower_context_t* context,
   IREE_RETURN_IF_ERROR(
       loom_low_lower_allocate_plan_data(context, sizeof(*plan), (void**)&plan));
   *plan = (loom_aie2p_gather_plan_t){
-      .ab_symbol = table->ab_symbol,
-      .cd_symbol = table->cd_symbol,
+      .table = table,
       .element_bit_count = match.element_bit_count,
   };
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
+      context, AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256, 2, &result_type));
+  IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+      context, loom_vector_gather_result(source_op), result_type));
   *out_plan = loom_low_lower_plan_make(LOOM_AIE2P_GATHER_PLAN_IMMUTABLE, plan);
   return iree_ok_status();
 }
@@ -368,33 +368,51 @@ static loom_aie2p_gather_physical_recipe_t loom_aie2p_gather_physical_recipe(
   }
 }
 
+// Symbol identities are emission results. Planning retains the table contents
+// and placement relationship without publishing symbols in the source module.
+static iree_status_t loom_aie2p_gather_publish_symbols(
+    loom_module_t* module, loom_low_lower_module_state_t* module_state,
+    loom_aie2p_gather_table_state_t* table) {
+  if (table->ab_symbol.symbol_id != LOOM_SYMBOL_ID_INVALID) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(loom_aie2p_gather_reserve_derived_symbol(
+      module, module_state, table->source_name, IREE_SV("$aie2p$lookup$ab"),
+      &table->ab_symbol));
+  return loom_aie2p_gather_reserve_derived_symbol(
+      module, module_state, table->source_name, IREE_SV("$aie2p$lookup$cd"),
+      &table->cd_symbol);
+}
+
 iree_status_t loom_aie2p_emit_gather_plan(loom_low_lower_context_t* context,
                                           const loom_op_t* source_op,
                                           loom_low_lower_plan_t plan) {
   const loom_aie2p_gather_plan_t* gather_plan =
       (const loom_aie2p_gather_plan_t*)plan.target_data;
+  IREE_RETURN_IF_ERROR(loom_aie2p_gather_publish_symbols(
+      loom_low_lower_context_module(context),
+      loom_low_lower_context_module_state(context), gather_plan->table));
   const loom_aie2p_gather_physical_recipe_t physical_recipe =
       loom_aie2p_gather_physical_recipe(gather_plan->element_bit_count);
   const loom_location_id_t location = source_op->location;
   loom_type_t scalar_type = loom_type_none();
   loom_type_t select_type = loom_type_none();
   loom_type_t vector_half_type = loom_type_none();
-  loom_type_t vector_type = loom_type_none();
+  const loom_type_t vector_type = loom_low_lower_value_binding_type(
+      context, loom_vector_gather_result(source_op));
   IREE_RETURN_IF_ERROR(loom_aie2p_gather_make_register_type(
       context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ER, 1, &scalar_type));
   IREE_RETURN_IF_ERROR(loom_aie2p_gather_make_register_type(
       context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ERS16, 1, &select_type));
   IREE_RETURN_IF_ERROR(loom_aie2p_gather_make_register_type(
       context, AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256, 1, &vector_half_type));
-  IREE_RETURN_IF_ERROR(loom_aie2p_gather_make_register_type(
-      context, AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256, 2, &vector_type));
 
   loom_value_id_t ab_pointer = LOOM_VALUE_ID_INVALID;
   loom_value_id_t cd_pointer = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_aie2p_emit_rodata_address(
-      context, gather_plan->ab_symbol, location, &ab_pointer));
+      context, gather_plan->table->ab_symbol, location, &ab_pointer));
   IREE_RETURN_IF_ERROR(loom_aie2p_emit_rodata_address(
-      context, gather_plan->cd_symbol, location, &cd_pointer));
+      context, gather_plan->table->cd_symbol, location, &cd_pointer));
 
   loom_value_id_t ab_scalar = LOOM_VALUE_ID_INVALID;
   loom_value_id_t cd_scalar = LOOM_VALUE_ID_INVALID;
@@ -431,9 +449,8 @@ iree_status_t loom_aie2p_emit_gather_plan(loom_low_lower_context_t* context,
       context, AIE2P_CORE_DESCRIPTOR_REF_SELECT_I32X16, select_operands,
       IREE_ARRAYSIZE(select_operands), vector_type, location, &lane_bases));
 
-  loom_value_id_t source_offsets = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_vector_gather_offsets(source_op), &source_offsets));
+  loom_value_id_t source_offsets = loom_low_lower_lookup_value(
+      context, loom_vector_gather_offsets(source_op));
 
   loom_builder_t* builder = loom_low_lower_context_builder(context);
   loom_value_id_t shuffle_control = LOOM_VALUE_ID_INVALID;
@@ -554,10 +571,12 @@ iree_status_t loom_aie2p_finalize_gather_module(
   loom_builder_initialize(module, &module->arena, loom_module_block(module),
                           &builder);
   for (iree_host_size_t i = 0; i < state->table_count; ++i) {
-    const loom_aie2p_gather_table_state_t* table = &state->tables[i];
+    loom_aie2p_gather_table_state_t* table = &state->tables[i];
     if (!table->initialized) {
       continue;
     }
+    IREE_RETURN_IF_ERROR(
+        loom_aie2p_gather_publish_symbols(module, module_state, table));
     IREE_ASSERT(
         module->symbols.entries[table->ab_symbol.symbol_id].defining_op ==
         NULL);

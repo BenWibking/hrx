@@ -24,6 +24,25 @@ namespace {
 
 class LowLowerReportTest : public ::testing::Test {
  protected:
+  static iree_status_t ObservePlannedRows(void* user_data,
+                                          loom_low_lower_context_t* context) {
+    auto* test = static_cast<LowLowerReportTest*>(user_data);
+    // Selection and source-frequency evidence precede the first instruction.
+    EXPECT_NE(test->result_.report, nullptr);
+    EXPECT_EQ(test->result_.report->selected_source_op_count, 1u);
+    EXPECT_EQ(test->result_.report->emitted_low_op_count, 0u);
+    EXPECT_EQ(test->result_.report->rows.count, 1u);
+    if (test->result_.report->rows.head) {
+      const loom_low_lower_report_row_t& row =
+          loom_low_lower_report_row_vec_const_rows(
+              test->result_.report->rows.head)[0];
+      EXPECT_EQ(row.execution_count_plus_one, 2u);
+      EXPECT_EQ(row.emitted_low_op_count, 0u);
+      EXPECT_EQ(row.source_op_kind, LOOM_OP_SCALAR_ADDI);
+    }
+    return iree_ok_status();
+  }
+
   void SetUp() override {
     iree_arena_block_pool_initialize(4096, iree_allocator_system(),
                                      &block_pool_);
@@ -44,6 +63,7 @@ class LowLowerReportTest : public ::testing::Test {
     IREE_ASSERT_OK(
         loom_value_fact_table_compute(&fact_table_, module_, function_));
 
+    options_.target_ref = loom_symbol_ref_null();
     options_.target_facts = &target_facts_;
     options_.descriptor_registry = &descriptor_registry_.registry;
     options_.policy = loom_test_low_lower_policy();
@@ -113,18 +133,22 @@ class LowLowerReportTest : public ::testing::Test {
 };
 
 TEST_F(LowLowerReportTest, CapturesAndReleasesSelectionRows) {
+  loom_low_lower_policy_t policy = *options_.policy;
+  policy.emit_preamble = {ObservePlannedRows, this};
+  options_.policy = &policy;
   options_.report_allocator = iree_allocator_system();
   IREE_ASSERT_OK(
       loom_low_lower_function(module_, function_, &options_, &result_));
 
-  EXPECT_EQ(result_.selected_source_op_count, 1u);
-  EXPECT_EQ(result_.emitted_low_op_count, 1u);
-  ASSERT_EQ(result_.report_rows.count, 1u);
-  ASSERT_NE(result_.report_rows.head, nullptr);
-  ASSERT_EQ(result_.report_rows.head, result_.report_rows.tail);
-  ASSERT_EQ(result_.report_rows.head->count, 1u);
+  ASSERT_NE(result_.report, nullptr);
+  EXPECT_EQ(result_.report->selected_source_op_count, 1u);
+  EXPECT_EQ(result_.report->emitted_low_op_count, 1u);
+  ASSERT_EQ(result_.report->rows.count, 1u);
+  ASSERT_NE(result_.report->rows.head, nullptr);
+  ASSERT_EQ(result_.report->rows.head, result_.report->rows.tail);
+  ASSERT_EQ(result_.report->rows.head->count, 1u);
   const loom_low_lower_report_row_t& row =
-      loom_low_lower_report_row_vec_const_rows(result_.report_rows.head)[0];
+      loom_low_lower_report_row_vec_const_rows(result_.report->rows.head)[0];
   EXPECT_TRUE(iree_string_view_equal(row.function_name, IREE_SV("add")));
   EXPECT_EQ(row.source_op_kind, LOOM_OP_SCALAR_ADDI);
   EXPECT_EQ(row.selection_kind, LOOM_LOW_LOWER_REPORT_SELECTION_RULE);
@@ -134,23 +158,33 @@ TEST_F(LowLowerReportTest, CapturesAndReleasesSelectionRows) {
                                      IREE_SV("integer.add.i32")));
 
   loom_low_lower_result_deinitialize(&result_);
-  EXPECT_EQ(result_.report_rows.count, 0u);
-  EXPECT_EQ(result_.report_rows.head, nullptr);
-  EXPECT_EQ(result_.report_rows.tail, nullptr);
-  EXPECT_TRUE(iree_allocator_is_null(result_.report_allocator));
-  EXPECT_TRUE(iree_allocator_is_null(result_.memory_report_row_allocator));
+  EXPECT_EQ(result_.report, nullptr);
 }
 
 TEST_F(LowLowerReportTest, DisabledReportsProduceNoRows) {
   IREE_ASSERT_OK(
       loom_low_lower_function(module_, function_, &options_, &result_));
 
-  EXPECT_EQ(result_.selected_source_op_count, 0u);
-  EXPECT_EQ(result_.emitted_low_op_count, 0u);
-  EXPECT_EQ(result_.report_rows.count, 0u);
-  EXPECT_EQ(result_.report_rows.head, nullptr);
-  EXPECT_EQ(result_.memory_report_rows.count, 0u);
-  EXPECT_EQ(result_.memory_report_rows.rows, nullptr);
+  EXPECT_EQ(result_.report, nullptr);
+}
+
+TEST_F(LowLowerReportTest, ReleasesRowsWhenAPlannedFunctionIsNotEmitted) {
+  options_.report_allocator = iree_allocator_system();
+  iree_arena_allocator_t plan_arena;
+  iree_arena_initialize(&block_pool_, &plan_arena);
+  loom_low_lower_function_plan_t* plan = nullptr;
+  IREE_ASSERT_OK(loom_low_lower_plan_function(module_, function_, &options_,
+                                              &plan_arena, &result_, &plan));
+  ASSERT_NE(plan, nullptr);
+  ASSERT_NE(result_.report, nullptr);
+  EXPECT_EQ(result_.report->rows.count, 1u);
+  EXPECT_EQ(result_.low_func_op, nullptr);
+
+  // A later function's rejection can discard the transaction before this
+  // plan executes. Returned reports have their own cleanup boundary.
+  iree_arena_deinitialize(&plan_arena);
+  loom_low_lower_result_deinitialize(&result_);
+  EXPECT_EQ(result_.report, nullptr);
 }
 
 }  // namespace

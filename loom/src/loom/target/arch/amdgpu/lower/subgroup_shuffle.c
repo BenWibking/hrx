@@ -191,7 +191,18 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_shuffle_plan(
   out_plan->width = shape.width;
   out_plan->wavefront_size = wavefront_size;
   *out_selected = true;
-  return iree_ok_status();
+  if (out_plan->valid != LOOM_VALUE_ID_INVALID) {
+    IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+        context, out_plan->valid,
+        loom_low_register_type(
+            loom_low_lower_context_descriptor_set(context)->stable_id,
+            LOOM_AMDGPU_REG_CLASS_ID_SGPR, 2)));
+  }
+  return loom_low_lower_plan_value_type(
+      context, out_plan->result,
+      loom_low_register_type(
+          loom_low_lower_context_descriptor_set(context)->stable_id,
+          LOOM_AMDGPU_REG_CLASS_ID_VGPR, register_count));
 }
 
 static iree_status_t loom_amdgpu_emit_subgroup_mask_compare(
@@ -323,8 +334,8 @@ static iree_status_t loom_amdgpu_emit_subgroup_shuffle_source_lane(
 
   loom_value_id_t low_source_offset = LOOM_VALUE_ID_INVALID;
   if (plan->exact_offset == UINT32_MAX) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, plan->source_offset, &low_source_offset));
+    low_source_offset =
+        loom_low_lower_lookup_value(context, plan->source_offset);
     IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32(
         context, source_op, low_source_offset, &low_source_offset));
   }
@@ -436,8 +447,10 @@ iree_status_t loom_amdgpu_lower_kernel_subgroup_shuffle(
 
   loom_type_t valid_type = loom_type_none();
   if (plan->valid != LOOM_VALUE_ID_INVALID) {
-    IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(context, source_op,
-                                                     plan->valid, &valid_type));
+    // Participation is an EXEC-shaped mask even on wave32 targets.
+    valid_type = loom_low_register_type(
+        loom_low_lower_context_descriptor_set(context)->stable_id,
+        LOOM_AMDGPU_REG_CLASS_ID_SGPR, 2);
   }
 
   loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;

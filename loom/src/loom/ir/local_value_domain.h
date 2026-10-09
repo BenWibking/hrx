@@ -36,7 +36,7 @@ typedef struct loom_local_value_domain_t {
   loom_module_t* module;
   // Region whose local values are covered by this domain.
   const loom_region_t* region;
-  // Borrowed acquisition arena owning value storage through the last use,
+  // Borrowed arena owning value storage through the last use,
   // including any released and restored plans.
   iree_arena_allocator_t* arena;
   // Function/region-local value IDs indexed by local value ordinal.
@@ -64,9 +64,9 @@ typedef struct loom_local_value_domain_t {
 // from acquisition until release, including across later registration.
 // The first block's arguments occupy the ordinal prefix in argument order,
 // including unused arguments and arguments with dependent types.
-// The acquisition arena must remain valid through the domain's last use,
-// including release/restore cycles. Registrations by borrowed analyses grow
-// the domain in this arena, not in query scratch.
+// The owning arena must remain valid through the domain's last use or explicit
+// relocation, including release/restore cycles. Registrations by borrowed
+// analyses grow the domain in its owning arena, not in query scratch.
 iree_status_t loom_local_value_domain_acquire_for_region(
     loom_module_t* module, const loom_region_t* region,
     iree_arena_allocator_t* arena, loom_local_value_domain_t* out_domain);
@@ -79,6 +79,14 @@ iree_status_t loom_local_value_domain_acquire_for_region_tree(
     loom_module_t* module, const loom_region_t* region,
     iree_arena_allocator_t* arena, loom_local_value_domain_t* out_domain);
 
+// Relocates the exact populated value list to |arena| without changing ordinals
+// or the scratch borrow. The domain owner uses this to retain a completed list
+// beyond its construction arena. Further registration grows in the new arena.
+// The old storage remains with its arena; no pointer into that storage may be
+// used after relocation. Allocation failure leaves the domain unchanged.
+iree_status_t loom_local_value_domain_relocate(
+    loom_local_value_domain_t* domain, iree_arena_allocator_t* arena);
+
 // Clears all acquired value IDs and releases the module ordinal scratch map.
 // The compact value list and its ordinals remain available for restoration
 // while the owning arena and original values remain alive.
@@ -89,14 +97,14 @@ void loom_local_value_domain_release(loom_local_value_domain_t* domain);
 // Used when admission retains several function plans before their consuming
 // rewrites. Only the restored domain may query or extend the scratch map;
 // release it before restoring another domain. Source mutations must preserve
-// the retained values until their plan has been consumed. The original
-// acquisition arena continues to own storage for any further registration.
+// the retained values until their plan has been consumed. The domain's owning
+// arena continues to own storage for any further registration.
 void loom_local_value_domain_restore(loom_local_value_domain_t* domain);
 
 // Registers |value_id| in an acquired domain and returns its local ordinal.
 // Existing registrations return their current ordinal. This keeps rewrite
 // frames compact while allowing new values to join the same ordinal-keyed
-// scratch domain as they are created. Growth uses the acquisition arena so
+// scratch domain as they are created. Growth uses the domain's owning arena so
 // temporary consumers cannot shorten the domain's storage lifetime.
 iree_status_t loom_local_value_domain_register_value(
     loom_local_value_domain_t* domain, loom_value_id_t value_id,

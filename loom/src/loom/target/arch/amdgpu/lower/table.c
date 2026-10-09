@@ -7,6 +7,7 @@
 #include "loom/target/arch/amdgpu/lower/table.h"
 
 #include <stdint.h>
+#include <string.h>
 
 #include "loom/ir/context.h"
 #include "loom/ops/vector/ops.h"
@@ -441,6 +442,39 @@ static bool loom_amdgpu_table_lookup_plan_from_op(
   return false;
 }
 
+static_assert(LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES <= 32,
+              "table literal lanes must fit in their selection mask");
+
+static iree_status_t loom_amdgpu_select_table_literals(
+    loom_low_lower_context_t* context, loom_amdgpu_table_lookup_plan_t* plan) {
+  if (plan->indices == LOOM_VALUE_ID_INVALID ||
+      plan->select_src1_literal_descriptor.descriptor == NULL) {
+    return iree_ok_status();
+  }
+  const loom_value_fact_table_t* fact_table =
+      loom_low_lower_context_fact_table(context);
+  const loom_module_t* module = loom_low_lower_context_module(context);
+  uint32_t bits[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];
+  uint32_t count = 0;
+  // Lane zero seeds the accumulator; only subsequent lanes emit selects.
+  for (uint32_t lane = 1; lane < plan->table_lane_count; ++lane) {
+    if (loom_amdgpu_source_lane_as_u32_bits(fact_table, module, plan->table,
+                                            lane, &bits[count])) {
+      plan->literal_lane_mask |= UINT32_C(1) << lane;
+      ++count;
+    }
+  }
+  if (count == 0) {
+    return iree_ok_status();
+  }
+  uint32_t* retained = NULL;
+  IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
+      context, count * sizeof(*retained), (void**)&retained));
+  memcpy(retained, bits, count * sizeof(*retained));
+  plan->literal_bits = retained;
+  return iree_ok_status();
+}
+
 iree_status_t loom_amdgpu_select_vector_table_lookup_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_table_lookup_plan_t* out_plan, bool* out_selected) {
@@ -488,11 +522,32 @@ iree_status_t loom_amdgpu_select_vector_table_lookup_plan(
         context, LOOM_AMDGPU_DESCRIPTOR_REF_V_CMP_EQ_I32_SRC1_INLINE,
         &out_plan->compare_src1_inline_descriptor,
         &optional_descriptor_present));
+    IREE_RETURN_IF_ERROR(loom_amdgpu_select_table_literals(context, out_plan));
 
     *out_selected = true;
     return iree_ok_status();
   }
   return iree_ok_status();
+}
+
+iree_status_t loom_amdgpu_finalize_vector_table_lookup_plan(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_table_lookup_plan_t* plan) {
+  const bool is_ladder =
+      plan->strategy == LOOM_AMDGPU_TABLE_LOOKUP_STRATEGY_F32_LADDER;
+  loom_type_t result_type = loom_low_register_type(
+      loom_low_lower_context_descriptor_set(context)->stable_id,
+      LOOM_AMDGPU_REG_CLASS_ID_VGPR,
+      is_ladder ? plan->result_lane_count : plan->index_register_count);
+  // A singleton table bypasses the comparison ladder and reuses its carrier.
+  if (is_ladder && plan->table_lane_count == 1) {
+    result_type = loom_low_lower_value_binding_type(context, plan->table);
+    if (plan->result_lane_count != 1) {
+      result_type = loom_low_register_carrier_type_with_unit_count(
+          result_type, plan->result_lane_count);
+    }
+  }
+  return loom_low_lower_plan_value_type(context, plan->result, result_type);
 }
 
 static bool loom_amdgpu_table_lookup_strategy_descriptors_present(
@@ -623,8 +678,9 @@ static iree_status_t loom_amdgpu_table_lookup_emit_index_compare(
 static iree_status_t loom_amdgpu_table_lookup_emit_table_select(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_table_lookup_plan_t* plan, loom_value_id_t false_lane,
-    loom_value_id_t true_lane, loom_value_id_t condition, uint32_t table_lane,
-    loom_type_t lane_type, loom_value_id_t* out_selected_lane) {
+    loom_value_id_t true_lane, loom_value_id_t condition,
+    const uint32_t* literal_bits, loom_type_t lane_type,
+    loom_value_id_t* out_selected_lane) {
   *out_selected_lane = LOOM_VALUE_ID_INVALID;
   loom_named_attr_t attrs[1] = {0};
   iree_host_size_t attr_count = 0;
@@ -632,18 +688,12 @@ static iree_status_t loom_amdgpu_table_lookup_emit_table_select(
       &plan->select_register_descriptor;
   loom_value_id_t operands[3] = {false_lane, true_lane, condition};
   iree_host_size_t operand_count = 3;
-  const loom_value_fact_table_t* fact_table =
-      loom_low_lower_context_fact_table(context);
-  uint32_t table_bits = 0;
-  if (plan->select_src1_literal_descriptor.descriptor != NULL &&
-      loom_amdgpu_source_lane_as_u32_bits(
-          fact_table, loom_low_lower_context_module(context), plan->table,
-          table_lane, &table_bits)) {
+  if (literal_bits != NULL) {
     descriptor = &plan->select_src1_literal_descriptor;
     operands[1] = condition;
     operand_count = 2;
     IREE_RETURN_IF_ERROR(
-        loom_amdgpu_append_i64_attr(context, IREE_SV("imm32"), table_bits,
+        loom_amdgpu_append_i64_attr(context, IREE_SV("imm32"), *literal_bits,
                                     attrs, IREE_ARRAYSIZE(attrs), &attr_count));
   }
   loom_op_t* select_op = NULL;
@@ -664,14 +714,18 @@ static iree_status_t loom_amdgpu_table_lookup_select_table_lane(
     loom_type_t mask_lane_type, loom_value_id_t* out_selected_lane) {
   *out_selected_lane = LOOM_VALUE_ID_INVALID;
   loom_value_id_t selected_lane = table_lanes[0];
+  const uint32_t* literal_bits = plan->literal_bits;
   for (uint32_t i = 1; i < plan->table_lane_count; ++i) {
     loom_value_id_t condition = LOOM_VALUE_ID_INVALID;
     IREE_RETURN_IF_ERROR(loom_amdgpu_table_lookup_emit_index_compare(
         context, source_op, plan, index_lane, ordinals[i], i, mask_lane_type,
         &condition));
+    const uint32_t* selected_bits =
+        (plan->literal_lane_mask & (UINT32_C(1) << i)) != 0 ? literal_bits++
+                                                            : NULL;
     IREE_RETURN_IF_ERROR(loom_amdgpu_table_lookup_emit_table_select(
-        context, source_op, plan, selected_lane, table_lanes[i], condition, i,
-        lane_type, &selected_lane));
+        context, source_op, plan, selected_lane, table_lanes[i], condition,
+        selected_bits, lane_type, &selected_lane));
   }
   *out_selected_lane = selected_lane;
   return iree_ok_status();
@@ -800,13 +854,10 @@ static iree_status_t loom_amdgpu_lower_vector_table_lookup_packed_i8(
 iree_status_t loom_amdgpu_lower_vector_table_lookup(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_table_lookup_plan_t* plan) {
-  loom_value_id_t low_table = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->table, &low_table));
+  loom_value_id_t low_table = loom_low_lower_lookup_value(context, plan->table);
   loom_value_id_t low_indices = LOOM_VALUE_ID_INVALID;
   if (plan->indices != LOOM_VALUE_ID_INVALID) {
-    IREE_RETURN_IF_ERROR(
-        loom_low_lower_lookup_value(context, plan->indices, &low_indices));
+    low_indices = loom_low_lower_lookup_value(context, plan->indices);
   }
 
   if (plan->strategy == LOOM_AMDGPU_TABLE_LOOKUP_STRATEGY_PACKED_I8_PERMUTE ||

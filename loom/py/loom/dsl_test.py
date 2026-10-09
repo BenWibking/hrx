@@ -2740,6 +2740,67 @@ class TestOp:
                 format=[Scope([ResultType("result")])],
             )
 
+    def test_reference_source_requires_a_definite_storage_origin(self) -> None:
+        Op(
+            "test.derive",
+            operands=[Operand("source", BUFFER)],
+            results=[Result("result", BUFFER, reference_source="source")],
+            traits=[PURE],
+        )
+        for operands, result, message in [
+            (
+                [],
+                Result("result", BUFFER, reference_source="missing"),
+                "not an operand",
+            ),
+            (
+                [Operand("source", BUFFER, optional=True)],
+                Result("result", BUFFER, reference_source="source"),
+                "one required operand",
+            ),
+            (
+                [Operand("source", BUFFER, variadic=True)],
+                Result("result", BUFFER, reference_source="source"),
+                "one required operand",
+            ),
+            (
+                [Operand("source", INTEGER)],
+                Result("result", BUFFER, reference_source="source"),
+                "buffer or view",
+            ),
+            (
+                [Operand("source", BUFFER)],
+                Result("result", INTEGER, reference_source="source"),
+                "buffer or view",
+            ),
+            (
+                [Operand("source", BUFFER)],
+                Result("result", BUFFER, allocates=True, reference_source="source"),
+                "cannot allocate",
+            ),
+        ]:
+            with _raises(ValueError, match=message):
+                Op("test.derive", operands=operands, results=[result])
+
+    def test_reference_observations_exclude_payload_effects(self) -> None:
+        for reference_type in (BUFFER, dsl.VIEW):
+            Op(
+                "test.observe",
+                operands=[Operand("input", reference_type, observes_reference=True)],
+                traits=[PURE],
+            )
+        with _raises(ValueError, match="buffer or view fields"):
+            Op(
+                "test.observe",
+                operands=[Operand("input", INTEGER, observes_reference=True)],
+            )
+        with _raises(ValueError, match="cannot access payload"):
+            Op(
+                "test.observe",
+                operands=[Operand("input", BUFFER, observes_reference=True)],
+                effects=[Reads("input")],
+            )
+
     def test_lookup_attr(self) -> None:
         op = Op("test.op", attrs=[AttrDef("axis", "i64")])
         assert op.attr("axis") is not None

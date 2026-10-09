@@ -481,6 +481,8 @@ class Operand:
     variadic: If True, this is zero-or-more values (list[Value]).
     optional: If True, this operand may be absent.
     role: Semantic role consumed by generic analyses.
+    observes_reference: Observes buffer/view metadata without accessing payload
+        or exposing a usable reference/address through a result or side effect.
     """
 
     name: str
@@ -489,6 +491,7 @@ class Operand:
     variadic: bool = False
     optional: bool = False
     role: OperandRole = OperandRole.NONE
+    observes_reference: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -503,6 +506,9 @@ class Result:
         that cannot alias any pre-existing resource.
     signature_only: If True, this result describes a locally scoped signature
         value rather than an SSA value visible after the operation.
+    reference_source: Named buffer/view operand whose storage this reference
+        derives from. Coordinates and reference representation may change;
+        ownership and the physical carrier are not transferred or aliased.
     """
 
     name: str
@@ -511,6 +517,7 @@ class Result:
     variadic: bool = False
     allocates: bool = False
     signature_only: bool = False
+    reference_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -6267,6 +6274,58 @@ def _validate_keyed_module_record(
         )
 
 
+def _validate_reference_contracts(
+    op_name: str,
+    operands: tuple[Operand, ...],
+    results: tuple[Result | TiedResult, ...],
+    effects: tuple[Effect, ...],
+) -> None:
+    """Validates storage provenance independently of ownership or carriers."""
+    for operand in operands:
+        if not operand.observes_reference:
+            continue
+        if operand.type_constraint not in (BUFFER, VIEW):
+            raise ValueError(
+                f"Op '{op_name}': reference observations require buffer or view fields"
+            )
+        if any(effect.operand == operand.name for effect in effects):
+            raise ValueError(
+                f"Op '{op_name}': reference observations cannot access payload"
+            )
+    for result in results:
+        source_name = getattr(result, "reference_source", None)
+        if source_name is None:
+            continue
+        source = next(
+            (operand for operand in operands if operand.name == source_name), None
+        )
+        if source is None:
+            raise ValueError(
+                f"Op '{op_name}': reference source '{source_name}' is not an operand"
+            )
+        if source.variadic or source.optional:
+            raise ValueError(
+                f"Op '{op_name}': reference source '{source_name}' "
+                "must be one required operand"
+            )
+        if source.type_constraint not in (
+            BUFFER,
+            VIEW,
+        ) or result.type_constraint not in (BUFFER, VIEW):
+            raise ValueError(
+                f"Op '{op_name}': reference sources require buffer or view fields"
+            )
+        if result.allocates or getattr(result, "signature_only", False):
+            raise ValueError(
+                f"Op '{op_name}': derived references cannot allocate "
+                "or be signature-only"
+            )
+        if operands.index(source) >= 255:
+            raise ValueError(
+                f"Op '{op_name}': reference source exceeds descriptor index range"
+            )
+
+
 def _validate_signature_only_results(
     op_name: str,
     results: tuple[Result | TiedResult, ...],
@@ -6682,6 +6741,9 @@ class Op:
             tuple(traits),
             frozen_effects,
             frozen_ownership_effects,
+        )
+        _validate_reference_contracts(
+            name, frozen_operands, frozen_results, frozen_effects
         )
         _validate_signature_only_results(
             name, frozen_results, tuple(traits), frozen_format

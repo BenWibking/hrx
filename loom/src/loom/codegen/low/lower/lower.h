@@ -20,9 +20,12 @@
 #include "loom/analysis/condition_facts.h"
 #include "loom/analysis/contract_vector.h"
 #include "loom/analysis/native_layout.h"
+#include "loom/analysis/storage_access.h"
 #include "loom/analysis/symbolic_expr.h"
 #include "loom/codegen/low/descriptors.h"
+#include "loom/codegen/low/lower/bindings.h"
 #include "loom/codegen/low/lower/function_storage.h"
+#include "loom/codegen/low/lower/memory_effects.h"
 #include "loom/codegen/low/lower/module_state.h"
 #include "loom/codegen/low/lower/report.h"
 #include "loom/codegen/low/lower/visibility.h"
@@ -41,6 +44,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct loom_low_representation_projection_index_t
+    loom_low_representation_projection_index_t;
 
 typedef struct loom_low_lower_context_t loom_low_lower_context_t;
 typedef struct loom_low_lower_rule_set_t loom_low_lower_rule_set_t;
@@ -248,25 +254,31 @@ typedef struct loom_low_lower_emit_preamble_callback_t {
   void* user_data;
 } loom_low_lower_emit_preamble_callback_t;
 
-typedef iree_status_t (*loom_low_lower_emit_entry_setup_fn_t)(
+typedef iree_status_t (*loom_low_lower_entry_setup_fn_t)(
     void* user_data, loom_low_lower_context_t* context);
 
-typedef struct loom_low_lower_emit_entry_setup_callback_t {
-  // Optional callback invoked after ABI live-ins and resources are emitted,
-  // before source body packets are emitted.
-  loom_low_lower_emit_entry_setup_fn_t fn;
-  // Caller-owned payload passed to |fn|.
+typedef struct loom_low_lower_entry_setup_t {
+  // Optional planning callback after operation selection, storage demand, and
+  // ABI planning. It consumes retained plans to validate entry resources and
+  // retain setup decisions before any Low construction. Source rejection
+  // emits diagnostics; status carries infrastructure failures only.
+  loom_low_lower_entry_setup_fn_t plan;
+  // Optional executor after ABI live-ins and resources are emitted, before
+  // source body packets. It consumes validated decisions without inspecting
+  // source facts or introducing new authored-input rejection.
+  loom_low_lower_entry_setup_fn_t emit;
+  // Caller-owned payload passed to both callbacks.
   void* user_data;
-} loom_low_lower_emit_entry_setup_callback_t;
+} loom_low_lower_entry_setup_t;
 
 typedef iree_status_t (*loom_low_lower_prepare_branch_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
     const loom_op_t* source_terminator, iree_arena_allocator_t* analysis_arena);
 
 typedef struct loom_low_lower_prepare_branch_callback_t {
-  // Optional callback invoked after source blocks have low blocks, before any
-  // source body operations are emitted. Targets use this to plan structural
-  // branch expansion and interpose low-only destination blocks. The analysis
+  // Optional callback invoked after source selection and before Low creation.
+  // Targets use the shared control plan to retain structural branch expansion
+  // and interpose planned destination blocks without mutating IR. The analysis
   // arena is reset immediately after each callback and must not back retained
   // plans, target state, or emitted IR.
   loom_low_lower_prepare_branch_fn_t fn;
@@ -274,22 +286,31 @@ typedef struct loom_low_lower_prepare_branch_callback_t {
   void* user_data;
 } loom_low_lower_prepare_branch_callback_t;
 
-typedef iree_status_t (*loom_low_lower_materialize_branch_arg_fn_t)(
+typedef iree_status_t (*loom_low_lower_prepare_control_operand_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
-    const loom_op_t* source_terminator, uint8_t successor_index,
-    uint16_t arg_index, loom_value_id_t source_value_id,
-    loom_value_id_t low_value_id, loom_type_t required_low_type,
-    loom_value_id_t* out_low_value_id);
+    const loom_op_t* source_terminator, loom_value_id_t source_value_id,
+    loom_type_t required_low_type, const void** out_plan);
 
-typedef struct loom_low_lower_materialize_branch_arg_callback_t {
-  // Optional callback invoked when a structural branch payload's already
-  // lowered value does not match the destination block argument type. Targets
-  // use this to materialize edge-local register-class copies without changing
-  // the source value's canonical low mapping.
-  loom_low_lower_materialize_branch_arg_fn_t fn;
-  // Caller-owned payload passed to |fn|.
+typedef iree_status_t (*loom_low_lower_emit_control_operand_fn_t)(
+    void* user_data, loom_low_lower_context_t* context,
+    const loom_op_t* source_terminator, loom_value_id_t source_value_id,
+    loom_value_id_t low_value_id, loom_type_t required_low_type,
+    const void* plan, loom_value_id_t* out_low_value_id);
+
+typedef struct loom_low_lower_control_operand_t {
+  // Prepares a branch or callable-exit operand whose actual producer carrier
+  // differs from its receiving signature. Source facts are available here;
+  // rejection emits diagnostics before any Low construction. Retained data
+  // belongs to the function arena or immutable target storage. NULL is a
+  // valid recipe for a conversion determined entirely by the selected types.
+  loom_low_lower_prepare_control_operand_fn_t prepare;
+  // Emits the prepared conversion without consulting source analysis or
+  // changing the source value's canonical mapping. Only infrastructure
+  // failures remain possible. Both callbacks are present or both are absent.
+  loom_low_lower_emit_control_operand_fn_t emit;
+  // Caller-owned payload passed to both callbacks.
   void* user_data;
-} loom_low_lower_materialize_branch_arg_callback_t;
+} loom_low_lower_control_operand_t;
 
 typedef iree_status_t (*loom_low_lower_materialize_structural_operand_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
@@ -299,9 +320,8 @@ typedef iree_status_t (*loom_low_lower_materialize_structural_operand_fn_t)(
 
 typedef struct loom_low_lower_materialize_structural_operand_callback_t {
   // Optional callback invoked for low structural op operands after source value
-  // lookup. Required types come from the receiving boundary when one exists,
-  // such as the callable result signature. Targets materialize representation
-  // conversions and storage contracts such as defined register parts.
+  // lookup and prepared carrier conversion. Targets enforce storage contracts
+  // such as defined register parts using only the emitted Low operands.
   loom_low_lower_materialize_structural_operand_fn_t fn;
   // Caller-owned payload passed to |fn|.
   void* user_data;
@@ -337,14 +357,17 @@ typedef iree_status_t (*loom_low_lower_map_abi_layout_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
     loom_low_lower_abi_layout_kind_t layout_kind, const loom_type_t* arg_types,
     iree_host_size_t arg_count, const loom_type_t* result_types,
-    iree_host_size_t result_count, loom_named_attr_slice_t* out_abi_layout);
+    iree_host_size_t result_count, iree_arena_allocator_t* scratch_arena,
+    loom_named_attr_slice_t* out_abi_layout);
 
 typedef struct loom_low_lower_map_abi_layout_callback_t {
-  // Optional callback invoked once while building a low boundary op. The
-  // callback returns target-owned structured ABI layout facts; the low op
-  // builder canonicalizes and copies the returned slice into the module arena.
-  // A source rejection emits a lowering diagnostic and returns OK; boundary
-  // creation stops before constructing the replacement operation.
+  // Optional callback invoked once during boundary planning, after signature
+  // carriers are final and before creating Low IR. The callback returns ABI
+  // layout facts in scratch_arena or module storage. The shared boundary
+  // planner canonicalizes the result into module storage before releasing
+  // scratch. A source rejection emits a lowering diagnostic and returns OK.
+  // Status is reserved for infrastructure failures such as allocation or
+  // diagnostic IO.
   loom_low_lower_map_abi_layout_fn_t fn;
   // Caller-owned payload passed to |fn|.
   void* user_data;
@@ -730,6 +753,20 @@ typedef struct loom_low_lower_select_op_callback_t {
   void* user_data;
 } loom_low_lower_select_op_callback_t;
 
+typedef iree_status_t (*loom_low_lower_finalize_plan_fn_t)(
+    void* user_data, loom_low_lower_context_t* context,
+    const loom_op_t* source_op, loom_low_lower_plan_t plan);
+
+typedef struct loom_low_lower_finalize_plan_callback_t {
+  // Completes operand-dependent decisions for one selected, live target plan.
+  // The shared planner calls this in definition order before Low creation;
+  // source bindings contain actual producer carriers, and facts remain live.
+  // The callback consumes its retained plan without traversing source IR.
+  loom_low_lower_finalize_plan_fn_t fn;
+  // Caller-owned payload passed to |fn|.
+  void* user_data;
+} loom_low_lower_finalize_plan_callback_t;
+
 typedef iree_status_t (*loom_low_lower_emit_op_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
     const loom_op_t* source_op, loom_low_lower_plan_t plan);
@@ -768,30 +805,22 @@ typedef struct loom_low_lower_plan_report_t {
   loom_scalar_type_t native_transition_destination_type;
 } loom_low_lower_plan_report_t;
 
-typedef void (*loom_low_lower_describe_plan_fn_t)(
+typedef iree_status_t (*loom_low_lower_describe_plan_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
-    const loom_op_t* source_op, loom_low_lower_plan_t plan,
+    const loom_op_t* source_op, loom_low_lower_plan_t plan, bool is_elided,
+    uint64_t execution_count_plus_one,
     loom_low_lower_plan_report_t* out_report);
 
 typedef struct loom_low_lower_describe_plan_callback_t {
-  // Optional callback describing one target-owned plan for production compile
-  // reports. All returned data must remain borrowed/static.
+  // Optional callback projecting one finalized target plan into compile reports
+  // before emission. Execution frequency is shared with the selection row;
+  // detail rows may be allocated through the context. Elided plans retain
+  // selection descriptions but issue no memory accesses. Returned
+  // description fields must refer to registry-owned data, not analysis scratch.
   loom_low_lower_describe_plan_fn_t fn;
   // Caller-owned payload passed to |fn|.
   void* user_data;
 } loom_low_lower_describe_plan_callback_t;
-
-typedef iree_status_t (*loom_low_lower_finalize_function_fn_t)(
-    void* user_data, loom_low_lower_context_t* context);
-
-typedef struct loom_low_lower_finalize_function_callback_t {
-  // Optional callback invoked after a low function body emits successfully and
-  // before the source function is erased. Targets use this to commit
-  // function-local lowering discoveries into module-scope state.
-  loom_low_lower_finalize_function_fn_t fn;
-  // Caller-owned payload passed to |fn|.
-  void* user_data;
-} loom_low_lower_finalize_function_callback_t;
 
 typedef iree_status_t (*loom_low_lower_finalize_module_fn_t)(
     void* user_data, loom_module_t* module,
@@ -867,18 +896,18 @@ typedef struct loom_low_lower_policy_t {
                                   loom_type_t rhs);
   // Optionally emits target live-ins or other structural preamble packets.
   loom_low_lower_emit_preamble_callback_t emit_preamble;
-  // Optionally emits target entry-block setup packets after ABI imports.
-  loom_low_lower_emit_entry_setup_callback_t emit_entry_setup;
+  // Target entry resources planned before Low construction and emitted after
+  // ABI imports.
+  loom_low_lower_entry_setup_t entry_setup;
   // Optionally materializes target-owned low boundary attrs/layout from the
   // source function signature and mapped low signature.
   loom_low_lower_map_abi_layout_callback_t map_abi_layout;
-  // Optionally plans target-specific branch expansion after low blocks exist.
+  // Optionally plans target-specific branch expansion before Low creation.
   loom_low_lower_prepare_branch_callback_t prepare_branch;
-  // Optionally materializes branch payloads to the exact destination block
-  // argument type after the canonical low value has been looked up.
-  loom_low_lower_materialize_branch_arg_callback_t materialize_branch_arg;
-  // Optionally materializes structural op operands to their required low type
-  // and target storage contract, including the selected callable result type.
+  // Prepares and emits branch/return conversions to the receiving signature.
+  loom_low_lower_control_operand_t control_operand;
+  // Optionally materializes the target storage contract of structural operands
+  // after their carrier matches the receiving signature.
   loom_low_lower_materialize_structural_operand_callback_t
       materialize_structural_operand;
   // Optionally materializes relationships across a complete descriptor
@@ -928,12 +957,12 @@ typedef struct loom_low_lower_policy_t {
   // Optional target-owned source storage demand marker for callback-selected
   // plans. Missing preserves the conservative all-operands behavior.
   loom_low_lower_mark_plan_storage_demands_callback_t mark_plan_storage_demands;
+  // Optional completion of selected plans after producer carriers are known.
+  loom_low_lower_finalize_plan_callback_t finalize_plan;
   // Optional target-owned callback plan description for compile reports.
   loom_low_lower_describe_plan_callback_t describe_plan;
   // Optional target-owned emitter for plans selected by |select_op|.
   loom_low_lower_emit_op_callback_t emit_op;
-  // Optional target-owned function finalizer.
-  loom_low_lower_finalize_function_callback_t finalize_function;
   // Optional target-owned module finalizer.
   loom_low_lower_finalize_module_callback_t finalize_module;
 } loom_low_lower_policy_t;
@@ -996,6 +1025,11 @@ typedef struct loom_low_lower_options_t {
   // Lowering is a pure consumer of facts; callers own acquisition and
   // invalidation.
   loom_value_fact_table_t* fact_table;
+  // Optional shared reference/access scope for a module planning transaction.
+  // Without one, function planning owns a scope that retires before emission.
+  loom_storage_access_scope_t* storage_access;
+  // Borrowed projected helper interfaces, available before IR publication.
+  const loom_low_representation_projection_index_t* representation_projections;
   // Structured diagnostic emitter for user legality and lowering failures.
   iree_diagnostic_emitter_t emitter;
   // Maximum number of errors to emit before aborting. Zero means no limit.
@@ -1024,6 +1058,23 @@ enum {
   LOOM_LOW_LOWER_STATIC_LAUNCH_CONFIG_WORKGROUP_CLUSTER_SIZE = 1u << 2,
 };
 
+// Optional owned reporting payload. Normal lowering retains no report rows,
+// counters, or allocator metadata when reports are disabled.
+typedef struct loom_low_lower_report_t {
+  // Reported number of non-structural source operations selected for lowering.
+  uint64_t selected_source_op_count;
+  // Reported number of low operations emitted from source operation selections.
+  uint64_t emitted_low_op_count;
+  // Allocator owning this record and its selection row blocks.
+  iree_allocator_t allocator;
+  // Allocator owning the contiguous memory row array.
+  iree_allocator_t memory_row_allocator;
+  // Selection decisions with instruction counts attached during emission.
+  loom_low_lower_report_row_list_t rows;
+  // Planned source-memory packet descriptions.
+  loom_low_lower_memory_report_row_list_t memory_rows;
+} loom_low_lower_report_t;
+
 typedef struct loom_low_lower_result_t {
   // Number of error diagnostics emitted.
   uint32_t error_count;
@@ -1036,10 +1087,6 @@ typedef struct loom_low_lower_result_t {
   loom_op_t* low_func_op;
   // Module-local symbol reference for |low_func_op|.
   loom_symbol_ref_t low_func_ref;
-  // Reported number of non-structural source operations selected for lowering.
-  uint64_t selected_source_op_count;
-  // Reported number of low operations emitted from source operation selections.
-  uint64_t emitted_low_op_count;
   // Static launch-config fact bits proven while the source kernel was alive.
   loom_low_lower_static_launch_config_flags_t static_launch_config_flags;
   // Proven workgroup size from the source kernel launch config.
@@ -1048,14 +1095,9 @@ typedef struct loom_low_lower_result_t {
   loom_target_dispatch_workgroup_count_t static_workgroup_count;
   // Proven nontrivial workgroup-cluster size from the source launch config.
   loom_target_workgroup_cluster_size_t static_workgroup_cluster_size;
-  // Allocator used for owned source-low report rows.
-  iree_allocator_t report_allocator;
-  // Allocator used for owned source-memory packet report row storage.
-  iree_allocator_t memory_report_row_allocator;
-  // Owned source-low report rows.
-  loom_low_lower_report_row_list_t report_rows;
-  // Owned source-memory packet report rows.
-  loom_low_lower_memory_report_row_list_t memory_report_rows;
+  // Optional owned selection and memory reports, absent when rows were not
+  // requested or the function has no selected operations.
+  loom_low_lower_report_t* report;
   // Module-arena packet effects retained independently of optional reports.
   loom_low_memory_access_map_t* memory_accesses;
 } loom_low_lower_result_t;
@@ -1065,17 +1107,45 @@ typedef struct loom_low_lower_resolved_descriptor_t {
   const loom_low_descriptor_t* descriptor;
 } loom_low_lower_resolved_descriptor_t;
 
+typedef struct loom_low_lower_function_plan_t loom_low_lower_function_plan_t;
+
+// Plans one source definition without publishing Low IR. Source facts and
+// function analysis are construction inputs; the returned plan retains only
+// decisions and same-function source references needed by execution. Callers
+// may release source facts and plan other functions after this returns.
+//
+// User rejection emits diagnostics and returns a NULL plan. |arena| owns the
+// plan and all retained payloads; its address and storage must remain valid
+// through execution. Plans sharing a transaction can share this arena without
+// reserving a separate block per function. Report rows in |out_result| are
+// separately owned and released with result_deinitialize.
+iree_status_t loom_low_lower_plan_function(
+    loom_module_t* module, loom_func_like_t source_function,
+    const loom_low_lower_options_t* options, iree_arena_allocator_t* arena,
+    loom_low_lower_result_t* out_result,
+    loom_low_lower_function_plan_t** out_plan);
+
+// Executes a retained plan once, replacing its source definition. The result
+// must be the one initialized by plan_function; execution adds emitted output
+// and instruction counts. Other function plans can execute in between planning
+// and execution without retaining their source facts or ordinal scratch. All
+// authored-input rejection is complete; execution returns only infrastructure
+// failures and never changes the diagnostic error count.
+iree_status_t loom_low_lower_emit_function(loom_low_lower_function_plan_t* plan,
+                                           loom_low_lower_result_t* result);
+
 // Lowers one body-backed FuncLike source callable into a target-low function in
 // place. Kernel definitions retain their target-low kernel ABI; other FuncLike
-// operations lower to low.func.def.
+// operations lower to low.func.def. Module transactions plan every function
+// with plan_function before calling emit_function, preserving source callees
+// throughout access analysis and representation selection.
 //
 // User IR failures are emitted through |options->emitter| and counted in
 // |out_result|. The function returns OK in that case and does not emit a low
 // function. On success the emitted target-low function preserves the source
 // function symbol and replaces the source op at the same module position.
-// Infrastructure failures such as malformed options, invalid target symbols,
-// or a policy that violates the lowering contract are returned as status
-// failures.
+// Status carries infrastructure failures such as allocation failure. Verified
+// options, target symbols, and policy-produced plans are compiler-owned state.
 iree_status_t loom_low_lower_function(loom_module_t* module,
                                       loom_func_like_t source_function,
                                       const loom_low_lower_options_t* options,
@@ -1085,7 +1155,7 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
 loom_module_t* loom_low_lower_context_module(loom_low_lower_context_t* context);
 
 // Returns the builder positioned in the current low block. Only valid while
-// emit_preamble, emit_entry_setup, or emit_op callback code is emitting;
+// emit_preamble, entry_setup.emit, or emit_op callback code is emitting;
 // select_op callbacks must not mutate IR.
 loom_builder_t* loom_low_lower_context_builder(
     loom_low_lower_context_t* context);
@@ -1137,21 +1207,6 @@ loom_target_low_legality_diagnostic_flags_t
 loom_low_lower_context_diagnostic_flags(
     const loom_low_lower_context_t* context);
 
-// Retains a producer-owned footprint for one exact descriptor effect. The
-// result owns a deep copy in the module arena; source analysis may then expire.
-iree_status_t loom_low_lower_record_memory_effect(
-    loom_low_lower_context_t* context, const loom_op_t* low_op,
-    uint16_t effect_ordinal, const loom_low_memory_access_summary_t* summary);
-
-// Records one packet whose memory effects all use |source_plan|'s address.
-// The caller has selected actual packet geometry; additional_offset bounds
-// runtime packet coordinates not present in the canonical source plan.
-iree_status_t loom_low_lower_record_memory_packet(
-    loom_low_lower_context_t* context, const loom_op_t* low_op,
-    const loom_low_descriptor_t* descriptor,
-    const loom_low_source_memory_access_plan_t* source_plan,
-    loom_value_facts_t additional_offset);
-
 // Returns true when the caller requested source-low detail report rows.
 bool loom_low_lower_context_wants_report_rows(
     const loom_low_lower_context_t* context);
@@ -1162,6 +1217,18 @@ const loom_target_bundle_t* loom_low_lower_context_bundle(
 
 // Returns the typed target facts selected for this lowering attempt.
 const loom_target_facts_t* loom_low_lower_context_target_facts(
+    const loom_low_lower_context_t* context);
+
+// Returns the workgroup dimensions retained from source launch facts, or the
+// selected HAL ABI's required dimensions when source facts do not specify them.
+// NULL means no fixed dimensions. The result outlives source analysis storage.
+const loom_target_workgroup_size_t* loom_low_lower_context_workgroup_size(
+    const loom_low_lower_context_t* context);
+
+// Returns the retained nontrivial source cluster size, or NULL for an ordinary
+// dispatch. This lookup never reopens source launch-config analysis.
+const loom_target_workgroup_cluster_size_t*
+loom_low_lower_context_workgroup_cluster_size(
     const loom_low_lower_context_t* context);
 
 // Returns the selected target bundle key used in generated diagnostics.
@@ -1180,23 +1247,23 @@ iree_string_view_t loom_low_lower_context_config_key(
 const loom_low_descriptor_set_t* loom_low_lower_context_descriptor_set(
     const loom_low_lower_context_t* context);
 
-// Returns source value facts computed before planning. The table describes
-// the source function being lowered and remains valid only during callbacks.
+// Returns source value facts computed before planning. Valid only during
+// planning callbacks; emission consumes retained decisions instead.
 const loom_value_fact_table_t* loom_low_lower_context_fact_table(
     const loom_low_lower_context_t* context);
 
 // Returns the source function's retained CFG snapshot: adjacency, dominance,
-// region continuations, natural loops and control dependencies. The fact scope
-// owns this structure throughout immutable source-function lowering. Target
-// callbacks consume its indexed facts without rediscovering graph structure.
+// region continuations, natural loops, and control dependencies. The fact scope
+// owns this structure during planning only. Target planning callbacks consume
+// its indexed facts without rediscovering graph structure.
 const loom_value_fact_cfg_region_t* loom_low_lower_context_cfg(
     const loom_low_lower_context_t* context);
 
-// Returns reusable traversal state for condition-fact queries.
+// Returns reusable traversal state for planning-only condition-fact queries.
 loom_condition_query_t* loom_low_lower_context_condition_query(
     loom_low_lower_context_t* context);
 
-// Returns the function-local symbolic expression context.
+// Returns the function-local symbolic expression context during planning.
 loom_symbolic_expr_context_t* loom_low_lower_context_symbolic_expr_context(
     loom_low_lower_context_t* context);
 
@@ -1205,7 +1272,7 @@ loom_sanitizer_reporting_mode_t loom_low_lower_context_sanitizer_reporting_mode(
     const loom_low_lower_context_t* context);
 
 // Returns a lazily analyzed view-region table for the source function being
-// lowered. The table remains valid only during the current lowering callback.
+// lowered. The table remains valid only during planning.
 iree_status_t loom_low_lower_context_view_regions(
     loom_low_lower_context_t* context,
     const loom_view_region_table_t** out_view_regions);
@@ -1213,7 +1280,8 @@ iree_status_t loom_low_lower_context_view_regions(
 typedef struct loom_storage_interference_t loom_storage_interference_t;
 
 // Returns function-owned source storage analysis, constructing it once on
-// demand. Static allocation selection and physical packing share this result.
+// demand during planning. Static allocation selection and physical packing
+// share this result; emission does not retain its provenance or liveness state.
 iree_status_t loom_low_lower_context_storage_interference(
     loom_low_lower_context_t* context,
     loom_storage_interference_t** out_interference);
@@ -1232,12 +1300,6 @@ loom_low_lower_selected_plan_view_t loom_low_lower_context_selected_plan_view(
 // value they may look up while emitting the selected callback plan.
 void loom_low_lower_require_source_value_storage(
     loom_low_lower_context_t* context, loom_value_id_t source_value_id);
-
-// Returns true when |source_value_id| already has a non-elided low SSA mapping.
-// Emission callbacks may use this to select an optional equivalent source
-// realization. Required operands must use loom_low_lower_lookup_value.
-bool loom_low_lower_source_value_has_low_mapping(
-    const loom_low_lower_context_t* context, loom_value_id_t source_value_id);
 
 // Requires low SSA storage for every operand of |source_op|. This is the
 // conservative callback-plan fallback used when a target does not provide exact
@@ -1329,7 +1391,7 @@ typedef struct loom_low_lower_entry_interposition_t {
 
 // Interposes a low-only setup block before the mapped source entry block.
 //
-// This may only be called from an emit_entry_setup callback while the builder
+// This may only be called from an entry_setup.emit callback while the builder
 // is positioned at the end of the current physical entry block. The physical
 // entry block remains the function entry and must be terminated by the caller.
 // Source body emission will continue in the returned body_block, which receives
@@ -1341,21 +1403,14 @@ iree_status_t loom_low_lower_interpose_entry_block(
     uint16_t target_arg_count,
     loom_low_lower_entry_interposition_t* out_interposition);
 
-// Appends a low-only block to the low function being emitted.
-//
-// This is for target control packets that need a dispatch/restore block with no
-// corresponding source block. Source block remapping remains fixed.
-iree_status_t loom_low_lower_append_low_block(loom_low_lower_context_t* context,
-                                              loom_block_t** out_block);
-
 // Looks up the effective low destination for one source terminator successor.
 //
 // This accounts for target interpositions registered by
-// loom_low_lower_interpose_successor_dest. Callers that are lowering structural
-// terminators should prefer this over raw block lookup.
-iree_status_t loom_low_lower_lookup_successor_dest(
-    loom_low_lower_context_t* context, const loom_op_t* source_terminator,
-    uint8_t successor_index, loom_block_t** out_low_dest);
+// loom_low_lower_control_interpose_successor. Callers that are lowering
+// structural terminators should prefer this over raw block lookup.
+loom_block_t* loom_low_lower_lookup_successor_dest(
+    const loom_low_lower_context_t* context, const loom_op_t* source_terminator,
+    uint8_t successor_index);
 
 // Maps one source successor payload to low values accepted by |low_dest|.
 //
@@ -1364,9 +1419,8 @@ iree_status_t loom_low_lower_lookup_successor_dest(
 // loom_low_lower_lookup_value loops when forwarding block arguments.
 iree_status_t loom_low_lower_remap_successor_args(
     loom_low_lower_context_t* context, const loom_op_t* source_terminator,
-    uint8_t successor_index, loom_block_t* low_dest,
-    const loom_value_id_t* source_args, uint16_t source_arg_count,
-    loom_value_slice_t* out_low_args);
+    loom_block_t* low_dest, const loom_value_id_t* source_args,
+    uint16_t source_arg_count, loom_value_slice_t* out_low_args);
 
 // Resolves source values to their Low mappings and materializes each value for
 // a structural operation boundary. |required_types| may be NULL to retain each
@@ -1392,28 +1446,6 @@ iree_status_t loom_low_lower_materialize_structural_operand(
     iree_host_size_t operand_index, loom_value_id_t source_value_id,
     loom_type_t required_low_type, loom_value_id_t* inout_low_value_id);
 
-// Interposes a low-only destination block on one source successor edge.
-//
-// The new block receives the same edge payload as the source terminator edge:
-// no arguments for cfg.cond_br and the cfg.br payload for cfg.br.
-// |out_previous_low_dest| receives the effective destination that the
-// interposed block should eventually branch to when it wants to preserve the
-// original edge behavior.
-iree_status_t loom_low_lower_interpose_successor_dest(
-    loom_low_lower_context_t* context, const loom_op_t* source_terminator,
-    uint8_t successor_index, loom_block_t* interposed_low_block,
-    loom_block_t** out_previous_low_dest);
-
-// Records one target-owned structural branch plan for |source_terminator|.
-iree_status_t loom_low_lower_set_branch_plan(loom_low_lower_context_t* context,
-                                             const loom_op_t* source_terminator,
-                                             loom_low_lower_plan_t plan);
-
-// Looks up the target-owned structural branch plan for |source_terminator|.
-bool loom_low_lower_lookup_branch_plan(loom_low_lower_context_t* context,
-                                       const loom_op_t* source_terminator,
-                                       loom_low_lower_plan_t* out_plan);
-
 // Maps |source_type| through the active policy. Emits a diagnostic when the
 // policy returns no native mapping, leaving |out_low_type| as none.
 iree_status_t loom_low_lower_map_type(loom_low_lower_context_t* context,
@@ -1428,36 +1460,11 @@ iree_status_t loom_low_lower_map_value(loom_low_lower_context_t* context,
                                        loom_value_id_t source_value_id,
                                        loom_type_t* out_low_type);
 
-// Looks up the low SSA value already bound to |source_value_id|.
-iree_status_t loom_low_lower_lookup_value(loom_low_lower_context_t* context,
-                                          loom_value_id_t source_value_id,
-                                          loom_value_id_t* out_low_value_id);
-
 // Looks up the emitted low block corresponding to |source_block| in the source
 // function currently being lowered.
 iree_status_t loom_low_lower_lookup_block(loom_low_lower_context_t* context,
                                           const loom_block_t* source_block,
                                           loom_block_t** out_low_block);
-
-// Binds one source SSA value to the corresponding low SSA value. The source
-// value's display name is copied when available.
-iree_status_t loom_low_lower_bind_value(loom_low_lower_context_t* context,
-                                        loom_value_id_t source_value_id,
-                                        loom_value_id_t low_value_id);
-
-// Binds |result_value_id| to the low SSA value already selected for
-// |source_value_id|. This is for target callbacks that preserve a source-level
-// alias while relying on facts to carry view or offset semantics separately.
-iree_status_t loom_low_lower_bind_value_alias(loom_low_lower_context_t* context,
-                                              loom_value_id_t source_value_id,
-                                              loom_value_id_t result_value_id);
-
-// Marks one source SSA value as intentionally erased by the selected lowering
-// rule. This is only for source-level sequencing/control values whose users are
-// also lowered away, such as async tokens and groups. Elided values must never
-// be consumed as target-low operands.
-iree_status_t loom_low_lower_elide_value(loom_low_lower_context_t* context,
-                                         loom_value_id_t source_value_id);
 
 // Creates a target-low register type from a descriptor-set register-class ID.
 iree_status_t loom_low_lower_make_register_type(

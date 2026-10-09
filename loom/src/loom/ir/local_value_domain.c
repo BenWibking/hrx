@@ -6,6 +6,8 @@
 
 #include "loom/ir/local_value_domain.h"
 
+#include <string.h>
+
 #include "loom/ir/ancestry.h"
 
 typedef iree_status_t (*loom_local_value_domain_value_fn_t)(
@@ -340,6 +342,21 @@ iree_status_t loom_local_value_domain_acquire_for_region_tree(
   return loom_local_value_domain_acquire(
       module, region, LOOM_LOCAL_VALUE_DOMAIN_FLAG_REGION_TREE, arena,
       out_domain);
+}
+
+iree_status_t loom_local_value_domain_relocate(
+    loom_local_value_domain_t* domain, iree_arena_allocator_t* arena) {
+  loom_value_id_t* value_ids = NULL;
+  if (domain->value_count != 0) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        arena, domain->value_count, sizeof(*value_ids), (void**)&value_ids));
+    memcpy(value_ids, domain->value_ids,
+           domain->value_count * sizeof(*value_ids));
+  }
+  domain->arena = arena;
+  domain->value_ids = value_ids;
+  domain->value_capacity = domain->value_count;
+  return iree_ok_status();
 }
 
 void loom_local_value_domain_release(loom_local_value_domain_t* domain) {

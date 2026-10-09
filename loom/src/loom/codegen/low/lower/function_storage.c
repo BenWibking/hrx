@@ -83,8 +83,11 @@ iree_status_t loom_low_lower_function_storage_select(
       .byte_alignment = loom_buffer_alloca_base_alignment(source_op),
       .storage_space = mapping->storage_space,
   };
+  loom_type_t address_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
-      context, mapping->address_register_class, 1, &plan->address_type));
+      context, mapping->address_register_class, 1, &address_type));
+  IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+      context, loom_buffer_alloca_result(source_op), address_type));
   *out_plan = plan;
   return iree_ok_status();
 }
@@ -101,7 +104,9 @@ iree_status_t loom_low_lower_function_storage_emit(
   loom_op_t* address_op = NULL;
   IREE_RETURN_IF_ERROR(loom_low_storage_address_build(
       builder, loom_low_storage_reserve_storage(storage_op), /*offset=*/0,
-      plan->address_type, source_op->location, &address_op));
+      loom_low_lower_value_binding_type(context,
+                                        loom_buffer_alloca_result(source_op)),
+      source_op->location, &address_op));
   return loom_low_lower_bind_value(context,
                                    loom_buffer_alloca_result(source_op),
                                    loom_low_storage_address_result(address_op));

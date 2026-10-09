@@ -13,6 +13,7 @@
 #include "loom/analysis/consumption.h"
 #include "loom/analysis/symbolic_expr_proof.h"
 #include "loom/codegen/low/lower/context.h"
+#include "loom/codegen/low/lower/rule_descriptor.h"
 #include "loom/codegen/low/lower/rule_source_memory.h"
 #include "loom/codegen/low/lower/rule_value.h"
 #include "loom/ir/context.h"
@@ -24,16 +25,6 @@
 #include "loom/ops/vector/ops.h"
 #include "loom/ops/vector/storage.h"
 #include "loom/target/registers.h"
-
-typedef struct loom_low_lower_rule_descriptor_map_t {
-  // Rule set whose local descriptor refs are resolved by descriptor_ordinals.
-  const loom_low_lower_rule_set_t* rule_set;
-  // Cached descriptor ordinal plus one by rule-set-local descriptor ref. Zero
-  // is unresolved and UINT32_MAX is a resolved missing descriptor.
-  uint32_t* descriptor_ordinals;
-  // Number of entries in descriptor_ordinals.
-  uint16_t descriptor_count;
-} loom_low_lower_rule_descriptor_map_t;
 
 static const loom_low_lower_rule_span_t* loom_low_lower_rule_set_find_span(
     const loom_low_lower_rule_set_t* rule_set, loom_op_kind_t source_op_kind) {
@@ -1706,66 +1697,26 @@ static iree_status_t loom_low_lower_rule_match_can_materialize_from_lowering(
                                        out_can_materialize);
 }
 
-static loom_low_lower_rule_descriptor_map_t*
-loom_low_lower_rule_descriptor_map_find(
-    loom_low_lower_context_t* context,
-    const loom_low_lower_rule_set_t* rule_set) {
-  for (uint16_t i = 0; i < context->lowering.rule_descriptor_map_count; ++i) {
-    loom_low_lower_rule_descriptor_map_t* map =
-        &context->lowering.rule_descriptor_maps[i];
-    if (map->rule_set == rule_set) {
-      return map;
-    }
-  }
-  return NULL;
-}
-
-static iree_status_t loom_low_lower_rule_descriptor_maps_initialize(
+static iree_status_t loom_low_lower_rule_descriptor_cache_initialize(
     loom_low_lower_context_t* context,
     const loom_low_descriptor_set_t* descriptor_set) {
-  IREE_ASSERT(descriptor_set != NULL);
-  if (context->lowering.rule_descriptor_map_set == descriptor_set) {
+  // A frame's lowering policy is immutable. Only descriptor-set probes may
+  // change the selected binding during target legality queries.
+  if (context->lowering->rule_descriptor_cache != NULL &&
+      context->lowering->rule_descriptor_cache->descriptor_set ==
+          descriptor_set) {
     return iree_ok_status();
   }
-
-  context->lowering.rule_descriptor_map_set = descriptor_set;
-  context->lowering.rule_descriptor_maps = NULL;
-  context->lowering.rule_descriptor_map_count = 0;
-
   const loom_low_lower_rule_set_list_t rule_sets =
       context->policy->contract.rule_sets;
-  if (rule_sets.count == 0) {
-    return iree_ok_status();
+  if (context->module_state != NULL) {
+    return loom_low_lower_module_state_rule_descriptor_cache(
+        context->module_state, rule_sets, descriptor_set,
+        &context->lowering->rule_descriptor_cache);
   }
-
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      &context->function_arena, rule_sets.count,
-      sizeof(*context->lowering.rule_descriptor_maps),
-      (void**)&context->lowering.rule_descriptor_maps));
-  context->lowering.rule_descriptor_map_count = rule_sets.count;
-
-  for (uint16_t i = 0; i < rule_sets.count; ++i) {
-    const loom_low_lower_rule_set_t* rule_set = rule_sets.values[i];
-    loom_low_lower_rule_descriptor_map_t* map =
-        &context->lowering.rule_descriptor_maps[i];
-    *map = (loom_low_lower_rule_descriptor_map_t){
-        .rule_set = rule_set,
-        .descriptor_ordinals = NULL,
-        .descriptor_count = rule_set->descriptor_ref_count,
-    };
-    if (rule_set->descriptor_ref_count == 0) {
-      continue;
-    }
-    IREE_ASSERT(rule_set->descriptor_refs != NULL);
-    uint32_t* descriptor_ordinals = NULL;
-    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-        &context->function_arena, rule_set->descriptor_ref_count,
-        sizeof(*descriptor_ordinals), (void**)&descriptor_ordinals));
-    memset(descriptor_ordinals, 0,
-           rule_set->descriptor_ref_count * sizeof(*descriptor_ordinals));
-    map->descriptor_ordinals = descriptor_ordinals;
-  }
-  return iree_ok_status();
+  return loom_low_lower_rule_descriptor_cache_select(
+      rule_sets, descriptor_set, context->function_arena,
+      &context->lowering->rule_descriptor_cache);
 }
 
 iree_status_t loom_low_lower_rule_match_descriptor_ref_from_lowering(
@@ -1775,38 +1726,23 @@ iree_status_t loom_low_lower_rule_match_descriptor_ref_from_lowering(
     const loom_low_descriptor_t** out_descriptor) {
   *out_descriptor = NULL;
   loom_low_lower_context_t* context = (loom_low_lower_context_t*)user_data;
-  IREE_RETURN_IF_ERROR(loom_low_lower_rule_descriptor_maps_initialize(
+  IREE_RETURN_IF_ERROR(loom_low_lower_rule_descriptor_cache_initialize(
       context, match_context->descriptor_set));
-  loom_low_lower_rule_descriptor_map_t* map = NULL;
+  loom_low_lower_rule_descriptor_cache_t* cache =
+      context->lowering->rule_descriptor_cache;
+  uint16_t rule_set_index = 0;
   if (match_context->policy_rule_set_ordinal == 0) {
-    map = loom_low_lower_rule_descriptor_map_find(context, rule_set);
+    while (rule_set_index < cache->rule_sets.count &&
+           cache->rule_sets.values[rule_set_index] != rule_set) {
+      ++rule_set_index;
+    }
   } else {
-    const uint16_t rule_set_index =
-        (uint16_t)(match_context->policy_rule_set_ordinal - 1u);
-    IREE_ASSERT_LT(rule_set_index, context->lowering.rule_descriptor_map_count);
-    map = &context->lowering.rule_descriptor_maps[rule_set_index];
+    rule_set_index = (uint16_t)(match_context->policy_rule_set_ordinal - 1u);
   }
-  IREE_ASSERT(map != NULL);
-  IREE_ASSERT_EQ(map->rule_set, rule_set);
-  IREE_ASSERT_LT(descriptor_ref, map->descriptor_count);
-  uint32_t cached_ordinal = map->descriptor_ordinals[descriptor_ref];
-  if (cached_ordinal == 0) {
-    const iree_string_view_t key = loom_low_lower_rule_set_string(
-        rule_set, rule_set->descriptor_refs[descriptor_ref].key_string_ref);
-    const uint32_t descriptor_ordinal =
-        loom_low_descriptor_set_lookup_descriptor(match_context->descriptor_set,
-                                                  key);
-    cached_ordinal = descriptor_ordinal == LOOM_LOW_DESCRIPTOR_ORDINAL_NONE
-                         ? UINT32_MAX
-                         : descriptor_ordinal + 1;
-    map->descriptor_ordinals[descriptor_ref] = cached_ordinal;
-  }
-  if (cached_ordinal != UINT32_MAX) {
-    *out_descriptor = loom_low_descriptor_set_descriptor_at(
-        match_context->descriptor_set, cached_ordinal - 1);
-    IREE_ASSERT(*out_descriptor != NULL);
-  }
-  return iree_ok_status();
+  IREE_ASSERT_LT(rule_set_index, cache->rule_sets.count);
+  IREE_ASSERT_EQ(cache->rule_sets.values[rule_set_index], rule_set);
+  return loom_low_lower_rule_descriptor_cache_resolve(
+      cache, rule_set_index, descriptor_ref, out_descriptor);
 }
 
 void loom_low_lower_rule_match_context_initialize_from_lowering(

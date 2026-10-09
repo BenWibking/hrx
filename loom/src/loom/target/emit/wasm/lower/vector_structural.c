@@ -489,8 +489,8 @@ static iree_status_t loom_wasm_packet_emitter_initialize(
   uint32_t total_packet_count = 0;
   const loom_module_t* module = loom_low_lower_context_module(context);
   for (uint16_t i = 0; i < source_count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, source_values[i], &out_emitter->low_sources[i]));
+    out_emitter->low_sources[i] =
+        loom_low_lower_lookup_value(context, source_values[i]);
     const loom_wasm_vector_carrier_t carrier =
         loom_wasm_vector_carrier_for_type(
             loom_module_value_type(module, source_values[i]));
@@ -738,9 +738,8 @@ static iree_status_t loom_wasm_emit_from_elements(
                           elements.count - element_start);
     IREE_ASSERT_GT(live_lane_count, 0);
 
-    loom_value_id_t scalar = LOOM_VALUE_ID_INVALID;
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, elements.values[element_start], &scalar));
+    loom_value_id_t scalar =
+        loom_low_lower_lookup_value(context, elements.values[element_start]);
     loom_op_t* low_op = NULL;
     IREE_RETURN_IF_ERROR(loom_low_lower_emit_resolved_descriptor_op(
         context, &splat_descriptor, &scalar, 1, (loom_named_attr_slice_t){0},
@@ -750,8 +749,8 @@ static iree_status_t loom_wasm_emit_from_elements(
     packets[packet] = loom_value_slice_get(loom_low_op_results(low_op), 0);
 
     for (uint8_t lane = 1; lane < live_lane_count; ++lane) {
-      IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-          context, elements.values[element_start + lane], &scalar));
+      scalar = loom_low_lower_lookup_value(
+          context, elements.values[element_start + lane]);
       const loom_value_id_t operands[] = {packets[packet], scalar};
       const loom_named_attr_t lane_attr = {
           .name_id = lane_name,

@@ -63,6 +63,7 @@ loom_cc_library(
     iree::io::stream
     loom::analysis::liveness
     loom::analysis::liveness_json
+    loom::analysis::storage_access
     loom::analysis::storage_interference
     loom::binding::c::interop
     loom::binding::c::loomc

@@ -277,6 +277,7 @@ def test_compile_exact_lane_origin_operand_reference(materialize: bool) -> None:
     materializer = ValueMaterializer(
         name="test_origin",
         can_materialize="test_origin_can_materialize",
+        result_type="test_origin_result_type",
         materialize="test_origin_materialize",
         header="test/origin.h",
     )
@@ -334,6 +335,7 @@ def test_compile_uniform_element_origin_operand_reference(
     materializer = ValueMaterializer(
         name="test_origin",
         can_materialize="test_origin_can_materialize",
+        result_type="test_origin_result_type",
         materialize="test_origin_materialize",
         header="test/origin.h",
     )
@@ -1470,6 +1472,7 @@ def test_compile_lower_rule_set_tracks_materialized_source_identity() -> None:
     materializer = ValueMaterializer(
         name="test_materializer",
         can_materialize="test_can_materialize",
+        result_type="test_materialized_type",
         materialize="test_materialize",
         header="test/materialize.h",
     )

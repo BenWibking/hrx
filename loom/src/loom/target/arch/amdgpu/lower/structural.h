@@ -126,6 +126,11 @@ iree_status_t loom_amdgpu_lower_vector_slice(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_vector_slice_plan_t* plan);
 
+// Publishes carriers for selected register permutations using actual inputs.
+iree_status_t loom_amdgpu_finalize_vector_structural_plan(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_low_lower_plan_t selected_plan);
+
 // Verifies source vector structural op legality for AMDGPU target-low
 // selection.
 iree_status_t loom_amdgpu_low_legality_verify_vector_structural(

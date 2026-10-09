@@ -903,6 +903,8 @@ def generate_tables_c(
                     flags_parts.append("LOOM_OPERAND_VARIADIC")
                 if operand.optional:
                     flags_parts.append("LOOM_OPERAND_OPTIONAL")
+                if operand.observes_reference:
+                    flags_parts.append("LOOM_OPERAND_OBSERVES_REFERENCE")
                 effect_kind = effect_map.get(operand.name)
                 if effect_kind in (EffectKind.READ, EffectKind.READWRITE):
                     flags_parts.append("LOOM_OPERAND_READS")
@@ -945,7 +947,11 @@ def generate_tables_c(
                         source_operand_index = str(c_queries.resolve_ownership_source_operand_index(op, result_ownership_effect.source))
                 else:
                     ownership_effect_name = "LOOM_RESULT_OWNERSHIP_NONE"
-                if result_ownership_effect is None:
+                reference_source = getattr(result, "reference_source", None)
+                if reference_source is not None:
+                    reference_source_index = next(i for i, operand in enumerate(op.operands) if operand.name == reference_source)
+                    lines.append(f"    {{{_bstring_expr(result.name)}, {type_constraint}, {flags}, {ownership_effect_name}, {source_operand_index}, {reference_source_index + 1}}},")
+                elif result_ownership_effect is None:
                     lines.append(f"    {{{_bstring_expr(result.name)}, {type_constraint}, {flags}}},")
                 else:
                     lines.append(f"    {{{_bstring_expr(result.name)}, {type_constraint}, {flags}, {ownership_effect_name}, {source_operand_index}}},")
@@ -1238,6 +1244,8 @@ def generate_tables_c(
             vtable_flag_bits.append("LOOM_OP_VTABLE_HAS_PREDICATE_LIST")
         if op.structural_materialization:
             vtable_flag_bits.append("LOOM_OP_VTABLE_STRUCTURAL_MATERIALIZATION")
+        if any(getattr(result, "reference_source", None) is not None for result in op.results):
+            vtable_flag_bits.append("LOOM_OP_VTABLE_HAS_REFERENCE_SOURCE")
         vtable_flags_str = " | ".join(vtable_flag_bits) if vtable_flag_bits else "0"
 
         sym_kind = _symbol_kind(op)

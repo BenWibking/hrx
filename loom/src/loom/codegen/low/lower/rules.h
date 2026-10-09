@@ -142,12 +142,42 @@ typedef iree_status_t (*loom_low_lower_materialize_value_fn_t)(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value_id, loom_value_id_t* out_low_value_id);
 
+// Retains a use's source-dependent choices after producer carriers are final.
+// The returned opaque recipe belongs to the function arena or immutable target
+// storage. NULL is a valid recipe; no source analysis survives into emission.
+typedef iree_status_t (*loom_low_lower_prepare_value_materialization_fn_t)(
+    loom_low_lower_context_t* context, loom_value_id_t source_value_id,
+    const void** out_plan);
+
+// Executes the retained recipe without consulting source analysis. The source
+// identity remains available for looking up its canonical emitted carrier.
+typedef iree_status_t (*loom_low_lower_emit_value_materialization_fn_t)(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t source_value_id, const void* plan,
+    loom_value_id_t* out_low_value_id);
+
+// Returns the exact carrier produced by a selected materializer. Source
+// producers have published their bindings; this query does not emit or choose
+// a preferred source mapping.
+typedef loom_type_t (*loom_low_lower_materialized_value_type_fn_t)(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value_id);
+
 typedef struct loom_low_lower_value_materializer_t {
   // Selection-time predicate proving this materializer can handle the source
   // value without emitting IR.
   loom_low_lower_can_materialize_value_fn_t can_materialize;
-  // Emission-time callback that returns the low value used by descriptor ops.
-  loom_low_lower_materialize_value_fn_t materialize;
+  // Native operand type selected before materialization begins.
+  loom_low_lower_materialized_value_type_fn_t result_type;
+  // Optional preparation of source-dependent choices for this operand use.
+  // NULL selects direct emission, which needs no source analysis.
+  loom_low_lower_prepare_value_materialization_fn_t prepare;
+  // Emission consumes either a retained recipe or only the bound Low carrier.
+  union {
+    // Used when prepare is NULL; may inspect Low values and target descriptors.
+    loom_low_lower_materialize_value_fn_t direct;
+    // Used when prepare is present; receives its recipe, including NULL.
+    loom_low_lower_emit_value_materialization_fn_t planned;
+  } emit;
 } loom_low_lower_value_materializer_t;
 
 typedef struct loom_low_lower_rule_descriptor_ref_t {
@@ -988,9 +1018,10 @@ typedef struct loom_low_lower_emit_t {
   uint16_t copy_operand_mask;
   // Result-type table range selected by RESULT_TYPE_PATTERN.
   union {
-    // First value-ref table row mapped as a low result. Result type refs must
-    // address source results. When BIND_RESULTS_TO_REFS is set,
-    // result_bind_ref_start controls where the emitted low results are bound.
+    // First value-ref table row mapped as a low result. Descriptor result
+    // types reference source results; structural emits can also inherit an
+    // earlier temporary's carrier. BIND_RESULTS_TO_REFS makes
+    // result_bind_ref_start control where emitted results are bound.
     uint16_t value_ref_start;
     // First exact type-pattern table row mapped as a low result type.
     uint16_t type_pattern_start;
@@ -1034,11 +1065,26 @@ typedef struct loom_low_lower_emit_t {
   uint16_t accumulator_operand_index : 2;
   // Operand-group materialization applied before descriptor emission.
   uint16_t operand_materialization : 1;
+  // At least one attribute projects a private immutable payload. Planning
+  // retains its data ID; execution publishes the symbol used by the packet.
+  uint16_t has_read_only_data_attributes : 1;
   // Reserved storage available to future emit parameters.
-  uint16_t reserved_count_bits : 2;
+  uint16_t reserved_count_bits : 1;
 } loom_low_lower_emit_t;
 static_assert(sizeof(loom_low_lower_emit_t) == 20,
               "loom_low_lower_emit_t must be 20 bytes");
+
+// Returns the table reference receiving one emitted result. Type selection
+// and SSA materialization share this exact result-to-source correspondence.
+static inline uint16_t loom_low_lower_rule_emit_result_bind_ref_index(
+    const loom_low_lower_emit_t* emit, uint16_t result_ordinal) {
+  const uint16_t start =
+      iree_any_bit_set(emit->flags,
+                       LOOM_LOW_LOWER_EMIT_FLAG_BIND_RESULTS_TO_REFS)
+          ? emit->result_bind_ref_start
+          : emit->result_type.value_ref_start;
+  return (uint16_t)(start + result_ordinal);
+}
 
 // Ordinal into a rule set's interned emit table.
 typedef uint16_t loom_low_lower_emit_ref_t;

@@ -42,7 +42,19 @@ typedef struct loom_low_representation_descriptor_update_t {
   loom_trait_flags_t effective_traits;
 } loom_low_representation_descriptor_update_t;
 
-typedef struct loom_low_representation_projection_plan_t {
+struct loom_low_representation_projection_plan_t {
+  // Authored function whose representation is published after planning.
+  loom_func_like_t function;
+  // Canonical exact representation attribute retained during planning.
+  loom_string_id_t target_descriptor_set_key;
+  // First argument carrier in value_updates.
+  uint16_t argument_offset;
+  // First result carrier in value_updates.
+  uint16_t result_offset;
+  // Exact representation descriptors consumed by callers and publication.
+  const loom_low_descriptor_set_t* descriptor_set;
+  // Borrowed immutable function target facts selected by module planning.
+  const loom_target_facts_t* target_facts;
   // Planned SSA type updates.
   loom_low_representation_value_update_t* value_updates;
   // Capacity of |value_updates|.
@@ -55,7 +67,62 @@ typedef struct loom_low_representation_projection_plan_t {
   iree_host_size_t descriptor_capacity;
   // Number of populated descriptor updates.
   iree_host_size_t descriptor_count;
-} loom_low_representation_projection_plan_t;
+};
+
+iree_status_t loom_low_representation_projection_index_build(
+    const loom_module_t* module,
+    const loom_low_representation_projection_plan_t* const* plans,
+    iree_host_size_t plan_count, iree_arena_allocator_t* arena,
+    loom_low_representation_projection_index_t* out_index) {
+  *out_index = (loom_low_representation_projection_index_t){0};
+  if (plan_count == 0) {
+    return iree_ok_status();
+  }
+  uint16_t* ordinals = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, module->symbols.count, sizeof(*ordinals), (void**)&ordinals));
+  memset(ordinals, 0, module->symbols.count * sizeof(*ordinals));
+  for (iree_host_size_t i = 0; i < plan_count; ++i) {
+    const loom_symbol_ref_t callee = loom_func_like_callee(plans[i]->function);
+    ordinals[callee.symbol_id] = (uint16_t)(i + 1);
+  }
+  *out_index = (loom_low_representation_projection_index_t){
+      .plans = plans,
+      .ordinals = ordinals,
+      .symbol_count = module->symbols.count,
+  };
+  return iree_ok_status();
+}
+
+const loom_low_representation_projection_plan_t*
+loom_low_representation_projection_index_find(
+    const loom_low_representation_projection_index_t* index,
+    loom_symbol_id_t symbol_id) {
+  const uint16_t ordinal = index != NULL && symbol_id < index->symbol_count
+                               ? index->ordinals[symbol_id]
+                               : 0;
+  return ordinal != 0 ? index->plans[ordinal - 1] : NULL;
+}
+
+const loom_low_descriptor_set_t* loom_low_representation_projection_descriptors(
+    const loom_low_representation_projection_plan_t* plan) {
+  return plan->descriptor_set;
+}
+
+const loom_target_facts_t* loom_low_representation_projection_target_facts(
+    const loom_low_representation_projection_plan_t* plan) {
+  return plan->target_facts;
+}
+
+loom_type_t loom_low_representation_projection_argument_type(
+    const loom_low_representation_projection_plan_t* plan, uint16_t index) {
+  return plan->value_updates[plan->argument_offset + index].type;
+}
+
+loom_type_t loom_low_representation_projection_result_type(
+    const loom_low_representation_projection_plan_t* plan, uint16_t index) {
+  return plan->value_updates[plan->result_offset + index].type;
+}
 
 static bool loom_low_representation_count_add(iree_host_size_t amount,
                                               iree_host_size_t* total) {
@@ -66,6 +133,10 @@ static bool loom_low_representation_count_op(
     const loom_op_t* op, iree_host_size_t* value_count,
     iree_host_size_t* descriptor_count) {
   if (!loom_low_representation_count_add(op->result_count, value_count)) {
+    return false;
+  }
+  if (loom_low_func_decl_isa(op) &&
+      !loom_low_representation_count_add(op->operand_count, value_count)) {
     return false;
   }
   if (loom_low_op_isa(op) || loom_low_const_isa(op)) {
@@ -246,6 +317,15 @@ static iree_status_t loom_low_representation_plan_op(
     loom_module_t* module, loom_op_t* op,
     const loom_low_representation_projection_t* projection,
     loom_low_representation_projection_plan_t* plan) {
+  // Bodyless argument definitions occupy the declaration's operand tuple.
+  // Definition arguments are reached through their entry block below.
+  if (loom_low_func_decl_isa(op)) {
+    const loom_value_slice_t arguments = loom_low_func_decl_args(op);
+    for (uint16_t i = 0; i < arguments.count; ++i) {
+      IREE_RETURN_IF_ERROR(loom_low_representation_plan_value(
+          module, projection, arguments.values[i], plan));
+    }
+  }
   if (loom_low_op_isa(op)) {
     IREE_RETURN_IF_ERROR(loom_low_representation_plan_descriptor(
         op, loom_low_op_descriptor(op), projection, plan));
@@ -308,9 +388,10 @@ static iree_status_t loom_low_representation_allocate_plan(
   return iree_ok_status();
 }
 
-static iree_status_t loom_low_representation_apply_plan(
+iree_status_t loom_low_apply_function_representation(
     loom_module_t* module,
     const loom_low_representation_projection_plan_t* plan, bool* out_changed) {
+  *out_changed = false;
   for (iree_host_size_t i = 0; i < plan->value_count; ++i) {
     const loom_low_representation_value_update_t* update =
         &plan->value_updates[i];
@@ -347,19 +428,25 @@ static iree_status_t loom_low_representation_apply_plan(
       *out_changed = true;
     }
   }
+  loom_attribute_t* representation_attr = &loom_op_attrs(
+      plan->function.op)[plan->function.vtable->repr_contract_attr_index];
+  if (loom_attr_as_string_id(*representation_attr) !=
+      plan->target_descriptor_set_key) {
+    *representation_attr = loom_attr_string(plan->target_descriptor_set_key);
+    *out_changed = true;
+  }
   return iree_ok_status();
 }
 
-iree_status_t loom_low_project_function_representation(
+iree_status_t loom_low_plan_function_representation(
     loom_module_t* module, loom_func_like_t function,
     const loom_target_facts_t* target_facts,
     const loom_low_descriptor_registry_t* descriptor_registry,
-    iree_diagnostic_emitter_t emitter, iree_arena_allocator_t* scratch_arena,
-    bool* out_valid, bool* out_changed) {
-  *out_valid = false;
-  *out_changed = false;
+    iree_diagnostic_emitter_t emitter, iree_arena_allocator_t* arena,
+    const loom_low_representation_projection_plan_t** out_plan) {
+  *out_plan = NULL;
   if (!module || !loom_func_like_isa(function) || !target_facts ||
-      !descriptor_registry || !scratch_arena) {
+      !descriptor_registry || !arena) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
         "low function representation projection requires a function, target "
@@ -372,12 +459,16 @@ iree_status_t loom_low_project_function_representation(
                             "or low.func.decl");
   }
 
+  iree_arena_allocator_t scratch_arena;
+  iree_arena_initialize(module->arena.block_pool, &scratch_arena);
   loom_symbol_fact_table_t symbol_facts = {0};
-  loom_symbol_fact_table_initialize(&symbol_facts, scratch_arena);
+  loom_symbol_fact_table_initialize(&symbol_facts, &scratch_arena);
   loom_low_resolved_target_t source_target = {0};
-  IREE_RETURN_IF_ERROR(loom_low_resolve_function_target(
+  iree_status_t status = loom_low_resolve_function_target(
       module, &symbol_facts, function.op, target_facts, descriptor_registry,
-      emitter, &source_target));
+      emitter, &source_target);
+  iree_arena_deinitialize(&scratch_arena);
+  IREE_RETURN_IF_ERROR(status);
   if (source_target.descriptor_set == NULL) {
     return iree_ok_status();
   }
@@ -405,24 +496,24 @@ iree_status_t loom_low_project_function_representation(
       .source_descriptor_set = source_target.descriptor_set,
       .target_descriptor_set = target_descriptor_set,
   };
-  loom_low_representation_projection_plan_t plan = {0};
+  loom_low_representation_projection_plan_t* plan = NULL;
   IREE_RETURN_IF_ERROR(
-      loom_low_representation_allocate_plan(function.op, scratch_arena, &plan));
+      iree_arena_allocate(arena, sizeof(*plan), (void**)&plan));
   IREE_RETURN_IF_ERROR(
-      loom_low_representation_plan_op(module, function.op, &projection, &plan));
-
-  loom_string_id_t target_descriptor_set_key = LOOM_STRING_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_module_intern_string(
-      module, bundle->config->contract_set_key, &target_descriptor_set_key));
-  IREE_RETURN_IF_ERROR(
-      loom_low_representation_apply_plan(module, &plan, out_changed));
-  loom_attribute_t* representation_attr =
-      &loom_op_attrs(function.op)[function.vtable->repr_contract_attr_index];
-  if (loom_attr_as_string_id(*representation_attr) !=
-      target_descriptor_set_key) {
-    *representation_attr = loom_attr_string(target_descriptor_set_key);
-    *out_changed = true;
+      loom_low_representation_allocate_plan(function.op, arena, plan));
+  plan->function = function;
+  plan->descriptor_set = target_descriptor_set;
+  plan->target_facts = target_facts;
+  if (loom_low_func_decl_isa(function.op)) {
+    plan->result_offset = function.op->operand_count;
+  } else {
+    plan->argument_offset = function.op->result_count;
   }
-  *out_valid = true;
+  IREE_RETURN_IF_ERROR(
+      loom_low_representation_plan_op(module, function.op, &projection, plan));
+  IREE_RETURN_IF_ERROR(
+      loom_module_intern_string(module, bundle->config->contract_set_key,
+                                &plan->target_descriptor_set_key));
+  *out_plan = plan;
   return iree_ok_status();
 }

@@ -331,7 +331,9 @@ def _generate_source(
             [
                 [
                     f".can_materialize = {materializer.can_materialize}",
-                    f".materialize = {materializer.materialize}",
+                    f".result_type = {materializer.result_type}",
+                    *([f".prepare = {materializer.prepare}"] if materializer.prepare else []),
+                    f".emit.{'planned' if materializer.prepare else 'direct'} = {materializer.materialize}",
                 ]
                 for materializer in source_contract.materializers
             ],
@@ -1144,6 +1146,9 @@ def _validate_c_table_shape(
             f"{row_subject} attr-copy range",
             "attr-copy",
         )
+        has_read_only_data_attributes = any(attr_copy.kind.is_read_only_data for attr_copy in table.attr_copies[row.attr_copy_start : row.attr_copy_start + row.attr_copy_count])
+        if row.has_read_only_data_attributes != has_read_only_data_attributes:
+            raise ValueError(f"{row_subject} read-only data flag does not match its attribute projections")
         _require_u16(row.tied_result_start, f"{row_subject} tied-result start")
         _require_unsigned_bits(
             row.tied_result_count,

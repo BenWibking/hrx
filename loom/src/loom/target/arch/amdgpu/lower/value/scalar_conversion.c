@@ -577,6 +577,12 @@ static bool loom_amdgpu_select_scalar_conversion_plan_impl(
           loom_amdgpu_integer_scalar_type_bit_count(result_type),
       .convert_descriptor_ref = rule->convert_descriptor_ref,
   };
+  if (rule->kind == LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FP8_TO_BF16) {
+    out_plan->fp8_decode.source_format =
+        loom_numeric_format_from_scalar_type(source_type);
+    out_plan->fp8_decode.value_flags =
+        loom_amdgpu_fp8_decode_value_flags_from_facts(source_facts);
+  }
   return true;
 }
 
@@ -624,6 +630,49 @@ iree_status_t loom_amdgpu_select_scalar_conversion_plan(
       break;
     case LOOM_AMDGPU_SCALAR_CONVERSION_OP_EXTF:
     case LOOM_AMDGPU_SCALAR_CONVERSION_OP_COUNT_:
+      break;
+  }
+  if (out_plan->kind == LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT &&
+      out_plan->narrow_representation ==
+          LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_LOW_BITS) {
+    // Consumers require only the low payload bits, so no normalization or
+    // register-bank conversion is necessary.
+    out_plan->kind = LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS;
+  }
+  if (out_plan->kind == LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS) {
+    return iree_ok_status();
+  }
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
+      context, source_op, out_plan->result, &result_type));
+  return loom_low_lower_plan_value_type(context, out_plan->result, result_type);
+}
+
+iree_status_t loom_amdgpu_finalize_scalar_conversion_plan(
+    loom_low_lower_context_t* context,
+    loom_amdgpu_scalar_conversion_plan_t* plan) {
+  switch (plan->kind) {
+    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS:
+      return loom_low_lower_plan_value_type(
+          context, plan->result,
+          loom_low_lower_value_binding_type(context, plan->source));
+    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT:
+    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FP8_ENCODE:
+    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FPTOI_F32_TO_I32:
+    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FPTOI_F32_TO_NARROW:
+      return loom_amdgpu_prepare_vgpr_literal(context, plan->source,
+                                              &plan->source_materialization);
+    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SIGN_EXTEND_I64:
+    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ZERO_EXTEND:
+      if (plan->source_bit_count == 32 && plan->result_bit_count == 64 &&
+          loom_amdgpu_low_type_is_register_class(
+              context, loom_low_lower_value_binding_type(context, plan->result),
+              LOOM_AMDGPU_REG_CLASS_ID_VGPR)) {
+        return loom_amdgpu_prepare_vgpr_literal(context, plan->source,
+                                                &plan->source_materialization);
+      }
+      break;
+    default:
       break;
   }
   return iree_ok_status();
@@ -680,9 +729,7 @@ static iree_status_t loom_amdgpu_lookup_and_normalize_vgpr_narrow_integer(
                   LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_SIGN_EXTENDED ||
               required_representation ==
                   LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED);
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source, &low_source));
+  loom_value_id_t low_source = loom_low_lower_lookup_value(context, source);
 
   const loom_type_t low_type = loom_module_value_type(
       loom_low_lower_context_module(context), low_source);
@@ -703,7 +750,7 @@ static iree_status_t loom_amdgpu_lookup_and_normalize_vgpr_narrow_integer(
         mode, vgpr_type, out_low_source);
   }
 
-  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_i32(
+  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_registers(
       context, source_op, source, &low_source));
   return loom_amdgpu_normalize_narrow_integer(
       context, source_op, low_source, source_bit_count, source_representation,
@@ -712,14 +759,10 @@ static iree_status_t loom_amdgpu_lookup_and_normalize_vgpr_narrow_integer(
 
 static iree_status_t loom_amdgpu_lookup_scalar_conversion_source_for_i64_result(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source, loom_value_id_t result, uint32_t source_bit_count,
-    loom_low_representation_id_t source_representation,
+    const loom_amdgpu_scalar_conversion_plan_t* plan, loom_type_t result_type,
     loom_low_representation_id_t required_representation,
     loom_value_id_t* out_low_source) {
   *out_low_source = LOOM_VALUE_ID_INVALID;
-  loom_type_t result_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(
-      loom_amdgpu_low_result_type(context, source_op, result, &result_type));
   if (!loom_low_type_is_register(result_type) ||
       loom_low_register_type_unit_count(result_type) != 2) {
     IREE_ASSERT_UNREACHABLE(
@@ -729,13 +772,14 @@ static iree_status_t loom_amdgpu_lookup_scalar_conversion_source_for_i64_result(
   const bool result_is_vgpr = loom_amdgpu_low_type_is_register_class(
       context, result_type, LOOM_AMDGPU_REG_CLASS_ID_VGPR);
   if (result_is_vgpr) {
-    if (source_bit_count < 32) {
+    if (plan->source_bit_count < 32) {
       return loom_amdgpu_lookup_and_normalize_vgpr_narrow_integer(
-          context, source_op, source, source_bit_count, source_representation,
-          required_representation, out_low_source);
+          context, source_op, plan->source, plan->source_bit_count,
+          plan->narrow_representation, required_representation, out_low_source);
     }
-    return loom_amdgpu_lookup_or_materialize_vgpr_i32(context, source_op,
-                                                      source, out_low_source);
+    return loom_amdgpu_emit_prepared_vgpr_value(
+        context, source_op, plan->source, plan->source_materialization,
+        out_low_source);
   }
 
   const bool result_is_sgpr = loom_amdgpu_low_type_is_register_class(
@@ -746,8 +790,7 @@ static iree_status_t loom_amdgpu_lookup_scalar_conversion_source_for_i64_result(
     IREE_BUILTIN_UNREACHABLE();
   }
 
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source, out_low_source));
+  *out_low_source = loom_low_lower_lookup_value(context, plan->source);
   const loom_module_t* module = loom_low_lower_context_module(context);
   const loom_type_t source_type =
       loom_module_value_type(module, *out_low_source);
@@ -759,10 +802,10 @@ static iree_status_t loom_amdgpu_lookup_scalar_conversion_source_for_i64_result(
         "non-SGPR source");
     IREE_BUILTIN_UNREACHABLE();
   }
-  if (source_bit_count < 32) {
+  if (plan->source_bit_count < 32) {
     return loom_amdgpu_normalize_narrow_integer(
-        context, source_op, *out_low_source, source_bit_count,
-        source_representation, required_representation, out_low_source);
+        context, source_op, *out_low_source, plan->source_bit_count,
+        plan->narrow_representation, required_representation, out_low_source);
   }
   return iree_ok_status();
 }
@@ -820,29 +863,11 @@ static iree_status_t loom_amdgpu_bind_zero_extended_i64(
                                            low_source, high_bits);
 }
 
-static loom_amdgpu_fp8_decode_value_flags_t
-loom_amdgpu_scalar_fp8_decode_value_flags(loom_low_lower_context_t* context,
-                                          loom_value_id_t source) {
-  const loom_value_fact_table_t* fact_table =
-      loom_low_lower_context_fact_table(context);
-  if (fact_table == NULL) {
-    return LOOM_AMDGPU_FP8_DECODE_VALUE_FLAG_NONE;
-  }
-  return loom_amdgpu_fp8_decode_value_flags_from_facts(
-      loom_value_fact_table_lookup(fact_table, source));
-}
-
 static iree_status_t loom_amdgpu_emit_scalar_fp8_to_bf16(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_scalar_conversion_plan_t* plan) {
-  const loom_module_t* module = loom_low_lower_context_module(context);
-  const loom_scalar_type_t source_type = loom_amdgpu_scalar_type_or_none(
-      loom_module_value_type(module, plan->source));
-  IREE_ASSERT(source_type == LOOM_SCALAR_TYPE_F8E4M3 ||
-              source_type == LOOM_SCALAR_TYPE_F8E5M2);
-
   loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_i32(
+  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_registers(
       context, source_op, plan->source, &low_source));
   loom_value_id_t low_byte = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_vgpr_zero_extend(
@@ -856,15 +881,13 @@ static iree_status_t loom_amdgpu_emit_scalar_fp8_to_bf16(
   loom_type_t sgpr_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_type(context, &sgpr_type));
   const loom_amdgpu_fp8_decode_plan_t* decode_plan = NULL;
-  const loom_value_fact_numeric_format_flags_t source_format =
-      loom_numeric_format_from_scalar_type(source_type);
   IREE_RETURN_IF_ERROR(loom_amdgpu_get_fp8_decode_plan(
-      context, source_format, source_format, &decode_plan));
+      context, plan->fp8_decode.source_format, plan->fp8_decode.source_format,
+      &decode_plan));
 
   loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_fp8_to_bf16_lane(
-      context, source_op, decode_plan, low_byte,
-      loom_amdgpu_scalar_fp8_decode_value_flags(context, plan->source),
+      context, source_op, decode_plan, low_byte, plan->fp8_decode.value_flags,
       vgpr_type, sgpr_type, mask_type, &low_result));
   return loom_low_lower_bind_value(context, plan->result, low_result);
 }
@@ -880,13 +903,9 @@ static iree_status_t loom_amdgpu_emit_scalar_fp8_encode(
               source_type == LOOM_SCALAR_TYPE_F32);
 
   loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  if (source_type == LOOM_SCALAR_TYPE_F32) {
-    IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_f32(
-        context, source_op, plan->source, &low_source));
-  } else {
-    IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_i32(
-        context, source_op, plan->source, &low_source));
-  }
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_prepared_vgpr_value(
+      context, source_op, plan->source, plan->source_materialization,
+      &low_source));
 
   loom_type_t lane_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_type(context, &lane_type));
@@ -954,10 +973,7 @@ static iree_status_t loom_amdgpu_emit_scalar_fp8_encode(
 
 iree_status_t loom_amdgpu_lower_integer_to_predicate(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source, loom_value_id_t result) {
-  loom_type_t result_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(
-      loom_amdgpu_low_result_type(context, source_op, result, &result_type));
+    loom_value_id_t source, loom_value_id_t result, loom_type_t result_type) {
   const bool is_mask = loom_low_register_type_unit_count(result_type) == 2;
   loom_type_t word_type = loom_type_none();
   loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
@@ -998,20 +1014,18 @@ iree_status_t loom_amdgpu_lower_integer_to_predicate(
 iree_status_t loom_amdgpu_lower_scalar_conversion(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_scalar_conversion_plan_t* plan) {
+  if (plan->kind == LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS) {
+    return loom_low_lower_bind_value_alias(context, plan->source, plan->result);
+  }
+  const loom_type_t result_type =
+      loom_low_lower_value_binding_type(context, plan->result);
   switch (plan->kind) {
-    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS:
-      return loom_low_lower_bind_value_alias(context, plan->source,
-                                             plan->result);
     case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_INTEGER_TO_PREDICATE:
-      return loom_amdgpu_lower_integer_to_predicate(context, source_op,
-                                                    plan->source, plan->result);
+      return loom_amdgpu_lower_integer_to_predicate(
+          context, source_op, plan->source, plan->result, result_type);
     case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_TRUNCATE_LOW_32: {
-      loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(
-          loom_low_lower_lookup_value(context, plan->source, &low_source));
-      loom_type_t result_type = loom_type_none();
-      IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
-          context, source_op, plan->result, &result_type));
+      loom_value_id_t low_source =
+          loom_low_lower_lookup_value(context, plan->source);
       loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(
           context, source_op, low_source, /*lane_offset=*/0, result_type,
@@ -1019,12 +1033,12 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
       return loom_low_lower_bind_value(context, plan->result, low_result);
     }
     case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT: {
-      loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(
-          loom_low_lower_lookup_value(context, plan->source, &low_source));
+      loom_value_id_t low_source =
+          loom_low_lower_lookup_value(context, plan->source);
       if (!loom_amdgpu_low_value_defines_register_low16(context, low_source)) {
-        IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_i32(
-            context, source_op, plan->source, &low_source));
+        IREE_RETURN_IF_ERROR(loom_amdgpu_emit_prepared_vgpr_value(
+            context, source_op, plan->source, plan->source_materialization,
+            &low_source));
       }
       loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(loom_amdgpu_normalize_narrow_integer(
@@ -1057,8 +1071,7 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
       loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(
           loom_amdgpu_lookup_scalar_conversion_source_for_i64_result(
-              context, source_op, plan->source, plan->result,
-              plan->source_bit_count, plan->narrow_representation,
+              context, source_op, plan, result_type,
               LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_SIGN_EXTENDED,
               &low_source));
       loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
@@ -1071,8 +1084,7 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
       if (plan->result_bit_count == 64) {
         IREE_RETURN_IF_ERROR(
             loom_amdgpu_lookup_scalar_conversion_source_for_i64_result(
-                context, source_op, plan->source, plan->result,
-                plan->source_bit_count, plan->narrow_representation,
+                context, source_op, plan, result_type,
                 LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED,
                 &low_source));
       } else {
@@ -1096,9 +1108,6 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
           plan->narrow_representation,
           LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_SIGN_EXTENDED,
           &sign_extended_source));
-      loom_type_t result_type = loom_type_none();
-      IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
-          context, source_op, plan->result, &result_type));
       loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(loom_amdgpu_emit_vgpr_unary(
           context, source_op, plan->convert_descriptor_ref,
@@ -1112,9 +1121,6 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
           plan->narrow_representation,
           LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED,
           &zero_extended_source));
-      loom_type_t result_type = loom_type_none();
-      IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
-          context, source_op, plan->result, &result_type));
       loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(loom_amdgpu_emit_vgpr_unary(
           context, source_op, plan->convert_descriptor_ref,
@@ -1130,8 +1136,9 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
                                          plan->result, &plan->f64_narrow);
     case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FPTOI_F32_TO_I32: {
       loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_f32(
-          context, source_op, plan->source, &low_source));
+      IREE_RETURN_IF_ERROR(loom_amdgpu_emit_prepared_vgpr_value(
+          context, source_op, plan->source, plan->source_materialization,
+          &low_source));
       loom_type_t lane_type = loom_type_none();
       IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_type(context, &lane_type));
       loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
@@ -1142,8 +1149,9 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
     }
     case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FPTOI_F32_TO_NARROW: {
       loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_f32(
-          context, source_op, plan->source, &low_source));
+      IREE_RETURN_IF_ERROR(loom_amdgpu_emit_prepared_vgpr_value(
+          context, source_op, plan->source, plan->source_materialization,
+          &low_source));
       loom_type_t lane_type = loom_type_none();
       IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_type(context, &lane_type));
       loom_value_id_t converted_source = LOOM_VALUE_ID_INVALID;
@@ -1157,6 +1165,7 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
           plan->narrow_representation, &low_result));
       return loom_low_lower_bind_value(context, plan->result, low_result);
     }
+    case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS:
     case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NONE:
       break;
   }

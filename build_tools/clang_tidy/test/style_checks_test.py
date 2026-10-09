@@ -189,6 +189,7 @@ class StyleChecksTest(clang_tidy_test.ClangTidyAssertions):
                 "iree_clang_tidy_style_multi_argument_release_ignored",
                 "iree_clang_tidy_style_non_pointer_release_ignored",
                 "iree_clang_tidy_style_indirect_release_ignored",
+                "iree_clang_tidy_style_lease_release",
                 "awaited_resource",
                 "waited_resource",
             ],

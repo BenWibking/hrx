@@ -8,6 +8,7 @@
 
 #include "loom/analysis/liveness.h"
 #include "loom/analysis/liveness_json.h"
+#include "loom/analysis/storage_access.h"
 #include "loom/analysis/storage_interference.h"
 #include "loom/codegen/low/diagnostics.h"
 #include "loom/ir/module.h"
@@ -28,6 +29,8 @@ iree_status_t loom_check_emit_liveness(loom_module_t* module,
 iree_status_t loom_check_emit_storage_interference(
     loom_module_t* module, loom_func_like_t function,
     iree_arena_allocator_t* arena, iree_string_builder_t* output) {
+  loom_storage_access_scope_t storage_access;
+  loom_storage_access_scope_initialize(module, arena, &storage_access);
   loom_value_fact_table_t facts;
   IREE_RETURN_IF_ERROR(
       loom_value_fact_table_initialize(&facts, arena, module->values.count));
@@ -42,7 +45,7 @@ iree_status_t loom_check_emit_storage_interference(
       arena, domain.definition_count, sizeof(*roots), (void**)&roots);
   if (iree_status_is_ok(status)) {
     status = loom_storage_interference_analyze_function(
-        module, &facts, &domain, function, arena, &analysis);
+        module, &facts, &domain, function, &storage_access, arena, &analysis);
   }
   iree_host_size_t root_count = 0;
   for (loom_value_ordinal_t i = 0;

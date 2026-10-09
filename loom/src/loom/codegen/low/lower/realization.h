@@ -52,8 +52,8 @@ typedef struct loom_low_lower_realization_loop_t {
   const loom_op_t* entry;
   // Dedicated backedge, executed once per body iteration.
   const loom_op_t* backedge;
-  // Borrowed induction equation owned by the retained CFG facts.
-  const loom_value_fact_induction_t* induction;
+  // Source value governed by the proved induction equation.
+  loom_value_id_t induction_value;
   // Exact source-integer initial value.
   int64_t initial_value;
   // Exact positive source-integer increment.
@@ -123,9 +123,12 @@ typedef struct loom_low_lower_realization_offer_t {
 } loom_low_lower_realization_offer_t;
 
 // Creates the shared owner and retains loop eligibility from existing facts.
-// It does not traverse operations or recover induction expressions.
+// It does not traverse operations or recover induction expressions. Offers,
+// interning tables, and placement work use |construction_arena|, which must
+// remain live until finalize returns. The frozen schedule borrows none of it.
 iree_status_t loom_low_lower_realizations_create(
-    loom_low_lower_context_t* context);
+    loom_low_lower_context_t* context,
+    iree_arena_allocator_t* construction_arena);
 
 // Returns the admitted innermost loop, or NULL outside the candidate domain.
 const loom_low_lower_realization_loop_t* loom_low_lower_realization_loop(
@@ -160,6 +163,14 @@ iree_status_t loom_low_lower_realizations_finalize(
 // Creates supplemental block arguments after all authored arguments exist.
 iree_status_t loom_low_lower_realizations_map_blocks(
     loom_low_lower_context_t* context);
+
+// Indexed signature of the supplemental tuple retained for a top-level source
+// block. Control expansion consumes the same canonical recipes as emission.
+uint16_t loom_low_lower_realization_block_argument_count(
+    const loom_low_lower_context_t* context, const loom_block_t* source_block);
+loom_type_t loom_low_lower_realization_block_argument_type(
+    const loom_low_lower_context_t* context, const loom_block_t* source_block,
+    uint16_t argument_index);
 
 // Emits initializers at block entry and initializers/updates after an authored
 // operation. Both run inside the normal shared emission scratch lifetime.

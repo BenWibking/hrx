@@ -278,7 +278,8 @@ iree_status_t loom_amdgpu_map_abi_layout(
     void* user_data, loom_low_lower_context_t* context,
     loom_low_lower_abi_layout_kind_t layout_kind, const loom_type_t* arg_types,
     iree_host_size_t arg_count, const loom_type_t* result_types,
-    iree_host_size_t result_count, loom_named_attr_slice_t* out_abi_layout) {
+    iree_host_size_t result_count, iree_arena_allocator_t* scratch_arena,
+    loom_named_attr_slice_t* out_abi_layout) {
   (void)user_data;
   (void)arg_types;
   (void)result_types;
@@ -321,14 +322,15 @@ iree_status_t loom_amdgpu_map_abi_layout(
 
   loom_amdgpu_hal_kernarg_resource_t* resources = NULL;
   if (resource_count != 0) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
-        context, resource_count, sizeof(*resources), (void**)&resources));
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        scratch_arena, resource_count, sizeof(*resources), (void**)&resources));
     memset(resources, 0, resource_count * sizeof(*resources));
   }
   loom_amdgpu_hal_kernarg_direct_arg_t* direct_args = NULL;
   if (direct_arg_count != 0) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
-        context, direct_arg_count, sizeof(*direct_args), (void**)&direct_args));
+    IREE_RETURN_IF_ERROR(
+        iree_arena_allocate_array(scratch_arena, direct_arg_count,
+                                  sizeof(*direct_args), (void**)&direct_args));
     memset(direct_args, 0, direct_arg_count * sizeof(*direct_args));
   }
 
@@ -371,8 +373,7 @@ iree_status_t loom_amdgpu_map_abi_layout(
   };
   loom_attribute_t attr = {0};
   IREE_RETURN_IF_ERROR(loom_amdgpu_hal_kernel_abi_make_layout_attr(
-      loom_low_lower_context_module(context), &layout,
-      loom_low_lower_context_emission_arena(context), &attr));
+      loom_low_lower_context_module(context), &layout, scratch_arena, &attr));
   *out_abi_layout = loom_attr_as_dict(attr);
   return iree_ok_status();
 }

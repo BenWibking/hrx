@@ -23,12 +23,28 @@ typedef struct loom_amdgpu_memory_dynamic_term_sequence_t {
   // Dynamic terms selected for emission in address-expression order.
   const loom_low_source_memory_dynamic_term_t*
       terms[LOOM_LOW_SOURCE_MEMORY_DYNAMIC_TERM_CAPACITY];
+  // Numeric operand decisions corresponding to each selected term.
+  const loom_amdgpu_memory_dynamic_term_plan_t*
+      plans[LOOM_LOW_SOURCE_MEMORY_DYNAMIC_TERM_CAPACITY];
   // Target operand path selected for each emitted term.
   loom_amdgpu_memory_dynamic_index_kind_t
       kinds[LOOM_LOW_SOURCE_MEMORY_DYNAMIC_TERM_CAPACITY];
   // Number of populated term and kind entries.
   uint8_t count;
 } loom_amdgpu_memory_dynamic_term_sequence_t;
+
+// Retains numeric operand decisions for every source term alternative. Entries
+// use canonical-term, realization, then optional retained-component order.
+iree_status_t loom_amdgpu_plan_memory_dynamic_terms(
+    loom_low_lower_context_t* context,
+    const loom_low_source_memory_access_plan_t* source,
+    const loom_amdgpu_memory_dynamic_term_plan_t** out_plans);
+
+// Retains operand decisions for a fixed sequence used by an address
+// realization.
+iree_status_t loom_amdgpu_plan_memory_term_sequence(
+    loom_low_lower_context_t* context,
+    loom_amdgpu_memory_dynamic_term_sequence_t* sequence);
 
 // Selects a legal operand for a shared cross-access component, preserving the
 // complete VADDR bound. Otherwise retains opportunistic mixed scalar/vector

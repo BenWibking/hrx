@@ -587,9 +587,14 @@ storage: accessed=yes single_instance=unproven
 
 // ====
 
-// Impure calls can access their arguments, but cannot discover fresh private
-// scratch that has never been passed to them.
+// Direct and nested impure calls cannot discover fresh private scratch that
+// has never been passed to them.
 func.decl @service(%external: buffer)
+
+func.def @forward_service(%external: buffer) {
+  func.call @service(%external) : (buffer)
+  func.return
+}
 
 func.def @test(%external: buffer, %limit: index) -> (i32) {
   %origin = index.constant 0 : offset
@@ -602,6 +607,7 @@ func.def @test(%external: buffer, %limit: index) -> (i32) {
     %slot = buffer.view %scratch[%origin] : buffer -> view<1xi32>
     view.store %accumulator, %slot[0] : i32, view<1xi32>
     func.call @service(%external) : (buffer)
+    func.call @forward_service(%external) : (buffer)
     %next = view.load %slot[0] : view<1xi32> -> i32
     scf.yield %next : i32
   }

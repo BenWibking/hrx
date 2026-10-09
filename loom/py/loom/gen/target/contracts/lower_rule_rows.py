@@ -973,6 +973,7 @@ def emit_row(descriptor_refs: Mapping[str, int], row: LowerEmit) -> list[str]:
             always=True,
         )
         _append_field(fields, "attr_copy_count", row.attr_copy_count, always=True)
+    _append_field(fields, "has_read_only_data_attributes", int(row.has_read_only_data_attributes))
     if row.tied_result_count:
         _append_field(
             fields,

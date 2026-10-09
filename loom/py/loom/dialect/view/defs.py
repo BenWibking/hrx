@@ -164,7 +164,7 @@ view_subview = Op(
         Operand("source", VIEW, doc="Source view."),
         Operand("offsets", INDEX, doc="Dynamic logical offsets.", variadic=True),
     ],
-    results=[Result("result", VIEW, doc="Subview over the same storage root.")],
+    results=[Result("result", VIEW, doc="Subview over the same storage root.", reference_source="source")],
     attrs=[
         AttrDef(
             "static_offsets",
@@ -518,7 +518,7 @@ view_prefetch = Op(
         "explicit hint-stripping pass removes it."
     ),
     operands=[
-        Operand("view", VIEW, doc="Typed view whose address should be prefetched."),
+        Operand("view", VIEW, doc="Typed view whose address should be prefetched.", observes_reference=True),
         Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
     ],
     attrs=[

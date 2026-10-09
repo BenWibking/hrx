@@ -19,6 +19,13 @@ extern "C" {
 #endif
 
 typedef struct loom_low_lower_module_state_t loom_low_lower_module_state_t;
+struct loom_low_lower_rule_set_list_t;
+struct loom_low_descriptor_set_t;
+struct loom_low_lower_rule_descriptor_cache_t;
+
+// Private payload identity, stable until the module-state arena is released.
+// This is not a module symbol and cannot appear in IR.
+typedef uint32_t loom_low_lower_read_only_data_id_t;
 
 // Creates a module-scope target-state container allocated from |arena|.
 //
@@ -29,6 +36,15 @@ typedef struct loom_low_lower_module_state_t loom_low_lower_module_state_t;
 iree_status_t loom_low_lower_module_state_create(
     iree_arena_allocator_t* arena,
     loom_low_lower_module_state_t** out_module_state);
+
+// Returns shared descriptor bindings for an immutable rule-table list and
+// descriptor set. The cache belongs to the module-state arena and remains
+// available across function planning and emission.
+iree_status_t loom_low_lower_module_state_rule_descriptor_cache(
+    loom_low_lower_module_state_t* module_state,
+    struct loom_low_lower_rule_set_list_t rule_sets,
+    const struct loom_low_descriptor_set_t* descriptor_set,
+    struct loom_low_lower_rule_descriptor_cache_t** out_cache);
 
 // Returns module-scope target state for |key|, allocating zeroed storage on
 // first use.
@@ -41,14 +57,21 @@ iree_status_t loom_low_lower_module_state_get_or_allocate(
     loom_low_lower_module_state_t* module_state, const void* key,
     iree_host_size_t data_length, void** out_data);
 
-// Interns one immutable byte payload and returns its reserved module symbol.
-// Equal contents share one symbol and retain the maximum requested alignment.
-// Definitions are materialized by loom_low_lower_module_state_finalize after
-// every source function and target policy has finished lowering.
+// Copies one immutable byte payload into pass-local storage without changing
+// the source module. Equal contents share an ID and retain the maximum
+// requested power-of-two alignment. Returned IDs survive record-array growth.
 iree_status_t loom_low_lower_module_state_intern_read_only_data(
-    loom_low_lower_module_state_t* module_state, struct loom_module_t* module,
+    loom_low_lower_module_state_t* module_state,
     iree_const_byte_span_t contents, uint64_t minimum_alignment,
-    loom_location_id_t location, loom_symbol_ref_t* out_symbol);
+    loom_location_id_t location, loom_low_lower_read_only_data_id_t* out_id);
+
+// Publishes a module symbol for a retained payload when execution first needs
+// it. Subsequent references return the same symbol. Definitions are emitted by
+// loom_low_lower_module_state_finalize after source lowering and target policy
+// finalizers have finished. Planning must not call this function.
+iree_status_t loom_low_lower_module_state_reference_read_only_data(
+    loom_low_lower_module_state_t* module_state, struct loom_module_t* module,
+    loom_low_lower_read_only_data_id_t id, loom_symbol_ref_t* out_symbol);
 
 // Materializes every interned immutable payload as a global.rodata.def.
 iree_status_t loom_low_lower_module_state_finalize(

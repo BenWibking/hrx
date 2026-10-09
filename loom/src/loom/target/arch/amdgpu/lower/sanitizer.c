@@ -35,7 +35,7 @@
 typedef struct loom_amdgpu_sanitizer_site_chunk_t {
   // Next committed site-row chunk, or NULL for the final chunk.
   struct loom_amdgpu_sanitizer_site_chunk_t* next;
-  // Rows copied from one successfully lowered source function.
+  // Rows copied from one source function's planned sanitizer sites.
   loom_sanitizer_site_row_t* rows;
   // Number of rows in rows.
   iree_host_size_t row_count;
@@ -53,8 +53,6 @@ typedef struct loom_amdgpu_sanitizer_module_state_t {
 typedef struct loom_amdgpu_sanitizer_lower_state_t {
   // True once the source function sanitizer site collection has been built.
   bool has_site_collection;
-  // First module-global site ID assigned to this function's collection.
-  loom_sanitizer_site_id_t site_id_base;
   // Function-local sanitizer site rows in report-site order.
   loom_sanitizer_site_collection_t site_collection;
   // True once the runtime feedback config symbol has been looked up or created.
@@ -183,16 +181,16 @@ static iree_status_t loom_amdgpu_sanitizer_module_state_from_context(
   return iree_ok_status();
 }
 
-static iree_status_t loom_amdgpu_sanitizer_reserve_site_table_symbol(
+static iree_status_t loom_amdgpu_sanitizer_validate_site_table_symbol(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
   loom_module_t* module = loom_low_lower_context_module(context);
   const iree_string_view_t symbol_name =
       IREE_SV(LOOM_SANITIZER_SITE_TABLE_SYMBOL_NAME);
-  loom_symbol_ref_t symbol_ref = loom_symbol_ref_null();
-  IREE_RETURN_IF_ERROR(loom_amdgpu_sanitizer_get_or_create_symbol(
-      module, symbol_name, &symbol_ref));
-  const loom_symbol_t* symbol = &module->symbols.entries[symbol_ref.symbol_id];
-  if (symbol->defining_op != NULL) {
+  const loom_string_id_t name_id =
+      loom_module_lookup_string(module, symbol_name);
+  const uint16_t symbol_id = loom_module_find_symbol(module, name_id);
+  if (symbol_id != LOOM_SYMBOL_ID_INVALID &&
+      module->symbols.entries[symbol_id].defining_op != NULL) {
     return loom_amdgpu_sanitizer_emit_site_table_symbol_diagnostic(
         context, source_op, symbol_name);
   }
@@ -308,39 +306,22 @@ static iree_status_t loom_amdgpu_sanitizer_ensure_site_collection(
   if (row_count != 0) {
     const uint32_t previous_error_count =
         loom_low_lower_context_error_count(context);
-    IREE_RETURN_IF_ERROR(loom_amdgpu_sanitizer_reserve_site_table_symbol(
+    IREE_RETURN_IF_ERROR(loom_amdgpu_sanitizer_validate_site_table_symbol(
         context, loom_low_lower_context_source_function(context).op));
     if (loom_low_lower_context_error_count(context) != previous_error_count) {
       return iree_ok_status();
     }
   }
-  state->site_id_base = (loom_sanitizer_site_id_t)module_state->site_row_count;
   for (iree_host_size_t i = 0; i < row_count; ++i) {
     state->site_collection.rows[i].site_id =
-        (loom_sanitizer_site_id_t)(state->site_id_base + i);
+        (loom_sanitizer_site_id_t)(module_state->site_row_count + i);
   }
-
-  state->has_site_collection = true;
-  return iree_ok_status();
-}
-
-iree_status_t loom_amdgpu_finalize_sanitizer_function(
-    loom_low_lower_context_t* context) {
-  loom_amdgpu_sanitizer_lower_state_t* function_state = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_amdgpu_sanitizer_lower_state(context, &function_state));
-  if (!function_state->has_site_collection ||
-      function_state->site_collection.row_count == 0) {
+  if (row_count == 0) {
+    state->has_site_collection = true;
     return iree_ok_status();
   }
-
-  loom_amdgpu_sanitizer_module_state_t* module_state = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_amdgpu_sanitizer_module_state_from_context(context, &module_state));
-  IREE_ASSERT(module_state->site_row_count == function_state->site_id_base,
-              "AMDGPU sanitizer site rows committed out of order");
-
-  const iree_host_size_t row_count = function_state->site_collection.row_count;
+  // Reserve the complete function's IDs before another function is planned.
+  // The module rows outlive this function's plan and its source operations.
   loom_low_lower_module_state_t* lower_module_state =
       loom_low_lower_context_module_state(context);
   loom_amdgpu_sanitizer_site_chunk_t* chunk = NULL;
@@ -351,7 +332,7 @@ iree_status_t loom_amdgpu_finalize_sanitizer_function(
       lower_module_state, row_count, sizeof(*chunk->rows),
       (void**)&chunk->rows));
   for (iree_host_size_t i = 0; i < row_count; ++i) {
-    chunk->rows[i] = function_state->site_collection.rows[i];
+    chunk->rows[i] = state->site_collection.rows[i];
     chunk->rows[i].op = NULL;
   }
   chunk->row_count = row_count;
@@ -363,6 +344,7 @@ iree_status_t loom_amdgpu_finalize_sanitizer_function(
   }
   module_state->site_chunk_tail = chunk;
   module_state->site_row_count += row_count;
+  state->has_site_collection = true;
   return iree_ok_status();
 }
 
@@ -830,6 +812,9 @@ iree_status_t loom_amdgpu_select_sanitizer_assert_access_plan(
       return iree_ok_status();
     }
   }
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+      context, &out_plan->address.source,
+      &out_plan->address.dynamic_term_plans));
   *out_selected = true;
   return iree_ok_status();
 }
@@ -1027,9 +1012,8 @@ static iree_status_t loom_amdgpu_sanitizer_build_assert_failure_split(
   loom_builder_t* builder = loom_low_lower_context_builder(context);
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_lower_context_descriptor_set(context);
-  loom_value_id_t condition = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_kernel_assert_condition(source_op), &condition));
+  loom_value_id_t condition = loom_low_lower_lookup_value(
+      context, loom_kernel_assert_condition(source_op));
   const loom_type_t condition_type =
       loom_module_value_type(loom_low_lower_context_module(context), condition);
 
@@ -1261,11 +1245,9 @@ iree_status_t loom_amdgpu_lower_sanitizer_assert_access(
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_lower_context_descriptor_set(context);
 
-  loom_value_id_t low_resource = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
+  loom_value_id_t low_resource = loom_low_lower_lookup_value(
       context,
-      loom_low_source_memory_access_base_view_value_id(&plan->address.source),
-      &low_resource));
+      loom_low_source_memory_access_base_view_value_id(&plan->address.source));
 
   loom_amdgpu_sanitizer_lower_state_t* state = NULL;
   IREE_RETURN_IF_ERROR(loom_amdgpu_sanitizer_lower_state(context, &state));

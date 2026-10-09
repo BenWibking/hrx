@@ -70,7 +70,10 @@ iree_status_t loom_amdgpu_extract_low_register_unit(
     uint32_t register_offset, loom_type_t unit_type,
     loom_value_id_t* out_register_unit);
 
-// Binds a source result to one or more already-emitted low register units.
+// Binds a source result to already-emitted register pieces. Multiple pieces
+// must be untyped registers in one bank; the result preserves their physical
+// units, including multiword masks and conversion results. A singleton retains
+// its exact incoming type. No source-value mapping is required.
 iree_status_t loom_amdgpu_bind_low_register_range(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_result, const loom_value_id_t* low_registers,
@@ -285,6 +288,11 @@ iree_status_t loom_amdgpu_emit_sgpr64_from_u32(
 iree_status_t loom_amdgpu_emit_sgpr64_constant_u64(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     uint64_t value, loom_value_id_t* out_low_wide_value);
+
+// Compares one scalar register word against zero and returns its SCC truth.
+iree_status_t loom_amdgpu_emit_sgpr32_nonzero_scc(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t low_value, loom_value_id_t* out_low_scc);
 
 // Emits SCC true when any bit in an EXEC-width SGPRx2 lane mask is set.
 //

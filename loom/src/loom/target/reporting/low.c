@@ -458,20 +458,15 @@ iree_status_t loom_target_compile_report_record_low_lowering(
     loom_target_compile_report_t* report,
     const loom_low_lower_result_t* lower_result) {
   loom_target_compile_report_record_low_workload(report, lower_result);
-  const bool has_source_low_summary =
-      lower_result->selected_source_op_count != 0 ||
-      lower_result->emitted_low_op_count != 0 ||
-      lower_result->report_rows.head != NULL ||
-      lower_result->memory_report_rows.count != 0;
-  if (!has_source_low_summary) {
+  const loom_low_lower_report_t* lowering_report = lower_result->report;
+  if (lowering_report == NULL) {
     return iree_ok_status();
   }
   report->detail_flags |= LOOM_TARGET_COMPILE_REPORT_DETAIL_SOURCE_LOW_ROWS;
   report->source_low_selected_op_count +=
-      lower_result->selected_source_op_count;
-  report->source_low_emitted_op_count += lower_result->emitted_low_op_count;
-  for (const loom_low_lower_report_row_vec_t* vec =
-           lower_result->report_rows.head;
+      lowering_report->selected_source_op_count;
+  report->source_low_emitted_op_count += lowering_report->emitted_low_op_count;
+  for (const loom_low_lower_report_row_vec_t* vec = lowering_report->rows.head;
        vec != NULL; vec = vec->next) {
     const loom_low_lower_report_row_t* source_rows =
         loom_low_lower_report_row_vec_const_rows(vec);
@@ -500,10 +495,9 @@ iree_status_t loom_target_compile_report_record_low_lowering(
           loom_target_compile_report_record_source_low_row(report, &row));
     }
   }
-  for (iree_host_size_t i = 0; i < lower_result->memory_report_rows.count;
-       ++i) {
+  for (iree_host_size_t i = 0; i < lowering_report->memory_rows.count; ++i) {
     const loom_low_lower_memory_report_row_t* source_row =
-        &lower_result->memory_report_rows.rows[i];
+        &lowering_report->memory_rows.rows[i];
     const loom_target_compile_report_memory_interval_t source_interval =
         loom_target_compile_report_source_interval(
             &source_row->source_interval);

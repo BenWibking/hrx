@@ -18,6 +18,7 @@
 
 #include "loom/codegen/low/lower/rules.h"
 #include "loom/codegen/low/lower/source_memory.h"
+#include "loom/codegen/low/lower/structural_plan.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,8 +27,10 @@ extern "C" {
 typedef struct loom_low_lower_resolved_emit_t loom_low_lower_resolved_emit_t;
 typedef struct loom_low_representation_plan_t loom_low_representation_plan_t;
 typedef struct loom_low_lower_realizations_t loom_low_lower_realizations_t;
+typedef struct loom_low_lower_source_invoke_plan_t
+    loom_low_lower_source_invoke_plan_t;
 
-enum loom_low_lower_value_storage_flag_bits_e {
+enum loom_low_lower_value_flag_bits_e {
   // The source value must be materialized as a target-Low SSA value.
   LOOM_LOW_LOWER_VALUE_STORAGE_REQUIRED = (uint8_t)1u << 0,
   // One selected memory plan can reuse this source realization. A second plan
@@ -40,8 +43,12 @@ enum loom_low_lower_value_storage_flag_bits_e {
   // Storage was required before backward selected-plan demand analysis.
   // Refinement retains these structural and function-boundary requirements.
   LOOM_LOW_LOWER_VALUE_STORAGE_BASELINE_REQUIRED = (uint8_t)1u << 3,
+  // The binding slot contains an emitted value instead of a selected type.
+  LOOM_LOW_LOWER_VALUE_MATERIALIZED = (uint8_t)1u << 4,
+  // The planned binding inherits its carrier from one flattened source ordinal.
+  LOOM_LOW_LOWER_VALUE_INHERITED_TYPE = (uint8_t)1u << 5,
 };
-typedef uint8_t loom_low_lower_value_storage_flags_t;
+typedef uint8_t loom_low_lower_value_flags_t;
 
 enum loom_low_lower_selected_plan_flag_bits_e {
   // The selected source op is intentionally skipped because none of its
@@ -61,6 +68,8 @@ typedef enum loom_low_lower_selected_plan_kind_e {
   LOOM_LOW_LOWER_SELECTED_PLAN_CALLBACK = 2,
   // Selection reserves bounded function storage using a target space mapping.
   LOOM_LOW_LOWER_SELECTED_PLAN_FUNCTION_STORAGE = 3,
+  // Shared normalization of a semantic invocation into a native helper call.
+  LOOM_LOW_LOWER_SELECTED_PLAN_INVOKE = 4,
 } loom_low_lower_selected_plan_kind_t;
 
 // One source operation's lowering decision retained between planning and
@@ -79,9 +88,12 @@ typedef struct loom_low_lower_selected_plan_t {
   uint16_t rule_set_index;
   // Rule-table ordinal for table-driven selections.
   uint16_t rule_index;
-  // Rule set owning |rule|, or NULL for non-rule plans.
+  // Rule set owning |rule|, or NULL for non-rule plans and claimed
+  // placeholders.
   const loom_low_lower_rule_set_t* rule_set;
-  // Table rule selected during planning, or NULL for non-rule plans.
+  // Table rule selected during planning, or NULL for non-rule plans and claimed
+  // placeholders. An earlier selection claimed by a later rule retains its
+  // original recipe for reporting.
   const loom_low_lower_rule_t* rule;
   // Resolved emit rows for |rule|, or NULL for non-rule plans.
   const loom_low_lower_resolved_emit_t* resolved_emits;
@@ -90,6 +102,8 @@ typedef struct loom_low_lower_selected_plan_t {
   const loom_low_source_memory_access_plan_t* source_memory_access;
   // Selected-plan-specific retained payload.
   union {
+    // Helper signature and proved preconditions owned by the function plan.
+    const loom_low_lower_source_invoke_plan_t* invoke;
     // Shared bounded-allocation plan owned by the function lowering arena.
     const loom_low_lower_function_storage_plan_t* function_storage;
     // Target-owned plan selected during planning.
@@ -119,20 +133,22 @@ typedef struct loom_low_lower_descriptor_matrix_plan_t {
 
 // Function-local retained plan and source-value materialization state.
 typedef struct loom_low_lower_source_plan_t {
+  // Shared structural type and branch decisions consumed without value facts.
+  loom_low_lower_structural_plan_t structural;
   // Required visibility on mutable global reads; thread scope keeps the
   // ordinary eager acquisition recipe. Fixed before per-operation selection.
   uint8_t read_visibility_scope;
-  // Source-body blocks in definition-before-use order, borrowed from retained
-  // dominance when all blocks are reachable. Unreachable blocks follow in
-  // storage order. NULL preserves the single-block structured path.
+  // Owned source-body permutation in definition-before-use order, copied from
+  // dominance. Unreachable blocks follow in storage order. NULL preserves the
+  // single-block structured path.
   const uint16_t* block_order;
   // Function-local physical-representation plan, or NULL when the target has
   // no representation observer or before that observer begins.
   loom_low_representation_plan_t* representation_plan;
   // Shared pure-value placement, initialization and supplemental CFG payloads.
   loom_low_lower_realizations_t* realizations;
-  // Per-source-value storage demand flags indexed by source value ordinal.
-  loom_low_lower_value_storage_flags_t* value_storage_flags;
+  // Storage demands and binding states indexed by source value ordinal.
+  loom_low_lower_value_flags_t* value_flags;
   // Number of values addressed through selected fact-derived references.
   // Zero keeps ordinary rule selection and demand analysis on the direct path.
   loom_value_ordinal_t fact_storage_demand_count;
@@ -144,9 +160,9 @@ typedef struct loom_low_lower_source_plan_t {
   struct {
     // First retained access in shared source traversal order.
     loom_low_lower_source_memory_record_t* first;
-    // Next access to consume during per-operation selection.
+    // Next access to consume during selection or emission.
     const loom_low_lower_source_memory_record_t* cursor;
-    // Access visible to the current observer or selector, or NULL.
+    // Access visible to the current observer, selector, or emitter, or NULL.
     const loom_low_lower_source_memory_record_t* current;
   } memory;
   // Selected plans in source traversal order.
@@ -180,11 +196,6 @@ bool loom_low_lower_source_plan_op_is_metadata(loom_op_kind_t kind);
 // Returns true when |source_value_id| needs a materialized target-Low result.
 bool loom_low_lower_source_plan_result_storage_required(
     const loom_low_lower_context_t* context, loom_value_id_t source_value_id);
-
-// Returns the exact condition value when facts prove a cfg.cond_br direction.
-bool loom_low_lower_source_plan_cfg_cond_br_exact_bool(
-    const loom_low_lower_context_t* context, const loom_op_t* source_op,
-    bool* out_condition);
 
 #ifdef __cplusplus
 }  // extern "C"

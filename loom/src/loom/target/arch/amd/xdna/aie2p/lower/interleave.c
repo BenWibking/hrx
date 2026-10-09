@@ -172,6 +172,14 @@ iree_status_t loom_aie2p_select_interleave_plan(
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
       context, sizeof(*retained_plan), (void**)&retained_plan));
   *retained_plan = matched_plan;
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
+      context, retained_plan->result_carrier_kind,
+      retained_plan->result_carrier_unit_count, &result_type));
+  for (uint16_t i = 0; i < source_op->result_count; ++i) {
+    IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+        context, loom_op_const_results(source_op)[i], result_type));
+  }
   *out_plan = loom_low_lower_plan_make(LOOM_AIE2P_INTERLEAVE_PLAN_NATIVE,
                                        retained_plan);
   return iree_ok_status();
@@ -514,10 +522,10 @@ static iree_status_t loom_aie2p_emit_zip_plan(
     const loom_aie2p_interleave_plan_t* plan, const loom_op_t* source_op) {
   loom_value_id_t low_even = LOOM_VALUE_ID_INVALID;
   loom_value_id_t low_odd = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      emitter->context, loom_vector_interleave_even(source_op), &low_even));
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      emitter->context, loom_vector_interleave_odd(source_op), &low_odd));
+  low_even = loom_low_lower_lookup_value(
+      emitter->context, loom_vector_interleave_even(source_op));
+  low_odd = loom_low_lower_lookup_value(emitter->context,
+                                        loom_vector_interleave_odd(source_op));
 
   loom_value_id_t controls[2] = {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID};
   IREE_RETURN_IF_ERROR(loom_aie2p_interleave_emit_control(
@@ -567,10 +575,8 @@ static iree_status_t loom_aie2p_emit_zip_plan(
 static iree_status_t loom_aie2p_emit_unzip_plan(
     loom_aie2p_vector_packet_emitter_t* emitter,
     const loom_aie2p_interleave_plan_t* plan, const loom_op_t* source_op) {
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      emitter->context, loom_vector_deinterleave_source(source_op),
-      &low_source));
+  loom_value_id_t low_source = loom_low_lower_lookup_value(
+      emitter->context, loom_vector_deinterleave_source(source_op));
 
   loom_value_id_t controls[2] = {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID};
   IREE_RETURN_IF_ERROR(loom_aie2p_interleave_emit_control(
@@ -628,10 +634,10 @@ static iree_status_t loom_aie2p_emit_zip_block_route_plan(
     const loom_aie2p_interleave_plan_t* plan, const loom_op_t* source_op) {
   loom_value_id_t low_even = LOOM_VALUE_ID_INVALID;
   loom_value_id_t low_odd = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      emitter->context, loom_vector_interleave_even(source_op), &low_even));
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      emitter->context, loom_vector_interleave_odd(source_op), &low_odd));
+  low_even = loom_low_lower_lookup_value(
+      emitter->context, loom_vector_interleave_even(source_op));
+  low_odd = loom_low_lower_lookup_value(emitter->context,
+                                        loom_vector_interleave_odd(source_op));
 
   loom_aie2p_interleave_route_state_t state;
   loom_aie2p_interleave_route_state_initialize(emitter, plan, low_even, low_odd,
@@ -649,10 +655,8 @@ static iree_status_t loom_aie2p_emit_zip_block_route_plan(
 static iree_status_t loom_aie2p_emit_unzip_block_route_plan(
     loom_aie2p_vector_packet_emitter_t* emitter,
     const loom_aie2p_interleave_plan_t* plan, const loom_op_t* source_op) {
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      emitter->context, loom_vector_deinterleave_source(source_op),
-      &low_source));
+  loom_value_id_t low_source = loom_low_lower_lookup_value(
+      emitter->context, loom_vector_deinterleave_source(source_op));
 
   loom_aie2p_interleave_route_state_t state;
   loom_aie2p_interleave_route_state_initialize(emitter, plan, low_source,

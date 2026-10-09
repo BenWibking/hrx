@@ -139,6 +139,11 @@ iree_status_t loom_amdgpu_select_vector_bitpack_plan(
           loom_low_lower_context_descriptor_set(context),
           &out_plan->i8_permute);
     }
+    return loom_low_lower_plan_value_type(
+        context, out_plan->result,
+        loom_low_register_type(
+            loom_low_lower_context_descriptor_set(context)->stable_id,
+            LOOM_AMDGPU_REG_CLASS_ID_VGPR, out_plan->result_register_count));
   }
   return iree_ok_status();
 }
@@ -159,6 +164,11 @@ iree_status_t loom_amdgpu_select_vector_bitunpack_plan(
           loom_low_lower_context_descriptor_set(context),
           &out_plan->i8_permute);
     }
+    return loom_low_lower_plan_value_type(
+        context, out_plan->result,
+        loom_low_register_type(
+            loom_low_lower_context_descriptor_set(context)->stable_id,
+            LOOM_AMDGPU_REG_CLASS_ID_VGPR, out_plan->result_register_count));
   }
   return iree_ok_status();
 }
@@ -481,9 +491,8 @@ static iree_status_t loom_amdgpu_lower_vector_bitpack_i8_permute(
 iree_status_t loom_amdgpu_lower_vector_bitpack(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_bitpack_plan_t* plan) {
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, &low_source));
+  loom_value_id_t low_source =
+      loom_low_lower_lookup_value(context, plan->source);
   IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
       context, source_op, low_source, &low_source));
 
@@ -681,9 +690,8 @@ static iree_status_t loom_amdgpu_lower_vector_bitunpack_packed_i8(
 iree_status_t loom_amdgpu_lower_vector_bitunpack(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_bitunpack_plan_t* plan) {
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, &low_source));
+  loom_value_id_t low_source =
+      loom_low_lower_lookup_value(context, plan->source);
   IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
       context, source_op, low_source, &low_source));
 

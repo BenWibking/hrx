@@ -997,6 +997,8 @@ enum loom_op_vtable_flag_bits_e {
   // its results. Schedulers model the generated packet effects and the
   // resulting register lifetimes even though the source node is structural.
   LOOM_OP_VTABLE_STRUCTURAL_MATERIALIZATION = 1u << 10,
+  // At least one result declares its originating buffer/view operand field.
+  LOOM_OP_VTABLE_HAS_REFERENCE_SOURCE = 1u << 11,
 };
 typedef uint16_t loom_op_vtable_flags_t;
 

@@ -288,6 +288,27 @@ bool IsRefCountAnchoredRecordOrBase(const RecordDecl* Record) {
   return IsRefCountAnchoredRecordOrBase(Record, VisitedRecords);
 }
 
+bool IsRefCountOperationFunction(
+    const FunctionDecl* Function,
+    bool (*FunctionNamePredicate)(llvm::StringRef FunctionName)) {
+  if (!Function || Function->getNumParams() != 1 ||
+      !Function->getReturnType()->isVoidType() ||
+      !FunctionNamePredicate(SimpleFunctionName(Function))) {
+    return false;
+  }
+  QualType ParameterType = Function->getParamDecl(0)->getType();
+  if (!ParameterType->isPointerType()) {
+    return false;
+  }
+  QualType PointeeType = ParameterType->getPointeeType();
+  if (PointeeType->isVoidType()) {
+    return true;
+  }
+  const RecordDecl* Record = RecordFromType(PointeeType);
+  return Record && (!Record->isCompleteDefinition() ||
+                    IsRefCountAnchoredRecordOrBase(Record));
+}
+
 const RecordDecl* OutParameterPointeeRecord(const ParmVarDecl* Parameter) {
   if (!Parameter || !Parameter->getName().starts_with("out_")) {
     return nullptr;
@@ -637,9 +658,7 @@ std::optional<DirectRefCountOperation> DirectRefCountOperationStatement(
     return std::nullopt;
   }
   const FunctionDecl* Callee = Call->getDirectCallee();
-  StringRef CalleeName = SimpleFunctionName(Callee);
-  if (!Callee || !Callee->getReturnType()->isVoidType() ||
-      !FunctionNamePredicate(CalleeName)) {
+  if (!IsRefCountOperationFunction(Callee, FunctionNamePredicate)) {
     return std::nullopt;
   }
   const VarDecl* Variable = ReferencedVariable(Call->getArg(0));
@@ -772,9 +791,7 @@ class ReleasedUseVisitor final
 
   void VisitCallExpr(const CallExpr* Expression) {
     const FunctionDecl* Callee = Expression->getDirectCallee();
-    StringRef CalleeName = SimpleFunctionName(Callee);
-    if (Callee && (IsRefCountReleaseFunctionName(CalleeName) ||
-                   IsRetainFunctionName(CalleeName))) {
+    if (IsRefCountOperationFunction(Callee, IsRefCountLifecycleFunctionName)) {
       VisitChildren(Expression);
       return;
     }
@@ -936,6 +953,10 @@ class ReleaseFlowAnalyzer final
 };
 
 }  // namespace
+
+bool IsRefCountReleaseFunction(const FunctionDecl* Function) {
+  return IsRefCountOperationFunction(Function, IsRefCountReleaseFunctionName);
+}
 
 RefCountLifecycleCheck::RefCountLifecycleCheck(StringRef Name,
                                                ClangTidyContext* Context)

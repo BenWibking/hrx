@@ -13,14 +13,17 @@ loom_cc_library(
   NAME
     lower
   HDRS
+    "bindings.h"
     "call_predicates.h"
     "context.h"
     "contract_query.h"
     "contract_selection.h"
+    "control_plan.h"
     "execution.h"
     "function_boundary.h"
     "function_storage.h"
     "lower.h"
+    "memory_effects.h"
     "module_state.h"
     "participation.h"
     "realization.h"
@@ -29,6 +32,7 @@ loom_cc_library(
     "rule_descriptor.h"
     "rule_emit.h"
     "rule_match.h"
+    "rule_plan.h"
     "rule_source_memory.h"
     "rule_value.h"
     "rules.h"
@@ -36,12 +40,15 @@ loom_cc_library(
     "source_memory.h"
     "source_plan.h"
     "source_query.h"
+    "structural_plan.h"
     "visibility.h"
   SRCS
+    "bindings.c"
     "call_predicates.c"
     "context.c"
     "contract_query.c"
     "contract_selection.c"
+    "control_plan.c"
     "execution.c"
     "function_boundary.c"
     "function_storage.c"
@@ -56,6 +63,7 @@ loom_cc_library(
     "rule_descriptor.c"
     "rule_emit.c"
     "rule_match.c"
+    "rule_plan.c"
     "rule_source_memory_match.c"
     "rule_source_memory_materialize.c"
     "rule_value.c"
@@ -63,6 +71,7 @@ loom_cc_library(
     "source_memory.c"
     "source_plan.c"
     "source_query.c"
+    "structural_plan.c"
     "visibility.c"
   DEPS
     iree::base
@@ -76,6 +85,7 @@ loom_cc_library(
     loom::analysis::kernel_async_legality
     loom::analysis::kernel_barrier_lifetime
     loom::analysis::native_layout
+    loom::analysis::storage_access
     loom::analysis::storage_interference
     loom::analysis::symbol_facts
     loom::analysis::symbolic_expr
@@ -148,6 +158,7 @@ loom_cc_library(
     loom::ops::func
     loom::ops::func_symbol_facts
     loom::ops::kernel
+    loom::ops::low
     loom::ops::target
     loom::target::facts_builder
     loom::target::function_contract
@@ -183,6 +194,10 @@ loom_cc_test(
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::ir
+    loom::ops::global
+    loom::target::test::alt_descriptors
+    loom::target::test::descriptors
 )
 
 loom_cc_test(
@@ -280,6 +295,23 @@ loom_cc_test(
 
 loom_cc_test(
   NAME
+    memory_effects_test
+  SRCS
+    "memory_effects_test.cc"
+  DEPS
+    ::lower
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::analysis::symbolic_expr
+    loom::analysis::symbolic_expr_test_fixture
+    loom::codegen::low::memory_access
+    loom::codegen::low::source_memory_plan
+    loom::ir::facts
+)
+
+loom_cc_test(
+  NAME
     source_plan_test
   SRCS
     "source_plan_test.cc"
@@ -288,12 +320,17 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::codegen::low::testing::source_workload
+    loom::error::error_defs
     loom::ir
+    loom::ops::cfg
     loom::ops::func
     loom::ops::low
     loom::ops::scalar
     loom::ops::test
+    loom::ops::vector
     loom::target::low_descriptor_registry
+    loom::target::registers
+    loom::target::test::descriptors
     loom::target::test::low_registry
     loom::target::test::lower
     loom::target::test::target_record_table

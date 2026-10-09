@@ -300,10 +300,8 @@ iree_status_t loom_amdgpu_select_view_prefetch_plan(
 iree_status_t loom_amdgpu_lower_view_prefetch(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_prefetch_plan_t* plan) {
-  loom_value_id_t low_resource = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_low_source_memory_access_base_view_value_id(&plan->source),
-      &low_resource));
+  loom_value_id_t low_resource = loom_low_lower_lookup_value(
+      context, loom_low_source_memory_access_base_view_value_id(&plan->source));
 
   const loom_value_id_t dynamic_index =
       plan->has_dynamic_base_offset ? plan->source.dynamic_terms[0].index

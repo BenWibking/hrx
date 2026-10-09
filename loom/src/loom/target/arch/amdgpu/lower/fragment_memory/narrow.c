@@ -665,7 +665,6 @@ static iree_status_t loom_amdgpu_emit_fragment_memory_fp8_to_packed_f16_packet(
 
 iree_status_t loom_amdgpu_emit_fragment_memory_fp8_to_packed_16bit_load_packet(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
-    const loom_amdgpu_matrix_fragment_layout_t* layout,
     const loom_amdgpu_fragment_memory_plan_t* plan,
     const loom_amdgpu_fragment_memory_packet_plan_t* packet,
     loom_amdgpu_fragment_memory_address_state_t* address_state,
@@ -767,7 +766,7 @@ iree_status_t loom_amdgpu_emit_fragment_memory_fp8_to_packed_16bit_load_packet(
       context, packet->packet_register_count, vgpr_type, &packet_type));
   loom_value_id_t low_source_packet = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_fragment_load_packet(
-      context, source_op, layout, plan, packet, access->element_index,
+      context, source_op, plan, packet, access->element_index,
       access->element_count, packet_type, &address, low_packet_resource,
       low_soffset, &low_source_packet));
   if (packet->result_register_count == 1) {
@@ -813,8 +812,8 @@ iree_status_t loom_amdgpu_emit_fragment_memory_fp8_to_packed_16bit_load_packet(
   }
   loom_value_id_t low_conversion_scale = LOOM_VALUE_ID_INVALID;
   if (has_fp8_load_scale) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, plan->fp8_load_scale_source, &low_conversion_scale));
+    low_conversion_scale =
+        loom_low_lower_lookup_value(context, plan->fp8_load_scale_source);
     IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_full_low_vgpr_b32(
         context, source_op, low_conversion_scale, &low_conversion_scale));
   } else if (use_scalef32_descriptor) {

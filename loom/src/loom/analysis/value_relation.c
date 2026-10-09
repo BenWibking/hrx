@@ -23,7 +23,8 @@ typedef enum loom_value_relation_iterator_phase_e {
   LOOM_VALUE_RELATION_PHASE_LOOP_BYPASS = LOOM_VALUE_RELATION_LOOP_BYPASS - 1,
   LOOM_VALUE_RELATION_PHASE_LOOP_TERMINATOR = 8,
   LOOM_VALUE_RELATION_PHASE_REGION_TERMINATOR = 9,
-  LOOM_VALUE_RELATION_PHASE_END = 10,
+  LOOM_VALUE_RELATION_PHASE_REFERENCE_SOURCE = 10,
+  LOOM_VALUE_RELATION_PHASE_END = 11,
 } loom_value_relation_iterator_phase_t;
 static_assert(LOOM_VALUE_RELATION_PHASE_END <= 16,
               "value relation phases must fit the iterator bitset");
@@ -102,6 +103,30 @@ static bool loom_value_relation_next_value_alias(
   return loom_value_relation_emit(
       loom_op_const_operands(op)[0], loom_op_const_results(op)[0], 0,
       LOOM_VALUE_RELATION_VALUE_ALIAS, out_relation);
+}
+
+static bool loom_value_relation_next_reference_source(
+    loom_value_relation_iterator_t* iterator,
+    loom_value_relation_t* out_relation) {
+  const loom_op_t* op = iterator->op;
+  const loom_op_vtable_t* vtable = iterator->vtable;
+  while (iterator->outer_index < op->result_count) {
+    const uint16_t result_index = iterator->outer_index++;
+    const uint16_t field_index =
+        iree_min(result_index, vtable->fixed_result_count);
+    const uint8_t source = vtable->result_descriptors[field_index]
+                               .reference_source_operand_index_plus_one;
+    if (!source) {
+      continue;
+    }
+    const loom_value_slice_t span =
+        loom_op_operand_field_span(vtable, op, source - 1);
+    return loom_value_relation_emit(
+        span.values[0], loom_op_const_results(op)[result_index],
+        (uint16_t)(span.values - loom_op_const_operands(op)),
+        LOOM_VALUE_RELATION_REFERENCE_SOURCE, out_relation);
+  }
+  return false;
 }
 
 static bool loom_value_relation_next_select_payload(
@@ -386,6 +411,17 @@ void loom_value_relation_iterator_initialize(
         LOOM_VALUE_RELATION_PHASE_REGION_TERMINATOR);
   }
   uint16_t phase_bits = 0;
+  if (iree_any_bit_set(
+          relation_mask,
+          LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_REFERENCE_SOURCE))) {
+    requested_phase_bits |= LOOM_VALUE_RELATION_PHASE_BIT(
+        LOOM_VALUE_RELATION_PHASE_REFERENCE_SOURCE);
+  }
+  if (vtable && iree_any_bit_set(vtable->vtable_flags,
+                                 LOOM_OP_VTABLE_HAS_REFERENCE_SOURCE)) {
+    phase_bits |= LOOM_VALUE_RELATION_PHASE_BIT(
+        LOOM_VALUE_RELATION_PHASE_REFERENCE_SOURCE);
+  }
   if (op->tied_result_count != 0) {
     phase_bits |=
         LOOM_VALUE_RELATION_PHASE_BIT(LOOM_VALUE_RELATION_PHASE_TIED_RESULT);
@@ -506,6 +542,10 @@ bool loom_value_relation_iterator_next(loom_value_relation_iterator_t* iterator,
       case LOOM_VALUE_RELATION_PHASE_REGION_TERMINATOR:
         found =
             loom_value_relation_next_region_terminator(iterator, out_relation);
+        break;
+      case LOOM_VALUE_RELATION_PHASE_REFERENCE_SOURCE:
+        found =
+            loom_value_relation_next_reference_source(iterator, out_relation);
         break;
       case LOOM_VALUE_RELATION_PHASE_END:
         break;

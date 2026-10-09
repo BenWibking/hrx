@@ -17,16 +17,19 @@
 extern "C" {
 #endif
 
-// Materializes an integer or address operand in |register_class_id| (SGPR or
-// VGPR), preserving its complete numeric value. |minimum_unit_count| is one
+// Selects the numeric transport from source facts. |minimum_unit_count| is one
 // for consumers accepting a compact unsigned word or two for pair consumers.
-// Indexed source facts permit a one-word result only for a proven u32 value.
-// Other inputs retain both words or sign/zero-extend a one-word carrier as
-// required by their source domain. Scalar materialization requires uniformity.
+loom_amdgpu_integer_operand_form_t loom_amdgpu_select_integer_operand_form(
+    loom_value_facts_t facts, uint8_t minimum_unit_count);
+
+// Materializes the selected integer operand in |register_class_id| (SGPR or
+// VGPR). Pair forms preserve a complete existing pair or extend a single word;
+// an unsigned-word form extracts the proven u32 payload. Emission consumes no
+// source facts. Scalar materialization requires selected uniformity.
 iree_status_t loom_amdgpu_lookup_or_materialize_integer_operand(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, uint32_t register_class_id,
-    uint8_t minimum_unit_count, loom_value_id_t* out_low_value);
+    loom_amdgpu_integer_operand_form_t form, loom_value_id_t* out_low_value);
 
 // Sign-extends a one-unit SGPR or VGPR value into a two-unit carrier in the
 // same register class. The low word is retained and the high word replicates
@@ -59,6 +62,11 @@ iree_status_t loom_amdgpu_emit_i64_mul_lo(loom_low_lower_context_t* context,
 iree_status_t loom_amdgpu_select_index_cast_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_index_cast_plan_t* out_plan, bool* out_selected);
+
+// Publishes the cast's selected width in its actual source or conversion bank.
+iree_status_t loom_amdgpu_finalize_index_cast_plan(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_index_cast_plan_t* plan);
 
 // Lowers an AMDGPU index.cast plan.
 iree_status_t loom_amdgpu_lower_index_cast(

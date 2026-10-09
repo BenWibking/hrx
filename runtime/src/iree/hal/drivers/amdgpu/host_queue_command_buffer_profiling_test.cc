@@ -1945,6 +1945,13 @@ TEST_F(HostQueueCommandBufferProfilingTest,
         command_buffer_signal, command_buffer_signal_value,
         iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE);
   }
+  // The pressure fill is independent of command-buffer completion. Both must
+  // finish before the profiling session can end.
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_semaphore_wait(pressure_signal, pressure_signal_value,
+                                     iree_infinite_timeout(),
+                                     IREE_ASYNC_WAIT_FLAG_NONE);
+  }
   IREE_EXPECT_OK(
       iree_hsa_signal_destroy(IREE_LIBHSA(&libhsa_), blocker_signal));
 
@@ -2095,6 +2102,13 @@ TEST_F(HostQueueCommandBufferProfilingTest,
     status = iree_hal_semaphore_wait(
         command_buffer_signal, command_buffer_signal_value,
         iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE);
+  }
+  // The pressure fill is independent of command-buffer completion. Both must
+  // finish before the profiling session can end.
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_semaphore_wait(pressure_signal, pressure_signal_value,
+                                     iree_infinite_timeout(),
+                                     IREE_ASYNC_WAIT_FLAG_NONE);
   }
   IREE_EXPECT_OK(
       iree_hsa_signal_destroy(IREE_LIBHSA(&libhsa_), blocker_signal));

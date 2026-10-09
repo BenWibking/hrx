@@ -413,6 +413,8 @@ typedef struct loom_target_contract_query_environment_t {
   const loom_low_descriptor_set_t* descriptor_set;
   // Source value facts visible to the query.
   const loom_value_fact_table_t* fact_table;
+  // Shared reference/access scope valid for this immutable source snapshot.
+  struct loom_storage_access_scope_t* storage_access;
   // Optional scoped vector lane projection used for candidate planning.
   loom_target_contract_vector_lane_projection_t vector_lane_projection;
   // Optional active value domain extended by ordinal-keyed query analyses.

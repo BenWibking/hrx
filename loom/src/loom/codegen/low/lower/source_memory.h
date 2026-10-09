@@ -26,6 +26,8 @@ typedef struct loom_low_lower_source_memory_record_t {
   struct loom_low_lower_source_memory_record_t* next;
   // Function-owned canonical access, finalized before per-operation selection.
   loom_low_source_memory_access_plan_t access;
+  // Shared dynamic memory-effect proof, or NULL for static/unproved origins.
+  const loom_low_lower_memory_origin_t* origin;
   // Source-level rejection preserved for target selection diagnostics.
   loom_low_source_memory_access_diagnostic_t diagnostic;
   // Complete target memory plan prepared after representation selection, or
@@ -67,9 +69,10 @@ iree_status_t loom_low_lower_source_memory_observe(
 iree_status_t loom_low_lower_source_memory_prepare(
     loom_low_lower_context_t* context);
 
-// Advances the retained access cursor alongside per-operation selection.
-void loom_low_lower_source_memory_select_op(loom_low_lower_context_t* context,
-                                            const loom_op_t* source_op);
+// Advances the retained access cursor in the shared selection/emission walk.
+// Each traversal resets the cursor to the first record before entering ops.
+void loom_low_lower_source_memory_enter_op(loom_low_lower_context_t* context,
+                                           const loom_op_t* source_op);
 
 // Returns the current operation's canonical plan, or NULL with its retained
 // diagnostic when source planning rejected it. Observation and selection both

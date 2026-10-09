@@ -489,7 +489,13 @@ iree_hal_buffer_release(buffer);
 buffer = NULL;
 ```
 
-In straight-line code, a direct one-argument release statement consumes that
+Release/retain call classification uses the same offset-zero refcount anchor,
+including embedded bases, when the pointee definition is available. Releasing
+a lease on concrete non-refcounted storage does not consume that storage's
+lifetime. Opaque record and `void*` handles retain the naming contract because
+their representation is unavailable at the callsite.
+
+In straight-line code, a direct one-argument refcounted release consumes that
 handle spelling until it is reassigned. Later dereferences or repeated releases
 of the same handle are diagnosed:
 

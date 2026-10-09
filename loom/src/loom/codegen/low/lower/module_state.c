@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "iree/base/internal/math.h"
+#include "loom/codegen/low/lower/rule_descriptor.h"
 #include "loom/ir/intern_table.h"
 #include "loom/ir/module.h"
 #include "loom/ir/symbol_map.h"
@@ -26,19 +27,25 @@ typedef struct loom_low_lower_module_target_state_record_t {
 } loom_low_lower_module_target_state_record_t;
 
 typedef struct loom_low_lower_read_only_data_record_t {
-  // Module-local symbol reserved for this payload.
+  // Module-local symbol published during execution; null while only planned.
   loom_symbol_ref_t symbol;
   // First source location that requested the payload.
   loom_location_id_t location;
   // Copied immutable payload bytes.
   iree_const_byte_span_t contents;
-  // Maximum alignment requested by any equal payload use.
-  uint64_t minimum_alignment;
+  // Content hash retained for the symbol name assigned during execution.
+  uint32_t hash;
+  // Log2 of the maximum power-of-two alignment requested by equal payloads.
+  uint8_t minimum_alignment_log2;
 } loom_low_lower_read_only_data_record_t;
+static_assert(sizeof(loom_low_lower_read_only_data_record_t) <= 32,
+              "immutable payload records must fit in 32 bytes");
 
 struct loom_low_lower_module_state_t {
   // Arena used for module-scope target state records and payloads.
   iree_arena_allocator_t* arena;
+  // Shared immutable table bindings, selected lazily by function lowerings.
+  loom_low_lower_rule_descriptor_cache_t* rule_descriptor_cache;
   // Module-scope target state records keyed by target-owned static storage.
   loom_low_lower_module_target_state_record_t* target_state_records;
   // Number of populated target_state_records entries.
@@ -73,6 +80,18 @@ iree_status_t loom_low_lower_module_state_create(
   IREE_RETURN_IF_ERROR(loom_intern_table_initialize(
       arena, /*capacity=*/0, &module_state->read_only_data_index));
   *out_module_state = module_state;
+  return iree_ok_status();
+}
+
+iree_status_t loom_low_lower_module_state_rule_descriptor_cache(
+    loom_low_lower_module_state_t* module_state,
+    loom_low_lower_rule_set_list_t rule_sets,
+    const loom_low_descriptor_set_t* descriptor_set,
+    loom_low_lower_rule_descriptor_cache_t** out_cache) {
+  IREE_RETURN_IF_ERROR(loom_low_lower_rule_descriptor_cache_select(
+      rule_sets, descriptor_set, module_state->arena,
+      &module_state->rule_descriptor_cache));
+  *out_cache = module_state->rule_descriptor_cache;
   return iree_ok_status();
 }
 
@@ -139,7 +158,9 @@ static uint32_t loom_low_lower_read_only_data_hash(
 }
 
 typedef struct loom_low_lower_read_only_data_query_t {
+  // Current record-array base, which may move between interning calls.
   const loom_low_lower_read_only_data_record_t* records;
+  // Borrowed bytes being compared with interned, arena-owned payloads.
   iree_const_byte_span_t contents;
 } loom_low_lower_read_only_data_query_t;
 
@@ -214,17 +235,14 @@ static iree_status_t loom_low_lower_module_state_reserve_read_only_data_symbol(
 }
 
 iree_status_t loom_low_lower_module_state_intern_read_only_data(
-    loom_low_lower_module_state_t* module_state, loom_module_t* module,
+    loom_low_lower_module_state_t* module_state,
     iree_const_byte_span_t contents, uint64_t minimum_alignment,
-    loom_location_id_t location, loom_symbol_ref_t* out_symbol) {
-  IREE_ASSERT(module_state != NULL);
-  IREE_ASSERT(module != NULL);
-  IREE_ASSERT_GT(contents.data_length, 0);
-  IREE_ASSERT(iree_is_power_of_two_uint64(minimum_alignment));
+    loom_location_id_t location, loom_low_lower_read_only_data_id_t* out_id) {
   IREE_ASSERT_FALSE(module_state->finalized);
-  *out_symbol = loom_symbol_ref_null();
 
   const uint32_t hash = loom_low_lower_read_only_data_hash(contents);
+  const uint8_t minimum_alignment_log2 =
+      (uint8_t)iree_math_count_trailing_zeros_u64(minimum_alignment);
   const loom_low_lower_read_only_data_query_t query = {
       .records = module_state->read_only_data_records,
       .contents = contents,
@@ -235,9 +253,9 @@ iree_status_t loom_low_lower_module_state_intern_read_only_data(
   if (probe.index != UINT32_MAX) {
     loom_low_lower_read_only_data_record_t* record =
         &module_state->read_only_data_records[probe.index];
-    record->minimum_alignment =
-        iree_max(record->minimum_alignment, minimum_alignment);
-    *out_symbol = record->symbol;
+    record->minimum_alignment_log2 =
+        iree_max(record->minimum_alignment_log2, minimum_alignment_log2);
+    *out_id = probe.index;
     return iree_ok_status();
   }
 
@@ -265,23 +283,34 @@ iree_status_t loom_low_lower_module_state_intern_read_only_data(
   IREE_RETURN_IF_ERROR(iree_arena_allocate(
       module_state->arena, contents.data_length, (void**)&copied_data));
   memcpy(copied_data, contents.data, contents.data_length);
-  loom_symbol_ref_t symbol = loom_symbol_ref_null();
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_module_state_reserve_read_only_data_symbol(
-          module_state, module, hash, &symbol));
   const uint32_t record_index =
       (uint32_t)module_state->read_only_data_record_count++;
   module_state->read_only_data_records[record_index] =
       (loom_low_lower_read_only_data_record_t){
-          .symbol = symbol,
+          .symbol = loom_symbol_ref_null(),
           .location = location,
           .contents =
               iree_make_const_byte_span(copied_data, contents.data_length),
-          .minimum_alignment = minimum_alignment,
+          .hash = hash,
+          .minimum_alignment_log2 = minimum_alignment_log2,
       };
   loom_intern_table_insert(&module_state->read_only_data_index, slot, hash,
                            record_index);
-  *out_symbol = symbol;
+  *out_id = record_index;
+  return iree_ok_status();
+}
+
+iree_status_t loom_low_lower_module_state_reference_read_only_data(
+    loom_low_lower_module_state_t* module_state, loom_module_t* module,
+    loom_low_lower_read_only_data_id_t id, loom_symbol_ref_t* out_symbol) {
+  loom_low_lower_read_only_data_record_t* record =
+      &module_state->read_only_data_records[id];
+  if (!loom_symbol_ref_is_valid(record->symbol)) {
+    IREE_RETURN_IF_ERROR(
+        loom_low_lower_module_state_reserve_read_only_data_symbol(
+            module_state, module, record->hash, &record->symbol));
+  }
+  *out_symbol = record->symbol;
   return iree_ok_status();
 }
 
@@ -295,21 +324,26 @@ iree_status_t loom_low_lower_module_state_finalize(
   loom_builder_t builder;
   loom_builder_initialize(module, &module->arena, loom_module_block(module),
                           &builder);
-  for (iree_host_size_t i = 0; i < module_state->read_only_data_record_count;
+  iree_status_t status = iree_ok_status();
+  for (iree_host_size_t i = 0; iree_status_is_ok(status) &&
+                               i < module_state->read_only_data_record_count;
        ++i) {
     const loom_low_lower_read_only_data_record_t* record =
         &module_state->read_only_data_records[i];
-    IREE_ASSERT(module->symbols.entries[record->symbol.symbol_id].defining_op ==
-                NULL);
-    loom_op_t* definition = NULL;
-    IREE_RETURN_IF_ERROR(loom_global_rodata_def_build(
-        &builder, LOOM_GLOBAL_RODATA_DEF_BUILD_FLAG_HAS_ALIGNMENT,
-        record->symbol, (int64_t)record->minimum_alignment,
-        loom_symbol_ref_array_empty(), record->contents, record->location,
-        &definition));
+    loom_symbol_ref_t symbol = loom_symbol_ref_null();
+    status = loom_low_lower_module_state_reference_read_only_data(
+        module_state, module, (loom_low_lower_read_only_data_id_t)i, &symbol);
+    if (iree_status_is_ok(status)) {
+      loom_op_t* definition = NULL;
+      status = loom_global_rodata_def_build(
+          &builder, LOOM_GLOBAL_RODATA_DEF_BUILD_FLAG_HAS_ALIGNMENT, symbol,
+          (int64_t)(UINT64_C(1) << record->minimum_alignment_log2),
+          loom_symbol_ref_array_empty(), record->contents, record->location,
+          &definition);
+    }
   }
-  module_state->finalized = true;
-  return iree_ok_status();
+  module_state->finalized = iree_status_is_ok(status);
+  return status;
 }
 
 iree_status_t loom_low_lower_module_state_allocate(

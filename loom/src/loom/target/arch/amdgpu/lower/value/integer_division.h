@@ -37,6 +37,11 @@ iree_status_t loom_amdgpu_select_unsigned_i64_division_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_unsigned_i64_division_plan_t* out_plan, bool* out_selected);
 
+// Publishes the numerator's actual carrier after the selected bank conversion.
+iree_status_t loom_amdgpu_finalize_unsigned_i64_division_plan(
+    loom_low_lower_context_t* context,
+    const loom_amdgpu_unsigned_i64_division_plan_t* plan);
+
 // Emits the retained reciprocal recipe using native word arithmetic.
 iree_status_t loom_amdgpu_lower_unsigned_i64_division(
     loom_low_lower_context_t* context, const loom_op_t* source_op,

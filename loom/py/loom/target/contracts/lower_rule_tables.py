@@ -113,6 +113,15 @@ class LowerAttrCopyKind(Enum):
     I64_LITERAL_MINUS_ATTRS = "i64_literal_minus_attrs"
     I64_ATTR_MINUS_LITERAL = "i64_attr_minus_literal"
 
+    @property
+    def is_read_only_data(self) -> bool:
+        """Whether this projection retains bytes for deferred symbol publication."""
+        return self in (
+            LowerAttrCopyKind.I64_ARRAY_READ_ONLY_ELEMENTS,
+            LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT,
+            LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_WORDS,
+        )
+
 
 LOWER_EMIT_FLAG_SWAP_OPERANDS_0_1 = 1 << 0
 LOWER_EMIT_FLAG_BIND_RESULTS_TO_REFS = 1 << 1
@@ -310,6 +319,7 @@ class LowerEmit:
     result_bind_ref_start: int = 0
     attr_copy_start: int = 0
     attr_copy_count: int = 0
+    has_read_only_data_attributes: bool = False
     tied_result_start: int = 0
     tied_result_count: int = 0
     source_memory_ordinal: int = LOWER_SOURCE_MEMORY_NONE

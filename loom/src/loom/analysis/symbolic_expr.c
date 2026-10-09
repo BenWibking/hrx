@@ -421,6 +421,29 @@ void loom_symbolic_expr_constant(int64_t value,
   };
 }
 
+iree_status_t loom_symbolic_expr_clone(const loom_symbolic_expr_t* input,
+                                       iree_arena_allocator_t* arena,
+                                       loom_symbolic_expr_t* output) {
+  *output = *input;
+  if (input->term_count != 0) {
+    loom_symbolic_term_t* terms = NULL;
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        arena, input->term_count, sizeof(*terms), (void**)&terms));
+    memcpy(terms, input->terms, input->term_count * sizeof(*terms));
+    output->terms = terms;
+  }
+  if (input->congruence != NULL) {
+    loom_symbolic_congruence_t* congruence = NULL;
+    IREE_RETURN_IF_ERROR(
+        iree_arena_allocate(arena, sizeof(*congruence), (void**)&congruence));
+    congruence->modulus = input->congruence->modulus;
+    IREE_RETURN_IF_ERROR(loom_symbolic_expr_clone(
+        &input->congruence->expression, arena, &congruence->expression));
+    output->congruence = congruence;
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_symbolic_expr_make_linear(
     loom_symbolic_expr_context_t* context, int64_t constant,
     loom_symbolic_term_t* terms, iree_host_size_t term_count,

@@ -283,12 +283,7 @@ bool IsPointerLikeSingleArgumentRelease(const CallExpr* Call,
     return false;
   }
   const FunctionDecl* Callee = Call->getDirectCallee();
-  if (!Callee || Callee->getNumParams() != 1 ||
-      !Callee->getReturnType()->isVoidType() ||
-      !IsRefCountReleaseFunctionName(Callee->getName())) {
-    return false;
-  }
-  return Callee->getParamDecl(0)->getType()->isAnyPointerType();
+  return IsRefCountReleaseFunction(Callee);
 }
 
 class TestStatusMacroRecorder final : public PPCallbacks {

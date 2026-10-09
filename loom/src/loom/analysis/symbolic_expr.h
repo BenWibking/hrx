@@ -248,6 +248,13 @@ void loom_symbolic_expr_unknown(loom_value_facts_t facts,
 void loom_symbolic_expr_constant(int64_t value,
                                  loom_symbolic_expr_t* out_expression);
 
+// Retains an expression and its term/congruence storage in |arena|. Captured
+// variable identities keep their original evaluation namespace; the source
+// context and its arena may expire after this copy.
+iree_status_t loom_symbolic_expr_clone(const loom_symbolic_expr_t* input,
+                                       iree_arena_allocator_t* arena,
+                                       loom_symbolic_expr_t* output);
+
 // Constructs an exact symbolic variable expression for |value_id| using any
 // facts available in the context.
 iree_status_t loom_symbolic_expr_value(loom_symbolic_expr_context_t* context,

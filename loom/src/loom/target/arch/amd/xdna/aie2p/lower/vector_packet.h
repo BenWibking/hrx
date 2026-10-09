@@ -55,7 +55,7 @@ uint8_t loom_aie2p_vector_packet_carrier_unit_count(
 
 // Returns the low register type for |unit_count| units of |carrier_kind|.
 iree_status_t loom_aie2p_vector_packet_make_carrier_type(
-    loom_aie2p_vector_packet_emitter_t* emitter,
+    loom_low_lower_context_t* context,
     loom_aie2p_vector_carrier_kind_t carrier_kind, uint32_t unit_count,
     loom_type_t* out_type);
 

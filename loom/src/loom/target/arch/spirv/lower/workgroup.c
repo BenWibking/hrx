@@ -34,8 +34,6 @@ typedef struct loom_spirv_workgroup_alloca_plan_t {
 typedef struct loom_spirv_workgroup_view_plan_t {
   // Source storage-root value that has already lowered to low.storage.
   loom_value_id_t root_value_id;
-  // Register class used for the Workgroup array base pointer.
-  uint16_t array_pointer_reg_class_id;
 } loom_spirv_workgroup_view_plan_t;
 
 static bool loom_spirv_workgroup_i64_is_power_of_two(int64_t value) {
@@ -76,11 +74,11 @@ static iree_status_t loom_spirv_workgroup_view_plan_from_facts(
   *out_selected = false;
   *out_has_workgroup_facts = false;
   const loom_value_id_t result = loom_buffer_view_result(source_op);
+  uint16_t array_pointer_reg_class_id = LOOM_LOW_REG_CLASS_NONE;
   IREE_RETURN_IF_ERROR(loom_spirv_resolve_workgroup_view_reg_class(
-      context, result, out_has_workgroup_facts,
-      &out_plan->array_pointer_reg_class_id));
+      context, result, out_has_workgroup_facts, &array_pointer_reg_class_id));
   if (!*out_has_workgroup_facts ||
-      out_plan->array_pointer_reg_class_id == LOOM_LOW_REG_CLASS_NONE) {
+      array_pointer_reg_class_id == LOOM_LOW_REG_CLASS_NONE) {
     return iree_ok_status();
   }
   loom_value_fact_view_reference_t reference = {0};
@@ -91,6 +89,11 @@ static iree_status_t loom_spirv_workgroup_view_plan_from_facts(
         "selected SPIR-V Workgroup view has no Workgroup reference");
   }
   out_plan->root_value_id = reference.root_value_id;
+  loom_type_t array_pointer_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
+      context, array_pointer_reg_class_id, 1, &array_pointer_type));
+  IREE_RETURN_IF_ERROR(
+      loom_low_lower_plan_value_type(context, result, array_pointer_type));
   *out_selected = true;
   return iree_ok_status();
 }
@@ -142,6 +145,9 @@ static iree_status_t loom_spirv_select_workgroup_alloca(
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
       context, sizeof(*plan_data), (void**)&plan_data));
   *plan_data = plan;
+  IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+      context, loom_buffer_alloca_result(source_op),
+      loom_type_storage(LOOM_STORAGE_SPACE_WORKGROUP)));
   *out_plan =
       loom_low_lower_plan_make(LOOM_SPIRV_WORKGROUP_PLAN_ALLOCA, plan_data);
   return iree_ok_status();
@@ -243,7 +249,7 @@ static iree_status_t loom_spirv_workgroup_measure_storage(
   return iree_ok_status();
 }
 
-iree_status_t loom_spirv_emit_workgroup_entry_setup(
+iree_status_t loom_spirv_plan_workgroup_entry_setup(
     loom_low_lower_context_t* context) {
   uint64_t byte_extent = 0;
   IREE_RETURN_IF_ERROR(
@@ -261,7 +267,7 @@ iree_status_t loom_spirv_emit_workgroup_entry_setup(
         context, loom_low_lower_context_source_function(context).op,
         LOOM_ERR_TARGET_051_REF, params, IREE_ARRAYSIZE(params));
   }
-  return loom_spirv_workgroup_layout_emit_storage_roots(context);
+  return iree_ok_status();
 }
 
 static iree_status_t loom_spirv_lower_workgroup_alloca(
@@ -287,12 +293,10 @@ static iree_status_t loom_spirv_lower_workgroup_alloca(
 static iree_status_t loom_spirv_lower_workgroup_view(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_spirv_workgroup_view_plan_t* plan) {
-  loom_value_id_t low_storage = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->root_value_id, &low_storage));
-  loom_type_t array_pointer_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
-      context, plan->array_pointer_reg_class_id, 1, &array_pointer_type));
+  loom_value_id_t low_storage =
+      loom_low_lower_lookup_value(context, plan->root_value_id);
+  const loom_type_t array_pointer_type = loom_low_lower_value_binding_type(
+      context, loom_buffer_view_result(source_op));
   loom_op_t* address_op = NULL;
   IREE_RETURN_IF_ERROR(loom_low_storage_address_build(
       loom_low_lower_context_builder(context), low_storage, /*offset=*/0,

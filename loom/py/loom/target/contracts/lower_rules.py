@@ -1856,6 +1856,9 @@ class _LowerRuleSetCompiler:
                 result_bind_ref_start=result_bind_ref_start,
                 attr_copy_start=attr_copy_start,
                 attr_copy_count=len(attr_copies),
+                has_read_only_data_attributes=any(
+                    attr_copy.kind.is_read_only_data for attr_copy in attr_copies
+                ),
                 tied_result_start=tied_result_start,
                 tied_result_count=len(tied_results),
                 source_memory_ordinal=source_memory_ordinal,

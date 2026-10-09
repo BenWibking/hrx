@@ -338,7 +338,12 @@ const loom_value_fact_table_t* loom_target_low_legality_fact_table(
   return context->options->environment->fact_table;
 }
 
-const loom_local_value_domain_t* loom_target_low_legality_value_domain(
+loom_storage_access_scope_t* loom_target_low_legality_storage_access(
+    const loom_target_low_legality_context_t* context) {
+  return context->options->environment->storage_access;
+}
+
+loom_local_value_domain_t* loom_target_low_legality_value_domain(
     const loom_target_low_legality_context_t* context) {
   return context->options->environment->value_domain;
 }

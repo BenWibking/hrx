@@ -195,6 +195,7 @@ loom_cc_library(
         "//loom/binding/c:loomc",
         "//loom/src/loom/analysis:liveness",
         "//loom/src/loom/analysis:liveness_json",
+        "//loom/src/loom/analysis:storage_access",
         "//loom/src/loom/analysis:storage_interference",
         "//loom/src/loom/codegen:pass_environment",
         "//loom/src/loom/codegen/low:allocation",

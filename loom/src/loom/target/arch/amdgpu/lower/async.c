@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "loom/analysis/view_regions.h"
 #include "loom/codegen/low/builder.h"
 #include "loom/ir/facts.h"
 #include "loom/ops/kernel/ops.h"
@@ -404,6 +405,8 @@ static iree_status_t loom_amdgpu_async_gather_resolve_selection(
     out_plan->source_dynamic_term_kinds[i] =
         selection->source_dynamic_term_kinds[i];
   }
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+      context, &out_plan->source, &out_plan->dynamic_term_plans));
   return loom_amdgpu_resolve_descriptor_ref(context, selection->descriptor_ref,
                                             &out_plan->descriptor);
 }
@@ -620,6 +623,12 @@ iree_status_t loom_amdgpu_select_kernel_async_cluster_gather_plan(
   }
   out_plan->source_address = selection.source_address;
   out_plan->dest_address = selection.dest_address;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+      context, &out_plan->source_address.source,
+      &out_plan->source_address.dynamic_term_plans));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+      context, &out_plan->dest_address.source,
+      &out_plan->dest_address.dynamic_term_plans));
   out_plan->participant_mask = selection.participant_mask;
   out_plan->packet_byte_count = selection.packet_byte_count;
   IREE_RETURN_IF_ERROR(loom_amdgpu_resolve_descriptor_ref(
@@ -736,6 +745,53 @@ static bool loom_amdgpu_tensor_load_select(
   return true;
 }
 
+// Tensor endpoints declare whole-transfer effects independently of the opaque
+// hardware dgroups. Capture the canonical view envelopes, not a per-lane packet
+// width. Participant-varying origins cannot be canceled between accesses.
+static iree_status_t loom_amdgpu_plan_tensor_memory_effect(
+    loom_low_lower_context_t* context, const loom_view_region_t* region,
+    const loom_low_memory_relative_interval_t** out_interval) {
+  *out_interval = NULL;
+  if (region == NULL || region->root_value_id == LOOM_VALUE_ID_INVALID) {
+    return iree_ok_status();
+  }
+  const loom_value_facts_t root_facts = loom_value_fact_table_lookup(
+      loom_low_lower_context_fact_table(context), region->root_value_id);
+  const bool workgroup_allocation =
+      region->origin.kind == LOOM_VALUE_FACT_REFERENCE_ORIGIN_ALLOCATION &&
+      region->memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP;
+  if (!workgroup_allocation &&
+      !loom_value_facts_is_workgroup_uniform(root_facts)) {
+    return iree_ok_status();
+  }
+  loom_low_memory_relative_interval_t relative = {
+      .scope = loom_low_lower_context_source_function(context).op,
+      .storage_id = region->root_value_id,
+      .disjoint_storage_ordinal =
+          region->alias_scope_id != LOOM_VALUE_FACT_ALIAS_SCOPE_ID_NONE
+              ? region->alias_scope_id + 1u
+              : 0,
+  };
+  if (loom_symbolic_expr_is_constant(&region->begin_byte_offset) ||
+      loom_value_facts_is_workgroup_uniform(region->begin_byte_offset.facts)) {
+    relative.origin = region->begin_byte_offset;
+    relative.upper = region->byte_length.facts.range_hi;
+  } else {
+    loom_symbolic_expr_constant(0, &relative.origin);
+    relative.lower = region->begin_byte_offset.facts.range_lo;
+    relative.upper = region->end_byte_offset.facts.range_hi;
+  }
+  loom_low_memory_relative_interval_t* retained = NULL;
+  IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
+      context, sizeof(*retained), (void**)&retained));
+  *retained = relative;
+  IREE_RETURN_IF_ERROR(loom_symbolic_expr_clone(
+      &relative.origin, loom_low_lower_context_function_arena(context),
+      &retained->origin));
+  *out_interval = retained;
+  return iree_ok_status();
+}
+
 iree_status_t loom_amdgpu_select_kernel_async_tensor_load_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_tensor_load_plan_t* out_plan, bool* out_selected) {
@@ -758,12 +814,18 @@ iree_status_t loom_amdgpu_select_kernel_async_tensor_load_plan(
   const loom_view_region_table_t* view_regions = NULL;
   IREE_RETURN_IF_ERROR(
       loom_low_lower_context_view_regions(context, &view_regions));
+  const loom_view_region_t* source_region = NULL;
   loom_view_region_table_try_lookup(
       view_regions, loom_kernel_async_tensor_load_to_lds_source(source_op),
-      &out_plan->source_region);
+      &source_region);
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_tensor_memory_effect(
+      context, source_region, &out_plan->source_interval));
+  const loom_view_region_t* dest_region = NULL;
   loom_view_region_table_try_lookup(
       view_regions, loom_kernel_async_tensor_load_to_lds_dest(source_op),
-      &out_plan->dest_region);
+      &dest_region);
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_tensor_memory_effect(
+      context, dest_region, &out_plan->dest_interval));
   out_plan->dgroup_count = selection.dgroup_count;
   out_plan->cache_policy = selection.cache_policy;
   for (uint8_t i = 0; i < selection.dgroup_count; ++i) {
@@ -997,6 +1059,7 @@ iree_status_t loom_amdgpu_lower_kernel_async_gather(
   // the source-only offset in SADDR so M0 remains the exact destination base.
   loom_amdgpu_memory_access_t access = {
       .source = plan->source,
+      .dynamic_term_plans = plan->dynamic_term_plans,
       .address_form = LOOM_AMDGPU_MEMORY_ADDRESS_FORM_GLOBAL_SADDR,
       .scalar_base_byte_offset = (uint64_t)plan->source.static_byte_offset,
       .scalar_offset_placement =
@@ -1015,9 +1078,8 @@ iree_status_t loom_amdgpu_lower_kernel_async_gather(
       loom_amdgpu_emit_memory_vaddr(context, source_op, &access, &sequence,
                                     LOOM_VALUE_ID_INVALID, &low_vaddr));
 
-  loom_value_id_t low_resource = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, plan->source.root_value_id, &low_resource));
+  loom_value_id_t low_resource =
+      loom_low_lower_lookup_value(context, plan->source.root_value_id);
   loom_value_id_t low_saddr = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_saddr(
       context, source_op, &access, &sequence, low_resource, &low_saddr));
@@ -1037,8 +1099,9 @@ iree_status_t loom_amdgpu_lower_kernel_async_gather(
       loom_make_named_attr_slice(attrs, attr_count),
       /*result_types=*/NULL, /*result_count=*/0, /*tied_results=*/NULL,
       /*tied_result_count=*/0, source_op->location, &low_op));
-  return loom_low_lower_elide_value(context,
-                                    loom_kernel_async_gather_token(source_op));
+  loom_low_lower_elide_value(context,
+                             loom_kernel_async_gather_token(source_op));
+  return iree_ok_status();
 }
 
 iree_status_t loom_amdgpu_lower_kernel_async_cluster_gather(
@@ -1060,9 +1123,8 @@ iree_status_t loom_amdgpu_lower_kernel_async_cluster_gather(
       context, source_op, &plan->source_address, &source_sequence,
       LOOM_VALUE_ID_INVALID, &low_source_addr));
 
-  loom_value_id_t low_resource = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, plan->source_address.source.root_value_id, &low_resource));
+  loom_value_id_t low_resource = loom_low_lower_lookup_value(
+      context, plan->source_address.source.root_value_id);
   loom_value_id_t low_saddr = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_saddr(
       context, source_op, &plan->source_address, &source_sequence, low_resource,
@@ -1089,8 +1151,9 @@ iree_status_t loom_amdgpu_lower_kernel_async_cluster_gather(
       loom_make_named_attr_slice(attrs, attr_count),
       /*result_types=*/NULL, /*result_count=*/0, /*tied_results=*/NULL,
       /*tied_result_count=*/0, source_op->location, &low_op));
-  return loom_low_lower_elide_value(
-      context, loom_kernel_async_cluster_gather_token(source_op));
+  loom_low_lower_elide_value(context,
+                             loom_kernel_async_cluster_gather_token(source_op));
+  return iree_ok_status();
 }
 
 static iree_status_t loom_amdgpu_tensor_load_materialize_dgroup(
@@ -1099,9 +1162,7 @@ static iree_status_t loom_amdgpu_tensor_load_materialize_dgroup(
     loom_value_id_t source, uint32_t expected_register_count,
     loom_value_id_t* out_dgroup) {
   *out_dgroup = LOOM_VALUE_ID_INVALID;
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source, &low_source));
+  loom_value_id_t low_source = loom_low_lower_lookup_value(context, source);
 
   const loom_module_t* module = loom_low_lower_context_module(context);
   const loom_type_t low_source_type =
@@ -1145,45 +1206,16 @@ static iree_status_t loom_amdgpu_tensor_load_materialize_dgroup(
                                               sgpr_range_type, out_dgroup);
 }
 
-// Tensor endpoints declare whole-transfer effects independently of the opaque
-// hardware dgroups. Capture the canonical view envelopes, not a per-lane packet
-// width. Participant-varying origins cannot be canceled between accesses.
 static iree_status_t loom_amdgpu_record_tensor_memory_effect(
     loom_low_lower_context_t* context, const loom_op_t* low_op,
     uint16_t effect_ordinal, loom_low_memory_space_t memory_space,
-    const loom_view_region_t* region) {
-  if (region == NULL || region->root_value_id == LOOM_VALUE_ID_INVALID) {
+    const loom_low_memory_relative_interval_t* interval) {
+  if (interval == NULL) {
     return iree_ok_status();
-  }
-  const loom_value_facts_t root_facts = loom_value_fact_table_lookup(
-      loom_low_lower_context_fact_table(context), region->root_value_id);
-  const bool workgroup_allocation =
-      region->origin.kind == LOOM_VALUE_FACT_REFERENCE_ORIGIN_ALLOCATION &&
-      region->memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP;
-  if (!workgroup_allocation &&
-      !loom_value_facts_is_workgroup_uniform(root_facts)) {
-    return iree_ok_status();
-  }
-  loom_low_memory_relative_interval_t relative = {
-      .scope = loom_low_lower_context_source_function(context).op,
-      .storage_id = region->root_value_id,
-      .disjoint_storage_ordinal =
-          region->alias_scope_id != LOOM_VALUE_FACT_ALIAS_SCOPE_ID_NONE
-              ? region->alias_scope_id + 1u
-              : 0,
-  };
-  if (loom_symbolic_expr_is_constant(&region->begin_byte_offset) ||
-      loom_value_facts_is_workgroup_uniform(region->begin_byte_offset.facts)) {
-    relative.origin = region->begin_byte_offset;
-    relative.upper = region->byte_length.facts.range_hi;
-  } else {
-    loom_symbolic_expr_constant(0, &relative.origin);
-    relative.lower = region->begin_byte_offset.facts.range_lo;
-    relative.upper = region->end_byte_offset.facts.range_hi;
   }
   const loom_low_memory_access_summary_t summary = {
       .memory_space = memory_space,
-      .relative_interval = &relative,
+      .relative_interval = interval,
   };
   return loom_low_lower_record_memory_effect(context, low_op, effect_ordinal,
                                              &summary);
@@ -1223,11 +1255,13 @@ iree_status_t loom_amdgpu_lower_kernel_async_tensor_load(
   // Both descriptor forms bind effect 0 to the global source and effect 1 to
   // the LDS destination. Their ordering is part of the descriptor contract.
   IREE_RETURN_IF_ERROR(loom_amdgpu_record_tensor_memory_effect(
-      context, low_op, 0, LOOM_LOW_MEMORY_SPACE_GLOBAL, plan->source_region));
+      context, low_op, 0, LOOM_LOW_MEMORY_SPACE_GLOBAL, plan->source_interval));
   IREE_RETURN_IF_ERROR(loom_amdgpu_record_tensor_memory_effect(
-      context, low_op, 1, LOOM_LOW_MEMORY_SPACE_WORKGROUP, plan->dest_region));
-  return loom_low_lower_elide_value(
+      context, low_op, 1, LOOM_LOW_MEMORY_SPACE_WORKGROUP,
+      plan->dest_interval));
+  loom_low_lower_elide_value(
       context, loom_kernel_async_tensor_load_to_lds_token(source_op));
+  return iree_ok_status();
 }
 
 void loom_amdgpu_mark_async_gather_plan_storage_demands(

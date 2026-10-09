@@ -784,6 +784,22 @@ static iree_status_t loom_amdgpu_emit_fragment_repack_diagnostic(
                                        IREE_ARRAYSIZE(params));
 }
 
+iree_status_t loom_amdgpu_finalize_vector_fragment_repack_plan(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    const loom_amdgpu_fragment_repack_plan_t* plan) {
+  if (plan->strategy == LOOM_AMDGPU_FRAGMENT_REPACK_STRATEGY_DIAGNOSTIC) {
+    return loom_amdgpu_emit_fragment_repack_diagnostic(context, source_op,
+                                                       plan);
+  }
+  const loom_type_t result_type =
+      plan->strategy == LOOM_AMDGPU_FRAGMENT_REPACK_STRATEGY_ALIAS
+          ? loom_low_lower_value_binding_type(context, plan->source)
+          : loom_low_register_type(
+                loom_low_lower_context_descriptor_set(context)->stable_id,
+                LOOM_AMDGPU_REG_CLASS_ID_VGPR, plan->result_register_count);
+  return loom_low_lower_plan_value_type(context, plan->result, result_type);
+}
+
 static iree_status_t
 loom_amdgpu_emit_fragment_repack_narrow_source_registers_to_bf16(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
@@ -1422,9 +1438,8 @@ static iree_status_t
 loom_amdgpu_emit_fragment_repack_result_to_lhs_bf16_bpermute(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_fragment_repack_plan_t* plan) {
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, &low_source));
+  loom_value_id_t low_source =
+      loom_low_lower_lookup_value(context, plan->source);
   loom_type_t vgpr_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_type(context, &vgpr_type));
   loom_type_t mask_type = loom_type_none();

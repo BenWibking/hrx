@@ -251,9 +251,29 @@ class LowLowerRepresentationObserverTest : public ::testing::Test {
     }
   }
 
-  static iree_status_t CaptureRepresentations(
-      void* user_data, loom_low_lower_context_t* context) {
+  static iree_status_t BeginObservation(void* user_data,
+                                        loom_low_lower_context_t* context,
+                                        void** out_observer_state) {
     auto* test = static_cast<LowLowerRepresentationObserverTest*>(user_data);
+    IREE_RETURN_IF_ERROR(loom_low_lower_representation_observer_begin(
+        &test->provider_, context, &test->observer_state_));
+    *out_observer_state = test;
+    return iree_ok_status();
+  }
+
+  static void Observe(void* observer_state, loom_low_lower_context_t* context,
+                      const loom_op_t* source_op) {
+    auto* test =
+        static_cast<LowLowerRepresentationObserverTest*>(observer_state);
+    loom_low_lower_representation_observer_observe(test->observer_state_,
+                                                   context, source_op);
+  }
+
+  static iree_status_t EndObservation(void* user_data,
+                                      loom_low_lower_context_t* context) {
+    auto* test = static_cast<LowLowerRepresentationObserverTest*>(user_data);
+    IREE_RETURN_IF_ERROR(loom_low_lower_representation_observer_end(
+        test->observer_state_, context));
     test->capture_called_ = true;
     loom_target_contract_query_environment_t query_environment = {};
     IREE_RETURN_IF_ERROR(loom_low_lower_source_query_environment_initialize(
@@ -318,15 +338,13 @@ class LowLowerRepresentationObserverTest : public ::testing::Test {
         /*.user_data=*/this,
     };
     source_plan_observer_ = (loom_low_lower_source_plan_observer_t){
-        /*.begin=*/loom_low_lower_representation_observer_begin,
-        /*.observe=*/loom_low_lower_representation_observer_observe,
-        /*.end=*/loom_low_lower_representation_observer_end,
-        /*.user_data=*/&provider_,
+        /*.begin=*/BeginObservation,
+        /*.observe=*/Observe,
+        /*.end=*/EndObservation,
+        /*.user_data=*/this,
     };
     policy_ = *loom_test_low_lower_policy();
     policy_.source_plan_observer = &source_plan_observer_;
-    policy_.emit_preamble.fn = CaptureRepresentations;
-    policy_.emit_preamble.user_data = this;
     options_.target_facts = &target_facts_;
     options_.descriptor_registry = &descriptor_registry_.registry;
     options_.policy = &policy_;
@@ -420,6 +438,8 @@ class LowLowerRepresentationObserverTest : public ::testing::Test {
   loom_value_fact_table_t fact_table_ = {};
   loom_low_lower_representation_provider_t provider_ = {};
   loom_low_lower_source_plan_observer_t source_plan_observer_ = {};
+  // Representation observer state borrowed during source planning.
+  void* observer_state_ = nullptr;
   loom_low_lower_policy_t policy_ = {};
   loom_low_lower_options_t options_ = {};
   loom_low_lower_result_t result_ = {};

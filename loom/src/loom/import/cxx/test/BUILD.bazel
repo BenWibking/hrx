@@ -288,6 +288,15 @@ loom_test_module(
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
 )
 
+loom_test_module(
+    name = "call_lifetimes_module",
+    srcs = [
+        "call_lifetimes_kernel.cxx",
+        "call_lifetimes_kernel.loom",
+    ],
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+)
+
 loom_test(
     name = "local_names_test",
     srcs = ["local_names.cxx"],

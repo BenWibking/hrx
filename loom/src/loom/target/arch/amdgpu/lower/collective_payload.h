@@ -77,11 +77,15 @@ bool loom_amdgpu_collective_resolve_workgroup_shape(
     loom_amdgpu_workgroup_collective_shape_t* out_shape,
     loom_amdgpu_workgroup_collective_shape_failure_t* out_failure);
 
-// Looks up or materializes a source payload value in low IR form.
+// Retains scalar integer payload materializations for reduce and scan plans.
+iree_status_t loom_amdgpu_finalize_collective_payload(
+    loom_low_lower_context_t* context, loom_low_lower_plan_t plan);
+
+// Looks up or materializes a source payload using its selected operand recipe.
 iree_status_t loom_amdgpu_collective_lookup_payload(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t value, loom_amdgpu_subgroup_payload_kind_t payload_kind,
-    loom_value_id_t* out_low_value);
+    const void* materialization, loom_value_id_t* out_low_value);
 
 // Extracts one 32-bit payload register from a scalar or vector low value.
 iree_status_t loom_amdgpu_collective_payload_register(

@@ -412,9 +412,32 @@ iree_status_t loom_aie2p_select_transpose_plan(
   retained_plan->layout = match.layout;
   memcpy(retained_plan->switch_masks, match.switch_masks,
          match.layout.stage_count * sizeof(match.switch_masks[0]));
+  if (match.layout.mechanism != LOOM_AIE2P_TRANSPOSE_MECHANISM_ALIAS) {
+    loom_type_t result_type = loom_type_none();
+    IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
+        context, match.layout.carrier_kind, match.layout.carrier_unit_count,
+        &result_type));
+    IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+        context, loom_vector_transpose_result(source_op), result_type));
+  }
   *out_plan =
       loom_low_lower_plan_make(LOOM_AIE2P_TRANSPOSE_PLAN_STATIC, retained_plan);
   return iree_ok_status();
+}
+
+iree_status_t loom_aie2p_finalize_transpose_plan(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_low_lower_plan_t plan) {
+  const loom_aie2p_transpose_plan_t* transpose_plan =
+      (const loom_aie2p_transpose_plan_t*)plan.target_data;
+  if (transpose_plan->layout.mechanism !=
+      LOOM_AIE2P_TRANSPOSE_MECHANISM_ALIAS) {
+    return iree_ok_status();
+  }
+  return loom_low_lower_plan_value_type(
+      context, loom_vector_transpose_result(source_op),
+      loom_low_lower_value_binding_type(
+          context, loom_vector_transpose_source(source_op)));
 }
 
 void loom_aie2p_mark_transpose_plan_demands(loom_low_lower_context_t* context,
@@ -490,9 +513,8 @@ static iree_status_t loom_aie2p_transpose_emit_state_initialize(
   for (uint8_t i = 0; i < LOOM_AIE2P_TRANSPOSE_PACKET_BYTE_COUNT; ++i) {
     out_state->shift_controls[i] = LOOM_VALUE_ID_INVALID;
   }
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_vector_transpose_source(source_op),
-      &out_state->low_source));
+  out_state->low_source = loom_low_lower_lookup_value(
+      context, loom_vector_transpose_source(source_op));
   return loom_aie2p_vector_packet_emitter_initialize(context, source_op,
                                                      &out_state->emitter);
 }

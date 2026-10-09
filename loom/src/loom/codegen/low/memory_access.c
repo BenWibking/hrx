@@ -305,29 +305,6 @@ iree_status_t loom_low_memory_access_map_create(
   return loom_intern_table_initialize(arena, 0, &(*out_map)->index);
 }
 
-static iree_status_t loom_low_memory_copy_expression(
-    iree_arena_allocator_t* arena, const loom_symbolic_expr_t* input,
-    loom_symbolic_expr_t* output) {
-  *output = *input;
-  if (input->term_count != 0) {
-    loom_symbolic_term_t* terms = NULL;
-    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-        arena, input->term_count, sizeof(*terms), (void**)&terms));
-    memcpy(terms, input->terms, input->term_count * sizeof(*terms));
-    output->terms = terms;
-  }
-  if (input->congruence != NULL) {
-    loom_symbolic_congruence_t* congruence = NULL;
-    IREE_RETURN_IF_ERROR(
-        iree_arena_allocate(arena, sizeof(*congruence), (void**)&congruence));
-    congruence->modulus = input->congruence->modulus;
-    IREE_RETURN_IF_ERROR(loom_low_memory_copy_expression(
-        arena, &input->congruence->expression, &congruence->expression));
-    output->congruence = congruence;
-  }
-  return iree_ok_status();
-}
-
 static iree_status_t loom_low_memory_bind_effects(
     loom_low_memory_access_map_t* map, const loom_op_t* op,
     loom_low_memory_effect_binding_t* effects) {
@@ -369,8 +346,8 @@ iree_status_t loom_low_memory_access_map_insert(
     IREE_RETURN_IF_ERROR(
         iree_arena_allocate(map->arena, sizeof(*interval), (void**)&interval));
     *interval = *summary->relative_interval;
-    IREE_RETURN_IF_ERROR(loom_low_memory_copy_expression(
-        map->arena, &summary->relative_interval->origin, &interval->origin));
+    IREE_RETURN_IF_ERROR(loom_symbolic_expr_clone(
+        &summary->relative_interval->origin, map->arena, &interval->origin));
     effect->summary.relative_interval = interval;
   }
   if (summary->byte_interval != NULL) {

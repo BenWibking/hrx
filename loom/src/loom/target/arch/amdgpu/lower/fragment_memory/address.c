@@ -278,9 +278,8 @@ static iree_status_t loom_amdgpu_fragment_memory_lookup_product_value(
       .value = LOOM_VALUE_ID_INVALID,
       .register_kind = LOOM_AMDGPU_FRAGMENT_MEMORY_ADDRESS_REGISTER_NONE,
   };
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
   const loom_module_t* module = loom_low_lower_context_module(context);
   const loom_type_t low_type = loom_module_value_type(module, low_value);
   loom_amdgpu_fragment_memory_address_register_kind_t register_kind =

@@ -386,7 +386,15 @@ TEST_F(LowLowerPassTest, SourceSelectionUsesPerFunctionTargetFacts) {
       "func.def target(@test_target) @add(%lhs: i32, %rhs: i32) -> (i32) {\n"
       "  %sum = scalar.addi %lhs, %rhs : i32\n"
       "  func.return %sum : i32\n"
-      "}\n"));
+      "}\n"
+      "low.func.def target<test.low.core>(@test_target) @ready("
+      "%value: reg<test.i32>) -> (reg<test.i32>) {\n"
+      "  low.return %value : reg<test.i32>\n"
+      "}\n"
+      "low.func.decl target<test.low.core>(@test_target) @external("
+      "%value: reg<test.i32>) -> (reg<test.i32>)\n"
+      "func.decl target(@test_target) @source_external(%value: i32) -> "
+      "(i32)\n"));
   ASSERT_GT(loom_test_target_bundles.count, 2u);
 
   loom_low_lower_policy_registry_t policy_registry = {};
@@ -432,15 +440,21 @@ TEST_F(LowLowerPassTest, SourceSelectionUsesPerFunctionTargetFacts) {
   loom_low_source_selection_options_t options = {
       /*.policy_registry=*/&policy_registry,
       /*.diagnostic_emitter=*/{},
-      /*.lowering_kind=*/{},
       /*.function_versions=*/&function_versions,
       /*.collect_target_candidates=*/false,
   };
   loom_low_source_selection_list_t selections = {};
-  IREE_ASSERT_OK(loom_low_select_source_symbols(module.get(), &options, &arena,
-                                                &selections));
+  IREE_ASSERT_OK(loom_low_select_lowering_symbols(module.get(), &options,
+                                                  &arena, &selections));
 
-  ASSERT_EQ(selections.count, 1u);
+  ASSERT_EQ(selections.count, 4u);
+  EXPECT_EQ(selections.values[0].kind, LOOM_LOW_SOURCE_SELECTION_FUNCTION);
+  EXPECT_EQ(selections.values[1].kind,
+            LOOM_LOW_SOURCE_SELECTION_REPRESENTATION);
+  EXPECT_EQ(selections.values[2].kind,
+            LOOM_LOW_SOURCE_SELECTION_REPRESENTATION);
+  EXPECT_EQ(selections.values[3].kind, LOOM_LOW_SOURCE_SELECTION_DECLARATION);
+  EXPECT_EQ(selections.values[0].report, nullptr);
   EXPECT_EQ(selections.values[0].version_handle, &function_version.base);
   EXPECT_EQ(selections.values[0].target_ref.module_id, target_ref.module_id);
   EXPECT_EQ(selections.values[0].target_ref.symbol_id, target_ref.symbol_id);
@@ -465,6 +479,60 @@ TEST_F(LowLowerPassTest, SourceSelectionUsesPerFunctionTargetFacts) {
                                      IREE_SV("test.low.core")));
   EXPECT_EQ(selections.values[0].target_source,
             LOOM_TARGET_BINDING_SOURCE_SPECIALIZATION);
+  iree_arena_deinitialize(&arena);
+}
+
+TEST_F(LowLowerPassTest, FinalizesPoliciesOnceWithoutAdditionalStorage) {
+  ModulePtr module = Parse(IREE_SV(
+      "test.target<low_core> @test_target\n"
+      "low.func.decl target<test.low.core>(@test_target) @ready()\n"
+      "func.def target(@test_target) @idle() {\n  func.return\n}\n"
+      "func.def target(@test_target) @first() {\n  func.return\n}\n"
+      "func.def target(@test_target) @first_again() {\n  func.return\n}\n"
+      "func.def target(@test_target) @second() {\n  func.return\n}\n"
+      "func.decl target(@test_target) @second_again()\n"));
+  iree_arena_allocator_t arena;
+  iree_arena_initialize(&block_pool_, &arena);
+  const loom_low_source_selection_options_t options = {
+      /*.policy_registry=*/&policy_registry_,
+  };
+  loom_low_source_selection_list_t selections = {};
+  IREE_ASSERT_OK(loom_low_select_lowering_symbols(module.get(), &options,
+                                                  &arena, &selections));
+  ASSERT_EQ(selections.count, 6u);
+
+  std::vector<int> order;
+  loom_low_lower_policy_t first = *selections.values[2].policy;
+  first.finalize_module = {
+      /*.fn=*/[](void* user_data, loom_module_t*,
+                 loom_low_lower_module_state_t*, iree_arena_allocator_t*) {
+        static_cast<std::vector<int>*>(user_data)->push_back(1);
+        return iree_ok_status();
+      },
+      /*.user_data=*/&order,
+  };
+  loom_low_lower_policy_t second = first;
+  second.finalize_module.fn = [](void* user_data, loom_module_t*,
+                                 loom_low_lower_module_state_t*,
+                                 iree_arena_allocator_t*) {
+    static_cast<std::vector<int>*>(user_data)->push_back(2);
+    return iree_ok_status();
+  };
+  // Leading Low projections do not contribute finalizers. The inactive source
+  // prefix and repeated policies cannot change the first-use order.
+  selections.values[0].policy = &first;
+  selections.values[2].policy = &second;
+  selections.values[3].policy = &second;
+  selections.values[4].policy = &first;
+  selections.values[5].policy = &first;
+  loom_low_lower_module_state_t* module_state = nullptr;
+  IREE_ASSERT_OK(loom_low_lower_module_state_create(&arena, &module_state));
+  const iree_host_size_t retained_bytes = arena.used_allocation_size;
+  IREE_ASSERT_OK(loom_low_source_selection_finalize_policies(
+      module.get(), &selections, module_state, &arena));
+  EXPECT_EQ(order, (std::vector<int>{2, 1}));
+  EXPECT_EQ(selections.count, 6u);
+  EXPECT_EQ(arena.used_allocation_size, retained_bytes);
   iree_arena_deinitialize(&arena);
 }
 
@@ -798,6 +866,46 @@ TEST_F(LowLowerPassTest, InvokeNormalizesToDirectLowCallWithPolicyPreserved) {
   EXPECT_TRUE(HasSymbol(module.get(), IREE_SV("helper")));
 }
 
+TEST_F(LowLowerPassTest, DefinitionRejectionPreservesEarlierSourceSymbols) {
+  ModulePtr module = Parse(
+      IREE_SV("test.target<low_core> @target\n"
+              "func.decl target(@target) @valid(%input: i32) -> (i32)\n"
+              "func.def target(@target) @identity(%input: i32) -> (i32) {\n"
+              "  func.return %input : i32\n"
+              "}\n"
+              "func.def target(@target) @unsupported(%input: f64) {\n"
+              "  func.return\n"
+              "}\n"));
+  const loom_symbol_ref_t valid_ref =
+      FindSymbolRef(module.get(), IREE_SV("valid"));
+  const loom_symbol_ref_t unsupported_ref =
+      FindSymbolRef(module.get(), IREE_SV("unsupported"));
+  const loom_symbol_ref_t identity_ref =
+      FindSymbolRef(module.get(), IREE_SV("identity"));
+  const loom_op_t* identity =
+      module->symbols.entries[identity_ref.symbol_id].defining_op;
+  const loom_op_t* valid =
+      module->symbols.entries[valid_ref.symbol_id].defining_op;
+  const loom_op_t* unsupported =
+      module->symbols.entries[unsupported_ref.symbol_id].defining_op;
+  const iree_host_size_t initial_value_count = module->values.count;
+  const uint32_t op_count = loom_module_block(module.get())->op_count;
+
+  DiagnosticEmissionCollector collector;
+  IREE_ASSERT_OK(RunSourceToLow(&policy_registry_, module.get(), &collector));
+  EXPECT_EQ(collector.count, 1);
+  EXPECT_EQ(module->values.count, initial_value_count);
+  EXPECT_EQ(loom_module_block(module.get())->op_count, op_count);
+  EXPECT_EQ(module->symbols.entries[valid_ref.symbol_id].defining_op, valid);
+  EXPECT_EQ(module->symbols.entries[identity_ref.symbol_id].defining_op,
+            identity);
+  EXPECT_FALSE(iree_any_bit_set(identity->flags, LOOM_OP_FLAG_DEAD));
+  EXPECT_EQ(module->symbols.entries[unsupported_ref.symbol_id].defining_op,
+            unsupported);
+  EXPECT_FALSE(iree_any_bit_set(valid->flags, LOOM_OP_FLAG_DEAD));
+  EXPECT_FALSE(iree_any_bit_set(unsupported->flags, LOOM_OP_FLAG_DEAD));
+}
+
 TEST_F(LowLowerPassTest,
        RepresentationProjectionRefreshesDescriptorTraitsAndSummaries) {
   ModulePtr module =
@@ -806,8 +914,14 @@ TEST_F(LowLowerPassTest,
                     "  %result = low.op<test.projectable_effect.i32>(%input) : "
                     "(reg<test.i32>) -> reg<test.i32>\n"
                     "  low.return %result : reg<test.i32>\n"
-                    "}\n"));
+                    "}\n"
+                    "low.func.decl target<test.low.core> @project_import("
+                    "%input: reg<test.i32>) -> (reg<test.i32>)\n"));
 
+  const loom_symbol_ref_t import_ref =
+      FindSymbolRef(module.get(), IREE_SV("project_import"));
+  const loom_func_like_t import = loom_func_like_cast(
+      module.get(), module->symbols.entries[import_ref.symbol_id].defining_op);
   const loom_symbol_ref_t function_ref =
       FindSymbolRef(module.get(), IREE_SV("project_effect"));
   loom_func_like_t function = loom_func_like_cast(
@@ -850,14 +964,68 @@ TEST_F(LowLowerPassTest,
 
   iree_arena_allocator_t arena;
   iree_arena_initialize(&block_pool_, &arena);
-  bool valid = false;
-  bool changed = false;
-  IREE_ASSERT_OK(loom_low_project_function_representation(
+  const loom_string_id_t authored_contract =
+      loom_func_like_repr_contract(function);
+  const loom_type_t authored_argument_type =
+      loom_block_arg_type(module.get(), loom_region_entry_block(body), 0);
+  const uint32_t authored_descriptor = loom_low_op_descriptor(packet);
+  const loom_low_representation_projection_plan_t* plan = nullptr;
+  IREE_ASSERT_OK(loom_low_plan_function_representation(
       module.get(), function, &target_facts, &projection_registry.registry,
-      iree_diagnostic_emitter_t{}, &arena, &valid, &changed));
+      iree_diagnostic_emitter_t{}, &arena, &plan));
+  ASSERT_NE(plan, nullptr);
+  const loom_low_representation_projection_plan_t* import_plan = nullptr;
+  IREE_ASSERT_OK(loom_low_plan_function_representation(
+      module.get(), import, &target_facts, &projection_registry.registry,
+      iree_diagnostic_emitter_t{}, &arena, &import_plan));
+  ASSERT_NE(import_plan, nullptr);
+  EXPECT_TRUE(loom_type_equal(
+      loom_module_value_type(module.get(),
+                             loom_low_func_decl_args(import.op).values[0]),
+      authored_argument_type));
+  EXPECT_EQ(loom_func_like_repr_contract(import), authored_contract);
+  EXPECT_EQ(loom_func_like_repr_contract(function), authored_contract);
+  EXPECT_EQ(loom_low_op_descriptor(packet), authored_descriptor);
+  EXPECT_TRUE(loom_type_equal(
+      loom_block_arg_type(module.get(), loom_region_entry_block(body), 0),
+      authored_argument_type));
+  EXPECT_TRUE(iree_any_bit_set(packet->traits, LOOM_TRAIT_UNKNOWN_EFFECTS));
+  EXPECT_TRUE(loom_region_has_read_effects(body));
+  EXPECT_TRUE(loom_region_has_write_effects(body));
+  EXPECT_FALSE(loom_region_has_convergent_effects(body));
+
+  const loom_low_representation_projection_plan_t* plans[] = {plan,
+                                                              import_plan};
+  loom_low_representation_projection_index_t index = {};
+  IREE_ASSERT_OK(loom_low_representation_projection_index_build(
+      module.get(), plans, IREE_ARRAYSIZE(plans), &arena, &index));
+  EXPECT_EQ(loom_low_representation_projection_index_find(
+                &index, function_ref.symbol_id),
+            plan);
+  EXPECT_EQ(loom_low_representation_projection_index_find(&index,
+                                                          import_ref.symbol_id),
+            import_plan);
+  const loom_type_t projected_argument_type =
+      loom_low_representation_projection_argument_type(plan, 0);
+  const loom_type_t projected_result_type =
+      loom_low_representation_projection_result_type(plan, 0);
+  EXPECT_FALSE(
+      loom_type_equal(projected_argument_type, authored_argument_type));
+  EXPECT_TRUE(loom_type_equal(
+      loom_low_representation_projection_argument_type(import_plan, 0),
+      projected_argument_type));
+  EXPECT_TRUE(loom_type_equal(
+      loom_low_representation_projection_result_type(import_plan, 0),
+      projected_result_type));
+
+  bool changed = false;
+  IREE_ASSERT_OK(
+      loom_low_apply_function_representation(module.get(), plan, &changed));
+  EXPECT_TRUE(changed);
+  IREE_ASSERT_OK(loom_low_apply_function_representation(module.get(),
+                                                        import_plan, &changed));
   iree_arena_deinitialize(&arena);
 
-  EXPECT_TRUE(valid);
   EXPECT_TRUE(changed);
   EXPECT_FALSE(iree_any_bit_set(packet->traits, LOOM_TRAIT_UNKNOWN_EFFECTS));
   EXPECT_TRUE(iree_any_bit_set(packet->traits, LOOM_TRAIT_CONVERGENT));
@@ -874,6 +1042,24 @@ TEST_F(LowLowerPassTest,
       target_descriptor_set, IREE_SV("test.projectable_effect.i32"));
   ASSERT_NE(target_ordinal, LOOM_LOW_DESCRIPTOR_ORDINAL_NONE);
   EXPECT_EQ(loom_low_op_descriptor(packet), target_ordinal);
+  EXPECT_EQ(loom_func_like_repr_contract(import),
+            loom_func_like_repr_contract(function));
+  EXPECT_TRUE(loom_type_equal(
+      projected_argument_type,
+      loom_block_arg_type(module.get(), loom_region_entry_block(body), 0)));
+  EXPECT_TRUE(loom_type_equal(
+      projected_result_type,
+      loom_module_value_type(
+          module.get(), loom_low_func_def_results(function.op).values[0])));
+  EXPECT_TRUE(loom_type_equal(
+      loom_module_value_type(module.get(),
+                             loom_low_func_decl_args(import.op).values[0]),
+      loom_block_arg_type(module.get(), loom_region_entry_block(body), 0)));
+  EXPECT_TRUE(loom_type_equal(
+      loom_module_value_type(module.get(),
+                             loom_low_func_decl_results(import.op).values[0]),
+      loom_module_value_type(
+          module.get(), loom_low_func_def_results(function.op).values[0])));
 }
 
 TEST_F(LowLowerPassTest, InlineRetainsCalleeWithImmutableFunctionVersion) {
