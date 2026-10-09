@@ -1455,7 +1455,11 @@ def _require_table_range(
 
 
 def _op_header_includes(table: CompiledLowerRuleSet) -> tuple[str, ...]:
-    dialect_names = {rule.source_op.group.name for rule in table.rules if rule.source_op.group is not None}
+    source_ops = (
+        *(rule.source_op for rule in table.rules),
+        *(source_node.source_op for source_node in table.source_nodes),
+    )
+    dialect_names = {source_op.group.name for source_op in source_ops if source_op.group is not None}
     return tuple(f"loom/ops/{name}/ops.h" for name in sorted(dialect_names))
 
 
