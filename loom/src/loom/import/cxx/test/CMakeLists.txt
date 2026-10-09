@@ -679,7 +679,6 @@ loom_test_module(
     comparison_functions_module
   SRCS
     "comparison_functions.cxx"
-    "comparison_functions.loom"
 )
 endif()
 
@@ -689,7 +688,6 @@ loom_test_module(
     integer_functions_module
   SRCS
     "integer_functions.cxx"
-    "integer_functions.loom"
 )
 endif()
 
@@ -699,7 +697,6 @@ loom_test_module(
     schedule_values_module
   SRCS
     "schedule_values.cxx"
-    "schedule_values.loom"
 )
 endif()
 

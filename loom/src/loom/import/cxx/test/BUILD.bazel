@@ -412,10 +412,7 @@ loom_test(
 [
     loom_test_module(
         name = source + "_module",
-        srcs = [
-            source + ".cxx",
-            source + ".loom",
-        ],
+        srcs = [source + ".cxx"],
         target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
     )
     for source in _AUTHORED_HOST_ONLY_SOURCES
