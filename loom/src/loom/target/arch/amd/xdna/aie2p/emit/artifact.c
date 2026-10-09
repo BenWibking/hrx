@@ -239,7 +239,6 @@ static iree_string_view_t loom_aie2p_xdna_product_issue_quantity(
     case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_SECTION_NAME_BYTE_LENGTH:
       return IREE_SV("section-name bytes");
     case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_NONE:
-    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_PARTITION_COLUMN_COUNT:
       break;
   }
   IREE_ASSERT_UNREACHABLE("XDNA product issue kind");
@@ -249,29 +248,13 @@ static iree_string_view_t loom_aie2p_xdna_product_issue_quantity(
 static iree_status_t loom_aie2p_xdna_emit_product_issue(
     const loom_aie2p_xdna_artifact_request_t* request,
     const loom_aie2p_xdna_source_entry_t* source_entries,
-    iree_host_size_t entry_count, const loom_xdna_device_profile_t* profile,
+    iree_host_size_t entry_count,
     const loom_aie2p_xdna_product_issue_t* issue) {
   const iree_host_size_t entry_ordinal = issue->entry_ordinal < entry_count
                                              ? issue->entry_ordinal
                                              : entry_count - 1u;
   const loom_aie2p_xdna_source_entry_t* source_entry =
       &source_entries[entry_ordinal];
-  if (issue->kind == LOOM_AIE2P_XDNA_PRODUCT_ISSUE_PARTITION_COLUMN_COUNT) {
-    const loom_diagnostic_param_t params[] = {
-        loom_param_string(source_entry->name),
-        loom_param_u32((uint32_t)issue->actual),
-        loom_param_string(iree_make_cstring_view(profile->key)),
-        loom_param_u32((uint32_t)issue->minimum),
-        loom_param_u32((uint32_t)issue->maximum),
-    };
-    const loom_diagnostic_emission_t emission = {
-        .op = source_entry->function_op,
-        .error = LOOM_ERR_XDNA_057,
-        .params = params,
-        .param_count = IREE_ARRAYSIZE(params),
-    };
-    return iree_diagnostic_emit(request->diagnostic_emitter, &emission);
-  }
   const loom_diagnostic_param_t params[] = {
       loom_param_string(loom_aie2p_xdna_product_issue_quantity(issue->kind)),
       loom_param_u64(issue->actual),
@@ -305,11 +288,6 @@ static iree_status_t loom_aie2p_xdna_collect_source_leaves(
       ++leaf_count;
     }
   }
-  if (leaf_count == 0) {
-    return iree_make_status(IREE_STATUS_NOT_FOUND,
-                            "AIE2P array program has no core workers");
-  }
-
   loom_aie2p_array_leaf_t* leaves = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       request->scratch_arena, leaf_count, sizeof(*leaves), (void**)&leaves));
@@ -744,6 +722,7 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
 
   loom_aie2p_array_leaf_t* source_leaves = NULL;
   iree_host_size_t source_leaf_count = 0;
+  bool source_leaves_collected = false;
   loom_aie2p_array_plan_t* array_plans = NULL;
   IREE_RETURN_IF_ERROR(
       iree_arena_allocate_array(request->scratch_arena, entry_count,
@@ -779,7 +758,7 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
       loom_target_compile_report_record_low_kernel_workload(
           request->compile_report, source_entry->function_op);
     }
-    if (source_leaves == NULL) {
+    if (!source_leaves_collected) {
       bool source_leaves_valid = false;
       IREE_RETURN_IF_ERROR(loom_aie2p_xdna_collect_source_leaves(
           request, &symbol_facts, &versions, &source_leaves, &source_leaf_count,
@@ -787,6 +766,7 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
       if (!source_leaves_valid) {
         return iree_ok_status();
       }
+      source_leaves_collected = true;
     }
     bool valid = false;
     IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_build(
@@ -826,8 +806,8 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
       &product, request->scratch_arena, &product_admitted, &product_admission,
       &product_issue));
   if (!product_admitted) {
-    return loom_aie2p_xdna_emit_product_issue(
-        request, source_entries, entry_count, device_profile, &product_issue);
+    return loom_aie2p_xdna_emit_product_issue(request, source_entries,
+                                              entry_count, &product_issue);
   }
 
   for (iree_host_size_t i = 0; i < entry_count; ++i) {
@@ -879,8 +859,8 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
   IREE_RETURN_IF_ERROR(loom_aie2p_xdna_product_finalize(
       product_admission, &product_finalized, &product_image, &product_issue));
   if (!product_finalized) {
-    return loom_aie2p_xdna_emit_product_issue(
-        request, source_entries, entry_count, device_profile, &product_issue);
+    return loom_aie2p_xdna_emit_product_issue(request, source_entries,
+                                              entry_count, &product_issue);
   }
 
   for (iree_host_size_t i = 0; i < entry_count; ++i) {

@@ -171,8 +171,6 @@ struct loom_aie2p_xdna_product_admission_t {
   uint32_t relocation_count;
   // Aggregate exported entry-name byte length.
   uint32_t entry_name_byte_length;
-  // Entry owning |partition_column_count|.
-  uint32_t partition_entry_ordinal;
   // Occupied array-column prefix across all entries.
   uint16_t partition_column_count;
   // Memory-tile row count encoded in native transaction headers.
@@ -648,7 +646,6 @@ iree_status_t loom_aie2p_xdna_product_admit(
     entry_name_byte_length += entry->name.size;
     if (entry->column_count > admission->partition_column_count) {
       admission->partition_column_count = entry->column_count;
-      admission->partition_entry_ordinal = (uint32_t)i;
     }
 
     if (binding_count > IREE_XDNA_ELF_MAX_TABLE_RECORD_COUNT) {
@@ -665,17 +662,6 @@ iree_status_t loom_aie2p_xdna_product_admit(
     }
   }
   IREE_ASSERT_LT(tile_count, UINT32_MAX);
-
-  if (admission->partition_column_count <
-          profile->minimum_partition_column_count ||
-      admission->partition_column_count > family->column_count) {
-    loom_aie2p_xdna_set_issue(
-        LOOM_AIE2P_XDNA_PRODUCT_ISSUE_PARTITION_COLUMN_COUNT,
-        admission->partition_entry_ordinal, admission->partition_column_count,
-        profile->minimum_partition_column_count, family->column_count,
-        out_issue);
-    return iree_ok_status();
-  }
 
   const uint64_t entry_count = product->entry_count;
   const uint64_t use_offset =

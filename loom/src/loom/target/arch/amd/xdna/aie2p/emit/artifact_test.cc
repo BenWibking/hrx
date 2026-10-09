@@ -75,6 +75,13 @@ low.func.def retain target<amd.xdna.aie2p.array>(@array_target) abi(array_progra
 }
 )";
 
+constexpr char kEmptyArraySource[] = R"(
+aie2p.target<array> @array_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
+low.func.def retain target<amd.xdna.aie2p.array>(@array_target) abi(array_program) @empty_array() asm {
+  return
+}
+)";
+
 constexpr char kMixedProfileSource[] = R"(
 aie2p.target<array> @strix_target {device_profile = "amd.xdna.strix.17f0_10"}
 aie2p.target<array> @halo_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
@@ -342,6 +349,30 @@ TEST_F(XdnaArtifactTest, RejectsMixedProfilesWithDiagnostic) {
   EXPECT_EQ(capture.emissions[0].string_params[1],
             "amd.xdna.strix_halo.17f0_11");
   EXPECT_EQ(capture.emissions[0].string_params[2], "amd.xdna.strix.17f0_10");
+}
+
+TEST_F(XdnaArtifactTest, RejectsEmptyArrayWithDiagnostic) {
+  ModulePtr module;
+  IREE_ASSERT_OK(ParseModule(IREE_SV(kEmptyArraySource), &module));
+  DiagnosticEmissionCapture capture;
+  const loom_aie2p_xdna_artifact_request_t request = {
+      /*.module=*/module.get(),
+      /*.function_versions=*/nullptr,
+      /*.low_descriptor_registry=*/&low_registry_.registry,
+      /*.compile_report=*/nullptr,
+      /*.diagnostic_emitter=*/capture.emitter(),
+      /*.scratch_arena=*/&scratch_arena_,
+      /*.allocator=*/iree_allocator_null(),
+  };
+  bool emitted = false;
+  IREE_ASSERT_OK(
+      loom_aie2p_xdna_compile_artifact(&request, &emitted, &contents_));
+  EXPECT_FALSE(emitted);
+  ASSERT_EQ(capture.emissions.size(), 1u);
+  EXPECT_EQ(capture.emissions[0].error, LOOM_ERR_XDNA_018);
+  ASSERT_EQ(capture.emissions[0].u32_params.size(), 2u);
+  EXPECT_EQ(capture.emissions[0].u32_params[0], 0u);
+  EXPECT_EQ(capture.emissions[0].u32_params[1], 0u);
 }
 
 TEST_F(XdnaArtifactTest, RejectsAggregateBindingCountBeforeResidentCompile) {

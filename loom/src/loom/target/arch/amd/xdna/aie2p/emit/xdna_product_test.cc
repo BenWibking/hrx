@@ -35,6 +35,48 @@ class XdnaProductTest : public ::testing::Test {
     iree_arena_block_pool_deinitialize(&pool_);
   }
 
+  void ExpectAdmissionIssue(const loom_aie2p_xdna_product_t* product,
+                            loom_aie2p_xdna_product_issue_kind_t expected_kind,
+                            uint32_t expected_entry_ordinal,
+                            uint64_t expected_actual, uint64_t expected_minimum,
+                            uint64_t expected_maximum) {
+    loom_aie2p_xdna_product_issue_t issue = {};
+    loom_aie2p_xdna_product_admission_t* admission = nullptr;
+    bool admitted = true;
+    IREE_ASSERT_OK(loom_aie2p_xdna_product_admit(product, &arena_, &admitted,
+                                                 &admission, &issue));
+    EXPECT_FALSE(admitted);
+    EXPECT_EQ(admission, nullptr);
+    EXPECT_EQ(issue.kind, expected_kind);
+    EXPECT_EQ(issue.entry_ordinal, expected_entry_ordinal);
+    EXPECT_EQ(issue.actual, expected_actual);
+    EXPECT_EQ(issue.minimum, expected_minimum);
+    EXPECT_EQ(issue.maximum, expected_maximum);
+  }
+
+  void InitializeSourceKnownProduct(loom_aie2p_array_program_t* out_program,
+                                    loom_aie2p_xdna_entry_t* out_entry,
+                                    loom_aie2p_xdna_product_t* out_product) {
+    const loom_xdna_device_profile_t* profile =
+        loom_xdna_device_profile_lookup(IREE_SV("amd.xdna.strix_halo.17f0_11"));
+    IREE_ASSERT(profile != nullptr);
+    *out_program = (loom_aie2p_array_program_t){0};
+    *out_entry = (loom_aie2p_xdna_entry_t){
+        /*.name=*/IREE_SV("entry"),
+        /*.column_count=*/1,
+        /*.bindings=*/nullptr,
+        /*.binding_count=*/0,
+        /*.array_program=*/out_program,
+        /*.tiles=*/nullptr,
+        /*.tile_count=*/0,
+    };
+    *out_product = (loom_aie2p_xdna_product_t){
+        /*.device_profile=*/profile,
+        /*.entries=*/out_entry,
+        /*.entry_count=*/1,
+    };
+  }
+
   // Backing blocks for temporary native emission data.
   iree_arena_block_pool_t pool_;
   // Scratch storage used only while constructing the product.
@@ -42,6 +84,70 @@ class XdnaProductTest : public ::testing::Test {
   // Growable native ELF output.
   iree_io_stream_t* stream_ = nullptr;
 };
+
+TEST_F(XdnaProductTest, RejectsSourceKnownEntryCount) {
+  loom_aie2p_array_program_t program;
+  loom_aie2p_xdna_entry_t entry;
+  loom_aie2p_xdna_product_t product;
+  InitializeSourceKnownProduct(&program, &entry, &product);
+  constexpr iree_host_size_t kMaximumEntryCount =
+      IREE_XDNA_ELF_MAX_TABLE_RECORD_COUNT / 2u;
+  std::vector<loom_aie2p_xdna_entry_t> entries(kMaximumEntryCount + 1u, entry);
+  product.entries = entries.data();
+  product.entry_count = entries.size();
+  ExpectAdmissionIssue(&product, LOOM_AIE2P_XDNA_PRODUCT_ISSUE_ENTRY_COUNT,
+                       UINT32_MAX, entries.size(), 0, kMaximumEntryCount);
+}
+
+TEST_F(XdnaProductTest, RejectsSourceKnownEntryNameLength) {
+  loom_aie2p_array_program_t program;
+  loom_aie2p_xdna_entry_t entry;
+  loom_aie2p_xdna_product_t product;
+  InitializeSourceKnownProduct(&program, &entry, &product);
+  const std::string name(IREE_XDNA_ELF_MAX_ENTRY_NAME_LENGTH + 1u, 'x');
+  entry.name = iree_make_string_view(name.data(), name.size());
+  ExpectAdmissionIssue(&product,
+                       LOOM_AIE2P_XDNA_PRODUCT_ISSUE_ENTRY_NAME_BYTE_LENGTH, 0,
+                       name.size(), 0, IREE_XDNA_ELF_MAX_ENTRY_NAME_LENGTH);
+}
+
+TEST_F(XdnaProductTest, RejectsSourceKnownRelocationCount) {
+  loom_aie2p_array_program_t program;
+  loom_aie2p_xdna_entry_t entry;
+  loom_aie2p_xdna_product_t product;
+  InitializeSourceKnownProduct(&program, &entry, &product);
+  constexpr iree_host_size_t kSourceRelocationCount =
+      IREE_XDNA_ELF_MAX_TABLE_RECORD_COUNT / 2u + 1u;
+  std::vector<loom_aie2p_program_relocation_t> relocations(
+      kSourceRelocationCount);
+  program.relocations = relocations.data();
+  program.relocation_count = relocations.size();
+  ExpectAdmissionIssue(
+      &product, LOOM_AIE2P_XDNA_PRODUCT_ISSUE_RELOCATION_RECORD_COUNT, 0,
+      2u * kSourceRelocationCount, 0, IREE_XDNA_ELF_MAX_TABLE_RECORD_COUNT);
+}
+
+TEST_F(XdnaProductTest, RejectsSourceKnownMetadataSize) {
+  loom_aie2p_array_program_t program;
+  loom_aie2p_xdna_entry_t entry;
+  loom_aie2p_xdna_product_t product;
+  InitializeSourceKnownProduct(&program, &entry, &product);
+  const std::string name(IREE_XDNA_ELF_MAX_ENTRY_NAME_LENGTH, 'x');
+  entry.name = iree_make_string_view(name.data(), name.size());
+  constexpr iree_host_size_t kEntryCount = 4096;
+  std::vector<loom_aie2p_xdna_entry_t> entries(kEntryCount, entry);
+  product.entries = entries.data();
+  product.entry_count = entries.size();
+  const uint64_t expected_metadata_size =
+      IREE_XDNA_ELF_HEADER_RECORD_SIZE +
+      kEntryCount * (IREE_XDNA_ELF_ALLOCATION_RECORD_SIZE + sizeof(uint32_t) +
+                     IREE_XDNA_ELF_ENTRY_RECORD_SIZE +
+                     2u * IREE_XDNA_ELF_INVOCATION_RECORD_SIZE + name.size());
+  ASSERT_GT(expected_metadata_size, IREE_XDNA_ELF_MAX_METADATA_TABLE_SIZE);
+  ExpectAdmissionIssue(
+      &product, LOOM_AIE2P_XDNA_PRODUCT_ISSUE_METADATA_BYTE_LENGTH, UINT32_MAX,
+      expected_metadata_size, 0, IREE_XDNA_ELF_MAX_METADATA_TABLE_SIZE);
+}
 
 TEST_F(XdnaProductTest, PreservesRequirementsIndependentOfWorkerTopology) {
   // Service-only entries initialize a lock without loading a compute program.
@@ -584,6 +690,118 @@ TEST(Aie2pXdnaProductTest, DeduplicatesSharedSectionsBeforeDirectoryAdmission) {
   iree_io_stream_release(stream);
   iree_arena_deinitialize(&arena);
   iree_arena_block_pool_deinitialize(&block_pool);
+}
+
+TEST_F(XdnaProductTest, RejectsExactSectionHeaderOverflow) {
+  const loom_xdna_device_profile_t* profile =
+      loom_xdna_device_profile_lookup(IREE_SV("amd.xdna.strix_halo.17f0_11"));
+  ASSERT_NE(profile, nullptr);
+
+  // Five fixed sections and two command fragments leave room for 4,089
+  // resident sections. Access-free sections remain distinct by contract, so
+  // one more proves that admission uses the exact post-intern count.
+  constexpr iree_host_size_t kLinkedSectionCount = 4090;
+  constexpr uint64_t kExpectedSectionCount = 5u + 2u + kLinkedSectionCount;
+  static_assert(kExpectedSectionCount ==
+                IREE_XDNA_ELF_MAX_SECTION_HEADER_COUNT + 1u);
+  const std::array<uint8_t, 4> code = {0x44, 0x20, 0xc1, 0x20};
+  std::vector<loom_native_section_t> linked_sections(kLinkedSectionCount);
+  std::vector<loom_aie2p_linked_section_placement_t> linked_placements(
+      kLinkedSectionCount);
+  linked_sections[0] = (loom_native_section_t){
+      /*.name=*/IREE_SV(".text.kernel"),
+      /*.storage=*/LOOM_NATIVE_SECTION_STORAGE_CONTENTS,
+      /*.access=*/LOOM_NATIVE_SECTION_ACCESS_READ |
+          LOOM_NATIVE_SECTION_ACCESS_EXECUTE,
+      /*.address=*/0,
+      /*.alignment=*/16,
+      /*.contents=*/iree_make_const_byte_span(code.data(), code.size()),
+  };
+  linked_placements[0].memory_space = LOOM_XDNA_MEMORY_SPACE_PROGRAM;
+  for (iree_host_size_t i = 1; i < kLinkedSectionCount; ++i) {
+    linked_sections[i] = (loom_native_section_t){
+        /*.name=*/IREE_SV(".discard"),
+        /*.storage=*/LOOM_NATIVE_SECTION_STORAGE_CONTENTS,
+        /*.access=*/LOOM_NATIVE_SECTION_ACCESS_NONE,
+        /*.address=*/(uint32_t)i,
+        /*.alignment=*/1,
+        /*.contents=*/iree_const_byte_span_empty(),
+    };
+    linked_placements[i].memory_space = LOOM_XDNA_MEMORY_SPACE_PROGRAM;
+  }
+  const loom_aie2p_linked_tile_t linked_tile = {
+      /*.assembly=*/
+      {
+          /*.sections=*/linked_sections.data(),
+          /*.section_count=*/linked_sections.size(),
+      },
+      /*.section_placements=*/linked_placements.data(),
+      /*.section_placement_count=*/linked_placements.size(),
+      /*.symbol_layouts=*/nullptr,
+      /*.symbol_layout_count=*/0,
+      /*.entry_section_index=*/0,
+      /*.entry_address=*/0,
+  };
+  const loom_native_object_symbol_t entry_symbol = {
+      /*.name=*/IREE_SV("kernel"),
+      /*.section_contribution_index=*/0,
+      /*.section_offset=*/0,
+      /*.size=*/code.size(),
+      /*.binding=*/LOOM_NATIVE_OBJECT_SYMBOL_BINDING_GLOBAL,
+      /*.visibility=*/LOOM_NATIVE_OBJECT_SYMBOL_VISIBILITY_DEFAULT,
+      /*.kind=*/LOOM_NATIVE_OBJECT_SYMBOL_KIND_FUNCTION,
+  };
+  loom_aie2p_leaf_contribution_t contribution = {};
+  contribution.object.symbols = &entry_symbol;
+  contribution.object.symbol_count = 1;
+  contribution.realization.entry_symbol_index = 0;
+  const loom_aie2p_xdna_tile_t tile = {
+      /*.coordinate=*/{0, 2},
+      /*.contribution=*/&contribution,
+      /*.linked_tile=*/&linked_tile,
+  };
+  loom_aie2p_program_record_t record = {};
+  record.type = LOOM_AIE2P_PROGRAM_RECORD_TILE_PROGRAM_LOAD;
+  record.value.tile_program_load.tile_program_index = 0;
+  const loom_aie2p_array_program_t program = {
+      /*.array_records=*/&record,
+      /*.array_record_count=*/1,
+      /*.control_records=*/nullptr,
+      /*.control_record_count=*/0,
+      /*.relocations=*/nullptr,
+      /*.relocation_count=*/0,
+  };
+  const loom_aie2p_xdna_entry_t entry = {
+      /*.name=*/IREE_SV("entry"),
+      /*.column_count=*/1,
+      /*.bindings=*/nullptr,
+      /*.binding_count=*/0,
+      /*.array_program=*/&program,
+      /*.tiles=*/&tile,
+      /*.tile_count=*/1,
+  };
+  const loom_aie2p_xdna_product_t product = {
+      /*.device_profile=*/profile,
+      /*.entries=*/&entry,
+      /*.entry_count=*/1,
+  };
+
+  loom_aie2p_xdna_product_issue_t issue = {};
+  loom_aie2p_xdna_product_admission_t* admission = nullptr;
+  bool admitted = false;
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_admit(&product, &arena_, &admitted,
+                                               &admission, &issue));
+  ASSERT_TRUE(admitted);
+  loom_aie2p_xdna_product_image_t* image = nullptr;
+  bool finalized = false;
+  IREE_ASSERT_OK(
+      loom_aie2p_xdna_product_finalize(admission, &finalized, &image, &issue));
+  EXPECT_FALSE(finalized);
+  EXPECT_EQ(image, nullptr);
+  EXPECT_EQ(issue.kind, LOOM_AIE2P_XDNA_PRODUCT_ISSUE_SECTION_HEADER_COUNT);
+  EXPECT_EQ(issue.entry_ordinal, UINT32_MAX);
+  EXPECT_EQ(issue.actual, kExpectedSectionCount);
+  EXPECT_EQ(issue.maximum, IREE_XDNA_ELF_MAX_SECTION_HEADER_COUNT);
 }
 
 TEST(Aie2pXdnaProductTest, RejectsExactProgramHeaderOverflow) {
