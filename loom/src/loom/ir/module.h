@@ -35,9 +35,6 @@ extern "C" {
 // Capacity hints from bytecode header or source module (for cloning).
 // NULL = use defaults (text parsing, test construction).
 typedef struct loom_module_size_hints_t {
-  // Expected value count. Values allocate lazily in stable segments, so this
-  // does not reserve speculative row capacity.
-  iree_host_size_t value_count;
   // Expected interned string count, sizing content-interner buckets only.
   iree_host_size_t string_count;
   // Expected interned type count.
