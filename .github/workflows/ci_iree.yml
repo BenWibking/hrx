@@ -123,6 +123,7 @@ jobs:
             command: iree-bazel-amdgpu
             runner: linux-gfx942-1gpu-ccs-csp-ossci-rocm
             target_selector: gfx942
+            loom_importer: cxx
             container_options: &amdgpu_container_options >-
               --ipc host --group-add video --device /dev/kfd --device /dev/dri
               --group-add 993 --group-add 992 --group-add 110
@@ -335,8 +336,12 @@ jobs:
           if [[ -n "${{ matrix.target_selector }}" ]]; then
             target_args=(--amdgpu-target "${{ matrix.target_selector }}")
           fi
+          importer_args=()
+          if [[ -n "${{ matrix.loom_importer }}" ]]; then
+            importer_args=(--loom-importer "${{ matrix.loom_importer }}")
+          fi
           python3 build_tools/devtools/ci.py ${{ matrix.command }} \
-            "${target_args[@]}" "${scope_args[@]}" \
+            "${target_args[@]}" "${importer_args[@]}" "${scope_args[@]}" \
             --bazel-profile-dir "${RUNNER_TEMP}/bazel-profiles" --keep-going
 
       - name: Build and test the AMD client
