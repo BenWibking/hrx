@@ -190,6 +190,37 @@ value %restricted: test.packed.narrow -> physical_register[0:1]
 
 // ====
 
+// RUN: emit low-allocation-query @loop_relocation_observes_atomic_alias values=%seed,%state,%next,%blocker_source,%blocker,%peer fixed=%seed:physical_register:2:1 fixed=%next:physical_register:0:1 fixed=%peer:physical_register:8:1
+
+test.target<low_core> @target
+
+// test.r0 and test.a0 have distinct physical-register IDs but own the same
+// atomic storage unit. The exit-only alias can share with the backedge source,
+// but it blocks relocating the loop header onto that source location. %peer
+// occupies the other alias candidate without fixing the blocker itself.
+low.func.def target<test.low.core>(@target) @loop_relocation_observes_atomic_alias(%condition: reg<test.i32>, %seed: reg<test.explicit32>, %peer: reg<test.alias.narrow>) -> (reg<test.explicit32>, reg<test.alias.narrow>, reg<test.alias.narrow>) asm {
+  low.br ^loop(%seed: reg<test.explicit32>)
+^loop(%state: reg<test.explicit32>):
+  low.cond_br %condition, ^body, ^exit : reg<test.i32>
+^body:
+  %next = test.const.explicit32 1
+  low.br ^loop(%next: reg<test.explicit32>)
+^exit:
+  %blocker_source = test.const.explicit32 2
+  %blocker = copy %blocker_source : reg<test.explicit32> -> reg<test.alias.narrow>
+  return %state, %blocker, %peer
+}
+
+// ----
+value %seed: test.explicit32 -> physical_register[2:1]
+value %state: test.explicit32 -> physical_register[2:1]
+value %next: test.explicit32 -> physical_register[0:1]
+value %blocker_source: test.explicit32 -> physical_register[3:1]
+value %blocker: test.alias.narrow -> physical_register[7:1]
+value %peer: test.alias.narrow -> physical_register[8:1]
+
+// ====
+
 // RUN: emit low-allocation-query @equal_restricted_domains_remain_preferred values=%first,%second,%narrow_first,%narrow_second copies=%narrow_first,%narrow_second
 
 test.target<low_core> @target

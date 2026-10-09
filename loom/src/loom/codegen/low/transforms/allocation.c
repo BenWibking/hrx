@@ -84,7 +84,14 @@ static const loom_pass_option_def_t kLowMaterializeAllocationOptions[] = {
   V(statistics_type, rematerializations, "rematerializations",                 \
     "Number of allocation-pressure rematerialized packets inserted.")          \
   V(statistics_type, live_range_splits, "live_range_splits",                   \
-    "Number of allocation-pressure low.copy split packets inserted.")
+    "Number of allocation-pressure low.copy split packets inserted.")          \
+  V(statistics_type, attempts, "attempts", "Number of allocation attempts.")   \
+  V(statistics_type, attempt_arena_used_bytes_high_water,                      \
+    "attempt_arena_used_bytes_high_water",                                     \
+    "Maximum attempt-arena bytes used at a retry boundary.")                   \
+  V(statistics_type, attempt_arena_owned_bytes_high_water,                     \
+    "attempt_arena_owned_bytes_high_water",                                    \
+    "Maximum attempt-arena bytes owned at a retry boundary.")
 
 LOOM_PASS_STATISTICS_DEFINE(loom_low_materialize_allocation_statistics,
                             loom_low_materialize_allocation_statistics_t,
@@ -391,20 +398,22 @@ static iree_status_t loom_low_materialize_allocation_build_table(
   return status;
 }
 
-iree_status_t loom_low_materialize_allocation_run(loom_pass_t* pass,
-                                                  loom_module_t* module,
-                                                  loom_func_like_t function) {
-  if (!loom_low_function_def_isa(function.op)) {
-    return iree_ok_status();
-  }
+static void loom_low_materialize_allocation_record_attempt_high_water(
+    loom_pass_t* pass, const iree_arena_allocator_t* attempt_arena) {
+  loom_low_materialize_allocation_statistics_t* statistics =
+      loom_low_materialize_allocation_statistics(pass);
+  ++statistics->attempts;
+  statistics->attempt_arena_used_bytes_high_water =
+      iree_max(statistics->attempt_arena_used_bytes_high_water,
+               (int64_t)attempt_arena->used_allocation_size);
+  statistics->attempt_arena_owned_bytes_high_water =
+      iree_max(statistics->attempt_arena_owned_bytes_high_water,
+               (int64_t)attempt_arena->total_allocation_size);
+}
 
-  bool synthesis_admitted = false;
-  IREE_RETURN_IF_ERROR(loom_low_diagnostic_admit_allocation_synthesis(
-      module, function.op, pass->diagnostic_emitter, &synthesis_admitted));
-  if (!synthesis_admitted) {
-    return iree_ok_status();
-  }
-
+static iree_status_t loom_low_materialize_allocation_run_attempts(
+    loom_pass_t* pass, loom_module_t* module, loom_func_like_t function,
+    iree_arena_allocator_t* attempt_arena) {
   loom_low_materialize_allocation_pass_state_t* state =
       (loom_low_materialize_allocation_pass_state_t*)pass->state;
   const loom_low_pass_capability_t* low_capability =
@@ -425,11 +434,18 @@ iree_status_t loom_low_materialize_allocation_run(loom_pass_t* pass,
   loom_low_rematerialization_state_t rematerialization = {
       .arena = pass->arena,
   };
+  bool has_attempt = false;
   for (;;) {
+    if (has_attempt) {
+      loom_low_materialize_allocation_record_attempt_high_water(pass,
+                                                                attempt_arena);
+      iree_arena_reset(attempt_arena);
+    }
+    has_attempt = true;
     loom_low_allocation_table_t table = {0};
     IREE_RETURN_IF_ERROR(loom_low_materialize_allocation_build_table(
         module, function.op, function_target_facts, descriptor_registry,
-        &allocation_options, pass->arena, &table));
+        &allocation_options, attempt_arena, &table));
     if (iteration_limit == 0) {
       if (table.liveness.value_count == IREE_HOST_SIZE_MAX) {
         return iree_make_status(
@@ -463,7 +479,7 @@ iree_status_t loom_low_materialize_allocation_run(loom_pass_t* pass,
               : (iree_diagnostic_emitter_t){0};
       IREE_RETURN_IF_ERROR(loom_low_allocation_rematerialize_failure(
           module, &table, /*schedule=*/NULL, &rematerialization, emitter,
-          pass->arena, &result));
+          attempt_arena, &result));
       if (result.rewritten_operand_count != 0) {
         loom_low_materialize_allocation_statistics_t* statistics =
             loom_low_materialize_allocation_statistics(pass);
@@ -491,7 +507,7 @@ iree_status_t loom_low_materialize_allocation_run(loom_pass_t* pass,
       loom_low_allocation_rematerialization_result_t rematerialization_result =
           {0};
       IREE_RETURN_IF_ERROR(loom_low_allocation_rematerialize_spill_plan(
-          module, &table, &rematerialization, pass->arena,
+          module, &table, &rematerialization, attempt_arena,
           &rematerialization_result));
       if (rematerialization_result.value.rewritten_operand_count != 0) {
         IREE_RETURN_IF_ERROR(
@@ -513,7 +529,7 @@ iree_status_t loom_low_materialize_allocation_run(loom_pass_t* pass,
               ? pass->diagnostic_emitter
               : (iree_diagnostic_emitter_t){0};
       IREE_RETURN_IF_ERROR(loom_low_allocation_split_fixed_value_spill_plans(
-          module, &table, emitter, pass->arena, &split_result));
+          module, &table, emitter, attempt_arena, &split_result));
       if (split_result.rewritten_operand_count != 0) {
         loom_low_materialize_allocation_statistics_t* statistics =
             loom_low_materialize_allocation_statistics(pass);
@@ -543,7 +559,7 @@ iree_status_t loom_low_materialize_allocation_run(loom_pass_t* pass,
         .emitter = pass->diagnostic_emitter,
     };
     IREE_RETURN_IF_ERROR(loom_low_allocation_materialize_spills(
-        &table, &materialization_options, pass->arena, &result));
+        &table, &materialization_options, attempt_arena, &result));
     if (result.error_count != 0) {
       return iree_ok_status();
     }
@@ -565,4 +581,31 @@ iree_status_t loom_low_materialize_allocation_run(loom_pass_t* pass,
     loom_pass_mark_changed(pass);
     ++iteration_count;
   }
+}
+
+iree_status_t loom_low_materialize_allocation_run(loom_pass_t* pass,
+                                                  loom_module_t* module,
+                                                  loom_func_like_t function) {
+  if (!loom_low_function_def_isa(function.op)) {
+    return iree_ok_status();
+  }
+
+  bool synthesis_admitted = false;
+  IREE_RETURN_IF_ERROR(loom_low_diagnostic_admit_allocation_synthesis(
+      module, function.op, pass->diagnostic_emitter, &synthesis_admitted));
+  if (!synthesis_admitted) {
+    return iree_ok_status();
+  }
+
+  // Retain only rematerialization membership in the pass arena. Each retry
+  // rebuilds the complete function model and allocation table, so its
+  // superseded analysis and repair scratch can return to the shared pool.
+  iree_arena_allocator_t attempt_arena;
+  iree_arena_initialize(pass->arena->block_pool, &attempt_arena);
+  iree_status_t status = loom_low_materialize_allocation_run_attempts(
+      pass, module, function, &attempt_arena);
+  loom_low_materialize_allocation_record_attempt_high_water(pass,
+                                                            &attempt_arena);
+  iree_arena_deinitialize(&attempt_arena);
+  return status;
 }

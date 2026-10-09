@@ -173,6 +173,28 @@ low.func.def target<test.low.core>(@test_target) @block_arg_spill(%row: reg<test
 
 // ====
 
+// Each materialized spill rebuilds the complete allocation snapshot. The
+// per-attempt memory high-water must remain bounded across all three attempts.
+// RUN: pass-report low-materialize-allocation{budgets=test.i32=2}
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @reports_released_allocation_attempt_storage(%row: reg<test.i32>, %carry: reg<test.i32>) -> (reg<test.i32>) asm {
+  low.br ^late
+^late:
+  %late_state = test.const.i32 7
+  low.br ^join(%late_state: reg<test.i32>)
+^join(%state: reg<test.i32>):
+  %sum = test.add.i32 %row, %carry
+  %out = test.add.i32 %sum, %state
+  return %out
+}
+
+// ----
+{"invocations":[{"pass":"low-materialize-allocation","kind":"func","anchor":"func","pipeline":"__command_line","symbol":"reports_released_allocation_attempt_storage","instruction_index":1,"duration_ns":0,"changed":true,"status":{"code":0,"name":"OK"},"statistics":{"storage":2,"spills":2,"reloads":2,"rematerializations":0,"live_range_splits":0,"attempts":3,"attempt_arena_used_bytes_high_water":9664,"attempt_arena_owned_bytes_high_water":32768},"details":[]}]}
+
+// ====
+
 // Structured-region arguments are part of the op's register ABI. They cannot
 // use the function-CFG block-argument spill path.
 // RUN: pass low-materialize-allocation{budgets=test.i32=3}
