@@ -24,6 +24,17 @@
 extern "C" {
 #endif
 
+typedef iree_status_t (*loom_low_lower_contract_accept_rule_fn_t)(
+    void* user_data, const loom_low_lower_rule_selection_t* selection,
+    bool* out_accepted);
+
+typedef struct loom_low_lower_contract_accept_rule_callback_t {
+  // Optional callback deciding whether a matched source graph can be claimed.
+  loom_low_lower_contract_accept_rule_fn_t fn;
+  // Caller-owned payload passed to |fn|.
+  void* user_data;
+} loom_low_lower_contract_accept_rule_callback_t;
+
 typedef struct loom_low_lower_contract_query_options_t {
   // Optional composed contract index used for direct op-to-case lookup.
   const loom_target_contract_index_t* contract_index;
@@ -37,6 +48,8 @@ typedef struct loom_low_lower_contract_query_options_t {
   loom_low_lower_rule_match_descriptor_ref_callback_t descriptor_ref;
   // Optional target-owned descriptor-matrix projection.
   loom_low_lower_descriptor_matrix_t descriptor_matrix;
+  // Optional source-graph ownership filter applied after a rule matches.
+  loom_low_lower_contract_accept_rule_callback_t accept_rule;
 } loom_low_lower_contract_query_options_t;
 
 // Returns true and assigns the generated lower-rule row referenced by a
@@ -91,6 +104,15 @@ iree_status_t loom_low_lower_query_target_contract(
     const loom_low_lower_contract_query_options_t* options,
     const loom_op_t* source_op,
     loom_target_contract_query_result_t* out_result);
+
+// Queries one source op and retains the matched source graph when a generated
+// lower rule is selected. Descriptor-matrix and target-owned legal results
+// leave |out_selection| empty.
+iree_status_t loom_low_lower_query_target_contract_with_selection(
+    const loom_target_contract_query_environment_t* environment,
+    const loom_low_lower_contract_query_options_t* options,
+    const loom_op_t* source_op, loom_target_contract_query_result_t* out_result,
+    loom_low_lower_rule_selection_t* out_selection);
 
 #ifdef __cplusplus
 }  // extern "C"

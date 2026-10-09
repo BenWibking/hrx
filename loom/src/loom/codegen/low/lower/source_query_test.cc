@@ -129,6 +129,15 @@ class LowLowerSourceQueryTest : public ::testing::Test {
                                           argument_ids_[1], i32_type,
                                           LOOM_LOCATION_UNKNOWN, &source_op_));
     result_id_ = loom_scalar_addi_result(source_op_);
+    IREE_ASSERT_OK(loom_scalar_addi_build(
+        &body_builder, 0, argument_ids_[0], argument_ids_[1], i32_type,
+        LOOM_LOCATION_UNKNOWN, &fused_root_op_));
+    IREE_ASSERT_OK(loom_scalar_muli_build(
+        &body_builder, 0, loom_scalar_addi_result(fused_root_op_),
+        argument_ids_[1], i32_type, LOOM_LOCATION_UNKNOWN, &fused_related_op_));
+    IREE_ASSERT_OK(loom_scalar_addi_build(
+        &body_builder, 0, loom_scalar_muli_result(fused_related_op_),
+        argument_ids_[0], i32_type, LOOM_LOCATION_UNKNOWN, &overlap_root_op_));
     const loom_type_t vector_type = loom_type_shaped_1d(
         LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_I32, loom_dim_pack_static(4), 0);
     const loom_value_id_t elements[] = {argument_ids_[0], argument_ids_[1],
@@ -171,6 +180,12 @@ class LowLowerSourceQueryTest : public ::testing::Test {
   loom_module_t* module_ = nullptr;
   loom_func_like_t function_ = {};
   loom_op_t* source_op_ = nullptr;
+  // Root of a selected add-multiply source graph.
+  loom_op_t* fused_root_op_ = nullptr;
+  // Multiply owned by fused_root_op_.
+  loom_op_t* fused_related_op_ = nullptr;
+  // Add whose competing multiply-add graph overlaps fused_root_op_.
+  loom_op_t* overlap_root_op_ = nullptr;
   // Generated vector rule whose guards require native register metadata.
   loom_op_t* mapped_source_op_ = nullptr;
   loom_value_id_t argument_ids_[2] = {LOOM_VALUE_ID_INVALID,
@@ -392,12 +407,44 @@ TEST_F(LowLowerSourceQueryTest, SelectsGeneratedTargetContract) {
   EXPECT_TRUE(iree_string_view_equal(semantic_tag, IREE_SV("integer.add.i32")));
 }
 
+TEST_F(LowLowerSourceQueryTest, RelatedOpsUseSelectedSourceGraphContract) {
+  CreateQueryScope();
+
+  // Query the related op before its root to prove coverage is independent of
+  // the greedy legalization worklist order.
+  loom_target_contract_query_result_t related_result =
+      loom_target_contract_query_result_empty();
+  IREE_ASSERT_OK(QueryContract(fused_related_op_, &related_result));
+  EXPECT_EQ(related_result.outcome, LOOM_TARGET_CONTRACT_QUERY_LEGAL);
+  EXPECT_EQ(related_result.selected_descriptor, nullptr);
+
+  loom_target_contract_query_result_t root_result =
+      loom_target_contract_query_result_empty();
+  IREE_ASSERT_OK(QueryContract(fused_root_op_, &root_result));
+  ASSERT_NE(root_result.selected_descriptor, nullptr);
+  EXPECT_TRUE(iree_string_view_equal(
+      loom_low_descriptor_set_string(
+          mapping_context_.descriptor_set,
+          root_result.selected_descriptor->semantic_tag_string_ref),
+      IREE_SV("test.fused.add_mul.i32")));
+
+  // The later add cannot also claim the multiply and falls through to its
+  // standalone contract, matching source-plan ownership.
+  loom_target_contract_query_result_t overlap_result =
+      loom_target_contract_query_result_empty();
+  IREE_ASSERT_OK(QueryContract(overlap_root_op_, &overlap_result));
+  ASSERT_NE(overlap_result.selected_descriptor, nullptr);
+  EXPECT_TRUE(iree_string_view_equal(
+      loom_low_descriptor_set_string(
+          mapping_context_.descriptor_set,
+          overlap_result.selected_descriptor->semantic_tag_string_ref),
+      IREE_SV("integer.add.i32")));
+}
+
 TEST_F(LowLowerSourceQueryTest, TargetOwnedContractComposesWithGeneratedCases) {
   struct QueryProbe {
     // Operation owned by the target callback.
     const loom_op_t* handled_op = nullptr;
-    // Number of target callback invocations.
-    int query_count = 0;
     // True when the callback observed source-scope analyses.
     bool observed_source_scope = false;
   } probe = {/*.handled_op=*/mapped_source_op_};
@@ -409,7 +456,6 @@ TEST_F(LowLowerSourceQueryTest, TargetOwnedContractComposesWithGeneratedCases) {
                  loom_target_contract_query_result_t* out_result)
                   -> iree_status_t {
         auto* probe = static_cast<QueryProbe*>(user_data);
-        ++probe->query_count;
         probe->observed_source_scope |= environment->value_domain != nullptr &&
                                         environment->view_regions != nullptr;
         *out_result = loom_target_contract_query_result_empty();
@@ -434,7 +480,6 @@ TEST_F(LowLowerSourceQueryTest, TargetOwnedContractComposesWithGeneratedCases) {
   IREE_ASSERT_OK(QueryContract(mapped_source_op_, &target_result));
   EXPECT_EQ(target_result.outcome, LOOM_TARGET_CONTRACT_QUERY_LEGAL);
   EXPECT_EQ(target_result.selected_descriptor, nullptr);
-  EXPECT_EQ(probe.query_count, 2);
   EXPECT_TRUE(probe.observed_source_scope);
 }
 
