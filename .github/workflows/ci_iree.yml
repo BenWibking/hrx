@@ -314,8 +314,6 @@ jobs:
       - name: Report ROCm environment
         if: matrix.kind == 'amdgpu'
         timeout-minutes: 1
-        env:
-          ROCR_VISIBLE_DEVICES: "0"
         run: bash .github/scripts/check_rocm_environment.sh
 
       - name: Check native accelerator access
@@ -328,8 +326,6 @@ jobs:
         if: matrix.kind == 'cpu' || matrix.kind == 'vulkan' || matrix.kind == 'amdgpu'
         id: iree_bazel_ci
         shell: bash
-        env:
-          ROCR_VISIBLE_DEVICES: ${{ matrix.kind == 'amdgpu' && '0' || '' }}
         run: |
           scope_args=()
           if [[ "${{ steps.scope.outputs.loom_only }}" == true && "${{ matrix.command }}" != iree-bazel-repository-build ]]; then
@@ -844,14 +840,10 @@ jobs:
       - name: Report ROCm environment
         if: matrix.kind == 'amdgpu'
         timeout-minutes: 1
-        env:
-          ROCR_VISIBLE_DEVICES: "0"
         run: bash .github/scripts/check_rocm_environment.sh
 
       - name: Run IREE CMake CI
         id: iree_cmake_ci
-        env:
-          ROCR_VISIBLE_DEVICES: ${{ matrix.kind == 'amdgpu' && '0' || '' }}
         run: |
           target_args=()
           if [[ -n "${{ matrix.target_selector }}" ]]; then

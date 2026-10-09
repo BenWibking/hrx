@@ -651,6 +651,38 @@ class CiTest(unittest.TestCase):
             + str(Path("/tmp/rocm-root") / relative_path),
             amdgpu_test.argv,
         )
+        for name in ci.AMDGPU_DEVICE_VISIBILITY_ENV_VARS:
+            self.assertFalse(
+                any(
+                    option.startswith(f"--test_env={name}=")
+                    for option in amdgpu_test.argv
+                )
+            )
+
+    def test_amdgpu_bazel_tests_preserve_device_visibility(self):
+        args = ci.parse_arguments(
+            [
+                "iree-bazel-amdgpu",
+                "--target",
+                "//runtime/...",
+            ]
+        )
+
+        device_visibility = {
+            "ROCR_VISIBLE_DEVICES": "GPU-00112233",
+            "HIP_VISIBLE_DEVICES": "0",
+            "CUDA_VISIBLE_DEVICES": "1",
+            "GPU_DEVICE_ORDINAL": "2",
+        }
+        with mock.patch.dict(ci.os.environ, device_visibility, clear=True):
+            steps = ci.steps_from_args(args)
+
+        amdgpu_test = next(step for step in steps if step.name == "Test IREE / AMDGPU")
+        for name in ci.AMDGPU_DEVICE_VISIBILITY_ENV_VARS:
+            self.assertIn(
+                f"--test_env={name}={device_visibility[name]}",
+                amdgpu_test.argv,
+            )
 
     def test_amdgpu_bazel_device_toolchain_uses_fetched_rocm_root(self):
         args = ci.parse_arguments(["iree-bazel-amdgpu"])
@@ -1077,6 +1109,29 @@ class CiTest(unittest.TestCase):
                     block.index(mkdir_command), block.index(git_config_command)
                 )
 
+    def test_amdgpu_container_jobs_preserve_runner_device_selection(self):
+        for path, job_name in (
+            (".github/workflows/ci_iree.yml", "bazel_linux"),
+            (".github/workflows/ci_iree.yml", "cmake_linux"),
+            (".github/workflows/ci_libhrx.yml", "cmake_linux_gfx942"),
+            (
+                ".github/workflows/test_core_linux_gpu_source.yml",
+                "test_core_linux_gpu_source",
+            ),
+        ):
+            with self.subTest(path=path, job_name=job_name):
+                block = self.workflow_job_block(path, job_name)
+                self.assertIn(
+                    "--env-file /etc/podinfo/gha-gpu-isolation-settings", block
+                )
+                for variable_name in (
+                    "ROCR_VISIBLE_DEVICES",
+                    "HIP_VISIBLE_DEVICES",
+                    "CUDA_VISIBLE_DEVICES",
+                    "GPU_DEVICE_ORDINAL",
+                ):
+                    self.assertNotIn(f"{variable_name}:", block)
+
     def test_fetch_toolchain_uses_owned_ci_entry_point(self):
         script = Path(".github/scripts/fetch_rocm_toolchain.sh").read_text()
         self.assertIn(
@@ -1436,7 +1491,7 @@ fi
             clear=True,
         ):
             steps = ci.steps_from_args(args)
-            expected_env = ci.amdgpu_libhsa_test_env()
+            expected_env = ci.amdgpu_test_env()
 
         test_steps = [
             step for step in steps if step.name.startswith("Test IREE CMake AMDGPU")
