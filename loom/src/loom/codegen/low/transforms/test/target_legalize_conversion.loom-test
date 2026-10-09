@@ -326,3 +326,60 @@ func.def target(@test_target) @vector_integer_widths(%flags: vector<4xi1>, %wide
   %unsigned_wide = vector.fptrunc %28 : vector<3xf32> to vector<3xf16>
   func.return %signed_flags, %unsigned_flags, %signed_wide, %unsigned_wide : vector<4xbf16>, vector<4xf16>, vector<3xf8E4M3>, vector<3xf16>
 }
+
+// ====
+// RUN: pass target-legalize{mode=complete,policy=reference-only},dce
+
+test.target<low_core> @test_target
+
+func.def target(@test_target) @narrow_integer_extensions(%byte: i8, %halfword: i16) -> (i16, i16, i32, i32, i64, i64, i32, i32, i64, i64) {
+  %byte_signed_halfword = scalar.extsi %byte : i8 to i16
+  %byte_unsigned_halfword = scalar.extui %byte : i8 to i16
+  %byte_signed_word = scalar.extsi %byte : i8 to i32
+  %byte_unsigned_word = scalar.extui %byte : i8 to i32
+  %byte_signed_wide = scalar.extsi %byte : i8 to i64
+  %byte_unsigned_wide = scalar.extui %byte : i8 to i64
+  %halfword_signed_word = scalar.extsi %halfword : i16 to i32
+  %halfword_unsigned_word = scalar.extui %halfword : i16 to i32
+  %halfword_signed_wide = scalar.extsi %halfword : i16 to i64
+  %halfword_unsigned_wide = scalar.extui %halfword : i16 to i64
+  func.return %byte_signed_halfword, %byte_unsigned_halfword, %byte_signed_word, %byte_unsigned_word, %byte_signed_wide, %byte_unsigned_wide, %halfword_signed_word, %halfword_unsigned_word, %halfword_signed_wide, %halfword_unsigned_wide : i16, i16, i32, i32, i64, i64, i32, i32, i64, i64
+}
+
+// ----
+test.target<low_core> @test_target
+
+func.def target(@test_target) @narrow_integer_extensions(%byte: i8, %halfword: i16) -> (i16, i16, i32, i32, i64, i64, i32, i32, i64, i64) {
+  %46 = scalar.extui %byte : i8 to i32
+  %47 = scalar.constant 24 : i32
+  %48 = scalar.shli %46, %47 : i32
+  %49 = scalar.shrsi %48, %47 : i32
+  %byte_signed_halfword = scalar.trunci %49 : i32 to i16
+  %44 = scalar.extui %byte : i8 to i32
+  %byte_unsigned_halfword = scalar.trunci %44 : i32 to i16
+  %40 = scalar.extui %byte : i8 to i32
+  %41 = scalar.constant 24 : i32
+  %42 = scalar.shli %40, %41 : i32
+  %byte_signed_word = scalar.shrsi %42, %41 : i32
+  %byte_unsigned_word = scalar.extui %byte : i8 to i32
+  %35 = scalar.extui %byte : i8 to i32
+  %36 = scalar.constant 24 : i32
+  %37 = scalar.shli %35, %36 : i32
+  %38 = scalar.shrsi %37, %36 : i32
+  %byte_signed_wide = scalar.extsi %38 : i32 to i64
+  %33 = scalar.extui %byte : i8 to i32
+  %byte_unsigned_wide = scalar.extui %33 : i32 to i64
+  %29 = scalar.extui %halfword : i16 to i32
+  %30 = scalar.constant 16 : i32
+  %31 = scalar.shli %29, %30 : i32
+  %halfword_signed_word = scalar.shrsi %31, %30 : i32
+  %halfword_unsigned_word = scalar.extui %halfword : i16 to i32
+  %24 = scalar.extui %halfword : i16 to i32
+  %25 = scalar.constant 16 : i32
+  %26 = scalar.shli %24, %25 : i32
+  %27 = scalar.shrsi %26, %25 : i32
+  %halfword_signed_wide = scalar.extsi %27 : i32 to i64
+  %22 = scalar.extui %halfword : i16 to i32
+  %halfword_unsigned_wide = scalar.extui %22 : i32 to i64
+  func.return %byte_signed_halfword, %byte_unsigned_halfword, %byte_signed_word, %byte_unsigned_word, %byte_signed_wide, %byte_unsigned_wide, %halfword_signed_word, %halfword_unsigned_word, %halfword_signed_wide, %halfword_unsigned_wide : i16, i16, i32, i32, i64, i64, i32, i32, i64, i64
+}

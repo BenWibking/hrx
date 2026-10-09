@@ -21,6 +21,41 @@ low.func.def target<wasm.core.simd128> abi(wasm_function) @scalar_integer_consta
 
 // ====
 
+func.def @narrow_integer_extensions(%byte: i8, %halfword: i16) -> (i16, i16, i32, i32, i64, i64, i32, i32, i64, i64) {
+  %byte_signed_halfword = scalar.extsi %byte : i8 to i16
+  %byte_unsigned_halfword = scalar.extui %byte : i8 to i16
+  %byte_signed_word = scalar.extsi %byte : i8 to i32
+  %byte_unsigned_word = scalar.extui %byte : i8 to i32
+  %byte_signed_wide = scalar.extsi %byte : i8 to i64
+  %byte_unsigned_wide = scalar.extui %byte : i8 to i64
+  %halfword_signed_word = scalar.extsi %halfword : i16 to i32
+  %halfword_unsigned_word = scalar.extui %halfword : i16 to i32
+  %halfword_signed_wide = scalar.extsi %halfword : i16 to i64
+  %halfword_unsigned_wide = scalar.extui %halfword : i16 to i64
+  func.return %byte_signed_halfword, %byte_unsigned_halfword, %byte_signed_word, %byte_unsigned_word, %byte_signed_wide, %byte_unsigned_wide, %halfword_signed_word, %halfword_unsigned_word, %halfword_signed_wide, %halfword_unsigned_wide : i16, i16, i32, i32, i64, i64, i32, i32, i64, i64
+}
+
+// ----
+low.func.def target<wasm.core.simd128> abi(wasm_function) @narrow_integer_extensions(%byte: reg<wasm.i32>, %halfword: reg<wasm.i32>) -> (reg<wasm.i32>, reg<wasm.i32>, reg<wasm.i32>, reg<wasm.i32>, reg<wasm.i64>, reg<wasm.i64>, reg<wasm.i32>, reg<wasm.i32>, reg<wasm.i64>, reg<wasm.i64>) asm {
+  %63 = i32.const 255
+  %byte_unsigned_halfword = i32.and %byte, %63
+  %65 = i32.const 24
+  %66 = i32.shl %byte_unsigned_halfword, %65
+  %byte_signed_halfword = i32.shr_s %66, %65
+  %byte_signed_wide = i64.extend_i32_s %byte_signed_halfword
+  %byte_unsigned_wide = i64.extend_i32_u %byte_unsigned_halfword
+  %70 = i32.const 65535
+  %71 = i32.and %halfword, %70
+  %72 = i32.const 16
+  %73 = i32.shl %71, %72
+  %halfword_signed_word = i32.shr_s %73, %72
+  %halfword_signed_wide = i64.extend_i32_s %halfword_signed_word
+  %halfword_unsigned_wide = i64.extend_i32_u %71
+  return %byte_signed_halfword, %byte_unsigned_halfword, %byte_signed_halfword, %byte_unsigned_halfword, %byte_signed_wide, %byte_unsigned_wide, %halfword_signed_word, %71, %halfword_signed_wide, %halfword_unsigned_wide
+}
+
+// ====
+
 // Narrow floating values use unsigned integer lane payloads without conversion.
 func.def @byte_lanes(%input: vector<16xf8E4M3>, %replacement: f8E4M3, %condition: i1) -> (vector<16xi8>, f8E4M3) {
   %last = vector.extract %input[15] : vector<16xf8E4M3> -> f8E4M3

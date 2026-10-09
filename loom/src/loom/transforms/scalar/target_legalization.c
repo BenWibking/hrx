@@ -620,6 +620,85 @@ static iree_status_t loom_scalar_legalize_boolean_extension(
   return iree_ok_status();
 }
 
+// Routes narrow integer extensions through the i32 carrier shared by targets
+// without every logical width pair. Unsigned extension to i32 is the primitive
+// carrier operation: signed values normalize with an i32 shift pair, smaller
+// results truncate that carrier, and wider results extend it once more.
+static iree_status_t loom_scalar_legalize_narrow_integer_extension(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+
+  const bool signed_extension = loom_scalar_extsi_isa(op);
+  const loom_value_id_t input = loom_op_operands(op)[0];
+  const loom_type_t input_type = loom_module_value_type(context->module, input);
+  const loom_type_t result_type =
+      loom_module_value_type(context->module, loom_op_results(op)[0]);
+  const int32_t input_width =
+      loom_scalar_type_bitwidth(loom_type_element_type(input_type));
+  const int32_t result_width =
+      loom_scalar_type_bitwidth(loom_type_element_type(result_type));
+  const loom_type_t working_type = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
+
+  // This is already the carrier primitive used by the decomposition. Leaving
+  // it intact prevents a self-rewrite when a target reports it as unhandled.
+  if (!signed_extension && result_width == 32) {
+    return iree_ok_status();
+  }
+
+  loom_rewriter_t* rewriter = context->rewriter;
+  loom_builder_t* builder = &rewriter->builder;
+  loom_builder_set_before(builder, op);
+  const loom_value_id_t value_checkpoint =
+      loom_rewriter_value_checkpoint(rewriter);
+
+  loom_op_t* conversion = NULL;
+  IREE_RETURN_IF_ERROR(loom_scalar_extui_build(
+      builder, input, input_type, working_type, op->location, &conversion));
+  loom_value_id_t value = loom_scalar_extui_result(conversion);
+  if (signed_extension) {
+    loom_value_id_t shift = LOOM_VALUE_ID_INVALID;
+    IREE_RETURN_IF_ERROR(loom_scalar_legalize_build_i32_constant(
+        builder, op->location, 32 - input_width, &shift));
+    loom_op_t* shifted = NULL;
+    IREE_RETURN_IF_ERROR(loom_scalar_shli_build(
+        builder, 0, value, shift, working_type, op->location, &shifted));
+    IREE_RETURN_IF_ERROR(
+        loom_scalar_shrsi_build(builder, loom_scalar_shli_result(shifted),
+                                shift, working_type, op->location, &shifted));
+    value = loom_scalar_shrsi_result(shifted);
+  }
+
+  if (result_width < 32) {
+    IREE_RETURN_IF_ERROR(loom_scalar_trunci_build(
+        builder, value, working_type, result_type, op->location, &conversion));
+    value = loom_scalar_trunci_result(conversion);
+  } else if (result_width > 32) {
+    if (signed_extension) {
+      IREE_RETURN_IF_ERROR(loom_scalar_extsi_build(builder, value, working_type,
+                                                   result_type, op->location,
+                                                   &conversion));
+      value = loom_scalar_extsi_result(conversion);
+    } else {
+      IREE_RETURN_IF_ERROR(loom_scalar_extui_build(builder, value, working_type,
+                                                   result_type, op->location,
+                                                   &conversion));
+      value = loom_scalar_extui_result(conversion);
+    }
+  }
+
+  IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
+      rewriter, op, &value, 1, value_checkpoint));
+  IREE_RETURN_IF_ERROR(
+      loom_rewriter_replace_all_uses_and_erase(rewriter, op, &value, 1));
+  out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  return iree_ok_status();
+}
+
 static iree_status_t loom_scalar_legalize_bitfield_extract(
     const loom_target_legalizer_entry_t* entry,
     loom_target_legalization_context_t* context, loom_op_t* op,
@@ -1365,9 +1444,23 @@ static const loom_target_legalizer_rule_t kScalarLegalizerRules[] = {
         .legalize = loom_scalar_legalize_boolean_extension,
     },
     {
+        .root_kind = LOOM_OP_SCALAR_EXTSI,
+        .first_operand_element_types =
+            LOOM_SCALAR_TYPE_SET_I8 | LOOM_SCALAR_TYPE_SET_I16,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_scalar_legalize_narrow_integer_extension,
+    },
+    {
         .root_kind = LOOM_OP_SCALAR_EXTUI,
         .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I1,
         .legalize = loom_scalar_legalize_boolean_extension,
+    },
+    {
+        .root_kind = LOOM_OP_SCALAR_EXTUI,
+        .first_operand_element_types =
+            LOOM_SCALAR_TYPE_SET_I8 | LOOM_SCALAR_TYPE_SET_I16,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_scalar_legalize_narrow_integer_extension,
     },
     {
         .root_kind = LOOM_OP_SCALAR_FMAI,
