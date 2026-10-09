@@ -101,11 +101,11 @@ func.def @saved_count(%values: vector<4xi32>, %source_storage: buffer, %replacem
 }
 
 // ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @saved_count(%values: reg<wasm.v128>, %source: reg<wasm.i32>, %replacement: reg<wasm.i32>) -> (reg<wasm.v128>) asm {
-  %count = i32.load %source
+low.func.def target<wasm.core.simd128> abi(wasm_function) @saved_count(%values: reg<wasm.v128>, %source_storage: reg<wasm.i32>, %replacement: reg<wasm.i32>) -> (reg<wasm.v128>) asm {
+  %count = i32.load %source_storage
   %mask = i32.const 31
   %bounded_count = i32.and %count, %mask
-  i32.store %source, %replacement
+  i32.store %source_storage, %replacement
   %result = i32x4.shl %values, %bounded_count
   return %result
 }

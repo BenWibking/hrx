@@ -98,9 +98,11 @@ static void loom_test_grouped_product_evaluation_math_policy_query(
 }
 
 static bool loom_test_math_prefer_fma(
-    const loom_target_math_policy_t* policy, loom_type_t value_type,
+    const loom_target_math_policy_t* policy,
+    const loom_target_bundle_t* target_bundle, loom_type_t value_type,
     loom_target_math_fastmath_flags_t fastmath_flags) {
   (void)policy;
+  (void)target_bundle;
   (void)value_type;
   (void)fastmath_flags;
   return true;
