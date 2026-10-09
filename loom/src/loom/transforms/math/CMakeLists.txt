@@ -19,9 +19,6 @@ loom_cc_library(
     "evaluation.h"
     "legalize.c"
     "patterns.c"
-    "patterns_cbrt.c"
-    "patterns_exp.c"
-    "patterns_log.c"
     "patterns.h"
     "patterns_elementwise.c"
   DEPS
