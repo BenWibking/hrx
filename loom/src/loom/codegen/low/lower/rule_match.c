@@ -965,6 +965,29 @@ static iree_status_t loom_low_lower_rule_guard_matches(
                      value <= payload->i64_range.maximum;
       return iree_ok_status();
     }
+    case LOOM_LOW_LOWER_GUARD_ATTR_I64_SUM_EQ: {
+      const uint16_t attr_index = guard->selector.attribute.attr_index;
+      const uint16_t other_attr_index =
+          guard->selector.attribute.other_attr_index;
+      if (attr_index >= source_op->attribute_count ||
+          other_attr_index >= source_op->attribute_count) {
+        return iree_ok_status();
+      }
+      const loom_attribute_t attr = loom_op_const_attrs(source_op)[attr_index];
+      const loom_attribute_t other_attr =
+          loom_op_const_attrs(source_op)[other_attr_index];
+      if (attr.kind != LOOM_ATTR_I64 || other_attr.kind != LOOM_ATTR_I64) {
+        return iree_ok_status();
+      }
+      if ((other_attr.i64 > 0 && attr.i64 > INT64_MAX - other_attr.i64) ||
+          (other_attr.i64 < 0 && attr.i64 < INT64_MIN - other_attr.i64)) {
+        return iree_ok_status();
+      }
+      *out_matches =
+          attr.i64 + other_attr.i64 ==
+          loom_low_lower_rule_set_guard_payload(rule_set, guard)->i64;
+      return iree_ok_status();
+    }
     case LOOM_LOW_LOWER_GUARD_ATTR_I64_ARRAY_COUNT_EQ:
       if (guard->selector.attribute.attr_index >= source_op->attribute_count ||
           loom_op_const_attrs(source_op)[guard->selector.attribute.attr_index]

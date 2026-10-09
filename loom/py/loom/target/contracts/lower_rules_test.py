@@ -2842,6 +2842,41 @@ def test_compile_lower_rule_set_compiles_i64_bit_mask_attr_projection() -> None:
     )
 
 
+def test_compile_lower_rule_set_compiles_i64_attr_sum_guard() -> None:
+    table = ContractFragment(
+        name="test.attr-sum",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=[
+            DescriptorRule(
+                source_op=scalar_bitwise.scalar_bitfield_extractu,
+                descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                guards=(
+                    Guard.value_type("result", Scalar("i32")),
+                    Guard.i64_attrs_sum_equals("offset", "width", 32),
+                ),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                        results={"dst": ValueRef.result("result")},
+                        immediates={"i32_value": 0},
+                    ),
+                ),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+
+    guard = next(
+        guard
+        for guard in compiled.guards
+        if guard.kind == GuardKind.I64_ATTRS_SUM_EQUALS
+    )
+    assert guard.attr_index == 0
+    assert guard.other_attr_index == 1
+    assert guard.literal_i64 == 32
+
+
 def test_compile_lower_rule_set_compiles_i64_array_element_offset_projection() -> None:
     table = ContractFragment(
         name="test.array-element-offset",
