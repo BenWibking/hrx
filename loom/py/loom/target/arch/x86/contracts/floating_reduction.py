@@ -25,6 +25,7 @@ from loom.target.arch.x86.vector_families import (
     AVX2_SCALAR_FLOAT_FMA_MNEMONICS,
     AVX2_VECTOR_BIT_WIDTHS,
     AVX512_FP16_SCALAR_FLOAT_FMA_MNEMONIC,
+    AVX512_FP16_VECTOR_BIT_WIDTHS,
     AVX512_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     FLOAT_EXTREMA_OPERATIONS,
@@ -47,7 +48,7 @@ _FLOAT_SUFFIXES = {
     "f32": ("ps", "ss"),
     "f64": ("pd", "sd"),
 }
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
+_REGISTER_SUFFIXES = {64: "xmm", 128: "xmm", 256: "ymm", 512: "zmm"}
 _OPERATION_STEMS = {
     "addf": "add",
     "mulf": "mul",
@@ -107,7 +108,7 @@ def _xmm_chunks(
     vector_bit_width: int,
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[list[EmitDescriptorOp], tuple[ValueRef, ...], tuple[Descriptor, ...]]:
-    if vector_bit_width == 128:
+    if vector_bit_width <= 128:
         return [], (ValueRef.operand(operand),), ()
     if vector_bit_width == 256:
         extract = descriptor_lookup("x86.avx2.vextractf128.xmm.ymm")
@@ -134,6 +135,7 @@ def _xmm_chunks(
 def ordered_float_reduction_emit_chain(
     input_values: Sequence[ValueRef],
     element: VectorElement,
+    lane_count: int,
     operation: str,
     descriptor_lookup: _DescriptorLookup,
     *,
@@ -147,12 +149,12 @@ def ordered_float_reduction_emit_chain(
     chunk_type = Vector(element.name, lanes=128 // element.bit_width)
     scalar_type = Scalar(element.name)
     chunk_lane_count = 128 // element.bit_width
-    lane_count = len(input_values) * chunk_lane_count
     lane_ordinal = 0
     accumulator = ValueRef.operand("init")
     emits: list[EmitDescriptorOp] = []
     for input_value in input_values:
-        for lane in range(chunk_lane_count):
+        remaining_lane_count = lane_count - lane_ordinal
+        for lane in range(min(chunk_lane_count, remaining_lane_count)):
             lane_value = input_value
             if lane != 0:
                 lane_value = ValueRef.temporary(f"{temporary_prefix}lane{lane_ordinal}")
@@ -186,6 +188,7 @@ def ordered_float_reduction_emit_chain(
 def reassociated_float_reduction_emit_chain(
     input_value: ValueRef,
     element: VectorElement,
+    lane_count: int,
     operation: str,
     descriptor_lookup: _DescriptorLookup,
     *,
@@ -202,7 +205,7 @@ def reassociated_float_reduction_emit_chain(
     scalar_type = Scalar(element.name)
     reduced = input_value
     emits: list[EmitDescriptorOp] = []
-    shift_bytes = 8
+    shift_bytes = lane_count * element.bit_width // 16
     ordinal = 0
     while shift_bytes >= element.bit_width // 8:
         shifted = ValueRef.temporary(f"{temporary_prefix}shifted{ordinal}")
@@ -318,6 +321,7 @@ def _float_reduction_rule(
             reassociated_float_reduction_emit_chain(
                 reduced,
                 element,
+                min(vector_bit_width, 128) // element.bit_width,
                 operation,
                 descriptor_lookup,
                 temporary_prefix="horizontal_",
@@ -329,6 +333,7 @@ def _float_reduction_rule(
             ordered_float_reduction_emit_chain(
                 chunks,
                 element,
+                vector_bit_width // element.bit_width,
                 operation,
                 descriptor_lookup,
                 temporary_prefix="ordered_",
@@ -421,7 +426,7 @@ def avx512_fp16_float_reduction_rules(
     """Generates ordered and reassociated AVX512-FP16 reductions."""
 
     return _float_reduction_rules(
-        (*AVX2_VECTOR_BIT_WIDTHS, *AVX512_VECTOR_BIT_WIDTHS),
+        AVX512_FP16_VECTOR_BIT_WIDTHS,
         descriptor_lookup,
         elements=(FP16_ELEMENT,),
         priority=1,
@@ -455,7 +460,8 @@ def _float_dot_rule(
     emits = [*lhs_emits, *rhs_emits]
     lane_ordinal = 0
     for lhs_chunk, rhs_chunk in zip(lhs_chunks, rhs_chunks, strict=True):
-        for lane in range(chunk_lane_count):
+        remaining_lane_count = lane_count - lane_ordinal
+        for lane in range(min(chunk_lane_count, remaining_lane_count)):
             lhs_lane = lhs_chunk
             rhs_lane = rhs_chunk
             if lane != 0:
@@ -558,7 +564,7 @@ def avx512_fp16_float_dot_rules(
     """Generates exact ordered FP16-FMA dots at every native vector width."""
 
     return _float_dot_rules(
-        (*AVX2_VECTOR_BIT_WIDTHS, *AVX512_VECTOR_BIT_WIDTHS),
+        AVX512_FP16_VECTOR_BIT_WIDTHS,
         descriptor_lookup,
         elements=(FP16_ELEMENT,),
         priority=1,

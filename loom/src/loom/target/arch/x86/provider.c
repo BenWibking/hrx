@@ -167,6 +167,10 @@ static loom_x86_feature_bits_t loom_x86_cpu_contract_feature_bits(
                          IREE_CPU_DATA0_X86_64_AVX512BF16)) {
       features |= LOOM_X86_FEATURE_AVX512_BF16;
     }
+    if (iree_any_bit_set(cpu_data->fields[0],
+                         IREE_CPU_DATA0_X86_64_AVX512FP16)) {
+      features |= LOOM_X86_FEATURE_AVX512_FP16;
+    }
   }
   return features;
 }

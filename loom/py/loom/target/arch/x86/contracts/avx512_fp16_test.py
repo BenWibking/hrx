@@ -34,6 +34,7 @@ from loom.target.contracts import (
     EmitDescriptorOp,
     GuardKind,
     Scalar,
+    ValueAliasRule,
     Vector,
     compile_lower_rule_set,
 )
@@ -50,7 +51,7 @@ _VECTOR_BINARY_OPS = {
     vector.vector_mulf: "mulf",
     vector.vector_divf: "divf",
 }
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
+_REGISTER_SUFFIXES = {64: "xmm", 128: "xmm", 256: "ymm", 512: "zmm"}
 _SCALAR_EXTREMA_OPS = {
     scalar_arithmetic.scalar_minimumf: "minimumf",
     scalar_arithmetic.scalar_maximumf: "maximumf",
@@ -121,13 +122,6 @@ def test_fragment_compiles_every_authored_rule() -> None:
         dialect_ops=X86_AVX512_FP16_CONTRACT_DIALECT_OPS,
     )
     assert len(compiled.rules) == len(X86_AVX512_FP16_CONTRACT_FRAGMENT.cases)
-
-
-def test_fp16_rules_override_the_base_scalar_carrier_rules() -> None:
-    assert all(
-        isinstance(case, DescriptorRule) and case.priority >= 1
-        for case in X86_AVX512_FP16_CONTRACT_FRAGMENT.cases
-    )
 
 
 def test_scalar_arithmetic_covers_the_native_fp16_family() -> None:
@@ -205,10 +199,26 @@ def test_comparisons_cover_scalar_and_every_vector_representation() -> None:
         )
         for rule in _rules_for(vector.vector_cmpf)
     } == {
+        (Vector("f16", lanes=4), Vector("i1", lanes=4), "x86.k"),
+        (Vector("f16", lanes=4), Vector("i1", lanes=4), "x86.xmm"),
         (Vector("f16", lanes=8), Vector("i1", lanes=8), "x86.k"),
+        (Vector("f16", lanes=8), Vector("i1", lanes=8), "x86.xmm"),
         (Vector("f16", lanes=16), Vector("i1", lanes=16), "x86.k"),
+        (Vector("f16", lanes=16), Vector("i1", lanes=16), "x86.xmm"),
         (Vector("f16", lanes=32), Vector("i1", lanes=32), "x86.k"),
         (Vector("f16", lanes=32), Vector("i1", lanes=32), "x86.ymm"),
+    }
+
+    assert {
+        (
+            _value_type(rule, "condition"),
+            _value_type(rule, "result"),
+            _register_class(rule, "condition"),
+        )
+        for rule in _rules_for(vector.vector_select)
+    } == {
+        (Vector("i1", lanes=4), Vector("f16", lanes=4), "x86.k"),
+        (Vector("i1", lanes=4), Vector("f16", lanes=4), "x86.xmm"),
     }
 
 
@@ -230,10 +240,43 @@ def test_scalar_carrier_rules_preserve_the_existing_fp16_surface() -> None:
     assert {
         _value_type(rule, "result") for rule in _rules_for(vector.vector_splat)
     } == {
+        Vector("f16", lanes=4),
         Vector("f16", lanes=8),
         Vector("f16", lanes=16),
         Vector("f16", lanes=32),
     }
+    assert {rule.priority for rule in _rules_for(vector.vector_splat)} == {2}
+    constant_rules = _rules_for(vector.vector_constant)
+    assert {_value_type(rule, "result") for rule in constant_rules} == {
+        Vector("i16", lanes=4),
+        Vector("f16", lanes=4),
+    }
+    assert all(
+        _descriptor_keys(rule)
+        == (
+            "x86.scalar.movimm.gpr32",
+            "x86.avx2.vmovd.xmm.gpr32",
+            "x86.avx2.vpbroadcastw.xmm",
+        )
+        for rule in constant_rules
+    )
+    assert {
+        (_value_type(rule, "input"), _value_type(rule, "result"))
+        for rule in X86_AVX512_FP16_CONTRACT_FRAGMENT.cases
+        if isinstance(rule, ValueAliasRule) and rule.source_op is vector.vector_bitcast
+    } == {
+        (Vector("f16", lanes=4), Vector("i16", lanes=4)),
+        (Vector("i16", lanes=4), Vector("f16", lanes=4)),
+    }
+
+
+def test_low_xmm_shuffle_covers_both_logical_payload_types() -> None:
+    rules = _rules_for(vector.vector_shuffle)
+    assert len(rules) == 1
+    rule = rules[0]
+    assert _value_type(rule, "source") == Vector(("i16", "f16"), lanes=4)
+    assert _value_type(rule, "result") == Vector(("i16", "f16"), lanes=4)
+    assert _descriptor_keys(rule) == ("x86.avx2.vpshuflw.xmm",)
 
 
 def test_conversions_cover_every_representable_native_width() -> None:
@@ -261,10 +304,12 @@ def test_conversions_cover_every_representable_native_width() -> None:
     }
     assert vector_pairs == {
         vector.vector_extf: {
+            (Vector("f16", lanes=4), Vector("f32", lanes=4)),
             (Vector("f16", lanes=8), Vector("f32", lanes=8)),
             (Vector("f16", lanes=16), Vector("f32", lanes=16)),
         },
         vector.vector_fptrunc: {
+            (Vector("f32", lanes=4), Vector("f16", lanes=4)),
             (Vector("f32", lanes=8), Vector("f16", lanes=8)),
             (Vector("f32", lanes=16), Vector("f16", lanes=16)),
         },
@@ -294,6 +339,39 @@ def test_scalar_memory_preserves_every_addressing_recipe() -> None:
             assert memory_emits[0].source_memory.vector_lane_count == 1
 
 
+def test_low_xmm_memory_preserves_every_addressing_recipe() -> None:
+    for source_op, type_field in (
+        (vector.vector_load, "result"),
+        (vector.vector_store, "value"),
+    ):
+        rules = tuple(
+            rule
+            for rule in _rules_for(source_op)
+            if _value_type(rule, type_field) == Vector("f16", lanes=4)
+        )
+        assert len(rules) == 9
+        for rule in rules:
+            memory_emits = tuple(
+                emit
+                for emit in rule.emit
+                if isinstance(emit, EmitDescriptorOp)
+                and emit.descriptor.semantic_tag.startswith("memory.")
+            )
+            assert len(memory_emits) == 1
+            assert memory_emits[0].source_memory is not None
+            assert memory_emits[0].source_memory.element_byte_count == 2
+            assert memory_emits[0].source_memory.vector_lane_count == 4
+            assert memory_emits[0].descriptor.key.startswith("x86.avx2.vmovsd.")
+            assert not any(
+                key
+                in (
+                    "x86.avx2.vmovd.xmm.gpr32",
+                    "x86.avx2.vmovd.gpr32.xmm",
+                )
+                for key in _descriptor_keys(rule)
+            )
+
+
 def test_lane_movement_preserves_the_xmm_scalar_carrier() -> None:
     for source_op, vector_field, scalar_field, transport_key in (
         (
@@ -314,6 +392,7 @@ def test_lane_movement_preserves_the_xmm_scalar_carrier() -> None:
             (_value_type(rule, vector_field), _value_type(rule, scalar_field))
             for rule in rules
         } == {
+            (Vector("f16", lanes=4), Scalar("f16")),
             (Vector("f16", lanes=8), Scalar("f16")),
             (Vector("f16", lanes=16), Scalar("f16")),
             (Vector("f16", lanes=32), Scalar("f16")),
@@ -429,6 +508,42 @@ def test_reductions_preserve_fp16_accumulation_semantics() -> None:
     assert all(
         not any("vpermil" in key for key in _descriptor_keys(rule)) for rule in rules
     )
+    ordered_f16x4 = next(
+        rule
+        for rule in packed_rules
+        if _enum_keyword(rule, "kind") == "addf"
+        and _value_type(rule, "input") == Vector("f16", lanes=4)
+        and any(
+            guard.kind == GuardKind.INSTANCE_FLAGS_HAS_NONE
+            and guard.field == "fastmath"
+            and guard.enum_keyword == "reassoc"
+            for guard in rule.guards
+        )
+    )
+    assert _descriptor_keys(ordered_f16x4).count("x86.avx512_fp16.vaddsh.xmm") == 4
+    assert tuple(
+        emit.immediates["bytes"]
+        for emit in ordered_f16x4.emit
+        if emit.descriptor.key == "x86.avx2.vpsrldq.xmm"
+    ) == (2, 4, 6)
+
+    reassociated_f16x4 = next(
+        rule
+        for rule in packed_rules
+        if _enum_keyword(rule, "kind") == "addf"
+        and _value_type(rule, "input") == Vector("f16", lanes=4)
+        and any(
+            guard.kind == GuardKind.INSTANCE_FLAGS_HAS_ALL
+            and guard.field == "fastmath"
+            and guard.enum_keyword == "reassoc"
+            for guard in rule.guards
+        )
+    )
+    assert tuple(
+        emit.immediates["bytes"]
+        for emit in reassociated_f16x4.emit
+        if emit.descriptor.key == "x86.avx2.vpsrldq.xmm"
+    ) == (4, 2)
 
 
 def test_dots_accumulate_with_ordered_scalar_fp16_fma() -> None:
@@ -458,4 +573,13 @@ def test_dots_accumulate_with_ordered_scalar_fp16_fma() -> None:
     assert all("x86.avx2.vpsrldq.xmm" in _descriptor_keys(rule) for rule in rules)
     assert all(
         not any("vpermil" in key for key in _descriptor_keys(rule)) for rule in rules
+    )
+    f16x4_rule = next(
+        rule for rule in rules if _value_type(rule, "lhs") == Vector("f16", lanes=4)
+    )
+    assert (
+        _descriptor_keys(f16x4_rule).count(
+            f"x86.avx512_fp16.{AVX512_FP16_SCALAR_FLOAT_FMA_MNEMONIC}.xmm"
+        )
+        == 4
     )

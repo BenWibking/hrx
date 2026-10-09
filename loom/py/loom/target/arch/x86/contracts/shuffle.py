@@ -268,6 +268,18 @@ def avx2_shuffle_rules(
     )
 
 
+def x86_low_xmm_word_shuffle_rule(
+    descriptor_lookup: _DescriptorLookup,
+) -> DescriptorRule:
+    """Builds the four-word shuffle carried in the low half of XMM."""
+    return _immediate_shuffle_rule(
+        Vector(("i16", "f16"), lanes=4),
+        "x86.avx2.vpshuflw.xmm",
+        4,
+        descriptor_lookup,
+    )
+
+
 def _zmm_direct_shuffle_rule(
     *,
     element_names: tuple[str, ...],

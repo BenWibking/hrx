@@ -55,8 +55,13 @@ from loom.target.contracts.templates import (
     ternary_descriptor_rules,
 )
 
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
-_REGISTER_CLASSES = {128: "x86.xmm", 256: "x86.ymm", 512: "x86.zmm"}
+_REGISTER_SUFFIXES = {64: "xmm", 128: "xmm", 256: "ymm", 512: "zmm"}
+_REGISTER_CLASSES = {
+    64: "x86.xmm",
+    128: "x86.xmm",
+    256: "x86.ymm",
+    512: "x86.zmm",
+}
 _INTEGER_SOURCE_OPS = {
     "addi": vector.vector_addi,
     "subi": vector.vector_subi,

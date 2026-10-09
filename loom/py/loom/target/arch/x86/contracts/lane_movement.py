@@ -19,6 +19,7 @@ from loom.target.arch.x86.contracts.rule_builders import (
 )
 from loom.target.arch.x86.vector_families import (
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_FP16_VECTOR_BIT_WIDTHS,
     AVX512_VECTOR_BIT_WIDTHS,
     X86_LANE_FAMILIES,
 )
@@ -202,7 +203,7 @@ def _lane_insert_rule(
         )
     inserted = (
         ValueRef.result("result")
-        if vector_bit_width == 128
+        if vector_bit_width <= 128
         else ValueRef.temporary("inserted_chunk")
     )
     emits.append(
@@ -211,7 +212,7 @@ def _lane_insert_rule(
             operands={"dest": dest, "value": lane_value},
             results={"dst": inserted},
             result_types=(
-                None if vector_bit_width == 128 else {"dst": DescriptorResultType()}
+                None if vector_bit_width <= 128 else {"dst": DescriptorResultType()}
             ),
             immediates={"lane": lane},
         )
@@ -543,7 +544,7 @@ def avx512_fp16_lane_movement_rules(
     )
     return tuple(
         rule
-        for vector_bit_width in (*AVX2_VECTOR_BIT_WIDTHS, *AVX512_VECTOR_BIT_WIDTHS)
+        for vector_bit_width in AVX512_FP16_VECTOR_BIT_WIDTHS
         for rule in (
             _lane_extract_rule(
                 element_names=("f16",),

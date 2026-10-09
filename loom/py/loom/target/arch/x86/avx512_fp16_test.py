@@ -55,8 +55,10 @@ def test_avx512_fp16_rows_cover_the_native_scalar_and_vector_family() -> None:
     add("vfmadd231sh.xmm", 0x24B9, FEATURE_AVX512_FP16)
     add("vcmpsh.xmm", 0x2BC2, FEATURE_AVX512_FP16)
 
+    add("vcvtph2psx.xmm.xmm", 0x2413, FEATURE_AVX512_FP16 | FEATURE_AVX512_VL)
     add("vcvtph2psx.ymm.xmm", 0x6413, FEATURE_AVX512_FP16 | FEATURE_AVX512_VL)
     add("vcvtph2psx.zmm.ymm", 0xA413, FEATURE_AVX512_FP16)
+    add("vcvtps2phx.xmm.xmm", 0x041D, FEATURE_AVX512_FP16 | FEATURE_AVX512_VL)
     add("vcvtps2phx.xmm.ymm", 0x441D, FEATURE_AVX512_FP16 | FEATURE_AVX512_VL)
     add("vcvtps2phx.ymm.zmm", 0x841D, FEATURE_AVX512_FP16)
     add("vcvtsh2ss.xmm", 0x2013, FEATURE_AVX512_FP16)

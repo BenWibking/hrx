@@ -664,6 +664,34 @@ VMOVDQU64 = _instruction(
     _IMMEDIATES_1,
     _encoding(_EVEX, _MAP_1, 2, 1, 0x6F, (512,)),
 )
+VMOVSD_INDEXED_LOAD = _instruction(
+    "vmovsd",
+    _INDEXED_LOAD,
+    _OPERANDS_19,
+    _IMMEDIATES_2,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x10, (128,)),
+)
+VMOVSD_LOAD = _instruction(
+    "vmovsd",
+    _LOAD,
+    _OPERANDS_18,
+    _IMMEDIATES_3,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x10, (128,)),
+)
+VMOVSD_INDEXED_STORE_SOURCE = _instruction(
+    "vmovsd",
+    _INDEXED_STORE,
+    _OPERANDS_1,
+    _IMMEDIATES_2,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x11, (128,)),
+)
+VMOVSD_STORE_SOURCE = _instruction(
+    "vmovsd",
+    _STORE,
+    _OPERANDS_0,
+    _IMMEDIATES_3,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x11, (128,)),
+)
 VMOVQ_TO_GPR64 = _instruction(
     "vmovq",
     _REVERSE_UNARY,
@@ -1426,6 +1454,13 @@ VPSHUFD = _instruction(
     _IMMEDIATES_5,
     _encoding(_VEX, _MAP_1, 1, 0, 0x70, (128,)),
 )
+VPSHUFLW = _instruction(
+    "vpshuflw",
+    _UNARY_IMMEDIATE,
+    _OPERANDS_13,
+    _IMMEDIATES_5,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x70, (128,)),
+)
 VPSLLQ = _instruction(
     "vpsllq",
     _SHIFT_IMMEDIATE_6,
@@ -1793,4 +1828,10 @@ VECTOR_MEMORY = (
     VMOVDQU32_INDEXED_LOAD,
     VMOVDQU32_STORE_SOURCE,
     VMOVDQU32_INDEXED_STORE_SOURCE,
+)
+XMM_QWORD_MEMORY = (
+    VMOVSD_LOAD,
+    VMOVSD_INDEXED_LOAD,
+    VMOVSD_STORE_SOURCE,
+    VMOVSD_INDEXED_STORE_SOURCE,
 )

@@ -108,7 +108,8 @@ static bool loom_x86_math_prefer_avx512_fma(
       return false;
     }
     const int64_t bit_width = loom_type_dim_static_size_at(value_type, 0) * 16;
-    return bit_width == 128 || bit_width == 256 || bit_width == 512;
+    return bit_width == 64 || bit_width == 128 || bit_width == 256 ||
+           bit_width == 512;
   }
   return loom_type_is_vector(value_type) && loom_type_rank(value_type) == 1 &&
          loom_type_is_all_static(value_type) &&

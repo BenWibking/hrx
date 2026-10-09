@@ -749,6 +749,90 @@ def x86_scalar_xmm_word_memory_rules(
     )
 
 
+def _vector_memory_type_rules(
+    descriptor_lookup: _DescriptorLookup,
+    *,
+    descriptor_key_prefix: str,
+    register_suffix: str,
+    value_type: TypePattern,
+    element_byte_count: int,
+    lane_count: int,
+    diagnostic: GuardDiagnostic,
+    priority: int = 0,
+) -> tuple[DescriptorRule, ...]:
+    """Builds every addressing form for one exact vector transfer type."""
+    rules: list[DescriptorRule] = []
+    for source_op, operation in (
+        (vector.vector_load, SourceMemoryOperation.LOAD),
+        (vector.vector_store, SourceMemoryOperation.STORE),
+    ):
+        for addressing in _MemoryAddressing:
+            descriptor_key = _memory_descriptor_key(
+                descriptor_key_prefix,
+                operation,
+                addressing=addressing,
+                register_suffix=register_suffix,
+            )
+            rules.append(
+                _memory_rule(
+                    source_op,
+                    operation,
+                    value_type,
+                    element_byte_count=element_byte_count,
+                    lane_count=lane_count,
+                    addressing=addressing,
+                    descriptor_key=descriptor_key,
+                    descriptor_lookup=descriptor_lookup,
+                    diagnostic=diagnostic,
+                    priority=priority,
+                )
+            )
+        rules.extend(
+            _full_width_memory_rules(
+                source_op,
+                operation,
+                value_type,
+                element_byte_count=element_byte_count,
+                lane_count=lane_count,
+                descriptor_key=_memory_descriptor_key(
+                    descriptor_key_prefix,
+                    operation,
+                    addressing=_MemoryAddressing.MATERIALIZE_BYTE_OFFSET,
+                    register_suffix=register_suffix,
+                ),
+                descriptor_lookup=descriptor_lookup,
+                diagnostic=diagnostic,
+                priority=priority,
+            )
+        )
+    return tuple(rules)
+
+
+def x86_low_xmm_vector_memory_rules(
+    descriptor_lookup: _DescriptorLookup,
+    *,
+    value_type: TypePattern,
+    element_byte_count: int,
+    lane_count: int,
+    diagnostic: GuardDiagnostic,
+    priority: int = 0,
+) -> tuple[DescriptorRule, ...]:
+    """Transfers one 64-bit logical vector through the low half of XMM."""
+
+    if element_byte_count * lane_count != 8:
+        raise ValueError("low-XMM source memory requires an eight-byte payload")
+    return _vector_memory_type_rules(
+        descriptor_lookup,
+        descriptor_key_prefix="x86.avx2.vmovsd",
+        register_suffix="xmm",
+        value_type=value_type,
+        element_byte_count=element_byte_count,
+        lane_count=lane_count,
+        diagnostic=diagnostic,
+        priority=priority,
+    )
+
+
 def x86_vector_memory_rules(
     descriptor_lookup: _DescriptorLookup,
     *,
@@ -772,45 +856,15 @@ def x86_vector_memory_rules(
                 )
             lane_count = vector_byte_width // element_byte_count
             value_type = Vector(element_types, lanes=lane_count)
-            for source_op, operation in (
-                (vector.vector_load, SourceMemoryOperation.LOAD),
-                (vector.vector_store, SourceMemoryOperation.STORE),
-            ):
-                for addressing in _MemoryAddressing:
-                    descriptor_key = _memory_descriptor_key(
-                        f"{descriptor_key_prefix}.vmovdqu32",
-                        operation,
-                        addressing=addressing,
-                        register_suffix=register_suffix,
-                    )
-                    rules.append(
-                        _memory_rule(
-                            source_op,
-                            operation,
-                            value_type,
-                            element_byte_count=element_byte_count,
-                            lane_count=lane_count,
-                            addressing=addressing,
-                            descriptor_key=descriptor_key,
-                            descriptor_lookup=descriptor_lookup,
-                            diagnostic=diagnostic,
-                        )
-                    )
-                rules.extend(
-                    _full_width_memory_rules(
-                        source_op,
-                        operation,
-                        value_type,
-                        element_byte_count=element_byte_count,
-                        lane_count=lane_count,
-                        descriptor_key=_memory_descriptor_key(
-                            f"{descriptor_key_prefix}.vmovdqu32",
-                            operation,
-                            addressing=_MemoryAddressing.MATERIALIZE_BYTE_OFFSET,
-                            register_suffix=register_suffix,
-                        ),
-                        descriptor_lookup=descriptor_lookup,
-                        diagnostic=diagnostic,
-                    )
+            rules.extend(
+                _vector_memory_type_rules(
+                    descriptor_lookup,
+                    descriptor_key_prefix=f"{descriptor_key_prefix}.vmovdqu32",
+                    register_suffix=register_suffix,
+                    value_type=value_type,
+                    element_byte_count=element_byte_count,
+                    lane_count=lane_count,
+                    diagnostic=diagnostic,
                 )
+            )
     return tuple(rules)

@@ -25,6 +25,7 @@ from loom.target.arch.x86.vector_families import (
     AVX512_FP16_FLOAT_EXTREMA_MNEMONICS,
     AVX512_FP16_SCALAR_FLOAT_COMPARE_MNEMONIC,
     AVX512_FP16_SCALAR_FLOAT_EXTREMA_MNEMONICS,
+    AVX512_FP16_VECTOR_BIT_WIDTHS,
     AVX512_SELECT_MNEMONICS,
     FLOAT_ELEMENTS,
     FLOAT_EXTREMA_MNEMONICS,
@@ -44,7 +45,7 @@ from loom.target.contracts import (
 )
 from loom.target.low_descriptors import Descriptor
 
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
+_REGISTER_SUFFIXES = {64: "xmm", 128: "xmm", 256: "ymm", 512: "zmm"}
 _FLOAT_COMPARE_IMMEDIATES = {
     "oeq": 0,
     "ogt": 30,
@@ -427,7 +428,7 @@ def avx512_fp16_float_extrema_rules(
             priority=2,
         )
         for operation in FLOAT_EXTREMA_OPERATIONS
-        for vector_bit_width in _REGISTER_SUFFIXES
+        for vector_bit_width in AVX512_FP16_VECTOR_BIT_WIDTHS
     )
     exact_vector_rules = (
         _float_extrema_rule(
@@ -443,7 +444,7 @@ def avx512_fp16_float_extrema_rules(
             priority=1,
         )
         for operation in FLOAT_EXTREMA_OPERATIONS
-        for vector_bit_width in _REGISTER_SUFFIXES
+        for vector_bit_width in AVX512_FP16_VECTOR_BIT_WIDTHS
     )
     return (
         *fast_scalar_rules,

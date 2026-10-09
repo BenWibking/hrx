@@ -51,8 +51,8 @@ from .common import (
     _xmm_result,
 )
 
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
-_VECTOR_BIT_WIDTHS = tuple(_REGISTER_SUFFIXES)
+_REGISTER_SUFFIXES = {64: "xmm", 128: "xmm", 256: "ymm", 512: "zmm"}
+_VECTOR_BIT_WIDTHS = (128, 256, 512)
 
 
 def _required_feature_bits(vector_bit_width: int, *, scalar: bool = False) -> int:
@@ -267,7 +267,7 @@ def _descriptors() -> tuple[Descriptor, ...]:
                 native.VCVTPH2PSX,
                 vector_bit_width=max(result_width, input_width),
             )
-            for result_width, input_width in ((256, 128), (512, 256))
+            for result_width, input_width in ((128, 64), (256, 128), (512, 256))
         ),
         *(
             _bind(
@@ -275,7 +275,7 @@ def _descriptors() -> tuple[Descriptor, ...]:
                 native.VCVTPS2PHX,
                 vector_bit_width=max(result_width, input_width),
             )
-            for result_width, input_width in ((128, 256), (256, 512))
+            for result_width, input_width in ((64, 128), (128, 256), (256, 512))
         ),
     )
     scalar_conversions = (

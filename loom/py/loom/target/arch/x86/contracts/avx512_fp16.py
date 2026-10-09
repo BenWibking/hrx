@@ -22,6 +22,7 @@ from loom.dsl import Op
 from loom.target.arch.x86.contracts.avx512_predicate import (
     avx512_fp16_compare_rules,
     avx512_fp16_scalar_compare_rule,
+    avx512_fp16_select_rules,
 )
 from loom.target.arch.x86.contracts.constants import (
     floating_scalar_constant_bits_rule,
@@ -38,6 +39,7 @@ from loom.target.arch.x86.contracts.lane_movement import (
     avx512_fp16_lane_movement_rules,
 )
 from loom.target.arch.x86.contracts.memory import (
+    x86_low_xmm_vector_memory_rules,
     x86_scalar_xmm_word_memory_rules,
 )
 from loom.target.arch.x86.contracts.rule_builders import (
@@ -47,12 +49,13 @@ from loom.target.arch.x86.contracts.scalar_float import (
     scalar_register_conversion_rule,
     xmm_scalar_select_rule,
 )
+from loom.target.arch.x86.contracts.shuffle import x86_low_xmm_word_shuffle_rule
 from loom.target.arch.x86.contracts.vector_arithmetic import (
     direct_vector_family_rules,
     vector_fma_family_rules,
 )
 from loom.target.arch.x86.contracts.vector_construction import (
-    avx512_fp16_vector_splat_rules,
+    avx512_fp16_vector_construction_rules,
 )
 from loom.target.arch.x86.descriptors import X86_AVX512_FEATURES_DESCRIPTOR_SET
 from loom.target.arch.x86.vector_families import (
@@ -60,6 +63,7 @@ from loom.target.arch.x86.vector_families import (
     AVX512_FP16_FLOAT_FMA_MNEMONIC,
     AVX512_FP16_SCALAR_FLOAT_BINARY_FAMILIES,
     AVX512_FP16_SCALAR_FLOAT_FMA_MNEMONIC,
+    AVX512_FP16_VECTOR_BIT_WIDTHS,
     FP16_ELEMENT,
 )
 from loom.target.contracts import (
@@ -86,8 +90,7 @@ _I16 = Scalar("i16")
 _I32 = Scalar("i32")
 _F16 = Scalar("f16")
 _F32 = Scalar("f32")
-_VECTOR_BIT_WIDTHS = (128, 256, 512)
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
+_REGISTER_SUFFIXES = {64: "xmm", 128: "xmm", 256: "ymm", 512: "zmm"}
 
 _SOURCE_MEMORY_DIAGNOSTIC = GuardDiagnostic(
     subject_role="source-memory",
@@ -207,6 +210,7 @@ def _scalar_rules() -> tuple[DescriptorRule, ...]:
 def _vector_conversion_rules() -> tuple[DescriptorRule, ...]:
     cases: list[DirectDescriptorCase] = []
     for lane_count, input_suffix, result_suffix in (
+        (4, "xmm", "xmm"),
         (8, "xmm", "ymm"),
         (16, "ymm", "zmm"),
     ):
@@ -244,7 +248,7 @@ def _vector_rules() -> tuple[DescriptorRule, ...]:
         *direct_vector_family_rules(
             _descriptor,
             descriptor_key_prefix="x86.avx512_fp16",
-            vector_bit_widths=_VECTOR_BIT_WIDTHS,
+            vector_bit_widths=AVX512_FP16_VECTOR_BIT_WIDTHS,
             integer_families=(),
             float_families=AVX512_FP16_FLOAT_BINARY_FAMILIES,
             priority=1,
@@ -252,13 +256,15 @@ def _vector_rules() -> tuple[DescriptorRule, ...]:
         *vector_fma_family_rules(
             _descriptor,
             descriptor_key_prefix="x86.avx512_fp16",
-            vector_bit_widths=_VECTOR_BIT_WIDTHS,
+            vector_bit_widths=AVX512_FP16_VECTOR_BIT_WIDTHS,
             fma_mnemonics={"f16": AVX512_FP16_FLOAT_FMA_MNEMONIC},
             elements=(FP16_ELEMENT,),
             priority=1,
         ),
         *avx512_fp16_compare_rules(_descriptor),
-        *avx512_fp16_vector_splat_rules(_descriptor),
+        *avx512_fp16_select_rules(_descriptor),
+        *avx512_fp16_vector_construction_rules(_descriptor),
+        x86_low_xmm_word_shuffle_rule(_descriptor),
         *_vector_conversion_rules(),
     )
 
@@ -268,6 +274,14 @@ def _transport_rules() -> tuple[DescriptorRule, ...]:
         *x86_scalar_xmm_word_memory_rules(
             _descriptor,
             value_type=_F16,
+            diagnostic=_SOURCE_MEMORY_DIAGNOSTIC,
+            priority=1,
+        ),
+        *x86_low_xmm_vector_memory_rules(
+            _descriptor,
+            value_type=Vector("f16", lanes=4),
+            element_byte_count=2,
+            lane_count=4,
             diagnostic=_SOURCE_MEMORY_DIAGNOSTIC,
             priority=1,
         ),
