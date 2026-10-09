@@ -7,7 +7,7 @@ func.def target(@target) @load_extf_bf16x16(%source: buffer) -> (vector<16xf32>)
   %base = index.constant 0 : offset
   %source_view = buffer.view %source_aligned[%base] : buffer -> view<16xbf16>
   %loaded = vector.load %source_view[0] : view<16xbf16> -> vector<16xbf16>
-  %converted = vector.extf %loaded : vector<16xbf16> to vector<16xf32>
+  %converted = vector.extf<daz> %loaded : vector<16xbf16> to vector<16xf32>
   func.return %converted : vector<16xf32>
 }
 
@@ -30,7 +30,7 @@ func.def target(@target) @load_extf_bf16x32_dynamic(%source: buffer, %element0: 
   %base = index.constant 0 : offset
   %source_view = buffer.view %source_aligned[%base] : buffer -> view<128xbf16>
   %loaded = vector.load<volatile> %source_view[%element] : view<128xbf16> -> vector<32xbf16>
-  %converted = vector.extf %loaded : vector<32xbf16> to vector<32xf32>
+  %converted = vector.extf<daz> %loaded : vector<32xbf16> to vector<32xf32>
   func.return %converted : vector<32xf32>
 }
 
@@ -342,7 +342,7 @@ func.def target(@target) @store_fptrunc_bf16x16(%input: vector<16xf32>, %output:
   %output_aligned = buffer.assume.alignment %output {minimum_alignment = 32} : buffer
   %base = index.constant 0 : offset
   %output_view = buffer.view %output_aligned[%base] : buffer -> view<16xbf16>
-  %converted = vector.fptrunc %input : vector<16xf32> to vector<16xbf16>
+  %converted = vector.fptrunc<daz> %input : vector<16xf32> to vector<16xbf16>
   vector.store %converted, %output_view[0] : vector<16xbf16>, view<16xbf16>
   func.return
 }
@@ -366,7 +366,7 @@ func.def target(@target) @store_fptrunc_bf16x32_dynamic(%input: vector<32xf32>, 
   %element = index.assume %element0 [range(%element0, 0, 96), multiple_of(%element0, 32)] : index
   %base = index.constant 0 : offset
   %output_view = buffer.view %output_aligned[%base] : buffer -> view<128xbf16>
-  %converted = vector.fptrunc %input : vector<32xf32> to vector<32xbf16>
+  %converted = vector.fptrunc<daz> %input : vector<32xf32> to vector<32xbf16>
   vector.store<volatile> %converted, %output_view[%element] : vector<32xbf16>, view<128xbf16>
   func.return
 }
@@ -441,7 +441,7 @@ func.def target(@target) @shared_load_does_not_fuse(%source: buffer, %raw_output
   %source_view = buffer.view %source_aligned[%base] : buffer -> view<32xbf16>
   %output_view = buffer.view %output_aligned[%base] : buffer -> view<32xbf16>
   %loaded = vector.load %source_view[0] : view<32xbf16> -> vector<32xbf16>
-  %converted = vector.extf %loaded : vector<32xbf16> to vector<32xf32>
+  %converted = vector.extf<daz> %loaded : vector<32xbf16> to vector<32xf32>
   vector.store %loaded, %output_view[0] : vector<32xbf16>, view<32xbf16>
   func.return %converted : vector<32xf32>
 }
@@ -465,7 +465,7 @@ func.def target(@target) @report_store_fptrunc_once(%input: vector<32xf32>, %out
   %output_aligned = buffer.assume.alignment %output {minimum_alignment = 64} : buffer
   %base = index.constant 0 : offset
   %output_view = buffer.view %output_aligned[%base] : buffer -> view<32xbf16>
-  %converted = vector.fptrunc %input : vector<32xf32> to vector<32xbf16>
+  %converted = vector.fptrunc<daz> %input : vector<32xf32> to vector<32xbf16>
   vector.store %converted, %output_view[0] : vector<32xbf16>, view<32xbf16>
   func.return
 }

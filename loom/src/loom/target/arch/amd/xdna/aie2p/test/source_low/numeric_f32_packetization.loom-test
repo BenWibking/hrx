@@ -58,9 +58,49 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @f32x32_bf16_origi
   %76 = vsel.32.mask64 %54, %72, %75
   %77 = vmov.vector512.to.accumulator512 %46
   %78 = vmov.vector512.to.accumulator512 %76
-  %scaled = concat(%77, %78) : (reg<aie2p.mbms>, reg<aie2p.mbms>) -> reg<aie2p.mbms x2>
-  set.rounding 12
-  %rounded = vconv.bf16.fp32 %scaled
+  %81 = vmov.accumulator512.to.vector512 %77
+  %83 = vmov.accumulator512.to.vector512 %78
+  set.srs-mode 0
+  %84 = mov.short 1
+  %85 = vbcst.32 %84
+  %87 = vbcst.32 %25
+  %88 = mov.i32 2147483647
+  %89 = vbcst.32 %88
+  %90 = mov.i32 2139095040
+  %91 = vbcst.32 %90
+  %92 = mov.i32 4194304
+  %93 = vbcst.32 %92
+  set.ups-mode 1
+  set.srs-mode 1
+  %95 = vups.2x.x-to-c.unsigned %81, %32
+  %96 = mov.shift 16
+  %97 = vsrs.2x.c-to-x.unsigned %95, %96
+  %98 = vband %97, %85
+  %99 = vadd.32 %87, %98
+  %100 = vadd.32 %81, %99
+  %101 = vband %81, %89
+  %102 = vlt.u32x16.el.low32 %91, %101
+  %103 = predicate.complete.zero.high32 %102, 0
+  %104 = vbor %81, %93
+  %105 = vsel.32.mask64 %100, %104, %103
+  set.srs-mode 0
+  %107 = vmov.vector512.to.accumulator512 %105
+  %108 = vsrs.2x.b-to-w.unsigned %107, %96
+  set.srs-mode 1
+  %110 = vups.2x.x-to-c.unsigned %83, %32
+  %111 = vsrs.2x.c-to-x.unsigned %110, %96
+  %112 = vband %111, %85
+  %113 = vadd.32 %87, %112
+  %114 = vadd.32 %83, %113
+  %115 = vband %83, %89
+  %116 = vlt.u32x16.el.low32 %91, %115
+  %117 = predicate.complete.zero.high32 %116, 0
+  %118 = vbor %83, %93
+  %119 = vsel.32.mask64 %114, %118, %117
+  set.srs-mode 0
+  %121 = vmov.vector512.to.accumulator512 %119
+  %122 = vsrs.2x.b-to-w.unsigned %121, %96
+  %rounded = concat(%108, %122) : (reg<aie2p.vec256>, reg<aie2p.vec256>) -> reg<aie2p.vec256 x2>
   return %rounded
 }
 

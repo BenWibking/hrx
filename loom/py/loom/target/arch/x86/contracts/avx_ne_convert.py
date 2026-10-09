@@ -19,6 +19,7 @@ from loom.target.arch.x86.descriptors import X86_AVX2_FEATURES_DESCRIPTOR_SET
 from loom.target.contracts import (
     ContractFragment,
     DescriptorRule,
+    EmitDescriptorOp,
     Guard,
     GuardDiagnostic,
     Scalar,
@@ -56,6 +57,16 @@ def _register_suffix(lane_count: int) -> str:
     return {4: "xmm", 8: "ymm"}[lane_count]
 
 
+def _input_subnormal_guards(source_element: str) -> tuple[Guard, ...]:
+    if source_element != "bf16":
+        return ()
+    return (
+        Guard.value_not_subnormal_or_instance_flags_has_all(
+            "input", "subnormal", "daz"
+        ),
+    )
+
+
 def _broadcast_rules(
     source_element: str, lane_count: int
 ) -> tuple[DescriptorRule, ...]:
@@ -72,6 +83,7 @@ def _broadcast_rules(
             guards=(
                 Guard.value_type("input", source_type),
                 Guard.value_type("result", extended_type),
+                *_input_subnormal_guards(source_element),
             ),
         ),
         SourceNode.adjacent_unique_user(
@@ -134,6 +146,7 @@ def _deinterleave_rules(
             guards=(
                 Guard.value_type("input", selected_type),
                 Guard.value_type("result", result_type),
+                *_input_subnormal_guards(source_element),
             ),
         ),
     )
@@ -155,8 +168,36 @@ def _deinterleave_rules(
     )
 
 
+def _narrow_rule(lane_count: int) -> DescriptorRule:
+    input_type = Vector("f32", lanes=lane_count)
+    result_type = Vector("bf16", lanes=lane_count)
+    descriptor = _descriptor(
+        f"x86.avx_ne_convert.vcvtneps2bf16.xmm.{_register_suffix(lane_count)}"
+    )
+    return DescriptorRule(
+        source_op=vector.vector_fptrunc,
+        descriptor=descriptor,
+        guards=(
+            Guard.value_type("input", input_type),
+            Guard.value_type("result", result_type),
+            Guard.value_not_subnormal_or_instance_flags_has_all(
+                "input", "subnormal", "daz"
+            ),
+        ),
+        emit=(
+            EmitDescriptorOp(
+                descriptor=descriptor,
+                operands={"input": ValueRef.operand("input")},
+                results={"dst": ValueRef.result("result")},
+            ),
+        ),
+        report_key=f"native_f32x{lane_count}_to_bf16x{lane_count}",
+    )
+
+
 def _rules() -> tuple[DescriptorRule, ...]:
     return (
+        *(_narrow_rule(lane_count) for lane_count in (4, 8)),
         *(
             rule
             for source_element in _BROADCAST_MNEMONICS
@@ -171,10 +212,6 @@ def _rules() -> tuple[DescriptorRule, ...]:
         ),
     )
 
-
-# VCVTNEPS2BF16 flushes BF16 subnormal results to zero. Loom's strict
-# vector.fptrunc preserves IEEE BF16 subnormals, so that architectural form has
-# no source contract mapping.
 
 X86_AVX_NE_CONVERT_CONTRACT_DIALECT_OPS = {
     "scalar": ALL_SCALAR_OPS,

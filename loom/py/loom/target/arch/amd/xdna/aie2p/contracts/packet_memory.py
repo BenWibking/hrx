@@ -260,6 +260,9 @@ def _fused_float_load_rule(
                 guards=(
                     Guard.value_type("input", source_type),
                     Guard.value_type("result", result_type),
+                    Guard.value_not_subnormal_or_instance_flags_has_all(
+                        "input", "subnormal", "daz"
+                    ),
                 ),
             ),
         ),
@@ -519,6 +522,9 @@ def _fused_float_store_rule(
                 guards=(
                     Guard.value_type("input", source_type),
                     Guard.value_type("result", result_type),
+                    Guard.value_not_subnormal_or_instance_flags_has_all(
+                        "input", "subnormal", "daz"
+                    ),
                 ),
             ),
         ),

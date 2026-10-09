@@ -4,7 +4,7 @@
 func.def @store_narrow_bfloat(%input: f32, %output: buffer) {
   %base = index.constant 0 : offset
   %target = buffer.view %output[%base] : buffer -> view<1xbf16>
-  %narrow = scalar.fptrunc %input : f32 to bf16
+  %narrow = scalar.fptrunc<daz> %input : f32 to bf16
   view.store %narrow, %target[0] : bf16, view<1xbf16>
   func.return
 }

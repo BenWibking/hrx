@@ -29,7 +29,7 @@ func.def target(@target) @broadcast_bf16x8_static(%input: buffer) -> (vector<8xf
   %base = index.constant 0 : offset
   %source = buffer.view %input[%base] : buffer -> view<64xbf16>
   %narrow = view.load %source[3] : view<64xbf16> -> bf16
-  %wide = scalar.extf %narrow : bf16 to f32
+  %wide = scalar.extf<daz> %narrow : bf16 to f32
   %result = vector.splat %wide : vector<8xf32>
   func.return %result : vector<8xf32>
 }
@@ -51,7 +51,7 @@ func.def target(@target) @even_bf16x8_dynamic(%input: buffer, %position0: index)
   %source = buffer.view %input[%base] : buffer -> view<64xbf16>
   %packet = vector.load %source[%position] : view<64xbf16> -> vector<8xbf16>
   %even, %odd = vector.deinterleave<0> %packet : vector<8xbf16> -> vector<4xbf16>, vector<4xbf16>
-  %result = vector.extf %even : vector<4xbf16> to vector<4xf32>
+  %result = vector.extf<daz> %even : vector<4xbf16> to vector<4xf32>
   func.return %result : vector<4xf32>
 }
 
@@ -79,6 +79,25 @@ func.def target(@target) @odd_f16x16_static(%input: buffer) -> (vector<8xf32>) {
 low.func.def target<x86.avx2_features.core>(@target) abi(object_function) abi_layout({signature = (buffer) -> (vector<8xf32>)}) @odd_f16x16_static(%input: reg<x86.gpr64>) -> (reg<x86.ymm>) asm {
   %result = vcvtneoph2ps.load.ymm %input {disp32 = 8}
   return %result
+}
+
+// ====
+
+// AVX-NE-CONVERT can directly narrow either native AVX2 vector width when the
+// source author permits the instruction's input-subnormal behavior.
+x86.target<avx2> @target {contract_feature_bits = 256, contract_set_key = "x86.avx2_features.core"}
+
+func.def target(@target) @narrow_bf16_vectors(%xmm: vector<4xf32>, %ymm: vector<8xf32>) -> (vector<4xbf16>, vector<8xbf16>) {
+  %xmm_result = vector.fptrunc<daz> %xmm : vector<4xf32> to vector<4xbf16>
+  %ymm_result = vector.fptrunc<daz> %ymm : vector<8xf32> to vector<8xbf16>
+  func.return %xmm_result, %ymm_result : vector<4xbf16>, vector<8xbf16>
+}
+
+// ----
+low.func.def target<x86.avx2_features.core>(@target) abi(object_function) abi_layout({signature = (vector<4xf32>, vector<8xf32>) -> (vector<4xbf16>, vector<8xbf16>)}) @narrow_bf16_vectors(%xmm: reg<x86.xmm>, %ymm: reg<x86.ymm>) -> (reg<x86.xmm>, reg<x86.xmm>) asm {
+  %xmm_result = vcvtneps2bf16.xmm.xmm %xmm
+  %ymm_result = vcvtneps2bf16.xmm.ymm %ymm
+  return %xmm_result, %ymm_result
 }
 
 // ====

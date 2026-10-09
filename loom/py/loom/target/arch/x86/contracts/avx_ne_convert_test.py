@@ -70,7 +70,11 @@ def test_fragment_compiles_every_authored_rule() -> None:
 
 
 def test_rules_cover_every_exact_memory_conversion_shape() -> None:
-    rules = X86_AVX_NE_CONVERT_CONTRACT_FRAGMENT.cases
+    rules = tuple(
+        rule
+        for rule in X86_AVX_NE_CONVERT_CONTRACT_FRAGMENT.cases
+        if rule.source_op in (view.view_load, vector.vector_load)
+    )
     report_counts = Counter(rule.report_key for rule in rules)
     assert set(report_counts) == set(_EXPECTED_REPORT_PREFIXES)
     assert set(report_counts.values()) == {9}
@@ -80,6 +84,59 @@ def test_rules_cover_every_exact_memory_conversion_shape() -> None:
         assert _memory_emit(rule).descriptor.key.startswith(
             _EXPECTED_REPORT_PREFIXES[rule.report_key]
         )
+
+
+def test_narrowing_rules_cover_both_register_widths_with_compact_legality() -> None:
+    rules = tuple(
+        rule
+        for rule in X86_AVX_NE_CONVERT_CONTRACT_FRAGMENT.cases
+        if rule.source_op is vector.vector_fptrunc
+    )
+
+    assert len(rules) == 2
+    assert {rule.report_key for rule in rules} == {
+        "native_f32x4_to_bf16x4",
+        "native_f32x8_to_bf16x8",
+    }
+    for rule in rules:
+        permission_guards = tuple(
+            guard
+            for guard in rule.guards
+            if guard.kind is GuardKind.VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL
+        )
+        assert tuple(guard.field for guard in permission_guards) == ("input",)
+        assert tuple(guard.enum_keyword for guard in permission_guards) == ("daz",)
+        assert len(rule.emit) == 1
+        assert rule.emit[0].descriptor.key.startswith(
+            "x86.avx_ne_convert.vcvtneps2bf16."
+        )
+
+
+def test_bfloat_memory_rules_require_input_flush_permission_or_fact() -> None:
+    for rule in X86_AVX_NE_CONVERT_CONTRACT_FRAGMENT.cases:
+        if rule.source_op not in (view.view_load, vector.vector_load):
+            continue
+        extend = next(
+            node
+            for node in rule.source_nodes
+            if node.source_op
+            in (
+                scalar_conversion.scalar_extf,
+                vector.vector_extf,
+            )
+        )
+        input_type = next(
+            guard.type_pattern
+            for guard in extend.guards
+            if guard.kind is GuardKind.VALUE_TYPE and guard.field == "input"
+        )
+        assert input_type is not None
+        permission_guards = tuple(
+            guard
+            for guard in extend.guards
+            if guard.kind is GuardKind.VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL
+        )
+        assert bool(permission_guards) == (input_type.elements == ("bf16",))
 
 
 def test_broadcast_rules_join_load_extend_and_splat() -> None:
