@@ -95,6 +95,7 @@ DIALECT_REFERENCE_SPECS = (
     DialectReferenceSpec("kernel", "program"),
     DialectReferenceSpec("group", "program"),
     DialectReferenceSpec("pipeline", "program"),
+    DialectReferenceSpec("channel", "program"),
     DialectReferenceSpec("target", "program"),
     DialectReferenceSpec("config", "program"),
     DialectReferenceSpec("check", "testing"),

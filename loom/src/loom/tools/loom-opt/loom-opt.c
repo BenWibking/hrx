@@ -31,6 +31,7 @@
 #include "loom/pass/tooling.h"
 #include "loom/pass/trace.h"
 #include "loom/target/configured/provider_set.h"
+#include "loom/target/function_version_projection.h"
 #include "loom/target/pipeline.h"
 #include "loom/target/predicate.h"
 #include "loom/target/provider.h"
@@ -910,6 +911,27 @@ static iree_status_t loom_opt_run_shared_compile_pipeline(
   return status;
 }
 
+typedef struct loom_opt_snapshot_state_t {
+  // Live target versions whose contracts must survive serialized snapshots.
+  const loom_function_version_list_t* function_versions;
+  // Storage for the short-lived, self-contained module projection.
+  iree_arena_block_pool_t* block_pool;
+} loom_opt_snapshot_state_t;
+
+static iree_status_t loom_opt_project_snapshot(
+    void* user_data, const loom_module_t* source_module,
+    loom_module_t** out_projected_module) {
+  *out_projected_module = NULL;
+  const loom_opt_snapshot_state_t* state =
+      (const loom_opt_snapshot_state_t*)user_data;
+  if (state->function_versions->count == 0) {
+    return iree_ok_status();
+  }
+  return loom_target_function_versions_project_module(
+      source_module, state->function_versions, state->block_pool,
+      source_module->allocator, NULL, out_projected_module);
+}
+
 static iree_status_t loom_opt_run_passes(
     const loom_target_low_descriptor_registry_t* low_registry,
     const loom_target_environment_t* target_environment,
@@ -919,9 +941,11 @@ static iree_status_t loom_opt_run_passes(
     loom_source_resolver_t source_resolver,
     loom_diagnostic_sink_t diagnostic_sink, loom_pass_report_t* report,
     const loom_pass_trace_options_t* trace_options, bool* out_execution_started,
-    loom_pass_run_result_t* out_result, iree_allocator_t allocator) {
+    loom_pass_run_result_t* out_result, loom_module_t** out_projected_module,
+    iree_allocator_t allocator) {
   *out_execution_started = false;
   *out_result = (loom_pass_run_result_t){0};
+  *out_projected_module = NULL;
   iree_flag_string_list_t passes = FLAG_pass_list();
   iree_string_view_t pipeline_symbol =
       iree_string_view_trim(iree_make_cstring_view(FLAG_pipeline));
@@ -965,6 +989,17 @@ static iree_status_t loom_opt_run_passes(
   loom_function_version_owner_t function_versions;
   loom_function_version_owner_initialize(&function_version_arena,
                                          &function_versions);
+  loom_opt_snapshot_state_t snapshot_state = {
+      .function_versions = &function_versions.list,
+      .block_pool = block_pool,
+  };
+  if (trace_ptr) {
+    loom_pass_trace_bind_snapshot_projector(
+        trace_ptr, (loom_pass_trace_snapshot_projector_t){
+                       .project = loom_opt_project_snapshot,
+                       .user_data = &snapshot_state,
+                   });
+  }
   loom_target_legalizer_registry_storage_t legalizer_registry_storage = {0};
   iree_status_t status = loom_low_legalizer_registry_storage_initialize(
       legalizer_provider_list, iree_arena_allocator(&function_version_arena),
@@ -1027,6 +1062,10 @@ static iree_status_t loom_opt_run_passes(
           out_result);
     }
     iree_string_builder_deinitialize(&pipeline_builder);
+  }
+  if (iree_status_is_ok(status) && out_result->error_count == 0) {
+    status = loom_opt_project_snapshot(&snapshot_state, module,
+                                       out_projected_module);
   }
   loom_target_legalizer_registry_storage_deinitialize(
       &legalizer_registry_storage);
@@ -1366,6 +1405,8 @@ int main(int argc, char** argv) {
   loomc_module_t* public_module = NULL;
   loomc_result_t* public_result = NULL;
   loom_module_t* module = NULL;
+  // Exported snapshot owned independently of the public module.
+  loom_module_t* projected_module = NULL;
   loom_source_resolver_t source_resolver = {0};
   loom_config_text_binding_set_t config_set;
   loom_config_text_binding_set_initialize(allocator, &config_set);
@@ -1583,8 +1624,13 @@ int main(int argc, char** argv) {
         loom_cleanup_configured_pattern_provider_set(), pass_registry,
         &block_pool, module, source_resolver, diagnostic_sink,
         pass_report_initialized ? &pass_report : NULL, pass_trace_options_ptr,
-        &pass_execution_started, &pass_run_result, allocator);
+        &pass_execution_started, &pass_run_result, &projected_module,
+        allocator);
     status = pass_pipeline_status;
+    if (projected_module) {
+      module = projected_module;
+      diagnostic_sink_state.module = module;
+    }
   }
   bool pass_pipeline_failed = !iree_status_is_ok(pass_pipeline_status) ||
                               pass_run_result.error_count != 0;
@@ -1646,6 +1692,7 @@ int main(int argc, char** argv) {
   }
   loom_config_text_binding_set_deinitialize(&config_set);
   loomc_result_release(public_result);
+  loom_module_free(projected_module);
   loomc_module_release(public_module);
   loomc_source_release(public_source);
   iree_io_file_contents_free(contents);

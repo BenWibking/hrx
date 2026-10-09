@@ -295,17 +295,10 @@
 //
 // --- Pool type ---
 //
-// pool-type ::= 'pool' '<' pool-dim '>'
-// pool-dim  ::= INTEGER | '[' SSA-VALUE ']'
+// pool-type ::= 'pool'
 //
-// Block-managed device memory pool. One parameter: the block size in
-// bytes, which is either a static integer or a dynamic SSA reference.
-// The pool carries no element type, no encoding, no capacity — it's
-// untyped bytes managed at block granularity by the runtime.
-//
-// Examples:
-//   pool<65536>         Static 64KB blocks.
-//   pool<[%BS]>         Dynamic block size.
+// Opaque allocation resource. Backing identity, device, memory-space
+// capabilities, capacity and allocation strategy belong to the value.
 //
 // --- Function types ---
 //

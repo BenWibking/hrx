@@ -357,6 +357,30 @@ def test_npu2_stream_ordinals_match_programmable_register_order() -> None:
     ] == (2, 8)
 
 
+@pytest.mark.parametrize(
+    ("tile_kind", "prefix"),
+    [
+        (TileKind.COMPUTE, "core"),
+        (TileKind.MEMORY, "memory_tile"),
+        (TileKind.SHIM_NOC, "shim_noc"),
+    ],
+)
+@pytest.mark.parametrize("direction", list(StreamDirection))
+def test_npu2_stream_ports_cover_configuration_registers(
+    tile_kind: TileKind, prefix: str, direction: StreamDirection
+) -> None:
+    patterns = {pattern.key: pattern for pattern in NPU2_ARRAY_FAMILY.registers}
+    configuration = patterns[f"{prefix}.stream.{direction.value}_config"]
+    port_count = sum(
+        port.count
+        for port in NPU2_ARRAY_FAMILY.stream_ports
+        if port.tile_kind is tile_kind and port.direction is direction
+    )
+    assert port_count == configuration.dimensions[0].count
+    if direction is StreamDirection.SLAVE:
+        assert port_count == patterns[f"{prefix}.stream.slave_slot"].dimensions[0].count
+
+
 def test_npu2_dma_encoding_and_stream_port_mappings_are_exact() -> None:
     dma = {tile.kind: tile.dma for tile in NPU2_ARRAY_FAMILY.tiles}
 

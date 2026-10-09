@@ -673,6 +673,7 @@ typedef enum loom_dialect_id_e {
   LOOM_DIALECT_AIE2P = 0x21,
   LOOM_DIALECT_GROUP = 0x22,
   LOOM_DIALECT_PIPELINE = 0x23,
+  LOOM_DIALECT_CHANNEL = 0x24,
   LOOM_DIALECT_RESERVED = 0xFF,
 } loom_dialect_id_t;
 #define LOOM_OP_KIND_UNKNOWN ((loom_op_kind_t)0)
@@ -684,7 +685,7 @@ typedef enum loom_dialect_id_e {
 
 // Maximum number of built-in dialects. Dialect IDs must be less than
 // this value. Matches the size of the dialect vtable registry array.
-#define LOOM_DIALECT_BUILTIN_COUNT_ 36
+#define LOOM_DIALECT_BUILTIN_COUNT_ 37
 
 // Extracts the dialect ID (high byte) from an op kind.
 static inline uint8_t loom_op_dialect_id(loom_op_kind_t kind) {
@@ -1120,6 +1121,9 @@ enum loom_call_like_kind_e {
   LOOM_CALL_LIKE_KIND_COMMAND_PROGRAM = 4,
   // Exact compile-time template implementation call.
   LOOM_CALL_LIKE_KIND_TEMPLATE = 5,
+  // Structural composition within the enclosing execution and lifetime scope.
+  // Flattening preserves the callee's target and product boundary requirements.
+  LOOM_CALL_LIKE_KIND_COMPOSITION = 6,
 };
 
 // Interface descriptor for direct symbol call-like ops. The operand field and

@@ -18,10 +18,10 @@ kernel.def @byte_origin() {
 }
 
 // ----
-CHECK: %110 = i32.load8_u %source_view {offset = 1}
-CHECK: %141 = i32.load8_u %source_view {offset = 32}
-CHECK: i32.store8 %destination_view, %110
-CHECK: i32.store8 %destination_view, %141 {offset = 31}
+CHECK: %110 = i32.load8_u %source {offset = 1}
+CHECK: %141 = i32.load8_u %source {offset = 32}
+CHECK: i32.store8 %destination, %110
+CHECK: i32.store8 %destination, %141 {offset = 31}
 
 // ====
 
@@ -42,10 +42,10 @@ kernel.def @halfword_origin() {
 }
 
 // ----
-CHECK: %62 = i32.load16_u %source_view {offset = 2}
-CHECK: %77 = i32.load16_u %source_view {offset = 32}
-CHECK: i32.store16 %destination_view, %62
-CHECK: i32.store16 %destination_view, %77 {offset = 30}
+CHECK: %62 = i32.load16_u %source {offset = 2}
+CHECK: %77 = i32.load16_u %source {offset = 32}
+CHECK: i32.store16 %destination, %62
+CHECK: i32.store16 %destination, %77 {offset = 30}
 
 // ====
 
@@ -66,7 +66,7 @@ kernel.def @word_origin() {
 }
 
 // ----
-CHECK: %110 = i32.load8_u %source_view {offset = 4}
-CHECK: %141 = i32.load8_u %source_view {offset = 35}
-CHECK: i32.store8 %destination_view, %110
-CHECK: i32.store8 %destination_view, %141 {offset = 31}
+CHECK: %110 = i32.load8_u %source {offset = 4}
+CHECK: %141 = i32.load8_u %source {offset = 35}
+CHECK: i32.store8 %destination, %110
+CHECK: i32.store8 %destination, %141 {offset = 31}

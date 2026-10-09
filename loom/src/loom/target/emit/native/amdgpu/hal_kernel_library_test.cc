@@ -1543,6 +1543,16 @@ TEST_F(AmdgpuHalKernelLibraryTest,
   EXPECT_NE(GetStringParam(*diagnostic, 1).find("sramecc+"), std::string::npos);
   EXPECT_EQ(GetStringParam(*diagnostic, 2), "first_kernel");
   EXPECT_NE(GetStringParam(*diagnostic, 3).find("sramecc-"), std::string::npos);
+  EXPECT_EQ(diagnostic->filename, "amdgpu_emit_test.loom");
+  EXPECT_EQ(diagnostic->origin_line, 6u);
+  EXPECT_EQ(diagnostic->origin_column, 1u);
+  ASSERT_EQ(diagnostic->related_locations.size(), 1u);
+  const auto& first_target = diagnostic->related_locations[0];
+  EXPECT_EQ(first_target.label, "first code-object target selected here");
+  EXPECT_EQ(StringViewToString(first_target.source_location.filename),
+            "amdgpu_emit_test.loom");
+  EXPECT_EQ(first_target.source_location.start_line, 3u);
+  EXPECT_EQ(first_target.source_location.start_column, 1u);
 
   loom_amdgpu_hal_kernel_library_deinitialize(&library,
                                               iree_allocator_system());

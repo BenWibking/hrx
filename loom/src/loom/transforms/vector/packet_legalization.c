@@ -1709,7 +1709,8 @@ static iree_status_t loom_vector_packet_build_staging_view(
                                 source_op->location, &byte_count_op));
   loom_op_t* staging_buffer_op = NULL;
   IREE_RETURN_IF_ERROR(loom_buffer_alloca_build(
-      builder, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE, staging_alignment,
+      builder, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE,
+      LOOM_VALUE_ID_INVALID, staging_alignment,
       loom_index_constant_result(byte_count_op), loom_type_buffer(),
       source_op->location, &staging_buffer_op));
   loom_op_t* zero_offset_op = NULL;

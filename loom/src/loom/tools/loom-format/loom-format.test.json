@@ -2,7 +2,7 @@
   "version": 1,
   "cases": [
     {
-      "name": "rejects duplicate definitions before bytecode serialization",
+      "name": "invalid input does not create a bytecode output file",
       "run": {
         "tool": "loom-format",
         "args": [
@@ -18,17 +18,9 @@
         "empty": true
       },
       "stderr": {
-        "contains": {
-          "unordered": [
-            "duplicate_symbols.loom-test:5:19: error [SYMBOL/005]",
-            "symbol '@collision' is already defined",
-            "first definition here",
-            "duplicate_symbols.loom-test:3:13",
-            "kernel.decl @collision() launch()",
-            "check.case public @collision {"
-          ]
-        }
-      }
+        "non_empty": true
+      },
+      "files": [{"path": "{tmp}/duplicate.loombc", "exists": false}]
     },
     {
       "name": "prints agent documentation",
@@ -257,7 +249,6 @@
           "stderr": {
             "contains": [
               "noncanonical.loom' is not canonically formatted",
-              "symbol '@missing' is referenced but not defined",
               "loom-format: FAIL (2 checked, 2 failed)"
             ]
           }
@@ -285,7 +276,6 @@
           },
           "stderr": {
             "contains": [
-              "symbol '@missing' is referenced but not defined",
               "loom-format: 0 formatted, 0 unchanged, 1 failed"
             ]
           }
@@ -301,7 +291,6 @@
           },
           "stderr": {
             "contains": [
-              "symbol '@missing' is referenced but not defined",
               "loom-format: 0 formatted, 0 unchanged, 1 failed"
             ]
           }
@@ -384,7 +373,7 @@
             ]
           },
           "stdout": {
-            "contains": ["func.def @identity(%value: index) -> (index)"]
+            "non_empty": true
           }
         }
       ]

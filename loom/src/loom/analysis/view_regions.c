@@ -14,6 +14,7 @@
 #include "loom/ir/attribute.h"
 #include "loom/ir/context.h"
 #include "loom/ops/buffer/ops.h"
+#include "loom/ops/channel/ops.h"
 #include "loom/ops/encoding/storage.h"
 #include "loom/ops/kernel/ops.h"
 #include "loom/ops/view/ops.h"
@@ -694,14 +695,14 @@ static iree_status_t loom_view_region_build_subview(
   return iree_ok_status();
 }
 
-static iree_status_t loom_view_region_build_refine(
+static iree_status_t loom_view_region_build_reinterpret(
     loom_view_region_table_t* table, loom_value_id_t value_id,
-    const loom_op_t* op, loom_type_t view_type,
+    loom_value_id_t source_value_id, loom_type_t view_type,
     loom_value_fact_view_reference_t reference,
     loom_view_region_t* out_region) {
   const loom_view_region_t* source_region = NULL;
-  IREE_RETURN_IF_ERROR(loom_view_region_get_source(
-      table, loom_view_refine_source(op), &source_region));
+  IREE_RETURN_IF_ERROR(
+      loom_view_region_get_source(table, source_value_id, &source_region));
   IREE_RETURN_IF_ERROR(loom_view_region_build_default(
       table, value_id, view_type, reference, out_region));
   if (!source_region) {
@@ -755,9 +756,10 @@ static iree_status_t loom_view_region_build_for_value(
     return loom_view_region_build_subview(table, value_id, defining_op,
                                           view_type, reference, out_region);
   }
-  if (loom_view_refine_isa(defining_op)) {
-    return loom_view_region_build_refine(table, value_id, defining_op,
-                                         view_type, reference, out_region);
+  if (loom_view_refine_isa(defining_op) || loom_view_bitcast_isa(defining_op)) {
+    return loom_view_region_build_reinterpret(
+        table, value_id, loom_op_const_operands(defining_op)[0], view_type,
+        reference, out_region);
   }
   return loom_view_region_build_default(table, value_id, view_type, reference,
                                         out_region);
@@ -947,6 +949,14 @@ static bool loom_view_region_ordering_acquires(loom_attribute_t attribute) {
 static void loom_view_region_analyze_interference(
     loom_view_region_table_t* table, const loom_op_t* op,
     const loom_op_vtable_t* vtable, loom_trait_flags_t traits) {
+  const bool communication =
+      loom_kernel_async_group_isa(op) || loom_kernel_async_wait_isa(op) ||
+      loom_op_dialect_id(op->kind) == LOOM_DIALECT_CHANNEL;
+  if (communication && iree_any_bit_set(traits, LOOM_TRAIT_UNKNOWN_EFFECTS |
+                                                    LOOM_TRAIT_MEMORY_FENCE)) {
+    table->communication_memory_spaces = UINT32_MAX;
+    return;
+  }
   if (iree_any_bit_set(traits, LOOM_TRAIT_UNKNOWN_EFFECTS)) {
     table->interference_memory_spaces = UINT32_MAX;
   }
@@ -1053,15 +1063,25 @@ static iree_status_t loom_view_region_analyze_operand_access(
                                      region->alias_scope_id,
                                      region->memory_space, flags);
   } else {
-    // Raw byte accesses and buffer aliases participate in the same root proof.
+    // Opaque storage capabilities can carry either buffer or view references.
+    // Their effects belong to the backing allocation, just like typed views.
+    const loom_value_facts_t facts =
+        loom_view_region_lookup_facts(table, operand);
+    const loom_fact_context_t* context =
+        &table->expression_context->fact_table->context;
     loom_value_fact_buffer_reference_t reference = {
         .root_value_id = operand,
         .alias_scope_id = LOOM_VALUE_FACT_ALIAS_SCOPE_ID_NONE,
         .memory_space = LOOM_VALUE_FACT_MEMORY_SPACE_UNKNOWN,
     };
-    (void)loom_value_facts_query_buffer_reference(
-        &table->expression_context->fact_table->context,
-        loom_view_region_lookup_facts(table, operand), &reference);
+    loom_value_fact_view_reference_t view;
+    if (!loom_value_facts_query_buffer_reference(context, facts, &reference) &&
+        loom_value_facts_query_view_reference(context, facts, &view)) {
+      reference.root_value_id =
+          loom_value_fact_view_reference_resolve_root_value(view, operand);
+      reference.alias_scope_id = view.alias_scope_id;
+      reference.memory_space = view.memory_space;
+    }
     loom_view_region_add_root_access(
         table,
         loom_value_fact_buffer_reference_resolve_root_value(reference, operand),
@@ -1505,7 +1525,9 @@ bool loom_view_region_table_root_is_stable(
   }
   return memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_CONSTANT ||
          (alias_scope_id != LOOM_VALUE_FACT_ALIAS_SCOPE_ID_NONE &&
-          !(table->interference_memory_spaces & (1u << memory_space)) &&
+          !((table->interference_memory_spaces |
+             table->communication_memory_spaces) &
+            (1u << memory_space)) &&
           (ordinal >= table->value_domain->definition_count ||
            iree_any_bit_set(flags, LOOM_VIEW_STORAGE_INVARIANT) ||
            !(table->varying_root_write_memory_spaces & (1u << memory_space))));

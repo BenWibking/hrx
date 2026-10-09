@@ -87,6 +87,7 @@ __all__ = [
     "ENCODING_STORAGE",
     "ENCODING_TRANSFORM",
     "POOL",
+    "GROUP",
     "REGISTER",
     "STORAGE",
     "I1",
@@ -348,6 +349,7 @@ class TypeConstraint(Enum):
       ENCODING_STORAGE → EncodingType with role=storage
       ENCODING_TRANSFORM → EncodingType with role=transform
       POOL     → PoolType
+      GROUP    → GroupType
       REGISTER → RegisterType
       STORAGE  → StorageType
       I1       → ScalarType with kind=I1
@@ -396,6 +398,7 @@ class TypeConstraint(Enum):
     ENCODING_STORAGE = "encoding<storage>"
     ENCODING_TRANSFORM = "encoding<transform>"
     POOL = "pool"
+    GROUP = "group"
     REGISTER = "register"
     STORAGE = "storage"
     I1 = "i1"
@@ -438,6 +441,7 @@ ENCODING_SCHEMA = TypeConstraint.ENCODING_SCHEMA
 ENCODING_STORAGE = TypeConstraint.ENCODING_STORAGE
 ENCODING_TRANSFORM = TypeConstraint.ENCODING_TRANSFORM
 POOL = TypeConstraint.POOL
+GROUP = TypeConstraint.GROUP
 REGISTER = TypeConstraint.REGISTER
 STORAGE = TypeConstraint.STORAGE
 I1 = TypeConstraint.I1
@@ -1088,6 +1092,11 @@ class RegionDef:
         allows recurrence without reentering the owner; EXIT never continues
         after the owner. LoopLike supplies REPEATED for its regions and does
         not permit an override. Other regions default to ONCE.
+    execution_target: Optional target-symbol attribute selecting an independent
+        execution environment for this region. An absent attribute inherits the
+        enclosing target environment; an explicit unresolved target remains
+        independent. The selected environment projects to its worker code
+        contract. Regions without this contract execute in their parent's context.
     """
 
     name: str
@@ -1102,6 +1111,7 @@ class RegionDef:
     arg_uniform_scope: str | None = None
     command_effects_only: bool = False
     execution: RegionExecution | None = None
+    execution_target: str | None = None
 
 
 # ============================================================================
@@ -4209,7 +4219,7 @@ type TypeParamDef = (
 )
 
 
-_COMPACT_SHAPE_IR_KINDS = frozenset(("pool", "tile", "tensor", "vector", "view"))
+_COMPACT_SHAPE_IR_KINDS = frozenset(("group", "tile", "tensor", "vector", "view"))
 
 
 def _validate_compact_shape_format(
@@ -4234,10 +4244,11 @@ def _validate_compact_shape_format(
         kw,
     )
 
-    if ir_kind == "pool":
+    if ir_kind == "group":
         if len(params) != 1 or not isinstance(params[0], ShapeParam):
             raise ValueError(
-                f"TypeDef '{name}': pool representation requires one shape parameter"
+                f"TypeDef '{name}': {ir_kind} representation requires one "
+                "shape parameter"
             )
         expected_format: tuple[FormatElement, ...] = (ShapeOf(params[0].name),)
     elif ir_kind == "vector":
@@ -5683,6 +5694,8 @@ class CallLikeKind(Enum):
     COMMAND_PROGRAM = "command_program"
     # Exact compile-time template implementation call.
     TEMPLATE = "template"
+    # Structural composition sharing the enclosing execution and lifetime scope.
+    COMPOSITION = "composition"
 
 
 class InlinePolicy(Enum):

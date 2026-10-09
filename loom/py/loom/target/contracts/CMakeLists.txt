@@ -64,6 +64,7 @@ iree_py_test(
   DEPS
     loom::py::loom::target::contracts::contracts
     loom::py::loom::dialect::shared
+    loom::py::loom::dialect::buffer::buffer
     loom::py::loom::dialect::scalar::scalar
     loom::py::loom::dialect::vector::vector
     loom::py::loom::target::test::descriptors

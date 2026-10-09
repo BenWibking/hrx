@@ -97,6 +97,17 @@ static void loom_test_grouped_product_evaluation_math_policy_query(
   }
 }
 
+static bool loom_test_math_prefer_fma(
+    const loom_target_math_policy_t* policy,
+    const loom_target_bundle_t* target_bundle, loom_type_t value_type,
+    loom_target_math_fastmath_flags_t fastmath_flags) {
+  (void)policy;
+  (void)target_bundle;
+  (void)value_type;
+  (void)fastmath_flags;
+  return true;
+}
+
 static void loom_test_math_policy_registry_initialize(
     loom_target_math_policy_registry_t* out_registry) {
   static const loom_target_math_policy_t kWidenF32RoundPolicy = {
@@ -125,6 +136,10 @@ static void loom_test_math_policy_registry_initialize(
       .query = loom_test_grouped_product_evaluation_math_policy_query,
       .user_data = &kF16x4Evaluation,
   };
+  static const loom_target_math_policy_t kPreferFmaPolicy = {
+      .name = IREE_SVL("test-prefer-fma"),
+      .prefer_fma = loom_test_math_prefer_fma,
+  };
   static const loom_target_math_policy_registry_entry_t kEntries[] = {
       {
           .contract_set_key = IREE_SVL("test.math.widen_f32_round"),
@@ -137,6 +152,10 @@ static void loom_test_math_policy_registry_initialize(
       {
           .contract_set_key = IREE_SVL("test.math.grouped_product_f16x4"),
           .policy = &kF16x4EvaluationPolicy,
+      },
+      {
+          .contract_set_key = IREE_SVL("test.math.prefer_fma"),
+          .policy = &kPreferFmaPolicy,
       },
   };
   loom_target_math_policy_registry_initialize_from_entries(

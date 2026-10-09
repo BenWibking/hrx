@@ -130,11 +130,16 @@ CHECK-NOT: COMPILE-REPORT: source_low[*] * execution_count=0
 ```
 
 Each `CHECK:` must match a whole output line after trimming outer whitespace;
-`CHECK-NOT:` rejects any matching line. Checks are independent and unordered.
+`CHECK-NOT:` rejects any matching line. `CHECK-COUNT-N:` requires exactly N
+matching lines across the complete output, where N is a positive decimal count.
+For example, `CHECK-COUNT-2: * = buffer.alloca*` verifies distinct allocation
+operations without fixing their generated SSA names. Checks are independent and
+unordered.
 `*` matches any sequence within a line and `?` matches one character. Other
 characters are literal. A terminal `count=5` cannot match `count=50`. Blank lines
 and standalone `//` comments are ignored. At least one positive check is required;
-empty patterns and unknown directives are errors.
+empty patterns and unknown directives are errors. A positive counted check also
+satisfies the requirement for a positive check.
 
 This modifier works with every textual-output mode; `verify` uses diagnostic
 annotations. Exact goldens remain useful for canonical formatting and complete
@@ -147,13 +152,6 @@ For authored Low assembly, `emit low-compile-report @function` builds the shared
 emission frame and prints its normal report summary, including static and dynamic
 instruction counts. This uses the runner's linked target descriptors and the
 same report collector as native emission.
-
-`emit pipeline-plan @pipeline max-instances=<count>` checks diagnostics from
-the shared concrete pipeline planner without selecting a target. The input is
-verified before generic value facts and the plan are computed. The explicit
-resident-instance capacity supplies the planner's allocation bound, normally
-provided by a target materializer. This mode produces diagnostics only; source
-legality checks that need no propagated facts continue to use `verify`.
 
 ### Source Target Lowering
 
@@ -168,8 +166,9 @@ unsigned entry(unsigned value) { return value + 1u; }
 In a `.cxx-test`, import produces the source function and specialization supplies
 its target facts, including reachable helpers. The same request works with
 `.loom-test` source IR. With `target=...`, omitting `@entry` selects the sole
-function definition or the unique public entry among private helpers. This lets
-a file-level RUN select one target across cases with different entry names.
+function definition or the unique public function or kernel entry among private
+helpers. This lets a file-level RUN select one target across cases with different
+entry names.
 `output=low` compares the resulting Low assembly;
 `output=module` includes the rest of the module, and `output=none` checks only
 source-located diagnostics. Functions with authored target bindings can use the
@@ -183,7 +182,8 @@ comparison. Input verification errors use the same diagnostic annotations as
 
 Pass, pass-report, and compile-report modes accept the same target selection
 before the pipeline. An optional `entry=@function` selects an explicit entry;
-otherwise the sole definition or unique public entry is selected:
+otherwise the sole definition or unique public function or kernel entry is
+selected:
 
 ```text
 // RUN: with-checks compile-report target=vm:core source-to-low,low-dce

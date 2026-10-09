@@ -27,7 +27,7 @@ def implicit_terminator_kind(op: Op, ops_by_name: dict[str, Op]) -> str:
     terminator_name = trait.args[0]
     terminator_op = ops_by_name.get(terminator_name)
     if terminator_op is None:
-        raise ValueError(f"Op '{op.name}': ImplicitTerminator '{terminator_name}' must name an op in the '{op.namespace}' dialect")
+        raise ValueError(f"Op '{op.name}': ImplicitTerminator '{terminator_name}' must name a registered op")
     if not any(trait.name == "Terminator" for trait in terminator_op.traits):
         raise ValueError(f"Op '{op.name}': ImplicitTerminator '{terminator_name}' is not marked with the Terminator trait")
     terminator_layout = compute_layout(terminator_op)
@@ -80,7 +80,7 @@ def trait_op_kinds(
         ancestor_name = trait.args[0]
         ancestor_op = ops_by_name.get(ancestor_name)
         if ancestor_op is None:
-            raise ValueError(f"Op '{op.name}': {trait_name} '{ancestor_name}' must name an op in the '{op.namespace}' dialect")
+            raise ValueError(f"Op '{op.name}': {trait_name} '{ancestor_name}' must name a registered op")
         kinds.append(c_enum_name(ancestor_op))
     return kinds
 
@@ -104,7 +104,7 @@ def any_ancestor_op_kinds(
     for ancestor_name in names:
         ancestor_op = ops_by_name.get(ancestor_name)
         if ancestor_op is None:
-            raise ValueError(f"Op '{op.name}': HasAnyAncestor '{ancestor_name}' must name an op in the '{op.namespace}' dialect")
+            raise ValueError(f"Op '{op.name}': HasAnyAncestor '{ancestor_name}' must name a registered op")
         kinds.append(c_enum_name(ancestor_op))
     return kinds, names
 

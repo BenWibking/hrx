@@ -52,7 +52,8 @@ typedef struct loom_local_value_domain_t {
 // Acquires a local value domain for |region| in |module|'s ordinal scratch.
 //
 // The domain initially registers block arguments, op results, op operands, SSA
-// references carried by value types, and values captured by nested regions.
+// references carried by value types and attributes, and values captured by
+// nested regions.
 // Rewriting frames that create new values while the domain is active must
 // explicitly register those values before indexing ordinal-keyed scratch.
 // The definition prefix describes the acquired source topology; moving or
@@ -73,7 +74,17 @@ iree_status_t loom_local_value_domain_acquire_for_region_tree(
     iree_arena_allocator_t* arena, loom_local_value_domain_t* out_domain);
 
 // Clears all acquired value IDs and releases the module ordinal scratch map.
+// The compact value list and its ordinals remain available for restoration
+// while the owning arena and original values remain alive.
 void loom_local_value_domain_release(loom_local_value_domain_t* domain);
+
+// Restores a previously released domain into the module's available ordinal
+// scratch map. Does not inspect source IR or change any retained ordinal.
+// Used when admission retains several function plans before their consuming
+// rewrites. Only the restored domain may query or extend the scratch map;
+// release it before restoring another domain. Source mutations must preserve
+// the retained values until their plan has been consumed.
+void loom_local_value_domain_restore(loom_local_value_domain_t* domain);
 
 // Registers |value_id| in an acquired domain and returns its local ordinal.
 // Existing registrations return their current ordinal. This keeps rewrite

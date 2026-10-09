@@ -128,6 +128,15 @@ void loom_target_facts_builder_apply_requirement(
   loom_target_facts_builder_rebind(effective);
 }
 
+iree_status_t loom_target_facts_builder_project_worker(
+    const loom_target_facts_t* source, iree_arena_allocator_t* arena,
+    const loom_target_facts_t** out_facts) {
+  *out_facts = source;
+  return source != NULL && source->fact_type->project_worker != NULL
+             ? source->fact_type->project_worker(source, arena, out_facts)
+             : iree_ok_status();
+}
+
 void loom_target_facts_builder_replace_bundle(
     const loom_target_bundle_t* bundle, loom_target_facts_t* facts) {
   IREE_ASSERT_ARGUMENT(bundle);
@@ -141,5 +150,27 @@ void loom_target_facts_builder_replace_bundle(
       .config = *bundle->config,
       .bundle = *bundle,
   };
+  loom_target_facts_builder_rebind(facts);
+}
+
+void loom_target_facts_builder_set_worker_contract(
+    uint8_t selector, const loom_target_bundle_t* bundle,
+    loom_target_facts_t* facts) {
+  facts->selector = selector;
+  facts->storage.snapshot.name = bundle->snapshot->name;
+  facts->storage.snapshot.codegen_format = bundle->snapshot->codegen_format;
+  facts->storage.snapshot.artifact_format = bundle->snapshot->artifact_format;
+  facts->storage.export_plan = *bundle->export_plan;
+  facts->storage.config = *bundle->config;
+  facts->storage.bundle.name = bundle->name;
+  const loom_target_fact_field_set_t artifact_fields =
+      (UINT64_C(1) << LOOM_TARGET_FACT_FIELD_CODEGEN_FORMAT) |
+      (UINT64_C(1) << LOOM_TARGET_FACT_FIELD_ARTIFACT_FORMAT) |
+      (UINT64_C(1) << LOOM_TARGET_FACT_FIELD_ABI) |
+      (UINT64_C(1) << LOOM_TARGET_FACT_FIELD_EXPORT_SYMBOL) |
+      (UINT64_C(1) << LOOM_TARGET_FACT_FIELD_LINKAGE) |
+      (UINT64_C(1) << LOOM_TARGET_FACT_FIELD_CONTRACT_SET_KEY) |
+      (UINT64_C(1) << LOOM_TARGET_FACT_FIELD_CONTRACT_FEATURE_BITS);
+  facts->explicit_fields &= ~artifact_fields;
   loom_target_facts_builder_rebind(facts);
 }

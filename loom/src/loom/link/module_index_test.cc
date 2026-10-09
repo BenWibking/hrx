@@ -431,12 +431,12 @@ func.def @ordinary() {
 
 TEST_F(ModuleIndexTest, PreservesProductCarrierAcrossProviderForms) {
   const iree_string_view_t source = IREE_SV(R"(
-pipeline.def<kernel> @kernel_pipeline() launch() {
-  pipeline.return
+pipeline.def<kernel> @kernel_pipeline() run() {
+  pipeline.finish
 }
 
-pipeline.def @generic_pipeline() launch() {
-  pipeline.return
+pipeline.def @generic_pipeline() run() {
+  pipeline.finish
 }
 )");
   loom_module_t* module = Parse(source);

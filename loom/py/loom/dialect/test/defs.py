@@ -196,8 +196,12 @@ _TargetKind = EnumDef(
     [
         EnumCase("low_core", 1, doc="Generic target-low test core."),
         EnumCase("quirky", 2, doc="Synthetic edge-case target."),
+        EnumCase("device", 3, doc="Device environment containing low_core workers."),
     ],
     doc="Synthetic target kind for target-like interface tests.",
+    c_type="loom_test_target_kind_t",
+    c_const_prefix="LOOM_TEST_TARGET_KIND",
+    c_include="loom/target/test/target_records.h",
 )
 
 _TemplateFlags = EnumDef(
@@ -2725,7 +2729,7 @@ test_read_resource = Op(
         ResultType("result"),
     ],
     examples=[
-        "%tile = test.read_resource %pool : pool<[%BS]> -> tile<4xf32>",
+        "%tile = test.read_resource %pool : pool -> tile<4xf32>",
     ],
 )
 
@@ -2752,7 +2756,7 @@ test_write_resource = Op(
         TypeOf("data"),
     ],
     examples=[
-        "test.write_resource %pool, %tile : pool<[%BS]>, tile<4xf32>",
+        "test.write_resource %pool, %tile : pool, tile<4xf32>",
     ],
 )
 
@@ -2782,7 +2786,7 @@ test_mutate_resource = Op(
         ResultType("old_value"),
     ],
     examples=[
-        "%old = test.mutate_resource %pool, %delta : pool<[%BS]>, i32 -> i32",
+        "%old = test.mutate_resource %pool, %delta : pool, i32 -> i32",
     ],
 )
 
@@ -2804,7 +2808,7 @@ test_alloc = Op(
         ResultType("result"),
     ],
     examples=[
-        "%pool = test.alloc %sz : index -> pool<[%BS]>",
+        "%pool = test.alloc %sz : index -> pool",
     ],
 )
 
@@ -2827,7 +2831,7 @@ test_resource_alloc = Op(
         ResultType("result"),
     ],
     examples=[
-        "%resource = test.resource.alloc %sz : index -> pool<[%BS]>",
+        "%resource = test.resource.alloc %sz : index -> pool",
     ],
 )
 
@@ -2839,7 +2843,7 @@ test_resource_borrow = Op(
     ownership_effects=[Borrow("resource")],
     format=[Ref("resource"), COLON, TypeOf("resource")],
     examples=[
-        "test.resource.borrow %resource : pool<[%BS]>",
+        "test.resource.borrow %resource : pool",
     ],
 )
 
@@ -2851,7 +2855,7 @@ test_resource_borrow_ref = Op(
     ownership_effects=[Borrow("resource", BY_REFERENCE)],
     format=[Ref("resource"), COLON, TypeOf("resource")],
     examples=[
-        "test.resource.borrow_ref %resource : pool<[%BS]>",
+        "test.resource.borrow_ref %resource : pool",
     ],
 )
 
@@ -2863,7 +2867,7 @@ test_resource_consume = Op(
     ownership_effects=[Consume("resource")],
     format=[Ref("resource"), COLON, TypeOf("resource")],
     examples=[
-        "test.resource.consume %resource : pool<[%BS]>",
+        "test.resource.consume %resource : pool",
     ],
 )
 
@@ -2883,7 +2887,7 @@ test_resource_retain = Op(
         ResultType("result"),
     ],
     examples=[
-        "%retained = test.resource.retain %resource : pool<[%BS]> -> pool<[%BS]>",
+        "%retained = test.resource.retain %resource : pool -> pool",
     ],
 )
 
@@ -2895,7 +2899,7 @@ test_resource_release = Op(
     ownership_effects=[Release("resource")],
     format=[Ref("resource"), COLON, TypeOf("resource")],
     examples=[
-        "test.resource.release %resource : pool<[%BS]>",
+        "test.resource.release %resource : pool",
     ],
 )
 
@@ -2907,7 +2911,7 @@ test_resource_discard = Op(
     ownership_effects=[Discard("resource")],
     format=[Ref("resource"), COLON, TypeOf("resource")],
     examples=[
-        "test.resource.discard %resource : pool<[%BS]>",
+        "test.resource.discard %resource : pool",
     ],
 )
 
@@ -2919,7 +2923,7 @@ test_resource_escape = Op(
     ownership_effects=[Escape("resource")],
     format=[Ref("resource"), COLON, TypeOf("resource")],
     examples=[
-        "test.resource.escape %resource : pool<[%BS]>",
+        "test.resource.escape %resource : pool",
     ],
 )
 
@@ -2942,7 +2946,7 @@ test_resource_alias = Op(
         ResultType("result"),
     ],
     examples=[
-        "%alias = test.resource.alias %resource : pool<[%BS]> -> pool<[%BS]>",
+        "%alias = test.resource.alias %resource : pool -> pool",
     ],
 )
 
@@ -2965,7 +2969,7 @@ test_resource_borrowed = Op(
         ResultType("result"),
     ],
     examples=[
-        "%borrowed = test.resource.borrowed %resource : pool<[%BS]> -> pool<[%BS]>",
+        "%borrowed = test.resource.borrowed %resource : pool -> pool",
     ],
 )
 
@@ -2985,7 +2989,7 @@ test_resource_move = Op(
         ResultType("result"),
     ],
     examples=[
-        "%moved = test.resource.move %resource : pool<[%BS]> -> pool<[%BS]>",
+        "%moved = test.resource.move %resource : pool -> pool",
     ],
 )
 

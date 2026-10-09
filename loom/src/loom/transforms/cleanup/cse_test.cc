@@ -549,7 +549,7 @@ TEST_F(CSETest, EliminatesIdenticalBinaryOps) {
 }
 
 TEST_F(CSETest, ReadOnlyOpsCSEWithoutInterveningWrite) {
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_value_id_t pool_id = LOOM_VALUE_ID_INVALID;
@@ -578,7 +578,7 @@ TEST_F(CSETest, ReadOnlyOpsCSEWithoutInterveningWrite) {
 }
 
 TEST_F(CSETest, ReadOnlyOpsBlockedByInterveningWrite) {
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_value_id_t pool_id = LOOM_VALUE_ID_INVALID;
@@ -617,7 +617,7 @@ TEST_F(CSETest, ReadOnlyOpsBlockedByInterveningWrite) {
 }
 
 TEST_F(CSETest, PureOpsSurviveWriteBarrier) {
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_value_id_t pool_id = LOOM_VALUE_ID_INVALID;
@@ -659,7 +659,7 @@ TEST_F(CSETest, PureOpsSurviveWriteBarrier) {
 }
 
 TEST_F(CSETest, MutateResourceNotCSEd) {
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_value_id_t pool_id = LOOM_VALUE_ID_INVALID;
@@ -863,7 +863,7 @@ TEST_F(CSETest, ReusesDominatingExpressionAcrossReverseOrderedCFG) {
 }
 
 TEST_F(CSETest, StatefulReadCSEAcrossStraightLineCFGEdge) {
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_block_t* entry_block = loom_region_entry_block(body_);
@@ -901,7 +901,7 @@ TEST_F(CSETest, StatefulReadCSEAcrossStraightLineCFGEdge) {
 }
 
 TEST_F(CSETest, StatefulReadNotCSEdAcrossLoopHeader) {
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_block_t* entry_block = loom_region_entry_block(body_);
@@ -995,7 +995,7 @@ TEST_F(CSETest, IsolatedRegionBlocksCrossScope) {
 }
 
 TEST_F(CSETest, WriteInsideNestedRegionInvalidatesOuterReads) {
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_value_id_t pool_id = LOOM_VALUE_ID_INVALID;
@@ -1049,7 +1049,7 @@ TEST_F(CSETest, WriteInsideNestedRegionInvalidatesOuterReads) {
 }
 
 TEST_F(CSETest, PureOpSurvivesWriteInsideNestedRegion) {
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_value_id_t pool_id = LOOM_VALUE_ID_INVALID;
@@ -1211,7 +1211,7 @@ TEST_F(CSETest, SameResultTypesCSEd) {
 TEST_F(CSETest, PureOpSurvivesExpiredMemoryRead) {
   // A write expires a memory read without affecting an independent pure
   // constant. Both kinds of expression share the same structural index.
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_value_id_t pool_id = LOOM_VALUE_ID_INVALID;
@@ -1340,7 +1340,7 @@ TEST_F(CSETest, SingleOpNoCSEOpportunity) {
 
 TEST_F(CSETest, UniqueIdentityNotCSEd) {
   loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
 
   // Create an index block arg for the allocation size.
   loom_value_id_t size_id = LOOM_VALUE_ID_INVALID;
@@ -1376,7 +1376,7 @@ TEST_F(CSETest, UniqueIdentityNotCSEd) {
 
 TEST_F(CSETest, UniqueIdentityDoesNotTriggerWriteBarrier) {
   loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_value_id_t pool_id = LOOM_VALUE_ID_INVALID;

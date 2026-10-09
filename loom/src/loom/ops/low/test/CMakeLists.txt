@@ -15,6 +15,7 @@ loom_check_test_suite(
   SRCS
     "assembly_formats.loom-test"
     "assume.loom-test"
+    "call_effects.loom-test"
     "call_types.loom-test"
     "canonicalize.loom-test"
     "consumption.loom-test"

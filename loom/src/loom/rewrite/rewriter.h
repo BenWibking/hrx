@@ -351,6 +351,13 @@ iree_status_t loom_rewriter_replace_results_with_materialized_values_and_erase(
 // Erases an op that has no remaining uses.
 iree_status_t loom_rewriter_erase(loom_rewriter_t* rewriter, loom_op_t* op);
 
+// Erases disjoint operation subtrees whose results have no uses outside the
+// supplied set. The consuming plan owns that closure proof. Retained provider
+// and parent facts are updated once per member before any member is erased.
+iree_status_t loom_rewriter_erase_closed_set(loom_rewriter_t* rewriter,
+                                             loom_op_t* const* ops,
+                                             iree_host_size_t count);
+
 // Moves |op| before |before_op|, preserving operands/results/regions while
 // retargeting ancestry, worklist membership, and region effect summaries.
 // Both ops must be owned by the rewrite module, though |op| may be staged in a

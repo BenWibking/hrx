@@ -9,6 +9,21 @@
 
 iree_add_all_subdirs()
 
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
+iree_execution_test_suite(
+  NAME
+    loom_opt_trace
+  MANIFESTS
+    "test/loom-opt.test.json"
+  TOOLS
+    "loom-opt=loom::tools::loom-opt"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amd/xdna/test/resident_publication.loom"
+  LABELS
+    "hostonly"
+)
+endif()
+
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND LOOM_IMPORT_CXX)
 iree_native_test(
   NAME

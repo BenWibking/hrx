@@ -10,6 +10,7 @@ from dataclasses import replace
 
 import pytest
 
+from loom.dialect.buffer import defs as buffer
 from loom.dialect.scalar import analysis as scalar_analysis
 from loom.dialect.scalar import arithmetic as scalar_arithmetic
 from loom.dialect.vector import defs as vector
@@ -471,6 +472,13 @@ def test_elide_rule_validates_guards() -> None:
     )
 
     assert table.cases[0].source_op == vector.vector_extract
+
+
+def test_optional_operand_segment_count_guard() -> None:
+    Guard.operand_segment_count("pool", 0).validate(buffer.buffer_alloca)
+    Guard.operand_segment_count("pool", 1).validate(buffer.buffer_alloca)
+    with pytest.raises(ValueError, match="count must be zero or one"):
+        Guard.operand_segment_count("pool", 2).validate(buffer.buffer_alloca)
 
 
 def test_value_memory_space_guard_requires_known_unique_spaces() -> None:

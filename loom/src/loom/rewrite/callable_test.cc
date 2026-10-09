@@ -970,9 +970,16 @@ TEST_F(CallableInlineTest, CloneDefinitionRemapsOnlySelfReferences) {
       LOOM_LOCATION_UNKNOWN, &source_helper_call));
 
   loom_symbol_ref_t target_ref = MakeSymbol(IREE_SV("target"));
+  loom_ir_remap_op_projection_t calls[] = {{source_self_call, nullptr},
+                                           {source_helper_call, nullptr}};
+  const loom_callable_clone_options_t options = {
+      /*.observer=*/{},
+      /*.op_projection=*/{calls, IREE_ARRAYSIZE(calls)},
+  };
   loom_func_like_t cloned = {};
-  IREE_ASSERT_OK(loom_callable_clone_definition(
-      &module_builder_, source, target_ref, {}, &cloned, &rewriter_arena_));
+  IREE_ASSERT_OK(loom_callable_clone_definition(&module_builder_, source,
+                                                target_ref, &options, &cloned,
+                                                &rewriter_arena_));
 
   ASSERT_EQ(source_block->op_count, 3u);
   EXPECT_EQ(loom_func_call_callee(source_self_call).symbol_id,
@@ -990,6 +997,8 @@ TEST_F(CallableInlineTest, CloneDefinitionRemapsOnlySelfReferences) {
   ASSERT_EQ(cloned_block->op_count, 3u);
   loom_op_t* cloned_self_call = loom_block_op(cloned_block, 0);
   loom_op_t* cloned_helper_call = loom_block_op(cloned_block, 1);
+  EXPECT_EQ(calls[0].target_op, cloned_self_call);
+  EXPECT_EQ(calls[1].target_op, cloned_helper_call);
   ASSERT_TRUE(loom_func_call_isa(cloned_self_call));
   ASSERT_TRUE(loom_func_call_isa(cloned_helper_call));
   EXPECT_EQ(loom_func_call_callee(cloned_self_call).symbol_id,

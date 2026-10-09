@@ -2,7 +2,6 @@
 
 // Discarding a payload keeps its channel credit protocol. A following worker
 // binds its own pointers after the first worker's full topology-port range.
-
 aie2p.target<array> @array_target
 
 aie2p.target<core> @core_target
@@ -28,18 +27,47 @@ func.def target(@core_target) @following(%input_arg: buffer, %output_arg: buffer
   func.return
 }
 
-pipeline.def<kernel> public retain target(@array_target) @discard_then_increment() launch(%input: buffer, %output: buffer) {
-  %worker_count = index.constant 1 : index
-  %base = index.constant 0 : offset
-  %first_workers = group.create %worker_count : index -> group
-  %second_workers = group.create %worker_count : index -> group
-  %input_view = buffer.view %input[%base] : buffer -> view<1x4x16xi32>
-  %output_view = buffer.view %output[%base] : buffer -> view<1x4x16xi32>
-  %flow = pipeline.scatter %input_view across %first_workers : view<1x4x16xi32>, group -> pipeline.flow<tile<16xi32>>
-  %first = pipeline.stage @replace on %first_workers(%flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
-  %second = pipeline.stage @following on %second_workers(%first) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
-  pipeline.write %second to %output_view : pipeline.flow<tile<16xi32>>, view<1x4x16xi32>
-  pipeline.return
+low.func.def public retain target<amd.xdna.aie2p.array>(@array_target) abi(array_program) abi_layout({binding_count = 2}) @discard_then_increment() asm {
+  %first_worker_count = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %first_group = group %first_worker_count
+  %second_worker_count = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %second_group = group %second_worker_count
+  %first_lane = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %first_worker = worker %first_group, %first_lane, @replace
+  %second_lane = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %second_worker = worker %second_group, %second_lane, @following
+  %input = binding 0, "read"
+  %output = binding 1, "write"
+  %input_sender = sender %input, 0 : reg<aie2p.array.sender : tile<1x4x16xi32>>
+  %input_offset = constant.u64 0 : reg<aie2p.array.offset : offset>
+  %input_partition = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %input_partitions = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %input_partition_sender = partition.sender %input_sender, %input_offset, %input_partition, %input_partitions : reg<aie2p.array.sender : tile<16xi32>>
+  %first_receiver = receiver %first_worker, 0 : reg<aie2p.array.receiver : tile<16xi32>>
+  %input_capacity = constant.u32 2 : reg<aie2p.array.scalar : index>
+  %input_records = constant.u32 4 : reg<aie2p.array.scalar : index>
+  %input_channel = channel %input_partition_sender, %first_receiver, %input_capacity, %input_records : reg<aie2p.array.channel : tile<16xi32>>
+  %first_sender = sender %first_worker, 1 : reg<aie2p.array.sender : tile<16xi32>>
+  %second_receiver = receiver %second_worker, 0 : reg<aie2p.array.receiver : tile<16xi32>>
+  %intermediate_capacity = constant.u32 2 : reg<aie2p.array.scalar : index>
+  %intermediate_records = constant.u32 4 : reg<aie2p.array.scalar : index>
+  %intermediate_channel = channel %first_sender, %second_receiver, %intermediate_capacity, %intermediate_records : reg<aie2p.array.channel : tile<16xi32>>
+  %second_sender = sender %second_worker, 1 : reg<aie2p.array.sender : tile<16xi32>>
+  %output_receiver = receiver %output, 0 : reg<aie2p.array.receiver : tile<1x4x16xi32>>
+  %output_offset = constant.u64 0 : reg<aie2p.array.offset : offset>
+  %output_partition = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %output_partitions = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %output_partition_receiver = partition.receiver %output_receiver, %output_offset, %output_partition, %output_partitions : reg<aie2p.array.receiver : tile<16xi32>>
+  %output_capacity = constant.u32 2 : reg<aie2p.array.scalar : index>
+  %output_records = constant.u32 4 : reg<aie2p.array.scalar : index>
+  %output_channel = channel %second_sender, %output_partition_receiver, %output_capacity, %output_records : reg<aie2p.array.channel : tile<16xi32>>
+  %first_column = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %first_row = constant.u32 2 : reg<aie2p.array.scalar : index>
+  constrain.location %first_worker, %first_column, %first_row
+  %second_column = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %second_row = constant.u32 3 : reg<aie2p.array.scalar : index>
+  constrain.location %second_worker, %second_column, %second_row
+  return
 }
 
 // ----

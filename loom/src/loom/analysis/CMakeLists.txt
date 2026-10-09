@@ -103,12 +103,43 @@ loom_cc_library(
     iree::base::internal::arena
     loom::ir
     loom::ops::buffer
+    loom::ops::channel
     loom::ops::kernel
     loom::ops::op_defs
     loom::util::cfg_postdominance
     loom::util::fact_table
     loom::util::walk
   PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    storage_geometry
+  HDRS
+    "storage_geometry.h"
+  SRCS
+    "storage_geometry.c"
+  DEPS
+    iree::base
+    loom::ir
+    loom::ops::encoding
+    loom::util::fact_table
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    storage_geometry_test
+  SRCS
+    "storage_geometry_test.cc"
+  DEPS
+    ::storage_geometry
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::encoding
+    loom::util::fact_table
 )
 
 loom_cc_library(
@@ -462,6 +493,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::ir
     loom::ops::cfg
+    loom::ops::low
     loom::util::adaptive_sort
     loom::util::cfg_graph
     loom::util::dominance
@@ -629,8 +661,10 @@ loom_cc_library(
   NAME
     ownership_lifetime
   HDRS
+    "ownership_callable.h"
     "ownership_lifetime.h"
   SRCS
+    "ownership_callable.c"
     "ownership_lifetime.c"
   DEPS
     ::liveness
@@ -765,66 +799,149 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
-    pipeline_plan
+    channel_completion
   HDRS
-    "pipeline_plan.h"
+    "channel_completion.h"
   SRCS
-    "pipeline_plan.c"
+    "channel_completion.c"
   DEPS
-    ::type_refinement
+    ::channel_plan
     iree::base
-    iree::base::internal
+    iree::base::internal::arena
+    loom::ops::channel
+    loom::util::cfg_graph
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    channel_plan
+  HDRS
+    "channel_plan.h"
+  SRCS
+    "channel_plan.c"
+  DEPS
+    ::value_relation
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::type_registry
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    channel_completion_test
+  SRCS
+    "channel_completion_test.cc"
+  DEPS
+    ::channel_completion
+    ::channel_plan
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::cfg
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::type_registry
+    loom::util::cfg_graph
+    loom::verify
+)
+
+loom_cc_test(
+  NAME
+    channel_plan_test
+  SRCS
+    "channel_plan_test.cc"
+  DEPS
+    ::channel_plan
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::index
+    loom::ops::type_registry
+)
+
+loom_cc_library(
+  NAME
+    pipeline_resources
+  HDRS
+    "pipeline_resources.h"
+  SRCS
+    "pipeline_resources.c"
+  DEPS
+    ::channel_plan
+    ::source_storage_packing
+    iree::base
     iree::base::internal::arena
     loom::error::emitter
     loom::error::error_defs
     loom::ir
-    loom::ir::facts
     loom::ops::buffer
-    loom::ops::combining
-    loom::ops::encoding
-    loom::ops::group
-    loom::ops::op_defs
+    loom::ops::channel
+    loom::ops::func
     loom::ops::pipeline
-    loom::ops::type_registry
     loom::util::fact_table
   PUBLIC
 )
 
 loom_cc_test(
   NAME
-    pipeline_plan_test
+    pipeline_resources_test
   SRCS
-    "pipeline_plan_test.cc"
+    "pipeline_resources_test.cc"
   DEPS
-    ::pipeline_firing
-    ::pipeline_plan
-    iree::base
+    ::pipeline_resources
+    ::pipeline_workers
+    ::source_storage_packing
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::error::diagnostic
     loom::error::error_defs
-    loom::format::text::parser
     loom::ir
-    loom::ops::encoding
+    loom::ops::buffer
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::index
     loom::ops::pipeline
-    loom::testing::context
-    loom::testing::module_ptr
+    loom::ops::type_registry
     loom::util::fact_table
+    loom::verify
 )
 
 loom_cc_library(
   NAME
-    pipeline_firing
+    pipeline_workers
   HDRS
-    "pipeline_firing.h"
+    "pipeline_workers.h"
   SRCS
-    "pipeline_firing.c"
+    "pipeline_workers.c"
   DEPS
-    ::pipeline_plan
+    ::channel_completion
+    ::channel_plan
+    ::kernel_async_legality
+    ::movement
+    ::pipeline_resources
     iree::base
     iree::base::internal::arena
     loom::error::emitter
     loom::error::error_defs
+    loom::ir
+    loom::ops::cfg
+    loom::ops::func
+    loom::ops::kernel
+    loom::ops::pipeline
+    loom::ops::type_registry
+    loom::util::adaptive_sort
+    loom::util::cfg_graph
+    loom::util::fact_table
   PUBLIC
 )
 
@@ -1197,6 +1314,7 @@ loom_cc_library(
   SRCS
     "movement.c"
   DEPS
+    ::storage_geometry
     ::view_regions
     iree::base
     iree::base::internal
@@ -1532,6 +1650,7 @@ loom_cc_library(
     loom::ir
     loom::ir::facts
     loom::ops::buffer
+    loom::ops::channel
     loom::ops::encoding
     loom::ops::kernel
     loom::ops::op_defs
@@ -1552,6 +1671,7 @@ loom_cc_test(
     iree::testing::gtest_main
     loom::ir
     loom::ops::buffer
+    loom::ops::channel
     loom::ops::encoding
     loom::ops::index
     loom::ops::kernel

@@ -67,8 +67,10 @@ typedef struct loom_canonicalizer_options_t {
   // Optional function/region-local seeds cloned before the initial analysis.
   // The caller selects values in this scope; other entries in the source table
   // are not imported. Extension payloads are re-interned, so the seeds may come
-  // from a different fact context. The view is borrowed for the run; target
-  // scope is supplied independently by target_facts.
+  // from a different fact context. Opaque result inference retains these
+  // inputs until the populated scope is cleared; the table and its selected
+  // facts remain immutable for that lifetime. Target scope is supplied
+  // independently by target_facts.
   loom_value_fact_table_view_t seed_facts;
 
   // Optional whole-module owner permitting callable boundary type changes.

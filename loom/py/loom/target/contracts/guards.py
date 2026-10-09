@@ -973,13 +973,18 @@ class Guard:
             return
         if self.kind == GuardKind.OPERAND_SEGMENT_COUNT:
             operand = _require_operand(source_op, self.field, subject)
-            if not operand.variadic:
+            if not (operand.variadic or operand.optional):
                 raise ValueError(
                     f"{source_op.name}: {subject} field '{self.field}' "
-                    "must be a variadic operand"
+                    "must be a variadic or optional operand"
                 )
             if self.count is None:
                 raise ValueError(f"{source_op.name}: {subject} needs a count")
+            if operand.optional and self.count > 1:
+                raise ValueError(
+                    f"{source_op.name}: optional operand '{self.field}' "
+                    "count must be zero or one"
+                )
             return
         if self.kind in (
             GuardKind.VALUE_SIGNED_BIT_COUNT,

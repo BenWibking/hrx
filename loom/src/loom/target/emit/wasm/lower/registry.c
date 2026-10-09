@@ -130,7 +130,7 @@ static iree_status_t loom_wasm_map_type(void* user_data,
                                         loom_type_t source_type,
                                         loom_type_t* out_low_type) {
   (void)user_data;
-  if (loom_type_is_buffer(source_type) ||
+  if (loom_type_is_buffer(source_type) || loom_type_is_view(source_type) ||
       loom_wasm_type_is_i32_register(source_type)) {
     return loom_wasm_make_i32_register_type(context, out_low_type);
   }

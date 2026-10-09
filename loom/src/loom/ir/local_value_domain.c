@@ -120,6 +120,25 @@ static iree_status_t loom_local_value_domain_for_each_value_type_ref(
   return iree_ok_status();
 }
 
+static iree_status_t loom_local_value_domain_for_each_attribute_ref(
+    const loom_module_t* module, const loom_op_t* op,
+    loom_local_value_domain_value_callback_t visitor) {
+  const uint32_t* attribute_owners = loom_op_attribute_owners(op);
+  for (uint8_t i = 0; i < op->attribute_count; ++i) {
+    if (!attribute_owners[i]) {
+      continue;
+    }
+    loom_type_use_iterator_t dependencies;
+    loom_attribute_dependencies_begin(&module->type_uses, op, i, &dependencies);
+    for (loom_value_id_t provider = loom_type_dependencies_next(&dependencies);
+         provider != LOOM_VALUE_ID_INVALID;
+         provider = loom_type_dependencies_next(&dependencies)) {
+      IREE_RETURN_IF_ERROR(visitor.fn(visitor.user_data, provider));
+    }
+  }
+  return iree_ok_status();
+}
+
 typedef struct loom_local_value_domain_external_use_state_t {
   // Module containing the visited regions.
   const loom_module_t* module;
@@ -172,6 +191,10 @@ static iree_status_t loom_local_value_domain_for_each_region_external_use(
             loom_local_value_domain_value_callback_make(
                 loom_local_value_domain_external_value_callback, state)));
       }
+      IREE_RETURN_IF_ERROR(loom_local_value_domain_for_each_attribute_ref(
+          state->module, op,
+          loom_local_value_domain_value_callback_make(
+              loom_local_value_domain_external_value_callback, state)));
       loom_region_t* const* regions = loom_op_regions(op);
       for (uint8_t i = 0; i < op->region_count; ++i) {
         IREE_RETURN_IF_ERROR(
@@ -213,6 +236,8 @@ static iree_status_t loom_local_value_domain_for_each_op_use(
     IREE_RETURN_IF_ERROR(loom_local_value_domain_for_each_value_type_ref(
         module, results[i], visitor));
   }
+  IREE_RETURN_IF_ERROR(
+      loom_local_value_domain_for_each_attribute_ref(module, op, visitor));
   return loom_local_value_domain_for_each_nested_external_use(module, op,
                                                               visitor);
 }
@@ -286,6 +311,8 @@ static iree_status_t loom_local_value_domain_register_region_tree_values(
         IREE_RETURN_IF_ERROR(loom_local_value_domain_for_each_value_type_ref(
             domain->module, results[i], visitor));
       }
+      IREE_RETURN_IF_ERROR(loom_local_value_domain_for_each_attribute_ref(
+          domain->module, op, visitor));
       loom_region_t* const* regions = loom_op_regions(op);
       for (uint8_t i = 0; i < op->region_count; ++i) {
         IREE_RETURN_IF_ERROR(
@@ -343,5 +370,14 @@ void loom_local_value_domain_release(loom_local_value_domain_t* domain) {
                                             domain->value_ids[i]);
   }
   loom_module_value_ordinal_scratch_release(domain->module);
-  domain->flags = 0;
+  domain->flags &= ~LOOM_LOCAL_VALUE_DOMAIN_FLAG_ACQUIRED;
+}
+
+void loom_local_value_domain_restore(loom_local_value_domain_t* domain) {
+  loom_module_value_ordinal_scratch_acquire(domain->module);
+  for (loom_value_ordinal_t i = 0; i < domain->value_count; ++i) {
+    loom_module_value_ordinal_scratch_set(domain->module, domain->value_ids[i],
+                                          i);
+  }
+  domain->flags |= LOOM_LOCAL_VALUE_DOMAIN_FLAG_ACQUIRED;
 }

@@ -33,23 +33,21 @@ low.func.def public target<test.low.core>(@target) @identity_after_inlined_conti
 test.target<low_core> @target
 
 low.func.def public target<test.low.core>(@target) @identity_after_inlined_continuation(%choose: reg<test.i32>, %again: reg<test.i32>, %seed: reg<test.i32>) -> (reg<test.i32>) asm {
-  low.cond_br %choose, ^_bb4, ^_bb5 : reg<test.i32>
-^_bb6(%selected: reg<test.i32>):
+  low.cond_br %choose, ^_bb3, ^_bb4 : reg<test.i32>
+^_bb5(%selected: reg<test.i32>):
   %source = test.add.i32 %selected, %seed
   %identity = low.assume %source [] : reg<test.i32>
   low.br ^loop
 ^loop:
   %sum = test.add.i32 %identity, %seed
-  low.cond_br %again, ^backedge, ^returned : reg<test.i32>
-^backedge:
-  low.br ^loop
+  low.cond_br %again, ^loop, ^returned : reg<test.i32>
 ^returned:
   return %sum
+^_bb3:
+  low.br ^_bb5(%seed: reg<test.i32>)
 ^_bb4:
-  low.br ^_bb6(%seed: reg<test.i32>)
-^_bb5:
   %doubled = test.add.i32 %seed, %seed
-  low.br ^_bb6(%doubled: reg<test.i32>)
+  low.br ^_bb5(%doubled: reg<test.i32>)
 }
 
 // ====

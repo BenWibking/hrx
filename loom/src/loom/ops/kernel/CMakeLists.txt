@@ -53,6 +53,7 @@ loom_generated_cc_library(
     loom::ops::function_contract_verify
     loom::ops::index
     loom::ops::op_defs
+    loom::ops::pipeline
     loom::ops::scf
     loom::ops::target
     loom::ops::template

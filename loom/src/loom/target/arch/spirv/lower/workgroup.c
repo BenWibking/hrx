@@ -98,8 +98,9 @@ static iree_status_t loom_spirv_workgroup_view_plan_from_facts(
 static iree_status_t loom_spirv_select_workgroup_alloca(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_low_lower_plan_t* out_plan) {
-  if (loom_buffer_alloca_memory_space(source_op) !=
-      LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) {
+  if (loom_buffer_alloca_pool(source_op) != LOOM_VALUE_ID_INVALID ||
+      loom_buffer_alloca_memory_space(source_op) !=
+          LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) {
     return iree_ok_status();
   }
   bool lifetime_supported = false;

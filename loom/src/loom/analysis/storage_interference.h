@@ -30,6 +30,11 @@ typedef struct loom_storage_interference_t loom_storage_interference_t;
 //
 // The analysis owns the function walk. Consumers query its indexed result and
 // must not reconstruct aliases or access footprints from source IR.
+// Calls conservatively expose roots reachable through their reference operands,
+// including pure calls that may return aliases. Calls without a reference to
+// a fresh frame root cannot access it. Channel bindings expose their storage
+// until realization makes the borrowed accesses and their lifetimes explicit.
+// Unmodeled non-call memory effects remain conservative for every root.
 iree_status_t loom_storage_interference_analyze_function(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
     const loom_local_value_domain_t* value_domain, loom_func_like_t function,

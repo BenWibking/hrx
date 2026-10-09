@@ -21,13 +21,15 @@ extern "C" {
 #endif
 
 typedef struct loom_aie2p_xdna_artifact_request_t {
-  // Immutable module containing prepared AIE2P target-low IR.
-  const loom_module_t* module;
+  // Prepared AIE2P target-low IR. Complete workers participate in shared
+  // allocation repair during native compilation.
+  loom_module_t* module;
 
   // Concrete compiler function versions participating in compilation.
   const loom_function_version_list_t* function_versions;
 
-  // Low descriptor registry containing AIE2P core and array descriptors.
+  // Low descriptor registry containing AIE2P core, array and configuration
+  // sets.
   const loom_low_descriptor_registry_t* low_descriptor_registry;
 
   // Optional caller-owned structured compile report for this compilation. The

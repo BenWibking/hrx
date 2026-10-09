@@ -437,6 +437,7 @@ TEST_F(CatalogTest, TypeAndAttributeMetadataKeepFirstUseOrder) {
   static const loom_parameterized_type_descriptor_t descriptor = {
       /*.name=*/LOOM_BSTRING_REF(17, "test.catalog_type"),
       /*.parameter_descriptors=*/parameters,
+      /*.fact_domain=*/nullptr,
       /*.ir_kind=*/LOOM_TYPE_PARAMETERIZED,
       /*.type_flags=*/{},
       /*.parameter_count=*/IREE_ARRAYSIZE(parameters),
@@ -517,6 +518,7 @@ TEST_F(CatalogTest, ParameterizedTypesResumeAfterNestedTypes) {
   static const loom_parameterized_type_descriptor_t descriptor = {
       /*.name=*/LOOM_BSTRING_REF(10, "test.chain"),
       /*.parameter_descriptors=*/kPayloadParameters,
+      /*.fact_domain=*/nullptr,
       /*.ir_kind=*/LOOM_TYPE_PARAMETERIZED,
       /*.type_flags=*/{},
       /*.parameter_count=*/IREE_ARRAYSIZE(kPayloadParameters),

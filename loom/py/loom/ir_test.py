@@ -60,6 +60,7 @@ from loom.ir import (
     FileLocation,
     FunctionType,
     FusedLocation,
+    GroupType,
     LocationTable,
     Module,
     OpaqueLocation,
@@ -441,34 +442,41 @@ class TestShapedTypeWithDynamicEncoding:
 
 
 class TestPoolType:
-    def test_static_block_size(self) -> None:
-        t = PoolType(block_size=StaticDim(65536))
+    def test_opaque_pool(self) -> None:
+        t = PoolType()
         assert t.type_kind == TypeKind.POOL
-        assert not t.has_dynamic_block_size
-        assert repr(t) == "pool<65536>"
+        assert repr(t) == "pool"
 
-    def test_dynamic_block_size(self) -> None:
-        t = PoolType(block_size=DynamicDim())
-        assert t.type_kind == TypeKind.POOL
-        assert t.has_dynamic_block_size
-        assert repr(t) == "pool<?>"
-
-    def test_equality(self) -> None:
-        a = PoolType(block_size=StaticDim(4096))
-        b = PoolType(block_size=StaticDim(4096))
-        c = PoolType(block_size=StaticDim(65536))
+    def test_equality_and_hash(self) -> None:
+        a = PoolType()
+        b = PoolType()
         assert a == b
-        assert a != c
-
-    def test_hashable(self) -> None:
-        a = PoolType(block_size=StaticDim(4096))
-        b = PoolType(block_size=StaticDim(4096))
         assert len({a, b}) == 1
+        assert a != BUFFER_TYPE
 
-    def test_dynamic_vs_static(self) -> None:
-        a = PoolType(block_size=DynamicDim())
-        b = PoolType(block_size=StaticDim(4096))
-        assert a != b
+
+# ============================================================================
+# Group type
+# ============================================================================
+
+
+class TestGroupType:
+    def test_static_shape(self) -> None:
+        group = GroupType((StaticDim(2), StaticDim(4)))
+        assert group.type_kind == TypeKind.GROUP
+        assert group.rank == 2
+        assert group.is_all_static
+        assert repr(group) == "group<2x4>"
+
+    def test_dynamic_shape(self) -> None:
+        group = GroupType((DynamicDim(7), StaticDim(4)))
+        assert group.rank == 2
+        assert not group.is_all_static
+        assert repr(group) == "group<[%7]x4>"
+
+    def test_requires_participants(self) -> None:
+        with pytest.raises(ValueError, match="rank >= 1"):
+            GroupType(())
 
 
 # ============================================================================

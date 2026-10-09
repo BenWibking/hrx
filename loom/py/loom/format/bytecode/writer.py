@@ -48,6 +48,7 @@ from loom.ir import (
     FileLocation,
     FunctionType,
     FusedLocation,
+    GroupType,
     Module,
     NoneType,
     OpaqueLocation,
@@ -90,6 +91,7 @@ _IR_TYPE_CLASSES = (
     ParameterizedType,
     EncodingType,
     PoolType,
+    GroupType,
     NoneType,
 )
 
@@ -176,6 +178,7 @@ BYTECODE_TYPE_KIND_BY_IR_KIND: dict[TypeKind, int] = {
     TypeKind.REGISTER: 12,
     TypeKind.STORAGE: 13,
     TypeKind.PARAMETERIZED: 14,
+    TypeKind.GROUP: 15,
 }
 
 BYTECODE_IR_KIND_BY_TYPE_KIND: dict[int, TypeKind] = {
@@ -1084,22 +1087,29 @@ class BytecodeWriter:
             case EncodingType(role=role):
                 buf.write_u8(BYTECODE_TYPE_KIND_BY_IR_KIND[TypeKind.ENCODING])
                 buf.write_u8(role.value)
-            case PoolType(block_size=block_size):
+            case PoolType():
                 buf.write_u8(BYTECODE_TYPE_KIND_BY_IR_KIND[TypeKind.POOL])
-                if values is not None:
-                    buf.write_varint(
-                        1
-                        + self._value_number_or_error(
-                            values, block_size.value_id, "pool dimension"
-                        )
-                    )
-                    return
-                match block_size:
-                    case StaticDim(size=size):
-                        buf.write_u8(0)  # static
-                        buf.write_varint(size)
-                    case DynamicDim():
-                        buf.write_u8(1)  # dynamic
+            case GroupType(dims=dims):
+                buf.write_u8(BYTECODE_TYPE_KIND_BY_IR_KIND[TypeKind.GROUP])
+                buf.write_u8(len(dims))
+                for dimension in dims:
+                    match dimension:
+                        case StaticDim(size=size):
+                            buf.write_u8(0)
+                            buf.write_varint(size)
+                        case DynamicDim(value_id=value_id):
+                            buf.write_u8(1)
+                            if values is not None:
+                                buf.write_varint(
+                                    0
+                                    if value_id is None
+                                    else 1
+                                    + self._value_number_or_error(
+                                        values,
+                                        value_id,
+                                        "group dimension",
+                                    )
+                                )
             case BufferType():
                 buf.write_u8(BYTECODE_TYPE_KIND_BY_IR_KIND[TypeKind.BUFFER])
             case _:

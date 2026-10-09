@@ -133,7 +133,8 @@ bool loom_expression_equal(const loom_module_t* module, const loom_op_t* a,
 enum loom_expression_scope_flag_bits_e {
   // Incoming control flow can observe a different mutable state.
   LOOM_EXPRESSION_SCOPE_FLAG_STATE_BARRIER = 1u << 0,
-  // The enclosing operation hides values from outside this region.
+  // Outer expressions are unavailable across lexical isolation or independent
+  // execution, even when the latter permits explicitly captured values.
   LOOM_EXPRESSION_SCOPE_FLAG_ISOLATED = 1u << 1,
 };
 typedef uint8_t loom_expression_scope_flags_t;
@@ -250,8 +251,10 @@ static iree_status_t loom_expression_walk_enter_scope(
                        LOOM_DOMINANCE_WALK_SCOPE_FLAG_STATE_BARRIER)) {
     flags |= LOOM_EXPRESSION_SCOPE_FLAG_STATE_BARRIER;
   }
-  if (iree_any_bit_set(dominance_flags,
-                       LOOM_DOMINANCE_WALK_SCOPE_FLAG_ISOLATED)) {
+  if (iree_any_bit_set(
+          dominance_flags,
+          LOOM_DOMINANCE_WALK_SCOPE_FLAG_ISOLATED |
+              LOOM_DOMINANCE_WALK_SCOPE_FLAG_INDEPENDENT_EXECUTION)) {
     flags |= LOOM_EXPRESSION_SCOPE_FLAG_ISOLATED;
   }
   loom_expression_scope_t* parent = walk->active_scope;

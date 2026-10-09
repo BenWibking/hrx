@@ -30,7 +30,7 @@ from loom.dialect.kernel import ALL_KERNEL_OPS, ALL_KERNEL_TYPES
 from loom.dialect.low import ALL_LOW_OPS
 from loom.dialect.pass_ import ALL_PASS_OPS
 from loom.dialect.scalar import ALL_SCALAR_OPS
-from loom.dialect.target import ALL_TARGET_OPS, ALL_TARGET_PARAMETERIZED_ATTRS
+from loom.dialect.target import ALL_TARGET_PARAMETERIZED_ATTRS
 from loom.dialect.template import ALL_TEMPLATE_OPS
 from loom.dialect.test import (
     ALL_TEST_OPS,
@@ -101,6 +101,7 @@ from loom.ir import (
     EnumArrayAttr,
     FileLocation,
     FunctionType,
+    GroupType,
     LocationTable,
     Module,
     Operation,
@@ -984,14 +985,19 @@ class TestTypesSection:
         dialect_type = DialectType("test.ref", (I32,))
         self._roundtrip_type(_test_ptr_register_type(value_type=dialect_type))
 
-    def test_pool_static(self) -> None:
-        self._roundtrip_type(PoolType(StaticDim(65536)))
+    def test_pool(self) -> None:
+        self._roundtrip_type(PoolType())
 
-    def test_pool_static_small(self) -> None:
-        self._roundtrip_type(PoolType(StaticDim(4096)))
+    def test_group_static(self) -> None:
+        self._roundtrip_type(GroupType((StaticDim(8),)))
 
-    def test_pool_dynamic(self) -> None:
-        self._roundtrip_type(PoolType(DynamicDim(0)), bindings=(INDEX,))
+    def test_group_static_overflow_dimensions(self) -> None:
+        self._roundtrip_type(GroupType((StaticDim(2), StaticDim(2), StaticDim(2))))
+
+    def test_group_dynamic(self) -> None:
+        self._roundtrip_type(
+            GroupType((DynamicDim(0), StaticDim(4))), bindings=(INDEX,)
+        )
 
     def test_buffer_type(self) -> None:
         self._roundtrip_type(BUFFER_TYPE)
@@ -2130,11 +2136,11 @@ class TestCrossFormatRoundTrip:
 
     def test_enum_future_ordinal_survives_bytecode(self) -> None:
         text = (
-            "target.generic<reference> @future_target "
+            "test.target<low_core> @future_target "
             "{artifact_format = elf, codegen_format = low_native}\n"
         )
         parser = Parser()
-        parser.register_ops(ALL_TARGET_OPS)
+        parser.register_ops(ALL_TEST_OPS)
         module = parser.parse(text)
         target_op = module.symbols[0].op
         assert target_op is not None

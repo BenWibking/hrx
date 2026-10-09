@@ -42,6 +42,20 @@ loom_cc_library(
 
 loom_cc_test(
   NAME
+    erasure_test
+  SRCS
+    "erasure_test.cc"
+  DEPS
+    ::rewriter
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::test
+)
+
+loom_cc_test(
+  NAME
     pattern_registry_test
   SRCS
     "pattern_registry_test.cc"

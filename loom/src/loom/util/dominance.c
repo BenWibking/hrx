@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/op_defs.h"
 #include "loom/util/cfg_dominance.h"
@@ -520,7 +521,8 @@ static iree_status_t loom_dominance_walk_push_region(
     if (immediate_dominator != LOOM_CFG_DOMINATOR_INVALID &&
         immediate_dominator != i) {
       scope->parent = &scopes[immediate_dominator];
-      scope->flags &= ~LOOM_DOMINANCE_WALK_SCOPE_FLAG_ISOLATED;
+      scope->flags &= ~(LOOM_DOMINANCE_WALK_SCOPE_FLAG_ISOLATED |
+                        LOOM_DOMINANCE_WALK_SCOPE_FLAG_INDEPENDENT_EXECUTION);
     }
     if (loom_dominance_walk_cfg_state_barrier(&graph, &dominance, i)) {
       scope->flags |= LOOM_DOMINANCE_WALK_SCOPE_FLAG_STATE_BARRIER;
@@ -594,11 +596,17 @@ iree_status_t loom_dominance_walk_next(
         .traits = traits,
     };
     for (int32_t r = (int32_t)op->region_count - 1; r >= 0; --r) {
-      iree_status_t status = loom_dominance_walk_push_region(
-          walk, loom_op_regions(op)[r], scope,
+      loom_dominance_walk_scope_flags_t flags =
           loom_traits_is_isolated(traits)
               ? LOOM_DOMINANCE_WALK_SCOPE_FLAG_ISOLATED
-              : 0);
+              : 0;
+      const loom_region_descriptor_t* descriptor =
+          loom_op_vtable_region_descriptor(loom_op_vtable(walk->module, op), r);
+      if (descriptor && descriptor->execution_target_attr_index_plus_one) {
+        flags |= LOOM_DOMINANCE_WALK_SCOPE_FLAG_INDEPENDENT_EXECUTION;
+      }
+      iree_status_t status = loom_dominance_walk_push_region(
+          walk, loom_op_regions(op)[r], scope, flags);
       if (!iree_status_is_ok(status)) {
         loom_dominance_walk_leave_all_scopes(walk);
         return status;

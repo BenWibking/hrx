@@ -131,15 +131,29 @@ iree_status_t loom_callable_inline_consuming_call(
     loom_rewriter_t* rewriter, const loom_availability_analysis_t* availability,
     loom_op_t* call_op, loom_func_like_t callee);
 
+// Translation of retained compiler products while cloning a callable.
+typedef struct loom_callable_clone_options_t {
+  // Optional observer invoked by the shared clone machinery.
+  loom_ir_clone_observer_t observer;
+  // Selected source-to-clone correspondence in clone visitation order.
+  struct {
+    // Caller-owned entries populated during cloning.
+    loom_ir_remap_op_projection_t* entries;
+    // Number of selected operations.
+    iree_host_size_t count;
+  } op_projection;
+} loom_callable_clone_options_t;
+
 // Clones one same-module function-like definition as |target_ref|.
 //
 // |target_ref| must name an existing symbol without a defining op. The cloned
 // function's defining symbol and recursive self-references are rewritten to
 // |target_ref| while references to every other same-module symbol are
-// preserved.
+// preserved. Optional |options| translate compiler products without another IR
+// walk. Projection entries follow the shared remap visitation-order contract.
 iree_status_t loom_callable_clone_definition(
     loom_builder_t* builder, loom_func_like_t source,
-    loom_symbol_ref_t target_ref, loom_ir_clone_observer_t clone_observer,
+    loom_symbol_ref_t target_ref, const loom_callable_clone_options_t* options,
     loom_func_like_t* out_cloned, iree_arena_allocator_t* scratch_arena);
 
 #ifdef __cplusplus

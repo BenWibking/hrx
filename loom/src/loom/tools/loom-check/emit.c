@@ -7,7 +7,6 @@
 #include <inttypes.h>
 #include <string.h>
 
-#include "loom/analysis/pipeline_plan.h"
 #include "loom/codegen/low/allocation.h"
 #include "loom/codegen/low/allocation_json.h"
 #include "loom/codegen/low/descriptors.h"
@@ -28,7 +27,6 @@
 #include "loom/ops/func/ops.h"
 #include "loom/ops/low/ops.h"
 #include "loom/ops/op_defs.h"
-#include "loom/ops/pipeline/ops.h"
 #include "loom/pass/pipeline.h"
 #include "loom/target/low_packet_diagnostics.h"
 #include "loom/target/provider.h"
@@ -40,7 +38,6 @@
 #include "loom/tools/loom-check/low_emit.h"
 #include "loom/tools/loom-check/low_report.h"
 #include "loom/tools/loom-check/target_low_registry_manifest.h"
-#include "loom/util/fact_table.h"
 #include "loom/util/stream.h"
 
 typedef enum loom_check_emit_format_e {
@@ -51,7 +48,6 @@ typedef enum loom_check_emit_format_e {
   LOOM_CHECK_EMIT_LOW_ALLOCATION_SUMMARY = 4,
   LOOM_CHECK_EMIT_LOW_PACKET_JSON = 5,
   LOOM_CHECK_EMIT_LOW_COMPILE_REPORT = 6,
-  LOOM_CHECK_EMIT_PIPELINE_PLAN = 7,
   LOOM_CHECK_EMIT_STORAGE_INTERFERENCE = 8,
 } loom_check_emit_format_t;
 
@@ -102,13 +98,12 @@ typedef struct loom_check_emit_low_allocation_summary_row_t {
 } loom_check_emit_low_allocation_summary_row_t;
 
 static const iree_string_view_t kLoomCheckEmitCoreTargetNames[] = {
-    IREE_SVL("liveness-json"),        IREE_SVL("liveness"),
-    IREE_SVL("low-schedule-json"),    IREE_SVL("low-schedule"),
-    IREE_SVL("low-allocation-json"),  IREE_SVL("low-allocation-summary"),
-    IREE_SVL("low-allocation"),       IREE_SVL("low-packet-json"),
-    IREE_SVL("low-packet"),           IREE_SVL("target-low-registry-manifest"),
-    IREE_SVL("low-compile-report"),   IREE_SVL("pipeline-plan"),
-    IREE_SVL("storage-interference"),
+    IREE_SVL("liveness-json"),       IREE_SVL("liveness"),
+    IREE_SVL("low-schedule-json"),   IREE_SVL("low-schedule"),
+    IREE_SVL("low-allocation-json"), IREE_SVL("low-allocation-summary"),
+    IREE_SVL("low-allocation"),      IREE_SVL("low-packet-json"),
+    IREE_SVL("low-packet"),          IREE_SVL("target-low-registry-manifest"),
+    IREE_SVL("low-compile-report"),  IREE_SVL("storage-interference"),
 };
 
 typedef struct loom_check_emit_request_t {
@@ -118,8 +113,6 @@ typedef struct loom_check_emit_request_t {
   iree_string_view_t emit_target_name;
   // Module-local function symbol name used by analysis dumps.
   iree_string_view_t analysis_symbol_name;
-  // Explicit resident-instance capacity for target-neutral pipeline planning.
-  loom_pipeline_plan_limits_t pipeline_limits;
   // Low allocation budget overrides parsed from the RUN line.
   loom_low_allocation_budget_t
       low_allocation_budgets[LOOM_CHECK_LOW_EMIT_MAX_ALLOCATION_BUDGETS];
@@ -582,30 +575,6 @@ static iree_status_t loom_check_emit_parse_request(
             ? LOOM_CHECK_EMIT_STORAGE_INTERFERENCE
             : LOOM_CHECK_EMIT_LIVENESS_JSON;
     return iree_ok_status();
-  } else if (iree_string_view_equal(target_name, IREE_SV("pipeline-plan"))) {
-    iree_string_view_t symbol_name;
-    iree_string_view_t capacity;
-    iree_string_view_split(target_options, ' ', &symbol_name, &capacity);
-    capacity = iree_string_view_trim(capacity);
-    if (!iree_string_view_consume_prefix(&symbol_name, IREE_SV("@")) ||
-        iree_string_view_is_empty(symbol_name) ||
-        !iree_string_view_consume_prefix(&capacity,
-                                         IREE_SV("max-instances="))) {
-      return iree_make_status(
-          IREE_STATUS_INVALID_ARGUMENT,
-          "pipeline-plan requires @pipeline max-instances=<positive integer>");
-    }
-    IREE_RETURN_IF_ERROR(loom_pass_option_parse_uint32(
-        target_name, IREE_SV("max-instances"), capacity,
-        &out_request->pipeline_limits.instance_count));
-    if (out_request->pipeline_limits.instance_count == 0) {
-      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                              "pipeline-plan max-instances must be positive");
-    }
-    out_request->analysis_symbol_name = symbol_name;
-    out_request->format = LOOM_CHECK_EMIT_PIPELINE_PLAN;
-    out_request->suppress_actual_output = true;
-    return iree_ok_status();
   } else if (iree_string_view_equal(target_name,
                                     IREE_SV("low-schedule-json")) ||
              iree_string_view_equal(target_name, IREE_SV("low-schedule"))) {
@@ -828,36 +797,6 @@ static iree_status_t loom_check_emit_write_function_analysis(
   }
   return loom_check_emit_liveness(module, function, analysis_arena,
                                   &result->actual_output);
-}
-
-static iree_status_t loom_check_emit_pipeline_plan(
-    loom_module_t* module, iree_string_view_t symbol_name,
-    loom_pipeline_plan_limits_t limits, const loom_test_case_t* test_case,
-    iree_string_view_t filename,
-    loom_check_diagnostic_collector_t* diagnostic_collector,
-    iree_diagnostic_emitter_t emitter, iree_arena_allocator_t* arena) {
-  loom_func_like_t pipeline = {0};
-  IREE_RETURN_IF_ERROR(
-      loom_check_emit_find_func_like(module, symbol_name, test_case, filename,
-                                     diagnostic_collector, emitter, &pipeline));
-  if (!loom_func_like_isa(pipeline)) {
-    return iree_ok_status();
-  }
-  if (!loom_pipeline_def_isa(pipeline.op)) {
-    const loom_symbol_id_t symbol_id = loom_module_find_symbol(
-        module, loom_module_lookup_string(module, symbol_name));
-    return loom_check_emit_symbol_kind_mismatch(
-        module, &module->symbols.entries[symbol_id], symbol_name,
-        IREE_SV("pipeline.def"), emitter);
-  }
-  loom_value_fact_table_t facts = {0};
-  IREE_RETURN_IF_ERROR(
-      loom_value_fact_table_initialize(&facts, arena, module->values.count));
-  IREE_RETURN_IF_ERROR(loom_value_fact_table_compute(&facts, module, pipeline));
-  loom_pipeline_plan_t plan = {0};
-  bool valid = false;
-  return loom_pipeline_plan_build(module, pipeline, &facts, limits, emitter,
-                                  arena, &plan, &valid);
 }
 
 static iree_status_t loom_check_emit_index_pressure_cliffs(
@@ -1551,11 +1490,6 @@ static iree_status_t loom_check_emit_core_native_module(
         module, request->analysis_symbol_name, request->format,
         provider_request->test_case, provider_request->filename,
         diagnostic_collector, emitter, diagnostic_collector->arena, result);
-  } else if (request->format == LOOM_CHECK_EMIT_PIPELINE_PLAN) {
-    status = loom_check_emit_pipeline_plan(
-        module, request->analysis_symbol_name, request->pipeline_limits,
-        provider_request->test_case, provider_request->filename,
-        diagnostic_collector, emitter, diagnostic_collector->arena);
   } else if (request->format == LOOM_CHECK_EMIT_LOW_SCHEDULE_JSON) {
     status = loom_check_emit_write_low_schedule_json(
         native_module->module, request->analysis_symbol_name,

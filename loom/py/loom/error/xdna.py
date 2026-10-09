@@ -19,52 +19,6 @@ ERR_XDNA_001 = ErrorDef(
     fix_hint="Provide a non-empty record sequence for the worker fold.",
 )
 
-# ERR_XDNA_002: AIE2P worker requires a frame-completion phase.
-ERR_XDNA_002 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=2,
-    severity=Severity.ERROR,
-    summary="AIE2P worker requires a frame-completion phase.",
-    message=(
-        "AIE2P pipeline group {group} has frame-completion stages that "
-        "require a phased worker program"
-    ),
-    params=(ErrorParam("group", ParamKind.U32),),
-    fix_hint="Place completion stages in a separate group.",
-)
-
-# ERR_XDNA_003: AIE2P worker outputs require different firing phases.
-ERR_XDNA_003 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=3,
-    severity=Severity.ERROR,
-    summary="AIE2P worker outputs require different firing phases.",
-    message=(
-        "AIE2P pipeline group {group} requires compatible folds on every "
-        "boundary output; mixed cadences require a phased worker program"
-    ),
-    params=(ErrorParam("group", ParamKind.U32),),
-    fix_hint="Place recordwise and folded outputs in separate groups.",
-)
-
-# ERR_XDNA_004: AIE2P internal buffered flow requires a ring state machine.
-ERR_XDNA_004 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=4,
-    severity=Severity.ERROR,
-    summary="AIE2P internal buffered flow requires a ring state machine.",
-    message=(
-        "AIE2P pipeline group {group} flow {flow} has capacity {capacity}; "
-        "buffered same-group flow requires a composite ring state machine"
-    ),
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("flow", ParamKind.U32),
-        ErrorParam("capacity", ParamKind.U32),
-    ),
-    fix_hint="Place the buffered flow producer and consumer in separate groups.",
-)
-
 # ERR_XDNA_005: AIE2P worker channel cycle requires interleaved phases.
 ERR_XDNA_005 = ErrorDef(
     domain=ErrorDomain.XDNA,
@@ -120,91 +74,6 @@ ERR_XDNA_007 = ErrorDef(
     ),
     params=(ErrorParam("channel", ParamKind.U32),),
     fix_hint="Reduce independent streams crossing the link or change worker placement.",
-)
-
-# ERR_XDNA_008: AIE2P array pipeline requires kernel materialization scope.
-ERR_XDNA_008 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=8,
-    severity=Severity.ERROR,
-    summary="AIE2P array pipeline requires kernel materialization scope.",
-    message=(
-        "AIE2P array pipeline requires kernel materialization scope; got '{scope}'"
-    ),
-    params=(ErrorParam("scope", ParamKind.STRING),),
-    fix_hint="Declare pipeline.def<kernel> for one resident array executable.",
-)
-
-# ERR_XDNA_009: AIE2P pipeline exceeds resident compute capacity.
-ERR_XDNA_009 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=9,
-    severity=Severity.ERROR,
-    summary="AIE2P pipeline exceeds resident compute capacity.",
-    message=(
-        "AIE2P pipeline requires {instance_count} resident instances "
-        "but has {compute_tile_count} compute tiles"
-    ),
-    params=(
-        ErrorParam("instance_count", ParamKind.U32),
-        ErrorParam("compute_tile_count", ParamKind.U32),
-    ),
-    fix_hint="Reduce the total resident group lane count.",
-)
-
-# ERR_XDNA_010: AIE2P composite stages have different core targets.
-ERR_XDNA_010 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=10,
-    severity=Severity.ERROR,
-    summary="AIE2P composite stages have different core targets.",
-    message=(
-        "AIE2P pipeline group {group} stage '@{entry}' uses target "
-        "'@{actual_target}', but its other stages use '@{expected_target}'"
-    ),
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("entry", ParamKind.STRING),
-        ErrorParam("actual_target", ParamKind.STRING),
-        ErrorParam("expected_target", ParamKind.STRING),
-    ),
-    fix_hint="Use one exact core target for all stages in a resident group.",
-)
-
-# ERR_XDNA_011: AIE2P composite flow has no representable private record.
-ERR_XDNA_011 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=11,
-    severity=Severity.ERROR,
-    summary="AIE2P composite flow has no representable private record.",
-    message=(
-        "AIE2P pipeline group {group} internal flow {flow} requires a "
-        "whole-byte tile whose bit count fits in 64 bits; got {tile_type}"
-    ),
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("flow", ParamKind.U32),
-        ErrorParam("tile_type", ParamKind.TYPE),
-    ),
-    fix_hint="Use byte-complete internal records with a representable total size.",
-)
-
-# ERR_XDNA_012: AIE2P composite worker exceeds callable ABI capacity.
-ERR_XDNA_012 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=12,
-    severity=Severity.ERROR,
-    summary="AIE2P composite worker exceeds callable ABI capacity.",
-    message=(
-        "AIE2P pipeline group {group} requires {port_count} composite buffer "
-        "arguments; the callable ABI supports at most {maximum}"
-    ),
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("port_count", ParamKind.U32),
-        ErrorParam("maximum", ParamKind.U32),
-    ),
-    fix_hint="Split the stages across groups or reduce distinct boundary flows.",
 )
 
 # ERR_XDNA_013: A worker coordinate lies outside the physical array.
@@ -653,19 +522,277 @@ ERR_XDNA_034 = ErrorDef(
     ),
 )
 
+ERR_XDNA_050 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=50,
+    severity=Severity.ERROR,
+    summary="Configuration function has a runtime signature.",
+    message=(
+        "configuration function '@{function_name}' has {argument_count} arguments "
+        "and {result_count} results; configuration functions have neither"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("argument_count", ParamKind.U32),
+        ErrorParam("result_count", ParamKind.U32),
+    ),
+)
+
+ERR_XDNA_035 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=35,
+    severity=Severity.ERROR,
+    summary="Configuration function contains runtime control or storage.",
+    message=(
+        "configuration function '@{function_name}' requires a single sequence "
+        "of configuration commands; '{op_name}' requires core execution"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("op_name", ParamKind.STRING),
+    ),
+)
+
+ERR_XDNA_036 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=36,
+    severity=Severity.ERROR,
+    summary="Configuration references an undefined function body.",
+    message=(
+        "configuration reference '{field_name}' to '@{symbol_name}' "
+        "requires a {definition_kind} definition"
+    ),
+    params=(
+        ErrorParam("field_name", ParamKind.STRING),
+        ErrorParam("symbol_name", ParamKind.STRING),
+        ErrorParam("definition_kind", ParamKind.STRING),
+    ),
+)
+
+ERR_XDNA_037 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=37,
+    severity=Severity.ERROR,
+    summary="Configuration reference requires a closed function signature.",
+    message=(
+        "configuration reference '{field_name}' to '@{symbol_name}' supplies "
+        "no arguments or return continuation, but the function has "
+        "{argument_count} arguments and {result_count} results"
+    ),
+    params=(
+        ErrorParam("field_name", ParamKind.STRING),
+        ErrorParam("symbol_name", ParamKind.STRING),
+        ErrorParam("argument_count", ParamKind.U32),
+        ErrorParam("result_count", ParamKind.U32),
+    ),
+)
+
+ERR_XDNA_038 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=38,
+    severity=Severity.ERROR,
+    summary="Configuration command is unavailable in the selected phase.",
+    message=(
+        "configuration function '@{function_name}' is used for {phase}, "
+        "which cannot execute '{command}'"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("phase", ParamKind.STRING),
+        ErrorParam("command", ParamKind.STRING),
+    ),
+)
+
+ERR_XDNA_039 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=39,
+    severity=Severity.ERROR,
+    summary="Configuration entry count does not match its function role.",
+    message=(
+        "configuration function '@{function_name}' requires {expected_count} "
+        "entry commands, but has {actual_count}"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("expected_count", ParamKind.U32),
+        ErrorParam("actual_count", ParamKind.U32),
+    ),
+)
+
+ERR_XDNA_040 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=40,
+    severity=Severity.ERROR,
+    summary="Loaded tile program requires an unbound physical resource.",
+    message=(
+        "loaded tile program '@{function_name}' contains '{op_name}'; "
+        "program.load requires imported resource addresses "
+        "to be explicit in the core program"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("op_name", ParamKind.STRING),
+    ),
+)
+
+ERR_XDNA_041 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=41,
+    severity=Severity.ERROR,
+    summary="Configuration operand is outside its physical range.",
+    message=(
+        "configuration operand '{operand_name}' is {value}; "
+        "its physical range is [{minimum}, {maximum}]"
+    ),
+    params=(
+        ErrorParam("operand_name", ParamKind.STRING),
+        ErrorParam("value", ParamKind.U64),
+        ErrorParam("minimum", ParamKind.U64),
+        ErrorParam("maximum", ParamKind.U64),
+    ),
+)
+
+ERR_XDNA_042 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=42,
+    severity=Severity.ERROR,
+    summary="Configuration operand violates an alignment contract.",
+    message=(
+        "configuration operand '{operand_name}' is {value}; "
+        "it must be a multiple of {alignment}"
+    ),
+    params=(
+        ErrorParam("operand_name", ParamKind.STRING),
+        ErrorParam("value", ParamKind.U64),
+        ErrorParam("alignment", ParamKind.U64),
+    ),
+)
+
+ERR_XDNA_043 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=43,
+    severity=Severity.ERROR,
+    summary="Invocation binding ordinal is not dense.",
+    message=(
+        "invocation binding ordinal is {actual}; "
+        "the next declared binding is {expected}"
+    ),
+    params=(ErrorParam("actual", ParamKind.U64), ErrorParam("expected", ParamKind.U64)),
+)
+
+ERR_XDNA_044 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=44,
+    severity=Severity.ERROR,
+    summary="Invocation range exceeds the declared binding extent.",
+    message=(
+        "binding {binding} has {extent} bytes; "
+        "range offset {offset} and length {length} exceed that extent"
+    ),
+    params=(
+        ErrorParam("binding", ParamKind.U32),
+        ErrorParam("extent", ParamKind.U64),
+        ErrorParam("offset", ParamKind.U64),
+        ErrorParam("length", ParamKind.U64),
+    ),
+)
+
+ERR_XDNA_045 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=45,
+    severity=Severity.ERROR,
+    summary="Configuration register access crosses a physical tile aperture.",
+    message=(
+        "configuration register access at address {address} has {word_count} words "
+        "and exceeds one tile in the {columns}-column partition"
+    ),
+    params=(
+        ErrorParam("address", ParamKind.U32),
+        ErrorParam("word_count", ParamKind.U64),
+        ErrorParam("columns", ParamKind.U32),
+    ),
+)
+
+ERR_XDNA_046 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=46,
+    severity=Severity.ERROR,
+    summary="Program load does not select a compute tile.",
+    message=(
+        "program.load coordinate ({column}, {row}) is not a compute tile "
+        "in the {columns}-column partition"
+    ),
+    params=(
+        ErrorParam("column", ParamKind.U64),
+        ErrorParam("row", ParamKind.U64),
+        ErrorParam("columns", ParamKind.U32),
+    ),
+)
+
+ERR_XDNA_047 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=47,
+    severity=Severity.ERROR,
+    summary="Shim descriptor flags overlap its relocated address.",
+    message=(
+        "shim descriptor flags {flags} set low address bits "
+        "reserved for the range operand"
+    ),
+    params=(ErrorParam("flags", ParamKind.U32),),
+)
+
+ERR_XDNA_048 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=48,
+    severity=Severity.ERROR,
+    summary="Binding alignment is not a power of two.",
+    message="invocation binding alignment {alignment} must be a nonzero power of two",
+    params=(ErrorParam("alignment", ParamKind.U64),),
+)
+
+ERR_XDNA_049 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=49,
+    severity=Severity.ERROR,
+    summary="Resident data and worker storage exceed tile memory.",
+    message=(
+        "tile [{column}, {row}] requires {required} bytes for resident data "
+        "and loaded worker storage, but has {capacity} bytes"
+    ),
+    params=(
+        ErrorParam("column", ParamKind.U32),
+        ErrorParam("row", ParamKind.U32),
+        ErrorParam("required", ParamKind.U64),
+        ErrorParam("capacity", ParamKind.U64),
+    ),
+)
+
+ERR_XDNA_052 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=52,
+    severity=Severity.ERROR,
+    summary="Register wait requires bits outside its comparison mask.",
+    message=(
+        "wait.mask32 value {value} sets bits outside mask {mask}; "
+        "the masked register cannot match this value"
+    ),
+    params=(ErrorParam("mask", ParamKind.U32), ErrorParam("value", ParamKind.U32)),
+)
+
+ERR_XDNA_051 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=51,
+    severity=Severity.ERROR,
+    summary="Resident worker realization cannot satisfy this program.",
+    message="AIE2P resident worker realization requires {requirement}",
+    params=(ErrorParam("requirement", ParamKind.STRING),),
+)
+
 ALL_XDNA_ERRORS = (
     ERR_XDNA_001,
-    ERR_XDNA_002,
-    ERR_XDNA_003,
-    ERR_XDNA_004,
     ERR_XDNA_005,
     ERR_XDNA_006,
     ERR_XDNA_007,
-    ERR_XDNA_008,
-    ERR_XDNA_009,
-    ERR_XDNA_010,
-    ERR_XDNA_011,
-    ERR_XDNA_012,
     ERR_XDNA_013,
     ERR_XDNA_014,
     ERR_XDNA_015,
@@ -688,4 +815,22 @@ ALL_XDNA_ERRORS = (
     ERR_XDNA_032,
     ERR_XDNA_033,
     ERR_XDNA_034,
+    ERR_XDNA_050,
+    ERR_XDNA_035,
+    ERR_XDNA_036,
+    ERR_XDNA_037,
+    ERR_XDNA_038,
+    ERR_XDNA_039,
+    ERR_XDNA_040,
+    ERR_XDNA_041,
+    ERR_XDNA_042,
+    ERR_XDNA_043,
+    ERR_XDNA_044,
+    ERR_XDNA_045,
+    ERR_XDNA_046,
+    ERR_XDNA_047,
+    ERR_XDNA_048,
+    ERR_XDNA_049,
+    ERR_XDNA_052,
+    ERR_XDNA_051,
 )

@@ -76,7 +76,8 @@ static iree_status_t loom_aie2p_provider_build_pipeline_target_where(
 
 static iree_status_t loom_aie2p_provider_contribute_pipeline(
     const loom_target_pipeline_contribution_t* contribution) {
-  if (contribution->phase != LOOM_TARGET_PIPELINE_PHASE_SOURCE_TO_LOW) {
+  if (contribution->phase !=
+      LOOM_TARGET_PIPELINE_PHASE_SOURCE_EXECUTION_REALIZATION) {
     return iree_ok_status();
   }
   loom_op_t* for_op = NULL;

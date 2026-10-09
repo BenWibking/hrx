@@ -291,22 +291,22 @@ func.def @nested_convergent_clears_parent(%condition: i1, %value: i32) -> (i32, 
 // identities. Folding the second borrowed result into the first would make the
 // later borrow of %lhs a use after move.
 // RUN: pass cse
-func.def @moved_result_consumption_blocks_cse(%resource: pool<16>) {
-  %lhs = test.resource.borrowed %resource : pool<16> -> pool<16>
-  %rhs = test.resource.borrowed %resource : pool<16> -> pool<16>
-  %moved = test.resource.move %rhs : pool<16> -> pool<16>
-  test.resource.borrow %lhs : pool<16>
-  test.resource.borrow %moved : pool<16>
+func.def @moved_result_consumption_blocks_cse(%resource: pool) {
+  %lhs = test.resource.borrowed %resource : pool -> pool
+  %rhs = test.resource.borrowed %resource : pool -> pool
+  %moved = test.resource.move %rhs : pool -> pool
+  test.resource.borrow %lhs : pool
+  test.resource.borrow %moved : pool
   func.return
 }
 
 // ----
-func.def @moved_result_consumption_blocks_cse(%resource: pool<16>) {
-  %lhs = test.resource.borrowed %resource : pool<16> -> pool<16>
-  %rhs = test.resource.borrowed %resource : pool<16> -> pool<16>
-  %moved = test.resource.move %rhs : pool<16> -> pool<16>
-  test.resource.borrow %lhs : pool<16>
-  test.resource.borrow %moved : pool<16>
+func.def @moved_result_consumption_blocks_cse(%resource: pool) {
+  %lhs = test.resource.borrowed %resource : pool -> pool
+  %rhs = test.resource.borrowed %resource : pool -> pool
+  %moved = test.resource.move %rhs : pool -> pool
+  test.resource.borrow %lhs : pool
+  test.resource.borrow %moved : pool
   func.return
 }
 

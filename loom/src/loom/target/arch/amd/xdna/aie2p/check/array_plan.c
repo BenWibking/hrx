@@ -154,8 +154,8 @@ static const char* loom_aie2p_array_plan_check_direction_name(
 }
 
 static const char* loom_aie2p_array_plan_check_dma_direction_name(
-    loom_aie2p_array_dma_direction_t direction) {
-  return direction == LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
+    loom_xdna_dma_direction_t direction) {
+  return direction == LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
              ? "memory-to-stream"
              : "stream-to-memory";
 }
@@ -532,6 +532,7 @@ static iree_status_t loom_aie2p_array_program_check_count_records(
         ++out_counts->tile_loads;
         break;
       case LOOM_AIE2P_PROGRAM_RECORD_DMA_TASK_WAIT:
+      case LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WAIT32:
         ++out_counts->waits;
         break;
       default:
@@ -622,6 +623,16 @@ static iree_status_t loom_aie2p_array_program_check_format(
         IREE_RETURN_IF_ERROR(loom_aie2p_array_program_check_append_block(
             IREE_SV("control"), i, &record->value.register_block_write32,
             builder));
+        break;
+      }
+      case LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WAIT32: {
+        IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+            builder,
+            "control-mask-wait record=%" PRIhsz " address=0x%08" PRIx32
+            " mask=0x%08" PRIx32 " value=0x%08" PRIx32 "\n",
+            i, record->value.register_mask_wait32.address,
+            record->value.register_mask_wait32.mask,
+            record->value.register_mask_wait32.value));
         break;
       }
       case LOOM_AIE2P_PROGRAM_RECORD_DMA_TASK_WAIT: {

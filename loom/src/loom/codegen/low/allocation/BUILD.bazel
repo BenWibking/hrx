@@ -658,6 +658,18 @@ loom_cc_library(
     ],
 )
 
+loom_cc_test(
+    name = "physical_domains_test",
+    srcs = ["physical_domains_test.cc"],
+    deps = [
+        ":physical_domains",
+        "//loom/src/loom/target/test:descriptors",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
 loom_cc_library(
     name = "scalar_packing",
     srcs = ["scalar_packing.c"],

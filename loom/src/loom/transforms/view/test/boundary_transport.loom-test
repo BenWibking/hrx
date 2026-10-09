@@ -30,18 +30,16 @@ func.def public target(@carrier_target) @caller(%storage: buffer, %offset: offse
 
 test.target<low_core> @carrier_target
 
-pipeline.def public target(@carrier_target) @consume(%input: view<1xi32>) launch() {
-  pipeline.return
+pipeline.def public target(@carrier_target) @consume(%input: view<1xi32>) run() {
 }
 
 // ----
 test.target<low_core> @carrier_target
 
-pipeline.def public target(@carrier_target) @consume(%input_root: buffer, %input_offset: offset) launch() {
+pipeline.def public target(@carrier_target) @consume(%input_root: buffer, %input_offset: offset) run() {
   cfg.br ^_bb1(%input_root: buffer, %input_offset: offset)
 ^_bb1(%1: buffer, %0: offset):
   %input = buffer.view %1[%0] : buffer -> view<1xi32>
-  pipeline.return
 }
 
 // ====

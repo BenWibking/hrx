@@ -79,6 +79,7 @@ KEYWORD_MAP: dict[str, str] = {
     "config": "LOOM_KW_CONFIG",
     "launch": "LOOM_KW_LAUNCH",
     "workgroups": "LOOM_KW_WORKGROUPS",
+    "workers": "LOOM_KW_WORKERS",
     "abi_layout": "LOOM_KW_ABI_LAYOUT",
     "extent": "LOOM_KW_EXTENT",
     "module": "LOOM_KW_MODULE",
@@ -101,6 +102,8 @@ KEYWORD_MAP: dict[str, str] = {
     "<": "LOOM_KW_LANGLE",
     ">": "LOOM_KW_RANGLE",
     "conflicts": "LOOM_KW_CONFLICTS",
+    "run": "LOOM_KW_RUN",
+    "pool": "LOOM_KW_POOL",
 }
 
 # Maps Region(..., syntax=...) names to C parser/printer selector IDs. The

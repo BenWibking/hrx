@@ -272,7 +272,7 @@ static iree_status_t loom_test_resource_lifetime_build_release(
 
 static iree_status_t loom_test_resource_lifetime_run(loom_pass_t* pass,
                                                      loom_module_t* module) {
-  const loom_ownership_lifetime_materialization_policy_t policy = {
+  const loom_ownership_lifetime_policy_t policy = {
       .family =
           {
               .name = IREE_SVL("test.resource"),
@@ -280,7 +280,7 @@ static iree_status_t loom_test_resource_lifetime_run(loom_pass_t* pass,
           },
       .build_release = loom_test_resource_lifetime_build_release,
   };
-  loom_ownership_lifetime_materialize_options_t options = {
+  loom_ownership_lifetime_options_t options = {
       .arena = pass->arena,
       .emitter = pass->diagnostic_emitter,
       .phase_name = pass->info->name,

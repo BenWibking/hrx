@@ -513,7 +513,8 @@ iree_status_t loom_spirv_workgroup_layout_record_alloca(
     IREE_RETURN_IF_ERROR(loom_source_storage_packing_create(
         loom_source_storage_packing_interference_callback_make(
             loom_spirv_workgroup_layout_query_interference, layout),
-        loom_low_lower_context_function_arena(context), &segment->packing));
+        NULL, 0, loom_low_lower_context_function_arena(context),
+        &segment->packing));
     IREE_ASSERT_LT(layout->segment_count,
                    IREE_ARRAYSIZE(layout->segment_order));
     layout->segment_order[layout->segment_count++] = scalar_type;

@@ -322,8 +322,7 @@ kernel.decl @materialized_kernel() launch(%storage: buffer)
 
 command.program.decl @materialized_program(%configuration: index) launch(%storage: buffer)
 
-pipeline.def @materialized_pipeline(%configuration: index) launch(%storage: buffer) {
-  pipeline.return
+pipeline.def @materialized_pipeline(%configuration: index) run(%storage: buffer) {
 }
 
 check.scenario @materialized_products configure[2](%configuration: index, %configuration_entropy: check.entropy) {

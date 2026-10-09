@@ -38,6 +38,8 @@ def test_outputs_contain_owned_tables() -> None:
         descriptor_source_path = Path(temp_dir) / "core_descriptors.c"
         array_descriptor_header_path = Path(temp_dir) / "array_descriptors.h"
         array_descriptor_source_path = Path(temp_dir) / "array_descriptors.c"
+        configuration_header_path = Path(temp_dir) / "configuration_descriptors.h"
+        configuration_source_path = Path(temp_dir) / "configuration_descriptors.c"
         assert (
             encoding_tables.main(
                 [
@@ -55,6 +57,10 @@ def test_outputs_contain_owned_tables() -> None:
                     str(array_descriptor_header_path),
                     "--array-descriptor-source-output",
                     str(array_descriptor_source_path),
+                    "--configuration-descriptor-header-output",
+                    str(configuration_header_path),
+                    "--configuration-descriptor-source-output",
+                    str(configuration_source_path),
                 ]
             )
             == 0
@@ -66,6 +72,8 @@ def test_outputs_contain_owned_tables() -> None:
         descriptor_source_contents = descriptor_source_path.read_text(encoding="utf-8")
         array_descriptor_header_contents = array_descriptor_header_path.read_text(encoding="utf-8")
         array_descriptor_source_contents = array_descriptor_source_path.read_text(encoding="utf-8")
+        configuration_header = configuration_header_path.read_text(encoding="utf-8")
+        configuration_source = configuration_source_path.read_text(encoding="utf-8")
 
     assert "kLoomAie2pInstructionLayouts" in encoding_contents
     assert "kLoomAie2pEncodingFieldNames" in encoding_contents
@@ -86,6 +94,8 @@ def test_outputs_contain_owned_tables() -> None:
     string_data = array_descriptor_source_contents.replace('"\n    "', "")
     assert "amd.xdna.aie2p.array.worker" in string_data
     assert "aie2p.array.binding_access" in string_data
+    assert "loom_aie2p_configuration_descriptor_set" in configuration_header
+    assert "amd.xdna.aie2p.configuration.program.load" in configuration_source.replace('"\n    "', "")
 
 
 def test_check_validates_without_output() -> None:

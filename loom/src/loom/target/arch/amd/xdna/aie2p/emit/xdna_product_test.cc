@@ -10,16 +10,141 @@
 #include <cstring>
 #include <vector>
 
-#include "iree/base/internal/arena.h"
 #include "iree/io/vec_stream.h"
-#include "iree/schemas/xdna_executable.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
 namespace loom {
 namespace {
 
-TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
+class XdnaProductTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    iree_arena_block_pool_initialize(4096, iree_allocator_system(), &pool_);
+    iree_arena_initialize(&pool_, &arena_);
+    IREE_ASSERT_OK(iree_io_vec_stream_create(
+        IREE_IO_STREAM_MODE_READABLE | IREE_IO_STREAM_MODE_WRITABLE |
+            IREE_IO_STREAM_MODE_SEEKABLE,
+        4096, iree_allocator_system(), &stream_));
+  }
+
+  void TearDown() override {
+    iree_io_stream_release(stream_);
+    iree_arena_deinitialize(&arena_);
+    iree_arena_block_pool_deinitialize(&pool_);
+  }
+
+  // Backing blocks for temporary native emission data.
+  iree_arena_block_pool_t pool_;
+  // Scratch storage used only while constructing the product.
+  iree_arena_allocator_t arena_;
+  // Growable native ELF output.
+  iree_io_stream_t* stream_ = nullptr;
+};
+
+TEST_F(XdnaProductTest, PreservesRequirementsIndependentOfWorkerTopology) {
+  // Service-only entries initialize a lock without loading a compute program.
+  // Their partition width and external contracts remain required even though
+  // no worker or payload-channel graph exists at this boundary.
+  loom_aie2p_program_record_t commands[2] = {};
+  commands[0].type = LOOM_AIE2P_PROGRAM_RECORD_REGISTER_WRITE32;
+  commands[0].value.register_write32 = {0x0221F000, 1};
+  commands[1].type = LOOM_AIE2P_PROGRAM_RECORD_REGISTER_WRITE32;
+  commands[1].value.register_write32 = {0x0E21F000, 1};
+  const loom_aie2p_array_program_t programs[] = {
+      {nullptr, 0, &commands[0], 1, nullptr, 0},
+      {nullptr, 0, &commands[1], 1, nullptr, 0},
+  };
+  const iree_xdna_elf_binding_record_t bindings[] = {
+      {
+          /*.kind=*/IREE_XDNA_ELF_BINDING_KIND_BUFFER,
+          /*.address_space=*/IREE_XDNA_ELF_BINDING_ADDRESS_SPACE_GLOBAL,
+          /*.access=*/IREE_XDNA_ELF_BINDING_ACCESS_READ,
+          /*.usage=*/IREE_XDNA_ELF_BINDING_USAGE_DEVICE_VISIBLE,
+          /*.minimum_byte_length=*/4096 + 256,
+          /*.minimum_alignment=*/256,
+          /*.minimum_byte_offset=*/256,
+          /*.maximum_byte_offset=*/1024,
+      },
+      {
+          /*.kind=*/IREE_XDNA_ELF_BINDING_KIND_BUFFER,
+          /*.address_space=*/IREE_XDNA_ELF_BINDING_ADDRESS_SPACE_HOST,
+          /*.access=*/IREE_XDNA_ELF_BINDING_ACCESS_READ |
+              IREE_XDNA_ELF_BINDING_ACCESS_WRITE,
+          /*.usage=*/IREE_XDNA_ELF_BINDING_USAGE_DEVICE_VISIBLE |
+              IREE_XDNA_ELF_BINDING_USAGE_COHERENT,
+          /*.minimum_byte_length=*/65536 + 64,
+          /*.minimum_alignment=*/64,
+          /*.minimum_byte_offset=*/0,
+          /*.maximum_byte_offset=*/UINT64_MAX,
+      },
+  };
+  const loom_aie2p_xdna_entry_t entries[] = {
+      {IREE_SV("ingress"), 2, &bindings[0], 1, &programs[0], nullptr, 0},
+      {IREE_SV("egress"), 8, &bindings[1], 1, &programs[1], nullptr, 0},
+  };
+  const auto profile_key = IREE_SV("amd.xdna.strix_halo.17f0_11");
+  const loom_aie2p_xdna_product_t product = {
+      loom_xdna_device_profile_lookup(profile_key), entries,
+      IREE_ARRAYSIZE(entries)};
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_write(&product, stream_, &arena_));
+  std::vector<uint8_t> bytes(iree_io_stream_length(stream_));
+  IREE_ASSERT_OK(iree_io_stream_seek(stream_, IREE_IO_STREAM_SEEK_SET, 0));
+  IREE_ASSERT_OK(
+      iree_io_stream_read(stream_, bytes.size(), bytes.data(), nullptr));
+  iree_arena_reset(&arena_);
+
+  // ELF32's first program header describes the native metadata. Decode its
+  // public wire records independently of the compiler's scratch allocation.
+  ASSERT_GE(bytes.size(), 52u);
+  const uint32_t program_header_offset =
+      iree_unaligned_load_le_u32(bytes.data() + 28);
+  ASSERT_LE(uint64_t(program_header_offset) + 32, bytes.size());
+  const auto* program_header = bytes.data() + program_header_offset;
+  ASSERT_EQ(iree_unaligned_load_le_u32(program_header),
+            IREE_XDNA_ELF_PROGRAM_TYPE_METADATA);
+  const uint32_t metadata_offset =
+      iree_unaligned_load_le_u32(program_header + 4);
+  const uint32_t metadata_length =
+      iree_unaligned_load_le_u32(program_header + 16);
+  ASSERT_LE(uint64_t(metadata_offset) + metadata_length, bytes.size());
+  ASSERT_GE(metadata_length, IREE_XDNA_ELF_HEADER_RECORD_SIZE);
+  const auto* metadata = bytes.data() + metadata_offset;
+  const auto header = iree_xdna_elf_decode_header(metadata);
+  EXPECT_EQ(header.column_count, 8u);
+  ASSERT_EQ(header.allocation_count, 2u);
+  ASSERT_EQ(header.allocation_use_count, 2u);
+  ASSERT_EQ(header.entry_count, 2u);
+  ASSERT_EQ(header.binding_count, 2u);
+  const uint32_t entry_offset =
+      IREE_XDNA_ELF_HEADER_RECORD_SIZE +
+      header.allocation_count * IREE_XDNA_ELF_ALLOCATION_RECORD_SIZE +
+      header.allocation_use_count * sizeof(uint32_t);
+  const uint32_t binding_offset =
+      entry_offset + header.entry_count * IREE_XDNA_ELF_ENTRY_RECORD_SIZE;
+  ASSERT_LE(
+      binding_offset + header.binding_count * IREE_XDNA_ELF_BINDING_RECORD_SIZE,
+      metadata_length);
+  for (uint32_t i = 0; i < IREE_ARRAYSIZE(entries); ++i) {
+    const auto entry = iree_xdna_elf_decode_entry(
+        metadata + entry_offset + i * IREE_XDNA_ELF_ENTRY_RECORD_SIZE);
+    ASSERT_EQ(entry.first_binding, i);
+    EXPECT_EQ(entry.binding_count, 1u);
+    const auto binding = iree_xdna_elf_decode_binding(
+        metadata + binding_offset +
+        entry.first_binding * IREE_XDNA_ELF_BINDING_RECORD_SIZE);
+    EXPECT_EQ(binding.kind, bindings[i].kind);
+    EXPECT_EQ(binding.address_space, bindings[i].address_space);
+    EXPECT_EQ(binding.access, bindings[i].access);
+    EXPECT_EQ(binding.usage, bindings[i].usage);
+    EXPECT_EQ(binding.minimum_byte_length, bindings[i].minimum_byte_length);
+    EXPECT_EQ(binding.minimum_alignment, bindings[i].minimum_alignment);
+    EXPECT_EQ(binding.minimum_byte_offset, bindings[i].minimum_byte_offset);
+    EXPECT_EQ(binding.maximum_byte_offset, bindings[i].maximum_byte_offset);
+  }
+}
+
+TEST_F(XdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
   const loom_xdna_device_profile_t* profile =
       loom_xdna_device_profile_lookup(IREE_SV("amd.xdna.strix_halo.17f0_11"));
   ASSERT_NE(profile, nullptr);
@@ -118,31 +243,28 @@ TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
       /*.contribution=*/&contribution,
       /*.linked_tile=*/&linked_tile,
   };
-  const loom_aie2p_array_worker_plan_t worker_plan = {
-      /*.worker_index=*/0,
-      /*.coordinate=*/kCoordinate,
-  };
-  loom_aie2p_array_plan_t array_plan = {};
-  array_plan.family = family;
-  array_plan.worker_plans = &worker_plan;
-  array_plan.worker_plan_count = 1;
-
-  constexpr uint32_t kActivationAddress = 0x01234000;
-  constexpr uint32_t kActivationValue = 0x0000CAFE;
-  loom_aie2p_program_record_t records[2] = {};
+  constexpr uint32_t kActivationAddress = 0x02232000;
+  constexpr uint32_t kActivationValue = 1;
+  constexpr uint32_t kCompletionAddress = 0x0221F0F0;
+  loom_aie2p_program_record_t records[4] = {};
   records[0].type = LOOM_AIE2P_PROGRAM_RECORD_TILE_PROGRAM_LOAD;
   records[0].value.tile_program_load.tile_program_index = 0;
   records[1].type = LOOM_AIE2P_PROGRAM_RECORD_REGISTER_WRITE32;
   records[1].value.register_write32.address = kActivationAddress;
   records[1].value.register_write32.value = kActivationValue;
+  records[2].type = LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WAIT32;
+  records[2].value.register_mask_wait32 = {kCompletionAddress, 0x3F, 1};
+  records[3].type = LOOM_AIE2P_PROGRAM_RECORD_REGISTER_WRITE32;
+  records[3].value.register_write32 = {kActivationAddress, 0};
   loom_aie2p_array_program_t array_program = {};
   array_program.array_records = records;
   array_program.array_record_count = IREE_ARRAYSIZE(records);
-  array_program.tile_program_count = 1;
 
   const loom_aie2p_xdna_entry_t entry = {
       /*.name=*/IREE_SV("entry"),
-      /*.array_plan=*/&array_plan,
+      /*.column_count=*/kCoordinate.column + 1,
+      /*.bindings=*/nullptr,
+      /*.binding_count=*/0,
       /*.array_program=*/&array_program,
       /*.tiles=*/&tile,
       /*.tile_count=*/1,
@@ -153,20 +275,11 @@ TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
       /*.entry_count=*/1,
   };
 
-  iree_arena_block_pool_t block_pool;
-  iree_arena_block_pool_initialize(4096, iree_allocator_system(), &block_pool);
-  iree_arena_allocator_t arena;
-  iree_arena_initialize(&block_pool, &arena);
-  iree_io_stream_t* stream = nullptr;
-  IREE_ASSERT_OK(iree_io_vec_stream_create(
-      IREE_IO_STREAM_MODE_READABLE | IREE_IO_STREAM_MODE_WRITABLE |
-          IREE_IO_STREAM_MODE_SEEKABLE,
-      4096, iree_allocator_system(), &stream));
-  IREE_ASSERT_OK(loom_aie2p_xdna_product_write(&product, stream, &arena));
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_write(&product, stream_, &arena_));
 
-  std::vector<uint8_t> file_bytes(iree_io_stream_length(stream));
-  IREE_ASSERT_OK(iree_io_stream_seek(stream, IREE_IO_STREAM_SEEK_SET, 0));
-  IREE_ASSERT_OK(iree_io_stream_read(stream, file_bytes.size(),
+  std::vector<uint8_t> file_bytes(iree_io_stream_length(stream_));
+  IREE_ASSERT_OK(iree_io_stream_seek(stream_, IREE_IO_STREAM_SEEK_SET, 0));
+  IREE_ASSERT_OK(iree_io_stream_read(stream_, file_bytes.size(),
                                      file_bytes.data(), nullptr));
   ASSERT_GE(file_bytes.size(), 52u);
   const uint32_t program_header_offset =
@@ -225,7 +338,7 @@ TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
   EXPECT_EQ(load_offsets[2], 40u);
   EXPECT_EQ(load_offsets[3], 56u);
   EXPECT_EQ(load_offsets[4], 64u);
-  EXPECT_EQ(iree_unaligned_load_le_u32(transaction.data() + 8), 3u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(transaction.data() + 8), 5u);
 
   const uint32_t coordinate_address =
       ((uint32_t)kCoordinate.column << family->column_shift) |
@@ -255,9 +368,21 @@ TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
   EXPECT_EQ(iree_unaligned_load_le_u32(activation + 16), kActivationValue);
   EXPECT_EQ(iree_unaligned_load_le_u32(activation + 20), 24u);
 
-  iree_io_stream_release(stream);
-  iree_arena_deinitialize(&arena);
-  iree_arena_block_pool_deinitialize(&block_pool);
+  // Firmware transaction 0.1's masked poll is a complete 32-byte record,
+  // including its reserved tail word. The stop write follows the poll.
+  const std::array<uint8_t, 32> completion = {
+      4, 0, 0, 0, 0,    0, 0, 0, 0xF0, 0xF0, 0x21, 2, 0, 0, 0, 0,
+      1, 0, 0, 0, 0x3F, 0, 0, 0, 32,   0,    0,    0, 0, 0, 0, 0,
+  };
+  ASSERT_GE(transaction.size(), 144u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(transaction.data() + 12), 144u);
+  EXPECT_EQ(0, std::memcmp(transaction.data() + 88, completion.data(),
+                           completion.size()));
+  const uint8_t* stop = transaction.data() + 120;
+  EXPECT_EQ(stop[0], 0u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(stop + 8), kActivationAddress);
+  EXPECT_EQ(iree_unaligned_load_le_u32(stop + 16), 0u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(stop + 20), 24u);
 }
 
 }  // namespace

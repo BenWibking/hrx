@@ -70,7 +70,7 @@ from loom.dsl import (
     EnumCase,
     EnumDef,
     FuncLikeInterface,
-    HasAncestor,
+    HasAnyAncestor,
     HasParent,
     ImplicitTerminator,
     NoAncestor,
@@ -92,7 +92,10 @@ from loom.dsl import (
     Writes,
 )
 
-_KERNEL_CONVERGENT_TRAITS = [CONVERGENT, HasAncestor("kernel.def")]
+# Execution queries and collectives retain their worker context while strands
+# are outlined and materialized into kernels. Construction has no such context.
+_KERNEL_EXECUTION_CONTEXT = HasAnyAncestor("kernel.def", "pipeline.strand")
+_KERNEL_CONVERGENT_TRAITS = [CONVERGENT, _KERNEL_EXECUTION_CONTEXT]
 
 # ============================================================================
 # Dialect
@@ -542,7 +545,7 @@ kernel_assert = Op(
             doc="Optional human-readable assertion message.",
         ),
     ],
-    traits=[UNKNOWN_EFFECTS, HasAncestor("kernel.def")],
+    traits=[UNKNOWN_EFFECTS, _KERNEL_EXECUTION_CONTEXT],
     format=[
         Ref("condition"),
         OptionalGroup(
@@ -601,7 +604,7 @@ kernel_workitem_id = Op(
             doc="Coordinate axis to read.",
         ),
     ],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_workitem_id_facts",
     format=[
         TemplateParam("dimension"),
@@ -639,7 +642,7 @@ kernel_workgroup_id = Op(
             doc="Coordinate axis to read.",
         ),
     ],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_workgroup_id_facts",
     format=[
         TemplateParam("dimension"),
@@ -670,7 +673,7 @@ kernel_workgroup_size = Op(
             doc="Coordinate axis to read.",
         ),
     ],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_workgroup_size_facts",
     format=[TemplateParam("dimension"), COLON, ResultType("result")],
     examples=["%size = kernel.workgroup.size<x> : index"],
@@ -690,7 +693,7 @@ kernel_workgroup_count = Op(
             doc="Coordinate axis to read.",
         ),
     ],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_workgroup_count_facts",
     format=[TemplateParam("dimension"), COLON, ResultType("result")],
     examples=["%count = kernel.workgroup.count<x> : index"],
@@ -721,7 +724,7 @@ kernel_cluster_id = Op(
             doc="Coordinate axis to read.",
         ),
     ],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_cluster_id_facts",
     canonicalize="loom_kernel_cluster_id_canonicalize",
     format=[TemplateParam("dimension"), COLON, ResultType("result")],
@@ -748,7 +751,7 @@ kernel_cluster_workgroup_id = Op(
             doc="Coordinate axis to read.",
         ),
     ],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_cluster_workgroup_id_facts",
     canonicalize="loom_kernel_cluster_workgroup_id_canonicalize",
     format=[TemplateParam("dimension"), COLON, ResultType("result")],
@@ -768,7 +771,7 @@ kernel_cluster_workgroup_flat_id = Op(
             doc="Flat current-workgroup coordinate within its cluster.",
         ),
     ],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_cluster_workgroup_flat_id_facts",
     canonicalize="loom_kernel_cluster_workgroup_flat_id_canonicalize",
     format=[COLON, ResultType("result")],
@@ -795,7 +798,7 @@ kernel_cluster_size = Op(
             doc="Coordinate axis to read.",
         ),
     ],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_cluster_size_facts",
     canonicalize="loom_kernel_cluster_size_canonicalize",
     format=[TemplateParam("dimension"), COLON, ResultType("result")],
@@ -822,7 +825,7 @@ kernel_cluster_count = Op(
             doc="Coordinate axis to read.",
         ),
     ],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_cluster_count_facts",
     canonicalize="loom_kernel_cluster_count_canonicalize",
     format=[TemplateParam("dimension"), COLON, ResultType("result")],
@@ -848,7 +851,7 @@ kernel_workitem_dispatch_id = Op(
             doc="Coordinate axis to read.",
         ),
     ],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_workitem_dispatch_id_facts",
     canonicalize="loom_kernel_workitem_dispatch_id_canonicalize",
     format=[TemplateParam("dimension"), COLON, ResultType("result")],
@@ -866,7 +869,7 @@ kernel_subgroup_id = Op(
     phase=OpPhase.EXECUTABLE,
     doc="Read the current subgroup coordinate within the workgroup.",
     results=[Result("result", INDEX, doc="Current subgroup id within the workgroup.")],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_subgroup_id_facts",
     format=[COLON, ResultType("result")],
     examples=["%sg = kernel.subgroup.id : index"],
@@ -878,7 +881,7 @@ kernel_subgroup_count = Op(
     phase=OpPhase.EXECUTABLE,
     doc="Read the number of subgroups in the current workgroup.",
     results=[Result("result", INDEX, doc="Subgroup count in the workgroup.")],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_subgroup_count_facts",
     format=[COLON, ResultType("result")],
     examples=["%count = kernel.subgroup.count : index"],
@@ -890,7 +893,7 @@ kernel_subgroup_size = Op(
     phase=OpPhase.EXECUTABLE,
     doc=("Read the execution width of the current subgroup. The width includes inactive lanes and may exceed the workgroup's invocation count."),
     results=[Result("result", INDEX, doc="Current subgroup size.")],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_subgroup_size_facts",
     format=[COLON, ResultType("result")],
     examples=["%size = kernel.subgroup.size : index"],
@@ -902,7 +905,7 @@ kernel_subgroup_lane_id = Op(
     phase=OpPhase.EXECUTABLE,
     doc="Read the current invocation coordinate within its subgroup.",
     results=[Result("result", INDEX, doc="Current subgroup lane id.")],
-    traits=[PURE, HasAncestor("kernel.def")],
+    traits=[PURE, _KERNEL_EXECUTION_CONTEXT],
     facts="loom_kernel_subgroup_lane_id_facts",
     format=[COLON, ResultType("result")],
     examples=["%lane = kernel.subgroup.lane.id : index"],
@@ -1458,7 +1461,11 @@ kernel_async_copy = Op(
         "Initiate an asynchronous byte-for-byte transfer between two already "
         "originated views. The source and destination view types may use "
         "different logical element types or shapes, but they must describe the "
-        "same static byte footprint. The direction attribute makes the "
+        "same logical payload byte count. Each view's layout determines the "
+        "addresses visited in logical element order; padding is not copied. "
+        "Dimensions may remain symbolic in source; specialization and value "
+        "facts must establish equal concrete payload sizes before target "
+        "transfer selection. The direction attribute makes the "
         "required memory-space flow explicit. The returned token must be "
         "committed to exactly one kernel.async.group before the copied bytes "
         "are waited or consumed."

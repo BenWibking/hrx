@@ -381,7 +381,7 @@ bool loom_op_is_trivially_dead(const loom_module_t* module,
     return false;
   }
   loom_trait_flags_t traits = loom_op_effective_traits(module, op);
-  if (iree_any_bit_set(traits, LOOM_TRAIT_HINT)) {
+  if (iree_any_bit_set(traits, LOOM_TRAIT_HINT | LOOM_TRAIT_SYMBOL_DEFINE)) {
     return false;
   }
   if (loom_traits_are_convergent(traits)) {
@@ -2477,15 +2477,9 @@ IREE_ATTRIBUTE_NOINLINE static void loom_op_drop_signature_type_uses(
   }
 }
 
-// Erases |op| and every operation nested in its regions. The root op must have
-// unused results; nested ops are removed as part of the dead subtree and may
-// still have uses from sibling ops that will be erased by the same walk.
-static iree_status_t loom_op_erase_subtree(loom_module_t* module, loom_op_t* op,
-                                           bool verify_results_unused) {
-  if (verify_results_unused) {
-    IREE_RETURN_IF_ERROR(loom_op_verify_erase_preconditions(module, op));
-  }
-
+// Erases a subtree whose enclosing removal has established result-use closure.
+// Sibling operations may still use its results until that removal completes.
+static void loom_op_erase_subtree(loom_module_t* module, loom_op_t* op) {
   loom_region_t** regions = loom_op_regions(op);
   for (uint8_t i = 0; i < op->region_count; ++i) {
     loom_region_t* region = regions[i];
@@ -2495,8 +2489,7 @@ static iree_status_t loom_op_erase_subtree(loom_module_t* module, loom_op_t* op,
     loom_block_t* block = NULL;
     loom_region_for_each_block(region, block) {
       while (block->first_op) {
-        IREE_RETURN_IF_ERROR(
-            loom_op_erase_subtree(module, block->first_op, false));
+        loom_op_erase_subtree(module, block->first_op);
       }
       loom_block_drop_arg_type_uses(module, block);
     }
@@ -2507,7 +2500,7 @@ static iree_status_t loom_op_erase_subtree(loom_module_t* module, loom_op_t* op,
   loom_value_id_t* operands = loom_op_operands(op);
   for (uint16_t i = 0; i < op->operand_count; ++i) {
     if (operands[i] != LOOM_VALUE_ID_INVALID) {
-      IREE_RETURN_IF_ERROR(loom_value_remove_use(module, operands[i], op, i));
+      loom_value_remove_use(module, operands[i], op, i);
     }
   }
   // Drop type references carried by result values. Result definition pointers
@@ -2527,11 +2520,19 @@ static iree_status_t loom_op_erase_subtree(loom_module_t* module, loom_op_t* op,
   }
   loom_block_unlink_op(module, op);
   op->flags |= LOOM_OP_FLAG_DEAD;
-  return iree_ok_status();
 }
 
 iree_status_t loom_op_erase(loom_module_t* module, loom_op_t* op) {
-  return loom_op_erase_subtree(module, op, true);
+  IREE_RETURN_IF_ERROR(loom_op_verify_erase_preconditions(module, op));
+  loom_op_erase_subtree(module, op);
+  return iree_ok_status();
+}
+
+void loom_op_erase_closed_set(loom_module_t* module, loom_op_t* const* ops,
+                              iree_host_size_t count) {
+  for (iree_host_size_t i = 0; i < count; ++i) {
+    loom_op_erase_subtree(module, ops[i]);
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -2870,8 +2871,7 @@ iree_status_t loom_region_remove_blocks(loom_module_t* module,
     }
     loom_block_t* block = region->blocks[block_index];
     while (block->first_op) {
-      IREE_RETURN_IF_ERROR(
-          loom_op_erase_subtree(module, block->first_op, false));
+      loom_op_erase_subtree(module, block->first_op);
     }
     loom_block_drop_arg_type_uses(module, block);
     block->parent_region = NULL;

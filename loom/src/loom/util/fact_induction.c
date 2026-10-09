@@ -430,9 +430,13 @@ loom_loop_recurrence_facts_t loom_value_fact_induction_facts(
   const loom_scalar_type_t scalar_type =
       loom_type_element_type(loom_module_value_type(module, induction->value));
   uint8_t bitwidth = 64;
-  if (table->context.target_facts) {
-    const loom_target_snapshot_t* target =
-        &table->context.target_facts->storage.snapshot;
+  const loom_value_t* induction_value =
+      loom_module_value(module, induction->value);
+  const loom_target_facts_t* target_facts =
+      loom_value_fact_table_block_target_facts(
+          table, loom_value_def_block(induction_value));
+  if (target_facts) {
+    const loom_target_snapshot_t* target = &target_facts->storage.snapshot;
     bitwidth = scalar_type == LOOM_SCALAR_TYPE_INDEX ? target->index_bitwidth
                                                      : target->offset_bitwidth;
   }

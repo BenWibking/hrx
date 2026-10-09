@@ -75,9 +75,9 @@ iree_status_t loom_expression_walk_create(loom_module_t* module,
                                           loom_expression_walk_t** out_walk);
 
 // Visits in dominator-before-dominated order, returning a null op at
-// completion. Nested regions are visited after their owner. Isolated regions
-// hide parent expressions; mutable-state lookups cross only straight-line CFG
-// edges.
+// completion. Nested regions are visited after their owner. Isolated and
+// independently executing regions hide parent expressions; mutable-state
+// lookups cross only straight-line CFG edges.
 iree_status_t loom_expression_walk_next(loom_expression_walk_t* walk,
                                         loom_expression_cursor_t* out_cursor);
 

@@ -31,6 +31,9 @@ from loom.target.arch.amd.xdna.aie.encoding import (
 from loom.target.arch.amd.xdna.aie2p.array_descriptors import (
     AIE2P_ARRAY_DESCRIPTOR_SET,
 )
+from loom.target.arch.amd.xdna.aie2p.configuration_descriptors import (
+    AIE2P_CONFIGURATION_DESCRIPTOR_SET,
+)
 from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
     AIE2P_CORE_DESCRIPTOR_SET,
 )
@@ -504,6 +507,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Validate generation inputs without writing an output file.",
     )
+    parser.add_argument("--configuration-descriptor-header-output", type=Path)
+    parser.add_argument("--configuration-descriptor-source-output", type=Path)
     args = parser.parse_args(argv)
     output_paths = (
         args.encoding_output,
@@ -513,6 +518,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.descriptor_source_output,
         args.array_descriptor_header_output,
         args.array_descriptor_source_output,
+        args.configuration_descriptor_header_output,
+        args.configuration_descriptor_source_output,
     )
     if args.check and any(path is not None for path in output_paths):
         parser.error("--check cannot be combined with output paths")
@@ -526,6 +533,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     generated_descriptors = generate_descriptor_set(AIE2P_CORE_DESCRIPTOR_SET)
     generated_array_descriptors = generate_descriptor_set(AIE2P_ARRAY_DESCRIPTOR_SET)
+    generated_configuration_descriptors = generate_descriptor_set(AIE2P_CONFIGURATION_DESCRIPTOR_SET)
     register_contents = _emit_register_tables()
     if args.encoding_output is not None:
         write_text_file(args.encoding_output, encoding_contents)
@@ -541,6 +549,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.array_descriptor_source_output,
             generated_array_descriptors.source,
         )
+        write_text_file(args.configuration_descriptor_header_output, generated_configuration_descriptors.header)
+        write_text_file(args.configuration_descriptor_source_output, generated_configuration_descriptors.source)
     return 0
 
 

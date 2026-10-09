@@ -82,6 +82,7 @@ from loom.dsl import (
     UNKNOWN_EFFECTS,
     AttrDef,
     BlockArgsSatisfy,
+    BorrowedResult,
     CallLikeInterface,
     CallLikeKind,
     ConditionForwardedCountMatchesBlockArgs,
@@ -713,6 +714,7 @@ low_func_call = Op(
         ),
     ],
     effective_traits="loom_low_func_call_effective_traits",
+    canonicalize="loom_low_func_call_canonicalize",
     verify="loom_low_func_call_verify",
     format=[
         OptionalGroup([Attr("purity")], anchor="purity"),
@@ -1444,12 +1446,13 @@ low_storage_reserve = Op(
     assembly=AssemblyFormat("storage"),
     group=low_ops,
     phase=OpPhase.EXECUTABLE,
-    doc="Reserve target-low function-local storage and preserve its segment footprint.",
+    doc="Reserve target-low function-local storage and preserve its segment footprint. The result borrows storage owned by the execution frame and requires no explicit release.",
     attrs=[
         AttrDef("byte_length", ATTR_TYPE_I64),
         AttrDef("byte_alignment", ATTR_TYPE_I64),
     ],
     results=[Result("storage", STORAGE, allocates=True)],
+    ownership_effects=[BorrowedResult("storage")],
     traits=[UNKNOWN_EFFECTS],
     verify="loom_low_storage_reserve_verify",
     facts="loom_low_storage_reserve_facts",
@@ -1660,7 +1663,11 @@ low_invoke = Op(
         "Source-typed call edge to an explicitly selected target-Low function. "
         "Source-to-Low lowering maps the source operands and results to the "
         "helper register signature, proves the helper argument predicates, and "
-        "normalizes the edge to low.func.call. Authored inline policy has the "
+        "normalizes the edge to low.func.call. Each source value maps to one "
+        "register-typed value. Views require storage and layout information "
+        "beyond that carrier and are not accepted as operands or results; use "
+        "a source helper taking views or pass buffers and offsets explicitly. "
+        "Authored inline policy has the "
         "same meaning as on low.func.call; targets without a Low call ABI may "
         "require the normalized edge to inline before emission."
     ),
@@ -1691,6 +1698,7 @@ low_invoke = Op(
         ),
     ],
     effective_traits="loom_low_invoke_effective_traits",
+    canonicalize="loom_low_invoke_canonicalize",
     verify="loom_low_invoke_verify",
     format=[
         OptionalGroup([Attr("purity")], anchor="purity"),

@@ -19,21 +19,22 @@ func.def @signed_dynamic_stride(%input: buffer, %bias0: index, %stride0: index, 
 }
 
 // ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_dynamic_stride(%source: reg<wasm.i32>, %bias: reg<wasm.i32>, %stride: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %signed = i32.load %source
+low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_dynamic_stride(%input: reg<wasm.i32>, %bias: reg<wasm.i32>, %stride: reg<wasm.i32>, %table: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
+  %signed = i32.load %input
   %23 = i32.mul %bias, %stride
   %24 = i32.const 4
   %25 = i32.mul %23, %24
   %26 = i32.mul %signed, %stride
   %28 = i32.mul %26, %24
   %29 = i32.add %25, %28
-  %30 = i32.add %view, %29
+  %30 = i32.add %table, %29
   %value = i32.load %30
   return %value
 }
 
 // ====
 
+// RUN: with-checks emit source-low target=wasm:simd128 output=low
 func.def @dynamic_stride_static_bias(%table: buffer, %position0: index, %stride0: index) -> (i8) {
   %position = index.assume %position0 [range(%position0, 0, 31)] : index
   %stride = index.assume %stride0 [range(%stride0, 1, 16)] : index
@@ -45,12 +46,11 @@ func.def @dynamic_stride_static_bias(%table: buffer, %position0: index, %stride0
 }
 
 // ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @dynamic_stride_static_bias(%view: reg<wasm.i32>, %position: reg<wasm.i32>, %stride: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %14 = i32.mul %position, %stride
-  %15 = i32.add %view, %14
-  %value = i32.load8_u %15 {offset = 128}
-  return %value
-}
+// The dynamic stride product remains separate from the folded byte bias.
+CHECK: * = i32.mul %position, %stride
+CHECK: * = i32.add %table, *
+CHECK: *%value = i32.load8_u * {offset = 128}
+CHECK: *return %value
 
 // ====
 
@@ -66,13 +66,13 @@ func.def @signed_wide_source(%input: i64, %table: buffer) -> (i32) {
 }
 
 // ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_wide_source(%signed: reg<wasm.i64>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
+low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_wide_source(%signed: reg<wasm.i64>, %table: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
   %13 = i32.const 512
   %14 = i32.wrap_i64 %signed
   %15 = i32.const 4
   %16 = i32.mul %14, %15
   %17 = i32.add %16, %13
-  %18 = i32.add %view, %17
+  %18 = i32.add %table, %17
   %value = i32.load %18
   return %value
 }
@@ -95,13 +95,13 @@ func.def @negative_varying_coefficient(%input: buffer, %table: buffer) -> (i32) 
 }
 
 // ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @negative_varying_coefficient(%source: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %coordinate = i32.load %source
+low.func.def target<wasm.core.simd128> abi(wasm_function) @negative_varying_coefficient(%input: reg<wasm.i32>, %table: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
+  %coordinate = i32.load %input
   %c0 = i32.const 0
   %position = i32.sub %c0, %coordinate
   %word_bytes = i32.const 4
   %origin = i32.mul %position, %word_bytes
-  %22 = i32.add %view, %origin
+  %22 = i32.add %table, %origin
   %value = i32.load %22
   return %value
 }

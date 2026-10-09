@@ -1105,26 +1105,12 @@ static iree_status_t loom_low_lower_rule_guard_matches(
       return iree_ok_status();
     }
     case LOOM_LOW_LOWER_GUARD_OPERAND_SEGMENT_COUNT_EQ: {
-      if (guard->selector.attribute.attr_index > source_op->operand_count) {
-        return iree_ok_status();
-      }
-      const loom_op_vtable_t* vtable = loom_context_resolve_op(
-          match_context->module->context, source_op->kind);
-      if (vtable == NULL) {
-        return iree_ok_status();
-      }
-      uint16_t segment_count = 0;
-      if (guard->selector.attribute.attr_index < vtable->fixed_operand_count) {
-        segment_count = 1;
-      } else if (guard->selector.attribute.attr_index ==
-                     vtable->fixed_operand_count &&
-                 iree_any_bit_set(vtable->vtable_flags,
-                                  LOOM_OP_VTABLE_VARIADIC_OPERANDS)) {
-        segment_count = (uint16_t)(source_op->operand_count -
-                                   guard->selector.attribute.attr_index);
-      }
+      const loom_op_vtable_t* vtable =
+          loom_op_vtable(match_context->module, source_op);
+      const loom_value_slice_t segment = loom_op_operand_field_span(
+          vtable, source_op, guard->selector.attribute.attr_index);
       *out_matches =
-          segment_count ==
+          segment.count ==
           loom_low_lower_rule_set_guard_payload(rule_set, guard)->u64;
       return iree_ok_status();
     }

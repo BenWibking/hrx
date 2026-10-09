@@ -30,6 +30,10 @@ typedef struct loom_low_physical_component_t {
   uint32_t end;
   // Union rank, independent of the selected representative's candidate set.
   uint8_t rank;
+  // Atomic storage demand of this value's required tied component. Only its
+  // origin contributes; the origin's unit lifetime already retains every
+  // member.
+  uint16_t demand_units;
   // Candidate-set identity preserved by merges, then compacted to the index
   // of its distinct effective domain before the lifetime sweeps.
   iree_host_size_t domain;
@@ -192,7 +196,6 @@ typedef enum loom_low_physical_demand_scope_e {
 } loom_low_physical_demand_scope_t;
 
 static iree_status_t loom_low_physical_demand_tree_build(
-    const loom_low_descriptor_set_t* descriptor_set,
     const loom_liveness_analysis_t* liveness,
     loom_low_physical_component_t* components, uint32_t component_count,
     const iree_host_size_t* register_class_domains, const uint8_t* subsets,
@@ -205,6 +208,10 @@ static iree_status_t loom_low_physical_demand_tree_build(
   memset(demand_ends, 0, point_count * sizeof(*demand_ends));
   memset(demand_tree, 0, tree_count * sizeof(*demand_tree));
   for (uint32_t i = 0; i < component_count; ++i) {
+    const uint16_t units = components[i].demand_units;
+    if (units == 0) {
+      continue;
+    }
     const uint32_t root = loom_low_physical_component_find(components, i);
     const uint16_t class_id = liveness->intervals[components[i].interval_index]
                                   .value_class.register_class_id;
@@ -224,8 +231,6 @@ static iree_status_t loom_low_physical_demand_tree_build(
         demand_points, point_count, components[i].interval_start);
     const iree_host_size_t end = loom_low_physical_point_lower_bound(
         demand_points, point_count, components[i].interval_end);
-    const uint16_t units =
-        descriptor_set->reg_classes[class_id].physical_atomic_unit_count;
     if (UINT64_MAX - demand_starts[start] < units ||
         UINT64_MAX - demand_ends[end] < units) {
       return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
@@ -485,6 +490,12 @@ static iree_status_t loom_low_physical_domains_build_preferences(
         .interval_end = end,
         .start = start,
         .end = end,
+        .demand_units =
+            placement->tied_storage_origins_by_value_ordinal == NULL ||
+                    placement->tied_storage_origins_by_value_ordinal[v] == v
+                ? descriptor_set->reg_classes[class_id]
+                      .physical_atomic_unit_count
+                : 0,
         .domain = class_id,
         .registers = class_words[class_id],
     };
@@ -790,8 +801,8 @@ static iree_status_t loom_low_physical_domains_build_preferences(
       continue;
     }
     IREE_RETURN_IF_ERROR(loom_low_physical_demand_tree_build(
-        descriptor_set, liveness, components, component_count,
-        register_class_domains, subsets, domain_count, a,
+        liveness, components, component_count, register_class_domains, subsets,
+        domain_count, a,
         LOOM_LOW_PHYSICAL_DEMAND_SCOPE_EFFECTIVE_DOMAIN_AND_DESCENDANTS,
         demand_points, point_count, tree_base, tree_count, demand_starts,
         demand_ends, demand_tree));
@@ -877,11 +888,10 @@ static iree_status_t loom_low_physical_domains_build_preferences(
       continue;
     }
     IREE_RETURN_IF_ERROR(loom_low_physical_demand_tree_build(
-        descriptor_set, liveness, components, component_count,
-        register_class_domains, subsets, domain_count, b,
-        LOOM_LOW_PHYSICAL_DEMAND_SCOPE_REGISTER_CLASS_DOMAIN, demand_points,
-        point_count, tree_base, tree_count, demand_starts, demand_ends,
-        demand_tree));
+        liveness, components, component_count, register_class_domains, subsets,
+        domain_count, b, LOOM_LOW_PHYSICAL_DEMAND_SCOPE_REGISTER_CLASS_DOMAIN,
+        demand_points, point_count, tree_base, tree_count, demand_starts,
+        demand_ends, demand_tree));
     for (iree_host_size_t i = 0; i < root_count; ++i) {
       const loom_low_physical_component_t* component = order[i];
       if (component->domain != b) {

@@ -208,7 +208,7 @@ iree_status_t loom_type_format_minimal(loom_type_t type, void* user_data,
       return loom_output_stream_write_cstring(stream, "encoding<...>");
     }
     case LOOM_TYPE_POOL:
-      return loom_output_stream_write_cstring(stream, "pool<...>");
+      return loom_output_stream_write_cstring(stream, "pool");
     case LOOM_TYPE_NONE:
       return loom_output_stream_write_cstring(stream, "<none>");
     default:

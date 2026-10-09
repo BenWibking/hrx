@@ -50,6 +50,7 @@ static const loom_attr_descriptor_t kParameters[] = {
 static const loom_parameterized_type_descriptor_t kParameterDescriptor = {
     /*.name=*/LOOM_BSTRING_REF(15, "wire.parameters"),
     /*.parameter_descriptors=*/kParameters,
+    /*.fact_domain=*/nullptr,
     /*.ir_kind=*/LOOM_TYPE_PARAMETERIZED,
     /*.type_flags=*/0,
     /*.parameter_count=*/IREE_ARRAYSIZE(kParameters),

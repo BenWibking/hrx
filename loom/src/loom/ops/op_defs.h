@@ -724,10 +724,14 @@ typedef struct loom_region_descriptor_t {
   // Recurrence and continuation contract supplied by the region declaration
   // or its owning control-flow interface.
   loom_region_execution_t execution;
+  // Target-symbol attribute index plus one for an independently executing
+  // region. Zero or an absent attribute inherits the enclosing target. An
+  // explicit unresolved target remains independent of that environment.
+  uint8_t execution_target_attr_index_plus_one;
 } loom_region_descriptor_t;
 
-static_assert(sizeof(loom_region_descriptor_t) == 6,
-              "loom_region_descriptor_t must be 6 bytes");
+static_assert(sizeof(loom_region_descriptor_t) == 8,
+              "loom_region_descriptor_t must be 8 bytes");
 
 // Matches a materialized terminator against a region's declared kinds. Whether
 // authored or synthesized, an implicit terminator obeys the same yield tuple
@@ -908,7 +912,8 @@ bool loom_op_results_unused(const loom_module_t* module, const loom_op_t* op);
 // Returns true if |op| is trivially dead: it has results, does not
 // write to any resource, has no unknown effects, and every result is
 // unused. Read-only and non-deterministic ops without writes are dead
-// when unused — a read with no observer is a no-op.
+// when unused — a read with no observer is a no-op. Symbols and hints are
+// retained independently of their SSA result uses.
 bool loom_op_is_trivially_dead(const loom_module_t* module,
                                const loom_op_t* op);
 
@@ -1861,6 +1866,14 @@ iree_status_t loom_op_remove_results(loom_module_t* module, loom_op_t* op,
 // serialized. The memory is not freed (arena-owned). Returns
 // IREE_STATUS_FAILED_PRECONDITION if any result still has uses.
 iree_status_t loom_op_erase(loom_module_t* module, loom_op_t* op);
+
+// Erases a producer-proven closed set of disjoint operation subtrees. Results
+// may reference other members, but no live operation or type outside the set
+// may use a removed value. The consuming rewrite establishes that closure
+// before calling; this path does not repeat its use/def analysis. Unlike
+// repeated single-op erasure, source order need not be reverse topological.
+void loom_op_erase_closed_set(loom_module_t* module, loom_op_t* const* ops,
+                              iree_host_size_t count);
 
 // Removes a closed set of non-entry blocks from |region| and compacts the
 // region block table in place.

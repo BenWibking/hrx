@@ -40,6 +40,7 @@ loom_cc_binary(
     loom::pass::tooling
     loom::pass::trace
     loom::target::configured::provider_set
+    loom::target::function_version_projection
     loom::target::math_policy
     loom::target::pipeline
     loom::target::predicate

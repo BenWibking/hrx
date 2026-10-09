@@ -16,6 +16,7 @@
 
 #include "experimental/xdna/executable.h"
 #include "iree/base/internal/shm.h"
+#include "iree/base/internal/span.h"
 #include "iree/hal/drivers/amd/xdna/image/aie2p/npu2.h"
 #include "iree/hal/drivers/amd/xdna/image/testdata/add_i32.h"
 #include "iree/hal/drivers/amd/xdna/image/testdata/add_i32_npu4.h"
@@ -77,6 +78,7 @@ class XdnaExecutionFixture : public XdnaDeviceFixture {
     info.type = AMDF_STRUCTURE_TYPE_XDNA_ENDPOINT_INFO;
     info.structure_size = sizeof(info);
     ASSERT_EQ(xdna_api_->endpoint_query_info(endpoint_, &info), AMDF_STATUS_OK);
+    RecordProperty("amdf_xdna_target", info.target_id);
     amdf_xdna_device_info_t device_info = {};
     device_info.type = AMDF_STRUCTURE_TYPE_XDNA_DEVICE_INFO;
     device_info.structure_size = sizeof(device_info);
@@ -487,9 +489,10 @@ class XdnaExecutionFixture : public XdnaDeviceFixture {
     }
   }
 
-  void PrepareExecution(const ResolvedBindings& bindings, Execution* execution,
-                        uint32_t logical_column_count = 1,
-                        uint32_t command_capacity = 1) {
+  void PrepareExecution(
+      iree::span<const iree_hal_amd_xdna_executable_binding_t> bindings,
+      Execution* execution, uint32_t logical_column_count = 1,
+      uint32_t command_capacity = 1) {
     amdf_xdna_context_create_info_t context_create = {};
     context_create.type = AMDF_STRUCTURE_TYPE_XDNA_CONTEXT_CREATE_INFO;
     context_create.structure_size = sizeof(context_create);
@@ -675,7 +678,7 @@ class XdnaExecutionFixture : public XdnaDeviceFixture {
   iree_hal_amd_xdna_aie2p_target_t target_ = {};
   // Case-owned immutable decoded compiler image.
   iree_hal_amd_xdna_image_t* executable_ = nullptr;
-  // Indexed multiplication entry in the immutable image.
+  // Selected entry in the immutable image.
   uint32_t entry_ordinal_ = 0;
   // Storage requirements derived from the endpoint and executable.
   iree_host_size_t instruction_alignment_ = 0;

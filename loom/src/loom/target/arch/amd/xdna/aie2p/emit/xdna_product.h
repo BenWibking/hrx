@@ -12,7 +12,8 @@
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
 #include "iree/io/stream.h"
-#include "loom/target/arch/amd/xdna/aie2p/array/program.h"
+#include "iree/schemas/xdna_executable.h"
+#include "loom/target/arch/amd/xdna/aie2p/emit/program.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/tile_link.h"
 #include "loom/target/arch/amd/xdna/device/profile.h"
 
@@ -34,8 +35,14 @@ typedef struct loom_aie2p_xdna_tile_t {
 typedef struct loom_aie2p_xdna_entry_t {
   // Diagnostic and runtime export name.
   iree_string_view_t name;
-  // Exact physical array plan defining bindings and placements.
-  const loom_aie2p_array_plan_t* array_plan;
+  // Required partition width, including worker-free service resources.
+  uint16_t column_count;
+  // Complete external requirements in binding-ordinal order. Extents include
+  // control and service storage as well as payloads; commands do not imply
+  // them.
+  const iree_xdna_elf_binding_record_t* bindings;
+  // Number of records in |bindings|.
+  iree_host_size_t binding_count;
   // Typed array and invocation-control program awaiting final ordinals.
   const loom_aie2p_array_program_t* array_program;
   // Resident tile programs in worker order.
@@ -56,7 +63,7 @@ typedef struct loom_aie2p_xdna_product_t {
 
 // Writes one canonical ELF32LE `.xdna` product.
 //
-// Native commands are emitted directly from compiler-owned array plans. Load
+// Native commands and entry requirements are supplied by their producers. Load
 // ranges splice shared linked initialized sections and command fragments into
 // caller-owned backing; identical payloads and repeat bodies each occupy one
 // file range. Entries without per-invocation control records publish a

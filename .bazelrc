@@ -58,11 +58,9 @@ build --incompatible_default_to_explicit_init_py
 # selection belongs to the target platform/toolchain; host-dependent flags such
 # as -march=native are deliberately not part of this fleet-cacheable profile.
 build:opt --compilation_mode=opt
-build:opt --features=thin_lto
-build:opt --copt=-O3
-build:opt --cxxopt=-O3
-build:opt --host_copt=-O3
-build:opt --host_cxxopt=-O3
+build:opt --features=thin_lto_link
+build:opt --features=optimize_for_speed
+build:opt --host_features=optimize_for_speed
 
 # Use one pinned mimalloc instance for the build-selected IREE allocator.
 # Global C++ allocation follows the same provider through the process ABI.

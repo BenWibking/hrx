@@ -39,9 +39,11 @@ loom_cc_library(
     deps = [
         ":types",
         "//loom/src/loom/analysis:conditioned_value_facts",
+        "//loom/src/loom/analysis:symbol_facts",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops:type_registry",
+        "//loom/src/loom/ops/target",
         "//loom/src/loom/util:fact_table",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
@@ -325,6 +327,7 @@ loom_cc_library(
         "//loom/src/loom/transforms/loop:loop_fusion",
         "//loom/src/loom/transforms/math:legalize",
         "//loom/src/loom/transforms/ownership:ownership_lifetime",
+        "//loom/src/loom/transforms/pipeline:outline",
         "//loom/src/loom/transforms/scf:scf_pipeline",
         "//loom/src/loom/transforms/scf:scf_to_cfg",
         "//loom/src/loom/transforms/scf:scf_unroll",
@@ -381,6 +384,22 @@ loom_cc_test(
         "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/test",
         "//loom/src/loom/pass/test:harness",
+        "//loom/src/loom/rewrite:rewriter",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "target_scope_test",
+    srcs = ["target_scope_test.cc"],
+    deps = [
+        ":value_facts",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_registry",
+        "//loom/src/loom/ops/pipeline",
+        "//loom/src/loom/ops/target",
+        "//loom/src/loom/ops/test",
         "//loom/src/loom/rewrite:rewriter",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",

@@ -102,6 +102,8 @@ nav:
       - Parallelize kernel JIT compilation: integration/product-frontier.md
       - Use the JIT task pool: integration/jit-task-pool.md
       - Embed kernel JIT compilation: integration/jit-kernel.md
+  - Targets:
+      - Resident pipelines on XDNA: targets/xdna-pipelines.md
   - Reference:
       - Reference map: reference/index.md
       - Dialects: reference/dialects/index.md

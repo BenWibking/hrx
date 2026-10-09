@@ -88,6 +88,7 @@ TEST(DecisionProgramTest, SelectsScalarPredicateChoiceFromSsaFacts) {
       /*.arena=*/{},
       /*.transient_arena=*/{},
       /*.entries=*/fact_entries.data(),
+      /*.first_value_id=*/0,
       /*.count=*/{},
       /*.capacity=*/fact_entries.size(),
   };

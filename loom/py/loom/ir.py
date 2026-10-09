@@ -68,6 +68,7 @@ __all__ = [
     "StorageSpace",
     "StorageType",
     "PoolType",
+    "GroupType",
     "FunctionType",
     "NoneType",
     "RegisterType",
@@ -215,7 +216,8 @@ class TypeKind(IntEnum):
     REGISTER = 12
     STORAGE = 13
     PARAMETERIZED = 14
-    PLACEHOLDER = 15
+    GROUP = 15
+    PLACEHOLDER = 16
 
 
 # ============================================================================
@@ -673,33 +675,50 @@ ENCODING_TRANSFORM_TYPE = EncodingType(EncodingRole.TRANSFORM)
 
 @dataclass(frozen=True, slots=True)
 class PoolType:
-    """A block-managed device memory pool: pool<[%block_size]>.
+    """An opaque allocation resource: pool.
 
-    One parameter: the block size in bytes, which may be static or
-    dynamic. The pool carries no capacity, no element type, no
-    encoding — it's untyped bytes. Element type and encoding are
-    imposed by pool ops at access time.
-
-    A dynamic block_size carries the index-typed SSA value that supplies its
-    size, just like a dynamic dimension in a shaped type.
+    The value selects backing storage. Device identity, memory-space
+    capabilities, capacity and allocation strategy are not type parameters.
     """
-
-    block_size: Dim
 
     @property
     def type_kind(self) -> TypeKind:
         return TypeKind.POOL
 
+    def __repr__(self) -> str:
+        return "pool"
+
+
+@dataclass(frozen=True, slots=True)
+class GroupType:
+    """A shaped communication domain: group<8>, group<2x4>, or group<[%n]>.
+
+    The shape identifies participants and their rank coordinates. It does not
+    contain participant values, channels, or physical resources. Placement and
+    topology facts relate a group value to concrete execution resources.
+    """
+
+    dims: tuple[Dim, ...]
+
+    def __post_init__(self) -> None:
+        if not self.dims:
+            raise ValueError("group types must have rank >= 1")
+
     @property
-    def has_dynamic_block_size(self) -> bool:
-        return isinstance(self.block_size, DynamicDim)
+    def type_kind(self) -> TypeKind:
+        return TypeKind.GROUP
+
+    @property
+    def rank(self) -> int:
+        return len(self.dims)
+
+    @property
+    def is_all_static(self) -> bool:
+        return all(isinstance(dimension, StaticDim) for dimension in self.dims)
 
     def __repr__(self) -> str:
-        match self.block_size:
-            case StaticDim(size=size):
-                return f"pool<{size}>"
-            case DynamicDim():
-                return "pool<?>"
+        dimensions = "x".join(repr(dimension) for dimension in self.dims)
+        return f"group<{dimensions}>"
 
 
 @dataclass(frozen=True, slots=True)
@@ -731,6 +750,7 @@ type Type = (
     | ParameterizedType
     | EncodingType
     | PoolType
+    | GroupType
     | PlaceholderType
     | NoneType
 )
@@ -1424,6 +1444,7 @@ def _canonicalize_parameterized_value(
                     ParameterizedType,
                     EncodingType,
                     PoolType,
+                    GroupType,
                     PlaceholderType,
                     NoneType,
                 ),

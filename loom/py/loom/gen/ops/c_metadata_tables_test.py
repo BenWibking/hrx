@@ -17,34 +17,45 @@ from loom.dsl import (
     INTEGER,
     ISOLATED_FROM_ABOVE,
     SYMBOL_DEFINE,
+    TERMINATOR,
     AttrDef,
     Dialect,
     EnumCase,
     EnumDef,
+    HasAncestor,
     HasAnyAncestor,
+    HasParent,
+    ImplicitTerminator,
+    NoAncestor,
     Op,
+    OpCategory,
     Operand,
     RegionDef,
     RegionExecution,
     Result,
     SameType,
     SymbolDefinition,
+    SymbolReference,
     SymbolValueContract,
 )
+from loom.gen.ops.c_dialect import generate_dialect_contents
 from loom.gen.ops.c_metadata_tables import generate_tables_c
+from loom.gen.ops.model import DialectGeneration
 
 
 @pytest.mark.parametrize("execution", [None, *RegionExecution])
-def test_region_execution_metadata(execution: RegionExecution | None) -> None:
+@pytest.mark.parametrize("independent_target", [False, True])
+def test_region_execution_metadata(execution: RegionExecution | None, independent_target: bool) -> None:
     op = Op(
         "test.region",
         group=Dialect("test"),
-        regions=[RegionDef("body", execution=execution)],
+        attrs=[AttrDef("target", ATTR_TYPE_SYMBOL, symbol_ref=SymbolReference("target", ["target"]))] if independent_target else [],
+        regions=[RegionDef("body", execution=execution, execution_target="target" if independent_target else None)],
         format=[Region("body")],
     )
     expected = execution if execution is not None else RegionExecution.ONCE
     source = generate_tables_c("test", 0, [op])
-    assert f"{{LOOM_OP_KIND_UNKNOWN, LOOM_OP_KIND_UNKNOWN, 0, {expected.c_name}}}" in source
+    assert f"{{LOOM_OP_KIND_UNKNOWN, LOOM_OP_KIND_UNKNOWN, 0, {expected.c_name}, {int(independent_target)}}}" in source
 
 
 def test_capturing_multiple_regions_requires_declared_control_flow() -> None:
@@ -192,6 +203,29 @@ def test_generate_tables_rejects_unknown_region_argument_uniform_scope() -> None
         generate_tables_c("test", 0, [op])
 
 
+def test_generate_tables_rejects_missing_region_execution_target() -> None:
+    op = Op(
+        "test.worker",
+        group=Dialect("test"),
+        regions=[RegionDef("body", execution_target="target")],
+        format=[Region("body")],
+    )
+    with pytest.raises(ValueError, match="execution_target 'target' does not name an attribute"):
+        generate_tables_c("test", 0, [op])
+
+
+def test_generate_tables_rejects_non_target_region_execution_target() -> None:
+    op = Op(
+        "test.worker",
+        group=Dialect("test"),
+        attrs=[AttrDef("target", ATTR_TYPE_I64)],
+        regions=[RegionDef("body", execution_target="target")],
+        format=[Region("body")],
+    )
+    with pytest.raises(ValueError, match="execution_target 'target' must reference a target symbol"):
+        generate_tables_c("test", 0, [op])
+
+
 def test_generate_tables_emits_alternative_required_ancestors() -> None:
     dialect = Dialect("test")
     first = Op("test.first", group=dialect)
@@ -222,6 +256,76 @@ def test_generate_tables_rejects_duplicate_alternative_ancestors() -> None:
 
     with pytest.raises(ValueError, match="contains duplicate op names"):
         generate_tables_c("test", 0, [context, nested])
+
+
+@pytest.mark.parametrize(
+    ("placement", "field"),
+    [
+        (HasParent, "required_parents"),
+        (HasAncestor, "required_ancestors"),
+        (HasAnyAncestor, "required_any_ancestors"),
+        (NoAncestor, "forbidden_ancestors"),
+    ],
+)
+def test_placement_references_another_declared_dialect(placement, field: str) -> None:
+    context = Op("execution.context", group=Dialect("execution", c_path="ops/execution"))
+    nested = Op("test.nested", group=Dialect("test"), traits=[placement(context.name)])
+
+    source = generate_tables_c("test", 0, [nested], referenced_ops=[context])
+
+    assert '#include "loom/ops/execution/ops.h"' in source
+    assert f"loom_test_nested_{field}[] = {{\n    LOOM_OP_EXECUTION_CONTEXT,\n}};" in source
+    assert "loom_execution_context_vtable" not in source
+
+
+def test_region_terminators_reference_another_declared_dialect() -> None:
+    terminator = Op("execution.end", group=Dialect("execution"), traits=[TERMINATOR])
+    nested = Op(
+        "test.region",
+        group=Dialect("test"),
+        regions=[RegionDef("body", terminator=terminator.name)],
+        traits=[ImplicitTerminator(terminator.name)],
+        format=[Region("body")],
+    )
+
+    source = generate_tables_c("test", 0, [nested], referenced_ops=[terminator])
+
+    assert '#include "loom/ops/execution/ops.h"' in source
+    assert "{LOOM_OP_EXECUTION_END, LOOM_OP_EXECUTION_END," in source
+    assert "loom_execution_end_vtable" not in source
+
+
+def test_placement_requires_the_referenced_declaration() -> None:
+    nested = Op("test.nested", group=Dialect("test"), traits=[HasAnyAncestor("execution.context")])
+
+    with pytest.raises(ValueError, match="must name a registered op"):
+        generate_tables_c("test", 0, [nested])
+
+
+@pytest.mark.parametrize("sharded", [False, True])
+def test_dialect_generation_retains_placement_declarations(sharded: bool) -> None:
+    dialect = Dialect("test")
+    context = Op("test.context", group=dialect)
+    external = Op("execution.context", group=Dialect("execution"))
+    nested = Op(
+        "test.nested",
+        group=dialect,
+        traits=[HasAnyAncestor(context.name, external.name)],
+    )
+    generation = DialectGeneration(
+        dialect=dialect,
+        ops=[context, nested],
+        table_shards=[(OpCategory("context"), [context]), (OpCategory("nested"), [nested])] if sharded else None,
+        referenced_ops=[external],
+    )
+
+    files = generate_dialect_contents(generation)
+    source = files["tables/nested.c" if sharded else "tables.c"]
+
+    assert '#include "loom/ops/execution/ops.h"' in source
+    assert "loom_test_nested_required_any_ancestors[] = {\n    LOOM_OP_TEST_CONTEXT,\n    LOOM_OP_EXECUTION_CONTEXT,\n};" in source
+    assert "loom_execution_context_vtable" not in source
+    assert "LOOM_OP_EXECUTION_CONTEXT" not in files["ops.h"]
 
 
 def test_constraint_count_fits_vtable_storage() -> None:

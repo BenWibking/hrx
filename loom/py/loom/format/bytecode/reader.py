@@ -81,6 +81,7 @@ from loom.ir import (
     FileLocation,
     FunctionType,
     FusedLocation,
+    GroupType,
     Module,
     OpaqueLocation,
     Operation,
@@ -777,6 +778,7 @@ class BytecodeReader:
             TypeKind.VECTOR,
             TypeKind.VIEW,
             TypeKind.POOL,
+            TypeKind.GROUP,
             TypeKind.FUNCTION,
             TypeKind.DIALECT,
             TypeKind.REGISTER,
@@ -859,21 +861,29 @@ class BytecodeReader:
                     else EncodingType(role)
                 )
             case TypeKind.POOL:
-                if values is not None:
-                    reference, offset = decode_varint(data, offset)
-                    value_id = (
-                        self._map_value_ref(reference - 1, values)
-                        if reference
-                        else None
-                    )
-                    return PoolType(DynamicDim(value_id)), offset
-                is_dynamic = data[offset]
-                offset += 1
-                if is_dynamic:
-                    ir_type = PoolType(block_size=DynamicDim())
-                else:
-                    size, offset = decode_varint(data, offset)
-                    ir_type = PoolType(block_size=StaticDim(size))
+                ir_type = PoolType()
+            case TypeKind.GROUP:
+                rank, offset = self._read_type_field(data, offset, values)
+                if rank == 0 or rank > 15:
+                    raise BytecodeError(f"group type rank must be in [1, 15]: {rank}")
+                dimensions: list[StaticDim | DynamicDim] = []
+                for _ in range(rank):
+                    is_dynamic, offset = self._read_type_field(data, offset, values)
+                    if is_dynamic not in (0, 1):
+                        raise BytecodeError(
+                            f"invalid group dimension kind: {is_dynamic}"
+                        )
+                    if is_dynamic:
+                        value_id = None
+                        if values is not None:
+                            reference, offset = decode_varint(data, offset)
+                            if reference:
+                                value_id = self._map_value_ref(reference - 1, values)
+                        dimensions.append(DynamicDim(value_id))
+                    else:
+                        size, offset = decode_varint(data, offset)
+                        dimensions.append(StaticDim(size))
+                ir_type = GroupType(tuple(dimensions))
             case TypeKind.BUFFER:
                 ir_type = BUFFER_TYPE
             case _:

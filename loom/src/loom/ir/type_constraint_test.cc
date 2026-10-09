@@ -84,4 +84,13 @@ TEST(TypeConstraintTest, ExactI32) {
       loom_type_scalar(LOOM_SCALAR_TYPE_I64), LOOM_TYPE_CONSTRAINT_I32));
 }
 
+TEST(TypeConstraintTest, Group) {
+  const loom_type_t group =
+      loom_type_group_2d(loom_dim_pack_static(2), loom_dim_pack_static(4));
+  EXPECT_TRUE(
+      loom_type_satisfies_constraint(group, LOOM_TYPE_CONSTRAINT_GROUP));
+  EXPECT_FALSE(loom_type_satisfies_constraint(loom_type_pool(),
+                                              LOOM_TYPE_CONSTRAINT_GROUP));
+}
+
 }  // namespace

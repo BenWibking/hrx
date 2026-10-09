@@ -96,6 +96,11 @@ typedef struct loom_aie2p_leaf_read_only_data_t {
   iree_const_byte_span_t contents;
   // Required power-of-two placement alignment.
   uint64_t minimum_alignment;
+  // Retained data ordinals requiring disjoint physical banks. Only definitions
+  // referenced by this function participate; these indexes own no source IR.
+  const uint32_t* bank_conflicts;
+  // Number of retained conflicting definitions.
+  iree_host_size_t bank_conflict_count;
 } loom_aie2p_leaf_read_only_data_t;
 
 // Exact storage required in one placement domain.
