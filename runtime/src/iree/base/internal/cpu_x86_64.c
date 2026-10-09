@@ -56,6 +56,8 @@ uint64_t iree_cpu_x86_64_decode_features(
                    capabilities->leaf7_1.edx, 1 << 4);
     IREE_COPY_BITS(features, IREE_CPU_DATA0_X86_64_AVXVNNIINT16,
                    capabilities->leaf7_1.edx, 1 << 10);
+    IREE_COPY_BITS(features, IREE_CPU_DATA0_X86_64_AVXNECONVERT,
+                   capabilities->leaf7_1.edx, 1 << 5);
   }
 
   // Features that depend on ZMM registers being enabled by the OS.
