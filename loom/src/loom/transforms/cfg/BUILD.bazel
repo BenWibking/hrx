@@ -39,6 +39,8 @@ loom_cc_library(
         "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/cfg",
         "//loom/src/loom/pass:types",
+        "//loom/src/loom/rewrite:materialize",
+        "//loom/src/loom/rewrite:remap",
         "//loom/src/loom/rewrite:rewriter",
         "//runtime/src/iree/base",
     ],

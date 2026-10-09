@@ -166,17 +166,18 @@ bool loom_motion_op_can_relocate_effect_free(const loom_module_t* module,
 bool loom_motion_op_can_rematerialize_effect_free(const loom_module_t* module,
                                                   const loom_op_t* op) {
   if (!module || !op || iree_any_bit_set(op->flags, LOOM_OP_FLAG_DEAD) ||
-      op->tied_result_count != 0 || op->region_count != 0) {
+      op->tied_result_count != 0 || op->successor_count != 0 ||
+      op->region_count != 0) {
     return false;
   }
   const loom_trait_flags_t traits = loom_op_effective_traits(module, op);
   if (!iree_any_bit_set(traits, LOOM_TRAIT_PURE) ||
       loom_traits_may_read(traits) || loom_traits_may_write(traits) ||
-      iree_any_bit_set(traits, LOOM_TRAIT_TERMINATOR | LOOM_TRAIT_HINT |
-                                   LOOM_TRAIT_POISON_BOUNDARY |
-                                   LOOM_TRAIT_CONVERGENT |
-                                   LOOM_TRAIT_OBSERVABLE_EFFECT |
-                                   LOOM_TRAIT_UNIQUE_IDENTITY)) {
+      iree_any_bit_set(
+          traits,
+          LOOM_TRAIT_TERMINATOR | LOOM_TRAIT_HINT | LOOM_TRAIT_POISON_BOUNDARY |
+              LOOM_TRAIT_CONVERGENT | LOOM_TRAIT_OBSERVABLE_EFFECT |
+              LOOM_TRAIT_UNIQUE_IDENTITY | LOOM_TRAIT_CALLABLE_BOUNDARY)) {
     return false;
   }
   return !loom_op_requires_source_context(module, op);

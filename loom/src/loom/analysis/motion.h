@@ -162,10 +162,12 @@ bool loom_motion_op_can_relocate_effect_free(const loom_module_t* module,
 
 // Returns true if |op| may be rebuilt independently while preserving or
 // narrowing its original dynamic execution predicate. This requires pure,
-// deterministic, identity-free semantics and rejects retained regions,
-// terminators, hints, poison boundaries, convergence, and pending source
-// expansion. It does not require SAFE_TO_SPECULATE because rematerialization
-// must not introduce execution on an additional control path.
+// deterministic, identity-free semantics and rejects successors, retained
+// regions, terminators, hints, poison boundaries, convergence, callable
+// boundaries, and pending source expansion. Call purity does not describe
+// returned identity or execution cost. This does not require SAFE_TO_SPECULATE
+// because rematerialization must not introduce execution on an additional
+// control path.
 bool loom_motion_op_can_rematerialize_effect_free(const loom_module_t* module,
                                                   const loom_op_t* op);
 
