@@ -10,6 +10,7 @@
 
 #include "loom/ir/module.h"
 #include "loom/ops/low/ops.h"
+#include "loom/ops/vector/interleave.h"
 #include "loom/ops/vector/ops.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/vector_packet.h"
@@ -21,31 +22,18 @@ enum {
   LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT = 64,
 };
 
-typedef enum loom_aie2p_interleave_kind_e {
-  LOOM_AIE2P_INTERLEAVE_KIND_ZIP = 0,
-  LOOM_AIE2P_INTERLEAVE_KIND_UNZIP = 1,
-} loom_aie2p_interleave_kind_t;
-
 typedef enum loom_aie2p_interleave_mechanism_e {
   LOOM_AIE2P_INTERLEAVE_MECHANISM_VSHUFFLE = 0,
   LOOM_AIE2P_INTERLEAVE_MECHANISM_BLOCK_ROUTE = 1,
 } loom_aie2p_interleave_mechanism_t;
 
 typedef struct loom_aie2p_interleave_plan_t {
-  // Physical bytes in each result value.
-  uint16_t result_byte_count;
-  // Physical bytes in one semantic interleave block.
-  uint16_t chunk_byte_count;
-  // Patterned operation selected for this plan.
-  uint8_t kind;
+  // Shared semantic byte route and packet layout.
+  loom_vector_interleave_packet_plan_t route;
   // Packet realization selected for the semantic block size.
   uint8_t mechanism;
   // Low VSHUFFLE control; the high result uses the next control.
   uint8_t low_control;
-  // Logical packets in each zip input or in the complete unzip source.
-  uint8_t source_packet_count;
-  // Logical packets in the zip result or in each unzip result.
-  uint8_t result_packet_count;
   // Physical carrier family of each source value.
   uint8_t source_carrier_kind;
   // Physical allocation units in each complete source carrier.
@@ -55,110 +43,8 @@ typedef struct loom_aie2p_interleave_plan_t {
   // Physical allocation units in each complete result carrier.
   uint8_t result_carrier_unit_count;
 } loom_aie2p_interleave_plan_t;
-static_assert(sizeof(loom_aie2p_interleave_plan_t) == 14,
+static_assert(sizeof(loom_aie2p_interleave_plan_t) == 18,
               "AIE2P interleave plans must stay cache dense");
-
-static bool loom_aie2p_interleave_layout(
-    loom_type_t half_type, loom_type_t combined_type, int64_t axis,
-    uint16_t* out_chunk_byte_count, uint8_t* out_low_zip_control,
-    uint8_t* out_low_unzip_control, bool* out_has_vshuffle) {
-  *out_chunk_byte_count = 0;
-  *out_low_zip_control = 0;
-  *out_low_unzip_control = 0;
-  *out_has_vshuffle = false;
-  if (!loom_type_is_vector(half_type) || !loom_type_is_vector(combined_type) ||
-      !loom_type_element_type_equals(half_type, combined_type) ||
-      loom_type_rank(half_type) != loom_type_rank(combined_type) ||
-      !loom_type_is_all_static(half_type) ||
-      !loom_type_is_all_static(combined_type) || axis < 0 ||
-      axis >= loom_type_rank(half_type)) {
-    return false;
-  }
-
-  const uint8_t rank = loom_type_rank(half_type);
-  uint64_t trailing_element_count = 1;
-  for (uint8_t dimension = 0; dimension < rank; ++dimension) {
-    const int64_t half_size =
-        loom_type_dim_static_size_at(half_type, dimension);
-    const int64_t combined_size =
-        loom_type_dim_static_size_at(combined_type, dimension);
-    if (half_size < 1 || combined_size < 1 ||
-        (dimension == (uint8_t)axis
-             ? (half_size > INT64_MAX / 2 || combined_size != half_size * 2)
-             : combined_size != half_size)) {
-      return false;
-    }
-    if (dimension > (uint8_t)axis) {
-      if (trailing_element_count > UINT64_MAX / (uint64_t)half_size) {
-        return false;
-      }
-      trailing_element_count *= (uint64_t)half_size;
-    }
-  }
-
-  const loom_scalar_type_t element_type = loom_type_element_type(half_type);
-  const uint16_t physical_bit_count =
-      element_type == LOOM_SCALAR_TYPE_I1
-          ? 8
-          : loom_aie2p_scalar_type_physical_bit_count(element_type);
-  if (physical_bit_count < 8 || (physical_bit_count & 7u) != 0 ||
-      trailing_element_count > UINT64_MAX / physical_bit_count) {
-    return false;
-  }
-  const uint64_t chunk_bit_count = trailing_element_count * physical_bit_count;
-  const uint64_t chunk_byte_count = chunk_bit_count / 8;
-  if (chunk_byte_count == 0 || chunk_byte_count > UINT16_MAX) {
-    return false;
-  }
-  *out_chunk_byte_count = (uint16_t)chunk_byte_count;
-
-  if (chunk_bit_count > 256 ||
-      (chunk_bit_count & (chunk_bit_count - 1u)) != 0) {
-    return true;
-  }
-  uint8_t chunk_byte_log2 = 0;
-  for (uint64_t remaining_bytes = chunk_byte_count; remaining_bytes > 1;
-       remaining_bytes >>= 1) {
-    ++chunk_byte_log2;
-  }
-  *out_low_zip_control = (uint8_t)(20u - 2u * chunk_byte_log2);
-  *out_low_unzip_control = (uint8_t)(2u * chunk_byte_log2);
-  *out_has_vshuffle = true;
-  return true;
-}
-
-static bool loom_aie2p_interleave_payload_layout(loom_type_t type,
-                                                 uint8_t* out_packet_count,
-                                                 uint16_t* out_byte_count) {
-  *out_packet_count = 0;
-  *out_byte_count = 0;
-  uint64_t element_count = 0;
-  if (!loom_type_static_element_count(type, &element_count) ||
-      element_count == 0) {
-    return false;
-  }
-  const loom_scalar_type_t element_type = loom_type_element_type(type);
-  const uint16_t physical_bit_count =
-      element_type == LOOM_SCALAR_TYPE_I1
-          ? 8
-          : loom_aie2p_scalar_type_physical_bit_count(element_type);
-  if (physical_bit_count == 0 ||
-      element_count > UINT64_MAX / physical_bit_count) {
-    return false;
-  }
-  const uint64_t payload_byte_count = element_count * physical_bit_count / 8u;
-  const uint64_t packet_count =
-      (payload_byte_count + LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT - 1u) /
-      LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT;
-  if (packet_count == 0 ||
-      packet_count > LOOM_AIE2P_INTERLEAVE_MAX_PACKET_COUNT ||
-      payload_byte_count > UINT16_MAX) {
-    return false;
-  }
-  *out_packet_count = (uint8_t)packet_count;
-  *out_byte_count = (uint16_t)payload_byte_count;
-  return true;
-}
 
 static bool loom_aie2p_interleave_plan_from_op(
     const loom_module_t* module, const loom_op_t* source_op,
@@ -167,7 +53,7 @@ static bool loom_aie2p_interleave_plan_from_op(
 
   loom_type_t source_type = loom_type_none();
   loom_type_t result_type = loom_type_none();
-  loom_aie2p_interleave_kind_t kind = LOOM_AIE2P_INTERLEAVE_KIND_ZIP;
+  loom_vector_interleave_kind_t kind = LOOM_VECTOR_INTERLEAVE_KIND_ZIP;
   int64_t axis = 0;
   if (loom_vector_interleave_isa(source_op)) {
     source_type =
@@ -194,23 +80,26 @@ static bool loom_aie2p_interleave_plan_from_op(
     if (!loom_type_equal(result_type, odd_type)) {
       return false;
     }
-    kind = LOOM_AIE2P_INTERLEAVE_KIND_UNZIP;
+    kind = LOOM_VECTOR_INTERLEAVE_KIND_UNZIP;
     axis = loom_vector_deinterleave_axis(source_op);
   } else {
     return false;
   }
 
   const loom_type_t half_type =
-      kind == LOOM_AIE2P_INTERLEAVE_KIND_ZIP ? source_type : result_type;
+      kind == LOOM_VECTOR_INTERLEAVE_KIND_ZIP ? source_type : result_type;
   const loom_type_t combined_type =
-      kind == LOOM_AIE2P_INTERLEAVE_KIND_ZIP ? result_type : source_type;
-  uint16_t chunk_byte_count = 0;
-  uint8_t low_zip_control = 0;
-  uint8_t low_unzip_control = 0;
-  bool has_vshuffle = false;
-  if (!loom_aie2p_interleave_layout(half_type, combined_type, axis,
-                                    &chunk_byte_count, &low_zip_control,
-                                    &low_unzip_control, &has_vshuffle)) {
+      kind == LOOM_VECTOR_INTERLEAVE_KIND_ZIP ? result_type : source_type;
+  const loom_scalar_type_t element_type = loom_type_element_type(half_type);
+  const uint16_t physical_bit_count =
+      element_type == LOOM_SCALAR_TYPE_I1
+          ? 8
+          : loom_aie2p_scalar_type_physical_bit_count(element_type);
+  loom_vector_interleave_packet_plan_t route;
+  if (!loom_vector_interleave_packet_plan_initialize(
+          kind, half_type, combined_type, axis, physical_bit_count,
+          LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT,
+          LOOM_AIE2P_INTERLEAVE_MAX_PACKET_COUNT, &route)) {
     return false;
   }
 
@@ -218,31 +107,31 @@ static bool loom_aie2p_interleave_plan_from_op(
       loom_aie2p_vector_carrier_for_type(source_type);
   const loom_aie2p_vector_carrier_t result_carrier =
       loom_aie2p_vector_carrier_for_type(result_type);
-  uint8_t source_packet_count = 0;
-  uint8_t result_packet_count = 0;
-  uint16_t source_byte_count = 0;
-  uint16_t result_byte_count = 0;
   if (source_carrier.kind == LOOM_AIE2P_VECTOR_CARRIER_NONE ||
       result_carrier.kind == LOOM_AIE2P_VECTOR_CARRIER_NONE ||
       source_carrier.unit_count > UINT8_MAX ||
-      result_carrier.unit_count > UINT8_MAX ||
-      !loom_aie2p_interleave_payload_layout(source_type, &source_packet_count,
-                                            &source_byte_count) ||
-      !loom_aie2p_interleave_payload_layout(result_type, &result_packet_count,
-                                            &result_byte_count)) {
+      result_carrier.unit_count > UINT8_MAX) {
     return false;
   }
 
+  const uint32_t chunk_bit_count = route.chunk_byte_count * 8u;
+  const bool has_vshuffle = chunk_bit_count <= 256u &&
+                            (chunk_bit_count & (chunk_bit_count - 1u)) == 0;
+  uint8_t chunk_byte_log2 = 0;
+  for (uint16_t remaining_bytes = route.chunk_byte_count; remaining_bytes > 1;
+       remaining_bytes >>= 1) {
+    ++chunk_byte_log2;
+  }
+  const uint8_t low_control = !has_vshuffle ? 0
+                              : kind == LOOM_VECTOR_INTERLEAVE_KIND_ZIP
+                                  ? (uint8_t)(20u - 2u * chunk_byte_log2)
+                                  : (uint8_t)(2u * chunk_byte_log2);
+
   *out_plan = (loom_aie2p_interleave_plan_t){
-      .result_byte_count = result_byte_count,
-      .chunk_byte_count = chunk_byte_count,
-      .kind = (uint8_t)kind,
+      .route = route,
       .mechanism = has_vshuffle ? LOOM_AIE2P_INTERLEAVE_MECHANISM_VSHUFFLE
                                 : LOOM_AIE2P_INTERLEAVE_MECHANISM_BLOCK_ROUTE,
-      .low_control = kind == LOOM_AIE2P_INTERLEAVE_KIND_ZIP ? low_zip_control
-                                                            : low_unzip_control,
-      .source_packet_count = source_packet_count,
-      .result_packet_count = result_packet_count,
+      .low_control = low_control,
       .source_carrier_kind = source_carrier.kind,
       .source_carrier_unit_count = (uint8_t)source_carrier.unit_count,
       .result_carrier_kind = result_carrier.kind,
@@ -322,7 +211,7 @@ void loom_aie2p_describe_interleave_plan(
       interleave_plan->mechanism == LOOM_AIE2P_INTERLEAVE_MECHANISM_BLOCK_ROUTE;
   *out_report = (loom_low_lower_plan_report_t){
       .plan_key =
-          interleave_plan->kind == LOOM_AIE2P_INTERLEAVE_KIND_ZIP
+          interleave_plan->route.kind == LOOM_VECTOR_INTERLEAVE_KIND_ZIP
               ? (uses_block_route
                      ? (is_predicate
                             ? IREE_SV("interleave.predicate-block-route")
@@ -498,24 +387,6 @@ static iree_status_t loom_aie2p_interleave_route_aligned_source(
       /*tied_result_count=*/0, out_aligned_source);
 }
 
-static void loom_aie2p_interleave_route_source_byte(
-    const loom_aie2p_interleave_plan_t* plan, uint8_t result_index,
-    uint16_t result_byte, uint8_t* out_source_index,
-    uint16_t* out_source_byte) {
-  const uint16_t chunk = result_byte / plan->chunk_byte_count;
-  const uint16_t chunk_byte = result_byte % plan->chunk_byte_count;
-  if (plan->kind == LOOM_AIE2P_INTERLEAVE_KIND_ZIP) {
-    *out_source_index = (uint8_t)(chunk & 1u);
-    *out_source_byte =
-        (uint16_t)((chunk / 2u) * plan->chunk_byte_count + chunk_byte);
-  } else {
-    *out_source_index = 0;
-    *out_source_byte =
-        (uint16_t)((chunk * 2u + result_index) * plan->chunk_byte_count +
-                   chunk_byte);
-  }
-}
-
 static uint64_t loom_aie2p_interleave_byte_mask(uint8_t start, uint8_t length) {
   if (length == 64) {
     return UINT64_MAX;
@@ -527,14 +398,12 @@ static loom_aie2p_interleave_route_packet_t
 loom_aie2p_interleave_route_packet_initialize(
     const loom_aie2p_interleave_plan_t* plan, uint8_t result_index,
     uint8_t result_packet) {
-  const uint16_t result_byte_base =
-      result_packet * LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT;
   return (loom_aie2p_interleave_route_packet_t){
       .result_index = result_index,
       .result_packet = result_packet,
       .live_byte_count =
-          (uint8_t)iree_min(LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT,
-                            plan->result_byte_count - result_byte_base),
+          (uint8_t)loom_vector_interleave_packet_plan_result_live_byte_count(
+              &plan->route, result_index, result_packet),
       .emitted =
           {
               .value = LOOM_VALUE_ID_INVALID,
@@ -550,46 +419,38 @@ static bool loom_aie2p_interleave_route_packet_is_complete(
 static iree_status_t loom_aie2p_interleave_route_packet_segment(
     loom_aie2p_interleave_route_state_t* state,
     loom_aie2p_interleave_route_packet_t* packet) {
-  const uint16_t result_byte_base =
-      packet->result_packet * LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT;
-  const uint16_t result_byte = result_byte_base + packet->result_packet_byte;
-  uint8_t source_index = 0;
-  uint16_t source_byte = 0;
-  loom_aie2p_interleave_route_source_byte(state->plan, packet->result_index,
-                                          result_byte, &source_index,
-                                          &source_byte);
-  const uint8_t source_packet_byte =
-      source_byte % LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT;
-  const uint16_t semantic_chunk_remaining =
-      state->plan->chunk_byte_count -
-      result_byte % state->plan->chunk_byte_count;
-  const uint8_t segment_byte_count = (uint8_t)iree_min(
-      iree_min(semantic_chunk_remaining,
-               LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT - source_packet_byte),
-      packet->live_byte_count - packet->result_packet_byte);
+  const uint8_t result_packet_byte = packet->result_packet_byte;
+  uint16_t cursor = result_packet_byte;
+  loom_vector_interleave_packet_segment_t segment;
+  const bool has_segment = loom_vector_interleave_packet_plan_next_segment(
+      &state->plan->route, packet->result_index, packet->result_packet, &cursor,
+      &segment);
+  IREE_ASSERT(has_segment);
+  const uint16_t source_byte =
+      segment.source_packet * LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT +
+      segment.source_packet_byte_offset;
 
-  if (packet->result_packet_byte == 0 &&
-      segment_byte_count == packet->live_byte_count &&
-      source_packet_byte == 0 &&
+  if (result_packet_byte == 0 &&
+      segment.byte_count == packet->live_byte_count &&
+      segment.source_packet_byte_offset == 0 &&
       state->plan->source_carrier_kind == state->plan->result_carrier_kind) {
     IREE_RETURN_IF_ERROR(loom_aie2p_interleave_route_source_native_packet(
-        state, source_index,
-        source_byte / LOOM_AIE2P_INTERLEAVE_PACKET_BYTE_COUNT,
+        state, segment.source_index, segment.source_packet,
         &packet->emitted.value));
     packet->emitted.is_native = true;
-    packet->result_packet_byte = packet->live_byte_count;
+    packet->result_packet_byte = (uint8_t)cursor;
     return iree_ok_status();
   }
 
   loom_value_id_t aligned_source = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_aie2p_interleave_route_aligned_source(
-      state, source_index, source_byte, packet->result_packet_byte,
+      state, segment.source_index, source_byte, result_packet_byte,
       &aligned_source));
   if (packet->emitted.value == LOOM_VALUE_ID_INVALID) {
     packet->emitted.value = aligned_source;
   } else {
     const uint64_t mask = loom_aie2p_interleave_byte_mask(
-        packet->result_packet_byte, segment_byte_count);
+        result_packet_byte, (uint8_t)segment.byte_count);
     loom_value_id_t selector = LOOM_VALUE_ID_INVALID;
     IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_emit_byte_selector(
         state->emitter, mask, &selector));
@@ -605,7 +466,7 @@ static iree_status_t loom_aie2p_interleave_route_packet_segment(
         /*tied_results=*/NULL, /*tied_result_count=*/0,
         &packet->emitted.value));
   }
-  packet->result_packet_byte += segment_byte_count;
+  packet->result_packet_byte = (uint8_t)cursor;
   return iree_ok_status();
 }
 
@@ -634,7 +495,7 @@ static iree_status_t loom_aie2p_interleave_bind_routed_packets(
       LOOM_VALUE_ID_INVALID,
       LOOM_VALUE_ID_INVALID,
   };
-  for (uint8_t packet = 0; packet < plan->result_packet_count; ++packet) {
+  for (uint8_t packet = 0; packet < plan->route.result_packet_count; ++packet) {
     if (packets[packet].is_native) {
       native_packets[packet] = packets[packet].value;
     } else {
@@ -648,7 +509,7 @@ static iree_status_t loom_aie2p_interleave_bind_routed_packets(
       .unit_count = plan->result_carrier_unit_count,
   };
   return loom_aie2p_vector_packet_bind_native_packets(
-      emitter, result_carrier, plan->result_packet_count, native_packets,
+      emitter, result_carrier, plan->route.result_packet_count, native_packets,
       result_value);
 }
 
@@ -665,7 +526,7 @@ static iree_status_t loom_aie2p_emit_zip_plan(
   loom_value_id_t controls[2] = {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID};
   IREE_RETURN_IF_ERROR(loom_aie2p_interleave_emit_control(
       emitter, plan->low_control, &controls[0]));
-  if (plan->result_packet_count > 1) {
+  if (plan->route.result_packet_count > 1) {
     IREE_RETURN_IF_ERROR(loom_aie2p_interleave_emit_control(
         emitter, plan->low_control + 1u, &controls[1]));
   }
@@ -681,8 +542,8 @@ static iree_status_t loom_aie2p_emit_zip_plan(
       LOOM_VALUE_ID_INVALID,
   };
   uint8_t result_packet = 0;
-  for (uint8_t source_packet = 0; source_packet < plan->source_packet_count;
-       ++source_packet) {
+  for (uint8_t source_packet = 0;
+       source_packet < plan->route.source_packet_count; ++source_packet) {
     loom_value_id_t even_packet = LOOM_VALUE_ID_INVALID;
     loom_value_id_t odd_packet = LOOM_VALUE_ID_INVALID;
     IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_read_vector(
@@ -690,7 +551,7 @@ static iree_status_t loom_aie2p_emit_zip_plan(
     IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_read_vector(
         emitter, low_odd, source_carrier, source_packet, &odd_packet));
     for (uint8_t half = 0;
-         half < 2 && result_packet < plan->result_packet_count;
+         half < 2 && result_packet < plan->route.result_packet_count;
          ++half, ++result_packet) {
       IREE_RETURN_IF_ERROR(loom_aie2p_interleave_emit_shuffle(
           emitter, even_packet, odd_packet, controls[half],
@@ -703,7 +564,7 @@ static iree_status_t loom_aie2p_emit_zip_plan(
       .unit_count = plan->result_carrier_unit_count,
   };
   return loom_aie2p_vector_packet_bind_vector_packets(
-      emitter, result_carrier, plan->result_packet_count, result_packets,
+      emitter, result_carrier, plan->route.result_packet_count, result_packets,
       loom_vector_interleave_result(source_op));
 }
 
@@ -731,14 +592,14 @@ static iree_status_t loom_aie2p_emit_unzip_plan(
       {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID,
        LOOM_VALUE_ID_INVALID},
   };
-  for (uint8_t result_packet = 0; result_packet < plan->result_packet_count;
-       ++result_packet) {
+  for (uint8_t result_packet = 0;
+       result_packet < plan->route.result_packet_count; ++result_packet) {
     const uint8_t low_source_packet = result_packet * 2u;
     loom_value_id_t low_packet = LOOM_VALUE_ID_INVALID;
     IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_read_vector(
         emitter, low_source, source_carrier, low_source_packet, &low_packet));
     loom_value_id_t high_packet = low_packet;
-    if (low_source_packet + 1u < plan->source_packet_count) {
+    if (low_source_packet + 1u < plan->route.source_packet_count) {
       IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_read_vector(
           emitter, low_source, source_carrier, low_source_packet + 1u,
           &high_packet));
@@ -758,7 +619,7 @@ static iree_status_t loom_aie2p_emit_unzip_plan(
   };
   for (uint8_t result_index = 0; result_index < 2; ++result_index) {
     IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_bind_vector_packets(
-        emitter, result_carrier, plan->result_packet_count,
+        emitter, result_carrier, plan->route.result_packet_count,
         result_packets[result_index], source_results.values[result_index]));
   }
   return iree_ok_status();
@@ -779,7 +640,7 @@ static iree_status_t loom_aie2p_emit_zip_block_route_plan(
                                                &state);
   loom_aie2p_interleave_emitted_packet_t
       result_packets[LOOM_AIE2P_INTERLEAVE_MAX_PACKET_COUNT];
-  for (uint8_t packet = 0; packet < plan->result_packet_count; ++packet) {
+  for (uint8_t packet = 0; packet < plan->route.result_packet_count; ++packet) {
     IREE_RETURN_IF_ERROR(loom_aie2p_interleave_route_result_packet(
         &state, /*result_index=*/0, packet, &result_packets[packet]));
   }
@@ -802,7 +663,7 @@ static iree_status_t loom_aie2p_emit_unzip_block_route_plan(
       loom_vector_deinterleave_results(source_op);
   loom_aie2p_interleave_emitted_packet_t
       result_packets[2][LOOM_AIE2P_INTERLEAVE_MAX_PACKET_COUNT];
-  for (uint8_t packet = 0; packet < plan->result_packet_count; ++packet) {
+  for (uint8_t packet = 0; packet < plan->route.result_packet_count; ++packet) {
     loom_aie2p_interleave_route_packet_t routed_packets[2] = {
         loom_aie2p_interleave_route_packet_initialize(plan, 0, packet),
         loom_aie2p_interleave_route_packet_initialize(plan, 1, packet),
@@ -839,13 +700,13 @@ iree_status_t loom_aie2p_emit_interleave_plan(loom_low_lower_context_t* context,
       context, source_op, &emitter));
   if (interleave_plan->mechanism ==
       LOOM_AIE2P_INTERLEAVE_MECHANISM_BLOCK_ROUTE) {
-    return interleave_plan->kind == LOOM_AIE2P_INTERLEAVE_KIND_ZIP
+    return interleave_plan->route.kind == LOOM_VECTOR_INTERLEAVE_KIND_ZIP
                ? loom_aie2p_emit_zip_block_route_plan(&emitter, interleave_plan,
                                                       source_op)
                : loom_aie2p_emit_unzip_block_route_plan(
                      &emitter, interleave_plan, source_op);
   }
-  return interleave_plan->kind == LOOM_AIE2P_INTERLEAVE_KIND_ZIP
+  return interleave_plan->route.kind == LOOM_VECTOR_INTERLEAVE_KIND_ZIP
              ? loom_aie2p_emit_zip_plan(&emitter, interleave_plan, source_op)
              : loom_aie2p_emit_unzip_plan(&emitter, interleave_plan, source_op);
 }
