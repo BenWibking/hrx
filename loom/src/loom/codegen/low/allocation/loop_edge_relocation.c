@@ -647,14 +647,87 @@ static bool loom_low_allocation_loop_edge_candidate_index_overlaps_assignment(
   return false;
 }
 
+// Builds the sorted set of storage keys one header's queries can reach: the
+// candidates' target storage and the destinations they vacate (the only
+// locations offered to evictions).
+static iree_status_t loom_low_allocation_loop_edge_relocation_query_keys(
+    const loom_low_allocation_loop_edge_relocation_state_t* state,
+    const loom_low_allocation_loop_edge_candidate_t* candidates,
+    iree_host_size_t candidate_count,
+    const loom_low_allocation_loop_edge_candidate_index_t* candidate_index,
+    loom_low_allocation_loop_edge_storage_unit_t** out_keys,
+    iree_host_size_t* out_key_count) {
+  const loom_low_allocation_loop_edge_relocation_context_t* context =
+      state->context;
+  iree_host_size_t key_count = candidate_index->unit_count;
+  for (iree_host_size_t i = 0; i < candidate_count; ++i) {
+    const uint32_t destination_unit_count =
+        loom_low_allocation_storage_assignment_atomic_unit_count(
+            context->descriptor_set,
+            &context->assignments[candidates[i].destination_assignment_index]);
+    if (!iree_host_size_checked_add(key_count, destination_unit_count,
+                                    &key_count)) {
+      return iree_make_status(
+          IREE_STATUS_RESOURCE_EXHAUSTED,
+          "loop edge query storage projection exceeds host size");
+    }
+  }
+  loom_low_allocation_loop_edge_storage_unit_t* keys = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      state->scratch_arena, key_count, sizeof(*keys), (void**)&keys));
+  memcpy(keys, candidate_index->units,
+         candidate_index->unit_count * sizeof(*keys));
+  iree_host_size_t key_index = candidate_index->unit_count;
+  for (iree_host_size_t i = 0; i < candidate_count; ++i) {
+    const loom_low_allocation_assignment_t* destination =
+        &context->assignments[candidates[i].destination_assignment_index];
+    const uint32_t destination_unit_count =
+        loom_low_allocation_storage_assignment_atomic_unit_count(
+            context->descriptor_set, destination);
+    for (uint32_t j = 0; j < destination_unit_count; ++j) {
+      keys[key_index++] = loom_low_allocation_loop_edge_assignment_storage_unit(
+          context->descriptor_set, destination, j, /*owner_index=*/0);
+    }
+  }
+  loom_low_allocation_loop_edge_storage_unit_sort(keys, key_count);
+  *out_keys = keys;
+  *out_key_count = key_count;
+  return iree_ok_status();
+}
+
+static bool loom_low_allocation_loop_edge_storage_keys_contain(
+    const loom_low_allocation_loop_edge_storage_unit_t* keys,
+    iree_host_size_t key_count,
+    const loom_low_allocation_loop_edge_storage_unit_t* key) {
+  const iree_host_size_t position =
+      loom_low_allocation_loop_edge_storage_unit_lower_bound(keys, key_count,
+                                                             key);
+  return position < key_count &&
+         loom_low_allocation_loop_edge_storage_unit_key_compare(
+             &keys[position], key) == 0;
+}
+
+// Indexes the storage of every unignored register-like assignment that a
+// header's queries can reach. Queries only probe candidate targets and the
+// destinations they vacate, so units elsewhere are never visited; skipping
+// them keeps the per-header cost to one projection pass over the function
+// instead of sorting every assignment's storage for every loop header.
 static iree_status_t
 loom_low_allocation_loop_edge_relocation_assignment_index_initialize(
     const loom_low_allocation_loop_edge_relocation_state_t* state,
+    const loom_low_allocation_loop_edge_candidate_t* candidates,
+    iree_host_size_t candidate_count,
+    const loom_low_allocation_loop_edge_candidate_index_t* candidate_index,
     const uint8_t* ignored_assignments,
     loom_low_allocation_loop_edge_assignment_index_t* out_index) {
   *out_index = (loom_low_allocation_loop_edge_assignment_index_t){0};
   const loom_low_allocation_loop_edge_relocation_context_t* context =
       state->context;
+  loom_low_allocation_loop_edge_storage_unit_t* keys = NULL;
+  iree_host_size_t key_count = 0;
+  IREE_RETURN_IF_ERROR(loom_low_allocation_loop_edge_relocation_query_keys(
+      state, candidates, candidate_count, candidate_index, &keys, &key_count));
+
   iree_host_size_t unit_count = 0;
   for (iree_host_size_t i = 0; i < context->assignment_count; ++i) {
     const loom_low_allocation_assignment_t* assignment =
@@ -666,11 +739,14 @@ loom_low_allocation_loop_edge_relocation_assignment_index_initialize(
     const uint32_t assignment_unit_count =
         loom_low_allocation_storage_assignment_atomic_unit_count(
             context->descriptor_set, assignment);
-    if (!iree_host_size_checked_add(unit_count, assignment_unit_count,
-                                    &unit_count)) {
-      return iree_make_status(
-          IREE_STATUS_RESOURCE_EXHAUSTED,
-          "loop edge assignment storage projection exceeds host size");
+    for (uint32_t j = 0; j < assignment_unit_count; ++j) {
+      const loom_low_allocation_loop_edge_storage_unit_t unit =
+          loom_low_allocation_loop_edge_assignment_storage_unit(
+              context->descriptor_set, assignment, j, (uint32_t)i);
+      if (loom_low_allocation_loop_edge_storage_keys_contain(keys, key_count,
+                                                             &unit)) {
+        ++unit_count;
+      }
     }
   }
 
@@ -689,9 +765,13 @@ loom_low_allocation_loop_edge_relocation_assignment_index_initialize(
         loom_low_allocation_storage_assignment_atomic_unit_count(
             context->descriptor_set, assignment);
     for (uint32_t j = 0; j < assignment_unit_count; ++j) {
-      units[unit_index++] =
+      const loom_low_allocation_loop_edge_storage_unit_t unit =
           loom_low_allocation_loop_edge_assignment_storage_unit(
               context->descriptor_set, assignment, j, (uint32_t)i);
+      if (loom_low_allocation_loop_edge_storage_keys_contain(keys, key_count,
+                                                             &unit)) {
+        units[unit_index++] = unit;
+      }
     }
   }
   loom_low_allocation_loop_edge_storage_unit_sort(units, unit_count);
@@ -1658,7 +1738,8 @@ static iree_status_t loom_low_allocation_loop_edge_relocation_try_header(
   loom_low_allocation_loop_edge_assignment_index_t assignment_index;
   IREE_RETURN_IF_ERROR(
       loom_low_allocation_loop_edge_relocation_assignment_index_initialize(
-          state, ignored_assignments, &assignment_index));
+          state, candidates, candidate_count, &candidate_index,
+          ignored_assignments, &assignment_index));
 
   bool full_group_applied = false;
   IREE_RETURN_IF_ERROR(loom_low_allocation_loop_edge_relocation_try_full_group(
