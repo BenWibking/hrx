@@ -6,7 +6,10 @@
 
 """Descriptor invariants consumed by the native Wasm immediate readers."""
 
-from loom.target.arch.wasm.descriptors import WASM_CORE_SIMD128_DESCRIPTOR_SET
+from loom.target.arch.wasm.descriptors import (
+    WASM_CORE_SIMD128_DESCRIPTOR_SET,
+    WASM_INTEGER_ARITHMETIC_INSTRUCTIONS,
+)
 from loom.target.low_descriptors import ImmediateFlag, ImmediateKind
 
 
@@ -111,6 +114,80 @@ def test_integer_equality_descriptors_cover_every_simd_lane_width():
         assert descriptor.encoding_id == opcode
         assert not descriptor.immediates
         assert len(descriptor.operands) == 3
+
+
+def test_integer_arithmetic_descriptors_match_the_simd128_instruction_matrix():
+    expected = {
+        ("i8x16", "abs"): (0x60, 1),
+        ("i8x16", "neg"): (0x61, 1),
+        ("i8x16", "add"): (0x6E, 2),
+        ("i8x16", "sub"): (0x71, 2),
+        ("i8x16", "min_s"): (0x76, 2),
+        ("i8x16", "min_u"): (0x77, 2),
+        ("i8x16", "max_s"): (0x78, 2),
+        ("i8x16", "max_u"): (0x79, 2),
+        ("i16x8", "abs"): (0x80, 1),
+        ("i16x8", "neg"): (0x81, 1),
+        ("i16x8", "add"): (0x8E, 2),
+        ("i16x8", "sub"): (0x91, 2),
+        ("i16x8", "mul"): (0x95, 2),
+        ("i16x8", "min_s"): (0x96, 2),
+        ("i16x8", "min_u"): (0x97, 2),
+        ("i16x8", "max_s"): (0x98, 2),
+        ("i16x8", "max_u"): (0x99, 2),
+        ("i32x4", "abs"): (0xA0, 1),
+        ("i32x4", "neg"): (0xA1, 1),
+        ("i32x4", "add"): (0xAE, 2),
+        ("i32x4", "sub"): (0xB1, 2),
+        ("i32x4", "mul"): (0xB5, 2),
+        ("i32x4", "min_s"): (0xB6, 2),
+        ("i32x4", "min_u"): (0xB7, 2),
+        ("i32x4", "max_s"): (0xB8, 2),
+        ("i32x4", "max_u"): (0xB9, 2),
+        ("i64x2", "abs"): (0xC0, 1),
+        ("i64x2", "neg"): (0xC1, 1),
+        ("i64x2", "add"): (0xCE, 2),
+        ("i64x2", "sub"): (0xD1, 2),
+        ("i64x2", "mul"): (0xD5, 2),
+    }
+    actual = {
+        (instruction.shape, instruction.operation): (
+            instruction.subopcode,
+            instruction.arity,
+        )
+        for instruction in WASM_INTEGER_ARITHMETIC_INSTRUCTIONS
+    }
+    assert actual == expected
+
+    descriptors = {
+        descriptor.key: descriptor
+        for descriptor in WASM_CORE_SIMD128_DESCRIPTOR_SET.descriptors
+    }
+    for (shape, operation), (subopcode, arity) in expected.items():
+        descriptor = descriptors[f"wasm.{shape}.{operation}"]
+        assert descriptor.encoding_id == 0xFD00 | subopcode
+        assert not descriptor.immediates
+        assert len(descriptor.operands) == arity + 1
+
+
+def test_integer_arithmetic_recipe_descriptors_match_simd128_encodings():
+    descriptors = {
+        descriptor.key: descriptor
+        for descriptor in WASM_CORE_SIMD128_DESCRIPTOR_SET.descriptors
+    }
+    for key, opcode in (
+        ("wasm.i16x8.extmul_low_i8x16_u", 0xFD9E),
+        ("wasm.i16x8.extmul_high_i8x16_u", 0xFD9F),
+        ("wasm.i64x2.lt_s", 0xFDD8),
+    ):
+        descriptor = descriptors[key]
+        assert descriptor.encoding_id == opcode
+        assert not descriptor.immediates
+        assert [operand.field_name for operand in descriptor.operands] == [
+            "dst",
+            "lhs",
+            "rhs",
+        ]
 
 
 def test_simd_shifts_have_one_i32_count_for_every_integer_lane_width():
