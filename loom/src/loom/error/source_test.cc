@@ -106,13 +106,13 @@ TEST(SourceTest, BlockScanningAndRangeAnchorsPreserveCoordinates) {
       /*.end_line=*/4,
       /*.end_column=*/1,
   };
-  for (const auto position : {std::pair<uint32_t, uint32_t>{1, 250},
-                              {2, 1},
-                              {2, 101},
-                              {2, 250},
-                              {3, 2},
-                              {4, 1},
-                              {99, 1}}) {
+  for (const auto& position : {std::pair<uint32_t, uint32_t>{1, 250},
+                               {2, 1},
+                               {2, 101},
+                               {2, 250},
+                               {3, 2},
+                               {4, 1},
+                               {99, 1}}) {
     EXPECT_EQ(
         loom_source_range_byte_offset(&range, position.first, position.second),
         loom_source_byte_offset(source_view, position.first, position.second));
