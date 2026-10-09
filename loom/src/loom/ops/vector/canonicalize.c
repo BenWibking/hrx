@@ -531,6 +531,115 @@ static iree_status_t loom_vector_canonicalize_uniform_result(
 // Construction and access
 //===----------------------------------------------------------------------===//
 
+static iree_status_t loom_vector_canonicalize_slice(loom_op_t* op,
+                                                    loom_rewriter_t* rewriter,
+                                                    bool* out_changed) {
+  *out_changed = false;
+  if (loom_vector_slice_offsets(op).count != 0) {
+    return iree_ok_status();
+  }
+
+  const loom_value_id_t source = loom_vector_slice_source(op);
+  loom_op_t* source_def_op = NULL;
+  if (!loom_vector_value_def_op(rewriter, source, &source_def_op) ||
+      !loom_vector_concat_isa(source_def_op)) {
+    return iree_ok_status();
+  }
+
+  const loom_type_t source_type =
+      loom_module_value_type(rewriter->module, source);
+  const loom_type_t result_type =
+      loom_module_value_type(rewriter->module, loom_vector_slice_result(op));
+  if (!loom_type_is_vector(source_type) || !loom_type_is_vector(result_type) ||
+      !loom_type_is_all_static(source_type) ||
+      !loom_type_is_all_static(result_type)) {
+    return iree_ok_status();
+  }
+
+  const uint8_t rank = loom_type_rank(source_type);
+  if (rank == 0 || loom_type_rank(result_type) != rank) {
+    return iree_ok_status();
+  }
+  const int64_t axis = loom_vector_concat_axis(source_def_op);
+  if (axis < 0 || axis >= rank) {
+    return iree_ok_status();
+  }
+
+  const loom_attribute_t static_offsets = loom_vector_slice_static_offsets(op);
+  if (static_offsets.count != rank) {
+    return iree_ok_status();
+  }
+  for (uint8_t i = 0; i < rank; ++i) {
+    if (static_offsets.i64_array[i] < 0) {
+      return iree_ok_status();
+    }
+  }
+
+  const int64_t slice_offset = static_offsets.i64_array[axis];
+  const int64_t slice_extent =
+      loom_type_dim_static_size_at(result_type, (uint8_t)axis);
+  int64_t slice_end = 0;
+  if (slice_extent <= 0 ||
+      !iree_checked_add_i64(slice_offset, slice_extent, &slice_end)) {
+    return iree_ok_status();
+  }
+
+  int64_t input_start = 0;
+  const loom_value_slice_t inputs = loom_vector_concat_inputs(source_def_op);
+  for (uint16_t i = 0; i < inputs.count; ++i) {
+    const loom_value_id_t input = inputs.values[i];
+    const loom_type_t input_type =
+        loom_module_value_type(rewriter->module, input);
+    if (!loom_type_is_vector(input_type) ||
+        !loom_type_is_all_static(input_type) ||
+        loom_type_rank(input_type) != rank) {
+      return iree_ok_status();
+    }
+
+    const int64_t input_extent =
+        loom_type_dim_static_size_at(input_type, (uint8_t)axis);
+    int64_t input_end = 0;
+    if (!iree_checked_add_i64(input_start, input_extent, &input_end)) {
+      return iree_ok_status();
+    }
+    if (slice_offset < input_start || slice_end > input_end) {
+      input_start = input_end;
+      continue;
+    }
+
+    int64_t adjusted_offsets[LOOM_TYPE_MAX_RANK];
+    bool all_offsets_are_zero = true;
+    for (uint8_t j = 0; j < rank; ++j) {
+      adjusted_offsets[j] = static_offsets.i64_array[j];
+    }
+    adjusted_offsets[axis] -= input_start;
+    for (uint8_t j = 0; j < rank; ++j) {
+      all_offsets_are_zero &= adjusted_offsets[j] == 0;
+    }
+
+    if (all_offsets_are_zero && loom_type_equal(input_type, result_type)) {
+      IREE_RETURN_IF_ERROR(
+          loom_vector_replace_single_result_with_value(op, rewriter, input));
+      *out_changed = true;
+      return iree_ok_status();
+    }
+
+    loom_builder_set_before(&rewriter->builder, op);
+    const loom_value_id_t value_checkpoint =
+        loom_rewriter_value_checkpoint(rewriter);
+    loom_op_t* replacement_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_vector_slice_build(
+        &rewriter->builder, input, /*offsets=*/NULL, /*offsets_count=*/0,
+        adjusted_offsets, rank, result_type, op->location, &replacement_op));
+    IREE_RETURN_IF_ERROR(loom_vector_replace_single_result_with_new_op(
+        op, rewriter, replacement_op, value_checkpoint));
+    *out_changed = true;
+    return iree_ok_status();
+  }
+
+  return iree_ok_status();
+}
+
 static loom_type_t loom_vector_concat_type_with_static_axis_extent(
     loom_type_t type, uint8_t axis, int64_t extent,
     uint64_t* dimension_storage) {
@@ -2770,6 +2879,12 @@ iree_status_t loom_vector_concat_canonicalize(loom_op_t* op,
                                               loom_rewriter_t* rewriter) {
   return loom_vector_canonicalize_uniform_then(op, rewriter,
                                                loom_vector_canonicalize_concat);
+}
+
+iree_status_t loom_vector_slice_canonicalize(loom_op_t* op,
+                                             loom_rewriter_t* rewriter) {
+  return loom_vector_canonicalize_uniform_then(op, rewriter,
+                                               loom_vector_canonicalize_slice);
 }
 
 iree_status_t loom_vector_iota_canonicalize(loom_op_t* op,

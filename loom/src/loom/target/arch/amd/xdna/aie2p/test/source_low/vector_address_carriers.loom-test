@@ -85,10 +85,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @accumulator_addre
   %16 = slice %right[2] : reg<aie2p.vec256 x4> -> reg<aie2p.vec256 x2>
   %17 = vmov.vector512.to.accumulator512 %16
   %joined = concat(%11, %13, %15, %17) : (reg<aie2p.mbms>, reg<aie2p.mbms>, reg<aie2p.mbms>, reg<aie2p.mbms>) -> reg<aie2p.mbms x4>
-  %20 = vmov.accumulator512.to.vector512 %15
-  %22 = vmov.accumulator512.to.vector512 %17
-  %high = concat(%20, %22) : (reg<aie2p.vec256 x2>, reg<aie2p.vec256 x2>) -> reg<aie2p.vec256 x4>
-  return %joined, %high
+  return %joined, %right
 }
 
 // ====

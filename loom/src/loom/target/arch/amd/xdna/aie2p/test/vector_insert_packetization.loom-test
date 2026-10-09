@@ -254,20 +254,20 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @i8x64x2_insert_dy
   %56 = vinsert.8.reg %53, %55, %45
   %57 = select.mask %47, -1
   %58 = vsel.32 %53, %56, %57
-  %60 = copy %43 : reg<aie2p.er> -> reg<aie2p.er>
-  %61 = mac %60, %position, %42
-  %62 = vextract.8.imm %pair, 1
-  %63 = ltu %61, %46
-  %65 = copy %61 : reg<aie2p.er> -> reg<aie2p.mr29_insert>
-  %66 = vinsert.8.reg %52, %65, %62
-  %67 = select.mask %63, -1
-  %68 = vsel.32 %66, %52, %67
-  %70 = sub %61, %46
-  %71 = copy %70 : reg<aie2p.er> -> reg<aie2p.mr29_insert>
-  %72 = vinsert.8.reg %58, %71, %62
-  %73 = select.mask %63, -1
-  %74 = vsel.32 %58, %72, %73
-  %result = concat(%68, %74) : (reg<aie2p.vec256 x2>, reg<aie2p.vec256 x2>) -> reg<aie2p.vec256 x4>
+  %59 = copy %43 : reg<aie2p.er> -> reg<aie2p.er>
+  %60 = mac %59, %position, %42
+  %61 = vextract.8.imm %pair, 1
+  %62 = ltu %60, %46
+  %63 = copy %60 : reg<aie2p.er> -> reg<aie2p.mr29_insert>
+  %64 = vinsert.8.reg %52, %63, %61
+  %65 = select.mask %62, -1
+  %66 = vsel.32 %64, %52, %65
+  %67 = sub %60, %46
+  %68 = copy %67 : reg<aie2p.er> -> reg<aie2p.mr29_insert>
+  %69 = vinsert.8.reg %58, %68, %61
+  %70 = select.mask %62, -1
+  %71 = vsel.32 %58, %69, %70
+  %result = concat(%66, %71) : (reg<aie2p.vec256 x2>, reg<aie2p.vec256 x2>) -> reg<aie2p.vec256 x4>
   return %result
 }
 

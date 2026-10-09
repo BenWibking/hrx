@@ -145,6 +145,49 @@ func.def @concat_variadic_pairwise(%a: vector<4xi8>, %b: vector<4xi8>, %c: vecto
 
 // ====
 
+// A slice selecting one complete concat input returns that input, including
+// after a variadic concat has been balanced into a binary tree.
+func.def @slice_selects_concat_input(%lhs: vector<3xi8>, %middle: vector<4xi8>, %rhs: vector<5xi8>) -> (vector<4xi8>) {
+  %joined = vector.concat<0> %lhs, %middle, %rhs : vector<3xi8>, vector<4xi8>, vector<5xi8> -> vector<12xi8>
+  %result = vector.slice %joined[3] : vector<12xi8> -> vector<4xi8>
+  func.return %result : vector<4xi8>
+}
+// ----
+func.def @slice_selects_concat_input(%lhs: vector<3xi8>, %middle: vector<4xi8>, %rhs: vector<5xi8>) -> (vector<4xi8>) {
+  func.return %middle : vector<4xi8>
+}
+
+// ====
+
+// A slice contained within one concat input is remapped to that input.
+func.def @slice_within_concat_input(%lhs: vector<2x4xi8>, %rhs: vector<2x5xi8>) -> (vector<1x2xi8>) {
+  %joined = vector.concat<1> %lhs, %rhs : vector<2x4xi8>, vector<2x5xi8> -> vector<2x9xi8>
+  %result = vector.slice %joined[1, 5] : vector<2x9xi8> -> vector<1x2xi8>
+  func.return %result : vector<1x2xi8>
+}
+// ----
+func.def @slice_within_concat_input(%lhs: vector<2x4xi8>, %rhs: vector<2x5xi8>) -> (vector<1x2xi8>) {
+  %result = vector.slice %rhs[1, 1] : vector<2x5xi8> -> vector<1x2xi8>
+  func.return %result : vector<1x2xi8>
+}
+
+// ====
+
+// A slice spanning a concat boundary remains a slice of the aggregate.
+func.def @slice_spans_concat_inputs(%lhs: vector<4xi8>, %rhs: vector<5xi8>) -> (vector<3xi8>) {
+  %joined = vector.concat<0> %lhs, %rhs : vector<4xi8>, vector<5xi8> -> vector<9xi8>
+  %result = vector.slice %joined[3] : vector<9xi8> -> vector<3xi8>
+  func.return %result : vector<3xi8>
+}
+// ----
+func.def @slice_spans_concat_inputs(%lhs: vector<4xi8>, %rhs: vector<5xi8>) -> (vector<3xi8>) {
+  %joined = vector.concat<0> %lhs, %rhs : vector<4xi8>, vector<5xi8> -> vector<9xi8>
+  %result = vector.slice %joined[3] : vector<9xi8> -> vector<3xi8>
+  func.return %result : vector<3xi8>
+}
+
+// ====
+
 // Extracting exactly the leading axes introduced by a broadcast returns the
 // original trailing vector.
 func.def @extract_broadcast_leading_axes(%value: vector<4xf32>) -> (vector<4xf32>) {
