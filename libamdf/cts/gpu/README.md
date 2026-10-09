@@ -251,6 +251,15 @@ such observations in a valid run; these records are neither a concurrency
 guarantee nor a throughput measurement. The correctness contract is exact
 dataflow and last-reader ownership without per-job host service.
 
+The [file-staging composition](linux/io_uring/file-staged.md) adds native file
+completion before each upload. Registered SYSTEM source pages become reusable
+after SDMA finishes reading them; copied SYSTEM/LOCAL destinations remain owned
+until every independent compute reader finishes. A third finite AQL queue owns
+file requests and waits only on Linux I/O. Native dependencies deliberately
+let the next file read overwrite a source before its prior final reader runs,
+proving the two reuse boundaries with exact retained outputs. Buffered/direct
+cases and terminal file errors share the same drain and visibility contract.
+
 The lifecycle cases exercise the same resource helper as the `DISABLED_`
 peer-device recreation scenarios, without creating extra devices. Recreation requires
 `--gtest_also_run_disabled_tests` and is a separate qualification. The manual

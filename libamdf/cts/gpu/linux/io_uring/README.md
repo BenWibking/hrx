@@ -3,8 +3,9 @@
 The [causal round trips](file_io_test.cc) and [concurrent gathers](file_gather_test.cc)
 demonstrate one GPU invocation constructing native io_uring requests, consuming
 kernel completions, and computing on the returned bytes. libamdf supplies
-registered memory and a native PM4 queue. The caller uses Linux syscalls
-directly; the running test has no HAL, IREE async,
+registered memory and a native PM4 queue. The [staged-file path](file-staged.md)
+adds GPU-generated SDMA and independently dispatched AQL readers. The caller
+uses Linux syscalls directly; the running test has no HAL, IREE async,
 liburing, or shader-compiler dependency. Loom compiles the
 [GPU programs](../../kernels/README.md) during the build.
 
@@ -14,8 +15,10 @@ API or a throughput result. One-credit cases isolate native visibility and
 causal progress. Three-credit cases add a key-based demand join, independent
 ready work, a retained final reader, scattered writeback/reload, and error
 drain. Both have one SQ publisher and one CQ consumer. The logical readers run
-inside one invocation; independently dispatched matmul workers, cancellation,
-and a production cache scheduler need their own ownership witnesses.
+inside one invocation. The staged-file cases separately prove native completion
+and last-reader reuse across independent multi-workgroup dispatches. These
+integer ownership witnesses do not implement matmul, cancellation or a
+production cache scheduler.
 
 ## One credit causal workload
 
@@ -255,8 +258,9 @@ activating a GPU.
 Production integration still needs the caller's actual request identity,
 cache admission/eviction and final-reader lifecycle, plus a matched host-issued
 baseline before a performance claim. The finite fixture does not establish
-fairness under sustained arrivals, per-request cancellation, multi-workgroup
-consumer publication, or application-level cache ownership. Checkpointing
+fairness under sustained arrivals, per-request cancellation, or application-level
+cache ownership. Independent multi-workgroup consumers have their separate
+[staged-file ownership cases](file-staged.md). Checkpointing
 further needs consistent tensor versions and a separate durability/publication
 boundary. Those gates remain distinct from the native ownership proof.
 

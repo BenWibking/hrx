@@ -166,6 +166,17 @@ signals for actual reuse. The complete physical target matrix requires no
 private or workgroup storage. Queue dependency packets, rather than shader
 waits, join every reader before the next upload into that slot.
 
+[file_staged.loom](file_staged.loom) exports a serial native-file owner, an SDMA
+uploader and an independent multi-workgroup reader. Each successful file read
+admits an upload; failed or incomplete reads drain without copying or consuming
+payloads. The [typed ABI](file_staged.h) separates the CPU fixed-buffer pointer
+from GPU addresses and retains each job's result across all three queues.
+The [file-staging recipe](../linux/io_uring/file-staged.md) overwrites each source
+page before its previous user's final reader starts, while retaining the SDMA
+copy until every reader completes. All three products use the complete target
+matrix and have their argument and resource contracts checked by
+[file_staged_test.cc](file_staged_test.cc).
+
 [resident_npu_sdma.loom](resident_npu_sdma.loom) consumes NPU-computed transfer
 requests. Its source page and copy prefix vary with the NPU payload. The GPU
 publishes SDMA, acquires every destination word and returns values derived from

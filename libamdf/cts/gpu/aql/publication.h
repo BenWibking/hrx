@@ -8,7 +8,9 @@
 #define AMDF_CTS_GPU_AQL_PUBLICATION_H_
 
 #include <cstring>
+#include <span>
 
+#include "gtest/gtest.h"
 #include "libamdf/cts/gpu/aql/encoding/packets.h"
 #include "libamdf/cts/gpu/util/user_queue.h"
 
@@ -28,6 +30,36 @@ inline void Publish(const GpuUserQueue& queue, uint64_t index,
   std::memcpy(slot + 1, packet.data() + 1, sizeof(Packet) - sizeof(uint32_t));
   GpuStoreRelease(reinterpret_cast<uintptr_t>(slot), packet[0]);
   GpuStoreRelease(queue.host.doorbell_address, index);
+}
+
+// Prepare a complete finite batch while its first header remains INVALID.
+// The caller publishes that header only after every dependent batch is ready.
+inline void PrepareBatch(const GpuUserQueue& queue, uint64_t begin,
+                         std::span<const Packet> packets) {
+  const uint64_t capacity = queue.host.ring_byte_length / sizeof(Packet);
+  ASSERT_LT(packets.size(), capacity);
+  ASSERT_EQ(GpuLoadAcquire<uint64_t>(queue.host.read_index_address), begin);
+  auto* ring = reinterpret_cast<Packet*>(queue.host.ring_address);
+  auto& first = ring[begin & (capacity - 1)];
+  ASSERT_EQ(first[0] & 0xffu, 1u);
+  std::memcpy(first.data() + 1, packets.front().data() + 1,
+              sizeof(Packet) - sizeof(uint32_t));
+  for (size_t i = 1; i < packets.size(); ++i) {
+    ring[(begin + i) & (capacity - 1)] = packets[i];
+  }
+}
+
+// Publishes the same nonempty batch prepared above, reserving its whole extent
+// before making its first header valid. No packet may be edited afterward.
+inline void PublishBatch(const GpuUserQueue& queue, uint64_t begin,
+                         std::span<const Packet> packets) {
+  const uint64_t capacity = queue.host.ring_byte_length / sizeof(Packet);
+  auto* ring = reinterpret_cast<Packet*>(queue.host.ring_address);
+  GpuStoreRelease(queue.host.write_index_address, begin + packets.size());
+  GpuStoreRelease(
+      reinterpret_cast<uintptr_t>(ring[begin & (capacity - 1)].data()),
+      packets.front()[0]);
+  GpuStoreRelease(queue.host.doorbell_address, begin + packets.size() - 1);
 }
 
 }  // namespace aql

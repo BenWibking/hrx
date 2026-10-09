@@ -37,6 +37,7 @@ exports_files([
     "file_gather.loom",
     "file_latency.cxx",
     "file_latency.loom",
+    "file_staged.loom",
     "geometry_ids.loom",
     "lds_exchange.loom",
     "pattern_fill_unaligned.loom",
@@ -174,6 +175,30 @@ amdf_cc_library(
         targets = AMDF_CTS_GPU_KERNEL_TARGETS,
     )
     for stage in [
+        "upload",
+        "reader",
+    ]
+]
+
+amdf_cc_library(
+    name = "file_staged",
+    testonly = True,
+    hdrs = ["file_staged.h"],
+)
+
+[
+    amdf_cts_gpu_kernel_set(
+        name = "file_staged_" + stage + "_kernels",
+        srcs = [
+            "file_staged.loom",
+            "sdma_copy.loom",
+        ],
+        entry_point = "file_staged_" + stage,
+        namespace = "kernels::file_staged_" + stage,
+        targets = AMDF_CTS_GPU_KERNEL_TARGETS,
+    )
+    for stage in [
+        "read",
         "upload",
         "reader",
     ]
@@ -464,7 +489,10 @@ amdf_cc_library(
 
 amdf_cc_test(
     name = "kernel_test",
-    srcs = ["kernel_test.cc"],
+    srcs = [
+        "file_staged_test.cc",
+        "kernel_test.cc",
+    ],
     deps = [
         ":byte_copy_unaligned",
         ":byte_copy_unaligned_kernels",
@@ -478,6 +506,10 @@ amdf_cc_test(
         ":device_sdma_staged",
         ":device_sdma_transfer_kernels",
         ":device_sdma_upload_kernels",
+        ":file_staged",
+        ":file_staged_read_kernels",
+        ":file_staged_reader_kernels",
+        ":file_staged_upload_kernels",
         ":geometry_ids",
         ":geometry_ids_kernels",
         ":kernel",

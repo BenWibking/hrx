@@ -12,6 +12,26 @@ iree_add_all_subdirs()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 iree_cc_library(
   NAME
+    file_io_resources
+  HDRS
+    "file_io_resources.h"
+  SRCS
+    "file_io_resources.cc"
+  DEPS
+    $<BUILD_LOCAL_INTERFACE:iree::third_party::linux_io_uapi>
+    amdf::headers
+    iree::third_party::google_test
+    libamdf::cts::gpu::gpu_device_fixture
+    libamdf::cts::gpu::util::memory
+    libamdf::cts::gpu::util::user_queue
+  TESTONLY
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+iree_cc_library(
+  NAME
     file_io_fixture
   HDRS
     "file_io_fixture.h"
@@ -19,6 +39,7 @@ iree_cc_library(
     "file_io_fixture.cc"
   DEPS
     $<BUILD_LOCAL_INTERFACE:iree::third_party::linux_io_uapi>
+    ::file_io_resources
     amdf::headers
     iree::third_party::google_test
     libamdf::cts::gpu::kernels::kernel
@@ -193,6 +214,90 @@ iree_native_test(
     "--amdf_library={{$<TARGET_FILE:amdf::amdf>}}"
   SRC
     ::file_io_cxx_dynamic_bin
+  DATA
+    "amdf::amdf"
+  LABELS
+    "iree-build-requirement=libamdf"
+    "iree-build-requirement=libamdf.gpu"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-run-requirement=libamdf.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+iree_cc_library(
+  NAME
+    file_staged_cases
+  SRCS
+    "file_staged_test.cc"
+  DEPS
+    ::file_io_resources
+    amdf::headers
+    iree::third_party::google_test
+    libamdf::cts::gpu::aql::publication
+    libamdf::cts::gpu::kernels::file_staged
+    libamdf::cts::gpu::kernels::file_staged_read_kernels
+    libamdf::cts::gpu::kernels::file_staged_reader_kernels
+    libamdf::cts::gpu::kernels::file_staged_upload_kernels
+    libamdf::cts::gpu::recipes::device_sdma_fixture
+    libamdf::cts::gpu::sdma::encoding::commands
+  TESTONLY
+  ALWAYSLINK
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+amdf_cts_binary(
+  NAME
+    file_staged_dynamic_bin
+  DATA
+    amdf::amdf
+  DEPS
+    ::file_staged_cases
+    amdf::headers
+    libamdf::cts::util::dynamic_provider
+    libamdf::cts::util::test_main
+  TESTONLY
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+iree_native_test(
+  NAME
+    "file_staged_dynamic"
+  ARGS
+    "--amdf_native_lifetime=process"
+    "--amdf_library={{$<TARGET_FILE:amdf::amdf>}}"
+  SRC
+    ::file_staged_dynamic_bin
+  DATA
+    "amdf::amdf"
+  LABELS
+    "iree-build-requirement=libamdf"
+    "iree-build-requirement=libamdf.gpu"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-run-requirement=libamdf.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+iree_native_test(
+  NAME
+    "file_staged_dynamic_instance"
+  ARGS
+    "--amdf_native_lifetime=instance"
+    "--amdf_library={{$<TARGET_FILE:amdf::amdf>}}"
+  SRC
+    ::file_staged_dynamic_bin
   DATA
     "amdf::amdf"
   LABELS

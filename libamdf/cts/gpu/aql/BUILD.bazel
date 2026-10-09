@@ -20,6 +20,7 @@ amdf_cc_library(
     deps = [
         "//libamdf/cts/gpu/aql/encoding:packets",
         "//libamdf/cts/gpu/util:user_queue",
+        "//third_party:google_test",
     ],
 )
 
