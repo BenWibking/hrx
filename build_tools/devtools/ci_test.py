@@ -651,6 +651,38 @@ class CiTest(unittest.TestCase):
             + str(Path("/tmp/rocm-root") / relative_path),
             amdgpu_test.argv,
         )
+        for name in ci.AMDGPU_DEVICE_VISIBILITY_ENV_VARS:
+            self.assertFalse(
+                any(
+                    option.startswith(f"--test_env={name}=")
+                    for option in amdgpu_test.argv
+                )
+            )
+
+    def test_amdgpu_bazel_tests_preserve_device_visibility(self):
+        args = ci.parse_arguments(
+            [
+                "iree-bazel-amdgpu",
+                "--target",
+                "//runtime/...",
+            ]
+        )
+
+        device_visibility = {
+            "ROCR_VISIBLE_DEVICES": "GPU-00112233",
+            "HIP_VISIBLE_DEVICES": "0",
+            "CUDA_VISIBLE_DEVICES": "1",
+            "GPU_DEVICE_ORDINAL": "2",
+        }
+        with mock.patch.dict(ci.os.environ, device_visibility, clear=True):
+            steps = ci.steps_from_args(args)
+
+        amdgpu_test = next(step for step in steps if step.name == "Test IREE / AMDGPU")
+        for name in ci.AMDGPU_DEVICE_VISIBILITY_ENV_VARS:
+            self.assertIn(
+                f"--test_env={name}={device_visibility[name]}",
+                amdgpu_test.argv,
+            )
 
     def test_amdgpu_bazel_device_toolchain_uses_fetched_rocm_root(self):
         args = ci.parse_arguments(["iree-bazel-amdgpu"])
@@ -1436,7 +1468,7 @@ fi
             clear=True,
         ):
             steps = ci.steps_from_args(args)
-            expected_env = ci.amdgpu_libhsa_test_env()
+            expected_env = ci.amdgpu_test_env()
 
         test_steps = [
             step for step in steps if step.name.startswith("Test IREE CMake AMDGPU")

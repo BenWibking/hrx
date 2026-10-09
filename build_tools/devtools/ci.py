@@ -194,19 +194,36 @@ def sanitizer_env(config: str | None) -> tuple[tuple[str, str], ...]:
     return (("TSAN_OPTIONS", f"suppressions={TSAN_SUPPRESSIONS_FILE}"),)
 
 
-def amdgpu_libhsa_test_env() -> tuple[tuple[str, str], ...]:
+# Bazel test actions do not inherit the client environment. Preserve the
+# selectors that establish the runner's GPU lease without choosing one here.
+AMDGPU_DEVICE_VISIBILITY_ENV_VARS = (
+    "ROCR_VISIBLE_DEVICES",
+    "HIP_VISIBLE_DEVICES",
+    "CUDA_VISIBLE_DEVICES",
+    "GPU_DEVICE_ORDINAL",
+)
+
+
+def amdgpu_test_env() -> tuple[tuple[str, str], ...]:
+    test_env = []
+    for name in AMDGPU_DEVICE_VISIBILITY_ENV_VARS:
+        value = os.environ.get(name)
+        if value:
+            test_env.append((name, value))
+
     libhsa_path = os.environ.get("IREE_HAL_AMDGPU_LIBHSA_PATH")
     if not libhsa_path:
         rocm_root = os.environ.get("HRX_ROCM_ROOT")
         if not rocm_root:
-            return ()
+            return tuple(test_env)
         relative_path = (
             Path("bin/hsa-runtime64.dll")
             if sys.platform == "win32"
             else Path("lib/libhsa-runtime64.so.1")
         )
         libhsa_path = str(Path(rocm_root) / relative_path)
-    return (("IREE_HAL_AMDGPU_LIBHSA_PATH", libhsa_path),)
+    test_env.append(("IREE_HAL_AMDGPU_LIBHSA_PATH", libhsa_path))
+    return tuple(test_env)
 
 
 def vulkan_device_test_env() -> tuple[tuple[str, str], ...]:
@@ -662,7 +679,7 @@ def amdgpu_build_and_test_steps(
                 ci_config.AMDGPU_BAZEL_TEST_TAG_FILTERS + host_sanitizer_tag_filters
             ),
             available_resources=ci_config.AMDGPU_RESOURCES,
-            test_env=amdgpu_libhsa_test_env(),
+            test_env=amdgpu_test_env(),
             bazel_options=bazel_options,
         ),
     ]
@@ -892,7 +909,7 @@ def cmake_amdgpu_steps(
             regex="^iree/hal/drivers/amdgpu/",
             exclude_regex=xfail_regex,
             available_resources=ci_config.AMDGPU_RESOURCES,
-            env=sanitizer_env(sanitizer) + amdgpu_libhsa_test_env(),
+            env=sanitizer_env(sanitizer) + amdgpu_test_env(),
             parallelism=1,
         )
     )
@@ -913,7 +930,7 @@ def cmake_amdgpu_steps(
             label_exclude_regex=resource_label_exclude_regex,
             exclude_regex=resource_exclude_regex,
             available_resources=ci_config.AMDGPU_RESOURCES,
-            env=sanitizer_env(sanitizer) + amdgpu_libhsa_test_env(),
+            env=sanitizer_env(sanitizer) + amdgpu_test_env(),
             parallelism=1,
         )
     )
