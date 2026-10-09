@@ -89,7 +89,9 @@ REMOVED_OPTIONS = frozenset(
     ("--enable-driver", "--include-driver", "--exclude-driver", "--rocm-path")
 )
 NATIVE_DRIVER_FLAG = "--//runtime/config/hal:drivers"
+NATIVE_RUNTIME_AMDGPU_TARGETS_FLAG = "--//runtime/src/iree/hal/drivers/amdgpu:targets"
 NATIVE_LOOM_TARGET_FLAG = "--//loom/config/target:enable"
+NATIVE_LOOM_AMDGPU_TARGETS_FLAG = "--//loom/config/target/amdgpu:targets"
 NATIVE_LOOM_EMIT_FLAG = "--//loom/config/emit:enable"
 NATIVE_LOOM_EXECUTE_FLAG = "--//loom/config/execute:enable"
 NATIVE_LOOM_IMPORT_FLAG = "--//loom/config/import:enable"
@@ -113,6 +115,7 @@ class ConfigRequest:
     enabled_loom_targets: set[str] = field(
         default_factory=lambda: set(DEFAULT_LOOM_TARGETS)
     )
+    runtime_amdgpu_targets: set[str] | None = None
     enabled_loom_execute: set[str] = field(
         default_factory=lambda: set(DEFAULT_LOOM_EXECUTE)
     )
@@ -120,6 +123,7 @@ class ConfigRequest:
     loom_emit_source: str | None = None
     loom_import_source: str | None = None
     loom_target_source: str | None = None
+    loom_amdgpu_targets: set[str] | None = None
     enabled_loom_emitters: set[str] = field(default_factory=set)
     enabled_loom_importers: set[str] = field(default_factory=set)
     amdf_build: bool = False
@@ -168,6 +172,9 @@ class ConfigRequest:
         self.driver_source = "native"
         self.enabled_drivers = set(drivers)
 
+    def set_runtime_amdgpu_target_list(self, targets: set[str]) -> None:
+        self.runtime_amdgpu_targets = set(targets)
+
     def set_loom_target(self, target: str, enabled: bool) -> None:
         if self.loom_target_source == "native":
             raise SystemExit(
@@ -193,6 +200,9 @@ class ConfigRequest:
             )
         self.loom_target_source = "native"
         self.enabled_loom_targets = set(targets)
+
+    def set_loom_amdgpu_target_list(self, targets: set[str]) -> None:
+        self.loom_amdgpu_targets = set(targets)
 
     def set_loom_emitter(self, emitter: str, enabled: bool) -> None:
         if self.loom_emit_source == "native":
@@ -582,11 +592,25 @@ def apply_native_bazel_arg(request: ConfigRequest, arg: str) -> None:
         return
     if arg == NATIVE_DRIVER_FLAG:
         raise SystemExit(f"{NATIVE_DRIVER_FLAG} must use --flag=value syntax.")
+    if arg.startswith(NATIVE_RUNTIME_AMDGPU_TARGETS_FLAG + "="):
+        request.set_runtime_amdgpu_target_list(parse_string_list(arg.split("=", 1)[1]))
+        return
+    if arg == NATIVE_RUNTIME_AMDGPU_TARGETS_FLAG:
+        raise SystemExit(
+            f"{NATIVE_RUNTIME_AMDGPU_TARGETS_FLAG} must use --flag=value syntax."
+        )
     if arg.startswith(NATIVE_LOOM_TARGET_FLAG + "="):
         request.set_loom_target_list(parse_string_list(arg.split("=", 1)[1]))
         return
     if arg == NATIVE_LOOM_TARGET_FLAG:
         raise SystemExit(f"{NATIVE_LOOM_TARGET_FLAG} must use --flag=value syntax.")
+    if arg.startswith(NATIVE_LOOM_AMDGPU_TARGETS_FLAG + "="):
+        request.set_loom_amdgpu_target_list(parse_string_list(arg.split("=", 1)[1]))
+        return
+    if arg == NATIVE_LOOM_AMDGPU_TARGETS_FLAG:
+        raise SystemExit(
+            f"{NATIVE_LOOM_AMDGPU_TARGETS_FLAG} must use --flag=value syntax."
+        )
     if arg.startswith(NATIVE_LOOM_EMIT_FLAG + "="):
         request.set_loom_emitter_list(parse_string_list(arg.split("=", 1)[1]))
         return
@@ -748,6 +772,18 @@ def generate_config(args: argparse.Namespace) -> str:
             "--//runtime/config/hal:drivers="
             + ",".join(ordered_driver_set(request.enabled_drivers)),
         ),
+        *(
+            [
+                bazelrc_line(
+                    "build",
+                    NATIVE_RUNTIME_AMDGPU_TARGETS_FLAG
+                    + "="
+                    + ",".join(sorted(request.runtime_amdgpu_targets)),
+                )
+            ]
+            if request.runtime_amdgpu_targets is not None
+            else []
+        ),
         "",
         "# libamdf library and implementation-family scope.",
         bazelrc_line(
@@ -786,6 +822,18 @@ def generate_config(args: argparse.Namespace) -> str:
             "build",
             "--//loom/config/target:enable="
             + ",".join(ordered_loom_target_set(request.enabled_loom_targets)),
+        ),
+        *(
+            [
+                bazelrc_line(
+                    "build",
+                    NATIVE_LOOM_AMDGPU_TARGETS_FLAG
+                    + "="
+                    + ",".join(sorted(request.loom_amdgpu_targets)),
+                )
+            ]
+            if request.loom_amdgpu_targets is not None
+            else []
         ),
         bazelrc_line(
             "build",

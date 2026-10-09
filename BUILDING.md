@@ -812,6 +812,8 @@ python dev.py bazel configure \
   -DLOOM_TARGET_AMDGPU=ON \
   -DLOOM_EXECUTE_IREE_HAL=ON \
   -DIREE_HAL_DRIVER_AMDGPU=ON \
+  --//runtime/src/iree/hal/drivers/amdgpu:targets=gfx942 \
+  --//loom/config/target/amdgpu:targets=gfx942 \
   -DIREE_ROCM_PATH=/opt/rocm
 ```
 

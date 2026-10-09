@@ -436,6 +436,24 @@ class ConfigureBazelTest(unittest.TestCase):
         self.assertIn("build --//loom/config/execute:enable=iree_hal", config)
         self.assertIn("build --//loom/config/emit:enable=xdna", config)
 
+    def test_native_amdgpu_targets_configure_processor_scope(self):
+        args = self.configure_bazel.parse_arguments(
+            [
+                "--//runtime/src/iree/hal/drivers/amdgpu:targets=gfx942,gfx125X-all",
+                "--//loom/config/target/amdgpu:targets=gfx942,gfx125X-all",
+            ]
+        )
+        config = self.configure_bazel.generate_config(args)
+
+        self.assertIn(
+            "build --//runtime/src/iree/hal/drivers/amdgpu:targets=gfx125X-all,gfx942",
+            config,
+        )
+        self.assertIn(
+            "build --//loom/config/target/amdgpu:targets=gfx125X-all,gfx942",
+            config,
+        )
+
     def test_portable_and_native_loom_target_options_conflict(self):
         args = self.configure_bazel.parse_arguments(
             [
