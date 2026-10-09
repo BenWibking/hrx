@@ -175,18 +175,21 @@ static void loom_wasm_mark_plan_storage_demands(
   IREE_ASSERT_UNREACHABLE("Wasm storage demand has unknown plan kind");
 }
 
-static void loom_wasm_describe_plan(void* user_data,
-                                    loom_low_lower_context_t* context,
-                                    const loom_op_t* source_op,
-                                    loom_low_lower_plan_t plan,
-                                    loom_low_lower_plan_report_t* out_report) {
+static iree_status_t loom_wasm_describe_plan(
+    void* user_data, loom_low_lower_context_t* context,
+    const loom_op_t* source_op, loom_low_lower_plan_t plan, bool is_elided,
+    uint64_t execution_count_plus_one,
+    loom_low_lower_plan_report_t* out_report) {
   (void)user_data;
+  (void)is_elided;
+  (void)execution_count_plus_one;
   if (loom_wasm_vector_structural_plan_isa(plan)) {
     loom_wasm_describe_vector_structural_plan(context, source_op, plan,
                                               out_report);
-    return;
+  } else {
+    IREE_ASSERT_UNREACHABLE("Wasm report has unknown plan kind");
   }
-  IREE_ASSERT_UNREACHABLE("Wasm report has unknown plan kind");
+  return iree_ok_status();
 }
 
 static iree_status_t loom_wasm_emit_op(void* user_data,
