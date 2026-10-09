@@ -191,21 +191,27 @@ loom_check_test_suite(
 # Generated host cases remain only while their source families migrate to
 # authored scenarios and independent Loom oracles.
 _GENERATED_HOST_SOURCES = [
-    "comparison_functions.cxx",
     "constant_loops.cxx",
-    "integer_functions.cxx",
-    "record_values.cxx",
-    "schedule_values.cxx",
     "structured_continue.cxx",
 ]
 
 _AUTHORED_HOST_SOURCES = [
     "assumptions",
+    "comparison_functions",
     "enum_values",
     "increment_values",
+    "integer_functions",
+    "record_values",
+    "schedule_values",
     "shaped_intrinsics",
     "vector_initializers",
     "vector_values",
+]
+
+_AUTHORED_HOST_ONLY_SOURCES = [
+    "comparison_functions",
+    "integer_functions",
+    "schedule_values",
 ]
 
 _AUTHORED_HOST_VARIANTS = {
@@ -426,10 +432,22 @@ loom_test(
 ]
 
 [
+    loom_test_module(
+        name = source + "_module",
+        srcs = [
+            source + ".cxx",
+            source + ".loom",
+        ],
+        target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+    )
+    for source in _AUTHORED_HOST_ONLY_SOURCES
+]
+
+[
     loom_test(
         name = source + "_test",
         benchmark_smoke = False,
-        case = source + "_functions" if source not in _AUTHORED_HOST_VARIANTS else "",
+        case = (source if source.endswith("_functions") else source + "_functions") if source not in _AUTHORED_HOST_VARIANTS else "",
         execution_profiles = [VM_REFERENCE_PROFILE],
         module = ":" + source + "_module",
         target_compatible_with = _HOST_COMPATIBILITY,

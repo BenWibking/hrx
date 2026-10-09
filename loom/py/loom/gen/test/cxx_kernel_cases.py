@@ -15,9 +15,6 @@ from pathlib import Path
 
 from loom.gen.test.kernel_fixture import Arrays, Case, rounded, signed_bits
 
-BYTE_INPUTS = [0, 127, 128, 254, 255, 511]
-WIDE_INPUTS = [0, 126, 254, 255, (1 << 32) - 1, 1 << 32, (1 << 63) - 1, 1 << 63, (1 << 64) - 1]
-
 
 def attention(arrays):
     cases = []
@@ -297,21 +294,6 @@ def continue_vectors(arrays):
 CONSTANT_LOOP_STARTS = [0, 1, 2, 3, 7, 16, 17, 18, 19, 20, 21, 0x80000000, 0xFFFFFFFF]
 
 
-def schedule_functions():
-    cases = []
-    for name in ["call", "snapshot", "wide", "narrow", "signed", "unevaluated", "initializer", "serial"]:
-        samples = []
-        for count in [0, 1, 2, 3, 4, 5, 7, 16, 17, 33]:
-            expected = sum(range(count))
-            if name == "snapshot":
-                expected += count + 3
-            elif name == "unevaluated":
-                expected += count + 8 + ord("A")
-            samples.append(([count], expected))
-        cases.append(function_cases(f"schedule_{name}", [32], 32, samples))
-    return "\n".join(cases)
-
-
 def constant_loop_functions():
     cases = [
         ("counted_stride", [([start], sum(range(start, 20, 4))) for start in CONSTANT_LOOP_STARTS]),
@@ -345,41 +327,6 @@ def constant_loops(arrays):
         case.lines.append(f"  check.expect.bitwise actual(%input) expected(%original) : tensor<{len(values)}xi32>")
         cases.append(case.finish(expected))
     return "kernel.decl @constant_loops() launch(%input: buffer, %output: buffer, %start: i32)\n\n" + "\n".join(cases)
-
-
-def integer_functions():
-    cases = []
-
-    def function(name, argument_widths, result_width, samples):
-        cases.append(function_cases(name, argument_widths, result_width, samples))
-
-    products = [(0, -1), (65536, 65536), (-65537, 98304), (65537, -98304), (-(1 << 31), 65536), ((1 << 31) - 1, 65536), (12345, 6789)]
-    function("fixed_multiply", [32, 32], 32, [(pair, pair[0] * pair[1] // 65536) for pair in products])
-    function("byte_increment", [32], 32, [([value], (value + 1) % 256) for value in BYTE_INPUTS])
-    function("byte_decrement", [32], 32, [([value], (value - 1) % 256) for value in BYTE_INPUTS])
-    function("short_decrement", [32], 32, [([value], value - 1) for value in [-32767, -129, -1, 0, 1, 32767]])
-    function("wide_increment", [64], 64, [([value], (value + 1) % (1 << 64)) for value in WIDE_INPUTS])
-    narrow_values = [0, 1, 0x12345678, (1 << 31), (1 << 32) - 1]
-    function("shift_left_narrow", [32, 64], 32, [([value, count], value * (1 << count) % (1 << 32)) for value in narrow_values for count in [0, 1, 16, 31]])
-    wide_values = [0, 1, -1, -65537, 0x123456789ABCDEF, -(1 << 63)]
-    counts = [0, 1, 16, 31, 32, 63]
-    function("shift_left_wide", [64, 32], 64, [([value, count], value * (1 << count) % (1 << 64)) for value in wide_values for count in counts])
-    function("shift_right_signed", [64, 32], 64, [([value, count], value // (1 << count)) for value in wide_values for count in counts])
-    function("shift_right_unsigned", [64, 32], 64, [([value, count], (value % (1 << 64)) // (1 << count)) for value in wide_values for count in counts])
-    return "\n\n".join(cases) + "\n"
-
-
-def comparison_functions():
-    samples = []
-    for mask in range(128):
-        arguments = [256 if mask & (1 << index) else 255 for index in range(7)]
-        samples.append((arguments, int(mask == 0)))
-    samples.append(([0] * 7, 1))
-    for index in range(7):
-        arguments = [0] * 7
-        arguments[index] = (1 << 32) - 1
-        samples.append((arguments, 0))
-    return function_cases("comparison_chain", [32] * 7, 32, samples) + "\n"
 
 
 def pointer_walk(arrays):
@@ -453,31 +400,6 @@ def vector_depth_span(arrays):
         case.launch("vector_depth_span", "%previous, %output, %count, %depth, %step", f"tensor<{len(previous)}xi32>, tensor<{count}xi32>, i32, i32, i32")
         cases.append(case.finish(expected))
     return "kernel.decl @vector_depth_span() launch(%previous: buffer, %output: buffer, %count: i32, %depth: i32, %step: i32)\n\n" + "\n".join(cases)
-
-
-def record_pair_reference(value, count):
-    return 9 * value + count * (count - 1) // 2 + 21 + 3 * ((count + 1) // 2)
-
-
-def record_sequence_reference(value, choose):
-    return 5 * value + 60 if choose else 12 * value + 30
-
-
-def record_functions():
-    values = [0, 7, 0xFFFFFFFF]
-    pairs = [([value, count], record_pair_reference(value, count)) for value in values for count in [0, 1, 2, 7]]
-    defaults = [([value], value + 44) for value in values]
-    sequencing = [([value, choose], record_sequence_reference(value, choose)) for value in values for choose in [0, 1, 2]]
-    return (
-        "\n\n".join(
-            [
-                function_cases("record_pairs", [32, 32], 32, pairs),
-                function_cases("record_defaults", [32], 32, defaults),
-                function_cases("record_sequencing", [32, 32], 32, sequencing),
-            ]
-        )
-        + "\n"
-    )
 
 
 def launch_grid(kernel, x, y=1, z=1):
@@ -817,11 +739,7 @@ KERNEL_GROUPS = {
 
 
 HOST_REFERENCES = {
-    "comparison_functions.cxx": comparison_functions,
     "constant_loops.cxx": constant_loop_functions,
-    "integer_functions.cxx": integer_functions,
-    "record_values.cxx": record_functions,
-    "schedule_values.cxx": schedule_functions,
     "structured_continue.cxx": continue_functions,
 }
 
