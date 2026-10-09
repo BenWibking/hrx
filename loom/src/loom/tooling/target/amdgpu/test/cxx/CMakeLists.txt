@@ -2884,6 +2884,22 @@ iree_native_test(
 )
 endif()
 
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_CDNA3_CORE AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+iree_native_test(
+  NAME
+    "iq4xs_gate_up_async_lowering"
+  WORKING_DIRECTORY "${IREE_ROOT_DIR}"
+  ARGS
+    "{{${CMAKE_CURRENT_SOURCE_DIR}/iq4xs_gate_up_async_lowering.cxx-test}}"
+  SRC
+    loom::tools::loom-check
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/iq4xs_gate_up.cxx"
+  LABELS
+    "loom-check"
+)
+endif()
+
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 iree_native_test(
   NAME
@@ -3658,7 +3674,7 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 loom_test_module(
   NAME
-    iq4xs_gate_up_test_module
+    iq4xs_gate_up_module
   SRCS
     "iq4xs_gate_up.cxx"
     "${CMAKE_CURRENT_BINARY_DIR}/iq4xs_gate_up_checks.loom"
@@ -3672,15 +3688,15 @@ if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDG
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
 loom_execution_test(
   NAME
-    iq4xs_gate_up_test_d1_p4_b2_t1_execute_amdgpu_test
+    iq4xs_gate_up_test_execute_amdgpu_test
   CORRECTNESS_ONLY
   MODULE
-    "::iq4xs_gate_up_test_module"
+    "::iq4xs_gate_up_module"
   RUNNER_ARGS
     "--device=amdgpu"
+    "--config=qwen38.iq4xs.async_staging=false"
     "--config=qwen38.iq4xs.block_unroll_factor=2"
     "--config=qwen38.iq4xs.packet_unroll_factor=4"
-    "--config=qwen38.iq4xs.pipeline_depth=1"
     "--config=qwen38.iq4xs.tile_unroll_factor=1"
     "--case=iq4xs_gate_up_values"
   LABELS
@@ -3702,17 +3718,17 @@ endif()
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
 loom_execution_test(
   NAME
-    iq4xs_gate_up_test_d1_p4_b2_t1_execute_amdgpu_access_test
+    iq4xs_gate_up_test_execute_amdgpu_access_test
   CORRECTNESS_ONLY
   MODULE
-    "::iq4xs_gate_up_test_module"
+    "::iq4xs_gate_up_module"
   RUNNER_ARGS
     "--device=amdgpu"
     "--sanitizer=access"
     "--sanitizer-reporting=report-only"
+    "--config=qwen38.iq4xs.async_staging=false"
     "--config=qwen38.iq4xs.block_unroll_factor=2"
     "--config=qwen38.iq4xs.packet_unroll_factor=4"
-    "--config=qwen38.iq4xs.pipeline_depth=1"
     "--config=qwen38.iq4xs.tile_unroll_factor=1"
     "--case=iq4xs_gate_up_values"
   LABELS
@@ -3730,6 +3746,22 @@ loom_execution_test(
     "gpu-device"
 )
 endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "iq4xs_gate_up_async_compile_test"
+  SRC
+    "::iq4xs_gate_up_module"
+  TARGETS
+    loom::target::amdgpu::gfx942
+  ARGS
+    "--config=qwen38.iq4xs.async_staging=true"
+    "--config=qwen38.iq4xs.block_unroll_factor=2"
+    "--config=qwen38.iq4xs.packet_unroll_factor=4"
+    "--config=qwen38.iq4xs.tile_unroll_factor=1"
+)
 endif()
 
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)

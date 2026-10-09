@@ -10,6 +10,7 @@
 #include <loomcxx/kernel.h>
 #include <loomcxx/predicate.h>
 #include <loomcxx/scalar.h>
+#include <loomcxx/target/amdgpu.h>
 #include <loomcxx/vector.h>
 
 #include <stdfloat>
@@ -39,9 +40,8 @@ static_assert(__builtin_offsetof(IQ4XSBlock, scales_high) == 2);
 static_assert(__builtin_offsetof(IQ4XSBlock, scales_low) == 4);
 static_assert(__builtin_offsetof(IQ4XSBlock, quants) == 8);
 
-[[loom::config("qwen38.iq4xs.pipeline_depth"),
-  loom::where(loom::predicate::range(1u, 4u))]]
-extern const unsigned pipeline_depth;
+[[loom::config("qwen38.iq4xs.async_staging")]]
+extern const bool async_staging;
 [[loom::config("qwen38.iq4xs.packet_unroll_factor"),
   loom::where(loom::predicate::range(1u, 4u))]]
 extern const unsigned packet_unroll_factor;
@@ -51,6 +51,65 @@ extern const unsigned block_unroll_factor;
 [[loom::config("qwen38.iq4xs.tile_unroll_factor"),
   loom::where(loom::predicate::range(1u, 5u))]]
 extern const unsigned tile_unroll_factor;
+
+constexpr loom::amdgpu::target iq4xs_gfx9_4_target{
+    .kind = "gfx9-4-generic",
+};
+
+LOOM_DEVICE
+LOOM_TEMPLATE_DECL("qwen38.iq4xs.stage_input")
+void stage_iq4xs_input(bool use_async, unsigned tile, unsigned workitem,
+                       const BFloat2* input, BFloat2* scratch);
+
+LOOM_TEMPLATE_DEF(stage_iq4xs_input)
+[[loom::priority(1)]] void stage_iq4xs_input_synchronous(
+    bool use_async, unsigned tile, unsigned workitem, const BFloat2* input,
+    BFloat2* scratch) [[loom::where(!use_async)]] {
+  scratch[workitem] = input[tile * 256u + workitem];
+  loom::kernel::barrier<loom::memory_space::workgroup,
+                        loom::atomic::scope::workgroup,
+                        loom::atomic::ordering::acq_rel>();
+}
+
+template <unsigned SubgroupIndex>
+static LOOM_FORCE_INLINE void stage_iq4xs_input_subgroup(unsigned tile,
+                                                         unsigned workitem,
+                                                         const BFloat2* input,
+                                                         BFloat2* scratch) {
+  auto source = loom::buffer::view<5, 512>(
+      reinterpret_cast<const std::bfloat16_t*>(input), {},
+      loom::encoding::layout::dense<2>());
+  auto source_pair =
+      loom::view::subview<1, 2>(source, {tile, workitem * 2u}, {});
+  auto destination = loom::buffer::view<64, 1, 2>(
+      reinterpret_cast<std::bfloat16_t*>(scratch + SubgroupIndex * 64u), {},
+      loom::encoding::layout::dense<3>());
+  auto transfer = loom::kernel::async::gather<loom::cache::scope::device,
+                                              loom::cache::temporal::regular>(
+      source_pair, destination);
+  auto group = loom::kernel::async::group(transfer);
+  loom::kernel::async::wait<0>(group);
+}
+
+LOOM_TEMPLATE_DEF(stage_iq4xs_input)
+[[loom::target(iq4xs_gfx9_4_target), loom::priority(20)]]
+void stage_iq4xs_input_gfx9_4(bool use_async, unsigned tile, unsigned workitem,
+                              const BFloat2* input, BFloat2* scratch)
+    [[loom::where(use_async)]] {
+  unsigned subgroup = loom::kernel::subgroup::id();
+  if (subgroup == 0u) {
+    stage_iq4xs_input_subgroup<0>(tile, workitem, input, scratch);
+  } else if (subgroup == 1u) {
+    stage_iq4xs_input_subgroup<1>(tile, workitem, input, scratch);
+  } else if (subgroup == 2u) {
+    stage_iq4xs_input_subgroup<2>(tile, workitem, input, scratch);
+  } else {
+    stage_iq4xs_input_subgroup<3>(tile, workitem, input, scratch);
+  }
+  loom::kernel::barrier<loom::memory_space::workgroup,
+                        loom::atomic::scope::workgroup,
+                        loom::atomic::ordering::acq_rel>();
+}
 
 static LOOM_FORCE_INLINE Codes16 iq4nl_table() {
   return {-127, -104, -83, -65, -49, -35, -22, -10,
@@ -126,13 +185,10 @@ void qwen38_iq4xs_gate_up_swiglu(
   Float2 up_accumulator = {};
   [[loom::unroll(tile_unroll_factor), loom::schedule("recurrence")]]
   for (unsigned tile = 0; tile < 5u; ++tile) {
-    scratch_pairs[stage_pair] = input_pairs[tile * 256u + stage_pair];
-    loom::kernel::barrier<loom::memory_space::workgroup,
-                          loom::atomic::scope::workgroup,
-                          loom::atomic::ordering::acq_rel>();
+    stage_iq4xs_input(async_staging, tile, stage_pair, input_pairs,
+                      scratch_pairs);
 
-    [[loom::pipeline(pipeline_depth), loom::unroll(block_unroll_factor),
-      loom::schedule("recurrence")]]
+    [[loom::unroll(block_unroll_factor), loom::schedule("recurrence")]]
     for (unsigned block_in_tile = 0; block_in_tile < 2u; ++block_in_tile) {
       unsigned block_index = tile * 2u + block_in_tile;
       const IQ4XSBlock* gate_block = &gate_row[block_index];
@@ -148,8 +204,7 @@ void qwen38_iq4xs_gate_up_swiglu(
       unsigned group_packet_base = group * 4u;
       unsigned scratch_block_base = block_in_tile * 256u;
 
-      [[loom::pipeline(pipeline_depth), loom::unroll(packet_unroll_factor),
-        loom::schedule("recurrence")]]
+      [[loom::unroll(packet_unroll_factor), loom::schedule("recurrence")]]
       for (unsigned packet = 0; packet < 4u; ++packet) {
         Bytes4 gate_packed = gate_packets[group_packet_base + packet];
         Bytes4 up_packed = up_packets[group_packet_base + packet];
