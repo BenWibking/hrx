@@ -8323,7 +8323,7 @@ DEVICE bool valid_positive(Real value) {
 DEVICE void apply_perturbation(CellRecord* record, int cell, int step, bool enabled, Real* mass) {
 BurnRecord* b = &record->current;
 
-    if (!enabled || step == 0 || step % perturbation_interval != 0) {
+    if (!enabled || step == 0 || static_cast<unsigned>(step) % static_cast<unsigned>(perturbation_interval) != 0) {
         return;
     }
 
