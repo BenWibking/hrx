@@ -93,18 +93,17 @@ static bool loom_low_allocation_loop_edge_write_conflicts(
       interference, &state->assignment_map, &state->write_proposal);
 }
 
-// One canonical target-visible storage unit owned by an assignment or
-// relocation candidate.
-typedef struct loom_low_allocation_loop_edge_storage_unit_t {
-  // Target-visible storage kind containing the unit.
+// Original storage color of one eviction assignment.
+typedef struct loom_low_allocation_loop_edge_eviction_color_t {
+  // Target-visible storage kind containing the assignment.
   loom_low_allocation_location_kind_t location_kind;
-  // Descriptor-defined storage namespace containing the unit.
-  uint32_t storage_key;
-  // Location within the storage namespace.
+  // Exact descriptor register class required by a matching vacancy.
+  uint32_t descriptor_reg_class_id;
+  // Base location within the register class.
   uint32_t location;
-  // Candidate or assignment index owning the unit.
+  // Eviction index owning the color.
   uint32_t owner_index;
-} loom_low_allocation_loop_edge_storage_unit_t;
+} loom_low_allocation_loop_edge_eviction_color_t;
 
 // Contiguous equal-color range in the sorted eviction color table.
 typedef struct loom_low_allocation_loop_edge_eviction_group_t {
@@ -114,14 +113,14 @@ typedef struct loom_low_allocation_loop_edge_eviction_group_t {
   uint32_t color_count;
 } loom_low_allocation_loop_edge_eviction_group_t;
 
-static bool loom_low_allocation_loop_edge_storage_unit_less(
-    const loom_low_allocation_loop_edge_storage_unit_t* lhs,
-    const loom_low_allocation_loop_edge_storage_unit_t* rhs) {
+static bool loom_low_allocation_loop_edge_eviction_color_less(
+    const loom_low_allocation_loop_edge_eviction_color_t* lhs,
+    const loom_low_allocation_loop_edge_eviction_color_t* rhs) {
   if (lhs->location_kind != rhs->location_kind) {
     return lhs->location_kind < rhs->location_kind;
   }
-  if (lhs->storage_key != rhs->storage_key) {
-    return lhs->storage_key < rhs->storage_key;
+  if (lhs->descriptor_reg_class_id != rhs->descriptor_reg_class_id) {
+    return lhs->descriptor_reg_class_id < rhs->descriptor_reg_class_id;
   }
   if (lhs->location != rhs->location) {
     return lhs->location < rhs->location;
@@ -129,18 +128,18 @@ static bool loom_low_allocation_loop_edge_storage_unit_less(
   return lhs->owner_index < rhs->owner_index;
 }
 
-LOOM_DEFINE_ADAPTIVE_SORT(loom_low_allocation_loop_edge_storage_unit_sort,
-                          loom_low_allocation_loop_edge_storage_unit_t,
-                          loom_low_allocation_loop_edge_storage_unit_less)
+LOOM_DEFINE_ADAPTIVE_SORT(loom_low_allocation_loop_edge_eviction_color_sort,
+                          loom_low_allocation_loop_edge_eviction_color_t,
+                          loom_low_allocation_loop_edge_eviction_color_less)
 
-static int loom_low_allocation_loop_edge_storage_unit_key_compare(
-    const loom_low_allocation_loop_edge_storage_unit_t* lhs,
-    const loom_low_allocation_loop_edge_storage_unit_t* rhs) {
+static int loom_low_allocation_loop_edge_eviction_color_key_compare(
+    const loom_low_allocation_loop_edge_eviction_color_t* lhs,
+    const loom_low_allocation_loop_edge_eviction_color_t* rhs) {
   if (lhs->location_kind != rhs->location_kind) {
     return lhs->location_kind < rhs->location_kind ? -1 : 1;
   }
-  if (lhs->storage_key != rhs->storage_key) {
-    return lhs->storage_key < rhs->storage_key ? -1 : 1;
+  if (lhs->descriptor_reg_class_id != rhs->descriptor_reg_class_id) {
+    return lhs->descriptor_reg_class_id < rhs->descriptor_reg_class_id ? -1 : 1;
   }
   if (lhs->location != rhs->location) {
     return lhs->location < rhs->location ? -1 : 1;
@@ -148,75 +147,37 @@ static int loom_low_allocation_loop_edge_storage_unit_key_compare(
   return 0;
 }
 
-static loom_low_allocation_loop_edge_storage_unit_t
-loom_low_allocation_loop_edge_assignment_storage_unit(
-    const loom_low_descriptor_set_t* descriptor_set,
-    const loom_low_allocation_assignment_t* assignment,
-    uint32_t atomic_unit_ordinal, uint32_t owner_index) {
-  loom_low_allocation_loop_edge_storage_unit_t unit = {
-      .location_kind = assignment->location_kind,
-      .owner_index = owner_index,
-  };
-  loom_low_allocation_storage_assignment_atomic_unit(
-      descriptor_set, assignment, atomic_unit_ordinal, &unit.storage_key,
-      &unit.location);
-  return unit;
-}
+typedef struct loom_low_allocation_loop_edge_query_set_t {
+  // Allocation state supplying current assignments to queries.
+  const loom_low_allocation_loop_edge_relocation_context_t* context;
+  // Assignments intersecting a queried physical unit or linear envelope.
+  uint32_t* assignment_indices;
+  // Number of entries in |assignment_indices|.
+  iree_host_size_t assignment_count;
+} loom_low_allocation_loop_edge_query_set_t;
 
-static iree_host_size_t loom_low_allocation_loop_edge_storage_unit_lower_bound(
-    const loom_low_allocation_loop_edge_storage_unit_t* units,
-    iree_host_size_t unit_count,
-    const loom_low_allocation_loop_edge_storage_unit_t* key) {
-  iree_host_size_t low = 0;
-  iree_host_size_t high = unit_count;
-  while (low < high) {
-    const iree_host_size_t middle = low + (high - low) / 2;
-    if (loom_low_allocation_loop_edge_storage_unit_key_compare(&units[middle],
-                                                               key) < 0) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-  return low;
-}
-
-typedef struct loom_low_allocation_loop_edge_candidate_index_t {
-  // Sorted unique target storage units indexed by relocation candidate.
-  loom_low_allocation_loop_edge_storage_unit_t* units;
-  // Number of entries in units.
-  iree_host_size_t unit_count;
-} loom_low_allocation_loop_edge_candidate_index_t;
-
-typedef struct loom_low_allocation_loop_edge_assignment_index_t {
-  // Sorted storage units indexed by assignment.
-  loom_low_allocation_loop_edge_storage_unit_t* units;
-  // Number of entries in units.
-  iree_host_size_t unit_count;
-  // Last query generation visiting each assignment.
-  uint32_t* seen_generations;
-  // Current nonzero query generation.
-  uint32_t seen_generation;
-} loom_low_allocation_loop_edge_assignment_index_t;
+// Coarse span covering every queried range in one linear storage namespace.
+typedef struct loom_low_allocation_loop_edge_query_envelope_t {
+  // Target-visible storage kind containing the span.
+  loom_low_allocation_location_kind_t location_kind;
+  // Descriptor-defined linear storage namespace containing the span.
+  uint32_t storage_key;
+  // Smallest queried location in the namespace.
+  uint32_t minimum_location;
+  // One-past-largest queried location in the namespace.
+  uint64_t exclusive_maximum_location;
+} loom_low_allocation_loop_edge_query_envelope_t;
 
 // Unique assignment owners overlapping one storage assignment.
 typedef struct loom_low_allocation_loop_edge_assignment_query_t {
-  // Index being queried.
-  loom_low_allocation_loop_edge_assignment_index_t* index;
-  // Descriptor set used to project assignment storage.
+  // Header-local relevant assignment set being queried.
+  const loom_low_allocation_loop_edge_query_set_t* set;
+  // Descriptor set defining storage overlap.
   const loom_low_descriptor_set_t* descriptor_set;
-  // Assignment whose physical storage is being queried.
+  // Target or vacated-destination storage queried by the caller.
   const loom_low_allocation_assignment_t* assignment;
-  // Current projected storage key.
-  loom_low_allocation_loop_edge_storage_unit_t key;
-  // Next atomic unit to project after key.
-  uint32_t atomic_unit_ordinal;
-  // Total atomic units in assignment.
-  uint32_t atomic_unit_count;
-  // Current position in the sorted index.
+  // Current position in the relevant owner list.
   iree_host_size_t position;
-  // Generation marking owners already returned by this query.
-  uint32_t seen_generation;
 } loom_low_allocation_loop_edge_assignment_query_t;
 
 static iree_status_t loom_low_allocation_loop_edge_relocation_consumption_query(
@@ -546,15 +507,10 @@ static iree_status_t loom_low_allocation_loop_edge_relocation_collect_candidate(
       state, out_candidate, out_candidate_found);
 }
 
-static iree_status_t
-loom_low_allocation_loop_edge_relocation_candidate_index_initialize(
+static bool loom_low_allocation_loop_edge_relocation_candidates_are_disjoint(
     const loom_low_allocation_loop_edge_relocation_state_t* state,
     const loom_low_allocation_loop_edge_candidate_t* candidates,
-    iree_host_size_t candidate_count, uint8_t* component_markers,
-    loom_low_allocation_loop_edge_candidate_index_t* out_index,
-    bool* out_candidates_are_disjoint) {
-  *out_index = (loom_low_allocation_loop_edge_candidate_index_t){0};
-  *out_candidates_are_disjoint = false;
+    iree_host_size_t candidate_count, uint8_t* component_markers) {
   const loom_low_allocation_loop_edge_relocation_context_t* context =
       state->context;
 
@@ -578,275 +534,207 @@ loom_low_allocation_loop_edge_relocation_candidate_index_initialize(
     component_markers[representative] = 0;
   }
   if (marked_candidate_count != candidate_count) {
-    return iree_ok_status();
+    return false;
   }
 
-  iree_host_size_t unit_count = 0;
+  // Candidate count is bounded by the loop header's argument count. Compare
+  // their ranges directly.
   for (iree_host_size_t i = 0; i < candidate_count; ++i) {
-    const uint32_t candidate_unit_count =
-        loom_low_allocation_storage_assignment_atomic_unit_count(
-            context->descriptor_set, &candidates[i].assignment);
-    if (!iree_host_size_checked_add(unit_count, candidate_unit_count,
-                                    &unit_count)) {
-      return iree_make_status(
-          IREE_STATUS_RESOURCE_EXHAUSTED,
-          "loop edge candidate storage projection exceeds host size");
+    for (iree_host_size_t j = 0; j < i; ++j) {
+      if (loom_low_allocation_storage_assignment_ranges_overlap(
+              context->descriptor_set, &candidates[i].assignment,
+              &candidates[j].assignment)) {
+        return false;
+      }
     }
   }
-  loom_low_allocation_loop_edge_storage_unit_t* units = NULL;
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      state->scratch_arena, unit_count, sizeof(*units), (void**)&units));
-  iree_host_size_t unit_index = 0;
-  for (iree_host_size_t i = 0; i < candidate_count; ++i) {
-    const uint32_t candidate_unit_count =
-        loom_low_allocation_storage_assignment_atomic_unit_count(
-            context->descriptor_set, &candidates[i].assignment);
-    for (uint32_t j = 0; j < candidate_unit_count; ++j) {
-      units[unit_index++] =
-          loom_low_allocation_loop_edge_assignment_storage_unit(
-              context->descriptor_set, &candidates[i].assignment, j,
-              (uint32_t)i);
-    }
-  }
-  loom_low_allocation_loop_edge_storage_unit_sort(units, unit_count);
-  for (iree_host_size_t i = 1; i < unit_count; ++i) {
-    if (loom_low_allocation_loop_edge_storage_unit_key_compare(
-            &units[i - 1], &units[i]) == 0) {
-      return iree_ok_status();
-    }
-  }
-
-  *out_index = (loom_low_allocation_loop_edge_candidate_index_t){
-      .units = units,
-      .unit_count = unit_count,
-  };
-  *out_candidates_are_disjoint = true;
-  return iree_ok_status();
+  return true;
 }
 
-static bool loom_low_allocation_loop_edge_candidate_index_overlaps_assignment(
-    const loom_low_allocation_loop_edge_candidate_index_t* index,
+static bool loom_low_allocation_loop_edge_candidates_overlap_assignment(
     const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_allocation_loop_edge_candidate_t* candidates,
+    iree_host_size_t candidate_count,
     const loom_low_allocation_assignment_t* assignment) {
-  const uint32_t unit_count =
-      loom_low_allocation_storage_assignment_atomic_unit_count(descriptor_set,
-                                                               assignment);
-  for (uint32_t i = 0; i < unit_count; ++i) {
-    const loom_low_allocation_loop_edge_storage_unit_t key =
-        loom_low_allocation_loop_edge_assignment_storage_unit(
-            descriptor_set, assignment, i, /*owner_index=*/0);
-    const iree_host_size_t position =
-        loom_low_allocation_loop_edge_storage_unit_lower_bound(
-            index->units, index->unit_count, &key);
-    if (position < index->unit_count &&
-        loom_low_allocation_loop_edge_storage_unit_key_compare(
-            &index->units[position], &key) == 0) {
+  for (iree_host_size_t i = 0; i < candidate_count; ++i) {
+    if (loom_low_allocation_storage_assignment_ranges_overlap(
+            descriptor_set, &candidates[i].assignment, assignment)) {
       return true;
     }
   }
   return false;
 }
 
-// Builds the sorted set of storage keys one header's queries can reach: the
-// candidates' target storage and the destinations they vacate (the only
-// locations offered to evictions).
-static iree_status_t loom_low_allocation_loop_edge_relocation_query_keys(
-    const loom_low_allocation_loop_edge_relocation_state_t* state,
-    const loom_low_allocation_loop_edge_candidate_t* candidates,
-    iree_host_size_t candidate_count,
-    const loom_low_allocation_loop_edge_candidate_index_t* candidate_index,
-    loom_low_allocation_loop_edge_storage_unit_t** out_keys,
-    iree_host_size_t* out_key_count) {
-  const loom_low_allocation_loop_edge_relocation_context_t* context =
-      state->context;
-  iree_host_size_t key_count = candidate_index->unit_count;
-  for (iree_host_size_t i = 0; i < candidate_count; ++i) {
-    const uint32_t destination_unit_count =
-        loom_low_allocation_storage_assignment_atomic_unit_count(
-            context->descriptor_set,
-            &context->assignments[candidates[i].destination_assignment_index]);
-    if (!iree_host_size_checked_add(key_count, destination_unit_count,
-                                    &key_count)) {
-      return iree_make_status(
-          IREE_STATUS_RESOURCE_EXHAUSTED,
-          "loop edge query storage projection exceeds host size");
+static void loom_low_allocation_loop_edge_include_query_range(
+    const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_allocation_assignment_t* assignment,
+    uint8_t* queried_physical_units,
+    loom_low_allocation_loop_edge_query_envelope_t* envelopes,
+    iree_host_size_t* inout_envelope_count) {
+  if (loom_low_allocation_storage_assignment_uses_explicit_physical_register(
+          descriptor_set, assignment)) {
+    const uint32_t unit_count =
+        loom_low_allocation_storage_assignment_atomic_unit_count(descriptor_set,
+                                                                 assignment);
+    for (uint32_t i = 0; i < unit_count; ++i) {
+      uint32_t unused_storage_key = 0;
+      uint32_t physical_unit = 0;
+      loom_low_allocation_storage_assignment_atomic_unit(
+          descriptor_set, assignment, i, &unused_storage_key, &physical_unit);
+      queried_physical_units[physical_unit] = 1;
     }
+    return;
   }
-  loom_low_allocation_loop_edge_storage_unit_t* keys = NULL;
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      state->scratch_arena, key_count, sizeof(*keys), (void**)&keys));
-  memcpy(keys, candidate_index->units,
-         candidate_index->unit_count * sizeof(*keys));
-  iree_host_size_t key_index = candidate_index->unit_count;
-  for (iree_host_size_t i = 0; i < candidate_count; ++i) {
-    const loom_low_allocation_assignment_t* destination =
-        &context->assignments[candidates[i].destination_assignment_index];
-    const uint32_t destination_unit_count =
-        loom_low_allocation_storage_assignment_atomic_unit_count(
-            context->descriptor_set, destination);
-    for (uint32_t j = 0; j < destination_unit_count; ++j) {
-      keys[key_index++] = loom_low_allocation_loop_edge_assignment_storage_unit(
-          context->descriptor_set, destination, j, /*owner_index=*/0);
+
+  const uint32_t storage_key = loom_low_reg_class_storage_key(
+      descriptor_set, assignment->descriptor_reg_class_id);
+  const uint64_t exclusive_maximum_location =
+      (uint64_t)assignment->location_base + assignment->location_count;
+  for (iree_host_size_t i = 0; i < *inout_envelope_count; ++i) {
+    loom_low_allocation_loop_edge_query_envelope_t* envelope = &envelopes[i];
+    if (envelope->location_kind != assignment->location_kind ||
+        envelope->storage_key != storage_key) {
+      continue;
     }
+    envelope->minimum_location =
+        iree_min(envelope->minimum_location, assignment->location_base);
+    envelope->exclusive_maximum_location = iree_max(
+        envelope->exclusive_maximum_location, exclusive_maximum_location);
+    return;
   }
-  loom_low_allocation_loop_edge_storage_unit_sort(keys, key_count);
-  *out_keys = keys;
-  *out_key_count = key_count;
-  return iree_ok_status();
+  envelopes[(*inout_envelope_count)++] =
+      (loom_low_allocation_loop_edge_query_envelope_t){
+          .location_kind = assignment->location_kind,
+          .storage_key = storage_key,
+          .minimum_location = assignment->location_base,
+          .exclusive_maximum_location = exclusive_maximum_location,
+      };
 }
 
-static bool loom_low_allocation_loop_edge_storage_keys_contain(
-    const loom_low_allocation_loop_edge_storage_unit_t* keys,
-    iree_host_size_t key_count,
-    const loom_low_allocation_loop_edge_storage_unit_t* key) {
-  const iree_host_size_t position =
-      loom_low_allocation_loop_edge_storage_unit_lower_bound(keys, key_count,
-                                                             key);
-  return position < key_count &&
-         loom_low_allocation_loop_edge_storage_unit_key_compare(
-             &keys[position], key) == 0;
-}
-
-// Indexes the storage of every unignored register-like assignment that a
-// header's queries can reach. Queries only probe candidate targets and the
-// destinations they vacate, so units elsewhere are never visited; skipping
-// them keeps the per-header cost to one projection pass over the function
-// instead of sorting every assignment's storage for every loop header.
+// Retains assignments that may be reachable by one header's queries: targets
+// and the destinations they may vacate. Candidate count is bounded by the loop
+// header's argument count. Descriptor-owned physical-unit ordinals and coarse
+// linear-storage envelopes reject unrelated assignments in one table pass.
 static iree_status_t
-loom_low_allocation_loop_edge_relocation_assignment_index_initialize(
+loom_low_allocation_loop_edge_relocation_query_set_initialize(
     const loom_low_allocation_loop_edge_relocation_state_t* state,
     const loom_low_allocation_loop_edge_candidate_t* candidates,
-    iree_host_size_t candidate_count,
-    const loom_low_allocation_loop_edge_candidate_index_t* candidate_index,
-    const uint8_t* ignored_assignments,
-    loom_low_allocation_loop_edge_assignment_index_t* out_index) {
-  *out_index = (loom_low_allocation_loop_edge_assignment_index_t){0};
+    iree_host_size_t candidate_count, const uint8_t* ignored_assignments,
+    loom_low_allocation_loop_edge_query_set_t* out_set) {
+  *out_set = (loom_low_allocation_loop_edge_query_set_t){0};
   const loom_low_allocation_loop_edge_relocation_context_t* context =
       state->context;
-  loom_low_allocation_loop_edge_storage_unit_t* keys = NULL;
-  iree_host_size_t key_count = 0;
-  IREE_RETURN_IF_ERROR(loom_low_allocation_loop_edge_relocation_query_keys(
-      state, candidates, candidate_count, candidate_index, &keys, &key_count));
+  const loom_low_descriptor_set_t* descriptor_set = context->descriptor_set;
 
-  iree_host_size_t unit_count = 0;
-  for (iree_host_size_t i = 0; i < context->assignment_count; ++i) {
-    const loom_low_allocation_assignment_t* assignment =
-        &context->assignments[i];
-    if (ignored_assignments[i] ||
-        !loom_low_allocation_assignment_is_register_like(assignment)) {
-      continue;
-    }
-    const uint32_t assignment_unit_count =
-        loom_low_allocation_storage_assignment_atomic_unit_count(
-            context->descriptor_set, assignment);
-    for (uint32_t j = 0; j < assignment_unit_count; ++j) {
-      const loom_low_allocation_loop_edge_storage_unit_t unit =
-          loom_low_allocation_loop_edge_assignment_storage_unit(
-              context->descriptor_set, assignment, j, (uint32_t)i);
-      if (loom_low_allocation_loop_edge_storage_keys_contain(keys, key_count,
-                                                             &unit)) {
-        ++unit_count;
-      }
-    }
+  uint8_t* queried_physical_units = NULL;
+  if (descriptor_set->physical_register_unit_count != 0) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        state->scratch_arena, descriptor_set->physical_register_unit_count,
+        sizeof(*queried_physical_units), (void**)&queried_physical_units));
+    memset(queried_physical_units, 0,
+           descriptor_set->physical_register_unit_count *
+               sizeof(*queried_physical_units));
+  }
+  loom_low_allocation_loop_edge_query_envelope_t* envelopes = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(state->scratch_arena, candidate_count * 2,
+                                sizeof(*envelopes), (void**)&envelopes));
+  iree_host_size_t envelope_count = 0;
+  for (iree_host_size_t i = 0; i < candidate_count; ++i) {
+    loom_low_allocation_loop_edge_include_query_range(
+        descriptor_set, &candidates[i].assignment, queried_physical_units,
+        envelopes, &envelope_count);
+    loom_low_allocation_loop_edge_include_query_range(
+        descriptor_set,
+        &context->assignments[candidates[i].destination_assignment_index],
+        queried_physical_units, envelopes, &envelope_count);
   }
 
-  loom_low_allocation_loop_edge_storage_unit_t* units = NULL;
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      state->scratch_arena, unit_count, sizeof(*units), (void**)&units));
-  iree_host_size_t unit_index = 0;
-  for (iree_host_size_t i = 0; i < context->assignment_count; ++i) {
-    const loom_low_allocation_assignment_t* assignment =
-        &context->assignments[i];
-    if (ignored_assignments[i] ||
-        !loom_low_allocation_assignment_is_register_like(assignment)) {
-      continue;
-    }
-    const uint32_t assignment_unit_count =
-        loom_low_allocation_storage_assignment_atomic_unit_count(
-            context->descriptor_set, assignment);
-    for (uint32_t j = 0; j < assignment_unit_count; ++j) {
-      const loom_low_allocation_loop_edge_storage_unit_t unit =
-          loom_low_allocation_loop_edge_assignment_storage_unit(
-              context->descriptor_set, assignment, j, (uint32_t)i);
-      if (loom_low_allocation_loop_edge_storage_keys_contain(keys, key_count,
-                                                             &unit)) {
-        units[unit_index++] = unit;
-      }
-    }
-  }
-  loom_low_allocation_loop_edge_storage_unit_sort(units, unit_count);
-
-  uint32_t* seen_generations = NULL;
+  uint32_t* assignment_indices = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       state->scratch_arena, context->assignment_count,
-      sizeof(*seen_generations), (void**)&seen_generations));
-  memset(seen_generations, 0,
-         context->assignment_count * sizeof(*seen_generations));
-  *out_index = (loom_low_allocation_loop_edge_assignment_index_t){
-      .units = units,
-      .unit_count = unit_count,
-      .seen_generations = seen_generations,
+      sizeof(*assignment_indices), (void**)&assignment_indices));
+  iree_host_size_t assignment_count = 0;
+  for (iree_host_size_t i = 0; i < context->assignment_count; ++i) {
+    const loom_low_allocation_assignment_t* assignment =
+        &context->assignments[i];
+    if (ignored_assignments[i] ||
+        !loom_low_allocation_assignment_is_register_like(assignment)) {
+      continue;
+    }
+    bool is_relevant = false;
+    if (loom_low_allocation_storage_assignment_uses_explicit_physical_register(
+            descriptor_set, assignment)) {
+      const uint32_t unit_count =
+          loom_low_allocation_storage_assignment_atomic_unit_count(
+              descriptor_set, assignment);
+      for (uint32_t j = 0; j < unit_count; ++j) {
+        uint32_t unused_storage_key = 0;
+        uint32_t physical_unit = 0;
+        loom_low_allocation_storage_assignment_atomic_unit(
+            descriptor_set, assignment, j, &unused_storage_key, &physical_unit);
+        if (queried_physical_units[physical_unit]) {
+          is_relevant = true;
+          break;
+        }
+      }
+    } else {
+      const uint32_t storage_key = loom_low_reg_class_storage_key(
+          descriptor_set, assignment->descriptor_reg_class_id);
+      const uint64_t assignment_begin = assignment->location_base;
+      const uint64_t assignment_end =
+          assignment_begin + assignment->location_count;
+      for (iree_host_size_t j = 0; j < envelope_count; ++j) {
+        const loom_low_allocation_loop_edge_query_envelope_t* envelope =
+            &envelopes[j];
+        if (assignment->location_kind == envelope->location_kind &&
+            storage_key == envelope->storage_key &&
+            assignment_begin < envelope->exclusive_maximum_location &&
+            envelope->minimum_location < assignment_end) {
+          is_relevant = true;
+          break;
+        }
+      }
+    }
+    if (is_relevant) {
+      assignment_indices[assignment_count++] = (uint32_t)i;
+    }
+  }
+
+  *out_set = (loom_low_allocation_loop_edge_query_set_t){
+      .context = context,
+      .assignment_indices = assignment_indices,
+      .assignment_count = assignment_count,
   };
   return iree_ok_status();
 }
 
-static uint32_t loom_low_allocation_loop_edge_assignment_index_next_generation(
-    loom_low_allocation_loop_edge_assignment_index_t* index,
-    iree_host_size_t assignment_count) {
-  if (index->seen_generation == UINT32_MAX) {
-    memset(index->seen_generations, 0,
-           assignment_count * sizeof(*index->seen_generations));
-    index->seen_generation = 0;
-  }
-  return ++index->seen_generation;
-}
-
 static void loom_low_allocation_loop_edge_assignment_query_initialize(
-    loom_low_allocation_loop_edge_assignment_index_t* index,
+    const loom_low_allocation_loop_edge_query_set_t* set,
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_allocation_assignment_t* assignment,
-    iree_host_size_t assignment_count,
     loom_low_allocation_loop_edge_assignment_query_t* out_query) {
   *out_query = (loom_low_allocation_loop_edge_assignment_query_t){
-      .index = index,
+      .set = set,
       .descriptor_set = descriptor_set,
       .assignment = assignment,
-      .atomic_unit_count =
-          loom_low_allocation_storage_assignment_atomic_unit_count(
-              descriptor_set, assignment),
-      .position = index->unit_count,
-      .seen_generation =
-          loom_low_allocation_loop_edge_assignment_index_next_generation(
-              index, assignment_count),
   };
 }
 
 static bool loom_low_allocation_loop_edge_assignment_query_next(
     loom_low_allocation_loop_edge_assignment_query_t* query,
     uint32_t* out_assignment_index) {
-  while (true) {
-    while (query->position < query->index->unit_count &&
-           loom_low_allocation_loop_edge_storage_unit_key_compare(
-               &query->index->units[query->position], &query->key) == 0) {
-      const uint32_t assignment_index =
-          query->index->units[query->position++].owner_index;
-      if (query->index->seen_generations[assignment_index] ==
-          query->seen_generation) {
-        continue;
-      }
-      query->index->seen_generations[assignment_index] = query->seen_generation;
+  while (query->position < query->set->assignment_count) {
+    const uint32_t assignment_index =
+        query->set->assignment_indices[query->position++];
+    if (loom_low_allocation_storage_assignment_ranges_overlap(
+            query->descriptor_set, query->assignment,
+            &query->set->context->assignments[assignment_index])) {
       *out_assignment_index = assignment_index;
       return true;
     }
-    if (query->atomic_unit_ordinal == query->atomic_unit_count) {
-      return false;
-    }
-    query->key = loom_low_allocation_loop_edge_assignment_storage_unit(
-        query->descriptor_set, query->assignment, query->atomic_unit_ordinal++,
-        /*owner_index=*/0);
-    query->position = loom_low_allocation_loop_edge_storage_unit_lower_bound(
-        query->index->units, query->index->unit_count, &query->key);
   }
+  return false;
 }
 
 static bool loom_low_allocation_loop_edge_relocation_candidate_target_conflicts(
@@ -909,17 +797,15 @@ static bool loom_low_allocation_loop_edge_relocation_assignment_conflicts(
   return false;
 }
 
-static bool
-loom_low_allocation_loop_edge_relocation_candidate_has_indexed_conflict(
+static bool loom_low_allocation_loop_edge_relocation_candidate_has_conflict(
     const loom_low_allocation_loop_edge_relocation_state_t* state,
     const loom_low_allocation_loop_edge_candidate_t* candidate,
-    loom_low_allocation_loop_edge_assignment_index_t* assignment_index) {
+    const loom_low_allocation_loop_edge_query_set_t* query_set) {
   const loom_low_allocation_loop_edge_relocation_context_t* context =
       state->context;
   loom_low_allocation_loop_edge_assignment_query_t query;
   loom_low_allocation_loop_edge_assignment_query_initialize(
-      assignment_index, context->descriptor_set, &candidate->assignment,
-      context->assignment_count, &query);
+      query_set, context->descriptor_set, &candidate->assignment, &query);
   uint32_t existing_assignment_index = 0;
   while (loom_low_allocation_loop_edge_assignment_query_next(
       &query, &existing_assignment_index)) {
@@ -937,7 +823,7 @@ loom_low_allocation_loop_edge_relocation_collect_conflict_assignments(
     const loom_low_allocation_loop_edge_relocation_state_t* state,
     const loom_low_allocation_loop_edge_candidate_t* candidates,
     iree_host_size_t candidate_count,
-    loom_low_allocation_loop_edge_assignment_index_t* assignment_index,
+    const loom_low_allocation_loop_edge_query_set_t* query_set,
     uint8_t* conflict_assignments, iree_host_size_t* out_conflict_count) {
   *out_conflict_count = 0;
   const loom_low_allocation_loop_edge_relocation_context_t* context =
@@ -945,8 +831,7 @@ loom_low_allocation_loop_edge_relocation_collect_conflict_assignments(
   for (iree_host_size_t i = 0; i < candidate_count; ++i) {
     loom_low_allocation_loop_edge_assignment_query_t query;
     loom_low_allocation_loop_edge_assignment_query_initialize(
-        assignment_index, context->descriptor_set, &candidates[i].assignment,
-        context->assignment_count, &query);
+        query_set, context->descriptor_set, &candidates[i].assignment, &query);
     uint32_t existing_assignment_index = 0;
     while (loom_low_allocation_loop_edge_assignment_query_next(
         &query, &existing_assignment_index)) {
@@ -1058,7 +943,7 @@ loom_low_allocation_loop_edge_relocation_initialize_eviction_groups(
     iree_arena_allocator_t* scratch_arena,
     const loom_low_allocation_loop_edge_eviction_t* evictions,
     iree_host_size_t eviction_count,
-    loom_low_allocation_loop_edge_storage_unit_t** out_colors,
+    loom_low_allocation_loop_edge_eviction_color_t** out_colors,
     loom_low_allocation_loop_edge_eviction_group_t** out_groups,
     iree_host_size_t* out_group_count) {
   *out_colors = NULL;
@@ -1068,20 +953,20 @@ loom_low_allocation_loop_edge_relocation_initialize_eviction_groups(
     return iree_ok_status();
   }
 
-  loom_low_allocation_loop_edge_storage_unit_t* colors = NULL;
+  loom_low_allocation_loop_edge_eviction_color_t* colors = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       scratch_arena, eviction_count, sizeof(*colors), (void**)&colors));
   for (iree_host_size_t i = 0; i < eviction_count; ++i) {
     const loom_low_allocation_assignment_t* assignment =
         &evictions[i].assignment;
-    colors[i] = (loom_low_allocation_loop_edge_storage_unit_t){
+    colors[i] = (loom_low_allocation_loop_edge_eviction_color_t){
         .location_kind = assignment->location_kind,
-        .storage_key = assignment->descriptor_reg_class_id,
+        .descriptor_reg_class_id = assignment->descriptor_reg_class_id,
         .location = assignment->location_base,
         .owner_index = (uint32_t)i,
     };
   }
-  loom_low_allocation_loop_edge_storage_unit_sort(colors, eviction_count);
+  loom_low_allocation_loop_edge_eviction_color_sort(colors, eviction_count);
 
   loom_low_allocation_loop_edge_eviction_group_t* groups = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
@@ -1090,7 +975,7 @@ loom_low_allocation_loop_edge_relocation_initialize_eviction_groups(
   for (iree_host_size_t group_start = 0; group_start < eviction_count;) {
     iree_host_size_t group_end = group_start + 1;
     while (group_end < eviction_count &&
-           loom_low_allocation_loop_edge_storage_unit_key_compare(
+           loom_low_allocation_loop_edge_eviction_color_key_compare(
                &colors[group_start], &colors[group_end]) == 0) {
       ++group_end;
     }
@@ -1117,17 +1002,16 @@ loom_low_allocation_loop_edge_relocation_initialize_eviction_groups(
   return iree_ok_status();
 }
 
-static bool loom_low_allocation_loop_edge_assignment_index_conflicts(
+static bool loom_low_allocation_loop_edge_query_set_conflicts(
     const loom_low_allocation_loop_edge_relocation_state_t* state,
-    loom_low_allocation_loop_edge_assignment_index_t* index,
+    const loom_low_allocation_loop_edge_query_set_t* query_set,
     const loom_low_allocation_assignment_t* candidate,
     const uint8_t* ignored_assignments) {
   const loom_low_allocation_loop_edge_relocation_context_t* context =
       state->context;
   loom_low_allocation_loop_edge_assignment_query_t query;
   loom_low_allocation_loop_edge_assignment_query_initialize(
-      index, context->descriptor_set, candidate, context->assignment_count,
-      &query);
+      query_set, context->descriptor_set, candidate, &query);
   uint32_t existing_assignment_index = 0;
   while (loom_low_allocation_loop_edge_assignment_query_next(
       &query, &existing_assignment_index)) {
@@ -1149,13 +1033,15 @@ static bool loom_low_allocation_loop_edge_assignment_index_conflicts(
 
 static bool loom_low_allocation_loop_edge_relocation_eviction_location_is_legal(
     const loom_low_allocation_loop_edge_relocation_state_t* state,
-    const loom_low_allocation_loop_edge_candidate_index_t* candidate_index,
-    loom_low_allocation_loop_edge_assignment_index_t* assignment_index,
+    const loom_low_allocation_loop_edge_candidate_t* candidates,
+    iree_host_size_t candidate_count,
+    const loom_low_allocation_loop_edge_query_set_t* query_set,
     const loom_low_allocation_loop_edge_eviction_t* eviction,
-    const loom_low_allocation_loop_edge_candidate_t* vacancy,
-    const uint8_t* ignored_assignments) {
+    uint32_t vacancy_candidate_index, const uint8_t* ignored_assignments) {
   const loom_low_allocation_loop_edge_relocation_context_t* context =
       state->context;
+  const loom_low_allocation_loop_edge_candidate_t* vacancy =
+      &candidates[vacancy_candidate_index];
   const loom_low_allocation_assignment_t* vacated_assignment =
       &context->assignments[vacancy->destination_assignment_index];
   if (eviction->assignment.descriptor_reg_class_id !=
@@ -1181,10 +1067,10 @@ static bool loom_low_allocation_loop_edge_relocation_eviction_location_is_legal(
   if (assignment.location_base % required_alignment != 0) {
     return false;
   }
-  if (loom_low_allocation_loop_edge_candidate_index_overlaps_assignment(
-          candidate_index, context->descriptor_set, &assignment) ||
-      loom_low_allocation_loop_edge_assignment_index_conflicts(
-          state, assignment_index, &assignment, ignored_assignments)) {
+  if (loom_low_allocation_loop_edge_candidates_overlap_assignment(
+          context->descriptor_set, candidates, candidate_count, &assignment) ||
+      loom_low_allocation_loop_edge_query_set_conflicts(
+          state, query_set, &assignment, ignored_assignments)) {
     return false;
   }
   if (loom_low_allocation_target_constraints_fixed_storage_conflicts(
@@ -1207,16 +1093,16 @@ static bool loom_low_allocation_loop_edge_relocation_eviction_location_is_legal(
 typedef struct loom_low_allocation_loop_edge_matching_t {
   // Loop relocation state owning assignments and target constraints.
   const loom_low_allocation_loop_edge_relocation_state_t* state;
-  // Unique target storage units occupied by relocation candidates.
-  const loom_low_allocation_loop_edge_candidate_index_t* candidate_index;
-  // Indexed original assignment storage used by legality queries.
-  loom_low_allocation_loop_edge_assignment_index_t* assignment_index;
+  // Relevant original assignments used by legality queries.
+  const loom_low_allocation_loop_edge_query_set_t* query_set;
   // Complete loop-header candidate group.
   const loom_low_allocation_loop_edge_candidate_t* candidates;
+  // Number of entries in |candidates|.
+  iree_host_size_t candidate_count;
   // External values that must leave candidate target locations.
   const loom_low_allocation_loop_edge_eviction_t* evictions;
   // Evictions ordered by their original storage color.
-  const loom_low_allocation_loop_edge_storage_unit_t* eviction_colors;
+  const loom_low_allocation_loop_edge_eviction_color_t* eviction_colors;
   // Equal-color eviction spans in matching-policy order.
   const loom_low_allocation_loop_edge_eviction_group_t* eviction_groups;
   // Number of distinct storage-color groups.
@@ -1284,12 +1170,12 @@ static bool loom_low_allocation_loop_edge_relocation_eviction_group_is_legal(
   for (uint32_t i = 0; i < group->color_count; ++i) {
     const uint32_t eviction_index =
         matching->eviction_colors[group->color_start + i].owner_index;
+    const uint32_t vacancy_candidate_index =
+        matching->vacancy_candidate_indices[vacancy_index];
     if (!loom_low_allocation_loop_edge_relocation_eviction_location_is_legal(
-            matching->state, matching->candidate_index,
-            matching->assignment_index, &matching->evictions[eviction_index],
-            &matching->candidates
-                 [matching->vacancy_candidate_indices[vacancy_index]],
-            matching->ignored_assignments)) {
+            matching->state, matching->candidates, matching->candidate_count,
+            matching->query_set, &matching->evictions[eviction_index],
+            vacancy_candidate_index, matching->ignored_assignments)) {
       return false;
     }
   }
@@ -1356,8 +1242,7 @@ static iree_status_t loom_low_allocation_loop_edge_relocation_try_full_group(
     loom_low_allocation_loop_edge_relocation_state_t* state,
     const loom_low_allocation_loop_edge_candidate_t* candidates,
     iree_host_size_t candidate_count,
-    const loom_low_allocation_loop_edge_candidate_index_t* candidate_index,
-    loom_low_allocation_loop_edge_assignment_index_t* assignment_index,
+    const loom_low_allocation_loop_edge_query_set_t* query_set,
     const uint8_t* ignored_assignments, bool* out_applied,
     iree_host_size_t* out_recolored_value_count) {
   *out_applied = false;
@@ -1375,8 +1260,8 @@ static iree_status_t loom_low_allocation_loop_edge_relocation_try_full_group(
          context->assignment_count * sizeof(*conflict_assignments));
   iree_host_size_t conflict_count = 0;
   loom_low_allocation_loop_edge_relocation_collect_conflict_assignments(
-      state, candidates, candidate_count, assignment_index,
-      conflict_assignments, &conflict_count);
+      state, candidates, candidate_count, query_set, conflict_assignments,
+      &conflict_count);
 
   uint32_t* vacancy_candidate_indices = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
@@ -1387,55 +1272,29 @@ static iree_status_t loom_low_allocation_loop_edge_relocation_try_full_group(
     const loom_low_allocation_assignment_t* old_destination =
         &context->assignments[candidates[i].destination_assignment_index];
     const bool location_remains_occupied =
-        loom_low_allocation_loop_edge_candidate_index_overlaps_assignment(
-            candidate_index, context->descriptor_set, old_destination);
+        loom_low_allocation_loop_edge_candidates_overlap_assignment(
+            context->descriptor_set, candidates, candidate_count,
+            old_destination);
     if (!location_remains_occupied) {
       vacancy_candidate_indices[vacancy_count++] = (uint32_t)i;
     }
   }
-  iree_host_size_t vacancy_unit_count = 0;
   for (iree_host_size_t i = 0; i < vacancy_count; ++i) {
-    const loom_low_allocation_assignment_t* vacancy =
+    const loom_low_allocation_assignment_t* lhs =
         &context->assignments[candidates[vacancy_candidate_indices[i]]
                                   .destination_assignment_index];
-    const uint32_t unit_count =
-        loom_low_allocation_storage_assignment_atomic_unit_count(
-            context->descriptor_set, vacancy);
-    if (!iree_host_size_checked_add(vacancy_unit_count, unit_count,
-                                    &vacancy_unit_count)) {
-      return iree_make_status(
-          IREE_STATUS_RESOURCE_EXHAUSTED,
-          "loop edge vacancy storage projection exceeds host size");
-    }
-  }
-  loom_low_allocation_loop_edge_storage_unit_t* vacancy_units = NULL;
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      state->scratch_arena, vacancy_unit_count, sizeof(*vacancy_units),
-      (void**)&vacancy_units));
-  iree_host_size_t vacancy_unit_index = 0;
-  for (iree_host_size_t i = 0; i < vacancy_count; ++i) {
-    const loom_low_allocation_assignment_t* vacancy =
-        &context->assignments[candidates[vacancy_candidate_indices[i]]
-                                  .destination_assignment_index];
-    const uint32_t unit_count =
-        loom_low_allocation_storage_assignment_atomic_unit_count(
-            context->descriptor_set, vacancy);
-    for (uint32_t j = 0; j < unit_count; ++j) {
-      vacancy_units[vacancy_unit_index++] =
-          loom_low_allocation_loop_edge_assignment_storage_unit(
-              context->descriptor_set, vacancy, j, (uint32_t)i);
-    }
-  }
-  loom_low_allocation_loop_edge_storage_unit_sort(vacancy_units,
-                                                  vacancy_unit_count);
-  for (iree_host_size_t i = 1; i < vacancy_unit_count; ++i) {
-    // A physical location can host at most one eviction color. Header values
-    // may share storage when their unit liveness is disjoint, so reject the
-    // full recoloring path when two apparent vacancies alias. The subset
-    // relocation path below can still apply moves that need no eviction.
-    if (loom_low_allocation_loop_edge_storage_unit_key_compare(
-            &vacancy_units[i - 1], &vacancy_units[i]) == 0) {
-      return iree_ok_status();
+    for (iree_host_size_t j = 0; j < i; ++j) {
+      const loom_low_allocation_assignment_t* rhs =
+          &context->assignments[candidates[vacancy_candidate_indices[j]]
+                                    .destination_assignment_index];
+      // A physical location can host at most one eviction color. Header values
+      // may share storage when their unit liveness is disjoint, so reject the
+      // full recoloring path when two apparent vacancies alias. The subset
+      // relocation path below can still apply moves that need no eviction.
+      if (loom_low_allocation_storage_assignment_ranges_overlap(
+              context->descriptor_set, lhs, rhs)) {
+        return iree_ok_status();
+      }
     }
   }
   if (conflict_count > UINT32_MAX) {
@@ -1464,7 +1323,7 @@ static iree_status_t loom_low_allocation_loop_edge_relocation_try_full_group(
   }
   IREE_ASSERT_EQ(eviction_count, conflict_count);
 
-  loom_low_allocation_loop_edge_storage_unit_t* eviction_colors = NULL;
+  loom_low_allocation_loop_edge_eviction_color_t* eviction_colors = NULL;
   loom_low_allocation_loop_edge_eviction_group_t* eviction_groups = NULL;
   iree_host_size_t group_count = 0;
   IREE_RETURN_IF_ERROR(
@@ -1525,9 +1384,9 @@ static iree_status_t loom_low_allocation_loop_edge_relocation_try_full_group(
     }
     loom_low_allocation_loop_edge_matching_t matching = {
         .state = state,
-        .candidate_index = candidate_index,
-        .assignment_index = assignment_index,
+        .query_set = query_set,
         .candidates = candidates,
+        .candidate_count = candidate_count,
         .evictions = evictions,
         .eviction_colors = eviction_colors,
         .eviction_groups = eviction_groups,
@@ -1617,53 +1476,21 @@ static void
 loom_low_allocation_loop_edge_relocation_disable_candidate_dependents(
     const loom_low_allocation_loop_edge_relocation_state_t* state,
     const loom_low_allocation_loop_edge_candidate_t* candidates,
-    const loom_low_allocation_loop_edge_candidate_index_t* candidate_index,
-    uint32_t required_candidate_index, uint32_t seen_generation,
-    uint32_t* seen_generations, uint8_t* candidate_enabled,
-    uint32_t* disabled_candidate_indices,
+    iree_host_size_t candidate_count, uint32_t required_candidate_index,
+    uint8_t* candidate_enabled, uint32_t* disabled_candidate_indices,
     iree_host_size_t* inout_disabled_candidate_count) {
-  const loom_low_allocation_loop_edge_relocation_context_t* context =
-      state->context;
-  uint32_t member_index =
+  const uint32_t destination_assignment_index =
       candidates[required_candidate_index].destination_assignment_index;
-  do {
-    const loom_low_allocation_assignment_t* member =
-        &context->assignments[member_index];
-    const uint32_t unit_count =
-        loom_low_allocation_storage_assignment_atomic_unit_count(
-            context->descriptor_set, member);
-    for (uint32_t i = 0; i < unit_count; ++i) {
-      const loom_low_allocation_loop_edge_storage_unit_t key =
-          loom_low_allocation_loop_edge_assignment_storage_unit(
-              context->descriptor_set, member, i, /*owner_index=*/0);
-      const iree_host_size_t position =
-          loom_low_allocation_loop_edge_storage_unit_lower_bound(
-              candidate_index->units, candidate_index->unit_count, &key);
-      if (position == candidate_index->unit_count ||
-          loom_low_allocation_loop_edge_storage_unit_key_compare(
-              &candidate_index->units[position], &key) != 0) {
-        continue;
-      }
-      const uint32_t dependent_candidate_index =
-          candidate_index->units[position].owner_index;
-      if (!candidate_enabled[dependent_candidate_index] ||
-          seen_generations[dependent_candidate_index] == seen_generation) {
-        continue;
-      }
-      seen_generations[dependent_candidate_index] = seen_generation;
-      if (!loom_low_allocation_loop_edge_relocation_candidate_depends_on_destination(
-              state, &candidates[dependent_candidate_index],
-              candidates[required_candidate_index]
-                  .destination_assignment_index)) {
-        continue;
-      }
-      candidate_enabled[dependent_candidate_index] = 0;
-      disabled_candidate_indices[(*inout_disabled_candidate_count)++] =
-          dependent_candidate_index;
+  for (iree_host_size_t i = 0; i < candidate_count; ++i) {
+    if (!candidate_enabled[i] ||
+        !loom_low_allocation_loop_edge_relocation_candidate_depends_on_destination(
+            state, &candidates[i], destination_assignment_index)) {
+      continue;
     }
-    member_index = state->groups.next_members[member_index];
-  } while (member_index !=
-           candidates[required_candidate_index].destination_assignment_index);
+    candidate_enabled[i] = 0;
+    disabled_candidate_indices[(*inout_disabled_candidate_count)++] =
+        (uint32_t)i;
+  }
 }
 
 static iree_status_t loom_low_allocation_loop_edge_relocation_try_header(
@@ -1720,13 +1547,8 @@ static iree_status_t loom_low_allocation_loop_edge_relocation_try_header(
       sizeof(*ignored_assignments), (void**)&ignored_assignments));
   memset(ignored_assignments, 0,
          state->context->assignment_count * sizeof(*ignored_assignments));
-  loom_low_allocation_loop_edge_candidate_index_t candidate_index;
-  bool candidates_are_disjoint = false;
-  IREE_RETURN_IF_ERROR(
-      loom_low_allocation_loop_edge_relocation_candidate_index_initialize(
-          state, candidates, candidate_count, ignored_assignments,
-          &candidate_index, &candidates_are_disjoint));
-  if (!candidates_are_disjoint) {
+  if (!loom_low_allocation_loop_edge_relocation_candidates_are_disjoint(
+          state, candidates, candidate_count, ignored_assignments)) {
     return iree_ok_status();
   }
   for (iree_host_size_t i = 0; i < candidate_count; ++i) {
@@ -1735,16 +1557,15 @@ static iree_status_t loom_low_allocation_loop_edge_relocation_try_header(
     ignored_assignments[candidates[i].source_assignment_index] = 1;
   }
 
-  loom_low_allocation_loop_edge_assignment_index_t assignment_index;
+  loom_low_allocation_loop_edge_query_set_t query_set;
   IREE_RETURN_IF_ERROR(
-      loom_low_allocation_loop_edge_relocation_assignment_index_initialize(
-          state, candidates, candidate_count, &candidate_index,
-          ignored_assignments, &assignment_index));
+      loom_low_allocation_loop_edge_relocation_query_set_initialize(
+          state, candidates, candidate_count, ignored_assignments, &query_set));
 
   bool full_group_applied = false;
   IREE_RETURN_IF_ERROR(loom_low_allocation_loop_edge_relocation_try_full_group(
-      state, candidates, candidate_count, &candidate_index, &assignment_index,
-      ignored_assignments, &full_group_applied, out_recolored_value_count));
+      state, candidates, candidate_count, &query_set, ignored_assignments,
+      &full_group_applied, out_recolored_value_count));
   if (full_group_applied) {
     *out_relocated_value_count = candidate_count;
     return iree_ok_status();
@@ -1762,34 +1583,25 @@ static iree_status_t loom_low_allocation_loop_edge_relocation_try_header(
                                 (void**)&disabled_candidate_indices));
   iree_host_size_t disabled_candidate_count = 0;
   for (iree_host_size_t i = 0; i < candidate_count; ++i) {
-    if (loom_low_allocation_loop_edge_relocation_candidate_has_indexed_conflict(
-            state, &candidates[i], &assignment_index)) {
+    if (loom_low_allocation_loop_edge_relocation_candidate_has_conflict(
+            state, &candidates[i], &query_set)) {
       candidate_enabled[i] = 0;
       disabled_candidate_indices[disabled_candidate_count++] = (uint32_t)i;
     }
   }
 
   // An enabled candidate may only ignore the old destination storage of
-  // another candidate when that destination will itself move. Follow only
-  // physical overlaps from each rejected destination, disabling each
-  // dependent candidate once instead of rescanning the candidate cross
-  // product to discover the transitive closure.
-  uint32_t* seen_candidate_generations = NULL;
-  IREE_RETURN_IF_ERROR(
-      iree_arena_allocate_array(state->scratch_arena, candidate_count,
-                                sizeof(*seen_candidate_generations),
-                                (void**)&seen_candidate_generations));
-  memset(seen_candidate_generations, 0,
-         candidate_count * sizeof(*seen_candidate_generations));
+  // another candidate when that destination will itself move. Candidate count
+  // is bounded by header arguments, so carry candidate identity directly while
+  // computing the dependency closure.
   iree_host_size_t disabled_candidate_position = 0;
   while (disabled_candidate_position < disabled_candidate_count) {
     const uint32_t required_candidate_index =
         disabled_candidate_indices[disabled_candidate_position++];
-    const uint32_t seen_generation = (uint32_t)disabled_candidate_position;
     loom_low_allocation_loop_edge_relocation_disable_candidate_dependents(
-        state, candidates, &candidate_index, required_candidate_index,
-        seen_generation, seen_candidate_generations, candidate_enabled,
-        disabled_candidate_indices, &disabled_candidate_count);
+        state, candidates, candidate_count, required_candidate_index,
+        candidate_enabled, disabled_candidate_indices,
+        &disabled_candidate_count);
   }
 
   if (loom_low_allocation_loop_edge_write_conflicts(
