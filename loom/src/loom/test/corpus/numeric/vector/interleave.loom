@@ -1,127 +1,102 @@
-// Applies distinct biases to the even and odd byte streams before weaving them
-// back together. The unequal arithmetic keeps both structural operations
-// observable while exercising wrapping byte payloads.
-func.def @packed_byte_even_odd_bias(%input: buffer, %output: buffer) {
+// Applies distinct masks to the even and odd byte streams before weaving them
+// back together. The unequal bit transforms keep both structural operations
+// observable while preserving packed byte carriers.
+func.def @packed_byte_even_odd_mask(%input: buffer, %output: buffer) {
   %base = index.constant 0 : offset
   %begin = index.constant 0 : index
   %end = index.constant 64 : index
-  %step = index.constant 8 : index
+  %step = index.constant 16 : index
   %input_bytes = buffer.view %input[%base] : buffer -> view<64xi8>
   %output_bytes = buffer.view %output[%base] : buffer -> view<64xi8>
-  %even_bias = vector.constant 1 : vector<4xi8>
-  %odd_bias = vector.constant -3 : vector<4xi8>
+  %even_mask = vector.constant 1 : vector<8xi8>
+  %odd_mask = vector.constant -3 : vector<8xi8>
   scf.for %i = [%begin to %end step %step] {
-    %packet = vector.load %input_bytes[%i] : view<64xi8> -> vector<8xi8>
-    %even, %odd = vector.deinterleave<0> %packet : vector<8xi8> -> vector<4xi8>, vector<4xi8>
-    %biased_even = vector.addi %even, %even_bias : vector<4xi8>
-    %biased_odd = vector.addi %odd, %odd_bias : vector<4xi8>
-    %result = vector.interleave<0> %biased_even, %biased_odd : vector<4xi8>, vector<4xi8> -> vector<8xi8>
-    vector.store %result, %output_bytes[%i] : vector<8xi8>, view<64xi8>
+    %packet = vector.load %input_bytes[%i] : view<64xi8> -> vector<16xi8>
+    %even, %odd = vector.deinterleave<0> %packet : vector<16xi8> -> vector<8xi8>, vector<8xi8>
+    %masked_even = vector.xori %even, %even_mask : vector<8xi8>
+    %masked_odd = vector.xori %odd, %odd_mask : vector<8xi8>
+    %result = vector.interleave<0> %masked_even, %masked_odd : vector<8xi8>, vector<8xi8> -> vector<16xi8>
+    vector.store %result, %output_bytes[%i] : vector<16xi8>, view<64xi8>
   }
   func.return
 }
 
 // Scalar loads and stores keep the oracle independent of vector structural
 // lowering and make the alternating lane contract explicit.
-func.def @packed_byte_even_odd_bias_oracle(%input: buffer, %output: buffer) {
+func.def @packed_byte_even_odd_mask_oracle(%input: buffer, %output: buffer) {
   %base = index.constant 0 : offset
   %begin = index.constant 0 : index
   %end = index.constant 64 : index
-  %step = index.constant 8 : index
-  %c1_index = index.constant 1 : index
-  %c2_index = index.constant 2 : index
-  %c3_index = index.constant 3 : index
-  %c4_index = index.constant 4 : index
-  %c5_index = index.constant 5 : index
-  %c6_index = index.constant 6 : index
-  %c7_index = index.constant 7 : index
-  %even_bias = scalar.constant 1 : i8
-  %odd_bias = scalar.constant -3 : i8
+  %step = index.constant 1 : index
+  %pair_width = index.constant 2 : index
+  %even_mask = scalar.constant 1 : i8
+  %odd_mask = scalar.constant -3 : i8
   %input_bytes = buffer.view %input[%base] : buffer -> view<64xi8>
   %output_bytes = buffer.view %output[%base] : buffer -> view<64xi8>
-  scf.for %i0 = [%begin to %end step %step] {
-    %i1 = index.add %i0, %c1_index : index
-    %i2 = index.add %i0, %c2_index : index
-    %i3 = index.add %i0, %c3_index : index
-    %i4 = index.add %i0, %c4_index : index
-    %i5 = index.add %i0, %c5_index : index
-    %i6 = index.add %i0, %c6_index : index
-    %i7 = index.add %i0, %c7_index : index
-    %v0 = view.load %input_bytes[%i0] : view<64xi8> -> i8
-    %v1 = view.load %input_bytes[%i1] : view<64xi8> -> i8
-    %v2 = view.load %input_bytes[%i2] : view<64xi8> -> i8
-    %v3 = view.load %input_bytes[%i3] : view<64xi8> -> i8
-    %v4 = view.load %input_bytes[%i4] : view<64xi8> -> i8
-    %v5 = view.load %input_bytes[%i5] : view<64xi8> -> i8
-    %v6 = view.load %input_bytes[%i6] : view<64xi8> -> i8
-    %v7 = view.load %input_bytes[%i7] : view<64xi8> -> i8
-    %r0 = scalar.addi %v0, %even_bias : i8
-    %r1 = scalar.addi %v1, %odd_bias : i8
-    %r2 = scalar.addi %v2, %even_bias : i8
-    %r3 = scalar.addi %v3, %odd_bias : i8
-    %r4 = scalar.addi %v4, %even_bias : i8
-    %r5 = scalar.addi %v5, %odd_bias : i8
-    %r6 = scalar.addi %v6, %even_bias : i8
-    %r7 = scalar.addi %v7, %odd_bias : i8
-    view.store %r0, %output_bytes[%i0] : i8, view<64xi8>
-    view.store %r1, %output_bytes[%i1] : i8, view<64xi8>
-    view.store %r2, %output_bytes[%i2] : i8, view<64xi8>
-    view.store %r3, %output_bytes[%i3] : i8, view<64xi8>
-    view.store %r4, %output_bytes[%i4] : i8, view<64xi8>
-    view.store %r5, %output_bytes[%i5] : i8, view<64xi8>
-    view.store %r6, %output_bytes[%i6] : i8, view<64xi8>
-    view.store %r7, %output_bytes[%i7] : i8, view<64xi8>
+  scf.for %i = [%begin to %end step %step] {
+    %parity = index.rem %i, %pair_width : index
+    %is_odd = index.cmp ne, %parity, %begin : index
+    %mask = scf.select %is_odd, %odd_mask, %even_mask : i8
+    %value = view.load %input_bytes[%i] : view<64xi8> -> i8
+    %result = scalar.xori %value, %mask : i8
+    view.store %result, %output_bytes[%i] : i8, view<64xi8>
   }
   func.return
 }
 
 // Uses a non-power-of-two row width and crosses the 512-bit packet boundary.
 // This keeps whole 21-byte rows observable through both structural operations.
-func.def @irregular_byte_row_bias(%input: buffer, %output: buffer) {
+func.def @irregular_byte_row_mask(%input: buffer, %output: buffer) {
   %base = index.constant 0 : offset
   %begin = index.constant 0 : index
-  %input_bytes = buffer.view %input[%base] : buffer -> view<6x21xi8>
-  %output_bytes = buffer.view %output[%base] : buffer -> view<6x21xi8>
-  %packet = vector.load %input_bytes[%begin, %begin] : view<6x21xi8> -> vector<6x21xi8>
-  %even, %odd = vector.deinterleave<0> %packet : vector<6x21xi8> -> vector<3x21xi8>, vector<3x21xi8>
-  %even_bias = vector.constant 17 : vector<3x21xi8>
-  %odd_bias = vector.constant -29 : vector<3x21xi8>
-  %biased_even = vector.addi %even, %even_bias : vector<3x21xi8>
-  %biased_odd = vector.addi %odd, %odd_bias : vector<3x21xi8>
-  %result = vector.interleave<0> %biased_even, %biased_odd : vector<3x21xi8>, vector<3x21xi8> -> vector<6x21xi8>
-  vector.store %result, %output_bytes[%begin, %begin] : vector<6x21xi8>, view<6x21xi8>
+  %input_bytes = buffer.view %input[%base] : buffer -> view<336xi8>
+  %output_bytes = buffer.view %output[%base] : buffer -> view<336xi8>
+  %flat_packet = vector.load %input_bytes[%begin] : view<336xi8> -> vector<336xi8>
+  %packet = vector.bitcast %flat_packet : vector<336xi8> to vector<16x21xi8>
+  %even, %odd = vector.deinterleave<0> %packet : vector<16x21xi8> -> vector<8x21xi8>, vector<8x21xi8>
+  %even_flat = vector.bitcast %even : vector<8x21xi8> to vector<168xi8>
+  %odd_flat = vector.bitcast %odd : vector<8x21xi8> to vector<168xi8>
+  %even_mask = vector.constant 17 : vector<168xi8>
+  %odd_mask = vector.constant -29 : vector<168xi8>
+  %masked_even_flat = vector.xori %even_flat, %even_mask : vector<168xi8>
+  %masked_odd_flat = vector.xori %odd_flat, %odd_mask : vector<168xi8>
+  %masked_even = vector.bitcast %masked_even_flat : vector<168xi8> to vector<8x21xi8>
+  %masked_odd = vector.bitcast %masked_odd_flat : vector<168xi8> to vector<8x21xi8>
+  %result = vector.interleave<0> %masked_even, %masked_odd : vector<8x21xi8>, vector<8x21xi8> -> vector<16x21xi8>
+  %flat_result = vector.bitcast %result : vector<16x21xi8> to vector<336xi8>
+  vector.store %flat_result, %output_bytes[%begin] : vector<336xi8>, view<336xi8>
   func.return
 }
 
-func.def @irregular_byte_row_bias_oracle(%input: buffer, %output: buffer) {
+func.def @irregular_byte_row_mask_oracle(%input: buffer, %output: buffer) {
   %base = index.constant 0 : offset
   %begin = index.constant 0 : index
-  %end = index.constant 126 : index
+  %end = index.constant 336 : index
   %step = index.constant 1 : index
   %row_width = index.constant 21 : index
   %pair_width = index.constant 2 : index
-  %even_bias = scalar.constant 17 : i8
-  %odd_bias = scalar.constant -29 : i8
-  %input_bytes = buffer.view %input[%base] : buffer -> view<126xi8>
-  %output_bytes = buffer.view %output[%base] : buffer -> view<126xi8>
+  %even_mask = scalar.constant 17 : i8
+  %odd_mask = scalar.constant -29 : i8
+  %input_bytes = buffer.view %input[%base] : buffer -> view<336xi8>
+  %output_bytes = buffer.view %output[%base] : buffer -> view<336xi8>
   scf.for %i = [%begin to %end step %step] {
     %row = index.div %i, %row_width : index
     %parity = index.rem %row, %pair_width : index
     %is_odd = index.cmp ne, %parity, %begin : index
-    %bias = scf.select %is_odd, %odd_bias, %even_bias : i8
-    %value = view.load %input_bytes[%i] : view<126xi8> -> i8
-    %result = scalar.addi %value, %bias : i8
-    view.store %result, %output_bytes[%i] : i8, view<126xi8>
+    %mask = scf.select %is_odd, %odd_mask, %even_mask : i8
+    %value = view.load %input_bytes[%i] : view<336xi8> -> i8
+    %result = scalar.xori %value, %mask : i8
+    view.store %result, %output_bytes[%i] : i8, view<336xi8>
   }
   func.return
 }
 
-check.scenario @packed_byte_even_odd_bias_values {
+check.scenario @packed_byte_even_odd_mask_values {
   check.trial[1](%trial: index, %entropy: check.entropy) {
     %input = check.generate.iota offset(-128) step(1) period(256) : tensor<64xi8>
     %output_storage = check.generate.fill value(91) : tensor<72xi8>
     %output = check.tensor.view %output_storage offset(4) : tensor<72xi8> -> tensor<64xi8>
-    check.compare<@packed_byte_even_odd_bias, @packed_byte_even_odd_bias_oracle>(%input, %output) : (tensor<64xi8>, tensor<64xi8>) -> () {
+    check.compare<@packed_byte_even_odd_mask, @packed_byte_even_odd_mask_oracle>(%input, %output) : (tensor<64xi8>, tensor<64xi8>) -> () {
       check.expect.bitwise actual(%input) expected(%input) : tensor<64xi8>
       check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<72xi8>
     }
@@ -131,7 +106,7 @@ check.scenario @packed_byte_even_odd_bias_values {
     %input = check.generate.random.uniform seed(%seed) range(-128 to 127) : tensor<64xi8>
     %output_storage = check.generate.fill value(-37) : tensor<72xi8>
     %output = check.tensor.view %output_storage offset(4) : tensor<72xi8> -> tensor<64xi8>
-    check.compare<@packed_byte_even_odd_bias, @packed_byte_even_odd_bias_oracle>(%input, %output) : (tensor<64xi8>, tensor<64xi8>) -> () {
+    check.compare<@packed_byte_even_odd_mask, @packed_byte_even_odd_mask_oracle>(%input, %output) : (tensor<64xi8>, tensor<64xi8>) -> () {
       check.expect.bitwise actual(%input) expected(%input) : tensor<64xi8>
       check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<72xi8>
     }
@@ -139,14 +114,14 @@ check.scenario @packed_byte_even_odd_bias_values {
   check.return
 }
 
-check.scenario @irregular_byte_row_bias_values {
+check.scenario @irregular_byte_row_mask_values {
   check.trial[1](%trial: index, %entropy: check.entropy) {
-    %input = check.generate.iota offset(-128) step(2) period(256) : tensor<126xi8>
-    %output_storage = check.generate.fill value(83) : tensor<134xi8>
-    %output = check.tensor.view %output_storage offset(4) : tensor<134xi8> -> tensor<126xi8>
-    check.compare<@irregular_byte_row_bias, @irregular_byte_row_bias_oracle>(%input, %output) : (tensor<126xi8>, tensor<126xi8>) -> () {
-      check.expect.bitwise actual(%input) expected(%input) : tensor<126xi8>
-      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<134xi8>
+    %input = check.generate.iota offset(-128) step(2) period(128) : tensor<336xi8>
+    %output_storage = check.generate.fill value(83) : tensor<344xi8>
+    %output = check.tensor.view %output_storage offset(4) : tensor<344xi8> -> tensor<336xi8>
+    check.compare<@irregular_byte_row_mask, @irregular_byte_row_mask_oracle>(%input, %output) : (tensor<336xi8>, tensor<336xi8>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<336xi8>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<344xi8>
     }
   }
   check.return

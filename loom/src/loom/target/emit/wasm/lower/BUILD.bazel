@@ -4,7 +4,11 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-load("//loom/build_tools/bazel:build_defs.bzl", "loom_cc_library")
+load(
+    "//loom/build_tools/bazel:build_defs.bzl",
+    "loom_cc_library",
+    "loom_cc_test",
+)
 
 package(
     default_visibility = ["//visibility:private"],
@@ -13,14 +17,44 @@ package(
 )
 
 loom_cc_library(
+    name = "vector_carrier",
+    srcs = ["vector_carrier.c"],
+    hdrs = ["vector_carrier.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_test(
+    name = "vector_carrier_test",
+    srcs = ["vector_carrier_test.cc"],
+    deps = [
+        ":vector_carrier",
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "lower",
-    srcs = ["registry.c"],
-    hdrs = ["lower.h"],
+    srcs = [
+        "registry.c",
+        "vector_structural.c",
+    ],
+    hdrs = [
+        "lower.h",
+        "vector_structural.h",
+    ],
     textual_hdrs = ["//loom/src/loom/target/emit/wasm/contracts:tables.inl"],
     visibility = ["//loom/src/loom/target/arch/wasm:__pkg__"],
     deps = [
+        ":vector_carrier",
         "//loom/src/loom/codegen/low/lower",
         "//loom/src/loom/ir",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/ops/vector",
         "//loom/src/loom/target/arch/wasm/descriptors:descriptors_ids",
         "//loom/src/loom/target/emit/wasm:error_defs",
         "//loom/src/loom/target/emit/wasm/contracts",
