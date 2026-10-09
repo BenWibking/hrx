@@ -51,6 +51,35 @@ func.def @distinct_forwarded_source_rejects_guard(%storage: buffer, %raw: index,
 
 // RUN: pass vector-memory-footprint
 
+// Arithmetic anchors follow exact CFG argument identities while retaining the
+// original quotient relation.
+func.def @forwarded_quotient_anchors_preserve_guard(%storage: buffer, %coordinate_raw: index, %extent_raw: index) {
+  %base = index.constant 0 : offset
+  %c2 = index.constant 2 : index
+  %c4 = index.constant 4 : index
+  %c8 = index.constant 8 : index
+  %coordinate = index.assume %coordinate_raw [range(%coordinate_raw, 0, 511)] : index
+  %extent = index.assume %extent_raw [range(%extent_raw, 8, 1023)] : index
+  %left = index.div %coordinate, %c4 : index
+  %right = index.div %extent, %c8 : index
+  %fits = index.cmp slt, %left, %right : index
+  cfg.cond_br %fits, ^forward, ^exit
+^forward:
+  cfg.br ^access(%coordinate: index, %extent: index)
+^access(%forwarded_coordinate: index, %forwarded_extent: index):
+  %origin = index.mul %forwarded_coordinate, %c2 : index
+  %view = buffer.view %storage[%base] : buffer -> view<[%forwarded_extent]xi32>
+  %loaded = vector.load %view[%origin] : view<[%forwarded_extent]xi32> -> vector<2xi32>
+  test.use %loaded : vector<2xi32>
+  cfg.br ^exit
+^exit:
+  func.return
+}
+
+// ====
+
+// RUN: pass vector-memory-footprint
+
 // Correlated loop arguments remain equal while their positions rotate on the backedge.
 func.def @correlated_loop_rotation_preserves_identity(%storage: buffer, %raw: index, %bound_raw: index, %choice: i1) {
   %base = index.constant 0 : offset

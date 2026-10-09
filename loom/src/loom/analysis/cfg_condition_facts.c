@@ -194,6 +194,9 @@ typedef struct loom_cfg_condition_relation_solver_t {
   loom_local_value_domain_t* value_domain;
   const loom_cfg_value_identity_table_t* identities;
 
+  // Optional producer of semantic anchors for authored relation operands.
+  const loom_cfg_condition_relation_anchor_provider_t* anchor_provider;
+
   // Arena retained by the caller after solve completion.
   iree_arena_allocator_t* arena;
 
@@ -208,6 +211,9 @@ typedef struct loom_cfg_condition_relation_solver_t {
 
   // Interned construction sets.
   loom_condition_relation_set_builder_t* set_builder;
+
+  // Optional sparse semantic anchors for authored relation operands.
+  loom_cfg_condition_relation_anchor_builder_t* derived_anchors;
 
   // Reusable high-water matrix candidate storage.
   loom_condition_relation_matrix_builder_t matrix_builder;
@@ -1927,6 +1933,7 @@ loom_cfg_condition_relation_publish(
   loom_cfg_condition_relation_table_builder_t builder = {
       .operand_domain = &solver->operand_domain,
       .set_builder = solver->set_builder,
+      .derived_anchors = solver->derived_anchors,
       .views = views,
       .edge_view_indices = edge_view_indices,
       .view_count = (uint32_t)view_count,
@@ -1948,6 +1955,9 @@ static iree_status_t loom_cfg_condition_relation_solve(
   }
   IREE_RETURN_IF_ERROR(
       loom_cfg_condition_relation_build_operand_domain(solver));
+  IREE_RETURN_IF_ERROR(loom_cfg_condition_relation_anchor_builder_build(
+      solver->anchor_provider, &solver->operand_domain, solver->set_builder,
+      solver->scratch_arena, &solver->derived_anchors));
   IREE_RETURN_IF_ERROR(loom_cfg_condition_relation_build_edges(solver));
   IREE_RETURN_IF_ERROR(
       loom_cfg_condition_relation_initialize_candidates(solver));
@@ -1965,6 +1975,7 @@ iree_status_t loom_cfg_condition_relation_table_compute(
     const loom_dominance_info_t* dominance,
     loom_local_value_domain_t* value_domain,
     const loom_cfg_value_identity_table_t* identities,
+    const loom_cfg_condition_relation_anchor_provider_t* anchor_provider,
     iree_arena_allocator_t* arena,
     loom_cfg_condition_relation_table_t* out_table) {
   *out_table = (loom_cfg_condition_relation_table_t){0};
@@ -1984,6 +1995,7 @@ iree_status_t loom_cfg_condition_relation_table_compute(
       .dominance = dominance,
       .value_domain = value_domain,
       .identities = identities,
+      .anchor_provider = anchor_provider,
       .arena = arena,
       .scratch_arena = &scratch_arena,
   };

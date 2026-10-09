@@ -1676,8 +1676,8 @@ static iree_status_t loom_cfg_simplify_process_cfg_region(
   loom_cfg_condition_relation_table_t path_fact_table = {0};
   IREE_RETURN_IF_ERROR(loom_cfg_condition_relation_table_compute(
       state->module, graph, state->fact_table, state->dominance,
-      &state->value_domain, &state->value_identities, state->analysis_arena,
-      &path_fact_table));
+      &state->value_domain, &state->value_identities,
+      /*anchor_provider=*/NULL, state->analysis_arena, &path_fact_table));
   IREE_RETURN_IF_ERROR(loom_cfg_simplify_thread_fact_known_branches(
       state, graph, &path_fact_table, out_changed));
   if (*out_changed) {

@@ -813,7 +813,8 @@ static iree_status_t loom_template_selection_prepare_cfg_facts(
         state->module, entry->graph, value_facts, &builder.dominance,
         &state->application_scope.value_domain,
         &state->application_scope.value_identities,
-        value_facts->transient_arena, &entry->conditions);
+        /*anchor_provider=*/NULL, value_facts->transient_arena,
+        &entry->conditions);
   }
   if (iree_status_is_ok(status)) {
     state->application_scope.cfg_facts = builder.entries;

@@ -18,6 +18,7 @@
 #include "loom/analysis/memory_root_bounds.h"
 #include "loom/analysis/symbolic_expr.h"
 #include "loom/analysis/symbolic_expr_proof.h"
+#include "loom/analysis/symbolic_projection.h"
 #include "loom/analysis/vector_memory_mask_bounds.h"
 #include "loom/error/error_catalog.h"
 #include "loom/ir/context.h"
@@ -1633,6 +1634,30 @@ static void loom_vector_memory_footprint_stack_pop(
   }
 }
 
+static iree_status_t loom_vector_memory_footprint_query_relation_anchors(
+    void* user_data, loom_value_id_t relation_value_id,
+    const loom_cfg_condition_relation_anchor_sink_t* sink) {
+  loom_symbolic_expr_context_t* context =
+      (loom_symbolic_expr_context_t*)user_data;
+  loom_symbolic_expr_t expression = {0};
+  IREE_RETURN_IF_ERROR(
+      loom_symbolic_expr_from_value(context, relation_value_id, &expression));
+  for (iree_host_size_t i = 0; i < expression.term_count; ++i) {
+    IREE_RETURN_IF_ERROR(
+        sink->emit(sink->user_data, expression.terms[i].value_id));
+    if (expression.terms[i].relation_value_id != expression.terms[i].value_id) {
+      IREE_RETURN_IF_ERROR(
+          sink->emit(sink->user_data, expression.terms[i].relation_value_id));
+    }
+  }
+  const loom_symbolic_projection_t* projection =
+      loom_symbolic_expr_lookup_projection(context, &expression);
+  if (projection != NULL) {
+    IREE_RETURN_IF_ERROR(sink->emit(sink->user_data, projection->value_id));
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_vector_memory_footprint_push_region(
     loom_vector_memory_footprint_state_t* state,
     loom_vector_memory_footprint_stack_t* stack, loom_region_t* region,
@@ -1698,14 +1723,20 @@ static iree_status_t loom_vector_memory_footprint_push_cfg_blocks(
   IREE_RETURN_IF_ERROR(loom_cfg_value_identity_table_update(
       &state->value_identities, retained_region, &state->dominance,
       state->arena));
+  state->expression_context.condition_scope = NULL;
+  loom_symbolic_expr_context_reset(&state->expression_context);
 
   loom_cfg_condition_relation_table_t* condition_table = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate(
       state->arena, sizeof(*condition_table), (void**)&condition_table));
+  const loom_cfg_condition_relation_anchor_provider_t anchor_provider = {
+      .user_data = &state->expression_context,
+      .query = loom_vector_memory_footprint_query_relation_anchors,
+  };
   IREE_RETURN_IF_ERROR(loom_cfg_condition_relation_table_compute(
       state->module, graph, state->fact_table, &state->dominance,
-      state->value_domain, &state->value_identities, state->arena,
-      condition_table));
+      state->value_domain, &state->value_identities, &anchor_provider,
+      state->arena, condition_table));
   for (iree_host_size_t i = graph->block_count; i > 0; --i) {
     uint16_t block_index = (uint16_t)(i - 1);
     if (!loom_cfg_graph_block_is_reachable(graph, block_index)) {
