@@ -37,31 +37,54 @@ bool loom_low_allocation_unit_liveness_storage_is_ignored(
   return false;
 }
 
-static bool loom_low_allocation_unit_liveness_unit_is_clobbered(
+// Clobber rows for one storage location: the half-open slice of the sorted
+// clobber table with that (storage_key, location).
+static void loom_low_allocation_unit_liveness_location_clobbers(
     const loom_low_allocation_unit_liveness_t* unit_liveness,
-    uint32_t storage_key, uint32_t location, uint32_t start_point,
-    uint32_t end_point) {
+    uint32_t storage_key, uint32_t location, iree_host_size_t* out_begin,
+    iree_host_size_t* out_end) {
+  const loom_low_allocation_clobber_t* entries = unit_liveness->clobbers.entries;
   const loom_low_allocation_clobber_t key = {
-      .storage_key = storage_key, .location = location, .point = start_point};
+      .storage_key = storage_key, .location = location, .point = 0};
   iree_host_size_t begin = 0;
   iree_host_size_t end = unit_liveness->clobbers.count;
   while (begin < end) {
     const iree_host_size_t middle = begin + (end - begin) / 2;
-    if (loom_low_allocation_clobber_less(
-            &unit_liveness->clobbers.entries[middle], &key)) {
+    if (loom_low_allocation_clobber_less(&entries[middle], &key)) {
       begin = middle + 1;
     } else {
       end = middle;
     }
   }
-  for (; begin < unit_liveness->clobbers.count; ++begin) {
-    const loom_low_allocation_clobber_t* clobber =
-        &unit_liveness->clobbers.entries[begin];
-    if (clobber->storage_key != storage_key || clobber->location != location ||
-        clobber->point >= end_point) {
-      return false;
+  *out_begin = begin;
+  end = unit_liveness->clobbers.count;
+  iree_host_size_t first = begin;
+  while (first < end) {
+    const iree_host_size_t middle = first + (end - first) / 2;
+    if (entries[middle].storage_key == storage_key &&
+        entries[middle].location == location) {
+      first = middle + 1;
+    } else {
+      end = middle;
     }
-    if (!clobber->permits_definition || clobber->point != start_point) {
+  }
+  *out_end = first;
+}
+
+// Whether a clobber of one location's slice lands in [start_point, end_point).
+// A permitted definition exactly at start_point does not conflict. |cursor|
+// only moves forward, so callers visit windows in ascending start order.
+static bool loom_low_allocation_unit_liveness_window_is_clobbered(
+    const loom_low_allocation_unit_liveness_t* unit_liveness,
+    iree_host_size_t* cursor, iree_host_size_t slice_end, uint32_t start_point,
+    uint32_t end_point) {
+  const loom_low_allocation_clobber_t* entries = unit_liveness->clobbers.entries;
+  while (*cursor < slice_end && entries[*cursor].point < start_point) {
+    ++*cursor;
+  }
+  for (iree_host_size_t i = *cursor;
+       i < slice_end && entries[i].point < end_point; ++i) {
+    if (!entries[i].permits_definition || entries[i].point != start_point) {
       return true;
     }
   }
@@ -132,9 +155,18 @@ bool loom_low_allocation_unit_liveness_clobber_conflicts(
       const uint32_t location = atomic_units != NULL
                                     ? atomic_units[atomic_unit]
                                     : candidate->location_base + unit;
+      // Most locations have no clobbers; find this location's slice once and
+      // walk it alongside the candidate's ascending segments.
+      iree_host_size_t cursor = 0;
+      iree_host_size_t slice_end = 0;
+      loom_low_allocation_unit_liveness_location_clobbers(
+          unit_liveness, storage_key, location, &cursor, &slice_end);
+      if (cursor == slice_end) {
+        continue;
+      }
       if (candidate->liveness_segments.count == 0) {
-        if (loom_low_allocation_unit_liveness_unit_is_clobbered(
-                unit_liveness, storage_key, location, start_point, end_point)) {
+        if (loom_low_allocation_unit_liveness_window_is_clobbered(
+                unit_liveness, &cursor, slice_end, start_point, end_point)) {
           return true;
         }
         continue;
@@ -145,8 +177,8 @@ bool loom_low_allocation_unit_liveness_clobber_conflicts(
         const loom_liveness_segment_t* segment =
             &unit_liveness->storage_segments
                  .entries[candidate->liveness_segments.start + segment_index];
-        if (loom_low_allocation_unit_liveness_unit_is_clobbered(
-                unit_liveness, storage_key, location,
+        if (loom_low_allocation_unit_liveness_window_is_clobbered(
+                unit_liveness, &cursor, slice_end,
                 iree_max(start_point, segment->start_point),
                 iree_min(end_point, segment->end_point))) {
           return true;
