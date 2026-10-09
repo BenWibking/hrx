@@ -9,61 +9,6 @@
 
 iree_add_all_subdirs()
 
-set(_without_bf16_fma_platform_targets "")
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_CDNA3_CORE)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx940)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx941)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx942)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_CDNA4_CORE)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx950)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA3_CORE)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1100)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1101)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1102)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1103)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_CORE)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1200)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1201)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_GFX125X_CORE)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA3_5_CORE)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1150)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1151)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1152)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1153)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4M_CORE)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1170)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1171)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx1172)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_GFX1251_CORE)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_GFX9_4_GENERIC_CORE)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx9-4-generic)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_GFX11_GENERIC_CORE)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx11-generic)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_GFX12_GENERIC_CORE)
-  list(APPEND _without_bf16_fma_platform_targets loom::target::amdgpu::gfx12-generic)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_GFX12_5_GENERIC_CORE)
-endif()
-if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_GFX1250_A0_CORE)
-endif()
-loom_target_set(
-  NAME
-    "without_bf16_fma"
-  ALLOW_EMPTY
-  TARGETS
-    ${_without_bf16_fma_platform_targets}
-)
-
 loom_corpus_build(
   NAME
     "all"
@@ -92,7 +37,7 @@ loom_corpus_build(
     "numeric/vector/conversion.loom"
     "@truncate_halfwords"
     "AMDGPU/023,TARGET/003"
-    "loom::target::amdgpu::test::corpus::without_bf16_fma"
+    "loom::target::amdgpu::without_bf16_fma"
     "numeric/vector/broadcast_arithmetic.loom"
     "@broadcast_arithmetic_bf16"
     "TARGET/003"

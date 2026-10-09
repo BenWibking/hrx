@@ -5,21 +5,10 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 load(
-    "//loom/build_tools/amdgpu:descriptor_sets.bzl",
-    "loom_amdgpu_selected_descriptor_set_deps",
-)
-load(
-    "//loom/build_tools/amdgpu:target_config.bzl",
-    "LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITIES",
-    "LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_TARGET",
-    "LOOM_AMDGPU_SUPPORTED_TARGETS",
-)
-load(
     "//loom/build_tools/bazel:defs.bzl",
     "loom_corpus_build",
     "loom_legacy_case_test",
     "loom_scenario_test",
-    "loom_target_set",
 )
 load(
     "//loom/src/loom/test/corpus:catalog.bzl",
@@ -135,26 +124,6 @@ _NO_HARDWARE_SUBJECT_EXCLUDES = {
     for source in _NO_DEVICE_SUBJECTS
 }
 
-loom_target_set(
-    name = "without_bf16_fma",
-    allow_empty = True,
-    targets = loom_amdgpu_selected_descriptor_set_deps({
-        capability: [
-            "//loom/target/amdgpu:" + target
-            for target in LOOM_AMDGPU_SUPPORTED_TARGETS
-            if LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_TARGET[target] == capability and
-               target not in [
-                   "gfx1250",
-                   "gfx1251",
-                   "gfx1250-a0",
-                   "gfx12-5-generic",
-               ]
-        ]
-        for capability in LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITIES
-    }),
-    visibility = ["//visibility:private"],
-)
-
 loom_corpus_build(
     name = "all",
     all_roots_xfail = {
@@ -170,7 +139,7 @@ loom_corpus_build(
             "numeric/vector/conversion.loom:@pack_nibbles": "AMDGPU/023,TARGET/003",
             "numeric/vector/conversion.loom:@truncate_halfwords": "AMDGPU/023,TARGET/003",
         },
-        ":without_bf16_fma": {
+        "//loom/target/amdgpu:without_bf16_fma": {
             "numeric/vector/broadcast_arithmetic.loom:@broadcast_arithmetic_bf16": "TARGET/003",
         },
     },
