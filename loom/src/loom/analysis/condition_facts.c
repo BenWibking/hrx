@@ -621,6 +621,144 @@ static bool loom_condition_integer_comparison_relation(
                    out_relation, out_unsigned_order);
 }
 
+static bool loom_condition_relation_to_predicate_kind(
+    loom_symbolic_integer_relation_t relation, uint8_t* out_kind) {
+  switch (relation) {
+    case LOOM_SYMBOLIC_INTEGER_RELATION_EQ:
+      *out_kind = LOOM_PREDICATE_EQ;
+      return true;
+    case LOOM_SYMBOLIC_INTEGER_RELATION_NE:
+      *out_kind = LOOM_PREDICATE_NE;
+      return true;
+    case LOOM_SYMBOLIC_INTEGER_RELATION_LT:
+      *out_kind = LOOM_PREDICATE_LT;
+      return true;
+    case LOOM_SYMBOLIC_INTEGER_RELATION_LE:
+      *out_kind = LOOM_PREDICATE_LE;
+      return true;
+    case LOOM_SYMBOLIC_INTEGER_RELATION_GT:
+      *out_kind = LOOM_PREDICATE_GT;
+      return true;
+    case LOOM_SYMBOLIC_INTEGER_RELATION_GE:
+      *out_kind = LOOM_PREDICATE_GE;
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Derives numeric consequences while the condition owner visits a comparison.
+// Consumers retain and index the resulting dividend relations; they do not
+// search quotient users when querying an address's bounds.
+static iree_status_t loom_condition_facts_derive_quotient_preimage(
+    const loom_module_t* module, const loom_value_fact_table_t* fact_table,
+    loom_value_id_t quotient_value, loom_value_facts_t quotient_facts,
+    loom_condition_fact_set_t* facts,
+    loom_condition_derivation_t* out_derivation, bool* out_complete) {
+  const loom_value_facts_t ambient_quotient =
+      loom_condition_lookup_facts(fact_table, quotient_value);
+  if (quotient_facts.range_lo == ambient_quotient.range_lo &&
+      quotient_facts.range_hi == ambient_quotient.range_hi) {
+    return iree_ok_status();
+  }
+  quotient_value =
+      loom_value_fact_table_query_identity(fact_table, quotient_value);
+  const loom_value_t* value = loom_module_value(module, quotient_value);
+  if (loom_value_is_block_arg(value)) {
+    return iree_ok_status();
+  }
+  const loom_op_t* op = loom_value_def_op(value);
+  if (!op) {
+    return iree_ok_status();
+  }
+  loom_value_facts_quotient_kind_t kind;
+  switch (op->kind) {
+    case LOOM_OP_INDEX_DIV:
+    case LOOM_OP_SCALAR_DIVUI:
+      kind = LOOM_VALUE_FACTS_QUOTIENT_DIVUI;
+      break;
+    case LOOM_OP_SCALAR_DIVSI:
+      kind = LOOM_VALUE_FACTS_QUOTIENT_DIVSI;
+      break;
+    case LOOM_OP_SCALAR_CEILDIVUI:
+      kind = LOOM_VALUE_FACTS_QUOTIENT_CEILDIVUI;
+      break;
+    case LOOM_OP_SCALAR_CEILDIVSI:
+      kind = LOOM_VALUE_FACTS_QUOTIENT_CEILDIVSI;
+      break;
+    case LOOM_OP_SCALAR_FLOORDIVSI:
+      kind = LOOM_VALUE_FACTS_QUOTIENT_FLOORDIVSI;
+      break;
+    case LOOM_OP_INDEX_SHRUI:
+    case LOOM_OP_SCALAR_SHRUI:
+      kind = LOOM_VALUE_FACTS_QUOTIENT_SHRUI;
+      break;
+    case LOOM_OP_INDEX_SHRSI:
+    case LOOM_OP_SCALAR_SHRSI:
+      kind = LOOM_VALUE_FACTS_QUOTIENT_SHRSI;
+      break;
+    default:
+      return iree_ok_status();
+  }
+  const loom_value_id_t dividend = loom_op_const_operands(op)[0];
+  const loom_value_facts_t dividend_facts =
+      loom_condition_lookup_facts(fact_table, dividend);
+  const loom_value_facts_t scale_facts =
+      loom_condition_lookup_facts(fact_table, loom_op_const_operands(op)[1]);
+  const loom_scalar_type_t scalar_type =
+      loom_type_element_type(loom_module_value_type(module, quotient_value));
+  int32_t bit_count = loom_scalar_type_bitwidth(scalar_type);
+  if (op->kind == LOOM_OP_INDEX_DIV) {
+    if (!loom_value_facts_is_non_negative(dividend_facts) ||
+        !loom_value_facts_is_positive(scale_facts)) {
+      return iree_ok_status();
+    }
+    bit_count = 64;
+  } else if (op->kind == LOOM_OP_INDEX_SHRUI ||
+             op->kind == LOOM_OP_INDEX_SHRSI) {
+    bit_count = loom_index_target_carrier_bitwidth(
+        fact_table ? &fact_table->context : NULL, scalar_type);
+    if (bit_count == 0 && (op->kind == LOOM_OP_INDEX_SHRSI ||
+                           loom_value_facts_is_non_negative(dividend_facts))) {
+      bit_count = 64;
+    }
+    // Address facts use mathematical signed values, not the signed raw-bit
+    // representation of an unsigned carrier value with its high bit set.
+    if (bit_count <= 0 ||
+        !loom_value_facts_fit_signed_bit_count(dividend_facts,
+                                               (uint8_t)bit_count) ||
+        !loom_value_facts_fit_signed_bit_count(quotient_facts,
+                                               (uint8_t)bit_count)) {
+      return iree_ok_status();
+    }
+  }
+  const loom_value_facts_t preimage = loom_value_facts_quotient_preimage(
+      kind, bit_count, quotient_facts, scale_facts);
+  if (preimage.range_lo > dividend_facts.range_lo) {
+    const loom_condition_integer_relation_t lower = {
+        .relation = LOOM_SYMBOLIC_INTEGER_RELATION_GE,
+        .left = loom_condition_value_operand(dividend),
+        .right = {.kind = LOOM_CONDITION_INTEGER_OPERAND_CONSTANT,
+                  .value_id = LOOM_VALUE_ID_INVALID,
+                  .constant = preimage.range_lo},
+    };
+    IREE_RETURN_IF_ERROR(loom_condition_fact_set_append_integer_relation(
+        facts, out_derivation, lower, out_complete));
+  }
+  if (preimage.range_hi < dividend_facts.range_hi) {
+    const loom_condition_integer_relation_t upper = {
+        .relation = LOOM_SYMBOLIC_INTEGER_RELATION_LE,
+        .left = loom_condition_value_operand(dividend),
+        .right = {.kind = LOOM_CONDITION_INTEGER_OPERAND_CONSTANT,
+                  .value_id = LOOM_VALUE_ID_INVALID,
+                  .constant = preimage.range_hi},
+    };
+    IREE_RETURN_IF_ERROR(loom_condition_fact_set_append_integer_relation(
+        facts, out_derivation, upper, out_complete));
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_condition_facts_query_integer_compare(
     const loom_module_t* module, const loom_op_t* op,
     loom_condition_fact_set_t* facts,
@@ -641,6 +779,10 @@ static iree_status_t loom_condition_facts_query_integer_compare(
   if (!assumed_truth) {
     relation = loom_symbolic_integer_relation_invert(relation);
   }
+  loom_value_facts_t left_facts =
+      loom_condition_lookup_facts(fact_table, left_value);
+  loom_value_facts_t right_facts =
+      loom_condition_lookup_facts(fact_table, right_value);
 
   if (unsigned_order && !loom_condition_values_are_non_negative(
                             fact_table, left_value, right_value)) {
@@ -672,6 +814,8 @@ static iree_status_t loom_condition_facts_query_integer_compare(
     };
     IREE_RETURN_IF_ERROR(loom_condition_fact_set_append_integer_relation(
         facts, out_derivation, nonnegative, out_complete));
+    loom_value_facts_t* lower_facts = ascending ? &left_facts : &right_facts;
+    lower_facts->range_lo = iree_max(lower_facts->range_lo, 0);
   }
 
   const loom_condition_integer_relation_t assertion = {
@@ -679,8 +823,20 @@ static iree_status_t loom_condition_facts_query_integer_compare(
       .left = loom_condition_value_operand(left_value),
       .right = loom_condition_value_operand(right_value),
   };
-  return loom_condition_fact_set_append_integer_relation(
-      facts, out_derivation, assertion, out_complete);
+  IREE_RETURN_IF_ERROR(loom_condition_fact_set_append_integer_relation(
+      facts, out_derivation, assertion, out_complete));
+  uint8_t predicate_kind = 0;
+  if (loom_condition_relation_to_predicate_kind(relation, &predicate_kind) &&
+      loom_value_facts_refine_relation(predicate_kind, left_facts, right_facts,
+                                       &left_facts, &right_facts)) {
+    IREE_RETURN_IF_ERROR(loom_condition_facts_derive_quotient_preimage(
+        module, fact_table, left_value, left_facts, facts, out_derivation,
+        out_complete));
+    IREE_RETURN_IF_ERROR(loom_condition_facts_derive_quotient_preimage(
+        module, fact_table, right_value, right_facts, facts, out_derivation,
+        out_complete));
+  }
+  return iree_ok_status();
 }
 
 enum {
@@ -1271,32 +1427,6 @@ iree_status_t loom_condition_fact_set_proves_condition(
   return loom_condition_fact_resolver_proves_condition(
       query, fact_table, facts != NULL ? &resolver : NULL, condition_value,
       out_condition, out_proven);
-}
-
-static bool loom_condition_relation_to_predicate_kind(
-    loom_symbolic_integer_relation_t relation, uint8_t* out_kind) {
-  switch (relation) {
-    case LOOM_SYMBOLIC_INTEGER_RELATION_EQ:
-      *out_kind = LOOM_PREDICATE_EQ;
-      return true;
-    case LOOM_SYMBOLIC_INTEGER_RELATION_NE:
-      *out_kind = LOOM_PREDICATE_NE;
-      return true;
-    case LOOM_SYMBOLIC_INTEGER_RELATION_LT:
-      *out_kind = LOOM_PREDICATE_LT;
-      return true;
-    case LOOM_SYMBOLIC_INTEGER_RELATION_LE:
-      *out_kind = LOOM_PREDICATE_LE;
-      return true;
-    case LOOM_SYMBOLIC_INTEGER_RELATION_GT:
-      *out_kind = LOOM_PREDICATE_GT;
-      return true;
-    case LOOM_SYMBOLIC_INTEGER_RELATION_GE:
-      *out_kind = LOOM_PREDICATE_GE;
-      return true;
-    default:
-      return false;
-  }
 }
 
 static bool loom_condition_operand_matches_value(
