@@ -73,15 +73,13 @@ typedef struct loom_testbench_invocation_provider_t {
   void* user_data;
 } loom_testbench_invocation_provider_t;
 
-// Cases selected by the runner for this execution, in runner-owned order.
-// Providers prepare only entries without planning issues; the runner reports
-// those issues instead of invoking the affected case.
-typedef struct loom_testbench_case_plan_list_t {
-  // Borrowed case plans. Multiple benchmarks may name the same case.
-  const loom_testbench_case_plan_t* const* values;
-  // Number of selected case plans.
+// Function invocations selected by the runner for one compiled provider.
+typedef struct loom_testbench_invocation_plan_list_t {
+  // Borrowed invocation plans in runner-owned order.
+  const loom_testbench_invocation_plan_t* const* values;
+  // Number of selected invocation plans.
   iree_host_size_t count;
-} loom_testbench_case_plan_list_t;
+} loom_testbench_invocation_plan_list_t;
 
 typedef struct loom_testbench_oracle_provider_t {
   // Stable provider name referenced by check.oracle.call.

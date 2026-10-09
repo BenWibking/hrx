@@ -1136,7 +1136,7 @@ int iree_test_loom_main(int argc, char** argv,
     loom_testbench_scenario_execution_options_initialize(
         &scenario_execution_options);
     const loom_testbench_case_plan_t** selected_cases = NULL;
-    loom_testbench_case_plan_list_t selected = {0};
+    iree_host_size_t selected_case_count = 0;
     const loom_testbench_compilation_t compilation = {
         .compiler = compiler,
         .workspace = compiler_workspace,
@@ -1157,15 +1157,46 @@ int iree_test_loom_main(int argc, char** argv,
         const loom_testbench_case_plan_t* case_plan = &module_plan.cases[i];
         if (iree_test_loom_case_matches_selection(case_plan,
                                                   selected_case_name)) {
-          selected_cases[selected.count++] = case_plan;
+          selected_cases[selected_case_count++] = case_plan;
         }
       }
-      selected.values = selected_cases;
-      if (configuration->function_call_provider.fn) {
+      iree_host_size_t function_call_capacity = 0;
+      for (iree_host_size_t i = 0; i < selected_case_count; ++i) {
+        if (selected_cases[i]->issue_count == 0) {
+          function_call_capacity += selected_cases[i]->invocation_count;
+        }
+      }
+      const loom_testbench_invocation_plan_t** function_calls = NULL;
+      if (function_call_capacity != 0) {
+        status = iree_arena_allocate_array(&plan_arena, function_call_capacity,
+                                           sizeof(*function_calls),
+                                           (void**)&function_calls);
+      }
+      iree_host_size_t function_call_count = 0;
+      for (iree_host_size_t i = 0;
+           iree_status_is_ok(status) && i < selected_case_count; ++i) {
+        const loom_testbench_case_plan_t* case_plan = selected_cases[i];
+        if (case_plan->issue_count != 0) {
+          continue;
+        }
+        for (iree_host_size_t j = 0; j < case_plan->invocation_count; ++j) {
+          const loom_testbench_invocation_plan_t* invocation =
+              &case_plan->invocations[j];
+          if (invocation->kind == LOOM_TESTBENCH_INVOCATION_FUNCTION_CALL) {
+            function_calls[function_call_count++] = invocation;
+          }
+        }
+      }
+      if (iree_status_is_ok(status) && function_call_count != 0 &&
+          configuration->function_call_provider.fn) {
         execution_options.invocation.function_call =
             configuration->function_call_provider.fn(
                 configuration->function_call_provider.user_data, &compilation,
-                selected, compile_result_callback);
+                (loom_testbench_invocation_plan_list_t){
+                    .values = function_calls,
+                    .count = function_call_count,
+                },
+                compile_result_callback);
       }
       if (configuration->scenario_target_profile.fn != NULL) {
         scenario_execution_options.target =
@@ -1202,7 +1233,6 @@ int iree_test_loom_main(int argc, char** argv,
       }
     }
 
-    const iree_host_size_t selected_case_count = selected.count;
     iree_host_size_t selected_scenario_count = 0;
     for (iree_host_size_t i = 0; i < module_plan.scenario_count; ++i) {
       if (iree_test_loom_scenario_matches_selection(&module_plan.scenarios[i],
@@ -1265,10 +1295,10 @@ int iree_test_loom_main(int argc, char** argv,
           "trials");
     }
     for (iree_host_size_t selection_index = 0;
-         iree_status_is_ok(status) && selection_index < selected.count;
+         iree_status_is_ok(status) && selection_index < selected_case_count;
          ++selection_index) {
       const loom_testbench_case_plan_t* case_plan =
-          selected.values[selection_index];
+          selected_cases[selection_index];
       const iree_host_size_t case_index = case_plan - module_plan.cases;
       iree_test_loom_xfail_t* xfail =
           iree_test_loom_xfail_list_find(&xfails, case_plan->name);

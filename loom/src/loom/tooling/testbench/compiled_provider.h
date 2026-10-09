@@ -54,14 +54,14 @@ static inline iree_status_t loom_testbench_observe_compile_result(
                      : iree_ok_status();
 }
 
-// Binds one borrowed function-call provider to the runner's selected cases.
-// The caller owns callback state. Compilation inputs and case plans remain live
-// through the final invocation. Providers compile private module clones and
-// report each complete public compiler result through |result_callback|.
+// Binds one borrowed function-call provider to the runner's selected calls.
+// The caller owns callback state. Compilation inputs and invocation plans
+// remain live through the final call. Providers compile private module clones
+// and report each complete public compiler result through |result_callback|.
 typedef loom_testbench_invocation_provider_t(
     IREE_API_PTR* loom_testbench_function_call_provider_fn_t)(
     void* user_data, const loom_testbench_compilation_t* compilation,
-    loom_testbench_case_plan_list_t cases,
+    loom_testbench_invocation_plan_list_t invocations,
     loom_testbench_compile_result_callback_t result_callback);
 
 typedef struct loom_testbench_function_call_provider_callback_t {
