@@ -364,7 +364,6 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
   loom_low_representation_projection_index_t projection_index = {0};
   loom_low_source_declaration_plan_t* declaration_plans = NULL;
   iree_host_size_t planned_declaration_count = 0;
-  iree_host_size_t declaration_capacity = 0;
   for (iree_host_size_t i = 0;
        i < target_function_list.count && iree_status_is_ok(status) &&
        !emitted_error_diagnostics;
@@ -398,16 +397,30 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
         module, projection_plans, projection_count, &selection_arena,
         &projection_index);
   }
+  iree_host_size_t selected_declaration_count = 0;
+  iree_host_size_t selected_function_count = 0;
   for (iree_host_size_t i = 0;
        i < selection_list.count && iree_status_is_ok(status) &&
        !emitted_error_diagnostics;
        ++i) {
-    status = loom_low_source_to_low_record_target_specialization(
-        compile_report, &selection_list.values[i]);
+    const loom_low_source_selection_t* selection = &selection_list.values[i];
+    if (selection->kind == LOOM_LOW_SOURCE_SELECTION_DECLARATION) {
+      ++selected_declaration_count;
+    } else {
+      ++selected_function_count;
+    }
+    status = loom_low_source_to_low_record_target_specialization(compile_report,
+                                                                 selection);
   }
   if (iree_status_is_ok(status) && !emitted_error_diagnostics) {
     status =
         loom_low_lower_module_state_create(&selection_arena, &module_state);
+  }
+  if (iree_status_is_ok(status) && !emitted_error_diagnostics &&
+      selected_declaration_count != 0) {
+    status = iree_arena_allocate_array(
+        &selection_arena, selected_declaration_count,
+        sizeof(*declaration_plans), (void**)&declaration_plans);
   }
   uint32_t declaration_count = 0;
   for (iree_host_size_t i = 0;
@@ -445,12 +458,6 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
       break;
     }
     if (iree_status_is_ok(status)) {
-      status = iree_arena_grow_array(
-          &selection_arena, planned_declaration_count,
-          planned_declaration_count + 1, sizeof(*declaration_plans),
-          &declaration_capacity, (void**)&declaration_plans);
-    }
-    if (iree_status_is_ok(status)) {
       declaration_plans[planned_declaration_count++] =
           (loom_low_source_declaration_plan_t){
               .selection = selection,
@@ -461,7 +468,12 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
   }
   loom_low_source_function_plan_t* function_plans = NULL;
   iree_host_size_t planned_function_count = 0;
-  iree_host_size_t function_capacity = 0;
+  if (iree_status_is_ok(status) && !emitted_error_diagnostics &&
+      selected_function_count != 0) {
+    status = iree_arena_allocate_array(
+        &selection_arena, selected_function_count, sizeof(*function_plans),
+        (void**)&function_plans);
+  }
   for (iree_host_size_t i = 0;
        i < selection_list.count && iree_status_is_ok(status) &&
        !emitted_error_diagnostics;
@@ -505,12 +517,6 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
         .module_state = module_state,
         .report_allocator = source_low_report_allocator,
     };
-    status = iree_arena_grow_array(
-        &selection_arena, planned_function_count, planned_function_count + 1,
-        sizeof(*function_plans), &function_capacity, (void**)&function_plans);
-    if (!iree_status_is_ok(status)) {
-      break;
-    }
     loom_low_source_function_plan_t* plan =
         &function_plans[planned_function_count++];
     *plan = (loom_low_source_function_plan_t){.selection = selection};
