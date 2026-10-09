@@ -57,26 +57,37 @@ bool loom_source_resolve(loom_source_resolver_t resolver,
 }
 
 // Returns an exact position when present, while always publishing the clamped
-// byte offset used by source highlighting.
-static bool loom_source_find_position(iree_string_view_t source, uint32_t line,
-                                      uint32_t column,
+// byte offset used by source highlighting. |line_starts| optionally indexes
+// line starts; without it, lines are found by scanning from the start.
+static bool loom_source_find_position(iree_string_view_t source,
+                                      const iree_host_size_t* line_starts,
+                                      iree_host_size_t line_count,
+                                      uint32_t line, uint32_t column,
                                       iree_host_size_t* out_offset) {
   if (line == 0) {
     *out_offset = 0;
     return false;
   }
-  // Scan newlines to find the byte offset of the start of |line|.
-  uint32_t current_line = 1;
   iree_host_size_t offset = 0;
-  while (current_line < line && offset < source.size) {
-    if (source.data[offset] == '\n') {
-      ++current_line;
+  if (line_starts != NULL) {
+    if (line > line_count) {
+      *out_offset = source.size;
+      return false;
     }
-    ++offset;
-  }
-  if (current_line < line) {
-    *out_offset = source.size;
-    return false;
+    offset = line_starts[line - 1];
+  } else {
+    // Scan newlines to find the byte offset of the start of |line|.
+    uint32_t current_line = 1;
+    while (current_line < line && offset < source.size) {
+      if (source.data[offset] == '\n') {
+        ++current_line;
+      }
+      ++offset;
+    }
+    if (current_line < line) {
+      *out_offset = source.size;
+      return false;
+    }
   }
   // Walk UTF-8 codepoints to reach the target column (1-based).
   // Column 1 means "start of line" = offset stays where it is.
@@ -93,7 +104,8 @@ static bool loom_source_find_position(iree_string_view_t source, uint32_t line,
 iree_host_size_t loom_source_byte_offset(iree_string_view_t source,
                                          uint32_t line, uint32_t column) {
   iree_host_size_t offset;
-  loom_source_find_position(source, line, column, &offset);
+  loom_source_find_position(source, /*line_starts=*/NULL, /*line_count=*/0,
+                            line, column, &offset);
   return offset;
 }
 
@@ -149,12 +161,32 @@ static iree_status_t loom_source_storage_allocate_entry(
     loom_source_storage_t* storage, loom_source_id_t source_id,
     iree_string_view_t filename, iree_string_view_t source,
     loom_source_entry_t* out_entry) {
+  iree_host_size_t line_count = 1;
+  for (iree_host_size_t i = 0; i < source.size; ++i) {
+    line_count += source.data[i] == '\n';
+  }
+  // Layout: filename, NUL, source, NUL, then the aligned line-start table.
+  const iree_host_size_t line_start_alignment = iree_alignof(iree_host_size_t);
   iree_host_size_t filename_capacity = 0;
+  iree_host_size_t text_size = 0;
+  iree_host_size_t aligned_text_size = 0;
+  iree_host_size_t line_starts_size = 0;
   iree_host_size_t allocation_size = 0;
   if (!iree_host_size_checked_add(filename.size, 1, &filename_capacity) ||
       !iree_host_size_checked_add(filename_capacity, source.size,
-                                  &allocation_size) ||
-      !iree_host_size_checked_add(allocation_size, 1, &allocation_size)) {
+                                  &text_size) ||
+      !iree_host_size_checked_add(text_size, 1, &text_size) ||
+      !iree_host_size_checked_add(text_size, line_start_alignment - 1,
+                                  &aligned_text_size) ||
+      !iree_host_size_checked_mul(line_count, sizeof(iree_host_size_t),
+                                  &line_starts_size)) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "source snapshot allocation size overflow");
+  }
+  const iree_host_size_t line_starts_offset =
+      aligned_text_size & ~(line_start_alignment - 1);
+  if (!iree_host_size_checked_add(line_starts_offset, line_starts_size,
+                                  &allocation_size)) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "source snapshot allocation size overflow");
   }
@@ -170,10 +202,21 @@ static iree_status_t loom_source_storage_allocate_entry(
     memcpy(source_ptr, source.data, source.size);
   }
   source_ptr[source.size] = 0;
+  iree_host_size_t* line_starts =
+      (iree_host_size_t*)(storage_ptr + line_starts_offset);
+  iree_host_size_t line = 0;
+  line_starts[line++] = 0;
+  for (iree_host_size_t i = 0; i < source.size; ++i) {
+    if (source.data[i] == '\n') {
+      line_starts[line++] = i + 1;
+    }
+  }
   *out_entry = (loom_source_entry_t){
       .source_id = source_id,
       .source = iree_make_string_view(source_ptr, source.size),
       .filename = iree_make_string_view(storage_ptr, filename.size),
+      .line_starts = line_starts,
+      .line_count = line_count,
   };
   return iree_ok_status();
 }
@@ -282,10 +325,14 @@ bool loom_source_table_resolve(void* user_data, const loom_module_t* module,
   // Only an ordered range actually present in the snapshot has exact spelling.
   // Explicit debug locations can name unavailable or out-of-snapshot positions.
   iree_host_size_t start_offset = 0, end_offset = 0;
-  if (!loom_source_find_position(source_entry->source, entry->file.start_line,
-                                 entry->file.start_col, &start_offset) ||
-      !loom_source_find_position(source_entry->source, entry->file.end_line,
-                                 entry->file.end_col, &end_offset) ||
+  if (!loom_source_find_position(
+          source_entry->source, source_entry->line_starts,
+          source_entry->line_count, entry->file.start_line,
+          entry->file.start_col, &start_offset) ||
+      !loom_source_find_position(
+          source_entry->source, source_entry->line_starts,
+          source_entry->line_count, entry->file.end_line, entry->file.end_col,
+          &end_offset) ||
       end_offset < start_offset) {
     return false;
   }

@@ -54,6 +54,12 @@ typedef struct loom_source_entry_t {
   iree_string_view_t source;
   // Borrowed source filename.
   iree_string_view_t filename;
+  // Optional borrowed byte offsets of each line start (line N at index N - 1),
+  // or NULL to locate lines by scanning |source|. Owned snapshots provide it
+  // so resolving many locations does not rescan the source from its start.
+  const iree_host_size_t* line_starts;
+  // Number of entries in |line_starts|: one more than the newline count.
+  iree_host_size_t line_count;
 } loom_source_entry_t;
 
 // Borrowed source entries for loom_source_table_resolve. Entries need not be
