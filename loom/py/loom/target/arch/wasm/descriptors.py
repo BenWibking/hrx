@@ -1156,6 +1156,29 @@ WASM_CORE_SIMD128_DESCRIPTOR_SET = DescriptorSet(
             schedule_class=_SCHEDULE_SIMD_I32X4,
             flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
+        *(
+            Descriptor(
+                key=f"wasm.{shape}.{operation}",
+                mnemonic=f"{shape}.{operation}",
+                semantic_tag=f"vector.{operation}.{shape}",
+                encoding_id=_simd_encoding_id(base_opcode + opcode_offset),
+                operands=(
+                    _v128_result(),
+                    _v128_operand("value"),
+                    _i32_operand("count"),
+                ),
+                asm_forms=_asm(results=("dst",), operands=("value", "count")),
+                schedule_class=schedule,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            )
+            for shape, base_opcode, schedule in (
+                ("i8x16", 0x6B, _SCHEDULE_SIMD_I32X4),
+                ("i16x8", 0x8B, _SCHEDULE_SIMD_I32X4),
+                ("i32x4", 0xAB, _SCHEDULE_SIMD_I32X4),
+                ("i64x2", 0xCB, _SCHEDULE_SIMD_I64X2),
+            )
+            for opcode_offset, operation in enumerate(("shl", "shr_s", "shr_u"))
+        ),
         *_lane_descriptors(
             "i8x16",
             _i32_result(),

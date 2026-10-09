@@ -10,7 +10,7 @@ from loom.dialect.scf import defs as scf
 from loom.dialect.vector import defs as vector
 from loom.ir import ScalarType
 from loom.scalar_type import ScalarTypeKind, scalar_type_name
-from loom.target.contracts import DescriptorRule, GuardKind, ValueAliasRule
+from loom.target.contracts import DescriptorRule, GuardKind, ValueAliasRule, ValueRef
 from loom.target.emit.wasm.contracts import WASM_CORE_SIMD128_CONTRACT_FRAGMENT
 
 _FLOAT_KINDS = frozenset(
@@ -34,6 +34,68 @@ _NON_FLOAT_KINDS = frozenset(
         ScalarTypeKind.I64,
     }
 )
+
+
+def test_uniform_shifts_cover_constant_and_runtime_counts_for_all_lane_widths():
+    operations = {
+        vector.vector_shli: "shl",
+        vector.vector_shrsi: "shr_s",
+        vector.vector_shrui: "shr_u",
+    }
+    actual = set()
+    for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases:
+        if not isinstance(rule, DescriptorRule) or rule.source_op not in operations:
+            continue
+        type_guards = {
+            guard.field: guard.type_pattern
+            for guard in rule.guards
+            if guard.kind is GuardKind.VALUE_TYPE and guard.value_ref is None
+        }
+        result_type = type_guards["result"]
+        assert type_guards["lhs"] == type_guards["rhs"] == result_type
+        (element,) = result_type.elements
+        bit_count = int(element[1:])
+        assert result_type.lanes == 128 // bit_count
+        range_guard = next(
+            guard for guard in rule.guards if guard.kind is GuardKind.VALUE_I64_RANGE
+        )
+        assert range_guard.field == "rhs"
+        assert (range_guard.minimum, range_guard.maximum) == (0, bit_count - 1)
+        constant = any(guard.kind is GuardKind.VALUE_EXACT_I64 for guard in rule.guards)
+        if constant:
+            assert rule.guards[0].kind is GuardKind.VALUE_EXACT_I64
+        else:
+            assert rule.guards[0].value_ref == ValueRef.uniform_element_origin_operand(
+                "rhs"
+            )
+        actual.add((bit_count, operations[rule.source_op], constant))
+        final = rule.emit[-1]
+        assert (
+            final.descriptor.key
+            == f"wasm.i{bit_count}x{128 // bit_count}.{operations[rule.source_op]}"
+        )
+        assert final.operands["value"] == ValueRef.operand("lhs")
+        if constant:
+            assert len(rule.emit) == 2
+            assert rule.emit[0].descriptor.key == "wasm.i32.const"
+            assert final.operands["count"] == ValueRef.temporary("count")
+        elif bit_count == 64:
+            assert len(rule.emit) == 2
+            assert rule.emit[0].descriptor.key == "wasm.i32.wrap_i64"
+            assert rule.emit[0].operands[
+                "input"
+            ] == ValueRef.uniform_element_origin_operand("rhs")
+        else:
+            assert len(rule.emit) == 1
+            assert final.operands["count"] == ValueRef.uniform_element_origin_operand(
+                "rhs"
+            )
+    assert actual == {
+        (bit_count, operation, constant)
+        for bit_count in (8, 16, 32, 64)
+        for operation in ("shl", "shr_s", "shr_u")
+        for constant in (False, True)
+    }
 
 
 def _narrowing_pair(rule: DescriptorRule) -> tuple[str, str]:

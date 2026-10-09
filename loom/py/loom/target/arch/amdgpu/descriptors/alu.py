@@ -4583,7 +4583,10 @@ def _v_pk_with_op_sel_hi_field(
                 f"packed overlay '{overlay.descriptor_key}' has no OP_SEL_HI field"
             )
         rewritten_overlays.append(
-            replace(overlay, fixed_encoding_fields=tuple(fixed_encoding_fields))
+            replace(
+                overlay,
+                fixed_encoding_fields=tuple(fixed_encoding_fields),
+            )
         )
     return tuple(rewritten_overlays)
 
@@ -4607,6 +4610,7 @@ def _v_pk_ternary_literal_overlay(
     literal_field = ""
     operands = [AmdgpuOperandOverlay("VDST", _vgpr_result(units=units))]
     asm_operands = []
+    native_values = [_native_result("dst")]
     for (
         source_name,
         xml_field_name,
@@ -4615,8 +4619,10 @@ def _v_pk_ternary_literal_overlay(
     ) in _V_PK_TERNARY_SOURCES:
         if source_name == literal_source:
             literal_field = xml_field_name
+            native_values.append(_native_i64_immediate("imm32"))
             continue
         asm_operands.append(operand_name)
+        native_values.append(_native_operand(operand_name))
         operands.append(
             AmdgpuOperandOverlay(
                 xml_field_name, operand_builder(operand_name, units=units)
@@ -4633,14 +4639,19 @@ def _v_pk_ternary_literal_overlay(
         semantic_tag=semantic_tag,
         schedule_class=_SCHEDULE_VALU,
         operands=tuple(operands),
-        asm_forms=_asm(
-            results=("dst",),
-            operands=tuple(asm_operands),
-            immediates=("imm32",),
+        asm_forms=(
+            AsmForm(
+                native_assembly_mnemonic=mnemonic,
+                results=("dst",),
+                operands=tuple(asm_operands),
+                immediates=(AsmImmediate("imm32"),),
+                native_assembly_values=tuple(native_values),
+            ),
         ),
+        immediate_fields=("LITERAL",),
         immediates=(_LITERAL_U32_IMMEDIATE,),
         fixed_encoding_fields=(
-            ("OP_SEL_HI", 0x7),
+            ("OP_SEL_HI", 7),
             (literal_field, _predefined("SRC_LITERAL", "OPR_SRC")),
         ),
         flags=(DescriptorFlag.DEAD_REMOVABLE,),
@@ -5014,6 +5025,149 @@ def _v_pk_add_f32_overlay() -> AmdgpuDescriptorOverlay:
         semantic_tag="float.add.pk2.f32",
         units=2,
     )
+
+
+def _v_pk_broadcast_overlays(
+    overlay: AmdgpuDescriptorOverlay,
+) -> tuple[AmdgpuDescriptorOverlay, ...]:
+    """Pins selectors and physical reads together, including literal forms."""
+    source_names = tuple(
+        source.descriptor_operand.field_name for source in overlay.operands[1:]
+    )
+    units = overlay.operands[0].descriptor_operand.unit_count
+    immediate_names = tuple(immediate.field_name for immediate in overlay.immediates)
+    native_immediates = tuple(
+        value
+        for form in overlay.asm_forms or ()
+        for value in form.native_assembly_values
+        if value.field_name in immediate_names
+    )
+    overlays = []
+    for mask in range(1, 1 << len(source_names)):
+        operands = [overlay.operands[0]]
+        native_values = [_native_result("dst")]
+        for source_index, source in enumerate(overlay.operands[1:]):
+            name = source.descriptor_operand.field_name
+            if mask & (1 << source_index):
+                operand = source.descriptor_operand
+                operand = replace(
+                    operand,
+                    unit_count=1,
+                    reg_alts=tuple(
+                        replace(
+                            alternative,
+                            unit_alignment=units,
+                            register_part=(
+                                {
+                                    _REG_SGPR: _REG_PART_SGPR_LOW16,
+                                    _REG_VGPR: _REG_PART_VGPR_LOW16,
+                                }[alternative.reg_class]
+                                if units == 1
+                                else None
+                            ),
+                        )
+                        for alternative in operand.reg_alts
+                    ),
+                )
+                source = replace(
+                    source,
+                    descriptor_operand=operand,
+                    size_exception_reason=(
+                        "packed lanes both select the low half"
+                        if units == 1
+                        else "packed lanes both select the first dword"
+                    ),
+                )
+            native_values.append(_native_operand(name))
+            operands.append(source)
+        selector = 7 ^ mask
+        selector_value = _native_modifier_literal(
+            "op_sel_hi:["
+            + ",".join(str((selector >> bit) & 1) for bit in range(len(source_names)))
+            + "]"
+        )
+        native_values.append(selector_value)
+        suffix = "_".join(
+            name for bit, name in enumerate(source_names) if mask & (1 << bit)
+        )
+        descriptor_key = f"{overlay.descriptor_key}.broadcast_{suffix}"
+        variant = replace(
+            overlay,
+            descriptor_key=descriptor_key,
+            operands=tuple(operands),
+            operand_forms=tuple(
+                replace(
+                    form,
+                    replacement_descriptor=form.replacement_descriptor.replace(
+                        overlay.descriptor_key, descriptor_key, 1
+                    ),
+                )
+                for form in overlay.operand_forms
+            ),
+            fixed_encoding_fields=(("OP_SEL_HI", selector),),
+            asm_forms=_asm(
+                mnemonic=f"{overlay.mnemonic}.broadcast_{suffix}",
+                native_assembly_mnemonic=overlay.mnemonic,
+                results=("dst",),
+                operands=source_names,
+                immediates=immediate_names,
+                named_immediates=True,
+                native_assembly_values=(*native_values, *native_immediates),
+            ),
+        )
+        overlays.append(variant)
+        if overlay.operand_forms:
+            source_operands = {source.xml_field_name: source for source in operands}
+            overlays.extend(
+                replace(
+                    literal,
+                    operands=tuple(
+                        source_operands[source.xml_field_name]
+                        for source in literal.operands
+                    ),
+                    fixed_encoding_fields=tuple(
+                        (field, selector if field == "OP_SEL_HI" else value)
+                        for field, value in literal.fixed_encoding_fields
+                    ),
+                    asm_forms=tuple(
+                        replace(
+                            form,
+                            native_assembly_mnemonic=overlay.mnemonic,
+                            native_assembly_values=(
+                                *form.native_assembly_values,
+                                selector_value,
+                            ),
+                        )
+                        for form in literal.asm_forms or ()
+                    ),
+                )
+                for literal in _v_pk_ternary_literal_overlays(
+                    descriptor_key=descriptor_key,
+                    instruction_name=overlay.instruction_name,
+                    mnemonic=f"{overlay.mnemonic}.broadcast_{suffix}",
+                    semantic_tag=overlay.semantic_tag,
+                )
+            )
+    return tuple(overlays)
+
+
+def _v_pk_operand_overlays(
+    overlays: tuple[AmdgpuDescriptorOverlay, ...],
+) -> tuple[AmdgpuDescriptorOverlay, ...]:
+    """Expands packed arithmetic families with complete operand contracts."""
+    result = []
+    for overlay in overlays:
+        result.extend((overlay, *_v_pk_broadcast_overlays(overlay)))
+        if overlay.operand_forms:
+            result.extend(
+                _v_pk_ternary_literal_overlays(
+                    descriptor_key=overlay.descriptor_key,
+                    instruction_name=overlay.instruction_name,
+                    mnemonic=overlay.mnemonic,
+                    semantic_tag=overlay.semantic_tag,
+                )
+            )
+    return tuple(result)
 
 
 def _v_pk_mul_f32_overlay() -> AmdgpuDescriptorOverlay:
@@ -7653,6 +7807,8 @@ __all__ = (
     "_v_pk_mul_lo_u16_overlay",
     "_v_pk_i16_binary_overlays",
     "_v_pk_fma_f32_overlay",
+    "_v_pk_broadcast_overlays",
+    "_v_pk_operand_overlays",
     "_v_pk_fmac_f16_overlay",
     "_v_pk_mad_i16_overlay",
     "_v_pk_mad_i16_literal_overlays",

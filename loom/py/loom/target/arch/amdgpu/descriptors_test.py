@@ -4198,7 +4198,8 @@ def test_packed_fma_mad_descriptors_pin_lane_container_widths() -> None:
             assert tuple(
                 operand.descriptor_operand.unit_count for operand in descriptor.operands
             ) == (1, 1, 1, 1)
-            assert descriptor.fixed_encoding_fields == ((op_sel_hi_field, 0x7),)
+            assert descriptor.fixed_encoding_fields == ((op_sel_hi_field, 7),)
+            assert not descriptor.immediate_fields
 
     cdna_descriptor_sets = (_gfx940_core_overlays(), _gfx950_core_overlays())
     for descriptor_set in cdna_descriptor_sets:
@@ -4256,7 +4257,7 @@ def test_gfx125x_packed_bf16_descriptors_are_arch_scoped() -> None:
             operand.descriptor_operand.unit_count
             for operand in binary_descriptor.operands
         ) == (1, 1, 1)
-        assert binary_descriptor.fixed_encoding_fields == (("OPSEL_HI", 0x7),)
+        assert binary_descriptor.fixed_encoding_fields == (("OPSEL_HI", 7),)
 
     fma_descriptor = descriptors["amdgpu.v_pk_fma_bf16"]
     assert fma_descriptor.encoding_name == "ENC_VOP3P"
@@ -4269,7 +4270,8 @@ def test_gfx125x_packed_bf16_descriptors_are_arch_scoped() -> None:
     assert tuple(
         operand.descriptor_operand.unit_count for operand in fma_descriptor.operands
     ) == (1, 1, 1, 1)
-    assert fma_descriptor.fixed_encoding_fields == (("OPSEL_HI", 0x7),)
+    assert fma_descriptor.fixed_encoding_fields == (("OPSEL_HI", 7),)
+    assert not fma_descriptor.immediate_fields
 
 
 def test_gfx125x_packed_fp8_to_f16_sources_use_low_half_window() -> None:
@@ -4394,7 +4396,7 @@ def test_packed_binary_descriptors_pin_lane_container_widths() -> None:
             assert tuple(
                 operand.descriptor_operand.unit_count for operand in descriptor.operands
             ) == (1, 1, 1)
-            assert descriptor.fixed_encoding_fields == ((op_sel_hi_field, 0x7),)
+            assert descriptor.fixed_encoding_fields == ((op_sel_hi_field, 7),)
 
 
 def test_packed_float_descriptors_follow_target_numeric_semantics() -> None:
@@ -4422,7 +4424,8 @@ def test_packed_float_descriptors_follow_target_numeric_semantics() -> None:
         assert tuple(
             operand.descriptor_operand.unit_count for operand in descriptor.operands
         ) == (1, 1, 1)
-        assert descriptor.fixed_encoding_fields == (("OPSEL_HI", 0x7),)
+        assert descriptor.fixed_encoding_fields == (("OPSEL_HI", 7),)
+        assert not descriptor.immediates
 
     for descriptor_set in (_gfx940_core_overlays(), _gfx950_core_overlays()):
         descriptors = {
@@ -4514,10 +4517,12 @@ def test_packed_fma_mad_rdna_literal_forms_cover_source_positions() -> None:
                 assert tuple(
                     immediate.field_name for immediate in literal_descriptor.immediates
                 ) == ("imm32",)
+                assert literal_descriptor.immediate_fields == ("LITERAL",)
                 assert literal_descriptor.fixed_encoding_fields[0] == (
                     op_sel_hi_field,
-                    0x7,
+                    7,
                 )
+                assert len(literal_descriptor.fixed_encoding_fields) == 2
                 fixed_field, fixed_value = literal_descriptor.fixed_encoding_fields[1]
                 assert fixed_field == literal_field
                 assert isinstance(fixed_value, AmdgpuOperandPredefinedValueRef)
@@ -4533,6 +4538,72 @@ def test_packed_fma_mad_rdna_literal_forms_cover_source_positions() -> None:
                 key.startswith(f"{descriptor_key}.") and key.endswith("_lit")
                 for key in descriptors
             )
+
+
+def test_packed_broadcasts_preserve_register_parts_and_literal_replacements() -> None:
+    for overlays in (
+        _gfx940_core_overlays(),
+        _gfx950_core_overlays(),
+        _gfx9_4_generic_core_overlays(),
+        _gfx11_core_overlays(),
+        _gfx115x_core_overlays(),
+        _rdna4m_core_overlays(),
+        _gfx12_core_overlays(),
+        _gfx125x_core_overlays(),
+    ):
+        descriptors = {overlay.descriptor_key: overlay for overlay in overlays}
+        families = [
+            overlay
+            for overlay in overlays
+            if overlay.instruction_name.startswith("V_PK_")
+            and overlay.encoding_name == "ENC_VOP3P"
+            and "." not in overlay.descriptor_key.removeprefix("amdgpu.")
+        ]
+        for base in families:
+            names = [
+                source.descriptor_operand.field_name for source in base.operands[1:]
+            ]
+            units = base.operands[0].descriptor_operand.unit_count
+            for mask in range(1, 1 << len(names)):
+                suffix = "_".join(
+                    name for bit, name in enumerate(names) if mask & (1 << bit)
+                )
+                variant = descriptors[f"{base.descriptor_key}.broadcast_{suffix}"]
+                assert variant.instruction_name == base.instruction_name
+                assert (
+                    dict(variant.fixed_encoding_fields)[
+                        base.fixed_encoding_fields[0][0]
+                    ]
+                    == 7 ^ mask
+                )
+                assert variant.immediates == base.immediates
+                for bit, source in enumerate(variant.operands[1:]):
+                    operand = source.descriptor_operand
+                    assert operand.unit_count == (1 if mask & (1 << bit) else units)
+                    for alternative in operand.reg_alts:
+                        expected_part = None
+                        if units == 1 and mask & (1 << bit):
+                            expected_part = {
+                                _REG_SGPR: _REG_PART_SGPR_LOW16,
+                                _REG_VGPR: _REG_PART_VGPR_LOW16,
+                            }[alternative.reg_class]
+                        assert alternative.register_part == expected_part
+                        if units == 2 and mask & (1 << bit):
+                            assert alternative.unit_alignment == 2
+                sources = {source.xml_field_name: source for source in variant.operands}
+                assert len(variant.operand_forms) == len(base.operand_forms)
+                for form in variant.operand_forms:
+                    literal = descriptors[form.replacement_descriptor]
+                    assert literal.instruction_name == base.instruction_name
+                    assert (
+                        literal.fixed_encoding_fields[0]
+                        == variant.fixed_encoding_fields[0]
+                    )
+                    assert [
+                        immediate.field_name for immediate in literal.immediates
+                    ] == ["imm32"]
+                    for source in literal.operands:
+                        assert source == sources[source.xml_field_name]
 
 
 def test_packed_fmac_f16_descriptor_pins_destructive_accumulator() -> None:

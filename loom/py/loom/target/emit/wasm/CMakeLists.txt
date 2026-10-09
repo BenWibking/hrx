@@ -16,6 +16,7 @@ iree_py_library(
     "__init__.py"
     "contracts.py"
     "float_narrowing.py"
+    "vector_shifts.py"
   DEPS
     loom::py::loom::core
     loom::py::loom::dialect::index::index

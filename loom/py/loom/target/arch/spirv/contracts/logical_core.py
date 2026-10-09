@@ -1455,6 +1455,43 @@ def _vector_float_binary_rules() -> tuple[DescriptorRule, ...]:
     )
 
 
+def _vector_float_scale_rules() -> tuple[DescriptorRule, ...]:
+    rules = []
+    for scalar in FLOAT_SCALAR_ALU_TYPES:
+        for lane_count in NATIVE_ORDINARY_VECTOR_LANE_COUNTS:
+            descriptor = _descriptor(
+                f"spirv.op_vector_times_scalar.v{lane_count}{scalar.suffix}"
+            )
+            vector_type = Vector(scalar.source_type, lanes=lane_count)
+            for broadcast, lanes in (("rhs", "lhs"), ("lhs", "rhs")):
+                rules.append(
+                    DescriptorRule(
+                        source_op=vector.vector_mulf,
+                        descriptor=descriptor,
+                        guards=(
+                            *_typed_guards(("lhs", "rhs", "result"), vector_type),
+                            *_feature_guards(descriptor),
+                            Guard.uniform_element_origin_type(
+                                broadcast, Scalar(scalar.source_type)
+                            ),
+                        ),
+                        emit=(
+                            _descriptor_emit(
+                                descriptor=descriptor,
+                                operands={
+                                    "vector": ValueRef.operand(lanes),
+                                    "scalar": ValueRef.uniform_element_origin_operand(
+                                        broadcast
+                                    ),
+                                },
+                                results={"dst": ValueRef.result("result")},
+                            ),
+                        ),
+                    )
+                )
+    return tuple(rules)
+
+
 def _conversion_rules() -> tuple[DescriptorRule, ...]:
     rules = [
         _conversion_rule(row)
@@ -1542,6 +1579,7 @@ SPIRV_LOGICAL_CORE_CONTRACT_FRAGMENT = ContractFragment(
         _conversion_alias_rule(scalar_conversion.scalar_bitcast, _I8, _F8E5M2),
         *_conversion_rules(),
         *_scalar_binary_rules(),
+        *_vector_float_scale_rules(),
         *_vector_float_binary_rules(),
         *SPIRV_EXTENDED_MATH_CONTRACT_CASES,
         *SPIRV_ORDINARY_VECTOR_CONTRACT_CASES,

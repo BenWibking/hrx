@@ -134,6 +134,7 @@ loom_check_test_suite(
     "test/source_low/structured_control.loom-test"
     "test/source_low/target_legalize_native_store.loom-test"
     "test/source_low/uniform_predicate_control.loom-test"
+    "test/source_low/uniform_shifts.loom-test"
   TEST_NAME_PREFIX_TO_STRIP
     "test/source_low/"
 )

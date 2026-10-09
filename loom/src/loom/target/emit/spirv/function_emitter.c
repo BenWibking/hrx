@@ -342,13 +342,12 @@ static iree_status_t loom_spirv_emit_rounding_decoration(
       LOOM_SPIRV_OP_DECORATE, operands, IREE_ARRAYSIZE(operands));
 }
 
-static iree_status_t loom_spirv_emit_binary_same_type_packet(
+static iree_status_t loom_spirv_emit_binary_lhs_type_packet(
     loom_spirv_emit_state_t* state, const loom_low_descriptor_packet_t* packet,
     const loom_spirv_packet_row_t* row) {
   loom_spirv_module_value_ref_t operands[2] = {0};
   IREE_RETURN_IF_ERROR(
       loom_spirv_emit_load_packet_operands(state, packet, row, operands));
-  IREE_ASSERT_EQ(operands[0].type_id, operands[1].type_id);
   uint32_t result_id = 0;
   IREE_RETURN_IF_ERROR(loom_spirv_emit_prepare_packet_result(
       state, packet, operands[0].type_id,
@@ -996,8 +995,8 @@ static iree_status_t loom_spirv_emit_descriptor_packet(
       return loom_spirv_emit_scalar_constant_packet(state, packet, row);
     case LOOM_SPIRV_PACKET_FORM_BOOLEAN_CONSTANT:
       return loom_spirv_emit_boolean_constant_packet(state, packet, row);
-    case LOOM_SPIRV_PACKET_FORM_BINARY_SAME_TYPE:
-      return loom_spirv_emit_binary_same_type_packet(state, packet, row);
+    case LOOM_SPIRV_PACKET_FORM_BINARY_LHS_TYPE:
+      return loom_spirv_emit_binary_lhs_type_packet(state, packet, row);
     case LOOM_SPIRV_PACKET_FORM_UNARY_TYPED:
       return loom_spirv_emit_unary_typed_packet(state, packet, row);
     case LOOM_SPIRV_PACKET_FORM_COMPOSITE_CONSTRUCT:

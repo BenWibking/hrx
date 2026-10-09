@@ -2193,22 +2193,19 @@ low.kernel.def target<amdgpu.rdna4.gfx125x.core>(@target) abi_layout({constant_c
   %45 = slice %41[3] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
   %47 = v_lshlrev_b32_src0_inline %lane, 1
   %row_scale = global_load_u16_saddr %47, %scale_view
-  %49 = v_and_b32_lit %row_scale, 65535
-  %51 = v_lshlrev_b32_src0_inline %49, 16
-  %52 = v_or_b32 %49, %51
-  %84 = v_pk_mul_bf16 %34, %52
-  %87 = v_pk_mul_bf16 %35, %52
-  %90 = v_pk_mul_bf16 %36, %52
-  %93 = v_pk_mul_bf16 %37, %52
-  %96 = v_pk_mul_bf16 %42, %52
-  %99 = v_pk_mul_bf16 %43, %52
-  %102 = v_pk_mul_bf16 %44, %52
-  %105 = v_pk_mul_bf16 %45, %52
-  %112 = concat(%84, %87, %90, %93) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x4>
-  %108 = v_lshlrev_b32_src0_inline %lane, 5
-  global_store_b128_saddr %108, %112, %output_view
-  %111 = concat(%96, %99, %102, %105) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x4>
-  global_store_b128_saddr %108, %111, %output_view {offset = 16}
+  %50 = v_pk_mul_bf16.broadcast_rhs %34, %row_scale
+  %52 = v_pk_mul_bf16.broadcast_rhs %35, %row_scale
+  %54 = v_pk_mul_bf16.broadcast_rhs %36, %row_scale
+  %56 = v_pk_mul_bf16.broadcast_rhs %37, %row_scale
+  %58 = v_pk_mul_bf16.broadcast_rhs %42, %row_scale
+  %60 = v_pk_mul_bf16.broadcast_rhs %43, %row_scale
+  %62 = v_pk_mul_bf16.broadcast_rhs %44, %row_scale
+  %64 = v_pk_mul_bf16.broadcast_rhs %45, %row_scale
+  %71 = concat(%50, %52, %54, %56) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x4>
+  %67 = v_lshlrev_b32_src0_inline %lane, 5
+  global_store_b128_saddr %67, %71, %output_view
+  %70 = concat(%58, %60, %62, %64) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x4>
+  global_store_b128_saddr %67, %70, %output_view {offset = 16}
   return
 }
 

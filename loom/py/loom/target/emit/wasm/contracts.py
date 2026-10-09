@@ -68,6 +68,7 @@ from loom.target.contracts.templates import (
     reduction_descriptor_rules,
 )
 from loom.target.emit.wasm.float_narrowing import float_narrowing_rules
+from loom.target.emit.wasm.vector_shifts import uniform_shift_rules
 from loom.target.low_descriptors import Descriptor
 
 _I1 = Scalar("i1")
@@ -1367,6 +1368,7 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
     descriptor_set=WASM_CORE_SIMD128_DESCRIPTOR_SET,
     public_header="loom/target/emit/wasm/contracts/core_simd128.h",
     cases=(
+        *uniform_shift_rules(),
         *_view_alias_rules(),
         _buffer_load_i8_u_rule(),
         _buffer_store_i8_rule(),

@@ -24,7 +24,9 @@ from loom.target.arch.x86.vector_families import (
     AVX512_INTEGER_BINARY_FAMILIES,
     AVX512_INTEGER_COMPARE_MNEMONICS,
     AVX512_SELECT_MNEMONICS,
+    AVX512_UNIFORM_SHIFT_FAMILIES,
     AVX512VL_INTEGER_BINARY_FAMILIES,
+    AVX512VL_UNIFORM_SHIFT_FAMILIES,
     AVX512VL_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     FLOAT_EXTREMA_MNEMONICS,
@@ -916,10 +918,10 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
         *(
             _evex_descriptor(
                 Descriptor(
-                    key=f"x86.avx512.{mnemonic}.zmm",
-                    mnemonic=mnemonic,
-                    semantic_tag=f"integer.{semantic}.i16x32",
-                    operands=(_zmm_result(), _zmm_operand("source")),
+                    key=f"x86.avx512.{family.mnemonic}.{_REGISTER_SUFFIXES[width]}",
+                    mnemonic=family.mnemonic,
+                    semantic_tag=f"{family.semantic}.{family.element.name}x{family.element.lane_count(width)}",
+                    operands=(_vector_result(width), _vector_operand(width, "source")),
                     immediates=(
                         Immediate(
                             "shift",
@@ -929,19 +931,23 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
                         ),
                     ),
                     asm_forms=_asm(
-                        mnemonic=f"avx512.{mnemonic}.zmm",
+                        mnemonic=f"avx512.{family.mnemonic}.{_REGISTER_SUFFIXES[width]}",
                         results=("dst",),
                         operands=("source",),
                         immediates=("shift",),
                     ),
-                    schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+                    schedule_class=_vector_i32_schedule_class(width),
                     flags=(DescriptorFlag.DEAD_REMOVABLE,),
                 ),
                 instruction,
             )
-            for mnemonic, semantic, instruction in (
-                ("vpsllw", "shl", native.VPSLLW),
-                ("vpsrlw", "shru", native.VPSRLW),
+            for family, instruction in zip(
+                AVX512_UNIFORM_SHIFT_FAMILIES,
+                native.AVX512_UNIFORM_SHIFT_IMMEDIATE,
+                strict=True,
+            )
+            for width in (
+                (128, 256, 512) if family in AVX512VL_UNIFORM_SHIFT_FAMILIES else (512,)
             )
         ),
         _evex_descriptor(

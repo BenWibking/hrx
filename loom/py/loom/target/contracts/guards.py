@@ -210,6 +210,25 @@ class Guard:
         )
 
     @classmethod
+    def uniform_element_origin_type(
+        cls,
+        field: str,
+        type_pattern: TypePattern,
+        *,
+        element: int = 0,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        """Requires a same-type uniform scalar origin of an operand."""
+        return cls(
+            kind=GuardKind.VALUE_TYPE,
+            field=field,
+            element=element,
+            type_pattern=type_pattern,
+            value_ref=ValueRef.uniform_element_origin_operand(field, element=element),
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
     def exact_uniform_element_origin_type(
         cls,
         field: str,
