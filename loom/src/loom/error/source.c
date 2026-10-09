@@ -260,24 +260,13 @@ bool loom_source_table_resolve(void* user_data, const loom_module_t* module,
     return false;
   }
 
-  // Owned tables are indexed by source ID. Preserve the general resolver
-  // contract for callers that provide unordered tables.
-  const loom_source_entry_t* source_entry = NULL;
-  if (entry->file.source_id < table->count &&
-      table->entries[entry->file.source_id].source_id ==
+  if (entry->file.source_id >= table->count ||
+      table->entries[entry->file.source_id].source_id !=
           entry->file.source_id) {
-    source_entry = &table->entries[entry->file.source_id];
-  } else {
-    for (iree_host_size_t i = 0; i < table->count; ++i) {
-      if (table->entries[i].source_id == entry->file.source_id) {
-        source_entry = &table->entries[i];
-        break;
-      }
-    }
-  }
-  if (!source_entry) {
     return false;
   }
+  const loom_source_entry_t* source_entry =
+      &table->entries[entry->file.source_id];
 
   // Only an ordered range actually present in the snapshot has exact spelling.
   // Explicit debug locations can name unavailable or out-of-snapshot positions.

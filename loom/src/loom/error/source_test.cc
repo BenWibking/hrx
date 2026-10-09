@@ -164,7 +164,7 @@ TEST_F(SourceResolverTest, SnapshotsAreQualifiedByModuleEvenWithMatchingNames) {
   loom_module_free(other);
 }
 
-TEST_F(SourceResolverTest, UnorderedSnapshotTablesResolveBySourceIdentity) {
+TEST_F(SourceResolverTest, SparseSnapshotTablesResolveBySourceIdentity) {
   loom_source_id_t unused_source_id;
   IREE_ASSERT_OK(loom_module_register_source(module, IREE_SV("unused.h"),
                                              &unused_source_id));
@@ -173,12 +173,16 @@ TEST_F(SourceResolverTest, UnorderedSnapshotTablesResolveBySourceIdentity) {
   IREE_ASSERT_OK(
       loom_module_register_source(module, IREE_SV("kernel.h"), &source_id));
   ASSERT_EQ(source_id, 1u);
-  const loom_source_entry_t source = {
-      source_id,
-      IREE_SV("kernel"),
-      IREE_SV("kernel.h"),
+  const loom_source_entry_t sources[] = {
+      {/*.source_id=*/LOOM_SOURCE_ID_INVALID},
+      {
+          /*.source_id=*/source_id,
+          /*.source=*/IREE_SV("kernel"),
+          /*.filename=*/IREE_SV("kernel.h"),
+      },
   };
-  loom_source_table_resolver_t table = {module, &source, 1};
+  loom_source_table_resolver_t table = {module, sources,
+                                        IREE_ARRAYSIZE(sources)};
   loom_location_id_t location;
   IREE_ASSERT_OK(loom_module_add_location(
       module, loom_location_file_range(source_id, 1, 1, 1, 7), &location));

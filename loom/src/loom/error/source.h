@@ -56,13 +56,15 @@ typedef struct loom_source_entry_t {
   iree_string_view_t filename;
 } loom_source_entry_t;
 
-// Borrowed source entries for loom_source_table_resolve. Entries need not be
-// dense or ordered by source ID. Linking projects IDs into the target module
-// before its locations are resolved against this table.
+// Borrowed source entries for loom_source_table_resolve. Entries are indexed
+// by source ID; missing snapshots have an invalid source ID. Linking projects
+// IDs into the target module before its locations are resolved against this
+// table.
 typedef struct loom_source_table_resolver_t {
   // Borrowed module whose source IDs identify these exact snapshots.
   const loom_module_t* module;
-  // Borrowed entries and their strings, live through the final resolution use.
+  // Source-ID-indexed borrowed entries and their strings, live through the
+  // final resolution use.
   const loom_source_entry_t* entries;
   // Number of entries, including any empty entries.
   iree_host_size_t count;
