@@ -1289,7 +1289,9 @@ loom_cc_test(
     loom::format::text::parser
     loom::ir
     loom::ops::op_registry
+    loom::target::arch::amd::xdna::error_defs
     loom::target::reporting::report
+    loom::testing::diagnostic_matchers
     loom::testing::module_ptr
   LABELS
     "iree-build-requirement=libamdf"
