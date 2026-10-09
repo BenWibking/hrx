@@ -6,11 +6,15 @@
 
 // Linearizes dense multi-dimensional view accesses into rank-1 source IR.
 //
-// The pass rewrites scalar view.load/store operations that index static dense
-// views formed by buffer.view into equivalent accesses through a rank-1 view of
-// the same buffer and byte offset. The resulting index.madd expressions are
-// ordinary source SSA, so canonicalize and CSE can share address math before
-// source-to-low without target-specific emission knowledge.
+// The pass rewrites scalar and vector loads/stores into static dense views
+// formed by buffer.view through an equivalent rank-1 view of the same buffer
+// and byte offset. Existing value facts must prove that the complete footprint
+// fits every original axis before flattening can discard those constraints.
+// Unproved accesses retain their ranked form for memory-footprint verification;
+// the pass does not infer bounds from a memory operation's use of an index.
+// The resulting index.madd expressions are ordinary source SSA, so canonicalize
+// and CSE can share address math before source-to-low without target-specific
+// emission knowledge.
 
 #ifndef LOOM_TRANSFORMS_LINEARIZE_VIEW_ACCESSES_H_
 #define LOOM_TRANSFORMS_LINEARIZE_VIEW_ACCESSES_H_
