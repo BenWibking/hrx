@@ -47,6 +47,7 @@ from loom.target.low_descriptors import (
     Hazard,
     Immediate,
     ImmediateEncodingSlice,
+    ImmediateFlag,
     ImmediateKind,
     InstructionClass,
     IssueUse,
@@ -839,6 +840,13 @@ def _compile_asm_form(
             )
         )
 
+    # Retain the parser/printer's complete order so implicit field lookup needs
+    # no descriptor scan or explicit-prefix membership search at runtime.
+    explicit_immediate_count = len(immediate_order)
+    has_named_immediates = any(immediate.name is not None or ImmediateFlag.DEFAULT_VALUE in descriptor.immediates[immediate.immediate_index].flags for immediate in immediate_order)
+    explicit_immediate_indices = {immediate.immediate_index for immediate in immediate_order}
+    immediate_order.extend(CompiledAsmImmediate(immediate_index=index, name_label=None, name=None) for index in range(len(descriptor.immediates)) if index not in explicit_immediate_indices)
+
     native_assembly_values = []
     for value_ordinal, value in enumerate(asm_form.native_assembly_values):
         native_assembly_values.append(
@@ -866,6 +874,14 @@ def _compile_asm_form(
         operand_segments=tuple(operand_segments),
         result_value_types=asm_form.result_value_types,
         immediates=tuple(immediate_order),
+        explicit_immediate_count=explicit_immediate_count,
+        has_named_immediates=has_named_immediates,
+        requires_named_immediates=any(
+            ImmediateFlag.DEFAULT_VALUE not in descriptor.immediates[immediate.immediate_index].flags for immediate in immediate_order[0 if has_named_immediates else explicit_immediate_count :]
+        ),
+        native_owns_immediate_syntax=any(
+            value.kind in (NativeAsmValueKind.IMMEDIATE_I64, NativeAsmValueKind.IMMEDIATE_UNSIGNED_HEX, NativeAsmValueKind.IMMEDIATE_TARGET_FORMAT) for value in native_assembly_values
+        ),
         native_assembly_values=tuple(native_assembly_values),
     )
 

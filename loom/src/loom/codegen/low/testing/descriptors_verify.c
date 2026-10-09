@@ -430,7 +430,17 @@ static iree_status_t loom_low_verify_asm_immediates(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_asm_layout_t* layout,
     const loom_low_descriptor_t* descriptor, uint32_t descriptor_index) {
-  for (uint16_t i = 0; i < layout->immediate_count; ++i) {
+  if (layout->explicit_immediate_count > descriptor->immediate_count) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "low asm form for descriptor %" PRIu32
+                            " has more explicit immediates than fields",
+                            descriptor_index);
+  }
+  bool has_named_immediates = false;
+  bool required_explicit_immediates = false;
+  bool required_implicit_immediates = false;
+  uint16_t previous_implicit_index = 0;
+  for (uint16_t i = 0; i < descriptor->immediate_count; ++i) {
     const uint32_t row_index = layout->immediate_start + i;
     const loom_low_asm_immediate_t* asm_immediate =
         &descriptor_set->asm_immediates[row_index];
@@ -441,6 +451,27 @@ static iree_status_t loom_low_verify_asm_immediates(
                               " but descriptor has only %" PRIu16 " immediates",
                               descriptor_index, asm_immediate->immediate_index,
                               descriptor->immediate_count);
+    }
+    const loom_low_immediate_t* immediate =
+        &descriptor_set->immediates[descriptor->immediate_start +
+                                    asm_immediate->immediate_index];
+    const bool has_default = iree_any_bit_set(
+        immediate->flags, LOOM_LOW_IMMEDIATE_FLAG_DEFAULT_VALUE);
+    if (i < layout->explicit_immediate_count) {
+      required_explicit_immediates |= !has_default;
+      has_named_immediates |=
+          asm_immediate->name_string_ref != LOOM_STRING_REF_NONE || has_default;
+    } else {
+      required_implicit_immediates |= !has_default;
+      if (asm_immediate->name_string_ref != LOOM_STRING_REF_NONE ||
+          (i > layout->explicit_immediate_count &&
+           asm_immediate->immediate_index <= previous_implicit_index)) {
+        return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                                "low asm form for descriptor %" PRIu32
+                                " has a named or unordered implicit field",
+                                descriptor_index);
+      }
+      previous_implicit_index = asm_immediate->immediate_index;
     }
     for (uint16_t j = 0; j < i; ++j) {
       const loom_low_asm_immediate_t* previous =
@@ -482,6 +513,21 @@ static iree_status_t loom_low_verify_asm_immediates(
       }
     }
   }
+  const bool requires_named_immediates =
+      required_implicit_immediates ||
+      (has_named_immediates && required_explicit_immediates);
+  if (has_named_immediates !=
+          iree_any_bit_set(layout->flags,
+                           LOOM_LOW_ASM_LAYOUT_FLAG_NAMED_IMMEDIATES) ||
+      requires_named_immediates !=
+          iree_any_bit_set(
+              layout->flags,
+              LOOM_LOW_ASM_LAYOUT_FLAG_REQUIRED_NAMED_IMMEDIATES)) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "low asm form for descriptor %" PRIu32
+                            " has inconsistent named-immediate syntax",
+                            descriptor_index);
+  }
   return iree_ok_status();
 }
 
@@ -506,6 +552,7 @@ static iree_status_t loom_low_verify_native_asm_values(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_asm_layout_t* layout,
     const loom_low_descriptor_t* descriptor, uint32_t descriptor_index) {
+  bool owns_immediate_syntax = false;
   for (uint16_t i = 0; i < layout->native_assembly_value_count; ++i) {
     const uint32_t row_index = layout->native_assembly_value_start + i;
     const loom_low_native_asm_value_t* value =
@@ -668,6 +715,7 @@ static iree_status_t loom_low_verify_native_asm_values(
         break;
       }
       case LOOM_LOW_NATIVE_ASM_VALUE_KIND_IMMEDIATE_I64:
+        owns_immediate_syntax = true;
         if (value->index >= descriptor->immediate_count) {
           return iree_make_status(
               IREE_STATUS_OUT_OF_RANGE,
@@ -692,6 +740,7 @@ static iree_status_t loom_low_verify_native_asm_values(
         }
         break;
       case LOOM_LOW_NATIVE_ASM_VALUE_KIND_IMMEDIATE_UNSIGNED_HEX:
+        owns_immediate_syntax = true;
         if (value->index >= descriptor->immediate_count) {
           return iree_make_status(
               IREE_STATUS_OUT_OF_RANGE,
@@ -715,6 +764,7 @@ static iree_status_t loom_low_verify_native_asm_values(
         }
         break;
       case LOOM_LOW_NATIVE_ASM_VALUE_KIND_IMMEDIATE_TARGET_FORMAT:
+        owns_immediate_syntax = true;
         if (value->index >= descriptor->immediate_count) {
           return iree_make_status(
               IREE_STATUS_OUT_OF_RANGE,
@@ -742,6 +792,14 @@ static iree_status_t loom_low_verify_native_asm_values(
         IREE_ASSERT_UNREACHABLE("validated above");
         break;
     }
+  }
+  if (owns_immediate_syntax !=
+      iree_any_bit_set(layout->flags,
+                       LOOM_LOW_ASM_LAYOUT_FLAG_NATIVE_IMMEDIATE_SYNTAX)) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "low asm form for descriptor %" PRIu32
+                            " has inconsistent native immediate syntax",
+                            descriptor_index);
   }
   return iree_ok_status();
 }
@@ -906,8 +964,14 @@ static iree_status_t loom_low_verify_asm_form(
                             asm_form_index);
   }
   IREE_RETURN_IF_ERROR(loom_low_verify_span(
-      layout->immediate_start, layout->immediate_count,
+      layout->immediate_start, descriptor->immediate_count,
       descriptor_set->asm_immediate_count, "asm_immediates"));
+  IREE_RETURN_IF_ERROR(loom_low_verify_known_flags(
+      layout->flags,
+      LOOM_LOW_ASM_LAYOUT_FLAG_NAMED_IMMEDIATES |
+          LOOM_LOW_ASM_LAYOUT_FLAG_REQUIRED_NAMED_IMMEDIATES |
+          LOOM_LOW_ASM_LAYOUT_FLAG_NATIVE_IMMEDIATE_SYNTAX,
+      "asm_layouts", asm_form->layout_index));
   IREE_RETURN_IF_ERROR(loom_low_verify_span(
       layout->native_assembly_value_start, layout->native_assembly_value_count,
       descriptor_set->native_asm_value_count, "native_asm_values"));

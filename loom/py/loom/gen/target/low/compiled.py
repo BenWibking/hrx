@@ -284,7 +284,16 @@ class CompiledAsmForm:
     operand_indices: tuple[int, ...]
     operand_segments: tuple[CompiledAsmOperandSegment, ...]
     result_value_types: tuple[AsmResultValueType | None, ...]
+    # Complete immediate order: explicit assembly fields, then descriptor suffix.
     immediates: tuple[CompiledAsmImmediate, ...]
+    # Number of authored fields at the start of the complete immediate order.
+    explicit_immediate_count: int
+    # An explicit alias or default selects named syntax for the entire form.
+    has_named_immediates: bool
+    # At least one field in the named dictionary has no descriptor default.
+    requires_named_immediates: bool
+    # Native immediate projections own spelling instead of generic suffixes.
+    native_owns_immediate_syntax: bool
     native_assembly_values: tuple[CompiledNativeAsmValue, ...]
     # Index assigned when this form's formatting spans enter shared storage.
     layout_index: int = 0
@@ -302,7 +311,7 @@ class CompiledAsmLayout:
     operand_index_start: int
     # First delimited input operand segment.
     operand_segment_start: int
-    # First immediate spelling row.
+    # First row of the complete immediate order, including implicit fields.
     immediate_start: int
     # First native assembly value row.
     native_assembly_value_start: int
@@ -312,10 +321,16 @@ class CompiledAsmLayout:
     operand_index_count: int
     # Number of delimited input operand segments.
     operand_segment_count: int
-    # Number of immediate spelling rows.
-    immediate_count: int
+    # Number of explicit spelling rows before the implicit descriptor suffix.
+    explicit_immediate_count: int
     # Number of native assembly value rows.
     native_assembly_value_count: int
+    # Explicit aliases or defaults require named syntax for the entire form.
+    has_named_immediates: bool
+    # The named dictionary cannot be omitted after any positional prefix.
+    requires_named_immediates: bool
+    # Native immediate projections suppress generic immediate suffixes.
+    native_owns_immediate_syntax: bool
 
 
 def append_interned_sequence[RowT: Hashable](
@@ -424,8 +439,11 @@ class CompiledAsmTableStorage:
                 result_operand_index_count=len(asm_form.result_indices),
                 operand_index_count=len(asm_form.operand_indices),
                 operand_segment_count=len(asm_form.operand_segments),
-                immediate_count=len(asm_form.immediates),
+                explicit_immediate_count=asm_form.explicit_immediate_count,
                 native_assembly_value_count=len(asm_form.native_assembly_values),
+                has_named_immediates=asm_form.has_named_immediates,
+                requires_named_immediates=asm_form.requires_named_immediates,
+                native_owns_immediate_syntax=asm_form.native_owns_immediate_syntax,
             )
             layout_index = self._layout_indices.get(layout)
             if layout_index is None:

@@ -1294,7 +1294,7 @@ static iree_status_t loom_amdgpu_append_asm_form_immediates(
     const loom_low_asm_layout_t* layout, bool* in_list) {
   const loom_low_descriptor_set_t* descriptor_set =
       context->schedule->target.descriptor_set;
-  for (uint16_t i = 0; i < layout->immediate_count; ++i) {
+  for (uint16_t i = 0; i < layout->explicit_immediate_count; ++i) {
     const uint32_t asm_immediate_index = layout->immediate_start + i;
     IREE_ASSERT_LT(asm_immediate_index, descriptor_set->asm_immediate_count);
     IREE_ASSERT(descriptor_set->asm_immediates != NULL);
@@ -1391,25 +1391,6 @@ static iree_status_t loom_amdgpu_append_memory_immediate_suffixes(
   return iree_ok_status();
 }
 
-static bool loom_amdgpu_native_asm_form_owns_immediate_syntax(
-    const loom_low_descriptor_set_t* descriptor_set,
-    const loom_low_asm_layout_t* layout) {
-  for (uint16_t i = 0; i < layout->native_assembly_value_count; ++i) {
-    const uint32_t value_index = layout->native_assembly_value_start + i;
-    IREE_ASSERT_LT(value_index, descriptor_set->native_asm_value_count);
-    IREE_ASSERT(descriptor_set->native_asm_values != NULL);
-    switch (descriptor_set->native_asm_values[value_index].kind) {
-      case LOOM_LOW_NATIVE_ASM_VALUE_KIND_IMMEDIATE_I64:
-      case LOOM_LOW_NATIVE_ASM_VALUE_KIND_IMMEDIATE_UNSIGNED_HEX:
-      case LOOM_LOW_NATIVE_ASM_VALUE_KIND_IMMEDIATE_TARGET_FORMAT:
-        return true;
-      default:
-        break;
-    }
-  }
-  return false;
-}
-
 static iree_status_t loom_amdgpu_try_append_native_memory_packet(
     const loom_native_assembly_packet_context_t* context, bool* out_matched) {
   *out_matched = false;
@@ -1438,8 +1419,8 @@ static iree_status_t loom_amdgpu_try_append_native_memory_packet(
       loom_amdgpu_append_native_asm_form_values(context, layout, &in_list));
   // A native value list containing immediates owns their complete spelling.
   // Forms that only reorder operands retain the generic memory suffixes.
-  if (loom_amdgpu_native_asm_form_owns_immediate_syntax(descriptor_set,
-                                                        layout)) {
+  if (iree_any_bit_set(layout->flags,
+                       LOOM_LOW_ASM_LAYOUT_FLAG_NATIVE_IMMEDIATE_SYNTAX)) {
     return iree_ok_status();
   }
   return loom_amdgpu_append_memory_immediate_suffixes(context);

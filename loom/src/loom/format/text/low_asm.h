@@ -93,6 +93,8 @@ typedef struct loom_text_low_asm_packet_descriptor_t {
   uint16_t immediate_attribute_field_index;
   // True when at least one immediate requires named-dictionary syntax.
   bool has_named_immediates;
+  // Whether the named dictionary is required after any positional prefix.
+  bool requires_named_immediates;
   // Canonical operation kind supplying the packet's instance-flag vocabulary.
   loom_op_kind_t operation_kind;
 } loom_text_low_asm_packet_descriptor_t;
@@ -222,7 +224,9 @@ typedef iree_status_t (*loom_text_low_asm_result_type_annotation_required_fn_t)(
     uint16_t result_index, const loom_module_t* module, loom_type_t type,
     bool* out_required, iree_string_view_t* out_diagnostic_detail);
 
-typedef iree_status_t (*loom_text_low_asm_immediate_descriptor_fn_t)(
+// Resolves a generation-owned field in the packet's complete immediate order.
+// The caller supplies an index below packet->immediate_count.
+typedef void (*loom_text_low_asm_immediate_descriptor_fn_t)(
     const loom_text_low_asm_environment_state_t* state,
     const loom_text_low_asm_packet_descriptor_t* packet,
     uint16_t immediate_index,

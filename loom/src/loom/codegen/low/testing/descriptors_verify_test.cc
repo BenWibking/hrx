@@ -303,7 +303,7 @@ void AddAsmForms(TestTables* tables) {
   tables->asm_layouts[0].operand_index_start = 1;
   tables->asm_layouts[0].operand_index_count = 2;
   tables->asm_layouts[0].immediate_start = 0;
-  tables->asm_layouts[0].immediate_count = 0;
+  tables->asm_layouts[0].explicit_immediate_count = 0;
 
   tables->asm_forms[1].mnemonic_string_ref = TEST_STRING_REF(mnemonic_const);
   tables->asm_forms[1].native_assembly_mnemonic_string_ref =
@@ -317,7 +317,7 @@ void AddAsmForms(TestTables* tables) {
   tables->asm_layouts[1].operand_index_start = 4;
   tables->asm_layouts[1].operand_index_count = 0;
   tables->asm_layouts[1].immediate_start = 0;
-  tables->asm_layouts[1].immediate_count = 1;
+  tables->asm_layouts[1].explicit_immediate_count = 1;
 
   tables->set.asm_form_count = IREE_ARRAYSIZE(tables->asm_forms);
   tables->set.asm_layout_count = IREE_ARRAYSIZE(tables->asm_layouts);
@@ -2034,6 +2034,34 @@ TEST(LowDescriptorsTest, RejectsAsmFormImmediateOutOfRange) {
 
   IREE_EXPECT_STATUS_IS(IREE_STATUS_OUT_OF_RANGE,
                         loom_low_descriptor_set_verify(&tables.set));
+}
+
+TEST(LowDescriptorsTest, RejectsInconsistentAsmSyntaxFlags) {
+  TestTables tables;
+  InitializeTestTables(&tables);
+  AddAsmForms(&tables);
+  for (loom_low_asm_layout_flags_t flag : {
+           LOOM_LOW_ASM_LAYOUT_FLAG_NAMED_IMMEDIATES,
+           LOOM_LOW_ASM_LAYOUT_FLAG_REQUIRED_NAMED_IMMEDIATES,
+           LOOM_LOW_ASM_LAYOUT_FLAG_NATIVE_IMMEDIATE_SYNTAX,
+       }) {
+    tables.asm_layouts[1].flags = flag;
+    IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                          loom_low_descriptor_set_verify(&tables.set));
+  }
+}
+
+TEST(LowDescriptorsTest, OnlyExplicitDefaultsSelectNamedAsmSyntax) {
+  TestTables tables;
+  InitializeTestTables(&tables);
+  AddAsmForms(&tables);
+  tables.immediates[0].flags = LOOM_LOW_IMMEDIATE_FLAG_DEFAULT_VALUE;
+  tables.asm_layouts[1].flags = LOOM_LOW_ASM_LAYOUT_FLAG_NAMED_IMMEDIATES;
+  IREE_ASSERT_OK(loom_low_descriptor_set_verify(&tables.set));
+
+  tables.asm_layouts[1].explicit_immediate_count = 0;
+  tables.asm_layouts[1].flags = 0;
+  IREE_ASSERT_OK(loom_low_descriptor_set_verify(&tables.set));
 }
 
 TEST(LowDescriptorsTest, RejectsRegisterClassWithoutStorageKind) {

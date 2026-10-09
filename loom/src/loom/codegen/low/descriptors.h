@@ -26,7 +26,7 @@ extern "C" {
 #endif
 
 // ABI version for descriptor sets consumed by this header.
-#define LOOM_LOW_DESCRIPTOR_SET_ABI_VERSION 54u
+#define LOOM_LOW_DESCRIPTOR_SET_ABI_VERSION 55u
 
 // Sentinel for absent target-family or descriptor-set stable IDs.
 #define LOOM_LOW_STABLE_ID_NONE UINT64_C(0)
@@ -1376,11 +1376,22 @@ typedef struct loom_low_asm_operand_segment_t {
 static_assert(sizeof(loom_low_asm_operand_segment_t) == 4,
               "loom_low_asm_operand_segment_t must be 4 bytes");
 
+enum loom_low_asm_layout_flag_bits_e {
+  // An explicit immediate alias or default selects named Low asm syntax.
+  LOOM_LOW_ASM_LAYOUT_FLAG_NAMED_IMMEDIATES = 1u << 0,
+  // Native immediate projections own spelling instead of generic suffixes.
+  LOOM_LOW_ASM_LAYOUT_FLAG_NATIVE_IMMEDIATE_SYNTAX = 1u << 1,
+  // The named dictionary contains a field without a descriptor default.
+  // Positional fields are excluded when the form has a positional prefix.
+  LOOM_LOW_ASM_LAYOUT_FLAG_REQUIRED_NAMED_IMMEDIATES = 1u << 2,
+};
+typedef uint16_t loom_low_asm_layout_flags_t;
+
 // Interned formatting spans shared by assembly forms in one storage provider.
 // The spans describe descriptor-local positions, not descriptor identities or
 // mnemonic spellings. Forms in different descriptor-set views can share a
 // layout when all of their result, operand, immediate and native projections
-// agree.
+// and formatting flags agree.
 typedef struct loom_low_asm_layout_t {
   // First descriptor-local result operand index in asm_operand_indices.
   uint16_t result_operand_index_start;
@@ -1390,7 +1401,9 @@ typedef struct loom_low_asm_layout_t {
   uint16_t operand_index_start;
   // First delimited input operand segment row.
   uint16_t operand_segment_start;
-  // First immediate spelling row for this asm form.
+  // First row of the complete descriptor-local immediate order: explicit
+  // assembly fields followed by unmentioned fields in descriptor order.
+  // The descriptor's immediate_count determines the complete span length.
   uint16_t immediate_start;
   // First native assembly value row for this asm form.
   uint16_t native_assembly_value_start;
@@ -1400,14 +1413,16 @@ typedef struct loom_low_asm_layout_t {
   uint16_t operand_index_count;
   // Number of delimited input operand segments for this asm form.
   uint16_t operand_segment_count;
-  // Number of immediate spelling rows for this asm form.
-  uint16_t immediate_count;
+  // Number of explicit spelling rows before the implicit descriptor suffix.
+  uint16_t explicit_immediate_count;
   // Number of native assembly value rows for this asm form.
   uint16_t native_assembly_value_count;
+  // Generation-owned syntax facts derived from the form and its descriptor.
+  loom_low_asm_layout_flags_t flags;
 } loom_low_asm_layout_t;
 
-static_assert(sizeof(loom_low_asm_layout_t) == 22,
-              "loom_low_asm_layout_t must be 22 bytes");
+static_assert(sizeof(loom_low_asm_layout_t) == 24,
+              "loom_low_asm_layout_t must be 24 bytes");
 
 // Assembly identity remains separate from its shared formatting layout so
 // mnemonic lookup and packet selection do not load formatting spans.

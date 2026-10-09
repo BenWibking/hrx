@@ -141,14 +141,14 @@ static iree_status_t loom_low_packet_asm_append_attr(
 static iree_status_t loom_low_packet_asm_append_immediates(
     loom_low_packet_asm_state_t* state, const loom_low_descriptor_t* descriptor,
     const loom_low_asm_layout_t* layout, loom_named_attr_slice_t attrs) {
-  if (layout->immediate_count == 0) {
+  if (layout->explicit_immediate_count == 0) {
     return iree_ok_status();
   }
   const loom_low_descriptor_set_t* descriptor_set =
       state->schedule->target.descriptor_set;
   const loom_module_t* module = state->schedule->module;
   iree_host_size_t printed_count = 0;
-  for (uint16_t i = 0; i < layout->immediate_count; ++i) {
+  for (uint16_t i = 0; i < layout->explicit_immediate_count; ++i) {
     const uint32_t asm_immediate_index = layout->immediate_start + i;
     if (asm_immediate_index >= descriptor_set->asm_immediate_count) {
       return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
