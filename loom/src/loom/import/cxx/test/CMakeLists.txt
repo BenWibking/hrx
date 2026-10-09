@@ -797,25 +797,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_generated_file(
   NAME
-    vector_initializers_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "vector_initializers_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/vector_initializers.cxx"
-  INPUTS
-    "vector_initializers.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
     vector_values_cases_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -1031,34 +1012,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_test_module(
   NAME
-    vector_initializers_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/vector_initializers_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/vector_initializers.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    vector_initializers_test_execute_vm_reference_test
-  MODULE
-    "::vector_initializers_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
     vector_values_test_module
   SRCS
     "${CMAKE_CURRENT_BINARY_DIR}/vector_values_cases.cxx"
@@ -1134,6 +1087,26 @@ loom_execution_test(
     "::increment_values_module"
   RUNNER_ARGS
     "--case=increment_values_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    vector_initializers_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::vector_initializers_module"
+  RUNNER_ARGS
+    "--case=vector_initializers_functions"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
     "loom-execution-profile=vm_reference"
@@ -1516,25 +1489,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_generated_file_family(
   NAME
-    vector_initializers_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "vector_initializers_checks.loom"
-    "vector_initializers_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=vector_initializers"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
     vector_values_checks_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -1738,21 +1692,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
-    vector_initializers_module
-  SRCS
-    "vector_initializers.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/vector_initializers_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/vector_initializers_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/vector_initializers_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
     vector_values_module
   SRCS
     "vector_values.cxx"
@@ -1857,6 +1796,16 @@ loom_test_module(
   SRCS
     "typed_views.cxx"
     "typed_views.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    vector_initializers_module
+  SRCS
+    "vector_initializers.cxx"
+    "vector_initializers.loom"
 )
 endif()
 

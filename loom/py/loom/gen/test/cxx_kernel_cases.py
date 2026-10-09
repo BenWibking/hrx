@@ -503,45 +503,6 @@ def vector_control(arrays):
     return "kernel.decl @vector_control_kernel() launch(%output: buffer, %input: i32, %count: i32)\n\n" + "\n".join(cases)
 
 
-CONSTRUCTOR_INPUTS = [0, 1, 127, 255, 256, 0xFFFFFF80, 0x7FFFFFFC, 0xFFFFFFFF]
-
-
-def constructor_references(value):
-    signed = signed_bits(value, 32)
-    floating = struct.unpack("<I", struct.pack("<f", float(signed)))[0]
-    return {
-        "constructor_return": [signed + lane for lane in range(4)],
-        "constructor_argument": [value, 7, 0, 0],
-        "constructor_single": [value, 0, 0, 0],
-        "constructor_narrow": [value & 255, 255, 128] + [0] * 13,
-        "constructor_float": [floating, 0x80000000, 0x3FC00000, 0],
-        "constructor_nested": [value + 9, 9, 9, 9],
-    }
-
-
-def vector_constructor_values():
-    samples = {}
-    for value in CONSTRUCTOR_INPUTS:
-        for name, lanes in constructor_references(value).items():
-            samples.setdefault(name, []).extend(([value, lane], expected) for lane, expected in enumerate(lanes))
-    return "\n\n".join(function_cases(name, [32, 32], 32, values) for name, values in samples.items()) + "\n"
-
-
-def vector_initializers(arrays):
-    cases = []
-    for value in CONSTRUCTOR_INPUTS:
-        expected = []
-        for name, lanes in constructor_references(value).items():
-            expected.extend(struct.unpack("<4I", bytes(lanes)) if name == "constructor_narrow" else lanes)
-        expected.extend(value + lane for lane in range(4))
-        expected.extend([1234, 0, 0, 0])
-        case = Case(arrays, f"vector_initializers_{value}", "i32", len(expected))
-        case.scalar("input", signed_bits(value, 32), "i32")
-        case.launch("vector_initializers", "%output, %input", f"tensor<{len(expected)}xi32>, i32")
-        cases.append(case.finish([signed_bits(element, 32) for element in expected]))
-    return "kernel.decl @vector_initializers() launch(%output: buffer, %input: i32)\n\n" + "\n".join(cases)
-
-
 def record_pair_reference(value, count):
     return 9 * value + count * (count - 1) // 2 + 21 + 3 * ((count + 1) // 2)
 
@@ -991,7 +952,6 @@ KERNEL_GROUPS = {
     "short_circuit": short_circuit,
     "structured_continue": lambda arrays: "\n".join(reference(arrays) for reference in (continue_values, continue_scheduled, continue_copy, continue_pointers, continue_vectors)),
     "vector_depth": lambda arrays: vector_depth(arrays) + "\n" + vector_depth_span(arrays),
-    "vector_initializers": vector_initializers,
     "vector_values": lambda arrays: vector_control(arrays) + "\n" + vector_masks(arrays),
     "volatile_memory": volatile_memory,
 }
@@ -1005,7 +965,6 @@ HOST_REFERENCES = {
     "schedule_values.cxx": schedule_functions,
     "shaped_intrinsics.cxx": shaped_intrinsic_values,
     "structured_continue.cxx": continue_functions,
-    "vector_initializers.cxx": vector_constructor_values,
     "vector_values.cxx": vector_values,
 }
 
