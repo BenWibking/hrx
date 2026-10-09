@@ -446,6 +446,12 @@ iree_status_t loom_amdgpu_encoding_pack_v_mov_b32_vgpr(
     const loom_amdgpu_encoding_table_t* table, uint16_t vdst, uint16_t vsrc0,
     loom_amdgpu_encoding_packet_t* out_packet);
 
+// Packs a 32-bit SGPR-to-VGPR v_mov_b32 packet using the target table's VOP1
+// layout.
+iree_status_t loom_amdgpu_encoding_pack_v_mov_b32_sgpr(
+    const loom_amdgpu_encoding_table_t* table, uint16_t vdst, uint16_t ssrc0,
+    loom_amdgpu_encoding_packet_t* out_packet);
+
 // Packs a 32-bit immediate-to-VGPR v_mov_b32 packet using an inline vector
 // source when possible and a literal VOP1 form otherwise.
 iree_status_t loom_amdgpu_encoding_pack_v_mov_b32_u32(
