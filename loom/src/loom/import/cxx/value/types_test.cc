@@ -16,9 +16,43 @@
 
 #include "iree/testing/gtest.h"
 #include "loom/import/cxx/source/error.h"
+#include "loom/import/cxx/value/builder_test.h"
 
 namespace loom::cxx_import {
 namespace {
+
+using TypesWithModuleTest = ValueBuilderTest;
+
+TEST_F(TypesWithModuleTest, ProjectsRegisteredOpaqueDialectHandles) {
+  Source source(IREE_SV(R"(
+    struct [[loom::type("check.entropy")]] Entropy {};
+    struct [[loom::type("buffer")]] NotOpaque {};
+    struct [[loom::type("unknown.value")]] Unknown {};
+  )"),
+                IREE_SV("dialect_types.cxx"), options());
+  Types types(source.unit(), source.diagnostics(), module_);
+  auto* owner = source.unit().ast();
+  auto source_type = [&](const char* name) {
+    return (*source.unit().globalScope()->find(name).begin())->type();
+  };
+
+  const auto& entropy = types.partition(source_type("Entropy"), owner);
+  ASSERT_EQ(entropy.kind, ValueKind::OpaqueDialect);
+  ASSERT_EQ(entropy.component_count, 1u);
+  auto projected = types.get(source_type("Entropy"), owner);
+  ASSERT_TRUE(loom_type_is_dialect(projected));
+  EXPECT_TRUE(
+      types.is_opaque_dialect(source_type("Entropy"), "check.entropy", owner));
+  EXPECT_FALSE(
+      types.is_opaque_dialect(source_type("Entropy"), "async.token", owner));
+  std::vector<loom_type_t> signature;
+  types.append(source_type("Entropy"), owner, signature);
+  ASSERT_EQ(signature.size(), 1u);
+  EXPECT_TRUE(loom_type_equal(signature[0], projected));
+
+  EXPECT_THROW(types.get(source_type("NotOpaque"), owner), SourceRejected);
+  EXPECT_THROW(types.get(source_type("Unknown"), owner), SourceRejected);
+}
 
 TEST(TypesTest, ProjectsTheConfiguredDataModelAndRetainsSignedness) {
   for (auto model : {LOOM_CXX_DATA_MODEL_LP64, LOOM_CXX_DATA_MODEL_LLP64,

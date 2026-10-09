@@ -71,7 +71,7 @@ class Translator final : private Initialization::Evaluation {
         diagnostics_(diagnostics),
         module_(module),
         locations_(unit, diagnostics, module, options.source_observer),
-        types_(unit, diagnostics),
+        types_(unit, diagnostics, module),
         scalars_(unit, diagnostics, types_, locations_, builder_),
         names_(unit, diagnostics),
         function_contracts_(unit, diagnostics),
@@ -271,10 +271,18 @@ class Translator final : private Initialization::Evaluation {
     auto* body = defined.body;
     auto* op = defined.operation;
     auto* region = defined.region;
-    if (defined.kind == FunctionKind::CheckCase) {
+    if (defined.kind == FunctionKind::CheckCase ||
+        defined.kind == FunctionKind::CheckScenario) {
       auto saved = loom_builder_enter_region(&builder_, op, region);
-      translate_check_body(unit_, diagnostics_, functions_, intrinsics_, types_,
-                           scalars_, locations_, builder_, defined);
+      if (defined.kind == FunctionKind::CheckCase) {
+        translate_check_case_body(unit_, diagnostics_, functions_, intrinsics_,
+                                  types_, scalars_, locations_, builder_,
+                                  defined);
+      } else {
+        translate_check_scenario_body(unit_, diagnostics_, functions_,
+                                      intrinsics_, types_, scalars_, locations_,
+                                      builder_, defined);
+      }
       loom_builder_restore(&builder_, saved);
       return;
     }
@@ -824,6 +832,8 @@ class Translator final : private Initialization::Evaluation {
     cxx::ClassSymbol* source = nullptr;
     if (partition.kind == ValueKind::Record) {
       source = static_cast<const RecordPartition&>(partition).source;
+    } else if (partition.kind == ValueKind::OpaqueDialect) {
+      source = static_cast<const OpaqueDialectPartition&>(partition).source;
     } else if (partition.kind == ValueKind::Encoding) {
       source = static_cast<const EncodingPartition&>(partition).source;
     } else if (partition.kind == ValueKind::View) {

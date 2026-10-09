@@ -65,8 +65,10 @@ loom_cc_library(
     ::representation
     iree::third_party::cxx_parser
     loom::import::cxx::source
+    loom::import::cxx::source::error
     loom::ir
     loom::ops::op_defs
+    loom::ops::type_registry
   PUBLIC
 )
 endif()
@@ -288,6 +290,7 @@ loom_cc_test(
     "exceptions"
     "rtti"
   DEPS
+    ::builder_test
     ::types
     iree::testing::gtest
     iree::testing::gtest_main

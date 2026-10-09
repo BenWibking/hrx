@@ -18,6 +18,11 @@
 #include <limits>
 #include <optional>
 
+#include "loom/import/cxx/source/error.h"
+#include "loom/ir/context.h"
+#include "loom/ir/module.h"
+#include "loom/ops/type_registry.h"
+
 namespace loom::cxx_import {
 namespace {
 
@@ -201,7 +206,53 @@ const Partition* Types::special(const cxx::Type* input, cxx::AST* owner) {
   if (name == "tensor") {
     return tensor(type, owner);
   }
-  diagnostics_.reject(unit_, owner, "unknown Loom source type binding");
+  return opaque_dialect(type, name, owner);
+}
+
+const OpaqueDialectPartition* Types::opaque_dialect(const cxx::ClassType* input,
+                                                    std::string_view name,
+                                                    cxx::AST* owner) {
+  auto* source = input->definition();
+  if (auto found = opaque_dialects_.find(source);
+      found != opaque_dialects_.end()) {
+    return found->second.get();
+  }
+  auto traits = unit_.typeTraits();
+  if (source) {
+    traits.requireCompleteClass(source);
+    source = input->definition();
+  }
+  if (traits.is_volatile(input) || !source || !source->isComplete() ||
+      source->isUnion() || !source->baseClasses().empty() ||
+      !traits.is_trivially_copyable(input) ||
+      !traits.has_trivial_destructor(input)) {
+    diagnostics_.reject(
+        unit_, owner,
+        "dialect values require a complete trivial class without bases");
+  }
+  if (!module_) {
+    diagnostics_.reject(unit_, owner,
+                        "dialect source types require a destination module");
+  }
+  const auto name_view = iree_make_string_view(name.data(), name.size());
+  const auto* descriptor =
+      loom_type_registry_lookup(module_->context, name_view);
+  if (!descriptor || descriptor->ir_kind != LOOM_TYPE_DIALECT ||
+      descriptor->param_count != 0 || descriptor->format_element_count != 0) {
+    diagnostics_.reject(
+        unit_, owner,
+        "Loom source type binding must name a registered opaque dialect type");
+  }
+  loom_string_id_t name_id;
+  check(loom_module_intern_string(module_, name_view, &name_id));
+  auto result = std::make_unique<OpaqueDialectPartition>();
+  result->kind = ValueKind::OpaqueDialect;
+  result->component_count = 1;
+  result->source = source;
+  result->type = loom_type_dialect_opaque(name_id);
+  auto* admitted = result.get();
+  opaque_dialects_.emplace(source, std::move(result));
+  return admitted;
 }
 
 const EncodingPartition* Types::encoding(const cxx::ClassType* input,
@@ -512,6 +563,7 @@ void Types::append_component_names(const Partition& partition,
   };
   switch (partition.kind) {
     case ValueKind::SSA:
+    case ValueKind::OpaqueDialect:
     case ValueKind::Encoding:
     case ValueKind::Tensor:
       append({});
@@ -642,6 +694,9 @@ loom_type_t Types::get(const cxx::Type* input, cxx::AST* ast) {
       if (admitted && admitted->kind == ValueKind::Tensor) {
         return static_cast<const TensorPartition*>(admitted)->type;
       }
+      if (admitted && admitted->kind == ValueKind::OpaqueDialect) {
+        return static_cast<const OpaqueDialectPartition*>(admitted)->type;
+      }
       diagnostics_.reject(unit_, ast,
                           "unsupported C++ type: " + cxx::to_string(input));
     }
@@ -725,6 +780,21 @@ bool Types::is_unsigned(const cxx::Type* type) {
   return traits.is_unsigned(traits.underlying_type(type));
 }
 
+bool Types::is_opaque_dialect(const cxx::Type* type, std::string_view name,
+                              cxx::AST* owner) {
+  auto projected = get(type, owner);
+  if (!loom_type_is_dialect(projected) ||
+      loom_type_dialect_param_count(projected) != 0 || !module_) {
+    return false;
+  }
+  auto name_id = loom_type_dialect_name_id(projected);
+  return name_id != LOOM_STRING_ID_INVALID &&
+         name_id < module_->strings.count &&
+         iree_string_view_equal(
+             loom_string_table_get(&module_->strings, name_id),
+             iree_make_string_view(name.data(), name.size()));
+}
+
 // The frontend has selected the special member and checked accessibility,
 // deletion, cv and overload resolution. Source admission establishes trivial
 // lifecycle semantics before an implicit copy becomes an SSA value copy.
@@ -740,6 +810,8 @@ void Types::admit_copy(cxx::FunctionSymbol* constructor, const cxx::Type* type,
     source = static_cast<const RecordPartition&>(admitted).source;
   } else if (admitted.kind == ValueKind::Encoding) {
     source = static_cast<const EncodingPartition&>(admitted).source;
+  } else if (admitted.kind == ValueKind::OpaqueDialect) {
+    source = static_cast<const OpaqueDialectPartition&>(admitted).source;
   } else if (admitted.kind == ValueKind::View) {
     source = static_cast<const ViewPartition&>(admitted).source;
   } else if (admitted.kind == ValueKind::Tensor) {
@@ -750,8 +822,8 @@ void Types::admit_copy(cxx::FunctionSymbol* constructor, const cxx::Type* type,
         unit_, owner,
         is_record ? "default record construction requires source object "
                     "initialization semantics"
-                  : "default encoding, view or tensor construction requires "
-                    "source object initialization semantics");
+                  : "default Loom source type construction requires source "
+                    "object initialization semantics");
   }
   if (!source || (constructor != source->copyConstructor() &&
                   constructor != source->moveConstructor())) {
@@ -760,8 +832,8 @@ void Types::admit_copy(cxx::FunctionSymbol* constructor, const cxx::Type* type,
         is_record
             ? "record construction requires aggregate initialization "
               "or a trivial copy"
-            : "encoding, view and tensor construction requires an operation "
-              "result or a trivial copy");
+            : "Loom source type construction requires an operation result or "
+              "a trivial copy");
   }
 }
 
@@ -798,6 +870,10 @@ void Types::append_bound(const cxx::Type* input, cxx::AST* owner,
   switch (admitted.kind) {
     case ValueKind::SSA:
       output.push_back(get(input, owner));
+      return;
+    case ValueKind::OpaqueDialect:
+      output.push_back(
+          static_cast<const OpaqueDialectPartition&>(admitted).type);
       return;
     case ValueKind::Pointer:
       output.push_back(loom_type_buffer());

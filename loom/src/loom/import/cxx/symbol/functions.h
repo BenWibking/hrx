@@ -7,6 +7,7 @@
 #ifndef LOOM_IMPORT_CXX_SYMBOL_FUNCTIONS_H_
 #define LOOM_IMPORT_CXX_SYMBOL_FUNCTIONS_H_
 
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -34,6 +35,7 @@ enum class FunctionKind {
   LaunchConfiguration,
   ClusteredLaunchConfiguration,
   CheckCase,
+  CheckScenario,
 };
 
 // Admitted definition ready for recursive body construction. The source owns
@@ -101,7 +103,9 @@ class Functions {
   cxx::FunctionSymbol* definition(cxx::FunctionSymbol* function) const;
   // Source case identity retained during declaration admission.
   bool is_check_case(cxx::FunctionSymbol* function) const;
-  // Emits benchmark records referencing selected cases after body projection.
+  // Whether the declaration owns a check case or scenario record.
+  bool is_check_record(cxx::FunctionSymbol* function) const;
+  // Emits benchmark records referencing selected records after body projection.
   void build_benchmarks(Locations& locations, loom_builder_t* builder);
   // Discovery order grows as declare reaches helpers. Spans are invalidated by
   // growth; consumers obtain the next indexed entry after each body finishes.
@@ -154,8 +158,8 @@ class Functions {
   struct Benchmark {
     // Semantic declaration supplying the benchmark's name.
     cxx::FunctionSymbol* function;
-    // Semantic case declaration named by the source attribute.
-    cxx::FunctionSymbol* case_function;
+    // Semantic case or scenario declaration named by the source attribute.
+    cxx::FunctionSymbol* record_function;
     // Attribute owning diagnostics and the emitted benchmark location.
     cxx::AST* source;
   };
@@ -163,6 +167,14 @@ class Functions {
   std::unordered_map<cxx::FunctionSymbol*, cxx::FunctionSymbol*> definitions_;
   // Case annotations retained with their original declaration for diagnostics.
   std::unordered_map<cxx::FunctionSymbol*, cxx::AST*> check_cases_;
+  struct CheckScenario {
+    // Annotation owning diagnostics and source location.
+    cxx::AST* source;
+    // Finite compile-visible domain, absent for an unconfigured scenario.
+    std::optional<int64_t> configuration_count;
+  };
+  // Scenario annotations retained by canonical semantic declaration identity.
+  std::unordered_map<cxx::FunctionSymbol*, CheckScenario> check_scenarios_;
   // Benchmark declarations in source order, resolved during admission.
   std::vector<Benchmark> benchmarks_;
   // Selected externally visible definitions; other reached helpers stay

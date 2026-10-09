@@ -13,10 +13,15 @@
 // retain the selected target's capabilities.
 #define LOOM_CHECK_CASE(name) [[loom::check_case]] void name()
 
-// Measures an existing correctness case after its correctness gate passes.
+// Declares a differential or target-only scenario containing finite trial
+// domains. A configured scenario spells [[loom::check_scenario(count)]] on a
+// void function taking (loom::check::ordinal, loom::check::entropy).
+#define LOOM_CHECK_SCENARIO(name) [[loom::check_scenario]] void name()
+
+// Measures an existing check record after its correctness gate passes.
 // Timing policy and iteration counts belong to the benchmark runner.
-#define LOOM_CHECK_BENCHMARK(name, case_name) \
-  [[loom::check_benchmark(case_name)]] void name()
+#define LOOM_CHECK_BENCHMARK(name, record_name) \
+  [[loom::check_benchmark(record_name)]] void name()
 
 namespace loom::kernel {
 
@@ -36,6 +41,65 @@ template <class... Args>
 }  // namespace loom::kernel
 
 namespace loom::check {
+
+// Stable source representation of a configuration or trial-domain ordinal.
+// Scenario regions retain Loom's target-independent index type and cast it
+// once when binding this ordinary C++ value.
+using ordinal = unsigned long long;
+
+// Immutable counter-based entropy identity supplied to configured scenarios
+// and trials. Named forks and indexed reads are deterministic and do not
+// mutate this handle.
+class [[loom::type("check.entropy")]] entropy {};
+
+namespace detail {
+
+template <class Function>
+struct function_result;
+
+template <class Result, class... Args>
+struct function_result<Result (*)(Args...)> {
+  using type = Result;
+};
+
+template <class Function>
+using function_result_t = typename function_result<Function>::type;
+
+}  // namespace detail
+
+// Declares Count independently replayable runtime trials. Body must be a
+// lambda taking (ordinal, entropy); its final statement is compare() or
+// invoke().
+template <__SIZE_TYPE__ Count, class Body>
+[[loom::op("check.trial")]] void trial(Body body);
+
+// Invokes an ordinary function while realizing one trial recipe. Scalar and
+// scalar-record arguments and results remain local to the trial.
+template <auto Function, class... Args>
+[[loom::op("check.generate")]]
+detail::function_result_t<decltype(Function)> generate(Args... args);
+
+// Ends a trial by independently invoking one subject under the target and
+// oracle profiles. The final argument is a comparison lambda; mutable tensor
+// captures select the corresponding profile's realized storage.
+template <auto Subject, class... Args>
+[[loom::op("check.compare")]] void compare(Args... args);
+
+// Uses a distinct ordinary function or kernel as the oracle implementation.
+template <auto Subject, auto Oracle, class... Args>
+[[loom::op("check.compare")]] void compare(Args... args);
+
+// Ends a trial with one target-only invocation.
+template <auto Subject, class... Args>
+[[loom::op("check.invoke")]] void invoke(Args... args);
+
+// Derives a stable named substream without advancing its parent.
+[[loom::op("check.entropy.fork")]] entropy fork(entropy source,
+                                                const char* name);
+
+// Reads one deterministic word at a static or runtime ordinal.
+[[loom::op("check.entropy.read")]] unsigned long long read(entropy source,
+                                                           ordinal position);
 
 // A dense rank-one tensor handle. Copies share storage owned by the check
 // runner; const qualifies the handle, not its contents. Count is a static

@@ -1,0 +1,123 @@
+// RUN: roundtrip
+#include <loomcxx/check.h>
+
+unsigned long long combine(unsigned long long configuration,
+                           unsigned long long trial,
+                           unsigned long long entropy) {
+  return configuration + trial + entropy;
+}
+
+unsigned long long identity(unsigned long long value) { return value; }
+
+unsigned long long identity_oracle(unsigned long long value) { return value; }
+
+[[loom::kernel, loom::workgroup_size(1, 1, 1),
+  loom::workgroup_count(1, 1, 1)]] void
+write_value(unsigned* output, unsigned value) {
+  output[0] = value;
+}
+
+[[loom::check_scenario(3)]]
+void configured(loom::check::ordinal configuration,
+                loom::check::entropy scenario_entropy) {
+  loom::check::trial<2>(
+      [&](loom::check::ordinal trial, loom::check::entropy trial_entropy) {
+        const auto stream = loom::check::fork(trial_entropy, "input");
+        const auto word = loom::check::read(stream, trial);
+        const auto input =
+            loom::check::generate<combine>(configuration, trial, word);
+        loom::check::compare<identity, identity_oracle>(
+            input, [](unsigned long long actual,
+                      unsigned long long expected) {
+              loom::check::expect_equal(actual, expected);
+            });
+      });
+}
+
+LOOM_CHECK_BENCHMARK(configured_benchmark, configured);
+
+LOOM_CHECK_SCENARIO(tensor_actions) {
+  loom::check::trial<1>(
+      [](loom::check::ordinal trial, loom::check::entropy entropy) {
+        const auto storage = loom::check::fill<unsigned, 1>(0u);
+        loom::check::compare<write_value>(storage, 7u, [&] {
+          loom::check::expect_bitwise(storage, storage);
+        });
+      });
+  loom::check::trial<1>(
+      [](loom::check::ordinal trial, loom::check::entropy entropy) {
+        const auto storage = loom::check::fill<unsigned, 1>(0u);
+        loom::check::invoke<write_value>(storage, 11u);
+      });
+}
+
+// ----
+func.def public @combine(%configuration: i64, %trial: i64, %entropy: i64) -> (i64) {
+  %4 = scalar.addi %configuration, %trial : i64
+  %5 = scalar.addi %4, %entropy : i64
+  func.return %5 : i64
+}
+
+func.def public @identity(%value: i64) -> (i64) {
+  func.return %value : i64
+}
+
+func.def public @identity_oracle(%value: i64) -> (i64) {
+  func.return %value : i64
+}
+
+kernel.def @write_value() {
+  %12 = index.constant 1 : index
+  %13 = index.constant 1 : index
+  %14 = index.constant 1 : index
+  %15 = index.constant 1 : index
+  %16 = index.constant 1 : index
+  %17 = index.constant 1 : index
+  kernel.launch.config workgroups(%12, %13, %14) workgroup_size(%15, %16, %17) : index
+} launch(%output: buffer, %value: i32) {
+  %output_byte_offset = index.constant 0 : offset
+  %19 = scalar.constant 0 : i32
+  %20 = scalar.extsi %19 : i32 to i64
+  %21 = scalar.constant 4 : i64
+  %22 = scalar.muli %20, %21 : i64
+  %23 = index.cast %output_byte_offset : offset to i64
+  %24 = scalar.addi %23, %22 : i64
+  %25 = scalar.assume %24 [range(%24, 0, 9223372036854775807)] : i64
+  %26 = index.cast %25 : i64 to offset
+  %27 = buffer.view %output[%26] : buffer -> view<1xi32>
+  view.store %value, %27[0] : i32, view<1xi32>
+  kernel.return
+}
+
+check.scenario public @configured configure[3](%configuration: index, %scenario_entropy: check.entropy) {
+  %configuration_i64 = index.cast %configuration : index to i64
+  check.trial[2](%trial: index, %trial_entropy: check.entropy) {
+    %trial_i64 = index.cast %trial : index to i64
+    %stream = check.entropy.fork %trial_entropy name("input") : check.entropy
+    %35 = index.cast %trial_i64 : i64 to index
+    %word = check.entropy.read %stream[%35] : check.entropy -> i64
+    %input = check.generate<@combine>(%configuration_i64, %trial_i64, %word) : (i64, i64, i64) -> (i64)
+    check.compare<@identity, @identity_oracle>(%input) : (i64) -> [actual(%actual: i64), expected(%expected: i64)] {
+      check.expect.equal actual(%actual) expected(%expected) : i64
+    }
+  }
+  check.return
+}
+
+check.scenario public @tensor_actions {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %storage = check.generate.fill value(0) : tensor<1xi32>
+    %43 = check.literal value(7) : i32
+    check.compare<@write_value>(%storage, %43) : (tensor<1xi32>, i32) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<1xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %storage = check.generate.fill value(0) : tensor<1xi32>
+    %47 = check.literal value(11) : i32
+    check.invoke<@write_value>(%storage, %47) : (tensor<1xi32>, i32) -> ()
+  }
+  check.return
+}
+
+check.benchmark<@configured> @configured_benchmark

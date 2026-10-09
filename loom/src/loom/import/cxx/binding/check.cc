@@ -7,8 +7,13 @@
 #include "loom/import/cxx/binding/check.h"
 
 #include <cxx/ast.h>
+#include <cxx/const_int.h>
+#include <cxx/const_value.h>
+#include <cxx/control.h>
 #include <cxx/symbols.h>
 #include <cxx/types.h>
+
+#include <limits>
 
 #include "loom/import/cxx/binding/launch.h"
 #include "loom/import/cxx/source/attributes.h"
@@ -68,6 +73,24 @@ std::optional<CheckIntrinsic::Operation> CheckIntrinsic::parse_operation(
   if (name == "kernel.launch") {
     return Operation::Launch;
   }
+  if (name == "check.trial") {
+    return Operation::Trial;
+  }
+  if (name == "check.generate") {
+    return Operation::Generate;
+  }
+  if (name == "check.compare") {
+    return Operation::Compare;
+  }
+  if (name == "check.invoke") {
+    return Operation::Invoke;
+  }
+  if (name == "check.entropy.fork") {
+    return Operation::EntropyFork;
+  }
+  if (name == "check.entropy.read") {
+    return Operation::EntropyRead;
+  }
   return std::nullopt;
 }
 
@@ -84,6 +107,27 @@ std::optional<CheckIntrinsic> CheckIntrinsic::resolve(
   bool returns_void = signature->returnType()->kind() == cxx::TypeKind::kVoid;
   auto fail = [&](const char* message) {
     diagnostics.reject(unit, owner, message);
+  };
+  auto selected_function = [&](size_t index) -> cxx::FunctionSymbol* {
+    auto arguments = function->templateArguments();
+    auto selected = arguments.size() > index
+                        ? cxx::template_argument_value(arguments[index])
+                        : std::nullopt;
+    auto* address =
+        selected ? std::get_if<std::shared_ptr<cxx::ConstAddress>>(&*selected)
+                 : nullptr;
+    return address && *address
+               ? cxx::symbol_cast<cxx::FunctionSymbol>((*address)->symbol())
+               : nullptr;
+  };
+  auto bind_configuration = [&](cxx::FunctionSymbol* selected) {
+    if (!selected || !annotated(selected, "kernel")) {
+      return static_cast<cxx::FunctionSymbol*>(nullptr);
+    }
+    if (!selected->templateArguments().empty() && selected->declaration()) {
+      launches.declaration(selected, selected->declaration()->attributeList);
+    }
+    return launches.configuration_function(selected);
   };
   if (attribute.arguments.size() != 1 || signature->isVariadic()) {
     fail("check operations require one binding and a fixed source signature");
@@ -262,6 +306,76 @@ std::optional<CheckIntrinsic> CheckIntrinsic::resolve(
       }
       break;
     }
+    case Operation::Trial: {
+      auto arguments = function->templateArguments();
+      auto count_value = arguments.empty()
+                             ? std::nullopt
+                             : cxx::template_argument_value(arguments[0]);
+      auto* count =
+          count_value ? std::get_if<cxx::ConstInt>(&*count_value) : nullptr;
+      if (!returns_void || parameters.size() != 1 || !count ||
+          count->isNegative() || count->isZero() ||
+          count->toUWide() > static_cast<cxx::ConstInt::UWide>(
+                                 std::numeric_limits<int64_t>::max()) ||
+          types.unqualified(parameters[0])->kind() != cxx::TypeKind::kClass) {
+        fail("check.trial requires trial<positive_count>(lambda)");
+      }
+      result.trial_count = static_cast<int64_t>(count->toUIntMax());
+      break;
+    }
+    case Operation::Generate: {
+      result.subject = selected_function(0);
+      if (!result.subject || signature->isVariadic()) {
+        fail("check.generate requires an ordinary function template argument");
+      }
+      break;
+    }
+    case Operation::Compare: {
+      result.subject = selected_function(0);
+      result.oracle = selected_function(1);
+      if (!returns_void || !result.subject || parameters.empty() ||
+          types.unqualified(parameters.back())->kind() !=
+              cxx::TypeKind::kClass) {
+        fail("check.compare requires a subject and a final comparison lambda");
+      }
+      result.configuration = bind_configuration(result.subject);
+      auto* oracle_configuration = bind_configuration(result.oracle);
+      if (oracle_configuration != result.configuration && result.oracle) {
+        fail(
+            "check.compare target and oracle must use the same workload "
+            "configuration");
+      }
+      break;
+    }
+    case Operation::Invoke: {
+      result.subject = selected_function(0);
+      if (!returns_void || !result.subject) {
+        fail("check.invoke requires a subject function template argument");
+      }
+      result.configuration = bind_configuration(result.subject);
+      break;
+    }
+    case Operation::EntropyFork: {
+      if (parameters.size() != 2 || returns_void ||
+          !types.is_opaque_dialect(parameters[0], "check.entropy", owner) ||
+          !types.is_opaque_dialect(signature->returnType(), "check.entropy",
+                                   owner) ||
+          !is_string_type(types, parameters[1])) {
+        fail("check.entropy.fork requires entropy(entropy, const char*)");
+      }
+      break;
+    }
+    case Operation::EntropyRead: {
+      if (parameters.size() != 2 || returns_void ||
+          !types.is_opaque_dialect(parameters[0], "check.entropy", owner) ||
+          types.unqualified(signature->returnType()) !=
+              unit.control()->getUnsignedLongLongIntType() ||
+          types.unqualified(parameters[1]) !=
+              unit.control()->getUnsignedLongLongIntType()) {
+        fail("check.entropy.read requires an entropy source and an i64 result");
+      }
+      break;
+    }
   }
   return result;
 }
@@ -271,6 +385,8 @@ bool CheckIntrinsic::equivalent(const CheckIntrinsic& other) const {
          loom_type_equal(scalar_type, other.scalar_type) &&
          source_tensor == other.source_tensor &&
          result_tensor == other.result_tensor && kernel == other.kernel &&
+         subject == other.subject && oracle == other.oracle &&
+         trial_count == other.trial_count &&
          configuration == other.configuration;
 }
 

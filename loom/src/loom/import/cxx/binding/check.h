@@ -9,6 +9,7 @@
 
 #include <cxx/attributes.h>
 
+#include <cstdint>
 #include <optional>
 #include <string_view>
 
@@ -31,7 +32,13 @@ struct CheckIntrinsic {
     Bitwise,
     Requires,
     Event,
-    Launch
+    Launch,
+    Trial,
+    Generate,
+    Compare,
+    Invoke,
+    EntropyFork,
+    EntropyRead,
   };
 
   static std::optional<Operation> parse_operation(std::string_view name);
@@ -56,6 +63,12 @@ struct CheckIntrinsic {
   const TensorPartition* result_tensor = nullptr;
   // Statically selected kernel declaration, borrowed from the source unit.
   cxx::FunctionSymbol* kernel = nullptr;
+  // Ordinary generator or target subject selected by a template argument.
+  cxx::FunctionSymbol* subject = nullptr;
+  // Optional distinct oracle selected by a second template argument.
+  cxx::FunctionSymbol* oracle = nullptr;
+  // Finite trial count selected by trial<Count>.
+  int64_t trial_count = 0;
   // Kernel-owned launch configuration, if one supplies this launch's geometry.
   cxx::FunctionSymbol* configuration = nullptr;
 };

@@ -76,6 +76,16 @@ struct EncodingPartition final : Partition {
   size_t rank;
 };
 
+// Canonical source handle projected to one registered opaque dialect value.
+// The source class supplies C++ naming and copy semantics while the dialect
+// descriptor owns the native semantic type.
+struct OpaqueDialectPartition final : Partition {
+  // Concrete source class retaining copy and lifetime semantics.
+  cxx::ClassSymbol* source;
+  // Registered opaque dialect type interned into the destination module.
+  loom_type_t type;
+};
+
 // Owns temporary overflow dimensions while bound High types are consumed by
 // one immediately following builder call. Rank-one and rank-two types retain
 // dimensions inline and leave this storage empty.
@@ -170,8 +180,9 @@ struct TensorPartition final : Partition {
 // diagnostics outlive this projection.
 class Types {
  public:
-  Types(cxx::TranslationUnit& unit, Diagnostics& diagnostics)
-      : unit_(unit), diagnostics_(diagnostics) {}
+  Types(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
+        loom_module_t* module = nullptr)
+      : unit_(unit), diagnostics_(diagnostics), module_(module) {}
 
   // Projects a leaf value's representation independently of top-level cv
   // qualifiers. Object pointers carry a buffer and byte offset independently
@@ -230,12 +241,18 @@ class Types {
   const cxx::VectorType* vector(const cxx::Type* type);
   bool is_unsigned(const cxx::Type* type);
   bool is_float(const cxx::Type* type);
+  // Whether the source class names this exact registered opaque dialect type.
+  bool is_opaque_dialect(const cxx::Type* type, std::string_view name,
+                         cxx::AST* owner);
 
  private:
   void require_record_storage(const cxx::ClassType* input, cxx::AST* owner);
   const Partition* special(const cxx::Type* input, cxx::AST* owner);
   const EncodingPartition* encoding(const cxx::ClassType* input,
                                     cxx::AST* owner);
+  const OpaqueDialectPartition* opaque_dialect(const cxx::ClassType* input,
+                                               std::string_view name,
+                                               cxx::AST* owner);
   const ViewPartition* view(const cxx::ClassType* input, cxx::AST* owner);
   const TensorPartition* tensor(const cxx::ClassType* input, cxx::AST* owner);
   void append_component_names(const Partition& partition,
@@ -246,6 +263,8 @@ class Types {
   cxx::TranslationUnit& unit_;
   // Source rejection boundary for unsupported types.
   Diagnostics& diagnostics_;
+  // Destination owning interned dialect type names; null in scalar-only tests.
+  loom_module_t* module_;
   // Stable source partitions, independent of every particular SSA binding.
   std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<RecordPartition>>
       records_;
@@ -256,6 +275,9 @@ class Types {
   // Admitted special source objects, keyed by concrete specialization.
   std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<EncodingPartition>>
       encodings_;
+  // Admitted opaque dialect handles keyed by concrete source class.
+  std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<OpaqueDialectPartition>>
+      opaque_dialects_;
   // Admitted view specializations retaining element and extent contracts.
   std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<ViewPartition>> views_;
   // Admitted tensor handles retaining their element and static extent.
