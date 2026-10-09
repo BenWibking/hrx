@@ -140,7 +140,7 @@ def _vector_i32_schedule_class(vector_bit_width: int) -> str:
 
 def _vector_f32_schedule_class(vector_bit_width: int) -> str:
     match vector_bit_width:
-        case 128:
+        case 64 | 128:
             return _SCHEDULE_VECTOR_F32_XMM
         case 256:
             return _SCHEDULE_VECTOR_F32_YMM
@@ -233,7 +233,7 @@ def _zmm_operand(field_name: str) -> Operand:
 
 def _vector_reg_alt(vector_bit_width: int) -> tuple[RegClassAlt, ...]:
     match vector_bit_width:
-        case 128:
+        case 64 | 128:
             return _XMM_ALT
         case 256:
             return _YMM_ALT

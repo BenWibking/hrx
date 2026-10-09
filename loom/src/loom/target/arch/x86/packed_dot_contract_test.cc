@@ -11,7 +11,7 @@
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 #include "loom/target/arch/x86/descriptors/avx512_descriptors.h"
-#include "loom/target/arch/x86/descriptors/avx512_packed_dot_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx512_features_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx_vnni_descriptors.h"
 #include "loom/target/arch/x86/descriptors/packed_dot_descriptors.h"
 
@@ -100,8 +100,7 @@ TEST(PackedDotContractTest, ResolvesGeneratedLowDescriptorReferences) {
 
   const loom_low_descriptor_t* composite_descriptor =
       loom_x86_packed_dot_low_descriptor(
-          loom_x86_avx512_packed_dot_core_descriptor_set(),
-          semantic_descriptor);
+          loom_x86_avx512_features_core_descriptor_set(), semantic_descriptor);
   ASSERT_NE(composite_descriptor, nullptr);
   EXPECT_EQ(composite_descriptor->stable_id, semantic_descriptor->stable_id);
 

@@ -595,6 +595,24 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
     ),
     _vex_descriptor(
         Descriptor(
+            key="x86.avx2.vpshuflw.xmm",
+            mnemonic="vpshuflw",
+            semantic_tag="bits.permute.16x4",
+            operands=(_vector_result(128), _xmm_operand("source")),
+            immediates=(_SHUFFLE_4X2_CONTROL_IMMEDIATE,),
+            asm_forms=_asm(
+                mnemonic="vpshuflw.xmm",
+                results=("dst",),
+                operands=("source",),
+                immediates=("control",),
+            ),
+            schedule_class=_SCHEDULE_VECTOR_I32_XMM,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        ),
+        native.VPSHUFLW,
+    ),
+    _vex_descriptor(
+        Descriptor(
             key="x86.avx2.vpermilpd.xmm",
             mnemonic="vpermilpd",
             semantic_tag="bits.permute.64x2",
@@ -1250,6 +1268,20 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
         store_schedule_class=_SCHEDULE_MEMORY_STORE_XMM,
         assembly_suffix=".xmm",
         vector_instructions=native.VECTOR_MEMORY,
+        vector_prefix=VectorEncodingPrefix.VEX,
+    ),
+    *memory_descriptors(
+        key_prefix="x86.avx2",
+        load_mnemonic="vmovsd",
+        store_mnemonic="vmovsd",
+        register_class=_REG_XMM,
+        register_suffix="xmm",
+        semantic_type="v64",
+        width_bits=64,
+        load_schedule_class=_SCHEDULE_MEMORY_LOAD_XMM,
+        store_schedule_class=_SCHEDULE_MEMORY_STORE_XMM,
+        assembly_suffix=".xmm",
+        vector_instructions=native.XMM_QWORD_MEMORY,
         vector_prefix=VectorEncodingPrefix.VEX,
     ),
     *memory_descriptors(

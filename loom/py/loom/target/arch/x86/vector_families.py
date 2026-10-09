@@ -13,6 +13,7 @@ from dataclasses import dataclass
 AVX2_VECTOR_BIT_WIDTHS = (128, 256)
 AVX512_VECTOR_BIT_WIDTHS = (512,)
 AVX512VL_VECTOR_BIT_WIDTHS = AVX2_VECTOR_BIT_WIDTHS
+AVX512_FP16_VECTOR_BIT_WIDTHS = (64, 128, 256, 512)
 AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS = (
     *AVX2_VECTOR_BIT_WIDTHS,
     *AVX512_VECTOR_BIT_WIDTHS,
@@ -71,10 +72,12 @@ FLOAT_ELEMENTS = (
     VectorElement("f64", 64),
 )
 
+FP16_ELEMENT = VectorElement("f16", 16)
+
 STORAGE_ELEMENTS = (
     VectorElement("f8E4M3", 8),
     VectorElement("f8E5M2", 8),
-    VectorElement("f16", 16),
+    FP16_ELEMENT,
     VectorElement("bf16", 16),
 )
 
@@ -194,6 +197,16 @@ AVX2_FLOAT_BINARY_FAMILIES = tuple(
 
 AVX512_FLOAT_BINARY_FAMILIES = AVX2_FLOAT_BINARY_FAMILIES
 
+AVX512_FP16_FLOAT_BINARY_FAMILIES = tuple(
+    VectorBinaryFamily(source_operation, f"v{stem}ph", semantic, FP16_ELEMENT)
+    for source_operation, stem, semantic in (
+        ("addf", "add", "float.add"),
+        ("subf", "sub", "float.sub"),
+        ("mulf", "mul", "float.mul"),
+        ("divf", "div", "float.div"),
+    )
+)
+
 AVX2_SCALAR_FLOAT_BINARY_FAMILIES = tuple(
     VectorBinaryFamily(source_operation, f"v{stem}{suffix}", semantic, element)
     for source_operation, stem, semantic in (
@@ -203,6 +216,16 @@ AVX2_SCALAR_FLOAT_BINARY_FAMILIES = tuple(
         ("divf", "div", "float.div"),
     )
     for element, suffix in zip(FLOAT_ELEMENTS, ("ss", "sd"), strict=True)
+)
+
+AVX512_FP16_SCALAR_FLOAT_BINARY_FAMILIES = tuple(
+    VectorBinaryFamily(source_operation, f"v{stem}sh", semantic, FP16_ELEMENT)
+    for source_operation, stem, semantic in (
+        ("addf", "add", "float.add"),
+        ("subf", "sub", "float.sub"),
+        ("mulf", "mul", "float.mul"),
+        ("divf", "div", "float.div"),
+    )
 )
 
 AVX2_BITWISE_FAMILIES = (
@@ -269,6 +292,9 @@ AVX512_INTEGER_COMPARE_MNEMONICS = {
 
 AVX512_FLOAT_COMPARE_MNEMONICS = AVX2_FLOAT_COMPARE_MNEMONICS
 
+AVX512_FP16_FLOAT_COMPARE_MNEMONIC = "vcmpph"
+AVX512_FP16_SCALAR_FLOAT_COMPARE_MNEMONIC = "vcmpsh"
+
 AVX512_SELECT_MNEMONICS = {
     **{
         element.name: f"vpblendm{suffix}"
@@ -286,6 +312,9 @@ AVX2_SCALAR_FLOAT_FMA_MNEMONICS = {
     "f32": "vfmadd231ss",
     "f64": "vfmadd231sd",
 }
+
+AVX512_FP16_FLOAT_FMA_MNEMONIC = "vfmadd231ph"
+AVX512_FP16_SCALAR_FLOAT_FMA_MNEMONIC = "vfmadd231sh"
 
 FLOAT_EXTREMA_OPERATIONS = (
     "minimumf",
@@ -306,6 +335,20 @@ AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS = {
     "maximumf": {"f32": "vmaxss", "f64": "vmaxsd"},
     "minnumf": {"f32": "vminss", "f64": "vminsd"},
     "maxnumf": {"f32": "vmaxss", "f64": "vmaxsd"},
+}
+
+AVX512_FP16_FLOAT_EXTREMA_MNEMONICS = {
+    "minimumf": "vminph",
+    "maximumf": "vmaxph",
+    "minnumf": "vminph",
+    "maxnumf": "vmaxph",
+}
+
+AVX512_FP16_SCALAR_FLOAT_EXTREMA_MNEMONICS = {
+    "minimumf": "vminsh",
+    "maximumf": "vmaxsh",
+    "minnumf": "vminsh",
+    "maxnumf": "vmaxsh",
 }
 
 AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS = ("addf", "mulf")
@@ -360,6 +403,19 @@ def validate_vector_families() -> None:
         )
     if set(AVX512_SELECT_MNEMONICS) != set(AVX2_PAYLOAD_ELEMENT_NAMES):
         raise ValueError("AVX-512 select rows must cover every payload element")
+    fp16_binary_operations = {
+        family.source_operation for family in AVX512_FP16_FLOAT_BINARY_FAMILIES
+    }
+    if fp16_binary_operations != {"addf", "subf", "mulf", "divf"}:
+        raise ValueError("AVX-512 FP16 binary rows must cover the arithmetic family")
+    if {
+        family.source_operation for family in AVX512_FP16_SCALAR_FLOAT_BINARY_FAMILIES
+    } != fp16_binary_operations:
+        raise ValueError("AVX-512 FP16 scalar and packed arithmetic must agree")
+    if set(AVX512_FP16_FLOAT_EXTREMA_MNEMONICS) != set(FLOAT_EXTREMA_OPERATIONS) or set(
+        AVX512_FP16_SCALAR_FLOAT_EXTREMA_MNEMONICS
+    ) != set(FLOAT_EXTREMA_OPERATIONS):
+        raise ValueError("AVX-512 FP16 extrema rows must cover every float semantic")
 
 
 validate_vector_families()

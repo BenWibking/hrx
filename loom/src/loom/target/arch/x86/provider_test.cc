@@ -96,9 +96,9 @@ TEST_F(X86ProviderTest, SelectsStrongestExecutableCpuProfile) {
       {IREE_CPU_DATA0_X86_64_AVX, LOOM_X86_TARGET_KIND_SIMD128,
        IREE_SV("x86.simd128.core")},
       {kAvx2CpuFeatures, LOOM_X86_TARGET_KIND_AVX2,
-       IREE_SV("x86.avx2_packed_dot.core")},
+       IREE_SV("x86.avx2_features.core")},
       {kAvx512CpuFeatures, LOOM_X86_TARGET_KIND_AVX512,
-       IREE_SV("x86.avx512_packed_dot.core")},
+       IREE_SV("x86.avx512_features.core")},
   };
   for (const auto& selection_case : cases) {
     iree_cpu_data_t cpu_data = {
@@ -173,7 +173,7 @@ TEST_F(X86ProviderTest, PreservesAuthoredRequirementIdentity) {
   EXPECT_EQ(selected_facts->base.selector, LOOM_X86_TARGET_KIND_AVX2);
   EXPECT_TRUE(iree_string_view_equal(
       selected_facts->base.storage.config.contract_set_key,
-      IREE_SV("x86.avx2_packed_dot.core")));
+      IREE_SV("x86.avx2_features.core")));
   EXPECT_TRUE(loom_target_facts_field_is_explicit(
       &selected_facts->base, LOOM_TARGET_FACT_FIELD_CONTRACT_SET_KEY));
   EXPECT_TRUE(loom_target_facts_field_is_explicit(
@@ -238,6 +238,7 @@ TEST_F(X86ProviderTest, ProjectsOptionalInstructionFeaturesIndependently) {
       {IREE_CPU_DATA0_X86_64_AVXVNNIINT16, LOOM_X86_FEATURE_AVX_VNNI_INT16},
       {IREE_CPU_DATA0_X86_64_AVX512VNNI, LOOM_X86_FEATURE_AVX512_VNNI},
       {IREE_CPU_DATA0_X86_64_AVX512BF16, LOOM_X86_FEATURE_AVX512_BF16},
+      {IREE_CPU_DATA0_X86_64_AVX512FP16, LOOM_X86_FEATURE_AVX512_FP16},
   };
   for (const auto& feature_case : cases) {
     iree_cpu_data_t cpu_data = {

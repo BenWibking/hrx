@@ -168,11 +168,8 @@ static bool loom_x86_abi_classify_value(
     };
     return byte_length != 0;
   }
-  if (!loom_x86_call_abi_classify_source_type(logical_type,
-                                              out_classification)) {
-    return false;
-  }
-  return out_classification->carrier_register_class == carrier_class;
+  return loom_x86_call_abi_classify_source_carrier(logical_type, carrier_class,
+                                                   out_classification);
 }
 
 static bool loom_x86_abi_signature(

@@ -36,6 +36,7 @@ loom_cc_library(
     loom::ops::vector
     loom::target::abi::task::parameter_layout
     loom::target::arch::x86::contracts
+    loom::target::arch::x86::feature_bits
     loom::target::arch::x86::packed_dot_contract
     loom::target::arch::x86::packed_dot_contract_projection
     loom::target::arch::x86::register_classes

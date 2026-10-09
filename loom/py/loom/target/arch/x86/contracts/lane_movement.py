@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from loom.dialect.vector import defs as vector
 from loom.target.arch.x86.contracts.rule_builders import (
     DescriptorLookup as _DescriptorLookup,
@@ -17,6 +19,7 @@ from loom.target.arch.x86.contracts.rule_builders import (
 )
 from loom.target.arch.x86.vector_families import (
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_FP16_VECTOR_BIT_WIDTHS,
     AVX512_VECTOR_BIT_WIDTHS,
     X86_LANE_FAMILIES,
 )
@@ -28,6 +31,7 @@ from loom.target.contracts import (
     EmitDescriptorOp,
     Guard,
     Scalar,
+    TypePattern,
     ValueRef,
     Vector,
 )
@@ -35,8 +39,18 @@ from loom.target.low_descriptors import Descriptor
 
 _F32 = Scalar("f32")
 _F64 = Scalar("f64")
+_I16 = Scalar("i16")
 _I64 = Scalar("i64")
 _V2F64 = Vector("f64", lanes=2)
+
+
+@dataclass(frozen=True, slots=True)
+class _LaneValueTransport:
+    """Moves one logical scalar between lane and source carriers."""
+
+    lane_type: TypePattern
+    extract: Descriptor
+    insert: Descriptor
 
 
 def _lane_descriptor_key(mnemonic: str, element_bit_width: int) -> str:
@@ -65,6 +79,8 @@ def _lane_extract_rule(
     vector_bit_width: int,
     descriptor_key: str,
     descriptor_lookup: _DescriptorLookup,
+    transport: _LaneValueTransport | None = None,
+    priority: int = 0,
 ) -> DescriptorRule:
     lane_count = vector_bit_width // element_bit_width
     chunk_lane_count = 128 // element_bit_width
@@ -95,14 +111,29 @@ def _lane_extract_rule(
                 },
             )
         )
+    lane_result = (
+        ValueRef.result("result")
+        if transport is None
+        else ValueRef.temporary("lane_value")
+    )
     emits.append(
         _op_emit(
             descriptor=descriptor,
             operands={"source": source},
-            results={"dst": ValueRef.result("result")},
+            results={"dst": lane_result},
+            result_types=(None if transport is None else {"dst": transport.lane_type}),
             immediates={"lane": lane},
         )
     )
+    if transport is not None:
+        dependencies.append(transport.extract)
+        emits.append(
+            _op_emit(
+                descriptor=transport.extract,
+                operands={"input": lane_result},
+                results={"dst": ValueRef.result("result")},
+            )
+        )
     return DescriptorRule(
         source_op=vector.vector_extract,
         descriptor=descriptor,
@@ -115,6 +146,7 @@ def _lane_extract_rule(
             *(Guard.descriptor_available(value) for value in dependencies),
         ),
         emit=tuple(emits),
+        priority=priority,
     )
 
 
@@ -125,6 +157,8 @@ def _lane_insert_rule(
     vector_bit_width: int,
     descriptor_key: str,
     descriptor_lookup: _DescriptorLookup,
+    transport: _LaneValueTransport | None = None,
+    priority: int = 0,
 ) -> DescriptorRule:
     lane_count = vector_bit_width // element_bit_width
     chunk_lane_count = 128 // element_bit_width
@@ -133,6 +167,18 @@ def _lane_insert_rule(
     descriptor = descriptor_lookup(descriptor_key)
     emits: list[EmitDescriptorOp] = []
     dependencies: list[Descriptor] = []
+    lane_value = ValueRef.operand("value")
+    if transport is not None:
+        dependencies.append(transport.insert)
+        lane_value = ValueRef.temporary("lane_value")
+        emits.append(
+            _op_emit(
+                descriptor=transport.insert,
+                operands={"input": ValueRef.operand("value")},
+                results={"dst": lane_value},
+                result_types={"dst": transport.lane_type},
+            )
+        )
     dest = ValueRef.operand("dest")
     lane: AttrProject = AttrProject.i64_array_element("static_indices", element=0)
     if vector_bit_width > 128:
@@ -157,16 +203,16 @@ def _lane_insert_rule(
         )
     inserted = (
         ValueRef.result("result")
-        if vector_bit_width == 128
+        if vector_bit_width <= 128
         else ValueRef.temporary("inserted_chunk")
     )
     emits.append(
         _op_emit(
             descriptor=descriptor,
-            operands={"dest": dest, "value": ValueRef.operand("value")},
+            operands={"dest": dest, "value": lane_value},
             results={"dst": inserted},
             result_types=(
-                None if vector_bit_width == 128 else {"dst": DescriptorResultType()}
+                None if vector_bit_width <= 128 else {"dst": DescriptorResultType()}
             ),
             immediates={"lane": lane},
         )
@@ -204,6 +250,7 @@ def _lane_insert_rule(
             *(Guard.descriptor_available(value) for value in dependencies),
         ),
         emit=tuple(emits),
+        priority=priority,
     )
 
 
@@ -482,6 +529,42 @@ def _insert_f64_wide_rule(
                 },
             ),
         ),
+    )
+
+
+def avx512_fp16_lane_movement_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Moves f16 lanes while preserving the feature-selected XMM scalar."""
+
+    transport = _LaneValueTransport(
+        lane_type=_I16,
+        extract=descriptor_lookup("x86.avx2.vmovd.xmm.gpr32"),
+        insert=descriptor_lookup("x86.avx2.vmovd.gpr32.xmm"),
+    )
+    return tuple(
+        rule
+        for vector_bit_width in AVX512_FP16_VECTOR_BIT_WIDTHS
+        for rule in (
+            _lane_extract_rule(
+                element_names=("f16",),
+                element_bit_width=16,
+                vector_bit_width=vector_bit_width,
+                descriptor_key=_lane_descriptor_key("vpextrw", 16),
+                descriptor_lookup=descriptor_lookup,
+                transport=transport,
+                priority=1,
+            ),
+            _lane_insert_rule(
+                element_names=("f16",),
+                element_bit_width=16,
+                vector_bit_width=vector_bit_width,
+                descriptor_key=_lane_descriptor_key("vpinsrw", 16),
+                descriptor_lookup=descriptor_lookup,
+                transport=transport,
+                priority=1,
+            ),
+        )
     )
 
 

@@ -32,8 +32,10 @@ from loom.target.arch.x86.contracts.rule_builders import (
 from loom.target.arch.x86.vector_families import (
     AVX2_VECTOR_BIT_WIDTHS,
     AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
+    AVX512_FP16_VECTOR_BIT_WIDTHS,
     AVX512_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
+    FP16_ELEMENT,
     INTEGER_ELEMENTS,
     STORAGE_ELEMENTS,
     VectorElement,
@@ -57,8 +59,13 @@ _I1 = Scalar("i1")
 _I32 = Scalar("i32")
 _I64 = Scalar("i64")
 _V2I64 = Vector("i64", lanes=2)
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
-_REGISTER_CLASSES = {128: "x86.xmm", 256: "x86.ymm", 512: "x86.zmm"}
+_REGISTER_SUFFIXES = {64: "xmm", 128: "xmm", 256: "ymm", 512: "zmm"}
+_REGISTER_CLASSES = {
+    64: "x86.xmm",
+    128: "x86.xmm",
+    256: "x86.ymm",
+    512: "x86.zmm",
+}
 _INTEGER_BROADCAST_MNEMONICS = {
     8: "vpbroadcastb",
     16: "vpbroadcastw",
@@ -306,6 +313,8 @@ def _splat_rule(
     result_type: TypePattern,
     descriptor_key: str,
     descriptor_lookup: _DescriptorLookup,
+    *,
+    priority: int = 0,
 ) -> DescriptorRule:
     descriptor = descriptor_lookup(descriptor_key)
     return DescriptorRule(
@@ -322,6 +331,7 @@ def _splat_rule(
                 results={"dst": ValueRef.result("result")},
             ),
         ),
+        priority=priority,
     )
 
 
@@ -1072,6 +1082,68 @@ def avx2_vector_construction_rules(
             for element in INTEGER_ELEMENTS
             for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
             for unit_step in (True, False)
+        ),
+    )
+
+
+def avx512_fp16_vector_construction_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[ContractCase, ...]:
+    """Constructs FP16 vectors including the 64-bit low-XMM payload."""
+    low_xmm_type = Vector(FP16_ELEMENT.name, lanes=4)
+    low_xmm_bits_type = Vector("i16", lanes=4)
+    splat_rules = tuple(
+        _splat_rule(
+            Scalar(FP16_ELEMENT.name),
+            _full_vector_type(FP16_ELEMENT, vector_bit_width),
+            (
+                "x86.avx512_fp16.vpbroadcastw.zmm.xmm"
+                if vector_bit_width == 512
+                else f"x86.avx2.vpbroadcastw.{_REGISTER_SUFFIXES[vector_bit_width]}"
+            ),
+            descriptor_lookup,
+            # The AVX-512 base fragment also has a priority-1 storage splat
+            # for the ordinary GPR scalar carrier. The FP16 feature overlay
+            # must select its native XMM carrier instead.
+            priority=2,
+        )
+        for vector_bit_width in AVX512_FP16_VECTOR_BIT_WIDTHS
+    )
+    return (
+        integer_vector_constant_rule(
+            low_xmm_bits_type,
+            Vector("i16", lanes=8),
+            16,
+            descriptor_lookup("x86.scalar.movimm.gpr32"),
+            descriptor_lookup("x86.avx2.vmovd.xmm.gpr32"),
+            descriptor_lookup("x86.avx2.vpbroadcastw.xmm"),
+        ),
+        floating_vector_constant_bits_rule(
+            low_xmm_type,
+            _full_vector_type(FP16_ELEMENT, 128),
+            FP16_ELEMENT.name,
+            descriptor_lookup("x86.scalar.movimm.gpr32"),
+            descriptor_lookup("x86.avx2.vmovd.xmm.gpr32"),
+            descriptor_lookup("x86.avx2.vpbroadcastw.xmm"),
+        ),
+        *splat_rules,
+        ValueAliasRule(
+            source_op=vector.vector_bitcast,
+            source=ValueRef.operand("input"),
+            result=ValueRef.result("result"),
+            guards=(
+                Guard.value_type("input", low_xmm_type),
+                Guard.value_type("result", low_xmm_bits_type),
+            ),
+        ),
+        ValueAliasRule(
+            source_op=vector.vector_bitcast,
+            source=ValueRef.operand("input"),
+            result=ValueRef.result("result"),
+            guards=(
+                Guard.value_type("input", low_xmm_bits_type),
+                Guard.value_type("result", low_xmm_type),
+            ),
         ),
     )
 

@@ -23,7 +23,8 @@ bool loom_rewriter_prefers_fma(const loom_rewriter_t* rewriter,
                                loom_type_t value_type, uint8_t fastmath_flags) {
   const loom_target_math_policy_t* policy = rewriter->math_policy;
   return policy && policy->prefer_fma &&
-         policy->prefer_fma(policy, value_type, fastmath_flags);
+         policy->prefer_fma(policy, rewriter->math_target_bundle, value_type,
+                            fastmath_flags);
 }
 
 typedef enum loom_rewriter_user_change_flag_bits_e {

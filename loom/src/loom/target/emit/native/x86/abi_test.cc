@@ -20,10 +20,10 @@
 #include "loom/ops/target/ops.h"
 #include "loom/target/arch/x86/descriptors/avx10_2_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx2_descriptors.h"
-#include "loom/target/arch/x86/descriptors/avx2_packed_dot_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx2_features_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_bf16_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_descriptors.h"
-#include "loom/target/arch/x86/descriptors/avx512_packed_dot_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx512_features_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_vnni_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx_vnni_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx_vnni_int16_descriptors.h"
@@ -73,9 +73,9 @@ static const ProfileExpectation kProfiles[] = {
      /*.vector_register_count=*/16,
      /*.mask_register_count=*/0},
     {/*.name=*/"avx2_packed_dot",
-     /*.descriptor_key=*/"x86.avx2_packed_dot.core",
+     /*.descriptor_key=*/"x86.avx2_features.core",
      /*.carrier=*/"ymm",
-     /*.provider=*/loom_x86_avx2_packed_dot_core_descriptor_set,
+     /*.provider=*/loom_x86_avx2_features_core_descriptor_set,
      /*.vector_register_class=*/LOOM_X86_REGISTER_CLASS_YMM,
      /*.vector_register_count=*/16,
      /*.mask_register_count=*/0},
@@ -94,9 +94,9 @@ static const ProfileExpectation kProfiles[] = {
      /*.vector_register_count=*/32,
      /*.mask_register_count=*/0},
     {/*.name=*/"avx512_packed_dot",
-     /*.descriptor_key=*/"x86.avx512_packed_dot.core",
+     /*.descriptor_key=*/"x86.avx512_features.core",
      /*.carrier=*/"zmm",
-     /*.provider=*/loom_x86_avx512_packed_dot_core_descriptor_set,
+     /*.provider=*/loom_x86_avx512_features_core_descriptor_set,
      /*.vector_register_class=*/LOOM_X86_REGISTER_CLASS_ZMM,
      /*.vector_register_count=*/32,
      /*.mask_register_count=*/8},
@@ -148,10 +148,10 @@ static const loom_low_descriptor_set_provider_t kDescriptorSetProviders[] = {
     loom_x86_scalar_core_descriptor_set,
     loom_x86_simd128_core_descriptor_set,
     loom_x86_avx2_core_descriptor_set,
-    loom_x86_avx2_packed_dot_core_descriptor_set,
+    loom_x86_avx2_features_core_descriptor_set,
     loom_x86_avx512_core_descriptor_set,
     loom_x86_packed_dot_core_descriptor_set,
-    loom_x86_avx512_packed_dot_core_descriptor_set,
+    loom_x86_avx512_features_core_descriptor_set,
     loom_x86_avx512_vnni_core_descriptor_set,
     loom_x86_avx512_bf16_core_descriptor_set,
     loom_x86_avx_vnni_core_descriptor_set,
@@ -335,7 +335,11 @@ TEST_F(X86FunctionAbiTest, ScalarLogicalTypesUsePlatformClasses) {
        LOOM_X86_CALL_ABI_VALUE_ACTION_NORMALIZE_I16},
       {"f16", "gpr32", LOOM_X86_REGISTER_CLASS_XMM, 2, 2,
        LOOM_X86_CALL_ABI_VALUE_ACTION_NONE},
+      {"f16", "xmm", LOOM_X86_REGISTER_CLASS_XMM, 2, 2,
+       LOOM_X86_CALL_ABI_VALUE_ACTION_NONE},
       {"bf16", "gpr32", LOOM_X86_REGISTER_CLASS_XMM, 2, 2,
+       LOOM_X86_CALL_ABI_VALUE_ACTION_NONE},
+      {"bf16", "xmm", LOOM_X86_REGISTER_CLASS_XMM, 2, 2,
        LOOM_X86_CALL_ABI_VALUE_ACTION_NONE},
       {"i32", "gpr32", LOOM_X86_REGISTER_CLASS_GPR32, 4, 4,
        LOOM_X86_CALL_ABI_VALUE_ACTION_NONE},
@@ -401,6 +405,7 @@ TEST_F(X86FunctionAbiTest, VectorLogicalTypesCoverEveryWidthFamily) {
     const char* carrier;
     uint16_t register_class;
   } widths[] = {
+      {64, "xmm", LOOM_X86_REGISTER_CLASS_XMM},
       {128, "xmm", LOOM_X86_REGISTER_CLASS_XMM},
       {256, "ymm", LOOM_X86_REGISTER_CLASS_YMM},
       {512, "zmm", LOOM_X86_REGISTER_CLASS_ZMM},
@@ -415,11 +420,16 @@ TEST_F(X86FunctionAbiTest, VectorLogicalTypesCoverEveryWidthFamily) {
     }
   }
   for (uint16_t lane_count : {2, 4, 8, 16, 32, 64}) {
-    const iree_host_size_t width_index = lane_count <= 16 ? 0 : lane_count / 32;
-    cases.push_back({"vector<" + std::to_string(lane_count) + "xi1>",
-                     widths[width_index].carrier,
-                     widths[width_index].register_class,
-                     static_cast<uint16_t>(widths[width_index].bits / 8)});
+    const uint16_t register_class =
+        lane_count <= 16   ? LOOM_X86_REGISTER_CLASS_XMM
+        : lane_count == 32 ? LOOM_X86_REGISTER_CLASS_YMM
+                           : LOOM_X86_REGISTER_CLASS_ZMM;
+    const char* carrier = lane_count <= 16   ? "xmm"
+                          : lane_count == 32 ? "ymm"
+                                             : "zmm";
+    const uint16_t byte_length = lane_count <= 16 ? 16 : lane_count;
+    cases.push_back({"vector<" + std::to_string(lane_count) + "xi1>", carrier,
+                     register_class, byte_length});
   }
 
   std::string source;
@@ -565,10 +575,14 @@ TEST_F(X86FunctionAbiTest, StackRowsRetainExactScalarAndVectorWidths) {
   static const StackCase cases[] = {
       {"f16", "x86.avx2.core", "f16", "gpr32",
        loom_x86_avx2_core_descriptor_set, 8, 16},
+      {"f16_xmm", "x86.avx512.core", "f16", "xmm",
+       loom_x86_avx512_core_descriptor_set, 8, 16},
       {"f32", "x86.avx2.core", "f32", "xmm", loom_x86_avx2_core_descriptor_set,
        8, 16},
       {"f64", "x86.avx2.core", "f64", "xmm", loom_x86_avx2_core_descriptor_set,
        8, 16},
+      {"xmm64", "x86.avx512.core", "vector<4xf16>", "xmm",
+       loom_x86_avx512_core_descriptor_set, 8, 16},
       {"xmm", "x86.simd128.core", "vector<4xi32>", "xmm",
        loom_x86_simd128_core_descriptor_set, 16, 16},
       {"ymm", "x86.avx2.core", "vector<8xi32>", "ymm",
@@ -614,6 +628,27 @@ TEST_F(X86FunctionAbiTest, StackRowsRetainExactScalarAndVectorWidths) {
     EXPECT_EQ(prepared.abi.stack_argument_alignment, test_case.stack_alignment);
     EXPECT_TRUE(prepared.abi.has_simd_stack_argument);
   }
+}
+
+TEST_F(X86FunctionAbiTest, LowXmmVectorResultRetainsLogicalWidth) {
+  ModulePtr module = Parse(R"(
+low.func.def target<x86.avx512.core> abi(object_function) abi_layout({signature = (vector<4xf16>, vector<4xf16>, vector<4xf16>) -> (vector<4xf16>, vector<4xf16>, vector<4xf16>)}) @results(%a: reg<x86.xmm>, %b: reg<x86.xmm>, %c: reg<x86.xmm>) -> (reg<x86.xmm>, reg<x86.xmm>, reg<x86.xmm>) asm {
+  return %a, %b, %c
+}
+)");
+  const PreparedAbi prepared =
+      Prepare(module.get(), "results", loom_x86_avx512_core_descriptor_set);
+  ASSERT_TRUE(prepared.supported);
+  ASSERT_EQ(prepared.abi.call_contract.result_count, 3u);
+  EXPECT_EQ(prepared.abi.call_contract.results[0].location_base, 0u);
+  EXPECT_EQ(prepared.abi.call_contract.results[1].location_base, 1u);
+  EXPECT_EQ(prepared.abi.call_contract.results[2].location_kind,
+            LOOM_LOW_ALLOCATION_LOCATION_UNASSIGNED);
+  EXPECT_EQ(prepared.abi.results[2].stack_offset, 0u);
+  EXPECT_EQ(prepared.abi.results[2].byte_length, 8u);
+  EXPECT_EQ(prepared.abi.results[2].byte_alignment, 8u);
+  EXPECT_EQ(prepared.abi.call_storage_bytes, 8u);
+  EXPECT_EQ(prepared.abi.call_storage_alignment, 16u);
 }
 
 TEST_F(X86FunctionAbiTest, PrivateResultsUseIndependentBanksAndOverflow) {

@@ -69,8 +69,9 @@ def validate_descriptor_encoding(descriptor: Descriptor) -> None:
             raise ValueError(f"{descriptor.key}: {error}") from error
         if not descriptor.encoding_id:
             raise ValueError(f"{descriptor.key}: invalid native vector encoding")
-        if not 1 <= (descriptor.encoding_id >> 8) & 3 <= 3:
-            raise ValueError(f"{descriptor.key}: invalid native vector opcode map")
+        # Map zero denotes the compact EVEX map-5/map-6 states. The typed
+        # VectorEncoding constructor has already rejected every unsupported
+        # architectural map before producing this packed ID.
     else:
         Form(descriptor.encoding_format_id)
     inputs = sum(

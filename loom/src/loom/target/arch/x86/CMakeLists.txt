@@ -61,6 +61,7 @@ loom_cc_library(
   SRCS
     "math_policy.c"
   DEPS
+    ::feature_bits
     iree::base
     loom::target::math_policy
   PUBLIC
@@ -77,7 +78,7 @@ loom_cc_library(
     "register_classes.c"
   DEPS
     iree::base
-    loom::target::arch::x86::descriptors::avx512_packed_dot_descriptors_ids
+    loom::target::arch::x86::descriptors::avx512_features_descriptors_ids
   PUBLIC
 )
 endif()
@@ -303,6 +304,7 @@ loom_check_test_suite(
     "test/source_low/source_low_avx2_reductions.loom-test"
     "test/source_low/source_low_avx512_families.loom-test"
     "test/source_low/source_low_avx512_float_semantics.loom-test"
+    "test/source_low/source_low_avx512_fp16.loom-test"
     "test/source_low/source_low_avx512_packed_dot.loom-test"
     "test/source_low/source_low_avx512_predicates.loom-test"
     "test/source_low/source_low_avx512_reductions.loom-test"

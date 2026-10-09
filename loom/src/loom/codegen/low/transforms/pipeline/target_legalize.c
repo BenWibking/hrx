@@ -1905,6 +1905,7 @@ static iree_status_t loom_low_target_legalize_function(
           loom_target_math_pass_capability_policy_registry(
               loom_target_math_pass_capability_from_pass(pass)),
           loom_low_source_selection_target_bundle(selection)),
+      .math_target_bundle = loom_low_source_selection_target_bundle(selection),
   };
   const loom_greedy_rewrite_callbacks_t rewrite_callbacks = {
       .user_data = &state,

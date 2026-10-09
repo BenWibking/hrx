@@ -14,6 +14,7 @@ from loom.target.low_descriptors import Descriptor, DescriptorSet
 
 from .avx2 import X86_AVX2_DESCRIPTOR_SET
 from .avx512 import X86_AVX512_CORE_DESCRIPTOR_SET
+from .avx512_fp16 import X86_AVX512_FP16_DESCRIPTOR_SET
 from .common import _T, _qualify_packed_dot_descriptor_asm_forms
 from .packed_dot import (
     X86_AVX_VNNI_DESCRIPTOR_SET,
@@ -25,15 +26,16 @@ from .packed_dot import (
 _X86_DESCRIPTOR_SET_COMPONENTS = tuple[tuple[DescriptorSet, frozenset[str]], ...]
 
 
-_X86_AVX512_PACKED_DOT_COMPONENTS: _X86_DESCRIPTOR_SET_COMPONENTS = (
+_X86_AVX512_FEATURE_COMPONENTS: _X86_DESCRIPTOR_SET_COMPONENTS = (
     (X86_AVX512_CORE_DESCRIPTOR_SET, frozenset()),
+    (X86_AVX512_FP16_DESCRIPTOR_SET, frozenset()),
     *(
         (descriptor_set, frozenset())
         for descriptor_set in X86_PACKED_DOT_FEATURE_DESCRIPTOR_SETS
     ),
 )
 
-_X86_AVX2_PACKED_DOT_COMPONENTS: _X86_DESCRIPTOR_SET_COMPONENTS = (
+_X86_AVX2_FEATURE_COMPONENTS: _X86_DESCRIPTOR_SET_COMPONENTS = (
     (X86_AVX2_DESCRIPTOR_SET, frozenset()),
     (X86_AVX_VNNI_DESCRIPTOR_SET, frozenset()),
     (X86_AVX_VNNI_INT8_DESCRIPTOR_SET, frozenset()),
@@ -115,22 +117,22 @@ def _composite_descriptor_set(
     )
 
 
-X86_AVX2_PACKED_DOT_DESCRIPTOR_SET = _composite_descriptor_set(
-    key="x86.avx2_packed_dot.core",
-    feature_key="x86.avx2_packed_dot.v1",
-    stem="avx2_packed_dot",
-    function_name="loom_x86_avx2_packed_dot_core_descriptor_set",
-    c_table_prefix="X86Avx2PackedDotCore",
-    c_enum_prefix="X86_AVX2_PACKED_DOT_CORE",
-    components=_X86_AVX2_PACKED_DOT_COMPONENTS,
+X86_AVX2_FEATURES_DESCRIPTOR_SET = _composite_descriptor_set(
+    key="x86.avx2_features.core",
+    feature_key="x86.avx2_features.v1",
+    stem="avx2_features",
+    function_name="loom_x86_avx2_features_core_descriptor_set",
+    c_table_prefix="X86Avx2FeaturesCore",
+    c_enum_prefix="X86_AVX2_FEATURES_CORE",
+    components=_X86_AVX2_FEATURE_COMPONENTS,
 )
 
-X86_AVX512_PACKED_DOT_DESCRIPTOR_SET = _composite_descriptor_set(
-    key="x86.avx512_packed_dot.core",
-    feature_key="x86.avx512_packed_dot.v1",
-    stem="avx512_packed_dot",
-    function_name="loom_x86_avx512_packed_dot_core_descriptor_set",
-    c_table_prefix="X86Avx512PackedDotCore",
-    c_enum_prefix="X86_AVX512_PACKED_DOT_CORE",
-    components=_X86_AVX512_PACKED_DOT_COMPONENTS,
+X86_AVX512_FEATURES_DESCRIPTOR_SET = _composite_descriptor_set(
+    key="x86.avx512_features.core",
+    feature_key="x86.avx512_features.v1",
+    stem="avx512_features",
+    function_name="loom_x86_avx512_features_core_descriptor_set",
+    c_table_prefix="X86Avx512FeaturesCore",
+    c_enum_prefix="X86_AVX512_FEATURES_CORE",
+    components=_X86_AVX512_FEATURE_COMPONENTS,
 )

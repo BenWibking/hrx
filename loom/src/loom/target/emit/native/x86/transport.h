@@ -71,7 +71,8 @@ void loom_x86_transport_select_storage_register(
     loom_x86_transport_instruction_t* out_instruction);
 
 // Selects one platform-ABI load or store. |byte_length| may be narrower than
-// the register class for scalar SSE values; full-width values use the ordinary
+// the register class for scalar SSE values; two-byte XMM values use VMOVD in
+// the ABI's padded eight-byte stack slots. Full-width values use the ordinary
 // storage transport. Returns false when the pair has no SysV transport form.
 bool loom_x86_transport_select_abi_storage(
     loom_x86_storage_transfer_t transfer, uint16_t descriptor_reg_class_id,

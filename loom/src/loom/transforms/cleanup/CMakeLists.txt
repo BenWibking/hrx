@@ -167,6 +167,7 @@ loom_cc_library(
     loom::rewrite::pattern_registry
     loom::rewrite::rewriter
     loom::rewrite::type_propagation
+    loom::target::facts
     loom::util::fact_table
     loom::util::walk
   PUBLIC

@@ -29,6 +29,8 @@ _EVEX = VectorEncodingPrefix.EVEX
 _MAP_1 = VectorOpcodeMap.MAP_0F
 _MAP_2 = VectorOpcodeMap.MAP_0F38
 _MAP_3 = VectorOpcodeMap.MAP_0F3A
+_MAP_5 = VectorOpcodeMap.MAP_5
+_MAP_6 = VectorOpcodeMap.MAP_6
 
 _ZERO = vector_encoding_recipe(_R.RESULT, _R.RESULT, _R.RESULT)
 _REVERSE_UNARY = vector_encoding_recipe(_R.INPUT_0, _R.NONE, _R.RESULT)
@@ -218,6 +220,20 @@ KXORQ = _instruction(
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_1, 0, 1, 0x47, fixed=1),
 )
+VADDPH = _instruction(
+    "vaddph",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 0, 0, 0x58, (128, 256, 512)),
+)
+VADDSH = _instruction(
+    "vaddsh",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 2, 0, 0x58, (128,)),
+)
 VADDPD = _instruction(
     "vaddpd",
     _NDS,
@@ -321,6 +337,48 @@ VCMPPS_VECTOR_BINARY = _instruction(
     _IMMEDIATES_4,
     _encoding(_VEX, _MAP_1, 0, 0, 0xC2, (128, 256)),
 )
+VCMPPH = _instruction(
+    "vcmpph",
+    _NDS_IMMEDIATE,
+    _OPERANDS_8,
+    _IMMEDIATES_4,
+    _encoding(_EVEX, _MAP_3, 0, 0, 0xC2, (128, 256, 512)),
+)
+VCMPSH = _instruction(
+    "vcmpsh",
+    _NDS_IMMEDIATE,
+    _OPERANDS_8,
+    _IMMEDIATES_4,
+    _encoding(_EVEX, _MAP_3, 2, 0, 0xC2, (128,)),
+)
+VCVTPH2PSX = _instruction(
+    "vcvtph2psx",
+    _UNARY,
+    _OPERANDS_13,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_6, 1, 0, 0x13, (128, 256, 512)),
+)
+VCVTPS2PHX = _instruction(
+    "vcvtps2phx",
+    _UNARY,
+    _OPERANDS_13,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 1, 0, 0x1D, (128, 256, 512)),
+)
+VCVTSH2SS = _instruction(
+    "vcvtsh2ss",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_6, 0, 0, 0x13, (128,)),
+)
+VCVTSS2SH = _instruction(
+    "vcvtss2sh",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 0, 0, 0x1D, (128,)),
+)
 VDIVPD = _instruction(
     "vdivpd",
     _NDS,
@@ -350,6 +408,20 @@ VDIVSS = _instruction(
     _OPERANDS_16,
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_1, 2, 0, 0x5E, (128,)),
+)
+VDIVPH = _instruction(
+    "vdivph",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 0, 0, 0x5E, (128, 256, 512)),
+)
+VDIVSH = _instruction(
+    "vdivsh",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 2, 0, 0x5E, (128,)),
 )
 VEXTRACTF128 = _instruction(
     "vextractf128",
@@ -401,6 +473,20 @@ VFMADD231SS = _instruction(
     _OPERANDS_17,
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_2, 1, 0, 0xB9, (128,)),
+)
+VFMADD231PH = _instruction(
+    "vfmadd231ph",
+    _DESTRUCTIVE_NDS,
+    _OPERANDS_17,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_6, 1, 0, 0xB8, (128, 256, 512)),
+)
+VFMADD231SH = _instruction(
+    "vfmadd231sh",
+    _DESTRUCTIVE_NDS,
+    _OPERANDS_17,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_6, 1, 0, 0xB9, (128,)),
 )
 VINSERTF128 = _instruction(
     "vinsertf128",
@@ -460,6 +546,20 @@ VMAXSS = _instruction(
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_1, 2, 0, 0x5F, (128,)),
 )
+VMAXPH = _instruction(
+    "vmaxph",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 0, 0, 0x5F, (128, 256, 512)),
+)
+VMAXSH = _instruction(
+    "vmaxsh",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 2, 0, 0x5F, (128,)),
+)
 VMINPD = _instruction(
     "vminpd",
     _NDS,
@@ -489,6 +589,20 @@ VMINSS = _instruction(
     _OPERANDS_16,
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_1, 2, 0, 0x5D, (128,)),
+)
+VMINPH = _instruction(
+    "vminph",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 0, 0, 0x5D, (128, 256, 512)),
+)
+VMINSH = _instruction(
+    "vminsh",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 2, 0, 0x5D, (128,)),
 )
 VMOVD_TO_GPR32 = _instruction(
     "vmovd",
@@ -550,6 +664,34 @@ VMOVDQU64 = _instruction(
     _IMMEDIATES_1,
     _encoding(_EVEX, _MAP_1, 2, 1, 0x6F, (512,)),
 )
+VMOVSD_INDEXED_LOAD = _instruction(
+    "vmovsd",
+    _INDEXED_LOAD,
+    _OPERANDS_19,
+    _IMMEDIATES_2,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x10, (128,)),
+)
+VMOVSD_LOAD = _instruction(
+    "vmovsd",
+    _LOAD,
+    _OPERANDS_18,
+    _IMMEDIATES_3,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x10, (128,)),
+)
+VMOVSD_INDEXED_STORE_SOURCE = _instruction(
+    "vmovsd",
+    _INDEXED_STORE,
+    _OPERANDS_1,
+    _IMMEDIATES_2,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x11, (128,)),
+)
+VMOVSD_STORE_SOURCE = _instruction(
+    "vmovsd",
+    _STORE,
+    _OPERANDS_0,
+    _IMMEDIATES_3,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x11, (128,)),
+)
 VMOVQ_TO_GPR64 = _instruction(
     "vmovq",
     _REVERSE_UNARY,
@@ -593,6 +735,20 @@ VMULSS = _instruction(
     _OPERANDS_16,
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_1, 2, 0, 0x59, (128,)),
+)
+VMULPH = _instruction(
+    "vmulph",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 0, 0, 0x59, (128, 256, 512)),
+)
+VMULSH = _instruction(
+    "vmulsh",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 2, 0, 0x59, (128,)),
 )
 VPACKSSDW = _instruction(
     "vpackssdw",
@@ -1298,6 +1454,13 @@ VPSHUFD = _instruction(
     _IMMEDIATES_5,
     _encoding(_VEX, _MAP_1, 1, 0, 0x70, (128,)),
 )
+VPSHUFLW = _instruction(
+    "vpshuflw",
+    _UNARY_IMMEDIATE,
+    _OPERANDS_13,
+    _IMMEDIATES_5,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x70, (128,)),
+)
 VPSLLQ = _instruction(
     "vpsllq",
     _SHIFT_IMMEDIATE_6,
@@ -1506,6 +1669,20 @@ VSUBSS = _instruction(
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_1, 2, 0, 0x5C, (128,)),
 )
+VSUBPH = _instruction(
+    "vsubph",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 0, 0, 0x5C, (128, 256, 512)),
+)
+VSUBSH = _instruction(
+    "vsubsh",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_5, 2, 0, 0x5C, (128,)),
+)
 VXORPS = _instruction(
     "vxorps",
     _ZERO,
@@ -1600,6 +1777,20 @@ AVX512_INTEGER_COMPARE = (
 )
 AVX2_FLOAT_COMPARE = (VCMPPS_VECTOR_BINARY, VCMPPD_VECTOR_BINARY)
 AVX512_FLOAT_COMPARE = (VCMPPS_MASK_COMPARE, VCMPPD_MASK_COMPARE)
+AVX512_FP16_FLOAT_BINARY = (VADDPH, VSUBPH, VMULPH, VDIVPH)
+AVX512_FP16_SCALAR_FLOAT_BINARY = (VADDSH, VSUBSH, VMULSH, VDIVSH)
+AVX512_FP16_FLOAT_EXTREMA = (VMINPH, VMAXPH)
+AVX512_FP16_SCALAR_FLOAT_EXTREMA = (VMINSH, VMAXSH)
+AVX512_FP16_FLOAT_FMA = VFMADD231PH
+AVX512_FP16_SCALAR_FLOAT_FMA = VFMADD231SH
+AVX512_FP16_FLOAT_COMPARE = VCMPPH
+AVX512_FP16_SCALAR_FLOAT_COMPARE = VCMPSH
+AVX512_FP16_CONVERSIONS = (
+    VCVTPH2PSX,
+    VCVTPS2PHX,
+    VCVTSH2SS,
+    VCVTSS2SH,
+)
 AVX2_FLOAT_EXTREMA = (VMINPS, VMAXPS, VMINPD, VMAXPD)
 AVX2_SCALAR_FLOAT_EXTREMA = (VMINSS, VMAXSS, VMINSD, VMAXSD)
 AVX2_FLOAT_FMA = (VFMADD231PS, VFMADD231PD)
@@ -1637,4 +1828,10 @@ VECTOR_MEMORY = (
     VMOVDQU32_INDEXED_LOAD,
     VMOVDQU32_STORE_SOURCE,
     VMOVDQU32_INDEXED_STORE_SOURCE,
+)
+XMM_QWORD_MEMORY = (
+    VMOVSD_LOAD,
+    VMOVSD_INDEXED_LOAD,
+    VMOVSD_STORE_SOURCE,
+    VMOVSD_INDEXED_STORE_SOURCE,
 )

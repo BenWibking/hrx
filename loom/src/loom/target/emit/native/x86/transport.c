@@ -304,7 +304,7 @@ bool loom_x86_transport_select_abi_storage(
     return true;
   }
   if (register_class != LOOM_X86_REGISTER_CLASS_XMM ||
-      (byte_length != 4 && byte_length != 8)) {
+      (byte_length != 2 && byte_length != 4 && byte_length != 8)) {
     return false;
   }
   *out_instruction = (loom_x86_transport_instruction_t){0};
@@ -321,7 +321,15 @@ bool loom_x86_transport_select_abi_storage(
     out_instruction->operands.inputs[0] = base_register;
     out_instruction->encoding_format_id = LOOM_X86_TRANSPORT_RECIPE_LOAD;
   }
-  out_instruction->encoding_id = loom_x86_transport_vector_encoding(
-      is_store ? 0x11 : 0x10, byte_length == 4 ? 2 : 3, false, reg >= 16, 0);
+  if (byte_length == 2) {
+    // SysV pads scalar stack arguments and retained result slots to eight
+    // bytes. VMOVD transports the significant low half through the padded
+    // slot and keeps scalar FP16 carriers in XMM without an intermediate GPR.
+    out_instruction->encoding_id = loom_x86_transport_vector_encoding(
+        is_store ? 0x7e : 0x6e, 1, false, reg >= 16, 0);
+  } else {
+    out_instruction->encoding_id = loom_x86_transport_vector_encoding(
+        is_store ? 0x11 : 0x10, byte_length == 4 ? 2 : 3, false, reg >= 16, 0);
+  }
   return true;
 }

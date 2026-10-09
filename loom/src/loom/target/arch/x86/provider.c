@@ -167,17 +167,20 @@ static loom_x86_feature_bits_t loom_x86_cpu_contract_feature_bits(
                          IREE_CPU_DATA0_X86_64_AVX512BF16)) {
       features |= LOOM_X86_FEATURE_AVX512_BF16;
     }
+    if (iree_any_bit_set(cpu_data->fields[0],
+                         IREE_CPU_DATA0_X86_64_AVX512FP16)) {
+      features |= LOOM_X86_FEATURE_AVX512_FP16;
+    }
   }
   return features;
 }
 
-static iree_string_view_t loom_x86_composite_contract_set_key(
-    uint8_t selector) {
+static iree_string_view_t loom_x86_feature_contract_set_key(uint8_t selector) {
   switch (selector) {
     case LOOM_X86_TARGET_KIND_AVX2:
-      return IREE_SV("x86.avx2_packed_dot.core");
+      return IREE_SV("x86.avx2_features.core");
     case LOOM_X86_TARGET_KIND_AVX512:
-      return IREE_SV("x86.avx512_packed_dot.core");
+      return IREE_SV("x86.avx512_features.core");
     default:
       return iree_string_view_empty();
   }
@@ -229,27 +232,27 @@ static iree_status_t loom_x86_create_owned_cpu_profile(
   };
   loom_target_bundle_storage_rebind(&owned->bundle_storage);
 
-  const iree_string_view_t composite_contract_set_key =
-      loom_x86_composite_contract_set_key(core_profile->selector);
+  const iree_string_view_t feature_contract_set_key =
+      loom_x86_feature_contract_set_key(core_profile->selector);
   const bool requirement_selects_core_contract =
       requirement != NULL &&
       loom_target_facts_field_is_explicit(
           requirement, LOOM_TARGET_FACT_FIELD_CONTRACT_SET_KEY) &&
       iree_string_view_equal(requirement->storage.config.contract_set_key,
                              core_bundle->config->contract_set_key);
-  const bool use_composite_contract =
-      !iree_string_view_is_empty(composite_contract_set_key) &&
+  const bool use_feature_contract =
+      !iree_string_view_is_empty(feature_contract_set_key) &&
       !requirement_selects_core_contract;
-  if (use_composite_contract) {
-    owned->bundle_storage.config.name = composite_contract_set_key;
-    owned->bundle_storage.config.contract_set_key = composite_contract_set_key;
+  if (use_feature_contract) {
+    owned->bundle_storage.config.name = feature_contract_set_key;
+    owned->bundle_storage.config.contract_set_key = feature_contract_set_key;
     owned->bundle_storage.config.contract_feature_bits =
         loom_x86_cpu_contract_feature_bits(cpu_data, core_profile->selector);
   }
 
   owned->cpu_data = *cpu_data;
   loom_target_fact_field_set_t explicit_fields = 0;
-  if (use_composite_contract) {
+  if (use_feature_contract) {
     loom_target_fact_field_set_insert(&explicit_fields,
                                       LOOM_TARGET_FACT_FIELD_CONTRACT_SET_KEY);
     loom_target_fact_field_set_insert(

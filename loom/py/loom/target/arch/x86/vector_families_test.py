@@ -9,6 +9,11 @@ from loom.target.arch.x86.descriptors import (
     X86_AVX512_CORE_DESCRIPTOR_SET,
     X86_AVX_VNNI_INT8_DESCRIPTOR_SET,
 )
+from loom.target.arch.x86.vector_encoding import (
+    VectorEncoding,
+    VectorEncodingPrefix,
+    VectorOpcodeMap,
+)
 from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_BINARY_FAMILIES,
     AVX2_FLOAT_COMPARE_MNEMONICS,
@@ -31,6 +36,46 @@ from loom.target.arch.x86.vector_families import (
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
 )
+
+
+def test_extended_evex_opcode_maps_preserve_legacy_encoding_ids() -> None:
+    vex = VectorEncoding(
+        VectorEncodingPrefix.VEX,
+        VectorOpcodeMap.MAP_0F,
+        0,
+        0,
+        0x58,
+        (128,),
+    )
+    evex = VectorEncoding(
+        VectorEncodingPrefix.EVEX,
+        VectorOpcodeMap.MAP_0F,
+        0,
+        0,
+        0x58,
+        (128,),
+    )
+    map_5 = VectorEncoding(
+        VectorEncodingPrefix.EVEX,
+        VectorOpcodeMap.MAP_5,
+        0,
+        0,
+        0x58,
+        (128, 256, 512),
+    )
+    map_6 = VectorEncoding(
+        VectorEncodingPrefix.EVEX,
+        VectorOpcodeMap.MAP_6,
+        1,
+        0,
+        0xB8,
+        (128, 256, 512),
+    )
+
+    assert vex.encoding_id(128) == 0x0158
+    assert evex.encoding_id(128) == 0x2158
+    assert map_5.encoding_id(512) == 0x8058
+    assert map_6.encoding_id(512) == 0xA4B8
 
 
 def test_avx2_direct_integer_matrix_matches_isa_families() -> None:
