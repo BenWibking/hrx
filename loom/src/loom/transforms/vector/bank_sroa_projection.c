@@ -1007,24 +1007,27 @@ static iree_status_t loom_vector_bank_sroa_materialize_source(
       continue;
     }
     if (source_component->kind == LOOM_VECTOR_BANK_SROA_SOURCE_VALUE) {
-      out_component_values[component] = source_component->source.value_id;
+      out_component_values[component] = loom_boundary_projection_resolve_value(
+          function, source_component->source.value_id);
       continue;
     }
 
+    const loom_value_id_t aggregate_value_id =
+        loom_boundary_projection_resolve_value(
+            function, source_component->source.aggregate_value_id);
     int64_t indices[LOOM_TYPE_MAX_RANK] = {0};
     loom_vector_bank_sroa_component_indices(source_plan->bank, component,
                                             indices);
     loom_op_t* extract_op = NULL;
     IREE_RETURN_IF_ERROR(loom_vector_extract_build(
-        &plan->rewriter.builder, source_component->source.aggregate_value_id,
+        &plan->rewriter.builder, aggregate_value_id,
         /*indices=*/NULL, /*indices_count=*/0, indices,
         source_plan->bank->prefix_rank, source_plan->bank->payload_type,
         source->boundary_op->location, &extract_op));
     out_component_values[component] = loom_vector_extract_result(extract_op);
     if (source_plan->name_components) {
       IREE_RETURN_IF_ERROR(loom_rewriter_try_set_derived_value_name(
-          &plan->rewriter, source_component->source.aggregate_value_id,
-          out_component_values[component],
+          &plan->rewriter, aggregate_value_id, out_component_values[component],
           source_plan->bank->component_name_suffixes[component]));
     }
   }
@@ -1050,7 +1053,6 @@ static iree_status_t loom_vector_bank_sroa_eliminate(
   (void)logical_type;
   (void)location;
   IREE_ASSERT(slot->schema.rule == rule);
-  (void)function;
   loom_vector_bank_sroa_bank_plan_t* bank =
       (loom_vector_bank_sroa_bank_plan_t*)slot->schema.rule_plan;
   IREE_ASSERT(bank != NULL);
@@ -1069,6 +1071,8 @@ static iree_status_t loom_vector_bank_sroa_eliminate(
     const loom_vector_bank_sroa_extract_use_t* extract = &endpoint->extracts[i];
     const loom_value_id_t replacement = loom_vector_bank_sroa_resolve_component(
         slot, extract->source, extract->component);
+    IREE_RETURN_IF_ERROR(loom_boundary_projection_record_value_replacement(
+        function, loom_vector_extract_result(extract->op), replacement));
     IREE_RETURN_IF_ERROR(loom_rewriter_copy_value_name(
         &plan->rewriter, loom_vector_extract_result(extract->op), replacement));
     IREE_RETURN_IF_ERROR(loom_rewriter_replace_all_uses_and_erase(

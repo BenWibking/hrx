@@ -15,9 +15,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from loom.target.arch.x86.packed_dot_data import (
+from loom.target.arch.x86.feature_bits import (
     FEATURE_AVX10_2,
     FEATURE_AVX512_BF16,
+    FEATURE_AVX512_FP16,
     FEATURE_AVX512_VL,
     FEATURE_AVX512_VNNI,
     FEATURE_AVX_VNNI,
@@ -43,6 +44,7 @@ X86_ISA_TIER_PACKED_DOT = "packed_dot"
 X86_FEATURE_PROFILE_NONE = "none"
 X86_FEATURE_PROFILE_AVX512_VNNI = "avx512_vnni"
 X86_FEATURE_PROFILE_AVX512_BF16 = "avx512_bf16"
+X86_FEATURE_PROFILE_AVX512_FP16 = "avx512_fp16"
 X86_FEATURE_PROFILE_AVX_VNNI = "avx_vnni"
 X86_FEATURE_PROFILE_AVX_VNNI_INT8 = "avx_vnni_int8"
 X86_FEATURE_PROFILE_AVX_VNNI_INT16 = "avx_vnni_int16"
@@ -80,21 +82,28 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
         key="x86.scalar.core",
         isa_tier=X86_ISA_TIER_SCALAR,
         register_classes=_with_base_registers(),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
     ),
     X86DescriptorSetInfo(
         generator_target="simd128",
         key="x86.simd128.core",
         isa_tier=X86_ISA_TIER_SIMD128,
         register_classes=_with_base_registers(X86_REG_CLASS_XMM),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
     ),
     X86DescriptorSetInfo(
         generator_target="avx2",
         key="x86.avx2.core",
         isa_tier=X86_ISA_TIER_AVX2,
         register_classes=_with_base_registers(X86_REG_CLASS_XMM, X86_REG_CLASS_YMM),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
+    ),
+    X86DescriptorSetInfo(
+        generator_target="avx2_features",
+        key="x86.avx2_features.core",
+        isa_tier=X86_ISA_TIER_AVX2,
+        register_classes=_with_base_registers(X86_REG_CLASS_XMM, X86_REG_CLASS_YMM),
+        storage_generator_target="avx512_features",
     ),
     X86DescriptorSetInfo(
         generator_target="avx512",
@@ -106,14 +115,14 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
             X86_REG_CLASS_ZMM,
             X86_REG_CLASS_K,
         ),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
     ),
     X86DescriptorSetInfo(
         generator_target="packed_dot",
         key="x86.packed_dot.core",
         isa_tier=X86_ISA_TIER_PACKED_DOT,
         register_classes=(X86_REG_CLASS_XMM, X86_REG_CLASS_YMM, X86_REG_CLASS_ZMM),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
         required_feature_bits=(
             FEATURE_AVX512_BF16
             | FEATURE_AVX512_VL
@@ -122,8 +131,8 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
         ),
     ),
     X86DescriptorSetInfo(
-        generator_target="avx512_packed_dot",
-        key="x86.avx512_packed_dot.core",
+        generator_target="avx512_features",
+        key="x86.avx512_features.core",
         isa_tier=X86_ISA_TIER_AVX512,
         register_classes=_with_base_registers(
             X86_REG_CLASS_XMM,
@@ -131,20 +140,13 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
             X86_REG_CLASS_ZMM,
             X86_REG_CLASS_K,
         ),
-        required_feature_bits=(
-            FEATURE_AVX512_VNNI
-            | FEATURE_AVX512_BF16
-            | FEATURE_AVX512_VL
-            | FEATURE_AVX_VNNI
-            | FEATURE_AVX_VNNI_INT8
-        ),
     ),
     X86DescriptorSetInfo(
         generator_target="avx512_vnni",
         key="x86.avx512_vnni.core",
         isa_tier=X86_ISA_TIER_PACKED_DOT,
         register_classes=(X86_REG_CLASS_XMM, X86_REG_CLASS_YMM, X86_REG_CLASS_ZMM),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
         feature_profile=X86_FEATURE_PROFILE_AVX512_VNNI,
         required_feature_bits=FEATURE_AVX512_VNNI | FEATURE_AVX512_VL,
     ),
@@ -153,7 +155,7 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
         key="x86.avx512_bf16.core",
         isa_tier=X86_ISA_TIER_PACKED_DOT,
         register_classes=(X86_REG_CLASS_XMM, X86_REG_CLASS_YMM, X86_REG_CLASS_ZMM),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
         feature_profile=X86_FEATURE_PROFILE_AVX512_BF16,
         required_feature_bits=FEATURE_AVX512_BF16 | FEATURE_AVX512_VL,
     ),
@@ -162,7 +164,7 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
         key="x86.avx_vnni.core",
         isa_tier=X86_ISA_TIER_PACKED_DOT,
         register_classes=(X86_REG_CLASS_XMM, X86_REG_CLASS_YMM),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
         feature_profile=X86_FEATURE_PROFILE_AVX_VNNI,
         required_feature_bits=FEATURE_AVX_VNNI,
     ),
@@ -171,7 +173,7 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
         key="x86.avx_vnni_int8.core",
         isa_tier=X86_ISA_TIER_PACKED_DOT,
         register_classes=(X86_REG_CLASS_XMM, X86_REG_CLASS_YMM),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
         feature_profile=X86_FEATURE_PROFILE_AVX_VNNI_INT8,
         required_feature_bits=FEATURE_AVX_VNNI_INT8,
     ),
@@ -180,7 +182,7 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
         key="x86.avx_vnni_int16.core",
         isa_tier=X86_ISA_TIER_PACKED_DOT,
         register_classes=(X86_REG_CLASS_XMM, X86_REG_CLASS_YMM),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
         feature_profile=X86_FEATURE_PROFILE_AVX_VNNI_INT16,
         required_feature_bits=FEATURE_AVX_VNNI_INT16,
     ),
@@ -189,9 +191,23 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
         key="x86.avx10_2.core",
         isa_tier=X86_ISA_TIER_PACKED_DOT,
         register_classes=(X86_REG_CLASS_XMM, X86_REG_CLASS_YMM, X86_REG_CLASS_ZMM),
-        storage_generator_target="avx512_packed_dot",
+        storage_generator_target="avx512_features",
         feature_profile=X86_FEATURE_PROFILE_AVX10_2,
         required_feature_bits=FEATURE_AVX10_2,
+    ),
+    X86DescriptorSetInfo(
+        generator_target="avx512_fp16",
+        key="x86.avx512_fp16.core",
+        isa_tier=X86_ISA_TIER_AVX512,
+        register_classes=(
+            X86_REG_CLASS_XMM,
+            X86_REG_CLASS_YMM,
+            X86_REG_CLASS_ZMM,
+            X86_REG_CLASS_K,
+        ),
+        storage_generator_target="avx512_features",
+        feature_profile=X86_FEATURE_PROFILE_AVX512_FP16,
+        required_feature_bits=FEATURE_AVX512_FP16 | FEATURE_AVX512_VL,
     ),
 )
 
@@ -244,8 +260,8 @@ X86_TARGET_PROFILE_INFOS: tuple[X86TargetProfileInfo, ...] = (
     ),
     X86TargetProfileInfo(
         profile_key="x86.avx512_packed_dot",
-        descriptor_generator_target="avx512_packed_dot",
-        descriptor_set_key="x86.avx512_packed_dot.core",
+        descriptor_generator_target="avx512_features",
+        descriptor_set_key="x86.avx512_features.core",
         register_classes=_with_base_registers(
             X86_REG_CLASS_XMM,
             X86_REG_CLASS_YMM,

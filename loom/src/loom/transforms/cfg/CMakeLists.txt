@@ -43,6 +43,8 @@ loom_cc_library(
     loom::ops::cfg
     loom::ops::op_defs
     loom::pass::types
+    loom::rewrite::materialize
+    loom::rewrite::remap
     loom::rewrite::rewriter
   PUBLIC
 )

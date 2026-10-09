@@ -49,6 +49,9 @@ from loom.target.arch.amd.xdna.aie2p.contracts.index_conversion import (
 from loom.target.arch.amd.xdna.aie2p.contracts.integer_division import (
     AIE2P_INTEGER_DIVISION_RULES,
 )
+from loom.target.arch.amd.xdna.aie2p.contracts.integer_shift import (
+    AIE2P_INTEGER_SHIFT_RULES,
+)
 from loom.target.arch.amd.xdna.aie2p.contracts.memory import AIE2P_MEMORY_RULES
 from loom.target.arch.amd.xdna.aie2p.contracts.nonlinear import (
     AIE2P_NONLINEAR_RULES,
@@ -58,6 +61,9 @@ from loom.target.arch.amd.xdna.aie2p.contracts.packed_dot import (
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.packet_memory import (
     AIE2P_PACKET_MEMORY_RULES,
+)
+from loom.target.arch.amd.xdna.aie2p.contracts.power_of_two_scale import (
+    AIE2P_POWER_OF_TWO_SCALE_RULES,
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.reduction import (
     AIE2P_REDUCTION_RULES,
@@ -292,6 +298,7 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
         core_rules._float_constant_rule(
             core_rules._F32, ValueProject.float_as_f32_i32("result")
         ),
+        *AIE2P_INTEGER_SHIFT_RULES,
         *AIE2P_CONVERSION_RULES,
         core_rules._vector_constant_rule(
             core_rules._I8_VECTOR,
@@ -820,6 +827,7 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
         *AIE2P_NONLINEAR_RULES,
         core_rules._matrix_accumulator_zero_rule(),
         *AIE2P_FLOATING_RULES,
+        *AIE2P_POWER_OF_TWO_SCALE_RULES,
         *(
             core_rules._vector_constant_rule(
                 core_rules._I32_MATRIX_ACCUMULATOR,

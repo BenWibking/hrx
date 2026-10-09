@@ -79,10 +79,10 @@ def test_scalar_physical_ownership_is_shared_by_core_profiles() -> None:
         "r14",
         "r15",
     )
-    for target in ("scalar", "simd128", "avx2", "avx512", "avx512_packed_dot"):
+    for target in ("scalar", "simd128", "avx2", "avx512", "avx512_features"):
         spec = x86_descriptors._descriptor_set_for_info(x86_descriptor_set_info_by_generator_target(target))
         # Native profiles are views over the composite storage inventory.
-        storage = x86_descriptors._shared_storage_descriptor_set(x86_descriptor_data.X86_AVX512_PACKED_DOT_DESCRIPTOR_SET, (spec,))
+        storage = x86_descriptors._shared_storage_descriptor_set(x86_descriptor_data.X86_AVX512_FEATURES_DESCRIPTOR_SET, (spec,))
         compiled = compiler.compile_descriptor_set(storage)
         assert tuple(register.name for register in compiled.physical_registers) == names
         assert tuple(register.atomic_units for register in compiled.physical_registers) == tuple((i,) for i in range(16))
@@ -116,7 +116,7 @@ def test_native_facts_cover_core_profiles() -> None:
         assert all(descriptor.encoding_format_id for descriptor in descriptor_set.descriptors)
 
     core_keys = {descriptor.key for descriptor in x86_descriptor_data.X86_AVX512_CORE_DESCRIPTOR_SET.descriptors}
-    missing_composite_facts = {descriptor.key for descriptor in x86_descriptor_data.X86_AVX512_PACKED_DOT_DESCRIPTOR_SET.descriptors if not descriptor.encoding_format_id}
+    missing_composite_facts = {descriptor.key for descriptor in x86_descriptor_data.X86_AVX512_FEATURES_DESCRIPTOR_SET.descriptors if not descriptor.encoding_format_id}
     assert missing_composite_facts.isdisjoint(core_keys)
 
 
@@ -195,13 +195,15 @@ def test_storage_generation_emits_current_public_views() -> None:
         assert (
             x86_descriptors.main(
                 [
-                    "--target=avx512_packed_dot",
-                    f"--header={tmp_path / 'avx512_packed_dot_descriptors.h'}",
-                    f"--source={tmp_path / 'avx512_packed_dot_descriptors.c'}",
+                    "--target=avx512_features",
+                    f"--header={tmp_path / 'avx512_features_descriptors.h'}",
+                    f"--source={tmp_path / 'avx512_features_descriptors.c'}",
                     f"--view-header=avx512={tmp_path / 'avx512_descriptors.h'}",
                     f"--view-header=avx2={tmp_path / 'avx2_descriptors.h'}",
+                    f"--view-header=avx2_features={tmp_path / 'avx2_features_descriptors.h'}",
                     f"--view-header=avx10_2={tmp_path / 'avx10_2_descriptors.h'}",
                     f"--view-header=avx512_bf16={tmp_path / 'avx512_bf16_descriptors.h'}",
+                    f"--view-header=avx512_fp16={tmp_path / 'avx512_fp16_descriptors.h'}",
                     f"--view-header=avx512_vnni={tmp_path / 'avx512_vnni_descriptors.h'}",
                     f"--view-header=avx_vnni={tmp_path / 'avx_vnni_descriptors.h'}",
                     f"--view-header=avx_vnni_int8={tmp_path / 'avx_vnni_int8_descriptors.h'}",
@@ -214,10 +216,12 @@ def test_storage_generation_emits_current_public_views() -> None:
             == 0
         )
 
-        source = (tmp_path / "avx512_packed_dot_descriptors.c").read_text(encoding="utf-8")
-        composite_header = (tmp_path / "avx512_packed_dot_descriptors.h").read_text(encoding="utf-8")
+        source = (tmp_path / "avx512_features_descriptors.c").read_text(encoding="utf-8")
+        composite_header = (tmp_path / "avx512_features_descriptors.h").read_text(encoding="utf-8")
         avx512_header = (tmp_path / "avx512_descriptors.h").read_text(encoding="utf-8")
         avx2_header = (tmp_path / "avx2_descriptors.h").read_text(encoding="utf-8")
+        avx2_features_header = (tmp_path / "avx2_features_descriptors.h").read_text(encoding="utf-8")
+        avx512_fp16_header = (tmp_path / "avx512_fp16_descriptors.h").read_text(encoding="utf-8")
         avx_vnni_header = (tmp_path / "avx_vnni_descriptors.h").read_text(encoding="utf-8")
         packed_dot_header = (tmp_path / "packed_dot_descriptors.h").read_text(encoding="utf-8")
         scalar_header = (tmp_path / "scalar_descriptors.h").read_text(encoding="utf-8")
@@ -225,49 +229,58 @@ def test_storage_generation_emits_current_public_views() -> None:
 
     assert "loom_x86_avx512_core_descriptor_set" in source
     assert "loom_x86_avx2_core_descriptor_set" in source
+    assert "loom_x86_avx2_features_core_descriptor_set" in source
+    assert "loom_x86_avx512_fp16_core_descriptor_set" in source
     assert "loom_x86_packed_dot_core_descriptor_set" in source
     assert "loom_x86_avx_vnni_core_descriptor_set" in source
-    assert "loom_x86_avx512_packed_dot_core_descriptor_set" in source
+    assert "loom_x86_avx512_features_core_descriptor_set" in source
     assert "loom_x86_scalar_core_descriptor_set" in source
     assert "loom_x86_simd128_core_descriptor_set" in source
-    assert "static const loom_low_operand_t kX86Avx512PackedDotCoreStorageOperands[]" in source
+    assert "static const loom_low_operand_t kX86Avx512FeaturesCoreStorageOperands[]" in source
     assert "static const loom_low_operand_t kX86Avx512CoreOperands[]" not in source
     assert "static const loom_low_operand_t kX86PackedDotCoreOperands[]" not in source
-    assert "static const loom_low_descriptor_t kX86Avx512PackedDotCoreStorageDescriptors[]" in source
-    assert "static const loom_low_descriptor_t kX86Avx512CoreDescriptors[]" not in source
-    assert "static const loom_low_descriptor_t kX86PackedDotCoreDescriptors[]" in source
+    assert "static const loom_low_descriptor_t kX86Avx512FeaturesCoreStorageDescriptors[]" in source
+    for view_prefix in (
+        "X86Avx512Core",
+        "X86Avx2Core",
+        "X86Avx2FeaturesCore",
+        "X86PackedDotCore",
+        "X86ScalarCore",
+        "X86Simd128Core",
+    ):
+        assert f"static const loom_low_descriptor_t k{view_prefix}Descriptors[]" not in source
+        assert f"static const loom_low_descriptor_view_t k{view_prefix}DescriptorViews[]" not in source
+        assert f"static const loom_low_descriptor_ref_t k{view_prefix}DescriptorRefs[]" not in source
+        assert f"static const loom_low_asm_form_t k{view_prefix}AsmForms[]" not in source
     assert "static const loom_low_asm_form_t kX86AvxVnniCoreAsmForms[]" in source
-    assert source.count(".descriptors = kX86Avx512PackedDotCoreStorageDescriptors,") == 3
-    assert ".descriptors = kX86PackedDotCoreDescriptors," in source
-    assert source.count(".descriptor_views = kX86Avx512PackedDotCoreStorageDescriptorViews,") == 3
-    assert ".descriptor_views = kX86PackedDotCoreDescriptorViews," in source
+    assert source.count(".descriptors = kX86Avx512FeaturesCoreStorageDescriptors,") == 8
+    assert source.count(".descriptor_views = kX86Avx512FeaturesCoreStorageDescriptorViews,") == 8
     assert ".asm_forms = kX86AvxVnniCoreAsmForms," in source
-    assert source.count(".asm_forms = kX86Avx512PackedDotCoreStorageAsmForms,") == 3
-    assert source.count(".descriptor_refs = kX86Avx512PackedDotCoreStorageDescriptorRefs,") == 3
-    assert ".descriptor_refs = kX86PackedDotCoreDescriptorRefs," in source
-    assert ".descriptor_refs = kX86ScalarCoreDescriptorRefs," in source
-    assert "static const loom_low_descriptor_t kX86Simd128CoreDescriptors[]" not in source
-    assert ("static const loom_low_descriptor_view_t kX86Simd128CoreDescriptorViews[]") not in source
-    assert "static const loom_low_descriptor_ref_t kX86Simd128CoreDescriptorRefs[]" not in source
-    assert "static const loom_low_asm_form_t kX86Simd128CoreAsmForms[]" not in source
-    assert source.count(".descriptors = kX86ScalarCoreDescriptors,") == 2
-    assert source.count(".descriptor_views = kX86ScalarCoreDescriptorViews,") == 2
-    assert source.count(".descriptor_refs = kX86ScalarCoreDescriptorRefs,") == 2
-    assert source.count(".asm_forms = kX86ScalarCoreAsmForms,") == 2
+    assert source.count(".asm_forms = kX86Avx512FeaturesCoreStorageAsmForms,") == 8
+    assert source.count(".descriptor_refs = kX86Avx512FeaturesCoreStorageDescriptorRefs,") == 8
+    assert "kX86Avx2FeaturesCoreDescriptorMembershipWords" in source
+    assert "kX86PackedDotCoreDescriptorMembershipWords" in source
+    assert source.count(".descriptor_membership_words = kX86ScalarCoreDescriptorMembershipWords,") == 2
     # A shared spelling may span adjacent literals in the compact byte pool.
     string_data = source.replace('"\n    "', "")
     assert "avx_vnni.vpdpbusd.ymm" in string_data
     assert "vpdpbusd.ymm" in string_data
     assert "loom_x86_avx512_core_descriptor_set" in avx512_header
     assert "loom_x86_avx2_core_descriptor_set" in avx2_header
+    assert "loom_x86_avx2_features_core_descriptor_set" in avx2_features_header
+    assert "loom_x86_avx512_fp16_core_descriptor_set" in avx512_fp16_header
     assert "loom_x86_avx_vnni_core_descriptor_set" in avx_vnni_header
     assert "loom_x86_packed_dot_core_descriptor_set" in packed_dot_header
     assert "loom_x86_scalar_core_descriptor_set" in scalar_header
     assert "loom_x86_simd128_core_descriptor_set" in simd128_header
-    assert f"#define X86_AVX512_PACKED_DOT_CORE_DESCRIPTOR_SET_ORDINAL UINT16_C({x86_descriptor_set_ordinal('x86.avx512_packed_dot.core')})" in composite_header
+    assert f"#define X86_AVX512_FEATURES_CORE_DESCRIPTOR_SET_ORDINAL UINT16_C({x86_descriptor_set_ordinal('x86.avx512_features.core')})" in composite_header
     assert f"#define X86_PACKED_DOT_CORE_DESCRIPTOR_SET_ORDINAL UINT16_C({x86_descriptor_set_ordinal('x86.packed_dot.core')})" in packed_dot_header
     _assert_descriptor_ref(avx512_header, "X86_AVX512_CORE_DESCRIPTOR_REF_AVX2_VADDPS_XMM")
     _assert_descriptor_ref(avx2_header, "X86_AVX2_CORE_DESCRIPTOR_REF_AVX2_VADDPS_XMM")
+    _assert_descriptor_ref(
+        avx2_features_header,
+        "X86_AVX2_FEATURES_CORE_DESCRIPTOR_REF_AVX_VNNI_INT8_VPDPBSSD_YMM",
+    )
     _assert_descriptor_ref(
         avx_vnni_header,
         "X86_AVX_VNNI_CORE_DESCRIPTOR_REF_AVX_VNNI_VPDPBUSD_YMM",
@@ -279,12 +292,18 @@ def test_storage_generation_emits_current_public_views() -> None:
     )
     _assert_descriptor_ref(
         composite_header,
-        "X86_AVX512_PACKED_DOT_CORE_DESCRIPTOR_REF_AVX512_BF16_VDPBF16PS_ZMM",
+        "X86_AVX512_FEATURES_CORE_DESCRIPTOR_REF_AVX512_BF16_VDPBF16PS_ZMM",
+    )
+    _assert_descriptor_ref(
+        avx512_fp16_header,
+        "X86_AVX512_FP16_CORE_DESCRIPTOR_REF_AVX512_FP16_VADDPH_ZMM",
     )
     _assert_reg_class_id(scalar_header, "X86_SCALAR_CORE_REG_CLASS_ID_GPR32")
     _assert_reg_class_id(scalar_header, "X86_SCALAR_CORE_REG_CLASS_ID_GPR64")
     _assert_reg_class_id(simd128_header, "X86_SIMD128_CORE_REG_CLASS_ID_XMM")
     _assert_reg_class_id(avx2_header, "X86_AVX2_CORE_REG_CLASS_ID_YMM")
+    _assert_reg_class_id(avx2_features_header, "X86_AVX2_FEATURES_CORE_REG_CLASS_ID_YMM")
+    assert "X86_AVX2_FEATURES_CORE_REG_CLASS_ID_ZMM" not in avx2_features_header
     _assert_reg_class_id(avx_vnni_header, "X86_AVX_VNNI_CORE_REG_CLASS_ID_YMM")
     assert "X86_AVX_VNNI_CORE_REG_CLASS_ID_ZMM" not in avx_vnni_header
     assert "X86_AVX_VNNI_CORE_DESCRIPTOR_REF_AVX512_VADDPS_ZMM" not in avx_vnni_header
@@ -298,7 +317,7 @@ def test_view_target_generation_rejects_direct_source_output() -> None:
         tmp_path = Path(temporary_directory)
         with _RaisesValueError(
             r"x86 descriptor target avx512 is a view of storage target "
-            r"avx512_packed_dot"
+            r"avx512_features"
         ):
             x86_descriptors.main(
                 [
@@ -324,14 +343,14 @@ def test_unknown_view_header_is_rejected() -> None:
     with TemporaryDirectory() as temporary_directory:
         tmp_path = Path(temporary_directory)
         with _RaisesValueError(
-            r"x86 descriptor target avx512_packed_dot cannot emit view "
+            r"x86 descriptor target avx512_features cannot emit view "
             r"headers for: missing"
         ):
             x86_descriptors.main(
                 [
-                    "--target=avx512_packed_dot",
-                    f"--header={tmp_path / 'avx512_packed_dot_descriptors.h'}",
-                    f"--source={tmp_path / 'avx512_packed_dot_descriptors.c'}",
+                    "--target=avx512_features",
+                    f"--header={tmp_path / 'avx512_features_descriptors.h'}",
+                    f"--source={tmp_path / 'avx512_features_descriptors.c'}",
                     f"--view-header=missing={tmp_path / 'missing_descriptors.h'}",
                 ]
             )

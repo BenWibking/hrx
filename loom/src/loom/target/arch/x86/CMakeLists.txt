@@ -12,6 +12,22 @@ iree_add_all_subdirs()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    facts
+  HDRS
+    "facts.h"
+  SRCS
+    "facts.c"
+  DEPS
+    iree::base
+    iree::base::cpu_data
+    loom::target::facts
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     feature_bits
   HDRS
     "feature_bits.h"
@@ -45,6 +61,7 @@ loom_cc_library(
   SRCS
     "math_policy.c"
   DEPS
+    ::feature_bits
     iree::base
     loom::target::math_policy
   PUBLIC
@@ -61,7 +78,7 @@ loom_cc_library(
     "register_classes.c"
   DEPS
     iree::base
-    loom::target::arch::x86::descriptors::avx512_packed_dot_descriptors_ids
+    loom::target::arch::x86::descriptors::avx512_features_descriptors_ids
   PUBLIC
 )
 endif()
@@ -114,6 +131,7 @@ loom_cc_library(
   SRCS
     "hal_materialization.c"
   DEPS
+    ::facts
     ::register_classes
     iree::base
     iree::base::internal::arena
@@ -159,6 +177,8 @@ loom_cc_library(
     "provider.c"
   DEPS
     ::call_abi
+    ::facts
+    ::feature_bits
     ::legalization
     ::math_policy
     ::pass_registry
@@ -182,8 +202,11 @@ loom_cc_test(
   SRCS
     "provider_test.cc"
   DEPS
+    ::facts
+    ::feature_bits
     ::provider
     iree::base::cpu_data
+    iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
     loom::target::arch::x86::ops
@@ -201,6 +224,7 @@ loom_cc_library(
   SRCS
     "compiler_provider.c"
   DEPS
+    ::facts
     ::provider
     loom::target::arch::x86::ops
     loom::target::emit::native::x86::module
@@ -223,7 +247,6 @@ loom_check_test_suite(
     "test/source_low/buffer_bulk.loom-test"
     "test/source_low/buffer_raw.loom-test"
     "test/source_low/buffer_selection.loom-test"
-    "test/source_low/callable_returns.loom-test"
     "test/source_low/callable_values.loom-test"
     "test/source_low/carried_counter_store.loom-test"
     "test/source_low/function_boundary.loom-test"
@@ -281,6 +304,7 @@ loom_check_test_suite(
     "test/source_low/source_low_avx2_reductions.loom-test"
     "test/source_low/source_low_avx512_families.loom-test"
     "test/source_low/source_low_avx512_float_semantics.loom-test"
+    "test/source_low/source_low_avx512_fp16.loom-test"
     "test/source_low/source_low_avx512_packed_dot.loom-test"
     "test/source_low/source_low_avx512_predicates.loom-test"
     "test/source_low/source_low_avx512_reductions.loom-test"

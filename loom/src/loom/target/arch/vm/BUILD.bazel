@@ -181,9 +181,9 @@ loom_cc_library(
     textual_hdrs = ["//loom/src/loom/target/arch/vm/contracts:tables.inl"],
     visibility = [
         "//loom/src/loom/target/all:__pkg__",
+        "//loom/src/loom/target/arch/vm/check:__pkg__",
         "//loom/src/loom/target/configured:__pkg__",
         "//loom/src/loom/target/emit/vm:__pkg__",
-        "//loom/src/loom/tooling/target/vm:__pkg__",
         "//loom/src/loom/tools/iree-benchmark-loom:__pkg__",
         "//loom/src/loom/tools/iree-test-loom:__pkg__",
     ],
@@ -221,7 +221,6 @@ loom_check_test_suite(
         "test/native_references.loom-test",
         "test/scalar.loom-test",
         "test/source_low/callable_policy.loom-test",
-        "test/source_low/callable_returns.loom-test",
         "test/source_low/callable_values.loom-test",
         "test/source_low/carried_counter_store.loom-test",
         "test/source_low/loop_counter_offset.loom-test",

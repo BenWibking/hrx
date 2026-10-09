@@ -155,6 +155,7 @@ loom_cc_library(
         "//loom/src/loom/rewrite:pattern_registry",
         "//loom/src/loom/rewrite:rewriter",
         "//loom/src/loom/rewrite:type_propagation",
+        "//loom/src/loom/target:facts",
         "//loom/src/loom/util:fact_table",
         "//loom/src/loom/util:walk",
         "//runtime/src/iree/base",

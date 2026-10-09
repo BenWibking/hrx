@@ -607,7 +607,6 @@ loom_cc_library(
     loom::ops::low
     loom::ops::op_defs
     loom::target::reporting::report
-    loom::tools::loom-check::compile
     loom::tools::loom-check::execute
     loom::tools::loom-check::provider
   PUBLIC
@@ -800,7 +799,6 @@ loom_check_test_suite(
     "test/source_low/bf16_vectors.loom-test"
     "test/source_low/buffer_selection.loom-test"
     "test/source_low/callable_result_diagnostics.loom-test"
-    "test/source_low/callable_returns.loom-test"
     "test/source_low/callable_values.loom-test"
     "test/source_low/carried_counter_store.loom-test"
     "test/source_low/component_packetization.loom-test"
@@ -855,6 +853,8 @@ loom_check_test_suite(
     "test/source_low/numeric_index_conversion.loom-test"
     "test/source_low/numeric_index_operands.loom-test"
     "test/source_low/numeric_integer_extrema.loom-test"
+    "test/source_low/numeric_integer_shift_i64.loom-test"
+    "test/source_low/numeric_integer_shift_report.loom-test"
     "test/source_low/numeric_integer_widening.loom-test"
     "test/source_low/numeric_integer_widening_partial.loom-test"
     "test/source_low/numeric_minmax.loom-test"
@@ -862,6 +862,7 @@ loom_check_test_suite(
     "test/source_low/numeric_nonlinear.loom-test"
     "test/source_low/numeric_offset_narrowing.loom-test"
     "test/source_low/numeric_offset_wide.loom-test"
+    "test/source_low/numeric_power_of_two_scale.loom-test"
     "test/source_low/numeric_reciprocal.loom-test"
     "test/source_low/numeric_reduce.loom-test"
     "test/source_low/numeric_saturating_pack.loom-test"

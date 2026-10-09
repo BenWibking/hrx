@@ -40,6 +40,7 @@ loom_generated_cc_library(
     loom::ir
     loom::ops::op_defs
     loom::ops::target
+    loom::target::arch::x86::facts
     loom::target::arch::x86::records::target_records
     loom::target::types
 )

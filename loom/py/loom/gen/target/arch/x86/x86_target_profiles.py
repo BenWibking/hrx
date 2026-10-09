@@ -27,7 +27,7 @@ _ensure_runtime_py_on_path()
 from loom.gen.support.c import c_string_literal as _c_string_literal  # noqa: E402
 from loom.gen.support.files import write_text_file as _write_text  # noqa: E402
 from loom.gen.support.generated_file import line_comment_header  # noqa: E402
-from loom.target.arch.x86.packed_dot_data import (  # noqa: E402
+from loom.target.arch.x86.feature_bits import (  # noqa: E402
     FEATURE_AVX10_2,
     FEATURE_AVX512_BF16,
     FEATURE_AVX512_VL,

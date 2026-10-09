@@ -1459,6 +1459,8 @@ def _s_and_b32_overlay() -> AmdgpuDescriptorOverlay:
         instruction_name="S_AND_B32",
         mnemonic="s_and_b32",
         semantic_tag="integer.and.u32",
+        rhs_inline_descriptor_key="amdgpu.s_and_b32.rhs_inline",
+        literal_descriptor_key="amdgpu.s_and_b32.lit",
     )
 
 
@@ -1486,12 +1488,52 @@ def _s_or_b32_overlay() -> AmdgpuDescriptorOverlay:
         instruction_name="S_OR_B32",
         mnemonic="s_or_b32",
         semantic_tag="integer.or.u32",
+        rhs_inline_descriptor_key="amdgpu.s_or_b32.rhs_inline",
+        literal_descriptor_key="amdgpu.s_or_b32.lit",
+    )
+
+
+def _s_or_b32_rhs_inline_overlay() -> AmdgpuDescriptorOverlay:
+    return _s_binary_u32_rhs_inline_overlay(
+        descriptor_key="amdgpu.s_or_b32.rhs_inline",
+        instruction_name="S_OR_B32",
+        mnemonic="s_or_b32",
+        semantic_tag="integer.or.u32",
+    )
+
+
+def _s_or_b32_literal_overlay() -> AmdgpuDescriptorOverlay:
+    return _s_binary_u32_literal_overlay(
+        descriptor_key="amdgpu.s_or_b32.lit",
+        instruction_name="S_OR_B32",
+        mnemonic="s_or_b32",
+        semantic_tag="integer.or.u32",
     )
 
 
 def _s_xor_b32_overlay() -> AmdgpuDescriptorOverlay:
     return _s_binary_u32_overlay(
         descriptor_key="amdgpu.s_xor_b32",
+        instruction_name="S_XOR_B32",
+        mnemonic="s_xor_b32",
+        semantic_tag="integer.xor.u32",
+        rhs_inline_descriptor_key="amdgpu.s_xor_b32.rhs_inline",
+        literal_descriptor_key="amdgpu.s_xor_b32.lit",
+    )
+
+
+def _s_xor_b32_rhs_inline_overlay() -> AmdgpuDescriptorOverlay:
+    return _s_binary_u32_rhs_inline_overlay(
+        descriptor_key="amdgpu.s_xor_b32.rhs_inline",
+        instruction_name="S_XOR_B32",
+        mnemonic="s_xor_b32",
+        semantic_tag="integer.xor.u32",
+    )
+
+
+def _s_xor_b32_literal_overlay() -> AmdgpuDescriptorOverlay:
+    return _s_binary_u32_literal_overlay(
+        descriptor_key="amdgpu.s_xor_b32.lit",
         instruction_name="S_XOR_B32",
         mnemonic="s_xor_b32",
         semantic_tag="integer.xor.u32",
@@ -2554,7 +2596,11 @@ def _integer_bitwise_shift_overlays(
         _s_and_b32_rhs_inline_overlay(),
         _s_and_b32_literal_overlay(),
         _s_or_b32_overlay(),
+        _s_or_b32_rhs_inline_overlay(),
+        _s_or_b32_literal_overlay(),
         _s_xor_b32_overlay(),
+        _s_xor_b32_rhs_inline_overlay(),
+        _s_xor_b32_literal_overlay(),
         _s_and_b64_overlay(),
         _s_and_b64_scc_overlay(),
         _s_or_b64_overlay(),
@@ -7722,12 +7768,16 @@ __all__ = (
     "_s_mul_i32_rhs_inline_overlay",
     "_s_mulk_i32_overlay",
     "_s_or_b32_overlay",
+    "_s_or_b32_rhs_inline_overlay",
+    "_s_or_b32_literal_overlay",
     "_s_or_b64_overlay",
     "_s_shift_u64_overlay",
     "_s_shift_u64_rhs_inline_overlay",
     "_s_sub_u32_overlay",
     "_s_sub_u32_rhs_inline_overlay",
     "_s_xor_b32_overlay",
+    "_s_xor_b32_rhs_inline_overlay",
+    "_s_xor_b32_literal_overlay",
     "_s_xor_b64_overlay",
     "_v_add_co_ci_u32_overlay",
     "_v_add_co_u32_overlay",

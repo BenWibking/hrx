@@ -19,6 +19,7 @@ iree_c_embed_data(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/flash_attention.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/llama_rms_norm.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/mxfp_group_dot.cxx"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/q4k_q8_swiglu.cxx"
   C_FILE_OUTPUT
     "kernels.c"
   H_FILE_OUTPUT

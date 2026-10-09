@@ -135,6 +135,10 @@ struct loom_rewriter_t {
   // target-neutral optional arithmetic choices until a target is selected.
   const struct loom_target_math_policy_t* math_policy;
 
+  // Resolved target bundle paired with |math_policy|. NULL denotes a
+  // target-neutral rewrite scope.
+  const struct loom_target_bundle_t* math_target_bundle;
+
   // Structural snapshots published into the fact table for edited regions.
   struct {
     // Region-address hash buckets for O(1) snapshot storage lookup.

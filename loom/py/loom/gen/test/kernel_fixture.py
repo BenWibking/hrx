@@ -65,8 +65,12 @@ class Case:
     def scalar(self, name, value, element):
         self.lines.append(f"  %{name} = check.literal value({value}) : {element}")
 
-    def launch(self, kernel, arguments, types):
-        self.lines.append(f"  kernel.launch @{kernel}({arguments}) : ({types})")
+    def launch(self, kernel, arguments, types, workloads=None, workload_types=None):
+        if (workloads is None) != (workload_types is None):
+            raise ValueError("kernel workloads and their types must be provided together")
+        workload_values = f"[{workloads}]" if workloads is not None else ""
+        workload_signature = f"[{workload_types}]" if workload_types is not None else ""
+        self.lines.append(f"  kernel.launch @{kernel}{workload_values}({arguments}) : {workload_signature}({types})")
 
     def finish(self, expected, tolerance=None):
         self.array("expected", expected)

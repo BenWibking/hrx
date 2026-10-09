@@ -28,10 +28,13 @@
 #include "libamdf/cts/gpu/util/user_queue.h"
 #include "libamdf/cts/interop/gpu/xdna/recipes/device_fixture.h"
 #include "libamdf/cts/interop/gpu/xdna/recipes/pm4_queue.h"
+#include "libamdf/cts/interop/gpu/xdna/recipes/resident_memory.h"
 #include "libamdf/cts/interop/gpu/xdna/recipes/resident_transaction.h"
 #include "libamdf/cts/xdna/programs/resident_channels.h"
 #include "libamdf/cts/xdna/programs/resident_exchange.h"
 #include "libamdf/cts/xdna/programs/resident_npu_initiated.h"
+#include "libamdf/cts/xdna/programs/resident_split_response.h"
+#include "libamdf/cts/xdna/programs/resident_terminal_relay.h"
 #include "libamdf/cts/xdna/util/executable.h"
 #include "libamdf/cts/xdna/util/execution.h"
 
@@ -48,13 +51,19 @@ constexpr uint32_t kSlotSeedStep = 0x9E3779B9u;
 
 enum class LaunchOrder { kGpuFirst, kNpuFirst };
 enum class Participants { kBoth, kGpu, kNpu };
-// Window and NPU-initiated schedules use one worker; held schedules use two.
+// Window and NPU-initiated schedules use one service; held schedules use two.
+// Relayed and split windows add a worker that owns only the terminal output.
 enum class ServiceSchedule {
   kWindow,
+  kRelayedWindow,
   kHoldFirst,
   kHoldSecond,
   kNpuInitiated,
-  kNpuSdma
+  kNpuSdma,
+  kSplitPayload0PayloadFirst,
+  kSplitPayload0ReadyFirst,
+  kSplitPayload1PayloadFirst,
+  kSplitPayload1ReadyFirst,
 };
 enum BufferOrdinal : size_t {
   kStartup,
@@ -88,7 +97,7 @@ struct ExchangePlan {
   uint32_t round_count;
   // Initial cause, provided to the participant producing the first payload.
   uint32_t seed;
-  // Selects one complete protocol and its worker placement.
+  // Selects one complete protocol, response route and worker placement.
   ServiceSchedule schedule;
 
   uint32_t service_count() const {
@@ -96,6 +105,30 @@ struct ExchangePlan {
                    schedule == ServiceSchedule::kHoldSecond
                ? 2u
                : 1u;
+  }
+  bool split_response() const {
+    return schedule == ServiceSchedule::kSplitPayload0PayloadFirst ||
+           schedule == ServiceSchedule::kSplitPayload0ReadyFirst ||
+           schedule == ServiceSchedule::kSplitPayload1PayloadFirst ||
+           schedule == ServiceSchedule::kSplitPayload1ReadyFirst;
+  }
+  bool ready_first() const {
+    return schedule == ServiceSchedule::kSplitPayload0ReadyFirst ||
+           schedule == ServiceSchedule::kSplitPayload1ReadyFirst;
+  }
+  ResidentResponsePath response_path() const {
+    if (!split_response()) {
+      return ResidentResponsePath::kChained;
+    }
+    return schedule == ServiceSchedule::kSplitPayload0PayloadFirst ||
+                   schedule == ServiceSchedule::kSplitPayload0ReadyFirst
+               ? ResidentResponsePath::kPayload0Ready1
+               : ResidentResponsePath::kPayload1Ready0;
+  }
+  uint32_t logical_column_count() const {
+    return schedule == ServiceSchedule::kRelayedWindow || split_response()
+               ? 2u
+               : service_count();
   }
   bool npu_initiated() const {
     return schedule == ServiceSchedule::kNpuInitiated || npu_sdma();
@@ -162,19 +195,6 @@ void CheckQueueTransition(const amdf_cache_transition_t& transition,
   ASSERT_EQ(transition.range_granularity, 0u);
 }
 
-struct JointBuffer {
-  // Host-only source owner, retained until a native registration is removed.
-  CtsMappedMemory source;
-  // Joint native allocation or registration with one explicit host mapping.
-  CtsMappedMemory memory;
-  // Queried GPU address of the logical payload, after its leading guard.
-  uint64_t gpu_address = 0;
-  // Queried NPU DMA address of the same logical payload.
-  uint64_t npu_address = 0;
-  // Complete expected rounded backing, including both guards and padding.
-  std::vector<uint8_t> expected;
-};
-
 enum SdmaBufferOrdinal : size_t {
   kSdmaSource,
   kSdmaDestination,
@@ -222,12 +242,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
       return;
     }
     for (auto& buffer : buffers_) {
-      if (!buffer.memory.Release(api_)) {
-        return;
-      }
-    }
-    for (auto& buffer : buffers_) {
-      if (!buffer.source.Release(api_)) {
+      if (!buffer.Release(api_)) {
         return;
       }
     }
@@ -408,35 +423,41 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
   }
 
   void PrepareBuffers(amdf_memory_profile_roles_t role,
-                      const ExchangePlan& plan) {
+                      const ExchangePlan& plan,
+                      const ResidentImportPlan* import_plan) {
     const auto shape = plan.shape;
-    if (role == AMDF_MEMORY_PROFILE_ROLE_REGISTER &&
-        (features_ & AMDF_GPU_DEVICE_FEATURE_HOST_REGISTRATION) == 0) {
-      GTEST_SKIP() << "GPU host registration is not advertised";
-    }
     amdf_memory_profile_t profile = {};
-    ASSERT_NO_FATAL_FAILURE(FindProfile(accesses_, role, &profile));
-    if (profile.ordinal == AMDF_MEMORY_PROFILE_ORDINAL_UNKNOWN) {
-      GTEST_SKIP() << "joint backing construction is not advertised";
-    }
-    const auto& geometry = role == AMDF_MEMORY_PROFILE_ROLE_REGISTER
-                               ? profile.registration
-                               : profile.allocation;
-    ASSERT_GT(geometry.byte_length_granularity, 0u);
     amdf_memory_create_info_t create = {};
-    create.type = AMDF_STRUCTURE_TYPE_MEMORY_CREATE_INFO;
-    create.structure_size = sizeof(create);
-    create.memory_profile_ordinal = profile.ordinal;
-    create.access_count = accesses_.size();
-    create.accesses = accesses_.data();
-    create.required_flags = AMDF_MEMORY_FLAG_HOST_VISIBLE;
-    create.minimum_alignment = geometry.minimum_alignment;
-    if (role == AMDF_MEMORY_PROFILE_ROLE_REGISTER) {
-      create.registered_host_cacheability =
-          geometry.registered_host_cacheability;
+    amdf_memory_construction_capabilities_t geometry = {};
+    std::array<amdf_memory_pair_info_t, kGpuXdnaJointEdges.size()>
+        profile_pairs = {};
+    if (!import_plan) {
+      if (role == AMDF_MEMORY_PROFILE_ROLE_REGISTER &&
+          (features_ & AMDF_GPU_DEVICE_FEATURE_HOST_REGISTRATION) == 0) {
+        GTEST_SKIP() << "GPU host registration is not advertised";
+      }
+      ASSERT_NO_FATAL_FAILURE(FindProfile(accesses_, role, &profile));
+      if (profile.ordinal == AMDF_MEMORY_PROFILE_ORDINAL_UNKNOWN) {
+        GTEST_SKIP() << "joint backing construction is not advertised";
+      }
+      geometry = role == AMDF_MEMORY_PROFILE_ROLE_REGISTER
+                     ? profile.registration
+                     : profile.allocation;
+      ASSERT_GT(geometry.byte_length_granularity, 0u);
+      create.type = AMDF_STRUCTURE_TYPE_MEMORY_CREATE_INFO;
+      create.structure_size = sizeof(create);
+      create.memory_profile_ordinal = profile.ordinal;
+      create.access_count = accesses_.size();
+      create.accesses = accesses_.data();
+      create.required_flags = AMDF_MEMORY_FLAG_HOST_VISIBLE;
+      create.minimum_alignment = geometry.minimum_alignment;
+      if (role == AMDF_MEMORY_PROFILE_ROLE_REGISTER) {
+        create.registered_host_cacheability =
+            geometry.registered_host_cacheability;
+      }
+      ASSERT_NO_FATAL_FAILURE(
+          QueryProfilePairs(create, 1, kGpuXdnaJointEdges, profile_pairs));
     }
-    ASSERT_NO_FATAL_FAILURE(
-        QueryProfilePairs(create, 1, kGpuXdnaJointEdges, pairs_));
     const std::array<size_t, kBufferCount> payload_byte_lengths = {
         64,
         256 * plan.service_count(),
@@ -448,84 +469,112 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
       SCOPED_TRACE(i);
       auto& buffer = buffers_[i];
       const uint64_t extent = 2 * kPayloadByteOffset + payload_byte_lengths[i];
-      create.byte_length = (extent + geometry.byte_length_granularity - 1) /
-                           geometry.byte_length_granularity *
-                           geometry.byte_length_granularity;
-      if (role == AMDF_MEMORY_PROFILE_ROLE_REGISTER) {
-        amdf_memory_create_info_t host_create = {};
-        host_create.type = AMDF_STRUCTURE_TYPE_MEMORY_CREATE_INFO;
-        host_create.structure_size = sizeof(host_create);
-        host_create.required_flags = AMDF_MEMORY_FLAG_HOST_VISIBLE;
-        host_create.byte_length = create.byte_length;
-        host_create.minimum_alignment =
-            geometry.registered_host_pointer_alignment;
+      if (import_plan) {
         ASSERT_NO_FATAL_FAILURE(
-            buffer.source.Create(api_, system_scope_, host_create));
-        ASSERT_EQ(buffer.source.host.cacheability,
-                  create.registered_host_cacheability);
-        create.registered_host_pointer = buffer.source.host.pointer;
+            buffer.CreateImported(api_, system_scope_, *import_plan, extent));
+        ASSERT_NO_FATAL_FAILURE(CheckAccesses(
+            buffer.memory, std::span(&import_plan->source.access, 1)));
+        ASSERT_NO_FATAL_FAILURE(
+            buffer.QueryImportedPairs(api_, gpu_family_.ordinal, xdna_family_));
+      } else {
+        create.byte_length = (extent + geometry.byte_length_granularity - 1) /
+                             geometry.byte_length_granularity *
+                             geometry.byte_length_granularity;
+        if (role == AMDF_MEMORY_PROFILE_ROLE_REGISTER) {
+          amdf_memory_create_info_t host_create = {};
+          host_create.type = AMDF_STRUCTURE_TYPE_MEMORY_CREATE_INFO;
+          host_create.structure_size = sizeof(host_create);
+          host_create.required_flags = AMDF_MEMORY_FLAG_HOST_VISIBLE;
+          host_create.byte_length = create.byte_length;
+          host_create.minimum_alignment =
+              geometry.registered_host_pointer_alignment;
+          ASSERT_NO_FATAL_FAILURE(
+              buffer.registration.Create(api_, system_scope_, host_create));
+          ASSERT_EQ(buffer.registration.host.cacheability,
+                    create.registered_host_cacheability);
+          create.registered_host_pointer = buffer.registration.host.pointer;
+        }
+        ASSERT_NO_FATAL_FAILURE(
+            buffer.memory.Create(api_, system_scope_, create));
+        ASSERT_NO_FATAL_FAILURE(CheckAccesses(buffer.memory, accesses_));
+        ASSERT_NO_FATAL_FAILURE(CheckConcretePairs(
+            buffer.memory, 1, kGpuXdnaJointEdges, profile_pairs));
+        ASSERT_EQ(api_->memory_query_address(buffer.memory.memory, 0,
+                                             AMDF_MEMORY_ADDRESS_XDNA_DMA,
+                                             &buffer.npu_address),
+                  AMDF_STATUS_OK);
+        ASSERT_EQ(api_->memory_query_address(buffer.memory.memory, 1,
+                                             AMDF_MEMORY_ADDRESS_GPU,
+                                             &buffer.gpu_address),
+                  AMDF_STATUS_OK);
+        buffer.logical.byte_length = buffer.memory.info.byte_length;
+        buffer.pairs = profile_pairs;
       }
-      ASSERT_NO_FATAL_FAILURE(
-          buffer.memory.Create(api_, system_scope_, create));
-      ASSERT_NO_FATAL_FAILURE(CheckAccesses(buffer.memory, accesses_));
-      ASSERT_NO_FATAL_FAILURE(
-          CheckConcretePairs(buffer.memory, 1, kGpuXdnaJointEdges, pairs_));
-      ASSERT_EQ(api_->memory_query_address(buffer.memory.memory, 0,
-                                           AMDF_MEMORY_ADDRESS_XDNA_DMA,
-                                           &buffer.npu_address),
-                AMDF_STATUS_OK);
-      ASSERT_EQ(api_->memory_query_address(buffer.memory.memory, 1,
-                                           AMDF_MEMORY_ADDRESS_GPU,
-                                           &buffer.gpu_address),
-                AMDF_STATUS_OK);
       buffer.npu_address += kPayloadByteOffset;
       buffer.gpu_address += kPayloadByteOffset;
-      ASSERT_EQ((reinterpret_cast<uintptr_t>(buffer.memory.host.pointer) +
+      ASSERT_EQ((reinterpret_cast<uintptr_t>(buffer.bytes().data()) +
                  kPayloadByteOffset) %
                     alignof(uint32_t),
                 0u);
       ASSERT_EQ(buffer.gpu_address % 64, 0u);
       ASSERT_EQ(buffer.npu_address % 4, 0u);
-      buffer.expected.assign(buffer.memory.bytes().size(),
-                             uint8_t{0xA5} ^ uint8_t(i * 17));
+      buffer.expected_backing.assign(buffer.memory.bytes().size(),
+                                     uint8_t{0xA5} ^ uint8_t(i * 17));
       if (i == kRequest || i == kResponse) {
         for (uint32_t slot = 0; slot < plan.slot_count(); ++slot) {
           const size_t offset =
               kPayloadByteOffset + slot * shape.slot_byte_stride();
-          StoreU32(buffer.expected, offset, 0);
-          std::fill_n(buffer.expected.begin() + offset + shape.byte_offset(),
+          StoreU32(buffer.expected(), offset, 0);
+          std::fill_n(buffer.expected().begin() + offset + shape.byte_offset(),
                       shape.byte_length(), 0);
         }
       } else if (i != kControl) {
-        std::fill_n(buffer.expected.begin() + kPayloadByteOffset,
+        std::fill_n(buffer.expected().begin() + kPayloadByteOffset,
                     payload_byte_lengths[i], 0);
       }
     }
     for (uint32_t service = 0; service < plan.service_count(); ++service) {
-      StoreU32(buffers_[kControl].expected,
+      StoreU32(buffers_[kControl].expected(),
                kPayloadByteOffset + service * 256 + kResidentFinalAckByteOffset,
                0);
       const size_t configuration_offset = kPayloadByteOffset + service * 64;
-      StoreU32(buffers_[kConfiguration].expected, configuration_offset,
+      StoreU32(buffers_[kConfiguration].expected(), configuration_offset,
                plan.service_round_count(service));
-      StoreU32(buffers_[kConfiguration].expected, configuration_offset + 4,
+      StoreU32(buffers_[kConfiguration].expected(), configuration_offset + 4,
                shape.word_count);
-      StoreU32(buffers_[kConfiguration].expected, configuration_offset + 8,
+      StoreU32(buffers_[kConfiguration].expected(), configuration_offset + 8,
                shape.credit_count);
       if (plan.npu_initiated()) {
-        StoreU32(buffers_[kConfiguration].expected, configuration_offset + 12,
+        StoreU32(buffers_[kConfiguration].expected(), configuration_offset + 12,
                  plan.seed);
+      }
+      if (plan.split_response()) {
+        // These immutable values match the cold routes and never contain a
+        // memory address. Both complete tasks precede all response data.
+        const bool payload_zero =
+            plan.response_path() == ResidentResponsePath::kPayload0Ready1;
+        const uint32_t payload_header =
+            payload_zero ? 0x8001d204u : 0x0001d20cu;
+        const uint32_t ready_header = payload_zero ? 0x0001d20cu : 0x8001d204u;
+        StoreU32(buffers_[kConfiguration].expected(), configuration_offset + 12,
+                 plan.ready_first() ? ready_header : payload_header);
+        StoreU32(buffers_[kConfiguration].expected(), configuration_offset + 16,
+                 plan.ready_first() ? 3u : 2u);
+        StoreU32(buffers_[kConfiguration].expected(), configuration_offset + 20,
+                 plan.ready_first() ? payload_header : ready_header);
+        StoreU32(buffers_[kConfiguration].expected(), configuration_offset + 24,
+                 plan.ready_first() ? 2u : 3u);
       }
     }
     for (auto& buffer : buffers_) {
-      std::copy(buffer.expected.begin(), buffer.expected.end(),
+      std::copy(buffer.expected_backing.begin(), buffer.expected_backing.end(),
                 buffer.memory.bytes().begin());
-      ASSERT_EQ(
-          HostTransition(buffer.memory, pairs_[kGpuXdnaHostToXdna].release),
-          AMDF_STATUS_OK);
-      ASSERT_EQ(
-          HostTransition(buffer.memory, pairs_[kGpuXdnaHostToGpu].release),
-          AMDF_STATUS_OK);
+      ASSERT_EQ(HostTransition(buffer.memory,
+                               buffer.pairs[kGpuXdnaHostToXdna].release),
+                AMDF_STATUS_OK);
+      ASSERT_EQ(HostTransition(buffer.memory,
+                               buffer.pairs[kGpuXdnaHostToGpu].release),
+                AMDF_STATUS_OK);
     }
   }
 
@@ -533,7 +582,10 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     const auto shape = plan.shape;
     const iree_file_toc_t* image = nullptr;
     const auto* images =
-        plan.npu_initiated() ? amdf_cts_xdna_resident_npu_initiated_create()
+        plan.split_response() ? amdf_cts_xdna_resident_split_response_create()
+        : plan.schedule == ServiceSchedule::kRelayedWindow
+            ? amdf_cts_xdna_resident_terminal_relay_create()
+        : plan.npu_initiated() ? amdf_cts_xdna_resident_npu_initiated_create()
         : plan.service_count() == 2 ? amdf_cts_xdna_resident_channels_create()
                                     : amdf_cts_xdna_resident_exchange_create();
     const std::string_view target = xdna_endpoint_info_.target_id;
@@ -551,7 +603,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     XdnaExecutable executable;
     ASSERT_TRUE(executable.Initialize(
         {reinterpret_cast<const uint8_t*>(image->data), image->size},
-        xdna_endpoint_info_, xdna_device_info_, plan.service_count(),
+        xdna_endpoint_info_, xdna_device_info_, plan.logical_column_count(),
         std::span(binding_accesses).first(2 * plan.service_count())));
     std::vector<uint8_t> storage(executable.allocation_byte_length());
     executable.Load(storage);
@@ -583,12 +635,13 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     ASSERT_TRUE(BuildResidentTransaction(
         executable.ResolveInvocation(storage),
         std::span(services).first(plan.service_count()), shape.byte_length(),
-        &commands));
+        plan.response_path(), &commands));
     ASSERT_LE(commands.size(),
               xdna_device_info_.instruction.maximum_byte_length);
-    ASSERT_NO_FATAL_FAILURE(execution_.Prepare(
-        api_, xdna_api_, xdna_device_, xdna_family_, plan.service_count(),
-        commands, executable.allocation_alignment()));
+    ASSERT_NO_FATAL_FAILURE(
+        execution_.Prepare(api_, xdna_api_, xdna_device_, xdna_family_,
+                           plan.logical_column_count(), commands,
+                           executable.allocation_alignment()));
     ASSERT_EQ(
         api_->host_mapping_cache_control(
             execution_.instructions.mapping, AMDF_HOST_CACHE_OPERATION_FLUSH, 0,
@@ -758,16 +811,17 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     // One aligned single-copy store publishes the immutable startup decision.
     // No payload/control backing participates in this host cache maintenance.
     GpuStoreRelease<uint32_t>(
-        reinterpret_cast<uintptr_t>(startup.memory.host.pointer) +
+        reinterpret_cast<uintptr_t>(startup.bytes().data()) +
             kPayloadByteOffset,
         decision);
-    StoreU32(startup.expected, kPayloadByteOffset, decision);
-    auto status =
-        HostTransition(startup.memory, pairs_[kGpuXdnaHostToXdna].release);
+    StoreU32(startup.expected(), kPayloadByteOffset, decision);
+    auto status = HostTransition(startup.memory,
+                                 startup.pairs[kGpuXdnaHostToXdna].release);
     if (!amdf_status_is_ok(status)) {
       return status;
     }
-    return HostTransition(startup.memory, pairs_[kGpuXdnaHostToGpu].release);
+    return HostTransition(startup.memory,
+                          startup.pairs[kGpuXdnaHostToGpu].release);
   }
 
   // The GPU-initiated protocols carry either one cause per slot or a single
@@ -811,8 +865,8 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
                  record_offset + 4 * plan.record_header_word_count() + i * 4,
                  response);
         const size_t payload_offset = slot_offset + shape.byte_offset() + i * 4;
-        StoreU32(buffers_[kRequest].expected, payload_offset, request);
-        StoreU32(buffers_[kResponse].expected, payload_offset, response);
+        StoreU32(buffers_[kRequest].expected(), payload_offset, request);
+        StoreU32(buffers_[kResponse].expected(), payload_offset, response);
         if (i == 0) {
           first_response = response;
         }
@@ -820,16 +874,16 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
         response_sum += response;
       }
       const size_t terminal_offset = kPayloadByteOffset + service * 64;
-      StoreU32(buffers_[kTerminal].expected, terminal_offset + 12,
+      StoreU32(buffers_[kTerminal].expected(), terminal_offset + 12,
                first_response);
-      StoreU32(buffers_[kTerminal].expected, terminal_offset + 16,
+      StoreU32(buffers_[kTerminal].expected(), terminal_offset + 16,
                last_response);
-      StoreU32(buffers_[kTerminal].expected, terminal_offset + 20,
+      StoreU32(buffers_[kTerminal].expected(), terminal_offset + 20,
                response_sum);
       causes[slot] = first_response;
       chronological_cause = first_response;
-      StoreU32(buffers_[kRequest].expected, slot_offset, generation);
-      StoreU32(buffers_[kResponse].expected, slot_offset, generation);
+      StoreU32(buffers_[kRequest].expected(), slot_offset, generation);
+      StoreU32(buffers_[kResponse].expected(), slot_offset, generation);
     }
   }
 
@@ -861,7 +915,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
         StoreU32(expected_records_,
                  record_offset + 4 * plan.record_header_word_count() + i * 4,
                  value);
-        StoreU32(buffers_[kResponse].expected, payload_offset, value);
+        StoreU32(buffers_[kResponse].expected(), payload_offset, value);
         sum += value;
         if (produces_return) {
           const uint32_t returned =
@@ -870,19 +924,19 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
                                  kPayloadByteOffset + i * 4) +
                         value + generation
                   : 3u * value + generation;
-          StoreU32(buffers_[kRequest].expected, payload_offset, returned);
+          StoreU32(buffers_[kRequest].expected(), payload_offset, returned);
           words[i] = returned + 257u * (generation + 1u) + 17u * i;
         }
       }
-      StoreU32(buffers_[kResponse].expected, kPayloadByteOffset, generation);
+      StoreU32(buffers_[kResponse].expected(), kPayloadByteOffset, generation);
       if (produces_return) {
-        StoreU32(buffers_[kRequest].expected, kPayloadByteOffset, generation);
+        StoreU32(buffers_[kRequest].expected(), kPayloadByteOffset, generation);
       } else {
-        StoreU32(buffers_[kTerminal].expected, kPayloadByteOffset + 12,
+        StoreU32(buffers_[kTerminal].expected(), kPayloadByteOffset + 12,
                  words.front());
-        StoreU32(buffers_[kTerminal].expected, kPayloadByteOffset + 16,
+        StoreU32(buffers_[kTerminal].expected(), kPayloadByteOffset + 16,
                  words.back());
-        StoreU32(buffers_[kTerminal].expected, kPayloadByteOffset + 20, sum);
+        StoreU32(buffers_[kTerminal].expected(), kPayloadByteOffset + 20, sum);
       }
     }
   }
@@ -891,7 +945,8 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
            uint32_t seed, LaunchOrder order,
            Participants participants = Participants::kBoth,
            ExchangeShape shape = {16, 16},
-           ServiceSchedule schedule = ServiceSchedule::kWindow) {
+           ServiceSchedule schedule = ServiceSchedule::kWindow,
+           const ResidentImportPlan* import_plan = nullptr) {
     const ExchangePlan plan{shape, round_count, seed, schedule};
     ASSERT_GE(shape.word_count, 1u);
     ASSERT_LE(shape.word_count, 1024u);
@@ -904,7 +959,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
       ASSERT_EQ(shape.credit_count, 1u);
       ASSERT_LE(round_count, UINT32_MAX - 1u);
     }
-    ASSERT_NO_FATAL_FAILURE(PrepareBuffers(role, plan));
+    ASSERT_NO_FATAL_FAILURE(PrepareBuffers(role, plan, import_plan));
     if (IsSkipped()) {
       return;
     }
@@ -919,11 +974,24 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     if (HasFailure()) {
       return;
     }
+    if (plan.split_response()) {
+      RecordProperty(
+          "resident_split_payload_channel",
+          plan.response_path() == ResidentResponsePath::kPayload0Ready1 ? 0
+                                                                        : 1);
+      RecordProperty("resident_split_arming",
+                     plan.ready_first() ? "ready-first" : "payload-first");
+    }
     RecordProperty("resident_round_count", plan.record_count());
     RecordProperty("resident_service_count", plan.service_count());
+    RecordProperty("resident_logical_column_count",
+                   plan.logical_column_count());
     RecordProperty("resident_schedule",
-                   plan.npu_sdma()                           ? "npu-sdma"
-                   : plan.npu_initiated()                    ? "npu-initiated"
+                   plan.split_response()  ? "split-response"
+                   : plan.npu_sdma()      ? "npu-sdma"
+                   : plan.npu_initiated() ? "npu-initiated"
+                   : schedule == ServiceSchedule::kRelayedWindow
+                       ? "relayed-credit-window"
                    : schedule == ServiceSchedule::kWindow    ? "credit-window"
                    : schedule == ServiceSchedule::kHoldFirst ? "hold-first"
                                                              : "hold-second");
@@ -940,9 +1008,17 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     RecordProperty("resident_slot_byte_stride", shape.slot_byte_stride());
     RecordProperty("resident_launch_order",
                    order == LaunchOrder::kGpuFirst ? "gpu-first" : "npu-first");
-    RecordProperty("resident_backing", role == AMDF_MEMORY_PROFILE_ROLE_REGISTER
-                                           ? "registered"
-                                           : "allocated");
+    RecordProperty("resident_backing",
+                   import_plan ? "gpu-export-xdna-import"
+                   : role == AMDF_MEMORY_PROFILE_ROLE_REGISTER ? "registered"
+                                                               : "allocated");
+    if (import_plan) {
+      RecordProperty("resident_import_transport",
+                     import_plan->source.transport.type);
+      RecordProperty("resident_import_source_offset",
+                     std::to_string(import_plan->source_byte_offset));
+      RecordProperty("resident_import_public_host_views", 1);
+    }
     RecordProperty("resident_participants",
                    participants == Participants::kBoth  ? "both"
                    : participants == Participants::kGpu ? "gpu"
@@ -1037,16 +1113,16 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     for (uint32_t service = 0; service < plan.service_count(); ++service) {
       if (gpu_accepted) {
         StoreU32(
-            buffers_[kControl].expected,
+            buffers_[kControl].expected(),
             kPayloadByteOffset + service * 256 + kResidentFinalAckByteOffset,
             decision);
       }
       if (npu_accepted) {
         const size_t terminal_offset = kPayloadByteOffset + service * 64;
-        StoreU32(buffers_[kTerminal].expected, terminal_offset, decision);
-        StoreU32(buffers_[kTerminal].expected, terminal_offset + 4,
+        StoreU32(buffers_[kTerminal].expected(), terminal_offset, decision);
+        StoreU32(buffers_[kTerminal].expected(), terminal_offset + 4,
                  decision == kRun ? plan.service_round_count(service) : 0);
-        StoreU32(buffers_[kTerminal].expected, terminal_offset + 8,
+        StoreU32(buffers_[kTerminal].expected(), terminal_offset + 8,
                  shape.word_count);
       }
     }
@@ -1117,7 +1193,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
       auto& buffer = buffers_[i];
       ASSERT_EQ(HostTransition(buffer.memory, buffer.memory.host.invalidate),
                 AMDF_STATUS_OK);
-      CheckBytes(buffer.memory.bytes(), buffer.expected);
+      CheckBytes(buffer.memory.bytes(), buffer.expected_backing);
     }
     ASSERT_EQ(HostTransition(code_, code_.host.invalidate), AMDF_STATUS_OK);
     CheckBytes(code_.bytes(), original_code_);
@@ -1165,10 +1241,8 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     // Prefix copies that preserve an earlier destination tail.
     uint32_t short_copy_count = 0;
   } sdma_;
-  // Joint records and their independent native backing owners.
-  std::array<JointBuffer, kBufferCount> buffers_;
-  // Prospective and checked concrete publication contracts for joint backing.
-  std::array<amdf_memory_pair_info_t, kGpuXdnaJointEdges.size()> pairs_ = {};
+  // Protocol records, complete source backing and optional import owners.
+  std::array<ResidentBuffer, kBufferCount> buffers_;
   // Accepted GPU work whose completion and command retirement remain pending.
   bool gpu_pending_ = false;
   // Accepted NPU command whose external transfer drain remains pending.
@@ -1218,6 +1292,75 @@ TEST_F(ResidentGpuXdnaTest, RegisteredIndependentChannelsMirrored) {
   Run(AMDF_MEMORY_PROFILE_ROLE_REGISTER, 3, 0x80000001u, LaunchOrder::kNpuFirst,
       Participants::kBoth, {16, 16}, ServiceSchedule::kHoldSecond);
 }
+
+struct ImportedExchangeCase {
+  // Exact external representation, selected before allocation.
+  amdf_external_memory_type_t transport;
+  // Export at the logical source base or an aligned interior range.
+  ResidentSourceOffset source_offset;
+  // First accepted participant when both run.
+  LaunchOrder order;
+  // Complete dependent exchanges before final acknowledgement.
+  uint32_t round_count;
+  // A sole participant exercises the ordinary prestart ABORT protocol.
+  Participants participants;
+};
+
+class ResidentImportedExchangeTest
+    : public ResidentGpuXdnaTest,
+      public ::testing::WithParamInterface<ImportedExchangeCase> {};
+
+TEST_P(ResidentImportedExchangeTest, CausalRoundTrip) {
+  const auto& parameters = GetParam();
+  ResidentImportPlan import_plan;
+  ASSERT_NO_FATAL_FAILURE(import_plan.Find(api_, system_scope_, accesses_[1],
+                                           accesses_[0], parameters.transport,
+                                           parameters.source_offset));
+  if (IsSkipped()) {
+    return;
+  }
+  Run(AMDF_MEMORY_PROFILE_ROLE_CREATE, parameters.round_count, 0xFFFFFFFEu,
+      parameters.order, parameters.participants, {1024, 1, 2},
+      ServiceSchedule::kWindow, &import_plan);
+}
+
+std::vector<ImportedExchangeCase> ImportedExchangeCases() {
+  std::vector<ImportedExchangeCase> cases;
+  for (amdf_external_memory_type_t transport :
+       {AMDF_EXTERNAL_MEMORY_TYPE_DMA_BUF_FD,
+        AMDF_EXTERNAL_MEMORY_TYPE_OPAQUE_FD}) {
+    for (auto offset :
+         {ResidentSourceOffset::kZero, ResidentSourceOffset::kAligned}) {
+      for (auto order : {LaunchOrder::kGpuFirst, LaunchOrder::kNpuFirst}) {
+        for (uint32_t rounds : {0u, 1u, 17u}) {
+          cases.push_back(
+              {transport, offset, order, rounds, Participants::kBoth});
+        }
+        cases.push_back({transport, offset, order, 17,
+                         order == LaunchOrder::kGpuFirst ? Participants::kGpu
+                                                         : Participants::kNpu});
+      }
+    }
+  }
+  return cases;
+}
+
+std::string ImportedExchangeCaseName(
+    const ::testing::TestParamInfo<ImportedExchangeCase>& info) {
+  std::string name =
+      info.param.transport == AMDF_EXTERNAL_MEMORY_TYPE_DMA_BUF_FD ? "DmaBuf"
+                                                                   : "Opaque";
+  name += info.param.source_offset == ResidentSourceOffset::kZero ? "Base"
+                                                                  : "Subrange";
+  name += info.param.order == LaunchOrder::kGpuFirst ? "GpuFirst" : "NpuFirst";
+  return name + (info.param.participants == Participants::kBoth
+                     ? "Rounds" + std::to_string(info.param.round_count)
+                     : "Abort");
+}
+
+INSTANTIATE_TEST_SUITE_P(ImportedBacking, ResidentImportedExchangeTest,
+                         ::testing::ValuesIn(ImportedExchangeCases()),
+                         ImportedExchangeCaseName);
 
 struct NpuInitiatedCase {
   // GPU return count; a positive count adds one closing NPU payload.
@@ -1374,7 +1517,21 @@ uint32_t SeedForPeerCause(uint32_t peer_cause) {
 }
 
 const char* ScheduleCaseSuffix(ServiceSchedule schedule) {
-  return schedule == ServiceSchedule::kWindow      ? ""
+  switch (schedule) {
+    case ServiceSchedule::kSplitPayload0PayloadFirst:
+      return "Payload0PayloadFirst";
+    case ServiceSchedule::kSplitPayload0ReadyFirst:
+      return "Payload0ReadyFirst";
+    case ServiceSchedule::kSplitPayload1PayloadFirst:
+      return "Payload1PayloadFirst";
+    case ServiceSchedule::kSplitPayload1ReadyFirst:
+      return "Payload1ReadyFirst";
+    default:
+      break;
+  }
+  return schedule == ServiceSchedule::kWindow ||
+                 schedule == ServiceSchedule::kRelayedWindow
+             ? ""
          : schedule == ServiceSchedule::kHoldFirst ? "HoldFirst"
                                                    : "HoldSecond";
 }
@@ -1388,7 +1545,7 @@ struct ExchangeCase {
   uint32_t round_count;
   // Maximum requests admitted before waiting for a response.
   uint32_t credit_count;
-  // Shared credit window or independent worker placement.
+  // Resident service topology and terminal-output route.
   ServiceSchedule schedule = ServiceSchedule::kWindow;
 };
 
@@ -1400,7 +1557,8 @@ TEST_P(ResidentExchangeTest, CausalRoundTrip) {
   const auto& parameters = GetParam();
   // Both seeds exercise unsigned wrapping without an identity first request.
   uint32_t seed = parameters.round_count == 1 ? UINT32_MAX : 0x7FFFFF00u;
-  if (parameters.schedule != ServiceSchedule::kWindow) {
+  if (parameters.schedule == ServiceSchedule::kHoldFirst ||
+      parameters.schedule == ServiceSchedule::kHoldSecond) {
     seed = SeedForPeerCause(parameters.round_count == 17 ? 0xFFFFFFFEu : seed);
   }
   Run(parameters.role, parameters.round_count, seed, parameters.order,
@@ -1409,13 +1567,14 @@ TEST_P(ResidentExchangeTest, CausalRoundTrip) {
 }
 
 std::vector<ExchangeCase> ExchangeCases(
-    uint32_t credit_count, std::span<const uint32_t> round_counts) {
+    uint32_t credit_count, std::span<const uint32_t> round_counts,
+    ServiceSchedule schedule = ServiceSchedule::kWindow) {
   std::vector<ExchangeCase> cases;
   for (amdf_memory_profile_roles_t role :
        {AMDF_MEMORY_PROFILE_ROLE_CREATE, AMDF_MEMORY_PROFILE_ROLE_REGISTER}) {
     for (auto order : {LaunchOrder::kGpuFirst, LaunchOrder::kNpuFirst}) {
       for (uint32_t round_count : round_counts) {
-        cases.push_back({role, order, round_count, credit_count});
+        cases.push_back({role, order, round_count, credit_count, schedule});
       }
     }
   }
@@ -1458,6 +1617,18 @@ INSTANTIATE_TEST_SUITE_P(IndependentChannelsAndBacking, ResidentExchangeTest,
                          ::testing::ValuesIn(IndependentExchangeCases()),
                          ExchangeCaseName);
 
+INSTANTIATE_TEST_SUITE_P(
+    TerminalRelay, ResidentExchangeTest,
+    ::testing::ValuesIn(ExchangeCases(1, std::array{0u, 1u, 257u},
+                                      ServiceSchedule::kRelayedWindow)),
+    ExchangeCaseName);
+
+INSTANTIATE_TEST_SUITE_P(TerminalRelayTwoCredits, ResidentExchangeTest,
+                         ::testing::ValuesIn(ExchangeCases(
+                             2, std::array{0u, 1u, 2u, 3u, 17u, 257u, 258u},
+                             ServiceSchedule::kRelayedWindow)),
+                         ExchangeCaseName);
+
 struct PrestartAbortCase {
   // Advertised construction role for the accepted participant's joint backing.
   amdf_memory_profile_roles_t role;
@@ -1465,7 +1636,7 @@ struct PrestartAbortCase {
   Participants participant;
   // Number of paired slots prepared before the partial startup.
   uint32_t credit_count;
-  // Shared credit window or independent worker placement.
+  // Resident service topology and terminal-output route.
   ServiceSchedule schedule = ServiceSchedule::kWindow;
 };
 
@@ -1482,12 +1653,14 @@ TEST_P(ResidentPrestartAbortTest, DrainsWithoutPeer) {
       {16, 16, parameters.credit_count}, parameters.schedule);
 }
 
-std::vector<PrestartAbortCase> PrestartAbortCases(uint32_t credit_count) {
+std::vector<PrestartAbortCase> PrestartAbortCases(
+    uint32_t credit_count,
+    ServiceSchedule schedule = ServiceSchedule::kWindow) {
   std::vector<PrestartAbortCase> cases;
   for (amdf_memory_profile_roles_t role :
        {AMDF_MEMORY_PROFILE_ROLE_CREATE, AMDF_MEMORY_PROFILE_ROLE_REGISTER}) {
     for (auto participant : {Participants::kGpu, Participants::kNpu}) {
-      cases.push_back({role, participant, credit_count});
+      cases.push_back({role, participant, credit_count, schedule});
     }
   }
   return cases;
@@ -1529,12 +1702,22 @@ INSTANTIATE_TEST_SUITE_P(IndependentChannelsAndBacking,
                          ::testing::ValuesIn(IndependentPrestartAbortCases()),
                          PrestartAbortCaseName);
 
+INSTANTIATE_TEST_SUITE_P(
+    TerminalRelay, ResidentPrestartAbortTest,
+    ::testing::ValuesIn(PrestartAbortCases(1, ServiceSchedule::kRelayedWindow)),
+    PrestartAbortCaseName);
+
+INSTANTIATE_TEST_SUITE_P(
+    TerminalRelayTwoCredits, ResidentPrestartAbortTest,
+    ::testing::ValuesIn(PrestartAbortCases(2, ServiceSchedule::kRelayedWindow)),
+    PrestartAbortCaseName);
+
 struct PayloadCase {
   // Advertised construction role for the complete joint slot backing.
   amdf_memory_profile_roles_t role;
   // Actual payload extent and placement relative to its generation word.
   ExchangeShape shape;
-  // Shared credit window or independent worker placement.
+  // Resident service topology and terminal-output route.
   ServiceSchedule schedule = ServiceSchedule::kWindow;
 };
 
@@ -1544,21 +1727,24 @@ class ResidentPayloadTest : public ResidentGpuXdnaTest,
 
 TEST_P(ResidentPayloadTest, PublishesCompleteResponse) {
   const auto& parameters = GetParam();
-  const uint32_t seed = parameters.schedule == ServiceSchedule::kWindow
-                            ? 0xFFFFFFFEu
-                            : SeedForPeerCause(0xFFFFFFFEu);
+  const bool independent = parameters.schedule == ServiceSchedule::kHoldFirst ||
+                           parameters.schedule == ServiceSchedule::kHoldSecond;
+  const uint32_t seed =
+      independent ? SeedForPeerCause(0xFFFFFFFEu) : 0xFFFFFFFEu;
   Run(parameters.role, 17, seed, LaunchOrder::kNpuFirst, Participants::kBoth,
       parameters.shape, parameters.schedule);
 }
 
-std::vector<PayloadCase> PayloadCases(uint32_t credit_count,
-                                      std::span<const uint32_t> word_counts) {
+std::vector<PayloadCase> PayloadCases(
+    uint32_t credit_count, std::span<const uint32_t> word_counts,
+    ServiceSchedule schedule = ServiceSchedule::kWindow) {
   std::vector<PayloadCase> cases;
   for (amdf_memory_profile_roles_t role :
        {AMDF_MEMORY_PROFILE_ROLE_CREATE, AMDF_MEMORY_PROFILE_ROLE_REGISTER}) {
     for (uint32_t word_count : word_counts) {
       for (uint32_t word_offset : {1u, 16u}) {
-        cases.push_back({role, {word_count, word_offset, credit_count}});
+        cases.push_back(
+            {role, {word_count, word_offset, credit_count}, schedule});
       }
     }
   }
@@ -1606,6 +1792,59 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(IndependentChannelsPayloadAndBacking,
                          ResidentPayloadTest,
                          ::testing::ValuesIn(IndependentPayloadCases()),
+                         PayloadCaseName);
+
+INSTANTIATE_TEST_SUITE_P(TerminalRelay, ResidentPayloadTest,
+                         ::testing::ValuesIn(PayloadCases(
+                             1, std::array{1u, 4u, 15u, 16u, 17u, 64u, 1024u},
+                             ServiceSchedule::kRelayedWindow)),
+                         PayloadCaseName);
+
+INSTANTIATE_TEST_SUITE_P(
+    TerminalRelayTwoCredits, ResidentPayloadTest,
+    ::testing::ValuesIn(PayloadCases(2, std::array{1u, 16u, 1024u},
+                                     ServiceSchedule::kRelayedWindow)),
+    PayloadCaseName);
+
+template <typename Case>
+std::vector<Case> SplitResponseCases(std::vector<Case> baseline) {
+  std::vector<Case> cases;
+  for (auto parameters : baseline) {
+    for (auto schedule : {ServiceSchedule::kSplitPayload0PayloadFirst,
+                          ServiceSchedule::kSplitPayload0ReadyFirst,
+                          ServiceSchedule::kSplitPayload1PayloadFirst,
+                          ServiceSchedule::kSplitPayload1ReadyFirst}) {
+      parameters.schedule = schedule;
+      cases.push_back(parameters);
+    }
+  }
+  return cases;
+}
+
+INSTANTIATE_TEST_SUITE_P(SplitResponse, ResidentExchangeTest,
+                         ::testing::ValuesIn(SplitResponseCases(
+                             ExchangeCases(1, std::array{0u, 1u, 257u}))),
+                         ExchangeCaseName);
+INSTANTIATE_TEST_SUITE_P(SplitResponseTwoCredits, ResidentExchangeTest,
+                         ::testing::ValuesIn(SplitResponseCases(ExchangeCases(
+                             2, std::array{0u, 1u, 2u, 3u, 17u, 257u, 258u}))),
+                         ExchangeCaseName);
+INSTANTIATE_TEST_SUITE_P(
+    SplitResponse, ResidentPrestartAbortTest,
+    ::testing::ValuesIn(SplitResponseCases(PrestartAbortCases(1))),
+    PrestartAbortCaseName);
+INSTANTIATE_TEST_SUITE_P(
+    SplitResponseTwoCredits, ResidentPrestartAbortTest,
+    ::testing::ValuesIn(SplitResponseCases(PrestartAbortCases(2))),
+    PrestartAbortCaseName);
+INSTANTIATE_TEST_SUITE_P(SplitResponse, ResidentPayloadTest,
+                         ::testing::ValuesIn(SplitResponseCases(
+                             PayloadCases(1, std::array{1u, 4u, 15u, 16u, 17u,
+                                                        64u, 1024u}))),
+                         PayloadCaseName);
+INSTANTIATE_TEST_SUITE_P(SplitResponseTwoCredits, ResidentPayloadTest,
+                         ::testing::ValuesIn(SplitResponseCases(
+                             PayloadCases(2, std::array{1u, 16u, 1024u}))),
                          PayloadCaseName);
 
 }  // namespace

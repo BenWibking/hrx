@@ -76,6 +76,8 @@ class ValueProjectKind(Enum):
     FLOAT_AS_F32_I32 = "float_as_f32_i32"
     FLOAT_AS_F64_I64 = "float_as_f64_i64"
     FLOAT_AS_F64_I32_WORD = "float_as_f64_i32_word"
+    FLOAT_POWER_OF_TWO_EXPONENT = "float_power_of_two_exponent"
+    FLOAT_POWER_OF_TWO_NEGATED_EXPONENT = "float_power_of_two_negated_exponent"
 
 
 @unique
@@ -1041,6 +1043,28 @@ class ValueProject:
             kind=ValueProjectKind.FLOAT_AS_F64_I32_WORD,
             source_value=source_value,
             word_index=word_index,
+        )
+
+    @classmethod
+    def float_power_of_two_exponent(
+        cls, source_value: str, *, target_bit_offset: int = 0
+    ) -> Self:
+        """Projects the mathematical exponent of an exact signed power of two."""
+        return cls(
+            kind=ValueProjectKind.FLOAT_POWER_OF_TWO_EXPONENT,
+            source_value=source_value,
+            target_bit_offset=target_bit_offset,
+        )
+
+    @classmethod
+    def float_power_of_two_negated_exponent(
+        cls, source_value: str, *, target_bit_offset: int = 0
+    ) -> Self:
+        """Projects the negated exponent of an exact signed power of two."""
+        return cls(
+            kind=ValueProjectKind.FLOAT_POWER_OF_TWO_NEGATED_EXPONENT,
+            source_value=source_value,
+            target_bit_offset=target_bit_offset,
         )
 
     def __post_init__(self) -> None:

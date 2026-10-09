@@ -11,10 +11,8 @@
 #include "libamdf/cts/gpu/pm4/encoding/commands.h"
 #include "libamdf/cts/xdna/util/execution.h"
 
-namespace {
-
-void CheckTransition(const amdf_cache_transition_t& actual,
-                     const amdf_cache_transition_t& expected) {
+void CheckGpuXdnaTransition(const amdf_cache_transition_t& actual,
+                            const amdf_cache_transition_t& expected) {
   ASSERT_EQ(actual.kind, expected.kind);
   ASSERT_EQ(actual.executor, expected.executor);
   ASSERT_EQ(actual.operation, expected.operation);
@@ -24,8 +22,6 @@ void CheckTransition(const amdf_cache_transition_t& actual,
   ASSERT_EQ(actual.host_fence_after, expected.host_fence_after);
   ASSERT_EQ(actual.range_granularity, expected.range_granularity);
 }
-
-}  // namespace
 
 GpuXdnaDeviceFixture::GpuXdnaDeviceFixture(
     amdf_queue_roles_t required_gpu_roles)
@@ -267,8 +263,10 @@ void GpuXdnaDeviceFixture::CheckConcretePairs(
     ASSERT_EQ(pair.flags, expected[i].flags);
     ASSERT_EQ(pair.atomic_reach.scope_32, expected[i].atomic_reach.scope_32);
     ASSERT_EQ(pair.atomic_reach.scope_64, expected[i].atomic_reach.scope_64);
-    ASSERT_NO_FATAL_FAILURE(CheckTransition(pair.release, expected[i].release));
-    ASSERT_NO_FATAL_FAILURE(CheckTransition(pair.acquire, expected[i].acquire));
+    ASSERT_NO_FATAL_FAILURE(
+        CheckGpuXdnaTransition(pair.release, expected[i].release));
+    ASSERT_NO_FATAL_FAILURE(
+        CheckGpuXdnaTransition(pair.acquire, expected[i].acquire));
     auto host_release = memory.host.flush;
     auto host_acquire = memory.host.invalidate;
     const bool gpu_peer = edges[i].producer == GpuXdnaSite::kGpu ||
@@ -282,12 +280,12 @@ void GpuXdnaDeviceFixture::CheckConcretePairs(
         host_acquire = none;
       }
     }
-    ASSERT_NO_FATAL_FAILURE(CheckTransition(
+    ASSERT_NO_FATAL_FAILURE(CheckGpuXdnaTransition(
         pair.release, edges[i].producer == GpuXdnaSite::kGpu ? release
                       : edges[i].producer == GpuXdnaSite::kXdna
                           ? none
                           : host_release));
-    ASSERT_NO_FATAL_FAILURE(CheckTransition(
+    ASSERT_NO_FATAL_FAILURE(CheckGpuXdnaTransition(
         pair.acquire, edges[i].consumer == GpuXdnaSite::kGpu ? acquire
                       : edges[i].consumer == GpuXdnaSite::kXdna
                           ? none

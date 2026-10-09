@@ -9,6 +9,14 @@
 
 namespace loom::vector {
 
+// Groups adjacent four-lane byte products into signed i32 accumulator lanes.
+// Each input lane's C++ signedness selects its interpretation, covering the
+// s8s8, u8s8, s8u8, and u8u8 vector.dot4i variants without a separate source
+// tag. Inputs have the same shape and four times the accumulator's lane count.
+template <class Left, class Right, class Accumulator>
+[[loom::op("vector.dot4i")]] Accumulator dot4i(Left lhs, Right rhs,
+                                               Accumulator accumulator);
+
 // Decodes a physical vector into Result using an encoding<schema>. Auxiliary
 // is an ordinary aggregate whose vector fields name schema operands such as
 // scale, zero_point, or codebook. Values remain explicit SSA operands; a schema

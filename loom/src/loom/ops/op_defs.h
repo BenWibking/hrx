@@ -1836,29 +1836,6 @@ iree_status_t loom_builder_allocate_segmented_op_with_successors(
     uint16_t tied_result_count, uint8_t attribute_count,
     loom_location_id_t location, loom_op_t** out_op);
 
-// Allocates an op like loom_builder_allocate_segmented_op_with_successors
-// without linking it into any block. |operand_segment_counts| may be NULL when
-// |operand_segment_count| is zero.
-//
-// A detached op is not part of the program: it has no parent block, its
-// operands have no registered uses, and no builder callback has observed it.
-// Callers may create its regions, define its region arguments and results, and
-// bind result definitions with loom_builder_bind_op_results. Publishing the op
-// requires loom_builder_insert_op followed by loom_builder_finalize_op. Until
-// then, every value it defines is reachable only through callers that hold the
-// op; ordinary IR walks, verification, and analyses cannot observe it.
-iree_status_t loom_builder_allocate_detached_op(
-    loom_builder_t* builder, loom_op_kind_t kind, uint16_t operand_count,
-    const uint16_t* operand_segment_counts, uint8_t operand_segment_count,
-    uint16_t result_count, uint8_t successor_count, uint8_t region_count,
-    uint16_t tied_result_count, uint8_t attribute_count,
-    loom_location_id_t location, loom_op_t** out_op);
-
-// Links a detached op at the builder's current insertion point and stamps the
-// insertion point's parent op. Does not register operand uses or invoke the
-// finalization callback; call loom_builder_finalize_op afterward.
-iree_status_t loom_builder_insert_op(loom_builder_t* builder, loom_op_t* op);
-
 // Removes selected results from a variadic-result op and compacts trailing
 // storage in-place.
 //
@@ -1878,8 +1855,10 @@ iree_status_t loom_op_remove_results(loom_module_t* module, loom_op_t* op,
 // Removes operand and attribute use records, drops type-use records carried by
 // results, owned declaration arguments and nested block arguments, then marks
 // the op dead. Result values retain their defining op and result index as
-// immutable producer provenance. Dead ops are skipped by enumeration macros
-// and will not be serialized. The memory is not freed (arena-owned). Returns
+// immutable producer provenance. The remaining operation payload is left
+// unchanged and may be inspected as immutable provenance until module
+// destruction. Dead ops are skipped by enumeration macros and will not be
+// serialized. The memory is not freed (arena-owned). Returns
 // IREE_STATUS_FAILED_PRECONDITION if any result still has uses.
 iree_status_t loom_op_erase(loom_module_t* module, loom_op_t* op);
 
@@ -1920,24 +1899,7 @@ iree_status_t loom_region_remove_blocks(loom_module_t* module,
 // Finalizes a newly-built op: registers all operand uses and performs
 // any other per-op bookkeeping. Called as the tail return from every
 // builder: `return loom_builder_finalize_op(builder, *out_op);`
-//
-// Finalization releases the builder's value reservation, registers operand
-// uses, binds result definitions, refreshes attribute uses and summaries, and
-// fires the on_op_finalized callback, in that order. Each op is finalized
-// exactly once, after it is linked into a block.
 iree_status_t loom_builder_finalize_op(loom_builder_t* builder, loom_op_t* op);
-
-// Verifies that every value reserved by loom_builder_reserve_values was
-// consumed and clears the reservation. A no-op without a reservation.
-// loom_builder_finalize_op performs this release; staged construction calls it
-// directly once the detached op has defined all of its identities.
-iree_status_t loom_builder_release_reserved_values(loom_builder_t* builder);
-
-// Records |op| as the defining operation of each of its result values without
-// registering operand uses or invoking callbacks. Staged construction binds
-// detached results before other operations reference them. Finalization binds
-// them again, idempotently.
-void loom_builder_bind_op_results(loom_builder_t* builder, loom_op_t* op);
 
 // Replaces an attribute on a constructed operation, maintaining exact SSA
 // attribute-use records, effective traits and direct semantic summaries.

@@ -131,7 +131,7 @@ func.def public @update(%words: buffer, %words_byte_offset: offset, %mask: vecto
 [[loom::kernel, loom::workgroup_size(64, 1, 1)]]
 void update(unsigned* output) {
   [[loom::workgroup]] volatile unsigned words[64];
-  unsigned index = loom::workitem_id.x;
+  unsigned index = loom::kernel::workitem::id.x;
   words[index] = index;
   words[index] += 5;
   output[index] = words[index];
@@ -188,7 +188,7 @@ void update(unsigned input, unsigned* output) {
   unsigned* alias = &slot;
   *alias = input;
   slot += 5u;
-  loom::workgroup_barrier();
+  loom::kernel::workgroup::barrier();
   output[0] = *alias;
 }
 
@@ -211,7 +211,7 @@ using Words = unsigned __attribute__((vector_size(16)));
 void update(Words input, Words* output) {
   [[loom::workgroup]] Words slot;
   slot = input;
-  loom::workgroup_barrier();
+  loom::kernel::workgroup::barrier();
   output[0] = slot;
 }
 

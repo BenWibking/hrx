@@ -20,6 +20,7 @@ loom_target_contract_file_family(
   FRAGMENTS
     "avx2=x86.avx2"
     "avx512=x86.avx512"
+    "avx512_fp16=x86.avx512_fp16"
     "packed_dot=x86.packed_dot"
     "scalar=x86.scalar"
   ARGS
@@ -27,7 +28,8 @@ loom_target_contract_file_family(
     "--contract-index=LOOM_X86_AVX2_CONTRACT:x86.scalar,x86.avx2"
     "--contract-index=LOOM_X86_AVX512_CONTRACT:x86.scalar,x86.avx2,x86.avx512"
     "--contract-index=LOOM_X86_PACKED_DOT_CONTRACT:x86.packed_dot"
-    "--contract-index=LOOM_X86_AVX512_PACKED_DOT_CONTRACT:x86.scalar,x86.avx2,x86.avx512,x86.packed_dot"
+    "--contract-index=LOOM_X86_AVX2_FEATURES_CONTRACT:x86.scalar,x86.avx2,x86.packed_dot"
+    "--contract-index=LOOM_X86_AVX512_FEATURES_CONTRACT:x86.scalar,x86.avx2,x86.avx512,x86.avx512_fp16,x86.packed_dot"
   COMMENT
     "Generating x86 contract table families"
 )
@@ -79,6 +81,21 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_target_contract_cc_libraries(
   NAME
+    avx512_fp16
+  CONTRACT_DEPS
+    loom::target::contract
+  LOWER_RULE_DEPS
+    loom::codegen::low::lower
+    loom::ops::scalar
+    loom::ops::scf
+    loom::ops::vector
+    loom::ops::view
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_target_contract_cc_libraries(
+  NAME
     packed_dot
   CONTRACT_DEPS
     loom::target::contract
@@ -96,6 +113,8 @@ loom_cc_library(
     "avx2.h"
     "avx2_lower_rules.h"
     "avx512.h"
+    "avx512_fp16.h"
+    "avx512_fp16_lower_rules.h"
     "avx512_lower_rules.h"
     "packed_dot.h"
     "packed_dot_lower_rules.h"
@@ -105,6 +124,8 @@ loom_cc_library(
     ::avx2
     ::avx2_lower_rules
     ::avx512
+    ::avx512_fp16
+    ::avx512_fp16_lower_rules
     ::avx512_lower_rules
     ::packed_dot
     ::packed_dot_lower_rules

@@ -48,6 +48,7 @@ _DESCRIPTOR_KEYS = (
     "amdgpu.s_mov_b32",
     "amdgpu.s_cselect_b32",
     "amdgpu.s_cmp_lg_i32",
+    "amdgpu.s_cmp_lg_i32.src1_inline",
     "amdgpu.s_cmp_ge_u32",
     "amdgpu.s_add_u32",
     "amdgpu.s_sub_u32",
@@ -69,7 +70,11 @@ _DESCRIPTOR_KEYS = (
     "amdgpu.s_and_b32.rhs_inline",
     "amdgpu.s_and_b32.lit",
     "amdgpu.s_or_b32",
+    "amdgpu.s_or_b32.rhs_inline",
+    "amdgpu.s_or_b32.lit",
     "amdgpu.s_xor_b32",
+    "amdgpu.s_xor_b32.rhs_inline",
+    "amdgpu.s_xor_b32.lit",
     "amdgpu.s_and_b64",
     "amdgpu.s_mov_b64_exec_read",
     "amdgpu.s_or_b64",
@@ -108,10 +113,13 @@ _DESCRIPTOR_KEYS = (
     "amdgpu.v_max_u32.src0_inline",
     "amdgpu.v_max_u32.lit",
     "amdgpu.v_and_b32",
+    "amdgpu.v_and_b32.src0_inline",
     "amdgpu.v_and_b32.lit",
     "amdgpu.v_or_b32",
+    "amdgpu.v_or_b32.src0_inline",
     "amdgpu.v_or_b32.lit",
     "amdgpu.v_xor_b32",
+    "amdgpu.v_xor_b32.src0_inline",
     "amdgpu.v_xor_b32.lit",
     "amdgpu.v_lshlrev_b32",
     "amdgpu.v_lshlrev_b32.src0_inline",
@@ -629,7 +637,7 @@ def _i32_sgpr_vgpr_rules(
     )
 
 
-def _i32_literal_binary_rule(
+def _i32_immediate_binary_rule(
     source_op: Op,
     descriptor: Descriptor,
     *,
@@ -684,9 +692,9 @@ def _i32_literal_binary_rule(
     )
 
 
-def _i32_extrema_rules(source_op: Op, suffix: str) -> tuple[DescriptorRule, ...]:
+def _i32_encoded_binary_rules(source_op: Op, suffix: str) -> tuple[DescriptorRule, ...]:
     immediate_rules = tuple(
-        _i32_literal_binary_rule(
+        _i32_immediate_binary_rule(
             source_op,
             _descriptor(descriptor_key),
             literal_source=literal_source,
@@ -709,40 +717,6 @@ def _i32_extrema_rules(source_op: Op, suffix: str) -> tuple[DescriptorRule, ...]
             source_op,
             _I32,
             _descriptor(f"amdgpu.v_{suffix}"),
-            I32_VGPR_MATERIALIZER,
-        ),
-    )
-
-
-def _i32_sgpr_vgpr_literal_rules(
-    source_op: Op,
-    sgpr_descriptor_key: str,
-    vgpr_descriptor_key: str,
-    literal_descriptor_key: str,
-) -> tuple[DescriptorRule, ...]:
-    sgpr_descriptor = _descriptor(sgpr_descriptor_key)
-    vgpr_descriptor = _descriptor(vgpr_descriptor_key)
-    literal_descriptor = _descriptor(literal_descriptor_key)
-    return (
-        _sgpr_binary_rule(source_op, _I32, sgpr_descriptor),
-        _i32_literal_binary_rule(
-            source_op,
-            literal_descriptor,
-            literal_source="lhs",
-            nonliteral_source="rhs",
-            register_class="amdgpu.vgpr",
-        ),
-        _i32_literal_binary_rule(
-            source_op,
-            literal_descriptor,
-            literal_source="rhs",
-            nonliteral_source="lhs",
-            register_class="amdgpu.vgpr",
-        ),
-        _vgpr_binary_rule(
-            source_op,
-            _I32,
-            vgpr_descriptor,
             I32_VGPR_MATERIALIZER,
         ),
     )
@@ -773,6 +747,130 @@ def _i1_sgpr_mask_rule(
                 results={"dst": _RESULT},
             ),
         ),
+    )
+
+
+_I1_SCALAR_BOOL_CLASSES = ("amdgpu.scc", "amdgpu.sgpr")
+
+
+def _i1_mixed_bool_mask_rule(
+    source_op: Op,
+    operation: str,
+    bool_field: str,
+    bool_class: str,
+) -> DescriptorRule:
+    mask_field = "rhs" if bool_field == "lhs" else "lhs"
+    move = _descriptor("amdgpu.s_mov_b32")
+    read_exec = _descriptor("amdgpu.s_mov_b64_exec_read")
+    bit_xor = _descriptor("amdgpu.s_xor_b64")
+    compare = _descriptor("amdgpu.s_cmp_lg_i32.src1_inline")
+    select = _descriptor("amdgpu.s_cselect_b32")
+
+    setup: tuple[EmitDescriptorOp, ...]
+    if operation == "and":
+        setup = (
+            EmitDescriptorOp(
+                descriptor=move,
+                results={"dst": ValueRef.temporary("false_value")},
+                result_types={"dst": _I32},
+                immediates={"imm32": 0},
+            ),
+        )
+        true_value = ValueRef.operand(mask_field)
+        false_value = ValueRef.temporary("false_value")
+        setup_descriptors = (move,)
+    elif operation == "or":
+        setup = (
+            EmitDescriptorOp(
+                descriptor=read_exec,
+                results={"dst": ValueRef.temporary("true_value")},
+                result_types={"dst": _RESULT},
+            ),
+        )
+        true_value = ValueRef.temporary("true_value")
+        false_value = ValueRef.operand(mask_field)
+        setup_descriptors = (read_exec,)
+    elif operation == "xor":
+        setup = (
+            EmitDescriptorOp(
+                descriptor=read_exec,
+                results={"dst": ValueRef.temporary("exec")},
+                result_types={"dst": _RESULT},
+            ),
+            EmitDescriptorOp(
+                descriptor=bit_xor,
+                operands={
+                    "lhs": ValueRef.operand(mask_field),
+                    "rhs": ValueRef.temporary("exec"),
+                },
+                results={"dst": ValueRef.temporary("true_value")},
+                result_types={"dst": _RESULT},
+            ),
+        )
+        true_value = ValueRef.temporary("true_value")
+        false_value = ValueRef.operand(mask_field)
+        setup_descriptors = (read_exec, bit_xor)
+    else:
+        raise ValueError(f"unsupported mixed Boolean/mask operation: {operation}")
+
+    condition = ValueRef.operand(bool_field)
+    if bool_class == "amdgpu.sgpr":
+        setup += (
+            EmitDescriptorOp(
+                descriptor=compare,
+                operands={"lhs": condition},
+                results={"scc": ValueRef.temporary("condition")},
+                result_types={"scc": _I1},
+                immediates={"rhs": 0},
+            ),
+        )
+        condition = ValueRef.temporary("condition")
+        setup_descriptors += (compare,)
+
+    return DescriptorRule(
+        source_op=source_op,
+        descriptor=select,
+        guards=(
+            *_typed_binary_guards(_I1),
+            Guard.low_value_register_class(mask_field, "amdgpu.sgpr"),
+            Guard.low_value_register_unit_count(mask_field, 2),
+            Guard.low_value_register_class(bool_field, bool_class),
+            Guard.low_value_register_unit_count(bool_field, 1),
+            Guard.low_value_register_class("result", "amdgpu.sgpr"),
+            Guard.low_value_register_unit_count("result", 2),
+            *_descriptor_available_guards(*setup_descriptors, select),
+        ),
+        emit=(
+            *setup,
+            EmitDescriptorOp(
+                descriptor=select,
+                operands={
+                    "true_value": true_value,
+                    "false_value": false_value,
+                    "condition": condition,
+                },
+                results={"dst": _RESULT},
+                result_types={"dst": _RESULT},
+                form=DescriptorEmitForm.PER_LANE_SEQUENCE,
+            ),
+        ),
+    )
+
+
+def _i1_mixed_bool_mask_rules(
+    source_op: Op,
+    operation: str,
+) -> tuple[DescriptorRule, ...]:
+    return tuple(
+        _i1_mixed_bool_mask_rule(
+            source_op,
+            operation,
+            bool_field,
+            bool_class,
+        )
+        for bool_class in _I1_SCALAR_BOOL_CLASSES
+        if operation != "xor" or bool_class != "amdgpu.scc"
+        for bool_field in ("lhs", "rhs")
     )
 
 
@@ -864,9 +962,6 @@ def _vector_predicate_select_rule() -> DescriptorRule:
             ),
         ),
     )
-
-
-_I1_SCALAR_BOOL_CLASSES = ("amdgpu.scc", "amdgpu.sgpr")
 
 
 def _i1_scalar_bool_operand(field: str, register_class: str) -> ValueRef:
@@ -1632,7 +1727,7 @@ def _rules() -> tuple[DescriptorRule, ...]:
         (scalar_arithmetic.scalar_minui, "min_u32"),
         (scalar_arithmetic.scalar_maxui, "max_u32"),
     ):
-        rules.extend(_i32_extrema_rules(source_op, suffix))
+        rules.extend(_i32_encoded_binary_rules(source_op, suffix))
     rules.extend(
         _i32_sgpr_vgpr_rules(
             scalar_arithmetic.scalar_addi,
@@ -1661,6 +1756,12 @@ def _rules() -> tuple[DescriptorRule, ...]:
             "amdgpu.s_and_b32",
         )
     )
+    rules.extend(
+        _i1_mixed_bool_mask_rules(
+            scalar_bitwise.scalar_andi,
+            "and",
+        )
+    )
     rules.append(
         _i1_sgpr_mask_rule(
             scalar_bitwise.scalar_andi,
@@ -1680,33 +1781,17 @@ def _rules() -> tuple[DescriptorRule, ...]:
             "amdgpu.v_and_b32",
         )
     )
-    rules.extend(
-        _i32_literal_binary_rule(
-            scalar_bitwise.scalar_andi,
-            _descriptor(descriptor_key),
-            literal_source=literal_source,
-            nonliteral_source=nonliteral_source,
-            register_class="amdgpu.sgpr",
-            literal_range=literal_range,
-        )
-        for descriptor_key, literal_range in (
-            ("amdgpu.s_and_b32.rhs_inline", (0, 64)),
-            ("amdgpu.s_and_b32.lit", None),
-        )
-        for literal_source, nonliteral_source in (("lhs", "rhs"), ("rhs", "lhs"))
-    )
-    rules.extend(
-        _i32_sgpr_vgpr_literal_rules(
-            scalar_bitwise.scalar_andi,
-            "amdgpu.s_and_b32",
-            "amdgpu.v_and_b32",
-            "amdgpu.v_and_b32.lit",
-        )
-    )
+    rules.extend(_i32_encoded_binary_rules(scalar_bitwise.scalar_andi, "and_b32"))
     rules.extend(
         _i1_scalar_bool_bitwise_rules(
             scalar_bitwise.scalar_ori,
             "amdgpu.s_or_b32",
+        )
+    )
+    rules.extend(
+        _i1_mixed_bool_mask_rules(
+            scalar_bitwise.scalar_ori,
+            "or",
         )
     )
     rules.append(
@@ -1728,18 +1813,17 @@ def _rules() -> tuple[DescriptorRule, ...]:
             "amdgpu.v_or_b32",
         )
     )
-    rules.extend(
-        _i32_sgpr_vgpr_literal_rules(
-            scalar_bitwise.scalar_ori,
-            "amdgpu.s_or_b32",
-            "amdgpu.v_or_b32",
-            "amdgpu.v_or_b32.lit",
-        )
-    )
+    rules.extend(_i32_encoded_binary_rules(scalar_bitwise.scalar_ori, "or_b32"))
     rules.extend(
         _i1_scalar_bool_bitwise_rules(
             scalar_bitwise.scalar_xori,
             "amdgpu.s_xor_b32",
+        )
+    )
+    rules.extend(
+        _i1_mixed_bool_mask_rules(
+            scalar_bitwise.scalar_xori,
+            "xor",
         )
     )
     rules.append(
@@ -1761,14 +1845,7 @@ def _rules() -> tuple[DescriptorRule, ...]:
             "amdgpu.v_xor_b32",
         )
     )
-    rules.extend(
-        _i32_sgpr_vgpr_literal_rules(
-            scalar_bitwise.scalar_xori,
-            "amdgpu.s_xor_b32",
-            "amdgpu.v_xor_b32",
-            "amdgpu.v_xor_b32.lit",
-        )
-    )
+    rules.extend(_i32_encoded_binary_rules(scalar_bitwise.scalar_xori, "xor_b32"))
     rules.extend(
         _i32_shift_rules(
             scalar_bitwise.scalar_shli,

@@ -327,6 +327,12 @@ enum loom_low_lower_attr_copy_kind_e {
   // Interns one parity of byte selectors as word indices plus 0/8-bit shifts
   // and emits the reserved read-only data symbol.
   LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_READ_ONLY_BYTE_WORDS = 43,
+  // Emits the mathematical exponent of an exact signed floating-point power
+  // of two as an i64 packet attribute.
+  LOOM_LOW_LOWER_ATTR_COPY_VALUE_FLOAT_POWER_OF_TWO_EXPONENT = 44,
+  // Emits the negated mathematical exponent of an exact signed floating-point
+  // power of two as an i64 packet attribute.
+  LOOM_LOW_LOWER_ATTR_COPY_VALUE_FLOAT_POWER_OF_TWO_NEGATED_EXPONENT = 45,
   // Maximum attribute-copy kind plus one.
   LOOM_LOW_LOWER_ATTR_COPY_COUNT_,
 };
@@ -787,6 +793,9 @@ typedef enum loom_low_lower_guard_kind_e {
   LOOM_LOW_LOWER_GUARD_VALUE_NOT_NAN = 37,
   // Source enum attribute value must be present in the u64 bit set.
   LOOM_LOW_LOWER_GUARD_ATTR_ENUM_IN = 38,
+  // Source value facts must be an exact signed floating-point power of two
+  // whose mathematical exponent is in the inclusive payload i64 range.
+  LOOM_LOW_LOWER_GUARD_VALUE_EXACT_POWER_OF_TWO_FLOAT = 39,
   // Maximum guard kind value plus one.
   LOOM_LOW_LOWER_GUARD_COUNT_,
 } loom_low_lower_guard_kind_t;

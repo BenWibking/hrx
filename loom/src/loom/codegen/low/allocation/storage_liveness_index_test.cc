@@ -120,40 +120,6 @@ TEST_F(LowAllocationStorageLivenessIndexTest,
 }
 
 TEST_F(LowAllocationStorageLivenessIndexTest,
-       IntersectsSparseStorageSegmentsWithRefinedUnitLifetimes) {
-  const loom_low_reg_class_t reg_classes[1] = {};
-  const loom_low_descriptor_set_t descriptor_set =
-      DescriptorSet(reg_classes, IREE_ARRAYSIZE(reg_classes));
-  loom_low_allocation_assignment_t assignment =
-      Assignment(/*reg_class_id=*/0, /*location=*/4, /*unit_count=*/2,
-                 /*start_point=*/2, /*end_point=*/12,
-                 /*unit_point_start=*/0);
-  assignment.liveness_segments = {.start = 1, .count = 3};
-  const loom_liveness_segment_t segments[] = {
-      {0, 1}, {2, 5}, {8, 10}, {11, 12}};
-  uint32_t unit_start_points[] = {3, 6};
-  uint32_t unit_end_points[] = {9, 12};
-  loom_low_allocation_unit_liveness_t unit_liveness = UnitLiveness(
-      unit_start_points, unit_end_points, IREE_ARRAYSIZE(unit_end_points));
-  unit_liveness.storage_segments.entries = segments;
-  loom_low_allocation_storage_liveness_index_t index;
-  IREE_ASSERT_OK(loom_low_allocation_storage_liveness_index_initialize(
-      &descriptor_set, &assignment, /*assignment_count=*/1, &unit_liveness,
-      &arena_, &index));
-  const loom_low_move_location_t first = Location(/*reg_class_id=*/0, 4);
-  const loom_low_move_location_t second = Location(/*reg_class_id=*/0, 5);
-  for (uint32_t point = 0; point < 14; ++point) {
-    SCOPED_TRACE(point);
-    EXPECT_EQ(loom_low_allocation_storage_liveness_index_is_live_at_point(
-                  &index, &first, point),
-              (point >= 3 && point < 5) || point == 8);
-    EXPECT_EQ(loom_low_allocation_storage_liveness_index_is_live_at_point(
-                  &index, &second, point),
-              (point >= 8 && point < 10) || point == 11);
-  }
-}
-
-TEST_F(LowAllocationStorageLivenessIndexTest,
        SortsReusedStorageIndependentlyOfAssignmentOrder) {
   loom_low_reg_class_t reg_classes[3] = {};
   reg_classes[0].alias_set_id = 7;

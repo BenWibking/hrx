@@ -228,7 +228,7 @@ func.def public @update(%records: buffer, %records_byte_offset: offset, %record:
 void shared_rows(unsigned* output) {
   [[loom::workgroup]] unsigned words[64];
   auto* rows = reinterpret_cast<unsigned (*)[32]>(&words);
-  unsigned index = loom::workitem_id.x;
+  unsigned index = loom::kernel::workitem::id.x;
   rows[1][index] = index;
   output[index] = words[index + 32];
 }
@@ -292,7 +292,7 @@ struct SharedRecord {
 [[loom::kernel, loom::workgroup_size(4, 1, 1)]]
 void shared_records(unsigned* output, float* values) {
   [[loom::workgroup]] SharedRecord records[4];
-  unsigned index = loom::workitem_id.x;
+  unsigned index = loom::kernel::workitem::id.x;
   records[index].tag = 3;
   records[index].sequence = index + 7;
   records[index].values[1] = 2.0f;

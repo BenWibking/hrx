@@ -89,9 +89,10 @@ check.scenario @cfg_composition_walk_rows_values {
   check.return
 }
 
-// A reference constructed between nested decisions is live only in the
-// success successor. The failure block is shared with the outer decision, so
-// target control-flow convergence must preserve the reference's dominance.
+// A reference constructed between nested decisions is used to evaluate the
+// inner decision and remains live in its success successor. The failure block
+// is shared with the outer decision, so target control-flow convergence must
+// preserve the reference's dominance without inventing an inactive reference.
 kernel.def @cfg_shared_failure_live_view() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
@@ -107,10 +108,11 @@ func.def device inline @compute_cfg_shared_failure_live_view(%input: buffer, %ex
   %first_bad = scalar.cmpi ne, %first, %expected_first : i32
   cfg.cond_br %first_bad, ^failure, ^check_second
 ^check_second:
-  %second = view.load %input_view[1] : view<2xi32> -> i32
+  %second_offset = index.constant 4 : offset
+  %second_view = buffer.view %input[%second_offset] : buffer -> view<1xi32>
+  %second = view.load %second_view[0] : view<1xi32> -> i32
   %c0 = scalar.constant 0 : i32
   %second_bad = scalar.cmpi sgt, %second, %c0 : i32
-  %success_view = buffer.view %output[%base] : buffer -> view<2xi32>
   cfg.cond_br %second_bad, ^failure, ^success
 ^failure:
   %failure_view = buffer.view %output[%base] : buffer -> view<2xi32>
@@ -118,7 +120,10 @@ func.def device inline @compute_cfg_shared_failure_live_view(%input: buffer, %ex
   view.store %failure, %failure_view[0] : i32, view<2xi32>
   cfg.br ^done
 ^success:
-  view.store %second, %success_view[0] : i32, view<2xi32>
+  %success_second = view.load %second_view[0] : view<1xi32> -> i32
+  %twice = scalar.addi %second, %success_second : i32
+  %success_view = buffer.view %output[%base] : buffer -> view<2xi32>
+  view.store %twice, %success_view[0] : i32, view<2xi32>
   cfg.br ^done
 ^done:
   func.return

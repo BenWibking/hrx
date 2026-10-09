@@ -46,22 +46,6 @@ loom_low_allocation_storage_liveness_unit_assignment(
   };
 }
 
-// Intersects a refined unit lifetime with one sparse physical reservation.
-// An empty segment range retains the conservative contiguous unit lifetime.
-static loom_liveness_segment_t loom_low_allocation_storage_liveness_segment(
-    const loom_low_allocation_assignment_t* assignment,
-    const loom_low_allocation_unit_liveness_t* unit_liveness,
-    uint32_t start_point, uint32_t end_point, uint32_t segment_index) {
-  if (assignment->liveness_segments.count != 0) {
-    const loom_liveness_segment_t* segment =
-        &unit_liveness->storage_segments
-             .entries[assignment->liveness_segments.start + segment_index];
-    start_point = iree_max(start_point, segment->start_point);
-    end_point = iree_min(end_point, segment->end_point);
-  }
-  return (loom_liveness_segment_t){start_point, end_point};
-}
-
 static iree_status_t loom_low_allocation_storage_liveness_count_records(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_allocation_assignment_t* assignments,
@@ -97,24 +81,12 @@ static iree_status_t loom_low_allocation_storage_liveness_count_records(
       const uint32_t atomic_unit_count =
           loom_low_allocation_storage_assignment_atomic_unit_count(
               descriptor_set, &unit_assignment);
-      const uint32_t segment_count =
-          iree_max(assignment->liveness_segments.count, 1u);
-      for (uint32_t segment_index = 0; segment_index < segment_count;
-           ++segment_index) {
-        const loom_liveness_segment_t segment =
-            loom_low_allocation_storage_liveness_segment(
-                assignment, unit_liveness, start_point, end_point,
-                segment_index);
-        if (segment.start_point >= segment.end_point) {
-          continue;
-        }
-        if (!iree_host_size_checked_add(out_record_counts[kind_ordinal],
-                                        atomic_unit_count,
-                                        &out_record_counts[kind_ordinal])) {
-          return iree_make_status(
-              IREE_STATUS_RESOURCE_EXHAUSTED,
-              "storage liveness record count exceeds host size");
-        }
+      if (!iree_host_size_checked_add(out_record_counts[kind_ordinal],
+                                      atomic_unit_count,
+                                      &out_record_counts[kind_ordinal])) {
+        return iree_make_status(
+            IREE_STATUS_RESOURCE_EXHAUSTED,
+            "storage liveness record count exceeds host size");
       }
     }
   }
@@ -251,27 +223,15 @@ iree_status_t loom_low_allocation_storage_liveness_index_initialize(
       const uint32_t atomic_unit_count =
           loom_low_allocation_storage_assignment_atomic_unit_count(
               descriptor_set, &unit_assignment);
-      const uint32_t segment_count =
-          iree_max(assignment->liveness_segments.count, 1u);
-      for (uint32_t segment_index = 0; segment_index < segment_count;
-           ++segment_index) {
-        const loom_liveness_segment_t segment =
-            loom_low_allocation_storage_liveness_segment(
-                assignment, unit_liveness, start_point, end_point,
-                segment_index);
-        if (segment.start_point >= segment.end_point) {
-          continue;
-        }
-        for (uint32_t atomic_unit = 0; atomic_unit < atomic_unit_count;
-             ++atomic_unit) {
-          loom_low_allocation_storage_lifetime_t* lifetime =
-              &out_index->lifetimes[record_cursors[kind_ordinal]++];
-          loom_low_allocation_storage_assignment_atomic_unit(
-              descriptor_set, &unit_assignment, atomic_unit,
-              &lifetime->storage_key, &lifetime->location);
-          lifetime->start_point = segment.start_point;
-          lifetime->prefix_maximum_end_point = segment.end_point;
-        }
+      for (uint32_t atomic_unit = 0; atomic_unit < atomic_unit_count;
+           ++atomic_unit) {
+        loom_low_allocation_storage_lifetime_t* lifetime =
+            &out_index->lifetimes[record_cursors[kind_ordinal]++];
+        loom_low_allocation_storage_assignment_atomic_unit(
+            descriptor_set, &unit_assignment, atomic_unit,
+            &lifetime->storage_key, &lifetime->location);
+        lifetime->start_point = start_point;
+        lifetime->prefix_maximum_end_point = end_point;
       }
     }
   }

@@ -362,13 +362,15 @@ typedef iree_status_t (*loom_target_provider_select_profile_fn_t)(
 // Selects a native execution profile from explicit, OS-enabled CPU facts.
 // At most one of |requirement| and |profile| is non-NULL: authored target facts
 // constrain automatic selection, while an explicit profile preserves identity.
-// Returns a borrowed process-lifetime profile, or NULL when this provider
-// cannot execute the requested representation on the supplied CPU. This query
-// neither detects the compiler host nor allocates storage.
-typedef const loom_target_profile_t* (
-    *loom_target_provider_select_cpu_profile_fn_t)(
+// Returns a process-lifetime or allocator-owned profile through
+// |out_selection|. A successful empty selection means this provider cannot
+// execute the requested representation on the supplied CPU. This query never
+// detects the compiler host; it consumes only the explicit CPU facts supplied
+// by its caller.
+typedef iree_status_t (*loom_target_provider_select_cpu_profile_fn_t)(
     const iree_cpu_data_t* cpu_data, const loom_target_facts_t* requirement,
-    const loom_target_profile_t* profile);
+    const loom_target_profile_t* profile,
+    loom_target_profile_selection_t* out_selection, iree_allocator_t allocator);
 
 // Target-owned compiler capability contribution linked into a tool or driver.
 struct loom_target_provider_t {

@@ -59,8 +59,8 @@ void typed_view_copy(const float* input, float* output, unsigned rows,
   auto destination = loom::buffer::view<loomt::dynamic, 8>(
       output + output_origin, {rows}, output_layout);
 
-  unsigned row = loom::workitem_id.y;
-  unsigned column = loom::workitem_id.x;
+  unsigned row = loom::kernel::workitem::id.y;
+  unsigned column = loom::kernel::workitem::id.x;
   if (row < rows) {
     float value = loom::view::load(source, row, column);
     loom::view::store(value, destination, row, column);
@@ -80,6 +80,6 @@ void typed_storage_rank3(
   auto storage = loom::encoding::define(layout, schema);
   auto source = loom::buffer::view<loomt::dynamic, loomt::dynamic, 16>(
       input, {rows, tiles}, storage);
-  auto lane = loom::workitem_id.x;
+  auto lane = loom::kernel::workitem::id.x;
   output[lane] = loom::view::load(source, 0, 0, lane);
 }

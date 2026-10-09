@@ -24,9 +24,12 @@ from loom.target.arch.x86.vector_families import (
     AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
     AVX2_SCALAR_FLOAT_FMA_MNEMONICS,
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_FP16_SCALAR_FLOAT_FMA_MNEMONIC,
+    AVX512_FP16_VECTOR_BIT_WIDTHS,
     AVX512_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     FLOAT_EXTREMA_OPERATIONS,
+    FP16_ELEMENT,
     VectorElement,
 )
 from loom.target.contracts import (
@@ -40,7 +43,12 @@ from loom.target.contracts import (
 )
 from loom.target.low_descriptors import Descriptor
 
-_FLOAT_SUFFIXES = {"f32": ("ps", "ss"), "f64": ("pd", "sd")}
+_FLOAT_SUFFIXES = {
+    "f16": ("ph", "sh"),
+    "f32": ("ps", "ss"),
+    "f64": ("pd", "sd"),
+}
+_REGISTER_SUFFIXES = {64: "xmm", 128: "xmm", 256: "ymm", 512: "zmm"}
 _OPERATION_STEMS = {
     "addf": "add",
     "mulf": "mul",
@@ -60,6 +68,13 @@ def _float_descriptor(
     descriptor_lookup: _DescriptorLookup,
 ) -> Descriptor:
     packed_suffix, scalar_suffix = _FLOAT_SUFFIXES[element.name]
+    if element.name == FP16_ELEMENT.name:
+        return descriptor_lookup(
+            "x86.avx512_fp16."
+            f"v{_OPERATION_STEMS[operation]}"
+            f"{scalar_suffix if scalar else packed_suffix}."
+            f"{'xmm' if scalar else _REGISTER_SUFFIXES[vector_bit_width]}"
+        )
     descriptor_prefix = "x86.avx2"
     register_suffix = "xmm"
     if not scalar and vector_bit_width == 512:
@@ -71,12 +86,29 @@ def _float_descriptor(
     )
 
 
+def _lane_to_low_descriptor(
+    element: VectorElement,
+    descriptor_lookup: _DescriptorLookup,
+) -> Descriptor:
+    if element.name == FP16_ELEMENT.name:
+        return descriptor_lookup("x86.avx2.vpsrldq.xmm")
+    return descriptor_lookup(
+        f"x86.avx2.vpermil{'ps' if element.name == 'f32' else 'pd'}.xmm"
+    )
+
+
+def _lane_to_low_immediates(element: VectorElement, lane: int) -> dict[str, int]:
+    if element.name == FP16_ELEMENT.name:
+        return {"bytes": lane * (element.bit_width // 8)}
+    return {"control": lane}
+
+
 def _xmm_chunks(
     operand: str,
     vector_bit_width: int,
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[list[EmitDescriptorOp], tuple[ValueRef, ...], tuple[Descriptor, ...]]:
-    if vector_bit_width == 128:
+    if vector_bit_width <= 128:
         return [], (ValueRef.operand(operand),), ()
     if vector_bit_width == 256:
         extract = descriptor_lookup("x86.avx2.vextractf128.xmm.ymm")
@@ -103,6 +135,7 @@ def _xmm_chunks(
 def ordered_float_reduction_emit_chain(
     input_values: Sequence[ValueRef],
     element: VectorElement,
+    lane_count: int,
     operation: str,
     descriptor_lookup: _DescriptorLookup,
     *,
@@ -112,28 +145,26 @@ def ordered_float_reduction_emit_chain(
     scalar_combine = _float_descriptor(
         operation, element, scalar=True, descriptor_lookup=descriptor_lookup
     )
-    shuffle = descriptor_lookup(
-        f"x86.avx2.vpermil{'ps' if element.name == 'f32' else 'pd'}.xmm"
-    )
+    lane_to_low = _lane_to_low_descriptor(element, descriptor_lookup)
     chunk_type = Vector(element.name, lanes=128 // element.bit_width)
     scalar_type = Scalar(element.name)
     chunk_lane_count = 128 // element.bit_width
-    lane_count = len(input_values) * chunk_lane_count
     lane_ordinal = 0
     accumulator = ValueRef.operand("init")
     emits: list[EmitDescriptorOp] = []
     for input_value in input_values:
-        for lane in range(chunk_lane_count):
+        remaining_lane_count = lane_count - lane_ordinal
+        for lane in range(min(chunk_lane_count, remaining_lane_count)):
             lane_value = input_value
             if lane != 0:
                 lane_value = ValueRef.temporary(f"{temporary_prefix}lane{lane_ordinal}")
                 emits.append(
                     _op_emit(
-                        descriptor=shuffle,
+                        descriptor=lane_to_low,
                         operands={"source": input_value},
                         results={"dst": lane_value},
                         result_types={"dst": chunk_type},
-                        immediates={"control": lane},
+                        immediates=_lane_to_low_immediates(element, lane),
                     )
                 )
             lane_ordinal += 1
@@ -157,6 +188,7 @@ def ordered_float_reduction_emit_chain(
 def reassociated_float_reduction_emit_chain(
     input_value: ValueRef,
     element: VectorElement,
+    lane_count: int,
     operation: str,
     descriptor_lookup: _DescriptorLookup,
     *,
@@ -173,7 +205,7 @@ def reassociated_float_reduction_emit_chain(
     scalar_type = Scalar(element.name)
     reduced = input_value
     emits: list[EmitDescriptorOp] = []
-    shift_bytes = 8
+    shift_bytes = lane_count * element.bit_width // 16
     ordinal = 0
     while shift_bytes >= element.bit_width // 8:
         shifted = ValueRef.temporary(f"{temporary_prefix}shifted{ordinal}")
@@ -289,20 +321,19 @@ def _float_reduction_rule(
             reassociated_float_reduction_emit_chain(
                 reduced,
                 element,
+                min(vector_bit_width, 128) // element.bit_width,
                 operation,
                 descriptor_lookup,
                 temporary_prefix="horizontal_",
             )
         )
     elif not reassociated:
-        shuffle = descriptor_lookup(
-            f"x86.avx2.vpermil{'ps' if element.name == 'f32' else 'pd'}.xmm"
-        )
-        dependencies.append(shuffle)
+        dependencies.append(_lane_to_low_descriptor(element, descriptor_lookup))
         emits.extend(
             ordered_float_reduction_emit_chain(
                 chunks,
                 element,
+                vector_bit_width // element.bit_width,
                 operation,
                 descriptor_lookup,
                 temporary_prefix="ordered_",
@@ -339,6 +370,9 @@ def _float_reduction_rule(
 def _float_reduction_rules(
     vector_bit_widths: Sequence[int],
     descriptor_lookup: _DescriptorLookup,
+    *,
+    elements: Sequence[VectorElement] = FLOAT_ELEMENTS,
+    priority: int = 0,
 ) -> tuple[DescriptorRule, ...]:
     return tuple(
         _float_reduction_rule(
@@ -347,9 +381,10 @@ def _float_reduction_rules(
             operation,
             reassociated,
             descriptor_lookup,
+            priority=priority,
         )
         for operation in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
-        for element in FLOAT_ELEMENTS
+        for element in elements
         for vector_bit_width in vector_bit_widths
         for reassociated in (False, True)
     ) + tuple(
@@ -363,10 +398,10 @@ def _float_reduction_rules(
                 Guard.instance_flags_has_all("fastmath", "nnan"),
                 Guard.instance_flags_has_all("fastmath", "nsz"),
             ),
-            priority=1,
+            priority=max(1, priority),
         )
         for operation in FLOAT_EXTREMA_OPERATIONS
-        for element in FLOAT_ELEMENTS
+        for element in elements
         for vector_bit_width in vector_bit_widths
     )
 
@@ -385,10 +420,25 @@ def avx512_float_reduction_rules(
     return _float_reduction_rules(AVX512_VECTOR_BIT_WIDTHS, descriptor_lookup)
 
 
+def avx512_fp16_float_reduction_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Generates ordered and reassociated AVX512-FP16 reductions."""
+
+    return _float_reduction_rules(
+        AVX512_FP16_VECTOR_BIT_WIDTHS,
+        descriptor_lookup,
+        elements=(FP16_ELEMENT,),
+        priority=1,
+    )
+
+
 def _float_dot_rule(
     element: VectorElement,
     vector_bit_width: int,
     descriptor_lookup: _DescriptorLookup,
+    *,
+    priority: int = 0,
 ) -> DescriptorRule:
     lhs_emits, lhs_chunks, lhs_dependencies = _xmm_chunks(
         "lhs", vector_bit_width, descriptor_lookup
@@ -396,11 +446,11 @@ def _float_dot_rule(
     rhs_emits, rhs_chunks, rhs_dependencies = _xmm_chunks(
         "rhs", vector_bit_width, descriptor_lookup
     )
-    shuffle = descriptor_lookup(
-        f"x86.avx2.vpermil{'ps' if element.name == 'f32' else 'pd'}.xmm"
-    )
+    lane_to_low = _lane_to_low_descriptor(element, descriptor_lookup)
     fma = descriptor_lookup(
-        f"x86.avx2.{AVX2_SCALAR_FLOAT_FMA_MNEMONICS[element.name]}.xmm"
+        f"x86.avx512_fp16.{AVX512_FP16_SCALAR_FLOAT_FMA_MNEMONIC}.xmm"
+        if element.name == FP16_ELEMENT.name
+        else f"x86.avx2.{AVX2_SCALAR_FLOAT_FMA_MNEMONICS[element.name]}.xmm"
     )
     chunk_type = Vector(element.name, lanes=128 // element.bit_width)
     scalar_type = Scalar(element.name)
@@ -410,7 +460,8 @@ def _float_dot_rule(
     emits = [*lhs_emits, *rhs_emits]
     lane_ordinal = 0
     for lhs_chunk, rhs_chunk in zip(lhs_chunks, rhs_chunks, strict=True):
-        for lane in range(chunk_lane_count):
+        remaining_lane_count = lane_count - lane_ordinal
+        for lane in range(min(chunk_lane_count, remaining_lane_count)):
             lhs_lane = lhs_chunk
             rhs_lane = rhs_chunk
             if lane != 0:
@@ -419,18 +470,18 @@ def _float_dot_rule(
                 emits.extend(
                     (
                         _op_emit(
-                            descriptor=shuffle,
+                            descriptor=lane_to_low,
                             operands={"source": lhs_chunk},
                             results={"dst": lhs_lane},
                             result_types={"dst": chunk_type},
-                            immediates={"control": lane},
+                            immediates=_lane_to_low_immediates(element, lane),
                         ),
                         _op_emit(
-                            descriptor=shuffle,
+                            descriptor=lane_to_low,
                             operands={"source": rhs_chunk},
                             results={"dst": rhs_lane},
                             result_types={"dst": chunk_type},
-                            immediates={"control": lane},
+                            immediates=_lane_to_low_immediates(element, lane),
                         ),
                     )
                 )
@@ -465,21 +516,30 @@ def _float_dot_rule(
             *(
                 Guard.descriptor_available(descriptor)
                 for descriptor in dict.fromkeys(
-                    (*lhs_dependencies, *rhs_dependencies, shuffle)
+                    (*lhs_dependencies, *rhs_dependencies, lane_to_low)
                 )
             ),
         ),
         emit=tuple(emits),
+        priority=priority,
     )
 
 
 def _float_dot_rules(
     vector_bit_widths: Sequence[int],
     descriptor_lookup: _DescriptorLookup,
+    *,
+    elements: Sequence[VectorElement] = FLOAT_ELEMENTS,
+    priority: int = 0,
 ) -> tuple[DescriptorRule, ...]:
     return tuple(
-        _float_dot_rule(element, vector_bit_width, descriptor_lookup)
-        for element in FLOAT_ELEMENTS
+        _float_dot_rule(
+            element,
+            vector_bit_width,
+            descriptor_lookup,
+            priority=priority,
+        )
+        for element in elements
         for vector_bit_width in vector_bit_widths
     )
 
@@ -496,3 +556,16 @@ def avx512_float_dot_rules(
 ) -> tuple[DescriptorRule, ...]:
     """Generates exact ordered scalar-FMA dots for every AVX-512 float shape."""
     return _float_dot_rules(AVX512_VECTOR_BIT_WIDTHS, descriptor_lookup)
+
+
+def avx512_fp16_float_dot_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Generates exact ordered FP16-FMA dots at every native vector width."""
+
+    return _float_dot_rules(
+        AVX512_FP16_VECTOR_BIT_WIDTHS,
+        descriptor_lookup,
+        elements=(FP16_ELEMENT,),
+        priority=1,
+    )

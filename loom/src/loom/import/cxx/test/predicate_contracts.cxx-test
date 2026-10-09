@@ -76,13 +76,13 @@ unsigned scaled(unsigned value)
 
 LOOM_TEMPLATE_DEF(scaled)
 [[loom::priority(20)]] unsigned scaled_wave64(unsigned value)
-    [[loom::where(loom::target::subgroup_size() == 64u && value > 0u)]] {
+    [[loom::where(loom::target::subgroup::size() == 64u && value > 0u)]] {
   return value;
 }
 
 LOOM_TEMPLATE_DEF(scaled)
 [[loom::priority(20)]] unsigned scaled_wave32(unsigned value)
-    [[loom::where(32u == loom::target::subgroup_size() && value > 0u)]] {
+    [[loom::where(32u == loom::target::subgroup::size() && value > 0u)]] {
   return value;
 }
 
@@ -118,10 +118,11 @@ template.def<@test.scaled> priority(1) @scaled_fallback(%value: i32) -> (i32) {
 // provider selection while retaining independent value predicates.
 #include <loomcxx/kernel.h>
 #include <loomcxx/predicate.h>
+#include <loomcxx/target.h>
 
 LOOM_TEMPLATE_DECL("test.wave64_only")
 unsigned wave64_only(unsigned value)
-    [[loom::where(loom::target::subgroup_size() == 64u &&
+    [[loom::where(loom::target::subgroup::size() == 64u &&
                   loom::predicate::multiple_of(value, 16u))]];
 
 unsigned use_wave64(unsigned value) { return wave64_only(value); }

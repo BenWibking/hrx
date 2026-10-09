@@ -73,6 +73,19 @@ TEST(EncodingTest, VectorRegisterPrefixesAndBehaviors) {
   operands.inputs[2] = 4;
   ExpectVectorEncoding(0xb230, 0x2664, operands,
                        {0x62, 0xf2, 0x5d, 0x0a, 0x64, 0xcb});
+
+  // AVX512-FP16 uses the extended EVEX opcode maps without widening the
+  // 16-bit instruction record. VADDPH uses map 5 and VFMADD231PH uses map 6.
+  operands = {};
+  operands.result = 1;
+  operands.inputs[0] = 2;
+  operands.inputs[1] = 3;
+  ExpectVectorEncoding(0x8210, 0x8058, operands,
+                       {0x62, 0xf5, 0x6c, 0x48, 0x58, 0xcb});
+  operands.inputs[1] = 2;
+  operands.inputs[2] = 3;
+  ExpectVectorEncoding(0x8320, 0xa4b8, operands,
+                       {0x62, 0xf6, 0x6d, 0x48, 0xb8, 0xcb});
 }
 
 TEST(EncodingTest, AvxVnniInt8FamilyHasExactReferenceBytes) {
@@ -130,6 +143,11 @@ TEST(EncodingTest, VectorMemoryDisplacementsAndCanonicalSib) {
   ExpectVectorEncoding(0xc1c0, 0xa96f, operands,
                        {0x62, 0xf1, 0x7e, 0x48, 0x6f, 0x48, 0x01});
 
+  // Map-5 VCVTPS2PHX is also EVEX despite its clear prefix/map extension bit.
+  // Its ZMM source therefore compresses the same 64-byte displacement.
+  ExpectVectorEncoding(0xc1c0, 0x841d, operands,
+                       {0x62, 0xf5, 0x7d, 0x48, 0x1d, 0x48, 0x01});
+
   // R12 requires a SIB byte whose absent index has canonical scale zero.
   operands.inputs[0] = 12;
   operands.immediate = 0;
@@ -153,6 +171,16 @@ TEST(EncodingTest, EveryVectorRecipeHasExactReferenceBytes) {
        {0, 1, {2, 3, 0}, 0},
        6,
        {0x62, 0xf2, 0xe5, 0x48, 0x8d, 0xca}},
+      {0x8140,
+       0x2413,
+       {0, 1, {2, 0, 0}, 0},
+       6,
+       {0x62, 0xf6, 0x7d, 0x08, 0x13, 0xca}},
+      {0x8140,
+       0x041d,
+       {0, 1, {2, 0, 0}, 0},
+       6,
+       {0x62, 0xf5, 0x7d, 0x08, 0x1d, 0xca}},
       {0x8140, 0x056e, {0, 1, {1, 0, 0}, 0}, 4, {0xc5, 0xf9, 0x6e, 0xc9}},
       {0x8210, 0x4616, {0, 1, {2, 3, 0}, 0}, 5, {0xc4, 0xe2, 0x6d, 0x16, 0xcb}},
       {0x8320, 0x06b8, {0, 1, {1, 3, 4}, 0}, 5, {0xc4, 0xe2, 0x61, 0xb8, 0xcc}},
@@ -165,6 +193,11 @@ TEST(EncodingTest, EveryVectorRecipeHasExactReferenceBytes) {
       {0x9106, 0x0573, {1, 1, {2, 0, 0}, 0}, 5, {0xc5, 0xf1, 0x73, 0xda, 0x01}},
       {0x9108, 0x0573, {1, 1, {2, 0, 0}, 0}, 5, {0xc5, 0xf1, 0x73, 0xf2, 0x01}},
       {0x9140, 0x05c5, {1, 0, {2, 0, 0}, 0}, 5, {0xc5, 0xf9, 0xc5, 0xc2, 0x01}},
+      {0x9140,
+       0x0d70,
+       {0x1b, 1, {2, 0, 0}, 0},
+       5,
+       {0xc5, 0xfb, 0x70, 0xca, 0x1b}},
       {0x9210,
        0x0720,
        {1, 1, {2, 2, 0}, 0},
@@ -186,6 +219,11 @@ TEST(EncodingTest, EveryVectorRecipeHasExactReferenceBytes) {
        6,
        {0xc5, 0xfa, 0x6f, 0x4c, 0x51, 0x10}},
       {0xc1c0,
+       0x0d10,
+       {16, 1, {0, 0, 0}, 0},
+       5,
+       {0xc5, 0xfb, 0x10, 0x48, 0x10}},
+      {0xc1c0,
        0x096f,
        {16, 1, {1, 0, 0}, 0},
        5,
@@ -195,6 +233,11 @@ TEST(EncodingTest, EveryVectorRecipeHasExactReferenceBytes) {
        {16, 0, {1, 1, 2}, 1},
        6,
        {0xc5, 0xfa, 0x7f, 0x4c, 0x51, 0x10}},
+      {0xd2c1,
+       0x0d11,
+       {16, 0, {1, 0, 0}, 0},
+       5,
+       {0xc5, 0xfb, 0x11, 0x48, 0x10}},
       {0xd2c1,
        0x097f,
        {16, 0, {1, 1, 0}, 0},

@@ -17,6 +17,7 @@
 #include "loom/rewrite/greedy.h"
 #include "loom/rewrite/rewriter.h"
 #include "loom/rewrite/type_propagation.h"
+#include "loom/target/facts.h"
 #include "loom/transforms/cleanup/fact_refinement.h"
 #include "loom/transforms/cleanup/patterns.h"
 #include "loom/util/walk.h"
@@ -701,6 +702,8 @@ static iree_status_t loom_canonicalizer_run_precomputed_region(
                         : NULL,
           },
       .math_policy = options ? options->math_policy : NULL,
+      .math_target_bundle =
+          options ? loom_target_facts_bundle(options->target_facts) : NULL,
   };
   loom_greedy_rewrite_callbacks_t callbacks = {
       .user_data = &state,

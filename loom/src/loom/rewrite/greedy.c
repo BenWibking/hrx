@@ -105,6 +105,7 @@ iree_status_t loom_greedy_rewrite_run_region(
     driver->rewriter.pending_exact_relations_callback =
         options->pending_exact_relations_callback;
     driver->rewriter.math_policy = options->math_policy;
+    driver->rewriter.math_target_bundle = options->math_target_bundle;
   }
   iree_status_t status = loom_rewriter_enable_worklist(&driver->rewriter);
   bool prepare_region_called = false;

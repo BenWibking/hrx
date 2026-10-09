@@ -33,31 +33,6 @@ loom_cc_library(
   PUBLIC
 )
 
-loom_cc_library(
-  NAME
-    session
-  HDRS
-    "session.h"
-  SRCS
-    "session.c"
-  DEPS
-    iree::base
-    iree::base::internal::arena
-    loom::codegen::low::repr
-    loom::codegen::low::text_asm
-    loom::error::diagnostic
-    loom::error::source
-    loom::format::bytecode::format
-    loom::format::bytecode::reader
-    loom::format::text::parser
-    loom::ir
-    loom::link::linker
-    loom::target::provider
-    loom::tooling::context
-    loom::tooling::input
-  PUBLIC
-)
-
 loom_cc_test(
   NAME
     benchmark_test

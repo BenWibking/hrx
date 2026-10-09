@@ -35,6 +35,16 @@ enum class feature : unsigned char {
   disabled,
 };
 
+namespace subgroup {
+
+// Reads the selected target's subgroup width in launch configuration code or
+// a trailing loom::where template applicability contract. This is a
+// compilation input, unlike loom::kernel::subgroup::size(), which queries the
+// executing kernel topology.
+[[loom::op("target.subgroup.size")]] unsigned size();
+
+}  // namespace subgroup
+
 }  // namespace loom::target
 
 #endif  // LOOMCXX_TARGET_H_

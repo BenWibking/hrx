@@ -28,8 +28,10 @@ class ShapedIntrinsic {
     bool operator==(const TableLookup&) const = default;
   };
   struct Dot4i {
-    // Explicit interpretation of each input's byte lanes.
-    loom_vector_dot4i_kind_t kind;
+    // Explicit interpretation of each input's byte lanes. An absent kind is
+    // inferred from a concrete declaration's source element signedness and
+    // resolved before this operation can be called.
+    std::optional<loom_vector_dot4i_kind_t> kind;
     bool operator==(const Dot4i&) const = default;
   };
   struct Dot2f {

@@ -17,6 +17,8 @@ loom_cc_binary(
     name = "loom-opt",
     srcs = ["loom-opt.c"],
     deps = [
+        "//loom/binding/c:interop",
+        "//loom/binding/c:loomc",
         "//loom/src/loom/codegen:pass_environment",
         "//loom/src/loom/codegen/low:text_asm",
         "//loom/src/loom/codegen/low:verify",
@@ -36,10 +38,11 @@ loom_cc_binary(
         "//loom/src/loom/target:pipeline",
         "//loom/src/loom/target:predicate",
         "//loom/src/loom/target:provider",
-        "//loom/src/loom/target/configured:provider",
+        "//loom/src/loom/target/configured:provider_set",
         "//loom/src/loom/tooling/cli:help",
+        "//loom/src/loom/tooling/cli:loomc_diagnostic_json",
+        "//loom/src/loom/tooling/cli:loomc_result",
         "//loom/src/loom/tooling/config",
-        "//loom/src/loom/tooling/execution:session",
         "//loom/src/loom/tooling/io:file",
         "//loom/src/loom/tooling/pass:trace_cli",
         "//loom/src/loom/transforms/cleanup:configured",
@@ -48,6 +51,7 @@ loom_cc_binary(
         "//loom/src/loom/util:stream",
         "//loom/src/loom/verify",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/base/tooling:flags",
         "//runtime/src/iree/io:file_handle",
     ],
@@ -58,6 +62,7 @@ iree_execution_test_suite(
     manifests = ["loom-opt.test.json"],
     tags = ["hostonly"],
     tools = {
+        "loom-format": "//loom/src/loom/tools/loom-format",
         "loom-opt": ":loom-opt",
     },
 )

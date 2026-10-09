@@ -17,9 +17,8 @@
 #include "target.h"
 
 static void loomc_amdgpu_target_profile_destroy(
-    loom_target_profile_t* target_profile, loomc_allocator_t allocator) {
-  loomc_allocator_free(allocator,
-                       (loom_amdgpu_target_profile_t*)target_profile);
+    loom_target_profile_t* target_profile, iree_allocator_t allocator) {
+  iree_allocator_free(allocator, (loom_amdgpu_target_profile_t*)target_profile);
 }
 
 static loomc_status_t loomc_amdgpu_validate_string_view(

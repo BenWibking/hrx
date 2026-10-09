@@ -99,7 +99,7 @@ func.def @local_vector(%input: vector<16xi32>) -> (vector<16xi32>) {
 }
 
 // ----
-low.func.def target<x86.avx512_packed_dot.core> abi(object_function) abi_layout({signature = (vector<16xi32>) -> (vector<16xi32>)}) @local_vector(%input: reg<x86.zmm>) -> (reg<x86.zmm>) asm {
+low.func.def target<x86.avx512_features.core> abi(object_function) abi_layout({signature = (vector<16xi32>) -> (vector<16xi32>)}) @local_vector(%input: reg<x86.zmm>) -> (reg<x86.zmm>) asm {
   %9 = storage {byte_alignment = 64, byte_length = 64} : low.storage<private>
   %storage = storage_address %9 : low.storage<private> -> reg<x86.gpr64>
   vmovdqu32.store %input, %storage {disp32 = 0}

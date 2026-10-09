@@ -84,6 +84,7 @@ class GuardKind(Enum):
     VALUE_EXACT_POWER_OF_TWO_I64 = "value_exact_power_of_two_i64"
     VALUE_U32_DIVISOR_MAGIC_KIND = "value_u32_divisor_magic_kind"
     VALUE_EXACT_FLOAT = "value_exact_float"
+    VALUE_EXACT_POWER_OF_TWO_FLOAT = "value_exact_power_of_two_float"
     VALUE_NOT_NAN = "value_not_nan"
     VALUE_I64_RANGE = "value_i64_range"
     VALUE_I64_RANGE_LE = "value_i64_range_le"
@@ -528,6 +529,24 @@ class Guard:
         )
 
     @classmethod
+    def value_exact_power_of_two_float(
+        cls,
+        field: str,
+        minimum_exponent: int,
+        maximum_exponent: int,
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        """Requires an exact signed power of two in an exponent interval."""
+        return cls(
+            kind=GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT,
+            field=field,
+            minimum=minimum_exponent,
+            maximum=maximum_exponent,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
     def value_not_nan(
         cls,
         field: str,
@@ -950,6 +969,7 @@ class Guard:
             GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
             GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_EXACT_FLOAT,
+            GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT,
             GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_I64_RANGE,
             GuardKind.VALUE_I64_RANGE_LE,
@@ -1086,6 +1106,10 @@ def _validate_value_fact_guard(
         guard.minimum is None or guard.maximum is None
     ):
         raise ValueError(f"{source_op.name}: {subject} needs minimum/maximum")
+    if guard.kind == GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT and (
+        guard.minimum is None or guard.maximum is None
+    ):
+        raise ValueError(f"{source_op.name}: {subject} needs exponent bounds")
     if guard.kind == GuardKind.VALUE_FLOAT_EQUALS and guard.f64_value is None:
         raise ValueError(f"{source_op.name}: {subject} needs an f64 value")
     if guard.kind in (

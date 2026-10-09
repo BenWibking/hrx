@@ -14,7 +14,7 @@ loom_low_descriptor_cc_library(
   NAME
     scalar_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -27,7 +27,7 @@ loom_low_descriptor_cc_library(
   NAME
     simd128_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -40,7 +40,20 @@ loom_low_descriptor_cc_library(
   NAME
     avx2_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
+    loom::codegen::low::descriptors
+  IDS_DEPS
+    loom::codegen::low::descriptors
+  HEADER_ONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_low_descriptor_cc_library(
+  NAME
+    avx2_features_descriptors
+  DEPS
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -53,7 +66,7 @@ loom_low_descriptor_cc_library(
   NAME
     avx512_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -66,7 +79,7 @@ loom_low_descriptor_cc_library(
   NAME
     packed_dot_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -79,7 +92,7 @@ loom_low_descriptor_cc_library(
   NAME
     avx512_vnni_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -92,7 +105,20 @@ loom_low_descriptor_cc_library(
   NAME
     avx512_bf16_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
+    loom::codegen::low::descriptors
+  IDS_DEPS
+    loom::codegen::low::descriptors
+  HEADER_ONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_low_descriptor_cc_library(
+  NAME
+    avx512_fp16_descriptors
+  DEPS
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -105,7 +131,7 @@ loom_low_descriptor_cc_library(
   NAME
     avx_vnni_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -118,7 +144,7 @@ loom_low_descriptor_cc_library(
   NAME
     avx_vnni_int8_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -131,7 +157,7 @@ loom_low_descriptor_cc_library(
   NAME
     avx_vnni_int16_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -144,7 +170,7 @@ loom_low_descriptor_cc_library(
   NAME
     avx10_2_descriptors
   DEPS
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
     loom::codegen::low::descriptors
   IDS_DEPS
     loom::codegen::low::descriptors
@@ -155,17 +181,19 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_low_descriptor_cc_library(
   NAME
-    avx512_packed_dot_descriptors
+    avx512_features_descriptors
   GENERATOR
     loom::py::loom::gen::target::arch::x86::low_descriptor_shard
   GENERATED_HDR_FLAGS
     "--view-header=scalar"
     "--view-header=simd128"
     "--view-header=avx2"
+    "--view-header=avx2_features"
     "--view-header=avx512"
     "--view-header=packed_dot"
     "--view-header=avx512_vnni"
     "--view-header=avx512_bf16"
+    "--view-header=avx512_fp16"
     "--view-header=avx_vnni"
     "--view-header=avx_vnni_int8"
     "--view-header=avx_vnni_int16"
@@ -174,16 +202,18 @@ loom_low_descriptor_cc_library(
     "scalar_descriptors.h"
     "simd128_descriptors.h"
     "avx2_descriptors.h"
+    "avx2_features_descriptors.h"
     "avx512_descriptors.h"
     "packed_dot_descriptors.h"
     "avx512_vnni_descriptors.h"
     "avx512_bf16_descriptors.h"
+    "avx512_fp16_descriptors.h"
     "avx_vnni_descriptors.h"
     "avx_vnni_int8_descriptors.h"
     "avx_vnni_int16_descriptors.h"
     "avx10_2_descriptors.h"
   ARGS
-    "--target=avx512_packed_dot"
+    "--target=avx512_features"
   DEPS
     loom::codegen::low::descriptors
 )
@@ -199,8 +229,9 @@ loom_cc_library(
     "entry.c"
   DEPS
     ::avx2_descriptors_ids
+    ::avx2_features_descriptors_ids
     ::avx512_descriptors_ids
-    ::avx512_packed_dot_descriptors_ids
+    ::avx512_features_descriptors_ids
     ::scalar_descriptors_ids
     ::simd128_descriptors_ids
     iree::base
@@ -237,9 +268,11 @@ loom_cc_library(
   DEPS
     ::avx10_2_descriptors
     ::avx2_descriptors
+    ::avx2_features_descriptors
     ::avx512_bf16_descriptors
     ::avx512_descriptors
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
+    ::avx512_fp16_descriptors
     ::avx512_vnni_descriptors
     ::avx_vnni_descriptors
     ::avx_vnni_int16_descriptors
@@ -263,9 +296,11 @@ loom_cc_library(
   HDRS
     "avx10_2_descriptors.h"
     "avx2_descriptors.h"
+    "avx2_features_descriptors.h"
     "avx512_bf16_descriptors.h"
     "avx512_descriptors.h"
-    "avx512_packed_dot_descriptors.h"
+    "avx512_features_descriptors.h"
+    "avx512_fp16_descriptors.h"
     "avx512_vnni_descriptors.h"
     "avx_vnni_descriptors.h"
     "avx_vnni_int16_descriptors.h"
@@ -276,9 +311,11 @@ loom_cc_library(
   DEPS
     ::avx10_2_descriptors
     ::avx2_descriptors
+    ::avx2_features_descriptors
     ::avx512_bf16_descriptors
     ::avx512_descriptors
-    ::avx512_packed_dot_descriptors
+    ::avx512_features_descriptors
+    ::avx512_fp16_descriptors
     ::avx512_vnni_descriptors
     ::avx_vnni_descriptors
     ::avx_vnni_int16_descriptors

@@ -1,146 +1,6 @@
-// TEMPLATE: loom/src/loom/test/corpus/source_low/memory_signed_terms.loom-test
-// TEMPLATE-EXCLUDE: @signed_high_bit_stride The complete byte offset exceeds the Wasm32 address domain.
-// TEMPLATE-EXCLUDE: @signed_wide_stride The complete byte offset exceeds the Wasm32 address domain.
-// TEMPLATE-EXCLUDE: @signed_dynamic_wide_stride The complete byte offset exceeds the Wasm32 address domain.
-// TEMPLATE-EXCLUDE: @negative_wide_coefficient The complete byte offset exceeds the Wasm32 address domain.
-// TEMPLATE-EXCLUDE: @workgroup_negative_vector_coefficient Wasm functions have no workgroup memory address space.
 // RUN: emit source-low target=wasm:simd128 output=low
 
-func.def @signed_uniform_word(%input: i32, %table: buffer) -> (i32) {
-  %signed = scalar.assume %input [range(%input, -128, 127)] : i32
-  %bias = scalar.constant 128 : i32
-  %ordinal = scalar.addi %signed, %bias : i32
-  %position = index.cast %ordinal : i32 to index
-  %base = index.constant 0 : offset
-  %view = buffer.view %table[%base] : buffer -> view<256xi32>
-  %value = view.load %view[%position] : view<256xi32> -> i32
-  func.return %value : i32
-}
-
-// ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_uniform_word(%signed: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %13 = i32.const 512
-  %14 = i32.const 4
-  %15 = i32.mul %signed, %14
-  %16 = i32.add %15, %13
-  %17 = i32.add %view, %16
-  %value = i32.load %17
-  return %value
-}
-
-// ====
-
-func.def @signed_varying_word(%input: buffer, %table: buffer) -> (i32) {
-  %source_origin = index.constant 0 : offset
-  %source = buffer.view %input[%source_origin] : buffer -> view<1xi32>
-  %raw = view.load %source[0] : view<1xi32> -> i32
-  %signed = scalar.assume %raw [range(%raw, -128, 127)] : i32
-  %bias = scalar.constant 128 : i32
-  %ordinal = scalar.addi %signed, %bias : i32
-  %position = index.cast %ordinal : i32 to index
-  %base = index.constant 0 : offset
-  %view = buffer.view %table[%base] : buffer -> view<256xi32>
-  %value = view.load %view[%position] : view<256xi32> -> i32
-  func.return %value : i32
-}
-
-// ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_varying_word(%source: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %signed = i32.load %source
-  %17 = i32.const 512
-  %18 = i32.const 4
-  %19 = i32.mul %signed, %18
-  %20 = i32.add %19, %17
-  %21 = i32.add %view, %20
-  %value = i32.load %21
-  return %value
-}
-
-// ====
-
-func.def @signed_factored_word(%input: buffer, %table: buffer) -> (i32) {
-  %source_origin = index.constant 0 : offset
-  %source = buffer.view %input[%source_origin] : buffer -> view<1xi32>
-  %raw = view.load %source[0] : view<1xi32> -> i32
-  %signed = scalar.assume %raw [range(%raw, -64, 63)] : i32
-  %bias = scalar.constant 64 : i32
-  %ordinal = scalar.addi %signed, %bias : i32
-  %position = index.cast %ordinal : i32 to index
-  %base = index.constant 0 : offset
-  %layout = encoding.layout.strided [2] : encoding<layout>
-  %view = buffer.view %table[%base] : buffer -> view<128xi32, %layout>
-  %value = view.load %view[%position] : view<128xi32, %layout> -> i32
-  func.return %value : i32
-}
-
-// ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_factored_word(%source: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %signed = i32.load %source
-  %18 = i32.const 512
-  %19 = i32.const 8
-  %20 = i32.mul %signed, %19
-  %21 = i32.add %20, %18
-  %22 = i32.add %view, %21
-  %value = i32.load %22
-  return %value
-}
-
-// ====
-
-func.def @signed_varying_byte(%input: buffer, %table: buffer) -> (i8) {
-  %source_origin = index.constant 0 : offset
-  %source = buffer.view %input[%source_origin] : buffer -> view<1xi32>
-  %raw = view.load %source[0] : view<1xi32> -> i32
-  %signed = scalar.assume %raw [range(%raw, -128, 127)] : i32
-  %position = index.cast %signed : i32 to index
-  %base = index.constant 128 : offset
-  %view = buffer.view %table[%base] : buffer -> view<256xi8>
-  %bias = index.constant 128 : index
-  %ordinal = index.add %position, %bias : index
-  %value = view.load %view[%ordinal] : view<256xi8> -> i8
-  func.return %value : i8
-}
-
-// ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_varying_byte(%source: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %signed = i32.load %source
-  %17 = i32.const 256
-  %18 = i32.add %signed, %17
-  %19 = i32.add %view, %18
-  %value = i32.load8_u %19
-  return %value
-}
-
-// ====
-
-func.def @signed_irregular_stride(%input: buffer, %table: buffer) -> (i32) {
-  %source_origin = index.constant 0 : offset
-  %source = buffer.view %input[%source_origin] : buffer -> view<1xi32>
-  %raw = view.load %source[0] : view<1xi32> -> i32
-  %signed = scalar.assume %raw [range(%raw, -128, 127)] : i32
-  %position = index.cast %signed : i32 to index
-  %bias = index.constant 128 : index
-  %ordinal = index.add %position, %bias : index
-  %base = index.constant 0 : offset
-  %layout = encoding.layout.strided [3] : encoding<layout>
-  %view = buffer.view %table[%base] : buffer -> view<256xi32, %layout>
-  %value = view.load %view[%ordinal] : view<256xi32, %layout> -> i32
-  func.return %value : i32
-}
-
-// ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_irregular_stride(%source: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %signed = i32.load %source
-  %18 = i32.const 1536
-  %19 = i32.const 12
-  %20 = i32.mul %signed, %19
-  %21 = i32.add %20, %18
-  %22 = i32.add %view, %21
-  %value = i32.load %22
-  return %value
-}
-
-// ====
+// Exact Wasm arithmetic contracts not exercised by its kernel-less corpus profile.
 
 func.def @signed_dynamic_stride(%input: buffer, %bias0: index, %stride0: index, %table: buffer) -> (i32) {
   %source_origin = index.constant 0 : offset
@@ -194,26 +54,6 @@ low.func.def target<wasm.core.simd128> abi(wasm_function) @dynamic_stride_static
 
 // ====
 
-func.def @unsigned_high_bit_offset(%input: buffer, %table: buffer) -> (i8) {
-  %source_origin = index.constant 0 : offset
-  %source = buffer.view %input[%source_origin] : buffer -> view<1xi32>
-  %raw = view.load %source[0] : view<1xi32> -> i32
-  %origin = index.cast %raw : i32 to offset
-  %view = buffer.view %table[%origin] : buffer -> view<1xi8>
-  %value = view.load %view[0] : view<1xi8> -> i8
-  func.return %value : i8
-}
-
-// ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @unsigned_high_bit_offset(%source: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %origin = i32.load %source
-  %13 = i32.add %view, %origin
-  %value = i32.load8_u %13
-  return %value
-}
-
-// ====
-
 func.def @signed_wide_source(%input: i64, %table: buffer) -> (i32) {
   %signed = scalar.assume %input [range(%input, -128, 127)] : i64
   %bias = scalar.constant 128 : i64
@@ -235,31 +75,6 @@ low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_wide_source(%s
   %18 = i32.add %view, %17
   %value = i32.load %18
   return %value
-}
-
-// ====
-
-func.def @negative_uniform_coefficient(%selector0: i32, %value: i32, %table: buffer) {
-  %selector = scalar.assume %selector0 [range(%selector0, 0, 1)] : i32
-  %coordinate = index.cast %selector : i32 to index
-  %c1 = index.constant 1 : index
-  %position = index.sub %c1, %coordinate : index
-  %word_bytes = index.constant 4 : offset
-  %origin = index.scale %position, %word_bytes : index, offset -> offset
-  %view = buffer.view %table[%origin] : buffer -> view<1xi32>
-  view.store %value, %view[0] : i32, view<1xi32>
-  func.return
-}
-
-// ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @negative_uniform_coefficient(%selector: reg<wasm.i32>, %value: reg<wasm.i32>, %view: reg<wasm.i32>) asm {
-  %13 = i32.const 4
-  %14 = i32.const -4
-  %15 = i32.mul %selector, %14
-  %16 = i32.add %15, %13
-  %17 = i32.add %view, %16
-  i32.store %17, %value
-  return
 }
 
 // ====

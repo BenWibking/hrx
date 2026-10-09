@@ -158,6 +158,103 @@ func.def @sinks_cfg_successor_family(%outer: i1, %left: i32, %right: i32, %buffe
 
 // ====
 
+// A reference used both to evaluate a nested decision and in its unique
+// successor keeps the source identity and rebuilds its pure metadata chain in
+// that successor. Scalar address inputs remain available for later CFG join
+// transport.
+func.def @rematerializes_cfg_reference_chain(%outer: i1, %inner: i1, %buffer: buffer) {
+  cfg.cond_br %outer, ^shared, ^decision
+^decision:
+  %offset = index.constant 4 : offset
+  %global = buffer.assume.memory_space<global> %buffer : buffer
+  %view = buffer.view %global[%offset] : buffer -> view<2xi32>
+  %sub = view.subview %view[0] : view<2xi32> -> view<1xi32>
+  %value = view.load %sub[0] : view<1xi32> -> i32
+  cfg.cond_br %inner, ^selected, ^shared
+^selected:
+  view.store %value, %sub[0] : i32, view<1xi32>
+  func.return
+^shared:
+  func.return
+}
+
+// ----
+func.def @rematerializes_cfg_reference_chain(%outer: i1, %inner: i1, %buffer: buffer) {
+  cfg.cond_br %outer, ^shared, ^decision
+^decision:
+  %offset = index.constant 4 : offset
+  %global = buffer.assume.memory_space<global> %buffer : buffer
+  %view = buffer.view %global[%offset] : buffer -> view<2xi32>
+  %sub = view.subview %view[0] : view<2xi32> -> view<1xi32>
+  %value = view.load %sub[0] : view<1xi32> -> i32
+  cfg.cond_br %inner, ^selected, ^shared
+^selected:
+  %global_remat = buffer.assume.memory_space<global> %buffer : buffer
+  %view_remat = buffer.view %global_remat[%offset] : buffer -> view<2xi32>
+  %sub_remat = view.subview %view_remat[0] : view<2xi32> -> view<1xi32>
+  view.store %value, %sub_remat[0] : i32, view<1xi32>
+  func.return
+^shared:
+  func.return
+}
+
+// ====
+
+// A fresh allocation has unique storage identity and cannot be cloned even
+// when its uses span the decision and one successor.
+func.def @keeps_cfg_unique_reference(%outer: i1, %inner: i1, %byte_length: offset) {
+  cfg.cond_br %outer, ^shared, ^decision
+^decision:
+  %scratch = buffer.alloca<private> align(4) %byte_length : buffer
+  test.use %scratch : buffer
+  cfg.cond_br %inner, ^selected, ^shared
+^selected:
+  test.use %scratch : buffer
+  func.return
+^shared:
+  func.return
+}
+
+// ====
+
+// A pure call does not expose the cost or identity contract of its returned
+// reference, so rematerialization never duplicates a callable boundary.
+func.def pure @return_reference(%buffer: buffer) -> (buffer) {
+  func.return %buffer : buffer
+}
+
+func.def @keeps_cfg_reference_call(%outer: i1, %inner: i1, %buffer: buffer) {
+  cfg.cond_br %outer, ^shared, ^decision
+^decision:
+  %called = func.call pure @return_reference(%buffer) : (buffer) -> (buffer)
+  test.use %called : buffer
+  cfg.cond_br %inner, ^selected, ^shared
+^selected:
+  test.use %called : buffer
+  func.return
+^shared:
+  func.return
+}
+
+// ====
+
+// A cyclic successor can execute the cloned metadata more often than the
+// source decision, so reference rematerialization retains the original value.
+func.def @keeps_cfg_loop_reference(%outer: i1, %enter: i1, %again: i1, %buffer: buffer, %offset: offset) {
+  cfg.cond_br %outer, ^exit, ^decision
+^decision:
+  %view = buffer.view %buffer[%offset] : buffer -> view<1xi32>
+  test.use %view : view<1xi32>
+  cfg.cond_br %enter, ^loop, ^exit
+^loop:
+  test.use %view : view<1xi32>
+  cfg.cond_br %again, ^loop, ^exit
+^exit:
+  func.return
+}
+
+// ====
+
 // Uses in both successors keep the producer before the decision. Sinking is a
 // relocation and never duplicates a producer.
 func.def @keeps_cfg_cross_successor_use(%condition: i1, %a: i32, %b: i32) {

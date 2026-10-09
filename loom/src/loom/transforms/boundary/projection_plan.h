@@ -180,13 +180,11 @@ struct loom_boundary_projection_function_t {
   loom_boundary_projection_block_t* blocks;
   // Number of rewritten blocks.
   iree_host_size_t block_count;
-  // Canonical correspondence from original definitions to the values that
-  // replaced them during the atomic application phase. Empty until
-  // application begins; each replacement records the definitions it retires.
-  // Retained source recipes resolve their logical value IDs through this map
-  // because use replacement in live IR does not update IDs stored in recipes.
-  loom_ir_remap_t correspondence;
-  // LoopLike recurrence plans in operation postorder.
+  // Original definition to current definition correspondence maintained while
+  // applying the retained plan. Source recipes resolve logical value IDs
+  // through this map after an earlier boundary rebuild replaces their defs.
+  loom_ir_remap_t value_correspondence;
+  // LoopLike recurrence plans in dominance preorder.
   loom_boundary_projection_loop_t* loops;
   // Number of populated loop plans.
   iree_host_size_t loop_count;
@@ -257,17 +255,19 @@ iree_host_size_t loom_boundary_projection_slot_index(
     const loom_boundary_projection_function_t* function,
     loom_value_id_t value_id);
 
-// Records that |replacement| now defines the program value previously defined
-// by |original| in |function|'s application batch.
-iree_status_t loom_boundary_projection_record_replacement(
+// Records one definition replacement in the application correspondence.
+// Resolution follows chains when a replacement is itself replaced later.
+iree_status_t loom_boundary_projection_record_value_replacement(
     loom_boundary_projection_function_t* function, loom_value_id_t original,
     loom_value_id_t replacement);
 
-// Returns the value currently defining |value_id| after the replacements
-// recorded so far in |function|'s application batch, or |value_id| when none
-// replaced it. Rules call this when materializing a retained source recipe
-// that names a logical value, so a recipe planned against an original
-// definition observes the replacement installed by an earlier rewrite.
+// Records and applies one definition replacement while preserving its name.
+iree_status_t loom_boundary_projection_replace_definition(
+    loom_boundary_projection_plan_t* plan,
+    loom_boundary_projection_function_t* function, loom_value_id_t source,
+    loom_value_id_t target);
+
+// Resolves an original planned value to its current live definition.
 loom_value_id_t loom_boundary_projection_resolve_value(
     const loom_boundary_projection_function_t* function,
     loom_value_id_t value_id);

@@ -98,10 +98,10 @@ TEST(TransportTest, CompleteDescriptorRegisterClassPairMatrix) {
   static const RegisterClassLocation classes[] = {
       {LOOM_X86_REGISTER_CLASS_GPR32, 1, 2},
       {LOOM_X86_REGISTER_CLASS_GPR64, 1, 2},
-      {X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RAX, 0, 0},
-      {X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RDX, 2, 2},
-      {X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_ECX, 1, 1},
-      {X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RCX, 1, 1},
+      {X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RAX, 0, 0},
+      {X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RDX, 2, 2},
+      {X86_AVX512_FEATURES_CORE_REG_CLASS_ID_ECX, 1, 1},
+      {X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RCX, 1, 1},
       {LOOM_X86_REGISTER_CLASS_XMM, 1, 2},
       {LOOM_X86_REGISTER_CLASS_YMM, 1, 2},
       {LOOM_X86_REGISTER_CLASS_ZMM, 1, 2},
@@ -148,18 +148,18 @@ TEST(TransportTest, RegisterNumbersAndStorageWidthsCoverEveryClass) {
   EXPECT_EQ(loom_x86_transport_byte_length(LOOM_X86_REGISTER_CLASS_YMM), 32u);
   EXPECT_EQ(loom_x86_transport_byte_length(LOOM_X86_REGISTER_CLASS_ZMM), 64u);
   EXPECT_EQ(loom_x86_transport_byte_length(LOOM_X86_REGISTER_CLASS_K), 8u);
-  EXPECT_EQ(loom_x86_transport_byte_length(
-                X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RAX),
-            8u);
-  EXPECT_EQ(loom_x86_transport_byte_length(
-                X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RDX),
-            8u);
-  EXPECT_EQ(loom_x86_transport_byte_length(
-                X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_ECX),
-            4u);
-  EXPECT_EQ(loom_x86_transport_byte_length(
-                X86_AVX512_PACKED_DOT_CORE_REG_CLASS_ID_RCX),
-            8u);
+  EXPECT_EQ(
+      loom_x86_transport_byte_length(X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RAX),
+      8u);
+  EXPECT_EQ(
+      loom_x86_transport_byte_length(X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RDX),
+      8u);
+  EXPECT_EQ(
+      loom_x86_transport_byte_length(X86_AVX512_FEATURES_CORE_REG_CLASS_ID_ECX),
+      4u);
+  EXPECT_EQ(
+      loom_x86_transport_byte_length(X86_AVX512_FEATURES_CORE_REG_CLASS_ID_RCX),
+      8u);
 }
 
 TEST(TransportTest, RegisterTransfersUseExactWidthAndDirection) {
@@ -275,6 +275,10 @@ TEST(TransportTest, AbiStackTransfersCoverScalarWidths) {
                    LOOM_X86_REGISTER_CLASS_GPR32, 2, 9, 5, 16,
                    {0x66, 0x44, 0x89, 0x4d, 0x10});
   ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_XMM,
+                   2, 1, 4, 0, {0xc5, 0xf9, 0x6e, 0x0c, 0x24});
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_STORE, LOOM_X86_REGISTER_CLASS_XMM,
+                   2, 1, 4, 0, {0xc5, 0xf9, 0x7e, 0x0c, 0x24});
+  ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_XMM,
                    4, 1, 4, 0, {0xc5, 0xfa, 0x10, 0x0c, 0x24});
   ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_STORE, LOOM_X86_REGISTER_CLASS_XMM,
                    4, 1, 4, 0, {0xc5, 0xfa, 0x11, 0x0c, 0x24});
@@ -284,11 +288,6 @@ TEST(TransportTest, AbiStackTransfersCoverScalarWidths) {
                    8, 9, 12, 64, {0xc4, 0x41, 0x7b, 0x11, 0x4c, 0x24, 0x40});
   ExpectAbiStorage(LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_XMM,
                    16, 1, 4, 0, {0xc5, 0xf8, 0x10, 0x0c, 0x24});
-
-  loom_x86_transport_instruction_t instruction;
-  EXPECT_FALSE(loom_x86_transport_select_abi_storage(
-      LOOM_X86_STORAGE_TRANSFER_LOAD, LOOM_X86_REGISTER_CLASS_XMM, 2, 1, 4, 0,
-      &instruction));
 }
 
 }  // namespace

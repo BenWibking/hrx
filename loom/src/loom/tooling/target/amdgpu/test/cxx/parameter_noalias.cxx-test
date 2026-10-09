@@ -96,8 +96,8 @@ using Float4 = float __attribute__((ext_vector_type(4)));
 void copy([[loom::noalias]] const Half4* weights,
           [[loom::noalias]] const unsigned* row_ids,
           [[loom::noalias]] Float4* output) {
-  unsigned row = loom::workgroup_id.y;
-  unsigned column = loom::workgroup_id.x * 256u + loom::workitem_id.x;
+  unsigned row = loom::kernel::workgroup::id.y;
+  unsigned column = loom::kernel::workgroup::id.x * 256u + loom::kernel::workitem::id.x;
   unsigned source_row = row_ids[row];
   loom::assume(source_row < 65536u);
   output[row * 768u + column] =

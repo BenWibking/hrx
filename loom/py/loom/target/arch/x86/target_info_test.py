@@ -10,9 +10,10 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from loom.target.arch.x86.packed_dot_data import (
+from loom.target.arch.x86.feature_bits import (
     FEATURE_AVX10_2,
     FEATURE_AVX512_BF16,
+    FEATURE_AVX512_FP16,
     FEATURE_AVX512_VL,
     FEATURE_AVX512_VNNI,
     FEATURE_AVX_VNNI,
@@ -71,23 +72,25 @@ def test_descriptor_set_lookup_and_ordinals_are_key_sorted() -> None:
 def test_descriptor_storage_target_lookup_classifies_current_views() -> None:
     assert (
         x86_descriptor_set_storage_info_by_generator_target("avx512").generator_target
-        == "avx512_packed_dot"
+        == "avx512_features"
     )
     assert (
         x86_descriptor_set_storage_info_by_generator_target(
-            "avx512_packed_dot"
+            "avx512_features"
         ).generator_target
-        == "avx512_packed_dot"
+        == "avx512_features"
     )
 
     view_infos = x86_descriptor_set_view_infos_by_storage_generator_target(
-        "avx512_packed_dot"
+        "avx512_features"
     )
     assert [info.generator_target for info in view_infos] == [
         "avx10_2",
         "avx2",
+        "avx2_features",
         "avx512",
         "avx512_bf16",
+        "avx512_fp16",
         "avx512_vnni",
         "avx_vnni",
         "avx_vnni_int16",
@@ -102,7 +105,7 @@ def test_packed_dot_feature_rows_record_feature_and_width_requirements() -> None
     rows_by_target = {
         info.generator_target: info
         for info in x86_descriptor_set_view_infos_by_storage_generator_target(
-            "avx512_packed_dot"
+            "avx512_features"
         )
     }
 
@@ -117,11 +120,21 @@ def test_packed_dot_feature_rows_record_feature_and_width_requirements() -> None
     assert rows_by_target["avx512_bf16"].required_feature_bits == (
         FEATURE_AVX512_BF16 | FEATURE_AVX512_VL
     )
+    assert rows_by_target["avx512_fp16"].required_feature_bits == (
+        FEATURE_AVX512_FP16 | FEATURE_AVX512_VL
+    )
     assert rows_by_target["avx_vnni_int8"].required_feature_bits == (
         FEATURE_AVX_VNNI_INT8
     )
     assert rows_by_target["avx_vnni_int16"].required_feature_bits == (
         FEATURE_AVX_VNNI_INT16
+    )
+    assert rows_by_target["avx2_features"].required_feature_bits == 0
+    assert rows_by_target["avx2_features"].register_classes == (
+        X86_REG_CLASS_GPR32,
+        X86_REG_CLASS_GPR64,
+        X86_REG_CLASS_XMM,
+        X86_REG_CLASS_YMM,
     )
     assert rows_by_target["avx10_2"].required_feature_bits == FEATURE_AVX10_2
 
@@ -133,7 +146,7 @@ def test_descriptor_view_lookup_rejects_view_storage_target() -> None:
 
 def test_target_profile_lookup_records_current_feature_projection() -> None:
     profile = x86_target_profile_info_by_key("x86.avx512_packed_dot")
-    assert profile.descriptor_set_key == "x86.avx512_packed_dot.core"
+    assert profile.descriptor_set_key == "x86.avx512_features.core"
     assert profile.native_bundle_key == "x86-avx512-packed-dot"
     assert profile.register_classes == (
         X86_REG_CLASS_GPR32,

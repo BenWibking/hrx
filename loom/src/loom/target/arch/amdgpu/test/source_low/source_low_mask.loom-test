@@ -225,15 +225,13 @@ func.def @f32_compare_masks(%lhs: f32, %rhs: f32, %tie_mask: i1) -> (i1) {
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @f32_compare_masks(%lhs: reg<amdgpu.vgpr>, %rhs: reg<amdgpu.vgpr>, %tie_mask: reg<amdgpu.sgpr>) -> (reg<amdgpu.sgpr x2>) asm {
   %equal = v_cmp_eq_f32 %lhs, %rhs
   %greater = v_cmp_gt_f32 %lhs, %rhs
-  %14 = s_cmp_lg_i32_src1_inline %tie_mask {rhs = 0}
-  %15 = s_mov_b64_exec_read
-  %16 = slice %15[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %17 = slice %15[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %18 = s_mov_b32 0
-  %19 = s_cselect_b32 %16, %18, %14
-  %20 = s_cselect_b32 %17, %18, %14
-  %21 = concat(%19, %20) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
-  %equal_masked = s_and_b64 %equal, %21
+  %14 = s_mov_b32 0
+  %15 = s_cmp_lg_i32_src1_inline %tie_mask {rhs = 0}
+  %16 = slice %equal[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %17 = s_cselect_b32 %16, %14, %15
+  %18 = slice %equal[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %19 = s_cselect_b32 %18, %14, %15
+  %equal_masked = concat(%17, %19) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
   %selected = s_or_b64 %greater, %equal_masked
   return %selected
 }

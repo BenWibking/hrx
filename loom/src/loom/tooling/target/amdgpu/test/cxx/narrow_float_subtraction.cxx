@@ -16,7 +16,7 @@ using Float8 = float __attribute__((ext_vector_type(8)));
 [[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void subtract_f16_8(const Half8* lhs, const Half8* rhs, Float8* output,
                     unsigned count) {
-  for (unsigned packet = loom::workitem_id.x; packet < count / 8;
+  for (unsigned packet = loom::kernel::workitem::id.x; packet < count / 8;
        packet += 64) {
     Half8 difference = lhs[packet] - rhs[packet];
     output[packet] = __builtin_convertvector(difference, Float8);
@@ -26,7 +26,7 @@ void subtract_f16_8(const Half8* lhs, const Half8* rhs, Float8* output,
 [[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void subtract_bf16_8(const Brain8* lhs, const Brain8* rhs, Float8* output,
                      unsigned count) {
-  for (unsigned packet = loom::workitem_id.x; packet < count / 8;
+  for (unsigned packet = loom::kernel::workitem::id.x; packet < count / 8;
        packet += 64) {
     Brain8 difference = lhs[packet] - rhs[packet];
     output[packet] = __builtin_convertvector(difference, Float8);
@@ -36,7 +36,7 @@ void subtract_bf16_8(const Brain8* lhs, const Brain8* rhs, Float8* output,
 [[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void subtract_f16_1(const std::float16_t* lhs, const std::float16_t* rhs,
                     float* output, unsigned count) {
-  for (unsigned position = loom::workitem_id.x; position < count;
+  for (unsigned position = loom::kernel::workitem::id.x; position < count;
        position += 64) {
     std::float16_t difference = lhs[position] - rhs[position];
     output[position] = difference;
@@ -46,7 +46,7 @@ void subtract_f16_1(const std::float16_t* lhs, const std::float16_t* rhs,
 [[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
 void subtract_bf16_1(const std::bfloat16_t* lhs, const std::bfloat16_t* rhs,
                      float* output, unsigned count) {
-  for (unsigned position = loom::workitem_id.x; position < count;
+  for (unsigned position = loom::kernel::workitem::id.x; position < count;
        position += 64) {
     std::bfloat16_t difference = lhs[position] - rhs[position];
     output[position] = difference;

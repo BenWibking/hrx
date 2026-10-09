@@ -26,8 +26,7 @@ typedef struct loom_low_allocation_storage_lifetime_t
 // Canonical storage-unit lifetimes sorted by storage identity and start point.
 //
 // Construction materializes each refined logical assignment unit into its
-// target-visible atomic storage units, intersected with sparse physical
-// reservations when present. One binary search answers each atomic
+// target-visible atomic storage units. One binary search answers each atomic
 // point query.
 typedef struct loom_low_allocation_storage_liveness_index_t {
   // Descriptor set whose storage alias contract defines this index.

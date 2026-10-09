@@ -336,6 +336,89 @@ def test_integer_extrema_rules_prefer_encoded_constants() -> None:
         )
 
 
+def test_scalar_i32_bitwise_rules_prefer_encoded_constants() -> None:
+    compiled = _compiled_integer_rules()
+
+    for source_op, suffix in (
+        (scalar_bitwise.scalar_andi, "and_b32"),
+        (scalar_bitwise.scalar_ori, "or_b32"),
+        (scalar_bitwise.scalar_xori, "xor_b32"),
+    ):
+        descriptor_sequences = tuple(
+            _rule_descriptor_keys(compiled, rule)
+            for rule in _rules_for_source_op(compiled, source_op)
+            if set(_rule_type_patterns(compiled, rule)) == {Scalar("i32")}
+        )
+        assert descriptor_sequences == (
+            (f"amdgpu.s_{suffix}.rhs_inline",),
+            (f"amdgpu.s_{suffix}.rhs_inline",),
+            (f"amdgpu.s_{suffix}.lit",),
+            (f"amdgpu.s_{suffix}.lit",),
+            (f"amdgpu.v_{suffix}.src0_inline",),
+            (f"amdgpu.v_{suffix}.src0_inline",),
+            (f"amdgpu.v_{suffix}.lit",),
+            (f"amdgpu.v_{suffix}.lit",),
+            (f"amdgpu.s_{suffix}",),
+            (f"amdgpu.v_{suffix}",),
+        )
+
+
+def test_mixed_scalar_bool_mask_rules_precede_mask_materialization() -> None:
+    compiled = _compiled_integer_rules()
+
+    for source_op, direct_sequences, fallback in (
+        (
+            scalar_bitwise.scalar_andi,
+            (
+                ("amdgpu.s_mov_b32", "amdgpu.s_cselect_b32"),
+                (
+                    "amdgpu.s_mov_b32",
+                    "amdgpu.s_cmp_lg_i32.src1_inline",
+                    "amdgpu.s_cselect_b32",
+                ),
+            ),
+            ("amdgpu.s_and_b64",),
+        ),
+        (
+            scalar_bitwise.scalar_ori,
+            (
+                ("amdgpu.s_mov_b64_exec_read", "amdgpu.s_cselect_b32"),
+                (
+                    "amdgpu.s_mov_b64_exec_read",
+                    "amdgpu.s_cmp_lg_i32.src1_inline",
+                    "amdgpu.s_cselect_b32",
+                ),
+            ),
+            ("amdgpu.s_or_b64",),
+        ),
+        (
+            scalar_bitwise.scalar_xori,
+            (
+                (
+                    "amdgpu.s_mov_b64_exec_read",
+                    "amdgpu.s_xor_b64",
+                    "amdgpu.s_cmp_lg_i32.src1_inline",
+                    "amdgpu.s_cselect_b32",
+                ),
+            ),
+            ("amdgpu.s_xor_b64",),
+        ),
+    ):
+        sequences = tuple(
+            _rule_descriptor_keys(compiled, rule)
+            for rule in _rules_for_source_op(compiled, source_op)
+        )
+        fallback_position = sequences.index(fallback)
+        for sequence in direct_sequences:
+            matching_positions = tuple(
+                index
+                for index, candidate in enumerate(sequences)
+                if candidate == sequence
+            )
+            assert len(matching_positions) == 2
+            assert all(index < fallback_position for index in matching_positions)
+
+
 def test_packed_i16_arithmetic_rules_try_native_pk_ops_before_word_ops() -> None:
     compiled = _compiled_arithmetic_rules()
 

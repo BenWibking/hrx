@@ -37,7 +37,6 @@ loom_cc_library(
     "report.h"
     "run.h"
     "scenario_execution.h"
-    "session.h"
     "snapshot.h"
     "testbench.h"
     "timing.h"
@@ -66,7 +65,6 @@ loom_cc_library(
     "report.c"
     "run.c"
     "scenario_execution.c"
-    "session.c"
     "snapshot.c"
     "testbench.c"
     "timing.c"
@@ -105,7 +103,6 @@ loom_cc_library(
     loom::tooling::execution::hal::runtime
     loom::tooling::execution::hal::scenario_profile
     loom::tooling::execution::hal::testbench_actual
-    loom::tooling::execution::session
     loom::tooling::input
     loom::tooling::input::flags
     loom::tooling::input::loomc
@@ -271,7 +268,6 @@ loom_cc_binary(
     loom::tooling::execution::hal::testbench_actual
     loom::tooling::input::configured
     loom::tooling::input::loomc_configured
-    loom::transforms::cleanup::configured
     ${_iree_benchmark_loom_platform_deps}
 )
 

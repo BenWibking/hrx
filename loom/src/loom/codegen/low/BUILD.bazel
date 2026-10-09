@@ -34,6 +34,7 @@ _LOW_DESCRIPTOR_VISIBILITY = [
     "//loom/src/loom/tooling/target/vm:__pkg__",
     "//loom/src/loom/tooling/target/wasm:__pkg__",
     "//loom/src/loom/tools/loom-check:__pkg__",
+    "//loom/src/loom/tools/loom-check/test/low:__pkg__",
 ]
 
 _LOW_FORMAT_CODEC_VISIBILITY = [

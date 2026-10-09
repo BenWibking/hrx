@@ -10,8 +10,9 @@
 
 #include "iree/testing/gtest.h"
 #include "loom/target/arch/x86/descriptors/avx2_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx2_features_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_descriptors.h"
-#include "loom/target/arch/x86/descriptors/avx512_packed_dot_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx512_features_descriptors.h"
 #include "loom/target/arch/x86/descriptors/scalar_descriptors.h"
 #include "loom/target/arch/x86/descriptors/simd128_descriptors.h"
 
@@ -48,8 +49,9 @@ TEST(EntryDescriptorsTest, OrdinalsResolveInEachRepresentationView) {
   for (const auto* set : {loom_x86_scalar_core_descriptor_set(),
                           loom_x86_simd128_core_descriptor_set(),
                           loom_x86_avx2_core_descriptor_set(),
+                          loom_x86_avx2_features_core_descriptor_set(),
                           loom_x86_avx512_core_descriptor_set(),
-                          loom_x86_avx512_packed_dot_core_descriptor_set()}) {
+                          loom_x86_avx512_features_core_descriptor_set()}) {
     const auto* entry = loom_x86_entry_descriptors(set);
     ASSERT_NE(entry, nullptr);
     for (const auto& instruction : instructions) {

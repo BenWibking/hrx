@@ -154,28 +154,28 @@ low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @i8x4_bounded_var
   %66 = v_bfe_i32_offset_width_inline %values {offset = 0, width = 8}
   %67 = v_bfe_i32_offset_width_inline %amounts {offset = 0, width = 8}
   %68 = v_and_b32_lit %67, 255
-  %69 = v_and_b32_lit %68, 7
+  %69 = v_and_b32_src0_inline %68, 7
   %70 = v_and_b32_lit %66, 255
   %71 = v_and_b32_lit %69, 255
   %72 = v_lshrrev_b32 %71, %70
   %73 = v_bfe_i32_offset_width_inline %values {offset = 8, width = 8}
   %74 = v_bfe_i32_offset_width_inline %amounts {offset = 8, width = 8}
   %75 = v_and_b32_lit %74, 255
-  %76 = v_and_b32_lit %75, 7
+  %76 = v_and_b32_src0_inline %75, 7
   %77 = v_and_b32_lit %73, 255
   %78 = v_and_b32_lit %76, 255
   %79 = v_lshrrev_b32 %78, %77
   %80 = v_bfe_i32_offset_width_inline %values {offset = 16, width = 8}
   %81 = v_bfe_i32_offset_width_inline %amounts {offset = 16, width = 8}
   %82 = v_and_b32_lit %81, 255
-  %83 = v_and_b32_lit %82, 7
+  %83 = v_and_b32_src0_inline %82, 7
   %84 = v_and_b32_lit %80, 255
   %85 = v_and_b32_lit %83, 255
   %86 = v_lshrrev_b32 %85, %84
   %87 = v_ashrrev_i32_src0_inline %values, 24
   %88 = v_ashrrev_i32_src0_inline %amounts, 24
   %89 = v_and_b32_lit %88, 255
-  %90 = v_and_b32_lit %89, 7
+  %90 = v_and_b32_src0_inline %89, 7
   %91 = v_and_b32_lit %87, 255
   %92 = v_and_b32_lit %90, 255
   %93 = v_lshrrev_b32 %92, %91

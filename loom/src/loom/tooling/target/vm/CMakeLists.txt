@@ -12,17 +12,30 @@ iree_add_all_subdirs()
 if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
-    check
+    loom_check
   HDRS
-    "check.h"
+    "check/loom_check.h"
   SRCS
-    "check.c"
+    "check/loom_check.c"
   DEPS
     iree::base
     iree::vm::bytecode::disassembler
-    loom::target::arch::vm::provider
-    loom::tools::loom-check::compile
     loom::tools::loom-check::execute
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_library(
+  NAME
+    check_provider
+  HDRS
+    "check/provider.h"
+  SRCS
+    "check/provider.c"
+  DEPS
+    ::loom_check
+    iree::base
     loom::tools::loom-check::provider
   PUBLIC
 )

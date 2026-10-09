@@ -743,6 +743,15 @@ _DENSE_MATRIX_DESCRIPTOR_SPECS = (
 _BASE_DESCRIPTOR_SPECS = (
     *_address_descriptor_specs(),
     _DescriptorSpec(
+        "ADD_NC_mv_add_ri",
+        f"{_TARGET_KEY}.add.i32.immediate.shift",
+        "integer.add.i32",
+        "II_ADD_NC_mv_add_ri_eS",
+        storage_overrides=(("dst", "eS"),),
+        asm_mnemonic="add.shift",
+        flags=(DescriptorFlag.SAFE_TO_SPECULATE,),
+    ),
+    _DescriptorSpec(
         "ADD_add_r_ri",
         f"{_TARGET_KEY}.add.i32.immediate",
         "integer.add.i32",

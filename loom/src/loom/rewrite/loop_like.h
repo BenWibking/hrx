@@ -30,7 +30,7 @@ typedef struct loom_loop_like_replacement_state_t {
   // Required for non-empty condition-loop header state and unused for counted
   // loops. Types may reference sibling replacement header IDs. Such callers
   // reserve header identities followed by result identities before invoking
-  // loom_loop_like_build_replacement or loom_loop_like_prepare_replacement.
+  // loom_loop_like_build_replacement.
   const loom_type_t* header_types;
 
   // Prefix offsets from each source header-state ordinal to its replacement
@@ -44,10 +44,9 @@ typedef struct loom_loop_like_replacement_state_t {
   //
   // Types may reference sibling replacement result IDs. Callers constructing
   // such a scheme reserve the complete identity sequence before invoking
-  // loom_loop_like_build_replacement or loom_loop_like_prepare_replacement,
-  // matching generated loop builder semantics. Counted loops reserve only
-  // results. Condition loops reserve header identities first and result
-  // identities second.
+  // loom_loop_like_build_replacement, matching generated loop builder
+  // semantics. Counted loops reserve only results. Condition loops reserve
+  // header identities first and result identities second.
   const loom_type_t* result_types;
 
   // Number of new results and body-region entry values.
@@ -96,68 +95,11 @@ typedef struct loom_loop_like_replacement_t {
 // source terminators, populates replacement region operations, and completes
 // replacement of source result uses. |scratch_arena| retains no output state
 // and may be reset after this call.
-//
-// Equivalent to loom_loop_like_prepare_replacement followed immediately by
-// loom_loop_like_complete_replacement with |state->initial_values|.
 iree_status_t loom_loop_like_build_replacement(
     loom_builder_t* builder, loom_loop_like_t source,
     const loom_loop_like_replacement_state_t* state,
     iree_arena_allocator_t* scratch_arena,
     loom_loop_like_replacement_t* out_replacement);
-
-// Staged replacement construction
-//
-// Rewrites of nested or chained loops can need a replacement's endpoints
-// before its initial values exist: an inner loop may start from an outer
-// replacement's body argument while the outer backedge yields the inner
-// replacement's result. Staging separates endpoint definition from
-// publication so a caller can prepare every replacement in a batch, consume
-// their endpoints in source recipes, and then complete each one.
-//
-// Preparation produces a detached operation (see
-// loom_builder_allocate_detached_op) whose regions, entry blocks, region
-// arguments, and results all exist with final types and definitions: result
-// values name the detached op and argument values name their entry block.
-// Its initial state operands are unset, it is linked into no block, its
-// operands have no registered uses, and no builder callback has run. Any
-// builder value reservation consumed by the header and result identities is
-// released, so several prepared replacements may be outstanding at once.
-//
-// Between preparation and completion, other operations may reference the
-// prepared endpoints and the caller may populate the replacement's regions.
-// Such references are transitional: an endpoint defined in a detached
-// region does not dominate a use outside it until the caller moves the user
-// into that region. The caller owns that interval. It must complete every
-// prepared replacement and restore ordinary ownership and dominance before
-// any verifier, analysis, or other pass observes the module. Builder
-// finalization callbacks still run for operations published during the
-// interval; callers whose callbacks inspect operand definitions (for example,
-// a rewriter with an attached fact table) must not reference prepared
-// endpoints from operations they publish before completion.
-
-// Prepares a detached replacement for |source| using |state|.
-//
-// Produces the same operation, endpoints, names, comments, and presentation as
-// loom_loop_like_build_replacement, except that only |state->initial_values|
-// .count is read: the initial state operands are supplied at completion. A
-// prepared replacement that is never completed remains detached arena storage
-// and is never observable as program IR.
-iree_status_t loom_loop_like_prepare_replacement(
-    loom_builder_t* builder, loom_loop_like_t source,
-    const loom_loop_like_replacement_state_t* state,
-    iree_arena_allocator_t* scratch_arena,
-    loom_loop_like_replacement_t* out_replacement);
-
-// Completes a prepared replacement.
-//
-// Installs |initial_values| as the replacement's initial state operands, links
-// the operation at |builder|'s insertion point, and finalizes it: operand uses
-// are registered and the builder callback runs exactly once. |initial_values|
-// must have the header count supplied at preparation. Region population may
-// occur before or after completion.
-iree_status_t loom_loop_like_complete_replacement(
-    loom_builder_t* builder, const loom_loop_like_replacement_t* replacement,
-    loom_value_slice_t initial_values);
 
 #ifdef __cplusplus
 }  // extern "C"

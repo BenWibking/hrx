@@ -80,6 +80,13 @@ bool loom_value_facts_as_exact_float(loom_scalar_type_t scalar_type,
                                      loom_value_facts_t facts,
                                      double* out_value);
 
+// Extracts the mathematical base-two exponent of an exact finite nonzero
+// floating-point value whose magnitude is a power of two. Both positive and
+// negative values are accepted; the sign does not affect |out_exponent|.
+bool loom_value_facts_as_exact_power_of_two_float(
+    loom_scalar_type_t scalar_type, loom_value_facts_t facts,
+    int32_t* out_exponent);
+
 // Extracts inclusive finite interval endpoints interpreted as |scalar_type|.
 // Returns false for class-only facts and non-finite exact values.
 bool loom_value_facts_as_float_range(loom_scalar_type_t scalar_type,

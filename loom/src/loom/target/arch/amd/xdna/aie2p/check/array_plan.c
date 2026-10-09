@@ -873,7 +873,6 @@ static iree_status_t loom_aie2p_array_plan_check_append_names(
 
 const loom_check_emit_provider_t loom_aie2p_array_plan_check_emit_provider = {
     .name = IREE_SVL("aie2p-array-plan"),
-    .consumes_source = true,
     .match = loom_aie2p_array_plan_check_matches,
     .execute = loom_aie2p_array_plan_check_execute,
     .append_names = loom_aie2p_array_plan_check_append_names,

@@ -38,6 +38,7 @@ loom_cc_library(
   DEPS
     ::xfail
     iree::base
+    iree::base::internal::arena
     iree::base::internal::path
     iree::base::tooling::flags
     iree::io::stream
@@ -51,7 +52,6 @@ loom_cc_library(
     loom::tooling::config
     loom::tooling::execution::hal::scenario_profile
     loom::tooling::execution::hal::testbench_actual
-    loom::tooling::execution::session
     loom::tooling::input::flags
     loom::tooling::input::loomc
     loom::tooling::io::file
@@ -119,7 +119,6 @@ loom_cc_binary(
     loom::tooling::execution::hal::testbench_actual
     loom::tooling::input::configured
     loom::tooling::input::loomc_configured
-    loom::transforms::cleanup::configured
     ${_iree_test_loom_platform_deps}
 )
 

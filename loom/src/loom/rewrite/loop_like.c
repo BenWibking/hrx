@@ -79,8 +79,7 @@ static iree_status_t loom_loop_like_validate_replacement_domain(
 }
 
 static iree_status_t loom_loop_like_validate_replacement_state(
-    loom_loop_like_t source, const loom_loop_like_replacement_state_t* state,
-    bool require_initial_values) {
+    loom_loop_like_t source, const loom_loop_like_replacement_state_t* state) {
   if (!state) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "replacement state is NULL");
@@ -88,8 +87,7 @@ static iree_status_t loom_loop_like_validate_replacement_state(
   const uint16_t source_header_count = loom_loop_like_iter_args(source).count;
   const uint16_t source_result_count = source.op->result_count;
   const uint16_t target_header_count = state->initial_values.count;
-  if (require_initial_values && target_header_count != 0 &&
-      !state->initial_values.values) {
+  if (target_header_count != 0 && !state->initial_values.values) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "replacement header values are NULL");
   }
@@ -343,7 +341,7 @@ static iree_status_t loom_loop_like_copy_names(
   return iree_ok_status();
 }
 
-iree_status_t loom_loop_like_prepare_replacement(
+iree_status_t loom_loop_like_build_replacement(
     loom_builder_t* builder, loom_loop_like_t source,
     const loom_loop_like_replacement_state_t* state,
     iree_arena_allocator_t* scratch_arena,
@@ -357,8 +355,8 @@ iree_status_t loom_loop_like_prepare_replacement(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "source operation is not LoopLike");
   }
-  IREE_RETURN_IF_ERROR(loom_loop_like_validate_replacement_state(
-      source, state, /*require_initial_values=*/false));
+  IREE_RETURN_IF_ERROR(
+      loom_loop_like_validate_replacement_state(source, state));
 
   const loom_op_vtable_t* vtable = loom_op_vtable(builder->module, source.op);
   IREE_ASSERT(vtable && vtable->loop_like == source.vtable);
@@ -396,24 +394,32 @@ iree_status_t loom_loop_like_prepare_replacement(
       &tied_result_count));
 
   loom_op_t* target = NULL;
-  IREE_RETURN_IF_ERROR(loom_builder_allocate_detached_op(
-      builder, source.op->kind, target_operand_count, segment_counts,
-      segment_count, target_result_count, source.op->successor_count,
-      source.op->region_count, tied_result_count, source.op->attribute_count,
-      source.op->location, &target));
+  if (segment_count != 0) {
+    IREE_RETURN_IF_ERROR(loom_builder_allocate_segmented_op_with_successors(
+        builder, source.op->kind, target_operand_count, segment_counts,
+        segment_count, target_result_count, source.op->successor_count,
+        source.op->region_count, tied_result_count, source.op->attribute_count,
+        source.op->location, &target));
+  } else {
+    IREE_RETURN_IF_ERROR(loom_builder_allocate_op_with_successors(
+        builder, source.op->kind, target_operand_count, target_result_count,
+        source.op->successor_count, source.op->region_count, tied_result_count,
+        source.op->attribute_count, source.op->location, &target));
+  }
   target->instance_flags = source.op->instance_flags;
   target->traits = source.op->traits;
   target->flags |= source.op->flags & LOOM_OP_SOURCE_PRESENTATION_FLAG_MASK;
 
-  // Initial state operands remain unset until completion supplies them.
   loom_value_id_t* target_operands = loom_op_operands(target);
   const loom_value_id_t* source_operands = loom_op_const_operands(source.op);
   if (source_state_operand_offset != 0) {
     memcpy(target_operands, source_operands,
            source_state_operand_offset * sizeof(*target_operands));
   }
-  for (uint16_t i = 0; i < target_header_count; ++i) {
-    target_operands[source_state_operand_offset + i] = LOOM_VALUE_ID_INVALID;
+  if (target_header_count != 0) {
+    memcpy(target_operands + source_state_operand_offset,
+           state->initial_values.values,
+           target_header_count * sizeof(*target_operands));
   }
   const uint16_t source_suffix_offset =
       (uint16_t)(source_state_operand_offset + source_header.count);
@@ -489,10 +495,7 @@ iree_status_t loom_loop_like_prepare_replacement(
   }
   IREE_RETURN_IF_ERROR(
       loom_loop_like_copy_names(builder, source, state, out_replacement));
-  // Every reserved header and result identity now has its type. Releasing the
-  // reservation here lets several prepared replacements remain outstanding.
-  IREE_RETURN_IF_ERROR(loom_builder_release_reserved_values(builder));
-  loom_builder_bind_op_results(builder, target);
+  IREE_RETURN_IF_ERROR(loom_builder_finalize_op(builder, target));
 
   iree_host_size_t comment_count = 0;
   const iree_string_view_t* comments =
@@ -502,43 +505,4 @@ iree_status_t loom_loop_like_prepare_replacement(
         builder->module, target, comments, comment_count));
   }
   return iree_ok_status();
-}
-
-iree_status_t loom_loop_like_complete_replacement(
-    loom_builder_t* builder, const loom_loop_like_replacement_t* replacement,
-    loom_value_slice_t initial_values) {
-  loom_op_t* target = replacement->loop.op;
-  IREE_ASSERT(target && !target->parent_block);
-  const loom_value_slice_t header = loom_loop_like_iter_args(replacement->loop);
-  if (initial_values.count != header.count) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "prepared replacement has %u header values but completion supplied %u",
-        (unsigned)header.count, (unsigned)initial_values.count);
-  }
-  if (initial_values.count != 0) {
-    memcpy(loom_op_operands(target) +
-               loom_loop_like_iter_args_operand_offset(replacement->loop),
-           initial_values.values,
-           initial_values.count * sizeof(*initial_values.values));
-  }
-  IREE_RETURN_IF_ERROR(loom_builder_insert_op(builder, target));
-  return loom_builder_finalize_op(builder, target);
-}
-
-iree_status_t loom_loop_like_build_replacement(
-    loom_builder_t* builder, loom_loop_like_t source,
-    const loom_loop_like_replacement_state_t* state,
-    iree_arena_allocator_t* scratch_arena,
-    loom_loop_like_replacement_t* out_replacement) {
-  *out_replacement = (loom_loop_like_replacement_t){0};
-  if (state && state->initial_values.count != 0 &&
-      !state->initial_values.values) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "replacement header values are NULL");
-  }
-  IREE_RETURN_IF_ERROR(loom_loop_like_prepare_replacement(
-      builder, source, state, scratch_arena, out_replacement));
-  return loom_loop_like_complete_replacement(builder, out_replacement,
-                                             state->initial_values);
 }

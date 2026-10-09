@@ -36,6 +36,15 @@ uint8_t math_permissions(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
   return flags;
 }
 
+loom_vector_dot4i_kind_t dot4i_kind(bool lhs_unsigned, bool rhs_unsigned) {
+  if (lhs_unsigned) {
+    return rhs_unsigned ? LOOM_VECTOR_DOT4I_KIND_U8U8
+                        : LOOM_VECTOR_DOT4I_KIND_U8S8;
+  }
+  return rhs_unsigned ? LOOM_VECTOR_DOT4I_KIND_S8U8
+                      : LOOM_VECTOR_DOT4I_KIND_S8S8;
+}
+
 }  // namespace
 
 std::optional<ShapedIntrinsic::Operation> ShapedIntrinsic::admit(
@@ -50,10 +59,13 @@ std::optional<ShapedIntrinsic::Operation> ShapedIntrinsic::admit(
     return TableLookup{};
   }
   if (name == "vector.dot4i") {
+    if (attribute.arguments.size() == 1) {
+      return Dot4i{std::nullopt};
+    }
     if (attribute.arguments.size() != 2) {
       diagnostics.reject(unit, owner,
-                         "dot4i requires one signedness argument: s8s8, u8s8, "
-                         "s8u8, or u8u8");
+                         "dot4i accepts no semantic arguments or one "
+                         "signedness argument: s8s8, u8s8, s8u8, or u8u8");
     }
     auto kind = attribute.arguments[1]->name();
     if (kind == "s8s8") {
@@ -166,12 +178,12 @@ ShapedIntrinsic ShapedIntrinsic::resolve(Operation operation,
                          "dot4i requires equal i8 input shapes with four lanes "
                          "per i32 accumulator/result lane");
     }
-    bool lhs_unsigned = dot->kind == LOOM_VECTOR_DOT4I_KIND_U8S8 ||
-                        dot->kind == LOOM_VECTOR_DOT4I_KIND_U8U8;
-    bool rhs_unsigned = dot->kind == LOOM_VECTOR_DOT4I_KIND_S8U8 ||
-                        dot->kind == LOOM_VECTOR_DOT4I_KIND_U8U8;
-    if (types.is_unsigned(operands[0]->elementType()) != lhs_unsigned ||
-        types.is_unsigned(operands[1]->elementType()) != rhs_unsigned) {
+    auto source_kind =
+        dot4i_kind(types.is_unsigned(operands[0]->elementType()),
+                   types.is_unsigned(operands[1]->elementType()));
+    if (!dot->kind) {
+      dot->kind = source_kind;
+    } else if (*dot->kind != source_kind) {
       diagnostics.reject(unit, owner,
                          "dot4i signedness must match the source byte types");
     }
@@ -225,7 +237,7 @@ loom_value_id_t ShapedIntrinsic::call(
           return loom_vector_table_lookup_build(
               builder, arguments[0], arguments[1], result_type_, location, &op);
         } else if constexpr (std::is_same_v<T, Dot4i>) {
-          return loom_vector_dot4i_build(builder, operation.kind, arguments[0],
+          return loom_vector_dot4i_build(builder, *operation.kind, arguments[0],
                                          arguments[1], arguments[2],
                                          result_type_, location, &op);
         } else if constexpr (std::is_same_v<T, Dot2f>) {

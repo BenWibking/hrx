@@ -790,7 +790,7 @@ static iree_status_t loom_boundary_projection_collect_function(
     };
     loom_walk_result_t walk_result = LOOM_WALK_CONTINUE;
     IREE_RETURN_IF_ERROR(loom_walk_function(
-        plan->module, function->function, LOOM_WALK_POST_ORDER,
+        plan->module, function->function, LOOM_WALK_PRE_ORDER,
         (loom_walk_callback_t){loom_boundary_projection_collect_op, &collect},
         plan->arena, &walk_result));
   }
@@ -870,24 +870,38 @@ iree_host_size_t loom_boundary_projection_slot_index(
              : IREE_HOST_SIZE_MAX;
 }
 
-iree_status_t loom_boundary_projection_record_replacement(
+iree_status_t loom_boundary_projection_record_value_replacement(
     loom_boundary_projection_function_t* function, loom_value_id_t original,
     loom_value_id_t replacement) {
   IREE_ASSERT_NE(replacement, LOOM_VALUE_ID_INVALID);
-  return loom_ir_remap_map_value(&function->correspondence, original,
+  return loom_ir_remap_map_value(&function->value_correspondence, original,
                                  replacement);
+}
+
+iree_status_t loom_boundary_projection_replace_definition(
+    loom_boundary_projection_plan_t* plan,
+    loom_boundary_projection_function_t* function, loom_value_id_t source,
+    loom_value_id_t target) {
+  IREE_RETURN_IF_ERROR(loom_boundary_projection_record_value_replacement(
+      function, source, target));
+  IREE_RETURN_IF_ERROR(
+      loom_rewriter_move_value_name(&plan->rewriter, source, target));
+  return loom_rewriter_replace_all_uses_with(&plan->rewriter, source, target);
 }
 
 loom_value_id_t loom_boundary_projection_resolve_value(
     const loom_boundary_projection_function_t* function,
     loom_value_id_t value_id) {
-  // Replacement values are created by the batch and lie outside the snapshot,
-  // so a lookup chain ends after one step.
+  loom_value_id_t current = value_id;
   loom_value_id_t replacement = LOOM_VALUE_ID_INVALID;
-  return loom_ir_remap_try_lookup_value(&function->correspondence, value_id,
-                                        &replacement)
-             ? replacement
-             : value_id;
+  iree_host_size_t depth = 0;
+  while (loom_ir_remap_try_lookup_value(&function->value_correspondence,
+                                        current, &replacement)) {
+    IREE_ASSERT_LT(depth++, function->value_correspondence.mapped_value_count);
+    IREE_ASSERT_NE(current, replacement);
+    current = replacement;
+  }
+  return current;
 }
 
 iree_status_t loom_boundary_projection_add_dependency(

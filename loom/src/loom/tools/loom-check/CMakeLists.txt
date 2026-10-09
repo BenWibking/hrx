@@ -31,6 +31,8 @@ loom_cc_library(
   HDRS
     "analysis.h"
     "comparison.h"
+    "compile.h"
+    "compile_diagnostics.h"
     "diagnostics.h"
     "execute.h"
     "input.h"
@@ -40,6 +42,8 @@ loom_cc_library(
   SRCS
     "analysis.c"
     "comparison.c"
+    "compile.c"
+    "compile_diagnostics.c"
     "diagnostics.c"
     "emit.c"
     "execute.c"
@@ -61,6 +65,8 @@ loom_cc_library(
     loom::analysis::liveness_json
     loom::analysis::pipeline_plan
     loom::analysis::storage_interference
+    loom::binding::c::interop
+    loom::binding::c::loomc
     loom::codegen::low::allocation
     loom::codegen::low::allocation_json
     loom::codegen::low::descriptors
@@ -98,6 +104,7 @@ loom_cc_library(
     loom::pass::registry
     loom::pass::report
     loom::pass::tooling
+    loom::sanitizer::options
     loom::target::entry_selection
     loom::target::legalization
     loom::target::low_asm_diagnostics
@@ -105,16 +112,21 @@ loom_cc_library(
     loom::target::low_legality
     loom::target::low_packet_diagnostics
     loom::target::math_policy
+    loom::target::pipeline
+    loom::target::pipeline_options
     loom::target::predicate
     loom::target::provider
     loom::target::reporting::format
     loom::target::reporting::low
+    loom::target::reporting::report
     loom::target::selection
     loom::target::specialization
     loom::target::types
     loom::testing::test_diagnostic
     loom::testing::test_file
+    loom::tooling::cli::loomc_diagnostic_json
     loom::tooling::input
+    loom::tooling::io::source_path
     loom::tools::loom-format::convert
     loom::transforms::cleanup::patterns
     loom::util::diff
@@ -163,7 +175,6 @@ loom_cc_test(
   SRCS
     "execute_test.cc"
   DEPS
-    ::compile
     ::execute
     ::report
     ::source_low
@@ -283,43 +294,12 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
-    compile
-  HDRS
-    "compile.h"
-    "compile_diagnostics.h"
-  SRCS
-    "compile.c"
-    "compile_diagnostics.c"
-  DEPS
-    ::execute
-    iree::base
-    loom::binding::c::interop
-    loom::binding::c::loomc
-    loom::error::error_defs
-    loom::error::source
-    loom::ops::op_defs
-    loom::sanitizer::options
-    loom::target::pipeline
-    loom::target::pipeline_options
-    loom::target::reporting::report
-    loom::testing::test_file
-    loom::tooling::cli::loomc_diagnostic_json
-    loom::tooling::input
-    loom::tooling::io::source_path
-    loom::util::json
-    loom::util::stream
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
     source_low
   HDRS
     "source_low.h"
   SRCS
     "source_low.c"
   DEPS
-    ::compile
     ::execute
     iree::base
     loom::binding::c::interop
@@ -347,7 +327,6 @@ loom_cc_library(
   SRCS
     "file.c"
   DEPS
-    ::compile
     ::execute
     ::json_output
     ::output
@@ -405,7 +384,6 @@ loom_cc_library(
   SRCS
     "main.c"
   DEPS
-    ::compile
     ::execute
     ::file
     ::json_output
@@ -447,26 +425,14 @@ loom_cc_library(
     test_provider
   HDRS
     "test_provider.h"
-    "test_schedule_provider.h"
   SRCS
     "test_provider.c"
-    "test_schedule_provider.c"
   DEPS
     ::execute
     ::provider
     iree::base
-    loom::codegen::low::allocation
-    loom::codegen::low::descriptors
-    loom::codegen::low::function_model
-    loom::codegen::low::packet_hazard_plan
-    loom::codegen::low::packet_hazard_plan_json
-    loom::codegen::low::packet_progress
-    loom::codegen::low::schedule
-    loom::codegen::low::schedule::dependencies
-    loom::codegen::low::storage_layout
-    loom::codegen::low::storage_transport
-    loom::ir
     loom::target::test::provider
+    loom::tools::loom-check::test::low::providers
   TESTONLY
   PUBLIC
 )
@@ -528,7 +494,8 @@ if(LOOM_TARGET_ARCH_WASM)
   list(APPEND _loom_check_platform_deps loom::target::arch::wasm::check::check_provider)
 endif()
 if(LOOM_TARGET_ARCH_VM)
-  list(APPEND _loom_check_platform_deps loom::tooling::target::vm::check)
+  list(APPEND _loom_check_platform_deps loom::target::arch::vm::check::check_provider)
+  list(APPEND _loom_check_platform_deps loom::tooling::target::vm::check_provider)
 endif()
 if(LOOM_EMIT_WASM)
   list(APPEND _loom_check_platform_deps loom::tooling::target::wasm::check_provider)
@@ -547,7 +514,7 @@ loom_cc_binary(
   COPTS
     ${_loom_check_platform_copts}
   DEPS
-    ::compile
+    ::execute
     ::provider
     iree::base
     loom::target::arch::cmd::check::check_provider
@@ -596,7 +563,8 @@ if(LOOM_TARGET_ARCH_WASM)
   list(APPEND _loom_check_test_platform_deps loom::target::arch::wasm::check::check_provider)
 endif()
 if(LOOM_TARGET_ARCH_VM)
-  list(APPEND _loom_check_test_platform_deps loom::tooling::target::vm::check)
+  list(APPEND _loom_check_test_platform_deps loom::target::arch::vm::check::check_provider)
+  list(APPEND _loom_check_test_platform_deps loom::tooling::target::vm::check_provider)
 endif()
 if(LOOM_EMIT_WASM)
   list(APPEND _loom_check_test_platform_deps loom::tooling::target::wasm::check_provider)
@@ -616,7 +584,7 @@ loom_cc_binary(
     "-DLOOM_CHECK_HAVE_TEST_PROVIDER=1"
     ${_loom_check_test_platform_copts}
   DEPS
-    ::compile
+    ::execute
     ::provider
     ::test_provider
     iree::base

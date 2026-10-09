@@ -63,11 +63,11 @@ loom_cxx_import_options_t options() {
 TEST(TargetRequirementsTest, ProjectsSemanticSubgroupSizeEquality) {
   auto import_options = options();
   Source source(IREE_SV(R"cpp(
-#include <loomcxx/kernel.h>
+#include <loomcxx/target.h>
                   unsigned wave64(unsigned value)
-                      [[loom::where(loom::target::subgroup_size() == 64u)]];
+                      [[loom::where(loom::target::subgroup::size() == 64u)]];
                   unsigned wave32(unsigned value)
-                      [[loom::where(32u == loom::target::subgroup_size())]];
+                      [[loom::where(32u == loom::target::subgroup::size())]];
                 )cpp"),
                 IREE_SV("requirements.cxx"), import_options);
 
@@ -103,9 +103,9 @@ TEST(TargetRequirementsTest, LeavesValuePredicatesToTheirOwner) {
 TEST(TargetRequirementsTest, RejectsInexactTargetComparisons) {
   auto import_options = options();
   Source source(IREE_SV(R"cpp(
-#include <loomcxx/kernel.h>
+#include <loomcxx/target.h>
                   unsigned not_wave64(unsigned value)
-                      [[loom::where(loom::target::subgroup_size() != 64u)]];
+                      [[loom::where(loom::target::subgroup::size() != 64u)]];
                 )cpp"),
                 IREE_SV("inexact.cxx"), import_options);
   auto* expression = function_where(source, "not_wave64");

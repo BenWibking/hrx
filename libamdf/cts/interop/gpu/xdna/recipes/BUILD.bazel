@@ -39,6 +39,18 @@ amdf_cc_library(
 )
 
 amdf_cc_library(
+    name = "resident_memory",
+    testonly = True,
+    srcs = ["resident_memory.cc"],
+    hdrs = ["resident_memory.h"],
+    deps = [
+        ":device_fixture",
+        "//libamdf/cts/util:mapped_memory",
+        "//third_party:google_test",
+    ],
+)
+
+amdf_cc_library(
     name = "resident_transaction",
     testonly = True,
     srcs = ["resident_transaction.cc"],
@@ -80,6 +92,7 @@ amdf_cts_test_suite(
     deps = [
         ":device_fixture",
         ":pm4_queue",
+        ":resident_memory",
         ":resident_transaction",
         "//libamdf/cts/gpu:gpu_device_fixture",
         "//libamdf/cts/gpu/kernels:resident_channels",
@@ -102,6 +115,8 @@ amdf_cts_test_suite(
         "//libamdf/cts/xdna/programs:resident_channels",
         "//libamdf/cts/xdna/programs:resident_exchange",
         "//libamdf/cts/xdna/programs:resident_npu_initiated",
+        "//libamdf/cts/xdna/programs:resident_split_response",
+        "//libamdf/cts/xdna/programs:resident_terminal_relay",
         "//libamdf/cts/xdna/util:executable",
         "//libamdf/cts/xdna/util:execution",
         "//third_party:google_test",

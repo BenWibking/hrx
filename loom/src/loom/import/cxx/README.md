@@ -578,8 +578,9 @@ non-overlapping with `[[loom::noalias]]`:
 void gather_rows([[loom::noalias]] const float* weights,
                  [[loom::noalias]] const unsigned* row_ids,
                  [[loom::noalias]] float* output) {
-  unsigned row = loom::workgroup_id.y;
-  unsigned column = loom::workgroup_id.x * 256u + loom::workitem_id.x;
+  unsigned row = loom::kernel::workgroup::id.y;
+  unsigned column =
+      loom::kernel::workgroup::id.x * 256u + loom::kernel::workitem::id.x;
   unsigned source_row = row_ids[row];
   loom::assume(source_row < 65536u);
   output[row * 768u + column] = weights[source_row * 768u + column];
@@ -1000,32 +1001,34 @@ the corresponding High operation.
 ## Subgroup cooperation
 
 `<loomcxx/kernel.h>` exposes subgroup topology, votes, and broadcasts as typed
-High operations. `subgroup_id()`, `subgroup_count()`, `subgroup_size()`, and
-`subgroup_lane_id()` return unsigned coordinates. The execution width includes
-inactive lanes and can exceed the number of invocations in a partial subgroup.
+High operations. `loom::kernel::subgroup::{id,count,size,lane_id}()` return
+unsigned coordinates. The execution width includes inactive lanes and can
+exceed the number of invocations in a partial subgroup.
 
-Votes observe the active invocations at the call. `subgroup_any(predicate)` and
-`subgroup_all(predicate)` return booleans. `subgroup_ballot(predicate)` returns
-a 64-bit mask, with bit *i* identifying physical lane *i*;
-`subgroup_ballot<unsigned>(predicate)` explicitly requests a 32-bit mask.
-`subgroup_active_mask<Mask>()` uses the same width contract without a predicate.
-The selected mask must cover the target subgroup width.
+Votes observe the active invocations at the call.
+`loom::kernel::subgroup::vote::{any,all}(predicate)` return booleans.
+`loom::kernel::subgroup::vote::ballot(predicate)` returns a 64-bit mask, with
+bit *i* identifying physical lane *i*; an explicit `unsigned` template argument
+requests a 32-bit mask. `loom::kernel::subgroup::active_mask<Mask>()` uses the
+same width contract without a predicate. The selected mask must cover the
+target subgroup width.
 
 Broadcasts preserve their scalar or explicit vector value type. A named source
-lane must be active; the target determines its range and uniformity requirements.
-`subgroup_broadcast_first(value)` selects the first active lane, including
-inside divergent control flow; that lane need not be lane zero.
+lane must be active; the target determines its range and uniformity
+requirements. `loom::kernel::subgroup::broadcast_first(value)` selects the
+first active lane, including inside divergent control flow; that lane need not
+be lane zero.
 
 ```cpp
 #include <loomcxx/kernel.h>
 using UInt4 = unsigned __attribute__((ext_vector_type(4)));
 
 [[loom::force_inline]] UInt4 exchange(UInt4 local, unsigned elected_lane) {
-  return loom::subgroup_broadcast(local, elected_lane);
+  return loom::kernel::subgroup::broadcast(local, elected_lane);
 }
 
 [[loom::force_inline]] unsigned long long ready_streams(bool ready) {
-  return loom::subgroup_ballot(ready);
+  return loom::kernel::subgroup::vote::ballot(ready);
 }
 ```
 
@@ -1046,18 +1049,18 @@ using loom::atomic::scope;
 // After observing a system publication, acquire the payload and let the
 // subgroup cooperate on it.
 loom::buffer::fence<ordering::acquire, scope::system>();
-loom::barrier<loom::memory_space::global, scope::subgroup,
-              ordering::acq_rel>();
+loom::kernel::barrier<loom::memory_space::global, scope::subgroup,
+                      ordering::acq_rel>();
 ```
 
 The second call emits one `kernel.barrier<global> scope(subgroup)
 ordering(acq_rel)`. Barriers accept subgroup or workgroup scope. Global memory
 accepts acquire, release, or acquire-release ordering; workgroup memory requires
 acquire-release. They can live in ordinary callable helpers and do not complete
-independent asynchronous DMA. `workgroup_barrier()` retains the HIP-style
-global-and-workgroup-memory contract. Native payload widths and synchronization
-support follow the corresponding High operations; source import does not split
-values or insert target-specific instructions.
+independent asynchronous DMA. `loom::kernel::workgroup::barrier()` retains the
+HIP-style global-and-workgroup-memory contract. Native payload widths and
+synchronization support follow the corresponding High operations; source import
+does not split values or insert target-specific instructions.
 
 ## Target-selected template providers
 
@@ -1115,12 +1118,13 @@ error because it would bypass late template selection.
 
 Providers can depend on a normalized target fact without naming a backend or
 processor. A trailing `loom::where` comparison against
-`loom::target::subgroup_size()` becomes the template's parameterized target
+`loom::target::subgroup::size()` becomes the template's parameterized target
 condition, while ordinary value clauses remain value predicates:
 
 ```cpp
 #include <loomcxx/kernel.h>
 #include <loomcxx/predicate.h>
+#include <loomcxx/target.h>
 
 LOOM_TEMPLATE_DECL("guide.scale")
 unsigned scale(unsigned value)
@@ -1128,13 +1132,13 @@ unsigned scale(unsigned value)
 
 LOOM_TEMPLATE_DEF(scale)
 [[loom::priority(20)]] unsigned scale_wave64(unsigned value)
-    [[loom::where(loom::target::subgroup_size() == 64u && value > 0u)]] {
+    [[loom::where(loom::target::subgroup::size() == 64u && value > 0u)]] {
   return value + value;
 }
 
 LOOM_TEMPLATE_DEF(scale)
 [[loom::priority(20)]] unsigned scale_wave32(unsigned value)
-    [[loom::where(32u == loom::target::subgroup_size() && value > 0u)]] {
+    [[loom::where(32u == loom::target::subgroup::size() && value > 0u)]] {
   return value << 1u;
 }
 
@@ -1841,10 +1845,10 @@ for (unsigned column = 0; column < columns; ++column) {
 
 Factors and depths can also be ordinary integer expressions: local values,
 helper parameters, template arguments, arithmetic, and topology values such
-as `loom::workgroup_size.x`. The importer reads them once after the `for`
-initializer, before loop execution, and retains them as SSA index operands
-of `scf.for`. Mutation of a binding inside the loop does not change its
-schedule. Source widths, promotions, and signedness are preserved.
+as `loom::kernel::workgroup::size.x`. The importer reads them once after the
+`for` initializer, before loop execution, and retains them as SSA index
+operands of `scf.for`. Mutation of a binding inside the loop does not change
+its schedule. Source widths, promotions, and signedness are preserved.
 
 ```cpp
 LOOM_FORCE_INLINE int sum(const int* input, unsigned columns,

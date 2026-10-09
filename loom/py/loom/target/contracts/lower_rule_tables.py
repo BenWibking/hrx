@@ -80,6 +80,10 @@ class LowerAttrCopyKind(Enum):
     VALUE_FLOAT_AS_F32_I32 = "value_float_as_f32_i32"
     VALUE_FLOAT_AS_F64_I64 = "value_float_as_f64_i64"
     VALUE_FLOAT_AS_F64_I32_WORD = "value_float_as_f64_i32_word"
+    VALUE_FLOAT_POWER_OF_TWO_EXPONENT = "value_float_power_of_two_exponent"
+    VALUE_FLOAT_POWER_OF_TWO_NEGATED_EXPONENT = (
+        "value_float_power_of_two_negated_exponent"
+    )
     VALUE_TYPE_STATIC_DIM_SCALED = "value_type_static_dim_scaled"
     VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED = (
         "value_type_literal_minus_static_dim_scaled"

@@ -136,12 +136,9 @@ static bool loom_low_rematerialization_packet_is_eligible(
   loom_low_descriptor_packet_t packet = {0};
   loom_low_descriptor_packet_initialize(target->descriptor_set, defining_op,
                                         &packet);
-  const bool is_structural =
-      loom_low_concat_isa(defining_op) || loom_low_slice_isa(defining_op);
-  if (!is_structural &&
-      (!loom_low_descriptor_packet_kind_may_rematerialize(packet.kind) ||
-       !loom_low_descriptor_result_can_rematerialize(
-           target->descriptor_set, packet.descriptor, result_index))) {
+  if (!loom_low_descriptor_packet_kind_may_rematerialize(packet.kind) ||
+      !loom_low_descriptor_result_can_rematerialize(
+          target->descriptor_set, packet.descriptor, result_index)) {
     return false;
   }
   *out_defining_op = defining_op;

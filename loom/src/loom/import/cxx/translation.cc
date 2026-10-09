@@ -1126,11 +1126,26 @@ class Translator final : private Initialization::Evaluation {
           unit_.typeTraits().is_array(member->type)) {
         return name(load(ast), cxx::to_string(member->symbol->name()));
       }
-      bool topology = base && (annotated(base->symbol, "workitem_id") ||
-                               annotated(base->symbol, "workgroup_id") ||
-                               annotated(base->symbol, "workgroup_size") ||
-                               annotated(base->symbol, "workgroup_count"));
-      if (!topology) {
+      // Concise source leaves such as workitem::id retain their complete
+      // topology family in the durable IR value name.
+      const char* topology_name = nullptr;
+      decltype(&loom_kernel_workitem_id_build) topology_build = nullptr;
+      if (base) {
+        if (annotated(base->symbol, "workitem_id")) {
+          topology_name = "workitem_id";
+          topology_build = loom_kernel_workitem_id_build;
+        } else if (annotated(base->symbol, "workgroup_id")) {
+          topology_name = "workgroup_id";
+          topology_build = loom_kernel_workgroup_id_build;
+        } else if (annotated(base->symbol, "workgroup_size")) {
+          topology_name = "workgroup_size";
+          topology_build = loom_kernel_workgroup_size_build;
+        } else if (annotated(base->symbol, "workgroup_count")) {
+          topology_name = "workgroup_count";
+          topology_build = loom_kernel_workgroup_count_build;
+        }
+      }
+      if (!topology_build) {
         auto* field = cxx::symbol_cast<cxx::FieldSymbol>(member->symbol);
         if (!field || field->isStatic()) {
           fail(ast, "record value access requires a non-static data member");
@@ -1151,23 +1166,10 @@ class Translator final : private Initialization::Evaluation {
       } else {
         fail(ast, "unknown topology axis");
       }
-      auto build = annotated(base->symbol, "workitem_id")
-                       ? loom_kernel_workitem_id_build
-                   : annotated(base->symbol, "workgroup_id")
-                       ? loom_kernel_workgroup_id_build
-                   : annotated(base->symbol, "workgroup_size")
-                       ? loom_kernel_workgroup_size_build
-                   : annotated(base->symbol, "workgroup_count")
-                       ? loom_kernel_workgroup_count_build
-                       : nullptr;
-      if (!build) {
-        fail(ast, "member base is not an owned topology intrinsic");
-      }
       loom_op_t* op;
       auto coordinate = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
-      check(build(&builder_, dimension, coordinate, source, &op));
-      auto value =
-          name(result(op), cxx::to_string(base->symbol->name()) + "_" + axis);
+      check(topology_build(&builder_, dimension, coordinate, source, &op));
+      auto value = name(result(op), std::string(topology_name) + "_" + axis);
       check(loom_index_cast_build(&builder_, value, coordinate,
                                   types_.get(ast->type, ast), source, &op));
       return result(op);

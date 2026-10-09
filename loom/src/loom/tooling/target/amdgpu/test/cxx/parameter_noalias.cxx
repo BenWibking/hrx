@@ -19,8 +19,9 @@ void gather_rows([[loom::noalias,
                    loom::assume_aligned(64)]] const Half4* weights,
                  [[loom::noalias]] const unsigned* row_ids,
                  [[loom::noalias, loom::assume_aligned(64)]] Float4* output) {
-  unsigned row = loom::workgroup_id.y;
-  unsigned column = loom::workgroup_id.x * 256u + loom::workitem_id.x;
+  unsigned row = loom::kernel::workgroup::id.y;
+  unsigned column =
+      loom::kernel::workgroup::id.x * 256u + loom::kernel::workitem::id.x;
   unsigned source_row = row_ids[row];
   loom::assume(source_row < 2u);
   output[row * 768u + column] =
@@ -30,7 +31,8 @@ void gather_rows([[loom::noalias,
 [[loom::kernel, loom::workgroup_size(256, 1, 1),
   loom::workgroup_count(6, 1, 1)]]
 void initialize_weights(Half4* weights) {
-  unsigned index = loom::workgroup_id.x * 256u + loom::workitem_id.x;
+  unsigned index =
+      loom::kernel::workgroup::id.x * 256u + loom::kernel::workitem::id.x;
   // Distinct lanes and row signs expose both row addressing and lane order.
   float sign = index < 768u ? 1.0f : -1.0f;
   weights[index] =
@@ -48,7 +50,8 @@ void initialize_indices(unsigned* indices) {
 [[loom::kernel, loom::workgroup_size(256, 1, 1),
   loom::workgroup_count(24, 1, 1)]]
 void check_rows(const float* output, unsigned* matches) {
-  unsigned index = loom::workgroup_id.x * 256u + loom::workitem_id.x;
+  unsigned index =
+      loom::kernel::workgroup::id.x * 256u + loom::kernel::workitem::id.x;
   float expected = float(index % 4u + 1u);
   if (index < 3072u) {
     expected = -expected;

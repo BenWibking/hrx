@@ -50,13 +50,6 @@ typedef int Integers __attribute__((vector_size(16)));
 [[loom::op("vector.table.lookup", "afn")]] Integers custom(Integers, Integers);
 
 // ====
-// Dot requires an explicit signedness choice.
-typedef signed char SignedBytes __attribute__((vector_size(16)));
-typedef int Integers __attribute__((vector_size(16)));
-// ERROR@+1: LOWERING/059 "dot4i requires one signedness argument: s8s8, u8s8, s8u8, or u8u8"
-[[loom::op("vector.dot4i")]] Integers custom(SignedBytes, SignedBytes, Integers);
-
-// ====
 // Dot rejects unknown signedness choices.
 typedef signed char SignedBytes __attribute__((vector_size(16)));
 typedef int Integers __attribute__((vector_size(16)));
@@ -67,7 +60,7 @@ typedef int Integers __attribute__((vector_size(16)));
 // Dot accepts exactly one semantic argument.
 typedef signed char SignedBytes __attribute__((vector_size(16)));
 typedef int Integers __attribute__((vector_size(16)));
-// ERROR@+1: LOWERING/059 "dot4i requires one signedness argument: s8s8, u8s8, s8u8, or u8u8"
+// ERROR@+1: LOWERING/059 "dot4i accepts no semantic arguments or one signedness argument: s8s8, u8s8, s8u8, or u8u8"
 [[loom::op("vector.dot4i", "s8s8", "afn")]] Integers custom(SignedBytes, SignedBytes, Integers);
 
 // ====

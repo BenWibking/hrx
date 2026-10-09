@@ -16,17 +16,25 @@ package(
 _VM_CHECK_VISIBILITY = ["//loom/src/loom/tools/loom-check:__pkg__"]
 
 loom_cc_library(
-    name = "check",
-    srcs = ["check.c"],
-    hdrs = ["check.h"],
-    visibility = _VM_CHECK_VISIBILITY,
+    name = "loom_check",
+    srcs = ["check/loom_check.c"],
+    hdrs = ["check/loom_check.h"],
     deps = [
-        "//loom/src/loom/target/arch/vm:provider",
-        "//loom/src/loom/tools/loom-check:compile",
         "//loom/src/loom/tools/loom-check:execute",
-        "//loom/src/loom/tools/loom-check:provider",
         "//runtime/src/iree/base",
         "//runtime/src/iree/vm/bytecode:disassembler",
+    ],
+)
+
+loom_cc_library(
+    name = "check_provider",
+    srcs = ["check/provider.c"],
+    hdrs = ["check/provider.h"],
+    visibility = _VM_CHECK_VISIBILITY,
+    deps = [
+        ":loom_check",
+        "//loom/src/loom/tools/loom-check:provider",
+        "//runtime/src/iree/base",
     ],
 )
 

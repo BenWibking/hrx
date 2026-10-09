@@ -90,21 +90,33 @@ TEST(ConfiguredCompilerProviderSetTest, NativeCpuSelectionUsesDeviceFacts) {
   // No optional ISA features are promised by this execution device.
   iree_cpu_data_t cpu_data = {};
   cpu_data.architecture = IREE_CPU_ARCHITECTURE_X86_64;
-  const loom_target_profile_t* selected = nullptr;
+  loom_target_profile_selection_t selected = {};
   IREE_ASSERT_OK(loom_target_environment_select_cpu_profile(
-      &environment, &cpu_data, nullptr, nullptr, &selected));
-  EXPECT_EQ(selected, scalar_profile);
+      &environment, &cpu_data, nullptr, nullptr, &selected,
+      iree_allocator_system()));
+  ASSERT_NE(selected.profile, nullptr);
+  EXPECT_NE(selected.profile, scalar_profile);
+  EXPECT_NE(selected.destroy, nullptr);
+  const loom_target_bundle_t* selected_bundle =
+      loom_target_profile_bundle(selected.profile);
+  ASSERT_NE(selected_bundle, nullptr);
+  EXPECT_TRUE(iree_string_view_equal(selected_bundle->config->contract_set_key,
+                                     IREE_SV("x86.scalar.core")));
+  loom_target_profile_selection_release(&selected, iree_allocator_system());
   IREE_ASSERT_OK(loom_target_environment_select_cpu_profile(
-      &environment, &cpu_data, nullptr, scalar_profile, &selected));
-  EXPECT_EQ(selected, scalar_profile);
+      &environment, &cpu_data, nullptr, scalar_profile, &selected,
+      iree_allocator_system()));
+  EXPECT_EQ(selected.profile, scalar_profile);
+  EXPECT_EQ(selected.destroy, nullptr);
+  loom_target_profile_selection_release(&selected, iree_allocator_system());
 
   // A compiler running on x86 must still reject an x86 profile for ARM.
   cpu_data.architecture = IREE_CPU_ARCHITECTURE_ARM_64;
-  IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_UNAVAILABLE,
-      loom_target_environment_select_cpu_profile(
-          &environment, &cpu_data, nullptr, scalar_profile, &selected));
-  EXPECT_EQ(selected, nullptr);
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_UNAVAILABLE,
+                        loom_target_environment_select_cpu_profile(
+                            &environment, &cpu_data, nullptr, scalar_profile,
+                            &selected, iree_allocator_system()));
+  EXPECT_EQ(selected.profile, nullptr);
   loom_target_environment_deinitialize(&environment);
 }
 #endif  // LOOM_CONFIG_COMPILER_HAVE_X86

@@ -79,9 +79,9 @@ target fixture.
 Architecturally inapplicable cases in a mixed fixture have explicit exclusions:
 
 ```text
-// TEMPLATE: loom/src/loom/test/corpus/source_low/view_transport.loom-test
-// TEMPLATE-EXCLUDE: @correlated_cfg_rotation SPIR-V requires structured control flow.
-// RUN: emit source-low target=spirv:vulkan1.3+bda output=low control-flow=structured-low
+// TEMPLATE: loom/src/loom/test/corpus/source_low/math_contraction.loom-test
+// TEMPLATE-EXCLUDE: @scalar_explicit Scalar F32 multiply/FMA lowering is not implemented for this profile.
+// RUN: emit source-low target=wasm:simd128 output=low
 ```
 
 Each exclusion names one exact case and gives a reason. Duplicate or unknown

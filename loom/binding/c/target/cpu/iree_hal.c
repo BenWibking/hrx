@@ -103,13 +103,14 @@ static loomc_status_t loomc_cpu_iree_hal_select_target(
     }
   }
 
-  const loom_target_profile_t* selected_profile = NULL;
+  loom_target_profile_selection_t selected_profile = {0};
   if (loomc_status_is_ok(status) && loomc_result_succeeded(result)) {
     const loom_target_profile_t* requested_profile =
         loomc_target_profile_loom_target_profile(options->target_profile);
     iree_status_t iree_status = loom_target_environment_select_cpu_profile(
         loomc_target_environment_loom_target_environment(target_environment),
-        &cpu_spec.cpu_data, NULL, requested_profile, &selected_profile);
+        &cpu_spec.cpu_data, NULL, requested_profile, &selected_profile,
+        iree_allocator_from_loomc(allocator));
     if (!iree_status_is_ok(iree_status)) {
       status = loomc_cpu_iree_hal_fail_status(
           result, loomc_status_from_iree(iree_status));
@@ -150,12 +151,12 @@ static loomc_status_t loomc_cpu_iree_hal_select_target(
       const loomc_string_view_t identifier =
           loomc_string_view_is_empty(options->identifier)
               ? loomc_string_view_from_iree(
-                    selected_profile->target_bundle->name)
+                    selected_profile.profile->target_bundle->name)
               : options->identifier;
-      status =
-          loomc_target_profile_create(target_environment, identifier,
-                                      (loom_target_profile_t*)selected_profile,
-                                      NULL, allocator, &target_profile);
+      status = loomc_target_profile_create(
+          target_environment, identifier, selected_profile.profile,
+          selected_profile.destroy, allocator, &target_profile);
+      selected_profile = (loom_target_profile_selection_t){0};
     }
   }
 
@@ -170,6 +171,8 @@ static loomc_status_t loomc_cpu_iree_hal_select_target(
     *out_result = result;
     result = NULL;
   }
+  loom_target_profile_selection_release(&selected_profile,
+                                        iree_allocator_from_loomc(allocator));
   loomc_target_profile_release(target_profile);
   loomc_result_release(result);
   return status;

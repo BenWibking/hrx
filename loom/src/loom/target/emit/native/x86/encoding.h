@@ -10,8 +10,10 @@
 // a packed vector recipe marked by LOOM_X86_ENCODING_FORMAT_VECTOR. Python
 // descriptor declarations supply all immutable opcode and recipe facts;
 // encoding never interprets a mnemonic or resolves SSA values. Vector
-// encoding_id fields hold opcode, map, mandatory prefix, W, VEX/EVEX kind, and
-// vector length in that order from low to high bits.
+// encoding_id fields hold opcode, map, mandatory prefix, W, a prefix/map
+// extension, and vector length in that order from low to high bits. EVEX maps
+// 5 and 6 use the two map-zero extension states; all other maps retain their
+// architectural number and use the extension as the EVEX selector.
 
 #ifndef LOOM_TARGET_EMIT_NATIVE_X86_ENCODING_H_
 #define LOOM_TARGET_EMIT_NATIVE_X86_ENCODING_H_

@@ -167,12 +167,13 @@ iree_status_t loom_math_legalize_create(loom_pass_t* pass,
 
 static bool loom_math_legalize_scalar_result_query(
     const loom_module_t* module, const loom_op_t* op,
-    loom_target_math_op_t math_op,
+    const loom_target_bundle_t* target_bundle, loom_target_math_op_t math_op,
     loom_target_math_fastmath_flags_t fastmath_flags,
     loom_target_math_query_t* out_query) {
   const loom_value_id_t result = loom_op_results(op)[0];
   const loom_type_t result_type = loom_module_value_type(module, result);
   *out_query = (loom_target_math_query_t){
+      .target_bundle = target_bundle,
       .math_op = math_op,
       .lane_domain = LOOM_TARGET_MATH_LANE_DOMAIN_SCALAR,
       .value_type = result_type,
@@ -184,12 +185,13 @@ static bool loom_math_legalize_scalar_result_query(
 
 static bool loom_math_legalize_vector_result_query(
     const loom_module_t* module, const loom_op_t* op,
-    loom_target_math_op_t math_op,
+    const loom_target_bundle_t* target_bundle, loom_target_math_op_t math_op,
     loom_target_math_fastmath_flags_t fastmath_flags,
     loom_target_math_query_t* out_query) {
   const loom_value_id_t result = loom_op_results(op)[0];
   const loom_type_t result_type = loom_module_value_type(module, result);
   *out_query = (loom_target_math_query_t){
+      .target_bundle = target_bundle,
       .math_op = math_op,
       .lane_domain = LOOM_TARGET_MATH_LANE_DOMAIN_VECTOR,
       .value_type = result_type,
@@ -337,18 +339,19 @@ static loom_target_math_op_t loom_math_legalize_vector_op_kind(
 
 static bool loom_math_legalize_query_for_op(
     const loom_module_t* module, const loom_op_t* op,
+    const loom_target_bundle_t* target_bundle,
     loom_target_math_query_t* out_query) {
   loom_target_math_op_t math_op = loom_math_legalize_scalar_op_kind(op);
   if (math_op != LOOM_TARGET_MATH_OP_UNKNOWN) {
     return loom_math_legalize_scalar_result_query(
-        module, op, math_op,
+        module, op, target_bundle, math_op,
         loom_math_legalize_fastmath_flags(op->instance_flags), out_query);
   }
 
   math_op = loom_math_legalize_vector_op_kind(op);
   if (math_op != LOOM_TARGET_MATH_OP_UNKNOWN) {
     return loom_math_legalize_vector_result_query(
-        module, op, math_op,
+        module, op, target_bundle, math_op,
         loom_math_legalize_fastmath_flags(op->instance_flags), out_query);
   }
 
@@ -499,7 +502,9 @@ static iree_status_t loom_math_legalize_rewrite(
   }
 
   loom_target_math_query_t query = {0};
-  if (!loom_math_legalize_query_for_op(state->module, op, &query)) {
+  if (!loom_math_legalize_query_for_op(
+          state->module, op, loom_target_facts_bundle(state->target_facts),
+          &query)) {
     return iree_ok_status();
   }
 
@@ -889,6 +894,7 @@ iree_status_t loom_math_legalize_run(loom_pass_t* pass, loom_module_t* module,
   loom_greedy_rewrite_options_t rewrite_options = {
       .max_iterations = options ? options->max_iterations : 0,
       .math_policy = policy,
+      .math_target_bundle = loom_target_facts_bundle(target_facts),
   };
   loom_greedy_rewrite_callbacks_t callbacks = {
       .user_data = &state,

@@ -81,7 +81,7 @@ low.func.def target<x86.avx512.core>(@x86_target) @x86_avx2_low_subset_rejects_h
 // RUN: emit low-allocation-json @x86_avx_vnni_low_subset_rejects_high_ymm output=none fixed=%acc_copy:physical_register:16:1 fixed=%dot:physical_register:16:1
 x86.target<avx512_packed_dot> @x86_target
 
-low.func.def target<x86.avx512_packed_dot.core>(@x86_target) @x86_avx_vnni_low_subset_rejects_high_ymm(%acc: reg<x86.ymm>, %lhs: reg<x86.ymm>, %rhs: reg<x86.ymm>) -> (reg<x86.ymm>) asm {
+low.func.def target<x86.avx512_features.core>(@x86_target) @x86_avx_vnni_low_subset_rejects_high_ymm(%acc: reg<x86.ymm>, %lhs: reg<x86.ymm>, %rhs: reg<x86.ymm>) -> (reg<x86.ymm>) asm {
   // ERROR@+1: BACKEND/022 {function_name="x86_avx_vnni_low_subset_rejects_high_ymm", request_kind="fixed_value", register_class="x86.ymm", location_base="16", allocation_capacity="16"}
   %acc_copy = copy %acc : reg<x86.ymm> -> reg<x86.ymm>
   // ERROR@+1: BACKEND/022 {function_name="x86_avx_vnni_low_subset_rejects_high_ymm", request_kind="fixed_value", register_class="x86.ymm", location_base="16", allocation_capacity="16"}
