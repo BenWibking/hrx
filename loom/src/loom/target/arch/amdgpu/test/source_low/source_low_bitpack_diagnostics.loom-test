@@ -13,7 +13,7 @@ func.def target(@target) @bitpack_width_rejected(%codes: vector<2xi32>) -> (vect
 amdgpu.target<gfx11-generic> @target
 
 func.def target(@target) @bitpack_source_type_rejected(%codes: vector<4xi8>) -> (vector<4xi8>) {
-  // ERROR@+1: TARGET/003 {subject_role="type", subject_name="vector<i32>", constraint_key="amdgpu.arithmetic.vector_i32"}
+  // ERROR@+1: TARGET/002 {field_name="source", actual_type="vector<4xi8>"}
   %packed = vector.bitpack<8> %codes : vector<4xi8> -> vector<4xi8>
   func.return %packed : vector<4xi8>
 }
@@ -23,7 +23,7 @@ func.def target(@target) @bitpack_source_type_rejected(%codes: vector<4xi8>) -> 
 amdgpu.target<gfx11-generic> @target
 
 func.def target(@target) @bitpack_result_type_rejected(%codes: vector<4xi32>) -> (vector<2xi16>) {
-  // ERROR@+1: TARGET/003 {subject_role="type", subject_name="vector<i8>", constraint_key="amdgpu.arithmetic.vector_i8_packed"}
+  // ERROR@+1: TARGET/002 {field_name="result", actual_type="vector<2xi16>"}
   %packed = vector.bitpack<8> %codes : vector<4xi32> -> vector<2xi16>
   func.return %packed : vector<2xi16>
 }

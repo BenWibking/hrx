@@ -327,6 +327,22 @@ def _rdna_scalar_domain_fma_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
     )
 
 
+def _f64_arithmetic_support_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
+    return (
+        _v_sub_f64_overlay(),
+        _v_fma_f64_neg_a_overlay(),
+        _v_fma_f64_neg_a_one_overlay(),
+        _v_sqrt_f64_overlay(),
+        _v_rsq_f64_overlay(),
+        _v_ldexp_f64_overlay(),
+        _v_rcp_f64_overlay(),
+        _v_div_scale_f64_overlay(),
+        _v_div_fmas_f64_overlay(),
+        _v_div_fixup_f64_overlay(),
+        *_v_cvt_f64_integer_overlays(),
+    )
+
+
 def _cdna_core_overlays(
     *,
     packed8_source_semantics: str,
@@ -410,7 +426,7 @@ def _cdna_core_overlays(
         *_integer_bitwise_permute_overlays(include_vop3_literal_forms=False),
         *_v_binary_f32_overlays(),
         *_v_binary_f64_overlays(),
-        _v_sub_f64_overlay(),
+        *_f64_arithmetic_support_overlays(),
         *_v_binary_f16_overlays(),
         _v_med3_num_f32_overlay(),
         *_v_binary_f32_dpp_legacy_overlays(),
@@ -419,8 +435,6 @@ def _cdna_core_overlays(
         _v_fmamk_f32_product_flushing_overlay(),
         _v_fmac_f32_overlay(),
         *_cdna_scalar_fma_overlays(),
-        _v_fma_f64_neg_a_overlay(),
-        _v_fma_f64_neg_a_one_overlay(),
         _v_pk_fmac_f16_overlay(),
         *_v_pk_operand_overlays(
             (
@@ -442,18 +456,11 @@ def _cdna_core_overlays(
         *_v_mad_mixhi_f16_overlays(op_sel_field="OP_SEL", op_sel_hi_field="OP_SEL_HI"),
         *_v_native_f32_math_overlays(),
         _v_sqrt_f32_overlay(),
-        _v_sqrt_f64_overlay(),
-        _v_rsq_f64_overlay(),
-        _v_ldexp_f64_overlay(),
         _v_rsq_f32_overlay(),
         _v_rcp_f32_overlay(),
-        _v_rcp_f64_overlay(),
         _v_div_scale_f32_overlay(),
         _v_div_fmas_f32_overlay(),
         _v_div_fixup_f32_overlay(),
-        _v_div_scale_f64_overlay(),
-        _v_div_fmas_f64_overlay(),
-        _v_div_fixup_f64_overlay(),
         _v_cvt_f32_f16_overlay(),
         _v_cvt_f16_f32_overlay(),
         _v_pack_b32_f16_overlay(),
@@ -472,7 +479,6 @@ def _cdna_core_overlays(
         _v_cvt_f64_f32_overlay(),
         _v_cvt_f32_f64_overlay(),
         _v_cvt_f32_i32_overlay(),
-        *_v_cvt_f64_integer_overlays(),
         _v_cvt_f32_u32_overlay(),
         *_v_cvt_f32_ubyte_overlays(),
         _v_cvt_i32_f32_overlay(),
@@ -1127,6 +1133,7 @@ def _gfx11_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         _v_permlanex16_b32_src12_inline_overlay(),
         *_v_binary_f32_overlays(),
         *_v_binary_f64_overlays(),
+        *_f64_arithmetic_support_overlays(),
         *_v_binary_f16_overlays(),
         _v_med3_num_f32_overlay(),
         *_v_binary_f32_dpp16_overlays(),
@@ -1978,6 +1985,7 @@ def _rdna4_core_overlays(
         _v_permlanex16_b32_src12_inline_overlay(),
         *_v_binary_f32_overlays(),
         *_v_binary_f64_overlays(minmax_instruction_suffix="_NUM"),
+        *_f64_arithmetic_support_overlays(),
         *_v_binary_f16_overlays(),
         _v_med3_num_f32_overlay(
             instruction_name="V_MED3_NUM_F32",
