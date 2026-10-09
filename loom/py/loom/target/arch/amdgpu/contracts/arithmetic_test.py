@@ -667,6 +667,49 @@ def test_clamp_rules_publish_distinct_number_and_ieee_ops() -> None:
     ) in vector_positions
 
 
+def test_clamp_rules_publish_existing_f32_fallback_recipes() -> None:
+    compiled = _compiled_arithmetic_rules()
+
+    expected_descriptors = {
+        0: {
+            "amdgpu.v_cmp_olt_f32",
+            "amdgpu.v_cmp_ogt_f32",
+            "amdgpu.v_cndmask_b32",
+        },
+        1: {"amdgpu.v_max_f32", "amdgpu.v_min_f32"},
+    }
+    for source_op, expected_type in (
+        (scalar_arithmetic.scalar_clampf, Scalar("f32")),
+        (
+            vector.vector_clampf,
+            TypePattern.vector(
+                "f32",
+                minimum_static_elements=1,
+                maximum_static_elements="LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES",
+            ),
+        ),
+    ):
+        recipes = {}
+        for rule in _rules_for_source_op(compiled, source_op):
+            if not rule.flags & LOWER_RULE_FLAG_CONTRACT_ONLY:
+                continue
+            guards = compiled.guards[
+                rule.guard_start : rule.guard_start + rule.guard_count
+            ]
+            mode_guards = tuple(
+                guard for guard in guards if guard.kind == GuardKind.ENUM_ATTR_EQUALS
+            )
+            assert len(mode_guards) == 1
+            recipes[mode_guards[0].u64] = {
+                guard.descriptor.key
+                for guard in guards
+                if guard.kind == GuardKind.DESCRIPTOR_AVAILABLE
+            }
+            assert set(_rule_type_patterns(compiled, rule)) == {expected_type}
+
+        assert recipes == expected_descriptors
+
+
 def test_packed_f32_arithmetic_rules_publish_native_pk_ops() -> None:
     compiled = _compiled_arithmetic_rules()
 
