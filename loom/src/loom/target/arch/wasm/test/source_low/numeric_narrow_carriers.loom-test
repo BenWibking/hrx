@@ -1,5 +1,26 @@
 // RUN: emit source-low target=wasm:simd128 output=low
 
+// Narrow integer constants use their signed source domains while occupying
+// Wasm i32 registers.
+func.def @scalar_integer_constants() -> (i8, i8, i16, i16) {
+  %byte_min = scalar.constant -128 : i8
+  %byte_max = scalar.constant 127 : i8
+  %word_min = scalar.constant -32768 : i16
+  %word_max = scalar.constant 32767 : i16
+  func.return %byte_min, %byte_max, %word_min, %word_max : i8, i8, i16, i16
+}
+
+// ----
+low.func.def target<wasm.core.simd128> abi(wasm_function) @scalar_integer_constants() -> (reg<wasm.i32>, reg<wasm.i32>, reg<wasm.i32>, reg<wasm.i32>) asm {
+  %byte_min = i32.const -128
+  %byte_max = i32.const 127
+  %word_min = i32.const -32768
+  %word_max = i32.const 32767
+  return %byte_min, %byte_max, %word_min, %word_max
+}
+
+// ====
+
 // Narrow floating values use unsigned integer lane payloads without conversion.
 func.def @byte_lanes(%input: vector<16xf8E4M3>, %replacement: f8E4M3, %condition: i1) -> (vector<16xi8>, f8E4M3) {
   %last = vector.extract %input[15] : vector<16xf8E4M3> -> f8E4M3
