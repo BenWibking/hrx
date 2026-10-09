@@ -16,6 +16,8 @@
 #include "loom/target/arch/x86/contracts/avx512_fp16.h"
 #include "loom/target/arch/x86/contracts/avx512_fp16_lower_rules.h"
 #include "loom/target/arch/x86/contracts/avx512_lower_rules.h"
+#include "loom/target/arch/x86/contracts/avx_ne_convert.h"
+#include "loom/target/arch/x86/contracts/avx_ne_convert_lower_rules.h"
 #include "loom/target/arch/x86/contracts/packed_dot.h"
 #include "loom/target/arch/x86/contracts/packed_dot_lower_rules.h"
 #include "loom/target/arch/x86/contracts/scalar.h"
