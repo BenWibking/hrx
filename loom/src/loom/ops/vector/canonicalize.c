@@ -235,6 +235,36 @@ static bool loom_vector_index_value_as_static_index(
   return true;
 }
 
+static bool loom_vector_slice_offset_value_as_static_offset(
+    const loom_rewriter_t* rewriter, loom_value_id_t value_id,
+    loom_type_t source_type, loom_type_t result_type, uint16_t axis,
+    int64_t* out_static_offset) {
+  int64_t static_offset = 0;
+  if (!loom_value_facts_as_exact_i64(
+          loom_rewriter_value_facts(rewriter, value_id), &static_offset) ||
+      static_offset < 0) {
+    return false;
+  }
+  if (axis < loom_type_rank(source_type) &&
+      !loom_type_dim_is_dynamic_at(source_type, (uint8_t)axis)) {
+    const int64_t bound =
+        loom_type_dim_static_size_at(source_type, (uint8_t)axis);
+    if (static_offset > bound) {
+      return false;
+    }
+    if (axis < loom_type_rank(result_type) &&
+        !loom_type_dim_is_dynamic_at(result_type, (uint8_t)axis)) {
+      const int64_t extent =
+          loom_type_dim_static_size_at(result_type, (uint8_t)axis);
+      if (extent > bound || static_offset > bound - extent) {
+        return false;
+      }
+    }
+  }
+  *out_static_offset = static_offset;
+  return true;
+}
+
 static bool loom_vector_static_ordinal_from_indices(
     loom_type_t type, const int64_t* indices, iree_host_size_t* out_ordinal) {
   iree_host_size_t ordinal = 0;
@@ -531,27 +561,94 @@ static iree_status_t loom_vector_canonicalize_uniform_result(
 // Construction and access
 //===----------------------------------------------------------------------===//
 
+static iree_status_t loom_vector_canonicalize_slice_static_offsets(
+    loom_op_t* op, loom_rewriter_t* rewriter, loom_type_t source_type,
+    loom_type_t result_type, bool* out_changed) {
+  *out_changed = false;
+  const loom_attribute_t old_static_offsets =
+      loom_vector_slice_static_offsets(op);
+  if (old_static_offsets.kind != LOOM_ATTR_I64_ARRAY ||
+      old_static_offsets.count == 0) {
+    return iree_ok_status();
+  }
+
+  const loom_value_slice_t old_offsets = loom_vector_slice_offsets(op);
+  if (old_offsets.count == 0) {
+    return iree_ok_status();
+  }
+
+  int64_t new_static_offsets[LOOM_TYPE_MAX_RANK];
+  loom_value_id_t new_offsets[LOOM_TYPE_MAX_RANK];
+
+  bool changed = false;
+  uint16_t old_dynamic_offset = 0;
+  uint16_t new_dynamic_offset = 0;
+  for (uint16_t axis = 0; axis < old_static_offsets.count; ++axis) {
+    int64_t static_offset = old_static_offsets.i64_array[axis];
+    if (static_offset != INT64_MIN) {
+      new_static_offsets[axis] = static_offset;
+      continue;
+    }
+    if (old_dynamic_offset >= old_offsets.count) {
+      return iree_ok_status();
+    }
+
+    const loom_value_id_t dynamic_offset =
+        old_offsets.values[old_dynamic_offset++];
+    if (loom_vector_slice_offset_value_as_static_offset(
+            rewriter, dynamic_offset, source_type, result_type, axis,
+            &static_offset)) {
+      new_static_offsets[axis] = static_offset;
+      changed = true;
+    } else {
+      new_static_offsets[axis] = INT64_MIN;
+      new_offsets[new_dynamic_offset++] = dynamic_offset;
+    }
+  }
+  if (old_dynamic_offset != old_offsets.count || !changed) {
+    return iree_ok_status();
+  }
+
+  loom_builder_set_before(&rewriter->builder, op);
+  const loom_value_id_t value_checkpoint =
+      loom_rewriter_value_checkpoint(rewriter);
+  loom_op_t* replacement_op = NULL;
+  IREE_RETURN_IF_ERROR(loom_vector_slice_build(
+      &rewriter->builder, loom_vector_slice_source(op), new_offsets,
+      new_dynamic_offset, new_static_offsets, old_static_offsets.count,
+      result_type, op->location, &replacement_op));
+  IREE_RETURN_IF_ERROR(loom_vector_replace_single_result_with_new_op(
+      op, rewriter, replacement_op, value_checkpoint));
+  *out_changed = true;
+  return iree_ok_status();
+}
+
 static iree_status_t loom_vector_canonicalize_slice(loom_op_t* op,
                                                     loom_rewriter_t* rewriter,
                                                     bool* out_changed) {
   *out_changed = false;
-  if (loom_vector_slice_offsets(op).count != 0) {
+  const loom_value_id_t source = loom_vector_slice_source(op);
+  const loom_type_t source_type =
+      loom_module_value_type(rewriter->module, source);
+  const loom_type_t result_type =
+      loom_module_value_type(rewriter->module, loom_vector_slice_result(op));
+  if (!loom_type_is_vector(source_type) || !loom_type_is_vector(result_type) ||
+      loom_type_rank(source_type) != loom_type_rank(result_type)) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(loom_vector_canonicalize_slice_static_offsets(
+      op, rewriter, source_type, result_type, out_changed));
+  if (*out_changed || loom_vector_slice_offsets(op).count != 0) {
     return iree_ok_status();
   }
 
-  const loom_value_id_t source = loom_vector_slice_source(op);
   loom_op_t* source_def_op = NULL;
   if (!loom_vector_value_def_op(rewriter, source, &source_def_op) ||
       !loom_vector_concat_isa(source_def_op)) {
     return iree_ok_status();
   }
 
-  const loom_type_t source_type =
-      loom_module_value_type(rewriter->module, source);
-  const loom_type_t result_type =
-      loom_module_value_type(rewriter->module, loom_vector_slice_result(op));
-  if (!loom_type_is_vector(source_type) || !loom_type_is_vector(result_type) ||
-      !loom_type_is_all_static(source_type) ||
+  if (!loom_type_is_all_static(source_type) ||
       !loom_type_is_all_static(result_type)) {
     return iree_ok_status();
   }

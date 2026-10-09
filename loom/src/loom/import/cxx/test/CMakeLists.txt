@@ -84,6 +84,8 @@ loom_check_test_suite(
     "locations.cxx-test"
     "loops.cxx-test"
     "macro_operators.cxx-test"
+    "matrix_fragments.cxx-test"
+    "matrix_fragments_invalid.cxx-test"
     "mxfp_group_dot.cxx-test"
     "narrow_float_subtraction.cxx-test"
     "offsetof.cxx-test"

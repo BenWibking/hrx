@@ -346,6 +346,33 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_cc_library(
   NAME
+    fragment
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "fragment.h"
+  SRCS
+    "fragment.cc"
+  DEPS
+    ::index_values
+    iree::base
+    iree::third_party::cxx_parser
+    loom::import::cxx::source::error
+    loom::import::cxx::value::representation
+    loom::import::cxx::value::types
+    loom::ir
+    loom::ops::encoding
+    loom::ops::vector
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
     shaped
   CXX_STANDARD
     23
@@ -358,9 +385,11 @@ loom_cc_library(
     "shaped.cc"
   DEPS
     ::combining
+    ::index_values
     ::scalar_bindings
     iree::third_party::cxx_parser
     loom::import::cxx::source::error
+    loom::import::cxx::value::representation
     loom::import::cxx::value::types
     loom::ops::combining
     loom::ops::vector
@@ -422,6 +451,31 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_cc_library(
   NAME
+    index_values
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "index_values.h"
+  SRCS
+    "index_values.cc"
+  DEPS
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::error
+    loom::import::cxx::value::representation
+    loom::import::cxx::value::types
+    loom::ops::index
+    loom::ops::scalar
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
     view
   CXX_STANDARD
     23
@@ -433,6 +487,7 @@ loom_cc_library(
   SRCS
     "view.cc"
   DEPS
+    ::index_values
     iree::base
     iree::third_party::cxx_parser
     loom::import::cxx::source
@@ -543,6 +598,7 @@ loom_cc_library(
     ::check
     ::decode
     ::encoding
+    ::fragment
     ::function_contracts
     ::kernel
     ::launch

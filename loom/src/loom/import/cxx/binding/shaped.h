@@ -14,6 +14,7 @@
 #include <span>
 #include <variant>
 
+#include "loom/import/cxx/value/representation.h"
 #include "loom/import/cxx/value/types.h"
 #include "loom/ops/vector/ops.h"
 
@@ -24,6 +25,11 @@ namespace loom::cxx_import {
 // the retained result type and semantic kind without reexamining source types.
 class ShapedIntrinsic {
  public:
+  struct Slice {
+    // Source-language interpretation retained for index widening.
+    std::optional<bool> offset_unsigned;
+    bool operator==(const Slice&) const = default;
+  };
   struct TableLookup {
     bool operator==(const TableLookup&) const = default;
   };
@@ -49,7 +55,8 @@ class ShapedIntrinsic {
     uint8_t flags;
     bool operator==(const Reduction&) const = default;
   };
-  using Operation = std::variant<TableLookup, Dot4i, Dot2f, Dotf, Reduction>;
+  using Operation =
+      std::variant<Slice, TableLookup, Dot4i, Dot2f, Dotf, Reduction>;
 
   // Admits a string-only loom::op attribute independently of source types.
   // Unknown names return nullopt; recognized names with invalid declarations
@@ -69,8 +76,8 @@ class ShapedIntrinsic {
                                  cxx::AST* owner);
 
   // Emits the admitted operation using already-converted source arguments.
-  loom_value_id_t call(std::span<const loom_value_id_t> arguments,
-                       uint8_t math_flags, loom_builder_t* builder,
+  loom_value_id_t call(std::span<const Value> arguments, uint8_t math_flags,
+                       loom_builder_t* builder,
                        loom_location_id_t location) const;
 
   // Compares operation semantics for redeclarations of one canonical symbol.

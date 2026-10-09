@@ -22,6 +22,7 @@ load("//loom/target/amdgpu:execution_profiles.bzl", "amdgpu_execution_profile")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "nvfp4_matrix.h",
     "q8s32_specialization.h",
     "q8s32_specialization_providers.loom",
     "q8s32_specialization_providers.cxx",
@@ -211,6 +212,38 @@ loom_test(
 )
 
 loom_test(
+    name = "nvfp4_matrix_test",
+    srcs = [
+        "nvfp4_matrix.cxx",
+        "nvfp4_matrix_providers.cxx",
+    ],
+    benchmark_smoke = False,
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx1100",
+    ],
+    data = ["nvfp4_matrix.h"],
+    execution_profiles = _EXECUTION_PROFILES,
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+)
+
+loom_test(
+    name = "nvfp4_matrix_loom_providers_test",
+    srcs = [
+        "nvfp4_matrix.cxx",
+        "nvfp4_matrix_providers.loom",
+    ],
+    benchmark_smoke = False,
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx1100",
+    ],
+    data = ["nvfp4_matrix.h"],
+    execution_profiles = _EXECUTION_PROFILES,
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+)
+
+loom_test(
     name = "q8s32_specialization_test",
     srcs = [
         "q8s32_specialization.cxx",
@@ -248,6 +281,21 @@ loom_check_test(
 )
 
 loom_check_test(
+    name = "nvfp4_matrix_lowering",
+    src = "nvfp4_matrix_lowering.cxx-test",
+    data = [
+        "nvfp4_matrix.cxx",
+        "nvfp4_matrix.h",
+        "nvfp4_matrix_providers.cxx",
+    ],
+    runner = "//loom/src/loom/tools/loom-check",
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/import:cxx",
+        "//loom/config/target/arch:amdgpu",
+    ]),
+)
+
+loom_check_test(
     name = "storage_division",
     src = "storage_division.cxx-test",
     runner = "//loom/src/loom/tools/loom-check",
@@ -271,6 +319,7 @@ loom_check_test(
         "assembly_lowering",
         "assembly_invalid",
         "integer_extrema",
+        "matrix_fragments",
         "opaque_pointers",
         "parameter_alignment",
         "parameter_noalias",

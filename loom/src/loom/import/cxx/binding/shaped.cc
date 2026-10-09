@@ -9,10 +9,12 @@
 #include <cxx/names.h>
 
 #include <array>
+#include <limits>
 #include <type_traits>
 #include <utility>
 
 #include "loom/import/cxx/binding/combining.h"
+#include "loom/import/cxx/binding/index_values.h"
 #include "loom/import/cxx/binding/scalar_bindings.h"
 #include "loom/import/cxx/source/error.h"
 #include "loom/ops/combining.h"
@@ -51,6 +53,12 @@ std::optional<ShapedIntrinsic::Operation> ShapedIntrinsic::admit(
     cxx::TranslationUnit& unit, Diagnostics& diagnostics,
     const cxx::Attribute& attribute, cxx::AST* owner) {
   auto name = attribute.arguments[0]->name();
+  if (name == "vector.slice") {
+    if (attribute.arguments.size() != 1) {
+      diagnostics.reject(unit, owner, "vector slice has no semantic arguments");
+    }
+    return Slice{std::nullopt};
+  }
   if (name == "vector.table.lookup") {
     if (attribute.arguments.size() != 1) {
       diagnostics.reject(unit, owner,
@@ -117,6 +125,30 @@ ShapedIntrinsic ShapedIntrinsic::resolve(Operation operation,
                                          Diagnostics& diagnostics, Types& types,
                                          const cxx::FunctionType* signature,
                                          cxx::AST* owner) {
+  if (auto* slice = std::get_if<Slice>(&operation)) {
+    if (signature->isVariadic() || signature->parameterTypes().size() != 2) {
+      diagnostics.reject(unit, owner,
+                         "vector.slice requires a source and lane offset");
+    }
+    auto* source = types.vector(signature->parameterTypes()[0]);
+    auto* result = types.vector(signature->returnType());
+    if (!source || !result) {
+      diagnostics.reject(unit, owner,
+                         "vector.slice requires source and result vectors");
+    }
+    if (types.unqualified(source->elementType()) !=
+            types.unqualified(result->elementType()) ||
+        result->elementCount() > source->elementCount()) {
+      diagnostics.reject(
+          unit, owner,
+          "vector.slice result must preserve the element type and fit within "
+          "the source");
+    }
+    slice->offset_unsigned = require_integral(unit, diagnostics, types,
+                                              signature->parameterTypes()[1],
+                                              owner, "vector.slice offset");
+    return ShapedIntrinsic(operation, types.get(result, owner));
+  }
   bool lookup = std::holds_alternative<TableLookup>(operation);
   bool reduction = std::holds_alternative<Reduction>(operation);
   bool scalar_result = reduction || std::holds_alternative<Dotf>(operation);
@@ -226,35 +258,45 @@ ShapedIntrinsic ShapedIntrinsic::resolve(Operation operation,
   return ShapedIntrinsic(operation, result_type);
 }
 
-loom_value_id_t ShapedIntrinsic::call(
-    std::span<const loom_value_id_t> arguments, uint8_t math_flags,
-    loom_builder_t* builder, loom_location_id_t location) const {
+loom_value_id_t ShapedIntrinsic::call(std::span<const Value> arguments,
+                                      uint8_t math_flags,
+                                      loom_builder_t* builder,
+                                      loom_location_id_t location) const {
   loom_op_t* op;
   check(std::visit(
       [&](auto operation) {
         using T = decltype(operation);
-        if constexpr (std::is_same_v<T, TableLookup>) {
-          return loom_vector_table_lookup_build(
-              builder, arguments[0], arguments[1], result_type_, location, &op);
+        if constexpr (std::is_same_v<T, Slice>) {
+          const loom_value_id_t offset = cast_index(
+              arguments[1], *operation.offset_unsigned, builder, location);
+          const int64_t static_offset = std::numeric_limits<int64_t>::min();
+          return loom_vector_slice_build(builder, arguments[0].ssa(), &offset,
+                                         1, &static_offset, 1, result_type_,
+                                         location, &op);
+        } else if constexpr (std::is_same_v<T, TableLookup>) {
+          return loom_vector_table_lookup_build(builder, arguments[0].ssa(),
+                                                arguments[1].ssa(),
+                                                result_type_, location, &op);
         } else if constexpr (std::is_same_v<T, Dot4i>) {
-          return loom_vector_dot4i_build(builder, *operation.kind, arguments[0],
-                                         arguments[1], arguments[2],
-                                         result_type_, location, &op);
+          return loom_vector_dot4i_build(
+              builder, *operation.kind, arguments[0].ssa(), arguments[1].ssa(),
+              arguments[2].ssa(), result_type_, location, &op);
         } else if constexpr (std::is_same_v<T, Dot2f>) {
-          return loom_vector_dot2f_build(builder, arguments[0], arguments[1],
-                                         arguments[2], result_type_, location,
-                                         &op);
+          return loom_vector_dot2f_build(builder, arguments[0].ssa(),
+                                         arguments[1].ssa(), arguments[2].ssa(),
+                                         result_type_, location, &op);
         } else if constexpr (std::is_same_v<T, Dotf>) {
-          return loom_vector_dotf_build(
-              builder, operation.flags | math_flags, arguments[0], arguments[1],
-              arguments[2], result_type_, location, &op);
+          return loom_vector_dotf_build(builder, operation.flags | math_flags,
+                                        arguments[0].ssa(), arguments[1].ssa(),
+                                        arguments[2].ssa(), result_type_,
+                                        location, &op);
         } else {
           uint8_t flags = loom_combining_kind_accepts_float(operation.kind)
                               ? operation.flags | math_flags
                               : 0;
-          return loom_vector_reduce_build(builder, operation.kind, flags,
-                                          arguments[0], arguments[1],
-                                          result_type_, location, &op);
+          return loom_vector_reduce_build(
+              builder, operation.kind, flags, arguments[0].ssa(),
+              arguments[1].ssa(), result_type_, location, &op);
         }
       },
       operation_));
