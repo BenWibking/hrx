@@ -619,16 +619,15 @@ iree_status_t loom_vector_interleave_verify(
 // %lo, %hi = vector.deinterleave<0> %r : vector<32xi8> -> vector<16xi8>, vector<16xi8>
 LOOM_DEFINE_ISA(loom_vector_deinterleave_isa, LOOM_OP_VECTOR_DEINTERLEAVE)
 LOOM_DEFINE_OPERAND(loom_vector_deinterleave_source, 0)
-LOOM_DEFINE_VARIADIC_RESULTS(loom_vector_deinterleave_results, 0)
+LOOM_DEFINE_RESULT(loom_vector_deinterleave_even, 0)
+LOOM_DEFINE_RESULT(loom_vector_deinterleave_odd, 1)
 LOOM_DEFINE_ATTR_I64(loom_vector_deinterleave_axis, 0)
 iree_status_t loom_vector_deinterleave_build(
     loom_builder_t* builder,
     int64_t axis,
     loom_may_consume loom_value_id_t source,
-    const loom_type_t* result_types,
-    iree_host_size_t result_count,
-    const loom_tied_result_t* tied_results,
-    iree_host_size_t tied_result_count,
+    loom_type_t even_type,
+    loom_type_t odd_type,
     loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_vector_deinterleave_facts(

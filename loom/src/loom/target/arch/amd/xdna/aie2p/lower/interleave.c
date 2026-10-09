@@ -67,16 +67,12 @@ static bool loom_aie2p_interleave_plan_from_op(
     }
     axis = loom_vector_interleave_axis(source_op);
   } else if (loom_vector_deinterleave_isa(source_op)) {
-    const loom_value_slice_t results =
-        loom_vector_deinterleave_results(source_op);
-    if (results.count != 2) {
-      return false;
-    }
     source_type = loom_module_value_type(
         module, loom_vector_deinterleave_source(source_op));
-    result_type = loom_module_value_type(module, results.values[0]);
+    result_type = loom_module_value_type(
+        module, loom_vector_deinterleave_even(source_op));
     const loom_type_t odd_type =
-        loom_module_value_type(module, results.values[1]);
+        loom_module_value_type(module, loom_vector_deinterleave_odd(source_op));
     if (!loom_type_equal(result_type, odd_type)) {
       return false;
     }
@@ -611,8 +607,10 @@ static iree_status_t loom_aie2p_emit_unzip_plan(
     }
   }
 
-  const loom_value_slice_t source_results =
-      loom_vector_deinterleave_results(source_op);
+  const loom_value_id_t source_results[2] = {
+      loom_vector_deinterleave_even(source_op),
+      loom_vector_deinterleave_odd(source_op),
+  };
   const loom_aie2p_vector_carrier_t result_carrier = {
       .kind = plan->result_carrier_kind,
       .unit_count = plan->result_carrier_unit_count,
@@ -620,7 +618,7 @@ static iree_status_t loom_aie2p_emit_unzip_plan(
   for (uint8_t result_index = 0; result_index < 2; ++result_index) {
     IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_bind_vector_packets(
         emitter, result_carrier, plan->route.result_packet_count,
-        result_packets[result_index], source_results.values[result_index]));
+        result_packets[result_index], source_results[result_index]));
   }
   return iree_ok_status();
 }
@@ -659,8 +657,10 @@ static iree_status_t loom_aie2p_emit_unzip_block_route_plan(
   loom_aie2p_interleave_route_state_t state;
   loom_aie2p_interleave_route_state_initialize(emitter, plan, low_source,
                                                LOOM_VALUE_ID_INVALID, &state);
-  const loom_value_slice_t results =
-      loom_vector_deinterleave_results(source_op);
+  const loom_value_id_t results[2] = {
+      loom_vector_deinterleave_even(source_op),
+      loom_vector_deinterleave_odd(source_op),
+  };
   loom_aie2p_interleave_emitted_packet_t
       result_packets[2][LOOM_AIE2P_INTERLEAVE_MAX_PACKET_COUNT];
   for (uint8_t packet = 0; packet < plan->route.result_packet_count; ++packet) {
@@ -684,8 +684,7 @@ static iree_status_t loom_aie2p_emit_unzip_block_route_plan(
   }
   for (uint8_t result_index = 0; result_index < 2; ++result_index) {
     IREE_RETURN_IF_ERROR(loom_aie2p_interleave_bind_routed_packets(
-        emitter, plan, result_packets[result_index],
-        results.values[result_index]));
+        emitter, plan, result_packets[result_index], results[result_index]));
   }
   return iree_ok_status();
 }

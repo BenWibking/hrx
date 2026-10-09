@@ -2594,27 +2594,26 @@ iree_status_t loom_vector_deinterleave_facts(
     loom_fact_context_t* context, const loom_module_t* module,
     const loom_op_t* op, const loom_value_facts_t* operand_facts,
     loom_value_facts_t* result_facts) {
-  if (op->result_count != 2) {
-    return loom_vector_make_unknown_result_facts(result_facts,
-                                                 op->result_count);
-  }
   const loom_value_id_t source = loom_vector_deinterleave_source(op);
+  const loom_value_id_t results[] = {
+      loom_vector_deinterleave_even(op),
+      loom_vector_deinterleave_odd(op),
+  };
   loom_type_t source_type = loom_module_value_type(module, source);
   int64_t axis = loom_vector_deinterleave_axis(op);
   if (axis < 0 || axis >= loom_type_rank(source_type)) {
     return loom_vector_make_unknown_result_facts(result_facts,
-                                                 op->result_count);
+                                                 IREE_ARRAYSIZE(results));
   }
 
-  const loom_value_id_t* results = loom_op_const_results(op);
-  for (uint16_t result_index = 0; result_index < op->result_count;
+  for (uint16_t result_index = 0; result_index < IREE_ARRAYSIZE(results);
        ++result_index) {
     loom_type_t result_type =
         loom_module_value_type(module, results[result_index]);
     iree_host_size_t result_lane_count = 0;
     if (loom_type_rank(result_type) != loom_type_rank(source_type)) {
       return loom_vector_make_unknown_result_facts(result_facts,
-                                                   op->result_count);
+                                                   IREE_ARRAYSIZE(results));
     }
     if (axis == 0 && loom_type_rank(source_type) == 1) {
       IREE_RETURN_IF_ERROR(loom_value_fact_table_define_static_lane_origin(
@@ -2641,7 +2640,7 @@ iree_status_t loom_vector_deinterleave_facts(
           !iree_checked_add_i64(source_indices[axis], result_index,
                                 &source_indices[axis])) {
         return loom_vector_make_unknown_result_facts(result_facts,
-                                                     op->result_count);
+                                                     IREE_ARRAYSIZE(results));
       }
       iree_host_size_t source_lane = 0;
       if (!loom_vector_static_ordinal_from_indices(source_type, source_indices,
@@ -2649,7 +2648,7 @@ iree_status_t loom_vector_deinterleave_facts(
           !loom_vector_facts_query_lane(context, operand_facts[0], source_lane,
                                         &lanes[lane])) {
         return loom_vector_make_unknown_result_facts(result_facts,
-                                                     op->result_count);
+                                                     IREE_ARRAYSIZE(results));
       }
     }
     IREE_RETURN_IF_ERROR(loom_vector_make_small_static_lane_facts(

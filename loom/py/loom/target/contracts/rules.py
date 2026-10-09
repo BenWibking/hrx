@@ -24,7 +24,7 @@ from loom.target.contracts.emits import (
     EmitRegisterMove,
     EmitRegisterSlice,
 )
-from loom.target.contracts.guards import Guard
+from loom.target.contracts.guards import Guard, GuardKind
 from loom.target.contracts.kinds import ContractSystem, SourceValueKind
 from loom.target.contracts.source import ValueRef
 from loom.target.low_descriptors import Descriptor, DescriptorSet, OperandRole
@@ -270,6 +270,14 @@ class DescriptorRule:
                         source_node.parent_value.element,
                     )
                 )
+            for guard in source_node.guards:
+                if (
+                    guard.kind is GuardKind.VALUE_NO_USES
+                    and source_node.source_op.result(guard.field) is not None
+                ):
+                    covered_results.add(
+                        (source_node.name, guard.field, guard.element or 0)
+                    )
         for emit in self.emit:
             if isinstance(emit, EmitDescriptorOp):
                 result_refs = tuple(emit.results.values())

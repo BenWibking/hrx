@@ -125,6 +125,38 @@ def test_descriptor_rule_validates_related_source_nodes() -> None:
     )
 
 
+def test_descriptor_rule_accepts_dead_related_result() -> None:
+    ContractFragment(
+        name="test-low.dead-related-result",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=(
+            DescriptorRule(
+                source_op=scalar_arithmetic.scalar_addi,
+                descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
+                source_nodes=(
+                    SourceNode.adjacent_definition(
+                        "pair",
+                        source_op=vector.vector_deinterleave,
+                        parent_operand=ValueRef.operand("lhs"),
+                        node_result=ValueRef.result("even"),
+                        guards=(Guard.value_no_uses("odd"),),
+                    ),
+                ),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
+                        operands={
+                            "lhs": ValueRef.result("even", source_node="pair"),
+                            "rhs": ValueRef.operand("rhs"),
+                        },
+                        results={"dst": ValueRef.result("result")},
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
 def test_descriptor_rule_rejects_unknown_source_node_parent() -> None:
     with pytest.raises(ValueError, match="references unknown parent 'missing'"):
         ContractFragment(
@@ -1040,10 +1072,10 @@ def test_result_ref_rejects_element_on_fixed_result() -> None:
 def test_result_ref_rejects_negative_variadic_element() -> None:
     with pytest.raises(
         ValueError,
-        match=(r"vector.deinterleave: test result result element must be non-negative"),
+        match=(r"scalar.assume: test result result element must be non-negative"),
     ):
         ValueRef.result("results", element=-1).validate(
-            vector.vector_deinterleave, "test result"
+            scalar_analysis.scalar_assume, "test result"
         )
 
 

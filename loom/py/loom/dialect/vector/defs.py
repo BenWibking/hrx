@@ -31,7 +31,6 @@ from loom.assembly import (
     Ref,
     Refs,
     ResultType,
-    ResultTypeList,
     TemplateParam,
     TemplateParamFlags,
     TypeOf,
@@ -994,7 +993,10 @@ vector_deinterleave = Op(
         "axis is half of the source extent."
     ),
     operands=[Operand("source", VECTOR)],
-    results=[Result("results", VECTOR, variadic=True, doc="Even-position result followed by odd-position result.")],
+    results=[
+        Result("even", VECTOR, doc="Values at even positions along the axis."),
+        Result("odd", VECTOR, doc="Values at odd positions along the axis."),
+    ],
     attrs=[
         AttrDef(
             "axis",
@@ -1003,8 +1005,8 @@ vector_deinterleave = Op(
         ),
     ],
     constraints=[
-        SameType("results"),
-        SameElementType("source", "results"),
+        SameType("even", "odd"),
+        SameElementType("source", "even"),
         DimIndexInBounds("source", "axis"),
     ],
     verify="loom_vector_deinterleave_verify",
@@ -1016,7 +1018,9 @@ vector_deinterleave = Op(
         COLON,
         TypeOf("source"),
         ARROW,
-        ResultTypeList("results", parens=False),
+        ResultType("even"),
+        COMMA,
+        ResultType("odd"),
     ],
     examples=[
         "%lo, %hi = vector.deinterleave<0> %r : vector<32xi8> -> vector<16xi8>, vector<16xi8>",

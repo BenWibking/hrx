@@ -57,16 +57,13 @@ static bool loom_wasm_interleave_plan_from_op(
     }
     axis = loom_vector_interleave_axis(source_op);
   } else if (loom_vector_deinterleave_isa(source_op)) {
-    const loom_value_slice_t results =
-        loom_vector_deinterleave_results(source_op);
-    if (results.count != 2) {
-      return false;
-    }
     source_type = loom_module_value_type(
         module, loom_vector_deinterleave_source(source_op));
-    result_type = loom_module_value_type(module, results.values[0]);
-    if (!loom_type_equal(result_type,
-                         loom_module_value_type(module, results.values[1]))) {
+    result_type = loom_module_value_type(
+        module, loom_vector_deinterleave_even(source_op));
+    const loom_type_t odd_type =
+        loom_module_value_type(module, loom_vector_deinterleave_odd(source_op));
+    if (!loom_type_equal(result_type, odd_type)) {
       return false;
     }
     kind = LOOM_VECTOR_INTERLEAVE_KIND_UNZIP;
@@ -830,12 +827,14 @@ static iree_status_t loom_wasm_emit_interleave(
         &emitter, plan, /*result_index=*/0, result,
         loom_module_value_type(module, result));
   }
-  const loom_value_slice_t results =
-      loom_vector_deinterleave_results(source_op);
+  const loom_value_id_t results[2] = {
+      loom_vector_deinterleave_even(source_op),
+      loom_vector_deinterleave_odd(source_op),
+  };
   for (uint8_t result_index = 0; result_index < 2; ++result_index) {
     IREE_RETURN_IF_ERROR(loom_wasm_emit_interleave_result(
-        &emitter, plan, result_index, results.values[result_index],
-        loom_module_value_type(module, results.values[result_index])));
+        &emitter, plan, result_index, results[result_index],
+        loom_module_value_type(module, results[result_index])));
   }
   return iree_ok_status();
 }

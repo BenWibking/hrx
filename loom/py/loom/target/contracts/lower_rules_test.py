@@ -395,14 +395,15 @@ def test_compile_variadic_result_element_refs() -> None:
         descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
         cases=(
             DescriptorRule(
-                source_op=vector.vector_deinterleave,
+                source_op=scalar_analysis.scalar_assume,
+                guards=(Guard.operand_segment_count("values", 2),),
                 emit=(
                     EmitRegisterCopy(
-                        source=ValueRef.operand("source"),
+                        source=ValueRef.operand("values", element=0),
                         result=ValueRef.result("results", element=0),
                     ),
                     EmitRegisterCopy(
-                        source=ValueRef.operand("source"),
+                        source=ValueRef.operand("values", element=1),
                         result=ValueRef.result("results", element=1),
                     ),
                 ),
@@ -412,7 +413,7 @@ def test_compile_variadic_result_element_refs() -> None:
 
     compiled = compile_lower_rule_set(
         fragment,
-        dialect_ops={"vector": ALL_VECTOR_OPS},
+        dialect_ops={"scalar": ALL_SCALAR_OPS},
     )
 
     result_refs = tuple(
