@@ -73,6 +73,30 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_cc_library(
   NAME
+    async
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "async.h"
+  SRCS
+    "async.cc"
+  DEPS
+    iree::third_party::cxx_parser
+    loom::import::cxx::source::error
+    loom::import::cxx::value::representation
+    loom::import::cxx::value::types
+    loom::ops::cache
+    loom::ops::kernel
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
     atomic
   CXX_STANDARD
     23
@@ -593,6 +617,7 @@ loom_cc_library(
     "intrinsics.cc"
   DEPS
     ::assembly
+    ::async
     ::atomic
     ::buffer
     ::check

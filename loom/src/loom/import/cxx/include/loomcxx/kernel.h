@@ -9,6 +9,8 @@
 
 #include <loomcxx/atomic.h>
 #include <loomcxx/buffer.h>
+#include <loomcxx/cache.h>
+#include <loomcxx/view.h>
 
 // Fixed launch geometry belongs on the entry with
 // loom::workgroup_size(x, y, z) and loom::workgroup_count(x, y, z).
@@ -48,6 +50,18 @@
 
 namespace loom {
 
+namespace type {
+
+// One initiated asynchronous transfer. A token must be committed to exactly
+// one kernel.async.group before its destination is consumed.
+class [[loom::type("kernel.async.token")]] async_token {};
+
+// One committed position in a kernel's ordered asynchronous-transfer stream.
+// Waiting for a group also completes every older group in that stream.
+class [[loom::type("kernel.async.group")]] async_group {};
+
+}  // namespace type
+
 // Declares integer truth, comparison, and conjunction contracts. Conditions
 // are retained as Loom facts without runtime evaluation. Calls, mutation,
 // volatile reads, and expressions without a retained scalar identity diagnose
@@ -55,6 +69,95 @@ namespace loom {
 [[loom::assume]] void assume(bool condition);
 
 namespace kernel {
+
+namespace async {
+
+// Required memory-space direction for a byte-for-byte asynchronous copy.
+enum class direction : unsigned char {
+  // Read global-like storage and write workgroup storage.
+  global_to_workgroup = 0,
+  // Read workgroup storage and write global-like storage.
+  workgroup_to_global = 1,
+};
+
+// Initiates a byte-for-byte transfer between views with equal logical payload
+// sizes. Direction and advisory cache policy remain explicit source contracts.
+template <direction Direction, cache::scope CacheScope,
+          cache::temporal CacheTemporal, class SourceShape, class SourceType,
+          encoding::role SourceRole, class DestinationShape,
+          class DestinationType, encoding::role DestinationRole>
+[[loom::op("kernel.async.copy")]] type::async_token copy(
+    type::view<SourceShape, SourceType, SourceRole> source,
+    type::view<DestinationShape, DestinationType, DestinationRole> destination);
+
+// Predicated copy. A false predicate performs no memory access and returns an
+// already-complete token so every invocation can retain the same group shape.
+template <direction Direction, cache::scope CacheScope,
+          cache::temporal CacheTemporal, class SourceShape, class SourceType,
+          encoding::role SourceRole, class DestinationShape,
+          class DestinationType, encoding::role DestinationRole>
+[[loom::op("kernel.async.copy.mask")]] type::async_token copy_mask(
+    type::view<SourceShape, SourceType, SourceRole> source,
+    type::view<DestinationShape, DestinationType, DestinationRole> destination,
+    bool predicate);
+
+// Collectively gathers each subgroup invocation's source view into the
+// corresponding lane of one subgroup-uniform workgroup destination tile.
+template <cache::scope CacheScope, cache::temporal CacheTemporal,
+          class SourceShape, class SourceType, encoding::role SourceRole,
+          class DestinationShape, class DestinationType,
+          encoding::role DestinationRole>
+[[loom::op("kernel.async.gather")]] type::async_token gather(
+    type::view<SourceShape, SourceType, SourceRole> source,
+    type::view<DestinationShape, DestinationType, DestinationRole> destination);
+
+// Predicated subgroup gather preserving a uniform async group shape.
+template <cache::scope CacheScope, cache::temporal CacheTemporal,
+          class SourceShape, class SourceType, encoding::role SourceRole,
+          class DestinationShape, class DestinationType,
+          encoding::role DestinationRole>
+[[loom::op("kernel.async.gather.mask")]] type::async_token gather_mask(
+    type::view<SourceShape, SourceType, SourceRole> source,
+    type::view<DestinationShape, DestinationType, DestinationRole> destination,
+    bool predicate);
+
+namespace cluster {
+
+// Collectively gathers corresponding values for the workgroup-cluster ranks
+// named by participant_mask. Bit N names flat cluster rank N.
+template <cache::scope CacheScope, cache::temporal CacheTemporal,
+          class SourceShape, class SourceType, encoding::role SourceRole,
+          class DestinationShape, class DestinationType,
+          encoding::role DestinationRole>
+[[loom::op("kernel.async.cluster.gather")]] type::async_token gather(
+    type::view<SourceShape, SourceType, SourceRole> source,
+    type::view<DestinationShape, DestinationType, DestinationRole> destination,
+    unsigned participant_mask);
+
+// Predicated cluster gather preserving a uniform async group shape.
+template <cache::scope CacheScope, cache::temporal CacheTemporal,
+          class SourceShape, class SourceType, encoding::role SourceRole,
+          class DestinationShape, class DestinationType,
+          encoding::role DestinationRole>
+[[loom::op("kernel.async.cluster.gather.mask")]] type::async_token gather_mask(
+    type::view<SourceShape, SourceType, SourceRole> source,
+    type::view<DestinationShape, DestinationType, DestinationRole> destination,
+    unsigned participant_mask, bool predicate);
+
+}  // namespace cluster
+
+// Commits zero or more transfers at one position in the ordered async stream.
+// Empty groups are valid pipeline markers.
+template <class... Tokens>
+[[loom::op("kernel.async.group")]] type::async_group group(Tokens... tokens);
+
+// Completes group and every older group while allowing exactly NewerGroups
+// younger groups to remain outstanding. This does not synchronize invocations;
+// use a separate barrier before another invocation consumes staged storage.
+template <unsigned long long NewerGroups>
+[[loom::op("kernel.async.wait")]] void wait(type::async_group group);
+
+}  // namespace async
 
 // Three-dimensional unsigned coordinate used by launch and topology APIs.
 struct uint3 {

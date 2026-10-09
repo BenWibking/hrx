@@ -20,6 +20,8 @@ loom_check_test_suite(
     "assembly_invalid.cxx-test"
     "assumptions.cxx-test"
     "assumptions_invalid.cxx-test"
+    "async.cxx-test"
+    "async_invalid.cxx-test"
     "atomic_builtins.cxx-test"
     "atomics.cxx-test"
     "atomics_invalid.cxx-test"

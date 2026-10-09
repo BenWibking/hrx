@@ -153,7 +153,8 @@ class Translator final : private Initialization::Evaluation {
       return Value(loom_op_results(cast)[0]);
     }
     if (value.is_record() || value.is_array() || value.is_buffer() ||
-        value.is_encoding() || value.is_view() || value.is_tensor()) {
+        value.is_opaque_dialect() || value.is_encoding() || value.is_view() ||
+        value.is_tensor()) {
       if (&types_.partition(output_type, owner) != &value.partition()) {
         fail(owner, "conversion must preserve the source value type");
       }
@@ -1377,7 +1378,8 @@ class Translator final : private Initialization::Evaluation {
              "check declarations cannot be called from ordinary functions");
       }
       auto* binding = intrinsics_.lookup(function, ast);
-      if (binding && std::holds_alternative<SubgroupIntrinsic>(*binding)) {
+      if (binding && (std::holds_alternative<SubgroupIntrinsic>(*binding) ||
+                      std::holds_alternative<AsyncIntrinsic>(*binding))) {
         require_kernel_context(ast);
       }
       if (binding && std::holds_alternative<TargetIntrinsic>(*binding)) {
@@ -2022,6 +2024,9 @@ class Translator final : private Initialization::Evaluation {
         }
         auto* binding = function ? intrinsics_.lookup(function, ast) : nullptr;
         if (binding) {
+          if (std::holds_alternative<AsyncIntrinsic>(*binding)) {
+            require_kernel_context(ast);
+          }
           auto* assembly = std::get_if<AssemblyIntrinsic>(binding);
           loom_symbol_ref_t fragment = {};
           auto* expressions = call->expressionList;
