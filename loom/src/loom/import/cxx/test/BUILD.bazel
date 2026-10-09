@@ -189,7 +189,6 @@ loom_check_test_suite(
 # Generated host cases remain only while their source families migrate to
 # authored scenarios and independent Loom oracles.
 _GENERATED_HOST_SOURCES = [
-    "assumptions.cxx",
     "comparison_functions.cxx",
     "constant_loops.cxx",
     "integer_functions.cxx",
@@ -202,6 +201,7 @@ _GENERATED_HOST_SOURCES = [
 ]
 
 _AUTHORED_HOST_SOURCES = [
+    "assumptions",
     "enum_values",
     "increment_values",
 ]
@@ -526,7 +526,6 @@ loom_test_module(
 # Target packages select applicable modules and own their execution policy.
 _GENERATED_KERNEL_SOURCES = [
     "aiter_swiglu_f16",
-    "assumptions",
     "constant_loops",
     "control_flow",
     "early_returns",
@@ -543,6 +542,7 @@ _GENERATED_KERNEL_SOURCES = [
 ]
 
 _AUTHORED_KERNEL_SOURCES = [
+    "assumptions",
     "enum_values",
     "increment_values",
     "integer_increment",

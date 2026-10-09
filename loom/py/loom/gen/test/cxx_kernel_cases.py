@@ -347,73 +347,6 @@ def constant_loops(arrays):
     return "kernel.decl @constant_loops() launch(%input: buffer, %output: buffer, %start: i32)\n\n" + "\n".join(cases)
 
 
-def assumption_functions():
-    values = [0, 1, 127, 128, 254, 255]
-    seven = [[0] * 7, [255] * 7] + [[255 if lane == active else 0 for lane in range(7)] for active in range(7)]
-    samples = [
-        ("bound_pair", [32, 32], [([a, b], a * 257 + b) for a in values for b in values]),
-        ("bound_seven", [32] * 7, [(args, sum(a * b for a, b in zip(args, [1, 2, 3, 5, 7, 11, 13], strict=True))) for args in seven]),
-        ("bound_repeated", [32], [([value], value * 17) for value in [0, 1, 15, 16, 31]]),
-        ("bound_capacity", [32], [([value], value * 16 + 336) for value in [0, 1, 255, 256, 426, 427]]),
-        ("bound_cast", [32], [([value], value + 5) for value in [0, 1, 7, 15]]),
-        ("bound_byte", [8], [([value], value + (1024 if value >= 128 else 0)) for value in range(256)]),
-        ("bound_wide", [64], [([value], value * 3) for value in values]),
-        ("bound_size", [32], [([value], value) for value in [0, 1, 7, 15]]),
-        ("bound_scoped", [32], [([value], value + (1 if value < 256 else 3)) for value in [0, 1, 127, 128, 255, 256, 427, 0x7FFFFFFF, 0xFFFFFFFF]]),
-        ("bound_inclusive", [32], [([value], value * 19 + 3) for value in [0, 1, 127, 426, 427]]),
-        (
-            "bound_signed",
-            [32, 32],
-            [([hidden, capacity], hidden * 23 + capacity) for hidden, capacity in [(1, 1), (1, 7), (31, 31), (31, 63), (127, 255)]],
-        ),
-        (
-            "bound_unsigned",
-            [32, 32],
-            [
-                ([tokens, capacity], tokens ^ capacity)
-                for tokens, capacity in [
-                    (0, 0),
-                    (0x7FFFFFFF, 0x80000000),
-                    (0x80000000, 0xFFFFFFFF),
-                    (0xFFFFFFFE, 0xFFFFFFFF),
-                    (0xFFFFFFFF, 0xFFFFFFFF),
-                ]
-            ],
-        ),
-    ]
-    return "\n".join(function_cases(name, widths, 32, cases) for name, widths, cases in samples)
-
-
-def assumption_kernel(arrays):
-    cases = []
-    for input_value in [0, 1, 127, 128, 255, 256, 427, 0xFFFFFFC0, 0xFFFFFFFF]:
-        expected = []
-        for lane in range(64):
-            value = (input_value + lane) % (1 << 32)
-            byte = value % 256
-            expected.extend(
-                [
-                    byte * 257 + value // 256 % 256,
-                    byte + 278,
-                    value % 32 * 17,
-                    value % 428 * 16 + 336,
-                    value % 16 + 5,
-                    byte + (1024 if byte >= 128 else 0),
-                    byte * 3,
-                    value % 16,
-                    signed_bits(value + (1 if value < 256 else 3), 32),
-                    value % 428 * 19 + 3,
-                    (value % 63 + 1) * 23 + (value % 63 + 1) + value % 5,
-                    signed_bits(0x80000000, 32),
-                ]
-            )
-        case = Case(arrays, f"assumptions_{input_value}", "i32", len(expected))
-        case.scalar("input", signed_bits(input_value, 32), "i32")
-        case.launch("assumption_kernel", "%output, %input", f"tensor<{len(expected)}xi32>, i32")
-        cases.append(case.finish(expected))
-    return "kernel.decl @assumption_kernel() launch(%output: buffer, %input: i32)\n\n" + "\n".join(cases)
-
-
 def integer_functions():
     cases = []
 
@@ -1044,7 +977,6 @@ def q4k_q8_swiglu(arrays):
 
 KERNEL_GROUPS = {
     "aiter_swiglu_f16": lambda arrays: launch_grid("aiter_swiglu_f16", 3) + swiglu(arrays),
-    "assumptions": assumption_kernel,
     "constant_loops": constant_loops,
     "control_flow": control_flow,
     "early_returns": early_returns,
@@ -1066,7 +998,6 @@ KERNEL_GROUPS = {
 
 
 HOST_REFERENCES = {
-    "assumptions.cxx": assumption_functions,
     "comparison_functions.cxx": comparison_functions,
     "constant_loops.cxx": constant_loop_functions,
     "integer_functions.cxx": integer_functions,

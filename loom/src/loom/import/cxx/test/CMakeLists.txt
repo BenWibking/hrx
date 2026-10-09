@@ -662,25 +662,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_generated_file(
   NAME
-    assumptions_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "assumptions_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/assumptions.cxx"
-  INPUTS
-    "assumptions.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
     comparison_functions_cases_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -847,34 +828,6 @@ loom_generated_file(
     "vector_values.cxx"
   TESTONLY
 )
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
-    assumptions_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/assumptions_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/assumptions.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    assumptions_test_execute_vm_reference_test
-  MODULE
-    "::assumptions_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
 endif()
 
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
@@ -1133,6 +1086,26 @@ if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 if(LOOM_TARGET_ARCH_VM)
 loom_execution_test(
   NAME
+    assumptions_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::assumptions_module"
+  RUNNER_ARGS
+    "--case=assumptions_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
     enum_values_test_execute_vm_reference_test
   CORRECTNESS_ONLY
   MODULE
@@ -1344,25 +1317,6 @@ loom_generated_file_family(
   ARGS
     "kernel"
     "--group=aiter_swiglu_f16"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
-    assumptions_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "assumptions_checks.loom"
-    "assumptions_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=assumptions"
   TESTONLY
 )
 endif()
@@ -1632,21 +1586,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
-    assumptions_module
-  SRCS
-    "assumptions.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/assumptions_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/assumptions_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/assumptions_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
     constant_loops_module
   SRCS
     "constant_loops.cxx"
@@ -1836,6 +1775,16 @@ loom_test_module(
     "${CMAKE_CURRENT_BINARY_DIR}/volatile_memory_checks.loom"
   INPUTOPTS
 
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    assumptions_module
+  SRCS
+    "assumptions.cxx"
+    "assumptions.loom"
 )
 endif()
 
