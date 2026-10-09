@@ -1067,6 +1067,15 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
+    enum_values_module
+  SRCS
+    "enum_values.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
     integer_increment_module
   SRCS
     "integer_increment.cxx"
@@ -1457,16 +1466,6 @@ loom_test_module(
     "${CMAKE_CURRENT_BINARY_DIR}/volatile_memory_checks.loom"
   INPUTOPTS
 
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    enum_values_module
-  SRCS
-    "enum_values.cxx"
-    "enum_values.loom"
 )
 endif()
 

@@ -515,6 +515,7 @@ loom_test_module(
         "assumptions",
         "constant_loops",
         "configured_workgroup_storage",
+        "enum_values",
         "integer_increment",
         "mxfp_group_dot",
         "packed_byte_arithmetic",
@@ -544,7 +545,6 @@ _GENERATED_KERNEL_SOURCES = [
 ]
 
 _AUTHORED_KERNEL_SOURCES = [
-    "enum_values",
     "increment_values",
     "record_values",
     "scheduled_sum",
