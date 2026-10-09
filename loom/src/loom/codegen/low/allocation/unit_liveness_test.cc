@@ -65,14 +65,12 @@ class LowAllocationUnitLivenessTest : public ::testing::Test {
                           const loom_value_id_t* value_ids,
                           iree_host_size_t value_count,
                           loom_local_value_domain_t* out_domain) {
-    *out_domain = loom_local_value_domain_t{};
-    out_domain->module = module;
-    out_domain->flags = LOOM_LOCAL_VALUE_DOMAIN_FLAG_ACQUIRED;
-    loom_module_value_ordinal_scratch_acquire(module);
+    IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region(
+        module, module->body, &arena_, out_domain));
     for (iree_host_size_t i = 0; i < value_count; ++i) {
       loom_value_ordinal_t value_ordinal = LOOM_VALUE_ORDINAL_INVALID;
       IREE_ASSERT_OK(loom_local_value_domain_register_value(
-          out_domain, &arena_, value_ids[i], &value_ordinal));
+          out_domain, value_ids[i], &value_ordinal));
       EXPECT_EQ((loom_value_ordinal_t)i, value_ordinal);
     }
   }

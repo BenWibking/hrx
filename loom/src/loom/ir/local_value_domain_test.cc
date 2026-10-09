@@ -223,15 +223,15 @@ TEST_F(LocalValueDomainTest,
   IREE_ASSERT_OK(loom_module_define_value(
       module_, loom_type_scalar(LOOM_SCALAR_TYPE_INDEX), &new_value));
   loom_value_ordinal_t ordinal = LOOM_VALUE_ORDINAL_INVALID;
-  IREE_ASSERT_OK(loom_local_value_domain_register_value(&domain_, &arena_,
-                                                        new_value, &ordinal));
+  IREE_ASSERT_OK(
+      loom_local_value_domain_register_value(&domain_, new_value, &ordinal));
   EXPECT_EQ(ordinal, ids.size());
   EXPECT_EQ(domain_.definition_count, 2u);
   for (loom_value_ordinal_t i = 0; i < ids.size(); ++i) {
     EXPECT_EQ(loom_local_value_domain_ordinal(&domain_, ids[i]), i);
   }
-  IREE_ASSERT_OK(loom_local_value_domain_register_value(&domain_, &arena_,
-                                                        definition, &ordinal));
+  IREE_ASSERT_OK(
+      loom_local_value_domain_register_value(&domain_, definition, &ordinal));
   EXPECT_EQ(domain_.value_ids[ordinal], definition);
   EXPECT_EQ(domain_.value_count, ids.size() + 1);
 }

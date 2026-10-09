@@ -70,7 +70,7 @@ static iree_status_t loom_condition_query_resolve_value_ordinal(
     loom_value_ordinal_t* out_value_ordinal) {
   if (query->value_domain != NULL) {
     IREE_RETURN_IF_ERROR(loom_local_value_domain_register_value(
-        query->value_domain, query->arena, value_id, out_value_ordinal));
+        query->value_domain, value_id, out_value_ordinal));
   } else {
     *out_value_ordinal = (loom_value_ordinal_t)value_id;
   }

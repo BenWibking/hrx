@@ -242,7 +242,7 @@ static bool loom_low_emission_frame_input_has_retained_read(
 static iree_status_t loom_low_emission_frame_rename_fixed_inputs(
     loom_low_function_context_t* context,
     const loom_low_emission_frame_options_t* options,
-    iree_arena_allocator_t* arena, iree_arena_allocator_t* scratch_arena) {
+    iree_arena_allocator_t* scratch_arena) {
   const loom_low_resolved_target_t* target = &context->target;
   if (options->allocation_fixed_value_count == 0 || context->error_count != 0 ||
       target->target_facts == NULL ||
@@ -324,7 +324,7 @@ static iree_status_t loom_low_emission_frame_rename_fixed_inputs(
     loom_value_ordinal_t copy_ordinal = LOOM_VALUE_ORDINAL_INVALID;
     if (iree_status_is_ok(status)) {
       status = loom_local_value_domain_register_value(
-          domain, arena, loom_low_copy_result(transfer), &copy_ordinal);
+          domain, loom_low_copy_result(transfer), &copy_ordinal);
     }
     if (iree_status_is_ok(status)) {
       ++context->requirements.node_count;
@@ -410,8 +410,8 @@ static iree_status_t loom_low_emission_frame_build_impl(
   iree_arena_allocator_t preparation_arena;
   iree_arena_initialize(arena->block_pool, &preparation_arena);
   if (iree_status_is_ok(status)) {
-    status = loom_low_emission_frame_rename_fixed_inputs(
-        &context, options, arena, &preparation_arena);
+    status = loom_low_emission_frame_rename_fixed_inputs(&context, options,
+                                                         &preparation_arena);
   }
   iree_arena_deinitialize(&preparation_arena);
   if (iree_status_is_ok(status)) {
