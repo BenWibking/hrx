@@ -54,6 +54,9 @@ hipcc --offload-arch=gfx942 -std=c++20 -O3 -ffp-contract=off \
 /tmp/chemistry-hip --help
 ```
 
+The standalone HIP driver defaults to a `64^3` grid (262,144 cells). Use
+`--grid N` to override the number of cells along each axis.
+
 ## Import and compile the Loom kernels
 
 ```sh
@@ -64,7 +67,7 @@ loom-import-cxx --data-model=lp64 --approximate-functions=false \
 
 for root in prepare_grid_timestep_kernel advance_collapse_gridwide_kernel; do
   loom-compile /tmp/chemistry.loom --root=chemistry.$root \
-    --config=chemistry.$root.workgroup_count.x=1 \
+    --config=chemistry.$root.workgroup_count.x=2048 \
     --config=chemistry.$root.workgroup_count.y=1 \
     --config=chemistry.$root.workgroup_count.z=1 \
     --format=amdgpu-hsaco --target=amdgpu:gfx942 \
@@ -72,7 +75,8 @@ for root in prepare_grid_timestep_kernel advance_collapse_gridwide_kernel; do
 done
 ```
 
-The example launches up to 128 cells. For other sizes, bind the x workgroup count
+The example configures a `64^3` grid: 262,144 cells in 2,048 workgroups of 128
+threads. For other sizes, bind the x workgroup count
 to `ceil(num_cells / 128)`. Each cell requires a disjoint, correctly aligned
 `CellRecord` (216 bytes under LP64); solver work arrays are private to each lane.
 The caller must preserve prepare, synchronize, copy candidates, host minimum,
@@ -83,8 +87,15 @@ advance, and synchronize ordering, including atomic failure publication.
 From a repository checkout on a gfx942 ROCm machine:
 
 ```sh
+./run_rocm_comparison.sh
+# Override the default cell count or number of correctness steps:
 ./run_rocm_comparison.sh --cells 128 --steps 1000
 ```
+
+Both HIP and Loom default to 262,144 cells (`64^3`), with one correctness step,
+one warmup, and five timing repeats. The script matches Loom's compiled
+workgroup count to the cell count used by the comparison harness. Cells are
+stored as a flat array; the chemistry kernels evolve each cell independently.
 
 The script checks generated sources, imports and compiles both Loom roots,
 builds the original HIP kernels with the comparison harness, and runs numerical

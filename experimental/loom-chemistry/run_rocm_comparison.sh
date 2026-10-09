@@ -49,7 +49,8 @@ echo "Importing chemistry into Loom IR..."
   --output="$work/chemistry.loom" "$here/reproducer.cpp"
 # The kernels take their workgroup count as compile-time config; match the
 # ceil(cells / 128) workgroups compare_rocm launches.
-cells=128
+# Match reference.cpp's default_grid_dim=64 and the comparison harness default.
+cells=$((64 * 64 * 64))
 args=("$@")
 for ((i = 0; i + 1 < ${#args[@]}; ++i)); do
   [[ ${args[i]} == --cells ]] && cells=${args[i + 1]}

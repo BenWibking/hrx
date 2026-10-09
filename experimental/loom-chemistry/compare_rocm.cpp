@@ -183,7 +183,8 @@ static double median(std::vector<double> values) {
 
 int main(int argc, char** argv) try {
     if (argc < 3) throw std::runtime_error("usage: compare_rocm PREPARE.hsaco ADVANCE.hsaco [--cells N] [--steps N] [--warmup N] [--repeats N] [--rtol X] [--atol X] [--abundance-atol X]");
-    int n = 128, steps = 1, warmup = 1, repeats = 5;
+    int n = default_grid_dim * default_grid_dim * default_grid_dim;
+    int steps = 1, warmup = 1, repeats = 5;
     for (int i = 3; i < argc; i += 2) {
         if (i + 1 == argc) throw std::runtime_error("missing option value");
         std::string key = argv[i];
