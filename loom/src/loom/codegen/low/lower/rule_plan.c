@@ -1139,12 +1139,11 @@ static iree_status_t loom_low_lower_rule_plan_carriers(
       }
       const uint32_t operand_lane_count = source_units / lane_units;
       IREE_ASSERT_EQ(source_units % lane_units, 0);
-      if (expands_lanes ||
-          (accumulates_lanes && i != emit->accumulator_operand_index)) {
+      if (accumulates_lanes && i != emit->accumulator_operand_index) {
         IREE_ASSERT(lanes->lane_count == 0 ||
                     lanes->lane_count == operand_lane_count);
         lanes->lane_count = operand_lane_count;
-      } else if (sequences_lanes) {
+      } else if (expands_lanes || sequences_lanes) {
         IREE_ASSERT(lanes->lane_count <= 1 || operand_lane_count == 1 ||
                     lanes->lane_count == operand_lane_count);
         lanes->lane_count = iree_max(lanes->lane_count, operand_lane_count);
@@ -1158,8 +1157,8 @@ static iree_status_t loom_low_lower_rule_plan_carriers(
                        operand_types[emit->accumulator_operand_index]),
                    seed_first_lane ? lanes->lane_count : 1);
   }
+  loom_type_t result_types[3];
   uint16_t remaining_mask = resolved->result_type_mask;
-  uint16_t result_index = 0;
   while (remaining_mask != 0) {
     const uint16_t ordinal =
         (uint16_t)iree_math_count_trailing_zeros_u32(remaining_mask);
@@ -1208,6 +1207,29 @@ static iree_status_t loom_low_lower_rule_plan_carriers(
       return iree_ok_status();
     }
     IREE_ASSERT(loom_low_type_is_register(result_type));
+    result_types[ordinal] = result_type;
+    if (expands_lanes) {
+      const uint32_t packet_units =
+          loom_low_lower_rule_descriptor_result_operand(
+              context->descriptor_set, resolved->descriptor.descriptor, ordinal)
+              ->unit_count;
+      const uint32_t result_units =
+          loom_low_register_type_unit_count(result_type);
+      IREE_ASSERT_EQ(result_units % packet_units, 0);
+      lanes->lane_count =
+          iree_max(lanes->lane_count, result_units / packet_units);
+    }
+  }
+  // Packet-width inputs may be broadcast across a wider result. Resolve every
+  // aggregate carrier before binding any result so all bindings share the final
+  // repetition count, including descriptors with several results.
+  remaining_mask = resolved->result_type_mask;
+  uint16_t result_index = 0;
+  while (remaining_mask != 0) {
+    const uint16_t ordinal =
+        (uint16_t)iree_math_count_trailing_zeros_u32(remaining_mask);
+    remaining_mask &= (uint16_t)(remaining_mask - 1u);
+    const loom_type_t result_type = result_types[ordinal];
     const uint16_t bind_ref_index =
         loom_low_lower_rule_emit_result_bind_ref_index(emit, ordinal);
     const loom_low_lower_value_ref_t* bind_ref =
