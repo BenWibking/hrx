@@ -17,6 +17,7 @@ iree_cc_library(
     "publication.h"
   DEPS
     amdf::headers
+    iree::third_party::google_test
     libamdf::cts::gpu::aql::encoding::packets
     libamdf::cts::gpu::util::user_queue
   TESTONLY

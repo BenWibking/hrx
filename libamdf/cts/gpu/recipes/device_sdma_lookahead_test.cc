@@ -58,34 +58,6 @@ struct LookaheadCase {
   std::string name;
 };
 
-// Prepare a complete finite batch while its first header remains INVALID.
-// The caller publishes that header only after both queue bodies are ready.
-void PrepareBatch(GpuUserQueue& queue, uint64_t begin,
-                  const std::vector<aql::Packet>& packets) {
-  const uint64_t capacity = queue.host.ring_byte_length / sizeof(aql::Packet);
-  ASSERT_LT(packets.size(), capacity);
-  ASSERT_EQ(GpuLoadAcquire<uint64_t>(queue.host.read_index_address), begin);
-  auto* ring = reinterpret_cast<aql::Packet*>(queue.host.ring_address);
-  auto& first = ring[begin & (capacity - 1)];
-  ASSERT_EQ(first[0] & 0xffu, 1u);
-  std::memcpy(first.data() + 1, packets.front().data() + 1,
-              sizeof(aql::Packet) - sizeof(uint32_t));
-  for (size_t i = 1; i < packets.size(); ++i) {
-    ring[(begin + i) & (capacity - 1)] = packets[i];
-  }
-}
-
-void PublishBatch(GpuUserQueue& queue, uint64_t begin,
-                  const std::vector<aql::Packet>& packets) {
-  const uint64_t capacity = queue.host.ring_byte_length / sizeof(aql::Packet);
-  auto* ring = reinterpret_cast<aql::Packet*>(queue.host.ring_address);
-  GpuStoreRelease(queue.host.write_index_address, begin + packets.size());
-  GpuStoreRelease(
-      reinterpret_cast<uintptr_t>(ring[begin & (capacity - 1)].data()),
-      packets.front()[0]);
-  GpuStoreRelease(queue.host.doorbell_address, begin + packets.size() - 1);
-}
-
 // Compare every word without expanding an entire allocation into a failure log.
 void CheckWords(const void* observed, const std::vector<uint32_t>& expected) {
   const auto* words = static_cast<const uint32_t*>(observed);
@@ -503,10 +475,12 @@ TEST_P(DeviceSdmaLookaheadTest, ReuseJoinsEveryIndependentReader) {
   expected_control[kCompletionOffset / 4] = test_case.job_count;
   std::memcpy(expected_control.data() + kFrontierOffset / 4, &frontier,
               sizeof(frontier));
-  ASSERT_NO_FATAL_FAILURE(PrepareBatch(*publisher, publisher_index, uploads));
-  ASSERT_NO_FATAL_FAILURE(PrepareBatch(*consumer, consumer_index, readers));
-  PublishBatch(*consumer, consumer_index, readers);
-  PublishBatch(*publisher, publisher_index, uploads);
+  ASSERT_NO_FATAL_FAILURE(
+      aql::PrepareBatch(*publisher, publisher_index, uploads));
+  ASSERT_NO_FATAL_FAILURE(
+      aql::PrepareBatch(*consumer, consumer_index, readers));
+  aql::PublishBatch(*consumer, consumer_index, readers);
+  aql::PublishBatch(*publisher, publisher_index, uploads);
 
   // One terminal host join; no per-job refill, inspection or release.
   GpuWaitEqual<int64_t>(reinterpret_cast<uintptr_t>(&terminal_signal.value), 0);
