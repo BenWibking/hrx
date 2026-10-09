@@ -59,10 +59,10 @@ void loom_low_lower_inherit_value_type(loom_low_lower_context_t* context,
 loom_type_t loom_low_lower_value_binding_type(
     const loom_low_lower_context_t* context, loom_value_id_t source_value_id);
 
-// Looks up the Low SSA value already bound to |source_value_id|.
-iree_status_t loom_low_lower_lookup_value(loom_low_lower_context_t* context,
-                                          loom_value_id_t source_value_id,
-                                          loom_value_id_t* out_low_value_id);
+// Returns the Low SSA value already bound to |source_value_id|. The producer
+// must have materialized a non-elided binding before this lookup.
+loom_value_id_t loom_low_lower_lookup_value(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value_id);
 
 // Returns true when the source value has a non-elided emitted binding. A
 // selected type alone does not count as an available SSA value.
@@ -88,8 +88,8 @@ iree_status_t loom_low_lower_bind_value_alias(loom_low_lower_context_t* context,
 
 // Marks a source value as erased by its selected plan. Such values represent
 // source sequencing or control and cannot be consumed as Low operands.
-iree_status_t loom_low_lower_elide_value(loom_low_lower_context_t* context,
-                                         loom_value_id_t source_value_id);
+void loom_low_lower_elide_value(loom_low_lower_context_t* context,
+                                loom_value_id_t source_value_id);
 
 #ifdef __cplusplus
 }  // extern "C"

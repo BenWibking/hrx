@@ -472,8 +472,8 @@ static iree_status_t loom_aie2p_shuffle_emit_state_initialize(
       .source_vector_packets = {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID,
                                 LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID},
   };
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_vector_shuffle_source(source_op), &out_state->low_source));
+  out_state->low_source = loom_low_lower_lookup_value(
+      context, loom_vector_shuffle_source(source_op));
   IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_emitter_initialize(
       context, source_op, &out_state->packet_emitter));
 

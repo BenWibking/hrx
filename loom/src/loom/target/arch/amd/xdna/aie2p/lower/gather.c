@@ -449,9 +449,8 @@ iree_status_t loom_aie2p_emit_gather_plan(loom_low_lower_context_t* context,
       context, AIE2P_CORE_DESCRIPTOR_REF_SELECT_I32X16, select_operands,
       IREE_ARRAYSIZE(select_operands), vector_type, location, &lane_bases));
 
-  loom_value_id_t source_offsets = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_vector_gather_offsets(source_op), &source_offsets));
+  loom_value_id_t source_offsets = loom_low_lower_lookup_value(
+      context, loom_vector_gather_offsets(source_op));
 
   loom_builder_t* builder = loom_low_lower_context_builder(context);
   loom_value_id_t shuffle_control = LOOM_VALUE_ID_INVALID;

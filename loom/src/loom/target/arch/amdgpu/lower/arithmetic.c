@@ -1198,8 +1198,7 @@ static iree_status_t loom_amdgpu_lookup_fma_mix_packet_sources(
           ? LOOM_AMDGPU_FMA_MIX_SOURCE_COUNT - 1
           : LOOM_AMDGPU_FMA_MIX_SOURCE_COUNT;
   for (uint32_t i = 0; i < source_count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(context, plan->sources[i],
-                                                     &out_operands[i]));
+    out_operands[i] = loom_low_lower_lookup_value(context, plan->sources[i]);
     IREE_RETURN_IF_ERROR(loom_amdgpu_extract_fma_mix_register_unit(
         context, source_op, out_operands[i], plan->source_register_offsets[i],
         &out_operands[i]));
@@ -1372,8 +1371,7 @@ iree_status_t loom_amdgpu_lower_vector_packed_ternary(
       LOOM_VALUE_ID_INVALID,
   };
   for (uint32_t i = 0; i < IREE_ARRAYSIZE(low_sources); ++i) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(context, plan->sources[i],
-                                                     &low_sources[i]));
+    low_sources[i] = loom_low_lower_lookup_value(context, plan->sources[i]);
   }
   IREE_RETURN_IF_ERROR(loom_amdgpu_legalize_vop3_scalar_sources(
       context, source_op, low_sources));
@@ -1464,8 +1462,7 @@ iree_status_t loom_amdgpu_lower_mulf_mix(
       LOOM_VALUE_ID_INVALID,
   };
   for (uint32_t i = 0; i < IREE_ARRAYSIZE(low_sources); ++i) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(context, plan->sources[i],
-                                                     &low_sources[i]));
+    low_sources[i] = loom_low_lower_lookup_value(context, plan->sources[i]);
   }
 
   const loom_type_t lane_type = loom_low_register_type(

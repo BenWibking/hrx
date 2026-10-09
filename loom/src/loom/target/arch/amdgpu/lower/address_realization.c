@@ -284,10 +284,8 @@ static iree_status_t loom_amdgpu_initialize_descriptor_root(
     loom_value_id_t* out_value) {
   (void)carried_value;
   const loom_low_source_memory_access_plan_t* source = data;
-  loom_value_id_t binding = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_low_source_memory_access_base_view_value_id(source),
-      &binding));
+  loom_value_id_t binding = loom_low_lower_lookup_value(
+      context, loom_low_source_memory_access_base_view_value_id(source));
   // Shared descriptor selection requires a fixed explicit resource extent.
   return loom_amdgpu_emit_hal_buffer_descriptor(
       context, source_op, binding, source, /*plan=*/NULL, out_value);

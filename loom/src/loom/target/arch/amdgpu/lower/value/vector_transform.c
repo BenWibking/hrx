@@ -153,9 +153,8 @@ iree_status_t loom_amdgpu_finalize_vector_transform_plan(
 iree_status_t loom_amdgpu_lower_vector_transform(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_vector_transform_plan_t* plan) {
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, &low_source));
+  loom_value_id_t low_source =
+      loom_low_lower_lookup_value(context, plan->source);
 
   const loom_module_t* module = loom_low_lower_context_module(context);
   loom_type_t source_lane_type =

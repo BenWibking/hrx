@@ -1260,9 +1260,8 @@ static iree_status_t loom_amdgpu_lookup_atomic_value_as_vgpr(
         context, source_op, source_value, out_low_value);
   }
 
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
   const loom_type_t low_type = loom_module_value_type(module, low_value);
   const bool is_vgpr = loom_amdgpu_low_type_is_register_class_count(
       context, low_type, LOOM_AMDGPU_REG_CLASS_ID_VGPR, register_count);
@@ -1290,9 +1289,8 @@ static iree_status_t loom_amdgpu_materialize_atomic_value_as_fresh_vgpr(
     return loom_amdgpu_emit_atomic_constant_as_vgpr(
         context, source_op, *constant_bits, register_count, out_low_value);
   }
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
   return loom_amdgpu_copy_atomic_value_to_fresh_vgpr(
       context, source_op, low_value, register_count, out_low_value);
 }
@@ -1322,10 +1320,8 @@ iree_status_t loom_amdgpu_lower_atomic(loom_low_lower_context_t* context,
     IREE_ASSERT_UNREACHABLE("selected AMDGPU atomic source op");
     IREE_BUILTIN_UNREACHABLE();
   }
-  loom_value_id_t low_resource = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_low_source_memory_access_base_view_value_id(&plan->source),
-      &low_resource));
+  loom_value_id_t low_resource = loom_low_lower_lookup_value(
+      context, loom_low_source_memory_access_base_view_value_id(&plan->source));
   const uint32_t payload_register_count =
       loom_amdgpu_atomic_source_payload_register_count(&plan->source);
   const uint32_t packet_byte_count =

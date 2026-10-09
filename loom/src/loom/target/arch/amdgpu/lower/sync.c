@@ -306,8 +306,9 @@ iree_status_t loom_amdgpu_lower_kernel_split_barrier(
     case LOOM_AMDGPU_KERNEL_BARRIER_LOWERING_KIND_SPLIT_ARRIVE: {
       IREE_RETURN_IF_ERROR(loom_amdgpu_emit_explicit_packet_plan(
           context, source_op, &plan->split_signal));
-      return loom_low_lower_elide_value(
-          context, loom_kernel_barrier_arrive_phase(source_op));
+      loom_low_lower_elide_value(context,
+                                 loom_kernel_barrier_arrive_phase(source_op));
+      return iree_ok_status();
     }
     case LOOM_AMDGPU_KERNEL_BARRIER_LOWERING_KIND_SPLIT_WAIT:
       return loom_amdgpu_emit_explicit_packet_plan(context, source_op,

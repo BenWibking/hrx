@@ -162,8 +162,8 @@ static iree_status_t loom_low_lower_rule_low_value(
         return materializer->emit.direct(context, materialized_source_op,
                                          source_value_id, out_low_value_id);
       }
-      return loom_low_lower_lookup_value(context, source_value_id,
-                                         out_low_value_id);
+      *out_low_value_id = loom_low_lower_lookup_value(context, source_value_id);
+      return iree_ok_status();
     }
     case LOOM_LOW_LOWER_VALUE_REF_TEMPORARY:
       IREE_ASSERT_LT(value_ref->index, state->temporary_count);
@@ -186,8 +186,8 @@ static iree_status_t loom_low_lower_rule_low_value(
       }
       const loom_value_id_t source_value_id =
           source_memory_access->dynamic_terms[value_ref->index].index;
-      return loom_low_lower_lookup_value(context, source_value_id,
-                                         out_low_value_id);
+      *out_low_value_id = loom_low_lower_lookup_value(context, source_value_id);
+      return iree_ok_status();
     }
     case LOOM_LOW_LOWER_VALUE_REF_SOURCE_MEMORY_DYNAMIC_BYTE_OFFSET:
       IREE_ASSERT(source_memory != NULL);
@@ -230,8 +230,9 @@ static iree_status_t loom_low_lower_rule_low_value(
       IREE_ASSERT(source_memory != NULL);
       IREE_ASSERT(source_memory_access != NULL);
       IREE_ASSERT_EQ(value_ref->materializer_index, 0);
-      return loom_low_lower_lookup_value(
-          context, source_memory_access->root_value_id, out_low_value_id);
+      *out_low_value_id = loom_low_lower_lookup_value(
+          context, source_memory_access->root_value_id);
+      return iree_ok_status();
     default:
       IREE_ASSERT_UNREACHABLE("unknown generated value ref kind");
       IREE_BUILTIN_UNREACHABLE();
@@ -381,7 +382,7 @@ static iree_status_t loom_low_lower_rule_bind_results(
   return iree_ok_status();
 }
 
-static iree_status_t loom_low_lower_rule_elide_results(
+static void loom_low_lower_rule_elide_results(
     loom_low_lower_context_t* context,
     const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
     const loom_low_lower_rule_t* rule) {
@@ -393,9 +394,8 @@ static iree_status_t loom_low_lower_rule_elide_results(
     IREE_ASSERT_EQ(value_ref->kind, LOOM_LOW_LOWER_VALUE_REF_RESULT);
     loom_value_id_t source_value_id = loom_low_lower_rule_source_value(
         context->module, rule_set, source_op, value_ref_index);
-    IREE_RETURN_IF_ERROR(loom_low_lower_elide_value(context, source_value_id));
+    loom_low_lower_elide_value(context, source_value_id);
   }
-  return iree_ok_status();
 }
 
 static iree_status_t loom_low_lower_rule_bind_aliases(
@@ -1205,5 +1205,6 @@ iree_status_t loom_low_lower_rule_set_emit_rule(
 
   IREE_RETURN_IF_ERROR(
       loom_low_lower_rule_bind_aliases(context, rule_set, source_op, rule));
-  return loom_low_lower_rule_elide_results(context, rule_set, source_op, rule);
+  loom_low_lower_rule_elide_results(context, rule_set, source_op, rule);
+  return iree_ok_status();
 }

@@ -528,9 +528,8 @@ iree_status_t loom_amdgpu_emit_sgpr_byte_offset(
         static_byte_offset, sgpr_type, out_low_offset);
   }
 
-  loom_value_id_t low_index = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, dynamic_index, &low_index));
+  loom_value_id_t low_index =
+      loom_low_lower_lookup_value(context, dynamic_index);
   loom_value_id_t low_dynamic_offset = low_index;
   if (dynamic_index_byte_stride != 1) {
     IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr_scale_byte_offset_u32(

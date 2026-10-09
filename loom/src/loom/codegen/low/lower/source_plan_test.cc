@@ -285,9 +285,8 @@ class LowLowerSourcePlanTest : public ::testing::Test {
         loom_low_lower_context_source_function(context), &argument_count);
     EXPECT_TRUE(
         loom_low_lower_source_value_has_low_mapping(context, arguments[0]));
-    loom_value_id_t low_argument = LOOM_VALUE_ID_INVALID;
-    IREE_RETURN_IF_ERROR(
-        loom_low_lower_lookup_value(context, arguments[0], &low_argument));
+    loom_value_id_t low_argument =
+        loom_low_lower_lookup_value(context, arguments[0]);
     EXPECT_TRUE(loom_type_equal(
         entry.argument_type,
         loom_module_value_type(loom_low_lower_context_module(context),

@@ -1002,8 +1002,7 @@ static iree_status_t loom_amdgpu_initialize_fp4_scale_emission(
   IREE_ASSERT_GT(state->source_register_count, 0u);
   IREE_ASSERT_LE(state->scale_count, LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES);
 
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(context, plan->scale_source,
-                                                   &state->low_source));
+  state->low_source = loom_low_lower_lookup_value(context, plan->scale_source);
   IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
       context, source_op, state->low_source, &state->low_source));
   IREE_RETURN_IF_ERROR(
@@ -1303,14 +1302,12 @@ static iree_status_t loom_amdgpu_lower_vector_fp4_decode_native_pair(
       plan->strategy.fp4_decode.native_pair_recipe;
   IREE_ASSERT(recipe != NULL);
 
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, &low_source));
+  loom_value_id_t low_source =
+      loom_low_lower_lookup_value(context, plan->source);
   IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
       context, source_op, low_source, &low_source));
-  loom_value_id_t low_scale_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(context, plan->scale_source,
-                                                   &low_scale_source));
+  loom_value_id_t low_scale_source =
+      loom_low_lower_lookup_value(context, plan->scale_source);
   IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
       context, source_op, low_scale_source, &low_scale_source));
 
@@ -1372,14 +1369,12 @@ static iree_status_t loom_amdgpu_lower_vector_fp4_decode_native_pk8(
       plan->strategy.fp4_decode.native_pk8_recipe;
   IREE_ASSERT(recipe != NULL);
 
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, &low_source));
+  loom_value_id_t low_source =
+      loom_low_lower_lookup_value(context, plan->source);
   IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
       context, source_op, low_source, &low_source));
-  loom_value_id_t low_scale_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(context, plan->scale_source,
-                                                   &low_scale_source));
+  loom_value_id_t low_scale_source =
+      loom_low_lower_lookup_value(context, plan->scale_source);
   IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
       context, source_op, low_scale_source, &low_scale_source));
 
@@ -1455,9 +1450,8 @@ static iree_status_t loom_amdgpu_lower_vector_fp4_decode_portable(
   const loom_amdgpu_fp4_decode_recipe_t* decode_recipe =
       plan->strategy.fp4_decode.portable_recipe;
   IREE_ASSERT(decode_recipe != NULL);
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, &low_source));
+  loom_value_id_t low_source =
+      loom_low_lower_lookup_value(context, plan->source);
   IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
       context, source_op, low_source, &low_source));
 

@@ -403,8 +403,8 @@ iree_status_t loom_low_lower_source_invoke(
       context, source_operands.count, sizeof(*low_operands),
       (void**)&low_operands));
   for (uint16_t i = 0; i < source_operands.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, source_operands.values[i], &low_operands[i]));
+    low_operands[i] =
+        loom_low_lower_lookup_value(context, source_operands.values[i]);
     const loom_type_t expected_type =
         loom_type_table_get(&module->types, type_ids[i]);
     IREE_RETURN_IF_ERROR(loom_low_lower_materialize_structural_operand(

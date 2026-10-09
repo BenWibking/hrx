@@ -341,9 +341,8 @@ void loom_amdgpu_memory_access_resolve_dynamic_terms(
 static iree_status_t loom_amdgpu_lookup_memory_u32_operand(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, loom_value_id_t* out_low_value) {
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
   const loom_module_t* module = loom_low_lower_context_module(context);
   const loom_type_t low_type = loom_module_value_type(module, low_value);
   const uint32_t unit_count = loom_low_register_type_unit_count(low_type);
@@ -1029,9 +1028,7 @@ static iree_status_t loom_amdgpu_emit_memory_flat_dynamic_term(
   *out_low_lo = LOOM_VALUE_ID_INVALID;
   *out_low_hi = LOOM_VALUE_ID_INVALID;
 
-  loom_value_id_t low_index = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, term->index, &low_index));
+  loom_value_id_t low_index = loom_low_lower_lookup_value(context, term->index);
   bool emitted_wide = false;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_flat_wide_dynamic_term(
       context, source_op, term, plan, low_index, vgpr_type, out_low_lo,
@@ -1153,9 +1150,7 @@ static iree_status_t loom_amdgpu_emit_memory_flat_scalar_dynamic_term(
   *out_low_term = LOOM_VALUE_ID_INVALID;
   *out_emitted = false;
 
-  loom_value_id_t low_index = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, term->index, &low_index));
+  loom_value_id_t low_index = loom_low_lower_lookup_value(context, term->index);
   const bool index_is_sgpr_b64 = loom_amdgpu_low_value_is_register_class_count(
       context, low_index, LOOM_AMDGPU_REG_CLASS_ID_SGPR, 2);
   const bool index_is_sgpr_b32 = loom_amdgpu_low_value_is_register_class_count(
@@ -1169,9 +1164,8 @@ static iree_status_t loom_amdgpu_emit_memory_flat_scalar_dynamic_term(
     return iree_ok_status();
   }
   for (uint8_t i = 0; i < term->stride_value_count; ++i) {
-    loom_value_id_t low_stride = LOOM_VALUE_ID_INVALID;
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, term->stride_values[i], &low_stride));
+    loom_value_id_t low_stride =
+        loom_low_lower_lookup_value(context, term->stride_values[i]);
     if (!loom_amdgpu_low_type_is_register_class(
             context, loom_module_value_type(module, low_stride),
             LOOM_AMDGPU_REG_CLASS_ID_SGPR)) {

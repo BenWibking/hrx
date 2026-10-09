@@ -162,9 +162,8 @@ iree_status_t loom_amdgpu_value_can_materialize_as_vgpr_registers(
 iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_registers(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, loom_value_id_t* out_low_value) {
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
   return loom_amdgpu_materialize_low_vgpr_b32_registers(
       context, source_op, low_value, out_low_value);
 }
@@ -187,7 +186,8 @@ iree_status_t loom_amdgpu_lookup_or_materialize_vop3_binary_rhs(
   if (loom_amdgpu_descriptor_set_info_has_flags(
           descriptor_set_info,
           LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOP3_TWO_SCALAR_SOURCES)) {
-    return loom_low_lower_lookup_value(context, source_value, out_low_value);
+    *out_low_value = loom_low_lower_lookup_value(context, source_value);
+    return iree_ok_status();
   }
   return loom_amdgpu_lookup_or_materialize_vgpr_registers(
       context, source_op, source_value, out_low_value);
@@ -304,9 +304,8 @@ iree_status_t loom_amdgpu_lookup_or_materialize_i1_integer(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, uint32_t register_class_id,
     loom_value_id_t* out_low_value) {
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
   const loom_type_t low_type =
       loom_module_value_type(loom_low_lower_context_module(context), low_value);
   if (loom_low_register_type_unit_count(low_type) == 2) {
@@ -357,9 +356,8 @@ iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_i64(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, loom_value_id_t* out_low_value) {
   *out_low_value = LOOM_VALUE_ID_INVALID;
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
 
   const loom_module_t* module = loom_low_lower_context_module(context);
   const loom_type_t low_type = loom_module_value_type(module, low_value);
@@ -403,9 +401,8 @@ iree_status_t loom_amdgpu_emit_prepared_vgpr_address(
         context, source_op, source_value, LOOM_AMDGPU_REG_CLASS_ID_VGPR,
         out_low_value);
   }
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
 
   const loom_type_t low_type = loom_module_value_type(module, low_value);
   const bool is_vgpr = loom_amdgpu_low_type_is_register_class(
@@ -455,9 +452,8 @@ iree_status_t loom_amdgpu_lookup_or_materialize_sgpr_address(
         context, source_op, source_value, LOOM_AMDGPU_REG_CLASS_ID_SGPR,
         out_low_value);
   }
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
 
   const loom_type_t low_type = loom_module_value_type(module, low_value);
   const bool is_sgpr = loom_amdgpu_low_type_is_register_class(
@@ -587,9 +583,8 @@ iree_status_t loom_amdgpu_emit_prepared_native_i1_mask(
     return iree_ok_status();
   }
 
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
 
   return loom_amdgpu_materialize_low_native_i1_mask(context, source_op,
                                                     low_value, out_low_value);

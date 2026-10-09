@@ -812,8 +812,8 @@ iree_status_t loom_amdgpu_emit_fragment_memory_fp8_to_packed_16bit_load_packet(
   }
   loom_value_id_t low_conversion_scale = LOOM_VALUE_ID_INVALID;
   if (has_fp8_load_scale) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, plan->fp8_load_scale_source, &low_conversion_scale));
+    low_conversion_scale =
+        loom_low_lower_lookup_value(context, plan->fp8_load_scale_source);
     IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_full_low_vgpr_b32(
         context, source_op, low_conversion_scale, &low_conversion_scale));
   } else if (use_scalef32_descriptor) {

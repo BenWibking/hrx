@@ -461,10 +461,9 @@ static iree_status_t loom_amdgpu_lower_memory_packet_load(
   loom_amdgpu_memory_access_resolve_dynamic_terms(context, access, &sequence);
   loom_value_id_t low_resource = LOOM_VALUE_ID_INVALID;
   if (loom_amdgpu_memory_access_needs_hal_resource(access)) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
+    low_resource = loom_low_lower_lookup_value(
         context,
-        loom_low_source_memory_access_base_view_value_id(&access->source),
-        &low_resource));
+        loom_low_source_memory_access_base_view_value_id(&access->source));
   }
 
   loom_value_id_t low_vaddr = LOOM_VALUE_ID_INVALID;
@@ -639,10 +638,9 @@ static iree_status_t loom_amdgpu_lower_memory_packet_store(
   }
   loom_value_id_t low_resource = LOOM_VALUE_ID_INVALID;
   if (loom_amdgpu_memory_access_needs_hal_resource(access)) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
+    low_resource = loom_low_lower_lookup_value(
         context,
-        loom_low_source_memory_access_base_view_value_id(&access->source),
-        &low_resource));
+        loom_low_source_memory_access_base_view_value_id(&access->source));
   }
 
   loom_value_id_t low_vaddr = LOOM_VALUE_ID_INVALID;
@@ -852,9 +850,8 @@ iree_status_t loom_amdgpu_lower_memory_store(
       context, source_op, &plan->packets[0].access.source));
   const loom_value_id_t source_value = loom_amdgpu_memory_store_value(
       loom_low_lower_context_module(context), source_op);
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
+  loom_value_id_t low_value =
+      loom_low_lower_lookup_value(context, source_value);
   if (plan->packet_count == 1) {
     return loom_amdgpu_lower_memory_packet_store(context, source_op,
                                                  &plan->packets[0], low_value);

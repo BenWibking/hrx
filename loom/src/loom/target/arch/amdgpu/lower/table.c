@@ -854,13 +854,10 @@ static iree_status_t loom_amdgpu_lower_vector_table_lookup_packed_i8(
 iree_status_t loom_amdgpu_lower_vector_table_lookup(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_table_lookup_plan_t* plan) {
-  loom_value_id_t low_table = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->table, &low_table));
+  loom_value_id_t low_table = loom_low_lower_lookup_value(context, plan->table);
   loom_value_id_t low_indices = LOOM_VALUE_ID_INVALID;
   if (plan->indices != LOOM_VALUE_ID_INVALID) {
-    IREE_RETURN_IF_ERROR(
-        loom_low_lower_lookup_value(context, plan->indices, &low_indices));
+    low_indices = loom_low_lower_lookup_value(context, plan->indices);
   }
 
   if (plan->strategy == LOOM_AMDGPU_TABLE_LOOKUP_STRATEGY_PACKED_I8_PERMUTE ||

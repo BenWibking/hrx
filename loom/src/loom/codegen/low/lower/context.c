@@ -770,8 +770,7 @@ iree_status_t loom_low_lower_remap_successor_args(
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
       context, low_arg_count, sizeof(*low_args), (void**)&low_args));
   for (uint16_t i = 0; i < source_arg_count; ++i) {
-    IREE_RETURN_IF_ERROR(
-        loom_low_lower_lookup_value(context, source_args[i], &low_args[i]));
+    low_args[i] = loom_low_lower_lookup_value(context, source_args[i]);
 
     const loom_type_t required_type =
         loom_block_arg_type(context->module, low_dest, i);

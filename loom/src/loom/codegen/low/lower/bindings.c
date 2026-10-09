@@ -66,9 +66,8 @@ loom_type_t loom_low_lower_value_binding_type(
   return loom_type_table_get(&context->module->types, binding.type);
 }
 
-iree_status_t loom_low_lower_lookup_value(loom_low_lower_context_t* context,
-                                          loom_value_id_t source_value_id,
-                                          loom_value_id_t* out_low_value_id) {
+loom_value_id_t loom_low_lower_lookup_value(
+    const loom_low_lower_context_t* context, loom_value_id_t source_value_id) {
   const loom_value_ordinal_t ordinal =
       loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
   IREE_ASSERT(
@@ -79,8 +78,7 @@ iree_status_t loom_low_lower_lookup_value(loom_low_lower_context_t* context,
       context->lowering->value_bindings[ordinal].value;
   IREE_ASSERT_NE(low_value, LOOM_LOW_LOWER_VALUE_ID_ELIDED,
                  "source-to-low requested elided source value");
-  *out_low_value_id = low_value;
-  return iree_ok_status();
+  return low_value;
 }
 
 bool loom_low_lower_source_value_has_low_mapping(
@@ -129,19 +127,17 @@ iree_status_t loom_low_lower_replace_value_binding(
 iree_status_t loom_low_lower_bind_value_alias(loom_low_lower_context_t* context,
                                               loom_value_id_t source_value_id,
                                               loom_value_id_t result_value_id) {
-  loom_value_id_t low_value_id;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value_id, &low_value_id));
+  loom_value_id_t low_value_id =
+      loom_low_lower_lookup_value(context, source_value_id);
   return loom_low_lower_bind_value(context, result_value_id, low_value_id);
 }
 
-iree_status_t loom_low_lower_elide_value(loom_low_lower_context_t* context,
-                                         loom_value_id_t source_value_id) {
+void loom_low_lower_elide_value(loom_low_lower_context_t* context,
+                                loom_value_id_t source_value_id) {
   const loom_value_ordinal_t ordinal =
       loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
   context->lowering->value_bindings[ordinal].value =
       LOOM_LOW_LOWER_VALUE_ID_ELIDED;
   context->lowering->source_plan.value_flags[ordinal] |=
       LOOM_LOW_LOWER_VALUE_MATERIALIZED;
-  return iree_ok_status();
 }

@@ -372,8 +372,7 @@ static iree_status_t loom_low_lower_rule_source_memory_lookup_byte_offset(
     const loom_low_lower_source_memory_byte_offset_materializer_t* materializer,
     loom_value_id_t source_value_id, loom_type_t offset_type,
     loom_location_id_t location, loom_value_id_t* out_value_id) {
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value_id, out_value_id));
+  *out_value_id = loom_low_lower_lookup_value(context, source_value_id);
   const loom_scalar_type_t scalar_type =
       loom_type_element_type(loom_module_value_type(
           loom_low_lower_context_module(context), source_value_id));
@@ -422,13 +421,13 @@ iree_status_t loom_low_lower_rule_materialize_source_memory_dynamic_term(
       loom_type_element_type(loom_module_value_type(
           loom_low_lower_context_module(context), source_value_id));
   if (!loom_scalar_type_is_integer(scalar_type)) {
-    return loom_low_lower_lookup_value(context, source_value_id, out_value_id);
+    *out_value_id = loom_low_lower_lookup_value(context, source_value_id);
+    return iree_ok_status();
   }
   const loom_low_lower_source_memory_integer_conversion_t* conversion =
       &materializer->integer_conversions[scalar_type - LOOM_SCALAR_TYPE_I1];
   if (conversion->descriptor_ref != LOOM_LOW_LOWER_DESCRIPTOR_REF_NONE) {
-    IREE_RETURN_IF_ERROR(
-        loom_low_lower_lookup_value(context, source_value_id, out_value_id));
+    *out_value_id = loom_low_lower_lookup_value(context, source_value_id);
     return loom_low_lower_rule_source_memory_convert_integer(
         context, rule_set, conversion, materializer->constant_descriptor_ref,
         materializer->constant_immediate_string_ref, *out_value_id,
@@ -677,9 +676,8 @@ loom_low_lower_rule_materialize_source_memory_address_coordinate_value(
   const loom_module_t* module = loom_low_lower_context_module(context);
   const loom_type_t source_type =
       loom_module_value_type(module, source_value_id);
-  loom_value_id_t low_value_id = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value_id, &low_value_id));
+  loom_value_id_t low_value_id =
+      loom_low_lower_lookup_value(context, source_value_id);
   const loom_scalar_type_t scalar_type = loom_type_element_type(source_type);
   if (loom_scalar_type_is_integer(scalar_type)) {
     return loom_low_lower_rule_source_memory_convert_integer(
@@ -786,9 +784,8 @@ loom_low_lower_rule_materialize_source_memory_complete_coordinate(
       source_memory_access->dynamic_view_base_term_count != 0 &&
       source_memory_access->dynamic_view_base_value_id !=
           LOOM_VALUE_ID_INVALID) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, source_memory_access->dynamic_view_base_value_id,
-        &accumulator));
+    accumulator = loom_low_lower_lookup_value(
+        context, source_memory_access->dynamic_view_base_value_id);
     first_canonical_term = source_memory_access->dynamic_view_base_term_count;
     const bool subtracted_view_base = iree_checked_sub_i64(
         static_byte_offset,
@@ -874,8 +871,7 @@ iree_status_t loom_low_lower_rule_materialize_source_memory_address(
           ? loom_low_source_memory_access_base_view_value_id(
                 source_memory_access)
           : source_memory_access->root_value_id;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_base, &base));
+  base = loom_low_lower_lookup_value(context, source_base);
   loom_value_id_t coordinate = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(
       loom_low_lower_rule_materialize_source_memory_complete_coordinate(

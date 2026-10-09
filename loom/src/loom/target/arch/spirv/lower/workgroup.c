@@ -293,9 +293,8 @@ static iree_status_t loom_spirv_lower_workgroup_alloca(
 static iree_status_t loom_spirv_lower_workgroup_view(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_spirv_workgroup_view_plan_t* plan) {
-  loom_value_id_t low_storage = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->root_value_id, &low_storage));
+  loom_value_id_t low_storage =
+      loom_low_lower_lookup_value(context, plan->root_value_id);
   const loom_type_t array_pointer_type = loom_low_lower_value_binding_type(
       context, loom_buffer_view_result(source_op));
   loom_op_t* address_op = NULL;

@@ -190,8 +190,7 @@ iree_status_t loom_low_lower_remap_values(loom_low_lower_context_t* context,
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
       context, value_count, sizeof(*low_values), (void**)&low_values));
   for (iree_host_size_t i = 0; i < value_count; ++i) {
-    IREE_RETURN_IF_ERROR(
-        loom_low_lower_lookup_value(context, source_values[i], &low_values[i]));
+    low_values[i] = loom_low_lower_lookup_value(context, source_values[i]);
     const loom_type_t required_low_type =
         required_types ? required_types[i]
                        : loom_module_value_type(context->module, low_values[i]);
@@ -216,7 +215,8 @@ static iree_status_t loom_low_lower_bind_or_elide_alias(
   }
   if (!loom_low_lower_source_plan_result_storage_required(context,
                                                           result_value_id)) {
-    return loom_low_lower_elide_value(context, result_value_id);
+    loom_low_lower_elide_value(context, result_value_id);
+    return iree_ok_status();
   }
   return loom_low_lower_bind_value_alias(context, source_value_id,
                                          result_value_id);
@@ -288,9 +288,8 @@ static iree_status_t loom_low_lower_emit_scf_yield(
 
 static iree_status_t loom_low_lower_emit_scf_condition(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
-  loom_value_id_t low_condition = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_scf_condition_condition(source_op), &low_condition));
+  loom_value_id_t low_condition = loom_low_lower_lookup_value(
+      context, loom_scf_condition_condition(source_op));
   const loom_value_slice_t forwarded = loom_scf_condition_forwarded(source_op);
   loom_value_id_t* low_forwarded = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
@@ -304,9 +303,8 @@ static iree_status_t loom_low_lower_emit_scf_condition(
 
 static iree_status_t loom_low_lower_emit_scf_if(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
-  loom_value_id_t low_condition = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_scf_if_condition(source_op), &low_condition));
+  loom_value_id_t low_condition =
+      loom_low_lower_lookup_value(context, loom_scf_if_condition(source_op));
 
   loom_type_t* result_types = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_structural_take_types(
@@ -360,15 +358,12 @@ static iree_status_t loom_low_lower_bind_region_entry_args(
 
 static iree_status_t loom_low_lower_emit_scf_for(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
-  loom_value_id_t low_lower_bound = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_scf_for_lower_bound(source_op), &low_lower_bound));
-  loom_value_id_t low_upper_bound = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_scf_for_upper_bound(source_op), &low_upper_bound));
-  loom_value_id_t low_step = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_scf_for_step(source_op), &low_step));
+  loom_value_id_t low_lower_bound =
+      loom_low_lower_lookup_value(context, loom_scf_for_lower_bound(source_op));
+  loom_value_id_t low_upper_bound =
+      loom_low_lower_lookup_value(context, loom_scf_for_upper_bound(source_op));
+  loom_value_id_t low_step =
+      loom_low_lower_lookup_value(context, loom_scf_for_step(source_op));
 
   loom_value_slice_t iter_args = loom_scf_for_iter_args(source_op);
   loom_value_id_t* low_iter_args = NULL;
@@ -380,8 +375,8 @@ static iree_status_t loom_low_lower_emit_scf_for(
   loom_low_scf_for_build_flags_t build_flags = 0;
   if (loom_scf_for_unroll_factor_is_present(source_op)) {
     build_flags |= LOOM_LOW_SCF_FOR_BUILD_FLAG_HAS_UNROLL_FACTOR;
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, loom_scf_for_unroll_factor(source_op), &low_unroll_factor));
+    low_unroll_factor = loom_low_lower_lookup_value(
+        context, loom_scf_for_unroll_factor(source_op));
   }
 
   uint8_t unroll_policy = 0;
@@ -563,9 +558,8 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
         return loom_low_br_build(&context->builder, low_dest, NULL, 0,
                                  source_op->location, &low_br_op);
       }
-      loom_value_id_t low_condition = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-          context, loom_cfg_cond_br_condition(source_op), &low_condition));
+      loom_value_id_t low_condition = loom_low_lower_lookup_value(
+          context, loom_cfg_cond_br_condition(source_op));
       if (context->policy->emit_cond_branch.fn != NULL) {
         return context->policy->emit_cond_branch.fn(
             context->policy->emit_cond_branch.user_data, context, source_op,
@@ -592,19 +586,17 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
   }
 }
 
-static iree_status_t loom_low_lower_emit_elided_selected_plan(
+static void loom_low_lower_emit_elided_selected_plan(
     loom_low_lower_context_t* context,
     const loom_low_lower_selected_plan_t* selected_plan) {
   const loom_op_t* source_op = selected_plan->source_op;
   const loom_value_id_t* source_results = loom_op_const_results(source_op);
   for (uint16_t i = 0; i < source_op->result_count; ++i) {
-    IREE_RETURN_IF_ERROR(
-        loom_low_lower_elide_value(context, source_results[i]));
+    loom_low_lower_elide_value(context, source_results[i]);
   }
   if (!iree_allocator_is_null(context->options->report_allocator)) {
     loom_low_lower_report_record_emission(context, /*emitted_low_op_count=*/0);
   }
-  return iree_ok_status();
 }
 
 static loom_value_id_t loom_low_lower_descriptor_matrix_sparse_source_value(
@@ -667,21 +659,24 @@ static iree_status_t loom_low_lower_descriptor_matrix_packet_value(
       const loom_value_id_t source_value =
           loom_low_lower_descriptor_matrix_sparse_source_value(
               &plan->contract_request);
-      return loom_low_lower_lookup_value(context, source_value, out_low_value);
+      *out_low_value = loom_low_lower_lookup_value(context, source_value);
+      return iree_ok_status();
     }
     case LOOM_LOW_OPERAND_SOURCE_BINDING_LHS_SCALE: {
       const loom_value_id_t source_value =
           loom_low_lower_descriptor_matrix_auxiliary_source_value(
               &plan->contract_request.lhs,
               LOOM_CONTRACT_AUXILIARY_OPERAND_KEY_SCALE);
-      return loom_low_lower_lookup_value(context, source_value, out_low_value);
+      *out_low_value = loom_low_lower_lookup_value(context, source_value);
+      return iree_ok_status();
     }
     case LOOM_LOW_OPERAND_SOURCE_BINDING_RHS_SCALE: {
       const loom_value_id_t source_value =
           loom_low_lower_descriptor_matrix_auxiliary_source_value(
               &plan->contract_request.rhs,
               LOOM_CONTRACT_AUXILIARY_OPERAND_KEY_SCALE);
-      return loom_low_lower_lookup_value(context, source_value, out_low_value);
+      *out_low_value = loom_low_lower_lookup_value(context, source_value);
+      return iree_ok_status();
     }
     case LOOM_LOW_OPERAND_SOURCE_BINDING_NONE:
     default:
@@ -868,12 +863,10 @@ static iree_status_t loom_low_lower_emit_descriptor_matrix_vector_mma(
     IREE_BUILTIN_UNREACHABLE();
   }
 
-  loom_value_id_t low_lhs = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_vector_mma_lhs(source_op), &low_lhs));
-  loom_value_id_t low_rhs = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_vector_mma_rhs(source_op), &low_rhs));
+  loom_value_id_t low_lhs =
+      loom_low_lower_lookup_value(context, loom_vector_mma_lhs(source_op));
+  loom_value_id_t low_rhs =
+      loom_low_lower_lookup_value(context, loom_vector_mma_rhs(source_op));
   if (iree_any_bit_set(
           plan->transform_flags,
           LOOM_TARGET_CONTRACT_DESCRIPTOR_MATRIX_TRANSFORM_TRANSPOSE_MN)) {
@@ -881,9 +874,8 @@ static iree_status_t loom_low_lower_emit_descriptor_matrix_vector_mma(
     low_lhs = low_rhs;
     low_rhs = exchanged_lhs;
   }
-  loom_value_id_t low_init = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_vector_mma_init(source_op), &low_init));
+  loom_value_id_t low_init =
+      loom_low_lower_lookup_value(context, loom_vector_mma_init(source_op));
 
   const loom_value_id_t result = loom_vector_mma_result(source_op);
   const loom_type_t result_low_type =
@@ -938,7 +930,8 @@ static iree_status_t loom_low_lower_emit_selected_plan(
   }
   if (iree_any_bit_set(selected_plan.flags,
                        LOOM_LOW_LOWER_SELECTED_PLAN_ELIDED)) {
-    return loom_low_lower_emit_elided_selected_plan(context, &selected_plan);
+    loom_low_lower_emit_elided_selected_plan(context, &selected_plan);
+    return iree_ok_status();
   }
   const bool report_allocator_provided =
       !iree_allocator_is_null(context->options->report_allocator);

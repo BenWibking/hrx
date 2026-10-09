@@ -1012,9 +1012,8 @@ static iree_status_t loom_amdgpu_sanitizer_build_assert_failure_split(
   loom_builder_t* builder = loom_low_lower_context_builder(context);
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_lower_context_descriptor_set(context);
-  loom_value_id_t condition = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_kernel_assert_condition(source_op), &condition));
+  loom_value_id_t condition = loom_low_lower_lookup_value(
+      context, loom_kernel_assert_condition(source_op));
   const loom_type_t condition_type =
       loom_module_value_type(loom_low_lower_context_module(context), condition);
 
@@ -1246,11 +1245,9 @@ iree_status_t loom_amdgpu_lower_sanitizer_assert_access(
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_lower_context_descriptor_set(context);
 
-  loom_value_id_t low_resource = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
+  loom_value_id_t low_resource = loom_low_lower_lookup_value(
       context,
-      loom_low_source_memory_access_base_view_value_id(&plan->address.source),
-      &low_resource));
+      loom_low_source_memory_access_base_view_value_id(&plan->address.source));
 
   loom_amdgpu_sanitizer_lower_state_t* state = NULL;
   IREE_RETURN_IF_ERROR(loom_amdgpu_sanitizer_lower_state(context, &state));

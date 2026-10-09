@@ -1396,8 +1396,7 @@ static iree_status_t loom_amdgpu_lookup_or_compose_vgpr_16bit_float(
     loom_value_id_t source_value, uint32_t register_bit_offset,
     loom_type_t lane_type, loom_value_id_t* out_low_value) {
   *out_low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, out_low_value));
+  *out_low_value = loom_low_lower_lookup_value(context, source_value);
   return loom_amdgpu_compose_vgpr_16bit_float_lane_bits(
       context, source_op, *out_low_value, register_bit_offset, lane_type,
       out_low_value);
@@ -1538,9 +1537,8 @@ static iree_status_t loom_amdgpu_lower_vector_from_packed_integer_elements(
         break;
       }
 
-      loom_value_id_t low_element = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-          context, plan->payload.elements[element_index], &low_element));
+      loom_value_id_t low_element = loom_low_lower_lookup_value(
+          context, plan->payload.elements[element_index]);
       IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32(
           context, source_op, low_element, &low_element));
 
@@ -1583,8 +1581,8 @@ static iree_status_t loom_amdgpu_lower_vector_from_register_elements(
     if (reused) {
       continue;
     }
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, plan->payload.elements[i], &elements[i]));
+    elements[i] =
+        loom_low_lower_lookup_value(context, plan->payload.elements[i]);
     if (plan->storage_kind == LOOM_AMDGPU_VECTOR_STORAGE_KIND_I1_MASK) {
       continue;
     }
@@ -1638,8 +1636,7 @@ static iree_status_t loom_amdgpu_lookup_vector_insert_value(
           context, source_op, plan->value, plan->value_materialization,
           out_value);
     case LOOM_SCALAR_TYPE_F32: {
-      IREE_RETURN_IF_ERROR(
-          loom_low_lower_lookup_value(context, plan->value, out_value));
+      *out_value = loom_low_lower_lookup_value(context, plan->value);
       return loom_amdgpu_materialize_low_vgpr_b32(context, source_op,
                                                   *out_value, out_value);
     }
@@ -1654,8 +1651,7 @@ static iree_status_t loom_amdgpu_lookup_vector_insert_value(
     case LOOM_SCALAR_TYPE_F8E4M3:
     case LOOM_SCALAR_TYPE_F8E5M2: {
       IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_type(context, &lane_type));
-      IREE_RETURN_IF_ERROR(
-          loom_low_lower_lookup_value(context, plan->value, out_value));
+      *out_value = loom_low_lower_lookup_value(context, plan->value);
       IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32(
           context, source_op, *out_value, out_value));
       // Bitcasts and narrow integers can retain upper carrier bits. Normalize
@@ -1689,9 +1685,7 @@ static iree_status_t loom_amdgpu_lower_predicate_vector_insert(
   loom_type_t mask_type = loom_type_none();
   IREE_RETURN_IF_ERROR(
       loom_amdgpu_make_sgpr_range_type(context, 2, &mask_type));
-  loom_value_id_t low_dest = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->dest, &low_dest));
+  loom_value_id_t low_dest = loom_low_lower_lookup_value(context, plan->dest);
   loom_type_t index_type = loom_type_none();
   loom_value_id_t index = LOOM_VALUE_ID_INVALID;
   if (plan->is_dynamic) {
@@ -1757,9 +1751,7 @@ static iree_status_t loom_amdgpu_lower_packed_vector_insert(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_vector_insert_plan_t* plan, loom_value_id_t low_value) {
   IREE_ASSERT(plan->lane_bit_count == 8 || plan->lane_bit_count == 16);
-  loom_value_id_t low_dest = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->dest, &low_dest));
+  loom_value_id_t low_dest = loom_low_lower_lookup_value(context, plan->dest);
   const loom_module_t* module = loom_low_lower_context_module(context);
   loom_type_t register_type =
       loom_amdgpu_low_register_lane_type(module, low_dest);
@@ -1852,9 +1844,7 @@ static iree_status_t loom_amdgpu_lower_vector_insert(
                                                   low_value);
   }
 
-  loom_value_id_t low_dest = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->dest, &low_dest));
+  loom_value_id_t low_dest = loom_low_lower_lookup_value(context, plan->dest);
   const loom_module_t* module = loom_low_lower_context_module(context);
   loom_type_t lane_type = loom_amdgpu_low_register_lane_type(module, low_dest);
   if (loom_type_kind(lane_type) == LOOM_TYPE_NONE) {

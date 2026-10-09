@@ -513,9 +513,8 @@ static iree_status_t loom_aie2p_transpose_emit_state_initialize(
   for (uint8_t i = 0; i < LOOM_AIE2P_TRANSPOSE_PACKET_BYTE_COUNT; ++i) {
     out_state->shift_controls[i] = LOOM_VALUE_ID_INVALID;
   }
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_vector_transpose_source(source_op),
-      &out_state->low_source));
+  out_state->low_source = loom_low_lower_lookup_value(
+      context, loom_vector_transpose_source(source_op));
   return loom_aie2p_vector_packet_emitter_initialize(context, source_op,
                                                      &out_state->emitter);
 }

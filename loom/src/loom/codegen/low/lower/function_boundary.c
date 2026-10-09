@@ -498,9 +498,8 @@ iree_status_t loom_low_lower_function_boundary_remap_predicates(
       }
       loom_value_id_t source_value =
           (loom_value_id_t)source_predicates[i].args[j];
-      loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(
-          loom_low_lower_lookup_value(context, source_value, &low_value));
+      loom_value_id_t low_value =
+          loom_low_lower_lookup_value(context, source_value);
       IREE_RETURN_IF_ERROR(
           loom_ir_remap_map_value(&remap, source_value, low_value));
     }

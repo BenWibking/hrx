@@ -416,13 +416,11 @@ static iree_status_t loom_aie2p_emit_matrix_mma(
   loom_value_id_t lhs = LOOM_VALUE_ID_INVALID;
   loom_value_id_t rhs = LOOM_VALUE_ID_INVALID;
   loom_value_id_t init = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_vector_mma_lhs(source_op), &lhs));
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, loom_vector_mma_rhs(source_op), &rhs));
+  lhs = loom_low_lower_lookup_value(context, loom_vector_mma_lhs(source_op));
+  rhs = loom_low_lower_lookup_value(context, loom_vector_mma_rhs(source_op));
   if (plan->operation == LOOM_AIE2P_MATRIX_OPERATION_ACCUMULATE) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, loom_vector_mma_init(source_op), &init));
+    init =
+        loom_low_lower_lookup_value(context, loom_vector_mma_init(source_op));
   }
 
   loom_type_t control_type = loom_type_none();

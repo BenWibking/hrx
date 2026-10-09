@@ -1078,9 +1078,8 @@ iree_status_t loom_amdgpu_lower_kernel_async_gather(
       loom_amdgpu_emit_memory_vaddr(context, source_op, &access, &sequence,
                                     LOOM_VALUE_ID_INVALID, &low_vaddr));
 
-  loom_value_id_t low_resource = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, plan->source.root_value_id, &low_resource));
+  loom_value_id_t low_resource =
+      loom_low_lower_lookup_value(context, plan->source.root_value_id);
   loom_value_id_t low_saddr = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_saddr(
       context, source_op, &access, &sequence, low_resource, &low_saddr));
@@ -1100,8 +1099,9 @@ iree_status_t loom_amdgpu_lower_kernel_async_gather(
       loom_make_named_attr_slice(attrs, attr_count),
       /*result_types=*/NULL, /*result_count=*/0, /*tied_results=*/NULL,
       /*tied_result_count=*/0, source_op->location, &low_op));
-  return loom_low_lower_elide_value(context,
-                                    loom_kernel_async_gather_token(source_op));
+  loom_low_lower_elide_value(context,
+                             loom_kernel_async_gather_token(source_op));
+  return iree_ok_status();
 }
 
 iree_status_t loom_amdgpu_lower_kernel_async_cluster_gather(
@@ -1123,9 +1123,8 @@ iree_status_t loom_amdgpu_lower_kernel_async_cluster_gather(
       context, source_op, &plan->source_address, &source_sequence,
       LOOM_VALUE_ID_INVALID, &low_source_addr));
 
-  loom_value_id_t low_resource = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-      context, plan->source_address.source.root_value_id, &low_resource));
+  loom_value_id_t low_resource = loom_low_lower_lookup_value(
+      context, plan->source_address.source.root_value_id);
   loom_value_id_t low_saddr = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_saddr(
       context, source_op, &plan->source_address, &source_sequence, low_resource,
@@ -1152,8 +1151,9 @@ iree_status_t loom_amdgpu_lower_kernel_async_cluster_gather(
       loom_make_named_attr_slice(attrs, attr_count),
       /*result_types=*/NULL, /*result_count=*/0, /*tied_results=*/NULL,
       /*tied_result_count=*/0, source_op->location, &low_op));
-  return loom_low_lower_elide_value(
-      context, loom_kernel_async_cluster_gather_token(source_op));
+  loom_low_lower_elide_value(context,
+                             loom_kernel_async_cluster_gather_token(source_op));
+  return iree_ok_status();
 }
 
 static iree_status_t loom_amdgpu_tensor_load_materialize_dgroup(
@@ -1162,9 +1162,7 @@ static iree_status_t loom_amdgpu_tensor_load_materialize_dgroup(
     loom_value_id_t source, uint32_t expected_register_count,
     loom_value_id_t* out_dgroup) {
   *out_dgroup = LOOM_VALUE_ID_INVALID;
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source, &low_source));
+  loom_value_id_t low_source = loom_low_lower_lookup_value(context, source);
 
   const loom_module_t* module = loom_low_lower_context_module(context);
   const loom_type_t low_source_type =
@@ -1261,8 +1259,9 @@ iree_status_t loom_amdgpu_lower_kernel_async_tensor_load(
   IREE_RETURN_IF_ERROR(loom_amdgpu_record_tensor_memory_effect(
       context, low_op, 1, LOOM_LOW_MEMORY_SPACE_WORKGROUP,
       plan->dest_interval));
-  return loom_low_lower_elide_value(
+  loom_low_lower_elide_value(
       context, loom_kernel_async_tensor_load_to_lds_token(source_op));
+  return iree_ok_status();
 }
 
 void loom_amdgpu_mark_async_gather_plan_storage_demands(

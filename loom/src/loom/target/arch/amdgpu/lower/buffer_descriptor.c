@@ -189,9 +189,8 @@ static iree_status_t loom_amdgpu_emit_buffer_extent(
   IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_type(context, &sgpr_type));
   loom_value_id_t extent = LOOM_VALUE_ID_INVALID;
   for (uint8_t i = 0; i < plan->dimension_count; ++i) {
-    loom_value_id_t dimension = LOOM_VALUE_ID_INVALID;
-    IREE_RETURN_IF_ERROR(
-        loom_low_lower_lookup_value(context, plan->dimensions[i], &dimension));
+    loom_value_id_t dimension =
+        loom_low_lower_lookup_value(context, plan->dimensions[i]);
     if (i == 0) {
       extent = dimension;
     } else {
@@ -210,8 +209,8 @@ static iree_status_t loom_amdgpu_emit_buffer_extent(
   }
   loom_value_id_t base = LOOM_VALUE_ID_INVALID;
   if (plan->base == LOOM_AMDGPU_BUFFER_EXTENT_BASE_VALUE) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, source->dynamic_view_base_value_id, &base));
+    base = loom_low_lower_lookup_value(context,
+                                       source->dynamic_view_base_value_id);
   } else if (plan->base == LOOM_AMDGPU_BUFFER_EXTENT_BASE_TERMS) {
     for (uint8_t i = 0; i < source->dynamic_view_base_term_count; ++i) {
       loom_value_id_t term = LOOM_VALUE_ID_INVALID;

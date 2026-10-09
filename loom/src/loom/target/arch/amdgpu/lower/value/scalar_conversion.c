@@ -729,9 +729,7 @@ static iree_status_t loom_amdgpu_lookup_and_normalize_vgpr_narrow_integer(
                   LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_SIGN_EXTENDED ||
               required_representation ==
                   LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED);
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source, &low_source));
+  loom_value_id_t low_source = loom_low_lower_lookup_value(context, source);
 
   const loom_type_t low_type = loom_module_value_type(
       loom_low_lower_context_module(context), low_source);
@@ -792,8 +790,7 @@ static iree_status_t loom_amdgpu_lookup_scalar_conversion_source_for_i64_result(
     IREE_BUILTIN_UNREACHABLE();
   }
 
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, out_low_source));
+  *out_low_source = loom_low_lower_lookup_value(context, plan->source);
   const loom_module_t* module = loom_low_lower_context_module(context);
   const loom_type_t source_type =
       loom_module_value_type(module, *out_low_source);
@@ -1027,9 +1024,8 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
       return loom_amdgpu_lower_integer_to_predicate(
           context, source_op, plan->source, plan->result, result_type);
     case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_TRUNCATE_LOW_32: {
-      loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(
-          loom_low_lower_lookup_value(context, plan->source, &low_source));
+      loom_value_id_t low_source =
+          loom_low_lower_lookup_value(context, plan->source);
       loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(
           context, source_op, low_source, /*lane_offset=*/0, result_type,
@@ -1037,9 +1033,8 @@ iree_status_t loom_amdgpu_lower_scalar_conversion(
       return loom_low_lower_bind_value(context, plan->result, low_result);
     }
     case LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT: {
-      loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(
-          loom_low_lower_lookup_value(context, plan->source, &low_source));
+      loom_value_id_t low_source =
+          loom_low_lower_lookup_value(context, plan->source);
       if (!loom_amdgpu_low_value_defines_register_low16(context, low_source)) {
         IREE_RETURN_IF_ERROR(loom_amdgpu_emit_prepared_vgpr_value(
             context, source_op, plan->source, plan->source_materialization,

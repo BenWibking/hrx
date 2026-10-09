@@ -330,9 +330,8 @@ static iree_status_t loom_amdgpu_division_emit_multiply_high(
 iree_status_t loom_amdgpu_lower_unsigned_i64_division(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_unsigned_i64_division_plan_t* plan) {
-  loom_value_id_t numerator;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, &numerator));
+  loom_value_id_t numerator =
+      loom_low_lower_lookup_value(context, plan->source);
   if (plan->register_class_id == LOOM_AMDGPU_REG_CLASS_ID_VGPR) {
     IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
         context, source_op, numerator, &numerator));

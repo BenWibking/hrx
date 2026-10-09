@@ -191,7 +191,8 @@ iree_status_t loom_amdgpu_collective_lookup_payload(
     case LOOM_AMDGPU_SUBGROUP_PAYLOAD_F32_SCALAR:
     case LOOM_AMDGPU_SUBGROUP_PAYLOAD_I32_VECTOR:
     case LOOM_AMDGPU_SUBGROUP_PAYLOAD_F32_VECTOR:
-      return loom_low_lower_lookup_value(context, value, out_low_value);
+      *out_low_value = loom_low_lower_lookup_value(context, value);
+      return iree_ok_status();
     case LOOM_AMDGPU_SUBGROUP_PAYLOAD_NONE:
       break;
   }

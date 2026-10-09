@@ -216,8 +216,7 @@ iree_status_t loom_amdgpu_lookup_vector_scale_source(
     const loom_amdgpu_vector_16bit_float_conversion_plan_t* plan,
     loom_value_id_t* out_low_scale) {
   IREE_ASSERT_NE(plan->scale_source, LOOM_VALUE_ID_INVALID);
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->scale_source, out_low_scale));
+  *out_low_scale = loom_low_lower_lookup_value(context, plan->scale_source);
   return loom_amdgpu_materialize_full_low_vgpr_b32(
       context, source_op, *out_low_scale, out_low_scale);
 }
@@ -929,9 +928,8 @@ static iree_status_t loom_amdgpu_lower_vector_16bit_float_extf(
       LOOM_AMDGPU_VECTOR_FLOAT_CONVERSION_STRATEGY_FP4_DECODE) {
     return loom_amdgpu_lower_vector_fp4_decode(context, source_op, plan);
   }
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->storage_source, &low_source));
+  loom_value_id_t low_source =
+      loom_low_lower_lookup_value(context, plan->storage_source);
 
   const loom_module_t* module = loom_low_lower_context_module(context);
   loom_type_t source_lane_type =
@@ -1290,9 +1288,8 @@ static iree_status_t loom_amdgpu_lower_vector_fp8_encode_software(
 static iree_status_t loom_amdgpu_lower_vector_fp8_encode(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_vector_16bit_float_conversion_plan_t* plan) {
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, &low_source));
+  loom_value_id_t low_source =
+      loom_low_lower_lookup_value(context, plan->source);
 
   const loom_module_t* module = loom_low_lower_context_module(context);
   loom_type_t source_lane_type =
@@ -1427,9 +1424,8 @@ static iree_status_t loom_amdgpu_lower_vector_16bit_float_fptrunc(
         context, source_op, plan);
   }
 
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->source, &low_source));
+  loom_value_id_t low_source =
+      loom_low_lower_lookup_value(context, plan->source);
 
   const loom_module_t* module = loom_low_lower_context_module(context);
   loom_type_t source_lane_type =

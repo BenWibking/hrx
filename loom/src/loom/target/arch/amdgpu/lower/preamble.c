@@ -1738,14 +1738,8 @@ iree_status_t loom_amdgpu_lower_preamble_op(
         return loom_low_lower_bind_value(
             context, loom_kernel_workitem_id_result(source_op), low_result);
       }
-      loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-      return loom_low_lower_lookup_value(
-          context, loom_kernel_workitem_id_result(source_op), &low_result);
-    }
-    case LOOM_OP_KERNEL_WORKGROUP_ID: {
-      loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-      return loom_low_lower_lookup_value(
-          context, loom_kernel_workgroup_id_result(source_op), &low_result);
+      // Entry setup already bound the unpacked workitem identity.
+      return iree_ok_status();
     }
     case LOOM_OP_KERNEL_WORKGROUP_SIZE:
     case LOOM_OP_KERNEL_SUBGROUP_SIZE:
@@ -1754,11 +1748,14 @@ iree_status_t loom_amdgpu_lower_preamble_op(
       return loom_amdgpu_emit_query_constant(
           context, source_op, loom_op_const_results(source_op)[0], result_type,
           plan->value);
-    case LOOM_OP_KERNEL_WORKGROUP_COUNT: {
-      loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-      return loom_low_lower_lookup_value(
-          context, loom_kernel_workgroup_count_result(source_op), &low_result);
-    }
+    case LOOM_OP_KERNEL_WORKGROUP_ID:
+    case LOOM_OP_KERNEL_WORKGROUP_COUNT:
+    case LOOM_OP_KERNEL_CLUSTER_ID:
+    case LOOM_OP_KERNEL_CLUSTER_WORKGROUP_ID:
+    case LOOM_OP_KERNEL_CLUSTER_WORKGROUP_FLAT_ID:
+    case LOOM_OP_KERNEL_CLUSTER_COUNT:
+      // Entry setup already bound these dispatch values.
+      return iree_ok_status();
     case LOOM_OP_KERNEL_WORKITEM_DISPATCH_ID: {
       const loom_kernel_dimension_t dimension =
           loom_kernel_workitem_dispatch_id_dimension(source_op);
@@ -1787,28 +1784,6 @@ iree_status_t loom_amdgpu_lower_preamble_op(
           context, source_op, plan,
           loom_kernel_subgroup_lane_id_result(source_op),
           /*is_lane_id=*/true);
-    case LOOM_OP_KERNEL_CLUSTER_ID: {
-      loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-      return loom_low_lower_lookup_value(
-          context, loom_kernel_cluster_id_result(source_op), &low_result);
-    }
-    case LOOM_OP_KERNEL_CLUSTER_WORKGROUP_ID: {
-      loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-      return loom_low_lower_lookup_value(
-          context, loom_kernel_cluster_workgroup_id_result(source_op),
-          &low_result);
-    }
-    case LOOM_OP_KERNEL_CLUSTER_WORKGROUP_FLAT_ID: {
-      loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-      return loom_low_lower_lookup_value(
-          context, loom_kernel_cluster_workgroup_flat_id_result(source_op),
-          &low_result);
-    }
-    case LOOM_OP_KERNEL_CLUSTER_COUNT: {
-      loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-      return loom_low_lower_lookup_value(
-          context, loom_kernel_cluster_count_result(source_op), &low_result);
-    }
     default:
       IREE_ASSERT_UNREACHABLE("AMDGPU preamble plan selected unknown op kind");
       IREE_BUILTIN_UNREACHABLE();

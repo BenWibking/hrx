@@ -501,10 +501,9 @@ iree_status_t loom_amdgpu_lower_vector_fragment_load(
   loom_value_id_t low_packet_resource = LOOM_VALUE_ID_INVALID;
   loom_value_id_t low_soffset = LOOM_VALUE_ID_INVALID;
   if (plan->source.memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
+    low_resource = loom_low_lower_lookup_value(
         context,
-        loom_low_source_memory_access_base_view_value_id(&plan->source),
-        &low_resource));
+        loom_low_source_memory_access_base_view_value_id(&plan->source));
     IREE_RETURN_IF_ERROR(loom_amdgpu_fragment_memory_packet_resource(
         context, source_op, plan, low_resource, &low_packet_resource,
         &low_soffset));
@@ -601,10 +600,9 @@ iree_status_t loom_amdgpu_lower_vector_fragment_store(
   loom_value_id_t low_packet_resource = LOOM_VALUE_ID_INVALID;
   loom_value_id_t low_soffset = LOOM_VALUE_ID_INVALID;
   if (plan->source.memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
+    low_resource = loom_low_lower_lookup_value(
         context,
-        loom_low_source_memory_access_base_view_value_id(&plan->source),
-        &low_resource));
+        loom_low_source_memory_access_base_view_value_id(&plan->source));
     IREE_RETURN_IF_ERROR(loom_amdgpu_fragment_memory_packet_resource(
         context, source_op, plan, low_resource, &low_packet_resource,
         &low_soffset));
@@ -686,20 +684,19 @@ iree_status_t loom_amdgpu_lower_vector_fragment_store(
 
     loom_value_id_t low_payload = LOOM_VALUE_ID_INVALID;
     if (plan->narrowed_result.packed_source != LOOM_VALUE_ID_INVALID) {
-      IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-          context, plan->narrowed_result.packed_source, &low_payload));
+      low_payload = loom_low_lower_lookup_value(
+          context, plan->narrowed_result.packed_source);
     } else if (plan->narrowed_result.round_source != LOOM_VALUE_ID_INVALID) {
-      IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-          context, plan->narrowed_result.round_source, &low_payload));
+      low_payload = loom_low_lower_lookup_value(
+          context, plan->narrowed_result.round_source);
     } else {
-      IREE_RETURN_IF_ERROR(
-          loom_low_lower_lookup_value(context, plan->payload, &low_payload));
+      low_payload = loom_low_lower_lookup_value(context, plan->payload);
     }
     loom_value_id_t low_scale = LOOM_VALUE_ID_INVALID;
     loom_value_id_t low_paired_scale = LOOM_VALUE_ID_INVALID;
     if (plan->narrowed_result.scale_source != LOOM_VALUE_ID_INVALID) {
-      IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-          context, plan->narrowed_result.scale_source, &low_scale));
+      low_scale = loom_low_lower_lookup_value(
+          context, plan->narrowed_result.scale_source);
       IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_full_low_vgpr_b32(
           context, source_op, low_scale, &low_scale));
       low_paired_scale = low_scale;
@@ -767,9 +764,8 @@ iree_status_t loom_amdgpu_lower_vector_fragment_store(
     return iree_ok_status();
   }
 
-  loom_value_id_t low_payload = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, plan->payload, &low_payload));
+  loom_value_id_t low_payload =
+      loom_low_lower_lookup_value(context, plan->payload);
 
   if (plan->packetization ==
       LOOM_AMDGPU_FRAGMENT_MEMORY_PACKETIZATION_PACKED_B16) {

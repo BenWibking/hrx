@@ -334,8 +334,8 @@ static iree_status_t loom_amdgpu_emit_subgroup_shuffle_source_lane(
 
   loom_value_id_t low_source_offset = LOOM_VALUE_ID_INVALID;
   if (plan->exact_offset == UINT32_MAX) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
-        context, plan->source_offset, &low_source_offset));
+    low_source_offset =
+        loom_low_lower_lookup_value(context, plan->source_offset);
     IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32(
         context, source_op, low_source_offset, &low_source_offset));
   }
