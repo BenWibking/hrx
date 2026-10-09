@@ -96,15 +96,21 @@ def test_narrow_lanes_use_unsigned_extract_encodings_and_exact_lane_domains():
             assert not immediate.flags
 
 
-def test_byte_equality_is_an_immediate_free_simd_binary_operation():
-    descriptor = next(
-        descriptor
+def test_integer_equality_descriptors_cover_every_simd_lane_width():
+    descriptors = {
+        descriptor.key: descriptor
         for descriptor in WASM_CORE_SIMD128_DESCRIPTOR_SET.descriptors
-        if descriptor.key == "wasm.i8x16.eq"
-    )
-    assert descriptor.encoding_id == 0xFD23
-    assert not descriptor.immediates
-    assert len(descriptor.operands) == 3
+    }
+    for shape, opcode in (
+        ("i8x16", 0xFD23),
+        ("i16x8", 0xFD2D),
+        ("i32x4", 0xFD37),
+        ("i64x2", 0xFDD6),
+    ):
+        descriptor = descriptors[f"wasm.{shape}.eq"]
+        assert descriptor.encoding_id == opcode
+        assert not descriptor.immediates
+        assert len(descriptor.operands) == 3
 
 
 def test_simd_shifts_have_one_i32_count_for_every_integer_lane_width():

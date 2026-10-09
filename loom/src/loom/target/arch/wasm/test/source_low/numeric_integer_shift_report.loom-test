@@ -1,0 +1,36 @@
+// RUN: with-checks compile-report target=wasm:simd128 source-to-low,low-dce
+
+func.def @integer_shift_strategies(%bytes: vector<16xi8>, %byte_counts: vector<16xi8>, %wide: vector<2xi64>, %wide_count: i64) -> (vector<16xi8>, vector<16xi8>, vector<2xi64>) {
+  %byte_count = vector.constant 7 : vector<16xi8>
+  %wide_mask = scalar.constant 63 : i64
+  %bounded_wide_count = scalar.andi %wide_count, %wide_mask : i64
+  %wide_counts = vector.splat %bounded_wide_count : vector<2xi64>
+  %uniform_bytes = vector.shli %bytes, %byte_count : vector<16xi8>
+  %varying_bytes = vector.shrui %bytes, %byte_counts : vector<16xi8>
+  %uniform_wide = vector.shrsi %wide, %wide_counts : vector<2xi64>
+  func.return %uniform_bytes, %varying_bytes, %uniform_wide : vector<16xi8>, vector<16xi8>, vector<2xi64>
+}
+
+// ----
+CHECK: COMPILE-REPORT: source_low[*] function=integer_shift_strategies source_op=vector.shli selection=rule plan_key=wasm.integer_shift.uniform.native *
+CHECK: COMPILE-REPORT: source_low[*] function=integer_shift_strategies source_op=vector.shrui selection=rule plan_key=wasm.integer_shift.varying.barrel *
+CHECK: COMPILE-REPORT: source_low[*] function=integer_shift_strategies source_op=vector.shrsi selection=rule plan_key=wasm.integer_shift.uniform.native *
+
+// ====
+
+// RUN: with-checks compile-report target=wasm:simd128 target-legalize{mode=eager}
+
+func.def @wide_shift_packetization(%input: buffer, %count_input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %input[%base] : buffer -> view<63xi8>
+  %count_view = buffer.view %count_input[%base] : buffer -> view<63xi8>
+  %output_view = buffer.view %output[%base] : buffer -> view<63xi8>
+  %values = vector.load %input_view[0] : view<63xi8> -> vector<63xi8>
+  %counts = vector.load %count_view[0] : view<63xi8> -> vector<63xi8>
+  %result = vector.shli %values, %counts : vector<63xi8>
+  vector.store %result, %output_view[0] : vector<63xi8>, view<63xi8>
+  func.return
+}
+
+// ----
+CHECK: COMPILE-REPORT: target_legalization[*] function=wide_shift_packetization source_op=vector.shli * action=rewritten * legalizer=vector-packet strategy=target * scalarized=false *

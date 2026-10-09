@@ -77,22 +77,10 @@ func.def @subview_vector_aligned(%input: buffer, %output: buffer) {
 
 // ----
 low.func.def target<wasm.core.simd128> abi(wasm_function) @subview_vector_aligned(%input_aligned: reg<wasm.i32>, %output_aligned: reg<wasm.i32>) asm {
-  %39 = i32.load %input_aligned {offset = 256}
-  %40 = i32.load %input_aligned {offset = 260}
-  %41 = i32.load %input_aligned {offset = 264}
-  %42 = i32.load %input_aligned {offset = 268}
-  %43 = i32.load %input_aligned {offset = 272}
-  %44 = i32.load %input_aligned {offset = 276}
-  %45 = i32.load %input_aligned {offset = 280}
-  %46 = i32.load %input_aligned {offset = 284}
-  i32.store %output_aligned, %39 {offset = 192}
-  i32.store %output_aligned, %40 {offset = 196}
-  i32.store %output_aligned, %41 {offset = 200}
-  i32.store %output_aligned, %42 {offset = 204}
-  i32.store %output_aligned, %43 {offset = 208}
-  i32.store %output_aligned, %44 {offset = 212}
-  i32.store %output_aligned, %45 {offset = 216}
-  i32.store %output_aligned, %46 {offset = 220}
+  %16 = v128.load %input_aligned {offset = 256}
+  %17 = v128.load %input_aligned {offset = 272}
+  v128.store %output_aligned, %16 {offset = 192}
+  v128.store %output_aligned, %17 {offset = 208}
   return
 }
 

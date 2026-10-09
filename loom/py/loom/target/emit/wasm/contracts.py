@@ -68,7 +68,10 @@ from loom.target.contracts.templates import (
     reduction_descriptor_rules,
 )
 from loom.target.emit.wasm.float_narrowing import float_narrowing_rules
-from loom.target.emit.wasm.vector_shifts import uniform_shift_rules
+from loom.target.emit.wasm.vector_shifts import (
+    uniform_shift_rules,
+    varying_shift_rules,
+)
 from loom.target.low_descriptors import Descriptor
 
 _I1 = Scalar("i1")
@@ -112,6 +115,20 @@ _V128_LANE_TYPES = (
     (_F64, _V2F64, "f64x2", ""),
 )
 
+# Transient integer values smaller than one physical SIMD register retain their
+# source lane count while occupying the low lanes of a v128 carrier. Callable
+# arguments and results remain restricted to the exact shapes above.
+_PARTIAL_I8 = Vector("i8", minimum_lanes=1, maximum_lanes=15)
+_PARTIAL_I16 = Vector("i16", minimum_lanes=1, maximum_lanes=7)
+_PARTIAL_I32 = Vector("i32", minimum_lanes=1, maximum_lanes=3)
+_PARTIAL_I64 = Vector("i64", minimum_lanes=1, maximum_lanes=1)
+_PARTIAL_INTEGER_LANE_TYPES = (
+    (_I8, _PARTIAL_I8, "i8x16", "_u", 16),
+    (_I16, _PARTIAL_I16, "i16x8", "_u", 8),
+    (_I32, _PARTIAL_I32, "i32x4", "", 4),
+    (_I64, _PARTIAL_I64, "i64x2", "", 2),
+)
+
 _I64_ATTR_DIAGNOSTIC = GuardDiagnostic(
     ref=target_diagnostic(
         ERR_WASM_002,
@@ -148,9 +165,17 @@ def _type_text(type_pattern: TypePattern) -> str:
     if type_pattern.kind == "buffer":
         return "buffer"
     if type_pattern.kind == "vector":
+        if type_pattern.lanes is not None:
+            shape = str(type_pattern.lanes)
+        elif (
+            type_pattern.minimum_lanes is not None
+            and type_pattern.maximum_lanes is not None
+        ):
+            shape = f"[{type_pattern.minimum_lanes}..{type_pattern.maximum_lanes}]"
+        else:
+            shape = "static"
         return " or ".join(
-            f"vector<{type_pattern.lanes}x{element}>"
-            for element in type_pattern.elements
+            f"vector<{shape}x{element}>" for element in type_pattern.elements
         )
     if type_pattern == _I1:
         return "i1 scalar"
@@ -342,6 +367,7 @@ def _const_vector_splat_rule(
                 descriptor=splat,
                 operands={"value": ValueRef.temporary("element")},
                 results={"dst": ValueRef.result("result")},
+                form=DescriptorEmitForm.OP,
             ),
         ),
     )
@@ -367,6 +393,7 @@ def _binary_rule(
                     "rhs": ValueRef.operand("rhs"),
                 },
                 results={"dst": ValueRef.result("result")},
+                form=DescriptorEmitForm.OP,
             ),
         ),
     )
@@ -755,6 +782,7 @@ def _splat_rule(
                 descriptor=descriptor,
                 operands={"value": ValueRef.operand("scalar")},
                 results={"dst": ValueRef.result("result")},
+                form=DescriptorEmitForm.OP,
             ),
         ),
     )
@@ -967,7 +995,10 @@ def _extract_rule(
             Guard.operand_segment_count("indices", 0),
             Guard.i64_array_count("static_indices", 1),
             Guard.i64_array_element_range(
-                "static_indices", 0, 0, source_type.lanes - 1
+                "static_indices",
+                0,
+                0,
+                _maximum_vector_lane_count(source_type) - 1,
             ),
         ),
         emit=tuple(emits),
@@ -989,7 +1020,12 @@ def _insert_rule(
             _value_type("result", dest_type),
             Guard.operand_segment_count("indices", 0),
             Guard.i64_array_count("static_indices", 1),
-            Guard.i64_array_element_range("static_indices", 0, 0, dest_type.lanes - 1),
+            Guard.i64_array_element_range(
+                "static_indices",
+                0,
+                0,
+                _maximum_vector_lane_count(dest_type) - 1,
+            ),
         ),
         emit=(
             EmitDescriptorOp(
@@ -1005,6 +1041,7 @@ def _insert_rule(
                         element=0,
                     )
                 },
+                form=DescriptorEmitForm.OP,
             ),
         ),
     )
@@ -1014,11 +1051,15 @@ def _dynamic_insert_rule(
     value_type: TypePattern,
     dest_type: TypePattern,
     splat_descriptor_key: str,
+    *,
+    physical_lane_count: int | None = None,
 ) -> DescriptorRule:
     # Replicate each lane ordinal across its physical bytes. Equality with the
     # broadcast index selects every bit of that lane without scalar expansion.
     # Predicate lanes occupy four bytes, independent of their source bitwidth.
-    bytes_per_lane = 16 // dest_type.lanes
+    if physical_lane_count is None:
+        physical_lane_count = _maximum_vector_lane_count(dest_type)
+    bytes_per_lane = 16 // physical_lane_count
     ordinals = bytes(byte // bytes_per_lane for byte in range(16))
     descriptor = _descriptor("wasm.v128.bitselect")
     value = ValueRef.operand("value")
@@ -1053,6 +1094,7 @@ def _dynamic_insert_rule(
                 operands={"value": ValueRef.operand("indices")},
                 results={"dst": ValueRef.temporary("lane_index")},
                 result_types={"dst": _V16I8},
+                form=DescriptorEmitForm.OP,
             ),
             EmitDescriptorOp(
                 descriptor=_descriptor("wasm.i8x16.eq"),
@@ -1062,12 +1104,14 @@ def _dynamic_insert_rule(
                 },
                 results={"dst": ValueRef.temporary("lane_mask")},
                 result_types={"dst": _V16I8},
+                form=DescriptorEmitForm.OP,
             ),
             EmitDescriptorOp(
                 descriptor=_descriptor(splat_descriptor_key),
                 operands={"value": value},
                 results={"dst": ValueRef.temporary("replacement")},
                 result_types={"dst": _V16I8},
+                form=DescriptorEmitForm.OP,
             ),
             EmitDescriptorOp(
                 descriptor=descriptor,
@@ -1077,9 +1121,18 @@ def _dynamic_insert_rule(
                     "condition": ValueRef.temporary("lane_mask"),
                 },
                 results={"dst": ValueRef.result("result")},
+                form=DescriptorEmitForm.OP,
             ),
         ),
     )
+
+
+def _maximum_vector_lane_count(type_pattern: TypePattern) -> int:
+    if type_pattern.lanes is not None:
+        return type_pattern.lanes
+    if isinstance(type_pattern.maximum_lanes, int):
+        return type_pattern.maximum_lanes
+    raise ValueError(f"vector type has no fixed maximum lane count: {type_pattern!r}")
 
 
 def _predicate_insert_rule() -> DescriptorRule:
@@ -1639,6 +1692,11 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             for source_type in _NUMERIC_V128_TYPES
             for result_type in _NUMERIC_V128_TYPES
         ),
+        *(
+            _conversion_alias_rule(vector.vector_bitcast, source_type, result_type)
+            for _, source_type, _, _, _ in _PARTIAL_INTEGER_LANE_TYPES
+            for _, result_type, _, _, _ in _PARTIAL_INTEGER_LANE_TYPES
+        ),
         _conversion_alias_rule(scalar_conversion.scalar_trunci, _I32, _I8),
         _conversion_alias_rule(scalar_conversion.scalar_trunci, _I32, _I16),
         _conversion_alias_rule(scalar_conversion.scalar_extui, _I1, _I32),
@@ -1671,6 +1729,11 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             _V2I64, ValueProject.exact_i64("result"), Guard.value_exact_i64("result")
         ),
         _const_v128_rule(
+            _PARTIAL_I64,
+            ValueProject.exact_i64("result"),
+            Guard.value_exact_i64("result"),
+        ),
+        _const_v128_rule(
             _V2F64, ValueProject.float_bits("result"), Guard.value_exact_float("result")
         ),
         *(
@@ -1687,6 +1750,17 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 (Vector("i16", lanes=8), "i16x8"),
                 (_V4I32, "i32x4"),
             )
+        ),
+        *(
+            _const_vector_splat_rule(
+                vector_type,
+                "i32",
+                shape_name,
+                "i32_value",
+                ValueProject.exact_i64("result"),
+                Guard.value_exact_i64("result"),
+            )
+            for _, vector_type, shape_name, _, _ in _PARTIAL_INTEGER_LANE_TYPES[:-1]
         ),
         *(
             _const_vector_splat_rule(
@@ -1725,9 +1799,20 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             _splat_rule(scalar_type, vector_type, f"wasm.{shape_name}.splat")
             for scalar_type, vector_type, shape_name, _ in _V128_LANE_TYPES
         ),
+        *(
+            _splat_rule(scalar_type, vector_type, f"wasm.{shape_name}.splat")
+            for (
+                scalar_type,
+                vector_type,
+                shape_name,
+                _,
+                _,
+            ) in _PARTIAL_INTEGER_LANE_TYPES
+        ),
         _select_rule(_V4I1),
         _select_rule(_V4I32),
         _select_rule(_V4F32),
+        *varying_shift_rules(_descriptor, _value_type),
         *(
             _binary_rule(source_op, value_type, f"wasm.v128.{operation}")
             for source_op, operation in (
@@ -1742,6 +1827,15 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 _V4I32,
                 _V2I64,
             )
+        ),
+        *(
+            _binary_rule(source_op, vector_type, f"wasm.v128.{operation}")
+            for source_op, operation in (
+                (vector.vector_andi, "and"),
+                (vector.vector_ori, "or"),
+                (vector.vector_xori, "xor"),
+            )
+            for _, vector_type, _, _, _ in _PARTIAL_INTEGER_LANE_TYPES
         ),
         _compare_rule(vector.vector_cmpi, "eq", _V4I32, "wasm.i32x4.eq"),
         _compare_rule(vector.vector_cmpi, "ne", _V4I32, "wasm.i32x4.ne"),
@@ -1924,15 +2018,52 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             )
             for scalar_type, vector_type, shape_name, suffix in _V128_LANE_TYPES
         ),
+        *(
+            _extract_rule(
+                vector_type, scalar_type, f"wasm.{shape_name}.extract_lane{suffix}"
+            )
+            for (
+                scalar_type,
+                vector_type,
+                shape_name,
+                suffix,
+                _,
+            ) in _PARTIAL_INTEGER_LANE_TYPES
+        ),
         _predicate_insert_rule(),
         *(
             _insert_rule(scalar_type, vector_type, f"wasm.{shape_name}.replace_lane")
             for scalar_type, vector_type, shape_name, _ in _V128_LANE_TYPES
         ),
+        *(
+            _insert_rule(scalar_type, vector_type, f"wasm.{shape_name}.replace_lane")
+            for (
+                scalar_type,
+                vector_type,
+                shape_name,
+                _,
+                _,
+            ) in _PARTIAL_INTEGER_LANE_TYPES
+        ),
         _dynamic_insert_rule(_I1, _V4I1, "wasm.i32x4.splat"),
         *(
             _dynamic_insert_rule(scalar_type, vector_type, f"wasm.{shape_name}.splat")
             for scalar_type, vector_type, shape_name, _ in _V128_LANE_TYPES
+        ),
+        *(
+            _dynamic_insert_rule(
+                scalar_type,
+                vector_type,
+                f"wasm.{shape_name}.splat",
+                physical_lane_count=physical_lane_count,
+            )
+            for (
+                scalar_type,
+                vector_type,
+                shape_name,
+                _,
+                physical_lane_count,
+            ) in _PARTIAL_INTEGER_LANE_TYPES
         ),
         *(_shuffle_rule(value_type) for value_type in _NUMERIC_V128_TYPES),
         _shuffle_rule(_V4I1),

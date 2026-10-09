@@ -60,7 +60,7 @@ static bool loom_wasm_source_type_supported(void* user_data,
          scalar_type == LOOM_SCALAR_TYPE_F8E5M2;
 }
 
-static bool loom_wasm_type_is_v128_register(loom_type_t type) {
+static bool loom_wasm_type_is_callable_v128_register(loom_type_t type) {
   if (!loom_type_is_vector(type) || loom_type_rank(type) != 1 ||
       !loom_type_is_all_static(type)) {
     return false;
@@ -87,11 +87,33 @@ static bool loom_wasm_type_is_v128_register(loom_type_t type) {
   }
 }
 
+static bool loom_wasm_type_is_partial_integer_v128_register(
+    loom_type_t source_type) {
+  if (!loom_type_is_vector(source_type) || loom_type_rank(source_type) != 1 ||
+      !loom_type_is_all_static(source_type)) {
+    return false;
+  }
+  const loom_scalar_type_t element_type = loom_type_element_type(source_type);
+  if (!loom_scalar_type_set_contains(LOOM_SCALAR_TYPE_SET_INTEGER_PAYLOAD,
+                                     element_type)) {
+    return false;
+  }
+  const uint32_t physical_lane_count =
+      128u / (uint32_t)loom_scalar_type_bitwidth(element_type);
+  const int64_t lane_count = loom_type_dim_static_size_at(source_type, 0);
+  return lane_count >= 1 && (uint64_t)lane_count < physical_lane_count;
+}
+
+static bool loom_wasm_type_is_v128_register(loom_type_t source_type) {
+  return loom_wasm_type_is_callable_v128_register(source_type) ||
+         loom_wasm_type_is_partial_integer_v128_register(source_type);
+}
+
 static bool loom_wasm_source_function_vector_carrier_supported(
     void* user_data, const loom_module_t* module, loom_type_t source_type) {
   (void)user_data;
   (void)module;
-  return loom_wasm_type_is_v128_register(source_type);
+  return loom_wasm_type_is_callable_v128_register(source_type);
 }
 
 static iree_status_t loom_wasm_make_i32_register_type(
@@ -168,9 +190,36 @@ static iree_status_t loom_wasm_map_argument(
 
 #include "loom/target/emit/wasm/contracts/tables.inl"
 
+static const uint16_t kWasmVectorPacketBitCounts[] = {128u};
+static const uint16_t kWasmVectorPacketLaneCounts[] = {16u, 8u, 4u, 2u};
+static const loom_target_vector_packet_lane_limit_t
+    kWasmVectorPacketStructuralLaneLimits[] = {
+        {
+            .element_type = LOOM_SCALAR_TYPE_I1,
+            .maximum_lane_count = 4u,
+        },
+};
+static_assert(IREE_ARRAYSIZE(kWasmVectorPacketLaneCounts) <=
+                  LOOM_TARGET_VECTOR_PACKET_LANE_COUNT_LIMIT,
+              "packet lane candidates exceed the shared planner capacity");
+
+static const loom_target_vector_packet_policy_t kWasmVectorPacketPolicy = {
+    .native_bit_counts = kWasmVectorPacketBitCounts,
+    .native_lane_counts = kWasmVectorPacketLaneCounts,
+    .index_bit_count = 32u,
+    .offset_bit_count = 32u,
+    .structural_lane_limits = kWasmVectorPacketStructuralLaneLimits,
+    .maximum_unpacketized_bit_count = 128u,
+    .native_bit_count_count = IREE_ARRAYSIZE(kWasmVectorPacketBitCounts),
+    .native_lane_count_count = IREE_ARRAYSIZE(kWasmVectorPacketLaneCounts),
+    .structural_lane_limit_count =
+        IREE_ARRAYSIZE(kWasmVectorPacketStructuralLaneLimits),
+};
+
 static const loom_low_lower_policy_t kWasmLowLowerPolicy = {
     .name = IREE_SVL("wasm-lower"),
     .error_catalog = &loom_wasm_error_catalog,
+    .vector_packet_policy = &kWasmVectorPacketPolicy,
     .map_type = {.fn = loom_wasm_map_type, .user_data = NULL},
     .map_argument = {.fn = loom_wasm_map_argument, .user_data = NULL},
     .source_type_supported = {.fn = loom_wasm_source_type_supported,

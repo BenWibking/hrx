@@ -44,7 +44,11 @@ def test_uniform_shifts_cover_constant_and_runtime_counts_for_all_lane_widths():
     }
     actual = set()
     for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases:
-        if not isinstance(rule, DescriptorRule) or rule.source_op not in operations:
+        if (
+            not isinstance(rule, DescriptorRule)
+            or rule.source_op not in operations
+            or rule.report_key != "wasm.integer_shift.uniform.native"
+        ):
             continue
         type_guards = {
             guard.field: guard.type_pattern
@@ -55,7 +59,10 @@ def test_uniform_shifts_cover_constant_and_runtime_counts_for_all_lane_widths():
         assert type_guards["lhs"] == type_guards["rhs"] == result_type
         (element,) = result_type.elements
         bit_count = int(element[1:])
-        assert result_type.lanes == 128 // bit_count
+        assert (result_type.minimum_lanes, result_type.maximum_lanes) == (
+            1,
+            128 // bit_count,
+        )
         range_guard = next(
             guard for guard in rule.guards if guard.kind is GuardKind.VALUE_I64_RANGE
         )
@@ -64,10 +71,12 @@ def test_uniform_shifts_cover_constant_and_runtime_counts_for_all_lane_widths():
         constant = any(guard.kind is GuardKind.VALUE_EXACT_I64 for guard in rule.guards)
         if constant:
             assert rule.guards[0].kind is GuardKind.VALUE_EXACT_I64
+            assert rule.priority == 1
         else:
             assert rule.guards[0].value_ref == ValueRef.uniform_element_origin_operand(
                 "rhs"
             )
+            assert rule.priority == 2
         actual.add((bit_count, operations[rule.source_op], constant))
         final = rule.emit[-1]
         assert (
@@ -186,12 +195,37 @@ def _numeric_vector_shapes(rule, field):
         if guard.kind is not GuardKind.VALUE_TYPE or guard.field != field:
             continue
         pattern = guard.type_pattern
-        if pattern.kind == "vector":
+        if pattern.kind == "vector" and pattern.lanes is not None:
             yield from (
                 (element, pattern.lanes)
                 for element in pattern.elements
                 if element != "i1"
             )
+
+
+def _numeric_vector_ranges(rule, field):
+    for guard in rule.guards:
+        if guard.kind is not GuardKind.VALUE_TYPE or guard.field != field:
+            continue
+        pattern = guard.type_pattern
+        if (
+            pattern.kind == "vector"
+            and isinstance(pattern.minimum_lanes, int)
+            and isinstance(pattern.maximum_lanes, int)
+        ):
+            yield from (
+                (element, pattern.minimum_lanes, pattern.maximum_lanes)
+                for element in pattern.elements
+                if element != "i1"
+            )
+
+
+def _integer_vector_ranges(rule, field):
+    yield from (
+        shape
+        for shape in _numeric_vector_ranges(rule, field)
+        if shape[0] in ("i8", "i16", "i32", "i64")
+    )
 
 
 def _expected_numeric_vector_shapes():
@@ -217,6 +251,58 @@ def test_full_numeric_carriers_have_complete_structural_rules() -> None:
             for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases
             if isinstance(rule, DescriptorRule) and rule.source_op is source_op
             for shape in _numeric_vector_shapes(rule, field)
+        }
+        assert actual == expected, source_op.name
+
+
+def test_partial_integer_carriers_have_complete_structural_rules() -> None:
+    expected = {
+        (
+            scalar_type_name(kind),
+            1,
+            128 // ScalarType(kind).bitwidth - 1,
+        )
+        for kind in ScalarTypeKind
+        if kind
+        in (
+            ScalarTypeKind.I8,
+            ScalarTypeKind.I16,
+            ScalarTypeKind.I32,
+            ScalarTypeKind.I64,
+        )
+    }
+    for source_op, field, rules_per_shape in (
+        (vector.vector_constant, "result", 1),
+        (vector.vector_splat, "result", 1),
+        (vector.vector_extract, "source", 1),
+        (vector.vector_insert, "dest", 2),
+    ):
+        counts = {}
+        for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases:
+            if not isinstance(rule, DescriptorRule) or rule.source_op is not source_op:
+                continue
+            for shape in _integer_vector_ranges(rule, field):
+                counts[shape] = counts.get(shape, 0) + 1
+        assert counts == {shape: rules_per_shape for shape in expected}, source_op.name
+
+
+def test_partial_integer_carriers_have_complete_bitwise_rules() -> None:
+    expected = {
+        ("i8", 1, 15),
+        ("i16", 1, 7),
+        ("i32", 1, 3),
+        ("i64", 1, 1),
+    }
+    for source_op in (
+        vector.vector_andi,
+        vector.vector_ori,
+        vector.vector_xori,
+    ):
+        actual = {
+            shape
+            for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases
+            if isinstance(rule, DescriptorRule) and rule.source_op is source_op
+            for shape in _integer_vector_ranges(rule, "result")
         }
         assert actual == expected, source_op.name
 
@@ -283,7 +369,12 @@ def test_dynamic_insert_masks_select_exactly_one_complete_physical_lane() -> Non
             for guard in rule.guards
             if guard.kind is GuardKind.VALUE_TYPE and guard.field == "result"
         )
-        lane_counts.add(result_type.lanes)
+        if result_type.lanes is not None:
+            physical_lane_count = result_type.lanes
+        else:
+            element_bit_count = int(result_type.elements[0][1:])
+            physical_lane_count = 128 // element_bit_count
+        lane_counts.add(physical_lane_count)
         if result_type.elements == ("i1",):
             assert [emit.descriptor.key for emit in rule.emit[:2]] == [
                 "wasm.i32.const",
@@ -298,8 +389,8 @@ def test_dynamic_insert_masks_select_exactly_one_complete_physical_lane() -> Non
         assert select.descriptor.key == "wasm.v128.bitselect"
         ordinals = constant.immediates["lo64"].to_bytes(8, "little")
         ordinals += constant.immediates["hi64"].to_bytes(8, "little")
-        lane_bits = 128 // result_type.lanes
-        for lane in range(result_type.lanes):
+        lane_bits = 128 // physical_lane_count
+        for lane in range(physical_lane_count):
             selected_bytes = bytes(
                 255 if ordinal == lane else 0 for ordinal in ordinals
             )
@@ -318,6 +409,32 @@ def test_numeric_bitcasts_alias_every_full_width_shape_pair() -> None:
         for result in _numeric_vector_shapes(rule, "result")
     }
     shapes = _expected_numeric_vector_shapes()
+    assert actual == {(source, result) for source in shapes for result in shapes}
+
+
+def test_partial_integer_bitcasts_alias_every_element_type_pair() -> None:
+    actual = {
+        (source, result)
+        for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases
+        if isinstance(rule, ValueAliasRule) and rule.source_op is vector.vector_bitcast
+        for source in _integer_vector_ranges(rule, "input")
+        for result in _integer_vector_ranges(rule, "result")
+    }
+    shapes = {
+        (
+            scalar_type_name(kind),
+            1,
+            128 // ScalarType(kind).bitwidth - 1,
+        )
+        for kind in ScalarTypeKind
+        if kind
+        in (
+            ScalarTypeKind.I8,
+            ScalarTypeKind.I16,
+            ScalarTypeKind.I32,
+            ScalarTypeKind.I64,
+        )
+    }
     assert actual == {(source, result) for source in shapes for result in shapes}
 
 

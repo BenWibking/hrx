@@ -87,23 +87,6 @@ func.def target(@target) @unsupported_vector_carrier(%value: vector<8xi32>) {
 
 wasm.target<simd128> @target
 
-// A scalar reference recipe cannot consume a vector carrier that the target
-// cannot represent.
-func.def target(@target) @unsupported_reference_carrier(%lhs: vector<8xi32>, %rhs: vector<8xi32>) -> (vector<8xi32>) {
-  %product = vector.muli %lhs, %rhs : vector<8xi32>
-  func.return %product : vector<8xi32>
-}
-
-// ----
-CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=0 scalarized=0 target_rewritten=0 reference_rewritten=0 deferred=0 invalid_ir=0 unsupported=0 unhandled=1 rows=1 *
-CHECK: COMPILE-REPORT: target_legalization[0] function=unsupported_reference_carrier source_op=vector.muli * action=unhandled outcome=unhandled contract=unsupported legalizer=- strategy=none * scalarized=false * created_ops=0 erased_ops=0
-
-// ====
-
-// RUN: with-checks compile-report target-legalize{mode=eager}
-
-wasm.target<simd128> @target
-
 // Structural reduction legalization must preserve the same boundary. Expanding
 // this operation would hide the invalid callable carrier behind a much larger
 // scalar program.

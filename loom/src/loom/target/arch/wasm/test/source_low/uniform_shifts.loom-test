@@ -51,17 +51,44 @@ func.def @varying_counts(%values: vector<2xi64>, %counts: vector<2xi64>) -> (vec
 
 // ----
 low.func.def target<wasm.core.simd128> abi(wasm_function) @varying_counts(%values: reg<wasm.v128>, %counts: reg<wasm.v128>) -> (reg<wasm.v128>) asm {
-  %22 = i64x2.extract_lane %values, 0
-  %23 = i64x2.extract_lane %counts, 0
-  %24 = i64.const 63
-  %25 = i64.and %23, %24
-  %26 = i64.shr_u %22, %25
-  %27 = i64x2.extract_lane %values, 1
-  %28 = i64x2.extract_lane %counts, 1
-  %29 = i64.and %28, %24
-  %30 = i64.shr_u %27, %29
-  %31 = i64x2.splat %26
-  %result = i64x2.replace_lane %31, %30, 1
+  %mask = v128.const 63, 63
+  %bounded_counts = v128.and %counts, %mask
+  %11 = v128.const 1, 1
+  %12 = i32.const 1
+  %13 = v128.const 2, 2
+  %14 = i32.const 2
+  %15 = v128.const 4, 4
+  %16 = i32.const 4
+  %17 = v128.const 8, 8
+  %18 = i32.const 8
+  %19 = v128.const 16, 16
+  %20 = i32.const 16
+  %21 = v128.const 32, 32
+  %22 = i32.const 32
+  %23 = v128.and %bounded_counts, %11
+  %24 = i64x2.eq %23, %11
+  %25 = i64x2.shr_u %values, %12
+  %26 = v128.bitselect %25, %values, %24
+  %27 = v128.and %bounded_counts, %13
+  %28 = i64x2.eq %27, %13
+  %29 = i64x2.shr_u %26, %14
+  %30 = v128.bitselect %29, %26, %28
+  %31 = v128.and %bounded_counts, %15
+  %32 = i64x2.eq %31, %15
+  %33 = i64x2.shr_u %30, %16
+  %34 = v128.bitselect %33, %30, %32
+  %35 = v128.and %bounded_counts, %17
+  %36 = i64x2.eq %35, %17
+  %37 = i64x2.shr_u %34, %18
+  %38 = v128.bitselect %37, %34, %36
+  %39 = v128.and %bounded_counts, %19
+  %40 = i64x2.eq %39, %19
+  %41 = i64x2.shr_u %38, %20
+  %42 = v128.bitselect %41, %38, %40
+  %43 = v128.and %bounded_counts, %21
+  %44 = i64x2.eq %43, %21
+  %45 = i64x2.shr_u %42, %22
+  %result = v128.bitselect %45, %42, %44
   return %result
 }
 
