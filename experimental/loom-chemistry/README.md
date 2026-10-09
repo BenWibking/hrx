@@ -82,6 +82,47 @@ to `ceil(num_cells / 128)`. Each cell requires a disjoint, correctly aligned
 The caller must preserve prepare, synchronize, copy candidates, host minimum,
 advance, and synchronize ordering, including atomic failure publication.
 
+### Workgroup size and register occupancy
+
+Each lane evolves one cell, and `KERNEL` fixes the workgroup size at 128 threads
+(`[[loom::workgroup_size(128, 1, 1)]]` in `support.h`), which is two wave64
+waves on gfx942. 128 threads per block was historically the best-performing
+choice for the HIP kernel, so both versions keep it.
+
+A wave can address at most 256 VGPRs (`v0`-`v255`) whatever the workgroup size.
+On gfx942 a workgroup is resident on one compute unit with four SIMDs, each
+holding 512 unified VGPR/AGPR slots per lane, so the workgroup size limits
+registers only once more than one wave must share a SIMD:
+
+| Threads per workgroup | Waves per SIMD | Slots per wave | VGPRs per wave |
+| --- | --- | --- | --- |
+| 64-256 | 1 | 512 | 256, plus up to 256 AGPRs |
+| 512 | 2 | 256 | 256, with no AGPRs |
+| 1,024 | 4 | 128 | 128 |
+
+The tradeoff is registers against occupancy. A kernel that uses fewer registers
+per wave lets more waves stay resident on each SIMD to hide memory and
+instruction latency, but a register-heavy kernel like this one spills more when
+its budget shrinks. At 128 threads the advance kernel already has the full
+256-VGPR budget, so a smaller workgroup would not give it more registers, and a
+larger one would not relieve the allocation failure below.
+
+### Known limitation: production-sized advance kernel
+
+Loom cannot currently compile the advance kernel for the production `64^3`
+grid. With `workgroup_count.x=2048`, gfx942 VGPR allocation fails on both macOS
+and Linux hosts from the same imported module:
+
+```text
+error [BACKEND/005]: ... failed to allocate amdgpu.vgpr registers for
+'@chemistry.advance_collapse_gridwide_kernel' with budget 256, peak 531,
+and failure code 'spill-traffic-register-exhausted'
+```
+
+The same module compiles with `workgroup_count.x=1` (up to 128 cells). The
+workgroup count is compile-time config, so the cell count selects which kernel
+is compiled. The prepare kernel compiles at both sizes.
+
 ## Compare HIP and Loom on a GPU
 
 From a repository checkout on a gfx942 ROCm machine:
@@ -96,6 +137,8 @@ Both HIP and Loom default to 262,144 cells (`64^3`), with one correctness step,
 one warmup, and five timing repeats. The script matches Loom's compiled
 workgroup count to the cell count used by the comparison harness. Cells are
 stored as a flat array; the chemistry kernels evolve each cell independently.
+The default size does not yet compile in Loom (see the known limitation above);
+use `--cells 128` until it does.
 
 The script checks generated sources, imports and compiles both Loom roots,
 builds the original HIP kernels with the comparison harness, and runs numerical
