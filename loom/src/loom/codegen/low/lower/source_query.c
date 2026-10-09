@@ -662,8 +662,6 @@ struct loom_low_lower_source_query_scope_t {
   loom_low_lowering_frame_t frame;
   // Reference/access graph owned by this immutable-source query scope.
   loom_storage_access_scope_t storage_access;
-  // Stable payload owner for target query state.
-  iree_arena_allocator_t arena;
   // Diagnostic and result scratch required by the lowering context.
   loom_low_lower_result_t result;
   // True while the frame's value domain owns module ordinal scratch.
@@ -683,7 +681,9 @@ iree_status_t loom_low_lower_source_query_scope_create(
       .low_func_ref = loom_symbol_ref_null(),
   };
   scope->context = (loom_low_lower_context_t){
-      .function_arena = &scope->arena,
+      // Queries retain no emission plan: target payloads and analyses share
+      // the immutable-source scope lifetime and one arena.
+      .function_arena = &scope->context.analysis_arena,
       .lowering = &scope->frame,
       .module = module,
       .source_function = source_function,
@@ -699,7 +699,6 @@ iree_status_t loom_low_lower_source_query_scope_create(
     scope->context.lowering->source_callable_exit_kind =
         source_body_descriptor->terminator;
   }
-  iree_arena_initialize(module->arena.block_pool, &scope->arena);
   iree_arena_initialize(module->arena.block_pool,
                         &scope->context.analysis_arena);
   loom_storage_access_scope_initialize(module, &scope->context.analysis_arena,
@@ -744,7 +743,6 @@ void loom_low_lower_source_query_scope_deinitialize(
   }
   loom_low_lower_result_deinitialize(&scope->result);
   iree_arena_deinitialize(&scope->context.analysis_arena);
-  iree_arena_deinitialize(&scope->arena);
   memset(scope, 0, sizeof(*scope));
 }
 
