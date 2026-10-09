@@ -237,31 +237,77 @@ func.def target(@target) @vector_softplus_exp2(%input: vector<4xf32>) -> (vector
 }
 // ----
 low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @vector_softplus_exp2(%input: reg<amdgpu.vgpr x4>) -> (reg<amdgpu.vgpr x4>) asm {
-  %13 = slice %input[0] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
-  %14 = v_mul_f32_lit %13, 1069066811
-  %15 = slice %input[1] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
-  %16 = v_mul_f32_lit %15, 1069066811
-  %17 = slice %input[2] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
-  %18 = v_mul_f32_lit %17, 1069066811
-  %19 = slice %input[3] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
-  %20 = v_mul_f32_lit %19, 1069066811
-  %23 = v_exp_f32 %14
-  %25 = v_exp_f32 %16
-  %27 = v_exp_f32 %18
-  %29 = v_exp_f32 %20
-  %32 = v_add_f32_src0_inline %23, "f32_1_0"
-  %34 = v_add_f32_src0_inline %25, "f32_1_0"
-  %36 = v_add_f32_src0_inline %27, "f32_1_0"
-  %38 = v_add_f32_src0_inline %29, "f32_1_0"
-  %41 = v_log_f32 %32
-  %43 = v_log_f32 %34
-  %45 = v_log_f32 %36
-  %47 = v_log_f32 %38
-  %50 = v_mul_f32_lit %41, 1060205080
-  %52 = v_mul_f32_lit %43, 1060205080
-  %54 = v_mul_f32_lit %45, 1060205080
-  %56 = v_mul_f32_lit %47, 1060205080
-  %result = concat(%50, %52, %54, %56) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x4>
+  %30 = v_mov_b32 1065353216
+  %35 = v_mov_b32 1065353217
+  %40 = slice %input[0] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
+  %41 = v_and_b32_lit %40, 2147483647
+  %42 = slice %input[1] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
+  %43 = v_and_b32_lit %42, 2147483647
+  %44 = slice %input[2] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
+  %45 = v_and_b32_lit %44, 2147483647
+  %46 = slice %input[3] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
+  %47 = v_and_b32_lit %46, 2147483647
+  %50 = v_mul_f32_lit %41, 3216550459
+  %52 = v_mul_f32_lit %43, 3216550459
+  %54 = v_mul_f32_lit %45, 3216550459
+  %56 = v_mul_f32_lit %47, 3216550459
+  %59 = v_exp_f32 %50
+  %61 = v_exp_f32 %52
+  %63 = v_exp_f32 %54
+  %65 = v_exp_f32 %56
+  %68 = v_add_f32_src0_inline %59, "f32_1_0"
+  %70 = v_add_f32_src0_inline %61, "f32_1_0"
+  %72 = v_add_f32_src0_inline %63, "f32_1_0"
+  %74 = v_add_f32_src0_inline %65, "f32_1_0"
+  %78 = v_sub_f32 %68, %30
+  %81 = v_sub_f32 %70, %30
+  %84 = v_sub_f32 %72, %30
+  %87 = v_sub_f32 %74, %30
+  %91 = v_cmp_ge_f32 %68, %35
+  %94 = v_cmp_ge_f32 %70, %35
+  %97 = v_cmp_ge_f32 %72, %35
+  %100 = v_cmp_ge_f32 %74, %35
+  %104 = v_cndmask_b32_src0_lit %78, %91, 1065353216
+  %107 = v_cndmask_b32_src0_lit %81, %94, 1065353216
+  %110 = v_cndmask_b32_src0_lit %84, %97, 1065353216
+  %113 = v_cndmask_b32_src0_lit %87, %100, 1065353216
+  %116 = v_rcp_f32 %104
+  %118 = v_rcp_f32 %107
+  %120 = v_rcp_f32 %110
+  %122 = v_rcp_f32 %113
+  %126 = v_mul_f32 %59, %116
+  %129 = v_mul_f32 %61, %118
+  %132 = v_mul_f32 %63, %120
+  %135 = v_mul_f32 %65, %122
+  %138 = v_log_f32 %68
+  %140 = v_log_f32 %70
+  %142 = v_log_f32 %72
+  %144 = v_log_f32 %74
+  %147 = v_mul_f32_lit %138, 1060205080
+  %149 = v_mul_f32_lit %140, 1060205080
+  %151 = v_mul_f32_lit %142, 1060205080
+  %153 = v_mul_f32_lit %144, 1060205080
+  %157 = v_mul_f32 %147, %126
+  %160 = v_mul_f32 %149, %129
+  %163 = v_mul_f32 %151, %132
+  %166 = v_mul_f32 %153, %135
+  %171 = v_cndmask_b32 %59, %157, %91
+  %175 = v_cndmask_b32 %61, %160, %94
+  %179 = v_cndmask_b32 %63, %163, %97
+  %183 = v_cndmask_b32 %65, %166, %100
+  %186 = v_cmp_ge_f32_src1_inline %40 {rhs = "f32_0_0"}
+  %188 = v_cmp_ge_f32_src1_inline %42 {rhs = "f32_0_0"}
+  %190 = v_cmp_ge_f32_src1_inline %44 {rhs = "f32_0_0"}
+  %192 = v_cmp_ge_f32_src1_inline %46 {rhs = "f32_0_0"}
+  %196 = v_cndmask_b32_src0_inline %40, %186 {false_value = 0}
+  %199 = v_cndmask_b32_src0_inline %42, %188 {false_value = 0}
+  %202 = v_cndmask_b32_src0_inline %44, %190 {false_value = 0}
+  %205 = v_cndmask_b32_src0_inline %46, %192 {false_value = 0}
+  %209 = v_add_f32 %196, %171
+  %212 = v_add_f32 %199, %175
+  %215 = v_add_f32 %202, %179
+  %218 = v_add_f32 %205, %183
+  %result = concat(%209, %212, %215, %218) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x4>
   return %result
 }
 

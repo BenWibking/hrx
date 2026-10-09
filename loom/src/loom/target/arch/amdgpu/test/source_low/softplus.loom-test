@@ -1,0 +1,389 @@
+// RUN: emit source-low target=amdgpu:gfx1151 output=low
+
+kernel.def @softplus_scalar() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%source: buffer, %destination: buffer) {
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %source[%base] : buffer -> view<1xf32>
+  %output_view = buffer.view %destination[%base] : buffer -> view<1xf32>
+  %input = view.load %input_view[0] : view<1xf32> -> f32
+  %result = scalar.softplusf %input : f32
+  view.store %result, %output_view[0] : f32, view<1xf32>
+  kernel.return
+}
+
+// ----
+low.kernel.def target<amdgpu.rdna3_5.core> abi_layout({constant_count = 0, direct_arg_count = 0, direct_arg_names = {}, direct_arg_offsets = [], direct_arg_parameter_indices = [], direct_arg_sizes = [], parameter_count = 2, resource_count = 2, resource_offsets = [0, 8], resource_parameter_indices = [0, 1], uses_kernarg_segment_ptr = true}) workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @softplus_scalar() asm {
+  %input_view = resource<hal_binding> {extent = 4, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %output_view = resource<hal_binding> {extent = 4, index = 1, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %30 = v_mov_b32 0
+  %input = global_load_b32_saddr %30, %input_view
+  %33 = v_mov_b32 1065353216
+  %34 = v_mov_b32 1065353217
+  %35 = v_and_b32_lit %input, 2147483647
+  %36 = v_mul_f32_lit %35, 3216550459
+  %37 = v_exp_f32 %36
+  %38 = v_add_f32_src0_inline %37, "f32_1_0"
+  %39 = v_sub_f32 %38, %33
+  %40 = v_cmp_ge_f32 %38, %34
+  %41 = v_cndmask_b32_src0_lit %39, %40, 1065353216
+  %42 = v_rcp_f32 %41
+  %43 = v_mul_f32 %37, %42
+  %44 = v_log_f32 %38
+  %45 = v_mul_f32_lit %44, 1060205080
+  %46 = v_mul_f32 %45, %43
+  %47 = v_cndmask_b32 %37, %46, %40
+  %48 = v_cmp_ge_f32_src1_inline %input {rhs = "f32_0_0"}
+  %49 = v_cndmask_b32_src0_inline %input, %48 {false_value = 0}
+  %result = v_add_f32 %49, %47
+  global_store_b32_saddr %30, %result, %output_view
+  return
+}
+
+// ====
+
+kernel.def @softplus_scalar_fast() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%source: buffer, %destination: buffer) {
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %source[%base] : buffer -> view<1xf32>
+  %output_view = buffer.view %destination[%base] : buffer -> view<1xf32>
+  %input = view.load %input_view[0] : view<1xf32> -> f32
+  %result = scalar.softplusf<reassoc|nnan|ninf|nsz|arcp|contract|afn> %input : f32
+  view.store %result, %output_view[0] : f32, view<1xf32>
+  kernel.return
+}
+
+// ----
+low.kernel.def target<amdgpu.rdna3_5.core> abi_layout({constant_count = 0, direct_arg_count = 0, direct_arg_names = {}, direct_arg_offsets = [], direct_arg_parameter_indices = [], direct_arg_sizes = [], parameter_count = 2, resource_count = 2, resource_offsets = [0, 8], resource_parameter_indices = [0, 1], uses_kernarg_segment_ptr = true}) workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @softplus_scalar_fast() asm {
+  %input_view = resource<hal_binding> {extent = 4, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %output_view = resource<hal_binding> {extent = 4, index = 1, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %30 = v_mov_b32 0
+  %input = global_load_b32_saddr %30, %input_view
+  %33 = v_mov_b32 1065353216
+  %34 = v_mov_b32 1065353217
+  %35 = v_and_b32_lit %input, 2147483647
+  %36 = v_mul_f32_lit %35, 3216550459
+  %37 = v_exp_f32 %36
+  %38 = v_add_f32_src0_inline %37, "f32_1_0"
+  %39 = v_sub_f32 %38, %33
+  %40 = v_cmp_ge_f32 %38, %34
+  %41 = v_cndmask_b32_src0_lit %39, %40, 1065353216
+  %42 = v_rcp_f32 %41
+  %43 = v_mul_f32 %37, %42
+  %44 = v_log_f32 %38
+  %45 = v_mul_f32_lit %44, 1060205080
+  %46 = v_mul_f32 %45, %43
+  %47 = v_cndmask_b32 %37, %46, %40
+  %48 = v_cmp_ge_f32_src1_inline %input {rhs = "f32_0_0"}
+  %49 = v_cndmask_b32_src0_inline %input, %48 {false_value = 0}
+  %result = v_add_f32 %49, %47
+  global_store_b32_saddr %30, %result, %output_view
+  return
+}
+
+// ====
+
+kernel.def @softplus_single_lane() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%source: buffer, %destination: buffer) {
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %source[%base] : buffer -> view<1xf32>
+  %output_view = buffer.view %destination[%base] : buffer -> view<1xf32>
+  %input = vector.load %input_view[0] : view<1xf32> -> vector<1xf32>
+  %result = vector.softplusf %input : vector<1xf32>
+  vector.store %result, %output_view[0] : vector<1xf32>, view<1xf32>
+  kernel.return
+}
+
+// ----
+low.kernel.def target<amdgpu.rdna3_5.core> abi_layout({constant_count = 0, direct_arg_count = 0, direct_arg_names = {}, direct_arg_offsets = [], direct_arg_parameter_indices = [], direct_arg_sizes = [], parameter_count = 2, resource_count = 2, resource_offsets = [0, 8], resource_parameter_indices = [0, 1], uses_kernarg_segment_ptr = true}) workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @softplus_single_lane() asm {
+  %input_view = resource<hal_binding> {extent = 4, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %output_view = resource<hal_binding> {extent = 4, index = 1, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %30 = v_mov_b32 0
+  %input = global_load_b32_saddr %30, %input_view
+  %33 = v_mov_b32 1065353216
+  %34 = v_mov_b32 1065353217
+  %35 = v_and_b32_lit %input, 2147483647
+  %36 = v_mul_f32_lit %35, 3216550459
+  %37 = v_exp_f32 %36
+  %38 = v_add_f32_src0_inline %37, "f32_1_0"
+  %39 = v_sub_f32 %38, %33
+  %40 = v_cmp_ge_f32 %38, %34
+  %41 = v_cndmask_b32_src0_lit %39, %40, 1065353216
+  %42 = v_rcp_f32 %41
+  %43 = v_mul_f32 %37, %42
+  %44 = v_log_f32 %38
+  %45 = v_mul_f32_lit %44, 1060205080
+  %46 = v_mul_f32 %45, %43
+  %47 = v_cndmask_b32 %37, %46, %40
+  %48 = v_cmp_ge_f32_src1_inline %input {rhs = "f32_0_0"}
+  %49 = v_cndmask_b32_src0_inline %input, %48 {false_value = 0}
+  %result = v_add_f32 %49, %47
+  global_store_b32_saddr %30, %result, %output_view
+  return
+}
+
+// ====
+
+kernel.def @softplus_odd_width() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%source: buffer, %destination: buffer) {
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %source[%base] : buffer -> view<3xf32>
+  %output_view = buffer.view %destination[%base] : buffer -> view<3xf32>
+  %input = vector.load %input_view[0] : view<3xf32> -> vector<3xf32>
+  %result = vector.softplusf<afn> %input : vector<3xf32>
+  vector.store %result, %output_view[0] : vector<3xf32>, view<3xf32>
+  kernel.return
+}
+
+// ----
+low.kernel.def target<amdgpu.rdna3_5.core> abi_layout({constant_count = 0, direct_arg_count = 0, direct_arg_names = {}, direct_arg_offsets = [], direct_arg_parameter_indices = [], direct_arg_sizes = [], parameter_count = 2, resource_count = 2, resource_offsets = [0, 8], resource_parameter_indices = [0, 1], uses_kernarg_segment_ptr = true}) workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @softplus_odd_width() asm {
+  %input_view = resource<hal_binding> {extent = 12, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %output_view = resource<hal_binding> {extent = 12, index = 1, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %30 = v_mov_b32 0
+  %input = global_load_b96_saddr %30, %input_view
+  %36 = v_mov_b32 1065353216
+  %40 = v_mov_b32 1065353217
+  %44 = slice %input[0] : reg<amdgpu.vgpr x3> -> reg<amdgpu.vgpr>
+  %45 = v_and_b32_lit %44, 2147483647
+  %46 = slice %input[1] : reg<amdgpu.vgpr x3> -> reg<amdgpu.vgpr>
+  %47 = v_and_b32_lit %46, 2147483647
+  %48 = slice %input[2] : reg<amdgpu.vgpr x3> -> reg<amdgpu.vgpr>
+  %49 = v_and_b32_lit %48, 2147483647
+  %52 = v_mul_f32_lit %45, 3216550459
+  %54 = v_mul_f32_lit %47, 3216550459
+  %56 = v_mul_f32_lit %49, 3216550459
+  %59 = v_exp_f32 %52
+  %61 = v_exp_f32 %54
+  %63 = v_exp_f32 %56
+  %66 = v_add_f32_src0_inline %59, "f32_1_0"
+  %68 = v_add_f32_src0_inline %61, "f32_1_0"
+  %70 = v_add_f32_src0_inline %63, "f32_1_0"
+  %74 = v_sub_f32 %66, %36
+  %77 = v_sub_f32 %68, %36
+  %80 = v_sub_f32 %70, %36
+  %84 = v_cmp_ge_f32 %66, %40
+  %87 = v_cmp_ge_f32 %68, %40
+  %90 = v_cmp_ge_f32 %70, %40
+  %94 = v_cndmask_b32_src0_lit %74, %84, 1065353216
+  %97 = v_cndmask_b32_src0_lit %77, %87, 1065353216
+  %100 = v_cndmask_b32_src0_lit %80, %90, 1065353216
+  %103 = v_rcp_f32 %94
+  %105 = v_rcp_f32 %97
+  %107 = v_rcp_f32 %100
+  %111 = v_mul_f32 %59, %103
+  %114 = v_mul_f32 %61, %105
+  %117 = v_mul_f32 %63, %107
+  %120 = v_log_f32 %66
+  %122 = v_log_f32 %68
+  %124 = v_log_f32 %70
+  %127 = v_mul_f32_lit %120, 1060205080
+  %129 = v_mul_f32_lit %122, 1060205080
+  %131 = v_mul_f32_lit %124, 1060205080
+  %135 = v_mul_f32 %127, %111
+  %138 = v_mul_f32 %129, %114
+  %141 = v_mul_f32 %131, %117
+  %146 = v_cndmask_b32 %59, %135, %84
+  %150 = v_cndmask_b32 %61, %138, %87
+  %154 = v_cndmask_b32 %63, %141, %90
+  %157 = v_cmp_ge_f32_src1_inline %44 {rhs = "f32_0_0"}
+  %159 = v_cmp_ge_f32_src1_inline %46 {rhs = "f32_0_0"}
+  %161 = v_cmp_ge_f32_src1_inline %48 {rhs = "f32_0_0"}
+  %165 = v_cndmask_b32_src0_inline %44, %157 {false_value = 0}
+  %168 = v_cndmask_b32_src0_inline %46, %159 {false_value = 0}
+  %171 = v_cndmask_b32_src0_inline %48, %161 {false_value = 0}
+  %175 = v_add_f32 %165, %146
+  %178 = v_add_f32 %168, %150
+  %181 = v_add_f32 %171, %154
+  %result = concat(%175, %178, %181) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x3>
+  global_store_b96_saddr %30, %result, %output_view
+  return
+}
+
+// ====
+
+kernel.def @softplus_shaped() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%source: buffer, %destination: buffer) {
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %source[%base] : buffer -> view<2x3xf32>
+  %output_view = buffer.view %destination[%base] : buffer -> view<2x3xf32>
+  %input = vector.load %input_view[0, 0] : view<2x3xf32> -> vector<2x3xf32>
+  %result = vector.softplusf<reassoc|nnan|ninf|nsz|arcp|contract|afn> %input : vector<2x3xf32>
+  vector.store %result, %output_view[0, 0] : vector<2x3xf32>, view<2x3xf32>
+  kernel.return
+}
+
+// ----
+low.kernel.def target<amdgpu.rdna3_5.core> abi_layout({constant_count = 0, direct_arg_count = 0, direct_arg_names = {}, direct_arg_offsets = [], direct_arg_parameter_indices = [], direct_arg_sizes = [], parameter_count = 2, resource_count = 2, resource_offsets = [0, 8], resource_parameter_indices = [0, 1], uses_kernarg_segment_ptr = true}) workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @softplus_shaped() asm {
+  %input_view = resource<hal_binding> {extent = 24, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %output_view = resource<hal_binding> {extent = 24, index = 1, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %113 = v_mov_b32 0
+  %114 = global_load_b96_saddr %113, %input_view
+  %116 = global_load_b96_saddr %113, %input_view {offset = 12}
+  %input = concat(%114, %116) : (reg<amdgpu.vgpr x3>, reg<amdgpu.vgpr x3>) -> reg<amdgpu.vgpr x6>
+  %125 = v_mov_b32 1065353216
+  %132 = slice %input[0] : reg<amdgpu.vgpr x6> -> reg<amdgpu.vgpr>
+  %133 = v_and_b32_lit %132, 2147483647
+  %134 = slice %input[1] : reg<amdgpu.vgpr x6> -> reg<amdgpu.vgpr>
+  %135 = v_and_b32_lit %134, 2147483647
+  %136 = slice %input[2] : reg<amdgpu.vgpr x6> -> reg<amdgpu.vgpr>
+  %137 = v_and_b32_lit %136, 2147483647
+  %138 = slice %input[3] : reg<amdgpu.vgpr x6> -> reg<amdgpu.vgpr>
+  %139 = v_and_b32_lit %138, 2147483647
+  %140 = slice %input[4] : reg<amdgpu.vgpr x6> -> reg<amdgpu.vgpr>
+  %141 = v_and_b32_lit %140, 2147483647
+  %142 = slice %input[5] : reg<amdgpu.vgpr x6> -> reg<amdgpu.vgpr>
+  %143 = v_and_b32_lit %142, 2147483647
+  %146 = v_mul_f32_lit %133, 3216550459
+  %148 = v_mul_f32_lit %135, 3216550459
+  %150 = v_mul_f32_lit %137, 3216550459
+  %152 = v_mul_f32_lit %139, 3216550459
+  %154 = v_mul_f32_lit %141, 3216550459
+  %156 = v_mul_f32_lit %143, 3216550459
+  %159 = v_exp_f32 %146
+  %161 = v_exp_f32 %148
+  %163 = v_exp_f32 %150
+  %165 = v_exp_f32 %152
+  %167 = v_exp_f32 %154
+  %169 = v_exp_f32 %156
+  %172 = v_add_f32_src0_inline %159, "f32_1_0"
+  %174 = v_add_f32_src0_inline %161, "f32_1_0"
+  %176 = v_add_f32_src0_inline %163, "f32_1_0"
+  %178 = v_add_f32_src0_inline %165, "f32_1_0"
+  %180 = v_add_f32_src0_inline %167, "f32_1_0"
+  %182 = v_add_f32_src0_inline %169, "f32_1_0"
+  %186 = v_sub_f32 %172, %125
+  %189 = v_sub_f32 %174, %125
+  %192 = v_sub_f32 %176, %125
+  %195 = v_sub_f32 %178, %125
+  %198 = v_sub_f32 %180, %125
+  %201 = v_sub_f32 %182, %125
+  %208 = v_mov_b32 1065353217
+  %209 = v_cmp_ge_f32 %172, %208
+  %215 = v_cmp_ge_f32 %174, %208
+  %221 = v_cmp_ge_f32 %176, %208
+  %227 = v_cmp_ge_f32 %178, %208
+  %233 = v_cmp_ge_f32 %180, %208
+  %239 = v_cmp_ge_f32 %182, %208
+  %243 = v_cndmask_b32_src0_lit %186, %209, 1065353216
+  %246 = v_cndmask_b32_src0_lit %189, %215, 1065353216
+  %249 = v_cndmask_b32_src0_lit %192, %221, 1065353216
+  %252 = v_cndmask_b32_src0_lit %195, %227, 1065353216
+  %255 = v_cndmask_b32_src0_lit %198, %233, 1065353216
+  %258 = v_cndmask_b32_src0_lit %201, %239, 1065353216
+  %261 = v_rcp_f32 %243
+  %263 = v_rcp_f32 %246
+  %265 = v_rcp_f32 %249
+  %267 = v_rcp_f32 %252
+  %269 = v_rcp_f32 %255
+  %271 = v_rcp_f32 %258
+  %275 = v_mul_f32 %159, %261
+  %278 = v_mul_f32 %161, %263
+  %281 = v_mul_f32 %163, %265
+  %284 = v_mul_f32 %165, %267
+  %287 = v_mul_f32 %167, %269
+  %290 = v_mul_f32 %169, %271
+  %293 = v_log_f32 %172
+  %295 = v_log_f32 %174
+  %297 = v_log_f32 %176
+  %299 = v_log_f32 %178
+  %301 = v_log_f32 %180
+  %303 = v_log_f32 %182
+  %306 = v_mul_f32_lit %293, 1060205080
+  %308 = v_mul_f32_lit %295, 1060205080
+  %310 = v_mul_f32_lit %297, 1060205080
+  %312 = v_mul_f32_lit %299, 1060205080
+  %314 = v_mul_f32_lit %301, 1060205080
+  %316 = v_mul_f32_lit %303, 1060205080
+  %320 = v_mul_f32 %306, %275
+  %323 = v_mul_f32 %308, %278
+  %326 = v_mul_f32 %310, %281
+  %329 = v_mul_f32 %312, %284
+  %332 = v_mul_f32 %314, %287
+  %335 = v_mul_f32 %316, %290
+  %340 = v_cndmask_b32 %159, %320, %209
+  %344 = v_cndmask_b32 %161, %323, %215
+  %348 = v_cndmask_b32 %163, %326, %221
+  %352 = v_cndmask_b32 %165, %329, %227
+  %356 = v_cndmask_b32 %167, %332, %233
+  %360 = v_cndmask_b32 %169, %335, %239
+  %362 = v_cmp_ge_f32_src1_inline %132 {rhs = "f32_0_0"}
+  %363 = v_cmp_ge_f32_src1_inline %134 {rhs = "f32_0_0"}
+  %364 = v_cmp_ge_f32_src1_inline %136 {rhs = "f32_0_0"}
+  %365 = v_cmp_ge_f32_src1_inline %138 {rhs = "f32_0_0"}
+  %366 = v_cmp_ge_f32_src1_inline %140 {rhs = "f32_0_0"}
+  %367 = v_cmp_ge_f32_src1_inline %142 {rhs = "f32_0_0"}
+  %371 = v_cndmask_b32_src0_inline %132, %362 {false_value = 0}
+  %374 = v_cndmask_b32_src0_inline %134, %363 {false_value = 0}
+  %377 = v_cndmask_b32_src0_inline %136, %364 {false_value = 0}
+  %380 = v_cndmask_b32_src0_inline %138, %365 {false_value = 0}
+  %383 = v_cndmask_b32_src0_inline %140, %366 {false_value = 0}
+  %386 = v_cndmask_b32_src0_inline %142, %367 {false_value = 0}
+  %390 = v_add_f32 %371, %340
+  %393 = v_add_f32 %374, %344
+  %396 = v_add_f32 %377, %348
+  %399 = v_add_f32 %380, %352
+  %402 = v_add_f32 %383, %356
+  %405 = v_add_f32 %386, %360
+  %410 = concat(%390, %393, %396) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x3>
+  global_store_b96_saddr %113, %410, %output_view
+  %415 = concat(%399, %402, %405) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x3>
+  global_store_b96_saddr %113, %415, %output_view {offset = 12}
+  return
+}
+
+// ====
+
+kernel.def @softplus_half() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%source: buffer, %destination: buffer) {
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %source[%base] : buffer -> view<1xf16>
+  %output_view = buffer.view %destination[%base] : buffer -> view<1xf16>
+  %input = view.load %input_view[0] : view<1xf16> -> f16
+  // ERROR@+1: LOWERING/036 {op_name="scalar.softplusf", phase_name="legalize-math", math_op="softplusf", lane_domain="scalar", element_type="f16", constraint_key="math.element.f32"}
+  %result = scalar.softplusf %input : f16
+  view.store %result, %output_view[0] : f16, view<1xf16>
+  kernel.return
+}
+
+// ====
+
+kernel.def @softplus_brain() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%source: buffer, %destination: buffer) {
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %source[%base] : buffer -> view<3xbf16>
+  %output_view = buffer.view %destination[%base] : buffer -> view<3xbf16>
+  %input = vector.load %input_view[0] : view<3xbf16> -> vector<3xbf16>
+  // ERROR@+1: LOWERING/036 {op_name="vector.softplusf", phase_name="legalize-math", math_op="softplusf", lane_domain="vector", element_type="bf16", constraint_key="math.element.f32"}
+  %result = vector.softplusf<afn> %input : vector<3xbf16>
+  vector.store %result, %output_view[0] : vector<3xbf16>, view<3xbf16>
+  kernel.return
+}
+
+// ====
+
+kernel.def @softplus_double() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%source: buffer, %destination: buffer) {
+  %base = index.constant 0 : offset
+  %input_view = buffer.view %source[%base] : buffer -> view<2xf64>
+  %output_view = buffer.view %destination[%base] : buffer -> view<2xf64>
+  %input = vector.load %input_view[0] : view<2xf64> -> vector<2xf64>
+  // ERROR@+1: LOWERING/036 {op_name="vector.softplusf", phase_name="legalize-math", math_op="softplusf", lane_domain="vector", element_type="f64", constraint_key="math.element.f32"}
+  %result = vector.softplusf<reassoc|nnan|ninf|nsz|arcp|contract|afn> %input : vector<2xf64>
+  vector.store %result, %output_view[0] : vector<2xf64>, view<2xf64>
+  kernel.return
+}

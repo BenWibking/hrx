@@ -183,9 +183,13 @@ static void loom_amdgpu_math_policy_query(
                                    IREE_SV("math.recipe.silu_logistic_f32"));
       return;
     case LOOM_TARGET_MATH_OP_SOFTPLUSF:
-      *out_decision =
-          loom_amdgpu_math_rewrite(LOOM_TARGET_MATH_RECIPE_SOFTPLUS_EXP2_F32,
-                                   IREE_SV("math.recipe.softplus_exp2_f32"));
+      // The stable tail uses exp2 on nonpositive inputs, log2 on [1, 2],
+      // and a reciprocal only on [2^-23, 1].
+      *out_decision = loom_amdgpu_math_rewrite_with_recipe_fastmath(
+          LOOM_TARGET_MATH_RECIPE_SOFTPLUS_EXP2_F32,
+          IREE_SV("math.recipe.softplus_exp2_f32"),
+          LOOM_TARGET_MATH_FASTMATH_FLAG_ARCP |
+              LOOM_TARGET_MATH_FASTMATH_FLAG_AFN);
       return;
     case LOOM_TARGET_MATH_OP_EXPF:
       *out_decision = loom_amdgpu_math_rewrite_if_afn(
