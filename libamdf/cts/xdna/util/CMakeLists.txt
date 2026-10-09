@@ -28,6 +28,22 @@ endif()
 if(AMDF_BUILD AND AMDF_FAMILY_XDNA)
 iree_cc_library(
   NAME
+    resident_transaction
+  HDRS
+    "resident_transaction.h"
+  SRCS
+    "resident_transaction.cc"
+  DEPS
+    amdf::headers
+    iree::third_party::google_test
+  TESTONLY
+  PUBLIC
+)
+endif()
+
+if(AMDF_BUILD AND AMDF_FAMILY_XDNA)
+iree_cc_library(
+  NAME
     execution
   HDRS
     "execution.h"
