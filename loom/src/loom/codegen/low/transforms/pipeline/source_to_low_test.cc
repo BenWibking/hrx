@@ -482,6 +482,60 @@ TEST_F(LowLowerPassTest, SourceSelectionUsesPerFunctionTargetFacts) {
   iree_arena_deinitialize(&arena);
 }
 
+TEST_F(LowLowerPassTest, FinalizesPoliciesOnceWithoutAdditionalStorage) {
+  ModulePtr module = Parse(IREE_SV(
+      "test.target<low_core> @test_target\n"
+      "low.func.decl target<test.low.core>(@test_target) @ready()\n"
+      "func.def target(@test_target) @idle() {\n  func.return\n}\n"
+      "func.def target(@test_target) @first() {\n  func.return\n}\n"
+      "func.def target(@test_target) @first_again() {\n  func.return\n}\n"
+      "func.def target(@test_target) @second() {\n  func.return\n}\n"
+      "func.decl target(@test_target) @second_again()\n"));
+  iree_arena_allocator_t arena;
+  iree_arena_initialize(&block_pool_, &arena);
+  const loom_low_source_selection_options_t options = {
+      /*.policy_registry=*/&policy_registry_,
+  };
+  loom_low_source_selection_list_t selections = {};
+  IREE_ASSERT_OK(loom_low_select_lowering_symbols(module.get(), &options,
+                                                  &arena, &selections));
+  ASSERT_EQ(selections.count, 6u);
+
+  std::vector<int> order;
+  loom_low_lower_policy_t first = *selections.values[2].policy;
+  first.finalize_module = {
+      /*.fn=*/[](void* user_data, loom_module_t*,
+                 loom_low_lower_module_state_t*, iree_arena_allocator_t*) {
+        static_cast<std::vector<int>*>(user_data)->push_back(1);
+        return iree_ok_status();
+      },
+      /*.user_data=*/&order,
+  };
+  loom_low_lower_policy_t second = first;
+  second.finalize_module.fn = [](void* user_data, loom_module_t*,
+                                 loom_low_lower_module_state_t*,
+                                 iree_arena_allocator_t*) {
+    static_cast<std::vector<int>*>(user_data)->push_back(2);
+    return iree_ok_status();
+  };
+  // Leading Low projections do not contribute finalizers. The inactive source
+  // prefix and repeated policies cannot change the first-use order.
+  selections.values[0].policy = &first;
+  selections.values[2].policy = &second;
+  selections.values[3].policy = &second;
+  selections.values[4].policy = &first;
+  selections.values[5].policy = &first;
+  loom_low_lower_module_state_t* module_state = nullptr;
+  IREE_ASSERT_OK(loom_low_lower_module_state_create(&arena, &module_state));
+  const iree_host_size_t retained_bytes = arena.used_allocation_size;
+  IREE_ASSERT_OK(loom_low_source_selection_finalize_policies(
+      module.get(), &selections, module_state, &arena));
+  EXPECT_EQ(order, (std::vector<int>{2, 1}));
+  EXPECT_EQ(selections.count, 6u);
+  EXPECT_EQ(arena.used_allocation_size, retained_bytes);
+  iree_arena_deinitialize(&arena);
+}
+
 TEST_F(LowLowerPassTest, ModuleInternalVersionLowersWithoutArtifactAbi) {
   ModulePtr module =
       Parse(IREE_SV("test.target<low_core> @test_target\n"

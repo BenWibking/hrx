@@ -159,10 +159,11 @@ iree_status_t loom_low_select_target_bound_funcs(
 
 // Invokes each distinct source-lowering policy's module finalizer once in
 // first-use order. Existing Low projections and policies without finalizers
-// contribute no module resources and are skipped.
+// contribute no module resources and are skipped. Consumes the list's policy
+// bindings after all source plans have executed, reusing those fields for the
+// distinct-policy prefix. Other fields and the selection count are unchanged.
 iree_status_t loom_low_source_selection_finalize_policies(
-    loom_module_t* module,
-    const loom_low_source_selection_list_t* selection_list,
+    loom_module_t* module, loom_low_source_selection_list_t* selection_list,
     loom_low_lower_module_state_t* module_state,
     iree_arena_allocator_t* scratch_arena);
 
