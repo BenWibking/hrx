@@ -6,14 +6,15 @@
 
 // Routed Q4_K gate/up SwiGLU compiler workload.
 //
-// One wave computes one routed output channel. Each loop iteration consumes a
-// 1024-element K stripe through paired Q4_K decode, Q8_1 dot products, and
-// gate/up accumulation. Varying input_size changes the loop bound while keeping
-// the compiled body bounded.
+// One wave computes one routed output channel. Each loop iteration assigns one
+// 256-element Q4_K block to every eight-lane group for paired Q4_K decode, Q8_1
+// dot products, and gate/up accumulation. Varying input_size changes the loop
+// bound while keeping the compiled body bounded.
 
 #include <loomcxx/kernel.h>
 #include <loomcxx/predicate.h>
 #include <loomcxx/scalar.h>
+#include <loomcxx/target.h>
 #include <loomcxx/vector.h>
 
 #include <stdfloat>
@@ -152,7 +153,7 @@ void ffn_routed_gate_up_swiglu_q4k_q8_body(
   loom::assume(expert_count >= 1u && expert_count <= 128u);
   loom::assume(output_size >= 1u && output_size <= 4096u);
   loom::assume(token < token_count && route < route_count &&
-               channel < output_size && lane < 32u);
+               channel < output_size);
 
   unsigned q4_block_count = ffn_input_size / 256u;
   unsigned q8_group_count = ffn_input_size / 128u;
@@ -170,9 +171,11 @@ void ffn_routed_gate_up_swiglu_q4k_q8_body(
 
   float gate_accumulator = 0.0f;
   float up_accumulator = 0.0f;
-  unsigned iteration_count = (ffn_input_size + 1023u) / 1024u;
+  unsigned blocks_per_iteration = loom::kernel::subgroup::size() / 8u;
+  unsigned iteration_count =
+      (q4_block_count + blocks_per_iteration - 1u) / blocks_per_iteration;
   for (unsigned iteration = 0; iteration < iteration_count; ++iteration) {
-    unsigned q4_block = iteration * 4u + lane_q4_block;
+    unsigned q4_block = iteration * blocks_per_iteration + lane_q4_block;
     if (q4_block < q4_block_count) {
       unsigned q8_group = q4_block * 2u + q8_group_in_block;
       const Q8_1Group* group = &q8_input[token * q8_group_count + q8_group];
@@ -219,7 +222,7 @@ void ffn_routed_gate_up_swiglu_q4k_q8_body(
 static loom::kernel::configuration ffn_routed_gate_up_configuration(
     unsigned, unsigned, unsigned, unsigned, unsigned) {
   return {{(ffn_output_size + 3u) / 4u, ffn_route_count, ffn_token_capacity},
-          {128u, 1u, 1u}};
+          {4u * loom::target::subgroup::size(), 1u, 1u}};
 }
 
 [[loom::kernel(ffn_routed_gate_up_configuration)]] void
