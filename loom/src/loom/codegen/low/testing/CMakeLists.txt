@@ -148,22 +148,4 @@ loom_cc_library(
   PUBLIC
 )
 
-loom_cc_library(
-  NAME
-    text_asm_test_util
-  HDRS
-    "text_asm_test_util.h"
-  SRCS
-    "text_asm_test_util.cc"
-  DEPS
-    iree::base
-    iree::base::internal::arena
-    loom::codegen::low::descriptors
-    loom::codegen::low::text_asm
-    loom::format::text::low_asm
-    loom::ir
-  TESTONLY
-  PUBLIC
-)
-
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

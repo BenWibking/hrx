@@ -931,26 +931,6 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
-    packet_asm
-  HDRS
-    "packet_asm.h"
-  SRCS
-    "packet_asm.c"
-  DEPS
-    ::allocation
-    ::descriptors
-    ::packet
-    iree::base
-    loom::codegen::low::schedule
-    loom::format::text::printer
-    loom::ir
-    loom::ops::low
-    loom::util::stream
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
     planning_statistics
   HDRS
     "planning_statistics.h"
