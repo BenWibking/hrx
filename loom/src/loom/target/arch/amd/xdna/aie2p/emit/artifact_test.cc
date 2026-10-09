@@ -87,8 +87,23 @@ low.func.def retain target<amd.xdna.aie2p.array>(@halo_target) abi(array_program
 )";
 
 constexpr char kAggregateBindingOverflowSource[] = R"(
+aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 aie2p.target<array> @array_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 aie2p.target<core> @core_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
+low.func.def retain target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @configuration_entry() asm {
+  %columns = constant 1 : reg<aie2p.config.scalar : i64>
+  entry %columns, @initialize, @invoke
+  return
+}
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %column = constant 0 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  program.load %column, %row, @configuration_worker
+  return
+}
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke() asm {
+  return
+}
 low.func.def retain target<amd.xdna.aie2p.array>(@array_target) abi(array_program) abi_layout({binding_count = 32768}) @first() asm {
   %channel_capacity = constant.u32 1 : reg<aie2p.array.scalar : index>
   %records_per_activation = constant.u32 1 : reg<aie2p.array.scalar : index>
@@ -133,6 +148,9 @@ low.func.def target<amd.xdna.aie2p.core>(@core_target) abi(object_function) @pro
 }
 low.func.def target<amd.xdna.aie2p.core>(@core_target) abi(object_function) @consume_i16() asm {
   %input = resource<native_pointer> {index = 0, source_type = buffer} : reg<aie2p.ep>
+  return
+}
+low.func.def target<amd.xdna.aie2p.core>(@core_target) abi(object_function) @configuration_worker() asm {
   return
 }
 )";
@@ -335,10 +353,10 @@ TEST_F(XdnaArtifactTest, RejectsAggregateBindingCountBeforeResidentCompile) {
       /*.module=*/module.get(),
       /*.function_versions=*/nullptr,
       /*.low_descriptor_registry=*/&low_registry_.registry,
-      /*.compile_report=*/nullptr,
+      /*.compile_report=*/&compile_report_,
       /*.diagnostic_emitter=*/capture.emitter(),
       /*.scratch_arena=*/&scratch_arena_,
-      /*.allocator=*/iree_allocator_null(),
+      /*.allocator=*/iree_allocator_system(),
   };
   bool emitted = false;
   IREE_ASSERT_OK(
@@ -351,6 +369,8 @@ TEST_F(XdnaArtifactTest, RejectsAggregateBindingCountBeforeResidentCompile) {
   ASSERT_EQ(capture.emissions[0].u64_params.size(), 2u);
   EXPECT_EQ(capture.emissions[0].u64_params[0], 65536u);
   EXPECT_EQ(capture.emissions[0].u64_params[1], 65535u);
+  EXPECT_EQ(compile_report_.entry_rows.count, 0u);
+  EXPECT_EQ(compile_report_.pipeline_plans.count, 0u);
 }
 
 }  // namespace

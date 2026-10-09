@@ -749,6 +749,11 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
       iree_arena_allocate_array(request->scratch_arena, entry_count,
                                 sizeof(*array_plans), (void**)&array_plans));
   memset(array_plans, 0, entry_count * sizeof(*array_plans));
+  loom_aie2p_configuration_plan_t** configuration_plans = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      request->scratch_arena, entry_count, sizeof(*configuration_plans),
+      (void**)&configuration_plans));
+  memset(configuration_plans, 0, entry_count * sizeof(*configuration_plans));
   loom_aie2p_array_program_t* array_programs = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       request->scratch_arena, entry_count, sizeof(*array_programs),
@@ -762,9 +767,9 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
     if (loom_aie2p_xdna_has_contract(request->module, source_entry->function_op,
                                      IREE_SV("amd.xdna.aie2p.configuration"))) {
       bool valid = false;
-      IREE_RETURN_IF_ERROR(loom_aie2p_configuration_emit(
+      IREE_RETURN_IF_ERROR(loom_aie2p_configuration_plan_build(
           request, source_entry->function_op, device_profile,
-          &product_entries[i], &valid));
+          &configuration_plans[i], &product_entries[i], &valid));
       if (!valid) {
         return iree_ok_status();
       }
@@ -823,6 +828,18 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
   if (!product_admitted) {
     return loom_aie2p_xdna_emit_product_issue(
         request, source_entries, entry_count, device_profile, &product_issue);
+  }
+
+  for (iree_host_size_t i = 0; i < entry_count; ++i) {
+    if (configuration_plans[i] == NULL) {
+      continue;
+    }
+    bool materialized = false;
+    IREE_RETURN_IF_ERROR(loom_aie2p_configuration_plan_materialize(
+        configuration_plans[i], &materialized));
+    if (!materialized) {
+      return iree_ok_status();
+    }
   }
 
   loom_module_t* resident_module = NULL;

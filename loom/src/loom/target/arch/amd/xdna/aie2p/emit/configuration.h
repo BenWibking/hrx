@@ -14,8 +14,10 @@
 extern "C" {
 #endif
 
-// Emits a physical configuration entry and its referenced complete core
-// programs.
+// Arena-owned physical configuration plan awaiting resident materialization.
+typedef struct loom_aie2p_configuration_plan_t loom_aie2p_configuration_plan_t;
+
+// Builds a physical configuration plan and its source-known product entry.
 //
 // The entry names straight-line initialization and invocation functions. Their
 // shared Low schedules supply instruction order and operand identities. Binding
@@ -81,16 +83,29 @@ extern "C" {
 // invocation function supplies external bindings and all relocated writes.
 // Configuration functions are statically evaluated straight-line Low programs;
 // worker functions retain their complete authored control flow. Each distinct
-// worker is compiled once and linked at each placement with that tile's data
-// reservations and core-visible address apertures.
+// worker is named once in the plan and is later compiled once and linked at
+// each placement with that tile's data reservations and core-visible address
+// apertures.
 //
-// All storage in |out_entry| belongs to the request's arena. Unsupported
-// authored configuration, unresolved physical values and native code/storage
-// overflow fail before any artifact is returned.
-iree_status_t loom_aie2p_configuration_emit(
+// Building evaluates all configuration functions and retains every fact needed
+// for product admission, but does not compile or link resident workers. All
+// storage in |out_plan| and |out_entry| belongs to the request's arena.
+// Unsupported authored configuration and unresolved physical values leave
+// |out_valid| false. Status reports infrastructure failures.
+iree_status_t loom_aie2p_configuration_plan_build(
     const loom_aie2p_xdna_artifact_request_t* request,
     const loom_op_t* entry_op, const loom_xdna_device_profile_t* device_profile,
+    loom_aie2p_configuration_plan_t** out_plan,
     loom_aie2p_xdna_entry_t* out_entry, bool* out_valid);
+
+// Compiles and links every resident worker named by |plan|.
+//
+// Product-wide source-known limits must be admitted before this call. On
+// success the product entry produced with |plan| owns a complete tile array.
+// Authored native code or storage overflow leaves |out_materialized| false.
+// Status reports infrastructure failures.
+iree_status_t loom_aie2p_configuration_plan_materialize(
+    loom_aie2p_configuration_plan_t* plan, bool* out_materialized);
 
 #ifdef __cplusplus
 }  // extern "C"
