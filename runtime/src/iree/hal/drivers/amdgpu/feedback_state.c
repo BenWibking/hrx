@@ -796,6 +796,13 @@ iree_status_t iree_hal_amdgpu_feedback_state_initialize(
                             "AMDGPU feedback requires a device event sink");
   }
 
+  iree_hal_amdgpu_source_context_registry_t* source_context_registry = NULL;
+  IREE_RETURN_IF_ERROR(iree_allocator_malloc(host_allocator,
+                                             sizeof(*source_context_registry),
+                                             (void**)&source_context_registry));
+  iree_hal_amdgpu_source_context_registry_initialize(host_allocator,
+                                                     source_context_registry);
+
   out_state->libhsa = &system->libhsa;
   out_state->host_allocator = host_allocator;
   out_state->device = device;
@@ -805,6 +812,7 @@ iree_status_t iree_hal_amdgpu_feedback_state_initialize(
   out_state->tsan_report_policy = options->tsan.report_policy;
   out_state->error_handler = error_handler;
   out_state->error_handler_user_data = error_handler_user_data;
+  out_state->source_context_registry = source_context_registry;
 
   iree_status_t status = iree_allocator_malloc_array(
       host_allocator, physical_device_count,
@@ -856,6 +864,9 @@ void iree_hal_amdgpu_feedback_state_deinitialize(
     iree_slim_mutex_deinitialize(&device_state->drain_mutex);
   }
   iree_allocator_free(state->host_allocator, state->device_states);
+  iree_hal_amdgpu_source_context_registry_deinitialize(
+      state->source_context_registry);
+  iree_allocator_free(state->host_allocator, state->source_context_registry);
   memset(state, 0, sizeof(*state));
 
   IREE_TRACE_ZONE_END(z0);
@@ -864,6 +875,22 @@ void iree_hal_amdgpu_feedback_state_deinitialize(
 bool iree_hal_amdgpu_feedback_state_is_enabled(
     const iree_hal_amdgpu_feedback_state_t* state) {
   return state && state->is_enabled;
+}
+
+iree_status_t iree_hal_amdgpu_feedback_state_register_source_context(
+    iree_hal_amdgpu_feedback_state_t* state,
+    const iree_hal_amdgpu_source_context_t* source_context,
+    const iree_hal_amdgpu_source_context_t** out_registered_context) {
+  IREE_ASSERT_ARGUMENT(state);
+  IREE_ASSERT_ARGUMENT(source_context);
+  IREE_ASSERT_ARGUMENT(out_registered_context);
+  *out_registered_context = NULL;
+  if (IREE_UNLIKELY(!iree_hal_amdgpu_feedback_state_is_enabled(state))) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "AMDGPU feedback state is not enabled");
+  }
+  return iree_hal_amdgpu_source_context_registry_register(
+      state->source_context_registry, source_context, out_registered_context);
 }
 
 iree_status_t iree_hal_amdgpu_feedback_state_populate_config(

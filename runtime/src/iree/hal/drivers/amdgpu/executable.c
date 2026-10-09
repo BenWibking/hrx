@@ -829,8 +829,10 @@ typedef struct iree_hal_amdgpu_executable_t {
   uint64_t executable_id;
   // Stable content hash for the exact loaded HSACO/code-object bytes.
   uint64_t code_object_hash[2];
-  // Executable-owned source context used by feedback packet attribution.
+  // Executable-owned working context used while resolving source metadata.
   iree_hal_amdgpu_source_context_t source_context;
+  // Feedback-owned immutable context addressed by device report packets.
+  const iree_hal_amdgpu_source_context_t* feedback_source_context;
   // Provider-neutral metadata borrowing from |handle|'s loaded code object.
   iree_hal_amdgpu_executable_metadata_t* metadata;
 
@@ -1337,7 +1339,7 @@ static iree_status_t iree_hal_amdgpu_executable_try_attach_sanitizer_site_table(
 static iree_status_t iree_hal_amdgpu_executable_publish_feedback_config(
     iree_hal_amdgpu_executable_t* executable,
     iree_hal_amdgpu_executable_load_variant_t* load_variant,
-    const iree_hal_amdgpu_feedback_state_t* feedback_state) {
+    iree_hal_amdgpu_feedback_state_t* feedback_state) {
   iree_hal_executable_global_t global = iree_hal_executable_global_invalid();
   bool found = false;
   IREE_RETURN_IF_ERROR(
@@ -1353,6 +1355,13 @@ static iree_status_t iree_hal_amdgpu_executable_publish_feedback_config(
     return iree_ok_status();
   }
 
+  if (!executable->feedback_source_context) {
+    IREE_RETURN_IF_ERROR(iree_hal_amdgpu_feedback_state_register_source_context(
+                             feedback_state, &executable->source_context,
+                             &executable->feedback_source_context),
+                         "preserving AMDGPU executable source context");
+  }
+
   const iree_host_size_t device_ordinal = executable->physical_device_ordinal;
   iree_hal_amdgpu_feedback_config_t config;
   IREE_RETURN_IF_ERROR(
@@ -1360,7 +1369,8 @@ static iree_status_t iree_hal_amdgpu_executable_publish_feedback_config(
                                                      device_ordinal, &config),
       "populating feedback config for physical device %" PRIhsz,
       device_ordinal);
-  config.source_context = (uint64_t)(uintptr_t)&executable->source_context;
+  config.source_context =
+      (uint64_t)(uintptr_t)executable->feedback_source_context;
 
   iree_hal_buffer_t* global_buffer = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_global_table_buffer(
@@ -1377,7 +1387,7 @@ static iree_status_t iree_hal_amdgpu_executable_publish_feedback_config(
   }
   // The context pointer crosses the device global and feedback packet before an
   // HSA signal wakes the host reader. TSAN cannot observe that path.
-  IREE_TSAN_RELEASE(&executable->source_context);
+  IREE_TSAN_RELEASE((void*)executable->feedback_source_context);
   IREE_RETURN_IF_ERROR(
       iree_hsa_memory_copy(IREE_LIBHSA(executable->libhsa), target_ptr, &config,
                            sizeof(config)),
@@ -1718,7 +1728,7 @@ static iree_status_t iree_hal_amdgpu_executable_create_from_raw_hsaco(
     iree_host_size_t physical_device_ordinal,
     const iree_hal_executable_load_params_t* load_params,
     uint64_t executable_id, const iree_hal_amdgpu_executable_limits_t* limits,
-    const iree_hal_amdgpu_feedback_state_t* feedback_state,
+    iree_hal_amdgpu_feedback_state_t* feedback_state,
     const iree_hal_amdgpu_asan_state_t* asan_state,
     const iree_hal_amdgpu_tsan_state_t* tsan_state,
     iree_host_size_t physical_device_count,
