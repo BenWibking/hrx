@@ -2,7 +2,22 @@ cmake_minimum_required(VERSION 3.20)
 project(loom_chemistry_reproducer LANGUAGES CXX)
 enable_testing()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-add_executable(chemistry-validate validate.cpp)
+set(CHEM_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+set(CHEM_GENERATED_SOURCES
+  ${CHEM_GENERATED_DIR}/reproducer.cpp
+  ${CHEM_GENERATED_DIR}/integrate.inc
+  ${CHEM_GENERATED_DIR}/reference_kernels.inc)
+add_custom_command(
+  OUTPUT ${CHEM_GENERATED_SOURCES}
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/generate.py
+    --output-dir=${CHEM_GENERATED_DIR}
+  DEPENDS generate.py reference.cpp
+  COMMENT "Generating Loom chemistry sources"
+  VERBATIM)
+set_source_files_properties(${CHEM_GENERATED_SOURCES} PROPERTIES HEADER_FILE_ONLY ON)
+add_executable(chemistry-validate validate.cpp ${CHEM_GENERATED_SOURCES})
+target_include_directories(chemistry-validate PRIVATE
+  ${CHEM_GENERATED_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(chemistry-validate PRIVATE cxx_std_20)
 if(MSVC)
   message(FATAL_ERROR "Validation currently requires Clang or GCC (native atomic builtins and LP64)")
@@ -13,10 +28,8 @@ if(CHEM_SANITIZE)
   target_compile_options(chemistry-validate PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
   target_link_options(chemistry-validate PRIVATE -fsanitize=address,undefined)
 endif()
-add_test(NAME generated-sources COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/generate.py --check)
 add_test(NAME numerical-equivalence COMMAND chemistry-validate)
 if(COMMAND iree_register_test_build_targets)
-  iree_register_test_build_targets(generated-sources)
   iree_register_test_build_targets(numerical-equivalence TARGETS chemistry-validate)
 endif()
 set(LOOM_IMPORT_CXX_TOOL "" CACHE FILEPATH "Optional path to the native loom-import-cxx executable")
