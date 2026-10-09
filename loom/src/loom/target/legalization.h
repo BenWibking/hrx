@@ -88,6 +88,10 @@ enum loom_target_legalizer_entry_flag_bits_e {
   // rejecting it under require-native. An unanswered query can still have a
   // native lowering. Reference-only explicitly requests the recipe instead.
   LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION = 1u << 1,
+  // Requires an unanswered contract query before applying the recipe or
+  // rejecting it under require-native. An explicit target rejection remains
+  // authoritative. Reference-only explicitly requests the recipe instead.
+  LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_UNHANDLED = 1u << 2,
 };
 typedef uint32_t loom_target_legalizer_entry_flags_t;
 

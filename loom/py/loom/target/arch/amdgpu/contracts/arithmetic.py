@@ -205,6 +205,8 @@ _DESCRIPTOR_KEYS = (
     "amdgpu.v_and_b32.lit",
     "amdgpu.v_or_b32",
     "amdgpu.v_or_b32.lit",
+    "amdgpu.v_cmp_ogt_f32",
+    "amdgpu.v_cmp_olt_f32",
     "amdgpu.v_cmp_uno_f32",
     "amdgpu.v_cndmask_b32",
     "amdgpu.v_xor_b32",
@@ -3724,8 +3726,43 @@ def _packed_number_extrema_rules() -> tuple[DescriptorRule, ...]:
     return tuple(rules)
 
 
-def _minmax_family_rules() -> tuple[DescriptorRule, ...]:
-    rules: list[DescriptorRule] = []
+def _clampf_fallback_recipe_rules() -> tuple[RecipeRule, ...]:
+    rules: list[RecipeRule] = []
+    for source_op, type_pattern in (
+        (scalar_arithmetic.scalar_clampf, _F32),
+        (vector.vector_clampf, _VEC_F32_STATIC),
+    ):
+        for mode, descriptor_keys in (
+            (
+                "ordered",
+                (
+                    "amdgpu.v_cmp_olt_f32",
+                    "amdgpu.v_cmp_ogt_f32",
+                    "amdgpu.v_cndmask_b32",
+                ),
+            ),
+            ("number", ("amdgpu.v_max_f32", "amdgpu.v_min_f32")),
+        ):
+            rules.append(
+                RecipeRule(
+                    source_op=source_op,
+                    guards=(
+                        Guard.enum_attr_equals("mode", mode),
+                        *_typed_guards(
+                            ("value", "lower", "upper", "result"), type_pattern
+                        ),
+                        *(
+                            Guard.descriptor_available(_descriptor(key))
+                            for key in descriptor_keys
+                        ),
+                    ),
+                )
+            )
+    return tuple(rules)
+
+
+def _minmax_family_rules() -> tuple[DescriptorRule | RecipeRule, ...]:
+    rules: list[DescriptorRule | RecipeRule] = []
     for source_op, descriptor_operation in (
         (scalar_arithmetic.scalar_minimumf, "minimum"),
         (scalar_arithmetic.scalar_maximumf, "maximum"),
@@ -3808,6 +3845,7 @@ def _minmax_family_rules() -> tuple[DescriptorRule, ...]:
                 ),
             )
         )
+    rules.extend(_clampf_fallback_recipe_rules())
     return tuple(rules)
 
 
