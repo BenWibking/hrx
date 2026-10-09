@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include <loomcxx/encoding.h>
-#include <loomcxx/target.h>
+#include <loomcxx/target/amdgpu.h>
 #include <loomcxx/vector.h>
 
 #include <stdfloat>
@@ -24,6 +24,14 @@ struct NvFp4Parameters {
   NvFp4Scale scale;
 };
 
+constexpr loom::amdgpu::target nvfp4_wave32_target{
+    .kind = "gfx11-generic",
+};
+
+constexpr loom::amdgpu::target nvfp4_wave64_target{
+    .kind = "gfx9-4-generic",
+};
+
 LOOM_FORCE_INLINE NvFp4Schema nvfp4_schema() {
   return loom::encoding::define<loom::encoding::f4e2m1{
       .payload_elements = 16,
@@ -33,11 +41,10 @@ LOOM_FORCE_INLINE NvFp4Schema nvfp4_schema() {
 }
 
 LOOM_TEMPLATE_DEF(nvfp4_matrix_tile)
-[[loom::priority(20)]] void nvfp4_matrix_tile_wave32(NvFp4Payload lhs_payload,
-                                                     NvFp4Scale lhs_scale,
-                                                     NvFp4Payload rhs_payload,
-                                                     NvFp4Scale rhs_scale,
-                                                     float* output)
+[[loom::target(nvfp4_wave32_target), loom::priority(20)]]
+void nvfp4_matrix_tile_wave32(NvFp4Payload lhs_payload, NvFp4Scale lhs_scale,
+                              NvFp4Payload rhs_payload, NvFp4Scale rhs_scale,
+                              float* output)
     [[loom::where(loom::target::subgroup::size() == 32u)]] {
   auto schema = nvfp4_schema();
   auto lhs_data = loom::vector::decode<NvFp4Half16>(lhs_payload, schema,
@@ -59,11 +66,10 @@ LOOM_TEMPLATE_DEF(nvfp4_matrix_tile)
 }
 
 LOOM_TEMPLATE_DEF(nvfp4_matrix_tile)
-[[loom::priority(20)]] void nvfp4_matrix_tile_wave64(NvFp4Payload lhs_payload,
-                                                     NvFp4Scale lhs_scale,
-                                                     NvFp4Payload rhs_payload,
-                                                     NvFp4Scale rhs_scale,
-                                                     float* output)
+[[loom::target(nvfp4_wave64_target), loom::priority(20)]]
+void nvfp4_matrix_tile_wave64(NvFp4Payload lhs_payload, NvFp4Scale lhs_scale,
+                              NvFp4Payload rhs_payload, NvFp4Scale rhs_scale,
+                              float* output)
     [[loom::where(loom::target::subgroup::size() == 64u)]] {
   auto schema = nvfp4_schema();
   auto lhs_data = loom::vector::decode<NvFp4Half16>(lhs_payload, schema,
