@@ -70,6 +70,7 @@ loom_cc_library(
     loom::target::provider
     loom::transforms::scalar::target_legalization
     loom::transforms::vector::packet_legalization
+    loom::transforms::vector::target_legalization
     loom::transforms::vector::to_scalar
   PUBLIC
 )
@@ -141,6 +142,7 @@ loom_check_test_suite(
     "test/source_low/uniform_shifts.loom-test"
     "test/source_low/vector_from_elements.loom-test"
     "test/source_low/vector_interleave.loom-test"
+    "test/source_low/vector_transpose.loom-test"
     "test/source_low/view_bitcast.loom-test"
     "test/source_low/view_carriers.loom-test"
   TEST_NAME_PREFIX_TO_STRIP
