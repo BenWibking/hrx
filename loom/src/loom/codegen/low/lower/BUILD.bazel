@@ -140,6 +140,7 @@ loom_cc_library(
         "//loom/src/loom/util:dominance",
         "//loom/src/loom/util:fact_table",
         "//loom/src/loom/util:string_pool",
+        "//loom/src/loom/util:walk",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
         "//runtime/src/iree/base/internal:arena",

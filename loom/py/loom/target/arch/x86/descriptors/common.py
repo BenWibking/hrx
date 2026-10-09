@@ -24,6 +24,10 @@ from loom.target.arch.x86.packed_dot_data import (
     PackedDotDescriptor,
     packed_dot_native_layout,
 )
+from loom.target.arch.x86.vector_encoding import (
+    VectorEncodingPrefix,
+    VectorMachineInstruction,
+)
 from loom.target.low_descriptors import (
     AsmForm,
     AsmImmediate,
@@ -31,6 +35,7 @@ from loom.target.low_descriptors import (
     ConstraintKind,
     Descriptor,
     DescriptorFlag,
+    DescriptorSet,
     EnumDomain,
     Immediate,
     ImmediateFlag,
@@ -99,12 +104,89 @@ _YMM_ALT = (RegClassAlt(_REG_YMM),)
 _ZMM_ALT = (RegClassAlt(_REG_ZMM),)
 _K_ALT = (RegClassAlt(_REG_K),)
 
+_X86_VEX_ADDRESSABLE_REGISTER_COUNT = 16
+
 
 def _low_subset_operand(operand: Operand, addressable_unit_count: int) -> Operand:
     return replace(
         operand,
         address_map_kind=OperandAddressMapKind.LOW_SUBSET,
         addressable_unit_count=addressable_unit_count,
+    )
+
+
+def _restrict_vex_registers(descriptor: Descriptor) -> Descriptor:
+    """Restricts VEX-encoded SIMD operands to the low 16 registers."""
+    return replace(
+        descriptor,
+        operands=tuple(
+            _low_subset_operand(operand, _X86_VEX_ADDRESSABLE_REGISTER_COUNT)
+            if any(
+                reg_alt.reg_class in (_REG_XMM, _REG_YMM)
+                for reg_alt in operand.reg_alts
+            )
+            else operand
+            for operand in descriptor.operands
+        ),
+    )
+
+
+def _vex_descriptor(
+    descriptor: Descriptor, instruction: VectorMachineInstruction
+) -> Descriptor:
+    return instruction.bind(
+        _restrict_vex_registers(descriptor), VectorEncodingPrefix.VEX
+    )
+
+
+def _descriptor_support_tables(
+    descriptors: tuple[Descriptor, ...], source: DescriptorSet
+) -> tuple[tuple[RegClass, ...], tuple[Resource, ...], tuple[ScheduleClass, ...]]:
+    """Selects the register, resource, and schedule closure used by rows."""
+    schedule_names = frozenset(
+        schedule_name
+        for descriptor in descriptors
+        for schedule_name in (
+            descriptor.schedule_class,
+            *descriptor.schedule_alternatives,
+        )
+    )
+    schedule_classes = tuple(
+        schedule
+        for schedule in source.schedule_classes
+        if schedule.name in schedule_names
+    )
+    resource_names = frozenset(
+        issue_use.resource
+        for schedule in schedule_classes
+        for issue_use in schedule.issue_uses
+    ) | frozenset(
+        hazard.resource
+        for schedule in schedule_classes
+        for hazard in schedule.hazards
+        if hazard.resource is not None
+    )
+    reg_class_names = frozenset(
+        alternative.reg_class
+        for descriptor in descriptors
+        for operand in descriptor.operands
+        for alternative in operand.reg_alts
+        if alternative.reg_class is not None
+    ) | frozenset(
+        delta.reg_class
+        for schedule in schedule_classes
+        for delta in schedule.pressure_deltas
+    )
+    return (
+        tuple(
+            reg_class
+            for reg_class in source.reg_classes
+            if reg_class.name in reg_class_names
+        ),
+        tuple(
+            resource for resource in source.resources if resource.name in resource_names
+        ),
+        schedule_classes,
     )
 
 

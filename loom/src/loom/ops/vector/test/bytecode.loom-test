@@ -1,5 +1,13 @@
 // RUN: format bytecode
 
+func.def @float_conversion_policy(%half: vector<4xf16>, %single: vector<4xf32>) -> (vector<4xf32>, vector<4xbf16>) {
+  %wide = vector.extf<daz> %half : vector<4xf16> to vector<4xf32>
+  %narrow = vector.fptrunc<daz|ftz> %single : vector<4xf32> to vector<4xbf16>
+  func.return %wide, %narrow : vector<4xf32>, vector<4xbf16>
+}
+
+// ====
+
 // Fragment movement uses keyed attributes, dynamic shape operands, dynamic view
 // origins, cache attrs, and a trailing store without a result. Keep bytecode
 // coverage separate from the larger text roundtrip corpus so wire-format gaps

@@ -31,7 +31,6 @@ from loom.assembly import (
     Ref,
     Refs,
     ResultType,
-    ResultTypeList,
     TemplateParam,
     TemplateParamFlags,
     TypeOf,
@@ -42,7 +41,13 @@ from loom.dialect.atomic import AtomicKind, AtomicMemoryFlags, AtomicOrdering, A
 from loom.dialect.cache import CacheScope, CacheTemporal
 from loom.dialect.combining import CombiningKind
 from loom.dialect.memory import MemoryAccessFlags
-from loom.dialect.scalar import ClampFMode, FastMathFlags, GeluVariant, IntOverflowFlags
+from loom.dialect.scalar import (
+    ClampFMode,
+    FastMathFlags,
+    FloatConversionFlags,
+    GeluVariant,
+    IntOverflowFlags,
+)
 from loom.dialect.scalar.comparison import CmpFPredicate, CmpIPredicate
 from loom.dsl import (
     ANY,
@@ -427,17 +432,34 @@ def _vector_cast(
     constraints: Sequence[Constraint] = (),
     traits: Sequence[Trait] = (),
     input_role: OperandRole = OperandRole.NONE,
+    flags: tuple[str, EnumDef] | None = None,
     facts: str = "",
     canonicalize: str = "",
     **kwargs: Any,
 ) -> Op:
     result_element_constraint = _element_constraint_for(result_constraint)
+    attrs: list[AttrDef] = []
+    fmt: list[FormatElement] = []
+    if flags:
+        attr_name, enum_def = flags
+        attrs.append(AttrDef(attr_name, ATTR_TYPE_FLAGS, optional=True, enum_def=enum_def))
+        fmt.append(Flags(attr_name))
+    fmt.extend(
+        [
+            Ref("input"),
+            COLON,
+            TypeOf("input"),
+            kw("to"),
+            TypeOf("result"),
+        ]
+    )
     return Op(
         name,
         group=vector_ops,
         doc=doc,
         operands=[Operand("input", VECTOR, role=input_role)],
         results=[Result("result", VECTOR)],
+        attrs=attrs,
         constraints=[
             source_constraint("input"),
             result_element_constraint("result"),
@@ -448,13 +470,7 @@ def _vector_cast(
         facts=facts,
         canonicalize=canonicalize,
         traits=[PURE, ELEMENTWISE, DECOMPOSABLE, *traits],
-        format=[
-            Ref("input"),
-            COLON,
-            TypeOf("input"),
-            kw("to"),
-            TypeOf("result"),
-        ],
+        format=fmt,
         **kwargs,
     )
 
@@ -994,7 +1010,10 @@ vector_deinterleave = Op(
         "axis is half of the source extent."
     ),
     operands=[Operand("source", VECTOR)],
-    results=[Result("results", VECTOR, variadic=True, doc="Even-position result followed by odd-position result.")],
+    results=[
+        Result("even", VECTOR, doc="Values at even positions along the axis."),
+        Result("odd", VECTOR, doc="Values at odd positions along the axis."),
+    ],
     attrs=[
         AttrDef(
             "axis",
@@ -1003,8 +1022,8 @@ vector_deinterleave = Op(
         ),
     ],
     constraints=[
-        SameType("results"),
-        SameElementType("source", "results"),
+        SameType("even", "odd"),
+        SameElementType("source", "even"),
         DimIndexInBounds("source", "axis"),
     ],
     verify="loom_vector_deinterleave_verify",
@@ -1016,7 +1035,9 @@ vector_deinterleave = Op(
         COLON,
         TypeOf("source"),
         ARROW,
-        ResultTypeList("results", parens=False),
+        ResultType("even"),
+        COMMA,
+        ResultType("odd"),
     ],
     examples=[
         "%lo, %hi = vector.deinterleave<0> %r : vector<32xi8> -> vector<16xi8>, vector<16xi8>",
@@ -3496,7 +3517,15 @@ vector_extf = _vector_cast(
     phase=OpPhase.EXECUTABLE,
     source_constraint=HasFloatElement,
     result_constraint=FLOAT_ELEMENT,
-    doc=("Lanewise floating-point precision extension. Source and result shapes match exactly; only the floating-point element type widens."),
+    doc=(
+        "Lanewise floating-point precision extension. Source and result shapes "
+        "match exactly; only the floating-point element type widens. Without "
+        "flags, the conversion preserves subnormal inputs and results. "
+        "`daz` permits replacing a subnormal input with its signed zero before "
+        "conversion; `ftz` permits replacing a subnormal result "
+        "with its signed zero."
+    ),
+    flags=("subnormal", FloatConversionFlags),
     constraints=[ElementWidthGreaterThan("result", "input")],
     input_role=OperandRole.FLOAT_EXTENSION_SOURCE,
     facts="loom_vector_extf_facts",
@@ -3515,7 +3544,12 @@ vector_fptrunc = _vector_cast(
         "destination format: f8E4M3 saturates finite overflow and infinities "
         "to its signed maximum finite value while preserving NaNs; IEEE "
         "formats preserve infinities and NaNs."
+        " Without flags, the conversion preserves subnormal inputs and results."
+        " `daz` permits replacing a subnormal input with its signed zero before"
+        " conversion; `ftz` permits replacing a subnormal result"
+        " with its signed zero."
     ),
+    flags=("subnormal", FloatConversionFlags),
     constraints=[ElementWidthLessThan("result", "input")],
     facts="loom_vector_fptrunc_facts",
     canonicalize="loom_vector_fptrunc_canonicalize",

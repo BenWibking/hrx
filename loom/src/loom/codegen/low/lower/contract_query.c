@@ -245,7 +245,8 @@ static iree_status_t loom_low_lower_query_target_contract_index(
     const loom_low_lower_contract_query_options_t* options,
     const loom_op_t* source_op,
     const loom_low_lower_rule_match_context_t* match_context,
-    loom_target_contract_query_result_t* out_result) {
+    loom_target_contract_query_result_t* out_result,
+    loom_low_lower_rule_selection_t* out_selection) {
   const loom_target_contract_index_t* index = options->contract_index;
   const loom_target_contract_op_entry_t op_entry =
       loom_target_contract_index_lookup_kind(index, source_op->kind);
@@ -283,7 +284,8 @@ static iree_status_t loom_low_lower_query_target_contract_index(
       }
       if (contract_case->system ==
           LOOM_TARGET_CONTRACT_SYSTEM_DESCRIPTOR_MATRIX) {
-        if (iteration_mode == LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_ALL) {
+        if (iteration_mode == LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_ALL &&
+            options->accept_rule.fn == NULL) {
           continue;
         }
         const loom_target_contract_descriptor_matrix_rule_t* matrix_rule =
@@ -313,7 +315,16 @@ static iree_status_t loom_low_lower_query_target_contract_index(
               &case_match_context, rule_set, source_op, rule_index, 1,
               &selection));
       if (selection.rule != NULL) {
-        if (iteration_mode == LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_ALL) {
+        if (options->accept_rule.fn != NULL) {
+          bool accepted = false;
+          IREE_RETURN_IF_ERROR(options->accept_rule.fn(
+              options->accept_rule.user_data, &selection, &accepted));
+          if (!accepted) {
+            continue;
+          }
+        }
+        if (iteration_mode == LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_ALL &&
+            options->accept_rule.fn == NULL) {
           IREE_ASSERT_UNREACHABLE(
               "generated contract candidate index omitted a matching rule");
           IREE_BUILTIN_UNREACHABLE();
@@ -345,6 +356,9 @@ static iree_status_t loom_low_lower_query_target_contract_index(
             .missing_fact_bits = 0,
             .rejection = NULL,
         };
+        if (out_selection != NULL) {
+          *out_selection = selection;
+        }
         return iree_ok_status();
       }
       if (loom_low_lower_rule_failure_is_better(selection.failure,
@@ -393,12 +407,17 @@ static iree_status_t loom_low_lower_query_target_contract_index(
   return iree_ok_status();
 }
 
-iree_status_t loom_low_lower_query_target_contract(
+iree_status_t loom_low_lower_query_target_contract_with_selection(
     const loom_target_contract_query_environment_t* environment,
     const loom_low_lower_contract_query_options_t* options,
-    const loom_op_t* source_op,
-    loom_target_contract_query_result_t* out_result) {
+    const loom_op_t* source_op, loom_target_contract_query_result_t* out_result,
+    loom_low_lower_rule_selection_t* out_selection) {
   *out_result = loom_target_contract_query_result_empty();
+  if (out_selection != NULL) {
+    *out_selection = (loom_low_lower_rule_selection_t){
+        .rule_index = UINT16_MAX,
+    };
+  }
 
   if (options->contract_index == NULL ||
       options->contract_index->case_count == 0) {
@@ -440,6 +459,16 @@ iree_status_t loom_low_lower_query_target_contract(
       .flags = LOOM_LOW_LOWER_RULE_MATCH_FLAG_CONTRACT_ONLY,
   };
 
-  return loom_low_lower_query_target_contract_index(
-      environment, options, source_op, &match_context, out_result);
+  return loom_low_lower_query_target_contract_index(environment, options,
+                                                    source_op, &match_context,
+                                                    out_result, out_selection);
+}
+
+iree_status_t loom_low_lower_query_target_contract(
+    const loom_target_contract_query_environment_t* environment,
+    const loom_low_lower_contract_query_options_t* options,
+    const loom_op_t* source_op,
+    loom_target_contract_query_result_t* out_result) {
+  return loom_low_lower_query_target_contract_with_selection(
+      environment, options, source_op, out_result, /*out_selection=*/NULL);
 }

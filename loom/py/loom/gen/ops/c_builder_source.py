@@ -1283,6 +1283,8 @@ def generate_builders_c(
             lines.append(f"LOOM_DEFINE_UNARY_OP_WITH_FLAGS_BUILDER({prefix}_build, {enum_name})")
         elif pattern == "CAST":
             lines.append(f"LOOM_DEFINE_CAST_OP_BUILDER({prefix}_build, {enum_name})")
+        elif pattern == "CAST_WITH_FLAGS":
+            lines.append(f"LOOM_DEFINE_CAST_OP_WITH_FLAGS_BUILDER({prefix}_build, {enum_name})")
         elif pattern == "COMPARISON":
             lines.append(f"LOOM_DEFINE_COMPARISON_OP_BUILDER({prefix}_build, {enum_name})")
         elif pattern == "COMPARISON_WITH_FLAGS":

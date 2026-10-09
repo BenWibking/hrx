@@ -115,6 +115,24 @@ COMPILE-REPORT: source_low[26] function=vector_f32_gelu_tanh source_op=vector.do
 
 // ====
 
+// RUN: with-checks compile-report target=amd.xdna.aie2p:core legalize-math,dce,canonicalize,source-to-low,low-dce
+
+// A BF16-authored approximate recipe admits the native AIE subnormal policy at
+// its input, product, and result representation boundaries.
+func.def @vector_bf16_logistic(%input: vector<16xbf16>) -> (vector<16xbf16>) {
+  %result = vector.logisticf<afn> %input : vector<16xbf16>
+  func.return %result : vector<16xbf16>
+}
+
+// ----
+CHECK: COMPILE-REPORT: math_legalization[*] function=vector_bf16_logistic * element=bf16 recipe=logistic-tanh-f32 *
+CHECK: COMPILE-REPORT: source_low[0] function=vector_bf16_logistic source_op=vector.extf selection=rule plan_key=native_bfloat16x16_to_binary32x16 *
+CHECK: COMPILE-REPORT: source_low[3] function=vector_bf16_logistic source_op=vector.fptrunc selection=rule plan_key=native_binary32x16_to_bfloat16x16 *
+CHECK: COMPILE-REPORT: source_low[11] function=vector_bf16_logistic source_op=vector.fptrunc selection=rule plan_key=native_binary32x16_to_bfloat16x16 *
+CHECK: COMPILE-REPORT: source_low[13] function=vector_bf16_logistic source_op=vector.fptrunc selection=rule plan_key=native_binary32x16_to_bfloat16x16 *
+
+// ====
+
 // RUN: emit source-low target=amd.xdna.aie2p:core output=none
 
 func.def @scalar_f32_logistic_requires_approximation(%input: f32) -> (f32) {

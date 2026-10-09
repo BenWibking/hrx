@@ -13,6 +13,7 @@ class VectorCastMixin:
     def extf(
         self,
         *,
+        subnormal: str = ...,
         input: ValueRef,
         results: list[Type | TiedResultSpec],
         name: str | None = ...,
@@ -23,6 +24,7 @@ class VectorCastMixin:
     def fptrunc(
         self,
         *,
+        subnormal: str = ...,
         input: ValueRef,
         results: list[Type | TiedResultSpec],
         name: str | None = ...,

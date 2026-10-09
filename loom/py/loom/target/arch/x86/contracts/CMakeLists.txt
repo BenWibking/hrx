@@ -18,6 +18,7 @@ iree_py_library(
     "avx512.py"
     "avx512_fp16.py"
     "avx512_predicate.py"
+    "avx_ne_convert.py"
     "constants.py"
     "float_narrowing.py"
     "floating_extrema.py"
@@ -47,6 +48,28 @@ iree_py_library(
     loom::py::loom::target::arch::x86::vector_families
     loom::py::loom::target::contracts::contracts
     loom::py::loom::target::emit::float_narrowing
+)
+
+iree_py_test(
+  NAME
+    avx_ne_convert_test
+  MAIN
+    "../../../../tools/pytest_style_runner.py"
+  SRCS
+    "avx_ne_convert_test.py"
+    "../../../../tools/pytest_style_runner.py"
+  ARGS
+    "loom.target.arch.x86.contracts.avx_ne_convert_test"
+  DEPS
+    loom::py::loom::target::arch::x86::contracts::contracts
+    loom::py::loom::dialect::scalar::scalar
+    loom::py::loom::dialect::vector::vector
+    loom::py::loom::dialect::view::view
+    loom::py::loom::target::contracts::contracts
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
 )
 
 iree_py_test(

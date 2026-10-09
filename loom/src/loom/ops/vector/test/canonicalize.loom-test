@@ -374,6 +374,25 @@ func.def @float_resize_roundtrip(%x: vector<4xf16>) -> (vector<4xf16>) {
 
 // ====
 
+// Subnormal permissions prevent exact resize-roundtrip cancellation.
+func.def @relaxed_float_resize_roundtrip(%x: vector<4xf16>) -> (vector<4xf16>, vector<4xf16>) {
+  %wide_input = vector.extf<daz> %x : vector<4xf16> to vector<4xf32>
+  %back_input = vector.fptrunc %wide_input : vector<4xf32> to vector<4xf16>
+  %wide_result = vector.extf %x : vector<4xf16> to vector<4xf32>
+  %back_result = vector.fptrunc<ftz> %wide_result : vector<4xf32> to vector<4xf16>
+  func.return %back_input, %back_result : vector<4xf16>, vector<4xf16>
+}
+// ----
+func.def @relaxed_float_resize_roundtrip(%x: vector<4xf16>) -> (vector<4xf16>, vector<4xf16>) {
+  %wide_input = vector.extf<daz> %x : vector<4xf16> to vector<4xf32>
+  %back_input = vector.fptrunc %wide_input : vector<4xf32> to vector<4xf16>
+  %wide_result = vector.extf %x : vector<4xf16> to vector<4xf32>
+  %back_result = vector.fptrunc<ftz> %wide_result : vector<4xf32> to vector<4xf16>
+  func.return %back_input, %back_result : vector<4xf16>, vector<4xf16>
+}
+
+// ====
+
 // Floating-point truncation chains must not collapse: double rounding can be
 // observably different from one direct truncation.
 func.def @float_truncation_chain_preserves_rounding(%x: vector<4xf64>) -> (vector<4xf16>) {

@@ -363,6 +363,38 @@ def test_fused_packet_memory_rules_preserve_graph_and_state_contracts() -> None:
             ]
 
 
+def test_fused_float_memory_rules_publish_subnormal_policy() -> None:
+    float_rules = [
+        rule
+        for rule in AIE2P_PACKET_MEMORY_RULES
+        if rule.source_nodes[0].source_op is vector.vector_extf
+        or rule.source_nodes[0].source_op is vector.vector_fptrunc
+    ]
+    assert len(float_rules) == len(_fused_address_cases(256)) * 2 * 2 * 2
+    for rule in float_rules:
+        source_node = rule.source_nodes[0]
+        source_memory = _source_memory_emit(rule).source_memory
+        assert source_memory is not None
+        lane_count = source_memory.vector_lane_count
+        if source_node.source_op is vector.vector_extf:
+            assert source_node.guards == (
+                Guard.value_type("input", Vector("bf16", lanes=lane_count)),
+                Guard.value_type("result", Vector("f32", lanes=lane_count)),
+                Guard.value_not_subnormal_or_instance_flags_has_all(
+                    "input", "subnormal", "daz"
+                ),
+            )
+        else:
+            assert source_node.source_op is vector.vector_fptrunc
+            assert source_node.guards == (
+                Guard.value_type("input", Vector("f32", lanes=lane_count)),
+                Guard.value_type("result", Vector("bf16", lanes=lane_count)),
+                Guard.value_not_subnormal_or_instance_flags_has_all(
+                    "input", "subnormal", "daz"
+                ),
+            )
+
+
 def test_bfp_load_rules_preserve_two_native_chunks() -> None:
     rules = [
         rule

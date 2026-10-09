@@ -6949,6 +6949,7 @@ def cast_op(
     doc: str,
     input_role: OperandRole = OperandRole.NONE,
     traits: list[Trait] | None = None,
+    flags: tuple[str, EnumDef] | None = None,
     **kwargs: Any,
 ) -> Op:
     """Declare a type-casting op: (input) -> result, different types.
@@ -6956,10 +6957,29 @@ def cast_op(
     Format: %r = name %x : input_type to result_type
     """
     from loom.assembly import COLON, Ref, TypeOf, kw
+    from loom.assembly import Flags as FlagsFmt
 
     op_traits = [PURE]
     if traits:
         op_traits.extend(traits)
+
+    attrs: list[AttrDef] = []
+    fmt: list[FormatElement] = []
+    if flags:
+        attr_name, enum_def = flags
+        attrs.append(
+            AttrDef(attr_name, ATTR_TYPE_FLAGS, optional=True, enum_def=enum_def)
+        )
+        fmt.append(FlagsFmt(attr_name))
+    fmt.extend(
+        [
+            Ref("input"),
+            COLON,
+            TypeOf("input"),
+            kw("to"),
+            TypeOf("result"),
+        ]
+    )
 
     return Op(
         name=name,
@@ -6967,14 +6987,9 @@ def cast_op(
         doc=doc,
         operands=[Operand("input", from_constraint, role=input_role)],
         results=[Result("result", to_constraint)],
+        attrs=attrs,
         traits=op_traits,
-        format=[
-            Ref("input"),
-            COLON,
-            TypeOf("input"),
-            kw("to"),
-            TypeOf("result"),
-        ],
+        format=fmt,
         **kwargs,
     )
 

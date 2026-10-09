@@ -448,10 +448,13 @@ def _evaluate_packet_lane(
                 value = operands["src"] & 0xFFFF
             elif descriptor_key == "narrow.2x.b-to-w.unsigned.configured":
                 assert state["saturation"] in (0, 1)
-                assert state["rounding"] == 12
+                assert state["rounding"] in (0, 12)
                 assert state["srs-mode"] == 0
-                value = _round_unsigned_to_even(
-                    operands["src"] & 0xFFFFFFFF, operands["su"]
+                value = operands["src"] & 0xFFFFFFFF
+                value = (
+                    _round_unsigned_to_even(value, operands["su"])
+                    if state["rounding"] == 12
+                    else value >> operands["su"]
                 )
                 if state["saturation"]:
                     value = min(value, 0xFFFF)
@@ -1001,6 +1004,30 @@ def _f32_f16_rounding_boundaries() -> set[int]:
     return values
 
 
+def _f32_bf16_rounding_boundaries() -> set[int]:
+    """Returns binary32 neighborhoods around bfloat16 class and carry edges."""
+
+    values = set()
+    for magnitude in (0x0000, 0x0001, 0x007F, 0x0080, 0x3F7F, 0x3F80, 0x7F7F):
+        for sign in (0, 0x8000):
+            upper = (sign | magnitude) << 16
+            for remainder in (0, 0x7FFF, 0x8000, 0x8001, 0xFFFF):
+                values.update(_encoding_neighbors(upper | remainder, 32))
+    values.update(
+        {
+            0x7F800000,
+            0xFF800000,
+            0x7F800001,
+            0x7FC00000,
+            0x7FFFFFFF,
+            0xFF800001,
+            0xFFC00000,
+            0xFFFFFFFF,
+        }
+    )
+    return values
+
+
 def _reference_integer_to_f16(value: int) -> int:
     sign = 0
     magnitude = value
@@ -1037,6 +1064,21 @@ def _rule(report_key: str, source_op: Op | None = None) -> DescriptorRule:
         if isinstance(rule, DescriptorRule)
         and rule.report_key == report_key
         and (source_op is None or rule.source_op is source_op)
+    ]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def _typed_rule(
+    report_key: str, input_type: Vector, result_type: Vector
+) -> DescriptorRule:
+    matches = [
+        rule
+        for rule in AIE2P_CONVERSION_RULES
+        if isinstance(rule, DescriptorRule)
+        and rule.report_key == report_key
+        and Guard.value_type("input", input_type) in rule.guards
+        and Guard.value_type("result", result_type) in rule.guards
     ]
     assert len(matches) == 1
     return matches[0]
@@ -1262,7 +1304,36 @@ def test_native_integer_conversion_preserves_scale_and_status_state() -> None:
     ]
 
 
-def test_native_bfloat16_packet_conversions_preserve_exact_width_and_rounding() -> None:
+def test_native_bfloat16_packet_conversions_publish_subnormal_policy() -> None:
+    for lane_range, minimum_lanes, maximum_lanes in (
+        ("1-15", 1, 15),
+        ("16", 16, 16),
+        ("17-31", 17, 31),
+        ("32", 32, 32),
+    ):
+        f32_type = Vector(
+            "f32", minimum_lanes=minimum_lanes, maximum_lanes=maximum_lanes
+        )
+        bf16_type = Vector(
+            "bf16", minimum_lanes=minimum_lanes, maximum_lanes=maximum_lanes
+        )
+        narrow = _rule(f"native_binary32x{lane_range}_to_bfloat16x{lane_range}")
+        assert narrow.guards == (
+            Guard.value_type("input", f32_type),
+            Guard.value_type("result", bf16_type),
+            Guard.value_not_subnormal_or_instance_flags_has_all(
+                "input", "subnormal", "daz"
+            ),
+        )
+        widen = _rule(f"native_bfloat16x{lane_range}_to_binary32x{lane_range}")
+        assert widen.guards == (
+            Guard.value_type("input", bf16_type),
+            Guard.value_type("result", f32_type),
+            Guard.value_not_subnormal_or_instance_flags_has_all(
+                "input", "subnormal", "daz"
+            ),
+        )
+
     narrow = _rule("native_binary32x32_to_bfloat16x32")
     assert [emit.descriptor.key for emit in narrow.emit] == [
         "amd.xdna.aie2p.state.rounding.immediate",
@@ -1624,74 +1695,92 @@ def test_float8_packet_widening_matches_exhaustive_oracles() -> None:
         _assert_float8_packet_widening_matches_oracles(fp8_format, range(1 << 8))
 
 
-def test_binary16_packet_conversion_covers_every_native_logical_width() -> None:
-    widen_values = (0x0000, 0x0001, 0x03FF, 0x0400, 0x7C00, 0x7E01)
-    narrow_values = (
-        0x00000000,
-        0x33000001,
-        0x387FE000,
-        0x3F7FF000,
-        0x7F800000,
-        0x7FC00001,
-    )
-    for lane_range, minimum_lanes, maximum_lanes in (
-        ("1-15", 1, 15),
-        ("16", 16, 16),
+def test_exact_float16_packet_conversion_covers_every_logical_width() -> None:
+    for _lane_range, minimum_lanes, maximum_lanes in (
+        ("1-16", 1, 16),
         ("17-31", 17, 31),
         ("32", 32, 32),
     ):
-        f16_type = Vector(
-            "f16", minimum_lanes=minimum_lanes, maximum_lanes=maximum_lanes
-        )
         f32_type = Vector(
             "f32", minimum_lanes=minimum_lanes, maximum_lanes=maximum_lanes
         )
-        widen = _rule(f"native_binary16x{lane_range}_to_binary32x{lane_range}")
-        narrow = _rule(f"native_binary32x{lane_range}_to_binary16x{lane_range}")
-        assert widen.guards == (
-            Guard.value_type("input", f16_type),
-            Guard.value_type("result", f32_type),
-        )
-        assert narrow.guards == (
-            Guard.value_type("input", f32_type),
-            Guard.value_type("result", f16_type),
-        )
-        for bits in widen_values:
-            assert _evaluate_packet_lane(widen, bits) == _reference_f16_to_f32(bits)
-        for bits in narrow_values:
-            assert _evaluate_packet_lane(narrow, bits) == _reference_f32_to_f16(bits)
+        for element, report_name in (("f16", "binary16"), ("bf16", "bfloat16")):
+            float16_type = Vector(
+                element,
+                minimum_lanes=minimum_lanes,
+                maximum_lanes=maximum_lanes,
+            )
+            widen = _typed_rule(
+                f"exact_{report_name}_to_binary32_packet",
+                float16_type,
+                f32_type,
+            )
+            narrow = _typed_rule(
+                f"exact_binary32_to_{report_name}_packet",
+                f32_type,
+                float16_type,
+            )
+            assert widen.guards == (
+                Guard.value_type("input", float16_type),
+                Guard.value_type("result", f32_type),
+            )
+            assert narrow.guards == (
+                Guard.value_type("input", f32_type),
+                Guard.value_type("result", float16_type),
+            )
 
 
-def _assert_binary16_packet_widening_matches_oracle(values: Iterable[int]) -> None:
-    rule = _rule("native_binary16x16_to_binary32x16")
+def _assert_float16_packet_widening_matches_oracle(
+    float16_format: FloatPacketFormat, values: Iterable[int]
+) -> None:
+    rule = _typed_rule(
+        f"exact_{float16_format.report_name}_to_binary32_packet",
+        Vector(float16_format.element, minimum_lanes=1, maximum_lanes=16),
+        Vector("f32", minimum_lanes=1, maximum_lanes=16),
+    )
     for bits in values:
-        assert _evaluate_packet_lane(rule, bits) == _reference_f16_to_f32(bits), hex(
-            bits
+        expected = (
+            _reference_f16_to_f32(bits)
+            if float16_format.element == "f16"
+            else bits << 16
         )
+        assert _evaluate_packet_lane(rule, bits) == expected, hex(bits)
 
 
-def test_binary16_packet_widening_matches_boundary_oracle() -> None:
-    f16_format = next(
-        float_format
-        for float_format in FLOAT_PACKET_FORMATS
-        if float_format.element == "f16"
-    )
-    _assert_binary16_packet_widening_matches_oracle(
-        _float_encoding_boundaries(f16_format)
-    )
+def test_float16_packet_widening_matches_boundary_oracles() -> None:
+    for float16_format in (
+        packet_format
+        for packet_format in FLOAT_PACKET_FORMATS
+        if packet_format.bit_width == 16
+    ):
+        _assert_float16_packet_widening_matches_oracle(
+            float16_format, _float_encoding_boundaries(float16_format)
+        )
 
 
 @pytest.mark.exhaustive
-def test_binary16_packet_widening_matches_exhaustive_oracle() -> None:
-    _assert_binary16_packet_widening_matches_oracle(range(1 << 16))
+def test_float16_packet_widening_matches_exhaustive_oracles() -> None:
+    for float16_format in (
+        packet_format
+        for packet_format in FLOAT_PACKET_FORMATS
+        if packet_format.bit_width == 16
+    ):
+        _assert_float16_packet_widening_matches_oracle(float16_format, range(1 << 16))
 
 
-def test_binary16_packet_narrowing_matches_rounding_boundaries() -> None:
-    rule = _rule("native_binary32x16_to_binary16x16")
-    for bits in _f32_f16_rounding_boundaries():
-        assert _evaluate_packet_lane(rule, bits) == _reference_f32_to_f16(bits), hex(
-            bits
+def test_float16_packet_narrowing_matches_rounding_boundaries() -> None:
+    for report_name, boundaries, reference in (
+        ("binary16", _f32_f16_rounding_boundaries(), _reference_f32_to_f16),
+        ("bfloat16", _f32_bf16_rounding_boundaries(), _reference_f32_to_bf16),
+    ):
+        result_element = "f16" if report_name == "binary16" else "bf16"
+        rule = _typed_rule(
+            f"exact_binary32_to_{report_name}_packet",
+            Vector("f32", minimum_lanes=1, maximum_lanes=16),
+            Vector(result_element, minimum_lanes=1, maximum_lanes=16),
         )
+        for bits in boundaries:
+            assert _evaluate_packet_lane(rule, bits) == reference(bits), hex(bits)
 
 
 def test_float8_packet_narrowing_covers_every_native_logical_width() -> None:

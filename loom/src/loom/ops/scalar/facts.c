@@ -870,20 +870,17 @@ iree_status_t loom_scalar_extf_facts(loom_fact_context_t* context,
                                      const loom_op_t* op,
                                      const loom_value_facts_t* operand_facts,
                                      loom_value_facts_t* result_facts) {
-  loom_scalar_type_t source_scalar_type = loom_type_element_type(
-      loom_module_value_type(module, loom_scalar_extf_input(op)));
-  double value = 0.0;
-  if (loom_value_facts_is_nan(operand_facts[0])) {
-    result_facts[0] = loom_value_facts_known_nan();
-    loom_value_facts_propagate_unary_distribution(operand_facts[0],
-                                                  &result_facts[0]);
-  } else if (loom_value_facts_as_exact_float(source_scalar_type,
-                                             operand_facts[0], &value)) {
-    result_facts[0] = loom_value_facts_exact_float(
-        loom_scalar_result_element_type(module, op), value);
-  } else {
-    result_facts[0] = operand_facts[0];
-  }
+  const loom_float_conversion_policy_t policy = {
+      .may_flush_input_subnormal = iree_any_bit_set(
+          op->instance_flags, LOOM_SCALAR_FLOATCONVERSIONFLAGS_DAZ),
+      .may_flush_result_subnormal = iree_any_bit_set(
+          op->instance_flags, LOOM_SCALAR_FLOATCONVERSIONFLAGS_FTZ),
+  };
+  loom_value_facts_eval_float_conversion(
+      loom_type_element_type(
+          loom_module_value_type(module, loom_scalar_extf_input(op))),
+      loom_scalar_result_element_type(module, op), policy, &operand_facts[0],
+      &result_facts[0]);
   return iree_ok_status();
 }
 
@@ -892,22 +889,17 @@ iree_status_t loom_scalar_fptrunc_facts(loom_fact_context_t* context,
                                         const loom_op_t* op,
                                         const loom_value_facts_t* operand_facts,
                                         loom_value_facts_t* result_facts) {
-  loom_scalar_type_t source_scalar_type = loom_type_element_type(
-      loom_module_value_type(module, loom_scalar_fptrunc_input(op)));
-  if (loom_value_facts_is_nan(operand_facts[0])) {
-    result_facts[0] = loom_value_facts_known_nan();
-    loom_value_facts_propagate_unary_distribution(operand_facts[0],
-                                                  &result_facts[0]);
-    return iree_ok_status();
-  }
-  double value = 0.0;
-  if (!loom_value_facts_as_exact_float(source_scalar_type, operand_facts[0],
-                                       &value)) {
-    result_facts[0] = loom_value_facts_unknown();
-    return iree_ok_status();
-  }
-  result_facts[0] = loom_value_facts_exact_float(
-      loom_scalar_result_element_type(module, op), value);
+  const loom_float_conversion_policy_t policy = {
+      .may_flush_input_subnormal = iree_any_bit_set(
+          op->instance_flags, LOOM_SCALAR_FLOATCONVERSIONFLAGS_DAZ),
+      .may_flush_result_subnormal = iree_any_bit_set(
+          op->instance_flags, LOOM_SCALAR_FLOATCONVERSIONFLAGS_FTZ),
+  };
+  loom_value_facts_eval_float_conversion(
+      loom_type_element_type(
+          loom_module_value_type(module, loom_scalar_fptrunc_input(op))),
+      loom_scalar_result_element_type(module, op), policy, &operand_facts[0],
+      &result_facts[0]);
   return iree_ok_status();
 }
 

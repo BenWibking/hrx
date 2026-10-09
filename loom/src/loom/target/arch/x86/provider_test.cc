@@ -211,7 +211,8 @@ TEST_F(X86ProviderTest, ProjectsCompleteCpuFactsAndExecutableFeatures) {
       /*.fields=*/
       {kAvx2CpuFeatures | IREE_CPU_DATA0_X86_64_AVXVNNI |
            IREE_CPU_DATA0_X86_64_AVXVNNIINT8 |
-           IREE_CPU_DATA0_X86_64_AVXVNNIINT16,
+           IREE_CPU_DATA0_X86_64_AVXVNNIINT16 |
+           IREE_CPU_DATA0_X86_64_AVXNECONVERT,
        2, 3, 4, 5, 6, 7, 8},
   };
   loom_target_profile_selection_t selection = Select(&cpu_data);
@@ -224,7 +225,8 @@ TEST_F(X86ProviderTest, ProjectsCompleteCpuFactsAndExecutableFeatures) {
   }
   EXPECT_EQ(facts->base.storage.config.contract_feature_bits,
             LOOM_X86_FEATURE_AVX_VNNI | LOOM_X86_FEATURE_AVX_VNNI_INT8 |
-                LOOM_X86_FEATURE_AVX_VNNI_INT16);
+                LOOM_X86_FEATURE_AVX_VNNI_INT16 |
+                LOOM_X86_FEATURE_AVX_NE_CONVERT);
   loom_target_profile_selection_release(&selection, iree_allocator_system());
 }
 
@@ -236,6 +238,7 @@ TEST_F(X86ProviderTest, ProjectsOptionalInstructionFeaturesIndependently) {
       {IREE_CPU_DATA0_X86_64_AVXVNNI, LOOM_X86_FEATURE_AVX_VNNI},
       {IREE_CPU_DATA0_X86_64_AVXVNNIINT8, LOOM_X86_FEATURE_AVX_VNNI_INT8},
       {IREE_CPU_DATA0_X86_64_AVXVNNIINT16, LOOM_X86_FEATURE_AVX_VNNI_INT16},
+      {IREE_CPU_DATA0_X86_64_AVXNECONVERT, LOOM_X86_FEATURE_AVX_NE_CONVERT},
       {IREE_CPU_DATA0_X86_64_AVX512VNNI, LOOM_X86_FEATURE_AVX512_VNNI},
       {IREE_CPU_DATA0_X86_64_AVX512BF16, LOOM_X86_FEATURE_AVX512_BF16},
       {IREE_CPU_DATA0_X86_64_AVX512FP16, LOOM_X86_FEATURE_AVX512_FP16},

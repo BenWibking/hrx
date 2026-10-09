@@ -1192,6 +1192,22 @@ static iree_status_t loom_low_lower_rule_guard_matches(
                          match_context->fact_table, value_id));
       return iree_ok_status();
     }
+    case LOOM_LOW_LOWER_GUARD_VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL: {
+      if (iree_all_bits_set(
+              source_op->instance_flags,
+              loom_low_lower_rule_set_guard_payload(rule_set, guard)->u64)) {
+        *out_matches = true;
+        return iree_ok_status();
+      }
+      const loom_value_id_t value_id = loom_low_lower_rule_source_value(
+          match_context->module, rule_set, source_op,
+          guard->selector.value.value_ref_index);
+      *out_matches =
+          match_context->fact_table &&
+          loom_value_facts_is_not_subnormal(loom_value_fact_table_lookup(
+              match_context->fact_table, value_id));
+      return iree_ok_status();
+    }
     case LOOM_LOW_LOWER_GUARD_VALUE_I64_RANGE: {
       const loom_low_lower_guard_payload_t* payload =
           loom_low_lower_rule_set_guard_payload(rule_set, guard);

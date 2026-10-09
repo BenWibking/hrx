@@ -188,6 +188,16 @@ def _instruction(
     )
 
 
+def _vex_memory_load_instructions(
+    mnemonic: str, mandatory_prefix: int, opcode: int
+) -> tuple[VectorMachineInstruction, VectorMachineInstruction]:
+    encoding = _encoding(_VEX, _MAP_2, mandatory_prefix, 0, opcode, (128, 256))
+    return (
+        _instruction(mnemonic, _LOAD, _OPERANDS_18, _IMMEDIATES_3, encoding),
+        _instruction(mnemonic, _INDEXED_LOAD, _OPERANDS_19, _IMMEDIATES_2, encoding),
+    )
+
+
 KANDQ = _instruction(
     "kandq",
     _NDS,
@@ -267,6 +277,8 @@ VADDSS = _instruction(
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_1, 2, 0, 0x58, (128,)),
 )
+VBCSTNEBF162PS_MEMORY = _vex_memory_load_instructions("vbcstnebf162ps", 2, 0xB1)
+VBCSTNESH2PS_MEMORY = _vex_memory_load_instructions("vbcstnesh2ps", 1, 0xB1)
 VBLENDMPD = _instruction(
     "vblendmpd",
     _EVEX_MASK_SELECT,
@@ -353,6 +365,17 @@ VCMPSH = _instruction(
     _OPERANDS_8,
     _IMMEDIATES_4,
     _encoding(_EVEX, _MAP_3, 2, 0, 0xC2, (128,)),
+)
+VCVTNEEBF162PS_MEMORY = _vex_memory_load_instructions("vcvtneebf162ps", 2, 0xB0)
+VCVTNEEPH2PS_MEMORY = _vex_memory_load_instructions("vcvtneeph2ps", 1, 0xB0)
+VCVTNEOBF162PS_MEMORY = _vex_memory_load_instructions("vcvtneobf162ps", 3, 0xB0)
+VCVTNEOPH2PS_MEMORY = _vex_memory_load_instructions("vcvtneoph2ps", 0, 0xB0)
+VCVTNEPS2BF16 = _instruction(
+    "vcvtneps2bf16",
+    _UNARY,
+    _OPERANDS_13,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_2, 2, 0, 0x72, (128, 256)),
 )
 VCVTPH2PSX = _instruction(
     "vcvtph2psx",
@@ -1914,6 +1937,14 @@ AVX512_FP16_CONVERSIONS = (
     VCVTPS2PHX,
     VCVTSH2SS,
     VCVTSS2SH,
+)
+AVX_NE_CONVERT_MEMORY = (
+    VBCSTNEBF162PS_MEMORY,
+    VBCSTNESH2PS_MEMORY,
+    VCVTNEEBF162PS_MEMORY,
+    VCVTNEEPH2PS_MEMORY,
+    VCVTNEOBF162PS_MEMORY,
+    VCVTNEOPH2PS_MEMORY,
 )
 AVX2_FLOAT_EXTREMA = (VMINPS, VMAXPS, VMINPD, VMAXPD)
 AVX2_SCALAR_FLOAT_EXTREMA = (VMINSS, VMAXSS, VMINSD, VMAXSD)

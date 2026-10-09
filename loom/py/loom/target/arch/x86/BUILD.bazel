@@ -66,6 +66,7 @@ iree_py_library(
         "descriptors/avx2.py",
         "descriptors/avx512.py",
         "descriptors/avx512_fp16.py",
+        "descriptors/avx_ne_convert.py",
         "descriptors/common.py",
         "descriptors/composite.py",
         "descriptors/encoding.py",
@@ -137,5 +138,20 @@ iree_py_test(
     deps = [
         ":descriptors",
         ":vector_families",
+    ],
+)
+
+iree_py_test(
+    name = "avx_ne_convert_test",
+    srcs = [
+        "avx_ne_convert_test.py",
+        "//loom/py/loom/tools:pytest_style_runner.py",
+    ],
+    args = ["loom.target.arch.x86.avx_ne_convert_test"],
+    main = "pytest_style_runner.py",
+    deps = [
+        ":descriptors",
+        ":target_info",
+        "//loom/py/loom/target:low_descriptors",
     ],
 )

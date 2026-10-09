@@ -23,7 +23,7 @@ static loom_target_math_policy_decision_t loom_aie2p_math_reject(
 }
 
 static loom_target_math_policy_decision_t loom_aie2p_math_rewrite(
-    loom_target_math_recipe_t recipe,
+    const loom_target_math_query_t* query, loom_target_math_recipe_t recipe,
     const loom_target_math_evaluation_t* evaluation,
     iree_string_view_t constraint_key) {
   loom_target_math_policy_decision_t decision = {
@@ -33,6 +33,12 @@ static loom_target_math_policy_decision_t loom_aie2p_math_rewrite(
   };
   if (evaluation != NULL) {
     decision.evaluation = *evaluation;
+    if (query->element_type == LOOM_SCALAR_TYPE_BF16) {
+      decision.evaluation.conversion.input_flags =
+          LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_DAZ;
+      decision.evaluation.conversion.result_flags =
+          LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_DAZ;
+    }
   }
   return decision;
 }
@@ -93,6 +99,10 @@ static const loom_target_math_evaluation_t
         .product_element_type = LOOM_SCALAR_TYPE_BF16,
         .accumulator_element_type = LOOM_SCALAR_TYPE_F32,
         .packet_lane_count = 16,
+        .conversion =
+            {
+                .product_flags = LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_DAZ,
+            },
 };
 
 static const loom_aie2p_math_form_t kAie2pMathForms[] = {
@@ -398,7 +408,7 @@ static void loom_aie2p_math_policy_query(
       *out_decision =
           form->recipe == LOOM_TARGET_MATH_RECIPE_UNKNOWN
               ? loom_aie2p_math_keep(form->form_constraint_key)
-              : loom_aie2p_math_rewrite(form->recipe, form->evaluation,
+              : loom_aie2p_math_rewrite(query, form->recipe, form->evaluation,
                                         form->form_constraint_key);
       return;
     }

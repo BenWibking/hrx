@@ -228,6 +228,8 @@ func.def @cmp_select(%a: vector<16xf32>, %b: vector<16xf32>, %i: vector<16xi32>,
 func.def @casts(%h: vector<8xf16>, %f: vector<8xf32>, %i8: vector<8xi8>, %i32: vector<8xi32>, %scale_bytes: vector<2xi8>) {
   %w = vector.extf %h : vector<8xf16> to vector<8xf32>
   %n = vector.fptrunc %f : vector<8xf32> to vector<8xf16>
+  %wf = vector.extf<daz> %h : vector<8xf16> to vector<8xf32>
+  %nf = vector.fptrunc<daz|ftz> %f : vector<8xf32> to vector<8xbf16>
   %si = vector.extsi %i8 : vector<8xi8> to vector<8xi32>
   %ui = vector.extui %i8 : vector<8xi8> to vector<8xi32>
   %tr = vector.trunci %i32 : vector<8xi32> to vector<8xi8>
@@ -237,7 +239,7 @@ func.def @casts(%h: vector<8xf16>, %f: vector<8xf32>, %i8: vector<8xi8>, %i32: v
   %fu = vector.fptoui %f : vector<8xf32> to vector<8xi32>
   %bits = vector.bitcast %f : vector<8xf32> to vector<8xi32>
   %scale = vector.bitcast %scale_bytes : vector<2xi8> to vector<1xf16>
-  test.use %w, %n, %si, %ui, %tr, %sf, %uf, %fs, %fu, %bits, %scale : vector<8xf32>, vector<8xf16>, vector<8xi32>, vector<8xi32>, vector<8xi8>, vector<8xf32>, vector<8xf32>, vector<8xi32>, vector<8xi32>, vector<8xi32>, vector<1xf16>
+  test.use %w, %n, %wf, %nf, %si, %ui, %tr, %sf, %uf, %fs, %fu, %bits, %scale : vector<8xf32>, vector<8xf16>, vector<8xf32>, vector<8xbf16>, vector<8xi32>, vector<8xi32>, vector<8xi8>, vector<8xf32>, vector<8xf32>, vector<8xi32>, vector<8xi32>, vector<8xi32>, vector<1xf16>
   func.return
 }
 

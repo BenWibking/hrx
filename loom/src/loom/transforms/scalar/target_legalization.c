@@ -564,13 +564,17 @@ static iree_status_t loom_scalar_legalize_extf(
   // F32 represents every narrow source value exactly. Keep these edges as
   // ordinary extensions so the target can select its native F32/F64 paths.
   loom_op_t* widened = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_scalar_extf_build(&rewriter->builder, loom_scalar_extf_input(op),
-                             input_type, f32_type, op->location, &widened));
-  loom_op_t* converted = NULL;
+  const uint8_t input_flags =
+      op->instance_flags & LOOM_SCALAR_FLOATCONVERSIONFLAGS_DAZ;
   IREE_RETURN_IF_ERROR(loom_scalar_extf_build(
-      &rewriter->builder, loom_scalar_extf_result(widened), f32_type,
-      result_type, op->location, &converted));
+      &rewriter->builder, input_flags, loom_scalar_extf_input(op), input_type,
+      f32_type, op->location, &widened));
+  loom_op_t* converted = NULL;
+  const uint8_t result_flags =
+      op->instance_flags & LOOM_SCALAR_FLOATCONVERSIONFLAGS_FTZ;
+  IREE_RETURN_IF_ERROR(loom_scalar_extf_build(
+      &rewriter->builder, result_flags, loom_scalar_extf_result(widened),
+      f32_type, result_type, op->location, &converted));
   const loom_value_id_t replacement = loom_scalar_extf_result(converted);
   IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
       rewriter, op, &replacement, 1, value_checkpoint));
@@ -998,9 +1002,9 @@ static iree_status_t loom_scalar_legalize_exact_narrow_float(
   loom_value_id_t operands[3];
   for (iree_host_size_t i = 0; i < operand_count; ++i) {
     loom_op_t* extension = NULL;
-    IREE_RETURN_IF_ERROR(
-        loom_scalar_extf_build(builder, loom_op_operands(op)[i], type,
-                               working_type, op->location, &extension));
+    IREE_RETURN_IF_ERROR(loom_scalar_extf_build(
+        builder, /*instance_flags=*/0, loom_op_operands(op)[i], type,
+        working_type, op->location, &extension));
     operands[i] = loom_scalar_extf_result(extension);
   }
 
@@ -1029,7 +1033,8 @@ static iree_status_t loom_scalar_legalize_exact_narrow_float(
   if (!loom_scalar_cmpf_isa(op)) {
     loom_op_t* truncation = NULL;
     IREE_RETURN_IF_ERROR(loom_scalar_fptrunc_build(
-        builder, replacement, working_type, type, op->location, &truncation));
+        builder, /*instance_flags=*/0, replacement, working_type, type,
+        op->location, &truncation));
     replacement = loom_scalar_fptrunc_result(truncation);
   }
   IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(

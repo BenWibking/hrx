@@ -1012,6 +1012,22 @@ def _compiled_source_graph_table() -> CompiledLowerRuleSet:
     )
 
 
+def test_generate_lower_rule_set_includes_related_source_node_dialects() -> None:
+    table = _compiled_source_graph_table()
+    table = replace(
+        table,
+        source_nodes=(replace(table.source_nodes[0], source_op=vector.vector_splat),),
+    )
+
+    generated = generate_lower_rule_set_from_compiled(
+        _c_shape_contract(),
+        compiled=table,
+    )
+
+    assert '#include "loom/ops/scalar/ops.h"' in generated.source
+    assert '#include "loom/ops/vector/ops.h"' in generated.source
+
+
 def test_validate_c_table_shape_rejects_nonpreceding_source_node_parent() -> None:
     table = _compiled_source_graph_table()
     table = replace(

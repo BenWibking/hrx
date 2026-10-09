@@ -84,6 +84,7 @@ from loom.target.contracts.lower_rule_diagnostics import (
     _materializer_diagnostic,
     _named_constraint_diagnostic,
     _not_nan_diagnostic,
+    _not_subnormal_or_flag_diagnostic,
     _operand_segment_count_diagnostic,
     _register_class_diagnostic,
     _register_unit_count_diagnostic,
@@ -969,6 +970,7 @@ class _LowerRuleSetCompiler:
             GuardKind.VALUE_EXACT_FLOAT,
             GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT,
             GuardKind.VALUE_NOT_NAN,
+            GuardKind.VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL,
             GuardKind.VALUE_I64_RANGE,
             GuardKind.VALUE_I64_RANGE_LE,
             GuardKind.VALUE_I64_RANGE_GE,
@@ -1282,7 +1284,10 @@ class _LowerRuleSetCompiler:
                 )
             )
             return
-        if guard.kind in (GuardKind.VALUE_EXACT_FLOAT, GuardKind.VALUE_NOT_NAN):
+        if guard.kind in (
+            GuardKind.VALUE_EXACT_FLOAT,
+            GuardKind.VALUE_NOT_NAN,
+        ):
             self._guards.append(
                 LowerGuard(
                     kind=guard.kind,
@@ -1296,6 +1301,42 @@ class _LowerRuleSetCompiler:
                             else _not_nan_diagnostic(guard.field),
                         ),
                     ),
+                )
+            )
+            return
+        if guard.kind == GuardKind.VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL:
+            attr_field = guard.attr_field
+            enum_keyword = guard.enum_keyword
+            if attr_field is None or enum_keyword is None:
+                raise ValueError(
+                    f"{source_op.name}: subnormal-permission guard needs a "
+                    "flags attribute and enum keyword"
+                )
+            attr = source_op.attr(attr_field)
+            if attr is None or attr.enum_def is None:
+                raise ValueError(
+                    f"{source_op.name}: subnormal-permission guard needs a "
+                    "flags enum definition"
+                )
+            enum_value = next(
+                enum_case.value
+                for enum_case in attr.enum_def.cases
+                if enum_case.keyword == enum_keyword
+            )
+            self._guards.append(
+                LowerGuard(
+                    kind=guard.kind,
+                    value_ref_index=value_ref_index,
+                    diagnostic_index=self._append_diagnostic_ref(
+                        source_op,
+                        _guard_diagnostic(
+                            guard,
+                            _not_subnormal_or_flag_diagnostic(
+                                guard.field, attr_field, enum_keyword
+                            ),
+                        ),
+                    ),
+                    u64=enum_value,
                 )
             )
             return

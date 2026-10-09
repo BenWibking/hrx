@@ -24,6 +24,7 @@ __all__ = [
     "SCALAR_OP_CATEGORIES",
     "ClampFMode",
     "FastMathFlags",
+    "FloatConversionFlags",
     "GeluVariant",
     "IntOverflowFlags",
 ]
@@ -82,6 +83,23 @@ FastMathFlags = EnumDef(
         EnumCase("fast", 127, doc="All of the above."),
     ],
     doc="IEEE 754 fast-math relaxation flags for float operations.",
+)
+
+FloatConversionFlags = EnumDef(
+    "FloatConversionFlags",
+    [
+        EnumCase(
+            "daz",
+            1,
+            doc=("Denormals are zero: permit a subnormal input to be replaced by the corresponding signed zero before conversion."),
+        ),
+        EnumCase(
+            "ftz",
+            2,
+            doc=("Flush to zero: permit a subnormal rounded result to be replaced by the corresponding signed zero."),
+        ),
+    ],
+    doc="Independent DAZ and FTZ permissions for floating-point conversions.",
 )
 
 IntOverflowFlags = EnumDef(

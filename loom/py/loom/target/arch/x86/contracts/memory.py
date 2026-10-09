@@ -30,6 +30,7 @@ from loom.target.contracts import (
     SourceMemoryOperation,
     SourceMemoryProject,
     SourceMemoryRootKind,
+    SourceNode,
     TypePattern,
     ValueRef,
     Vector,
@@ -218,7 +219,10 @@ def _memory_rule(
     descriptor_lookup: _DescriptorLookup,
     diagnostic: GuardDiagnostic,
     transport: _MemoryValueTransport | None = None,
+    source_nodes: Sequence[SourceNode] = (),
+    load_result: ValueRef | None = None,
     priority: int = 0,
+    report_key: str = "",
 ) -> DescriptorRule:
     descriptor = descriptor_lookup(descriptor_key)
     operands = {"base": ValueRef.source_memory_root()}
@@ -229,8 +233,12 @@ def _memory_rule(
     if operation is SourceMemoryOperation.LOAD:
         type_field = "result"
         if transport is None:
-            results["dst"] = ValueRef.result("result")
+            results["dst"] = (
+                ValueRef.result("result") if load_result is None else load_result
+            )
         else:
+            if load_result is not None:
+                raise ValueError("transported x86 loads cannot override their result")
             transport_descriptor = transport.load
             memory_value = ValueRef.temporary("memory_value")
             results["dst"] = memory_value
@@ -312,6 +320,7 @@ def _memory_rule(
     return DescriptorRule(
         source_op=source_op,
         descriptor=descriptor,
+        source_nodes=source_nodes,
         guards=(
             *(
                 ()
@@ -331,6 +340,7 @@ def _memory_rule(
         ),
         emit=tuple(emits),
         priority=priority,
+        report_key=report_key,
     )
 
 
@@ -356,7 +366,10 @@ def _full_width_memory_rules(
     descriptor_lookup: _DescriptorLookup,
     diagnostic: GuardDiagnostic,
     transport: _MemoryValueTransport | None = None,
+    source_nodes: Sequence[SourceNode] = (),
+    load_result: ValueRef | None = None,
     priority: int = 0,
+    report_key: str = "",
 ) -> tuple[DescriptorRule, ...]:
     """Materializes displacements that cannot fit an instruction's disp32."""
 
@@ -367,8 +380,12 @@ def _full_width_memory_rules(
     if operation is SourceMemoryOperation.LOAD:
         type_field = "result"
         if transport is None:
-            results = {"dst": ValueRef.result("result")}
+            results = {
+                "dst": ValueRef.result("result") if load_result is None else load_result
+            }
         else:
+            if load_result is not None:
+                raise ValueError("transported x86 loads cannot override their result")
             transport_descriptor = transport.load
             memory_value = ValueRef.temporary("memory_value")
             results = {"dst": memory_value}
@@ -469,6 +486,7 @@ def _full_width_memory_rules(
             DescriptorRule(
                 source_op=source_op,
                 descriptor=descriptor,
+                source_nodes=source_nodes,
                 guards=(
                     Guard.value_type(type_field, value_type),
                     *(
@@ -479,6 +497,7 @@ def _full_width_memory_rules(
                 ),
                 emit=tuple(emits),
                 priority=priority,
+                report_key=report_key,
             )
         )
     return tuple(rules)
@@ -831,6 +850,69 @@ def x86_low_xmm_vector_memory_rules(
         diagnostic=diagnostic,
         priority=priority,
     )
+
+
+def x86_fused_load_rules(
+    descriptor_lookup: _DescriptorLookup,
+    *,
+    source_op: Op,
+    source_type: TypePattern,
+    source_nodes: Sequence[SourceNode],
+    result: ValueRef,
+    element_byte_count: int,
+    lane_count: int,
+    descriptor_key_prefix: str,
+    register_suffix: str,
+    diagnostic: GuardDiagnostic,
+    report_key: str,
+) -> tuple[DescriptorRule, ...]:
+    """Builds every x86 addressing form for a fused source load."""
+
+    rules = [
+        _memory_rule(
+            source_op,
+            SourceMemoryOperation.LOAD,
+            source_type,
+            element_byte_count=element_byte_count,
+            lane_count=lane_count,
+            addressing=addressing,
+            descriptor_key=_memory_descriptor_key(
+                descriptor_key_prefix,
+                SourceMemoryOperation.LOAD,
+                addressing=addressing,
+                register_suffix=register_suffix,
+            ),
+            descriptor_lookup=descriptor_lookup,
+            diagnostic=diagnostic,
+            source_nodes=source_nodes,
+            load_result=result,
+            priority=1,
+            report_key=report_key,
+        )
+        for addressing in _MemoryAddressing
+    ]
+    rules.extend(
+        _full_width_memory_rules(
+            source_op,
+            SourceMemoryOperation.LOAD,
+            source_type,
+            element_byte_count=element_byte_count,
+            lane_count=lane_count,
+            descriptor_key=_memory_descriptor_key(
+                descriptor_key_prefix,
+                SourceMemoryOperation.LOAD,
+                addressing=_MemoryAddressing.MATERIALIZE_BYTE_OFFSET,
+                register_suffix=register_suffix,
+            ),
+            descriptor_lookup=descriptor_lookup,
+            diagnostic=diagnostic,
+            source_nodes=source_nodes,
+            load_result=result,
+            priority=1,
+            report_key=report_key,
+        )
+    )
+    return tuple(rules)
 
 
 def x86_vector_memory_rules(

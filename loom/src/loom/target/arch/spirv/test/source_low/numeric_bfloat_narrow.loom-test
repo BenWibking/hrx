@@ -1,7 +1,7 @@
 // RUN: emit source-low target=spirv:vulkan1.3+bda+extended-types output=low control-flow=structured-low
 
 func.def @narrow_bfloat(%input: f32) -> (bf16) {
-  %narrow = scalar.fptrunc %input : f32 to bf16
+  %narrow = scalar.fptrunc<daz> %input : f32 to bf16
   func.return %narrow : bf16
 }
 
@@ -33,7 +33,7 @@ low.func.def target<spirv.logical.core> abi(shader_entry_point) @narrow_bfloat(%
 func.def @store_narrow_bfloat(%input: f32, %output: buffer) {
   %base = index.constant 0 : offset
   %target = buffer.view %output[%base] : buffer -> view<1xbf16>
-  %narrow = scalar.fptrunc %input : f32 to bf16
+  %narrow = scalar.fptrunc<daz> %input : f32 to bf16
   view.store %narrow, %target[0] : bf16, view<1xbf16>
   func.return
 }

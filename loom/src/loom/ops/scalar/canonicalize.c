@@ -560,15 +560,15 @@ static iree_status_t loom_scalar_replace_single_result_with_cast_op(
   loom_op_t* replacement_op = NULL;
   switch (kind) {
     case LOOM_OP_SCALAR_EXTF: {
-      IREE_RETURN_IF_ERROR(
-          loom_scalar_extf_build(&rewriter->builder, input, input_type,
-                                 result_type, op->location, &replacement_op));
+      IREE_RETURN_IF_ERROR(loom_scalar_extf_build(
+          &rewriter->builder, /*instance_flags=*/0, input, input_type,
+          result_type, op->location, &replacement_op));
       break;
     }
     case LOOM_OP_SCALAR_FPTRUNC: {
       IREE_RETURN_IF_ERROR(loom_scalar_fptrunc_build(
-          &rewriter->builder, input, input_type, result_type, op->location,
-          &replacement_op));
+          &rewriter->builder, /*instance_flags=*/0, input, input_type,
+          result_type, op->location, &replacement_op));
       break;
     }
     case LOOM_OP_SCALAR_EXTSI: {
@@ -1675,7 +1675,8 @@ iree_status_t loom_scalar_fptrunc_canonicalize(loom_op_t* op,
                                                loom_rewriter_t* rewriter) {
   loom_value_id_t input = loom_scalar_fptrunc_input(op);
   loom_op_t* input_def = loom_scalar_defining_op(rewriter, input);
-  if (input_def && loom_scalar_extf_isa(input_def)) {
+  if (op->instance_flags == 0 && input_def && loom_scalar_extf_isa(input_def) &&
+      input_def->instance_flags == 0) {
     loom_value_id_t inner_input = loom_scalar_extf_input(input_def);
     if (loom_type_equal(loom_module_value_type(rewriter->module, inner_input),
                         loom_scalar_single_result_type(rewriter, op))) {

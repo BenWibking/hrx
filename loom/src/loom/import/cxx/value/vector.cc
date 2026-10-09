@@ -72,20 +72,23 @@ loom_value_id_t Vectors::convert_elements(loom_value_id_t value,
     // exactly. Only the final conversion rounds to the destination format.
     auto widened = loom_type_shaped_1d(LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_F32,
                                        input_vector->elementCount(), 0);
-    check(loom_vector_extf_build(&builder_, value, input, widened, location,
+    check(loom_vector_extf_build(&builder_, 0, value, input, widened, location,
                                  &op));
-    check(loom_vector_fptrunc_build(&builder_, loom_op_results(op)[0], widened,
-                                    output, location, &op));
+    check(loom_vector_fptrunc_build(&builder_, 0, loom_op_results(op)[0],
+                                    widened, output, location, &op));
     return loom_op_results(op)[0];
   }
   bool narrows = input_size > output_size;
   bool unsigned_input = types_.is_unsigned(input_element);
+  if (floating_input && floating_output) {
+    check((narrows ? loom_vector_fptrunc_build : loom_vector_extf_build)(
+        &builder_, 0, value, input, output, location, &op));
+    return loom_op_results(op)[0];
+  }
   auto build =
       floating_output
-          ? (floating_input ? (narrows ? loom_vector_fptrunc_build
-                                       : loom_vector_extf_build)
-                            : (unsigned_input ? loom_vector_uitofp_build
-                                              : loom_vector_sitofp_build))
+          ? (unsigned_input ? loom_vector_uitofp_build
+                            : loom_vector_sitofp_build)
           : (floating_input
                  ? (types_.is_unsigned(output_element)
                         ? loom_vector_fptoui_build

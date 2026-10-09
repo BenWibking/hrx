@@ -1431,13 +1431,8 @@ iree_status_t loom_vector_deinterleave_verify(
     iree_diagnostic_emitter_t emitter) {
   loom_type_t source_type =
       loom_module_value_type(module, loom_vector_deinterleave_source(op));
-  loom_value_slice_t results = loom_vector_deinterleave_results(op);
-  if (results.count != 2) {
-    return loom_vector_emit_count_mismatch(emitter, op, IREE_SV("results"),
-                                           results.count,
-                                           IREE_SV("required result count"), 2);
-  }
-  loom_type_t even_type = loom_module_value_type(module, results.values[0]);
+  loom_type_t even_type =
+      loom_module_value_type(module, loom_vector_deinterleave_even(op));
   if (!loom_type_is_vector(source_type) || !loom_type_is_vector(even_type)) {
     return iree_ok_status();
   }

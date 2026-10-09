@@ -102,7 +102,7 @@ def detect_builder_pattern(op: Op) -> str | None:
         # Distinguish cast from unary by checking for "to" keyword.
         has_to = any(isinstance(e, Keyword) and e.text == "to" for e in op.format)
         if has_to:
-            return "CAST"
+            return "CAST_WITH_FLAGS" if has_flags else "CAST"
         return "UNARY_WITH_FLAGS" if has_flags else "UNARY"
 
     # Comparison: 2 fixed operands, 1 fixed result, 1 enum attr, no regions.

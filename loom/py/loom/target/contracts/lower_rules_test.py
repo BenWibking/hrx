@@ -395,14 +395,15 @@ def test_compile_variadic_result_element_refs() -> None:
         descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
         cases=(
             DescriptorRule(
-                source_op=vector.vector_deinterleave,
+                source_op=scalar_analysis.scalar_assume,
+                guards=(Guard.operand_segment_count("values", 2),),
                 emit=(
                     EmitRegisterCopy(
-                        source=ValueRef.operand("source"),
+                        source=ValueRef.operand("values", element=0),
                         result=ValueRef.result("results", element=0),
                     ),
                     EmitRegisterCopy(
-                        source=ValueRef.operand("source"),
+                        source=ValueRef.operand("values", element=1),
                         result=ValueRef.result("results", element=1),
                     ),
                 ),
@@ -412,7 +413,7 @@ def test_compile_variadic_result_element_refs() -> None:
 
     compiled = compile_lower_rule_set(
         fragment,
-        dialect_ops={"vector": ALL_VECTOR_OPS},
+        dialect_ops={"scalar": ALL_SCALAR_OPS},
     )
 
     result_refs = tuple(
@@ -3389,6 +3390,29 @@ def test_compile_lower_rule_set_compiles_instance_flags_guard() -> None:
         assert compiled.rules[0].guard_count == 4
         assert compiled.guards[0].kind == guard.kind
         assert compiled.guards[0].u64 == 16
+
+
+def test_compile_lower_rule_set_compiles_fact_or_instance_flag_guard() -> None:
+    guard = Guard.value_not_subnormal_or_instance_flags_has_all(
+        "input", "subnormal", "ftz"
+    )
+    table = ContractFragment(
+        name="test.subnormal-policy",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=[
+            RecipeRule(
+                source_op=scalar_conversion.scalar_fptrunc,
+                guards=(guard,),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+
+    assert compiled.rules[0].guard_count == 1
+    assert compiled.guards[0].kind == guard.kind
+    assert compiled.guards[0].value_ref_index == 0
+    assert compiled.guards[0].u64 == 2
 
 
 def test_compile_lower_rule_set_projects_source_instance_flags() -> None:

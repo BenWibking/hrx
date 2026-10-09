@@ -30,6 +30,10 @@ enum loom_conversion_kind_e {
   LOOM_CONVERSION_COUNT_,
 };
 
+static inline bool loom_conversion_kind_is_float(loom_conversion_kind_t kind) {
+  return kind == LOOM_CONVERSION_EXTF || kind == LOOM_CONVERSION_FPTRUNC;
+}
+
 typedef uint8_t loom_conversion_chain_flags_t;
 enum loom_conversion_chain_flag_bits_e {
   // The intermediate result must be proven non-negative before composition.

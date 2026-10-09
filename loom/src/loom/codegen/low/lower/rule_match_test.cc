@@ -202,6 +202,15 @@ class LowLowerRuleMatchTest : public ::testing::Test {
     return op;
   }
 
+  loom_op_t* BuildFloatTruncate(uint8_t instance_flags, loom_value_id_t input) {
+    loom_op_t* op = nullptr;
+    IREE_EXPECT_OK(loom_scalar_fptrunc_build(
+        &builder_, instance_flags, input,
+        loom_type_scalar(LOOM_SCALAR_TYPE_F32),
+        loom_type_scalar(LOOM_SCALAR_TYPE_BF16), LOOM_LOCATION_UNKNOWN, &op));
+    return op;
+  }
+
   loom_op_t* BuildAdd(loom_value_id_t lhs, loom_value_id_t rhs) {
     loom_op_t* op = nullptr;
     IREE_EXPECT_OK(loom_scalar_addi_build(
@@ -623,6 +632,69 @@ TEST_F(LowLowerRuleMatchTest, MatchesFloatingPowersInExponentRange) {
         &match_context, &rule_set, op, &selection));
     EXPECT_EQ(selection.rule != nullptr, test_case.matches)
         << "value=" << test_case.value;
+  }
+}
+
+TEST_F(LowLowerRuleMatchTest, MatchesSubnormalPolicyPermissionOrRetainedFact) {
+  loom_low_lower_guard_t guard = {};
+  guard.kind =
+      LOOM_LOW_LOWER_GUARD_VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL;
+  guard.diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
+  guard.payload_ordinal = 1;
+  loom_low_lower_guard_payload_t guard_payload = {};
+  guard_payload.u64 = LOOM_SCALAR_FLOATCONVERSIONFLAGS_DAZ;
+  const loom_low_lower_guard_ref_t guard_ref = 0;
+  loom_low_lower_value_ref_t value_ref = {};
+  value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_OPERAND;
+  loom_low_lower_rule_t rule = {};
+  rule.guard_count = 1;
+  const loom_low_lower_rule_span_t span = {
+      /*.source_op_kind=*/LOOM_OP_SCALAR_FPTRUNC,
+      /*.rule_start=*/0,
+      /*.rule_count=*/1,
+  };
+  loom_low_lower_rule_set_t rule_set = {};
+  rule_set.spans = &span;
+  rule_set.span_count = 1;
+  rule_set.rules = &rule;
+  rule_set.rule_count = 1;
+  rule_set.value_refs = &value_ref;
+  rule_set.value_ref_count = 1;
+  rule_set.guard_payloads = &guard_payload;
+  rule_set.guard_payload_count = 1;
+  rule_set.guards = &guard;
+  rule_set.guard_count = 1;
+  rule_set.guard_refs = &guard_ref;
+  rule_set.guard_ref_count = 1;
+
+  struct Case {
+    uint8_t instance_flags;
+    double input;
+    bool provide_facts;
+    bool matches;
+  };
+  const Case cases[] = {
+      {0, 1.0, true, true},
+      {0, 0x1p-149, true, false},
+      {LOOM_SCALAR_FLOATCONVERSIONFLAGS_DAZ, 0x1p-149, false, true},
+  };
+  for (const Case& test_case : cases) {
+    const loom_op_t* input_op = BuildFloatConstant(test_case.input);
+    const loom_op_t* source_op = BuildFloatTruncate(
+        test_case.instance_flags, loom_scalar_constant_result(input_op));
+    loom_value_fact_table_t facts = {};
+    IREE_ASSERT_OK(loom_value_fact_table_initialize(&facts, &module_->arena,
+                                                    module_->values.count));
+    IREE_ASSERT_OK(loom_value_fact_table_define(
+        &facts, loom_scalar_constant_result(input_op),
+        loom_value_facts_exact_float(LOOM_SCALAR_TYPE_F32, test_case.input)));
+    loom_low_lower_rule_match_context_t match_context = {};
+    match_context.module = module_;
+    match_context.fact_table = test_case.provide_facts ? &facts : nullptr;
+    loom_low_lower_rule_selection_t selection = {};
+    IREE_ASSERT_OK(loom_low_lower_rule_set_select_with_match_context(
+        &match_context, &rule_set, source_op, &selection));
+    EXPECT_EQ(selection.rule != nullptr, test_case.matches);
   }
 }
 

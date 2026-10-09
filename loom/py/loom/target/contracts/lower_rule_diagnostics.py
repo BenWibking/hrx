@@ -281,6 +281,18 @@ def _not_nan_diagnostic(field: str) -> DiagnosticRef:
     return _named_constraint_diagnostic("value_fact", field, "not_nan")
 
 
+def _not_subnormal_or_flag_diagnostic(
+    value_field: str,
+    flags_field: str,
+    flag_keyword: str,
+) -> DiagnosticRef:
+    return _named_constraint_diagnostic(
+        "value_fact",
+        value_field,
+        f"not_subnormal_or_{flags_field}_{flag_keyword}",
+    )
+
+
 def _integer_range_diagnostic(
     field: str,
     minimum: int,

@@ -13,6 +13,7 @@ import pytest
 from loom.dialect.buffer import defs as buffer
 from loom.dialect.scalar import analysis as scalar_analysis
 from loom.dialect.scalar import arithmetic as scalar_arithmetic
+from loom.dialect.scalar import conversion as scalar_conversion
 from loom.dialect.vector import defs as vector
 from loom.error.target import ERR_TARGET_003
 from loom.target.contracts import (
@@ -122,6 +123,38 @@ def test_descriptor_rule_validates_related_source_nodes() -> None:
         name="test-low.fused-source-nodes",
         descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
         cases=(_fused_scalar_rule(source_nodes=(_forward_source_node(),)),),
+    )
+
+
+def test_descriptor_rule_accepts_dead_related_result() -> None:
+    ContractFragment(
+        name="test-low.dead-related-result",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=(
+            DescriptorRule(
+                source_op=scalar_arithmetic.scalar_addi,
+                descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
+                source_nodes=(
+                    SourceNode.adjacent_definition(
+                        "pair",
+                        source_op=vector.vector_deinterleave,
+                        parent_operand=ValueRef.operand("lhs"),
+                        node_result=ValueRef.result("even"),
+                        guards=(Guard.value_no_uses("odd"),),
+                    ),
+                ),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
+                        operands={
+                            "lhs": ValueRef.result("even", source_node="pair"),
+                            "rhs": ValueRef.operand("rhs"),
+                        },
+                        results={"dst": ValueRef.result("result")},
+                    ),
+                ),
+            ),
+        ),
     )
 
 
@@ -793,6 +826,35 @@ def test_descriptor_rule_rejects_unknown_instance_flag() -> None:
         )
 
 
+def test_descriptor_rule_validates_fact_or_instance_flag_guard() -> None:
+    ContractFragment(
+        name="test-low.subnormal-policy",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=[
+            RecipeRule(
+                source_op=scalar_conversion.scalar_fptrunc,
+                guards=[
+                    Guard.value_not_subnormal_or_instance_flags_has_all(
+                        "input", "subnormal", "daz"
+                    )
+                ],
+            )
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"scalar.fptrunc: guard "
+        r"value_not_subnormal_or_instance_flags_has_all field 'subnormal' "
+        r"has no enum case 'spicy'",
+    ):
+        Guard.value_not_subnormal_or_instance_flags_has_all(
+            "input", "subnormal", "spicy"
+        ).validate(
+            scalar_conversion.scalar_fptrunc,
+        )
+
+
 def test_descriptor_rule_validates_source_and_descriptor_fields() -> None:
     descriptor = TEST_LOW_EXTRACT_LANE_I32_DESCRIPTOR
 
@@ -1040,10 +1102,10 @@ def test_result_ref_rejects_element_on_fixed_result() -> None:
 def test_result_ref_rejects_negative_variadic_element() -> None:
     with pytest.raises(
         ValueError,
-        match=(r"vector.deinterleave: test result result element must be non-negative"),
+        match=(r"scalar.assume: test result result element must be non-negative"),
     ):
         ValueRef.result("results", element=-1).validate(
-            vector.vector_deinterleave, "test result"
+            scalar_analysis.scalar_assume, "test result"
         )
 
 

@@ -96,15 +96,15 @@ class LowLowerRuleValueTest : public ::testing::Test {
         &body_builder, /*overflow_flags=*/0, loom_scalar_addi_result(addi_op_),
         arguments_[1], i32_type, LOOM_LOCATION_UNKNOWN, &muli_op_));
     IREE_ASSERT_OK(loom_vector_extf_build(
-        &body_builder, arguments_[2], bf16_vector_type, f32_vector_type,
-        LOOM_LOCATION_UNKNOWN, &direct_extf_op_));
+        &body_builder, /*instance_flags=*/0, arguments_[2], bf16_vector_type,
+        f32_vector_type, LOOM_LOCATION_UNKNOWN, &direct_extf_op_));
     IREE_ASSERT_OK(loom_vector_fptrunc_build(
-        &body_builder, arguments_[3], f32_vector_type, bf16_vector_type,
-        LOOM_LOCATION_UNKNOWN, &fptrunc_op_));
+        &body_builder, /*instance_flags=*/0, arguments_[3], f32_vector_type,
+        bf16_vector_type, LOOM_LOCATION_UNKNOWN, &fptrunc_op_));
     IREE_ASSERT_OK(loom_vector_extf_build(
-        &body_builder, loom_vector_fptrunc_result(fptrunc_op_),
-        bf16_vector_type, f32_vector_type, LOOM_LOCATION_UNKNOWN,
-        &roundtrip_extf_op_));
+        &body_builder, /*instance_flags=*/0,
+        loom_vector_fptrunc_result(fptrunc_op_), bf16_vector_type,
+        f32_vector_type, LOOM_LOCATION_UNKNOWN, &roundtrip_extf_op_));
     IREE_ASSERT_OK(loom_vector_negf_build(
         &body_builder, /*instance_flags=*/0,
         loom_vector_extf_result(roundtrip_extf_op_), f32_vector_type,

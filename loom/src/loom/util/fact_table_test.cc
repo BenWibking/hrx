@@ -836,6 +836,30 @@ TEST_F(FactTableTest, SmallStaticLanesExtensionRoundTrips) {
   EXPECT_TRUE(loom_value_facts_is_unknown(result.lanes[2]));
 }
 
+TEST_F(FactTableTest, SmallStaticLanesPreserveCommonFloatPredicates) {
+  loom_value_fact_table_t table = {0};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&table, &arena_, 0));
+
+  loom_value_facts_t lanes[] = {
+      loom_value_facts_exact_float(LOOM_SCALAR_TYPE_F32, 1.0),
+      loom_value_facts_exact_float(LOOM_SCALAR_TYPE_F32, INFINITY),
+  };
+  loom_value_facts_t facts = loom_value_facts_unknown();
+  IREE_ASSERT_OK(loom_value_facts_make_small_static_lanes(
+      &table.context,
+      (loom_value_fact_small_static_lanes_t){
+          /*.lanes=*/lanes,
+          /*.count=*/IREE_ARRAYSIZE(lanes),
+      },
+      &facts));
+
+  EXPECT_TRUE(loom_value_facts_is_float(facts));
+  EXPECT_TRUE(loom_value_facts_is_not_nan(facts));
+  EXPECT_TRUE(loom_value_facts_is_not_subnormal(facts));
+  EXPECT_FALSE(loom_value_facts_is_not_inf(facts));
+  EXPECT_FALSE(loom_value_facts_is_finite(facts));
+}
+
 TEST_F(FactTableTest, OversizedSmallStaticLanesDegradesToUnknown) {
   loom_value_fact_table_t table = {0};
   IREE_ASSERT_OK(loom_value_fact_table_initialize(&table, &arena_, 0));
@@ -1726,8 +1750,7 @@ TEST_F(FactTableTest, TypedMeetPreservesFloatingClassesAcrossTables) {
         EXPECT_EQ(loom_value_facts_is_not_inf(joined),
                   i != 5 && i != 6 && j != 5 && j != 6);
         EXPECT_EQ(loom_value_facts_is_exact(joined), i == j);
-        EXPECT_EQ(loom_value_facts_is_not_subnormal(joined),
-                  scalar_type == LOOM_SCALAR_TYPE_F64 && i != 4 && j != 4);
+        EXPECT_EQ(loom_value_facts_is_not_subnormal(joined), i != 4 && j != 4);
         EXPECT_TRUE(loom_value_facts_is_cluster_uniform(joined));
       }
     }

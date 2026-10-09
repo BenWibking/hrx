@@ -12,7 +12,7 @@ from loom.assembly import (
     ResultType,
     TypeOf,
 )
-from loom.dialect.scalar import scalar_ops
+from loom.dialect.scalar import FloatConversionFlags, scalar_ops
 from loom.dsl import (
     CONSTANT_LIKE,
     DISTRIBUTION_TRANSFER,
@@ -92,7 +92,14 @@ scalar_extf = cast_op(
     phase=OpPhase.EXECUTABLE,
     from_constraint=FLOAT,
     to_constraint=FLOAT,
-    doc="Float precision extension to a strictly wider format: e.g. f16 to f32.",
+    doc=(
+        "Float precision extension to a strictly wider format. Without flags, "
+        "the conversion preserves subnormal inputs and results. `daz` "
+        "permits replacing a subnormal input with its signed zero before "
+        "conversion; `ftz` permits replacing a subnormal result with "
+        "its signed zero."
+    ),
+    flags=("subnormal", FloatConversionFlags),
     constraints=[ElementWidthGreaterThan("result", "input")],
     input_role=OperandRole.FLOAT_EXTENSION_SOURCE,
     facts="loom_scalar_extf_facts",
@@ -110,7 +117,12 @@ scalar_fptrunc = cast_op(
         "Special values follow the destination format: f8E4M3 saturates "
         "finite overflow and infinities to its signed maximum finite value "
         "while preserving NaNs; IEEE formats preserve infinities and NaNs."
+        " Without flags, the conversion preserves subnormal inputs and results."
+        " `daz` permits replacing a subnormal input with its signed zero before"
+        " conversion; `ftz` permits replacing a subnormal result"
+        " with its signed zero."
     ),
+    flags=("subnormal", FloatConversionFlags),
     constraints=[ElementWidthLessThan("result", "input")],
     canonicalize="loom_scalar_fptrunc_canonicalize",
     facts="loom_scalar_fptrunc_facts",

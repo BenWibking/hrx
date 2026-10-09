@@ -70,15 +70,15 @@ static iree_status_t loom_scalar_combine_replace_with_conversion(
   loom_op_t* replacement_op = NULL;
   switch (replacement_kind) {
     case LOOM_CONVERSION_EXTF: {
-      IREE_RETURN_IF_ERROR(
-          loom_scalar_extf_build(&rewriter->builder, input, input_type,
-                                 result_type, op->location, &replacement_op));
+      IREE_RETURN_IF_ERROR(loom_scalar_extf_build(
+          &rewriter->builder, /*instance_flags=*/0, input, input_type,
+          result_type, op->location, &replacement_op));
       break;
     }
     case LOOM_CONVERSION_FPTRUNC: {
       IREE_RETURN_IF_ERROR(loom_scalar_fptrunc_build(
-          &rewriter->builder, input, input_type, result_type, op->location,
-          &replacement_op));
+          &rewriter->builder, /*instance_flags=*/0, input, input_type,
+          result_type, op->location, &replacement_op));
       break;
     }
     case LOOM_CONVERSION_EXTSI: {
@@ -125,8 +125,16 @@ static iree_status_t loom_scalar_combine_conversion_chain(
     return iree_ok_status();
   }
 
-  const loom_conversion_chain_match_t match = loom_conversion_chain_match(
-      outer_kind, loom_scalar_combine_conversion_kind(defining_op));
+  const loom_conversion_kind_t inner_kind =
+      loom_scalar_combine_conversion_kind(defining_op);
+  if ((loom_conversion_kind_is_float(outer_kind) && op->instance_flags != 0) ||
+      (loom_conversion_kind_is_float(inner_kind) &&
+       defining_op->instance_flags != 0)) {
+    return iree_ok_status();
+  }
+
+  const loom_conversion_chain_match_t match =
+      loom_conversion_chain_match(outer_kind, inner_kind);
   if (match.candidate == LOOM_CONVERSION_NONE) {
     if (outer_kind == LOOM_CONVERSION_TRUNCI) {
       return loom_scalar_narrowing_truncate(rewriter, op, defining_op,

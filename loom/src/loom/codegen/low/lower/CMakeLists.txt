@@ -125,6 +125,7 @@ loom_cc_library(
     loom::util::dominance
     loom::util::fact_table
     loom::util::string_pool
+    loom::util::walk
   PUBLIC
 )
 

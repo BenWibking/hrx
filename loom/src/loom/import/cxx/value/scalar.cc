@@ -72,21 +72,23 @@ loom_value_id_t Scalars::convert(loom_value_id_t value,
     // Distinct narrow formats can have equal storage widths. F32 represents
     // each exactly, so only the final cast rounds.
     auto widened = loom_type_scalar(LOOM_SCALAR_TYPE_F32);
-    check(loom_scalar_extf_build(&builder_, value, input, widened,
+    check(loom_scalar_extf_build(&builder_, 0, value, input, widened,
                                  locations_.get(owner), &op));
     value = loom_op_results(op)[0];
-    check(loom_scalar_fptrunc_build(&builder_, value, widened, output,
+    check(loom_scalar_fptrunc_build(&builder_, 0, value, widened, output,
                                     locations_.get(owner), &op));
     return loom_op_results(op)[0];
   }
   bool narrows = layout->sizeOf(input_type) > layout->sizeOf(output_type);
+  if (types_.is_float(input_type) && types_.is_float(output_type)) {
+    check((narrows ? loom_scalar_fptrunc_build : loom_scalar_extf_build)(
+        &builder_, 0, value, input, output, locations_.get(owner), &op));
+    return loom_op_results(op)[0];
+  }
   auto build =
       types_.is_float(output_type)
-          ? (types_.is_float(input_type)
-                 ? (narrows ? loom_scalar_fptrunc_build
-                            : loom_scalar_extf_build)
-                 : (unsigned_input ? loom_scalar_uitofp_build
-                                   : loom_scalar_sitofp_build))
+          ? (unsigned_input ? loom_scalar_uitofp_build
+                            : loom_scalar_sitofp_build)
           : (types_.is_float(input_type)
                  ? (types_.is_unsigned(output_type) ? loom_scalar_fptoui_build
                                                     : loom_scalar_fptosi_build)

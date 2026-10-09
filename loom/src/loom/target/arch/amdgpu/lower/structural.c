@@ -309,14 +309,9 @@ static bool loom_amdgpu_vector_deinterleave_plan_from_op(
     return false;
   }
 
-  loom_value_slice_t results = loom_vector_deinterleave_results(source_op);
-  if (results.count != 2) {
-    return false;
-  }
-
   out_plan->source = loom_vector_deinterleave_source(source_op);
-  out_plan->results[0] = results.values[0];
-  out_plan->results[1] = results.values[1];
+  out_plan->results[0] = loom_vector_deinterleave_even(source_op);
+  out_plan->results[1] = loom_vector_deinterleave_odd(source_op);
   const loom_type_t source_type =
       loom_module_value_type(module, out_plan->source);
   const loom_type_t even_type =
