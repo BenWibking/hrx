@@ -226,8 +226,8 @@ check.scenario @vector_f64_constant_selection_values {
 }
 
 // Constant coordinate arithmetic wraps in its declared carrier before the
-// range comparison. Observe extracted coordinates and mask-selected payloads.
-func.def @vector_coordinate_constants(%payload_bits: i64, %output: buffer) {
+// range comparison. Both iotas and the masks reach observable memory.
+func.def @vector_coordinate_constants(%payload_bits: i64, %coordinates: buffer, %selected: buffer) {
   %true_payload = scalar.trunci %payload_bits : i64 to i32
   %all_bits = scalar.constant -1 : i32
   %false_payload = scalar.xori %true_payload, %all_bits : i32
@@ -241,46 +241,67 @@ func.def @vector_coordinate_constants(%payload_bits: i64, %output: buffer) {
   %negative = vector.iota %negative_lower step %negative_step : vector<4xi8>
   %positive_mask = vector.mask.range [%positive_lower to %positive_upper step %positive_step] : i8 -> vector<4xi1>
   %negative_mask = vector.mask.range [%negative_lower to %negative_upper step %negative_step] : i8 -> vector<4xi1>
-  %positive_lane = vector.extract %positive[1] : vector<4xi8> -> i8
-  %negative_lane = vector.extract %negative[1] : vector<4xi8> -> i8
-  %positive_coordinate = scalar.extsi %positive_lane : i8 to i32
-  %negative_coordinate = scalar.extsi %negative_lane : i8 to i32
-  %positive_condition = vector.extract %positive_mask[1] : vector<4xi1> -> i1
-  %negative_condition = vector.extract %negative_mask[1] : vector<4xi1> -> i1
-  %positive_value = scf.select %positive_condition, %true_payload, %false_payload : i32
-  %negative_value = scf.select %negative_condition, %true_payload, %false_payload : i32
+  %true_values = vector.splat %true_payload : vector<4xi32>
+  %false_values = vector.splat %false_payload : vector<4xi32>
+  %positive_values = vector.select %positive_mask, %true_values, %false_values : vector<4xi32>
+  %negative_values = vector.select %negative_mask, %true_values, %false_values : vector<4xi32>
   %base = index.constant 0 : offset
-  %result = buffer.view %output[%base] : buffer -> view<4xi32>
-  view.store %positive_coordinate, %result[0] : i32, view<4xi32>
-  view.store %negative_coordinate, %result[1] : i32, view<4xi32>
-  view.store %positive_value, %result[2] : i32, view<4xi32>
-  view.store %negative_value, %result[3] : i32, view<4xi32>
+  %coordinate_view = buffer.view %coordinates[%base] : buffer -> view<8xi8>
+  %selected_view = buffer.view %selected[%base] : buffer -> view<8xi32>
+  vector.store %positive, %coordinate_view[0] : vector<4xi8>, view<8xi8>
+  vector.store %negative, %coordinate_view[4] : vector<4xi8>, view<8xi8>
+  vector.store %positive_values, %selected_view[0] : vector<4xi32>, view<8xi32>
+  vector.store %negative_values, %selected_view[4] : vector<4xi32>, view<8xi32>
   func.return
 }
 
-// 120 + 16 is -120 in signed i8, and -120 - 16 is 120. The wrapped
-// coordinates therefore select the true and false payloads, respectively.
-func.def @vector_coordinate_constants_oracle(%payload_bits: i64, %output: buffer) {
+// The oracle computes in a wider scalar type, then explicitly truncates and
+// sign-extends each coordinate before comparing it.
+func.def @vector_coordinate_constants_oracle(%payload_bits: i64, %coordinates: buffer, %selected: buffer) {
   %true_payload = scalar.trunci %payload_bits : i64 to i32
   %all_bits = scalar.constant -1 : i32
   %false_payload = scalar.xori %true_payload, %all_bits : i32
-  %positive_coordinate = scalar.constant -120 : i32
-  %negative_coordinate = scalar.constant 120 : i32
+  %lower = scalar.constant 120 : i32
+  %positive_upper = scalar.constant 100 : i32
+  %negative_upper = scalar.constant -100 : i32
+  %stride = scalar.constant 16 : i32
+  %c0 = scalar.constant 0 : i32
+  %begin = index.constant 0 : index
+  %end = index.constant 4 : index
+  %step = index.constant 1 : index
   %base = index.constant 0 : offset
-  %result = buffer.view %output[%base] : buffer -> view<4xi32>
-  view.store %positive_coordinate, %result[0] : i32, view<4xi32>
-  view.store %negative_coordinate, %result[1] : i32, view<4xi32>
-  view.store %true_payload, %result[2] : i32, view<4xi32>
-  view.store %false_payload, %result[3] : i32, view<4xi32>
+  %coordinate_view = buffer.view %coordinates[%base] : buffer -> view<8xi8>
+  %selected_view = buffer.view %selected[%base] : buffer -> view<8xi32>
+  scf.for %lane = [%begin to %end step %step] {
+    %ordinal = index.cast %lane : index to i32
+    %delta = scalar.muli %ordinal, %stride : i32
+    %positive_wide = scalar.addi %lower, %delta : i32
+    %negative_wide = scalar.subi %c0, %positive_wide : i32
+    %positive = scalar.trunci %positive_wide : i32 to i8
+    %negative = scalar.trunci %negative_wide : i32 to i8
+    %positive_signed = scalar.extsi %positive : i8 to i32
+    %negative_signed = scalar.extsi %negative : i8 to i32
+    %positive_mask = scalar.cmpi slt, %positive_signed, %positive_upper : i32
+    %negative_mask = scalar.cmpi slt, %negative_signed, %negative_upper : i32
+    %positive_value = scf.select %positive_mask, %true_payload, %false_payload : i32
+    %negative_value = scf.select %negative_mask, %true_payload, %false_payload : i32
+    %negative_lane = index.add %lane, %end : index
+    view.store %positive, %coordinate_view[%lane] : i8, view<8xi8>
+    view.store %negative, %coordinate_view[%negative_lane] : i8, view<8xi8>
+    view.store %positive_value, %selected_view[%lane] : i32, view<8xi32>
+    view.store %negative_value, %selected_view[%negative_lane] : i32, view<8xi32>
+  }
   func.return
 }
 
 check.scenario @vector_coordinate_constant_values {
   check.trial[8](%trial: index, %entropy: check.entropy) {
     %payload_bits = check.entropy.read %entropy[%trial] : check.entropy -> i64
-    %output = check.generate.fill value(23) : tensor<4xi32>
-    check.compare<@vector_coordinate_constants, @vector_coordinate_constants_oracle>(%payload_bits, %output) : (i64, tensor<4xi32>) -> () {
-      check.expect.bitwise actual(%output) expected(%output) : tensor<4xi32>
+    %coordinates = check.generate.fill value(23) : tensor<8xi8>
+    %selected = check.generate.fill value(23) : tensor<8xi32>
+    check.compare<@vector_coordinate_constants, @vector_coordinate_constants_oracle>(%payload_bits, %coordinates, %selected) : (i64, tensor<8xi8>, tensor<8xi32>) -> () {
+      check.expect.bitwise actual(%coordinates) expected(%coordinates) : tensor<8xi8>
+      check.expect.bitwise actual(%selected) expected(%selected) : tensor<8xi32>
     }
   }
   check.return

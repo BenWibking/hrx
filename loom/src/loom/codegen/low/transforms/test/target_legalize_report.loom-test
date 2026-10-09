@@ -296,3 +296,48 @@ func.def target(@test_target) @inapplicable_reference_domains(%left: i32, %right
 // ----
 CHECK: COMPILE-REPORT: summary artifact=none status=OK *
 CHECK-NOT: COMPILE-REPORT: target_legalization*
+
+// ====
+// RUN: with-checks compile-report target-legalize
+
+test.target<low_core> @test_target
+
+// The source coordinate vocabulary is one reference family. Distinct function
+// names keep every accepted coordinate type visible in the report contract.
+func.def target(@test_target) @range_mask_index(%lower: index, %upper: index, %step: index) {
+  %mask = vector.mask.range [%lower to %upper step %step] : index -> vector<2xi1>
+  test.use %mask : vector<2xi1>
+  func.return
+}
+
+func.def target(@test_target) @range_mask_i8(%lower: i8, %upper: i8, %step: i8) {
+  %mask = vector.mask.range [%lower to %upper step %step] : i8 -> vector<2xi1>
+  test.use %mask : vector<2xi1>
+  func.return
+}
+
+func.def target(@test_target) @range_mask_i16(%lower: i16, %upper: i16, %step: i16) {
+  %mask = vector.mask.range [%lower to %upper step %step] : i16 -> vector<2xi1>
+  test.use %mask : vector<2xi1>
+  func.return
+}
+
+func.def target(@test_target) @range_mask_i32(%lower: i32, %upper: i32, %step: i32) {
+  %mask = vector.mask.range [%lower to %upper step %step] : i32 -> vector<2xi1>
+  test.use %mask : vector<2xi1>
+  func.return
+}
+
+func.def target(@test_target) @range_mask_i64(%lower: i64, %upper: i64, %step: i64) {
+  %mask = vector.mask.range [%lower to %upper step %step] : i64 -> vector<2xi1>
+  test.use %mask : vector<2xi1>
+  func.return
+}
+
+// ----
+CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=5 scalarized=5 target_rewritten=0 reference_rewritten=5 deferred=0 invalid_ir=0 unsupported=0 unhandled=0 rows=5 *
+CHECK: COMPILE-REPORT: target_legalization[*] function=range_mask_index source_op=vector.mask.range * action=rewritten outcome=reference-fallback contract=unhandled legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=range_mask_i8 source_op=vector.mask.range * action=rewritten outcome=reference-fallback contract=unhandled legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=range_mask_i16 source_op=vector.mask.range * action=rewritten outcome=reference-fallback contract=unhandled legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=range_mask_i32 source_op=vector.mask.range * action=rewritten outcome=reference-fallback contract=unhandled legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=range_mask_i64 source_op=vector.mask.range * action=rewritten outcome=reference-fallback contract=unhandled legalizer=vector strategy=reference * scalarized=true *

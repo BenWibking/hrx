@@ -107,6 +107,8 @@ TEST(LowLegalizerRegistryTest, TargetProvidersPrecedeGenericProviders) {
   ExpectReferenceProvider(registry, LOOM_OP_VECTOR_FPTOUI,
                           IREE_SV("conversion"));
   ExpectReferenceProvider(registry, LOOM_OP_VECTOR_REDUCE, IREE_SV("vector"));
+  ExpectReferenceProvider(registry, LOOM_OP_VECTOR_MASK_RANGE,
+                          IREE_SV("vector"));
   ExpectReferenceProvider(registry, LOOM_OP_VIEW_ATOMIC_RMW, IREE_SV("view"));
 
   const loom_target_legalizer_entry_t* narrow_binary =
