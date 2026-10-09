@@ -455,54 +455,6 @@ def vector_depth_span(arrays):
     return "kernel.decl @vector_depth_span() launch(%previous: buffer, %output: buffer, %count: i32, %depth: i32, %step: i32)\n\n" + "\n".join(cases)
 
 
-def vector_values():
-    cases = []
-
-    def function(name, samples):
-        cases.append(function_cases(name, [32] * len(samples[0][0]), 32, samples))
-
-    function(
-        "vector_unsigned", [([value, lane], ((([value, 0x80000000, 0xFFFFFFFF, 7][lane] + 17) & 0xFFFFFFFF) >> 3) // 3) for value in [0, 1, 0x7FFFFFFF, 0xFFFFFFF0, 0xFFFFFFFF] for lane in range(4)]
-    )
-    pairs = [(0, 0), (0, 0xFFFFFFFF), (0xFFFFFFFF, 0), (0x80000000, 0x7FFFFFFF)]
-    function("vector_mask", [([a, b, lane], -int([a, 0xFFFFFFFF, 0, 0x80000000][lane] > [b, 0, 0, 0x7FFFFFFF][lane])) for a, b in pairs for lane in range(4)])
-    function("vector_narrow", [([value, lane], (([value & 255, 255, 128, 0] + [0] * 12)[lane] + 200 & 255) >> 1) for value in [0, 55, 56, 127, 255, 511] for lane in [0, 1, 2, 3, 8, 15]])
-
-    def signed_result(value, divisor):
-        quotient = abs(value) // abs(divisor) * (-1 if (value < 0) != (divisor < 0) else 1)
-        return (quotient >> 1) + value - quotient * divisor
-
-    for width, name in [(8, "vector_signed_byte"), (16, "vector_signed_short")]:
-        inputs = [-(1 << (width - 1)), -127, -1, 0, 1, (1 << (width - 1)) - 1]
-        function(name, [([value, divisor, lane], signed_result([value, -127, -1, 127][lane], [divisor, 3, -3, 3][lane])) for value in inputs for divisor in [-3, 3] for lane in range(4)])
-    function(
-        "vector_unsigned_short",
-        [([value, lane], ((([value & 65535, 65535, 32768, 0] + [0] * 4)[lane] * 257 + 60000) & 65535) >> 5) for value in [0, 1, 32767, 32768, 65535, 65536] for lane in [0, 1, 2, 3, 7]],
-    )
-    function(
-        "vector_bitcast", [([a, b, lane], [a, b, 0x3F800000, 0x80000000][lane] ^ 0x80000000) for a, b in [(0, 0x80000000), (0x3F000000, 0xBF800000), (0x7F800000, 0xFF800000)] for lane in range(4)]
-    )
-    float_pairs = [(0, 0x80000000), (0x7FC00000, 0x7FC00000), (0x3F800000, 0x40000000), (0x7F800000, 0x7F800000)]
-    function("vector_float_ne", [([a, b, lane], -int(f32_bits([a, 0x7FC00000, 0, 0x80000000][lane]) != f32_bits([b, 0x3F800000, 0x80000000, 0][lane]))) for a, b in float_pairs for lane in range(4)])
-    function("vector_ext_splat", [([value, lane], value) for value in [0, 1, 0xFFFFFFFF, 0x80000000, 17] for lane in range(4)])
-    return "\n\n".join(cases) + "\n"
-
-
-def vector_control(arrays):
-    cases = []
-    for value in [0, 0xFFFFFFFF, 0x7FFFFFFF]:
-        for count in [0, 1, 3, 7]:
-            expected = [(initial + 4 * count) & 0xFFFFFFFF for initial in [value, 1, 0, 0]]
-            if count > 2:
-                expected = [~element for element in expected]
-            case = Case(arrays, f"vector_control_{value}_{count}", "i32", 4)
-            case.scalar("input", signed_bits(value, 32), "i32")
-            case.scalar("count", count, "i32")
-            case.launch("vector_control_kernel", "%output, %input, %count", "tensor<4xi32>, i32, i32")
-            cases.append(case.finish([signed_bits(element, 32) for element in expected]))
-    return "kernel.decl @vector_control_kernel() launch(%output: buffer, %input: i32, %count: i32)\n\n" + "\n".join(cases)
-
-
 def record_pair_reference(value, count):
     return 9 * value + count * (count - 1) // 2 + 21 + 3 * ((count + 1) // 2)
 
@@ -526,31 +478,6 @@ def record_functions():
         )
         + "\n"
     )
-
-
-def f32_bits(bits):
-    return struct.unpack("<f", struct.pack("<I", bits))[0]
-
-
-def vector_masks(arrays):
-    cases = []
-    for ordinal, (left, right) in enumerate(
-        [
-            ([0, 0xFFFFFFFF, 0x80000000, 7], [0, 0, 0x7FFFFFFF, 7]),
-            ([0, 0x80000000, 0x7FC00000, 0x7F800000], [0x80000000, 0, 0x3F800000, 0x7F800000]),
-            ([0x3F800000, 0xFF800000, 0x7FC00000, 0xBF800000], [0x40000000, 0x7F800000, 0x7FC00000, 0xC0000000]),
-        ]
-    ):
-        expected = [-int(a < b) for a, b in zip(left, right, strict=True)]
-        expected += [-int(a == b) for a, b in zip(left, right, strict=True)]
-        expected += [-int(a == 0) for a in left]
-        expected += [-int(signed_bits(a, 32) < signed_bits(b, 32)) for a, b in zip(left, right, strict=True)]
-        expected += [-int(f32_bits(a) != f32_bits(b)) for a, b in zip(left, right, strict=True)]
-        case = Case(arrays, f"vector_masks_{ordinal}", "i32", len(expected))
-        case.array("input", [signed_bits(value, 32) for value in left + right])
-        case.launch("vector_masks", "%input, %output", "tensor<8xi32>, tensor<20xi32>")
-        cases.append(case.finish(expected))
-    return "kernel.decl @vector_masks() launch(%input: buffer, %output: buffer)\n\n" + "\n".join(cases)
 
 
 def shaped_intrinsic_values():
@@ -952,7 +879,6 @@ KERNEL_GROUPS = {
     "short_circuit": short_circuit,
     "structured_continue": lambda arrays: "\n".join(reference(arrays) for reference in (continue_values, continue_scheduled, continue_copy, continue_pointers, continue_vectors)),
     "vector_depth": lambda arrays: vector_depth(arrays) + "\n" + vector_depth_span(arrays),
-    "vector_values": lambda arrays: vector_control(arrays) + "\n" + vector_masks(arrays),
     "volatile_memory": volatile_memory,
 }
 
@@ -965,7 +891,6 @@ HOST_REFERENCES = {
     "schedule_values.cxx": schedule_functions,
     "shaped_intrinsics.cxx": shaped_intrinsic_values,
     "structured_continue.cxx": continue_functions,
-    "vector_values.cxx": vector_values,
 }
 
 

@@ -795,25 +795,6 @@ loom_generated_file(
 endif()
 
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
-    vector_values_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "vector_values_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/vector_values.cxx"
-  INPUTS
-    "vector_values.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_test_module(
   NAME
     comparison_functions_test_module
@@ -1010,34 +991,6 @@ endif()
 endif()
 
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
-    vector_values_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/vector_values_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/vector_values.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    vector_values_test_execute_vm_reference_test
-  MODULE
-    "::vector_values_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 if(LOOM_TARGET_ARCH_VM)
 loom_execution_test(
   NAME
@@ -1107,6 +1060,44 @@ loom_execution_test(
     "::vector_initializers_module"
   RUNNER_ARGS
     "--case=vector_initializers_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    vector_values_test_functions_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::vector_values_module"
+  RUNNER_ARGS
+    "--case=vector_values_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    vector_values_test_signed_functions_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::vector_values_module"
+  RUNNER_ARGS
+    "--case=vector_values_signed_functions"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
     "loom-execution-profile=vm_reference"
@@ -1489,25 +1480,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_generated_file_family(
   NAME
-    vector_values_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "vector_values_checks.loom"
-    "vector_values_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=vector_values"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
     volatile_memory_checks_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -1692,21 +1664,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
-    vector_values_module
-  SRCS
-    "vector_values.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/vector_values_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/vector_values_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/vector_values_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
     volatile_memory_module
   SRCS
     "volatile_memory.cxx"
@@ -1806,6 +1763,16 @@ loom_test_module(
   SRCS
     "vector_initializers.cxx"
     "vector_initializers.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    vector_values_module
+  SRCS
+    "vector_values.cxx"
+    "vector_values.loom"
 )
 endif()
 

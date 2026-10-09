@@ -198,7 +198,6 @@ _GENERATED_HOST_SOURCES = [
     "schedule_values.cxx",
     "shaped_intrinsics.cxx",
     "structured_continue.cxx",
-    "vector_values.cxx",
 ]
 
 _AUTHORED_HOST_SOURCES = [
@@ -206,7 +205,15 @@ _AUTHORED_HOST_SOURCES = [
     "enum_values",
     "increment_values",
     "vector_initializers",
+    "vector_values",
 ]
+
+_AUTHORED_HOST_VARIANTS = {
+    "vector_values": {
+        "functions": {"case": "vector_values_functions"},
+        "signed_functions": {"case": "vector_values_signed_functions"},
+    },
+}
 
 _HOST_COMPATIBILITY = loom_config_compatible_with([
     "//loom/config/import:cxx",
@@ -422,10 +429,11 @@ loom_test(
     loom_test(
         name = source + "_test",
         benchmark_smoke = False,
-        case = source + "_functions",
+        case = source + "_functions" if source not in _AUTHORED_HOST_VARIANTS else "",
         execution_profiles = [VM_REFERENCE_PROFILE],
         module = ":" + source + "_module",
         target_compatible_with = _HOST_COMPATIBILITY,
+        variants = _AUTHORED_HOST_VARIANTS.get(source),
     )
     for source in _AUTHORED_HOST_SOURCES
 ]
@@ -538,7 +546,6 @@ _GENERATED_KERNEL_SOURCES = [
     "short_circuit",
     "structured_continue",
     "vector_depth",
-    "vector_values",
     "volatile_memory",
 ]
 
@@ -552,6 +559,7 @@ _AUTHORED_KERNEL_SOURCES = [
     "symbol_exports",
     "typed_views",
     "vector_initializers",
+    "vector_values",
 ]
 
 [
