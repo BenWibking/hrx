@@ -14,6 +14,17 @@ package(
 )
 
 amdf_cc_library(
+    name = "device_sdma_fixture",
+    testonly = True,
+    srcs = ["device_sdma_fixture.cc"],
+    hdrs = ["device_sdma_fixture.h"],
+    deps = [
+        "//libamdf/cts/gpu/aql:dispatch_fixture",
+        "//third_party:google_test",
+    ],
+)
+
+amdf_cc_library(
     name = "pm4_sdma_fixture",
     testonly = True,
     srcs = ["pm4_sdma_fixture.cc"],
@@ -43,6 +54,7 @@ amdf_cts_test_suite(
     }),
     visibility = ["//visibility:public"],
     deps = [
+        ":device_sdma_fixture",
         ":pm4_sdma_fixture",
         "//libamdf/cts/gpu/aql:dispatch_fixture",
         "//libamdf/cts/gpu/kernels:device_sdma",
