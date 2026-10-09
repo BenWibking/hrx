@@ -24,7 +24,7 @@ kernel.def target(@device) @nested_lane_control() {
   cfg.cond_br %inner, ^inner_enabled, ^inner_disabled
 ^inner_enabled:
   // ERROR@+1: LOWERING/024 {op_name="kernel.async.cluster.gather", phase_name="kernel-async-legality", rejection_bits="1024"}
-  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   cfg.br ^join
@@ -65,7 +65,7 @@ kernel.def target(@device) @nested_subgroup_control() {
   cfg.cond_br %inner, ^inner_enabled, ^inner_disabled
 ^inner_enabled:
   // ERROR@+1: LOWERING/024 {op_name="kernel.async.cluster.gather", phase_name="kernel-async-legality", rejection_bits="1024"}
-  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   cfg.br ^join
@@ -104,7 +104,7 @@ kernel.def @nested_workgroup_control() {
   cfg.cond_br %inner, ^inner_enabled, ^inner_disabled
 ^inner_enabled:
   // ERROR@+1: LOWERING/024 {op_name="kernel.async.cluster.gather", phase_name="kernel-async-legality", rejection_bits="1024"}
-  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   cfg.br ^join
@@ -142,7 +142,7 @@ kernel.def @nested_cluster_control() {
 ^enabled_arm:
   cfg.cond_br %inner, ^inner_enabled, ^inner_disabled
 ^inner_enabled:
-  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   cfg.br ^join
@@ -182,7 +182,7 @@ kernel.def @deep_reordered() {
   cfg.cond_br %inner, ^deep, ^skip
 ^deep:
   // ERROR@+1: LOWERING/024 {op_name="kernel.async.cluster.gather", phase_name="kernel-async-legality", rejection_bits="1024"}
-  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   cfg.br ^join
@@ -217,7 +217,7 @@ kernel.def @cycle() {
   cfg.cond_br %inner, ^body, ^skip
 ^body:
   // ERROR@+1: LOWERING/024 {op_name="kernel.async.cluster.gather", phase_name="kernel-async-legality", rejection_bits="1024"}
-  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   cfg.br ^loop
@@ -250,7 +250,7 @@ kernel.def @multiple_exits() {
   cfg.cond_br %inner, ^body, ^skip
 ^body:
   // ERROR@+1: LOWERING/024 {op_name="kernel.async.cluster.gather", phase_name="kernel-async-legality", rejection_bits="1024"}
-  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   kernel.return
@@ -287,7 +287,7 @@ kernel.def @inner_reconvergence() {
   cfg.br ^inner_join
 ^inner_join:
   // ERROR@+1: LOWERING/024 {op_name="kernel.async.cluster.gather", phase_name="kernel-async-legality", rejection_bits="1024"}
-  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   cfg.br ^join
@@ -327,7 +327,7 @@ kernel.def @full_reconvergence() {
 ^skip:
   cfg.br ^join
 ^join:
-  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   kernel.return
@@ -361,7 +361,7 @@ kernel.def @sequential() {
 ^middle:
   cfg.cond_br %inner, ^body, ^skip
 ^body:
-  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %participants {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   cfg.br ^join

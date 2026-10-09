@@ -72,7 +72,7 @@ func.def inline @fill_input(%input_size: index, %record: index, %input: buffer, 
   %byte_offset = index.cast %byte_index : index to offset
   %source = buffer.view %input[%byte_offset] : buffer -> view<[%input_size]xbf16>
   %write, %destination = channel.reserve %inputs : channel<tile<[%input_size]xbf16>> -> (write<tile<[%input_size]xbf16>>, view<[%input_size]xbf16>)
-  %copy = kernel.async.copy %source to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%input_size]xbf16> to view<[%input_size]xbf16> -> kernel.async.token
+  %copy = kernel.async.copy %source to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<[%input_size]xbf16> to view<[%input_size]xbf16> -> kernel.async.token
   %pending = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %pending {newer_groups = 0} : kernel.async.group
   channel.publish %write : write<tile<[%input_size]xbf16>>
@@ -87,7 +87,7 @@ func.def inline @drain_output(%record: index, %outputs: channel<tile<1xf32>>, %o
   %byte_offset = index.cast %byte_index : index to offset
   %destination = buffer.view %output[%byte_offset] : buffer -> view<1xf32>
   %read, %source = channel.acquire %outputs : channel<tile<1xf32>> -> (read<tile<1xf32>>, view<1xf32>)
-  %copy = kernel.async.copy %source to %destination {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xf32> to view<1xf32> -> kernel.async.token
+  %copy = kernel.async.copy %source to %destination {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xf32> to view<1xf32> -> kernel.async.token
   %pending = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %pending {newer_groups = 0} : kernel.async.group
   channel.release %read : read<tile<1xf32>>
@@ -121,7 +121,7 @@ pipeline.def<kernel> public retain target(@npu) @ffn_gate_up_quadratic_bf16() ru
   pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
     %source_weights = buffer.view %weights[%origin] : buffer -> view<2x[%input_size]xbf16>
     %weight_write, %weight_destination = channel.reserve %resident_weights : channel<tile<2x[%input_size]xbf16>> -> (write<tile<2x[%input_size]xbf16>>, view<2x[%input_size]xbf16>)
-    %weight_copy = kernel.async.copy %source_weights to %weight_destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2x[%input_size]xbf16> to view<2x[%input_size]xbf16> -> kernel.async.token
+    %weight_copy = kernel.async.copy %source_weights to %weight_destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<2x[%input_size]xbf16> to view<2x[%input_size]xbf16> -> kernel.async.token
     %weight_pending = kernel.async.group %weight_copy : kernel.async.token -> kernel.async.group
     kernel.async.wait %weight_pending {newer_groups = 0} : kernel.async.group
     channel.publish %weight_write : write<tile<2x[%input_size]xbf16>>

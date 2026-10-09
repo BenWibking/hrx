@@ -179,7 +179,7 @@ func.def @issue(%input: buffer, %destination: buffer) {
   %shared = buffer.assume.memory_space<workgroup> %destination : buffer
   %source = buffer.view %global[%origin] : buffer -> view<1xi32>
   %view = buffer.view %shared[%origin] : buffer -> view<1xi32>
-  %token = kernel.async.copy %source to %view {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
+  %token = kernel.async.copy %source to %view {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
   %group = kernel.async.group %token : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return

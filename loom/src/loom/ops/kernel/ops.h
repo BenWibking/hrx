@@ -264,7 +264,7 @@ iree_status_t loom_kernel_barrier_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_KERNEL_ASYNC_COPY: Initiate an asynchronous byte-for-byte transfer between two already originated views. The source and destination view types may use different logical element types or shapes, but they must describe the same logical payload byte count. Each view's layout determines the addresses visited in logical element order; padding is not copied. Dimensions may remain symbolic in source; specialization and value facts must establish equal concrete payload sizes before target transfer selection. The direction attribute makes the required memory-space flow explicit. The returned token must be committed to exactly one kernel.async.group before the copied bytes are waited or consumed.
-// %copy = kernel.async.copy %src to %dst {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8> to view<16xi8> -> kernel.async.token
+// %copy = kernel.async.copy %src to %dst {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8> to view<16xi8> -> kernel.async.token
 LOOM_DEFINE_ISA(loom_kernel_async_copy_isa, LOOM_OP_KERNEL_ASYNC_COPY)
 LOOM_DEFINE_OPERAND(loom_kernel_async_copy_source, 0)
 LOOM_DEFINE_OPERAND(loom_kernel_async_copy_dest, 1)
@@ -287,7 +287,7 @@ iree_status_t loom_kernel_async_copy_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_KERNEL_ASYNC_COPY_MASK: Predicated form of kernel.async.copy. When predicate is true, the op initiates the same transfer as kernel.async.copy. When predicate is false, the op performs no memory access and produces an already complete token so grouping and waiting remain structurally uniform.
-// %copy = kernel.async.copy.mask %src to %dst, %in_bounds {cache_scope = cu, cache_temporal = non_temporal, direction = global_to_workgroup} : view<16xi8> to view<16xi8>, i1 -> kernel.async.token
+// %copy = kernel.async.copy.mask %src to %dst, %in_bounds {cache_scope = workgroup, cache_temporal = non_temporal, direction = global_to_workgroup} : view<16xi8> to view<16xi8>, i1 -> kernel.async.token
 LOOM_DEFINE_ISA(loom_kernel_async_copy_mask_isa, LOOM_OP_KERNEL_ASYNC_COPY_MASK)
 LOOM_DEFINE_OPERAND(loom_kernel_async_copy_mask_source, 0)
 LOOM_DEFINE_OPERAND(loom_kernel_async_copy_mask_dest, 1)
@@ -312,7 +312,7 @@ iree_status_t loom_kernel_async_copy_mask_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_KERNEL_ASYNC_GATHER: Initiate a subgroup-collective asynchronous gather from each invocation's source view into a lane-contiguous workgroup destination view. The destination view has one leading subgroup-lane axis and a trailing lane slot with enough static bytes to hold one source payload. If the lane slot is larger than the source footprint, the extra destination bytes are padding bytes with unspecified contents. The destination denotes the subgroup-uniform base tile; the current subgroup lane is applied by the op semantics and must not be pre-applied by forming a lane subview. This directly represents AMDGPU global_load_lds-style staging, including padded narrow loads, without requiring a later pass to rediscover that a set of per-lane copies was really one subgroup LDS DMA operation.
-// %copy = kernel.async.gather %src_lane to %lds_tile {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<[%wave]x4xi8> -> kernel.async.token
+// %copy = kernel.async.gather %src_lane to %lds_tile {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<[%wave]x4xi8> -> kernel.async.token
 LOOM_DEFINE_ISA(loom_kernel_async_gather_isa, LOOM_OP_KERNEL_ASYNC_GATHER)
 LOOM_DEFINE_OPERAND(loom_kernel_async_gather_source, 0)
 LOOM_DEFINE_OPERAND(loom_kernel_async_gather_dest, 1)
@@ -333,7 +333,7 @@ iree_status_t loom_kernel_async_gather_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_KERNEL_ASYNC_GATHER_MASK: Predicated form of kernel.async.gather. False predicates perform no source or destination access for the current invocation but still produce a completed token, preserving a uniform async group shape for tails and guarded tiles.
-// %copy = kernel.async.gather.mask %src_lane to %lds_tile, %in_bounds {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<[%wave]x4xi8>, i1 -> kernel.async.token
+// %copy = kernel.async.gather.mask %src_lane to %lds_tile, %in_bounds {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<[%wave]x4xi8>, i1 -> kernel.async.token
 LOOM_DEFINE_ISA(loom_kernel_async_gather_mask_isa, LOOM_OP_KERNEL_ASYNC_GATHER_MASK)
 LOOM_DEFINE_OPERAND(loom_kernel_async_gather_mask_source, 0)
 LOOM_DEFINE_OPERAND(loom_kernel_async_gather_mask_dest, 1)
@@ -403,7 +403,7 @@ iree_status_t loom_kernel_tensor_lds_descriptor_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_KERNEL_ASYNC_TENSOR_LOAD_TO_LDS: Initiate an AMDGPU gfx1250+ tensor-memory load from a global-like source view into a workgroup/LDS destination view using an explicit kernel.tensor.lds.descriptor. The descriptor supplies the exact hardware dgroups, while the source and destination views keep the logical rank, element type, layout, and memory-space facts visible. The endpoints must have the same rank in [1, 5], the same 1/2/4/8 byte element type, and memory spaces global/constant/descriptor to workgroup. The returned token must be committed to exactly one kernel.async.group.
-// %copy = kernel.async.tensor.load.to.lds %global_tile to %lds_tile using %desc {cache_scope = cu, cache_temporal = regular} : view<64x64xf32> to view<64x64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+// %copy = kernel.async.tensor.load.to.lds %global_tile to %lds_tile using %desc {cache_scope = workgroup, cache_temporal = regular} : view<64x64xf32> to view<64x64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
 LOOM_DEFINE_ISA(loom_kernel_async_tensor_load_to_lds_isa, LOOM_OP_KERNEL_ASYNC_TENSOR_LOAD_TO_LDS)
 LOOM_DEFINE_OPERAND(loom_kernel_async_tensor_load_to_lds_source, 0)
 LOOM_DEFINE_OPERAND(loom_kernel_async_tensor_load_to_lds_dest, 1)
@@ -449,7 +449,7 @@ iree_status_t loom_kernel_async_tensor_store_from_lds_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_KERNEL_ASYNC_CLUSTER_GATHER: Initiate a workgroup-cluster asynchronous load from a global-like source view into a workgroup/shared-memory destination view. The required i32 cluster_mask is a semantic participant set: bit N names flat cluster rank N, with x as the minor dimension. Source and destination must have the same static byte footprint, and that footprint must be exactly 1, 4, 8, or 16 bytes. Every named participant must execute the operation in the same dynamic order with corresponding lane-local source and destination addresses. Target lowering maps the participant set, addresses, and cache policy to the selected machine protocol. The returned token must be committed to exactly one kernel.async.group.
-// %copy = kernel.async.cluster.gather %src to %lds using %mask {cache_scope = se, cache_temporal = high_temporal} : view<16xi8> to view<16xi8>, i32 -> kernel.async.token
+// %copy = kernel.async.cluster.gather %src to %lds using %mask {cache_scope = cluster, cache_temporal = high_temporal} : view<16xi8> to view<16xi8>, i32 -> kernel.async.token
 LOOM_DEFINE_ISA(loom_kernel_async_cluster_gather_isa, LOOM_OP_KERNEL_ASYNC_CLUSTER_GATHER)
 LOOM_DEFINE_OPERAND(loom_kernel_async_cluster_gather_source, 0)
 LOOM_DEFINE_OPERAND(loom_kernel_async_cluster_gather_dest, 1)
@@ -472,7 +472,7 @@ iree_status_t loom_kernel_async_cluster_gather_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_KERNEL_ASYNC_CLUSTER_GATHER_MASK: Predicated form of kernel.async.cluster.gather. False predicates perform no source or destination access for the current invocation but still produce a completed token, preserving a uniform async group shape for tails and guarded tiles. The cluster_mask remains the semantic participant set and is distinct from the scalar i1 predicate.
-// %copy = kernel.async.cluster.gather.mask %src to %lds using %mask, %in_bounds {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32, i1 -> kernel.async.token
+// %copy = kernel.async.cluster.gather.mask %src to %lds using %mask, %in_bounds {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32, i1 -> kernel.async.token
 LOOM_DEFINE_ISA(loom_kernel_async_cluster_gather_mask_isa, LOOM_OP_KERNEL_ASYNC_CLUSTER_GATHER_MASK)
 LOOM_DEFINE_OPERAND(loom_kernel_async_cluster_gather_mask_source, 0)
 LOOM_DEFINE_OPERAND(loom_kernel_async_cluster_gather_mask_dest, 1)

@@ -26,7 +26,7 @@ pipeline.def<kernel> public retain target(@device) @strided_ingress() run(%input
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %input[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
       %write, %destination = channel.reserve %records : channel<tile<2x2xi32>> -> (write<tile<2x2xi32>>, view<2x2xi32>)
-      %copy = kernel.async.copy %external to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
+      %copy = kernel.async.copy %external to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.publish %write : write<tile<2x2xi32>>
@@ -48,7 +48,7 @@ pipeline.def<kernel> public retain target(@device) @strided_ingress() run(%input
       %byte_index = index.mul %output_record, %record_bytes : index
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %output[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
-      %copy = kernel.async.copy %payload to %external {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
+      %copy = kernel.async.copy %payload to %external {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.release %read : read<tile<2x2xi32>, mutable>
@@ -367,7 +367,7 @@ pipeline.def<kernel> public retain target(@device) @retained_input() run(%input_
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %input[%origin] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
       %write, %destination = channel.reserve %records : channel<tile<2x2xi32>> -> (write<tile<2x2xi32>>, view<2x2xi32>)
-      %copy = kernel.async.copy %external to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
+      %copy = kernel.async.copy %external to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.publish %write : write<tile<2x2xi32>>
@@ -389,7 +389,7 @@ pipeline.def<kernel> public retain target(@device) @retained_input() run(%input_
       %byte_index = index.mul %output_record, %record_bytes : index
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %output[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
-      %copy = kernel.async.copy %payload to %external {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
+      %copy = kernel.async.copy %payload to %external {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.release %read : read<tile<2x2xi32>, mutable>
@@ -687,7 +687,7 @@ pipeline.def<kernel> public retain target(@device) @feedback_input() run(%input_
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %input[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
       %write, %destination = channel.reserve %records : channel<tile<2x2xi32>> -> (write<tile<2x2xi32>>, view<2x2xi32>)
-      %copy = kernel.async.copy %external to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
+      %copy = kernel.async.copy %external to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.publish %write : write<tile<2x2xi32>>
@@ -709,7 +709,7 @@ pipeline.def<kernel> public retain target(@device) @feedback_input() run(%input_
       %byte_index = index.mul %output_record, %record_bytes : index
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %input[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
-      %copy = kernel.async.copy %payload to %external {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
+      %copy = kernel.async.copy %payload to %external {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.release %read : read<tile<2x2xi32>, mutable>
@@ -748,7 +748,7 @@ pipeline.def<kernel> public retain target(@device) @partial_consumer() run(%inpu
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %input[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
       %write, %destination = channel.reserve %records : channel<tile<2x2xi32>> -> (write<tile<2x2xi32>>, view<2x2xi32>)
-      %copy = kernel.async.copy %external to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
+      %copy = kernel.async.copy %external to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.publish %write : write<tile<2x2xi32>>
@@ -770,7 +770,7 @@ pipeline.def<kernel> public retain target(@device) @partial_consumer() run(%inpu
       %byte_index = index.mul %output_record, %record_bytes : index
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %output[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
-      %copy = kernel.async.copy %payload to %external {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
+      %copy = kernel.async.copy %payload to %external {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.release %read : read<tile<2x2xi32>, mutable>
@@ -809,7 +809,7 @@ pipeline.def<kernel> public retain target(@device) @external_iteration_limit() r
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %input[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
       %write, %destination = channel.reserve %records : channel<tile<2x2xi32>> -> (write<tile<2x2xi32>>, view<2x2xi32>)
-      %copy = kernel.async.copy %external to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
+      %copy = kernel.async.copy %external to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.publish %write : write<tile<2x2xi32>>
@@ -831,7 +831,7 @@ pipeline.def<kernel> public retain target(@device) @external_iteration_limit() r
       %byte_index = index.mul %output_record, %record_bytes : index
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %output[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
-      %copy = kernel.async.copy %payload to %external {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
+      %copy = kernel.async.copy %payload to %external {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.release %read : read<tile<2x2xi32>, mutable>
@@ -869,7 +869,7 @@ pipeline.def<kernel> public retain target(@device) @unscoped_input() run(%input_
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %input[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
       %write, %destination = channel.reserve %records : channel<tile<2x2xi32>> -> (write<tile<2x2xi32>>, view<2x2xi32>)
-      %copy = kernel.async.copy %external to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
+      %copy = kernel.async.copy %external to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> to view<2x2xi32> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.publish %write : write<tile<2x2xi32>>
@@ -891,7 +891,7 @@ pipeline.def<kernel> public retain target(@device) @unscoped_input() run(%input_
       %byte_index = index.mul %output_record, %record_bytes : index
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %output[%offset] : buffer -> view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>>
-      %copy = kernel.async.copy %payload to %external {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
+      %copy = kernel.async.copy %payload to %external {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<2x2xi32> to view<2x2xi32, #encoding.layout.strided<strides=[4, 1]>> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.release %read : read<tile<2x2xi32>, mutable>

@@ -73,7 +73,7 @@ class AsyncIntrinsic {
 
   // Semantic operation selected at concrete specialization admission.
   Operation operation_;
-  // Advisory cache hierarchy scope; unused by group and wait.
+  // Advisory logical cache-policy scope; unused by group and wait.
   loom_cache_scope_t cache_scope_;
   // Advisory temporal policy; unused by group and wait.
   loom_cache_temporal_t cache_temporal_;

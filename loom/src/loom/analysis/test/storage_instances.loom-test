@@ -137,7 +137,7 @@ func.def @test(%input: buffer) -> (i32) {
   %sum, %value, %last = scf.for %i = [%begin to %limit step %step](%accumulator = %seed : i32, %previous_value = %seed : i32, %previous = %initial_storage : buffer) -> (i32, i32, buffer) {
     %previous_root = buffer.assume.memory_space<workgroup> %previous : buffer
     %previous_view = buffer.view %previous_root[%origin] : buffer -> view<1xi32>
-    %copy = kernel.async.copy %source to %previous_view {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %copy = kernel.async.copy %source to %previous_view {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
     %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
     kernel.barrier<workgroup> scope(workgroup) ordering(acq_rel)
     %storage = buffer.alloca<workgroup> align(4) %bytes : buffer
@@ -175,7 +175,7 @@ func.def @test(%input: buffer) -> (i32) {
   %sum, %value, %last = scf.for %i = [%begin to %limit step %step](%accumulator = %seed : i32, %previous_value = %seed : i32, %previous = %initial_storage : buffer) -> (i32, i32, buffer) {
     %previous_root = buffer.assume.memory_space<workgroup> %previous : buffer
     %previous_view = buffer.view %previous_root[%origin] : buffer -> view<1xi32>
-    %copy = kernel.async.copy %source to %previous_view {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %copy = kernel.async.copy %source to %previous_view {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
     %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
     kernel.async.wait %group {newer_groups = 0} : kernel.async.group
     kernel.barrier<workgroup> scope(workgroup) ordering(acq_rel)
@@ -523,7 +523,7 @@ func.def @test(%input: buffer) {
   scf.for %i = [%begin to %end step %step] {
     %storage = buffer.alloca<workgroup> align(4) %bytes : buffer
     %slot = buffer.view %storage[%origin] : buffer -> view<1xi32>
-    %copy = kernel.async.copy %source to %slot {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %copy = kernel.async.copy %source to %slot {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
     %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
     scf.if %complete {
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group

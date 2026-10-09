@@ -9,15 +9,16 @@
 
 namespace loom::cache {
 
-// Cache hierarchy scope at which an advisory policy applies.
+// Logical execution scope at which an advisory cache policy applies. Targets
+// map these portable domains to their physical cache hierarchy.
 enum class scope : unsigned char {
-  // Cache/coherency scope is the compute unit.
-  cu = 0,
-  // Cache/coherency scope is the shader engine.
-  se = 1,
-  // Cache/coherency scope is the current device.
+  // Cache-policy scope is the current workgroup.
+  workgroup = 0,
+  // Cache-policy scope is the current workgroup cluster.
+  cluster = 1,
+  // Cache-policy scope is the current device.
   device = 2,
-  // Cache/coherency scope is the full system.
+  // Cache-policy scope is the full system.
   system = 3,
 };
 

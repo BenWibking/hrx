@@ -511,7 +511,7 @@ class AmdgpuHalKernelLibraryTest : public ::testing::Test {
         "  %dest = buffer.view %scratch[%zero] : buffer -> "
         "view<64x64xf32>\n"
         "  %copy = kernel.async.tensor.load.to.lds %source to %dest using "
-        "%descriptor {cache_scope = cu, cache_temporal = regular} : "
+        "%descriptor {cache_scope = workgroup, cache_temporal = regular} : "
         "view<64x64xf32> to view<64x64xf32>, "
         "kernel.tensor.lds.descriptor -> kernel.async.token\n"
         "  %group = kernel.async.group %copy : kernel.async.token -> "

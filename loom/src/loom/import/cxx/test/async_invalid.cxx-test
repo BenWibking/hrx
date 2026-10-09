@@ -5,8 +5,8 @@ void ordinary(view source, view destination) {
   // ERROR@+1: LOWERING/059 "kernel intrinsic requires a kernel or force-inline helper"
   (void)loom::kernel::async::copy<
       loom::kernel::async::direction::global_to_workgroup,
-      loom::cache::scope::cu, loom::cache::temporal::regular>(source,
-                                                              destination);
+      loom::cache::scope::workgroup, loom::cache::temporal::regular>(
+      source, destination);
 }
 
 // ====
@@ -15,7 +15,7 @@ using view = loom::type::view<loom::type::shape<4>, unsigned char>;
 LOOM_FORCE_INLINE void invalid_direction(view source, view destination) {
   // ERROR@+1: LOWERING/059 "unknown kernel async copy direction"
   (void)loom::kernel::async::copy<loom::kernel::async::direction(2),
-                                  loom::cache::scope::cu,
+                                  loom::cache::scope::workgroup,
                                   loom::cache::temporal::regular>(source,
                                                                   destination);
 }
@@ -35,7 +35,7 @@ LOOM_FORCE_INLINE void invalid_scope(view source, view destination) {
 using view = loom::type::view<loom::type::shape<4>, unsigned char>;
 LOOM_FORCE_INLINE void invalid_temporal(view source, view destination) {
   // ERROR@+1: LOWERING/059 "unknown kernel async temporal cache policy"
-  (void)loom::kernel::async::gather<loom::cache::scope::cu,
+  (void)loom::kernel::async::gather<loom::cache::scope::workgroup,
                                     loom::cache::temporal(10)>(source,
                                                                destination);
 }
@@ -47,8 +47,8 @@ LOOM_FORCE_INLINE void invalid_load_policy(view source, view destination) {
   // ERROR@+1: LOWERING/059 "kernel async load requires a load-compatible temporal policy"
   (void)loom::kernel::async::copy<
       loom::kernel::async::direction::global_to_workgroup,
-      loom::cache::scope::cu, loom::cache::temporal::writeback>(source,
-                                                                destination);
+      loom::cache::scope::workgroup, loom::cache::temporal::writeback>(
+      source, destination);
 }
 
 // ====
@@ -58,8 +58,8 @@ LOOM_FORCE_INLINE void invalid_store_policy(view source, view destination) {
   // ERROR@+1: LOWERING/059 "kernel async store requires a store-compatible temporal policy"
   (void)loom::kernel::async::copy<
       loom::kernel::async::direction::workgroup_to_global,
-      loom::cache::scope::cu, loom::cache::temporal::last_use>(source,
-                                                               destination);
+      loom::cache::scope::workgroup, loom::cache::temporal::last_use>(
+      source, destination);
 }
 
 // ====
@@ -67,7 +67,7 @@ LOOM_FORCE_INLINE void invalid_store_policy(view source, view destination) {
 using view = loom::type::view<loom::type::shape<4>, unsigned char>;
 LOOM_FORCE_INLINE void invalid_bypass_scope(view source, view destination) {
   // ERROR@+1: LOWERING/059 "bypass requires system cache scope"
-  (void)loom::kernel::async::gather<loom::cache::scope::cu,
+  (void)loom::kernel::async::gather<loom::cache::scope::workgroup,
                                     loom::cache::temporal::bypass>(source,
                                                                    destination);
 }
@@ -81,8 +81,8 @@ LOOM_FORCE_INLINE void immutable_destination(view source,
   // ERROR@+1: LOWERING/059 "kernel async destination requires a mutable view"
   (void)loom::kernel::async::copy<
       loom::kernel::async::direction::global_to_workgroup,
-      loom::cache::scope::cu, loom::cache::temporal::regular>(source,
-                                                              destination);
+      loom::cache::scope::workgroup, loom::cache::temporal::regular>(
+      source, destination);
 }
 
 // ====
@@ -94,8 +94,8 @@ LOOM_FORCE_INLINE void volatile_source(volatile_view source, view destination) {
   // ERROR@+1: LOWERING/059 "kernel async transfers do not support volatile views"
   (void)loom::kernel::async::copy<
       loom::kernel::async::direction::global_to_workgroup,
-      loom::cache::scope::cu, loom::cache::temporal::regular>(source,
-                                                              destination);
+      loom::cache::scope::workgroup, loom::cache::temporal::regular>(
+      source, destination);
 }
 
 // ====

@@ -21,10 +21,10 @@ bool loom_amdgpu_memory_cache_policy_is_present(
 
 iree_string_view_t loom_amdgpu_cache_scope_name(uint8_t scope) {
   switch (scope) {
-    case LOOM_CACHE_SCOPE_CU:
-      return IREE_SV("cu");
-    case LOOM_CACHE_SCOPE_SE:
-      return IREE_SV("se");
+    case LOOM_CACHE_SCOPE_WORKGROUP:
+      return IREE_SV("workgroup");
+    case LOOM_CACHE_SCOPE_CLUSTER:
+      return IREE_SV("cluster");
     case LOOM_CACHE_SCOPE_DEVICE:
       return IREE_SV("device");
     case LOOM_CACHE_SCOPE_SYSTEM:

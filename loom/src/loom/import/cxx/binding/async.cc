@@ -178,7 +178,7 @@ std::optional<AsyncIntrinsic> AsyncIntrinsic::resolve(
                        "kernel async operations require fixed signatures");
   }
   auto parameters = signature->parameterTypes();
-  auto cache_scope = LOOM_CACHE_SCOPE_CU;
+  auto cache_scope = LOOM_CACHE_SCOPE_WORKGROUP;
   auto cache_temporal = LOOM_CACHE_TEMPORAL_REGULAR;
   auto direction = LOOM_KERNEL_DIRECTION_GLOBAL_TO_WORKGROUP;
   uint16_t newer_groups = 0;

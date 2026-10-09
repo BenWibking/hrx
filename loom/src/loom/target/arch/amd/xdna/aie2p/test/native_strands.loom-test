@@ -27,13 +27,13 @@ pipeline.def<kernel> public retain target(@npu) @scale_panels() run(%unused_firs
       %offset = index.cast %byte_index : index to offset
       %external_input = buffer.view %input[%offset] : buffer -> view<2x4xi32, #encoding.layout.strided<strides=[8, 1]>>
       %write, %destination = channel.reserve %inputs : channel<tile<2x4xi32>> -> (write<tile<2x4xi32>>, view<2x4xi32>)
-      %ingress = kernel.async.copy %external_input to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2x4xi32, #encoding.layout.strided<strides=[8, 1]>> to view<2x4xi32> -> kernel.async.token
+      %ingress = kernel.async.copy %external_input to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<2x4xi32, #encoding.layout.strided<strides=[8, 1]>> to view<2x4xi32> -> kernel.async.token
       %incoming = kernel.async.group %ingress : kernel.async.token -> kernel.async.group
       kernel.async.wait %incoming {newer_groups = 0} : kernel.async.group
       channel.publish %write : write<tile<2x4xi32>>
       %read, %source = channel.acquire %outputs : channel<tile<2x4xi32>> -> (read<tile<2x4xi32>>, view<2x4xi32>)
       %external_output = buffer.view %output[%offset] : buffer -> view<2x4xi32, #encoding.layout.strided<strides=[6, 1]>>
-      %egress = kernel.async.copy %source to %external_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<2x4xi32> to view<2x4xi32, #encoding.layout.strided<strides=[6, 1]>> -> kernel.async.token
+      %egress = kernel.async.copy %source to %external_output {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<2x4xi32> to view<2x4xi32, #encoding.layout.strided<strides=[6, 1]>> -> kernel.async.token
       %outgoing = kernel.async.group %egress : kernel.async.token -> kernel.async.group
       kernel.async.wait %outgoing {newer_groups = 0} : kernel.async.group
       channel.release %read : read<tile<2x4xi32>>
@@ -109,7 +109,7 @@ pipeline.def<kernel> public retain target(@npu) @copy_panels() run(%input_arg: b
       %input_offset = index.cast %input_index : index to offset
       %external_input = buffer.view %input[%input_offset] : buffer -> view<16x64xbf16, #encoding.layout.strided<strides=[768, 1]>>
       %write, %destination = channel.reserve %inputs : channel<tile<16x64xbf16>> -> (write<tile<16x64xbf16>>, view<16x64xbf16, #encoding.layout.strided<strides=[768, 1]>>)
-      %ingress = kernel.async.copy %external_input to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16x64xbf16, #encoding.layout.strided<strides=[768, 1]>> to view<16x64xbf16, #encoding.layout.strided<strides=[768, 1]>> -> kernel.async.token
+      %ingress = kernel.async.copy %external_input to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16x64xbf16, #encoding.layout.strided<strides=[768, 1]>> to view<16x64xbf16, #encoding.layout.strided<strides=[768, 1]>> -> kernel.async.token
       %incoming = kernel.async.group %ingress : kernel.async.token -> kernel.async.group
       kernel.async.wait %incoming {newer_groups = 0} : kernel.async.group
       channel.publish %write : write<tile<16x64xbf16>>
@@ -117,7 +117,7 @@ pipeline.def<kernel> public retain target(@npu) @copy_panels() run(%input_arg: b
       %output_index = index.mul %record, %output_step : index
       %output_offset = index.cast %output_index : index to offset
       %external_output = buffer.view %output[%output_offset] : buffer -> view<16x64xbf16, #encoding.layout.strided<strides=[80, 1]>>
-      %egress = kernel.async.copy %source to %external_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<16x64xbf16> to view<16x64xbf16, #encoding.layout.strided<strides=[80, 1]>> -> kernel.async.token
+      %egress = kernel.async.copy %source to %external_output {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<16x64xbf16> to view<16x64xbf16, #encoding.layout.strided<strides=[80, 1]>> -> kernel.async.token
       %outgoing = kernel.async.group %egress : kernel.async.token -> kernel.async.group
       kernel.async.wait %outgoing {newer_groups = 0} : kernel.async.group
       channel.release %read : read<tile<16x64xbf16>>
