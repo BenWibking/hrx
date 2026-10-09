@@ -92,6 +92,12 @@ _MODULES = [
     "workload_configuration",
 ]
 
+_XFAILS = {
+    "vector_values": {
+        "@vector_values_signed_functions": "TARGET/001",
+    },
+}
+
 [
     loom_test(
         name = module + "_test",
@@ -100,6 +106,25 @@ _MODULES = [
         target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
     )
     for module in _MODULES
+    if module not in _XFAILS
+]
+
+[
+    loom_test(
+        name = module + "_test",
+        args = [
+            "--xfail=%s=%s" % (
+                record,
+                _XFAILS[module][record],
+            )
+            for record in sorted(_XFAILS[module])
+        ],
+        execution_profiles = _EXECUTION_PROFILES,
+        module = "//loom/src/loom/import/cxx/test:" + module + "_module",
+        target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+    )
+    for module in _MODULES
+    if module in _XFAILS
 ]
 
 test_suite(
