@@ -1985,7 +1985,7 @@ loom_corpus_test(
     "TARGET/001"
     "numeric/vector/broadcast_arithmetic.loom"
     "@broadcast_arithmetic_bf16_values"
-    "TARGET/003"
+    "TARGET/001,TARGET/003"
     "numeric/vector/broadcast_arithmetic.loom"
     "@broadcast_arithmetic_f16_values"
     "TARGET/003"
