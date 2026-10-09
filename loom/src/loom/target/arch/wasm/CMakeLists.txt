@@ -107,7 +107,6 @@ loom_check_test_suite(
     "test/source_low/loop_counter_offset.loom-test"
     "test/source_low/math_contraction.loom-test"
     "test/source_low/memory_access_flags.loom-test"
-    "test/source_low/memory_packet_from_elements.loom-test"
     "test/source_low/memory_scalar_narrow.loom-test"
     "test/source_low/memory_signed_terms.loom-test"
     "test/source_low/memory_subview.loom-test"
@@ -140,6 +139,8 @@ loom_check_test_suite(
     "test/source_low/target_legalize_native_store.loom-test"
     "test/source_low/uniform_predicate_control.loom-test"
     "test/source_low/uniform_shifts.loom-test"
+    "test/source_low/vector_from_elements.loom-test"
+    "test/source_low/vector_interleave.loom-test"
     "test/source_low/view_bitcast.loom-test"
     "test/source_low/view_carriers.loom-test"
   TEST_NAME_PREFIX_TO_STRIP

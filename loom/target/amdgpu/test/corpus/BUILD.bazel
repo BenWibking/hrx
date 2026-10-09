@@ -213,7 +213,7 @@ loom_scenario_test(
             "numeric/vector/float_extrema.loom:@vector_float_extrema_f8e4m3_values": "TARGET/003",
             "numeric/vector/float_extrema.loom:@vector_float_extrema_f8e5m2_values": "TARGET/003",
             "numeric/vector/floating.loom:@vector_scale_f64_values": "TARGET/003",
-            "numeric/vector/interleave.loom:@irregular_byte_row_bias_values": "AMDGPU/023,TARGET/003",
+            "numeric/vector/interleave.loom:@irregular_byte_row_mask_values": "AMDGPU/023,TARGET/003",
             "numeric/vector/reductions.loom:@vector_axis_reduction_values": "TARGET/093",
             "numeric/vector/reductions.loom:@vector_bitwise_reduction_values": "TARGET/093",
             "numeric/vector/reductions.loom:@vector_empty_reduction_values": "TARGET/093",

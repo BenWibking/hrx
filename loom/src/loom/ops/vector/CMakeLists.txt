@@ -31,6 +31,7 @@ loom_generated_cc_library(
     "construction.c"
     "facts.c"
     "fragment.c"
+    "interleave.c"
     "memory.c"
     "scalarization.c"
     "storage.c"
@@ -78,6 +79,7 @@ loom_generated_cc_library(
     "combining.h"
     "construction.h"
     "fragment.h"
+    "interleave.h"
     "memory.h"
     "ops.h"
     "scalarization.h"
@@ -125,6 +127,17 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::ir
+)
+
+loom_cc_test(
+  NAME
+    interleave_test
+  SRCS
+    "interleave_test.cc"
+  DEPS
+    ::vector
+    iree::testing::gtest
+    iree::testing::gtest_main
 )
 
 loom_cc_test(

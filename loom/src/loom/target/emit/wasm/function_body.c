@@ -1063,6 +1063,11 @@ static iree_status_t loom_wasm_emit_low_scf_while(loom_wasm_emit_state_t* state,
 
 static iree_status_t loom_wasm_emit_structural_op(loom_wasm_emit_state_t* state,
                                                   const loom_op_t* op) {
+  // Allocation has already proven that structural tuple projections and
+  // compositions forward the same Wasm locals without packet moves.
+  if (loom_low_slice_isa(op) || loom_low_concat_isa(op)) {
+    return iree_ok_status();
+  }
   if (loom_low_copy_isa(op) || loom_low_move_isa(op)) {
     return loom_wasm_emit_low_transfer(state, op);
   }

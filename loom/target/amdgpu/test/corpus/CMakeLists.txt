@@ -700,7 +700,7 @@ loom_corpus_test(
     "@vector_scale_f64_values"
     "TARGET/003"
     "numeric/vector/interleave.loom"
-    "@irregular_byte_row_bias_values"
+    "@irregular_byte_row_mask_values"
     "AMDGPU/023,TARGET/003"
     "numeric/vector/reductions.loom"
     "@vector_axis_reduction_values"

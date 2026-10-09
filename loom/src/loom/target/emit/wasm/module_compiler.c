@@ -289,10 +289,11 @@ static iree_status_t loom_wasm_program_assignment_value_type(
         "Wasm value %u is not allocated to a target-local id",
         (unsigned)assignment->value_id);
   }
-  if (assignment->location_count != 1 || assignment->unit_count != 1) {
+  if (assignment->location_count == 0 ||
+      assignment->location_count != assignment->unit_count) {
     return iree_make_status(
         IREE_STATUS_FAILED_PRECONDITION,
-        "Wasm value %u uses a multi-unit target-id assignment",
+        "Wasm value %u uses a non-contiguous target-id assignment",
         (unsigned)assignment->value_id);
   }
   return loom_wasm_value_type_from_descriptor_register_class(
