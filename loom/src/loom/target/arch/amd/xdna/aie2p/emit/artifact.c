@@ -211,6 +211,81 @@ static iree_status_t loom_aie2p_xdna_resolve_device_profile(
   return iree_ok_status();
 }
 
+static iree_string_view_t loom_aie2p_xdna_product_issue_quantity(
+    loom_aie2p_xdna_product_issue_kind_t kind) {
+  switch (kind) {
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_ENTRY_COUNT:
+      return IREE_SV("entries");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_ENTRY_NAME_BYTE_LENGTH:
+      return IREE_SV("entry-name bytes");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_BINDING_RECORD_COUNT:
+      return IREE_SV("binding records");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_RELOCATION_RECORD_COUNT:
+      return IREE_SV("relocation records");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_METADATA_BYTE_LENGTH:
+      return IREE_SV("metadata bytes");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_PROGRAM_HEADER_COUNT:
+      return IREE_SV("program headers");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_SECTION_HEADER_COUNT:
+      return IREE_SV("section headers");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_NATIVE_COMMAND_BYTE_LENGTH:
+      return IREE_SV("native command bytes");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_NATIVE_OPERATION_COUNT:
+      return IREE_SV("native operations");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_SYMBOL_STRING_BYTE_LENGTH:
+      return IREE_SV("native symbol-name bytes");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_FILE_BYTE_LENGTH:
+      return IREE_SV("file bytes");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_SECTION_NAME_BYTE_LENGTH:
+      return IREE_SV("section-name bytes");
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_NONE:
+    case LOOM_AIE2P_XDNA_PRODUCT_ISSUE_PARTITION_COLUMN_COUNT:
+      break;
+  }
+  IREE_ASSERT_UNREACHABLE("XDNA product issue kind");
+  return IREE_SV("image records");
+}
+
+static iree_status_t loom_aie2p_xdna_emit_product_issue(
+    const loom_aie2p_xdna_artifact_request_t* request,
+    const loom_aie2p_xdna_source_entry_t* source_entries,
+    iree_host_size_t entry_count, const loom_xdna_device_profile_t* profile,
+    const loom_aie2p_xdna_product_issue_t* issue) {
+  const iree_host_size_t entry_ordinal = issue->entry_ordinal < entry_count
+                                             ? issue->entry_ordinal
+                                             : entry_count - 1u;
+  const loom_aie2p_xdna_source_entry_t* source_entry =
+      &source_entries[entry_ordinal];
+  if (issue->kind == LOOM_AIE2P_XDNA_PRODUCT_ISSUE_PARTITION_COLUMN_COUNT) {
+    const loom_diagnostic_param_t params[] = {
+        loom_param_string(source_entry->name),
+        loom_param_u32((uint32_t)issue->actual),
+        loom_param_string(iree_make_cstring_view(profile->key)),
+        loom_param_u32((uint32_t)issue->minimum),
+        loom_param_u32((uint32_t)issue->maximum),
+    };
+    const loom_diagnostic_emission_t emission = {
+        .op = source_entry->function_op,
+        .error = LOOM_ERR_XDNA_057,
+        .params = params,
+        .param_count = IREE_ARRAYSIZE(params),
+    };
+    return iree_diagnostic_emit(request->diagnostic_emitter, &emission);
+  }
+  const loom_diagnostic_param_t params[] = {
+      loom_param_string(loom_aie2p_xdna_product_issue_quantity(issue->kind)),
+      loom_param_u64(issue->actual),
+      loom_param_u64(issue->maximum),
+  };
+  const loom_diagnostic_emission_t emission = {
+      .op = source_entry->function_op,
+      .error = LOOM_ERR_XDNA_056,
+      .params = params,
+      .param_count = IREE_ARRAYSIZE(params),
+  };
+  return iree_diagnostic_emit(request->diagnostic_emitter, &emission);
+}
+
 static iree_status_t loom_aie2p_xdna_collect_source_leaves(
     const loom_aie2p_xdna_artifact_request_t* request,
     loom_symbol_fact_table_t* symbol_facts,
@@ -730,7 +805,24 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
         .bindings = bindings,
         .binding_count = array_plans[i].binding_slot_count,
         .array_program = &array_programs[i],
+        .tile_count = array_plans[i].worker_plan_count,
     };
+  }
+
+  const loom_aie2p_xdna_product_t product = {
+      .device_profile = device_profile,
+      .entries = product_entries,
+      .entry_count = entry_count,
+  };
+  loom_aie2p_xdna_product_admission_t* product_admission = NULL;
+  loom_aie2p_xdna_product_issue_t product_issue = {0};
+  bool product_admitted = false;
+  IREE_RETURN_IF_ERROR(loom_aie2p_xdna_product_admit(
+      &product, request->scratch_arena, &product_admitted, &product_admission,
+      &product_issue));
+  if (!product_admitted) {
+    return loom_aie2p_xdna_emit_product_issue(
+        request, source_entries, entry_count, device_profile, &product_issue);
   }
 
   loom_module_t* resident_module = NULL;
@@ -765,6 +857,15 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
     return iree_ok_status();
   }
 
+  loom_aie2p_xdna_product_image_t* product_image = NULL;
+  bool product_finalized = false;
+  IREE_RETURN_IF_ERROR(loom_aie2p_xdna_product_finalize(
+      product_admission, &product_finalized, &product_image, &product_issue));
+  if (!product_finalized) {
+    return loom_aie2p_xdna_emit_product_issue(
+        request, source_entries, entry_count, device_profile, &product_issue);
+  }
+
   for (iree_host_size_t i = 0; i < entry_count; ++i) {
     if (array_plans[i].function_op == NULL) {
       continue;
@@ -775,21 +876,20 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
         request->scratch_arena));
   }
 
-  const loom_aie2p_xdna_product_t product = {
-      .device_profile = device_profile,
-      .entries = product_entries,
-      .entry_count = entry_count,
-  };
-
   iree_io_stream_t* stream = NULL;
   status = iree_io_vec_stream_create(IREE_IO_STREAM_MODE_READABLE |
                                          IREE_IO_STREAM_MODE_WRITABLE |
                                          IREE_IO_STREAM_MODE_SEEKABLE,
                                      4096, request->allocator, &stream);
   if (iree_status_is_ok(status)) {
-    status =
-        loom_aie2p_xdna_product_write(&product, stream, request->scratch_arena);
+    status = loom_aie2p_xdna_product_write(product_image, stream);
   }
+  const iree_io_stream_pos_t stream_length =
+      stream != NULL ? iree_io_stream_length(stream) : 0;
+  if (iree_status_is_ok(status)) {
+    IREE_ASSERT_GT(stream_length, 0);
+  }
+
   iree_byte_sequence_t* contents = NULL;
   if (iree_status_is_ok(status)) {
     status = iree_io_vec_stream_move_contents(stream, &contents);

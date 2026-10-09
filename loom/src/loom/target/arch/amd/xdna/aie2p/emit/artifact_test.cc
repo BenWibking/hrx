@@ -86,6 +86,57 @@ low.func.def retain target<amd.xdna.aie2p.array>(@halo_target) abi(array_program
 }
 )";
 
+constexpr char kAggregateBindingOverflowSource[] = R"(
+aie2p.target<array> @array_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
+aie2p.target<core> @core_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
+low.func.def retain target<amd.xdna.aie2p.array>(@array_target) abi(array_program) abi_layout({binding_count = 32768}) @first() asm {
+  %channel_capacity = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %records_per_activation = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %first_lane = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %second_lane = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %worker_count = constant.u32 2 : reg<aie2p.array.scalar : index>
+  %column = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %producer_row = constant.u32 2 : reg<aie2p.array.scalar : index>
+  %consumer_row = constant.u32 3 : reg<aie2p.array.scalar : index>
+  %group = group %worker_count
+  %producer = worker %group, %first_lane, @produce_i16
+  %consumer = worker %group, %second_lane, @consume_i16
+  %sender = sender %producer, 0 : reg<aie2p.array.sender : tile<1xi16>>
+  %receiver = receiver %consumer, 0 : reg<aie2p.array.receiver : tile<1xi16>>
+  %channel = channel %sender, %receiver, %channel_capacity, %records_per_activation : reg<aie2p.array.channel : tile<1xi16>>
+  constrain.location %producer, %column, %producer_row
+  constrain.location %consumer, %column, %consumer_row
+  return
+}
+low.func.def retain target<amd.xdna.aie2p.array>(@array_target) abi(array_program) abi_layout({binding_count = 32768}) @second() asm {
+  %channel_capacity = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %records_per_activation = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %first_lane = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %second_lane = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %worker_count = constant.u32 2 : reg<aie2p.array.scalar : index>
+  %column = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %producer_row = constant.u32 2 : reg<aie2p.array.scalar : index>
+  %consumer_row = constant.u32 3 : reg<aie2p.array.scalar : index>
+  %group = group %worker_count
+  %producer = worker %group, %first_lane, @produce_i16
+  %consumer = worker %group, %second_lane, @consume_i16
+  %sender = sender %producer, 0 : reg<aie2p.array.sender : tile<1xi16>>
+  %receiver = receiver %consumer, 0 : reg<aie2p.array.receiver : tile<1xi16>>
+  %channel = channel %sender, %receiver, %channel_capacity, %records_per_activation : reg<aie2p.array.channel : tile<1xi16>>
+  constrain.location %producer, %column, %producer_row
+  constrain.location %consumer, %column, %consumer_row
+  return
+}
+low.func.def target<amd.xdna.aie2p.core>(@core_target) abi(object_function) @produce_i16() asm {
+  %output = resource<native_pointer> {index = 0, source_type = buffer} : reg<aie2p.ep>
+  return
+}
+low.func.def target<amd.xdna.aie2p.core>(@core_target) abi(object_function) @consume_i16() asm {
+  %input = resource<native_pointer> {index = 0, source_type = buffer} : reg<aie2p.ep>
+  return
+}
+)";
+
 iree_status_t InitializeXdnaContext(loom_context_t* context) {
   loom_context_initialize(iree_allocator_system(), context);
   iree_status_t status = loom_op_registry_register_all_dialects(context);
@@ -273,6 +324,33 @@ TEST_F(XdnaArtifactTest, RejectsMixedProfilesWithDiagnostic) {
   EXPECT_EQ(capture.emissions[0].string_params[1],
             "amd.xdna.strix_halo.17f0_11");
   EXPECT_EQ(capture.emissions[0].string_params[2], "amd.xdna.strix.17f0_10");
+}
+
+TEST_F(XdnaArtifactTest, RejectsAggregateBindingCountBeforeResidentCompile) {
+  ModulePtr module;
+  IREE_ASSERT_OK(
+      ParseModule(IREE_SV(kAggregateBindingOverflowSource), &module));
+  DiagnosticEmissionCapture capture;
+  const loom_aie2p_xdna_artifact_request_t request = {
+      /*.module=*/module.get(),
+      /*.function_versions=*/nullptr,
+      /*.low_descriptor_registry=*/&low_registry_.registry,
+      /*.compile_report=*/nullptr,
+      /*.diagnostic_emitter=*/capture.emitter(),
+      /*.scratch_arena=*/&scratch_arena_,
+      /*.allocator=*/iree_allocator_null(),
+  };
+  bool emitted = false;
+  IREE_ASSERT_OK(
+      loom_aie2p_xdna_compile_artifact(&request, &emitted, &contents_));
+  EXPECT_FALSE(emitted);
+  ASSERT_EQ(capture.emissions.size(), 1u);
+  EXPECT_EQ(capture.emissions[0].error, LOOM_ERR_XDNA_056);
+  ASSERT_EQ(capture.emissions[0].string_params.size(), 1u);
+  EXPECT_EQ(capture.emissions[0].string_params[0], "binding records");
+  ASSERT_EQ(capture.emissions[0].u64_params.size(), 2u);
+  EXPECT_EQ(capture.emissions[0].u64_params[0], 65536u);
+  EXPECT_EQ(capture.emissions[0].u64_params[1], 65535u);
 }
 
 }  // namespace

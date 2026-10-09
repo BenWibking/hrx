@@ -838,6 +838,45 @@ ERR_XDNA_055 = ErrorDef(
     fix_hint="Compile entries for different device profiles as separate artifacts.",
 )
 
+# ERR_XDNA_056: An AIE2P product exceeds an image-format limit.
+ERR_XDNA_056 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=56,
+    severity=Severity.ERROR,
+    summary="AIE2P product exceeds an image-format limit.",
+    message=(
+        "AIE2P product requires {actual} {quantity}; the XDNA image format "
+        "supports at most {maximum}"
+    ),
+    params=(
+        ErrorParam("quantity", ParamKind.STRING),
+        ErrorParam("actual", ParamKind.U64),
+        ErrorParam("maximum", ParamKind.U64),
+    ),
+    fix_hint="Reduce the number or encoded size of entries in this artifact.",
+)
+
+# ERR_XDNA_057: An AIE2P artifact entry does not fit the deployment profile.
+ERR_XDNA_057 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=57,
+    severity=Severity.ERROR,
+    summary="AIE2P artifact entry does not fit the deployment profile.",
+    message=(
+        "AIE2P artifact entry '@{function_name}' requires {column_count} columns; "
+        "device profile '{profile}' supports a contiguous partition width in "
+        "[{minimum}, {maximum}]"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("column_count", ParamKind.U32),
+        ErrorParam("profile", ParamKind.STRING),
+        ErrorParam("minimum", ParamKind.U32),
+        ErrorParam("maximum", ParamKind.U32),
+    ),
+    fix_hint="Change array placement or select a compatible device profile.",
+)
+
 ALL_XDNA_ERRORS = (
     ERR_XDNA_001,
     ERR_XDNA_005,
@@ -886,4 +925,6 @@ ALL_XDNA_ERRORS = (
     ERR_XDNA_053,
     ERR_XDNA_054,
     ERR_XDNA_055,
+    ERR_XDNA_056,
+    ERR_XDNA_057,
 )

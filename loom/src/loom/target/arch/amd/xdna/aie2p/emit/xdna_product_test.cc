@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "iree/io/vec_stream.h"
@@ -87,7 +88,18 @@ TEST_F(XdnaProductTest, PreservesRequirementsIndependentOfWorkerTopology) {
   const loom_aie2p_xdna_product_t product = {
       loom_xdna_device_profile_lookup(profile_key), entries,
       IREE_ARRAYSIZE(entries)};
-  IREE_ASSERT_OK(loom_aie2p_xdna_product_write(&product, stream_, &arena_));
+  loom_aie2p_xdna_product_issue_t issue = {};
+  loom_aie2p_xdna_product_admission_t* admission = nullptr;
+  bool admitted = false;
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_admit(&product, &arena_, &admitted,
+                                               &admission, &issue));
+  ASSERT_TRUE(admitted);
+  loom_aie2p_xdna_product_image_t* image = nullptr;
+  bool finalized = false;
+  IREE_ASSERT_OK(
+      loom_aie2p_xdna_product_finalize(admission, &finalized, &image, &issue));
+  ASSERT_TRUE(finalized);
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_write(image, stream_));
   std::vector<uint8_t> bytes(iree_io_stream_length(stream_));
   IREE_ASSERT_OK(iree_io_stream_seek(stream_, IREE_IO_STREAM_SEEK_SET, 0));
   IREE_ASSERT_OK(
@@ -143,6 +155,143 @@ TEST_F(XdnaProductTest, PreservesRequirementsIndependentOfWorkerTopology) {
     EXPECT_EQ(binding.maximum_byte_offset, bindings[i].maximum_byte_offset);
   }
 }
+
+class SyntheticXdnaProduct {
+ public:
+  SyntheticXdnaProduct(iree_host_size_t entry_count,
+                       iree_host_size_t tile_count) {
+    profile_ =
+        loom_xdna_device_profile_lookup(IREE_SV("amd.xdna.strix_halo.17f0_11"));
+    IREE_ASSERT(profile_ != nullptr);
+    family_ = loom_xdna_device_profile_array_family(profile_);
+    IREE_ASSERT(family_ != nullptr);
+    const loom_xdna_tile_facts_t* compute = nullptr;
+    for (uint8_t i = 0; i < family_->tile_count; ++i) {
+      if (family_->tiles[i].kind == LOOM_XDNA_TILE_KIND_COMPUTE) {
+        compute = &family_->tiles[i];
+      }
+    }
+    IREE_ASSERT(compute != nullptr);
+    IREE_ASSERT_LE(tile_count, (iree_host_size_t)family_->column_count *
+                                   compute->row_count);
+
+    sections_[0] = (loom_native_section_t){
+        /*.name=*/IREE_SV(".text.kernel"),
+        /*.storage=*/LOOM_NATIVE_SECTION_STORAGE_CONTENTS,
+        /*.access=*/LOOM_NATIVE_SECTION_ACCESS_READ |
+            LOOM_NATIVE_SECTION_ACCESS_EXECUTE,
+        /*.address=*/0,
+        /*.alignment=*/16,
+        /*.contents=*/iree_make_const_byte_span(code_.data(), code_.size()),
+    };
+    sections_[1] = (loom_native_section_t){
+        /*.name=*/IREE_SV(".storage.first"),
+        /*.storage=*/LOOM_NATIVE_SECTION_STORAGE_RESERVATION,
+        /*.access=*/LOOM_NATIVE_SECTION_ACCESS_READ |
+            LOOM_NATIVE_SECTION_ACCESS_WRITE,
+        /*.address=*/0x70000,
+        /*.alignment=*/64,
+        /*.contents=*/iree_const_byte_span_empty(),
+        /*.reservation_length=*/64,
+    };
+    sections_[2] = (loom_native_section_t){
+        /*.name=*/IREE_SV(".storage.second"),
+        /*.storage=*/LOOM_NATIVE_SECTION_STORAGE_RESERVATION,
+        /*.access=*/LOOM_NATIVE_SECTION_ACCESS_READ |
+            LOOM_NATIVE_SECTION_ACCESS_WRITE,
+        /*.address=*/0x70100,
+        /*.alignment=*/64,
+        /*.contents=*/iree_const_byte_span_empty(),
+        /*.reservation_length=*/64,
+    };
+    placements_[0].memory_space = LOOM_XDNA_MEMORY_SPACE_PROGRAM;
+    placements_[1].memory_space = LOOM_XDNA_MEMORY_SPACE_DATA;
+    placements_[2].memory_space = LOOM_XDNA_MEMORY_SPACE_DATA;
+    linked_tile_ = (loom_aie2p_linked_tile_t){
+        /*.assembly=*/
+        {
+            /*.sections=*/sections_.data(),
+            /*.section_count=*/sections_.size(),
+        },
+        /*.section_placements=*/placements_.data(),
+        /*.section_placement_count=*/placements_.size(),
+        /*.symbol_layouts=*/nullptr,
+        /*.symbol_layout_count=*/0,
+        /*.entry_section_index=*/0,
+        /*.entry_address=*/0,
+    };
+    entry_symbol_ = (loom_native_object_symbol_t){
+        /*.name=*/IREE_SV("kernel"),
+        /*.section_contribution_index=*/0,
+        /*.section_offset=*/0,
+        /*.size=*/code_.size(),
+        /*.binding=*/LOOM_NATIVE_OBJECT_SYMBOL_BINDING_GLOBAL,
+        /*.visibility=*/LOOM_NATIVE_OBJECT_SYMBOL_VISIBILITY_DEFAULT,
+        /*.kind=*/LOOM_NATIVE_OBJECT_SYMBOL_KIND_FUNCTION,
+    };
+    contribution_.object.symbols = &entry_symbol_;
+    contribution_.object.symbol_count = 1;
+    contribution_.realization.entry_symbol_index = 0;
+
+    records_.resize(tile_count);
+    for (iree_host_size_t i = 0; i < tile_count; ++i) {
+      records_[i].type = LOOM_AIE2P_PROGRAM_RECORD_TILE_PROGRAM_LOAD;
+      records_[i].value.tile_program_load.tile_program_index = (uint32_t)i;
+    }
+    array_program_.array_records = records_.data();
+    array_program_.array_record_count = records_.size();
+
+    tiles_.resize(entry_count * tile_count);
+    names_.reserve(entry_count);
+    entries_.resize(entry_count);
+    for (iree_host_size_t i = 0; i < entry_count; ++i) {
+      names_.emplace_back("entry_" + std::to_string(i));
+      for (iree_host_size_t j = 0; j < tile_count; ++j) {
+        tiles_[i * tile_count + j] = (loom_aie2p_xdna_tile_t){
+            /*.coordinate=*/
+            {(uint16_t)(j / compute->row_count),
+             (uint16_t)(compute->first_row + j % compute->row_count)},
+            /*.contribution=*/&contribution_,
+            /*.linked_tile=*/&linked_tile_,
+        };
+      }
+      entries_[i] = (loom_aie2p_xdna_entry_t){
+          /*.name=*/iree_make_cstring_view(names_[i].c_str()),
+          /*.column_count=*/
+          (uint16_t)((tile_count + compute->row_count - 1u) /
+                     compute->row_count),
+          /*.bindings=*/nullptr,
+          /*.binding_count=*/0,
+          /*.array_program=*/&array_program_,
+          /*.tiles=*/tiles_.data() + i * tile_count,
+          /*.tile_count=*/tile_count,
+      };
+    }
+    product_ = (loom_aie2p_xdna_product_t){
+        /*.device_profile=*/profile_,
+        /*.entries=*/entries_.data(),
+        /*.entry_count=*/entries_.size(),
+    };
+  }
+
+  const loom_aie2p_xdna_product_t* product() const { return &product_; }
+
+ private:
+  const loom_xdna_device_profile_t* profile_ = nullptr;
+  const loom_xdna_array_family_t* family_ = nullptr;
+  std::array<uint8_t, 4> code_ = {0x44, 0x20, 0xc1, 0x20};
+  std::array<loom_native_section_t, 3> sections_ = {};
+  std::array<loom_aie2p_linked_section_placement_t, 3> placements_ = {};
+  loom_aie2p_linked_tile_t linked_tile_ = {};
+  loom_native_object_symbol_t entry_symbol_ = {};
+  loom_aie2p_leaf_contribution_t contribution_ = {};
+  std::vector<loom_aie2p_program_record_t> records_;
+  loom_aie2p_array_program_t array_program_ = {};
+  std::vector<loom_aie2p_xdna_tile_t> tiles_;
+  std::vector<std::string> names_;
+  std::vector<loom_aie2p_xdna_entry_t> entries_;
+  loom_aie2p_xdna_product_t product_ = {};
+};
 
 TEST_F(XdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
   const loom_xdna_device_profile_t* profile =
@@ -275,7 +424,18 @@ TEST_F(XdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
       /*.entry_count=*/1,
   };
 
-  IREE_ASSERT_OK(loom_aie2p_xdna_product_write(&product, stream_, &arena_));
+  loom_aie2p_xdna_product_issue_t issue = {};
+  loom_aie2p_xdna_product_admission_t* admission = nullptr;
+  bool admitted = false;
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_admit(&product, &arena_, &admitted,
+                                               &admission, &issue));
+  ASSERT_TRUE(admitted);
+  loom_aie2p_xdna_product_image_t* image = nullptr;
+  bool finalized = false;
+  IREE_ASSERT_OK(
+      loom_aie2p_xdna_product_finalize(admission, &finalized, &image, &issue));
+  ASSERT_TRUE(finalized);
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_write(image, stream_));
 
   std::vector<uint8_t> file_bytes(iree_io_stream_length(stream_));
   IREE_ASSERT_OK(iree_io_stream_seek(stream_, IREE_IO_STREAM_SEEK_SET, 0));
@@ -383,6 +543,77 @@ TEST_F(XdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
   EXPECT_EQ(iree_unaligned_load_le_u32(stop + 8), kActivationAddress);
   EXPECT_EQ(iree_unaligned_load_le_u32(stop + 16), 0u);
   EXPECT_EQ(iree_unaligned_load_le_u32(stop + 20), 24u);
+}
+
+TEST(Aie2pXdnaProductTest, DeduplicatesSharedSectionsBeforeDirectoryAdmission) {
+  constexpr iree_host_size_t kEntryCount = 100;
+  constexpr iree_host_size_t kTileCount = 19;
+  static_assert(kEntryCount * kTileCount * 3 >
+                IREE_XDNA_ELF_MAX_SECTION_HEADER_COUNT);
+  SyntheticXdnaProduct fixture(kEntryCount, kTileCount);
+  iree_arena_block_pool_t block_pool;
+  iree_arena_block_pool_initialize(4096, iree_allocator_system(), &block_pool);
+  iree_arena_allocator_t arena;
+  iree_arena_initialize(&block_pool, &arena);
+
+  loom_aie2p_xdna_product_issue_t issue = {};
+  loom_aie2p_xdna_product_admission_t* admission = nullptr;
+  bool admitted = false;
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_admit(fixture.product(), &arena,
+                                               &admitted, &admission, &issue));
+  ASSERT_TRUE(admitted);
+  loom_aie2p_xdna_product_image_t* image = nullptr;
+  bool finalized = false;
+  IREE_ASSERT_OK(
+      loom_aie2p_xdna_product_finalize(admission, &finalized, &image, &issue));
+  ASSERT_TRUE(finalized);
+
+  iree_io_stream_t* stream = nullptr;
+  IREE_ASSERT_OK(iree_io_vec_stream_create(
+      IREE_IO_STREAM_MODE_READABLE | IREE_IO_STREAM_MODE_WRITABLE |
+          IREE_IO_STREAM_MODE_SEEKABLE,
+      4096, iree_allocator_system(), &stream));
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_write(image, stream));
+  std::array<uint8_t, 52> header = {};
+  IREE_ASSERT_OK(iree_io_stream_seek(stream, IREE_IO_STREAM_SEEK_SET, 0));
+  IREE_ASSERT_OK(
+      iree_io_stream_read(stream, header.size(), header.data(), nullptr));
+  EXPECT_EQ(iree_unaligned_load_le_u16(header.data() + 44), 3901u);
+  EXPECT_EQ(iree_unaligned_load_le_u16(header.data() + 48), 2008u);
+
+  iree_io_stream_release(stream);
+  iree_arena_deinitialize(&arena);
+  iree_arena_block_pool_deinitialize(&block_pool);
+}
+
+TEST(Aie2pXdnaProductTest, RejectsExactProgramHeaderOverflow) {
+  constexpr iree_host_size_t kEntryCount = 65;
+  constexpr iree_host_size_t kTileCount = 32;
+  static_assert(1 + kEntryCount * (2 * kTileCount + 1) == 4226);
+  SyntheticXdnaProduct fixture(kEntryCount, kTileCount);
+  iree_arena_block_pool_t block_pool;
+  iree_arena_block_pool_initialize(4096, iree_allocator_system(), &block_pool);
+  iree_arena_allocator_t arena;
+  iree_arena_initialize(&block_pool, &arena);
+
+  loom_aie2p_xdna_product_issue_t issue = {};
+  loom_aie2p_xdna_product_admission_t* admission = nullptr;
+  bool admitted = false;
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_admit(fixture.product(), &arena,
+                                               &admitted, &admission, &issue));
+  ASSERT_TRUE(admitted);
+  loom_aie2p_xdna_product_image_t* image = nullptr;
+  bool finalized = false;
+  IREE_ASSERT_OK(
+      loom_aie2p_xdna_product_finalize(admission, &finalized, &image, &issue));
+  EXPECT_FALSE(finalized);
+  EXPECT_EQ(image, nullptr);
+  EXPECT_EQ(issue.kind, LOOM_AIE2P_XDNA_PRODUCT_ISSUE_PROGRAM_HEADER_COUNT);
+  EXPECT_EQ(issue.actual, 4226u);
+  EXPECT_EQ(issue.maximum, IREE_XDNA_ELF_MAX_PROGRAM_HEADER_COUNT);
+
+  iree_arena_deinitialize(&arena);
+  iree_arena_block_pool_deinitialize(&block_pool);
 }
 
 }  // namespace
