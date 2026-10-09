@@ -424,18 +424,18 @@ IntrinsicCallResult Intrinsics::call(const Binding& admitted,
     return {
         application->call(arguments, types_, arena, owner, builder, location)};
   }
+  if (auto* shaped = std::get_if<ShapedIntrinsic>(binding)) {
+    return {Value(shaped->call(arguments, math_flags, builder, location))};
+  }
   std::array<loom_value_id_t, 8> inline_values;
   std::vector<loom_value_id_t> overflow;
   auto flattened = flatten(arguments, inline_values, overflow);
-  if (auto* scalar = std::get_if<ScalarBinding>(binding)) {
-    loom_op_t* op;
-    check(scalar->operation.scalar->build(
-        builder, scalar->operation.flags | math_flags, flattened.data(),
-        scalar->type, location, &op));
-    return {Value(loom_op_results(op)[0])};
-  }
-  const auto& shaped = std::get<ShapedIntrinsic>(admitted);
-  return {Value(shaped.call(flattened, math_flags, builder, location))};
+  const auto& scalar = std::get<ScalarBinding>(admitted);
+  loom_op_t* op;
+  check(scalar.operation.scalar->build(
+      builder, scalar.operation.flags | math_flags, flattened.data(),
+      scalar.type, location, &op));
+  return {Value(loom_op_results(op)[0])};
 }
 
 }  // namespace loom::cxx_import

@@ -11,6 +11,12 @@
 
 namespace loom::vector {
 
+// Extracts a contiguous register subvector at a dynamic lane offset. Result
+// selects the retained lane count while preserving the source element type.
+template <class Result, class Source>
+[[loom::op("vector.slice")]] Result slice(Source source,
+                                          loom::type::size_type offset);
+
 namespace fragment {
 
 // Matrix operand interpretation attached to a physical vector. Names and

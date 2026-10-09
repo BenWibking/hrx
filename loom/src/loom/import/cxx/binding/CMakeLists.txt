@@ -385,9 +385,11 @@ loom_cc_library(
     "shaped.cc"
   DEPS
     ::combining
+    ::index_values
     ::scalar_bindings
     iree::third_party::cxx_parser
     loom::import::cxx::source::error
+    loom::import::cxx::value::representation
     loom::import::cxx::value::types
     loom::ops::combining
     loom::ops::vector
