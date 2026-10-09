@@ -426,7 +426,7 @@ func.def @enum_storage_u64_oracle(%input: buffer, %output: buffer, %delta: i64) 
   func.return
 }
 
-check.scenario @enum_values {
+check.scenario @enum_values_functions {
   check.trial[10](%trial: index, %entropy: check.entropy) {
     %input = check.generate<@enum_command_input>(%trial) : (index) -> (i32)
     %output = check.generate.fill value(-123) : tensor<5xi64>

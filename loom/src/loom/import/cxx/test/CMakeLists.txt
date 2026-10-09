@@ -719,25 +719,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_generated_file(
   NAME
-    increment_values_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "increment_values_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/increment_values.cxx"
-  INPUTS
-    "increment_values.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
     integer_functions_cases_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -955,34 +936,6 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_test_module(
   NAME
-    increment_values_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/increment_values_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/increment_values.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    increment_values_test_execute_vm_reference_test
-  MODULE
-    "::increment_values_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
     integer_functions_test_module
   SRCS
     "${CMAKE_CURRENT_BINARY_DIR}/integer_functions_cases.cxx"
@@ -1185,7 +1138,27 @@ loom_execution_test(
   MODULE
     "::enum_values_module"
   RUNNER_ARGS
-    "--case=enum_values"
+    "--case=enum_values_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    increment_values_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::increment_values_module"
+  RUNNER_ARGS
+    "--case=increment_values_functions"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
     "loom-execution-profile=vm_reference"
@@ -1473,25 +1446,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_generated_file_family(
   NAME
-    increment_values_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "increment_values_checks.loom"
-    "increment_values_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=increment_values"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
     llama_rms_norm_checks_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -1753,21 +1707,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
-    increment_values_module
-  SRCS
-    "increment_values.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/increment_values_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/increment_values_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/increment_values_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
     llama_rms_norm_module
   SRCS
     "llama_rms_norm.cxx"
@@ -1907,6 +1846,16 @@ loom_test_module(
   SRCS
     "enum_values.cxx"
     "enum_values.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    increment_values_module
+  SRCS
+    "increment_values.cxx"
+    "increment_values.loom"
 )
 endif()
 

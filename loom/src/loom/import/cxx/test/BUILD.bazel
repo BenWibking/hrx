@@ -192,7 +192,6 @@ _GENERATED_HOST_SOURCES = [
     "assumptions.cxx",
     "comparison_functions.cxx",
     "constant_loops.cxx",
-    "increment_values.cxx",
     "integer_functions.cxx",
     "record_values.cxx",
     "schedule_values.cxx",
@@ -204,6 +203,7 @@ _GENERATED_HOST_SOURCES = [
 
 _AUTHORED_HOST_SOURCES = [
     "enum_values",
+    "increment_values",
 ]
 
 _HOST_COMPATIBILITY = loom_config_compatible_with([
@@ -420,7 +420,7 @@ loom_test(
     loom_test(
         name = source + "_test",
         benchmark_smoke = False,
-        case = source,
+        case = source + "_functions",
         execution_profiles = [VM_REFERENCE_PROFILE],
         module = ":" + source + "_module",
         target_compatible_with = _HOST_COMPATIBILITY,
@@ -531,7 +531,6 @@ _GENERATED_KERNEL_SOURCES = [
     "control_flow",
     "early_returns",
     "flash_attention",
-    "increment_values",
     "llama_rms_norm",
     "pointer_walk",
     "shaped_intrinsics",
@@ -545,6 +544,7 @@ _GENERATED_KERNEL_SOURCES = [
 
 _AUTHORED_KERNEL_SOURCES = [
     "enum_values",
+    "increment_values",
     "integer_increment",
     "record_values",
     "scheduled_sum",
