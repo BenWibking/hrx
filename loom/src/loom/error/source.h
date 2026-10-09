@@ -148,6 +148,12 @@ bool loom_source_table_resolve(void* user_data, const loom_module_t* module,
 iree_host_size_t loom_source_byte_offset(iree_string_view_t source,
                                          uint32_t line, uint32_t column);
 
+// Computes a byte offset starting from |range| when the requested coordinate
+// follows its start. Coordinates before the range retain the same clamping
+// semantics as loom_source_byte_offset.
+iree_host_size_t loom_source_range_byte_offset(const loom_source_range_t* range,
+                                               uint32_t line, uint32_t column);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

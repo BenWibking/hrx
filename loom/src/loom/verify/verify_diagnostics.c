@@ -227,10 +227,10 @@ static iree_host_size_t loom_collect_source_backed_highlights(
 
     const loom_location_field_span_t* field_span =
         &location->file.field_spans[span_index];
-    iree_host_size_t start_offset = loom_source_byte_offset(
-        source_location->source, field_span->start_line, field_span->start_col);
-    iree_host_size_t end_offset = loom_source_byte_offset(
-        source_location->source, field_span->end_line, field_span->end_col);
+    iree_host_size_t start_offset = loom_source_range_byte_offset(
+        source_location, field_span->start_line, field_span->start_col);
+    iree_host_size_t end_offset = loom_source_range_byte_offset(
+        source_location, field_span->end_line, field_span->end_col);
     if (start_offset >= end_offset || start_offset < source_location->start ||
         end_offset > source_location->end) {
       continue;

@@ -7,6 +7,7 @@
 #include "loom/error/source.h"
 
 #include <string>
+#include <utility>
 
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -15,6 +16,29 @@
 #include "loom/link/linker.h"
 
 namespace {
+
+static iree_host_size_t ReferenceAsciiByteOffset(iree_string_view_t source,
+                                                 uint32_t line,
+                                                 uint32_t column) {
+  if (line == 0) {
+    return 0;
+  }
+  uint32_t current_line = 1;
+  iree_host_size_t offset = 0;
+  while (current_line < line && offset < source.size) {
+    current_line += source.data[offset++] == '\n';
+  }
+  if (current_line < line) {
+    return source.size;
+  }
+  uint32_t current_column = 1;
+  while (current_column < column && offset < source.size &&
+         source.data[offset] != '\n') {
+    ++current_column;
+    ++offset;
+  }
+  return offset;
+}
 
 TEST(SourceTest, HighlightOffsetsClampWhileCountingCodePoints) {
   const auto source = IREE_SV("\tαb\nlast\n");
@@ -27,6 +51,78 @@ TEST(SourceTest, HighlightOffsetsClampWhileCountingCodePoints) {
   EXPECT_EQ(loom_source_byte_offset(source, 3, 1), source.size);
   EXPECT_EQ(loom_source_byte_offset(source, 99, 1), source.size);
   EXPECT_EQ(loom_source_byte_offset(source, 0, 99), 0u);
+}
+
+TEST(SourceTest, BlockScanningMatchesBytewiseOracle) {
+  std::string regular_source;
+  for (int line = 0; line < 600; ++line) {
+    regular_source.append(1 + (line * 17) % 97, 'a' + line % 26);
+    regular_source.push_back('\n');
+  }
+  const std::string dense_source(2048, '\n');
+  std::string long_line_source(4097, 'x');
+  long_line_source.append("\ny\n");
+
+  const std::string* sources[] = {&regular_source, &dense_source,
+                                  &long_line_source};
+  for (const std::string* source : sources) {
+    const auto source_view =
+        iree_make_string_view(source->data(), source->size());
+    uint32_t line_count = 1;
+    for (char value : *source) {
+      line_count += value == '\n';
+    }
+    for (uint32_t line = 0; line <= line_count + 2; ++line) {
+      for (uint32_t column : {0u, 1u, 2u, 17u, 257u, 4098u}) {
+        EXPECT_EQ(loom_source_byte_offset(source_view, line, column),
+                  ReferenceAsciiByteOffset(source_view, line, column))
+            << "source size " << source->size() << ", line " << line
+            << ", column " << column;
+      }
+    }
+  }
+}
+
+TEST(SourceTest, BlockScanningAndRangeAnchorsPreserveCoordinates) {
+  std::string source(300, 'a');
+  source.push_back('\n');
+  source.append(300, 'b');
+  source.append("\nlast\n");
+  const auto source_view = iree_make_string_view(source.data(), source.size());
+
+  EXPECT_EQ(loom_source_byte_offset(source_view, 2, 1), 301u);
+  EXPECT_EQ(loom_source_byte_offset(source_view, 2, 101), 401u);
+  EXPECT_EQ(loom_source_byte_offset(source_view, 3, 2), 603u);
+  EXPECT_EQ(loom_source_byte_offset(source_view, 4, 1), source.size());
+
+  const loom_source_range_t range = {
+      /*.provenance=*/LOOM_SOURCE_PROVENANCE_EXACT_SOURCE,
+      /*.filename=*/iree_string_view_empty(),
+      /*.source=*/source_view,
+      /*.start=*/401,
+      /*.end=*/source.size(),
+      /*.start_line=*/2,
+      /*.start_column=*/101,
+      /*.end_line=*/4,
+      /*.end_column=*/1,
+  };
+  for (const auto position : {std::pair<uint32_t, uint32_t>{1, 250},
+                              {2, 1},
+                              {2, 101},
+                              {2, 250},
+                              {3, 2},
+                              {4, 1},
+                              {99, 1}}) {
+    EXPECT_EQ(
+        loom_source_range_byte_offset(&range, position.first, position.second),
+        loom_source_byte_offset(source_view, position.first, position.second));
+  }
+
+  std::string dense_source(1024, '\n');
+  EXPECT_EQ(loom_source_byte_offset(
+                iree_make_string_view(dense_source.data(), dense_source.size()),
+                513, 1),
+            512u);
 }
 
 class SourceResolverTest : public ::testing::Test {
