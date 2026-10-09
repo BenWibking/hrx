@@ -239,7 +239,6 @@ loom_cc_library(
     name = "low_registry",
     srcs = ["descriptors/low_registry.c"],
     hdrs = ["descriptors/low_registry.h"],
-    visibility = ["//loom/src/loom/tooling/target/amd/xdna:__pkg__"],
     deps = [
         ":array_descriptors",
         ":configuration_descriptors",
@@ -386,7 +385,6 @@ loom_cc_library(
     hdrs = ["records/target_records.h"],
     visibility = [
         "//loom/src/loom/target/arch/amd/xdna/aie2p:__subpackages__",
-        "//loom/src/loom/tooling/target/amd/xdna:__pkg__",
     ],
     deps = [
         "//loom/src/loom/target:types",
