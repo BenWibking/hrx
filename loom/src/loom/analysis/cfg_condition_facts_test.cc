@@ -426,16 +426,19 @@ TEST_F(CfgConditionFactsTest, DerivedAnchorVisitsRelationWithAuthoredOperands) {
   struct AnchorMapping {
     loom_value_id_t relation;
     loom_value_id_t anchor;
+    iree_host_size_t query_count;
   } mapping = {
       /*.relation=*/relation_left,
       /*.anchor=*/derived_anchor,
+      /*.query_count=*/0,
   };
   const loom_cfg_condition_relation_anchor_provider_t anchor_provider = {
       /*.user_data=*/&mapping,
       /*.query=*/
       [](void* user_data, loom_value_id_t relation_value_id,
          const loom_cfg_condition_relation_anchor_sink_t* sink) {
-        const auto* mapping = static_cast<const AnchorMapping*>(user_data);
+        auto* mapping = static_cast<AnchorMapping*>(user_data);
+        ++mapping->query_count;
         if (relation_value_id != mapping->relation) {
           return iree_ok_status();
         }
@@ -446,6 +449,7 @@ TEST_F(CfgConditionFactsTest, DerivedAnchorVisitsRelationWithAuthoredOperands) {
   };
   const loom_cfg_condition_relation_table_t table = ComputeRelationTable(
       &graph, &dominance, IdentityMode::kCfg, &anchor_provider);
+  EXPECT_EQ(mapping.query_count, 2u);
   EXPECT_EQ(table.derived_anchor_count, 1u);
 
   const uint16_t guarded_index =

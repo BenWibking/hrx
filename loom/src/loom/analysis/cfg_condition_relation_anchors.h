@@ -53,12 +53,14 @@ typedef struct loom_cfg_condition_relation_anchor_builder_t
 typedef struct loom_cfg_condition_relation_anchor_index_t
     loom_cfg_condition_relation_anchor_index_t;
 
-// Builds canonical sparse anchor associations for every SSA operand in
+// Builds canonical sparse anchor associations for |relation_operands| in
 // |operand_domain|. Authored operands remain the retained relation values;
 // emitted values are query keys only.
 iree_status_t loom_cfg_condition_relation_anchor_builder_build(
     const loom_cfg_condition_relation_anchor_provider_t* provider,
     const loom_cfg_condition_operand_domain_t* operand_domain,
+    const loom_cfg_condition_operand_t* relation_operands,
+    uint32_t relation_operand_count,
     loom_condition_relation_set_builder_t* set_builder,
     iree_arena_allocator_t* scratch_arena,
     loom_cfg_condition_relation_anchor_builder_t** out_builder);

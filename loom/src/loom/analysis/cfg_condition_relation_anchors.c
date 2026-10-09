@@ -172,6 +172,8 @@ static iree_status_t loom_cfg_condition_relation_anchor_builder_finish(
 iree_status_t loom_cfg_condition_relation_anchor_builder_build(
     const loom_cfg_condition_relation_anchor_provider_t* provider,
     const loom_cfg_condition_operand_domain_t* operand_domain,
+    const loom_cfg_condition_operand_t* relation_operands,
+    uint32_t relation_operand_count,
     loom_condition_relation_set_builder_t* set_builder,
     iree_arena_allocator_t* scratch_arena,
     loom_cfg_condition_relation_anchor_builder_t** out_builder) {
@@ -193,8 +195,8 @@ iree_status_t loom_cfg_condition_relation_anchor_builder_build(
       .user_data = &state,
       .emit = loom_cfg_condition_relation_anchor_emit,
   };
-  for (loom_cfg_condition_operand_t operand = 0;
-       operand < operand_domain->value_count; ++operand) {
+  for (uint32_t i = 0; i < relation_operand_count; ++i) {
+    const loom_cfg_condition_operand_t operand = relation_operands[i];
     state.operand = operand;
     IREE_RETURN_IF_ERROR(provider->query(
         provider->user_data, operand_domain->values[operand], &sink));
