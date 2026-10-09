@@ -581,8 +581,6 @@ def _compile_operand_form(
     descriptor_ordinals: dict[str, int],
     selected_descriptors: Sequence[Descriptor],
     operand_form: OperandForm,
-    match_start: int,
-    operand_map_start: int,
 ) -> tuple[
     CompiledOperandForm,
     tuple[CompiledOperandFormMatch, ...],
@@ -701,9 +699,9 @@ def _compile_operand_form(
             replacement_immediate_index=replacement_immediate_index,
             immediate_match_index=immediate_match_index,
             immediate_action=operand_form.immediate_action,
-            match_start=match_start,
+            match_start=0,
             match_count=len(compiled_matches),
-            operand_map_start=operand_map_start,
+            operand_map_start=0,
             operand_map_count=len(operand_map),
         ),
         tuple(compiled_matches),
@@ -1501,7 +1499,9 @@ def compile_descriptor_set(
     encoding_field_values: list[EncodingFieldValue] = []
     operand_forms: list[CompiledOperandForm] = []
     operand_form_matches: list[CompiledOperandFormMatch] = []
+    operand_form_match_group_starts: dict[tuple[CompiledOperandFormMatch, ...], int] = {}
     operand_form_operand_indices: list[int] = []
+    operand_form_map_group_starts: dict[tuple[int, ...], int] = {}
     descriptor_rows: list[dict[str, int]] = []
     schedule_rows: list[dict[str, int]] = []
     enum_domain_rows: list[dict[str, int]] = []
@@ -1753,12 +1753,18 @@ def compile_descriptor_set(
                 descriptor_ordinals,
                 selected_descriptors,
                 operand_form,
-                len(operand_form_matches),
-                len(operand_form_operand_indices),
+            )
+            compiled_form.match_start, _ = append_interned_sequence(
+                compiled_matches,
+                operand_form_matches,
+                operand_form_match_group_starts,
+            )
+            compiled_form.operand_map_start, _ = append_interned_sequence(
+                operand_map,
+                operand_form_operand_indices,
+                operand_form_map_group_starts,
             )
             operand_forms.append(compiled_form)
-            operand_form_matches.extend(compiled_matches)
-            operand_form_operand_indices.extend(operand_map)
         descriptor_rows.append(
             {
                 "operand_start": operand_start,
