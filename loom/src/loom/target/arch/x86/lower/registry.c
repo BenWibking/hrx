@@ -41,7 +41,8 @@ static bool loom_x86_vector_element_bit_width(loom_scalar_type_t scalar_type,
 }
 
 static bool loom_x86_static_vector_register_class_for_source_type(
-    loom_type_t source_type, uint32_t maximum_vector_bit_width,
+    loom_type_t source_type, uint32_t minimum_vector_bit_width,
+    uint32_t maximum_vector_bit_width,
     loom_x86_register_class_t* out_register_class) {
   if (!loom_type_is_vector(source_type) || loom_type_rank(source_type) != 1 ||
       !loom_type_is_all_static(source_type)) {
@@ -58,6 +59,9 @@ static bool loom_x86_static_vector_register_class_for_source_type(
     return false;
   }
   const uint32_t vector_bit_width = (uint32_t)lane_count * element_bit_width;
+  if (vector_bit_width < minimum_vector_bit_width) {
+    return false;
+  }
   return loom_x86_register_class_for_vector_bit_width(vector_bit_width,
                                                       out_register_class);
 }
@@ -97,6 +101,13 @@ static bool loom_x86_type_is_narrow_scalar_bits(loom_type_t type) {
 static bool loom_x86_type_is_scalar_f16(loom_type_t type) {
   return loom_type_is_scalar(type) &&
          loom_type_element_type(type) == LOOM_SCALAR_TYPE_F16;
+}
+
+static bool loom_x86_type_is_vector_f16x4(loom_type_t type) {
+  return loom_type_is_vector(type) && loom_type_rank(type) == 1 &&
+         loom_type_is_all_static(type) &&
+         loom_type_element_type(type) == LOOM_SCALAR_TYPE_F16 &&
+         loom_type_dim_static_size_at(type, 0) == 4;
 }
 
 static bool loom_x86_type_is_scalar_f32(loom_type_t type) {
@@ -173,7 +184,8 @@ static bool loom_x86_avx2_register_class_for_source_type(
     return true;
   }
   return loom_x86_static_vector_register_class_for_source_type(
-      source_type, /*maximum_vector_bit_width=*/256, out_register_class);
+      source_type, /*minimum_vector_bit_width=*/128,
+      /*maximum_vector_bit_width=*/256, out_register_class);
 }
 
 static bool loom_x86_avx512_register_class_for_source_type(
@@ -187,7 +199,8 @@ static bool loom_x86_avx512_register_class_for_source_type(
     return true;
   }
   return loom_x86_static_vector_register_class_for_source_type(
-      source_type, /*maximum_vector_bit_width=*/512, out_register_class);
+      source_type, /*minimum_vector_bit_width=*/128,
+      /*maximum_vector_bit_width=*/512, out_register_class);
 }
 
 static bool loom_x86_avx512_features_register_class_for_source_type(
@@ -196,6 +209,13 @@ static bool loom_x86_avx512_features_register_class_for_source_type(
   if ((feature_bits & LOOM_X86_FEATURE_AVX512_FP16) != 0 &&
       loom_x86_type_is_scalar_f16(source_type)) {
     *out_register_class = LOOM_X86_REGISTER_CLASS_XMM;
+    return true;
+  }
+  if ((feature_bits & LOOM_X86_FEATURE_AVX512_FP16) != 0 &&
+      loom_x86_type_is_vector_f16x4(source_type) &&
+      loom_x86_static_vector_register_class_for_source_type(
+          source_type, /*minimum_vector_bit_width=*/64,
+          /*maximum_vector_bit_width=*/64, out_register_class)) {
     return true;
   }
   return loom_x86_avx512_register_class_for_source_type(source_type,
@@ -344,7 +364,8 @@ static iree_status_t loom_x86_map_packed_dot_type(
     loom_type_t* out_low_type) {
   loom_x86_register_class_t register_class = 0;
   if (loom_x86_static_vector_register_class_for_source_type(
-          source_type, /*maximum_vector_bit_width=*/512, &register_class)) {
+          source_type, /*minimum_vector_bit_width=*/128,
+          /*maximum_vector_bit_width=*/512, &register_class)) {
     return loom_x86_make_register_type(context, register_class, out_low_type);
   }
   return iree_ok_status();
@@ -442,10 +463,13 @@ static iree_status_t loom_x86_map_avx512_features_contract_value(
       (loom_x86_feature_bits_t)loom_target_contract_query_environment_bundle(
           environment)
           ->config->contract_feature_bits;
-  if ((feature_bits & LOOM_X86_FEATURE_AVX512_FP16) != 0 &&
-      loom_x86_type_is_scalar_f16(source_type)) {
-    *out_mapped_value = loom_low_lower_rule_mapped_value_register(
-        LOOM_X86_REGISTER_CLASS_XMM, 1);
+  loom_x86_register_class_t register_class = 0;
+  if (loom_x86_avx512_features_register_class_for_source_type(
+          source_type, feature_bits, &register_class) &&
+      (loom_x86_type_is_scalar_f16(source_type) ||
+       loom_x86_type_is_vector_f16x4(source_type))) {
+    *out_mapped_value =
+        loom_low_lower_rule_mapped_value_register(register_class, 1);
     return iree_ok_status();
   }
   return loom_x86_map_avx512_contract_value(user_data, environment, source_op,

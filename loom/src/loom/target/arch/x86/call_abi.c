@@ -173,6 +173,15 @@ static bool loom_x86_call_abi_classify_vector(
             (uint32_t)vector_bit_width, &register_class)) {
       return false;
     }
+    const uint16_t byte_length = (uint16_t)(vector_bit_width / 8);
+    *out_classification = (loom_x86_call_abi_classification_t){
+        .abi_class = LOOM_X86_CALL_ABI_CLASS_SSE,
+        .carrier_register_class = register_class,
+        .boundary_register_class = register_class,
+        .byte_length = byte_length,
+        .byte_alignment = (uint8_t)byte_length,
+    };
+    return true;
   }
   const uint16_t byte_length =
       loom_x86_call_abi_register_byte_length(register_class);

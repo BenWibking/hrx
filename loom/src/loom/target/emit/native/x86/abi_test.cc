@@ -405,6 +405,7 @@ TEST_F(X86FunctionAbiTest, VectorLogicalTypesCoverEveryWidthFamily) {
     const char* carrier;
     uint16_t register_class;
   } widths[] = {
+      {64, "xmm", LOOM_X86_REGISTER_CLASS_XMM},
       {128, "xmm", LOOM_X86_REGISTER_CLASS_XMM},
       {256, "ymm", LOOM_X86_REGISTER_CLASS_YMM},
       {512, "zmm", LOOM_X86_REGISTER_CLASS_ZMM},
@@ -419,11 +420,16 @@ TEST_F(X86FunctionAbiTest, VectorLogicalTypesCoverEveryWidthFamily) {
     }
   }
   for (uint16_t lane_count : {2, 4, 8, 16, 32, 64}) {
-    const iree_host_size_t width_index = lane_count <= 16 ? 0 : lane_count / 32;
-    cases.push_back({"vector<" + std::to_string(lane_count) + "xi1>",
-                     widths[width_index].carrier,
-                     widths[width_index].register_class,
-                     static_cast<uint16_t>(widths[width_index].bits / 8)});
+    const uint16_t register_class =
+        lane_count <= 16   ? LOOM_X86_REGISTER_CLASS_XMM
+        : lane_count == 32 ? LOOM_X86_REGISTER_CLASS_YMM
+                           : LOOM_X86_REGISTER_CLASS_ZMM;
+    const char* carrier = lane_count <= 16   ? "xmm"
+                          : lane_count == 32 ? "ymm"
+                                             : "zmm";
+    const uint16_t byte_length = lane_count <= 16 ? 16 : lane_count;
+    cases.push_back({"vector<" + std::to_string(lane_count) + "xi1>", carrier,
+                     register_class, byte_length});
   }
 
   std::string source;
@@ -575,6 +581,8 @@ TEST_F(X86FunctionAbiTest, StackRowsRetainExactScalarAndVectorWidths) {
        8, 16},
       {"f64", "x86.avx2.core", "f64", "xmm", loom_x86_avx2_core_descriptor_set,
        8, 16},
+      {"xmm64", "x86.avx512.core", "vector<4xf16>", "xmm",
+       loom_x86_avx512_core_descriptor_set, 8, 16},
       {"xmm", "x86.simd128.core", "vector<4xi32>", "xmm",
        loom_x86_simd128_core_descriptor_set, 16, 16},
       {"ymm", "x86.avx2.core", "vector<8xi32>", "ymm",
@@ -620,6 +628,27 @@ TEST_F(X86FunctionAbiTest, StackRowsRetainExactScalarAndVectorWidths) {
     EXPECT_EQ(prepared.abi.stack_argument_alignment, test_case.stack_alignment);
     EXPECT_TRUE(prepared.abi.has_simd_stack_argument);
   }
+}
+
+TEST_F(X86FunctionAbiTest, LowXmmVectorResultRetainsLogicalWidth) {
+  ModulePtr module = Parse(R"(
+low.func.def target<x86.avx512.core> abi(object_function) abi_layout({signature = (vector<4xf16>, vector<4xf16>, vector<4xf16>) -> (vector<4xf16>, vector<4xf16>, vector<4xf16>)}) @results(%a: reg<x86.xmm>, %b: reg<x86.xmm>, %c: reg<x86.xmm>) -> (reg<x86.xmm>, reg<x86.xmm>, reg<x86.xmm>) asm {
+  return %a, %b, %c
+}
+)");
+  const PreparedAbi prepared =
+      Prepare(module.get(), "results", loom_x86_avx512_core_descriptor_set);
+  ASSERT_TRUE(prepared.supported);
+  ASSERT_EQ(prepared.abi.call_contract.result_count, 3u);
+  EXPECT_EQ(prepared.abi.call_contract.results[0].location_base, 0u);
+  EXPECT_EQ(prepared.abi.call_contract.results[1].location_base, 1u);
+  EXPECT_EQ(prepared.abi.call_contract.results[2].location_kind,
+            LOOM_LOW_ALLOCATION_LOCATION_UNASSIGNED);
+  EXPECT_EQ(prepared.abi.results[2].stack_offset, 0u);
+  EXPECT_EQ(prepared.abi.results[2].byte_length, 8u);
+  EXPECT_EQ(prepared.abi.results[2].byte_alignment, 8u);
+  EXPECT_EQ(prepared.abi.call_storage_bytes, 8u);
+  EXPECT_EQ(prepared.abi.call_storage_alignment, 16u);
 }
 
 TEST_F(X86FunctionAbiTest, PrivateResultsUseIndependentBanksAndOverflow) {

@@ -9,6 +9,7 @@
 bool loom_x86_register_class_for_vector_bit_width(
     uint32_t vector_bit_width, loom_x86_register_class_t* out_register_class) {
   switch (vector_bit_width) {
+    case 64:
     case 128:
       *out_register_class = LOOM_X86_REGISTER_CLASS_XMM;
       return true;
