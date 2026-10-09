@@ -24,7 +24,6 @@ from loom.target.arch.amdgpu.contracts.bfloat import bfloat_narrow_rules
 from loom.target.arch.amdgpu.contracts.materializers import (
     ADDRESS_VGPR_MATERIALIZER,
     F32_VGPR_MATERIALIZER,
-    F64_VGPR_MATERIALIZER,
     I1_NATIVE_MASK_MATERIALIZER,
     REGISTERS_VGPR_MATERIALIZER,
     VOP3_BINARY_RHS_MATERIALIZER,
@@ -874,6 +873,51 @@ def _f32_abs_rule(
                 results={"dst": ValueRef.result("result")},
                 immediates={"imm32": _F32_ABS_MASK},
                 form=_emit_form(type_pattern),
+            ),
+        ),
+    )
+
+
+def _f64_sign_rule(
+    source_op: Op,
+    descriptor_key: str,
+    immediate: int,
+) -> DescriptorRule:
+    descriptor = _descriptor(descriptor_key)
+    source = ValueRef.operand("input", materializer=REGISTERS_VGPR_MATERIALIZER.name)
+    return DescriptorRule(
+        source_op=source_op,
+        descriptor=descriptor,
+        guards=(
+            *_typed_guards(("input", "result"), _F64),
+            Guard.value_materializable("input", REGISTERS_VGPR_MATERIALIZER.name),
+            Guard.descriptor_available(descriptor),
+        ),
+        emit=(
+            EmitRegisterSlice(
+                source=source,
+                result=ValueRef.temporary("low_word"),
+                unit_count=1,
+            ),
+            EmitRegisterSlice(
+                source=source,
+                result=ValueRef.temporary("high_word"),
+                unit_offset=1,
+                unit_count=1,
+            ),
+            EmitDescriptorOp(
+                descriptor=descriptor,
+                operands={"rhs": ValueRef.temporary("high_word")},
+                results={"dst": ValueRef.temporary("result_high_word")},
+                result_types={"dst": DescriptorResultType()},
+                immediates={"imm32": immediate},
+            ),
+            EmitRegisterConcat(
+                sources=(
+                    ValueRef.temporary("low_word"),
+                    ValueRef.temporary("result_high_word"),
+                ),
+                result=ValueRef.result("result"),
             ),
         ),
     )
@@ -2320,7 +2364,7 @@ def _sqrtf_exact_f64_rule() -> DescriptorRule:
             "v_cmp_class_f64",
         )
     }
-    source = ValueRef.operand("input", materializer=F64_VGPR_MATERIALIZER.name)
+    source = ValueRef.operand("input", materializer=REGISTERS_VGPR_MATERIALIZER.name)
     temp = ValueRef.temporary
     emit: list[ContractEmit] = []
 
@@ -2420,7 +2464,7 @@ def _sqrtf_exact_f64_rule() -> DescriptorRule:
         guards=(
             *_typed_guards(("input", "result"), _F64),
             Guard.instance_flags_has_none("fastmath", "afn"),
-            Guard.value_materializable("input", F64_VGPR_MATERIALIZER.name),
+            Guard.value_materializable("input", REGISTERS_VGPR_MATERIALIZER.name),
             *(
                 Guard.descriptor_available(descriptor)
                 for descriptor in descriptors.values()
@@ -2442,8 +2486,8 @@ def _divf_exact_f64_rule() -> DescriptorRule:
     multiply = _descriptor("amdgpu.v_mul_f64")
     fmas = _descriptor("amdgpu.v_div_fmas_f64")
     fixup = _descriptor("amdgpu.v_div_fixup_f64")
-    numerator = ValueRef.operand("lhs", materializer=F64_VGPR_MATERIALIZER.name)
-    denominator = ValueRef.operand("rhs", materializer=F64_VGPR_MATERIALIZER.name)
+    numerator = ValueRef.operand("lhs", materializer=REGISTERS_VGPR_MATERIALIZER.name)
+    denominator = ValueRef.operand("rhs", materializer=REGISTERS_VGPR_MATERIALIZER.name)
     register_type = DescriptorResultType()
     return DescriptorRule(
         source_op=scalar_arithmetic.scalar_divf,
@@ -2451,8 +2495,8 @@ def _divf_exact_f64_rule() -> DescriptorRule:
         report_key=_report_key(scalar_arithmetic.scalar_divf, "exact_f64_fixup"),
         guards=(
             *_typed_guards(("lhs", "rhs", "result"), _F64),
-            Guard.value_materializable("lhs", F64_VGPR_MATERIALIZER.name),
-            Guard.value_materializable("rhs", F64_VGPR_MATERIALIZER.name),
+            Guard.value_materializable("lhs", REGISTERS_VGPR_MATERIALIZER.name),
+            Guard.value_materializable("rhs", REGISTERS_VGPR_MATERIALIZER.name),
             *(
                 Guard.descriptor_available(descriptor)
                 for descriptor in (
@@ -2679,6 +2723,94 @@ def _bool_to_f64_rule() -> DescriptorRule:
             EmitDescriptorOp(
                 descriptor=convert,
                 operands={"input": ValueRef.temporary("integer")},
+                results={"dst": ValueRef.result("result")},
+            ),
+        ),
+    )
+
+
+def _i64_to_f64_rule(source_op: Op, *, signed: bool) -> DescriptorRule:
+    # Convert each 32-bit limb exactly, scale the signed or unsigned high limb
+    # by 2^32 exactly, and let the final addition perform the one required
+    # rounding.
+    low_convert = _descriptor("amdgpu.v_cvt_f64_u32")
+    high_convert = _descriptor(
+        "amdgpu.v_cvt_f64_i32" if signed else "amdgpu.v_cvt_f64_u32"
+    )
+    move = _descriptor("amdgpu.v_mov_b32")
+    multiply = _descriptor("amdgpu.v_mul_f64")
+    add = _descriptor("amdgpu.v_add_f64")
+    source = ValueRef.operand("input")
+    return DescriptorRule(
+        source_op=source_op,
+        descriptor=high_convert,
+        guards=(
+            _value_type("input", _I64),
+            _value_type("result", _F64),
+            *(
+                Guard.descriptor_available(descriptor)
+                for descriptor in (low_convert, high_convert, move, multiply, add)
+            ),
+        ),
+        emit=(
+            EmitRegisterSlice(
+                source=source,
+                result=ValueRef.temporary("low_word"),
+                unit_count=1,
+            ),
+            EmitRegisterSlice(
+                source=source,
+                result=ValueRef.temporary("high_word"),
+                unit_offset=1,
+                unit_count=1,
+            ),
+            EmitDescriptorOp(
+                descriptor=low_convert,
+                operands={"input": ValueRef.temporary("low_word")},
+                results={"dst": ValueRef.temporary("low_f64")},
+                result_types={"dst": DescriptorResultType()},
+            ),
+            EmitDescriptorOp(
+                descriptor=high_convert,
+                operands={"input": ValueRef.temporary("high_word")},
+                results={"dst": ValueRef.temporary("high_f64")},
+                result_types={"dst": DescriptorResultType()},
+            ),
+            EmitDescriptorOp(
+                descriptor=move,
+                results={"dst": ValueRef.temporary("scale_low_word")},
+                result_types={"dst": DescriptorResultType()},
+                immediates={"imm32": 0},
+            ),
+            EmitDescriptorOp(
+                descriptor=move,
+                results={"dst": ValueRef.temporary("scale_high_word")},
+                result_types={"dst": DescriptorResultType()},
+                immediates={"imm32": 0x41F00000},
+            ),
+            EmitRegisterConcat(
+                sources=(
+                    ValueRef.temporary("scale_low_word"),
+                    ValueRef.temporary("scale_high_word"),
+                ),
+                result=ValueRef.temporary("scale"),
+                result_type=ValueRef.result("result"),
+            ),
+            EmitDescriptorOp(
+                descriptor=multiply,
+                operands={
+                    "lhs": ValueRef.temporary("high_f64"),
+                    "rhs": ValueRef.temporary("scale"),
+                },
+                results={"dst": ValueRef.temporary("high_scaled")},
+                result_types={"dst": DescriptorResultType()},
+            ),
+            EmitDescriptorOp(
+                descriptor=add,
+                operands={
+                    "lhs": ValueRef.temporary("high_scaled"),
+                    "rhs": ValueRef.temporary("low_f64"),
+                },
                 results={"dst": ValueRef.result("result")},
             ),
         ),
@@ -4257,39 +4389,8 @@ def _rules() -> tuple[ContractCase, ...]:
                 "amdgpu.v_cvt_f64_u32",
             ),
             _bool_to_f64_rule(),
-            RecipeRule(
-                source_op=scalar_conversion.scalar_uitofp,
-                guards=(
-                    _value_type("input", _I64),
-                    _value_type("result", _F64),
-                    *(
-                        Guard.descriptor_available(_descriptor(key))
-                        for key in (
-                            "amdgpu.v_cvt_f64_u32",
-                            "amdgpu.v_mul_f64",
-                            "amdgpu.v_add_f64",
-                            "amdgpu.v_mov_b32",
-                        )
-                    ),
-                ),
-            ),
-            RecipeRule(
-                source_op=scalar_conversion.scalar_sitofp,
-                guards=(
-                    _value_type("input", _I64),
-                    _value_type("result", _F64),
-                    *(
-                        Guard.descriptor_available(_descriptor(key))
-                        for key in (
-                            "amdgpu.v_cvt_f64_u32",
-                            "amdgpu.v_cvt_f64_i32",
-                            "amdgpu.v_mul_f64",
-                            "amdgpu.v_add_f64",
-                            "amdgpu.v_mov_b32",
-                        )
-                    ),
-                ),
-            ),
+            _i64_to_f64_rule(scalar_conversion.scalar_uitofp, signed=False),
+            _i64_to_f64_rule(scalar_conversion.scalar_sitofp, signed=True),
         )
     )
     for source_op, conversion_descriptor_key in (
@@ -4679,21 +4780,15 @@ def _rules() -> tuple[ContractCase, ...]:
             ),
             _f32_neg_rule(scalar_arithmetic.scalar_negf, _F32, f32_operand=True),
             _f32_abs_rule(scalar_arithmetic.scalar_absf, _F32, f32_operand=True),
-            RecipeRule(
-                source_op=scalar_arithmetic.scalar_negf,
-                guards=(
-                    _value_type("input", _F64),
-                    _value_type("result", _F64),
-                    Guard.descriptor_available(_descriptor("amdgpu.v_xor_b32.lit")),
-                ),
+            _f64_sign_rule(
+                scalar_arithmetic.scalar_negf,
+                "amdgpu.v_xor_b32.lit",
+                0x80000000,
             ),
-            RecipeRule(
-                source_op=scalar_arithmetic.scalar_absf,
-                guards=(
-                    _value_type("input", _F64),
-                    _value_type("result", _F64),
-                    Guard.descriptor_available(_descriptor("amdgpu.v_and_b32.lit")),
-                ),
+            _f64_sign_rule(
+                scalar_arithmetic.scalar_absf,
+                "amdgpu.v_and_b32.lit",
+                0x7FFFFFFF,
             ),
             *_f32_copysign_rules(scalar_arithmetic.scalar_copysignf, _F32),
             _divf_arcp_one_rule(scalar_arithmetic.scalar_divf, _F32),
@@ -4965,7 +5060,6 @@ AMDGPU_ARITHMETIC_CONTRACT_FRAGMENT = ContractFragment(
     materializers=(
         ADDRESS_VGPR_MATERIALIZER,
         F32_VGPR_MATERIALIZER,
-        F64_VGPR_MATERIALIZER,
         I1_NATIVE_MASK_MATERIALIZER,
         REGISTERS_VGPR_MATERIALIZER,
         VOP3_BINARY_RHS_MATERIALIZER,
