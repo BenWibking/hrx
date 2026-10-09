@@ -15,8 +15,12 @@ with tempfile.TemporaryDirectory(prefix='loom-chemistry-import-') as work:
                f'--output={output}', str(here / 'reproducer.cpp')]
     subprocess.run(command, check=True)
     ir = output.read_text()
-    for operation in ('scalar.expf', 'scalar.logf', 'scalar.sqrtf', 'scalar.cbrtf'):
-        assert any(operation in line and 'f64' in line for line in ir.splitlines()), operation
+    # sqrt stays a strict scalar operation; exp, log, and cbrt are f64_math.h
+    # source recipes, so the IR must not request target math legalization.
+    assert any('scalar.sqrtf' in line and 'f64' in line for line in ir.splitlines())
+    for operation in ('scalar.expf', 'scalar.logf', 'scalar.cbrtf'):
+        assert operation not in ir, operation
+    assert 'afn' not in ir
     assert ir.count('kernel.def ') == 2
     for name in ('fjac', 'e', 'y', 'mass', 'ip'):
         assert f'%{name}_storage = buffer.alloca<private>' in ir, name

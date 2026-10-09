@@ -16,7 +16,7 @@ originating checkout), so the full imported module is the reproducer.
 
 | File | Purpose |
 | --- | --- |
-| `chemistry.loom` | Compiler input: both kernels imported from `../reproducer.cpp` with `loom-import-cxx --data-model=lp64 --approximate-functions=false` at HRX `383e88d8b6`. SHA256 `3ec3a674…99ef`. |
+| `chemistry.loom` | Compiler input: both kernels imported from `../reproducer.cpp` with `loom-import-cxx --data-model=lp64 --approximate-functions=false` at HRX `0be406433a` (upstream f64 lowering; exp/log/cbrt from `../f64_math.h`). SHA256 `ab3289ef…9cca`. |
 | `compile.sh` | Compiles both kernels for gfx942 and prints static metrics beside the pinned HIP object. No GPU needed. `--reimport` regenerates the module from source first. |
 | `static_counts.py` | Static code-object metrics (scratch, branches, EXEC writes, waits, resources) plus a summary of Loom's `BACKEND/009` spill diagnostics. |
 | `hip_code_objects.sh` | Builds device code objects for the original HIP kernels and the HIP-rewritten control. Needs `hipcc` only (the `../Dockerfile.rocm10` container works). |
@@ -124,8 +124,14 @@ private bytes against 0.
 | 2026-10-01, `af901efb55` (GPU-measured) | — | 51,968 | 364,734 | — |
 | 2026-10-02, `4bbc173125` | 6,598 | — | — | 130 s |
 | 2026-10-08, `383e88d8b6` | 8,314 | 61,624 | 318,454 | 200–213 s |
+| 2026-10-09, `0be406433a`, source exp/log/cbrt | 8,364 | 62,000 | 322,477 | — |
 
-Instruction count fell while spills and private storage grew. The GPU timings
+Instruction count fell while spills and private storage grew. The 2026-10-09
+row replaces the compiler's f64 exp/log/cbrt recipes with the same operations
+written in `../f64_math.h`. The imported functions match the recipes
+operation for operation, with selects and no branches. On the same compiler,
+the recipe build still reproduces the 2026-10-08 counts exactly, so the
+difference comes from inlining and scheduling the source functions. The GPU timings
 below predate this growth.
 
 ## What the ISA shows

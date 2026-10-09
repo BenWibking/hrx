@@ -1,8 +1,8 @@
 # Chemistry reproducer for the Loom C++ importer
 
 `reproducer.cpp` contains both rewritten device kernels and their reachable
-chemistry/ROS2S routines. It imports into verified Loom High IR with native
-`double` math operations and real integer atomics. This is a device-source rewrite, not a complete
+chemistry/ROS2S routines. It imports into verified Loom High IR with strict
+`double` math and real integer atomics. This is a device-source rewrite, not a complete
 Loom GPU application or a replacement HIP runtime.
 
 The original `/Users/benwibking/amrex_codes/mojo-chemistry/reproducer.cpp` is
@@ -33,7 +33,8 @@ with the pinned HIP source and the current reason for each transformation.
   with `done`, `retry`, and a result code. No additional solver iteration executes
   after an original return, break, or continue point.
 - `support.h` supplies by-value min/max templates and the original recursive
-  `powi` template. Their operand-selection rules and multiplication grouping
+  `powi` template. For Loom it binds `sqrt` and `abs` to scalar operations and
+  `exp`, `log`, and `cbrt` to the strict f64 source recipes in `f64_math.h`. Their operand-selection rules and multiplication grouping
   match the original, including min/max behavior for NaNs and signed zero.
 - The small `EosSums` aggregate again returns the EOS sums by value, so both
   EOS routines share the source calculation.
@@ -136,8 +137,9 @@ They emit `view.atomic.rmw<addi>` and `view.atomic.cmpxchg` with relaxed orderin
 and device scope, returning the old value. There are no non-atomic stand-ins;
 the old `CHEM_IMPORT_STRUCTURE_ONLY` mode has been removed.
 
-The import check keeps `double`, exp/log/sqrt/cbrt/abs, and finite-value testing;
-it does not substitute float or grant approximate-math permissions. The gfx942
+The import check keeps `double`, sqrt/abs, the exp/log/cbrt source recipes, and
+finite-value testing; it does not substitute float or grant approximate-math
+permissions. The gfx942
 backend has focused source-low and assembly coverage for f64 arithmetic,
 comparisons, conversions, sqrt, and division, as well as signed constant
 remainder. Strict f64 division uses the target's DIV_SCALE,
@@ -145,11 +147,14 @@ reciprocal-refinement, DIV_FMAS, and DIV_FIXUP sequence.
 
 In the current compiler worktree, `cfg-converge` reconstructs a non-owning
 `buffer.view` in its consuming successor, and the HAL kernel ABI places f64
-direct arguments in SGPR pairs. Strict f64 math legalization handles `expf`,
-`logf`, and `cbrtf`; the focused
-`loom/src/loom/target/arch/amdgpu/test/source_low/source_low_f64_strict_math_gfx942.loom-test`
-tracks all three. Native AMDGPU emission still has no device-library call/link
-path for OCML, so these operations use target recipes.
+direct arguments in SGPR pairs. Upstream AMDGPU lowering supports native f64
+arithmetic and strict sqrt but does not legalize f64 `expf`, `logf`, or `cbrtf`,
+and native emission has no device-library call/link path for OCML. `f64_math.h`
+therefore carries those three as statement-for-statement transcriptions of the
+compiler recipes on `feat/amdgpu-f64-math-recipes` (OpenLibm/fdlibm exp and log,
+Newton cbrt). Against correctly rounded results they are within 1 ULP, and
+special values and NaN payloads match the recipes. Once those recipes land,
+bind the three functions back to `loom::scalar` and delete `f64_math.h`.
 
 Before the local-state refactor, both kernel roots emitted gfx942 HSACO files:
 about 21 KB for prepare and 2.3 MB for advance. The old advance kernel needed a

@@ -2,7 +2,8 @@
 #pragma once
 
 // The host test uses the system's original double math. The Loom translation
-// retains f64 operations, without AFN/ARCP or any replacement approximation.
+// retains f64 operations without AFN/ARCP. sqrt is a native strict operation;
+// exp, log, and cbrt use the strict f64 recipes in f64_math.h.
 #if defined(__loom__)
 #include <hip/hip_runtime.h>
 #include <loomcxx/atomic.h>
@@ -12,6 +13,7 @@
 #define KERNEL __global__ [[loom::workgroup_size(128, 1, 1)]]
 #define CELL_PARAMETER
 #define CELL_INDEX (blockIdx.x * blockDim.x + threadIdx.x)
+#include "f64_math.h"
 #else
 #include <cmath>
 #define DEVICE inline
@@ -44,11 +46,11 @@ template<typename T> DEVICE T max(T a, T b) { return a < b ? b : a; }
 #define CHEM_MATH(name, op) DEVICE Real name(Real x) { return loom::scalar::op(x); }
 CHEM_MATH(abs, absf)
 CHEM_MATH(fabs, absf)
-CHEM_MATH(exp, expf)
-CHEM_MATH(log, logf)
 CHEM_MATH(sqrt, sqrtf)
-CHEM_MATH(cbrt, cbrtf)
 #undef CHEM_MATH
+DEVICE Real exp(Real x) { return f64_math::exp(x); }
+DEVICE Real log(Real x) { return f64_math::log(x); }
+DEVICE Real cbrt(Real x) { return f64_math::cbrt(x); }
 DEVICE bool isfinite(Real x) {
     unsigned long long bits = __builtin_bit_cast(unsigned long long, x);
     return (bits & 0x7ff0000000000000ULL) != 0x7ff0000000000000ULL;
