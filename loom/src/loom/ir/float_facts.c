@@ -23,6 +23,30 @@ static bool loom_float_type_is_supported(loom_scalar_type_t scalar_type) {
          scalar_type == LOOM_SCALAR_TYPE_F64;
 }
 
+static double loom_float_type_minimum_normal(loom_scalar_type_t scalar_type) {
+  switch (scalar_type) {
+    case LOOM_SCALAR_TYPE_F8E4M3:
+      return 0x1p-6;
+    case LOOM_SCALAR_TYPE_F8E5M2:
+    case LOOM_SCALAR_TYPE_F16:
+      return 0x1p-14;
+    case LOOM_SCALAR_TYPE_BF16:
+    case LOOM_SCALAR_TYPE_F32:
+      return 0x1p-126;
+    case LOOM_SCALAR_TYPE_F64:
+      return 0x1p-1022;
+    default:
+      return NAN;
+  }
+}
+
+static bool loom_float_is_subnormal(loom_scalar_type_t scalar_type,
+                                    double value) {
+  const double magnitude = fabs(value);
+  return magnitude != 0.0 &&
+         magnitude < loom_float_type_minimum_normal(scalar_type);
+}
+
 static double loom_float_round_to_type(loom_scalar_type_t scalar_type,
                                        double value) {
   switch (scalar_type) {
@@ -115,8 +139,7 @@ loom_value_facts_exact_float(loom_scalar_type_t scalar_type, double value) {
   const double rounded_value = loom_float_round_to_type(scalar_type, value);
   loom_value_facts_t facts =
       loom_value_facts_exact_rounded_float(rounded_value);
-  if (scalar_type == LOOM_SCALAR_TYPE_F64 &&
-      fpclassify(rounded_value) != FP_SUBNORMAL) {
+  if (!loom_float_is_subnormal(scalar_type, rounded_value)) {
     facts.flags |= LOOM_VALUE_FACT_NOT_SUBNORMAL;
   }
   return facts;
@@ -145,15 +168,97 @@ loom_value_facts_t loom_value_facts_make_float_range(
     facts.range_lo = rounded_lo_bits;
     facts.range_hi = rounded_hi_bits;
     facts.flags |= LOOM_VALUE_FACT_NOT_INF | LOOM_VALUE_FACT_FINITE;
+    const double minimum_normal = loom_float_type_minimum_normal(scalar_type);
+    if ((rounded_lo == 0.0 && rounded_hi == 0.0) ||
+        rounded_hi <= -minimum_normal || rounded_lo >= minimum_normal) {
+      facts.flags |= LOOM_VALUE_FACT_NOT_SUBNORMAL;
+    }
   }
   return facts;
 }
 
 loom_value_facts_t loom_value_facts_known_nan(void) {
   loom_value_facts_t facts = loom_value_facts_unknown();
-  facts.flags =
-      LOOM_VALUE_FACT_FLOAT | LOOM_VALUE_FACT_NAN | LOOM_VALUE_FACT_NOT_INF;
+  facts.flags = LOOM_VALUE_FACT_FLOAT | LOOM_VALUE_FACT_NAN |
+                LOOM_VALUE_FACT_NOT_INF | LOOM_VALUE_FACT_NOT_SUBNORMAL;
   return facts;
+}
+
+static void loom_value_facts_add_signed_zero_alternative(
+    loom_scalar_type_t source_type, loom_scalar_type_t result_type,
+    const loom_value_facts_t* source_facts, loom_value_facts_t* result_facts) {
+  double source_value = 0.0;
+  if (loom_value_facts_as_exact_float(source_type, *source_facts,
+                                      &source_value)) {
+    const loom_value_facts_t signed_zero =
+        loom_value_facts_exact_float(result_type, copysign(0.0, source_value));
+    loom_value_facts_meet(result_facts, &signed_zero, result_facts);
+    return;
+  }
+
+  double range_lo = 0.0;
+  double range_hi = 0.0;
+  if (loom_value_facts_as_float_range(source_type, *source_facts, &range_lo,
+                                      &range_hi)) {
+    if (range_lo > 0.0) {
+      const loom_value_facts_t positive_zero =
+          loom_value_facts_exact_float(result_type, 0.0);
+      loom_value_facts_meet(result_facts, &positive_zero, result_facts);
+      return;
+    }
+    if (range_hi < 0.0) {
+      const loom_value_facts_t negative_zero =
+          loom_value_facts_exact_float(result_type, -0.0);
+      loom_value_facts_meet(result_facts, &negative_zero, result_facts);
+      return;
+    }
+  }
+
+  const loom_value_facts_t positive_zero =
+      loom_value_facts_exact_float(result_type, 0.0);
+  const loom_value_facts_t negative_zero =
+      loom_value_facts_exact_float(result_type, -0.0);
+  loom_value_facts_meet(result_facts, &positive_zero, result_facts);
+  loom_value_facts_meet(result_facts, &negative_zero, result_facts);
+}
+
+void loom_value_facts_eval_float_conversion(
+    loom_scalar_type_t source_type, loom_scalar_type_t result_type,
+    loom_float_conversion_policy_t policy,
+    const loom_value_facts_t* input_facts,
+    loom_value_facts_t* out_result_facts) {
+  double input_value = 0.0;
+  if (loom_value_facts_is_nan(*input_facts)) {
+    *out_result_facts = loom_value_facts_known_nan();
+  } else if (loom_value_facts_as_exact_float(source_type, *input_facts,
+                                             &input_value)) {
+    *out_result_facts = loom_value_facts_exact_float(result_type, input_value);
+  } else {
+    double range_lo = 0.0;
+    double range_hi = 0.0;
+    if (loom_value_facts_as_float_range(source_type, *input_facts, &range_lo,
+                                        &range_hi)) {
+      *out_result_facts =
+          loom_value_facts_make_float_range(result_type, range_lo, range_hi);
+    } else if (loom_scalar_type_bitwidth(source_type) <
+               loom_scalar_type_bitwidth(result_type)) {
+      *out_result_facts = *input_facts;
+    } else {
+      *out_result_facts = loom_value_facts_unknown();
+    }
+  }
+
+  if (policy.may_flush_input_subnormal &&
+      !loom_value_facts_is_not_subnormal(*input_facts)) {
+    loom_value_facts_add_signed_zero_alternative(source_type, result_type,
+                                                 input_facts, out_result_facts);
+  }
+  if (policy.may_flush_result_subnormal &&
+      !loom_value_facts_is_not_subnormal(*out_result_facts)) {
+    loom_value_facts_add_signed_zero_alternative(
+        result_type, result_type, out_result_facts, out_result_facts);
+  }
+  loom_value_facts_propagate_unary_distribution(*input_facts, out_result_facts);
 }
 
 bool loom_value_facts_as_exact_float(loom_scalar_type_t scalar_type,

@@ -87,6 +87,9 @@ class GuardKind(Enum):
     VALUE_EXACT_FLOAT = "value_exact_float"
     VALUE_EXACT_POWER_OF_TWO_FLOAT = "value_exact_power_of_two_float"
     VALUE_NOT_NAN = "value_not_nan"
+    VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL = (
+        "value_not_subnormal_or_instance_flags_has_all"
+    )
     VALUE_I64_RANGE = "value_i64_range"
     VALUE_I64_RANGE_LE = "value_i64_range_le"
     VALUE_I64_RANGE_GE = "value_i64_range_ge"
@@ -611,6 +614,25 @@ class Guard:
         )
 
     @classmethod
+    def value_not_subnormal_or_instance_flags_has_all(
+        cls,
+        value_field: str,
+        flags_field: str,
+        enum_case: str | EnumCase,
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        """Requires a retained fact unless the source op permits the behavior."""
+        keyword = enum_case.keyword if isinstance(enum_case, EnumCase) else enum_case
+        return cls(
+            kind=GuardKind.VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL,
+            field=value_field,
+            attr_field=flags_field,
+            enum_keyword=keyword,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
     def value_i64_range(
         cls,
         field: str,
@@ -1007,6 +1029,14 @@ class Guard:
         ):
             _validate_value_fact_guard(self, source_op, subject)
             return
+        if self.kind == GuardKind.VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL:
+            _validate_value_fact_guard(self, source_op, subject)
+            if self.attr_field is None:
+                raise ValueError(
+                    f"{source_op.name}: {subject} needs a flags attribute field"
+                )
+            _validate_instance_flags_guard(self, source_op, subject, self.attr_field)
+            return
         if self.kind in (
             GuardKind.VALUE_NO_USES,
             GuardKind.VALUE_NO_USES_AFTER,
@@ -1036,27 +1066,34 @@ class Guard:
             GuardKind.INSTANCE_FLAGS_HAS_ALL,
             GuardKind.INSTANCE_FLAGS_HAS_NONE,
         ):
-            attr = _require_attr(source_op, self.field, subject)
-            if attr.attr_type != ATTR_TYPE_FLAGS:
-                raise ValueError(
-                    f"{source_op.name}: {subject} field '{self.field}' "
-                    "must be a flags attr"
-                )
-            if self.enum_keyword is None:
-                raise ValueError(f"{source_op.name}: {subject} needs a flag keyword")
-            enum_def = attr.enum_def
-            if enum_def is None:
-                raise ValueError(
-                    f"{source_op.name}: {subject} field '{self.field}' "
-                    "has no enum definition"
-                )
-            if self.enum_keyword not in enum_def.keywords:
-                raise ValueError(
-                    f"{source_op.name}: {subject} field '{self.field}' "
-                    f"has no enum case '{self.enum_keyword}'"
-                )
+            _validate_instance_flags_guard(self, source_op, subject, self.field)
             return
         _validate_i64_array_guard(self, source_op, subject)
+
+
+def _validate_instance_flags_guard(
+    guard: Guard,
+    source_op: Op,
+    subject: str,
+    field: str,
+) -> None:
+    attr = _require_attr(source_op, field, subject)
+    if attr.attr_type != ATTR_TYPE_FLAGS:
+        raise ValueError(
+            f"{source_op.name}: {subject} field '{field}' must be a flags attr"
+        )
+    if guard.enum_keyword is None:
+        raise ValueError(f"{source_op.name}: {subject} needs a flag keyword")
+    enum_def = attr.enum_def
+    if enum_def is None:
+        raise ValueError(
+            f"{source_op.name}: {subject} field '{field}' has no enum definition"
+        )
+    if guard.enum_keyword not in enum_def.keywords:
+        raise ValueError(
+            f"{source_op.name}: {subject} field '{field}' has no enum case "
+            f"'{guard.enum_keyword}'"
+        )
 
 
 def _validate_source_attr_guard(

@@ -64,6 +64,7 @@ _GUARD_VALUE_REF_KINDS = frozenset(
         GuardKind.VALUE_EXACT_FLOAT,
         GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT,
         GuardKind.VALUE_NOT_NAN,
+        GuardKind.VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL,
         GuardKind.VALUE_I64_RANGE,
         GuardKind.VALUE_I64_RANGE_LE,
         GuardKind.VALUE_I64_RANGE_GE,
@@ -677,6 +678,7 @@ def guard_payload_row(row: LowerGuard) -> list[str]:
         GuardKind.VALUE_FLOAT_EQUALS,
         GuardKind.INSTANCE_FLAGS_HAS_ALL,
         GuardKind.INSTANCE_FLAGS_HAS_NONE,
+        GuardKind.VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL,
     ):
         u64_payload = lower_rule_spelling.u64_c_literal(row.u64)
     elif row.kind == GuardKind.VALUE_STORAGE_ELEMENT_FORMAT:

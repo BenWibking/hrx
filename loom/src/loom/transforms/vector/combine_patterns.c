@@ -102,15 +102,15 @@ static iree_status_t loom_vector_combine_replace_with_conversion(
   loom_op_t* replacement_op = NULL;
   switch (replacement_kind) {
     case LOOM_CONVERSION_EXTF: {
-      IREE_RETURN_IF_ERROR(
-          loom_vector_extf_build(&rewriter->builder, input, input_type,
-                                 result_type, op->location, &replacement_op));
+      IREE_RETURN_IF_ERROR(loom_vector_extf_build(
+          &rewriter->builder, /*instance_flags=*/0, input, input_type,
+          result_type, op->location, &replacement_op));
       break;
     }
     case LOOM_CONVERSION_FPTRUNC: {
       IREE_RETURN_IF_ERROR(loom_vector_fptrunc_build(
-          &rewriter->builder, input, input_type, result_type, op->location,
-          &replacement_op));
+          &rewriter->builder, /*instance_flags=*/0, input, input_type,
+          result_type, op->location, &replacement_op));
       break;
     }
     case LOOM_CONVERSION_EXTSI: {
@@ -161,15 +161,15 @@ static iree_status_t loom_vector_combine_sink_conversion_through_splat(
   loom_op_t* scalar_op = NULL;
   switch (op->kind) {
     case LOOM_OP_VECTOR_EXTF: {
-      IREE_RETURN_IF_ERROR(
-          loom_scalar_extf_build(&rewriter->builder, scalar, scalar_type,
-                                 scalar_result_type, op->location, &scalar_op));
+      IREE_RETURN_IF_ERROR(loom_scalar_extf_build(
+          &rewriter->builder, op->instance_flags, scalar, scalar_type,
+          scalar_result_type, op->location, &scalar_op));
       break;
     }
     case LOOM_OP_VECTOR_FPTRUNC: {
       IREE_RETURN_IF_ERROR(loom_scalar_fptrunc_build(
-          &rewriter->builder, scalar, scalar_type, scalar_result_type,
-          op->location, &scalar_op));
+          &rewriter->builder, op->instance_flags, scalar, scalar_type,
+          scalar_result_type, op->location, &scalar_op));
       break;
     }
     case LOOM_OP_VECTOR_EXTSI: {
@@ -223,8 +223,16 @@ static iree_status_t loom_vector_combine_conversion_chain(
     return iree_ok_status();
   }
 
-  const loom_conversion_chain_match_t match = loom_conversion_chain_match(
-      outer_kind, loom_vector_combine_conversion_kind(defining_op));
+  const loom_conversion_kind_t inner_kind =
+      loom_vector_combine_conversion_kind(defining_op);
+  if ((loom_conversion_kind_is_float(outer_kind) && op->instance_flags != 0) ||
+      (loom_conversion_kind_is_float(inner_kind) &&
+       defining_op->instance_flags != 0)) {
+    return iree_ok_status();
+  }
+
+  const loom_conversion_chain_match_t match =
+      loom_conversion_chain_match(outer_kind, inner_kind);
   if (match.candidate == LOOM_CONVERSION_NONE) {
     return iree_ok_status();
   }

@@ -12,6 +12,19 @@
 #include "loom/ops/scf/ops.h"
 #include "loom/ops/vector/ops.h"
 
+static_assert(LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_DAZ ==
+                  LOOM_SCALAR_FLOATCONVERSIONFLAGS_DAZ,
+              "math and scalar conversion input flags must match");
+static_assert(LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_FTZ ==
+                  LOOM_SCALAR_FLOATCONVERSIONFLAGS_FTZ,
+              "math and scalar conversion result flags must match");
+static_assert(LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_DAZ ==
+                  LOOM_VECTOR_FLOATCONVERSIONFLAGS_DAZ,
+              "math and vector conversion input flags must match");
+static_assert(LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_FTZ ==
+                  LOOM_VECTOR_FLOATCONVERSIONFLAGS_FTZ,
+              "math and vector conversion result flags must match");
+
 typedef iree_status_t (*loom_math_evaluation_constant_build_fn_t)(
     loom_builder_t* builder, loom_attribute_t value, loom_type_t result_type,
     loom_location_id_t location, loom_op_t** out_op);
@@ -46,8 +59,9 @@ typedef iree_status_t (*loom_math_evaluation_clampf_build_fn_t)(
     loom_type_t result_type, loom_location_id_t location, loom_op_t** out_op);
 
 typedef iree_status_t (*loom_math_evaluation_cast_build_fn_t)(
-    loom_builder_t* builder, loom_value_id_t input, loom_type_t input_type,
-    loom_type_t result_type, loom_location_id_t location, loom_op_t** out_op);
+    loom_builder_t* builder, uint8_t instance_flags, loom_value_id_t input,
+    loom_type_t input_type, loom_type_t result_type,
+    loom_location_id_t location, loom_op_t** out_op);
 
 struct loom_math_evaluation_lane_ops_t {
   // Builds a uniform scalar or vector constant.
@@ -202,9 +216,9 @@ static uint8_t loom_math_evaluation_clampf_mode(uint8_t fastmath_flags) {
 }
 
 static iree_status_t loom_math_evaluation_build_cast(
-    loom_builder_t* builder, loom_value_id_t input, loom_type_t input_type,
-    loom_type_t result_type, loom_location_id_t location,
-    loom_value_id_t* out_value) {
+    loom_builder_t* builder, uint8_t instance_flags, loom_value_id_t input,
+    loom_type_t input_type, loom_type_t result_type,
+    loom_location_id_t location, loom_value_id_t* out_value) {
   if (loom_type_equal(input_type, result_type)) {
     *out_value = input;
     return iree_ok_status();
@@ -219,11 +233,15 @@ static iree_status_t loom_math_evaluation_build_cast(
     const loom_type_t intermediate_type =
         loom_math_evaluation_type_with_element(input_type,
                                                LOOM_SCALAR_TYPE_F32);
+    const uint8_t input_flags =
+        instance_flags & LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_DAZ;
+    const uint8_t result_flags =
+        instance_flags & LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_FTZ;
     loom_value_id_t intermediate = LOOM_VALUE_ID_INVALID;
     IREE_RETURN_IF_ERROR(loom_math_evaluation_build_cast(
-        builder, input, input_type, intermediate_type, location,
+        builder, input_flags, input, input_type, intermediate_type, location,
         &intermediate));
-    return loom_math_evaluation_build_cast(builder, intermediate,
+    return loom_math_evaluation_build_cast(builder, result_flags, intermediate,
                                            intermediate_type, result_type,
                                            location, out_value);
   }
@@ -233,8 +251,8 @@ static iree_status_t loom_math_evaluation_build_cast(
           ? (is_vector ? loom_vector_extf_build : loom_scalar_extf_build)
           : (is_vector ? loom_vector_fptrunc_build : loom_scalar_fptrunc_build);
   loom_op_t* op = NULL;
-  IREE_RETURN_IF_ERROR(
-      build(builder, input, input_type, result_type, location, &op));
+  IREE_RETURN_IF_ERROR(build(builder, instance_flags, input, input_type,
+                             result_type, location, &op));
   *out_value = loom_op_results(op)[0];
   return iree_ok_status();
 }
@@ -253,7 +271,8 @@ static iree_status_t loom_math_evaluation_import_grouped_product(
         builder, source, source_packet_type, evaluation->location, &splat_op));
     loom_value_id_t accumulator = LOOM_VALUE_ID_INVALID;
     IREE_RETURN_IF_ERROR(loom_math_evaluation_build_cast(
-        builder, loom_vector_splat_result(splat_op), source_packet_type,
+        builder, evaluation->descriptor.conversion.input_flags,
+        loom_vector_splat_result(splat_op), source_packet_type,
         evaluation->value_type, evaluation->location, &accumulator));
     *out_value = loom_math_evaluation_value_from_id(accumulator);
     return iree_ok_status();
@@ -275,8 +294,9 @@ static iree_status_t loom_math_evaluation_import_grouped_product(
       evaluation->source_element_count);
   loom_value_id_t flat_accumulator = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_math_evaluation_build_cast(
-      builder, flat_source, flat_source_type, flat_accumulator_type,
-      evaluation->location, &flat_accumulator));
+      builder, evaluation->descriptor.conversion.input_flags, flat_source,
+      flat_source_type, flat_accumulator_type, evaluation->location,
+      &flat_accumulator));
   if (evaluation->source_element_count ==
       evaluation->descriptor.packet_lane_count) {
     *out_value = loom_math_evaluation_value_from_id(flat_accumulator);
@@ -406,8 +426,9 @@ static iree_status_t loom_math_evaluation_materialize_product(
   loom_builder_t* builder = &evaluation->rewriter->builder;
   loom_value_id_t narrow = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_math_evaluation_build_cast(
-      builder, value->accumulator, evaluation->value_type,
-      evaluation->product_type, evaluation->location, &narrow));
+      builder, evaluation->descriptor.conversion.product_flags,
+      value->accumulator, evaluation->value_type, evaluation->product_type,
+      evaluation->location, &narrow));
   IREE_RETURN_IF_ERROR(loom_math_evaluation_build_zero(
       evaluation, evaluation->product_type, &evaluation->zero_product));
   loom_op_t* interleave_op = NULL;
@@ -436,7 +457,8 @@ iree_status_t loom_math_evaluation_export(
       packet_type = loom_math_evaluation_packet_type(
           source_element, evaluation->descriptor.packet_lane_count);
       IREE_RETURN_IF_ERROR(loom_math_evaluation_build_cast(
-          builder, value->accumulator, evaluation->value_type, packet_type,
+          builder, evaluation->descriptor.conversion.result_flags,
+          value->accumulator, evaluation->value_type, packet_type,
           evaluation->location, &packet));
     }
     const int64_t static_index = 0;
@@ -467,8 +489,8 @@ iree_status_t loom_math_evaluation_export(
       source_element, evaluation->source_element_count);
   loom_value_id_t flat_source = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_math_evaluation_build_cast(
-      builder, flat_value, flat_value_type, flat_source_type,
-      evaluation->location, &flat_source));
+      builder, evaluation->descriptor.conversion.result_flags, flat_value,
+      flat_value_type, flat_source_type, evaluation->location, &flat_source));
   if (loom_type_equal(flat_source_type, evaluation->source_result_type)) {
     *out_value = flat_source;
     return iree_ok_status();

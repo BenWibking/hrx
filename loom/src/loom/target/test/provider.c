@@ -38,14 +38,23 @@ static void loom_test_widen_f32_round_math_policy_query(
 
 static loom_target_math_policy_decision_t
 loom_test_grouped_product_evaluation_rewrite(
-    const loom_target_math_policy_t* policy, loom_target_math_recipe_t recipe,
+    const loom_target_math_policy_t* policy,
+    const loom_target_math_query_t* query, loom_target_math_recipe_t recipe,
     iree_string_view_t key) {
-  return (loom_target_math_policy_decision_t){
+  loom_target_math_policy_decision_t decision = {
       .action = LOOM_TARGET_MATH_POLICY_ACTION_REWRITE,
       .recipe = recipe,
       .evaluation = *(const loom_target_math_evaluation_t*)policy->user_data,
       .constraint_key = key,
   };
+  if (query->element_type == LOOM_SCALAR_TYPE_BF16) {
+    decision.evaluation.conversion.input_flags =
+        LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_DAZ;
+    decision.evaluation.conversion.result_flags =
+        LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_DAZ |
+        LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_FTZ;
+  }
+  return decision;
 }
 
 static void loom_test_grouped_product_evaluation_math_policy_query(
@@ -63,22 +72,22 @@ static void loom_test_grouped_product_evaluation_math_policy_query(
   switch (query->math_op) {
     case LOOM_TARGET_MATH_OP_GELUF_TANH:
       *out_decision = loom_test_grouped_product_evaluation_rewrite(
-          policy, LOOM_TARGET_MATH_RECIPE_GELU_TANH_F32,
+          policy, query, LOOM_TARGET_MATH_RECIPE_GELU_TANH_F32,
           IREE_SV("test.math.recipe.gelu_tanh"));
       return;
     case LOOM_TARGET_MATH_OP_GELUF_LOGISTIC:
       *out_decision = loom_test_grouped_product_evaluation_rewrite(
-          policy, LOOM_TARGET_MATH_RECIPE_GELU_LOGISTIC_F32,
+          policy, query, LOOM_TARGET_MATH_RECIPE_GELU_LOGISTIC_F32,
           IREE_SV("test.math.recipe.gelu_logistic"));
       return;
     case LOOM_TARGET_MATH_OP_SILUF:
       *out_decision = loom_test_grouped_product_evaluation_rewrite(
-          policy, LOOM_TARGET_MATH_RECIPE_SILU_LOGISTIC_F32,
+          policy, query, LOOM_TARGET_MATH_RECIPE_SILU_LOGISTIC_F32,
           IREE_SV("test.math.recipe.silu_logistic"));
       return;
     case LOOM_TARGET_MATH_OP_LOGISTICF:
       *out_decision = loom_test_grouped_product_evaluation_rewrite(
-          policy, LOOM_TARGET_MATH_RECIPE_LOGISTIC_TANH_F32,
+          policy, query, LOOM_TARGET_MATH_RECIPE_LOGISTIC_TANH_F32,
           IREE_SV("test.math.recipe.logistic_tanh"));
       return;
     case LOOM_TARGET_MATH_OP_TANHF:
@@ -119,6 +128,11 @@ static void loom_test_math_policy_registry_initialize(
       .product_element_type = LOOM_SCALAR_TYPE_BF16,
       .accumulator_element_type = LOOM_SCALAR_TYPE_F32,
       .packet_lane_count = 16,
+      .conversion =
+          {
+              .product_flags = LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_DAZ |
+                               LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_FTZ,
+          },
   };
   static const loom_target_math_policy_t kBf16x16EvaluationPolicy = {
       .name = IREE_SVL("test-grouped-product-bf16x16"),

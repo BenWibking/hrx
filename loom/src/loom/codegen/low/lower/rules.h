@@ -803,6 +803,9 @@ typedef enum loom_low_lower_guard_kind_e {
   LOOM_LOW_LOWER_GUARD_VALUE_EXACT_POWER_OF_TWO_FLOAT = 39,
   // Two source i64 attributes must sum to payload.i64 without signed overflow.
   LOOM_LOW_LOWER_GUARD_ATTR_I64_SUM_EQ = 40,
+  // Source flags permit subnormal flushing or retained facts prove that the
+  // selected value cannot be subnormal.
+  LOOM_LOW_LOWER_GUARD_VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL = 41,
   // Maximum guard kind value plus one.
   LOOM_LOW_LOWER_GUARD_COUNT_,
 } loom_low_lower_guard_kind_t;

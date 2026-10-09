@@ -11,16 +11,25 @@
 #include "loom/ops/vector/ops.h"
 #include "loom/rewrite/rewriter.h"
 
-typedef iree_status_t (*loom_conversion_builder_fn_t)(
-    loom_builder_t* builder, loom_value_id_t input, loom_type_t input_type,
-    loom_type_t result_type, loom_location_id_t location, loom_op_t** out_op);
+// Staged conversions are attribute-free one-operand, one-result operations.
+// Float extension/truncation flags remain zero because staging preserves the
+// source operation's strict conversion semantics.
+static iree_status_t loom_conversion_build_exact(
+    loom_builder_t* builder, loom_op_kind_t kind, loom_value_id_t input,
+    loom_type_t result_type, loom_location_id_t location, loom_op_t** out_op) {
+  IREE_RETURN_IF_ERROR(
+      loom_builder_allocate_op(builder, kind, 1, 1, 0, 0, 0, location, out_op));
+  loom_op_operands(*out_op)[0] = input;
+  IREE_RETURN_IF_ERROR(loom_builder_define_result(
+      builder, result_type, &loom_op_results(*out_op)[0]));
+  return loom_builder_finalize_op(builder, *out_op);
+}
 
 // Builds a shape-preserving conversion chain with an F32 intermediate. The
 // caller establishes that staging preserves the original rounding semantics.
 static iree_status_t loom_conversion_stage_f32(
     loom_target_legalization_context_t* context, loom_op_t* op,
-    loom_conversion_builder_fn_t first_builder,
-    loom_conversion_builder_fn_t second_builder,
+    loom_op_kind_t first_kind, loom_op_kind_t second_kind,
     loom_target_legalizer_result_t* out_result) {
   const loom_value_id_t input = loom_op_operands(op)[0];
   const loom_type_t input_type = loom_module_value_type(context->module, input);
@@ -37,13 +46,13 @@ static iree_status_t loom_conversion_stage_f32(
   loom_builder_set_before(&rewriter->builder, op);
   const loom_value_id_t checkpoint = loom_rewriter_value_checkpoint(rewriter);
   loom_op_t* intermediate = NULL;
-  IREE_RETURN_IF_ERROR(first_builder(&rewriter->builder, input, input_type,
-                                     intermediate_type, op->location,
-                                     &intermediate));
+  IREE_RETURN_IF_ERROR(loom_conversion_build_exact(
+      &rewriter->builder, first_kind, input, intermediate_type, op->location,
+      &intermediate));
   loom_op_t* converted = NULL;
-  IREE_RETURN_IF_ERROR(
-      second_builder(&rewriter->builder, loom_op_results(intermediate)[0],
-                     intermediate_type, result_type, op->location, &converted));
+  IREE_RETURN_IF_ERROR(loom_conversion_build_exact(
+      &rewriter->builder, second_kind, loom_op_results(intermediate)[0],
+      result_type, op->location, &converted));
   const loom_value_id_t replacement = loom_op_results(converted)[0];
   IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
       rewriter, op, &replacement, 1, checkpoint));
@@ -89,14 +98,12 @@ static iree_status_t loom_conversion_legalize_integer_to_float(
       op->kind == LOOM_OP_SCALAR_SITOFP || op->kind == LOOM_OP_VECTOR_SITOFP;
   const bool is_vector = loom_type_is_vector(
       loom_module_value_type(context->module, loom_op_operands(op)[0]));
-  loom_conversion_builder_fn_t convert =
-      is_vector
-          ? (is_signed ? loom_vector_sitofp_build : loom_vector_uitofp_build)
-          : (is_signed ? loom_scalar_sitofp_build : loom_scalar_uitofp_build);
+  const loom_op_kind_t convert_kind =
+      is_vector ? (is_signed ? LOOM_OP_VECTOR_SITOFP : LOOM_OP_VECTOR_UITOFP)
+                : (is_signed ? LOOM_OP_SCALAR_SITOFP : LOOM_OP_SCALAR_UITOFP);
   return loom_conversion_stage_f32(
-      context, op, convert,
-      is_vector ? loom_vector_fptrunc_build : loom_scalar_fptrunc_build,
-      out_result);
+      context, op, convert_kind,
+      is_vector ? LOOM_OP_VECTOR_FPTRUNC : LOOM_OP_SCALAR_FPTRUNC, out_result);
 }
 
 static iree_status_t loom_conversion_legalize_float_to_integer(
@@ -108,15 +115,14 @@ static iree_status_t loom_conversion_legalize_float_to_integer(
       op->kind == LOOM_OP_SCALAR_FPTOSI || op->kind == LOOM_OP_VECTOR_FPTOSI;
   const bool is_vector = loom_type_is_vector(
       loom_module_value_type(context->module, loom_op_operands(op)[0]));
-  loom_conversion_builder_fn_t convert =
-      is_vector
-          ? (is_signed ? loom_vector_fptosi_build : loom_vector_fptoui_build)
-          : (is_signed ? loom_scalar_fptosi_build : loom_scalar_fptoui_build);
+  const loom_op_kind_t convert_kind =
+      is_vector ? (is_signed ? LOOM_OP_VECTOR_FPTOSI : LOOM_OP_VECTOR_FPTOUI)
+                : (is_signed ? LOOM_OP_SCALAR_FPTOSI : LOOM_OP_SCALAR_FPTOUI);
   // Every F16/BF16/FP8 source value widens exactly, so the original toward-zero
   // conversion and its defined integer result domain are unchanged.
   return loom_conversion_stage_f32(
-      context, op, is_vector ? loom_vector_extf_build : loom_scalar_extf_build,
-      convert, out_result);
+      context, op, is_vector ? LOOM_OP_VECTOR_EXTF : LOOM_OP_SCALAR_EXTF,
+      convert_kind, out_result);
 }
 
 static const loom_target_legalizer_rule_t kConversionLegalizerRules[] = {

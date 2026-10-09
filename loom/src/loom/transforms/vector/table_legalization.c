@@ -83,8 +83,8 @@ static iree_status_t loom_vector_table_quantize_comparison_packet(
     const loom_type_t comparison_type =
         loom_vector_table_packet_type(quantize->comparison_element_type, count);
     IREE_RETURN_IF_ERROR(loom_vector_extf_build(
-        quantize->builder, value, input_type, comparison_type,
-        quantize->location, &packet_op));
+        quantize->builder, /*instance_flags=*/0, value, input_type,
+        comparison_type, quantize->location, &packet_op));
     value = loom_vector_extf_result(packet_op);
   }
   *out_value = value;

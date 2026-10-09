@@ -81,6 +81,15 @@ typedef enum loom_target_math_fastmath_flag_bits_e {
 } loom_target_math_fastmath_flag_bits_t;
 typedef uint8_t loom_target_math_fastmath_flags_t;
 
+// Mirrors the scalar/vector FloatConversionFlags bit layout so target-selected
+// evaluation policies can be projected into generated conversion ops.
+typedef enum loom_target_math_float_conversion_flag_bits_e {
+  LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_NONE = 0u,
+  LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_DAZ = 1u << 0,
+  LOOM_TARGET_MATH_FLOAT_CONVERSION_FLAG_FTZ = 1u << 1,
+} loom_target_math_float_conversion_flag_bits_t;
+typedef uint8_t loom_target_math_float_conversion_flags_t;
+
 typedef enum loom_target_math_policy_action_e {
   LOOM_TARGET_MATH_POLICY_ACTION_UNKNOWN = 0,
   LOOM_TARGET_MATH_POLICY_ACTION_KEEP = 1,
@@ -117,6 +126,17 @@ typedef enum loom_target_math_evaluation_kind_e {
   LOOM_TARGET_MATH_EVALUATION_GROUPED_PRODUCT = 1,
 } loom_target_math_evaluation_kind_t;
 
+// Subnormal permissions applied at the representation boundaries of a
+// target-selected math evaluation.
+typedef struct loom_target_math_evaluation_conversion_t {
+  // Permissions used when importing authored operands into accumulator lanes.
+  loom_target_math_float_conversion_flags_t input_flags;
+  // Permissions used when rounding accumulator values into product lanes.
+  loom_target_math_float_conversion_flags_t product_flags;
+  // Permissions used when restoring accumulator values to the authored type.
+  loom_target_math_float_conversion_flags_t result_flags;
+} loom_target_math_evaluation_conversion_t;
+
 typedef struct loom_target_math_evaluation_t {
   // Evaluation mechanism selected for the recipe.
   loom_target_math_evaluation_kind_t kind;
@@ -126,6 +146,8 @@ typedef struct loom_target_math_evaluation_t {
   loom_scalar_type_t accumulator_element_type;
   // Physical accumulator lanes carried by one evaluation packet.
   uint16_t packet_lane_count;
+  // Conversion policy for the evaluation's representation boundaries.
+  loom_target_math_evaluation_conversion_t conversion;
 } loom_target_math_evaluation_t;
 
 typedef struct loom_target_math_query_t {

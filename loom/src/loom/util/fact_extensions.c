@@ -856,7 +856,15 @@ iree_status_t loom_value_facts_make_small_static_lanes(
   loom_value_fact_extension_entry_t entry = {0};
   entry.kind = LOOM_VALUE_FACT_EXTENSION_SMALL_STATIC_LANES;
   entry.payload.small_static_lanes = lanes;
-  return loom_value_facts_make_extension(context, &entry, out);
+  IREE_RETURN_IF_ERROR(loom_value_facts_make_extension(context, &entry, out));
+  if (lanes.count > 0) {
+    uint32_t common_float_predicates = LOOM_VALUE_FACT_FLOAT_PREDICATE_MASK;
+    for (iree_host_size_t i = 0; i < lanes.count; ++i) {
+      common_float_predicates &= lanes.lanes[i].flags;
+    }
+    out->flags |= common_float_predicates;
+  }
+  return iree_ok_status();
 }
 
 bool loom_value_facts_query_small_static_lanes(

@@ -3562,41 +3562,57 @@ iree_status_t loom_vector_index_cast_facts(
                                                  input);
 }
 
+typedef struct loom_vector_float_conversion_transfer_t {
+  loom_scalar_type_t source_type;
+  loom_float_conversion_policy_t policy;
+} loom_vector_float_conversion_transfer_t;
+
+static void loom_vector_float_conversion_transfer(
+    loom_scalar_type_t result_type, const loom_value_facts_t* input,
+    const void* user_data, loom_value_facts_t* out) {
+  const loom_vector_float_conversion_transfer_t* transfer = user_data;
+  loom_value_facts_eval_float_conversion(transfer->source_type, result_type,
+                                         transfer->policy, input, out);
+}
+
+static loom_float_conversion_policy_t loom_vector_float_conversion_policy(
+    const loom_op_t* op) {
+  return (loom_float_conversion_policy_t){
+      .may_flush_input_subnormal = iree_any_bit_set(
+          op->instance_flags, LOOM_VECTOR_FLOATCONVERSIONFLAGS_DAZ),
+      .may_flush_result_subnormal = iree_any_bit_set(
+          op->instance_flags, LOOM_VECTOR_FLOATCONVERSIONFLAGS_FTZ),
+  };
+}
+
 iree_status_t loom_vector_extf_facts(loom_fact_context_t* context,
                                      const loom_module_t* module,
                                      const loom_op_t* op,
                                      const loom_value_facts_t* operand_facts,
                                      loom_value_facts_t* result_facts) {
-  bool fragment_handled = false;
-  IREE_RETURN_IF_ERROR(loom_vector_try_preserve_lanewise_fragment_facts(
-      context, operand_facts, 1, result_facts, &fragment_handled));
-  if (!fragment_handled) {
-    IREE_RETURN_IF_ERROR(
-        loom_vector_unary_summary_facts(context, operand_facts, result_facts,
-                                        loom_vector_passthrough_transfer));
-  }
+  const loom_float_conversion_policy_t policy =
+      loom_vector_float_conversion_policy(op);
+  const loom_vector_float_conversion_transfer_t transfer = {
+      .source_type = loom_type_element_type(
+          loom_module_value_type(module, loom_vector_extf_input(op))),
+      .policy = policy,
+  };
+  IREE_RETURN_IF_ERROR(loom_vector_float_unary_summary_facts(
+      context, loom_vector_result_element_type(module, op), operand_facts,
+      result_facts, loom_vector_float_conversion_transfer, &transfer));
+
   const loom_value_id_t result = loom_vector_extf_result(op);
   const loom_value_id_t input = loom_vector_extf_input(op);
   IREE_RETURN_IF_ERROR(
       loom_vector_try_define_same_lane_origin(context, module, result, input));
-  return loom_vector_try_define_exact_same_lane_origin(context, module, result,
-                                                       input);
-}
-
-static void loom_vector_float_truncate_transfer(loom_scalar_type_t result_type,
-                                                const loom_value_facts_t* input,
-                                                const void* user_data,
-                                                loom_value_facts_t* out) {
-  const loom_scalar_type_t source_type = *(const loom_scalar_type_t*)user_data;
-  double value = 0.0;
-  if (loom_value_facts_is_nan(*input)) {
-    *out = loom_value_facts_known_nan();
-  } else if (!loom_value_facts_as_exact_float(source_type, *input, &value)) {
-    *out = loom_value_facts_unknown();
-  } else {
-    *out = loom_value_facts_exact_float(result_type, value);
-  }
-  loom_value_facts_propagate_unary_distribution(*input, out);
+  const bool preserves_exact_values =
+      (!policy.may_flush_input_subnormal ||
+       loom_value_facts_is_not_subnormal(operand_facts[0])) &&
+      (!policy.may_flush_result_subnormal ||
+       loom_value_facts_is_not_subnormal(result_facts[0]));
+  return preserves_exact_values ? loom_vector_try_define_exact_same_lane_origin(
+                                      context, module, result, input)
+                                : iree_ok_status();
 }
 
 iree_status_t loom_vector_fptrunc_facts(loom_fact_context_t* context,
@@ -3604,11 +3620,14 @@ iree_status_t loom_vector_fptrunc_facts(loom_fact_context_t* context,
                                         const loom_op_t* op,
                                         const loom_value_facts_t* operand_facts,
                                         loom_value_facts_t* result_facts) {
-  const loom_scalar_type_t source_type = loom_type_element_type(
-      loom_module_value_type(module, loom_vector_fptrunc_input(op)));
+  const loom_vector_float_conversion_transfer_t transfer = {
+      .source_type = loom_type_element_type(
+          loom_module_value_type(module, loom_vector_fptrunc_input(op))),
+      .policy = loom_vector_float_conversion_policy(op),
+  };
   IREE_RETURN_IF_ERROR(loom_vector_float_unary_summary_facts(
       context, loom_vector_result_element_type(module, op), operand_facts,
-      result_facts, loom_vector_float_truncate_transfer, &source_type));
+      result_facts, loom_vector_float_conversion_transfer, &transfer));
   return loom_vector_try_define_same_lane_origin(context, module,
                                                  loom_vector_fptrunc_result(op),
                                                  loom_vector_fptrunc_input(op));

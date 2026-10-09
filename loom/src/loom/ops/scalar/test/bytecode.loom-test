@@ -1,5 +1,13 @@
 // RUN: format bytecode
 
+func.def @float_conversion_policy(%half: f16, %single: f32) -> (f32, bf16) {
+  %wide = scalar.extf<daz> %half : f16 to f32
+  %narrow = scalar.fptrunc<daz|ftz> %single : f32 to bf16
+  func.return %wide, %narrow : f32, bf16
+}
+
+// ====
+
 // Semantic activation ops carry their fastmath flags and GELU variant/scale
 // through bytecode without lowering to formula fragments.
 func.def @activation_math(%x: f32) -> (f32, f32, f32, f32, f32) {

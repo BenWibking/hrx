@@ -2230,7 +2230,8 @@ static iree_status_t loom_vector_canonicalize_dense_q8_0_decode(
   if (scale_element_type != result_element_type) {
     loom_op_t* scale_ext_op = NULL;
     IREE_RETURN_IF_ERROR(loom_scalar_extf_build(
-        &rewriter->builder, scale_scalar, loom_type_scalar(scale_element_type),
+        &rewriter->builder, /*instance_flags=*/0, scale_scalar,
+        loom_type_scalar(scale_element_type),
         loom_type_scalar(result_element_type), location, &scale_ext_op));
     scale_scalar = loom_scalar_extf_result(scale_ext_op);
   }
@@ -2801,7 +2802,8 @@ static iree_status_t loom_vector_canonicalize_fptrunc(loom_op_t* op,
   if (!loom_vector_value_def_op(rewriter, input, &input_def)) {
     return iree_ok_status();
   }
-  if (loom_vector_extf_isa(input_def)) {
+  if (op->instance_flags == 0 && loom_vector_extf_isa(input_def) &&
+      input_def->instance_flags == 0) {
     loom_value_id_t inner_input = loom_vector_extf_input(input_def);
     if (loom_type_equal(loom_module_value_type(rewriter->module, inner_input),
                         result_type)) {

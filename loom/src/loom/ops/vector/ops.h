@@ -191,6 +191,10 @@ enum {
 #define LOOM_VECTOR_INTOVERFLOWFLAGS_NSW ((uint8_t)1)
 #define LOOM_VECTOR_INTOVERFLOWFLAGS_NUW ((uint8_t)2)
 
+// Independent DAZ and FTZ permissions for floating-point conversions.
+#define LOOM_VECTOR_FLOATCONVERSIONFLAGS_DAZ ((uint8_t)1)
+#define LOOM_VECTOR_FLOATCONVERSIONFLAGS_FTZ ((uint8_t)2)
+
 // Matrix multiply-accumulate semantic flags.
 #define LOOM_VECTOR_MMAFLAGS_SATURATE ((uint8_t)1)
 
@@ -2819,15 +2823,17 @@ iree_status_t loom_vector_signi_facts(
     const loom_value_facts_t* operand_facts,
     loom_value_facts_t* result_facts);
 
-// LOOM_OP_VECTOR_EXTF: Lanewise floating-point precision extension. Source and result shapes match exactly; only the floating-point element type widens.
+// LOOM_OP_VECTOR_EXTF: Lanewise floating-point precision extension. Source and result shapes match exactly; only the floating-point element type widens. Without flags, the conversion preserves subnormal inputs and results. `daz` permits replacing a subnormal input with its signed zero before conversion; `ftz` permits replacing a subnormal result with its signed zero.
 // vector.extf
 LOOM_DEFINE_ISA(loom_vector_extf_isa, LOOM_OP_VECTOR_EXTF)
 LOOM_DEFINE_OPERAND(loom_vector_extf_input, 0)
 LOOM_DEFINE_RESULT(loom_vector_extf_result, 0)
+LOOM_DEFINE_INSTANCE_FLAGS(loom_vector_extf_subnormal)
 iree_status_t loom_vector_extf_build(
-    loom_builder_t* builder, loom_value_id_t input,
-    loom_type_t input_type, loom_type_t result_type,
-    loom_location_id_t location, loom_op_t** out_op);
+    loom_builder_t* builder, uint8_t instance_flags,
+    loom_value_id_t input, loom_type_t input_type,
+    loom_type_t result_type, loom_location_id_t location,
+    loom_op_t** out_op);
 iree_status_t loom_vector_extf_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
 iree_status_t loom_vector_extf_facts(
     loom_fact_context_t* context,
@@ -2835,15 +2841,17 @@ iree_status_t loom_vector_extf_facts(
     const loom_value_facts_t* operand_facts,
     loom_value_facts_t* result_facts);
 
-// LOOM_OP_VECTOR_FPTRUNC: Lanewise floating-point precision truncation using round-to-nearest, ties-to-even. Source and result shapes match exactly; only the floating-point element type narrows. Special values follow the destination format: f8E4M3 saturates finite overflow and infinities to its signed maximum finite value while preserving NaNs; IEEE formats preserve infinities and NaNs.
+// LOOM_OP_VECTOR_FPTRUNC: Lanewise floating-point precision truncation using round-to-nearest, ties-to-even. Source and result shapes match exactly; only the floating-point element type narrows. Special values follow the destination format: f8E4M3 saturates finite overflow and infinities to its signed maximum finite value while preserving NaNs; IEEE formats preserve infinities and NaNs. Without flags, the conversion preserves subnormal inputs and results. `daz` permits replacing a subnormal input with its signed zero before conversion; `ftz` permits replacing a subnormal result with its signed zero.
 // vector.fptrunc
 LOOM_DEFINE_ISA(loom_vector_fptrunc_isa, LOOM_OP_VECTOR_FPTRUNC)
 LOOM_DEFINE_OPERAND(loom_vector_fptrunc_input, 0)
 LOOM_DEFINE_RESULT(loom_vector_fptrunc_result, 0)
+LOOM_DEFINE_INSTANCE_FLAGS(loom_vector_fptrunc_subnormal)
 iree_status_t loom_vector_fptrunc_build(
-    loom_builder_t* builder, loom_value_id_t input,
-    loom_type_t input_type, loom_type_t result_type,
-    loom_location_id_t location, loom_op_t** out_op);
+    loom_builder_t* builder, uint8_t instance_flags,
+    loom_value_id_t input, loom_type_t input_type,
+    loom_type_t result_type, loom_location_id_t location,
+    loom_op_t** out_op);
 iree_status_t loom_vector_fptrunc_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
 iree_status_t loom_vector_fptrunc_facts(
     loom_fact_context_t* context,

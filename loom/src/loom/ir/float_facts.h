@@ -49,6 +49,14 @@ typedef enum loom_float_integer_conversion_kind_e {
   LOOM_FLOAT_INTEGER_CONVERSION_UNSIGNED = 1,
 } loom_float_integer_conversion_kind_t;
 
+// Subnormal-handling permissions carried by a floating-point conversion.
+typedef struct loom_float_conversion_policy_t {
+  // Whether a subnormal input may be replaced by its corresponding signed zero.
+  bool may_flush_input_subnormal;
+  // Whether a subnormal rounded result may be replaced by its signed zero.
+  bool may_flush_result_subnormal;
+} loom_float_conversion_policy_t;
+
 // Returns exact floating-point facts after rounding |value| to |scalar_type|.
 // The compact fact payload stores the rounded value as a host double; callers
 // must continue to provide the declared scalar type when interpreting it.
@@ -74,6 +82,15 @@ bool loom_value_facts_from_float_bits(loom_scalar_type_t scalar_type,
 // This represents raw NaN payloads that cannot be retained in the compact fact
 // payload, such as signaling NaNs discovered through integer bitcasts.
 loom_value_facts_t loom_value_facts_known_nan(void);
+
+// Evaluates a floating-width conversion under |policy|. Each policy field adds
+// the flushed value to the permitted result set; it does not require flushing.
+// All other rounding and special-value behavior remains exact.
+void loom_value_facts_eval_float_conversion(
+    loom_scalar_type_t source_type, loom_scalar_type_t result_type,
+    loom_float_conversion_policy_t policy,
+    const loom_value_facts_t* input_facts,
+    loom_value_facts_t* out_result_facts);
 
 // Extracts an exact floating-point value interpreted as |scalar_type|.
 bool loom_value_facts_as_exact_float(loom_scalar_type_t scalar_type,

@@ -3392,6 +3392,29 @@ def test_compile_lower_rule_set_compiles_instance_flags_guard() -> None:
         assert compiled.guards[0].u64 == 16
 
 
+def test_compile_lower_rule_set_compiles_fact_or_instance_flag_guard() -> None:
+    guard = Guard.value_not_subnormal_or_instance_flags_has_all(
+        "input", "subnormal", "ftz"
+    )
+    table = ContractFragment(
+        name="test.subnormal-policy",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=[
+            RecipeRule(
+                source_op=scalar_conversion.scalar_fptrunc,
+                guards=(guard,),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+
+    assert compiled.rules[0].guard_count == 1
+    assert compiled.guards[0].kind == guard.kind
+    assert compiled.guards[0].value_ref_index == 0
+    assert compiled.guards[0].u64 == 2
+
+
 def test_compile_lower_rule_set_projects_source_instance_flags() -> None:
     descriptor, descriptor_set = _add_f32_flags_descriptor_set()
     table = ContractFragment(

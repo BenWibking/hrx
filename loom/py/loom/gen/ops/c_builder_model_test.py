@@ -11,21 +11,28 @@ import pytest
 from loom.assembly import (
     ARROW,
     BINDING_TYPE_BLOCK_ARG,
+    COLON,
     Attr,
     AttrDict,
     BindingList,
     BlockArgs,
+    Flags,
     OptionalGroup,
     PredicateList,
     Ref,
     Region,
     ResultType,
     ResultTypeList,
+    TypeOf,
+    kw,
 )
 from loom.dsl import (
     ANY,
+    ATTR_TYPE_FLAGS,
     AttrDef,
     Dialect,
+    EnumCase,
+    EnumDef,
     LoopLikeInterface,
     Op,
     Operand,
@@ -158,6 +165,31 @@ def test_compact_builders_require_matching_parameter_names() -> None:
         )
         assert (detect_builder_pattern(op) is not None) == (names == ("lhs", "rhs"))
         assert [param["name"] for param in extract_c_params(op, {}) if param["kind"] == "operand"] == list(names)
+
+
+def test_flagged_cast_uses_a_flag_aware_compact_builder() -> None:
+    flags = EnumDef("CastFlags", [EnumCase("relaxed", 1)])
+    op = Op(
+        "test.cast",
+        group=Dialect("test"),
+        operands=[Operand("input", ANY)],
+        results=[Result("result", ANY)],
+        attrs=[AttrDef("flags", ATTR_TYPE_FLAGS, optional=True, enum_def=flags)],
+        format=[
+            Flags("flags"),
+            Ref("input"),
+            COLON,
+            TypeOf("input"),
+            kw("to"),
+            TypeOf("result"),
+        ],
+    )
+
+    assert detect_builder_pattern(op) == "CAST_WITH_FLAGS"
+    header = generate_ops_h("test", 0, [op])
+    assert "loom_builder_t* builder, uint8_t instance_flags," in header
+    source = generate_builders_c("test", [op])
+    assert "LOOM_DEFINE_CAST_OP_WITH_FLAGS_BUILDER" in source
 
 
 @pytest.mark.parametrize("order", [("access", "view"), ("view", "access")])
