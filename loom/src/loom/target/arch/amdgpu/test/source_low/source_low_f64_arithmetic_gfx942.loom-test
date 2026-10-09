@@ -1,48 +1,50 @@
 // RUN: emit source-low target=amdgpu:gfx942 output=low
 
-func.def @native_f64(%lhs: f64, %rhs: f64) -> (f64, f64, f64) {
+func.def @native_f64(%lhs: f64, %rhs: f64, %addend: f64) -> (f64, f64, f64, f64) {
   %sum = scalar.addf %lhs, %rhs : f64
   %product = scalar.mulf %lhs, %rhs : f64
+  %fused = scalar.fmaf %lhs, %rhs, %addend : f64
   %root = scalar.sqrtf %lhs : f64
-  func.return %sum, %product, %root : f64, f64, f64
+  func.return %sum, %product, %fused, %root : f64, f64, f64, f64
 }
 
 // ----
-low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @native_f64(%lhs: reg<amdgpu.vgpr x2>, %rhs: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @native_f64(%lhs: reg<amdgpu.vgpr x2>, %rhs: reg<amdgpu.vgpr x2>, %addend: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
   %sum = v_add_f64 %lhs, %rhs
   %product = v_mul_f64 %lhs, %rhs
-  %15 = v_mov_b32 0
-  %16 = v_mov_b32 268435456
-  %17 = v_mov_b32 1071644672
-  %18 = concat(%15, %16) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  %19 = concat(%15, %17) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  %20 = v_cmp_lt_f64 %lhs, %18
-  %21 = v_mov_b32 256
-  %22 = v_cndmask_b32 %15, %21, %20
-  %23 = v_ldexp_f64 %lhs, %22
-  %24 = v_rsq_f64 %23
-  %25 = v_mul_f64 %23, %24
-  %26 = v_mul_f64 %24, %19
-  %27 = v_fma_f64_neg_a %26, %25, %19
-  %28 = v_fma_f64 %26, %27, %26
-  %29 = v_fma_f64 %25, %27, %25
-  %30 = v_fma_f64_neg_a %29, %29, %23
-  %31 = v_fma_f64 %30, %28, %29
-  %32 = v_fma_f64_neg_a %31, %31, %23
-  %33 = v_fma_f64 %32, %28, %31
-  %34 = v_mov_b32 4294967168
-  %35 = v_cndmask_b32 %15, %34, %20
-  %36 = v_ldexp_f64 %33, %35
-  %37 = s_mov_b32 608
-  %38 = v_cmp_class_f64 %23, %37
-  %39 = slice %36[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %40 = slice %23[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %41 = v_cndmask_b32 %39, %40, %38
-  %42 = slice %36[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %43 = slice %23[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %44 = v_cndmask_b32 %42, %43, %38
-  %root = concat(%41, %44) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  return %sum, %product, %root
+  %fused = v_fma_f64 %lhs, %rhs, %addend
+  %21 = v_mov_b32 0
+  %22 = v_mov_b32 268435456
+  %23 = v_mov_b32 1071644672
+  %24 = concat(%21, %22) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %25 = concat(%21, %23) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %26 = v_cmp_lt_f64 %lhs, %24
+  %27 = v_mov_b32 256
+  %28 = v_cndmask_b32 %21, %27, %26
+  %29 = v_ldexp_f64 %lhs, %28
+  %30 = v_rsq_f64 %29
+  %31 = v_mul_f64 %29, %30
+  %32 = v_mul_f64 %30, %25
+  %33 = v_fma_f64_neg_a %32, %31, %25
+  %34 = v_fma_f64 %32, %33, %32
+  %35 = v_fma_f64 %31, %33, %31
+  %36 = v_fma_f64_neg_a %35, %35, %29
+  %37 = v_fma_f64 %36, %34, %35
+  %38 = v_fma_f64_neg_a %37, %37, %29
+  %39 = v_fma_f64 %38, %34, %37
+  %40 = v_mov_b32 4294967168
+  %41 = v_cndmask_b32 %21, %40, %26
+  %42 = v_ldexp_f64 %39, %41
+  %43 = s_mov_b32 608
+  %44 = v_cmp_class_f64 %29, %43
+  %45 = slice %42[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %46 = slice %29[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %47 = v_cndmask_b32 %45, %46, %44
+  %48 = slice %42[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %49 = slice %29[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %50 = v_cndmask_b32 %48, %49, %44
+  %root = concat(%47, %50) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  return %sum, %product, %fused, %root
 }
 
 // ====
@@ -167,21 +169,26 @@ low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @subtract_f64(%lhs: reg<a
 
 // ====
 
-func.def @change_f64_sign(%value: f64) -> (f64, f64) {
+func.def @change_f64_sign(%value: f64, %sign: f64) -> (f64, f64, f64) {
   %negative = scalar.negf %value : f64
   %absolute = scalar.absf %value : f64
-  func.return %negative, %absolute : f64, f64
+  %copied = scalar.copysignf %value, %sign : f64
+  func.return %negative, %absolute, %copied : f64, f64, f64
 }
 
 // ----
-low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @change_f64_sign(%value: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
-  %8 = slice %value[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %9 = slice %value[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %10 = v_xor_b32_lit %9, 2147483648
-  %negative = concat(%8, %10) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  %14 = v_and_b32_lit %9, 2147483647
-  %absolute = concat(%8, %14) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  return %negative, %absolute
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @change_f64_sign(%value: reg<amdgpu.vgpr x2>, %sign: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
+  %13 = slice %value[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %14 = slice %value[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %15 = v_xor_b32_lit %14, 2147483648
+  %negative = concat(%13, %15) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %19 = v_and_b32_lit %14, 2147483647
+  %absolute = concat(%13, %19) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %23 = slice %sign[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %24 = s_mov_b32 2147483647
+  %25 = v_bfi_b32 %24, %14, %23
+  %copied = concat(%13, %25) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  return %negative, %absolute, %copied
 }
 
 // ====

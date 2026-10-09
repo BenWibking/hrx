@@ -506,6 +506,7 @@ _SPIRV_EXECUTION_XFAILS = {
     "numeric/float/exponential.loom:@exponential_values": "EXPECT/002,EXPECT/003",
     "numeric/float/extrema.loom:@float_extrema_values": "TARGET/003",
     "numeric/float/logarithm.loom:@logarithm_values": "EXPECT/003",
+    "numeric/float/roots.loom:@root_f64_values": "TARGET/001",
     "numeric/float/roots.loom:@root_values": "TARGET/001",
     "numeric/float/rounding.loom:@rounding_f32_values": "TARGET/093",
     "numeric/float/rounding.loom:@rounding_f64_values": "TARGET/093",

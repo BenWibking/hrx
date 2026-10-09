@@ -77,6 +77,7 @@ def _rule_descriptor_keys(
     return tuple(
         compiled.emits[emit_index].descriptor.key
         for emit_index in range(rule.emit_start, rule.emit_start + rule.emit_count)
+        if compiled.emits[emit_index].descriptor is not None
     )
 
 
@@ -308,6 +309,16 @@ def test_f32_copysign_rules_try_literal_bfi_before_register_mask() -> None:
             positions[("amdgpu.v_bfi_b32.src0_lit",)]
             < positions[("amdgpu.s_mov_b32", "amdgpu.v_bfi_b32")]
         )
+
+    scalar_f64_sequences = tuple(
+        _rule_descriptor_keys(compiled, rule)
+        for rule in _rules_for_source_op(compiled, scalar_arithmetic.scalar_copysignf)
+        if set(_rule_type_patterns(compiled, rule)) == {Scalar("f64")}
+    )
+    assert scalar_f64_sequences == (
+        ("amdgpu.v_bfi_b32.src0_lit",),
+        ("amdgpu.s_mov_b32", "amdgpu.v_bfi_b32"),
+    )
 
 
 def test_integer_extrema_rules_prefer_encoded_constants() -> None:
