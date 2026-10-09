@@ -1828,6 +1828,25 @@ bool loom_liveness_segment_range_contains(
   return false;
 }
 
+// First segment in [first, end) whose end lies after |point|. Segments in a
+// range are sorted and disjoint, so their end points ascend.
+static const loom_liveness_segment_t* loom_liveness_segment_first_ending_after(
+    const loom_liveness_segment_t* first, const loom_liveness_segment_t* end,
+    uint32_t point) {
+  iree_host_size_t count = (iree_host_size_t)(end - first);
+  while (count != 0) {
+    const iree_host_size_t half = count / 2;
+    const loom_liveness_segment_t* middle = first + half;
+    if (middle->end_point <= point) {
+      first = middle + 1;
+      count -= half + 1;
+    } else {
+      count = half;
+    }
+  }
+  return first;
+}
+
 bool loom_liveness_segment_ranges_overlap(
     const loom_liveness_segment_t* segments, loom_liveness_segment_range_t lhs,
     loom_liveness_segment_range_t rhs) {
@@ -1838,6 +1857,20 @@ bool loom_liveness_segment_ranges_overlap(
   const loom_liveness_segment_t* rhs_segment = &segments[rhs.start];
   const loom_liveness_segment_t* lhs_end = lhs_segment + lhs.count;
   const loom_liveness_segment_t* rhs_end = rhs_segment + rhs.count;
+  // Skip each side's segments that end before the other side begins. During
+  // allocation one side is usually a long-lived value whose earlier segments
+  // can never meet a later candidate; walking them made every check linear in
+  // that value's whole history.
+  lhs_segment = loom_liveness_segment_first_ending_after(
+      lhs_segment, lhs_end, rhs_segment->start_point);
+  if (lhs_segment == lhs_end) {
+    return false;
+  }
+  rhs_segment = loom_liveness_segment_first_ending_after(
+      rhs_segment, rhs_end, lhs_segment->start_point);
+  if (rhs_segment == rhs_end) {
+    return false;
+  }
   // Both cursors are valid at entry. Only the advanced cursor can become
   // exhausted; the other segment remains available for the next comparison.
   for (;;) {
