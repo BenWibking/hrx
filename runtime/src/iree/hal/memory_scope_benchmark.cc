@@ -90,7 +90,7 @@ static void BM_QueryPreparedPair(benchmark::State& state) {
   const iree_hal_memory_transition_table_t table = table_set.table(0);
   const iree_hal_memory_transition_pair_t pair = table_set.pair();
   for (auto _ : state) {
-    const iree_hal_memory_transition_t transition =
+    iree_hal_memory_transition_t transition =
         iree_hal_memory_transition_query(table, pair);
     benchmark::DoNotOptimize(transition);
   }
@@ -105,11 +105,10 @@ static void BM_QueryPreparedPairAndCheck(benchmark::State& state) {
   const iree_hal_memory_transition_table_t table = table_set.table(0);
   const iree_hal_memory_transition_pair_t pair = table_set.pair();
   for (auto _ : state) {
-    const iree_hal_memory_transition_t transition =
+    iree_hal_memory_transition_t transition =
         iree_hal_memory_transition_query(table, pair);
-    const bool supported =
-        iree_hal_memory_effects_is_supported(transition.release) &&
-        iree_hal_memory_effects_is_supported(transition.acquire);
+    bool supported = iree_hal_memory_effects_is_supported(transition.release) &&
+                     iree_hal_memory_effects_is_supported(transition.acquire);
     benchmark::DoNotOptimize(transition);
     benchmark::DoNotOptimize(supported);
   }

@@ -525,27 +525,6 @@ endif()
 if(IREE_HAL_DRIVER_AMDGPU)
 iree_cc_test(
   NAME
-    buffer_test
-  SRCS
-    "buffer_test.cc"
-  DEPS
-    ::amdgpu
-    ::headers
-    iree::hal
-    iree::testing::gtest
-    iree::testing::gtest_main
-  LABELS
-    "iree-build-requirement=runtime.hal.amdgpu"
-    "iree-run-requirement=runtime.resource.amd_gpu"
-    "runtime-resource=amd-gpu"
-  RESOURCE_GROUP
-    gpu-device
-)
-endif()
-
-if(IREE_HAL_DRIVER_AMDGPU)
-iree_cc_test(
-  NAME
     atomic_memory_test
   SRCS
     "atomic_memory_test.cc"
@@ -824,6 +803,7 @@ iree_cc_test(
   NAME
     host_queue_atomic_test
   SRCS
+    "buffer_test.cc"
     "host_queue_atomic_test.cc"
     "host_queue_command_buffer_packet.h"
     "host_queue_command_buffer_test_util.h"
