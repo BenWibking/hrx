@@ -60,31 +60,11 @@ static const loom_low_descriptor_t* loom_low_descriptor_text_asm_descriptor(
   return (const loom_low_descriptor_t*)descriptor;
 }
 
-static iree_status_t loom_low_descriptor_text_asm_string(
-    const loom_low_descriptor_set_t* descriptor_set,
-    loom_string_ref_t string_ref, iree_string_view_t* out_string) {
-  *out_string = loom_low_descriptor_set_string(descriptor_set, string_ref);
-  if (iree_string_view_is_empty(*out_string)) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "low asm descriptor table has an empty required "
-                            "string");
-  }
-  return iree_ok_status();
-}
-
-static iree_status_t loom_low_descriptor_text_asm_make_packet(
+static void loom_low_descriptor_text_asm_make_packet(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_asm_form_t* asm_form,
     const loom_low_descriptor_t* descriptor,
     loom_text_low_asm_packet_descriptor_t* out_packet) {
-  iree_string_view_t descriptor_key = iree_string_view_empty();
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_string(
-      descriptor_set, descriptor->key_string_ref, &descriptor_key));
-
-  iree_string_view_t mnemonic = iree_string_view_empty();
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_string(
-      descriptor_set, asm_form->mnemonic_string_ref, &mnemonic));
-
   const loom_low_asm_layout_t* layout =
       &descriptor_set->asm_layouts[asm_form->layout_index];
   const bool builds_as_const =
@@ -94,8 +74,10 @@ static iree_status_t loom_low_descriptor_text_asm_make_packet(
           loom_low_descriptor_text_asm_descriptor_set_handle(descriptor_set),
       .form = loom_low_descriptor_text_asm_form_handle(asm_form),
       .descriptor = loom_low_descriptor_text_asm_descriptor_handle(descriptor),
-      .descriptor_key = descriptor_key,
-      .mnemonic = mnemonic,
+      .descriptor_key = loom_low_descriptor_set_string(
+          descriptor_set, descriptor->key_string_ref),
+      .mnemonic = loom_low_descriptor_set_string(descriptor_set,
+                                                 asm_form->mnemonic_string_ref),
       .result_count = layout->result_operand_index_count,
       .minimum_operand_count = descriptor->minimum_packet_operand_count,
       .operand_segment_count = layout->operand_segment_count,
@@ -112,10 +94,9 @@ static iree_status_t loom_low_descriptor_text_asm_make_packet(
           layout->flags, LOOM_LOW_ASM_LAYOUT_FLAG_REQUIRED_NAMED_IMMEDIATES),
       .operation_kind = builds_as_const ? LOOM_OP_LOW_CONST : LOOM_OP_LOW_OP,
   };
-  return iree_ok_status();
 }
 
-static iree_status_t loom_low_descriptor_text_asm_lookup_packet(
+static void loom_low_descriptor_text_asm_lookup_packet(
     const loom_text_low_asm_environment_state_t* state,
     const loom_text_low_asm_descriptor_set_t* descriptor_set_handle,
     iree_string_view_t mnemonic,
@@ -128,25 +109,14 @@ static iree_status_t loom_low_descriptor_text_asm_lookup_packet(
   uint32_t asm_form_ordinal =
       loom_low_descriptor_set_lookup_asm_form(descriptor_set, mnemonic);
   if (asm_form_ordinal == LOOM_LOW_ASM_FORM_ORDINAL_NONE) {
-    return iree_ok_status();
+    return;
   }
   const loom_low_asm_form_t* asm_form =
-      loom_low_descriptor_set_asm_form_at(descriptor_set, asm_form_ordinal);
-  if (asm_form == NULL) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "low asm form ordinal is out of range");
-  }
-
+      &descriptor_set->asm_forms[asm_form_ordinal];
   const loom_low_descriptor_t* descriptor =
-      loom_low_descriptor_set_descriptor_at(descriptor_set,
-                                            asm_form->descriptor_ordinal);
-  if (descriptor == NULL) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "low asm form references an invalid descriptor");
-  }
-
-  return loom_low_descriptor_text_asm_make_packet(descriptor_set, asm_form,
-                                                  descriptor, out_packet);
+      &descriptor_set->descriptors[asm_form->descriptor_ordinal];
+  loom_low_descriptor_text_asm_make_packet(descriptor_set, asm_form, descriptor,
+                                           out_packet);
 }
 
 static iree_status_t loom_low_descriptor_text_asm_diagnose_unknown_packet(
@@ -181,69 +151,9 @@ static iree_status_t loom_low_descriptor_text_asm_diagnose_unknown_packet(
   return iree_ok_status();
 }
 
-static iree_status_t loom_low_descriptor_text_asm_lookup_packet_by_ordinal(
-    const loom_low_descriptor_set_t* descriptor_set,
-    uint32_t descriptor_ordinal,
-    loom_text_low_asm_packet_descriptor_t* out_packet) {
-  *out_packet = (loom_text_low_asm_packet_descriptor_t){0};
-  const loom_low_descriptor_t* descriptor =
-      loom_low_descriptor_set_descriptor_at(descriptor_set, descriptor_ordinal);
-  if (descriptor == NULL) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "low descriptor ordinal is out of range");
-  }
-
-  const loom_low_descriptor_view_t* descriptor_view =
-      loom_low_descriptor_set_descriptor_view_at(descriptor_set,
-                                                 descriptor_ordinal);
-  uint32_t asm_form_ordinal = LOOM_LOW_ASM_FORM_ORDINAL_NONE;
-  if (descriptor_view->canonical_asm_form_ordinal ==
-      LOOM_LOW_ASM_FORM_ORDINAL_NONE) {
-    return iree_ok_status();
-  }
-  asm_form_ordinal = descriptor_view->canonical_asm_form_ordinal;
-  const loom_low_asm_form_t* selected_form =
-      loom_low_descriptor_set_asm_form_at(descriptor_set, asm_form_ordinal);
-  if (selected_form == NULL) {
-    return iree_make_status(
-        IREE_STATUS_OUT_OF_RANGE,
-        "low descriptor canonical asm form ordinal is out of range");
-  }
-  return loom_low_descriptor_text_asm_make_packet(descriptor_set, selected_form,
-                                                  descriptor, out_packet);
-}
-
-static iree_status_t loom_low_descriptor_text_asm_descriptor_operand(
-    const loom_low_descriptor_set_t* descriptor_set,
-    const loom_low_descriptor_t* descriptor, uint16_t descriptor_operand_index,
-    const loom_low_operand_t** out_operand) {
-  *out_operand = NULL;
-  if (descriptor_operand_index >= descriptor->operand_count) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "low asm packet references an operand outside the "
-                            "descriptor");
-  }
-  const uint32_t operand_row =
-      descriptor->operand_start + descriptor_operand_index;
-  if (operand_row >= descriptor_set->operand_count) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "low asm descriptor operand row is out of range");
-  }
-  *out_operand = &descriptor_set->operands[operand_row];
-  return iree_ok_status();
-}
-
-static iree_status_t loom_low_descriptor_text_asm_result_operand(
+static const loom_low_operand_t* loom_low_descriptor_text_asm_result_operand(
     const loom_text_low_asm_packet_descriptor_t* packet, uint16_t result_index,
-    uint16_t* out_descriptor_operand_index,
-    const loom_low_operand_t** out_operand) {
-  *out_descriptor_operand_index = 0;
-  *out_operand = NULL;
-  if (result_index >= packet->result_count) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "low asm result index is out of range");
-  }
-
+    uint16_t* out_descriptor_operand_index) {
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
   const loom_low_descriptor_t* descriptor =
@@ -255,29 +165,16 @@ static iree_status_t loom_low_descriptor_text_asm_result_operand(
 
   const uint32_t asm_operand_index =
       layout->result_operand_index_start + result_index;
-  if (asm_operand_index >= descriptor_set->asm_operand_index_count) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "low asm result operand index is out of range");
-  }
   const uint16_t descriptor_operand_index =
       descriptor_set->asm_operand_indices[asm_operand_index];
-  const loom_low_operand_t* operand = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_descriptor_operand(
-      descriptor_set, descriptor, descriptor_operand_index, &operand));
-  if (operand->role != LOOM_LOW_OPERAND_ROLE_RESULT) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "low asm result references a non-result operand");
-  }
   *out_descriptor_operand_index = descriptor_operand_index;
-  *out_operand = operand;
-  return iree_ok_status();
+  return &descriptor_set
+              ->operands[descriptor->operand_start + descriptor_operand_index];
 }
 
-static iree_status_t loom_low_descriptor_text_asm_find_packet_operand_index(
+static bool loom_low_descriptor_text_asm_find_packet_operand_index(
     const loom_text_low_asm_packet_descriptor_t* packet,
-    uint16_t descriptor_operand_index, bool* out_found,
-    uint16_t* out_packet_operand_index) {
-  *out_found = false;
+    uint16_t descriptor_operand_index, uint16_t* out_packet_operand_index) {
   *out_packet_operand_index = 0;
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
@@ -287,25 +184,18 @@ static iree_status_t loom_low_descriptor_text_asm_find_packet_operand_index(
       &descriptor_set->asm_layouts[asm_form->layout_index];
   for (uint16_t i = 0; i < layout->operand_index_count; ++i) {
     const uint32_t asm_operand_index = layout->operand_index_start + i;
-    if (asm_operand_index >= descriptor_set->asm_operand_index_count) {
-      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                              "low asm operand index is out of range");
-    }
     if (descriptor_set->asm_operand_indices[asm_operand_index] ==
         descriptor_operand_index) {
-      *out_found = true;
       *out_packet_operand_index = i;
-      return iree_ok_status();
+      return true;
     }
   }
-  return iree_ok_status();
+  return false;
 }
 
-static iree_status_t loom_low_descriptor_text_asm_find_packet_result_index(
+static bool loom_low_descriptor_text_asm_find_packet_result_index(
     const loom_text_low_asm_packet_descriptor_t* packet,
-    uint16_t descriptor_operand_index, bool* out_found,
-    uint16_t* out_packet_result_index) {
-  *out_found = false;
+    uint16_t descriptor_operand_index, uint16_t* out_packet_result_index) {
   *out_packet_result_index = 0;
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
@@ -315,18 +205,13 @@ static iree_status_t loom_low_descriptor_text_asm_find_packet_result_index(
       &descriptor_set->asm_layouts[asm_form->layout_index];
   for (uint16_t i = 0; i < packet->result_count; ++i) {
     const uint32_t asm_operand_index = layout->result_operand_index_start + i;
-    if (asm_operand_index >= descriptor_set->asm_operand_index_count) {
-      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                              "low asm result index is out of range");
-    }
     if (descriptor_set->asm_operand_indices[asm_operand_index] ==
         descriptor_operand_index) {
-      *out_found = true;
       *out_packet_result_index = i;
-      return iree_ok_status();
+      return true;
     }
   }
-  return iree_ok_status();
+  return false;
 }
 
 static bool loom_low_descriptor_text_asm_constraint_ties_result_type(
@@ -347,10 +232,6 @@ static iree_status_t loom_low_descriptor_text_asm_find_tied_packet_operand(
       loom_low_descriptor_text_asm_descriptor(packet->descriptor);
   for (uint16_t i = 0; i < descriptor->constraint_count; ++i) {
     const uint32_t constraint_index = descriptor->constraint_start + i;
-    if (constraint_index >= descriptor_set->constraint_count) {
-      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                              "low asm descriptor constraint is out of range");
-    }
     const loom_low_constraint_t* constraint =
         &descriptor_set->constraints[constraint_index];
     if (!loom_low_descriptor_text_asm_constraint_ties_result_type(
@@ -360,15 +241,9 @@ static iree_status_t loom_low_descriptor_text_asm_find_tied_packet_operand(
     if (constraint->lhs_operand_index != result_descriptor_operand_index) {
       continue;
     }
-    if (constraint->rhs_operand_index == LOOM_LOW_ID_NONE) {
-      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                              "low asm result tie has no rhs operand");
-    }
-    bool found = false;
     uint16_t packet_operand_index = 0;
-    IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_find_packet_operand_index(
-        packet, constraint->rhs_operand_index, &found, &packet_operand_index));
-    if (!found) {
+    if (!loom_low_descriptor_text_asm_find_packet_operand_index(
+            packet, constraint->rhs_operand_index, &packet_operand_index)) {
       return iree_make_status(
           IREE_STATUS_INVALID_ARGUMENT,
           "low asm result tie references an operand outside the asm form");
@@ -380,33 +255,13 @@ static iree_status_t loom_low_descriptor_text_asm_find_tied_packet_operand(
   return iree_ok_status();
 }
 
-static iree_status_t loom_low_descriptor_text_asm_copy_to_module_arena(
-    loom_module_t* module, iree_string_view_t value,
-    iree_string_view_t* out_value) {
-  if (iree_string_view_is_empty(value)) {
-    *out_value = iree_string_view_empty();
-    return iree_ok_status();
-  }
-  char* storage = NULL;
-  IREE_RETURN_IF_ERROR(
-      iree_arena_allocate(&module->arena, value.size, (void**)&storage));
-  memcpy(storage, value.data, value.size);
-  *out_value = iree_make_string_view(storage, value.size);
-  return iree_ok_status();
-}
-
 static iree_status_t loom_low_descriptor_text_asm_append_reg_type(
     iree_string_builder_t* builder,
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_operand_t* operand, uint16_t reg_class_id) {
-  if (reg_class_id >= descriptor_set->reg_class_count) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "low asm result register class is out of range");
-  }
-  iree_string_view_t reg_class_name = iree_string_view_empty();
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_string(
-      descriptor_set, descriptor_set->reg_classes[reg_class_id].name_string_ref,
-      &reg_class_name));
+  const iree_string_view_t reg_class_name = loom_low_descriptor_set_string(
+      descriptor_set,
+      descriptor_set->reg_classes[reg_class_id].name_string_ref);
   IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "reg<"));
   IREE_RETURN_IF_ERROR(
       iree_string_builder_append_string(builder, reg_class_name));
@@ -417,24 +272,14 @@ static iree_status_t loom_low_descriptor_text_asm_append_reg_type(
   return iree_string_builder_append_cstring(builder, ">");
 }
 
-static iree_status_t loom_low_descriptor_text_asm_format_expected_result_types(
-    loom_module_t* module, const loom_low_descriptor_set_t* descriptor_set,
+static iree_status_t loom_low_descriptor_text_asm_append_expected_result_types(
+    const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_operand_t* operand, iree_string_view_t prefix,
-    iree_string_view_t* out_detail) {
-  *out_detail = iree_string_view_empty();
-  iree_string_builder_t builder;
-  iree_string_builder_initialize(module->allocator, &builder);
-  iree_status_t status = iree_string_builder_append_string(&builder, prefix);
+    iree_string_builder_t* builder) {
+  IREE_RETURN_IF_ERROR(iree_string_builder_append_string(builder, prefix));
   uint16_t appended_count = 0;
-  for (uint16_t i = 0;
-       i < operand->reg_class_alt_count && iree_status_is_ok(status); ++i) {
+  for (uint16_t i = 0; i < operand->reg_class_alt_count; ++i) {
     const uint32_t alt_index = operand->reg_class_alt_start + i;
-    if (alt_index >= descriptor_set->reg_class_alt_count) {
-      status = iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                                "low asm result register-class alternative is "
-                                "out of range");
-      break;
-    }
     const loom_low_reg_class_alt_t* alternative =
         &descriptor_set->reg_class_alts[alt_index];
     if (alternative->reg_class_id == LOOM_LOW_REG_CLASS_NONE ||
@@ -443,40 +288,51 @@ static iree_status_t loom_low_descriptor_text_asm_format_expected_result_types(
       continue;
     }
     if (appended_count > 0) {
-      status = iree_string_builder_append_cstring(&builder, " | ");
-      if (!iree_status_is_ok(status)) {
-        break;
-      }
+      IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, " | "));
     }
-    status = loom_low_descriptor_text_asm_append_reg_type(
-        &builder, descriptor_set, operand, alternative->reg_class_id);
+    IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_append_reg_type(
+        builder, descriptor_set, operand, alternative->reg_class_id));
     ++appended_count;
   }
-  if (iree_status_is_ok(status) && appended_count == 0) {
-    status = iree_string_builder_append_cstring(&builder, "<none>");
+  if (appended_count == 0) {
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "<none>"));
   }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_low_descriptor_text_asm_format_expected_result_types(
+    loom_module_t* module, const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_operand_t* operand, iree_string_view_t prefix,
+    iree_string_view_t* out_detail) {
+  *out_detail = iree_string_view_empty();
+  // Measure this cold-path diagnostic before allocating its exact retained
+  // storage. No temporary buffer or growth slack survives in the module.
+  iree_string_builder_t builder;
+  iree_string_builder_initialize(iree_allocator_null(), &builder);
+  IREE_RETURN_IF_ERROR(
+      loom_low_descriptor_text_asm_append_expected_result_types(
+          descriptor_set, operand, prefix, &builder));
+  const iree_host_size_t storage_size = iree_string_builder_size(&builder) + 1;
+  char* storage = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate(&module->arena, storage_size, (void**)&storage));
+  iree_string_builder_initialize_with_storage(storage, storage_size, &builder);
+  iree_status_t status =
+      loom_low_descriptor_text_asm_append_expected_result_types(
+          descriptor_set, operand, prefix, &builder);
   if (iree_status_is_ok(status)) {
-    status = loom_low_descriptor_text_asm_copy_to_module_arena(
-        module, iree_string_builder_view(&builder), out_detail);
+    *out_detail = iree_string_builder_view(&builder);
   }
   iree_string_builder_deinitialize(&builder);
   return status;
 }
 
-static iree_status_t loom_low_descriptor_text_asm_find_single_register_alt(
+static uint16_t loom_low_descriptor_text_asm_find_single_register_alt(
     const loom_low_descriptor_set_t* descriptor_set,
-    const loom_low_operand_t* operand, bool* out_found, bool* out_ambiguous,
-    uint16_t* out_reg_class_id) {
-  *out_found = false;
-  *out_ambiguous = false;
-  *out_reg_class_id = LOOM_LOW_REG_CLASS_NONE;
+    const loom_low_operand_t* operand) {
+  uint16_t reg_class_id = LOOM_LOW_REG_CLASS_NONE;
   for (uint16_t i = 0; i < operand->reg_class_alt_count; ++i) {
     const uint32_t alt_index = operand->reg_class_alt_start + i;
-    if (alt_index >= descriptor_set->reg_class_alt_count) {
-      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                              "low asm result register-class alternative is "
-                              "out of range");
-    }
     const loom_low_reg_class_alt_t* alternative =
         &descriptor_set->reg_class_alts[alt_index];
     if (alternative->reg_class_id == LOOM_LOW_REG_CLASS_NONE ||
@@ -484,18 +340,12 @@ static iree_status_t loom_low_descriptor_text_asm_find_single_register_alt(
                           LOOM_LOW_REG_CLASS_ALT_FLAG_IMMEDIATE)) {
       continue;
     }
-    if (*out_found) {
-      *out_ambiguous = true;
-      return iree_ok_status();
+    if (reg_class_id != LOOM_LOW_REG_CLASS_NONE) {
+      return LOOM_LOW_REG_CLASS_NONE;
     }
-    if (alternative->reg_class_id >= descriptor_set->reg_class_count) {
-      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                              "low asm result register class is out of range");
-    }
-    *out_found = true;
-    *out_reg_class_id = alternative->reg_class_id;
+    reg_class_id = alternative->reg_class_id;
   }
-  return iree_ok_status();
+  return reg_class_id;
 }
 
 static const loom_low_asm_result_value_type_t*
@@ -557,30 +407,22 @@ static loom_type_t loom_low_descriptor_text_asm_make_inferred_register_type(
   return loom_type_register_payload_with_value_type(out_register_data);
 }
 
-static iree_status_t loom_low_descriptor_text_asm_result_accepts_type(
+static bool loom_low_descriptor_text_asm_result_accepts_type(
     const loom_low_descriptor_set_t* descriptor_set,
-    const loom_low_operand_t* operand, const loom_module_t* module,
-    loom_type_t type, bool* out_accepted) {
-  (void)module;
-  *out_accepted = false;
+    const loom_low_operand_t* operand, loom_type_t type) {
   if (!loom_low_type_is_register(type)) {
-    return iree_ok_status();
+    return false;
   }
   if (loom_low_register_type_unit_count(type) != operand->unit_count) {
-    return iree_ok_status();
+    return false;
   }
   if (loom_low_register_type_descriptor_set_stable_id(type) !=
       descriptor_set->stable_id) {
-    return iree_ok_status();
+    return false;
   }
   const uint16_t actual_class_id = loom_low_register_type_class_id(type);
   for (uint16_t i = 0; i < operand->reg_class_alt_count; ++i) {
     const uint32_t alt_index = operand->reg_class_alt_start + i;
-    if (alt_index >= descriptor_set->reg_class_alt_count) {
-      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                              "low asm result register-class alternative is "
-                              "out of range");
-    }
     const loom_low_reg_class_alt_t* alternative =
         &descriptor_set->reg_class_alts[alt_index];
     if (alternative->reg_class_id == LOOM_LOW_REG_CLASS_NONE ||
@@ -588,16 +430,11 @@ static iree_status_t loom_low_descriptor_text_asm_result_accepts_type(
                           LOOM_LOW_REG_CLASS_ALT_FLAG_IMMEDIATE)) {
       continue;
     }
-    if (alternative->reg_class_id >= descriptor_set->reg_class_count) {
-      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                              "low asm result register class is out of range");
-    }
     if (actual_class_id == alternative->reg_class_id) {
-      *out_accepted = true;
-      return iree_ok_status();
+      return true;
     }
   }
-  return iree_ok_status();
+  return false;
 }
 
 static iree_status_t loom_low_descriptor_text_asm_infer_result_type(
@@ -613,9 +450,9 @@ static iree_status_t loom_low_descriptor_text_asm_infer_result_type(
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
   uint16_t descriptor_operand_index = 0;
-  const loom_low_operand_t* operand = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_result_operand(
-      packet, result_index, &descriptor_operand_index, &operand));
+  const loom_low_operand_t* operand =
+      loom_low_descriptor_text_asm_result_operand(packet, result_index,
+                                                  &descriptor_operand_index);
 
   bool has_tied_operand = false;
   uint16_t tied_operand_index = 0;
@@ -629,10 +466,8 @@ static iree_status_t loom_low_descriptor_text_asm_infer_result_type(
     }
     loom_type_t tied_type =
         loom_module_value_type(module, operands[tied_operand_index]);
-    bool accepted = false;
-    IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_result_accepts_type(
-        descriptor_set, operand, module, tied_type, &accepted));
-    if (accepted) {
+    if (loom_low_descriptor_text_asm_result_accepts_type(descriptor_set,
+                                                         operand, tied_type)) {
       *out_type = tied_type;
       return iree_ok_status();
     }
@@ -641,12 +476,10 @@ static iree_status_t loom_low_descriptor_text_asm_infer_result_type(
         IREE_SV("tied operand type must be one of: "), out_diagnostic_detail);
   }
 
-  bool found = false;
-  bool ambiguous = false;
-  uint16_t reg_class_id = LOOM_LOW_REG_CLASS_NONE;
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_find_single_register_alt(
-      descriptor_set, operand, &found, &ambiguous, &reg_class_id));
-  if (!found || ambiguous) {
+  const uint16_t reg_class_id =
+      loom_low_descriptor_text_asm_find_single_register_alt(descriptor_set,
+                                                            operand);
+  if (reg_class_id == LOOM_LOW_REG_CLASS_NONE) {
     return loom_low_descriptor_text_asm_format_expected_result_types(
         module, descriptor_set, operand,
         IREE_SV("result type annotation is required for one of: "),
@@ -671,14 +504,12 @@ static iree_status_t loom_low_descriptor_text_asm_validate_result_type(
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
   uint16_t descriptor_operand_index = 0;
-  const loom_low_operand_t* operand = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_result_operand(
-      packet, result_index, &descriptor_operand_index, &operand));
+  const loom_low_operand_t* operand =
+      loom_low_descriptor_text_asm_result_operand(packet, result_index,
+                                                  &descriptor_operand_index);
 
-  bool accepted = false;
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_result_accepts_type(
-      descriptor_set, operand, module, type, &accepted));
-  if (!accepted) {
+  if (!loom_low_descriptor_text_asm_result_accepts_type(descriptor_set, operand,
+                                                        type)) {
     return loom_low_descriptor_text_asm_format_expected_result_types(
         module, descriptor_set, operand,
         IREE_SV("result type annotation must be one of: "),
@@ -720,14 +551,12 @@ loom_low_descriptor_text_asm_result_type_annotation_required(
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
   uint16_t descriptor_operand_index = 0;
-  const loom_low_operand_t* operand = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_result_operand(
-      packet, result_index, &descriptor_operand_index, &operand));
+  const loom_low_operand_t* operand =
+      loom_low_descriptor_text_asm_result_operand(packet, result_index,
+                                                  &descriptor_operand_index);
 
-  bool accepted = false;
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_result_accepts_type(
-      descriptor_set, operand, module, type, &accepted));
-  if (!accepted) {
+  if (!loom_low_descriptor_text_asm_result_accepts_type(descriptor_set, operand,
+                                                        type)) {
     *out_diagnostic_detail =
         IREE_SV("result type annotation is not accepted by low descriptor");
     return iree_ok_status();
@@ -754,12 +583,10 @@ loom_low_descriptor_text_asm_result_type_annotation_required(
     return iree_ok_status();
   }
 
-  bool found = false;
-  bool ambiguous = false;
-  uint16_t reg_class_id = LOOM_LOW_REG_CLASS_NONE;
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_find_single_register_alt(
-      descriptor_set, operand, &found, &ambiguous, &reg_class_id));
-  if (!found || ambiguous) {
+  const uint16_t reg_class_id =
+      loom_low_descriptor_text_asm_find_single_register_alt(descriptor_set,
+                                                            operand);
+  if (reg_class_id == LOOM_LOW_REG_CLASS_NONE) {
     return iree_ok_status();
   }
   loom_register_type_data_t register_data = {0};
@@ -805,26 +632,21 @@ static void loom_low_descriptor_text_asm_immediate_descriptor(
           : out_immediate->field_name;
 }
 
-static iree_status_t loom_low_descriptor_text_asm_tied_result_count(
-    const loom_text_low_asm_packet_descriptor_t* packet,
-    iree_host_size_t* out_tied_result_count) {
-  *out_tied_result_count = 0;
+static iree_host_size_t loom_low_descriptor_text_asm_tied_result_count(
+    const loom_text_low_asm_packet_descriptor_t* packet) {
+  iree_host_size_t tied_result_count = 0;
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
   const loom_low_descriptor_t* descriptor =
       loom_low_descriptor_text_asm_descriptor(packet->descriptor);
   for (uint16_t i = 0; i < descriptor->constraint_count; ++i) {
     const uint32_t constraint_index = descriptor->constraint_start + i;
-    if (constraint_index >= descriptor_set->constraint_count) {
-      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                              "low asm descriptor constraint is out of range");
-    }
     if (descriptor_set->constraints[constraint_index].kind ==
         LOOM_LOW_CONSTRAINT_KIND_TIED) {
-      ++*out_tied_result_count;
+      ++tied_result_count;
     }
   }
-  return iree_ok_status();
+  return tied_result_count;
 }
 
 static iree_status_t loom_low_descriptor_text_asm_tied_result_at(
@@ -839,10 +661,6 @@ static iree_status_t loom_low_descriptor_text_asm_tied_result_at(
   iree_host_size_t current_ordinal = 0;
   for (uint16_t i = 0; i < descriptor->constraint_count; ++i) {
     const uint32_t constraint_index = descriptor->constraint_start + i;
-    if (constraint_index >= descriptor_set->constraint_count) {
-      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                              "low asm descriptor constraint is out of range");
-    }
     const loom_low_constraint_t* constraint =
         &descriptor_set->constraints[constraint_index];
     if (constraint->kind != LOOM_LOW_CONSTRAINT_KIND_TIED) {
@@ -852,25 +670,17 @@ static iree_status_t loom_low_descriptor_text_asm_tied_result_at(
       continue;
     }
 
-    if (constraint->rhs_operand_index == LOOM_LOW_ID_NONE) {
-      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                              "low asm tied result has no rhs operand");
-    }
-    bool found_result = false;
     uint16_t result_index = 0;
-    IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_find_packet_result_index(
-        packet, constraint->lhs_operand_index, &found_result, &result_index));
-    if (!found_result) {
+    if (!loom_low_descriptor_text_asm_find_packet_result_index(
+            packet, constraint->lhs_operand_index, &result_index)) {
       return iree_make_status(
           IREE_STATUS_INVALID_ARGUMENT,
           "low asm tied result references a result outside the asm form");
     }
 
-    bool found_operand = false;
     uint16_t operand_index = 0;
-    IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_find_packet_operand_index(
-        packet, constraint->rhs_operand_index, &found_operand, &operand_index));
-    if (!found_operand) {
+    if (!loom_low_descriptor_text_asm_find_packet_operand_index(
+            packet, constraint->rhs_operand_index, &operand_index)) {
       return iree_make_status(
           IREE_STATUS_INVALID_ARGUMENT,
           "low asm tied result references an operand outside the asm form");
@@ -884,8 +694,7 @@ static iree_status_t loom_low_descriptor_text_asm_tied_result_at(
     return iree_ok_status();
   }
 
-  return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                          "low asm tied result ordinal is out of range");
+  IREE_BUILTIN_UNREACHABLE();
 }
 
 static iree_status_t loom_low_descriptor_text_asm_build_tied_results(
@@ -895,9 +704,8 @@ static iree_status_t loom_low_descriptor_text_asm_build_tied_results(
     iree_host_size_t* out_tied_result_count) {
   *out_tied_results = NULL;
   *out_tied_result_count = 0;
-  iree_host_size_t tied_result_count = 0;
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_tied_result_count(
-      packet, &tied_result_count));
+  const iree_host_size_t tied_result_count =
+      loom_low_descriptor_text_asm_tied_result_count(packet);
   if (tied_result_count == 0) {
     return iree_ok_status();
   }
@@ -959,7 +767,7 @@ static iree_status_t loom_low_descriptor_text_asm_build_packet(
       tied_result_count, location, out_op);
 }
 
-static iree_status_t loom_low_descriptor_text_asm_operand_segment_descriptor(
+static void loom_low_descriptor_text_asm_operand_segment_descriptor(
     const loom_text_low_asm_environment_state_t* state,
     const loom_text_low_asm_packet_descriptor_t* packet, uint16_t segment_index,
     loom_text_low_asm_operand_segment_descriptor_t* out_segment) {
@@ -971,15 +779,7 @@ static iree_status_t loom_low_descriptor_text_asm_operand_segment_descriptor(
       loom_low_descriptor_text_asm_form(packet->form);
   const loom_low_asm_layout_t* layout =
       &descriptor_set->asm_layouts[asm_form->layout_index];
-  if (segment_index >= layout->operand_segment_count) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "low asm operand segment index is out of range");
-  }
   const uint32_t row_index = layout->operand_segment_start + segment_index;
-  if (row_index >= descriptor_set->asm_operand_segment_count) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "low asm operand segment row is out of range");
-  }
   const loom_low_asm_operand_segment_t* segment =
       &descriptor_set->asm_operand_segments[row_index];
   switch (segment->delimiter) {
@@ -996,15 +796,13 @@ static iree_status_t loom_low_descriptor_text_asm_operand_segment_descriptor(
           LOOM_TEXT_LOW_ASM_OPERAND_SEGMENT_DELIMITER_PAREN;
       break;
     default:
-      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                              "low asm operand segment has an invalid "
-                              "delimiter");
+      IREE_ASSERT_UNREACHABLE("generated low asm operand segment delimiter");
+      IREE_BUILTIN_UNREACHABLE();
   }
   out_segment->is_variadic = iree_any_bit_set(
       segment->flags, LOOM_LOW_ASM_OPERAND_SEGMENT_FLAG_VARIADIC);
   out_segment->fixed_operand_count =
       segment->operand_count - (out_segment->is_variadic ? 1 : 0);
-  return iree_ok_status();
 }
 
 static iree_status_t loom_low_descriptor_text_asm_attr_slice(
@@ -1123,9 +921,8 @@ loom_low_descriptor_text_asm_tied_results_require_annotation(
     const loom_text_low_asm_packet_descriptor_t* packet, const loom_op_t* op,
     bool* out_required) {
   *out_required = false;
-  iree_host_size_t expected_count = 0;
-  IREE_RETURN_IF_ERROR(
-      loom_low_descriptor_text_asm_tied_result_count(packet, &expected_count));
+  const iree_host_size_t expected_count =
+      loom_low_descriptor_text_asm_tied_result_count(packet);
   if (op->tied_result_count != expected_count) {
     *out_required = true;
     return iree_ok_status();
@@ -1180,16 +977,20 @@ static iree_status_t loom_low_descriptor_text_asm_describe_packet(
   }
 
   out_statement->kind = LOOM_TEXT_LOW_ASM_STATEMENT_UNAVAILABLE;
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_string(
-      descriptor_set, descriptor->key_string_ref,
-      &out_statement->packet.descriptor_key));
-
-  loom_text_low_asm_packet_descriptor_t packet = {0};
-  IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_lookup_packet_by_ordinal(
-      descriptor_set, descriptor_ordinal, &packet));
-  if (packet.descriptor == NULL) {
+  out_statement->packet.descriptor_key = loom_low_descriptor_set_string(
+      descriptor_set, descriptor->key_string_ref);
+  const loom_low_descriptor_view_t* descriptor_view =
+      loom_low_descriptor_set_descriptor_view_at(descriptor_set,
+                                                 descriptor_ordinal);
+  if (descriptor_view->canonical_asm_form_ordinal ==
+      LOOM_LOW_ASM_FORM_ORDINAL_NONE) {
     return iree_ok_status();
   }
+  loom_text_low_asm_packet_descriptor_t packet = {0};
+  loom_low_descriptor_text_asm_make_packet(
+      descriptor_set,
+      &descriptor_set->asm_forms[descriptor_view->canonical_asm_form_ordinal],
+      descriptor, &packet);
   if (is_const != (packet.operation_kind == LOOM_OP_LOW_CONST)) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,

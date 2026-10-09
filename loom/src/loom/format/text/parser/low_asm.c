@@ -289,26 +289,25 @@ static iree_status_t loom_parse_low_asm_flat_operands(
   return iree_ok_status();
 }
 
-static iree_status_t loom_low_asm_operand_segment_tokens(
+static void loom_low_asm_operand_segment_tokens(
     loom_text_low_asm_operand_segment_delimiter_t delimiter,
     loom_token_kind_t* out_open_token, loom_token_kind_t* out_close_token) {
   switch (delimiter) {
     case LOOM_TEXT_LOW_ASM_OPERAND_SEGMENT_DELIMITER_ANGLE:
       *out_open_token = LOOM_TOKEN_LANGLE;
       *out_close_token = LOOM_TOKEN_RANGLE;
-      return iree_ok_status();
+      return;
     case LOOM_TEXT_LOW_ASM_OPERAND_SEGMENT_DELIMITER_SQUARE:
       *out_open_token = LOOM_TOKEN_LBRACKET;
       *out_close_token = LOOM_TOKEN_RBRACKET;
-      return iree_ok_status();
+      return;
     case LOOM_TEXT_LOW_ASM_OPERAND_SEGMENT_DELIMITER_PAREN:
       *out_open_token = LOOM_TOKEN_LPAREN;
       *out_close_token = LOOM_TOKEN_RPAREN;
-      return iree_ok_status();
+      return;
     default:
-      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                              "low asm operand segment has an invalid "
-                              "delimiter");
+      IREE_ASSERT_UNREACHABLE("generated low asm operand segment delimiter");
+      IREE_BUILTIN_UNREACHABLE();
   }
 }
 
@@ -319,14 +318,12 @@ static iree_status_t loom_parse_low_asm_segmented_operands(
   for (uint16_t segment_index = 0;
        segment_index < packet->operand_segment_count; ++segment_index) {
     loom_text_low_asm_operand_segment_descriptor_t segment = {0};
-    IREE_RETURN_IF_ERROR(
-        parser->low_asm_environment.vtable->operand_segment_descriptor(
-            parser->low_asm_environment.state, packet, segment_index,
-            &segment));
+    parser->low_asm_environment.vtable->operand_segment_descriptor(
+        parser->low_asm_environment.state, packet, segment_index, &segment);
     loom_token_kind_t open_token = LOOM_TOKEN_NONE;
     loom_token_kind_t close_token = LOOM_TOKEN_NONE;
-    IREE_RETURN_IF_ERROR(loom_low_asm_operand_segment_tokens(
-        segment.delimiter, &open_token, &close_token));
+    loom_low_asm_operand_segment_tokens(segment.delimiter, &open_token,
+                                        &close_token);
     LOOM_PARSE_EXPECT(parser, open_token, NULL);
     if (parser->error_count > errors_before) {
       return iree_ok_status();
@@ -644,9 +641,9 @@ static iree_status_t loom_parse_low_asm_instruction(
     iree_host_size_t comment_count, loom_parsed_op_t* parsed) {
   const uint32_t errors_before = parser->error_count;
   loom_text_low_asm_packet_descriptor_t packet = {0};
-  IREE_RETURN_IF_ERROR(parser->low_asm_environment.vtable->lookup_packet(
+  parser->low_asm_environment.vtable->lookup_packet(
       parser->low_asm_environment.state, descriptor_set, mnemonic_token.text,
-      &packet));
+      &packet);
   if (packet.descriptor == NULL) {
     bool diagnostic_emitted = false;
     IREE_RETURN_IF_ERROR(loom_parser_try_emit_unknown_low_packet_diagnostic(

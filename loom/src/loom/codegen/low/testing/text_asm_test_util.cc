@@ -80,8 +80,9 @@ iree_status_t LowTextAsmTypeInferenceHarness::LookupPacket(
         IREE_STATUS_NOT_FOUND, "descriptor set '%.*s' was not found",
         (int)descriptor_set_key.size, descriptor_set_key.data);
   }
-  return environment_.vtable->lookup_packet(environment_.state, descriptor_set,
-                                            mnemonic, out_packet);
+  environment_.vtable->lookup_packet(environment_.state, descriptor_set,
+                                     mnemonic, out_packet);
+  return iree_ok_status();
 }
 
 iree_status_t LowTextAsmTypeInferenceHarness::MakeRegisterType(

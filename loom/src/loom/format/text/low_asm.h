@@ -186,9 +186,9 @@ typedef struct loom_text_low_asm_statement_t {
 // lossless-spelling availability checks. Semantic validation belongs in the
 // verifier and descriptor-backed describe implementation, not in the printer.
 
-// Resolves a mnemonic within a descriptor set to a packet descriptor. Returns
-// OK with |out_packet->descriptor| NULL when no packet matches.
-typedef iree_status_t (*loom_text_low_asm_lookup_packet_fn_t)(
+// Resolves a mnemonic within a descriptor set to a packet descriptor. Sets
+// |out_packet->descriptor| to NULL when no packet matches.
+typedef void (*loom_text_low_asm_lookup_packet_fn_t)(
     const loom_text_low_asm_environment_state_t* state,
     const loom_text_low_asm_descriptor_set_t* descriptor_set,
     iree_string_view_t mnemonic,
@@ -203,6 +203,9 @@ typedef iree_status_t (*loom_text_low_asm_diagnose_unknown_packet_fn_t)(
     iree_string_view_t packet_name,
     loom_text_low_asm_diagnostic_t* out_diagnostic);
 
+// Result-type queries below receive an index below packet->result_count and
+// operands in the packet's declared assembly order. Type compatibility depends
+// on user IR; the descriptor metadata and its projections are generated facts.
 typedef iree_status_t (*loom_text_low_asm_infer_result_type_fn_t)(
     const loom_text_low_asm_environment_state_t* state,
     const loom_text_low_asm_packet_descriptor_t* packet,
@@ -232,7 +235,9 @@ typedef void (*loom_text_low_asm_immediate_descriptor_fn_t)(
     uint16_t immediate_index,
     loom_text_low_asm_immediate_descriptor_t* out_immediate);
 
-typedef iree_status_t (*loom_text_low_asm_operand_segment_descriptor_fn_t)(
+// Resolves a generation-owned segment. The caller supplies an index below
+// packet->operand_segment_count.
+typedef void (*loom_text_low_asm_operand_segment_descriptor_fn_t)(
     const loom_text_low_asm_environment_state_t* state,
     const loom_text_low_asm_packet_descriptor_t* packet, uint16_t segment_index,
     loom_text_low_asm_operand_segment_descriptor_t* out_segment);
