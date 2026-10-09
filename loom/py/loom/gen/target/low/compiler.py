@@ -1799,11 +1799,6 @@ def compile_descriptor_set(
 
     compact_start_tables = (
         ("descriptor", selected_descriptors),
-        ("asm operand index", asm_table_storage.operand_indices),
-        ("asm operand segment", asm_table_storage.operand_segments),
-        ("asm result value type", asm_table_storage.result_value_types),
-        ("asm immediate", asm_table_storage.immediates),
-        ("native asm value", asm_table_storage.native_values),
         ("operand", operands),
         ("immediate", immediates),
         ("effect", effects),

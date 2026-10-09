@@ -140,16 +140,16 @@ static iree_status_t loom_low_packet_asm_append_attr(
 
 static iree_status_t loom_low_packet_asm_append_immediates(
     loom_low_packet_asm_state_t* state, const loom_low_descriptor_t* descriptor,
-    const loom_low_asm_form_t* asm_form, loom_named_attr_slice_t attrs) {
-  if (asm_form->immediate_count == 0) {
+    const loom_low_asm_layout_t* layout, loom_named_attr_slice_t attrs) {
+  if (layout->immediate_count == 0) {
     return iree_ok_status();
   }
   const loom_low_descriptor_set_t* descriptor_set =
       state->schedule->target.descriptor_set;
   const loom_module_t* module = state->schedule->module;
   iree_host_size_t printed_count = 0;
-  for (uint16_t i = 0; i < asm_form->immediate_count; ++i) {
-    const uint32_t asm_immediate_index = asm_form->immediate_start + i;
+  for (uint16_t i = 0; i < layout->immediate_count; ++i) {
+    const uint32_t asm_immediate_index = layout->immediate_start + i;
     if (asm_immediate_index >= descriptor_set->asm_immediate_count) {
       return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                               "low packet asm immediate row is out of range");
@@ -249,24 +249,26 @@ static iree_status_t loom_low_packet_asm_append_descriptor_packet(
                             "low.const");
   }
 
-  if (asm_form->result_operand_index_count > 0) {
+  const loom_low_asm_layout_t* layout =
+      &descriptor_set->asm_layouts[asm_form->layout_index];
+  if (layout->result_operand_index_count > 0) {
     IREE_RETURN_IF_ERROR(loom_low_packet_asm_append_asm_form_values(
-        state, packet, asm_form->result_operand_index_start,
-        asm_form->result_operand_index_count));
+        state, packet, layout->result_operand_index_start,
+        layout->result_operand_index_count));
     IREE_RETURN_IF_ERROR(
         iree_string_builder_append_cstring(state->builder, " = "));
   }
   IREE_RETURN_IF_ERROR(loom_low_packet_asm_append_descriptor_string(
       descriptor_set, asm_form->mnemonic_string_ref, state->builder));
-  if (asm_form->operand_index_count > 0) {
+  if (layout->operand_index_count > 0) {
     IREE_RETURN_IF_ERROR(
         iree_string_builder_append_cstring(state->builder, " "));
     IREE_RETURN_IF_ERROR(loom_low_packet_asm_append_asm_form_values(
-        state, packet, asm_form->operand_index_start,
-        asm_form->operand_index_count));
+        state, packet, layout->operand_index_start,
+        layout->operand_index_count));
   }
   return loom_low_packet_asm_append_immediates(state, packet->descriptor,
-                                               asm_form, attrs);
+                                               layout, attrs);
 }
 
 static iree_status_t loom_low_packet_asm_append_return(

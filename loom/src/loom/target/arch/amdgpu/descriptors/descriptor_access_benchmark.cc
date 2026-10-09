@@ -158,9 +158,11 @@ static void BM_AssemblyFacts(benchmark::State& state,
         }
         const loom_low_asm_form_t* asm_form =
             &descriptor_set->asm_forms[asm_form_ordinal];
+        const loom_low_asm_layout_t* layout =
+            &descriptor_set->asm_layouts[asm_form->layout_index];
         return static_cast<uint64_t>(asm_form_ordinal) +
-               asm_form->descriptor_ordinal + asm_form->operand_index_count +
-               asm_form->immediate_count;
+               asm_form->descriptor_ordinal + layout->operand_index_count +
+               layout->immediate_count;
       });
 }
 
@@ -188,8 +190,10 @@ static void BM_MixedFacts(benchmark::State& state,
         if (asm_form_ordinal != LOOM_LOW_ASM_FORM_ORDINAL_NONE) {
           const loom_low_asm_form_t* asm_form =
               &descriptor_set->asm_forms[asm_form_ordinal];
+          const loom_low_asm_layout_t* layout =
+              &descriptor_set->asm_layouts[asm_form->layout_index];
           result += asm_form_ordinal + asm_form->descriptor_ordinal +
-                    asm_form->operand_index_count;
+                    layout->operand_index_count;
         }
         return result;
       });

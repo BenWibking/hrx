@@ -12,6 +12,7 @@ from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
 
 from loom.gen.support.string_pool import CStringPool
+from loom.gen.target.low.validation import validate_u16_table_count
 from loom.target.low_descriptors import (
     AsmOperandSegmentDelimiter,
     AsmResultValueType,
@@ -285,12 +286,36 @@ class CompiledAsmForm:
     result_value_types: tuple[AsmResultValueType | None, ...]
     immediates: tuple[CompiledAsmImmediate, ...]
     native_assembly_values: tuple[CompiledNativeAsmValue, ...]
-    result_index_start: int = 0
-    result_value_type_start: int | None = None
-    operand_index_start: int = 0
-    operand_segment_start: int = 0
-    immediate_start: int = 0
-    native_assembly_value_start: int = 0
+    # Index assigned when this form's formatting spans enter shared storage.
+    layout_index: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledAsmLayout:
+    """Exact emitted formatting spans, independent of assembly identity."""
+
+    # First result operand index in the shared operand-index table.
+    result_operand_index_start: int
+    # First exact semantic result type, or None when no types are declared.
+    result_value_type_start: int | None
+    # First input operand index in the shared operand-index table.
+    operand_index_start: int
+    # First delimited input operand segment.
+    operand_segment_start: int
+    # First immediate spelling row.
+    immediate_start: int
+    # First native assembly value row.
+    native_assembly_value_start: int
+    # Number of result operand indices.
+    result_operand_index_count: int
+    # Number of input operand indices.
+    operand_index_count: int
+    # Number of delimited input operand segments.
+    operand_segment_count: int
+    # Number of immediate spelling rows.
+    immediate_count: int
+    # Number of native assembly value rows.
+    native_assembly_value_count: int
 
 
 def append_interned_sequence[RowT: Hashable](
@@ -316,6 +341,8 @@ def append_interned_sequence[RowT: Hashable](
 class CompiledAsmTableStorage:
     """Interned assembly-form table rows shared across storage and views."""
 
+    # Exact formatting layouts addressed by each form's layout index.
+    layouts: list[CompiledAsmLayout] = field(default_factory=list)
     # Result and operand indices addressed by assembly-form spans.
     operand_indices: list[int] = field(default_factory=list)
     # Delimited operand groups addressed by assembly-form spans.
@@ -326,6 +353,8 @@ class CompiledAsmTableStorage:
     immediates: list[CompiledAsmImmediate] = field(default_factory=list)
     # Native assembly values addressed by assembly-form spans.
     native_values: list[CompiledNativeAsmValue] = field(default_factory=list)
+    # Indices of formatting layouts already in storage.
+    _layout_indices: dict[CompiledAsmLayout, int] = field(default_factory=dict, init=False, repr=False)
     # Starts of exact operand-index sequences already in storage.
     _operand_index_starts: dict[tuple[int, ...], int] = field(
         default_factory=dict,
@@ -353,37 +382,69 @@ class CompiledAsmTableStorage:
         """Interns each form's exact table spans into this storage."""
 
         for asm_form in asm_forms:
-            asm_form.result_index_start, _ = append_interned_sequence(
+            result_index_start, _ = append_interned_sequence(
                 asm_form.result_indices,
                 self.operand_indices,
                 self._operand_index_starts,
             )
+            result_value_type_start = None
             if asm_form.result_value_types:
-                asm_form.result_value_type_start, _ = append_interned_sequence(
+                result_value_type_start, _ = append_interned_sequence(
                     asm_form.result_value_types,
                     self.result_value_types,
                     self._result_value_type_starts,
                 )
-            asm_form.operand_index_start, _ = append_interned_sequence(
+            operand_index_start, _ = append_interned_sequence(
                 asm_form.operand_indices,
                 self.operand_indices,
                 self._operand_index_starts,
             )
-            asm_form.operand_segment_start, _ = append_interned_sequence(
+            operand_segment_start, _ = append_interned_sequence(
                 asm_form.operand_segments,
                 self.operand_segments,
                 self._operand_segment_starts,
             )
-            asm_form.immediate_start, _ = append_interned_sequence(
+            immediate_start, _ = append_interned_sequence(
                 asm_form.immediates,
                 self.immediates,
                 self._immediate_starts,
             )
-            asm_form.native_assembly_value_start, _ = append_interned_sequence(
+            native_assembly_value_start, _ = append_interned_sequence(
                 asm_form.native_assembly_values,
                 self.native_values,
                 self._native_value_starts,
             )
+            layout = CompiledAsmLayout(
+                result_operand_index_start=result_index_start,
+                result_value_type_start=result_value_type_start,
+                operand_index_start=operand_index_start,
+                operand_segment_start=operand_segment_start,
+                immediate_start=immediate_start,
+                native_assembly_value_start=native_assembly_value_start,
+                result_operand_index_count=len(asm_form.result_indices),
+                operand_index_count=len(asm_form.operand_indices),
+                operand_segment_count=len(asm_form.operand_segments),
+                immediate_count=len(asm_form.immediates),
+                native_assembly_value_count=len(asm_form.native_assembly_values),
+            )
+            layout_index = self._layout_indices.get(layout)
+            if layout_index is None:
+                layout_index = len(self.layouts)
+                self._layout_indices[layout] = layout_index
+                self.layouts.append(layout)
+            asm_form.layout_index = layout_index
+
+        # Views can append new spans after the storage descriptors are compiled.
+        # Validate their shared compact address space at its owning boundary.
+        for table_name, rows in (
+            ("layout", self.layouts),
+            ("operand index", self.operand_indices),
+            ("operand segment", self.operand_segments),
+            ("result value type", self.result_value_types),
+            ("immediate", self.immediates),
+            ("native value", self.native_values),
+        ):
+            validate_u16_table_count(len(rows), f"asm {table_name}")
 
 
 @dataclass(frozen=True, slots=True)

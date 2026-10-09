@@ -26,7 +26,7 @@ extern "C" {
 #endif
 
 // ABI version for descriptor sets consumed by this header.
-#define LOOM_LOW_DESCRIPTOR_SET_ABI_VERSION 53u
+#define LOOM_LOW_DESCRIPTOR_SET_ABI_VERSION 54u
 
 // Sentinel for absent target-family or descriptor-set stable IDs.
 #define LOOM_LOW_STABLE_ID_NONE UINT64_C(0)
@@ -1376,13 +1376,12 @@ typedef struct loom_low_asm_operand_segment_t {
 static_assert(sizeof(loom_low_asm_operand_segment_t) == 4,
               "loom_low_asm_operand_segment_t must be 4 bytes");
 
-typedef struct loom_low_asm_form_t {
-  // String-pool reference for the unqualified asm mnemonic.
-  loom_string_ref_t mnemonic_string_ref;
-  // Optional string-pool reference for the native assembly mnemonic.
-  loom_string_ref_t native_assembly_mnemonic_string_ref;
-  // Descriptor ordinal selected by this asm form.
-  uint16_t descriptor_ordinal;
+// Interned formatting spans shared by assembly forms in one storage provider.
+// The spans describe descriptor-local positions, not descriptor identities or
+// mnemonic spellings. Forms in different descriptor-set views can share a
+// layout when all of their result, operand, immediate and native projections
+// agree.
+typedef struct loom_low_asm_layout_t {
   // First descriptor-local result operand index in asm_operand_indices.
   uint16_t result_operand_index_start;
   // First exact semantic result row, or START_NONE when none are declared.
@@ -1405,10 +1404,26 @@ typedef struct loom_low_asm_form_t {
   uint16_t immediate_count;
   // Number of native assembly value rows for this asm form.
   uint16_t native_assembly_value_count;
+} loom_low_asm_layout_t;
+
+static_assert(sizeof(loom_low_asm_layout_t) == 22,
+              "loom_low_asm_layout_t must be 22 bytes");
+
+// Assembly identity remains separate from its shared formatting layout so
+// mnemonic lookup and packet selection do not load formatting spans.
+typedef struct loom_low_asm_form_t {
+  // String-pool reference for the unqualified asm mnemonic.
+  loom_string_ref_t mnemonic_string_ref;
+  // Optional string-pool reference for the native assembly mnemonic.
+  loom_string_ref_t native_assembly_mnemonic_string_ref;
+  // Descriptor ordinal selected by this asm form.
+  uint16_t descriptor_ordinal;
+  // Index into the descriptor set's shared asm_layouts table.
+  uint16_t layout_index;
 } loom_low_asm_form_t;
 
-static_assert(sizeof(loom_low_asm_form_t) == 32,
-              "loom_low_asm_form_t must be 32 bytes");
+static_assert(sizeof(loom_low_asm_form_t) == 12,
+              "loom_low_asm_form_t must be 12 bytes");
 
 typedef enum loom_low_descriptor_set_flag_bits_e {
   // Emitters consume the shared schedule without downstream reordering and
@@ -1477,6 +1492,10 @@ typedef struct loom_low_descriptor_set_t {
   const loom_low_asm_form_t* asm_forms;
   // Number of asm form rows owned by this set.
   uint32_t asm_form_count;
+  // Interned formatting layouts shared by this storage provider's forms/views.
+  const loom_low_asm_layout_t* asm_layouts;
+  // Number of rows in the shared asm_layouts table.
+  uint32_t asm_layout_count;
   // Packed descriptor-local operand indices referenced by asm forms.
   const uint16_t* asm_operand_indices;
   // Number of descriptor-local operand index rows owned by this set.
