@@ -17,6 +17,7 @@
           "\"trial_count\":5",
           "\"failed_trial_count\":0",
           "\"scenario\":\"batched_vm\",\"action\":\"compare\"",
+          "\"expectation_count\":2,\"passed_count\":2,\"failure_count\":0",
           "\"entropy\":\"0x29b9d6df0d14db0f274d51698d27ffe7\"",
           "\"trial_index\":0,\"trial_ordinal\":2,\"passed\":true",
           "\"scenario\":\"batched_vm\",\"action\":\"invoke\"",

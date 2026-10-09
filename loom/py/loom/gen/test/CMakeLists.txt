@@ -29,15 +29,4 @@ iree_py_library(
     loom::py::loom::gen::package
 )
 
-iree_py_library(
-  NAME
-    narrow_float_subtraction
-  MAIN
-    "narrow_float_subtraction.py"
-  SRCS
-    "narrow_float_subtraction.py"
-  DEPS
-    loom::py::loom::gen::test::kernel_fixture
-)
-
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

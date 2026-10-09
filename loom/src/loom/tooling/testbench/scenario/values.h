@@ -10,6 +10,7 @@
 #define LOOM_TOOLING_TESTBENCH_SCENARIO_VALUES_H_
 
 #include "iree/base/api.h"
+#include "loom/tooling/testbench/invocation.h"
 #include "loom/tooling/testbench/value_materializer.h"
 
 #ifdef __cplusplus
@@ -117,6 +118,7 @@ void loom_testbench_scenario_trial_values_deinitialize(
 // entropy identity but allocate all mutable shaped values independently.
 iree_status_t loom_testbench_scenario_trial_values_materialize(
     const loom_testbench_value_materializer_options_t* options,
+    loom_testbench_invocation_executor_t* generator_executor,
     const loom_testbench_scenario_configuration_values_t* configuration,
     iree_host_size_t trial_ordinal,
     loom_testbench_scenario_trial_values_t* values);

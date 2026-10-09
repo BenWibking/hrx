@@ -237,6 +237,34 @@ check.scenario public @advance_sweep {
 }
 ```
 
+Built-in `check.generate.*` operations cover compact synthetic data. An
+authored [`check.generate`](../reference/dialects/check/ops/generate.md) call
+can instead run an ordinary function as an ordered step in the trial recipe.
+It returns scalar values directly and may initialize shaped storage passed as
+an argument:
+
+```loom
+func.decl @make_advance_trial(%trial: index, %entropy_word: i64, %state: buffer) -> (i64)
+
+check.scenario public @authored_advance_sweep {
+  check.trial[32](%trial: index, %entropy: check.entropy) {
+    %input_entropy = check.entropy.fork %entropy name("input") : check.entropy
+    %entropy_word = check.entropy.read %input_entropy[%trial] : check.entropy -> i64
+    %state = check.generate.fill value(0.0) : tensor<64xf32>
+    %word = check.generate<@make_advance_trial>(%trial, %entropy_word, %state) : (index, i64, tensor<64xf32>) -> (i64)
+    check.compare<@advance>(%state, %word) : (tensor<64xf32>, i64) -> () {
+      check.expect.close actual(%state) expected(%state) atol(1.0e-6) rtol(1.0e-5) nan(same) : tensor<64xf32>
+    }
+  }
+  check.return
+}
+```
+
+The generator runs after product preparation, so its results cannot specialize
+the subject. A comparison executes it independently for the target and oracle
+value graphs. A scenario benchmark executes it once per target replica before
+the product enters its timing loop.
+
 The trial ordinal and entropy identity are stable parts of the trial. Named
 [`check.entropy.fork`](../reference/dialects/check/ops/entropy-fork.md)
 operations split independent generator streams, and explicit

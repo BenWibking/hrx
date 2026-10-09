@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-// Executes semantic functions through the VM. The check.case provider compiles
+// Executes semantic functions through the VM. The direct-call provider compiles
 // all selected function roots on its first call and reuses one process. The
 // check.scenario profile instead uses this instance as compiler configuration
 // and eagerly creates an independent bytecode module and process per prepared
@@ -33,8 +33,8 @@ typedef struct loom_vm_testbench_t {
   loom_testbench_compile_result_callback_t result_callback;
   // Owned VM core profile applied to every selected semantic function.
   loomc_target_profile_t* target_profile;
-  // Borrowed selected cases identifying the functions crossing the host ABI.
-  loom_testbench_case_plan_list_t cases;
+  // Borrowed selected calls identifying the functions crossing the host ABI.
+  loom_testbench_invocation_plan_list_t invocations;
   // Allocator for bytecode and runtime objects.
   iree_allocator_t host_allocator;
   // Whether compilation semantically rejected the selected source module.
@@ -69,14 +69,14 @@ iree_status_t loom_vm_testbench_initialize(
 // Releases runtime objects. Safe for a zero-initialized or failed provider.
 void loom_vm_testbench_deinitialize(loom_vm_testbench_t* testbench);
 
-// Binds the runner-selected cases and returns a borrowed function-call
+// Binds the runner-selected calls and returns a borrowed function-call
 // callback. |user_data| points to an initialized loom_vm_testbench_t. The
-// compilation inputs and case list remain live through the final call;
+// compilation inputs and invocation list remain live through the final call;
 // deinitialization does not access them. Each compile uses a private clone of
 // the canonical public module.
 loom_testbench_invocation_provider_t loom_vm_testbench_invocation_provider(
     void* user_data, const loom_testbench_compilation_t* compilation,
-    loom_testbench_case_plan_list_t cases,
+    loom_testbench_invocation_plan_list_t invocations,
     loom_testbench_compile_result_callback_t result_callback);
 
 // Binds compilation inputs and returns an eager VM execution profile. Every

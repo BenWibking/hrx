@@ -723,6 +723,16 @@ iree_status_t loom_check_invoke_verify(const loom_module_t* module,
       IREE_SV("product results"), 0);
 }
 
+iree_status_t loom_check_generate_verify(const loom_module_t* module,
+                                         const loom_op_t* op,
+                                         iree_diagnostic_emitter_t emitter) {
+  return loom_function_call_contract_verify(
+      module, op, loom_check_generate_callee(op),
+      loom_check_generate_arguments(op), loom_check_generate_results(op),
+      LOOM_FUNCTION_CALL_ARGUMENT_MATCH_FLAG_ALLOW_BUFFER_MATERIALIZATION,
+      emitter);
+}
+
 iree_status_t loom_check_entropy_fork_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter) {

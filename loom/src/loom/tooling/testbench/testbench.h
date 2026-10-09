@@ -72,6 +72,8 @@ typedef enum loom_testbench_issue_kind_e {
   LOOM_TESTBENCH_ISSUE_UNSUPPORTED_TRIAL_BODY_OP = 11,
   // A check.compare or check.invoke action cannot be planned.
   LOOM_TESTBENCH_ISSUE_INVALID_SCENARIO_ACTION = 12,
+  // A check.generate call cannot be planned for recipe execution.
+  LOOM_TESTBENCH_ISSUE_INVALID_TRIAL_GENERATOR = 13,
 } loom_testbench_issue_kind_t;
 
 typedef enum loom_testbench_value_source_kind_e {
@@ -118,6 +120,15 @@ typedef enum loom_testbench_scenario_action_kind_e {
   // Target-only action from check.invoke.
   LOOM_TESTBENCH_SCENARIO_ACTION_INVOKE = 2,
 } loom_testbench_scenario_action_kind_t;
+
+typedef enum loom_testbench_trial_recipe_step_kind_e {
+  // Invalid or uninitialized recipe step.
+  LOOM_TESTBENCH_TRIAL_RECIPE_STEP_NONE = 0,
+  // Built-in deterministic value source.
+  LOOM_TESTBENCH_TRIAL_RECIPE_STEP_VALUE_SOURCE = 1,
+  // Authored ordinary-function generator invocation.
+  LOOM_TESTBENCH_TRIAL_RECIPE_STEP_GENERATOR = 2,
+} loom_testbench_trial_recipe_step_kind_t;
 
 typedef enum loom_testbench_expectation_kind_e {
   // Invalid or uninitialized expectation slot.
@@ -339,6 +350,17 @@ typedef struct loom_testbench_invocation_plan_t {
   iree_host_size_t result_count;
 } loom_testbench_invocation_plan_t;
 
+typedef struct loom_testbench_trial_recipe_step_t {
+  // Step kind and payload discriminator.
+  loom_testbench_trial_recipe_step_kind_t kind;
+  union {
+    // Plan for a built-in check value source.
+    loom_testbench_value_source_plan_t value_source;
+    // Plan for a check.generate ordinary-function call.
+    loom_testbench_invocation_plan_t generator;
+  };
+} loom_testbench_trial_recipe_step_t;
+
 typedef struct loom_testbench_close_expectation_plan_t {
   // Absolute tolerance.
   double absolute_tolerance;
@@ -430,10 +452,10 @@ typedef struct loom_testbench_trial_plan_t {
   loom_value_id_t entropy_value_id;
   // Number of concrete trials in this domain.
   iree_host_size_t trial_count;
-  // Runtime value source plans in source order.
-  const loom_testbench_value_source_plan_t* value_sources;
-  // Number of entries in |value_sources|.
-  iree_host_size_t value_source_count;
+  // Runtime recipe steps in source order.
+  const loom_testbench_trial_recipe_step_t* recipe_steps;
+  // Number of entries in |recipe_steps|.
+  iree_host_size_t recipe_step_count;
   // Terminal action for every concrete trial.
   loom_testbench_scenario_action_plan_t action;
   // Issues discovered while planning this trial.

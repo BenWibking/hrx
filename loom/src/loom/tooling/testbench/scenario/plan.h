@@ -20,8 +20,10 @@ typedef struct loom_testbench_scenario_plan_counts_t {
   iree_host_size_t scenario_count;
   // Number of check.trial domains across all scenarios.
   iree_host_size_t trial_count;
-  // Number of configuration and trial value source operations.
+  // Number of configuration value source operations.
   iree_host_size_t value_source_count;
+  // Number of value-source and generator steps across trial recipes.
+  iree_host_size_t recipe_step_count;
   // Number of expectations nested under check.compare actions.
   iree_host_size_t expectation_count;
   // Maximum number of structured issues scenario planning can emit.

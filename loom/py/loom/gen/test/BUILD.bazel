@@ -29,12 +29,3 @@ iree_py_library(
     srcs = ["kernel_fixture.py"],
     deps = ["//loom/py/loom/gen:package"],
 )
-
-iree_py_binary(
-    name = "narrow_float_subtraction",
-    testonly = True,
-    srcs = ["narrow_float_subtraction.py"],
-    main = "narrow_float_subtraction.py",
-    visibility = ["//loom/src/loom/tooling/target/amdgpu/test/cxx:__pkg__"],
-    deps = [":kernel_fixture"],
-)
