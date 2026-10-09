@@ -434,6 +434,10 @@ static iree_status_t loom_storage_access_visit(
 static iree_status_t loom_storage_access_build_pending(
     loom_storage_access_state_t* state) {
   loom_module_t* module = state->scope->module;
+  // Traversal frames expire after each body. Reference nodes and classified
+  // uses belong to the scope arena and survive until planning completes.
+  iree_arena_allocator_t traversal_arena;
+  iree_arena_initialize(module->arena.block_pool, &traversal_arena);
   iree_status_t status = iree_ok_status();
   while (state->first_function && iree_status_is_ok(status)) {
     state->current = state->first_function;
@@ -454,7 +458,8 @@ static iree_status_t loom_storage_access_build_pending(
                          LOOM_WALK_PRE_ORDER,
                          (loom_walk_callback_t){.fn = loom_storage_access_visit,
                                                 .user_data = state},
-                         state->scope->arena, &walk_result);
+                         &traversal_arena, &walk_result);
+    iree_arena_reset(&traversal_arena);
     for (const loom_storage_reference_t* reference =
              state->current->graph.references;
          reference; reference = reference->next) {
@@ -463,6 +468,7 @@ static iree_status_t loom_storage_access_build_pending(
     }
     loom_module_value_ordinal_scratch_release(module);
   }
+  iree_arena_deinitialize(&traversal_arena);
   return status;
 }
 
