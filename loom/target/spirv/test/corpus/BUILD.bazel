@@ -261,6 +261,7 @@ _ALL_PROFILE_XFAILS = {
     "numeric/conversion/quantization.loom:@approximate_quantization_shapes": "LOWERING/036",
     "numeric/conversion/quantization.loom:@quantization_shapes": "LOWERING/036",
     "numeric/float/extrema.loom:@float_extrema_f32": "TARGET/003",
+    "numeric/integer/wide/address_comparison.loom:@mixed_width_index_comparisons": "SPIRV/026",
     "numeric/predicate/extract.loom:@predicate_extract": "TARGET/032",
     "numeric/predicate/extract.loom:@predicate_logic_across_divergence": "TARGET/001",
     "numeric/vector/broadcast_arithmetic.loom:@broadcast_fma": "TARGET/001",
@@ -394,6 +395,7 @@ _ALL_ROOTS_XFAIL = [
     "memory/storage/stability/switch.loom",
     "numeric/conversion/quantization.loom",
     "numeric/float/extrema.loom",
+    "numeric/integer/wide/address_comparison.loom",
     "numeric/predicate/extract.loom",
 ]
 
@@ -519,6 +521,7 @@ _SPIRV_EXECUTION_XFAILS = {
     "numeric/integer/bitfield.loom:@bitfield_values": "TARGET/003",
     "numeric/integer/constant_unsigned_division.loom:@constant_index_boundary_division_values": "TARGET/005",
     "numeric/integer/division.loom:@integer_division_values": "TARGET/093",
+    "numeric/integer/wide/address_comparison.loom:@mixed_width_index_comparison_values": "SPIRV/026",
     "numeric/integer/wide/observations.loom:@wide_dynamic_lane_values": "TARGET/004",
     "numeric/predicate/extract.loom:@predicate_extract_values": "TARGET/032",
     "numeric/predicate/extract.loom:@predicate_logic_across_divergence_values": "TARGET/001",
