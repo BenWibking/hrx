@@ -68,7 +68,6 @@ typedef struct loom_low_lower_source_query_coverage_build_state_t {
   loom_low_lower_source_query_coverage_t* coverage;
 } loom_low_lower_source_query_coverage_build_state_t;
 
-static const uint8_t loom_low_lower_source_query_coverage_state_key = 0;
 static const loom_low_lower_source_query_graph_t
     loom_low_lower_source_query_legal_root_marker = {0};
 static const loom_low_lower_source_query_graph_t
@@ -86,11 +85,11 @@ static bool loom_low_lower_source_query_op_value_ordinal(
     loom_value_ordinal_t* out_ordinal) {
   *out_ordinal = LOOM_VALUE_ORDINAL_INVALID;
   if (op->result_count == 0 ||
-      !loom_local_value_domain_is_acquired(&context->lowering.value_domain)) {
+      !loom_local_value_domain_is_acquired(&context->lowering->value_domain)) {
     return false;
   }
   const loom_value_ordinal_t ordinal = loom_local_value_domain_try_ordinal(
-      &context->lowering.value_domain, loom_op_const_results(op)[0]);
+      &context->lowering->value_domain, loom_op_const_results(op)[0]);
   if (ordinal == LOOM_VALUE_ORDINAL_INVALID) {
     return false;
   }
@@ -146,14 +145,14 @@ static iree_status_t loom_low_lower_source_query_coverage_set(
   loom_value_ordinal_t ordinal = LOOM_VALUE_ORDINAL_INVALID;
   if (loom_low_lower_source_query_op_value_ordinal(context, op, &ordinal)) {
     const loom_value_ordinal_t required_count =
-        context->lowering.value_domain.value_count;
+        context->lowering->value_domain.value_count;
     if (coverage->value_graphs == NULL ||
         coverage->value_graph_count < required_count) {
       const loom_value_ordinal_t previous_count =
           coverage->value_graphs != NULL ? coverage->value_graph_count : 0;
       const loom_low_lower_source_query_graph_t** new_value_graphs = NULL;
       IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-          &context->function_arena, required_count, sizeof(*new_value_graphs),
+          &context->analysis_arena, required_count, sizeof(*new_value_graphs),
           (void**)&new_value_graphs));
       if (previous_count != 0) {
         memcpy(new_value_graphs, coverage->value_graphs,
@@ -184,7 +183,7 @@ static iree_status_t loom_low_lower_source_query_coverage_set(
     }
     loom_low_lower_source_query_zero_result_entry_t* new_entries = NULL;
     IREE_RETURN_IF_ERROR(
-        iree_arena_allocate_array(&context->function_arena, new_capacity,
+        iree_arena_allocate_array(&context->analysis_arena, new_capacity,
                                   sizeof(*new_entries), (void**)&new_entries));
     memset(new_entries, 0, new_capacity * sizeof(*new_entries));
     for (iree_host_size_t i = 0; i < coverage->zero_result_capacity; ++i) {
@@ -213,7 +212,7 @@ static iree_status_t loom_low_lower_source_query_coverage_record_graph(
     const loom_op_t* const* source_nodes, uint8_t source_node_count,
     const loom_target_contract_query_result_t* root_result) {
   loom_low_lower_source_query_graph_t* graph = NULL;
-  IREE_RETURN_IF_ERROR(iree_arena_allocate(&context->function_arena,
+  IREE_RETURN_IF_ERROR(iree_arena_allocate(&context->analysis_arena,
                                            sizeof(*graph), (void**)&graph));
   *graph = (loom_low_lower_source_query_graph_t){
       .root_op = source_nodes[0],
@@ -404,10 +403,14 @@ static iree_status_t loom_low_lower_source_query_prepare_coverage(
     const loom_low_lower_contract_query_options_t* options,
     loom_low_lower_source_query_coverage_t** out_coverage) {
   *out_coverage = NULL;
-  loom_low_lower_source_query_coverage_t* coverage = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_lower_get_or_allocate_target_state(
-      context, &loom_low_lower_source_query_coverage_state_key,
-      sizeof(*coverage), (void**)&coverage));
+  loom_low_lower_source_query_coverage_t* coverage =
+      context->source_query_coverage;
+  if (coverage == NULL) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate(
+        &context->analysis_arena, sizeof(*coverage), (void**)&coverage));
+    memset(coverage, 0, sizeof(*coverage));
+    context->source_query_coverage = coverage;
+  }
   *out_coverage = coverage;
   if (coverage->prepared || coverage->preparing) {
     return iree_ok_status();
@@ -418,7 +421,7 @@ static iree_status_t loom_low_lower_source_query_prepare_coverage(
   }
 
   const loom_local_value_domain_t* value_domain =
-      &context->lowering.value_domain;
+      &context->lowering->value_domain;
   coverage->value_graph_count = value_domain->value_count;
 
   coverage->preparing = true;
@@ -601,7 +604,7 @@ static iree_status_t loom_low_lower_source_query_contract(
   loom_low_lower_source_query_coverage_t* coverage = NULL;
   if (iree_status_is_ok(status) && !fact_table_changed &&
       query_environment.vector_lane_projection.source_lane_count == 0 &&
-      loom_local_value_domain_is_acquired(&context->lowering.value_domain)) {
+      loom_local_value_domain_is_acquired(&context->lowering->value_domain)) {
     status = loom_low_lower_source_query_prepare_coverage(
         context, &query_environment, &query_options, &coverage);
   }
