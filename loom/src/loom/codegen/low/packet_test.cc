@@ -18,6 +18,8 @@ struct PacketTestState {
   loom_low_descriptor_t descriptors[2] = {};
   loom_low_descriptor_view_t descriptor_views[2] = {};
   loom_low_asm_form_t asm_forms[2] = {};
+  // Shared empty formatting layout for both packet-selection forms.
+  loom_low_asm_layout_t asm_layouts[1] = {};
   loom_low_descriptor_set_t descriptor_set = {};
   loom_module_t module = {};
   loom_op_t function_op = {};
@@ -44,10 +46,8 @@ void InitializePacketTestState(PacketTestState* state) {
   state->descriptor_views[1].canonical_asm_form_ordinal = 0;
 
   state->asm_forms[0].descriptor_ordinal = 1;
-  state->asm_forms[0].result_value_type_start =
-      LOOM_LOW_ASM_RESULT_VALUE_TYPE_START_NONE;
   state->asm_forms[1].descriptor_ordinal = 0;
-  state->asm_forms[1].result_value_type_start =
+  state->asm_layouts[0].result_value_type_start =
       LOOM_LOW_ASM_RESULT_VALUE_TYPE_START_NONE;
 
   state->descriptor_set.descriptors = state->descriptors;
@@ -57,6 +57,8 @@ void InitializePacketTestState(PacketTestState* state) {
       IREE_ARRAYSIZE(state->descriptors);
   state->descriptor_set.asm_forms = state->asm_forms;
   state->descriptor_set.asm_form_count = IREE_ARRAYSIZE(state->asm_forms);
+  state->descriptor_set.asm_layouts = state->asm_layouts;
+  state->descriptor_set.asm_layout_count = IREE_ARRAYSIZE(state->asm_layouts);
 
   state->region_blocks[0] = &state->block;
   state->region.block_count = IREE_ARRAYSIZE(state->region_blocks);

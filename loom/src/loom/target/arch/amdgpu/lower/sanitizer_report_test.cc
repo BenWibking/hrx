@@ -193,7 +193,9 @@ class AmdgpuSanitizerReportTest : public ::testing::Test {
     if (canonical_asm_form_ordinal >= descriptor_set_->asm_form_count) {
       return 0;
     }
-    return descriptor_set_->asm_forms[canonical_asm_form_ordinal]
+    const loom_low_asm_form_t& asm_form =
+        descriptor_set_->asm_forms[canonical_asm_form_ordinal];
+    return descriptor_set_->asm_layouts[asm_form.layout_index]
         .operand_index_count;
   }
 

@@ -16,6 +16,7 @@ from loom.gen.support.string_pool import emit_c_string_pool
 from loom.gen.target.low import attr_indices, c_spelling, validation
 from loom.gen.target.low.compiled import (
     CompiledAsmForm,
+    CompiledAsmLayout,
     CompiledDescriptorSet,
     CompiledNativeAsmValue,
     CompiledOperandForm,
@@ -324,19 +325,28 @@ def _asm_form_row_lines(
             f".mnemonic_string_ref = {pool.ref(asm_form.mnemonic_label)},",
             f".native_assembly_mnemonic_string_ref = {c_spelling.optional_string_expr(pool, asm_form.native_assembly_mnemonic_label)},",
             f".descriptor_ordinal = {asm_form.descriptor_ordinal},",
-            f".result_operand_index_start = {asm_form.result_index_start},",
-            f".result_value_type_start = {asm_form.result_value_type_start if asm_form.result_value_type_start is not None else 'LOOM_LOW_ASM_RESULT_VALUE_TYPE_START_NONE'},",
-            f".result_operand_index_count = {len(asm_form.result_indices)},",
-            f".operand_index_start = {asm_form.operand_index_start},",
-            f".operand_segment_start = {asm_form.operand_segment_start},",
-            f".operand_index_count = {len(asm_form.operand_indices)},",
-            f".operand_segment_count = {len(asm_form.operand_segments)},",
-            f".immediate_start = {asm_form.immediate_start},",
-            f".immediate_count = {len(asm_form.immediates)},",
-            f".native_assembly_value_start = {asm_form.native_assembly_value_start},",
-            f".native_assembly_value_count = {len(asm_form.native_assembly_values)},",
+            f".layout_index = {asm_form.layout_index},",
         ]
         for asm_form in asm_forms
+    ]
+
+
+def _asm_layout_row_lines(layouts: Sequence[CompiledAsmLayout]) -> list[list[str]]:
+    return [
+        [
+            f".result_operand_index_start = {layout.result_operand_index_start},",
+            f".result_value_type_start = {layout.result_value_type_start if layout.result_value_type_start is not None else 'LOOM_LOW_ASM_RESULT_VALUE_TYPE_START_NONE'},",
+            f".operand_index_start = {layout.operand_index_start},",
+            f".operand_segment_start = {layout.operand_segment_start},",
+            f".immediate_start = {layout.immediate_start},",
+            f".native_assembly_value_start = {layout.native_assembly_value_start},",
+            f".result_operand_index_count = {layout.result_operand_index_count},",
+            f".operand_index_count = {layout.operand_index_count},",
+            f".operand_segment_count = {layout.operand_segment_count},",
+            f".immediate_count = {layout.immediate_count},",
+            f".native_assembly_value_count = {layout.native_assembly_value_count},",
+        ]
+        for layout in layouts
     ]
 
 
@@ -1067,6 +1077,13 @@ def emit_source_for_views(
     )
     _emit_array(
         lines,
+        "loom_low_asm_layout_t",
+        spec.c_table_prefix,
+        "AsmLayouts",
+        _asm_layout_row_lines(asm_table_storage.layouts),
+    )
+    _emit_array(
+        lines,
         "loom_low_native_asm_value_t",
         spec.c_table_prefix,
         "NativeAsmValues",
@@ -1130,6 +1147,7 @@ def emit_source_for_views(
         "hazards": "hazard_count",
         "pressure_deltas": "pressure_delta_count",
         "asm_forms": "asm_form_count",
+        "asm_layouts": "asm_layout_count",
         "asm_operand_indices": "asm_operand_index_count",
         "asm_operand_segments": "asm_operand_segment_count",
         "asm_result_value_types": "asm_result_value_type_count",
@@ -1293,6 +1311,12 @@ def emit_source_for_views(
         if view.asm_forms:
             view_lines.append(f"    .asm_forms = {asm_form_table_symbol},")
             view_lines.append(f"    .asm_form_count = IREE_ARRAYSIZE({asm_form_table_symbol}),")
+            append_optional_table(
+                "asm_layouts",
+                "AsmLayouts",
+                asm_table_storage.layouts,
+                view_lines,
+            )
             append_optional_table(
                 "asm_operand_indices",
                 "AsmOperandIndices",

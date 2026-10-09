@@ -140,19 +140,18 @@ static iree_status_t loom_low_descriptor_text_asm_descriptor_immediate_info(
 
 static iree_status_t loom_low_descriptor_text_asm_form_references_immediate(
     const loom_low_descriptor_set_t* descriptor_set,
-    const loom_low_asm_form_t* asm_form, uint16_t descriptor_immediate_index,
+    const loom_low_asm_layout_t* layout, uint16_t descriptor_immediate_index,
     bool* out_references) {
   *out_references = false;
-  if (asm_form->immediate_start > descriptor_set->asm_immediate_count ||
-      asm_form->immediate_count >
-          descriptor_set->asm_immediate_count - asm_form->immediate_start) {
+  if (layout->immediate_start > descriptor_set->asm_immediate_count ||
+      layout->immediate_count >
+          descriptor_set->asm_immediate_count - layout->immediate_start) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "low asm form immediate span is out of range");
   }
-  for (uint16_t i = 0; i < asm_form->immediate_count; ++i) {
+  for (uint16_t i = 0; i < layout->immediate_count; ++i) {
     const loom_low_asm_immediate_t* asm_immediate =
-        &descriptor_set
-             ->asm_immediates[asm_form->immediate_start + (uint32_t)i];
+        &descriptor_set->asm_immediates[layout->immediate_start + (uint32_t)i];
     if (asm_immediate->immediate_index == descriptor_immediate_index) {
       *out_references = true;
       return iree_ok_status();
@@ -174,17 +173,18 @@ static iree_status_t loom_low_descriptor_text_asm_make_packet(
   IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_string(
       descriptor_set, asm_form->mnemonic_string_ref, &mnemonic));
 
-  if (asm_form->immediate_start > descriptor_set->asm_immediate_count ||
-      asm_form->immediate_count >
-          descriptor_set->asm_immediate_count - asm_form->immediate_start) {
+  const loom_low_asm_layout_t* layout =
+      &descriptor_set->asm_layouts[asm_form->layout_index];
+  if (layout->immediate_start > descriptor_set->asm_immediate_count ||
+      layout->immediate_count >
+          descriptor_set->asm_immediate_count - layout->immediate_start) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "low asm form immediate span is out of range");
   }
   bool has_named_immediates = false;
-  for (uint16_t i = 0; i < asm_form->immediate_count; ++i) {
+  for (uint16_t i = 0; i < layout->immediate_count; ++i) {
     const loom_low_asm_immediate_t* asm_immediate =
-        &descriptor_set
-             ->asm_immediates[asm_form->immediate_start + (uint32_t)i];
+        &descriptor_set->asm_immediates[layout->immediate_start + (uint32_t)i];
     if (asm_immediate->name_string_ref != LOOM_STRING_REF_NONE) {
       has_named_immediates = true;
       break;
@@ -218,12 +218,12 @@ static iree_status_t loom_low_descriptor_text_asm_make_packet(
       .descriptor = loom_low_descriptor_text_asm_descriptor_handle(descriptor),
       .descriptor_key = descriptor_key,
       .mnemonic = mnemonic,
-      .result_count = asm_form->result_operand_index_count,
+      .result_count = layout->result_operand_index_count,
       .minimum_operand_count = descriptor->minimum_packet_operand_count,
-      .operand_segment_count = asm_form->operand_segment_count,
+      .operand_segment_count = layout->operand_segment_count,
       .has_variadic_operands =
           loom_low_descriptor_has_variadic_operands(descriptor),
-      .asm_immediate_count = asm_form->immediate_count,
+      .asm_immediate_count = layout->immediate_count,
       .immediate_count = descriptor->immediate_count,
       .immediate_attribute_field_index =
           builds_as_const ? loom_low_const_attrs_diagnostic_ref().index
@@ -369,9 +369,11 @@ static iree_status_t loom_low_descriptor_text_asm_result_operand(
       loom_low_descriptor_text_asm_descriptor(packet->descriptor);
   const loom_low_asm_form_t* asm_form =
       loom_low_descriptor_text_asm_form(packet->form);
+  const loom_low_asm_layout_t* layout =
+      &descriptor_set->asm_layouts[asm_form->layout_index];
 
   const uint32_t asm_operand_index =
-      asm_form->result_operand_index_start + result_index;
+      layout->result_operand_index_start + result_index;
   if (asm_operand_index >= descriptor_set->asm_operand_index_count) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "low asm result operand index is out of range");
@@ -400,8 +402,10 @@ static iree_status_t loom_low_descriptor_text_asm_find_packet_operand_index(
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
   const loom_low_asm_form_t* asm_form =
       loom_low_descriptor_text_asm_form(packet->form);
-  for (uint16_t i = 0; i < asm_form->operand_index_count; ++i) {
-    const uint32_t asm_operand_index = asm_form->operand_index_start + i;
+  const loom_low_asm_layout_t* layout =
+      &descriptor_set->asm_layouts[asm_form->layout_index];
+  for (uint16_t i = 0; i < layout->operand_index_count; ++i) {
+    const uint32_t asm_operand_index = layout->operand_index_start + i;
     if (asm_operand_index >= descriptor_set->asm_operand_index_count) {
       return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                               "low asm operand index is out of range");
@@ -426,8 +430,10 @@ static iree_status_t loom_low_descriptor_text_asm_find_packet_result_index(
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
   const loom_low_asm_form_t* asm_form =
       loom_low_descriptor_text_asm_form(packet->form);
+  const loom_low_asm_layout_t* layout =
+      &descriptor_set->asm_layouts[asm_form->layout_index];
   for (uint16_t i = 0; i < packet->result_count; ++i) {
-    const uint32_t asm_operand_index = asm_form->result_operand_index_start + i;
+    const uint32_t asm_operand_index = layout->result_operand_index_start + i;
     if (asm_operand_index >= descriptor_set->asm_operand_index_count) {
       return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                               "low asm result index is out of range");
@@ -619,12 +625,14 @@ loom_low_descriptor_text_asm_result_value_type(
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
   const loom_low_asm_form_t* asm_form =
       loom_low_descriptor_text_asm_form(packet->form);
-  if (asm_form->result_value_type_start ==
+  const loom_low_asm_layout_t* layout =
+      &descriptor_set->asm_layouts[asm_form->layout_index];
+  if (layout->result_value_type_start ==
       LOOM_LOW_ASM_RESULT_VALUE_TYPE_START_NONE) {
     return NULL;
   }
   const uint32_t value_type_index =
-      asm_form->result_value_type_start + result_index;
+      layout->result_value_type_start + result_index;
   const loom_low_asm_result_value_type_t* value_type =
       &descriptor_set->asm_result_value_types[value_type_index];
   return value_type->kind == LOOM_LOW_ASM_RESULT_VALUE_TYPE_KIND_NONE
@@ -899,9 +907,11 @@ static iree_status_t loom_low_descriptor_text_asm_immediate_descriptor(
       loom_low_descriptor_text_asm_descriptor(packet->descriptor);
   const loom_low_asm_form_t* asm_form =
       loom_low_descriptor_text_asm_form(packet->form);
+  const loom_low_asm_layout_t* layout =
+      &descriptor_set->asm_layouts[asm_form->layout_index];
   if (immediate_index < packet->asm_immediate_count) {
     const uint32_t asm_immediate_index =
-        asm_form->immediate_start + immediate_index;
+        layout->immediate_start + immediate_index;
     if (asm_immediate_index >= descriptor_set->asm_immediate_count) {
       return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                               "low asm immediate row is out of range");
@@ -919,7 +929,7 @@ static iree_status_t loom_low_descriptor_text_asm_immediate_descriptor(
        ++descriptor_immediate_index) {
     bool referenced_by_form = false;
     IREE_RETURN_IF_ERROR(loom_low_descriptor_text_asm_form_references_immediate(
-        descriptor_set, asm_form, descriptor_immediate_index,
+        descriptor_set, layout, descriptor_immediate_index,
         &referenced_by_form));
     if (referenced_by_form) {
       continue;
@@ -1099,11 +1109,13 @@ static iree_status_t loom_low_descriptor_text_asm_operand_segment_descriptor(
       loom_low_descriptor_text_asm_descriptor_set(packet->descriptor_set);
   const loom_low_asm_form_t* asm_form =
       loom_low_descriptor_text_asm_form(packet->form);
-  if (segment_index >= asm_form->operand_segment_count) {
+  const loom_low_asm_layout_t* layout =
+      &descriptor_set->asm_layouts[asm_form->layout_index];
+  if (segment_index >= layout->operand_segment_count) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "low asm operand segment index is out of range");
   }
-  const uint32_t row_index = asm_form->operand_segment_start + segment_index;
+  const uint32_t row_index = layout->operand_segment_start + segment_index;
   if (row_index >= descriptor_set->asm_operand_segment_count) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "low asm operand segment row is out of range");

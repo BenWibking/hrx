@@ -1935,7 +1935,8 @@ def test_descriptor_set_view_rejects_local_schedule_definition() -> None:
         )
 
 
-def test_descriptor_set_family_emits_prefix_view_local_asm_forms() -> None:
+@pytest.mark.parametrize("reverse_operands", [False, True])
+def test_descriptor_set_family_emits_prefix_view_local_asm_forms(reverse_operands: bool) -> None:
     storage_descriptor = replace(
         TEST_LOW_ADD_I32_DESCRIPTOR,
         asm_forms=(
@@ -1953,7 +1954,7 @@ def test_descriptor_set_family_emits_prefix_view_local_asm_forms() -> None:
             AsmForm(
                 mnemonic="add.i32",
                 results=("dst",),
-                operands=("lhs", "rhs"),
+                operands=("rhs", "lhs") if reverse_operands else ("lhs", "rhs"),
                 result_value_types=(AsmResultValueType(ScalarTypeKind.I32),),
             ),
         ),
@@ -1989,7 +1990,11 @@ def test_descriptor_set_family_emits_prefix_view_local_asm_forms() -> None:
     assert ".descriptor_views = kTestLowCoreDescriptorViews," in source
     assert ".asm_forms = kTestLowViewCoreAsmForms," in source
     assert source.count(".kind = LOOM_LOW_ASM_RESULT_VALUE_TYPE_KIND_SCALAR,") == 1
-    assert source.count(".result_value_type_start = 0,") == 2
+    expected_layout_count = 2 if reverse_operands else 1
+    assert source.count(".result_value_type_start = 0,") == expected_layout_count
+    assert (descriptor_view.asm_forms[0].layout_index == compiled.asm_forms[0].layout_index) == (not reverse_operands)
+    assert len(compiled.asm_table_storage.layouts) == expected_layout_count
+    assert source.count(".asm_layouts = kTestLowCoreAsmLayouts,") == 2
 
 
 def test_descriptor_set_family_compares_derived_descriptor_projections() -> None:
@@ -2358,7 +2363,7 @@ def test_generator_emits_trailing_variadic_operand_segment() -> None:
     generated = generate_descriptor_set(descriptor_set)
 
     assert compiled.asm_forms[0].operand_indices == (1, 2)
-    assert compiled.asm_forms[0].operand_segment_start == 0
+    assert compiled.asm_table_storage.layouts[compiled.asm_forms[0].layout_index].operand_segment_start == 0
     assert compiled.asm_table_storage.operand_segments[0].operand_count == 2
     assert compiled.asm_table_storage.operand_segments[0].has_variadic_operand
     assert compiled.descriptor_rows[0]["minimum_packet_operand_count"] == 1
@@ -2424,7 +2429,7 @@ def test_generator_emits_exact_asm_result_value_type() -> None:
     compiled = compiler.compile_descriptor_set(descriptor_set)
     generated = generate_descriptor_set(descriptor_set)
 
-    assert compiled.asm_forms[0].result_value_type_start == 0
+    assert compiled.asm_table_storage.layouts[compiled.asm_forms[0].layout_index].result_value_type_start == 0
     assert compiled.asm_table_storage.result_value_types == [AsmResultValueType(ScalarTypeKind.I32, vector_lane_count=4)]
     assert "static const loom_low_asm_result_value_type_t kTestLowCoreAsmResultValueTypes[]" in generated.source
     assert ".kind = LOOM_LOW_ASM_RESULT_VALUE_TYPE_KIND_VECTOR," in generated.source
