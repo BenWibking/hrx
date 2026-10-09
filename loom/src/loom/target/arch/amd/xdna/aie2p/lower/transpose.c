@@ -12,6 +12,7 @@
 
 #include "loom/ir/module.h"
 #include "loom/ops/vector/ops.h"
+#include "loom/ops/vector/transpose.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/vector_packet.h"
 #include "loom/target/arch/amd/xdna/aie2p/vector_carrier.h"
@@ -113,30 +114,6 @@ static bool loom_aie2p_transpose_admitted(const loom_module_t* module,
              LOOM_AIE2P_VECTOR_CARRIER_NONE;
 }
 
-static void loom_aie2p_transpose_indices_from_ordinal(loom_type_t type,
-                                                      uint16_t ordinal,
-                                                      int64_t* indices) {
-  const uint8_t rank = loom_type_rank(type);
-  for (uint8_t reverse_axis = 0; reverse_axis < rank; ++reverse_axis) {
-    const uint8_t axis = (uint8_t)(rank - reverse_axis - 1);
-    const uint16_t dimension_size =
-        (uint16_t)loom_type_dim_static_size_at(type, axis);
-    indices[axis] = ordinal % dimension_size;
-    ordinal /= dimension_size;
-  }
-}
-
-static uint8_t loom_aie2p_transpose_ordinal_from_indices(
-    loom_type_t type, const int64_t* indices) {
-  uint16_t ordinal = 0;
-  const uint8_t rank = loom_type_rank(type);
-  for (uint8_t axis = 0; axis < rank; ++axis) {
-    ordinal = (uint16_t)(ordinal * loom_type_dim_static_size_at(type, axis) +
-                         indices[axis]);
-  }
-  return (uint8_t)ordinal;
-}
-
 static void loom_aie2p_transpose_source_lanes(const loom_module_t* module,
                                               const loom_op_t* source_op,
                                               uint16_t lane_count,
@@ -147,18 +124,9 @@ static void loom_aie2p_transpose_source_lanes(const loom_module_t* module,
       loom_module_value_type(module, loom_vector_transpose_result(source_op));
   const loom_attribute_t permutation =
       loom_vector_transpose_permutation(source_op);
-  const uint8_t rank = loom_type_rank(source_type);
-  int64_t result_indices[LOOM_TYPE_MAX_RANK] = {0};
-  int64_t source_indices[LOOM_TYPE_MAX_RANK] = {0};
   for (uint16_t result_lane = 0; result_lane < lane_count; ++result_lane) {
-    loom_aie2p_transpose_indices_from_ordinal(result_type, result_lane,
-                                              result_indices);
-    for (uint8_t result_axis = 0; result_axis < rank; ++result_axis) {
-      source_indices[permutation.i64_array[result_axis]] =
-          result_indices[result_axis];
-    }
-    out_source_lanes[result_lane] =
-        loom_aie2p_transpose_ordinal_from_indices(source_type, source_indices);
+    out_source_lanes[result_lane] = (uint8_t)loom_vector_transpose_source_lane(
+        source_type, result_type, permutation.i64_array, result_lane);
   }
 }
 

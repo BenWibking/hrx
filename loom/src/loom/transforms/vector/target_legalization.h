@@ -21,6 +21,12 @@ extern "C" {
 iree_status_t loom_vector_from_elements_linearize_rewrite_op(
     loom_rewriter_t* rewriter, loom_op_t* op, bool* out_rewritten);
 
+// Rewrites a static vector.transpose as a row-major rank-one vector.shuffle,
+// surrounded by shape-only vector.bitcast operations when needed. Static
+// transposes with an identity lane permutation become a shape-only bitcast.
+iree_status_t loom_vector_transpose_to_shuffle_rewrite_op(
+    loom_rewriter_t* rewriter, loom_op_t* op, bool* out_rewritten);
+
 // Returns the generic vector legalizer provider. Pipelines should compose this
 // after target-specific providers so native target rewrites win before scalar
 // reference decomposition.

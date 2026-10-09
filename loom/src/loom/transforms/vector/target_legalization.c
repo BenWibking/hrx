@@ -7,6 +7,7 @@
 #include "loom/transforms/vector/target_legalization.h"
 
 #include <math.h>
+#include <stdint.h>
 
 #include "loom/ir/module.h"
 #include "loom/ir/types.h"
@@ -14,6 +15,7 @@
 #include "loom/ops/scf/ops.h"
 #include "loom/ops/vector/memory.h"
 #include "loom/ops/vector/ops.h"
+#include "loom/ops/vector/transpose.h"
 #include "loom/transforms/vector/reduction_legalization.h"
 #include "loom/transforms/vector/to_scalar.h"
 #include "loom/util/numeric_format.h"
@@ -151,6 +153,102 @@ static iree_status_t loom_vector_legalize_atomic(
   bool rewritten = false;
   IREE_RETURN_IF_ERROR(loom_vector_atomic_to_scalar_rewrite_op(
       context->pass, context->rewriter, op, &rewritten));
+  if (rewritten) {
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  }
+  return iree_ok_status();
+}
+
+iree_status_t loom_vector_transpose_to_shuffle_rewrite_op(
+    loom_rewriter_t* rewriter, loom_op_t* op, bool* out_rewritten) {
+  *out_rewritten = false;
+  if (!loom_vector_transpose_isa(op)) {
+    return iree_ok_status();
+  }
+
+  const loom_value_id_t source = loom_vector_transpose_source(op);
+  const loom_type_t source_type =
+      loom_module_value_type(rewriter->module, source);
+  const loom_type_t result_type = loom_module_value_type(
+      rewriter->module, loom_vector_transpose_result(op));
+  uint64_t element_count = 0;
+  if (!loom_type_is_all_static(source_type) ||
+      !loom_type_is_all_static(result_type) ||
+      !loom_type_static_element_count(source_type, &element_count) ||
+      element_count > UINT16_MAX) {
+    return iree_ok_status();
+  }
+
+  int64_t* source_lanes = NULL;
+  if (element_count > 0) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        rewriter->arena, (iree_host_size_t)element_count, sizeof(*source_lanes),
+        (void**)&source_lanes));
+  }
+
+  const loom_attribute_t permutation = loom_vector_transpose_permutation(op);
+  bool is_identity = true;
+  for (uint64_t result_lane = 0; result_lane < element_count; ++result_lane) {
+    const uint64_t source_lane = loom_vector_transpose_source_lane(
+        source_type, result_type, permutation.i64_array, result_lane);
+    source_lanes[result_lane] = (int64_t)source_lane;
+    is_identity &= source_lane == result_lane;
+  }
+
+  const loom_type_t flat_type = loom_type_shaped_1d(
+      LOOM_TYPE_VECTOR, loom_type_element_type(source_type),
+      loom_dim_pack_static((int64_t)element_count), /*encoding_id=*/0);
+  loom_builder_set_before(&rewriter->builder, op);
+  const loom_value_id_t value_checkpoint =
+      loom_rewriter_value_checkpoint(rewriter);
+  loom_value_id_t flat_source = source;
+  if (!loom_type_equal(source_type, flat_type)) {
+    loom_op_t* flatten_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_vector_bitcast_build(&rewriter->builder, source,
+                                                   source_type, flat_type,
+                                                   op->location, &flatten_op));
+    flat_source = loom_vector_bitcast_result(flatten_op);
+  }
+
+  loom_value_id_t replacement = flat_source;
+  if (!is_identity) {
+    loom_op_t* shuffle_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_vector_shuffle_build(
+        &rewriter->builder, source_lanes, (iree_host_size_t)element_count,
+        flat_source, flat_type, op->location, &shuffle_op));
+    replacement = loom_vector_shuffle_result(shuffle_op);
+  }
+  if (!loom_type_equal(flat_type, result_type)) {
+    loom_op_t* restore_op = NULL;
+    IREE_RETURN_IF_ERROR(
+        loom_vector_bitcast_build(&rewriter->builder, replacement, flat_type,
+                                  result_type, op->location, &restore_op));
+    replacement = loom_vector_bitcast_result(restore_op);
+  }
+
+  IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
+      rewriter, op, &replacement, 1, value_checkpoint));
+  IREE_RETURN_IF_ERROR(
+      loom_rewriter_replace_all_uses_and_erase(rewriter, op, &replacement, 1));
+  *out_rewritten = true;
+  return iree_ok_status();
+}
+
+static iree_status_t loom_vector_legalize_transpose(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (context->source_function_has_unsupported_vector_carrier ||
+      !loom_target_legalization_op_has_source_vector_carriers(context, op)) {
+    return iree_ok_status();
+  }
+  bool rewritten = false;
+  IREE_RETURN_IF_ERROR(loom_vector_transpose_to_shuffle_rewrite_op(
+      context->rewriter, op, &rewritten));
   if (rewritten) {
     out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
   }
@@ -782,6 +880,11 @@ static const loom_target_legalizer_rule_t kVectorLegalizerRules[] = {
     {
         .root_kind = LOOM_OP_VECTOR_MASK_RANGE,
         .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_TRANSPOSE,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_transpose,
     },
     {
         .root_kind = LOOM_OP_VECTOR_SHUFFLE,

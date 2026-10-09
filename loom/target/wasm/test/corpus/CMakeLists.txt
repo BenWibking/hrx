@@ -861,6 +861,7 @@ loom_corpus_test(
     "numeric/vector/float_comparison.loom"
     "numeric/vector/float_extrema.loom"
     "numeric/vector/insertion.loom"
+    "numeric/vector/integer_arithmetic.loom"
     "numeric/vector/integer_bitwise.loom"
     "numeric/vector/integer_comparison.loom"
     "numeric/vector/integer_shifts.loom"

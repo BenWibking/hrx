@@ -68,6 +68,9 @@ from loom.target.contracts.templates import (
     reduction_descriptor_rules,
 )
 from loom.target.emit.wasm.float_narrowing import float_narrowing_rules
+from loom.target.emit.wasm.vector_integer_arithmetic import (
+    integer_arithmetic_rules,
+)
 from loom.target.emit.wasm.vector_shifts import (
     uniform_shift_rules,
     varying_shift_rules,
@@ -1905,9 +1908,7 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 (vector.vector_sqrtf, "sqrt"),
             )
         ),
-        _binary_rule(vector.vector_addi, _V4I32, "wasm.i32x4.add"),
-        _binary_rule(vector.vector_subi, _V4I32, "wasm.i32x4.sub"),
-        _binary_rule(vector.vector_muli, _V4I32, "wasm.i32x4.mul"),
+        *integer_arithmetic_rules(_descriptor, _value_type),
         _const_i32_rule(index.index_constant, _INDEX),
         _const_i32_rule(index.index_constant, _OFFSET),
         *(

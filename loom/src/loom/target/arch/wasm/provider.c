@@ -20,6 +20,7 @@
 #include "loom/target/emit/wasm/lower/lower.h"
 #include "loom/transforms/scalar/target_legalization.h"
 #include "loom/transforms/vector/packet_legalization.h"
+#include "loom/transforms/vector/target_legalization.h"
 #include "loom/transforms/vector/to_scalar.h"
 
 static iree_status_t loom_wasm_profile_project_facts(
@@ -250,6 +251,26 @@ static iree_status_t loom_wasm_legalize_vector_store(
   return iree_ok_status();
 }
 
+static iree_status_t loom_wasm_legalize_vector_transpose(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (!loom_wasm_legalizer_descriptor_set_is_simd128(context->descriptor_set)) {
+    return iree_ok_status();
+  }
+  bool rewritten = false;
+  IREE_RETURN_IF_ERROR(loom_vector_transpose_to_shuffle_rewrite_op(
+      context->rewriter, op, &rewritten));
+  if (rewritten) {
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  }
+  return iree_ok_status();
+}
+
 static const loom_target_legalizer_rule_t kLoomWasmLegalizerRules[] = {
     {
         .root_kind = LOOM_OP_SCALAR_EXTF,
@@ -267,6 +288,10 @@ static const loom_target_legalizer_rule_t kLoomWasmLegalizerRules[] = {
         .root_kind = LOOM_OP_VECTOR_STORE,
         .first_operand_element_types = LOOM_SCALAR_TYPE_SET_INTEGER_PAYLOAD,
         .legalize = loom_wasm_legalize_vector_store,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_TRANSPOSE,
+        .legalize = loom_wasm_legalize_vector_transpose,
     },
 };
 
