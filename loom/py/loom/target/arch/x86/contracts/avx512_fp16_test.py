@@ -10,7 +10,9 @@ from loom.dialect.scalar import conversion as scalar_conversion
 from loom.dialect.scalar import math as scalar_math
 from loom.dialect.scf import defs as scf
 from loom.dialect.vector import defs as vector
+from loom.dialect.view import defs as view
 from loom.target.arch.x86.contracts.avx512_fp16 import (
+    X86_AVX512_FP16_CONTRACT_DIALECT_OPS,
     X86_AVX512_FP16_CONTRACT_FRAGMENT,
 )
 from loom.target.arch.x86.descriptors import (
@@ -23,7 +25,14 @@ from loom.target.arch.x86.vector_families import (
     AVX512_FP16_SCALAR_FLOAT_BINARY_FAMILIES,
     AVX512_FP16_SCALAR_FLOAT_FMA_MNEMONIC,
 )
-from loom.target.contracts import DescriptorRule, GuardKind, Scalar, Vector
+from loom.target.contracts import (
+    DescriptorRule,
+    EmitDescriptorOp,
+    GuardKind,
+    Scalar,
+    Vector,
+    compile_lower_rule_set,
+)
 
 _SCALAR_BINARY_OPS = {
     scalar_arithmetic.scalar_addf: "addf",
@@ -67,6 +76,12 @@ def _register_class(rule: DescriptorRule, field: str) -> str | None:
     )
 
 
+def _descriptor_keys(rule: DescriptorRule) -> tuple[str, ...]:
+    return tuple(
+        emit.descriptor.key for emit in rule.emit if isinstance(emit, EmitDescriptorOp)
+    )
+
+
 def test_feature_view_contains_the_complete_fp16_overlay() -> None:
     feature_keys = {
         descriptor.key for descriptor in X86_AVX512_FEATURES_DESCRIPTOR_SET.descriptors
@@ -74,6 +89,14 @@ def test_feature_view_contains_the_complete_fp16_overlay() -> None:
     assert {
         descriptor.key for descriptor in X86_AVX512_FP16_DESCRIPTOR_SET.descriptors
     } <= feature_keys
+
+
+def test_fragment_compiles_every_authored_rule() -> None:
+    compiled = compile_lower_rule_set(
+        X86_AVX512_FP16_CONTRACT_FRAGMENT,
+        dialect_ops=X86_AVX512_FP16_CONTRACT_DIALECT_OPS,
+    )
+    assert len(compiled.rules) == len(X86_AVX512_FP16_CONTRACT_FRAGMENT.cases)
 
 
 def test_fp16_rules_override_the_base_scalar_carrier_rules() -> None:
@@ -222,3 +245,53 @@ def test_conversions_cover_every_representable_native_width() -> None:
             (Vector("f32", lanes=16), Vector("f16", lanes=16)),
         },
     }
+
+
+def test_scalar_memory_preserves_every_addressing_recipe() -> None:
+    for source_op, type_field, transport_key in (
+        (view.view_load, "result", "x86.avx2.vmovd.xmm.gpr32"),
+        (view.view_store, "value", "x86.avx2.vmovd.gpr32.xmm"),
+    ):
+        rules = _rules_for(source_op)
+        assert len(rules) == 9
+        assert all(_value_type(rule, type_field) == Scalar("f16") for rule in rules)
+        for rule in rules:
+            descriptor_keys = _descriptor_keys(rule)
+            assert descriptor_keys.count(transport_key) == 1
+            memory_emits = tuple(
+                emit
+                for emit in rule.emit
+                if isinstance(emit, EmitDescriptorOp)
+                and emit.descriptor.semantic_tag.startswith("memory.")
+            )
+            assert len(memory_emits) == 1
+            assert memory_emits[0].source_memory is not None
+            assert memory_emits[0].source_memory.element_byte_count == 2
+            assert memory_emits[0].source_memory.vector_lane_count == 1
+
+
+def test_lane_movement_preserves_the_xmm_scalar_carrier() -> None:
+    for source_op, vector_field, scalar_field, transport_key in (
+        (
+            vector.vector_extract,
+            "source",
+            "result",
+            "x86.avx2.vmovd.xmm.gpr32",
+        ),
+        (
+            vector.vector_insert,
+            "dest",
+            "value",
+            "x86.avx2.vmovd.gpr32.xmm",
+        ),
+    ):
+        rules = _rules_for(source_op)
+        assert {
+            (_value_type(rule, vector_field), _value_type(rule, scalar_field))
+            for rule in rules
+        } == {
+            (Vector("f16", lanes=8), Scalar("f16")),
+            (Vector("f16", lanes=16), Scalar("f16")),
+            (Vector("f16", lanes=32), Scalar("f16")),
+        }
+        assert all(transport_key in _descriptor_keys(rule) for rule in rules)

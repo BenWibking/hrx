@@ -17,6 +17,7 @@ from loom.dialect.scalar import math as scalar_math
 from loom.dialect.scf import ALL_SCF_OPS
 from loom.dialect.vector import ALL_VECTOR_OPS
 from loom.dialect.vector import defs as vector
+from loom.dialect.view import ALL_VIEW_OPS
 from loom.dsl import Op
 from loom.target.arch.x86.contracts.avx512_predicate import (
     avx512_fp16_compare_rules,
@@ -25,6 +26,12 @@ from loom.target.arch.x86.contracts.avx512_predicate import (
 from loom.target.arch.x86.contracts.constants import (
     floating_scalar_constant_bits_rule,
     floating_scalar_zero_rule,
+)
+from loom.target.arch.x86.contracts.lane_movement import (
+    avx512_fp16_lane_movement_rules,
+)
+from loom.target.arch.x86.contracts.memory import (
+    x86_scalar_xmm_word_memory_rules,
 )
 from loom.target.arch.x86.contracts.rule_builders import (
     emit_descriptor_op as _op_emit,
@@ -55,6 +62,7 @@ from loom.target.contracts import (
     DescriptorRule,
     DirectDescriptorCase,
     Guard,
+    GuardDiagnostic,
     Scalar,
     TypePattern,
     ValueProject,
@@ -73,6 +81,12 @@ _F16 = Scalar("f16")
 _F32 = Scalar("f32")
 _VECTOR_BIT_WIDTHS = (128, 256, 512)
 _REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
+
+_SOURCE_MEMORY_DIAGNOSTIC = GuardDiagnostic(
+    subject_role="source-memory",
+    subject_name="x86-avx512-fp16",
+    constraint_key="x86.avx512_fp16.source_memory",
+)
 
 
 def _descriptor(key: str) -> Descriptor:
@@ -242,14 +256,27 @@ def _vector_rules() -> tuple[DescriptorRule, ...]:
     )
 
 
+def _transport_rules() -> tuple[DescriptorRule, ...]:
+    return (
+        *x86_scalar_xmm_word_memory_rules(
+            _descriptor,
+            value_type=_F16,
+            diagnostic=_SOURCE_MEMORY_DIAGNOSTIC,
+            priority=1,
+        ),
+        *avx512_fp16_lane_movement_rules(_descriptor),
+    )
+
+
 def _cases() -> Sequence[ContractCase]:
-    return (*_scalar_rules(), *_vector_rules())
+    return (*_scalar_rules(), *_vector_rules(), *_transport_rules())
 
 
 X86_AVX512_FP16_CONTRACT_DIALECT_OPS = {
     "scalar": ALL_SCALAR_OPS,
     "scf": ALL_SCF_OPS,
     "vector": ALL_VECTOR_OPS,
+    "view": ALL_VIEW_OPS,
 }
 
 X86_AVX512_FP16_CONTRACT_FRAGMENT = ContractFragment(
