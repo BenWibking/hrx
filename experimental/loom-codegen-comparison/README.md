@@ -6,18 +6,19 @@ kernel pair: 15 equations, 14 species, device redshift 30, and 128-thread blocks
 
 `reference.cpp` is the unchanged HIP source snapshot, SHA256
 `6c7ca23933b211980e831e8d2bfc4328245ab0e3c75f6b07a5e0ed40307843d0`.
-`reproducer.cpp` contains the Loom kernel roots and reachable chemistry/ROS2S
-routines. Sources carry their original license notices.
+`generate.py` emits `reproducer.cpp`, which contains the Loom kernel roots and
+reachable chemistry/ROS2S routines. Generated sources are not checked in; the
+CMake build, check scripts, and ROCm script generate them. Sources carry their
+original license notices.
 
 ## Files
 
 | Files | Purpose |
 | --- | --- |
 | `reference.cpp` | Original HIP kernels and standalone host driver |
-| `reproducer.cpp`, `integrate.inc` | Generated Loom device program and solver control flow |
 | `support.h`, `f64_math.h` | Loom math, atomics, and strict f64 exp/log/cbrt source recipes |
-| `generate.py` | Checked translation from the pinned HIP source |
-| `validate.cpp`, `reference_kernels.inc`, `CMakeLists.txt` | Native differential validation against HIP source bodies |
+| `generate.py` | Translation from the pinned HIP source; emits `reproducer.cpp` and `integrate.inc` (Loom device program and solver control flow) and `reference_kernels.inc` (original kernel bodies) |
+| `validate.cpp`, `CMakeLists.txt` | Native differential validation against HIP source bodies |
 | `check_import.py` | Checks both imported roots, f64 math, private storage, and atomics |
 | `check_compile.py` | XFAIL regression test for the production-sized advance kernel compile |
 | `compare_rocm.cpp`, `run_rocm_comparison.sh` | Build and run the HIP/Loom GPU comparison |
@@ -28,16 +29,16 @@ routines. Sources carry their original license notices.
 Run from this directory:
 
 ```sh
-python3 generate.py --check
-# After editing translation rules:
-python3 generate.py
-
 cmake -S . -B /tmp/chemistry-check -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug -DCHEM_SANITIZE=ON
 cmake --build /tmp/chemistry-check
 ctest --test-dir /tmp/chemistry-check --output-on-failure
 /tmp/chemistry-check/chemistry-validate --full-grid
 ```
+
+The build runs `generate.py` into `/tmp/chemistry-check/generated` and reruns it
+when `generate.py` or `reference.cpp` changes. To inspect the generated sources
+directly, run `python3 generate.py --output-dir=/tmp/chemistry-generated`.
 
 Clang or GCC and a 64-bit LP64 host are required. Set
 `-DLOOM_IMPORT_CXX_TOOL=/path/to/loom-import-cxx` when configuring to include the
@@ -62,10 +63,11 @@ The standalone HIP driver defaults to a `64^3` grid (262,144 cells). Use
 ## Import and compile the Loom kernels
 
 ```sh
+python3 generate.py --output-dir=/tmp/chemistry-generated
 loom-import-cxx --data-model=lp64 --approximate-functions=false \
   --root=chemistry::prepare_grid_timestep_kernel \
   --root=chemistry::advance_collapse_gridwide_kernel \
-  --output=/tmp/chemistry.loom reproducer.cpp
+  --I=. --output=/tmp/chemistry.loom /tmp/chemistry-generated/reproducer.cpp
 
 for root in prepare_grid_timestep_kernel advance_collapse_gridwide_kernel; do
   loom-compile /tmp/chemistry.loom --root=chemistry.$root \
@@ -147,7 +149,7 @@ stored as a flat array; the chemistry kernels evolve each cell independently.
 The default size does not yet compile in Loom (see the known limitation above);
 use `--cells 128` until it does.
 
-The script checks generated sources, imports and compiles both Loom roots,
+The script generates the Loom sources, imports and compiles both Loom roots,
 builds the original HIP kernels with the comparison harness, and runs numerical
 and timing comparisons. Set `ROCM_PATH` or `HIPCC` for ROCm, and `LOOM_BUILD_DIR`
 or `LOOM_IMPORT_CXX` and `LOOM_COMPILE` for checkout-local Loom tools. Outputs
