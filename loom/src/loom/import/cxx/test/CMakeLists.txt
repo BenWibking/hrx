@@ -1174,6 +1174,15 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
+    integer_increment_module
+  SRCS
+    "integer_increment.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
     mxfp_group_dot_module
   SRCS
     "mxfp_group_dot.cxx"
@@ -1644,16 +1653,6 @@ loom_test_module(
   SRCS
     "increment_values.cxx"
     "increment_values.loom"
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    integer_increment_module
-  SRCS
-    "integer_increment.cxx"
-    "integer_increment.loom"
 )
 endif()
 
