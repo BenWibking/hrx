@@ -231,83 +231,94 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @vector_
 
 amdgpu.target<gfx11-generic> @target
 
-func.def target(@target) @vector_softplus_exp2(%input: vector<4xf32>) -> (vector<4xf32>) {
-  %result = vector.softplusf<afn> %input : vector<4xf32>
-  func.return %result : vector<4xf32>
+func.def target(@target) @scalar_softplus_exp2(%input: f32) -> (f32) {
+  %result = scalar.softplusf %input : f32
+  func.return %result : f32
+}
+
+// ----
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @scalar_softplus_exp2(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %26 = v_mov_b32 1065353216
+  %27 = v_mov_b32 1065353217
+  %28 = v_and_b32_lit %input, 2147483647
+  %29 = v_mul_f32_lit %28, 3216550459
+  %30 = v_exp_f32 %29
+  %31 = v_add_f32_src0_inline %30, "f32_1_0"
+  %32 = v_sub_f32 %31, %26
+  %33 = v_cmp_ge_f32 %31, %27
+  %34 = v_cndmask_b32_src0_lit %32, %33, 1065353216
+  %35 = v_rcp_f32 %34
+  %36 = v_mul_f32 %30, %35
+  %37 = v_log_f32 %31
+  %38 = v_mul_f32_lit %37, 1060205080
+  %39 = v_mul_f32 %38, %36
+  %40 = v_cndmask_b32 %30, %39, %33
+  %41 = v_cmp_ge_f32_src1_inline %input {rhs = "f32_0_0"}
+  %42 = v_cndmask_b32_src0_inline %input, %41 {false_value = 0}
+  %result = v_add_f32 %42, %40
+  return %result
+}
+
+// ====
+
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @scalar_softplus_exp2_fast(%input: f32) -> (f32) {
+  %result = scalar.softplusf<reassoc|nnan|ninf|nsz|arcp|contract|afn> %input : f32
+  func.return %result : f32
+}
+
+// ----
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @scalar_softplus_exp2_fast(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %26 = v_mov_b32 1065353216
+  %27 = v_mov_b32 1065353217
+  %28 = v_and_b32_lit %input, 2147483647
+  %29 = v_mul_f32_lit %28, 3216550459
+  %30 = v_exp_f32 %29
+  %31 = v_add_f32_src0_inline %30, "f32_1_0"
+  %32 = v_sub_f32 %31, %26
+  %33 = v_cmp_ge_f32 %31, %27
+  %34 = v_cndmask_b32_src0_lit %32, %33, 1065353216
+  %35 = v_rcp_f32 %34
+  %36 = v_mul_f32 %30, %35
+  %37 = v_log_f32 %31
+  %38 = v_mul_f32_lit %37, 1060205080
+  %39 = v_mul_f32 %38, %36
+  %40 = v_cndmask_b32 %30, %39, %33
+  %41 = v_cmp_ge_f32_src1_inline %input {rhs = "f32_0_0"}
+  %42 = v_cndmask_b32_src0_inline %input, %41 {false_value = 0}
+  %result = v_add_f32 %42, %40
+  return %result
+}
+
+// ====
+
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @vector_softplus_exp2(%input: vector<1xf32>) -> (vector<1xf32>) {
+  %result = vector.softplusf<afn> %input : vector<1xf32>
+  func.return %result : vector<1xf32>
 }
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @vector_softplus_exp2(%input: reg<amdgpu.vgpr x4>) -> (reg<amdgpu.vgpr x4>) asm {
-  %30 = v_mov_b32 1065353216
-  %35 = v_mov_b32 1065353217
-  %40 = slice %input[0] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
-  %41 = v_and_b32_lit %40, 2147483647
-  %42 = slice %input[1] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
-  %43 = v_and_b32_lit %42, 2147483647
-  %44 = slice %input[2] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
-  %45 = v_and_b32_lit %44, 2147483647
-  %46 = slice %input[3] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
-  %47 = v_and_b32_lit %46, 2147483647
-  %50 = v_mul_f32_lit %41, 3216550459
-  %52 = v_mul_f32_lit %43, 3216550459
-  %54 = v_mul_f32_lit %45, 3216550459
-  %56 = v_mul_f32_lit %47, 3216550459
-  %59 = v_exp_f32 %50
-  %61 = v_exp_f32 %52
-  %63 = v_exp_f32 %54
-  %65 = v_exp_f32 %56
-  %68 = v_add_f32_src0_inline %59, "f32_1_0"
-  %70 = v_add_f32_src0_inline %61, "f32_1_0"
-  %72 = v_add_f32_src0_inline %63, "f32_1_0"
-  %74 = v_add_f32_src0_inline %65, "f32_1_0"
-  %78 = v_sub_f32 %68, %30
-  %81 = v_sub_f32 %70, %30
-  %84 = v_sub_f32 %72, %30
-  %87 = v_sub_f32 %74, %30
-  %91 = v_cmp_ge_f32 %68, %35
-  %94 = v_cmp_ge_f32 %70, %35
-  %97 = v_cmp_ge_f32 %72, %35
-  %100 = v_cmp_ge_f32 %74, %35
-  %104 = v_cndmask_b32_src0_lit %78, %91, 1065353216
-  %107 = v_cndmask_b32_src0_lit %81, %94, 1065353216
-  %110 = v_cndmask_b32_src0_lit %84, %97, 1065353216
-  %113 = v_cndmask_b32_src0_lit %87, %100, 1065353216
-  %116 = v_rcp_f32 %104
-  %118 = v_rcp_f32 %107
-  %120 = v_rcp_f32 %110
-  %122 = v_rcp_f32 %113
-  %126 = v_mul_f32 %59, %116
-  %129 = v_mul_f32 %61, %118
-  %132 = v_mul_f32 %63, %120
-  %135 = v_mul_f32 %65, %122
-  %138 = v_log_f32 %68
-  %140 = v_log_f32 %70
-  %142 = v_log_f32 %72
-  %144 = v_log_f32 %74
-  %147 = v_mul_f32_lit %138, 1060205080
-  %149 = v_mul_f32_lit %140, 1060205080
-  %151 = v_mul_f32_lit %142, 1060205080
-  %153 = v_mul_f32_lit %144, 1060205080
-  %157 = v_mul_f32 %147, %126
-  %160 = v_mul_f32 %149, %129
-  %163 = v_mul_f32 %151, %132
-  %166 = v_mul_f32 %153, %135
-  %171 = v_cndmask_b32 %59, %157, %91
-  %175 = v_cndmask_b32 %61, %160, %94
-  %179 = v_cndmask_b32 %63, %163, %97
-  %183 = v_cndmask_b32 %65, %166, %100
-  %186 = v_cmp_ge_f32_src1_inline %40 {rhs = "f32_0_0"}
-  %188 = v_cmp_ge_f32_src1_inline %42 {rhs = "f32_0_0"}
-  %190 = v_cmp_ge_f32_src1_inline %44 {rhs = "f32_0_0"}
-  %192 = v_cmp_ge_f32_src1_inline %46 {rhs = "f32_0_0"}
-  %196 = v_cndmask_b32_src0_inline %40, %186 {false_value = 0}
-  %199 = v_cndmask_b32_src0_inline %42, %188 {false_value = 0}
-  %202 = v_cndmask_b32_src0_inline %44, %190 {false_value = 0}
-  %205 = v_cndmask_b32_src0_inline %46, %192 {false_value = 0}
-  %209 = v_add_f32 %196, %171
-  %212 = v_add_f32 %199, %175
-  %215 = v_add_f32 %202, %179
-  %218 = v_add_f32 %205, %183
-  %result = concat(%209, %212, %215, %218) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x4>
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @vector_softplus_exp2(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %26 = v_mov_b32 1065353216
+  %27 = v_mov_b32 1065353217
+  %28 = v_and_b32_lit %input, 2147483647
+  %29 = v_mul_f32_lit %28, 3216550459
+  %30 = v_exp_f32 %29
+  %31 = v_add_f32_src0_inline %30, "f32_1_0"
+  %32 = v_sub_f32 %31, %26
+  %33 = v_cmp_ge_f32 %31, %27
+  %34 = v_cndmask_b32_src0_lit %32, %33, 1065353216
+  %35 = v_rcp_f32 %34
+  %36 = v_mul_f32 %30, %35
+  %37 = v_log_f32 %31
+  %38 = v_mul_f32_lit %37, 1060205080
+  %39 = v_mul_f32 %38, %36
+  %40 = v_cndmask_b32 %30, %39, %33
+  %41 = v_cmp_ge_f32_src1_inline %input {rhs = "f32_0_0"}
+  %42 = v_cndmask_b32_src0_inline %input, %41 {false_value = 0}
+  %result = v_add_f32 %42, %40
   return %result
 }
 
@@ -842,6 +853,36 @@ func.def target(@target) @rejects_non_f32_math(%input: f64) -> (f64) {
   // ERROR@+1: LOWERING/036 {op_name="scalar.softplusf", phase_name="legalize-math", policy_name="amdgpu-math", math_op="softplusf", lane_domain="scalar", element_type="f64", constraint_key="math.element.f32"}
   %result = scalar.softplusf %input : f64
   func.return %result : f64
+}
+
+// ====
+
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @rejects_softplus_f16(%input: f16) -> (f16) {
+  // ERROR@+1: LOWERING/036 {op_name="scalar.softplusf", phase_name="legalize-math", policy_name="amdgpu-math", math_op="softplusf", lane_domain="scalar", element_type="f16", constraint_key="math.element.f32"}
+  %result = scalar.softplusf %input : f16
+  func.return %result : f16
+}
+
+// ====
+
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @rejects_softplus_bf16_vector(%input: vector<3xbf16>) -> (vector<3xbf16>) {
+  // ERROR@+1: LOWERING/036 {op_name="vector.softplusf", phase_name="legalize-math", policy_name="amdgpu-math", math_op="softplusf", lane_domain="vector", element_type="bf16", constraint_key="math.element.f32"}
+  %result = vector.softplusf<afn> %input : vector<3xbf16>
+  func.return %result : vector<3xbf16>
+}
+
+// ====
+
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @rejects_softplus_f64_vector(%input: vector<2xf64>) -> (vector<2xf64>) {
+  // ERROR@+1: LOWERING/036 {op_name="vector.softplusf", phase_name="legalize-math", policy_name="amdgpu-math", math_op="softplusf", lane_domain="vector", element_type="f64", constraint_key="math.element.f32"}
+  %result = vector.softplusf<reassoc|nnan|ninf|nsz|arcp|contract|afn> %input : vector<2xf64>
+  func.return %result : vector<2xf64>
 }
 
 // ====
