@@ -460,7 +460,6 @@ loom_cc_library(
         "//loom/src/loom/target/emit:__subpackages__",
         "//loom/src/loom/target/test:__pkg__",
         "//loom/src/loom/target/testing:__pkg__",
-        "//loom/src/loom/tooling/compile:__pkg__",
         "//loom/src/loom/tooling/execution:__pkg__",
         "//loom/src/loom/tooling/target/spirv:__pkg__",
         "//loom/src/loom/tools/loom-check:__pkg__",
