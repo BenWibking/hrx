@@ -1134,6 +1134,16 @@ def packed_byte_shifts(arrays):
     return "kernel.decl @packed_byte_shifts() launch(%input: buffer, %output: buffer)\n\n" + case.finish([signed_bits(value, 8) for value in expected])
 
 
+IQ4NL_CODEBOOK = [-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113]
+
+
+def rounded_bfloat16(value):
+    """Round one finite value to bfloat16 and return its exact float value."""
+    bits = struct.unpack("<I", struct.pack("<f", value))[0]
+    bits += 0x7FFF + ((bits >> 16) & 1)
+    return struct.unpack("<f", struct.pack("<I", bits & 0xFFFF0000))[0]
+
+
 def pack_iq4xs(scale, group_scales, codes):
     """Pack logical scales/codes into the 136-byte IQ4_XS storage layout."""
     scale_codes = [value + 32 for value in group_scales]
@@ -1148,14 +1158,13 @@ def iq4xs_blocks(arrays):
     # Eight blocks cover every signed six-bit scale and all 256 packed byte
     # values, including distinct adjacent record contents. Low codes permute
     # all sixteen entries; group-dependent high codes span every pairing.
-    codebook = [-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113]
     packed = bytearray([0xA5] * 32)
     mutated = bytearray(packed)
     expected = []
     for block, scale in enumerate((0.5, -0.25, 2.0, -4.0, 0.0625, -0.125, 1.0, -2.0)):
         group_scales = [block * 8 + group - 32 for group in range(8)]
         codes = [(3 * lane + 5 * group + 7 * block + (lane // 16) * (group + 8 * block)) % 16 for group in range(8) for lane in range(32)]
-        expected.extend(scale * group_scales[index // 32] * codebook[code] for index, code in enumerate(codes))
+        expected.extend(scale * group_scales[index // 32] * IQ4NL_CODEBOOK[code] for index, code in enumerate(codes))
         packed.extend(pack_iq4xs(scale, group_scales, codes))
         mutated.extend(pack_iq4xs(scale, [value ^ 1 for value in group_scales], [code ^ 1 for code in codes]))
     packed.extend([0xA5] * 32)
@@ -1166,7 +1175,7 @@ def iq4xs_blocks(arrays):
         case = Case(arrays, kernel + "_values", "f32", len(expected))
         case.array("input_storage", [signed_bits(value, 8) for value in packed], "i8")
         case.array("original", [signed_bits(value, 8) for value in packed], "i8")
-        case.array("codebook", codebook, "i8")
+        case.array("codebook", IQ4NL_CODEBOOK, "i8")
         case.lines.append("  %input = check.tensor.view %input_storage offset(32) : tensor<1152xi8> -> tensor<1088xi8>")
         case.launch(kernel, "%input, %codebook, %output", "tensor<1088xi8>, tensor<16xi8>, tensor<2048xf32>")
         case.lines.append("  check.expect.bitwise actual(%input_storage) expected(%original) : tensor<1152xi8>")
@@ -1186,6 +1195,64 @@ def iq4xs_blocks(arrays):
     declarations += "kernel.decl @decode_iq4xs_packed() launch(%blocks: buffer, %codebook: buffer, %output: buffer)\n\n"
     declarations += "kernel.decl @update_iq4xs() launch(%blocks: buffer)\n\n"
     return declarations + cases
+
+
+def iq4xs_gate_up(arrays):
+    # Preserve the production 2,560 x 640 x top-10 execution geometry while
+    # storing only the two experts selected by this fixture. Expected values
+    # are evaluated from the logical scale/code records before packing.
+    input_size = 2560
+    output_size = 640
+    route_ids = [1, 0, 1, 1, 0, 0, 1, 0, 1, 0]
+    expert_count = 2
+    block_count = input_size // 256
+    input_values = [rounded_bfloat16(-1.0 + (index % 257) / 128.0) for index in range(input_size)]
+
+    projections = {}
+    packed_weights = {}
+    for name, kind in (("gate", 0), ("up", 1)):
+        records = bytearray()
+        experts = []
+        for expert in range(expert_count):
+            rows = []
+            for channel in range(output_size):
+                products = []
+                for block in range(block_count):
+                    scale = 2.0 ** -(11 + ((expert + channel + block + kind) % 3))
+                    group_scales = [((expert * 19 + channel * 7 + block * 13 + group * 9 + kind * 23) % 64) - 32 for group in range(8)]
+                    codes = [(expert * 11 + channel * 5 + block * 7 + group * 3 + lane * 13 + lane // 5 + kind * 9) % 16 for group in range(8) for lane in range(32)]
+                    records.extend(pack_iq4xs(scale, group_scales, codes))
+                    for group, group_scale in enumerate(group_scales):
+                        decoded_scale = rounded_bfloat16(scale * group_scale)
+                        for lane in range(32):
+                            code = codes[group * 32 + lane]
+                            weight = rounded_bfloat16(decoded_scale * IQ4NL_CODEBOOK[code])
+                            input_index = block * 256 + group * 32 + lane
+                            products.append(weight * input_values[input_index])
+                rows.append(math.fsum(products))
+            experts.append(rows)
+        projections[name] = experts
+        packed_weights[name] = records
+
+    expected = []
+    for expert in route_ids:
+        for channel in range(output_size):
+            gate = projections["gate"][expert][channel]
+            up = projections["up"][expert][channel]
+            expected.append(gate / (1.0 + math.exp(-gate)) * up)
+
+    case = Case(arrays, "iq4xs_gate_up_values", "f32", len(expected))
+    case.lines.append(f"  %input = check.generate.iota offset(-1.0) step(0.0078125) period(257) : tensor<{input_size}xbf16>")
+    case.array("route_ids", route_ids, "i32")
+    for name in ("gate", "up"):
+        case.array(f"{name}_weight", [signed_bits(value, 8) for value in packed_weights[name]], "i8")
+    case.launch(
+        "qwen38_iq4xs_gate_up_swiglu",
+        "%input, %route_ids, %gate_weight, %up_weight, %output",
+        f"tensor<{input_size}xbf16>, tensor<{len(route_ids)}xi32>, tensor<{len(packed_weights['gate'])}xi8>, tensor<{len(packed_weights['up'])}xi8>, tensor<{len(expected)}xf32>",
+    )
+    declaration = "kernel.decl @qwen38_iq4xs_gate_up_swiglu() launch(%input: buffer, %route_ids: buffer, %gate_weight: buffer, %up_weight: buffer, %output: buffer)\n\n"
+    return declaration + case.finish(expected, 0.00001)
 
 
 def pack_q4k(scale, minimum, group_scales, group_minimums, codes):
@@ -1309,6 +1376,7 @@ KERNEL_GROUPS = {
     "increment_values": lambda arrays: increment_values(arrays) + "\n" + increment_pointers(arrays),
     "integer_increment": lambda arrays: integer_increment(arrays, 8, BYTE_INPUTS) + "\n" + integer_increment(arrays, 64, WIDE_INPUTS),
     "iq4xs_blocks": iq4xs_blocks,
+    "iq4xs_gate_up": iq4xs_gate_up,
     "llama_rms_norm": lambda arrays: launch_grid("llama_rms_norm", 3) + rms_norm(arrays),
     "packed_byte_shifts": packed_byte_shifts,
     "pointer_walk": pointer_walk,
