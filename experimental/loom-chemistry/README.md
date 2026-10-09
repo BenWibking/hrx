@@ -1,193 +1,67 @@
-# Chemistry reproducer for the Loom C++ importer
+# f64 chemistry kernels for HIP and Loom
 
-`reproducer.cpp` contains both rewritten device kernels and their reachable
-chemistry/ROS2S routines. It imports into verified Loom High IR with strict
-`double` math and real integer atomics. This is a device-source rewrite, not a complete
-Loom GPU application or a replacement HIP runtime.
+This directory contains the original HIP chemistry reproducer and its generated
+Loom C++ translation. Both use `double` and retain the prepare/advance gridwide
+kernel pair: 15 equations, 14 species, device redshift 30, and 128-thread blocks.
 
-The original `/Users/benwibking/amrex_codes/mojo-chemistry/reproducer.cpp` is
-unchanged. `reference.cpp` is its byte-for-byte snapshot, SHA256
+`reference.cpp` is the unchanged HIP source snapshot, SHA256
 `6c7ca23933b211980e831e8d2bfc4328245ab0e3c75f6b07a5e0ed40307843d0`.
-The source carries BSD-3-Clause SPDX notices. The rewrite specializes the
-ordinary HIP path: 15 equations, 14 species, device redshift 30, LP64 source
-layout, and the original default 128-thread block. The optional structured CUDA
-driver and host-only adjustable redshift are not the selected program.
+`reproducer.cpp` contains the Loom kernel roots and reachable chemistry/ROS2S
+routines. Sources carry their original license notices.
 
-## Source organization
+## Files
 
-See [HIP to Loom C++ rewrites](HIP-TO-LOOM-REWRITES.md) for a direct comparison
-with the pinned HIP source and the current reason for each transformation.
+| Files | Purpose |
+| --- | --- |
+| `reference.cpp` | Original HIP kernels and standalone host driver |
+| `reproducer.cpp`, `integrate.inc` | Generated Loom device program and solver control flow |
+| `support.h`, `f64_math.h` | Loom math, atomics, and strict f64 exp/log/cbrt source recipes |
+| `generate.py` | Checked translation from the pinned HIP source |
+| `validate.cpp`, `reference_kernels.inc`, `CMakeLists.txt` | Native differential validation against HIP source bodies |
+| `check_import.py` | Checks both imported roots, f64 math, private storage, and atomics |
+| `compare_rocm.cpp`, `run_rocm_comparison.sh` | Build and run the HIP/Loom GPU comparison |
+| `HIP-TO-LOOM-REWRITES.md` | Translation and numerical-contract notes |
 
-- `generate.py` extracts the original bodies and applies checked transformations.
-  A pinned digest and exact-match replacements reject source drift. No chemistry
-  coefficients or floating-point expressions are manually re-derived.
-- `CellRecord` groups a named `BurnRecord`, time, step count, and statistics.
-  `burn_ros2s` declares solver scalars and arrays as thread-local storage,
-  including both flattened 15×15 matrices. Declaration initializers reset them
-  on every burn, at the original state-construction point after EOS.
-  A pointer-only `ScratchView` passes them to the solver routines.
-  `ScratchRecord` remains a native test fixture for
-  inspecting every solver field, with member initializers for the same defaults.
-  The original `ROS2SCoefficients` struct is retained directly.
-- `integrate.inc` retains the solver arithmetic and replaces nested loop exits
-  with `done`, `retry`, and a result code. No additional solver iteration executes
-  after an original return, break, or continue point.
-- `support.h` supplies by-value min/max templates and the original recursive
-  `powi` template. For Loom it binds `sqrt` and `abs` to scalar operations and
-  `exp`, `log`, and `cbrt` to the strict f64 source recipes in `f64_math.h`. Their operand-selection rules and multiplication grouping
-  match the original, including min/max behavior for NaNs and signed zero.
-- The small `EosSums` aggregate again returns the EOS sums by value, so both
-  EOS routines share the source calculation.
-- The generator outlines nested ternaries into small helpers with deduced return
-  types, preserving conditional evaluation. This avoids Loom's 32-region nesting
-  limit without turning lazy branches into eager evaluations. Their captured
-  scalar temporaries are already initialized and do not change during the
-  expression; species input is read-only.
-- Generated chemistry expressions use direct array accesses; the source's
-  literal one-based output indices are converted to zero-based indices.
-- Buffer and record-field compound assignments retain the source spelling.
+## Generate and validate
 
-Regenerate or check the committed output:
+Run from this directory:
 
 ```sh
-python3 experimental/loom-chemistry/generate.py
-python3 experimental/loom-chemistry/generate.py --check
-```
+python3 generate.py --check
+# After editing translation rules:
+python3 generate.py
 
-For compiler spill comparisons, the separate [f32 experiment](f32/README.md)
-mechanically derives both kernels with single-precision storage, literals, and
-math. It has its own generator and record layout and is not numerically
-validated against this f64 baseline.
-
-## Buffer and launch contract
-
-Both kernels take `cells` as their first argument, followed by `num_cells` and
-`completed_global_steps`. Allocate a disjoint, correctly aligned `CellRecord`
-for each cell.
-
-| Argument | Elements per cell | Contents |
-| --- | ---: | --- |
-| `cells` | 1 `CellRecord` (216 bytes under LP64) | Named rho, T, e, species 0–13, time, density_driver, completed_steps, and seven unsigned 64-bit counters |
-
-Persistent cell fields and counters must be packed from the original initialized
-states. The solver initializes its local state on every burn; preparation uses
-a separate local normalization workspace. The compiler imports these arrays as
-private storage, whose eventual register or private-segment placement is decided
-by target lowering and allocation. Buffer sizes and the original integer cell
-index/launch bounds remain caller responsibilities.
-
-The remaining arguments retain the original kernel meanings. Supply
-`ceil(num_cells / 128)` workgroups along x and one along y/z; specialize the
-generated workgroup-count config declarations accordingly. Keep the original
-prepare/synchronize/copy-candidates/host-minimum/advance/synchronize ordering.
-Do not replace atomic failure publication with a host reduction: it changes
-failure selection and cancellation behavior. `reference.cpp` retains the
-original host driver and serialization code for a later runtime integration.
-
-## Native equivalence checks
-
-From the repository root:
-
-```sh
-cmake -S experimental/loom-chemistry -B /tmp/chemistry-check -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug -DCHEM_SANITIZE=ON \
-  -DLOOM_IMPORT_CXX_TOOL=/path/to/loom-import-cxx
+cmake -S . -B /tmp/chemistry-check -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug -DCHEM_SANITIZE=ON
 cmake --build /tmp/chemistry-check
 ctest --test-dir /tmp/chemistry-check --output-on-failure
 /tmp/chemistry-check/chemistry-validate --full-grid
 ```
 
-The tool argument is optional. Without it, CTest runs generation consistency and
-native differential validation. Validation requires Clang or GCC and a 64-bit
-LP64 host. Floating-point contraction is disabled in both implementations so
-the comparison measures the rewrite rather than different contraction choices.
+Clang or GCC and a 64-bit LP64 host are required. Set
+`-DLOOM_IMPORT_CXX_TOOL=/path/to/loom-import-cxx` when configuring to include the
+import check. Native validation compares double bit patterns and integer fields
+using the same host math and serial lane order; it does not establish GPU math
+results, concurrent atomic behavior, or GPU performance.
 
-`validate.cpp` compiles the original routines beside the rewrite, uses the same
-system double math, and compares double bit patterns and integer values. It
-checks RHS/Jacobian values over 18 temperature/density cases, EOS and species
-normalization, pivoted and singular LU, solver work arrays and counters, adaptive
-retries, early errors, the fifth singular-decomposition failure, both kernel
-bodies, inactive lanes, and perturbation step 20. A synthetic diagonal Jacobian
-tests the exact same generated solver-control body against the original generic
-integrator's singular-retry path. `reference_kernels.inc` is extracted directly
-from the original kernels, with only topology and atomic-call adapters, so the
-reference is the HIP gridwide policy rather than the different CPU main loop.
+## Build the HIP reproducer
 
-The kernel differential check uses the same serial lane order for both versions.
-CPU atomic operations remain atomic, but these tests do not validate concurrent
-GPU ordering, ROCm libm results, native code generation, or performance. Bitwise
-agreement on these cases is evidence for the transformation, not an exhaustive
-proof for all inputs.
-
-## Import check and remaining target work
-
-The actual importer can process both roots and all their helpers:
+On a ROCm machine, compile the original standalone driver:
 
 ```sh
-loom-import-cxx \
-  --data-model=lp64 --approximate-functions=false \
-  --root=chemistry::prepare_grid_timestep_kernel \
-  --root=chemistry::advance_collapse_gridwide_kernel \
-  --output=/tmp/chemistry.loom \
-  experimental/loom-chemistry/reproducer.cpp
+hipcc --offload-arch=gfx942 -std=c++20 -O3 -ffp-contract=off \
+  -DPRIMORDIAL_ROS2S_ENABLE_HIP=1 reference.cpp -o /tmp/chemistry-hip
+/tmp/chemistry-hip --help
 ```
 
-`support.h` binds the original integer atomic calls through Loom's typed atomic API.
-They emit `view.atomic.rmw<addi>` and `view.atomic.cmpxchg` with relaxed ordering
-and device scope, returning the old value. There are no non-atomic stand-ins;
-the old `CHEM_IMPORT_STRUCTURE_ONLY` mode has been removed.
-
-The import check keeps `double`, sqrt/abs, the exp/log/cbrt source recipes, and
-finite-value testing; it does not substitute float or grant approximate-math
-permissions. The gfx942
-backend has focused source-low and assembly coverage for f64 arithmetic,
-comparisons, conversions, sqrt, and division, as well as signed constant
-remainder. Strict f64 division uses the target's DIV_SCALE,
-reciprocal-refinement, DIV_FMAS, and DIV_FIXUP sequence.
-
-In the current compiler worktree, `cfg-converge` reconstructs a non-owning
-`buffer.view` in its consuming successor, and the HAL kernel ABI places f64
-direct arguments in SGPR pairs. Upstream AMDGPU lowering supports native f64
-arithmetic and strict sqrt but does not legalize f64 `expf`, `logf`, or `cbrtf`,
-and native emission has no device-library call/link path for OCML. `f64_math.h`
-therefore carries those three as statement-for-statement transcriptions of the
-compiler recipes on `feat/amdgpu-f64-math-recipes` (OpenLibm/fdlibm exp and log,
-Newton cbrt). Against correctly rounded results they are within 1 ULP, and
-special values and NaN payloads match the recipes. Once those recipes land,
-bind the three functions back to `loom::scalar` and delete `f64_math.h`.
-
-Before the local-state refactor, both kernel roots emitted gfx942 HSACO files:
-about 21 KB for prepare and 2.3 MB for advance. The old advance kernel needed a
-16-round spill-materialization limit, sparse storage-lifetime-aware scratch
-selection, and scalable branch-island layout. The earlier source-priority
-build measured a 2.05 MB native instruction stream with 3,805 branches and
-23,185 branch islands. The current AMDGPU kernel path uses upstream's
-resource-stall schedule; its broader performance effect has not been qualified.
-That advance compilation took minutes and emitted thousands of spill warnings.
-The [gfx942 Loom versus HIP spill-traffic comparison](SPILL-TRAFFIC-COMPARISON.md)
-records static scratch ISA counts from the earlier global-scratch Loom build and
-a ROCm 10.0.0 HIP build. Recompile to measure the local-state version.
-
-With the local-state rewrite and the 2026-09-26 compiler build, both roots
-again emit gfx942 code objects. Static disassembly has 2,839 prepare and
-365,061 advance instructions, compared with 2,925 and 402,355 for the prior
-global-scratch Loom objects. The new advance object reports 0 bytes of LDS,
-102 SGPRs, 256 VGPRs, and 52,604 private bytes per lane; the prior object
-reported 0, 102, 256, and 50,328 respectively. Local storage removes the
-global scratch argument and lowers static instruction count, but register
-pressure and private-segment use remain high. These counts do not establish
-runtime speed or numerical behavior on a GPU.
-
-The [advance spill reproducer](advance-spill-repro/README.md) has current
-static counts beside HIP and a HIP-rewritten control, with matched-input GPU
-replay tooling. At `383e88d8b6` (2026-10-08) the advance object has 318,454
-instructions, 8,314 spill diagnostics and 61,624 private bytes per lane.
-
-The kernels take their workgroup count as compile-time config, and
-`loom-compile` rejects the module with `CONFIG/INVALID` unless all three
-dimensions are bound. Use `ceil(cells / 128)` for x; this example is 128 cells:
+## Import and compile the Loom kernels
 
 ```sh
+loom-import-cxx --data-model=lp64 --approximate-functions=false \
+  --root=chemistry::prepare_grid_timestep_kernel \
+  --root=chemistry::advance_collapse_gridwide_kernel \
+  --output=/tmp/chemistry.loom reproducer.cpp
+
 for root in prepare_grid_timestep_kernel advance_collapse_gridwide_kernel; do
   loom-compile /tmp/chemistry.loom --root=chemistry.$root \
     --config=chemistry.$root.workgroup_count.x=1 \
@@ -198,97 +72,28 @@ for root in prepare_grid_timestep_kernel advance_collapse_gridwide_kernel; do
 done
 ```
 
-Earlier resource-stall builds could fail after extensive VGPR spilling
-with `BACKEND/005 spill-traffic-register-exhausted`, or exhaust the original
-eight-round spill-materialization limit. The
-`repro/amdgpu-sgpr-spill-traffic` branch contains a standalone Low-IR
-reduction of that allocation shape at
-`loom/src/loom/target/arch/amdgpu/test/source_low/low_sgpr_spill_traffic_pressure_gfx942.loom-test`.
-It keeps the scalar address-add/concat sequence from a lowered scratch load
-and places 51 live SGPR pairs around it. The case is XFAIL because allocation
-reports `BACKEND/005` with `spill-traffic-register-exhausted`; a 50-pair
-control passes within the 102-SGPR budget. Run it with `loom-check` on that
-branch; it tests the allocator directly, not the full chemistry pipeline.
+The example launches up to 128 cells. For other sizes, bind the x workgroup count
+to `ceil(num_cells / 128)`. Each cell requires a disjoint, correctly aligned
+`CellRecord` (216 bytes under LP64); solver work arrays are private to each lane.
+The caller must preserve prepare, synchronize, copy candidates, host minimum,
+advance, and synchronize ordering, including atomic failure publication.
 
-The two atomic helpers remain force-inlined. A separately compiled integrator
-under an experimental direct-call policy still needs target-specific control
-flow, call emission, and ABI support before it can relieve this kernel's
-inlining pressure. The emitted HSACO files have not been run on an AMD GPU;
-device numerical behavior and performance remain unverified.
+## Compare HIP and Loom on a GPU
 
-## Pinned HIP gfx942 code object
-
-[`reference-gfx942-device.hsaco`](reference-gfx942-device.hsaco) contains the
-HIP prepare and advance kernels from `reference.cpp` (SHA256
-`6c7ca23933b211980e831e8d2bfc4328245ab0e3c75f6b07a5e0ed40307843d0`).
-It was compiled on 2026-09-25 with TheRock ROCm 10.0.0 `hipcc`, using
-`--offload-arch=gfx942 -std=c++20 -O3 -ffp-contract=off
--DPRIMORDIAL_ROS2S_ENABLE_HIP=1 -DPRIMORDIAL_ROS2S_NO_MAIN=1 --genco`, then
-extracted from the `hipv4-amdgcn-amd-amdhsa--gfx942` offload bundle. Its
-SHA256 is `ad2e65d465a63c1703105b48b11835a995164b890558ea3edaabe1d4d2734a13`.
-
-## ROCm VM comparison
-
-On a Hot Aisle gfx942/MI300X VM with ROCm installed at `/opt/rocm` and CMake,
-Ninja, Python 3, and a C++ build toolchain available, run from this repository
-checkout:
+From a repository checkout on a gfx942 ROCm machine:
 
 ```sh
-experimental/loom-chemistry/run_rocm_comparison.sh \
-  --cells 128 --steps 1 --warmup 1 --repeats 5
+./run_rocm_comparison.sh --cells 128 --steps 1000
 ```
 
-The script configures and builds `loom-import-cxx` and `loom-compile` when they
-are absent, checks generated-source consistency, imports both
-kernel roots, compiles separate gfx942 HSACO files with workgroup counts
-matching `--cells`, and compiles the pinned
-`reference.cpp` HIP kernels with `hipcc`. It writes all artifacts and compiler
-logs under `build/loom-chemistry-rocm`. Set `LOOM_BUILD_DIR`, `LOOM_IMPORT_CXX`,
-`LOOM_COMPILE`, `ROCM_PATH`, `HIPCC`, or `CHEM_WORK_DIR` to override defaults.
-`CHEM_BUILD_JOBS` controls Loom tool build parallelism. Keep enough free memory
-and disk space for the large advance-kernel compile.
+The script checks generated sources, imports and compiles both Loom roots,
+builds the original HIP kernels with the comparison harness, and runs numerical
+and timing comparisons. Set `ROCM_PATH` or `HIPCC` for ROCm, and `LOOM_BUILD_DIR`
+or `LOOM_IMPORT_CXX` and `LOOM_COMPILE` for checkout-local Loom tools. Outputs
+default to `build/loom-chemistry-rocm` at the repository root; override with
+`CHEM_WORK_DIR`. If Loom tools are missing, the script configures and builds them.
 
-The executable requires a visible gfx942 device. Use `HIP_VISIBLE_DEVICES` to
-select one if the VM exposes multiple GPUs. It initializes the same cells for
-both layouts, runs the original prepare/host minimum/advance sequence, and
-compares each prepare and advance result. Floating fields use configurable
-`--rtol` (default `2e-4`). Dimensionless abundances use `--abundance-atol`
-(default `1e-14`) to accommodate roundoff near zero; other floating fields use
-`--atol` (default `1e-40`). Integer counters and status values must match
-exactly. On any mismatch it exits nonzero without reporting performance. `--steps 25` includes the first perturbation event.
-
-The Loom module-launch path marshals the `perturb` flag as a 32-bit zero or
-one, matching its code-object argument metadata. Passing a C++ `bool` pointer
-would supply only one byte and can cause the step-20 perturbation to be skipped.
-
-For timing, it resets each backend to the same initial state before every
-sample, alternates backend order, and reports median HIP-event device time for
-each kernel separately. It also reports median wall time for one complete
-prepare/host-minimum/advance step, including synchronization and candidate
-copies. Allocation, initial-state reset, and compilation are excluded from all
-timings. The benchmark uses step-zero inputs and the
-original kernel's first grid timestep for both advance launches; increase
-`--cells` to measure larger grids. Results are local to the VM and ROCm stack.
-
-`shared_failure_branch_gfx942.loom-test` is a standalone reduction of the
-prepare-kernel branch failure. Run it with `loom-check` to verify both expected
-`TARGET/034` diagnostics. Its two lane-dependent checks read separate i32
-elements and branch to one store block; it contains no f64 operation or atomic.
-The shared block has two incoming CFG edges. AMDGPU's masked-region fallback
-requires the true entry to have the current guard as its unique external
-predecessor, so neither conditional can use that plan. Giving the two edges
-separate copies of the store block removes these branch-planner diagnostics in
-the isolated source-to-low run. That experiment does not qualify a full kernel
-code object or establish a preferred compiler transformation.
-
-`check_import.py` checks that both roots import and verify with cleanup enabled,
-that the four transcendental operations retain f64 types, and that real i32
-atomics retain relaxed ordering and device scope. Public entry names are
-`@chemistry.prepare_grid_timestep_kernel` and
-`@chemistry.advance_collapse_gridwide_kernel`.
-
-The typed-record rewrite passed generation consistency, native differential
-tests under AddressSanitizer/UBSan on macOS arm64 with Apple Clang 21.0.0, and
-both kernel-root imports using a fresh tool built from this checkout. The
-four-cell, 1,000-step run passed 235,705 exact field comparisons with contraction
-disabled. These native and frontend results do not establish device correctness.
+`f64_math.h` supplies exp/log/cbrt recipes for the Loom device path; native
+validation uses system math. Import checks and code-object emission alone do
+not validate those recipes against HIP device math; use the GPU comparison for
+that evidence.
