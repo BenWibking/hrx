@@ -31,7 +31,7 @@ from loom.target.contracts.emits import (
     ResultTypeBinding,
 )
 from loom.target.contracts.fragments import ContractFragment
-from loom.target.contracts.guards import Guard, GuardKind
+from loom.target.contracts.guards import Guard, GuardKind, is_source_attr_guard_kind
 from loom.target.contracts.immediates import (
     AttrProject,
     AttrProjectKind,
@@ -77,6 +77,7 @@ from loom.target.contracts.lower_rule_diagnostics import (
     _i64_array_element_range_diagnostic,
     _i64_array_elements_range_diagnostic,
     _i64_attr_range_diagnostic,
+    _i64_attrs_sum_diagnostic,
     _instance_flags_diagnostic,
     _integer_range_diagnostic,
     _integer_range_relation_diagnostic,
@@ -614,6 +615,138 @@ class _LowerRuleSetCompiler:
         for guard in _order_operand_segment_guards(source_op, guards):
             self._append_guard(source_op, guard, type_patterns_by_field)
 
+    def _append_source_attr_guard(self, source_op: Op, guard: Guard) -> None:
+        attr_index = _source_attr_index(source_op, guard.field)
+        if guard.kind == GuardKind.ENUM_ATTR_EQUALS:
+            attr = source_op.attr(guard.field)
+            if (
+                attr is None
+                or attr.attr_type != ATTR_TYPE_ENUM
+                or attr.enum_def is None
+            ):
+                raise ValueError(
+                    f"{source_op.name}: enum guard field '{guard.field}' "
+                    "must name an enum attr"
+                )
+            enum_keyword = guard.enum_keyword
+            if enum_keyword is None:
+                raise ValueError(f"{source_op.name}: enum guard needs a keyword")
+            enum_value = next(
+                enum_case.value
+                for enum_case in attr.enum_def.cases
+                if enum_case.keyword == enum_keyword
+            )
+            self._guards.append(
+                LowerGuard(
+                    kind=guard.kind,
+                    attr_index=attr_index,
+                    diagnostic_index=self._append_diagnostic_ref(
+                        source_op,
+                        _guard_diagnostic(
+                            guard,
+                            _enum_attr_diagnostic(guard.field, enum_keyword),
+                        ),
+                    ),
+                    u64=enum_value,
+                )
+            )
+            return
+        if guard.kind == GuardKind.ENUM_ATTR_IN:
+            attr = source_op.attrs[attr_index]
+            assert attr.attr_type == ATTR_TYPE_ENUM
+            assert attr.enum_def is not None
+            enum_cases = {
+                enum_case.keyword: enum_case for enum_case in attr.enum_def.cases
+            }
+            enum_mask = 0
+            for enum_keyword in guard.enum_keywords:
+                enum_value = enum_cases[enum_keyword].value
+                if not 0 <= enum_value < 64:
+                    raise ValueError(
+                        f"{source_op.name}: enum guard field '{guard.field}' "
+                        f"case '{enum_keyword}' value {enum_value} does not fit "
+                        "the generated u64 set"
+                    )
+                enum_mask |= 1 << enum_value
+            self._guards.append(
+                LowerGuard(
+                    kind=guard.kind,
+                    attr_index=attr_index,
+                    diagnostic_index=self._append_diagnostic_ref(
+                        source_op,
+                        _guard_diagnostic(
+                            guard,
+                            _enum_attr_set_diagnostic(
+                                guard.field,
+                                guard.enum_keywords,
+                            ),
+                        ),
+                    ),
+                    u64=enum_mask,
+                )
+            )
+            return
+        if guard.kind == GuardKind.ATTR_KIND:
+            assert guard.attr_type is not None
+            self._guards.append(
+                LowerGuard(
+                    kind=guard.kind,
+                    attr_index=attr_index,
+                    diagnostic_index=self._append_diagnostic_ref(
+                        source_op,
+                        _guard_diagnostic(
+                            guard,
+                            _attr_diagnostic(guard.field, guard.attr_type),
+                        ),
+                    ),
+                    attr_kind=guard.attr_type,
+                )
+            )
+            return
+        if guard.kind == GuardKind.I64_RANGE:
+            assert guard.minimum is not None and guard.maximum is not None
+            self._guards.append(
+                LowerGuard(
+                    kind=guard.kind,
+                    attr_index=attr_index,
+                    diagnostic_index=self._append_diagnostic_ref(
+                        source_op,
+                        _guard_diagnostic(
+                            guard,
+                            _i64_attr_range_diagnostic(
+                                guard.field,
+                                guard.minimum,
+                                guard.maximum,
+                            ),
+                        ),
+                    ),
+                    minimum_i64=guard.minimum,
+                    maximum_i64=guard.maximum,
+                )
+            )
+            return
+        assert guard.kind == GuardKind.I64_ATTRS_SUM_EQUALS
+        assert guard.other_field is not None and guard.i64_value is not None
+        self._guards.append(
+            LowerGuard(
+                kind=guard.kind,
+                attr_index=attr_index,
+                other_attr_index=_source_attr_index(source_op, guard.other_field),
+                diagnostic_index=self._append_diagnostic_ref(
+                    source_op,
+                    _guard_diagnostic(
+                        guard,
+                        _i64_attrs_sum_diagnostic(
+                            guard.field,
+                            guard.other_field,
+                            guard.i64_value,
+                        ),
+                    ),
+                ),
+                literal_i64=guard.i64_value,
+            )
+        )
+
     def _append_guard(
         self,
         source_op: Op,
@@ -653,120 +786,8 @@ class _LowerRuleSetCompiler:
             )
             return
 
-        if guard.kind == GuardKind.ENUM_ATTR_EQUALS:
-            attr_index = _source_attr_index(source_op, guard.field)
-            attr = source_op.attr(guard.field)
-            if (
-                attr is None
-                or attr.attr_type != ATTR_TYPE_ENUM
-                or attr.enum_def is None
-            ):
-                raise ValueError(
-                    f"{source_op.name}: enum guard field '{guard.field}' "
-                    "must name an enum attr"
-                )
-            enum_keyword = guard.enum_keyword
-            if enum_keyword is None:
-                raise ValueError(f"{source_op.name}: enum guard needs a keyword")
-            enum_value = next(
-                enum_case.value
-                for enum_case in attr.enum_def.cases
-                if enum_case.keyword == enum_keyword
-            )
-            self._guards.append(
-                LowerGuard(
-                    kind=guard.kind,
-                    attr_index=attr_index,
-                    diagnostic_index=self._append_diagnostic_ref(
-                        source_op,
-                        _guard_diagnostic(
-                            guard,
-                            _enum_attr_diagnostic(guard.field, enum_keyword),
-                        ),
-                    ),
-                    u64=enum_value,
-                )
-            )
-            return
-
-        if guard.kind == GuardKind.ENUM_ATTR_IN:
-            attr_index = _source_attr_index(source_op, guard.field)
-            attr = source_op.attrs[attr_index]
-            assert attr.attr_type == ATTR_TYPE_ENUM
-            assert attr.enum_def is not None
-            enum_cases = {
-                enum_case.keyword: enum_case for enum_case in attr.enum_def.cases
-            }
-            enum_mask = 0
-            for enum_keyword in guard.enum_keywords:
-                enum_value = enum_cases[enum_keyword].value
-                if not 0 <= enum_value < 64:
-                    raise ValueError(
-                        f"{source_op.name}: enum guard field '{guard.field}' "
-                        f"case '{enum_keyword}' value {enum_value} does not fit "
-                        "the generated u64 set"
-                    )
-                enum_mask |= 1 << enum_value
-            self._guards.append(
-                LowerGuard(
-                    kind=guard.kind,
-                    attr_index=attr_index,
-                    diagnostic_index=self._append_diagnostic_ref(
-                        source_op,
-                        _guard_diagnostic(
-                            guard,
-                            _enum_attr_set_diagnostic(
-                                guard.field,
-                                guard.enum_keywords,
-                            ),
-                        ),
-                    ),
-                    u64=enum_mask,
-                )
-            )
-            return
-
-        if guard.kind == GuardKind.ATTR_KIND:
-            if guard.attr_type is None:
-                raise ValueError(f"{source_op.name}: attr_kind guard needs a kind")
-            self._guards.append(
-                LowerGuard(
-                    kind=guard.kind,
-                    attr_index=_source_attr_index(source_op, guard.field),
-                    diagnostic_index=self._append_diagnostic_ref(
-                        source_op,
-                        _guard_diagnostic(
-                            guard,
-                            _attr_diagnostic(guard.field, guard.attr_type),
-                        ),
-                    ),
-                    attr_kind=guard.attr_type,
-                )
-            )
-            return
-
-        if guard.kind == GuardKind.I64_RANGE:
-            if guard.minimum is None or guard.maximum is None:
-                raise ValueError(f"{source_op.name}: i64_range guard needs bounds")
-            self._guards.append(
-                LowerGuard(
-                    kind=guard.kind,
-                    attr_index=_source_attr_index(source_op, guard.field),
-                    diagnostic_index=self._append_diagnostic_ref(
-                        source_op,
-                        _guard_diagnostic(
-                            guard,
-                            _i64_attr_range_diagnostic(
-                                guard.field,
-                                guard.minimum,
-                                guard.maximum,
-                            ),
-                        ),
-                    ),
-                    minimum_i64=guard.minimum,
-                    maximum_i64=guard.maximum,
-                )
-            )
+        if is_source_attr_guard_kind(guard.kind):
+            self._append_source_attr_guard(source_op, guard)
             return
 
         if guard.kind == GuardKind.TARGET_SUBGROUP_SIZE_RANGE:

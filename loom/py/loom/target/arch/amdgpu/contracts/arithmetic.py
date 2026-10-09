@@ -1499,19 +1499,18 @@ def _vector_bitfield_extractu_shift_literal_mask_rule() -> DescriptorRule:
     )
 
 
-def _vector_bitfield_extracts_top_aligned_rule(width: int) -> DescriptorRule:
-    descriptor = _descriptor("amdgpu.v_ashrrev_i32.src0_inline")
+def _vector_bitfield_extract_top_aligned_rule(
+    source_op: Op,
+    descriptor_key: str,
+) -> DescriptorRule:
+    descriptor = _descriptor(descriptor_key)
     return DescriptorRule(
-        source_op=vector.vector_bitfield_extracts,
+        source_op=source_op,
         descriptor=descriptor,
         guards=(
             *_typed_guards(("source", "result"), _VEC_I32_STATIC),
-            *_bitfield_attr_guards(
-                offset_min=32 - width,
-                offset_max=32 - width,
-                width_min=width,
-                width_max=width,
-            ),
+            Guard.i64_attrs_sum_equals("offset", "width", 32),
+            Guard.i64_range("offset", 1, 31),
             Guard.descriptor_available(descriptor),
         ),
         emit=(
@@ -1519,7 +1518,7 @@ def _vector_bitfield_extracts_top_aligned_rule(width: int) -> DescriptorRule:
                 descriptor=descriptor,
                 operands={"value": ValueRef.operand("source")},
                 results={"dst": ValueRef.result("result")},
-                immediates={"imm32": 32 - width},
+                immediates={"imm32": AttrProject.direct("offset")},
                 form=DescriptorEmitForm.PER_LANE,
             ),
         ),
@@ -1766,6 +1765,10 @@ def _vector_bitfield_rules() -> tuple[ContractCase, ...]:
             for width in _BITFIELD_INLINE_MASK_WIDTHS
         ),
         _vector_bitfield_extractu_offset0_literal_rule(),
+        _vector_bitfield_extract_top_aligned_rule(
+            vector.vector_bitfield_extractu,
+            "amdgpu.v_lshrrev_b32.src0_inline",
+        ),
         _vector_bitfield_extract_bfe_rule(
             vector.vector_bitfield_extractu,
             "amdgpu.v_bfe_u32.offset_width_inline",
@@ -1776,7 +1779,10 @@ def _vector_bitfield_rules() -> tuple[ContractCase, ...]:
         ),
         _vector_bitfield_extractu_shift_literal_mask_rule(),
         _vector_bitfield_extract_alias_rule(vector.vector_bitfield_extracts),
-        *(_vector_bitfield_extracts_top_aligned_rule(width) for width in range(1, 32)),
+        _vector_bitfield_extract_top_aligned_rule(
+            vector.vector_bitfield_extracts,
+            "amdgpu.v_ashrrev_i32.src0_inline",
+        ),
         _vector_bitfield_extract_bfe_rule(
             vector.vector_bitfield_extracts,
             "amdgpu.v_bfe_i32.offset_width_inline",

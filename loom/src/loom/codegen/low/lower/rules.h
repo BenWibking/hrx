@@ -801,6 +801,8 @@ typedef enum loom_low_lower_guard_kind_e {
   // Source value facts must be an exact signed floating-point power of two
   // whose mathematical exponent is in the inclusive payload i64 range.
   LOOM_LOW_LOWER_GUARD_VALUE_EXACT_POWER_OF_TWO_FLOAT = 39,
+  // Two source i64 attributes must sum to payload.i64 without signed overflow.
+  LOOM_LOW_LOWER_GUARD_ATTR_I64_SUM_EQ = 40,
   // Maximum guard kind value plus one.
   LOOM_LOW_LOWER_GUARD_COUNT_,
 } loom_low_lower_guard_kind_t;
@@ -817,6 +819,8 @@ typedef union loom_low_lower_guard_payload_t {
   uint64_t u64;
   // Signed bias applied before testing an exact power of two.
   int64_t addend;
+  // Required signed integer value.
+  int64_t i64;
   // Inclusive signed range payload.
   struct {
     // Inclusive lower bound.
@@ -863,8 +867,13 @@ typedef struct loom_low_lower_guard_t {
     struct {
       // Source attribute or operand-segment ordinal.
       uint16_t attr_index;
-      // Source i64-array element ordinal used by element-range guards.
-      uint16_t element_index;
+      // Kind-selected second attribute or array-element ordinal.
+      union {
+        // Second source attribute ordinal used by pairwise attribute guards.
+        uint16_t other_attr_index;
+        // Source i64-array element ordinal used by element-range guards.
+        uint16_t element_index;
+      };
       // Reserved storage available to future attribute guards.
       uint16_t reserved;
     } attribute;

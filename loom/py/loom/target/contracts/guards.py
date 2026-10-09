@@ -68,6 +68,7 @@ class GuardKind(Enum):
     ENUM_ATTR_EQUALS = "enum_attr_equals"
     ENUM_ATTR_IN = "enum_attr_in"
     I64_RANGE = "i64_range"
+    I64_ATTRS_SUM_EQUALS = "i64_attrs_sum_equals"
     DESCRIPTOR_AVAILABLE = "descriptor_available"
     VALUE_MATERIALIZABLE = "value_materializable"
     LOW_VALUE_REGISTER_CLASS = "low_value_register_class"
@@ -110,6 +111,18 @@ _LOW_VALUE_GUARD_KINDS = (
     GuardKind.VALUE_STATIC_DIM0_MULTIPLE,
     GuardKind.LOW_VALUE_REGISTER_UNIT_COUNT_EQ,
 )
+
+_SOURCE_ATTR_GUARD_KINDS = (
+    GuardKind.ATTR_KIND,
+    GuardKind.ENUM_ATTR_EQUALS,
+    GuardKind.ENUM_ATTR_IN,
+    GuardKind.I64_RANGE,
+    GuardKind.I64_ATTRS_SUM_EQUALS,
+)
+
+
+def is_source_attr_guard_kind(kind: GuardKind) -> bool:
+    return kind in _SOURCE_ATTR_GUARD_KINDS
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +174,8 @@ class Guard:
     maximum: int | None = None
     # Signed bias applied before the exact-power-of-two predicate.
     addend: int = 0
+    # Exact signed payload carried by a kind-specific guard.
+    i64_value: int | None = None
     f64_value: float | None = None
     numeric_format_c_expression: str | None = None
     storage_operand_schema: EncodingOperandSummaryDef | None = None
@@ -314,6 +329,23 @@ class Guard:
             field=field,
             minimum=minimum,
             maximum=maximum,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
+    def i64_attrs_sum_equals(
+        cls,
+        field: str,
+        other_field: str,
+        value: int,
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        return cls(
+            kind=GuardKind.I64_ATTRS_SUM_EQUALS,
+            field=field,
+            other_field=other_field,
+            i64_value=value,
             diagnostic=diagnostic,
         )
 
@@ -827,6 +859,13 @@ class Guard:
             raise ValueError("power-of-two addend must fit in i64")
         if self.addend and self.kind != GuardKind.VALUE_EXACT_POWER_OF_TWO_I64:
             raise ValueError(f"{self.kind.value} guard cannot carry an addend")
+        if self.i64_value is not None and not -(2**63) <= self.i64_value < 2**63:
+            raise ValueError(f"{self.kind.value} i64 value must fit in i64")
+        if self.kind == GuardKind.I64_ATTRS_SUM_EQUALS:
+            if self.i64_value is None:
+                raise ValueError(f"{self.kind.value} guard needs an i64 value")
+        elif self.i64_value is not None:
+            raise ValueError(f"{self.kind.value} guard cannot carry an i64 value")
         if not self.field:
             raise ValueError(f"{self.kind.value} guard requires a field")
         if self.other_field is not None and not self.other_field:
@@ -916,48 +955,8 @@ class Guard:
             if self.type_pattern is None:
                 raise ValueError(f"{source_op.name}: {subject} needs a type pattern")
             return
-        if self.kind == GuardKind.ATTR_KIND:
-            _require_attr(source_op, self.field, subject)
-            if self.attr_type is None:
-                raise ValueError(f"{source_op.name}: {subject} needs an attr type")
-            return
-        if self.kind in (GuardKind.ENUM_ATTR_EQUALS, GuardKind.ENUM_ATTR_IN):
-            attr = _require_attr(source_op, self.field, subject)
-            if attr.attr_type != ATTR_TYPE_ENUM:
-                raise ValueError(
-                    f"{source_op.name}: {subject} field '{self.field}' "
-                    "must be an enum attr"
-                )
-            enum_def = attr.enum_def
-            if enum_def is None:
-                raise ValueError(
-                    f"{source_op.name}: {subject} field '{self.field}' "
-                    "has no enum definition"
-                )
-            keywords = (
-                (self.enum_keyword,)
-                if self.kind == GuardKind.ENUM_ATTR_EQUALS
-                else self.enum_keywords
-            )
-            if keywords == (None,):
-                raise ValueError(f"{source_op.name}: {subject} needs an enum keyword")
-            for keyword in keywords:
-                assert keyword is not None
-                if keyword not in enum_def.keywords:
-                    raise ValueError(
-                        f"{source_op.name}: {subject} field '{self.field}' "
-                        f"has no enum case '{keyword}'"
-                    )
-            return
-        if self.kind == GuardKind.I64_RANGE:
-            attr = _require_attr(source_op, self.field, subject)
-            if attr.attr_type not in (ATTR_TYPE_I64, ATTR_TYPE_ANY):
-                raise ValueError(
-                    f"{source_op.name}: {subject} field '{self.field}' "
-                    "must be an i64 or any attr"
-                )
-            if self.minimum is None or self.maximum is None:
-                raise ValueError(f"{source_op.name}: {subject} needs minimum/maximum")
+        if is_source_attr_guard_kind(self.kind):
+            _validate_source_attr_guard(self, source_op, subject)
             return
         if self.kind == GuardKind.DESCRIPTOR_AVAILABLE:
             if self.descriptor is None:
@@ -1058,6 +1057,62 @@ class Guard:
                 )
             return
         _validate_i64_array_guard(self, source_op, subject)
+
+
+def _validate_source_attr_guard(
+    guard: Guard,
+    source_op: Op,
+    subject: str,
+) -> None:
+    attr = _require_attr(source_op, guard.field, subject)
+    if guard.kind == GuardKind.ATTR_KIND:
+        if guard.attr_type is None:
+            raise ValueError(f"{source_op.name}: {subject} needs an attr type")
+        return
+    if guard.kind in (GuardKind.ENUM_ATTR_EQUALS, GuardKind.ENUM_ATTR_IN):
+        if attr.attr_type != ATTR_TYPE_ENUM:
+            raise ValueError(
+                f"{source_op.name}: {subject} field '{guard.field}' "
+                "must be an enum attr"
+            )
+        enum_def = attr.enum_def
+        if enum_def is None:
+            raise ValueError(
+                f"{source_op.name}: {subject} field '{guard.field}' "
+                "has no enum definition"
+            )
+        keywords = (
+            (guard.enum_keyword,)
+            if guard.kind == GuardKind.ENUM_ATTR_EQUALS
+            else guard.enum_keywords
+        )
+        if keywords == (None,):
+            raise ValueError(f"{source_op.name}: {subject} needs an enum keyword")
+        for keyword in keywords:
+            assert keyword is not None
+            if keyword not in enum_def.keywords:
+                raise ValueError(
+                    f"{source_op.name}: {subject} field '{guard.field}' "
+                    f"has no enum case '{keyword}'"
+                )
+        return
+    if attr.attr_type not in (ATTR_TYPE_I64, ATTR_TYPE_ANY):
+        raise ValueError(
+            f"{source_op.name}: {subject} field '{guard.field}' "
+            "must be an i64 or any attr"
+        )
+    if guard.kind == GuardKind.I64_RANGE:
+        if guard.minimum is None or guard.maximum is None:
+            raise ValueError(f"{source_op.name}: {subject} needs minimum/maximum")
+        return
+    if guard.other_field is None:
+        raise ValueError(f"{source_op.name}: {subject} needs another field")
+    other_attr = _require_attr(source_op, guard.other_field, subject)
+    if other_attr.attr_type not in (ATTR_TYPE_I64, ATTR_TYPE_ANY):
+        raise ValueError(
+            f"{source_op.name}: {subject} field '{guard.other_field}' "
+            "must be an i64 or any attr"
+        )
 
 
 def _validate_low_value_guard(
