@@ -1413,19 +1413,10 @@ iree_status_t loom_low_lower_plan_function(
       options->storage_access ? options->storage_access : &storage_access;
   iree_status_t status = loom_low_lower_function_plan_build(&context);
   loom_local_value_domain_t* domain = &plan->frame.value_domain;
-  if (iree_status_is_ok(status) && out_result->error_count == 0 &&
-      domain->value_count != 0) {
+  if (iree_status_is_ok(status) && out_result->error_count == 0) {
     // Construction can grow the domain in scratch. Retain only its completed
     // ordinal sequence, preserving every assignment without another IR walk.
-    loom_value_id_t* value_ids = NULL;
-    status = iree_arena_allocate_array(arena, domain->value_count,
-                                       sizeof(*value_ids), (void**)&value_ids);
-    if (iree_status_is_ok(status)) {
-      memcpy(value_ids, domain->value_ids,
-             domain->value_count * sizeof(*value_ids));
-      domain->value_ids = value_ids;
-      domain->value_capacity = domain->value_count;
-    }
+    status = loom_local_value_domain_relocate(domain, arena);
   }
   loom_local_value_domain_release(domain);
   iree_arena_deinitialize(&context.analysis_arena);
