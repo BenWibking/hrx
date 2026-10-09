@@ -33,9 +33,10 @@ typedef struct loom_storage_interference_t loom_storage_interference_t;
 // scratch borrow without changing its numbering or the caller's value facts.
 //
 // Reference transport and classified uses come from the canonical access graph.
-// This analysis adds allocation memberships and lifetime proofs. Consumers
-// query its indexed result instead of reconstructing aliases or access
-// footprints. Calls expose only roots reachable through their reference
+// This analysis adds allocation memberships and lifetime proofs. Functions
+// without local allocation roots require no access graph or per-value tables.
+// Consumers query its indexed result instead of reconstructing aliases or
+// access footprints. Calls expose only roots reachable through their reference
 // operands. Channel bindings expose their backing storage until realization
 // makes borrowed accesses and their lifetimes explicit. Unmodeled non-call
 // memory effects remain conservative for every root.

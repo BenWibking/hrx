@@ -725,6 +725,28 @@ TEST_F(LowLowerSourcePlanTest,
   iree_arena_deinitialize(&plan_arena);
 }
 
+TEST_F(LowLowerSourcePlanTest, SkipsAccessGraphsWithoutLocalStorage) {
+  bool queried = false;
+  policy_.entry_setup = {
+      +[](void* user_data, loom_low_lower_context_t* context) {
+        *static_cast<bool*>(user_data) = true;
+        EXPECT_EQ(context->storage_access->state, nullptr);
+        loom_storage_interference_t* interference = nullptr;
+        IREE_RETURN_IF_ERROR(loom_low_lower_context_storage_interference(
+            context, &interference));
+        EXPECT_NE(interference, nullptr);
+        EXPECT_EQ(context->storage_access->state, nullptr);
+        return iree_ok_status();
+      },
+      +[](void*, loom_low_lower_context_t*) { return iree_ok_status(); },
+      &queried,
+  };
+  IREE_ASSERT_OK(
+      loom_low_lower_function(module_, function_, &options_, &result_));
+  EXPECT_TRUE(queried);
+  EXPECT_EQ(result_.error_count, 0u);
+}
+
 TEST_F(LowLowerSourcePlanTest, PlansEntryResourcesAfterStorageDemand) {
   policy_.entry_setup = {PlanEntry, EmitEntry, &observer_};
   IREE_ASSERT_OK(

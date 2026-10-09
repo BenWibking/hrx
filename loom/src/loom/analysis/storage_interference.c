@@ -657,6 +657,24 @@ static iree_status_t loom_storage_interference_initialize_values(
       const loom_op_t* defining_op = loom_value_def_op(value);
       if (defining_op && loom_buffer_alloca_isa(defining_op) &&
           loom_buffer_alloca_result(defining_op) == value_id) {
+        if (analysis->entries == NULL) {
+          const iree_host_size_t value_count =
+              analysis->value_domain->value_count;
+          IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+              analysis->arena, value_count, sizeof(*analysis->entries),
+              (void**)&analysis->entries));
+          memset(analysis->entries, 0,
+                 value_count * sizeof(*analysis->entries));
+          IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+              analysis->arena, value_count, sizeof(*analysis->edges),
+              (void**)&analysis->edges));
+          memset(analysis->edges, 0, value_count * sizeof(*analysis->edges));
+          IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+              analysis->arena, value_count, sizeof(*analysis->memberships),
+              (void**)&analysis->memberships));
+          memset(analysis->memberships, 0,
+                 value_count * sizeof(*analysis->memberships));
+        }
         analysis->entries[value_ordinal] = (loom_storage_interference_entry_t){
             .flags = LOOM_STORAGE_INTERFERENCE_ENTRY_ROOT |
                      LOOM_STORAGE_INTERFERENCE_ENTRY_COMPLETE,
@@ -669,7 +687,20 @@ static iree_status_t loom_storage_interference_initialize_values(
                 : LOOM_STORAGE_INTERFERENCE_ENTRY_SINGLE_INSTANCE;
       }
     }
+  }
+  if (analysis->entries == NULL) {
+    return iree_ok_status();
+  }
 
+  for (loom_value_ordinal_t value_ordinal = 0;
+       value_ordinal < analysis->value_domain->value_count; ++value_ordinal) {
+    if (iree_any_bit_set(analysis->entries[value_ordinal].flags,
+                         LOOM_STORAGE_INTERFERENCE_ENTRY_ROOT)) {
+      IREE_RETURN_IF_ERROR(loom_storage_interference_add_membership(
+          analysis, value_ordinal, value_ordinal));
+    }
+    const loom_value_id_t value_id =
+        analysis->value_domain->value_ids[value_ordinal];
     if (!loom_storage_interference_value_is_reference(analysis, value_id)) {
       continue;
     }
@@ -681,14 +712,6 @@ static iree_status_t loom_storage_interference_initialize_values(
     }
   }
 
-  for (loom_value_ordinal_t value_ordinal = 0;
-       value_ordinal < analysis->value_domain->value_count; ++value_ordinal) {
-    if (iree_any_bit_set(analysis->entries[value_ordinal].flags,
-                         LOOM_STORAGE_INTERFERENCE_ENTRY_ROOT)) {
-      IREE_RETURN_IF_ERROR(loom_storage_interference_add_membership(
-          analysis, value_ordinal, value_ordinal));
-    }
-  }
   return iree_ok_status();
 }
 
@@ -707,40 +730,30 @@ iree_status_t loom_storage_interference_analyze_function(
   IREE_ASSERT_ARGUMENT(out_analysis);
   *out_analysis = NULL;
 
-  const loom_storage_access_function_t* access = NULL;
-  IREE_RETURN_IF_ERROR(loom_storage_access_require_function(
-      access_scope, function, value_domain, &access));
   loom_storage_interference_t* analysis = NULL;
   IREE_RETURN_IF_ERROR(
       iree_arena_allocate(arena, sizeof(*analysis), (void**)&analysis));
   *analysis = (loom_storage_interference_t){
       .module = module,
       .fact_table = fact_table,
-      .has_unknown_memory_access = access->has_unknown_memory_access,
       .value_domain = value_domain,
       .arena = arena,
       .function = function,
   };
   loom_control_uniformity_info_initialize(module, fact_table, arena,
                                           &analysis->control_uniformity);
-  const iree_host_size_t value_count = value_domain->value_count;
-  if (value_count != 0) {
-    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(arena, value_count,
-                                                   sizeof(*analysis->entries),
-                                                   (void**)&analysis->entries));
-    memset(analysis->entries, 0, value_count * sizeof(*analysis->entries));
-    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(arena, value_count,
-                                                   sizeof(*analysis->edges),
-                                                   (void**)&analysis->edges));
-    memset(analysis->edges, 0, value_count * sizeof(*analysis->edges));
-    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-        arena, value_count, sizeof(*analysis->memberships),
-        (void**)&analysis->memberships));
-    memset(analysis->memberships, 0,
-           value_count * sizeof(*analysis->memberships));
-  }
 
   IREE_RETURN_IF_ERROR(loom_storage_interference_initialize_values(analysis));
+  // With no local allocation roots there are no storage-instance or overlap
+  // proofs to construct, even when the function accesses external memory.
+  if (analysis->entries == NULL) {
+    *out_analysis = analysis;
+    return iree_ok_status();
+  }
+  const loom_storage_access_function_t* access = NULL;
+  IREE_RETURN_IF_ERROR(loom_storage_access_require_function(
+      access_scope, function, value_domain, &access));
+  analysis->has_unknown_memory_access = access->has_unknown_memory_access;
   for (const loom_storage_reference_t* reference = access->references;
        reference; reference = reference->next) {
     const loom_value_ordinal_t ordinal =
@@ -786,6 +799,9 @@ static const loom_storage_interference_entry_t*
 loom_storage_interference_lookup_root(
     const loom_storage_interference_t* analysis,
     loom_value_id_t root_value_id) {
+  if (analysis->entries == NULL) {
+    return NULL;
+  }
   const loom_value_ordinal_t root_ordinal = loom_local_value_domain_try_ordinal(
       analysis->value_domain, root_value_id);
   if (root_ordinal == LOOM_VALUE_ORDINAL_INVALID) {
