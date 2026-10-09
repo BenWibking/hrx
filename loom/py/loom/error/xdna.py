@@ -788,6 +788,56 @@ ERR_XDNA_051 = ErrorDef(
     params=(ErrorParam("requirement", ParamKind.STRING),),
 )
 
+# ERR_XDNA_053: An XDNA artifact root is not an artifact entry.
+ERR_XDNA_053 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=53,
+    severity=Severity.ERROR,
+    summary="XDNA artifact root is not an artifact entry.",
+    message=(
+        "XDNA artifact root '@{function_name}' uses representation "
+        "'{representation}'; expected 'amd.xdna.aie2p.array' or "
+        "'amd.xdna.aie2p.configuration'"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("representation", ParamKind.STRING),
+    ),
+    fix_hint="Select an AIE2P array or configuration root for XDNA emission.",
+)
+
+# ERR_XDNA_054: An XDNA artifact has no exact deployment profile.
+ERR_XDNA_054 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=54,
+    severity=Severity.ERROR,
+    summary="XDNA artifact has no exact deployment profile.",
+    message=(
+        "AIE2P artifact entry '@{function_name}' uses a generic target and no "
+        "artifact entry selects the exact device profile required for emission"
+    ),
+    params=(ErrorParam("function_name", ParamKind.STRING),),
+    fix_hint="Select one exact XDNA device profile for the artifact entry.",
+)
+
+# ERR_XDNA_055: XDNA artifact entries select different deployment profiles.
+ERR_XDNA_055 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=55,
+    severity=Severity.ERROR,
+    summary="XDNA artifact entries select different deployment profiles.",
+    message=(
+        "AIE2P artifact entry '@{function_name}' selects device profile "
+        "'{actual_profile}', but the artifact already uses '{expected_profile}'"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("actual_profile", ParamKind.STRING),
+        ErrorParam("expected_profile", ParamKind.STRING),
+    ),
+    fix_hint="Compile entries for different device profiles as separate artifacts.",
+)
+
 ALL_XDNA_ERRORS = (
     ERR_XDNA_001,
     ERR_XDNA_005,
@@ -833,4 +883,7 @@ ALL_XDNA_ERRORS = (
     ERR_XDNA_049,
     ERR_XDNA_052,
     ERR_XDNA_051,
+    ERR_XDNA_053,
+    ERR_XDNA_054,
+    ERR_XDNA_055,
 )
