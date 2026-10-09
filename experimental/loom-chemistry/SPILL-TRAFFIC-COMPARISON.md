@@ -1,5 +1,9 @@
 # Loom versus HIP scratch traffic on gfx942
 
+> Historical: these counts are from the 2026-09-24 global-scratch build. Current
+> counts, a HIP-rewritten control and GPU replay tooling are in the
+> [advance spill reproducer](advance-spill-repro/README.md).
+
 Measured 2026-09-24 from the advance and prepare kernels in this directory. This
 is a static code-generation comparison; neither code object was executed on an
 AMD GPU for this analysis.

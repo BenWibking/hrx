@@ -173,13 +173,24 @@ global scratch argument and lowers static instruction count, but register
 pressure and private-segment use remain high. These counts do not establish
 runtime speed or numerical behavior on a GPU.
 
+The [advance spill reproducer](advance-spill-repro/README.md) has current
+static counts beside HIP and a HIP-rewritten control, with matched-input GPU
+replay tooling. At `383e88d8b6` (2026-10-08) the advance object has 318,454
+instructions, 8,314 spill diagnostics and 61,624 private bytes per lane.
+
+The kernels take their workgroup count as compile-time config, and
+`loom-compile` rejects the module with `CONFIG/INVALID` unless all three
+dimensions are bound. Use `ceil(cells / 128)` for x; this example is 128 cells:
+
 ```sh
-loom-compile /tmp/chemistry.loom --product=kernel \
-  --root=chemistry.prepare_grid_timestep_kernel --format=amdgpu-hsaco \
-  --target=amdgpu:gfx942 --output=/tmp/chemistry-prepare.hsaco
-loom-compile /tmp/chemistry.loom --product=kernel \
-  --root=chemistry.advance_collapse_gridwide_kernel --format=amdgpu-hsaco \
-  --target=amdgpu:gfx942 --output=/tmp/chemistry-advance.hsaco
+for root in prepare_grid_timestep_kernel advance_collapse_gridwide_kernel; do
+  loom-compile /tmp/chemistry.loom --root=chemistry.$root \
+    --config=chemistry.$root.workgroup_count.x=1 \
+    --config=chemistry.$root.workgroup_count.y=1 \
+    --config=chemistry.$root.workgroup_count.z=1 \
+    --format=amdgpu-hsaco --target=amdgpu:gfx942 \
+    --output=/tmp/chemistry-$root.hsaco
+done
 ```
 
 Earlier resource-stall builds could fail after extensive VGPR spilling
@@ -224,7 +235,8 @@ experimental/loom-chemistry/run_rocm_comparison.sh \
 
 The script configures and builds `loom-import-cxx` and `loom-compile` when they
 are absent, checks generated-source consistency, imports both
-kernel roots, compiles separate gfx942 HSACO files, and compiles the pinned
+kernel roots, compiles separate gfx942 HSACO files with workgroup counts
+matching `--cells`, and compiles the pinned
 `reference.cpp` HIP kernels with `hipcc`. It writes all artifacts and compiler
 logs under `build/loom-chemistry-rocm`. Set `LOOM_BUILD_DIR`, `LOOM_IMPORT_CXX`,
 `LOOM_COMPILE`, `ROCM_PATH`, `HIPCC`, or `CHEM_WORK_DIR` to override defaults.

@@ -47,8 +47,23 @@ echo "Importing chemistry into Loom IR..."
   --root=chemistry::prepare_grid_timestep_kernel \
   --root=chemistry::advance_collapse_gridwide_kernel \
   --output="$work/chemistry.loom" "$here/reproducer.cpp"
-echo "Compiling Loom prepare kernel for gfx942..."
-if ! "$compiler" "$work/chemistry.loom" --product=kernel \
+# The kernels take their workgroup count as compile-time config; match the
+# ceil(cells / 128) workgroups compare_rocm launches.
+cells=128
+args=("$@")
+for ((i = 0; i + 1 < ${#args[@]}; ++i)); do
+  [[ ${args[i]} == --cells ]] && cells=${args[i + 1]}
+done
+[[ $cells =~ ^[1-9][0-9]*$ ]] || { echo "--cells must be a positive integer" >&2; exit 2; }
+workgroups=$(((cells + 127) / 128))
+workgroup_config() {
+  echo "--config=chemistry.$1.workgroup_count.x=$workgroups" \
+    "--config=chemistry.$1.workgroup_count.y=1" \
+    "--config=chemistry.$1.workgroup_count.z=1"
+}
+echo "Compiling Loom prepare kernel for gfx942 ($workgroups workgroups)..."
+# shellcheck disable=SC2046
+if ! "$compiler" "$work/chemistry.loom" $(workgroup_config prepare_grid_timestep_kernel) \
   --root=chemistry.prepare_grid_timestep_kernel --format=amdgpu-hsaco \
   --target=amdgpu:gfx942 --output="$work/chemistry-prepare.hsaco" \
   2>"$work/prepare-compile.log"; then
@@ -56,7 +71,8 @@ if ! "$compiler" "$work/chemistry.loom" --product=kernel \
   exit 1
 fi
 echo "Compiling Loom advance kernel for gfx942 (this can take minutes)..."
-if ! "$compiler" "$work/chemistry.loom" --product=kernel \
+# shellcheck disable=SC2046
+if ! "$compiler" "$work/chemistry.loom" $(workgroup_config advance_collapse_gridwide_kernel) \
   --root=chemistry.advance_collapse_gridwide_kernel --format=amdgpu-hsaco \
   --target=amdgpu:gfx942 --output="$work/chemistry-advance.hsaco" \
   2>"$work/advance-compile.log"; then
