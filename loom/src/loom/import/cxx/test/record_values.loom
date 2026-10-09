@@ -4,6 +4,12 @@ kernel.decl @record_control() launch(%input: buffer, %output: buffer, %seed: i32
 
 kernel.decl @leaf_control() launch(%input: buffer, %output: buffer, %seed: i32, %count: i32)
 
+func.decl @record_pairs(%input: i32, %count: i32) -> (i32)
+
+func.decl @record_defaults(%input: i32) -> (i32)
+
+func.decl @record_sequencing(%input: i32, %choose: i32) -> (i32)
+
 global.rodata.def @record_seeds = align(4) bytes("0000000007000000ffffffff")
 
 global.rodata.def @record_counts = align(4) bytes("00000000010000000200000007000000")
@@ -40,6 +46,68 @@ func.def @record_control_config(%trial: index) -> (i32, i32) {
   %seed = view.load %seeds[%seed_index] : view<3xi32> -> i32
   %count = view.load %counts[%count_index] : view<4xi32> -> i32
   func.return %seed, %count : i32, i32
+}
+
+func.def @record_function_config(%trial: index) -> (i32, i32, i32) {
+  %bounded_trial = index.assume %trial [range(%trial, 0, 11)] : index
+  %choose_span = index.constant 3 : index
+  %seed, %count = func.call @record_control_config(%bounded_trial) : (index) -> (i32, i32)
+  %choose_index = index.rem %bounded_trial, %choose_span : index
+  %choose = index.cast %choose_index : index to i32
+  func.return %seed, %count, %choose : i32, i32, i32
+}
+
+func.def @record_function_observations(%seed: i32, %count: i32, %choose: i32, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %pair = func.call @record_pairs(%seed, %count) : (i32, i32) -> (i32)
+  %defaults = func.call @record_defaults(%seed) : (i32) -> (i32)
+  %sequence = func.call @record_sequencing(%seed, %choose) : (i32, i32) -> (i32)
+  %results = buffer.view %output[%origin] : buffer -> view<3xi32>
+  view.store %pair, %results[0] : i32, view<3xi32>
+  view.store %defaults, %results[1] : i32, view<3xi32>
+  view.store %sequence, %results[2] : i32, view<3xi32>
+  func.return
+}
+
+func.def @record_function_oracle(%seed: i32, %count: i32, %choose: i32, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %c0 = scalar.constant 0 : i32
+  %c1 = scalar.constant 1 : i32
+  %c2 = scalar.constant 2 : i32
+  %c3 = scalar.constant 3 : i32
+  %c5 = scalar.constant 5 : i32
+  %c9 = scalar.constant 9 : i32
+  %c12 = scalar.constant 12 : i32
+  %c21 = scalar.constant 21 : i32
+  %c30 = scalar.constant 30 : i32
+  %c44 = scalar.constant 44 : i32
+  %c60 = scalar.constant 60 : i32
+  %count_minus_one = scalar.subi %count, %c1 : i32
+  %count_product = scalar.muli %count, %count_minus_one : i32
+  %pair_increment = scalar.divui %count_product, %c2 : i32
+  %count_plus_one = scalar.addi %count, %c1 : i32
+  %half_up = scalar.divui %count_plus_one, %c2 : i32
+  %seed_times_nine = scalar.muli %seed, %c9 : i32
+  %half_up_times_three = scalar.muli %half_up, %c3 : i32
+  %pair_partial = scalar.addi %seed_times_nine, %pair_increment : i32
+  %pair_with_constant = scalar.addi %pair_partial, %c21 : i32
+  %pair = scalar.addi %pair_with_constant, %half_up_times_three : i32
+  %defaults = scalar.addi %seed, %c44 : i32
+  %chosen = scalar.cmpi ne, %choose, %c0 : i32
+  %sequence = scf.if %chosen -> (i32) {
+    %scaled = scalar.muli %seed, %c5 : i32
+    %result = scalar.addi %scaled, %c60 : i32
+    scf.yield %result : i32
+  } else {
+    %scaled = scalar.muli %seed, %c12 : i32
+    %result = scalar.addi %scaled, %c30 : i32
+    scf.yield %result : i32
+  }
+  %results = buffer.view %output[%origin] : buffer -> view<3xi32>
+  view.store %pair, %results[0] : i32, view<3xi32>
+  view.store %defaults, %results[1] : i32, view<3xi32>
+  view.store %sequence, %results[2] : i32, view<3xi32>
+  func.return
 }
 
 func.def @record_values_oracle(%input: buffer, %output: buffer, %seed: i32, %count: i32, %choose: i32) {
@@ -192,6 +260,17 @@ func.def @record_control_oracle(%input: buffer, %output: buffer, %seed: i32, %co
   view.store %original_cursor_value, %output_view[6] : i32, view<8xi32>
   view.store %seed, %output_view[7] : i32, view<8xi32>
   func.return
+}
+
+check.scenario @record_values_functions {
+  check.trial[12](%trial: index, %entropy: check.entropy) {
+    %seed, %count, %choose = check.generate<@record_function_config>(%trial) : (index) -> (i32, i32, i32)
+    %output = check.generate.fill value(-123) : tensor<3xi32>
+    check.compare<@record_function_observations, @record_function_oracle>(%seed, %count, %choose, %output) : (i32, i32, i32, tensor<3xi32>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<3xi32>
+    }
+  }
+  check.return
 }
 
 check.scenario @record_value_cases {

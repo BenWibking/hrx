@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-load("//loom/build_tools/bazel:build_defs.bzl", "loom_config_compatible_with", "loom_generated_file", "loom_generated_file_family")
+load("//loom/build_tools/bazel:build_defs.bzl", "loom_config_compatible_with", "loom_generated_file_family")
 load("//loom/build_tools/bazel:defs.bzl", "loom_test", "loom_test_module")
 load("//loom/build_tools/bazel:loom_check.bzl", "loom_check_test_suite")
 load("//loom/target/vm:execution_profiles.bzl", "VM_REFERENCE_PROFILE")
@@ -188,24 +188,25 @@ loom_check_test_suite(
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
 )
 
-# Generated host cases remain only while their source families migrate to
-# authored scenarios and independent Loom oracles.
-_GENERATED_HOST_SOURCES = [
-    "comparison_functions.cxx",
-    "constant_loops.cxx",
-    "integer_functions.cxx",
-    "record_values.cxx",
-    "schedule_values.cxx",
-    "structured_continue.cxx",
-]
-
 _AUTHORED_HOST_SOURCES = [
     "assumptions",
+    "comparison_functions",
+    "constant_loops",
     "enum_values",
     "increment_values",
+    "integer_functions",
+    "record_values",
+    "schedule_values",
     "shaped_intrinsics",
+    "structured_continue",
     "vector_initializers",
     "vector_values",
+]
+
+_AUTHORED_HOST_ONLY_SOURCES = [
+    "comparison_functions",
+    "integer_functions",
+    "schedule_values",
 ]
 
 _AUTHORED_HOST_VARIANTS = {
@@ -398,38 +399,22 @@ loom_test(
 )
 
 [
-    loom_generated_file(
-        name = source.removesuffix(".cxx") + "_cases_gen",
-        testonly = True,
-        args = [
-            "host",
-            "--source=$(location " + source + ")",
+    loom_test_module(
+        name = source + "_module",
+        srcs = [
+            source + ".cxx",
+            source + ".loom",
         ],
-        generator = "//loom/py/loom/gen/test:cxx_kernel_cases",
-        inputs = [source],
-        output = source.removesuffix(".cxx") + "_cases.cxx",
-        output_flag = "--output",
-        target_compatible_with = _HOST_COMPATIBILITY,
+        target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
     )
-    for source in _GENERATED_HOST_SOURCES
-]
-
-[
-    loom_test(
-        name = source.removesuffix(".cxx") + "_test",
-        srcs = [":" + source.removesuffix(".cxx") + "_cases.cxx"],
-        data = [source],
-        execution_profiles = [VM_REFERENCE_PROFILE],
-        target_compatible_with = _HOST_COMPATIBILITY,
-    )
-    for source in _GENERATED_HOST_SOURCES
+    for source in _AUTHORED_HOST_ONLY_SOURCES
 ]
 
 [
     loom_test(
         name = source + "_test",
         benchmark_smoke = False,
-        case = source + "_functions" if source not in _AUTHORED_HOST_VARIANTS else "",
+        case = (source if source.endswith("_functions") else source + "_functions") if source not in _AUTHORED_HOST_VARIANTS else "",
         execution_profiles = [VM_REFERENCE_PROFILE],
         module = ":" + source + "_module",
         target_compatible_with = _HOST_COMPATIBILITY,
@@ -536,26 +521,26 @@ loom_test_module(
 # Target packages select applicable modules and own their execution policy.
 _GENERATED_KERNEL_SOURCES = [
     "aiter_swiglu_f16",
-    "constant_loops",
     "control_flow",
     "early_returns",
     "flash_attention",
     "llama_rms_norm",
     "pointer_walk",
     "short_circuit",
-    "structured_continue",
     "vector_depth",
     "volatile_memory",
 ]
 
 _AUTHORED_KERNEL_SOURCES = [
     "assumptions",
+    "constant_loops",
     "enum_values",
     "increment_values",
     "integer_increment",
     "record_values",
     "scheduled_sum",
     "shaped_intrinsics",
+    "structured_continue",
     "symbol_exports",
     "typed_views",
     "vector_initializers",
@@ -619,9 +604,6 @@ _AUTHORED_KERNEL_SOURCES = [
 test_suite(
     name = "functions_test",
     tests = [":pointer_origins_test"] + [
-        ":" + source.removesuffix(".cxx") + "_test"
-        for source in _GENERATED_HOST_SOURCES
-    ] + [
         ":" + source + "_test"
         for source in _AUTHORED_HOST_SOURCES
     ],

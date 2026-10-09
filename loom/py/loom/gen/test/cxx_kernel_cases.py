@@ -4,19 +4,15 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""C++ checks and kernel inputs with independent numerical references."""
+"""C++ kernel inputs with independent numerical references."""
 
 import argparse
 import math
-import os
 import random
 import struct
 from pathlib import Path
 
 from loom.gen.test.kernel_fixture import Arrays, Case, rounded, signed_bits
-
-BYTE_INPUTS = [0, 127, 128, 254, 255, 511]
-WIDE_INPUTS = [0, 126, 254, 255, (1 << 32) - 1, 1 << 32, (1 << 63) - 1, 1 << 63, (1 << 64) - 1]
 
 
 def attention(arrays):
@@ -157,231 +153,6 @@ def early_returns(arrays):
     return "kernel.decl @early_returns() launch(%input: buffer, %output: buffer, %length: i32)\n\n" + "\n".join(cases)
 
 
-def function_cases(name, argument_widths, result_width, samples, *, argument_types=None):
-    """Emit source calls with the oracle's exact argument and expected bits."""
-    cases = []
-    for ordinal, (arguments, expected) in enumerate(samples):
-        # Negative enum inputs retain their numeric value before the enum cast.
-        # The positive literal remains representable even for INT64_MIN.
-        operands = [f"(-{-value - 1}LL - 1)" if value < 0 else f"0x{value % (1 << width):x}ULL" for value, width in zip(arguments, argument_widths, strict=True)]
-        if argument_types is not None:
-            operands = [f"static_cast<{kind}>({value})" for kind, value in zip(argument_types, operands, strict=True)]
-        operands = ", ".join(operands)
-        expected_bits = expected % (1 << result_width)
-        cases.append(
-            f"LOOM_CHECK_CASE({name}_{ordinal}) {{\n  const auto actual = {name}({operands});\n  loom::check::expect_equal(actual,\n      static_cast<decltype(actual)>(0x{expected_bits:x}ULL));\n}}"
-        )
-    return "\n\n".join(cases)
-
-
-def continue_references(count, choose):
-    indices = range(count)
-    selected = [index for index in indices if not index & choose]
-    post_selected = [index for index in range(1, count + 1) if not index & choose]
-    branch_total = sum(1 + (2 if index & choose else 8) for index in indices)
-    branch_total += sum((4 if index & choose else 16) + 32 + index for index in indices if not index & (2 if index & choose else 4))
-    post_count = max(1, count)
-    nested = sum(outer * 7 + inner for outer in indices for inner in range(5) if (outer + inner) % 2 == 0)
-    scoped = [index + (11 if index & choose else 23) for index in indices if not (index + (11 if index & choose else 23)) & (1 if index & choose else 2)]
-    return {
-        "continue_branches": branch_total,
-        "continue_for_step": sum(post_selected) + count * 257 + (count + 1) * 65537,
-        "continue_while": sum(post_selected) + (count + 1) * 257,
-        "continue_do": sum(index for index in range(post_count) if not index & choose) + post_count * (257 + 65537),
-        "continue_nested": nested + 100 * len(selected),
-        "continue_all": count * (count - 1) // 2 + (count + 2) * 257,
-        "continue_scopes": sum(scoped) + len(scoped) * (len(scoped) + 1) // 2 + (len(scoped) + 1) * 257,
-        "continue_byte": (250 + count + 7 * len(selected)) % 256,
-    }
-
-
-def continue_functions():
-    counts = [0, 1, 2, 3, 7, 16, 31]
-    cases = []
-    for name in continue_references(0, 0):
-        if name == "continue_all":
-            samples = [([count], continue_references(count, 0)[name]) for count in counts]
-            widths = [32]
-        else:
-            samples = [([count, choose], continue_references(count, choose)[name]) for count in counts for choose in [0, 1, 2, 3, 5, 7, 31]]
-            widths = [32, 32]
-        cases.append(function_cases(name, widths, 32, samples))
-    return "\n".join(cases)
-
-
-def continue_values(arrays):
-    cases = []
-    for count in [0, 1, 7, 31]:
-        for choose in [0, 3, 7]:
-            expected = []
-            for lane in range(64):
-                length, mask = count + lane % 4, choose ^ (lane % 8)
-                expected.extend(continue_references(length, mask).values())
-            case = Case(arrays, f"continue_values_{count}_{choose}", "i32", len(expected))
-            case.scalar("count", count, "i32")
-            case.scalar("choose", choose, "i32")
-            case.launch("continue_values", "%output, %count, %choose", f"tensor<{len(expected)}xi32>, i32, i32")
-            cases.append(case.finish(expected))
-    return "kernel.decl @continue_values() launch(%output: buffer, %count: i32, %choose: i32)\n\n" + "\n".join(cases)
-
-
-def continue_scheduled(arrays):
-    cases = []
-    for count in [0, 1, 2, 5, 17, 33]:
-        for choose in [0, 3]:
-            values = [(index * 17 + 7) % 251 for index in range(max(1, count * 64))]
-            expected = []
-            for lane in range(64):
-                selected = sum(values[lane * count + index] for index in range(count) if not index & (choose ^ (lane % 8)))
-                expected.extend([selected] * 4)
-            case = Case(arrays, f"continue_scheduled_{count}_{choose}", "i32", len(expected))
-            case.array("input", values)
-            case.array("original", values)
-            case.scalar("count", count, "i32")
-            case.scalar("choose", choose, "i32")
-            case.launch("continue_scheduled", "%input, %output, %count, %choose", f"tensor<{len(values)}xi32>, tensor<{len(expected)}xi32>, i32, i32")
-            case.lines.append(f"  check.expect.bitwise actual(%input) expected(%original) : tensor<{len(values)}xi32>")
-            cases.append(case.finish(expected))
-    return "kernel.decl @continue_scheduled() launch(%input: buffer, %output: buffer, %count: i32, %choose: i32)\n\n" + "\n".join(cases)
-
-
-def continue_copy(arrays):
-    values = [index * 7 + 3 for index in range(64 * 16)]
-    expected = [value if index % 2 else -123 for index, value in enumerate(values)]
-    case = Case(arrays, "copy_odd_indices", "i32", len(expected))
-    case.array("input", values)
-    case.array("original", values)
-    case.launch("continue_copy", "%input, %output", f"tensor<{len(values)}xi32>, tensor<{len(expected)}xi32>")
-    case.lines.append(f"  check.expect.bitwise actual(%input) expected(%original) : tensor<{len(values)}xi32>")
-    return "kernel.decl @continue_copy() launch(%input: buffer, %output: buffer)\n\n" + case.finish(expected)
-
-
-def continue_pointers(arrays):
-    cases = []
-    for length in [0, 1, 17, 32, 33]:
-        for choose in [0, 1, 7]:
-            values = [(index * 7) % 37 for index in range(max(1, length * 64))]
-            expected = [-123] * (34 * 64)
-            for lane in range(64):
-                selected = [value for value in values[lane * length : (lane + 1) * length] if value & choose]
-                expected[lane * 34 : lane * 34 + len(selected)] = selected
-                expected[lane * 34 + 33] = len(selected)
-            case = Case(arrays, f"continue_pointers_{length}_{choose}", "i32", len(expected))
-            case.array("input", values)
-            case.array("original", values)
-            case.scalar("length", length, "i32")
-            case.scalar("choose", choose, "i32")
-            case.launch("continue_pointers", "%input, %output, %length, %choose", f"tensor<{len(values)}xi32>, tensor<{len(expected)}xi32>, i32, i32")
-            case.lines.append(f"  check.expect.bitwise actual(%input) expected(%original) : tensor<{len(values)}xi32>")
-            cases.append(case.finish(expected))
-    return "kernel.decl @continue_pointers() launch(%input: buffer, %output: buffer, %length: i32, %choose: i32)\n\n" + "\n".join(cases)
-
-
-def continue_vectors(arrays):
-    cases = []
-    for count in [0, 1, 2, 7, 31]:
-        for choose in [0, 1, 7]:
-            expected = [1, 2, 3, 4]
-            for index in range(count):
-                expected = [value + index * (lane + 1) for lane, value in enumerate(expected)]
-                if not index & choose:
-                    expected = [value ^ mask for value, mask in zip(expected, [17, 31, 63, 127], strict=True)]
-            case = Case(arrays, f"continue_vectors_{count}_{choose}", "i32", len(expected))
-            case.scalar("count", count, "i32")
-            case.scalar("choose", choose, "i32")
-            case.launch("continue_vectors", "%output, %count, %choose", "tensor<4xi32>, i32, i32")
-            cases.append(case.finish(expected))
-    return "kernel.decl @continue_vectors() launch(%output: buffer, %count: i32, %choose: i32)\n\n" + "\n".join(cases)
-
-
-CONSTANT_LOOP_STARTS = [0, 1, 2, 3, 7, 16, 17, 18, 19, 20, 21, 0x80000000, 0xFFFFFFFF]
-
-
-def schedule_functions():
-    cases = []
-    for name in ["call", "snapshot", "wide", "narrow", "signed", "unevaluated", "initializer", "serial"]:
-        samples = []
-        for count in [0, 1, 2, 3, 4, 5, 7, 16, 17, 33]:
-            expected = sum(range(count))
-            if name == "snapshot":
-                expected += count + 3
-            elif name == "unevaluated":
-                expected += count + 8 + ord("A")
-            samples.append(([count], expected))
-        cases.append(function_cases(f"schedule_{name}", [32], 32, samples))
-    return "\n".join(cases)
-
-
-def constant_loop_functions():
-    cases = [
-        ("counted_stride", [([start], sum(range(start, 20, 4))) for start in CONSTANT_LOOP_STARTS]),
-        ("counted_empty", [([start], 7) for start in CONSTANT_LOOP_STARTS]),
-        ("counted_maximum_step", [([start], 7 if start == 0 else 0) for start in CONSTANT_LOOP_STARTS]),
-        ("counted_edge", [([start], sum(range(start, 0xFFFFFFFC, 4))) for start in range(0xFFFFFFF0, 0x100000000)]),
-    ]
-    return "\n".join(function_cases(name, [32], 32, samples) for name, samples in cases)
-
-
-def constant_loops(arrays):
-    values = [(index * 17 + 7) % 251 for index in range(64 * 20)]
-    cases = []
-    for start in CONSTANT_LOOP_STARTS:
-        expected = []
-        for lane in range(64):
-            row = values[lane * 20 : (lane + 1) * 20]
-            expected.extend([sum(row[start:20:2])] * 2)
-            expected.extend([sum(row[0:20:2])] * 2)
-            expected.append(sum(row[0:20:4]))
-            expected.append(sum(row))
-            iterations = max(0, (20 - start) // 2)
-            expected.append(sum(row[start : start + iterations]) + 19 - iterations)
-            expected.append(signed_bits(sum(range(0xFFFFFFF0 + lane % 8, 0xFFFFFFFC, 4)), 32))
-            expected.extend([sum(row[0:bound:2]) for bound in [0, 1, 2, 5]])
-        case = Case(arrays, f"constant_loops_{start}", "i32", len(expected))
-        case.array("input", values)
-        case.array("original", values)
-        case.scalar("start", signed_bits(start, 32), "i32")
-        case.launch("constant_loops", "%input, %output, %start", f"tensor<{len(values)}xi32>, tensor<{len(expected)}xi32>, i32")
-        case.lines.append(f"  check.expect.bitwise actual(%input) expected(%original) : tensor<{len(values)}xi32>")
-        cases.append(case.finish(expected))
-    return "kernel.decl @constant_loops() launch(%input: buffer, %output: buffer, %start: i32)\n\n" + "\n".join(cases)
-
-
-def integer_functions():
-    cases = []
-
-    def function(name, argument_widths, result_width, samples):
-        cases.append(function_cases(name, argument_widths, result_width, samples))
-
-    products = [(0, -1), (65536, 65536), (-65537, 98304), (65537, -98304), (-(1 << 31), 65536), ((1 << 31) - 1, 65536), (12345, 6789)]
-    function("fixed_multiply", [32, 32], 32, [(pair, pair[0] * pair[1] // 65536) for pair in products])
-    function("byte_increment", [32], 32, [([value], (value + 1) % 256) for value in BYTE_INPUTS])
-    function("byte_decrement", [32], 32, [([value], (value - 1) % 256) for value in BYTE_INPUTS])
-    function("short_decrement", [32], 32, [([value], value - 1) for value in [-32767, -129, -1, 0, 1, 32767]])
-    function("wide_increment", [64], 64, [([value], (value + 1) % (1 << 64)) for value in WIDE_INPUTS])
-    narrow_values = [0, 1, 0x12345678, (1 << 31), (1 << 32) - 1]
-    function("shift_left_narrow", [32, 64], 32, [([value, count], value * (1 << count) % (1 << 32)) for value in narrow_values for count in [0, 1, 16, 31]])
-    wide_values = [0, 1, -1, -65537, 0x123456789ABCDEF, -(1 << 63)]
-    counts = [0, 1, 16, 31, 32, 63]
-    function("shift_left_wide", [64, 32], 64, [([value, count], value * (1 << count) % (1 << 64)) for value in wide_values for count in counts])
-    function("shift_right_signed", [64, 32], 64, [([value, count], value // (1 << count)) for value in wide_values for count in counts])
-    function("shift_right_unsigned", [64, 32], 64, [([value, count], (value % (1 << 64)) // (1 << count)) for value in wide_values for count in counts])
-    return "\n\n".join(cases) + "\n"
-
-
-def comparison_functions():
-    samples = []
-    for mask in range(128):
-        arguments = [256 if mask & (1 << index) else 255 for index in range(7)]
-        samples.append((arguments, int(mask == 0)))
-    samples.append(([0] * 7, 1))
-    for index in range(7):
-        arguments = [0] * 7
-        arguments[index] = (1 << 32) - 1
-        samples.append((arguments, 0))
-    return function_cases("comparison_chain", [32] * 7, 32, samples) + "\n"
-
-
 def pointer_walk(arrays):
     cases = []
     counts = [0, 1, 2, 5, 17, 33, 47]
@@ -453,31 +224,6 @@ def vector_depth_span(arrays):
         case.launch("vector_depth_span", "%previous, %output, %count, %depth, %step", f"tensor<{len(previous)}xi32>, tensor<{count}xi32>, i32, i32, i32")
         cases.append(case.finish(expected))
     return "kernel.decl @vector_depth_span() launch(%previous: buffer, %output: buffer, %count: i32, %depth: i32, %step: i32)\n\n" + "\n".join(cases)
-
-
-def record_pair_reference(value, count):
-    return 9 * value + count * (count - 1) // 2 + 21 + 3 * ((count + 1) // 2)
-
-
-def record_sequence_reference(value, choose):
-    return 5 * value + 60 if choose else 12 * value + 30
-
-
-def record_functions():
-    values = [0, 7, 0xFFFFFFFF]
-    pairs = [([value, count], record_pair_reference(value, count)) for value in values for count in [0, 1, 2, 7]]
-    defaults = [([value], value + 44) for value in values]
-    sequencing = [([value, choose], record_sequence_reference(value, choose)) for value in values for choose in [0, 1, 2]]
-    return (
-        "\n\n".join(
-            [
-                function_cases("record_pairs", [32, 32], 32, pairs),
-                function_cases("record_defaults", [32], 32, defaults),
-                function_cases("record_sequencing", [32, 32], 32, sequencing),
-            ]
-        )
-        + "\n"
-    )
 
 
 def launch_grid(kernel, x, y=1, z=1):
@@ -799,7 +545,6 @@ def q4k_q8_swiglu(arrays):
 
 KERNEL_GROUPS = {
     "aiter_swiglu_f16": lambda arrays: launch_grid("aiter_swiglu_f16", 3) + swiglu(arrays),
-    "constant_loops": constant_loops,
     "control_flow": control_flow,
     "early_returns": early_returns,
     "flash_attention": lambda arrays: launch_grid("flash_attention", 3) + attention(arrays),
@@ -810,50 +555,22 @@ KERNEL_GROUPS = {
     "pointer_walk": pointer_walk,
     "q4k_q8_swiglu": q4k_q8_swiglu,
     "short_circuit": short_circuit,
-    "structured_continue": lambda arrays: "\n".join(reference(arrays) for reference in (continue_values, continue_scheduled, continue_copy, continue_pointers, continue_vectors)),
     "vector_depth": lambda arrays: vector_depth(arrays) + "\n" + vector_depth_span(arrays),
     "volatile_memory": volatile_memory,
 }
 
 
-HOST_REFERENCES = {
-    "comparison_functions.cxx": comparison_functions,
-    "constant_loops.cxx": constant_loop_functions,
-    "integer_functions.cxx": integer_functions,
-    "record_values.cxx": record_functions,
-    "schedule_values.cxx": schedule_functions,
-    "structured_continue.cxx": continue_functions,
-}
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    modes = parser.add_subparsers(dest="mode", required=True)
-    host = modes.add_parser("host", help="emit one source-authored scalar check group")
-    host.add_argument("--source", type=Path, required=True)
-    host.add_argument("--output", type=Path, required=True)
+    modes = parser.add_subparsers(required=True)
     kernel = modes.add_parser("kernel", help="emit one kernel check group and its arrays")
     kernel.add_argument("--group", choices=KERNEL_GROUPS, required=True)
     kernel.add_argument("--output", type=Path, required=True)
     kernel.add_argument("--arrays", type=Path, required=True)
     options = parser.parse_args()
-    if options.mode == "kernel":
-        arrays = Arrays(options.arrays, options.output.parent)
-        options.output.parent.mkdir(parents=True, exist_ok=True)
-        options.output.write_text(KERNEL_GROUPS[options.group](arrays))
-        return
-
-    reference = HOST_REFERENCES.get(options.source.name)
-    if reference is None:
-        parser.error(f"no host reference for source '{options.source.name}'")
-
-    # The source and output are declared build inputs/outputs. A relative include
-    # preserves their relationship without embedding a sandbox or checkout path.
-    include = Path(os.path.relpath(options.source, options.output.parent)).as_posix()
-    contents = f'// Generated from independent Python numerical references.\n#include <loomcxx/check.h>\n#include "{include}"\n\n' + reference() + "\n"
+    arrays = Arrays(options.arrays, options.output.parent)
     options.output.parent.mkdir(parents=True, exist_ok=True)
-    if not options.output.exists() or options.output.read_text() != contents:
-        options.output.write_text(contents)
+    options.output.write_text(KERNEL_GROUPS[options.group](arrays))
 
 
 if __name__ == "__main__":
