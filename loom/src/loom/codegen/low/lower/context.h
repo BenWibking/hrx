@@ -39,8 +39,8 @@ extern "C" {
 // Sentinel indicating that a source value was intentionally erased.
 #define LOOM_LOW_LOWER_VALUE_ID_ELIDED ((loom_value_id_t)(UINT32_MAX - 1))
 
-typedef struct loom_low_lower_rule_descriptor_map_t
-    loom_low_lower_rule_descriptor_map_t;
+typedef struct loom_low_lower_rule_descriptor_cache_t
+    loom_low_lower_rule_descriptor_cache_t;
 
 typedef struct loom_low_lower_target_state_record_t {
   // Target-owned static key identifying this function-local state object.
@@ -87,12 +87,9 @@ typedef struct loom_low_lowering_frame_t {
   loom_low_lower_control_plan_t* control_plan;
   // Callable signature, argument imports, and ABI layout retained for emission.
   loom_low_lower_function_boundary_t boundary;
-  // Descriptor set used to build rule_descriptor_maps.
-  const loom_low_descriptor_set_t* rule_descriptor_map_set;
-  // Per-policy-rule-set descriptor-ref to descriptor-row maps.
-  loom_low_lower_rule_descriptor_map_t* rule_descriptor_maps;
-  // Number of entries in rule_descriptor_maps.
-  uint16_t rule_descriptor_map_count;
+  // Shared descriptor bindings for the active immutable target tables. Without
+  // module state, this is the head of the function-owned cache list.
+  loom_low_lower_rule_descriptor_cache_t* rule_descriptor_cache;
   // Function-local target state records keyed by target-owned static storage.
   loom_low_lower_target_state_record_t* target_state_records;
   // Number of populated target_state_records entries.

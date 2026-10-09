@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "iree/base/internal/math.h"
+#include "loom/codegen/low/lower/rule_descriptor.h"
 #include "loom/ir/intern_table.h"
 #include "loom/ir/module.h"
 #include "loom/ir/symbol_map.h"
@@ -43,6 +44,8 @@ static_assert(sizeof(loom_low_lower_read_only_data_record_t) <= 32,
 struct loom_low_lower_module_state_t {
   // Arena used for module-scope target state records and payloads.
   iree_arena_allocator_t* arena;
+  // Shared immutable table bindings, selected lazily by function lowerings.
+  loom_low_lower_rule_descriptor_cache_t* rule_descriptor_cache;
   // Module-scope target state records keyed by target-owned static storage.
   loom_low_lower_module_target_state_record_t* target_state_records;
   // Number of populated target_state_records entries.
@@ -77,6 +80,18 @@ iree_status_t loom_low_lower_module_state_create(
   IREE_RETURN_IF_ERROR(loom_intern_table_initialize(
       arena, /*capacity=*/0, &module_state->read_only_data_index));
   *out_module_state = module_state;
+  return iree_ok_status();
+}
+
+iree_status_t loom_low_lower_module_state_rule_descriptor_cache(
+    loom_low_lower_module_state_t* module_state,
+    loom_low_lower_rule_set_list_t rule_sets,
+    const loom_low_descriptor_set_t* descriptor_set,
+    loom_low_lower_rule_descriptor_cache_t** out_cache) {
+  IREE_RETURN_IF_ERROR(loom_low_lower_rule_descriptor_cache_select(
+      rule_sets, descriptor_set, module_state->arena,
+      &module_state->rule_descriptor_cache));
+  *out_cache = module_state->rule_descriptor_cache;
   return iree_ok_status();
 }
 

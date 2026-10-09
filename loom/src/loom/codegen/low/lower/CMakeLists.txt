@@ -195,6 +195,8 @@ loom_cc_test(
     iree::testing::gtest_main
     loom::ir
     loom::ops::global
+    loom::target::test::alt_descriptors
+    loom::target::test::descriptors
 )
 
 loom_cc_test(

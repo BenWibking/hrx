@@ -10,9 +10,12 @@
 
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
+#include "loom/codegen/low/lower/rule_descriptor.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/global/ops.h"
+#include "loom/target/test/alt_descriptors.h"
+#include "loom/target/test/descriptors.h"
 
 namespace loom {
 namespace {
@@ -38,6 +41,66 @@ class LowLowerModuleStateTest : public ::testing::Test {
   // State owned by arena_.
   loom_low_lower_module_state_t* module_state_ = nullptr;
 };
+
+TEST_F(LowLowerModuleStateTest, SharesDescriptorBindingsAcrossFunctions) {
+  // Two valid rule tables refer to disjoint generated descriptor sets. Their
+  // ordering is part of each policy's rule-set ordinal contract.
+  const iree_string_view_t keys[] = {IREE_SV("test.add.i32"),
+                                     IREE_SV("test.alt.neg.i32")};
+  loom_low_lower_rule_descriptor_ref_t refs[2] = {};
+  loom_low_lower_rule_set_t rules[2] = {};
+  for (uint16_t i = 0; i < 2; ++i) {
+    refs[i].key_string_ref = (uint32_t)keys[i].size << 24;
+    rules[i].string_pool = {keys[i].data, (uint32_t)keys[i].size};
+    rules[i].descriptor_refs = &refs[i];
+    rules[i].descriptor_ref_count = 1;
+  }
+  const loom_low_lower_rule_set_t* ordered[] = {&rules[0], &rules[1]};
+  const loom_low_lower_rule_set_t* reversed[] = {&rules[1], &rules[0]};
+  const loom_low_lower_rule_set_list_t lists[] = {{2, ordered}, {2, reversed}};
+  const loom_low_descriptor_set_t* sets[] = {
+      loom_test_low_core_descriptor_set(), loom_test_low_alt_descriptor_set()};
+  loom_low_lower_rule_descriptor_cache_t* caches[2][2] = {};
+  for (uint16_t list = 0; list < 2; ++list) {
+    for (uint16_t set = 0; set < 2; ++set) {
+      IREE_ASSERT_OK(loom_low_lower_module_state_rule_descriptor_cache(
+          module_state_, lists[list], sets[set], &caches[list][set]));
+      for (uint16_t index = 0; index < 2; ++index) {
+        const loom_low_descriptor_t* descriptor = nullptr;
+        IREE_ASSERT_OK(loom_low_lower_rule_descriptor_cache_resolve(
+            caches[list][set], index, 0, &descriptor));
+        if (index == (list ^ set)) {
+          ASSERT_NE(descriptor, nullptr);
+          EXPECT_TRUE(
+              iree_string_view_equal(loom_low_descriptor_set_string(
+                                         sets[set], descriptor->key_string_ref),
+                                     keys[set]));
+        } else {
+          EXPECT_EQ(descriptor, nullptr);
+        }
+      }
+    }
+  }
+
+  // Revisit all table pairs in another order, as independent function plans
+  // do. Neither successful bindings nor cached misses allocate another map.
+  const auto used_bytes = arena_.used_allocation_size;
+  for (uint16_t set = 0; set < 2; ++set) {
+    for (uint16_t list = 0; list < 2; ++list) {
+      loom_low_lower_rule_descriptor_cache_t* cache = nullptr;
+      IREE_ASSERT_OK(loom_low_lower_module_state_rule_descriptor_cache(
+          module_state_, lists[list], sets[set], &cache));
+      EXPECT_EQ(cache, caches[list][set]);
+      for (uint16_t index = 0; index < 2; ++index) {
+        const loom_low_descriptor_t* descriptor = nullptr;
+        IREE_ASSERT_OK(loom_low_lower_rule_descriptor_cache_resolve(
+            cache, index, 0, &descriptor));
+        EXPECT_EQ(descriptor != nullptr, index == (list ^ set));
+      }
+    }
+  }
+  EXPECT_EQ(arena_.used_allocation_size, used_bytes);
+}
 
 class LowLowerReadOnlyDataTest : public LowLowerModuleStateTest {
  protected:

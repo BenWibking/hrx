@@ -19,6 +19,9 @@ extern "C" {
 #endif
 
 typedef struct loom_low_lower_module_state_t loom_low_lower_module_state_t;
+struct loom_low_lower_rule_set_list_t;
+struct loom_low_descriptor_set_t;
+struct loom_low_lower_rule_descriptor_cache_t;
 
 // Private payload identity, stable until the module-state arena is released.
 // This is not a module symbol and cannot appear in IR.
@@ -33,6 +36,15 @@ typedef uint32_t loom_low_lower_read_only_data_id_t;
 iree_status_t loom_low_lower_module_state_create(
     iree_arena_allocator_t* arena,
     loom_low_lower_module_state_t** out_module_state);
+
+// Returns shared descriptor bindings for an immutable rule-table list and
+// descriptor set. The cache belongs to the module-state arena and remains
+// available across function planning and emission.
+iree_status_t loom_low_lower_module_state_rule_descriptor_cache(
+    loom_low_lower_module_state_t* module_state,
+    struct loom_low_lower_rule_set_list_t rule_sets,
+    const struct loom_low_descriptor_set_t* descriptor_set,
+    struct loom_low_lower_rule_descriptor_cache_t** out_cache);
 
 // Returns module-scope target state for |key|, allocating zeroed storage on
 // first use.

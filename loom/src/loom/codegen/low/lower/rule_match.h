@@ -189,7 +189,7 @@ void loom_low_lower_rule_match_context_initialize_from_lowering(
     loom_low_lower_rule_source_memory_state_t* source_memory_state,
     loom_low_lower_rule_match_context_t* out_match_context);
 
-// Resolves descriptor refs through a lowering context's function-local cache.
+// Resolves descriptor refs through the scope's shared immutable table bindings.
 // This adapts the mutable lowering lifecycle to the read-only match callback.
 iree_status_t loom_low_lower_rule_match_descriptor_ref_from_lowering(
     void* user_data, const loom_low_lower_rule_match_context_t* match_context,
