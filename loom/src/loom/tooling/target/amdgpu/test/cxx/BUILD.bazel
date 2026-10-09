@@ -271,6 +271,7 @@ loom_check_test(
         "assembly_lowering",
         "assembly_invalid",
         "integer_extrema",
+        "matrix_fragments",
         "opaque_pointers",
         "parameter_alignment",
         "parameter_noalias",
