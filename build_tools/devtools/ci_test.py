@@ -1109,6 +1109,29 @@ class CiTest(unittest.TestCase):
                     block.index(mkdir_command), block.index(git_config_command)
                 )
 
+    def test_amdgpu_container_jobs_preserve_runner_device_selection(self):
+        for path, job_name in (
+            (".github/workflows/ci_iree.yml", "bazel_linux"),
+            (".github/workflows/ci_iree.yml", "cmake_linux"),
+            (".github/workflows/ci_libhrx.yml", "cmake_linux_gfx942"),
+            (
+                ".github/workflows/test_core_linux_gpu_source.yml",
+                "test_core_linux_gpu_source",
+            ),
+        ):
+            with self.subTest(path=path, job_name=job_name):
+                block = self.workflow_job_block(path, job_name)
+                self.assertIn(
+                    "--env-file /etc/podinfo/gha-gpu-isolation-settings", block
+                )
+                for variable_name in (
+                    "ROCR_VISIBLE_DEVICES",
+                    "HIP_VISIBLE_DEVICES",
+                    "CUDA_VISIBLE_DEVICES",
+                    "GPU_DEVICE_ORDINAL",
+                ):
+                    self.assertNotIn(f"{variable_name}:", block)
+
     def test_fetch_toolchain_uses_owned_ci_entry_point(self):
         script = Path(".github/scripts/fetch_rocm_toolchain.sh").read_text()
         self.assertIn(
