@@ -19,6 +19,7 @@ routines. Sources carry their original license notices.
 | `generate.py` | Checked translation from the pinned HIP source |
 | `validate.cpp`, `reference_kernels.inc`, `CMakeLists.txt` | Native differential validation against HIP source bodies |
 | `check_import.py` | Checks both imported roots, f64 math, private storage, and atomics |
+| `check_compile.py` | XFAIL regression test for the production-sized advance kernel compile |
 | `compare_rocm.cpp`, `run_rocm_comparison.sh` | Build and run the HIP/Loom GPU comparison |
 | `HIP-TO-LOOM-REWRITES.md` | Translation and numerical-contract notes |
 
@@ -40,7 +41,8 @@ ctest --test-dir /tmp/chemistry-check --output-on-failure
 
 Clang or GCC and a 64-bit LP64 host are required. Set
 `-DLOOM_IMPORT_CXX_TOOL=/path/to/loom-import-cxx` when configuring to include the
-import check. Native validation compares double bit patterns and integer fields
+import check; also set `-DLOOM_COMPILE_TOOL=/path/to/loom-compile` to include the
+production advance-kernel compile test, which takes several minutes. Native validation compares double bit patterns and integer fields
 using the same host math and serial lane order; it does not establish GPU math
 results, concurrent atomic behavior, or GPU performance.
 
@@ -122,6 +124,11 @@ and failure code 'spill-traffic-register-exhausted'
 The same module compiles with `workgroup_count.x=1` (up to 128 cells). The
 workgroup count is compile-time config, so the cell count selects which kernel
 is compiled. The prepare kernel compiles at both sizes.
+
+The `production-advance-compile` test (`check_compile.py`) tracks this as an
+XFAIL. It passes only while the compile fails with this allocation error, so an
+unrelated compile failure or a successful compile (XPASS) fails the test. When
+Loom fixes the allocation, remove the XFAIL and this note.
 
 ## Compare HIP and Loom on a GPU
 
