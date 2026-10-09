@@ -1040,6 +1040,24 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
+    assumptions_module
+  SRCS
+    "assumptions.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    constant_loops_module
+  SRCS
+    "constant_loops.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
     configured_workgroup_storage_module
   SRCS
     "configured_workgroup_storage.cxx"
@@ -1097,6 +1115,15 @@ loom_test_module(
     packed_group_dot_module
   SRCS
     "packed_group_dot.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    symbol_exports_module
+  SRCS
+    "symbol_exports.cxx"
 )
 endif()
 
@@ -1436,26 +1463,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
-    assumptions_module
-  SRCS
-    "assumptions.cxx"
-    "assumptions.loom"
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    constant_loops_module
-  SRCS
-    "constant_loops.cxx"
-    "constant_loops.loom"
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
     enum_values_module
   SRCS
     "enum_values.cxx"
@@ -1510,16 +1517,6 @@ loom_test_module(
   SRCS
     "structured_continue.cxx"
     "structured_continue.loom"
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    symbol_exports_module
-  SRCS
-    "symbol_exports.cxx"
-    "symbol_exports.loom"
 )
 endif()
 

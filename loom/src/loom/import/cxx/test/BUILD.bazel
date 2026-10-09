@@ -512,6 +512,8 @@ loom_test_module(
         target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
     )
     for source in [
+        "assumptions",
+        "constant_loops",
         "configured_workgroup_storage",
         "integer_increment",
         "mxfp_group_dot",
@@ -519,6 +521,7 @@ loom_test_module(
         "packed_float16_conversion",
         "packed_float8_conversion",
         "packed_group_dot",
+        "symbol_exports",
         "vector_lookup",
         "vector_math",
         "workload_configuration",
@@ -541,15 +544,12 @@ _GENERATED_KERNEL_SOURCES = [
 ]
 
 _AUTHORED_KERNEL_SOURCES = [
-    "assumptions",
-    "constant_loops",
     "enum_values",
     "increment_values",
     "record_values",
     "scheduled_sum",
     "shaped_intrinsics",
     "structured_continue",
-    "symbol_exports",
     "typed_views",
     "vector_initializers",
     "vector_values",
