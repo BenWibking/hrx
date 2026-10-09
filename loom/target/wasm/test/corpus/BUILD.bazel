@@ -225,7 +225,6 @@ loom_corpus_build(
     all_roots_xfail = {
         "//loom/target/wasm:simd128": [
             "control/branch/structured.loom",
-            "control/loop/vector_recurrence.loom",
             "function/buffer/arguments.loom",
             "function/buffer/call_overflow.loom",
             "function/buffer/calls.loom",
@@ -267,7 +266,6 @@ loom_corpus_build(
     xfails = {
         "//loom/target/wasm:simd128": {
             "control/branch/structured.loom:@structured_branch_observations": "TARGET/001",
-            "control/loop/vector_recurrence.loom:@vector_recurrence_observations": "WASM/001",
             "function/buffer/arguments.loom:@buffer_argument_observations": "TARGET/001",
             "function/buffer/arguments.loom:@buffer_extent_observations": "TARGET/001",
             "function/buffer/call_overflow.loom:@buffer_overflow_observations": "TARGET/001",
@@ -365,8 +363,6 @@ loom_corpus_build(
             "numeric/vector/floating.loom:@vector_scale_f16": "LOWERING/036",
             "numeric/vector/floating.loom:@vector_scale_f32": "WASM/001",
             "numeric/vector/floating.loom:@vector_scale_f64": "LOWERING/036",
-            "numeric/vector/integer_shifts.loom:@vector_i16_shifts": "WASM/001",
-            "numeric/vector/integer_shifts.loom:@vector_i8_shifts": "WASM/001",
             "numeric/vector/packed_arithmetic.loom:@packed_halfword_add": "LOWERING/036",
             "numeric/vector/packed_selection.loom:@select_packed_words": "WASM/001",
             "numeric/vector/reductions.loom:@vector_float_extrema_reductions": "TARGET/001",
@@ -383,7 +379,6 @@ loom_scenario_test(
     xfails = {
         WASM_HOSTED_PROFILE.name: {
             "control/branch/structured.loom:@structured_branch_values": "TARGET/001",
-            "control/loop/vector_recurrence.loom:@vector_recurrence_values": "WASM/001",
             "function/buffer/arguments.loom:@buffer_argument_values": "TARGET/001",
             "function/buffer/arguments.loom:@buffer_extent_values": "TARGET/001",
             "function/buffer/call_overflow.loom:@buffer_overflow_values": "TARGET/001",
@@ -473,8 +468,6 @@ loom_scenario_test(
             "numeric/vector/floating.loom:@vector_scale_f16_values": "LOWERING/036",
             "numeric/vector/floating.loom:@vector_scale_f32_values": "WASM/001",
             "numeric/vector/floating.loom:@vector_scale_f64_values": "LOWERING/036",
-            "numeric/vector/integer_shifts.loom:@vector_i16_shift_values": "WASM/001",
-            "numeric/vector/integer_shifts.loom:@vector_i8_shift_values": "WASM/001",
             "numeric/vector/packed_arithmetic.loom:@packed_halfword_add_values": "LOWERING/036",
             "numeric/vector/packed_selection.loom:@packed_word_selects": "WASM/001",
             "numeric/vector/reductions.loom:@vector_float_extrema_reduction_values": "TARGET/001",

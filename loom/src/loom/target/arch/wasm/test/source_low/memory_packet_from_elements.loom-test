@@ -1,0 +1,21 @@
+// RUN: emit source-low target=wasm:simd128 output=low
+
+func.def @store_packetized_elements(%output: buffer, %a: i64, %b: i64, %c: i64, %d: i64, %e: i64) {
+  %base = index.constant 0 : offset
+  %view = buffer.view %output[%base] : buffer -> view<5xi64>
+  %value = vector.from_elements %a, %b, %c, %d, %e : vector<5xi64>
+  vector.store %value, %view[0] : vector<5xi64>, view<5xi64>
+  func.return
+}
+
+// ----
+low.func.def target<wasm.core.simd128> abi(wasm_function) @store_packetized_elements(%output: reg<wasm.i32>, %a: reg<wasm.i64>, %b: reg<wasm.i64>, %c: reg<wasm.i64>, %d: reg<wasm.i64>, %e: reg<wasm.i64>) asm {
+  %24 = i64x2.splat %a
+  %25 = i64x2.replace_lane %24, %b, 1
+  %26 = i64x2.splat %c
+  %27 = i64x2.replace_lane %26, %d, 1
+  v128.store %output, %25
+  v128.store %output, %27 {offset = 16}
+  i64.store %output, %e {offset = 32}
+  return
+}
