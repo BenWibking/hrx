@@ -1,5 +1,31 @@
 // RUN: emit source-low target=x86:scalar output=low
 
+func.def @widen_signed_byte(%value: i8) -> (i32) {
+  %result = scalar.extsi %value : i8 to i32
+  func.return %result : i32
+}
+
+// ----
+low.func.def target<x86.scalar.core> abi(object_function) abi_layout({signature = (i8) -> (i32)}) @widen_signed_byte(%value: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
+  %result = movsx.i8.gpr32 %value
+  return %result
+}
+
+// ====
+
+func.def @widen_signed_halfword(%value: i16) -> (i32) {
+  %result = scalar.extsi %value : i16 to i32
+  func.return %result : i32
+}
+
+// ----
+low.func.def target<x86.scalar.core> abi(object_function) abi_layout({signature = (i16) -> (i32)}) @widen_signed_halfword(%value: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
+  %result = movsx.i16.gpr32 %value
+  return %result
+}
+
+// ====
+
 func.def @widen_unsigned_byte(%value: i8) -> (i32) {
   %result = scalar.extui %value : i8 to i32
   func.return %result : i32

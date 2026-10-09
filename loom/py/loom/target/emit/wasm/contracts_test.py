@@ -147,6 +147,42 @@ def test_scalar_float_narrowing_rules_cover_the_complete_type_matrix() -> None:
     assert actual_pairs == expected_pairs
 
 
+def test_scalar_integer_constants_cover_every_fixed_width_type() -> None:
+    actual = {}
+    for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases:
+        if (
+            not isinstance(rule, DescriptorRule)
+            or rule.source_op is not conversion.scalar_constant
+        ):
+            continue
+        result_guard = next(
+            guard
+            for guard in rule.guards
+            if guard.kind is GuardKind.VALUE_TYPE and guard.field == "result"
+        )
+        result_type = result_guard.type_pattern
+        if result_type.kind != "scalar" or result_type.elements[0] not in (
+            "i1",
+            "i8",
+            "i16",
+            "i32",
+            "i64",
+        ):
+            continue
+        assert len(result_type.elements) == 1
+        assert len(rule.emit) == 1
+        assert rule.emit[0].descriptor == rule.descriptor
+        actual[result_type.elements[0]] = rule.descriptor.key
+
+    assert actual == {
+        "i1": "wasm.i32.const",
+        "i8": "wasm.i32.const",
+        "i16": "wasm.i32.const",
+        "i32": "wasm.i32.const",
+        "i64": "wasm.i64.const",
+    }
+
+
 def test_exact_recipes_cover_every_non_native_pair() -> None:
     native_pairs = frozenset({("f64", "f32")})
     exact_recipe_pairs = {

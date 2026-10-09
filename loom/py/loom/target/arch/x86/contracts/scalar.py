@@ -1100,6 +1100,16 @@ def _cases() -> Sequence[ContractCase]:
             )
             for input_type, width in ((_I8, 8), (_I16, 16))
         ),
+        *(
+            _conversion_rule(
+                scalar_conversion.scalar_extsi,
+                input_type,
+                _I32,
+                f"x86.scalar.movsx.i{width}.gpr32",
+                descriptor_lookup,
+            )
+            for input_type, width in ((_I8, 8), (_I16, 16))
+        ),
         _conversion_rule(
             scalar_conversion.scalar_extsi,
             _I32,

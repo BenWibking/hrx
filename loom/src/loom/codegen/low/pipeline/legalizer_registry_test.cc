@@ -107,6 +107,8 @@ TEST(LowLegalizerRegistryTest, TargetProvidersPrecedeGenericProviders) {
   ExpectReferenceProvider(registry, LOOM_OP_VECTOR_FPTOUI,
                           IREE_SV("conversion"));
   ExpectReferenceProvider(registry, LOOM_OP_VECTOR_REDUCE, IREE_SV("vector"));
+  ExpectReferenceProvider(registry, LOOM_OP_VECTOR_MASK_RANGE,
+                          IREE_SV("vector"));
   ExpectReferenceProvider(registry, LOOM_OP_VIEW_ATOMIC_RMW, IREE_SV("view"));
 
   const loom_target_legalizer_entry_t* narrow_binary =
@@ -114,6 +116,30 @@ TEST(LowLegalizerRegistryTest, TargetProvidersPrecedeGenericProviders) {
   ASSERT_NE(narrow_binary, nullptr);
   EXPECT_EQ(narrow_binary->first_operand_element_types,
             LOOM_SCALAR_TYPE_SET_I8 | LOOM_SCALAR_TYPE_SET_I16);
+  const loom_target_legalizer_op_entry_t scalar_extsi_entry =
+      loom_target_legalizer_registry_lookup_kind(registry,
+                                                 LOOM_OP_SCALAR_EXTSI);
+  ASSERT_EQ(scalar_extsi_entry.entry_count, 2u);
+  const loom_target_legalizer_entry_t* scalar_extsi_entries =
+      &registry->entries[scalar_extsi_entry.entry_start];
+  EXPECT_EQ(scalar_extsi_entries[0].first_operand_element_types,
+            LOOM_SCALAR_TYPE_SET_I1);
+  EXPECT_EQ(scalar_extsi_entries[1].first_operand_element_types,
+            LOOM_SCALAR_TYPE_SET_I8 | LOOM_SCALAR_TYPE_SET_I16);
+  EXPECT_EQ(scalar_extsi_entries[1].flags,
+            LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION);
+  const loom_target_legalizer_op_entry_t scalar_extui_entry =
+      loom_target_legalizer_registry_lookup_kind(registry,
+                                                 LOOM_OP_SCALAR_EXTUI);
+  ASSERT_EQ(scalar_extui_entry.entry_count, 2u);
+  const loom_target_legalizer_entry_t* scalar_extui_entries =
+      &registry->entries[scalar_extui_entry.entry_start];
+  EXPECT_EQ(scalar_extui_entries[0].first_operand_element_types,
+            LOOM_SCALAR_TYPE_SET_I1);
+  EXPECT_EQ(scalar_extui_entries[1].first_operand_element_types,
+            LOOM_SCALAR_TYPE_SET_I8 | LOOM_SCALAR_TYPE_SET_I16);
+  EXPECT_EQ(scalar_extui_entries[1].flags,
+            LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION);
   const loom_target_legalizer_entry_t* predicate_extension =
       LookupOnlyEntry(registry, LOOM_OP_VECTOR_EXTUI);
   ASSERT_NE(predicate_extension, nullptr);
