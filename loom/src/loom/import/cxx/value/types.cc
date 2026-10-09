@@ -197,6 +197,12 @@ const Partition* Types::special(const cxx::Type* input, cxx::AST* owner) {
                         "loom source types require one string type binding");
   }
   auto name = binding->arguments[0]->name();
+  if (name == "buffer") {
+    return buffer(type, owner);
+  }
+  if (name == "index") {
+    return index(type, owner);
+  }
   if (name == "encoding") {
     return encoding(type, owner);
   }
@@ -207,6 +213,78 @@ const Partition* Types::special(const cxx::Type* input, cxx::AST* owner) {
     return tensor(type, owner);
   }
   return opaque_dialect(type, name, owner);
+}
+
+const BufferPartition* Types::buffer(const cxx::ClassType* input,
+                                     cxx::AST* owner) {
+  auto* source = input->definition();
+  if (auto found = buffers_.find(source); found != buffers_.end()) {
+    return found->second.get();
+  }
+  auto traits = unit_.typeTraits();
+  if (source) {
+    traits.requireCompleteClass(source);
+    source = input->definition();
+  }
+  if (!source || !source->isComplete() || source->isUnion() ||
+      !source->baseClasses().empty() || !traits.is_trivially_copyable(input) ||
+      !traits.has_trivial_destructor(input)) {
+    diagnostics_.reject(unit_, owner,
+                        "buffer values require a complete trivial class "
+                        "without bases");
+  }
+  auto arguments = source->templateArguments();
+  auto* element = arguments.size() == 1
+                      ? cxx::template_argument_type(arguments[0])
+                      : nullptr;
+  if (!element) {
+    diagnostics_.reject(
+        unit_, owner,
+        "buffer values require one supported non-boolean scalar element type");
+  }
+  auto element_type = get(element, owner);
+  if (loom_type_kind(element_type) != LOOM_TYPE_SCALAR ||
+      loom_type_element_type(element_type) == LOOM_SCALAR_TYPE_I1) {
+    diagnostics_.reject(
+        unit_, owner,
+        "buffer values require one supported non-boolean scalar element type");
+  }
+  auto result = std::make_unique<BufferPartition>();
+  result->kind = ValueKind::Buffer;
+  result->component_count = 1;
+  result->source = source;
+  result->element_type = element;
+  auto* admitted = result.get();
+  buffers_.emplace(source, std::move(result));
+  return admitted;
+}
+
+const IndexPartition* Types::index(const cxx::ClassType* input,
+                                   cxx::AST* owner) {
+  auto* source = input->definition();
+  if (auto found = indices_.find(source); found != indices_.end()) {
+    return found->second.get();
+  }
+  auto traits = unit_.typeTraits();
+  if (source) {
+    traits.requireCompleteClass(source);
+    source = input->definition();
+  }
+  if (!source || !source->isComplete() || source->isUnion() ||
+      !source->baseClasses().empty() || !source->templateArguments().empty() ||
+      !traits.is_trivially_copyable(input) ||
+      !traits.has_trivial_destructor(input)) {
+    diagnostics_.reject(unit_, owner,
+                        "index values require a complete non-template trivial "
+                        "class without bases");
+  }
+  auto result = std::make_unique<IndexPartition>();
+  result->kind = ValueKind::Index;
+  result->component_count = 1;
+  result->source = source;
+  auto* admitted = result.get();
+  indices_.emplace(source, std::move(result));
+  return admitted;
 }
 
 const OpaqueDialectPartition* Types::opaque_dialect(const cxx::ClassType* input,
@@ -563,6 +641,8 @@ void Types::append_component_names(const Partition& partition,
   };
   switch (partition.kind) {
     case ValueKind::SSA:
+    case ValueKind::Buffer:
+    case ValueKind::Index:
     case ValueKind::OpaqueDialect:
     case ValueKind::Encoding:
     case ValueKind::Tensor:
@@ -691,6 +771,12 @@ loom_type_t Types::get(const cxx::Type* input, cxx::AST* ast) {
     }
     case cxx::TypeKind::kClass: {
       auto* admitted = special(input, ast);
+      if (admitted && admitted->kind == ValueKind::Buffer) {
+        return loom_type_buffer();
+      }
+      if (admitted && admitted->kind == ValueKind::Index) {
+        return loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+      }
       if (admitted && admitted->kind == ValueKind::Tensor) {
         return static_cast<const TensorPartition*>(admitted)->type;
       }
@@ -808,6 +894,10 @@ void Types::admit_copy(cxx::FunctionSymbol* constructor, const cxx::Type* type,
   bool is_record = admitted.kind == ValueKind::Record;
   if (admitted.kind == ValueKind::Record) {
     source = static_cast<const RecordPartition&>(admitted).source;
+  } else if (admitted.kind == ValueKind::Buffer) {
+    source = static_cast<const BufferPartition&>(admitted).source;
+  } else if (admitted.kind == ValueKind::Index) {
+    source = static_cast<const IndexPartition&>(admitted).source;
   } else if (admitted.kind == ValueKind::Encoding) {
     source = static_cast<const EncodingPartition&>(admitted).source;
   } else if (admitted.kind == ValueKind::OpaqueDialect) {
@@ -870,6 +960,12 @@ void Types::append_bound(const cxx::Type* input, cxx::AST* owner,
   switch (admitted.kind) {
     case ValueKind::SSA:
       output.push_back(get(input, owner));
+      return;
+    case ValueKind::Buffer:
+      output.push_back(loom_type_buffer());
+      return;
+    case ValueKind::Index:
+      output.push_back(loom_type_scalar(LOOM_SCALAR_TYPE_INDEX));
       return;
     case ValueKind::OpaqueDialect:
       output.push_back(
@@ -951,6 +1047,10 @@ bool Types::is_float(const cxx::Type* input) {
          kind == cxx::TypeKind::kBFloat16 || kind == cxx::TypeKind::kDouble ||
          kind == cxx::TypeKind::kFloat8E4M3FN ||
          kind == cxx::TypeKind::kFloat8E5M2;
+}
+
+bool Types::is_index(const cxx::Type* type, cxx::AST* owner) {
+  return partition(type, owner).kind == ValueKind::Index;
 }
 
 }  // namespace loom::cxx_import

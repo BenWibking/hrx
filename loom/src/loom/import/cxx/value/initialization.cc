@@ -57,7 +57,9 @@ Value Initialization::value(const cxx::Type* type,
     return arena_.capture(*record, components);
   }
   const auto& partition = types_.partition(type, owner);
-  if (partition.kind == ValueKind::OpaqueDialect ||
+  if (partition.kind == ValueKind::Buffer ||
+      partition.kind == ValueKind::Index ||
+      partition.kind == ValueKind::OpaqueDialect ||
       partition.kind == ValueKind::Encoding ||
       partition.kind == ValueKind::View ||
       partition.kind == ValueKind::Tensor) {

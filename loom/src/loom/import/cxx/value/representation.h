@@ -31,6 +31,8 @@ enum class ValueKind {
   Pointer,
   Record,
   Array,
+  Buffer,
+  Index,
   OpaqueDialect,
   Encoding,
   View,
@@ -71,6 +73,8 @@ class Value {
   bool is_pointer() const { return partition_->kind == ValueKind::Pointer; }
   bool is_record() const { return partition_->kind == ValueKind::Record; }
   bool is_array() const { return partition_->kind == ValueKind::Array; }
+  bool is_buffer() const { return partition_->kind == ValueKind::Buffer; }
+  bool is_index() const { return partition_->kind == ValueKind::Index; }
   bool is_opaque_dialect() const {
     return partition_->kind == ValueKind::OpaqueDialect;
   }
@@ -79,6 +83,8 @@ class Value {
   bool is_tensor() const { return partition_->kind == ValueKind::Tensor; }
   loom_value_id_t ssa() const {
     IREE_ASSERT(partition_->kind == ValueKind::SSA ||
+                partition_->kind == ValueKind::Buffer ||
+                partition_->kind == ValueKind::Index ||
                 partition_->kind == ValueKind::OpaqueDialect);
     return storage_.inline_values[0];
   }

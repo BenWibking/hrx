@@ -7,6 +7,7 @@
 #ifndef LOOMCXX_VIEW_H_
 #define LOOMCXX_VIEW_H_
 
+#include <loomcxx/buffer.h>
 #include <loomcxx/encoding_type.h>
 
 namespace loom::type {
@@ -89,6 +90,14 @@ template <loom::type::size_type... Extents, class T, loom::encoding::role Role>
 [[loom::op("buffer.view")]]
 loom::type::view<loom::type::shape<Extents...>, T, Role> view(
     T* data, loom::detail::view_dimensions<Extents...> dimensions,
+    loom::type::encoding<Role, sizeof...(Extents)> encoding);
+
+// Forms a typed view at the root of an existing Loom buffer value.
+template <loom::type::size_type... Extents, class T, loom::encoding::role Role>
+[[loom::op("buffer.view")]]
+loom::type::view<loom::type::shape<Extents...>, T, Role> view(
+    loom::type::buffer<T> data,
+    loom::detail::view_dimensions<Extents...> dimensions,
     loom::type::encoding<Role, sizeof...(Extents)> encoding);
 
 }  // namespace loom::buffer

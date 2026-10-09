@@ -167,12 +167,22 @@ std::optional<ViewIntrinsic> ViewIntrinsic::resolve(
                                           signature->returnType(), owner);
       auto* pointer =
           cxx::type_cast<cxx::PointerType>(types.unqualified(parameters[0]));
-      if (!pointer ||
-          pointer->elementType() != result.result_view_->element_type) {
+      const BufferPartition* buffer = nullptr;
+      if (!pointer) {
+        const auto& partition = types.partition(parameters[0], owner);
+        if (partition.kind == ValueKind::Buffer) {
+          buffer = &static_cast<const BufferPartition&>(partition);
+        }
+      }
+      auto* element = pointer  ? pointer->elementType()
+                      : buffer ? buffer->element_type
+                               : nullptr;
+      if (!element || element != result.result_view_->element_type) {
         diagnostics.reject(
             unit, owner,
-            "buffer.view pointer element type must match its result view");
+            "buffer.view source element type must match its result view");
       }
+      result.source_buffer_ = buffer;
       result.unsigned_dimension_mask_ = require_integral_record(
           unit, diagnostics, types, parameters[1],
           dynamic_extent_count(*result.result_view_), owner, "view dimensions");
@@ -330,7 +340,9 @@ std::optional<Value> ViewIntrinsic::call(std::span<const Value> arguments,
 
       std::optional<Pointer> pointer;
       if (operation_ == Operation::BufferView) {
-        pointer = storage.constrain_origin(arguments[0].pointer(), owner);
+        pointer = source_buffer_
+                      ? storage.root(arguments[0].ssa(), owner)
+                      : storage.constrain_origin(arguments[0].pointer(), owner);
       }
 
       loom_value_id_t result_id;
@@ -400,6 +412,7 @@ bool ViewIntrinsic::equivalent(const ViewIntrinsic& other) const {
   return operation_ == other.operation_ &&
          result_source_type_ == other.result_source_type_ &&
          result_encoding_ == other.result_encoding_ &&
+         source_buffer_ == other.source_buffer_ &&
          source_view_ == other.source_view_ &&
          result_view_ == other.result_view_ &&
          unsigned_argument_mask_ == other.unsigned_argument_mask_ &&

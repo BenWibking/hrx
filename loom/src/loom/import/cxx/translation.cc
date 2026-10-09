@@ -135,8 +135,25 @@ class Translator final : private Initialization::Evaluation {
   Value convert(cxx::ExpressionAST* input_ast, const cxx::Type* output_type,
                 cxx::AST* owner) override {
     auto value = expression(input_ast);
-    if (value.is_record() || value.is_array() || value.is_encoding() ||
-        value.is_view() || value.is_tensor()) {
+    if (value.is_index()) {
+      auto output = types_.get(output_type, owner);
+      auto index = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+      if (loom_type_equal(output, index)) {
+        return value;
+      }
+      if (types_.unqualified(output_type) !=
+          unit_.control()->getUnsignedLongLongIntType()) {
+        fail(owner,
+             "index conversion requires loom::type::index or unsigned long "
+             "long");
+      }
+      loom_op_t* cast;
+      check(loom_index_cast_build(&builder_, value.ssa(), index, output,
+                                  locations_.get(owner), &cast));
+      return Value(loom_op_results(cast)[0]);
+    }
+    if (value.is_record() || value.is_array() || value.is_buffer() ||
+        value.is_encoding() || value.is_view() || value.is_tensor()) {
       if (&types_.partition(output_type, owner) != &value.partition()) {
         fail(owner, "conversion must preserve the source value type");
       }
@@ -210,7 +227,7 @@ class Translator final : private Initialization::Evaluation {
       auto pointer = value.pointer();
       name(pointer.root, hint);
       name(pointer.byte_offset, hint + "_byte_offset");
-    } else if (value.is_encoding() || value.is_tensor()) {
+    } else if (value.is_buffer() || value.is_encoding() || value.is_tensor()) {
       name(value.components()[0], hint);
     } else {
       name(value.ssa(), hint);
@@ -832,6 +849,10 @@ class Translator final : private Initialization::Evaluation {
     cxx::ClassSymbol* source = nullptr;
     if (partition.kind == ValueKind::Record) {
       source = static_cast<const RecordPartition&>(partition).source;
+    } else if (partition.kind == ValueKind::Buffer) {
+      source = static_cast<const BufferPartition&>(partition).source;
+    } else if (partition.kind == ValueKind::Index) {
+      source = static_cast<const IndexPartition&>(partition).source;
     } else if (partition.kind == ValueKind::OpaqueDialect) {
       source = static_cast<const OpaqueDialectPartition&>(partition).source;
     } else if (partition.kind == ValueKind::Encoding) {
@@ -986,7 +1007,8 @@ class Translator final : private Initialization::Evaluation {
       return expression(initializer->expression);
     }
     if (auto* cast = cxx::ast_cast<cxx::ImplicitCastExpressionAST>(ast)) {
-      if (cast->conversionFunction) {
+      if (cast->conversionFunction &&
+          !types_.is_index(cast->expression->type, ast)) {
         types_.admit_copy(cast->conversionFunction, ast->type, ast);
       }
       return convert(cast->expression, cast->type, ast);

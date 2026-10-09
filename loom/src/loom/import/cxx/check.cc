@@ -29,7 +29,6 @@
 #include "loom/ir/module.h"
 #include "loom/ops/check/ops.h"
 #include "loom/ops/func/ops.h"
-#include "loom/ops/index/ops.h"
 #include "loom/ops/kernel/ops.h"
 
 namespace loom::cxx_import {
@@ -191,14 +190,10 @@ class CheckBody {
     name(block->arg_ids[0], parameters[0]);
     name(block->arg_ids[1], parameters[1]);
     if (SymbolReference::find(body.body, parameters[0])) {
-      loom_op_t* cast;
-      auto source = locations_.get(body.source);
-      check(loom_index_cast_build(&builder_, block->arg_ids[0],
-                                  loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
-                                  loom_type_scalar(LOOM_SCALAR_TYPE_I64),
-                                  source, &cast));
-      values_[parameters[0]] = name(Value(loom_op_results(cast)[0]),
-                                    spelling(parameters[0], "_i64"));
+      const auto& ordinal =
+          types_.partition(parameters[0]->type(), body.source);
+      values_[parameters[0]] = name(
+          value_arena_.capture(ordinal, {block->arg_ids, 1}), parameters[0]);
     }
     if (SymbolReference::find(body.body, parameters[1])) {
       const auto& entropy =
@@ -289,8 +284,7 @@ class CheckBody {
     }
     auto parameters = lambda_parameters(lambda);
     if (parameters.size() != 2 ||
-        types_.unqualified(parameters[0]->type) !=
-            unit_.control()->getUnsignedLongLongIntType() ||
+        !types_.is_index(parameters[0]->type, parameters[0]) ||
         !types_.is_opaque_dialect(parameters[1]->type, "check.entropy",
                                   parameters[1])) {
       fail(lambda,
@@ -319,14 +313,11 @@ class CheckBody {
     name(block->arg_ids[0], parameters[0]->symbol);
     name(block->arg_ids[1], parameters[1]->symbol);
     if (SymbolReference::find(lambda->statement, parameters[0]->symbol)) {
-      loom_op_t* cast;
-      check(loom_index_cast_build(&builder_, block->arg_ids[0],
-                                  argument_types[0],
-                                  loom_type_scalar(LOOM_SCALAR_TYPE_I64),
-                                  locations_.get(parameters[0]), &cast));
+      const auto& ordinal =
+          types_.partition(parameters[0]->type, parameters[0]);
       values_[parameters[0]->symbol] =
-          name(Value(loom_op_results(cast)[0]),
-               spelling(parameters[0]->symbol, "_i64"));
+          name(value_arena_.capture(ordinal, {block->arg_ids, 1}),
+               parameters[0]->symbol);
     }
     if (SymbolReference::find(lambda->statement, parameters[1]->symbol)) {
       const auto& entropy_partition =
@@ -659,6 +650,31 @@ class CheckBody {
       auto* parameter_type = parameters[index]->type();
       auto* argument_type = source_arguments[index]->type;
       auto expected = types_.get(parameter_type, source);
+      const auto& expected_partition =
+          types_.partition(parameter_type, source_arguments[index]);
+      if (values[index].is_tensor() &&
+          loom_type_kind(expected) == LOOM_TYPE_BUFFER) {
+        const cxx::Type* expected_element = nullptr;
+        if (auto* pointer = cxx::type_cast<cxx::PointerType>(
+                types_.unqualified(parameter_type))) {
+          expected_element = pointer->elementType();
+        } else if (expected_partition.kind == ValueKind::Buffer) {
+          expected_element =
+              static_cast<const BufferPartition&>(expected_partition)
+                  .element_type;
+        }
+        const auto& tensor =
+            static_cast<const TensorPartition&>(values[index].partition());
+        if (!expected_element || types_.unqualified(expected_element) !=
+                                     types_.unqualified(tensor.element_type)) {
+          fail(source_arguments[index],
+               "check tensor element type must match the subject buffer "
+               "element type");
+        }
+        if (kernel || expected_partition.kind == ValueKind::Buffer) {
+          continue;
+        }
+      }
       if (kernel && loom_type_kind(expected) == LOOM_TYPE_BUFFER) {
         if (!values[index].is_tensor()) {
           fail(source_arguments[index],
@@ -666,8 +682,6 @@ class CheckBody {
         }
         continue;
       }
-      const auto& expected_partition =
-          types_.partition(parameter_type, source_arguments[index]);
       if (values[index].components().size() !=
           expected_partition.component_count) {
         if (!kernel && expected_partition.kind == ValueKind::Pointer &&
@@ -1032,12 +1046,15 @@ class CheckBody {
                  "range");
           }
           auto value = expression(position);
-          loom_op_t* cast;
-          check(loom_index_cast_build(&builder_, value.ssa(),
-                                      loom_type_scalar(LOOM_SCALAR_TYPE_I64),
-                                      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
-                                      locations_.get(position), &cast));
-          dynamic_ordinals.push_back(loom_op_results(cast)[0]);
+          auto value_type =
+              loom_module_value_type(builder_.module, value.ssa());
+          auto index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+          if (!loom_type_equal(value_type, index_type)) {
+            fail(position,
+                 "dynamic check entropy ordinals require "
+                 "loom::check::ordinal");
+          }
+          dynamic_ordinals.push_back(value.ssa());
         }
         check(loom_check_entropy_read_build(
             &builder_, entropy.ssa(), dynamic_ordinals.data(),

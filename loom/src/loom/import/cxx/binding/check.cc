@@ -370,9 +370,12 @@ std::optional<CheckIntrinsic> CheckIntrinsic::resolve(
           !types.is_opaque_dialect(parameters[0], "check.entropy", owner) ||
           types.unqualified(signature->returnType()) !=
               unit.control()->getUnsignedLongLongIntType() ||
-          types.unqualified(parameters[1]) !=
-              unit.control()->getUnsignedLongLongIntType()) {
-        fail("check.entropy.read requires an entropy source and an i64 result");
+          (!types.is_index(parameters[1], owner) &&
+           types.unqualified(parameters[1]) !=
+               unit.control()->getUnsignedLongLongIntType())) {
+        fail(
+            "check.entropy.read requires an entropy source, index or constant "
+            "ordinal, and an i64 result");
       }
       break;
     }

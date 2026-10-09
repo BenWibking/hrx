@@ -203,3 +203,30 @@ func.def public @read_weight(%data: buffer, %data_byte_offset: offset, %rows: i3
 func.def @preserve_weights(%weights_dim0: index, %weights_dim1: index, %weights_storage: encoding<storage>, %weights: view<[%weights_dim0]x[%weights_dim1]x16xf8E4M3, %weights_storage>) -> (%45: index, %46: index, %47: encoding<storage>, view<[%45]x[%46]x16xf8E4M3, %47>) {
   func.return %weights_dim0, %weights_dim1, %weights_storage, %weights : index, index, encoding<storage>, view<[%weights_dim0]x[%weights_dim1]x16xf8E4M3, %weights_storage>
 }
+
+// ====
+// Typed buffers preserve one zero-origin buffer value across ordinary calls.
+#include <loomcxx/view.h>
+
+void increment_root(loom::type::buffer<unsigned> data) {
+  auto values = loom::buffer::view<4>(
+      data, {}, loom::encoding::layout::dense<1>());
+  auto value = loom::view::load(values, 0);
+  loom::view::store(value + 1u, values, 0);
+}
+
+// ----
+func.def public @increment_root(%data: buffer) {
+  %values_layout = encoding.layout.dense : encoding<layout>
+  %2 = index.constant 0 : offset
+  %values = buffer.view %data[%2] : buffer -> view<4xi32, %values_layout>
+  %4 = scalar.constant 0 : i32
+  %5 = index.cast %4 : i32 to index
+  %value = view.load %values[%5] : view<4xi32, %values_layout> -> i32
+  %7 = scalar.constant 1 : i32
+  %8 = scalar.addi %value, %7 : i32
+  %9 = scalar.constant 0 : i32
+  %10 = index.cast %9 : i32 to index
+  view.store %8, %values[%10] : i32, view<4xi32, %values_layout>
+  func.return
+}

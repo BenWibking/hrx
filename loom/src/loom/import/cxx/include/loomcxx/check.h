@@ -23,6 +23,18 @@
 #define LOOM_CHECK_BENCHMARK(name, record_name) \
   [[loom::check_benchmark(record_name)]] void name()
 
+namespace loom::type {
+
+// Native target-independent index value supplied by structured Loom regions.
+// Implicit conversion restores ordinary unsigned C++ arithmetic inside called
+// functions without changing the region's index-typed boundary.
+class [[loom::type("index")]] index {
+ public:
+  operator unsigned long long() const;
+};
+
+}  // namespace loom::type
+
 namespace loom::kernel {
 
 // Syntax-only bundle separating launch workloads from kernel ABI arguments.
@@ -43,9 +55,7 @@ template <class... Args>
 namespace loom::check {
 
 // Stable source representation of a configuration or trial-domain ordinal.
-// Scenario regions retain Loom's target-independent index type and cast it
-// once when binding this ordinary C++ value.
-using ordinal = unsigned long long;
+using ordinal = loom::type::index;
 
 // Immutable counter-based entropy identity supplied to configured scenarios
 // and trials. Named forks and indexed reads are deterministic and do not
@@ -73,8 +83,9 @@ using function_result_t = typename function_result<Function>::type;
 template <__SIZE_TYPE__ Count, class Body>
 [[loom::op("check.trial")]] void trial(Body body);
 
-// Invokes an ordinary function while realizing one trial recipe. Scalar and
-// scalar-record arguments and results remain local to the trial.
+// Invokes an ordinary function while realizing one trial recipe. Tensors bind
+// loom::type::buffer<T> parameters; scalar and scalar-record values remain
+// local to the trial.
 template <auto Function, class... Args>
 [[loom::op("check.generate")]]
 detail::function_result_t<decltype(Function)> generate(Args... args);
@@ -100,6 +111,8 @@ template <auto Subject, class... Args>
 // Reads one deterministic word at a static or runtime ordinal.
 [[loom::op("check.entropy.read")]] unsigned long long read(entropy source,
                                                            ordinal position);
+[[loom::op("check.entropy.read")]] unsigned long long read(
+    entropy source, unsigned long long constant_position);
 
 // A dense rank-one tensor handle. Copies share storage owned by the check
 // runner; const qualifies the handle, not its contents. Count is a static

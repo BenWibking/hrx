@@ -13,6 +13,13 @@
 // ====
 #include <loomcxx/check.h>
 
+// ERROR@+1: LOWERING/059 "configured check_scenario first parameter must be loom::check::ordinal"
+[[loom::check_scenario(4)]] void wrong_configuration_ordinal(
+    unsigned long long configuration, loom::check::entropy entropy) {}
+
+// ====
+#include <loomcxx/check.h>
+
 // ERROR@+1: LOWERING/059 "configured check_scenario requires one positive i64 configuration count"
 [[loom::check_scenario(0)]] void empty_configuration_domain() {}
 
@@ -33,6 +40,22 @@ LOOM_CHECK_SCENARIO(wrong_trial_signature) {
       // ERROR@+1: LOWERING/059 "check.trial lambda requires (loom::check::ordinal, loom::check::entropy)"
       [](int trial, loom::check::entropy entropy) {
         loom::check::invoke<subject>();
+      });
+}
+
+// ====
+#include <loomcxx/check.h>
+
+unsigned long long runtime_ordinal() { return 0; }
+void entropy_subject() {}
+
+LOOM_CHECK_SCENARIO(runtime_entropy_ordinal) {
+  loom::check::trial<1>(
+      [](loom::check::ordinal trial, loom::check::entropy entropy) {
+        const auto position = loom::check::generate<runtime_ordinal>();
+        // ERROR@+1: LOWERING/059 "dynamic check entropy ordinals require loom::check::ordinal"
+        const auto word = loom::check::read(entropy, position);
+        loom::check::invoke<entropy_subject>();
       });
 }
 
@@ -90,6 +113,21 @@ LOOM_CHECK_SCENARIO(ordinary_pointer_argument) {
         const auto output = loom::check::fill<unsigned, 1>(0u);
         // ERROR@+1: LOWERING/059 "ordinary C++ pointer parameters retain a byte offset and cannot bind a one-component check tensor"
         loom::check::compare<pointer_subject>(output, [] {});
+      });
+}
+
+// ====
+#include <loomcxx/check.h>
+#include <loomcxx/view.h>
+
+void wrong_buffer_element(loom::type::buffer<float> output) {}
+
+LOOM_CHECK_SCENARIO(mismatched_buffer_element) {
+  loom::check::trial<1>(
+      [](loom::check::ordinal trial, loom::check::entropy entropy) {
+        const auto output = loom::check::fill<unsigned, 1>(0u);
+        // ERROR@+1: LOWERING/059 "check tensor element type must match the subject buffer element type"
+        loom::check::invoke<wrong_buffer_element>(output);
       });
 }
 

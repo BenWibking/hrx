@@ -736,8 +736,7 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
     size_t configuration_argument_count = 0;
     if (scenario->second.configuration_count) {
       if (parameters.size() != 2 ||
-          types.unqualified(parameters[0]->type()) !=
-              unit_.control()->getUnsignedLongLongIntType()) {
+          !types.is_index(parameters[0]->type(), definition)) {
         diagnostics_.reject(unit_, scenario->second.source,
                             "configured check_scenario first parameter must be "
                             "loom::check::ordinal");

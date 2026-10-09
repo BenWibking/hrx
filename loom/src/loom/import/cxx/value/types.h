@@ -64,6 +64,24 @@ struct ArrayPartition final : Partition {
   bool requires_binding;
 };
 
+// Canonical typed source handle projected to one zero-origin High buffer.
+// The element type constrains source view construction but is not carried by
+// Loom's untyped buffer value.
+struct BufferPartition final : Partition {
+  // Concrete source specialization retaining copy and lifetime semantics.
+  cxx::ClassSymbol* source;
+  // Source element type, including qualifiers used by typed views.
+  const cxx::Type* element_type;
+};
+
+// Canonical source handle projected to Loom's target-independent index scalar.
+// The class gives C++ a distinct type for native region arguments while its
+// conversion operator restores ordinary unsigned arithmetic inside functions.
+struct IndexPartition final : Partition {
+  // Concrete source class retaining copy and conversion semantics.
+  cxx::ClassSymbol* source;
+};
+
 // Canonical source encoding object projected to one first-class High encoding
 // value. Rank remains a source type refinement used to reject mismatched view
 // construction; the High encoding role owns the runtime semantic type.
@@ -241,6 +259,8 @@ class Types {
   const cxx::VectorType* vector(const cxx::Type* type);
   bool is_unsigned(const cxx::Type* type);
   bool is_float(const cxx::Type* type);
+  // Whether the source class projects directly to Loom's native index scalar.
+  bool is_index(const cxx::Type* type, cxx::AST* owner);
   // Whether the source class names this exact registered opaque dialect type.
   bool is_opaque_dialect(const cxx::Type* type, std::string_view name,
                          cxx::AST* owner);
@@ -248,6 +268,8 @@ class Types {
  private:
   void require_record_storage(const cxx::ClassType* input, cxx::AST* owner);
   const Partition* special(const cxx::Type* input, cxx::AST* owner);
+  const BufferPartition* buffer(const cxx::ClassType* input, cxx::AST* owner);
+  const IndexPartition* index(const cxx::ClassType* input, cxx::AST* owner);
   const EncodingPartition* encoding(const cxx::ClassType* input,
                                     cxx::AST* owner);
   const OpaqueDialectPartition* opaque_dialect(const cxx::ClassType* input,
@@ -268,6 +290,12 @@ class Types {
   // Stable source partitions, independent of every particular SSA binding.
   std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<RecordPartition>>
       records_;
+  // Admitted typed buffer handles keyed by concrete source specialization.
+  std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<BufferPartition>>
+      buffers_;
+  // Admitted native index handles keyed by their source class.
+  std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<IndexPartition>>
+      indices_;
   // Array schemas retain the element partition once, independently of length.
   std::unordered_map<const cxx::BoundedArrayType*,
                      std::unique_ptr<ArrayPartition>>

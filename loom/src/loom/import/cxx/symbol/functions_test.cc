@@ -124,8 +124,11 @@ TEST_F(FunctionsTest,
 
 TEST_F(FunctionsTest, ConfiguredScenarioRetainsItsNativeRegionSignature) {
   Source source(IREE_SV(R"(
+    namespace loom::type {
+    class [[loom::type("index")]] index {};
+    }
     namespace loom::check {
-    using ordinal = unsigned long long;
+    using ordinal = loom::type::index;
     class [[loom::type("check.entropy")]] entropy {};
     }
     [[loom::check_scenario(7)]]
