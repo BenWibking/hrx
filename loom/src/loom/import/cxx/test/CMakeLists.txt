@@ -661,100 +661,6 @@ loom_execution_test(
 endif()
 endif()
 
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
-    constant_loops_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "constant_loops_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/constant_loops.cxx"
-  INPUTS
-    "constant_loops.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_generated_file(
-  NAME
-    structured_continue_cases_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUT
-    "structured_continue_cases.cxx"
-  OUTPUT_FLAG
-    "--output"
-  ARGS
-    "host"
-    "--source=${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/structured_continue.cxx"
-  INPUTS
-    "structured_continue.cxx"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
-    constant_loops_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/constant_loops_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/constant_loops.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    constant_loops_test_execute_vm_reference_test
-  MODULE
-    "::constant_loops_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-loom_test_module(
-  NAME
-    structured_continue_test_module
-  SRCS
-    "${CMAKE_CURRENT_BINARY_DIR}/structured_continue_cases.cxx"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/structured_continue.cxx"
-)
-endif()
-
-if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    structured_continue_test_execute_vm_reference_test
-  MODULE
-    "::structured_continue_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-endif()
-
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
@@ -815,6 +721,26 @@ loom_execution_test(
     "::comparison_functions_module"
   RUNNER_ARGS
     "--case=comparison_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    constant_loops_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::constant_loops_module"
+  RUNNER_ARGS
+    "--case=constant_loops_functions"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
     "loom-execution-profile=vm_reference"
@@ -935,6 +861,26 @@ loom_execution_test(
     "::shaped_intrinsics_module"
   RUNNER_ARGS
     "--case=shaped_intrinsics_functions"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    structured_continue_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::structured_continue_module"
+  RUNNER_ARGS
+    "--case=structured_continue_functions"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
     "loom-execution-profile=vm_reference"
@@ -1185,25 +1131,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_generated_file_family(
   NAME
-    constant_loops_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "constant_loops_checks.loom"
-    "constant_loops_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=constant_loops"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
     control_flow_checks_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -1318,25 +1245,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_generated_file_family(
   NAME
-    structured_continue_checks_gen
-  GENERATOR
-    loom::py::loom::gen::test::cxx_kernel_cases
-  OUTPUTS
-    "structured_continue_checks.loom"
-    "structured_continue_arrays"
-  OUTPUT_FLAGS
-    "--output"
-    "--arrays"
-  ARGS
-    "kernel"
-    "--group=structured_continue"
-  TESTONLY
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_generated_file_family(
-  NAME
     vector_depth_checks_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases
@@ -1384,21 +1292,6 @@ loom_test_module(
     "${CMAKE_CURRENT_BINARY_DIR}/aiter_swiglu_f16_checks.loom"
   INPUTOPTS
     "cxx:approximate-functions=true"
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
-    constant_loops_module
-  SRCS
-    "constant_loops.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/constant_loops_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/constant_loops_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/constant_loops_checks.loom"
-  INPUTOPTS
-
 )
 endif()
 
@@ -1495,21 +1388,6 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
-    structured_continue_module
-  SRCS
-    "structured_continue.cxx"
-    "${CMAKE_CURRENT_BINARY_DIR}/structured_continue_checks.loom"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/structured_continue_arrays"
-    "${CMAKE_CURRENT_BINARY_DIR}/structured_continue_checks.loom"
-  INPUTOPTS
-
-)
-endif()
-
-if(LOOM_IMPORT_CXX)
-loom_test_module(
-  NAME
     vector_depth_module
   SRCS
     "vector_depth.cxx"
@@ -1544,6 +1422,16 @@ loom_test_module(
   SRCS
     "assumptions.cxx"
     "assumptions.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    constant_loops_module
+  SRCS
+    "constant_loops.cxx"
+    "constant_loops.loom"
 )
 endif()
 
@@ -1604,6 +1492,16 @@ loom_test_module(
   SRCS
     "shaped_intrinsics.cxx"
     "shaped_intrinsics.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    structured_continue_module
+  SRCS
+    "structured_continue.cxx"
+    "structured_continue.loom"
 )
 endif()
 

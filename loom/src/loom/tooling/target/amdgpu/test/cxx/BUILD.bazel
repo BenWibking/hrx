@@ -32,7 +32,7 @@ _AMDGPU_EXECUTION_PROFILE = amdgpu_execution_profile(
     name = "amdgpu",
 )
 
-# These sources assert zero access reports against independent reference data.
+# Access-instrumented execution fails automatically when a report is emitted.
 _EXECUTION_PROFILES = [
     _AMDGPU_EXECUTION_PROFILE,
     amdgpu_execution_profile(

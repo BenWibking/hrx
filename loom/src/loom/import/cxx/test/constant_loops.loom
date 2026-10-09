@@ -1,0 +1,250 @@
+func.decl @counted_stride(%start: i32) -> (i32)
+
+func.decl @counted_edge(%start: i32) -> (i32)
+
+func.decl @counted_empty(%start: i32) -> (i32)
+
+func.decl @counted_maximum_step(%start: i32) -> (i32)
+
+kernel.decl @constant_loops() launch(%input: buffer, %output: buffer, %start: i32)
+
+global.rodata.def @constant_loop_starts = align(4) bytes("000000000100000002000000030000000700000010000000110000001200000013000000140000001500000000000080ffffffff")
+
+func.def @constant_loop_start(%trial: index) -> (i32) {
+  %origin = index.constant 0 : offset
+  %bounded_trial = index.assume %trial [range(%trial, 0, 12)] : index
+  %storage = global.load @constant_loop_starts : buffer
+  %starts = buffer.view %storage[%origin] : buffer -> view<13xi32>
+  %start = view.load %starts[%bounded_trial] : view<13xi32> -> i32
+  func.return %start : i32
+}
+
+func.def @constant_edge_start(%trial: index) -> (i32) {
+  %bounded_trial = index.assume %trial [range(%trial, 0, 15)] : index
+  %trial_i32 = index.cast %bounded_trial : index to i32
+  %first = scalar.constant -16 : i32
+  %start = scalar.addi %first, %trial_i32 : i32
+  func.return %start : i32
+}
+
+func.def @counted_stride_reference(%start: i32) -> (i32) {
+  %c0 = scalar.constant 0 : i32
+  %c1 = scalar.constant 1 : i32
+  %c2 = scalar.constant 2 : i32
+  %c3 = scalar.constant 3 : i32
+  %c4 = scalar.constant 4 : i32
+  %c20 = scalar.constant 20 : i32
+  %has_iterations = scalar.cmpi ult, %start, %c20 : i32
+  %result = scf.if %has_iterations -> (i32) {
+    %distance = scalar.subi %c20, %start : i32
+    %rounded_distance = scalar.addi %distance, %c3 : i32
+    %iterations = scalar.divui %rounded_distance, %c4 : i32
+    %predecessor = scalar.subi %iterations, %c1 : i32
+    %pair_product = scalar.muli %iterations, %predecessor : i32
+    %step_sum = scalar.muli %pair_product, %c2 : i32
+    %base_sum = scalar.muli %iterations, %start : i32
+    %sum = scalar.addi %base_sum, %step_sum : i32
+    scf.yield %sum : i32
+  } else {
+    scf.yield %c0 : i32
+  }
+  func.return %result : i32
+}
+
+func.def @counted_edge_reference(%start: i32) -> (i32) {
+  %c0 = scalar.constant 0 : i32
+  %c1 = scalar.constant 1 : i32
+  %c2 = scalar.constant 2 : i32
+  %c3 = scalar.constant 3 : i32
+  %c4 = scalar.constant 4 : i32
+  %bound = scalar.constant -4 : i32
+  %has_iterations = scalar.cmpi ult, %start, %bound : i32
+  %result = scf.if %has_iterations -> (i32) {
+    %distance = scalar.subi %bound, %start : i32
+    %rounded_distance = scalar.addi %distance, %c3 : i32
+    %iterations = scalar.divui %rounded_distance, %c4 : i32
+    %predecessor = scalar.subi %iterations, %c1 : i32
+    %pair_product = scalar.muli %iterations, %predecessor : i32
+    %step_sum = scalar.muli %pair_product, %c2 : i32
+    %base_sum = scalar.muli %iterations, %start : i32
+    %sum = scalar.addi %base_sum, %step_sum : i32
+    scf.yield %sum : i32
+  } else {
+    scf.yield %c0 : i32
+  }
+  func.return %result : i32
+}
+
+func.def @constant_loop_function_observations(%start: i32, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %stride = func.call @counted_stride(%start) : (i32) -> (i32)
+  %empty = func.call @counted_empty(%start) : (i32) -> (i32)
+  %maximum_step = func.call @counted_maximum_step(%start) : (i32) -> (i32)
+  %results = buffer.view %output[%origin] : buffer -> view<3xi32>
+  view.store %stride, %results[0] : i32, view<3xi32>
+  view.store %empty, %results[1] : i32, view<3xi32>
+  view.store %maximum_step, %results[2] : i32, view<3xi32>
+  func.return
+}
+
+func.def @constant_loop_function_oracle(%start: i32, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %c0 = scalar.constant 0 : i32
+  %c7 = scalar.constant 7 : i32
+  %stride = func.call @counted_stride_reference(%start) : (i32) -> (i32)
+  %starts_at_zero = scalar.cmpi eq, %start, %c0 : i32
+  %maximum_step = scf.select %starts_at_zero, %c7, %c0 : i32
+  %results = buffer.view %output[%origin] : buffer -> view<3xi32>
+  view.store %stride, %results[0] : i32, view<3xi32>
+  view.store %c7, %results[1] : i32, view<3xi32>
+  view.store %maximum_step, %results[2] : i32, view<3xi32>
+  func.return
+}
+
+func.def @constant_edge_observation(%start: i32, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %result = func.call @counted_edge(%start) : (i32) -> (i32)
+  %results = buffer.view %output[%origin] : buffer -> view<1xi32>
+  view.store %result, %results[0] : i32, view<1xi32>
+  func.return
+}
+
+func.def @constant_edge_oracle(%start: i32, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %result = func.call @counted_edge_reference(%start) : (i32) -> (i32)
+  %results = buffer.view %output[%origin] : buffer -> view<1xi32>
+  view.store %result, %results[0] : i32, view<1xi32>
+  func.return
+}
+
+func.def @constant_loop_input(%input: buffer) {
+  %origin = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 1280 : index
+  %step = index.constant 1 : index
+  %c7 = scalar.constant 7 : i32
+  %c17 = scalar.constant 17 : i32
+  %c251 = scalar.constant 251 : i32
+  %values = buffer.view %input[%origin] : buffer -> view<1280xi32>
+  scf.for %position = [%begin to %end step %step] {
+    %position_i32 = index.cast %position : index to i32
+    %scaled = scalar.muli %position_i32, %c17 : i32
+    %shifted = scalar.addi %scaled, %c7 : i32
+    %value = scalar.remui %shifted, %c251 : i32
+    view.store %value, %values[%position] : i32, view<1280xi32>
+  }
+  func.return
+}
+
+func.def @constant_row_sum(%input: buffer, %lane: index, %begin: index, %end: index, %step: index) -> (i32) {
+  %origin = index.constant 0 : offset
+  %c0 = scalar.constant 0 : i32
+  %positive_step = index.assume %step [range(%step, 1, 4)] : index
+  %values = buffer.view %input[%origin] : buffer -> view<64x20xi32>
+  %sum = scf.for %column = [%begin to %end step %positive_step](%total = %c0 : i32) -> (i32) {
+    %bounded_column = index.assume %column [range(%column, 0, 19)] : index
+    %value = view.load %values[%lane, %bounded_column] : view<64x20xi32> -> i32
+    %next = scalar.addi %total, %value : i32
+    scf.yield %next : i32
+  }
+  func.return %sum : i32
+}
+
+func.def @constant_loops_oracle(%input: buffer, %output: buffer, %start: i32) {
+  %origin = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %lane_end = index.constant 64 : index
+  %step = index.constant 1 : index
+  %c0 = scalar.constant 0 : i32
+  %c2 = scalar.constant 2 : i32
+  %c7 = scalar.constant 7 : i32
+  %c19 = scalar.constant 19 : i32
+  %c20 = scalar.constant 20 : i32
+  %index0 = index.constant 0 : index
+  %index1 = index.constant 1 : index
+  %index2 = index.constant 2 : index
+  %index4 = index.constant 4 : index
+  %index5 = index.constant 5 : index
+  %index20 = index.constant 20 : index
+  %has_start = scalar.cmpi ult, %start, %c20 : i32
+  %results = buffer.view %output[%origin] : buffer -> view<64x12xi32>
+  scf.for %lane = [%begin to %lane_end step %step] {
+    %start_sum = scf.if %has_start -> (i32) {
+      %start_index = index.cast %start : i32 to index
+      %sum = func.call @constant_row_sum(%input, %lane, %start_index, %index20, %index2) : (buffer, index, index, index, index) -> (i32)
+      scf.yield %sum : i32
+    } else {
+      scf.yield %c0 : i32
+    }
+    %even_sum = func.call @constant_row_sum(%input, %lane, %index0, %index20, %index2) : (buffer, index, index, index, index) -> (i32)
+    %wrapped_sum = func.call @constant_row_sum(%input, %lane, %index0, %index20, %index4) : (buffer, index, index, index, index) -> (i32)
+    %all_sum = func.call @constant_row_sum(%input, %lane, %index0, %index20, %index1) : (buffer, index, index, index, index) -> (i32)
+    %mutable_sum, %mutable_bound = scf.if %has_start -> (i32, i32) {
+      %distance = scalar.subi %c20, %start : i32
+      %iterations = scalar.divui %distance, %c2 : i32
+      %start_index = index.cast %start : i32 to index
+      %iterations_index = index.cast %iterations : i32 to index
+      %end_index = index.add %start_index, %iterations_index : index
+      %sum = func.call @constant_row_sum(%input, %lane, %start_index, %end_index, %index1) : (buffer, index, index, index, index) -> (i32)
+      %bound = scalar.subi %c19, %iterations : i32
+      scf.yield %sum, %bound : i32, i32
+    } else {
+      scf.yield %c0, %c19 : i32, i32
+    }
+    %mutable_result = scalar.addi %mutable_sum, %mutable_bound : i32
+    %lane_i32 = index.cast %lane : index to i32
+    %lane_low = scalar.andi %lane_i32, %c7 : i32
+    %edge_base = scalar.constant -16 : i32
+    %edge_start = scalar.addi %edge_base, %lane_low : i32
+    %edge = func.call @counted_edge_reference(%edge_start) : (i32) -> (i32)
+    %bound1_sum = func.call @constant_row_sum(%input, %lane, %index0, %index1, %index2) : (buffer, index, index, index, index) -> (i32)
+    %bound2_sum = func.call @constant_row_sum(%input, %lane, %index0, %index2, %index2) : (buffer, index, index, index, index) -> (i32)
+    %bound5_sum = func.call @constant_row_sum(%input, %lane, %index0, %index5, %index2) : (buffer, index, index, index, index) -> (i32)
+    view.store %start_sum, %results[%lane, 0] : i32, view<64x12xi32>
+    view.store %start_sum, %results[%lane, 1] : i32, view<64x12xi32>
+    view.store %even_sum, %results[%lane, 2] : i32, view<64x12xi32>
+    view.store %even_sum, %results[%lane, 3] : i32, view<64x12xi32>
+    view.store %wrapped_sum, %results[%lane, 4] : i32, view<64x12xi32>
+    view.store %all_sum, %results[%lane, 5] : i32, view<64x12xi32>
+    view.store %mutable_result, %results[%lane, 6] : i32, view<64x12xi32>
+    view.store %edge, %results[%lane, 7] : i32, view<64x12xi32>
+    view.store %c0, %results[%lane, 8] : i32, view<64x12xi32>
+    view.store %bound1_sum, %results[%lane, 9] : i32, view<64x12xi32>
+    view.store %bound2_sum, %results[%lane, 10] : i32, view<64x12xi32>
+    view.store %bound5_sum, %results[%lane, 11] : i32, view<64x12xi32>
+  }
+  func.return
+}
+
+check.scenario @constant_loops_functions {
+  check.trial[13](%trial: index, %entropy: check.entropy) {
+    %start = check.generate<@constant_loop_start>(%trial) : (index) -> (i32)
+    %output = check.generate.fill value(-123) : tensor<3xi32>
+    check.compare<@constant_loop_function_observations, @constant_loop_function_oracle>(%start, %output) : (i32, tensor<3xi32>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<3xi32>
+    }
+  }
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %start = check.generate<@constant_edge_start>(%trial) : (index) -> (i32)
+    %output = check.generate.fill value(-123) : tensor<1xi32>
+    check.compare<@constant_edge_observation, @constant_edge_oracle>(%start, %output) : (i32, tensor<1xi32>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario @constant_loop_cases {
+  check.trial[13](%trial: index, %entropy: check.entropy) {
+    %start = check.generate<@constant_loop_start>(%trial) : (index) -> (i32)
+    %input = check.generate.fill value(0) : tensor<1280xi32>
+    check.generate<@constant_loop_input>(%input) : (tensor<1280xi32>) -> ()
+    %storage = check.generate.fill value(-123) : tensor<800xi32>
+    %output = check.tensor.view %storage offset(64) : tensor<800xi32> -> tensor<768xi32>
+    check.compare<@constant_loops, @constant_loops_oracle>(%input, %output, %start) : (tensor<1280xi32>, tensor<768xi32>, i32) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<1280xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<800xi32>
+    }
+  }
+  check.return
+}
