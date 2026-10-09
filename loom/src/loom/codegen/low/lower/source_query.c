@@ -682,10 +682,6 @@ iree_status_t loom_low_lower_source_query_scope_create(
   scope->result = (loom_low_lower_result_t){
       .low_func_ref = loom_symbol_ref_null(),
   };
-  if (!iree_allocator_is_null(options->report_allocator)) {
-    scope->result.report_allocator = options->report_allocator;
-    scope->result.memory_report_row_allocator = module->allocator;
-  }
   scope->context = (loom_low_lower_context_t){
       .function_arena = &scope->arena,
       .lowering = &scope->frame,

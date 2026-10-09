@@ -441,6 +441,7 @@ TEST_F(LowLowerPassTest, SourceSelectionUsesPerFunctionTargetFacts) {
                                                 &selections));
 
   ASSERT_EQ(selections.count, 1u);
+  EXPECT_EQ(selections.values[0].report, nullptr);
   EXPECT_EQ(selections.values[0].version_handle, &function_version.base);
   EXPECT_EQ(selections.values[0].target_ref.module_id, target_ref.module_id);
   EXPECT_EQ(selections.values[0].target_ref.symbol_id, target_ref.symbol_id);

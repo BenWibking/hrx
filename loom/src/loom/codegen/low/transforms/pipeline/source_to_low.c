@@ -66,34 +66,36 @@ typedef struct loom_low_source_function_plan_t {
 static iree_status_t loom_low_source_to_low_record_target_specialization(
     loom_target_compile_report_t* compile_report,
     const loom_low_source_selection_t* selection) {
-  if (!loom_target_compile_report_wants_details(
-          compile_report, LOOM_TARGET_COMPILE_REPORT_DETAIL_SOURCE_LOW_ROWS)) {
-    return iree_ok_status();
-  }
-  if (selection->target_source != LOOM_TARGET_BINDING_SOURCE_SPECIALIZATION) {
+  const loom_low_source_selection_report_t* report = selection->report;
+  if (report == NULL) {
     return iree_ok_status();
   }
   const loom_target_bundle_t* bundle =
       loom_low_source_selection_target_bundle(selection);
   const loom_target_snapshot_t* snapshot = bundle ? bundle->snapshot : NULL;
   const loom_target_config_t* config = bundle ? bundle->config : NULL;
+  const loom_target_bundle_t* candidate_bundle = report->candidates.bundle;
   const loom_target_compile_report_source_low_target_row_t row = {
       .function_name = selection->function_name,
       .target_source = selection->target_source,
-      .target_symbol_name = selection->target_symbol_name,
+      .target_symbol_name = report->target_symbol_name,
       .target_bundle_name = bundle ? bundle->name : iree_string_view_empty(),
       .target_snapshot_name =
           snapshot ? snapshot->name : iree_string_view_empty(),
       .target_config_name = config ? config->name : iree_string_view_empty(),
       .target_subgroup_size = snapshot ? snapshot->subgroup_size : 0,
-      .candidate_target_count = selection->candidate_target_count,
-      .candidate_target_symbol_name = selection->candidate_target_symbol_name,
-      .candidate_target_bundle_name = selection->candidate_target_bundle_name,
-      .candidate_target_snapshot_name =
-          selection->candidate_target_snapshot_name,
-      .candidate_target_config_name = selection->candidate_target_config_name,
+      .candidate_target_count = report->candidates.count,
+      .candidate_target_symbol_name = report->candidates.symbol_name,
+      .candidate_target_bundle_name =
+          candidate_bundle ? candidate_bundle->name : iree_string_view_empty(),
+      .candidate_target_snapshot_name = candidate_bundle
+                                            ? candidate_bundle->snapshot->name
+                                            : iree_string_view_empty(),
+      .candidate_target_config_name = candidate_bundle
+                                          ? candidate_bundle->config->name
+                                          : iree_string_view_empty(),
       .candidate_target_subgroup_size =
-          selection->candidate_target_subgroup_size,
+          candidate_bundle ? candidate_bundle->snapshot->subgroup_size : 0,
   };
   return loom_target_compile_report_record_source_low_target_row(compile_report,
                                                                  &row);

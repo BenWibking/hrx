@@ -1058,6 +1058,23 @@ enum {
   LOOM_LOW_LOWER_STATIC_LAUNCH_CONFIG_WORKGROUP_CLUSTER_SIZE = 1u << 2,
 };
 
+// Optional owned reporting payload. Normal lowering retains no report rows,
+// counters, or allocator metadata when reports are disabled.
+typedef struct loom_low_lower_report_t {
+  // Reported number of non-structural source operations selected for lowering.
+  uint64_t selected_source_op_count;
+  // Reported number of low operations emitted from source operation selections.
+  uint64_t emitted_low_op_count;
+  // Allocator owning this record and its selection row blocks.
+  iree_allocator_t allocator;
+  // Allocator owning the contiguous memory row array.
+  iree_allocator_t memory_row_allocator;
+  // Selection decisions with instruction counts attached during emission.
+  loom_low_lower_report_row_list_t rows;
+  // Planned source-memory packet descriptions.
+  loom_low_lower_memory_report_row_list_t memory_rows;
+} loom_low_lower_report_t;
+
 typedef struct loom_low_lower_result_t {
   // Number of error diagnostics emitted.
   uint32_t error_count;
@@ -1070,10 +1087,6 @@ typedef struct loom_low_lower_result_t {
   loom_op_t* low_func_op;
   // Module-local symbol reference for |low_func_op|.
   loom_symbol_ref_t low_func_ref;
-  // Reported number of non-structural source operations selected for lowering.
-  uint64_t selected_source_op_count;
-  // Reported number of low operations emitted from source operation selections.
-  uint64_t emitted_low_op_count;
   // Static launch-config fact bits proven while the source kernel was alive.
   loom_low_lower_static_launch_config_flags_t static_launch_config_flags;
   // Proven workgroup size from the source kernel launch config.
@@ -1082,14 +1095,9 @@ typedef struct loom_low_lower_result_t {
   loom_target_dispatch_workgroup_count_t static_workgroup_count;
   // Proven nontrivial workgroup-cluster size from the source launch config.
   loom_target_workgroup_cluster_size_t static_workgroup_cluster_size;
-  // Allocator used for owned source-low report rows.
-  iree_allocator_t report_allocator;
-  // Allocator used for owned source-memory packet report row storage.
-  iree_allocator_t memory_report_row_allocator;
-  // Owned source-low report rows.
-  loom_low_lower_report_row_list_t report_rows;
-  // Owned source-memory packet report rows.
-  loom_low_lower_memory_report_row_list_t memory_report_rows;
+  // Optional owned selection and memory reports, absent when rows were not
+  // requested or the function has no selected operations.
+  loom_low_lower_report_t* report;
   // Module-arena packet effects retained independently of optional reports.
   loom_low_memory_access_map_t* memory_accesses;
 } loom_low_lower_result_t;

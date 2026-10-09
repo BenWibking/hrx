@@ -55,8 +55,8 @@ static iree_status_t loom_low_lower_report_op_finalized(void* user_data,
 }
 
 void loom_low_lower_report_initialize(loom_low_lower_context_t* context) {
-  if (!iree_allocator_is_null(context->options->report_allocator)) {
-    context->report.selection_cursor = context->result->report_rows.head;
+  if (context->result->report != NULL) {
+    context->report.selection_cursor = context->result->report->rows.head;
     context->builder.on_op_finalized = (loom_builder_callback_t){
         .fn = loom_low_lower_report_op_finalized,
         .user_data = &context->report,
@@ -103,15 +103,15 @@ static void loom_low_lower_memory_report_row_list_deinitialize(
 }
 
 void loom_low_lower_result_deinitialize(loom_low_lower_result_t* result) {
-  if (result == NULL) {
+  if (result == NULL || result->report == NULL) {
     return;
   }
-  loom_low_lower_report_row_list_deinitialize(result->report_allocator,
-                                              &result->report_rows);
+  loom_low_lower_report_t* report = result->report;
+  loom_low_lower_report_row_list_deinitialize(report->allocator, &report->rows);
   loom_low_lower_memory_report_row_list_deinitialize(
-      result->memory_report_row_allocator, &result->memory_report_rows);
-  result->report_allocator = iree_allocator_null();
-  result->memory_report_row_allocator = iree_allocator_null();
+      report->memory_row_allocator, &report->memory_rows);
+  iree_allocator_free(report->allocator, report);
+  result->report = NULL;
 }
 
 static iree_status_t loom_low_lower_report_row_list_append(
@@ -145,8 +145,18 @@ static iree_status_t loom_low_lower_report_row_list_append(
 static iree_status_t loom_low_lower_report_prepare_selected_plan(
     loom_low_lower_context_t* context,
     const loom_low_lower_selected_plan_t* selected_plan) {
-  loom_low_lower_result_t* result = context->result;
-  ++result->selected_source_op_count;
+  if (context->result->report == NULL) {
+    const iree_allocator_t allocator = context->options->report_allocator;
+    IREE_RETURN_IF_ERROR(
+        iree_allocator_malloc(allocator, sizeof(*context->result->report),
+                              (void**)&context->result->report));
+    *context->result->report = (loom_low_lower_report_t){
+        .allocator = allocator,
+        .memory_row_allocator = context->module->allocator,
+    };
+  }
+  loom_low_lower_report_t* report = context->result->report;
+  ++report->selected_source_op_count;
 
   loom_low_lower_report_row_t row = {
       .function_name = loom_low_lower_context_function_name(context),
@@ -233,8 +243,8 @@ static iree_status_t loom_low_lower_report_prepare_selected_plan(
     row.native_transition_destination_type =
         plan_report.native_transition_destination_type;
   }
-  return loom_low_lower_report_row_list_append(&result->report_rows,
-                                               result->report_allocator, &row);
+  return loom_low_lower_report_row_list_append(&report->rows, report->allocator,
+                                               &row);
 }
 
 iree_status_t loom_low_lower_report_prepare(loom_low_lower_context_t* context) {
@@ -260,7 +270,7 @@ void loom_low_lower_report_record_emission(loom_low_lower_context_t* context,
   loom_low_lower_report_row_t* row = &loom_low_lower_report_row_vec_rows(
       report->selection_cursor)[report->selection_index++];
   row->emitted_low_op_count = emitted_low_op_count;
-  context->result->emitted_low_op_count += emitted_low_op_count;
+  context->result->report->emitted_low_op_count += emitted_low_op_count;
   if (report->selection_index == report->selection_cursor->count) {
     report->selection_cursor = report->selection_cursor->next;
     report->selection_index = 0;
@@ -587,6 +597,6 @@ iree_status_t loom_low_lower_record_memory_report_row(
     loom_low_lower_context_t* context,
     const loom_low_lower_memory_report_row_t* row) {
   return loom_low_lower_memory_report_row_list_append(
-      &context->result->memory_report_rows,
-      context->result->memory_report_row_allocator, row);
+      &context->result->report->memory_rows,
+      context->result->report->memory_row_allocator, row);
 }

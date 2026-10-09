@@ -1179,9 +1179,25 @@ struct loom_low_lower_function_plan_t {
   loom_module_t* module;
   // Source definition replaced by execution, preserving its symbol identity.
   loom_func_like_t source_function;
-  // Target and reporting policy, with construction-only analysis pointers
-  // erased.
-  loom_low_lower_options_t options;
+  // Settings still consumed after source analysis and selection have retired.
+  struct {
+    // Module-local target attached to the emitted function.
+    loom_symbol_ref_t target_ref;
+    // Immutable target facts shared by planning and emission.
+    const loom_target_facts_t* target_facts;
+    // Target callbacks executing the retained recipes.
+    const loom_low_lower_policy_t* policy;
+    // Shared module state receiving published target resources.
+    loom_low_lower_module_state_t* module_state;
+    // Diagnostic sink for target emission remarks.
+    iree_diagnostic_emitter_t emitter;
+    // Enabled target diagnostic remark categories.
+    loom_target_low_legality_diagnostic_flags_t diagnostic_flags;
+    // Planned control-flow form consumed by structural builders.
+    loom_low_control_flow_lowering_t control_flow_lowering;
+    // Assertion-reporting behavior for emitted sanitizer operations.
+    loom_sanitizer_reporting_mode_t sanitizer_reporting_mode;
+  } emission;
   // Selected instruction descriptors shared by planning and emission.
   const loom_low_descriptor_set_t* descriptor_set;
   // Retained selected decisions, source ordinals, and emission bindings.
@@ -1356,17 +1372,23 @@ iree_status_t loom_low_lower_plan_function(
   *out_result = (loom_low_lower_result_t){
       .low_func_ref = loom_symbol_ref_null(),
   };
-  if (!iree_allocator_is_null(options->report_allocator)) {
-    out_result->report_allocator = options->report_allocator;
-    out_result->memory_report_row_allocator = module->allocator;
-  }
   loom_low_lower_function_plan_t* plan = NULL;
   IREE_RETURN_IF_ERROR(
       iree_arena_allocate(arena, sizeof(*plan), (void**)&plan));
   *plan = (loom_low_lower_function_plan_t){
       .module = module,
       .source_function = source_function,
-      .options = *options,
+      .emission =
+          {
+              .target_ref = options->target_ref,
+              .target_facts = options->target_facts,
+              .policy = options->policy,
+              .module_state = options->module_state,
+              .emitter = options->emitter,
+              .diagnostic_flags = options->legality_diagnostic_flags,
+              .control_flow_lowering = options->control_flow_lowering,
+              .sanitizer_reporting_mode = options->sanitizer_reporting_mode,
+          },
       .arena = arena,
   };
   const loom_region_descriptor_t* source_body_descriptor =
@@ -1409,9 +1431,6 @@ iree_status_t loom_low_lower_plan_function(
   iree_arena_deinitialize(&context.analysis_arena);
   if (iree_status_is_ok(status) && out_result->error_count == 0) {
     plan->descriptor_set = context.descriptor_set;
-    plan->options.fact_table = NULL;
-    plan->options.storage_access = NULL;
-    plan->options.representation_projections = NULL;
     *out_plan = plan;
   }
   return status;
@@ -1472,15 +1491,27 @@ static iree_status_t loom_low_lower_function_plan_execute(
 
 iree_status_t loom_low_lower_emit_function(loom_low_lower_function_plan_t* plan,
                                            loom_low_lower_result_t* result) {
+  const loom_low_lower_options_t options = {
+      .target_ref = plan->emission.target_ref,
+      .target_facts = plan->emission.target_facts,
+      .policy = plan->emission.policy,
+      .module_state = plan->emission.module_state,
+      .emitter = plan->emission.emitter,
+      .legality_diagnostic_flags = plan->emission.diagnostic_flags,
+      .control_flow_lowering = plan->emission.control_flow_lowering,
+      .sanitizer_reporting_mode = plan->emission.sanitizer_reporting_mode,
+      .report_allocator = result->report != NULL ? result->report->allocator
+                                                 : iree_allocator_null(),
+  };
   loom_low_lower_context_t context = {
       .module = plan->module,
       .source_function = plan->source_function,
-      .options = &plan->options,
-      .policy = plan->options.policy,
+      .options = &options,
+      .policy = options.policy,
       .descriptor_set = plan->descriptor_set,
       .result = result,
       .function_arena = plan->arena,
-      .module_state = plan->options.module_state,
+      .module_state = options.module_state,
       .lowering = &plan->frame,
   };
   loom_local_value_domain_restore(&plan->frame.value_domain);

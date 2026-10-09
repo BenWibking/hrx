@@ -63,27 +63,22 @@ static bool loom_low_source_selection_snapshots_differ(
              lhs->max_workgroup_size.z, rhs->max_workgroup_size.z);
 }
 
-static void loom_low_source_selection_set_candidate_target(
-    const loom_module_t* module, const loom_target_symbol_facts_t* target_facts,
-    loom_low_source_selection_t* selection) {
-  const loom_target_bundle_t* bundle =
-      loom_target_facts_bundle(target_facts->projection);
-  selection->candidate_target_symbol_name =
-      loom_low_source_selection_symbol_ref_name(module, target_facts->symbol);
-  selection->candidate_target_bundle_name = bundle->name;
-  selection->candidate_target_snapshot_name = bundle->snapshot->name;
-  selection->candidate_target_config_name = bundle->config->name;
-  selection->candidate_target_subgroup_size = bundle->snapshot->subgroup_size;
-}
-
 static iree_status_t loom_low_source_selection_find_candidate_targets(
     const loom_module_t* module, loom_symbol_fact_table_t* fact_table,
     const loom_low_source_selection_options_t* options,
-    loom_low_source_selection_t* selection) {
+    iree_arena_allocator_t* arena, loom_low_source_selection_t* selection) {
   if (!options->collect_target_candidates ||
       selection->target_source != LOOM_TARGET_BINDING_SOURCE_SPECIALIZATION) {
     return iree_ok_status();
   }
+  loom_low_source_selection_report_t* report = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate(arena, sizeof(*report), (void**)&report));
+  *report = (loom_low_source_selection_report_t){
+      .target_symbol_name = loom_low_source_selection_symbol_ref_name(
+          module, selection->target_ref),
+  };
+  selection->report = report;
   const loom_target_bundle_t* selected_bundle =
       loom_target_facts_bundle(selection->target_facts);
   for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
@@ -111,12 +106,15 @@ static iree_status_t loom_low_source_selection_find_candidate_targets(
             selected_bundle->snapshot)) {
       continue;
     }
-    if (selection->candidate_target_count == 0) {
-      loom_low_source_selection_set_candidate_target(module, target_facts,
-                                                     selection);
+    if (report->candidates.count == 0) {
+      report->candidates.symbol_name =
+          loom_low_source_selection_symbol_ref_name(module,
+                                                    target_facts->symbol);
+      report->candidates.bundle =
+          loom_target_facts_bundle(target_facts->projection);
     }
-    if (selection->candidate_target_count != UINT32_MAX) {
-      ++selection->candidate_target_count;
+    if (report->candidates.count != UINT32_MAX) {
+      ++report->candidates.count;
     }
   }
   return iree_ok_status();
@@ -214,11 +212,9 @@ static iree_status_t loom_low_source_selection_try_symbol(
   out_selection->target_source = target_source;
   out_selection->target_ref = target_ref;
   out_selection->target_facts = target_facts;
-  out_selection->target_symbol_name =
-      loom_low_source_selection_symbol_ref_name(module, target_ref);
   out_selection->policy = policy;
   IREE_RETURN_IF_ERROR(loom_low_source_selection_find_candidate_targets(
-      module, fact_table, options, out_selection));
+      module, fact_table, options, arena, out_selection));
   *out_compatible = true;
   return iree_ok_status();
 }

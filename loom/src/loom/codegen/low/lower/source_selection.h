@@ -54,6 +54,23 @@ typedef enum loom_low_source_selection_kind_e {
   LOOM_LOW_SOURCE_SELECTION_DECLARATION = 2,
 } loom_low_source_selection_kind_t;
 
+// Specialization evidence captured only for requested target reports.
+typedef struct loom_low_source_selection_report_t {
+  // Borrowed module symbol name for the authored target, or empty when
+  // targetless.
+  iree_string_view_t target_symbol_name;
+
+  // Compatible different-topology targets, summarized in module order.
+  struct {
+    // Number of compatible target records.
+    uint32_t count;
+    // Borrowed symbol name of the first candidate, or empty when absent.
+    iree_string_view_t symbol_name;
+    // Immutable bundle of the first candidate, or NULL when absent.
+    const loom_target_bundle_t* bundle;
+  } candidates;
+} loom_low_source_selection_report_t;
+
 typedef struct loom_low_source_selection_t {
   // Selected symbol category.
   loom_low_source_selection_kind_t kind;
@@ -78,26 +95,8 @@ typedef struct loom_low_source_selection_t {
   // Borrowed immutable function target facts for |func|.
   const loom_target_facts_t* target_facts;
 
-  // Borrowed module symbol name for |target_ref|, or empty when targetless.
-  iree_string_view_t target_symbol_name;
-
-  // Number of compatible module target records with different topology.
-  uint32_t candidate_target_count;
-
-  // First compatible different-topology target symbol name, if any.
-  iree_string_view_t candidate_target_symbol_name;
-
-  // First compatible different-topology target bundle name, if any.
-  iree_string_view_t candidate_target_bundle_name;
-
-  // First compatible different-topology target snapshot name, if any.
-  iree_string_view_t candidate_target_snapshot_name;
-
-  // First compatible different-topology target config name, if any.
-  iree_string_view_t candidate_target_config_name;
-
-  // First compatible different-topology target fixed subgroup size, if any.
-  uint32_t candidate_target_subgroup_size;
+  // Optional report-only specialization evidence, absent unless requested.
+  const loom_low_source_selection_report_t* report;
 
   // Lowering policy selected by |target_facts|.
   const loom_low_lower_policy_t* policy;
