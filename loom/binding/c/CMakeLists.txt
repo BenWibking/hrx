@@ -113,6 +113,9 @@ loom_cc_library(
     loom::codegen::low::verify
     loom::codegen::pass_environment
     loom::compile::request
+    loom::config::application
+    loom::config::text
+    loom::config::text_binding
     loom::error::diagnostic
     loom::error::error_defs
     loom::error::json_sink
@@ -161,7 +164,6 @@ loom_cc_library(
     loom::target::selection
     loom::target::specialization
     loom::target::types
-    loom::tooling::config
     loom::transforms::cleanup::configured
     loom::transforms::cleanup::patterns
     loom::util::json

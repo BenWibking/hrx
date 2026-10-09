@@ -392,6 +392,7 @@ loom_cc_library(
     iree::base::internal::arena
     iree::base::tooling::flags
     loom::binding::c::loomc
+    loom::config::text_binding
     loom::sanitizer::options
     loom::tooling::cli::help
     loom::tooling::cli::loomc_options
@@ -432,6 +433,7 @@ loom_cc_library(
     ::provider
     iree::base
     loom::target::test::provider
+    loom::tools::loom-check::test::config::providers
     loom::tools::loom-check::test::low::providers
   TESTONLY
   PUBLIC

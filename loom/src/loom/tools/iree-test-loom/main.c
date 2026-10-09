@@ -16,6 +16,7 @@
 #include "iree/base/internal/path.h"
 #include "iree/base/tooling/flags.h"
 #include "iree/io/stdio_stream.h"
+#include "loom/config/text_binding.h"
 #include "loom/sanitizer/options.h"
 #include "loom/tooling/cli/help.h"
 #include "loom/tooling/cli/loomc_options.h"
@@ -679,20 +680,20 @@ static iree_status_t iree_test_loom_run_scenario(
 }
 
 static iree_status_t iree_test_loom_append_config_flags(
-    loom_tooling_config_set_t* config_set) {
+    loom_config_text_binding_set_t* config_set) {
   const iree_flag_string_list_t assignments = FLAG_config_list();
   for (iree_host_size_t i = 0; i < assignments.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_assignment(
+    IREE_RETURN_IF_ERROR(loom_tooling_config_text_binding_set_append_assignment(
         config_set, assignments.values[i]));
   }
   return iree_ok_status();
 }
 
 static iree_status_t iree_test_loom_append_config_files(
-    loom_tooling_config_set_t* config_set, iree_allocator_t allocator) {
+    loom_config_text_binding_set_t* config_set, iree_allocator_t allocator) {
   const iree_flag_string_list_t paths = FLAG_config_file_list();
   for (iree_host_size_t i = 0; i < paths.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_json_file(
+    IREE_RETURN_IF_ERROR(loom_tooling_config_text_binding_set_append_json_file(
         config_set, paths.values[i], allocator));
   }
   return iree_ok_status();
@@ -883,8 +884,8 @@ int iree_test_loom_main(int argc, char** argv,
   iree_arena_block_pool_t block_pool;
   iree_arena_block_pool_initialize(IREE_TEST_LOOM_BLOCK_POOL_BLOCK_SIZE,
                                    allocator, &block_pool);
-  loom_tooling_config_set_t config_set;
-  loom_tooling_config_set_initialize(allocator, &config_set);
+  loom_config_text_binding_set_t config_set;
+  loom_config_text_binding_set_initialize(allocator, &config_set);
   loomc_config_binding_t* config_bindings = NULL;
   loomc_config_options_t config_options = {0};
   loomc_context_t* compiler_context = NULL;
@@ -1170,7 +1171,7 @@ int iree_test_loom_main(int argc, char** argv,
         scenario_execution_options.target =
             configuration->scenario_target_profile.fn(
                 configuration->scenario_target_profile.user_data, &compilation,
-                source_table, &config_set,
+                source_table,
                 iree_test_loom_diagnostic_capture_sink(&diagnostic_capture),
                 compile_result_callback);
       }
@@ -1178,7 +1179,7 @@ int iree_test_loom_main(int argc, char** argv,
         scenario_execution_options.oracle =
             configuration->scenario_oracle_profile.fn(
                 configuration->scenario_oracle_profile.user_data, &compilation,
-                source_table, &config_set,
+                source_table,
                 iree_test_loom_diagnostic_capture_sink(&diagnostic_capture),
                 compile_result_callback);
       }
@@ -1445,7 +1446,7 @@ int iree_test_loom_main(int argc, char** argv,
   iree_arena_deinitialize(&plan_arena);
   iree_hal_allocator_release(host_device_allocator);
   loom_run_hal_testbench_context_deinitialize(&hal_context);
-  loom_tooling_config_set_deinitialize(&config_set);
+  loom_config_text_binding_set_deinitialize(&config_set);
   if (device_event_capture_initialized) {
     loom_testbench_device_event_capture_deinitialize(&device_event_capture);
   }

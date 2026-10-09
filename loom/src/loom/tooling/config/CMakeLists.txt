@@ -16,19 +16,13 @@ loom_cc_library(
     "config.h"
   SRCS
     "config.c"
-    "config_application.h"
-    "config_text.c"
   DEPS
     iree::base
-    iree::base::internal::arena
-    iree::base::internal::json
-    loom::analysis::symbol_value_constraints
-    loom::format::text::parser
+    loom::config::application
+    loom::config::text_binding
     loom::format::text::printer
     loom::ir
     loom::ops::config
-    loom::ops::encoding
-    loom::rewrite::remap
     loom::tooling::io::file
     loom::util::json
     loom::util::stream
@@ -43,16 +37,10 @@ loom_cc_test(
   DEPS
     ::config
     iree::base
-    iree::base::internal::arena
     iree::io::file_handle
     iree::testing::gtest
     iree::testing::gtest_main
     iree::testing::temp_file
-    loom::format::text::parser
-    loom::format::text::printer
-    loom::ir
-    loom::testing::context
-    loom::testing::module_ptr
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

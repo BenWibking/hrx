@@ -45,6 +45,7 @@ loom_cc_library(
     loom::binding::c::interop
     loom::binding::c::loomc
     loom::binding::c::target::iree_hal
+    loom::config::text_binding
     loom::sanitizer::options
     loom::tooling::cli::help
     loom::tooling::cli::loomc_options

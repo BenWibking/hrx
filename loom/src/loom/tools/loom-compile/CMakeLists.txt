@@ -19,6 +19,7 @@ loom_cc_binary(
     iree::base::tooling::flags
     loom::binding::c::loomc
     loom::binding::c::target::configured
+    loom::config::text_binding
     loom::sanitizer::options
     loom::tooling::cli::help
     loom::tooling::cli::loomc_options

@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "iree/base/internal/arena.h"
+#include "loom/config/text_binding.h"
 #include "loom/ir/module.h"
 #include "loom/tooling/cli/loomc_options.h"
 #include "loom/tooling/cli/loomc_result.h"
@@ -89,20 +90,20 @@ static iree_status_t iree_benchmark_loom_artifact_manifest_options_initialize(
 }
 
 static iree_status_t iree_benchmark_loom_append_config_assignments(
-    loom_tooling_config_set_t* config_set,
+    loom_config_text_binding_set_t* config_set,
     iree_string_view_list_t assignments) {
   for (iree_host_size_t i = 0; i < assignments.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_assignment(
+    IREE_RETURN_IF_ERROR(loom_tooling_config_text_binding_set_append_assignment(
         config_set, assignments.values[i]));
   }
   return iree_ok_status();
 }
 
 static iree_status_t iree_benchmark_loom_append_config_files(
-    loom_tooling_config_set_t* config_set, iree_string_view_list_t paths,
+    loom_config_text_binding_set_t* config_set, iree_string_view_list_t paths,
     iree_allocator_t allocator) {
   for (iree_host_size_t i = 0; i < paths.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_json_file(
+    IREE_RETURN_IF_ERROR(loom_tooling_config_text_binding_set_append_json_file(
         config_set, paths.values[i], allocator));
   }
   return iree_ok_status();
@@ -218,8 +219,8 @@ iree_status_t iree_benchmark_loom_run_file(
   const iree_benchmark_loom_options_t* benchmark_options =
       &normalized_benchmark_options;
   const iree_allocator_t allocator = options->host_allocator;
-  loom_tooling_config_set_t config_set;
-  loom_tooling_config_set_initialize(allocator, &config_set);
+  loom_config_text_binding_set_t config_set;
+  loom_config_text_binding_set_initialize(allocator, &config_set);
   loomc_config_binding_t* config_bindings = NULL;
   loomc_config_options_t config_options = {0};
   const iree_string_view_t input_path = options->input_path;
@@ -736,7 +737,7 @@ iree_status_t iree_benchmark_loom_run_file(
   if (device_event_capture_initialized) {
     loom_testbench_device_event_capture_deinitialize(&device_event_capture);
   }
-  loom_tooling_config_set_deinitialize(&config_set);
+  loom_config_text_binding_set_deinitialize(&config_set);
   iree_benchmark_loom_file_provider_deinitialize(&file_provider);
   iree_benchmark_loom_artifact_bundle_deinitialize(&artifact_bundle);
   iree_io_file_contents_free(contents);

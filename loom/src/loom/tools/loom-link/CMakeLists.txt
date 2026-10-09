@@ -22,6 +22,9 @@ loom_cc_binary(
     iree::io::stream
     loom::codegen::low::repr
     loom::codegen::low::text_asm
+    loom::config::application
+    loom::config::text
+    loom::config::text_binding
     loom::error::diagnostic
     loom::error::source
     loom::format::bytecode::writer

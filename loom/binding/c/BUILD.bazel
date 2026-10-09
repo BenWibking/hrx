@@ -220,6 +220,9 @@ loom_cc_library(
         "//loom/src/loom/codegen/low:verify",
         "//loom/src/loom/codegen/low/pipeline:legalizer_registry",
         "//loom/src/loom/compile:request",
+        "//loom/src/loom/config:application",
+        "//loom/src/loom/config:text",
+        "//loom/src/loom/config:text_binding",
         "//loom/src/loom/error:diagnostic",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/error:json_sink",
@@ -268,7 +271,6 @@ loom_cc_library(
         "//loom/src/loom/target/reporting:artifact_manifest",
         "//loom/src/loom/target/reporting:format",
         "//loom/src/loom/target/reporting:report",
-        "//loom/src/loom/tooling/config",
         "//loom/src/loom/transforms/cleanup:configured",
         "//loom/src/loom/transforms/cleanup:patterns",
         "//loom/src/loom/util:json",
@@ -297,13 +299,15 @@ loom_cc_library(
 )
 
 iree_assert_dependency_boundary(
-    name = "loomc_has_no_concrete_target_dependencies",
+    name = "loomc_has_no_tooling_or_concrete_target_dependencies",
     forbidden_subtrees = [
         "//loom/binding/c/target/...",
         "//loom/src/loom/target/arch/...",
         "//loom/src/loom/target/emit/...",
+        "//loom/src/loom/tooling/...",
+        "//loom/src/loom/tools/...",
     ],
-    message = "Base LoomC must remain target-agnostic; link optional target packages explicitly",
+    message = "Base LoomC must remain target-agnostic and independent of ejectable tooling adapters",
     target = ":loomc",
 )
 

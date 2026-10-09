@@ -187,8 +187,8 @@ LOOMC_API_PRIVATE void loomc_module_invalidate_compilation(
     loomc_module_t* module);
 
 // Captures applied invocation bindings into the module's compiler storage.
-LOOMC_API_PRIVATE loom_tooling_config_binding_sink_t
-loomc_module_config_binding_sink(loomc_module_t* module);
+LOOMC_API_PRIVATE loom_config_applied_value_sink_t
+loomc_module_config_applied_value_sink(loomc_module_t* module);
 
 // Returns accumulated applied bindings, valid until a failed mutation or
 // module destruction.

@@ -16,6 +16,9 @@
 #include "loom/codegen/low/text_asm.h"
 #include "loom/codegen/low/verify.h"
 #include "loom/codegen/pass_environment.h"
+#include "loom/config/application.h"
+#include "loom/config/text.h"
+#include "loom/config/text_binding.h"
 #include "loom/error/diagnostic.h"
 #include "loom/error/json_sink.h"
 #include "loom/error/source.h"
@@ -1034,35 +1037,35 @@ static iree_status_t loom_opt_run_passes(
 }
 
 static iree_status_t loom_opt_append_config_flags(
-    loom_tooling_config_set_t* config_set) {
+    loom_config_text_binding_set_t* config_set) {
   iree_flag_string_list_t assignments = FLAG_config_list();
   for (iree_host_size_t i = 0; i < assignments.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_assignment(
+    IREE_RETURN_IF_ERROR(loom_tooling_config_text_binding_set_append_assignment(
         config_set, assignments.values[i]));
   }
   return iree_ok_status();
 }
 
 static iree_status_t loom_opt_append_config_files(
-    loom_tooling_config_set_t* config_set, iree_allocator_t allocator) {
+    loom_config_text_binding_set_t* config_set, iree_allocator_t allocator) {
   iree_flag_string_list_t paths = FLAG_config_file_list();
   for (iree_host_size_t i = 0; i < paths.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_tooling_config_set_append_json_file(
+    IREE_RETURN_IF_ERROR(loom_tooling_config_text_binding_set_append_json_file(
         config_set, paths.values[i], allocator));
   }
   return iree_ok_status();
 }
 
 static iree_status_t loom_opt_materialize_config_set(
-    loom_module_t* module, const loom_tooling_config_set_t* config_set,
+    loom_module_t* module, const loom_config_text_binding_set_t* config_set,
     iree_arena_block_pool_t* block_pool,
-    loom_tooling_config_materialize_result_t* out_result) {
-  *out_result = (loom_tooling_config_materialize_result_t){0};
-  loom_tooling_config_materialize_options_t options;
-  loom_tooling_config_materialize_options_initialize(&options);
-  options.config_set = config_set;
-  return loom_tooling_config_materialize_module(module, &options, block_pool,
-                                                out_result);
+    loom_config_application_result_t* out_result) {
+  *out_result = (loom_config_application_result_t){0};
+  loom_config_text_materialize_options_t options;
+  loom_config_text_materialize_options_initialize(&options);
+  options.binding_set = config_set;
+  return loom_config_text_materialize_module(module, &options, block_pool,
+                                             out_result);
 }
 
 static iree_status_t loom_opt_write_pass_report(
@@ -1364,8 +1367,8 @@ int main(int argc, char** argv) {
   loomc_result_t* public_result = NULL;
   loom_module_t* module = NULL;
   loom_source_resolver_t source_resolver = {0};
-  loom_tooling_config_set_t config_set;
-  loom_tooling_config_set_initialize(allocator, &config_set);
+  loom_config_text_binding_set_t config_set;
+  loom_config_text_binding_set_initialize(allocator, &config_set);
   const loom_target_environment_t* target_environment = NULL;
   loom_target_low_descriptor_registry_t low_descriptor_registry = {0};
   loom_pass_registry_storage_t pass_registry_storage = {0};
@@ -1386,7 +1389,7 @@ int main(int argc, char** argv) {
   loom_pass_trace_options_t pass_trace_options = {0};
   const loom_pass_trace_options_t* pass_trace_options_ptr = NULL;
   bool pass_execution_started = false;
-  loom_tooling_config_materialize_result_t config_materialize_result = {0};
+  loom_config_application_result_t config_materialize_result = {0};
   loom_pass_run_result_t pass_run_result = {0};
   iree_status_t pass_pipeline_status = iree_ok_status();
   bool module_ready = true;
@@ -1616,7 +1619,7 @@ int main(int argc, char** argv) {
   }
   if (iree_status_is_ok(status) && pass_run_result.error_count == 0 &&
       !metadata_only && module_ready && FLAG_require_resolved_config) {
-    status = loom_tooling_config_require_resolved_module(module, NULL);
+    status = loom_config_require_resolved_module(module, NULL);
   }
   if (iree_status_is_ok(status) && pass_run_result.error_count == 0 &&
       !metadata_only && module_ready) {
@@ -1641,7 +1644,7 @@ int main(int argc, char** argv) {
   if (pass_report_initialized) {
     loom_pass_report_deinitialize(&pass_report);
   }
-  loom_tooling_config_set_deinitialize(&config_set);
+  loom_config_text_binding_set_deinitialize(&config_set);
   loomc_result_release(public_result);
   loomc_module_release(public_module);
   loomc_source_release(public_source);

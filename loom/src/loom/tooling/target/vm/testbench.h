@@ -18,8 +18,6 @@
 extern "C" {
 #endif
 
-typedef struct loom_tooling_config_set_t loom_tooling_config_set_t;
-
 // Executes semantic functions through the VM. The check.case provider compiles
 // all selected function roots on its first call and reuses one process. The
 // check.scenario profile instead uses this instance as compiler configuration
@@ -88,7 +86,6 @@ loom_testbench_invocation_provider_t loom_vm_testbench_invocation_provider(
 loom_testbench_execution_profile_t loom_vm_testbench_execution_profile(
     void* user_data, const loom_testbench_compilation_t* compilation,
     const loom_source_table_resolver_t* sources,
-    const loom_tooling_config_set_t* config_set,
     loom_diagnostic_sink_t diagnostic_sink,
     loom_testbench_compile_result_callback_t result_callback);
 
