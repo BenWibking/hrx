@@ -369,6 +369,7 @@ loom_corpus_test(
     "numeric/integer/division.loom"
     "numeric/integer/narrow_consumers.loom"
     "numeric/integer/scalar_observations.loom"
+    "numeric/integer/wide/address_comparison.loom"
     "numeric/integer/wide/observations.loom"
     "numeric/integer/wide/shifts.loom"
     "numeric/integer/wide/subtract.loom"

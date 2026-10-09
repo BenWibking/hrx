@@ -279,43 +279,6 @@ iree_status_t loom_amdgpu_lookup_or_materialize_integer_operand(
                                           out_low_value);
 }
 
-static iree_status_t loom_amdgpu_i64_compare_operand_lane(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source_value, uint32_t lane_index, loom_type_t lane_type,
-    loom_value_id_t* out_low_lane) {
-  *out_low_lane = LOOM_VALUE_ID_INVALID;
-  loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_source));
-
-  const loom_module_t* module = loom_low_lower_context_module(context);
-  const loom_type_t low_type = loom_module_value_type(module, low_source);
-  if (!loom_low_type_is_register(low_type)) {
-    IREE_ASSERT_UNREACHABLE(
-        "AMDGPU i64 compare plan selected non-register operand");
-    IREE_BUILTIN_UNREACHABLE();
-  }
-  const uint32_t unit_count = loom_low_register_type_unit_count(low_type);
-  if (unit_count == 1 && lane_index == 1) {
-    return loom_amdgpu_emit_const_u32(context, source_op,
-                                      LOOM_AMDGPU_DESCRIPTOR_REF_V_MOV_B32, 0,
-                                      lane_type, out_low_lane);
-  }
-  if (unit_count != 1 && unit_count != 2) {
-    IREE_ASSERT_UNREACHABLE(
-        "AMDGPU i64 compare plan selected wrong operand register count");
-    IREE_BUILTIN_UNREACHABLE();
-  }
-
-  const loom_type_t source_lane_type =
-      loom_low_register_carrier_type_with_unit_count(low_type, 1);
-  IREE_RETURN_IF_ERROR(loom_amdgpu_extract_low_register_unit(
-      context, source_op, low_source, unit_count, lane_index, source_lane_type,
-      out_low_lane));
-  return loom_amdgpu_materialize_low_vgpr_b32(context, source_op, *out_low_lane,
-                                              out_low_lane);
-}
-
 static iree_status_t loom_amdgpu_emit_i64_compare_mask(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_descriptor_ref_t descriptor_ref, loom_value_id_t lhs,
@@ -353,18 +316,26 @@ iree_status_t loom_amdgpu_lower_i64_compare(
   IREE_RETURN_IF_ERROR(
       loom_amdgpu_make_sgpr_range_type(context, 2, &mask_type));
 
+  // Normalize each operand once before splitting it. A narrow signed index
+  // needs a sign word even when the other operand has a wide address carrier.
+  loom_value_id_t lhs = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_integer_operand(
+      context, source_op, plan->lhs, LOOM_AMDGPU_REG_CLASS_ID_VGPR, 2, &lhs));
+  loom_value_id_t rhs = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_integer_operand(
+      context, source_op, plan->rhs, LOOM_AMDGPU_REG_CLASS_ID_VGPR, 2, &rhs));
   loom_value_id_t lhs_lo = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_i64_compare_operand_lane(
-      context, source_op, plan->lhs, 0, vgpr_type, &lhs_lo));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(context, source_op, lhs, 0,
+                                                  vgpr_type, &lhs_lo));
   loom_value_id_t lhs_hi = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_i64_compare_operand_lane(
-      context, source_op, plan->lhs, 1, vgpr_type, &lhs_hi));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(context, source_op, lhs, 1,
+                                                  vgpr_type, &lhs_hi));
   loom_value_id_t rhs_lo = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_i64_compare_operand_lane(
-      context, source_op, plan->rhs, 0, vgpr_type, &rhs_lo));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(context, source_op, rhs, 0,
+                                                  vgpr_type, &rhs_lo));
   loom_value_id_t rhs_hi = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_i64_compare_operand_lane(
-      context, source_op, plan->rhs, 1, vgpr_type, &rhs_hi));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(context, source_op, rhs, 1,
+                                                  vgpr_type, &rhs_hi));
 
   loom_value_id_t high_mask = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_i64_compare_mask(

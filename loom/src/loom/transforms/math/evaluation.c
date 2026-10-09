@@ -528,7 +528,9 @@ iree_status_t loom_math_evaluation_build_unary(
   IREE_ASSERT(build != NULL);
   loom_op_t* op = NULL;
   IREE_RETURN_IF_ERROR(build(
-      &evaluation->rewriter->builder, evaluation->fastmath_flags,
+      &evaluation->rewriter->builder,
+      evaluation->fastmath_flags | (evaluation->recipe_fastmath_flags &
+                                    LOOM_TARGET_MATH_FASTMATH_FLAG_AFN),
       input->accumulator, evaluation->value_type, evaluation->location, &op));
   *out_value = loom_math_evaluation_value_from_id(loom_op_results(op)[0]);
   return iree_ok_status();
