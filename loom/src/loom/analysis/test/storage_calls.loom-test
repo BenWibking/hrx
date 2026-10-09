@@ -309,3 +309,30 @@ func.def @test(%limit: index) {
 
 // ----
 local: accessed=no single_instance=yes
+
+// ====
+
+// Unknown local effects keep formal references conservative. Their uncertainty
+// crosses the argument boundary without contaminating unexposed caller storage.
+func.def @unknown_use(%input: buffer, %value: i32) {
+  test.use %value : i32
+  func.return
+}
+
+func.def @test(%limit: index) {
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %value = scalar.constant 7 : i32
+  scf.for %index = [%begin to %limit step %step] {
+    %unpassed = buffer.alloca<private> align(4) %bytes : buffer
+    %passed = buffer.alloca<private> align(4) %bytes : buffer
+    func.call @unknown_use(%passed, %value) : (buffer, i32)
+  }
+  func.return
+}
+
+// ----
+unpassed: accessed=no single_instance=yes
+passed: accessed=yes single_instance=unproven
+unpassed / passed: workgroup_nonoverlap=unproven

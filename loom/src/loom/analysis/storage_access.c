@@ -32,8 +32,6 @@ typedef struct loom_storage_access_function_record_t {
   struct loom_storage_access_function_record_t* next_pending;
   // Reference nodes in formal argument order; scalar entries are NULL.
   loom_storage_reference_t** arguments;
-  // Function-wide effects without an identified reference operand.
-  loom_storage_reference_t ambient;
   // Last rendezvous retained in source order, or NULL.
   loom_storage_access_barrier_t* barrier_tail;
 } loom_storage_access_function_record_t;
@@ -159,7 +157,6 @@ static iree_status_t loom_storage_access_enqueue_function(
   *record = (loom_storage_access_function_record_t){
       .function = function,
       .symbol_id = symbol_id,
-      .ambient = {.value_id = LOOM_VALUE_ID_INVALID},
   };
   const loom_block_t* entry =
       loom_region_entry_block(loom_func_like_body(function));
@@ -337,6 +334,9 @@ static iree_status_t loom_storage_access_visit(
       }
     }
   }
+  // Calls cannot access fresh caller storage without receiving a reference.
+  // Opaque calls keep the default escape effect on each exposed operand;
+  // ambient effects in a callee do not reach an unexposed caller root.
   if (callee_record) {
     for (uint16_t i = 0; i < op->operand_count; ++i) {
       loom_storage_reference_t* formal = callee_record->arguments[i];
@@ -353,9 +353,6 @@ static iree_status_t loom_storage_access_visit(
       state->operand_effects[i] = 0;
     }
   } else if (!loom_call_like_isa(call)) {
-    // Calls cannot access fresh caller storage without receiving a reference.
-    // Opaque calls keep the default escape effect on each exposed operand;
-    // ambient effects in a callee do not reach an unexposed caller root.
     bool described_read = false;
     bool described_write = false;
     const bool asynchronous = loom_movement_op_kind_is_async(op->kind);
@@ -391,8 +388,7 @@ static iree_status_t loom_storage_access_visit(
           !described_read) ||
          (iree_any_bit_set(traits, LOOM_TRAIT_WRITES_MEMORY) &&
           !described_write))) {
-      loom_storage_access_include(state, &state->current->ambient,
-                                  LOOM_STORAGE_ACCESS_ESCAPE);
+      state->current->graph.has_unknown_memory_access = true;
     }
     const loom_value_relation_mask_t mask =
         LOOM_VALUE_RELATION_MASK_ALL &
@@ -460,6 +456,20 @@ static iree_status_t loom_storage_access_build_pending(
                                                 .user_data = state},
                          &traversal_arena, &walk_result);
     iree_arena_reset(&traversal_arena);
+    if (iree_status_is_ok(status) &&
+        state->current->graph.has_unknown_memory_access) {
+      // An unmodeled local effect can reach every formal reference. Project
+      // that uncertainty through argument edges, never through an unrelated
+      // caller allocation. This runs once after the body's uses are classified.
+      const loom_block_t* entry = loom_region_entry_block(
+          loom_func_like_body(state->current->function));
+      for (uint16_t i = 0; i < entry->arg_count; ++i) {
+        if (state->current->arguments[i]) {
+          loom_storage_access_include(state, state->current->arguments[i],
+                                      LOOM_STORAGE_ACCESS_ESCAPE);
+        }
+      }
+    }
     for (const loom_storage_reference_t* reference =
              state->current->graph.references;
          reference; reference = reference->next) {
@@ -516,7 +526,6 @@ iree_status_t loom_storage_access_require_function(
     }
   }
   if (iree_status_is_ok(status)) {
-    record->graph.has_unknown_memory_access = record->ambient.effects != 0;
     *out_function = &record->graph;
   }
   return status;

@@ -56,7 +56,7 @@ typedef struct loom_storage_reference_edge_t {
 } loom_storage_reference_edge_t;
 
 struct loom_storage_reference_t {
-  // Source reference identity, or INVALID for a function's ambient effects.
+  // Source reference identity.
   loom_value_id_t value_id;
   // Compact reference index used only while constructing its function graph.
   uint32_t index;
