@@ -70,9 +70,10 @@ typedef struct loom_low_function_model_t {
   loom_cfg_loop_forest_t loop_forest;
 } loom_low_function_model_t;
 
-// Resolves one function and its required storage identities before immutable
-// analysis. The identity array reserves |additional_value_capacity| entries
-// for preparation-created independent values without abandoning arena storage.
+// Resolves one verified target-low function and its required storage identities
+// before immutable analysis. The identity array reserves
+// |additional_value_capacity| entries for preparation-created independent
+// values without abandoning arena storage.
 // The caller registers each created value in |out_context->value_domain| and
 // maintains the identity result before handing the context to a model.
 // When non-NULL, |resolved_target| supplies the producer-owned binding without

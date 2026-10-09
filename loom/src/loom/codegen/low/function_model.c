@@ -17,16 +17,11 @@ iree_status_t loom_low_function_context_initialize(
     iree_diagnostic_emitter_t emitter, loom_low_function_model_flags_t flags,
     iree_host_size_t additional_value_capacity, iree_arena_allocator_t* arena,
     loom_low_function_context_t* out_context) {
-  if (!loom_low_function_def_isa(low_func_op)) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "expected low.func.def or low.kernel.def");
-  }
   *out_context = (loom_low_function_context_t){
       .module = module,
       .function_op = low_func_op,
       .body = loom_low_function_body((loom_op_t*)low_func_op),
   };
-  IREE_ASSERT(out_context->body != NULL);
 
   if (resolved_target != NULL) {
     out_context->target = *resolved_target;
