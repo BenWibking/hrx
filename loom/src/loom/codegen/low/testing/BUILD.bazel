@@ -109,7 +109,7 @@ loom_cc_library(
     deps = [
         ":allocation_checker",
         ":source_workload",
-        "//loom/src/loom/analysis:call_effects",
+        "//loom/src/loom/analysis:storage_access",
         "//loom/src/loom/codegen:pass_environment",
         "//loom/src/loom/codegen/low:frame",
         "//loom/src/loom/codegen/low:function",

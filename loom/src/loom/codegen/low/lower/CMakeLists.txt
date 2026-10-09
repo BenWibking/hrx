@@ -77,7 +77,6 @@ loom_cc_library(
     iree::base
     iree::base::internal
     iree::base::internal::arena
-    loom::analysis::call_effects
     loom::analysis::cfg_value_identity
     loom::analysis::condition_facts
     loom::analysis::consumption
@@ -86,6 +85,7 @@ loom_cc_library(
     loom::analysis::kernel_async_legality
     loom::analysis::kernel_barrier_lifetime
     loom::analysis::native_layout
+    loom::analysis::storage_access
     loom::analysis::storage_interference
     loom::analysis::symbol_facts
     loom::analysis::symbolic_expr

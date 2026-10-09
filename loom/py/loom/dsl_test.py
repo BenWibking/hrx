@@ -2782,6 +2782,25 @@ class TestOp:
             with _raises(ValueError, match=message):
                 Op("test.derive", operands=operands, results=[result])
 
+    def test_reference_observations_exclude_payload_effects(self) -> None:
+        for reference_type in (BUFFER, dsl.VIEW):
+            Op(
+                "test.observe",
+                operands=[Operand("input", reference_type, observes_reference=True)],
+                traits=[PURE],
+            )
+        with _raises(ValueError, match="buffer or view fields"):
+            Op(
+                "test.observe",
+                operands=[Operand("input", INTEGER, observes_reference=True)],
+            )
+        with _raises(ValueError, match="cannot access payload"):
+            Op(
+                "test.observe",
+                operands=[Operand("input", BUFFER, observes_reference=True)],
+                effects=[Reads("input")],
+            )
+
     def test_lookup_attr(self) -> None:
         op = Op("test.op", attrs=[AttrDef("axis", "i64")])
         assert op.attr("axis") is not None

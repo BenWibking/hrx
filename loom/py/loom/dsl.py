@@ -481,6 +481,8 @@ class Operand:
     variadic: If True, this is zero-or-more values (list[Value]).
     optional: If True, this operand may be absent.
     role: Semantic role consumed by generic analyses.
+    observes_reference: Observes buffer/view metadata without accessing payload
+        or exposing a usable reference/address through a result or side effect.
     """
 
     name: str
@@ -489,6 +491,7 @@ class Operand:
     variadic: bool = False
     optional: bool = False
     role: OperandRole = OperandRole.NONE
+    observes_reference: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -6271,12 +6274,24 @@ def _validate_keyed_module_record(
         )
 
 
-def _validate_reference_sources(
+def _validate_reference_contracts(
     op_name: str,
     operands: tuple[Operand, ...],
     results: tuple[Result | TiedResult, ...],
+    effects: tuple[Effect, ...],
 ) -> None:
     """Validates storage provenance independently of ownership or carriers."""
+    for operand in operands:
+        if not operand.observes_reference:
+            continue
+        if operand.type_constraint not in (BUFFER, VIEW):
+            raise ValueError(
+                f"Op '{op_name}': reference observations require buffer or view fields"
+            )
+        if any(effect.operand == operand.name for effect in effects):
+            raise ValueError(
+                f"Op '{op_name}': reference observations cannot access payload"
+            )
     for result in results:
         source_name = getattr(result, "reference_source", None)
         if source_name is None:
@@ -6727,7 +6742,9 @@ class Op:
             frozen_effects,
             frozen_ownership_effects,
         )
-        _validate_reference_sources(name, frozen_operands, frozen_results)
+        _validate_reference_contracts(
+            name, frozen_operands, frozen_results, frozen_effects
+        )
         _validate_signature_only_results(
             name, frozen_results, tuple(traits), frozen_format
         )

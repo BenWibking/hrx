@@ -92,7 +92,6 @@ loom_cc_library(
     ],
     visibility = _LOWER_VISIBILITY,
     deps = [
-        "//loom/src/loom/analysis:call_effects",
         "//loom/src/loom/analysis:cfg_value_identity",
         "//loom/src/loom/analysis:condition_facts",
         "//loom/src/loom/analysis:consumption",
@@ -101,6 +100,7 @@ loom_cc_library(
         "//loom/src/loom/analysis:kernel_async_legality",
         "//loom/src/loom/analysis:kernel_barrier_lifetime",
         "//loom/src/loom/analysis:native_layout",
+        "//loom/src/loom/analysis:storage_access",
         "//loom/src/loom/analysis:storage_interference",
         "//loom/src/loom/analysis:symbol_facts",
         "//loom/src/loom/analysis:symbolic_expr",

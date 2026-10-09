@@ -418,6 +418,9 @@ enum loom_operand_flag_bits_e {
   LOOM_OPERAND_OPTIONAL = 1u << 1,
   LOOM_OPERAND_READS = 1u << 2,
   LOOM_OPERAND_WRITES = 1u << 3,
+  // Observes buffer/view metadata without accessing its payload or exposing
+  // a usable reference/address through a result or side effect.
+  LOOM_OPERAND_OBSERVES_REFERENCE = 1u << 4,
 };
 typedef uint8_t loom_operand_flags_t;
 

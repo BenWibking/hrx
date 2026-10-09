@@ -903,6 +903,8 @@ def generate_tables_c(
                     flags_parts.append("LOOM_OPERAND_VARIADIC")
                 if operand.optional:
                     flags_parts.append("LOOM_OPERAND_OPTIONAL")
+                if operand.observes_reference:
+                    flags_parts.append("LOOM_OPERAND_OBSERVES_REFERENCE")
                 effect_kind = effect_map.get(operand.name)
                 if effect_kind in (EffectKind.READ, EffectKind.READWRITE):
                     flags_parts.append("LOOM_OPERAND_READS")

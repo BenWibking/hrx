@@ -17,10 +17,10 @@
 #define LOOM_CODEGEN_LOW_LOWER_LOWER_H_
 
 #include "iree/base/api.h"
-#include "loom/analysis/call_effects.h"
 #include "loom/analysis/condition_facts.h"
 #include "loom/analysis/contract_vector.h"
 #include "loom/analysis/native_layout.h"
+#include "loom/analysis/storage_access.h"
 #include "loom/analysis/symbolic_expr.h"
 #include "loom/codegen/low/descriptors.h"
 #include "loom/codegen/low/lower/bindings.h"
@@ -1025,8 +1025,9 @@ typedef struct loom_low_lower_options_t {
   // Lowering is a pure consumer of facts; callers own acquisition and
   // invalidation.
   loom_value_fact_table_t* fact_table;
-  // Detached call effects established before any source body is lowered.
-  const loom_call_effects_t* call_effects;
+  // Optional shared reference/access scope for a module planning transaction.
+  // Without one, function planning owns a scope that retires before emission.
+  loom_storage_access_scope_t* storage_access;
   // Borrowed projected helper interfaces, available before IR publication.
   const loom_low_representation_projection_index_t* representation_projections;
   // Structured diagnostic emitter for user legality and lowering failures.
@@ -1127,7 +1128,9 @@ iree_status_t loom_low_lower_emit_function(loom_low_lower_function_plan_t* plan,
 
 // Lowers one body-backed FuncLike source callable into a target-low function in
 // place. Kernel definitions retain their target-low kernel ABI; other FuncLike
-// operations lower to low.func.def.
+// operations lower to low.func.def. Module transactions plan every function
+// with plan_function before calling emit_function, preserving source callees
+// throughout access analysis and representation selection.
 //
 // User IR failures are emitted through |options->emitter| and counted in
 // |out_result|. The function returns OK in that case and does not emit a low

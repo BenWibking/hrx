@@ -8,7 +8,7 @@
 
 #include <string.h>
 
-#include "loom/analysis/call_effects.h"
+#include "loom/analysis/storage_access.h"
 #include "loom/codegen/low/launch_config_program.h"
 #include "loom/codegen/low/lower/function_boundary.h"
 #include "loom/codegen/low/lower/representation_projection.h"
@@ -336,8 +336,11 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
 
   iree_arena_allocator_t selection_arena;
   iree_arena_initialize(module->arena.block_pool, &selection_arena);
+  iree_arena_allocator_t access_arena;
+  iree_arena_initialize(module->arena.block_pool, &access_arena);
+  loom_storage_access_scope_t storage_access;
+  loom_storage_access_scope_initialize(module, &access_arena, &storage_access);
   loom_low_lower_module_state_t* module_state = NULL;
-  loom_call_effects_t* call_effects = NULL;
   loom_low_source_selection_list_t selection_list = {0};
   loom_low_source_selection_list_t target_function_list = {0};
   const loom_low_source_selection_options_t selection_options = {
@@ -407,10 +410,6 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
         loom_low_lower_module_state_create(&selection_arena, &module_state);
   }
   uint32_t declaration_count = 0;
-  if (iree_status_is_ok(status) && !emitted_error_diagnostics) {
-    status = loom_call_effects_analyze_module(module, &selection_arena,
-                                              &call_effects);
-  }
   for (iree_host_size_t i = 0;
        i < selection_list.count && iree_status_is_ok(status) &&
        !emitted_error_diagnostics;
@@ -494,7 +493,7 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
             state ? state->legality_diagnostic_flags : 0,
         .policy = selection->policy,
         .fact_table = fact_table,
-        .call_effects = call_effects,
+        .storage_access = &storage_access,
         .representation_projections = &projection_index,
         .emitter = pass->diagnostic_emitter,
         .max_errors = state ? state->max_errors : 20,
@@ -531,6 +530,7 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
     statistics->remarks += (int64_t)plan->result.remark_count;
     emitted_error_diagnostics |= plan->result.error_count != 0;
   }
+  iree_arena_deinitialize(&access_arena);
   for (iree_host_size_t i = 0;
        i < projection_count && iree_status_is_ok(status) &&
        !emitted_error_diagnostics;

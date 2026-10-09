@@ -11,7 +11,7 @@
 
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
-#include "loom/analysis/call_effects.h"
+#include "loom/analysis/storage_access.h"
 #include "loom/ir/local_value_domain.h"
 #include "loom/ops/op_defs.h"
 #include "loom/util/fact_table.h"
@@ -28,20 +28,21 @@ typedef struct loom_storage_interference_t loom_storage_interference_t;
 // |function|. |value_domain| must be acquired for the function body and remain
 // active for the analysis lifetime. The returned analysis and all retained
 // provenance, access, and control facts are allocated from |arena|.
-// |call_effects| supplies detached callable summaries built before source body
-// mutation. NULL retains conservative treatment of unknown callable effects.
+// |access_scope| owns the immutable source snapshot shared with callable effect
+// queries. Construction may temporarily release and restore |value_domain|'s
+// scratch borrow without changing its numbering or the caller's value facts.
 //
-// The analysis owns the function walk. Consumers query its indexed result and
-// must not reconstruct aliases or access footprints from source IR.
-// Calls conservatively expose roots reachable through their reference operands,
-// including pure calls that may return aliases. Calls without a reference to
-// a fresh frame root cannot access it. Channel bindings expose their storage
-// until realization makes the borrowed accesses and their lifetimes explicit.
-// Unmodeled non-call memory effects remain conservative for every root.
+// Reference transport and classified uses come from the canonical access graph.
+// This analysis adds allocation memberships and lifetime proofs. Consumers
+// query its indexed result instead of reconstructing aliases or access
+// footprints. Calls expose only roots reachable through their reference
+// operands. Channel bindings expose their backing storage until realization
+// makes borrowed accesses and their lifetimes explicit. Unmodeled non-call
+// memory effects remain conservative for every root.
 iree_status_t loom_storage_interference_analyze_function(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
-    const loom_local_value_domain_t* value_domain, loom_func_like_t function,
-    const loom_call_effects_t* call_effects, iree_arena_allocator_t* arena,
+    loom_local_value_domain_t* value_domain, loom_func_like_t function,
+    loom_storage_access_scope_t* access_scope, iree_arena_allocator_t* arena,
     loom_storage_interference_t** out_analysis);
 
 // Returns true when |root_value_id| may have a memory footprint.

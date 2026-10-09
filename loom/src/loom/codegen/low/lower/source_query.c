@@ -461,7 +461,7 @@ iree_status_t loom_low_lower_source_query_environment_initialize(
       .target_facts = context->options->target_facts,
       .descriptor_set = descriptor_set,
       .fact_table = context->fact_table,
-      .call_effects = context->options->call_effects,
+      .storage_access = context->storage_access,
       .value_domain = &context->lowering->value_domain,
       .view_regions = view_regions,
       .arena = context->function_arena,
@@ -557,6 +557,7 @@ static iree_status_t loom_low_lower_source_query_contract(
 
   iree_status_t status = iree_ok_status();
   loom_target_contract_query_environment_t query_environment = *environment;
+  query_environment.storage_access = context->storage_access;
   if (query_environment.value_domain == NULL) {
     query_environment.value_domain =
         loom_low_lower_context_value_domain(context);
@@ -659,6 +660,8 @@ struct loom_low_lower_source_query_scope_t {
   loom_low_lower_context_t context;
   // Function state shared by contract queries in this scope.
   loom_low_lowering_frame_t frame;
+  // Reference/access graph owned by this immutable-source query scope.
+  loom_storage_access_scope_t storage_access;
   // Stable payload owner for target query state.
   iree_arena_allocator_t arena;
   // Diagnostic and result scratch required by the lowering context.
@@ -691,6 +694,7 @@ iree_status_t loom_low_lower_source_query_scope_create(
       .options = options,
       .policy = options->policy,
       .result = &scope->result,
+      .storage_access = &scope->storage_access,
   };
   scope->context.fact_table = options->fact_table;
   const loom_region_descriptor_t* source_body_descriptor =
@@ -702,6 +706,8 @@ iree_status_t loom_low_lower_source_query_scope_create(
   iree_arena_initialize(module->arena.block_pool, &scope->arena);
   iree_arena_initialize(module->arena.block_pool,
                         &scope->context.analysis_arena);
+  loom_storage_access_scope_initialize(module, &scope->context.analysis_arena,
+                                       &scope->storage_access);
 
   iree_status_t status =
       loom_target_low_descriptor_set_select_for_source_lowering(

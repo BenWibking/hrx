@@ -129,6 +129,8 @@ struct loom_low_lower_context_t {
   iree_arena_allocator_t analysis_arena;
   // Borrowed source value facts computed before planning.
   loom_value_fact_table_t* fact_table;
+  // Demand scope over immutable source, retired before plan execution.
+  loom_storage_access_scope_t* storage_access;
   // Reusable traversal state for condition-fact queries.
   loom_condition_query_t condition_query;
   // Stable function analyses advanced monotonically on demand.

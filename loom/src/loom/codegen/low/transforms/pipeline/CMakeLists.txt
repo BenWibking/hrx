@@ -18,7 +18,7 @@ loom_cc_library(
     "source_to_low.c"
   DEPS
     iree::base
-    loom::analysis::call_effects
+    loom::analysis::storage_access
     loom::codegen::low::descriptors
     loom::codegen::low::launch_config_program
     loom::codegen::low::lower

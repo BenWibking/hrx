@@ -419,7 +419,7 @@ buffer_length = Op(
     name="buffer.length",
     group=buffer_ops,
     doc=("Query the physical byte length of a buffer root without accessing its payload. Returns zero when the buffer is null."),
-    operands=[Operand("buffer", BUFFER, doc="Opaque storage root, which may be null.")],
+    operands=[Operand("buffer", BUFFER, doc="Opaque storage root, which may be null.", observes_reference=True)],
     results=[
         Result(
             "byte_length",

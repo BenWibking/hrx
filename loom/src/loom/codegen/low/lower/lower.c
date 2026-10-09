@@ -1393,13 +1393,18 @@ iree_status_t loom_low_lower_plan_function(
       .lowering = &plan->frame,
   };
   iree_arena_initialize(module->arena.block_pool, &context.analysis_arena);
+  loom_storage_access_scope_t storage_access;
+  loom_storage_access_scope_initialize(module, &context.analysis_arena,
+                                       &storage_access);
+  context.storage_access =
+      options->storage_access ? options->storage_access : &storage_access;
   iree_status_t status = loom_low_lower_function_plan_build(&context);
   loom_local_value_domain_release(&plan->frame.value_domain);
   iree_arena_deinitialize(&context.analysis_arena);
   if (iree_status_is_ok(status) && out_result->error_count == 0) {
     plan->descriptor_set = context.descriptor_set;
     plan->options.fact_table = NULL;
-    plan->options.call_effects = NULL;
+    plan->options.storage_access = NULL;
     plan->options.representation_projections = NULL;
     // Report construction may borrow source facts. Emission initializes only
     // its accounting cursor from the completed output rows.

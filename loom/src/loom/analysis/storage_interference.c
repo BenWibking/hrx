@@ -11,16 +11,12 @@
 #include "loom/analysis/control_uniformity.h"
 #include "loom/analysis/liveness.h"
 #include "loom/analysis/liveness_events.h"
-#include "loom/analysis/movement.h"
-#include "loom/analysis/value_relation.h"
 #include "loom/ir/context.h"
 #include "loom/ops/buffer/ops.h"
-#include "loom/ops/channel/ops.h"
 #include "loom/ops/kernel/launch_config.h"
 #include "loom/ops/kernel/ops.h"
 #include "loom/util/cfg_postdominance.h"
 #include "loom/util/fact_cfg.h"
-#include "loom/util/walk.h"
 
 typedef uint8_t loom_storage_interference_entry_flags_t;
 
@@ -71,6 +67,8 @@ typedef struct loom_storage_interference_entry_t {
   loom_storage_interference_entry_flags_t flags;
   // Memory space declared by the allocation root.
   loom_value_fact_memory_space_t memory_space;
+  // Canonical local transport and classified uses for this reference, or NULL.
+  const loom_storage_reference_t* reference;
   // Complete operation footprint for an allocation root.
   loom_storage_interference_footprint_t footprint;
 } loom_storage_interference_entry_t;
@@ -109,8 +107,6 @@ struct loom_storage_interference_t {
   const loom_module_t* module;
   // Populated value facts and retained CFG snapshots.
   const loom_value_fact_table_t* fact_table;
-  // Detached callable argument summaries borrowed for the analysis lifetime.
-  const loom_call_effects_t* call_effects;
   // Active local numbering for the function body.
   const loom_local_value_domain_t* value_domain;
   // Arena owning all analysis results and query summaries.
@@ -119,7 +115,7 @@ struct loom_storage_interference_t {
   loom_func_like_t function;
   // Root entries indexed by local value ordinal.
   loom_storage_interference_entry_t* entries;
-  // Outgoing provenance edges indexed by local value ordinal.
+  // Additional proved fact-root edges indexed by local value ordinal.
   loom_storage_interference_edge_t** edges;
   // Allocation-root memberships indexed by local value ordinal.
   loom_storage_interference_membership_t** memberships;
@@ -240,6 +236,16 @@ static iree_status_t loom_storage_interference_propagate_memberships(
       IREE_RETURN_IF_ERROR(loom_storage_interference_add_membership(
           analysis, edge->destination_ordinal, membership->root_ordinal));
     }
+    const loom_storage_reference_t* reference =
+        analysis->entries[membership->value_ordinal].reference;
+    for (const loom_storage_reference_edge_t* edge =
+             reference ? reference->destinations : NULL;
+         edge; edge = edge->next_destination) {
+      const loom_value_ordinal_t destination = loom_local_value_domain_ordinal(
+          analysis->value_domain, edge->destination->value_id);
+      IREE_RETURN_IF_ERROR(loom_storage_interference_add_membership(
+          analysis, destination, membership->root_ordinal));
+    }
   }
   return iree_ok_status();
 }
@@ -321,61 +327,25 @@ static iree_status_t loom_storage_interference_record_value_accesses(
   if (!memberships) {
     return iree_ok_status();
   }
-  const loom_value_id_t value_id =
-      analysis->value_domain->value_ids[value_ordinal];
-  const loom_value_t* value = loom_module_value(analysis->module, value_id);
-  const loom_use_t* use = NULL;
-  loom_value_for_each_use(value, use) {
-    const loom_op_t* user_op = loom_use_user_op(*use);
-    // A call can retain a reference or return an alias, including encoding it
-    // as a scalar at a Low boundary. Until the callee's access/escape contract
-    // is known, only the roots exposed to that call lose their lifetime proof.
-    // Purity alone does not describe result aliases.
-    // Binding storage into a channel also exposes aliases and asynchronous
-    // lifetimes not described by the buffer/view use graph. Channel realization
-    // must make those accesses explicit before this analysis can prove reuse.
-    const loom_call_like_t call =
-        loom_call_like_const_cast(analysis->module, user_op);
-    if (loom_channel_bind_isa(user_op) ||
-        (loom_call_like_isa(call) && !loom_call_like_is_direct_semantic(call))) {
+  const loom_storage_reference_t* reference =
+      analysis->entries[value_ordinal].reference;
+  for (const loom_storage_access_use_t* use = reference ? reference->uses
+                                                        : NULL;
+       use; use = use->next) {
+    const loom_op_t* user_op = use->operation;
+    const loom_storage_access_effects_t effects =
+        loom_storage_access_use_effects(use);
+    if (iree_any_bit_set(effects, LOOM_STORAGE_ACCESS_ESCAPE)) {
       loom_storage_interference_mark_memberships_incomplete(analysis,
                                                             memberships);
-      continue;
     }
-    const loom_op_vtable_t* vtable = loom_op_vtable(analysis->module, user_op);
-    const loom_operand_descriptor_t* descriptor = NULL;
-    bool accesses_memory = false;
-    if (loom_call_like_is_direct_semantic(call)) {
-      const loom_call_effect_summary_t* summary = loom_call_effects_lookup(
-          analysis->call_effects, loom_call_like_callee(call));
-      const loom_call_argument_effects_t effects =
-          summary ? summary->arguments[loom_use_operand_index(*use)]
-                  : LOOM_CALL_ARGUMENT_ESCAPE;
-      if (iree_any_bit_set(effects, LOOM_CALL_ARGUMENT_ESCAPE)) {
-        loom_storage_interference_mark_memberships_incomplete(analysis,
-                                                              memberships);
-      }
-      accesses_memory = iree_any_bit_set(
-          effects, LOOM_CALL_ARGUMENT_READ | LOOM_CALL_ARGUMENT_WRITE);
-    } else if (!loom_op_operand_descriptor_at(vtable, user_op,
-                                              loom_use_operand_index(*use),
-                                              &descriptor, NULL, NULL)) {
-      if (loom_traits_may_access_memory(
-              loom_op_effective_traits(analysis->module, user_op))) {
-        loom_storage_interference_mark_memberships_incomplete(analysis,
-                                                              memberships);
-      }
-      continue;
-    } else {
-      accesses_memory = iree_any_bit_set(
-          descriptor->flags, LOOM_OPERAND_READS | LOOM_OPERAND_WRITES);
-    }
-    if (!accesses_memory) {
+    if (!iree_any_bit_set(
+            effects, LOOM_STORAGE_ACCESS_READ | LOOM_STORAGE_ACCESS_WRITE)) {
       continue;
     }
 
     const loom_op_t* completion_op = NULL;
-    if (loom_movement_op_kind_is_async(user_op->kind)) {
+    if (iree_any_bit_set(effects, LOOM_STORAGE_ACCESS_ASYNC)) {
       completion_op =
           loom_storage_interference_async_completion(analysis, user_op);
       if (!completion_op) {
@@ -676,86 +646,6 @@ static iree_status_t loom_storage_interference_append_workgroup_barrier(
   return iree_ok_status();
 }
 
-static bool loom_storage_interference_is_lifetime_barrier(const loom_op_t* op) {
-  return loom_kernel_barrier_isa(op) &&
-         loom_kernel_barrier_memory_space(op) ==
-             LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP &&
-         loom_kernel_barrier_scope(op) == LOOM_ATOMIC_SCOPE_WORKGROUP &&
-         loom_kernel_barrier_ordering(op) == LOOM_ATOMIC_ORDERING_ACQ_REL;
-}
-
-static iree_status_t loom_storage_interference_walk_op(
-    void* user_data, loom_op_t* op, const loom_walk_context_t* context,
-    loom_walk_result_t* out_result) {
-  (void)context;
-  *out_result = LOOM_WALK_CONTINUE;
-  loom_storage_interference_t* analysis =
-      (loom_storage_interference_t*)user_data;
-  const loom_op_vtable_t* vtable = loom_op_vtable(analysis->module, op);
-  const loom_trait_flags_t traits =
-      loom_op_effective_traits(analysis->module, op);
-  const bool known_async_stream_effect =
-      loom_kernel_async_group_isa(op) || loom_kernel_async_wait_isa(op);
-  // Fresh frame storage is reachable by a callee through its operands. The
-  // per-value walk handles those exposures after alias propagation; a call
-  // without a reference to a root cannot invalidate that root's proof.
-  const bool callable_effect =
-      loom_call_like_isa(loom_call_like_cast(analysis->module, op));
-  if (iree_any_bit_set(traits, LOOM_TRAIT_UNKNOWN_EFFECTS) &&
-      !known_async_stream_effect && !callable_effect) {
-    analysis->has_unknown_memory_access = true;
-  } else if (loom_traits_may_access_memory(traits) &&
-             !known_async_stream_effect && !callable_effect) {
-    bool described_read = false;
-    bool described_write = false;
-    if (vtable && vtable->operand_descriptors) {
-      const uint8_t descriptor_count =
-          loom_op_vtable_operand_descriptor_count(vtable);
-      for (uint8_t i = 0; i < descriptor_count; ++i) {
-        const loom_operand_flags_t flags = vtable->operand_descriptors[i].flags;
-        described_read |= iree_any_bit_set(flags, LOOM_OPERAND_READS);
-        described_write |= iree_any_bit_set(flags, LOOM_OPERAND_WRITES);
-      }
-    }
-    const bool missing_read =
-        iree_any_bit_set(traits, LOOM_TRAIT_READS_MEMORY) && !described_read;
-    const bool missing_write =
-        iree_any_bit_set(traits, LOOM_TRAIT_WRITES_MEMORY) && !described_write;
-    analysis->has_unknown_memory_access |= missing_read || missing_write;
-  }
-
-  if (loom_storage_interference_is_lifetime_barrier(op)) {
-    IREE_RETURN_IF_ERROR(
-        loom_storage_interference_append_workgroup_barrier(analysis, op));
-  }
-
-  const loom_value_relation_mask_t relation_mask =
-      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_TIED_RESULT) |
-      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_FACT_IDENTITY) |
-      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_VALUE_ALIAS) |
-      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_SELECT_PAYLOAD) |
-      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_CFG_ARGUMENT) |
-      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_LOOP_CARRIED) |
-      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_LOOP_BYPASS) |
-      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_REGION_RESULT) |
-      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_REFERENCE_SOURCE);
-  loom_value_relation_iterator_t iterator;
-  loom_value_relation_iterator_initialize(analysis->module, op, relation_mask,
-                                          &iterator);
-  loom_value_relation_t relation;
-  while (loom_value_relation_iterator_next(&iterator, &relation)) {
-    if (!loom_storage_interference_value_is_reference(
-            analysis, relation.source_value_id) ||
-        !loom_storage_interference_value_is_reference(
-            analysis, relation.destination_value_id)) {
-      continue;
-    }
-    IREE_RETURN_IF_ERROR(loom_storage_interference_append_edge(
-        analysis, relation.source_value_id, relation.destination_value_id));
-  }
-  return iree_ok_status();
-}
-
 static iree_status_t loom_storage_interference_initialize_values(
     loom_storage_interference_t* analysis) {
   for (loom_value_ordinal_t value_ordinal = 0;
@@ -804,8 +694,8 @@ static iree_status_t loom_storage_interference_initialize_values(
 
 iree_status_t loom_storage_interference_analyze_function(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
-    const loom_local_value_domain_t* value_domain, loom_func_like_t function,
-    const loom_call_effects_t* call_effects, iree_arena_allocator_t* arena,
+    loom_local_value_domain_t* value_domain, loom_func_like_t function,
+    loom_storage_access_scope_t* access_scope, iree_arena_allocator_t* arena,
     loom_storage_interference_t** out_analysis) {
   IREE_ASSERT_ARGUMENT(module);
   IREE_ASSERT_ARGUMENT(fact_table);
@@ -817,13 +707,16 @@ iree_status_t loom_storage_interference_analyze_function(
   IREE_ASSERT_ARGUMENT(out_analysis);
   *out_analysis = NULL;
 
+  const loom_storage_access_function_t* access = NULL;
+  IREE_RETURN_IF_ERROR(loom_storage_access_require_function(
+      access_scope, function, value_domain, &access));
   loom_storage_interference_t* analysis = NULL;
   IREE_RETURN_IF_ERROR(
       iree_arena_allocate(arena, sizeof(*analysis), (void**)&analysis));
   *analysis = (loom_storage_interference_t){
       .module = module,
       .fact_table = fact_table,
-      .call_effects = call_effects,
+      .has_unknown_memory_access = access->has_unknown_memory_access,
       .value_domain = value_domain,
       .arena = arena,
       .function = function,
@@ -848,15 +741,17 @@ iree_status_t loom_storage_interference_analyze_function(
   }
 
   IREE_RETURN_IF_ERROR(loom_storage_interference_initialize_values(analysis));
-  loom_walk_result_t walk_result = LOOM_WALK_CONTINUE;
-  IREE_RETURN_IF_ERROR(loom_walk_region(
-      module, loom_func_like_body(function), LOOM_WALK_PRE_ORDER,
-      (loom_walk_callback_t){
-          .fn = loom_storage_interference_walk_op,
-          .user_data = analysis,
-      },
-      &walk_result));
-  IREE_ASSERT_EQ(walk_result, LOOM_WALK_CONTINUE);
+  for (const loom_storage_reference_t* reference = access->references;
+       reference; reference = reference->next) {
+    const loom_value_ordinal_t ordinal =
+        loom_local_value_domain_ordinal(value_domain, reference->value_id);
+    analysis->entries[ordinal].reference = reference;
+  }
+  for (const loom_storage_access_barrier_t* barrier = access->barriers; barrier;
+       barrier = barrier->next) {
+    IREE_RETURN_IF_ERROR(loom_storage_interference_append_workgroup_barrier(
+        analysis, barrier->operation));
+  }
   IREE_RETURN_IF_ERROR(
       loom_storage_interference_propagate_memberships(analysis));
 

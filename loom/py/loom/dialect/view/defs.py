@@ -518,7 +518,7 @@ view_prefetch = Op(
         "explicit hint-stripping pass removes it."
     ),
     operands=[
-        Operand("view", VIEW, doc="Typed view whose address should be prefetched."),
+        Operand("view", VIEW, doc="Typed view whose address should be prefetched.", observes_reference=True),
         Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
     ],
     attrs=[

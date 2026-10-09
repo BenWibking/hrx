@@ -327,7 +327,7 @@ iree_status_t loom_amdgpu_source_alloca_layout_for_low_legality(
   const loom_func_like_t source_function =
       loom_target_low_legality_function(context);
   const loom_module_t* module = loom_target_low_legality_module(context);
-  const loom_local_value_domain_t* value_domain =
+  loom_local_value_domain_t* value_domain =
       loom_target_low_legality_value_domain(context);
   iree_arena_allocator_t* arena =
       loom_target_low_legality_scratch_arena(context);
@@ -338,7 +338,7 @@ iree_status_t loom_amdgpu_source_alloca_layout_for_low_legality(
         loom_local_value_domain_is_acquired(value_domain)) {
       IREE_RETURN_IF_ERROR(loom_storage_interference_analyze_function(
           module, fact_table, value_domain, source_function,
-          loom_target_low_legality_call_effects(context), arena,
+          loom_target_low_legality_storage_access(context), arena,
           &interference));
     }
     IREE_RETURN_IF_ERROR(loom_amdgpu_source_alloca_layout_initialize(
