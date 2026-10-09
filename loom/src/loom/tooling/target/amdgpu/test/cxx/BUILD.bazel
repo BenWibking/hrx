@@ -228,6 +228,22 @@ loom_test(
 )
 
 loom_test(
+    name = "nvfp4_matrix_loom_providers_test",
+    srcs = [
+        "nvfp4_matrix.cxx",
+        "nvfp4_matrix_providers.loom",
+    ],
+    benchmark_smoke = False,
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx1100",
+    ],
+    data = ["nvfp4_matrix.h"],
+    execution_profiles = _EXECUTION_PROFILES,
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+)
+
+loom_test(
     name = "q8s32_specialization_test",
     srcs = [
         "q8s32_specialization.cxx",

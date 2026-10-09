@@ -7,7 +7,9 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "benchmark/benchmark.h"
 #include "loom/binding/c/benchmark/compile_throughput_benchmark.h"
@@ -27,6 +29,10 @@ struct CxxKernel {
   const char* target;
   // Additional definitions satisfying source-owned configuration declarations.
   const char* config_definitions = nullptr;
+  // Embedded sources served when preprocessing user includes.
+  const char* const* include_sources = nullptr;
+  // Number of entries in include_sources.
+  iree_host_size_t include_source_count = 0;
 };
 
 enum class CxxJitPhase {
@@ -46,6 +52,25 @@ struct CxxJitPhaseSpec {
   // Source, export and target shared with the complete endpoint benchmark.
   const CxxKernel* kernel;
 };
+
+static iree_status_t CreateEmbeddedSource(const EmbeddedSource& embedded,
+                                          SourcePtr* out_source) {
+  out_source->reset();
+  const loomc_source_options_t source_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_SOURCE_OPTIONS,
+      /*.structure_size=*/sizeof(source_options),
+      /*.next=*/nullptr,
+      /*.format=*/LOOMC_SOURCE_FORMAT_UNKNOWN,
+      /*.identifier=*/embedded.identifier,
+      /*.contents=*/embedded.contents,
+      /*.storage=*/LOOMC_SOURCE_STORAGE_BORROWED,
+  };
+  loomc_source_t* raw_source = nullptr;
+  IREE_RETURN_IF_ERROR(to_iree_status(
+      loomc_source_create(&source_options, loom_allocator(), &raw_source)));
+  out_source->reset(raw_source);
+  return iree_ok_status();
+}
 
 class CxxSourceScenarioBase : public TargetCompileScenario {
  public:
@@ -81,23 +106,22 @@ class CxxSourceScenarioBase : public TargetCompileScenario {
                         : loomc_make_cstring_view("cxx-source-to-hsaco"),
                     LOOMC_TARGET_CONTROL_FLOW_LOWERING_CFG));
 
-    const EmbeddedSource embedded =
-        FindEmbeddedSource(loomc_cxx_benchmark_kernels_create(),
-                           loomc_cxx_benchmark_kernels_size(), kernel_.source);
+    const auto* embedded_sources = loomc_cxx_benchmark_kernels_create();
+    const size_t embedded_source_count = loomc_cxx_benchmark_kernels_size();
+    const EmbeddedSource embedded = FindEmbeddedSource(
+        embedded_sources, embedded_source_count, kernel_.source);
+    IREE_RETURN_IF_ERROR(CreateEmbeddedSource(embedded, &source_));
     source_byte_count_ = (int64_t)embedded.contents.data_length;
-    const loomc_source_options_t source_options = {
-        /*.type=*/LOOMC_STRUCTURE_TYPE_SOURCE_OPTIONS,
-        /*.structure_size=*/sizeof(source_options),
-        /*.next=*/nullptr,
-        /*.format=*/LOOMC_SOURCE_FORMAT_UNKNOWN,
-        /*.identifier=*/embedded.identifier,
-        /*.contents=*/embedded.contents,
-        /*.storage=*/LOOMC_SOURCE_STORAGE_BORROWED,
-    };
-    loomc_source_t* raw_source = nullptr;
-    IREE_RETURN_IF_ERROR(to_iree_status(
-        loomc_source_create(&source_options, loom_allocator(), &raw_source)));
-    source_.reset(raw_source);
+    include_sources_.clear();
+    include_sources_.reserve(kernel_.include_source_count);
+    for (iree_host_size_t i = 0; i < kernel_.include_source_count; ++i) {
+      const EmbeddedSource include = FindEmbeddedSource(
+          embedded_sources, embedded_source_count, kernel_.include_sources[i]);
+      SourcePtr include_source;
+      IREE_RETURN_IF_ERROR(CreateEmbeddedSource(include, &include_source));
+      source_byte_count_ += (int64_t)include.contents.data_length;
+      include_sources_.push_back(std::move(include_source));
+    }
 
     std::string config;
     for (int axis = 0; axis < 3; ++axis) {
@@ -122,6 +146,9 @@ class CxxSourceScenarioBase : public TargetCompileScenario {
     options.flags = LOOMC_CXX_IMPORT_FLAG_APPROXIMATE_FUNCTIONS;
     options.roots = &root;
     options.root_count = 1;
+    if (!include_sources_.empty()) {
+      options.source_provider = {ProvideSource, this};
+    }
     loomc_module_t* raw_module = nullptr;
     loomc_result_t* raw_result = nullptr;
     iree_status_t status = to_iree_status(loomc_module_import_cxx(
@@ -181,10 +208,33 @@ class CxxSourceScenarioBase : public TargetCompileScenario {
   }
 
  private:
+  static loomc_status_t ProvideSource(void* user_data, loomc_string_view_t path,
+                                      loomc_source_t** out_source) {
+    auto& self = *static_cast<CxxSourceScenarioBase*>(user_data);
+    *out_source = nullptr;
+    std::string_view candidate(path.data, path.size);
+    const size_t separator = candidate.find_last_of('/');
+    if (separator != std::string_view::npos) {
+      candidate.remove_prefix(separator + 1);
+    }
+    for (const SourcePtr& include_source : self.include_sources_) {
+      const loomc_string_view_t identifier =
+          loomc_source_identifier(include_source.get());
+      if (candidate == std::string_view(identifier.data, identifier.size)) {
+        loomc_source_retain(include_source.get());
+        *out_source = include_source.get();
+        break;
+      }
+    }
+    return loomc_ok_status();
+  }
+
   // Static benchmark registration selecting source, export and target.
   const CxxKernel& kernel_;
   // Immutable source text backed by the embedded corpus table.
   SourcePtr source_;
+  // Immutable user includes returned through the source provider.
+  std::vector<SourcePtr> include_sources_;
   // Setup-only workspace retaining the immutable launch config module.
   WorkspacePtr setup_workspace_;
   // Ordinary immutable config module shared by source compilations.
@@ -343,6 +393,27 @@ constexpr CxxKernel kConfiguredWorkgroupStorage = {
     "gfx1151",
     "config.def @test.buffer.stage_count = 4 : i32\n",
 };
+constexpr const char* kNvFp4MatrixIncludes[] = {
+    "nvfp4_matrix.cxx",
+    "nvfp4_matrix.h",
+    "nvfp4_matrix_providers.cxx",
+};
+constexpr CxxKernel kNvFp4Gfx1100 = {
+    "nvfp4_matrix_benchmark.cxx",
+    "nvfp4_matrix",
+    "gfx1100",
+    nullptr,
+    kNvFp4MatrixIncludes,
+    IREE_ARRAYSIZE(kNvFp4MatrixIncludes),
+};
+constexpr CxxKernel kNvFp4Gfx942 = {
+    "nvfp4_matrix_benchmark.cxx",
+    "nvfp4_matrix",
+    "gfx942",
+    nullptr,
+    kNvFp4MatrixIncludes,
+    IREE_ARRAYSIZE(kNvFp4MatrixIncludes),
+};
 
 struct CxxJitPhaseRegistration {
   // Phase supplied to the benchmark scenario.
@@ -385,6 +456,8 @@ void RegisterCxxJitPhaseBenchmarks(const char* kernel_name,
   RegisterCxxJitPhaseBenchmarks("Q4KQ8SwiGluGfx1250", &kQ4KQ8SwiGlu);
   RegisterCxxJitPhaseBenchmarks("ConfiguredWorkgroupStorage",
                                 &kConfiguredWorkgroupStorage);
+  RegisterCxxJitPhaseBenchmarks("NvFp4Gfx1100", &kNvFp4Gfx1100);
+  RegisterCxxJitPhaseBenchmarks("NvFp4Gfx942", &kNvFp4Gfx942);
   return true;
 }();
 
@@ -405,6 +478,10 @@ BENCHMARK_CAPTURE(SourceToHsaco, Q4KQ8SwiGluGfx1250, &kQ4KQ8SwiGlu)
 BENCHMARK_CAPTURE(SourceToHsaco, ConfiguredWorkgroupStorage,
                   &kConfiguredWorkgroupStorage)
     ->Unit(::benchmark::kMicrosecond);
+BENCHMARK_CAPTURE(SourceToHsaco, NvFp4Gfx1100, &kNvFp4Gfx1100)
+    ->Unit(::benchmark::kMicrosecond);
+BENCHMARK_CAPTURE(SourceToHsaco, NvFp4Gfx942, &kNvFp4Gfx942)
+    ->Unit(::benchmark::kMicrosecond);
 
 BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, RmsNorm, &kRmsNorm)
     ->Unit(::benchmark::kMicrosecond)
@@ -420,6 +497,12 @@ BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, Q4KQ8SwiGluGfx1250, &kQ4KQ8SwiGlu)
     ->Iterations(1);
 BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, ConfiguredWorkgroupStorage,
                   &kConfiguredWorkgroupStorage)
+    ->Unit(::benchmark::kMicrosecond)
+    ->Iterations(1);
+BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, NvFp4Gfx1100, &kNvFp4Gfx1100)
+    ->Unit(::benchmark::kMicrosecond)
+    ->Iterations(1);
+BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, NvFp4Gfx942, &kNvFp4Gfx942)
     ->Unit(::benchmark::kMicrosecond)
     ->Iterations(1);
 

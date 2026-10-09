@@ -14,12 +14,16 @@ iree_c_embed_data(
   NAME
     kernels
   SRCS
+    "${PROJECT_SOURCE_DIR}/loom/binding/c/benchmark/import/cxx/nvfp4_matrix_benchmark.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/aiter_swiglu_f16.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/configured_workgroup_storage.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/flash_attention.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/llama_rms_norm.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/mxfp_group_dot.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/iq4xs_gate_up.cxx"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/nvfp4_matrix.cxx"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/nvfp4_matrix.h"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/nvfp4_matrix_providers.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/q4k_q8_swiglu.cxx"
   C_FILE_OUTPUT
     "kernels.c"
