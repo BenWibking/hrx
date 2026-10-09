@@ -148,7 +148,7 @@ TEST_P(TsanExecutableTest, PublishesTsanConfigGlobal) {
       queue(), empty_wait, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -232,7 +232,7 @@ TEST_P(TsanExecutableTest, ReportsTsanPacketThroughFeedback) {
       queue(), empty_wait, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 

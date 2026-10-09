@@ -8,6 +8,7 @@
 
 #include "iree/hal/device_group.h"
 #include "iree/hal/memory/passthrough_pool.h"
+#include "iree/hal/memory_scope.h"
 
 typedef struct iree_hal_host_slab_pool_plan_t {
   // Generic cold construction product.
@@ -56,6 +57,26 @@ static bool iree_hal_host_memory_access_is_supported(
     iree_hal_pool_host_access_t access) {
   return access.cacheability == IREE_HAL_HOST_CACHEABILITY_UNKNOWN ||
          access.cacheability == IREE_HAL_HOST_CACHEABILITY_WRITE_BACK;
+}
+
+static iree_status_t iree_hal_host_memory_query_pair(
+    void* user_data, iree_hal_memory_scope_id_t producer,
+    iree_hal_memory_scope_id_t consumer,
+    iree_hal_memory_pair_info_t* out_info) {
+  (void)user_data;
+  (void)producer;
+  (void)consumer;
+  // Host, Task queues and Task programs all access the same coherent process
+  // memory. Explicit execution dependencies still establish happens-before.
+  *out_info = (iree_hal_memory_pair_info_t){
+      .flags = IREE_HAL_MEMORY_PAIR_SHARED_BACKING_REACHABLE |
+               IREE_HAL_MEMORY_PAIR_FIXED_COST_KNOWN,
+      .release = {.kind = IREE_HAL_MEMORY_TRANSITION_KIND_NONE},
+      .acquire = {.kind = IREE_HAL_MEMORY_TRANSITION_KIND_NONE},
+      .atomic_reach = {.scope_32 = IREE_HAL_ATOMIC_REACH_SYSTEM,
+                       .scope_64 = IREE_HAL_ATOMIC_REACH_SYSTEM},
+  };
+  return iree_ok_status();
 }
 
 static iree_status_t iree_hal_host_slab_pool_query(
@@ -161,6 +182,10 @@ static iree_status_t iree_hal_host_slab_pool_query(
         contract->scopes[id].bindings[IREE_HAL_BUFFER_INTERFACE_HOST] = 0;
       }
     }
+    status = iree_hal_memory_contract_initialize_transitions(
+        contract, iree_hal_host_memory_query_pair, NULL);
+  }
+  if (iree_status_is_ok(status)) {
     status = callback.fn(callback.user_data, &plan->base);
   } else {
     iree_hal_host_slab_pool_plan_destroy(&plan->base);

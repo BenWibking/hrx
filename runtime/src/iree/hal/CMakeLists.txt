@@ -106,6 +106,29 @@ iree_cc_library(
 
 iree_cc_test(
   NAME
+    memory_scope_test
+  SRCS
+    "memory_scope_test.cc"
+  DEPS
+    ::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+iree_cc_binary_benchmark(
+  NAME
+    memory_scope_benchmark
+  SRCS
+    "memory_scope_benchmark.cc"
+  DEPS
+    ::hal
+    iree::testing::benchmark_main
+    iree::third_party::google_benchmark
+  TESTONLY
+)
+
+iree_cc_test(
+  NAME
     atomic_test
   SRCS
     "atomic_test.cc"

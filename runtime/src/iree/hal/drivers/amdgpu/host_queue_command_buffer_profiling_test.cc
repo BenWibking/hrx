@@ -363,11 +363,18 @@ TEST_F(HostQueueCommandBufferProfilingTest,
       /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_READ,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-      fixture.command_buffer, IREE_HAL_EXECUTION_STAGE_TRANSFER,
-      IREE_HAL_EXECUTION_STAGE_TRANSFER, IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
-      /*memory_barrier_count=*/1, &transfer_to_transfer_barrier,
-      /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr));
+  const iree_hal_barrier_t execution_barrier = {
+      /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
+      /*.effects=*/{},
+      /*.memory_barrier_count=*/1,
+      /*.memory_barriers=*/&transfer_to_transfer_barrier,
+      /*.buffer_barrier_count=*/0,
+      /*.buffer_barriers=*/nullptr,
+  };
+  IREE_ASSERT_OK(iree_hal_command_buffer_barrier(fixture.command_buffer,
+                                                 &execution_barrier));
   IREE_ASSERT_OK(iree_hal_command_buffer_copy_buffer(
       fixture.command_buffer,
       iree_hal_make_buffer_ref(fixture.input_buffer, 2 * sizeof(uint32_t),
@@ -379,11 +386,18 @@ TEST_F(HostQueueCommandBufferProfilingTest,
       /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_DISPATCH_READ,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-      fixture.command_buffer, IREE_HAL_EXECUTION_STAGE_TRANSFER,
-      IREE_HAL_EXECUTION_STAGE_DISPATCH, IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
-      /*memory_barrier_count=*/1, &transfer_to_dispatch_barrier,
-      /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr));
+  const iree_hal_barrier_t dispatch_dependency = {
+      /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH,
+      /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
+      /*.effects=*/{},
+      /*.memory_barrier_count=*/1,
+      /*.memory_barriers=*/&transfer_to_dispatch_barrier,
+      /*.buffer_barrier_count=*/0,
+      /*.buffer_barriers=*/nullptr,
+  };
+  IREE_ASSERT_OK(iree_hal_command_buffer_barrier(fixture.command_buffer,
+                                                 &dispatch_dependency));
   IREE_ASSERT_OK(AppendTwoDispatchOperations(&fixture));
   IREE_ASSERT_OK(iree_hal_command_buffer_end(fixture.command_buffer));
 
@@ -1905,7 +1919,7 @@ TEST_F(HostQueueCommandBufferProfilingTest,
       test_device.queue(), iree_hal_semaphore_list_empty(),
       pressure_signal_list, pressure_buffer,
       /*target_offset=*/0, sizeof(pressure_pattern), &pressure_pattern,
-      sizeof(pressure_pattern), IREE_HAL_FILL_FLAG_NONE);
+      sizeof(pressure_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
 
   uint64_t command_buffer_signal_value = 1;
   iree_hal_semaphore_t* command_buffer_signal_ptr = command_buffer_signal.get();
@@ -2048,7 +2062,7 @@ TEST_F(HostQueueCommandBufferProfilingTest,
       test_device.queue(), iree_hal_semaphore_list_empty(),
       pressure_signal_list, pressure_buffer,
       /*target_offset=*/0, sizeof(pressure_pattern), &pressure_pattern,
-      sizeof(pressure_pattern), IREE_HAL_FILL_FLAG_NONE);
+      sizeof(pressure_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
 
   uint64_t command_buffer_signal_value = 1;
   iree_hal_semaphore_t* command_buffer_signal_ptr = command_buffer_signal.get();

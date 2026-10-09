@@ -866,7 +866,7 @@ iree_status_t iree_hal_streaming_stream_wait_streams(
           .payload_values = &signal_value,
       };
       status = iree_hal_queue_barrier(stream->queue, wait_semaphores,
-                                      signal_semaphores,
+                                      signal_semaphores, /*barriers=*/NULL,
                                       IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
       if (iree_status_is_ok(status)) {
         // The accepted barrier owns the value it signals, so the timeline
@@ -1066,6 +1066,7 @@ iree_status_t iree_hal_streaming_stream_wait_semaphores(
           .payload_values = &stream_signal_value,
       };
       status = iree_hal_queue_barrier(stream->queue, combined_waits, signal,
+                                      /*barriers=*/NULL,
                                       IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
       if (iree_status_is_ok(status)) {
         stream->pending_value = stream_signal_value;
@@ -1476,7 +1477,7 @@ iree_status_t iree_hal_streaming_stream_wait_event(
       };
 
       status = iree_hal_queue_barrier(stream->queue, wait_semaphores,
-                                      signal_semaphores,
+                                      signal_semaphores, /*barriers=*/NULL,
                                       IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
       if (iree_status_is_ok(status)) {
         // The accepted barrier owns the value it signals, so the timeline
@@ -1679,11 +1680,16 @@ static iree_status_t iree_hal_streaming_record_dispatch_locked(
                         IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
     };
     timing_step_ns = timing_barrier_ns ? hrx_launch_timing_now_ns() : 0;
-    status = iree_hal_command_buffer_execution_barrier(
-        stream->command_buffer,
-        IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER,
-        IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER,
-        IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, 1, &memory_barrier, 0, NULL);
+    const iree_hal_barrier_t execution_barrier = {
+        .source_stage_mask = IREE_HAL_EXECUTION_STAGE_DISPATCH |
+                             IREE_HAL_EXECUTION_STAGE_TRANSFER,
+        .target_stage_mask = IREE_HAL_EXECUTION_STAGE_DISPATCH |
+                             IREE_HAL_EXECUTION_STAGE_TRANSFER,
+        .memory_barrier_count = 1,
+        .memory_barriers = &memory_barrier,
+    };
+    status = iree_hal_command_buffer_barrier(stream->command_buffer,
+                                             &execution_barrier);
     if (timing_barrier_ns) {
       *timing_barrier_ns += hrx_launch_timing_now_ns() - timing_step_ns;
     }
@@ -1960,7 +1966,7 @@ iree_status_t iree_hal_streaming_launch_kernel(
               config,
               iree_make_const_byte_span(arguments.constants,
                                         arguments.constants_size),
-              arguments.bindings, flags);
+              arguments.bindings, /*barriers=*/NULL, flags);
         }
         if (iree_status_is_ok(status)) {
           // The accepted dispatch owns the value it signals, so the timeline

@@ -318,9 +318,9 @@ TEST_F(PM4CommandDispatchTest, WritesInteriorOfNestedQueuedArena) {
   IREE_ASSERT_OK(iree_hal_buffer_subspan(root, 32, kOutputByteLength,
                                          host_allocator_, view.out()));
   SemaphoreList filled(test_device_.base_device(), {0}, {1});
-  IREE_ASSERT_OK(iree_hal_queue_fill(queue, allocated, filled, root, 0, 256,
-                                     &kSentinelValue, sizeof(kSentinelValue),
-                                     IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(iree_hal_queue_fill(
+      queue, allocated, filled, root, 0, 256, &kSentinelValue,
+      sizeof(kSentinelValue), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(filled, iree_infinite_timeout(),
                                               IREE_ASYNC_WAIT_FLAG_NONE));
   Ref<iree_hal_buffer_t> parameters;
@@ -336,7 +336,7 @@ TEST_F(PM4CommandDispatchTest, WritesInteriorOfNestedQueuedArena) {
   SemaphoreList downloaded(test_device_.base_device(), {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_download(queue, iree_hal_semaphore_list_empty(),
                                          downloaded, root, 0, result.data(),
-                                         sizeof(result)));
+                                         sizeof(result), /*barriers=*/NULL));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       downloaded, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
   for (size_t i = 0; i < result.size(); ++i) {
@@ -444,15 +444,20 @@ TEST_F(PM4CommandDispatchTest, DynamicParametersObservePriorDispatch) {
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_INDIRECT_COMMAND_READ |
           IREE_HAL_ACCESS_SCOPE_MEMORY_READ,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-      command_buffer,
-      /*source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH |
+  const iree_hal_barrier_t execution_barrier = {
+      /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH |
           IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
-      /*target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_PROCESS |
+      /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_PROCESS |
           IREE_HAL_EXECUTION_STAGE_DISPATCH,
-      IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, /*memory_barrier_count=*/1,
-      &memory_barrier, /*buffer_barrier_count=*/0,
-      /*buffer_barriers=*/NULL));
+      /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
+      /*.effects=*/{},
+      /*.memory_barrier_count=*/1,
+      /*.memory_barriers=*/&memory_barrier,
+      /*.buffer_barrier_count=*/0,
+      /*.buffer_barriers=*/NULL,
+  };
+  IREE_ASSERT_OK(
+      iree_hal_command_buffer_barrier(command_buffer, &execution_barrier));
   iree_hal_buffer_ref_t output_ref =
       iree_hal_make_buffer_ref(output_buffer, /*offset=*/0, kOutputByteLength);
   const iree_hal_buffer_ref_list_t consumer_bindings = {

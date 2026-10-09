@@ -389,7 +389,7 @@ TEST_F(HostQueuePendingTest,
   const uint32_t old_pattern = 0x11111111u;
   IREE_ASSERT_OK(iree_hal_queue_fill(
       &queue->base, allocated, used, original, 0, kByteLength, &old_pattern,
-      sizeof(old_pattern), IREE_HAL_FILL_FLAG_NONE));
+      sizeof(old_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   // Complete the last-use edge first: this backend parks deallocation behind
   // unfinished users. The gate below instead withholds native reclaim.
   IREE_ASSERT_OK(iree_hal_semaphore_wait(completion, used_value,
@@ -483,10 +483,10 @@ TEST_F(HostQueuePendingTest,
   const uint32_t new_pattern = 0xAABBCCDDu;
   IREE_ASSERT_OK(iree_hal_queue_fill(
       &queue->base, no_waits, filled, recycled, 0, kByteLength, &new_pattern,
-      sizeof(new_pattern), IREE_HAL_FILL_FLAG_NONE));
-  IREE_ASSERT_OK(iree_hal_queue_copy(&queue->base, filled, copied, recycled, 0,
-                                     readback, 0, kByteLength,
-                                     IREE_HAL_COPY_FLAG_NONE));
+      sizeof(new_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(iree_hal_queue_copy(
+      &queue->base, filled, copied, recycled, 0, readback, 0, kByteLength,
+      /*barriers=*/NULL, IREE_HAL_COPY_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_wait(completion, copied_value,
                                          iree_infinite_timeout(),
                                          IREE_ASYNC_WAIT_FLAG_NONE));
@@ -646,7 +646,8 @@ TEST_F(HostQueuePendingTest,
           /*.fn=*/RecordHostAction,
           /*.user_data=*/&action_state,
       },
-      /*operation_resources=*/NULL, /*operation_resource_count=*/0));
+      /*operation_resources=*/NULL, /*operation_resource_count=*/0,
+      (iree_hal_amdgpu_queue_barrier_t){0}));
 
   EXPECT_EQ(HostActionCallCount(&action_state), 1);
   EXPECT_EQ(HostActionStatusCode(&action_state), IREE_STATUS_CANCELLED);
@@ -691,7 +692,7 @@ TEST_F(HostQueuePendingTest, CancelPendingFillFailsSignalSemaphore) {
   IREE_ASSERT_OK(iree_hal_queue_fill(
       test_device.queue(), wait_list, signal_list, target_buffer,
       /*target_offset=*/0, sizeof(pattern), &pattern, sizeof(pattern),
-      IREE_HAL_FILL_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   ASSERT_TRUE(HostQueueHasPendingOps(queue));
 
   CancelPendingWithTestStatus(queue);
@@ -744,7 +745,7 @@ TEST_F(HostQueuePendingTest, CapacityParkedHostActionRetriesAfterPostDrain) {
       test_device.queue(), iree_hal_semaphore_list_empty(),
       pressure_signal_list, pressure_buffer,
       /*target_offset=*/0, sizeof(pressure_pattern), &pressure_pattern,
-      sizeof(pressure_pattern), IREE_HAL_FILL_FLAG_NONE);
+      sizeof(pressure_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
 
   HostActionState action_state;
   HostActionStateInitialize(&action_state);
@@ -755,7 +756,8 @@ TEST_F(HostQueuePendingTest, CapacityParkedHostActionRetriesAfterPostDrain) {
             /*.fn=*/RecordHostAction,
             /*.user_data=*/&action_state,
         },
-        /*operation_resources=*/NULL, /*operation_resource_count=*/0);
+        /*operation_resources=*/NULL, /*operation_resource_count=*/0,
+        (iree_hal_amdgpu_queue_barrier_t){0});
   }
   const bool retry_parked =
       iree_status_is_ok(status) && HostQueueHasPostDrainAction(queue);
@@ -910,7 +912,8 @@ TEST_F(HostQueuePendingTest,
   IREE_ASSERT_OK(iree_hal_queue_update(
       test_device.queue(), alloca1_signal_list, update_signal_list,
       &expected_value, /*source_offset=*/0, buffer1,
-      /*target_offset=*/0, sizeof(expected_value), IREE_HAL_UPDATE_FLAG_NONE));
+      /*target_offset=*/0, sizeof(expected_value), /*barriers=*/NULL,
+      IREE_HAL_UPDATE_FLAG_NONE));
 
   Ref<iree_hal_buffer_t> readback_buffer;
   IREE_ASSERT_OK(CreateHostVisibleTransferBuffer(
@@ -924,7 +927,8 @@ TEST_F(HostQueuePendingTest,
   IREE_ASSERT_OK(iree_hal_queue_copy(
       test_device.queue(), update_signal_list, copy_signal_list, buffer1,
       /*source_offset=*/0, readback_buffer,
-      /*target_offset=*/0, sizeof(expected_value), IREE_HAL_COPY_FLAG_NONE));
+      /*target_offset=*/0, sizeof(expected_value), /*barriers=*/NULL,
+      IREE_HAL_COPY_FLAG_NONE));
 
   Ref<iree_hal_semaphore_t> dealloca0_signal;
   IREE_ASSERT_OK(

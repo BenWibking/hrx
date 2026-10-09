@@ -165,8 +165,9 @@ void* iree_hal_amdgpu_buffer_device_pointer(iree_hal_buffer_t* buffer);
 // Returns the immutable atomic memory cells supported by |buffer|.
 //
 // Transient buffers resolve their staged backing once; nested views carry
-// prepared facts. Other implementations and unmaterialized transient buffers
-// support no cells.
+// prepared facts. Scoped foreign storage uses the generic backing's qualified
+// operation families, never an AMDGPU-private extension of its binding array.
+// Unqualified storage and unmaterialized transient buffers support no cells.
 iree_hal_amdgpu_atomic_memory_cell_flags_t
 iree_hal_amdgpu_buffer_atomic_memory_cells(iree_hal_buffer_t* buffer);
 

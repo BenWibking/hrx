@@ -559,7 +559,7 @@ static iree_status_t iree_io_parameter_op_batch_enqueue_splat(
       z0, iree_hal_queue_fill(batch->queue, step.wait_semaphore_list,
                               step.signal_semaphore_list, buffer, buffer_offset,
                               length, pattern, pattern_length,
-                              IREE_HAL_FILL_FLAG_NONE));
+                              /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
 
   IREE_TRACE_ZONE_END(z0);
   return iree_ok_status();
@@ -583,7 +583,7 @@ static iree_status_t iree_io_parameter_op_batch_enqueue_file_read(
   iree_status_t status = iree_hal_queue_read(
       batch->queue, step.wait_semaphore_list, step.signal_semaphore_list,
       source_file, source_file_offset, target_buffer, target_buffer_offset,
-      length, flags);
+      length, /*barriers=*/NULL, flags);
 
   IREE_TRACE_ZONE_END(z0);
   return status;
@@ -620,7 +620,7 @@ static iree_status_t iree_io_parameter_op_batch_enqueue_file_write(
   iree_status_t status = iree_hal_queue_write(
       batch->queue, step.wait_semaphore_list, step.signal_semaphore_list,
       source_buffer, source_buffer_offset, target_file, target_file_offset,
-      length, flags);
+      length, /*barriers=*/NULL, flags);
 
   IREE_TRACE_ZONE_END(z0);
   return status;
@@ -652,9 +652,9 @@ static iree_status_t iree_io_parameter_op_batch_flush(
   // this links the incoming waits directly to the outgoing signals.
   if (batch->timeline_live_count == 0) {
     IREE_TRACE_ZONE_APPEND_TEXT(z0, "pass-through wait-signal");
-    status = iree_hal_queue_transfer(batch->queue, batch->wait_semaphore_list,
-                                     batch->signal_semaphore_list,
-                                     /*operation_count=*/0, NULL);
+    status = iree_hal_queue_transfer(
+        batch->queue, batch->wait_semaphore_list, batch->signal_semaphore_list,
+        /*operation_count=*/0, NULL, /*barriers=*/NULL);
   } else {
     IREE_TRACE_ZONE_APPEND_TEXT(z0, "timeline set wait chain");
     // Note that we allocate timelines on-demand up to timeline_live_count so
@@ -664,9 +664,9 @@ static iree_status_t iree_io_parameter_op_batch_flush(
         .semaphores = batch->timeline_semaphores,
         .payload_values = batch->timeline_values,
     };
-    status = iree_hal_queue_transfer(batch->queue, join_semaphore_list,
-                                     batch->signal_semaphore_list,
-                                     /*operation_count=*/0, NULL);
+    status = iree_hal_queue_transfer(
+        batch->queue, join_semaphore_list, batch->signal_semaphore_list,
+        /*operation_count=*/0, NULL, /*barriers=*/NULL);
   }
 
   // Report the total number of bytes transferred by the batch.
@@ -813,9 +813,9 @@ static iree_status_t iree_io_parameter_transfer_batch_begin_group(
       .semaphores = &group->start_semaphore,
       .payload_values = &group->start_value,
   };
-  return iree_hal_queue_transfer(batch->queue, group->wait_semaphore_list,
-                                 start_signal_list,
-                                 /*operation_count=*/0, NULL);
+  return iree_hal_queue_transfer(
+      batch->queue, group->wait_semaphore_list, start_signal_list,
+      /*operation_count=*/0, NULL, /*barriers=*/NULL);
 }
 
 typedef struct iree_io_parameter_transfer_batch_step_t {
@@ -923,7 +923,7 @@ static iree_status_t iree_io_parameter_transfer_batch_enqueue_splat(
                                                             length, &step));
   iree_status_t status = iree_hal_queue_fill(
       batch->queue, step.wait_semaphore_list, step.signal_semaphore_list,
-      buffer, buffer_offset, length, pattern, pattern_length,
+      buffer, buffer_offset, length, pattern, pattern_length, /*barriers=*/NULL,
       IREE_HAL_FILL_FLAG_NONE);
 
   IREE_TRACE_ZONE_END(z0);
@@ -947,7 +947,7 @@ static iree_status_t iree_io_parameter_transfer_batch_enqueue_file_read(
   iree_status_t status = iree_hal_queue_read(
       batch->queue, step.wait_semaphore_list, step.signal_semaphore_list,
       source_file, source_file_offset, target_buffer, target_buffer_offset,
-      length, flags);
+      length, /*barriers=*/NULL, flags);
 
   IREE_TRACE_ZONE_END(z0);
   return status;
@@ -983,7 +983,7 @@ static iree_status_t iree_io_parameter_transfer_batch_enqueue_file_write(
   iree_status_t status = iree_hal_queue_write(
       batch->queue, step.wait_semaphore_list, step.signal_semaphore_list,
       source_buffer, source_buffer_offset, target_file, target_file_offset,
-      length, flags);
+      length, /*barriers=*/NULL, flags);
 
   IREE_TRACE_ZONE_END(z0);
   return status;
@@ -1008,9 +1008,9 @@ static iree_status_t iree_io_parameter_transfer_batch_complete_group(
   const iree_io_parameter_transfer_batch_group_t* group =
       &batch->groups[group_index];
   if (group->timeline_mask == 0) {
-    return iree_hal_queue_transfer(batch->queue, group->wait_semaphore_list,
-                                   group->signal_semaphore_list,
-                                   /*operation_count=*/0, NULL);
+    return iree_hal_queue_transfer(
+        batch->queue, group->wait_semaphore_list, group->signal_semaphore_list,
+        /*operation_count=*/0, NULL, /*barriers=*/NULL);
   }
 
   iree_hal_semaphore_t*
@@ -1030,9 +1030,9 @@ static iree_status_t iree_io_parameter_transfer_batch_complete_group(
       .semaphores = wait_semaphores,
       .payload_values = wait_values,
   };
-  return iree_hal_queue_transfer(batch->queue, wait_semaphore_list,
-                                 group->signal_semaphore_list,
-                                 /*operation_count=*/0, NULL);
+  return iree_hal_queue_transfer(
+      batch->queue, wait_semaphore_list, group->signal_semaphore_list,
+      /*operation_count=*/0, NULL, /*barriers=*/NULL);
 }
 
 static iree_status_t iree_io_parameter_transfer_batch_end(

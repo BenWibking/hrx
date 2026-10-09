@@ -155,6 +155,13 @@ iree_hal_atomic_operation_capabilities_t
 iree_hal_amdgpu_atomic_memory_expand_capabilities(
     iree_hal_amdgpu_atomic_memory_cell_flags_t cell_flags);
 
+// Collapses complete public operation families into compact memory cells.
+// Partial families contribute no cell: this representation cannot distinguish
+// support for individual operations within a width and coherence domain.
+iree_hal_amdgpu_atomic_memory_cell_flags_t
+iree_hal_amdgpu_atomic_memory_collapse_capabilities(
+    iree_hal_atomic_operation_capabilities_t capabilities);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

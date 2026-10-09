@@ -134,7 +134,7 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_staged_read(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_file_t* source_file, uint64_t source_offset,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_device_size_t length);
+    iree_device_size_t length, const iree_hal_queue_barriers_t* barriers);
 
 // Submits a chunked fd-backed queue_write through the staging pool.
 iree_status_t iree_hal_amdgpu_host_queue_submit_staged_write(
@@ -143,7 +143,7 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_staged_write(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* source_buffer, iree_device_size_t source_offset,
     iree_hal_file_t* target_file, uint64_t target_offset,
-    iree_device_size_t length);
+    iree_device_size_t length, const iree_hal_queue_barriers_t* barriers);
 
 #ifdef __cplusplus
 }  // extern "C"

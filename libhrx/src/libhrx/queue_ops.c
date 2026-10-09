@@ -153,7 +153,8 @@ hrx_status_t hrx_queue_fill(hrx_device_t device, hrx_queue_affinity_t affinity,
   status = iree_hal_queue_fill(
       queue, semaphore_lists.wait.list, semaphore_lists.signal.list,
       buffer->hal_buffer, (iree_device_size_t)offset, (iree_device_size_t)size,
-      pattern, (iree_host_size_t)pattern_size, IREE_HAL_FILL_FLAG_NONE);
+      pattern, (iree_host_size_t)pattern_size, /*barriers=*/NULL,
+      IREE_HAL_FILL_FLAG_NONE);
   hrx_hal_semaphore_lists_deinitialize(&semaphore_lists);
   HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));
 }
@@ -189,7 +190,7 @@ hrx_status_t hrx_queue_copy(hrx_device_t device, hrx_queue_affinity_t affinity,
       queue, semaphore_lists.wait.list, semaphore_lists.signal.list,
       src->hal_buffer, (iree_device_size_t)src_offset, dst->hal_buffer,
       (iree_device_size_t)dst_offset, (iree_device_size_t)size,
-      IREE_HAL_COPY_FLAG_NONE);
+      /*barriers=*/NULL, IREE_HAL_COPY_FLAG_NONE);
   hrx_hal_semaphore_lists_deinitialize(&semaphore_lists);
   HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));
 }
@@ -219,9 +220,9 @@ hrx_status_t hrx_queue_barrier(hrx_device_t device,
     HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));
   }
 
-  status = iree_hal_queue_barrier(queue, semaphore_lists.wait.list,
-                                  semaphore_lists.signal.list,
-                                  IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
+  status = iree_hal_queue_barrier(
+      queue, semaphore_lists.wait.list, semaphore_lists.signal.list,
+      /*barriers=*/NULL, IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
   hrx_hal_semaphore_lists_deinitialize(&semaphore_lists);
   HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));
 }
@@ -320,7 +321,7 @@ hrx_status_t hrx_queue_dispatch(
       queue, semaphore_lists.wait.list, semaphore_lists.signal.list,
       executable->hal_executable,
       iree_hal_executable_function_from_index(export_ordinal), hal_config,
-      hal_constants, hal_binding_list, hal_flags);
+      hal_constants, hal_binding_list, /*barriers=*/NULL, hal_flags);
   free(hal_bindings);
   hrx_hal_semaphore_lists_deinitialize(&semaphore_lists);
   HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));

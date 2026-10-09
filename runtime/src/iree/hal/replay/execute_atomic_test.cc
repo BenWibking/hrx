@@ -273,7 +273,8 @@ static iree_status_t CapturingQueueAtomicWait(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_hal_atomic_wait_params_t params) {
+    iree_hal_atomic_wait_params_t params,
+    const iree_hal_queue_barriers_t* barriers) {
   AtomicInvocation* invocation = BeginQueueInvocation(
       base_queue, kAtomicInvocationWait, wait_semaphore_list,
       signal_semaphore_list, target_buffer, target_offset, params.width);
@@ -286,7 +287,8 @@ static iree_status_t CapturingQueueAtomicStore(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_hal_atomic_store_params_t params) {
+    iree_hal_atomic_store_params_t params,
+    const iree_hal_queue_barriers_t* barriers) {
   AtomicInvocation* invocation = BeginQueueInvocation(
       base_queue, kAtomicInvocationStore, wait_semaphore_list,
       signal_semaphore_list, target_buffer, target_offset, params.width);
@@ -300,7 +302,8 @@ static iree_status_t CapturingQueueAtomicRmw(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_hal_atomic_rmw_params_t params) {
+    iree_hal_atomic_rmw_params_t params,
+    const iree_hal_queue_barriers_t* barriers) {
   AtomicInvocation* invocation = BeginQueueInvocation(
       base_queue, kAtomicInvocationRmw, wait_semaphore_list,
       signal_semaphore_list, target_buffer, target_offset, params.width);
@@ -313,7 +316,8 @@ static iree_status_t CapturingQueueTransfer(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_host_size_t operation_count,
-    const iree_hal_transfer_operation_t* operations) {
+    const iree_hal_transfer_operation_t* operations,
+    const iree_hal_queue_barriers_t* barriers) {
   CapturingQueue* queue = CastQueue(base_queue);
   BeginQueueInvocation(base_queue, kAtomicInvocationNone, wait_semaphore_list,
                        signal_semaphore_list, /*target_buffer=*/nullptr,

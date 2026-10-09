@@ -1226,19 +1226,19 @@ static iree_status_t iree_hal_streaming_submit_value_operations_locked(
         status = iree_hal_queue_atomic_wait(
             operation_queue, wait_semaphores, signal_semaphores,
             operation->target_buffer, operation->target_offset,
-            operation->params.wait);
+            operation->params.wait, /*barriers=*/NULL);
         break;
       case IREE_HAL_STREAMING_VALUE_OPERATION_STORE:
         status = iree_hal_queue_atomic_store(
             operation_queue, wait_semaphores, signal_semaphores,
             operation->target_buffer, operation->target_offset,
-            operation->params.store);
+            operation->params.store, /*barriers=*/NULL);
         break;
       case IREE_HAL_STREAMING_VALUE_OPERATION_UPDATE:
         status = iree_hal_queue_atomic_rmw(
             operation_queue, wait_semaphores, signal_semaphores,
             operation->target_buffer, operation->target_offset,
-            operation->params.update);
+            operation->params.update, /*barriers=*/NULL);
         break;
       default:
         IREE_ASSERT_UNREACHABLE("stream value operation must be valid");

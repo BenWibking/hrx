@@ -77,11 +77,13 @@ class VulkanFileTest : public CtsTestBase<> {
     IREE_ASSERT_OK(iree_hal_queue_write(
         transfer_queue_, empty_wait, write_signal, source_buffer.get(),
         /*source_offset=*/0, file.get(),
-        /*target_offset=*/0, file_length, IREE_HAL_WRITE_FLAG_NONE));
+        /*target_offset=*/0, file_length, /*barriers=*/NULL,
+        IREE_HAL_WRITE_FLAG_NONE));
     IREE_ASSERT_OK(iree_hal_queue_read(
         transfer_queue_, write_signal, read_signal, file.get(),
         /*source_offset=*/0, target_buffer.get(),
-        /*target_offset=*/0, file_length, IREE_HAL_READ_FLAG_NONE));
+        /*target_offset=*/0, file_length, /*barriers=*/NULL,
+        IREE_HAL_READ_FLAG_NONE));
     IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
         read_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -138,7 +140,7 @@ TEST_P(VulkanFileTest, NativeFileShortReadExceedsStagingRingFails) {
   IREE_ASSERT_OK(iree_hal_queue_read(
       transfer_queue_, empty_wait, read_signal, file.get(),
       /*source_offset=*/0, target_buffer.get(), /*target_offset=*/0,
-      import_length, IREE_HAL_READ_FLAG_NONE));
+      import_length, /*barriers=*/NULL, IREE_HAL_READ_FLAG_NONE));
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_OUT_OF_RANGE,
       iree_hal_semaphore_list_wait(read_signal, iree_infinite_timeout(),

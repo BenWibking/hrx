@@ -2489,41 +2489,31 @@ static iree_status_t iree_hal_amdgpu_pm4_command_buffer_end_debug_group(
   return iree_ok_status();
 }
 
-static iree_status_t iree_hal_amdgpu_pm4_command_buffer_execution_barrier(
+static iree_status_t iree_hal_amdgpu_pm4_command_buffer_barrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers) {
+    const iree_hal_barrier_t* barrier) {
   iree_hal_amdgpu_pm4_command_buffer_t* command_buffer =
       iree_hal_amdgpu_pm4_command_buffer_cast(base_command_buffer);
-  const iree_hal_execution_barrier_flags_t supported_flags =
-      IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
-      IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
-  if (IREE_UNLIKELY(flags & ~supported_flags)) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "unsupported AMDGPU PM4 execution barrier flags: 0x%016" PRIx64,
-        flags & ~supported_flags);
-  }
+
   const iree_hal_amdgpu_barrier_scopes_t scopes =
       iree_hal_amdgpu_barrier_resolve_scopes(
-          source_stage_mask, target_stage_mask, flags, memory_barrier_count,
-          memory_barriers, buffer_barrier_count, buffer_barriers);
+          barrier->source_stage_mask, barrier->target_stage_mask,
+          barrier->flags, barrier->memory_barrier_count,
+          barrier->memory_barriers, barrier->buffer_barrier_count,
+          barrier->buffer_barriers);
   iree_hal_amdgpu_pm4_barrier_state_accumulate(
       &command_buffer->recording.barrier_state, scopes.acquire, scopes.release);
-  for (iree_host_size_t i = 0; i < memory_barrier_count; ++i) {
+  for (iree_host_size_t i = 0; i < barrier->memory_barrier_count; ++i) {
     iree_hal_amdgpu_pm4_barrier_state_accumulate_access_scopes(
         &command_buffer->recording.barrier_state,
-        memory_barriers[i].source_scope, memory_barriers[i].target_scope);
+        barrier->memory_barriers[i].source_scope,
+        barrier->memory_barriers[i].target_scope);
   }
-  for (iree_host_size_t i = 0; i < buffer_barrier_count; ++i) {
+  for (iree_host_size_t i = 0; i < barrier->buffer_barrier_count; ++i) {
     iree_hal_amdgpu_pm4_barrier_state_accumulate_access_scopes(
         &command_buffer->recording.barrier_state,
-        buffer_barriers[i].source_scope, buffer_barriers[i].target_scope);
+        barrier->buffer_barriers[i].source_scope,
+        barrier->buffer_barriers[i].target_scope);
   }
   return iree_ok_status();
 }
@@ -3067,8 +3057,7 @@ static const iree_hal_command_buffer_vtable_t
         .begin_debug_group =
             iree_hal_amdgpu_pm4_command_buffer_begin_debug_group,
         .end_debug_group = iree_hal_amdgpu_pm4_command_buffer_end_debug_group,
-        .execution_barrier =
-            iree_hal_amdgpu_pm4_command_buffer_execution_barrier,
+        .barrier = iree_hal_amdgpu_pm4_command_buffer_barrier,
         .atomic_wait = iree_hal_amdgpu_pm4_command_buffer_atomic_wait,
         .atomic_store = iree_hal_amdgpu_pm4_command_buffer_atomic_store,
         .atomic_rmw = iree_hal_amdgpu_pm4_command_buffer_atomic_rmw,

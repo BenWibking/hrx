@@ -616,7 +616,7 @@ void RunIreeHalByteOffsetExecution(const IreeHalKernelExecution& execution) {
   uint64_t completion_value = 0;
   iree_status_t status = iree_hal_queue_transfer(
       execution.transfer_queue, iree_hal_semaphore_list_empty(), upload_signal,
-      IREE_ARRAYSIZE(upload_operations), upload_operations);
+      IREE_ARRAYSIZE(upload_operations), upload_operations, /*barriers=*/NULL);
 
   uint64_t dispatch_value = 2;
   iree_hal_semaphore_list_t dispatch_wait = {
@@ -653,7 +653,7 @@ void RunIreeHalByteOffsetExecution(const IreeHalKernelExecution& execution) {
     status = iree_hal_queue_download(execution.transfer_queue, download_wait,
                                      download_signal, output_buffer_ptr.get(),
                                      /*source_offset=*/0, output.data(),
-                                     sizeof(output));
+                                     sizeof(output), /*barriers=*/NULL);
   }
   if (iree_status_is_ok(status)) {
     completion_value = download_value;

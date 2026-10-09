@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "iree/hal/memory_scope.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -592,8 +593,17 @@ struct MappedTransferBuffer : iree_hal_buffer_t {
   size_t invalidate_count = 0;
   // Target transitions performed by the caller.
   size_t flush_count = 0;
+  // Last exact native maintenance range, including the mapped view offset.
+  struct {
+    // Byte offset from the native allocation base.
+    iree_device_size_t offset = 0;
+    // Number of bytes passed to the native operation.
+    iree_device_size_t length = 0;
+  } maintenance_range;
   // Injected native invalidation result, without owning a status allocation.
   iree_status_code_t invalidate_code = IREE_STATUS_OK;
+  // Injected native publication result, without owning a status allocation.
+  iree_status_code_t flush_code = IREE_STATUS_OK;
 
   explicit MappedTransferBuffer(iree_hal_memory_type_t coherence) {
     static const iree_hal_buffer_vtable_t vtable = {
@@ -629,6 +639,7 @@ struct MappedTransferBuffer : iree_hal_buffer_t {
            iree_device_size_t length) {
           auto* buffer = static_cast<MappedTransferBuffer*>(base);
           ++buffer->invalidate_count;
+          buffer->maintenance_range = {offset, length};
           if (buffer->invalidate_code != IREE_STATUS_OK) {
             return iree_status_from_code(buffer->invalidate_code);
           }
@@ -641,8 +652,15 @@ struct MappedTransferBuffer : iree_hal_buffer_t {
            iree_device_size_t length) {
           auto* buffer = static_cast<MappedTransferBuffer*>(base);
           ++buffer->flush_count;
-          memcpy(buffer->device_contents.data() + offset,
-                 buffer->host_contents.data() + offset, length);
+          buffer->maintenance_range = {offset, length};
+          if (buffer->flush_code != IREE_STATUS_OK) {
+            return iree_status_from_code(buffer->flush_code);
+          }
+          if (!iree_all_bits_set(iree_hal_buffer_memory_type(base),
+                                 IREE_HAL_MEMORY_TYPE_HOST_COHERENT)) {
+            memcpy(buffer->device_contents.data() + offset,
+                   buffer->host_contents.data() + offset, length);
+          }
           return iree_ok_status();
         },
         /*.query_memory=*/nullptr,
@@ -753,6 +771,167 @@ TEST(BufferMappedTransferTest, FailedInvalidationReturnsEveryMapping) {
   EXPECT_EQ(target->mapping_count, 0u);
   EXPECT_EQ(source->invalidate_count, 2u);
   EXPECT_EQ(target->flush_count, 0u);
+}
+
+// Native qualification is the dependency here. The mapping lifecycle, range
+// resolution, recipe capture and host executor use their production APIs.
+class BufferMappingTransitionTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    const iree_hal_buffer_binding_layout_t layout = {};
+    IREE_ASSERT_OK(iree_hal_memory_contract_create(
+        this, 4, &layout, iree_allocator_system(), &contract_));
+    contract_->host.access = IREE_HAL_MEMORY_ACCESS_ALL;
+    contract_->scopes[2].interfaces = 1u << IREE_HAL_BUFFER_INTERFACE_HOST;
+    contract_->scopes[2].usage = IREE_HAL_BUFFER_USAGE_STORAGE;
+    IREE_ASSERT_OK(iree_hal_memory_contract_initialize_transitions(
+        contract_,
+        [](void*, uint32_t producer, uint32_t consumer,
+           iree_hal_memory_pair_info_t* out_info) -> iree_status_t {
+          out_info->flags = IREE_HAL_MEMORY_PAIR_SHARED_BACKING_REACHABLE;
+          out_info->release.kind = IREE_HAL_MEMORY_TRANSITION_KIND_NONE;
+          out_info->acquire.kind = IREE_HAL_MEMORY_TRANSITION_KIND_NONE;
+          if (producer == 1) {
+            out_info->release.kind = IREE_HAL_MEMORY_TRANSITION_KIND_RANGE;
+            out_info->release.executor =
+                IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API;
+            out_info->release.operation =
+                IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_FLUSH;
+            out_info->release.range_granularity = 1;
+          }
+          if (consumer == 1) {
+            out_info->acquire.kind = IREE_HAL_MEMORY_TRANSITION_KIND_RANGE;
+            out_info->acquire.executor =
+                IREE_HAL_MEMORY_TRANSITION_EXECUTOR_HOST_API;
+            out_info->acquire.operation =
+                IREE_HAL_MEMORY_TRANSITION_OPERATION_HOST_INVALIDATE;
+            out_info->acquire.range_granularity = 1;
+          }
+          return iree_ok_status();
+        },
+        nullptr));
+    const iree_hal_memory_transition_table_t table = {contract_};
+    iree_hal_memory_transition_pair_t pair;
+    IREE_ASSERT_OK(iree_hal_memory_transition_prepare_pair(
+        table, {this, 1}, {this, 2}, IREE_HAL_MEMORY_TRANSITION_RELEASE,
+        &pair));
+    release_ = iree_hal_memory_transition_query(table, pair).release;
+    release_recipe_ = iree_hal_memory_transition_recipe(
+        table, pair, IREE_HAL_MEMORY_TRANSITION_RELEASE);
+    IREE_ASSERT_OK(iree_hal_memory_transition_prepare_pair(
+        table, {this, 2}, {this, 1}, IREE_HAL_MEMORY_TRANSITION_ACQUIRE,
+        &pair));
+    acquire_ = iree_hal_memory_transition_query(table, pair).acquire;
+    acquire_recipe_ = iree_hal_memory_transition_recipe(
+        table, pair, IREE_HAL_MEMORY_TRANSITION_ACQUIRE);
+  }
+
+  void TearDown() override { iree_hal_memory_contract_release(contract_); }
+
+  // Captured qualification retained through each host call.
+  iree_hal_memory_contract_t* contract_ = nullptr;
+  // Required producer-local publication action.
+  iree_hal_memory_effects_t release_ = {};
+  // Required consumer-local observation action.
+  iree_hal_memory_effects_t acquire_ = {};
+  // Immutable publication recipe borrowed from the contract.
+  const iree_hal_memory_transition_recipe_t* release_recipe_ = nullptr;
+  // Immutable observation recipe borrowed from the contract.
+  const iree_hal_memory_transition_recipe_t* acquire_recipe_ = nullptr;
+};
+
+TEST_F(BufferMappingTransitionTest,
+       NativeApiSurvivesCoherenceAndSubviewOffsets) {
+  for (iree_hal_memory_type_t coherence :
+       {0u, static_cast<uint32_t>(IREE_HAL_MEMORY_TYPE_HOST_COHERENT)}) {
+    auto buffer = MakeMappedTransferBuffer(coherence);
+    iree_hal_buffer_t* view = nullptr;
+    IREE_ASSERT_OK(iree_hal_buffer_subspan(buffer.get(), 7, 40,
+                                           iree_allocator_system(), &view));
+    iree_hal_buffer_mapping_t mapping = {};
+    IREE_ASSERT_OK(iree_hal_buffer_map_range(
+        view, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_ALL,
+        IREE_HAL_BUFFER_MAP_FLAG_NONE, 3, 24, &mapping));
+    memset(mapping.contents.data, 0x57, mapping.contents.data_length);
+    iree_hal_buffer_mapping_transition_t transition = {&mapping, 5, 8,
+                                                       release_recipe_};
+    IREE_ASSERT_OK(
+        iree_hal_buffer_mapping_memory_barrier(release_, 1, &transition));
+    EXPECT_EQ(buffer->flush_count, 1u);
+    EXPECT_EQ(buffer->maintenance_range.offset, 15u);
+    EXPECT_EQ(buffer->maintenance_range.length, 8u);
+    EXPECT_EQ(buffer->device_contents[15], 0x57);
+    buffer->device_contents[16] = 0x92;
+    transition.recipe = acquire_recipe_;
+    IREE_ASSERT_OK(
+        iree_hal_buffer_mapping_memory_barrier(acquire_, 1, &transition));
+    EXPECT_EQ(buffer->invalidate_count, 1u);
+    EXPECT_EQ(buffer->maintenance_range.offset, 15u);
+    EXPECT_EQ(buffer->maintenance_range.length, 8u);
+    EXPECT_EQ(mapping.contents.data[6], 0x92);
+    IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+    iree_hal_buffer_release(view);
+    EXPECT_EQ(buffer->mapping_count, 0u);
+  }
+}
+
+TEST_F(BufferMappingTransitionTest, PreflightsTheEntireBatchBeforeMaintenance) {
+  auto buffer = MakeMappedTransferBuffer();
+  iree_hal_buffer_mapping_t writable = {}, readable = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer.get(), IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 32, &writable));
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer.get(), IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 32, 32, &readable));
+  iree_hal_buffer_mapping_transition_t transitions[] = {
+      {&writable, 0, IREE_HAL_WHOLE_BUFFER, release_recipe_},
+      {&readable, 0, IREE_HAL_WHOLE_BUFFER, release_recipe_},
+  };
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_PERMISSION_DENIED,
+      iree_hal_buffer_mapping_memory_barrier(release_, 2, transitions));
+  EXPECT_EQ(buffer->flush_count, 0u);
+  transitions[1] = {&writable, 31, 2, release_recipe_};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_OUT_OF_RANGE,
+      iree_hal_buffer_mapping_memory_barrier(release_, 2, transitions));
+  EXPECT_EQ(buffer->flush_count, 0u);
+  IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&readable));
+  IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&writable));
+}
+
+TEST_F(BufferMappingTransitionTest,
+       NativeFailureStopsBatchAndPreservesOwnership) {
+  auto first = MakeMappedTransferBuffer();
+  auto second = MakeMappedTransferBuffer();
+  second->flush_code = IREE_STATUS_UNAVAILABLE;
+  first->host_contents.fill(0x38);
+  second->host_contents.fill(0x29);
+  iree_hal_buffer_mapping_t mappings[2] = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      first.get(), IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 16, &mappings[0]));
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      second.get(), IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 16, &mappings[1]));
+  iree_hal_buffer_mapping_transition_t transitions[] = {
+      {&mappings[0], 0, IREE_HAL_WHOLE_BUFFER, release_recipe_},
+      {&mappings[1], 0, IREE_HAL_WHOLE_BUFFER, release_recipe_},
+      {&mappings[0], 16, 0, release_recipe_},
+  };
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_UNAVAILABLE,
+      iree_hal_buffer_mapping_memory_barrier(release_, 3, transitions));
+  EXPECT_EQ(first->flush_count, 1u);
+  EXPECT_EQ(second->flush_count, 1u);
+  EXPECT_EQ(first->device_contents[0], 0x38);
+  EXPECT_EQ(second->device_contents[0], 0u);
+  EXPECT_EQ(first->mapping_count, 1u);
+  EXPECT_EQ(second->mapping_count, 1u);
+  for (auto& mapping : mappings) {
+    IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  }
 }
 
 }  // namespace

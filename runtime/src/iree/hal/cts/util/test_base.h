@@ -591,10 +591,10 @@ class CtsTestBase : public BaseType {
       uint8_t pattern = 0;
       SemaphoreList empty_wait;
       SemaphoreList fill_signal(device_, {0}, {1});
-      status =
-          iree_hal_queue_fill(transfer_queue_, empty_wait, fill_signal, buffer,
-                              /*target_offset=*/0, buffer_size, &pattern,
-                              sizeof(pattern), IREE_HAL_FILL_FLAG_NONE);
+      status = iree_hal_queue_fill(
+          transfer_queue_, empty_wait, fill_signal, buffer,
+          /*target_offset=*/0, buffer_size, &pattern, sizeof(pattern),
+          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
       if (iree_status_is_ok(status)) {
         status = iree_hal_semaphore_list_wait(
             fill_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE);
@@ -626,7 +626,7 @@ class CtsTestBase : public BaseType {
       status = iree_hal_queue_update(
           transfer_queue_, empty_wait, upload_signal, source_data,
           /*source_offset=*/0, buffer, /*target_offset=*/0, buffer_size,
-          IREE_HAL_UPDATE_FLAG_NONE);
+          /*barriers=*/NULL, IREE_HAL_UPDATE_FLAG_NONE);
       if (iree_status_is_ok(status)) {
         status = iree_hal_semaphore_list_wait(
             upload_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE);
@@ -656,10 +656,10 @@ class CtsTestBase : public BaseType {
     if (iree_status_is_ok(status)) {
       SemaphoreList empty_wait;
       SemaphoreList fill_signal(device_, {0}, {1});
-      status =
-          iree_hal_queue_fill(transfer_queue_, empty_wait, fill_signal, buffer,
-                              /*target_offset=*/0, buffer_size, &pattern,
-                              sizeof(pattern), IREE_HAL_FILL_FLAG_NONE);
+      status = iree_hal_queue_fill(
+          transfer_queue_, empty_wait, fill_signal, buffer,
+          /*target_offset=*/0, buffer_size, &pattern, sizeof(pattern),
+          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
       if (iree_status_is_ok(status)) {
         status = iree_hal_semaphore_list_wait(
             fill_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE);
@@ -704,9 +704,9 @@ class CtsTestBase : public BaseType {
     }
     SemaphoreList empty_wait;
     SemaphoreList upload_signal(device_, {0}, {1});
-    iree_status_t status =
-        iree_hal_queue_upload(transfer_queue_, empty_wait, upload_signal,
-                              source, target_buffer, target_offset, length);
+    iree_status_t status = iree_hal_queue_upload(
+        transfer_queue_, empty_wait, upload_signal, source, target_buffer,
+        target_offset, length, /*barriers=*/NULL);
     if (iree_status_is_ok(status)) {
       status = iree_hal_semaphore_list_wait(
           upload_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE);
@@ -725,9 +725,9 @@ class CtsTestBase : public BaseType {
     }
     SemaphoreList empty_wait;
     SemaphoreList download_signal(device_, {0}, {1});
-    iree_status_t status =
-        iree_hal_queue_download(transfer_queue_, empty_wait, download_signal,
-                                source_buffer, source_offset, target, length);
+    iree_status_t status = iree_hal_queue_download(
+        transfer_queue_, empty_wait, download_signal, source_buffer,
+        source_offset, target, length, /*barriers=*/NULL);
     if (iree_status_is_ok(status)) {
       status = iree_hal_semaphore_list_wait(
           download_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE);

@@ -114,14 +114,31 @@ typedef struct iree_hal_vulkan_command_execution_barrier_t {
   iree_hal_execution_stage_t target_stage_mask;
 
   // HAL barrier flags captured during recording.
-  iree_hal_execution_barrier_flags_t flags;
+  iree_hal_barrier_flags_t flags;
 
   // Number of memory barriers represented by the native barrier.
   iree_host_size_t memory_barrier_count;
 
-  // Number of buffer barriers represented by the native barrier.
-  iree_host_size_t buffer_barrier_count;
+  // Number of ordinary buffer barriers promoted to the global dependency.
+  iree_host_size_t global_buffer_barrier_count;
+
+  // Number of trailing exact-range native actions.
+  iree_host_size_t resource_barrier_count;
 } iree_hal_vulkan_command_execution_barrier_t;
+
+typedef struct iree_hal_vulkan_command_resource_barrier_t {
+  // Source HAL access scope captured during recording.
+  iree_hal_access_scope_t source_scope;
+
+  // Target HAL access scope captured during recording.
+  iree_hal_access_scope_t target_scope;
+
+  // Direct or indirect buffer range captured during recording.
+  iree_hal_buffer_ref_t buffer_ref;
+
+  // Exact ranged queue action copied from the selected recipe.
+  iree_hal_memory_transition_recipe_info_t operation;
+} iree_hal_vulkan_command_resource_barrier_t;
 
 typedef struct iree_hal_vulkan_command_atomic_t {
   // Source HAL execution stages captured during recording.
@@ -360,6 +377,13 @@ iree_hal_vulkan_command_execution_barrier_payload(
     const iree_hal_vulkan_command_t* command) {
   return (const iree_hal_vulkan_command_execution_barrier_t*)
       iree_hal_vulkan_command_buffer_const_command_payload(command);
+}
+
+static const iree_hal_vulkan_command_resource_barrier_t*
+iree_hal_vulkan_command_execution_resource_barriers(
+    const iree_hal_vulkan_command_execution_barrier_t* execution_barrier) {
+  return (const iree_hal_vulkan_command_resource_barrier_t*)(execution_barrier +
+                                                             1);
 }
 
 static const iree_hal_vulkan_command_atomic_t*
@@ -2004,48 +2028,67 @@ static iree_status_t iree_hal_vulkan_command_buffer_record_copy_native(
       IREE_SV("copy source"), copy_buffer->target_ref, IREE_SV("copy target"));
 }
 
-static void iree_hal_vulkan_command_buffer_record_execution_barrier_native(
+static iree_status_t
+iree_hal_vulkan_command_buffer_record_execution_barrier_native(
     const iree_hal_vulkan_device_syms_t* syms,
     VkCommandBuffer native_command_buffer,
+    iree_hal_buffer_binding_table_t binding_table,
     const iree_hal_vulkan_command_t* command) {
   const iree_hal_vulkan_command_execution_barrier_t* execution_barrier =
       iree_hal_vulkan_command_execution_barrier_payload(command);
-  // HAL barriers without memory or buffer payload are execution dependencies
-  // only. Memory visibility is requested by the barrier payloads.
-  const bool has_memory_visibility =
+  // Exact range barriers carry the execution dependency themselves. Emit a
+  // separate global barrier only for global visibility, ordinary access
+  // barriers, or an execution-only dependency with no ranged action.
+  const bool has_global_memory_visibility =
       execution_barrier->memory_barrier_count != 0 ||
-      execution_barrier->buffer_barrier_count != 0 ||
-      execution_barrier->flags != IREE_HAL_EXECUTION_BARRIER_FLAG_NONE;
-  const bool acquire_system_scope =
-      iree_any_bit_set(execution_barrier->flags,
-                       IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE) ||
-      iree_any_bit_set(execution_barrier->source_stage_mask,
-                       IREE_HAL_EXECUTION_STAGE_HOST);
-  const bool release_system_scope =
-      iree_any_bit_set(execution_barrier->flags,
-                       IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE) ||
-      iree_any_bit_set(execution_barrier->target_stage_mask,
-                       IREE_HAL_EXECUTION_STAGE_HOST);
-  iree_hal_vulkan_barrier_t barrier = {
-      .source_stage_mask = execution_barrier->source_stage_mask,
-      .source_access_mask =
-          has_memory_visibility ? VK_ACCESS_2_MEMORY_WRITE_BIT : 0,
-      .target_stage_mask = execution_barrier->target_stage_mask,
-      .target_access_mask =
-          has_memory_visibility
-              ? VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT
-              : 0,
-  };
-  if (acquire_system_scope) {
-    barrier.source_stage_mask |= IREE_HAL_EXECUTION_STAGE_HOST;
-    barrier.source_access_mask |= VK_ACCESS_2_HOST_WRITE_BIT;
+      execution_barrier->global_buffer_barrier_count != 0 ||
+      execution_barrier->flags != IREE_HAL_BARRIER_FLAG_NONE;
+  if (has_global_memory_visibility ||
+      execution_barrier->resource_barrier_count == 0) {
+    const iree_hal_vulkan_barrier_t barrier = iree_hal_vulkan_barrier_resolve(
+        execution_barrier->source_stage_mask,
+        execution_barrier->target_stage_mask, execution_barrier->flags,
+        has_global_memory_visibility);
+    iree_hal_vulkan_barrier_record(syms, native_command_buffer, &barrier);
   }
-  if (release_system_scope) {
-    barrier.target_stage_mask |= IREE_HAL_EXECUTION_STAGE_HOST;
+
+  const iree_hal_vulkan_command_resource_barrier_t* resource_barriers =
+      iree_hal_vulkan_command_execution_resource_barriers(execution_barrier);
+  for (iree_host_size_t i = 0; i < execution_barrier->resource_barrier_count;
+       ++i) {
+    const iree_hal_vulkan_command_resource_barrier_t* resource_barrier =
+        &resource_barriers[i];
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceSize offset = 0;
+    VkDeviceSize length = 0;
+    IREE_RETURN_IF_ERROR(
+        iree_hal_vulkan_command_buffer_resolve_native_buffer_ref(
+            binding_table, resource_barrier->buffer_ref,
+            IREE_SV("ranged memory transition"), &buffer,
+            /*out_handle_length=*/NULL, &offset, &length));
+    const bool is_release =
+        resource_barrier->operation.operation ==
+        IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM;
+    iree_hal_vulkan_barrier_t barrier = iree_hal_vulkan_barrier_resolve(
+        execution_barrier->source_stage_mask,
+        execution_barrier->target_stage_mask,
+        is_release ? IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE
+                   : IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE,
+        /*has_memory_visibility=*/false);
+    barrier.source_access_mask |=
+        iree_hal_vulkan_access_scope_mask(resource_barrier->source_scope);
     barrier.target_access_mask |=
-        VK_ACCESS_2_HOST_READ_BIT | VK_ACCESS_2_HOST_WRITE_BIT;
+        iree_hal_vulkan_access_scope_mask(resource_barrier->target_scope);
+    if (is_release && !barrier.source_access_mask) {
+      barrier.source_access_mask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+    } else if (!is_release && !barrier.target_access_mask) {
+      barrier.target_access_mask =
+          VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+    }
+    iree_hal_vulkan_buffer_barrier_record(syms, native_command_buffer, &barrier,
+                                          buffer, offset, length);
   }
-  iree_hal_vulkan_barrier_record(syms, native_command_buffer, &barrier);
+  return iree_ok_status();
 }
 
 static iree_status_t
@@ -2593,8 +2636,8 @@ iree_status_t iree_hal_vulkan_command_buffer_record_native(
         break;
       }
       case IREE_HAL_VULKAN_COMMAND_TYPE_EXECUTION_BARRIER:
-        iree_hal_vulkan_command_buffer_record_execution_barrier_native(
-            syms, native_command_buffer, command);
+        status = iree_hal_vulkan_command_buffer_record_execution_barrier_native(
+            syms, native_command_buffer, binding_table, command);
         break;
       case IREE_HAL_VULKAN_COMMAND_TYPE_ATOMIC:
         status = iree_hal_vulkan_command_buffer_record_atomic_native(
@@ -2852,51 +2895,83 @@ static iree_status_t iree_hal_vulkan_command_buffer_end_debug_group(
   return iree_ok_status();
 }
 
-static iree_status_t iree_hal_vulkan_command_buffer_execution_barrier(
+static iree_status_t iree_hal_vulkan_command_buffer_barrier(
     iree_hal_command_buffer_t* base_command_buffer,
-    iree_hal_execution_stage_t source_stage_mask,
-    iree_hal_execution_stage_t target_stage_mask,
-    iree_hal_execution_barrier_flags_t flags,
-    iree_host_size_t memory_barrier_count,
-    const iree_hal_memory_barrier_t* memory_barriers,
-    iree_host_size_t buffer_barrier_count,
-    const iree_hal_buffer_barrier_t* buffer_barriers) {
-  (void)memory_barriers;
-  (void)buffer_barriers;
+    const iree_hal_barrier_t* barrier) {
   iree_hal_vulkan_command_buffer_t* command_buffer =
       iree_hal_vulkan_command_buffer_cast(base_command_buffer);
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_command_buffer_validate_recording_state(
-      command_buffer, IREE_SV("execution_barrier")));
-  const iree_hal_execution_barrier_flags_t supported_flags =
-      IREE_HAL_EXECUTION_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
-      IREE_HAL_EXECUTION_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
-  if (flags & ~supported_flags) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "unsupported Vulkan command buffer execution "
-                            "barrier flags: 0x%016" PRIx64,
-                            flags & ~supported_flags);
-  }
-  if (source_stage_mask == 0 && target_stage_mask == 0 &&
-      memory_barrier_count == 0 && buffer_barrier_count == 0) {
-    return iree_ok_status();
-  }
+      command_buffer, IREE_SV("barrier")));
 
+  iree_host_size_t global_buffer_barrier_count = 0;
+  iree_host_size_t resource_barrier_count = 0;
+  for (iree_host_size_t i = 0; i < barrier->buffer_barrier_count; ++i) {
+    const iree_hal_buffer_barrier_t* buffer_barrier =
+        &barrier->buffer_barriers[i];
+    if (!buffer_barrier->recipe) {
+      ++global_buffer_barrier_count;
+      continue;
+    }
+    if (!iree_host_size_checked_add(resource_barrier_count,
+                                    buffer_barrier->recipe->operation_count,
+                                    &resource_barrier_count)) {
+      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                              "Vulkan resource barrier count overflows");
+    }
+  }
+  iree_host_size_t resource_barriers_size = 0;
+  iree_host_size_t payload_length = 0;
+  if (!iree_host_size_checked_mul(
+          resource_barrier_count,
+          sizeof(iree_hal_vulkan_command_resource_barrier_t),
+          &resource_barriers_size) ||
+      !iree_host_size_checked_add(
+          sizeof(iree_hal_vulkan_command_execution_barrier_t),
+          resource_barriers_size, &payload_length)) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "Vulkan barrier command size overflows");
+  }
   iree_host_size_t record_length = 0;
   iree_host_size_t payload_offset = 0;
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_command_buffer_ensure_command_capacity(
-      command_buffer, sizeof(iree_hal_vulkan_command_execution_barrier_t),
-      &record_length, &payload_offset));
+      command_buffer, payload_length, &record_length, &payload_offset));
+  for (iree_host_size_t i = 0; i < barrier->buffer_barrier_count; ++i) {
+    if (barrier->buffer_barriers[i].recipe) {
+      IREE_RETURN_IF_ERROR(iree_hal_vulkan_command_buffer_track_buffer_ref(
+          command_buffer, barrier->buffer_barriers[i].buffer_ref));
+    }
+  }
   void* payload = NULL;
   iree_hal_vulkan_command_buffer_append_command(
       command_buffer, IREE_HAL_VULKAN_COMMAND_TYPE_EXECUTION_BARRIER,
       record_length, payload_offset, /*out_command=*/NULL, &payload);
   iree_hal_vulkan_command_execution_barrier_t* execution_barrier =
       (iree_hal_vulkan_command_execution_barrier_t*)payload;
-  execution_barrier->source_stage_mask = source_stage_mask;
-  execution_barrier->target_stage_mask = target_stage_mask;
-  execution_barrier->flags = flags;
-  execution_barrier->memory_barrier_count = memory_barrier_count;
-  execution_barrier->buffer_barrier_count = buffer_barrier_count;
+  execution_barrier->source_stage_mask = barrier->source_stage_mask;
+  execution_barrier->target_stage_mask = barrier->target_stage_mask;
+  execution_barrier->flags = barrier->flags;
+  execution_barrier->memory_barrier_count = barrier->memory_barrier_count;
+  execution_barrier->global_buffer_barrier_count = global_buffer_barrier_count;
+  execution_barrier->resource_barrier_count = resource_barrier_count;
+  iree_hal_vulkan_command_resource_barrier_t* resource_barriers =
+      (iree_hal_vulkan_command_resource_barrier_t*)(execution_barrier + 1);
+  iree_host_size_t resource_ordinal = 0;
+  for (iree_host_size_t i = 0; i < barrier->buffer_barrier_count; ++i) {
+    const iree_hal_buffer_barrier_t* buffer_barrier =
+        &barrier->buffer_barriers[i];
+    if (!buffer_barrier->recipe) {
+      continue;
+    }
+    for (uint32_t j = 0; j < buffer_barrier->recipe->operation_count; ++j) {
+      resource_barriers[resource_ordinal++] =
+          (iree_hal_vulkan_command_resource_barrier_t){
+              .source_scope = buffer_barrier->source_scope,
+              .target_scope = buffer_barrier->target_scope,
+              .buffer_ref = buffer_barrier->buffer_ref,
+              .operation = buffer_barrier->recipe->operations[j],
+          };
+    }
+  }
   return iree_ok_status();
 }
 
@@ -3349,7 +3424,7 @@ static const iree_hal_command_buffer_vtable_t
         .end = iree_hal_vulkan_command_buffer_end,
         .begin_debug_group = iree_hal_vulkan_command_buffer_begin_debug_group,
         .end_debug_group = iree_hal_vulkan_command_buffer_end_debug_group,
-        .execution_barrier = iree_hal_vulkan_command_buffer_execution_barrier,
+        .barrier = iree_hal_vulkan_command_buffer_barrier,
         .atomic_wait = iree_hal_vulkan_command_buffer_atomic_wait,
         .atomic_store = iree_hal_vulkan_command_buffer_atomic_store,
         .atomic_rmw = iree_hal_vulkan_command_buffer_atomic_rmw,

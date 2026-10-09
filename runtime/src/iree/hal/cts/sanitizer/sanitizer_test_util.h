@@ -436,9 +436,10 @@ inline iree_status_t SanitizerReadBufferBytes(iree_hal_device_t* device,
 
   SemaphoreList empty_wait;
   SemaphoreList copy_signal(device, {0}, {1});
-  IREE_RETURN_IF_ERROR(iree_hal_queue_copy(
-      queue, empty_wait, copy_signal, source_buffer, source_offset,
-      staging_buffer, /*target_offset=*/0, length, IREE_HAL_COPY_FLAG_NONE));
+  IREE_RETURN_IF_ERROR(
+      iree_hal_queue_copy(queue, empty_wait, copy_signal, source_buffer,
+                          source_offset, staging_buffer, /*target_offset=*/0,
+                          length, /*barriers=*/NULL, IREE_HAL_COPY_FLAG_NONE));
   IREE_RETURN_IF_ERROR(iree_hal_semaphore_list_wait(
       copy_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
   IREE_RETURN_IF_ERROR(iree_hal_buffer_map_read(

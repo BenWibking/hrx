@@ -128,6 +128,11 @@ iree_status_t iree_hal_cmd_build_update(iree_hal_cmd_block_builder_t* builder,
                                         iree_hal_cmd_fixup_t** out_fixups,
                                         iree_hal_cmd_build_token_t* out_token);
 
+// Builds a one-tile FENCE command into the builder. The caller isolates this
+// command in its own barrier-delimited region.
+iree_status_t iree_hal_cmd_build_fence(iree_hal_cmd_block_builder_t* builder,
+                                       iree_hal_atomic_flags_t atomic_flags);
+
 //===----------------------------------------------------------------------===//
 // ATOMIC
 //===----------------------------------------------------------------------===//

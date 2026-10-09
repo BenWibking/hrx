@@ -162,6 +162,8 @@ iree_cc_library(
     "recorder.c"
     "recorder_allocator.c"
     "recorder_allocator.h"
+    "recorder_barrier.c"
+    "recorder_barrier.h"
     "recorder_buffer.c"
     "recorder_buffer.h"
     "recorder_command_buffer.c"

@@ -150,18 +150,23 @@ class DispatchIndirectParametersTest : public CtsTestBase<> {
             IREE_HAL_ACCESS_SCOPE_DISPATCH_READ |
             IREE_HAL_ACCESS_SCOPE_MEMORY_READ,
     };
-    IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-        command_buffer,
-        /*source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH |
+    const iree_hal_barrier_t execution_barrier = {
+        /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_DISPATCH |
             IREE_HAL_EXECUTION_STAGE_TRANSFER |
             IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE,
-        /*target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE |
+        /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE |
             IREE_HAL_EXECUTION_STAGE_COMMAND_PROCESS |
             IREE_HAL_EXECUTION_STAGE_DISPATCH |
             IREE_HAL_EXECUTION_STAGE_TRANSFER,
-        IREE_HAL_EXECUTION_BARRIER_FLAG_NONE, /*memory_barrier_count=*/1,
-        /*memory_barriers=*/&memory_barrier,
-        /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr));
+        /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
+        /*.effects=*/{},
+        /*.memory_barrier_count=*/1,
+        /*.memory_barriers=*/&memory_barrier,
+        /*.buffer_barrier_count=*/0,
+        /*.buffer_barriers=*/nullptr,
+    };
+    IREE_ASSERT_OK(
+        iree_hal_command_buffer_barrier(command_buffer, &execution_barrier));
   }
 
   void SubmitAndCheck(iree_hal_command_buffer_t* command_buffer,
@@ -209,7 +214,7 @@ TEST_P(DispatchIndirectParametersTest, StaticParametersFromQueueUpdate) {
   IREE_ASSERT_OK(iree_hal_queue_update(
       transfer_queue_, empty_wait, update_signal, parameter_data,
       /*source_offset=*/0, parameter_buffer, /*target_offset=*/0,
-      sizeof(parameter_data), IREE_HAL_UPDATE_FLAG_NONE));
+      sizeof(parameter_data), /*barriers=*/NULL, IREE_HAL_UPDATE_FLAG_NONE));
 
   iree_hal_buffer_binding_t binding_table_values[2];
   iree_hal_buffer_binding_table_t binding_table =
@@ -254,7 +259,7 @@ TEST_P(DispatchIndirectParametersTest, WholeBufferParameterRef) {
   IREE_ASSERT_OK(iree_hal_queue_update(
       transfer_queue_, empty_wait, update_signal, parameter_data,
       /*source_offset=*/0, parameter_buffer, /*target_offset=*/0,
-      sizeof(parameter_data), IREE_HAL_UPDATE_FLAG_NONE));
+      sizeof(parameter_data), /*barriers=*/NULL, IREE_HAL_UPDATE_FLAG_NONE));
 
   iree_hal_buffer_binding_t binding_table_values[2];
   iree_hal_buffer_binding_table_t binding_table =

@@ -1134,7 +1134,7 @@ TEST(ReplayExecuteTest, ReplaysDynamicQueueAcquisition) {
       /*.payload_values=*/signal_values,
   };
   IREE_ASSERT_OK(iree_hal_queue_barrier(queue, iree_hal_semaphore_list_empty(),
-                                        signal_list,
+                                        signal_list, /*barriers=*/NULL,
                                         IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_wait(semaphore, /*value=*/1,
                                          iree_infinite_timeout(),
@@ -1547,7 +1547,7 @@ static void CaptureFdBackedQueueRead(
   IREE_ASSERT_OK(iree_hal_queue_read(
       queue, iree_hal_semaphore_list_empty(), signal_list, file,
       /*source_offset=*/4, target_buffer, /*target_offset=*/0, /*length=*/16,
-      IREE_HAL_READ_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_READ_FLAG_NONE));
   if (signal_list.count != 0) {
     IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
         signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
@@ -1677,7 +1677,7 @@ TEST(ReplayExecuteTest, ExecutesRecordedHostAllocationFileRead) {
   IREE_ASSERT_OK(iree_hal_queue_read(
       queue, iree_hal_semaphore_list_empty(), signal_list, file,
       /*source_offset=*/4, target_buffer, /*target_offset=*/0, /*length=*/16,
-      IREE_HAL_READ_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_READ_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -1761,7 +1761,7 @@ TEST(ReplayExecuteTest, ExecutesRecordedFdBackedQueueRead) {
   IREE_ASSERT_OK(iree_hal_queue_read(
       queue, iree_hal_semaphore_list_empty(), signal_list, file,
       /*source_offset=*/4, target_buffer, /*target_offset=*/0, /*length=*/16,
-      IREE_HAL_READ_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_READ_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -1917,7 +1917,7 @@ TEST(ReplayExecuteTest, ExecutesRemappedFdBackedQueueRead) {
   IREE_ASSERT_OK(iree_hal_queue_read(
       queue, iree_hal_semaphore_list_empty(), signal_list, file,
       /*source_offset=*/4, target_buffer, /*target_offset=*/0, /*length=*/16,
-      IREE_HAL_READ_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_READ_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -2142,10 +2142,14 @@ TEST(ReplayExecuteTest, ExecutesRecordedFdBackedQueueWrite) {
       /*.semaphores=*/&signal_semaphore,
       /*.payload_values=*/&signal_value,
   };
+  iree_hal_barrier_t publication = {};
+  publication.flags = IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
+  const iree_hal_barrier_list_t publication_list = {1, &publication};
+  const iree_hal_queue_barriers_t barriers = {&publication_list, nullptr};
   IREE_ASSERT_OK(iree_hal_queue_write(
       queue, iree_hal_semaphore_list_empty(), signal_list, source_buffer,
       /*source_offset=*/0, file, /*target_offset=*/4, sizeof(source_contents),
-      IREE_HAL_WRITE_FLAG_NONE));
+      &barriers, IREE_HAL_WRITE_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -2349,7 +2353,7 @@ TEST(ReplayExecuteTest, ExecutesHostAllocationImportedBufferRecord) {
       wrapped_queue, iree_hal_semaphore_list_empty(), signal_list,
       imported_buffer,
       /*source_offset=*/0, target_buffer, /*target_offset=*/0,
-      sizeof(imported_storage), IREE_HAL_COPY_FLAG_NONE));
+      sizeof(imported_storage), /*barriers=*/NULL, IREE_HAL_COPY_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -2519,9 +2523,41 @@ TEST(ReplayExecuteTest, ExecutesRecordedExactQueueTransfer) {
   operations[4].download.source_offset = 4;
   operations[4].download.target = download_data;
   operations[4].download.length = sizeof(download_data);
-  IREE_ASSERT_OK(iree_hal_queue_transfer(
-      queue, iree_hal_semaphore_list_empty(), signal_list,
-      IREE_ARRAYSIZE(operations), operations));
+  iree_hal_buffer_t* barrier_view = nullptr;
+  IREE_ASSERT_OK(iree_hal_buffer_subspan(
+      target_buffer, 4, 8, iree_allocator_system(), &barrier_view));
+  {
+    const iree_hal_memory_transition_recipe_info_t operation = {
+        /*.kind=*/IREE_HAL_MEMORY_TRANSITION_KIND_RANGE,
+        /*.executor=*/IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE,
+        /*.operation=*/IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM,
+        /*.range_granularity=*/64,
+    };
+    const iree_hal_memory_transition_recipe_t recipe = {
+        /*.effects=*/{IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM},
+        /*.operation_count=*/1,
+        /*.operations=*/&operation,
+    };
+    iree_hal_buffer_barrier_t range = {};
+    range.source_scope = IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE;
+    range.target_scope = IREE_HAL_ACCESS_SCOPE_HOST_READ;
+    range.buffer_ref = iree_hal_make_buffer_ref(barrier_view, 2, 4);
+    range.recipe = &recipe;
+    iree_hal_barrier_t after = {};
+    after.source_stage_mask = IREE_HAL_EXECUTION_STAGE_TRANSFER;
+    after.target_stage_mask = IREE_HAL_EXECUTION_STAGE_HOST;
+    after.effects.bits = IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM |
+                         IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM;
+    after.buffer_barrier_count = 1;
+    after.buffer_barriers = &range;
+    const iree_hal_barrier_list_t after_list = {1, &after};
+    const iree_hal_barrier_list_t empty = {};
+    const iree_hal_queue_barriers_t barriers = {&empty, &after_list};
+    IREE_ASSERT_OK(iree_hal_queue_transfer(
+        queue, iree_hal_semaphore_list_empty(), signal_list,
+        IREE_ARRAYSIZE(operations), operations, &barriers));
+  }
+  iree_hal_buffer_release(barrier_view);
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
   EXPECT_EQ(0, memcmp(source_data + 4, download_data, sizeof(download_data)));
@@ -2533,6 +2569,55 @@ TEST(ReplayExecuteTest, ExecutesRecordedExactQueueTransfer) {
   IREE_ASSERT_OK(iree_hal_replay_recorder_close(recorder));
   iree_hal_device_group_release(wrapped_group);
   iree_hal_device_group_release(source_group);
+
+  auto contents = GetCapturedFileContents(storage);
+  iree_hal_replay_file_header_t header;
+  iree_host_size_t offset = 0;
+  IREE_ASSERT_OK(iree_hal_replay_file_parse_header(contents, &header, &offset));
+  bool found_transfer = false;
+  while (offset < contents.data_length) {
+    iree_hal_replay_file_record_t record;
+    IREE_ASSERT_OK(
+        iree_hal_replay_file_parse_record(contents, offset, &record, &offset));
+    if (record.header.operation_code !=
+        IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_TRANSFER) {
+      continue;
+    }
+    found_transfer = true;
+    EXPECT_TRUE(record.header.record_flags &
+                IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS);
+    EXPECT_TRUE(record.header.record_flags &
+                IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES);
+    EXPECT_EQ(record.barriers.before.count, 0u);
+    ASSERT_EQ(record.barriers.after.count, 1u);
+    iree_hal_replay_command_buffer_execution_barrier_payload_t action;
+    memcpy(&action, record.barriers.after.payload.data, sizeof(action));
+    EXPECT_EQ(action.flags, IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE);
+    ASSERT_EQ(action.buffer_barrier_count, 1u);
+    iree_hal_replay_buffer_barrier_payload_t range;
+    memcpy(&range, record.barriers.after.payload.data + sizeof(action),
+           sizeof(range));
+    EXPECT_NE(range.buffer_ref.buffer_id, IREE_HAL_REPLAY_OBJECT_ID_NONE);
+    EXPECT_EQ(range.buffer_ref.offset, 6u);
+    EXPECT_EQ(range.buffer_ref.length, 4u);
+    iree_hal_replay_memory_transition_recipe_payload_t recipe;
+    memcpy(&recipe,
+           record.barriers.after.payload.data + sizeof(action) + sizeof(range),
+           sizeof(recipe));
+    EXPECT_EQ(recipe.effects, IREE_HAL_MEMORY_EFFECT_RANGE_RELEASE_TO_SYSTEM);
+    ASSERT_EQ(recipe.operation_count, 1u);
+    iree_hal_replay_memory_transition_operation_payload_t operation;
+    memcpy(&operation,
+           record.barriers.after.payload.data + sizeof(action) + sizeof(range) +
+               sizeof(recipe),
+           sizeof(operation));
+    EXPECT_EQ(operation.kind, IREE_HAL_MEMORY_TRANSITION_KIND_RANGE);
+    EXPECT_EQ(operation.executor, IREE_HAL_MEMORY_TRANSITION_EXECUTOR_QUEUE);
+    EXPECT_EQ(operation.operation,
+              IREE_HAL_MEMORY_TRANSITION_OPERATION_RELEASE_TO_SYSTEM);
+    EXPECT_EQ(operation.range_granularity, 64u);
+  }
+  EXPECT_TRUE(found_transfer);
 
   iree_hal_device_group_t* replay_group = CreateTaskDeviceGroup();
   iree_hal_replay_execute_options_t options =
@@ -2571,12 +2656,20 @@ TEST(ReplayExecuteTest, ExecutesRecordedQueueBarrier) {
       semaphores,
       &signal_value,
   };
-  IREE_ASSERT_OK(
-      iree_hal_queue_barrier(wrapped_queue, iree_hal_semaphore_list_empty(),
-                             signal_list, IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
-  IREE_ASSERT_OK(iree_hal_queue_flush(wrapped_queue));
-  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
-      signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+  const iree_hal_barrier_list_t empty = {};
+  const iree_hal_queue_barriers_t boundaries[] = {{nullptr, nullptr},
+                                                  {&empty, nullptr},
+                                                  {nullptr, &empty},
+                                                  {&empty, &empty}};
+  for (const auto& barriers : boundaries) {
+    IREE_ASSERT_OK(iree_hal_queue_barrier(
+        wrapped_queue, iree_hal_semaphore_list_empty(), signal_list, &barriers,
+        IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
+    IREE_ASSERT_OK(iree_hal_queue_flush(wrapped_queue));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+        signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    ++signal_value;
+  }
 
   iree_hal_semaphore_release(semaphore);
 
@@ -2635,11 +2728,20 @@ TEST(ReplayExecuteTest, ExecutesRecordedCommandBufferTransfers) {
       /*.source_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
       /*.target_scope=*/IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
   };
-  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
-      command_buffer, IREE_HAL_EXECUTION_STAGE_TRANSFER,
-      IREE_HAL_EXECUTION_STAGE_TRANSFER, IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
-      /*memory_barrier_count=*/1, &transfer_barrier,
-      /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr));
+  const iree_hal_barrier_t execution_barrier = {
+      /*.source_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      /*.target_stage_mask=*/IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      /*.flags=*/IREE_HAL_BARRIER_FLAG_NONE,
+      /*.effects=*/
+      {IREE_HAL_MEMORY_EFFECT_GLOBAL_ACQUIRE_FROM_SYSTEM |
+       IREE_HAL_MEMORY_EFFECT_GLOBAL_RELEASE_TO_SYSTEM},
+      /*.memory_barrier_count=*/1,
+      /*.memory_barriers=*/&transfer_barrier,
+      /*.buffer_barrier_count=*/0,
+      /*.buffer_barriers=*/nullptr,
+  };
+  IREE_ASSERT_OK(
+      iree_hal_command_buffer_barrier(command_buffer, &execution_barrier));
   const uint8_t update_data[8] = {
       0xE0, 0x20, 0x21, 0x22, 0x23, 0xE1, 0xE2, 0xE3,
   };
@@ -2667,6 +2769,14 @@ TEST(ReplayExecuteTest, ExecutesRecordedCommandBufferTransfers) {
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
+  uint8_t actual[16] = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_read(buffer, 0, actual, sizeof(actual)));
+  const uint8_t expected[16] = {
+      0xCD, 0xCD, 0xCD, 0xCD, 0x20, 0x21, 0x22, 0x23,
+      0xCD, 0xCD, 0xCD, 0xCD, 0xCD, 0xCD, 0xCD, 0xCD,
+  };
+  EXPECT_EQ(memcmp(actual, expected, sizeof(actual)), 0);
+
   iree_hal_semaphore_release(semaphore);
   iree_hal_command_buffer_release(command_buffer);
   iree_hal_buffer_release(buffer);
@@ -2675,12 +2785,58 @@ TEST(ReplayExecuteTest, ExecutesRecordedCommandBufferTransfers) {
   iree_hal_device_group_release(wrapped_group);
   iree_hal_device_group_release(source_group);
 
+  // Replay captures the chosen semantics, not process-local contract keys.
+  const auto contents = GetCapturedFileContents(storage);
+  iree_hal_replay_file_header_t header;
+  iree_host_size_t offset = 0;
+  IREE_ASSERT_OK(iree_hal_replay_file_parse_header(contents, &header, &offset));
+  size_t captured_barrier_count = 0;
+  size_t barrier_payload_offset = 0;
+  while (offset < contents.data_length) {
+    iree_hal_replay_file_record_t record;
+    IREE_ASSERT_OK(
+        iree_hal_replay_file_parse_record(contents, offset, &record, &offset));
+    if (record.header.payload_type !=
+        IREE_HAL_REPLAY_PAYLOAD_TYPE_COMMAND_BUFFER_EXECUTION_BARRIER) {
+      continue;
+    }
+    iree_hal_replay_command_buffer_execution_barrier_payload_t payload;
+    ASSERT_GE(record.payload.data_length, sizeof(payload));
+    memcpy(&payload, record.payload.data, sizeof(payload));
+    EXPECT_EQ(payload.flags, IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE |
+                                 IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE);
+    barrier_payload_offset = record.payload.data - storage.data();
+    ++captured_barrier_count;
+  }
+  ASSERT_EQ(captured_barrier_count, 1u);
+
   iree_hal_device_group_t* replay_group = CreateTaskDeviceGroup();
   iree_hal_replay_execute_options_t options =
       iree_hal_replay_execute_options_default();
   IREE_EXPECT_OK(iree_hal_replay_execute_file(GetCapturedFileContents(storage),
                                               replay_group, &options,
                                               iree_allocator_system()));
+  // Wire stage masks are wider than HAL stage masks. Reject unknown high bits
+  // instead of narrowing them into a different, apparently valid dependency.
+  iree_hal_replay_command_buffer_execution_barrier_payload_t original_barrier;
+  memcpy(&original_barrier, storage.data() + barrier_payload_offset,
+         sizeof(original_barrier));
+  for (int boundary = 0; boundary < 2; ++boundary) {
+    auto invalid_barrier = original_barrier;
+    if (boundary == 0) {
+      invalid_barrier.source_stage_mask |= UINT64_C(1) << 32;
+    } else {
+      invalid_barrier.target_stage_mask |= UINT64_C(1) << 32;
+    }
+    memcpy(storage.data() + barrier_payload_offset, &invalid_barrier,
+           sizeof(invalid_barrier));
+    IREE_EXPECT_STATUS_IS(IREE_STATUS_DATA_LOSS,
+                          iree_hal_replay_execute_file(
+                              GetCapturedFileContents(storage), replay_group,
+                              &options, iree_allocator_system()));
+  }
+  memcpy(storage.data() + barrier_payload_offset, &original_barrier,
+         sizeof(original_barrier));
   iree_hal_device_group_release(replay_group);
   iree_hal_replay_recorder_release(recorder);
 }

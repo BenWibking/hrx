@@ -361,9 +361,9 @@ static iree_status_t execute_kernel(jit_state_t* state, const char* name,
                     .target_buffer = output_buffer,
                     .length = sizeof(output)}},
     };
-    status = iree_hal_queue_transfer(state->transfer_queue,
-                                     iree_hal_semaphore_list_empty(), uploaded,
-                                     IREE_ARRAYSIZE(operations), operations);
+    status = iree_hal_queue_transfer(
+        state->transfer_queue, iree_hal_semaphore_list_empty(), uploaded,
+        IREE_ARRAYSIZE(operations), operations, /*barriers=*/NULL);
     if (iree_status_is_ok(status)) {
       completion = upload;
     }
@@ -383,15 +383,16 @@ static iree_status_t execute_kernel(jit_state_t* state, const char* name,
         iree_hal_make_static_dispatch_config(launch.workgroup_count.x,
                                              launch.workgroup_count.y,
                                              launch.workgroup_count.z),
-        iree_const_byte_span_empty(), bindings, IREE_HAL_DISPATCH_FLAG_NONE);
+        iree_const_byte_span_empty(), bindings, /*barriers=*/NULL,
+        IREE_HAL_DISPATCH_FLAG_NONE);
     if (iree_status_is_ok(status)) {
       completion = dispatch;
     }
   }
   if (iree_status_is_ok(status)) {
-    status =
-        iree_hal_queue_download(state->transfer_queue, dispatched, downloaded,
-                                output_buffer, 0, output, sizeof(output));
+    status = iree_hal_queue_download(state->transfer_queue, dispatched,
+                                     downloaded, output_buffer, 0, output,
+                                     sizeof(output), /*barriers=*/NULL);
     if (iree_status_is_ok(status)) {
       completion = download;
     }

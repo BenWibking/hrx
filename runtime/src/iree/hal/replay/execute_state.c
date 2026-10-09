@@ -1033,3 +1033,209 @@ iree_status_t iree_hal_replay_executor_dispatch_layout(
   }
   return iree_ok_status();
 }
+
+//===----------------------------------------------------------------------===//
+// Captured queue barriers
+//===----------------------------------------------------------------------===//
+
+static iree_hal_memory_transition_recipe_info_t
+iree_hal_replay_executor_memory_transition_operation(
+    const iree_hal_replay_memory_transition_operation_payload_t* payload) {
+  return (iree_hal_memory_transition_recipe_info_t){
+      .kind = payload->kind,
+      .executor = payload->executor,
+      .operation = payload->operation,
+      .range_granularity = payload->range_granularity,
+      .host =
+          {
+              .instruction = payload->host_instruction,
+              .fence_before = payload->host_fence_before,
+              .fence_after = payload->host_fence_after,
+          },
+  };
+}
+
+iree_status_t iree_hal_replay_executor_make_queue_barriers(
+    iree_hal_replay_executor_t* executor,
+    const iree_hal_replay_file_record_t* record,
+    iree_hal_replay_queue_barrier_storage_t* out_storage) {
+  memset(out_storage, 0, sizeof(*out_storage));
+  const iree_hal_replay_barrier_list_view_t* lists[2] = {
+      &record->barriers.before, &record->barriers.after};
+  const bool has_transition_recipes = iree_any_bit_set(
+      record->header.record_flags,
+      IREE_HAL_REPLAY_FILE_RECORD_FLAG_MEMORY_TRANSITION_RECIPES);
+  iree_host_size_t allocation_size = 0;
+  for (iree_host_size_t boundary = 0; boundary < 2; ++boundary) {
+    if (lists[boundary]->count == UINT64_MAX) {
+      continue;
+    }
+    const uint8_t* wire = lists[boundary]->payload.data;
+    for (uint64_t i = 0; i < lists[boundary]->count; ++i) {
+      iree_hal_replay_command_buffer_execution_barrier_payload_t header;
+      memcpy(&header, wire, sizeof(header));
+      wire += sizeof(header) +
+              header.memory_barrier_count *
+                  sizeof(iree_hal_replay_memory_barrier_payload_t) +
+              header.buffer_barrier_count *
+                  sizeof(iree_hal_replay_buffer_barrier_payload_t);
+      iree_host_size_t transition_operation_count = 0;
+      if (has_transition_recipes) {
+        const uint8_t* recipe_wire = wire;
+        wire += header.buffer_barrier_count *
+                sizeof(iree_hal_replay_memory_transition_recipe_payload_t);
+        for (iree_host_size_t j = 0; j < header.buffer_barrier_count; ++j) {
+          iree_hal_replay_memory_transition_recipe_payload_t recipe;
+          memcpy(&recipe, recipe_wire + j * sizeof(recipe), sizeof(recipe));
+          transition_operation_count += recipe.operation_count;
+        }
+        wire += transition_operation_count *
+                sizeof(iree_hal_replay_memory_transition_operation_payload_t);
+      }
+      iree_host_size_t memory_size = 0, buffer_size = 0, recipe_size = 0;
+      iree_host_size_t transition_operation_size = 0;
+      if (!iree_host_size_checked_mul(header.memory_barrier_count,
+                                      sizeof(iree_hal_memory_barrier_t),
+                                      &memory_size) ||
+          !iree_host_size_checked_mul(header.buffer_barrier_count,
+                                      sizeof(iree_hal_buffer_barrier_t),
+                                      &buffer_size) ||
+          !iree_host_size_checked_mul(
+              has_transition_recipes ? header.buffer_barrier_count : 0,
+              sizeof(iree_hal_memory_transition_recipe_t), &recipe_size) ||
+          !iree_host_size_checked_mul(
+              transition_operation_count,
+              sizeof(iree_hal_memory_transition_recipe_info_t),
+              &transition_operation_size) ||
+          !iree_host_size_checked_add(
+              allocation_size, sizeof(iree_hal_barrier_t), &allocation_size) ||
+          !iree_host_size_checked_add(allocation_size, memory_size,
+                                      &allocation_size) ||
+          !iree_host_size_checked_add(allocation_size, buffer_size,
+                                      &allocation_size) ||
+          !iree_host_size_checked_add(allocation_size, recipe_size,
+                                      &allocation_size) ||
+          !iree_host_size_checked_add(
+              allocation_size, transition_operation_size, &allocation_size)) {
+        return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                                "replay queue barrier allocation overflow");
+      }
+    }
+  }
+  if (allocation_size) {
+    IREE_RETURN_IF_ERROR(iree_allocator_malloc(
+        executor->host_allocator, allocation_size, &out_storage->allocation));
+  }
+  uint8_t* native = out_storage->allocation;
+  iree_status_t status = iree_ok_status();
+  for (iree_host_size_t boundary = 0; boundary < 2 && iree_status_is_ok(status);
+       ++boundary) {
+    const iree_hal_replay_barrier_list_view_t* list = lists[boundary];
+    if (list->count == UINT64_MAX) {
+      continue;
+    }
+    iree_hal_barrier_t* barriers = (iree_hal_barrier_t*)native;
+    if (list->count) {
+      native += list->count * sizeof(*barriers);
+    }
+    out_storage->lists[boundary] =
+        (iree_hal_barrier_list_t){.count = list->count, .values = barriers};
+    const uint8_t* wire = list->payload.data;
+    for (iree_host_size_t i = 0; i < list->count && iree_status_is_ok(status);
+         ++i) {
+      iree_hal_replay_command_buffer_execution_barrier_payload_t header;
+      memcpy(&header, wire, sizeof(header));
+      wire += sizeof(header);
+      iree_hal_memory_barrier_t* memory = (iree_hal_memory_barrier_t*)native;
+      native += header.memory_barrier_count * sizeof(*memory);
+      for (iree_host_size_t j = 0; j < header.memory_barrier_count; ++j) {
+        iree_hal_replay_memory_barrier_payload_t payload;
+        memcpy(&payload, wire, sizeof(payload));
+        wire += sizeof(payload);
+        memory[j] = (iree_hal_memory_barrier_t){
+            .source_scope = payload.source_scope,
+            .target_scope = payload.target_scope,
+        };
+      }
+      iree_hal_buffer_barrier_t* buffers = (iree_hal_buffer_barrier_t*)native;
+      native += header.buffer_barrier_count * sizeof(*buffers);
+      memset(buffers, 0, header.buffer_barrier_count * sizeof(*buffers));
+      const uint8_t* buffer_wire = wire;
+      for (iree_host_size_t j = 0;
+           j < header.buffer_barrier_count && iree_status_is_ok(status); ++j) {
+        iree_hal_replay_buffer_barrier_payload_t payload;
+        memcpy(&payload, buffer_wire + j * sizeof(payload), sizeof(payload));
+        buffers[j].source_scope = payload.source_scope;
+        buffers[j].target_scope = payload.target_scope;
+        status = iree_hal_replay_executor_make_buffer_ref(
+            executor, &payload.buffer_ref, &buffers[j].buffer_ref);
+      }
+      wire += header.buffer_barrier_count *
+              sizeof(iree_hal_replay_buffer_barrier_payload_t);
+      uint32_t transition_effects = 0;
+      if (has_transition_recipes) {
+        iree_hal_memory_transition_recipe_t* recipes =
+            (iree_hal_memory_transition_recipe_t*)native;
+        native += header.buffer_barrier_count * sizeof(*recipes);
+        memset(recipes, 0, header.buffer_barrier_count * sizeof(*recipes));
+        const uint8_t* recipe_wire = wire;
+        wire += header.buffer_barrier_count *
+                sizeof(iree_hal_replay_memory_transition_recipe_payload_t);
+        iree_host_size_t transition_operation_count = 0;
+        for (iree_host_size_t j = 0; j < header.buffer_barrier_count; ++j) {
+          iree_hal_replay_memory_transition_recipe_payload_t recipe;
+          memcpy(&recipe, recipe_wire + j * sizeof(recipe), sizeof(recipe));
+          transition_operation_count += recipe.operation_count;
+        }
+        iree_hal_memory_transition_recipe_info_t* operations =
+            (iree_hal_memory_transition_recipe_info_t*)native;
+        native += transition_operation_count * sizeof(*operations);
+        iree_host_size_t operation_ordinal = 0;
+        for (iree_host_size_t j = 0; j < header.buffer_barrier_count; ++j) {
+          iree_hal_replay_memory_transition_recipe_payload_t recipe;
+          memcpy(&recipe, recipe_wire + j * sizeof(recipe), sizeof(recipe));
+          transition_effects |= recipe.effects;
+          if (!recipe.operation_count) {
+            continue;
+          }
+          recipes[j] = (iree_hal_memory_transition_recipe_t){
+              .effects = {recipe.effects},
+              .operation_count = recipe.operation_count,
+              .operations = &operations[operation_ordinal],
+          };
+          buffers[j].recipe = &recipes[j];
+          for (uint32_t k = 0; k < recipe.operation_count; ++k) {
+            iree_hal_replay_memory_transition_operation_payload_t operation;
+            memcpy(&operation, wire + operation_ordinal * sizeof(operation),
+                   sizeof(operation));
+            operations[operation_ordinal++] =
+                iree_hal_replay_executor_memory_transition_operation(
+                    &operation);
+          }
+        }
+        wire += transition_operation_count *
+                sizeof(iree_hal_replay_memory_transition_operation_payload_t);
+      }
+      barriers[i] = (iree_hal_barrier_t){
+          .source_stage_mask = header.source_stage_mask,
+          .target_stage_mask = header.target_stage_mask,
+          .flags = header.flags,
+          .effects = {transition_effects},
+          .memory_barrier_count = header.memory_barrier_count,
+          .memory_barriers = memory,
+          .buffer_barrier_count = header.buffer_barrier_count,
+          .buffer_barriers = buffers,
+      };
+    }
+  }
+  if (iree_status_is_ok(status)) {
+    out_storage->barriers.before =
+        lists[0]->count == UINT64_MAX ? NULL : &out_storage->lists[0];
+    out_storage->barriers.after =
+        lists[1]->count == UINT64_MAX ? NULL : &out_storage->lists[1];
+  } else {
+    iree_allocator_free(executor->host_allocator, out_storage->allocation);
+    memset(out_storage, 0, sizeof(*out_storage));
+  }
+  return status;
+}

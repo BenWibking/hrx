@@ -43,7 +43,7 @@ static iree_status_t QueueFillAndWait(iree_hal_device_t* device,
   IREE_RETURN_IF_ERROR(
       iree_hal_queue_fill(queue, empty_wait, fill_signal, target_buffer,
                           /*target_offset=*/0, length, pattern, pattern_length,
-                          IREE_HAL_FILL_FLAG_NONE));
+                          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   return iree_hal_semaphore_list_wait(fill_signal, iree_infinite_timeout(),
                                       IREE_ASYNC_WAIT_FLAG_NONE);
 }
@@ -58,7 +58,7 @@ static iree_status_t QueueCopyAndWait(iree_hal_device_t* device,
   IREE_RETURN_IF_ERROR(iree_hal_queue_copy(
       queue, empty_wait, copy_signal, source_buffer,
       /*source_offset=*/0, target_buffer, /*target_offset=*/0, length,
-      IREE_HAL_COPY_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_COPY_FLAG_NONE));
   return iree_hal_semaphore_list_wait(copy_signal, iree_infinite_timeout(),
                                       IREE_ASYNC_WAIT_FLAG_NONE);
 }

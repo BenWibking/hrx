@@ -278,7 +278,7 @@ static iree_status_t CaptureBracketedTick(
   IREE_RETURN_IF_ERROR(iree_hal_queue_timestamp(
       PrimaryQueue(device), iree_hal_semaphore_list_empty(),
       TimelinePoint(timeline, &value), target, /*target_offset=*/0,
-      IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
   IREE_RETURN_IF_ERROR(iree_hal_semaphore_wait(
       timeline, value, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
   *out_after_ns = iree_time_now();
@@ -312,7 +312,7 @@ static iree_status_t CaptureOneTick(TestLogicalDevice* test_device,
   IREE_RETURN_IF_ERROR(iree_hal_queue_timestamp(
       &queue->base, iree_hal_semaphore_list_empty(),
       TimelinePoint(timeline, &value), target, /*target_offset=*/0,
-      IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
   IREE_RETURN_IF_ERROR(iree_hal_semaphore_wait(
       timeline, value, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
   *out_captured_with_pm4 =
@@ -545,11 +545,11 @@ TEST_P(HostQueueTimestampTest, WritesMonotonicDeviceTicks) {
   IREE_ASSERT_OK(iree_hal_queue_timestamp(
       PrimaryQueue(device), iree_hal_semaphore_list_empty(),
       TimelinePoint(timeline, &v1), tick0, /*target_offset=*/0,
-      IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_queue_timestamp(
       PrimaryQueue(device), TimelinePoint(timeline, &v1),
       TimelinePoint(timeline, &v2), tick1, /*target_offset=*/0,
-      IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_wait(
       timeline, 2ull, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -599,15 +599,16 @@ TEST_P(HostQueueTimestampTest, TickAdvancesAcrossWork) {
   IREE_ASSERT_OK(iree_hal_queue_timestamp(
       PrimaryQueue(device), iree_hal_semaphore_list_empty(),
       TimelinePoint(timeline, &v1), tick0, /*target_offset=*/0,
-      IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_queue_fill(
       test_device.queue(), TimelinePoint(timeline, &v1),
       TimelinePoint(timeline, &v2), scratch, /*target_offset=*/0, kScratchBytes,
-      &pattern, /*pattern_length=*/sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+      &pattern, /*pattern_length=*/sizeof(pattern), /*barriers=*/NULL,
+      IREE_HAL_FILL_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_queue_timestamp(
       PrimaryQueue(device), TimelinePoint(timeline, &v2),
       TimelinePoint(timeline, &v3), tick1, /*target_offset=*/0,
-      IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_wait(
       timeline, 3ull, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -645,7 +646,7 @@ TEST_P(HostQueueTimestampTest, RejectsMisalignedOffset) {
       iree_hal_queue_timestamp(
           PrimaryQueue(device), iree_hal_semaphore_list_empty(),
           TimelinePoint(timeline, &v1), target, /*target_offset=*/4,
-          IREE_HAL_TIMESTAMP_FLAG_NONE));
+          /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
 }
 
 // iree_hal_buffer_validate_range reports OUT_OF_RANGE rather than
@@ -669,7 +670,7 @@ TEST_P(HostQueueTimestampTest, RejectsOutOfRangeOffset) {
       iree_hal_queue_timestamp(
           PrimaryQueue(device), iree_hal_semaphore_list_empty(),
           TimelinePoint(timeline, &v1), target, /*target_offset=*/8,
-          IREE_HAL_TIMESTAMP_FLAG_NONE));
+          /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
 }
 
 // iree_hal_buffer_validate_usage reports PERMISSION_DENIED rather than
@@ -701,7 +702,7 @@ TEST_P(HostQueueTimestampTest, RejectsBufferWithoutTransferTarget) {
       iree_hal_queue_timestamp(
           PrimaryQueue(device), iree_hal_semaphore_list_empty(),
           TimelinePoint(timeline, &v1), target, /*target_offset=*/0,
-          IREE_HAL_TIMESTAMP_FLAG_NONE));
+          /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
 }
 
 // An empty wait list keeps the immediate submit path, which validates flags
@@ -724,10 +725,10 @@ TEST_P(HostQueueTimestampTest, RejectsUnsupportedFlags) {
       (iree_hal_timestamp_flags_t)(1ull << 0);
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_INVALID_ARGUMENT,
-      iree_hal_queue_timestamp(PrimaryQueue(device),
-                               iree_hal_semaphore_list_empty(),
-                               TimelinePoint(timeline, &v1), target,
-                               /*target_offset=*/0, bad_flags));
+      iree_hal_queue_timestamp(
+          PrimaryQueue(device), iree_hal_semaphore_list_empty(),
+          TimelinePoint(timeline, &v1), target,
+          /*target_offset=*/0, /*barriers=*/NULL, bad_flags));
 }
 
 // A capture that ignored the target offset would leave a plausible tick at
@@ -751,7 +752,7 @@ TEST_P(HostQueueTimestampTest, WritesAtNonZeroOffset) {
   IREE_ASSERT_OK(iree_hal_queue_timestamp(
       PrimaryQueue(device), iree_hal_semaphore_list_empty(),
       TimelinePoint(timeline, &v1), target, /*target_offset=*/8,
-      IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_wait(
       timeline, 1ull, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -795,7 +796,7 @@ TEST_P(HostQueueTimestampTest, DefersUntilWaitSignaled) {
   IREE_ASSERT_OK(iree_hal_queue_timestamp(
       &queue->base, TimelinePoint(wait_sem, &wait_value),
       TimelinePoint(signal_sem, &signal_value), target, /*target_offset=*/0,
-      IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
 
   // Pin the premise: an op that issued inline makes this a duplicate of
   // WritesMonotonicDeviceTicks.
@@ -917,7 +918,7 @@ TEST_P(HostQueueTimestampTest, CapturesThroughAnAgentScopeSignalList) {
 
   IREE_ASSERT_OK(iree_hal_queue_timestamp(
       &queue->base, iree_hal_semaphore_list_empty(), signal_list, target,
-      /*target_offset=*/0, IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*target_offset=*/0, /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_wait(
       timeline, value, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -992,7 +993,7 @@ TEST_P(HostQueueTimestampTest, CapturesIntoQueueAllocaTarget) {
   IREE_ASSERT_OK(iree_hal_queue_timestamp(
       PrimaryQueue(device), iree_hal_semaphore_list_empty(),
       TimelinePoint(timeline, &before_value), before_target,
-      /*target_offset=*/0, IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*target_offset=*/0, /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
 
   uint64_t alloca_value = 2;
   iree_hal_buffer_params_t alloca_params = TransientTimestampBufferParams();
@@ -1014,13 +1015,13 @@ TEST_P(HostQueueTimestampTest, CapturesIntoQueueAllocaTarget) {
   IREE_ASSERT_OK(iree_hal_queue_timestamp(
       PrimaryQueue(device), TimelinePoint(timeline, &alloca_value),
       TimelinePoint(timeline, &capture_value), transient_target,
-      /*target_offset=*/0, IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*target_offset=*/0, /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
 
   uint64_t after_value = 4;
   IREE_ASSERT_OK(iree_hal_queue_timestamp(
       PrimaryQueue(device), TimelinePoint(timeline, &capture_value),
       TimelinePoint(timeline, &after_value), after_target, /*target_offset=*/0,
-      IREE_HAL_TIMESTAMP_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_wait(timeline, after_value,
                                          iree_infinite_timeout(),
                                          IREE_ASYNC_WAIT_FLAG_NONE));
@@ -1144,7 +1145,8 @@ TEST_P(HostQueueTimestampTest, RejectsUnstagedTargetWithoutAllocationWait) {
       iree_hal_queue_timestamp(
           PrimaryQueue(device), iree_hal_semaphore_list_empty(),
           TimelinePoint(capture_timeline, &capture_value), blocked_target,
-          /*target_offset=*/0, IREE_HAL_TIMESTAMP_FLAG_NONE));
+          /*target_offset=*/0, /*barriers=*/NULL,
+          IREE_HAL_TIMESTAMP_FLAG_NONE));
 
   // Release the held block so the blocked allocation can complete, then unwind
   // both wrappers through the queue rather than through wrapper destruction.

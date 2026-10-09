@@ -17,6 +17,7 @@
 #include "iree/hal/drivers/amdgpu/abi/profile.h"
 #include "iree/hal/drivers/amdgpu/abi/signal.h"
 #include "iree/hal/drivers/amdgpu/abi/tsan.h"
+#include "iree/hal/drivers/amdgpu/barrier.h"
 #include "iree/hal/drivers/amdgpu/device/blit.h"
 #include "iree/hal/drivers/amdgpu/device/grid_sync.h"
 #include "iree/hal/drivers/amdgpu/dispatch_concurrency.h"
@@ -785,7 +786,8 @@ iree_status_t iree_hal_amdgpu_host_queue_copy_buffer(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* source_buffer, iree_device_size_t source_offset,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_device_size_t length, iree_hal_copy_flags_t flags,
+    iree_device_size_t length, iree_hal_amdgpu_queue_barriers_t barriers,
+    iree_hal_copy_flags_t flags,
     iree_hal_profile_queue_event_type_t profile_event_type);
 
 // Enqueues a driver-owned host action ordered after |wait_semaphore_list|.
@@ -799,7 +801,8 @@ iree_status_t iree_hal_amdgpu_host_queue_enqueue_host_action(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     iree_hal_amdgpu_reclaim_action_t action,
     iree_hal_resource_t* const* operation_resources,
-    iree_host_size_t operation_resource_count);
+    iree_host_size_t operation_resource_count,
+    iree_hal_amdgpu_queue_barrier_t barriers);
 
 // Enqueues |action| to run after the current or next notification-ring drain
 // has fully published completed entries. The action storage must remain valid
@@ -873,7 +876,8 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_read(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_file_t* source_file, uint64_t source_offset,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_device_size_t length, iree_hal_read_flags_t flags);
+    iree_device_size_t length, const iree_hal_queue_barriers_t* barriers,
+    iree_hal_read_flags_t flags);
 
 // Enqueues a buffer-to-file write on |queue|.
 iree_status_t iree_hal_amdgpu_host_queue_submit_write(
@@ -882,7 +886,8 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_write(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* source_buffer, iree_device_size_t source_offset,
     iree_hal_file_t* target_file, uint64_t target_offset,
-    iree_device_size_t length, iree_hal_write_flags_t flags);
+    iree_device_size_t length, const iree_hal_queue_barriers_t* barriers,
+    iree_hal_write_flags_t flags);
 
 // Initializes queue-owned TSAN state.
 //

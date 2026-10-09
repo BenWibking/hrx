@@ -209,7 +209,7 @@ static iree_status_t DispatchManualAsanSelector(
       queue, empty_wait, dispatch_signal, executable,
       iree_hal_executable_function_from_index(kManualAsanBindingEntrypoint),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   return iree_hal_semaphore_list_wait(dispatch_signal, iree_infinite_timeout(),
                                       IREE_ASYNC_WAIT_FLAG_NONE);
 }
@@ -234,7 +234,7 @@ static iree_status_t DispatchManualAsanRawAddress(
       queue, empty_wait, dispatch_signal, executable,
       iree_hal_executable_function_from_index(kManualAsanRawAddressEntrypoint),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, empty_bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   return iree_hal_semaphore_list_wait(dispatch_signal, iree_infinite_timeout(),
                                       IREE_ASYNC_WAIT_FLAG_NONE);
 }

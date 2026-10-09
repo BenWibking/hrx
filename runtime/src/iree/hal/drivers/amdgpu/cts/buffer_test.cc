@@ -175,9 +175,9 @@ TEST_P(AmdgpuBufferTest, NativeBindingsExecuteFromInteriorPoolRanges) {
         for (size_t i = 0; i < roots.size(); ++i) {
           const iree_hal_semaphore_list_t done = {1, &uploaded.semaphores[i],
                                                   &uploaded.payload_values[i]};
-          IREE_ASSERT_OK(iree_hal_queue_upload(transfer_queue_, ready, done,
-                                               upload_data[i], roots[i], 0,
-                                               upload_lengths[i]));
+          IREE_ASSERT_OK(iree_hal_queue_upload(
+              transfer_queue_, ready, done, upload_data[i], roots[i], 0,
+              upload_lengths[i], /*barriers=*/NULL));
         }
 
         iree_hal_buffer_ref_t refs[2];
@@ -235,13 +235,13 @@ TEST_P(AmdgpuBufferTest, NativeBindingsExecuteFromInteriorPoolRanges) {
           IREE_ASSERT_OK(iree_hal_queue_dispatch(
               dispatch_queue_, uploaded, executed, executable_,
               iree_hal_executable_function_from_index(0), config, constant_data,
-              bindings, flags));
+              bindings, /*barriers=*/NULL, flags));
         }
         std::array<uint32_t, 8> result = {};
         SemaphoreList downloaded(device_, {0}, {1});
-        IREE_ASSERT_OK(iree_hal_queue_download(transfer_queue_, executed,
-                                               downloaded, roots[1], 0,
-                                               result.data(), sizeof(result)));
+        IREE_ASSERT_OK(iree_hal_queue_download(
+            transfer_queue_, executed, downloaded, roots[1], 0, result.data(),
+            sizeof(result), /*barriers=*/NULL));
         IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
             downloaded, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
         EXPECT_THAT(result,

@@ -101,6 +101,9 @@ struct iree_hal_amdgpu_pending_op_t {
   // Operation payload selector.
   iree_hal_amdgpu_pending_op_type_t type;
 
+  // Captured direct-operation visibility, preserved across capacity retries.
+  iree_hal_amdgpu_queue_barriers_t payload_barriers;
+
   union {
     // Captured queue_fill payload.
     struct {

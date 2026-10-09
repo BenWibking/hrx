@@ -619,6 +619,9 @@ struct iree_hal_amdgpu_staging_transfer_t {
   iree_hal_amdgpu_host_queue_post_drain_action_t signal_capacity_retry;
   // Cloned signal list published after the transfer completes.
   iree_hal_semaphore_list_t signal_semaphore_list;
+
+  // Visibility after all native and host I/O accesses, before terminal signals.
+  iree_hal_amdgpu_queue_barrier_t after_barrier;
   // Optional completion action used instead of publishing signal semaphores.
   iree_hal_amdgpu_reclaim_action_t completion_action;
   // Resource retaining |completion_action.user_data| through completion.
@@ -667,9 +670,25 @@ static void iree_hal_amdgpu_staging_transfer_record_failure(
   iree_slim_mutex_unlock(&transfer->mutex);
 }
 
+static void iree_hal_amdgpu_staging_transfer_retire_storage(
+    iree_hal_amdgpu_reclaim_entry_t* entry, void* user_data,
+    const iree_status_t status) {
+  (void)entry;
+  (void)status;
+  iree_hal_amdgpu_staging_transfer_t* transfer =
+      (iree_hal_amdgpu_staging_transfer_t*)user_data;
+  iree_hal_buffer_release(transfer->buffer);
+  transfer->buffer = NULL;
+  iree_hal_file_release(transfer->file);
+  transfer->file = NULL;
+}
+
 static iree_status_t iree_hal_amdgpu_staging_transfer_submit_signal_barrier(
     iree_hal_amdgpu_staging_transfer_t* transfer) {
-  if (iree_hal_semaphore_list_is_empty(transfer->signal_semaphore_list)) {
+  if (iree_hal_semaphore_list_is_empty(transfer->signal_semaphore_list) &&
+      !(transfer->after_barrier.acquire | transfer->after_barrier.release)) {
+    iree_hal_amdgpu_staging_transfer_retire_storage(NULL, transfer,
+                                                    iree_ok_status());
     return iree_ok_status();
   }
 
@@ -678,6 +697,7 @@ static iree_status_t iree_hal_amdgpu_staging_transfer_submit_signal_barrier(
 
   iree_hal_amdgpu_wait_resolution_t resolution;
   memset(&resolution, 0, sizeof(resolution));
+  resolution.payload_barriers.after = transfer->after_barrier;
   resolution.inline_acquire_scope = IREE_HSA_FENCE_SCOPE_SYSTEM;
   resolution.barrier_acquire_scope = IREE_HSA_FENCE_SCOPE_SYSTEM;
 
@@ -695,11 +715,14 @@ static iree_status_t iree_hal_amdgpu_staging_transfer_submit_signal_barrier(
           profile_event_info.type != IREE_HAL_PROFILE_QUEUE_EVENT_TYPE_NONE
               ? &profile_event_info
               : NULL;
+  iree_hal_resource_t* resources[] = {&transfer->resource};
   iree_status_t status = iree_hal_amdgpu_host_queue_try_submit_barrier(
       transfer->queue, &resolution, transfer->signal_semaphore_list,
-      (iree_hal_amdgpu_reclaim_action_t){0},
-      /*operation_resources=*/NULL, /*operation_resource_count=*/0,
-      profile_event_info_ptr,
+      (iree_hal_amdgpu_reclaim_action_t){
+          .fn = iree_hal_amdgpu_staging_transfer_retire_storage,
+          .user_data = transfer,
+      },
+      resources, IREE_ARRAYSIZE(resources), profile_event_info_ptr,
       iree_hal_amdgpu_host_queue_post_commit_callback_null(),
       /*resource_set=*/NULL,
       IREE_HAL_AMDGPU_HOST_QUEUE_SUBMISSION_FLAG_RETAIN_RESOURCES, &ready,
@@ -746,14 +769,8 @@ static void iree_hal_amdgpu_staging_transfer_fail_signals_with_borrowed_status(
 
 static void iree_hal_amdgpu_staging_transfer_complete(
     iree_hal_amdgpu_staging_transfer_t* transfer, iree_status_t status) {
-  // All byte accesses have retired. Return captured storage before publishing
-  // completion so a waiter can release its buffers and immediately reuse their
-  // backing, even while a post-drain continuation still retains this transfer.
-  iree_hal_buffer_release(transfer->buffer);
-  transfer->buffer = NULL;
-  iree_hal_file_release(transfer->file);
-  transfer->file = NULL;
   if (transfer->completion_action.fn) {
+    iree_hal_amdgpu_staging_transfer_retire_storage(NULL, transfer, status);
     transfer->completion_action.fn(
         /*entry=*/NULL, transfer->completion_action.user_data, status);
     iree_status_free(status);
@@ -762,6 +779,9 @@ static void iree_hal_amdgpu_staging_transfer_complete(
   }
   if (iree_status_is_ok(status)) {
     status = iree_hal_amdgpu_staging_transfer_submit_signal_barrier(transfer);
+  }
+  if (!iree_status_is_ok(status)) {
+    iree_hal_amdgpu_staging_transfer_retire_storage(NULL, transfer, status);
   }
   iree_hal_amdgpu_staging_transfer_fail_signals(transfer, status);
   iree_hal_resource_release(&transfer->resource);
@@ -1344,13 +1364,17 @@ static iree_status_t iree_hal_amdgpu_host_queue_submit_staged_transfer(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_amdgpu_staging_transfer_kind_t kind, iree_hal_file_t* file,
     uint64_t file_offset, iree_hal_buffer_t* buffer,
-    iree_device_size_t buffer_offset, iree_device_size_t length) {
+    iree_device_size_t buffer_offset, iree_device_size_t length,
+    const iree_hal_queue_barriers_t* barriers) {
+  const iree_hal_amdgpu_queue_barriers_t resolved_barriers =
+      iree_hal_amdgpu_queue_barriers_resolve(barriers);
   iree_hal_amdgpu_staging_transfer_t* transfer = NULL;
   const uint32_t profile_wait_count =
       iree_hal_amdgpu_host_queue_profile_semaphore_count(wait_semaphore_list);
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_staging_transfer_create(
       queue, kind, file, file_offset, /*host_base=*/NULL, buffer, buffer_offset,
       length, profile_wait_count, signal_semaphore_list, &transfer));
+  transfer->after_barrier = resolved_barriers.after;
 
   iree_hal_resource_t* resources[1] = {&transfer->resource};
   iree_status_t status = iree_hal_amdgpu_host_queue_enqueue_host_action(
@@ -1359,7 +1383,7 @@ static iree_status_t iree_hal_amdgpu_host_queue_submit_staged_transfer(
           .fn = iree_hal_amdgpu_staging_transfer_execute,
           .user_data = transfer,
       },
-      resources, IREE_ARRAYSIZE(resources));
+      resources, IREE_ARRAYSIZE(resources), resolved_barriers.before);
   iree_hal_resource_release(&transfer->resource);
   return status;
 }
@@ -1406,11 +1430,11 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_staged_read(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_file_t* source_file, uint64_t source_offset,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_device_size_t length) {
+    iree_device_size_t length, const iree_hal_queue_barriers_t* barriers) {
   return iree_hal_amdgpu_host_queue_submit_staged_transfer(
       queue, wait_semaphore_list, signal_semaphore_list,
       IREE_HAL_AMDGPU_STAGING_TRANSFER_FILE_READ, source_file, source_offset,
-      target_buffer, target_offset, length);
+      target_buffer, target_offset, length, barriers);
 }
 
 iree_status_t iree_hal_amdgpu_host_queue_submit_staged_write(
@@ -1419,9 +1443,9 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_staged_write(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* source_buffer, iree_device_size_t source_offset,
     iree_hal_file_t* target_file, uint64_t target_offset,
-    iree_device_size_t length) {
+    iree_device_size_t length, const iree_hal_queue_barriers_t* barriers) {
   return iree_hal_amdgpu_host_queue_submit_staged_transfer(
       queue, wait_semaphore_list, signal_semaphore_list,
       IREE_HAL_AMDGPU_STAGING_TRANSFER_FILE_WRITE, target_file, target_offset,
-      source_buffer, source_offset, length);
+      source_buffer, source_offset, length, barriers);
 }

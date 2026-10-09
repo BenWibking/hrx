@@ -81,10 +81,11 @@ iree_status_t RejectSecondHostCallQueueBarrier(
     iree_hal_queue_t* base_queue,
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
+    const iree_hal_queue_barriers_t* barriers,
     iree_hal_queue_barrier_flags_t flags) {
   return iree_hal_queue_barrier(
       CastRejectSecondHostCallQueue(base_queue)->target, wait_semaphore_list,
-      signal_semaphore_list, flags);
+      signal_semaphore_list, barriers, flags);
 }
 
 iree_status_t RejectSecondHostCallQueueHostCall(
@@ -216,6 +217,7 @@ iree_status_t AtomicPreflightQueueBarrier(
     iree_hal_queue_t* base_queue,
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
+    const iree_hal_queue_barriers_t* barriers,
     iree_hal_queue_barrier_flags_t flags) {
   (void)wait_semaphore_list;
   (void)signal_semaphore_list;
@@ -270,6 +272,7 @@ iree_status_t AtomicPreflightQueueDispatch(
     iree_hal_executable_t* executable, iree_hal_executable_function_t function,
     const iree_hal_dispatch_config_t config, iree_const_byte_span_t constants,
     const iree_hal_buffer_ref_list_t bindings,
+    const iree_hal_queue_barriers_t* barriers,
     iree_hal_dispatch_flags_t flags) {
   (void)wait_semaphore_list;
   (void)signal_semaphore_list;
