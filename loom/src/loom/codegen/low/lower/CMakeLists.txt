@@ -158,6 +158,7 @@ loom_cc_library(
     loom::ops::func
     loom::ops::func_symbol_facts
     loom::ops::kernel
+    loom::ops::low
     loom::ops::target
     loom::target::facts_builder
     loom::target::function_contract

@@ -344,36 +344,52 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
   loom_storage_access_scope_initialize(module, &access_arena, &storage_access);
   loom_low_lower_module_state_t* module_state = NULL;
   loom_low_source_selection_list_t selection_list = {0};
-  loom_low_source_selection_list_t target_function_list = {0};
   const loom_low_source_selection_options_t selection_options = {
       .policy_registry = policy_registry,
       .diagnostic_emitter = pass->diagnostic_emitter,
-      .lowering_kind = IREE_SV("source-to-low"),
       .function_versions =
           loom_target_pass_capability_function_versions(target_capability),
       .collect_target_candidates = record_source_low_targets,
   };
-  iree_status_t status = loom_low_select_source_symbols(
+  iree_status_t status = loom_low_select_lowering_symbols(
       module, &selection_options, &selection_arena, &selection_list);
-  if (iree_status_is_ok(status)) {
-    status = loom_low_select_target_bound_funcs(
-        module, &selection_options, &selection_arena, &target_function_list);
-  }
   bool emitted_error_diagnostics = false;
   const loom_low_representation_projection_plan_t** projection_plans = NULL;
   iree_host_size_t projection_count = 0;
-  iree_host_size_t projection_capacity = 0;
   loom_low_representation_projection_index_t projection_index = {0};
   loom_low_source_declaration_plan_t* declaration_plans = NULL;
   iree_host_size_t planned_declaration_count = 0;
+  iree_host_size_t selected_declaration_count = 0;
+  iree_host_size_t selected_function_count = 0;
+  iree_host_size_t selected_projection_count = 0;
   for (iree_host_size_t i = 0;
-       i < target_function_list.count && iree_status_is_ok(status) &&
+       i < selection_list.count && iree_status_is_ok(status) &&
        !emitted_error_diagnostics;
        ++i) {
-    const loom_low_source_selection_t* selection =
-        &target_function_list.values[i];
-    if (!loom_low_func_def_isa(selection->func.op) &&
-        !loom_low_func_decl_isa(selection->func.op)) {
+    const loom_low_source_selection_t* selection = &selection_list.values[i];
+    if (selection->kind == LOOM_LOW_SOURCE_SELECTION_REPRESENTATION) {
+      ++selected_projection_count;
+      continue;
+    }
+    if (selection->kind == LOOM_LOW_SOURCE_SELECTION_DECLARATION) {
+      ++selected_declaration_count;
+    } else {
+      ++selected_function_count;
+    }
+    status = loom_low_source_to_low_record_target_specialization(compile_report,
+                                                                 selection);
+  }
+  if (iree_status_is_ok(status) && selected_projection_count != 0) {
+    status = iree_arena_allocate_array(
+        &selection_arena, selected_projection_count, sizeof(*projection_plans),
+        (void**)&projection_plans);
+  }
+  for (iree_host_size_t i = 0;
+       i < selection_list.count && iree_status_is_ok(status) &&
+       !emitted_error_diagnostics;
+       ++i) {
+    const loom_low_source_selection_t* selection = &selection_list.values[i];
+    if (selection->kind != LOOM_LOW_SOURCE_SELECTION_REPRESENTATION) {
       continue;
     }
     const loom_low_representation_projection_plan_t* projection_plan = NULL;
@@ -385,12 +401,6 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
       emitted_error_diagnostics = true;
     }
     if (iree_status_is_ok(status) && !emitted_error_diagnostics) {
-      status = iree_arena_grow_array(
-          &selection_arena, projection_count, projection_count + 1,
-          sizeof(*projection_plans), &projection_capacity,
-          (void**)&projection_plans);
-    }
-    if (iree_status_is_ok(status) && !emitted_error_diagnostics) {
       projection_plans[projection_count++] = projection_plan;
     }
   }
@@ -398,21 +408,6 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
     status = loom_low_representation_projection_index_build(
         module, projection_plans, projection_count, &selection_arena,
         &projection_index);
-  }
-  iree_host_size_t selected_declaration_count = 0;
-  iree_host_size_t selected_function_count = 0;
-  for (iree_host_size_t i = 0;
-       i < selection_list.count && iree_status_is_ok(status) &&
-       !emitted_error_diagnostics;
-       ++i) {
-    const loom_low_source_selection_t* selection = &selection_list.values[i];
-    if (selection->kind == LOOM_LOW_SOURCE_SELECTION_DECLARATION) {
-      ++selected_declaration_count;
-    } else {
-      ++selected_function_count;
-    }
-    status = loom_low_source_to_low_record_target_specialization(compile_report,
-                                                                 selection);
   }
   if (iree_status_is_ok(status) && !emitted_error_diagnostics) {
     status =

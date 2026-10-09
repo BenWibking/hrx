@@ -1987,7 +1987,6 @@ iree_status_t loom_low_target_legalize_run(loom_pass_t* pass,
   const loom_low_source_selection_options_t selection_options = {
       .policy_registry = policy_registry,
       .diagnostic_emitter = pass->diagnostic_emitter,
-      .lowering_kind = IREE_SV("target-legalize"),
       .function_versions =
           loom_target_pass_capability_function_versions(target_capability),
   };

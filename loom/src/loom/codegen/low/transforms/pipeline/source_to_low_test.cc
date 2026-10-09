@@ -386,7 +386,15 @@ TEST_F(LowLowerPassTest, SourceSelectionUsesPerFunctionTargetFacts) {
       "func.def target(@test_target) @add(%lhs: i32, %rhs: i32) -> (i32) {\n"
       "  %sum = scalar.addi %lhs, %rhs : i32\n"
       "  func.return %sum : i32\n"
-      "}\n"));
+      "}\n"
+      "low.func.def target<test.low.core>(@test_target) @ready("
+      "%value: reg<test.i32>) -> (reg<test.i32>) {\n"
+      "  low.return %value : reg<test.i32>\n"
+      "}\n"
+      "low.func.decl target<test.low.core>(@test_target) @external("
+      "%value: reg<test.i32>) -> (reg<test.i32>)\n"
+      "func.decl target(@test_target) @source_external(%value: i32) -> "
+      "(i32)\n"));
   ASSERT_GT(loom_test_target_bundles.count, 2u);
 
   loom_low_lower_policy_registry_t policy_registry = {};
@@ -432,15 +440,20 @@ TEST_F(LowLowerPassTest, SourceSelectionUsesPerFunctionTargetFacts) {
   loom_low_source_selection_options_t options = {
       /*.policy_registry=*/&policy_registry,
       /*.diagnostic_emitter=*/{},
-      /*.lowering_kind=*/{},
       /*.function_versions=*/&function_versions,
       /*.collect_target_candidates=*/false,
   };
   loom_low_source_selection_list_t selections = {};
-  IREE_ASSERT_OK(loom_low_select_source_symbols(module.get(), &options, &arena,
-                                                &selections));
+  IREE_ASSERT_OK(loom_low_select_lowering_symbols(module.get(), &options,
+                                                  &arena, &selections));
 
-  ASSERT_EQ(selections.count, 1u);
+  ASSERT_EQ(selections.count, 4u);
+  EXPECT_EQ(selections.values[0].kind, LOOM_LOW_SOURCE_SELECTION_FUNCTION);
+  EXPECT_EQ(selections.values[1].kind,
+            LOOM_LOW_SOURCE_SELECTION_REPRESENTATION);
+  EXPECT_EQ(selections.values[2].kind,
+            LOOM_LOW_SOURCE_SELECTION_REPRESENTATION);
+  EXPECT_EQ(selections.values[3].kind, LOOM_LOW_SOURCE_SELECTION_DECLARATION);
   EXPECT_EQ(selections.values[0].report, nullptr);
   EXPECT_EQ(selections.values[0].version_handle, &function_version.base);
   EXPECT_EQ(selections.values[0].target_ref.module_id, target_ref.module_id);
