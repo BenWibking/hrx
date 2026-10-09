@@ -15,6 +15,9 @@ project(HRX VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# C++20+ targets use headers, not C++ modules requiring dependency scans; some
+# toolchains (e.g. ROCm's LLVM) ship no clang-scan-deps.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # Static and object libraries need compile-time prerequisites, not completed
 # archives for every transitive link dependency. CMake retains explicit ordering
