@@ -21,10 +21,15 @@ from loom.target.arch.x86.vector_families import (
     AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS,
     AVX2_VECTOR_BIT_WIDTHS,
     AVX512_FLOAT_COMPARE_MNEMONICS,
+    AVX512_FP16_FLOAT_COMPARE_MNEMONIC,
+    AVX512_FP16_FLOAT_EXTREMA_MNEMONICS,
+    AVX512_FP16_SCALAR_FLOAT_COMPARE_MNEMONIC,
+    AVX512_FP16_SCALAR_FLOAT_EXTREMA_MNEMONICS,
     AVX512_SELECT_MNEMONICS,
     FLOAT_ELEMENTS,
     FLOAT_EXTREMA_MNEMONICS,
     FLOAT_EXTREMA_OPERATIONS,
+    FP16_ELEMENT,
     VectorElement,
 )
 from loom.target.contracts import (
@@ -39,7 +44,7 @@ from loom.target.contracts import (
 )
 from loom.target.low_descriptors import Descriptor
 
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm"}
+_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
 _FLOAT_COMPARE_IMMEDIATES = {
     "oeq": 0,
     "ogt": 30,
@@ -200,11 +205,38 @@ def _avx512_float_extrema_descriptors(
     )
 
 
+def _avx512_fp16_float_extrema_descriptors(
+    operation: str,
+    vector_bit_width: int,
+    descriptor_lookup: _DescriptorLookup,
+    *,
+    scalar: bool = False,
+) -> tuple[Descriptor, Descriptor, Descriptor]:
+    register_suffix = _REGISTER_SUFFIXES[vector_bit_width]
+    is_minimum = operation in ("minimumf", "minnumf")
+    if vector_bit_width == 512:
+        tie_key = f"x86.avx512.{'vpord' if is_minimum else 'vpandd'}.zmm"
+    else:
+        tie_key = f"x86.avx2.{'vpor' if is_minimum else 'vpand'}.{register_suffix}"
+    compare_mnemonic = (
+        AVX512_FP16_SCALAR_FLOAT_COMPARE_MNEMONIC
+        if scalar
+        else AVX512_FP16_FLOAT_COMPARE_MNEMONIC
+    )
+    return (
+        descriptor_lookup(f"x86.avx512_fp16.{compare_mnemonic}.{register_suffix}"),
+        descriptor_lookup(tie_key),
+        descriptor_lookup(f"x86.avx512.vpblendmw.{register_suffix}"),
+    )
+
+
 def _float_extrema_rule(
     operation: str,
     source_type: TypePattern,
     source_op,
     descriptors: tuple[Descriptor, Descriptor, Descriptor],
+    *,
+    priority: int = 0,
 ) -> DescriptorRule:
     compare, tie, select = descriptors
     emits = _float_extrema_emit_chain(
@@ -226,6 +258,7 @@ def _float_extrema_rule(
             *(Guard.descriptor_available(descriptor) for descriptor in (compare, tie)),
         ),
         emit=emits,
+        priority=priority,
     )
 
 
@@ -233,6 +266,8 @@ def _fast_float_extrema_rule(
     source_type: TypePattern,
     descriptor: Descriptor,
     source_op,
+    *,
+    priority: int = 1,
 ) -> DescriptorRule:
     return DescriptorRule(
         source_op=source_op,
@@ -254,7 +289,7 @@ def _fast_float_extrema_rule(
                 results={"dst": ValueRef.result("result")},
             ),
         ),
-        priority=1,
+        priority=priority,
     )
 
 
@@ -346,3 +381,73 @@ def avx512_float_extrema_rules(
         for element in FLOAT_ELEMENTS
     )
     return (*fast_rules, *exact_rules)
+
+
+def avx512_fp16_float_extrema_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Generates scalar and packed AVX512-FP16 extrema families."""
+
+    fast_scalar_rules = (
+        _fast_float_extrema_rule(
+            Scalar(FP16_ELEMENT.name),
+            descriptor_lookup(
+                "x86.avx512_fp16."
+                f"{AVX512_FP16_SCALAR_FLOAT_EXTREMA_MNEMONICS[operation]}.xmm"
+            ),
+            _SCALAR_SOURCE_OPS[operation],
+            priority=2,
+        )
+        for operation in FLOAT_EXTREMA_OPERATIONS
+    )
+    exact_scalar_rules = (
+        _float_extrema_rule(
+            operation,
+            Scalar(FP16_ELEMENT.name),
+            _SCALAR_SOURCE_OPS[operation],
+            _avx512_fp16_float_extrema_descriptors(
+                operation, 128, descriptor_lookup, scalar=True
+            ),
+            priority=1,
+        )
+        for operation in FLOAT_EXTREMA_OPERATIONS
+    )
+    fast_vector_rules = (
+        _fast_float_extrema_rule(
+            Vector(
+                FP16_ELEMENT.name,
+                lanes=FP16_ELEMENT.lane_count(vector_bit_width),
+            ),
+            descriptor_lookup(
+                "x86.avx512_fp16."
+                f"{AVX512_FP16_FLOAT_EXTREMA_MNEMONICS[operation]}."
+                f"{_REGISTER_SUFFIXES[vector_bit_width]}"
+            ),
+            _VECTOR_SOURCE_OPS[operation],
+            priority=2,
+        )
+        for operation in FLOAT_EXTREMA_OPERATIONS
+        for vector_bit_width in _REGISTER_SUFFIXES
+    )
+    exact_vector_rules = (
+        _float_extrema_rule(
+            operation,
+            Vector(
+                FP16_ELEMENT.name,
+                lanes=FP16_ELEMENT.lane_count(vector_bit_width),
+            ),
+            _VECTOR_SOURCE_OPS[operation],
+            _avx512_fp16_float_extrema_descriptors(
+                operation, vector_bit_width, descriptor_lookup
+            ),
+            priority=1,
+        )
+        for operation in FLOAT_EXTREMA_OPERATIONS
+        for vector_bit_width in _REGISTER_SUFFIXES
+    )
+    return (
+        *fast_scalar_rules,
+        *exact_scalar_rules,
+        *fast_vector_rules,
+        *exact_vector_rules,
+    )

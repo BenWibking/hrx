@@ -21,9 +21,12 @@ from loom.target.arch.x86.descriptors import (
 )
 from loom.target.arch.x86.vector_families import (
     AVX512_FP16_FLOAT_BINARY_FAMILIES,
+    AVX512_FP16_FLOAT_EXTREMA_MNEMONICS,
     AVX512_FP16_FLOAT_FMA_MNEMONIC,
     AVX512_FP16_SCALAR_FLOAT_BINARY_FAMILIES,
+    AVX512_FP16_SCALAR_FLOAT_EXTREMA_MNEMONICS,
     AVX512_FP16_SCALAR_FLOAT_FMA_MNEMONIC,
+    FLOAT_EXTREMA_OPERATIONS,
 )
 from loom.target.contracts import (
     DescriptorRule,
@@ -47,6 +50,18 @@ _VECTOR_BINARY_OPS = {
     vector.vector_divf: "divf",
 }
 _REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
+_SCALAR_EXTREMA_OPS = {
+    scalar_arithmetic.scalar_minimumf: "minimumf",
+    scalar_arithmetic.scalar_maximumf: "maximumf",
+    scalar_arithmetic.scalar_minnumf: "minnumf",
+    scalar_arithmetic.scalar_maxnumf: "maxnumf",
+}
+_VECTOR_EXTREMA_OPS = {
+    vector.vector_minimumf: "minimumf",
+    vector.vector_maximumf: "maximumf",
+    vector.vector_minnumf: "minnumf",
+    vector.vector_maxnumf: "maxnumf",
+}
 
 
 def _rules_for(source_op) -> tuple[DescriptorRule, ...]:
@@ -101,7 +116,7 @@ def test_fragment_compiles_every_authored_rule() -> None:
 
 def test_fp16_rules_override_the_base_scalar_carrier_rules() -> None:
     assert all(
-        isinstance(case, DescriptorRule) and case.priority == 1
+        isinstance(case, DescriptorRule) and case.priority >= 1
         for case in X86_AVX512_FP16_CONTRACT_FRAGMENT.cases
     )
 
@@ -295,3 +310,52 @@ def test_lane_movement_preserves_the_xmm_scalar_carrier() -> None:
             (Vector("f16", lanes=32), Scalar("f16")),
         }
         assert all(transport_key in _descriptor_keys(rule) for rule in rules)
+
+
+def test_extrema_cover_exact_and_native_fast_semantics() -> None:
+    expected_cells = {
+        (source_op, Scalar("f16"), priority)
+        for source_op in _SCALAR_EXTREMA_OPS
+        for priority in (1, 2)
+    } | {
+        (source_op, Vector("f16", lanes=bit_width // 16), priority)
+        for source_op in _VECTOR_EXTREMA_OPS
+        for bit_width in _REGISTER_SUFFIXES
+        for priority in (1, 2)
+    }
+    rules = tuple(
+        rule
+        for source_op in (*_SCALAR_EXTREMA_OPS, *_VECTOR_EXTREMA_OPS)
+        for rule in _rules_for(source_op)
+    )
+    assert {
+        (rule.source_op, _value_type(rule, "result"), rule.priority) for rule in rules
+    } == expected_cells
+
+    exact_rules = tuple(rule for rule in rules if rule.priority == 1)
+    assert all(len(rule.emit) == 9 for rule in exact_rules)
+    assert all(
+        rule.descriptor.key.startswith("x86.avx512.vpblendmw.") for rule in exact_rules
+    )
+
+    fast_rules = tuple(rule for rule in rules if rule.priority == 2)
+    assert all(
+        {
+            guard.enum_keyword
+            for guard in rule.guards
+            if guard.kind == GuardKind.INSTANCE_FLAGS_HAS_ALL
+        }
+        == {"nnan", "nsz"}
+        for rule in fast_rules
+    )
+    expected_fast_descriptors = {
+        f"x86.avx512_fp16.{AVX512_FP16_SCALAR_FLOAT_EXTREMA_MNEMONICS[operation]}.xmm"
+        for operation in FLOAT_EXTREMA_OPERATIONS
+    } | {
+        "x86.avx512_fp16."
+        f"{AVX512_FP16_FLOAT_EXTREMA_MNEMONICS[operation]}."
+        f"{register_suffix}"
+        for operation in FLOAT_EXTREMA_OPERATIONS
+        for register_suffix in _REGISTER_SUFFIXES.values()
+    }
+    assert {rule.descriptor.key for rule in fast_rules} == expected_fast_descriptors

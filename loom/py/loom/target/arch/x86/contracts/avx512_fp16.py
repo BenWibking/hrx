@@ -27,6 +27,9 @@ from loom.target.arch.x86.contracts.constants import (
     floating_scalar_constant_bits_rule,
     floating_scalar_zero_rule,
 )
+from loom.target.arch.x86.contracts.floating_extrema import (
+    avx512_fp16_float_extrema_rules,
+)
 from loom.target.arch.x86.contracts.lane_movement import (
     avx512_fp16_lane_movement_rules,
 )
@@ -269,7 +272,12 @@ def _transport_rules() -> tuple[DescriptorRule, ...]:
 
 
 def _cases() -> Sequence[ContractCase]:
-    return (*_scalar_rules(), *_vector_rules(), *_transport_rules())
+    return (
+        *_scalar_rules(),
+        *_vector_rules(),
+        *avx512_fp16_float_extrema_rules(_descriptor),
+        *_transport_rules(),
+    )
 
 
 X86_AVX512_FP16_CONTRACT_DIALECT_OPS = {
