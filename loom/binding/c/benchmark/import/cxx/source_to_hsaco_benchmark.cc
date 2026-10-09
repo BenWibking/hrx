@@ -31,9 +31,11 @@ struct CxxKernel {
 
 enum class CxxJitPhase {
   kImport,
+  kSourceToPreparedLow,
   kCloneHigh,
   kSourceLow,
   kPreparedLow,
+  kHighToHsaco,
   kClonePreparedLow,
   kEmitPreparedLow,
 };
@@ -222,7 +224,8 @@ class CxxJitPhaseScenario final : public CxxSourceScenarioBase {
             ? LOOMC_TARGET_PIPELINE_KIND_SOURCE_LOW
             : LOOMC_TARGET_PIPELINE_KIND_PREPARED_LOW;
     IREE_RETURN_IF_ERROR(SetUpSource(worker_count, pipeline_kind));
-    if (phase_ == CxxJitPhase::kImport) {
+    if (phase_ == CxxJitPhase::kImport ||
+        phase_ == CxxJitPhase::kSourceToPreparedLow) {
       return iree_ok_status();
     }
 
@@ -244,8 +247,12 @@ class CxxJitPhaseScenario final : public CxxSourceScenarioBase {
     (void)job_ordinal;
     WorkspacePtr& workspace = workspace_at(worker_ordinal);
     ModulePtr module;
-    if (phase_ == CxxJitPhase::kImport) {
+    if (phase_ == CxxJitPhase::kImport ||
+        phase_ == CxxJitPhase::kSourceToPreparedLow) {
       IREE_RETURN_IF_ERROR(ImportSource(workspace, &module));
+      if (phase_ == CxxJitPhase::kSourceToPreparedLow) {
+        IREE_RETURN_IF_ERROR(CompileSource(workspace, module));
+      }
     } else {
       const loomc_module_t* template_module = UsesPreparedTemplate()
                                                   ? prepared_template_.get()
@@ -255,6 +262,9 @@ class CxxJitPhaseScenario final : public CxxSourceScenarioBase {
       if (phase_ == CxxJitPhase::kSourceLow ||
           phase_ == CxxJitPhase::kPreparedLow) {
         IREE_RETURN_IF_ERROR(CompileSource(workspace, module));
+      } else if (phase_ == CxxJitPhase::kHighToHsaco) {
+        IREE_RETURN_IF_ERROR(CompileSource(workspace, module));
+        IREE_RETURN_IF_ERROR(EmitHsaco(workspace, module));
       } else if (phase_ == CxxJitPhase::kEmitPreparedLow) {
         IREE_RETURN_IF_ERROR(EmitHsaco(workspace, module));
       }
@@ -312,6 +322,12 @@ constexpr CxxKernel kMxfp4 = {"mxfp_group_dot.cxx", "mxfp4_decode_dot",
                               "gfx1250"};
 constexpr CxxKernel kMxfp8 = {"mxfp_group_dot.cxx", "mxfp8_decode_dot",
                               "gfx1250"};
+constexpr CxxKernel kQ4KQ8SwiGlu = {
+    "q4k_q8_swiglu.cxx",
+    "ffn_routed_gate_up_swiglu_q4k_q8",
+    "gfx1250",
+    "config.def @ffn_routed_gate_up.input_size = 4096 : i32\n",
+};
 constexpr CxxKernel kConfiguredWorkgroupStorage = {
     "configured_workgroup_storage.cxx",
     "configured_workgroup_storage",
@@ -330,9 +346,11 @@ void RegisterCxxJitPhaseBenchmarks(const char* kernel_name,
                                    const CxxKernel* kernel) {
   constexpr CxxJitPhaseRegistration kPhases[] = {
       {CxxJitPhase::kImport, "Import"},
+      {CxxJitPhase::kSourceToPreparedLow, "SourceToPreparedLow"},
       {CxxJitPhase::kCloneHigh, "CloneHigh"},
       {CxxJitPhase::kSourceLow, "SourceLow"},
       {CxxJitPhase::kPreparedLow, "PreparedLow"},
+      {CxxJitPhase::kHighToHsaco, "HighToHsaco"},
       {CxxJitPhase::kClonePreparedLow, "ClonePreparedLow"},
       {CxxJitPhase::kEmitPreparedLow, "EmitPreparedLow"},
   };
@@ -354,6 +372,7 @@ void RegisterCxxJitPhaseBenchmarks(const char* kernel_name,
 [[maybe_unused]] const bool kCxxJitPhasesRegistered = [] {
   RegisterCxxJitPhaseBenchmarks("RmsNorm", &kRmsNorm);
   RegisterCxxJitPhaseBenchmarks("Mxfp8Gfx1250", &kMxfp8);
+  RegisterCxxJitPhaseBenchmarks("Q4KQ8SwiGluGfx1250", &kQ4KQ8SwiGlu);
   RegisterCxxJitPhaseBenchmarks("ConfiguredWorkgroupStorage",
                                 &kConfiguredWorkgroupStorage);
   return true;
@@ -369,6 +388,8 @@ BENCHMARK_CAPTURE(SourceToHsaco, Mxfp4Gfx1250, &kMxfp4)
     ->Unit(::benchmark::kMicrosecond);
 BENCHMARK_CAPTURE(SourceToHsaco, Mxfp8Gfx1250, &kMxfp8)
     ->Unit(::benchmark::kMicrosecond);
+BENCHMARK_CAPTURE(SourceToHsaco, Q4KQ8SwiGluGfx1250, &kQ4KQ8SwiGlu)
+    ->Unit(::benchmark::kMicrosecond);
 BENCHMARK_CAPTURE(SourceToHsaco, ConfiguredWorkgroupStorage,
                   &kConfiguredWorkgroupStorage)
     ->Unit(::benchmark::kMicrosecond);
@@ -377,6 +398,9 @@ BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, RmsNorm, &kRmsNorm)
     ->Unit(::benchmark::kMicrosecond)
     ->Iterations(1);
 BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, Mxfp8Gfx1250, &kMxfp8)
+    ->Unit(::benchmark::kMicrosecond)
+    ->Iterations(1);
+BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, Q4KQ8SwiGluGfx1250, &kQ4KQ8SwiGlu)
     ->Unit(::benchmark::kMicrosecond)
     ->Iterations(1);
 BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, ConfiguredWorkgroupStorage,

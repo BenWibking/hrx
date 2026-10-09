@@ -101,10 +101,10 @@ done
 ## Source to HSACO
 
 This Google Benchmark measures the public C++ importer through final HSACO
-emission for the maintained attention, llama.cpp RMSNorm, and aiter FP16 SwiGLU
-sources. It targets `gfx1151` without opening a GPU device. Numerical execution
-coverage and source provenance live with the kernels under
-`loom/src/loom/import/cxx/test/`.
+emission for maintained attention, normalization, activation, storage-encoding,
+and packed-quantized projection sources. Cases select `gfx1151` or `gfx1250`
+without opening a GPU device. Numerical execution coverage and source
+provenance live with each kernel's optional CXX test package.
 Compilation permits approximate mathematical functions and supplies three
 workgroups, matching that corpus's numerical configuration.
 
@@ -115,26 +115,37 @@ compiler, prepared pipeline, target profile, config module, source handle, and
 workspace are reused. Process startup and setup are outside timing. One warmup
 compilation precedes measurement; parsed C++ ASTs are not cached.
 
-The `CxxJitPhase` rows attribute this endpoint with two maintained sources:
-llama.cpp RMSNorm provides a small ordinary kernel, while the MXFP8 group dot
-exercises storage encodings, narrow-float conversion, vectors, reductions, and
-target-specific lowering. Each row invokes a complete public compiler boundary:
+The `CxxJitPhase` rows attribute this endpoint with maintained sources. llama.cpp
+RMSNorm provides a small ordinary kernel; the MXFP8 group dot exercises storage
+encodings, narrow-float conversion, vectors, reductions, and target-specific
+lowering; and the routed Q4_K/Q8_1 SwiGLU combines packed records, configuration,
+template application, integer dots, subgroup reductions, and nontrivial address
+arithmetic. Each row invokes a complete public compiler boundary:
 
 | Phase | Timed operation |
 | --- | --- |
 | `Import` | Preprocess, parse, type-check, and import source to verified High IR. |
+| `SourceToPreparedLow` | Import source and compile that module through prepared Low IR in one workspace. |
 | `CloneHigh` | Clone a setup-imported High module into the invocation workspace. |
 | `SourceLow` | Clone High IR and run the source-low target pipeline. |
 | `PreparedLow` | Clone High IR and run the complete prepared-low target pipeline. |
+| `HighToHsaco` | Clone High IR, compile it through prepared Low IR, emit HSACO, and validate the ELF artifact. |
 | `ClonePreparedLow` | Clone setup-prepared Low IR with its retained specialization facts. |
 | `EmitPreparedLow` | Clone prepared Low IR, emit HSACO, and validate the ELF artifact. |
 
 The lowering and emission rows include their required fresh-module clone. The
-clone-only rows expose that floor. `SourceLow` and `PreparedLow` are independent
-cumulative compilations, while `EmitPreparedLow` starts from retained prepared
-IR, so phase times are not additive reconstructions of `SourceToHsaco`.
+clone-only rows expose that floor. `SourceToPreparedLow` and `HighToHsaco`
+preserve each cumulative boundary in one workspace. `SourceLow`, `PreparedLow`,
+and `EmitPreparedLow` isolate their inputs with retained templates, so those
+phase times are not additive reconstructions of `SourceToHsaco`.
 Validation, result construction, teardown, and arena reuse remain owned by the
 public operation that performs them.
+
+The routed Q4_K/Q8_1 source supplies input size 4096 through an ordinary
+`config.def` and compiles its complete 768-channel kernel for `gfx1250`.
+`Import`, `SourceToPreparedLow`, and `SourceToHsaco` form cumulative boundaries
+whose differences provide an additive production-path breakdown. Clone-based
+phase probes remain diagnostic controls and are not additive.
 
 `ConfiguredWorkgroupStorage` measures a specialization-first kernel whose C++
 source declares a constrained stage count, uses that value to size aligned

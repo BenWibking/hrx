@@ -3363,6 +3363,96 @@ endif()
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 loom_generated_file_family(
   NAME
+    q4k_q8_swiglu_checks_gen
+  GENERATOR
+    loom::py::loom::gen::test::cxx_kernel_cases
+  OUTPUTS
+    "q4k_q8_swiglu_checks.loom"
+    "q4k_q8_swiglu_arrays"
+  OUTPUT_FLAGS
+    "--output"
+    "--arrays"
+  ARGS
+    "kernel"
+    "--group=q4k_q8_swiglu"
+  TESTONLY
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+loom_test_module(
+  NAME
+    q4k_q8_swiglu_test_module
+  SRCS
+    "q4k_q8_swiglu.cxx"
+    "${CMAKE_CURRENT_BINARY_DIR}/q4k_q8_swiglu_checks.loom"
+  DATA
+    "${CMAKE_CURRENT_BINARY_DIR}/q4k_q8_swiglu_arrays"
+    "${CMAKE_CURRENT_BINARY_DIR}/q4k_q8_swiglu_checks.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    q4k_q8_swiglu_test_input512_execute_amdgpu_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::q4k_q8_swiglu_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--config=ffn_routed_gate_up.input_size=512"
+    "--case=q4k_q8_swiglu_values"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    q4k_q8_swiglu_test_input512_execute_amdgpu_access_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::q4k_q8_swiglu_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=access"
+    "--sanitizer-reporting=report-only"
+    "--config=ffn_routed_gate_up.input_size=512"
+    "--case=q4k_q8_swiglu_values"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_access"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+loom_generated_file_family(
+  NAME
     packed_byte_shifts_checks_gen
   GENERATOR
     loom::py::loom::gen::test::cxx_kernel_cases

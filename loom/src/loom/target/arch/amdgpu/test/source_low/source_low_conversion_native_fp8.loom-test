@@ -28,7 +28,7 @@ low.kernel.def target<amdgpu.cdna3.core>(@target) abi_layout({constant_count = 0
   %75 = v_lshlrev_b32_src0_inline %74, 24
   %77 = v_and_b32_lit %73, 120
   %78 = v_lshrrev_b32_src0_inline %77, 3
-  %79 = v_and_b32_lit %73, 7
+  %79 = v_and_b32_src0_inline %73, 7
   %80 = v_mov_b32 120
   %81 = v_add_u32 %78, %80
   %83 = v_lshlrev_b32_src0_inline %81, 23
@@ -36,11 +36,11 @@ low.kernel.def target<amdgpu.cdna3.core>(@target) abi_layout({constant_count = 0
   %85 = v_or_b32 %75, %83
   %86 = v_or_b32 %85, %84
   %87 = s_mov_b32 0
-  %89 = v_and_b32_lit %79, 2
+  %89 = v_and_b32_src0_inline %79, 2
   %90 = v_cmp_ne_i32_src1_inline %89 {rhs = 0}
   %92 = v_mov_b32_copy %87
   %93 = v_cndmask_b32_src1_inline %92, %90 {true_value = 1}
-  %94 = v_and_b32_lit %79, 4
+  %94 = v_and_b32_src0_inline %79, 4
   %95 = v_cmp_ne_i32_src1_inline %94 {rhs = 0}
   %96 = v_cndmask_b32_src1_inline %93, %95 {true_value = 2}
   %98 = v_mov_b32 118
@@ -97,7 +97,7 @@ low.kernel.def target<amdgpu.cdna3.core>(@target) abi_layout({constant_count = 0
   %70 = v_lshlrev_b32_src0_inline %69, 24
   %71 = v_and_b32_lit %68, 124
   %72 = v_lshrrev_b32_src0_inline %71, 2
-  %73 = v_and_b32_lit %68, 3
+  %73 = v_and_b32_src0_inline %68, 3
   %75 = v_mov_b32 112
   %76 = v_add_u32 %72, %75
   %78 = v_lshlrev_b32_src0_inline %76, 23
@@ -105,7 +105,7 @@ low.kernel.def target<amdgpu.cdna3.core>(@target) abi_layout({constant_count = 0
   %80 = v_or_b32 %70, %78
   %81 = v_or_b32 %80, %79
   %82 = s_mov_b32 0
-  %83 = v_and_b32_lit %73, 2
+  %83 = v_and_b32_src0_inline %73, 2
   %84 = v_cmp_ne_i32_src1_inline %83 {rhs = 0}
   %86 = v_mov_b32_copy %82
   %87 = v_cndmask_b32_src1_inline %86, %84 {true_value = 1}

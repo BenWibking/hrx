@@ -419,13 +419,11 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @index_m
   %has_reference = s_cmp_lg_i32 %reference_count, %empty_reference_count
   %23 = v_mov_b32_copy %lower_index
   %at_or_above_lower = v_cmp_ge_i32 %lane, %23
-  %25 = s_mov_b64_exec_read
-  %26 = slice %25[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %27 = slice %25[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %29 = s_cselect_b32 %26, %empty_reference_count, %has_reference
-  %30 = s_cselect_b32 %27, %empty_reference_count, %has_reference
-  %31 = concat(%29, %30) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
-  %inside_reference = s_and_b64 %31, %at_or_above_lower
+  %26 = slice %at_or_above_lower[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %27 = s_cselect_b32 %26, %empty_reference_count, %has_reference
+  %28 = slice %at_or_above_lower[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %29 = s_cselect_b32 %28, %empty_reference_count, %has_reference
+  %inside_reference = concat(%27, %29) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
   %selected = v_cndmask_b32 %false_value, %true_value, %inside_reference
   return %selected
 }
