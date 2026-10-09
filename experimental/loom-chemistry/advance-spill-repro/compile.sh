@@ -16,7 +16,7 @@ chem=$(cd -- "$here/.." && pwd)
 # Inside the HRX checkout, default to its tools and build/ directory. In an
 # extracted tarball, set LOOM_COMPILE (and LOOM_IMPORT_CXX for --reimport).
 if repo=$(git -C "$chem" rev-parse --show-toplevel 2>/dev/null); then
-  default_out=${CHEM_WORK_DIR:-$default_out}
+  default_out=$repo/build/loom-chemistry-advance-spill-repro
 else
   repo=$here default_out=$here/out
 fi
