@@ -390,6 +390,10 @@ def collapse(text, var):
 
 perturb = collapse(body('apply_perturbation'), 'collapse')
 perturb = replace(perturb, 'for (auto& xn : b->xn) {\n        xn *= factor;', 'for (int n = 0; n < NumSpec; ++n) {\n        b->xn[n] *= factor;')
+# Steps count up from zero, so the unsigned remainder is equivalent and avoids
+# signed remainder lowering.
+perturb = replace(perturb, 'step % perturbation_interval',
+                  'static_cast<unsigned>(step) % static_cast<unsigned>(perturbation_interval)')
 emit('void apply_perturbation(CellRecord* record, int cell, int step, bool enabled, Real* mass)',
      'BurnRecord* b = &record->current;\n' + perturb)
 emit('Real collapse_timestep(const BurnRecord* b)', collapse(body('collapse_timestep'), 'collapse'))
