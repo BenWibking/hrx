@@ -143,9 +143,9 @@ static iree_status_t loom_print_low_asm_find_immediate_attr(
     const loom_named_attr_t** out_attr) {
   *out_immediate = (loom_text_low_asm_immediate_descriptor_t){0};
   *out_attr = NULL;
-  IREE_RETURN_IF_ERROR(ctx->low_asm_environment.vtable->immediate_descriptor(
+  ctx->low_asm_environment.vtable->immediate_descriptor(
       ctx->low_asm_environment.state, &statement->packet, immediate_index,
-      out_immediate));
+      out_immediate);
   for (iree_host_size_t i = 0; i < statement->attributes.count; ++i) {
     iree_string_view_t attr_name = iree_string_view_empty();
     IREE_RETURN_IF_ERROR(loom_print_low_asm_attr_name(
@@ -330,10 +330,8 @@ static void loom_print_low_asm_operand_segment_delimiters(
       *out_close = ")";
       return;
     default:
-      IREE_ASSERT_UNREACHABLE("validated low asm operand segment delimiter");
-      *out_open = "";
-      *out_close = "";
-      return;
+      IREE_ASSERT_UNREACHABLE("generated low asm operand segment delimiter");
+      IREE_BUILTIN_UNREACHABLE();
   }
 }
 
@@ -344,10 +342,9 @@ static iree_status_t loom_print_low_asm_operand_segments(
        segment_index < statement->packet.operand_segment_count;
        ++segment_index) {
     loom_text_low_asm_operand_segment_descriptor_t segment = {0};
-    IREE_RETURN_IF_ERROR(
-        ctx->low_asm_environment.vtable->operand_segment_descriptor(
-            ctx->low_asm_environment.state, &statement->packet, segment_index,
-            &segment));
+    ctx->low_asm_environment.vtable->operand_segment_descriptor(
+        ctx->low_asm_environment.state, &statement->packet, segment_index,
+        &segment);
     const uint16_t segment_operand_count =
         segment.is_variadic ? statement->operand_count - operand_offset
                             : segment.fixed_operand_count;

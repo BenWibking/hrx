@@ -817,6 +817,48 @@ TEST_F(LowAsmParserTest, RejectsAmbiguousInferredResultType) {
   (void)diagnostics;
 }
 
+TEST_F(LowAsmParserTest, TypeDiagnosticAllocatesOnlyRetainedArenaStorage) {
+  iree_host_size_t allocator_calls = 0;
+  const iree_allocator_t allocator = {
+      &allocator_calls,
+      [](void* self, iree_allocator_command_t command, const void* params,
+         void** inout_pointer) -> iree_status_t {
+        ++*static_cast<iree_host_size_t*>(self);
+        const iree_allocator_t system = iree_allocator_system();
+        return system.ctl(system.self, command, params, inout_pointer);
+      },
+  };
+  loom_module_t* module = nullptr;
+  IREE_ASSERT_OK(loom_module_allocate(&context_, IREE_SV("type_diagnostic"),
+                                      &block_pool_, nullptr, allocator,
+                                      &module));
+  loom_text_low_asm_environment_t environment = {};
+  loom_low_descriptor_text_asm_environment_initialize(&low_descriptor_registry_,
+                                                      &environment);
+  const loom_text_low_asm_descriptor_set_t* descriptor_set =
+      loom_low_repr_lookup_descriptor_set(&environment.low_repr,
+                                          IREE_SV("test.low.core"));
+  loom_text_low_asm_packet_descriptor_t packet = {};
+  environment.vtable->lookup_packet(environment.state, descriptor_set,
+                                    IREE_SV("test.ambiguous"), &packet);
+
+  allocator_calls = 0;
+  const iree_host_size_t used_before = module->arena.used_allocation_size;
+  loom_type_t type = loom_type_none();
+  iree_string_view_t detail = iree_string_view_empty();
+  IREE_EXPECT_OK(environment.vtable->infer_result_type(
+      environment.state, &packet, nullptr, 0, 0, module, &type, &detail));
+  EXPECT_EQ(allocator_calls, 0u);
+  EXPECT_EQ(module->arena.used_allocation_size - used_before,
+            iree_host_align(detail.size + 1, iree_max_align_t));
+  // Returned detail belongs to the module, not a recycled temporary block.
+  iree_arena_block_pool_trim(&block_pool_);
+  EXPECT_EQ(std::string(detail.data, detail.size),
+            "result type annotation is required for one of: "
+            "reg<test.i32> | reg<test.i64>");
+  loom_module_free(module);
+}
+
 TEST_F(LowAsmParserTest, AcceptsExplicitAmbiguousResultType) {
   loom_module_t* module = ParseOk(
       "low.func.def target<test.low.core> @ambiguous() -> "

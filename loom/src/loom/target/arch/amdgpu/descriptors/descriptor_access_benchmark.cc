@@ -162,7 +162,7 @@ static void BM_AssemblyFacts(benchmark::State& state,
             &descriptor_set->asm_layouts[asm_form->layout_index];
         return static_cast<uint64_t>(asm_form_ordinal) +
                asm_form->descriptor_ordinal + layout->operand_index_count +
-               layout->immediate_count;
+               layout->explicit_immediate_count;
       });
 }
 

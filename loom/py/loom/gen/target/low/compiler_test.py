@@ -524,7 +524,11 @@ def test_assembly_layout_interning_preserves_every_projection(changes) -> None:
         assert tuple(storage.operand_indices[layout.result_operand_index_start : layout.result_operand_index_start + layout.result_operand_index_count]) == asm_form.result_indices
         assert tuple(storage.operand_indices[layout.operand_index_start : layout.operand_index_start + layout.operand_index_count]) == asm_form.operand_indices
         assert tuple(storage.operand_segments[layout.operand_segment_start : layout.operand_segment_start + layout.operand_segment_count]) == asm_form.operand_segments
-        assert tuple(storage.immediates[layout.immediate_start : layout.immediate_start + layout.immediate_count]) == asm_form.immediates
+        assert tuple(storage.immediates[layout.immediate_start : layout.immediate_start + len(asm_form.immediates)]) == asm_form.immediates
+        assert layout.explicit_immediate_count == asm_form.explicit_immediate_count
+        assert layout.has_named_immediates == asm_form.has_named_immediates
+        assert layout.requires_named_immediates == asm_form.requires_named_immediates
+        assert layout.native_owns_immediate_syntax == asm_form.native_owns_immediate_syntax
         assert tuple(storage.native_values[layout.native_assembly_value_start : layout.native_assembly_value_start + layout.native_assembly_value_count]) == asm_form.native_assembly_values
         if layout.result_value_type_start is None:
             assert not asm_form.result_value_types
@@ -533,6 +537,83 @@ def test_assembly_layout_interning_preserves_every_projection(changes) -> None:
     before = tuple(storage.layouts)
     storage.append_forms(compiled.asm_forms)
     assert tuple(storage.layouts) == before
+
+
+@pytest.mark.parametrize("default_mask", range(8))
+@pytest.mark.parametrize("named", [False, True])
+def test_assembly_immediate_order_retains_complete_descriptor_projection(default_mask: int, named: bool) -> None:
+    immediate = TEST_LOW_CONST_I32_DESCRIPTOR.immediates[0]
+    fields = ("offset", "stride", "mode")
+    immediates = tuple(replace(immediate, field_name=name, flags=(ImmediateFlag.DEFAULT_VALUE,) if default_mask & (1 << index) else ()) for index, name in enumerate(fields))
+    orders = [order for count in range(4) for order in permutations(range(3), count)]
+    forms = tuple(
+        AsmForm(
+            mnemonic=f"test.immediate_order.{ordinal}",
+            results=("dst",),
+            operands=("lhs", "rhs"),
+            immediates=tuple(AsmImmediate(fields[index], f"named_{fields[index]}" if named else None) for index in order),
+        )
+        for ordinal, order in enumerate(orders)
+    )
+    descriptor = replace(TEST_LOW_ADD_I32_DESCRIPTOR, immediates=immediates, asm_forms=forms)
+    compiled = compiler.compile_descriptor_set(replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,)))
+    by_mnemonic = {form.mnemonic: form for form in compiled.asm_forms}
+    storage = compiled.asm_table_storage
+    for authored, explicit in zip(forms, orders, strict=True):
+        form = by_mnemonic[authored.mnemonic]
+        layout = storage.layouts[form.layout_index]
+        rows = storage.immediates[layout.immediate_start : layout.immediate_start + len(fields)]
+        expected_order = (*explicit, *(index for index in range(3) if index not in explicit))
+        assert tuple(row.immediate_index for row in rows) == expected_order
+        assert tuple(row.name for row in rows) == tuple(f"named_{fields[index]}" if named and index in explicit else None for index in expected_order)
+        assert layout.explicit_immediate_count == len(explicit)
+        assert layout.has_named_immediates == any(named or default_mask & (1 << index) for index in explicit)
+        named_fields = expected_order if layout.has_named_immediates else expected_order[len(explicit) :]
+        assert layout.requires_named_immediates == any(not default_mask & (1 << index) for index in named_fields)
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_assembly_layout_sharing_includes_descriptor_default_syntax(explicit: bool) -> None:
+    base = TEST_LOW_CONST_I32_DESCRIPTOR
+    descriptors = tuple(
+        replace(
+            base,
+            key=f"test.default.{ordinal}",
+            mnemonic=f"test.default.{ordinal}",
+            immediates=(replace(base.immediates[0], flags=(ImmediateFlag.DEFAULT_VALUE,) if ordinal else (), default_value=7 if ordinal == 2 else 0),),
+            asm_forms=(AsmForm(results=("dst",), immediates=(AsmImmediate("i32_value"),) if explicit else ()),),
+        )
+        for ordinal in range(3)
+    )
+    compiled = compiler.compile_descriptor_set(replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=descriptors))
+    first, second, third = compiled.asm_forms
+    assert first.layout_index != second.layout_index
+    assert second.layout_index == third.layout_index
+    assert [form.has_named_immediates for form in compiled.asm_forms] == [False, explicit, explicit]
+    assert [form.requires_named_immediates for form in compiled.asm_forms] == [not explicit, False, False]
+
+
+@pytest.mark.parametrize(
+    ("value", "owns_syntax"),
+    [
+        (None, False),
+        (NativeAsmValue(NativeAsmValueKind.LITERAL, literal="exec"), False),
+        (NativeAsmValue(NativeAsmValueKind.MODIFIER_LITERAL, literal="mode:1"), False),
+        (NativeAsmValue(NativeAsmValueKind.RESULT, field_name="dst"), False),
+        (NativeAsmValue(NativeAsmValueKind.OPERAND, field_name="address"), False),
+        (NativeAsmValue(NativeAsmValueKind.REGISTER_PART, field_name="dst"), False),
+        (NativeAsmValue(NativeAsmValueKind.IMMEDIATE_I64, field_name="i32_value"), True),
+        (NativeAsmValue(NativeAsmValueKind.IMMEDIATE_UNSIGNED_HEX, field_name="i32_value", bit_width=32), True),
+        (NativeAsmValue(NativeAsmValueKind.IMMEDIATE_TARGET_FORMAT, field_name="i32_value", target_format_id=1), True),
+    ],
+)
+def test_native_assembly_immediate_ownership_is_derived(value, owns_syntax: bool) -> None:
+    base = TEST_LOW_WRITE_LOW16_I32_DESCRIPTOR
+    form = replace(base.asm_forms[0], native_assembly_values=(value,) if value is not None else ())
+    descriptor = replace(base, immediates=TEST_LOW_CONST_I32_DESCRIPTOR.immediates, asm_forms=(form,))
+    compiled = compiler.compile_descriptor_set(replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,)))
+    assert compiled.asm_forms[0].native_owns_immediate_syntax == owns_syntax
+    assert compiled.asm_table_storage.layouts[0].native_owns_immediate_syntax == owns_syntax
 
 
 def test_physical_view_lookup_preserves_exact_class_and_unit_relations() -> None:

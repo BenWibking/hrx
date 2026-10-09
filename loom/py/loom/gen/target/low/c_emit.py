@@ -331,6 +331,17 @@ def _asm_form_row_lines(
     ]
 
 
+def _asm_layout_flags_expr(layout: CompiledAsmLayout) -> str:
+    flags = []
+    if layout.has_named_immediates:
+        flags.append("LOOM_LOW_ASM_LAYOUT_FLAG_NAMED_IMMEDIATES")
+    if layout.requires_named_immediates:
+        flags.append("LOOM_LOW_ASM_LAYOUT_FLAG_REQUIRED_NAMED_IMMEDIATES")
+    if layout.native_owns_immediate_syntax:
+        flags.append("LOOM_LOW_ASM_LAYOUT_FLAG_NATIVE_IMMEDIATE_SYNTAX")
+    return " | ".join(flags) if flags else "0"
+
+
 def _asm_layout_row_lines(layouts: Sequence[CompiledAsmLayout]) -> list[list[str]]:
     return [
         [
@@ -343,8 +354,9 @@ def _asm_layout_row_lines(layouts: Sequence[CompiledAsmLayout]) -> list[list[str
             f".result_operand_index_count = {layout.result_operand_index_count},",
             f".operand_index_count = {layout.operand_index_count},",
             f".operand_segment_count = {layout.operand_segment_count},",
-            f".immediate_count = {layout.immediate_count},",
+            f".explicit_immediate_count = {layout.explicit_immediate_count},",
             f".native_assembly_value_count = {layout.native_assembly_value_count},",
+            f".flags = {_asm_layout_flags_expr(layout)},",
         ]
         for layout in layouts
     ]
