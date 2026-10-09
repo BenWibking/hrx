@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from loom.dialect.scalar import comparison as scalar_comparison
 from loom.dialect.vector import defs as vector
 from loom.dsl import Op
 from loom.target.arch.x86.contracts.rule_builders import (
@@ -27,9 +28,12 @@ from loom.target.arch.x86.contracts.rule_builders import (
 from loom.target.arch.x86.vector_families import (
     AVX512_BITWISE_FAMILIES,
     AVX512_FLOAT_COMPARE_MNEMONICS,
+    AVX512_FP16_FLOAT_COMPARE_MNEMONIC,
+    AVX512_FP16_SCALAR_FLOAT_COMPARE_MNEMONIC,
     AVX512_INTEGER_COMPARE_MNEMONICS,
     AVX512_SELECT_MNEMONICS,
     FLOAT_ELEMENTS,
+    FP16_ELEMENT,
     INTEGER_ELEMENTS,
     STORAGE_ELEMENTS,
 )
@@ -615,6 +619,7 @@ def _comparison_rule(
     lane_count: int,
     result_register_class: str,
     compare: Descriptor,
+    priority: int = 0,
 ) -> DescriptorRule:
     native_result = (
         ValueRef.result("result")
@@ -669,6 +674,7 @@ def _comparison_rule(
             ),
         ),
         emit=tuple(emits),
+        priority=priority,
     )
 
 
@@ -738,6 +744,88 @@ def _float_compare_rules(
                 )
             )
     return tuple(rules)
+
+
+def avx512_fp16_compare_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Compares packed f16 values into native and full-register predicates."""
+    rules: list[DescriptorRule] = []
+    for vector_bit_width in (128, 256, 512):
+        lane_count = FP16_ELEMENT.lane_count(vector_bit_width)
+        operand_type = _full_vector_type(FP16_ELEMENT, vector_bit_width)
+        result_type = _PREDICATE_TYPES[lane_count]
+        compare = descriptor_lookup(
+            f"x86.avx512_fp16.{AVX512_FP16_FLOAT_COMPARE_MNEMONIC}."
+            f"{_REGISTER_SUFFIXES[vector_bit_width]}"
+        )
+        rules.extend(
+            _comparison_rule(
+                descriptor_lookup,
+                source_op=vector.vector_cmpf,
+                predicates=None,
+                predicate_immediates=_FLOAT_COMPARE_IMMEDIATES,
+                operand_type=operand_type,
+                result_type=result_type,
+                lane_count=lane_count,
+                result_register_class=result_register_class,
+                compare=compare,
+                priority=1,
+            )
+            for result_register_class in _operation_representations(
+                lane_count, vector_bit_width
+            )
+        )
+    return tuple(rules)
+
+
+def avx512_fp16_scalar_compare_rule(
+    descriptor_lookup: _DescriptorLookup,
+) -> DescriptorRule:
+    """Compares one f16 lane and returns its predicate in a scalar GPR."""
+    compare = descriptor_lookup(
+        f"x86.avx512_fp16.{AVX512_FP16_SCALAR_FLOAT_COMPARE_MNEMONIC}.xmm"
+    )
+    move = descriptor_lookup("x86.avx512.kmovq.gpr64.k")
+    truncate = descriptor_lookup("x86.scalar.mov.trunc.gpr32.gpr64")
+    return DescriptorRule(
+        source_op=scalar_comparison.scalar_cmpf,
+        descriptor=compare,
+        guards=(
+            *_typed_guards(("lhs", "rhs"), Scalar(FP16_ELEMENT.name)),
+            Guard.value_type("result", _I1),
+            Guard.descriptor_available(move),
+            Guard.descriptor_available(truncate),
+        ),
+        emit=(
+            _op_emit(
+                descriptor=compare,
+                operands={
+                    "lhs": ValueRef.operand("lhs"),
+                    "rhs": ValueRef.operand("rhs"),
+                },
+                results={"dst": ValueRef.temporary("mask")},
+                result_types={"dst": DescriptorResultType()},
+                immediates={
+                    "predicate": AttrProject.enum_remap(
+                        "predicate", _FLOAT_COMPARE_IMMEDIATES
+                    )
+                },
+            ),
+            _op_emit(
+                descriptor=move,
+                operands={"source": ValueRef.temporary("mask")},
+                results={"dst": ValueRef.temporary("bits")},
+                result_types={"dst": _I64},
+            ),
+            _op_emit(
+                descriptor=truncate,
+                operands={"src": ValueRef.temporary("bits")},
+                results={"dst": ValueRef.result("result")},
+            ),
+        ),
+        priority=1,
+    )
 
 
 def _select_rules(

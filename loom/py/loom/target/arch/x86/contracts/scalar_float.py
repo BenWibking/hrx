@@ -57,12 +57,14 @@ _F64 = Scalar("f64")
 _V2I64 = Vector("i64", lanes=2)
 
 
-def _conversion_rule(
+def scalar_register_conversion_rule(
     source_op: Op,
     source_type: TypePattern,
     result_type: TypePattern,
     descriptor_key: str,
     descriptor_lookup: _DescriptorLookup,
+    *,
+    priority: int = 0,
 ) -> DescriptorRule:
     descriptor = descriptor_lookup(descriptor_key)
     return DescriptorRule(
@@ -79,6 +81,7 @@ def _conversion_rule(
                 results={"dst": ValueRef.result("result")},
             ),
         ),
+        priority=priority,
     )
 
 
@@ -111,9 +114,11 @@ def _bf16_to_f32_rule(descriptor_lookup: _DescriptorLookup) -> DescriptorRule:
     )
 
 
-def _select_rule(
+def xmm_scalar_select_rule(
     type_pattern: TypePattern,
     descriptor_lookup: _DescriptorLookup,
+    *,
+    priority: int = 0,
 ) -> DescriptorRule:
     move = descriptor_lookup("x86.avx2.vmovd.xmm.gpr32")
     shift = descriptor_lookup("x86.avx2.vpsllq.xmm")
@@ -151,6 +156,7 @@ def _select_rule(
                 results={"dst": ValueRef.result("result")},
             ),
         ),
+        priority=priority,
     )
 
 
@@ -175,30 +181,30 @@ def avx2_scalar_float_rules(
             descriptor_lookup("x86.scalar.movimm.gpr64"),
             descriptor_lookup("x86.avx2.vmovq.xmm.gpr64"),
         ),
-        _select_rule(_F32, descriptor_lookup),
-        _select_rule(_F64, descriptor_lookup),
-        _conversion_rule(
+        xmm_scalar_select_rule(_F32, descriptor_lookup),
+        xmm_scalar_select_rule(_F64, descriptor_lookup),
+        scalar_register_conversion_rule(
             scalar_conversion.scalar_bitcast,
             _F32,
             _I32,
             "x86.avx2.vmovd.gpr32.xmm",
             descriptor_lookup,
         ),
-        _conversion_rule(
+        scalar_register_conversion_rule(
             scalar_conversion.scalar_bitcast,
             _I32,
             _F32,
             "x86.avx2.vmovd.xmm.gpr32",
             descriptor_lookup,
         ),
-        _conversion_rule(
+        scalar_register_conversion_rule(
             scalar_conversion.scalar_bitcast,
             _F64,
             _I64,
             "x86.avx2.vmovq.gpr64.xmm",
             descriptor_lookup,
         ),
-        _conversion_rule(
+        scalar_register_conversion_rule(
             scalar_conversion.scalar_bitcast,
             _I64,
             _F64,

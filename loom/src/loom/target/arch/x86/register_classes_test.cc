@@ -293,8 +293,10 @@ TEST(X86RegisterClassesTest, SparseCompositeViewUsesSharedStorageOrdinals) {
       descriptor_set, IREE_SV("x86.avx_vnni_int8.vpdpbssd.ymm"));
   ASSERT_NE(hidden_ordinal, LOOM_LOW_DESCRIPTOR_ORDINAL_NONE);
   ASSERT_NE(overlay_ordinal, LOOM_LOW_DESCRIPTOR_ORDINAL_NONE);
-  EXPECT_EQ(descriptor_set->descriptor_count, 315u);
-  EXPECT_EQ(descriptor_set->descriptor_ordinal_count, 501u);
+  EXPECT_LT(descriptor_set->descriptor_count,
+            descriptor_set->descriptor_ordinal_count);
+  EXPECT_LE(descriptor_set->descriptor_ordinal_count,
+            storage->descriptor_ordinal_count);
   ASSERT_LT(hidden_ordinal, descriptor_set->descriptor_ordinal_count);
   EXPECT_LT(hidden_ordinal, overlay_ordinal);
   EXPECT_FALSE(

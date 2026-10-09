@@ -34,6 +34,7 @@ from loom.target.arch.x86.vector_families import (
     AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
     AVX512_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
+    FP16_ELEMENT,
     INTEGER_ELEMENTS,
     STORAGE_ELEMENTS,
     VectorElement,
@@ -306,6 +307,8 @@ def _splat_rule(
     result_type: TypePattern,
     descriptor_key: str,
     descriptor_lookup: _DescriptorLookup,
+    *,
+    priority: int = 0,
 ) -> DescriptorRule:
     descriptor = descriptor_lookup(descriptor_key)
     return DescriptorRule(
@@ -322,6 +325,7 @@ def _splat_rule(
                 results={"dst": ValueRef.result("result")},
             ),
         ),
+        priority=priority,
     )
 
 
@@ -1073,6 +1077,26 @@ def avx2_vector_construction_rules(
             for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
             for unit_step in (True, False)
         ),
+    )
+
+
+def avx512_fp16_vector_splat_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Broadcasts the native XMM scalar f16 carrier at every SIMD width."""
+    return tuple(
+        _splat_rule(
+            Scalar(FP16_ELEMENT.name),
+            _full_vector_type(FP16_ELEMENT, vector_bit_width),
+            (
+                "x86.avx512_fp16.vpbroadcastw.zmm.xmm"
+                if vector_bit_width == 512
+                else f"x86.avx2.vpbroadcastw.{_REGISTER_SUFFIXES[vector_bit_width]}"
+            ),
+            descriptor_lookup,
+            priority=1,
+        )
+        for vector_bit_width in (128, 256, 512)
     )
 
 

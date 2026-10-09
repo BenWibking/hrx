@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from loom.dialect.vector import defs as vector
 from loom.target.arch.x86.contracts.rule_builders import (
@@ -39,6 +39,7 @@ from loom.target.arch.x86.vector_families import (
     AVX512VL_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     VectorBinaryFamily,
+    VectorElement,
 )
 from loom.target.contracts import (
     ContractCase,
@@ -81,13 +82,14 @@ _BITWISE_SOURCE_OPS = {
 }
 
 
-def _direct_vector_family_rules(
+def direct_vector_family_rules(
     descriptor_lookup: _DescriptorLookup,
     *,
     descriptor_key_prefix: str,
     vector_bit_widths: tuple[int, ...],
     integer_families: tuple[VectorBinaryFamily, ...],
     float_families: tuple[VectorBinaryFamily, ...],
+    priority: int = 0,
 ) -> tuple[DescriptorRule, ...]:
     cases = tuple(
         DirectDescriptorCase(
@@ -97,6 +99,7 @@ def _direct_vector_family_rules(
                 f"{_REGISTER_SUFFIXES[vector_bit_width]}"
             ),
             _full_vector_type(family.element, vector_bit_width),
+            priority=priority,
         )
         for family in integer_families
         for vector_bit_width in vector_bit_widths
@@ -108,6 +111,7 @@ def _direct_vector_family_rules(
                 f"{_REGISTER_SUFFIXES[vector_bit_width]}"
             ),
             _full_vector_type(family.element, vector_bit_width),
+            priority=priority,
         )
         for family in float_families
         for vector_bit_width in vector_bit_widths
@@ -161,12 +165,14 @@ def _bitwise_vector_family_rules(
     return tuple(rules)
 
 
-def _vector_fma_family_rules(
+def vector_fma_family_rules(
     descriptor_lookup: _DescriptorLookup,
     *,
     descriptor_key_prefix: str,
     vector_bit_widths: tuple[int, ...],
     fma_mnemonics: Mapping[str, str],
+    elements: Sequence[VectorElement] = FLOAT_ELEMENTS,
+    priority: int = 0,
 ) -> tuple[DescriptorRule, ...]:
     return ternary_descriptor_rules(
         tuple(
@@ -177,8 +183,9 @@ def _vector_fma_family_rules(
                     f"{_REGISTER_SUFFIXES[vector_bit_width]}"
                 ),
                 _full_vector_type(element, vector_bit_width),
+                priority=priority,
             )
-            for element in FLOAT_ELEMENTS
+            for element in elements
             for vector_bit_width in vector_bit_widths
         ),
         form=DescriptorEmitForm.OP,
@@ -192,7 +199,7 @@ def avx2_vector_arithmetic_rules(
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[ContractCase, ...]:
     return (
-        *_direct_vector_family_rules(
+        *direct_vector_family_rules(
             descriptor_lookup,
             descriptor_key_prefix="x86.avx2",
             vector_bit_widths=AVX2_VECTOR_BIT_WIDTHS,
@@ -206,7 +213,7 @@ def avx2_vector_arithmetic_rules(
             bitwise_families=AVX2_BITWISE_FAMILIES,
             element_names=(*AVX2_PAYLOAD_ELEMENT_NAMES, "i1"),
         ),
-        *_vector_fma_family_rules(
+        *vector_fma_family_rules(
             descriptor_lookup,
             descriptor_key_prefix="x86.avx2",
             vector_bit_widths=AVX2_VECTOR_BIT_WIDTHS,
@@ -219,14 +226,14 @@ def avx512_vector_arithmetic_rules(
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[ContractCase, ...]:
     return (
-        *_direct_vector_family_rules(
+        *direct_vector_family_rules(
             descriptor_lookup,
             descriptor_key_prefix="x86.avx512",
             vector_bit_widths=AVX512_VECTOR_BIT_WIDTHS,
             integer_families=AVX512_INTEGER_BINARY_FAMILIES,
             float_families=AVX512_FLOAT_BINARY_FAMILIES,
         ),
-        *_direct_vector_family_rules(
+        *direct_vector_family_rules(
             descriptor_lookup,
             descriptor_key_prefix="x86.avx512",
             vector_bit_widths=AVX512VL_VECTOR_BIT_WIDTHS,
@@ -240,7 +247,7 @@ def avx512_vector_arithmetic_rules(
             bitwise_families=AVX512_BITWISE_FAMILIES,
             element_names=AVX2_PAYLOAD_ELEMENT_NAMES,
         ),
-        *_vector_fma_family_rules(
+        *vector_fma_family_rules(
             descriptor_lookup,
             descriptor_key_prefix="x86.avx512",
             vector_bit_widths=AVX512_VECTOR_BIT_WIDTHS,
