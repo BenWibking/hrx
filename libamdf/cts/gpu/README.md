@@ -232,6 +232,25 @@ the payload to its next owner, while RPTR separately releases command bytes.
 The case establishes dependent data movement and consumption, without implying
 copy/compute overlap or a throughput result.
 
+The [lookahead cases](recipes/device_sdma_lookahead_test.cc) use a different
+information flow: the next source selection comes from an available request,
+so it can run before the current computation finishes. One AQL queue generates
+SDMA uploads while a second launches one or two independent readers. Each
+reader waits for its upload; the publisher waits for every previous reader of
+the assigned slot before overwriting it. Those waits are native queue
+dependency packets and occupy no shader workgroup. All packets and arguments
+are resident and immutable before the first upload starts.
+
+The matrix covers SYSTEM/LOCAL input placement, 1/2/4 slots, one/two readers,
+row sizes through 6336 bytes and block sizes through 72 KiB. One slot provides
+the serial control. Every reader has a distinct retained output, and the final
+input readback checks untouched tails and guards. Short jobs cross SDMA ring
+wrap. Reader start markers and native completion observations report copies
+that occur inside another dispatch's live interval. Scheduling can yield zero
+such observations in a valid run; these records are neither a concurrency
+guarantee nor a throughput measurement. The correctness contract is exact
+dataflow and last-reader ownership without per-job host service.
+
 The lifecycle cases exercise the same resource helper as the `DISABLED_`
 peer-device recreation scenarios, without creating extra devices. Recreation requires
 `--gtest_also_run_disabled_tests` and is a separate qualification. The manual

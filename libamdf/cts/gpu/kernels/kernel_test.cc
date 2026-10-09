@@ -19,8 +19,11 @@
 #include "libamdf/cts/gpu/kernels/device_sdma_batched_kernels.h"
 #include "libamdf/cts/gpu/kernels/device_sdma_consumer_kernels.h"
 #include "libamdf/cts/gpu/kernels/device_sdma_kernels.h"
+#include "libamdf/cts/gpu/kernels/device_sdma_lookahead.h"
+#include "libamdf/cts/gpu/kernels/device_sdma_reader_kernels.h"
 #include "libamdf/cts/gpu/kernels/device_sdma_staged.h"
 #include "libamdf/cts/gpu/kernels/device_sdma_transfer_kernels.h"
+#include "libamdf/cts/gpu/kernels/device_sdma_upload_kernels.h"
 #include "libamdf/cts/gpu/kernels/geometry_ids.h"
 #include "libamdf/cts/gpu/kernels/geometry_ids_kernels.h"
 #include "libamdf/cts/gpu/kernels/lds_exchange.h"
@@ -189,6 +192,68 @@ TEST(KernelTest, StagedDeviceSdmaProductsPreserveTheCallerContract) {
     CheckArgumentLayout(kernel, kConsumerOffsets, kConsumerLengths,
                         kConsumerKinds, sizeof(Consumer), alignof(Consumer));
     EXPECT_EQ(kernel.arguments.byte_length, 32u);
+    EXPECT_EQ(kernel.required_workgroup_size,
+              (std::array<uint32_t, 3>{64, 1, 1}));
+    EXPECT_EQ(kernel.private_segment_byte_length, 0u);
+    EXPECT_EQ(kernel.group_segment_byte_length, 0u);
+  }
+}
+
+TEST(KernelTest, LookaheadDeviceSdmaProductsPreserveTheCallerContract) {
+  using Upload = kernels::device_sdma_lookahead::UploadArguments;
+  constexpr std::array<uint32_t, 20> kOffsets = {
+      offsetof(Upload, ring),
+      offsetof(Upload, read_index),
+      offsetof(Upload, write_index),
+      offsetof(Upload, notification),
+      offsetof(Upload, completion),
+      offsetof(Upload, state),
+      offsetof(Upload, selection),
+      offsetof(Upload, request),
+      offsetof(Upload, previous_readers),
+      offsetof(Upload, lengths),
+      offsetof(Upload, source_address),
+      offsetof(Upload, input_address),
+      offsetof(Upload, completion_address),
+      offsetof(Upload, capacity),
+      offsetof(Upload, slot_byte_length),
+      offsetof(Upload, slot),
+      offsetof(Upload, generation),
+      offsetof(Upload, copy_control),
+      offsetof(Upload, fence_header),
+      offsetof(Upload, cache_flags)};
+  constexpr std::array<uint32_t, 20> kLengths = {8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+                                                 8, 8, 8, 8, 8, 4, 4, 4, 4, 4};
+  constexpr std::array<std::string_view, 20> kKinds = {
+      "global_buffer", "global_buffer", "global_buffer", "global_buffer",
+      "global_buffer", "global_buffer", "global_buffer", "global_buffer",
+      "global_buffer", "global_buffer", "by_value",      "by_value",
+      "by_value",      "by_value",      "by_value",      "by_value",
+      "by_value",      "by_value",      "by_value",      "by_value"};
+  for (const auto& kernel : kernels::device_sdma_upload::kKernels.variants) {
+    SCOPED_TRACE(kernel.target);
+    CheckArgumentLayout(kernel, kOffsets, kLengths, kKinds, sizeof(Upload),
+                        alignof(Upload));
+    EXPECT_EQ(kernel.arguments.byte_length, 144u);
+    EXPECT_EQ(kernel.required_workgroup_size,
+              (std::array<uint32_t, 3>{1, 1, 1}));
+    EXPECT_EQ(kernel.private_segment_byte_length, 0u);
+    EXPECT_EQ(kernel.group_segment_byte_length, 0u);
+  }
+  using Reader = kernels::device_sdma_lookahead::ReaderArguments;
+  constexpr std::array<uint32_t, 6> kReaderOffsets = {
+      offsetof(Reader, input),       offsetof(Reader, output),
+      offsetof(Reader, selection),   offsetof(Reader, started),
+      offsetof(Reader, round_count), offsetof(Reader, reader)};
+  constexpr std::array<uint32_t, 6> kReaderLengths = {8, 8, 8, 8, 4, 4};
+  constexpr std::array<std::string_view, 6> kReaderKinds = {
+      "global_buffer", "global_buffer", "global_buffer",
+      "global_buffer", "by_value",      "by_value"};
+  for (const auto& kernel : kernels::device_sdma_reader::kKernels.variants) {
+    SCOPED_TRACE(kernel.target);
+    CheckArgumentLayout(kernel, kReaderOffsets, kReaderLengths, kReaderKinds,
+                        sizeof(Reader), alignof(Reader));
+    EXPECT_EQ(kernel.arguments.byte_length, 40u);
     EXPECT_EQ(kernel.required_workgroup_size,
               (std::array<uint32_t, 3>{64, 1, 1}));
     EXPECT_EQ(kernel.private_segment_byte_length, 0u);

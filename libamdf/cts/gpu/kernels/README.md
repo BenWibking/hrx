@@ -156,6 +156,16 @@ entry-point ABIs. Both products cover the complete physical target matrix
 without private or workgroup storage. The recipe distinguishes SYSTEM and
 LOCAL placement and checks every job's returned bytes before native teardown.
 
+[device_sdma_lookahead.loom](device_sdma_lookahead.loom) separates request-driven
+upload from independently completed readers. The upload selects a page and
+length from an immutable request, then publishes a data descriptor after SDMA
+completion. Each reader sweeps the input with exact integer arithmetic into
+its own output, leaving tails and guards unchanged. The [typed ABI](device_sdma_lookahead.h)
+also carries observational start markers; the recipe uses native completion
+signals for actual reuse. The complete physical target matrix requires no
+private or workgroup storage. Queue dependency packets, rather than shader
+waits, join every reader before the next upload into that slot.
+
 [resident_npu_sdma.loom](resident_npu_sdma.loom) consumes NPU-computed transfer
 requests. Its source page and copy prefix vary with the NPU payload. The GPU
 publishes SDMA, acquires every destination word and returns values derived from

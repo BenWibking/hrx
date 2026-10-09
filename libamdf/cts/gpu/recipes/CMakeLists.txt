@@ -12,6 +12,23 @@ iree_add_all_subdirs()
 if(AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 iree_cc_library(
   NAME
+    device_sdma_fixture
+  HDRS
+    "device_sdma_fixture.h"
+  SRCS
+    "device_sdma_fixture.cc"
+  DEPS
+    amdf::headers
+    iree::third_party::google_test
+    libamdf::cts::gpu::aql::dispatch_fixture
+  TESTONLY
+  PUBLIC
+)
+endif()
+
+if(AMDF_BUILD AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+iree_cc_library(
+  NAME
     pm4_sdma_fixture
   HDRS
     "pm4_sdma_fixture.h"
@@ -34,12 +51,14 @@ iree_cc_library(
     recipes_cases
   SRCS
     "copy_dispatch_test.cc"
+    "device_sdma_lookahead_test.cc"
     "device_sdma_test.cc"
     "memory_pair_test.cc"
     "pm4_sdma_finite_test.cc"
     "pm4_sdma_streaming_test.cc"
     "pm4_sdma_test.cc"
   DEPS
+    ::device_sdma_fixture
     ::pm4_sdma_fixture
     amdf::headers
     iree::third_party::google_test
@@ -49,8 +68,11 @@ iree_cc_library(
     libamdf::cts::gpu::kernels::device_sdma_batched_kernels
     libamdf::cts::gpu::kernels::device_sdma_consumer_kernels
     libamdf::cts::gpu::kernels::device_sdma_kernels
+    libamdf::cts::gpu::kernels::device_sdma_lookahead
+    libamdf::cts::gpu::kernels::device_sdma_reader_kernels
     libamdf::cts::gpu::kernels::device_sdma_staged
     libamdf::cts::gpu::kernels::device_sdma_transfer_kernels
+    libamdf::cts::gpu::kernels::device_sdma_upload_kernels
     libamdf::cts::gpu::kernels::transform
     libamdf::cts::gpu::kernels::transform_kernels
     libamdf::cts::gpu::pm4::command_fixture

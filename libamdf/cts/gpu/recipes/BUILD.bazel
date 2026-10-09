@@ -14,6 +14,17 @@ package(
 )
 
 amdf_cc_library(
+    name = "device_sdma_fixture",
+    testonly = True,
+    srcs = ["device_sdma_fixture.cc"],
+    hdrs = ["device_sdma_fixture.h"],
+    deps = [
+        "//libamdf/cts/gpu/aql:dispatch_fixture",
+        "//third_party:google_test",
+    ],
+)
+
+amdf_cc_library(
     name = "pm4_sdma_fixture",
     testonly = True,
     srcs = ["pm4_sdma_fixture.cc"],
@@ -30,6 +41,7 @@ amdf_cts_test_suite(
     name = "recipes",
     srcs = [
         "copy_dispatch_test.cc",
+        "device_sdma_lookahead_test.cc",
         "device_sdma_test.cc",
         "memory_pair_test.cc",
         "pm4_sdma_finite_test.cc",
@@ -43,6 +55,7 @@ amdf_cts_test_suite(
     }),
     visibility = ["//visibility:public"],
     deps = [
+        ":device_sdma_fixture",
         ":pm4_sdma_fixture",
         "//libamdf/cts/gpu/aql:dispatch_fixture",
         "//libamdf/cts/gpu/kernels:device_sdma",
@@ -50,8 +63,11 @@ amdf_cts_test_suite(
         "//libamdf/cts/gpu/kernels:device_sdma_batched_kernels",
         "//libamdf/cts/gpu/kernels:device_sdma_consumer_kernels",
         "//libamdf/cts/gpu/kernels:device_sdma_kernels",
+        "//libamdf/cts/gpu/kernels:device_sdma_lookahead",
+        "//libamdf/cts/gpu/kernels:device_sdma_reader_kernels",
         "//libamdf/cts/gpu/kernels:device_sdma_staged",
         "//libamdf/cts/gpu/kernels:device_sdma_transfer_kernels",
+        "//libamdf/cts/gpu/kernels:device_sdma_upload_kernels",
         "//libamdf/cts/gpu/kernels:transform",
         "//libamdf/cts/gpu/kernels:transform_kernels",
         "//libamdf/cts/gpu/pm4:command_fixture",
