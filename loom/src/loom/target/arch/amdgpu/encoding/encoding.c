@@ -687,6 +687,29 @@ iree_status_t loom_amdgpu_encoding_pack_v_mov_b32_vgpr(
                                    IREE_ARRAYSIZE(field_values), out_packet);
 }
 
+iree_status_t loom_amdgpu_encoding_pack_v_mov_b32_sgpr(
+    const loom_amdgpu_encoding_table_t* table, uint16_t vdst, uint16_t ssrc0,
+    loom_amdgpu_encoding_packet_t* out_packet) {
+  if (table == NULL) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "AMDGPU v_mov_b32 encoding requires an encoding table");
+  }
+  loom_amdgpu_encoding_field_value_t field_values[] = {
+      {
+          .field_id = LOOM_AMDGPU_ENCODING_FIELD_VDST,
+          .value = vdst,
+      },
+      {
+          .field_id = LOOM_AMDGPU_ENCODING_FIELD_SRC0,
+          .value = ssrc0,
+      },
+  };
+  return loom_amdgpu_encoding_pack(table, LOOM_AMDGPU_ENCODING_FORMAT_VOP1,
+                                   table->v_mov_b32_opcode, field_values,
+                                   IREE_ARRAYSIZE(field_values), out_packet);
+}
+
 iree_status_t loom_amdgpu_encoding_pack_v_mov_b32_u32(
     const loom_amdgpu_encoding_table_t* table, uint16_t vdst, uint32_t imm32,
     loom_amdgpu_encoding_packet_t* out_packet) {
