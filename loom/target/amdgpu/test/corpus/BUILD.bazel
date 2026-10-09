@@ -153,7 +153,7 @@ loom_scenario_test(
     execution_profiles = [AMDGPU_HARDWARE_PROFILE],
     xfails = {
         AMDGPU_HARDWARE_PROFILE.name: {
-            "function/buffer/arguments.loom:@buffer_extent_values": "AMDGPU/034",
+            "function/buffer/arguments.loom:@buffer_extent_values": "TARGET/001",
             "function/buffer/call_overflow.loom:@buffer_overflow_values": "LOWERING/044",
             "function/buffer/calls.loom:@buffer_call_values": "LOWERING/044",
             "function/buffer/calls.loom:@buffer_cycle_values": "LOWERING/044",

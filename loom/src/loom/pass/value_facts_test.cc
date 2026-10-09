@@ -568,5 +568,56 @@ TEST_F(PassValueFactsTest, SeededScopesPreserveInputsAndSeparateInvocations) {
   loom_pass_value_fact_owner_deinitialize(&owner);
 }
 
+TEST_F(PassValueFactsTest, NativeDomainsPreserveSeededWideArguments) {
+  loom_module_t* module = AllocateModule();
+  loom_builder_t builder;
+  loom_builder_initialize(module, &module->arena, loom_module_block(module),
+                          &builder);
+  loom_string_id_t name;
+  IREE_ASSERT_OK(loom_module_intern_string(module, IREE_SV("worker"), &name));
+  loom_symbol_id_t symbol;
+  IREE_ASSERT_OK(loom_module_add_symbol(module, name, &symbol));
+  const loom_type_t types[] = {loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+                               loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET)};
+  loom_op_t* definition = nullptr;
+  IREE_ASSERT_OK(loom_test_func_build(&builder, 0, 0, 0, {0, symbol}, types, 2,
+                                      nullptr, 0, nullptr, 0, nullptr, 0,
+                                      LOOM_LOCATION_UNKNOWN, &definition));
+  const loom_func_like_t function = loom_func_like_cast(module, definition);
+  loom_region_t* body = loom_func_like_body(function);
+  loom_builder_enter_region(&builder, definition, body);
+  loom_op_t* terminator = nullptr;
+  IREE_ASSERT_OK(loom_test_yield_build(&builder, nullptr, 0,
+                                       LOOM_LOCATION_UNKNOWN, &terminator));
+  const loom_value_id_t arguments[] = {
+      loom_block_arg_id(loom_region_entry_block(body), 0),
+      loom_block_arg_id(loom_region_entry_block(body), 1)};
+  const loom_value_facts_t wide_range =
+      loom_value_facts_make(INT64_C(4294967296), INT64_C(4294967300), 4);
+  loom_value_fact_table_t inputs;
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&inputs, scratch_arena(), 0));
+  for (loom_value_id_t argument : arguments) {
+    IREE_ASSERT_OK(loom_value_fact_table_define(&inputs, argument, wide_range));
+  }
+
+  loom_target_facts_t target;
+  InitializeTestTargetFacts(IREE_SV("native32"), &target);
+  target.storage.snapshot.index_bitwidth = 32;
+  target.storage.snapshot.offset_bitwidth = 32;
+  loom_pass_value_fact_owner_t owner;
+  loom_pass_value_fact_owner_initialize(block_pool(), &owner);
+  loom_pass_value_fact_scope_t scope =
+      loom_pass_value_fact_scope_function_for_target(function, &target);
+  scope.seed_facts = {&inputs, arguments, IREE_ARRAYSIZE(arguments)};
+  loom_value_fact_table_t* facts = nullptr;
+  IREE_ASSERT_OK(
+      loom_pass_value_fact_owner_acquire(&owner, module, scope, &facts));
+  for (loom_value_id_t argument : arguments) {
+    EXPECT_TRUE(loom_value_facts_equal(
+        loom_value_fact_table_lookup(facts, argument), wide_range));
+  }
+  loom_pass_value_fact_owner_deinitialize(&owner);
+}
+
 }  // namespace
 }  // namespace loom

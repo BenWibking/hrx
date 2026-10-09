@@ -10,6 +10,7 @@
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/op_defs.h"
+#include "loom/target/facts.h"
 #include "loom/util/fact_cfg.h"
 #include "loom/util/fact_loop.h"
 #include "loom/util/fact_table.h"
@@ -172,7 +173,7 @@ static loom_value_facts_t loom_value_fact_table_clamp_extent_domain(
 
 static iree_status_t loom_value_fact_table_seed_scalar_arg(
     loom_value_fact_table_t* table, const loom_module_t* module,
-    loom_value_id_t value_id) {
+    loom_value_id_t value_id, const loom_target_facts_t* parameter_target) {
   if (!loom_value_facts_is_unknown(
           loom_value_fact_table_lookup(table, value_id))) {
     return iree_ok_status();
@@ -181,10 +182,15 @@ static iree_status_t loom_value_fact_table_seed_scalar_arg(
   if (!loom_type_is_scalar(type)) {
     return iree_ok_status();
   }
+  loom_value_facts_t facts = loom_value_facts_unknown();
+  if (parameter_target &&
+      loom_type_element_type(type) == LOOM_SCALAR_TYPE_INDEX) {
+    facts = loom_value_facts_make_signed_bit_count_range(
+        parameter_target->storage.snapshot.index_bitwidth);
+  }
   return loom_value_fact_table_define(
       table, value_id,
-      loom_value_fact_table_clamp_scalar_type_domain(
-          module, value_id, loom_value_facts_unknown()));
+      loom_value_fact_table_clamp_scalar_type_domain(module, value_id, facts));
 }
 
 static loom_value_facts_t loom_value_fact_table_unknown_for_value(
@@ -300,7 +306,8 @@ static iree_status_t loom_value_fact_table_apply_func_predicates(
     if (!loom_value_fact_table_block_contains_arg(block, value_id)) {
       continue;
     }
-    loom_value_facts_t facts = loom_value_fact_table_lookup(table, value_id);
+    loom_value_facts_t facts = loom_value_fact_table_clamp_scalar_type_domain(
+        module, value_id, loom_value_fact_table_lookup(table, value_id));
     loom_value_facts_apply_predicate(&facts, predicate);
     IREE_RETURN_IF_ERROR(loom_value_fact_table_define(table, value_id, facts));
   }
@@ -310,11 +317,21 @@ static iree_status_t loom_value_fact_table_apply_func_predicates(
 static iree_status_t loom_value_fact_table_seed_block_args(
     loom_value_fact_table_t* table, const loom_module_t* module,
     const loom_block_t* block, loom_op_t* parent_op) {
+  // Declared preconditions establish parameter facts before native defaults.
+  // In particular, an explicit wide range remains a wide carrier contract.
+  IREE_RETURN_IF_ERROR(loom_value_fact_table_apply_func_predicates(
+      table, module, block, parent_op));
   loom_value_fact_reference_origin_t origin = {0};
   if (parent_op == table->context.function.op &&
       block == loom_region_const_entry_block(block->parent_region)) {
     origin = table->context.reference_origin;
   }
+  // Native domains constrain unseeded parameters, not internal block arguments
+  // whose incoming values can have wider, producer-established ranges.
+  const loom_target_facts_t* parameter_target =
+      origin.kind == LOOM_VALUE_FACT_REFERENCE_ORIGIN_ENTRY
+          ? loom_value_fact_table_block_target_facts(table, block)
+          : NULL;
   const loom_region_descriptor_t* region_descriptor =
       loom_value_fact_table_seeded_region_descriptor(module, block, parent_op);
   const loom_value_fact_memory_space_t buffer_memory_space =
@@ -346,8 +363,8 @@ static iree_status_t loom_value_fact_table_seed_block_args(
         IREE_RETURN_IF_ERROR(
             loom_value_fact_table_seed_view_arg(table, value_id, type, origin));
       } else if (!has_entry) {
-        IREE_RETURN_IF_ERROR(
-            loom_value_fact_table_seed_scalar_arg(table, module, value_id));
+        IREE_RETURN_IF_ERROR(loom_value_fact_table_seed_scalar_arg(
+            table, module, value_id, parameter_target));
       }
     }
     if (has_workgroup_uniform_args || has_cluster_uniform_args) {
@@ -368,8 +385,6 @@ static iree_status_t loom_value_fact_table_seed_block_args(
               loom_value_fact_table_lookup(table, value_id))));
     }
   }
-  IREE_RETURN_IF_ERROR(loom_value_fact_table_apply_func_predicates(
-      table, module, block, parent_op));
   return loom_value_fact_table_seed_loop_iv_arg(table, module, block,
                                                 parent_op);
 }

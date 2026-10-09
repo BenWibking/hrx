@@ -102,7 +102,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @constant_remainde
 
 // ====
 
-func.def @constant_remainder_factors(%word: i32, %position: index) -> (i32, i32, index, index) {
+func.def @constant_remainder_factors(%word: i32, %position: index) -> (i32, i32, index, index) where [range(%position, 0, 4294967295)] {
   %bounded = index.assume %position [range(%position, 0, 4294967295)] : index
   %c5 = scalar.constant 5 : i32
   %c9 = scalar.constant 9 : i32
@@ -116,7 +116,7 @@ func.def @constant_remainder_factors(%word: i32, %position: index) -> (i32, i32,
 }
 
 // ----
-low.func.def target<amd.xdna.aie2p.core> abi(object_function) @constant_remainder_factors(%word: reg<aie2p.er>, %bounded: reg<aie2p.er>) -> (reg<aie2p.er>, reg<aie2p.er>, reg<aie2p.er>, reg<aie2p.er>) asm {
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @constant_remainder_factors(%word: reg<aie2p.er>, %bounded: reg<aie2p.er>) -> (reg<aie2p.er>, reg<aie2p.er>, reg<aie2p.er>, reg<aie2p.er>) where [range(%bounded, 0, 4294967295)] asm {
   %c5 = mov.short 5
   %c9 = mov.short 9
   %25 = mov.i32 -858993459
@@ -191,7 +191,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @constant_remainde
 
 // ====
 
-func.def @constant_remainder_by_seven(%word: i32, %position: index) -> (i32, index, i32, index) {
+func.def @constant_remainder_by_seven(%word: i32, %position: index) -> (i32, index, i32, index) where [range(%position, 0, 4294967295)] {
   %bounded = index.assume %position [range(%position, 0, 4294967295)] : index
   %word_divisor = scalar.constant 7 : i32
   %index_divisor = index.constant 7 : index
@@ -201,7 +201,7 @@ func.def @constant_remainder_by_seven(%word: i32, %position: index) -> (i32, ind
 }
 
 // ----
-low.func.def target<amd.xdna.aie2p.core> abi(object_function) @constant_remainder_by_seven(%word: reg<aie2p.er>, %bounded: reg<aie2p.er>) -> (reg<aie2p.er>, reg<aie2p.er>, reg<aie2p.er>, reg<aie2p.er>) asm {
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @constant_remainder_by_seven(%word: reg<aie2p.er>, %bounded: reg<aie2p.er>) -> (reg<aie2p.er>, reg<aie2p.er>, reg<aie2p.er>, reg<aie2p.er>) where [range(%bounded, 0, 4294967295)] asm {
   %word_divisor = mov.short 7
   %19 = mov.i32 613566757
   %20 = mov.i32 65535

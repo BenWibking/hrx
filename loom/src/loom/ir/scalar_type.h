@@ -24,8 +24,9 @@ extern "C" {
 enum loom_scalar_type_e {
   // No scalar type. Zero so absent and zero-initialized fields remain invalid.
   LOOM_SCALAR_TYPE_NONE = 0,
-  // Signed target-width integer for loop bounds, dimension sizes, and general
-  // indexing arithmetic. Arithmetic follows signed semantics.
+  // Signed integer for loop bounds, dimension sizes, and general indexing
+  // arithmetic. Unconstrained parameters use the target's native index width;
+  // computed values can require wider carriers. Arithmetic is signed.
   LOOM_SCALAR_TYPE_INDEX = 1,
   // Unsigned target-selected-width integer for buffer byte offsets and
   // addressing. Arithmetic follows unsigned semantics. Its target carrier may
