@@ -284,3 +284,155 @@ func.def target(@narrow) @paired_byte_stream_facts_survive_lowering() {
   test.use %a_end_lo, %a_end_hi, %b_end_lo, %b_end_hi : i64, i64, i64, i64
   func.return
 }
+
+// ====
+
+// RUN: pass scf-to-cfg,canonicalize,dce
+
+// A dynamic upper bound must not erase the independently proven lower bound.
+func.def @dynamic_index_bound_preserves_nonnegative_body(%end: index) {
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  scf.for %position = [%begin to %end step %step] {
+    %lo = test.fact_range_lo %position : index -> i64
+    %hi = test.fact_range_hi %position : index -> i64
+    test.use %lo, %hi : i64, i64
+  }
+  func.return
+}
+
+// ----
+func.def @dynamic_index_bound_preserves_nonnegative_body(%end: index) {
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  cfg.br ^_bb1(%begin: index)
+^_bb1(%6: index):
+  %8 = index.cmp slt, %6, %end : index
+  cfg.cond_br %8, ^_bb2, ^_bb3
+^_bb2:
+  %position = index.assume %6 [range(%6, 0, 9223372036854775806), lt(%6, %end)] : index
+  %lo = scalar.constant 0 : i64
+  %hi = scalar.constant 9223372036854775806 : i64
+  test.use %lo, %hi : i64, i64
+  %9 = index.add %position, %step : index
+  cfg.br ^_bb1(%9: index)
+^_bb3:
+  func.return
+}
+
+// ====
+
+// RUN: pass scf-to-cfg,canonicalize,dce
+
+// Byte offsets retain the same producer-owned body facts and divisibility.
+func.def @dynamic_offset_bound_preserves_body_range(%end_input: offset) {
+  %end = index.assume %end_input [range(%end_input, 8, 9223372036854775807)] : offset
+  %begin = index.constant 8 : offset
+  %step = index.constant 2 : offset
+  scf.for %position = [%begin to %end step %step] {
+    %lo = test.fact_range_lo %position : offset -> i64
+    %hi = test.fact_range_hi %position : offset -> i64
+    %divisor = test.fact_divisor %position : offset -> i64
+    test.use %lo, %hi, %divisor : i64, i64, i64
+  }
+  func.return
+}
+
+// ----
+func.def @dynamic_offset_bound_preserves_body_range(%end_input: offset) {
+  %end = index.assume %end_input [range(%end_input, 8, 9223372036854775807)] : offset
+  %begin = index.constant 8 : offset
+  %step = index.constant 2 : offset
+  cfg.br ^_bb1(%begin: offset)
+^_bb1(%8: offset):
+  %10 = index.cmp ult, %8, %end : offset
+  cfg.cond_br %10, ^_bb2, ^_bb4
+^_bb2:
+  %position = index.assume %8 [range(%8, 8, 9223372036854775806), multiple_of(%8, 2), lt(%8, %end)] : offset
+  %lo = scalar.constant 8 : i64
+  %hi = scalar.constant 9223372036854775806 : i64
+  %divisor = scalar.constant 2 : i64
+  test.use %lo, %hi, %divisor : i64, i64, i64
+  %11 = index.sub %end, %position : offset
+  %12 = index.cmp ult, %step, %11 : offset
+  cfg.cond_br %12, ^_bb3, ^_bb4
+^_bb3:
+  %13 = index.add %position, %step : offset
+  cfg.br ^_bb1(%13: offset)
+^_bb4:
+  func.return
+}
+
+// ====
+
+// RUN: pass scf-to-cfg,canonicalize,dce
+
+// Retention preserves the actual signed bound; it cannot invent nonnegativity.
+func.def @dynamic_index_bound_preserves_negative_body(%end: index) {
+  %begin = index.constant -17 : index
+  %step = index.constant 1 : index
+  scf.for %position = [%begin to %end step %step] {
+    %lo = test.fact_range_lo %position : index -> i64
+    %hi = test.fact_range_hi %position : index -> i64
+    test.use %lo, %hi : i64, i64
+  }
+  func.return
+}
+
+// ----
+func.def @dynamic_index_bound_preserves_negative_body(%end: index) {
+  %begin = index.constant -17 : index
+  %step = index.constant 1 : index
+  cfg.br ^_bb1(%begin: index)
+^_bb1(%6: index):
+  %8 = index.cmp slt, %6, %end : index
+  cfg.cond_br %8, ^_bb2, ^_bb3
+^_bb2:
+  %position = index.assume %6 [range(%6, -17, 9223372036854775806), lt(%6, %end)] : index
+  %lo = scalar.constant -17 : i64
+  %hi = scalar.constant 9223372036854775806 : i64
+  test.use %lo, %hi : i64, i64
+  %9 = index.add %position, %step : index
+  cfg.br ^_bb1(%9: index)
+^_bb3:
+  func.return
+}
+
+// ====
+
+// RUN: pass scf-to-cfg,canonicalize,dce
+
+// Crossing the 32-bit boundary does not change the range transport contract.
+func.def @wide_static_index_bound_preserves_body_range() {
+  %begin = index.constant 4294967296 : index
+  %end = index.constant 4294967300 : index
+  %step = index.constant 2 : index
+  scf.for %position = [%begin to %end step %step] {
+    %lo = test.fact_range_lo %position : index -> i64
+    %hi = test.fact_range_hi %position : index -> i64
+    %divisor = test.fact_divisor %position : index -> i64
+    test.use %lo, %hi, %divisor : i64, i64, i64
+  }
+  func.return
+}
+
+// ----
+func.def @wide_static_index_bound_preserves_body_range() {
+  %begin = index.constant 4294967296 : index
+  %end = index.constant 4294967300 : index
+  %step = index.constant 2 : index
+  cfg.br ^_bb1(%begin: index)
+^_bb1(%7: index):
+  %9 = index.cmp slt, %7, %end : index
+  cfg.cond_br %9, ^_bb2, ^_bb3
+^_bb2:
+  %position = index.assume %7 [range(%7, 4294967296, 4294967298), multiple_of(%7, 2)] : index
+  %lo = scalar.constant 4294967296 : i64
+  %hi = scalar.constant 4294967298 : i64
+  %divisor = scalar.constant 2 : i64
+  test.use %lo, %hi, %divisor : i64, i64, i64
+  %10 = index.add %position, %step : index
+  cfg.br ^_bb1(%10: index)
+^_bb3:
+  func.return
+}

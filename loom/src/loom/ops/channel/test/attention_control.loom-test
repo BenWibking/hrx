@@ -67,7 +67,7 @@ func.def @attention_scan(%queries: channel<tile<16x256xbf16>>, %keys: channel<ti
   %38 = index.cmp slt, %35, %blocks : index
   cfg.cond_br %38, ^_bb2, ^_bb3
 ^_bb2:
-  %block = index.assume %35 [lt(%35, %blocks)] : index
+  %block = index.assume %35 [range(%35, 0, 9223372036854775806), lt(%35, %blocks)] : index
   %next = func.call @attention_step(%query, %keys, %values, %partial, %state, %scores) : (view<16x256xbf16>, channel<tile<64x256xbf16>>, channel<tile<64x256xbf16>>, write<tile<16x258xf32>>, view<16x258xf32>, view<16x64xf32>) -> (write<tile<16x258xf32>>)
   %39 = index.add %block, %c1 : index
   cfg.br ^_bb1(%39: index, %next: write<tile<16x258xf32>>)

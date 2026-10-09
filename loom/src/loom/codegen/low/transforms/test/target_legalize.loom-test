@@ -80,7 +80,7 @@ func.def target(@test_target) @scalarizes_dynamic_flat_mma_store(%m: index, %n: 
   %40 = index.cmp slt, %38, %mn : index
   cfg.cond_br %40, ^_bb2, ^_bb7
 ^_bb2:
-  %39 = index.assume %38 [lt(%38, %mn)] : index
+  %39 = index.assume %38 [range(%38, 0, 9223372036854775806), lt(%38, %mn)] : index
   %28 = index.constant 0 : index
   %29 = index.constant 1 : index
   cfg.br ^_bb3(%28: index, %init0: f32)
@@ -88,7 +88,7 @@ func.def target(@test_target) @scalarizes_dynamic_flat_mma_store(%m: index, %n: 
   %46 = index.cmp slt, %43, %k : index
   cfg.cond_br %46, ^_bb4, ^_bb5
 ^_bb4:
-  %45 = index.assume %43 [lt(%43, %k)] : index
+  %45 = index.assume %43 [range(%43, 0, 9223372036854775806), lt(%43, %k)] : index
   %37 = scalar.fmaf %lhs0, %rhs0, %44 : f32
   %47 = index.add %45, %29 : index
   cfg.br ^_bb3(%47: index, %37: f32)
