@@ -174,126 +174,6 @@ def function_cases(name, argument_widths, result_width, samples, *, argument_typ
     return "\n\n".join(cases)
 
 
-INCREMENT_INPUTS = [0, 1, 3, 4, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 254, 255, 256, 0x7FFFFFFF, 0xFFFFFFFE, 0xFFFFFFFF]
-
-
-def increment_byte_reference(value):
-    first, second = value % 256, (value + 2) % 256
-    return first | (second << 8) | (second << 16) | (first << 24)
-
-
-def increment_select_reference(value, choose):
-    first, second = value % 256, (value * 3 + 1) % 256
-    if choose & 1:
-        selected, first = first, (first + 1) % 256
-    else:
-        second = (second - 1) % 256
-        selected = second
-    if choose & 2:
-        if choose & 4:
-            first = (first + 1) % 256
-            nested = first
-        else:
-            nested, second = second, (second - 1) % 256
-    else:
-        nested, first = first, (first - 1) % 256
-    return selected | (nested << 8) | (first << 16) | (second << 24)
-
-
-def increment_chain_reference(value):
-    return sum(value < bound for bound in [256, 128, 64, 32, 16, 8]) + 256 * int(value < 4)
-
-
-def increment_wide_reference(value):
-    return (value ^ ((value + 2) * 17) ^ ((value + 2) * 3)) % (1 << 64)
-
-
-def increment_condition_reference(value):
-    selected, final = (value + 2, value + 2) if value & 1 else (value + 1, value)
-    return (selected ^ (final * 17)) % (1 << 32)
-
-
-def increment_functions():
-    counts = [0, 1, 2, 3, 7, 8, 15, 16, 31, 32]
-    functions = [
-        ("increment_byte", [32], 32, [([value], increment_byte_reference(value)) for value in range(256)]),
-        ("decrement_short", [32], 32, [([value], value * 65536 + value - 2 + 32768) for value in [-32766, -129, -1, 0, 1, 128, 32767]]),
-        ("increment_wide", [64], 64, [([value], increment_wide_reference(value)) for value in WIDE_INPUTS]),
-        ("increment_chain", [32], 32, [([value], increment_chain_reference(value)) for value in INCREMENT_INPUTS]),
-        ("increment_or", [32, 32], 32, [([value, choose], (value + int(not choose)) * 2 + int(choose or value < 128)) for value in INCREMENT_INPUTS for choose in [0, 1]]),
-        ("increment_select", [32, 32], 32, [([value, choose], increment_select_reference(value, choose)) for value in INCREMENT_INPUTS for choose in range(8)]),
-        ("increment_condition", [32], 32, [([value], increment_condition_reference(value)) for value in INCREMENT_INPUTS]),
-        ("increment_while", [32], 32, [([count], count * (count + 1) // 2 * 257 + count + 1) for count in counts]),
-        ("increment_do", [32], 32, [([count], max(1, count) * (max(1, count) - 1) // 2 * 257 + max(1, count)) for count in counts]),
-    ]
-    return "\n\n".join(function_cases(name, widths, result_width, samples) for name, widths, result_width, samples in functions)
-
-
-def increment_values(arrays):
-    cases = []
-    for input_value in [0, 1, 127, 255, 256, 0x7FFFFFFF, 0xFFFFFFFE, 0xFFFFFFFF]:
-        expected = []
-        for lane in range(64):
-            value = (input_value + lane) % (1 << 32)
-            wide = increment_wide_reference((input_value * 4294967297 + lane) % (1 << 64))
-            count = lane % 8
-            expected.extend(
-                [
-                    increment_byte_reference(value),
-                    (lane - 31) * 65536 + lane - 33 + 32768,
-                    wide % (1 << 32),
-                    wide >> 32,
-                    increment_chain_reference(value),
-                    (value + int(lane % 2 == 0)) * 2 + int(lane % 2 or value < 128),
-                    increment_select_reference(value, lane % 8),
-                    increment_condition_reference(value),
-                    count * (count + 1) // 2 * 257 + count + 1,
-                    max(1, count) * (max(1, count) - 1) // 2 * 257 + max(1, count),
-                ]
-            )
-        case = Case(arrays, f"increment_values_{input_value}", "i32", len(expected))
-        case.scalar("input", signed_bits(input_value, 32), "i32")
-        case.launch("increment_values", "%output, %input", f"tensor<{len(expected)}xi32>, i32")
-        cases.append(case.finish([signed_bits(value, 32) for value in expected]))
-    return "kernel.decl @increment_values() launch(%output: buffer, %input: i32)\n\n" + "\n".join(cases)
-
-
-def increment_pointers(arrays):
-    cases = []
-    for length, choose in [(0, 0), (1, 0), (17, 1), (33, 2), *[(64, choose) for choose in range(3, 8)]]:
-        values = [(index * 17) % 31 - 15 for index in range(max(1, length) * 8)]
-        expected = [-123] * (64 * 12)
-        for lane in range(length):
-            inputs = values[lane * 8 : (lane + 1) * 8]
-            cursor = 2 + int(not choose & 2)
-            accepted = bool(choose & 2 or inputs[2])
-            guarded = bool(choose & 4 and inputs[cursor])
-            final = cursor + int(bool(choose & 4))
-            expected[lane * 12 : (lane + 1) * 12] = [
-                inputs[1],
-                inputs[3],
-                inputs[3],
-                inputs[1],
-                inputs[1 if choose & 1 else 2],
-                inputs[2],
-                int(accepted),
-                inputs[cursor],
-                int(guarded),
-                inputs[final],
-                inputs[final] + inputs[final + 1],
-                inputs[final + 2],
-            ]
-        case = Case(arrays, f"increment_pointers_{length}_{choose}", "i32", len(expected))
-        case.array("input", values)
-        case.scalar("length", length, "i32")
-        case.scalar("choose", choose, "i32")
-        case.launch("increment_pointers", "%input, %output, %length, %choose", f"tensor<{len(values)}xi32>, tensor<{len(expected)}xi32>, i32, i32")
-        case.array("input_expected", values)
-        case.lines.append(f"  check.expect.bitwise actual(%input) expected(%input_expected) : tensor<{len(values)}xi32>")
-        cases.append(case.finish(expected))
-    return "kernel.decl @increment_pointers() launch(%input: buffer, %output: buffer, %length: i32, %choose: i32)\n\n" + "\n".join(cases)
-
-
 def continue_references(count, choose):
     indices = range(count)
     selected = [index for index in indices if not index & choose]
@@ -467,73 +347,6 @@ def constant_loops(arrays):
     return "kernel.decl @constant_loops() launch(%input: buffer, %output: buffer, %start: i32)\n\n" + "\n".join(cases)
 
 
-def assumption_functions():
-    values = [0, 1, 127, 128, 254, 255]
-    seven = [[0] * 7, [255] * 7] + [[255 if lane == active else 0 for lane in range(7)] for active in range(7)]
-    samples = [
-        ("bound_pair", [32, 32], [([a, b], a * 257 + b) for a in values for b in values]),
-        ("bound_seven", [32] * 7, [(args, sum(a * b for a, b in zip(args, [1, 2, 3, 5, 7, 11, 13], strict=True))) for args in seven]),
-        ("bound_repeated", [32], [([value], value * 17) for value in [0, 1, 15, 16, 31]]),
-        ("bound_capacity", [32], [([value], value * 16 + 336) for value in [0, 1, 255, 256, 426, 427]]),
-        ("bound_cast", [32], [([value], value + 5) for value in [0, 1, 7, 15]]),
-        ("bound_byte", [8], [([value], value + (1024 if value >= 128 else 0)) for value in range(256)]),
-        ("bound_wide", [64], [([value], value * 3) for value in values]),
-        ("bound_size", [32], [([value], value) for value in [0, 1, 7, 15]]),
-        ("bound_scoped", [32], [([value], value + (1 if value < 256 else 3)) for value in [0, 1, 127, 128, 255, 256, 427, 0x7FFFFFFF, 0xFFFFFFFF]]),
-        ("bound_inclusive", [32], [([value], value * 19 + 3) for value in [0, 1, 127, 426, 427]]),
-        (
-            "bound_signed",
-            [32, 32],
-            [([hidden, capacity], hidden * 23 + capacity) for hidden, capacity in [(1, 1), (1, 7), (31, 31), (31, 63), (127, 255)]],
-        ),
-        (
-            "bound_unsigned",
-            [32, 32],
-            [
-                ([tokens, capacity], tokens ^ capacity)
-                for tokens, capacity in [
-                    (0, 0),
-                    (0x7FFFFFFF, 0x80000000),
-                    (0x80000000, 0xFFFFFFFF),
-                    (0xFFFFFFFE, 0xFFFFFFFF),
-                    (0xFFFFFFFF, 0xFFFFFFFF),
-                ]
-            ],
-        ),
-    ]
-    return "\n".join(function_cases(name, widths, 32, cases) for name, widths, cases in samples)
-
-
-def assumption_kernel(arrays):
-    cases = []
-    for input_value in [0, 1, 127, 128, 255, 256, 427, 0xFFFFFFC0, 0xFFFFFFFF]:
-        expected = []
-        for lane in range(64):
-            value = (input_value + lane) % (1 << 32)
-            byte = value % 256
-            expected.extend(
-                [
-                    byte * 257 + value // 256 % 256,
-                    byte + 278,
-                    value % 32 * 17,
-                    value % 428 * 16 + 336,
-                    value % 16 + 5,
-                    byte + (1024 if byte >= 128 else 0),
-                    byte * 3,
-                    value % 16,
-                    signed_bits(value + (1 if value < 256 else 3), 32),
-                    value % 428 * 19 + 3,
-                    (value % 63 + 1) * 23 + (value % 63 + 1) + value % 5,
-                    signed_bits(0x80000000, 32),
-                ]
-            )
-        case = Case(arrays, f"assumptions_{input_value}", "i32", len(expected))
-        case.scalar("input", signed_bits(input_value, 32), "i32")
-        case.launch("assumption_kernel", "%output, %input", f"tensor<{len(expected)}xi32>, i32")
-        cases.append(case.finish(expected))
-    return "kernel.decl @assumption_kernel() launch(%output: buffer, %input: i32)\n\n" + "\n".join(cases)
-
-
 def integer_functions():
     cases = []
 
@@ -554,42 +367,6 @@ def integer_functions():
     function("shift_right_signed", [64, 32], 64, [([value, count], value // (1 << count)) for value in wide_values for count in counts])
     function("shift_right_unsigned", [64, 32], 64, [([value, count], (value % (1 << 64)) // (1 << count)) for value in wide_values for count in counts])
     return "\n\n".join(cases) + "\n"
-
-
-def enum_functions():
-    cases = []
-    commands = [0, 1, 2, 3, 4, 5, 6, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFF]
-    cases.append(function_cases("enum_dispatch", [32], 32, [([value], 128 if value == 1 else 255 if value >= 5 else value + 7) for value in commands], argument_types=["Command"]))
-    cases.append(function_cases("enum_byte", [8], 32, [([value], (value + 1) % 256) for value in range(256)], argument_types=["Byte"]))
-    cases.append(function_cases("enum_signed", [8], 64, [([value], value * 65537) for value in [-128, -127, -1, 0, 1, 126, 127]], argument_types=["SignedByte"]))
-    cases.append(function_cases("enum_unsigned", [32], 64, [([value], value + 1) for value in commands], argument_types=["Word"]))
-    wide = [0, 1, (1 << 32) - 1, 1 << 32, (1 << 63) - 1, 1 << 63, (1 << 64) - 1]
-    cases.append(function_cases("enum_compare64", [64, 64], 32, [([left, right], int(left < right)) for left in wide for right in wide], argument_types=["Long", "Long"]))
-    cases.append(function_cases("enum_inferred", [32], 64, [([value], (1 << 40) if value else -1) for value in commands]))
-    cases.append(function_cases("enum_inferred_unsigned", [64], 32, [([value], int(value < (1 << 64) - 1)) for value in wide]))
-    cases.append(function_cases("enum_specialization", [32], 64, [([value], (1 << 40) + 0xFFFFFFFF + (4 if value else 0)) for value in commands]))
-    cases.append(function_cases("enum_packed_unsigned", [8], 32, [([value], value + 1) for value in range(256)], argument_types=["PackedByte"]))
-    cases.append(function_cases("enum_packed_signed", [8], 32, [([value], value - 1) for value in range(-128, 128)], argument_types=["PackedSignedByte"]))
-    cases.append(function_cases("enum_bool", [32], 32, [([value], int(value != 0)) for value in commands]))
-    return "\n\n".join(cases) + "\n"
-
-
-def enum_storage(arrays, width):
-    mask = (1 << width) - 1
-    values = [0, 1, (1 << (width - 1)) - 1, 1 << (width - 1), mask - 1, mask]
-    values += [(index * 0x123456789ABCDEF) & mask for index in range(64 - len(values))]
-    cases = []
-    for delta in [1, 1 << (width - 1), mask]:
-        element = f"i{width}"
-        case = Case(arrays, f"enum_storage_u{width}_{delta}", element, len(values))
-        case.array("input", [signed_bits(value, width) for value in values])
-        case.array("original", [signed_bits(value, width) for value in values])
-        case.scalar("delta", signed_bits(delta, width), element)
-        case.launch(f"enum_storage_u{width}", "%input, %output, %delta", f"tensor<64x{element}>, tensor<64x{element}>, {element}")
-        case.lines.append(f"  check.expect.bitwise actual(%input) expected(%original) : tensor<64x{element}>")
-        expected = [signed_bits((value + delta) & mask, width) for value in values]
-        cases.append(case.finish(expected))
-    return f"kernel.decl @enum_storage_u{width}() launch(%input: buffer, %output: buffer, %delta: i{width})\n\n" + "\n".join(cases)
 
 
 def comparison_functions():
@@ -1200,13 +977,10 @@ def q4k_q8_swiglu(arrays):
 
 KERNEL_GROUPS = {
     "aiter_swiglu_f16": lambda arrays: launch_grid("aiter_swiglu_f16", 3) + swiglu(arrays),
-    "assumptions": assumption_kernel,
     "constant_loops": constant_loops,
     "control_flow": control_flow,
     "early_returns": early_returns,
-    "enum_values": lambda arrays: "\n".join(enum_storage(arrays, width) for width in (8, 16, 32, 64)),
     "flash_attention": lambda arrays: launch_grid("flash_attention", 3) + attention(arrays),
-    "increment_values": lambda arrays: increment_values(arrays) + "\n" + increment_pointers(arrays),
     "iq4xs_blocks": iq4xs_blocks,
     "iq4xs_gate_up": iq4xs_gate_up,
     "llama_rms_norm": lambda arrays: launch_grid("llama_rms_norm", 3) + rms_norm(arrays),
@@ -1224,11 +998,8 @@ KERNEL_GROUPS = {
 
 
 HOST_REFERENCES = {
-    "assumptions.cxx": assumption_functions,
     "comparison_functions.cxx": comparison_functions,
     "constant_loops.cxx": constant_loop_functions,
-    "enum_values.cxx": enum_functions,
-    "increment_values.cxx": increment_functions,
     "integer_functions.cxx": integer_functions,
     "record_values.cxx": record_functions,
     "schedule_values.cxx": schedule_functions,
