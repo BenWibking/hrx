@@ -5,10 +5,12 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from loom.dialect.scalar import arithmetic as scalar_arithmetic
+from loom.dialect.scalar import conversion as scalar_conversion
 from loom.dialect.scalar import math as scalar_math
 from loom.dialect.vector import defs as vector
 from loom.target.arch.x86.contracts.avx2 import X86_AVX2_CONTRACT_FRAGMENT
 from loom.target.arch.x86.contracts.avx512 import X86_AVX512_CONTRACT_FRAGMENT
+from loom.target.arch.x86.contracts.scalar import X86_SCALAR_CONTRACT_FRAGMENT
 from loom.target.arch.x86.descriptors import (
     X86_AVX2_DESCRIPTOR_SET,
     X86_AVX512_CORE_DESCRIPTOR_SET,
@@ -66,6 +68,27 @@ def _static_index_range(rule: DescriptorRule) -> tuple[int, int]:
     assert guard.minimum is not None
     assert guard.maximum is not None
     return guard.minimum, guard.maximum
+
+
+def test_scalar_signed_narrow_extensions_use_native_carriers() -> None:
+    rules = tuple(
+        case
+        for case in X86_SCALAR_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+        and case.source_op is scalar_conversion.scalar_extsi
+        and _value_type_guard(case, "input") in (Scalar("i8"), Scalar("i16"))
+    )
+    assert {
+        (
+            _value_type_guard(rule, "input"),
+            _value_type_guard(rule, "result"),
+            rule.descriptor.key,
+        )
+        for rule in rules
+    } == {
+        (Scalar("i8"), Scalar("i32"), "x86.scalar.movsx.i8.gpr32"),
+        (Scalar("i16"), Scalar("i32"), "x86.scalar.movsx.i16.gpr32"),
+    }
 
 
 def test_uniform_shift_rules_cover_native_types_widths_and_count_forms() -> None:

@@ -288,6 +288,15 @@ TEST(EncodingTest, ByteRegisterPrefixAndFullWidthDefinition) {
   ExpectEncoding(LOOM_X86_ENCODING_FORM_MOVE,
                  LOOM_X86_ENCODING_OPCODE_0F | 0xb6 | LOOM_X86_ENCODING_BYTE,
                  operands, {0x40, 0x0f, 0xb6, 0xf6}, 1u << 6);
+  // MOVSX uses the same byte-register prefix and defines the full GPR32.
+  ExpectEncoding(LOOM_X86_ENCODING_FORM_MOVE,
+                 LOOM_X86_ENCODING_OPCODE_0F | 0xbe | LOOM_X86_ENCODING_BYTE,
+                 operands, {0x40, 0x0f, 0xbe, 0xf6}, 1u << 6);
+  // The word source needs neither a byte-register REX prefix nor 16-bit result
+  // selection; MOVSX still defines ESI.
+  ExpectEncoding(LOOM_X86_ENCODING_FORM_MOVE,
+                 LOOM_X86_ENCODING_OPCODE_0F | 0xbf, operands,
+                 {0x0f, 0xbf, 0xf6}, 1u << 6);
   // MOV esi,esi must still be emitted: it clears the high half of RSI.
   ExpectEncoding(LOOM_X86_ENCODING_FORM_MOVE, 0x8b, operands, {0x8b, 0xf6},
                  1u << 6);

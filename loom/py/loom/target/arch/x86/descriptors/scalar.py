@@ -345,6 +345,29 @@ def _gpr_narrow_zero_extend_descriptor(bit_count: int) -> Descriptor:
     )
 
 
+def _gpr_narrow_sign_extend_descriptor(bit_count: int) -> Descriptor:
+    # The source owns a full GPR32 allocation unit, but MOVSX reads only its
+    # low byte or word and defines the complete signed i32 carrier.
+    return Descriptor(
+        key=f"x86.scalar.movsx.i{bit_count}.gpr32",
+        encoding_format_id=Form.MOVE,
+        encoding_id=encoding(
+            0x0FBE if bit_count == 8 else 0x0FBF,
+            flags=Flag.BYTE if bit_count == 8 else 0,
+        ),
+        mnemonic="movsx",
+        semantic_tag=f"integer.extsi.i{bit_count}.i32",
+        operands=(_gpr32_result(), _gpr32_operand("src")),
+        asm_forms=_asm(
+            mnemonic=f"movsx.i{bit_count}.gpr32",
+            results=("dst",),
+            operands=("src",),
+        ),
+        schedule_class=_SCHEDULE_SCALAR,
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
 def _gpr_select_descriptor(bit_count: int) -> Descriptor:
     result = _gpr64_result() if bit_count == 64 else _gpr32_result()
     operand = _gpr64_operand if bit_count == 64 else _gpr32_operand
@@ -851,6 +874,7 @@ X86_SCALAR_SUFFIX_DESCRIPTORS = (
         asm_mnemonic="movzx.gpr64.gpr32",
     ),
     *(_gpr_narrow_zero_extend_descriptor(width) for width in (8, 16)),
+    *(_gpr_narrow_sign_extend_descriptor(width) for width in (8, 16)),
     Descriptor(
         key="x86.scalar.movimm.gpr64",
         encoding_format_id=Form.CONSTANT,
