@@ -587,6 +587,15 @@ iree_status_t iree_benchmark_loom_run_file(
         if (case_plan != NULL && case_plan->issue_count == 0) {
           function_call_capacity += case_plan->invocation_count;
         }
+        const loom_testbench_scenario_plan_t* scenario_plan =
+            work_plan.selected_benchmarks[i].scenario_plan;
+        if (scenario_plan != NULL && scenario_plan->issue_count == 0) {
+          for (iree_host_size_t trial_index = 0;
+               trial_index < scenario_plan->trial_count; ++trial_index) {
+            function_call_capacity +=
+                scenario_plan->trials[trial_index].recipe_step_count;
+          }
+        }
       }
       const loom_testbench_invocation_plan_t** selected_calls = NULL;
       if (function_call_capacity != 0) {
@@ -600,14 +609,31 @@ iree_status_t iree_benchmark_loom_run_file(
            ++i) {
         const loom_testbench_case_plan_t* case_plan =
             work_plan.selected_benchmarks[i].case_plan;
-        if (case_plan == NULL || case_plan->issue_count != 0) {
+        if (case_plan != NULL && case_plan->issue_count == 0) {
+          for (iree_host_size_t j = 0; j < case_plan->invocation_count; ++j) {
+            const loom_testbench_invocation_plan_t* invocation =
+                &case_plan->invocations[j];
+            if (invocation->kind == LOOM_TESTBENCH_INVOCATION_FUNCTION_CALL) {
+              selected_calls[function_call_count++] = invocation;
+            }
+          }
+        }
+        const loom_testbench_scenario_plan_t* scenario_plan =
+            work_plan.selected_benchmarks[i].scenario_plan;
+        if (scenario_plan == NULL || scenario_plan->issue_count != 0) {
           continue;
         }
-        for (iree_host_size_t j = 0; j < case_plan->invocation_count; ++j) {
-          const loom_testbench_invocation_plan_t* invocation =
-              &case_plan->invocations[j];
-          if (invocation->kind == LOOM_TESTBENCH_INVOCATION_FUNCTION_CALL) {
-            selected_calls[function_call_count++] = invocation;
+        for (iree_host_size_t trial_index = 0;
+             trial_index < scenario_plan->trial_count; ++trial_index) {
+          const loom_testbench_trial_plan_t* trial =
+              &scenario_plan->trials[trial_index];
+          for (iree_host_size_t step_index = 0;
+               step_index < trial->recipe_step_count; ++step_index) {
+            const loom_testbench_trial_recipe_step_t* step =
+                &trial->recipe_steps[step_index];
+            if (step->kind == LOOM_TESTBENCH_TRIAL_RECIPE_STEP_GENERATOR) {
+              selected_calls[function_call_count++] = &step->generator;
+            }
           }
         }
       }

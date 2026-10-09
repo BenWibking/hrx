@@ -46,7 +46,8 @@ enum {
   LOOM_OP_CHECK_INVOKE = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 24),
   LOOM_OP_CHECK_ENTROPY_FORK = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 25),
   LOOM_OP_CHECK_ENTROPY_READ = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 26),
-  LOOM_OP_CHECK_COUNT_ = 27,
+  LOOM_OP_CHECK_GENERATE = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 27),
+  LOOM_OP_CHECK_COUNT_ = 28,
 };
 
 // Check symbol visibility. Absent (0) means private.
@@ -579,6 +580,27 @@ iree_status_t loom_check_entropy_read_build(
     loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_check_entropy_read_verify(
+    const loom_module_t* module, const loom_op_t* op,
+    iree_diagnostic_emitter_t emitter);
+
+// LOOM_OP_CHECK_GENERATE: Invokes an ordinary function while realizing one runtime trial recipe. Scalar results remain trial-local; shaped arguments may be materialized as mutable function buffers.
+// %value = check.generate<@input_for_trial>(%trial, %storage) : (index, tensor<256xi16>) -> (i32)
+LOOM_DEFINE_ISA(loom_check_generate_isa, LOOM_OP_CHECK_GENERATE)
+LOOM_DEFINE_VARIADIC_OPERANDS(loom_check_generate_arguments, 0)
+LOOM_DEFINE_VARIADIC_RESULTS(loom_check_generate_results, 0)
+LOOM_DEFINE_ATTR_SYMBOL(loom_check_generate_callee, 0)
+iree_status_t loom_check_generate_build(
+    loom_builder_t* builder,
+    loom_symbol_ref_t callee,
+    loom_may_consume const loom_value_id_t* arguments,
+    iree_host_size_t arguments_count,
+    const loom_type_t* result_types,
+    iree_host_size_t result_count,
+    const loom_tied_result_t* tied_results,
+    iree_host_size_t tied_result_count,
+    loom_location_id_t location,
+    loom_op_t** out_op);
+iree_status_t loom_check_generate_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
 

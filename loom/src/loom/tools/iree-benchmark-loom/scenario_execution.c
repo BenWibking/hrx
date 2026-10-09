@@ -125,6 +125,8 @@ static iree_status_t iree_benchmark_loom_scenario_ensure_profile(
       &execution->scenario_options);
   execution->scenario_options.target =
       loom_run_hal_testbench_scenario_execution_profile(&execution->profile);
+  execution->scenario_options.function_call =
+      options->case_execution_options->invocation.function_call;
   execution->scenario_options.host_allocator = options->host_allocator;
   execution->profile_initialized = true;
   return iree_ok_status();

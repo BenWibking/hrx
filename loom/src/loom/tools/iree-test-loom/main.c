@@ -1166,6 +1166,22 @@ int iree_test_loom_main(int argc, char** argv,
           function_call_capacity += selected_cases[i]->invocation_count;
         }
       }
+      for (iree_host_size_t scenario_index = 0;
+           scenario_index < module_plan.scenario_count; ++scenario_index) {
+        const loom_testbench_scenario_plan_t* scenario =
+            &module_plan.scenarios[scenario_index];
+        if (scenario->issue_count != 0 ||
+            !iree_test_loom_scenario_matches_selection(scenario,
+                                                       selected_case_name)) {
+          continue;
+        }
+        for (iree_host_size_t trial_index = 0;
+             trial_index < scenario->trial_count; ++trial_index) {
+          const loom_testbench_trial_plan_t* trial =
+              &scenario->trials[trial_index];
+          function_call_capacity += trial->recipe_step_count;
+        }
+      }
       const loom_testbench_invocation_plan_t** function_calls = NULL;
       if (function_call_capacity != 0) {
         status = iree_arena_allocate_array(&plan_arena, function_call_capacity,
@@ -1187,6 +1203,31 @@ int iree_test_loom_main(int argc, char** argv,
           }
         }
       }
+      for (iree_host_size_t scenario_index = 0;
+           iree_status_is_ok(status) &&
+           scenario_index < module_plan.scenario_count;
+           ++scenario_index) {
+        const loom_testbench_scenario_plan_t* scenario =
+            &module_plan.scenarios[scenario_index];
+        if (scenario->issue_count != 0 ||
+            !iree_test_loom_scenario_matches_selection(scenario,
+                                                       selected_case_name)) {
+          continue;
+        }
+        for (iree_host_size_t trial_index = 0;
+             trial_index < scenario->trial_count; ++trial_index) {
+          const loom_testbench_trial_plan_t* trial =
+              &scenario->trials[trial_index];
+          for (iree_host_size_t step_index = 0;
+               step_index < trial->recipe_step_count; ++step_index) {
+            const loom_testbench_trial_recipe_step_t* step =
+                &trial->recipe_steps[step_index];
+            if (step->kind == LOOM_TESTBENCH_TRIAL_RECIPE_STEP_GENERATOR) {
+              function_calls[function_call_count++] = &step->generator;
+            }
+          }
+        }
+      }
       if (iree_status_is_ok(status) && function_call_count != 0 &&
           configuration->function_call_provider.fn) {
         execution_options.invocation.function_call =
@@ -1198,6 +1239,8 @@ int iree_test_loom_main(int argc, char** argv,
                 },
                 compile_result_callback);
       }
+      scenario_execution_options.function_call =
+          execution_options.invocation.function_call;
       if (configuration->scenario_target_profile.fn != NULL) {
         scenario_execution_options.target =
             configuration->scenario_target_profile.fn(

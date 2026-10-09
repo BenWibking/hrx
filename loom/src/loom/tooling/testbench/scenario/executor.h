@@ -104,6 +104,8 @@ typedef struct loom_testbench_scenario_execution_options_t {
   loom_testbench_execution_profile_t target;
   // Profile used to produce comparison results and state.
   loom_testbench_execution_profile_t oracle;
+  // Provider used to execute authored check.generate functions.
+  loom_testbench_invocation_provider_t function_call;
   // Shared capture receiving device events during correctness runs.
   loom_testbench_device_event_capture_t* device_event_capture;
   // Allocator for prepared scenario bookkeeping and provider products.
@@ -130,6 +132,8 @@ typedef struct loom_testbench_prepared_scenario_configuration_t {
   const loom_testbench_scenario_configuration_values_t* configuration;
   // Execution semantics selected while preparing every product.
   loom_testbench_scenario_execution_mode_t mode;
+  // Provider used to execute authored check.generate functions.
+  loom_testbench_invocation_provider_t function_call;
   // Shared device-event capture for correctness execution.
   loom_testbench_device_event_capture_t* device_event_capture;
   // Allocator owning |trials| and passed to product teardown.
@@ -191,6 +195,12 @@ typedef struct loom_testbench_scenario_trial_executor_t {
   loom_testbench_value_materializer_options_t materializer_options;
   // Host allocator owning all arrays below.
   iree_allocator_t host_allocator;
+  // Prepared authored generators in recipe order.
+  loom_testbench_prepared_invocation_t* prepared_generators;
+  // Static schedule describing |prepared_generators|.
+  loom_testbench_invocation_schedule_t generator_schedule;
+  // Reusable scratch used to execute authored generators.
+  loom_testbench_invocation_executor_t generator_executor;
   // Reusable independent target/oracle value graphs per batch slot.
   loom_testbench_scenario_trial_values_t* trial_values;
   // Reusable result records per batch slot.

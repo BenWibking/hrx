@@ -432,6 +432,40 @@ check_invoke = Op(
     ],
 )
 
+check_generate = Op(
+    "check.generate",
+    group=check_ops,
+    doc=("Invokes an ordinary function while realizing one runtime trial recipe. Scalar results remain trial-local; shaped arguments may be materialized as mutable function buffers."),
+    operands=[Operand("arguments", ANY, variadic=True, doc="Generator arguments.")],
+    results=[Result("results", SCALAR, variadic=True)],
+    attrs=[
+        AttrDef(
+            "callee",
+            "symbol",
+            symbol_ref=SymbolReference("trial generator", ["callable"]),
+        ),
+    ],
+    traits=[UNKNOWN_EFFECTS, HasParent("check.trial")],
+    verify="loom_check_generate_verify",
+    format=[
+        TemplateParam("callee"),
+        GLUE,
+        LPAREN,
+        Refs("arguments"),
+        RPAREN,
+        COLON,
+        LPAREN,
+        TypesOf("arguments"),
+        RPAREN,
+        ARROW,
+        Scope([ResultTypeList("results")]),
+    ],
+    examples=[
+        "%value = check.generate<@input_for_trial>(%trial, %storage) : (index, tensor<256xi16>) -> (i32)",
+        "check.generate<@fill_input>(%storage) : (tensor<256xi16>) -> ()",
+    ],
+)
+
 
 # ============================================================================
 # Requirements and skips
@@ -989,4 +1023,5 @@ ALL_CHECK_OPS = (
     check_invoke,
     check_entropy_fork,
     check_entropy_read,
+    check_generate,
 )
