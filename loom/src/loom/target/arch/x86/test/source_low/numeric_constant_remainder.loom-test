@@ -61,7 +61,7 @@ low.func.def target<x86.avx2.core> abi(object_function) @constant_remainder_load
 
 // ====
 
-func.def @constant_remainder_factors(%word: i32, %position: index) -> (i32, i32, index, index) {
+func.def @constant_remainder_factors(%word: i32, %position: index) -> (i32, i32, index, index) where [range(%position, 0, 4294967295)] {
   %bounded = index.assume %position [range(%position, 0, 4294967295)] : index
   %c5 = scalar.constant 5 : i32
   %c9 = scalar.constant 9 : i32
@@ -75,7 +75,7 @@ func.def @constant_remainder_factors(%word: i32, %position: index) -> (i32, i32,
 }
 
 // ----
-low.func.def target<x86.avx2.core> abi(object_function) @constant_remainder_factors(%word: reg<x86.gpr32>, %bounded: reg<x86.gpr64>) -> (reg<x86.gpr32>, reg<x86.gpr32>, reg<x86.gpr64>, reg<x86.gpr64>) asm {
+low.func.def target<x86.avx2.core> abi(object_function) @constant_remainder_factors(%word: reg<x86.gpr32>, %bounded: reg<x86.gpr64>) -> (reg<x86.gpr32>, reg<x86.gpr32>, reg<x86.gpr64>, reg<x86.gpr64>) where [range(%bounded, 0, 4294967295)] asm {
   %21 = copy %word : reg<x86.gpr32> -> reg<x86.gpr32>
   %22 = movzx.gpr64.gpr32 %21
   %23 = mov.imm64 3435973837
@@ -107,7 +107,7 @@ low.func.def target<x86.avx2.core> abi(object_function) @constant_remainder_fact
 
 // ====
 
-func.def @constant_remainder_by_seven(%word: i32, %position: index) -> (i32, index, i32, index) {
+func.def @constant_remainder_by_seven(%word: i32, %position: index) -> (i32, index, i32, index) where [range(%position, 0, 4294967295)] {
   %bounded = index.assume %position [range(%position, 0, 4294967295)] : index
   %word_divisor = scalar.constant 7 : i32
   %index_divisor = index.constant 7 : index
@@ -117,7 +117,7 @@ func.def @constant_remainder_by_seven(%word: i32, %position: index) -> (i32, ind
 }
 
 // ----
-low.func.def target<x86.avx2.core> abi(object_function) @constant_remainder_by_seven(%word: reg<x86.gpr32>, %bounded: reg<x86.gpr64>) -> (reg<x86.gpr32>, reg<x86.gpr64>, reg<x86.gpr32>, reg<x86.gpr64>) asm {
+low.func.def target<x86.avx2.core> abi(object_function) @constant_remainder_by_seven(%word: reg<x86.gpr32>, %bounded: reg<x86.gpr64>) -> (reg<x86.gpr32>, reg<x86.gpr64>, reg<x86.gpr32>, reg<x86.gpr64>) where [range(%bounded, 0, 4294967295)] asm {
   %17 = movzx.gpr64.gpr32 %word
   %18 = mov.imm64 2635249153387078803
   %19 = imul.gpr64 %17, %18

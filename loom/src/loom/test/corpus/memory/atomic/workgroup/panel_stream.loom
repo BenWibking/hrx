@@ -8,7 +8,7 @@ kernel.def @panel_stream() {
   %role_count = index.constant 2 : index
   %items = index.mul %subgroup_size, %role_count : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%items, %unit, %unit) : index
-} launch(%record_count: index, %input: buffer, %output: buffer) {
+} launch(%record_count: index, %input: buffer, %output: buffer) where [range(%record_count, 0, 40)] {
   %origin = index.constant 0 : offset
   %output_origin = index.constant 64 : offset
   %payload_bytes = index.constant 2048 : offset
@@ -102,7 +102,7 @@ kernel.def @panel_stream() {
 }
 
 // The sequential oracle has no queue, shared allocation, or publication state.
-func.def @panel_stream_oracle(%record_count: index, %input: buffer, %output: buffer) {
+func.def @panel_stream_oracle(%record_count: index, %input: buffer, %output: buffer) where [range(%record_count, 0, 40)] {
   %origin = index.constant 0 : offset
   %output_origin = index.constant 64 : offset
   %inputs = buffer.view %input[%origin] : buffer -> view<40x2x128xf32>
@@ -127,7 +127,7 @@ func.def @panel_stream_oracle(%record_count: index, %input: buffer, %output: buf
 }
 
 check.scenario @panel_stream_values {
-  check.trial[36](%record_count: index, %entropy: check.entropy) {
+  check.trial[41](%record_count: index, %entropy: check.entropy) {
     %seed = check.entropy.read %entropy[%record_count] : check.entropy -> i64
     %input = check.generate.random.uniform seed(%seed) range(-4.0 to 4.0) : tensor<40x2x128xf32>
     %unchanged_input = check.generate.random.uniform seed(%seed) range(-4.0 to 4.0) : tensor<40x2x128xf32>

@@ -1667,7 +1667,7 @@ test.target<quirky> @target32
 
 test.target<low_core> @target64
 
-func.def target(@target32) @target_carrier_range_proofs_32(%x: index, %y: index) -> (i1, i1, index, index, index, i64, i64) {
+func.def target(@target32) @target_carrier_range_proofs_32(%x: index, %y: index) -> (i1, i1, index, index, index, i64, i64) where [range(%x, 2147483648, 2147483663)] {
   %high = index.assume %x [range(%x, 2147483648, 2147483663)] : index
   %low = index.assume %y [range(%y, 0, 15)] : index
   %c8 = index.constant 8 : index
@@ -1682,7 +1682,7 @@ func.def target(@target32) @target_carrier_range_proofs_32(%x: index, %y: index)
   func.return %comparison, %unsigned_comparison, %minimum, %quotient, %shifted, %minimum_lo, %minimum_hi : i1, i1, index, index, index, i64, i64
 }
 
-func.def target(@target64) @target_carrier_range_proofs_64(%x: index, %y: index) -> (i1, i1, index, index, index, i64, i64) {
+func.def target(@target64) @target_carrier_range_proofs_64(%x: index, %y: index) -> (i1, i1, index, index, index, i64, i64) where [range(%x, 2147483648, 2147483663)] {
   %high = index.assume %x [range(%x, 2147483648, 2147483663)] : index
   %low = index.assume %y [range(%y, 0, 15)] : index
   %c8 = index.constant 8 : index
@@ -1702,7 +1702,7 @@ test.target<quirky> @target32
 
 test.target<low_core> @target64
 
-func.def target(@target32) @target_carrier_range_proofs_32(%x: index, %y: index) -> (i1, i1, index, index, index, i64, i64) {
+func.def target(@target32) @target_carrier_range_proofs_32(%x: index, %y: index) -> (i1, i1, index, index, index, i64, i64) where [range(%x, 2147483648, 2147483663)] {
   %high = index.assume %x [range(%x, 2147483648, 2147483663)] : index
   %low = index.assume %y [range(%y, 0, 15)] : index
   %c1 = index.constant 1 : index
@@ -1717,7 +1717,7 @@ func.def target(@target32) @target_carrier_range_proofs_32(%x: index, %y: index)
   func.return %comparison, %unsigned_comparison, %minimum, %quotient, %shifted, %minimum_lo, %minimum_hi : i1, i1, index, index, index, i64, i64
 }
 
-func.def target(@target64) @target_carrier_range_proofs_64(%x: index, %y: index) -> (i1, i1, index, index, index, i64, i64) {
+func.def target(@target64) @target_carrier_range_proofs_64(%x: index, %y: index) -> (i1, i1, index, index, index, i64, i64) where [range(%x, 2147483648, 2147483663)] {
   %high = index.assume %x [range(%x, 2147483648, 2147483663)] : index
   %low = index.assume %y [range(%y, 0, 15)] : index
   %c1 = index.constant 1 : index

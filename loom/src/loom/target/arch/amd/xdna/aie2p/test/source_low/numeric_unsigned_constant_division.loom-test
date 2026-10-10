@@ -254,7 +254,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @runtime_divisor(%
 
 // ====
 
-func.def @index_boundary_pairs(%input: index) -> (index, index, index, index) {
+func.def @index_boundary_pairs(%input: index) -> (index, index, index, index) where [range(%input, 0, 4294967295)] {
   %bounded = index.assume %input [range(%input, 0, 4294967295)] : index
   %power = index.constant 2147483648 : index
   // ERROR@+1: TARGET/005 {op_name="index.constant", subject_name="value", constraint_key="i64_attr_range", minimum="-1024", maximum="1023"}

@@ -885,6 +885,35 @@ void loom_value_facts_remsi(const loom_value_facts_t* lhs,
                             const loom_value_facts_t* rhs,
                             loom_value_facts_t* out);
 
+// Quotient semantics for inverse interval inference. Right shifts are floor
+// division by a positive power of two, including arithmetic shifts of negative
+// dividends. The scale operand is a divisor or a shift amount, respectively.
+typedef enum loom_value_facts_quotient_kind_e {
+  LOOM_VALUE_FACTS_QUOTIENT_DIVUI,
+  LOOM_VALUE_FACTS_QUOTIENT_DIVSI,
+  LOOM_VALUE_FACTS_QUOTIENT_CEILDIVUI,
+  LOOM_VALUE_FACTS_QUOTIENT_CEILDIVSI,
+  LOOM_VALUE_FACTS_QUOTIENT_FLOORDIVSI,
+  LOOM_VALUE_FACTS_QUOTIENT_SHRUI,
+  LOOM_VALUE_FACTS_QUOTIENT_SHRSI,
+} loom_value_facts_quotient_kind_t;
+
+// Returns an interval containing every dividend that can produce |quotient|
+// for any |scale| in a verified integer width in [1, 64]. Inputs and results
+// use signed fact representation, except i1 uses Boolean [0, 1]. Scale may be
+// an interval; no assumption that it is constant or positive is implicit.
+//
+// This is a preimage, not multiplication of the quotient's endpoints: rounding
+// residues, signed zero quotients, raw unsigned bits and wide products matter.
+// Bounds saturate to the carrier; split intervals are conservatively widened.
+// This lattice does not encode unreachable inputs. A possible zero divisor,
+// invalid shift or signed quotient overflow yields the carrier domain, without
+// assuming undefined behavior eliminates the corresponding input. The result
+// carries no distribution or divisibility from the quotient.
+loom_value_facts_t loom_value_facts_quotient_preimage(
+    loom_value_facts_quotient_kind_t kind, int32_t bit_count,
+    loom_value_facts_t quotient, loom_value_facts_t scale);
+
 // Shifts.
 void loom_value_facts_shli(const loom_value_facts_t* lhs,
                            const loom_value_facts_t* rhs,

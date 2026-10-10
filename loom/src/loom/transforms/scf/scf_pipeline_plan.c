@@ -441,6 +441,34 @@ static iree_status_t loom_scf_pipeline_plan_partition(
     bool has_static_bounds, bool has_guarded_candidate,
     iree_arena_allocator_t* arena, loom_scf_pipeline_plan_t* plan,
     loom_scf_pipeline_rejection_t* rejection) {
+  bool ordered_memory = false;
+  for (uint32_t i = 0; i < plan->body.count; ++i) {
+    const loom_scf_body_operation_t* operation = &plan->body.operations[i];
+    if (!iree_any_bit_set(
+            operation->effects,
+            LOOM_SCF_BODY_EFFECT_WRITE | LOOM_SCF_BODY_EFFECT_ORDERED)) {
+      continue;
+    }
+    ordered_memory = true;
+    if (plan->body.accesses.units[i].effects !=
+        LOOM_SCF_BODY_MEMORY_WORKGROUP) {
+      *rejection = (loom_scf_pipeline_rejection_t){
+          .op = operation->op,
+          .constraint = IREE_SV("workgroup-only stores and barriers in the "
+                                "ordered consumer"),
+      };
+      return iree_ok_status();
+    }
+    if (!has_static_bounds) {
+      *rejection = (loom_scf_pipeline_rejection_t){
+          .op = operation->op,
+          .constraint = IREE_SV("compile-time exact loop bounds to preserve "
+                                "ordered consumer participation"),
+      };
+      return iree_ok_status();
+    }
+  }
+
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       arena, plan->body.count, sizeof(*plan->stages), (void**)&plan->stages));
   uint32_t* branch_owners = NULL;
@@ -476,6 +504,13 @@ static iree_status_t loom_scf_pipeline_plan_partition(
       if (!loom_scf_pipeline_is_guarded_candidate(operation)) {
         continue;
       }
+      // Workgroup reads observe the current ordered consumer iteration. Keep
+      // their entire conditional intact instead of constructing a read-ahead
+      // cut.
+      if (ordered_memory && plan->body.accesses.units[i].effects ==
+                                LOOM_SCF_BODY_MEMORY_WORKGROUP) {
+        continue;
+      }
       IREE_RETURN_IF_ERROR(loom_scf_pipeline_try_build_guarded_partition(
           module, block, operation->op, spaces, domain, has_static_bounds,
           depends_on_carried, branch_owners, arena,
@@ -484,33 +519,6 @@ static iree_status_t loom_scf_pipeline_plan_partition(
     }
   }
 
-  bool ordered_memory = false;
-  for (uint32_t i = 0; i < plan->body.count; ++i) {
-    const loom_scf_body_operation_t* operation = &plan->body.operations[i];
-    if (!iree_any_bit_set(
-            operation->effects,
-            LOOM_SCF_BODY_EFFECT_WRITE | LOOM_SCF_BODY_EFFECT_ORDERED)) {
-      continue;
-    }
-    ordered_memory = true;
-    if (plan->body.accesses.units[i].effects !=
-        LOOM_SCF_BODY_MEMORY_WORKGROUP) {
-      *rejection = (loom_scf_pipeline_rejection_t){
-          .op = operation->op,
-          .constraint = IREE_SV("workgroup-only stores and barriers in the "
-                                "ordered consumer"),
-      };
-      return iree_ok_status();
-    }
-    if (!has_static_bounds) {
-      *rejection = (loom_scf_pipeline_rejection_t){
-          .op = operation->op,
-          .constraint = IREE_SV("compile-time exact loop bounds to preserve "
-                                "ordered consumer participation"),
-      };
-      return iree_ok_status();
-    }
-  }
   for (uint32_t i = 0; i < plan->body.count; ++i) {
     const loom_scf_body_operation_t* operation = &plan->body.operations[i];
     loom_scf_pipeline_guarded_partition_t* guarded_partition =

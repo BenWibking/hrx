@@ -239,3 +239,188 @@ void loom_value_facts_remsi(const loom_value_facts_t* lhs,
   *out = loom_value_facts_make(-remainder_bound, remainder_bound, 1);
   loom_value_facts_propagate_binary_distribution(lhs_facts, rhs_facts, out);
 }
+
+typedef enum loom_quotient_rounding_e {
+  LOOM_QUOTIENT_ROUNDING_FLOOR,
+  LOOM_QUOTIENT_ROUNDING_CEIL,
+  LOOM_QUOTIENT_ROUNDING_ZERO,
+} loom_quotient_rounding_t;
+
+typedef enum loom_quotient_endpoint_e {
+  LOOM_QUOTIENT_ENDPOINT_LOWER,
+  LOOM_QUOTIENT_ENDPOINT_UPPER,
+} loom_quotient_endpoint_t;
+
+typedef struct loom_quotient_signed_magnitude_t {
+  // Absolute value, including the representable magnitude of INT64_MIN.
+  uint64_t magnitude;
+  // Sign of the mathematical value; zero may carry either sign.
+  bool negative;
+} loom_quotient_signed_magnitude_t;
+
+// Inverts one rounded quotient endpoint for a positive divisor. Saturation
+// happens after expressing each magnitude as products and nonnegative sums;
+// an overflowing intermediate can therefore never hide later cancellation.
+static int64_t loom_quotient_inverse_endpoint(
+    loom_quotient_signed_magnitude_t quotient, uint64_t divisor,
+    loom_quotient_rounding_t rounding, loom_quotient_endpoint_t endpoint) {
+  if (rounding == LOOM_QUOTIENT_ROUNDING_ZERO) {
+    rounding = endpoint == LOOM_QUOTIENT_ENDPOINT_LOWER
+                   ? (quotient.negative || quotient.magnitude == 0
+                          ? LOOM_QUOTIENT_ROUNDING_CEIL
+                          : LOOM_QUOTIENT_ROUNDING_FLOOR)
+                   : (quotient.negative && quotient.magnitude != 0
+                          ? LOOM_QUOTIENT_ROUNDING_CEIL
+                          : LOOM_QUOTIENT_ROUNDING_FLOOR);
+  }
+  uint64_t magnitude =
+      iree_math_saturating_mul_u64(quotient.magnitude, divisor);
+  bool negative = quotient.negative && quotient.magnitude != 0;
+  if (rounding == LOOM_QUOTIENT_ROUNDING_FLOOR &&
+      endpoint == LOOM_QUOTIENT_ENDPOINT_UPPER) {
+    if (negative) {
+      magnitude = iree_math_saturating_add_u64(
+          iree_math_saturating_mul_u64(quotient.magnitude - 1, divisor), 1);
+    } else {
+      magnitude = iree_math_saturating_add_u64(magnitude, divisor - 1);
+    }
+  } else if (rounding == LOOM_QUOTIENT_ROUNDING_CEIL &&
+             endpoint == LOOM_QUOTIENT_ENDPOINT_LOWER) {
+    if (!negative && quotient.magnitude != 0) {
+      magnitude = iree_math_saturating_add_u64(
+          iree_math_saturating_mul_u64(quotient.magnitude - 1, divisor), 1);
+    } else {
+      magnitude = iree_math_saturating_add_u64(magnitude, divisor - 1);
+      negative = true;
+    }
+  }
+  if (negative) {
+    return magnitude >= (UINT64_C(1) << 63) ? INT64_MIN : -(int64_t)magnitude;
+  }
+  return magnitude > INT64_MAX ? INT64_MAX : (int64_t)magnitude;
+}
+
+loom_value_facts_t loom_value_facts_quotient_preimage(
+    loom_value_facts_quotient_kind_t kind, int32_t bit_count,
+    loom_value_facts_t quotient, loom_value_facts_t scale) {
+  const loom_value_facts_t domain =
+      bit_count == 1 ? loom_value_facts_make(0, 1, 1)
+                     : loom_value_facts_make_signed_bit_count_range(bit_count);
+  if (quotient.range_lo > quotient.range_hi ||
+      scale.range_lo > scale.range_hi) {
+    return domain;
+  }
+  quotient = loom_value_facts_wrap_integer(quotient, bit_count);
+  scale = loom_value_facts_wrap_integer(scale, bit_count);
+  const bool unsigned_quotient = kind == LOOM_VALUE_FACTS_QUOTIENT_DIVUI ||
+                                 kind == LOOM_VALUE_FACTS_QUOTIENT_CEILDIVUI ||
+                                 kind == LOOM_VALUE_FACTS_QUOTIENT_SHRUI;
+  const bool shift = kind == LOOM_VALUE_FACTS_QUOTIENT_SHRUI ||
+                     kind == LOOM_VALUE_FACTS_QUOTIENT_SHRSI;
+  const uint64_t bit_mask = iree_math_mask_low_bits_u64(UINT64_MAX, bit_count);
+  uint64_t minimum_scale = 0;
+  uint64_t maximum_scale = 0;
+  loom_quotient_rounding_t rounding =
+      kind == LOOM_VALUE_FACTS_QUOTIENT_CEILDIVUI ||
+              kind == LOOM_VALUE_FACTS_QUOTIENT_CEILDIVSI
+          ? LOOM_QUOTIENT_ROUNDING_CEIL
+      : kind == LOOM_VALUE_FACTS_QUOTIENT_DIVSI ? LOOM_QUOTIENT_ROUNDING_ZERO
+                                                : LOOM_QUOTIENT_ROUNDING_FLOOR;
+  bool negative_divisor = false;
+  if (shift) {
+    if (scale.range_lo < 0 || scale.range_hi >= bit_count) {
+      return domain;
+    }
+    minimum_scale = UINT64_C(1) << scale.range_lo;
+    maximum_scale = UINT64_C(1) << scale.range_hi;
+  } else if (unsigned_quotient) {
+    const loom_value_facts_unsigned_range_t range =
+        loom_value_facts_unsigned_range(scale, bit_mask);
+    if (range.minimum == 0) {
+      return domain;
+    }
+    minimum_scale = range.minimum;
+    maximum_scale = range.maximum;
+  } else {
+    if (bit_count == 1) {
+      const int64_t lower = -scale.range_hi;
+      scale.range_hi = -scale.range_lo;
+      scale.range_lo = lower;
+    }
+    // A divisor interval containing zero or -1 may produce an unconstrained
+    // result, including the signed minimum / -1 overflow pair.
+    if ((scale.range_lo <= 0 && scale.range_hi >= 0) ||
+        (scale.range_lo <= -1 && scale.range_hi >= -1)) {
+      return domain;
+    }
+    negative_divisor = scale.range_hi < 0;
+    minimum_scale = iree_math_magnitude_i64(negative_divisor ? scale.range_hi
+                                                             : scale.range_lo);
+    maximum_scale = iree_math_magnitude_i64(negative_divisor ? scale.range_lo
+                                                             : scale.range_hi);
+  }
+
+  if (unsigned_quotient) {
+    const loom_value_facts_unsigned_range_t range =
+        loom_value_facts_unsigned_range(quotient, bit_mask);
+    const uint64_t minimum =
+        rounding == LOOM_QUOTIENT_ROUNDING_CEIL
+            ? (range.minimum == 0 ? 0
+                                  : iree_math_saturating_add_u64(
+                                        iree_math_saturating_mul_u64(
+                                            range.minimum - 1, minimum_scale),
+                                        1))
+            : iree_math_saturating_mul_u64(range.minimum, minimum_scale);
+    uint64_t maximum =
+        iree_math_saturating_mul_u64(range.maximum, maximum_scale);
+    if (rounding == LOOM_QUOTIENT_ROUNDING_FLOOR) {
+      maximum = iree_math_saturating_add_u64(maximum, maximum_scale - 1);
+    }
+    maximum = iree_min(maximum, bit_mask);
+    if (minimum > maximum) {
+      return domain;
+    }
+    return loom_value_facts_make_unsigned_result_range(minimum, maximum,
+                                                       bit_count, 1);
+  }
+
+  if (bit_count == 1) {
+    const int64_t lower = -quotient.range_hi;
+    quotient.range_hi = -quotient.range_lo;
+    quotient.range_lo = lower;
+  }
+  const int64_t lower_quotient =
+      negative_divisor ? quotient.range_hi : quotient.range_lo;
+  const int64_t upper_quotient =
+      negative_divisor ? quotient.range_lo : quotient.range_hi;
+  const loom_quotient_signed_magnitude_t lower = {
+      .magnitude = iree_math_magnitude_i64(lower_quotient),
+      .negative = (lower_quotient < 0) != negative_divisor,
+  };
+  const loom_quotient_signed_magnitude_t upper = {
+      .magnitude = iree_math_magnitude_i64(upper_quotient),
+      .negative = (upper_quotient < 0) != negative_divisor,
+  };
+  if (negative_divisor && rounding != LOOM_QUOTIENT_ROUNDING_ZERO) {
+    rounding = rounding == LOOM_QUOTIENT_ROUNDING_FLOOR
+                   ? LOOM_QUOTIENT_ROUNDING_CEIL
+                   : LOOM_QUOTIENT_ROUNDING_FLOOR;
+  }
+  int64_t minimum = loom_quotient_inverse_endpoint(
+      lower,
+      lower.negative || lower.magnitude == 0 ? maximum_scale : minimum_scale,
+      rounding, LOOM_QUOTIENT_ENDPOINT_LOWER);
+  int64_t maximum = loom_quotient_inverse_endpoint(
+      upper,
+      upper.negative && upper.magnitude != 0 ? minimum_scale : maximum_scale,
+      rounding, LOOM_QUOTIENT_ENDPOINT_UPPER);
+  const loom_value_facts_t signed_domain =
+      loom_value_facts_make_signed_bit_count_range(bit_count);
+  minimum = iree_max(minimum, signed_domain.range_lo);
+  maximum = iree_min(maximum, signed_domain.range_hi);
+  if (minimum > maximum) {
+    return domain;
+  }
+  return bit_count == 1 ? loom_value_facts_make(-maximum, -minimum, 1)
+                        : loom_value_facts_make(minimum, maximum, 1);
+}

@@ -794,7 +794,11 @@ iree_status_t loom_value_fact_table_define_results(
 // inference, and may be empty for detached regions. |parent_op| is the op that
 // owns |region|; it is used to seed entry-block argument facts such as loop IV
 // ranges. Visits ops in dominance order so operand facts are available before
-// use.
+// use. Unconstrained index entry parameters have the selected target's signed
+// native domain, or the source domain without a target. Declared preconditions,
+// imported facts, computed values, and internal block arguments retain their
+// producer-established domains. Offset and fixed-width parameters retain their
+// source domains.
 iree_status_t loom_value_fact_table_compute_region(
     loom_value_fact_table_t* table, const loom_module_t* module,
     loom_func_like_t function, loom_region_t* region, loom_op_t* parent_op);

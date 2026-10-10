@@ -513,10 +513,6 @@ static iree_status_t loom_scf_to_cfg_lower_if(
 // scf.for
 //===----------------------------------------------------------------------===//
 
-// Keep materialized IV facts compact. Very wide dynamic ranges remain true in
-// the structured source, but printing them after CFG lowering would obscure the
-// control flow without helping target address legality.
-#define LOOM_SCF_TO_CFG_MATERIALIZED_IV_RANGE_MAX UINT32_MAX
 #define LOOM_SCF_TO_CFG_FOR_IV_PREDICATE_CAPACITY 4
 
 static uint16_t loom_scf_to_cfg_for_iv_predicates_from_facts(
@@ -536,8 +532,9 @@ static uint16_t loom_scf_to_cfg_for_iv_predicates_from_facts(
                      LOOM_PRED_ARG_NONE},
         .args = {value, facts.range_lo, 0},
     };
-  } else if (facts.range_hi >= facts.range_lo &&
-             facts.range_hi <= LOOM_SCF_TO_CFG_MATERIALIZED_IV_RANGE_MAX) {
+  } else {
+    // The structured domain disappears here. Its full body range must survive
+    // on the lowered value, including when one of the bounds is dynamic.
     predicates[count++] = (loom_predicate_t){
         .kind = LOOM_PREDICATE_RANGE,
         .arg_count = 3,

@@ -159,6 +159,116 @@ TEST_F(ConditionFactsTest, IndexCompareTrueEdgeProducesRelation) {
   EXPECT_EQ(relation.right.value_id, upper_bound);
 }
 
+TEST_F(ConditionFactsTest, QuotientConsequencesCoverScalarWidthsAndRounding) {
+  for (auto scalar_type :
+       {LOOM_SCALAR_TYPE_I1, LOOM_SCALAR_TYPE_I8, LOOM_SCALAR_TYPE_I16,
+        LOOM_SCALAR_TYPE_I32, LOOM_SCALAR_TYPE_I64}) {
+    const loom_type_t type = loom_type_scalar(scalar_type);
+    for (auto build : {loom_scalar_divui_build, loom_scalar_divsi_build,
+                       loom_scalar_ceildivui_build, loom_scalar_ceildivsi_build,
+                       loom_scalar_floordivsi_build, loom_scalar_shrui_build,
+                       loom_scalar_shrsi_build}) {
+      const bool boolean = scalar_type == LOOM_SCALAR_TYPE_I1;
+      const bool shift =
+          build == loom_scalar_shrui_build || build == loom_scalar_shrsi_build;
+      const bool ceiling = build == loom_scalar_ceildivui_build ||
+                           build == loom_scalar_ceildivsi_build;
+      const bool signed_division = build == loom_scalar_divsi_build ||
+                                   build == loom_scalar_ceildivsi_build ||
+                                   build == loom_scalar_floordivsi_build;
+      const loom_value_id_t dividend = DefineValue(type);
+      const loom_value_id_t scale = DefineValue(type);
+      const loom_value_id_t bound = DefineValue(type);
+      DefineFacts(dividend, loom_value_facts_make(0, boolean ? 1 : 127, 1));
+      DefineFacts(scale, loom_value_facts_exact_i64(
+                             shift ? (boolean ? 0 : 5) : (boolean ? 1 : 32)));
+      DefineFacts(bound, loom_value_facts_exact_i64(boolean ? 0 : 3));
+      loom_op_t* operation = nullptr;
+      IREE_ASSERT_OK(build(&builder_, dividend, scale, type,
+                           LOOM_LOCATION_UNKNOWN, &operation));
+      const loom_value_id_t quotient = loom_op_const_results(operation)[0];
+      DefineFacts(quotient, loom_value_facts_make(0, boolean ? 1 : 4, 1));
+      auto* comparison =
+          BuildScalarCompare(boolean ? LOOM_SCALAR_CMPI_PREDICATE_EQ
+                                     : LOOM_SCALAR_CMPI_PREDICATE_ULT,
+                             quotient, bound);
+      ASSERT_TRUE(Query(loom_scalar_cmpi_result(comparison)));
+      auto facts = loom_value_fact_table_lookup(&fact_table_, dividend);
+      loom_condition_fact_set_apply_to_value_facts(
+          &condition_facts_, &fact_table_, dividend, &facts);
+      EXPECT_EQ(facts.range_lo, 0);
+      EXPECT_EQ(facts.range_hi,
+                boolean ? (signed_division ? 1 : 0) : (ceiling ? 64 : 95));
+    }
+  }
+}
+
+TEST_F(ConditionFactsTest, QuotientEdgesHaveIndependentFactsAndCapacity) {
+  const loom_value_id_t dividend = DefineIndexValue();
+  const loom_value_id_t scale = DefineIndexValue();
+  const loom_value_id_t bound = DefineIndexValue();
+  DefineFacts(dividend, loom_value_facts_make(0, 2367, 1));
+  DefineFacts(scale, loom_value_facts_exact_i64(32));
+  DefineFacts(bound, loom_value_facts_exact_i64(73));
+  loom_op_t* operation = nullptr;
+  IREE_ASSERT_OK(loom_index_div_build(&builder_, dividend, scale,
+                                      LOOM_LOCATION_UNKNOWN, &operation));
+  const loom_value_id_t quotient = loom_index_div_result(operation);
+  DefineFacts(quotient, loom_value_facts_make(0, 73, 1));
+  const auto* comparison =
+      BuildIndexCompare(LOOM_INDEX_CMP_PREDICATE_ULT, quotient, bound);
+  for (bool truth : {true, false, true}) {
+    ASSERT_TRUE(Query(loom_index_cmp_result(comparison), truth));
+    auto facts = loom_value_fact_table_lookup(&fact_table_, dividend);
+    EXPECT_TRUE(loom_condition_fact_set_apply_to_value_facts(
+        &condition_facts_, &fact_table_, dividend, &facts));
+    EXPECT_EQ(facts.range_lo, truth ? 0 : 2336);
+    EXPECT_EQ(facts.range_hi, truth ? 2335 : 2367);
+  }
+  loom_condition_integer_relation_t storage[1];
+  loom_condition_fact_set_t bounded;
+  loom_condition_fact_set_initialize(storage, 1, &bounded);
+  bool complete = true;
+  IREE_ASSERT_OK(loom_condition_facts_query_into(
+      &condition_query_, &fact_table_, loom_index_cmp_result(comparison), true,
+      &bounded, &complete));
+  EXPECT_FALSE(complete);
+  loom_condition_derivation_t derivation;
+  loom_condition_derivation_initialize(&analysis_arena_, &derivation);
+  IREE_ASSERT_OK(loom_condition_facts_query_complete(
+      &condition_query_, &fact_table_, loom_index_cmp_result(comparison), true,
+      &derivation));
+  EXPECT_EQ(derivation.integer_facts.integer_relation_count, 2u);
+  EXPECT_EQ(derivation.boolean_fact_count, 1u);
+}
+
+TEST_F(ConditionFactsTest, IndexShiftRespectsMathematicalAndCarrierDomains) {
+  for (uint32_t carrier_width : {0u, 32u, 64u}) {
+    loom_target_facts_t target_facts = {};
+    target_facts.storage.snapshot.index_bitwidth = carrier_width;
+    fact_table_.context.target_facts = carrier_width ? &target_facts : nullptr;
+    const loom_value_id_t dividend = DefineIndexValue();
+    const loom_value_id_t scale = DefineIndexValue();
+    const loom_value_id_t bound = DefineIndexValue();
+    DefineFacts(dividend, loom_value_facts_make(0, INT64_C(1) << 32, 1));
+    DefineFacts(scale, loom_value_facts_exact_i64(5));
+    DefineFacts(bound, loom_value_facts_exact_i64(73));
+    loom_op_t* operation = nullptr;
+    IREE_ASSERT_OK(loom_index_shrui_build(&builder_, dividend, scale,
+                                          LOOM_LOCATION_UNKNOWN, &operation));
+    const loom_value_id_t quotient = loom_index_shrui_result(operation);
+    DefineFacts(quotient, loom_value_facts_make(0, INT64_C(1) << 27, 1));
+    auto* comparison =
+        BuildIndexCompare(LOOM_INDEX_CMP_PREDICATE_ULT, quotient, bound);
+    ASSERT_TRUE(Query(loom_index_cmp_result(comparison)));
+    auto facts = loom_value_fact_table_lookup(&fact_table_, dividend);
+    loom_condition_fact_set_apply_to_value_facts(
+        &condition_facts_, &fact_table_, dividend, &facts);
+    EXPECT_EQ(facts.range_hi, carrier_width == 32 ? INT64_C(1) << 32 : 2335);
+  }
+  fact_table_.context.target_facts = nullptr;
+}
+
 TEST_F(ConditionFactsTest, ComparisonCertificatePreservesCarrierAndIdentity) {
   loom_target_facts_t target_facts = {};
   target_facts.storage.snapshot.index_bitwidth = 32;

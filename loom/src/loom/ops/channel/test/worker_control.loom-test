@@ -120,7 +120,7 @@ func.def @collect_stream(%prepared: channel<tile<8xi32>>, %outputs: channel<tile
   %49 = index.cmp slt, %46, %count : index
   cfg.cond_br %49, ^_bb2, ^_bb3
 ^_bb2:
-  %record = index.assume %46 [lt(%46, %count)] : index
+  %record = index.assume %46 [range(%46, 1, 9223372036854775806), lt(%46, %count)] : index
   %previous = channel.wait %previous_read : read<tile<4xi32>> -> view<4xi32>
   %next = func.call @collect_and_send(%prepared, %outputs, %destination, %previous, %start) : (channel<tile<8xi32>>, channel<tile<4xi32>>, channel<tile<4xi32>>, view<4xi32>, i1) -> (read<tile<4xi32>>)
   channel.release %previous_read : read<tile<4xi32>>

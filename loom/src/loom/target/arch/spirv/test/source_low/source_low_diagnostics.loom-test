@@ -262,7 +262,7 @@ low.func.def target<spirv.logical.core>(@target) abi(shader_entry_point) @storag
 
 spirv.target<vulkan1_3> @target
 
-func.def target(@target) @storage_buffer_i32_rejects_wide_index(%input: buffer, %element0: index) -> (i32) {
+func.def target(@target) @storage_buffer_i32_rejects_wide_index(%input: buffer, %element0: index) -> (i32) where [range(%element0, 0, 2147483648)] {
   %input_base = index.constant 0 : offset
   %element = index.assume %element0 [range(%element0, 0, 2147483648)] : index
   %input_aligned = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
@@ -276,7 +276,7 @@ func.def target(@target) @storage_buffer_i32_rejects_wide_index(%input: buffer, 
 
 spirv.target<vulkan1_3> @target
 
-func.def target(@target) @storage_buffer_i32_rejects_wide_dynamic_stride(%input: buffer, %columns0: index, %row0: index) -> (i32) {
+func.def target(@target) @storage_buffer_i32_rejects_wide_dynamic_stride(%input: buffer, %columns0: index, %row0: index) -> (i32) where [range(%columns0, 1, 2147483648)] {
   %input_base = index.constant 0 : offset
   %columns = index.assume %columns0 [range(%columns0, 1, 2147483648)] : index
   %row = index.assume %row0 [range(%row0, 0, 3)] : index

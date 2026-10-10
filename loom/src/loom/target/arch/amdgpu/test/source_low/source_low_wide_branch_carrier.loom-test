@@ -293,3 +293,91 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @wide_of
 ^_bb3:
   return %wide
 }
+
+// ====
+
+// RUN: emit source-low target=amdgpu:gfx1151 output=low
+
+// A dynamic native bound keeps its counter and comparison in one register.
+func.def @native_index_counted_carrier(%end: index) -> (i32) {
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %initial_sum = scalar.constant 0 : i32
+  %result = scf.for %position = [%begin to %end step %step](%sum = %initial_sum : i32) -> (i32) {
+    %word = index.cast %position : index to i32
+    %next = scalar.addi %sum, %word : i32
+    scf.yield %next : i32
+  }
+  func.return %result : i32
+}
+
+// ----
+low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @native_index_counted_carrier(%end: reg<amdgpu.sgpr>) -> (reg<amdgpu.sgpr>) asm {
+  %begin = s_mov_b32 0
+  %step = s_mov_b32 1
+  low.br ^_bb1(%begin: reg<amdgpu.sgpr>, %begin: reg<amdgpu.sgpr>)
+^_bb1(%word: reg<amdgpu.sgpr>, %sum: reg<amdgpu.sgpr>):
+  %23 = s_cmp_lt_i32 %word, %end
+  low.cond_br %23, ^_bb2, ^_bb3 : reg<amdgpu.scc>
+^_bb2:
+  %next = s_add_u32 %sum, %word
+  %25 = s_add_u32 %word, %step
+  low.br ^_bb1(%25: reg<amdgpu.sgpr>, %next: reg<amdgpu.sgpr>)
+^_bb3:
+  return %sum
+}
+
+// ====
+
+// RUN: emit source-low target=amdgpu:gfx1151 output=low
+
+// The same loop with a wide computed bound retains both words of each index.
+func.def @wide_index_counted_carrier(%input: i64) -> (i64) {
+  %bounded = scalar.assume %input [range(%input, 4294967296, 4294967300)] : i64
+  %end = index.cast %bounded : i64 to index
+  %begin = index.constant 4294967296 : index
+  %step = index.constant 1 : index
+  %initial_sum = scalar.constant 0 : i64
+  %result = scf.for %position = [%begin to %end step %step](%sum = %initial_sum : i64) -> (i64) {
+    %word = index.cast %position : index to i64
+    %next = scalar.addi %sum, %word : i64
+    scf.yield %next : i64
+  }
+  func.return %result : i64
+}
+
+// ----
+low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @wide_index_counted_carrier(%end: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.sgpr x2>) asm {
+  %24 = s_mov_b32 0
+  %25 = s_mov_b32 1
+  %initial_sum = concat(%24, %24) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
+  %50 = s_mov_b64_exec_read
+  low.br ^_bb1(%24: reg<amdgpu.sgpr>, %25: reg<amdgpu.sgpr>, %initial_sum: reg<amdgpu.sgpr x2>)
+^_bb1(%73: reg<amdgpu.sgpr>, %74: reg<amdgpu.sgpr>, %sum: reg<amdgpu.sgpr x2>):
+  %32 = v_mov_b32_copy %73
+  %34 = v_mov_b32_copy %74
+  %36 = slice %end[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %37 = v_mov_b32_copy %36
+  %38 = slice %end[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %39 = v_mov_b32_copy %38
+  %45 = v_cmp_lt_i32 %34, %39
+  %46 = v_cmp_lt_u32 %32, %37
+  %47 = v_cmp_eq_i32 %34, %39
+  %48 = s_and_b64 %47, %46
+  %49 = s_or_b64 %45, %48
+  %51, %52 = s_and_saveexec_b64 %49
+  low.cond_br %52, ^_bb2, ^_bb3 : reg<amdgpu.scc>
+^_bb2:
+  %53 = slice %sum[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %54 = slice %sum[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %57, %58 = s_add_co_u32 %53, %73
+  %59, %60 = s_addc_u32 %54, %74, %58
+  %next = concat(%57, %59) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
+  %62 = s_mov_b32 0
+  %68, %69 = s_add_co_u32 %73, %25
+  %70, %71 = s_addc_u32 %74, %62, %69
+  low.br ^_bb1(%68: reg<amdgpu.sgpr>, %70: reg<amdgpu.sgpr>, %next: reg<amdgpu.sgpr x2>)
+^_bb3:
+  s_mov_b64_exec %50
+  return %sum
+}

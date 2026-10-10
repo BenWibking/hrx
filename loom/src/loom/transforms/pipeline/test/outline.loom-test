@@ -123,7 +123,7 @@ func.def inline @__pipeline_strand_0(%begin: index, %records: index, %yes: i1, %
   %20 = index.cmp slt, %18, %records : index
   cfg.cond_br %20, ^_bb2, ^_bb6
 ^_bb2:
-  %record = index.assume %18 [lt(%18, %records)] : index
+  %record = index.assume %18 [range(%18, 0, 9223372036854775806), lt(%18, %records)] : index
   %raw_read, %raw = channel.acquire<mutable> %raws : channel<tile<6144xi32>> -> (read<tile<6144xi32>, mutable>, view<6144xi32>)
   cfg.br ^_bb3(%yes: i1)
 ^_bb3(%more: i1):

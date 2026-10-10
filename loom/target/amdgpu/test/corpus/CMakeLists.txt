@@ -522,7 +522,7 @@ loom_corpus_test(
   XFAILS
     "function/buffer/arguments.loom"
     "@buffer_extent_values"
-    "AMDGPU/034"
+    "TARGET/001"
     "function/buffer/call_overflow.loom"
     "@buffer_overflow_values"
     "LOWERING/044"

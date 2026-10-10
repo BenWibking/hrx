@@ -76,7 +76,7 @@ func.def @reduce_branch(%left: channel<tile<256xf32>>, %right: channel<tile<256x
   %51 = index.cmp slt, %49, %chunks : index
   cfg.cond_br %51, ^_bb2, ^_bb3
 ^_bb2:
-  %chunk = index.assume %49 [lt(%49, %chunks)] : index
+  %chunk = index.assume %49 [range(%49, 0, 9223372036854775806), lt(%49, %chunks)] : index
   %write, %partial = channel.reserve %partials : channel<tile<256xf32>> -> (write<tile<256xf32>>, view<256xf32>)
   %left_read, %left_value = channel.acquire %left : channel<tile<256xf32>> -> (read<tile<256xf32>>, view<256xf32>)
   func.call @initialize_partial(%left_value, %partial) : (view<256xf32>, view<256xf32>)
@@ -110,7 +110,7 @@ func.def @forward_ring(%initial: read<tile<256xf32>>, %outgoing: channel<tile<25
   %57 = index.cmp slt, %54, %hops : index
   cfg.cond_br %57, ^_bb2, ^_bb3
 ^_bb2:
-  %hop = index.assume %54 [lt(%54, %hops)] : index
+  %hop = index.assume %54 [range(%54, 0, 9223372036854775806), lt(%54, %hops)] : index
   %next = func.call @forward_and_accept(%current, %outgoing, %incoming) : (read<tile<256xf32>>, channel<tile<256xf32>>, channel<tile<256xf32>>) -> (read<tile<256xf32>>)
   %58 = index.add %hop, %c1 : index
   cfg.br ^_bb1(%58: index, %next: read<tile<256xf32>>)

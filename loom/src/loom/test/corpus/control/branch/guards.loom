@@ -114,3 +114,63 @@ check.scenario @conditional_guard_values {
   }
   check.return
 }
+
+// The row guard excludes the final half-workgroup. Reconstructing a flat
+// vector address must retain that bound on the original linear coordinate.
+kernel.def @quotient_guarded_vector_transfer() {
+  %unit = index.constant 1 : index
+  %threads = index.constant 64 : index
+  %blocks = index.constant 37 : index
+  kernel.launch.config workgroups(%blocks, %unit, %unit) workgroup_size(%threads, %unit, %unit) : index
+} launch(%input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %threads = index.constant 64 : index
+  %rows = index.constant 73 : index
+  %groups = index.constant 32 : index
+  %width = index.constant 16 : index
+  %block = kernel.workgroup.id<x> : index
+  %lane = kernel.workitem.id<x> : index
+  %linear = index.madd %block, %threads, %lane : index
+  %row = index.div %linear, %groups : index
+  %group = index.rem %linear, %groups : index
+  %column = index.mul %group, %width : index
+  %inside = index.cmp ult, %row, %rows : index
+  %inputs = buffer.view %input[%base] : buffer -> view<73x512xf32>
+  %outputs = buffer.view %output[%base] : buffer -> view<73x512xf32>
+  scf.if %inside {
+    %value = vector.load %inputs[%row, %column] : view<73x512xf32> -> vector<16xf32>
+    vector.store %value, %outputs[%row, %column] : vector<16xf32>, view<73x512xf32>
+  }
+  kernel.return
+}
+
+// Copy exactly the valid elements without the kernel's quotient, remainder,
+// vector addressing, workgroup topology, or conditional execution.
+func.def @quotient_guarded_vector_transfer_oracle(%input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %begin = index.constant 0 : index
+  %end = index.constant 37376 : index
+  %step = index.constant 1 : index
+  %inputs = buffer.view %input[%base] : buffer -> view<37376xf32>
+  %outputs = buffer.view %output[%base] : buffer -> view<37376xf32>
+  scf.for %element = [%begin to %end step %step] {
+    %value = view.load %inputs[%element] : view<37376xf32> -> f32
+    view.store %value, %outputs[%element] : f32, view<37376xf32>
+  }
+  func.return
+}
+
+check.scenario @quotient_guarded_vector_transfer_values {
+  check.trial[4](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input_storage = check.generate.random.uniform seed(%seed) range(-4.0 to 4.0) : tensor<37408xf32>
+    %input = check.tensor.view %input_storage offset(64) : tensor<37408xf32> -> tensor<37376xf32>
+    %output_storage = check.generate.fill value(-11.0) : tensor<37408xf32>
+    %output = check.tensor.view %output_storage offset(64) : tensor<37408xf32> -> tensor<37376xf32>
+    check.compare<@quotient_guarded_vector_transfer, @quotient_guarded_vector_transfer_oracle>(%input, %output) : (tensor<37376xf32>, tensor<37376xf32>) -> () {
+      check.expect.bitwise actual(%input_storage) expected(%input_storage) : tensor<37408xf32>
+      check.expect.bitwise actual(%output_storage) expected(%output_storage) : tensor<37408xf32>
+    }
+  }
+  check.return
+}

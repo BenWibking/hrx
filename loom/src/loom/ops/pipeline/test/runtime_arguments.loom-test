@@ -41,7 +41,7 @@ pipeline.def @reduce_partials() run(%partials: channel<tile<256xf32>>, %output_w
   %22 = index.cmp slt, %19, %count : index
   cfg.cond_br %22, ^_bb2, ^_bb3
 ^_bb2:
-  %i = index.assume %19 [lt(%19, %count)] : index
+  %i = index.assume %19 [range(%19, 0, 9223372036854775806), lt(%19, %count)] : index
   %updated = func.call @accumulate(%partials, %write, %accumulator) : (channel<tile<256xf32>>, write<tile<256xf32>>, view<256xf32>) -> (write<tile<256xf32>>)
   %23 = index.add %i, %c1 : index
   cfg.br ^_bb1(%23: index, %updated: write<tile<256xf32>>)
@@ -79,7 +79,7 @@ pipeline.def @forward_records() run(%initial: read<tile<256xf32>>, %incoming: ch
   %16 = index.cmp slt, %13, %count : index
   cfg.cond_br %16, ^_bb2, ^_bb3
 ^_bb2:
-  %i = index.assume %13 [lt(%13, %count)] : index
+  %i = index.assume %13 [range(%13, 0, 9223372036854775806), lt(%13, %count)] : index
   %write, %destination = channel.reserve %outgoing : channel<tile<256xf32>> -> (write<tile<256xf32>>, view<256xf32>)
   channel.copy %pending -> %write : read<tile<256xf32>>, write<tile<256xf32>>
   %next = channel.accept %incoming : channel<tile<256xf32>> -> read<tile<256xf32>>
