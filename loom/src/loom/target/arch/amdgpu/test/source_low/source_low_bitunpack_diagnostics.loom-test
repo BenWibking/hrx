@@ -33,7 +33,7 @@ func.def target(@target) @bitunpack_lane_count_rejected(%packed: vector<17xi8>) 
 amdgpu.target<gfx11-generic> @target
 
 func.def target(@target) @bitunpack_result_type_rejected(%packed: vector<1xi32>) -> (vector<4xi16>) {
-  // ERROR@+1: TARGET/003 {subject_role="type", subject_name="vector<i32>", constraint_key="amdgpu.arithmetic.vector_i32"}
+  // ERROR@+1: TARGET/002 {field_name="result", actual_type="vector<4xi16>"}
   %unpacked = vector.bitunpacku<8> %packed : vector<1xi32> -> vector<4xi16>
   func.return %unpacked : vector<4xi16>
 }

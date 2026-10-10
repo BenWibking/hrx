@@ -1,6 +1,7 @@
 // Exercises scalar and vector square roots across directed IEEE-754 boundaries
 // and deterministic full-width entropy. Exact cases separately preserve signed
-// zero and infinity result bits.
+// zero and infinity result bits. Double-precision observations retain exact
+// result bits while normalizing unspecified NaN payloads and signs.
 
 func.def @root_observations(%first_bits: i32, %second_bits: i32, %output: buffer) {
   %first = scalar.bitcast %first_bits : i32 to f32
@@ -130,6 +131,161 @@ check.scenario @root_values {
     %output = check.generate.fill value(0.0) : tensor<6xf32>
     check.compare<@root_entropy_observations>(%first_bits, %second_bits, %output) : (i64, i64, tensor<6xf32>) -> () {
       check.expect.close actual(%output) expected(%output) atol(1.4012984643248171e-45) rtol(1.0000000000000001e-05) nan(same) : tensor<6xf32>
+    }
+  }
+  check.return
+}
+
+// VM core does not implement f64 square root, so the oracle selects
+// independently specified IEEE-754 result encodings instead of re-executing the
+// operation.
+func.def inline @root_f64_result_bits(%value: f64) -> (i64) {
+  %bits = scalar.bitcast %value : f64 to i64
+  %is_nan = scalar.isnanf %value : f64
+  %quiet_bit_mask = scalar.constant 2251799813685248 : i64
+  %exponent_mask = scalar.constant 9218868437227405312 : i64
+  %quiet_bit = scalar.andi %bits, %quiet_bit_mask : i64
+  %nan_tag = scalar.ori %quiet_bit, %exponent_mask : i64
+  %observed = scf.select %is_nan, %nan_tag, %bits : i64
+  func.return %observed : i64
+}
+
+func.def inline @root_f64_observations(%bits: i64, %output: buffer) {
+  %value = scalar.bitcast %bits : i64 to f64
+  %root = scalar.sqrtf %value : f64
+  %observed = func.call @root_f64_result_bits(%root) : (f64) -> (i64)
+  %origin = index.constant 0 : offset
+  %output_view = buffer.view %output[%origin] : buffer -> view<1xi64>
+  view.store %observed, %output_view[0] : i64, view<1xi64>
+  func.return
+}
+
+func.def inline @root_f64_boundary_values(%ordinal: index) -> (i64, i64) {
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  %c2 = index.constant 2 : index
+  %c3 = index.constant 3 : index
+  %c4 = index.constant 4 : index
+  %c5 = index.constant 5 : index
+  %c6 = index.constant 6 : index
+  %c7 = index.constant 7 : index
+  %c8 = index.constant 8 : index
+  %c9 = index.constant 9 : index
+  %c10 = index.constant 10 : index
+  %c11 = index.constant 11 : index
+  %c12 = index.constant 12 : index
+  %c13 = index.constant 13 : index
+  %c14 = index.constant 14 : index
+  %c15 = index.constant 15 : index
+  %c16 = index.constant 16 : index
+  %c17 = index.constant 17 : index
+  %is0 = index.cmp eq, %ordinal, %c0 : index
+  %is1 = index.cmp eq, %ordinal, %c1 : index
+  %is2 = index.cmp eq, %ordinal, %c2 : index
+  %is3 = index.cmp eq, %ordinal, %c3 : index
+  %is4 = index.cmp eq, %ordinal, %c4 : index
+  %is5 = index.cmp eq, %ordinal, %c5 : index
+  %is6 = index.cmp eq, %ordinal, %c6 : index
+  %is7 = index.cmp eq, %ordinal, %c7 : index
+  %is8 = index.cmp eq, %ordinal, %c8 : index
+  %is9 = index.cmp eq, %ordinal, %c9 : index
+  %is10 = index.cmp eq, %ordinal, %c10 : index
+  %is11 = index.cmp eq, %ordinal, %c11 : index
+  %is12 = index.cmp eq, %ordinal, %c12 : index
+  %is13 = index.cmp eq, %ordinal, %c13 : index
+  %is14 = index.cmp eq, %ordinal, %c14 : index
+  %is15 = index.cmp eq, %ordinal, %c15 : index
+  %is16 = index.cmp eq, %ordinal, %c16 : index
+  %is17 = index.cmp eq, %ordinal, %c17 : index
+  %input0 = scalar.constant 0 : i64
+  %input1 = scalar.constant -9223372036854775808 : i64
+  %input2 = scalar.constant 1 : i64
+  %input3 = scalar.constant 2 : i64
+  %input4 = scalar.constant 4503599627370495 : i64
+  %input5 = scalar.constant 4503599627370496 : i64
+  %input6 = scalar.constant 1152921504606846975 : i64
+  %input7 = scalar.constant 1152921504606846976 : i64
+  %input8 = scalar.constant 1152921504606846977 : i64
+  %input9 = scalar.constant 4607182418800017408 : i64
+  %input10 = scalar.constant 4611686018427387904 : i64
+  %input11 = scalar.constant 4636737291354636288 : i64
+  %input12 = scalar.constant 9218868437227405311 : i64
+  %input13 = scalar.constant 9218868437227405312 : i64
+  %input14 = scalar.constant -4503599627370496 : i64
+  %input15 = scalar.constant -4616189618054758400 : i64
+  %input16 = scalar.constant -9223372036854775807 : i64
+  %input17 = scalar.constant 9221120237041090851 : i64
+  %input18 = scalar.constant 9218868437227405603 : i64
+  %input_bits0 = scf.select %is0, %input0, %input18 : i64
+  %input_bits1 = scf.select %is1, %input1, %input_bits0 : i64
+  %input_bits2 = scf.select %is2, %input2, %input_bits1 : i64
+  %input_bits3 = scf.select %is3, %input3, %input_bits2 : i64
+  %input_bits4 = scf.select %is4, %input4, %input_bits3 : i64
+  %input_bits5 = scf.select %is5, %input5, %input_bits4 : i64
+  %input_bits6 = scf.select %is6, %input6, %input_bits5 : i64
+  %input_bits7 = scf.select %is7, %input7, %input_bits6 : i64
+  %input_bits8 = scf.select %is8, %input8, %input_bits7 : i64
+  %input_bits9 = scf.select %is9, %input9, %input_bits8 : i64
+  %input_bits10 = scf.select %is10, %input10, %input_bits9 : i64
+  %input_bits11 = scf.select %is11, %input11, %input_bits10 : i64
+  %input_bits12 = scf.select %is12, %input12, %input_bits11 : i64
+  %input_bits13 = scf.select %is13, %input13, %input_bits12 : i64
+  %input_bits14 = scf.select %is14, %input14, %input_bits13 : i64
+  %input_bits15 = scf.select %is15, %input15, %input_bits14 : i64
+  %input_bits16 = scf.select %is16, %input16, %input_bits15 : i64
+  %input_bits17 = scf.select %is17, %input17, %input_bits16 : i64
+  %expected0 = scalar.constant 0 : i64
+  %expected1 = scalar.constant -9223372036854775808 : i64
+  %expected2 = scalar.constant 2188749418902061056 : i64
+  %expected3 = scalar.constant 2190614870947216333 : i64
+  %expected4 = scalar.constant 2305843009213693951 : i64
+  %expected5 = scalar.constant 2305843009213693952 : i64
+  %expected6 = scalar.constant 2879665613934902220 : i64
+  %expected7 = scalar.constant 2879665613934902221 : i64
+  %expected8 = scalar.constant 2879665613934902221 : i64
+  %expected9 = scalar.constant 4607182418800017408 : i64
+  %expected10 = scalar.constant 4609047870845172685 : i64
+  %expected11 = scalar.constant 4621819117588971520 : i64
+  %expected12 = scalar.constant 6913025428013711359 : i64
+  %expected13 = scalar.constant 9218868437227405312 : i64
+  %expected14 = scalar.constant 9221120237041090560 : i64
+  %expected_bits0 = scf.select %is0, %expected0, %expected14 : i64
+  %expected_bits1 = scf.select %is1, %expected1, %expected_bits0 : i64
+  %expected_bits2 = scf.select %is2, %expected2, %expected_bits1 : i64
+  %expected_bits3 = scf.select %is3, %expected3, %expected_bits2 : i64
+  %expected_bits4 = scf.select %is4, %expected4, %expected_bits3 : i64
+  %expected_bits5 = scf.select %is5, %expected5, %expected_bits4 : i64
+  %expected_bits6 = scf.select %is6, %expected6, %expected_bits5 : i64
+  %expected_bits7 = scf.select %is7, %expected7, %expected_bits6 : i64
+  %expected_bits8 = scf.select %is8, %expected8, %expected_bits7 : i64
+  %expected_bits9 = scf.select %is9, %expected9, %expected_bits8 : i64
+  %expected_bits10 = scf.select %is10, %expected10, %expected_bits9 : i64
+  %expected_bits11 = scf.select %is11, %expected11, %expected_bits10 : i64
+  %expected_bits12 = scf.select %is12, %expected12, %expected_bits11 : i64
+  %expected_bits13 = scf.select %is13, %expected13, %expected_bits12 : i64
+  %expected_bits14 = scf.select %is14, %expected14, %expected_bits13 : i64
+  func.return %input_bits17, %expected_bits14 : i64, i64
+}
+
+func.def @root_f64_boundary_observations(%ordinal: index, %output: buffer) {
+  %input_bits, %expected_bits = func.call @root_f64_boundary_values(%ordinal) : (index) -> (i64, i64)
+  func.call @root_f64_observations(%input_bits, %output) : (i64, buffer)
+  func.return
+}
+
+func.def @root_f64_boundary_oracle(%ordinal: index, %output: buffer) {
+  %input_bits, %expected_bits = func.call @root_f64_boundary_values(%ordinal) : (index) -> (i64, i64)
+  %origin = index.constant 0 : offset
+  %output_view = buffer.view %output[%origin] : buffer -> view<1xi64>
+  view.store %expected_bits, %output_view[0] : i64, view<1xi64>
+  func.return
+}
+
+check.scenario @root_f64_values {
+  check.trial[19](%trial: index, %entropy: check.entropy) {
+    %output = check.generate.fill value(-1) : tensor<1xi64>
+    check.compare<@root_f64_boundary_observations, @root_f64_boundary_oracle>(%trial, %output) : (index, tensor<1xi64>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<1xi64>
     }
   }
   check.return
