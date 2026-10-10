@@ -20,10 +20,14 @@ with tempfile.TemporaryDirectory(prefix='loom-chemistry-import-') as work:
     ir = output.read_text()
     # sqrt stays a strict scalar operation; exp, log, and cbrt are f64_math.h
     # source recipes, so the IR must not request target math legalization.
+    # Only the f32 cbrt seed, like OCML's, uses approximate log2 and exp2.
     assert any('scalar.sqrtf' in line and 'f64' in line for line in ir.splitlines())
     for operation in ('scalar.expf', 'scalar.logf', 'scalar.cbrtf'):
         assert operation not in ir, operation
-    assert 'afn' not in ir
+    approximate = [line for line in ir.splitlines() if 'afn' in line]
+    assert approximate, 'cbrt seed lost its approximate log2/exp2'
+    assert all(('scalar.log2f<afn>' in line or 'scalar.exp2f<afn>' in line)
+               and line.rstrip().endswith(': f32') for line in approximate), approximate
     assert ir.count('kernel.def ') == 2
     for name in ('fjac', 'e', 'y', 'mass', 'ip'):
         assert f'%{name}_storage = buffer.alloca<private>' in ir, name
