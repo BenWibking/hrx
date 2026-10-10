@@ -42,7 +42,7 @@ if(LOOM_IMPORT_CXX_TOOL)
 endif()
 set(LOOM_COMPILE_TOOL "" CACHE FILEPATH "Optional path to the native loom-compile executable")
 if(LOOM_IMPORT_CXX_TOOL AND LOOM_COMPILE_TOOL)
-  # XFAIL: passes while the production-sized advance kernel fails allocation.
+  # Compiles the production-sized advance kernel for gfx942.
   add_test(NAME production-advance-compile COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/check_compile.py ${LOOM_IMPORT_CXX_TOOL} ${LOOM_COMPILE_TOOL})
   set_tests_properties(production-advance-compile PROPERTIES TIMEOUT 1800)
