@@ -14,6 +14,7 @@
 #include "loom/target/facts_builder.h"
 #include "loom/target/registers.h"
 #include "loom/target/reporting/low_mix.h"
+#include "loom/target/reporting/low_names.h"
 #include "loom/target/test/target_records.h"
 
 namespace loom {
@@ -529,6 +530,7 @@ TEST_P(CompileReportLowTest, RecordsPressureSpillAndAllocationFailureRows) {
           /*.store_bytes=*/320,
           /*.reload_count=*/6,
           /*.reload_bytes=*/384,
+          /*.storage_value_id=*/5,
       },
       {
           /*.value_id=*/4,
@@ -544,6 +546,7 @@ TEST_P(CompileReportLowTest, RecordsPressureSpillAndAllocationFailureRows) {
           /*.store_bytes=*/8,
           /*.reload_count=*/3,
           /*.reload_bytes=*/12,
+          /*.storage_value_id=*/3,
       },
   };
   loom_low_allocation_materialized_spill_vec_t materialized_spill_vec = {
@@ -611,6 +614,7 @@ TEST_P(CompileReportLowTest, RecordsPressureSpillAndAllocationFailureRows) {
   frame.target = target;
   frame.schedule = schedule;
   frame.allocation.module = module;
+  frame.module = module;
   frame.allocation.target = target;
   frame.allocation.liveness.intervals = liveness_intervals;
   frame.allocation.liveness.interval_count = IREE_ARRAYSIZE(liveness_intervals);
@@ -1013,6 +1017,12 @@ TEST_P(CompileReportLowTest, RecordsPressureSpillAndAllocationFailureRows) {
   EXPECT_EQ(spill_rows[2].store_bytes, 320u);
   EXPECT_EQ(spill_rows[2].reload_count, 6u);
   EXPECT_EQ(spill_rows[2].reload_bytes, 384u);
+  EXPECT_TRUE(
+      iree_string_view_equal(spill_rows[2].storage_name,
+                             loom_target_compile_report_value_name(module, 5)));
+  EXPECT_FALSE(
+      iree_string_view_equal(spill_rows[2].storage_name, IREE_SV("<unknown>")));
+  EXPECT_TRUE(iree_string_view_is_empty(spill_rows[0].storage_name));
   EXPECT_EQ(spill_rows[2].origin_kind,
             LOOM_TARGET_COMPILE_REPORT_PRESSURE_ORIGIN_GLOBAL_MEMORY);
   EXPECT_TRUE(iree_string_view_equal(spill_rows[2].origin_operation_name,
@@ -1026,6 +1036,9 @@ TEST_P(CompileReportLowTest, RecordsPressureSpillAndAllocationFailureRows) {
   EXPECT_TRUE(iree_string_view_equal(spill_rows[3].origin_operation_name,
                                      IREE_SV("<block-argument>")));
   EXPECT_EQ(spill_rows[3].slot_index, 8u);
+  EXPECT_TRUE(
+      iree_string_view_equal(spill_rows[3].storage_name,
+                             loom_target_compile_report_value_name(module, 3)));
   EXPECT_EQ(spill_rows[3].byte_size, 4u);
   EXPECT_EQ(spill_rows[3].store_count, 2u);
   EXPECT_EQ(spill_rows[3].store_bytes, 8u);

@@ -37,6 +37,24 @@ typedef struct loom_amdgpu_spill_lowering_result_t {
 // Rewrites low.spill/low.reload in |function_op| into descriptor-backed AMDGPU
 // scratch load/store packets. The descriptor set must be the already-selected
 // target-low descriptor set for the function target.
+// Direction of a scratch packet.
+typedef enum loom_amdgpu_scratch_access_kind_e {
+  // The packet does not access scratch through a spill-lowering form.
+  LOOM_AMDGPU_SCRATCH_ACCESS_NONE = 0,
+  // The packet loads from scratch.
+  LOOM_AMDGPU_SCRATCH_ACCESS_LOAD = 1,
+  // The packet stores to scratch.
+  LOOM_AMDGPU_SCRATCH_ACCESS_STORE = 2,
+} loom_amdgpu_scratch_access_kind_t;
+
+// Classifies |descriptor| as one of the scratch load or store forms this
+// lowering emits. Private-memory lowering shares these forms, so a match
+// identifies scratch traffic, not necessarily a spill.
+loom_amdgpu_scratch_access_kind_t
+loom_amdgpu_spill_lowering_classify_descriptor(
+    const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_descriptor_t* descriptor);
+
 iree_status_t loom_amdgpu_lower_spill_traffic(
     loom_module_t* module, loom_op_t* function_op,
     const loom_low_descriptor_set_t* descriptor_set,

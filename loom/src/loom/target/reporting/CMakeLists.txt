@@ -48,12 +48,14 @@ loom_cc_library(
   NAME
     report
   HDRS
+    "code_attribution.h"
     "loop_pipeline.h"
     "pipeline_plan.h"
     "report.h"
     "residency.h"
     "target_insertion.h"
   SRCS
+    "code_attribution.c"
     "config_bindings.c"
     "config_bindings.h"
     "loop_pipeline.c"

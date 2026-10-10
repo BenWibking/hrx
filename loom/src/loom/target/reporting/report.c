@@ -66,6 +66,8 @@ void loom_target_compile_report_deinitialize(
   loom_target_compile_report_row_list_deinitialize(
       allocator, &report->target_insertion_rows);
   loom_target_compile_report_row_list_deinitialize(
+      allocator, &report->code_attribution_rows);
+  loom_target_compile_report_row_list_deinitialize(
       allocator, &report->config_binding_rows);
   loom_target_compile_report_row_list_deinitialize(allocator,
                                                    &report->source_low_rows);
@@ -122,6 +124,7 @@ static bool loom_target_compile_report_has_rows(
          report->wait_reason_summary_rows.count != 0 ||
          report->wait_action_rows.count != 0 ||
          report->target_insertion_rows.count != 0 ||
+         report->code_attribution_rows.count != 0 ||
          report->config_binding_rows.count != 0 ||
          report->entry_rows.count != 0 || report->source_low_rows.count != 0 ||
          report->source_low_target_rows.count != 0 ||
@@ -1319,6 +1322,14 @@ iree_status_t loom_target_compile_report_record_entry_report(
     IREE_RETURN_IF_ERROR(loom_target_compile_report_row_list_append_all(
         &report->target_insertion_rows, &entry_report->target_insertion_rows,
         sizeof(loom_target_compile_report_target_insertion_row_t),
+        report->allocator));
+  }
+  if (iree_any_bit_set(
+          entry_report->detail_flags,
+          LOOM_TARGET_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION_ROWS)) {
+    IREE_RETURN_IF_ERROR(loom_target_compile_report_row_list_append_all(
+        &report->code_attribution_rows, &entry_report->code_attribution_rows,
+        sizeof(loom_target_compile_report_code_attribution_row_t),
         report->allocator));
   }
   if (iree_any_bit_set(entry_report->detail_flags,

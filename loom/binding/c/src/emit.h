@@ -44,6 +44,8 @@ typedef struct loomc_emit_resolved_options_t {
 
   // Compile report identifier requested by the caller.
   loomc_string_view_t compile_report_identifier;
+  // Optional compile report detail sets beyond the selected mode.
+  loomc_compile_report_detail_flags_t compile_report_detail_flags;
 
   // Full extension chain passed to target-specific emitters.
   const void* option_chain;

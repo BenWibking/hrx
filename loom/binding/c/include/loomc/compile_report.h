@@ -56,6 +56,20 @@ typedef enum loomc_compile_report_mode_e {
   LOOMC_COMPILE_REPORT_MODE_DETAILS = 2,
 } loomc_compile_report_mode_t;
 
+/// Optional compile report detail sets beyond the selected mode.
+typedef uint32_t loomc_compile_report_detail_flags_t;
+enum {
+  /// No optional detail sets are requested.
+  LOOMC_COMPILE_REPORT_DETAIL_NONE = 0u,
+
+  /// Requests one code-attribution row per emitted native instruction: its
+  /// byte offset within the function symbol, the scheduled operation and
+  /// source location that produced it, and the reason for inserted waits.
+  /// Requires `LOOMC_COMPILE_REPORT_MODE_DETAILS`. Rows are numerous; request
+  /// them only when joining the report with an instruction-level profile.
+  LOOMC_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION = 1u << 0,
+};
+
 /// Compile report emission options.
 ///
 /// Attach this descriptor through `loomc_emit_options_t::next`. The descriptor
@@ -85,6 +99,11 @@ typedef struct loomc_compile_report_options_t {
   /// compilation fails before selecting an emitter and no artifact identifier
   /// was provided.
   loomc_string_view_t identifier;
+
+  /// Optional detail sets requested in addition to `mode`. Read only when
+  /// `structure_size` is zero or covers this field; structures from callers
+  /// built before it was added request no detail sets.
+  loomc_compile_report_detail_flags_t detail_flags;
 } loomc_compile_report_options_t;
 
 /// Parses a stable compile report mode spelling.

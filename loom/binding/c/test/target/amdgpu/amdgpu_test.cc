@@ -6,6 +6,7 @@
 
 #include "loomc/target/amdgpu.h"
 
+#include <cstddef>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -1926,6 +1927,96 @@ config.def @unused = 9 : index
     emitted.reset();
     loomc_workspace_trim(workspace.get());
   }
+}
+
+// Emits |module| with a JSON compile report built from the given options and
+// returns the emission status; |out_result| receives the result on success.
+loomc_status_t EmitWithCompileReport(
+    loomc_target_environment_t* target_environment,
+    loomc_workspace_t* workspace, loomc_module_t* module,
+    loomc_compile_report_mode_t mode, loomc_host_size_t structure_size,
+    loomc_compile_report_detail_flags_t detail_flags, ResultPtr* out_result) {
+  loomc_compile_report_options_t compile_report_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_COMPILE_REPORT_OPTIONS,
+      /*.structure_size=*/structure_size,
+      /*.next=*/nullptr,
+      /*.mode=*/mode,
+      /*.format=*/LOOMC_COMPILE_REPORT_FORMAT_JSON,
+      /*.identifier=*/loomc_string_view_empty(),
+      /*.detail_flags=*/detail_flags,
+  };
+  loomc_emit_options_t emit_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
+      /*.structure_size=*/sizeof(emit_options),
+      /*.next=*/&compile_report_options,
+      /*.artifact_format=*/
+      loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_AMDGPU_HSACO),
+      /*.identifier=*/loomc_make_cstring_view("loom_kernel.hsaco"),
+      /*.artifact_flags=*/LOOMC_EMIT_ARTIFACT_FLAG_PRIMARY,
+  };
+  loomc_result_t* result = nullptr;
+  loomc_status_t status =
+      loomc_emit_module(target_environment, workspace, module, &emit_options,
+                        loomc_allocator_system(), &result);
+  out_result->reset(result);
+  return status;
+}
+
+std::string CompileReportText(const loomc_result_t* result) {
+  const loomc_artifact_t* report =
+      FindArtifact(result, LOOMC_ARTIFACT_KIND_REPORT,
+                   LOOMC_ARTIFACT_FORMAT_COMPILE_REPORT_JSON);
+  return report != nullptr ? ToString(report->contents) : std::string();
+}
+
+TEST(AmdgpuTargetTest, CodeAttributionDetailFlagsRespectStructureSize) {
+  TargetEnvironmentPtr target_environment = CreateAmdgpuTargetEnvironment();
+  ContextPtr context = CreateAmdgpuContext(target_environment.get());
+  WorkspacePtr workspace = CreateWorkspace();
+  SourcePtr source = CreateTextSource("amdgpu_code_attribution.loom", R"(
+amdgpu.target<gfx11-generic> @gfx_target
+
+low.kernel.def target<amdgpu.gfx11.generic.core>(@gfx_target) workgroup_size(64, 1, 1) @loom_kernel() {
+  low.return
+}
+)");
+  ModulePtr module =
+      DeserializeModule(context.get(), workspace.get(), source.get());
+
+  // Current callers request per-instruction rows explicitly.
+  ResultPtr with_rows;
+  LOOMC_ASSERT_OK(EmitWithCompileReport(
+      target_environment.get(), workspace.get(), module.get(),
+      LOOMC_COMPILE_REPORT_MODE_DETAILS, sizeof(loomc_compile_report_options_t),
+      LOOMC_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION, &with_rows));
+  ExpectSucceededResult(with_rows.get());
+  const std::string with_rows_report = CompileReportText(with_rows.get());
+  EXPECT_NE(with_rows_report.find("\"code_attribution_rows\":[{"),
+            std::string::npos)
+      << with_rows_report;
+
+  // A structure from a caller built before |detail_flags| existed is accepted
+  // and never reads the field, whatever lies beyond its declared size.
+  ResultPtr legacy;
+  LOOMC_ASSERT_OK(EmitWithCompileReport(
+      target_environment.get(), workspace.get(), module.get(),
+      LOOMC_COMPILE_REPORT_MODE_DETAILS,
+      offsetof(loomc_compile_report_options_t, detail_flags),
+      LOOMC_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION, &legacy));
+  ExpectSucceededResult(legacy.get());
+  const std::string legacy_report = CompileReportText(legacy.get());
+  EXPECT_FALSE(legacy_report.empty());
+  EXPECT_EQ(legacy_report.find("code_attribution_rows"), std::string::npos);
+
+  // The rows are a details-mode extension.
+  ResultPtr summary;
+  LOOMC_EXPECT_STATUS_IS(
+      LOOMC_STATUS_INVALID_ARGUMENT,
+      EmitWithCompileReport(target_environment.get(), workspace.get(),
+                            module.get(), LOOMC_COMPILE_REPORT_MODE_SUMMARY,
+                            sizeof(loomc_compile_report_options_t),
+                            LOOMC_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION,
+                            &summary));
 }
 
 TEST(AmdgpuTargetTest, EmitRuntimeGlobalsFromPreparedModule) {

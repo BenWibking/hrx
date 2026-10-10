@@ -14,6 +14,7 @@
 #include "loom/codegen/low/planning_statistics.h"
 #include "loom/ir/scalar_type.h"
 #include "loom/ir/types.h"
+#include "loom/target/reporting/code_attribution.h"
 #include "loom/target/reporting/loop_pipeline.h"
 #include "loom/target/reporting/pipeline_plan.h"
 #include "loom/target/reporting/residency.h"
@@ -98,6 +99,9 @@ enum {
   LOOM_TARGET_COMPILE_REPORT_DETAIL_PIPELINE_PLAN = 1u << 28,
   // Per-worker and per-channel pipeline realization rows were recorded.
   LOOM_TARGET_COMPILE_REPORT_DETAIL_PIPELINE_PLAN_ROWS = 1u << 29,
+  // Per-instruction code attribution rows were recorded. Requested only
+  // explicitly: the details mode does not include them.
+  LOOM_TARGET_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION_ROWS = 1u << 30,
   // Final per-entry residency constraints are retained in both report modes.
   LOOM_TARGET_COMPILE_REPORT_DETAIL_RESIDENCY_CONSTRAINTS = 1u << 27,
 };
@@ -931,6 +935,10 @@ typedef struct loom_target_compile_report_spill_row_t {
   uint64_t reload_count;
   // Byte traffic from predicted or materialized reloads.
   uint64_t reload_bytes;
+  // Name of the materialized spill storage reservation, the unique identity of
+  // a spill: slot ordinals are reused across spill batches. Empty for planned
+  // spills, which have no storage yet.
+  iree_string_view_t storage_name;
 } loom_target_compile_report_spill_row_t;
 
 // One hard allocation-failure row in a compile report.
@@ -2102,6 +2110,8 @@ typedef struct loom_target_compile_report_t {
   loom_target_compile_report_row_list_t wait_action_rows;
   // Owned target-inserted native packet rows.
   loom_target_compile_report_row_list_t target_insertion_rows;
+  // Owned per-instruction code attribution rows.
+  loom_target_compile_report_row_list_t code_attribution_rows;
   // Owned invocation config bindings materialized before compilation.
   loom_target_compile_report_row_list_t config_binding_rows;
   // Owned source-to-low selection rows.

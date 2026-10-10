@@ -525,6 +525,8 @@ static iree_status_t loom_target_compile_report_format_spill_rows(
           loom_target_compile_report_text_non_empty(row->semantic_tag);
       const iree_string_view_t slot_space =
           loom_target_compile_report_text_non_empty(row->slot_space);
+      const iree_string_view_t storage_name =
+          loom_target_compile_report_text_non_empty(row->storage_name);
       IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
           builder,
           "COMPILE-REPORT: spill[%" PRIhsz
@@ -533,7 +535,7 @@ static iree_status_t loom_target_compile_report_format_spill_rows(
           "origin=%.*s origin_op=%.*s semantic=%.*s "
           "assignment=%u slot=%u space=%.*s bytes=%" PRIu64 " align=%" PRIu64
           " stores=%" PRIu64 " store_bytes=%" PRIu64 " reloads=%" PRIu64
-          " reload_bytes=%" PRIu64 "\n",
+          " reload_bytes=%" PRIu64 " storage=%.*s\n",
           row_index, (int)kind.size, kind.data, (int)function_name.size,
           function_name.data, (int)value_name.size, value_name.data,
           (int)register_class.size, register_class.data,
@@ -544,7 +546,8 @@ static iree_status_t loom_target_compile_report_format_spill_rows(
           (int)semantic_tag.size, semantic_tag.data, row->assignment_index,
           row->slot_index, (int)slot_space.size, slot_space.data,
           row->byte_size, row->byte_alignment, row->store_count,
-          row->store_bytes, row->reload_count, row->reload_bytes));
+          row->store_bytes, row->reload_count, row->reload_bytes,
+          (int)storage_name.size, storage_name.data));
     }
   }
   return iree_ok_status();

@@ -83,6 +83,13 @@ IREE_FLAG_NAMED(
     string, emit_artifact_manifest, "emit-artifact-manifest", "",
     "Optional output path for --artifact-manifest JSON. Empty derives from the "
     "artifact output path by appending '.manifest.json'.");
+IREE_FLAG_NAMED(
+    bool, compile_report_code_attribution, "compile-report-code-attribution",
+    false,
+    "Adds one row per emitted native instruction to a details compile report: "
+    "its byte offset within the function symbol, the scheduled operation and "
+    "source location that produced it, and why inserted waits exist. Join "
+    "these rows with sampled program counters to attribute profiles.");
 IREE_FLAG_NAMED(string, compile_report_output, "compile-report-output",
                 "stderr",
                 "Output path for --compile-report. Use 'stderr', 'stdout'/'-', "
@@ -139,6 +146,15 @@ static iree_status_t loom_compile_parse_report_options(
         "'summary', 'details', 'json', 'json-summary', 'json-details', "
         "'text', 'text-summary', or 'text-details'",
         (int)value.size, value.data);
+  }
+  if (FLAG_compile_report_code_attribution) {
+    if (out_options->mode != LOOMC_COMPILE_REPORT_MODE_DETAILS) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "--compile-report-code-attribution requires a details compile "
+          "report, such as --compile-report=details");
+    }
+    out_options->detail_flags = LOOMC_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION;
   }
   *out_enabled = true;
   return iree_ok_status();

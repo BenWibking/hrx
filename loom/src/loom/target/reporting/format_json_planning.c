@@ -389,6 +389,9 @@ static iree_status_t loom_target_compile_report_format_spill_row_json(
   IREE_RETURN_IF_ERROR(
       loom_target_compile_report_json_write_optional_string_field(
           &object, IREE_SV("slot_space"), row->slot_space));
+  IREE_RETURN_IF_ERROR(
+      loom_target_compile_report_json_write_optional_string_field(
+          &object, IREE_SV("storage"), row->storage_name));
   IREE_RETURN_IF_ERROR(loom_json_object_write_uint64_field(
       &object, IREE_SV("byte_size"), row->byte_size));
   IREE_RETURN_IF_ERROR(loom_json_object_write_uint64_field(

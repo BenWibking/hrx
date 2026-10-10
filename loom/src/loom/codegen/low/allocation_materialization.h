@@ -60,6 +60,8 @@ typedef struct loom_low_allocation_materialized_spill_t {
   uint64_t reload_count;
   // Byte traffic from low.reload ops inserted for this value.
   uint64_t reload_bytes;
+  // low.storage.reserve result holding the spilled value.
+  loom_value_id_t storage_value_id;
 } loom_low_allocation_materialized_spill_t;
 
 typedef struct loom_low_allocation_materialized_spill_vec_t {

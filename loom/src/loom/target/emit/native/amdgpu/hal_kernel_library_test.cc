@@ -467,6 +467,109 @@ class AmdgpuHalKernelLibraryTest : public ::testing::Test {
         ParseSource(iree_make_cstring_view(kSource), out_module));
   }
 
+  // Emits |module| with |requested_detail_flags| and passes its code
+  // attribution rows, in emission order, to |inspect| while the module that
+  // owns their strings is still alive. Takes ownership of |module|.
+  template <typename InspectRows>
+  void EmitCodeAttributionRows(
+      loom_module_t* module,
+      loom_target_compile_report_detail_flags_t requested_detail_flags,
+      InspectRows&& inspect) {
+    ASSERT_NE(module, nullptr);
+    iree_arena_allocator_t scratch_arena;
+    iree_arena_initialize(&block_pool_, &scratch_arena);
+    loom_target_compile_report_t report = {};
+    loom_target_compile_report_initialize(&report, iree_allocator_system());
+    report.requested_detail_flags = requested_detail_flags;
+    loom_target_emit_request_t request = {};
+    request.module = module;
+    request.compile_report = &report;
+    request.scratch_arena = &scratch_arena;
+    request.allocator = iree_allocator_system();
+    loom_target_emit_artifact_t artifact = {};
+    bool emitted = false;
+    IREE_EXPECT_OK(loom_amdgpu_hal_kernel_library_emitter.emit(
+        &request, &emitted, &artifact));
+    EXPECT_TRUE(emitted);
+    std::vector<loom_target_compile_report_code_attribution_row_t> rows;
+    for (const loom_target_compile_report_vec_t* vec =
+             report.code_attribution_rows.head;
+         vec != nullptr; vec = vec->next) {
+      const auto* vec_rows =
+          static_cast<const loom_target_compile_report_code_attribution_row_t*>(
+              loom_target_compile_report_vec_const_rows(vec));
+      rows.insert(rows.end(), vec_rows, vec_rows + vec->count);
+    }
+    inspect(rows);
+    loom_target_emit_artifact_release(&artifact);
+    loom_target_compile_report_deinitialize(&report);
+    iree_arena_deinitialize(&scratch_arena);
+    loom_module_free(module);
+  }
+
+  // Parses a gfx1100 kernel that keeps more scalar values live than the SGPR
+  // budget holds, forcing spill slots, and that reloads authored scratch
+  // storage at an immediate-encodable offset and at an offset that needs a
+  // VGPR address.
+  void ParseGfx11SpillingKernel(loom_module_t** out_module) {
+    constexpr int kChainLength = 140;
+    std::string source =
+        "amdgpu.target<gfx1100> @gfx_target\n"
+        "low.kernel.def target<amdgpu.rdna3.core>(@gfx_target) "
+        "abi_layout({constant_count = 1, direct_arg_count = 1, "
+        "direct_arg_names = {arg0 = \"seed\"}, direct_arg_offsets = [8], "
+        "direct_arg_parameter_indices = [1], direct_arg_sizes = [4], "
+        "parameter_count = 2, resource_count = 1, resource_offsets = [0], "
+        "resource_parameter_indices = [0], uses_kernarg_segment_ptr = true}) "
+        "workgroup_size(64, 1, 1) @loom_kernel() {\n"
+        "  %kernarg = low.live_in<amdgpu.kernarg_segment_ptr> : "
+        "reg<amdgpu.sgpr x2>\n"
+        "  %seed = low.op<amdgpu.s_load_dword_offset_only>(%kernarg) "
+        "{offset = 8} : (reg<amdgpu.sgpr x2>) -> reg<amdgpu.sgpr>\n"
+        "  %view = low.op<amdgpu.s_load_dwordx2_offset_only>(%kernarg) "
+        "{offset = 0} : (reg<amdgpu.sgpr x2>) -> reg<amdgpu.sgpr x2>\n"
+        "  %manual = low.storage.reserve {byte_alignment = 4, "
+        "byte_length = 8192} : low.storage<private>\n"
+        "  low.spill %seed, %manual : reg<amdgpu.sgpr>, "
+        "low.storage<private>\n"
+        "  low.spill %seed, %manual {offset = 6000} : reg<amdgpu.sgpr>, "
+        "low.storage<private>\n"
+        "  %near = low.reload %manual : low.storage<private> -> "
+        "reg<amdgpu.sgpr>\n"
+        "  %far = low.reload %manual {offset = 6000} : low.storage<private> "
+        "-> reg<amdgpu.sgpr>\n"
+        "  %y0 = low.op<amdgpu.s_xor_b32>(%near, %far) : (reg<amdgpu.sgpr>, "
+        "reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr>\n";
+    for (int i = 1; i < kChainLength; ++i) {
+      source += "  %y" + std::to_string(i) + " = low.op<amdgpu.s_xor_b32>(%y" +
+                std::to_string(i - 1) +
+                ", %seed) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> "
+                "reg<amdgpu.sgpr>\n";
+    }
+    std::string previous = "%y" + std::to_string(kChainLength - 1);
+    for (int i = kChainLength - 2; i >= 0; --i) {
+      const std::string next = "%z" + std::to_string(i);
+      source += "  " + next + " = low.op<amdgpu.s_xor_b32>(" + previous +
+                ", %y" + std::to_string(i) +
+                ") : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> "
+                "reg<amdgpu.sgpr>\n";
+      previous = next;
+    }
+    source +=
+        "  %offset = low.const<amdgpu.v_mov_b32> {imm32 = 0} : "
+        "reg<amdgpu.vgpr>\n"
+        "  %value = low.op<amdgpu.v_mov_b32_copy>(" +
+        previous +
+        ") : (reg<amdgpu.sgpr>) -> reg<amdgpu.vgpr>\n"
+        "  low.op<amdgpu.global_store_b32_saddr>(%offset, %value, %view) "
+        "{offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, "
+        "reg<amdgpu.sgpr x2>)\n"
+        "  low.return\n"
+        "}\n";
+    ASSERT_NO_FATAL_FAILURE(ParseSource(
+        iree_make_string_view(source.data(), source.size()), out_module));
+  }
+
   void ParseGfx11KernelWithArguments(loom_module_t** out_module) {
     static const char kSource[] =
         "amdgpu.target<gfx1100> @gfx_target\n"
@@ -811,6 +914,92 @@ TEST_F(AmdgpuHalKernelLibraryTest, RetainsRequestedArtifactMetadata) {
   loom_target_compile_report_deinitialize(&report);
   iree_arena_deinitialize(&scratch_arena);
   loom_module_free(module);
+}
+
+TEST_F(AmdgpuHalKernelLibraryTest, RecordsCodeAttributionOnlyWhenRequested) {
+  loom_module_t* module = nullptr;
+  ASSERT_NO_FATAL_FAILURE(ParseGfx11KernelWithArguments(&module));
+  EmitCodeAttributionRows(
+      module, LOOM_TARGET_COMPILE_REPORT_DETAIL_SPILL_ROWS,
+      [](const std::vector<loom_target_compile_report_code_attribution_row_t>&
+             rows) { EXPECT_TRUE(rows.empty()); });
+}
+
+TEST_F(AmdgpuHalKernelLibraryTest, CodeAttributionRowsTileFunctionText) {
+  loom_module_t* module = nullptr;
+  ASSERT_NO_FATAL_FAILURE(ParseGfx11KernelWithArguments(&module));
+  EmitCodeAttributionRows(
+      module, LOOM_TARGET_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION_ROWS,
+      [](const std::vector<loom_target_compile_report_code_attribution_row_t>&
+             rows) {
+        ASSERT_FALSE(rows.empty());
+        uint64_t expected_offset = rows.front().symbol_offset;
+        bool has_attributed_wait = false;
+        for (const auto& row : rows) {
+          // Rows describe consecutive instructions: no gaps and no overlaps.
+          EXPECT_EQ(row.symbol_offset, expected_offset);
+          EXPECT_TRUE(row.byte_size == 4 || row.byte_size == 8 ||
+                      row.byte_size == 12)
+              << row.byte_size;
+          expected_offset = row.symbol_offset + row.byte_size;
+          if (iree_string_view_equal(row.instruction_kind, IREE_SV("wait"))) {
+            // Every inserted wait names why it exists.
+            EXPECT_FALSE(iree_string_view_is_empty(row.wait_reason));
+            EXPECT_GT(row.wait_action_count, 0u);
+            has_attributed_wait = true;
+          }
+        }
+        EXPECT_TRUE(has_attributed_wait);
+      });
+}
+
+TEST_F(AmdgpuHalKernelLibraryTest, CodeAttributionLinksScratchToStorage) {
+  loom_module_t* module = nullptr;
+  ASSERT_NO_FATAL_FAILURE(ParseGfx11SpillingKernel(&module));
+  EmitCodeAttributionRows(
+      module, LOOM_TARGET_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION_ROWS,
+      [](const std::vector<loom_target_compile_report_code_attribution_row_t>&
+             rows) {
+        bool has_spill_load = false;
+        bool has_spill_wait = false;
+        bool has_authored_immediate = false;
+        bool has_authored_vaddr = false;
+        for (const auto& row : rows) {
+          if (iree_string_view_is_empty(row.scratch_access)) {
+            continue;
+          }
+          // Every scratch access resolves to the storage it touches.
+          EXPECT_FALSE(iree_string_view_is_empty(row.scratch_storage_name));
+          const bool is_packet =
+              iree_string_view_equal(row.instruction_kind, IREE_SV("packet"));
+          if (row.spill_slot_index != UINT32_MAX) {
+            // Compiler spill slots name the spilled value.
+            EXPECT_FALSE(iree_string_view_is_empty(row.spill_value_name));
+            if (is_packet &&
+                iree_string_view_equal(row.scratch_access, IREE_SV("load"))) {
+              has_spill_load = true;
+            }
+            if (iree_string_view_equal(row.instruction_kind, IREE_SV("wait"))) {
+              has_spill_wait = true;
+            }
+          } else if (is_packet &&
+                     iree_string_view_equal(row.scratch_storage_name,
+                                            IREE_SV("manual"))) {
+            // Authored storage has no spilled value, at either address form.
+            EXPECT_TRUE(iree_string_view_is_empty(row.spill_value_name));
+            if (iree_string_view_ends_with(row.descriptor_key,
+                                           IREE_SV("_vaddr"))) {
+              has_authored_vaddr = true;
+            } else {
+              has_authored_immediate = true;
+            }
+          }
+        }
+        EXPECT_TRUE(has_spill_load);
+        EXPECT_TRUE(has_spill_wait);
+        EXPECT_TRUE(has_authored_immediate);
+        EXPECT_TRUE(has_authored_vaddr);
+      });
 }
 
 TEST_F(AmdgpuHalKernelLibraryTest,

@@ -6,6 +6,7 @@
 
 #include "emit.h"
 
+#include <stddef.h>
 #include <string.h>
 
 #include "context.h"
@@ -206,6 +207,23 @@ static bool loomc_emit_compile_report_format_is_valid(
   }
 }
 
+// Size of loomc_compile_report_options_t before |detail_flags| was appended.
+// Callers built against that layout remain valid and request no detail flags.
+#define LOOMC_COMPILE_REPORT_OPTIONS_MINIMUM_SIZE \
+  offsetof(loomc_compile_report_options_t, detail_flags)
+
+// Returns the optional detail flags when the caller's structure includes them.
+static loomc_compile_report_detail_flags_t
+loomc_emit_compile_report_detail_flags(
+    const loomc_compile_report_options_t* options) {
+  const iree_host_size_t field_end =
+      offsetof(loomc_compile_report_options_t, detail_flags) +
+      sizeof(options->detail_flags);
+  return options->structure_size == 0 || options->structure_size >= field_end
+             ? options->detail_flags
+             : LOOMC_COMPILE_REPORT_DETAIL_NONE;
+}
+
 static loomc_status_t loomc_emit_validate_compile_report_options(
     const loomc_compile_report_options_t* options) {
   if (options->type != LOOMC_STRUCTURE_TYPE_COMPILE_REPORT_OPTIONS) {
@@ -214,7 +232,7 @@ static loomc_status_t loomc_emit_validate_compile_report_options(
         "compile report options have an unknown structure type");
   }
   if (options->structure_size != 0 &&
-      options->structure_size < sizeof(*options)) {
+      options->structure_size < LOOMC_COMPILE_REPORT_OPTIONS_MINIMUM_SIZE) {
     return loomc_make_status(
         LOOMC_STATUS_INVALID_ARGUMENT,
         "compile report options structure_size is too small");
@@ -228,6 +246,18 @@ static loomc_status_t loomc_emit_validate_compile_report_options(
                              "compile report format is invalid");
   }
   LOOMC_RETURN_IF_ERROR(loomc_emit_validate_string_view(options->identifier));
+  const loomc_compile_report_detail_flags_t detail_flags =
+      loomc_emit_compile_report_detail_flags(options);
+  if ((detail_flags & ~LOOMC_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION) != 0) {
+    return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
+                             "compile report detail flags are invalid");
+  }
+  if (detail_flags != LOOMC_COMPILE_REPORT_DETAIL_NONE &&
+      options->mode != LOOMC_COMPILE_REPORT_MODE_DETAILS) {
+    return loomc_make_status(
+        LOOMC_STATUS_INVALID_ARGUMENT,
+        "compile report detail flags require the details report mode");
+  }
   if (options->mode == LOOMC_COMPILE_REPORT_MODE_NONE &&
       !loomc_string_view_is_empty(options->identifier)) {
     return loomc_make_status(
@@ -337,6 +367,8 @@ static loomc_status_t loomc_emit_resolve_options(
         out_options->compile_report_mode = report_options->mode;
         out_options->compile_report_format = report_options->format;
         out_options->compile_report_identifier = report_options->identifier;
+        out_options->compile_report_detail_flags =
+            loomc_emit_compile_report_detail_flags(report_options);
         next = report_options->next;
         break;
       }
@@ -729,6 +761,11 @@ loomc_status_t loomc_emit_transaction_initialize(
         loom_target_compile_report_requested_detail_flags(
             loomc_emit_target_compile_report_mode(
                 out_transaction->options.compile_report_mode));
+    if (iree_any_bit_set(out_transaction->options.compile_report_detail_flags,
+                         LOOMC_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION)) {
+      out_transaction->compile_report.requested_detail_flags |=
+          LOOM_TARGET_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION_ROWS;
+    }
     out_transaction->compile_report_initialized = true;
   }
   if (loomc_status_is_ok(status) &&

@@ -125,6 +125,15 @@ typedef struct loom_amdgpu_encode_native_insertion_output_t {
   iree_host_size_t count;
 } loom_amdgpu_encode_native_insertion_output_t;
 
+typedef struct loom_amdgpu_encode_instruction_map_output_t {
+  // Instruction-map entries, or NULL during sizing passes.
+  loom_amdgpu_instruction_map_entry_t* values;
+  // Capacity of |values| in entries.
+  iree_host_size_t capacity;
+  // Number of entries written so far.
+  iree_host_size_t count;
+} loom_amdgpu_encode_instruction_map_output_t;
+
 typedef struct loom_amdgpu_encode_traversal_state_t {
   // Scheduled packet currently being expanded into native instructions.
   loom_low_packet_view_t current_packet;
@@ -178,6 +187,8 @@ typedef struct loom_amdgpu_encode_state_t {
   loom_amdgpu_encode_text_fixup_output_t text_fixups;
   // Optional target-owned insertion records emitted for reports.
   loom_amdgpu_encode_native_insertion_output_t native_insertions;
+  // Optional per-instruction attribution entries, written only while writing.
+  loom_amdgpu_encode_instruction_map_output_t instruction_map;
   // Function-local branch placement state.
   loom_amdgpu_encode_branch_state_t branches;
   // Exact hint encoding retained by the first sizing traversal.
@@ -300,15 +311,66 @@ static void loom_amdgpu_propagate_pc_register(loom_amdgpu_encode_state_t* state,
 static void loom_amdgpu_append_encoding_packet(
     loom_amdgpu_encode_state_t* state,
     const loom_amdgpu_encoding_packet_t* packet) {
+  if (state->instruction_map.values != NULL) {
+    IREE_ASSERT_LT(state->instruction_map.count,
+                   state->instruction_map.capacity);
+    state->instruction_map.values[state->instruction_map.count++] =
+        (loom_amdgpu_instruction_map_entry_t){
+            .byte_offset = (uint32_t)state->stream.length,
+            .byte_size = (uint16_t)(packet->word_count * sizeof(uint32_t)),
+            .descriptor_ref = LOOM_AMDGPU_DESCRIPTOR_REF_NONE,
+            .insertion_kind = LOOM_AMDGPU_NATIVE_INSERTION_NONE,
+            .node_index = (uint32_t)state->traversal.current_packet.node_index,
+            .wait_packet_index = UINT32_MAX,
+            .wait_state_index = UINT32_MAX,
+        };
+  }
   for (uint16_t i = 0; i < packet->word_count; ++i) {
     loom_amdgpu_append_u32(state, packet->words[i]);
   }
   ++state->stream.instruction_count;
 }
 
+// Marks the most recently appended instruction as an inserted instruction.
+// Every insertion is recorded immediately after its instruction is appended,
+// while the plan cursors still index the wait packet or wait state that
+// produced it.
+static void loom_amdgpu_tag_instruction_map_insertion(
+    loom_amdgpu_encode_state_t* state, loom_amdgpu_native_insertion_kind_t kind,
+    loom_amdgpu_descriptor_ref_t descriptor_ref) {
+  if (state->instruction_map.values == NULL) {
+    return;
+  }
+  IREE_ASSERT_GT(state->instruction_map.count, 0);
+  loom_amdgpu_instruction_map_entry_t* entry =
+      &state->instruction_map.values[state->instruction_map.count - 1];
+  entry->insertion_kind = kind;
+  entry->descriptor_ref = descriptor_ref;
+  switch (kind) {
+    case LOOM_AMDGPU_NATIVE_INSERTION_WAIT:
+      if (descriptor_ref == LOOM_AMDGPU_DESCRIPTOR_REF_S_WAITCNT_DEPCTR) {
+        entry->wait_state_index =
+            (uint32_t)state->packet_plan.next_wait_state_index;
+      } else {
+        entry->wait_packet_index =
+            (uint32_t)state->packet_plan.next_wait_packet_index;
+      }
+      break;
+    case LOOM_AMDGPU_NATIVE_INSERTION_S_NOP:
+    case LOOM_AMDGPU_NATIVE_INSERTION_S_DELAY_ALU:
+    case LOOM_AMDGPU_NATIVE_INSERTION_V_NOP:
+      entry->wait_state_index =
+          (uint32_t)state->packet_plan.next_wait_state_index;
+      break;
+    default:
+      break;
+  }
+}
+
 static void loom_amdgpu_record_native_insertion(
     loom_amdgpu_encode_state_t* state, loom_amdgpu_native_insertion_kind_t kind,
     loom_amdgpu_descriptor_ref_t descriptor_ref, uint16_t immediate) {
+  loom_amdgpu_tag_instruction_map_insertion(state, kind, descriptor_ref);
   if (!iree_all_bits_set(
           state->inputs.flags,
           LOOM_AMDGPU_ENCODE_INSTRUCTION_STREAM_FLAG_CAPTURE_NATIVE_INSERTIONS)) {
@@ -334,9 +396,10 @@ static void loom_amdgpu_record_native_insertion(
 static void loom_amdgpu_record_native_descriptor_insertion(
     loom_amdgpu_encode_state_t* state, loom_amdgpu_native_insertion_kind_t kind,
     const loom_low_descriptor_t* descriptor, uint16_t immediate) {
-  if (!iree_all_bits_set(
+  if (!iree_any_bit_set(
           state->inputs.flags,
-          LOOM_AMDGPU_ENCODE_INSTRUCTION_STREAM_FLAG_CAPTURE_NATIVE_INSERTIONS)) {
+          LOOM_AMDGPU_ENCODE_INSTRUCTION_STREAM_FLAG_CAPTURE_NATIVE_INSERTIONS |
+              LOOM_AMDGPU_ENCODE_INSTRUCTION_STREAM_FLAG_CAPTURE_INSTRUCTION_MAP)) {
     return;
   }
   const loom_amdgpu_descriptor_ref_t descriptor_ref =
@@ -2151,6 +2214,7 @@ static iree_status_t loom_amdgpu_encode_instruction_stream_into_state(
   state->stream.instruction_count = 0;
   state->text_fixups.count = 0;
   state->native_insertions.count = 0;
+  state->instruction_map.count = 0;
   state->traversal.current_vgpr_msb_mode = 0;
   state->packet_plan.next_address_state_index = 0;
   state->packet_plan.next_wait_packet_index = 0;
@@ -2425,6 +2489,18 @@ static iree_status_t loom_amdgpu_encode_instruction_stream_internal(
                                        sizeof(native_insertions[0]),
                                        (void**)&native_insertions);
   }
+  const iree_host_size_t instruction_map_capacity =
+      sizing_state.stream.instruction_count + branch_layout.group_count +
+      branch_layout.island_count;
+  loom_amdgpu_instruction_map_entry_t* instruction_map = NULL;
+  if (iree_status_is_ok(status) && instruction_map_capacity != 0 &&
+      iree_all_bits_set(
+          flags,
+          LOOM_AMDGPU_ENCODE_INSTRUCTION_STREAM_FLAG_CAPTURE_INSTRUCTION_MAP)) {
+    status = iree_arena_allocate_array(arena, instruction_map_capacity,
+                                       sizeof(instruction_map[0]),
+                                       (void**)&instruction_map);
+  }
   loom_amdgpu_encode_state_t writing_state = {
       .inputs = inputs,
       .packet_plan = packet_plan_state,
@@ -2443,6 +2519,11 @@ static iree_status_t loom_amdgpu_encode_instruction_stream_internal(
           {
               .values = native_insertions,
               .capacity = native_insertion_capacity,
+          },
+      .instruction_map =
+          {
+              .values = instruction_map,
+              .capacity = instruction_map_capacity,
           },
       .branches =
           {
@@ -2480,6 +2561,9 @@ static iree_status_t loom_amdgpu_encode_instruction_stream_internal(
         .text_fixup_count = writing_state.text_fixups.count,
         .native_insertions = native_insertions,
         .native_insertion_count = writing_state.native_insertions.count,
+        .instruction_map = instruction_map,
+        .instruction_map_count =
+            instruction_map != NULL ? writing_state.instruction_map.count : 0,
     };
   }
   return status;

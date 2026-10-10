@@ -568,10 +568,15 @@ loom_cc_library(
     ::kernel_entry
     ::kernel_record
     ::preflight
+    ::spill_lowering
+    ::storage_layout
     iree::base
     iree::base::internal::arena
     loom::codegen::low::frame
+    loom::codegen::low::packet
+    loom::error::source
     loom::ir
+    loom::ops::low
     loom::target::arch::amdgpu::hal::kernel_abi
     loom::target::arch::amdgpu::planning::occupancy
     loom::target::arch::amdgpu::planning::packet_plan

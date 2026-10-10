@@ -58,12 +58,34 @@ typedef struct loom_amdgpu_native_insertion_t {
   uint16_t descriptor_ref;
 } loom_amdgpu_native_insertion_t;
 
+// One native instruction in an encoded stream, captured for code attribution.
+typedef struct loom_amdgpu_instruction_map_entry_t {
+  // Byte offset of the instruction within the encoded text.
+  uint32_t byte_offset;
+  // Encoded instruction size in bytes.
+  uint16_t byte_size;
+  // Stable descriptor reference of an inserted instruction, or
+  // LOOM_AMDGPU_DESCRIPTOR_REF_NONE.
+  uint16_t descriptor_ref;
+  // Native insertion kind, or LOOM_AMDGPU_NATIVE_INSERTION_NONE when the
+  // instruction expands the scheduled packet itself.
+  loom_amdgpu_native_insertion_kind_t insertion_kind;
+  // Schedule node whose native expansion contains the instruction.
+  uint32_t node_index;
+  // Wait-packet row encoded by a counter wait, or UINT32_MAX.
+  uint32_t wait_packet_index;
+  // Wait-state row encoded by a delay or dependency wait, or UINT32_MAX.
+  uint32_t wait_state_index;
+} loom_amdgpu_instruction_map_entry_t;
+
 typedef enum loom_amdgpu_encode_instruction_stream_flag_bits_e {
   // No optional encoding products are requested.
   LOOM_AMDGPU_ENCODE_INSTRUCTION_STREAM_FLAG_NONE = 0u,
   // Capture target-owned native insertion rows alongside encoded text.
   LOOM_AMDGPU_ENCODE_INSTRUCTION_STREAM_FLAG_CAPTURE_NATIVE_INSERTIONS = 1u
                                                                          << 0,
+  // Capture one instruction-map entry per encoded native instruction.
+  LOOM_AMDGPU_ENCODE_INSTRUCTION_STREAM_FLAG_CAPTURE_INSTRUCTION_MAP = 1u << 1,
 } loom_amdgpu_encode_instruction_stream_flag_bits_t;
 typedef uint32_t loom_amdgpu_encode_instruction_stream_flags_t;
 
@@ -102,6 +124,11 @@ typedef struct loom_amdgpu_encoded_instruction_stream_t {
   const loom_amdgpu_native_insertion_t* native_insertions;
   // Number of entries in |native_insertions|.
   iree_host_size_t native_insertion_count;
+  // One entry per native instruction in |text|, in order, when capture was
+  // requested.
+  const loom_amdgpu_instruction_map_entry_t* instruction_map;
+  // Number of entries in |instruction_map|.
+  iree_host_size_t instruction_map_count;
 } loom_amdgpu_encoded_instruction_stream_t;
 
 // Encodes one AMDGPU target-low function from an addressability-accepted

@@ -1090,3 +1090,29 @@ iree_status_t loom_amdgpu_lower_spill_traffic(
   }
   return status;
 }
+
+loom_amdgpu_scratch_access_kind_t
+loom_amdgpu_spill_lowering_classify_descriptor(
+    const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_descriptor_t* descriptor) {
+  if (descriptor == NULL) {
+    return LOOM_AMDGPU_SCRATCH_ACCESS_NONE;
+  }
+  const loom_amdgpu_descriptor_ref_t ref =
+      loom_amdgpu_descriptor_ref_for_descriptor(descriptor_set, descriptor);
+  static const uint32_t kChunkUnits[] = {1, 2, 4};
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(kChunkUnits); ++i) {
+    if (ref == loom_amdgpu_spill_lowering_load_descriptor_ref(kChunkUnits[i]) ||
+        ref == loom_amdgpu_spill_lowering_load_vaddr_descriptor_ref(
+                   kChunkUnits[i])) {
+      return LOOM_AMDGPU_SCRATCH_ACCESS_LOAD;
+    }
+    if (ref ==
+            loom_amdgpu_spill_lowering_store_descriptor_ref(kChunkUnits[i]) ||
+        ref == loom_amdgpu_spill_lowering_store_vaddr_descriptor_ref(
+                   kChunkUnits[i])) {
+      return LOOM_AMDGPU_SCRATCH_ACCESS_STORE;
+    }
+  }
+  return LOOM_AMDGPU_SCRATCH_ACCESS_NONE;
+}

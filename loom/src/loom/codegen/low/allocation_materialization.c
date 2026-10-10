@@ -85,6 +85,7 @@ loom_low_allocation_spill_plan_assignment(
 static void loom_low_allocation_record_materialized_spill(
     const loom_low_allocation_table_t* table,
     const loom_low_allocation_spill_plan_t* plan,
+    loom_value_id_t storage_value_id,
     loom_low_materialized_traffic_t store_traffic,
     loom_low_materialized_traffic_t reload_traffic,
     loom_low_allocation_materialized_spill_flags_t flags,
@@ -93,6 +94,7 @@ static void loom_low_allocation_record_materialized_spill(
       loom_low_allocation_spill_plan_assignment(table, plan);
   *record = (loom_low_allocation_materialized_spill_t){
       .value_id = plan->value_id,
+      .storage_value_id = storage_value_id,
       .descriptor_reg_class_id = assignment->descriptor_reg_class_id,
       .flags = flags,
       .assignment_index = plan->assignment_index,
@@ -937,8 +939,9 @@ iree_status_t loom_low_allocation_materialize_spills(
         result.storage_minimum_alignment, table->spill_plans[i].byte_alignment);
     if (record_materialized_spills) {
       loom_low_allocation_record_materialized_spill(
-          table, &table->spill_plans[i], materialized_store_traffic,
-          materialized_reload_traffic, record_flags, &materialized_spills[i]);
+          table, &table->spill_plans[i], slots[i].storage_value_id,
+          materialized_store_traffic, materialized_reload_traffic, record_flags,
+          &materialized_spills[i]);
     }
     if (emit_spill_diagnostics) {
       IREE_RETURN_IF_ERROR(loom_low_allocation_emit_materialized_spill(

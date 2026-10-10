@@ -851,6 +851,10 @@ iree_status_t loom_target_compile_report_record_materialized_spill_rows(
           .store_bytes = spill->store_bytes,
           .reload_count = spill->reload_count,
           .reload_bytes = spill->reload_bytes,
+          .storage_name = spill->storage_value_id != LOOM_VALUE_ID_INVALID
+                              ? loom_target_compile_report_value_name(
+                                    frame->module, spill->storage_value_id)
+                              : iree_string_view_empty(),
       };
       status = loom_target_compile_report_record_spill_row(report, &row);
     }

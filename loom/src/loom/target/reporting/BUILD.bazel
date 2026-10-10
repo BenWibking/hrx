@@ -48,6 +48,7 @@ loom_cc_library(
 loom_cc_library(
     name = "report",
     srcs = [
+        "code_attribution.c",
         "config_bindings.c",
         "config_bindings.h",
         "loop_pipeline.c",
@@ -61,6 +62,7 @@ loom_cc_library(
         "target_insertion.c",
     ],
     hdrs = [
+        "code_attribution.h",
         "loop_pipeline.h",
         "pipeline_plan.h",
         "report.h",

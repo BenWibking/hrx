@@ -66,6 +66,50 @@ loom_target_compile_report_append_emission_breakdown_fields(
       breakdown->coissued_component_count);
 }
 
+static iree_status_t loom_target_compile_report_format_code_attribution_rows(
+    const loom_target_compile_report_t* report,
+    iree_string_builder_t* builder) {
+  for (const loom_target_compile_report_vec_t* vec =
+           report->code_attribution_rows.head;
+       vec != NULL; vec = vec->next) {
+    const loom_target_compile_report_code_attribution_row_t* rows =
+        (const loom_target_compile_report_code_attribution_row_t*)
+            loom_target_compile_report_vec_const_rows(vec);
+    for (iree_host_size_t i = 0; i < vec->count; ++i) {
+      const loom_target_compile_report_code_attribution_row_t* row = &rows[i];
+      const iree_string_view_t function_name =
+          loom_target_compile_report_text_non_empty(row->function_name);
+      const iree_string_view_t block_name =
+          loom_target_compile_report_text_non_empty(row->block_name);
+      const iree_string_view_t operation_name =
+          loom_target_compile_report_text_non_empty(row->operation_name);
+      const iree_string_view_t source_filename =
+          loom_target_compile_report_text_non_empty(row->source_filename);
+      const iree_string_view_t wait_reason =
+          loom_target_compile_report_text_non_empty(row->wait_reason);
+      const iree_string_view_t scratch_access =
+          loom_target_compile_report_text_non_empty(row->scratch_access);
+      IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+          builder,
+          "COMPILE-REPORT: code[0x%06" PRIx64 "] function=%.*s size=%" PRIu32
+          " kind=%.*s block=%.*s node=%" PRIu32
+          " operation=%.*s source=%.*s:%" PRIu32 ":%" PRIu32
+          " wait_reason=%.*s scratch=%.*s spill_slot=%" PRId64 "\n",
+          row->symbol_offset, (int)function_name.size, function_name.data,
+          row->byte_size, (int)row->instruction_kind.size,
+          row->instruction_kind.data, (int)block_name.size, block_name.data,
+          row->node_index, (int)operation_name.size, operation_name.data,
+          (int)source_filename.size, source_filename.data, row->source_line,
+          row->source_column, (int)wait_reason.size, wait_reason.data,
+          (int)scratch_access.size, scratch_access.data,
+          row->spill_slot_index == UINT32_MAX
+              ? (int64_t)-1
+              : (int64_t)row->spill_slot_index));
+    }
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_target_compile_report_format_target_insertion_rows(
     const loom_target_compile_report_t* report,
     iree_string_builder_t* builder) {
@@ -945,6 +989,13 @@ iree_status_t loom_target_compile_report_format_text(
             LOOM_TARGET_COMPILE_REPORT_DETAIL_TARGET_INSERTION_ROWS)) {
       IREE_RETURN_IF_ERROR(
           loom_target_compile_report_format_target_insertion_rows(report,
+                                                                  builder));
+    }
+    if (iree_any_bit_set(
+            report->detail_flags,
+            LOOM_TARGET_COMPILE_REPORT_DETAIL_CODE_ATTRIBUTION_ROWS)) {
+      IREE_RETURN_IF_ERROR(
+          loom_target_compile_report_format_code_attribution_rows(report,
                                                                   builder));
     }
     IREE_RETURN_IF_ERROR(
