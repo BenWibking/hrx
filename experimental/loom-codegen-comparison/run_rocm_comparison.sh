@@ -16,19 +16,49 @@ if [[ ! -x $hipcc ]]; then
   echo "HIP compiler missing: $hipcc (set ROCM_PATH or HIPCC)" >&2
   exit 2
 fi
+# Hot Aisle VMs (Ubuntu + packaged ROCm) need three workarounds to build the
+# Loom tools: cmake/ninja are not preinstalled; the ROCm package lacks the AQL
+# profile SDK headers, so package-only ROCm dependencies fail to configure; and
+# ROCm's clang has no clang-scan-deps and crashes on the vendored C++ parser,
+# so the host tools use Ubuntu's clang-20. Set CHEM_HOTAISLE=0/1 to override.
+hotaisle=${CHEM_HOTAISLE:-}
+if [[ -z $hotaisle ]]; then
+  hotaisle=0
+  [[ -e /etc/ssh/sshd_config.d/70-hotaisle-auth-keys.conf ]] && hotaisle=1
+fi
+host_llvm=$rocm/llvm/bin
+rocm_dependency_mode=package
+if [[ $hotaisle == 1 ]]; then
+  host_llvm=/usr/lib/llvm-20/bin
+  rocm_dependency_mode=auto
+fi
+
 if [[ ! -x $importer || ! -x $compiler ]]; then
+  if [[ $hotaisle == 1 ]]; then
+    echo "Hot Aisle VM detected: using clang-20 host tools and auto ROCm dependencies."
+    missing=()
+    command -v cmake >/dev/null || missing+=(cmake)
+    command -v ninja >/dev/null || missing+=(ninja-build)
+    [[ -x $host_llvm/clang++ ]] || missing+=(clang-20 llvm-20)
+    [[ -x $host_llvm/ld.lld ]] || missing+=(lld-20)
+    if ((${#missing[@]})); then
+      echo "Installing ${missing[*]}..."
+      sudo apt-get update -q
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${missing[@]}"
+    fi
+  fi
   echo "Configuring Loom tools for ROCm gfx942..."
   cmake -S "$repo" -B "$loom_build" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_LIBDIR=lib \
-    -DCMAKE_C_COMPILER="$rocm/llvm/bin/clang" \
-    -DCMAKE_CXX_COMPILER="$rocm/llvm/bin/clang++" \
-    -DCMAKE_ASM_COMPILER="$rocm/llvm/bin/clang" \
-    -DCMAKE_AR="$rocm/llvm/bin/llvm-ar" \
-    -DCMAKE_RANLIB="$rocm/llvm/bin/llvm-ranlib" \
+    -DCMAKE_C_COMPILER="$host_llvm/clang" \
+    -DCMAKE_CXX_COMPILER="$host_llvm/clang++" \
+    -DCMAKE_ASM_COMPILER="$host_llvm/clang" \
+    -DCMAKE_AR="$host_llvm/llvm-ar" \
+    -DCMAKE_RANLIB="$host_llvm/llvm-ranlib" \
     -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \
     -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \
     -DCMAKE_MODULE_LINKER_FLAGS=-fuse-ld=lld \
-    -DIREE_ROCM_PATH="$rocm" -DIREE_ROCM_DEPENDENCY_MODE=package \
+    -DIREE_ROCM_PATH="$rocm" -DIREE_ROCM_DEPENDENCY_MODE="$rocm_dependency_mode" \
     -DLOOM_BUILD=ON -DLOOM_IMPORT_CXX=ON \
     -DLOOM_TARGET_DEFAULTS=OFF -DLOOM_TARGET_AMDGPU=ON \
     -DIREE_HAL_DRIVER_AMDGPU=ON -DIREE_HAL_AMDGPU_TARGETS=gfx942
