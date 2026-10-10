@@ -13,7 +13,7 @@
 #                                     compare_rocm (from generate + hipcc) ----------------/
 #
 # Environment:
-#   HOTAISLE_HOST      ssh destination (default hotaisle@23.183.40.70; arg 1 wins)
+#   HOTAISLE_HOST      ssh destination (default hotaisle@23.183.40.76; arg 1 wins)
 #   CCACHE_ARCHIVE_URL optional .tar.zst/.tar.gz of a ccache dir, fetched on the VM
 #   HARNESS_DIR        local dir of extra scripts to copy to ~ (default
 #                      .notes/advance-autoresearch/harness when it exists)
@@ -22,7 +22,7 @@
 #   JOBS               remote build parallelism (default: remote nproc)
 set -euo pipefail
 
-host=${1:-${HOTAISLE_HOST:-hotaisle@23.183.40.70}}
+host=${1:-${HOTAISLE_HOST:-hotaisle@23.183.40.76}}
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd -- "$here/../.." && pwd)
 # shellcheck disable=SC2016  # $HOME must expand on the VM.
