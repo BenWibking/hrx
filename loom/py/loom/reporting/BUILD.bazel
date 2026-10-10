@@ -16,6 +16,7 @@ iree_py_library(
     srcs = [
         "__init__.py",
         "compile_report.py",
+        "compile_report_attribution.py",
         "compile_report_bank_service.py",
         "compile_report_barriers.py",
         "compile_report_boundary_projections.py",
@@ -40,6 +41,7 @@ iree_py_library(
 iree_py_test(
     name = "reporting_test",
     srcs = [
+        "compile_report_attribution_test.py",
         "compile_report_bank_service_test.py",
         "compile_report_barriers_test.py",
         "compile_report_boundary_projections_test.py",
@@ -56,6 +58,7 @@ iree_py_test(
         "//loom/py/loom/tools:pytest_style_runner.py",
     ],
     args = [
+        "loom.reporting.compile_report_attribution_test",
         "loom.reporting.compile_report_bank_service_test",
         "loom.reporting.compile_report_barriers_test",
         "loom.reporting.compile_report_boundary_projections_test",

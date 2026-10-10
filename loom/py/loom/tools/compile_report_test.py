@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import struct
 from pathlib import Path
 
 import pytest
@@ -731,3 +732,99 @@ def test_suggest_json_reports_unsupported_family_without_provider(
     assert view["reason"] == "unsupported_target_family"
     assert "provider" not in view
     assert view["findings"] == []
+
+
+def test_attribute_joins_samples_with_code_rows(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report_path = tmp_path / "report.json"
+    _write_report(report_path)
+    report = json.loads(report_path.read_text())
+    report["code_attribution_rows"] = _CODE_ROWS
+    report_path.write_text(json.dumps(report))
+    code_object = tmp_path / "kernel.hsaco"
+    _write_code_object(code_object, "kernel", 0x1000, 12)
+    samples = tmp_path / "samples.csv"
+    samples.write_text("0x1008,5\n0x1000,2\n")
+
+    assert (
+        main(
+            [
+                "attribute",
+                str(report_path),
+                f"--code-object={code_object}",
+                f"--samples={samples}",
+                "--group-by=line,wait,storage",
+                "--format=json",
+            ]
+        )
+        == 0
+    )
+    profile = json.loads(capsys.readouterr().out)
+    assert profile["total_samples"] == 7
+    assert profile["groups"] == [
+        {
+            "key": ["kernel.cpp:11", "amdgpu.ssa_use", "kernel_spill_storage_7"],
+            "samples": 5,
+        },
+        {"key": ["kernel.cpp:10", "", ""], "samples": 2},
+    ]
+
+    disassembly = tmp_path / "kernel.s"
+    disassembly.write_text("\ts_nop 0 // 000000001000: BF800000\n")
+    assert (
+        main(
+            [
+                "attribute",
+                str(report_path),
+                f"--code-object={code_object}",
+                f"--verify-disassembly={disassembly}",
+            ]
+        )
+        == 2
+    )
+    assert "mismatched" in capsys.readouterr().err
+
+
+_CODE_ROWS = [
+    {
+        "function": "kernel",
+        "symbol_offset": 0,
+        "byte_size": 8,
+        "kind": "packet",
+        "source_file": "/src/kernel.cpp",
+        "source_line": 10,
+        "source_column": 3,
+    },
+    {
+        "function": "kernel",
+        "symbol_offset": 8,
+        "byte_size": 4,
+        "kind": "wait",
+        "source_file": "/src/kernel.cpp",
+        "source_line": 11,
+        "source_column": 5,
+        "wait_reason": "amdgpu.ssa_use",
+        "scratch_access": "load",
+        "scratch_storage": "kernel_spill_storage_7",
+        "spill_slot": 3,
+    },
+]
+
+
+def _write_code_object(path: Path, name: str, address: int, size: int) -> None:
+    """Writes a minimal ELF64 file holding one STT_FUNC symbol."""
+    strtab = b"\0" + name.encode() + b"\0"
+    symbols = b"\0" * 24 + struct.pack("<IBBHQQ", 1, 0x12, 0, 1, address, size)
+    sections = (
+        b"\0" * 64
+        + struct.pack("<IIQQQQIIQQ", 0, 2, 0, 0, 64, len(symbols), 2, 1, 8, 24)
+        + struct.pack(
+            "<IIQQQQIIQQ", 0, 3, 0, 0, 64 + len(symbols), len(strtab), 0, 0, 1, 0
+        )
+    )
+    header = bytearray(64)
+    header[:6] = b"\x7fELF\x02\x01"
+    struct.pack_into("<Q", header, 0x28, 64 + len(symbols) + len(strtab))
+    struct.pack_into("<HH", header, 0x3A, 64, 3)
+    path.write_bytes(bytes(header) + symbols + strtab + sections)

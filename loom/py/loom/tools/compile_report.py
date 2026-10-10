@@ -106,6 +106,26 @@ padding headroom at fixed launch and other resources. Static order is not runtim
 importance, and a report alone does not select a conflict-free pitch. Recompile
 layout candidates, compare all access directions and resources, and benchmark.
 
+### Attribute an instruction profile
+
+```shell
+loom-compile kernel.bc --target=amdgpu:gfx942 --format=amdgpu-hsaco \\
+  --output=kernel.hsaco --compile-report=details \\
+  --compile-report-code-attribution --compile-report-output=kernel.report.json
+loom-compile-report attribute kernel.report.json --code-object=kernel.hsaco \\
+  --rocprof=results.json --group-by=line,wait,producer
+loom-compile-report attribute kernel.report.json --code-object=kernel.hsaco \\
+  --rocprof=results.json --group-by=scratch_source
+```
+
+`attribute` maps rocprofiler-sdk host-trap PC samples to the operation, source
+line, wait reason and scratch data behind each sampled instruction. A wait is
+charged to the access it waits on; `scratch_source` separates compiler spill
+storage from authored storage such as local arrays. Group spills by storage,
+not slot: slot ordinals are reused across spill batches. Import C++ as bytecode
+(`loom-import-cxx --to=bc`) to keep C++ source locations. Samples show where
+time goes, not why a change would help; recompile and measure.
+
 ### Use the bounded JSON views
 
 ```shell
@@ -160,6 +180,8 @@ def run(args: argparse.Namespace, *, stdout: TextIO) -> int:
             force=args.force,
         )
         text = format_compile_report_diff_text(view)
+    elif args.command == "attribute":
+        view, text = _run_attribute(args)
     elif args.command == "suggest":
         from loom.reporting.compile_report_suggestions import (
             CompileReportSuggestionOptions,
@@ -186,6 +208,49 @@ def run(args: argparse.Namespace, *, stdout: TextIO) -> int:
     else:
         stdout.write(text)
     return 0
+
+
+def _run_attribute(args: argparse.Namespace) -> tuple[dict[str, object], str]:
+    from loom.reporting.compile_report_attribution import (
+        CodeAttribution,
+        build_attribution_profile,
+        code_attribution_rows,
+        format_attribution_profile_text,
+        format_disassembly_verification_text,
+        read_csv_samples,
+        read_function_symbols,
+        read_rocprof_samples,
+        verify_disassembly,
+    )
+
+    document = load_compile_report(args.report)
+    attribution = CodeAttribution(
+        code_attribution_rows(document), read_function_symbols(args.code_object)
+    )
+    if args.verify_disassembly is not None:
+        try:
+            with args.verify_disassembly.open("r", encoding="utf-8") as file:
+                result = verify_disassembly(attribution, file)
+        except OSError as exc:
+            raise CompileReportError(
+                f"cannot read {args.verify_disassembly}: {exc}"
+            ) from exc
+        if not result["ok"]:
+            raise CompileReportError(format_disassembly_verification_text(result))
+        return result, format_disassembly_verification_text(result)
+    if args.rocprof is not None:
+        counts = read_rocprof_samples(
+            args.rocprof, attribution.function_names, args.kernel
+        )
+    elif args.samples is not None:
+        counts = read_csv_samples(args.samples)
+    else:
+        raise CompileReportError(
+            "attribute requires --rocprof, --samples or --verify-disassembly"
+        )
+    group_by = tuple(key.strip() for key in args.group_by.split(",") if key.strip())
+    profile = build_attribution_profile(attribution, counts, group_by)
+    return profile, format_attribution_profile_text(profile, top=args.top)
 
 
 def _create_argument_parser() -> argparse.ArgumentParser:
@@ -235,6 +300,70 @@ def _create_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     _add_output_format_argument(diff_parser)
+
+    attribute_parser = subparsers.add_parser(
+        "attribute",
+        help=(
+            "Attributes sampled program counters to source, waits and scratch "
+            "data using code attribution rows."
+        ),
+    )
+    attribute_parser.add_argument(
+        "report",
+        type=Path,
+        help=(
+            "Compile report JSON produced with --compile-report=details "
+            "--compile-report-code-attribution."
+        ),
+    )
+    attribute_parser.add_argument(
+        "--code-object",
+        type=Path,
+        required=True,
+        help="Code object the report describes, for its function symbols.",
+    )
+    sample_group = attribute_parser.add_mutually_exclusive_group(required=True)
+    sample_group.add_argument(
+        "--rocprof",
+        type=Path,
+        help="rocprofiler-sdk JSON result with pc_sample_host_trap records.",
+    )
+    sample_group.add_argument(
+        "--samples",
+        type=Path,
+        help="CSV of code_object_offset[,count] lines.",
+    )
+    sample_group.add_argument(
+        "--verify-disassembly",
+        type=Path,
+        help=(
+            "llvm-objdump -d output of the code object; checks that rows and "
+            "instructions start at the same addresses."
+        ),
+    )
+    attribute_parser.add_argument(
+        "--kernel",
+        help=(
+            "Kernel-name substring selecting the profiled code object. By "
+            "default the report's function names must match exactly."
+        ),
+    )
+    attribute_parser.add_argument(
+        "--group-by",
+        default="line,wait,producer",
+        help=(
+            "Comma-separated keys: source, line, kind, wait, producer, block, "
+            "descriptor, function, scratch, storage, scratch_source. Defaults "
+            "to line,wait,producer."
+        ),
+    )
+    attribute_parser.add_argument(
+        "--top",
+        type=int,
+        default=30,
+        help="Number of text rows to print. Defaults to 30.",
+    )
+    _add_output_format_argument(attribute_parser)
 
     suggest_parser = subparsers.add_parser(
         "suggest",

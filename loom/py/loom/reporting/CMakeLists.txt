@@ -15,6 +15,7 @@ iree_py_library(
   SRCS
     "__init__.py"
     "compile_report.py"
+    "compile_report_attribution.py"
     "compile_report_bank_service.py"
     "compile_report_barriers.py"
     "compile_report_boundary_projections.py"
@@ -42,6 +43,7 @@ iree_py_test(
   MAIN
     "../tools/pytest_style_runner.py"
   SRCS
+    "compile_report_attribution_test.py"
     "compile_report_bank_service_test.py"
     "compile_report_barriers_test.py"
     "compile_report_boundary_projections_test.py"
@@ -57,6 +59,7 @@ iree_py_test(
     "compile_report_wait_reasons_test.py"
     "../tools/pytest_style_runner.py"
   ARGS
+    "loom.reporting.compile_report_attribution_test"
     "loom.reporting.compile_report_bank_service_test"
     "loom.reporting.compile_report_barriers_test"
     "loom.reporting.compile_report_boundary_projections_test"

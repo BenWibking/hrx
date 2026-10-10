@@ -5,11 +5,12 @@ one compilation identity. It is the first place to answer questions about code
 size, instruction mix, memory traffic, register pressure, residency, spills,
 and the source-to-Low decisions that produced them.
 
-`loom-compile-report` provides three bounded views:
+`loom-compile-report` provides four bounded views:
 
 - `show` presents one report without requiring knowledge of its JSON schema;
 - `diff` compares one controlled change under an explicit identity contract;
-- `suggest` uses source policies and target evidence to propose experiments.
+- `suggest` uses source policies and target evidence to propose experiments;
+- `attribute` joins an instruction-level PC-sampling profile with the report.
 
 Raw JSON remains available after one of those views identifies the exact
 evidence that needs deeper inspection. The scenario-indexed field and `jq`
@@ -595,6 +596,60 @@ trying to recover which source decision produced it.
 Pressure, allocation, scheduling, wait, memory, target-capability, and IR-trace
 queries are collected in [Query compile evidence](compile-report-queries.md)
 instead of being repeated in every tool's help.
+
+## Attribute a PC-sampling profile
+
+On AMDGPU, a details report can describe every emitted instruction. Request
+the rows explicitly; a large kernel emits hundreds of thousands of them:
+
+```shell
+loom-compile kernel.bc \
+  --format=amdgpu-hsaco \
+  --target=amdgpu:gfx942 \
+  --output=kernel.hsaco \
+  --compile-report=details \
+  --compile-report-code-attribution \
+  --compile-report-output=kernel.report.json
+```
+
+Each `code_attribution_rows` entry gives the instruction's byte offset within
+its function symbol, the scheduled operation and source location that produced
+it, and, for inserted waits, the wait reason and the instruction being waited
+on. Rows that touch scratch memory, or wait on an instruction that does, name
+the storage and where its data comes from: the spilled value's definition for
+compiler spill storage, otherwise the storage declaration, such as a local
+array. Source locations come from the compiled module, so import C++ as
+bytecode with `loom-import-cxx --to=bc` to keep C++ file and line positions.
+
+Sample the kernel with rocprofiler-sdk host-trap PC sampling, then aggregate
+the samples:
+
+```shell
+loom-compile-report attribute kernel.report.json \
+  --code-object=kernel.hsaco \
+  --rocprof=results.json \
+  --group-by=line,wait,producer
+loom-compile-report attribute kernel.report.json \
+  --code-object=kernel.hsaco \
+  --rocprof=results.json \
+  --group-by=scratch_source
+```
+
+The first view ranks source lines by the waits that stall them. The second
+charges each wait to the data it loads, separating compiler spills from
+authored scratch storage. Group spills by `storage` or `scratch_source`, never
+by slot: slot ordinals are reused across spill batches, so one slot can hold
+several unrelated values.
+
+The profiled code object is selected by exact kernel-symbol name, so a profile
+that also ran a reference implementation of the same kernel does not mix its
+samples in. `--samples=offsets.csv` reads `code_object_offset,count` lines from
+other profilers. `--verify-disassembly=kernel.s` checks the rows against
+`llvm-objdump -d` output for the same code object and fails unless every
+instruction and row start at the same address.
+
+Attribution shows where samples land, not why a change would help. Use it to
+choose the next experiment, then recompile and measure.
 
 ## Relate reports to benchmark results
 
