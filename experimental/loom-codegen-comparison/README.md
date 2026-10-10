@@ -16,11 +16,11 @@ original license notices.
 | Files | Purpose |
 | --- | --- |
 | `reference.cpp` | Original HIP kernels and standalone host driver |
-| `support.h`, `f64_math.h` | Loom math, atomics, and strict f64 exp/log/cbrt source recipes |
+| `support.h`, `f64_math.h` | Loom math, atomics, and OCML-derived f64 exp/log/cbrt source recipes |
 | `generate.py` | Translation from the pinned HIP source; emits `reproducer.cpp` and `integrate.inc` (Loom device program and solver control flow) and `reference_kernels.inc` (original kernel bodies) |
 | `validate.cpp`, `CMakeLists.txt` | Native differential validation against HIP source bodies |
 | `check_import.py` | Checks both imported roots, f64 math, private storage, and atomics |
-| `check_compile.py` | XFAIL regression test for the production-sized advance kernel compile |
+| `check_compile.py` | Compiles the production-sized advance kernel for gfx942 |
 | `compare_rocm.cpp`, `run_rocm_comparison.sh` | Build and run the HIP/Loom GPU comparison |
 | `HIP-TO-LOOM-REWRITES.md` | Translation and numerical-contract notes |
 
@@ -109,28 +109,15 @@ per wave lets more waves stay resident on each SIMD to hide memory and
 instruction latency, but a register-heavy kernel like this one spills more when
 its budget shrinks. At 128 threads the advance kernel already has the full
 256-VGPR budget, so a smaller workgroup would not give it more registers, and a
-larger one would not relieve the allocation failure below.
+larger one would shrink that budget.
 
-### Known limitation: production-sized advance kernel
+### Production-sized advance kernel
 
-Loom cannot currently compile the advance kernel for the production `64^3`
-grid. With `workgroup_count.x=2048`, gfx942 VGPR allocation fails on both macOS
-and Linux hosts from the same imported module:
-
-```text
-error [BACKEND/005]: ... failed to allocate amdgpu.vgpr registers for
-'@chemistry.advance_collapse_gridwide_kernel' with budget 256, peak 531,
-and failure code 'spill-traffic-register-exhausted'
-```
-
-The same module compiles with `workgroup_count.x=1` (up to 128 cells). The
-workgroup count is compile-time config, so the cell count selects which kernel
-is compiled. The prepare kernel compiles at both sizes.
-
-The `production-advance-compile` test (`check_compile.py`) tracks this as an
-XFAIL. It passes only while the compile fails with this allocation error, so an
-unrelated compile failure or a successful compile (XPASS) fails the test. When
-Loom fixes the allocation, remove the XFAIL and this note.
+The `production-advance-compile` test (`check_compile.py`) compiles the advance
+kernel for the production `64^3` grid (`workgroup_count.x=2048`) on gfx942. It
+fits the 256-VGPR budget with the OCML-derived `f64_math.h`; the earlier fdlibm
+exp and Newton cbrt recipes, with 14 f64 divisions between them, exhausted it
+(`spill-traffic-register-exhausted`).
 
 ## Compare HIP and Loom on a GPU
 
@@ -156,7 +143,7 @@ or `LOOM_IMPORT_CXX` and `LOOM_COMPILE` for checkout-local Loom tools. Outputs
 default to `build/loom-chemistry-rocm` at the repository root; override with
 `CHEM_WORK_DIR`. If Loom tools are missing, the script configures and builds them.
 
-`f64_math.h` supplies exp/log/cbrt recipes for the Loom device path; native
-validation uses system math. Import checks and code-object emission alone do
+`f64_math.h` supplies exp/log/cbrt recipes transcribed from AMD's OCML for the
+Loom device path; native validation uses system math. Import checks and code-object emission alone do
 not validate those recipes against HIP device math; use the GPU comparison for
 that evidence.

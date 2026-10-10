@@ -29,10 +29,12 @@ Each burn initializes solver storage at the original state-construction point.
 source-like form. Loop, pivot, and matrix-index assumptions describe valid
 private-array bounds.
 
-`f64_math.h` carries strict f64 exp/log/cbrt source recipes adapted from the
-compiler math recipes (OpenLibm/fdlibm exp and log, Newton cbrt). The device path
-uses these while native differential validation uses system math. No f32
-substitution or approximate-function permission is enabled.
+`f64_math.h` carries f64 exp/log/cbrt source recipes transcribed from AMD's
+OCML, with explicit `loom::scalar::fmaf` and bit-level replacements for f64
+rint, ldexp, and frexp, which Loom does not lower. The device path uses these
+while native differential validation uses system math. As in OCML, only the
+cbrt seed uses f32 approximate log2 and exp2; a Halley step in f64 corrects it.
+No other f32 substitution or approximate-function permission is enabled.
 
 [validate.cpp](validate.cpp) compares original and translated routines, solver
 fields, and serial kernel bodies with exact double-bit and integer comparisons.
