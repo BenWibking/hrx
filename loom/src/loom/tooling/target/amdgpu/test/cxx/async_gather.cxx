@@ -14,30 +14,22 @@ constexpr unsigned kSubgroupSize = 64u;
 constexpr unsigned kRecordCount = 257u;
 constexpr unsigned kInputElementCount = kRecordCount * kSubgroupSize;
 
-[[loom::kernel, loom::workgroup_size(kSubgroupSize, 1, 1),
-  loom::workgroup_count(1, 1, 1)]]
-void async_gather_reference(
-    unsigned record_count,
-    [[loom::noalias, loom::assume_aligned(64)]] const int* input,
-    [[loom::noalias, loom::assume_aligned(64)]] int* output) {
+void async_gather_reference(unsigned record_count,
+                            loom::type::buffer<int> input,
+                            loom::type::buffer<int> output) {
   loom::assume(record_count <= kRecordCount);
-  unsigned lane = loom::kernel::workitem::id.x;
-  unsigned neighbor = kSubgroupSize - 1u - lane;
-  auto* scratch = loom::buffer::alloca<int, loom::memory_space::workgroup, 16>(
-      kSubgroupSize);
-
-  int total = 0;
-  for (unsigned record = 0; record < record_count; ++record) {
-    scratch[lane] = input[record * kSubgroupSize + lane];
-    loom::kernel::barrier<loom::memory_space::workgroup,
-                          loom::atomic::scope::workgroup,
-                          loom::atomic::ordering::acq_rel>();
-    total += scratch[neighbor];
-    loom::kernel::barrier<loom::memory_space::workgroup,
-                          loom::atomic::scope::workgroup,
-                          loom::atomic::ordering::acq_rel>();
+  auto source = loom::buffer::view<kRecordCount, kSubgroupSize>(
+      input, {}, loom::encoding::layout::dense<2>());
+  auto destination = loom::buffer::view<kSubgroupSize>(
+      output, {}, loom::encoding::layout::dense<1>());
+  for (unsigned lane = 0; lane < kSubgroupSize; ++lane) {
+    int total = 0;
+    unsigned neighbor = kSubgroupSize - 1u - lane;
+    for (unsigned record = 0; record < record_count; ++record) {
+      total += loom::view::load(source, record, neighbor);
+    }
+    loom::view::store(total, destination, lane);
   }
-  output[lane] = total;
 }
 
 [[loom::kernel, loom::workgroup_size(kSubgroupSize, 1, 1),
