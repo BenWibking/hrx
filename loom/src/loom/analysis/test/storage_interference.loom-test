@@ -425,7 +425,7 @@ func.def @test(%input: buffer) {
   %source = buffer.view %global[%base] : buffer -> view<16xi8, %layout>
   %first = buffer.alloca<workgroup> align(16) %bytes : buffer
   %first_view = buffer.view %first[%base] : buffer -> view<16xi8, %layout>
-  %copy = kernel.async.copy %source to %first_view {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.copy %source to %first_view {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.barrier<workgroup> scope(workgroup) ordering(acq_rel)
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
@@ -453,7 +453,7 @@ func.def @test(%input: buffer) {
   %source = buffer.view %global[%base] : buffer -> view<16xi8, %layout>
   %first = buffer.alloca<workgroup> align(16) %bytes : buffer
   %first_view = buffer.view %first[%base] : buffer -> view<16xi8, %layout>
-  %copy = kernel.async.copy %source to %first_view {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.copy %source to %first_view {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   kernel.barrier<workgroup> scope(workgroup) ordering(acq_rel)

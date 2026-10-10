@@ -77,13 +77,13 @@ pipeline.def<kernel> public retain target(@device) @dma_copy() run(%input: buffe
   pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
     %external_input = buffer.view %source[%origin] : buffer -> view<1xi32>
     %write, %record = channel.reserve %channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
-    %ingress = kernel.async.copy %external_input to %record {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %ingress = kernel.async.copy %external_input to %record {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
     %incoming = kernel.async.group %ingress : kernel.async.token -> kernel.async.group
     kernel.async.wait %incoming {newer_groups = 0} : kernel.async.group
     channel.publish %write : write<tile<1xi32>>
     %read, %ready = channel.acquire %channel : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
     %external_output = buffer.view %destination[%origin] : buffer -> view<1xi32>
-    %egress = kernel.async.copy %ready to %external_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %egress = kernel.async.copy %ready to %external_output {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
     %outgoing = kernel.async.group %egress : kernel.async.token -> kernel.async.group
     kernel.async.wait %outgoing {newer_groups = 0} : kernel.async.group
     channel.release %read : read<tile<1xi32>>

@@ -1141,7 +1141,7 @@ func.def @async_copy_accepts_symbolic_byte_footprint(%buffer: buffer, %offset: o
   %source = buffer.view %global[%offset] : buffer -> view<[%n]xi8, %layout>
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<[%n]xi8, %layout>
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%n]xi8, %layout> to view<[%n]xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.copy %source to %dest {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<[%n]xi8, %layout> to view<[%n]xi8, %layout> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1150,7 +1150,7 @@ func.def @async_copy_accepts_symbolic_byte_footprint(%buffer: buffer, %offset: o
 // ====
 
 func.def @async_masked_copy_accepts_symbolic_byte_footprint(%elements: index, %bytes: index, %source: view<[%elements]xbf16>, %dest: view<[%bytes]xi8>, %enabled: i1) {
-  %copy = kernel.async.copy.mask %source to %dest, %enabled {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%elements]xbf16> to view<[%bytes]xi8>, i1 -> kernel.async.token
+  %copy = kernel.async.copy.mask %source to %dest, %enabled {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<[%elements]xbf16> to view<[%bytes]xi8>, i1 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1160,7 +1160,7 @@ func.def @async_masked_copy_accepts_symbolic_byte_footprint(%elements: index, %b
 
 func.def @async_copy_rejects_bit_elements_in_symbolic_source(%extent: index, %source: view<[%extent]xi1>, %dest: view<[%extent]xi8>) {
   // ERROR@+1: TYPE/003 "source" "view with a byte-addressable footprint"
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%extent]xi1> to view<[%extent]xi8> -> kernel.async.token
+  %copy = kernel.async.copy %source to %dest {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<[%extent]xi1> to view<[%extent]xi8> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1170,7 +1170,7 @@ func.def @async_copy_rejects_bit_elements_in_symbolic_source(%extent: index, %so
 
 func.def @async_masked_copy_rejects_bit_elements_in_symbolic_destination(%extent: index, %source: view<[%extent]xi8>, %dest: view<[%extent]xi1>, %enabled: i1) {
   // ERROR@+1: TYPE/003 "dest" "view with a byte-addressable footprint"
-  %copy = kernel.async.copy.mask %source to %dest, %enabled {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%extent]xi8> to view<[%extent]xi1>, i1 -> kernel.async.token
+  %copy = kernel.async.copy.mask %source to %dest, %enabled {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<[%extent]xi8> to view<[%extent]xi1>, i1 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1180,7 +1180,7 @@ func.def @async_masked_copy_rejects_bit_elements_in_symbolic_destination(%extent
 
 func.def @async_masked_copy_rejects_mismatched_byte_footprint(%source: view<16xbf16>, %dest: view<16xi8>, %enabled: i1) {
   // ERROR@+1: TYPE/003 "dest" "same static byte footprint as source"
-  %copy = kernel.async.copy.mask %source to %dest, %enabled {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xbf16> to view<16xi8>, i1 -> kernel.async.token
+  %copy = kernel.async.copy.mask %source to %dest, %enabled {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xbf16> to view<16xi8>, i1 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1197,7 +1197,7 @@ func.def @async_copy_rejects_mismatched_byte_footprint(%buffer: buffer, %offset:
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<8xi8, %layout>
   // ERROR@+1: TYPE/003 "dest" "same static byte footprint as source"
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<8xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.copy %source to %dest {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<8xi8, %layout> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1215,7 +1215,7 @@ kernel.def @async_copy_accepts_noalias_kernel_buffer_memory_space() {
   %source = buffer.view %source_noalias[%base] : buffer -> view<16xi8>
   %scratch = buffer.alloca<workgroup> align(16) %scratch_bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<16xi8>
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8> to view<16xi8> -> kernel.async.token
+  %copy = kernel.async.copy %source to %dest {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8> to view<16xi8> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   test.use %other_noalias : buffer
@@ -1233,7 +1233,7 @@ func.def @async_copy_rejects_global_store_last_use_cache(%buffer: buffer, %offse
   %source = buffer.view %source_buffer[%base] : buffer -> view<16xi8, %layout>
   %dest = buffer.view %global[%offset] : buffer -> view<16xi8, %layout>
   // ERROR@+1: STRUCTURE/014 "cache_temporal" "3" "store-compatible temporal hint"
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = last_use, direction = workgroup_to_global} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.copy %source to %dest {cache_scope = workgroup, cache_temporal = last_use, direction = workgroup_to_global} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1250,7 +1250,7 @@ func.def @async_copy_rejects_global_load_writeback_cache(%buffer: buffer, %offse
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<16xi8, %layout>
   // ERROR@+1: STRUCTURE/014 "cache_temporal" "4" "load-compatible temporal hint"
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = writeback, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.copy %source to %dest {cache_scope = workgroup, cache_temporal = writeback, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1284,7 +1284,7 @@ func.def @async_copy_token_must_be_grouped(%buffer: buffer, %offset: offset) {
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<16xi8, %layout>
   // ERROR@+1: DOMINANCE/009 "copy" "0" "exactly one kernel.async.group use"
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.copy %source to %dest {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
   func.return
 }
 
@@ -1298,7 +1298,7 @@ func.def @async_group_must_be_used(%buffer: buffer, %offset: offset) {
   %source = buffer.view %global[%offset] : buffer -> view<16xi8, %layout>
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<16xi8, %layout>
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.copy %source to %dest {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
   // ERROR@+1: DOMINANCE/009 "group" "0" "at least one wait or carried group use"
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   func.return
@@ -1362,7 +1362,7 @@ func.def @async_copy_token_rejects_multiple_groups(%buffer: buffer, %offset: off
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<16xi8, %layout>
   // ERROR@+1: DOMINANCE/009 "copy" "2" "exactly one kernel.async.group use"
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.copy %source to %dest {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
   %group0 = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   %group1 = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group0 {newer_groups = 1} : kernel.async.group
@@ -1381,7 +1381,7 @@ func.def @async_gather_requires_lane_axis(%buffer: buffer, %offset: offset) {
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<4xi8, %layout>
   // ERROR@+1: TYPE/003 "dest" "view with one leading subgroup-lane axis"
-  %copy = kernel.async.gather %source to %dest {cache_scope = cu, cache_temporal = regular} : view<4xi8, %layout> to view<4xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.gather %source to %dest {cache_scope = workgroup, cache_temporal = regular} : view<4xi8, %layout> to view<4xi8, %layout> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1398,7 +1398,7 @@ func.def @async_gather_rejects_small_lane_slot(%buffer: buffer, %offset: offset)
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<64x2xi8, %layout>
   // ERROR@+1: TYPE/003 "dest" "trailing lane byte footprint at least source footprint"
-  %copy = kernel.async.gather %source to %dest {cache_scope = cu, cache_temporal = regular} : view<4xi8, %layout> to view<64x2xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.gather %source to %dest {cache_scope = workgroup, cache_temporal = regular} : view<4xi8, %layout> to view<64x2xi8, %layout> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1415,7 +1415,7 @@ func.def @async_gather_requires_static_lane_footprint(%buffer: buffer, %offset: 
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<64x[%n]xi8, %layout>
   // ERROR@+1: TYPE/003 "dest" "view with static byte-addressable trailing lane footprint"
-  %copy = kernel.async.gather %source to %dest {cache_scope = cu, cache_temporal = regular} : view<4xi8, %layout> to view<64x[%n]xi8, %layout> -> kernel.async.token
+  %copy = kernel.async.gather %source to %dest {cache_scope = workgroup, cache_temporal = regular} : view<4xi8, %layout> to view<64x[%n]xi8, %layout> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1433,7 +1433,7 @@ func.def @async_cluster_gather_rejects_wrong_mask_type(%buffer: buffer, %offset:
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<4xi8, %layout>
   // ERROR@+1: TYPE/003 "cluster_mask" "i64" "i32"
-  %copy = kernel.async.cluster.gather %source to %dest using %bad_mask {cache_scope = cu, cache_temporal = regular} : view<4xi8, %layout> to view<4xi8, %layout>, i64 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %bad_mask {cache_scope = workgroup, cache_temporal = regular} : view<4xi8, %layout> to view<4xi8, %layout>, i64 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1451,7 +1451,7 @@ func.def @async_cluster_gather_rejects_unsupported_width(%buffer: buffer, %offse
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<2xi8, %layout>
   // ERROR@+1: TYPE/003 "source" "view with static 1, 4, 8, or 16 byte footprint"
-  %copy = kernel.async.cluster.gather %source to %dest using %cluster_mask {cache_scope = cu, cache_temporal = regular} : view<2xi8, %layout> to view<2xi8, %layout>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %cluster_mask {cache_scope = workgroup, cache_temporal = regular} : view<2xi8, %layout> to view<2xi8, %layout>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1469,7 +1469,7 @@ func.def @async_cluster_gather_rejects_mismatched_width(%buffer: buffer, %offset
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<4xi8, %layout>
   // ERROR@+1: TYPE/003 "dest" "same static byte footprint as source"
-  %copy = kernel.async.cluster.gather %source to %dest using %cluster_mask {cache_scope = cu, cache_temporal = regular} : view<8xi8, %layout> to view<4xi8, %layout>, i32 -> kernel.async.token
+  %copy = kernel.async.cluster.gather %source to %dest using %cluster_mask {cache_scope = workgroup, cache_temporal = regular} : view<8xi8, %layout> to view<4xi8, %layout>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1513,7 +1513,7 @@ func.def @async_tensor_load_rejects_wrong_descriptor_type(%buffer: buffer, %offs
   %scratch = buffer.alloca<workgroup> align(256) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<64x64xf32, %layout>
   // ERROR@+1: TYPE/003 "descriptor" "vector<4xi32>" "kernel.tensor.lds.descriptor"
-  %copy = kernel.async.tensor.load.to.lds %source to %dest using %bad_desc {cache_scope = cu, cache_temporal = regular} : view<64x64xf32, %layout> to view<64x64xf32, %layout>, vector<4xi32> -> kernel.async.token
+  %copy = kernel.async.tensor.load.to.lds %source to %dest using %bad_desc {cache_scope = workgroup, cache_temporal = regular} : view<64x64xf32, %layout> to view<64x64xf32, %layout>, vector<4xi32> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1534,7 +1534,7 @@ func.def @async_tensor_load_rejects_rank_mismatch(%buffer: buffer, %offset: offs
   %scratch = buffer.alloca<workgroup> align(256) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<64xf32, %layout>
   // ERROR@+1: TYPE/003 "dest" "same rank as source"
-  %copy = kernel.async.tensor.load.to.lds %source to %dest using %desc {cache_scope = cu, cache_temporal = regular} : view<64x64xf32, %layout> to view<64xf32, %layout>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %copy = kernel.async.tensor.load.to.lds %source to %dest using %desc {cache_scope = workgroup, cache_temporal = regular} : view<64x64xf32, %layout> to view<64xf32, %layout>, kernel.tensor.lds.descriptor -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1571,7 +1571,7 @@ kernel.def @bad_definition_predicate() {
 // ====
 
 func.def @async_copy_borrows_view_arguments(%source: view<256xi8>, %destination: view<64xi32>) {
-  %copy = kernel.async.copy %source to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<256xi8> to view<64xi32> -> kernel.async.token
+  %copy = kernel.async.copy %source to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<256xi8> to view<64xi32> -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return

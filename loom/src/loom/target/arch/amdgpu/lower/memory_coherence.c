@@ -17,7 +17,7 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
             // descriptors use GLC as return control rather than coherence.
             .load_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_SE] =
+                    [LOOM_CACHE_SCOPE_CLUSTER] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_GLC,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_GLC,
@@ -38,7 +38,7 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
             // paths before publication and invalidate GL0 after acquisition.
             .workgroup =
                 {
-                    .cache_scope = LOOM_CACHE_SCOPE_SE,
+                    .cache_scope = LOOM_CACHE_SCOPE_CLUSTER,
                     .release_wait_masks =
                         {LOOM_AMDGPU_WAIT_COUNTER_MASK_VMEM_LOAD |
                              LOOM_AMDGPU_WAIT_COUNTER_MASK_LDS |
@@ -52,9 +52,9 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
         {
             .load_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
-                    [LOOM_CACHE_SCOPE_SE] =
+                    [LOOM_CACHE_SCOPE_CLUSTER] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
@@ -63,9 +63,9 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
                 },
             .store_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
-                    [LOOM_CACHE_SCOPE_SE] =
+                    [LOOM_CACHE_SCOPE_CLUSTER] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
@@ -74,9 +74,9 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
                 },
             .atomic_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
-                    [LOOM_CACHE_SCOPE_SE] =
+                    [LOOM_CACHE_SCOPE_CLUSTER] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
@@ -85,9 +85,9 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
                 },
             .cache_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
-                    [LOOM_CACHE_SCOPE_SE] =
+                    [LOOM_CACHE_SCOPE_CLUSTER] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
@@ -104,7 +104,7 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
             .invalidate_count = 1,
             .workgroup =
                 {
-                    .cache_scope = LOOM_CACHE_SCOPE_SE,
+                    .cache_scope = LOOM_CACHE_SCOPE_CLUSTER,
                     .release_wait_masks =
                         {LOOM_AMDGPU_WAIT_COUNTER_MASK_VMEM_LOAD,
                          LOOM_AMDGPU_WAIT_COUNTER_MASK_VMEM_STORE,
@@ -117,9 +117,9 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
         {
             .load_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
-                    [LOOM_CACHE_SCOPE_SE] =
+                    [LOOM_CACHE_SCOPE_CLUSTER] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
@@ -128,9 +128,9 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
                 },
             .store_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
-                    [LOOM_CACHE_SCOPE_SE] =
+                    [LOOM_CACHE_SCOPE_CLUSTER] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
@@ -139,9 +139,9 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
                 },
             .atomic_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
-                    [LOOM_CACHE_SCOPE_SE] =
+                    [LOOM_CACHE_SCOPE_CLUSTER] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
@@ -150,9 +150,9 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
                 },
             .cache_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
-                    [LOOM_CACHE_SCOPE_SE] =
+                    [LOOM_CACHE_SCOPE_CLUSTER] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SCOPE,
@@ -171,7 +171,7 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
             // The CU cache is shared, but its ports do not order one another.
             .workgroup =
                 {
-                    .cache_scope = LOOM_CACHE_SCOPE_CU,
+                    .cache_scope = LOOM_CACHE_SCOPE_WORKGROUP,
                     .release_wait_masks =
                         {LOOM_AMDGPU_WAIT_COUNTER_MASK_VMEM_LOAD,
                          LOOM_AMDGPU_WAIT_COUNTER_MASK_VMEM_STORE,
@@ -186,7 +186,7 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
             // scope.
             .load_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SC0,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SC1,
@@ -196,7 +196,7 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
                 },
             .store_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SC0,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SC1,
@@ -211,7 +211,7 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
                 },
             .cache_attrs =
                 {
-                    [LOOM_CACHE_SCOPE_CU] =
+                    [LOOM_CACHE_SCOPE_WORKGROUP] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SC0,
                     [LOOM_CACHE_SCOPE_DEVICE] =
                         LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_SC1,
@@ -232,7 +232,7 @@ static const loom_amdgpu_memory_coherence_rule_t kMemoryCoherenceRules[] = {
             // With TgSplit disabled the workgroup shares an ordered L1.
             .workgroup =
                 {
-                    .cache_scope = LOOM_CACHE_SCOPE_CU,
+                    .cache_scope = LOOM_CACHE_SCOPE_WORKGROUP,
                     .release_wait_masks = {LOOM_AMDGPU_WAIT_COUNTER_MASK_LDS |
                                            LOOM_AMDGPU_WAIT_COUNTER_MASK_SMEM},
                     .release_wait_count = 1,

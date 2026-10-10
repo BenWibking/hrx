@@ -20,7 +20,7 @@ func.def target(@target) @async_copy_transfer_rejected(%input: buffer) {
   %scratch = buffer.alloca<workgroup> align(16) %bytes : buffer
   %dest = buffer.view %scratch[%buffer_base] : buffer -> view<16xi8>
   // ERROR@+1: AMDGPU/023 {constraint_key="async.transfer_packet"}
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8> to view<16xi8> -> kernel.async.token
+  %copy = kernel.async.copy %source to %dest {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8> to view<16xi8> -> kernel.async.token
   // ERROR@+1: AMDGPU/023 {constraint_key="async_group.local_transfer_tokens"}
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   // ERROR@+1: AMDGPU/023 {constraint_key="async_wait.group_token"}

@@ -402,8 +402,8 @@ kernel.def target(@target) @cache_policy_workgroup_dropped() {
   // REMARK@+1: BACKEND/017 "selected store memory packet 'amdgpu.ds_write_b128'"
   vector.store %stored_value, %scratch_view[%tid, 0] {cache_scope = device, cache_temporal = non_temporal} : vector<4xi32>, view<64x4xi32>
   %increment = scalar.constant 1 : i32
-  // REMARK@+1: BACKEND/040 "dropped cache policy 'cu/non_temporal'" "decision 'memory_cache_policy.unsupported'" "atomic_rmw in workgroup"
-  %old = view.atomic.rmw<addi> %increment, %scratch_view[%tid, 0] {cache_scope = cu, cache_temporal = non_temporal, ordering = acq_rel, scope = system} : i32, view<64x4xi32> -> i32
+  // REMARK@+1: BACKEND/040 "dropped cache policy 'workgroup/non_temporal'" "decision 'memory_cache_policy.unsupported'" "atomic_rmw in workgroup"
+  %old = view.atomic.rmw<addi> %increment, %scratch_view[%tid, 0] {cache_scope = workgroup, cache_temporal = non_temporal, ordering = acq_rel, scope = system} : i32, view<64x4xi32> -> i32
   kernel.return
 }
 

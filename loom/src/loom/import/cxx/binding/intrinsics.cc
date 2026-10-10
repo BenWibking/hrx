@@ -137,6 +137,7 @@ void Intrinsics::declaration(cxx::FunctionSymbol* function,
                 !BufferIntrinsic::supports(selected->arguments[0]->name()) &&
                 !DecodeIntrinsic::supports(selected->arguments[0]->name()) &&
                 !FragmentIntrinsic::supports(selected->arguments[0]->name()) &&
+                !AsyncIntrinsic::supports(selected->arguments[0]->name()) &&
                 !AtomicIntrinsic::supports(selected->arguments[0]->name()) &&
                 !FenceIntrinsic::supports(selected->arguments[0]->name()) &&
                 !BarrierIntrinsic::supports(selected->arguments[0]->name()) &&
@@ -212,6 +213,10 @@ Intrinsics::Binding Intrinsics::resolve(cxx::FunctionSymbol* function,
   if (auto assembly = AssemblyIntrinsic::resolve(unit_, diagnostics_, types_,
                                                  function, attribute, owner)) {
     return *assembly;
+  }
+  if (auto async = AsyncIntrinsic::resolve(unit_, diagnostics_, types_,
+                                           function, attribute, owner)) {
+    return *async;
   }
   if (auto atomic = AtomicIntrinsic::resolve(unit_, diagnostics_, types_,
                                              function, attribute, owner)) {
@@ -402,6 +407,9 @@ IntrinsicCallResult Intrinsics::call(const Binding& admitted,
   if (auto* view = std::get_if<ViewIntrinsic>(binding)) {
     return {view->call(arguments, types_, arena, storage, owner, builder,
                        location)};
+  }
+  if (auto* async = std::get_if<AsyncIntrinsic>(binding)) {
+    return {async->call(arguments, arena, builder, location)};
   }
   if (auto* atomic = std::get_if<AtomicIntrinsic>(binding)) {
     return {atomic->call(arguments, storage, owner, builder, location)};

@@ -17,6 +17,7 @@
 #include <variant>
 
 #include "loom/import/cxx/binding/assembly.h"
+#include "loom/import/cxx/binding/async.h"
 #include "loom/import/cxx/binding/atomic.h"
 #include "loom/import/cxx/binding/buffer.h"
 #include "loom/import/cxx/binding/check.h"
@@ -80,9 +81,10 @@ class Intrinsics {
   using Binding =
       std::variant<ScalarBinding, ShapedIntrinsic, EncodingIntrinsic,
                    DecodeIntrinsic, FragmentIntrinsic, BufferIntrinsic,
-                   ViewIntrinsic, AtomicIntrinsic, FenceIntrinsic,
-                   SubgroupIntrinsic, BarrierIntrinsic, TargetIntrinsic,
-                   AssemblyIntrinsic, TemplateApplyIntrinsic, CheckIntrinsic>;
+                   ViewIntrinsic, AsyncIntrinsic, AtomicIntrinsic,
+                   FenceIntrinsic, SubgroupIntrinsic, BarrierIntrinsic,
+                   TargetIntrinsic, AssemblyIntrinsic, TemplateApplyIntrinsic,
+                   CheckIntrinsic>;
 
   Intrinsics(cxx::TranslationUnit& unit, Diagnostics& diagnostics, Types& types,
              Locations& locations, SymbolNames& names,

@@ -105,7 +105,7 @@ static iree_string_view_t loom_cache_policy_error_expected_constraint(
     loom_cache_policy_error_t error) {
   switch (error) {
     case LOOM_CACHE_POLICY_ERROR_INVALID_SCOPE:
-      return IREE_SV("cu, se, device, or system");
+      return IREE_SV("workgroup, cluster, device, or system");
     case LOOM_CACHE_POLICY_ERROR_INVALID_TEMPORAL:
       return IREE_SV("supported cache temporal hint");
     case LOOM_CACHE_POLICY_ERROR_LOAD_TEMPORAL:

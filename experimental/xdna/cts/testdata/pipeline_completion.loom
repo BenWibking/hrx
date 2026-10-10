@@ -30,7 +30,7 @@ pipeline.def<kernel> public retain target(@npu) @autonomous_strided_ingress() ru
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %input[%offset] : buffer -> view<2xi32, #encoding.layout.strided<strides=[2]>>
       %write, %destination = channel.reserve %records : channel<tile<2xi32>> -> (write<tile<2xi32>>, view<2xi32>)
-      %copy = kernel.async.copy %external to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2xi32, #encoding.layout.strided<strides=[2]>> to view<2xi32> -> kernel.async.token
+      %copy = kernel.async.copy %external to %destination {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<2xi32, #encoding.layout.strided<strides=[2]>> to view<2xi32> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.publish %write : write<tile<2xi32>>
@@ -50,7 +50,7 @@ pipeline.def<kernel> public retain target(@npu) @autonomous_strided_ingress() ru
       %byte_index = index.mul %record, %record_bytes : index
       %offset = index.cast %byte_index : index to offset
       %external = buffer.view %output[%offset] : buffer -> view<2xi32, #encoding.layout.strided<strides=[2]>>
-      %copy = kernel.async.copy %payload to %external {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<2xi32> to view<2xi32, #encoding.layout.strided<strides=[2]>> -> kernel.async.token
+      %copy = kernel.async.copy %payload to %external {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<2xi32> to view<2xi32, #encoding.layout.strided<strides=[2]>> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.release %read : read<tile<2xi32>, mutable>
@@ -79,12 +79,12 @@ pipeline.def<kernel> public retain target(@npu) @single_admission() run(%output_
     %origin = index.constant 0 : offset
     %external_value = buffer.view %external[%origin] : buffer -> view<1xi32>
     %write, %incoming = channel.reserve %input : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
-    %ingress = kernel.async.copy %external_value to %incoming {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %ingress = kernel.async.copy %external_value to %incoming {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
     %ingress_group = kernel.async.group %ingress : kernel.async.token -> kernel.async.group
     kernel.async.wait %ingress_group {newer_groups = 0} : kernel.async.group
     channel.publish %write : write<tile<1xi32>>
     %read, %outgoing = channel.acquire %output : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
-    %egress = kernel.async.copy %outgoing to %external_value {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %egress = kernel.async.copy %outgoing to %external_value {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
     %egress_group = kernel.async.group %egress : kernel.async.token -> kernel.async.group
     kernel.async.wait %egress_group {newer_groups = 0} : kernel.async.group
     channel.release %read : read<tile<1xi32>>
@@ -148,7 +148,7 @@ pipeline.def<kernel> @projected_records(%capacity: index) run(%output_arg: buffe
       %record_offset = index.cast %record_index : index to offset
       %fixed_source = view.subview %payload[1] : view<4xi32> -> view<1xi32>
       %fixed_output = buffer.view %output[%record_offset] : buffer -> view<1xi32>
-      %fixed_copy = kernel.async.copy %fixed_source to %fixed_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+      %fixed_copy = kernel.async.copy %fixed_source to %fixed_output {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
       %fixed_group = kernel.async.group %fixed_copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %fixed_group {newer_groups = 0} : kernel.async.group
       scf.for %field = [%begin to %fields step %step] {
@@ -158,12 +158,12 @@ pipeline.def<kernel> @projected_records(%capacity: index) run(%output_arg: buffe
         %output_index = index.add %record_index, %field_index : index
         %output_offset = index.cast %output_index : index to offset
         %destination = buffer.view %output[%output_offset] : buffer -> view<1xi32>
-        %copy = kernel.async.copy %source to %destination {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+        %copy = kernel.async.copy %source to %destination {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
         %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
         kernel.async.wait %group {newer_groups = 0} : kernel.async.group
         // Update one fixed snapshot location from the varying local field.
         // The last field of the last record must win across descriptor reuse.
-        %snapshot_copy = kernel.async.copy %source to %snapshot {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+        %snapshot_copy = kernel.async.copy %source to %snapshot {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
         %snapshot_group = kernel.async.group %snapshot_copy : kernel.async.token -> kernel.async.group
         kernel.async.wait %snapshot_group {newer_groups = 0} : kernel.async.group
       }
@@ -208,14 +208,14 @@ pipeline.def<kernel> public retain target(@npu) @reordered_publication() run(%ou
   pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
     %first, %first_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
     %first_output = buffer.view %output[%origin] : buffer -> view<1xi32>
-    %first_copy = kernel.async.copy %first_payload to %first_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %first_copy = kernel.async.copy %first_payload to %first_output {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
     %first_group = kernel.async.group %first_copy : kernel.async.token -> kernel.async.group
     kernel.async.wait %first_group {newer_groups = 0} : kernel.async.group
     channel.release %first : read<tile<1xi32>>
     %second, %second_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
     %next_word = index.constant 4 : offset
     %second_output = buffer.view %output[%next_word] : buffer -> view<1xi32>
-    %second_copy = kernel.async.copy %second_payload to %second_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %second_copy = kernel.async.copy %second_payload to %second_output {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
     %second_group = kernel.async.group %second_copy : kernel.async.token -> kernel.async.group
     kernel.async.wait %second_group {newer_groups = 0} : kernel.async.group
     channel.release %second : read<tile<1xi32>>
@@ -251,7 +251,7 @@ pipeline.def<kernel> public retain target(@npu) @reordered_retirement() run(%out
     %second, %second_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
     channel.release %second : read<tile<1xi32>>
     %first_output = buffer.view %output[%origin] : buffer -> view<1xi32>
-    %first_copy = kernel.async.copy %first_payload to %first_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %first_copy = kernel.async.copy %first_payload to %first_output {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
     %first_group = kernel.async.group %first_copy : kernel.async.token -> kernel.async.group
     kernel.async.wait %first_group {newer_groups = 0} : kernel.async.group
     channel.release %first : read<tile<1xi32>>
@@ -298,7 +298,7 @@ pipeline.def<kernel> public retain target(@npu) @rotating_retirement() run(%outp
       %byte_index = index.mul %pair, %word_bytes : index
       %offset = index.cast %byte_index : index to offset
       %destination = buffer.view %output[%offset] : buffer -> view<1xi32>
-      %copy = kernel.async.copy %payload to %destination {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+      %copy = kernel.async.copy %payload to %destination {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
       %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
       kernel.async.wait %group {newer_groups = 0} : kernel.async.group
       channel.release %current : read<tile<1xi32>>
@@ -308,7 +308,7 @@ pipeline.def<kernel> public retain target(@npu) @rotating_retirement() run(%outp
     %last_payload = channel.wait %last : read<tile<1xi32>> -> view<1xi32>
     %last_offset = index.constant 8 : offset
     %last_destination = buffer.view %output[%last_offset] : buffer -> view<1xi32>
-    %copy = kernel.async.copy %last_payload to %last_destination {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %copy = kernel.async.copy %last_payload to %last_destination {cache_scope = workgroup, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
     %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
     kernel.async.wait %group {newer_groups = 0} : kernel.async.group
     channel.release %last : read<tile<1xi32>>

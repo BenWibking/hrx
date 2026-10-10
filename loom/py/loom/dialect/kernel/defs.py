@@ -1494,7 +1494,7 @@ kernel_async_copy = Op(
         ResultType("token"),
     ],
     examples=[
-        "%copy = kernel.async.copy %src to %dst {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8> to view<16xi8> -> kernel.async.token",
+        "%copy = kernel.async.copy %src to %dst {cache_scope = workgroup, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8> to view<16xi8> -> kernel.async.token",
     ],
 )
 
@@ -1541,7 +1541,7 @@ kernel_async_copy_mask = Op(
         ResultType("token"),
     ],
     examples=[
-        "%copy = kernel.async.copy.mask %src to %dst, %in_bounds {cache_scope = cu, cache_temporal = non_temporal, direction = global_to_workgroup} : view<16xi8> to view<16xi8>, i1 -> kernel.async.token",
+        "%copy = kernel.async.copy.mask %src to %dst, %in_bounds {cache_scope = workgroup, cache_temporal = non_temporal, direction = global_to_workgroup} : view<16xi8> to view<16xi8>, i1 -> kernel.async.token",
     ],
 )
 
@@ -1591,8 +1591,8 @@ kernel_async_gather = Op(
         ResultType("token"),
     ],
     examples=[
-        "%copy = kernel.async.gather %src_lane to %lds_tile {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<[%wave]x4xi8> -> kernel.async.token",
-        "%copy = kernel.async.gather %src_lane to %lds_tile {cache_scope = cu, cache_temporal = regular} : view<12xi8> to view<64x16xi8> -> kernel.async.token",
+        "%copy = kernel.async.gather %src_lane to %lds_tile {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<[%wave]x4xi8> -> kernel.async.token",
+        "%copy = kernel.async.gather %src_lane to %lds_tile {cache_scope = workgroup, cache_temporal = regular} : view<12xi8> to view<64x16xi8> -> kernel.async.token",
     ],
 )
 
@@ -1639,7 +1639,7 @@ kernel_async_gather_mask = Op(
         ResultType("token"),
     ],
     examples=[
-        "%copy = kernel.async.gather.mask %src_lane to %lds_tile, %in_bounds {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<[%wave]x4xi8>, i1 -> kernel.async.token",
+        "%copy = kernel.async.gather.mask %src_lane to %lds_tile, %in_bounds {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<[%wave]x4xi8>, i1 -> kernel.async.token",
     ],
 )
 
@@ -1693,7 +1693,7 @@ kernel_async_cluster_gather = Op(
         ResultType("token"),
     ],
     examples=[
-        "%copy = kernel.async.cluster.gather %src to %lds using %mask {cache_scope = se, cache_temporal = high_temporal} : view<16xi8> to view<16xi8>, i32 -> kernel.async.token",
+        "%copy = kernel.async.cluster.gather %src to %lds using %mask {cache_scope = cluster, cache_temporal = high_temporal} : view<16xi8> to view<16xi8>, i32 -> kernel.async.token",
     ],
 )
 
@@ -1747,7 +1747,7 @@ kernel_async_cluster_gather_mask = Op(
         ResultType("token"),
     ],
     examples=[
-        "%copy = kernel.async.cluster.gather.mask %src to %lds using %mask, %in_bounds {cache_scope = cu, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32, i1 -> kernel.async.token",
+        "%copy = kernel.async.cluster.gather.mask %src to %lds using %mask, %in_bounds {cache_scope = workgroup, cache_temporal = regular} : view<4xi8> to view<4xi8>, i32, i1 -> kernel.async.token",
     ],
 )
 
@@ -1799,7 +1799,7 @@ kernel_async_tensor_load_to_lds = Op(
         ResultType("token"),
     ],
     examples=[
-        "%copy = kernel.async.tensor.load.to.lds %global_tile to %lds_tile using %desc {cache_scope = cu, cache_temporal = regular} : view<64x64xf32> to view<64x64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token",
+        "%copy = kernel.async.tensor.load.to.lds %global_tile to %lds_tile using %desc {cache_scope = workgroup, cache_temporal = regular} : view<64x64xf32> to view<64x64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token",
     ],
 )
 

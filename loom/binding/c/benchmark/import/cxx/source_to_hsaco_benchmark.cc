@@ -376,7 +376,7 @@ constexpr CxxKernel kIq4XsGateUp = {
     "iq4xs_gate_up.cxx",
     "qwen38_iq4xs_gate_up_swiglu",
     "gfx1151",
-    "config.def @qwen38.iq4xs.pipeline_depth = 1 : i32\n"
+    "config.def @qwen38.iq4xs.async_staging = 0 : i1\n"
     "config.def @qwen38.iq4xs.packet_unroll_factor = 4 : i32\n"
     "config.def @qwen38.iq4xs.block_unroll_factor = 2 : i32\n"
     "config.def @qwen38.iq4xs.tile_unroll_factor = 1 : i32\n",

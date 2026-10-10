@@ -53,6 +53,22 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "async",
+    srcs = ["async.cc"],
+    hdrs = ["async.h"],
+    cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
+    cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
+    deps = [
+        "//loom/src/loom/import/cxx/source:error",
+        "//loom/src/loom/import/cxx/value:representation",
+        "//loom/src/loom/import/cxx/value:types",
+        "//loom/src/loom/ops:cache",
+        "//loom/src/loom/ops/kernel",
+        "//third_party:cxx_parser",
+    ],
+)
+
+loom_cc_library(
     name = "atomic",
     srcs = ["atomic.cc"],
     hdrs = ["atomic.h"],
@@ -408,6 +424,7 @@ loom_cc_library(
     cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
     deps = [
         ":assembly",
+        ":async",
         ":atomic",
         ":buffer",
         ":check",
