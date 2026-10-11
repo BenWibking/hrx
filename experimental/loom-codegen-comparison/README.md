@@ -94,15 +94,23 @@ waves on gfx942. 128 threads per block was historically the best-performing
 choice for the HIP kernel, so both versions keep it.
 
 A wave can address at most 256 VGPRs (`v0`-`v255`) whatever the workgroup size.
-On gfx942 a workgroup is resident on one compute unit with four SIMDs, each
-holding 512 unified VGPR/AGPR slots per lane, so the workgroup size limits
-registers only once more than one wave must share a SIMD:
+On gfx942 each compute unit has four SIMDs, and each SIMD holds 512 unified
+VGPR/AGPR slots per lane that all of its resident waves share. The number of
+waves resident on a SIMD is set by how many registers each wave uses, across
+both classes:
 
-| Threads per workgroup | Waves per SIMD | Slots per wave | VGPRs per wave |
-| --- | --- | --- | --- |
-| 64-256 | 1 | 512 | 256, plus up to 256 AGPRs |
-| 512 | 2 | 256 | 256, with no AGPRs |
-| 1,024 | 4 | 128 | 128 |
+| Waves per SIMD | Slots per wave | VGPRs per wave |
+| --- | --- | --- |
+| 1 | 512 | 256, plus up to 256 AGPRs |
+| 2 | 256 | 256, with no AGPRs |
+| 4 | 128 | 128 |
+
+Workgroup size only sets a lower bound on this. A workgroup must be resident on
+one compute unit, so 512 threads force at least 2 waves per SIMD and 1,024
+threads force at least 4. Smaller workgroups do not force fewer: several
+workgroups co-reside on a CU, so at 128 threads the advance kernel, which uses
+256 VGPRs, runs at 2 waves per SIMD from four co-resident workgroups. Using any
+AGPRs would drop it to 1 wave per SIMD.
 
 The tradeoff is registers against occupancy. A kernel that uses fewer registers
 per wave lets more waves stay resident on each SIMD to hide memory and
