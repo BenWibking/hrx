@@ -93,8 +93,6 @@ for kind, fields in [('Real', real_fields), ('int', int_fields)]:
     for name, count, value in fields:
         if name == 'burn':
             declaration = 'BurnRecord burn'
-        elif name in ('fjac', 'e'):
-            declaration = f'{kind} {name}[15][15]'
         elif count == 1:
             declaration = f'{kind} {name}'
         else:
@@ -102,30 +100,8 @@ for kind, fields in [('Real', real_fields), ('int', int_fields)]:
         initializer = value if count == 1 else '{}'
         parts.append(f'  {declaration} = {initializer};\n')
 parts.append('};\nstatic_assert(sizeof(ScratchRecord) == 4848);\n')
-parts.append('struct BurnView { Real* rho; Real* T; Real* e; Real* xn; };\n')
-parts.append('struct ScratchView {\n')
-for name, _, _ in real_fields + int_fields:
-    if name == 'burn':
-        parts.append('  BurnView burn;\n')
-    else:
-        kind = 'int' if name in {field for field, _, _ in int_fields} else 'Real'
-        parts.append(f'  {kind}* {name};\n')
-parts.append('};\n')
-
-
 def scratch_view_access(text):
-    """Project a pointer-only view without changing source arithmetic."""
-    for field in ('rho', 'T', 'e'):
-        text = text.replace(f's->burn.{field}', f's.burn.{field}[0]')
-    text = text.replace('s->burn.xn', 's.burn.xn')
-    scalar_fields = {name for name, count, _ in real_fields + int_fields
-                     if count == 1 and name != 'burn'}
-    for name, _, _ in real_fields + int_fields:
-        if name == 'burn':
-            continue
-        replacement = f's.{name}[0]' if name in scalar_fields else f's.{name}'
-        text = re.sub(r'\bs->' + name + r'\b', replacement, text)
-    assert not re.search(r'\bs->', text)
+    """Scratch fields are accessed in place through ScratchRecord*."""
     return text
 
 
@@ -136,26 +112,6 @@ def flatten_matrix_access(text, names):
     return text
 
 
-def scratch_view_initializer(local):
-    fields = []
-    for name, _, _ in real_fields + int_fields:
-        if name == 'burn':
-            if local:
-                fields.append('{&burn_rho, &burn_T, &burn_e, burn_xn}')
-            else:
-                fields.append('{&s->burn.rho, &s->burn.T, &s->burn.e, s->burn.xn}')
-        elif local:
-            fields.append('&' + name if name in scalar_scratch_fields else name)
-        else:
-            fields.append('&s->' + name if name in scalar_scratch_fields else
-                          ('&s->' + name + '[0][0]' if name in ('fjac', 'e') else 's->' + name))
-    return '{' + ', '.join(fields) + '}'
-
-
-scalar_scratch_fields = {name for name, count, _ in real_fields + int_fields
-                         if count == 1 and name != 'burn'}
-parts.append('DEVICE ScratchView scratch_view(ScratchRecord* s) {\n')
-parts.append('  return ' + scratch_view_initializer(False) + ';\n}\n')
 parts.append('DEVICE size_type matrix_index(size_type row, size_type column) {\n'
              '  size_type index = row * 15 + column;\n'
              '  __builtin_assume(index < 225);\n'
@@ -171,8 +127,6 @@ emit('EosSums eos_sums_from_number_densities(const Real* xn)', eos)
 for name in ('eos_rt', 'eos_re'):
     routine = body(name).replace('state.xn', 'b->xn').replace('state.e', 'b->e').replace('state.T', 'b->T')
     emit('void ' + name + '(BurnRecord* b)', routine)
-routine = body('eos_re').replace('state.xn', 'b.xn').replace('state.e', 'b.e[0]').replace('state.T', 'b.T[0]')
-emit('void eos_re_view(BurnView b)', routine)
 emit('void balance_charge(BurnRecord* b)', body('balance_charge').replace('state.xn', 'b->xn'))
 normalize = replace(body('normalize_number_densities_to_density'), 'std::array<Real, NumSpec> mass_fractions{};', '')
 normalize = normalize.replace('mass_fractions.size()', 'NumSpec').replace('state.xn', 'b->xn').replace('state.rho', 'b->rho')
@@ -240,25 +194,19 @@ emit('void burn_state_from_y(const Real* y, BurnRecord* b)', '''
     b->e = y[NumSpec];
     eos_re(b);
 ''')
-emit('void burn_state_from_y_view(const Real* y, BurnView b)', '''
-    b.rho[0] = 0.0;
-    for (int n = 0; n < NumSpec; ++n) b.xn[n] = math::max(y[n], small_number_density_floor());
-    b.e[0] = y[NumSpec];
-    eos_re_view(b);
-''')
-emit('void rhs(Real t, const Real* y, Real* out, ScratchView s)', '''
-    BurnView b = s.burn;
-    burn_state_from_y_view(y, b);
-    rhs_specie(b.T[0], out, b.xn, default_redshift);
-    Real edot = rhs_eint(b.T[0], b.xn, default_redshift);
+emit('void rhs(Real t, const Real* y, Real* out, ScratchRecord* s)', '''
+    BurnRecord* b = &s->burn;
+    burn_state_from_y(y, b);
+    rhs_specie(b->T, out, b->xn, default_redshift);
+    Real edot = rhs_eint(b->T, b->xn, default_redshift);
     out[14] = edot;
 ''')
-emit('void eval_jacobian(ScratchView s, Real x)', '''
-    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.fjac[matrix_index(n, m)] = 0.0;
-    BurnView b = s.burn;
-    burn_state_from_y_view(s.y, b);
-    jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
-    s.n_jac[0] += 1;
+emit('void eval_jacobian(ScratchRecord* s, Real x)', '''
+    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s->fjac[matrix_index(n, m)] = 0.0;
+    BurnRecord* b = &s->burn;
+    burn_state_from_y(s->y, b);
+    jac_nuc(b->T, s->fjac, b->xn, default_redshift);
+    s->n_jac += 1;
 ''')
 for name, signature, matrix in [('lu_decomposition', 'int lu_decomposition(Real* A, int* ipvt)', 'A'),
                                 ('lu_solve', 'void lu_solve(const Real* LU, const int* ipvt, Real* x)', 'LU')]:
@@ -280,9 +228,9 @@ def scratch_access(text):
     return re.sub(r'\bs\.(\w+)', r's->\1', text)
 
 
-for name, signature in [('decompose', 'int decompose(ScratchView s, Real fac)'),
-                         ('solve', 'void solve(ScratchView s, Real* ak)'),
-                         ('error_norm', 'Real error_norm(ScratchView s)')]:
+for name, signature in [('decompose', 'int decompose(ScratchRecord* s, Real fac)'),
+                         ('solve', 'void solve(ScratchRecord* s, Real* ak)'),
+                         ('error_norm', 'Real error_norm(ScratchRecord* s)')]:
     text = scratch_access(body(name))
     text = text.replace('linalg::', '').replace('<N>', '')
     text = text.replace('atol_for(s, i)', 's->atol_vec[i]').replace('rtol_for(s, i)', 's->rtol_vec[i]')
@@ -328,7 +276,7 @@ solver_control += '#ifndef CHEM_EVAL_JACOBIAN\n#define CHEM_EVAL_JACOBIAN eval_j
 solver_control += '#ifndef CHEM_RHS\n#define CHEM_RHS rhs\n#endif\n'
 text = text.replace('eval_jacobian(s, x);', 'CHEM_EVAL_JACOBIAN(s, x);')
 text = text.replace('rhs(', 'CHEM_RHS(')
-solver_control += 'DEVICE int integrate(ScratchView s) {\n' + flatten_matrix_access(scratch_view_access(common(text)), ('e', 'fjac')) + '\n}\n'
+solver_control += 'DEVICE int integrate(ScratchRecord* s) {\n' + flatten_matrix_access(scratch_view_access(common(text)), ('e', 'fjac')) + '\n}\n'
 solver_control += '#undef CHEM_EVAL_JACOBIAN\n#undef CHEM_RHS\n'
 # Reindent this small transformed block so the new control nesting is reviewable.
 # There are no string literals, braced initializers, or comments containing braces.
@@ -347,20 +295,10 @@ assert depth == parens == 0
 solver_control = '\n'.join(solver_lines).rstrip() + '\n'
 parts.append('#include "integrate.inc"\n')
 
-local_scratch = []
-for name, count, value in real_fields + int_fields:
-    kind = 'int' if name in {field for field, _, _ in int_fields} else 'Real'
-    if name == 'burn':
-        local_scratch += ['Real burn_rho = 0.0;', 'Real burn_T = 0.0;',
-                          'Real burn_e = 0.0;', 'Real burn_xn[14]{};']
-    elif count == 1:
-        local_scratch.append(f'{kind} {name} = {value};')
-    else:
-        assert value in ('0', '0.0'), 'array defaults require zero initialization'
-        local_scratch.append(f'{kind} {name}[{count}]{{}};')
-local_scratch.append('ScratchView s = ' + scratch_view_initializer(True) + ';')
+# One value-initialized record keeps the original State defaults and lifetime.
+local_scratch = ['ScratchRecord storage{};', 'ScratchRecord* s = &storage;']
 configure = body('configure_ros2s').replace('state.', 's.')
-emit('void configure_ros2s(ScratchView s)', scratch_view_access(scratch_access(configure)))
+emit('void configure_ros2s(ScratchRecord* s)', scratch_view_access(scratch_access(configure)))
 burn = body('burn_ros2s')
 burn = replace(burn, 'pc::eos_rt(state);', 'eos_rt(b);')
 # Keep construction at the source lifetime boundary, after EOS and on every burn.

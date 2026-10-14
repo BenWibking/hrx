@@ -62,8 +62,8 @@ struct ScratchRecord {
   Real ak1[15] = {};
   Real ak2[15] = {};
   Real work[15] = {};
-  Real fjac[15][15] = {};
-  Real e[15][15] = {};
+  Real fjac[225] = {};
+  Real e[225] = {};
   Real dy[15] = {};
   BurnRecord burn = {};
   int n_step = 0;
@@ -77,39 +77,6 @@ struct ScratchRecord {
   int ip[15] = {};
 };
 static_assert(sizeof(ScratchRecord) == 4848);
-struct BurnView { Real* rho; Real* T; Real* e; Real* xn; };
-struct ScratchView {
-  Real* t;
-  Real* tout;
-  Real* dt;
-  Real* y;
-  Real* rtol_vec;
-  Real* atol_vec;
-  Real* uround;
-  Real* fac_min;
-  Real* fac_max;
-  Real* safe;
-  Real* ynew;
-  Real* ak1;
-  Real* ak2;
-  Real* work;
-  Real* fjac;
-  Real* e;
-  Real* dy;
-  BurnView burn;
-  int* n_step;
-  int* n_rhs;
-  int* n_jac;
-  int* n_accept;
-  int* n_reject;
-  int* n_decomp;
-  int* n_solve;
-  int* max_steps;
-  int* ip;
-};
-DEVICE ScratchView scratch_view(ScratchRecord* s) {
-  return {&s->t, &s->tout, &s->dt, s->y, s->rtol_vec, s->atol_vec, &s->uround, &s->fac_min, &s->fac_max, &s->safe, s->ynew, s->ak1, s->ak2, s->work, &s->fjac[0][0], &s->e[0][0], s->dy, {&s->burn.rho, &s->burn.T, &s->burn.e, s->burn.xn}, &s->n_step, &s->n_rhs, &s->n_jac, &s->n_accept, &s->n_reject, &s->n_decomp, &s->n_solve, &s->max_steps, s->ip};
-}
 DEVICE size_type matrix_index(size_type row, size_type column) {
   size_type index = row * 15 + column;
   __builtin_assume(index < 225);
@@ -183,12 +150,6 @@ DEVICE void eos_re(BurnRecord* b) {
 
     const EosSums sums = eos_sums_from_number_densities(b->xn);
     b->T = b->e / (sums.sum_gammasinv * sums.gasconstant * sums.sum_Abarinv);
-
-}
-DEVICE void eos_re_view(BurnView b) {
-
-    const EosSums sums = eos_sums_from_number_densities(b.xn);
-    b.T[0] = b.e[0] / (sums.sum_gammasinv * sums.gasconstant * sums.sum_Abarinv);
 
 }
 DEVICE void balance_charge(BurnRecord* b) {
@@ -8074,30 +8035,22 @@ DEVICE void burn_state_from_y(const Real* y, BurnRecord* b) {
     eos_re(b);
 
 }
-DEVICE void burn_state_from_y_view(const Real* y, BurnView b) {
+DEVICE void rhs(Real t, const Real* y, Real* out, ScratchRecord* s) {
 
-    b.rho[0] = 0.0;
-    for (int n = 0; n < NumSpec; ++n) b.xn[n] = math::max(y[n], small_number_density_floor());
-    b.e[0] = y[NumSpec];
-    eos_re_view(b);
-
-}
-DEVICE void rhs(Real t, const Real* y, Real* out, ScratchView s) {
-
-    BurnView b = s.burn;
-    burn_state_from_y_view(y, b);
-    rhs_specie(b.T[0], out, b.xn, default_redshift);
-    Real edot = rhs_eint(b.T[0], b.xn, default_redshift);
+    BurnRecord* b = &s->burn;
+    burn_state_from_y(y, b);
+    rhs_specie(b->T, out, b->xn, default_redshift);
+    Real edot = rhs_eint(b->T, b->xn, default_redshift);
     out[14] = edot;
 
 }
-DEVICE void eval_jacobian(ScratchView s, Real x) {
+DEVICE void eval_jacobian(ScratchRecord* s, Real x) {
 
-    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.fjac[matrix_index(n, m)] = 0.0;
-    BurnView b = s.burn;
-    burn_state_from_y_view(s.y, b);
-    jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
-    s.n_jac[0] += 1;
+    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s->fjac[matrix_index(n, m)] = 0.0;
+    BurnRecord* b = &s->burn;
+    burn_state_from_y(s->y, b);
+    jac_nuc(b->T, s->fjac, b->xn, default_redshift);
+    s->n_jac += 1;
 
 }
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
@@ -8187,113 +8140,84 @@ DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
     }
 
 }
-DEVICE int decompose(ScratchView s, Real fac) {
+DEVICE int decompose(ScratchRecord* s, Real fac) {
 
         for (size_type i = 0; i < N; ++i) {
             for (size_type j = 0; j < N; ++j) {
-                s.e[matrix_index(i, j)] = -s.fjac[matrix_index(i, j)];
+                s->e[matrix_index(i, j)] = -s->fjac[matrix_index(i, j)];
             }
-            s.e[matrix_index(i, i)] += fac;
+            s->e[matrix_index(i, i)] += fac;
         }
-        const int info = lu_decomposition(s.e, s.ip);
+        const int info = lu_decomposition(s->e, s->ip);
         if (info == 0) {
-            s.n_decomp[0] += 1;
+            s->n_decomp += 1;
         }
         return info;
 
 }
-DEVICE void solve(ScratchView s, Real* ak) {
+DEVICE void solve(ScratchRecord* s, Real* ak) {
 
-        lu_solve(s.e, s.ip, ak);
-        s.n_solve[0] += 1;
+        lu_solve(s->e, s->ip, ak);
+        s->n_solve += 1;
 
 }
-DEVICE Real error_norm(ScratchView s) {
+DEVICE Real error_norm(ScratchRecord* s) {
 
         Real err = 0.0;
         for (size_type i = 0; i < N; ++i) {
-            const Real sk = s.atol_vec[i] + s.rtol_vec[i] * math::max(math::abs(s.y[i]), math::abs(s.ynew[i]));
-            const Real term = s.work[i] / sk;
+            const Real sk = s->atol_vec[i] + s->rtol_vec[i] * math::max(math::abs(s->y[i]), math::abs(s->ynew[i]));
+            const Real term = s->work[i] / sk;
             err += term * term;
         }
         return math::sqrt(err / static_cast<Real>(N));
 
 }
 #include "integrate.inc"
-DEVICE void configure_ros2s(ScratchView s) {
+DEVICE void configure_ros2s(ScratchRecord* s) {
 
     for (int n = 0; n < NumSpec; ++n) {
-        s.rtol_vec[static_cast<size_type>(n)] = rtol_spec;
-        s.atol_vec[static_cast<size_type>(n)] = atol_spec;
+        s->rtol_vec[static_cast<size_type>(n)] = rtol_spec;
+        s->atol_vec[static_cast<size_type>(n)] = atol_spec;
     }
-    s.rtol_vec[NumSpec] = rtol_energy;
-    s.atol_vec[NumSpec] = atol_energy;
-    s.max_steps[0] = 10000000;
+    s->rtol_vec[NumSpec] = rtol_energy;
+    s->atol_vec[NumSpec] = atol_energy;
+    s->max_steps = 10000000;
 
 }
 DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
 
     eos_rt(b);
 
-    Real t = 0.0;
-    Real tout = 0.0;
-    Real dt = 0.0;
-    Real y[15]{};
-    Real rtol_vec[15]{};
-    Real atol_vec[15]{};
-    Real uround = 1.e-16;
-    Real fac_min = 0.2;
-    Real fac_max = 6.0;
-    Real safe = 0.9;
-    Real ynew[15]{};
-    Real ak1[15]{};
-    Real ak2[15]{};
-    Real work[15]{};
-    Real fjac[225]{};
-    Real e[225]{};
-    Real dy[15]{};
-    Real burn_rho = 0.0;
-    Real burn_T = 0.0;
-    Real burn_e = 0.0;
-    Real burn_xn[14]{};
-    int n_step = 0;
-    int n_rhs = 0;
-    int n_jac = 0;
-    int n_accept = 0;
-    int n_reject = 0;
-    int n_decomp = 0;
-    int n_solve = 0;
-    int max_steps = 100000;
-    int ip[15]{};
-    ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip};
+    ScratchRecord storage{};
+    ScratchRecord* s = &storage;
     configure_ros2s(s);
 
-    s.t[0] = 0.0;
-    s.tout[0] = duration;
-    s.dt[0] = duration;
+    s->t = 0.0;
+    s->tout = duration;
+    s->dt = duration;
     for (int n = 0; n < NumSpec; ++n) {
-        s.y[static_cast<size_type>(n)] = b->xn[static_cast<size_type>(n)];
+        s->y[static_cast<size_type>(n)] = b->xn[static_cast<size_type>(n)];
     }
-    s.y[NumSpec] = b->e;
+    s->y[NumSpec] = b->e;
 
     const auto result = integrate(s);
 
-    stats->internal_steps += static_cast<u64>(math::max(0, s.n_step[0]));
-    stats->rhs_calls += static_cast<u64>(math::max(0, s.n_rhs[0]));
-    stats->jacobian_calls += static_cast<u64>(math::max(0, s.n_jac[0]));
-    stats->decompositions += static_cast<u64>(math::max(0, s.n_decomp[0]));
-    stats->linear_solves += static_cast<u64>(math::max(0, s.n_solve[0]));
-    stats->accepted_steps += static_cast<u64>(math::max(0, s.n_accept[0]));
-    stats->rejected_steps += static_cast<u64>(math::max(0, s.n_reject[0]));
+    stats->internal_steps += static_cast<u64>(math::max(0, s->n_step));
+    stats->rhs_calls += static_cast<u64>(math::max(0, s->n_rhs));
+    stats->jacobian_calls += static_cast<u64>(math::max(0, s->n_jac));
+    stats->decompositions += static_cast<u64>(math::max(0, s->n_decomp));
+    stats->linear_solves += static_cast<u64>(math::max(0, s->n_solve));
+    stats->accepted_steps += static_cast<u64>(math::max(0, s->n_accept));
+    stats->rejected_steps += static_cast<u64>(math::max(0, s->n_reject));
 
     if (result != SUCCESS) {
         return result;
     }
 
     for (int n = 0; n < NumSpec; ++n) {
-        b->xn[static_cast<size_type>(n)] = s.y[static_cast<size_type>(n)];
+        b->xn[static_cast<size_type>(n)] = s->y[static_cast<size_type>(n)];
     }
-    b->e = s.y[NumSpec];
+    b->e = s->y[NumSpec];
     return result;
 
 }

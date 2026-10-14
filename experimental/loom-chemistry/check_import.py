@@ -22,9 +22,8 @@ with tempfile.TemporaryDirectory(prefix='loom-chemistry-import-') as work:
         assert operation not in ir, operation
     assert 'afn' not in ir
     assert ir.count('kernel.def ') == 2
-    for name in ('fjac', 'e', 'y', 'mass', 'ip'):
+    for name in ('storage', 'mass'):
         assert f'%{name}_storage = buffer.alloca<private>' in ir, name
-    assert 'ScratchRecord* scratch' not in (here / 'reproducer.cpp').read_text()
     atomics = [line for line in ir.splitlines() if 'view.atomic.' in line]
     assert any('view.atomic.rmw<addi>' in line for line in atomics), atomics
     assert any('view.atomic.cmpxchg' in line for line in atomics), atomics

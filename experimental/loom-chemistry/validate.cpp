@@ -32,14 +32,14 @@ struct SingularProblem {
 };
 namespace singular_case {
 using namespace chemistry;
-inline void eval_jacobian(ScratchView s, Real) {
+inline void eval_jacobian(ScratchRecord* s, Real) {
     SingularProblem::jacobian_type jac{};
     SingularProblem::state_type y{};
     SingularProblem::jacobian(0., y, jac);
-    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.fjac[n * 15 + m] = jac[n][m];
-    s.n_jac[0] += 1;
+    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s->fjac[n * 15 + m] = jac[n][m];
+    s->n_jac += 1;
 }
-inline void rhs(Real, const Real*, Real*, ScratchView) { std::abort(); }
+inline void rhs(Real, const Real*, Real*, ScratchRecord*) { std::abort(); }
 #define CHEM_EVAL_JACOBIAN singular_case::eval_jacobian
 #define CHEM_RHS singular_case::rhs
 #include "integrate.inc"
@@ -199,7 +199,7 @@ static void test_integrator() {
 #undef COPY_ARRAY
         Ros2sIntegrator integrator;
         int result = static_cast<int>(integrator.integrate(old));
-        integer(result, lc::integrate(lc::scratch_view(s)), "integrator result");
+        integer(result, lc::integrate(s), "integrator result");
 #define CHECK_SCALAR(n) equal(old.n, s->n, #n)
         CHECK_SCALAR(t); CHECK_SCALAR(tout); CHECK_SCALAR(dt); CHECK_SCALAR(uround);
         CHECK_SCALAR(fac_min); CHECK_SCALAR(fac_max); CHECK_SCALAR(safe);
@@ -211,8 +211,8 @@ static void test_integrator() {
         CHECK_ARRAY(ak1); CHECK_ARRAY(ak2); CHECK_ARRAY(work); CHECK_ARRAY(dy); CHECK_ARRAY(ip);
 #undef CHECK_ARRAY
         for (int i = 0; i < 15; ++i) for (int j = 0; j < 15; ++j) {
-            equal(old.e[i][j], s->e[i][j], "solver LU");
-            equal(old.fjac[i][j], s->fjac[i][j], "solver jacobian");
+            equal(old.e[i][j], s->e[i * 15 + j], "solver LU");
+            equal(old.fjac[i][j], s->fjac[i * 15 + j], "solver jacobian");
         }
         std::printf("integrator variant %d: result %d, accepted %d, rejected %d\n",
                     variant, result, old.n_accept, old.n_reject);
@@ -275,19 +275,19 @@ static void test_singular_exit() {
     old.dt = 1.; old.tout = 10.;
     lc::ScratchRecord storage{};
     auto* s = &storage;
-    lc::configure_ros2s(lc::scratch_view(s));
+    lc::configure_ros2s(s);
     s->dt = 1.; s->tout = 10.;
     integrators::RODAS<SingularProblem> integrator;
     int result = static_cast<int>(integrator.integrate(old));
     integer(-7, result, "singular fixture triggers fifth failure");
-    integer(result, singular_case::integrate(lc::scratch_view(s)), "singular result");
+    integer(result, singular_case::integrate(s), "singular result");
     equal(old.t, s->t, "singular t"); equal(old.dt, s->dt, "singular dt");
     integer(old.n_jac, s->n_jac, "singular Jacobian count");
     integer(old.n_decomp, s->n_decomp, "singular decomposition count");
     integer(old.n_rhs, s->n_rhs, "singular RHS count");
     for (int n = 0; n < 15; ++n) {
         integer(old.ip[n], s->ip[n], "singular pivot");
-        for (int m = 0; m < 15; ++m) equal(old.e[n][m], s->e[n][m], "singular LU");
+        for (int m = 0; m < 15; ++m) equal(old.e[n][m], s->e[n * 15 + m], "singular LU");
     }
 }
 

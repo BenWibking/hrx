@@ -19,12 +19,12 @@ ROS2S coefficients, solver defaults, and floating-point expression order.
 | `std::min` and `std::max` | By-value helpers retaining the first operand on ties and unordered comparisons |
 | HIP integer `atomicCAS` and `atomicAdd` | Typed Loom compare-exchange and add RMW, relaxed ordering, device scope, returning the old value |
 | Range-for loops over species | Indexed loops retaining the original visit order |
-| Automatic `RODASState` and solver methods | Initialized local scalars and arrays passed through pointer-only `ScratchView`; matrices use flat row-major storage |
+| Automatic `RODASState` and solver methods | One value-initialized `ScratchRecord` with the original defaults, passed as `ScratchRecord*`; matrices use flat row-major storage |
 | Integrator returns/breaks/continues inside loops | `done`, `retry`, and a result code retaining the original early-exit points |
 | HIP gridwide kernels | Two Loom roots with the same cell index, launch bounds, failure publication, and prepare/advance policy |
 
-Each burn initializes solver storage at the original state-construction point.
-`ScratchRecord` is a native inspection fixture, not a kernel argument. Recursive
+Each burn value-initializes one private `ScratchRecord` at the original
+state-construction point; it is never a kernel argument. Recursive
 `powi`, by-value `EosSums`, compound assignments, and `if constexpr` remain in
 source-like form. Loop, pivot, and matrix-index assumptions describe valid
 private-array bounds.
