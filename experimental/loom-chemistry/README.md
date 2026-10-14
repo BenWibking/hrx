@@ -60,7 +60,7 @@ The standalone HIP driver defaults to a `64^3` grid (262,144 cells). Use
 ## Import and compile the Loom kernels
 
 ```sh
-loom-import-cxx --data-model=lp64 --approximate-functions=false \
+loom-import-cxx --data-model=lp64 --fp-model=precise \
   --root=chemistry::prepare_grid_timestep_kernel \
   --root=chemistry::advance_collapse_gridwide_kernel \
   --output=/tmp/chemistry.loom reproducer.cpp

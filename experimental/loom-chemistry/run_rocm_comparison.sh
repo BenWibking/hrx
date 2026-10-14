@@ -43,7 +43,7 @@ fi
 mkdir -p -- "$work"
 python3 "$here/generate.py" --check
 echo "Importing chemistry into Loom IR..."
-"$importer" --data-model=lp64 --approximate-functions=false \
+"$importer" --data-model=lp64 --fp-model=precise \
   --root=chemistry::prepare_grid_timestep_kernel \
   --root=chemistry::advance_collapse_gridwide_kernel \
   --output="$work/chemistry.loom" "$here/reproducer.cpp"
