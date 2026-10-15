@@ -8093,7 +8093,7 @@ DEVICE void rhs(Real t, const Real* y, Real* out, ScratchView s) {
 }
 DEVICE void eval_jacobian(ScratchView s, Real x) {
 
-    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.fjac[matrix_index(n, m)] = 0.0;
+    // jac_nuc unconditionally writes all 225 entries; no pre-zeroing needed.
     BurnView b = s.burn;
     burn_state_from_y_view(s.y, b);
     jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
@@ -8200,11 +8200,11 @@ DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 }
 DEVICE int decompose(ScratchView s, Real fac) {
 
-        for (size_type i = 0; i < N; ++i) {
-            for (size_type j = 0; j < N; ++j) {
-                s.e[matrix_index(i, j)] = -s.fjac[matrix_index(i, j)];
+        for (unsigned i = 0; i < 15u; ++i) {
+            [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+                s.e[midx(i, j)] = -s.fjac[midx(i, j)];
             }
-            s.e[matrix_index(i, i)] += fac;
+            s.e[midx(i, i)] += fac;
         }
         const int info = lu_decomposition(s.e, s.ip);
         if (info == 0) {
