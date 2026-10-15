@@ -5732,8 +5732,9 @@ DEVICE unsigned midx(unsigned row, unsigned column) {
 // Same arithmetic per element as the reference; the pivot row's trailing
 // values stay in registers and each trailing row is scaled then updated
 // (i outer, j inner; every element sees the identical operation sequence).
+// Reference partial-pivot search over column K (first maximum of |A[i][K]|).
 template <unsigned K>
-DEVICE int lu_step(Real* A, int* ipvt, int info) {
+DEVICE unsigned lu_pivot_search(const Real* A) {
     unsigned pivot_row = K;
     Real max_val = math::abs(A[midx(K, K)]);
     for (unsigned i = K + 1; i < 15u; ++i) {
@@ -5743,6 +5744,14 @@ DEVICE int lu_step(Real* A, int* ipvt, int info) {
             pivot_row = i;
         }
     }
+    return pivot_row;
+}
+// The pivot for column K arrives precomputed: the previous step's row update
+// tracks the running first maximum of |A[i][K]| over i = K..14 as it writes
+// those values (same comparisons in the same order as the search).
+template <unsigned K>
+DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
+    unsigned next_pivot = K + 1;
     ipvt[K] = static_cast<int>(pivot_row);
     __builtin_assume(pivot_row < 15u);
 
@@ -5768,6 +5777,7 @@ DEVICE int lu_step(Real* A, int* ipvt, int info) {
         [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
             row[j - K - 1] = A[midx(K, j)];
         }
+        Real next_max = 0.0;
         for (unsigned i = K + 1; i < 15u; ++i) {
             // Load the whole trailing row first, then store it: no store
             // between this row's loads (one memory wait per row).
@@ -5779,6 +5789,12 @@ DEVICE int lu_step(Real* A, int* ipvt, int info) {
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
                 cur[j - K] = cur[j - K] + row[j - K - 1] * m;
             }
+            if constexpr (K + 1 < 14u) {
+                const Real val = math::abs(cur[1]);
+                const bool take = (i == K + 1) | (val > next_max);
+                next_max = take ? val : next_max;
+                next_pivot = take ? i : next_pivot;
+            }
             A[midx(i, K)] = m;
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
                 A[midx(i, j)] = cur[j - K];
@@ -5786,16 +5802,17 @@ DEVICE int lu_step(Real* A, int* ipvt, int info) {
         }
     } else {
         info = static_cast<int>(K + 1);
+        if constexpr (K + 1 < 14u) next_pivot = lu_pivot_search<K + 1>(A);
     }
     if constexpr (K + 1 < 14u) {
-        return lu_step<K + 1>(A, ipvt, info);
+        return lu_step<K + 1>(A, ipvt, info, next_pivot);
     } else {
         return info;
     }
 }
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
-    int info = lu_step<0>(A, ipvt, 0);
+    int info = lu_step<0>(A, ipvt, 0, lu_pivot_search<0>(A));
 
     ipvt[14] = 14;
     if (A[midx(14u, 14u)] == 0.0) {
@@ -5809,7 +5826,7 @@ DEVICE int lu_decomposition(Real* A, int* ipvt) {
 // chunks of 7: load the chunk's x and LU values, then store the chunk, so a
 // store separates loads only between chunks. Same operations per element.
 template <unsigned K, unsigned J>
-DEVICE void lu_solve_fwd_chunk(const Real* LU, Real* x, Real t) {
+DEVICE void lu_solve_fwd_chunk(const Real* LU, Real* x, Real t, Real xk, unsigned pivot_row) {
     constexpr unsigned E = (J + 7 < 15u) ? J + 7 : 15u;
     Real xv[7];
     Real lv[7];
@@ -5818,9 +5835,11 @@ DEVICE void lu_solve_fwd_chunk(const Real* LU, Real* x, Real t) {
         lv[j - J] = LU[midx(j, K)];
     }
     [[loom::unroll]] for (unsigned j = J; j < E; ++j) {
-        x[j] = xv[j - J] + t * lv[j - J];
+        // The pivot swap's x[p] = x[K] is folded in as a select.
+        const Real v = (pivot_row == j) ? xk : xv[j - J];
+        x[j] = v + t * lv[j - J];
     }
-    if constexpr (E < 15u) lu_solve_fwd_chunk<K, E>(LU, x, t);
+    if constexpr (E < 15u) lu_solve_fwd_chunk<K, E>(LU, x, t, xk, pivot_row);
 }
 template <unsigned K, unsigned J>
 DEVICE void lu_solve_bwd_chunk(const Real* LU, Real* x, Real t) {
@@ -5840,12 +5859,12 @@ template <unsigned K>
 DEVICE void lu_solve_forward(const Real* LU, const int* ipvt, Real* x) {
     const unsigned pivot_row = static_cast<unsigned>(ipvt[K]);
     __builtin_assume(pivot_row < 15u);
+    // Branch-free pivot swap: x[K] <- t = x[p]; the x[p] <- x[K] half is
+    // applied inside the element update (p > K always lies in that range).
+    const Real xk = x[K];
     const Real t = x[pivot_row];
-    if (pivot_row != K) {
-        x[pivot_row] = x[K];
-        x[K] = t;
-    }
-    lu_solve_fwd_chunk<K, K + 1>(LU, x, t);
+    lu_solve_fwd_chunk<K, K + 1>(LU, x, t, xk, pivot_row);
+    x[K] = t;
     if constexpr (K + 1 < 14u) lu_solve_forward<K + 1>(LU, ipvt, x);
 }
 template <unsigned K>
