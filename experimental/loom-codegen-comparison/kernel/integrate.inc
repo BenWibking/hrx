@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Generated exact control rewrite; also tested with a singular-Jacobian fixture.
 #ifndef CHEM_EVAL_JACOBIAN
-#define CHEM_EVAL_JACOBIAN eval_jacobian
+// Default: the Jacobian is evaluated directly into the iteration matrix at
+// the top of every attempt (re-evaluation on a retry gives identical values
+// and is not counted), so fjac is never materialized or copied.
+#define CHEM_ITERATION_MATRIX_IN_E 1
+#else
+#define CHEM_ITERATION_MATRIX_IN_E 0
 #endif
 #ifndef CHEM_RHS
 #define CHEM_RHS rhs
@@ -65,12 +70,21 @@ DEVICE int integrate(ScratchView s) {
                 last = true;
             }
 
+#if !CHEM_ITERATION_MATRIX_IN_E
             CHEM_EVAL_JACOBIAN(s, x);
+#endif
             bool retry = true;
+            bool first_attempt = true;
 
             while (retry && !done) {
                 const Real fac = 1.0 / (h * C::gamma);
+#if CHEM_ITERATION_MATRIX_IN_E
+                eval_iteration_matrix(s, fac, first_attempt);
+                first_attempt = false;
+                if (decompose_in_place(s) != 0) {
+#else
                 if (decompose(s, fac) != 0) {
+#endif
                     nsing += 1;
                     if (nsing >= 5) {
                         s.t[0] = x;
@@ -165,4 +179,5 @@ DEVICE int integrate(ScratchView s) {
 
 }
 #undef CHEM_EVAL_JACOBIAN
+#undef CHEM_ITERATION_MATRIX_IN_E
 #undef CHEM_RHS
