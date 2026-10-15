@@ -158,14 +158,13 @@ DEVICE EosSums eos_sums_from_number_densities(const Real* xn) {
     Real sum_gammasinv = 0.0;
     Real rhotot = 0.0;
 
-    for (int n = 0; n < NumSpec; ++n) {
-        rhotot += xn[static_cast<size_type>(n)] * species_mass(n);
+    [[loom::unroll]] for (unsigned n = 0; n < 14u; ++n) {
+        rhotot += xn[n] * species_mass(static_cast<int>(n));
     }
 
-    for (int n = 0; n < NumSpec; ++n) {
-        const auto idx = static_cast<size_type>(n);
-        sum_abarinv += xn[idx];
-        sum_gammasinv += (xn[idx] * protonmass / rhotot) * (1.0 / (species_gamma(n) - 1.0));
+    [[loom::unroll]] for (unsigned n = 0; n < 14u; ++n) {
+        sum_abarinv += xn[n];
+        sum_gammasinv += (xn[n] * protonmass / rhotot) * (1.0 / (species_gamma(static_cast<int>(n)) - 1.0));
     }
 
     sum_abarinv *= protonmass / rhotot;
@@ -8077,7 +8076,9 @@ DEVICE void burn_state_from_y(const Real* y, BurnRecord* b) {
 DEVICE void burn_state_from_y_view(const Real* y, BurnView b) {
 
     b.rho[0] = 0.0;
-    for (int n = 0; n < NumSpec; ++n) b.xn[n] = math::max(y[n], small_number_density_floor());
+    [[loom::unroll]] for (unsigned n = 0; n < 14u; ++n) {
+        b.xn[n] = math::max(y[n], small_number_density_floor());
+    }
     b.e[0] = y[NumSpec];
     eos_re_view(b);
 
