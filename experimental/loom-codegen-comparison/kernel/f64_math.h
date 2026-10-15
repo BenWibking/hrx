@@ -111,22 +111,16 @@ DEVICE double exp(double x) {
     const double p = fma(t, p1, 1.0);
 
     // z = ldexp(p, n). Unclamped inputs give n in [-1551, 1477] and p in
-    // [0.7, 1.42]. Moving 1000 of the exponent into the second factor keeps
-    // the first product exact, so only the second product rounds, overflows,
-    // or becomes subnormal.
-    const bool scale_down = n < -1000;
-    const bool scale_up = n > 1000;
-    const int down_exponent = n + 1000;
-    const int up_exponent = n - 1000;
-    const int up_or_exact_exponent = scale_up ? up_exponent : n;
-    const int exact_exponent = scale_down ? down_exponent : up_or_exact_exponent;
-    const double up_or_unit_scale = scale_up ? 0x1p1000 : 1.0;
-    const double rounding_scale = scale_down ? 0x1p-1000 : up_or_unit_scale;
-    const int exact_biased_exponent = exact_exponent + 1023;
-    const u64 exact_scale_bits = (u64)exact_biased_exponent << 52;
-    const double exact_scale = __builtin_bit_cast(double, exact_scale_bits);
-    const double exact_product = p * exact_scale;
-    const double z = exact_product * rounding_scale;
+    // [0.7, 1.42]. Splitting n = n_lo + n_hi with n_lo = floor(n / 2) keeps
+    // both factors 2^n_lo and 2^n_hi normal and makes the first product
+    // exact, so only the second product rounds, overflows, or becomes
+    // subnormal: the same single rounding of p * 2^n as OCML's ldexp.
+    const int n_lo = n >> 1;
+    const int n_hi = n - n_lo;
+    const u64 lo_scale_bits = (u64)(n_lo + 1023) << 52;
+    const u64 hi_scale_bits = (u64)(n_hi + 1023) << 52;
+    const double exact_product = p * __builtin_bit_cast(double, lo_scale_bits);
+    const double z = exact_product * __builtin_bit_cast(double, hi_scale_bits);
 
     // NaN inputs propagate through the arithmetic above.
     const double infinity = __builtin_bit_cast(double, 0x7ff0000000000000ULL);
