@@ -138,22 +138,26 @@ DEVICE double exp(double x) {
 
 // logD_base.h, with the ep.h double-double helpers expanded in place.
 DEVICE double log(double a) {
+    // Work on the high word with shifts and VOP2-encodable literals: the
+    // 64-bit masks and select-between-constants of the direct transcription
+    // become SGPR constants that spill and reload on every call.
     const u64 bits = __builtin_bit_cast(u64, a);
-    const u64 magnitude = bits & 0x7fffffffffffffffULL;
+    const unsigned hi = (unsigned)(bits >> 32);
+    const unsigned exponent_field = (hi << 1) >> 21;
 
     // m = frexp_mant(a) in [0.5, 1) and its exponent. Signed, zero, and
     // non-finite inputs produce unused values that the selects below replace.
-    const bool subnormal = magnitude < 0x0010000000000000ULL;
+    const bool subnormal = exponent_field == 0u;
     const double scaled_subnormal = a * 0x1p54;
     const double normalized_input = subnormal ? scaled_subnormal : a;
     const u64 normalized_bits = __builtin_bit_cast(u64, normalized_input);
-    const u64 shifted_exponent = normalized_bits >> 52;
-    const u64 exponent_bits = shifted_exponent & 2047;
-    const int biased_exponent = (int)exponent_bits;
-    const int exponent_offset = subnormal ? 1076 : 1022;
-    const int frexp_exponent = biased_exponent - exponent_offset;
-    const u64 mantissa_bits = normalized_bits & 0x000fffffffffffffULL;
-    const u64 half_mantissa_bits = mantissa_bits | 0x3fe0000000000000ULL;
+    const unsigned normalized_hi = (unsigned)(normalized_bits >> 32);
+    const unsigned normalized_lo = (unsigned)normalized_bits;
+    const int biased_exponent = (int)((normalized_hi << 1) >> 21);
+    const int subnormal_shift = subnormal ? 54 : 0;
+    const int frexp_exponent = (biased_exponent - 1022) - subnormal_shift;
+    const unsigned half_mantissa_hi = ((normalized_hi << 12) >> 12) | 0x3fe00000u;
+    const u64 half_mantissa_bits = ((u64)half_mantissa_hi << 32) | (u64)normalized_lo;
     const double frexp_mantissa = __builtin_bit_cast(double, half_mantissa_bits);
 
     // b = m < 2/3; m = ldexp(m, b); e = frexp_exp(a) - b.
@@ -242,16 +246,17 @@ DEVICE double log(double a) {
 
     // OCML's NaN result comes from propagation through frexp. Setting the
     // quiet bit produces the same value without it.
-    const bool is_infinite = magnitude == 0x7ff0000000000000ULL;
-    const bool is_nan = magnitude > 0x7ff0000000000000ULL;
+    const bool is_nan = a != a;
+    const bool is_infinite = (exponent_field == 2047u) & !is_nan;
     const bool negative = a < 0.0;
     const bool is_zero = a == 0.0;
     const double negative_infinity =
         __builtin_bit_cast(double, 0xfff0000000000000ULL);
     const double canonical_nan =
         __builtin_bit_cast(double, 0x7ff8000000000000ULL);
-    const double quiet_nan =
-        __builtin_bit_cast(double, bits | 0x0008000000000000ULL);
+    const unsigned quiet_hi = hi | 0x00080000u;
+    const double quiet_nan = __builtin_bit_cast(
+        double, ((u64)quiet_hi << 32) | (u64)(unsigned)bits);
     const double with_infinity = is_infinite ? a : result;
     const double with_negative = negative ? canonical_nan : with_infinity;
     const double with_zero = is_zero ? negative_infinity : with_negative;
