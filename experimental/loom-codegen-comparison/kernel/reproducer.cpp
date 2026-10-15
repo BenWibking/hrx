@@ -75,8 +75,9 @@ struct ScratchRecord {
   int n_solve = 0;
   int max_steps = 100000;
   int ip[15] = {};
+  Real f0[15] = {};
 };
-static_assert(sizeof(ScratchRecord) == 4848);
+static_assert(sizeof(ScratchRecord) == 4968);
 struct BurnView { Real* rho; Real* T; Real* e; Real* xn; };
 struct ScratchView {
   Real* t;
@@ -106,9 +107,10 @@ struct ScratchView {
   int* n_solve;
   int* max_steps;
   int* ip;
+  Real* f0;
 };
 DEVICE ScratchView scratch_view(ScratchRecord* s) {
-  return {&s->t, &s->tout, &s->dt, s->y, s->rtol_vec, s->atol_vec, &s->uround, &s->fac_min, &s->fac_max, &s->safe, s->ynew, s->ak1, s->ak2, s->work, &s->fjac[0][0], &s->e[0][0], s->dy, {&s->burn.rho, &s->burn.T, &s->burn.e, s->burn.xn}, &s->n_step, &s->n_rhs, &s->n_jac, &s->n_accept, &s->n_reject, &s->n_decomp, &s->n_solve, &s->max_steps, s->ip};
+  return {&s->t, &s->tout, &s->dt, s->y, s->rtol_vec, s->atol_vec, &s->uround, &s->fac_min, &s->fac_max, &s->safe, s->ynew, s->ak1, s->ak2, s->work, &s->fjac[0][0], &s->e[0][0], s->dy, {&s->burn.rho, &s->burn.T, &s->burn.e, s->burn.xn}, &s->n_step, &s->n_rhs, &s->n_jac, &s->n_accept, &s->n_reject, &s->n_decomp, &s->n_solve, &s->max_steps, s->ip, s->f0};
 }
 DEVICE size_type matrix_index(size_type row, size_type column) {
   size_type index = row * 15 + column;
@@ -8098,6 +8100,10 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
     BurnView b = s.burn;
     burn_state_from_y_view(s.y, b);
     jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
+    // f(y) for ROS2S stage 0, from the same burn state as the Jacobian
+    // (identical to rhs(x, s.y, ...)); reused by every retry of this step.
+    rhs_specie(b.T[0], s.f0, b.xn, default_redshift);
+    s.f0[14] = rhs_eint(b.T[0], b.xn, default_redshift);
     s.n_jac[0] += 1;
 
 }
@@ -8278,7 +8284,8 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     int n_solve = 0;
     int max_steps = 100000;
     int ip[15]{};
-    ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip};
+    Real f0[15]{};
+    ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip, f0};
     configure_ros2s(s);
 
     s.t[0] = 0.0;

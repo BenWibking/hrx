@@ -84,13 +84,14 @@ DEVICE int integrate(ScratchView s) {
                     continue;
                 }
 
-                // One RHS/solve call site for all three stages (ak1, ak2, work
+                // Stage 0 uses f(y) computed with the Jacobian (same state).
+                for (size_type i = 0; i < N; ++i) s.ak1[i] = s.f0[i];
+                solve(s, s.ak1);
+                // One RHS/solve call site for stages 1 and 2 (ak1, ak2, work
                 // are contiguous: stage k writes ak1 + 15*k).
-                for (int stage = 0; stage < 3; ++stage) {
+                for (int stage = 1; stage < 3; ++stage) {
                     Real* target = s.ak1 + 15 * stage;
-                    if (stage == 0) {
-                        for (size_type i = 0; i < N; ++i) s.ynew[i] = s.y[i];
-                    } else if (stage == 1) {
+                    if (stage == 1) {
                         for (size_type i = 0; i < N; ++i) {
                             s.ynew[i] = s.y[i] + C::a21 * s.ak1[i];
                             s.ak2[i] = (C::c21 / h) * s.ak1[i];
@@ -102,11 +103,7 @@ DEVICE int integrate(ScratchView s) {
                         }
                     }
                     CHEM_RHS(x, s.ynew, s.dy, s);
-                    if (stage == 0) {
-                        for (size_type i = 0; i < N; ++i) target[i] = s.dy[i];
-                    } else {
-                        for (size_type i = 0; i < N; ++i) target[i] += s.dy[i];
-                    }
+                    for (size_type i = 0; i < N; ++i) target[i] += s.dy[i];
                     solve(s, target);
                 }
 
