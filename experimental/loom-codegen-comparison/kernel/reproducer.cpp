@@ -8246,9 +8246,10 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     Real fac_max = 6.0;
     Real safe = 0.9;
     Real ynew[15]{};
-    Real ak1[15]{};
-    Real ak2[15]{};
-    Real work[15]{};
+    Real kst[45]{};
+    Real* ak1 = kst;
+    Real* ak2 = kst + 15;
+    Real* work = kst + 30;
     Real fjac[225]{};
     Real e[225]{};
     Real dy[15]{};

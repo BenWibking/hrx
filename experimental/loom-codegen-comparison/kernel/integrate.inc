@@ -84,28 +84,31 @@ DEVICE int integrate(ScratchView s) {
                     continue;
                 }
 
-                CHEM_RHS(x, s.y, s.ak1, s);
-                solve(s, s.ak1);
-
-                for (size_type i = 0; i < N; ++i) {
-                    s.ynew[i] = s.y[i] + C::a21 * s.ak1[i];
-                    s.ak2[i] = (C::c21 / h) * s.ak1[i];
+                // One RHS/solve call site for all three stages (ak1, ak2, work
+                // are contiguous: stage k writes ak1 + 15*k).
+                for (int stage = 0; stage < 3; ++stage) {
+                    Real* target = s.ak1 + 15 * stage;
+                    if (stage == 0) {
+                        for (size_type i = 0; i < N; ++i) s.ynew[i] = s.y[i];
+                    } else if (stage == 1) {
+                        for (size_type i = 0; i < N; ++i) {
+                            s.ynew[i] = s.y[i] + C::a21 * s.ak1[i];
+                            s.ak2[i] = (C::c21 / h) * s.ak1[i];
+                        }
+                    } else {
+                        for (size_type i = 0; i < N; ++i) {
+                            s.ynew[i] = s.y[i] + C::a31 * s.ak1[i] + C::a32 * s.ak2[i];
+                            s.work[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) / h;
+                        }
+                    }
+                    CHEM_RHS(x, s.ynew, s.dy, s);
+                    if (stage == 0) {
+                        for (size_type i = 0; i < N; ++i) target[i] = s.dy[i];
+                    } else {
+                        for (size_type i = 0; i < N; ++i) target[i] += s.dy[i];
+                    }
+                    solve(s, target);
                 }
-                CHEM_RHS(x + C::ct2 * h, s.ynew, s.dy, s);
-                for (size_type i = 0; i < N; ++i) {
-                    s.ak2[i] += s.dy[i];
-                }
-                solve(s, s.ak2);
-
-                for (size_type i = 0; i < N; ++i) {
-                    s.ynew[i] = s.y[i] + C::a31 * s.ak1[i] + C::a32 * s.ak2[i];
-                    s.work[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) / h;
-                }
-                CHEM_RHS(x + h, s.ynew, s.dy, s);
-                for (size_type i = 0; i < N; ++i) {
-                    s.work[i] += s.dy[i];
-                }
-                solve(s, s.work);
 
                 for (size_type i = 0; i < N; ++i) {
                     const Real ak3i = s.work[i];
