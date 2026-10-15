@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='loom-chemistry-compile-') as work:
     subprocess.run([sys.executable, str(here / 'generate.py'), f'--output-dir={work}'],
                    check=True)
     subprocess.run([importer, f'--root=chemistry::{ROOT}', '--data-model=lp64',
-                    '--approximate-functions=false', f'--I={here}',
+                    '--fp-model=precise', f'--I={here}',
                     f'--output={module}', str(Path(work) / 'reproducer.cpp')],
                    check=True)
     kernel = module.read_text().split(f'kernel.def @chemistry.{ROOT}()', 1)[1]

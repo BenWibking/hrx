@@ -64,7 +64,7 @@ The standalone HIP driver defaults to a `64^3` grid (262,144 cells). Use
 
 ```sh
 python3 generate.py --output-dir=/tmp/chemistry-generated
-loom-import-cxx --data-model=lp64 --approximate-functions=false \
+loom-import-cxx --data-model=lp64 --fp-model=precise \
   --root=chemistry::prepare_grid_timestep_kernel \
   --root=chemistry::advance_collapse_gridwide_kernel \
   --I=. --output=/tmp/chemistry.loom /tmp/chemistry-generated/reproducer.cpp

@@ -1,0 +1,1751 @@
+// Compile-only reproducer; no GPU execution is required.
+amdgpu.target<gfx90a> @target
+low.kernel.def target<amdgpu.cdna2.core>(@target) workgroup_size(128, 1, 1) @repro() asm {
+  %kernarg = live_in<amdgpu.kernarg_segment_ptr> : reg<amdgpu.sgpr x2>
+  %base = s_load_dwordx2_offset_only %kernarg
+  %zero = v_mov_b32 0
+  %s0 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s1 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s2 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s3 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s4 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s5 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s6 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s7 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s8 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s9 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s10 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s11 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s12 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s13 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s14 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s15 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s16 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s17 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s18 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s19 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s20 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s21 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s22 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s23 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s24 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s25 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s26 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s27 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s28 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s29 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s30 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s31 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s32 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s33 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s34 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s35 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s36 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s37 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s38 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s39 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s40 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s41 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s42 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s43 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s44 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s45 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s46 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s47 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s48 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s49 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s50 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s51 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s52 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s53 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s54 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s55 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s56 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s57 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s58 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s59 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s60 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s61 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s62 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s63 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s64 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s65 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s66 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s67 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s68 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s69 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s70 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s71 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s72 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s73 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s74 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s75 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s76 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s77 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s78 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s79 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s80 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s81 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s82 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s83 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s84 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s85 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s86 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s87 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s88 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s89 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s90 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s91 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s92 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s93 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s94 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s95 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s96 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s97 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s98 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s99 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s100 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s101 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s102 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s103 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s104 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s105 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s106 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s107 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s108 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s109 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s110 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s111 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s112 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s113 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s114 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s115 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s116 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s117 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s118 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s119 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s120 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s121 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s122 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s123 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s124 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s125 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s126 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s127 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s128 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s129 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s130 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s131 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s132 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s133 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s134 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s135 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s136 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s137 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s138 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s139 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s140 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s141 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s142 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s143 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s144 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s145 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s146 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s147 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s148 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s149 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s150 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s151 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s152 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s153 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s154 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s155 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s156 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s157 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s158 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s159 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s160 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s161 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s162 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s163 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s164 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s165 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s166 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s167 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s168 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s169 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s170 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s171 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s172 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s173 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s174 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s175 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s176 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s177 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s178 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s179 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s180 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s181 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s182 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s183 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s184 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s185 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s186 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s187 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s188 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s189 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s190 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s191 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s192 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s193 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s194 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s195 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s196 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s197 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s198 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s199 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s200 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s201 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s202 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s203 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s204 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s205 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s206 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s207 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s208 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s209 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s210 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s211 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s212 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s213 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s214 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s215 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s216 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s217 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s218 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s219 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s220 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s221 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s222 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s223 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s224 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s225 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s226 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s227 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s228 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s229 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s230 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s231 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s232 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s233 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s234 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s235 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s236 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s237 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s238 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s239 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s240 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s241 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s242 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s243 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s244 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s245 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s246 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s247 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %s248 = storage {byte_alignment = 8, byte_length = 8} : low.storage<scratch>
+  %a0 = low.storage.address %s0 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v0 = v_mov_b32 1
+  %w0 = concat(%v0, %v0) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a0, %w0) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a1 = low.storage.address %s1 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v1 = v_mov_b32 2
+  %w1 = concat(%v1, %v1) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a1, %w1) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a2 = low.storage.address %s2 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v2 = v_mov_b32 3
+  %w2 = concat(%v2, %v2) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a2, %w2) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a3 = low.storage.address %s3 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v3 = v_mov_b32 4
+  %w3 = concat(%v3, %v3) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a3, %w3) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a4 = low.storage.address %s4 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v4 = v_mov_b32 5
+  %w4 = concat(%v4, %v4) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a4, %w4) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a5 = low.storage.address %s5 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v5 = v_mov_b32 6
+  %w5 = concat(%v5, %v5) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a5, %w5) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a6 = low.storage.address %s6 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v6 = v_mov_b32 7
+  %w6 = concat(%v6, %v6) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a6, %w6) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a7 = low.storage.address %s7 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v7 = v_mov_b32 8
+  %w7 = concat(%v7, %v7) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a7, %w7) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a8 = low.storage.address %s8 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v8 = v_mov_b32 9
+  %w8 = concat(%v8, %v8) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a8, %w8) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a9 = low.storage.address %s9 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v9 = v_mov_b32 10
+  %w9 = concat(%v9, %v9) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a9, %w9) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a10 = low.storage.address %s10 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v10 = v_mov_b32 11
+  %w10 = concat(%v10, %v10) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a10, %w10) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a11 = low.storage.address %s11 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v11 = v_mov_b32 12
+  %w11 = concat(%v11, %v11) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a11, %w11) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a12 = low.storage.address %s12 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v12 = v_mov_b32 13
+  %w12 = concat(%v12, %v12) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a12, %w12) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a13 = low.storage.address %s13 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v13 = v_mov_b32 14
+  %w13 = concat(%v13, %v13) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a13, %w13) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a14 = low.storage.address %s14 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v14 = v_mov_b32 15
+  %w14 = concat(%v14, %v14) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a14, %w14) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a15 = low.storage.address %s15 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v15 = v_mov_b32 16
+  %w15 = concat(%v15, %v15) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a15, %w15) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a16 = low.storage.address %s16 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v16 = v_mov_b32 17
+  %w16 = concat(%v16, %v16) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a16, %w16) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a17 = low.storage.address %s17 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v17 = v_mov_b32 18
+  %w17 = concat(%v17, %v17) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a17, %w17) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a18 = low.storage.address %s18 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v18 = v_mov_b32 19
+  %w18 = concat(%v18, %v18) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a18, %w18) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a19 = low.storage.address %s19 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v19 = v_mov_b32 20
+  %w19 = concat(%v19, %v19) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a19, %w19) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a20 = low.storage.address %s20 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v20 = v_mov_b32 21
+  %w20 = concat(%v20, %v20) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a20, %w20) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a21 = low.storage.address %s21 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v21 = v_mov_b32 22
+  %w21 = concat(%v21, %v21) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a21, %w21) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a22 = low.storage.address %s22 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v22 = v_mov_b32 23
+  %w22 = concat(%v22, %v22) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a22, %w22) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a23 = low.storage.address %s23 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v23 = v_mov_b32 24
+  %w23 = concat(%v23, %v23) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a23, %w23) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a24 = low.storage.address %s24 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v24 = v_mov_b32 25
+  %w24 = concat(%v24, %v24) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a24, %w24) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a25 = low.storage.address %s25 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v25 = v_mov_b32 26
+  %w25 = concat(%v25, %v25) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a25, %w25) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a26 = low.storage.address %s26 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v26 = v_mov_b32 27
+  %w26 = concat(%v26, %v26) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a26, %w26) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a27 = low.storage.address %s27 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v27 = v_mov_b32 28
+  %w27 = concat(%v27, %v27) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a27, %w27) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a28 = low.storage.address %s28 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v28 = v_mov_b32 29
+  %w28 = concat(%v28, %v28) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a28, %w28) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a29 = low.storage.address %s29 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v29 = v_mov_b32 30
+  %w29 = concat(%v29, %v29) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a29, %w29) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a30 = low.storage.address %s30 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v30 = v_mov_b32 31
+  %w30 = concat(%v30, %v30) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a30, %w30) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a31 = low.storage.address %s31 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v31 = v_mov_b32 32
+  %w31 = concat(%v31, %v31) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a31, %w31) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a32 = low.storage.address %s32 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v32 = v_mov_b32 33
+  %w32 = concat(%v32, %v32) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a32, %w32) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a33 = low.storage.address %s33 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v33 = v_mov_b32 34
+  %w33 = concat(%v33, %v33) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a33, %w33) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a34 = low.storage.address %s34 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v34 = v_mov_b32 35
+  %w34 = concat(%v34, %v34) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a34, %w34) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a35 = low.storage.address %s35 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v35 = v_mov_b32 36
+  %w35 = concat(%v35, %v35) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a35, %w35) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a36 = low.storage.address %s36 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v36 = v_mov_b32 37
+  %w36 = concat(%v36, %v36) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a36, %w36) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a37 = low.storage.address %s37 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v37 = v_mov_b32 38
+  %w37 = concat(%v37, %v37) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a37, %w37) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a38 = low.storage.address %s38 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v38 = v_mov_b32 39
+  %w38 = concat(%v38, %v38) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a38, %w38) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a39 = low.storage.address %s39 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v39 = v_mov_b32 40
+  %w39 = concat(%v39, %v39) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a39, %w39) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a40 = low.storage.address %s40 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v40 = v_mov_b32 41
+  %w40 = concat(%v40, %v40) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a40, %w40) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a41 = low.storage.address %s41 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v41 = v_mov_b32 42
+  %w41 = concat(%v41, %v41) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a41, %w41) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a42 = low.storage.address %s42 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v42 = v_mov_b32 43
+  %w42 = concat(%v42, %v42) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a42, %w42) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a43 = low.storage.address %s43 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v43 = v_mov_b32 44
+  %w43 = concat(%v43, %v43) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a43, %w43) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a44 = low.storage.address %s44 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v44 = v_mov_b32 45
+  %w44 = concat(%v44, %v44) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a44, %w44) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a45 = low.storage.address %s45 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v45 = v_mov_b32 46
+  %w45 = concat(%v45, %v45) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a45, %w45) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a46 = low.storage.address %s46 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v46 = v_mov_b32 47
+  %w46 = concat(%v46, %v46) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a46, %w46) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a47 = low.storage.address %s47 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v47 = v_mov_b32 48
+  %w47 = concat(%v47, %v47) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a47, %w47) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a48 = low.storage.address %s48 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v48 = v_mov_b32 49
+  %w48 = concat(%v48, %v48) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a48, %w48) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a49 = low.storage.address %s49 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v49 = v_mov_b32 50
+  %w49 = concat(%v49, %v49) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a49, %w49) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a50 = low.storage.address %s50 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v50 = v_mov_b32 51
+  %w50 = concat(%v50, %v50) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a50, %w50) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a51 = low.storage.address %s51 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v51 = v_mov_b32 52
+  %w51 = concat(%v51, %v51) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a51, %w51) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a52 = low.storage.address %s52 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v52 = v_mov_b32 53
+  %w52 = concat(%v52, %v52) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a52, %w52) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a53 = low.storage.address %s53 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v53 = v_mov_b32 54
+  %w53 = concat(%v53, %v53) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a53, %w53) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a54 = low.storage.address %s54 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v54 = v_mov_b32 55
+  %w54 = concat(%v54, %v54) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a54, %w54) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a55 = low.storage.address %s55 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v55 = v_mov_b32 56
+  %w55 = concat(%v55, %v55) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a55, %w55) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a56 = low.storage.address %s56 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v56 = v_mov_b32 57
+  %w56 = concat(%v56, %v56) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a56, %w56) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a57 = low.storage.address %s57 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v57 = v_mov_b32 58
+  %w57 = concat(%v57, %v57) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a57, %w57) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a58 = low.storage.address %s58 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v58 = v_mov_b32 59
+  %w58 = concat(%v58, %v58) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a58, %w58) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a59 = low.storage.address %s59 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v59 = v_mov_b32 60
+  %w59 = concat(%v59, %v59) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a59, %w59) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a60 = low.storage.address %s60 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v60 = v_mov_b32 61
+  %w60 = concat(%v60, %v60) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a60, %w60) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a61 = low.storage.address %s61 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v61 = v_mov_b32 62
+  %w61 = concat(%v61, %v61) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a61, %w61) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a62 = low.storage.address %s62 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v62 = v_mov_b32 63
+  %w62 = concat(%v62, %v62) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a62, %w62) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a63 = low.storage.address %s63 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v63 = v_mov_b32 64
+  %w63 = concat(%v63, %v63) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a63, %w63) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a64 = low.storage.address %s64 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v64 = v_mov_b32 65
+  %w64 = concat(%v64, %v64) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a64, %w64) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a65 = low.storage.address %s65 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v65 = v_mov_b32 66
+  %w65 = concat(%v65, %v65) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a65, %w65) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a66 = low.storage.address %s66 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v66 = v_mov_b32 67
+  %w66 = concat(%v66, %v66) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a66, %w66) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a67 = low.storage.address %s67 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v67 = v_mov_b32 68
+  %w67 = concat(%v67, %v67) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a67, %w67) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a68 = low.storage.address %s68 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v68 = v_mov_b32 69
+  %w68 = concat(%v68, %v68) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a68, %w68) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a69 = low.storage.address %s69 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v69 = v_mov_b32 70
+  %w69 = concat(%v69, %v69) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a69, %w69) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a70 = low.storage.address %s70 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v70 = v_mov_b32 71
+  %w70 = concat(%v70, %v70) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a70, %w70) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a71 = low.storage.address %s71 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v71 = v_mov_b32 72
+  %w71 = concat(%v71, %v71) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a71, %w71) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a72 = low.storage.address %s72 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v72 = v_mov_b32 73
+  %w72 = concat(%v72, %v72) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a72, %w72) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a73 = low.storage.address %s73 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v73 = v_mov_b32 74
+  %w73 = concat(%v73, %v73) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a73, %w73) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a74 = low.storage.address %s74 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v74 = v_mov_b32 75
+  %w74 = concat(%v74, %v74) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a74, %w74) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a75 = low.storage.address %s75 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v75 = v_mov_b32 76
+  %w75 = concat(%v75, %v75) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a75, %w75) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a76 = low.storage.address %s76 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v76 = v_mov_b32 77
+  %w76 = concat(%v76, %v76) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a76, %w76) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a77 = low.storage.address %s77 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v77 = v_mov_b32 78
+  %w77 = concat(%v77, %v77) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a77, %w77) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a78 = low.storage.address %s78 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v78 = v_mov_b32 79
+  %w78 = concat(%v78, %v78) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a78, %w78) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a79 = low.storage.address %s79 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v79 = v_mov_b32 80
+  %w79 = concat(%v79, %v79) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a79, %w79) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a80 = low.storage.address %s80 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v80 = v_mov_b32 81
+  %w80 = concat(%v80, %v80) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a80, %w80) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a81 = low.storage.address %s81 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v81 = v_mov_b32 82
+  %w81 = concat(%v81, %v81) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a81, %w81) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a82 = low.storage.address %s82 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v82 = v_mov_b32 83
+  %w82 = concat(%v82, %v82) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a82, %w82) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a83 = low.storage.address %s83 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v83 = v_mov_b32 84
+  %w83 = concat(%v83, %v83) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a83, %w83) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a84 = low.storage.address %s84 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v84 = v_mov_b32 85
+  %w84 = concat(%v84, %v84) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a84, %w84) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a85 = low.storage.address %s85 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v85 = v_mov_b32 86
+  %w85 = concat(%v85, %v85) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a85, %w85) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a86 = low.storage.address %s86 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v86 = v_mov_b32 87
+  %w86 = concat(%v86, %v86) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a86, %w86) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a87 = low.storage.address %s87 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v87 = v_mov_b32 88
+  %w87 = concat(%v87, %v87) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a87, %w87) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a88 = low.storage.address %s88 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v88 = v_mov_b32 89
+  %w88 = concat(%v88, %v88) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a88, %w88) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a89 = low.storage.address %s89 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v89 = v_mov_b32 90
+  %w89 = concat(%v89, %v89) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a89, %w89) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a90 = low.storage.address %s90 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v90 = v_mov_b32 91
+  %w90 = concat(%v90, %v90) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a90, %w90) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a91 = low.storage.address %s91 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v91 = v_mov_b32 92
+  %w91 = concat(%v91, %v91) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a91, %w91) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a92 = low.storage.address %s92 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v92 = v_mov_b32 93
+  %w92 = concat(%v92, %v92) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a92, %w92) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a93 = low.storage.address %s93 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v93 = v_mov_b32 94
+  %w93 = concat(%v93, %v93) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a93, %w93) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a94 = low.storage.address %s94 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v94 = v_mov_b32 95
+  %w94 = concat(%v94, %v94) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a94, %w94) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a95 = low.storage.address %s95 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v95 = v_mov_b32 96
+  %w95 = concat(%v95, %v95) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a95, %w95) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a96 = low.storage.address %s96 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v96 = v_mov_b32 97
+  %w96 = concat(%v96, %v96) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a96, %w96) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a97 = low.storage.address %s97 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v97 = v_mov_b32 98
+  %w97 = concat(%v97, %v97) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a97, %w97) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a98 = low.storage.address %s98 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v98 = v_mov_b32 99
+  %w98 = concat(%v98, %v98) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a98, %w98) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a99 = low.storage.address %s99 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v99 = v_mov_b32 100
+  %w99 = concat(%v99, %v99) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a99, %w99) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a100 = low.storage.address %s100 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v100 = v_mov_b32 101
+  %w100 = concat(%v100, %v100) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a100, %w100) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a101 = low.storage.address %s101 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v101 = v_mov_b32 102
+  %w101 = concat(%v101, %v101) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a101, %w101) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a102 = low.storage.address %s102 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v102 = v_mov_b32 103
+  %w102 = concat(%v102, %v102) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a102, %w102) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a103 = low.storage.address %s103 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v103 = v_mov_b32 104
+  %w103 = concat(%v103, %v103) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a103, %w103) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a104 = low.storage.address %s104 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v104 = v_mov_b32 105
+  %w104 = concat(%v104, %v104) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a104, %w104) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a105 = low.storage.address %s105 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v105 = v_mov_b32 106
+  %w105 = concat(%v105, %v105) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a105, %w105) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a106 = low.storage.address %s106 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v106 = v_mov_b32 107
+  %w106 = concat(%v106, %v106) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a106, %w106) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a107 = low.storage.address %s107 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v107 = v_mov_b32 108
+  %w107 = concat(%v107, %v107) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a107, %w107) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a108 = low.storage.address %s108 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v108 = v_mov_b32 109
+  %w108 = concat(%v108, %v108) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a108, %w108) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a109 = low.storage.address %s109 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v109 = v_mov_b32 110
+  %w109 = concat(%v109, %v109) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a109, %w109) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a110 = low.storage.address %s110 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v110 = v_mov_b32 111
+  %w110 = concat(%v110, %v110) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a110, %w110) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a111 = low.storage.address %s111 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v111 = v_mov_b32 112
+  %w111 = concat(%v111, %v111) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a111, %w111) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a112 = low.storage.address %s112 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v112 = v_mov_b32 113
+  %w112 = concat(%v112, %v112) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a112, %w112) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a113 = low.storage.address %s113 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v113 = v_mov_b32 114
+  %w113 = concat(%v113, %v113) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a113, %w113) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a114 = low.storage.address %s114 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v114 = v_mov_b32 115
+  %w114 = concat(%v114, %v114) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a114, %w114) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a115 = low.storage.address %s115 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v115 = v_mov_b32 116
+  %w115 = concat(%v115, %v115) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a115, %w115) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a116 = low.storage.address %s116 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v116 = v_mov_b32 117
+  %w116 = concat(%v116, %v116) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a116, %w116) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a117 = low.storage.address %s117 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v117 = v_mov_b32 118
+  %w117 = concat(%v117, %v117) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a117, %w117) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a118 = low.storage.address %s118 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v118 = v_mov_b32 119
+  %w118 = concat(%v118, %v118) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a118, %w118) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a119 = low.storage.address %s119 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v119 = v_mov_b32 120
+  %w119 = concat(%v119, %v119) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a119, %w119) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a120 = low.storage.address %s120 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v120 = v_mov_b32 121
+  %w120 = concat(%v120, %v120) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a120, %w120) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a121 = low.storage.address %s121 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v121 = v_mov_b32 122
+  %w121 = concat(%v121, %v121) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a121, %w121) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a122 = low.storage.address %s122 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v122 = v_mov_b32 123
+  %w122 = concat(%v122, %v122) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a122, %w122) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a123 = low.storage.address %s123 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v123 = v_mov_b32 124
+  %w123 = concat(%v123, %v123) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a123, %w123) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a124 = low.storage.address %s124 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v124 = v_mov_b32 125
+  %w124 = concat(%v124, %v124) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a124, %w124) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a125 = low.storage.address %s125 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v125 = v_mov_b32 126
+  %w125 = concat(%v125, %v125) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a125, %w125) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a126 = low.storage.address %s126 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v126 = v_mov_b32 127
+  %w126 = concat(%v126, %v126) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a126, %w126) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a127 = low.storage.address %s127 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v127 = v_mov_b32 128
+  %w127 = concat(%v127, %v127) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a127, %w127) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a128 = low.storage.address %s128 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v128 = v_mov_b32 129
+  %w128 = concat(%v128, %v128) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a128, %w128) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a129 = low.storage.address %s129 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v129 = v_mov_b32 130
+  %w129 = concat(%v129, %v129) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a129, %w129) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a130 = low.storage.address %s130 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v130 = v_mov_b32 131
+  %w130 = concat(%v130, %v130) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a130, %w130) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a131 = low.storage.address %s131 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v131 = v_mov_b32 132
+  %w131 = concat(%v131, %v131) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a131, %w131) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a132 = low.storage.address %s132 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v132 = v_mov_b32 133
+  %w132 = concat(%v132, %v132) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a132, %w132) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a133 = low.storage.address %s133 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v133 = v_mov_b32 134
+  %w133 = concat(%v133, %v133) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a133, %w133) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a134 = low.storage.address %s134 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v134 = v_mov_b32 135
+  %w134 = concat(%v134, %v134) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a134, %w134) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a135 = low.storage.address %s135 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v135 = v_mov_b32 136
+  %w135 = concat(%v135, %v135) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a135, %w135) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a136 = low.storage.address %s136 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v136 = v_mov_b32 137
+  %w136 = concat(%v136, %v136) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a136, %w136) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a137 = low.storage.address %s137 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v137 = v_mov_b32 138
+  %w137 = concat(%v137, %v137) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a137, %w137) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a138 = low.storage.address %s138 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v138 = v_mov_b32 139
+  %w138 = concat(%v138, %v138) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a138, %w138) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a139 = low.storage.address %s139 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v139 = v_mov_b32 140
+  %w139 = concat(%v139, %v139) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a139, %w139) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a140 = low.storage.address %s140 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v140 = v_mov_b32 141
+  %w140 = concat(%v140, %v140) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a140, %w140) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a141 = low.storage.address %s141 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v141 = v_mov_b32 142
+  %w141 = concat(%v141, %v141) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a141, %w141) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a142 = low.storage.address %s142 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v142 = v_mov_b32 143
+  %w142 = concat(%v142, %v142) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a142, %w142) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a143 = low.storage.address %s143 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v143 = v_mov_b32 144
+  %w143 = concat(%v143, %v143) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a143, %w143) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a144 = low.storage.address %s144 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v144 = v_mov_b32 145
+  %w144 = concat(%v144, %v144) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a144, %w144) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a145 = low.storage.address %s145 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v145 = v_mov_b32 146
+  %w145 = concat(%v145, %v145) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a145, %w145) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a146 = low.storage.address %s146 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v146 = v_mov_b32 147
+  %w146 = concat(%v146, %v146) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a146, %w146) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a147 = low.storage.address %s147 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v147 = v_mov_b32 148
+  %w147 = concat(%v147, %v147) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a147, %w147) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a148 = low.storage.address %s148 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v148 = v_mov_b32 149
+  %w148 = concat(%v148, %v148) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a148, %w148) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a149 = low.storage.address %s149 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v149 = v_mov_b32 150
+  %w149 = concat(%v149, %v149) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a149, %w149) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a150 = low.storage.address %s150 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v150 = v_mov_b32 151
+  %w150 = concat(%v150, %v150) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a150, %w150) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a151 = low.storage.address %s151 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v151 = v_mov_b32 152
+  %w151 = concat(%v151, %v151) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a151, %w151) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a152 = low.storage.address %s152 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v152 = v_mov_b32 153
+  %w152 = concat(%v152, %v152) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a152, %w152) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a153 = low.storage.address %s153 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v153 = v_mov_b32 154
+  %w153 = concat(%v153, %v153) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a153, %w153) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a154 = low.storage.address %s154 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v154 = v_mov_b32 155
+  %w154 = concat(%v154, %v154) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a154, %w154) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a155 = low.storage.address %s155 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v155 = v_mov_b32 156
+  %w155 = concat(%v155, %v155) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a155, %w155) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a156 = low.storage.address %s156 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v156 = v_mov_b32 157
+  %w156 = concat(%v156, %v156) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a156, %w156) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a157 = low.storage.address %s157 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v157 = v_mov_b32 158
+  %w157 = concat(%v157, %v157) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a157, %w157) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a158 = low.storage.address %s158 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v158 = v_mov_b32 159
+  %w158 = concat(%v158, %v158) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a158, %w158) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a159 = low.storage.address %s159 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v159 = v_mov_b32 160
+  %w159 = concat(%v159, %v159) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a159, %w159) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a160 = low.storage.address %s160 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v160 = v_mov_b32 161
+  %w160 = concat(%v160, %v160) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a160, %w160) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a161 = low.storage.address %s161 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v161 = v_mov_b32 162
+  %w161 = concat(%v161, %v161) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a161, %w161) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a162 = low.storage.address %s162 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v162 = v_mov_b32 163
+  %w162 = concat(%v162, %v162) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a162, %w162) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a163 = low.storage.address %s163 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v163 = v_mov_b32 164
+  %w163 = concat(%v163, %v163) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a163, %w163) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a164 = low.storage.address %s164 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v164 = v_mov_b32 165
+  %w164 = concat(%v164, %v164) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a164, %w164) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a165 = low.storage.address %s165 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v165 = v_mov_b32 166
+  %w165 = concat(%v165, %v165) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a165, %w165) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a166 = low.storage.address %s166 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v166 = v_mov_b32 167
+  %w166 = concat(%v166, %v166) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a166, %w166) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a167 = low.storage.address %s167 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v167 = v_mov_b32 168
+  %w167 = concat(%v167, %v167) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a167, %w167) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a168 = low.storage.address %s168 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v168 = v_mov_b32 169
+  %w168 = concat(%v168, %v168) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a168, %w168) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a169 = low.storage.address %s169 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v169 = v_mov_b32 170
+  %w169 = concat(%v169, %v169) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a169, %w169) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a170 = low.storage.address %s170 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v170 = v_mov_b32 171
+  %w170 = concat(%v170, %v170) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a170, %w170) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a171 = low.storage.address %s171 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v171 = v_mov_b32 172
+  %w171 = concat(%v171, %v171) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a171, %w171) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a172 = low.storage.address %s172 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v172 = v_mov_b32 173
+  %w172 = concat(%v172, %v172) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a172, %w172) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a173 = low.storage.address %s173 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v173 = v_mov_b32 174
+  %w173 = concat(%v173, %v173) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a173, %w173) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a174 = low.storage.address %s174 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v174 = v_mov_b32 175
+  %w174 = concat(%v174, %v174) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a174, %w174) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a175 = low.storage.address %s175 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v175 = v_mov_b32 176
+  %w175 = concat(%v175, %v175) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a175, %w175) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a176 = low.storage.address %s176 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v176 = v_mov_b32 177
+  %w176 = concat(%v176, %v176) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a176, %w176) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a177 = low.storage.address %s177 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v177 = v_mov_b32 178
+  %w177 = concat(%v177, %v177) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a177, %w177) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a178 = low.storage.address %s178 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v178 = v_mov_b32 179
+  %w178 = concat(%v178, %v178) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a178, %w178) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a179 = low.storage.address %s179 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v179 = v_mov_b32 180
+  %w179 = concat(%v179, %v179) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a179, %w179) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a180 = low.storage.address %s180 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v180 = v_mov_b32 181
+  %w180 = concat(%v180, %v180) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a180, %w180) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a181 = low.storage.address %s181 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v181 = v_mov_b32 182
+  %w181 = concat(%v181, %v181) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a181, %w181) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a182 = low.storage.address %s182 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v182 = v_mov_b32 183
+  %w182 = concat(%v182, %v182) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a182, %w182) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a183 = low.storage.address %s183 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v183 = v_mov_b32 184
+  %w183 = concat(%v183, %v183) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a183, %w183) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a184 = low.storage.address %s184 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v184 = v_mov_b32 185
+  %w184 = concat(%v184, %v184) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a184, %w184) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a185 = low.storage.address %s185 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v185 = v_mov_b32 186
+  %w185 = concat(%v185, %v185) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a185, %w185) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a186 = low.storage.address %s186 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v186 = v_mov_b32 187
+  %w186 = concat(%v186, %v186) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a186, %w186) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a187 = low.storage.address %s187 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v187 = v_mov_b32 188
+  %w187 = concat(%v187, %v187) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a187, %w187) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a188 = low.storage.address %s188 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v188 = v_mov_b32 189
+  %w188 = concat(%v188, %v188) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a188, %w188) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a189 = low.storage.address %s189 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v189 = v_mov_b32 190
+  %w189 = concat(%v189, %v189) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a189, %w189) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a190 = low.storage.address %s190 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v190 = v_mov_b32 191
+  %w190 = concat(%v190, %v190) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a190, %w190) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a191 = low.storage.address %s191 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v191 = v_mov_b32 192
+  %w191 = concat(%v191, %v191) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a191, %w191) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a192 = low.storage.address %s192 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v192 = v_mov_b32 193
+  %w192 = concat(%v192, %v192) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a192, %w192) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a193 = low.storage.address %s193 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v193 = v_mov_b32 194
+  %w193 = concat(%v193, %v193) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a193, %w193) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a194 = low.storage.address %s194 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v194 = v_mov_b32 195
+  %w194 = concat(%v194, %v194) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a194, %w194) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a195 = low.storage.address %s195 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v195 = v_mov_b32 196
+  %w195 = concat(%v195, %v195) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a195, %w195) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a196 = low.storage.address %s196 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v196 = v_mov_b32 197
+  %w196 = concat(%v196, %v196) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a196, %w196) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a197 = low.storage.address %s197 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v197 = v_mov_b32 198
+  %w197 = concat(%v197, %v197) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a197, %w197) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a198 = low.storage.address %s198 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v198 = v_mov_b32 199
+  %w198 = concat(%v198, %v198) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a198, %w198) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a199 = low.storage.address %s199 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v199 = v_mov_b32 200
+  %w199 = concat(%v199, %v199) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a199, %w199) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a200 = low.storage.address %s200 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v200 = v_mov_b32 201
+  %w200 = concat(%v200, %v200) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a200, %w200) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a201 = low.storage.address %s201 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v201 = v_mov_b32 202
+  %w201 = concat(%v201, %v201) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a201, %w201) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a202 = low.storage.address %s202 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v202 = v_mov_b32 203
+  %w202 = concat(%v202, %v202) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a202, %w202) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a203 = low.storage.address %s203 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v203 = v_mov_b32 204
+  %w203 = concat(%v203, %v203) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a203, %w203) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a204 = low.storage.address %s204 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v204 = v_mov_b32 205
+  %w204 = concat(%v204, %v204) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a204, %w204) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a205 = low.storage.address %s205 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v205 = v_mov_b32 206
+  %w205 = concat(%v205, %v205) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a205, %w205) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a206 = low.storage.address %s206 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v206 = v_mov_b32 207
+  %w206 = concat(%v206, %v206) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a206, %w206) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a207 = low.storage.address %s207 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v207 = v_mov_b32 208
+  %w207 = concat(%v207, %v207) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a207, %w207) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a208 = low.storage.address %s208 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v208 = v_mov_b32 209
+  %w208 = concat(%v208, %v208) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a208, %w208) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a209 = low.storage.address %s209 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v209 = v_mov_b32 210
+  %w209 = concat(%v209, %v209) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a209, %w209) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a210 = low.storage.address %s210 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v210 = v_mov_b32 211
+  %w210 = concat(%v210, %v210) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a210, %w210) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a211 = low.storage.address %s211 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v211 = v_mov_b32 212
+  %w211 = concat(%v211, %v211) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a211, %w211) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a212 = low.storage.address %s212 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v212 = v_mov_b32 213
+  %w212 = concat(%v212, %v212) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a212, %w212) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a213 = low.storage.address %s213 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v213 = v_mov_b32 214
+  %w213 = concat(%v213, %v213) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a213, %w213) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a214 = low.storage.address %s214 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v214 = v_mov_b32 215
+  %w214 = concat(%v214, %v214) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a214, %w214) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a215 = low.storage.address %s215 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v215 = v_mov_b32 216
+  %w215 = concat(%v215, %v215) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a215, %w215) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a216 = low.storage.address %s216 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v216 = v_mov_b32 217
+  %w216 = concat(%v216, %v216) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a216, %w216) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a217 = low.storage.address %s217 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v217 = v_mov_b32 218
+  %w217 = concat(%v217, %v217) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a217, %w217) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a218 = low.storage.address %s218 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v218 = v_mov_b32 219
+  %w218 = concat(%v218, %v218) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a218, %w218) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a219 = low.storage.address %s219 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v219 = v_mov_b32 220
+  %w219 = concat(%v219, %v219) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a219, %w219) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a220 = low.storage.address %s220 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v220 = v_mov_b32 221
+  %w220 = concat(%v220, %v220) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a220, %w220) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a221 = low.storage.address %s221 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v221 = v_mov_b32 222
+  %w221 = concat(%v221, %v221) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a221, %w221) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a222 = low.storage.address %s222 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v222 = v_mov_b32 223
+  %w222 = concat(%v222, %v222) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a222, %w222) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a223 = low.storage.address %s223 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v223 = v_mov_b32 224
+  %w223 = concat(%v223, %v223) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a223, %w223) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a224 = low.storage.address %s224 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v224 = v_mov_b32 225
+  %w224 = concat(%v224, %v224) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a224, %w224) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a225 = low.storage.address %s225 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v225 = v_mov_b32 226
+  %w225 = concat(%v225, %v225) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a225, %w225) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a226 = low.storage.address %s226 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v226 = v_mov_b32 227
+  %w226 = concat(%v226, %v226) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a226, %w226) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a227 = low.storage.address %s227 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v227 = v_mov_b32 228
+  %w227 = concat(%v227, %v227) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a227, %w227) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a228 = low.storage.address %s228 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v228 = v_mov_b32 229
+  %w228 = concat(%v228, %v228) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a228, %w228) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a229 = low.storage.address %s229 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v229 = v_mov_b32 230
+  %w229 = concat(%v229, %v229) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a229, %w229) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a230 = low.storage.address %s230 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v230 = v_mov_b32 231
+  %w230 = concat(%v230, %v230) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a230, %w230) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a231 = low.storage.address %s231 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v231 = v_mov_b32 232
+  %w231 = concat(%v231, %v231) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a231, %w231) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a232 = low.storage.address %s232 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v232 = v_mov_b32 233
+  %w232 = concat(%v232, %v232) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a232, %w232) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a233 = low.storage.address %s233 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v233 = v_mov_b32 234
+  %w233 = concat(%v233, %v233) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a233, %w233) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a234 = low.storage.address %s234 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v234 = v_mov_b32 235
+  %w234 = concat(%v234, %v234) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a234, %w234) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a235 = low.storage.address %s235 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v235 = v_mov_b32 236
+  %w235 = concat(%v235, %v235) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a235, %w235) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a236 = low.storage.address %s236 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v236 = v_mov_b32 237
+  %w236 = concat(%v236, %v236) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a236, %w236) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a237 = low.storage.address %s237 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v237 = v_mov_b32 238
+  %w237 = concat(%v237, %v237) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a237, %w237) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a238 = low.storage.address %s238 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v238 = v_mov_b32 239
+  %w238 = concat(%v238, %v238) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a238, %w238) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a239 = low.storage.address %s239 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v239 = v_mov_b32 240
+  %w239 = concat(%v239, %v239) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a239, %w239) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a240 = low.storage.address %s240 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v240 = v_mov_b32 241
+  %w240 = concat(%v240, %v240) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a240, %w240) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a241 = low.storage.address %s241 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v241 = v_mov_b32 242
+  %w241 = concat(%v241, %v241) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a241, %w241) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a242 = low.storage.address %s242 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v242 = v_mov_b32 243
+  %w242 = concat(%v242, %v242) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a242, %w242) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a243 = low.storage.address %s243 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v243 = v_mov_b32 244
+  %w243 = concat(%v243, %v243) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a243, %w243) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a244 = low.storage.address %s244 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v244 = v_mov_b32 245
+  %w244 = concat(%v244, %v244) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a244, %w244) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a245 = low.storage.address %s245 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v245 = v_mov_b32 246
+  %w245 = concat(%v245, %v245) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a245, %w245) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a246 = low.storage.address %s246 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v246 = v_mov_b32 247
+  %w246 = concat(%v246, %v246) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a246, %w246) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a247 = low.storage.address %s247 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v247 = v_mov_b32 248
+  %w247 = concat(%v247, %v247) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a247, %w247) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %a248 = low.storage.address %s248 : low.storage<scratch> -> reg<amdgpu.vgpr>
+  %v248 = v_mov_b32 249
+  %w248 = concat(%v248, %v248) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  low.op<amdgpu.scratch_store_b64_vaddr>(%a248, %w248) {offset = 0} : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr x2>)
+  %r0 = low.op<amdgpu.scratch_load_b64_vaddr>(%a0) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r0, %base
+  %r1 = low.op<amdgpu.scratch_load_b64_vaddr>(%a1) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r1, %base
+  %r2 = low.op<amdgpu.scratch_load_b64_vaddr>(%a2) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r2, %base
+  %r3 = low.op<amdgpu.scratch_load_b64_vaddr>(%a3) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r3, %base
+  %r4 = low.op<amdgpu.scratch_load_b64_vaddr>(%a4) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r4, %base
+  %r5 = low.op<amdgpu.scratch_load_b64_vaddr>(%a5) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r5, %base
+  %r6 = low.op<amdgpu.scratch_load_b64_vaddr>(%a6) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r6, %base
+  %r7 = low.op<amdgpu.scratch_load_b64_vaddr>(%a7) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r7, %base
+  %r8 = low.op<amdgpu.scratch_load_b64_vaddr>(%a8) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r8, %base
+  %r9 = low.op<amdgpu.scratch_load_b64_vaddr>(%a9) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r9, %base
+  %r10 = low.op<amdgpu.scratch_load_b64_vaddr>(%a10) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r10, %base
+  %r11 = low.op<amdgpu.scratch_load_b64_vaddr>(%a11) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r11, %base
+  %r12 = low.op<amdgpu.scratch_load_b64_vaddr>(%a12) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r12, %base
+  %r13 = low.op<amdgpu.scratch_load_b64_vaddr>(%a13) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r13, %base
+  %r14 = low.op<amdgpu.scratch_load_b64_vaddr>(%a14) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r14, %base
+  %r15 = low.op<amdgpu.scratch_load_b64_vaddr>(%a15) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r15, %base
+  %r16 = low.op<amdgpu.scratch_load_b64_vaddr>(%a16) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r16, %base
+  %r17 = low.op<amdgpu.scratch_load_b64_vaddr>(%a17) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r17, %base
+  %r18 = low.op<amdgpu.scratch_load_b64_vaddr>(%a18) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r18, %base
+  %r19 = low.op<amdgpu.scratch_load_b64_vaddr>(%a19) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r19, %base
+  %r20 = low.op<amdgpu.scratch_load_b64_vaddr>(%a20) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r20, %base
+  %r21 = low.op<amdgpu.scratch_load_b64_vaddr>(%a21) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r21, %base
+  %r22 = low.op<amdgpu.scratch_load_b64_vaddr>(%a22) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r22, %base
+  %r23 = low.op<amdgpu.scratch_load_b64_vaddr>(%a23) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r23, %base
+  %r24 = low.op<amdgpu.scratch_load_b64_vaddr>(%a24) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r24, %base
+  %r25 = low.op<amdgpu.scratch_load_b64_vaddr>(%a25) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r25, %base
+  %r26 = low.op<amdgpu.scratch_load_b64_vaddr>(%a26) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r26, %base
+  %r27 = low.op<amdgpu.scratch_load_b64_vaddr>(%a27) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r27, %base
+  %r28 = low.op<amdgpu.scratch_load_b64_vaddr>(%a28) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r28, %base
+  %r29 = low.op<amdgpu.scratch_load_b64_vaddr>(%a29) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r29, %base
+  %r30 = low.op<amdgpu.scratch_load_b64_vaddr>(%a30) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r30, %base
+  %r31 = low.op<amdgpu.scratch_load_b64_vaddr>(%a31) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r31, %base
+  %r32 = low.op<amdgpu.scratch_load_b64_vaddr>(%a32) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r32, %base
+  %r33 = low.op<amdgpu.scratch_load_b64_vaddr>(%a33) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r33, %base
+  %r34 = low.op<amdgpu.scratch_load_b64_vaddr>(%a34) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r34, %base
+  %r35 = low.op<amdgpu.scratch_load_b64_vaddr>(%a35) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r35, %base
+  %r36 = low.op<amdgpu.scratch_load_b64_vaddr>(%a36) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r36, %base
+  %r37 = low.op<amdgpu.scratch_load_b64_vaddr>(%a37) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r37, %base
+  %r38 = low.op<amdgpu.scratch_load_b64_vaddr>(%a38) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r38, %base
+  %r39 = low.op<amdgpu.scratch_load_b64_vaddr>(%a39) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r39, %base
+  %r40 = low.op<amdgpu.scratch_load_b64_vaddr>(%a40) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r40, %base
+  %r41 = low.op<amdgpu.scratch_load_b64_vaddr>(%a41) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r41, %base
+  %r42 = low.op<amdgpu.scratch_load_b64_vaddr>(%a42) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r42, %base
+  %r43 = low.op<amdgpu.scratch_load_b64_vaddr>(%a43) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r43, %base
+  %r44 = low.op<amdgpu.scratch_load_b64_vaddr>(%a44) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r44, %base
+  %r45 = low.op<amdgpu.scratch_load_b64_vaddr>(%a45) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r45, %base
+  %r46 = low.op<amdgpu.scratch_load_b64_vaddr>(%a46) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r46, %base
+  %r47 = low.op<amdgpu.scratch_load_b64_vaddr>(%a47) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r47, %base
+  %r48 = low.op<amdgpu.scratch_load_b64_vaddr>(%a48) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r48, %base
+  %r49 = low.op<amdgpu.scratch_load_b64_vaddr>(%a49) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r49, %base
+  %r50 = low.op<amdgpu.scratch_load_b64_vaddr>(%a50) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r50, %base
+  %r51 = low.op<amdgpu.scratch_load_b64_vaddr>(%a51) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r51, %base
+  %r52 = low.op<amdgpu.scratch_load_b64_vaddr>(%a52) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r52, %base
+  %r53 = low.op<amdgpu.scratch_load_b64_vaddr>(%a53) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r53, %base
+  %r54 = low.op<amdgpu.scratch_load_b64_vaddr>(%a54) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r54, %base
+  %r55 = low.op<amdgpu.scratch_load_b64_vaddr>(%a55) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r55, %base
+  %r56 = low.op<amdgpu.scratch_load_b64_vaddr>(%a56) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r56, %base
+  %r57 = low.op<amdgpu.scratch_load_b64_vaddr>(%a57) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r57, %base
+  %r58 = low.op<amdgpu.scratch_load_b64_vaddr>(%a58) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r58, %base
+  %r59 = low.op<amdgpu.scratch_load_b64_vaddr>(%a59) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r59, %base
+  %r60 = low.op<amdgpu.scratch_load_b64_vaddr>(%a60) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r60, %base
+  %r61 = low.op<amdgpu.scratch_load_b64_vaddr>(%a61) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r61, %base
+  %r62 = low.op<amdgpu.scratch_load_b64_vaddr>(%a62) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r62, %base
+  %r63 = low.op<amdgpu.scratch_load_b64_vaddr>(%a63) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r63, %base
+  %r64 = low.op<amdgpu.scratch_load_b64_vaddr>(%a64) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r64, %base
+  %r65 = low.op<amdgpu.scratch_load_b64_vaddr>(%a65) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r65, %base
+  %r66 = low.op<amdgpu.scratch_load_b64_vaddr>(%a66) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r66, %base
+  %r67 = low.op<amdgpu.scratch_load_b64_vaddr>(%a67) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r67, %base
+  %r68 = low.op<amdgpu.scratch_load_b64_vaddr>(%a68) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r68, %base
+  %r69 = low.op<amdgpu.scratch_load_b64_vaddr>(%a69) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r69, %base
+  %r70 = low.op<amdgpu.scratch_load_b64_vaddr>(%a70) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r70, %base
+  %r71 = low.op<amdgpu.scratch_load_b64_vaddr>(%a71) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r71, %base
+  %r72 = low.op<amdgpu.scratch_load_b64_vaddr>(%a72) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r72, %base
+  %r73 = low.op<amdgpu.scratch_load_b64_vaddr>(%a73) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r73, %base
+  %r74 = low.op<amdgpu.scratch_load_b64_vaddr>(%a74) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r74, %base
+  %r75 = low.op<amdgpu.scratch_load_b64_vaddr>(%a75) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r75, %base
+  %r76 = low.op<amdgpu.scratch_load_b64_vaddr>(%a76) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r76, %base
+  %r77 = low.op<amdgpu.scratch_load_b64_vaddr>(%a77) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r77, %base
+  %r78 = low.op<amdgpu.scratch_load_b64_vaddr>(%a78) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r78, %base
+  %r79 = low.op<amdgpu.scratch_load_b64_vaddr>(%a79) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r79, %base
+  %r80 = low.op<amdgpu.scratch_load_b64_vaddr>(%a80) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r80, %base
+  %r81 = low.op<amdgpu.scratch_load_b64_vaddr>(%a81) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r81, %base
+  %r82 = low.op<amdgpu.scratch_load_b64_vaddr>(%a82) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r82, %base
+  %r83 = low.op<amdgpu.scratch_load_b64_vaddr>(%a83) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r83, %base
+  %r84 = low.op<amdgpu.scratch_load_b64_vaddr>(%a84) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r84, %base
+  %r85 = low.op<amdgpu.scratch_load_b64_vaddr>(%a85) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r85, %base
+  %r86 = low.op<amdgpu.scratch_load_b64_vaddr>(%a86) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r86, %base
+  %r87 = low.op<amdgpu.scratch_load_b64_vaddr>(%a87) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r87, %base
+  %r88 = low.op<amdgpu.scratch_load_b64_vaddr>(%a88) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r88, %base
+  %r89 = low.op<amdgpu.scratch_load_b64_vaddr>(%a89) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r89, %base
+  %r90 = low.op<amdgpu.scratch_load_b64_vaddr>(%a90) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r90, %base
+  %r91 = low.op<amdgpu.scratch_load_b64_vaddr>(%a91) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r91, %base
+  %r92 = low.op<amdgpu.scratch_load_b64_vaddr>(%a92) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r92, %base
+  %r93 = low.op<amdgpu.scratch_load_b64_vaddr>(%a93) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r93, %base
+  %r94 = low.op<amdgpu.scratch_load_b64_vaddr>(%a94) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r94, %base
+  %r95 = low.op<amdgpu.scratch_load_b64_vaddr>(%a95) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r95, %base
+  %r96 = low.op<amdgpu.scratch_load_b64_vaddr>(%a96) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r96, %base
+  %r97 = low.op<amdgpu.scratch_load_b64_vaddr>(%a97) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r97, %base
+  %r98 = low.op<amdgpu.scratch_load_b64_vaddr>(%a98) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r98, %base
+  %r99 = low.op<amdgpu.scratch_load_b64_vaddr>(%a99) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r99, %base
+  %r100 = low.op<amdgpu.scratch_load_b64_vaddr>(%a100) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r100, %base
+  %r101 = low.op<amdgpu.scratch_load_b64_vaddr>(%a101) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r101, %base
+  %r102 = low.op<amdgpu.scratch_load_b64_vaddr>(%a102) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r102, %base
+  %r103 = low.op<amdgpu.scratch_load_b64_vaddr>(%a103) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r103, %base
+  %r104 = low.op<amdgpu.scratch_load_b64_vaddr>(%a104) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r104, %base
+  %r105 = low.op<amdgpu.scratch_load_b64_vaddr>(%a105) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r105, %base
+  %r106 = low.op<amdgpu.scratch_load_b64_vaddr>(%a106) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r106, %base
+  %r107 = low.op<amdgpu.scratch_load_b64_vaddr>(%a107) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r107, %base
+  %r108 = low.op<amdgpu.scratch_load_b64_vaddr>(%a108) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r108, %base
+  %r109 = low.op<amdgpu.scratch_load_b64_vaddr>(%a109) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r109, %base
+  %r110 = low.op<amdgpu.scratch_load_b64_vaddr>(%a110) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r110, %base
+  %r111 = low.op<amdgpu.scratch_load_b64_vaddr>(%a111) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r111, %base
+  %r112 = low.op<amdgpu.scratch_load_b64_vaddr>(%a112) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r112, %base
+  %r113 = low.op<amdgpu.scratch_load_b64_vaddr>(%a113) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r113, %base
+  %r114 = low.op<amdgpu.scratch_load_b64_vaddr>(%a114) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r114, %base
+  %r115 = low.op<amdgpu.scratch_load_b64_vaddr>(%a115) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r115, %base
+  %r116 = low.op<amdgpu.scratch_load_b64_vaddr>(%a116) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r116, %base
+  %r117 = low.op<amdgpu.scratch_load_b64_vaddr>(%a117) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r117, %base
+  %r118 = low.op<amdgpu.scratch_load_b64_vaddr>(%a118) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r118, %base
+  %r119 = low.op<amdgpu.scratch_load_b64_vaddr>(%a119) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r119, %base
+  %r120 = low.op<amdgpu.scratch_load_b64_vaddr>(%a120) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r120, %base
+  %r121 = low.op<amdgpu.scratch_load_b64_vaddr>(%a121) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r121, %base
+  %r122 = low.op<amdgpu.scratch_load_b64_vaddr>(%a122) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r122, %base
+  %r123 = low.op<amdgpu.scratch_load_b64_vaddr>(%a123) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r123, %base
+  %r124 = low.op<amdgpu.scratch_load_b64_vaddr>(%a124) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r124, %base
+  %r125 = low.op<amdgpu.scratch_load_b64_vaddr>(%a125) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r125, %base
+  %r126 = low.op<amdgpu.scratch_load_b64_vaddr>(%a126) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r126, %base
+  %r127 = low.op<amdgpu.scratch_load_b64_vaddr>(%a127) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r127, %base
+  %r128 = low.op<amdgpu.scratch_load_b64_vaddr>(%a128) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r128, %base
+  %r129 = low.op<amdgpu.scratch_load_b64_vaddr>(%a129) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r129, %base
+  %r130 = low.op<amdgpu.scratch_load_b64_vaddr>(%a130) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r130, %base
+  %r131 = low.op<amdgpu.scratch_load_b64_vaddr>(%a131) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r131, %base
+  %r132 = low.op<amdgpu.scratch_load_b64_vaddr>(%a132) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r132, %base
+  %r133 = low.op<amdgpu.scratch_load_b64_vaddr>(%a133) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r133, %base
+  %r134 = low.op<amdgpu.scratch_load_b64_vaddr>(%a134) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r134, %base
+  %r135 = low.op<amdgpu.scratch_load_b64_vaddr>(%a135) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r135, %base
+  %r136 = low.op<amdgpu.scratch_load_b64_vaddr>(%a136) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r136, %base
+  %r137 = low.op<amdgpu.scratch_load_b64_vaddr>(%a137) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r137, %base
+  %r138 = low.op<amdgpu.scratch_load_b64_vaddr>(%a138) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r138, %base
+  %r139 = low.op<amdgpu.scratch_load_b64_vaddr>(%a139) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r139, %base
+  %r140 = low.op<amdgpu.scratch_load_b64_vaddr>(%a140) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r140, %base
+  %r141 = low.op<amdgpu.scratch_load_b64_vaddr>(%a141) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r141, %base
+  %r142 = low.op<amdgpu.scratch_load_b64_vaddr>(%a142) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r142, %base
+  %r143 = low.op<amdgpu.scratch_load_b64_vaddr>(%a143) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r143, %base
+  %r144 = low.op<amdgpu.scratch_load_b64_vaddr>(%a144) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r144, %base
+  %r145 = low.op<amdgpu.scratch_load_b64_vaddr>(%a145) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r145, %base
+  %r146 = low.op<amdgpu.scratch_load_b64_vaddr>(%a146) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r146, %base
+  %r147 = low.op<amdgpu.scratch_load_b64_vaddr>(%a147) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r147, %base
+  %r148 = low.op<amdgpu.scratch_load_b64_vaddr>(%a148) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r148, %base
+  %r149 = low.op<amdgpu.scratch_load_b64_vaddr>(%a149) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r149, %base
+  %r150 = low.op<amdgpu.scratch_load_b64_vaddr>(%a150) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r150, %base
+  %r151 = low.op<amdgpu.scratch_load_b64_vaddr>(%a151) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r151, %base
+  %r152 = low.op<amdgpu.scratch_load_b64_vaddr>(%a152) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r152, %base
+  %r153 = low.op<amdgpu.scratch_load_b64_vaddr>(%a153) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r153, %base
+  %r154 = low.op<amdgpu.scratch_load_b64_vaddr>(%a154) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r154, %base
+  %r155 = low.op<amdgpu.scratch_load_b64_vaddr>(%a155) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r155, %base
+  %r156 = low.op<amdgpu.scratch_load_b64_vaddr>(%a156) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r156, %base
+  %r157 = low.op<amdgpu.scratch_load_b64_vaddr>(%a157) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r157, %base
+  %r158 = low.op<amdgpu.scratch_load_b64_vaddr>(%a158) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r158, %base
+  %r159 = low.op<amdgpu.scratch_load_b64_vaddr>(%a159) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r159, %base
+  %r160 = low.op<amdgpu.scratch_load_b64_vaddr>(%a160) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r160, %base
+  %r161 = low.op<amdgpu.scratch_load_b64_vaddr>(%a161) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r161, %base
+  %r162 = low.op<amdgpu.scratch_load_b64_vaddr>(%a162) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r162, %base
+  %r163 = low.op<amdgpu.scratch_load_b64_vaddr>(%a163) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r163, %base
+  %r164 = low.op<amdgpu.scratch_load_b64_vaddr>(%a164) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r164, %base
+  %r165 = low.op<amdgpu.scratch_load_b64_vaddr>(%a165) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r165, %base
+  %r166 = low.op<amdgpu.scratch_load_b64_vaddr>(%a166) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r166, %base
+  %r167 = low.op<amdgpu.scratch_load_b64_vaddr>(%a167) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r167, %base
+  %r168 = low.op<amdgpu.scratch_load_b64_vaddr>(%a168) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r168, %base
+  %r169 = low.op<amdgpu.scratch_load_b64_vaddr>(%a169) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r169, %base
+  %r170 = low.op<amdgpu.scratch_load_b64_vaddr>(%a170) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r170, %base
+  %r171 = low.op<amdgpu.scratch_load_b64_vaddr>(%a171) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r171, %base
+  %r172 = low.op<amdgpu.scratch_load_b64_vaddr>(%a172) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r172, %base
+  %r173 = low.op<amdgpu.scratch_load_b64_vaddr>(%a173) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r173, %base
+  %r174 = low.op<amdgpu.scratch_load_b64_vaddr>(%a174) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r174, %base
+  %r175 = low.op<amdgpu.scratch_load_b64_vaddr>(%a175) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r175, %base
+  %r176 = low.op<amdgpu.scratch_load_b64_vaddr>(%a176) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r176, %base
+  %r177 = low.op<amdgpu.scratch_load_b64_vaddr>(%a177) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r177, %base
+  %r178 = low.op<amdgpu.scratch_load_b64_vaddr>(%a178) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r178, %base
+  %r179 = low.op<amdgpu.scratch_load_b64_vaddr>(%a179) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r179, %base
+  %r180 = low.op<amdgpu.scratch_load_b64_vaddr>(%a180) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r180, %base
+  %r181 = low.op<amdgpu.scratch_load_b64_vaddr>(%a181) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r181, %base
+  %r182 = low.op<amdgpu.scratch_load_b64_vaddr>(%a182) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r182, %base
+  %r183 = low.op<amdgpu.scratch_load_b64_vaddr>(%a183) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r183, %base
+  %r184 = low.op<amdgpu.scratch_load_b64_vaddr>(%a184) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r184, %base
+  %r185 = low.op<amdgpu.scratch_load_b64_vaddr>(%a185) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r185, %base
+  %r186 = low.op<amdgpu.scratch_load_b64_vaddr>(%a186) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r186, %base
+  %r187 = low.op<amdgpu.scratch_load_b64_vaddr>(%a187) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r187, %base
+  %r188 = low.op<amdgpu.scratch_load_b64_vaddr>(%a188) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r188, %base
+  %r189 = low.op<amdgpu.scratch_load_b64_vaddr>(%a189) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r189, %base
+  %r190 = low.op<amdgpu.scratch_load_b64_vaddr>(%a190) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r190, %base
+  %r191 = low.op<amdgpu.scratch_load_b64_vaddr>(%a191) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r191, %base
+  %r192 = low.op<amdgpu.scratch_load_b64_vaddr>(%a192) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r192, %base
+  %r193 = low.op<amdgpu.scratch_load_b64_vaddr>(%a193) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r193, %base
+  %r194 = low.op<amdgpu.scratch_load_b64_vaddr>(%a194) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r194, %base
+  %r195 = low.op<amdgpu.scratch_load_b64_vaddr>(%a195) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r195, %base
+  %r196 = low.op<amdgpu.scratch_load_b64_vaddr>(%a196) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r196, %base
+  %r197 = low.op<amdgpu.scratch_load_b64_vaddr>(%a197) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r197, %base
+  %r198 = low.op<amdgpu.scratch_load_b64_vaddr>(%a198) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r198, %base
+  %r199 = low.op<amdgpu.scratch_load_b64_vaddr>(%a199) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r199, %base
+  %r200 = low.op<amdgpu.scratch_load_b64_vaddr>(%a200) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r200, %base
+  %r201 = low.op<amdgpu.scratch_load_b64_vaddr>(%a201) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r201, %base
+  %r202 = low.op<amdgpu.scratch_load_b64_vaddr>(%a202) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r202, %base
+  %r203 = low.op<amdgpu.scratch_load_b64_vaddr>(%a203) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r203, %base
+  %r204 = low.op<amdgpu.scratch_load_b64_vaddr>(%a204) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r204, %base
+  %r205 = low.op<amdgpu.scratch_load_b64_vaddr>(%a205) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r205, %base
+  %r206 = low.op<amdgpu.scratch_load_b64_vaddr>(%a206) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r206, %base
+  %r207 = low.op<amdgpu.scratch_load_b64_vaddr>(%a207) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r207, %base
+  %r208 = low.op<amdgpu.scratch_load_b64_vaddr>(%a208) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r208, %base
+  %r209 = low.op<amdgpu.scratch_load_b64_vaddr>(%a209) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r209, %base
+  %r210 = low.op<amdgpu.scratch_load_b64_vaddr>(%a210) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r210, %base
+  %r211 = low.op<amdgpu.scratch_load_b64_vaddr>(%a211) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r211, %base
+  %r212 = low.op<amdgpu.scratch_load_b64_vaddr>(%a212) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r212, %base
+  %r213 = low.op<amdgpu.scratch_load_b64_vaddr>(%a213) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r213, %base
+  %r214 = low.op<amdgpu.scratch_load_b64_vaddr>(%a214) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r214, %base
+  %r215 = low.op<amdgpu.scratch_load_b64_vaddr>(%a215) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r215, %base
+  %r216 = low.op<amdgpu.scratch_load_b64_vaddr>(%a216) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r216, %base
+  %r217 = low.op<amdgpu.scratch_load_b64_vaddr>(%a217) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r217, %base
+  %r218 = low.op<amdgpu.scratch_load_b64_vaddr>(%a218) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r218, %base
+  %r219 = low.op<amdgpu.scratch_load_b64_vaddr>(%a219) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r219, %base
+  %r220 = low.op<amdgpu.scratch_load_b64_vaddr>(%a220) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r220, %base
+  %r221 = low.op<amdgpu.scratch_load_b64_vaddr>(%a221) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r221, %base
+  %r222 = low.op<amdgpu.scratch_load_b64_vaddr>(%a222) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r222, %base
+  %r223 = low.op<amdgpu.scratch_load_b64_vaddr>(%a223) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r223, %base
+  %r224 = low.op<amdgpu.scratch_load_b64_vaddr>(%a224) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r224, %base
+  %r225 = low.op<amdgpu.scratch_load_b64_vaddr>(%a225) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r225, %base
+  %r226 = low.op<amdgpu.scratch_load_b64_vaddr>(%a226) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r226, %base
+  %r227 = low.op<amdgpu.scratch_load_b64_vaddr>(%a227) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r227, %base
+  %r228 = low.op<amdgpu.scratch_load_b64_vaddr>(%a228) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r228, %base
+  %r229 = low.op<amdgpu.scratch_load_b64_vaddr>(%a229) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r229, %base
+  %r230 = low.op<amdgpu.scratch_load_b64_vaddr>(%a230) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r230, %base
+  %r231 = low.op<amdgpu.scratch_load_b64_vaddr>(%a231) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r231, %base
+  %r232 = low.op<amdgpu.scratch_load_b64_vaddr>(%a232) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r232, %base
+  %r233 = low.op<amdgpu.scratch_load_b64_vaddr>(%a233) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r233, %base
+  %r234 = low.op<amdgpu.scratch_load_b64_vaddr>(%a234) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r234, %base
+  %r235 = low.op<amdgpu.scratch_load_b64_vaddr>(%a235) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r235, %base
+  %r236 = low.op<amdgpu.scratch_load_b64_vaddr>(%a236) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r236, %base
+  %r237 = low.op<amdgpu.scratch_load_b64_vaddr>(%a237) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r237, %base
+  %r238 = low.op<amdgpu.scratch_load_b64_vaddr>(%a238) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r238, %base
+  %r239 = low.op<amdgpu.scratch_load_b64_vaddr>(%a239) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r239, %base
+  %r240 = low.op<amdgpu.scratch_load_b64_vaddr>(%a240) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r240, %base
+  %r241 = low.op<amdgpu.scratch_load_b64_vaddr>(%a241) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r241, %base
+  %r242 = low.op<amdgpu.scratch_load_b64_vaddr>(%a242) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r242, %base
+  %r243 = low.op<amdgpu.scratch_load_b64_vaddr>(%a243) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r243, %base
+  %r244 = low.op<amdgpu.scratch_load_b64_vaddr>(%a244) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r244, %base
+  %r245 = low.op<amdgpu.scratch_load_b64_vaddr>(%a245) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r245, %base
+  %r246 = low.op<amdgpu.scratch_load_b64_vaddr>(%a246) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r246, %base
+  %r247 = low.op<amdgpu.scratch_load_b64_vaddr>(%a247) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r247, %base
+  %r248 = low.op<amdgpu.scratch_load_b64_vaddr>(%a248) {offset = 0} : (reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  global_store_dwordx2_saddr %zero, %r248, %base
+  return
+}

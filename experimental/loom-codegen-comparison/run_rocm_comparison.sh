@@ -74,7 +74,7 @@ mkdir -p -- "$work"
 generated="$work/generated"
 python3 "$here/generate.py" --output-dir="$generated"
 echo "Importing chemistry into Loom IR..."
-"$importer" --data-model=lp64 --approximate-functions=false \
+"$importer" --data-model=lp64 --fp-model=precise \
   --root=chemistry::prepare_grid_timestep_kernel \
   --root=chemistry::advance_collapse_gridwide_kernel \
   --I="$here" --output="$work/chemistry.loom" "$generated/reproducer.cpp"

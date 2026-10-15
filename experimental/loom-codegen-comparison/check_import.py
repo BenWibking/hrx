@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix='loom-chemistry-import-') as work:
     reproducer = Path(work) / 'reproducer.cpp'
     command = [tool, '--root=chemistry::prepare_grid_timestep_kernel',
                '--root=chemistry::advance_collapse_gridwide_kernel',
-               '--data-model=lp64', '--approximate-functions=false',
+               '--data-model=lp64', '--fp-model=precise',
                f'--I={here}', f'--output={output}', str(reproducer)]
     subprocess.run(command, check=True)
     ir = output.read_text()

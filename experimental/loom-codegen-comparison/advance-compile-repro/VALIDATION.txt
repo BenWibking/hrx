@@ -1,0 +1,26 @@
+Source revision: b0267f903b08081db399892bf24a79fc351f9a1c
+Host: moth.anu.edu.au (Linux x86_64)
+Target: amdgpu:gfx90a
+Compiler: Release loom-compile, built from the source snapshot on moth
+Compiler SHA256: dff061df454b7bf6892c244f09ce963bdfe018f33061ec95e6e3ed1a8d4cf14e
+
+Final package validation, using the original, uninstrumented compiler:
+PASS 249-slots: exit=1, 1.389s
+PASS 248-slots: exit=0, 0.032s
+PASS 249-interleaved: exit=0, 0.021s
+
+The failing case reports BACKEND/005, amdgpu.vgpr, budget 256, peak 262,
+and failure code spill-traffic-register-exhausted.
+Both passing controls produce nonempty HSACO files.
+
+Exhaustive slot-count sweep: every count from 1 through 248 compiled
+successfully. Count 249 failed repeatedly with the stated diagnostic.
+Minimality applies only to the slot count in this generated family.
+
+The original chemistry advance kernel reports budget 256, peak 259,
+and the same diagnostic category. The reduced case models the observed
+scratch traffic pattern; matching diagnostics do not prove a shared root cause.
+
+No GPU kernel execution is involved in these checks.
+Temporary remote compiler instrumentation was removed. Rebuilding the restored
+sources produced the exact compiler SHA256 recorded above.
