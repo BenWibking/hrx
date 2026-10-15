@@ -5795,34 +5795,62 @@ DEVICE int lu_decomposition(Real* A, int* ipvt) {
     return info;
 
 }
+// Reference solve with compile-time columns; element updates are grouped in
+// chunks of 7: load the chunk's x and LU values, then store the chunk, so a
+// store separates loads only between chunks. Same operations per element.
+template <unsigned K, unsigned J>
+DEVICE void lu_solve_fwd_chunk(const Real* LU, Real* x, Real t) {
+    constexpr unsigned E = (J + 7 < 15u) ? J + 7 : 15u;
+    Real xv[7];
+    Real lv[7];
+    [[loom::unroll]] for (unsigned j = J; j < E; ++j) {
+        xv[j - J] = x[j];
+        lv[j - J] = LU[midx(j, K)];
+    }
+    [[loom::unroll]] for (unsigned j = J; j < E; ++j) {
+        x[j] = xv[j - J] + t * lv[j - J];
+    }
+    if constexpr (E < 15u) lu_solve_fwd_chunk<K, E>(LU, x, t);
+}
+template <unsigned K, unsigned J>
+DEVICE void lu_solve_bwd_chunk(const Real* LU, Real* x, Real t) {
+    constexpr unsigned E = (J + 7 < K) ? J + 7 : K;
+    Real xv[7];
+    Real lv[7];
+    [[loom::unroll]] for (unsigned j = J; j < E; ++j) {
+        xv[j - J] = x[j];
+        lv[j - J] = LU[midx(j, K)];
+    }
+    [[loom::unroll]] for (unsigned j = J; j < E; ++j) {
+        x[j] = xv[j - J] + t * lv[j - J];
+    }
+    if constexpr (E < K) lu_solve_bwd_chunk<K, E>(LU, x, t);
+}
+template <unsigned K>
+DEVICE void lu_solve_forward(const Real* LU, const int* ipvt, Real* x) {
+    const unsigned pivot_row = static_cast<unsigned>(ipvt[K]);
+    __builtin_assume(pivot_row < 15u);
+    const Real t = x[pivot_row];
+    if (pivot_row != K) {
+        x[pivot_row] = x[K];
+        x[K] = t;
+    }
+    lu_solve_fwd_chunk<K, K + 1>(LU, x, t);
+    if constexpr (K + 1 < 14u) lu_solve_forward<K + 1>(LU, ipvt, x);
+}
+template <unsigned K>
+DEVICE void lu_solve_backward(const Real* LU, Real* x) {
+    x[K] /= LU[midx(K, K)];
+    const Real t = -x[K];
+    if constexpr (K > 0) {
+        lu_solve_bwd_chunk<K, 0>(LU, x, t);
+        lu_solve_backward<K - 1>(LU, x);
+    }
+}
 DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 
-    if constexpr (N > 1) {
-        for (size_type k = 0; k < N - 1; ++k) {
-            const auto pivot_row = static_cast<size_type>(ipvt[k]);
-            __builtin_assume(pivot_row < 15);
-            Real t = x[pivot_row];
-            if (pivot_row != k) {
-                x[pivot_row] = x[k];
-                x[k] = t;
-            }
-
-            for (size_type j = k + 1; j < N; ++j) {
-                __builtin_assume(j < 15);
-                x[j] += t * LU[matrix_index(j, k)];
-            }
-        }
-    }
-
-    for (size_type kb = 0; kb < N; ++kb) {
-        const size_type k = N - 1 - kb;
-        x[k] /= LU[matrix_index(k, k)];
-        const Real t = -x[k];
-        for (size_type j = 0; j < k; ++j) {
-            __builtin_assume(j < 15);
-            x[j] += t * LU[matrix_index(j, k)];
-        }
-    }
+    lu_solve_forward<0>(LU, ipvt, x);
+    lu_solve_backward<14>(LU, x);
 
 }
 DEVICE int decompose(ScratchView s, Real fac) {
