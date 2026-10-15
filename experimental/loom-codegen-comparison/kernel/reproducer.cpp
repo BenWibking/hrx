@@ -8114,7 +8114,7 @@ template <unsigned K>
 DEVICE int lu_step(Real* A, int* ipvt, int info) {
     unsigned pivot_row = K;
     Real max_val = math::abs(A[midx(K, K)]);
-    for (unsigned i = K + 1; i < 15u; ++i) {
+    [[loom::unroll]] for (unsigned i = K + 1; i < 15u; ++i) {
         const Real val = math::abs(A[midx(i, K)]);
         if (val > max_val) {
             max_val = val;
