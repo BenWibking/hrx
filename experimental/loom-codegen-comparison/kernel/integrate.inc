@@ -121,7 +121,11 @@ DEVICE int integrate(ScratchView s) {
                             s.work[i] = kv[i];
                         }
                     }
-                    CHEM_RHS(x, s.ynew, s.dy, s);
+                    // ABLATION PROBE: RHS evaluated twice (idempotent) to
+                    // measure its share of the runtime. Not a candidate.
+                    for (unsigned r = 0; r < 2u; ++r) {
+                        CHEM_RHS(x, s.ynew, s.dy, s);
+                    }
                     {
                         Real tv[15];
                         if (stage == 0) {
