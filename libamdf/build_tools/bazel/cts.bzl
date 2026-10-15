@@ -18,6 +18,7 @@ def amdf_cts_test_suite(
         defines = None,
         linkage_modes = ["dynamic"],
         linkopts = None,
+        native_lifetimes = ["process"],
         tags = None,
         resource_group = None,
         target_compatible_with = None,
@@ -32,6 +33,9 @@ def amdf_cts_test_suite(
       linkage_modes: Providers to link: dynamic (runtime-loaded, the default),
         shared (link-time shared), or static. Each mode adds one executable.
       linkopts: Native libraries required by the foreign API under test.
+      native_lifetimes: Native ownership policies to exercise. Ordinary
+        corpora use process lifetime; focused lifetime tests may also select
+        instance lifetime.
       tags: Additional tags applied to every generated test target.
       resource_group: Shared native resource used by the test invocations.
       target_compatible_with: Constraints required by every test mode.
@@ -46,6 +50,7 @@ def amdf_cts_test_suite(
         policy["tags"],
         policy.get("resource_group"),
     )
+    corpus_tags = tags or []
     corpus_name = name + "_cases"
     amdf_cc_library(
         name = corpus_name,
@@ -55,6 +60,7 @@ def amdf_cts_test_suite(
         deps = deps,
         linkopts = linkopts,
         alwayslink = True,
+        tags = corpus_tags,
         target_compatible_with = target_compatible_with,
     )
     common_deps = [":" + corpus_name, "//libamdf/cts/util:test_main"]
@@ -70,6 +76,7 @@ def amdf_cts_test_suite(
             testonly = True,
             data = data,
             deps = common_deps + ["//libamdf/cts/util:" + mode + "_provider"],
+            tags = corpus_tags,
             target_compatible_with = target_compatible_with,
         )
         provider_args = []
@@ -77,7 +84,10 @@ def amdf_cts_test_suite(
             provider_args = [
                 "--amdf_library=$(rootpath //libamdf:amdf_shared_artifact)",
             ]
-        for lifetime, suffix in [("process", ""), ("instance", "_instance")]:
+        for lifetime in native_lifetimes:
+            if lifetime not in ["process", "instance"]:
+                fail("unsupported libamdf native lifetime: " + lifetime)
+            suffix = "" if lifetime == "process" else "_" + lifetime
             test_name = name + "_" + mode + suffix
             iree_executable_test(
                 name = test_name,
@@ -91,6 +101,7 @@ def amdf_cts_test_suite(
             tests.append(":" + test_name)
     native.test_suite(
         name = name,
+        tags = test_tags,
         tests = tests,
         visibility = visibility,
     )

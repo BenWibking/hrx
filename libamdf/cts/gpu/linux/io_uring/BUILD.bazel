@@ -31,8 +31,11 @@ _RDNA_COMPATIBILITY = {
 _RDNA_COMPATIBILITY["//conditions:default"] = ["@platforms//:incompatible"]
 
 _FILE_IO_SRCS = [
+    "file_gather_fixture.h",
     "file_gather_test.cc",
+    "file_exchange_fixture.h",
     "file_io_test.cc",
+    "file_latency_fixture.h",
     "file_latency_test.cc",
 ]
 
@@ -139,10 +142,35 @@ amdf_cts_test_suite(
 )
 
 amdf_cts_test_suite(
-    name = "file_staged",
-    srcs = ["file_staged_test.cc"],
-    target_compatible_with = _FILE_IO_HOST_COMPATIBILITY,
+    name = "file_io_stress",
+    srcs = [
+        "file_exchange_fixture.h",
+        "file_gather_fixture.h",
+        "file_gather_stress_test.cc",
+        "file_io_stress_test.cc",
+        "file_latency_fixture.h",
+        "file_latency_stress_test.cc",
+    ],
+    tags = [
+        "manual",
+        "stress",
+    ],
+    target_compatible_with = _FILE_IO_COMPATIBILITY,
     visibility = ["//visibility:public"],
+    deps = _FILE_IO_DEPS + [
+        "//libamdf/cts/gpu/kernels:file_demand_kernels",
+        "//libamdf/cts/gpu/kernels:file_exchange_kernels",
+        "//libamdf/cts/gpu/kernels:file_gather_kernels",
+        "//libamdf/cts/gpu/kernels:file_latency_kernels",
+    ],
+)
+
+amdf_cc_library(
+    name = "file_staged_fixture",
+    testonly = True,
+    srcs = ["file_staged_fixture.cc"],
+    hdrs = ["file_staged_fixture.h"],
+    target_compatible_with = _FILE_IO_HOST_COMPATIBILITY,
     deps = [
         ":file_io_resources",
         "//libamdf/cts/gpu/aql:publication",
@@ -153,6 +181,32 @@ amdf_cts_test_suite(
         "//libamdf/cts/gpu/recipes:device_sdma_fixture",
         "//libamdf/cts/gpu/sdma/encoding:commands",
         "//libamdf/cts/util:wait",
+        "//third_party:google_test",
+    ],
+)
+
+amdf_cts_test_suite(
+    name = "file_staged",
+    srcs = ["file_staged_test.cc"],
+    target_compatible_with = _FILE_IO_HOST_COMPATIBILITY,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":file_staged_fixture",
+        "//third_party:google_test",
+    ],
+)
+
+amdf_cts_test_suite(
+    name = "file_staged_stress",
+    srcs = ["file_staged_stress_test.cc"],
+    tags = [
+        "manual",
+        "stress",
+    ],
+    target_compatible_with = _FILE_IO_HOST_COMPATIBILITY,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":file_staged_fixture",
         "//third_party:google_test",
     ],
 )

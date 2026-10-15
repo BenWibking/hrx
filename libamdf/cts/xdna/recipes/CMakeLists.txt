@@ -15,6 +15,7 @@ iree_cc_library(
     execution_cases
   SRCS
     "cpu_xdna_test.cc"
+    "firmware_trace_test.cc"
     "reservation_test.cc"
   DEPS
     amdf::headers
@@ -54,29 +55,6 @@ iree_native_test(
     "execution_dynamic"
   ARGS
     "--amdf_native_lifetime=process"
-    "--amdf_library={{$<TARGET_FILE:amdf::amdf>}}"
-  SRC
-    ::execution_dynamic_bin
-  DATA
-    "amdf::amdf"
-  LABELS
-    "iree-build-requirement=libamdf"
-    "iree-build-requirement=loom.target.arch.xdna"
-    "iree-build-requirement=loom.emit.xdna"
-    "iree-build-requirement=libamdf.xdna"
-    "iree-run-requirement=libamdf.resource.xdna"
-    "runtime-resource=amd-xdna"
-  RESOURCE_GROUP
-    gpu-device
-)
-endif()
-
-if(AMDF_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA AND AMDF_FAMILY_XDNA AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Windows"))
-iree_native_test(
-  NAME
-    "execution_dynamic_instance"
-  ARGS
-    "--amdf_native_lifetime=instance"
     "--amdf_library={{$<TARGET_FILE:amdf::amdf>}}"
   SRC
     ::execution_dynamic_bin

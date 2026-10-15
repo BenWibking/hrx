@@ -17,6 +17,7 @@ loom_cc_library(
     "float_facts.h"
   SRCS
     "facts.c"
+    "facts_bitwise.c"
     "facts_division.c"
     "float_facts.c"
   DEPS
@@ -33,14 +34,33 @@ loom_cc_test(
   SRCS
     "facts_bitwise_test.cc"
     "facts_division_test.cc"
+    "facts_division_test_util.cc"
+    "facts_division_test_util.h"
     "facts_refinement_test.cc"
     "facts_test.cc"
     "float_facts_test.cc"
   DEPS
     ::facts
+    iree::base::internal
     iree::base::internal::fpu_state
     iree::testing::gtest
     iree::testing::gtest_main
+)
+
+loom_cc_test(
+  NAME
+    facts_division_stress_test
+  SRCS
+    "facts_division_stress.cc"
+    "facts_division_test_util.cc"
+    "facts_division_test_util.h"
+  DEPS
+    ::facts
+    iree::testing::gtest
+    iree::testing::gtest_main
+  LABELS
+    "manual"
+    "stress"
 )
 
 loom_cc_library(

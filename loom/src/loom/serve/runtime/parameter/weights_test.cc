@@ -269,6 +269,37 @@ struct ActivationWake {
 
 class WeightsTest : public ::testing::TestWithParam<bool> {
  protected:
+  static void SetUpTestSuite() {
+    const iree_allocator_t host_allocator = iree_allocator_system();
+    loom_serve_host_t* host = nullptr;
+    IREE_ASSERT_OK(loom_serve_test_host_create(1, host_allocator, &host));
+    iree_hal_driver_t* driver = nullptr;
+    IREE_ASSERT_OK(
+        loom_serve_test_driver_create(host, host_allocator, &driver));
+    for (size_t i = 0; i < IREE_ARRAYSIZE(groups_); ++i) {
+      const bool elastic = i != 0;
+      const loom_serve_device_options_t options = {
+          .driver = driver,
+          .uri = IREE_SV("amdgpu:?feedback"),
+          .backing = elastic ? LOOM_SERVE_DEVICE_BACKING_ELASTIC
+                             : LOOM_SERVE_DEVICE_BACKING_FIXED,
+          .slab_size = kSlabBytes,
+          .memory_limit = elastic ? 2 * kSlabBytes : 0,
+      };
+      IREE_ASSERT_OK(loom_serve_device_group_allocate(
+          host, 1, &options, host_allocator, &groups_[i]));
+    }
+    iree_hal_driver_release(driver);
+    loom_serve_host_release(host);
+  }
+
+  static void TearDownTestSuite() {
+    for (auto*& group : groups_) {
+      IREE_EXPECT_OK(loom_serve_device_group_free(group));
+      group = nullptr;
+    }
+  }
+
   void WriteCheckpoint(const std::string& path, int32_t offset,
                        size_t first_tensor = 0, size_t tensor_count = 4) {
     // Actual safetensors input exercises file indexing and queued reads. Each
@@ -302,24 +333,7 @@ class WeightsTest : public ::testing::TestWithParam<bool> {
   }
 
   void SetUp() override {
-    loom_serve_host_t* host = nullptr;
-    IREE_ASSERT_OK(loom_serve_test_host_create(1, host_allocator_, &host));
-    iree_hal_driver_t* driver = nullptr;
-    IREE_ASSERT_OK(
-        loom_serve_test_driver_create(host, host_allocator_, &driver));
-    const loom_serve_device_options_t options = {
-        .driver = driver,
-        .uri = IREE_SV("amdgpu:?feedback"),
-        .backing = GetParam() ? LOOM_SERVE_DEVICE_BACKING_ELASTIC
-                              : LOOM_SERVE_DEVICE_BACKING_FIXED,
-        .slab_size = kSlabBytes,
-        .memory_limit = GetParam() ? 2 * kSlabBytes : 0,
-    };
-    auto status = loom_serve_device_group_allocate(host, 1, &options,
-                                                   host_allocator_, &group_);
-    iree_hal_driver_release(driver);
-    loom_serve_host_release(host);
-    IREE_ASSERT_OK(status);
+    group_ = groups_[GetParam() ? 1 : 0];
     device_owner_ = loom_serve_device_group_at(group_, 0);
     device_ = loom_serve_device_handle(device_owner_);
     dispatch_ = loom_serve_device_dispatch_queue(device_owner_);
@@ -372,7 +386,12 @@ class WeightsTest : public ::testing::TestWithParam<bool> {
     iree_hal_buffer_release(output_buffer_);
     loom_serve_jit_free(jit_);
     loom_serve_execution_release(execution_);
-    IREE_EXPECT_OK(loom_serve_device_group_free(group_));
+    IREE_EXPECT_OK(loom_serve_device_trim(device_owner_, 0));
+    DrainMaintenance();
+    const auto memory = loom_serve_device_memory_statistics(device_owner_);
+    EXPECT_EQ(memory.retained.reserved_bytes, 0u);
+    EXPECT_EQ(memory.retained.committed_bytes, 0u);
+    EXPECT_EQ(memory.workspace.bytes_committed, 0u);
     if (path_.Exists()) {
       EXPECT_TRUE(path_.Remove());
     }
@@ -508,7 +527,7 @@ class WeightsTest : public ::testing::TestWithParam<bool> {
   iree_allocator_t host_allocator_ = iree_allocator_system();
   // Copied compiler evidence retained beyond individual results.
   loom_serve_compilation_report_t compilation_ = {};
-  // Application group outliving all compiler, VM and I/O resources.
+  // Borrowed suite group outliving all compiler, VM and I/O resources.
   loom_serve_device_group_t* group_ = nullptr;
   // Borrowed device record within the application group.
   loom_serve_device_t* device_owner_ = nullptr;
@@ -524,6 +543,8 @@ class WeightsTest : public ::testing::TestWithParam<bool> {
   loom_serve_memory_pool_t* pool_ = nullptr;
   // Physical slab size; the shared budget holds two unique roots.
   static constexpr uint64_t kSlabBytes = 2 * 1024 * 1024;
+  // Suite-owned fixed and elastic devices, each constructed exactly once.
+  inline static loom_serve_device_group_t* groups_[2] = {};
   // Owned checkpoint plans, including partially failed construction.
   std::array<loom_serve_weights_t*, 3> plans_ = {};
   // Admission groups borrowing their plans until final queue retirement.
@@ -1093,28 +1114,67 @@ TEST_P(WeightsTest, PressureAdmissionDrainsNewPinsButNotAcceptedConsumers) {
   IREE_ASSERT_OK(loom_serve_residency_try_admit(residencies_[0], &admission));
   ASSERT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_ACQUIRED);
   ASSERT_NO_FATAL_FAILURE(Run(0, 90));
+  const auto initial = loom_serve_residency_snapshot(residencies_[0]);
+  EXPECT_EQ(initial.pin_count, 1u);
+  EXPECT_FALSE(initial.admission.waiting);
+  EXPECT_EQ(initial.admission.count, 0u);
+  EXPECT_EQ(initial.admission.duration_ns, 0u);
+  EXPECT_EQ(initial.admission.age_ns, 0u);
+  const iree_time_t first_wait_start = iree_time_now();
   IREE_ASSERT_OK(loom_serve_residency_try_admit(residencies_[1], &admission));
   if (!GetParam()) {
     ASSERT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_ACQUIRED);
+    const auto fixed = loom_serve_residency_snapshot(residencies_[1]);
+    EXPECT_EQ(fixed.pin_count, 1u);
+    EXPECT_FALSE(fixed.admission.waiting);
+    EXPECT_EQ(fixed.admission.count, 0u);
+    EXPECT_EQ(fixed.admission.duration_ns, 0u);
     ASSERT_NO_FATAL_FAILURE(Run(1, 290));
     loom_serve_residency_release(residencies_[1]);
     loom_serve_residency_release(residencies_[0]);
     return;
   }
   ASSERT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_CAPACITY);
+  const auto waiting = loom_serve_residency_snapshot(residencies_[1]);
+  EXPECT_EQ(waiting.pin_count, 0u);
+  EXPECT_TRUE(waiting.admission.waiting);
+  EXPECT_EQ(waiting.admission.count, 1u);
+  EXPECT_EQ(waiting.admission.duration_ns, waiting.admission.age_ns);
+  EXPECT_LE(waiting.admission.age_ns, iree_time_now() - first_wait_start);
   IREE_ASSERT_OK(loom_serve_residency_try_admit(residencies_[0], &admission));
   EXPECT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_DEFERRED);
   // The already-admitted consumer still takes its nested execution pin and
   // produces exact device output. A parameter-free peer cannot obstruct it.
   ASSERT_NO_FATAL_FAILURE(RunPinned(0, 90));
+  const auto retained = loom_serve_residency_snapshot(residencies_[0]);
+  EXPECT_TRUE(retained.admission.waiting);
+  EXPECT_EQ(retained.admission.count, 1u);
+  EXPECT_EQ(retained.pin_count, 1u);
   IREE_ASSERT_OK(loom_serve_residency_try_admit(residencies_[2], &admission));
   EXPECT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_ACQUIRED);
+  EXPECT_EQ(loom_serve_residency_snapshot(residencies_[2]).admission.count, 0u);
   loom_serve_residency_release(residencies_[2]);
   // Withdraw both tail and head, including repeated withdrawal. No owned
   // invocation pin is released by cancellation of a new request.
   loom_serve_residency_cancel_admission(residencies_[0]);
+  const auto withdrawn = loom_serve_residency_snapshot(residencies_[0]);
+  EXPECT_FALSE(withdrawn.admission.waiting);
+  EXPECT_EQ(withdrawn.admission.count, 1u);
+  EXPECT_EQ(withdrawn.admission.age_ns, 0u);
+  EXPECT_GE(withdrawn.admission.duration_ns, retained.admission.duration_ns);
+  EXPECT_EQ(withdrawn.pin_count, 1u);
   loom_serve_residency_cancel_admission(residencies_[0]);
+  EXPECT_EQ(
+      loom_serve_residency_snapshot(residencies_[0]).admission.duration_ns,
+      withdrawn.admission.duration_ns);
   loom_serve_residency_cancel_admission(residencies_[1]);
+  const auto first_wait = loom_serve_residency_snapshot(residencies_[1]);
+  EXPECT_FALSE(first_wait.admission.waiting);
+  EXPECT_EQ(first_wait.admission.count, 1u);
+  EXPECT_EQ(first_wait.admission.age_ns, 0u);
+  EXPECT_GE(first_wait.admission.duration_ns, waiting.admission.duration_ns);
+  EXPECT_LE(first_wait.admission.duration_ns,
+            iree_time_now() - first_wait_start);
   IREE_ASSERT_OK(loom_serve_residency_try_admit(residencies_[0], &admission));
   ASSERT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_ACQUIRED);
   loom_serve_residency_release(residencies_[0]);
@@ -1125,14 +1185,25 @@ TEST_P(WeightsTest, PressureAdmissionDrainsNewPinsButNotAcceptedConsumers) {
   loom_serve_residency_release(residencies_[0]);
   IREE_ASSERT_OK(loom_serve_residency_try_admit(residencies_[1], &admission));
   ASSERT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_ACQUIRED);
+  const auto admitted = loom_serve_residency_snapshot(residencies_[1]);
+  EXPECT_FALSE(admitted.admission.waiting);
+  EXPECT_EQ(admitted.admission.count, 2u);
+  EXPECT_EQ(admitted.admission.age_ns, 0u);
+  EXPECT_GE(admitted.admission.duration_ns, first_wait.admission.duration_ns);
+  EXPECT_EQ(admitted.pin_count, 1u);
   ASSERT_NO_FATAL_FAILURE(Run(1, 290));
   IREE_ASSERT_OK(loom_serve_residency_try_admit(residencies_[0], &admission));
   ASSERT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_CAPACITY);
+  EXPECT_EQ(loom_serve_residency_snapshot(residencies_[0]).admission.count, 2u);
   loom_serve_residency_release(residencies_[1]);
   IREE_ASSERT_OK(loom_serve_residency_try_admit(residencies_[0], &admission));
   ASSERT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_ACQUIRED);
   ASSERT_NO_FATAL_FAILURE(Run(0, 90));
   loom_serve_residency_release(residencies_[0]);
+  EXPECT_EQ(loom_serve_residency_snapshot(residencies_[0]).pin_count, 0u);
+  EXPECT_EQ(
+      loom_serve_residency_snapshot(residencies_[1]).admission.duration_ns,
+      admitted.admission.duration_ns);
 }
 
 TEST_P(WeightsTest, NewAdmissionsCoexistWithoutPhysicalPressure) {
@@ -1149,6 +1220,12 @@ TEST_P(WeightsTest, NewAdmissionsCoexistWithoutPhysicalPressure) {
     IREE_ASSERT_OK(loom_serve_residency_try_admit(residencies_[i], &admission));
     ASSERT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_ACQUIRED);
     ASSERT_NO_FATAL_FAILURE(Run(i, 70));
+    const auto active = loom_serve_residency_snapshot(residencies_[i]);
+    EXPECT_EQ(active.pin_count, 2u);
+    EXPECT_FALSE(active.admission.waiting);
+    EXPECT_EQ(active.admission.count, 0u);
+    EXPECT_EQ(active.admission.duration_ns, 0u);
+    EXPECT_EQ(active.admission.age_ns, 0u);
     loom_serve_residency_release(residencies_[i]);
     loom_serve_residency_release(residencies_[i]);
   }

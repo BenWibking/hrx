@@ -185,7 +185,7 @@ class Client:
             response = connection.getresponse()
             body = response.read()
             assert response.status == status, (target, response.status, body)
-            if response.getheader("Content-Type") == "application/octet-stream":
+            if response.getheader("Content-Type") == "audio/pcm;rate=24000;channels=1":
                 return body
             body = body.decode()
             if response.getheader("Content-Type") == "text/event-stream":
@@ -335,7 +335,7 @@ def running_server(server_command, directory, catalog, workers):
             raise
 
 
-def run_round(client, iteration, observations):
+def run_round(client, iteration, observations, *, conversation_count=4, fork_count=1):
     root = [{"role": "user", "content": "abxa"}]
     seed = client.text("root", root, 2)
     assert seed["text"] == "bx"
@@ -369,6 +369,12 @@ def run_round(client, iteration, observations):
         assert {span["epoch"] for span in spans} == {epoch["epoch"] for epoch in epochs}
         assert all(epoch["device_epochs"] == 1 for epoch in epochs)
         assert all(epoch["token_slots"] == epoch["token_capacity"] for epoch in epochs)
+        output = [event for event in history if event["event"] == "first_output"]
+        assert len(output) == 1, output
+        begin = next(event for event in history if event["event"] == "request_begin")
+        assert output[0]["request"] == begin["request"] == completed["request"]
+        assert output[0]["duration_ns"] == output[0]["time_ns"] - begin["time_ns"]
+        check_first_output(client.request("/metrics"), 1, "fixture-text")
     pin = client.checkpoint("base", "POST", "root", status=201)
     assert pin["position"] == 5, pin
     history = root + [{"role": "assistant", "content": seed["text"]}]
@@ -465,8 +471,10 @@ def run_round(client, iteration, observations):
         ) == {"content": "bab"}
         assert client.request("/readyz") == {"status": "ready"}
 
-    operations = [lambda index=index: conversation(index) for index in range(12)]
-    operations += [lambda index=index: fork(index) for index in range(3)]
+    operations = [
+        lambda index=index: conversation(index) for index in range(conversation_count)
+    ]
+    operations += [lambda index=index: fork(index) for index in range(fork_count)]
     operations += [
         embeddings,
         image,
@@ -487,6 +495,27 @@ def run_round(client, iteration, observations):
             future.result()
 
     client.idle()
+    if iteration == 0:
+        reader = LogClient("http://" + client.address, timeout=None)
+        for model in ("pixels", "vectors", "judge"):
+            records = reader.poll(model).records
+            assert not any(record["event"] == "gap" for record in records), records
+            outputs = [
+                record for record in records if record["event"] == "first_output"
+            ]
+            assert len(outputs) == 1, records
+            begin = next(
+                record for record in records if record["event"] == "request_begin"
+            )
+            end = next(record for record in records if record["event"] == "request_end")
+            output = outputs[0]
+            assert output["request"] == begin["request"] == end["request"]
+            assert begin["time_ns"] <= output["time_ns"] <= end["time_ns"]
+            assert output["duration_ns"] == output["time_ns"] - begin["time_ns"], (
+                model,
+                begin,
+                output,
+            )
     # Invalid input may neither consume the checkpoint nor poison future work.
     client.request(
         "/v1/chat/completions",
@@ -589,6 +618,54 @@ def prepare_catalog(fixtures, directory):
     return catalog, catalog_path
 
 
+def check_latency(metrics, counts, model=None):
+    """Every terminal owner outcome contributes exactly one duration sample."""
+    scope = "server" if model is None else "model"
+    prefix = f"loom_serve_{scope}_request_duration_seconds_"
+    samples = [
+        line
+        for line in metrics.splitlines()
+        if line.startswith(prefix) and (model is None or f'model="{model}",' in line)
+    ]
+    for outcome in ("completed", "rejected", "cancelled", "failed"):
+        values = [line for line in samples if f'outcome="{outcome}"' in line]
+        buckets = [line for line in values if line.startswith(prefix + "bucket{")]
+        bounds = [float(line.split('le="')[1].split('"')[0]) for line in buckets]
+        assert len(bounds) == 20 and sorted(bounds) == bounds, buckets
+        numbers = [int(line.rsplit(" ", 1)[1]) for line in buckets]
+        assert sorted(numbers) == numbers and numbers[-1] == counts[outcome], buckets
+        count = [line for line in values if line.startswith(prefix + "count{")]
+        total = [line for line in values if line.startswith(prefix + "sum{")]
+        assert len(count) == len(total) == 1, values
+        assert int(count[0].rsplit(" ", 1)[1]) == counts[outcome], values
+        assert float(total[0].rsplit(" ", 1)[1]) >= 0, values
+    return samples
+
+
+def check_first_output(metrics, expected=None, model=None):
+    """Milestone counts survive independently of terminal request outcomes."""
+    scope = "server" if model is None else "model"
+    prefix = f"loom_serve_{scope}_first_output_seconds_"
+    samples = [
+        line
+        for line in metrics.splitlines()
+        if line.startswith(prefix) and (model is None or f'model="{model}",' in line)
+    ]
+    buckets = [line for line in samples if line.startswith(prefix + "bucket{")]
+    bounds = [float(line.split('le="')[1].split('"')[0]) for line in buckets]
+    assert len(bounds) == 20 and sorted(bounds) == bounds, buckets
+    numbers = [int(line.rsplit(" ", 1)[1]) for line in buckets]
+    assert sorted(numbers) == numbers, buckets
+    count = [line for line in samples if line.startswith(prefix + "count{")]
+    total = [line for line in samples if line.startswith(prefix + "sum{")]
+    assert len(count) == len(total) == 1, samples
+    assert int(count[0].rsplit(" ", 1)[1]) == numbers[-1], samples
+    assert float(total[0].rsplit(" ", 1)[1]) >= 0, samples
+    if expected is not None:
+        assert numbers[-1] == expected, samples
+    return samples, numbers[-1]
+
+
 def check_counters(client, rounds):
     """Compare independent model snapshots, server totals and metrics."""
     url = "http://" + client.address
@@ -631,15 +708,24 @@ def check_counters(client, rounds):
         )
         metrics = client.request("/metrics")
         assert "loom_serve_server_counters_available 1\n" in metrics
+        assert "loom_serve_server_latency_available 1\n" in metrics
+        check_latency(metrics, total)
+        output_count = 0
         for key, value in total.items():
             assert f"loom_serve_server_{key}_total {value}\n" in metrics
         for model, counts in expected.items():
+            check_latency(metrics, counts, model)
+            _, count = check_first_output(
+                metrics, rounds if model != "fixture-text" else None, model
+            )
+            output_count += count
             for key, value in counts.items():
                 prefix = f'loom_serve_model_{key}_total{{model="{model}",kind="'
                 assert any(
                     line.startswith(prefix) and line.endswith(f"}} {value}")
                     for line in metrics.splitlines()
                 )
+        check_first_output(metrics, output_count)
         # Router-owned utilities do not become model-protocol work.
         assert client.request("/tokenize", {"model": "vectors", "content": "ab"}) == {
             "tokens": [0, 1]

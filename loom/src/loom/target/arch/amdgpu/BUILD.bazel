@@ -366,6 +366,7 @@ loom_cc_library(
     hdrs = ["legalization.h"],
     deps = [
         ":facts",
+        "//loom/src/loom/analysis:control_uniformity",
         "//loom/src/loom/analysis:symbolic_expr",
         "//loom/src/loom/codegen/low:descriptors",
         "//loom/src/loom/codegen/low:source_memory_plan",
@@ -385,6 +386,7 @@ loom_cc_library(
         "//loom/src/loom/target/arch/amdgpu/matrix:contract",
         "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
         "//loom/src/loom/transforms/conversion:target_legalization",
+        "//loom/src/loom/transforms/kernel:target_legalization",
         "//loom/src/loom/transforms/scalar:target_legalization",
         "//loom/src/loom/transforms/vector:cast_packet_legalization",
         "//loom/src/loom/transforms/vector:packet_legalization",
@@ -563,6 +565,16 @@ loom_check_test_suite(
         ],
     ),
     compile_targets = {
+        "test/source_low/address_cast_banks.loom-test": [
+            "//loom/target/amdgpu:gfx942",
+            "//loom/target/amdgpu:gfx1100",
+            "//loom/target/amdgpu:gfx1151",
+            "//loom/target/amdgpu:gfx1200",
+            "//loom/target/amdgpu:gfx1250",
+        ],
+        "test/source_low/cluster_query_carriers.loom-test": [
+            "//loom/target/amdgpu:gfx1250",
+        ],
         "test/source_low/float64_narrow.loom-test": [
             "//loom/target/amdgpu:" + target
             for target in LOOM_AMDGPU_SUPPORTED_TARGETS
@@ -572,6 +584,10 @@ loom_check_test_suite(
             for target in LOOM_AMDGPU_SUPPORTED_TARGETS
         ],
         "test/source_low/memory_float64_carrier.loom-test": [
+            "//loom/target/amdgpu:" + target
+            for target in LOOM_AMDGPU_SUPPORTED_TARGETS
+        ],
+        "test/source_low/memory_mixed_wide_offsets.loom-test": [
             "//loom/target/amdgpu:" + target
             for target in LOOM_AMDGPU_SUPPORTED_TARGETS
         ],
@@ -587,6 +603,13 @@ loom_check_test_suite(
         "test/source_low/predicate_truncation.loom-test": [
             "//loom/target/amdgpu:" + target
             for target in LOOM_AMDGPU_SUPPORTED_TARGETS
+        ],
+        "test/source_low/query_carriers.loom-test": [
+            "//loom/target/amdgpu:gfx942",
+            "//loom/target/amdgpu:gfx1100",
+            "//loom/target/amdgpu:gfx1151",
+            "//loom/target/amdgpu:gfx1200",
+            "//loom/target/amdgpu:gfx1250",
         ],
         "test/source_low/source_low_system_scope_store_wait.loom-test": [
             "//loom/target/amdgpu:gfx1200",

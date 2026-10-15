@@ -174,14 +174,16 @@ iree_py_test(
     loom::serve::server::catalog_test_util
     loom::serve::testing::http
     loom::serve::testing::logs
+    loom::serve::testing::workload
   LABELS
     "iree-run-requirement=runtime.resource.amd_gpu"
     "notsan"
-    "resource_group:gpu-device"
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"
     "${PROJECT_SOURCE_DIR}"
+  RESOURCE_GROUP
+    gpu-device
   TIMEOUT
     300
 )
@@ -237,14 +239,84 @@ iree_py_test(
     loom::serve::server::catalog_test_util
     loom::serve::testing::http
     loom::serve::testing::logs
+    loom::serve::testing::workload
   LABELS
     "iree-run-requirement=runtime.resource.amd_gpu"
     "notsan"
-    "resource_group:gpu-device"
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"
     "${PROJECT_SOURCE_DIR}"
+  RESOURCE_GROUP
+    gpu-device
+  TIMEOUT
+    300
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+iree_py_test(
+  NAME
+    catalog_stress_test
+  MAIN
+    "catalog_stress_test.py"
+  SRCS
+    "catalog_stress_test.py"
+    "../../../../serve/server/catalog_test.py"
+  ARGS
+    "--server={{$<TARGET_FILE:loom::tooling::target::amdgpu::serve::loom-serve-test-tool>}}"
+    "--fixture={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/image/model.json}}"
+    "--fixture={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/model.json}}"
+    "--fixture={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/decision/model.json}}"
+    "--fixture={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/speech/model.json}}"
+    "--fixture={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/model.json}}"
+    "--device=amdgpu"
+    "--pool_backing=fixed"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/decision/config.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/decision/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/decision/decide.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/decision/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/decision/prepare.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/config.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/embed.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/prepare.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/tokenizer.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/image/config.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/image/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/image/generate.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/image/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/image/prepare.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/image/tokenizer.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/speech/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/speech/generate.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/speech/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/speech/prepare.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/advance.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/prepare.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/tokenizer.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/weights.loom"
+    "loom::tooling::target::amdgpu::serve::loom-serve-test-tool"
+  DEPS
+    loom::serve::server::catalog_test_util
+    loom::serve::testing::http
+    loom::serve::testing::logs
+    loom::serve::testing::workload
+  LABELS
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "notsan"
+    "manual"
+    "stress"
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  RESOURCE_GROUP
+    gpu-device
   TIMEOUT
     300
 )
@@ -274,11 +346,50 @@ iree_py_test(
   LABELS
     "iree-run-requirement=runtime.resource.amd_gpu"
     "notsan"
-    "resource_group:gpu-device"
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"
     "${PROJECT_SOURCE_DIR}"
+  RESOURCE_GROUP
+    gpu-device
+  TIMEOUT
+    300
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+iree_py_test(
+  NAME
+    pressure_stress_test
+  MAIN
+    "pressure_stress_test.py"
+  SRCS
+    "pressure_stress_test.py"
+    "../../../../serve/server/pressure_test.py"
+  ARGS
+    "--server={{$<TARGET_FILE:loom::tooling::target::amdgpu::serve::loom-serve-test-tool>}}"
+    "--source={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/prepare.loom}}"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/advance.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/prepare.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/tokenizer.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/weights.loom"
+    "loom::tooling::target::amdgpu::serve::loom-serve-test-tool"
+  DEPS
+    loom::serve::testing::http
+  LABELS
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "notsan"
+    "manual"
+    "stress"
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  RESOURCE_GROUP
+    gpu-device
   TIMEOUT
     300
 )
@@ -330,6 +441,7 @@ loom_cc_test(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/prepare.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/tokenizer.json"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/variants/direct.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/variants/fused.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/variants/policy.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/variants/weights.loom"
   DEPS
@@ -572,11 +684,17 @@ loom_cc_test(
 endif()
 
 if(LOOM_TARGET_ARCH_VM AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+set(_jit_test_platform_deps "")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  list(APPEND _jit_test_platform_deps loom::serve::testing::stalled_stderr)
+endif()
 loom_cc_test(
   NAME
     jit_test
   SRCS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/jit_module_test.cc"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/jit_test.cc"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/jit_workspace_test.cc"
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/testdata/compilation/invalid.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/testdata/jit/config.loom"
@@ -591,18 +709,17 @@ loom_cc_test(
     iree::base::tooling::flags
     iree::hal
     iree::module::hal::types
-    iree::task
     iree::testing::gtest
     iree::testing::gtest_main
     iree::vm
-    iree::vm::bytecode::module
     loom::binding::c::loomc
     loom::serve::runtime::device
     loom::serve::runtime::execution
     loom::serve::runtime::program::jit
     loom::serve::runtime::program::module
-    loom::serve::testing::compiler
-    loom::serve::testing::device
+    loom::serve::testing::jit
+    loom::serve::testing::jit_module
+    ${_jit_test_platform_deps}
   ARGS
     "--jit_sources={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/testdata/jit/config.loom}}"
     "--invalid_sources={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/testdata/compilation/invalid.loom}}"

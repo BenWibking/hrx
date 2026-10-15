@@ -55,6 +55,7 @@ static_assert(LOOM_TYPE_COUNT_ <= 16,
 //===----------------------------------------------------------------------===//
 
 typedef struct loom_value_fact_region_entry_t loom_value_fact_region_entry_t;
+typedef struct loom_value_fact_region_frame_t loom_value_fact_region_frame_t;
 typedef struct loom_value_fact_condition_scratch_t
     loom_value_fact_condition_scratch_t;
 typedef struct loom_value_fact_exact_lane_origin_entry_t
@@ -89,11 +90,11 @@ typedef struct loom_value_fact_static_lane_origin_t {
   uint32_t source_lane_stride;
 } loom_value_fact_static_lane_origin_t;
 
-// Static strided logical-lane origin preserving each lane's floating-point
-// value exactly. Result lane N has the same value as source lane
-// source_lane_offset + N * source_lane_stride after conversion to the result
-// element type. The relation preserves signed zero and infinity; it does not
-// promise NaN payload identity.
+// Static strided logical-lane origin preserving each lane's scalar value
+// exactly. Result lane N has the same value as source lane source_lane_offset +
+// N * source_lane_stride after conversion to the result element type. For
+// floating-point values the relation preserves signed zero and infinity but
+// does not promise NaN payload identity.
 typedef struct loom_value_fact_exact_lane_origin_t {
   // Aggregate source value containing the exact lane values.
   loom_value_id_t source_value_id;
@@ -399,7 +400,7 @@ struct loom_value_fact_table_t {
   } exact_relations;
 
   // Reusable scratch buffers for fact inference calls. Allocated on first use,
-  // grown only when an op needs more slots. Never shrinks. Old buffers are
+  // grown only when an evaluation needs more slots. Old buffers are
   // abandoned in the arena and freed in bulk with the arena.
   struct {
     // Fact scratch buffer state.
@@ -409,6 +410,16 @@ struct loom_value_fact_table_t {
       // Allocated fact scratch entry count.
       iree_host_size_t capacity;
     } facts;
+    // Continuations shared by lexical traversals and reentrant loop solvers.
+    struct {
+      // Active nested frames; each traversal keeps its root on the native
+      // stack.
+      loom_value_fact_region_frame_t* values;
+      // Live prefix reserved across all suspended and current traversals.
+      iree_host_size_t count;
+      // Allocated frame count, reused until the scope is cleared.
+      iree_host_size_t capacity;
+    } regions;
     // Value ID scratch buffer state.
     struct {
       // Scratch value IDs used by transforms that materialize replacements.

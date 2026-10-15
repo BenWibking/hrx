@@ -372,6 +372,7 @@ loom_cc_library(
     "legalization.c"
   DEPS
     ::features
+    ::value_types
     iree::base
     loom::ir
     loom::ops::scalar
@@ -380,6 +381,8 @@ loom_cc_library(
     loom::target::arch::spirv::descriptors
     loom::target::legalization
     loom::transforms::scalar::target_legalization
+    loom::transforms::vector::packet_legalization
+    loom::transforms::vector::shape_legalization
     loom::transforms::vector::target_legalization
     loom::transforms::vector::to_scalar
   PUBLIC
@@ -568,10 +571,12 @@ loom_check_test_suite(
     "test/source_low/numeric_scalar_f32_values.loom-test"
     "test/source_low/numeric_unsigned_remainder.loom-test"
     "test/source_low/ordinary_vector_alu.loom-test"
+    "test/source_low/ordinary_vector_concat.loom-test"
     "test/source_low/ordinary_vector_conversion.loom-test"
     "test/source_low/ordinary_vector_float.loom-test"
     "test/source_low/ordinary_vector_scale.loom-test"
     "test/source_low/ordinary_vector_structure.loom-test"
+    "test/source_low/packed_bitstream_words.loom-test"
     "test/source_low/packed_memory_alignment.loom-test"
     "test/source_low/predicate_truncation.loom-test"
     "test/source_low/predicate_truncation_diagnostics.loom-test"
@@ -586,6 +591,7 @@ loom_check_test_suite(
     "test/source_low/subgroup_ballot.loom-test"
     "test/source_low/subgroup_predicates.loom-test"
     "test/source_low/subgroup_reductions.loom-test"
+    "test/source_low/subgroup_shuffle.loom-test"
     "test/source_low/target_legalize.loom-test"
     "test/source_low/unbound_low.loom-test"
     "test/source_low/vector_atomic_policy.loom-test"

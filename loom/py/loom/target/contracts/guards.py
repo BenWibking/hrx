@@ -117,6 +117,7 @@ class GuardKind(Enum):
     VALUE_U32_DIVISOR_MAGIC_KIND = "value_u32_divisor_magic_kind"
     VALUE_I32_DIVISOR_MAGIC_KIND = "value_i32_divisor_magic_kind"
     VALUE_EXACT_FLOAT = "value_exact_float"
+    VALUE_FLOAT_EXACTLY_REPRESENTABLE_AS = "value_float_exactly_representable_as"
     VALUE_EXACT_POWER_OF_TWO_FLOAT = "value_exact_power_of_two_float"
     VALUE_NOT_NAN = "value_not_nan"
     VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL = (
@@ -125,6 +126,7 @@ class GuardKind(Enum):
     VALUE_I64_RANGE = "value_i64_range"
     VALUE_I64_RANGE_LE = "value_i64_range_le"
     VALUE_I64_RANGE_GE = "value_i64_range_ge"
+    VALUE_I64_EQUALS_TARGET_SUBGROUP_SIZE = "value_i64_equals_target_subgroup_size"
     VALUE_FLOAT_EQUALS = "value_float_equals"
     VALUE_STORAGE_ELEMENT_FORMAT = "value_storage_element_format"
     VALUE_STORAGE_OPERAND_SCHEMA = "value_storage_operand_schema"
@@ -672,6 +674,22 @@ class Guard:
         )
 
     @classmethod
+    def value_float_exactly_representable_as(
+        cls,
+        field: str,
+        type_field: str,
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        """Requires finite values exact in another value's float element type."""
+        return cls(
+            kind=GuardKind.VALUE_FLOAT_EXACTLY_REPRESENTABLE_AS,
+            field=field,
+            other_field=type_field,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
     def value_exact_power_of_two_float(
         cls,
         field: str,
@@ -765,6 +783,20 @@ class Guard:
             kind=GuardKind.VALUE_I64_RANGE_GE,
             field=field,
             other_field=other_field,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
+    def value_i64_equals_target_subgroup_size(
+        cls,
+        field: str,
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        """Requires an exact integer value equal to the target subgroup size."""
+        return cls(
+            kind=GuardKind.VALUE_I64_EQUALS_TARGET_SUBGROUP_SIZE,
+            field=field,
             diagnostic=diagnostic,
         )
 
@@ -1134,11 +1166,13 @@ class Guard:
             GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_I32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_EXACT_FLOAT,
+            GuardKind.VALUE_FLOAT_EXACTLY_REPRESENTABLE_AS,
             GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT,
             GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_I64_RANGE,
             GuardKind.VALUE_I64_RANGE_LE,
             GuardKind.VALUE_I64_RANGE_GE,
+            GuardKind.VALUE_I64_EQUALS_TARGET_SUBGROUP_SIZE,
             GuardKind.VALUE_FLOAT_EQUALS,
             GuardKind.VALUE_STORAGE_ELEMENT_FORMAT,
             GuardKind.VALUE_STORAGE_OPERAND_SCHEMA,
@@ -1335,6 +1369,7 @@ def _validate_value_fact_guard(
         GuardKind.VALUE_I64_RANGE_LE,
         GuardKind.VALUE_I64_RANGE_GE,
         GuardKind.VALUE_STATIC_ELEMENT_COUNT_EQ,
+        GuardKind.VALUE_FLOAT_EXACTLY_REPRESENTABLE_AS,
     ):
         if guard.other_field is None:
             raise ValueError(f"{source_op.name}: {subject} needs another value")

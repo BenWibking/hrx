@@ -37,6 +37,8 @@ loom_check_test_suite(
     "boolean_storage_cleanup.cxx-test"
     "buffer_alloca.cxx-test"
     "buffer_alloca_invalid.cxx-test"
+    "buffer_memory_space.cxx-test"
+    "buffer_memory_space_invalid.cxx-test"
     "check.cxx-test"
     "check_close.cxx-test"
     "check_close_invalid.cxx-test"
@@ -85,6 +87,8 @@ loom_check_test_suite(
     "integer_intrinsics.cxx-test"
     "integer_widening.cxx-test"
     "intrinsics_invalid.cxx-test"
+    "kernel_arguments.cxx-test"
+    "kernel_arguments_invalid.cxx-test"
     "kernel_intrinsics.cxx-test"
     "kernel_intrinsics_invalid.cxx-test"
     "launch.cxx-test"
@@ -123,12 +127,15 @@ loom_check_test_suite(
     "scalar_invalid.cxx-test"
     "scalar_templates.cxx-test"
     "scalar_templates_invalid.cxx-test"
+    "scans.cxx-test"
+    "scans_invalid.cxx-test"
     "schedule_lowering.cxx-test"
     "schedules.cxx-test"
     "schedules_invalid.cxx-test"
     "shaped_intrinsics.cxx-test"
     "shaped_intrinsics_invalid.cxx-test"
     "standards.cxx-test"
+    "static_assert.cxx-test"
     "storage_updates.cxx-test"
     "subgroup_reductions.cxx-test"
     "subgroup_reductions_invalid.cxx-test"
@@ -175,6 +182,7 @@ loom_check_test_suite(
     "volatile.cxx-test"
     "volatile_invalid.cxx-test"
     "volatile_views.cxx-test"
+    "workgroup_reductions.cxx-test"
     "workload_config.cxx-test"
     "workload_config_invalid.cxx-test"
   DATA
@@ -1115,6 +1123,24 @@ loom_test_module(
     assumptions_module
   SRCS
     "assumptions.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    borrowed_storage_module
+  SRCS
+    "borrowed_storage.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    collective_scans_module
+  SRCS
+    "collective_scans.cxx"
 )
 endif()
 

@@ -202,6 +202,69 @@ def test_scalar_integer_to_float_native_encoding_family() -> None:
                 ]
 
 
+def test_scalar_float_comparisons_cover_types_predicates_and_selects() -> None:
+    expected_immediates = {
+        "oeq": 0,
+        "ogt": 30,
+        "oge": 29,
+        "olt": 17,
+        "ole": 18,
+        "one": 12,
+        "ord": 7,
+        "ueq": 8,
+        "ugt": 22,
+        "uge": 21,
+        "ult": 25,
+        "ule": 26,
+        "une": 4,
+        "uno": 3,
+    }
+    rules = tuple(
+        case
+        for case in X86_AVX2_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+        and case.source_op is scalar_comparison.scalar_cmpf
+    )
+    assert len(rules) == 4
+    for element, mnemonic in (("f32", "vcmpps"), ("f64", "vcmppd")):
+        typed_rules = tuple(
+            rule for rule in rules if _value_type_guard(rule, "lhs") == Scalar(element)
+        )
+        assert len(typed_rules) == 2
+        for rule in typed_rules:
+            assert _value_type_guard(rule, "rhs") == Scalar(element)
+            assert _value_type_guard(rule, "result") == Scalar("i1")
+            projection = rule.emit[0].immediates["predicate"]
+            assert isinstance(projection, AttrProject)
+            assert projection.kind is AttrProjectKind.ENUM_REMAP
+            assert dict(projection.enum_values) == expected_immediates
+
+        (materialized,) = (rule for rule in typed_rules if not rule.source_nodes)
+        assert [emit.descriptor.key for emit in materialized.emit] == [
+            f"x86.avx2.{mnemonic}.xmm",
+            "x86.avx2.vmovd.gpr32.xmm",
+            "x86.scalar.and.imm.gpr32",
+        ]
+        assert materialized.emit[-1].immediates == {"imm32": 1}
+        assert materialized.emit[-1].results == {"dst": ValueRef.result("result")}
+
+        (selected,) = (rule for rule in typed_rules if rule.source_nodes)
+        assert not selected.target_query
+        assert [emit.descriptor.key for emit in selected.emit] == [
+            f"x86.avx2.{mnemonic}.xmm",
+            "x86.avx2.vpblendvb.xmm",
+        ]
+        (select,) = selected.source_nodes
+        assert select.source_op is scf.scf_select
+        assert select.relation is SourceNodeRelation.EXCLUSIVE_USER
+        assert _source_node_value_type_guard(select, "condition") == Scalar("i1")
+        for field in ("true_value", "false_value", "result"):
+            assert _source_node_value_type_guard(select, field) == Scalar(element)
+        assert selected.emit[-1].results == {
+            "dst": ValueRef.result("result", source_node="select")
+        }
+
+
 def test_scalar_integer_conversions_cover_native_carrier_matrix() -> None:
     conversion_ops = (
         scalar_conversion.scalar_trunci,
@@ -1370,13 +1433,13 @@ def test_avx512_shuffles_cover_every_payload_type() -> None:
     } <= descriptor_keys
 
 
-def test_avx2_float_bitcasts_cover_every_storage_family_and_width() -> None:
+def test_avx2_bitcasts_cover_every_storage_family_and_width() -> None:
     rules = tuple(
         case
         for case in X86_AVX2_CONTRACT_FRAGMENT.cases
         if isinstance(case, ValueAliasRule) and case.source_op is vector.vector_bitcast
     )
-    expected = {
+    expected_float = {
         (source_type, result_type)
         for float_elements, integer_element, element_bit_width in (
             (("f8E4M3", "f8E5M2"), "i8", 8),
@@ -1398,6 +1461,25 @@ def test_avx2_float_bitcasts_cover_every_storage_family_and_width() -> None:
             ),
         )
     }
+    expected_integer = {
+        (
+            Vector(
+                source_element.name,
+                lanes=vector_bit_width // source_element.bit_width,
+            ),
+            Vector(
+                result_element.name,
+                lanes=vector_bit_width // result_element.bit_width,
+            ),
+        )
+        for vector_bit_width in AVX2_CARRIER_VECTOR_BIT_WIDTHS
+        for source_element in INTEGER_ELEMENTS
+        if vector_bit_width >= source_element.bit_width
+        for result_element in INTEGER_ELEMENTS
+        if source_element != result_element
+        if vector_bit_width >= result_element.bit_width
+    }
+    expected = expected_float | expected_integer
     actual = {
         (
             _value_type_guard(rule, "input"),
@@ -1520,7 +1602,7 @@ def test_avx512_construction_covers_every_zmm_payload_type() -> None:
         for case in X86_AVX512_CONTRACT_FRAGMENT.cases
         if isinstance(case, ValueAliasRule) and case.source_op is vector.vector_bitcast
     )
-    expected_bitcasts = {
+    expected_float_bitcasts = {
         (source_type, result_type)
         for float_elements, integer_element, element_bit_width in (
             (("f8E4M3", "f8E5M2"), "i8", 8),
@@ -1540,6 +1622,16 @@ def test_avx512_construction_covers_every_zmm_payload_type() -> None:
             ),
         )
     }
+    expected_integer_bitcasts = {
+        (
+            Vector(source_element.name, lanes=512 // source_element.bit_width),
+            Vector(result_element.name, lanes=512 // result_element.bit_width),
+        )
+        for source_element in INTEGER_ELEMENTS
+        for result_element in INTEGER_ELEMENTS
+        if source_element != result_element
+    }
+    expected_bitcasts = expected_float_bitcasts | expected_integer_bitcasts
     assert {
         (
             _value_type_guard(rule, "input"),

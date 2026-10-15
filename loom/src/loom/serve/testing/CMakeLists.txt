@@ -44,6 +44,53 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    jit
+  HDRS
+    "jit.h"
+  SRCS
+    "jit.cc"
+  DEPS
+    ::compiler
+    ::device
+    iree::base
+    iree::base::tooling::flags
+    iree::hal
+    iree::task
+    iree::testing::gtest
+    loom::binding::c::loomc
+    loom::serve::runtime::device
+    loom::serve::runtime::execution
+    loom::serve::runtime::host
+    loom::serve::runtime::program::jit
+  TESTONLY
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    jit_module
+  HDRS
+    "jit_module.h"
+  SRCS
+    "jit_module.cc"
+  DEPS
+    ::jit
+    iree::base
+    iree::hal
+    iree::module::hal::types
+    iree::vm
+    iree::vm::bytecode::module
+    loom::serve::runtime::device
+    loom::serve::runtime::execution
+    loom::serve::runtime::host
+    loom::serve::runtime::program::jit
+    loom::serve::runtime::program::module
+  TESTONLY
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     service_application
   HDRS
     "service_application.h"
@@ -174,6 +221,8 @@ loom_cc_binary(
     iree::tokenizer
     iree::tokenizer::format::huggingface::tokenizer_json
     iree::vm
+    loom::binding::c::loomc
+    loom::binding::c::target::vm
     loom::serve::runtime::program
     loom::serve::runtime::program::compilation
     loom::serve::runtime::program::input
@@ -194,6 +243,46 @@ iree_py_test(
     "loom_serve_testing/chat_test.py"
   DEPS
     loom::serve::testing::chat
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  TIMEOUT
+    60
+)
+
+iree_py_library(
+  NAME
+    workload
+  SRCS
+    "loom_serve_testing/workload.py"
+  IMPORTS
+    "."
+  DEPS
+    loom::serve::testing::chat
+)
+
+iree_py_library(
+  NAME
+    replay
+  MAIN
+    "loom_serve_testing/replay.py"
+  SRCS
+    "loom_serve_testing/replay.py"
+  DEPS
+    loom::serve::testing::workload
+)
+
+iree_py_test(
+  NAME
+    workload_test
+  MAIN
+    "loom_serve_testing/workload_test.py"
+  SRCS
+    "loom_serve_testing/replay.py"
+    "loom_serve_testing/workload_test.py"
+  DEPS
+    loom::serve::testing::workload
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"

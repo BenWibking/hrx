@@ -239,9 +239,8 @@ TEST_F(SourceEmbeddingServiceTest,
 }
 
 TEST_F(SourceEmbeddingServiceTest,
-       InvalidFeedbackAfterExecutionRetiresManagedRequests) {
-  const std::string package =
-      iree::testing::MakeTempFilePath("invalid_feedback");
+       InvalidStageAfterExecutionRetiresManagedRequests) {
+  const std::string package = iree::testing::MakeTempFilePath("invalid_stage");
   ASSERT_TRUE(std::filesystem::create_directory(package));
   for (const char* file : {"config.loom", "control.loom", "embed.loom",
                            "prepare.loom", "model.json", "tokenizer.json"}) {
@@ -254,16 +253,16 @@ TEST_F(SourceEmbeddingServiceTest,
     ASSERT_TRUE(input.good());
     std::string source((std::istreambuf_iterator<char>(input)), {});
     const std::string original =
-        "  %done = func.call @feedback(%slot, %output, %offset, "
-        "%feedback_bytes)";
+        "  %work = func.call @execute_2(%stage, %input, %output) : "
+        "(i32, hal.buffer, hal.buffer) -> (i64)";
     const size_t position = source.find(original);
     ASSERT_NE(position, std::string::npos);
-    // The command has already been accepted when the source exceeds its
-    // declared 1024-byte host destination. No invalid transfer is submitted.
-    source.replace(position, original.size(),
-                   "  %oversized = scalar.constant 4096 : i64\n"
-                   "  %done = func.call @feedback(%slot, %output, %offset, "
-                   "%oversized)");
+    // One valid command has been accepted before the source selects an
+    // undeclared second stage. Retirement must join that accepted command.
+    source.insert(position + original.size(),
+                  "\n  %invalid = scalar.constant 4096 : i32\n"
+                  "  %rejected = func.call @execute_2(%invalid, %input, "
+                  "%output) : (i32, hal.buffer, hal.buffer) -> (i64)");
     input.close();
     std::filesystem::permissions(path, std::filesystem::perms::owner_write,
                                  std::filesystem::perm_options::add);
@@ -271,7 +270,7 @@ TEST_F(SourceEmbeddingServiceTest,
     output << source;
     ASSERT_TRUE(output.good());
   }
-  CheckInvalidFeedbackRetirement(package);
+  CheckInvalidSubmissionRetirement(package);
 }
 
 TEST_F(SourceEmbeddingServiceTest,
@@ -283,7 +282,7 @@ TEST_F(SourceEmbeddingServiceTest,
         ::testing::ScopedFakeTestPartResultReporter::
             INTERCEPT_ONLY_CURRENT_THREAD,
         &failures);
-    CheckInvalidFeedbackRetirement(directory_);
+    CheckInvalidSubmissionRetirement(directory_);
   }
   ASSERT_EQ(failures.size(), 2);
   EXPECT_TRUE(failures.GetTestPartResult(0).fatally_failed());
@@ -394,14 +393,17 @@ TEST_F(SourceEmbeddingServiceTest,
     EXPECT_NE(inference.find(R"("embedding":[6,3])"), std::string::npos);
     latest = poll(fast);
     EXPECT_EQ(latest.find(R"("event":"gap")"), std::string::npos);
-    // Each inference has a begin, submit, device end and request end. Counters
-    // and HTTP polls are not inserted into the producer's stream.
+    // Publication is independent of device completion and terminal retirement.
+    // Counters and HTTP polls are not inserted into the producer's stream.
     size_t offset = 0;
-    for (size_t record = 0; record < 4; ++record) {
-      const auto found =
-          latest.find("\"sequence\":" + std::to_string(next++) + ",", offset);
+    for (const char* event : {"request_begin", "batch_submit", "batch_end",
+                              "first_output", "request_end"}) {
+      const std::string marker = "\"event\":\"" + std::string(event) +
+                                 "\",\"sequence\":" + std::to_string(next++) +
+                                 ",";
+      const auto found = latest.find(marker, offset);
       ASSERT_NE(found, std::string::npos);
-      offset = found + 12;
+      offset = found + marker.size();
     }
     EXPECT_EQ(latest.find("\"sequence\":", offset), std::string::npos);
     fast = cursor_of(latest);
@@ -415,18 +417,18 @@ TEST_F(SourceEmbeddingServiceTest,
       ASSERT_EQ(close(peer), 0);
     }
   }
-  EXPECT_EQ(next, 161u);
+  EXPECT_EQ(next, 201u);
   const std::string totals =
       R"("requests":40,"completed":40,"rejected":0,"cancelled":0,"failed":0,"input_tokens":160,"output_tokens":0,"batches":40)";
   EXPECT_NE(latest.find(totals), std::string::npos);
   EXPECT_NE(Read(Send("", "/logz", "GET")).find(totals), std::string::npos);
   const std::string resumed = poll(slow);
-  EXPECT_NE(resumed.find(R"({"event":"gap","from":1,"to":33})"),
+  EXPECT_NE(resumed.find(R"({"event":"gap","from":1,"to":73})"),
             std::string::npos);
   EXPECT_NE(resumed.find(totals), std::string::npos);
   const std::string joined = poll("");
   EXPECT_NE(joined.find(R"("partial":true)"), std::string::npos);
-  EXPECT_NE(joined.find(R"({"event":"gap","from":0,"to":33})"),
+  EXPECT_NE(joined.find(R"({"event":"gap","from":0,"to":73})"),
             std::string::npos);
   const std::string caught_up = poll(fast);
   EXPECT_EQ(caught_up.find("\"sequence\":"), std::string::npos);

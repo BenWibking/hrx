@@ -190,13 +190,15 @@ iree_py_test(
     loom::serve::server::catalog_test_util
     loom::serve::testing::http
     loom::serve::testing::logs
+    loom::serve::testing::workload
   LABELS
     "iree-run-requirement=vulkan.resource.device"
-    "resource_group:gpu-device"
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"
     "${PROJECT_SOURCE_DIR}"
+  RESOURCE_GROUP
+    gpu-device
   TIMEOUT
     300
 )
@@ -247,6 +249,7 @@ loom_cc_test(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/prepare.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/tokenizer.json"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/variants/direct.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/variants/fused.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/variants/policy.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/variants/weights.loom"
   DEPS

@@ -193,6 +193,34 @@ def check(server, source, directory, workers, memory_bytes, retention):
         assert memory_after["peak_bytes"] <= memory_bytes, result
         expected = 503 if retention != "none" and memory_bytes == 4194304 else 200
         assert second_status == expected, second
+        beta = next(item["loom"] for item in after["data"] if item["id"] == "beta")
+        admission = beta["parameters"]["admission"]
+        assert not admission["waiting"] and admission["age_seconds"] == 0, beta
+        assert beta["parameters"]["pins"] == 0, beta
+        if expected == 503 and retention == "parameters":
+            assert admission["count"] >= 1, beta
+        elif expected == 503:
+            # A retained checkpoint can exhaust mutable KV backing after
+            # parameter admission succeeds. This is not a parameter wait.
+            assert admission["count"] == 0, beta
+            assert beta["parameters"]["active"], beta
+        assert admission["duration_seconds"] >= 0, beta
+        connection = http.client.HTTPConnection(address.hostname, address.port)
+        try:
+            connection.request("GET", "/metrics")
+            response = connection.getresponse()
+            metrics = response.read().decode()
+            assert response.status == 200, metrics
+        finally:
+            connection.close()
+        identity = f'model="beta",kind="text",incarnation="{beta["incarnation"]}"'
+        assert (
+            f"loom_serve_model_parameter_admission_waits_total{{{identity}}} "
+            f"{admission['count']}\n"
+        ) in metrics, metrics
+        assert (
+            f"loom_serve_model_parameter_admission_waiting{{{identity}}} 0\n"
+        ) in metrics, metrics
         if expected == 200:
             assert output(second) == oracle("abxa"), second
         history = [
@@ -315,7 +343,7 @@ def check(server, source, directory, workers, memory_bytes, retention):
         assert control(address, "GET", "/readyz", 200) == {"status": "ready"}
 
 
-def main():
+def run_from_command_line(cases):
     parser = argparse.ArgumentParser()
     parser.add_argument("--server", type=Path, required=True)
     parser.add_argument("--source", type=Path, required=True)
@@ -324,19 +352,28 @@ def main():
     failures = []
     with tempfile.TemporaryDirectory(prefix="loom pressure ") as temporary:
         root = Path(temporary)
-        for workers in (1, 4):
-            for memory_bytes in (8388608, 4194304):
-                for retention in ("none", "checkpoint", "parameters"):
-                    directory = root / f"{workers}-{memory_bytes}-{retention}"
-                    directory.mkdir()
-                    try:
-                        check(
-                            server, source, directory, workers, memory_bytes, retention
-                        )
-                    except AssertionError as error:
-                        failures.append((workers, memory_bytes, retention, str(error)))
+        for workers, memory_bytes, retention in cases:
+            directory = root / f"{workers}-{memory_bytes}-{retention}"
+            directory.mkdir()
+            try:
+                check(server, source, directory, workers, memory_bytes, retention)
+            except AssertionError as error:
+                failures.append((workers, memory_bytes, retention, str(error)))
     assert not failures, failures
 
 
+# Pairwise coverage across worker count, physical memory limit, and retained
+# state policy. The manual pressure_stress_test target retains the complete
+# Cartesian product for explicit stress qualification.
+_CASES = (
+    (1, 8 * 1024 * 1024, "none"),
+    (1, 4 * 1024 * 1024, "checkpoint"),
+    (1, 8 * 1024 * 1024, "parameters"),
+    (4, 4 * 1024 * 1024, "none"),
+    (4, 8 * 1024 * 1024, "checkpoint"),
+    (4, 4 * 1024 * 1024, "parameters"),
+)
+
+
 if __name__ == "__main__":
-    main()
+    run_from_command_line(_CASES)

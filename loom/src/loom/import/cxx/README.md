@@ -1011,6 +1011,37 @@ in the preheader and after each body/increment, preserving side effects and
 Discarded template arms are not instantiated. Outside templates, both arms
 remain subject to C++ source checking even though only one is imported.
 
+## Borrowed storage domains
+
+Buffer-root promises mirror the `buffer.assume.*` IR family under
+`loom::buffer::assume`: `noalias(source)`, `alignment<Bytes>(source)`, and
+`memory_space<Space>(source)`.
+
+`loom::buffer::assume::memory_space<Space>(source)` publishes an existing
+storage-domain contract to Loom. It accepts a pointer or `loom::type::buffer<T>`
+and returns the same source type, preserving element qualifiers, storage
+identity, and pointer byte origin. The operation neither allocates nor copies
+storage. All `loom::memory_space` values are admitted: `global`, `workgroup`,
+`private_`, `constant`, `host`, `descriptor`, and `generic`. Target lowering
+determines which domains are legal for the program.
+
+```cpp
+#include <loomcxx/buffer.h>
+
+unsigned read_immutable(const unsigned* input, unsigned index) {
+  // The caller keeps this input immutable through completion of every access.
+  auto* values = loom::buffer::assume::memory_space<loom::memory_space::constant>(input);
+  return values[index];
+}
+```
+
+The `constant` promise applies to the storage, including other aliases, rather
+than merely preventing writes through this C++ pointer. This lets target
+lowering keep immutable input reads separate from synchronized mutable
+publication buffers. Conflicting known storage domains are rejected. The
+promise preserves the original extent, alignment, and nullability facts; it
+does not establish any of them independently.
+
 ## Typed views and layouts
 
 `<loomcxx/view.h>` exposes Loom views without hiding their shape and encoding
@@ -1344,6 +1375,29 @@ independent asynchronous DMA. `loom::kernel::workgroup::barrier()` retains the
 HIP-style global-and-workgroup-memory contract. Native payload widths and
 synchronization support follow the corresponding High operations; source import
 does not split values or insert target-specific instructions.
+
+Subgroup and workgroup prefixes are available under
+`loom::kernel::{subgroup,workgroup}::scan`. Their combining names match High
+(`addi`, `addf`, `minsi`, `maxui`, and the other reduction kinds). The first
+two template arguments select `scan_mode::{inclusive,exclusive}` and
+`scan_direction::{forward,reverse}`; defaults are inclusive and forward.
+Subgroup scans additionally accept cluster size and stride after those two
+selectors. Workgroup reductions use `loom::kernel::workgroup::reduce`.
+
+```cpp
+using loom::kernel::scan_direction;
+using loom::kernel::scan_mode;
+auto offset = loom::kernel::workgroup::scan::addi<scan_mode::exclusive>(count);
+auto suffix = loom::kernel::subgroup::scan::addf<
+    scan_mode::inclusive, scan_direction::reverse>(value);
+```
+
+Each operation preserves its scalar or rank-one vector type; an explicit cast
+before the collective selects a wider accumulator. Signed and unsigned minimum
+and maximum kinds require matching source signedness. The compiler retains the
+operation's native scope, inclusivity, direction, and cluster attributes in
+ordinary bytecode. Target support and convergence follow the High collective
+contract, including participation by a partially occupied final subgroup.
 
 ## Target-selected template providers
 

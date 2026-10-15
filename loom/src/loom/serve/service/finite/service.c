@@ -13,6 +13,7 @@
 #include "loom/serve/runtime/host/timer.h"
 #include "loom/serve/runtime/host/wake.h"
 #include "loom/serve/service/execution_reconfiguration.h"
+#include "loom/serve/service/finite/result.h"
 #include "loom/util/json.h"
 
 typedef struct finite_job_t {
@@ -91,6 +92,8 @@ struct loom_serve_finite_service_t {
   loom_serve_finite_prepared_t* prepared;
   // Protocol result row counts captured alongside the cohort.
   iree_host_size_t* rows;
+  // Explicit host materialization retained through CPU encoding release.
+  loom_serve_finite_snapshot_t* snapshot;
   // Completion publication; callbacks only publish and wake.
   struct {
     // Joins final callback accesses with owner collection/destruction.
@@ -126,6 +129,8 @@ struct loom_serve_finite_service_t {
     bool owns_stream;
     // Cumulative work retained even when every event has been overwritten.
     loom_serve_telemetry_counters_t counters;
+    // Request latency distributions retained independently of log readers.
+    loom_serve_telemetry_latency_t latency;
   } telemetry;
 };
 
@@ -153,6 +158,9 @@ static void loom_serve_finite_request_end(
       .data.end = {.outcome = outcome,
                    .duration_ns = now - arrival_time,
                    .input_tokens = input_tokens}};
+  loom_serve_telemetry_latency_observe(
+      &service->telemetry.latency.outcomes[outcome],
+      record.data.end.duration_ns);
   loom_serve_telemetry_diagnostic_capture(status, &record.data.end.diagnostic);
   loom_serve_telemetry_stream_append(service->telemetry.stream, &record);
 }
@@ -276,6 +284,8 @@ static void loom_serve_finite_job_destroy(loom_serve_finite_service_t* service,
 
 static void loom_serve_finite_finish(loom_serve_finite_service_t* service,
                                      const iree_status_t terminal_status) {
+  loom_serve_finite_snapshot_release(service->snapshot);
+  service->snapshot = NULL;
   loom_serve_residency_cancel_admission(
       loom_serve_finite_model_residency(service->model));
   for (iree_host_size_t i = 0; i < service->cohort_count; ++i) {
@@ -289,17 +299,25 @@ static iree_status_t loom_serve_finite_cpu_run(
     iree_task_process_t* process, const iree_task_worker_context_t* context,
     iree_task_process_drain_result_t* result) {
   loom_serve_finite_service_t* service = process->user_data;
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_TEXT(z0, service->name.data, service->name.size);
+  IREE_TRACE_ZONE_APPEND_TEXT(z0, finite_phases[service->phase]);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(
+      z0,
+      loom_serve_telemetry_stream_identity(service->telemetry.stream).ordinal);
   result->completed = true;
   result->did_work = true;
   if (service->phase == FINITE_BATCHING) {
-    return loom_serve_finite_model_prepare_batch(
+    const iree_status_t status = loom_serve_finite_model_prepare_batch(
         service->model, service->cohort_count, service->prepared,
         service->rows);
+    IREE_RETURN_AND_END_ZONE(z0, status);
   }
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t i = 0;
        i < service->cohort_count && iree_status_is_ok(status); ++i) {
     finite_job_t* job = service->cohort[i];
+    IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, job->id);
     if (service->phase == FINITE_PREPARING) {
       if (job->prepared.bytes) {
         continue;
@@ -331,8 +349,8 @@ static iree_status_t loom_serve_finite_cpu_run(
       job->body = iree_string_view_empty();
     } else {
       for (iree_host_size_t row = 0; row < job->request->count; ++row) {
-        job->rows[row] =
-            loom_serve_finite_model_row(service->model, job->result_index, row);
+        job->rows[row] = loom_serve_finite_snapshot_row(service->snapshot,
+                                                        job->result_index, row);
       }
       status = loom_serve_finite_begin(&job->response, "200 OK");
       if (iree_status_is_ok(status)) {
@@ -342,6 +360,7 @@ static iree_status_t loom_serve_finite_cpu_run(
       }
     }
   }
+  IREE_TRACE_ZONE_END(z0);
   return status;
 }
 
@@ -385,8 +404,20 @@ static void loom_serve_finite_device_completed(
 
 static iree_status_t loom_serve_finite_submit(
     loom_serve_finite_service_t* service) {
-  IREE_RETURN_IF_ERROR(loom_serve_finite_model_submit(
-      service->model, &service->device.frontier));
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_TEXT(z0, service->name.data, service->name.size);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(
+      z0,
+      loom_serve_telemetry_stream_identity(service->telemetry.stream).ordinal);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, service->telemetry.counters.batches + 1);
+  loom_serve_finite_result_t* result = NULL;
+  IREE_RETURN_AND_END_ZONE_IF_ERROR(
+      z0, loom_serve_finite_model_submit(service->model, &result,
+                                         &service->device.frontier));
+  iree_status_t status = loom_serve_finite_result_download(
+      result, &service->snapshot, &service->device.frontier);
+  loom_serve_finite_result_release(result);
+  IREE_RETURN_AND_END_ZONE_IF_ERROR(z0, status);
   iree_async_semaphore_wait_operation_t* wait = &service->device.operation;
   memset(wait, 0, sizeof(*wait));
   iree_async_operation_initialize(&wait->base,
@@ -401,11 +432,12 @@ static iree_status_t loom_serve_finite_submit(
   wait->values = service->device.frontier.values;
   wait->count = 2;
   wait->mode = IREE_ASYNC_WAIT_MODE_ALL;
-  IREE_RETURN_IF_ERROR(
-      iree_async_proactor_submit_one(service->proactor, &wait->base));
+  IREE_RETURN_AND_END_ZONE_IF_ERROR(
+      z0, iree_async_proactor_submit_one(service->proactor, &wait->base));
   service->phase = FINITE_RUNNING;
   loom_serve_finite_batch_event(service, &LOOM_SERVE_TELEMETRY_BATCH_SUBMIT,
                                 service->telemetry.counters.batches + 1);
+  IREE_TRACE_ZONE_END(z0);
   return iree_ok_status();
 }
 
@@ -559,13 +591,20 @@ static void loom_serve_finite_cancel_peers(
 
 static void loom_serve_finite_complete_execution(
     loom_serve_finite_service_t* service) {
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_TEXT(z0, service->name.data, service->name.size);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(
+      z0,
+      loom_serve_telemetry_stream_identity(service->telemetry.stream).ordinal);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, service->telemetry.counters.batches + 1);
   loom_serve_finite_model_complete(service->model);
   loom_serve_finite_batch_event(service, &LOOM_SERVE_TELEMETRY_BATCH_END,
                                 ++service->telemetry.counters.batches);
   iree_host_size_t retained = 0;
   for (iree_host_size_t i = 0; i < service->cohort_count; ++i) {
     finite_job_t* job = service->cohort[i];
-    job->input_tokens = loom_serve_finite_model_input_tokens(service->model, i);
+    job->input_tokens =
+        loom_serve_finite_snapshot_input_tokens(service->snapshot, i);
     service->telemetry.counters.input_tokens += job->input_tokens;
     if (!job->connection) {
       loom_serve_finite_job_destroy(service, job, iree_ok_status());
@@ -581,9 +620,9 @@ static void loom_serve_finite_complete_execution(
   if (retained) {
     loom_serve_finite_schedule_cpu(service, FINITE_ENCODING);
   } else {
-    loom_serve_finite_model_release_batch(service->model);
     loom_serve_finite_finish(service, iree_ok_status());
   }
+  IREE_TRACE_ZONE_END(z0);
 }
 
 static iree_status_t loom_serve_finite_collect(
@@ -624,10 +663,14 @@ static iree_status_t loom_serve_finite_collect(
         job->outcome = loom_serve_finite_send(
             job->connection, iree_string_builder_view(&job->response),
             &job->status);
+        if (job->outcome == LOOM_SERVE_TELEMETRY_COMPLETED) {
+          loom_serve_telemetry_latency_publish_output(
+              &service->telemetry.latency, service->telemetry.stream, job->id,
+              job->arrival_time);
+        }
         job->connection = NULL;
       }
     }
-    loom_serve_finite_model_release_batch(service->model);
     loom_serve_finite_finish(service, iree_ok_status());
   }
   return status;
@@ -815,7 +858,8 @@ loom_serve_http_service_t loom_serve_finite_service_interface(
       .capacity_domain = loom_serve_residency_cache(
           loom_serve_finite_model_residency(service->model)),
       .telemetry = {.stream = service->telemetry.stream,
-                    .counters = &service->telemetry.counters}};
+                    .counters = &service->telemetry.counters,
+                    .latency = &service->telemetry.latency}};
 }
 
 void loom_serve_finite_service_free(loom_serve_finite_service_t* service) {

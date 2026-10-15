@@ -10,6 +10,18 @@
 
 #include "iree/base/internal/math.h"
 
+// Float type ordinals 8 through 13 are encoded in fact flag bits 14 through
+// 19. Integer facts use the same physical bits for mutually exclusive topology
+// domains; LOOM_VALUE_FACT_FLOAT selects the interpretation.
+#define LOOM_VALUE_FACT_EXACT_FLOAT_TYPE_SHIFT 6
+#define LOOM_VALUE_FACT_EXACT_FLOAT_TYPE_MASK          \
+  ((loom_value_fact_flags_t)LOOM_SCALAR_TYPE_SET_FLOAT \
+   << LOOM_VALUE_FACT_EXACT_FLOAT_TYPE_SHIFT)
+
+static_assert((LOOM_VALUE_FACT_EXACT_FLOAT_TYPE_MASK &
+               ~LOOM_VALUE_FACT_TOPOLOGY_DOMAIN_MASK) == 0,
+              "exact float type set must share topology-only flag bits");
+
 // Computes flags from integer range facts. Does not set floating-point, float
 // predicate, or execution distribution flags; those are preserved by the caller
 // when appropriate.
@@ -120,7 +132,8 @@ void loom_value_facts_meet_float(const loom_value_facts_t* a,
                  (lhs.flags & rhs.flags &
                   (LOOM_VALUE_FACT_NAN | LOOM_VALUE_FACT_INF |
                    LOOM_VALUE_FACT_NOT_NAN | LOOM_VALUE_FACT_NOT_INF |
-                   LOOM_VALUE_FACT_FINITE | LOOM_VALUE_FACT_NOT_SUBNORMAL));
+                   LOOM_VALUE_FACT_FINITE | LOOM_VALUE_FACT_NOT_SUBNORMAL |
+                   LOOM_VALUE_FACT_EXACT_FLOAT_TYPE_MASK));
 
     double lhs_lo = 0.0;
     double lhs_hi = 0.0;
@@ -289,6 +302,9 @@ static const loom_value_fact_topology_domain_t kValueFactTopologyDomains[] = {
 
 const loom_value_fact_topology_domain_t*
 loom_value_fact_topology_domain_from_flags(loom_value_fact_flags_t flags) {
+  if (iree_any_bit_set(flags, LOOM_VALUE_FACT_FLOAT)) {
+    return NULL;
+  }
   flags &= LOOM_VALUE_FACT_TOPOLOGY_DOMAIN_MASK;
   if (flags == 0 || (flags & (flags - 1)) != 0) {
     return NULL;
@@ -325,6 +341,9 @@ bool loom_value_facts_mark_topology_domain(
     loom_value_facts_t* facts, loom_value_fact_topology_value_kind_t value_kind,
     loom_value_fact_topology_axis_t axis) {
   IREE_ASSERT_ARGUMENT(facts);
+  if (loom_value_facts_is_float(*facts)) {
+    return false;
+  }
   const loom_value_fact_topology_domain_t* domain =
       loom_value_fact_topology_domain_lookup(value_kind, axis);
   if (!domain) {
@@ -333,6 +352,26 @@ bool loom_value_facts_mark_topology_domain(
   facts->flags &= ~LOOM_VALUE_FACT_TOPOLOGY_DOMAIN_MASK;
   facts->flags |= domain->fact_flag;
   return true;
+}
+
+loom_scalar_type_set_t loom_value_facts_exact_float_types(
+    loom_value_facts_t facts) {
+  if (!loom_value_facts_is_float(facts)) {
+    return LOOM_SCALAR_TYPE_SET_NONE;
+  }
+  return (loom_scalar_type_set_t)((facts.flags &
+                                   LOOM_VALUE_FACT_EXACT_FLOAT_TYPE_MASK) >>
+                                  LOOM_VALUE_FACT_EXACT_FLOAT_TYPE_SHIFT);
+}
+
+void loom_value_facts_set_exact_float_types(loom_value_facts_t* facts,
+                                            loom_scalar_type_set_t types) {
+  IREE_ASSERT_ARGUMENT(facts);
+  IREE_ASSERT(loom_value_facts_is_float(*facts),
+              "exact float types require a floating-point fact");
+  facts->flags &= ~LOOM_VALUE_FACT_EXACT_FLOAT_TYPE_MASK;
+  facts->flags |= ((loom_value_fact_flags_t)(types & LOOM_SCALAR_TYPE_SET_FLOAT)
+                   << LOOM_VALUE_FACT_EXACT_FLOAT_TYPE_SHIFT);
 }
 
 loom_value_facts_t loom_value_facts_clamp_domain(loom_value_facts_t facts,
@@ -1511,140 +1550,6 @@ void loom_value_facts_rotri(const loom_value_facts_t* lhs,
                             const loom_value_facts_t* rhs, int32_t bit_count,
                             loom_value_facts_t* out) {
   loom_value_facts_rotate(lhs, rhs, bit_count, /*rotate_left=*/false, out);
-}
-
-//===----------------------------------------------------------------------===//
-// Transfer functions: bitwise
-//===----------------------------------------------------------------------===//
-
-// OR and XOR cannot introduce bits above either nonnegative operand's highest
-// possible set bit. Filling the lower bits is necessary: combining just the
-// endpoints would miss results such as 7 | 8 from two [0, 8] ranges. The signed
-// nonnegative domain limits bit_count to 63, including an INT64_MAX endpoint.
-static int64_t loom_value_facts_non_negative_bitwise_upper_bound(
-    int64_t lhs_hi, int64_t rhs_hi) {
-  uint64_t maximum_operand = (uint64_t)iree_max(lhs_hi, rhs_hi);
-  if (maximum_operand == 0) {
-    return 0;
-  }
-  uint32_t bit_count =
-      64u - (uint32_t)iree_math_count_leading_zeros_u64(maximum_operand);
-  return (int64_t)((UINT64_C(1) << bit_count) - 1);
-}
-
-static void loom_value_facts_propagate_bitwise_flags(
-    const loom_value_facts_t* lhs, const loom_value_facts_t* rhs,
-    loom_value_facts_t* out) {
-  const bool preserves_subgroup_lane_mask =
-      (loom_value_facts_is_subgroup_lane_mask(*lhs) &&
-       loom_value_facts_is_subgroup_lane_mask(*rhs)) ||
-      (loom_value_facts_is_subgroup_lane_mask(*lhs) &&
-       loom_value_facts_is_zero(*rhs)) ||
-      (loom_value_facts_is_zero(*lhs) &&
-       loom_value_facts_is_subgroup_lane_mask(*rhs));
-  if (preserves_subgroup_lane_mask) {
-    loom_value_facts_mark_subgroup_lane_mask(out);
-  }
-
-  loom_value_facts_propagate_binary_distribution(*lhs, *rhs, out);
-}
-
-void loom_value_facts_andi(const loom_value_facts_t* lhs,
-                           const loom_value_facts_t* rhs,
-                           loom_value_facts_t* out) {
-  const loom_value_facts_t lhs_facts = *lhs;
-  const loom_value_facts_t rhs_facts = *rhs;
-  int64_t lhs_lo = lhs_facts.range_lo, lhs_hi = lhs_facts.range_hi;
-  int64_t rhs_lo = rhs_facts.range_lo, rhs_hi = rhs_facts.range_hi;
-
-  // Exact folding.
-  if (lhs_lo == lhs_hi && rhs_lo == rhs_hi) {
-    *out = loom_value_facts_exact_i64(lhs_lo & rhs_lo);
-    loom_value_facts_propagate_bitwise_flags(&lhs_facts, &rhs_facts, out);
-    return;
-  }
-  // AND preserves every trailing zero bit proven on either input. Arbitrary
-  // odd divisors do not survive masking, so retain only power-of-two factors.
-  int64_t lhs_divisor = lhs_facts.known_divisor & -lhs_facts.known_divisor;
-  int64_t rhs_divisor = rhs_facts.known_divisor & -rhs_facts.known_divisor;
-  int64_t divisor = iree_max(lhs_divisor, rhs_divisor);
-
-  // Any nonnegative operand clears the sign bit and bounds the result, even
-  // when the other operand is a negative mask.
-  int64_t lo = INT64_MIN;
-  int64_t hi = INT64_MAX;
-  if (lhs_lo >= 0) {
-    lo = 0;
-    hi = lhs_hi;
-  }
-  if (rhs_lo >= 0) {
-    lo = 0;
-    hi = iree_min(hi, rhs_hi);
-  }
-  // Below the first possible set bit, the only multiple of divisor is zero.
-  if (lo == 0 && hi < divisor) {
-    hi = 0;
-  }
-  *out = loom_value_facts_make(lo, hi, divisor);
-  loom_value_facts_propagate_bitwise_flags(&lhs_facts, &rhs_facts, out);
-}
-
-void loom_value_facts_ori(const loom_value_facts_t* lhs,
-                          const loom_value_facts_t* rhs,
-                          loom_value_facts_t* out) {
-  const loom_value_facts_t lhs_facts = *lhs;
-  const loom_value_facts_t rhs_facts = *rhs;
-  int64_t lhs_lo = lhs_facts.range_lo, lhs_hi = lhs_facts.range_hi;
-  int64_t rhs_lo = rhs_facts.range_lo;
-  int64_t rhs_hi = rhs_facts.range_hi;
-
-  // Exact folding.
-  if (lhs_lo == lhs_hi && rhs_lo == rhs_hi) {
-    *out = loom_value_facts_exact_i64(lhs_lo | rhs_lo);
-    loom_value_facts_propagate_bitwise_flags(&lhs_facts, &rhs_facts, out);
-    return;
-  }
-
-  // OR retains each nonnegative operand's set bits without introducing bits
-  // above the wider operand's bound.
-  if (lhs_lo >= 0 && rhs_lo >= 0) {
-    *out = loom_value_facts_make(
-        iree_max(lhs_lo, rhs_lo),
-        loom_value_facts_non_negative_bitwise_upper_bound(lhs_hi, rhs_hi), 1);
-  } else {
-    *out = loom_value_facts_unknown();
-  }
-  // A set bit survives OR regardless of sign or how nonzero was established.
-  if (loom_value_facts_is_non_zero(lhs_facts) ||
-      loom_value_facts_is_non_zero(rhs_facts)) {
-    out->flags |= LOOM_VALUE_FACT_NON_ZERO;
-  }
-  loom_value_facts_propagate_bitwise_flags(&lhs_facts, &rhs_facts, out);
-}
-
-void loom_value_facts_xori(const loom_value_facts_t* lhs,
-                           const loom_value_facts_t* rhs,
-                           loom_value_facts_t* out) {
-  const loom_value_facts_t lhs_facts = *lhs;
-  const loom_value_facts_t rhs_facts = *rhs;
-  int64_t lhs_lo = lhs_facts.range_lo, lhs_hi = lhs_facts.range_hi;
-  int64_t rhs_lo = rhs_facts.range_lo, rhs_hi = rhs_facts.range_hi;
-
-  // Exact folding.
-  if (lhs_lo == lhs_hi && rhs_lo == rhs_hi) {
-    *out = loom_value_facts_exact_i64(lhs_lo ^ rhs_lo);
-    loom_value_facts_propagate_bitwise_flags(&lhs_facts, &rhs_facts, out);
-    return;
-  }
-  if (lhs_lo >= 0 && rhs_lo >= 0) {
-    *out = loom_value_facts_make(
-        0, loom_value_facts_non_negative_bitwise_upper_bound(lhs_hi, rhs_hi),
-        1);
-    loom_value_facts_propagate_bitwise_flags(&lhs_facts, &rhs_facts, out);
-    return;
-  }
-  *out = loom_value_facts_unknown();
-  loom_value_facts_propagate_bitwise_flags(&lhs_facts, &rhs_facts, out);
 }
 
 //===----------------------------------------------------------------------===//

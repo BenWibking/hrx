@@ -242,6 +242,7 @@ loom_cc_library(
     iree::base
     iree::vm
     iree::vm::bytecode::module
+    loom::binding::c::loomc
   PUBLIC
 )
 
@@ -259,6 +260,30 @@ loom_cc_library(
     iree::vm
   PUBLIC
 )
+
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_test(
+  NAME
+    program_test
+  SRCS
+    "program_test.cc"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/testdata/binding.loom"
+  DEPS
+    ::input
+    ::program
+    iree::base
+    iree::base::tooling::flags
+    iree::module::hal::types
+    iree::testing::gtest
+    iree::testing::gtest_main
+    iree::vm
+    loom::binding::c::loomc
+    loom::binding::c::target::vm
+  ARGS
+    "--binding_source={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/testdata/binding.loom}}"
+)
+endif()
 
 loom_cc_library(
   NAME
@@ -327,6 +352,8 @@ loom_cc_test(
     iree::tokenizer
     iree::tokenizer::format::huggingface::tokenizer_json
     iree::vm
+    loom::binding::c::loomc
+    loom::binding::c::target::vm
   ARGS
     "--input_source={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/testdata/input/control.loom}}"
 )
@@ -348,6 +375,7 @@ loom_cc_test(
     iree::testing::gtest_main
     iree::vm
     loom::binding::c::loomc
+    loom::binding::c::target::vm
   ARGS
     "--boundary_source={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/program/testdata/preparation/boundaries.loom}}"
 )

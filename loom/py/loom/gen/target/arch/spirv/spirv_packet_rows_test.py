@@ -83,7 +83,11 @@ from loom.target.arch.spirv.scalar_memory import (
     RAW_STORAGE_BUFFER_BYTE,
     STORAGE_BUFFER_SCALARS,
 )
-from loom.target.arch.spirv.subgroup import SPIRV_SUBGROUP_REDUCTIONS
+from loom.target.arch.spirv.subgroup import (
+    SPIRV_SUBGROUP_ARITHMETIC,
+    SPIRV_SUBGROUP_BALLOT_BIT_EXTRACT_INSTRUCTION,
+    SPIRV_SUBGROUP_SHUFFLES,
+)
 from loom.target.low_descriptors import Descriptor, ImmediateFlag, ImmediateKind
 
 
@@ -125,10 +129,10 @@ def test_generation_emits_the_complete_control_barrier_family() -> None:
         assert row.memory_semantics == case.memory_semantics
 
 
-def test_subgroup_reductions_retain_group_mode_and_cluster_operand() -> None:
+def test_subgroup_arithmetic_retains_group_mode_and_cluster_operand() -> None:
     rows = {row.descriptor_key: row for row in _packet_rows()}
-    for reduction in SPIRV_SUBGROUP_REDUCTIONS:
-        instruction = reduction.instruction
+    for arithmetic in SPIRV_SUBGROUP_ARITHMETIC:
+        instruction = arithmetic.instruction
         row = rows[instruction.key]
         assert row.form == "LOOM_SPIRV_PACKET_FORM_GROUP_NON_UNIFORM_ARITHMETIC"
         assert row.group_operation == instruction.group_operation
@@ -136,6 +140,33 @@ def test_subgroup_reductions_retain_group_mode_and_cluster_operand() -> None:
         assert row.immediate_count == int(instruction.clustered)
         assert row.result_count == 1
         assert row.operand_types == (row.result_type,)
+
+
+def test_subgroup_shuffle_rows_retain_both_typed_operands() -> None:
+    rows = {row.descriptor_key: row for row in _packet_rows()}
+    for shuffle in SPIRV_SUBGROUP_SHUFFLES:
+        instruction = shuffle.instruction
+        row = rows[instruction.key]
+        assert row.form == "LOOM_SPIRV_PACKET_FORM_GROUP_NON_UNIFORM_BINARY"
+        assert row.group_operation_scope == "LOOM_SPIRV_SCOPE_SUBGROUP"
+        assert row.group_operation is None
+        assert row.immediate_count == 0
+        assert row.result_count == 1
+        assert len(row.operand_types) == 2
+        assert row.operand_types[0] == row.result_type
+        assert "SCALAR_TYPE_U32" in row.operand_types[1]
+
+
+def test_subgroup_ballot_bit_extract_retains_mask_and_lane_operands() -> None:
+    row = _packet_row(SPIRV_SUBGROUP_BALLOT_BIT_EXTRACT_INSTRUCTION.key)
+    assert row.form == "LOOM_SPIRV_PACKET_FORM_GROUP_NON_UNIFORM_BINARY"
+    assert row.group_operation_scope == "LOOM_SPIRV_SCOPE_SUBGROUP"
+    assert row.group_operation is None
+    assert row.immediate_count == 0
+    assert row.result_count == 1
+    instruction = SPIRV_SUBGROUP_BALLOT_BIT_EXTRACT_INSTRUCTION
+    assert row.result_type == _expected_ordinary_vector_value(instruction.result_type)
+    assert row.operand_types == tuple(_expected_ordinary_vector_value(operand_type) for operand_type in instruction.operand_types)
 
 
 def _packet_value_types(row: _PacketRow) -> tuple[str, ...]:
@@ -598,7 +629,7 @@ def test_generation_emits_complete_ordinary_vector_structural_matrix() -> None:
     packet_rows_by_key = {row.descriptor_key: row for row in _packet_rows() if row.descriptor_key in {instruction.key for instruction in ORDINARY_VECTOR_INSTRUCTIONS}}
 
     assert len(ORDINARY_VECTOR_TYPES) == 30
-    assert len(ORDINARY_VECTOR_INSTRUCTIONS) == 120
+    assert len(ORDINARY_VECTOR_INSTRUCTIONS) == 180
     assert len(packet_rows_by_key) == len(ORDINARY_VECTOR_INSTRUCTIONS)
     assert ('static_assert(LOOM_SPIRV_PACKET_MAX_OPERAND_COUNT == 4, "generated packet operand maximum");') in tables
     assert ('static_assert(LOOM_SPIRV_PACKET_OPERAND_TYPE_CAPACITY == 3, "generated packet operand-type capacity");') in tables
@@ -610,6 +641,8 @@ def test_generation_emits_complete_ordinary_vector_structural_matrix() -> None:
         construct_key = f"spirv.op_composite_construct.{vector_type.suffix}"
         extract_key = f"spirv.op_composite_extract.{vector_type.suffix}.{component_type.suffix}"
         insert_key = f"spirv.op_composite_insert.{component_type.suffix}.{vector_type.suffix}"
+        dynamic_extract_key = f"spirv.op_vector_extract_dynamic.{vector_type.suffix}.{component_type.suffix}"
+        dynamic_insert_key = f"spirv.op_vector_insert_dynamic.{component_type.suffix}.{vector_type.suffix}"
         select_key = f"spirv.op_select.{vector_type.suffix}"
 
         construct = packet_rows_by_key[construct_key]
@@ -630,6 +663,25 @@ def test_generation_emits_complete_ordinary_vector_structural_matrix() -> None:
         assert "LOOM_SPIRV_PACKET_FORM_COMPOSITE_INSERT" in insert
         assert ".operand_count = 2" in insert
 
+        dynamic_extract = packet_rows_by_key[dynamic_extract_key]
+        assert dynamic_extract.opcode == "LOOM_SPIRV_OP_VECTOR_EXTRACT_DYNAMIC"
+        assert dynamic_extract.form == "LOOM_SPIRV_PACKET_FORM_TYPED"
+        assert dynamic_extract.result_type == _expected_ordinary_vector_value(component_type)
+        assert dynamic_extract.operand_types == (
+            _expected_ordinary_vector_value(vector_type),
+            "{.value_class = LOOM_SPIRV_VALUE_CLASS_SCALAR, .scalar_type = LOOM_SPIRV_SCALAR_TYPE_S32}",
+        )
+
+        dynamic_insert = packet_rows_by_key[dynamic_insert_key]
+        assert dynamic_insert.opcode == "LOOM_SPIRV_OP_VECTOR_INSERT_DYNAMIC"
+        assert dynamic_insert.form == "LOOM_SPIRV_PACKET_FORM_TYPED"
+        assert dynamic_insert.result_type == _expected_ordinary_vector_value(vector_type)
+        assert dynamic_insert.operand_types == (
+            _expected_ordinary_vector_value(vector_type),
+            _expected_ordinary_vector_value(component_type),
+            "{.value_class = LOOM_SPIRV_VALUE_CLASS_SCALAR, .scalar_type = LOOM_SPIRV_SCALAR_TYPE_S32}",
+        )
+
         select = packet_rows_by_key[select_key]
         assert select.opcode == "LOOM_SPIRV_OP_SELECT"
         assert select.form == "LOOM_SPIRV_PACKET_FORM_SELECT"
@@ -637,7 +689,14 @@ def test_generation_emits_complete_ordinary_vector_structural_matrix() -> None:
         assert len(select.operand_types) == 3
 
         expected_features = (component_type.feature_bits,) if component_type.feature_bits else ()
-        for descriptor_key in (construct_key, extract_key, insert_key, select_key):
+        for descriptor_key in (
+            construct_key,
+            extract_key,
+            insert_key,
+            dynamic_extract_key,
+            dynamic_insert_key,
+            select_key,
+        ):
             assert _descriptor(descriptor_key).feature_mask_words == expected_features
 
         component_index_maximum = vector_type.lane_count - 1
@@ -664,15 +723,17 @@ def test_generation_emits_complete_ordinary_vector_structural_matrix() -> None:
 
 def test_generation_emits_complete_ordinary_vector_shuffle_matrix() -> None:
     rows = {row.descriptor_key: row for row in _packet_rows() if row.descriptor_key in {instruction.key for instruction in ORDINARY_VECTOR_SHUFFLE_INSTRUCTIONS}}
-    assert len(rows) == len(ORDINARY_VECTOR_SHUFFLE_INSTRUCTIONS) == 30
+    assert len(rows) == len(ORDINARY_VECTOR_SHUFFLE_INSTRUCTIONS) == 70
 
     for instruction in ORDINARY_VECTOR_SHUFFLE_INSTRUCTIONS:
         row = rows[instruction.key]
-        source_value = _expected_ordinary_vector_value(instruction.source_type)
         assert row.opcode == instruction.opcode
         assert row.form == instruction.packet_form
         assert row.result_type == _expected_ordinary_vector_value(instruction.result_type)
-        assert row.operand_types == (source_value, source_value)
+        assert row.operand_types == (
+            _expected_ordinary_vector_value(instruction.source0_type),
+            _expected_ordinary_vector_value(instruction.source1_type),
+        )
         assert row.immediate_count == instruction.result_type.lane_count
 
 

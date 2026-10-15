@@ -1259,6 +1259,26 @@ static iree_status_t loom_low_lower_rule_guard_matches(
           match_context, rule_set, source_op,
           guard->selector.value.value_ref_index);
       return iree_ok_status();
+    case LOOM_LOW_LOWER_GUARD_VALUE_FLOAT_EXACTLY_REPRESENTABLE_AS: {
+      if (!match_context->fact_table) {
+        *out_matches = false;
+        return iree_ok_status();
+      }
+      const loom_value_id_t value_id = loom_low_lower_rule_source_value(
+          match_context->module, rule_set, source_op,
+          guard->selector.value.value_ref_index);
+      const loom_value_id_t type_value_id = loom_low_lower_rule_source_value(
+          match_context->module, rule_set, source_op,
+          guard->selector.value.other_value_ref_index);
+      const loom_scalar_type_t destination_type = loom_type_element_type(
+          loom_module_value_type(match_context->module, type_value_id));
+      const loom_value_facts_t facts =
+          loom_value_fact_table_lookup(match_context->fact_table, value_id);
+      *out_matches =
+          loom_value_facts_is_finite(facts) &&
+          loom_value_facts_is_exact_float_type(facts, destination_type);
+      return iree_ok_status();
+    }
     case LOOM_LOW_LOWER_GUARD_VALUE_EXACT_POWER_OF_TWO_FLOAT: {
       const loom_low_lower_guard_payload_t* payload =
           loom_low_lower_rule_set_guard_payload(rule_set, guard);
@@ -1314,6 +1334,16 @@ static iree_status_t loom_low_lower_rule_guard_matches(
           guard->selector.value.value_ref_index,
           guard->selector.value.other_value_ref_index);
       return iree_ok_status();
+    case LOOM_LOW_LOWER_GUARD_VALUE_I64_EQUALS_TARGET_SUBGROUP_SIZE: {
+      const uint32_t subgroup_size =
+          match_context->bundle->snapshot->subgroup_size;
+      *out_matches = subgroup_size != 0 &&
+                     loom_low_lower_rule_value_facts_i64_range(
+                         match_context, rule_set, source_op,
+                         guard->selector.value.value_ref_index,
+                         (int64_t)subgroup_size, (int64_t)subgroup_size);
+      return iree_ok_status();
+    }
     case LOOM_LOW_LOWER_GUARD_VALUE_FLOAT_EQUALS:
       *out_matches = loom_low_lower_rule_value_facts_float_equals(
           match_context, rule_set, source_op,

@@ -863,6 +863,7 @@ if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_
 loom_execution_test(
   NAME
     indirection_access_test_execute_amdgpu_access_test
+  CORRECTNESS_ONLY
   MODULE
     "::indirection_access_test_module"
   RUNNER_ARGS
@@ -877,6 +878,61 @@ loom_execution_test(
     "iree-run-requirement=runtime.resource.amd_gpu"
     "runtime-resource=amd-gpu"
     "loom-execution-profile=amdgpu_access"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    checked_benchmark_workload_test_execute_amdgpu_hardware_test
+  MODULE
+    "loom::test::corpus::checked_benchmarks::checked_benchmark_workload_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+  LABELS
+    "manual"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    authoring_benchmark_workload_test_execute_amdgpu_hardware_test
+  MODULE
+    "loom::test::corpus::authoring::authoring_benchmark_workload_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--config=mlp_down_projection_residual_bf16.row_capacity=3584"
+  LABELS
+    "manual"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware"
     "loom-target-family=amdgpu"
     "loom-target-class=gpu"
     "loom-executor=hardware"
@@ -1097,8 +1153,28 @@ iree_execution_test_suite(
     "iree-test-loom=loom::tools::iree-test-loom"
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/check_requirements.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/check_requirements_invalid.loom"
   LABELS
     "hostonly"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+iree_execution_test_suite(
+  NAME
+    check_target_requirements_test
+  MANIFESTS
+    "check-target-requirements.test.json"
+  TOOLS
+    "iree-benchmark-loom=loom::tools::iree-benchmark-loom"
+    "iree-test-loom=loom::tools::iree-test-loom"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/check_target_requirements.loom"
+  LABELS
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+  RESOURCE_GROUP
+    gpu-device
 )
 endif()
 

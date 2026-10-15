@@ -961,6 +961,17 @@ _BASE_DESCRIPTOR_SPECS = (
         storage_overrides=(("dst", "mBMs"), ("acc1", "mBMs")),
         asm_mnemonic="vmac.bf16x32",
     ),
+    # Packet dot products observe the low sixteen accumulator lanes. The
+    # instruction still clobbers every destination quarter.
+    _DescriptorSpec(
+        "VMAC_f_vmac_bf_vmul_bf_core_X_X",
+        f"{_TARGET_KEY}.accumulate.bf16x16.configured",
+        "floating.accumulate.bf16x16.configured",
+        "II_VMAC_f_vmac_bf_vmul_bf_core_X_X",
+        storage_overrides=(("dst", "mBMs"), ("acc1", "eBMLL")),
+        encoding_adapter_overrides=(("acc1", "LOOM_eBMLL_eDM"),),
+        asm_mnemonic="vmac.bf16x16",
+    ),
     _DescriptorSpec(
         "VEXTBCST_128_vec_extract_broadcast_imm",
         f"{_TARGET_KEY}.broadcast.bf16x8.to.bf16x32",
@@ -1496,6 +1507,16 @@ _BASE_DESCRIPTOR_SPECS = (
         "integer.insert.i64",
         "II_VINSERT_64_mR29_insert",
         asm_mnemonic="vinsert.64.reg",
+    ),
+    *(
+        _DescriptorSpec(
+            f"VPUSH_{direction}_{width}",
+            f"{_TARGET_KEY}.push.{direction}.i{width}",
+            f"integer.push.{direction}.i{width}",
+            f"II_VPUSH_{direction}_{width}",
+        )
+        for direction in ("hi", "lo")
+        for width in (8, 16, 32, 64)
     ),
     *_vector_memory_descriptor_specs(),
     # Each gather selects four pointers from one 256-bit vector and returns

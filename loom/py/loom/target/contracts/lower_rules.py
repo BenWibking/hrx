@@ -71,6 +71,7 @@ from loom.target.contracts.lower_rule_diagnostics import (
     _enum_attr_diagnostic,
     _enum_attr_set_diagnostic,
     _exact_float_diagnostic,
+    _exact_float_type_diagnostic,
     _exact_integer_diagnostic,
     _exact_power_of_two_float_diagnostic,
     _exact_power_of_two_integer_diagnostic,
@@ -1096,12 +1097,14 @@ class _LowerRuleSetCompiler:
             GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_I32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_EXACT_FLOAT,
+            GuardKind.VALUE_FLOAT_EXACTLY_REPRESENTABLE_AS,
             GuardKind.VALUE_EXACT_POWER_OF_TWO_FLOAT,
             GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_NOT_SUBNORMAL_OR_INSTANCE_FLAGS_HAS_ALL,
             GuardKind.VALUE_I64_RANGE,
             GuardKind.VALUE_I64_RANGE_LE,
             GuardKind.VALUE_I64_RANGE_GE,
+            GuardKind.VALUE_I64_EQUALS_TARGET_SUBGROUP_SIZE,
             GuardKind.VALUE_FLOAT_EQUALS,
             GuardKind.VALUE_STORAGE_ELEMENT_FORMAT,
             GuardKind.VALUE_STORAGE_OPERAND_SCHEMA,
@@ -1365,6 +1368,31 @@ class _LowerRuleSetCompiler:
                 LowerGuard(kind=guard.kind, value_ref_index=value_ref_index)
             )
             return
+        if guard.kind == GuardKind.VALUE_FLOAT_EXACTLY_REPRESENTABLE_AS:
+            if guard.other_field is None:
+                raise ValueError(
+                    f"{source_op.name}: exact float-type guard needs a type value"
+                )
+            self._guards.append(
+                LowerGuard(
+                    kind=guard.kind,
+                    value_ref_index=value_ref_index,
+                    other_value_ref_index=self._append_value_ref(
+                        source_op,
+                        _value_ref_for_source_field(source_op, guard.other_field),
+                    ),
+                    diagnostic_index=self._append_diagnostic_ref(
+                        source_op,
+                        _guard_diagnostic(
+                            guard,
+                            _exact_float_type_diagnostic(
+                                guard.field, guard.other_field
+                            ),
+                        ),
+                    ),
+                )
+            )
+            return
         if guard.kind in (
             GuardKind.VALUE_SIGNED_BIT_COUNT,
             GuardKind.VALUE_UNSIGNED_BIT_COUNT,
@@ -1563,6 +1591,25 @@ class _LowerRuleSetCompiler:
                     ),
                     minimum_i64=guard.minimum,
                     maximum_i64=guard.maximum,
+                )
+            )
+            return
+        if guard.kind == GuardKind.VALUE_I64_EQUALS_TARGET_SUBGROUP_SIZE:
+            self._guards.append(
+                LowerGuard(
+                    kind=guard.kind,
+                    value_ref_index=value_ref_index,
+                    diagnostic_index=self._append_diagnostic_ref(
+                        source_op,
+                        _guard_diagnostic(
+                            guard,
+                            _named_constraint_diagnostic(
+                                "value_fact",
+                                guard.field,
+                                "equals_target_subgroup_size",
+                            ),
+                        ),
+                    ),
                 )
             )
             return

@@ -222,8 +222,9 @@ class ControlTest
     const iree_string_view_t roots[] = {IREE_SVL("step"), IREE_SVL("fork")};
     const loom_serve_sources_t sources = {.base_directory = IREE_SV(".")};
     IREE_RETURN_IF_ERROR(loom_serve_jit_compile_vm(
-        &sources, iree_make_cstring_view(path.c_str()), IREE_ARRAYSIZE(roots),
-        roots, &compilation_, host_allocator_, &image));
+        loom_serve_host_target_environment(host_), &sources,
+        iree_make_cstring_view(path.c_str()), IREE_ARRAYSIZE(roots), roots,
+        &compilation_, host_allocator_, &image));
     iree_status_t status = iree_vm_bytecode_module_create_trusted(
         environment_, IREE_SV("model"), {image, host_allocator_},
         host_allocator_, &bytecode_module_);
@@ -355,7 +356,7 @@ class ControlTest
   // One source index and compiler for all prepared control stages.
   loom_serve_jit_t* jit_ = nullptr;
   // Cached stage commands and the device-owned continuation loop.
-  std::array<iree_hal_command_buffer_t*, 3> commands_ = {};
+  std::array<iree_hal_command_buffer_t*, 4> commands_ = {};
   // Two independently retained session states.
   std::array<std::array<iree_hal_buffer_t*, 3>, 2> buffers_ = {};
   // Persistent host upload storage, never recycled ahead of completion.
@@ -393,6 +394,25 @@ class ControlTest
   // Cold-resolved entry used without string lookup on every step.
   iree_vm_function_t step_ = iree_vm_function_null();
 };
+
+TEST_P(ControlTest, TargetFactsConfigureWorkgroupCounts) {
+  const auto* family = iree_hal_queue_family(
+      SelectQueue(device_, IREE_HAL_QUEUE_FAMILY_ROLE_FLAG_DISPATCH));
+  IREE_ASSERT_OK(Prepare(family, "geometry_fill", &commands_[3]));
+  inputs_[0].tokens.fill(-12345);
+  uint64_t completion = 0;
+  IREE_ASSERT_OK(Upload(0, 0, 3, &completion));
+  const iree_hal_buffer_binding_t binding = {buffers_[0][1], 0, kLengths[1]};
+  IREE_ASSERT_OK(loom_serve_execution_execute(execution_, commands_[3],
+                                              {1, &binding}, &completion));
+  IREE_ASSERT_OK(Download(0, &completion));
+  IREE_ASSERT_OK(loom_serve_execution_feedback_wait(execution_, completion));
+  for (size_t i = 0; i < 127; ++i) {
+    EXPECT_EQ(outputs_[0].tokens[i], static_cast<int32_t>(i * 7 + 3));
+  }
+  EXPECT_EQ(outputs_[0].tokens[127], -12345);
+  EXPECT_EQ(outputs_[0].tokens[128], -12345);
+}
 
 TEST_P(ControlTest, InterleavedRowsRetainHistory) {
   inputs_[0].control = {3, 17, 99};

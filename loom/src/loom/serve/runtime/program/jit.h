@@ -23,7 +23,7 @@ extern "C" {
 // shared host compiler sink and catalog-local worker scratch. Compilation calls
 // on a catalog are serialized by the caller; native requests run concurrently.
 // Execution of already prepared commands does not access this object.
-// Native requests with identical source bytes, roots and specialization names
+// Native requests with identical source bytes and ordered source roots
 // share loaded executables inside this catalog's fixed target/pipeline domain.
 // Prepared stages retain their executables independently of catalog lifetime.
 typedef struct loom_serve_jit_t loom_serve_jit_t;
@@ -35,7 +35,8 @@ typedef struct loom_serve_jit_stage_t loom_serve_jit_stage_t;
 // ordinals; it outlives this catalog and every compilation completion.
 // Compilation uses the linked backend selected from immutable HAL device
 // facts, including its exact loader target and queue affinity. Source target
-// declarations are specialized to that profile at each command's kernel roots.
+// declarations and launch configurations are specialized to that profile at
+// each command's kernel roots before planning and native entry compilation.
 // report receives copied evidence even on failure and outlives the catalog.
 // Only the serialized compilation owner accesses it between completions.
 iree_status_t loom_serve_jit_allocate(
@@ -53,6 +54,11 @@ void loom_serve_jit_free(loom_serve_jit_t* jit);
 // this catalog. Native tasks merge into it before publishing completion.
 loom_serve_compilation_report_t* loom_serve_jit_report(loom_serve_jit_t* jit);
 
+// Borrows the catalog's shared native and VM source grammar through jit
+// lifetime.
+loomc_target_environment_t* loom_serve_jit_target_environment(
+    const loom_serve_jit_t* jit);
+
 // Receives the owned stage on success (NULL on failure) and owns status. Runs
 // on a shared task worker after every native request and compiler access has
 // retired. May schedule more work or destroy its completed catalog, but never
@@ -63,6 +69,10 @@ typedef void (*loom_serve_jit_completion_fn_t)(void* user_data,
 
 // Accepts a compilation without waiting. Product construction, native kernel
 // compilation and final binding all run on the caller's shared executor.
+// Published native requests are deduplicated and submitted during command
+// construction; their compilation does not depend on the completed parent.
+// Completion joins all accepted native work even when parent construction
+// fails, retaining successfully loaded natives for subsequent compilations.
 // Success invokes completion exactly once, possibly before return. Rejection
 // invokes no callback. The caller keeps jit, root, config and its referenced
 // storage alive through completion, and submits at most one compile per jit
@@ -118,15 +128,16 @@ iree_status_t loom_serve_jit_stage_record(
 // Links the model's portable VM source against the declared library providers
 // and compiles named roots into one image. The entry source is primary input;
 // library-private symbols remain private. The entry may also occur in sources.
+// target_environment supplies VM compilation and the complete catalog grammar;
+// it is borrowed only for this call. Only the named roots target the VM.
 // root_count is nonzero. On success, the caller owns
 // the image with host_allocator and can transfer it to the VM bytecode module.
-iree_status_t loom_serve_jit_compile_vm(const loom_serve_sources_t* sources,
-                                        iree_string_view_t source_path,
-                                        iree_host_size_t root_count,
-                                        const iree_string_view_t* roots,
-                                        loom_serve_compilation_report_t* report,
-                                        iree_allocator_t host_allocator,
-                                        iree_const_byte_span_t* out_image);
+iree_status_t loom_serve_jit_compile_vm(
+    loomc_target_environment_t* target_environment,
+    const loom_serve_sources_t* sources, iree_string_view_t source_path,
+    iree_host_size_t root_count, const iree_string_view_t* roots,
+    loom_serve_compilation_report_t* report, iree_allocator_t host_allocator,
+    iree_const_byte_span_t* out_image);
 
 #ifdef __cplusplus
 }  // extern "C"
