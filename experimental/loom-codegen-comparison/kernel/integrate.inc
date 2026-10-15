@@ -24,8 +24,10 @@ DEVICE int integrate(ScratchView s) {
     }
 
     if (done) return result;
-    const Real hmaxn = s.tout[0] - s.t[0];
-    Real h = s.dt[0];
+    // Integrator scalars live in private memory (volatile) so they do not hold
+    // registers across the inlined RHS/Jacobian code.
+    const volatile Real hmaxn = s.tout[0] - s.t[0];
+    volatile Real h = s.dt[0];
     if (math::abs(h) <= 10.0 * s.uround[0]) {
         h = 1.e-6;
     }
@@ -33,13 +35,13 @@ DEVICE int integrate(ScratchView s) {
 
     bool reject = false;
     bool last = false;
-    int nsing = 0;
-    Real hacc = 0.0;
-    Real erracc = 1.0;
-    Real hopt = h;
-    Real x = s.t[0];
-    int n_step = 0;
-    int n_accept = 0;
+    volatile int nsing = 0;
+    volatile Real hacc = 0.0;
+    volatile Real erracc = 1.0;
+    volatile Real hopt = h;
+    volatile Real x = s.t[0];
+    volatile int n_step = 0;
+    volatile int n_accept = 0;
 
     while (!done) {
         if (n_step > s.max_steps[0]) {
@@ -88,20 +90,21 @@ DEVICE int integrate(ScratchView s) {
                 // are contiguous: stage k writes ak1 + 15*k).
                 for (int stage = 0; stage < 3; ++stage) {
                     Real* target = s.ak1 + 15 * stage;
+                    const Real hs = h;
                     if (stage == 0) {
                         for (size_type i = 0; i < N; ++i) s.ynew[i] = s.y[i];
                     } else if (stage == 1) {
                         for (size_type i = 0; i < N; ++i) {
                             s.ynew[i] = s.y[i] + C::a21 * s.ak1[i];
-                            s.ak2[i] = (C::c21 / h) * s.ak1[i];
+                            s.ak2[i] = (C::c21 / hs) * s.ak1[i];
                         }
                     } else {
                         for (size_type i = 0; i < N; ++i) {
                             s.ynew[i] = s.y[i] + C::a31 * s.ak1[i] + C::a32 * s.ak2[i];
-                            s.work[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) / h;
+                            s.work[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) / hs;
                         }
                     }
-                    CHEM_RHS(x, s.ynew, s.dy, s);
+                    CHEM_RHS(0.0, s.ynew, s.dy, s);
                     if (stage == 0) {
                         for (size_type i = 0; i < N; ++i) target[i] = s.dy[i];
                     } else {
