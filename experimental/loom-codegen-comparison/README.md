@@ -129,13 +129,18 @@ exp and Newton cbrt recipes, with 14 f64 divisions between them, exhausted it
 
 ## Compare HIP and Loom on a GPU
 
-From a repository checkout on a gfx942 ROCm machine:
+From a repository checkout on a ROCm machine:
 
 ```sh
 ./run_rocm_comparison.sh
 # Override the default cell count or number of correctness steps:
 ./run_rocm_comparison.sh --cells 128 --steps 1000
+# Target a GPU other than the default gfx942:
+AMDGPU_TARGET=gfx90a ./run_rocm_comparison.sh
 ```
+
+`AMDGPU_TARGET` sets the Loom compile target, the `hipcc` offload architecture,
+and the GPU that `compare_rocm` expects; `compare_rocm` takes it as `--arch`.
 
 Both HIP and Loom default to 262,144 cells (`64^3`), with one correctness step,
 one warmup, and five timing repeats. The script matches Loom's compiled

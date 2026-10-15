@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: BSD-3-Clause
-# Run on a Hot Aisle gfx942/MI300X ROCm VM from the repository checkout.
+# Run on a ROCm machine from the repository checkout. AMDGPU_TARGET selects the
+# GPU architecture (default gfx942, the Hot Aisle MI300X VMs; e.g. gfx90a).
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -11,6 +12,11 @@ loom_build=${LOOM_BUILD_DIR:-$repo/build/cmake}
 importer=${LOOM_IMPORT_CXX:-$loom_build/loom/src/loom/tools/loom-import-cxx/loom-import-cxx}
 compiler=${LOOM_COMPILE:-$loom_build/loom/src/loom/tools/loom-compile/loom-compile}
 hipcc=${HIPCC:-$rocm/bin/hipcc}
+target=${AMDGPU_TARGET:-gfx942}
+if [[ ! $target =~ ^gfx[0-9a-f]+$ ]]; then
+  echo "AMDGPU_TARGET must name a gfx processor, got: $target" >&2
+  exit 2
+fi
 
 if [[ ! -x $hipcc ]]; then
   echo "HIP compiler missing: $hipcc (set ROCM_PATH or HIPCC)" >&2
@@ -47,7 +53,7 @@ if [[ ! -x $importer || ! -x $compiler ]]; then
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${missing[@]}"
     fi
   fi
-  echo "Configuring Loom tools for ROCm gfx942..."
+  echo "Configuring Loom tools for ROCm $target..."
   cmake -S "$repo" -B "$loom_build" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_LIBDIR=lib \
     -DCMAKE_C_COMPILER="$host_llvm/clang" \
@@ -61,7 +67,7 @@ if [[ ! -x $importer || ! -x $compiler ]]; then
     -DIREE_ROCM_PATH="$rocm" -DIREE_ROCM_DEPENDENCY_MODE="$rocm_dependency_mode" \
     -DLOOM_BUILD=ON -DLOOM_IMPORT_CXX=ON \
     -DLOOM_TARGET_DEFAULTS=OFF -DLOOM_TARGET_AMDGPU=ON \
-    -DIREE_HAL_DRIVER_AMDGPU=ON -DIREE_HAL_AMDGPU_TARGETS=gfx942
+    -DIREE_HAL_DRIVER_AMDGPU=ON -DIREE_HAL_AMDGPU_TARGETS="$target"
   cmake --build "$loom_build" --target loom-import-cxx loom-compile -j "${CHEM_BUILD_JOBS:-4}"
 fi
 if [[ ! -x $importer || ! -x $compiler ]]; then
@@ -93,31 +99,31 @@ workgroup_config() {
     "--config=chemistry.$1.workgroup_count.y=1" \
     "--config=chemistry.$1.workgroup_count.z=1"
 }
-echo "Compiling Loom prepare kernel for gfx942 ($workgroups workgroups)..."
+echo "Compiling Loom prepare kernel for $target ($workgroups workgroups)..."
 # shellcheck disable=SC2046
 if ! "$compiler" "$work/chemistry.loom" $(workgroup_config prepare_grid_timestep_kernel) \
   --root=chemistry.prepare_grid_timestep_kernel --format=amdgpu-hsaco \
-  --target=amdgpu:gfx942 --output="$work/chemistry-prepare.hsaco" \
+  --target=amdgpu:"$target" --output="$work/chemistry-prepare.hsaco" \
   2>"$work/prepare-compile.log"; then
   tail -n 40 "$work/prepare-compile.log" >&2
   exit 1
 fi
-echo "Compiling Loom advance kernel for gfx942 (this can take minutes)..."
+echo "Compiling Loom advance kernel for $target (this can take minutes)..."
 # shellcheck disable=SC2046
 if ! "$compiler" "$work/chemistry.loom" $(workgroup_config advance_collapse_gridwide_kernel) \
   --root=chemistry.advance_collapse_gridwide_kernel --format=amdgpu-hsaco \
-  --target=amdgpu:gfx942 --output="$work/chemistry-advance.hsaco" \
+  --target=amdgpu:"$target" --output="$work/chemistry-advance.hsaco" \
   2>"$work/advance-compile.log"; then
   tail -n 40 "$work/advance-compile.log" >&2
   exit 1
 fi
 
 echo "Compiling original HIP kernels and comparison harness..."
-"$hipcc" --offload-arch=gfx942 -std=c++20 -O3 -ffp-contract=off \
+"$hipcc" --offload-arch="$target" -std=c++20 -O3 -ffp-contract=off \
   -DPRIMORDIAL_ROS2S_ENABLE_HIP=1 -DPRIMORDIAL_ROS2S_NO_MAIN=1 \
   -I "$generated" -I "$here" \
   "$here/compare_rocm.cpp" -o "$work/compare_rocm"
 
 echo "Running GPU correctness and performance comparison..."
 "$work/compare_rocm" "$work/chemistry-prepare.hsaco" \
-  "$work/chemistry-advance.hsaco" "$@"
+  "$work/chemistry-advance.hsaco" --arch "$target" "$@"

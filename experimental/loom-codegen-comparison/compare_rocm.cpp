@@ -182,13 +182,15 @@ static double median(std::vector<double> values) {
 }
 
 int main(int argc, char** argv) try {
-    if (argc < 3) throw std::runtime_error("usage: compare_rocm PREPARE.hsaco ADVANCE.hsaco [--cells N] [--steps N] [--warmup N] [--repeats N] [--rtol X] [--atol X] [--abundance-atol X]");
+    if (argc < 3) throw std::runtime_error("usage: compare_rocm PREPARE.hsaco ADVANCE.hsaco [--arch GFX] [--cells N] [--steps N] [--warmup N] [--repeats N] [--rtol X] [--atol X] [--abundance-atol X]");
     int n = default_grid_dim * default_grid_dim * default_grid_dim;
     int steps = 1, warmup = 1, repeats = 5;
+    std::string arch = "gfx942";
     for (int i = 3; i < argc; i += 2) {
         if (i + 1 == argc) throw std::runtime_error("missing option value");
         std::string key = argv[i];
-        if (key == "--cells") n = std::stoi(argv[i + 1]);
+        if (key == "--arch") arch = argv[i + 1];
+        else if (key == "--cells") n = std::stoi(argv[i + 1]);
         else if (key == "--steps") steps = std::stoi(argv[i + 1]);
         else if (key == "--warmup") warmup = std::stoi(argv[i + 1]);
         else if (key == "--repeats") repeats = std::stoi(argv[i + 1]);
@@ -206,8 +208,10 @@ int main(int argc, char** argv) try {
     if (!devices) throw std::runtime_error("no ROCm GPU visible");
     hipDeviceProp_t props{};
     hip_check(hipGetDeviceProperties(&props, 0), "hipGetDeviceProperties");
-    if (std::string(props.gcnArchName).rfind("gfx942", 0) != 0)
-        throw std::runtime_error(std::string("expected gfx942 GPU, got ") + props.gcnArchName);
+    // gcnArchName carries target features after the processor (gfx90a:sramecc+:xnack-).
+    std::string device_arch = props.gcnArchName;
+    if (device_arch.substr(0, device_arch.find(':')) != arch)
+        throw std::runtime_error("expected " + arch + " GPU, got " + device_arch);
     hip_check(hipSetDevice(0), "hipSetDevice");
     std::printf("GPU: %s (%s); cells=%d, correctness steps=%d, warmup=%d, repeats=%d\n",
                 props.name, props.gcnArchName, n, steps, warmup, repeats);
