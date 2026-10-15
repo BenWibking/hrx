@@ -144,7 +144,7 @@ DEVICE Real species_gamma(int n) {
 DEVICE Real density(const Real* xn) {
 
     Real rho = 0.0;
-    for (size_type n = 0; n < NumSpec; ++n) {
+    [[loom::unroll]] for (unsigned n = 0; n < 14u; ++n) {
         rho += xn[n] * species_mass(static_cast<int>(n));
     }
     return rho;
@@ -200,11 +200,11 @@ DEVICE void normalize_number_densities_to_density(BurnRecord* b, Real* mass_frac
 
 
     Real sum = 0.0;
-    for (size_type n = 0; n < NumSpec; ++n) {
+    [[loom::unroll]] for (unsigned n = 0; n < 14u; ++n) {
         mass_fractions[n] = species_mass(static_cast<int>(n)) * b->xn[n] / b->rho;
         sum += mass_fractions[n];
     }
-    for (size_type n = 0; n < NumSpec; ++n) {
+    [[loom::unroll]] for (unsigned n = 0; n < 14u; ++n) {
         mass_fractions[n] /= sum;
         b->xn[n] = mass_fractions[n] * b->rho / species_mass(static_cast<int>(n));
     }
@@ -8246,29 +8246,30 @@ DEVICE void configure_ros2s(ScratchView s) {
 DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
 
     eos_rt(b);
+    // Work arrays are fully written before they are read; no zero fill.
 
     Real t = 0.0;
     Real tout = 0.0;
     Real dt = 0.0;
-    Real y[15]{};
-    Real rtol_vec[15]{};
-    Real atol_vec[15]{};
+    Real y[15];
+    Real rtol_vec[15];
+    Real atol_vec[15];
     Real uround = 1.e-16;
     Real fac_min = 0.2;
     Real fac_max = 6.0;
     Real safe = 0.9;
-    Real ynew[15]{};
-    Real kst[45]{};
+    Real ynew[15];
+    Real kst[45];
     Real* ak1 = kst;
     Real* ak2 = kst + 15;
     Real* work = kst + 30;
-    Real fjac[225]{};
-    Real e[225]{};
-    Real dy[15]{};
+    Real fjac[225];
+    Real e[225];
+    Real dy[15];
     Real burn_rho = 0.0;
     Real burn_T = 0.0;
     Real burn_e = 0.0;
-    Real burn_xn[14]{};
+    Real burn_xn[14];
     int n_step = 0;
     int n_rhs = 0;
     int n_jac = 0;
@@ -8277,7 +8278,7 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     int n_decomp = 0;
     int n_solve = 0;
     int max_steps = 100000;
-    int ip[15]{};
+    int ip[15];
     ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip};
     configure_ros2s(s);
 
