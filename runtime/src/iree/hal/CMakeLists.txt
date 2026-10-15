@@ -106,7 +106,7 @@ iree_cc_library(
     iree::base::internal
     iree::base::internal::path
     iree::base::threading
-    iree::hal::memory::asan
+    iree::hal::memory::asan_pool
     iree::hal::utils::platform_topology
     iree::io::file_handle
   PUBLIC
@@ -166,6 +166,7 @@ iree_cc_test(
     "buffer_test.cc"
   DEPS
     ::hal
+    iree::hal::testing::mapped_transfer_buffer
     iree::testing::gtest
     iree::testing::gtest_main
 )

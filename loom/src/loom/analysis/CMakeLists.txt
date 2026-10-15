@@ -101,6 +101,7 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     loom::ir
+    loom::ops::global
     loom::ops::kernel
     loom::ops::op_defs
     loom::util::walk
@@ -698,6 +699,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::error::emitter
     loom::error::error_defs
+    loom::error::parameter
     loom::ir
     loom::ops::cfg
     loom::ops::op_defs
@@ -738,6 +740,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::error::emitter
     loom::error::error_defs
+    loom::error::parameter
     loom::ir
     loom::ops::kernel
     loom::ops::op_defs
@@ -757,6 +760,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::error::emitter
     loom::error::error_defs
+    loom::error::parameter
     loom::ir
     loom::ops::kernel
     loom::ops::op_defs
@@ -905,6 +909,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::error::emitter
     loom::error::error_defs
+    loom::error::parameter
     loom::ir
     loom::ops::buffer
     loom::ops::channel
@@ -956,6 +961,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::error::emitter
     loom::error::error_defs
+    loom::error::parameter
     loom::ir
     loom::ops::cfg
     loom::ops::channel
@@ -991,6 +997,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::error::emitter
     loom::error::error_defs
+    loom::error::parameter
     loom::ir
     loom::ops::cfg
     loom::ops::config
@@ -1736,6 +1743,7 @@ loom_cc_library(
     loom::ir
     loom::ir::facts
     loom::ops::buffer
+    loom::ops::callable_effects
     loom::ops::channel
     loom::ops::encoding
     loom::ops::kernel
