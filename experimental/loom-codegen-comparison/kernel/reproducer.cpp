@@ -218,13 +218,15 @@ DEVICE void floor_and_normalize_number_densities(BurnRecord* b, Real* mass) {
     normalize_number_densities_to_density(b, mass);
 
 }
-DEVICE auto rhs_specie_choice_0(Real T, Real x3, Real x4) {
-return ((x4) ? (
+DEVICE auto rhs_specie_choice_0(Real T, Real x3, bool x4) {
+    const auto choice_cond = (x4);
+    const auto choice_true = (
    -5.5279999999999998e-28*((T)*(T)*(T)*(T)*(T)) + 3.3467999999999999e-23*((((T)*(T)))*(((T)*(T)))) - 7.5474000000000004e-19*((T)*(T)*(T)) - 2.3088e-11*T + 7.3427999999999993e-15*x3 + 4.2277999999999996e-8
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
 DEVICE auto rhs_specie_choice_1(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x8, Real x9) {
 return ((T <= 1160.0) ? (
@@ -251,12 +253,14 @@ return ((x33 <= 5500.0) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_4(Real T, Real x28, Real x29) {
-return ((T >= 10.0 && T <= 100000.0) ? (
+    const auto choice_cond = (T >= 10.0 & T <= 100000.0);
+    const auto choice_true = (
    -7.7700000000000002e-13*T + 2.5000000000000002e-10*x28 + 2.96e-6*x29 - 1.73e-9
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
 DEVICE auto rhs_specie_choice_5(Real T, Real x46, Real x52, Real x53, Real x57) {
 return ((T < 30) ? (
@@ -267,14 +271,14 @@ return ((T < 30) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_6(Real T, Real x34, Real x52, Real x56, Real x6, Real x60, Real x61) {
-return ((T >= 100.0 && T <= 30000.0) ? (
+return ((T >= 100.0 & T <= 30000.0) ? (
    (-1.4491368e-7*x52 + 3.4172804999999998e-8*x56 + 3.5311931999999998e-13*((x6)*(x6)*(x6)*(x6)*(x6)*(x6)*(x6)) - 1.8171411000000001e-11*math::exp((6)*math::log(math::abs(x6))) + 3.3735381999999997e-7*x6 - 4.7813727999999997e-9*x60 + 3.9731542e-10*x61 - 3.3232183000000002e-7)*math::exp(-21237.150000000001*x34)
 )
 : (
    0
 ));
 }
-DEVICE auto rhs_specie_choice_7(Real T, Real x0, Real x34, Real x4) {
+DEVICE auto rhs_specie_choice_7(Real T, Real x0, Real x34, bool x4) {
 return ((x4) ? (
    1.26e-9*x0*math::exp(-127500.0*x34)
 )
@@ -282,7 +286,7 @@ return ((x4) ? (
    4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto rhs_specie_choice_8(Real T, Real x34, Real x73) {
+DEVICE auto rhs_specie_choice_8(Real T, Real x34, bool x73) {
 return ((x73) ? (
    2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs(T)))*math::exp(-37.100000000000001*x34) - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
 )
@@ -290,7 +294,7 @@ return ((x73) ? (
    0
 ));
 }
-DEVICE auto rhs_specie_choice_9(Real T, Real x34, Real x73) {
+DEVICE auto rhs_specie_choice_9(Real T, Real x34, bool x73) {
 return ((x73) ? (
    2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs(T)))*math::exp(-33.0*x34)
 )
@@ -589,15 +593,17 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
 
 
 }
-DEVICE auto rhs_eint_choice_0(Real x4, Real x6) {
-return ((x6) ? (
+DEVICE auto rhs_eint_choice_0(Real x4, bool x6) {
+    const auto choice_cond = (x6);
+    const auto choice_true = (
    1.0/10.0
-)
-: (
+);
+    const auto choice_false = (
    x4
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_1(Real x6, Real x9) {
+DEVICE auto rhs_eint_choice_1(bool x6, Real x9) {
 return ((x6) ? (
    math::sqrt(10)
 )
@@ -605,7 +611,7 @@ return ((x6) ? (
    x9
 ));
 }
-DEVICE auto rhs_eint_choice_2(Real T, Real x6) {
+DEVICE auto rhs_eint_choice_2(Real T, bool x6) {
 return ((x6) ? (
    0.63095734448019325
 )
@@ -613,7 +619,7 @@ return ((x6) ? (
    math::exp((-0.20000000000000001)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto rhs_eint_choice_3(Real T, Real x6) {
+DEVICE auto rhs_eint_choice_3(Real T, bool x6) {
 return ((x6) ? (
    5.011872336272722
 )
@@ -621,7 +627,7 @@ return ((x6) ? (
    math::exp((0.69999999999999996)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto rhs_eint_choice_4(Real T, Real x6) {
+DEVICE auto rhs_eint_choice_4(Real T, bool x6) {
 return ((x6) ? (
    0.67810976749343443
 )
@@ -630,46 +636,56 @@ return ((x6) ? (
 ));
 }
 DEVICE auto rhs_eint_choice_5(Real T) {
-return ((T >= 10000.0) ? (
+    const auto choice_cond = (T >= 10000.0);
+    const auto choice_true = (
    10000.0
-)
-: (
+);
+    const auto choice_false = (
    T
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_6(Real x46, const Real* xn) {
-return ((x46) ? (
+DEVICE auto rhs_eint_choice_6(bool x46, const Real* xn) {
+    const auto choice_cond = (x46);
+    const auto choice_true = (
    false
-)
-: (
+);
+    const auto choice_false = (
    xn[2] >= 10000000000.0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_7(Real x46, const Real* xn) {
-return ((x46) ? (
+DEVICE auto rhs_eint_choice_7(bool x46, const Real* xn) {
+    const auto choice_cond = (x46);
+    const auto choice_true = (
       0.01
-   )
-   : (
+   );
+    const auto choice_false = (
       xn[2]
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_8(Real x46, const Real* xn) {
-return ((rhs_eint_choice_6(x46, xn)) ? (
+DEVICE auto rhs_eint_choice_8(bool x46, const Real* xn) {
+    const auto choice_cond = (rhs_eint_choice_6(x46, xn));
+    const auto choice_true = (
    10000000000.0
-)
-: (
+);
+    const auto choice_false = (
    rhs_eint_choice_7(x46, xn)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_9(Real x0, Real x55) {
-return ((x55) ? (
+DEVICE auto rhs_eint_choice_9(Real x0, bool x55) {
+    const auto choice_cond = (x55);
+    const auto choice_true = (
       0.5
-   )
-   : (
+   );
+    const auto choice_false = (
       x0
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_10(Real x0, Real x55, Real x56, Real x57) {
+DEVICE auto rhs_eint_choice_10(Real x0, bool x55, Real x56, bool x57) {
 return ((x57) ? (
    math::exp((x56*math::log(rhs_eint_choice_9(x0, x55)) + 2.1498900000000001)*math::log(math::abs(10.0)))
 )
@@ -677,15 +693,17 @@ return ((x57) ? (
    0.0
 ));
 }
-DEVICE auto rhs_eint_choice_11(Real x87, Real x88) {
-return ((x88) ? (
+DEVICE auto rhs_eint_choice_11(Real x87, bool x88) {
+    const auto choice_cond = (x88);
+    const auto choice_true = (
       300.0
-   )
-   : (
+   );
+    const auto choice_false = (
       x87
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_12(Real x84, Real x85, Real x87, Real x88) {
+DEVICE auto rhs_eint_choice_12(Real x84, bool x85, Real x87, bool x88) {
 return ((x85) ? (
    x84
 )
@@ -693,183 +711,227 @@ return ((x85) ? (
    5.5313336794064847e-19/(math::exp(rhs_eint_choice_11(x87, x88)) + 1.0)
 ));
 }
-DEVICE auto rhs_eint_choice_13(Real x72, Real x73, Real x84, Real x85, Real x87, Real x88) {
+DEVICE auto rhs_eint_choice_13(Real x72, bool x73, Real x84, bool x85, Real x87, bool x88) {
 return ((x73) ? (
    x72
 )
 : rhs_eint_choice_12(x84, x85, x87, x88));
 }
-DEVICE auto rhs_eint_choice_14(Real x117, Real x118) {
-return ((x118) ? (
+DEVICE auto rhs_eint_choice_14(Real x117, bool x118) {
+    const auto choice_cond = (x118);
+    const auto choice_true = (
    x117
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_15(Real x113, Real x116, Real x117, Real x118) {
-return ((x116) ? (
+DEVICE auto rhs_eint_choice_15(Real x113, bool x116, Real x117, bool x118) {
+    const auto choice_cond = (x116);
+    const auto choice_true = (
    x113
-)
-: rhs_eint_choice_14(x117, x118));
+);
+    const auto choice_false = rhs_eint_choice_14(x117, x118);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_16(Real x102, Real x103, Real x98) {
-return ((x98) ? (
+DEVICE auto rhs_eint_choice_16(Real x102, Real x103, bool x98) {
+    const auto choice_cond = (x98);
+    const auto choice_true = (
    x102
-)
-: (
+);
+    const auto choice_false = (
    x103
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_17(Real x101, Real x96, Real x98) {
-return ((x98) ? (
+DEVICE auto rhs_eint_choice_17(Real x101, Real x96, bool x98) {
+    const auto choice_cond = (x98);
+    const auto choice_true = (
    x96
-)
-: (
+);
+    const auto choice_false = (
    x101
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_18(Real x108, Real x109, Real x111) {
-return ((x109) ? (
+DEVICE auto rhs_eint_choice_18(Real x108, bool x109, Real x111) {
+    const auto choice_cond = (x109);
+    const auto choice_true = (
    x108
-)
-: (
+);
+    const auto choice_false = (
    x111
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_19(Real x106, Real x107, Real x108, Real x109, Real x111) {
-return ((x107) ? (
+DEVICE auto rhs_eint_choice_19(Real x106, bool x107, Real x108, bool x109, Real x111) {
+    const auto choice_cond = (x107);
+    const auto choice_true = (
    x106
-)
-: rhs_eint_choice_18(x108, x109, x111));
+);
+    const auto choice_false = rhs_eint_choice_18(x108, x109, x111);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_20(Real x104, Real x105, Real x106, Real x107, Real x108, Real x109, Real x111) {
-return ((x105) ? (
+DEVICE auto rhs_eint_choice_20(Real x104, bool x105, Real x106, bool x107, Real x108, bool x109, Real x111) {
+    const auto choice_cond = (x105);
+    const auto choice_true = (
    x104
-)
-: rhs_eint_choice_19(x106, x107, x108, x109, x111));
+);
+    const auto choice_false = rhs_eint_choice_19(x106, x107, x108, x109, x111);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_21(Real x57, Real x64, Real x69) {
-return ((x57) ? (
+DEVICE auto rhs_eint_choice_21(bool x57, Real x64, Real x69) {
+    const auto choice_cond = (x57);
+    const auto choice_true = (
                                  2.1648287161311648e-38/((x64*x69 + 1.471335691176954e-59)*(x64*x69 + 1.471335691176954e-59)) >= 1.0
-                              )
-                              : (
+                              );
+    const auto choice_false = (
                                  true
-                              ));
+                              );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_22(Real x55, Real x57, Real x63, Real x64, Real x69) {
-return ((x55 && x57) ? (
+DEVICE auto rhs_eint_choice_22(bool x55, bool x57, Real x63, Real x64, Real x69) {
+    const auto choice_cond = (x55 & x57);
+    const auto choice_true = (
                               2.1648287161311648e-38/((x63*x69 + 1.471335691176954e-59)*(x63*x69 + 1.471335691176954e-59)) >= 1.0
-                           )
-                           : (
+                           );
+    const auto choice_false = (
                               rhs_eint_choice_21(x57, x64, x69)
-                           ));
+                           );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_23(Real x55, Real x57, Real x61, Real x63, Real x64, Real x69) {
-return ((x61) ? (
+DEVICE auto rhs_eint_choice_23(bool x55, bool x57, bool x61, Real x63, Real x64, Real x69) {
+    const auto choice_cond = (x61);
+    const auto choice_true = (
                            true
-                        )
-                        : (
+                        );
+    const auto choice_false = (
                            rhs_eint_choice_22(x55, x57, x63, x64, x69)
-                        ));
+                        );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_24(Real x55, Real x57, Real x61, Real x63, Real x64, Real x67, Real x69) {
-return ((x57 && x61) ? (
+DEVICE auto rhs_eint_choice_24(bool x55, bool x57, bool x61, Real x63, Real x64, Real x67, Real x69) {
+    const auto choice_cond = (x57 & x61);
+    const auto choice_true = (
                         4.833962023629485e-72/((x64*x67 + 2.1986273043946045e-76)*(x64*x67 + 2.1986273043946045e-76)) >= 1.0
-                     )
-                     : (
+                     );
+    const auto choice_false = (
                         rhs_eint_choice_23(x55, x57, x61, x63, x64, x69)
-                     ));
+                     );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_25(Real x55, Real x57, Real x61, Real x63, Real x64, Real x67, Real x69) {
-return ((x55 && x57 && x61) ? (
+DEVICE auto rhs_eint_choice_25(bool x55, bool x57, bool x61, Real x63, Real x64, Real x67, Real x69) {
+    const auto choice_cond = (x55 & x57 & x61);
+    const auto choice_true = (
                      4.833962023629485e-72/((x63*x67 + 2.1986273043946045e-76)*(x63*x67 + 2.1986273043946045e-76)) >= 1.0
-                  )
-                  : (
+                  );
+    const auto choice_false = (
                      rhs_eint_choice_24(x55, x57, x61, x63, x64, x67, x69)
-                  ));
+                  );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_26(Real x55, Real x57, Real x60, Real x61, Real x63, Real x64, Real x67, Real x69) {
-return ((x60) ? (
+DEVICE auto rhs_eint_choice_26(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x67, Real x69) {
+    const auto choice_cond = (x60);
+    const auto choice_true = (
                   true
-               )
-               : (
+               );
+    const auto choice_false = (
                   rhs_eint_choice_25(x55, x57, x61, x63, x64, x67, x69)
-               ));
+               );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_27(Real x55, Real x57, Real x60, Real x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
-return ((x57 && x60) ? (
+DEVICE auto rhs_eint_choice_27(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
+    const auto choice_cond = (x57 & x60);
+    const auto choice_true = (
                216.48287161311649/((x64*x66 + 1.471335691176954e-39)*(x64*x66 + 1.471335691176954e-39)) >= 1.0
-            )
-            : (
+            );
+    const auto choice_false = (
                rhs_eint_choice_26(x55, x57, x60, x61, x63, x64, x67, x69)
-            ));
+            );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_28(Real x55, Real x57, Real x60, Real x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
-return ((x55 && x57 && x60) ? (
+DEVICE auto rhs_eint_choice_28(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
+    const auto choice_cond = (x55 & x57 & x60);
+    const auto choice_true = (
             216.48287161311649/((x63*x66 + 1.471335691176954e-39)*(x63*x66 + 1.471335691176954e-39)) >= 1.0
-         )
-         : (
+         );
+    const auto choice_false = (
             rhs_eint_choice_27(x55, x57, x60, x61, x63, x64, x66, x67, x69)
-         ));
+         );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_29(Real x55, Real x57, Real x60, Real x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
-return ((x60 && x61) ? (
+DEVICE auto rhs_eint_choice_29(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
+    const auto choice_cond = (x60 & x61);
+    const auto choice_true = (
          true
-      )
-      : (
+      );
+    const auto choice_false = (
          rhs_eint_choice_28(x55, x57, x60, x61, x63, x64, x66, x67, x69)
-      ));
+      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_30(Real x55, Real x57, Real x60, Real x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
-return ((x57 && x60 && x61) ? (
+DEVICE auto rhs_eint_choice_30(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
+    const auto choice_cond = (x57 & x60 & x61);
+    const auto choice_true = (
       4.8339620236294848e-32/((x64 + 2.1986273043946046e-56)*(x64 + 2.1986273043946046e-56)) >= 1.0
-   )
-   : (
+   );
+    const auto choice_false = (
       rhs_eint_choice_29(x55, x57, x60, x61, x63, x64, x66, x67, x69)
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_31(Real x55, Real x57, Real x60, Real x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
-return ((x55 && x57 && x60 && x61) ? (
+DEVICE auto rhs_eint_choice_31(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
+    const auto choice_cond = (x55 & x57 & x60 & x61);
+    const auto choice_true = (
    4.8339620236294848e-32/((x63 + 2.1986273043946046e-56)*(x63 + 2.1986273043946046e-56)) >= 1.0
-)
-: (
+);
+    const auto choice_false = (
    rhs_eint_choice_30(x55, x57, x60, x61, x63, x64, x66, x67, x69)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_32(Real x59, Real x60) {
-return ((x60) ? (
+DEVICE auto rhs_eint_choice_32(Real x59, bool x60) {
+    const auto choice_cond = (x60);
+    const auto choice_true = (
       9.9999999999999993e-41
-   )
-   : (
+   );
+    const auto choice_false = (
       x59
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_33(Real x61, Real x68) {
-return ((x61) ? (
+DEVICE auto rhs_eint_choice_33(bool x61, Real x68) {
+    const auto choice_cond = (x61);
+    const auto choice_true = (
       1.0e+80
-   )
-   : (
+   );
+    const auto choice_false = (
       2.232953576238777e+46*x68
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_34(Real x59, Real x60) {
-return ((x60) ? (
+DEVICE auto rhs_eint_choice_34(Real x59, bool x60) {
+    const auto choice_cond = (x60);
+    const auto choice_true = (
       9.9999999999999993e-41
-   )
-   : (
+   );
+    const auto choice_false = (
       x59
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_35(Real x61, Real x68) {
-return ((x61) ? (
+DEVICE auto rhs_eint_choice_35(bool x61, Real x68) {
+    const auto choice_cond = (x61);
+    const auto choice_true = (
       1.0e+80
-   )
-   : (
+   );
+    const auto choice_false = (
       2.232953576238777e+46*x68
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_36(Real x55, Real x57, Real x58, Real x59, Real x60, Real x61, Real x62, Real x63, Real x64, Real x66, Real x67, Real x68, Real x69) {
+DEVICE auto rhs_eint_choice_36(bool x55, bool x57, Real x58, Real x59, bool x60, bool x61, Real x62, Real x63, Real x64, Real x66, Real x67, Real x68, Real x69) {
 return ((rhs_eint_choice_31(x55, x57, x60, x61, x63, x64, x66, x67, x69)) ? (
    1.0
 )
@@ -877,7 +939,7 @@ return ((rhs_eint_choice_31(x55, x57, x60, x61, x63, x64, x66, x67, x69)) ? (
    483396202.36294854/((x58*x62*math::sqrt(rhs_eint_choice_32(x59, x60)*rhs_eint_choice_33(x61, x68)) + 2.1986273043946046e-36)*(x58*x62*math::sqrt(rhs_eint_choice_34(x59, x60)*rhs_eint_choice_35(x61, x68)) + 2.1986273043946046e-36))
 ));
 }
-DEVICE auto rhs_eint_choice_37(Real T, Real x6) {
+DEVICE auto rhs_eint_choice_37(Real T, bool x6) {
 return ((x6) ? (
    0.4008667176273028
 )
@@ -885,7 +947,7 @@ return ((x6) ? (
    math::exp((-0.39700000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto rhs_eint_choice_38(Real T, Real x6) {
+DEVICE auto rhs_eint_choice_38(Real T, bool x6) {
 return ((x6) ? (
    0.031622776601683791
 )
@@ -893,7 +955,7 @@ return ((x6) ? (
    math::exp((-1.5)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto rhs_eint_choice_39(Real T, Real x6) {
+DEVICE auto rhs_eint_choice_39(Real T, bool x6) {
 return ((x6) ? (
    2.3157944032250755
 )
@@ -901,493 +963,615 @@ return ((x6) ? (
    math::exp((0.36470000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto rhs_eint_choice_40(Real x70, Real x71) {
-return ((x70) ? (
+DEVICE auto rhs_eint_choice_40(bool x70, Real x71) {
+    const auto choice_cond = (x70);
+    const auto choice_true = (
       true
-   )
-   : (
+   );
+    const auto choice_false = (
       x71 >= 1.0
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_41(Real x70, Real x71) {
-return ((x70) ? (
+DEVICE auto rhs_eint_choice_41(bool x70, Real x71) {
+    const auto choice_cond = (x70);
+    const auto choice_true = (
          1.000000000000001e+18
-      )
-      : (
+      );
+    const auto choice_false = (
          x71
-      ));
+      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_42(Real x70, Real x71) {
-return ((rhs_eint_choice_40(x70, x71)) ? (
+DEVICE auto rhs_eint_choice_42(bool x70, Real x71) {
+    const auto choice_cond = (rhs_eint_choice_40(x70, x71));
+    const auto choice_true = (
       1.0
-   )
-   : (
+   );
+    const auto choice_false = (
       rhs_eint_choice_41(x70, x71)
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_43(Real x109, Real x118, Real x150, Real x151, Real x161) {
-return ((x109 && x118) ? (
-                                                                                                                                                                           x150 && x161
-                                                                                                                                                                        )
-                                                                                                                                                                        : (
-                                                                                                                                                                           x151 && x161
-                                                                                                                                                                        ));
+DEVICE auto rhs_eint_choice_43(bool x109, bool x118, bool x150, bool x151, bool x161) {
+    const auto choice_cond = (x109 & x118);
+    const auto choice_true = (
+                                                                                                                                                                           x150 & x161
+                                                                                                                                                                        );
+    const auto choice_false = (
+                                                                                                                                                                           x151 & x161
+                                                                                                                                                                        );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_44(Real x107, Real x109, Real x118, Real x149, Real x150, Real x151, Real x161) {
-return ((x107 && x118) ? (
-                                                                                                                                                                        x149 && x161
-                                                                                                                                                                     )
-                                                                                                                                                                     : (
+DEVICE auto rhs_eint_choice_44(bool x107, bool x109, bool x118, bool x149, bool x150, bool x151, bool x161) {
+    const auto choice_cond = (x107 & x118);
+    const auto choice_true = (
+                                                                                                                                                                        x149 & x161
+                                                                                                                                                                     );
+    const auto choice_false = (
                                                                                                                                                                         rhs_eint_choice_43(x109, x118, x150, x151, x161)
-                                                                                                                                                                     ));
+                                                                                                                                                                     );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_45(Real x105, Real x107, Real x109, Real x118, Real x148, Real x149, Real x150, Real x151, Real x161) {
-return ((x105 && x118) ? (
-                                                                                                                                                                     x148 && x161
-                                                                                                                                                                  )
-                                                                                                                                                                  : (
+DEVICE auto rhs_eint_choice_45(bool x105, bool x107, bool x109, bool x118, bool x148, bool x149, bool x150, bool x151, bool x161) {
+    const auto choice_cond = (x105 & x118);
+    const auto choice_true = (
+                                                                                                                                                                     x148 & x161
+                                                                                                                                                                  );
+    const auto choice_false = (
                                                                                                                                                                      rhs_eint_choice_44(x107, x109, x118, x149, x150, x151, x161)
-                                                                                                                                                                  ));
+                                                                                                                                                                  );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_46(Real x105, Real x107, Real x109, Real x116, Real x118, Real x142, Real x148, Real x149, Real x150, Real x151, Real x161) {
-return ((x116) ? (
-                                                                                                                                                                  x142 && x161
-                                                                                                                                                               )
-                                                                                                                                                               : (
+DEVICE auto rhs_eint_choice_46(bool x105, bool x107, bool x109, bool x116, bool x118, bool x142, bool x148, bool x149, bool x150, bool x151, bool x161) {
+    const auto choice_cond = (x116);
+    const auto choice_true = (
+                                                                                                                                                                  x142 & x161
+                                                                                                                                                               );
+    const auto choice_false = (
                                                                                                                                                                   rhs_eint_choice_45(x105, x107, x109, x118, x148, x149, x150, x151, x161)
-                                                                                                                                                               ));
+                                                                                                                                                               );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_47(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x161) {
-return ((x109 && x114 && x115) ? (
-                                                                                                                                                               x140 && x161
-                                                                                                                                                            )
-                                                                                                                                                            : (
+DEVICE auto rhs_eint_choice_47(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x161) {
+    const auto choice_cond = (x109 & x114 & x115);
+    const auto choice_true = (
+                                                                                                                                                               x140 & x161
+                                                                                                                                                            );
+    const auto choice_false = (
                                                                                                                                                                rhs_eint_choice_46(x105, x107, x109, x116, x118, x142, x148, x149, x150, x151, x161)
-                                                                                                                                                            ));
+                                                                                                                                                            );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_48(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x161) {
-return ((x107 && x114 && x115) ? (
-                                                                                                                                                            x138 && x161
-                                                                                                                                                         )
-                                                                                                                                                         : (
+DEVICE auto rhs_eint_choice_48(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x161) {
+    const auto choice_cond = (x107 & x114 & x115);
+    const auto choice_true = (
+                                                                                                                                                            x138 & x161
+                                                                                                                                                         );
+    const auto choice_false = (
                                                                                                                                                             rhs_eint_choice_47(x105, x107, x109, x114, x115, x116, x118, x140, x142, x148, x149, x150, x151, x161)
-                                                                                                                                                         ));
+                                                                                                                                                         );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_49(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x161) {
-return ((x105 && x114 && x115) ? (
-                                                                                                                                                         x135 && x161
-                                                                                                                                                      )
-                                                                                                                                                      : (
+DEVICE auto rhs_eint_choice_49(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x161) {
+    const auto choice_cond = (x105 & x114 & x115);
+    const auto choice_true = (
+                                                                                                                                                         x135 & x161
+                                                                                                                                                      );
+    const auto choice_false = (
                                                                                                                                                          rhs_eint_choice_48(x105, x107, x109, x114, x115, x116, x118, x138, x140, x142, x148, x149, x150, x151, x161)
-                                                                                                                                                      ));
+                                                                                                                                                      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_50(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x161, Real x88) {
-return ((x88 && (x105 || x88) && (x107 || x88) && (x109 || x88) && (x114 || x88) && (x115 || x88) && (x118 || x88) && (x105 || x107 || x88) && (x105 || x109 || x88) && (x105 || x114 || x88) && (x105 || x115 || x88) && (x105 || x118 || x88) && (x107 || x109 || x88) && (x107 || x114 || x88) && (x107 || x115 || x88) && (x107 || x118 || x88) && (x109 || x114 || x88) && (x109 || x115 || x88) && (x109 || x118 || x88) && (x114 || x115 || x88) && (x115 || x118 || x88) && (x105 || x107 || x109 || x88) && (x105 || x107 || x114 || x88) && (x105 || x107 || x115 || x88) && (x105 || x107 || x118 || x88) && (x105 || x109 || x114 || x88) && (x105 || x109 || x115 || x88) && (x105 || x109 || x118 || x88) && (x105 || x114 || x115 || x88) && (x105 || x115 || x118 || x88) && (x107 || x109 || x114 || x88) && (x107 || x109 || x115 || x88) && (x107 || x109 || x118 || x88) && (x107 || x114 || x115 || x88) && (x107 || x115 || x118 || x88) && (x109 || x114 || x115 || x88) && (x109 || x115 || x118 || x88) && (x105 || x107 || x109 || x114 || x88) && (x105 || x107 || x109 || x115 || x88) && (x105 || x107 || x109 || x118 || x88) && (x105 || x107 || x114 || x115 || x88) && (x105 || x107 || x115 || x118 || x88) && (x105 || x109 || x114 || x115 || x88) && (x105 || x109 || x115 || x118 || x88) && (x107 || x109 || x114 || x115 || x88) && (x107 || x109 || x115 || x118 || x88) && (x105 || x107 || x109 || x114 || x115 || x88) && (x105 || x107 || x109 || x115 || x118 || x88)) ? (
+DEVICE auto rhs_eint_choice_50(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x161, bool x88) {
+    const auto choice_cond = (x88 & (x105 | x88) & (x107 | x88) & (x109 | x88) & (x114 | x88) & (x115 | x88) & (x118 | x88) & (x105 | x107 | x88) & (x105 | x109 | x88) & (x105 | x114 | x88) & (x105 | x115 | x88) & (x105 | x118 | x88) & (x107 | x109 | x88) & (x107 | x114 | x88) & (x107 | x115 | x88) & (x107 | x118 | x88) & (x109 | x114 | x88) & (x109 | x115 | x88) & (x109 | x118 | x88) & (x114 | x115 | x88) & (x115 | x118 | x88) & (x105 | x107 | x109 | x88) & (x105 | x107 | x114 | x88) & (x105 | x107 | x115 | x88) & (x105 | x107 | x118 | x88) & (x105 | x109 | x114 | x88) & (x105 | x109 | x115 | x88) & (x105 | x109 | x118 | x88) & (x105 | x114 | x115 | x88) & (x105 | x115 | x118 | x88) & (x107 | x109 | x114 | x88) & (x107 | x109 | x115 | x88) & (x107 | x109 | x118 | x88) & (x107 | x114 | x115 | x88) & (x107 | x115 | x118 | x88) & (x109 | x114 | x115 | x88) & (x109 | x115 | x118 | x88) & (x105 | x107 | x109 | x114 | x88) & (x105 | x107 | x109 | x115 | x88) & (x105 | x107 | x109 | x118 | x88) & (x105 | x107 | x114 | x115 | x88) & (x105 | x107 | x115 | x118 | x88) & (x105 | x109 | x114 | x115 | x88) & (x105 | x109 | x115 | x118 | x88) & (x107 | x109 | x114 | x115 | x88) & (x107 | x109 | x115 | x118 | x88) & (x105 | x107 | x109 | x114 | x115 | x88) & (x105 | x107 | x109 | x115 | x118 | x88));
+    const auto choice_true = (
                                                                                                                                                       false
-                                                                                                                                                   )
-                                                                                                                                                   : (
+                                                                                                                                                   );
+    const auto choice_false = (
                                                                                                                                                       rhs_eint_choice_49(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x161)
-                                                                                                                                                   ));
+                                                                                                                                                   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_51(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x159, Real x160, Real x161, Real x85, Real x88) {
-return ((x85) ? (
-                                                                                                                                                   x159 && x160
-                                                                                                                                                )
-                                                                                                                                                : (
+DEVICE auto rhs_eint_choice_51(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x159, bool x160, bool x161, bool x85, bool x88) {
+    const auto choice_cond = (x85);
+    const auto choice_true = (
+                                                                                                                                                   x159 & x160
+                                                                                                                                                );
+    const auto choice_false = (
                                                                                                                                                    rhs_eint_choice_50(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x161, x88)
-                                                                                                                                                ));
+                                                                                                                                                );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_52(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88) {
-return ((x109 && x85) ? (
-                                                                                                                                                x158 && x160
-                                                                                                                                             )
-                                                                                                                                             : (
+DEVICE auto rhs_eint_choice_52(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88) {
+    const auto choice_cond = (x109 & x85);
+    const auto choice_true = (
+                                                                                                                                                x158 & x160
+                                                                                                                                             );
+    const auto choice_false = (
                                                                                                                                                 rhs_eint_choice_51(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x159, x160, x161, x85, x88)
-                                                                                                                                             ));
+                                                                                                                                             );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_53(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88) {
-return ((x107 && x85) ? (
-                                                                                                                                             x157 && x160
-                                                                                                                                          )
-                                                                                                                                          : (
+DEVICE auto rhs_eint_choice_53(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88) {
+    const auto choice_cond = (x107 & x85);
+    const auto choice_true = (
+                                                                                                                                             x157 & x160
+                                                                                                                                          );
+    const auto choice_false = (
                                                                                                                                              rhs_eint_choice_52(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x158, x159, x160, x161, x85, x88)
-                                                                                                                                          ));
+                                                                                                                                          );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_54(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88) {
-return ((x105 && x85) ? (
-                                                                                                                                          x156 && x160
-                                                                                                                                       )
-                                                                                                                                       : (
+DEVICE auto rhs_eint_choice_54(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88) {
+    const auto choice_cond = (x105 & x85);
+    const auto choice_true = (
+                                                                                                                                          x156 & x160
+                                                                                                                                       );
+    const auto choice_false = (
                                                                                                                                           rhs_eint_choice_53(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x157, x158, x159, x160, x161, x85, x88)
-                                                                                                                                       ));
+                                                                                                                                       );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_55(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x98) {
-return ((x98) ? (
-                                                                                                                                       x155 && x160
-                                                                                                                                    )
-                                                                                                                                    : (
+DEVICE auto rhs_eint_choice_55(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x98) {
+    const auto choice_cond = (x98);
+    const auto choice_true = (
+                                                                                                                                       x155 & x160
+                                                                                                                                    );
+    const auto choice_false = (
                                                                                                                                        rhs_eint_choice_54(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x156, x157, x158, x159, x160, x161, x85, x88)
-                                                                                                                                    ));
+                                                                                                                                    );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_56(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x85 && x97) ? (
-                                                                                                                                    x154 && x160
-                                                                                                                                 )
-                                                                                                                                 : (
+DEVICE auto rhs_eint_choice_56(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x85 & x97);
+    const auto choice_true = (
+                                                                                                                                    x154 & x160
+                                                                                                                                 );
+    const auto choice_false = (
                                                                                                                                     rhs_eint_choice_55(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x155, x156, x157, x158, x159, x160, x161, x85, x88, x98)
-                                                                                                                                 ));
+                                                                                                                                 );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_57(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x85 && x97) ? (
-                                                                                                                                 x153 && x160
-                                                                                                                              )
-                                                                                                                              : (
+DEVICE auto rhs_eint_choice_57(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x85 & x97);
+    const auto choice_true = (
+                                                                                                                                 x153 & x160
+                                                                                                                              );
+    const auto choice_false = (
                                                                                                                                  rhs_eint_choice_56(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                                              ));
+                                                                                                                              );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_58(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x85 && x97) ? (
-                                                                                                                              x152 && x160
-                                                                                                                           )
-                                                                                                                           : (
+DEVICE auto rhs_eint_choice_58(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x85 & x97);
+    const auto choice_true = (
+                                                                                                                              x152 & x160
+                                                                                                                           );
+    const auto choice_false = (
                                                                                                                               rhs_eint_choice_57(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                                           ));
+                                                                                                                           );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_59(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x118 && x85) ? (
-                                                                                                                           x151 && x160
-                                                                                                                        )
-                                                                                                                        : (
+DEVICE auto rhs_eint_choice_59(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x118 & x85);
+    const auto choice_true = (
+                                                                                                                           x151 & x160
+                                                                                                                        );
+    const auto choice_false = (
                                                                                                                            rhs_eint_choice_58(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                                        ));
+                                                                                                                        );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_60(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x118 && x85) ? (
-                                                                                                                        x150 && x160
-                                                                                                                     )
-                                                                                                                     : (
+DEVICE auto rhs_eint_choice_60(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x118 & x85);
+    const auto choice_true = (
+                                                                                                                        x150 & x160
+                                                                                                                     );
+    const auto choice_false = (
                                                                                                                         rhs_eint_choice_59(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                                     ));
+                                                                                                                     );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_61(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x118 && x85) ? (
-                                                                                                                     x149 && x160
-                                                                                                                  )
-                                                                                                                  : (
+DEVICE auto rhs_eint_choice_61(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x118 & x85);
+    const auto choice_true = (
+                                                                                                                     x149 & x160
+                                                                                                                  );
+    const auto choice_false = (
                                                                                                                      rhs_eint_choice_60(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                                  ));
+                                                                                                                  );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_62(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x118 && x85) ? (
-                                                                                                                  x148 && x160
-                                                                                                               )
-                                                                                                               : (
+DEVICE auto rhs_eint_choice_62(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x118 & x85);
+    const auto choice_true = (
+                                                                                                                  x148 & x160
+                                                                                                               );
+    const auto choice_false = (
                                                                                                                   rhs_eint_choice_61(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                               ));
+                                                                                                               );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_63(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x118 && x85 && x97) ? (
-                                                                                                               x147 && x160
-                                                                                                            )
-                                                                                                            : (
+DEVICE auto rhs_eint_choice_63(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x118 & x85 & x97);
+    const auto choice_true = (
+                                                                                                               x147 & x160
+                                                                                                            );
+    const auto choice_false = (
                                                                                                                rhs_eint_choice_62(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                            ));
+                                                                                                            );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_64(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x118 && x85 && x97) ? (
-                                                                                                            x146 && x160
-                                                                                                         )
-                                                                                                         : (
+DEVICE auto rhs_eint_choice_64(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x118 & x85 & x97);
+    const auto choice_true = (
+                                                                                                            x146 & x160
+                                                                                                         );
+    const auto choice_false = (
                                                                                                             rhs_eint_choice_63(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                         ));
+                                                                                                         );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_65(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x118 && x85 && x97) ? (
-                                                                                                         x145 && x160
-                                                                                                      )
-                                                                                                      : (
+DEVICE auto rhs_eint_choice_65(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x118 & x85 & x97);
+    const auto choice_true = (
+                                                                                                         x145 & x160
+                                                                                                      );
+    const auto choice_false = (
                                                                                                          rhs_eint_choice_64(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                      ));
+                                                                                                      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_66(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x118 && x85 && x97) ? (
-                                                                                                      x144 && x160
-                                                                                                   )
-                                                                                                   : (
+DEVICE auto rhs_eint_choice_66(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x118 & x85 & x97);
+    const auto choice_true = (
+                                                                                                      x144 & x160
+                                                                                                   );
+    const auto choice_false = (
                                                                                                       rhs_eint_choice_65(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                   ));
+                                                                                                   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_67(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x114 && x115 && x85) ? (
-                                                                                                   x142 && x160
-                                                                                                )
-                                                                                                : (
+DEVICE auto rhs_eint_choice_67(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x114 & x115 & x85);
+    const auto choice_true = (
+                                                                                                   x142 & x160
+                                                                                                );
+    const auto choice_false = (
                                                                                                    rhs_eint_choice_66(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                                ));
+                                                                                                );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_68(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x114 && x115 && x85) ? (
-                                                                                                x140 && x160
-                                                                                             )
-                                                                                             : (
+DEVICE auto rhs_eint_choice_68(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x114 & x115 & x85);
+    const auto choice_true = (
+                                                                                                x140 & x160
+                                                                                             );
+    const auto choice_false = (
                                                                                                 rhs_eint_choice_67(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                             ));
+                                                                                             );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_69(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x114 && x115 && x85) ? (
-                                                                                             x138 && x160
-                                                                                          )
-                                                                                          : (
+DEVICE auto rhs_eint_choice_69(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x114 & x115 & x85);
+    const auto choice_true = (
+                                                                                             x138 & x160
+                                                                                          );
+    const auto choice_false = (
                                                                                              rhs_eint_choice_68(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                          ));
+                                                                                          );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_70(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x114 && x115 && x85) ? (
-                                                                                          x135 && x160
-                                                                                       )
-                                                                                       : (
+DEVICE auto rhs_eint_choice_70(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x114 & x115 & x85);
+    const auto choice_true = (
+                                                                                          x135 & x160
+                                                                                       );
+    const auto choice_false = (
                                                                                           rhs_eint_choice_69(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                       ));
+                                                                                       );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_71(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x114 && x115 && x85 && x97) ? (
-                                                                                       x132 && x160
-                                                                                    )
-                                                                                    : (
+DEVICE auto rhs_eint_choice_71(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x114 & x115 & x85 & x97);
+    const auto choice_true = (
+                                                                                       x132 & x160
+                                                                                    );
+    const auto choice_false = (
                                                                                        rhs_eint_choice_70(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                    ));
+                                                                                    );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_72(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x114 && x115 && x85 && x97) ? (
-                                                                                    x130 && x160
-                                                                                 )
-                                                                                 : (
+DEVICE auto rhs_eint_choice_72(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x114 & x115 & x85 & x97);
+    const auto choice_true = (
+                                                                                    x130 & x160
+                                                                                 );
+    const auto choice_false = (
                                                                                     rhs_eint_choice_71(x105, x107, x109, x114, x115, x116, x118, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                                 ));
+                                                                                 );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_73(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x114 && x115 && x85 && x97) ? (
-                                                                                 x128 && x160
-                                                                              )
-                                                                              : (
+DEVICE auto rhs_eint_choice_73(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x114 & x115 & x85 & x97);
+    const auto choice_true = (
+                                                                                 x128 & x160
+                                                                              );
+    const auto choice_false = (
                                                                                  rhs_eint_choice_72(x105, x107, x109, x114, x115, x116, x118, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                              ));
+                                                                              );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_74(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x114 && x115 && x85 && x97) ? (
-                                                                              x125 && x160
-                                                                           )
-                                                                           : (
+DEVICE auto rhs_eint_choice_74(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x114 & x115 & x85 & x97);
+    const auto choice_true = (
+                                                                              x125 & x160
+                                                                           );
+    const auto choice_false = (
                                                                               rhs_eint_choice_73(x105, x107, x109, x114, x115, x116, x118, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                           ));
+                                                                           );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_75(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x73) ? (
-                                                                           x120 && x159
-                                                                        )
-                                                                        : (
+DEVICE auto rhs_eint_choice_75(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x73);
+    const auto choice_true = (
+                                                                           x120 & x159
+                                                                        );
+    const auto choice_false = (
                                                                            rhs_eint_choice_74(x105, x107, x109, x114, x115, x116, x118, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
-                                                                        ));
+                                                                        );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_76(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x73) ? (
-                                                                        x120 && x158
-                                                                     )
-                                                                     : (
+DEVICE auto rhs_eint_choice_76(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x73);
+    const auto choice_true = (
+                                                                        x120 & x158
+                                                                     );
+    const auto choice_false = (
                                                                         rhs_eint_choice_75(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                                                     ));
+                                                                     );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_77(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x73) ? (
-                                                                     x120 && x157
-                                                                  )
-                                                                  : (
+DEVICE auto rhs_eint_choice_77(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x73);
+    const auto choice_true = (
+                                                                     x120 & x157
+                                                                  );
+    const auto choice_false = (
                                                                      rhs_eint_choice_76(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                                                  ));
+                                                                  );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_78(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x73) ? (
-                                                                  x120 && x156
-                                                               )
-                                                               : (
+DEVICE auto rhs_eint_choice_78(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x73);
+    const auto choice_true = (
+                                                                  x120 & x156
+                                                               );
+    const auto choice_false = (
                                                                   rhs_eint_choice_77(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                                               ));
+                                                               );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_79(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x73 && x85 && x97) ? (
-                                                               x120 && x155
-                                                            )
-                                                            : (
+DEVICE auto rhs_eint_choice_79(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x73 & x85 & x97);
+    const auto choice_true = (
+                                                               x120 & x155
+                                                            );
+    const auto choice_false = (
                                                                rhs_eint_choice_78(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                                            ));
+                                                            );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_80(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x73 && x85 && x97) ? (
-                                                            x120 && x154
-                                                         )
-                                                         : (
+DEVICE auto rhs_eint_choice_80(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x73 & x85 & x97);
+    const auto choice_true = (
+                                                            x120 & x154
+                                                         );
+    const auto choice_false = (
                                                             rhs_eint_choice_79(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                                         ));
+                                                         );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_81(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x73 && x85 && x97) ? (
-                                                         x120 && x153
-                                                      )
-                                                      : (
+DEVICE auto rhs_eint_choice_81(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x73 & x85 & x97);
+    const auto choice_true = (
+                                                         x120 & x153
+                                                      );
+    const auto choice_false = (
                                                          rhs_eint_choice_80(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                                      ));
+                                                      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_82(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x73 && x85 && x97) ? (
-                                                      x120 && x152
-                                                   )
-                                                   : (
+DEVICE auto rhs_eint_choice_82(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x73 & x85 & x97);
+    const auto choice_true = (
+                                                      x120 & x152
+                                                   );
+    const auto choice_false = (
                                                       rhs_eint_choice_81(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                                   ));
+                                                   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_83(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x118 && x73) ? (
-                                                   x120 && x151
-                                                )
-                                                : (
+DEVICE auto rhs_eint_choice_83(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x118 & x73);
+    const auto choice_true = (
+                                                   x120 & x151
+                                                );
+    const auto choice_false = (
                                                    rhs_eint_choice_82(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                                ));
+                                                );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_84(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x118 && x73) ? (
-                                                x120 && x150
-                                             )
-                                             : (
+DEVICE auto rhs_eint_choice_84(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x118 & x73);
+    const auto choice_true = (
+                                                x120 & x150
+                                             );
+    const auto choice_false = (
                                                 rhs_eint_choice_83(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                             ));
+                                             );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_85(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x118 && x73) ? (
-                                             x120 && x149
-                                          )
-                                          : (
+DEVICE auto rhs_eint_choice_85(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x118 & x73);
+    const auto choice_true = (
+                                             x120 & x149
+                                          );
+    const auto choice_false = (
                                              rhs_eint_choice_84(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                          ));
+                                          );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_86(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x118 && x73) ? (
-                                          x120 && x148
-                                       )
-                                       : (
+DEVICE auto rhs_eint_choice_86(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x118 & x73);
+    const auto choice_true = (
+                                          x120 & x148
+                                       );
+    const auto choice_false = (
                                           rhs_eint_choice_85(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                       ));
+                                       );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_87(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x118 && x73 && x85 && x97) ? (
-                                       x120 && x147
-                                    )
-                                    : (
+DEVICE auto rhs_eint_choice_87(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x118 & x73 & x85 & x97);
+    const auto choice_true = (
+                                       x120 & x147
+                                    );
+    const auto choice_false = (
                                        rhs_eint_choice_86(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                    ));
+                                    );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_88(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x118 && x73 && x85 && x97) ? (
-                                    x120 && x146
-                                 )
-                                 : (
+DEVICE auto rhs_eint_choice_88(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x118 & x73 & x85 & x97);
+    const auto choice_true = (
+                                    x120 & x146
+                                 );
+    const auto choice_false = (
                                     rhs_eint_choice_87(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                 ));
+                                 );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_89(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x118 && x73 && x85 && x97) ? (
-                                 x120 && x145
-                              )
-                              : (
+DEVICE auto rhs_eint_choice_89(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x118 & x73 & x85 & x97);
+    const auto choice_true = (
+                                 x120 & x145
+                              );
+    const auto choice_false = (
                                  rhs_eint_choice_88(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                              ));
+                              );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_90(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x118 && x73 && x85 && x97) ? (
-                              x120 && x144
-                           )
-                           : (
+DEVICE auto rhs_eint_choice_90(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x118 & x73 & x85 & x97);
+    const auto choice_true = (
+                              x120 & x144
+                           );
+    const auto choice_false = (
                               rhs_eint_choice_89(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                           ));
+                           );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_91(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x114 && x115 && x73) ? (
-                           x120 && x142
-                        )
-                        : (
+DEVICE auto rhs_eint_choice_91(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x114 & x115 & x73);
+    const auto choice_true = (
+                           x120 & x142
+                        );
+    const auto choice_false = (
                            rhs_eint_choice_90(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                        ));
+                        );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_92(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x114 && x115 && x73) ? (
-                        x120 && x140
-                     )
-                     : (
+DEVICE auto rhs_eint_choice_92(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x114 & x115 & x73);
+    const auto choice_true = (
+                        x120 & x140
+                     );
+    const auto choice_false = (
                         rhs_eint_choice_91(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                     ));
+                     );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_93(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x114 && x115 && x73) ? (
-                     x120 && x138
-                  )
-                  : (
+DEVICE auto rhs_eint_choice_93(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x114 & x115 & x73);
+    const auto choice_true = (
+                     x120 & x138
+                  );
+    const auto choice_false = (
                      rhs_eint_choice_92(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                  ));
+                  );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_94(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x114 && x115 && x73) ? (
-                  x120 && x135
-               )
-               : (
+DEVICE auto rhs_eint_choice_94(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x114 & x115 & x73);
+    const auto choice_true = (
+                  x120 & x135
+               );
+    const auto choice_false = (
                   rhs_eint_choice_93(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-               ));
+               );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_95(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x114 && x115 && x73 && x85 && x97) ? (
-               x120 && x132
-            )
-            : (
+DEVICE auto rhs_eint_choice_95(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x114 & x115 & x73 & x85 & x97);
+    const auto choice_true = (
+               x120 & x132
+            );
+    const auto choice_false = (
                rhs_eint_choice_94(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-            ));
+            );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_96(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x109 && x114 && x115 && x73 && x85 && x97) ? (
-            x120 && x130
-         )
-         : (
+DEVICE auto rhs_eint_choice_96(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x109 & x114 & x115 & x73 & x85 & x97);
+    const auto choice_true = (
+            x120 & x130
+         );
+    const auto choice_false = (
             rhs_eint_choice_95(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-         ));
+         );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_97(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x107 && x114 && x115 && x73 && x85 && x97) ? (
-         x120 && x128
-      )
-      : (
+DEVICE auto rhs_eint_choice_97(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x107 & x114 & x115 & x73 & x85 & x97);
+    const auto choice_true = (
+         x120 & x128
+      );
+    const auto choice_false = (
          rhs_eint_choice_96(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-      ));
+      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_98(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x97, Real x98) {
-return ((x105 && x114 && x115 && x73 && x85 && x97) ? (
-      x120 && x125
-   )
-   : (
+DEVICE auto rhs_eint_choice_98(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
+    const auto choice_cond = (x105 & x114 & x115 & x73 & x85 & x97);
+    const auto choice_true = (
+      x120 & x125
+   );
+    const auto choice_false = (
       rhs_eint_choice_97(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_99(Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x119, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x73, Real x85, Real x88, Real x89, Real x97, Real x98) {
-return ((rhs_eint_choice_98(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)) ? (
+DEVICE auto rhs_eint_choice_99(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, Real x119, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, Real x89, bool x97, bool x98) {
+    const auto choice_cond = (rhs_eint_choice_98(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98));
+    const auto choice_true = (
       x119*x89/(x119 + x89)
-   )
-   : (
+   );
+    const auto choice_false = (
       0
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto rhs_eint_choice_100(Real T, Real x105, Real x107, Real x109, Real x114, Real x115, Real x116, Real x118, Real x119, Real x120, Real x125, Real x128, Real x130, Real x132, Real x135, Real x138, Real x140, Real x142, Real x144, Real x145, Real x146, Real x147, Real x148, Real x149, Real x150, Real x151, Real x152, Real x153, Real x154, Real x155, Real x156, Real x157, Real x158, Real x159, Real x160, Real x161, Real x70, Real x71, Real x73, Real x85, Real x88, Real x89, Real x97, Real x98, const Real* xn) {
-return ((T < 2.0) ? (
+DEVICE auto rhs_eint_choice_100(Real T, bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, Real x119, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x70, Real x71, bool x73, bool x85, bool x88, Real x89, bool x97, bool x98, const Real* xn) {
+    const auto choice_cond = (T < 2.0);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    xn[8]*rhs_eint_choice_42(x70, x71)*rhs_eint_choice_99(x105, x107, x109, x114, x115, x116, x118, x119, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x89, x97, x98)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
 DEVICE auto rhs_eint_choice_101(Real T, Real x25, Real x26, Real x35, Real x41, Real x42, Real x43, Real x44, Real x45, Real x47, Real x48, Real x49, Real x5, Real x50, Real x51, Real x52, Real x53, Real x54, const Real* xn) {
 return ((T >= x5) ? (
@@ -1729,15 +1913,17 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     return (x1*(-3.1438547368704001e-21*math::exp((0.34999999999999998)*math::log(math::abs(T)))*xn[0]*xn[8]*math::exp(-102000.0*x4) - 0.00022681492*((((T)*(T)))*(((T)*(T))))*x0*x58*rhs_eint_choice_36(x55, x57, x58, x59, x60, x61, x62, x63, x64, x66, x67, x68, x69) + 0.00084373771595996178*T*(1.3806479999999999e-16*xn[0] + 1.3806479999999999e-16*xn[1] + 1.3806479999999999e-16*xn[10] + 1.3806479999999999e-16*xn[11] + 1.3806479999999999e-16*xn[12] + 1.3806479999999999e-16*xn[13] + 1.3806479999999999e-16*xn[2] + 1.3806479999999999e-16*xn[3] + 1.3806479999999999e-16*xn[4] + 1.3806479999999999e-16*xn[5] + 1.3806479999999999e-16*xn[6] + 1.3806479999999999e-16*xn[7] + 1.3806479999999999e-16*xn[8] + 1.3806479999999999e-16*xn[9])/(math::sqrt(x1)*x22) - 2.1299999999999999e-27*xn[0]*x2*(4.0*xn[11] + x3) - 5.6500000000000001e-36*xn[0]*(T - x5)*((((z + 1.0)*(z + 1.0)))*(((z + 1.0)*(z + 1.0)))) - 3.4635323838154264e-26*xn[1]*x14 - 1.3854129535261706e-25*xn[11]*x14 - 9.3799999999999993e-22*xn[13]*x10*x12*math::exp(-285335.40000000002*x8) + 7.1777505408000004e-12*((xn[2])*(xn[2])*(xn[2]))*x18*(2.0000000000000002e-31*x15 + 6.0000000000000001e-32*x21) + 7.1777505408000004e-12*((xn[2])*(xn[2]))*xn[8]*x18*(2.5000000000000002e-32*x15 + 7.5000000000000001e-33*x21) + 5.6556829037999995e-12*xn[2]*xn[3]*x18*(1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T))))/(0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0) + 1.75918975308e-21*xn[2]*xn[6]*x18 - 7.1777505408000004e-12*xn[2]*xn[8]*(math::exp((42.707410000000003*x23*x25 - 2.0273650000000001*x29 - 21467.790000000001*x4 - 1657.4099999999999*x4/(math::exp((x39)*math::log(math::abs(math::exp((-x38 - 8.1313220000000008)*math::log(math::abs(10.0)))*x17))) + 1.0) - x40 - 142.7664 - (70.138370000000009*x23*x25 + 11.28215*x25*math::log(14254.549999999999*x4 + 1.0) - 4.7035149999999994*x29 - x40 - 203.11568)/(math::exp((x39)*math::log(math::abs(math::exp((-x38 - 9.3055640000000004)*math::log(math::abs(10.0)))*x17))) + 1.0))*math::log(math::abs(10.0))) + math::exp((43.20243*x26*x28 - 68.422430000000006*x34 - x37 - 23705.700000000001*x4 - 2080.4099999999999*x4/(math::exp((x33)*math::log(math::abs(math::exp((-x30 - 13.656822)*math::log(math::abs(10.0)))*x17))) + 1.0) - 178.4239 - (19.734269999999999*x25*math::log(16780.950000000001*x4 + 1.0) + 37.886913*x26*x28 - 14.509090000000008*x34 - x37 - 307.31920000000002)/(math::exp((x33)*math::log(math::abs(math::exp((-x30 - 14.82123)*math::log(math::abs(10.0)))*x17))) + 1.0))*math::log(math::abs(10.0)))) - 7.1777505408000004e-12*((xn[8])*(xn[8]))*math::exp((x27)*math::log(math::abs(1.1800000000000001e-10*math::exp(-69500.0*x4))))*math::exp((1.0 - x27)*math::log(math::abs(8.1250000000000003e-8*x15*(1.0 - math::exp(-6000.0*x4))*math::exp(-52000.0*x4)))) - 1.2700000000000001e-21*x10*x13*math::exp(-157809.10000000001*x8) - 4.9500000000000001e-22*x10*x19*math::exp(-631515.0*x8) - 7.4999999999999996e-19*x13*math::exp(-118348.0*x8) - 5.5399999999999998e-17*x19*rhs_eint_choice_37(T, x6)*math::exp(-473638.0*x8) - 5.0099999999999997e-27*x20*math::exp(-55338.0*x8) - 9.1000000000000001e-27*x20*math::exp(-13179.0*x8) - 1.24e-13*x7*(1.0 + 0.29999999999999999*math::exp(-94000.0*x8))*rhs_eint_choice_38(T, x6)*math::exp(-470000.0*x8) - 1.5499999999999999e-26*x7*rhs_eint_choice_39(T, x6) - rhs_eint_choice_100(T, x105, x107, x109, x114, x115, x116, x118, x119, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x70, x71, x73, x85, x88, x89, x97, x98, xn) - rhs_eint_choice_101(T, x25, x26, x35, x41, x42, x43, x44, x45, x47, x48, x49, x5, x50, x51, x52, x53, x54, xn)));
 
 }
-DEVICE auto jac_nuc_choice_0(Real T, Real x23, Real x24, Real x25, Real x26) {
-return ((x26) ? (
+DEVICE auto jac_nuc_choice_0(Real T, Real x23, Real x24, Real x25, bool x26) {
+    const auto choice_cond = (x26);
+    const auto choice_true = (
    -5.5279999999999998e-28*((T)*(T)*(T)*(T)*(T)) - 2.3088e-11*T + 7.3427999999999993e-15*x23 - 7.5474000000000004e-19*x24 + 3.3467999999999999e-23*x25 + 4.2277999999999996e-8
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_1(Real T, Real x28, Real x30, Real x31) {
+DEVICE auto jac_nuc_choice_1(Real T, Real x28, bool x30, Real x31) {
 return ((x30) ? (
    x28
 )
@@ -1745,15 +1931,17 @@ return ((x30) ? (
    1250086.112245841*math::exp((-1.5)*math::log(math::abs(T)))*x31 + x28
 ));
 }
-DEVICE auto jac_nuc_choice_2(Real x28, Real x49, Real x50, Real x52) {
-return ((x49) ? (
+DEVICE auto jac_nuc_choice_2(Real x28, bool x49, Real x50, Real x52) {
+    const auto choice_cond = (x49);
+    const auto choice_true = (
    x28
-)
-: (
+);
+    const auto choice_false = (
    3.2867337024382687e-10*x50*x52
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_3(Real T, Real x61, Real x63) {
+DEVICE auto jac_nuc_choice_3(Real T, bool x61, Real x63) {
 return ((x61) ? (
    1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs(T)))
 )
@@ -1761,7 +1949,7 @@ return ((x61) ? (
    x63
 ));
 }
-DEVICE auto jac_nuc_choice_4(Real T, Real x12, Real x35, Real x37, Real x38, Real x39, Real x49, Real x50, Real x52, Real x82, Real x84, Real x85, Real x87, Real x88) {
+DEVICE auto jac_nuc_choice_4(Real T, Real x12, Real x35, Real x37, Real x38, Real x39, bool x49, Real x50, Real x52, Real x82, Real x84, Real x85, Real x87, Real x88) {
 return ((x49) ? (
    x82
 )
@@ -1769,15 +1957,17 @@ return ((x49) ? (
    -2.3799651743169991e-10*math::exp((-1.724112565782685)*math::log(math::abs(T)))*x52 + 3.2867337024382687e-10*x50*x52*(-0.0071425856320495021*x12*x35 - 7.1075145702705346e-5*x12*x37 + 2.9934653521797078e-5*x12*x38 + 4.0289298963030308e-6*x12*x39 - 0.04052089463969382*x84 - 0.0012850420852755183*x85 - 1.4854136318202087e-7*x87 - 2.7640217188769353e-8*x88)
 ));
 }
-DEVICE auto jac_nuc_choice_5(Real T, Real x23, Real x24, Real x25, Real x26) {
-return ((x26) ? (
+DEVICE auto jac_nuc_choice_5(Real T, Real x23, Real x24, Real x25, bool x26) {
+    const auto choice_cond = (x26);
+    const auto choice_true = (
    1.4685599999999999e-14*T - 2.2642200000000001e-18*x23 + 1.3387199999999999e-22*x24 - 2.7639999999999999e-27*x25 - 2.3088e-11
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_6(Real T, Real x12, Real x35, Real x37, Real x38, Real x39, Real x40, Real x61, Real x62, Real x63, Real x84, Real x85, Real x88) {
+DEVICE auto jac_nuc_choice_6(Real T, Real x12, Real x35, Real x37, Real x38, Real x39, Real x40, bool x61, Real x62, Real x63, Real x84, Real x85, Real x88) {
 return ((x61) ? (
    2.6092635916521491e-16*math::exp((0.78186)*math::log(math::abs(T)))
 )
@@ -1785,7 +1975,7 @@ return ((x61) ? (
    3.7804827525136553e-14*math::exp((0.13944933584163111)*math::log(math::abs(T)))*x62 + x63*(0.025393366159889998*x12*x35 + 0.0010061251423955*x12*x37 + 0.00051983779458540007*x12*x38 - 0.00018095067761848*x12*x39 + 1.9644009576313599e-5*x12*x40 - 0.28420270431082961*x84 - 0.0057310564851968003*x85 - 7.2615442150620009e-7*x88)
 ));
 }
-DEVICE auto jac_nuc_choice_7(Real T, Real x12, Real x30, Real x31, Real x82, Real x83) {
+DEVICE auto jac_nuc_choice_7(Real T, Real x12, bool x30, Real x31, Real x82, Real x83) {
 return ((x30) ? (
    x82
 )
@@ -1793,7 +1983,7 @@ return ((x30) ? (
    -1875129.1683687614*math::exp((-2.5)*math::log(math::abs(T)))*x31 + 587469852277.90271*x31*x83 + x82 + 54.282214350476039*x83*math::exp(-563932.20901156683*x12)
 ));
 }
-DEVICE auto jac_nuc_choice_8(Real T, Real x12, Real x13, Real x14) {
+DEVICE auto jac_nuc_choice_8(Real T, bool x12, Real x13, Real x14) {
 return ((x12) ? (
    1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)))
 )
@@ -1801,7 +1991,7 @@ return ((x12) ? (
    3.2867337024382687e-10*x13*x14
 ));
 }
-DEVICE auto jac_nuc_choice_9(Real T, Real x21, Real x22, Real x23) {
+DEVICE auto jac_nuc_choice_9(Real T, Real x21, Real x22, bool x23) {
 return ((x23) ? (
    1.26e-9*x21*x22
 )
@@ -1809,7 +1999,7 @@ return ((x23) ? (
    4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_10(Real T, Real x25, Real x26) {
+DEVICE auto jac_nuc_choice_10(Real T, Real x25, bool x26) {
 return ((x26) ? (
    2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs(T)))*x25 - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
 )
@@ -1817,15 +2007,17 @@ return ((x26) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_11(Real T, Real x28, Real x29, Real x30) {
-return ((x30) ? (
+DEVICE auto jac_nuc_choice_11(Real T, Real x28, Real x29, bool x30) {
+    const auto choice_cond = (x30);
+    const auto choice_true = (
    -7.7700000000000002e-13*T + 2.5000000000000002e-10*x28 + 2.96e-6*x29 - 1.73e-9
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_12(Real T, Real x41, Real x46) {
+DEVICE auto jac_nuc_choice_12(Real T, bool x41, Real x46) {
 return ((x41) ? (
    3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs(T)))
 )
@@ -1833,15 +2025,17 @@ return ((x41) ? (
    x46
 ));
 }
-DEVICE auto jac_nuc_choice_13(Real x52, Real x53) {
-return ((x53) ? (
+DEVICE auto jac_nuc_choice_13(Real x52, bool x53) {
+    const auto choice_cond = (x53);
+    const auto choice_true = (
    x52
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_14(Real T, Real x26, Real x56) {
+DEVICE auto jac_nuc_choice_14(Real T, bool x26, Real x56) {
 return ((x26) ? (
    2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs(T)))*x56
 )
@@ -1849,7 +2043,7 @@ return ((x26) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_15(Real T, Real x12, Real x13, Real x14, Real x18, Real x2, Real x4, Real x5, Real x6, Real x66, Real x67, Real x68, Real x8) {
+DEVICE auto jac_nuc_choice_15(Real T, bool x12, Real x13, Real x14, Real x18, Real x2, Real x4, Real x5, Real x6, Real x66, Real x67, Real x68, Real x8) {
 return ((x12) ? (
    -9.5174852894472843e-11*math::exp((-1.6353)*math::log(math::abs(T)))
 )
@@ -1857,7 +2051,7 @@ return ((x12) ? (
    -2.3799651743169991e-10*math::exp((-1.724112565782685)*math::log(math::abs(T)))*x14 + 3.2867337024382687e-10*x13*x14*(-0.0071425856320495021*x18*x2 - 7.1075145702705346e-5*x18*x4 + 2.9934653521797078e-5*x18*x5 + 4.0289298963030308e-6*x18*x6 - 2.7640217188769353e-8*x18*x8 - 0.04052089463969382*x66 - 0.0012850420852755183*x67 - 1.4854136318202087e-7*x68)
 ));
 }
-DEVICE auto jac_nuc_choice_16(Real T, Real x22, Real x23) {
+DEVICE auto jac_nuc_choice_16(Real T, Real x22, bool x23) {
 return ((x23) ? (
    0.00016065*math::exp((-2.75)*math::log(math::abs(T)))*x22 - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs(T)))*x22
 )
@@ -1865,7 +2059,7 @@ return ((x23) ? (
    1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_17(Real T, Real x18, Real x32, Real x33, Real x41, Real x42, Real x44, Real x46, Real x64, Real x65) {
+DEVICE auto jac_nuc_choice_17(Real T, Real x18, Real x32, Real x33, bool x41, Real x42, Real x44, Real x46, Real x64, Real x65) {
 return ((x41) ? (
    -5.2466095085621454e-21*math::exp((-1.1499999999999999)*math::log(math::abs(T)))
 )
@@ -1873,7 +2067,7 @@ return ((x41) ? (
    x33*x46*(3.5720000000000001*x18*x32*x44 - 0.62159999999999993*x42*x65 - 3.194*x64)
 ));
 }
-DEVICE auto jac_nuc_choice_18(Real T, Real x29, Real x30) {
+DEVICE auto jac_nuc_choice_18(Real T, Real x29, bool x30) {
 return ((x30) ? (
    1.2500000000000001e-10*x29 - 7.7700000000000002e-13 - 1.48e-6/math::exp((3.0/2.0)*math::log(math::abs(T)))
 )
@@ -1881,7 +2075,7 @@ return ((x30) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_19(Real T, Real x25, Real x26) {
+DEVICE auto jac_nuc_choice_19(Real T, Real x25, bool x26) {
 return ((x26) ? (
    7.4200000000000004e-9*math::exp((-1.5979999999999999)*math::log(math::abs(T)))*x25 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*math::log(math::abs(T)))*x25 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*math::log(math::abs(T)))
 )
@@ -1889,15 +2083,17 @@ return ((x26) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_20(Real x18, Real x43, Real x48, Real x49, Real x50, Real x51, Real x52, Real x53, Real x62, Real x63, Real x65) {
-return ((x53) ? (
+DEVICE auto jac_nuc_choice_20(Real x18, Real x43, Real x48, Real x49, Real x50, Real x51, Real x52, bool x53, Real x62, Real x63, Real x65) {
+    const auto choice_cond = (x53);
+    const auto choice_true = (
    x48*(-1.9125491199999999e-8*x18*x43 + 1.9865770999999999e-9*x18*x49 - 1.09028466e-10*x18*x50 + 2.4718352399999997e-12*x18*x51 + 3.3735381999999997e-7*x18 - 2.8982736e-7*x63 + 1.0251841499999999e-7*x65) + 21237.150000000001*x52*x62
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_21(Real T, Real x26, Real x56) {
+DEVICE auto jac_nuc_choice_21(Real T, bool x26, Real x56) {
 return ((x26) ? (
    6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs(T)))*x56 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs(T))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs(T)))*x56
 )
@@ -1905,15 +2101,17 @@ return ((x26) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_22(Real T, Real x14, Real x15, Real x16, Real x17) {
-return ((x17) ? (
+DEVICE auto jac_nuc_choice_22(Real T, Real x14, Real x15, Real x16, bool x17) {
+    const auto choice_cond = (x17);
+    const auto choice_true = (
    -5.5279999999999998e-28*((T)*(T)*(T)*(T)*(T)) - 2.3088e-11*T + 7.3427999999999993e-15*x14 - 7.5474000000000004e-19*x15 + 3.3467999999999999e-23*x16 + 4.2277999999999996e-8
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_23(Real T, Real x36, Real x37, Real x39) {
+DEVICE auto jac_nuc_choice_23(Real T, bool x36, Real x37, Real x39) {
 return ((x36) ? (
    1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)))
 )
@@ -1921,7 +2119,7 @@ return ((x36) ? (
    3.2867337024382687e-10*x37*x39
 ));
 }
-DEVICE auto jac_nuc_choice_24(Real T, Real x17, Real x41, Real x42) {
+DEVICE auto jac_nuc_choice_24(Real T, bool x17, Real x41, Real x42) {
 return ((x17) ? (
    1.26e-9*x41*x42
 )
@@ -1929,7 +2127,7 @@ return ((x17) ? (
    4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_25(Real T, Real x44, Real x45) {
+DEVICE auto jac_nuc_choice_25(Real T, Real x44, bool x45) {
 return ((x45) ? (
    2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs(T)))*x44 - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
 )
@@ -1937,15 +2135,17 @@ return ((x45) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_26(Real x54, Real x55) {
-return ((x55) ? (
+DEVICE auto jac_nuc_choice_26(Real x54, bool x55) {
+    const auto choice_cond = (x55);
+    const auto choice_true = (
    x54
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_27(Real T, Real x57, Real x64) {
+DEVICE auto jac_nuc_choice_27(Real T, bool x57, Real x64) {
 return ((x57) ? (
    3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs(T)))
 )
@@ -1953,23 +2153,27 @@ return ((x57) ? (
    x64
 ));
 }
-DEVICE auto jac_nuc_choice_28(Real T, Real x0, Real x1, Real x66) {
-return ((x66) ? (
+DEVICE auto jac_nuc_choice_28(Real T, Real x0, Real x1, bool x66) {
+    const auto choice_cond = (x66);
+    const auto choice_true = (
    -7.7700000000000002e-13*T + 2.5000000000000002e-10*x0 + 2.96e-6*x1 - 1.73e-9
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_29(Real x170, Real x171) {
-return ((x171) ? (
+DEVICE auto jac_nuc_choice_29(Real x170, bool x171) {
+    const auto choice_cond = (x171);
+    const auto choice_true = (
    x170
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_30(Real T, Real x173, Real x45) {
+DEVICE auto jac_nuc_choice_30(Real T, Real x173, bool x45) {
 return ((x45) ? (
    2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs(T)))*x173
 )
@@ -1977,7 +2181,7 @@ return ((x45) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_31(Real T, Real x184, Real x186) {
+DEVICE auto jac_nuc_choice_31(Real T, bool x184, Real x186) {
 return ((x184) ? (
    1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs(T)))
 )
@@ -1985,15 +2189,17 @@ return ((x184) ? (
    x186
 ));
 }
-DEVICE auto jac_nuc_choice_32(Real x195, Real x196, Real x197) {
-return ((x196) ? (
+DEVICE auto jac_nuc_choice_32(Real x195, bool x196, Real x197) {
+    const auto choice_cond = (x196);
+    const auto choice_true = (
    x195
-)
-: (
+);
+    const auto choice_false = (
    3.1699999999999999e-10*x197
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_33(Real T, Real x21, Real x222, Real x223, Real x225, Real x227, Real x23, Real x24, Real x25, Real x36, Real x37, Real x39, Real x7) {
+DEVICE auto jac_nuc_choice_33(Real T, Real x21, Real x222, Real x223, Real x225, Real x227, Real x23, Real x24, Real x25, bool x36, Real x37, Real x39, Real x7) {
 return ((x36) ? (
    -9.5174852894472843e-11*math::exp((-1.6353)*math::log(math::abs(T)))
 )
@@ -2001,15 +2207,17 @@ return ((x36) ? (
    -2.3799651743169991e-10*math::exp((-1.724112565782685)*math::log(math::abs(T)))*x39 + 3.2867337024382687e-10*x37*x39*(-0.0071425856320495021*x21*x7 - 0.04052089463969382*x222 - 0.0012850420852755183*x223 - 1.4854136318202087e-7*x225 - 2.7640217188769353e-8*x227 - 7.1075145702705346e-5*x23*x7 + 2.9934653521797078e-5*x24*x7 + 4.0289298963030308e-6*x25*x7)
 ));
 }
-DEVICE auto jac_nuc_choice_34(Real T, Real x14, Real x15, Real x16, Real x17) {
-return ((x17) ? (
+DEVICE auto jac_nuc_choice_34(Real T, Real x14, Real x15, Real x16, bool x17) {
+    const auto choice_cond = (x17);
+    const auto choice_true = (
    1.4685599999999999e-14*T - 2.2642200000000001e-18*x14 + 1.3387199999999999e-22*x15 - 2.7639999999999999e-27*x16 - 2.3088e-11
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_35(Real T, Real x17, Real x42) {
+DEVICE auto jac_nuc_choice_35(Real T, bool x17, Real x42) {
 return ((x17) ? (
    0.00016065*math::exp((-2.75)*math::log(math::abs(T)))*x42 - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs(T)))*x42
 )
@@ -2017,7 +2225,7 @@ return ((x17) ? (
    1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_36(Real T, Real x216, Real x218, Real x48, Real x57, Real x58, Real x63, Real x64, Real x7) {
+DEVICE auto jac_nuc_choice_36(Real T, Real x216, Real x218, Real x48, bool x57, Real x58, Real x63, Real x64, Real x7) {
 return ((x57) ? (
    -5.2466095085621454e-21*math::exp((-1.1499999999999999)*math::log(math::abs(T)))
 )
@@ -2025,15 +2233,17 @@ return ((x57) ? (
    x58*x64*(-3.194*x216 - 0.62159999999999993*x218 + 3.5720000000000001*x48*x63*x7)
 ));
 }
-DEVICE auto jac_nuc_choice_37(Real x1, Real x209, Real x66) {
-return ((x66) ? (
+DEVICE auto jac_nuc_choice_37(Real x1, Real x209, bool x66) {
+    const auto choice_cond = (x66);
+    const auto choice_true = (
    1.2500000000000001e-10*x1 - 1.48e-6*x209 - 7.7700000000000002e-13
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_38(Real T, Real x44, Real x45) {
+DEVICE auto jac_nuc_choice_38(Real T, Real x44, bool x45) {
 return ((x45) ? (
    7.4200000000000004e-9*math::exp((-1.5979999999999999)*math::log(math::abs(T)))*x44 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*math::log(math::abs(T)))*x44 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*math::log(math::abs(T)))
 )
@@ -2041,23 +2251,27 @@ return ((x45) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_39(Real x169, Real x217, Real x219, Real x220, Real x221, Real x47, Real x52, Real x53, Real x54, Real x55, Real x7) {
-return ((x55) ? (
+DEVICE auto jac_nuc_choice_39(Real x169, Real x217, Real x219, Real x220, Real x221, Real x47, Real x52, Real x53, Real x54, bool x55, Real x7) {
+    const auto choice_cond = (x55);
+    const auto choice_true = (
    21237.150000000001*x169*x54 + x47*(1.0251841499999999e-7*x217 - 2.8982736e-7*x219 - 1.9125491199999999e-8*x220 + 1.9865770999999999e-9*x221 - 1.09028466e-10*x52*x7 + 2.4718352399999997e-12*x53*x7 + 3.3735381999999997e-7*x7)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_40(Real x15, Real x169, Real x170, Real x171) {
-return ((x171) ? (
+DEVICE auto jac_nuc_choice_40(Real x15, Real x169, Real x170, bool x171) {
+    const auto choice_cond = (x171);
+    const auto choice_true = (
    x170*(4430.0*x169 - 347800.0/x15)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_41(Real T, Real x173, Real x45) {
+DEVICE auto jac_nuc_choice_41(Real T, Real x173, bool x45) {
 return ((x45) ? (
    6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs(T)))*x173 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs(T))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs(T)))*x173
 )
@@ -2065,15 +2279,17 @@ return ((x45) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_42(Real x169, Real x193, Real x194, Real x195, Real x196, Real x197, Real x216, Real x218, Real x220, Real x221, Real x226, Real x58) {
-return ((x196) ? (
+DEVICE auto jac_nuc_choice_42(Real x169, Real x193, Real x194, Real x195, bool x196, Real x197, Real x216, Real x218, Real x220, Real x221, Real x226, Real x58) {
+    const auto choice_cond = (x196);
+    const auto choice_true = (
    x195*x58*(1.5894349999999999*x193*x221 - 8.6761199999999992*x194*x220 + 5.8888600000000002*x216 + 6.7520699999999998*x218 + 14.393840000000001*x226)
-)
-: (
+);
+    const auto choice_false = (
    1.650619e-6*x169*x197
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_43(Real T, Real x184, Real x185, Real x186, Real x21, Real x222, Real x223, Real x227, Real x23, Real x24, Real x25, Real x26, Real x7) {
+DEVICE auto jac_nuc_choice_43(Real T, bool x184, Real x185, Real x186, Real x21, Real x222, Real x223, Real x227, Real x23, Real x24, Real x25, Real x26, Real x7) {
 return ((x184) ? (
    2.6092635916521491e-16*math::exp((0.78186)*math::log(math::abs(T)))
 )
@@ -2081,15 +2297,17 @@ return ((x184) ? (
    3.7804827525136553e-14*math::exp((0.13944933584163111)*math::log(math::abs(T)))*x185 + x186*(0.025393366159889998*x21*x7 - 0.28420270431082961*x222 - 0.0057310564851968003*x223 - 7.2615442150620009e-7*x227 + 0.0010061251423955*x23*x7 + 0.00051983779458540007*x24*x7 - 0.00018095067761848*x25*x7 + 1.9644009576313599e-5*x26*x7)
 ));
 }
-DEVICE auto jac_nuc_choice_44(Real T, Real x21, Real x22, Real x23) {
-return ((x23) ? (
+DEVICE auto jac_nuc_choice_44(Real T, Real x21, Real x22, bool x23) {
+    const auto choice_cond = (x23);
+    const auto choice_true = (
    -7.7700000000000002e-13*T + 2.5000000000000002e-10*x21 + 2.96e-6*x22 - 1.73e-9
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_45(Real T, Real x30, Real x32) {
+DEVICE auto jac_nuc_choice_45(Real T, bool x30, Real x32) {
 return ((x30) ? (
    1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs(T)))
 )
@@ -2097,15 +2315,17 @@ return ((x30) ? (
    x32
 ));
 }
-DEVICE auto jac_nuc_choice_46(Real x22, Real x23, Real x40) {
-return ((x23) ? (
+DEVICE auto jac_nuc_choice_46(Real x22, bool x23, Real x40) {
+    const auto choice_cond = (x23);
+    const auto choice_true = (
    1.2500000000000001e-10*x22 - 1.48e-6*x40 - 7.7700000000000002e-13
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_47(Real T, Real x11, Real x12, Real x13, Real x14, Real x15, Real x30, Real x31, Real x32, Real x4, Real x42, Real x43, Real x9) {
+DEVICE auto jac_nuc_choice_47(Real T, Real x11, Real x12, Real x13, Real x14, Real x15, bool x30, Real x31, Real x32, Real x4, Real x42, Real x43, Real x9) {
 return ((x30) ? (
    2.6092635916521491e-16*math::exp((0.78186)*math::log(math::abs(T)))
 )
@@ -2113,7 +2333,7 @@ return ((x30) ? (
    3.7804827525136553e-14*math::exp((0.13944933584163111)*math::log(math::abs(T)))*x31 + x32*(0.0010061251423955*x11*x4 + 0.00051983779458540007*x12*x4 - 0.00018095067761848*x13*x4 + 1.9644009576313599e-5*x14*x4 - 7.2615442150620009e-7*x15*x4 + 0.025393366159889998*x4*x9 - 0.28420270431082961*x42 - 0.0057310564851968003*x43)
 ));
 }
-DEVICE auto jac_nuc_choice_48(Real T, Real x4, Real x5) {
+DEVICE auto jac_nuc_choice_48(Real T, Real x4, bool x5) {
 return ((x5) ? (
    2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs(T)))*x4 - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
 )
@@ -2121,7 +2341,7 @@ return ((x5) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_49(Real T, Real x5, Real x7) {
+DEVICE auto jac_nuc_choice_49(Real T, bool x5, Real x7) {
 return ((x5) ? (
    2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs(T)))*x7
 )
@@ -2129,7 +2349,7 @@ return ((x5) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_50(Real T, Real x4, Real x5) {
+DEVICE auto jac_nuc_choice_50(Real T, Real x4, bool x5) {
 return ((x5) ? (
    7.4200000000000004e-9*math::exp((-1.5979999999999999)*math::log(math::abs(T)))*x4 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*math::log(math::abs(T)))*x4 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*math::log(math::abs(T)))
 )
@@ -2137,7 +2357,7 @@ return ((x5) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_51(Real T, Real x5, Real x7) {
+DEVICE auto jac_nuc_choice_51(Real T, bool x5, Real x7) {
 return ((x5) ? (
    6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs(T)))*x7 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs(T))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs(T)))*x7
 )
@@ -2145,7 +2365,7 @@ return ((x5) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_52(Real T, Real x8, Real x9) {
+DEVICE auto jac_nuc_choice_52(Real T, Real x8, bool x9) {
 return ((x9) ? (
    2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs(T)))*x8 - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
 )
@@ -2153,15 +2373,17 @@ return ((x9) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_53(Real x22, Real x23) {
-return ((x23) ? (
+DEVICE auto jac_nuc_choice_53(Real x22, bool x23) {
+    const auto choice_cond = (x23);
+    const auto choice_true = (
    x22
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_54(Real T, Real x25, Real x9) {
+DEVICE auto jac_nuc_choice_54(Real T, Real x25, bool x9) {
 return ((x9) ? (
    2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs(T)))*x25
 )
@@ -2169,15 +2391,17 @@ return ((x9) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_55(Real x35, Real x36, Real x37) {
-return ((x36) ? (
+DEVICE auto jac_nuc_choice_55(Real x35, bool x36, Real x37) {
+    const auto choice_cond = (x36);
+    const auto choice_true = (
    x35
-)
-: (
+);
+    const auto choice_false = (
    3.1699999999999999e-10*x37
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_56(Real T, Real x8, Real x9) {
+DEVICE auto jac_nuc_choice_56(Real T, Real x8, bool x9) {
 return ((x9) ? (
    7.4200000000000004e-9*math::exp((-1.5979999999999999)*math::log(math::abs(T)))*x8 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*math::log(math::abs(T)))*x8 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*math::log(math::abs(T)))
 )
@@ -2185,15 +2409,17 @@ return ((x9) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_57(Real T, Real x21, Real x22, Real x23) {
-return ((x23) ? (
+DEVICE auto jac_nuc_choice_57(Real T, Real x21, Real x22, bool x23) {
+    const auto choice_cond = (x23);
+    const auto choice_true = (
    x22*(4430.0*x21 - 347800.0/((T)*(T)*(T)))
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_58(Real T, Real x25, Real x9) {
+DEVICE auto jac_nuc_choice_58(Real T, Real x25, bool x9) {
 return ((x9) ? (
    6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs(T)))*x25 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs(T))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs(T)))*x25
 )
@@ -2201,23 +2427,27 @@ return ((x9) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_59(Real x11, Real x13, Real x21, Real x28, Real x29, Real x30, Real x31, Real x32, Real x33, Real x34, Real x35, Real x36, Real x37, Real x41, Real x7) {
-return ((x36) ? (
+DEVICE auto jac_nuc_choice_59(Real x11, Real x13, Real x21, Real x28, Real x29, Real x30, Real x31, Real x32, Real x33, Real x34, Real x35, bool x36, Real x37, Real x41, Real x7) {
+    const auto choice_cond = (x36);
+    const auto choice_true = (
    x11*x35*(14.393840000000001*x13*x33*x7 + 1.5894349999999999*x28*x30*x7 - 8.6761199999999992*x29*x32*x7 + 6.7520699999999998*x31*x34*x7 + 5.8888600000000002*x41)
-)
-: (
+);
+    const auto choice_false = (
    1.650619e-6*x21*x37
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_60(Real T, Real x0, Real x1, Real x2, Real x3) {
-return ((x3) ? (
+DEVICE auto jac_nuc_choice_60(Real T, Real x0, Real x1, Real x2, bool x3) {
+    const auto choice_cond = (x3);
+    const auto choice_true = (
    -5.5279999999999998e-28*((T)*(T)*(T)*(T)*(T)) - 2.3088e-11*T + 7.3427999999999993e-15*x0 - 7.5474000000000004e-19*x1 + 3.3467999999999999e-23*x2 + 4.2277999999999996e-8
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_61(Real T, Real x14, Real x6) {
+DEVICE auto jac_nuc_choice_61(Real T, Real x14, bool x6) {
 return ((x6) ? (
    3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs(T)))
 )
@@ -2225,23 +2455,27 @@ return ((x6) ? (
    x14
 ));
 }
-DEVICE auto jac_nuc_choice_62(Real x21, Real x22) {
-return ((x22) ? (
+DEVICE auto jac_nuc_choice_62(Real x21, bool x22) {
+    const auto choice_cond = (x22);
+    const auto choice_true = (
    x21
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_63(Real T, Real x0, Real x1, Real x2, Real x3) {
-return ((x3) ? (
+DEVICE auto jac_nuc_choice_63(Real T, Real x0, Real x1, Real x2, bool x3) {
+    const auto choice_cond = (x3);
+    const auto choice_true = (
    1.4685599999999999e-14*T - 2.2642200000000001e-18*x0 + 1.3387199999999999e-22*x1 - 2.7639999999999999e-27*x2 - 2.3088e-11
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_64(Real T, Real x10, Real x12, Real x14, Real x16, Real x25, Real x6, Real x7, Real x8, Real x9) {
+DEVICE auto jac_nuc_choice_64(Real T, Real x10, Real x12, Real x14, Real x16, Real x25, bool x6, Real x7, Real x8, Real x9) {
 return ((x6) ? (
    -5.2466095085621454e-21*math::exp((-1.1499999999999999)*math::log(math::abs(T)))
 )
@@ -2249,95 +2483,117 @@ return ((x6) ? (
    x14*x8*(-0.62159999999999993*x10*x25 + 3.5720000000000001*x12*x16*x7 - x16*x9)
 ));
 }
-DEVICE auto jac_nuc_choice_65(Real x0, Real x11, Real x16, Real x17, Real x18, Real x19, Real x20, Real x21, Real x22, Real x25, Real x7) {
-return ((x22) ? (
+DEVICE auto jac_nuc_choice_65(Real x0, Real x11, Real x16, Real x17, Real x18, Real x19, Real x20, Real x21, bool x22, Real x25, Real x7) {
+    const auto choice_cond = (x22);
+    const auto choice_true = (
    x17*(-1.9125491199999999e-8*x11*x16 + 1.9865770999999999e-9*x16*x18 - 1.09028466e-10*x16*x19 + 2.4718352399999997e-12*x16*x20 - 2.8982736e-7*x16*x7 + 3.3735381999999997e-7*x16 + 1.0251841499999999e-7*x25) + 21237.150000000001*x21/x0
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_66(Real x14, Real x15) {
-return ((x15) ? (
+DEVICE auto jac_nuc_choice_66(Real x14, bool x15) {
+    const auto choice_cond = (x15);
+    const auto choice_true = (
    x14
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_67(Real x116, Real x117) {
-return ((x117) ? (
+DEVICE auto jac_nuc_choice_67(Real x116, bool x117) {
+    const auto choice_cond = (x117);
+    const auto choice_true = (
    x116
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_68(Real x133, Real x134, Real x135) {
-return ((x134) ? (
+DEVICE auto jac_nuc_choice_68(Real x133, bool x134, Real x135) {
+    const auto choice_cond = (x134);
+    const auto choice_true = (
    x133
-)
-: (
+);
+    const auto choice_false = (
    3.1699999999999999e-10*x135
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_69(Real x0, Real x115, Real x12, Real x13, Real x14, Real x149, Real x15, Real x152, Real x153, Real x154, Real x7) {
-return ((x15) ? (
+DEVICE auto jac_nuc_choice_69(Real x0, Real x115, Real x12, Real x13, Real x14, Real x149, bool x15, Real x152, Real x153, Real x154, Real x7) {
+    const auto choice_cond = (x15);
+    const auto choice_true = (
    21237.150000000001*x115*x14 + x7*(-1.09028466e-10*x0*x12 + 2.4718352399999997e-12*x0*x13 + 3.3735381999999997e-7*x0 - 2.8982736e-7*x149 + 1.0251841499999999e-7*x152 - 1.9125491199999999e-8*x153 + 1.9865770999999999e-9*x154)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_70(Real T, Real x115, Real x116, Real x117) {
-return ((x117) ? (
+DEVICE auto jac_nuc_choice_70(Real T, Real x115, Real x116, bool x117) {
+    const auto choice_cond = (x117);
+    const auto choice_true = (
    x116*(4430.0*x115 - 347800.0/((T)*(T)*(T)))
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_71(Real x115, Real x131, Real x132, Real x133, Real x134, Real x135, Real x148, Real x150, Real x153, Real x154, Real x155, Real x23) {
-return ((x134) ? (
+DEVICE auto jac_nuc_choice_71(Real x115, Real x131, Real x132, Real x133, bool x134, Real x135, Real x148, Real x150, Real x153, Real x154, Real x155, Real x23) {
+    const auto choice_cond = (x134);
+    const auto choice_true = (
    x133*x23*(1.5894349999999999*x131*x154 - 8.6761199999999992*x132*x153 + 5.8888600000000002*x148 + 14.393840000000001*x150 + 6.7520699999999998*x155)
-)
-: (
+);
+    const auto choice_false = (
    1.650619e-6*x115*x135
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_72(Real x5, Real x6) {
-return ((x6) ? (
+DEVICE auto jac_nuc_choice_72(Real x5, bool x6) {
+    const auto choice_cond = (x6);
+    const auto choice_true = (
    x5
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_73(Real x21, Real x22, Real x23) {
-return ((x22) ? (
+DEVICE auto jac_nuc_choice_73(Real x21, bool x22, Real x23) {
+    const auto choice_cond = (x22);
+    const auto choice_true = (
    x21
-)
-: (
+);
+    const auto choice_false = (
    3.1699999999999999e-10*x23
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_74(Real T, Real x4, Real x5, Real x6) {
-return ((x6) ? (
+DEVICE auto jac_nuc_choice_74(Real T, Real x4, Real x5, bool x6) {
+    const auto choice_cond = (x6);
+    const auto choice_true = (
    x5*(4430.0*x4 - 347800.0/((T)*(T)*(T)))
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_75(Real x0, Real x13, Real x16, Real x17, Real x18, Real x19, Real x20, Real x21, Real x22, Real x23, Real x26, Real x4, Real x8, Real x9) {
-return ((x22) ? (
+DEVICE auto jac_nuc_choice_75(Real x0, Real x13, Real x16, Real x17, Real x18, Real x19, Real x20, Real x21, bool x22, Real x23, Real x26, Real x4, Real x8, Real x9) {
+    const auto choice_cond = (x22);
+    const auto choice_true = (
    x21*x8*(6.7520699999999998*x0*x13*x19 + 1.5894349999999999*x0*x16*x18 - 8.6761199999999992*x0*x17*x20 + 5.8888600000000002*x0*x9 + 14.393840000000001*x26)
-)
-: (
+);
+    const auto choice_false = (
    1.650619e-6*x23*x4
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_76(Real T, Real x10, Real x12, Real x8) {
+DEVICE auto jac_nuc_choice_76(Real T, bool x10, Real x12, Real x8) {
 return ((x10) ? (
    x8
 )
@@ -2345,7 +2601,7 @@ return ((x10) ? (
    1250086.112245841*math::exp((-1.5)*math::log(math::abs(T)))*x12 + x8
 ));
 }
-DEVICE auto jac_nuc_choice_77(Real T, Real x27, Real x28, Real x29) {
+DEVICE auto jac_nuc_choice_77(Real T, Real x27, Real x28, bool x29) {
 return ((x29) ? (
    1.26e-9*x27*x28
 )
@@ -2353,7 +2609,7 @@ return ((x29) ? (
    4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_78(Real T, Real x28, Real x29) {
+DEVICE auto jac_nuc_choice_78(Real T, Real x28, bool x29) {
 return ((x29) ? (
    0.00016065*math::exp((-2.75)*math::log(math::abs(T)))*x28 - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs(T)))*x28
 )
@@ -2361,7 +2617,7 @@ return ((x29) ? (
    1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_79(Real T, Real x10, Real x11, Real x12, Real x34, Real x35) {
+DEVICE auto jac_nuc_choice_79(Real T, bool x10, Real x11, Real x12, Real x34, Real x35) {
 return ((x10) ? (
    x34
 )
@@ -2369,7 +2625,7 @@ return ((x10) ? (
    -1875129.1683687614*math::exp((-2.5)*math::log(math::abs(T)))*x12 + 587469852277.90271*x12*x35 + x34 + 54.282214350476039*x35*math::exp(-563932.20901156683*x11)
 ));
 }
-DEVICE auto jac_nuc_choice_80(Real T, Real x0, Real x2, Real x4) {
+DEVICE auto jac_nuc_choice_80(Real T, Real x0, bool x2, Real x4) {
 return ((x2) ? (
    x0
 )
@@ -2377,7 +2633,7 @@ return ((x2) ? (
    1250086.112245841*math::exp((-1.5)*math::log(math::abs(T)))*x4 + x0
 ));
 }
-DEVICE auto jac_nuc_choice_81(Real T, Real x17, Real x18, Real x19) {
+DEVICE auto jac_nuc_choice_81(Real T, Real x17, Real x18, bool x19) {
 return ((x19) ? (
    1.26e-9*x17*x18
 )
@@ -2385,7 +2641,7 @@ return ((x19) ? (
    4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_82(Real T, Real x2, Real x22, Real x23, Real x3, Real x4) {
+DEVICE auto jac_nuc_choice_82(Real T, bool x2, Real x22, Real x23, Real x3, Real x4) {
 return ((x2) ? (
    x22
 )
@@ -2393,7 +2649,7 @@ return ((x2) ? (
    -1875129.1683687614*math::exp((-2.5)*math::log(math::abs(T)))*x4 + x22 + 587469852277.90271*x23*x4 + 54.282214350476039*x23*math::exp(-563932.20901156683*x3)
 ));
 }
-DEVICE auto jac_nuc_choice_83(Real T, Real x18, Real x19) {
+DEVICE auto jac_nuc_choice_83(Real T, Real x18, bool x19) {
 return ((x19) ? (
    0.00016065*math::exp((-2.75)*math::log(math::abs(T)))*x18 - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs(T)))*x18
 )
@@ -2401,7 +2657,7 @@ return ((x19) ? (
    1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_84(Real T, Real x16) {
+DEVICE auto jac_nuc_choice_84(Real T, bool x16) {
 return ((x16) ? (
    2.3157944032250755
 )
@@ -2409,7 +2665,7 @@ return ((x16) ? (
    math::exp((0.36470000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_85(Real x16, Real x19) {
+DEVICE auto jac_nuc_choice_85(bool x16, Real x19) {
 return ((x16) ? (
    math::sqrt(10)
 )
@@ -2417,15 +2673,17 @@ return ((x16) ? (
    x19
 ));
 }
-DEVICE auto jac_nuc_choice_86(Real x16, Real x8) {
-return ((x16) ? (
+DEVICE auto jac_nuc_choice_86(bool x16, Real x8) {
+    const auto choice_cond = (x16);
+    const auto choice_true = (
    1.0/10.0
-)
-: (
+);
+    const auto choice_false = (
    x8
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_87(Real T, Real x16) {
+DEVICE auto jac_nuc_choice_87(Real T, bool x16) {
 return ((x16) ? (
    5.011872336272722
 )
@@ -2433,7 +2691,7 @@ return ((x16) ? (
    math::exp((0.69999999999999996)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_88(Real T, Real x16) {
+DEVICE auto jac_nuc_choice_88(Real T, bool x16) {
 return ((x16) ? (
    0.63095734448019325
 )
@@ -2441,15 +2699,17 @@ return ((x16) ? (
    math::exp((-0.20000000000000001)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_89(Real x16, Real x38) {
-return ((x16) ? (
+DEVICE auto jac_nuc_choice_89(bool x16, Real x38) {
+    const auto choice_cond = (x16);
+    const auto choice_true = (
    0.031622776601683791
-)
-: (
+);
+    const auto choice_false = (
    x38
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_90(Real T, Real x16) {
+DEVICE auto jac_nuc_choice_90(Real T, bool x16) {
 return ((x16) ? (
    0.4008667176273028
 )
@@ -2457,7 +2717,7 @@ return ((x16) ? (
    math::exp((-0.39700000000000002)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_91(Real T, Real x16) {
+DEVICE auto jac_nuc_choice_91(Real T, bool x16) {
 return ((x16) ? (
    0.67810976749343443
 )
@@ -2465,783 +2725,979 @@ return ((x16) ? (
    math::exp((-0.16869999999999999)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_92(Real T, Real x167) {
-return ((x167) ? (
+DEVICE auto jac_nuc_choice_92(Real T, bool x167) {
+    const auto choice_cond = (x167);
+    const auto choice_true = (
    10000.0
-)
-: (
+);
+    const auto choice_false = (
    T
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_93(Real x173, const Real* xn) {
-return ((x173) ? (
+DEVICE auto jac_nuc_choice_93(bool x173, const Real* xn) {
+    const auto choice_cond = (x173);
+    const auto choice_true = (
    false
-)
-: (
+);
+    const auto choice_false = (
    xn[2] >= 10000000000.0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_94(Real x173, const Real* xn) {
-return ((x173) ? (
+DEVICE auto jac_nuc_choice_94(bool x173, const Real* xn) {
+    const auto choice_cond = (x173);
+    const auto choice_true = (
       0.01
-   )
-   : (
+   );
+    const auto choice_false = (
       xn[2]
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_95(Real x173, Real x174, const Real* xn) {
-return ((x174) ? (
+DEVICE auto jac_nuc_choice_95(bool x173, bool x174, const Real* xn) {
+    const auto choice_cond = (x174);
+    const auto choice_true = (
    10000000000.0
-)
-: (
+);
+    const auto choice_false = (
    jac_nuc_choice_94(x173, xn)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_96(Real x205, Real x212, Real x215) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_96(bool x205, Real x212, Real x215) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
                                  2.1648287161311648e-38/((x212*x215 + 1.471335691176954e-59)*(x212*x215 + 1.471335691176954e-59)) >= 1.0
-                              )
-                              : (
+                              );
+    const auto choice_false = (
                                  true
-                              ));
+                              );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_97(Real x205, Real x206, Real x210, Real x212, Real x215) {
-return ((x205 && x206) ? (
+DEVICE auto jac_nuc_choice_97(bool x205, bool x206, Real x210, Real x212, Real x215) {
+    const auto choice_cond = (x205 & x206);
+    const auto choice_true = (
                               2.1648287161311648e-38/((x210*x215 + 1.471335691176954e-59)*(x210*x215 + 1.471335691176954e-59)) >= 1.0
-                           )
-                           : (
+                           );
+    const auto choice_false = (
                               jac_nuc_choice_96(x205, x212, x215)
-                           ));
+                           );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_98(Real x205, Real x206, Real x207, Real x210, Real x212, Real x215) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_98(bool x205, bool x206, bool x207, Real x210, Real x212, Real x215) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
                            true
-                        )
-                        : (
+                        );
+    const auto choice_false = (
                            jac_nuc_choice_97(x205, x206, x210, x212, x215)
-                        ));
+                        );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_99(Real x205, Real x206, Real x207, Real x210, Real x212, Real x214, Real x215) {
-return ((x205 && x207) ? (
+DEVICE auto jac_nuc_choice_99(bool x205, bool x206, bool x207, Real x210, Real x212, Real x214, Real x215) {
+    const auto choice_cond = (x205 & x207);
+    const auto choice_true = (
                         4.833962023629485e-72/((x212*x214 + 2.1986273043946045e-76)*(x212*x214 + 2.1986273043946045e-76)) >= 1.0
-                     )
-                     : (
+                     );
+    const auto choice_false = (
                         jac_nuc_choice_98(x205, x206, x207, x210, x212, x215)
-                     ));
+                     );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_100(Real x205, Real x206, Real x207, Real x210, Real x212, Real x214, Real x215) {
-return ((x205 && x206 && x207) ? (
+DEVICE auto jac_nuc_choice_100(bool x205, bool x206, bool x207, Real x210, Real x212, Real x214, Real x215) {
+    const auto choice_cond = (x205 & x206 & x207);
+    const auto choice_true = (
                      4.833962023629485e-72/((x210*x214 + 2.1986273043946045e-76)*(x210*x214 + 2.1986273043946045e-76)) >= 1.0
-                  )
-                  : (
+                  );
+    const auto choice_false = (
                      jac_nuc_choice_99(x205, x206, x207, x210, x212, x214, x215)
-                  ));
+                  );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_101(Real x204, Real x205, Real x206, Real x207, Real x210, Real x212, Real x214, Real x215) {
-return ((x204) ? (
+DEVICE auto jac_nuc_choice_101(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x214, Real x215) {
+    const auto choice_cond = (x204);
+    const auto choice_true = (
                   true
-               )
-               : (
+               );
+    const auto choice_false = (
                   jac_nuc_choice_100(x205, x206, x207, x210, x212, x214, x215)
-               ));
+               );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_102(Real x204, Real x205, Real x206, Real x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
-return ((x204 && x205) ? (
+DEVICE auto jac_nuc_choice_102(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
+    const auto choice_cond = (x204 & x205);
+    const auto choice_true = (
                216.48287161311649/((x212*x213 + 1.471335691176954e-39)*(x212*x213 + 1.471335691176954e-39)) >= 1.0
-            )
-            : (
+            );
+    const auto choice_false = (
                jac_nuc_choice_101(x204, x205, x206, x207, x210, x212, x214, x215)
-            ));
+            );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_103(Real x204, Real x205, Real x206, Real x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
-return ((x204 && x205 && x206) ? (
+DEVICE auto jac_nuc_choice_103(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
+    const auto choice_cond = (x204 & x205 & x206);
+    const auto choice_true = (
             216.48287161311649/((x210*x213 + 1.471335691176954e-39)*(x210*x213 + 1.471335691176954e-39)) >= 1.0
-         )
-         : (
+         );
+    const auto choice_false = (
             jac_nuc_choice_102(x204, x205, x206, x207, x210, x212, x213, x214, x215)
-         ));
+         );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_104(Real x204, Real x205, Real x206, Real x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
-return ((x204 && x207) ? (
+DEVICE auto jac_nuc_choice_104(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
+    const auto choice_cond = (x204 & x207);
+    const auto choice_true = (
          true
-      )
-      : (
+      );
+    const auto choice_false = (
          jac_nuc_choice_103(x204, x205, x206, x207, x210, x212, x213, x214, x215)
-      ));
+      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_105(Real x204, Real x205, Real x206, Real x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
-return ((x204 && x205 && x207) ? (
+DEVICE auto jac_nuc_choice_105(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
+    const auto choice_cond = (x204 & x205 & x207);
+    const auto choice_true = (
       4.8339620236294848e-32/((x212 + 2.1986273043946046e-56)*(x212 + 2.1986273043946046e-56)) >= 1.0
-   )
-   : (
+   );
+    const auto choice_false = (
       jac_nuc_choice_104(x204, x205, x206, x207, x210, x212, x213, x214, x215)
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_106(Real x204, Real x205, Real x206, Real x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
-return ((x204 && x205 && x206 && x207) ? (
+DEVICE auto jac_nuc_choice_106(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
+    const auto choice_cond = (x204 & x205 & x206 & x207);
+    const auto choice_true = (
    4.8339620236294848e-32/((x210 + 2.1986273043946046e-56)*(x210 + 2.1986273043946046e-56)) >= 1.0
-)
-: (
+);
+    const auto choice_false = (
    jac_nuc_choice_105(x204, x205, x206, x207, x210, x212, x213, x214, x215)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_107(Real x206, Real x94) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_107(bool x206, Real x94) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
    0.5
-)
-: (
+);
+    const auto choice_false = (
    x94
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_108(Real x205, Real x217) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_108(bool x205, Real x217) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x217
-)
-: (
+);
+    const auto choice_false = (
    0.0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_109(Real x203, Real x204) {
-return ((x204) ? (
+DEVICE auto jac_nuc_choice_109(Real x203, bool x204) {
+    const auto choice_cond = (x204);
+    const auto choice_true = (
    9.9999999999999993e-41
-)
-: (
+);
+    const auto choice_false = (
    x203
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_110(Real x2, Real x207) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_110(Real x2, bool x207) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
    1.0e+80
-)
-: (
+);
+    const auto choice_false = (
    2.232953576238777e+46*x2
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_111(Real x216, Real x224) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_111(bool x216, Real x224) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    1.0
-)
-: (
+);
+    const auto choice_false = (
    483396202.36294854/((x224)*(x224))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_112(Real x231, Real x232) {
-return ((x231) ? (
+DEVICE auto jac_nuc_choice_112(bool x231, Real x232) {
+    const auto choice_cond = (x231);
+    const auto choice_true = (
    true
-)
-: (
+);
+    const auto choice_false = (
    x232 >= 1.0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_113(Real x231, Real x232) {
-return ((x231) ? (
+DEVICE auto jac_nuc_choice_113(bool x231, Real x232) {
+    const auto choice_cond = (x231);
+    const auto choice_true = (
       1.000000000000001e+18
-   )
-   : (
+   );
+    const auto choice_false = (
       x232
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_114(Real x231, Real x232, Real x233) {
-return ((x233) ? (
+DEVICE auto jac_nuc_choice_114(bool x231, Real x232, bool x233) {
+    const auto choice_cond = (x233);
+    const auto choice_true = (
    1.0
-)
-: (
+);
+    const auto choice_false = (
    jac_nuc_choice_113(x231, x232)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_115(Real x296, Real x297) {
-return ((x297) ? (
+DEVICE auto jac_nuc_choice_115(Real x296, bool x297) {
+    const auto choice_cond = (x297);
+    const auto choice_true = (
    x296
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_116(Real x291, Real x294, Real x296, Real x297) {
-return ((x294) ? (
+DEVICE auto jac_nuc_choice_116(Real x291, bool x294, Real x296, bool x297) {
+    const auto choice_cond = (x294);
+    const auto choice_true = (
    x291
-)
-: jac_nuc_choice_115(x296, x297));
+);
+    const auto choice_false = jac_nuc_choice_115(x296, x297);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_117(Real x254, Real x257, Real x264) {
-return ((x257) ? (
+DEVICE auto jac_nuc_choice_117(Real x254, bool x257, Real x264) {
+    const auto choice_cond = (x257);
+    const auto choice_true = (
    x254
-)
-: (
+);
+    const auto choice_false = (
    x264
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_118(Real x257, Real x266, Real x268) {
-return ((x257) ? (
+DEVICE auto jac_nuc_choice_118(bool x257, Real x266, Real x268) {
+    const auto choice_cond = (x257);
+    const auto choice_true = (
    x266
-)
-: (
+);
+    const auto choice_false = (
    x268
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_119(Real x276, Real x277, Real x283) {
-return ((x277) ? (
+DEVICE auto jac_nuc_choice_119(Real x276, bool x277, Real x283) {
+    const auto choice_cond = (x277);
+    const auto choice_true = (
    x276
-)
-: (
+);
+    const auto choice_false = (
    x283
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_120(Real x273, Real x274, Real x276, Real x277, Real x283) {
-return ((x274) ? (
+DEVICE auto jac_nuc_choice_120(Real x273, bool x274, Real x276, bool x277, Real x283) {
+    const auto choice_cond = (x274);
+    const auto choice_true = (
    x273
-)
-: jac_nuc_choice_119(x276, x277, x283));
+);
+    const auto choice_false = jac_nuc_choice_119(x276, x277, x283);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_121(Real x270, Real x271, Real x273, Real x274, Real x276, Real x277, Real x283) {
-return ((x271) ? (
+DEVICE auto jac_nuc_choice_121(Real x270, bool x271, Real x273, bool x274, Real x276, bool x277, Real x283) {
+    const auto choice_cond = (x271);
+    const auto choice_true = (
    x270
-)
-: jac_nuc_choice_120(x273, x274, x276, x277, x283));
+);
+    const auto choice_false = jac_nuc_choice_120(x273, x274, x276, x277, x283);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_122(Real x312, Real x313) {
-return ((x313) ? (
+DEVICE auto jac_nuc_choice_122(Real x312, bool x313) {
+    const auto choice_cond = (x313);
+    const auto choice_true = (
    300.0
-)
-: (
+);
+    const auto choice_false = (
    x312
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_123(Real x255, Real x310, Real x315) {
-return ((x255) ? (
+DEVICE auto jac_nuc_choice_123(bool x255, Real x310, Real x315) {
+    const auto choice_cond = (x255);
+    const auto choice_true = (
    x310
-)
-: (
+);
+    const auto choice_false = (
    5.5313336794064847e-19/x315
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_124(Real x255, Real x308, Real x309, Real x310, Real x315) {
-return ((x309) ? (
+DEVICE auto jac_nuc_choice_124(bool x255, Real x308, bool x309, Real x310, Real x315) {
+    const auto choice_cond = (x309);
+    const auto choice_true = (
    x308
-)
-: jac_nuc_choice_123(x255, x310, x315));
+);
+    const auto choice_false = jac_nuc_choice_123(x255, x310, x315);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_125(Real x277, Real x297, Real x350, Real x351, Real x361) {
-return ((x277 && x297) ? (
-                                                                                                                                                                        x350 && x361
-                                                                                                                                                                     )
-                                                                                                                                                                     : (
-                                                                                                                                                                        x351 && x361
-                                                                                                                                                                     ));
+DEVICE auto jac_nuc_choice_125(bool x277, bool x297, bool x350, bool x351, bool x361) {
+    const auto choice_cond = (x277 & x297);
+    const auto choice_true = (
+                                                                                                                                                                        x350 & x361
+                                                                                                                                                                     );
+    const auto choice_false = (
+                                                                                                                                                                        x351 & x361
+                                                                                                                                                                     );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_126(Real x274, Real x277, Real x297, Real x349, Real x350, Real x351, Real x361) {
-return ((x274 && x297) ? (
-                                                                                                                                                                     x349 && x361
-                                                                                                                                                                  )
-                                                                                                                                                                  : (
+DEVICE auto jac_nuc_choice_126(bool x274, bool x277, bool x297, bool x349, bool x350, bool x351, bool x361) {
+    const auto choice_cond = (x274 & x297);
+    const auto choice_true = (
+                                                                                                                                                                     x349 & x361
+                                                                                                                                                                  );
+    const auto choice_false = (
                                                                                                                                                                      jac_nuc_choice_125(x277, x297, x350, x351, x361)
-                                                                                                                                                                  ));
+                                                                                                                                                                  );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_127(Real x271, Real x274, Real x277, Real x297, Real x348, Real x349, Real x350, Real x351, Real x361) {
-return ((x271 && x297) ? (
-                                                                                                                                                                  x348 && x361
-                                                                                                                                                               )
-                                                                                                                                                               : (
+DEVICE auto jac_nuc_choice_127(bool x271, bool x274, bool x277, bool x297, bool x348, bool x349, bool x350, bool x351, bool x361) {
+    const auto choice_cond = (x271 & x297);
+    const auto choice_true = (
+                                                                                                                                                                  x348 & x361
+                                                                                                                                                               );
+    const auto choice_false = (
                                                                                                                                                                   jac_nuc_choice_126(x274, x277, x297, x349, x350, x351, x361)
-                                                                                                                                                               ));
+                                                                                                                                                               );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_128(Real x271, Real x274, Real x277, Real x294, Real x297, Real x342, Real x348, Real x349, Real x350, Real x351, Real x361) {
-return ((x294) ? (
-                                                                                                                                                               x342 && x361
-                                                                                                                                                            )
-                                                                                                                                                            : (
+DEVICE auto jac_nuc_choice_128(bool x271, bool x274, bool x277, bool x294, bool x297, bool x342, bool x348, bool x349, bool x350, bool x351, bool x361) {
+    const auto choice_cond = (x294);
+    const auto choice_true = (
+                                                                                                                                                               x342 & x361
+                                                                                                                                                            );
+    const auto choice_false = (
                                                                                                                                                                jac_nuc_choice_127(x271, x274, x277, x297, x348, x349, x350, x351, x361)
-                                                                                                                                                            ));
+                                                                                                                                                            );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_129(Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x361) {
-return ((x277 && x292 && x293) ? (
-                                                                                                                                                            x340 && x361
-                                                                                                                                                         )
-                                                                                                                                                         : (
+DEVICE auto jac_nuc_choice_129(bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x361) {
+    const auto choice_cond = (x277 & x292 & x293);
+    const auto choice_true = (
+                                                                                                                                                            x340 & x361
+                                                                                                                                                         );
+    const auto choice_false = (
                                                                                                                                                             jac_nuc_choice_128(x271, x274, x277, x294, x297, x342, x348, x349, x350, x351, x361)
-                                                                                                                                                         ));
+                                                                                                                                                         );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_130(Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x361) {
-return ((x274 && x292 && x293) ? (
-                                                                                                                                                         x338 && x361
-                                                                                                                                                      )
-                                                                                                                                                      : (
+DEVICE auto jac_nuc_choice_130(bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x361) {
+    const auto choice_cond = (x274 & x292 & x293);
+    const auto choice_true = (
+                                                                                                                                                         x338 & x361
+                                                                                                                                                      );
+    const auto choice_false = (
                                                                                                                                                          jac_nuc_choice_129(x271, x274, x277, x292, x293, x294, x297, x340, x342, x348, x349, x350, x351, x361)
-                                                                                                                                                      ));
+                                                                                                                                                      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_131(Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x361) {
-return ((x271 && x292 && x293) ? (
-                                                                                                                                                      x335 && x361
-                                                                                                                                                   )
-                                                                                                                                                   : (
+DEVICE auto jac_nuc_choice_131(bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x361) {
+    const auto choice_cond = (x271 & x292 & x293);
+    const auto choice_true = (
+                                                                                                                                                      x335 & x361
+                                                                                                                                                   );
+    const auto choice_false = (
                                                                                                                                                       jac_nuc_choice_130(x271, x274, x277, x292, x293, x294, x297, x338, x340, x342, x348, x349, x350, x351, x361)
-                                                                                                                                                   ));
+                                                                                                                                                   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_132(Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x361) {
-return ((x313 && (x271 || x313) && (x274 || x313) && (x277 || x313) && (x292 || x313) && (x293 || x313) && (x297 || x313) && (x271 || x274 || x313) && (x271 || x277 || x313) && (x271 || x292 || x313) && (x271 || x293 || x313) && (x271 || x297 || x313) && (x274 || x277 || x313) && (x274 || x292 || x313) && (x274 || x293 || x313) && (x274 || x297 || x313) && (x277 || x292 || x313) && (x277 || x293 || x313) && (x277 || x297 || x313) && (x292 || x293 || x313) && (x293 || x297 || x313) && (x271 || x274 || x277 || x313) && (x271 || x274 || x292 || x313) && (x271 || x274 || x293 || x313) && (x271 || x274 || x297 || x313) && (x271 || x277 || x292 || x313) && (x271 || x277 || x293 || x313) && (x271 || x277 || x297 || x313) && (x271 || x292 || x293 || x313) && (x271 || x293 || x297 || x313) && (x274 || x277 || x292 || x313) && (x274 || x277 || x293 || x313) && (x274 || x277 || x297 || x313) && (x274 || x292 || x293 || x313) && (x274 || x293 || x297 || x313) && (x277 || x292 || x293 || x313) && (x277 || x293 || x297 || x313) && (x271 || x274 || x277 || x292 || x313) && (x271 || x274 || x277 || x293 || x313) && (x271 || x274 || x277 || x297 || x313) && (x271 || x274 || x292 || x293 || x313) && (x271 || x274 || x293 || x297 || x313) && (x271 || x277 || x292 || x293 || x313) && (x271 || x277 || x293 || x297 || x313) && (x274 || x277 || x292 || x293 || x313) && (x274 || x277 || x293 || x297 || x313) && (x271 || x274 || x277 || x292 || x293 || x313) && (x271 || x274 || x277 || x293 || x297 || x313)) ? (
+DEVICE auto jac_nuc_choice_132(bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x361) {
+    const auto choice_cond = (x313 & (x271 | x313) & (x274 | x313) & (x277 | x313) & (x292 | x313) & (x293 | x313) & (x297 | x313) & (x271 | x274 | x313) & (x271 | x277 | x313) & (x271 | x292 | x313) & (x271 | x293 | x313) & (x271 | x297 | x313) & (x274 | x277 | x313) & (x274 | x292 | x313) & (x274 | x293 | x313) & (x274 | x297 | x313) & (x277 | x292 | x313) & (x277 | x293 | x313) & (x277 | x297 | x313) & (x292 | x293 | x313) & (x293 | x297 | x313) & (x271 | x274 | x277 | x313) & (x271 | x274 | x292 | x313) & (x271 | x274 | x293 | x313) & (x271 | x274 | x297 | x313) & (x271 | x277 | x292 | x313) & (x271 | x277 | x293 | x313) & (x271 | x277 | x297 | x313) & (x271 | x292 | x293 | x313) & (x271 | x293 | x297 | x313) & (x274 | x277 | x292 | x313) & (x274 | x277 | x293 | x313) & (x274 | x277 | x297 | x313) & (x274 | x292 | x293 | x313) & (x274 | x293 | x297 | x313) & (x277 | x292 | x293 | x313) & (x277 | x293 | x297 | x313) & (x271 | x274 | x277 | x292 | x313) & (x271 | x274 | x277 | x293 | x313) & (x271 | x274 | x277 | x297 | x313) & (x271 | x274 | x292 | x293 | x313) & (x271 | x274 | x293 | x297 | x313) & (x271 | x277 | x292 | x293 | x313) & (x271 | x277 | x293 | x297 | x313) & (x274 | x277 | x292 | x293 | x313) & (x274 | x277 | x293 | x297 | x313) & (x271 | x274 | x277 | x292 | x293 | x313) & (x271 | x274 | x277 | x293 | x297 | x313));
+    const auto choice_true = (
                                                                                                                                                    false
-                                                                                                                                                )
-                                                                                                                                                : (
+                                                                                                                                                );
+    const auto choice_false = (
                                                                                                                                                    jac_nuc_choice_131(x271, x274, x277, x292, x293, x294, x297, x335, x338, x340, x342, x348, x349, x350, x351, x361)
-                                                                                                                                                ));
+                                                                                                                                                );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_133(Real x255, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x359, Real x360, Real x361) {
-return ((x255) ? (
-                                                                                                                                                x359 && x360
-                                                                                                                                             )
-                                                                                                                                             : (
+DEVICE auto jac_nuc_choice_133(bool x255, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255);
+    const auto choice_true = (
+                                                                                                                                                x359 & x360
+                                                                                                                                             );
+    const auto choice_false = (
                                                                                                                                                 jac_nuc_choice_132(x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x361)
-                                                                                                                                             ));
+                                                                                                                                             );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_134(Real x255, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x277) ? (
-                                                                                                                                             x358 && x360
-                                                                                                                                          )
-                                                                                                                                          : (
+DEVICE auto jac_nuc_choice_134(bool x255, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x277);
+    const auto choice_true = (
+                                                                                                                                             x358 & x360
+                                                                                                                                          );
+    const auto choice_false = (
                                                                                                                                              jac_nuc_choice_133(x255, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x359, x360, x361)
-                                                                                                                                          ));
+                                                                                                                                          );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_135(Real x255, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x274) ? (
-                                                                                                                                          x357 && x360
-                                                                                                                                       )
-                                                                                                                                       : (
+DEVICE auto jac_nuc_choice_135(bool x255, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x274);
+    const auto choice_true = (
+                                                                                                                                          x357 & x360
+                                                                                                                                       );
+    const auto choice_false = (
                                                                                                                                           jac_nuc_choice_134(x255, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x358, x359, x360, x361)
-                                                                                                                                       ));
+                                                                                                                                       );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_136(Real x255, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x271) ? (
-                                                                                                                                       x356 && x360
-                                                                                                                                    )
-                                                                                                                                    : (
+DEVICE auto jac_nuc_choice_136(bool x255, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x271);
+    const auto choice_true = (
+                                                                                                                                       x356 & x360
+                                                                                                                                    );
+    const auto choice_false = (
                                                                                                                                        jac_nuc_choice_135(x255, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x357, x358, x359, x360, x361)
-                                                                                                                                    ));
+                                                                                                                                    );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_137(Real x255, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x257) ? (
-                                                                                                                                    x355 && x360
-                                                                                                                                 )
-                                                                                                                                 : (
+DEVICE auto jac_nuc_choice_137(bool x255, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x257);
+    const auto choice_true = (
+                                                                                                                                    x355 & x360
+                                                                                                                                 );
+    const auto choice_false = (
                                                                                                                                     jac_nuc_choice_136(x255, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x356, x357, x358, x359, x360, x361)
-                                                                                                                                 ));
+                                                                                                                                 );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_138(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x277) ? (
-                                                                                                                                 x354 && x360
-                                                                                                                              )
-                                                                                                                              : (
+DEVICE auto jac_nuc_choice_138(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x277);
+    const auto choice_true = (
+                                                                                                                                 x354 & x360
+                                                                                                                              );
+    const auto choice_false = (
                                                                                                                                  jac_nuc_choice_137(x255, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                                              ));
+                                                                                                                              );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_139(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x274) ? (
-                                                                                                                              x353 && x360
-                                                                                                                           )
-                                                                                                                           : (
+DEVICE auto jac_nuc_choice_139(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x274);
+    const auto choice_true = (
+                                                                                                                              x353 & x360
+                                                                                                                           );
+    const auto choice_false = (
                                                                                                                               jac_nuc_choice_138(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                                           ));
+                                                                                                                           );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_140(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x271) ? (
-                                                                                                                           x352 && x360
-                                                                                                                        )
-                                                                                                                        : (
+DEVICE auto jac_nuc_choice_140(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x271);
+    const auto choice_true = (
+                                                                                                                           x352 & x360
+                                                                                                                        );
+    const auto choice_false = (
                                                                                                                            jac_nuc_choice_139(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                                        ));
+                                                                                                                        );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_141(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x297) ? (
-                                                                                                                        x351 && x360
-                                                                                                                     )
-                                                                                                                     : (
+DEVICE auto jac_nuc_choice_141(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x297);
+    const auto choice_true = (
+                                                                                                                        x351 & x360
+                                                                                                                     );
+    const auto choice_false = (
                                                                                                                         jac_nuc_choice_140(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                                     ));
+                                                                                                                     );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_142(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x277 && x297) ? (
-                                                                                                                     x350 && x360
-                                                                                                                  )
-                                                                                                                  : (
+DEVICE auto jac_nuc_choice_142(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x277 & x297);
+    const auto choice_true = (
+                                                                                                                     x350 & x360
+                                                                                                                  );
+    const auto choice_false = (
                                                                                                                      jac_nuc_choice_141(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                                  ));
+                                                                                                                  );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_143(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x274 && x297) ? (
-                                                                                                                  x349 && x360
-                                                                                                               )
-                                                                                                               : (
+DEVICE auto jac_nuc_choice_143(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x274 & x297);
+    const auto choice_true = (
+                                                                                                                  x349 & x360
+                                                                                                               );
+    const auto choice_false = (
                                                                                                                   jac_nuc_choice_142(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                               ));
+                                                                                                               );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_144(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x271 && x297) ? (
-                                                                                                               x348 && x360
-                                                                                                            )
-                                                                                                            : (
+DEVICE auto jac_nuc_choice_144(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x271 & x297);
+    const auto choice_true = (
+                                                                                                               x348 & x360
+                                                                                                            );
+    const auto choice_false = (
                                                                                                                jac_nuc_choice_143(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                            ));
+                                                                                                            );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_145(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x297) ? (
-                                                                                                            x347 && x360
-                                                                                                         )
-                                                                                                         : (
+DEVICE auto jac_nuc_choice_145(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x297);
+    const auto choice_true = (
+                                                                                                            x347 & x360
+                                                                                                         );
+    const auto choice_false = (
                                                                                                             jac_nuc_choice_144(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                         ));
+                                                                                                         );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_146(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x277 && x297) ? (
-                                                                                                         x346 && x360
-                                                                                                      )
-                                                                                                      : (
+DEVICE auto jac_nuc_choice_146(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x277 & x297);
+    const auto choice_true = (
+                                                                                                         x346 & x360
+                                                                                                      );
+    const auto choice_false = (
                                                                                                          jac_nuc_choice_145(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                      ));
+                                                                                                      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_147(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x274 && x297) ? (
-                                                                                                      x345 && x360
-                                                                                                   )
-                                                                                                   : (
+DEVICE auto jac_nuc_choice_147(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x274 & x297);
+    const auto choice_true = (
+                                                                                                      x345 & x360
+                                                                                                   );
+    const auto choice_false = (
                                                                                                       jac_nuc_choice_146(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                   ));
+                                                                                                   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_148(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x271 && x297) ? (
-                                                                                                   x344 && x360
-                                                                                                )
-                                                                                                : (
+DEVICE auto jac_nuc_choice_148(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x271 & x297);
+    const auto choice_true = (
+                                                                                                   x344 & x360
+                                                                                                );
+    const auto choice_false = (
                                                                                                    jac_nuc_choice_147(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                                ));
+                                                                                                );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_149(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x292 && x293) ? (
-                                                                                                x342 && x360
-                                                                                             )
-                                                                                             : (
+DEVICE auto jac_nuc_choice_149(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x292 & x293);
+    const auto choice_true = (
+                                                                                                x342 & x360
+                                                                                             );
+    const auto choice_false = (
                                                                                                 jac_nuc_choice_148(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                             ));
+                                                                                             );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_150(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x277 && x292 && x293) ? (
-                                                                                             x340 && x360
-                                                                                          )
-                                                                                          : (
+DEVICE auto jac_nuc_choice_150(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x277 & x292 & x293);
+    const auto choice_true = (
+                                                                                             x340 & x360
+                                                                                          );
+    const auto choice_false = (
                                                                                              jac_nuc_choice_149(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                          ));
+                                                                                          );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_151(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x274 && x292 && x293) ? (
-                                                                                          x338 && x360
-                                                                                       )
-                                                                                       : (
+DEVICE auto jac_nuc_choice_151(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x274 & x292 & x293);
+    const auto choice_true = (
+                                                                                          x338 & x360
+                                                                                       );
+    const auto choice_false = (
                                                                                           jac_nuc_choice_150(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                       ));
+                                                                                       );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_152(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x271 && x292 && x293) ? (
-                                                                                       x335 && x360
-                                                                                    )
-                                                                                    : (
+DEVICE auto jac_nuc_choice_152(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x271 & x292 & x293);
+    const auto choice_true = (
+                                                                                       x335 & x360
+                                                                                    );
+    const auto choice_false = (
                                                                                        jac_nuc_choice_151(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                    ));
+                                                                                    );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_153(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x292 && x293) ? (
-                                                                                    x332 && x360
-                                                                                 )
-                                                                                 : (
+DEVICE auto jac_nuc_choice_153(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x292 & x293);
+    const auto choice_true = (
+                                                                                    x332 & x360
+                                                                                 );
+    const auto choice_false = (
                                                                                     jac_nuc_choice_152(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                                 ));
+                                                                                 );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_154(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x277 && x292 && x293) ? (
-                                                                                 x330 && x360
-                                                                              )
-                                                                              : (
+DEVICE auto jac_nuc_choice_154(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x277 & x292 & x293);
+    const auto choice_true = (
+                                                                                 x330 & x360
+                                                                              );
+    const auto choice_false = (
                                                                                  jac_nuc_choice_153(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                              ));
+                                                                              );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_155(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x274 && x292 && x293) ? (
-                                                                              x328 && x360
-                                                                           )
-                                                                           : (
+DEVICE auto jac_nuc_choice_155(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x274 & x292 & x293);
+    const auto choice_true = (
+                                                                              x328 & x360
+                                                                           );
+    const auto choice_false = (
                                                                               jac_nuc_choice_154(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                           ));
+                                                                           );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_156(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x313, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x271 && x292 && x293) ? (
-                                                                           x325 && x360
-                                                                        )
-                                                                        : (
+DEVICE auto jac_nuc_choice_156(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x313, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x271 & x292 & x293);
+    const auto choice_true = (
+                                                                           x325 & x360
+                                                                        );
+    const auto choice_false = (
                                                                            jac_nuc_choice_155(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                        ));
+                                                                        );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_157(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x309) ? (
-                                                                        x320 && x359
-                                                                     )
-                                                                     : (
+DEVICE auto jac_nuc_choice_157(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x309);
+    const auto choice_true = (
+                                                                        x320 & x359
+                                                                     );
+    const auto choice_false = (
                                                                         jac_nuc_choice_156(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x313, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                     ));
+                                                                     );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_158(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x277 && x309) ? (
-                                                                     x320 && x358
-                                                                  )
-                                                                  : (
+DEVICE auto jac_nuc_choice_158(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x277 & x309);
+    const auto choice_true = (
+                                                                     x320 & x358
+                                                                  );
+    const auto choice_false = (
                                                                      jac_nuc_choice_157(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                                  ));
+                                                                  );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_159(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x274 && x309) ? (
-                                                                  x320 && x357
-                                                               )
-                                                               : (
+DEVICE auto jac_nuc_choice_159(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x274 & x309);
+    const auto choice_true = (
+                                                                  x320 & x357
+                                                               );
+    const auto choice_false = (
                                                                   jac_nuc_choice_158(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                               ));
+                                                               );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_160(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x271 && x309) ? (
-                                                               x320 && x356
-                                                            )
-                                                            : (
+DEVICE auto jac_nuc_choice_160(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x271 & x309);
+    const auto choice_true = (
+                                                               x320 & x356
+                                                            );
+    const auto choice_false = (
                                                                jac_nuc_choice_159(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                            ));
+                                                            );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_161(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x309) ? (
-                                                            x320 && x355
-                                                         )
-                                                         : (
+DEVICE auto jac_nuc_choice_161(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x309);
+    const auto choice_true = (
+                                                            x320 & x355
+                                                         );
+    const auto choice_false = (
                                                             jac_nuc_choice_160(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                         ));
+                                                         );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_162(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x277 && x309) ? (
-                                                         x320 && x354
-                                                      )
-                                                      : (
+DEVICE auto jac_nuc_choice_162(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x277 & x309);
+    const auto choice_true = (
+                                                         x320 & x354
+                                                      );
+    const auto choice_false = (
                                                          jac_nuc_choice_161(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                      ));
+                                                      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_163(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x274 && x309) ? (
-                                                      x320 && x353
-                                                   )
-                                                   : (
+DEVICE auto jac_nuc_choice_163(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x274 & x309);
+    const auto choice_true = (
+                                                      x320 & x353
+                                                   );
+    const auto choice_false = (
                                                       jac_nuc_choice_162(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                   ));
+                                                   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_164(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x271 && x309) ? (
-                                                   x320 && x352
-                                                )
-                                                : (
+DEVICE auto jac_nuc_choice_164(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x271 & x309);
+    const auto choice_true = (
+                                                   x320 & x352
+                                                );
+    const auto choice_false = (
                                                    jac_nuc_choice_163(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                                ));
+                                                );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_165(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x297 && x309) ? (
-                                                x320 && x351
-                                             )
-                                             : (
+DEVICE auto jac_nuc_choice_165(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x297 & x309);
+    const auto choice_true = (
+                                                x320 & x351
+                                             );
+    const auto choice_false = (
                                                 jac_nuc_choice_164(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                             ));
+                                             );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_166(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x277 && x297 && x309) ? (
-                                             x320 && x350
-                                          )
-                                          : (
+DEVICE auto jac_nuc_choice_166(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x277 & x297 & x309);
+    const auto choice_true = (
+                                             x320 & x350
+                                          );
+    const auto choice_false = (
                                              jac_nuc_choice_165(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                          ));
+                                          );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_167(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x274 && x297 && x309) ? (
-                                          x320 && x349
-                                       )
-                                       : (
+DEVICE auto jac_nuc_choice_167(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x274 & x297 & x309);
+    const auto choice_true = (
+                                          x320 & x349
+                                       );
+    const auto choice_false = (
                                           jac_nuc_choice_166(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                       ));
+                                       );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_168(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x271 && x297 && x309) ? (
-                                       x320 && x348
-                                    )
-                                    : (
+DEVICE auto jac_nuc_choice_168(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x271 & x297 & x309);
+    const auto choice_true = (
+                                       x320 & x348
+                                    );
+    const auto choice_false = (
                                        jac_nuc_choice_167(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                    ));
+                                    );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_169(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x297 && x309) ? (
-                                    x320 && x347
-                                 )
-                                 : (
+DEVICE auto jac_nuc_choice_169(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x297 & x309);
+    const auto choice_true = (
+                                    x320 & x347
+                                 );
+    const auto choice_false = (
                                     jac_nuc_choice_168(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                 ));
+                                 );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_170(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x277 && x297 && x309) ? (
-                                 x320 && x346
-                              )
-                              : (
+DEVICE auto jac_nuc_choice_170(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x277 & x297 & x309);
+    const auto choice_true = (
+                                 x320 & x346
+                              );
+    const auto choice_false = (
                                  jac_nuc_choice_169(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                              ));
+                              );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_171(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x274 && x297 && x309) ? (
-                              x320 && x345
-                           )
-                           : (
+DEVICE auto jac_nuc_choice_171(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x274 & x297 & x309);
+    const auto choice_true = (
+                              x320 & x345
+                           );
+    const auto choice_false = (
                               jac_nuc_choice_170(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                           ));
+                           );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_172(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x271 && x297 && x309) ? (
-                           x320 && x344
-                        )
-                        : (
+DEVICE auto jac_nuc_choice_172(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x271 & x297 & x309);
+    const auto choice_true = (
+                           x320 & x344
+                        );
+    const auto choice_false = (
                            jac_nuc_choice_171(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                        ));
+                        );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_173(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x292 && x293 && x309) ? (
-                        x320 && x342
-                     )
-                     : (
+DEVICE auto jac_nuc_choice_173(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x292 & x293 & x309);
+    const auto choice_true = (
+                        x320 & x342
+                     );
+    const auto choice_false = (
                         jac_nuc_choice_172(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                     ));
+                     );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_174(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x277 && x292 && x293 && x309) ? (
-                     x320 && x340
-                  )
-                  : (
+DEVICE auto jac_nuc_choice_174(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x277 & x292 & x293 & x309);
+    const auto choice_true = (
+                     x320 & x340
+                  );
+    const auto choice_false = (
                      jac_nuc_choice_173(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                  ));
+                  );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_175(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x274 && x292 && x293 && x309) ? (
-                  x320 && x338
-               )
-               : (
+DEVICE auto jac_nuc_choice_175(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x274 & x292 & x293 & x309);
+    const auto choice_true = (
+                  x320 & x338
+               );
+    const auto choice_false = (
                   jac_nuc_choice_174(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-               ));
+               );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_176(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x271 && x292 && x293 && x309) ? (
-               x320 && x335
-            )
-            : (
+DEVICE auto jac_nuc_choice_176(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x271 & x292 & x293 & x309);
+    const auto choice_true = (
+               x320 & x335
+            );
+    const auto choice_false = (
                jac_nuc_choice_175(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-            ));
+            );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_177(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x292 && x293 && x309) ? (
-            x320 && x332
-         )
-         : (
+DEVICE auto jac_nuc_choice_177(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x292 & x293 & x309);
+    const auto choice_true = (
+            x320 & x332
+         );
+    const auto choice_false = (
             jac_nuc_choice_176(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-         ));
+         );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_178(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x277 && x292 && x293 && x309) ? (
-         x320 && x330
-      )
-      : (
+DEVICE auto jac_nuc_choice_178(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x277 & x292 & x293 & x309);
+    const auto choice_true = (
+         x320 & x330
+      );
+    const auto choice_false = (
          jac_nuc_choice_177(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-      ));
+      );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_179(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x274 && x292 && x293 && x309) ? (
-      x320 && x328
-   )
-   : (
+DEVICE auto jac_nuc_choice_179(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x274 & x292 & x293 & x309);
+    const auto choice_true = (
+      x320 & x328
+   );
+    const auto choice_false = (
       jac_nuc_choice_178(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_180(Real x255, Real x256, Real x257, Real x271, Real x274, Real x277, Real x292, Real x293, Real x294, Real x297, Real x309, Real x313, Real x320, Real x325, Real x328, Real x330, Real x332, Real x335, Real x338, Real x340, Real x342, Real x344, Real x345, Real x346, Real x347, Real x348, Real x349, Real x350, Real x351, Real x352, Real x353, Real x354, Real x355, Real x356, Real x357, Real x358, Real x359, Real x360, Real x361) {
-return ((x255 && x256 && x271 && x292 && x293 && x309) ? (
-   x320 && x325
-)
-: (
+DEVICE auto jac_nuc_choice_180(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
+    const auto choice_cond = (x255 & x256 & x271 & x292 & x293 & x309);
+    const auto choice_true = (
+   x320 & x325
+);
+    const auto choice_false = (
    jac_nuc_choice_179(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_181(Real x299, Real x319, Real x362) {
-return ((x362) ? (
+DEVICE auto jac_nuc_choice_181(Real x299, Real x319, bool x362) {
+    const auto choice_cond = (x362);
+    const auto choice_true = (
    x299*x319
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_182(Real x230, Real x364, const Real* xn) {
-return ((x230) ? (
+DEVICE auto jac_nuc_choice_182(bool x230, Real x364, const Real* xn) {
+    const auto choice_cond = (x230);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    xn[8]*x364
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_183(Real x200, Real x201) {
-return ((x201) ? (
+DEVICE auto jac_nuc_choice_183(Real x200, bool x201) {
+    const auto choice_cond = (x201);
+    const auto choice_true = (
    x200
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_184(Real x206, Real x95) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_184(bool x206, Real x95) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
    2.0
-)
-: (
+);
+    const auto choice_false = (
    x95
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_185(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_185(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       9.1093818800000008e-28
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_186(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_186(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_185(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_187(Real x204) {
-return ((x204) ? (
+DEVICE auto jac_nuc_choice_187(bool x204) {
+    const auto choice_cond = (x204);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    1
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_188(Real x1, Real x207) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_188(Real x1, bool x207) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
    9.9999999999999996e-81
-)
-: (
+);
+    const auto choice_false = (
    4.4783734451139649e-47*x1
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_189(Real x203, Real x204) {
-return ((x204) ? (
+DEVICE auto jac_nuc_choice_189(Real x203, bool x204) {
+    const auto choice_cond = (x204);
+    const auto choice_true = (
    1.0e+40
-)
-: (
+);
+    const auto choice_false = (
    1.0/x203
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_190(Real x203, Real x231) {
+DEVICE auto jac_nuc_choice_190(Real x203, bool x231) {
 return ((x231) ? (
       0
    )
@@ -3249,7 +3705,7 @@ return ((x231) ? (
       -12870.724904810098*math::exp((-1.45)*math::log(math::abs(x203)))
    ));
 }
-DEVICE auto jac_nuc_choice_191(Real x203, Real x231, Real x233) {
+DEVICE auto jac_nuc_choice_191(Real x203, bool x231, bool x233) {
 return ((x233) ? (
    0
 )
@@ -3257,321 +3713,401 @@ return ((x233) ? (
    jac_nuc_choice_190(x203, x231)
 ));
 }
-DEVICE auto jac_nuc_choice_192(Real x295, Real x297) {
-return ((x297) ? (
+DEVICE auto jac_nuc_choice_192(Real x295, bool x297) {
+    const auto choice_cond = (x297);
+    const auto choice_true = (
    x295
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_193(Real x290, Real x294, Real x295, Real x297) {
-return ((x294) ? (
+DEVICE auto jac_nuc_choice_193(Real x290, bool x294, Real x295, bool x297) {
+    const auto choice_cond = (x294);
+    const auto choice_true = (
    x290
-)
-: jac_nuc_choice_192(x295, x297));
+);
+    const auto choice_false = jac_nuc_choice_192(x295, x297);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_194(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_194(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       1.6726215800000001e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_195(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_195(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_194(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_196(Real x257, Real x265, Real x267) {
-return ((x257) ? (
+DEVICE auto jac_nuc_choice_196(bool x257, Real x265, Real x267) {
+    const auto choice_cond = (x257);
+    const auto choice_true = (
    x265
-)
-: (
+);
+    const auto choice_false = (
    x267
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_197(Real x275, Real x277, Real x282) {
-return ((x277) ? (
+DEVICE auto jac_nuc_choice_197(Real x275, bool x277, Real x282) {
+    const auto choice_cond = (x277);
+    const auto choice_true = (
    x275
-)
-: (
+);
+    const auto choice_false = (
    x282
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_198(Real x272, Real x274, Real x275, Real x277, Real x282) {
-return ((x274) ? (
+DEVICE auto jac_nuc_choice_198(Real x272, bool x274, Real x275, bool x277, Real x282) {
+    const auto choice_cond = (x274);
+    const auto choice_true = (
    x272
-)
-: jac_nuc_choice_197(x275, x277, x282));
+);
+    const auto choice_false = jac_nuc_choice_197(x275, x277, x282);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_199(Real x269, Real x271, Real x272, Real x274, Real x275, Real x277, Real x282) {
-return ((x271) ? (
+DEVICE auto jac_nuc_choice_199(Real x269, bool x271, Real x272, bool x274, Real x275, bool x277, Real x282) {
+    const auto choice_cond = (x271);
+    const auto choice_true = (
    x269
-)
-: jac_nuc_choice_198(x272, x274, x275, x277, x282));
+);
+    const auto choice_false = jac_nuc_choice_198(x272, x274, x275, x277, x282);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_200(Real x173) {
-return ((x173) ? (
+DEVICE auto jac_nuc_choice_200(bool x173) {
+    const auto choice_cond = (x173);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       1
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_201(Real x173, Real x174) {
-return ((x174) ? (
+DEVICE auto jac_nuc_choice_201(bool x173, bool x174) {
+    const auto choice_cond = (x174);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    jac_nuc_choice_200(x173)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_202(Real x173, const Real* xn) {
-return ((x173) ? (
+DEVICE auto jac_nuc_choice_202(bool x173, const Real* xn) {
+    const auto choice_cond = (x173);
+    const auto choice_true = (
       100.0
-   )
-   : (
+   );
+    const auto choice_false = (
       1.0/xn[2]
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_203(Real x173, Real x174, const Real* xn) {
-return ((x174) ? (
+DEVICE auto jac_nuc_choice_203(bool x173, bool x174, const Real* xn) {
+    const auto choice_cond = (x174);
+    const auto choice_true = (
    1.0e-10
-)
-: (
+);
+    const auto choice_false = (
    jac_nuc_choice_202(x173, xn)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_204(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_204(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       1.6735325181900001e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_205(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_205(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_204(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_206(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_206(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       1.6744434563800001e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_207(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_207(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_206(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_208(Real x230, Real x380) {
-return ((x230) ? (
+DEVICE auto jac_nuc_choice_208(bool x230, Real x380) {
+    const auto choice_cond = (x230);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x380
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_209(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_209(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       3.3451215800000003e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_210(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_210(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_209(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_211(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_211(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       3.3460325181899999e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_212(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_212(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_211(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_213(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_213(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       3.3461540981899999e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_214(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_214(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_213(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_215(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_215(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       3.3469434563800003e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_216(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_216(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_215(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_217(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_217(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       3.3470650363800003e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_218(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_218(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_217(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_219(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_219(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       5.0186540981899997e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_220(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_220(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_219(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_221(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_221(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       5.01956503638e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_222(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_222(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_221(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_223(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_223(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       6.6902431600000005e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_224(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_224(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_223(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_225(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_225(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       6.6911540981899994e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_226(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_226(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_225(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_227(Real x206) {
-return ((x206) ? (
+DEVICE auto jac_nuc_choice_227(bool x206) {
+    const auto choice_cond = (x206);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       6.6920650363799998e-24
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_228(Real x205, Real x206, Real x369) {
-return ((x205) ? (
+DEVICE auto jac_nuc_choice_228(bool x205, bool x206, Real x369) {
+    const auto choice_cond = (x205);
+    const auto choice_true = (
    x369*jac_nuc_choice_227(x206)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_229(Real x253, Real x257, Real x263) {
-return ((x257) ? (
+DEVICE auto jac_nuc_choice_229(Real x253, bool x257, Real x263) {
+    const auto choice_cond = (x257);
+    const auto choice_true = (
    x253
-)
-: (
+);
+    const auto choice_false = (
    x263
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_230(Real x16, Real x48) {
-return ((x16) ? (
+DEVICE auto jac_nuc_choice_230(bool x16, Real x48) {
+    const auto choice_cond = (x16);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    -x48
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_231(Real x16, Real x481) {
-return ((x16) ? (
+DEVICE auto jac_nuc_choice_231(bool x16, Real x481) {
+    const auto choice_cond = (x16);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    (1.0/2.0)*x481
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_232(Real T, Real x16) {
+DEVICE auto jac_nuc_choice_232(Real T, bool x16) {
 return ((x16) ? (
    0
 )
@@ -3579,7 +4115,7 @@ return ((x16) ? (
    -0.20000000000000001*math::exp((-1.2)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_233(Real T, Real x16) {
+DEVICE auto jac_nuc_choice_233(Real T, bool x16) {
 return ((x16) ? (
    0
 )
@@ -3587,7 +4123,7 @@ return ((x16) ? (
    -0.16869999999999999*math::exp((-1.1687000000000001)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_234(Real T, Real x16) {
+DEVICE auto jac_nuc_choice_234(Real T, bool x16) {
 return ((x16) ? (
    0
 )
@@ -3595,415 +4131,517 @@ return ((x16) ? (
    0.69999999999999996*math::exp((-0.30000000000000004)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_235(Real x167) {
-return ((x167) ? (
+DEVICE auto jac_nuc_choice_235(bool x167) {
+    const auto choice_cond = (x167);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    1
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_236(Real x167, Real x8) {
-return ((x167) ? (
+DEVICE auto jac_nuc_choice_236(bool x167, Real x8) {
+    const auto choice_cond = (x167);
+    const auto choice_true = (
    0.0001
-)
-: (
+);
+    const auto choice_false = (
    x8
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_237(Real x313) {
-return ((x313) ? (
+DEVICE auto jac_nuc_choice_237(bool x313) {
+    const auto choice_cond = (x313);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       0.00020000000000000001
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_238(Real x255, Real x310, Real x313, Real x314, Real x315, Real x512, Real x523, Real x524, Real x525, Real x526, Real x527, Real x528, Real x529) {
-return ((x255) ? (
+DEVICE auto jac_nuc_choice_238(bool x255, Real x310, bool x313, Real x314, Real x315, Real x512, Real x523, Real x524, Real x525, Real x526, Real x527, Real x528, Real x529) {
+    const auto choice_cond = (x255);
+    const auto choice_true = (
    x310*(11.55760367482214*x512 - 7.2479875549080308*x523 + 33.455408266588918*x524 - 35.698903039375494*x525 - 54.526167351293466*x526 + 62.988078688261993*x527 + 22.762583481781927*x528 - 32.574051224421225*x529)
-)
-: (
+);
+    const auto choice_false = (
    -5.5313336794064847e-19*x314*jac_nuc_choice_237(x313)/((x315)*(x315))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_239(Real T, Real x255, Real x300, Real x301, Real x302, Real x303, Real x306, Real x307, Real x309, Real x310, Real x313, Real x314, Real x315, Real x48, Real x512, Real x523, Real x524, Real x525, Real x526, Real x527, Real x528, Real x529) {
+DEVICE auto jac_nuc_choice_239(Real T, bool x255, Real x300, Real x301, Real x302, Real x303, Real x306, Real x307, bool x309, Real x310, bool x313, Real x314, Real x315, Real x48, Real x512, Real x523, Real x524, Real x525, Real x526, Real x527, Real x528, Real x529) {
 return ((x309) ? (
    3.2860556719809434e-26*math::exp((-0.24000000000000021)*math::log(math::abs(T)))*x307 + 1.8746122480121903e-32*math::exp((2.7599999999999998)*math::log(math::abs(T)))*x307 - 6.2968615725975507e-40*math::exp((4.8599999999999994)*math::log(math::abs(T)))*x306/((x303)*(x303)) + 1.8719999999999998e-14*x300*x48 + 3.9261999999999998e-15*x301*x48 + 1.53e-21*x302*x48
 )
 : jac_nuc_choice_238(x255, x310, x313, x314, x315, x512, x523, x524, x525, x526, x527, x528, x529));
 }
-DEVICE auto jac_nuc_choice_240(Real x296, Real x297, Real x512, Real x523, Real x524, Real x525, Real x526, Real x527, Real x528, Real x529) {
-return ((x297) ? (
+DEVICE auto jac_nuc_choice_240(Real x296, bool x297, Real x512, Real x523, Real x524, Real x525, Real x526, Real x527, Real x528, Real x529) {
+    const auto choice_cond = (x297);
+    const auto choice_true = (
    x296*(3.8689780091986448*x512 + 4.297112944704045*x523 - 117.34186576967058*x524 + 103.76942484394611*x525 + 123.18901581604325*x526 - 101.40241318979159*x527 - 43.540996231705549*x528 + 27.91190909651122*x529)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_241(Real x291, Real x294, Real x296, Real x297, Real x512, Real x523, Real x524, Real x525, Real x526, Real x527, Real x528, Real x529) {
-return ((x294) ? (
+DEVICE auto jac_nuc_choice_241(Real x291, bool x294, Real x296, bool x297, Real x512, Real x523, Real x524, Real x525, Real x526, Real x527, Real x528, Real x529) {
+    const auto choice_cond = (x294);
+    const auto choice_true = (
    x291*(38.719649225812766*x512 + 445.51869310442481*x523 + 1300.6686834345674*x524 + 5869.3152370465659*x525 + 11077.448644792414*x526 + 11324.985706577943*x527 + 6766.9891340104432*x528 + 2370.6849681533818*x529)
-)
-: jac_nuc_choice_240(x296, x297, x512, x523, x524, x525, x526, x527, x528, x529));
+);
+    const auto choice_false = jac_nuc_choice_240(x296, x297, x512, x523, x524, x525, x526, x527, x528, x529);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_242(Real x254, Real x257, Real x264, Real x512, Real x523, Real x527, Real x528, Real x529, Real x532) {
-return ((x257) ? (
+DEVICE auto jac_nuc_choice_242(Real x254, bool x257, Real x264, Real x512, Real x523, Real x527, Real x528, Real x529, Real x532) {
+    const auto choice_cond = (x257);
+    const auto choice_true = (
    x254*(5.0409049417480247*x512 - 3.7541549062629067*x523 + 2.2094886994529301*x527 - 1.528565035159452*x528 + 2.0057552335975877*x529)
-)
-: (
+);
+    const auto choice_false = (
    x264*x532
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_243(Real x257, Real x266, Real x268, Real x512, Real x523, Real x527, Real x528, Real x529, Real x532) {
-return ((x257) ? (
+DEVICE auto jac_nuc_choice_243(bool x257, Real x266, Real x268, Real x512, Real x523, Real x527, Real x528, Real x529, Real x532) {
+    const auto choice_cond = (x257);
+    const auto choice_true = (
    x266*(3.6184459289309552*x512 + 0.0708789387907936*x523 + 3.7035619079275177*x527 - 4.6974781513675152*x528 - 1.6316107607322889*x529)
-)
-: (
+);
+    const auto choice_false = (
    x268*x532
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_244(Real x101, Real x276, Real x277, Real x278, Real x279, Real x280, Real x281, Real x283, Real x512, Real x523, Real x527, Real x528, Real x529, Real x8) {
-return ((x277) ? (
+DEVICE auto jac_nuc_choice_244(Real x101, Real x276, bool x277, Real x278, Real x279, Real x280, Real x281, Real x283, Real x512, Real x523, Real x527, Real x528, Real x529, Real x8) {
+    const auto choice_cond = (x277);
+    const auto choice_true = (
    x276*(10.695627721640689*x512 - 17.135767342440825*x523 + 17.889115159724135*x527 - 50.756388852554174*x528 + 41.010708268606813*x529)
-)
-: (
+);
+    const auto choice_false = (
    x283*(278.71147075841589*x101*x279*x281*x8/((x279 + 0.003362753556164708)*(x279 + 0.003362753556164708)) - 1.1080034428212589e-30*x278*x280*x512/((1.3368457736780897e-35*x278 + 1)*(1.3368457736780897e-35*x278 + 1)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_245(Real x101, Real x273, Real x274, Real x276, Real x277, Real x278, Real x279, Real x280, Real x281, Real x283, Real x512, Real x523, Real x527, Real x528, Real x529, Real x8) {
-return ((x274) ? (
+DEVICE auto jac_nuc_choice_245(Real x101, Real x273, bool x274, Real x276, bool x277, Real x278, Real x279, Real x280, Real x281, Real x283, Real x512, Real x523, Real x527, Real x528, Real x529, Real x8) {
+    const auto choice_cond = (x274);
+    const auto choice_true = (
    x273*(8.2184944748967013*x101*x8 - 52.189748993977005*x523 - 48.951834264235494*x527 - 196.44057098336626*x528 - 192.38155095558542*x529)
-)
-: jac_nuc_choice_244(x101, x276, x277, x278, x279, x280, x281, x283, x512, x523, x527, x528, x529, x8));
+);
+    const auto choice_false = jac_nuc_choice_244(x101, x276, x277, x278, x279, x280, x281, x283, x512, x523, x527, x528, x529, x8);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_246(Real x101, Real x270, Real x271, Real x273, Real x274, Real x276, Real x277, Real x278, Real x279, Real x280, Real x281, Real x283, Real x512, Real x523, Real x527, Real x528, Real x529, Real x8) {
-return ((x271) ? (
+DEVICE auto jac_nuc_choice_246(Real x101, Real x270, bool x271, Real x273, bool x274, Real x276, bool x277, Real x278, Real x279, Real x280, Real x281, Real x283, Real x512, Real x523, Real x527, Real x528, Real x529, Real x8) {
+    const auto choice_cond = (x271);
+    const auto choice_true = (
    x270*(86.079180274567719*x512 + 267.76838492252847*x523 + 44.301288185112313*x527 + 185.67890535151699*x528 + 336.10445235294861*x529)
-)
-: jac_nuc_choice_245(x101, x273, x274, x276, x277, x278, x279, x280, x281, x283, x512, x523, x527, x528, x529, x8));
+);
+    const auto choice_false = jac_nuc_choice_245(x101, x273, x274, x276, x277, x278, x279, x280, x281, x283, x512, x523, x527, x528, x529, x8);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_247(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_247(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -6.0790882143828848e+42*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_248(Real x207, Real x216, Real x370, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_248(bool x207, bool x216, Real x370, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-x370*x373 - 1.8218763760000002e-27*x372 - x377*(x374 + x376*jac_nuc_choice_247(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_249(Real x239, Real x316, Real x318, Real x362, Real x381, Real x382) {
-return ((x362) ? (
+DEVICE auto jac_nuc_choice_249(Real x239, Real x316, Real x318, bool x362, Real x381, Real x382) {
+    const auto choice_cond = (x362);
+    const auto choice_true = (
       x239*x316*x318*x381 - x239*x381*x382
-   )
-   : (
+   );
+    const auto choice_false = (
       0
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_250(Real x230, Real x239, Real x316, Real x318, Real x362, Real x380, Real x381, Real x382, Real x383) {
-return ((x230) ? (
+DEVICE auto jac_nuc_choice_250(bool x230, Real x239, Real x316, Real x318, bool x362, Real x380, Real x381, Real x382, Real x383) {
+    const auto choice_cond = (x230);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x380 + x383*jac_nuc_choice_249(x239, x316, x318, x362, x381, x382)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_251(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_251(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -1.116213401528895e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_252(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x385) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_252(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x385) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-3.3452431600000003e-24*x372 - x373*x385 - x377*(x374 + x376*jac_nuc_choice_251(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_253(Real x316, Real x318, Real x362, Real x382, Real x386) {
-return ((x362) ? (
+DEVICE auto jac_nuc_choice_253(Real x316, Real x318, bool x362, Real x382, Real x386) {
+    const auto choice_cond = (x362);
+    const auto choice_true = (
       x316*x318*x386 - x382*x386
-   )
-   : (
+   );
+    const auto choice_false = (
       0
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_254(Real x230, Real x316, Real x318, Real x362, Real x380, Real x382, Real x383, Real x386) {
-return ((x230) ? (
+DEVICE auto jac_nuc_choice_254(bool x230, Real x316, Real x318, bool x362, Real x380, Real x382, Real x383, Real x386) {
+    const auto choice_cond = (x230);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x380 + x383*jac_nuc_choice_253(x316, x318, x362, x382, x386)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_255(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_255(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -1.1168213103516679e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_256(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x440) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_256(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x440) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-3.3470650363800003e-24*x372 - x373*x440 - x377*(x374 + x376*jac_nuc_choice_255(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_257(Real x316, Real x318, Real x362, Real x382, Real x419) {
-return ((x362) ? (
+DEVICE auto jac_nuc_choice_257(Real x316, Real x318, bool x362, Real x382, Real x419) {
+    const auto choice_cond = (x362);
+    const auto choice_true = (
       x316*x318*x419 - x382*x419
-   )
-   : (
+   );
+    const auto choice_false = (
       0
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_258(Real x230, Real x316, Real x318, Real x362, Real x380, Real x382, Real x383, Real x419) {
-return ((x230) ? (
+DEVICE auto jac_nuc_choice_258(bool x230, Real x316, Real x318, bool x362, Real x380, Real x382, Real x383, Real x419) {
+    const auto choice_cond = (x230);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x380 + x383*jac_nuc_choice_257(x316, x318, x362, x382, x419)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_259(Real x101, Real x179, Real x182, Real x183, Real x184, Real x185, Real x186, Real x188, Real x190, Real x191, Real x193, Real x194, Real x195, Real x196, Real x197, Real x198, Real x200, Real x201, Real x420, Real x421, Real x422, Real x423, Real x424, Real x425, Real x426, Real x427, Real x428) {
-return ((x201) ? (
+DEVICE auto jac_nuc_choice_259(Real x101, Real x179, Real x182, Real x183, Real x184, Real x185, Real x186, Real x188, Real x190, Real x191, Real x193, Real x194, Real x195, Real x196, Real x197, Real x198, Real x200, bool x201, Real x420, Real x421, Real x422, Real x423, Real x424, Real x425, Real x426, Real x427, Real x428) {
+    const auto choice_cond = (x201);
+    const auto choice_true = (
    x200*(2.1283484790071863*x101*x420 + 1.7949111316907187*x179*x420 - 0.019226585526500282*x182*x420 + 0.025328436022934504*x183*x420 + 0.26965574024053274*x184*x420 - 0.53023929521466884*x185*x420 - 1.249451749011359*x186*x420 + 0.00057030427583276537*x188*x426 - 0.006136941893251451*x190*x426 - 0.010237293323451529*x191*x427 + 0.023154795695148129*x193*x426 + 0.12150741535729581*x194*x427 + 0.048814803971473773*x195*x424 - 0.033709845761432836*x196*x422 - 0.63403983120684049*x197*x424 + 0.81953608629844088*x198*x422 + 2.5310936376227748*x420*x421 - 4.9020655078787438*x422*x423 + 2.8710012490505563*x424*x425 - 0.50882525384982424*x427*x428)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_260(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_260(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -1.117429219174441e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_261(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x448) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_261(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x448) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-3.3488869127600003e-24*x372 - x373*x448 - x377*(x374 + x376*jac_nuc_choice_260(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_262(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_262(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -2.2323456674160042e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_263(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x457) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_263(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x457) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-6.6902431600000005e-24*x372 - x373*x457 - x377*(x374 + x376*jac_nuc_choice_262(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_264(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_264(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -2.232953576238777e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_265(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x460) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_265(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x460) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-6.6920650363799998e-24*x372 - x373*x460 - x377*(x374 + x376*jac_nuc_choice_264(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_266(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_266(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -2.2330347118805627e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_267(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x462) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_267(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x462) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-6.6923081963799998e-24*x372 - x373*x462 - x377*(x374 + x376*jac_nuc_choice_266(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_268(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_268(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -2.23356148506155e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_269(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x465) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_269(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x465) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-6.6938869127600005e-24*x372 - x373*x465 - x377*(x374 + x376*jac_nuc_choice_268(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_270(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_270(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -2.2336426207033358e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_271(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x467) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_271(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x467) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-6.6941300727600005e-24*x372 - x373*x467 - x377*(x374 + x376*jac_nuc_choice_270(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_272(Real x239, Real x248, Real x249, Real x316, Real x318, Real x362, Real x382) {
-return ((x362) ? (
+DEVICE auto jac_nuc_choice_272(Real x239, Real x248, Real x249, Real x316, Real x318, bool x362, Real x382) {
+    const auto choice_cond = (x362);
+    const auto choice_true = (
       x239*x248*x316*x318 - x249*x382
-   )
-   : (
+   );
+    const auto choice_false = (
       0
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_273(Real x230, Real x239, Real x248, Real x249, Real x316, Real x318, Real x362, Real x364, Real x380, Real x382, Real x383) {
-return ((x230) ? (
+DEVICE auto jac_nuc_choice_273(bool x230, Real x239, Real x248, Real x249, Real x316, Real x318, bool x362, Real x364, Real x380, Real x382, Real x383) {
+    const auto choice_cond = (x230);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x364 + x380 + x383*jac_nuc_choice_272(x239, x248, x249, x316, x318, x362, x382)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_274(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_274(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -3.3491669777676719e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_275(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x468) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_275(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x468) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-1.0037308196379999e-23*x372 - x373*x468 - x377*(x374 + x376*jac_nuc_choice_274(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_276(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_276(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -3.3497748865904447e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_277(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x469) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_277(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x469) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-1.003913007276e-23*x372 - x373*x469 - x377*(x374 + x376*jac_nuc_choice_276(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_278(Real x199, Real x201) {
-return ((x201) ? (
+DEVICE auto jac_nuc_choice_278(Real x199, bool x201) {
+    const auto choice_cond = (x201);
+    const auto choice_true = (
    x199
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_279(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_279(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -4.4646913348320083e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_280(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x470) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_280(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x470) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-1.3380486320000001e-23*x372 - x373*x470 - x377*(x374 + x376*jac_nuc_choice_279(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_281(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_281(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -4.4652992436547811e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_282(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x471) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_282(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x471) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-1.3382308196379999e-23*x372 - x373*x471 - x377*(x374 + x376*jac_nuc_choice_281(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_283(Real x207, Real x375) {
-return ((x207) ? (
+DEVICE auto jac_nuc_choice_283(bool x207, Real x375) {
+    const auto choice_cond = (x207);
+    const auto choice_true = (
       0
-   )
-   : (
+   );
+    const auto choice_false = (
       -4.4659071524775539e+46*x375
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_284(Real x207, Real x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x473) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_284(bool x207, bool x216, Real x372, Real x373, Real x374, Real x375, Real x376, Real x377, Real x378, Real x473) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x378*(-1.338413007276e-23*x372 - x373*x473 - x377*(x374 + x376*jac_nuc_choice_283(x207, x375)))
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_285(Real x316, Real x318, Real x362, Real x382, Real x474) {
-return ((x362) ? (
+DEVICE auto jac_nuc_choice_285(Real x316, Real x318, bool x362, Real x382, Real x474) {
+    const auto choice_cond = (x362);
+    const auto choice_true = (
       x316*x318*x474 - x382*x474
-   )
-   : (
+   );
+    const auto choice_false = (
       0
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_286(Real x230, Real x316, Real x318, Real x362, Real x380, Real x382, Real x383, Real x474) {
-return ((x230) ? (
+DEVICE auto jac_nuc_choice_286(bool x230, Real x316, Real x318, bool x362, Real x380, Real x382, Real x383, Real x474) {
+    const auto choice_cond = (x230);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x380 + x383*jac_nuc_choice_285(x316, x318, x362, x382, x474)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_287(Real T, Real x16) {
+DEVICE auto jac_nuc_choice_287(Real T, bool x16) {
 return ((x16) ? (
    0
 )
@@ -4011,15 +4649,17 @@ return ((x16) ? (
    -0.39700000000000002*math::exp((-1.397)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_288(Real x16, Real x488) {
-return ((x16) ? (
+DEVICE auto jac_nuc_choice_288(bool x16, Real x488) {
+    const auto choice_cond = (x16);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    -1.5*x488
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_289(Real T, Real x16) {
+DEVICE auto jac_nuc_choice_289(Real T, bool x16) {
 return ((x16) ? (
    0
 )
@@ -4027,37 +4667,45 @@ return ((x16) ? (
    0.36470000000000002*math::exp((-0.63529999999999998)*math::log(math::abs(T)))
 ));
 }
-DEVICE auto jac_nuc_choice_290(Real x216, Real x222, Real x378, Real x481, Real x91, Real x94) {
-return ((x216) ? (
+DEVICE auto jac_nuc_choice_290(bool x216, Real x222, Real x378, Real x481, Real x91, Real x94) {
+    const auto choice_cond = (x216);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    -x222*x378*x481*x91*x94
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_291(Real x299, Real x318, Real x319, Real x362, Real x382, Real x530, Real x533) {
-return ((x362) ? (
+DEVICE auto jac_nuc_choice_291(Real x299, Real x318, Real x319, bool x362, Real x382, Real x530, Real x533) {
+    const auto choice_cond = (x362);
+    const auto choice_true = (
       x299*x318*x530 + x319*x533 + x382*(-x530 - x533)
-   )
-   : (
+   );
+    const auto choice_false = (
       0
-   ));
+   );
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_292(Real x230, Real x299, Real x318, Real x319, Real x362, Real x382, Real x383, Real x530, Real x533) {
-return ((x230) ? (
+DEVICE auto jac_nuc_choice_292(bool x230, Real x299, Real x318, Real x319, bool x362, Real x382, Real x383, Real x530, Real x533) {
+    const auto choice_cond = (x230);
+    const auto choice_true = (
    0
-)
-: (
+);
+    const auto choice_false = (
    x383*jac_nuc_choice_291(x299, x318, x319, x362, x382, x530, x533)
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
-DEVICE auto jac_nuc_choice_293(Real x101, Real x168, Real x171, Real x172, Real x179, Real x181, Real x183, Real x184, Real x185, Real x186, Real x187, Real x189, Real x190, Real x192, Real x193, Real x194, Real x196, Real x197, Real x198, Real x200, Real x201, Real x421, Real x423, Real x425, Real x428, Real x506, Real x507, Real x508, Real x509, Real x510, Real x511) {
-return ((x201) ? (
+DEVICE auto jac_nuc_choice_293(Real x101, Real x168, Real x171, Real x172, Real x179, Real x181, Real x183, Real x184, Real x185, Real x186, Real x187, Real x189, Real x190, Real x192, Real x193, Real x194, Real x196, Real x197, Real x198, Real x200, bool x201, Real x421, Real x423, Real x425, Real x428, Real x506, Real x507, Real x508, Real x509, Real x510, Real x511) {
+    const auto choice_cond = (x201);
+    const auto choice_true = (
    x200*(50.504556041967454*x101*x506 + 0.011577397847574064*x168*x192*x508 + 0.00057030427583276537*x171*x187*x508 - 0.0046027064199385889*x172*x189*x508 - 46.931151210299063*x179*x506 - 0.0084274614403582089*x181*x506 + 0.27317869543281359*x183*x506 - 1.5965204000783517*x184*x506 - 2.4510327539393719*x185*x506 + 15.190568323798459*x186*x506 - 0.013649724431268705*x190*x510 + 0.12150741535729581*x193*x510 + 0.097629607942947547*x194*x511 - 0.33921683589988288*x196*x507 - 0.076906342106001127*x197*x509 + 2.8710012490505563*x198*x507 + 1.7949111316907187*x421*x506 - 2.4989034980227181*x423*x507 + 0.80896722072159821*x425*x509 - 0.95105974681026062*x428*x511)
-)
-: (
+);
+    const auto choice_false = (
    0
-));
+);
+    return choice_cond ? choice_true : choice_false;
 }
 DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
 
