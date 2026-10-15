@@ -8100,58 +8100,64 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
     s.n_jac[0] += 1;
 
 }
+DEVICE unsigned midx(unsigned row, unsigned column) {
+  unsigned index = row * 15u + column;
+  __builtin_assume(index < 225u);
+  return index;
+}
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
+    // Same arithmetic as the reference LU, reordered per element only:
+    // the pivot row's trailing values are held in registers (row[]), and each
+    // trailing row is scaled and updated in one pass (i outer, j inner).
     int info = 0;
+    for (unsigned k = 0; k < 14u; ++k) {
+        unsigned pivot_row = k;
+        Real max_val = math::abs(A[midx(k, k)]);
+        for (unsigned i = k + 1; i < 15u; ++i) {
+            const Real val = math::abs(A[midx(i, k)]);
+            if (val > max_val) {
+                max_val = val;
+                pivot_row = i;
+            }
+        }
+        ipvt[k] = static_cast<int>(pivot_row);
+        __builtin_assume(pivot_row < 15);
 
-    if constexpr (N > 1) {
-        for (size_type k = 0; k < N - 1; ++k) {
-            size_type pivot_row = k;
-            Real max_val = math::abs(A[matrix_index(k, k)]);
-            for (size_type i = k + 1; i < N; ++i) {
-                const Real val = math::abs(A[matrix_index(i, k)]);
-                if (val > max_val) {
-                    max_val = val;
-                    pivot_row = i;
+        if (A[midx(pivot_row, k)] != 0.0) {
+            if (pivot_row != k) {
+                const Real t = A[midx(pivot_row, k)];
+                A[midx(pivot_row, k)] = A[midx(k, k)];
+                A[midx(k, k)] = t;
+                for (unsigned j = k + 1; j < 15u; ++j) {
+                    const Real trailing = A[midx(pivot_row, j)];
+                    A[midx(pivot_row, j)] = A[midx(k, j)];
+                    A[midx(k, j)] = trailing;
                 }
             }
-            ipvt[k] = static_cast<int>(pivot_row);
-            __builtin_assume(pivot_row < 15);
 
-            if (A[matrix_index(pivot_row, k)] != 0.0) {
-                if (pivot_row != k) {
-                    const Real t = A[matrix_index(pivot_row, k)];
-                    A[matrix_index(pivot_row, k)] = A[matrix_index(k, k)];
-                    A[matrix_index(k, k)] = t;
-                    for (size_type j = k + 1; j < N; ++j) {
-                        const Real trailing = A[matrix_index(pivot_row, j)];
-                        A[matrix_index(pivot_row, j)] = A[matrix_index(k, j)];
-                        A[matrix_index(k, j)] = trailing;
-                    }
-                }
-
-                const Real multiplier = -1.0 / A[matrix_index(k, k)];
-                for (size_type i = k + 1; i < N; ++i) {
-                    A[matrix_index(i, k)] *= multiplier;
-                }
-
-                for (size_type j = k + 1; j < N; ++j) {
-                    const Real t = A[matrix_index(k, j)];
-                    for (size_type i = k + 1; i < N; ++i) {
-                        A[matrix_index(i, j)] += t * A[matrix_index(i, k)];
-                    }
-                }
-            } else {
-                info = static_cast<int>(k + 1);
+            const Real multiplier = -1.0 / A[midx(k, k)];
+            Real row[15];
+            [[loom::unroll]] for (unsigned j = 0; j < 15; ++j) {
+                row[j] = (j > k) ? A[midx(k, j)] : 0.0;
             }
+            for (unsigned i = k + 1; i < 15u; ++i) {
+                const Real m = A[midx(i, k)] * multiplier;
+                A[midx(i, k)] = m;
+                [[loom::unroll]] for (unsigned j = 0; j < 15; ++j) {
+                    if (j > k) {
+                        A[midx(i, j)] += row[j] * m;
+                    }
+                }
+            }
+        } else {
+            info = static_cast<int>(k + 1);
         }
     }
 
-    if constexpr (N > 0) {
-        ipvt[N - 1] = static_cast<int>(N - 1);
-        if (A[matrix_index(N - 1, N - 1)] == 0.0) {
-            info = static_cast<int>(N);
-        }
+    ipvt[14] = 14;
+    if (A[midx(14, 14)] == 0.0) {
+        info = 15;
     }
 
     return info;
