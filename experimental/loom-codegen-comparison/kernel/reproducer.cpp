@@ -4229,7 +4229,25 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1424 = math::exp((-2)*math::log(math::abs(T)));
     const Real v1425 = 5.25e-11*math::exp(-4430.0*v1420 + 173900.0*v1424);
     const Real v1426 = T > 200.0;
-    const Real v1427 = jac_nuc_choice_72(v1425, v1426);
+    decltype(jac_nuc_choice_72(v1425, v1426)) mg1_0{};
+    decltype(jac_nuc_choice_74(T, v1424, v1425, v1426)) mg1_1{};
+    if ((static_cast<bool>(v1426))) {
+        mg1_0 = (
+   (v1425)
+);
+        mg1_1 = (
+   (v1425)*(4430.0*(v1424) - 347800.0/(((T))*((T))*((T))))
+);
+    } else {
+        mg1_0 = (
+   0
+);
+        mg1_1 = (
+   0
+);
+    }
+
+    const Real v1427 = mg1_0;
     out[matrix_index(10, 10)] = -xn[1]*v1422 - xn[2]*v1427;
     out[matrix_index(10, 2)] = -xn[10]*v1427 + 1.0e-25*xn[5] + xn[7]*v1423 + 6.3999999999999996e-10*xn[9];
     const Real v1428 = M_LN10;
@@ -4252,8 +4270,26 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1442 = T <= 1167.4796423742259;
     const Real v1443 = math::exp(-5207.0*v1420);
     const Real v1445 = 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)));
-    out[matrix_index(10, 14)] = (-4.5700000000000003e-7*xn[1]*xn[10]*v1421*v1424 - xn[10]*xn[2]*jac_nuc_choice_74(T, v1424, v1425, v1426) - xn[2]*xn[7]*v1445 - xn[3]*xn[5]*v1445 + xn[4]*xn[8]*(8.4600000000000008e-10*v1420*v1429 - 2.7400000000000004e-10*v1446) + xn[5]*xn[8]*jac_nuc_choice_75(v1420, v1433, v1436, v1437, v1438, v1439, v1440, v1441, v1442, v1443, v1446, v1424, v1428, v1429))/(xn[0]*v1448 + xn[1]*v1448 + xn[10]*v1449 + xn[11]*v1448 + xn[12]*v1448 + xn[13]*v1448 + xn[2]*v1448 + xn[3]*v1448 + xn[4]*v1448 + xn[5]*v1448 + xn[6]*v1449 + xn[7]*v1448 + xn[8]*v1449 + xn[9]*v1449);
-    const Real v1444 = jac_nuc_choice_73(v1441, v1442, v1443);
+    decltype(jac_nuc_choice_75(v1420, v1433, v1436, v1437, v1438, v1439, v1440, v1441, v1442, v1443, v1446, v1424, v1428, v1429)) mg2_0{};
+    decltype(jac_nuc_choice_73(v1441, v1442, v1443)) mg2_1{};
+    if ((static_cast<bool>(v1442))) {
+        mg2_0 = (
+   (v1441)*(v1428)*(6.7520699999999998*(v1420)*(v1433)*(v1439) + 1.5894349999999999*(v1420)*(v1436)*(v1438) - 8.6761199999999992*(v1420)*(v1437)*(v1440) + 5.8888600000000002*(v1420)*(v1429) + 14.393840000000001*(v1446))
+);
+        mg2_1 = (
+   (v1441)
+);
+    } else {
+        mg2_0 = (
+   1.650619e-6*(v1443)*(v1424)
+);
+        mg2_1 = (
+   3.1699999999999999e-10*(v1443)
+);
+    }
+
+    out[matrix_index(10, 14)] = (-4.5700000000000003e-7*xn[1]*xn[10]*v1421*v1424 - xn[10]*xn[2]*mg1_1 - xn[2]*xn[7]*v1445 - xn[3]*xn[5]*v1445 + xn[4]*xn[8]*(8.4600000000000008e-10*v1420*v1429 - 2.7400000000000004e-10*v1446) + xn[5]*xn[8]*mg2_0)/(xn[0]*v1448 + xn[1]*v1448 + xn[10]*v1449 + xn[11]*v1448 + xn[12]*v1448 + xn[13]*v1448 + xn[2]*v1448 + xn[3]*v1448 + xn[4]*v1448 + xn[5]*v1448 + xn[6]*v1449 + xn[7]*v1448 + xn[8]*v1449 + xn[9]*v1449);
+    const Real v1444 = mg2_1;
     out[matrix_index(10, 5)] = 1.0e-25*xn[2] + xn[3]*v1423 + xn[8]*v1444;
     const Real v1435 = 8.4600000000000008e-10*v1431 - 1.3700000000000002e-10*v1434 + 4.1700000000000001e-10;
     out[matrix_index(10, 8)] = xn[4]*v1435 + xn[5]*v1444;
@@ -4287,7 +4323,25 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     out[matrix_index(4, 10)] = xn[1]*v1039;
     const Real v1040 = math::exp(-37.100000000000001*v1037);
     const Real v1041 = T >= 50.0;
-    const Real v1042 = jac_nuc_choice_48(T, v1040, v1041);
+    decltype(jac_nuc_choice_48(T, v1040, v1041)) mg3_0{};
+    decltype(jac_nuc_choice_50(T, v1040, v1041)) mg3_1{};
+    if ((static_cast<bool>(v1041))) {
+        mg3_0 = (
+   2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs((T))))*(v1040) - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs((T))))
+);
+        mg3_1 = (
+   7.4200000000000004e-9*math::exp((-1.5979999999999999)*math::log(math::abs((T))))*(v1040) + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*math::log(math::abs((T))))*(v1040) - 4.8987999999999998e-17*math::exp((0.47999999999999998)*math::log(math::abs((T))))
+);
+    } else {
+        mg3_0 = (
+   0
+);
+        mg3_1 = (
+   0
+);
+    }
+
+    const Real v1042 = mg3_0;
     out[matrix_index(4, 1)] = xn[10]*v1039 + xn[5]*v1042;
     out[matrix_index(4, 5)] = xn[1]*v1042;
     const Real v1045 = M_LN10;
@@ -4305,7 +4359,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1060 = 3.4767371836380304e-16*v1058;
     const Real v1055 = math::exp((-2)*math::log(math::abs(v1045)));
     const Real v1043 = math::exp(-33.0*v1037);
-    out[matrix_index(4, 14)] = (1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] + 4.9363448015713007e-7*math::exp((-1.5)*math::log(math::abs(T)))*xn[4]*xn[7] + xn[1]*xn[5]*jac_nuc_choice_50(T, v1040, v1041) - xn[2]*xn[4]*jac_nuc_choice_51(T, v1041, v1043) - xn[2]*v1053*(5.1485802679346868*v1037*math::exp((1.0)*math::log(math::abs(v1047)))*v1050 - 0.87659414490283338*v1037*v1049*v1051 - 3.5068370966299316*v1057) + xn[4]*xn[8]*(2.7400000000000004e-10*v1037*v1047*v1055 - 8.4600000000000008e-10*v1057) + 4.5700000000000003e-7*xn[1]*xn[10]*v1038/((T)*(T)))/(xn[0]*v1059 + xn[1]*v1059 + xn[10]*v1060 + xn[11]*v1059 + xn[12]*v1059 + xn[13]*v1059 + xn[2]*v1059 + xn[3]*v1059 + xn[4]*v1059 + xn[5]*v1059 + xn[6]*v1060 + xn[7]*v1059 + xn[8]*v1060 + xn[9]*v1060);
+    out[matrix_index(4, 14)] = (1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] + 4.9363448015713007e-7*math::exp((-1.5)*math::log(math::abs(T)))*xn[4]*xn[7] + xn[1]*xn[5]*mg3_1 - xn[2]*xn[4]*jac_nuc_choice_51(T, v1041, v1043) - xn[2]*v1053*(5.1485802679346868*v1037*math::exp((1.0)*math::log(math::abs(v1047)))*v1050 - 0.87659414490283338*v1037*v1049*v1051 - 3.5068370966299316*v1057) + xn[4]*xn[8]*(2.7400000000000004e-10*v1037*v1047*v1055 - 8.4600000000000008e-10*v1057) + 4.5700000000000003e-7*xn[1]*xn[10]*v1038/((T)*(T)))/(xn[0]*v1059 + xn[1]*v1059 + xn[10]*v1060 + xn[11]*v1059 + xn[12]*v1059 + xn[13]*v1059 + xn[2]*v1059 + xn[3]*v1059 + xn[4]*v1059 + xn[5]*v1059 + xn[6]*v1060 + xn[7]*v1059 + xn[8]*v1060 + xn[9]*v1060);
     const Real v1056 = 1.3700000000000002e-10*((v1047)*(v1047))*v1055 - 8.4600000000000008e-10*v1048 - 4.1700000000000001e-10;
     const Real v1044 = jac_nuc_choice_49(T, v1041, v1043);
     out[matrix_index(4, 4)] = -xn[0]*v1036 - xn[2]*v1052 - xn[2]*v1044 - xn[7]*v1054 + xn[8]*v1056;
@@ -4326,13 +4380,49 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v659 = math::exp((-0.75)*math::log(math::abs(T)));
     const Real v660 = math::exp(-127500.0*v656);
     const Real v661 = T <= 10000.0;
-    const Real v662 = jac_nuc_choice_9(T, v659, v660, v661);
+    decltype(jac_nuc_choice_9(T, v659, v660, v661)) mg4_0{};
+    decltype(jac_nuc_choice_16(T, v660, v661)) mg4_1{};
+    if ((static_cast<bool>(v661))) {
+        mg4_0 = (
+   1.26e-9*(v659)*(v660)
+);
+        mg4_1 = (
+   0.00016065*math::exp((-2.75)*math::log(math::abs((T))))*(v660) - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs((T))))*(v660)
+);
+    } else {
+        mg4_0 = (
+   4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs((T))))
+);
+        mg4_1 = (
+   1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs((T))))
+);
+    }
+
+    const Real v662 = mg4_0;
     out[matrix_index(1, 13)] = -xn[1]*v662;
     const Real v1136 = ((T)*(T));
     const Real v1137 = ((T)*(T)*(T));
     const Real v1138 = ((((T)*(T)))*(((T)*(T))));
     const Real v1139 = T <= 10000.0;
-    const Real v1140 = jac_nuc_choice_60(T, v1136, v1137, v1138, v1139);
+    decltype(jac_nuc_choice_60(T, v1136, v1137, v1138, v1139)) mg5_0{};
+    decltype(jac_nuc_choice_63(T, v1136, v1137, v1138, v1139)) mg5_1{};
+    if ((static_cast<bool>(v1139))) {
+        mg5_0 = (
+   -5.5279999999999998e-28*(((T))*((T))*((T))*((T))*((T))) - 2.3088e-11*(T) + 7.3427999999999993e-15*(v1136) - 7.5474000000000004e-19*(v1137) + 3.3467999999999999e-23*(v1138) + 4.2277999999999996e-8
+);
+        mg5_1 = (
+   1.4685599999999999e-14*(T) - 2.2642200000000001e-18*(v1136) + 1.3387199999999999e-22*(v1137) - 2.7639999999999999e-27*(v1138) - 2.3088e-11
+);
+    } else {
+        mg5_0 = (
+   0
+);
+        mg5_1 = (
+   0
+);
+    }
+
+    const Real v1140 = mg5_0;
     out[matrix_index(6, 6)] = -xn[0]*v1140 - 6.0e-10*xn[2] - xn[3]*v1160;
     out[matrix_index(6, 0)] = -xn[6]*v1140;
     const Real v1152 = 1.0/T;
@@ -4355,9 +4445,45 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1164 = 3.4767371836380304e-16*v1162;
     const Real v1158 = T >= 100.0 && T <= 30000.0;
     const Real v1142 = T < 30;
-    out[matrix_index(6, 14)] = (-4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] - xn[0]*xn[6]*jac_nuc_choice_63(T, v1136, v1137, v1138, v1139) + xn[1]*xn[2]*jac_nuc_choice_64(T, v1146, v1148, v1150, v1152, v1161, v1142, v1143, v1144, v1145) + xn[1]*xn[8]*jac_nuc_choice_65(v1136, v1147, v1152, v1153, v1154, v1155, v1156, v1157, v1158, v1161, v1143) + 2.4999999999999998e-6*xn[3]*xn[6]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*v1163 + xn[1]*v1163 + xn[10]*v1164 + xn[11]*v1163 + xn[12]*v1163 + xn[13]*v1163 + xn[2]*v1163 + xn[3]*v1163 + xn[4]*v1163 + xn[5]*v1163 + xn[6]*v1164 + xn[7]*v1163 + xn[8]*v1164 + xn[9]*v1164);
-    const Real v1159 = jac_nuc_choice_62(v1157, v1158);
-    const Real v1151 = jac_nuc_choice_61(T, v1150, v1142);
+    decltype(jac_nuc_choice_64(T, v1146, v1148, v1150, v1152, v1161, v1142, v1143, v1144, v1145)) mg6_0{};
+    decltype(jac_nuc_choice_61(T, v1150, v1142)) mg6_1{};
+    if ((static_cast<bool>(v1142))) {
+        mg6_0 = (
+   -5.2466095085621454e-21*math::exp((-1.1499999999999999)*math::log(math::abs((T))))
+);
+        mg6_1 = (
+   3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs((T))))
+);
+    } else {
+        mg6_0 = (
+   (v1150)*(v1144)*(-0.62159999999999993*(v1146)*(v1161) + 3.5720000000000001*(v1148)*(v1152)*(v1143) - (v1152)*(v1145))
+);
+        mg6_1 = (
+   (v1150)
+);
+    }
+
+    decltype(jac_nuc_choice_65(v1136, v1147, v1152, v1153, v1154, v1155, v1156, v1157, v1158, v1161, v1143)) mg7_0{};
+    decltype(jac_nuc_choice_62(v1157, v1158)) mg7_1{};
+    if ((static_cast<bool>(v1158))) {
+        mg7_0 = (
+   (v1153)*(-1.9125491199999999e-8*(v1147)*(v1152) + 1.9865770999999999e-9*(v1152)*(v1154) - 1.09028466e-10*(v1152)*(v1155) + 2.4718352399999997e-12*(v1152)*(v1156) - 2.8982736e-7*(v1152)*(v1143) + 3.3735381999999997e-7*(v1152) + 1.0251841499999999e-7*(v1161)) + 21237.150000000001*(v1157)/(v1136)
+);
+        mg7_1 = (
+   (v1157)
+);
+    } else {
+        mg7_0 = (
+   0
+);
+        mg7_1 = (
+   0
+);
+    }
+
+    out[matrix_index(6, 14)] = (-4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] - xn[0]*xn[6]*mg5_1 + xn[1]*xn[2]*mg6_0 + xn[1]*xn[8]*mg7_0 + 2.4999999999999998e-6*xn[3]*xn[6]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*v1163 + xn[1]*v1163 + xn[10]*v1164 + xn[11]*v1163 + xn[12]*v1163 + xn[13]*v1163 + xn[2]*v1163 + xn[3]*v1163 + xn[4]*v1163 + xn[5]*v1163 + xn[6]*v1164 + xn[7]*v1163 + xn[8]*v1164 + xn[9]*v1164);
+    const Real v1159 = mg7_1;
+    const Real v1151 = mg6_1;
     out[matrix_index(6, 1)] = xn[2]*v1151 + xn[3]*v1141 + xn[8]*v1159;
     out[matrix_index(6, 8)] = xn[1]*v1159;
     out[matrix_index(6, 2)] = xn[1]*v1151 - 6.0e-10*xn[6];
@@ -4370,12 +4496,48 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1083 = 1.0/T;
     const Real v1101 = math::exp(-33.0*v1083);
     const Real v1085 = T >= 50.0;
-    const Real v1102 = jac_nuc_choice_54(T, v1101, v1085);
+    decltype(jac_nuc_choice_54(T, v1101, v1085)) mg8_0{};
+    decltype(jac_nuc_choice_58(T, v1101, v1085)) mg8_1{};
+    if ((static_cast<bool>(v1085))) {
+        mg8_0 = (
+   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs((T)))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs((T))))*(v1101)
+);
+        mg8_1 = (
+   6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs((T))))*(v1101) - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs((T)))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs((T))))*(v1101)
+);
+    } else {
+        mg8_0 = (
+   0
+);
+        mg8_1 = (
+   0
+);
+    }
+
+    const Real v1102 = mg8_0;
     out[matrix_index(5, 4)] = xn[0]*v1076 + xn[2]*v1102 + 1.9745379206285203e-6*xn[7]*v1082;
     const Real v1097 = math::exp((-2)*math::log(math::abs(T)));
     const Real v1098 = 5.25e-11*math::exp(173900.0*v1097 - 4430.0*v1083);
     const Real v1099 = T > 200.0;
-    const Real v1100 = jac_nuc_choice_53(v1098, v1099);
+    decltype(jac_nuc_choice_53(v1098, v1099)) mg9_0{};
+    decltype(jac_nuc_choice_57(T, v1097, v1098, v1099)) mg9_1{};
+    if ((static_cast<bool>(v1099))) {
+        mg9_0 = (
+   (v1098)
+);
+        mg9_1 = (
+   (v1098)*(4430.0*(v1097) - 347800.0/(((T))*((T))*((T))))
+);
+    } else {
+        mg9_0 = (
+   0
+);
+        mg9_1 = (
+   0
+);
+    }
+
+    const Real v1100 = mg9_0;
     out[matrix_index(5, 2)] = xn[10]*v1100 + xn[4]*v1102 - 1.0e-25*xn[5] + xn[7]*v1096;
     out[matrix_index(5, 10)] = xn[2]*v1100;
     const Real v1087 = M_LN10;
@@ -4404,8 +4566,26 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1113 = math::exp(-5207.0*v1083);
     const Real v1115 = math::exp((-1.5)*math::log(math::abs(T)))*xn[7];
     const Real v1116 = math::exp((-0.59000000000000008)*math::log(math::abs(T)));
-    out[matrix_index(5, 14)] = (-1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*xn[3]*xn[5] - 1.2635128643896626e-18*math::exp((-0.050000000000000044)*math::log(math::abs(T)))*xn[0]*v1079 + 1.4270531560759686e-22*xn[0]*xn[5]*v1078*v1080 - xn[1]*xn[5]*jac_nuc_choice_56(T, v1084, v1085) - xn[1]*v1095*(5.1485802679346868*math::exp((1.0)*math::log(math::abs(v1089)))*v1092*v1083 - 0.87659414490283338*v1091*v1093*v1083 - 3.5068370966299316*v1117) - 3.9837168574084181e-7*xn[1]*v1115 + xn[10]*xn[2]*jac_nuc_choice_57(T, v1097, v1098, v1099) + xn[2]*xn[4]*jac_nuc_choice_58(T, v1101, v1085) + 2.5313028975878652e-10*xn[2]*xn[7]*v1116 - 2.5313028975878652e-10*xn[3]*xn[5]*v1116 - 9.8726896031426014e-7*xn[4]*v1115 - xn[5]*xn[8]*jac_nuc_choice_59(v1087, v1089, v1097, v1104, v1105, v1106, v1107, v1108, v1109, v1110, v1111, v1112, v1113, v1117, v1083) - 3.5999999999999998e-8*xn[0]*xn[9]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*v1119 + xn[1]*v1119 + xn[10]*v1120 + xn[11]*v1119 + xn[12]*v1119 + xn[13]*v1119 + xn[2]*v1119 + xn[3]*v1119 + xn[4]*v1119 + xn[5]*v1119 + xn[6]*v1120 + xn[7]*v1119 + xn[8]*v1120 + xn[9]*v1120);
-    const Real v1114 = jac_nuc_choice_55(v1111, v1112, v1113);
+    decltype(jac_nuc_choice_59(v1087, v1089, v1097, v1104, v1105, v1106, v1107, v1108, v1109, v1110, v1111, v1112, v1113, v1117, v1083)) mg10_0{};
+    decltype(jac_nuc_choice_55(v1111, v1112, v1113)) mg10_1{};
+    if ((static_cast<bool>(v1112))) {
+        mg10_0 = (
+   (v1087)*(v1111)*(14.393840000000001*(v1089)*(v1109)*(v1083) + 1.5894349999999999*(v1104)*(v1106)*(v1083) - 8.6761199999999992*(v1105)*(v1108)*(v1083) + 6.7520699999999998*(v1107)*(v1110)*(v1083) + 5.8888600000000002*(v1117))
+);
+        mg10_1 = (
+   (v1111)
+);
+    } else {
+        mg10_0 = (
+   1.650619e-6*(v1097)*(v1113)
+);
+        mg10_1 = (
+   3.1699999999999999e-10*(v1113)
+);
+    }
+
+    out[matrix_index(5, 14)] = (-1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*xn[3]*xn[5] - 1.2635128643896626e-18*math::exp((-0.050000000000000044)*math::log(math::abs(T)))*xn[0]*v1079 + 1.4270531560759686e-22*xn[0]*xn[5]*v1078*v1080 - xn[1]*xn[5]*jac_nuc_choice_56(T, v1084, v1085) - xn[1]*v1095*(5.1485802679346868*math::exp((1.0)*math::log(math::abs(v1089)))*v1092*v1083 - 0.87659414490283338*v1091*v1093*v1083 - 3.5068370966299316*v1117) - 3.9837168574084181e-7*xn[1]*v1115 + xn[10]*xn[2]*mg9_1 + xn[2]*xn[4]*mg8_1 + 2.5313028975878652e-10*xn[2]*xn[7]*v1116 - 2.5313028975878652e-10*xn[3]*xn[5]*v1116 - 9.8726896031426014e-7*xn[4]*v1115 - xn[5]*xn[8]*mg10_0 - 3.5999999999999998e-8*xn[0]*xn[9]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*v1119 + xn[1]*v1119 + xn[10]*v1120 + xn[11]*v1119 + xn[12]*v1119 + xn[13]*v1119 + xn[2]*v1119 + xn[3]*v1119 + xn[4]*v1119 + xn[5]*v1119 + xn[6]*v1120 + xn[7]*v1119 + xn[8]*v1120 + xn[9]*v1120);
+    const Real v1114 = mg10_1;
     const Real v1086 = jac_nuc_choice_52(T, v1084, v1085);
     out[matrix_index(5, 5)] = -xn[0]*v1078*v1081 - xn[1]*v1086 - xn[1]*v1094 - 1.0e-25*xn[2] - xn[3]*v1096 - xn[3]*v1103 - xn[8]*v1114;
     out[matrix_index(5, 1)] = -xn[5]*v1086 + 7.9674337148168363e-7*xn[7]*v1082 - v1095;
@@ -4441,8 +4621,26 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1581 = T <= 10000.0;
     const Real v1584 = -9.5174852894472843e-11*math::exp((-1.6353)*math::log(math::abs(T)));
     const Real v1585 = math::exp((-3.5)*math::log(math::abs(T)));
-    out[matrix_index(13, 14)] = (-1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*v1576 + xn[0]*xn[12]*jac_nuc_choice_82(T, v1564, v1584, v1585, v1565, v1566) - xn[0]*v1578*(-0.030054336600000002*v1572*v1565 + 0.001447065312*v1573*v1565 - 2.9193291280000001e-5*v1574*v1565 - 21.506460400000002*v1565*v1568 + 9.1741162500000009*v1565*v1569 - 2.2740475600000001*v1565*v1570 + 0.33976956150000004*v1565*v1571) - xn[1]*xn[13]*jac_nuc_choice_83(T, v1580, v1581) + 7.2084342424042629e-17*xn[12]*xn[2]*v1579)/(xn[0]*v1587 + xn[1]*v1587 + xn[10]*v1588 + xn[11]*v1587 + xn[12]*v1587 + xn[13]*v1587 + xn[2]*v1587 + xn[3]*v1587 + xn[4]*v1587 + xn[5]*v1587 + xn[6]*v1588 + xn[7]*v1587 + xn[8]*v1588 + xn[9]*v1588);
-    const Real v1582 = jac_nuc_choice_81(T, v1579, v1580, v1581);
+    decltype(jac_nuc_choice_83(T, v1580, v1581)) mg11_0{};
+    decltype(jac_nuc_choice_81(T, v1579, v1580, v1581)) mg11_1{};
+    if ((static_cast<bool>(v1581))) {
+        mg11_0 = (
+   0.00016065*math::exp((-2.75)*math::log(math::abs((T))))*(v1580) - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs((T))))*(v1580)
+);
+        mg11_1 = (
+   1.26e-9*(v1579)*(v1580)
+);
+    } else {
+        mg11_0 = (
+   1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs((T))))
+);
+        mg11_1 = (
+   4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs((T))))
+);
+    }
+
+    out[matrix_index(13, 14)] = (-1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*v1576 + xn[0]*xn[12]*jac_nuc_choice_82(T, v1564, v1584, v1585, v1565, v1566) - xn[0]*v1578*(-0.030054336600000002*v1572*v1565 + 0.001447065312*v1573*v1565 - 2.9193291280000001e-5*v1574*v1565 - 21.506460400000002*v1565*v1568 + 9.1741162500000009*v1565*v1569 - 2.2740475600000001*v1565*v1570 + 0.33976956150000004*v1565*v1571) - xn[1]*xn[13]*mg11_0 + 7.2084342424042629e-17*xn[12]*xn[2]*v1579)/(xn[0]*v1587 + xn[1]*v1587 + xn[10]*v1588 + xn[11]*v1587 + xn[12]*v1587 + xn[13]*v1587 + xn[2]*v1587 + xn[3]*v1587 + xn[4]*v1587 + xn[5]*v1587 + xn[6]*v1588 + xn[7]*v1587 + xn[8]*v1588 + xn[9]*v1588);
+    const Real v1582 = mg11_1;
     out[matrix_index(13, 13)] = -xn[0]*v1575*v1577 - xn[1]*v1582;
     out[matrix_index(13, 0)] = xn[12]*v1567 - v1578;
     out[matrix_index(13, 1)] = -xn[13]*v1582;
@@ -4456,26 +4654,98 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v666 = math::sqrt(T);
     const Real v667 = 1.0/v666;
     const Real v668 = T >= 10.0 && T <= 100000.0;
-    const Real v669 = jac_nuc_choice_11(T, v666, v667, v668);
+    decltype(jac_nuc_choice_11(T, v666, v667, v668)) mg12_0{};
+    decltype(jac_nuc_choice_18(T, v667, v668)) mg12_1{};
+    if ((static_cast<bool>(v668))) {
+        mg12_0 = (
+   -7.7700000000000002e-13*(T) + 2.5000000000000002e-10*(v666) + 2.96e-6*(v667) - 1.73e-9
+);
+        mg12_1 = (
+   1.2500000000000001e-10*(v667) - 7.7700000000000002e-13 - 1.48e-6/math::exp((3.0/2.0)*math::log(math::abs((T))))
+);
+    } else {
+        mg12_0 = (
+   0
+);
+        mg12_1 = (
+   0
+);
+    }
+
+    const Real v669 = mg12_0;
     const Real v655 = 1.0e-8*math::exp((-0.40000000000000002)*math::log(math::abs(T)));
     out[matrix_index(1, 3)] = -xn[1]*v655 - xn[1]*v669;
     const Real v560 = T <= 10000.0;
     const Real v557 = ((T)*(T));
     const Real v558 = ((T)*(T)*(T));
     const Real v559 = ((((T)*(T)))*(((T)*(T))));
-    const Real v561 = jac_nuc_choice_0(T, v557, v558, v559, v560);
+    decltype(jac_nuc_choice_0(T, v557, v558, v559, v560)) mg13_0{};
+    decltype(jac_nuc_choice_5(T, v557, v558, v559, v560)) mg13_1{};
+    if ((static_cast<bool>(v560))) {
+        mg13_0 = (
+   -5.5279999999999998e-28*(((T))*((T))*((T))*((T))*((T))) - 2.3088e-11*(T) + 7.3427999999999993e-15*(v557) - 7.5474000000000004e-19*(v558) + 3.3467999999999999e-23*(v559) + 4.2277999999999996e-8
+);
+        mg13_1 = (
+   1.4685599999999999e-14*(T) - 2.2642200000000001e-18*(v557) + 1.3387199999999999e-22*(v558) - 2.7639999999999999e-27*(v559) - 2.3088e-11
+);
+    } else {
+        mg13_0 = (
+   0
+);
+        mg13_1 = (
+   0
+);
+    }
+
+    const Real v561 = mg13_0;
     out[matrix_index(0, 6)] = -xn[0]*v561;
     const Real v729 = 1.0/T;
     const Real v764 = math::exp(-127500.0*v729);
     const Real v739 = T <= 10000.0;
     const Real v763 = math::exp((-0.75)*math::log(math::abs(T)));
-    const Real v765 = jac_nuc_choice_24(T, v739, v763, v764);
+    decltype(jac_nuc_choice_24(T, v739, v763, v764)) mg14_0{};
+    decltype(jac_nuc_choice_35(T, v739, v764)) mg14_1{};
+    if ((static_cast<bool>(v739))) {
+        mg14_0 = (
+   1.26e-9*(v763)*(v764)
+);
+        mg14_1 = (
+   0.00016065*math::exp((-2.75)*math::log(math::abs((T))))*(v764) - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs((T))))*(v764)
+);
+    } else {
+        mg14_0 = (
+   4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs((T))))
+);
+        mg14_1 = (
+   1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs((T))))
+);
+    }
+
+    const Real v765 = mg14_0;
     out[matrix_index(2, 13)] = xn[1]*v765;
     const Real v1515 = 1.0/T;
     const Real v1532 = math::exp(-127500.0*v1515);
     const Real v1531 = math::exp((-0.75)*math::log(math::abs(T)));
     const Real v1533 = T <= 10000.0;
-    const Real v1534 = jac_nuc_choice_77(T, v1531, v1532, v1533);
+    decltype(jac_nuc_choice_77(T, v1531, v1532, v1533)) mg15_0{};
+    decltype(jac_nuc_choice_78(T, v1532, v1533)) mg15_1{};
+    if ((static_cast<bool>(v1533))) {
+        mg15_0 = (
+   1.26e-9*(v1531)*(v1532)
+);
+        mg15_1 = (
+   0.00016065*math::exp((-2.75)*math::log(math::abs((T))))*(v1532) - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs((T))))*(v1532)
+);
+    } else {
+        mg15_0 = (
+   4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs((T))))
+);
+        mg15_1 = (
+   1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs((T))))
+);
+    }
+
+    const Real v1534 = mg15_0;
     out[matrix_index(12, 1)] = xn[13]*v1534;
     const Real v1513 = 8.6173430000000006e-5*T;
     const Real v1518 = math::log(v1513);
@@ -4510,7 +4780,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1539 = math::exp((-3.5)*math::log(math::abs(T)));
     const Real v1516 = (1.5400000000000001e-9 + 4.6200000000000001e-10*math::exp(-93988.701501924661*v1515))*math::exp(-469943.50750964211*v1515);
     const Real v1527 = math::exp((23.915965629999999)*math::log(math::abs(T)));
-    out[matrix_index(12, 14)] = (1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*xn[13]*v1526 - 1.694596485110541e-207*math::exp((42.933476326349997)*math::log(math::abs(T)))*v1529*v1537 + 4.3524079114767552e-117*xn[0]*xn[13]*v1526*v1527*(9.1741162500000009*v1515*v1519 + 0.33976956150000004*v1515*v1521 + 0.001447065312*v1515*v1523 - 21.506460400000002*v1540 - 2.2740475600000001*v1541 - 0.030054336600000002*v1542 - 2.9193291280000001e-5*v1543) - 3.0451686126851684e-13*xn[0]*math::exp((-2.7523999999999997)*math::log(math::abs(v1505)))*v1515*v1509 + xn[1]*xn[13]*jac_nuc_choice_78(T, v1532, v1533) - 2.3410580000000002e-11*xn[11]*v1515*math::exp((-1.2476)*math::log(math::abs(v1507)))*v1536 - 7.2084342424042629e-17*xn[12]*xn[2]*v1531 - v1530*v1537*(14.104879460277006*v1515*v1519 + 0.40565210486515002*v1515*v1521 + 0.0013829937185547*v1515*v1523 - 36.961339871360003*v1540 - 3.0769865337967999*v1541 - 0.031944123769722006*v1542 - 2.5324648525320001e-5*v1543) - v1537*jac_nuc_choice_79(T, v1514, v1515, v1516, v1538, v1539) - 2.8942185892741411e-10*xn[0]*v1510/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*v1545 + xn[1]*v1545 + xn[10]*v1546 + xn[11]*v1545 + xn[12]*v1545 + xn[13]*v1545 + xn[2]*v1545 + xn[3]*v1545 + xn[4]*v1545 + xn[5]*v1545 + xn[6]*v1546 + xn[7]*v1545 + xn[8]*v1546 + xn[9]*v1546);
+    out[matrix_index(12, 14)] = (1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*xn[13]*v1526 - 1.694596485110541e-207*math::exp((42.933476326349997)*math::log(math::abs(T)))*v1529*v1537 + 4.3524079114767552e-117*xn[0]*xn[13]*v1526*v1527*(9.1741162500000009*v1515*v1519 + 0.33976956150000004*v1515*v1521 + 0.001447065312*v1515*v1523 - 21.506460400000002*v1540 - 2.2740475600000001*v1541 - 0.030054336600000002*v1542 - 2.9193291280000001e-5*v1543) - 3.0451686126851684e-13*xn[0]*math::exp((-2.7523999999999997)*math::log(math::abs(v1505)))*v1515*v1509 + xn[1]*xn[13]*mg15_1 - 2.3410580000000002e-11*xn[11]*v1515*math::exp((-1.2476)*math::log(math::abs(v1507)))*v1536 - 7.2084342424042629e-17*xn[12]*xn[2]*v1531 - v1530*v1537*(14.104879460277006*v1515*v1519 + 0.40565210486515002*v1515*v1521 + 0.0013829937185547*v1515*v1523 - 36.961339871360003*v1540 - 3.0769865337967999*v1541 - 0.031944123769722006*v1542 - 2.5324648525320001e-5*v1543) - v1537*jac_nuc_choice_79(T, v1514, v1515, v1516, v1538, v1539) - 2.8942185892741411e-10*xn[0]*v1510/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*v1545 + xn[1]*v1545 + xn[10]*v1546 + xn[11]*v1545 + xn[12]*v1545 + xn[13]*v1545 + xn[2]*v1545 + xn[3]*v1545 + xn[4]*v1545 + xn[5]*v1545 + xn[6]*v1546 + xn[7]*v1545 + xn[8]*v1546 + xn[9]*v1546);
     const Real v1512 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)));
     const Real v1517 = jac_nuc_choice_76(T, v1514, v1516, v1512);
     const Real v1511 = 5.7884371785482823e-10/v1504;
@@ -4593,9 +4863,27 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1016 = math::exp((-0.59000000000000008)*math::log(math::abs(T)));
     const Real v1017 = math::exp((-3.0/2.0)*math::log(math::abs(T)));
     const Real v1018 = xn[2]*xn[3];
-    out[matrix_index(3, 14)] = (1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*xn[0]*xn[8]*v982 - 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*xn[0]*v983 + 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*xn[3]*xn[5] + 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*xn[0]*xn[2]*v977 - 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*v994 - 8.6419753086419757e-23*xn[0]*v978*v979 - xn[0]*v996*(0.058916489135550004*v988*v981 - 0.009937168197024001*v989*v981 + 0.00074779264187460007*v990*v981 - 2.1050286473655998e-5*v991*v981 + 0.048699499187009998*v981*v986 - 0.56548861234079995*v1019 - 0.13460048125451995*v1020) - xn[1]*xn[3]*jac_nuc_choice_46(v999, v1000, v1017) + 2.5313028975878652e-10*xn[2]*xn[7]*v1016 - 2.5313028975878652e-10*xn[3]*xn[5]*v1016 + 2.4999999999999998e-6*xn[3]*xn[6]*v1017 - v1004*v1018*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - v1018*jac_nuc_choice_47(T, v988, v989, v990, v991, v992, v1007, v1008, v1009, v981, v1019, v1020, v986) - v1005*v1018*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((v1003)*(v1003)))/(xn[0]*v1014 + xn[1]*v1014 + xn[10]*v1015 + xn[11]*v1014 + xn[12]*v1014 + xn[13]*v1014 + xn[2]*v1014 + xn[3]*v1014 + xn[4]*v1014 + xn[5]*v1014 + xn[6]*v1015 + xn[7]*v1014 + xn[8]*v1015 + xn[9]*v1015);
+    decltype(jac_nuc_choice_47(T, v988, v989, v990, v991, v992, v1007, v1008, v1009, v981, v1019, v1020, v986)) mg16_0{};
+    decltype(jac_nuc_choice_45(T, v1007, v1009)) mg16_1{};
+    if ((static_cast<bool>(v1007))) {
+        mg16_0 = (
+   2.6092635916521491e-16*math::exp((0.78186)*math::log(math::abs((T))))
+);
+        mg16_1 = (
+   1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs((T))))
+);
+    } else {
+        mg16_0 = (
+   3.7804827525136553e-14*math::exp((0.13944933584163111)*math::log(math::abs((T))))*(v1008) + (v1009)*(0.0010061251423955*(v988)*(v981) + 0.00051983779458540007*(v989)*(v981) - 0.00018095067761848*(v990)*(v981) + 1.9644009576313599e-5*(v991)*(v981) - 7.2615442150620009e-7*(v992)*(v981) + 0.025393366159889998*(v981)*(v986) - 0.28420270431082961*(v1019) - 0.0057310564851968003*(v1020))
+);
+        mg16_1 = (
+   (v1009)
+);
+    }
+
+    out[matrix_index(3, 14)] = (1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*xn[0]*xn[8]*v982 - 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*xn[0]*v983 + 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*xn[3]*xn[5] + 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*xn[0]*xn[2]*v977 - 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*v994 - 8.6419753086419757e-23*xn[0]*v978*v979 - xn[0]*v996*(0.058916489135550004*v988*v981 - 0.009937168197024001*v989*v981 + 0.00074779264187460007*v990*v981 - 2.1050286473655998e-5*v991*v981 + 0.048699499187009998*v981*v986 - 0.56548861234079995*v1019 - 0.13460048125451995*v1020) - xn[1]*xn[3]*jac_nuc_choice_46(v999, v1000, v1017) + 2.5313028975878652e-10*xn[2]*xn[7]*v1016 - 2.5313028975878652e-10*xn[3]*xn[5]*v1016 + 2.4999999999999998e-6*xn[3]*xn[6]*v1017 - v1004*v1018*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - v1018*mg16_0 - v1005*v1018*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((v1003)*(v1003)))/(xn[0]*v1014 + xn[1]*v1014 + xn[10]*v1015 + xn[11]*v1014 + xn[12]*v1014 + xn[13]*v1014 + xn[2]*v1014 + xn[3]*v1014 + xn[4]*v1014 + xn[5]*v1014 + xn[6]*v1015 + xn[7]*v1014 + xn[8]*v1015 + xn[9]*v1015);
     const Real v1006 = v1004*v1005;
-    const Real v1010 = jac_nuc_choice_45(T, v1007, v1009);
+    const Real v1010 = mg16_1;
     out[matrix_index(3, 3)] = -xn[0]*v993*v995 - xn[1]*v997 - xn[1]*v1001 - xn[2]*v1006 - xn[2]*v1010 - xn[5]*v1002 - xn[5]*v1011 - xn[6]*v1012;
     const Real v980 = 1.4000000000000001e-18*v979;
     out[matrix_index(3, 2)] = xn[0]*v977*v980 - xn[3]*v1006 - xn[3]*v1010 + xn[7]*v1002;
@@ -4609,7 +4897,25 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v696 = 8.4600000000000008e-10*v673 - 1.3700000000000002e-10*v682*v683 + 4.1700000000000001e-10;
     const Real v664 = T >= 50.0;
     const Real v694 = math::exp(-33.0*v656);
-    const Real v695 = jac_nuc_choice_14(T, v664, v694);
+    decltype(jac_nuc_choice_14(T, v664, v694)) mg17_0{};
+    decltype(jac_nuc_choice_21(T, v664, v694)) mg17_1{};
+    if ((static_cast<bool>(v664))) {
+        mg17_0 = (
+   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs((T)))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs((T))))*(v694)
+);
+        mg17_1 = (
+   6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs((T))))*(v694) - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs((T)))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs((T))))*(v694)
+);
+    } else {
+        mg17_0 = (
+   0
+);
+        mg17_1 = (
+   0
+);
+    }
+
+    const Real v695 = mg17_0;
     out[matrix_index(1, 4)] = xn[2]*v695 + xn[8]*v696;
     const Real v638 = 8.6173430000000006e-5*T;
     const Real v639 = math::log(v638);
@@ -4651,10 +4957,64 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v701 = v656*v670;
     const Real v702 = v656*v672;
     const Real v703 = v656*v683;
-    out[matrix_index(1, 14)] = (3.9837168574084181e-7*math::exp((-1.5)*math::log(math::abs(T)))*xn[1]*xn[7] + 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] + 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*xn[2]*v647 - xn[0]*xn[1]*jac_nuc_choice_15(T, v650, v651, v652, v656, v640, v642, v643, v644, v704, v705, v706, v646) + 5.9082438637265071e-70*xn[0]*xn[2]*v648*v647*(4.6894649399999997*v656*v640 + 0.1741279885*v656*v642 - 0.015791857020000001*v656*v643 + 0.00078368076500000001*v656*v644 - 11.478657500000001*v704 - 1.1508224*v705 - 1.6313198799999999e-5*v706) - 4.5700000000000003e-7*xn[1]*xn[10]*v657*v700 - xn[1]*xn[13]*jac_nuc_choice_16(T, v660, v661) - xn[1]*xn[2]*jac_nuc_choice_17(T, v656, v670, v671, v679, v680, v682, v684, v702, v703) - xn[1]*xn[3]*jac_nuc_choice_18(T, v667, v668) - xn[1]*xn[5]*jac_nuc_choice_19(T, v663, v664) - xn[1]*xn[8]*jac_nuc_choice_20(v656, v681, v686, v687, v688, v689, v690, v691, v700, v701, v703) - xn[1]*v678*(5.1485802679346868*v656*math::exp((1.0)*math::log(math::abs(v670)))*v675 - 0.87659414490283338*v656*v674*v676 - 3.5068370966299316*v702) + 7.2084342424042629e-17*xn[12]*xn[2]*v659 + xn[2]*xn[4]*jac_nuc_choice_21(T, v664, v694) + xn[4]*xn[8]*(8.4600000000000008e-10*v656*v672 - 2.7400000000000004e-10*v682*v701))/(xn[0]*v698 + xn[1]*v698 + xn[10]*v699 + xn[11]*v698 + xn[12]*v698 + xn[13]*v698 + xn[2]*v698 + xn[3]*v698 + xn[4]*v698 + xn[5]*v698 + xn[6]*v699 + xn[7]*v698 + xn[8]*v699 + xn[9]*v699);
-    const Real v653 = jac_nuc_choice_8(T, v650, v651, v652);
-    const Real v685 = jac_nuc_choice_12(T, v679, v684);
-    const Real v692 = jac_nuc_choice_13(v690, v691);
+    decltype(jac_nuc_choice_15(T, v650, v651, v652, v656, v640, v642, v643, v644, v704, v705, v706, v646)) mg18_0{};
+    decltype(jac_nuc_choice_8(T, v650, v651, v652)) mg18_1{};
+    if ((static_cast<bool>(v650))) {
+        mg18_0 = (
+   -9.5174852894472843e-11*math::exp((-1.6353)*math::log(math::abs((T))))
+);
+        mg18_1 = (
+   1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs((T))))
+);
+    } else {
+        mg18_0 = (
+   -2.3799651743169991e-10*math::exp((-1.724112565782685)*math::log(math::abs((T))))*(v652) + 3.2867337024382687e-10*(v651)*(v652)*(-0.0071425856320495021*(v656)*(v640) - 7.1075145702705346e-5*(v656)*(v642) + 2.9934653521797078e-5*(v656)*(v643) + 4.0289298963030308e-6*(v656)*(v644) - 2.7640217188769353e-8*(v656)*(v646) - 0.04052089463969382*(v704) - 0.0012850420852755183*(v705) - 1.4854136318202087e-7*(v706))
+);
+        mg18_1 = (
+   3.2867337024382687e-10*(v651)*(v652)
+);
+    }
+
+    decltype(jac_nuc_choice_17(T, v656, v670, v671, v679, v680, v682, v684, v702, v703)) mg19_0{};
+    decltype(jac_nuc_choice_12(T, v679, v684)) mg19_1{};
+    if ((static_cast<bool>(v679))) {
+        mg19_0 = (
+   -5.2466095085621454e-21*math::exp((-1.1499999999999999)*math::log(math::abs((T))))
+);
+        mg19_1 = (
+   3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs((T))))
+);
+    } else {
+        mg19_0 = (
+   (v671)*(v684)*(3.5720000000000001*(v656)*(v670)*(v682) - 0.62159999999999993*(v680)*(v703) - 3.194*(v702))
+);
+        mg19_1 = (
+   (v684)
+);
+    }
+
+    decltype(jac_nuc_choice_20(v656, v681, v686, v687, v688, v689, v690, v691, v700, v701, v703)) mg20_0{};
+    decltype(jac_nuc_choice_13(v690, v691)) mg20_1{};
+    if ((static_cast<bool>(v691))) {
+        mg20_0 = (
+   (v686)*(-1.9125491199999999e-8*(v656)*(v681) + 1.9865770999999999e-9*(v656)*(v687) - 1.09028466e-10*(v656)*(v688) + 2.4718352399999997e-12*(v656)*(v689) + 3.3735381999999997e-7*(v656) - 2.8982736e-7*(v701) + 1.0251841499999999e-7*(v703)) + 21237.150000000001*(v690)*(v700)
+);
+        mg20_1 = (
+   (v690)
+);
+    } else {
+        mg20_0 = (
+   0
+);
+        mg20_1 = (
+   0
+);
+    }
+
+    out[matrix_index(1, 14)] = (3.9837168574084181e-7*math::exp((-1.5)*math::log(math::abs(T)))*xn[1]*xn[7] + 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] + 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*xn[2]*v647 - xn[0]*xn[1]*mg18_0 + 5.9082438637265071e-70*xn[0]*xn[2]*v648*v647*(4.6894649399999997*v656*v640 + 0.1741279885*v656*v642 - 0.015791857020000001*v656*v643 + 0.00078368076500000001*v656*v644 - 11.478657500000001*v704 - 1.1508224*v705 - 1.6313198799999999e-5*v706) - 4.5700000000000003e-7*xn[1]*xn[10]*v657*v700 - xn[1]*xn[13]*mg4_1 - xn[1]*xn[2]*mg19_0 - xn[1]*xn[3]*mg12_1 - xn[1]*xn[5]*jac_nuc_choice_19(T, v663, v664) - xn[1]*xn[8]*mg20_0 - xn[1]*v678*(5.1485802679346868*v656*math::exp((1.0)*math::log(math::abs(v670)))*v675 - 0.87659414490283338*v656*v674*v676 - 3.5068370966299316*v702) + 7.2084342424042629e-17*xn[12]*xn[2]*v659 + xn[2]*xn[4]*mg17_1 + xn[4]*xn[8]*(8.4600000000000008e-10*v656*v672 - 2.7400000000000004e-10*v682*v701))/(xn[0]*v698 + xn[1]*v698 + xn[10]*v699 + xn[11]*v698 + xn[12]*v698 + xn[13]*v698 + xn[2]*v698 + xn[3]*v698 + xn[4]*v698 + xn[5]*v698 + xn[6]*v699 + xn[7]*v698 + xn[8]*v699 + xn[9]*v699);
+    const Real v653 = mg18_1;
+    const Real v685 = mg19_1;
+    const Real v692 = mg20_1;
     const Real v665 = jac_nuc_choice_10(T, v663, v664);
     out[matrix_index(1, 1)] = -xn[0]*v653 - xn[10]*v658 - xn[13]*v662 - xn[2]*v685 - xn[3]*v655 - xn[3]*v669 - xn[5]*v665 - xn[7]*v654 - xn[8]*v692 - v678;
     const Real v649 = 5.9082438637265071e-70*v648;
@@ -4672,7 +5032,25 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v900 = math::exp((-0.12690000000000001*v897*((v770)*(v770)*(v770)) + 1.1180000000000001*v898*v899 - 1.5229999999999999*v782 - 19.379999999999999)*math::log(math::abs(10.0)));
     const Real v767 = T >= 50.0;
     const Real v895 = math::exp(-33.0*v729);
-    const Real v896 = jac_nuc_choice_30(T, v895, v767);
+    decltype(jac_nuc_choice_30(T, v895, v767)) mg21_0{};
+    decltype(jac_nuc_choice_41(T, v895, v767)) mg21_1{};
+    if ((static_cast<bool>(v767))) {
+        mg21_0 = (
+   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs((T)))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs((T))))*(v895)
+);
+        mg21_1 = (
+   6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs((T))))*(v895) - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs((T)))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs((T))))*(v895)
+);
+    } else {
+        mg21_0 = (
+   0
+);
+        mg21_1 = (
+   0
+);
+    }
+
+    const Real v896 = mg21_0;
     out[matrix_index(2, 4)] = -xn[2]*v896 - xn[2]*v900;
     const Real v1273 = math::powi<-3>(v1233);
     const Real v1220 = ((v1218)*(v1218)*(v1218));
@@ -4748,14 +5126,32 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v620 = v546*v572;
     const Real v621 = v546*v574;
     const Real v622 = v546*v575;
-    out[matrix_index(0, 14)] = (-1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*v610 + 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*v610 + 1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] - 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] - 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*v608 - 1.2635128643896626e-18*math::exp((-0.050000000000000044)*math::log(math::abs(T)))*v609 + 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*v612 + 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*v613 + 1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*v614 + 1.694596485110541e-207*math::exp((42.933476326349997)*math::log(math::abs(T)))*v582*v615 - xn[0]*xn[1]*jac_nuc_choice_4(T, v546, v569, v571, v572, v573, v583, v584, v586, v616, v618, v619, v621, v622) - xn[0]*xn[6]*jac_nuc_choice_5(T, v557, v558, v559, v560) + 3.0451686126851684e-13*xn[0]*v546*math::exp((-2.7523999999999997)*math::log(math::abs(v550)))*v554 + xn[0]*v594*v613*(4.6894649399999997*v546*v569 + 0.1741279885*v546*v571 + 0.00078368076500000001*v546*v573 - 11.478657500000001*v618 - 1.1508224*v619 - 0.015791857020000001*v620 - 1.6313198799999999e-5*v621) + xn[0]*v599*v612*(0.048699499187009998*v546*v569 + 0.058916489135550004*v546*v571 + 0.00074779264187460007*v546*v573 - 0.56548861234079995*v618 - 0.13460048125451995*v619 - 0.009937168197024001*v620 - 2.1050286473655998e-5*v621) + xn[0]*v602*v614*(9.1741162500000009*v546*v569 + 0.33976956150000004*v546*v571 + 0.001447065312*v546*v573 - 21.506460400000002*v618 - 2.2740475600000001*v619 - 0.030054336600000002*v620 - 2.9193291280000001e-5*v621) + 2.3410580000000002e-11*xn[11]*v546*math::exp((-1.2476)*math::log(math::abs(v552)))*v600 - xn[2]*xn[7]*v606 - xn[3]*xn[5]*v606 + 3.5999999999999998e-8*xn[9]*v607 + 1.4270531560759686e-22*v544*v609 + 2.8942185892741411e-10*v555*v607 + v591*v611*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) + 8.6419753086419757e-23*v540*v608 + v601*v615*(14.104879460277006*v546*v569 + 0.40565210486515002*v546*v571 + 0.0013829937185547*v546*v573 - 36.961339871360003*v618 - 3.0769865337967999*v619 - 0.031944123769722006*v620 - 2.5324648525320001e-5*v621) + v611*jac_nuc_choice_6(T, v546, v569, v571, v572, v573, v574, v595, v596, v597, v618, v619, v622) - v615*jac_nuc_choice_7(T, v546, v564, v565, v616, v617) + v592*v611*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((v590)*(v590)))/(xn[0]*v604 + xn[1]*v604 + xn[10]*v605 + xn[11]*v604 + xn[12]*v604 + xn[13]*v604 + xn[2]*v604 + xn[3]*v604 + xn[4]*v604 + xn[5]*v604 + xn[6]*v605 + xn[7]*v604 + xn[8]*v605 + xn[9]*v605);
+    decltype(jac_nuc_choice_6(T, v546, v569, v571, v572, v573, v574, v595, v596, v597, v618, v619, v622)) mg22_0{};
+    decltype(jac_nuc_choice_3(T, v595, v597)) mg22_1{};
+    if ((static_cast<bool>(v595))) {
+        mg22_0 = (
+   2.6092635916521491e-16*math::exp((0.78186)*math::log(math::abs((T))))
+);
+        mg22_1 = (
+   1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs((T))))
+);
+    } else {
+        mg22_0 = (
+   3.7804827525136553e-14*math::exp((0.13944933584163111)*math::log(math::abs((T))))*(v596) + (v597)*(0.025393366159889998*(v546)*(v569) + 0.0010061251423955*(v546)*(v571) + 0.00051983779458540007*(v546)*(v572) - 0.00018095067761848*(v546)*(v573) + 1.9644009576313599e-5*(v546)*(v574) - 0.28420270431082961*(v618) - 0.0057310564851968003*(v619) - 7.2615442150620009e-7*(v622))
+);
+        mg22_1 = (
+   (v597)
+);
+    }
+
+    out[matrix_index(0, 14)] = (-1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*v610 + 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*v610 + 1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] - 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] - 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*v608 - 1.2635128643896626e-18*math::exp((-0.050000000000000044)*math::log(math::abs(T)))*v609 + 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*v612 + 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*v613 + 1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*v614 + 1.694596485110541e-207*math::exp((42.933476326349997)*math::log(math::abs(T)))*v582*v615 - xn[0]*xn[1]*jac_nuc_choice_4(T, v546, v569, v571, v572, v573, v583, v584, v586, v616, v618, v619, v621, v622) - xn[0]*xn[6]*mg13_1 + 3.0451686126851684e-13*xn[0]*v546*math::exp((-2.7523999999999997)*math::log(math::abs(v550)))*v554 + xn[0]*v594*v613*(4.6894649399999997*v546*v569 + 0.1741279885*v546*v571 + 0.00078368076500000001*v546*v573 - 11.478657500000001*v618 - 1.1508224*v619 - 0.015791857020000001*v620 - 1.6313198799999999e-5*v621) + xn[0]*v599*v612*(0.048699499187009998*v546*v569 + 0.058916489135550004*v546*v571 + 0.00074779264187460007*v546*v573 - 0.56548861234079995*v618 - 0.13460048125451995*v619 - 0.009937168197024001*v620 - 2.1050286473655998e-5*v621) + xn[0]*v602*v614*(9.1741162500000009*v546*v569 + 0.33976956150000004*v546*v571 + 0.001447065312*v546*v573 - 21.506460400000002*v618 - 2.2740475600000001*v619 - 0.030054336600000002*v620 - 2.9193291280000001e-5*v621) + 2.3410580000000002e-11*xn[11]*v546*math::exp((-1.2476)*math::log(math::abs(v552)))*v600 - xn[2]*xn[7]*v606 - xn[3]*xn[5]*v606 + 3.5999999999999998e-8*xn[9]*v607 + 1.4270531560759686e-22*v544*v609 + 2.8942185892741411e-10*v555*v607 + v591*v611*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) + 8.6419753086419757e-23*v540*v608 + v601*v615*(14.104879460277006*v546*v569 + 0.40565210486515002*v546*v571 + 0.0013829937185547*v546*v573 - 36.961339871360003*v618 - 3.0769865337967999*v619 - 0.031944123769722006*v620 - 2.5324648525320001e-5*v621) + v611*mg22_0 - v615*jac_nuc_choice_7(T, v546, v564, v565, v616, v617) + v592*v611*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((v590)*(v590)))/(xn[0]*v604 + xn[1]*v604 + xn[10]*v605 + xn[11]*v604 + xn[12]*v604 + xn[13]*v604 + xn[2]*v604 + xn[3]*v604 + xn[4]*v604 + xn[5]*v604 + xn[6]*v605 + xn[7]*v604 + xn[8]*v605 + xn[9]*v605);
     const Real v562 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)));
     const Real v566 = jac_nuc_choice_1(T, v562, v564, v565);
     const Real v587 = jac_nuc_choice_2(v562, v583, v584, v586);
     const Real v541 = 1.4000000000000001e-18*v540;
     out[matrix_index(0, 0)] = -xn[1]*v587 - xn[12]*v566 + 3.8571873359681582e-209*xn[12]*v581*v582 + 4.3524079114767552e-117*xn[13]*v579*v580 + 5.9082438637265071e-70*xn[2]*v577*v578 + 3.7903999274394518e-18*xn[3]*v567*v576 - xn[4]*v534 - xn[6]*v561 - xn[9]*v537 - v545*v543 - v548*v549 - v555*v556 - v539*v541;
     const Real v593 = v591*v592;
-    const Real v598 = jac_nuc_choice_3(T, v595, v597);
+    const Real v598 = mg22_1;
     out[matrix_index(0, 2)] = -xn[0]*v538*v541 + xn[0]*v578*v594 + xn[3]*v593 + xn[3]*v598 + xn[7]*v589;
     const Real v588 = 1.0e-8*math::exp((-0.40000000000000002)*math::log(math::abs(T)));
     out[matrix_index(0, 3)] = xn[0]*v576*v599 + xn[1]*v588 + xn[2]*v593 + xn[2]*v598 + xn[5]*v589;
@@ -4895,7 +5291,43 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1363 = v1210*v1220;
     const Real v1364 = v1210*v1221;
     const Real v1367 = math::exp((-2.5)*math::log(math::abs(T)));
-    out[matrix_index(8, 14)] = (-1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*v1353 + 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*v1353 - 4.4675999999999997e-5*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*v1354 - 1.5329999999999998e-10*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*v1354 + 4.5700000000000003e-7*xn[1]*xn[10]*v1325*v1227 - xn[1]*xn[8]*jac_nuc_choice_69(v1210, v1325, v1222, v1223, v1224, v1359, v1225, v1362, v1363, v1364, v1217) + xn[10]*xn[2]*jac_nuc_choice_70(T, v1325, v1326, v1327) + ((xn[2])*(xn[2])*(xn[2]))*(-1.0000000000000001e-31*v1355 - 1.5e-32*v1356) + xn[4]*xn[8]*(-8.4600000000000008e-10*v1358 + 2.7400000000000004e-10*v1360) - xn[5]*xn[8]*jac_nuc_choice_71(v1325, v1341, v1342, v1343, v1344, v1345, v1358, v1360, v1363, v1364, v1365, v1233) + v1323*(-v1313*(3816.3275589792611*v1312*v1325 + v1315*(v1316*v1374 + v1373*math::log(v1309)) + v1320*(v1321*v1374 + v1373*math::log(v1298)) + 49431.413233526648*v1325 + 98.337445626384849*v1358 - 9.3363608541157479*v1360 - 1.783649418259394*v1365 - 1354334.7412883535*v1372 - 2.3025850929940459*v1302*(70.138370000000009*v1210*v1234 - 9.4070299999999989*v1360 - 0.77462909999999996*v1365 - 160821.97128249999*v1368/v1303 - 588180.10479140002*v1372)) - v1284*(4790.3210533157426*v1325*v1283 + 54584.391438988954*v1325 - 157.54846734442862*v1358 + 198.95454259823751*v1360 - 32.004783802655837*v1365 - 6559375.6154640894*v1369 - 2.3025850929940459*v1270*(75.773826*v1210*v1235*v1218 - 14.509090000000008*v1358 - 13.899501000000001*v1365 - 331159.79815649998*v1368/v1272 - 2848700.6345267999*v1369) + v1286*(v1370*math::log(v1280) + v1371*v1287) + v1292*(v1370*math::log(v1264) + v1371*v1293))) + v1333*v1361*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) + v1357*(-2.5000000000000002e-32*v1355 - 3.75e-33*v1356) + v1357*(1.2500000000000001e-32*v1355 + 1.875e-33*v1356) - v1256*(69500.0*v1325*v1243 - v1366*v1241) - v1256*(v1366*v1259 + 12307692.307692308*v1246*v1253*(-4.0625000000000001e-8*v1355*v1251 + 0.0042250000000000005*v1367*v1248*v1250 - 0.00048750000000000003*v1367*math::exp(-58000.0*v1210))*math::exp(v1249)/v1248) + v1334*v1361*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((v1332)*(v1332)) - 2.4999999999999998e-6*xn[3]*xn[6]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*v1351 + xn[1]*v1351 + xn[10]*v1352 + xn[11]*v1351 + xn[12]*v1351 + xn[13]*v1351 + xn[2]*v1351 + xn[3]*v1351 + xn[4]*v1351 + xn[5]*v1351 + xn[6]*v1352 + xn[7]*v1351 + xn[8]*v1352 + xn[9]*v1352);
+    decltype(jac_nuc_choice_69(v1210, v1325, v1222, v1223, v1224, v1359, v1225, v1362, v1363, v1364, v1217)) mg23_0{};
+    decltype(jac_nuc_choice_66(v1224, v1225)) mg23_1{};
+    if ((static_cast<bool>(v1225))) {
+        mg23_0 = (
+   21237.150000000001*(v1325)*(v1224) + (v1217)*(-1.09028466e-10*(v1210)*(v1222) + 2.4718352399999997e-12*(v1210)*(v1223) + 3.3735381999999997e-7*(v1210) - 2.8982736e-7*(v1359) + 1.0251841499999999e-7*(v1362) - 1.9125491199999999e-8*(v1363) + 1.9865770999999999e-9*(v1364))
+);
+        mg23_1 = (
+   (v1224)
+);
+    } else {
+        mg23_0 = (
+   0
+);
+        mg23_1 = (
+   0
+);
+    }
+
+    decltype(jac_nuc_choice_70(T, v1325, v1326, v1327)) mg24_0{};
+    decltype(jac_nuc_choice_67(v1326, v1327)) mg24_1{};
+    if ((static_cast<bool>(v1327))) {
+        mg24_0 = (
+   (v1326)*(4430.0*(v1325) - 347800.0/(((T))*((T))*((T))))
+);
+        mg24_1 = (
+   (v1326)
+);
+    } else {
+        mg24_0 = (
+   0
+);
+        mg24_1 = (
+   0
+);
+    }
+
+    out[matrix_index(8, 14)] = (-1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*v1353 + 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*v1353 - 4.4675999999999997e-5*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*v1354 - 1.5329999999999998e-10*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*v1354 + 4.5700000000000003e-7*xn[1]*xn[10]*v1325*v1227 - xn[1]*xn[8]*mg23_0 + xn[10]*xn[2]*mg24_0 + ((xn[2])*(xn[2])*(xn[2]))*(-1.0000000000000001e-31*v1355 - 1.5e-32*v1356) + xn[4]*xn[8]*(-8.4600000000000008e-10*v1358 + 2.7400000000000004e-10*v1360) - xn[5]*xn[8]*jac_nuc_choice_71(v1325, v1341, v1342, v1343, v1344, v1345, v1358, v1360, v1363, v1364, v1365, v1233) + v1323*(-v1313*(3816.3275589792611*v1312*v1325 + v1315*(v1316*v1374 + v1373*math::log(v1309)) + v1320*(v1321*v1374 + v1373*math::log(v1298)) + 49431.413233526648*v1325 + 98.337445626384849*v1358 - 9.3363608541157479*v1360 - 1.783649418259394*v1365 - 1354334.7412883535*v1372 - 2.3025850929940459*v1302*(70.138370000000009*v1210*v1234 - 9.4070299999999989*v1360 - 0.77462909999999996*v1365 - 160821.97128249999*v1368/v1303 - 588180.10479140002*v1372)) - v1284*(4790.3210533157426*v1325*v1283 + 54584.391438988954*v1325 - 157.54846734442862*v1358 + 198.95454259823751*v1360 - 32.004783802655837*v1365 - 6559375.6154640894*v1369 - 2.3025850929940459*v1270*(75.773826*v1210*v1235*v1218 - 14.509090000000008*v1358 - 13.899501000000001*v1365 - 331159.79815649998*v1368/v1272 - 2848700.6345267999*v1369) + v1286*(v1370*math::log(v1280) + v1371*v1287) + v1292*(v1370*math::log(v1264) + v1371*v1293))) + v1333*v1361*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) + v1357*(-2.5000000000000002e-32*v1355 - 3.75e-33*v1356) + v1357*(1.2500000000000001e-32*v1355 + 1.875e-33*v1356) - v1256*(69500.0*v1325*v1243 - v1366*v1241) - v1256*(v1366*v1259 + 12307692.307692308*v1246*v1253*(-4.0625000000000001e-8*v1355*v1251 + 0.0042250000000000005*v1367*v1248*v1250 - 0.00048750000000000003*v1367*math::exp(-58000.0*v1210))*math::exp(v1249)/v1248) + v1334*v1361*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((v1332)*(v1332)) - 2.4999999999999998e-6*xn[3]*xn[6]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*v1351 + xn[1]*v1351 + xn[10]*v1352 + xn[11]*v1351 + xn[12]*v1351 + xn[13]*v1351 + xn[2]*v1351 + xn[3]*v1351 + xn[4]*v1351 + xn[5]*v1351 + xn[6]*v1352 + xn[7]*v1351 + xn[8]*v1352 + xn[9]*v1352);
     const Real v1288 = 1.0/v1231;
     const Real v1317 = v1288*v1299;
     const Real v1318 = v1316*v1317;
@@ -4911,10 +5343,10 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1336 = 1.5e-32*v1331 + 5.0000000000000004e-32*v1247;
     const Real v1338 = -7.5000000000000001e-33*v1331 - 2.5000000000000002e-32*v1247;
     const Real v1329 = -v1313 - v1284;
-    const Real v1226 = jac_nuc_choice_66(v1224, v1225);
+    const Real v1226 = mg23_1;
     out[matrix_index(8, 8)] = -xn[0]*v1211*v1213 - xn[0]*v1214*v1216 - xn[1]*v1226 + xn[2]*xn[8]*v1349 + xn[2]*v1329 + xn[4]*v1340 - xn[5]*v1346 - 2*xn[8]*v1255 + v1330*v1336 + v1330*v1338 - v1348 + 2.0*v1230*v1236*v1239*v1242*v1245*v1254;
     const Real v1324 = v1323*(-v1313*(v1315*v1318 + v1320*v1322) - v1284*(v1286*v1290 + v1292*v1294)) + v1241*v1257 - v1257*v1259;
-    const Real v1328 = jac_nuc_choice_67(v1326, v1327);
+    const Real v1328 = mg24_1;
     const Real v1335 = v1333*v1334;
     const Real v1337 = 2*v1323;
     out[matrix_index(8, 2)] = xn[10]*v1328 + xn[3]*v1335 + 6.0e-10*xn[6] + xn[8]*v1329 + v1324 + 3*v1330*(6.0000000000000001e-32*v1331 + 2.0000000000000002e-31*v1247) + v1336*v1337 + v1337*v1338;
@@ -5091,7 +5523,115 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v942 = v772*v729;
     const Real v943 = v773*v729;
     const Real v952 = math::exp((-2.5)*math::log(math::abs(T)));
-    out[matrix_index(2, 14)] = (1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*v933 - 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*v933 + 8.9351999999999994e-5*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*v934 + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*v929 + 3.0659999999999995e-10*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*v934 - 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*v932 + 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*v751 - 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*v755 + xn[0]*xn[1]*jac_nuc_choice_33(T, v743, v944, v945, v947, v949, v745, v746, v747, v758, v759, v761, v729) + 2*xn[0]*xn[6]*jac_nuc_choice_34(T, v736, v737, v738, v739) - 3.5999999999999998e-8*xn[0]*xn[9]*v931 + xn[0]*v753*(0.048699499187009998*v743*v729 - 0.56548861234079995*v944 - 0.13460048125451995*v945 - 0.009937168197024001*v946 - 2.1050286473655998e-5*v947 + 0.058916489135550004*v745*v729 + 0.00074779264187460007*v747*v729) - xn[0]*v757*(4.6894649399999997*v743*v729 - 11.478657500000001*v944 - 1.1508224*v945 - 0.015791857020000001*v946 - 1.6313198799999999e-5*v947 + 0.1741279885*v745*v729 + 0.00078368076500000001*v747*v729) + xn[1]*xn[13]*jac_nuc_choice_35(T, v739, v764) - xn[1]*xn[2]*jac_nuc_choice_36(T, v938, v940, v770, v779, v780, v785, v786, v729) + 2*xn[1]*xn[3]*jac_nuc_choice_37(v723, v931, v788) + xn[1]*xn[5]*jac_nuc_choice_38(T, v766, v767) - 3.9837168574084181e-7*xn[1]*xn[7]*v928 + xn[1]*xn[8]*jac_nuc_choice_39(v891, v939, v941, v942, v943, v769, v774, v775, v776, v777, v729) - xn[10]*xn[2]*jac_nuc_choice_40(v737, v891, v892, v893) - 7.2084342424042629e-17*xn[12]*xn[2]*v763 - xn[2]*xn[4]*jac_nuc_choice_41(T, v895, v767) - xn[2]*v901*(-0.87659414490283338*v897*v899*v729 + 5.1485802679346868*v898*math::exp((1.0)*math::log(math::abs(v770)))*v729 - 3.5068370966299316*v938) + xn[3]*xn[5]*v930 - 2.4999999999999998e-6*xn[3]*xn[6]*v931 + xn[5]*xn[8]*jac_nuc_choice_42(v891, v915, v916, v917, v918, v919, v938, v940, v942, v943, v948, v780) + xn[8]*v890*(2.5000000000000002e-32*v928 + 3.75e-33*v936) + v856*(-v844*v961 - v957*v814) + v856*(v911*v957 + v912*v961) - v903*v937*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - v929*v930 + 8.6419753086419757e-23*v932*v727 + v935*(-1.0000000000000001e-31*v928 - 1.5e-32*v936) + v935*(3.0000000000000003e-31*v928 + 4.5e-32*v936) + v937*jac_nuc_choice_43(T, v906, v907, v908, v743, v944, v945, v949, v745, v746, v747, v748, v729) + v951*(v869*v950 + 12307692.307692308*v875*v790*(0.0042250000000000005*v863*v865*v952 - 4.0625000000000001e-8*v866*v928 - 0.00048750000000000003*v952*math::exp(-58000.0*v729))*math::exp(v864)/v863) + v951*(69500.0*v872*v891 - v881*v950) - v904*v937*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((v902)*(v902)))/(xn[0]*v926 + xn[1]*v926 + xn[10]*v927 + xn[11]*v926 + xn[12]*v926 + xn[13]*v926 + xn[2]*v926 + xn[3]*v926 + xn[4]*v926 + xn[5]*v926 + xn[6]*v927 + xn[7]*v926 + xn[8]*v927 + xn[9]*v927);
+    decltype(jac_nuc_choice_33(T, v743, v944, v945, v947, v949, v745, v746, v747, v758, v759, v761, v729)) mg25_0{};
+    decltype(jac_nuc_choice_23(T, v758, v759, v761)) mg25_1{};
+    if ((static_cast<bool>(v758))) {
+        mg25_0 = (
+   -9.5174852894472843e-11*math::exp((-1.6353)*math::log(math::abs((T))))
+);
+        mg25_1 = (
+   1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs((T))))
+);
+    } else {
+        mg25_0 = (
+   -2.3799651743169991e-10*math::exp((-1.724112565782685)*math::log(math::abs((T))))*(v761) + 3.2867337024382687e-10*(v759)*(v761)*(-0.0071425856320495021*(v743)*(v729) - 0.04052089463969382*(v944) - 0.0012850420852755183*(v945) - 1.4854136318202087e-7*(v947) - 2.7640217188769353e-8*(v949) - 7.1075145702705346e-5*(v745)*(v729) + 2.9934653521797078e-5*(v746)*(v729) + 4.0289298963030308e-6*(v747)*(v729))
+);
+        mg25_1 = (
+   3.2867337024382687e-10*(v759)*(v761)
+);
+    }
+
+    decltype(jac_nuc_choice_36(T, v938, v940, v770, v779, v780, v785, v786, v729)) mg26_0{};
+    decltype(jac_nuc_choice_27(T, v779, v786)) mg26_1{};
+    if ((static_cast<bool>(v779))) {
+        mg26_0 = (
+   -5.2466095085621454e-21*math::exp((-1.1499999999999999)*math::log(math::abs((T))))
+);
+        mg26_1 = (
+   3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs((T))))
+);
+    } else {
+        mg26_0 = (
+   (v780)*(v786)*(-3.194*(v938) - 0.62159999999999993*(v940) + 3.5720000000000001*(v770)*(v785)*(v729))
+);
+        mg26_1 = (
+   (v786)
+);
+    }
+
+    decltype(jac_nuc_choice_37(v723, v931, v788)) mg27_0{};
+    decltype(jac_nuc_choice_28(T, v722, v723, v788)) mg27_1{};
+    if ((static_cast<bool>(v788))) {
+        mg27_0 = (
+   1.2500000000000001e-10*(v723) - 1.48e-6*(v931) - 7.7700000000000002e-13
+);
+        mg27_1 = (
+   -7.7700000000000002e-13*(T) + 2.5000000000000002e-10*(v722) + 2.96e-6*(v723) - 1.73e-9
+);
+    } else {
+        mg27_0 = (
+   0
+);
+        mg27_1 = (
+   0
+);
+    }
+
+    decltype(jac_nuc_choice_39(v891, v939, v941, v942, v943, v769, v774, v775, v776, v777, v729)) mg28_0{};
+    decltype(jac_nuc_choice_26(v776, v777)) mg28_1{};
+    if ((static_cast<bool>(v777))) {
+        mg28_0 = (
+   21237.150000000001*(v891)*(v776) + (v769)*(1.0251841499999999e-7*(v939) - 2.8982736e-7*(v941) - 1.9125491199999999e-8*(v942) + 1.9865770999999999e-9*(v943) - 1.09028466e-10*(v774)*(v729) + 2.4718352399999997e-12*(v775)*(v729) + 3.3735381999999997e-7*(v729))
+);
+        mg28_1 = (
+   (v776)
+);
+    } else {
+        mg28_0 = (
+   0
+);
+        mg28_1 = (
+   0
+);
+    }
+
+    decltype(jac_nuc_choice_40(v737, v891, v892, v893)) mg29_0{};
+    decltype(jac_nuc_choice_29(v892, v893)) mg29_1{};
+    if ((static_cast<bool>(v893))) {
+        mg29_0 = (
+   (v892)*(4430.0*(v891) - 347800.0/(v737))
+);
+        mg29_1 = (
+   (v892)
+);
+    } else {
+        mg29_0 = (
+   0
+);
+        mg29_1 = (
+   0
+);
+    }
+
+    decltype(jac_nuc_choice_43(T, v906, v907, v908, v743, v944, v945, v949, v745, v746, v747, v748, v729)) mg30_0{};
+    decltype(jac_nuc_choice_31(T, v906, v908)) mg30_1{};
+    if ((static_cast<bool>(v906))) {
+        mg30_0 = (
+   2.6092635916521491e-16*math::exp((0.78186)*math::log(math::abs((T))))
+);
+        mg30_1 = (
+   1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs((T))))
+);
+    } else {
+        mg30_0 = (
+   3.7804827525136553e-14*math::exp((0.13944933584163111)*math::log(math::abs((T))))*(v907) + (v908)*(0.025393366159889998*(v743)*(v729) - 0.28420270431082961*(v944) - 0.0057310564851968003*(v945) - 7.2615442150620009e-7*(v949) + 0.0010061251423955*(v745)*(v729) + 0.00051983779458540007*(v746)*(v729) - 0.00018095067761848*(v747)*(v729) + 1.9644009576313599e-5*(v748)*(v729))
+);
+        mg30_1 = (
+   (v908)
+);
+    }
+
+    out[matrix_index(2, 14)] = (1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*v933 - 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*v933 + 8.9351999999999994e-5*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*v934 + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*v929 + 3.0659999999999995e-10*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*v934 - 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*v932 + 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*v751 - 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*v755 + xn[0]*xn[1]*mg25_0 + 2*xn[0]*xn[6]*jac_nuc_choice_34(T, v736, v737, v738, v739) - 3.5999999999999998e-8*xn[0]*xn[9]*v931 + xn[0]*v753*(0.048699499187009998*v743*v729 - 0.56548861234079995*v944 - 0.13460048125451995*v945 - 0.009937168197024001*v946 - 2.1050286473655998e-5*v947 + 0.058916489135550004*v745*v729 + 0.00074779264187460007*v747*v729) - xn[0]*v757*(4.6894649399999997*v743*v729 - 11.478657500000001*v944 - 1.1508224*v945 - 0.015791857020000001*v946 - 1.6313198799999999e-5*v947 + 0.1741279885*v745*v729 + 0.00078368076500000001*v747*v729) + xn[1]*xn[13]*mg14_1 - xn[1]*xn[2]*mg26_0 + 2*xn[1]*xn[3]*mg27_0 + xn[1]*xn[5]*jac_nuc_choice_38(T, v766, v767) - 3.9837168574084181e-7*xn[1]*xn[7]*v928 + xn[1]*xn[8]*mg28_0 - xn[10]*xn[2]*mg29_0 - 7.2084342424042629e-17*xn[12]*xn[2]*v763 - xn[2]*xn[4]*mg21_1 - xn[2]*v901*(-0.87659414490283338*v897*v899*v729 + 5.1485802679346868*v898*math::exp((1.0)*math::log(math::abs(v770)))*v729 - 3.5068370966299316*v938) + xn[3]*xn[5]*v930 - 2.4999999999999998e-6*xn[3]*xn[6]*v931 + xn[5]*xn[8]*jac_nuc_choice_42(v891, v915, v916, v917, v918, v919, v938, v940, v942, v943, v948, v780) + xn[8]*v890*(2.5000000000000002e-32*v928 + 3.75e-33*v936) + v856*(-v844*v961 - v957*v814) + v856*(v911*v957 + v912*v961) - v903*v937*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - v929*v930 + 8.6419753086419757e-23*v932*v727 + v935*(-1.0000000000000001e-31*v928 - 1.5e-32*v936) + v935*(3.0000000000000003e-31*v928 + 4.5e-32*v936) + v937*mg30_0 + v951*(v869*v950 + 12307692.307692308*v875*v790*(0.0042250000000000005*v863*v865*v952 - 4.0625000000000001e-8*v866*v928 - 0.00048750000000000003*v952*math::exp(-58000.0*v729))*math::exp(v864)/v863) + v951*(69500.0*v872*v891 - v881*v950) - v904*v937*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((v902)*(v902)))/(xn[0]*v926 + xn[1]*v926 + xn[10]*v927 + xn[11]*v926 + xn[12]*v926 + xn[13]*v926 + xn[2]*v926 + xn[3]*v926 + xn[4]*v926 + xn[5]*v926 + xn[6]*v927 + xn[7]*v926 + xn[8]*v927 + xn[9]*v927);
     const Real v818 = 1.0/v792;
     const Real v819 = v800*v818;
     const Real v820 = v817*v819;
@@ -5109,24 +5649,24 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v888 = 1.0/v885;
     const Real v889 = -1.5e-32*v888 - 5.0000000000000004e-32*v791;
     const Real v905 = v903*v904;
-    const Real v909 = jac_nuc_choice_31(T, v906, v908);
+    const Real v909 = mg30_1;
     const Real v910 = -v844 - v814;
     const Real v913 = v911 + v912;
-    const Real v787 = jac_nuc_choice_27(T, v779, v786);
+    const Real v787 = mg26_1;
     const Real v728 = 1.4000000000000001e-18*v727;
-    const Real v894 = jac_nuc_choice_29(v892, v893);
+    const Real v894 = mg29_1;
     out[matrix_index(2, 2)] = -xn[0]*v725*v728 - xn[0]*v754*v756 - xn[1]*v787 - xn[10]*v894 - xn[12]*v886 + xn[2]*xn[8]*v855 + xn[2]*xn[8]*v857 + 2*xn[2]*xn[8]*v889 - xn[3]*v905 + xn[3]*v909 - xn[4]*v896 - 1.0e-25*xn[5] - 6.0e-10*xn[6] - xn[7]*v884 - xn[7]*v887 + xn[8]*v910 + xn[8]*v913 - 6.3999999999999996e-10*xn[9] + 2.0*v859*v862*v868*v870*v874*v876 - v882 + 3*v890*(-1.8e-31*v888 - 6.0000000000000005e-31*v791) + 3*v890*(6.0000000000000001e-32*v888 + 2.0000000000000002e-31*v791) - v901;
     const Real v921 = 4.6051701859880918*v824*v821 + 9580.6421066314851*v815*v820;
     const Real v922 = 7632.6551179585222*v845*v849 + 4.6051701859880918*v850*v853;
     const Real v923 = 4.0*v879;
     const Real v924 = v856*(-v844*v922 - v921*v814) + v856*(v911*v921 + v912*v922) + v869*v923 - v881*v923;
-    const Real v778 = jac_nuc_choice_26(v776, v777);
+    const Real v778 = mg28_1;
     const Real v732 = 35.5*math::exp((-2.2799999999999998)*math::log(math::abs(T)));
     const Real v735 = 8.7599999999999997e-10*math::exp((0.34999999999999998)*math::log(math::abs(T)));
     out[matrix_index(2, 8)] = xn[0]*v732*v730 + xn[0]*v733*v735 + xn[1]*v778 + xn[2]*v910 + xn[2]*v913 + xn[5]*v920 + 4*xn[8]*v877 + v889*v890 + v924;
     const Real v883 = v855*v856 + v856*v857 + v869*v880 - v882;
-    const Real v789 = 2*jac_nuc_choice_28(T, v722, v723, v788);
-    const Real v762 = jac_nuc_choice_23(T, v758, v759, v761);
+    const Real v789 = 2*mg27_1;
+    const Real v762 = mg25_1;
     out[matrix_index(2, 1)] = xn[0]*v762 + xn[13]*v765 - xn[2]*v787 + xn[3]*v789 + xn[5]*v768 + 7.9674337148168363e-7*xn[7]*v791 + xn[8]*v778 + v883;
     const Real v740 = 2*jac_nuc_choice_22(T, v736, v737, v738, v739);
     const Real v724 = 7.1999999999999996e-8*v723;
@@ -5269,8 +5809,68 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1918 = math::exp(jac_nuc_choice_122(v1916, v1917));
     const Real v1919 = v1918 + 1.0;
     const Real v1920 = jac_nuc_choice_124(v1859, v1912, v1913, v1914, v1919);
-    const Real v1902 = v1843*jac_nuc_choice_116(v1895, v1898, v1900, v1901);
-    const Real v1903 = v1854 + v1902 + jac_nuc_choice_117(v1858, v1861, v1868) + jac_nuc_choice_118(v1861, v1870, v1872) + jac_nuc_choice_121(v1874, v1875, v1877, v1878, v1880, v1881, v1887);
+    decltype(jac_nuc_choice_116(v1895, v1898, v1900, v1901)) mg31_0{};
+    decltype(jac_nuc_choice_193(v1894, v1898, v1899, v1901)) mg31_1{};
+    if ((static_cast<bool>(v1898))) {
+        mg31_0 = (
+   (v1895)
+);
+        mg31_1 = (
+   (v1894)
+);
+    } else {
+        mg31_0 = jac_nuc_choice_115((v1900), static_cast<bool>(v1901));
+        mg31_1 = jac_nuc_choice_192((v1899), static_cast<bool>(v1901));
+    }
+
+    const Real v1902 = v1843*mg31_0;
+    decltype(jac_nuc_choice_117(v1858, v1861, v1868)) mg32_0{};
+    decltype(jac_nuc_choice_118(v1861, v1870, v1872)) mg32_1{};
+    decltype(jac_nuc_choice_196(v1861, v1869, v1871)) mg32_2{};
+    decltype(jac_nuc_choice_229(v1857, v1861, v1867)) mg32_3{};
+    if ((static_cast<bool>(v1861))) {
+        mg32_0 = (
+   (v1858)
+);
+        mg32_1 = (
+   (v1870)
+);
+        mg32_2 = (
+   (v1869)
+);
+        mg32_3 = (
+   (v1857)
+);
+    } else {
+        mg32_0 = (
+   (v1868)
+);
+        mg32_1 = (
+   (v1872)
+);
+        mg32_2 = (
+   (v1871)
+);
+        mg32_3 = (
+   (v1867)
+);
+    }
+
+    decltype(jac_nuc_choice_121(v1874, v1875, v1877, v1878, v1880, v1881, v1887)) mg33_0{};
+    decltype(jac_nuc_choice_199(v1873, v1875, v1876, v1878, v1879, v1881, v1886)) mg33_1{};
+    if ((static_cast<bool>(v1875))) {
+        mg33_0 = (
+   (v1874)
+);
+        mg33_1 = (
+   (v1873)
+);
+    } else {
+        mg33_0 = jac_nuc_choice_120((v1877), static_cast<bool>(v1878), (v1880), static_cast<bool>(v1881), (v1887));
+        mg33_1 = jac_nuc_choice_198((v1876), static_cast<bool>(v1878), (v1879), static_cast<bool>(v1881), (v1886));
+    }
+
+    const Real v1903 = v1854 + v1902 + mg32_0 + mg32_1 + mg33_0;
     const Real v1921 = v1903 + v1920;
     const Real v1922 = 1.0/v1921;
     const Real v1923 = v1920*v1922;
@@ -5292,7 +5892,32 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2134 = jac_nuc_choice_239(T, v1859, v1904, v1905, v1906, v1907, v1910, v1911, v1913, v1914, v1917, v1918, v1919, v1652, v2116, v2127, v2128, v2129, v2130, v2131, v2132, v2133);
     const Real v1777 = xn[2] <= 0.01;
     const Real v1778 = jac_nuc_choice_93(v1777, xn);
-    const Real v1779 = math::log(jac_nuc_choice_95(v1777, v1778, xn));
+    decltype(jac_nuc_choice_95(v1777, v1778, xn)) mg34_0{};
+    decltype(jac_nuc_choice_201(v1777, v1778)) mg34_1{};
+    decltype(jac_nuc_choice_203(v1777, v1778, xn)) mg34_2{};
+    if ((static_cast<bool>(v1778))) {
+        mg34_0 = (
+   10000000000.0
+);
+        mg34_1 = (
+   0
+);
+        mg34_2 = (
+   1.0e-10
+);
+    } else {
+        mg34_0 = (
+   jac_nuc_choice_94(static_cast<bool>(v1777), (xn))
+);
+        mg34_1 = (
+   jac_nuc_choice_200(static_cast<bool>(v1777))
+);
+        mg34_2 = (
+   jac_nuc_choice_202(static_cast<bool>(v1777), (xn))
+);
+    }
+
+    const Real v1779 = math::log(mg34_0);
     const Real v1781 = ((v1779)*(v1779)*(v1779));
     const Real v1800 = v1781*v1784;
     const Real v1782 = ((v1779)*(v1779));
@@ -5302,7 +5927,32 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1787 = v1773*v1781;
     const Real v1789 = v1738*v1782;
     const Real v1771 = T >= 10000.0;
-    const Real v1772 = math::log(jac_nuc_choice_92(T, v1771));
+    decltype(jac_nuc_choice_92(T, v1771)) mg35_0{};
+    decltype(jac_nuc_choice_235(v1771)) mg35_1{};
+    decltype(jac_nuc_choice_236(v1771, v1612)) mg35_2{};
+    if ((static_cast<bool>(v1771))) {
+        mg35_0 = (
+   10000.0
+);
+        mg35_1 = (
+   0
+);
+        mg35_2 = (
+   0.0001
+);
+    } else {
+        mg35_0 = (
+   (T)
+);
+        mg35_1 = (
+   1
+);
+        mg35_2 = (
+   (v1612)
+);
+    }
+
+    const Real v1772 = math::log(mg35_0);
     const Real v1774 = ((((v1772)*(v1772)))*(((v1772)*(v1772))));
     const Real v1792 = v1774*v1791;
     const Real v1775 = ((v1772)*(v1772)*(v1772));
@@ -5324,13 +5974,56 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1606 = 1.0/v1605;
     const Real v1698 = 9.1093818800000008e-28*xn[0] + 1.6726215800000001e-24*xn[1] + 5.01956503638e-24*xn[10] + 6.6902431600000005e-24*xn[11] + 6.6911540981899994e-24*xn[12] + 6.6920650363799998e-24*xn[13] + 1.6735325181900001e-24*xn[2] + 1.6744434563800001e-24*xn[3] + 3.3451215800000003e-24*xn[4] + 3.3460325181899999e-24*xn[5] + 3.3461540981899999e-24*xn[6] + 3.3469434563800003e-24*xn[7] + 3.3470650363800003e-24*xn[8] + 5.0186540981899997e-24*xn[9];
     const Real v1811 = v1698 <= 9.9999999999999993e-41;
-    const Real v1824 = jac_nuc_choice_110(v1606, v1811);
+    decltype(jac_nuc_choice_110(v1606, v1811)) mg36_0{};
+    decltype(jac_nuc_choice_188(v1605, v1811)) mg36_1{};
+    if ((static_cast<bool>(v1811))) {
+        mg36_0 = (
+   1.0e+80
+);
+        mg36_1 = (
+   9.9999999999999996e-81
+);
+    } else {
+        mg36_0 = (
+   2.232953576238777e+46*(v1606)
+);
+        mg36_1 = (
+   4.4783734451139649e-47*(v1605)
+);
+    }
+
+    const Real v1824 = mg36_0;
     const Real v1648 = xn[10] + xn[2] + xn[3] + xn[9];
     const Real v1806 = xn[6] + xn[8];
     const Real v1607 = xn[1] + xn[12] + xn[4];
     const Real v1807 = xn[0] + xn[11] + xn[13] + xn[5] + xn[7] + v1806 + v1607 + v1648;
     const Real v1808 = v1807 <= 9.9999999999999993e-41;
-    const Real v1823 = jac_nuc_choice_109(v1807, v1808);
+    decltype(jac_nuc_choice_109(v1807, v1808)) mg37_0{};
+    decltype(jac_nuc_choice_187(v1808)) mg37_1{};
+    decltype(jac_nuc_choice_189(v1807, v1808)) mg37_2{};
+    if ((static_cast<bool>(v1808))) {
+        mg37_0 = (
+   9.9999999999999993e-41
+);
+        mg37_1 = (
+   0
+);
+        mg37_2 = (
+   1.0e+40
+);
+    } else {
+        mg37_0 = (
+   (v1807)
+);
+        mg37_1 = (
+   1
+);
+        mg37_2 = (
+   1.0/(v1807)
+);
+    }
+
+    const Real v1823 = mg37_0;
     const Real v1825 = math::sqrt(v1823*v1824);
     const Real v1810 = v1698 >= 0.5;
     const Real v1815 = 1.0000420000000001*v1705;
@@ -5456,22 +6149,124 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1833 = 0.00022681492*v1698;
     const Real v1983 = v1831*v1833;
     const Real v1620 = T <= 10;
-    const Real v1624 = jac_nuc_choice_85(v1620, v1623);
+    decltype(jac_nuc_choice_85(v1620, v1623)) mg38_0{};
+    decltype(jac_nuc_choice_230(v1620, v1652)) mg38_1{};
+    decltype(jac_nuc_choice_87(T, v1620)) mg38_2{};
+    decltype(jac_nuc_choice_88(T, v1620)) mg38_3{};
+    decltype(jac_nuc_choice_233(T, v1620)) mg38_4{};
+    decltype(jac_nuc_choice_86(v1620, v1612)) mg38_5{};
+    decltype(jac_nuc_choice_89(v1620, v1642)) mg38_6{};
+    decltype(jac_nuc_choice_232(T, v1620)) mg38_7{};
+    decltype(jac_nuc_choice_234(T, v1620)) mg38_8{};
+    decltype(jac_nuc_choice_91(T, v1620)) mg38_9{};
+    decltype(jac_nuc_choice_90(T, v1620)) mg38_10{};
+    decltype(jac_nuc_choice_287(T, v1620)) mg38_11{};
+    decltype(jac_nuc_choice_289(T, v1620)) mg38_12{};
+    decltype(jac_nuc_choice_84(T, v1620)) mg38_13{};
+    if ((static_cast<bool>(v1620))) {
+        mg38_0 = (
+   math::sqrt(10)
+);
+        mg38_1 = (
+   0
+);
+        mg38_2 = (
+   5.011872336272722
+);
+        mg38_3 = (
+   0.63095734448019325
+);
+        mg38_4 = (
+   0
+);
+        mg38_5 = (
+   1.0/10.0
+);
+        mg38_6 = (
+   0.031622776601683791
+);
+        mg38_7 = (
+   0
+);
+        mg38_8 = (
+   0
+);
+        mg38_9 = (
+   0.67810976749343443
+);
+        mg38_10 = (
+   0.4008667176273028
+);
+        mg38_11 = (
+   0
+);
+        mg38_12 = (
+   0
+);
+        mg38_13 = (
+   2.3157944032250755
+);
+    } else {
+        mg38_0 = (
+   (v1623)
+);
+        mg38_1 = (
+   -(v1652)
+);
+        mg38_2 = (
+   math::exp((0.69999999999999996)*math::log(math::abs((T))))
+);
+        mg38_3 = (
+   math::exp((-0.20000000000000001)*math::log(math::abs((T))))
+);
+        mg38_4 = (
+   -0.16869999999999999*math::exp((-1.1687000000000001)*math::log(math::abs((T))))
+);
+        mg38_5 = (
+   (v1612)
+);
+        mg38_6 = (
+   (v1642)
+);
+        mg38_7 = (
+   -0.20000000000000001*math::exp((-1.2)*math::log(math::abs((T))))
+);
+        mg38_8 = (
+   0.69999999999999996*math::exp((-0.30000000000000004)*math::log(math::abs((T))))
+);
+        mg38_9 = (
+   math::exp((-0.16869999999999999)*math::log(math::abs((T))))
+);
+        mg38_10 = (
+   math::exp((-0.39700000000000002)*math::log(math::abs((T))))
+);
+        mg38_11 = (
+   -0.39700000000000002*math::exp((-1.397)*math::log(math::abs((T))))
+);
+        mg38_12 = (
+   0.36470000000000002*math::exp((-0.63529999999999998)*math::log(math::abs((T))))
+);
+        mg38_13 = (
+   math::exp((0.36470000000000002)*math::log(math::abs((T))))
+);
+    }
+
+    const Real v1624 = mg38_0;
     const Real v1625 = 0.0031622776601683794*v1624 + 1.0;
     const Real v1626 = 1.0/v1625;
     const Real v1671 = xn[12]*v1626;
     const Real v1670 = ((xn[0])*(xn[0]));
     const Real v1672 = v1670*v1671;
-    const Real v2082 = jac_nuc_choice_230(v1620, v1652);
+    const Real v2082 = mg38_1;
     const Real v2103 = v2082*v1672;
     const Real v2109 = 1.0*v1708*(2.9933606208922598*v1705*v1612 - 7.460375701300709*v2108*v1703);
     const Real v1993 = v1743*v1744;
     const Real v1998 = v1727*v1728;
     const Real v2002 = v1762*v1763;
     const Real v2007 = v1751*v1752;
-    const Real v1632 = 6.3095734448019361e-5*jac_nuc_choice_87(T, v1620) + 1.0;
+    const Real v1632 = 6.3095734448019361e-5*mg38_2 + 1.0;
     const Real v1633 = 1.0/v1632;
-    const Real v1634 = jac_nuc_choice_88(T, v1620);
+    const Real v1634 = mg38_3;
     const Real v1635 = v1633*v1634;
     const Real v2085 = 1.0/v1623;
     const Real v2086 = jac_nuc_choice_231(v1620, v2085);
@@ -5483,7 +6278,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2093 = v2086*v1661;
     const Real v1627 = xn[2]*v1626;
     const Real v2097 = v1627*v2082;
-    const Real v2098 = v1672*jac_nuc_choice_233(T, v1620);
+    const Real v2098 = v1672*mg38_4;
     const Real v1641 = xn[0]*xn[12];
     const Real v2095 = v2086/((v1625)*(v1625));
     const Real v2101 = v1641*v2095;
@@ -5491,22 +6286,40 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1835 = 1.2500000000000001e-10*xn[0] + 1.2500000000000001e-10*xn[1] + 1.2500000000000001e-10*xn[10] + 1.2500000000000001e-10*xn[11] + 1.2500000000000001e-10*xn[12] + 1.2500000000000001e-10*xn[13] + 1.2500000000000001e-10*xn[2] + 1.2500000000000001e-10*xn[3] + 1.2500000000000001e-10*xn[4] + 1.2500000000000001e-10*xn[5] + 1.2500000000000001e-10*xn[6] + 1.2500000000000001e-10*xn[7] + 1.2500000000000001e-10*xn[8] + 1.2500000000000001e-10*xn[9] <= 9.9999999999999993e-41;
     const Real v1836 = 28601.610899577994*math::exp((-0.45000000000000001)*math::log(math::abs(v1807)));
     const Real v1837 = jac_nuc_choice_112(v1835, v1836);
-    const Real v1838 = jac_nuc_choice_114(v1835, v1836, v1837);
+    decltype(jac_nuc_choice_114(v1835, v1836, v1837)) mg39_0{};
+    decltype(jac_nuc_choice_191(v1807, v1835, v1837)) mg39_1{};
+    if ((static_cast<bool>(v1837))) {
+        mg39_0 = (
+   1.0
+);
+        mg39_1 = (
+   0
+);
+    } else {
+        mg39_0 = (
+   jac_nuc_choice_113(static_cast<bool>(v1835), (v1836))
+);
+        mg39_1 = (
+   jac_nuc_choice_190((v1807), static_cast<bool>(v1835))
+);
+    }
+
+    const Real v1838 = mg39_0;
     const Real v1987 = xn[8]*v1838;
     const Real v2096 = xn[2]*v2095;
-    const Real v1628 = jac_nuc_choice_86(v1620, v1612);
+    const Real v1628 = mg38_5;
     const Real v1683 = math::exp(-157809.10000000001*v1628);
     const Real v1684 = v1624*v1683;
     const Real v2106 = xn[0]*v1684;
-    const Real v2110 = jac_nuc_choice_235(v1771)*jac_nuc_choice_236(v1771, v1612);
+    const Real v2110 = mg35_1*mg35_2;
     const Real v2112 = v1780*v2110;
     const Real v2114 = v1781*v2110;
     const Real v2115 = v1782*v2110;
-    const Real v1643 = jac_nuc_choice_89(v1620, v1642);
+    const Real v1643 = mg38_6;
     const Real v2083 = v1641*v1643*v2082;
     const Real v2090 = xn[0]*v1624;
-    const Real v2091 = v1633*v2090*jac_nuc_choice_232(T, v1620);
-    const Real v2099 = v1634*v2090*jac_nuc_choice_234(T, v1620)/((v1632)*(v1632));
+    const Real v2091 = v1633*v2090*mg38_7;
+    const Real v2099 = v1634*v2090*mg38_8/((v1632)*(v1632));
     const Real v2113 = v1779*v2110;
     const Real v2119 = v1724*v2118;
     const Real v2120 = v1705*v1652;
@@ -5516,7 +6329,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1644 = 1.0 + 0.29999999999999999*math::exp(-94000.0*v1628);
     const Real v1645 = math::exp(-470000.0*v1628);
     const Real v1646 = 1.24e-13*v1644*v1645;
-    const Real v1666 = jac_nuc_choice_91(T, v1620);
+    const Real v1666 = mg38_9;
     const Real v1667 = math::exp(-55338.0*v1628);
     const Real v1668 = v1666*v1667;
     const Real v1673 = math::exp(-13179.0*v1628);
@@ -5551,7 +6364,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2105 = xn[13]*v1680;
     const Real v2111 = v1772*v2110;
     const Real v1662 = math::exp(-473638.0*v1628);
-    const Real v1663 = v1662*jac_nuc_choice_90(T, v1620);
+    const Real v1663 = v1662*mg38_10;
     const Real v1613 = math::exp(-102000.0*v1612);
     const Real v1614 = xn[8]*v1613;
     const Real v2081 = xn[0]*v1614;
@@ -5573,7 +6386,32 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1618 = 5.6500000000000001e-36*((((z + 1.0)*(z + 1.0)))*(((z + 1.0)*(z + 1.0))));
     const Real v1697 = 1.3806479999999999e-16*xn[0] + 1.3806479999999999e-16*xn[1] + 1.3806479999999999e-16*xn[10] + 1.3806479999999999e-16*xn[11] + 1.3806479999999999e-16*xn[12] + 1.3806479999999999e-16*xn[13] + 1.3806479999999999e-16*xn[2] + 1.3806479999999999e-16*xn[3] + 1.3806479999999999e-16*xn[4] + 1.3806479999999999e-16*xn[5] + 1.3806479999999999e-16*xn[6] + 1.3806479999999999e-16*xn[7] + 1.3806479999999999e-16*xn[8] + 1.3806479999999999e-16*xn[9];
     const Real v1834 = T < 2.0;
-    out[matrix_index(14, 14)] = v1699*(-3.2067318316078082e-16*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*v2081 - 1.10034915790464e-21*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*v2081 - xn[0]*v1618 - 1.0649999999999999e-27*xn[0]*v1608*v1651 + 2.185341195413336e-30*xn[1]*v2099 + 8.741364781653344e-30*xn[11]*v2099 + 3.12599925e-16*xn[12]*v2104*v1676 + xn[2]*xn[3]*v2043*v1692*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((v1693)*(v1693)) + xn[3]*v2051*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - v1722*(69500.0*v1710*v1652 - v2049*v2109) - v1722*(v2013*v2109 + 12307692.307692308*v1718*v1609*(0.0042250000000000005*v1713*v1715*v2092 - 4.0625000000000001e-8*v1716*v1642 - 0.00048750000000000003*v2092*math::exp(-58000.0*v1612))*math::exp(v1714)/v1713) + 1.5653274417833479e-24*v1624*v2101*v1676 - 0.00090725967999999999*v1822*v1829*v1908*v1698 - 1.2700000000000001e-21*v1627*v2087*v1683 + 2.62395452e-11*v1970*v2082*v1663 - 5.5399999999999998e-17*v1970*v1662*jac_nuc_choice_287(T, v1620) - v1641*v1646*jac_nuc_choice_288(v1620, v2092) - 1.5499999999999999e-26*v1641*jac_nuc_choice_289(T, v1620) - v1983*jac_nuc_choice_290(v1820, v1826, v1982, v2085, v1695, v1698) + 5.8280000000000003e-8*v1644*v1645*v2083 + v2009*v1660*v1690*(-1.2500000000000001e-32*v1642 - 1.875e-33*v2100) - v2010*(v1749*(-2.3025850929940459*v1735*(75.773826*v1706*v1723*v1612 - 14.509090000000008*v2116 - 13.899501000000001*v2119 - 2848700.6345267999*v2121 - 331159.79815649998*v2120/v1737) + 4790.3210533157426*v1748*v1652 + v1992*(v1993*v2123 + v2122*math::log(v1745)) + v1997*(v1998*v2123 + v2122*math::log(v1729)) + 54584.391438988954*v1652 - 157.54846734442862*v2116 + 198.95454259823751*v2117 - 32.004783802655837*v2119 - 6559375.6154640894*v2121) + v1768*(-2.3025850929940459*v1757*(70.138370000000009*v1705*v1612 - 9.4070299999999989*v2117 - 0.77462909999999996*v2119 - 588180.10479140002*v2124 - 160821.97128249999*v2120/v1758) + 3816.3275589792611*v1767*v1652 + v2001*(v2002*v2126 + v2125*math::log(v1764)) + v2006*(v2007*v2126 + v2125*math::log(v1753)) + 49431.413233526648*v1652 + 98.337445626384849*v2116 - 9.3363608541157479*v2117 - 1.783649418259394*v2119 - 1354334.7412883535*v2124)) + 0.00084373771595996178*v2020*v1697 + 7.1777505407999997e-24*v2038*v2107 + v2041*v2107 + 7.1777505407999997e-24*v2045*v2107 + v2047*v2107 + 3.4968000000000002e-9*v2083*math::exp(-564000.0*v1628) - v2084*v2088 - v2084*v2091 - v2088*v2089 - v2089*v2091 + 2.9662164452379397e-24*v2090*v2095*v2105 - v2093*v1678 - v2093*v1682 + 2.3717082451262844e-21*v2094*v2096 + 8.8760999999999989e-14*v2094*v2097 + 4.0160926284138423e-24*v2096*v2106 + 2.0041755700000002e-16*v2097*v2106 - 5.0099999999999997e-27*v2098*v1667 - 9.1000000000000001e-27*v2098*v1673 + 1.7519018237332822e-19*v2101*v1663 + 1.5843011077443579e-29*v2102*v1668 + 2.8776726707532255e-29*v2102*v1674 + 2.7724337999999999e-22*v2103*v1668 + 1.199289e-22*v2103*v1674 + 2.6764460520000001e-16*v2104*v2105 + 7.1777505408000004e-12*v1660*v1687*(-1.0000000000000001e-31*v1642 - 1.5e-32*v2100) - jac_nuc_choice_292(v1834, v1903, v1922, v1923, v1966, v1986, v1987, v2134, v2137) - jac_nuc_choice_293(v1705, v1772, v1775, v1776, v1783, v1785, v1787, v1788, v1789, v1790, v1791, v1793, v1794, v1796, v1797, v1798, v1800, v1801, v1802, v1804, v1805, v2025, v2027, v2029, v2032, v2110, v2111, v2112, v2113, v2114, v2115))/(xn[0]*v2079 + xn[1]*v2079 + xn[10]*v2080 + xn[11]*v2079 + xn[12]*v2079 + xn[13]*v2079 + xn[2]*v2079 + xn[3]*v2079 + xn[4]*v2079 + xn[5]*v2079 + xn[6]*v2080 + xn[7]*v2079 + xn[8]*v2080 + xn[9]*v2080);
+    decltype(jac_nuc_choice_293(v1705, v1772, v1775, v1776, v1783, v1785, v1787, v1788, v1789, v1790, v1791, v1793, v1794, v1796, v1797, v1798, v1800, v1801, v1802, v1804, v1805, v2025, v2027, v2029, v2032, v2110, v2111, v2112, v2113, v2114, v2115)) mg40_0{};
+    decltype(jac_nuc_choice_183(v1804, v1805)) mg40_1{};
+    decltype(jac_nuc_choice_278(v1803, v1805)) mg40_2{};
+    if ((static_cast<bool>(v1805))) {
+        mg40_0 = (
+   (v1804)*(50.504556041967454*(v1705)*(v2110) + 0.011577397847574064*(v1772)*(v1796)*(v2112) + 0.00057030427583276537*(v1775)*(v1791)*(v2112) - 0.0046027064199385889*(v1776)*(v1793)*(v2112) - 46.931151210299063*(v1783)*(v2110) - 0.0084274614403582089*(v1785)*(v2110) + 0.27317869543281359*(v1787)*(v2110) - 1.5965204000783517*(v1788)*(v2110) - 2.4510327539393719*(v1789)*(v2110) + 15.190568323798459*(v1790)*(v2110) - 0.013649724431268705*(v1794)*(v2114) + 0.12150741535729581*(v1797)*(v2114) + 0.097629607942947547*(v1798)*(v2115) - 0.33921683589988288*(v1800)*(v2111) - 0.076906342106001127*(v1801)*(v2113) + 2.8710012490505563*(v1802)*(v2111) + 1.7949111316907187*(v2025)*(v2110) - 2.4989034980227181*(v2027)*(v2111) + 0.80896722072159821*(v2029)*(v2113) - 0.95105974681026062*(v2032)*(v2115))
+);
+        mg40_1 = (
+   (v1804)
+);
+        mg40_2 = (
+   (v1803)
+);
+    } else {
+        mg40_0 = (
+   0
+);
+        mg40_1 = (
+   0
+);
+        mg40_2 = (
+   0
+);
+    }
+
+    out[matrix_index(14, 14)] = v1699*(-3.2067318316078082e-16*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*v2081 - 1.10034915790464e-21*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*v2081 - xn[0]*v1618 - 1.0649999999999999e-27*xn[0]*v1608*v1651 + 2.185341195413336e-30*xn[1]*v2099 + 8.741364781653344e-30*xn[11]*v2099 + 3.12599925e-16*xn[12]*v2104*v1676 + xn[2]*xn[3]*v2043*v1692*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((v1693)*(v1693)) + xn[3]*v2051*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - v1722*(69500.0*v1710*v1652 - v2049*v2109) - v1722*(v2013*v2109 + 12307692.307692308*v1718*v1609*(0.0042250000000000005*v1713*v1715*v2092 - 4.0625000000000001e-8*v1716*v1642 - 0.00048750000000000003*v2092*math::exp(-58000.0*v1612))*math::exp(v1714)/v1713) + 1.5653274417833479e-24*v1624*v2101*v1676 - 0.00090725967999999999*v1822*v1829*v1908*v1698 - 1.2700000000000001e-21*v1627*v2087*v1683 + 2.62395452e-11*v1970*v2082*v1663 - 5.5399999999999998e-17*v1970*v1662*mg38_11 - v1641*v1646*jac_nuc_choice_288(v1620, v2092) - 1.5499999999999999e-26*v1641*mg38_12 - v1983*jac_nuc_choice_290(v1820, v1826, v1982, v2085, v1695, v1698) + 5.8280000000000003e-8*v1644*v1645*v2083 + v2009*v1660*v1690*(-1.2500000000000001e-32*v1642 - 1.875e-33*v2100) - v2010*(v1749*(-2.3025850929940459*v1735*(75.773826*v1706*v1723*v1612 - 14.509090000000008*v2116 - 13.899501000000001*v2119 - 2848700.6345267999*v2121 - 331159.79815649998*v2120/v1737) + 4790.3210533157426*v1748*v1652 + v1992*(v1993*v2123 + v2122*math::log(v1745)) + v1997*(v1998*v2123 + v2122*math::log(v1729)) + 54584.391438988954*v1652 - 157.54846734442862*v2116 + 198.95454259823751*v2117 - 32.004783802655837*v2119 - 6559375.6154640894*v2121) + v1768*(-2.3025850929940459*v1757*(70.138370000000009*v1705*v1612 - 9.4070299999999989*v2117 - 0.77462909999999996*v2119 - 588180.10479140002*v2124 - 160821.97128249999*v2120/v1758) + 3816.3275589792611*v1767*v1652 + v2001*(v2002*v2126 + v2125*math::log(v1764)) + v2006*(v2007*v2126 + v2125*math::log(v1753)) + 49431.413233526648*v1652 + 98.337445626384849*v2116 - 9.3363608541157479*v2117 - 1.783649418259394*v2119 - 1354334.7412883535*v2124)) + 0.00084373771595996178*v2020*v1697 + 7.1777505407999997e-24*v2038*v2107 + v2041*v2107 + 7.1777505407999997e-24*v2045*v2107 + v2047*v2107 + 3.4968000000000002e-9*v2083*math::exp(-564000.0*v1628) - v2084*v2088 - v2084*v2091 - v2088*v2089 - v2089*v2091 + 2.9662164452379397e-24*v2090*v2095*v2105 - v2093*v1678 - v2093*v1682 + 2.3717082451262844e-21*v2094*v2096 + 8.8760999999999989e-14*v2094*v2097 + 4.0160926284138423e-24*v2096*v2106 + 2.0041755700000002e-16*v2097*v2106 - 5.0099999999999997e-27*v2098*v1667 - 9.1000000000000001e-27*v2098*v1673 + 1.7519018237332822e-19*v2101*v1663 + 1.5843011077443579e-29*v2102*v1668 + 2.8776726707532255e-29*v2102*v1674 + 2.7724337999999999e-22*v2103*v1668 + 1.199289e-22*v2103*v1674 + 2.6764460520000001e-16*v2104*v2105 + 7.1777505408000004e-12*v1660*v1687*(-1.0000000000000001e-31*v1642 - 1.5e-32*v2100) - jac_nuc_choice_292(v1834, v1903, v1922, v1923, v1966, v1986, v1987, v2134, v2137) - mg40_0)/(xn[0]*v2079 + xn[1]*v2079 + xn[10]*v2080 + xn[11]*v2079 + xn[12]*v2079 + xn[13]*v2079 + xn[2]*v2079 + xn[3]*v2079 + xn[4]*v2079 + xn[5]*v2079 + xn[6]*v2080 + xn[7]*v2079 + xn[8]*v2080 + xn[9]*v2080);
     const Real v1636 = v1624*v1635;
     const Real v1637 = 3.4635323838154264e-26*v1636;
     const Real v1638 = xn[1]*v1637;
@@ -5589,7 +6427,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1611 = v1608*v1610;
     const Real v1615 = 3.1438547368704001e-21*math::exp((0.34999999999999998)*math::log(math::abs(T)));
     const Real v1616 = v1614*v1615;
-    const Real v1621 = 1.5499999999999999e-26*jac_nuc_choice_84(T, v1620);
+    const Real v1621 = 1.5499999999999999e-26*mg38_13;
     const Real v1622 = xn[12]*v1621;
     const Real v1630 = 7.4999999999999996e-19*v1629;
     const Real v1631 = v1627*v1630;
@@ -5600,7 +6438,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1832 = v1829*v1831;
     const Real v1619 = v1618*(T - v1617);
     const Real v1647 = v1643*v1646;
-    const Real v1969 = v1606*(0.00084373771595996178*T*v1696*v1697*v1700 - xn[0]*v1616 - xn[0]*v1619 - xn[0]*v1622 - xn[0]*v1631 - xn[0]*v1638 - xn[0]*v1640 - xn[0]*v1611 - xn[0]*v1686 - xn[12]*v1665 + 5.6556829037999995e-12*xn[2]*xn[3]*v1660*v1692*v1694 + 1.75918975308e-21*xn[2]*xn[6]*v1660 - xn[2]*v1770 + 7.1777505408000004e-12*xn[8]*v1660*v1690*v1691 - v1722 - v1832*v1833 - v1641*v1647 + 7.1777505408000004e-12*v1660*v1687*v1689 - v1669*v1672 - v1672*v1675 - v1678*v1679 - v1679*v1682 - jac_nuc_choice_182(v1834, v1968, xn) - jac_nuc_choice_183(v1804, v1805));
+    const Real v1969 = v1606*(0.00084373771595996178*T*v1696*v1697*v1700 - xn[0]*v1616 - xn[0]*v1619 - xn[0]*v1622 - xn[0]*v1631 - xn[0]*v1638 - xn[0]*v1640 - xn[0]*v1611 - xn[0]*v1686 - xn[12]*v1665 + 5.6556829037999995e-12*xn[2]*xn[3]*v1660*v1692*v1694 + 1.75918975308e-21*xn[2]*xn[6]*v1660 - xn[2]*v1770 + 7.1777505408000004e-12*xn[8]*v1660*v1690*v1691 - v1722 - v1832*v1833 - v1641*v1647 + 7.1777505408000004e-12*v1660*v1687*v1689 - v1669*v1672 - v1672*v1675 - v1678*v1679 - v1679*v1682 - jac_nuc_choice_182(v1834, v1968, xn) - mg40_1);
     const Real v1994 = v1732*v1650;
     const Real v1995 = v1993*v1994;
     const Real v1999 = v1994*v1998;
@@ -5617,9 +6455,9 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2037 = 7.1777505407999997e-24*v2036;
     const Real v2021 = T*v2020;
     const Real v2048 = v1606*v2021*v1697*v1698;
-    const Real v1984 = xn[8]*v1967*jac_nuc_choice_191(v1807, v1835, v1837);
+    const Real v1984 = xn[8]*v1967*mg39_1;
     const Real v2022 = 1.1649047900646892e-19*v2021;
-    const Real v2024 = jac_nuc_choice_201(v1777, v1778)*jac_nuc_choice_203(v1777, v1778, xn);
+    const Real v2024 = mg34_1*mg34_2;
     const Real v2026 = v1772*v2024;
     const Real v2028 = v1779*v2024;
     const Real v2030 = v1781*v2024;
@@ -5629,11 +6467,11 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1975 = v1829*v1830*v1833;
     const Real v1976 = v1812*v1826;
     const Real v1977 = 2*v1813*v1825;
-    const Real v1978 = (1.0/2.0)*v1824*jac_nuc_choice_187(v1808);
+    const Real v1978 = (1.0/2.0)*v1824*mg37_1;
     const Real v1979 = math::powi<-3>(v1604);
     const Real v1980 = (1.0/2.0)*v1823;
-    const Real v1981 = 2*v1827*jac_nuc_choice_188(v1605, v1811)*jac_nuc_choice_189(v1807, v1808);
-    const Real v2023 = jac_nuc_choice_199(v1873, v1875, v1876, v1878, v1879, v1881, v1886);
+    const Real v1981 = 2*v1827*mg36_1*mg37_2;
+    const Real v2023 = mg33_1;
     const Real v2033 = 1.75918975308e-21*v1660;
     const Real v2039 = 1.4355501081600001e-11*xn[8];
     out[matrix_index(14, 2)] = -3.7369204214442467e+22*v1969 + v1699*(xn[2]*v2039*v1660*v1691 + xn[6]*v2033 - v1770 - 3.7958214423066343e-28*v1832 - v1630*v1661 - v1975*v2044 - v1983*jac_nuc_choice_256(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2044) + v2022 + v2036*v2041 + v2036*v2047 + v2037*v2038 + v2037*v2045 + v2042*v2043 + 1.5764903505567533e+19*v2048 + v2050 + 2.1533251622400001e-11*v1660*v1689*v1690 - v1661*v1685 - jac_nuc_choice_258(v1834, v1920, v1922, v1966, v1984, v1986, v1987, v2023) - jac_nuc_choice_259(v1705, v1783, v1786, v1787, v1788, v1789, v1790, v1792, v1794, v1795, v1797, v1798, v1799, v1800, v1801, v1802, v1804, v1805, v2024, v2025, v2026, v2027, v2028, v2029, v2030, v2031, v2032));
@@ -5646,15 +6484,15 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     out[matrix_index(14, 8)] = -7.4738408428884933e+22*v1969 + v1699*(3.1529807011135066e+19*T*v1606*v1696*v1697*v1698*v1700 - xn[0]*v1615*v1613 + 5.6556829037999991e-24*xn[2]*xn[3]*v2018*v2070*v1692*v1694 + 1.7591897530800001e-33*xn[2]*xn[6]*v2018*v2070 - xn[2]*v1769 + 7.1777505407999997e-24*xn[8]*v2018*v2070*v1690*v1691 + 1.4355501081600001e-11*v1707*v1712*v1719*v2012*v2016*v1701 - v1720*v2039 - 7.5916428846132686e-28*v1832 - v1971 - v1975*v2071 - v1983*jac_nuc_choice_271(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2071) + 7.1777505407999997e-24*v2018*v2070*v1687*v1689 - v2065 - v2068 + 7.1777505408000004e-12*v1660*v1690*v1691 - jac_nuc_choice_273(v1834, v1843, v1852, v1853, v1920, v1922, v1966, v1968, v1984, v1986, v1987));
     const Real v1972 = v1624*v1626;
     const Real v1974 = jac_nuc_choice_186(v1809, v1810, v1973);
-    const Real v1985 = jac_nuc_choice_193(v1894, v1898, v1899, v1901);
+    const Real v1985 = mg31_1;
     out[matrix_index(14, 0)] = -2.0340826846270714e+19*v1969 + v1699*(8581161392004762.0*T*v1606*v1696*v1697*v1698*v1700 - xn[12]*v1647 - v1616 - v1619 - v1622 - 2.0661437223616499e-31*v1832 - v1631 - v1638 - v1640 - 1.0019999999999999e-26*v1970*v1668 - 1.82e-26*v1970*v1674 - v1971 - v1972*v1678 - v1972*v1682 - v1974*v1975 - v1983*jac_nuc_choice_248(v1811, v1820, v1974, v1976, v1977, v1978, v1979, v1980, v1981, v1982) - v1664*v1671 - v1611 - v1686 - jac_nuc_choice_250(v1834, v1843, v1920, v1922, v1966, v1984, v1985, v1986, v1987));
     const Real v1988 = xn[0]*v1610;
     const Real v1989 = jac_nuc_choice_195(v1809, v1810, v1973);
-    const Real v1990 = jac_nuc_choice_196(v1861, v1869, v1871);
+    const Real v1990 = mg32_2;
     const Real v2019 = -1.4139207259499998e-18*xn[2]*xn[3]*v2017*v2018*v1651*v1657*v1692*v1694 - 4.3979743826999997e-28*xn[2]*xn[6]*v2017*v2018*v1651*v1657 - 1.7944376352000002e-18*xn[8]*v2017*v2018*v1651*v1657*v1690*v1691 - 7.1777505408000004e-12*v1707*v1712*v1719*v2012*v2016*v1701 + v2011 + v2015 - 1.7944376352000002e-18*v2017*v2018*v1651*v1657*v1687*v1689;
     out[matrix_index(14, 1)] = -3.7348863387551538e+22*v1969 + v1699*(1.5756322344156688e+19*T*v1606*v1696*v1697*v1698*v1700 - xn[0]*v1637 - 3.7937552985797361e-28*v1832 - v1971 - v1975*v1989 - v1983*jac_nuc_choice_252(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v1989) - v1988 - v2019 - jac_nuc_choice_254(v1834, v1920, v1922, v1966, v1984, v1986, v1987, v1990));
     const Real v2077 = jac_nuc_choice_228(v1809, v1810, v1973);
-    const Real v2078 = jac_nuc_choice_229(v1857, v1861, v1867);
+    const Real v2078 = mg32_3;
     out[matrix_index(14, 13)] = -1.4943070555407201e+23*v1969 + v1699*(6.3040161099239145e+19*T*v1606*v1696*v1697*v1698*v1700 - 1.5178601958613267e-27*v1832 - v1971 - v1975*v2077 - v1983*jac_nuc_choice_284(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2077) - v1679*v1681 - jac_nuc_choice_286(v1834, v1920, v1922, v1966, v1984, v1986, v1987, v2078));
     const Real v2058 = jac_nuc_choice_208(v1834, v1984);
     const Real v2062 = v1971 + v2058;
@@ -5674,7 +6512,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2060 = v2050 + 1.7944376352000002e-18*v2054 + 4.3979743826999997e-28*v2055 + 1.7944376352000002e-18*v2056 + 1.4139207259499998e-18*v2057 + v2059;
     out[matrix_index(14, 3)] = -3.7389545041333399e+22*v1969 + v1699*(-3.7978875860335321e-28*v1832 - v1975*v2052 - v1983*jac_nuc_choice_261(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2052) + 1.5773484666978378e+19*v2048 + v2051*v1692 + v2060);
     const Real v2073 = jac_nuc_choice_222(v1809, v1810, v1973);
-    out[matrix_index(14, 10)] = -1.1208455699147847e+23*v1969 + v1699*(4.7284984055187104e+19*T*v1606*v1696*v1697*v1698*v1700 - 1.1385122421613269e-27*v1832 - v1975*v2073 - v1983*jac_nuc_choice_277(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2073) - v2019 - v2062 - jac_nuc_choice_278(v1803, v1805));
+    out[matrix_index(14, 10)] = -1.1208455699147847e+23*v1969 + v1699*(4.7284984055187104e+19*T*v1606*v1696*v1697*v1698*v1700 - 1.1385122421613269e-27*v1832 - v1975*v2073 - v1983*jac_nuc_choice_277(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2073) - v2019 - v2062 - mg40_2);
     const Real v2072 = jac_nuc_choice_220(v1809, v1810, v1973);
     out[matrix_index(14, 9)] = -1.1206421616458753e+23*v1969 + v1699*(-1.1383056277886369e-27*v1832 - v1975*v2072 - v1983*jac_nuc_choice_275(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2072) + 4.7276402893776257e+19*v2048 + v2060);
     const Real v2074 = jac_nuc_choice_224(v1809, v1810, v1973);
