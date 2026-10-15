@@ -5759,10 +5759,19 @@ DEVICE int lu_step(Real* A, int* ipvt, int info) {
             row[j - K - 1] = A[midx(K, j)];
         }
         for (unsigned i = K + 1; i < 15u; ++i) {
-            const Real m = A[midx(i, K)] * multiplier;
+            // Load the whole trailing row first, then store it: no store
+            // between this row's loads (one memory wait per row).
+            Real cur[15 - K];
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                cur[j - K] = A[midx(i, j)];
+            }
+            const Real m = cur[0] * multiplier;
+            [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                cur[j - K] = cur[j - K] + row[j - K - 1] * m;
+            }
             A[midx(i, K)] = m;
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
-                A[midx(i, j)] += row[j - K - 1] * m;
+                A[midx(i, j)] = cur[j - K];
             }
         }
     } else {
