@@ -5709,9 +5709,9 @@ DEVICE void rhs(Real t, const Real* y, Real* out, ScratchView s) {
 
     BurnView b = s.burn;
     burn_state_from_y_view(y, b);
-    rhs_specie(b.T[0], out, b.xn, default_redshift);
     Real edot = rhs_eint(b.T[0], b.xn, default_redshift);
     out[14] = edot;
+    rhs_specie(b.T[0], out, b.xn, default_redshift);
 
 }
 DEVICE void eval_jacobian(ScratchView s, Real x) {
@@ -5839,8 +5839,9 @@ DEVICE void lu_solve_fwd_chunk(const Real* LU, Real* x, Real t) {
     }
     if constexpr (E < 15u) lu_solve_fwd_chunk<K, E>(LU, x, t);
 }
+// Returns the updated x[K - 1] (kept in a register for the next step).
 template <unsigned K, unsigned J>
-DEVICE void lu_solve_bwd_chunk(const Real* LU, Real* x, Real t) {
+DEVICE Real lu_solve_bwd_chunk(const Real* LU, Real* x, Real t) {
     constexpr unsigned E = (J + 7 < K) ? J + 7 : K;
     Real xv[7];
     Real lv[7];
@@ -5849,9 +5850,14 @@ DEVICE void lu_solve_bwd_chunk(const Real* LU, Real* x, Real t) {
         lv[j - J] = LU[midx(j, K)];
     }
     [[loom::unroll]] for (unsigned j = J; j < E; ++j) {
-        x[j] = xv[j - J] + t * lv[j - J];
+        xv[j - J] = xv[j - J] + t * lv[j - J];
+        x[j] = xv[j - J];
     }
-    if constexpr (E < K) lu_solve_bwd_chunk<K, E>(LU, x, t);
+    if constexpr (E < K) {
+        return lu_solve_bwd_chunk<K, E>(LU, x, t);
+    } else {
+        return xv[E - 1 - J];
+    }
 }
 template <unsigned K>
 DEVICE void lu_solve_forward(const Real* LU, const int* ipvt, Real* x) {
@@ -5865,19 +5871,22 @@ DEVICE void lu_solve_forward(const Real* LU, const int* ipvt, Real* x) {
     lu_solve_fwd_chunk<K, K + 1>(LU, x, t);
     if constexpr (K + 1 < 14u) lu_solve_forward<K + 1>(LU, ipvt, x);
 }
+// xk is the current x[K] (carried from the previous step's update), so
+// x[K] is not reloaded right after it was stored.
 template <unsigned K>
-DEVICE void lu_solve_backward(const Real* LU, Real* x) {
-    x[K] /= LU[midx(K, K)];
-    const Real t = -x[K];
+DEVICE void lu_solve_backward(const Real* LU, Real* x, Real xk) {
+    const Real xq = xk / LU[midx(K, K)];
+    x[K] = xq;
+    const Real t = -xq;
     if constexpr (K > 0) {
-        lu_solve_bwd_chunk<K, 0>(LU, x, t);
-        lu_solve_backward<K - 1>(LU, x);
+        const Real next = lu_solve_bwd_chunk<K, 0>(LU, x, t);
+        lu_solve_backward<K - 1>(LU, x, next);
     }
 }
 DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 
     lu_solve_forward<0>(LU, ipvt, x);
-    lu_solve_backward<14>(LU, x);
+    lu_solve_backward<14>(LU, x, x[14]);
 
 }
 DEVICE int decompose(ScratchView s, Real fac) {
@@ -5886,7 +5895,8 @@ DEVICE int decompose(ScratchView s, Real fac) {
             [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
                 s.e[midx(i, j)] = -s.fjac[midx(i, j)];
             }
-            s.e[midx(i, i)] += fac;
+            // Diagonal from fjac (not reloaded from e right after the store).
+            s.e[midx(i, i)] = -s.fjac[midx(i, i)] + fac;
         }
         const int info = lu_decomposition(s.e, s.ip);
         if (info == 0) {
