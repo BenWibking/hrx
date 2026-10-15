@@ -110,30 +110,41 @@ DEVICE double exp(double x) {
     const double p1 = fma(t, p2, 1.0);
     const double p = fma(t, p1, 1.0);
 
-    // z = ldexp(p, n). Unclamped inputs give n in [-1551, 1477] and p in
-    // [0.7, 1.42]. Moving 1000 of the exponent into the second factor keeps
-    // the first product exact, so only the second product rounds, overflows,
-    // or becomes subnormal.
-    const bool scale_down = n < -1000;
-    const bool scale_up = n > 1000;
-    const int down_exponent = n + 1000;
-    const int up_exponent = n - 1000;
-    const int up_or_exact_exponent = scale_up ? up_exponent : n;
-    const int exact_exponent = scale_down ? down_exponent : up_or_exact_exponent;
-    const double up_or_unit_scale = scale_up ? 0x1p1000 : 1.0;
-    const double rounding_scale = scale_down ? 0x1p-1000 : up_or_unit_scale;
-    const int exact_biased_exponent = exact_exponent + 1023;
-    const u64 exact_scale_bits = (u64)exact_biased_exponent << 52;
-    const double exact_scale = __builtin_bit_cast(double, exact_scale_bits);
-    const double exact_product = p * exact_scale;
-    const double z = exact_product * rounding_scale;
+    // z = ldexp(p, n). For -690 < x < 690, |n| <= 996 and p in [0.7, 1.42],
+    // so p * 2^n is normal and exact: adding n to p's exponent field gives
+    // the same bits as the general path below, which only the rare
+    // out-of-range (or NaN) lanes execute.
+    const bool in_range = (x > -690.0) & (x < 690.0);
+    const u64 p_bits = __builtin_bit_cast(u64, p);
+    const u64 n_exponent_bits = (u64)(long long)n << 52;
+    double result = __builtin_bit_cast(double, p_bits + n_exponent_bits);
+    if (!in_range) {
+        // Unclamped inputs give n in [-1551, 1477] and p in [0.7, 1.42].
+        // Moving 1000 of the exponent into the second factor keeps the first
+        // product exact, so only the second product rounds, overflows, or
+        // becomes subnormal.
+        const bool scale_down = n < -1000;
+        const bool scale_up = n > 1000;
+        const int down_exponent = n + 1000;
+        const int up_exponent = n - 1000;
+        const int up_or_exact_exponent = scale_up ? up_exponent : n;
+        const int exact_exponent = scale_down ? down_exponent : up_or_exact_exponent;
+        const double up_or_unit_scale = scale_up ? 0x1p1000 : 1.0;
+        const double rounding_scale = scale_down ? 0x1p-1000 : up_or_unit_scale;
+        const int exact_biased_exponent = exact_exponent + 1023;
+        const u64 exact_scale_bits = (u64)exact_biased_exponent << 52;
+        const double exact_scale = __builtin_bit_cast(double, exact_scale_bits);
+        const double exact_product = p * exact_scale;
+        const double z = exact_product * rounding_scale;
 
-    // NaN inputs propagate through the arithmetic above.
-    const double infinity = __builtin_bit_cast(double, 0x7ff0000000000000ULL);
-    const bool overflows = x > 1024.0;
-    const bool underflows = x < -1075.0;
-    const double with_overflow = overflows ? infinity : z;
-    return underflows ? 0.0 : with_overflow;
+        // NaN inputs propagate through the arithmetic above.
+        const double infinity = __builtin_bit_cast(double, 0x7ff0000000000000ULL);
+        const bool overflows = x > 1024.0;
+        const bool underflows = x < -1075.0;
+        const double with_overflow = overflows ? infinity : z;
+        result = underflows ? 0.0 : with_overflow;
+    }
+    return result;
 }
 
 // logD_base.h, with the ep.h double-double helpers expanded in place.
