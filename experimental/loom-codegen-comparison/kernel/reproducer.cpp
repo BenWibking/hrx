@@ -5704,8 +5704,11 @@ DEVICE void rhs(Real t, const Real* y, Real* out, ScratchView s) {
 
     BurnView b = s.burn;
     burn_state_from_y_view(y, b);
+    // rhs_eint reads T through a volatile copy so its T-only subexpressions
+    // are recomputed rather than CSE'd with (and kept live from) rhs_specie.
+    volatile Real T_eint = b.T[0];
     rhs_specie(b.T[0], out, b.xn, default_redshift);
-    Real edot = rhs_eint(b.T[0], b.xn, default_redshift);
+    Real edot = rhs_eint(T_eint, b.xn, default_redshift);
     out[14] = edot;
 
 }
