@@ -89,28 +89,28 @@ DEVICE int integrate(ScratchView s) {
                 for (int stage = 0; stage < 3; ++stage) {
                     Real* target = s.ak1 + 15 * stage;
                     if (stage == 0) {
-                        for (size_type i = 0; i < N; ++i) s.ynew[i] = s.y[i];
+                        for (unsigned i = 0; i < 15u; ++i) s.ynew[i] = s.y[i];
                     } else if (stage == 1) {
-                        for (size_type i = 0; i < N; ++i) {
+                        for (unsigned i = 0; i < 15u; ++i) {
                             s.ynew[i] = s.y[i] + C::a21 * s.ak1[i];
                             s.ak2[i] = (C::c21 / h) * s.ak1[i];
                         }
                     } else {
-                        for (size_type i = 0; i < N; ++i) {
+                        for (unsigned i = 0; i < 15u; ++i) {
                             s.ynew[i] = s.y[i] + C::a31 * s.ak1[i] + C::a32 * s.ak2[i];
                             s.work[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) / h;
                         }
                     }
                     CHEM_RHS(x, s.ynew, s.dy, s);
                     if (stage == 0) {
-                        for (size_type i = 0; i < N; ++i) target[i] = s.dy[i];
+                        for (unsigned i = 0; i < 15u; ++i) target[i] = s.dy[i];
                     } else {
-                        for (size_type i = 0; i < N; ++i) target[i] += s.dy[i];
+                        for (unsigned i = 0; i < 15u; ++i) target[i] += s.dy[i];
                     }
                     solve(s, target);
                 }
 
-                for (size_type i = 0; i < N; ++i) {
+                for (unsigned i = 0; i < 15u; ++i) {
                     const Real ak3i = s.work[i];
                     s.ynew[i] = s.y[i] + C::b1 * s.ak1[i] + C::b2 * s.ak2[i] + C::b3 * ak3i;
                     s.work[i] = C::e1 * s.ak1[i] + C::e2 * s.ak2[i] + C::e3 * ak3i;
@@ -138,7 +138,7 @@ DEVICE int integrate(ScratchView s) {
                     }
                     hacc = h;
                     erracc = math::max(1.e-2, err);
-                    for (size_type copy = 0; copy < N; ++copy) s.y[copy] = s.ynew[copy];
+                    for (unsigned copy = 0; copy < 15u; ++copy) s.y[copy] = s.ynew[copy];
                     x += h;
                     if (math::abs(hnew) > hmaxn) {
                         hnew = hmaxn;

@@ -8171,30 +8171,28 @@ DEVICE int lu_decomposition(Real* A, int* ipvt) {
 }
 DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 
-    if constexpr (N > 1) {
-        for (size_type k = 0; k < N - 1; ++k) {
-            const auto pivot_row = static_cast<size_type>(ipvt[k]);
-            __builtin_assume(pivot_row < 15);
-            Real t = x[pivot_row];
-            if (pivot_row != k) {
-                x[pivot_row] = x[k];
-                x[k] = t;
-            }
+    for (unsigned k = 0; k < 14u; ++k) {
+        const unsigned pivot_row = static_cast<unsigned>(ipvt[k]);
+        __builtin_assume(pivot_row < 15u);
+        Real t = x[pivot_row];
+        if (pivot_row != k) {
+            x[pivot_row] = x[k];
+            x[k] = t;
+        }
 
-            for (size_type j = k + 1; j < N; ++j) {
-                __builtin_assume(j < 15);
-                x[j] += t * LU[matrix_index(j, k)];
-            }
+        for (unsigned j = k + 1; j < 15u; ++j) {
+            __builtin_assume(j < 15u);
+            x[j] += t * LU[midx(j, k)];
         }
     }
 
-    for (size_type kb = 0; kb < N; ++kb) {
-        const size_type k = N - 1 - kb;
-        x[k] /= LU[matrix_index(k, k)];
+    for (unsigned kb = 0; kb < 15u; ++kb) {
+        const unsigned k = 14u - kb;
+        x[k] /= LU[midx(k, k)];
         const Real t = -x[k];
-        for (size_type j = 0; j < k; ++j) {
-            __builtin_assume(j < 15);
-            x[j] += t * LU[matrix_index(j, k)];
+        for (unsigned j = 0; j < k; ++j) {
+            __builtin_assume(j < 15u);
+            x[j] += t * LU[midx(j, k)];
         }
     }
 
@@ -8223,7 +8221,7 @@ DEVICE void solve(ScratchView s, Real* ak) {
 DEVICE Real error_norm(ScratchView s) {
 
         Real err = 0.0;
-        for (size_type i = 0; i < N; ++i) {
+        for (unsigned i = 0; i < 15u; ++i) {
             const Real sk = s.atol_vec[i] + s.rtol_vec[i] * math::max(math::abs(s.y[i]), math::abs(s.ynew[i]));
             const Real term = s.work[i] / sk;
             err += term * term;
