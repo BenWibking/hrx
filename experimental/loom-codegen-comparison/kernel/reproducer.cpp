@@ -8223,7 +8223,7 @@ DEVICE void solve(ScratchView s, Real* ak) {
 DEVICE Real error_norm(ScratchView s) {
 
         Real err = 0.0;
-        for (size_type i = 0; i < N; ++i) {
+        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
             const Real sk = s.atol_vec[i] + s.rtol_vec[i] * math::max(math::abs(s.y[i]), math::abs(s.ynew[i]));
             const Real term = s.work[i] / sk;
             err += term * term;
