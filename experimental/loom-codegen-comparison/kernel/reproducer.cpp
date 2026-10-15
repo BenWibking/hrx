@@ -5717,9 +5717,13 @@ DEVICE void rhs(Real t, const Real* y, Real* out, ScratchView s) {
 DEVICE void eval_jacobian(ScratchView s, Real x) {
 
     // jac_nuc unconditionally writes all 225 entries; no pre-zeroing needed.
-    BurnView b = s.burn;
-    burn_state_from_y_view(s.y, b);
-    jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
+    // ABLATION PROBE: evaluate the (idempotent) Jacobian twice to measure its
+    // share of the runtime. Not a candidate.
+    for (unsigned r = 0; r < 2u; ++r) {
+        BurnView b = s.burn;
+        burn_state_from_y_view(s.y, b);
+        jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
+    }
     s.n_jac[0] += 1;
 
 }
