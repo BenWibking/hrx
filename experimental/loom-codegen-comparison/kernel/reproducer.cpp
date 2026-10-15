@@ -8100,58 +8100,69 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
     s.n_jac[0] += 1;
 
 }
-DEVICE int lu_decomposition(Real* A, int* ipvt) {
-
-    int info = 0;
-
-    if constexpr (N > 1) {
-        for (size_type k = 0; k < N - 1; ++k) {
-            size_type pivot_row = k;
-            Real max_val = math::abs(A[matrix_index(k, k)]);
-            for (size_type i = k + 1; i < N; ++i) {
-                const Real val = math::abs(A[matrix_index(i, k)]);
-                if (val > max_val) {
-                    max_val = val;
-                    pivot_row = i;
-                }
-            }
-            ipvt[k] = static_cast<int>(pivot_row);
-            __builtin_assume(pivot_row < 15);
-
-            if (A[matrix_index(pivot_row, k)] != 0.0) {
-                if (pivot_row != k) {
-                    const Real t = A[matrix_index(pivot_row, k)];
-                    A[matrix_index(pivot_row, k)] = A[matrix_index(k, k)];
-                    A[matrix_index(k, k)] = t;
-                    for (size_type j = k + 1; j < N; ++j) {
-                        const Real trailing = A[matrix_index(pivot_row, j)];
-                        A[matrix_index(pivot_row, j)] = A[matrix_index(k, j)];
-                        A[matrix_index(k, j)] = trailing;
-                    }
-                }
-
-                const Real multiplier = -1.0 / A[matrix_index(k, k)];
-                for (size_type i = k + 1; i < N; ++i) {
-                    A[matrix_index(i, k)] *= multiplier;
-                }
-
-                for (size_type j = k + 1; j < N; ++j) {
-                    const Real t = A[matrix_index(k, j)];
-                    for (size_type i = k + 1; i < N; ++i) {
-                        A[matrix_index(i, j)] += t * A[matrix_index(i, k)];
-                    }
-                }
-            } else {
-                info = static_cast<int>(k + 1);
-            }
+DEVICE unsigned midx(unsigned row, unsigned column) {
+  unsigned index = row * 15u + column;
+  __builtin_assume(index < 225u);
+  return index;
+}
+// One elimination step of the reference LU with a compile-time column K.
+// Same arithmetic per element as the reference; the pivot row's trailing
+// values stay in registers and each trailing row is scaled then updated
+// (i outer, j inner; every element sees the identical operation sequence).
+template <unsigned K>
+DEVICE int lu_step(Real* A, int* ipvt, int info) {
+    unsigned pivot_row = K;
+    Real max_val = math::abs(A[midx(K, K)]);
+    for (unsigned i = K + 1; i < 15u; ++i) {
+        const Real val = math::abs(A[midx(i, K)]);
+        if (val > max_val) {
+            max_val = val;
+            pivot_row = i;
         }
     }
+    ipvt[K] = static_cast<int>(pivot_row);
+    __builtin_assume(pivot_row < 15u);
 
-    if constexpr (N > 0) {
-        ipvt[N - 1] = static_cast<int>(N - 1);
-        if (A[matrix_index(N - 1, N - 1)] == 0.0) {
-            info = static_cast<int>(N);
+    if (A[midx(pivot_row, K)] != 0.0) {
+        if (pivot_row != K) {
+            const Real t = A[midx(pivot_row, K)];
+            A[midx(pivot_row, K)] = A[midx(K, K)];
+            A[midx(K, K)] = t;
+            [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                const Real trailing = A[midx(pivot_row, j)];
+                A[midx(pivot_row, j)] = A[midx(K, j)];
+                A[midx(K, j)] = trailing;
+            }
         }
+
+        const Real multiplier = -1.0 / A[midx(K, K)];
+        Real row[14 - K];
+        [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+            row[j - K - 1] = A[midx(K, j)];
+        }
+        for (unsigned i = K + 1; i < 15u; ++i) {
+            const Real m = A[midx(i, K)] * multiplier;
+            A[midx(i, K)] = m;
+            [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                A[midx(i, j)] += row[j - K - 1] * m;
+            }
+        }
+    } else {
+        info = static_cast<int>(K + 1);
+    }
+    if constexpr (K + 1 < 14u) {
+        return lu_step<K + 1>(A, ipvt, info);
+    } else {
+        return info;
+    }
+}
+DEVICE int lu_decomposition(Real* A, int* ipvt) {
+
+    int info = lu_step<0>(A, ipvt, 0);
+
+    ipvt[14] = 14;
+    if (A[midx(14u, 14u)] == 0.0) {
+        info = 15;
     }
 
     return info;
