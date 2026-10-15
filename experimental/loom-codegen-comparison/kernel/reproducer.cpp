@@ -5778,9 +5778,44 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
             row[j - K - 1] = A[midx(K, j)];
         }
         Real next_max = 0.0;
-        for (unsigned i = K + 1; i < 15u; ++i) {
-            // Load the whole trailing row first, then store it: no store
-            // between this row's loads (one memory wait per row).
+        // Two trailing rows per iteration: both rows' loads issue before
+        // either row is stored (half the store->load drains). Rows are
+        // processed and pivot-tracked in the same order as before.
+        constexpr unsigned NT = 14u - K;
+        constexpr unsigned NP = NT / 2u;
+        for (unsigned q = 0; q < NP; ++q) {
+            const unsigned i = K + 1u + 2u * q;
+            Real cur[15 - K];
+            Real cur2[15 - K];
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                cur[j - K] = A[midx(i, j)];
+                cur2[j - K] = A[midx(i + 1u, j)];
+            }
+            const Real m = cur[0] * multiplier;
+            const Real m2 = cur2[0] * multiplier;
+            [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                cur[j - K] = cur[j - K] + row[j - K - 1] * m;
+                cur2[j - K] = cur2[j - K] + row[j - K - 1] * m2;
+            }
+            if constexpr (K + 1 < 14u) {
+                const Real val = math::abs(cur[1]);
+                const bool take = (i == K + 1) | (val > next_max);
+                next_max = take ? val : next_max;
+                next_pivot = take ? i : next_pivot;
+                const Real val2 = math::abs(cur2[1]);
+                const bool take2 = val2 > next_max;
+                next_max = take2 ? val2 : next_max;
+                next_pivot = take2 ? i + 1u : next_pivot;
+            }
+            A[midx(i, K)] = m;
+            A[midx(i + 1u, K)] = m2;
+            [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                A[midx(i, j)] = cur[j - K];
+                A[midx(i + 1u, j)] = cur2[j - K];
+            }
+        }
+        if constexpr ((NT & 1u) != 0u) {
+            const unsigned i = 14u;
             Real cur[15 - K];
             [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
                 cur[j - K] = A[midx(i, j)];
