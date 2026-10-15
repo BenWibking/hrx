@@ -86,6 +86,7 @@ _MODULES = [
     "shaped_intrinsics",
     "short_circuit",
     "storage_updates",
+    "structured_break",
     "structured_continue",
     "symbol_exports",
     "typed_views",
@@ -99,9 +100,7 @@ _MODULES = [
 ]
 
 _XFAILS = {
-    "vector_values": {
-        "@vector_values_signed_functions": "TARGET/003",
-    },
+    "vector_values": {},
 }
 
 [
@@ -393,6 +392,7 @@ loom_check_test(
     for name in [
         "assembly_lowering",
         "assembly_invalid",
+        "dynamic_vector_slices",
         "integer_extrema",
         "matrix_fragments",
         "opaque_pointers",

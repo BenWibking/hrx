@@ -171,6 +171,7 @@ loom_check_test_suite(
         "vector_conversion_invalid.cxx-test",
         "vector_decode.cxx-test",
         "vector_decode_invalid.cxx-test",
+        "vector_lane_updates.cxx-test",
         "vector_list_assignment.cxx-test",
         "vector_list_assignment_invalid.cxx-test",
         "vector_lookup.cxx-test",
@@ -221,6 +222,19 @@ loom_check_test(
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
 )
 
+loom_check_test(
+    name = "vector_lane_updates_roundtrip_test",
+    src = "vector_lane_updates_roundtrip.cxx-test",
+    data = ["//loom/py/loom/tools:loom-export-cxx"],
+    env = {
+        "LOOM_EXPORT_CXX": "$(rootpath //loom/py/loom/tools:loom-export-cxx)",
+    },
+    # CMake exercises the Python tool through its execution-suite smoke; this
+    # exact golden requires Bazel's executable runfile for the emit provider.
+    tags = ["skip-bazel_to_cmake"],
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+)
+
 _AUTHORED_HOST_SOURCES = [
     "assumptions",
     "comparison_functions",
@@ -231,6 +245,7 @@ _AUTHORED_HOST_SOURCES = [
     "record_values",
     "schedule_values",
     "shaped_intrinsics",
+    "structured_break",
     "structured_continue",
     "vector_initializers",
     "vector_values",
@@ -577,6 +592,7 @@ loom_test_module(
         "packed_group_dot",
         "pointer_walk",
         "short_circuit",
+        "structured_break",
         "symbol_exports",
         "vector_depth",
         "vector_lookup",

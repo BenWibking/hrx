@@ -273,6 +273,54 @@ TEST(ControlFlowTest, NestedMemberWritesRetainTheOwningBindingAndSlice) {
   EXPECT_EQ(pointer->member, &kPointerPartition);
 }
 
+TEST(ControlFlowTest, VectorLaneWritesRetainTheOwningVectorSlice) {
+  loom_cxx_import_options_t options;
+  loom_cxx_import_options_initialize(&options);
+  Source source(IREE_SV(R"(
+    using Lanes = unsigned __attribute__((ext_vector_type(4)));
+    struct Packet { unsigned prefix; Lanes lanes; };
+    void entry(Packet packet, Packet* memory, unsigned index) {
+      if (index < 4) {
+        packet.lanes[index++] += 1;
+        memory[index].lanes[index] = 2;
+      }
+    }
+  )"),
+                IREE_SV("vector_lane_writes.cpp"), options);
+  auto* function = definition(source);
+  ASSERT_NE(function, nullptr);
+  auto* body = cxx::ast_cast<cxx::CompoundStatementFunctionBodyAST>(
+                   function->functionBody)
+                   ->statement;
+  auto* branch = cxx::ast_cast<cxx::IfStatementAST>(body->statementList->value);
+  ASSERT_NE(branch, nullptr);
+  auto* arm = cxx::ast_cast<cxx::CompoundStatementAST>(branch->statement);
+  ASSERT_NE(arm, nullptr);
+  auto* automatic_statement =
+      cxx::ast_cast<cxx::ExpressionStatementAST>(arm->statementList->value);
+  auto* automatic = cxx::ast_cast<cxx::CompoundAssignmentExpressionAST>(
+      automatic_statement->expression);
+  ASSERT_NE(automatic, nullptr);
+  auto* memory_statement = cxx::ast_cast<cxx::ExpressionStatementAST>(
+      arm->statementList->next->value);
+  auto* memory =
+      cxx::ast_cast<cxx::AssignmentExpressionAST>(memory_statement->expression);
+  ASSERT_NE(memory, nullptr);
+
+  Types types(source.unit(), source.diagnostics());
+  ControlFlow analysis(source.unit(), source.diagnostics(), types, body);
+  auto writes = analysis.written(branch);
+  ASSERT_EQ(writes.size(), 2u);
+  EXPECT_EQ(writes[0], function->symbol->parameters()[0]);
+  EXPECT_EQ(writes[1], function->symbol->parameters()[2]);
+  auto lane = analysis.destination(automatic->targetExpression);
+  ASSERT_TRUE(lane.has_value());
+  EXPECT_EQ(lane->binding, function->symbol->parameters()[0]);
+  EXPECT_EQ(lane->component_offset, 1u);
+  EXPECT_EQ(lane->member, &kSSAPartition);
+  EXPECT_FALSE(analysis.destination(memory->leftExpression).has_value());
+}
+
 TEST(ControlFlowTest, MemoryMembersRetainStorageIdentityAndAddressSideEffects) {
   loom_cxx_import_options_t options;
   loom_cxx_import_options_initialize(&options);
@@ -397,33 +445,52 @@ TEST(ControlFlowTest, IterationExitsStopAtTheirLoopAndExcludeUnreachablePaths) {
     const char* body;
     // Paths that continue the outer loop.
     ExitFlow continues;
+    // Paths that break from the outer loop.
+    ExitFlow breaks;
+    // Paths that leave the current iteration by either transfer.
+    ExitFlow iteration_exits;
     // Paths that return from the enclosing function.
     ExitFlow returns;
   };
   const Case cases[] = {
-      {"", ExitFlow::None, ExitFlow::None},
-      {"continue;", ExitFlow::All, ExitFlow::None},
-      {"if (x) continue;", ExitFlow::Some, ExitFlow::None},
-      {"if (x) continue; else continue;", ExitFlow::All, ExitFlow::None},
-      {"if constexpr(true) continue; else return;", ExitFlow::All,
+      {"", ExitFlow::None, ExitFlow::None, ExitFlow::None, ExitFlow::None},
+      {"continue;", ExitFlow::All, ExitFlow::None, ExitFlow::All,
        ExitFlow::None},
-      {"if constexpr(false) continue; else return;", ExitFlow::None,
-       ExitFlow::All},
-      {"if constexpr(false) continue;", ExitFlow::None, ExitFlow::None},
-      {"if constexpr(true) { if (x) continue; } else return;", ExitFlow::Some,
+      {"break;", ExitFlow::None, ExitFlow::All, ExitFlow::All, ExitFlow::None},
+      {"if (x) continue;", ExitFlow::Some, ExitFlow::None, ExitFlow::Some,
        ExitFlow::None},
-      {"if (x) { if (y) continue; } else { if (y) continue; }", ExitFlow::Some,
+      {"if (x) break;", ExitFlow::None, ExitFlow::Some, ExitFlow::Some,
        ExitFlow::None},
-      {"if (x) continue; return;", ExitFlow::Some, ExitFlow::Some},
-      {"continue; return;", ExitFlow::All, ExitFlow::None},
-      {"return; continue;", ExitFlow::None, ExitFlow::All},
-      {"while (x) { --x; continue; }", ExitFlow::None, ExitFlow::None},
-      {"do { --x; continue; } while (x);", ExitFlow::None, ExitFlow::None},
-      {"for (unsigned j=0; j<4u; ++j) { if (y) continue; }", ExitFlow::None,
-       ExitFlow::None},
-      {"while (x) { continue; return; }", ExitFlow::None, ExitFlow::None},
-      {"do { if (x) continue; return; } while (y);", ExitFlow::None,
+      {"if (x) break; else continue;", ExitFlow::Some, ExitFlow::Some,
+       ExitFlow::All, ExitFlow::None},
+      {"if (x) break; else break;", ExitFlow::None, ExitFlow::All,
+       ExitFlow::All, ExitFlow::None},
+      {"if constexpr(true) break; else continue;", ExitFlow::None,
+       ExitFlow::All, ExitFlow::All, ExitFlow::None},
+      {"if constexpr(false) break; else return;", ExitFlow::None,
+       ExitFlow::None, ExitFlow::None, ExitFlow::All},
+      {"if constexpr(false) break;", ExitFlow::None, ExitFlow::None,
+       ExitFlow::None, ExitFlow::None},
+      {"if constexpr(true) { if (x) break; } else return;", ExitFlow::None,
+       ExitFlow::Some, ExitFlow::Some, ExitFlow::None},
+      {"if (x) { if (y) continue; } else { if (y) break; }", ExitFlow::Some,
+       ExitFlow::Some, ExitFlow::Some, ExitFlow::None},
+      {"if (x) break; return;", ExitFlow::None, ExitFlow::Some, ExitFlow::Some,
        ExitFlow::Some},
+      {"break; return;", ExitFlow::None, ExitFlow::All, ExitFlow::All,
+       ExitFlow::None},
+      {"return; break;", ExitFlow::None, ExitFlow::None, ExitFlow::None,
+       ExitFlow::All},
+      {"while (x) { --x; continue; }", ExitFlow::None, ExitFlow::None,
+       ExitFlow::None, ExitFlow::None},
+      {"do { --x; break; } while (x);", ExitFlow::None, ExitFlow::None,
+       ExitFlow::None, ExitFlow::None},
+      {"for (unsigned j=0; j<4u; ++j) { if (y) break; }", ExitFlow::None,
+       ExitFlow::None, ExitFlow::None, ExitFlow::None},
+      {"while (x) { break; return; }", ExitFlow::None, ExitFlow::None,
+       ExitFlow::None, ExitFlow::None},
+      {"do { if (x) break; return; } while (y);", ExitFlow::None,
+       ExitFlow::None, ExitFlow::None, ExitFlow::Some},
   };
   loom_cxx_import_options_t options;
   loom_cxx_import_options_initialize(&options);
@@ -443,9 +510,15 @@ TEST(ControlFlowTest, IterationExitsStopAtTheirLoopAndExcludeUnreachablePaths) {
     Types types(source.unit(), source.diagnostics());
     ControlFlow analysis(source.unit(), source.diagnostics(), types, body);
     EXPECT_EQ(analysis.continues(loop->statement), test.continues);
+    EXPECT_EQ(analysis.breaks(loop->statement), test.breaks);
+    EXPECT_EQ(analysis.iteration_exits(loop->statement), test.iteration_exits);
     EXPECT_EQ(analysis.returns(loop->statement), test.returns);
     EXPECT_EQ(analysis.continues(loop), ExitFlow::None);
+    EXPECT_EQ(analysis.breaks(loop), ExitFlow::None);
+    EXPECT_EQ(analysis.iteration_exits(loop), ExitFlow::None);
     EXPECT_EQ(analysis.continues(body), ExitFlow::None);
+    EXPECT_EQ(analysis.breaks(body), ExitFlow::None);
+    EXPECT_EQ(analysis.iteration_exits(body), ExitFlow::None);
     EXPECT_NE(analysis.counted(loop), nullptr);
   }
 }

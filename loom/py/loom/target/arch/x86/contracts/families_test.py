@@ -30,7 +30,10 @@ from loom.target.arch.x86.scalar_families import (
 )
 from loom.target.arch.x86.vector_families import (
     AVX2_CARRIER_VECTOR_BIT_WIDTHS,
+    AVX2_FLOAT_BINARY_FAMILIES,
+    AVX2_FLOAT_FMA_MNEMONICS,
     AVX2_FLOAT_REDUCTION_OPERATIONS,
+    AVX2_FLOAT_VECTOR_BIT_WIDTHS,
     AVX2_INTEGER_REDUCTION_FAMILIES,
     AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
     AVX2_PAYLOAD_ELEMENT_NAMES,
@@ -560,6 +563,7 @@ def test_scalar_compare_select_rules_cover_native_carrier_matrix() -> None:
         case
         for case in X86_SCALAR_CONTRACT_FRAGMENT.cases
         if isinstance(case, DescriptorRule)
+        and case.source_op in (scalar_comparison.scalar_cmpi, index.index_cmp)
         and case.descriptor is not None
         and case.descriptor.key.startswith("x86.scalar.cmp.select.")
     )
@@ -987,6 +991,8 @@ def test_vector_memory_covers_storage_families_and_carrier_widths() -> None:
     ):
         for family in X86_VECTOR_STORAGE_FAMILIES:
             for vector_bit_width in AVX2_CARRIER_VECTOR_BIT_WIDTHS:
+                if vector_bit_width < family.element_bit_width:
+                    continue
                 value_type = Vector(
                     family.element_names,
                     lanes=vector_bit_width // family.element_bit_width,
@@ -1014,15 +1020,28 @@ def test_vector_memory_covers_storage_families_and_carrier_widths() -> None:
                     assert memory[0].source_memory.vector_lane_count == (
                         vector_bit_width // family.element_bit_width
                     )
-                    descriptor_prefix = (
-                        "x86.avx2.vmovsd."
-                        if vector_bit_width == 64
-                        else "x86.avx2.vmovdqu32."
-                    )
+                    if vector_bit_width <= 16:
+                        descriptor_prefix = (
+                            "x86.scalar.movzx."
+                            if source_op is vector.vector_load
+                            else "x86.scalar.mov."
+                        )
+                        assert any(
+                            emit.descriptor.key.startswith("x86.avx2.vmovd.")
+                            for emit in rule.emit
+                            if isinstance(emit, EmitDescriptorOp)
+                        )
+                    elif vector_bit_width == 32:
+                        descriptor_prefix = "x86.avx2.vmovss."
+                    elif vector_bit_width == 64:
+                        descriptor_prefix = "x86.avx2.vmovsd."
+                    else:
+                        descriptor_prefix = "x86.avx2.vmovdqu32."
                     assert memory[0].descriptor.key.startswith(descriptor_prefix)
 
 
 def test_avx2_lane_movement_covers_every_payload_type_and_width() -> None:
+    assert AVX2_CARRIER_VECTOR_BIT_WIDTHS == (8, 16, 32, 64, 128, 256)
     rules = tuple(
         case
         for case in X86_AVX2_CONTRACT_FRAGMENT.cases
@@ -1041,8 +1060,9 @@ def test_avx2_lane_movement_covers_every_payload_type_and_width() -> None:
             (0, vector_bit_width // row.element_bit_width - 1),
         )
         for row in X86_LANE_FAMILIES
-        for vector_bit_width in AVX2_CARRIER_VECTOR_BIT_WIDTHS
+        for vector_bit_width in (8, 16, 32, 64, 128, 256)
         for source_op in (vector.vector_extract, vector.vector_insert)
+        if vector_bit_width >= row.element_bit_width
     }
     expected.update(
         (
@@ -1052,8 +1072,9 @@ def test_avx2_lane_movement_covers_every_payload_type_and_width() -> None:
             (0, vector_bit_width // element_bit_width - 1),
         )
         for element_name, element_bit_width in (("f32", 32), ("f64", 64))
-        for vector_bit_width in AVX2_CARRIER_VECTOR_BIT_WIDTHS
+        for vector_bit_width in (8, 16, 32, 64, 128, 256)
         for source_op in (vector.vector_extract, vector.vector_insert)
+        if vector_bit_width >= element_bit_width
         if not (
             element_name == "f64"
             and vector_bit_width == 128
@@ -1105,10 +1126,85 @@ def test_avx2_splats_cover_every_register_carried_payload() -> None:
     expected = {
         Vector(element.name, lanes=vector_bit_width // element.bit_width)
         for element in (*INTEGER_ELEMENTS, *STORAGE_ELEMENTS, *FLOAT_ELEMENTS)
-        for vector_bit_width in AVX2_CARRIER_VECTOR_BIT_WIDTHS
+        for vector_bit_width in (8, 16, 32, 64, 128, 256)
+        if vector_bit_width >= element.bit_width
     }
     assert {_value_type_guard(rule, "result") for rule in rules} == expected
     assert len(rules) == len(expected)
+
+
+def test_avx2_memory_covers_every_register_carried_payload() -> None:
+    rules = tuple(
+        case
+        for case in X86_AVX2_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+        and case.source_op in (vector.vector_load, vector.vector_store)
+    )
+    actual = set()
+    for rule in rules:
+        type_field = "result" if rule.source_op is vector.vector_load else "value"
+        memory_emits = tuple(
+            emit
+            for emit in rule.emit
+            if isinstance(emit, EmitDescriptorOp)
+            and emit.source_memory is not None
+            and emit.descriptor.semantic_tag.startswith("memory.")
+        )
+        assert len(memory_emits) == 1
+        memory_emit = memory_emits[0]
+        source_memory = memory_emit.source_memory
+        assert source_memory is not None
+        vector_bit_width = (
+            source_memory.element_byte_count * source_memory.vector_lane_count * 8
+        )
+        actual.add(
+            (
+                rule.source_op,
+                _value_type_guard(rule, type_field),
+                vector_bit_width,
+            )
+        )
+        descriptor_prefix = {
+            8: "x86.scalar.",
+            16: "x86.scalar.",
+            32: "x86.avx2.vmovss.",
+            64: "x86.avx2.vmovsd.",
+            128: "x86.avx2.vmovdqu32.",
+            256: "x86.avx2.vmovdqu32.",
+        }[vector_bit_width]
+        assert memory_emit.descriptor.key.startswith(descriptor_prefix)
+        transport_keys = {
+            emit.descriptor.key
+            for emit in rule.emit
+            if isinstance(emit, EmitDescriptorOp)
+            and emit.descriptor.key.startswith("x86.avx2.vmovd.")
+        }
+        if vector_bit_width <= 16:
+            assert transport_keys == {
+                (
+                    "x86.avx2.vmovd.xmm.gpr32"
+                    if rule.source_op is vector.vector_load
+                    else "x86.avx2.vmovd.gpr32.xmm"
+                )
+            }
+        else:
+            assert not transport_keys
+
+    expected = {
+        (
+            source_op,
+            Vector(
+                family.element_names,
+                lanes=vector_bit_width // family.element_bit_width,
+            ),
+            vector_bit_width,
+        )
+        for family in X86_VECTOR_STORAGE_FAMILIES
+        for vector_bit_width in (8, 16, 32, 64, 128, 256)
+        for source_op in (vector.vector_load, vector.vector_store)
+        if vector_bit_width >= family.element_bit_width
+    }
+    assert actual == expected
 
 
 def test_exact_lane_construction_covers_every_payload_type_and_width() -> None:
@@ -1288,7 +1384,8 @@ def test_avx2_float_bitcasts_cover_every_storage_family_and_width() -> None:
             (("f32",), "i32", 32),
             (("f64",), "i64", 64),
         )
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+        for vector_bit_width in AVX2_CARRIER_VECTOR_BIT_WIDTHS
+        if vector_bit_width >= element_bit_width
         for lane_count in (vector_bit_width // element_bit_width,)
         for source_type, result_type in (
             (
@@ -1310,6 +1407,65 @@ def test_avx2_float_bitcasts_cover_every_storage_family_and_width() -> None:
     }
     assert actual == expected
     assert len(rules) == len(expected)
+
+
+def test_avx2_float_arithmetic_covers_every_carrier_width() -> None:
+    rules = tuple(
+        case
+        for case in X86_AVX2_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+    )
+    register_suffixes = {32: "xmm", 64: "xmm", 128: "xmm", 256: "ymm"}
+    expected_direct = {
+        (
+            f"vector.{family.source_operation}",
+            f"x86.avx2.{family.mnemonic}.{register_suffixes[vector_bit_width]}",
+            Vector(
+                family.element.name,
+                lanes=vector_bit_width // family.element.bit_width,
+            ),
+        )
+        for family in AVX2_FLOAT_BINARY_FAMILIES
+        for vector_bit_width in AVX2_FLOAT_VECTOR_BIT_WIDTHS
+        if vector_bit_width >= family.element.bit_width
+    }
+    assert {
+        (rule.source_op.name, rule.descriptor.key, _value_type_guard(rule, "result"))
+        for rule in rules
+        if rule.source_op.name
+        in {
+            f"vector.{family.source_operation}" for family in AVX2_FLOAT_BINARY_FAMILIES
+        }
+    } == expected_direct
+
+    expected_fma = {
+        (
+            f"x86.avx2.{AVX2_FLOAT_FMA_MNEMONICS[element.name]}."
+            f"{register_suffixes[vector_bit_width]}",
+            Vector(element.name, lanes=vector_bit_width // element.bit_width),
+        )
+        for element in FLOAT_ELEMENTS
+        for vector_bit_width in AVX2_FLOAT_VECTOR_BIT_WIDTHS
+        if vector_bit_width >= element.bit_width
+    }
+    assert {
+        (rule.descriptor.key, _value_type_guard(rule, "result"))
+        for rule in rules
+        if rule.source_op is vector.vector_fmaf
+    } == expected_fma
+
+    expected_constant_types = {
+        Vector(element.name, lanes=vector_bit_width // element.bit_width)
+        for element in FLOAT_ELEMENTS
+        for vector_bit_width in AVX2_FLOAT_VECTOR_BIT_WIDTHS
+        if vector_bit_width >= element.bit_width
+    }
+    assert {
+        _value_type_guard(rule, "result")
+        for rule in rules
+        if rule.source_op is vector.vector_constant
+        and _value_type_guard(rule, "result") in expected_constant_types
+    } == expected_constant_types
 
 
 def test_avx512_construction_covers_every_zmm_payload_type() -> None:
@@ -1398,7 +1554,7 @@ def test_avx512_arithmetic_covers_every_native_family() -> None:
     rules = tuple(
         case
         for case in X86_AVX512_CONTRACT_FRAGMENT.cases
-        if isinstance(case, DescriptorRule)
+        if isinstance(case, DescriptorRule) and case.descriptor is not None
     )
     register_suffixes = {128: "xmm", 256: "ymm", 512: "zmm"}
     expected_direct = {
@@ -1494,6 +1650,7 @@ def test_avx2_iotas_cover_every_integer_element_and_width() -> None:
         for element in INTEGER_ELEMENTS
         for vector_bit_width in AVX2_CARRIER_VECTOR_BIT_WIDTHS
         for priority in (0, 1)
+        if vector_bit_width >= element.bit_width
         if vector_bit_width != element.bit_width or priority == 0
     }
     assert actual == expected
@@ -1557,7 +1714,7 @@ def test_float_extrema_cover_every_semantic_and_width() -> None:
         vector.vector_maxnumf: "maxnumf",
     }
     for fragment, vector_bit_widths in (
-        (X86_AVX2_CONTRACT_FRAGMENT, AVX2_VECTOR_BIT_WIDTHS),
+        (X86_AVX2_CONTRACT_FRAGMENT, AVX2_FLOAT_VECTOR_BIT_WIDTHS),
         (X86_AVX512_CONTRACT_FRAGMENT, AVX512_VECTOR_BIT_WIDTHS),
     ):
         extrema_rules = tuple(
@@ -1583,6 +1740,7 @@ def test_float_extrema_cover_every_semantic_and_width() -> None:
             for operation in FLOAT_EXTREMA_OPERATIONS
             for element in FLOAT_ELEMENTS
             for vector_bit_width in vector_bit_widths
+            if vector_bit_width >= element.bit_width
         }
         priorities_by_cell = {}
         for rule in extrema_rules:
@@ -1703,9 +1861,15 @@ def test_integer_reductions_cover_every_native_combine_family() -> None:
 
 def test_float_reductions_and_dots_cover_both_types_and_all_widths() -> None:
     for fragment, vector_bit_widths in (
-        (X86_AVX2_CONTRACT_FRAGMENT, AVX2_VECTOR_BIT_WIDTHS),
+        (X86_AVX2_CONTRACT_FRAGMENT, AVX2_FLOAT_VECTOR_BIT_WIDTHS),
         (X86_AVX512_CONTRACT_FRAGMENT, AVX512_VECTOR_BIT_WIDTHS),
     ):
+        valid_shapes = tuple(
+            (element, vector_bit_width)
+            for element in FLOAT_ELEMENTS
+            for vector_bit_width in vector_bit_widths
+            if vector_bit_width >= element.bit_width
+        )
         reduction_rules = tuple(
             rule
             for rule in fragment.cases
@@ -1728,10 +1892,7 @@ def test_float_reductions_and_dots_cover_both_types_and_all_widths() -> None:
             in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
         )
         assert len(packed_reduction_rules) == (
-            len(AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS)
-            * len(FLOAT_ELEMENTS)
-            * len(vector_bit_widths)
-            * 2
+            len(AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS) * len(valid_shapes) * 2
         )
         assert {
             (
@@ -1762,8 +1923,7 @@ def test_float_reductions_and_dots_cover_both_types_and_all_widths() -> None:
                 fastmath_guard,
             )
             for operation in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
-            for element in FLOAT_ELEMENTS
-            for vector_bit_width in vector_bit_widths
+            for element, vector_bit_width in valid_shapes
             for fastmath_guard in (
                 GuardKind.INSTANCE_FLAGS_HAS_NONE,
                 GuardKind.INSTANCE_FLAGS_HAS_ALL,
@@ -1781,7 +1941,7 @@ def test_float_reductions_and_dots_cover_both_types_and_all_widths() -> None:
             in FLOAT_EXTREMA_OPERATIONS
         )
         assert len(fast_extrema_rules) == (
-            len(FLOAT_EXTREMA_OPERATIONS) * len(FLOAT_ELEMENTS) * len(vector_bit_widths)
+            len(FLOAT_EXTREMA_OPERATIONS) * len(valid_shapes)
         )
         assert {
             (
@@ -1808,8 +1968,7 @@ def test_float_reductions_and_dots_cover_both_types_and_all_widths() -> None:
                 frozenset(("reassoc", "nnan", "nsz")),
             )
             for operation in FLOAT_EXTREMA_OPERATIONS
-            for element in FLOAT_ELEMENTS
-            for vector_bit_width in vector_bit_widths
+            for element, vector_bit_width in valid_shapes
         }
 
         dot_rules = tuple(
@@ -1817,7 +1976,7 @@ def test_float_reductions_and_dots_cover_both_types_and_all_widths() -> None:
             for rule in fragment.cases
             if isinstance(rule, DescriptorRule) and rule.source_op is vector.vector_dotf
         )
-        assert len(dot_rules) == len(FLOAT_ELEMENTS) * len(vector_bit_widths)
+        assert len(dot_rules) == len(valid_shapes)
         assert {
             (
                 _value_type_guard(rule, "lhs"),
@@ -1828,8 +1987,7 @@ def test_float_reductions_and_dots_cover_both_types_and_all_widths() -> None:
             for rule in dot_rules
         } == {
             (vector_type, vector_type, scalar_type, scalar_type)
-            for element in FLOAT_ELEMENTS
-            for vector_bit_width in vector_bit_widths
+            for element, vector_bit_width in valid_shapes
             for vector_type in (
                 Vector(
                     element.name,

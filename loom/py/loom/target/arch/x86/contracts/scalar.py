@@ -30,6 +30,9 @@ from loom.dsl import Op
 from loom.target.arch.x86.contracts.constants import (
     floating_storage_scalar_constant_rule,
 )
+from loom.target.arch.x86.contracts.integer_bits import (
+    scalar_integer_bit_count_rules,
+)
 from loom.target.arch.x86.contracts.integer_division import (
     runtime_integer_division_rules,
     unsigned_constant_division_rules,
@@ -89,7 +92,7 @@ _I16_MIN = -(2**15)
 _I16_MAX = (2**15) - 1
 _I32_MIN = -(2**31)
 _I32_MAX = (2**31) - 1
-_I64_MIN = -(2**63) + 1
+_I64_MIN = -(2**63)
 _I64_MAX = (2**63) - 1
 _DISP32_MIN = -(2**31)
 _DISP32_MAX = (2**31) - 1
@@ -452,7 +455,7 @@ def _index_const_i64_rule(
         guards=(
             Guard.attr_kind("value", "i64"),
             Guard.value_type("result", result_type),
-            Guard.i64_range("value", -(2**63) + 1, (2**63) - 1),
+            Guard.i64_range("value", _I64_MIN, _I64_MAX),
         ),
         emit=(
             EmitDescriptorOp(
@@ -1549,6 +1552,7 @@ def _cases() -> Sequence[ContractCase]:
         ),
         *unsigned_constant_division_rules(descriptor_lookup),
         *runtime_integer_division_rules(descriptor_lookup),
+        *scalar_integer_bit_count_rules(descriptor_lookup),
     )
 
 

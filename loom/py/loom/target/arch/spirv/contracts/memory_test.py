@@ -4,6 +4,9 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from loom.target.arch.spirv.contracts.cooperative_matrix import (
+    COOPERATIVE_MATRIX_MEMORY_RULES,
+)
 from loom.target.arch.spirv.contracts.logical_core import (
     SPIRV_LOGICAL_CORE_CONTRACT_FRAGMENT,
 )
@@ -86,20 +89,79 @@ def test_cooperative_memory_uses_logical_shapes_without_carrier_widths() -> None
             )
         )
     expected = {
-        (family, role, element, rows, columns, workgroup, layout)
-        for family, source_element, accumulator_element, k_size in (
-            ("f16", "f16", "f32", 16),
-            ("bf16", "bf16", "f32", 16),
-            ("s8", "i8", "i32", 32),
-            ("u8", "i8", "i32", 32),
+        (scalar, role, element, rows, columns, workgroup, layout)
+        for scalar, element, rows, columns, roles in (
+            ("f16", "f16", 16, 16, ("lhs", "rhs", "init", "result")),
+            ("bf16", "bf16", 16, 16, ("lhs", "rhs")),
+            ("i8", "i8", 16, 32, ("lhs",)),
+            ("i8", "i8", 32, 16, ("rhs",)),
+            ("u8", "i8", 16, 32, ("lhs",)),
+            ("u8", "i8", 32, 16, ("rhs",)),
+            ("f32", "f32", 16, 16, ("init", "result")),
+            ("i32", "i32", 16, 16, ("init", "result")),
+            ("u32", "i32", 16, 16, ("init", "result")),
         )
-        for role, element, rows, columns in (
-            ("lhs", source_element, 16, k_size),
-            ("rhs", source_element, k_size, 16),
-            ("init", accumulator_element, 16, 16),
-            ("result", accumulator_element, 16, 16),
-        )
+        for role in roles
         for workgroup in (False, True)
+        for layout in (0, 1)
+    }
+    assert signatures == expected
+
+
+def test_cooperative_memory_uses_the_retained_allocation_carrier() -> None:
+    signatures = set()
+    for rule in COOPERATIVE_MATRIX_MEMORY_RULES:
+        memory = rule.emit[-1].source_memory
+        if "workgroup" not in memory.memory_spaces:
+            continue
+        role = next(
+            guard.enum_keyword
+            for guard in rule.guards
+            if guard.kind == GuardKind.ENUM_ATTR_EQUALS
+        )
+        carrier_guard = next(
+            guard
+            for guard in rule.guards
+            if guard.kind == GuardKind.LOW_VALUE_REGISTER_CLASS
+        )
+        carrier = carrier_guard.register_class.removeprefix(
+            "spirv.ptr.workgroup.array."
+        )
+        layout = rule.emit[-1].immediates["memory_layout"]
+        signature = (rule.descriptor.key.split(".")[3], role, carrier, layout)
+        assert signature not in signatures
+        signatures.add(signature)
+        for step in rule.emit:
+            assert step.source_memory is memory
+            assert step.source_memory_address_materializer.address.key == (
+                f"spirv.op_access_chain.workgroup.{carrier}.byte_offset"
+            )
+        assert (
+            memory.element_byte_count
+            == {
+                "f16": 2,
+                "bf16": 2,
+                "i16": 2,
+                "f32": 4,
+                "i8": 1,
+                "u8": 1,
+                "i32": 4,
+                "u32": 4,
+            }[carrier]
+        )
+    expected = {
+        (scalar, role, carrier, layout)
+        for scalar, roles, carriers in (
+            ("f16", ("lhs", "rhs", "init", "result"), ("f16", "i16")),
+            ("bf16", ("lhs", "rhs"), ("bf16", "i16")),
+            ("i8", ("lhs", "rhs"), ("i8",)),
+            ("u8", ("lhs", "rhs"), ("u8", "i8")),
+            ("f32", ("init", "result"), ("f32", "i32")),
+            ("i32", ("init", "result"), ("i32",)),
+            ("u32", ("init", "result"), ("u32", "i32")),
+        )
+        for role in roles
+        for carrier in carriers
         for layout in (0, 1)
     }
     assert signatures == expected

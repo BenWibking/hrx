@@ -20,6 +20,16 @@ iree_py_library(
 
 iree_py_library(
   NAME
+    compile_report_suggestions
+  SRCS
+    "compile_report_suggestions.py"
+  DEPS
+    loom::py::loom::target::arch::x86::package_init
+    loom::py::loom::reporting::reporting
+)
+
+iree_py_library(
+  NAME
     target_info
   SRCS
     "feature_bits.py"
@@ -85,6 +95,7 @@ iree_py_library(
     "descriptors/common.py"
     "descriptors/composite.py"
     "descriptors/encoding.py"
+    "descriptors/integer_bits.py"
     "descriptors/integer_float.py"
     "descriptors/memory.py"
     "descriptors/packed_dot.py"

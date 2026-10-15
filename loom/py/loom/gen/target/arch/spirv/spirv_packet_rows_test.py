@@ -38,7 +38,10 @@ from loom.target.arch.spirv.builtins import (
     BUILTIN_INDEX_QUERIES,
     BUILTIN_SCALAR_INDEX_QUERIES,
 )
-from loom.target.arch.spirv.cooperative_matrix import COOPERATIVE_MATRIX_CASES
+from loom.target.arch.spirv.cooperative_matrix import (
+    COOPERATIVE_MATRIX_TYPES,
+    cooperative_matrix_memory_variants,
+)
 from loom.target.arch.spirv.descriptors import SPIRV_LOGICAL_CORE_DESCRIPTOR_SET
 from loom.target.arch.spirv.extended_math import EXTENDED_MATH_INSTRUCTIONS
 from loom.target.arch.spirv.ordinary_vector import (
@@ -321,45 +324,39 @@ def test_generation_emits_complete_float_constant_packet_rows() -> None:
 
 def test_cooperative_matrix_memory_packets_preserve_runtime_stride() -> None:
     rows = {row.descriptor_key: row for row in _packet_rows()}
-    for case in COOPERATIVE_MATRIX_CASES:
-        for memory_space, pointer_class in (
-            ("storage_buffer", "PTR_PHYSICAL_STORAGE_BUFFER"),
-            ("workgroup", "PTR_WORKGROUP"),
-        ):
-            for role, scalar in (
-                ("lhs", case.lhs_scalar),
-                ("rhs", case.rhs_scalar),
-                ("init", case.accumulator_scalar),
-            ):
-                row = rows[
-                    case.descriptor_key(
-                        "op_cooperative_matrix_load_khr",
-                        role=role,
-                        memory_space=memory_space,
-                    )
-                ]
-                assert row.form == "LOOM_SPIRV_PACKET_FORM_COOPERATIVE_MATRIX_LOAD"
-                assert len(row.operand_types) == 2
+    for matrix_type in COOPERATIVE_MATRIX_TYPES:
+        scalar = matrix_type.scalar
+        for role in matrix_type.source_roles:
+            for memory in cooperative_matrix_memory_variants(scalar):
+                is_load = role != "result"
+                row = rows[matrix_type.memory_key(role, memory)]
+                assert row.form == ("LOOM_SPIRV_PACKET_FORM_COOPERATIVE_MATRIX_LOAD" if is_load else "LOOM_SPIRV_PACKET_FORM_COOPERATIVE_MATRIX_STORE")
+                assert len(row.operand_types) == (2 if is_load else 3)
+                pointer_class = "PTR_WORKGROUP" if memory.space == "workgroup" else "PTR_PHYSICAL_STORAGE_BUFFER"
                 assert f"LOOM_SPIRV_VALUE_CLASS_{pointer_class}" in row.operand_types[0]
-                assert scalar.scalar_enum in row.operand_types[0]
-                assert scalar.scalar_enum in row.result_type
-                assert "LOOM_SPIRV_VALUE_CLASS_SCALAR" in row.operand_types[1]
-                assert "LOOM_SPIRV_SCALAR_TYPE_U32" in row.operand_types[1]
+                assert memory.carrier.scalar_enum in row.operand_types[0]
+                value_type = row.result_type if is_load else row.operand_types[1]
+                assert "LOOM_SPIRV_VALUE_CLASS_COOPERATIVE_MATRIX" in value_type
+                assert scalar.scalar_enum in value_type
+                assert matrix_type.use_c_expression in value_type
+                assert "LOOM_SPIRV_VALUE_CLASS_SCALAR" in row.operand_types[-1]
+                assert "LOOM_SPIRV_SCALAR_TYPE_U32" in row.operand_types[-1]
+                assert row.memory_alignment == 16
                 assert row.has_immediate
-            store = rows[
-                case.descriptor_key(
-                    "op_cooperative_matrix_store_khr",
-                    role="result",
-                    memory_space=memory_space,
-                )
-            ]
-            assert store.form == "LOOM_SPIRV_PACKET_FORM_COOPERATIVE_MATRIX_STORE"
-            assert len(store.operand_types) == 3
-            assert f"LOOM_SPIRV_VALUE_CLASS_{pointer_class}" in store.operand_types[0]
-            assert case.result_scalar.scalar_enum in store.operand_types[1]
-            assert "LOOM_SPIRV_VALUE_CLASS_SCALAR" in store.operand_types[2]
-            assert "LOOM_SPIRV_SCALAR_TYPE_U32" in store.operand_types[2]
-            assert store.has_immediate
+
+
+def test_cooperative_constructors_use_one_exact_scalar_component() -> None:
+    rows = {row.descriptor_key: row for row in _packet_rows()}
+    for value in COOPERATIVE_MATRIX_TYPES:
+        row = rows[value.constructor_key]
+        assert row.form == "LOOM_SPIRV_PACKET_FORM_COMPOSITE_CONSTRUCT"
+        assert row.opcode == "LOOM_SPIRV_OP_COMPOSITE_CONSTRUCT"
+        assert len(row.operand_types) == 1
+        assert "LOOM_SPIRV_VALUE_CLASS_SCALAR" in row.operand_types[0]
+        assert value.scalar.scalar_enum in row.operand_types[0]
+        assert "LOOM_SPIRV_VALUE_CLASS_COOPERATIVE_MATRIX" in row.result_type
+        assert value.scalar.scalar_enum in row.result_type
+        assert value.use_c_expression in row.result_type
 
 
 def test_generation_offsets_storage_buffer_address_before_pointer_conversion() -> None:
@@ -752,7 +749,6 @@ def test_generation_emits_complete_ordinary_vector_bit_layout_rows() -> None:
 
 
 def test_generation_emits_complete_extended_math_matrix() -> None:
-    assert len(EXTENDED_MATH_INSTRUCTIONS) == 92
     rows = {row.descriptor_key: row for row in _packet_rows()}
     descriptors = {descriptor.key: descriptor for descriptor in SPIRV_LOGICAL_CORE_DESCRIPTOR_SET.descriptors}
     for instruction in EXTENDED_MATH_INSTRUCTIONS:

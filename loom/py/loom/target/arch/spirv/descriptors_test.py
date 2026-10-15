@@ -24,7 +24,9 @@ from loom.target.arch.spirv.builtins import (
 )
 from loom.target.arch.spirv.cooperative_matrix import (
     COOPERATIVE_MATRIX_CASES,
+    COOPERATIVE_MATRIX_TYPES,
     cooperative_matrix_descriptor_key,
+    cooperative_matrix_memory_variants,
 )
 from loom.target.arch.spirv.descriptors import SPIRV_LOGICAL_CORE_DESCRIPTOR_SET
 from loom.target.arch.spirv.extended_math import EXTENDED_MATH_INSTRUCTIONS
@@ -316,6 +318,31 @@ def _extended_math_result_recipes() -> dict[str, AsmResultValueType]:
     return recipes
 
 
+def _cooperative_matrix_result_keys() -> list[str]:
+    keys = [matrix_type.constructor_key for matrix_type in COOPERATIVE_MATRIX_TYPES]
+    keys.extend(
+        matrix_type.memory_key(role, memory)
+        for matrix_type in COOPERATIVE_MATRIX_TYPES
+        for role in matrix_type.source_roles
+        if role != "result"
+        for memory in cooperative_matrix_memory_variants(matrix_type.scalar)
+    )
+    keys.extend(
+        cooperative_matrix_descriptor_key(
+            "op_cooperative_matrix_mul_add_khr",
+            element=case.element,
+            m_size=case.m_size,
+            n_size=case.n_size,
+            k_size=case.k_size,
+            accumulator=case.accumulator,
+            scope="subgroup",
+            operand_mode=case.operand_mode,
+        )
+        for case in COOPERATIVE_MATRIX_CASES
+    )
+    return keys
+
+
 def test_result_asm_recipes_cover_every_spirv_descriptor_family() -> None:
     expected_recipes: dict[str, AsmResultValueType] = {}
     carrier_only_keys: set[str] = set()
@@ -502,28 +529,8 @@ def test_result_asm_recipes_cover_every_spirv_descriptor_family() -> None:
     add_carrier_only(f"spirv.op_uconvert.{raw_byte_suffix}.u32")
     add_carrier_only(f"spirv.op_uconvert.u32.{raw_byte_suffix}")
 
-    for case in COOPERATIVE_MATRIX_CASES:
-        for role in ("lhs", "rhs", "init"):
-            for memory_space in ("storage_buffer", "workgroup"):
-                add_carrier_only(
-                    case.descriptor_key(
-                        "op_cooperative_matrix_load_khr",
-                        role=role,
-                        memory_space=memory_space,
-                    )
-                )
-        add_carrier_only(
-            cooperative_matrix_descriptor_key(
-                "op_cooperative_matrix_mul_add_khr",
-                element=case.element,
-                m_size=case.m_size,
-                n_size=case.n_size,
-                k_size=case.k_size,
-                accumulator=case.accumulator,
-                scope="subgroup",
-                operand_mode=case.operand_mode,
-            )
-        )
+    for key in _cooperative_matrix_result_keys():
+        add_carrier_only(key)
     add_carrier_only("spirv.op_variable.function.ptr")
 
     actual_forms = {
@@ -563,20 +570,35 @@ def test_workgroup_matrix_memory_needs_no_storage_buffer_features() -> None:
     storage_bits = feature_bits_value(
         ("storage_buffer_8bit_access", "storage_buffer_16bit_access")
     )
-    for case in COOPERATIVE_MATRIX_CASES:
-        for role in ("lhs", "rhs", "init", "result"):
-            descriptor = descriptors[
-                case.descriptor_key(
-                    "op_cooperative_matrix_store_khr"
-                    if role == "result"
-                    else "op_cooperative_matrix_load_khr",
-                    role=role,
-                    memory_space="workgroup",
+    for matrix_type in COOPERATIVE_MATRIX_TYPES:
+        scalar = matrix_type.scalar
+        for role in matrix_type.source_roles:
+            for memory in cooperative_matrix_memory_variants(scalar):
+                if memory.space != "workgroup":
+                    continue
+                descriptor = descriptors[matrix_type.memory_key(role, memory)]
+                features = descriptor.feature_mask_words[0]
+                assert features == matrix_type.feature_bits | memory.feature_bits
+                assert not features & storage_bits
+                assert (
+                    features & scalar.register_feature_bits
+                    == scalar.register_feature_bits
                 )
-            ]
-            assert not descriptor.feature_mask_words[0] & storage_bits
-            assert descriptor.immediates[0].unsigned_max == 1
-            memory_effect = next(
-                effect for effect in descriptor.effects if effect.is_memory_access
-            )
-            assert memory_effect.width_bits == 0
+                assert (
+                    features & memory.carrier.register_feature_bits
+                    == memory.carrier.register_feature_bits
+                )
+                assert descriptor.immediates[0].unsigned_max == 1
+                pointer = next(
+                    operand
+                    for operand in descriptor.operands
+                    if operand.field_name == "ptr"
+                )
+                assert tuple(
+                    alternative.reg_class for alternative in pointer.reg_alts
+                ) == (f"spirv.ptr.workgroup.{memory.carrier.suffix}",)
+                memory_effect = next(
+                    effect for effect in descriptor.effects if effect.is_memory_access
+                )
+                assert memory_effect.memory_space == MemorySpace.WORKGROUP
+                assert memory_effect.width_bits == 0

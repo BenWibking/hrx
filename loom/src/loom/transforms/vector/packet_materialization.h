@@ -53,17 +53,25 @@ iree_status_t loom_vector_packet_preserve_memory_load_components(
 iree_status_t loom_vector_packet_staging_load(
     loom_vector_packetization_t* packetization, loom_value_id_t staging_view,
     loom_type_t vector_type, const loom_vector_packet_slice_t* slice,
-    const loom_op_t* source_op, loom_value_id_t* out_packet);
+    const loom_op_t* source_op, loom_vector_packet_value_t* out_packet);
 
 iree_status_t loom_vector_packet_materialize(
     loom_vector_packetization_t* packetization, loom_value_id_t source,
     const loom_vector_packet_slice_t* slice,
     loom_vector_packetized_value_t** out_value);
 
+// Computes the exact number of operations needed to materialize one dynamic
+// packet from every selected producer. Returns false when the offset facts do
+// not intersect the source domain or the operation count overflows.
+bool loom_vector_packet_dynamic_materialization_operation_count(
+    const loom_vector_packetization_t* packetization,
+    loom_value_facts_t lane_offset_facts, uint32_t lane_count,
+    iree_host_size_t* out_operation_count);
+
 iree_status_t loom_vector_packet_store(
     loom_vector_packetization_t* packetization,
     const loom_vector_memory_footprint_t* store_footprint,
-    const loom_vector_packet_slice_t* slice, loom_value_id_t packet,
+    const loom_vector_packet_slice_t* slice, loom_vector_packet_value_t packet,
     loom_vector_memory_cache_policy_t store_cache_policy, loom_op_t* store_op);
 
 bool loom_vector_packet_static_operation_count_is_bounded(
@@ -99,7 +107,7 @@ iree_status_t loom_vector_packet_build_staging_view(
 
 iree_status_t loom_vector_packet_staging_store(
     loom_vector_packetization_t* packetization, loom_value_id_t staging_view,
-    const loom_vector_packet_slice_t* slice, loom_value_id_t packet,
+    const loom_vector_packet_slice_t* slice, loom_vector_packet_value_t packet,
     const loom_op_t* source_op);
 
 iree_status_t loom_vector_packet_canonicalize_snapshots(

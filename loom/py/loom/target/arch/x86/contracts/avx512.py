@@ -15,6 +15,10 @@ from loom.dialect.vector import ALL_VECTOR_OPS
 from loom.target.arch.x86.contracts.avx512_predicate import (
     avx512_predicate_rules,
 )
+from loom.target.arch.x86.contracts.float_roots import (
+    scalar_float_root_rules,
+    vector_float_root_rules,
+)
 from loom.target.arch.x86.contracts.floating_extrema import (
     avx512_float_extrema_rules,
 )
@@ -37,7 +41,18 @@ from loom.target.arch.x86.contracts.vector_arithmetic import (
 from loom.target.arch.x86.contracts.vector_construction import (
     avx512_vector_construction_rules,
 )
+from loom.target.arch.x86.contracts.vector_integer_conversion import (
+    avx512_vector_integer_narrowing_rules,
+    vector_integer_widening_rules,
+)
 from loom.target.arch.x86.descriptors import X86_AVX512_CORE_DESCRIPTOR_SET
+from loom.target.arch.x86.vector_families import (
+    AVX512_CARRIER_VECTOR_BIT_WIDTHS,
+    AVX512_FLOAT_ROOT_FAMILIES,
+    AVX512_ROOT_VECTOR_BIT_WIDTHS,
+    AVX512_SCALAR_FLOAT_ROOT_FAMILIES,
+    AVX512_VECTOR_BIT_WIDTHS,
+)
 from loom.target.contracts import (
     ContractCase,
     ContractFragment,
@@ -68,11 +83,44 @@ def _memory_rules() -> tuple[DescriptorRule, ...]:
 
 
 def _cases() -> Sequence[ContractCase]:
+    exact_roots = tuple(
+        family for family in AVX512_FLOAT_ROOT_FAMILIES if not family.approximate
+    )
+    approximate_roots = tuple(
+        family for family in AVX512_FLOAT_ROOT_FAMILIES if family.approximate
+    )
     return (
         *avx512_integer_float_rules(_descriptor),
         *avx512_vector_construction_rules(_descriptor),
+        *vector_integer_widening_rules(
+            _descriptor,
+            descriptor_key_prefix="x86.avx512",
+            source_vector_bit_widths=AVX512_CARRIER_VECTOR_BIT_WIDTHS,
+            result_vector_bit_widths=(512,),
+        ),
+        *avx512_vector_integer_narrowing_rules(_descriptor),
         *avx512_predicate_rules(_descriptor),
         *avx512_vector_arithmetic_rules(_descriptor),
+        *scalar_float_root_rules(
+            _descriptor,
+            descriptor_key_prefix="x86.avx512",
+            families=AVX512_SCALAR_FLOAT_ROOT_FAMILIES,
+            priority=1,
+        ),
+        *vector_float_root_rules(
+            _descriptor,
+            descriptor_key_prefix="x86.avx512",
+            families=exact_roots,
+            vector_bit_widths=AVX512_VECTOR_BIT_WIDTHS,
+            priority=1,
+        ),
+        *vector_float_root_rules(
+            _descriptor,
+            descriptor_key_prefix="x86.avx512",
+            families=approximate_roots,
+            vector_bit_widths=AVX512_ROOT_VECTOR_BIT_WIDTHS,
+            priority=1,
+        ),
         *avx512_float_extrema_rules(_descriptor),
         *avx512_integer_reduction_rules(_descriptor),
         *avx512_float_reduction_rules(_descriptor),

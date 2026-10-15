@@ -50,6 +50,7 @@ from loom.target.contracts import (
     LowerEmitKind,
     OperandSegmentProject,
     OrdinalValueAliasRule,
+    ReadOnlyDataLiteral,
     RecipeRule,
     Scalar,
     SignedDivisorMagicKind,
@@ -2107,6 +2108,65 @@ def test_compile_lower_rule_set_projects_exact_operand_segment_data() -> None:
     assert attr_copy.kind.is_read_only_data
 
 
+def test_compile_lower_rule_set_packs_read_only_data_literals() -> None:
+    descriptor = replace(
+        TEST_LOW_FROM_ELEMENTS_V4I32_DESCRIPTOR,
+        immediates=(
+            Immediate(
+                "data",
+                ImmediateKind.ORDINAL,
+                flags=(ImmediateFlag.READ_ONLY_DATA,),
+                bit_width=32,
+                unsigned_max=(2**32) - 1,
+            ),
+        ),
+    )
+    descriptor_set = replace(
+        TEST_LOW_CORE_DESCRIPTOR_SET,
+        descriptors=tuple(
+            descriptor
+            if row.key == TEST_LOW_FROM_ELEMENTS_V4I32_DESCRIPTOR.key
+            else row
+            for row in TEST_LOW_CORE_DESCRIPTOR_SET.descriptors
+        ),
+    )
+    table = ContractFragment(
+        name="test.literal-read-only-data",
+        descriptor_set=descriptor_set,
+        cases=(
+            DescriptorRule(
+                source_op=vector.vector_from_elements,
+                descriptor=descriptor,
+                guards=(
+                    Guard.operand_segment_count("elements", 4),
+                    Guard.value_type("result", Vector("i32", lanes=4)),
+                ),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=descriptor,
+                        operands={
+                            f"lane{i}": ValueRef.operand("elements", element=i)
+                            for i in range(4)
+                        },
+                        results={"dst": ValueRef.result("result")},
+                        immediates={"data": ReadOnlyDataLiteral(b"\x00\x80\xff\x7f")},
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"vector": ALL_VECTOR_OPS})
+
+    assert compiled.literal_data == b"\x00\x80\xff\x7f"
+    assert len(compiled.attr_copies) == 1
+    attr_copy = compiled.attr_copies[0]
+    assert attr_copy.kind is LowerAttrCopyKind.READ_ONLY_DATA_LITERAL
+    assert attr_copy.literal_data_offset == 0
+    assert attr_copy.literal_data_length == 4
+    assert attr_copy.kind.is_read_only_data
+
+
 def test_compile_lower_rule_set_orders_variadic_arity_before_value_guards() -> None:
     table = ContractFragment(
         name="test.variadic-guard-order",
@@ -2149,6 +2209,7 @@ def test_compile_lower_rule_set_selects_variadic_value_type_element() -> None:
                         element=1,
                     ),
                     Guard.value_type("result", Vector("i32", lanes=5)),
+                    Guard.value_no_uses("result"),
                 ),
                 emit=(
                     EmitDescriptorOp(
@@ -2972,6 +3033,7 @@ def test_compile_lower_rule_set_rejects_descriptor_rule_without_emit() -> None:
             DescriptorRule(
                 source_op=scalar_arithmetic.scalar_addi,
                 descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
+                guards=(Guard.value_no_uses("result"),),
             )
         ],
     )
@@ -3681,6 +3743,7 @@ def test_compile_lower_rule_set_projects_guarded_variadic_value_type_dimension()
                         Vector("i32", dims=(2, 4)),
                         element=1,
                     ),
+                    Guard.value_no_uses("result"),
                 ),
                 emit=(
                     EmitDescriptorOp(
@@ -3740,6 +3803,7 @@ def test_compile_lower_rule_set_projects_guarded_variadic_value_type_dimension()
                 Vector("i32", lanes=4),
                 element=1,
             ),
+            Guard.value_no_uses("result"),
         ),
     )
     with pytest.raises(

@@ -11,13 +11,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 AVX2_VECTOR_BIT_WIDTHS = (128, 256)
-# The x86 call ABI carries 64-bit vectors in the low half of an XMM register.
-# These payloads use AVX2 construction and lane-movement instructions even though
-# they are narrower than an architecturally native packed arithmetic width.
-AVX2_CARRIER_VECTOR_BIT_WIDTHS = (64, *AVX2_VECTOR_BIT_WIDTHS)
+# The x86 call ABI carries subregister vectors in the low bits of an XMM
+# register. These payloads use AVX2 construction and lane-movement instructions
+# even though they are narrower than an architecturally native packed arithmetic
+# width.
+AVX2_CARRIER_VECTOR_BIT_WIDTHS = (8, 16, 32, 64, *AVX2_VECTOR_BIT_WIDTHS)
+# Packed floating-point instructions operate lane-wise over the low-XMM carrier,
+# so 64-bit logical packets use the same XMM descriptors as architecturally
+# native packed widths. One-lane f32 packets retain their scalar projection.
+AVX2_FLOAT_VECTOR_BIT_WIDTHS = (64, *AVX2_VECTOR_BIT_WIDTHS)
 AVX512_VECTOR_BIT_WIDTHS = (512,)
+AVX512_CARRIER_VECTOR_BIT_WIDTHS = (
+    *AVX2_CARRIER_VECTOR_BIT_WIDTHS,
+    *AVX512_VECTOR_BIT_WIDTHS,
+)
 AVX512VL_VECTOR_BIT_WIDTHS = AVX2_VECTOR_BIT_WIDTHS
-AVX512_FP16_VECTOR_BIT_WIDTHS = (64, 128, 256, 512)
+# One-lane vectors use the scalar FP16 family. Packed forms start at two lanes.
+AVX512_FP16_VECTOR_BIT_WIDTHS = (32, 64, 128, 256, 512)
+AVX2_ROOT_VECTOR_BIT_WIDTHS = AVX2_FLOAT_VECTOR_BIT_WIDTHS
+AVX512_ROOT_VECTOR_BIT_WIDTHS = (
+    *AVX2_ROOT_VECTOR_BIT_WIDTHS,
+    *AVX512_VECTOR_BIT_WIDTHS,
+)
 AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS = (
     *AVX2_VECTOR_BIT_WIDTHS,
     *AVX512_VECTOR_BIT_WIDTHS,
@@ -47,6 +62,17 @@ class VectorBinaryFamily:
 
 
 @dataclass(frozen=True, slots=True)
+class FloatRootFamily:
+    """Square-root operation row with its source precision contract."""
+
+    source_operation: str
+    mnemonic: str
+    semantic: str
+    element: VectorElement
+    approximate: bool
+
+
+@dataclass(frozen=True, slots=True)
 class VectorLaneFamily:
     """Bit-compatible scalar lane movement shared by source element types."""
 
@@ -64,11 +90,66 @@ class VectorStorageFamily:
     element_names: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class VectorIntegerWideningFamily:
+    """One signed and unsigned packed-integer widening pair."""
+
+    source: VectorElement
+    result: VectorElement
+    signed_mnemonic: str
+    unsigned_mnemonic: str
+
+
+@dataclass(frozen=True, slots=True)
+class VectorIntegerNarrowingFamily:
+    """One packed-integer narrowing pair."""
+
+    source: VectorElement
+    result: VectorElement
+    mnemonic: str
+
+    @property
+    def avx2_half_result_bit_width(self) -> int:
+        """Bit width produced from one 128-bit AVX2 source lane."""
+
+        return 128 * self.result.bit_width // self.source.bit_width
+
+
 INTEGER_ELEMENTS = (
     VectorElement("i8", 8),
     VectorElement("i16", 16),
     VectorElement("i32", 32),
     VectorElement("i64", 64),
+)
+
+X86_VECTOR_INTEGER_WIDENING_FAMILIES = (
+    VectorIntegerWideningFamily(
+        INTEGER_ELEMENTS[0], INTEGER_ELEMENTS[1], "vpmovsxbw", "vpmovzxbw"
+    ),
+    VectorIntegerWideningFamily(
+        INTEGER_ELEMENTS[0], INTEGER_ELEMENTS[2], "vpmovsxbd", "vpmovzxbd"
+    ),
+    VectorIntegerWideningFamily(
+        INTEGER_ELEMENTS[0], INTEGER_ELEMENTS[3], "vpmovsxbq", "vpmovzxbq"
+    ),
+    VectorIntegerWideningFamily(
+        INTEGER_ELEMENTS[1], INTEGER_ELEMENTS[2], "vpmovsxwd", "vpmovzxwd"
+    ),
+    VectorIntegerWideningFamily(
+        INTEGER_ELEMENTS[1], INTEGER_ELEMENTS[3], "vpmovsxwq", "vpmovzxwq"
+    ),
+    VectorIntegerWideningFamily(
+        INTEGER_ELEMENTS[2], INTEGER_ELEMENTS[3], "vpmovsxdq", "vpmovzxdq"
+    ),
+)
+
+X86_VECTOR_INTEGER_NARROWING_FAMILIES = (
+    VectorIntegerNarrowingFamily(INTEGER_ELEMENTS[1], INTEGER_ELEMENTS[0], "vpmovwb"),
+    VectorIntegerNarrowingFamily(INTEGER_ELEMENTS[2], INTEGER_ELEMENTS[0], "vpmovdb"),
+    VectorIntegerNarrowingFamily(INTEGER_ELEMENTS[3], INTEGER_ELEMENTS[0], "vpmovqb"),
+    VectorIntegerNarrowingFamily(INTEGER_ELEMENTS[2], INTEGER_ELEMENTS[1], "vpmovdw"),
+    VectorIntegerNarrowingFamily(INTEGER_ELEMENTS[3], INTEGER_ELEMENTS[1], "vpmovqw"),
+    VectorIntegerNarrowingFamily(INTEGER_ELEMENTS[3], INTEGER_ELEMENTS[2], "vpmovqd"),
 )
 
 FLOAT_ELEMENTS = (
@@ -253,6 +334,51 @@ AVX512_FP16_SCALAR_FLOAT_BINARY_FAMILIES = tuple(
     )
 )
 
+AVX2_FLOAT_ROOT_FAMILIES = (
+    FloatRootFamily("sqrtf", "vsqrtps", "float.sqrt", FLOAT_ELEMENTS[0], False),
+    FloatRootFamily("sqrtf", "vsqrtpd", "float.sqrt", FLOAT_ELEMENTS[1], False),
+    FloatRootFamily(
+        "rsqrtf", "vrsqrtps", "float.rsqrt.approx", FLOAT_ELEMENTS[0], True
+    ),
+)
+
+AVX2_SCALAR_FLOAT_ROOT_FAMILIES = (
+    FloatRootFamily("sqrtf", "vsqrtss", "float.sqrt", FLOAT_ELEMENTS[0], False),
+    FloatRootFamily("sqrtf", "vsqrtsd", "float.sqrt", FLOAT_ELEMENTS[1], False),
+    FloatRootFamily(
+        "rsqrtf", "vrsqrtss", "float.rsqrt.approx", FLOAT_ELEMENTS[0], True
+    ),
+)
+
+AVX512_FLOAT_ROOT_FAMILIES = (
+    *tuple(row for row in AVX2_FLOAT_ROOT_FAMILIES if not row.approximate),
+    FloatRootFamily(
+        "rsqrtf", "vrsqrt14ps", "float.rsqrt.approx", FLOAT_ELEMENTS[0], True
+    ),
+    FloatRootFamily(
+        "rsqrtf", "vrsqrt14pd", "float.rsqrt.approx", FLOAT_ELEMENTS[1], True
+    ),
+)
+
+AVX512_SCALAR_FLOAT_ROOT_FAMILIES = (
+    FloatRootFamily(
+        "rsqrtf", "vrsqrt14ss", "float.rsqrt.approx", FLOAT_ELEMENTS[0], True
+    ),
+    FloatRootFamily(
+        "rsqrtf", "vrsqrt14sd", "float.rsqrt.approx", FLOAT_ELEMENTS[1], True
+    ),
+)
+
+AVX512_FP16_FLOAT_ROOT_FAMILIES = (
+    FloatRootFamily("sqrtf", "vsqrtph", "float.sqrt", FP16_ELEMENT, False),
+    FloatRootFamily("rsqrtf", "vrsqrtph", "float.rsqrt.approx", FP16_ELEMENT, True),
+)
+
+AVX512_FP16_SCALAR_FLOAT_ROOT_FAMILIES = (
+    FloatRootFamily("sqrtf", "vsqrtsh", "float.sqrt", FP16_ELEMENT, False),
+    FloatRootFamily("rsqrtf", "vrsqrtsh", "float.rsqrt.approx", FP16_ELEMENT, True),
+)
+
 AVX2_BITWISE_FAMILIES = (
     ("andi", "vpand", "bits.and"),
     ("ori", "vpor", "bits.or"),
@@ -389,6 +515,25 @@ AVX2_PAYLOAD_ELEMENT_NAMES = tuple(
 
 
 def validate_vector_families() -> None:
+    widening_pairs = {
+        (family.source.name, family.result.name)
+        for family in X86_VECTOR_INTEGER_WIDENING_FAMILIES
+    }
+    if widening_pairs != {
+        (source.name, result.name)
+        for source_index, source in enumerate(INTEGER_ELEMENTS[:-1])
+        for result in INTEGER_ELEMENTS[source_index + 1 :]
+    }:
+        raise ValueError(
+            "x86 integer widening rows must cover every widening element pair"
+        )
+    widening_mnemonics = {
+        mnemonic
+        for family in X86_VECTOR_INTEGER_WIDENING_FAMILIES
+        for mnemonic in (family.signed_mnemonic, family.unsigned_mnemonic)
+    }
+    if len(widening_mnemonics) != 2 * len(X86_VECTOR_INTEGER_WIDENING_FAMILIES):
+        raise ValueError("x86 integer widening rows must use unique mnemonics")
     keys = [
         (family.source_operation, family.element.name)
         for family in (*AVX2_INTEGER_BINARY_FAMILIES, *AVX2_FLOAT_BINARY_FAMILIES)
@@ -437,6 +582,44 @@ def validate_vector_families() -> None:
         family.source_operation for family in AVX512_FP16_SCALAR_FLOAT_BINARY_FAMILIES
     } != fp16_binary_operations:
         raise ValueError("AVX-512 FP16 scalar and packed arithmetic must agree")
+    avx2_root_cells = {
+        (family.source_operation, family.element.name, family.approximate)
+        for family in AVX2_FLOAT_ROOT_FAMILIES
+    }
+    if avx2_root_cells != {
+        ("sqrtf", "f32", False),
+        ("sqrtf", "f64", False),
+        ("rsqrtf", "f32", True),
+    }:
+        raise ValueError("AVX2 root rows must cover exact roots and native rsqrt")
+    if {
+        (family.source_operation, family.element.name, family.approximate)
+        for family in AVX512_FLOAT_ROOT_FAMILIES
+    } != avx2_root_cells | {("rsqrtf", "f64", True)}:
+        raise ValueError("AVX-512 root rows must complete native F32/F64 roots")
+    if {
+        (family.source_operation, family.approximate)
+        for family in AVX512_FP16_FLOAT_ROOT_FAMILIES
+    } != {("sqrtf", False), ("rsqrtf", True)}:
+        raise ValueError("AVX-512 FP16 rows must cover exact sqrt and native rsqrt")
+    if {
+        (family.source_operation, family.element.name, family.approximate)
+        for family in AVX2_SCALAR_FLOAT_ROOT_FAMILIES
+    } != avx2_root_cells:
+        raise ValueError("AVX2 scalar and packed root rows must agree")
+    if {
+        (family.source_operation, family.element.name, family.approximate)
+        for family in AVX512_SCALAR_FLOAT_ROOT_FAMILIES
+    } != {
+        ("rsqrtf", "f32", True),
+        ("rsqrtf", "f64", True),
+    }:
+        raise ValueError("AVX-512 scalar root rows must cover VRSQRT14")
+    if {
+        (family.source_operation, family.approximate)
+        for family in AVX512_FP16_SCALAR_FLOAT_ROOT_FAMILIES
+    } != {("sqrtf", False), ("rsqrtf", True)}:
+        raise ValueError("AVX-512 FP16 scalar and packed root rows must agree")
     if set(AVX512_FP16_FLOAT_EXTREMA_MNEMONICS) != set(FLOAT_EXTREMA_OPERATIONS) or set(
         AVX512_FP16_SCALAR_FLOAT_EXTREMA_MNEMONICS
     ) != set(FLOAT_EXTREMA_OPERATIONS):

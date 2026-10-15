@@ -20,17 +20,20 @@ from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_BINARY_FAMILIES,
     AVX2_FLOAT_COMPARE_MNEMONICS,
     AVX2_FLOAT_FMA_MNEMONICS,
+    AVX2_FLOAT_ROOT_FAMILIES,
     AVX2_INTEGER_BINARY_FAMILIES,
     AVX2_INTEGER_COMPARE_MNEMONICS,
     AVX2_SCALAR_FLOAT_BINARY_FAMILIES,
     AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS,
     AVX2_SCALAR_FLOAT_FMA_MNEMONICS,
+    AVX2_SCALAR_FLOAT_ROOT_FAMILIES,
     AVX2_UNIFORM_SHIFT_FAMILIES,
     AVX2_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     FLOAT_EXTREMA_MNEMONICS,
     INTEGER_ELEMENTS,
     X86_LANE_FAMILIES,
+    X86_VECTOR_INTEGER_WIDENING_FAMILIES,
     VectorBinaryFamily,
     VectorLaneFamily,
 )
@@ -83,6 +86,8 @@ from .common import (
     _gpr64_operand,
     _gpr64_result,
     _scalar_float_binary_descriptor,
+    _scalar_float_unary_descriptor,
+    _vector_float_unary_descriptor,
     _vector_lane_units,
     _vector_operand,
     _vector_result,
@@ -186,6 +191,32 @@ def _vector_float_binary_family_descriptors(
             instruction=instruction,
         )
         for row, instruction in zip(rows, instructions, strict=True)
+        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+    )
+
+
+def _vector_float_root_family_descriptors() -> tuple[Descriptor, ...]:
+    return tuple(
+        _vex_descriptor(
+            _vector_float_unary_descriptor(
+                vector_bit_width=vector_bit_width,
+                key=(
+                    f"x86.avx2.{row.mnemonic}."
+                    f"{_VECTOR_REGISTER_SUFFIXES[vector_bit_width]}"
+                ),
+                mnemonic=row.mnemonic,
+                semantic_tag=(
+                    f"{row.semantic}.{row.element.name}x"
+                    f"{row.element.lane_count(vector_bit_width)}"
+                ),
+            ),
+            instruction,
+        )
+        for row, instruction in zip(
+            AVX2_FLOAT_ROOT_FAMILIES,
+            native.AVX2_FLOAT_ROOT,
+            strict=True,
+        )
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
     )
 
@@ -747,31 +778,6 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
         ),
         native.VPBROADCASTD_VECTOR_UNARY,
     ),
-    *(
-        _vector_widen_descriptor(
-            mnemonic=mnemonic,
-            result_bit_width=result_bit_width,
-            semantic_tag=(
-                f"integer.extend.signed.i{source_element_bit_width}x"
-                f"{result_bit_width // result_element_bit_width}."
-                f"i{result_element_bit_width}x"
-                f"{result_bit_width // result_element_bit_width}"
-            ),
-            instruction=instruction,
-            explicit_source_suffix=True,
-        )
-        for (
-            mnemonic,
-            source_element_bit_width,
-            result_element_bit_width,
-            instruction,
-        ) in (
-            ("vpmovsxdq", 32, 64, native.VPMOVSXDQ),
-            ("vpmovsxwd", 16, 32, native.VPMOVSXWD),
-            ("vpmovsxbw", 8, 16, native.VPMOVSXBW),
-        )
-        for result_bit_width in AVX2_VECTOR_BIT_WIDTHS
-    ),
     _vex_descriptor(
         Descriptor(
             key="x86.avx2.vpackssdw.xmm",
@@ -989,25 +995,43 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
             mnemonic=mnemonic,
             result_bit_width=result_bit_width,
             semantic_tag=(
-                f"integer.extui.i8x{result_bit_width // result_element_bit_width}."
+                f"integer.extend.{signedness}."
+                f"i{family.source.bit_width}x"
+                f"{result_bit_width // result_element_bit_width}."
                 f"i{result_element_bit_width}x"
                 f"{result_bit_width // result_element_bit_width}"
             ),
             instruction=instruction,
         )
-        for mnemonic, result_element_bit_width, instruction in (
-            ("vpmovzxbw", 16, native.VPMOVZXBW),
-            ("vpmovzxbd", 32, native.VPMOVZXBD),
-            ("vpmovzxbq", 64, native.VPMOVZXBQ),
+        for family, instructions in zip(
+            X86_VECTOR_INTEGER_WIDENING_FAMILIES,
+            native.PACKED_INTEGER_WIDEN,
+            strict=True,
         )
+        for mnemonic, signedness, instruction in zip(
+            (family.signed_mnemonic, family.unsigned_mnemonic),
+            ("signed", "unsigned"),
+            instructions,
+            strict=True,
+        )
+        for result_element_bit_width in (family.result.bit_width,)
         for result_bit_width in AVX2_VECTOR_BIT_WIDTHS
     ),
-    _vector_binary_descriptor(
-        vector_bit_width=128,
-        mnemonic="vpunpcklqdq",
-        semantic_tag="bits.interleave.low.i64x2",
-        schedule_class=_SCHEDULE_VECTOR_I32_XMM,
-        instruction=native.VPUNPCKLQDQ,
+    *(
+        _vector_binary_descriptor(
+            vector_bit_width=128,
+            mnemonic=mnemonic,
+            semantic_tag=(
+                f"bits.interleave.low.i{element_bit_width}x{128 // element_bit_width}"
+            ),
+            schedule_class=_SCHEDULE_VECTOR_I32_XMM,
+            instruction=instruction,
+        )
+        for mnemonic, element_bit_width, instruction in (
+            ("vpunpcklwd", 16, native.VPUNPCKLWD),
+            ("vpunpckldq", 32, native.VPUNPCKLDQ),
+            ("vpunpcklqdq", 64, native.VPUNPCKLQDQ),
+        )
     ),
     *(
         _vector_binary_descriptor(
@@ -1054,6 +1078,7 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
     *_vector_float_binary_family_descriptors(
         AVX2_FLOAT_BINARY_FAMILIES, native.AVX2_FLOAT_BINARY
     ),
+    *_vector_float_root_family_descriptors(),
     *(
         _vector_binary_descriptor(
             vector_bit_width=vector_bit_width,
@@ -1092,6 +1117,21 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
         for row, instruction in zip(
             AVX2_SCALAR_FLOAT_BINARY_FAMILIES,
             native.AVX2_SCALAR_FLOAT_BINARY,
+            strict=True,
+        )
+    ),
+    *(
+        _vex_descriptor(
+            _scalar_float_unary_descriptor(
+                key=f"x86.avx2.{row.mnemonic}.xmm",
+                mnemonic=row.mnemonic,
+                semantic_tag=f"{row.semantic}.{row.element.name}",
+            ),
+            instruction,
+        )
+        for row, instruction in zip(
+            AVX2_SCALAR_FLOAT_ROOT_FAMILIES,
+            native.AVX2_SCALAR_FLOAT_ROOT,
             strict=True,
         )
     ),
