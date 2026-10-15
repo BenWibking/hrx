@@ -8168,34 +8168,37 @@ DEVICE int lu_decomposition(Real* A, int* ipvt) {
     return info;
 
 }
+// Reference solve steps with compile-time K: same operations, 32-bit
+// constant-offset indexing, x stays in memory.
+template <unsigned K>
+DEVICE void lu_solve_forward(const Real* LU, const int* ipvt, Real* x) {
+    const unsigned pivot_row = static_cast<unsigned>(ipvt[K]);
+    __builtin_assume(pivot_row < 15u);
+    const Real t = x[pivot_row];
+    if (pivot_row != K) {
+        x[pivot_row] = x[K];
+        x[K] = t;
+    }
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        x[j] += t * LU[midx(j, K)];
+    }
+    if constexpr (K + 1 < 14u) lu_solve_forward<K + 1>(LU, ipvt, x);
+}
+template <unsigned K>
+DEVICE void lu_solve_backward(const Real* LU, Real* x) {
+    x[K] /= LU[midx(K, K)];
+    const Real t = -x[K];
+    if constexpr (K > 0) {
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            x[j] += t * LU[midx(j, K)];
+        }
+        lu_solve_backward<K - 1>(LU, x);
+    }
+}
 DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 
-    if constexpr (N > 1) {
-        for (size_type k = 0; k < N - 1; ++k) {
-            const auto pivot_row = static_cast<size_type>(ipvt[k]);
-            __builtin_assume(pivot_row < 15);
-            Real t = x[pivot_row];
-            if (pivot_row != k) {
-                x[pivot_row] = x[k];
-                x[k] = t;
-            }
-
-            for (size_type j = k + 1; j < N; ++j) {
-                __builtin_assume(j < 15);
-                x[j] += t * LU[matrix_index(j, k)];
-            }
-        }
-    }
-
-    for (size_type kb = 0; kb < N; ++kb) {
-        const size_type k = N - 1 - kb;
-        x[k] /= LU[matrix_index(k, k)];
-        const Real t = -x[k];
-        for (size_type j = 0; j < k; ++j) {
-            __builtin_assume(j < 15);
-            x[j] += t * LU[matrix_index(j, k)];
-        }
-    }
+    lu_solve_forward<0>(LU, ipvt, x);
+    lu_solve_backward<14>(LU, x);
 
 }
 DEVICE int decompose(ScratchView s, Real fac) {
