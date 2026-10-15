@@ -8102,56 +8102,57 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
 }
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
+    // Same arithmetic as the reference LU, reordered per element only:
+    // the pivot row's trailing values are held in registers (row[]), and each
+    // trailing row is scaled and updated in one pass (i outer, j inner).
     int info = 0;
+    for (int k = 0; k < 14; ++k) {
+        int pivot_row = k;
+        Real max_val = math::abs(A[k * 15 + k]);
+        for (int i = k + 1; i < 15; ++i) {
+            const Real val = math::abs(A[i * 15 + k]);
+            if (val > max_val) {
+                max_val = val;
+                pivot_row = i;
+            }
+        }
+        ipvt[k] = pivot_row;
+        __builtin_assume(pivot_row < 15);
 
-    if constexpr (N > 1) {
-        for (size_type k = 0; k < N - 1; ++k) {
-            size_type pivot_row = k;
-            Real max_val = math::abs(A[matrix_index(k, k)]);
-            for (size_type i = k + 1; i < N; ++i) {
-                const Real val = math::abs(A[matrix_index(i, k)]);
-                if (val > max_val) {
-                    max_val = val;
-                    pivot_row = i;
+        if (A[pivot_row * 15 + k] != 0.0) {
+            if (pivot_row != k) {
+                const Real t = A[pivot_row * 15 + k];
+                A[pivot_row * 15 + k] = A[k * 15 + k];
+                A[k * 15 + k] = t;
+                for (int j = k + 1; j < 15; ++j) {
+                    const Real trailing = A[pivot_row * 15 + j];
+                    A[pivot_row * 15 + j] = A[k * 15 + j];
+                    A[k * 15 + j] = trailing;
                 }
             }
-            ipvt[k] = static_cast<int>(pivot_row);
-            __builtin_assume(pivot_row < 15);
 
-            if (A[matrix_index(pivot_row, k)] != 0.0) {
-                if (pivot_row != k) {
-                    const Real t = A[matrix_index(pivot_row, k)];
-                    A[matrix_index(pivot_row, k)] = A[matrix_index(k, k)];
-                    A[matrix_index(k, k)] = t;
-                    for (size_type j = k + 1; j < N; ++j) {
-                        const Real trailing = A[matrix_index(pivot_row, j)];
-                        A[matrix_index(pivot_row, j)] = A[matrix_index(k, j)];
-                        A[matrix_index(k, j)] = trailing;
-                    }
-                }
-
-                const Real multiplier = -1.0 / A[matrix_index(k, k)];
-                for (size_type i = k + 1; i < N; ++i) {
-                    A[matrix_index(i, k)] *= multiplier;
-                }
-
-                for (size_type j = k + 1; j < N; ++j) {
-                    const Real t = A[matrix_index(k, j)];
-                    for (size_type i = k + 1; i < N; ++i) {
-                        A[matrix_index(i, j)] += t * A[matrix_index(i, k)];
-                    }
-                }
-            } else {
-                info = static_cast<int>(k + 1);
+            const Real multiplier = -1.0 / A[k * 15 + k];
+            Real row[15];
+            [[loom::unroll]] for (unsigned j = 0; j < 15; ++j) {
+                row[j] = (static_cast<int>(j) > k) ? A[k * 15 + static_cast<int>(j)] : 0.0;
             }
+            for (int i = k + 1; i < 15; ++i) {
+                const Real m = A[i * 15 + k] * multiplier;
+                A[i * 15 + k] = m;
+                [[loom::unroll]] for (unsigned j = 0; j < 15; ++j) {
+                    if (static_cast<int>(j) > k) {
+                        A[i * 15 + static_cast<int>(j)] += row[j] * m;
+                    }
+                }
+            }
+        } else {
+            info = k + 1;
         }
     }
 
-    if constexpr (N > 0) {
-        ipvt[N - 1] = static_cast<int>(N - 1);
-        if (A[matrix_index(N - 1, N - 1)] == 0.0) {
-            info = static_cast<int>(N);
-        }
+    ipvt[14] = 14;
+    if (A[14 * 15 + 14] == 0.0) {
+        info = 15;
     }
 
     return info;
