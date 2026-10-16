@@ -6177,12 +6177,7 @@ DEVICE Real combine_and_error_norm(ScratchView s, Real* yacc) {
 #include "integrate.inc"
 DEVICE void configure_ros2s(ScratchView s) {
 
-    for (int n = 0; n < NumSpec; ++n) {
-        s.rtol_vec[static_cast<size_type>(n)] = rtol_spec;
-        s.atol_vec[static_cast<size_type>(n)] = atol_spec;
-    }
-    s.rtol_vec[NumSpec] = rtol_energy;
-    s.atol_vec[NumSpec] = atol_energy;
+    // The tolerances are the constexpr rtol_/atol_ values, used directly.
     s.max_steps[0] = 10000000;
 
 }
