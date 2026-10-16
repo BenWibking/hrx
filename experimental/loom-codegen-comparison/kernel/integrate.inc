@@ -136,7 +136,8 @@ DEVICE int integrate(ScratchView s) {
                 // and order as the combination loop + error_norm.
                 Real yacc[15];
                 const Real err = combine_and_error_norm(s, yacc);
-                s.n_rhs[0] += 3;
+                // rhs calls, decompositions and solves are 3*n_step, n_step and
+                // 3*n_step; burn_ros2s derives them from n_step.
                 n_step += 1;
                 s.n_step[0] = n_step;
 
