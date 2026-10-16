@@ -6068,9 +6068,50 @@ DEVICE void lu_bwd_regs(const Real* LU, Real* v) {
         lu_bwd_regs<K - 1>(LU, v);
     }
 }
+// Two forward steps (K, K+1) per memory wait: all loads of both steps are
+// issued first (step K+1's pivot entry x'[q] is formed from loaded values),
+// then ordered overwrite stores leave exactly the reference state:
+// generic x''[j] = (x[j] + t*L(j,K)) + t'*L(j,K+1), then the fix-ups for the
+// two pivot rows, then x[K+1] = t' and x[K] = t. Same per-element operations.
+template <unsigned K>
+DEVICE void lu_fwd_pair(const Real* LU, const int* ipvt, Real* x) {
+    const unsigned p = static_cast<unsigned>(ipvt[K]);
+    const unsigned q = static_cast<unsigned>(ipvt[K + 1]);
+    __builtin_assume(p < 15u);
+    __builtin_assume(q < 15u);
+    const Real t = x[p];
+    const Real a = x[K];
+    const Real xk1 = x[K + 1];
+    const Real xq = x[q];
+    const Real lp1 = LU[midx(p, K)];
+    const Real lq1 = LU[midx(q, K)];
+    const Real lp2 = LU[midx(p, K + 1)];
+    const Real lq2 = LU[midx(q, K + 1)];
+    const Real lk1 = LU[midx(K + 1, K)];
+    Real g[13 - K];
+    [[loom::unroll]] for (unsigned j = K + 2; j < 15u; ++j) {
+        g[j - K - 2] = x[j] + t * LU[midx(j, K)];
+    }
+    // Step K+1 pivot value and old x'[K+1].
+    const Real tq = ((q == p) ? a : xq) + t * lq1;
+    const Real ak1 = ((p == K + 1) ? a : xk1) + t * lk1;
+    [[loom::unroll]] for (unsigned j = K + 2; j < 15u; ++j) {
+        g[j - K - 2] = g[j - K - 2] + tq * LU[midx(j, K + 1)];
+    }
+    const Real fp = (a + t * lp1) + tq * lp2;
+    const Real fq = ak1 + tq * lq2;
+    [[loom::unroll]] for (unsigned j = K + 2; j < 15u; ++j) {
+        x[j] = g[j - K - 2];
+    }
+    x[p] = fp;
+    x[q] = fq;
+    x[K + 1] = tq;
+    x[K] = t;
+    if constexpr (K + 2 < 14u) lu_fwd_pair<K + 2>(LU, ipvt, x);
+}
 DEVICE void lu_solve_batched(const Real* LU, const int* ipvt, Real* x) {
 
-    lu_fwd_batched<0>(LU, ipvt, x);
+    lu_fwd_pair<0>(LU, ipvt, x);
     Real v[15];
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
         v[i] = x[i];
