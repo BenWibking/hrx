@@ -106,6 +106,10 @@ struct ScratchView {
   int* n_solve;
   int* max_steps;
   int* ip;
+  Real* hacc;
+  Real* erracc;
+  int* reject;
+  int* last;
 };
 DEVICE ScratchView scratch_view(ScratchRecord* s) {
   return {&s->t, &s->tout, &s->dt, s->y, s->rtol_vec, s->atol_vec, &s->uround, &s->fac_min, &s->fac_max, &s->safe, s->ynew, s->ak1, s->ak2, s->work, &s->fjac[0][0], &s->e[0][0], s->dy, {&s->burn.rho, &s->burn.T, &s->burn.e, s->burn.xn}, &s->n_step, &s->n_rhs, &s->n_jac, &s->n_accept, &s->n_reject, &s->n_decomp, &s->n_solve, &s->max_steps, s->ip};
@@ -6196,6 +6200,10 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     Real* work = kst + 30;
     Real fjac[225];
     Real e[225];
+    Real hacc = 0.0;
+    Real erracc = 1.0;
+    int reject = 0;
+    int last = 0;
     Real dy[15];
     Real burn_rho = 0.0;
     Real burn_T = 0.0;
@@ -6210,7 +6218,7 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     int n_solve = 0;
     int max_steps = 100000;
     int ip[15];
-    ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip};
+    ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip, &hacc, &erracc, &reject, &last};
     configure_ros2s(s);
 
     s.t[0] = 0.0;
