@@ -38,8 +38,14 @@ DEVICE int integrate(ScratchView s) {
     Real erracc = 1.0;
     Real hopt = h;
     Real x = s.t[0];
+    // Statistics live in registers and are written once at the end. Every
+    // successful decomposition runs one attempt: 3 RHS calls and 3 solves,
+    // and n_step counts attempts, so decompositions = n_step and RHS calls =
+    // solves = 3 * n_step (exactly what the per-call counters summed to).
     int n_step = 0;
     int n_accept = 0;
+    int n_jac = 0;
+    int n_reject = 0;
 
     while (!done) {
         if (n_step > s.max_steps[0]) {
@@ -66,6 +72,7 @@ DEVICE int integrate(ScratchView s) {
             }
 
             CHEM_EVAL_JACOBIAN(s, x);
+            n_jac += 1;
             bool retry = true;
 
             while (retry && !done) {
@@ -136,9 +143,7 @@ DEVICE int integrate(ScratchView s) {
                 // and order as the combination loop + error_norm.
                 Real yacc[15];
                 const Real err = combine_and_error_norm(s, yacc);
-                s.n_rhs[0] += 3;
                 n_step += 1;
-                s.n_step[0] = n_step;
 
                 const Real raw_fac = math::cbrt(err) / s.safe[0];
                 const Real lower_fac = 1.0 / s.fac_max[0];
@@ -147,7 +152,6 @@ DEVICE int integrate(ScratchView s) {
                 Real hnew = h / fac_step;
                 if (err <= 1.0) {
                     n_accept += 1;
-                    s.n_accept[0] = n_accept;
                     if (n_accept > 1) {
                         const Real facgus = math::max(1.0 / s.fac_max[0],
                             math::min(1.0 / s.fac_min[0],
@@ -177,12 +181,19 @@ DEVICE int integrate(ScratchView s) {
                     last = false;
                     h = hnew;
                     if (n_accept >= 1) {
-                        s.n_reject[0] += 1;
+                        n_reject += 1;
                     }
                 }
             }
         }
     }
+    s.n_step[0] = n_step;
+    s.n_accept[0] = n_accept;
+    s.n_reject[0] = n_reject;
+    s.n_jac[0] = n_jac;
+    s.n_decomp[0] = n_step;
+    s.n_rhs[0] = 3 * n_step;
+    s.n_solve[0] = 3 * n_step;
     return result;
 
 }

@@ -5743,7 +5743,6 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
     BurnView b = s.burn;
     burn_state_from_y_view(s.y, b);
     jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
-    s.n_jac[0] += 1;
 
 }
 DEVICE unsigned midx(unsigned row, unsigned column) {
@@ -6095,16 +6094,12 @@ DEVICE int decompose(ScratchView s, Real fac) {
         if (A[midx(14u, 14u)] == 0.0) {
             info = 15;
         }
-        if (info == 0) {
-            s.n_decomp[0] += 1;
-        }
         return info;
 
 }
 DEVICE void solve(ScratchView s, Real* ak) {
 
         lu_solve_batched(s.e, s.ip, ak);
-        s.n_solve[0] += 1;
 
 }
 DEVICE Real error_norm(ScratchView s) {
