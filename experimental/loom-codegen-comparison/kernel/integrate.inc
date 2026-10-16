@@ -123,11 +123,11 @@ DEVICE int integrate(ScratchView s) {
                                 tv[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) / h + dyv[i];
                             }
                         }
+                        solve_regs(s, tv);
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
                             target[i] = tv[i];
                         }
                     }
-                    solve(s, target);
                 }
 
                 // Final combination with the error norm formed in registers: the

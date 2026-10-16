@@ -6072,6 +6072,26 @@ DEVICE void lu_bwd_regs(const Real* LU, Real* v) {
         lu_bwd_regs<K - 1>(LU, v);
     }
 }
+// Forward elimination in registers: the runtime pivot row is selected with
+// compile-time compares instead of a dynamically indexed private store/load.
+// Per element: base = (j == p) ? old x[K] : x[j] (the reference swap), then
+// base + t * L(j,K); x[K] = t. Same operations as lu_fwd_batched.
+template <unsigned K>
+DEVICE void lu_fwd_regs(const Real* LU, const int* ipvt, Real* v) {
+    const unsigned pivot_row = static_cast<unsigned>(ipvt[K]);
+    __builtin_assume(pivot_row < 15u);
+    const Real a = v[K];
+    Real t = a;
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        t = (pivot_row == j) ? v[j] : t;
+    }
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        const Real base = (pivot_row == j) ? a : v[j];
+        v[j] = base + t * LU[midx(j, K)];
+    }
+    v[K] = t;
+    if constexpr (K + 1 < 14u) lu_fwd_regs<K + 1>(LU, ipvt, v);
+}
 DEVICE void lu_solve_batched(const Real* LU, const int* ipvt, Real* x) {
 
     lu_fwd_batched<0>(LU, ipvt, x);
@@ -6106,6 +6126,11 @@ DEVICE void solve(ScratchView s, Real* ak) {
 
         lu_solve_batched(s.e, s.ip, ak);
 
+}
+// Register solve: v holds the right-hand side on entry and the solution on exit.
+DEVICE void solve_regs(ScratchView s, Real* v) {
+        lu_fwd_regs<0>(s.e, s.ip, v);
+        lu_bwd_regs<14>(s.e, v);
 }
 DEVICE Real error_norm(ScratchView s) {
 
