@@ -6126,6 +6126,8 @@ DEVICE Real error_norm(ScratchView s) {
 // Final ROS2S combination with the error norm formed in registers: yacc gets
 // the new state; same operations and summation order as the combination loop
 // followed by error_norm.
+// The tolerances are the compile-time values configure_ros2s stores into
+// atol_vec/rtol_vec (never changed afterwards), used directly here.
 DEVICE Real combine_and_error_norm(ScratchView s, Real* yacc) {
     Real ev[15];
     Real yo[15];
@@ -6135,21 +6137,21 @@ DEVICE Real combine_and_error_norm(ScratchView s, Real* yacc) {
         yacc[i] = yo[i] + C::b1 * s.ak1[i] + C::b2 * s.ak2[i] + C::b3 * ak3i;
         ev[i] = C::e1 * s.ak1[i] + C::e2 * s.ak2[i] + C::e3 * ak3i;
     }
-    const Real t0 = ev[0] / (s.atol_vec[0] + s.rtol_vec[0] * math::max(math::abs(yo[0]), math::abs(yacc[0])));
-    const Real t1 = ev[1] / (s.atol_vec[1] + s.rtol_vec[1] * math::max(math::abs(yo[1]), math::abs(yacc[1])));
-    const Real t2 = ev[2] / (s.atol_vec[2] + s.rtol_vec[2] * math::max(math::abs(yo[2]), math::abs(yacc[2])));
-    const Real t3 = ev[3] / (s.atol_vec[3] + s.rtol_vec[3] * math::max(math::abs(yo[3]), math::abs(yacc[3])));
-    const Real t4 = ev[4] / (s.atol_vec[4] + s.rtol_vec[4] * math::max(math::abs(yo[4]), math::abs(yacc[4])));
-    const Real t5 = ev[5] / (s.atol_vec[5] + s.rtol_vec[5] * math::max(math::abs(yo[5]), math::abs(yacc[5])));
-    const Real t6 = ev[6] / (s.atol_vec[6] + s.rtol_vec[6] * math::max(math::abs(yo[6]), math::abs(yacc[6])));
-    const Real t7 = ev[7] / (s.atol_vec[7] + s.rtol_vec[7] * math::max(math::abs(yo[7]), math::abs(yacc[7])));
-    const Real t8 = ev[8] / (s.atol_vec[8] + s.rtol_vec[8] * math::max(math::abs(yo[8]), math::abs(yacc[8])));
-    const Real t9 = ev[9] / (s.atol_vec[9] + s.rtol_vec[9] * math::max(math::abs(yo[9]), math::abs(yacc[9])));
-    const Real t10 = ev[10] / (s.atol_vec[10] + s.rtol_vec[10] * math::max(math::abs(yo[10]), math::abs(yacc[10])));
-    const Real t11 = ev[11] / (s.atol_vec[11] + s.rtol_vec[11] * math::max(math::abs(yo[11]), math::abs(yacc[11])));
-    const Real t12 = ev[12] / (s.atol_vec[12] + s.rtol_vec[12] * math::max(math::abs(yo[12]), math::abs(yacc[12])));
-    const Real t13 = ev[13] / (s.atol_vec[13] + s.rtol_vec[13] * math::max(math::abs(yo[13]), math::abs(yacc[13])));
-    const Real t14 = ev[14] / (s.atol_vec[14] + s.rtol_vec[14] * math::max(math::abs(yo[14]), math::abs(yacc[14])));
+    const Real t0 = ev[0] / (atol_spec + rtol_spec * math::max(math::abs(yo[0]), math::abs(yacc[0])));
+    const Real t1 = ev[1] / (atol_spec + rtol_spec * math::max(math::abs(yo[1]), math::abs(yacc[1])));
+    const Real t2 = ev[2] / (atol_spec + rtol_spec * math::max(math::abs(yo[2]), math::abs(yacc[2])));
+    const Real t3 = ev[3] / (atol_spec + rtol_spec * math::max(math::abs(yo[3]), math::abs(yacc[3])));
+    const Real t4 = ev[4] / (atol_spec + rtol_spec * math::max(math::abs(yo[4]), math::abs(yacc[4])));
+    const Real t5 = ev[5] / (atol_spec + rtol_spec * math::max(math::abs(yo[5]), math::abs(yacc[5])));
+    const Real t6 = ev[6] / (atol_spec + rtol_spec * math::max(math::abs(yo[6]), math::abs(yacc[6])));
+    const Real t7 = ev[7] / (atol_spec + rtol_spec * math::max(math::abs(yo[7]), math::abs(yacc[7])));
+    const Real t8 = ev[8] / (atol_spec + rtol_spec * math::max(math::abs(yo[8]), math::abs(yacc[8])));
+    const Real t9 = ev[9] / (atol_spec + rtol_spec * math::max(math::abs(yo[9]), math::abs(yacc[9])));
+    const Real t10 = ev[10] / (atol_spec + rtol_spec * math::max(math::abs(yo[10]), math::abs(yacc[10])));
+    const Real t11 = ev[11] / (atol_spec + rtol_spec * math::max(math::abs(yo[11]), math::abs(yacc[11])));
+    const Real t12 = ev[12] / (atol_spec + rtol_spec * math::max(math::abs(yo[12]), math::abs(yacc[12])));
+    const Real t13 = ev[13] / (atol_spec + rtol_spec * math::max(math::abs(yo[13]), math::abs(yacc[13])));
+    const Real t14 = ev[14] / (atol_energy + rtol_energy * math::max(math::abs(yo[14]), math::abs(yacc[14])));
     const Real q0 = 0.0 + t0 * t0;
     const Real q1 = q0 + t1 * t1;
     const Real q2 = q1 + t2 * t2;
