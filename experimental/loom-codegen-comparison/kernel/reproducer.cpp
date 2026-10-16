@@ -5777,9 +5777,11 @@ DEVICE unsigned lu_pivot_search(const Real* A) {
 // tracks the running first maximum of |A[i][K]| over i = K..14 as it writes
 // those values (same comparisons in the same order as the search).
 template <unsigned K>
-DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
+DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row, u64 piv) {
     unsigned next_pivot = K + 1;
-    ipvt[K] = static_cast<int>(pivot_row);
+    // Pivot rows are packed 4 bits per column (ipvt[0] low word, ipvt[1]
+    // high word), stored once after the last column.
+    const u64 piv_k = piv | (static_cast<u64>(pivot_row) << (4u * K));
     __builtin_assume(pivot_row < 15u);
 
     if (A[midx(pivot_row, K)] != 0.0) {
@@ -5844,8 +5846,10 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
         if constexpr (K + 1 < 14u) next_pivot = lu_pivot_search<K + 1>(A);
     }
     if constexpr (K + 1 < 14u) {
-        return lu_step<K + 1>(A, ipvt, info, next_pivot);
+        return lu_step<K + 1>(A, ipvt, info, next_pivot, piv_k);
     } else {
+        ipvt[0] = static_cast<int>(static_cast<unsigned>(piv_k & 0xffffffffull));
+        ipvt[1] = static_cast<int>(static_cast<unsigned>(piv_k >> 32u));
         return info;
     }
 }
@@ -5874,7 +5878,7 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         pivot_row = take ? i : pivot_row;
     }
     __builtin_assume(pivot_row < 15u);
-    ipvt[0] = static_cast<int>(pivot_row);
+    const u64 piv0 = static_cast<u64>(pivot_row);
     unsigned next_pivot = 1;
     int info = 0;
     const Real pivot = iter_elem(J, pivot_row, 0u, fac);
@@ -5936,11 +5940,11 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         info = 1;
         next_pivot = lu_pivot_search<1>(A);
     }
-    return lu_step<1>(A, ipvt, info, next_pivot);
+    return lu_step<1>(A, ipvt, info, next_pivot, piv0);
 }
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
-    int info = lu_step<0>(A, ipvt, 0, lu_pivot_search<0>(A));
+    int info = lu_step<0>(A, ipvt, 0, lu_pivot_search<0>(A), 0ull);
 
     ipvt[14] = 14;
     if (A[midx(14u, 14u)] == 0.0) {
@@ -6017,8 +6021,8 @@ DEVICE void lu_solve_backward(const Real* LU, Real* x, Real xk) {
 // x[j] (j > K) gets its update, then x[p] = old x[K] + t*L(p,K) (for p == K
 // it is overwritten by x[K] = t). Same per-element operations as lu_solve.
 template <unsigned K>
-DEVICE void lu_fwd_batched(const Real* LU, const int* ipvt, Real* x) {
-    const unsigned pivot_row = static_cast<unsigned>(ipvt[K]);
+DEVICE void lu_fwd_batched(const Real* LU, u64 piv, Real* x) {
+    const unsigned pivot_row = static_cast<unsigned>((piv >> (4u * K)) & 15ull);
     __builtin_assume(pivot_row < 15u);
     const Real t = x[pivot_row];
     const Real a = x[K];
@@ -6032,7 +6036,7 @@ DEVICE void lu_fwd_batched(const Real* LU, const int* ipvt, Real* x) {
     }
     x[pivot_row] = a + t * lp;
     x[K] = t;
-    if constexpr (K + 1 < 14u) lu_fwd_batched<K + 1>(LU, ipvt, x);
+    if constexpr (K + 1 < 14u) lu_fwd_batched<K + 1>(LU, piv, x);
 }
 template <unsigned K>
 DEVICE void lu_bwd_batched(const Real* LU, Real* x, Real xk) {
@@ -6074,7 +6078,9 @@ DEVICE void lu_bwd_regs(const Real* LU, Real* v) {
 }
 DEVICE void lu_solve_batched(const Real* LU, const int* ipvt, Real* x) {
 
-    lu_fwd_batched<0>(LU, ipvt, x);
+    const u64 piv = static_cast<u64>(static_cast<unsigned>(ipvt[0])) |
+        (static_cast<u64>(static_cast<unsigned>(ipvt[1])) << 32u);
+    lu_fwd_batched<0>(LU, piv, x);
     Real v[15];
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
         v[i] = x[i];
