@@ -6071,14 +6071,7 @@ DEVICE void lu_bwd_regs(const Real* LU, Real* v) {
 DEVICE void lu_solve_batched(const Real* LU, const int* ipvt, Real* x) {
 
     lu_fwd_batched<0>(LU, ipvt, x);
-    Real v[15];
-    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-        v[i] = x[i];
-    }
-    lu_bwd_regs<14>(LU, v);
-    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-        x[i] = v[i];
-    }
+    lu_bwd_batched<14>(LU, x, x[14]);
 
 }
 DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
