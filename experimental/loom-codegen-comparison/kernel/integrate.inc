@@ -17,7 +17,9 @@ DEVICE int integrate(ScratchView s) {
     }
     for (size_type i = 0; i < N && !done; ++i) {
         __builtin_assume(i < N);
-        if (s.atol_vec[i] <= 0.0 || s.rtol_vec[i] <= 10.0 * s.uround[0]) {
+        const Real atol_i = (i < 14u) ? atol_spec : atol_energy;
+        const Real rtol_i = (i < 14u) ? rtol_spec : rtol_energy;
+        if (atol_i <= 0.0 || rtol_i <= 10.0 * s.uround[0]) {
             result = TOO_MUCH_ACCURACY_REQUESTED;
             done = true;
         }
