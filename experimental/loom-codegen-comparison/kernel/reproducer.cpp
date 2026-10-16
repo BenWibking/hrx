@@ -6086,7 +6086,7 @@ DEVICE void lu_solve_batched(const Real* LU, const int* ipvt, Real* x) {
     [[loom::unroll]] for (unsigned k = 0; k < 14u; ++k) {
         pv[k] = ipvt[k];
     }
-    lu_fwd_batched<0>(LU, pv, x);
+    lu_solve_forward<0>(LU, pv, x);
     Real v[15];
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
         v[i] = x[i];
