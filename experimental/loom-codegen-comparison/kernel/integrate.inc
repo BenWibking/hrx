@@ -31,6 +31,13 @@ DEVICE int integrate(ScratchView s) {
     }
     h = math::min(math::abs(h), hmaxn);
 
+    // Controller settings: the compile-time values burn_ros2s and
+    // configure_ros2s store (nothing changes them), used directly in the loop.
+    constexpr Real uround_c = 1.e-16;
+    constexpr Real safe_c = 0.9;
+    constexpr Real fac_min_c = 0.2;
+    constexpr Real fac_max_c = 6.0;
+    constexpr int max_steps_c = 10000000;
     bool reject = false;
     bool last = false;
     int nsing = 0;
@@ -42,12 +49,12 @@ DEVICE int integrate(ScratchView s) {
     int n_accept = 0;
 
     while (!done) {
-        if (n_step > s.max_steps[0]) {
+        if (n_step > max_steps_c) {
             s.t[0] = x;
             s.dt[0] = h;
             result = TOO_MANY_STEPS; done = true;
         }
-        else if (0.1 * math::abs(h) <= math::abs(x) * s.uround[0]) {
+        else if (0.1 * math::abs(h) <= math::abs(x) * uround_c) {
             s.t[0] = x;
             s.dt[0] = h;
             result = DT_UNDERFLOW; done = true;
@@ -140,9 +147,9 @@ DEVICE int integrate(ScratchView s) {
                 // 3*n_step; burn_ros2s derives them from n_step.
                 n_step += 1;
 
-                const Real raw_fac = math::cbrt(err) / s.safe[0];
-                const Real lower_fac = 1.0 / s.fac_max[0];
-                const Real upper_fac = 1.0 / s.fac_min[0];
+                const Real raw_fac = math::cbrt(err) / safe_c;
+                const Real lower_fac = 1.0 / fac_max_c;
+                const Real upper_fac = 1.0 / fac_min_c;
                 const Real fac_step = math::max(lower_fac, math::min(upper_fac, raw_fac));
                 Real hnew = h / fac_step;
                 if (err <= 1.0) {
@@ -152,11 +159,11 @@ DEVICE int integrate(ScratchView s) {
                         s.n_reject[0] = n_step;
                     }
                     if (n_accept > 1) {
-                        const Real facgus = math::max(1.0 / s.fac_max[0],
-                            math::min(1.0 / s.fac_min[0],
+                        const Real facgus = math::max(1.0 / fac_max_c,
+                            math::min(1.0 / fac_min_c,
                             (hacc / h) *
                             math::cbrt((err * err) / erracc) /
-                            s.safe[0]));
+                            safe_c));
                         hnew = h / math::max(fac_step, facgus);
                     }
                     hacc = h;
