@@ -6080,7 +6080,13 @@ DEVICE void lu_bwd_regs(const Real* LU, Real* v) {
 }
 DEVICE void lu_solve_batched(const Real* LU, const int* ipvt, Real* x) {
 
-    lu_fwd_batched<0>(LU, ipvt, x);
+    // All pivot rows are loaded up front (independent of the x updates), so
+    // each forward step waits on one memory round trip instead of two.
+    int pv[14];
+    [[loom::unroll]] for (unsigned k = 0; k < 14u; ++k) {
+        pv[k] = ipvt[k];
+    }
+    lu_fwd_batched<0>(LU, pv, x);
     Real v[15];
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
         v[i] = x[i];
