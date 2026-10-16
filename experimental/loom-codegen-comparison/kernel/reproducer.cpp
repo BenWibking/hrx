@@ -6068,6 +6068,36 @@ DEVICE void lu_bwd_regs(const Real* LU, Real* v) {
         lu_bwd_regs<K - 1>(LU, v);
     }
 }
+// Solve whose right-hand side arrives in registers: forward step 0 runs on
+// the registers (pivot read and swap as selects over j), then x is stored
+// once and the remaining steps continue as in lu_solve_batched. Same
+// per-element operations.
+DEVICE void lu_solve_from_regs(const Real* LU, const int* ipvt, const Real* b, Real* x) {
+    const unsigned p = static_cast<unsigned>(ipvt[0]);
+    __builtin_assume(p < 15u);
+    const Real a = b[0];
+    Real t = a;
+    [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
+        t = (p == j) ? b[j] : t;
+    }
+    Real w[14];
+    [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
+        w[j - 1] = ((p == j) ? a : b[j]) + t * LU[midx(j, 0u)];
+    }
+    x[0] = t;
+    [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
+        x[j] = w[j - 1];
+    }
+    lu_fwd_batched<1>(LU, ipvt, x);
+    Real v[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        v[i] = x[i];
+    }
+    lu_bwd_regs<14>(LU, v);
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        x[i] = v[i];
+    }
+}
 DEVICE void lu_solve_batched(const Real* LU, const int* ipvt, Real* x) {
 
     lu_fwd_batched<0>(LU, ipvt, x);
