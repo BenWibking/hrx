@@ -5801,12 +5801,24 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
             row[j - K - 1] = A[midx(K, j)];
         }
         Real next_max = 0.0;
+        // Software-pipelined rows: row i+1 is loaded before row i is
+        // updated and stored, so its load latency overlaps row i's work.
+        // Same per-element operations as the plain row loop.
+        Real nxt[15 - K];
+        [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+            nxt[j - K] = A[midx(K + 1, j)];
+        }
         for (unsigned i = K + 1; i < 15u; ++i) {
-            // Load the whole trailing row first, then store it: no store
-            // between this row's loads (one memory wait per row).
             Real cur[15 - K];
             [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
-                cur[j - K] = A[midx(i, j)];
+                cur[j - K] = nxt[j - K];
+            }
+            if (i + 1 < 15u) {
+                const unsigned i1 = i + 1;
+                __builtin_assume(i1 < 15u);
+                [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                    nxt[j - K] = A[midx(i1, j)];
+                }
             }
             const Real m = cur[0] * multiplier;
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
