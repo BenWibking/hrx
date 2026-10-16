@@ -106,6 +106,9 @@ struct ScratchView {
   int* n_solve;
   int* max_steps;
   int* ip;
+  Real* e2;
+  Real* xa;
+  Real* xb;
 };
 DEVICE ScratchView scratch_view(ScratchRecord* s) {
   return {&s->t, &s->tout, &s->dt, s->y, s->rtol_vec, s->atol_vec, &s->uround, &s->fac_min, &s->fac_max, &s->safe, s->ynew, s->ak1, s->ak2, s->work, &s->fjac[0][0], &s->e[0][0], s->dy, {&s->burn.rho, &s->burn.T, &s->burn.e, s->burn.xn}, &s->n_step, &s->n_rhs, &s->n_jac, &s->n_accept, &s->n_reject, &s->n_decomp, &s->n_solve, &s->max_steps, s->ip};
@@ -5833,6 +5836,8 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
         return info;
     }
 }
+template <unsigned K>
+DEVICE int lu_step_db(const Real* src, Real* e, Real* e2, int* ipvt, int info, unsigned pivot_row);
 // Iteration-matrix element E(i,j) = -J(i,j) (+ fac on the diagonal), exactly as
 // decompose used to store it into e.
 DEVICE Real iter_elem(const Real* J, unsigned i, unsigned j, Real fac) {
@@ -5843,7 +5848,7 @@ DEVICE Real iter_elem(const Real* J, unsigned i, unsigned j, Real fac) {
 // identical values and operation order to "e = -fjac + fac*I; lu_step<0>(e)",
 // but the loads come from fjac (never stored here), so the per-row loads do not
 // wait on the preceding stores to e. Every element of e is written.
-DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
+DEVICE int lu_step0_from_jac(const Real* J, Real* A, Real* A2, int* ipvt, Real fac) {
     unsigned pivot_row = 0;
     Real max_val = math::abs(iter_elem(J, 0u, 0u, fac));
     for (unsigned i = 1; i < 15u; ++i) {
@@ -5902,7 +5907,80 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         info = 1;
         next_pivot = lu_pivot_search<1>(A);
     }
-    return lu_step<1>(A, ipvt, info, next_pivot);
+    return lu_step_db<1>(A, A, A2, ipvt, info, next_pivot);
+}
+// Double-buffered LU: step K reads the trailing block from the buffer step K-1
+// wrote and writes rows K..14, columns K..14 to its own buffer (e for even K,
+// e2 for odd K), so a step's row loads never follow its own stores to the same
+// array. Each LU entry is written once at its final value: U(i,j) (j >= i) in
+// lu_buf<i> (U(14,14) in lu_buf<13>), L(i,K) in lu_buf<K>. Same values and
+// operations as the in-place reference.
+template <unsigned K, typename P>
+DEVICE P lu_buf(P e, P e2) {
+    if constexpr (K % 2u == 0u) {
+        return e;
+    } else {
+        return e2;
+    }
+}
+template <unsigned K>
+DEVICE int lu_step_db(const Real* src, Real* e, Real* e2, int* ipvt, int info, unsigned pivot_row) {
+    Real* dst = lu_buf<K>(e, e2);
+    unsigned next_pivot = K + 1;
+    ipvt[K] = static_cast<int>(pivot_row);
+    __builtin_assume(pivot_row < 15u);
+    const Real pivot = src[midx(pivot_row, K)];
+    if (pivot != 0.0) {
+        Real row[14 - K];
+        [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+            row[j - K - 1] = src[midx(pivot_row, j)];
+        }
+        dst[midx(K, K)] = pivot;
+        [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+            dst[midx(K, j)] = row[j - K - 1];
+        }
+        const Real multiplier = -1.0 / pivot;
+        Real next_max = 0.0;
+        for (unsigned i = K + 1; i < 15u; ++i) {
+            const unsigned from = (i == pivot_row) ? K : i;
+            __builtin_assume(from < 15u);
+            Real cur[15 - K];
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                cur[j - K] = src[midx(from, j)];
+            }
+            const Real m = cur[0] * multiplier;
+            [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                cur[j - K] = cur[j - K] + row[j - K - 1] * m;
+            }
+            if constexpr (K + 1 < 14u) {
+                const Real val = math::abs(cur[1]);
+                const bool take = (i == K + 1) | (val > next_max);
+                next_max = take ? val : next_max;
+                next_pivot = take ? i : next_pivot;
+            }
+            dst[midx(i, K)] = m;
+            [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                dst[midx(i, j)] = cur[j - K];
+            }
+        }
+    } else {
+        info = static_cast<int>(K + 1);
+        for (unsigned i = K; i < 15u; ++i) {
+            Real cur[15 - K];
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                cur[j - K] = src[midx(i, j)];
+            }
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                dst[midx(i, j)] = cur[j - K];
+            }
+        }
+        if constexpr (K + 1 < 14u) next_pivot = lu_pivot_search<K + 1>(dst);
+    }
+    if constexpr (K + 1 < 14u) {
+        return lu_step_db<K + 1>(dst, e, e2, ipvt, info, next_pivot);
+    } else {
+        return info;
+    }
 }
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
@@ -5977,6 +6055,127 @@ DEVICE void lu_solve_backward(const Real* LU, Real* x, Real xk) {
         lu_solve_backward<K - 1>(LU, x, next);
     }
 }
+template <unsigned K, unsigned J>
+DEVICE void lu_solve_fwd_chunk_db(const Real* e, const Real* e2, Real* x, Real t) {
+    const Real* LU = lu_buf<K>(e, e2);
+    constexpr unsigned E = (J + 7 < 15u) ? J + 7 : 15u;
+    Real xv[7];
+    Real lv[7];
+    [[loom::unroll]] for (unsigned j = J; j < E; ++j) {
+        xv[j - J] = x[j];
+        lv[j - J] = LU[midx(j, K)];
+    }
+    [[loom::unroll]] for (unsigned j = J; j < E; ++j) {
+        x[j] = xv[j - J] + t * lv[j - J];
+    }
+    if constexpr (E < 15u) lu_solve_fwd_chunk_db<K, E>(e, e2, x, t);
+}
+// U(j,K) for j < K lives in lu_buf<j>; j is a compile-time unrolled index.
+template <unsigned K, unsigned J>
+DEVICE Real lu_solve_bwd_chunk_db(const Real* e, const Real* e2, Real* x, Real t) {
+    constexpr unsigned E = (J + 7 < K) ? J + 7 : K;
+    Real xv[7];
+    Real lv[7];
+    [[loom::unroll]] for (unsigned j = J; j < E; ++j) {
+        xv[j - J] = x[j];
+        lv[j - J] = ((j & 1u) != 0u) ? e2[midx(j, K)] : e[midx(j, K)];
+    }
+    [[loom::unroll]] for (unsigned j = J; j < E; ++j) {
+        xv[j - J] = xv[j - J] + t * lv[j - J];
+        x[j] = xv[j - J];
+    }
+    if constexpr (E < K) {
+        return lu_solve_bwd_chunk_db<K, E>(e, e2, x, t);
+    } else {
+        return xv[E - 1 - J];
+    }
+}
+template <unsigned K>
+DEVICE void lu_solve_forward_db(const Real* e, const Real* e2, const int* ipvt, Real* x) {
+    const unsigned pivot_row = static_cast<unsigned>(ipvt[K]);
+    __builtin_assume(pivot_row < 15u);
+    const Real t = x[pivot_row];
+    if (pivot_row != K) {
+        x[pivot_row] = x[K];
+        x[K] = t;
+    }
+    lu_solve_fwd_chunk_db<K, K + 1>(e, e2, x, t);
+    if constexpr (K + 1 < 14u) lu_solve_forward_db<K + 1>(e, e2, ipvt, x);
+}
+template <unsigned K>
+DEVICE void lu_solve_backward_db(const Real* e, const Real* e2, Real* x, Real xk) {
+    constexpr unsigned D = (K < 14u) ? K : 13u;
+    const Real* LU = lu_buf<D>(e, e2);
+    const Real xq = xk / LU[midx(K, K)];
+    x[K] = xq;
+    const Real t = -xq;
+    if constexpr (K > 0) {
+        const Real next = lu_solve_bwd_chunk_db<K, 0>(e, e2, x, t);
+        lu_solve_backward_db<K - 1>(e, e2, x, next);
+    }
+}
+DEVICE void lu_solve_db(const Real* e, const Real* e2, const int* ipvt, Real* x) {
+
+    lu_solve_forward_db<0>(e, e2, ipvt, x);
+    lu_solve_backward_db<14>(e, e2, x, x[14]);
+
+}
+// Double-buffered solve: each forward/backward step reads x from the buffer the
+// previous step wrote and writes its updates to the other one (xa/xb), so the
+// loads of a step never follow its own stores to the same array. Final
+// x[K] values go straight to x during the backward sweep. Same operations per
+// element as lu_solve; the pivot swap becomes an ordered overwrite store.
+template <unsigned K>
+DEVICE void lu_fwd_db(const Real* e, const Real* e2, const int* ipvt, const Real* src, Real* xa, Real* xb) {
+    Real* dst = lu_buf<K>(xa, xb);
+    const Real* LU = lu_buf<K>(e, e2);
+    const unsigned pivot_row = static_cast<unsigned>(ipvt[K]);
+    __builtin_assume(pivot_row < 15u);
+    const Real t = src[pivot_row];
+    const Real a = src[K];
+    const Real lp = LU[midx(pivot_row, K)];
+    Real v[14 - K];
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        v[j - K - 1] = src[j] + t * LU[midx(j, K)];
+    }
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        dst[j] = v[j - K - 1];
+    }
+    // pivot_row > K: x[p] held the old x[K] (a) before its update.
+    // pivot_row == K: this store is overwritten by dst[K] = t.
+    dst[pivot_row] = a + t * lp;
+    dst[K] = t;
+    if constexpr (K + 1 < 14u) lu_fwd_db<K + 1>(e, e2, ipvt, dst, xa, xb);
+}
+// Forward results: x[j] in lu_buf<j>(xa, xb) for j <= 13, x[14] in lu_buf<13>.
+template <unsigned K>
+DEVICE void lu_bwd_db(const Real* e, const Real* e2, Real* x, Real* xa, Real* xb, Real xk) {
+    constexpr unsigned D = (K < 14u) ? K : 13u;
+    const Real* LU = lu_buf<D>(e, e2);
+    const Real xq = xk / LU[midx(K, K)];
+    x[K] = xq;
+    const Real t = -xq;
+    if constexpr (K > 0) {
+        Real* dst = lu_buf<K>(xa, xb);
+        const Real* src = lu_buf<K + 1>(xa, xb);
+        Real v[K];
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            const Real xj = (K == 14u) ? (((j & 1u) != 0u) ? xb[j] : xa[j]) : src[j];
+            const Real uj = ((j & 1u) != 0u) ? e2[midx(j, K)] : e[midx(j, K)];
+            v[j] = xj + t * uj;
+        }
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            dst[j] = v[j];
+        }
+        lu_bwd_db<K - 1>(e, e2, x, xa, xb, v[K - 1]);
+    }
+}
+DEVICE void lu_solve_db2(const Real* e, const Real* e2, const int* ipvt, Real* x, Real* xa, Real* xb) {
+
+    lu_fwd_db<0>(e, e2, ipvt, x, xa, xb);
+    lu_bwd_db<14>(e, e2, x, xa, xb, lu_buf<13>(xa, xb)[14]);
+
+}
 DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 
     lu_solve_forward<0>(LU, ipvt, x);
@@ -5985,10 +6184,9 @@ DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 }
 DEVICE int decompose(ScratchView s, Real fac) {
 
-        Real* A = s.e;
-        int info = lu_step0_from_jac(s.fjac, A, s.ip, fac);
+        int info = lu_step0_from_jac(s.fjac, s.e, s.e2, s.ip, fac);
         s.ip[14] = 14;
-        if (A[midx(14u, 14u)] == 0.0) {
+        if (lu_buf<13>(s.e, s.e2)[midx(14u, 14u)] == 0.0) {
             info = 15;
         }
         if (info == 0) {
@@ -5999,7 +6197,7 @@ DEVICE int decompose(ScratchView s, Real fac) {
 }
 DEVICE void solve(ScratchView s, Real* ak) {
 
-        lu_solve(s.e, s.ip, ak);
+        lu_solve_db2(s.e, s.e2, s.ip, ak, s.xa, s.xb);
         s.n_solve[0] += 1;
 
 }
@@ -6048,6 +6246,9 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     Real* work = kst + 30;
     Real fjac[225];
     Real e[225];
+    Real e2[225];
+    Real xa[15];
+    Real xb[15];
     Real dy[15];
     Real burn_rho = 0.0;
     Real burn_T = 0.0;
@@ -6062,7 +6263,7 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     int n_solve = 0;
     int max_steps = 100000;
     int ip[15];
-    ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip};
+    ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip, e2, xa, xb};
     configure_ros2s(s);
 
     s.t[0] = 0.0;
