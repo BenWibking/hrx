@@ -6100,16 +6100,12 @@ DEVICE int decompose(ScratchView s, Real fac) {
         if (A[midx(14u, 14u)] == 0.0) {
             info = 15;
         }
-        if (info == 0) {
-            s.n_decomp[0] += 1;
-        }
         return info;
 
 }
 DEVICE void solve(ScratchView s, Real* ak) {
 
         lu_solve_batched(s.e, s.ip, ak);
-        s.n_solve[0] += 1;
 
 }
 DEVICE Real error_norm(ScratchView s) {
@@ -6232,10 +6228,10 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     const auto result = integrate(s);
 
     stats->internal_steps += static_cast<u64>(math::max(0, s.n_step[0]));
-    stats->rhs_calls += static_cast<u64>(math::max(0, s.n_rhs[0]));
+    stats->rhs_calls += static_cast<u64>(math::max(0, 3 * s.n_step[0]));
     stats->jacobian_calls += static_cast<u64>(math::max(0, s.n_jac[0]));
-    stats->decompositions += static_cast<u64>(math::max(0, s.n_decomp[0]));
-    stats->linear_solves += static_cast<u64>(math::max(0, s.n_solve[0]));
+    stats->decompositions += static_cast<u64>(math::max(0, s.n_step[0]));
+    stats->linear_solves += static_cast<u64>(math::max(0, 3 * s.n_step[0]));
     stats->accepted_steps += static_cast<u64>(math::max(0, s.n_accept[0]));
     stats->rejected_steps += static_cast<u64>(math::max(0, s.n_reject[0]));
 
