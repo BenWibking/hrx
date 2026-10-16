@@ -5732,12 +5732,22 @@ DEVICE void burn_state_from_y_view(const Real* y, BurnView b) {
     eos_re_view(b);
 
 }
+// Burn state (xn, T) from the integrator state in registers: same operations
+// as burn_state_from_y_view + eos_re_view, without the private burn record.
+DEVICE Real burn_temperature_from_y(const Real* y, Real* xn) {
+    [[loom::unroll]] for (unsigned n = 0; n < 14u; ++n) {
+        xn[n] = math::max(y[n], small_number_density_floor());
+    }
+    const Real e = y[NumSpec];
+    const EosSums sums = eos_sums_from_number_densities(xn);
+    return e / (sums.sum_gammasinv * sums.gasconstant * sums.sum_Abarinv);
+}
 DEVICE void rhs(Real t, const Real* y, Real* out, ScratchView s) {
 
-    BurnView b = s.burn;
-    burn_state_from_y_view(y, b);
-    rhs_specie(b.T[0], out, b.xn, default_redshift);
-    Real edot = rhs_eint(b.T[0], b.xn, default_redshift);
+    Real xn[14];
+    const Real T = burn_temperature_from_y(y, xn);
+    rhs_specie(T, out, xn, default_redshift);
+    Real edot = rhs_eint(T, xn, default_redshift);
     out[14] = edot;
 
 }
@@ -5745,9 +5755,9 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
 
     // jac_nuc writes the 146 structurally nonzero entries; the 79 zeros are
     // written once in burn_ros2s (jac_nuc_structural_zeros).
-    BurnView b = s.burn;
-    burn_state_from_y_view(s.y, b);
-    jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
+    Real xn[14];
+    const Real T = burn_temperature_from_y(s.y, xn);
+    jac_nuc(T, s.fjac, xn, default_redshift);
 
 }
 DEVICE unsigned midx(unsigned row, unsigned column) {
