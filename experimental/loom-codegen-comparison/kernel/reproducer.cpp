@@ -5833,6 +5833,77 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
         return info;
     }
 }
+// Iteration-matrix element E(i,j) = -J(i,j) (+ fac on the diagonal), exactly as
+// decompose used to store it into e.
+DEVICE Real iter_elem(const Real* J, unsigned i, unsigned j, Real fac) {
+    const Real nj = -J[midx(i, j)];
+    return (i == j) ? nj + fac : nj;
+}
+// Step K = 0 of lu_step with the iteration matrix formed on the fly from fjac:
+// identical values and operation order to "e = -fjac + fac*I; lu_step<0>(e)",
+// but the loads come from fjac (never stored here), so the per-row loads do not
+// wait on the preceding stores to e. Every element of e is written.
+DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
+    unsigned pivot_row = 0;
+    Real max_val = math::abs(iter_elem(J, 0u, 0u, fac));
+    for (unsigned i = 1; i < 15u; ++i) {
+        const Real val = math::abs(-J[midx(i, 0u)]);
+        if (val > max_val) {
+            max_val = val;
+            pivot_row = i;
+        }
+    }
+    __builtin_assume(pivot_row < 15u);
+    ipvt[0] = static_cast<int>(pivot_row);
+    unsigned next_pivot = 1;
+    int info = 0;
+    const Real pivot = iter_elem(J, pivot_row, 0u, fac);
+    if (pivot != 0.0) {
+        Real row[14];
+        [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
+            row[j - 1] = iter_elem(J, pivot_row, j, fac);
+        }
+        A[midx(0u, 0u)] = pivot;
+        [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
+            A[midx(0u, j)] = row[j - 1];
+        }
+        const Real multiplier = -1.0 / pivot;
+        Real next_max = 0.0;
+        for (unsigned i = 1; i < 15u; ++i) {
+            const unsigned src = (i == pivot_row) ? 0u : i;
+            __builtin_assume(src < 15u);
+            Real cur[15];
+            [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+                cur[j] = iter_elem(J, src, j, fac);
+            }
+            const Real m = cur[0] * multiplier;
+            [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
+                cur[j] = cur[j] + row[j - 1] * m;
+            }
+            const Real val = math::abs(cur[1]);
+            const bool take = (i == 1u) | (val > next_max);
+            next_max = take ? val : next_max;
+            next_pivot = take ? i : next_pivot;
+            A[midx(i, 0u)] = m;
+            [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
+                A[midx(i, j)] = cur[j];
+            }
+        }
+    } else {
+        for (unsigned i = 0; i < 15u; ++i) {
+            Real cur[15];
+            [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+                cur[j] = iter_elem(J, i, j, fac);
+            }
+            [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+                A[midx(i, j)] = cur[j];
+            }
+        }
+        info = 1;
+        next_pivot = lu_pivot_search<1>(A);
+    }
+    return lu_step<1>(A, ipvt, info, next_pivot);
+}
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
     int info = lu_step<0>(A, ipvt, 0, lu_pivot_search<0>(A));
@@ -5914,14 +5985,12 @@ DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 }
 DEVICE int decompose(ScratchView s, Real fac) {
 
-        for (unsigned i = 0; i < 15u; ++i) {
-            [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
-                s.e[midx(i, j)] = -s.fjac[midx(i, j)];
-            }
-            // Diagonal from fjac (not reloaded from e right after the store).
-            s.e[midx(i, i)] = -s.fjac[midx(i, i)] + fac;
+        Real* A = s.e;
+        int info = lu_step0_from_jac(s.fjac, A, s.ip, fac);
+        s.ip[14] = 14;
+        if (A[midx(14u, 14u)] == 0.0) {
+            info = 15;
         }
-        const int info = lu_decomposition(s.e, s.ip);
         if (info == 0) {
             s.n_decomp[0] += 1;
         }
