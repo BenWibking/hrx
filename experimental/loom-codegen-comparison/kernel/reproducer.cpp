@@ -4160,6 +4160,89 @@ return ((T > 200.0) ? (
    0.0
 ));
 }
+// Structurally zero Jacobian entries: jac_nuc never changes them, so they are
+// written once per cell before the integrator instead of on every Jacobian call.
+DEVICE void jac_nuc_structural_zeros(Real* out) {
+    out[matrix_index(0, 10)] = 0;
+    out[matrix_index(1, 11)] = 0;
+    out[matrix_index(2, 11)] = 0;
+    out[matrix_index(3, 4)] = 0;
+    out[matrix_index(3, 9)] = 0;
+    out[matrix_index(3, 10)] = 0;
+    out[matrix_index(3, 11)] = 0;
+    out[matrix_index(3, 12)] = 0;
+    out[matrix_index(3, 13)] = 0;
+    out[matrix_index(4, 3)] = 0;
+    out[matrix_index(4, 6)] = 0;
+    out[matrix_index(4, 9)] = 0;
+    out[matrix_index(4, 11)] = 0;
+    out[matrix_index(4, 12)] = 0;
+    out[matrix_index(4, 13)] = 0;
+    out[matrix_index(5, 6)] = 0;
+    out[matrix_index(5, 11)] = 0;
+    out[matrix_index(5, 12)] = 0;
+    out[matrix_index(5, 13)] = 0;
+    out[matrix_index(6, 4)] = 0;
+    out[matrix_index(6, 5)] = 0;
+    out[matrix_index(6, 7)] = 0;
+    out[matrix_index(6, 9)] = 0;
+    out[matrix_index(6, 10)] = 0;
+    out[matrix_index(6, 11)] = 0;
+    out[matrix_index(6, 12)] = 0;
+    out[matrix_index(6, 13)] = 0;
+    out[matrix_index(7, 6)] = 0;
+    out[matrix_index(7, 8)] = 0;
+    out[matrix_index(7, 9)] = 0;
+    out[matrix_index(7, 10)] = 0;
+    out[matrix_index(7, 11)] = 0;
+    out[matrix_index(7, 12)] = 0;
+    out[matrix_index(7, 13)] = 0;
+    out[matrix_index(8, 7)] = 0;
+    out[matrix_index(8, 11)] = 0;
+    out[matrix_index(8, 12)] = 0;
+    out[matrix_index(8, 13)] = 0;
+    out[matrix_index(9, 3)] = 0;
+    out[matrix_index(9, 6)] = 0;
+    out[matrix_index(9, 7)] = 0;
+    out[matrix_index(9, 8)] = 0;
+    out[matrix_index(9, 10)] = 0;
+    out[matrix_index(9, 11)] = 0;
+    out[matrix_index(9, 12)] = 0;
+    out[matrix_index(9, 13)] = 0;
+    out[matrix_index(10, 0)] = 0;
+    out[matrix_index(10, 6)] = 0;
+    out[matrix_index(10, 11)] = 0;
+    out[matrix_index(10, 12)] = 0;
+    out[matrix_index(10, 13)] = 0;
+    out[matrix_index(11, 1)] = 0;
+    out[matrix_index(11, 2)] = 0;
+    out[matrix_index(11, 3)] = 0;
+    out[matrix_index(11, 4)] = 0;
+    out[matrix_index(11, 5)] = 0;
+    out[matrix_index(11, 6)] = 0;
+    out[matrix_index(11, 7)] = 0;
+    out[matrix_index(11, 8)] = 0;
+    out[matrix_index(11, 9)] = 0;
+    out[matrix_index(11, 10)] = 0;
+    out[matrix_index(11, 13)] = 0;
+    out[matrix_index(12, 3)] = 0;
+    out[matrix_index(12, 4)] = 0;
+    out[matrix_index(12, 5)] = 0;
+    out[matrix_index(12, 6)] = 0;
+    out[matrix_index(12, 7)] = 0;
+    out[matrix_index(12, 8)] = 0;
+    out[matrix_index(12, 9)] = 0;
+    out[matrix_index(12, 10)] = 0;
+    out[matrix_index(13, 3)] = 0;
+    out[matrix_index(13, 4)] = 0;
+    out[matrix_index(13, 5)] = 0;
+    out[matrix_index(13, 6)] = 0;
+    out[matrix_index(13, 7)] = 0;
+    out[matrix_index(13, 8)] = 0;
+    out[matrix_index(13, 9)] = 0;
+    out[matrix_index(13, 10)] = 0;
+    out[matrix_index(13, 11)] = 0;
+}
 DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     Real T = temperature;
     // rows 0..13 by forward differentiation of rhs_specie (genjac.py)
@@ -5080,85 +5163,6 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     out[matrix_index(13, 2)] = a13_n2_0;
     out[matrix_index(13, 12)] = a13_n12_0;
     out[matrix_index(13, 13)] = a13_n13_0;
-    out[matrix_index(0, 10)] = 0;
-    out[matrix_index(1, 11)] = 0;
-    out[matrix_index(2, 11)] = 0;
-    out[matrix_index(3, 4)] = 0;
-    out[matrix_index(3, 9)] = 0;
-    out[matrix_index(3, 10)] = 0;
-    out[matrix_index(3, 11)] = 0;
-    out[matrix_index(3, 12)] = 0;
-    out[matrix_index(3, 13)] = 0;
-    out[matrix_index(4, 3)] = 0;
-    out[matrix_index(4, 6)] = 0;
-    out[matrix_index(4, 9)] = 0;
-    out[matrix_index(4, 11)] = 0;
-    out[matrix_index(4, 12)] = 0;
-    out[matrix_index(4, 13)] = 0;
-    out[matrix_index(5, 6)] = 0;
-    out[matrix_index(5, 11)] = 0;
-    out[matrix_index(5, 12)] = 0;
-    out[matrix_index(5, 13)] = 0;
-    out[matrix_index(6, 4)] = 0;
-    out[matrix_index(6, 5)] = 0;
-    out[matrix_index(6, 7)] = 0;
-    out[matrix_index(6, 9)] = 0;
-    out[matrix_index(6, 10)] = 0;
-    out[matrix_index(6, 11)] = 0;
-    out[matrix_index(6, 12)] = 0;
-    out[matrix_index(6, 13)] = 0;
-    out[matrix_index(7, 6)] = 0;
-    out[matrix_index(7, 8)] = 0;
-    out[matrix_index(7, 9)] = 0;
-    out[matrix_index(7, 10)] = 0;
-    out[matrix_index(7, 11)] = 0;
-    out[matrix_index(7, 12)] = 0;
-    out[matrix_index(7, 13)] = 0;
-    out[matrix_index(8, 7)] = 0;
-    out[matrix_index(8, 11)] = 0;
-    out[matrix_index(8, 12)] = 0;
-    out[matrix_index(8, 13)] = 0;
-    out[matrix_index(9, 3)] = 0;
-    out[matrix_index(9, 6)] = 0;
-    out[matrix_index(9, 7)] = 0;
-    out[matrix_index(9, 8)] = 0;
-    out[matrix_index(9, 10)] = 0;
-    out[matrix_index(9, 11)] = 0;
-    out[matrix_index(9, 12)] = 0;
-    out[matrix_index(9, 13)] = 0;
-    out[matrix_index(10, 0)] = 0;
-    out[matrix_index(10, 6)] = 0;
-    out[matrix_index(10, 11)] = 0;
-    out[matrix_index(10, 12)] = 0;
-    out[matrix_index(10, 13)] = 0;
-    out[matrix_index(11, 1)] = 0;
-    out[matrix_index(11, 2)] = 0;
-    out[matrix_index(11, 3)] = 0;
-    out[matrix_index(11, 4)] = 0;
-    out[matrix_index(11, 5)] = 0;
-    out[matrix_index(11, 6)] = 0;
-    out[matrix_index(11, 7)] = 0;
-    out[matrix_index(11, 8)] = 0;
-    out[matrix_index(11, 9)] = 0;
-    out[matrix_index(11, 10)] = 0;
-    out[matrix_index(11, 13)] = 0;
-    out[matrix_index(12, 3)] = 0;
-    out[matrix_index(12, 4)] = 0;
-    out[matrix_index(12, 5)] = 0;
-    out[matrix_index(12, 6)] = 0;
-    out[matrix_index(12, 7)] = 0;
-    out[matrix_index(12, 8)] = 0;
-    out[matrix_index(12, 9)] = 0;
-    out[matrix_index(12, 10)] = 0;
-    out[matrix_index(13, 3)] = 0;
-    out[matrix_index(13, 4)] = 0;
-    out[matrix_index(13, 5)] = 0;
-    out[matrix_index(13, 6)] = 0;
-    out[matrix_index(13, 7)] = 0;
-    out[matrix_index(13, 8)] = 0;
-    out[matrix_index(13, 9)] = 0;
-    out[matrix_index(13, 10)] = 0;
-    out[matrix_index(13, 11)] = 0;
     const Real v1641 = xn[0]*xn[12];
     const Real v1844 = math::log(0.001*T);
     const Real v1850 = ((v1844)*(v1844));
@@ -5739,7 +5743,8 @@ DEVICE void rhs(Real t, const Real* y, Real* out, ScratchView s) {
 }
 DEVICE void eval_jacobian(ScratchView s, Real x) {
 
-    // jac_nuc unconditionally writes all 225 entries; no pre-zeroing needed.
+    // jac_nuc writes the 146 structurally nonzero entries; the 79 zeros are
+    // written once in burn_ros2s (jac_nuc_structural_zeros).
     BurnView b = s.burn;
     burn_state_from_y_view(s.y, b);
     jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
@@ -6221,6 +6226,7 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     }
     s.y[NumSpec] = b->e;
 
+    jac_nuc_structural_zeros(s.fjac);
     const auto result = integrate(s);
 
     stats->internal_steps += static_cast<u64>(math::max(0, s.n_step[0]));
