@@ -139,7 +139,6 @@ DEVICE int integrate(ScratchView s) {
                 // rhs calls, decompositions and solves are 3*n_step, n_step and
                 // 3*n_step; burn_ros2s derives them from n_step.
                 n_step += 1;
-                s.n_step[0] = n_step;
 
                 const Real raw_fac = math::cbrt(err) / s.safe[0];
                 const Real lower_fac = 1.0 / s.fac_max[0];
@@ -148,7 +147,6 @@ DEVICE int integrate(ScratchView s) {
                 Real hnew = h / fac_step;
                 if (err <= 1.0) {
                     n_accept += 1;
-                    s.n_accept[0] = n_accept;
                     if (n_accept > 1) {
                         const Real facgus = math::max(1.0 / s.fac_max[0],
                             math::min(1.0 / s.fac_min[0],
@@ -184,6 +182,9 @@ DEVICE int integrate(ScratchView s) {
             }
         }
     }
+    // The step counters are only read after integrate returns.
+    s.n_step[0] = n_step;
+    s.n_accept[0] = n_accept;
     return result;
 
 }
