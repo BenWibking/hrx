@@ -5801,24 +5801,77 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
             row[j - K - 1] = A[midx(K, j)];
         }
         Real next_max = 0.0;
-        // Software-pipelined rows: row i+1 is loaded before row i is
-        // updated and stored, so its load latency overlaps row i's work.
-        // Same per-element operations as the plain row loop.
-        Real nxt[15 - K];
+        // Trailing rows in software-pipelined pairs: rows i+2 and i+3 are
+        // loaded before rows i and i+1 are updated and stored (one memory
+        // wait per pair). Same per-element operations and the same pivot
+        // comparisons in the same row order as the plain row loop.
+        constexpr unsigned NR = 14u - K;
+        Real nxa[15 - K];
+        Real nxb[15 - K];
         [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
-            nxt[j - K] = A[midx(K + 1, j)];
+            nxa[j - K] = A[midx(K + 1, j)];
         }
-        for (unsigned i = K + 1; i < 15u; ++i) {
+        if constexpr (NR >= 2u) {
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                nxb[j - K] = A[midx(K + 2, j)];
+            }
+        }
+        if constexpr (NR >= 2u) {
+            for (unsigned i = K + 1; i + 1 < 15u; i += 2) {
+                Real ca[15 - K];
+                Real cb[15 - K];
+                [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                    ca[j - K] = nxa[j - K];
+                    cb[j - K] = nxb[j - K];
+                }
+                if (i + 3 < 15u) {
+                    const unsigned i2 = i + 2;
+                    const unsigned i3 = i + 3;
+                    __builtin_assume(i3 < 15u);
+                    [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                        nxa[j - K] = A[midx(i2, j)];
+                        nxb[j - K] = A[midx(i3, j)];
+                    }
+                } else if (i + 2 < 15u) {
+                    const unsigned i2 = i + 2;
+                    __builtin_assume(i2 < 15u);
+                    [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                        nxa[j - K] = A[midx(i2, j)];
+                    }
+                }
+                const Real ma = ca[0] * multiplier;
+                [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                    ca[j - K] = ca[j - K] + row[j - K - 1] * ma;
+                }
+                const Real mb = cb[0] * multiplier;
+                [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                    cb[j - K] = cb[j - K] + row[j - K - 1] * mb;
+                }
+                if constexpr (K + 1 < 14u) {
+                    const Real va = math::abs(ca[1]);
+                    const bool ta = (i == K + 1) | (va > next_max);
+                    next_max = ta ? va : next_max;
+                    next_pivot = ta ? i : next_pivot;
+                    const Real vb = math::abs(cb[1]);
+                    const bool tb = vb > next_max;
+                    next_max = tb ? vb : next_max;
+                    next_pivot = tb ? i + 1 : next_pivot;
+                }
+                A[midx(i, K)] = ma;
+                [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                    A[midx(i, j)] = ca[j - K];
+                }
+                A[midx(i + 1, K)] = mb;
+                [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                    A[midx(i + 1, j)] = cb[j - K];
+                }
+            }
+        }
+        if constexpr (NR % 2u == 1u) {
+            // Last row (14), already loaded into nxa.
             Real cur[15 - K];
             [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
-                cur[j - K] = nxt[j - K];
-            }
-            if (i + 1 < 15u) {
-                const unsigned i1 = i + 1;
-                __builtin_assume(i1 < 15u);
-                [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
-                    nxt[j - K] = A[midx(i1, j)];
-                }
+                cur[j - K] = nxa[j - K];
             }
             const Real m = cur[0] * multiplier;
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
@@ -5826,13 +5879,13 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
             }
             if constexpr (K + 1 < 14u) {
                 const Real val = math::abs(cur[1]);
-                const bool take = (i == K + 1) | (val > next_max);
+                const bool take = (14u == K + 1) | (val > next_max);
                 next_max = take ? val : next_max;
-                next_pivot = take ? i : next_pivot;
+                next_pivot = take ? 14u : next_pivot;
             }
-            A[midx(i, K)] = m;
+            A[midx(14u, K)] = m;
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
-                A[midx(i, j)] = cur[j - K];
+                A[midx(14u, j)] = cur[j - K];
             }
         }
     } else {
