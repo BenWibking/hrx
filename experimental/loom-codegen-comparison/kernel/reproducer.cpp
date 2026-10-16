@@ -5801,12 +5801,24 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
             row[j - K - 1] = A[midx(K, j)];
         }
         Real next_max = 0.0;
+        // Software-pipelined rows: row i+1 is loaded before row i is
+        // updated and stored, so its load latency overlaps row i's work.
+        // Same per-element operations as the plain row loop.
+        Real nxt[15 - K];
+        [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+            nxt[j - K] = A[midx(K + 1, j)];
+        }
         for (unsigned i = K + 1; i < 15u; ++i) {
-            // Load the whole trailing row first, then store it: no store
-            // between this row's loads (one memory wait per row).
             Real cur[15 - K];
             [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
-                cur[j - K] = A[midx(i, j)];
+                cur[j - K] = nxt[j - K];
+            }
+            if (i + 1 < 15u) {
+                const unsigned i1 = i + 1;
+                __builtin_assume(i1 < 15u);
+                [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                    nxt[j - K] = A[midx(i1, j)];
+                }
             }
             const Real m = cur[0] * multiplier;
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
@@ -5869,12 +5881,26 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         }
         const Real multiplier = -1.0 / pivot;
         Real next_max = 0.0;
+        // Software-pipelined rows (see lu_step): row i+1 is loaded first.
+        Real nxt[15];
+        {
+            const unsigned src1 = (1u == pivot_row) ? 0u : 1u;
+            [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+                nxt[j] = iter_elem(J, src1, j, fac);
+            }
+        }
         for (unsigned i = 1; i < 15u; ++i) {
-            const unsigned src = (i == pivot_row) ? 0u : i;
-            __builtin_assume(src < 15u);
             Real cur[15];
             [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
-                cur[j] = iter_elem(J, src, j, fac);
+                cur[j] = nxt[j];
+            }
+            if (i + 1 < 15u) {
+                const unsigned i1 = i + 1;
+                const unsigned src = (i1 == pivot_row) ? 0u : i1;
+                __builtin_assume(src < 15u);
+                [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+                    nxt[j] = iter_elem(J, src, j, fac);
+                }
             }
             const Real m = cur[0] * multiplier;
             [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
@@ -5977,6 +6003,60 @@ DEVICE void lu_solve_backward(const Real* LU, Real* x, Real xk) {
         lu_solve_backward<K - 1>(LU, x, next);
     }
 }
+// Batched solve steps: every load of a step (x entries, LU column, and the
+// pivot entries) is issued before any of its stores, so each step waits on
+// memory once. The forward pivot swap is an ordered overwrite store:
+// x[j] (j > K) gets its update, then x[p] = old x[K] + t*L(p,K) (for p == K
+// it is overwritten by x[K] = t). Same per-element operations as lu_solve.
+template <unsigned K>
+DEVICE void lu_fwd_batched(const Real* LU, const int* ipvt, Real* x) {
+    const unsigned pivot_row = static_cast<unsigned>(ipvt[K]);
+    __builtin_assume(pivot_row < 15u);
+    const Real t = x[pivot_row];
+    const Real a = x[K];
+    const Real lp = LU[midx(pivot_row, K)];
+    Real v[14 - K];
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        v[j - K - 1] = x[j] + t * LU[midx(j, K)];
+    }
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        x[j] = v[j - K - 1];
+    }
+    x[pivot_row] = a + t * lp;
+    x[K] = t;
+    if constexpr (K + 1 < 14u) lu_fwd_batched<K + 1>(LU, ipvt, x);
+}
+template <unsigned K>
+DEVICE void lu_bwd_batched(const Real* LU, Real* x, Real xk) {
+    const Real xq = xk / LU[midx(K, K)];
+    if constexpr (K > 0) {
+        Real v[K];
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            v[j] = x[j];
+        }
+        Real u[K];
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            u[j] = LU[midx(j, K)];
+        }
+        x[K] = xq;
+        const Real t = -xq;
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            v[j] = v[j] + t * u[j];
+        }
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            x[j] = v[j];
+        }
+        lu_bwd_batched<K - 1>(LU, x, v[K - 1]);
+    } else {
+        x[K] = xq;
+    }
+}
+DEVICE void lu_solve_batched(const Real* LU, const int* ipvt, Real* x) {
+
+    lu_fwd_batched<0>(LU, ipvt, x);
+    lu_bwd_batched<14>(LU, x, x[14]);
+
+}
 DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 
     lu_solve_forward<0>(LU, ipvt, x);
@@ -5999,7 +6079,7 @@ DEVICE int decompose(ScratchView s, Real fac) {
 }
 DEVICE void solve(ScratchView s, Real* ak) {
 
-        lu_solve(s.e, s.ip, ak);
+        lu_solve_batched(s.e, s.ip, ak);
         s.n_solve[0] += 1;
 
 }
