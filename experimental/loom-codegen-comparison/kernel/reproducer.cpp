@@ -6123,11 +6123,11 @@ DEVICE Real error_norm(ScratchView s) {
 // followed by error_norm.
 // The tolerances are the compile-time values configure_ros2s stores into
 // atol_vec/rtol_vec (never changed afterwards), used directly here.
-DEVICE Real combine_and_error_norm(ScratchView s, Real* yacc) {
+DEVICE Real combine_and_error_norm(ScratchView s, const Real* ak3, Real* yacc) {
     Real ev[15];
     Real yo[15];
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-        const Real ak3i = s.work[i];
+        const Real ak3i = ak3[i];
         yo[i] = s.y[i];
         yacc[i] = yo[i] + C::b1 * s.ak1[i] + C::b2 * s.ak2[i] + C::b3 * ak3i;
         ev[i] = C::e1 * s.ak1[i] + C::e2 * s.ak2[i] + C::e3 * ak3i;
