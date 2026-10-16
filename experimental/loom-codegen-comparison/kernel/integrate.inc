@@ -86,7 +86,7 @@ DEVICE int integrate(ScratchView s) {
 
                 // One RHS/solve call site for all three stages (ak1, ak2, work
                 // are contiguous: stage k writes ak1 + 15*k).
-                for (int stage = 0; stage < 3; ++stage) {
+                for (int stage = 0; ; ++stage) {
                     Real* target = s.ak1 + 15 * stage;
                     // The stage state goes to the RHS in registers (ynew is only
                     // rewritten after the stages), and the k-vector term is formed
@@ -127,57 +127,72 @@ DEVICE int integrate(ScratchView s) {
                             target[i] = tv[i];
                         }
                     }
-                    solve(s, target);
-                }
-
-                // Final combination with the error norm formed in registers: the
-                // new state and error vector are not stored and reloaded (ynew and
-                // work are only read here and by the accept copy). Same operations
-                // and order as the combination loop + error_norm.
-                Real yacc[15];
-                const Real err = combine_and_error_norm(s, yacc);
-                // rhs calls, decompositions and solves are 3*n_step, n_step and
-                // 3*n_step; burn_ros2s derives them from n_step.
-                n_step += 1;
-
-                const Real raw_fac = math::cbrt(err) / s.safe[0];
-                const Real lower_fac = 1.0 / s.fac_max[0];
-                const Real upper_fac = 1.0 / s.fac_min[0];
-                const Real fac_step = math::max(lower_fac, math::min(upper_fac, raw_fac));
-                Real hnew = h / fac_step;
-                if (err <= 1.0) {
-                    n_accept += 1;
-                    if (n_accept > 1) {
-                        const Real facgus = math::max(1.0 / s.fac_max[0],
-                            math::min(1.0 / s.fac_min[0],
-                            (hacc / h) *
-                            math::cbrt((err * err) / erracc) /
-                            s.safe[0]));
-                        hnew = h / math::max(fac_step, facgus);
-                    }
-                    hacc = h;
-                    erracc = math::max(1.e-2, err);
+                    // Solve with the back substitution in registers; stages 0 and 1
+                    // store their k-vector, stage 2 hands its registers straight to
+                    // the final combination (work is not stored and reloaded).
+                    lu_fwd_batched<0>(s.e, s.ip, target);
+                    Real v[15];
                     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                        s.y[i] = yacc[i];
+                        v[i] = target[i];
                     }
-                    x += h;
-                    if (math::abs(hnew) > hmaxn) {
-                        hnew = hmaxn;
+                    lu_bwd_regs<14>(s.e, v);
+                    if (stage < 2) {
+                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                            target[i] = v[i];
+                        }
+                        continue;
                     }
-                    if (reject) {
-                        hnew = math::min(math::abs(hnew), math::abs(h));
-                    }
-                    reject = false;
-                    h = hnew;
-                    retry = false;
-                } else {
 
-                    reject = true;
-                    last = false;
-                    h = hnew;
-                    if (n_accept >= 1) {
-                        s.n_reject[0] += 1;
-                    }
+                        // Final combination with the error norm formed in registers: the
+                        // new state and error vector are not stored and reloaded (ynew and
+                        // work are only read here and by the accept copy). Same operations
+                        // and order as the combination loop + error_norm.
+                        Real yacc[15];
+                        const Real err = combine_and_error_norm(s, v, yacc);
+                        // rhs calls, decompositions and solves are 3*n_step, n_step and
+                        // 3*n_step; burn_ros2s derives them from n_step.
+                        n_step += 1;
+
+                        const Real raw_fac = math::cbrt(err) / s.safe[0];
+                        const Real lower_fac = 1.0 / s.fac_max[0];
+                        const Real upper_fac = 1.0 / s.fac_min[0];
+                        const Real fac_step = math::max(lower_fac, math::min(upper_fac, raw_fac));
+                        Real hnew = h / fac_step;
+                        if (err <= 1.0) {
+                            n_accept += 1;
+                            if (n_accept > 1) {
+                                const Real facgus = math::max(1.0 / s.fac_max[0],
+                                    math::min(1.0 / s.fac_min[0],
+                                    (hacc / h) *
+                                    math::cbrt((err * err) / erracc) /
+                                    s.safe[0]));
+                                hnew = h / math::max(fac_step, facgus);
+                            }
+                            hacc = h;
+                            erracc = math::max(1.e-2, err);
+                            [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                                s.y[i] = yacc[i];
+                            }
+                            x += h;
+                            if (math::abs(hnew) > hmaxn) {
+                                hnew = hmaxn;
+                            }
+                            if (reject) {
+                                hnew = math::min(math::abs(hnew), math::abs(h));
+                            }
+                            reject = false;
+                            h = hnew;
+                            retry = false;
+                        } else {
+
+                            reject = true;
+                            last = false;
+                            h = hnew;
+                            if (n_accept >= 1) {
+                                s.n_reject[0] += 1;
+                            }
+                        }
+                    break;
                 }
             }
         }
