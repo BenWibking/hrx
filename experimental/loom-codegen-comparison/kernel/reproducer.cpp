@@ -5748,7 +5748,6 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
     BurnView b = s.burn;
     burn_state_from_y_view(s.y, b);
     jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
-    s.n_jac[0] += 1;
 
 }
 DEVICE unsigned midx(unsigned row, unsigned column) {
@@ -6229,7 +6228,7 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
 
     stats->internal_steps += static_cast<u64>(math::max(0, s.n_step[0]));
     stats->rhs_calls += static_cast<u64>(math::max(0, 3 * s.n_step[0]));
-    stats->jacobian_calls += static_cast<u64>(math::max(0, s.n_jac[0]));
+    stats->jacobian_calls += static_cast<u64>(math::max(0, s.n_accept[0] + (result == LU_DECOMPOSITION_ERROR ? 1 : 0)));
     stats->decompositions += static_cast<u64>(math::max(0, s.n_step[0]));
     stats->linear_solves += static_cast<u64>(math::max(0, 3 * s.n_step[0]));
     stats->accepted_steps += static_cast<u64>(math::max(0, s.n_accept[0]));
