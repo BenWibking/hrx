@@ -5781,6 +5781,8 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
     unsigned next_pivot = K + 1;
     ipvt[K] = static_cast<int>(pivot_row);
     __builtin_assume(pivot_row < 15u);
+    // K == 13: the final A(14,14), kept from registers for the singularity check.
+    Real last_diag = 0.0;
 
     if (A[midx(pivot_row, K)] != 0.0) {
         if (pivot_row != K) {
@@ -5838,14 +5840,18 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
                 A[midx(i, j)] = cur[j - K];
             }
+            if constexpr (K == 13u) last_diag = cur[1];
         }
     } else {
         info = static_cast<int>(K + 1);
         if constexpr (K + 1 < 14u) next_pivot = lu_pivot_search<K + 1>(A);
+        if constexpr (K == 13u) last_diag = A[midx(14u, 14u)];
     }
     if constexpr (K + 1 < 14u) {
         return lu_step<K + 1>(A, ipvt, info, next_pivot);
     } else {
+        // Reference: a zero final diagonal reports info = 15 (overriding).
+        if (last_diag == 0.0) info = 15;
         return info;
     }
 }
@@ -6094,11 +6100,9 @@ DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 DEVICE int decompose(ScratchView s, Real fac) {
 
         Real* A = s.e;
+        // ip[14] is never read by the solve; the A(14,14) == 0 check is done
+        // in lu_step<13> on the register value.
         int info = lu_step0_from_jac(s.fjac, A, s.ip, fac);
-        s.ip[14] = 14;
-        if (A[midx(14u, 14u)] == 0.0) {
-            info = 15;
-        }
         return info;
 
 }
