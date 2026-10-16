@@ -15,15 +15,11 @@ DEVICE int integrate(ScratchView s) {
         s.fac_min[0] <= 0.0 || s.fac_max[0] < 1.0) {
         return BAD_INPUTS;
     }
-    for (size_type i = 0; i < N && !done; ++i) {
-        __builtin_assume(i < N);
-        if (s.atol_vec[i] <= 0.0 || s.rtol_vec[i] <= 10.0 * s.uround[0]) {
-            result = TOO_MUCH_ACCURACY_REQUESTED;
-            done = true;
-        }
+    bool bad_tol = false;
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        bad_tol = bad_tol | (s.atol_vec[i] <= 0.0) | (s.rtol_vec[i] <= 10.0 * s.uround[0]);
     }
-
-    if (done) return result;
+    if (bad_tol) return TOO_MUCH_ACCURACY_REQUESTED;
     const Real hmaxn = s.tout[0] - s.t[0];
     Real h = s.dt[0];
     if (math::abs(h) <= 10.0 * s.uround[0]) {
