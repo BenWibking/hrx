@@ -5856,14 +5856,18 @@ DEVICE Real iter_elem(const Real* J, unsigned i, unsigned j, Real fac) {
 // but the loads come from fjac (never stored here), so the per-row loads do not
 // wait on the preceding stores to e. Every element of e is written.
 DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
+    // Column-0 pivot search with all loads issued together (fjac is not
+    // stored here); same comparisons in the same order (first maximum).
+    Real col[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        col[i] = math::abs(iter_elem(J, i, 0u, fac));
+    }
     unsigned pivot_row = 0;
-    Real max_val = math::abs(iter_elem(J, 0u, 0u, fac));
-    for (unsigned i = 1; i < 15u; ++i) {
-        const Real val = math::abs(-J[midx(i, 0u)]);
-        if (val > max_val) {
-            max_val = val;
-            pivot_row = i;
-        }
+    Real max_val = col[0];
+    [[loom::unroll]] for (unsigned i = 1; i < 15u; ++i) {
+        const bool take = col[i] > max_val;
+        max_val = take ? col[i] : max_val;
+        pivot_row = take ? i : pivot_row;
     }
     __builtin_assume(pivot_row < 15u);
     ipvt[0] = static_cast<int>(pivot_row);

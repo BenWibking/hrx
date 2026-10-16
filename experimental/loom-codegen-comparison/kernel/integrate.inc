@@ -88,49 +88,39 @@ DEVICE int integrate(ScratchView s) {
                 // are contiguous: stage k writes ak1 + 15*k).
                 for (int stage = 0; stage < 3; ++stage) {
                     Real* target = s.ak1 + 15 * stage;
-                    // Vector updates: all loads, then all stores (one drain
-                    // per loop instead of two per element).
+                    // The stage state goes to the RHS in registers (ynew is only
+                    // rewritten after the stages), and the k-vector term is formed
+                    // after the RHS from ak1/ak2, so nothing is stored and then
+                    // reloaded from the same array before the RHS.
+                    Real yv[15];
                     if (stage == 0) {
-                        Real yv[15];
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
                             yv[i] = s.y[i];
                         }
-                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                            s.ynew[i] = yv[i];
-                        }
                     } else if (stage == 1) {
-                        Real yv[15];
-                        Real kv[15];
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
                             yv[i] = s.y[i] + C::a21 * s.ak1[i];
-                            kv[i] = (C::c21 / h) * s.ak1[i];
-                        }
-                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                            s.ynew[i] = yv[i];
-                            s.ak2[i] = kv[i];
                         }
                     } else {
-                        Real yv[15];
-                        Real kv[15];
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
                             yv[i] = s.y[i] + C::a31 * s.ak1[i] + C::a32 * s.ak2[i];
-                            kv[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) / h;
-                        }
-                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                            s.ynew[i] = yv[i];
-                            s.work[i] = kv[i];
                         }
                     }
-                    CHEM_RHS(x, s.ynew, s.dy, s);
+                    Real dyv[15];
+                    CHEM_RHS(x, yv, dyv, s);
                     {
                         Real tv[15];
                         if (stage == 0) {
                             [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                                tv[i] = s.dy[i];
+                                tv[i] = dyv[i];
+                            }
+                        } else if (stage == 1) {
+                            [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                                tv[i] = (C::c21 / h) * s.ak1[i] + dyv[i];
                             }
                         } else {
                             [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                                tv[i] = target[i] + s.dy[i];
+                                tv[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) / h + dyv[i];
                             }
                         }
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
