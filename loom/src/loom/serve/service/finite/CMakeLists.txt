@@ -9,6 +9,55 @@
 
 iree_add_all_subdirs()
 
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_library(
+  NAME
+    component_tests
+  SRCS
+    "component_test.cc"
+  DEPS
+    ::component
+    ::model
+    ::result
+    iree::base
+    iree::hal
+    iree::task
+    iree::testing::gtest
+    iree::testing::temp_file
+    iree::vm
+    loom::serve::runtime::device
+    loom::serve::runtime::execution
+    loom::serve::runtime::host
+    loom::serve::runtime::parameter::residency
+    loom::serve::runtime::storage::memory
+    loom::serve::testing::device
+    loom::serve::testing::service_application
+  TESTONLY
+  ALWAYSLINK
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_library(
+  NAME
+    component
+  HDRS
+    "component.h"
+  SRCS
+    "component.c"
+  DEPS
+    ::model
+    iree::base
+    loom::serve::runtime::device
+    loom::serve::runtime::host::wake
+    loom::serve::runtime::parameter::residency
+    loom::serve::runtime::program::compilation
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
     protocol
@@ -19,7 +68,9 @@ loom_cc_library(
     iree::vm
   PUBLIC
 )
+endif()
 
+if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
     service
@@ -53,7 +104,9 @@ loom_cc_library(
     loom::util::stream
   PUBLIC
 )
+endif()
 
+if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
     result
@@ -68,6 +121,7 @@ loom_cc_library(
     loom::serve::runtime::execution
   PUBLIC
 )
+endif()
 
 if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
@@ -84,7 +138,6 @@ loom_cc_library(
     iree::hal
     iree::module::hal::types
     iree::tokenizer
-    iree::tokenizer::format::huggingface::tokenizer_json
     iree::tooling::device_profiling
     iree::vm
     loom::binding::c::loomc
@@ -104,6 +157,7 @@ loom_cc_library(
     loom::serve::runtime::program::preparation
     loom::serve::runtime::program::sources
     loom::serve::runtime::program::stage_set
+    loom::serve::runtime::program::tokenizer_load
     loom::serve::runtime::program::variant_pool
     loom::serve::service::execution_reconfiguration
     loom::util::stream
@@ -111,7 +165,7 @@ loom_cc_library(
 )
 endif()
 
-if(IREE_HAL_DRIVER_TASK)
+if(IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM)
 loom_cc_test(
   NAME
     result_test
@@ -127,6 +181,8 @@ loom_cc_test(
     loom::serve::runtime::device
     loom::serve::runtime::execution
     loom::serve::runtime::host
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
 )
 endif()
 

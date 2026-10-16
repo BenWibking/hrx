@@ -39,6 +39,7 @@ loom_check_test_suite(
     "buffer_alloca_invalid.cxx-test"
     "buffer_memory_space.cxx-test"
     "buffer_memory_space_invalid.cxx-test"
+    "callable_effects.cxx-test"
     "check.cxx-test"
     "check_close.cxx-test"
     "check_close_invalid.cxx-test"
@@ -65,6 +66,7 @@ loom_check_test_suite(
     "constexpr_contract.cxx-test"
     "constexpr_contract_invalid.cxx-test"
     "constexpr_destruction.cxx-test"
+    "constexpr_reference_members.cxx-test"
     "constexpr_reference_return.cxx-test"
     "constexpr_semantics.cxx-test"
     "constexpr_storage.cxx-test"
@@ -101,6 +103,7 @@ loom_check_test_suite(
     "local_addresses.cxx-test"
     "local_arrays.cxx-test"
     "locations.cxx-test"
+    "loop_bodies.cxx-test"
     "loops.cxx-test"
     "macro_operators.cxx-test"
     "matrix_fragments.cxx-test"
@@ -1125,6 +1128,15 @@ loom_test_module(
     assumptions_module
   SRCS
     "assumptions.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    barrier_helpers_module
+  SRCS
+    "barrier_helpers.cxx"
 )
 endif()
 

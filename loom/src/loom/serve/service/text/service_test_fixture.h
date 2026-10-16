@@ -30,17 +30,34 @@
 #include "loom/serve/service/text/owner_turn_test_util.h"
 #include "loom/serve/service/text/service.h"
 #include "loom/serve/service/text/source_test_oracle.h"
-#include "loom/serve/service/text/stalled_client_test_util.h"
 #include "loom/serve/telemetry/stream.h"
 #include "loom/serve/testing/http_harness.h"
 #include "loom/serve/testing/model.h"
+#include "loom/serve/testing/stalled_http_client.h"
 #include "loom/serve/testing/stalled_stderr.h"
 #include "loom/serve/transport/http/listener.h"
 
 namespace loom_serve::testing::text {
 
+// Credit-controlled client carrying the ordinary text routing headers.
+class StalledClient : public loom_serve::testing::StalledHttpClient {
+ public:
+  void Send(loom_serve_http_server_t* server, const std::string& body,
+            const char* target = "/v1/chat/completions",
+            const char* method = "POST") {
+    StalledHttpClient::Send(
+        server, target, body, method,
+        "X-Loom-Session: stalled\r\nX-Loom-Model: fixture-text\r\n");
+  }
+};
+
 class SourceTextServiceTest : public ::testing::Test {
  protected:
+  // Whether this fixture owns a standalone model before the test body runs.
+  // Registry-owned tests override this because their production path creates
+  // the model from the submitted declaration.
+  virtual bool NeedsStandaloneModel() const { return true; }
+
   // Document ownership covers every asynchronous native load in this fixture.
   loom_serve::testing::ModelDocument document_;
 
@@ -126,8 +143,7 @@ class SourceTextServiceTest : public ::testing::Test {
   }
 
   void StartManaged(loom_serve_device_idle_policy_t idle = {}) {
-    IREE_ASSERT_OK(loom_serve_text_model_free(model_));
-    model_ = nullptr;
+    ASSERT_EQ(model_, nullptr);
     http_.Start([this, idle]() -> iree_status_t {
       const loom_serve_model_registration_options_t options = {
           .device_group = group_, .heartbeat_interval = 0};
@@ -148,14 +164,21 @@ class SourceTextServiceTest : public ::testing::Test {
     });
   }
 
-  std::string Declaration(const std::string& name, const std::string& source,
-                          const char* admission = "open",
-                          const std::string& definition_fields = "") {
+  std::string Declaration(
+      const std::string& name, const std::string& source,
+      const char* admission = "open", const std::string& definition_fields = "",
+      const std::vector<std::string>& additional_sources = {}) {
+    std::string sources = "\"advance.loom\"";
+    for (const auto& path : additional_sources) {
+      sources += ",\"" + path + "\"";
+    }
     return "{\"name\":\"" + name + "\",\"base_directory\":\"" +
            std::filesystem::absolute(source).string() + "\",\"admission\":\"" +
            admission +
            "\",\"definition\":{\"kind\":\"text\",\"prepare\":\"prepare.loom\","
-           "\"control\":\"control.loom\",\"sources\":[\"advance.loom\"],"
+           "\"control\":\"control.loom\",\"sources\":[" +
+           sources +
+           "],"
            "\"weights\":\"" +
            weights_ + "\",\"tokenizer\":\"" +
            std::filesystem::absolute(tokenizer_).string() +
@@ -215,6 +238,25 @@ class SourceTextServiceTest : public ::testing::Test {
                              const std::string& content) {
     return "{\"role\":\"" + role + "\",\"content\":\"" + content + "\"}";
   }
+
+  static std::string ImageMessage(const std::string& before,
+                                  const std::string& mime_type,
+                                  const std::string& base64,
+                                  const std::string& detail,
+                                  const std::string& after) {
+    return "{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"" +
+           before +
+           "\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:" +
+           mime_type + ";base64," + base64 + "\",\"detail\":\"" + detail +
+           "\"}},{\"type\":\"text\",\"text\":\"" + after + "\"}]}";
+  }
+
+  static constexpr char kPam[] =
+      "UDcKV0lEVEggMgpIRUlHSFQgMgpERVBUSCAzCk1BWFZBTCAyNTUKVFVQTFRZUEUg"
+      "UkdCCkVOREhEUgr/AAAA/wAAAP////8=";
+  static constexpr char kAlphaPam[] =
+      "UDcKV0lEVEggMgpIRUlHSFQgMgpERVBUSCA0Ck1BWFZBTCAyNTUKVFVQTFRZUEUg"
+      "UkdCX0FMUEhBCkVOREhEUgoKFB4AKDI8gEZQWv9kbnjI";
 
   static std::string Request(const std::string& messages, size_t limit = 16) {
     return "{\"model\":\"fixture-text\",\"stream\":true,\"stream_options\":{"
@@ -637,6 +679,12 @@ class SourceTextServiceTest : public ::testing::Test {
   loom_serve_http_listener_t* listener_ = nullptr;
   // HTTP readiness and optional outer owner, joined before model destruction.
   loom_serve::testing::HttpHarness http_;
+};
+
+// Source-service fixture whose model is created by the registration owner.
+class RegisteredSourceTextServiceTest : public SourceTextServiceTest {
+ protected:
+  bool NeedsStandaloneModel() const override { return false; }
 };
 
 }  // namespace loom_serve::testing::text

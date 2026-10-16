@@ -74,7 +74,7 @@ static const loom_amdgpu_lower_dispatch_row_t
                 LOOM_OP_INDEX_DIV, loom_amdgpu_integer_division_plan_t,
                 loom_amdgpu_select_integer_division_dispatch,
                 loom_amdgpu_emit_integer_division_dispatch,
-                loom_amdgpu_low_legality_verify_i64_division,
+                loom_amdgpu_low_legality_verify_wide_division,
                 LOOM_AMDGPU_STORAGE_INTEGER_DIVISION,
                 LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_INDEX_DIVREM)] =
@@ -82,14 +82,14 @@ static const loom_amdgpu_lower_dispatch_row_t
                 LOOM_OP_INDEX_DIVREM, loom_amdgpu_integer_division_plan_t,
                 loom_amdgpu_select_integer_division_dispatch,
                 loom_amdgpu_emit_integer_division_dispatch,
-                loom_amdgpu_low_legality_verify_i64_division,
+                loom_amdgpu_low_legality_verify_wide_division,
                 LOOM_AMDGPU_STORAGE_INTEGER_DIVISION),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_INDEX_REM)] =
             LOOM_AMDGPU_GENERATED_PRESELECT_DATA_POLICY_ROW(
                 LOOM_OP_INDEX_REM, loom_amdgpu_integer_division_plan_t,
                 loom_amdgpu_select_integer_division_dispatch,
                 loom_amdgpu_emit_integer_division_dispatch,
-                loom_amdgpu_low_legality_verify_i64_division,
+                loom_amdgpu_low_legality_verify_wide_division,
                 LOOM_AMDGPU_STORAGE_INTEGER_DIVISION,
                 LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
 };
@@ -142,7 +142,7 @@ static const loom_amdgpu_lower_dispatch_row_t
                 LOOM_OP_SCALAR_DIVUI, loom_amdgpu_integer_division_plan_t,
                 loom_amdgpu_select_integer_division_dispatch,
                 loom_amdgpu_emit_integer_division_dispatch,
-                loom_amdgpu_low_legality_verify_i64_division,
+                loom_amdgpu_low_legality_verify_wide_division,
                 LOOM_AMDGPU_STORAGE_INTEGER_DIVISION,
                 LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_DIVSI)] =
@@ -150,7 +150,7 @@ static const loom_amdgpu_lower_dispatch_row_t
                 LOOM_OP_SCALAR_DIVSI, loom_amdgpu_integer_division_plan_t,
                 loom_amdgpu_select_integer_division_dispatch,
                 loom_amdgpu_emit_integer_division_dispatch,
-                loom_amdgpu_low_legality_verify_i64_division,
+                loom_amdgpu_low_legality_verify_wide_division,
                 LOOM_AMDGPU_STORAGE_INTEGER_DIVISION,
                 LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_DIVREMUI)] =
@@ -158,21 +158,21 @@ static const loom_amdgpu_lower_dispatch_row_t
                 LOOM_OP_SCALAR_DIVREMUI, loom_amdgpu_integer_division_plan_t,
                 loom_amdgpu_select_integer_division_dispatch,
                 loom_amdgpu_emit_integer_division_dispatch,
-                loom_amdgpu_low_legality_verify_i64_division,
+                loom_amdgpu_low_legality_verify_wide_division,
                 LOOM_AMDGPU_STORAGE_INTEGER_DIVISION),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_DIVREMSI)] =
             LOOM_AMDGPU_RECIPE_DATA_STORAGE_ROW(
                 LOOM_OP_SCALAR_DIVREMSI, loom_amdgpu_integer_division_plan_t,
                 loom_amdgpu_select_integer_division_dispatch,
                 loom_amdgpu_emit_integer_division_dispatch,
-                loom_amdgpu_low_legality_verify_i64_division,
+                loom_amdgpu_low_legality_verify_wide_division,
                 LOOM_AMDGPU_STORAGE_INTEGER_DIVISION),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_REMUI)] =
             LOOM_AMDGPU_GENERATED_PRESELECT_DATA_POLICY_ROW(
                 LOOM_OP_SCALAR_REMUI, loom_amdgpu_integer_division_plan_t,
                 loom_amdgpu_select_integer_division_dispatch,
                 loom_amdgpu_emit_integer_division_dispatch,
-                loom_amdgpu_low_legality_verify_i64_division,
+                loom_amdgpu_low_legality_verify_wide_division,
                 LOOM_AMDGPU_STORAGE_INTEGER_DIVISION,
                 LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_REMSI)] =
@@ -180,7 +180,7 @@ static const loom_amdgpu_lower_dispatch_row_t
                 LOOM_OP_SCALAR_REMSI, loom_amdgpu_integer_division_plan_t,
                 loom_amdgpu_select_integer_division_dispatch,
                 loom_amdgpu_emit_integer_division_dispatch,
-                loom_amdgpu_low_legality_verify_i64_division,
+                loom_amdgpu_low_legality_verify_wide_division,
                 LOOM_AMDGPU_STORAGE_INTEGER_DIVISION,
                 LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_MULI)] =
@@ -997,12 +997,13 @@ static const loom_amdgpu_lower_dispatch_row_t
                 LOOM_OP_KERNEL_SUBGROUP_MATCH_ALL,
                 loom_amdgpu_low_legality_verify_kernel_subgroup_match),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_KERNEL_WORKGROUP_REDUCE)] =
-            LOOM_AMDGPU_RECIPE_DATA_SOURCE_REPORT_ROW(
+            LOOM_AMDGPU_RECIPE_DATA_STORAGE_REPORT_ROW(
                 LOOM_OP_KERNEL_WORKGROUP_REDUCE,
                 loom_amdgpu_workgroup_reduce_plan_t,
                 loom_amdgpu_select_kernel_workgroup_reduce_dispatch,
                 loom_amdgpu_emit_kernel_workgroup_reduce_dispatch,
-                loom_amdgpu_low_legality_verify_kernel_workgroup_reduce, 1,
+                loom_amdgpu_low_legality_verify_kernel_workgroup_reduce,
+                LOOM_AMDGPU_STORAGE_SOURCE_OPERANDS,
                 LOOM_AMDGPU_REPORT_WORKGROUP_REDUCE_PUBLICATION),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_KERNEL_WORKGROUP_SCAN)] =
             LOOM_AMDGPU_RECIPE_DATA_SOURCE_ROW(

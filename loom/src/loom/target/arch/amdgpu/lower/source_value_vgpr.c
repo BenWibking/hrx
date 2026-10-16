@@ -79,6 +79,8 @@ static bool loom_amdgpu_source_memory_access_prefers_vgpr(
   }
   if (plan.operation_kind != LOOM_LOW_SOURCE_MEMORY_OPERATION_LOAD ||
       (uint64_t)plan.element_byte_count * plan.vector_lane_count < 4 ||
+      (plan.vector_lane_byte_stride != plan.element_byte_count &&
+       plan.element_byte_count < 4) ||
       plan.minimum_alignment < 4 ||
       (plan.memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL &&
        plan.memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_CONSTANT) ||
@@ -205,7 +207,7 @@ static const loom_amdgpu_source_producer_flags_t
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_KERNEL_SUBGROUP_SCAN)] =
             LOOM_AMDGPU_SOURCE_PRODUCER_RESULT0_VGPR,
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_KERNEL_WORKGROUP_REDUCE)] =
-            LOOM_AMDGPU_SOURCE_PRODUCER_RESULT0_VGPR,
+            LOOM_AMDGPU_SOURCE_PRODUCER_ALWAYS_VGPR,
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_KERNEL_WORKGROUP_SCAN)] =
             LOOM_AMDGPU_SOURCE_PRODUCER_RESULT0_VGPR,
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_KERNEL_SUBGROUP_SHUFFLE)] =

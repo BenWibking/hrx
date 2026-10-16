@@ -14,8 +14,14 @@ set(IREE_DEPENDENCY_IDS
   "google_benchmark"
   "googletest"
   "libbacktrace"
+  "libjpeg_turbo"
+  "libpng"
+  "zlib"
   "zstd"
   "catch2"
+  "miniaudio"
+  "giflib"
+  "libwebp"
   "tracy_client"
   "cxx"
   "mimalloc"
@@ -93,6 +99,54 @@ set(IREE_DEP_LIBBACKTRACE_BUILD_FILE "")
 set(IREE_DEP_LIBBACKTRACE_PATCHES "")
 set(IREE_DEP_LIBBACKTRACE_PATCH_ARGS "")
 
+set(IREE_DEP_LIBJPEG_TURBO_KIND "bazel_dep")
+set(IREE_DEP_LIBJPEG_TURBO_OWNER "shared")
+set(IREE_DEP_LIBJPEG_TURBO_MODULE_NAME "libjpeg_turbo")
+set(IREE_DEP_LIBJPEG_TURBO_REPO_NAME "libjpeg_turbo")
+set(IREE_DEP_LIBJPEG_TURBO_VERSION "3.1.3.bcr.6")
+set(IREE_DEP_LIBJPEG_TURBO_DEV_DEPENDENCY "FALSE")
+set(IREE_DEP_LIBJPEG_TURBO_SOURCE_URL "https://bcr.bazel.build/modules/libjpeg_turbo/3.1.3.bcr.6/source.json")
+set(IREE_DEP_LIBJPEG_TURBO_URLS
+  "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.1.3/libjpeg-turbo-3.1.3.tar.gz"
+)
+set(IREE_DEP_LIBJPEG_TURBO_SHA256 "075920b826834ac4ddf97661cc73491047855859affd671d52079c6867c1c6c0")
+set(IREE_DEP_LIBJPEG_TURBO_STRIP_PREFIX "libjpeg-turbo-3.1.3")
+set(IREE_DEP_LIBJPEG_TURBO_BUILD_FILE "")
+set(IREE_DEP_LIBJPEG_TURBO_PATCHES "")
+set(IREE_DEP_LIBJPEG_TURBO_PATCH_ARGS "")
+
+set(IREE_DEP_LIBPNG_KIND "bazel_dep")
+set(IREE_DEP_LIBPNG_OWNER "shared")
+set(IREE_DEP_LIBPNG_MODULE_NAME "libpng")
+set(IREE_DEP_LIBPNG_REPO_NAME "libpng")
+set(IREE_DEP_LIBPNG_VERSION "1.6.58.bcr.1")
+set(IREE_DEP_LIBPNG_DEV_DEPENDENCY "FALSE")
+set(IREE_DEP_LIBPNG_SOURCE_URL "https://bcr.bazel.build/modules/libpng/1.6.58.bcr.1/source.json")
+set(IREE_DEP_LIBPNG_URLS
+  "https://github.com/pnggroup/libpng/archive/refs/tags/v1.6.58.tar.gz"
+)
+set(IREE_DEP_LIBPNG_SHA256 "a9d4df463d36a6e5f9c29bd6f4967312d17e996c1854f3511f833924eb1993cf")
+set(IREE_DEP_LIBPNG_STRIP_PREFIX "libpng-1.6.58")
+set(IREE_DEP_LIBPNG_BUILD_FILE "")
+set(IREE_DEP_LIBPNG_PATCHES "")
+set(IREE_DEP_LIBPNG_PATCH_ARGS "")
+
+set(IREE_DEP_ZLIB_KIND "bazel_dep")
+set(IREE_DEP_ZLIB_OWNER "shared")
+set(IREE_DEP_ZLIB_MODULE_NAME "zlib")
+set(IREE_DEP_ZLIB_REPO_NAME "zlib")
+set(IREE_DEP_ZLIB_VERSION "1.3.2")
+set(IREE_DEP_ZLIB_DEV_DEPENDENCY "FALSE")
+set(IREE_DEP_ZLIB_SOURCE_URL "https://bcr.bazel.build/modules/zlib/1.3.2/source.json")
+set(IREE_DEP_ZLIB_URLS
+  "https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz"
+)
+set(IREE_DEP_ZLIB_SHA256 "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16")
+set(IREE_DEP_ZLIB_STRIP_PREFIX "zlib-1.3.2")
+set(IREE_DEP_ZLIB_BUILD_FILE "")
+set(IREE_DEP_ZLIB_PATCHES "")
+set(IREE_DEP_ZLIB_PATCH_ARGS "")
+
 set(IREE_DEP_ZSTD_KIND "bazel_dep")
 set(IREE_DEP_ZSTD_OWNER "shared")
 set(IREE_DEP_ZSTD_MODULE_NAME "zstd")
@@ -125,6 +179,58 @@ set(IREE_DEP_CATCH2_BUILD_FILE "")
 set(IREE_DEP_CATCH2_PATCHES "")
 set(IREE_DEP_CATCH2_PATCH_ARGS "")
 
+set(IREE_DEP_MINIAUDIO_KIND "http_archive")
+set(IREE_DEP_MINIAUDIO_OWNER "shared")
+set(IREE_DEP_MINIAUDIO_MODULE_NAME "miniaudio")
+set(IREE_DEP_MINIAUDIO_REPO_NAME "miniaudio")
+set(IREE_DEP_MINIAUDIO_VERSION "")
+set(IREE_DEP_MINIAUDIO_DEV_DEPENDENCY "FALSE")
+set(IREE_DEP_MINIAUDIO_SOURCE_URL "")
+set(IREE_DEP_MINIAUDIO_URLS
+  "https://github.com/mackron/miniaudio/archive/refs/tags/0.11.25.tar.gz"
+)
+set(IREE_DEP_MINIAUDIO_SHA256 "b900edcffe979816e2560a0580b9b1216d674b4f17fbadeca8f777a7f8ab0274")
+set(IREE_DEP_MINIAUDIO_STRIP_PREFIX "miniaudio-0.11.25")
+set(IREE_DEP_MINIAUDIO_BUILD_FILE "//build_tools/third_party/miniaudio:miniaudio.BUILD.bazel")
+set(IREE_DEP_MINIAUDIO_PATCHES "")
+set(IREE_DEP_MINIAUDIO_PATCH_ARGS "")
+
+set(IREE_DEP_GIFLIB_KIND "http_archive")
+set(IREE_DEP_GIFLIB_OWNER "shared")
+set(IREE_DEP_GIFLIB_MODULE_NAME "giflib")
+set(IREE_DEP_GIFLIB_REPO_NAME "giflib")
+set(IREE_DEP_GIFLIB_VERSION "")
+set(IREE_DEP_GIFLIB_DEV_DEPENDENCY "FALSE")
+set(IREE_DEP_GIFLIB_SOURCE_URL "")
+set(IREE_DEP_GIFLIB_URLS
+  "https://github.com/arthenica/giflib/archive/refs/tags/5.2.1.tar.gz"
+)
+set(IREE_DEP_GIFLIB_SHA256 "b606fd11f489ecf343cbd3d810f47f99f51754b2c09de4904253ffb235e3df4a")
+set(IREE_DEP_GIFLIB_STRIP_PREFIX "giflib-5.2.1")
+set(IREE_DEP_GIFLIB_BUILD_FILE "//build_tools/third_party/giflib:giflib.BUILD.bazel")
+set(IREE_DEP_GIFLIB_PATCHES
+  "//build_tools/third_party/giflib:portable_hash_header.patch"
+)
+set(IREE_DEP_GIFLIB_PATCH_ARGS
+  "-p1"
+)
+
+set(IREE_DEP_LIBWEBP_KIND "http_archive")
+set(IREE_DEP_LIBWEBP_OWNER "shared")
+set(IREE_DEP_LIBWEBP_MODULE_NAME "libwebp")
+set(IREE_DEP_LIBWEBP_REPO_NAME "libwebp")
+set(IREE_DEP_LIBWEBP_VERSION "")
+set(IREE_DEP_LIBWEBP_DEV_DEPENDENCY "FALSE")
+set(IREE_DEP_LIBWEBP_SOURCE_URL "")
+set(IREE_DEP_LIBWEBP_URLS
+  "https://github.com/webmproject/libwebp/archive/refs/tags/v1.6.0.tar.gz"
+)
+set(IREE_DEP_LIBWEBP_SHA256 "93a852c2b3efafee3723efd4636de855b46f9fe1efddd607e1f42f60fc8f2136")
+set(IREE_DEP_LIBWEBP_STRIP_PREFIX "libwebp-1.6.0")
+set(IREE_DEP_LIBWEBP_BUILD_FILE "//build_tools/third_party/libwebp:libwebp.BUILD.bazel")
+set(IREE_DEP_LIBWEBP_PATCHES "")
+set(IREE_DEP_LIBWEBP_PATCH_ARGS "")
+
 set(IREE_DEP_TRACY_CLIENT_KIND "http_archive")
 set(IREE_DEP_TRACY_CLIENT_OWNER "shared")
 set(IREE_DEP_TRACY_CLIENT_MODULE_NAME "tracy_client")
@@ -154,10 +260,10 @@ set(IREE_DEP_CXX_VERSION "")
 set(IREE_DEP_CXX_DEV_DEPENDENCY "FALSE")
 set(IREE_DEP_CXX_SOURCE_URL "")
 set(IREE_DEP_CXX_URLS
-  "https://github.com/benvanik/cplusplus/archive/0d9e73ee1ec42ad94e1fd5408d59feb42838b97f.tar.gz"
+  "https://github.com/benvanik/cplusplus/archive/a6bf47b1c1bc0f30a61df8789ee2e7a1ae2c2b17.tar.gz"
 )
-set(IREE_DEP_CXX_SHA256 "a4e77cad5f3e2e83886641dabe7d7f7400d730d74233963323be19b632438e2d")
-set(IREE_DEP_CXX_STRIP_PREFIX "cplusplus-0d9e73ee1ec42ad94e1fd5408d59feb42838b97f")
+set(IREE_DEP_CXX_SHA256 "7793f6e7639cd6c7f4e246d33dce762d5a90f42109c7793b98c4b7712526ad99")
+set(IREE_DEP_CXX_STRIP_PREFIX "cplusplus-a6bf47b1c1bc0f30a61df8789ee2e7a1ae2c2b17")
 set(IREE_DEP_CXX_BUILD_FILE "//build_tools/third_party/cxx:cxx.BUILD.bazel")
 set(IREE_DEP_CXX_PATCHES "")
 set(IREE_DEP_CXX_PATCH_ARGS "")

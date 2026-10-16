@@ -379,11 +379,14 @@ TEST_F(BuilderTest, DirectWriteEffectSummaryUpdatesOnErase) {
   EXPECT_EQ(module_->body->read_effect_count, 0u);
   EXPECT_EQ(module_->body->write_effect_count, 1u);
   EXPECT_EQ(module_->body->memory_access_count, 1u);
+  EXPECT_EQ(loom_region_written_memory_spaces(module_->body),
+            1u << LOOM_VALUE_FACT_MEMORY_SPACE_UNKNOWN);
 
   IREE_ASSERT_OK(loom_op_erase(module_, write_op));
   EXPECT_EQ(module_->body->read_effect_count, 0u);
   EXPECT_EQ(module_->body->write_effect_count, 0u);
   EXPECT_EQ(module_->body->memory_access_count, 0u);
+  EXPECT_EQ(loom_region_written_memory_spaces(module_->body), 0);
 }
 
 TEST_F(BuilderTest, UnknownOpEffectsAreConservative) {
@@ -432,6 +435,10 @@ TEST_F(BuilderTest, NestedWriteEffectSummaryPropagatesToAncestors) {
   EXPECT_EQ(module_->body->write_effect_count, 1u);
   EXPECT_EQ(map_body->memory_access_count, 1u);
   EXPECT_EQ(module_->body->memory_access_count, 1u);
+  EXPECT_EQ(loom_region_written_memory_spaces(map_body),
+            1u << LOOM_VALUE_FACT_MEMORY_SPACE_UNKNOWN);
+  EXPECT_EQ(loom_region_written_memory_spaces(module_->body),
+            1u << LOOM_VALUE_FACT_MEMORY_SPACE_UNKNOWN);
 
   IREE_ASSERT_OK(loom_module_compute_uses(module_));
   EXPECT_EQ(map_body->memory_access_count, 1u);
@@ -443,6 +450,8 @@ TEST_F(BuilderTest, NestedWriteEffectSummaryPropagatesToAncestors) {
   EXPECT_EQ(map_body->memory_access_count, 0u);
   EXPECT_EQ(module_->body->memory_access_count, 0u);
   EXPECT_EQ(write_op->flags & LOOM_OP_FLAG_SUMMARIES_COUNTED, 0u);
+  EXPECT_EQ(loom_region_written_memory_spaces(map_body), 0);
+  EXPECT_EQ(loom_region_written_memory_spaces(module_->body), 0);
 }
 
 TEST_F(BuilderTest, VariadicOperands) {
@@ -1116,6 +1125,29 @@ TEST_F(BuilderTest, FuncBuilderConsumesReservedSignatureBeforeResults) {
   EXPECT_EQ(loom_type_dim_value_id_at(
                 loom_module_value_type(module_, loom_op_results(op)[1]), 0),
             loom_op_results(op)[0]);
+}
+
+TEST_F(BuilderTest, ExplicitBlockArgsConsumeReservedSignature) {
+  const auto index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+  loom_value_id_t signature[2];
+  IREE_ASSERT_OK(loom_builder_reserve_values(&builder_, 2, signature));
+  const loom_type_t actual_types[] = {index_type};
+  const loom_type_t expected_types[] = {
+      loom_type_shaped_1d(LOOM_TYPE_TENSOR, LOOM_SCALAR_TYPE_F32,
+                          loom_dim_pack_dynamic(signature[0]), 0)};
+  loom_op_t* op = nullptr;
+  IREE_ASSERT_OK(loom_test_block_arg_groups_build(
+      &builder_, actual_types, IREE_ARRAYSIZE(actual_types), expected_types,
+      IREE_ARRAYSIZE(expected_types), LOOM_LOCATION_UNKNOWN, &op));
+
+  const auto* entry =
+      loom_region_const_entry_block(loom_test_block_arg_groups_body(op));
+  ASSERT_EQ(entry->arg_count, IREE_ARRAYSIZE(signature));
+  EXPECT_EQ(entry->arg_ids[0], signature[0]);
+  EXPECT_EQ(entry->arg_ids[1], signature[1]);
+  EXPECT_EQ(
+      loom_type_dim_value_id_at(loom_block_arg_type(module_, entry, 1), 0),
+      signature[0]);
 }
 
 TEST_F(BuilderTest, SplitFuncBuilderProjectsSignatureArgs) {

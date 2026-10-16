@@ -1584,6 +1584,7 @@ VPSHUFB = _instruction(
     _NDS,
     _OPERANDS_16,
     _IMMEDIATES_0,
+    _encoding(_EVEX, _MAP_2, 1, 0, 0x00, (512,)),
     _encoding(_VEX, _MAP_2, 1, 0, 0x00, (128, 256)),
 )
 VPSHUFD = _instruction(
@@ -1835,6 +1836,13 @@ VPSUBW = _instruction(
     _encoding(_EVEX, _MAP_1, 1, 0, 0xF9, (512,)),
     _encoding(_VEX, _MAP_1, 1, 0, 0xF9, (128, 256)),
 )
+VPUNPCKLBW = _instruction(
+    "vpunpcklbw",
+    _NDS,
+    _OPERANDS_16,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_1, 1, 0, 0x60, (128,)),
+)
 VPUNPCKLDQ = _instruction(
     "vpunpckldq",
     _NDS,
@@ -1854,7 +1862,7 @@ VPUNPCKLWD = _instruction(
     _NDS,
     _OPERANDS_16,
     _IMMEDIATES_0,
-    _encoding(_VEX, _MAP_1, 1, 0, 0x60, (128,)),
+    _encoding(_VEX, _MAP_1, 1, 0, 0x61, (128,)),
 )
 VPXOR = _instruction(
     "vpxor",

@@ -19,13 +19,32 @@ typedef enum loom_serve_model_kind_e {
   LOOM_SERVE_MODEL_KIND_EMBEDDING = 3,
   LOOM_SERVE_MODEL_KIND_DECISION = 4,
   LOOM_SERVE_MODEL_KIND_SPEECH = 5,
+  LOOM_SERVE_MODEL_KIND_RECOGNITION = 6,
 } loom_serve_model_kind_t;
+
+// Optional model-owned finite computation with independent preparation and
+// parameter residency. The enclosing deployment supplies the source package,
+// provider catalog, local path base and device. An empty prepare path means
+// absent; a present declaration owns all four strings.
+typedef struct loom_serve_finite_component_configuration_t {
+  // Owned cold VM program declaring component stages and parameter domains.
+  iree_string_view_t prepare;
+  // Owned warm VM program implementing the finite invocation contract.
+  iree_string_view_t control;
+  // Owned asset directory passed to the component's prepare function.
+  iree_string_view_t assets;
+  // Owned source-defined JSON object; omission becomes an empty object.
+  iree_string_view_t options;
+} loom_serve_finite_component_configuration_t;
 
 typedef struct loom_serve_text_configuration_t {
   // Owned checkpoint file path.
   iree_string_view_t weights;
   // Owned tokenizer JSON file path.
   iree_string_view_t tokenizer;
+  // Optional finite image component, prepared by media demand or explicit
+  // component activation, independently of primary text preparation.
+  loom_serve_finite_component_configuration_t image;
   // Maximum simultaneous execution rows for this model.
   iree_host_size_t rows;
   // Successful overtakes per blocked oldest text request; zero is FIFO.
@@ -86,9 +105,8 @@ typedef struct loom_serve_model_configuration_t {
   loom_serve_sources_t sources;
   // Owned JSON object interpreted by the source prepare program.
   iree_string_view_t options;
-  // Bounded host request credit. Text/image/speech exclude the active
-  // invocation; finite vector services include all requests in the active
-  // cohort.
+  // Bounded host request credit. Text/image/speech/recognition exclude active
+  // model requests; finite vector services include the active cohort.
   iree_host_size_t pending_requests;
   // Retained execution choices, including original/pending/failed attempts.
   // Zero disables reconfiguration independently of modality admission.
@@ -101,7 +119,7 @@ typedef struct loom_serve_model_configuration_t {
     loom_serve_text_configuration_t text;
     // Finite image deployment geometry and checkpoint inputs.
     loom_serve_image_configuration_t image;
-    // Owned source asset directory for vector and speech deployments.
+    // Owned source asset directory for vector, speech, and recognition models.
     iree_string_view_t assets;
   };
 } loom_serve_model_configuration_t;

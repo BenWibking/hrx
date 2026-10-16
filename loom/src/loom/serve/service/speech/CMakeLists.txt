@@ -9,6 +9,7 @@
 
 iree_add_all_subdirs()
 
+if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
     request
@@ -22,7 +23,9 @@ loom_cc_library(
     iree::base::internal::unicode
   PUBLIC
 )
+endif()
 
+if(LOOM_TARGET_ARCH_VM)
 loom_cc_test(
   NAME
     request_test
@@ -33,8 +36,12 @@ loom_cc_test(
     iree::base
     iree::testing::gtest
     iree::testing::gtest_main
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
 )
+endif()
 
+if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
     generator
@@ -48,23 +55,7 @@ loom_cc_library(
     loom::serve::runtime::parameter::residency
   PUBLIC
 )
-
-loom_cc_library(
-  NAME
-    state
-  HDRS
-    "state.h"
-  SRCS
-    "state.c"
-  DEPS
-    iree::base
-    iree::hal
-    loom::serve::runtime::device
-    loom::serve::runtime::execution
-    loom::serve::runtime::execution::retirement
-    loom::serve::runtime::storage::memory
-  PUBLIC
-)
+endif()
 
 if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
@@ -76,13 +67,11 @@ loom_cc_library(
     "model.c"
   DEPS
     ::generator
-    ::state
     iree::base
     iree::base::threading
     iree::hal
     iree::module::hal::types
     iree::tokenizer
-    iree::tokenizer::format::huggingface::tokenizer_json
     iree::tooling::device_profiling
     iree::vm
     loom::binding::c::loomc
@@ -102,6 +91,8 @@ loom_cc_library(
     loom::serve::runtime::program::preparation
     loom::serve::runtime::program::sources
     loom::serve::runtime::program::stage_set
+    loom::serve::runtime::program::tokenizer_load
+    loom::serve::runtime::storage::rows
   PUBLIC
 )
 endif()
@@ -137,6 +128,7 @@ loom_cc_library(
     loom::serve::testing::model
     loom::serve::testing::package
     loom::serve::testing::service_application
+    loom::serve::testing::stalled_http_client
     loom::serve::transport::http::listener
     loom::serve::transport::http::server
   TESTONLY
@@ -145,6 +137,7 @@ loom_cc_library(
 )
 endif()
 
+if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
     output
@@ -156,7 +149,9 @@ loom_cc_library(
     iree::base
   PUBLIC
 )
+endif()
 
+if(LOOM_TARGET_ARCH_VM)
 loom_cc_test(
   NAME
     output_test
@@ -167,8 +162,12 @@ loom_cc_test(
     iree::base
     iree::testing::gtest
     iree::testing::gtest_main
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
 )
+endif()
 
+if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
     service
@@ -200,5 +199,6 @@ loom_cc_library(
     loom::util::stream
   PUBLIC
 )
+endif()
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

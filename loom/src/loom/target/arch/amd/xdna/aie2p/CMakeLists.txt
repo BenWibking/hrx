@@ -611,6 +611,25 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA)
 loom_cc_library(
   NAME
+    pipeline_dma_plan
+  HDRS
+    "pipeline/dma_plan.h"
+  SRCS
+    "pipeline/dma_plan.c"
+  DEPS
+    ::array_plan
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::storage_geometry
+    loom::target::arch::amd::xdna::array_facts
+    loom::target::arch::amd::xdna::array_registers
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
     pipeline_native
   HDRS
     "pipeline/native.h"
@@ -624,6 +643,7 @@ loom_cc_library(
     ::array_abi_layout
     ::array_plan
     ::configuration_descriptors
+    ::pipeline_dma_plan
     ::pipeline_worker
     ::target_facts
     ::target_records
@@ -918,6 +938,7 @@ loom_check_test_suite(
     "test/configuration_contracts.loom-test"
     "test/configuration_data.loom-test"
     "test/configuration_limits.loom-test"
+    "test/configuration_measurement.loom-test"
     "test/configuration_report.loom-test"
     "test/descriptors/bf16_comparison.loom-test"
     "test/descriptors/bfp_move.loom-test"
@@ -958,6 +979,7 @@ loom_check_test_suite(
     "test/native_bindings.loom-test"
     "test/native_completion.loom-test"
     "test/native_distribution.loom-test"
+    "test/native_dma_completions.loom-test"
     "test/native_dma_descriptors.loom-test"
     "test/native_endpoint_addresses.loom-test"
     "test/native_local_buffers.loom-test"
@@ -989,6 +1011,7 @@ loom_check_test_suite(
     "test/source_low/memory_access_flags.loom-test"
     "test/source_low/memory_address_bias_boundaries.loom-test"
     "test/source_low/memory_biased_offsets.loom-test"
+    "test/source_low/memory_byte_offset_reuse.loom-test"
     "test/source_low/memory_chunked_vector.loom-test"
     "test/source_low/memory_float8.loom-test"
     "test/source_low/memory_packed_tails.loom-test"
@@ -1025,6 +1048,7 @@ loom_check_test_suite(
     "test/source_low/numeric_index.loom-test"
     "test/source_low/numeric_index_conversion.loom-test"
     "test/source_low/numeric_index_operands.loom-test"
+    "test/source_low/numeric_integer_count.loom-test"
     "test/source_low/numeric_integer_extrema.loom-test"
     "test/source_low/numeric_integer_extrema_reductions.loom-test"
     "test/source_low/numeric_integer_shift_i64.loom-test"
@@ -1418,6 +1442,26 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::target::provider
+  LABELS
+    "iree-build-requirement=loom.target.arch.xdna"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_test(
+  NAME
+    pipeline_dma_plan_test
+  SRCS
+    "pipeline/dma_plan_test.cc"
+  DEPS
+    ::pipeline_dma_plan
+    iree::base
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::analysis::storage_geometry
+    loom::target::arch::amd::xdna::array_facts
+    loom::target::arch::amd::xdna::array_registers
   LABELS
     "iree-build-requirement=loom.target.arch.xdna"
 )

@@ -23,7 +23,7 @@ namespace loom_serve::testing {
 // A scheduler process submits compilation from the same executor that must
 // compile its native requests. Only the outer test thread waits. One worker
 // makes a hidden synchronous join deterministic instead of timing-dependent.
-struct Compilation {
+struct loom_serve_test_compilation_t {
   void Start(iree_task_executor_t* executor);
   iree_status_t Await(loom_serve_jit_stage_t** out_stage);
 
@@ -92,6 +92,8 @@ class JitTest : public ::testing::TestWithParam<int> {
   iree_hal_device_t* device_ = nullptr;
   // Exact dispatch queue borrowed from device.
   iree_hal_queue_t* dispatch_ = nullptr;
+  // Shared workspace counters observed before this test allocates backing.
+  iree_hal_pool_stats_t workspace_baseline_ = {};
   // Owned model submission/feedback timelines over shared device backing.
   loom_serve_execution_t* execution_ = nullptr;
   // Portable source location from runfiles.

@@ -87,9 +87,23 @@ _iree_cmake_integration_test(
 
 _iree_cmake_integration_test(
   NAME
+    cmake_dependency_downloads_test
+  SRCS
+    cmake_dependency_downloads_test.py
+)
+
+_iree_cmake_integration_test(
+  NAME
     cmake_dependency_patches_test
   SRCS
     cmake_dependency_patches_test.py
+)
+
+_iree_cmake_integration_test(
+  NAME
+    cmake_external_c_library_test
+  SRCS
+    cmake_external_c_library_test.py
 )
 
 _iree_cmake_integration_test(

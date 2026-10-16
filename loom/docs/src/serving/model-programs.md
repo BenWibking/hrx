@@ -22,16 +22,18 @@ The important distinction is the shape of state and output, not the model name:
 | Finite embeddings | Input preparation, cohort cost/compatibility, pooling/projection and final vectors. | [Embedding model](https://github.com/ROCm/hrx-system/tree/main/loom/src/loom/serve/fixture/embedding) |
 | Finite decisions | Structured question framing and compact normalized answer distributions. | [Decision model](https://github.com/ROCm/hrx-system/tree/main/loom/src/loom/serve/fixture/decision) |
 | Streaming speech | Voice conditioning, independent request state, compatible next-work batches and continuous waveform blocks. | [Speech model](https://github.com/ROCm/hrx-system/tree/main/loom/src/loom/serve/fixture/speech) |
+| Continuing recognition | Independent input clocks, compatible next-work batches and revisable transcript segments. | [Recognition model](https://github.com/ROCm/hrx-system/tree/main/loom/src/loom/serve/fixture/recognition) |
 
 These packages use actual source VM programs, native kernels and production
 HTTP services, not canned native replies. They establish the serving contract,
 not learned quality or competitive neural performance. Each learned port needs
 its own numerical oracle and representative workload.
 
-Audio input, an image-conditioned request or an arbitrary workflow graph needs
-an input/output ownership contract beyond these HTTP profiles. Such a port is
-a modality extension, not an embedding vector with overloaded fields. The
-[HTTP reference](http-profiles.md) defines the existing boundary.
+Image-conditioned text composes retained text with an optional finite image
+projector, described below. Audio input or an arbitrary workflow graph needs
+its own input/output ownership contract beyond these HTTP profiles, not an
+embedding vector with overloaded fields. The [HTTP reference](http-profiles.md)
+defines the existing boundary.
 
 ## Keep the package complete and relocatable
 
@@ -265,6 +267,92 @@ reuse of the released row. Compare each surviving stream with isolated execution
 and compare the model's numerical stages with an independent reference. Batch
 occupancy alone establishes neither a throughput improvement nor a playback
 deadline.
+
+## Image-conditioned text
+
+A text definition's optional [image component](model-documents.md#image-input)
+implements the finite contract. It shares the deployment's device and numerical
+provider catalog, while owning separate preparation and parameter residency.
+Ordinary text and exact retained image-prefix hits do not prepare the projector.
+Explicit component warmup follows the same preparation boundary. Its parameter
+pin policy is independent of the primary language model's policy; deactivation
+does not discard retained text state.
+
+The text control program declares image limits and receives ordered text/image
+content records. It renders model framing and returns each image's projected
+row count and opaque preprocessing metadata. Its input preparation maps those
+occurrences into logical input spans; native code checks the returned ranges
+against the inspected images. The
+[ordered-media contract](https://github.com/ROCm/hrx-system/blob/main/loom/src/loom/serve/service/text/media.h)
+defines these records and retained identity.
+
+On a media-prefix miss, codecs realize packed RGB8/RGBA8 pixels without
+resizing or normalizing them. The projector receives an
+[image request packet](https://github.com/ROCm/hrx-system/blob/main/loom/src/loom/serve/media/image_request.h)
+containing encoded/display geometry, orientation, source metadata and pixels.
+Its device program owns preprocessing and projection. Compatible images from
+the same request or different requests share finite cohorts; source work units
+and compatibility tags govern packing, not a native assumption of one image
+per invocation.
+
+Projected rows remain on the device. The language epoch imports producer
+readiness and gathers only the rows its current spans need. Source
+`encode_epoch` maps those rows and ordinary tokens into its input packet and
+owns the position information consumed by its numerical stages. The
+[media epoch contract](https://github.com/ROCm/hrx-system/blob/main/loom/src/loom/serve/service/text/media_epoch.h)
+defines the host control records separately from device features. Projector
+weights and completed features have independent lifetimes; live requests retain
+features only until their language consumers finish.
+
+## Recognize continuing audio
+
+A recognition package accepts a continuing sequence of normalized F32 PCM frames
+and explicit end-of-input. Input packet boundaries do not pad audio or finalize
+an utterance. Each request retains its own sample clock, convolution history,
+encoder state, decoder cache and transcript revisions as batch membership changes.
+
+The [recognition model declaration](https://github.com/ROCm/hrx-system/blob/main/loom/src/loom/serve/service/recognition/model.h)
+owns entry signatures and binary layouts. Cold preparation declares stages,
+parameter domains, sample geometry, bounded input/event storage, recording limits,
+resident rows and additive batch capacity. Warm source operations are:
+
+| Operation | Source-owned result |
+| --- | --- |
+| `prepare_request` | Validate language, prompt and temperature; retain independent request state and immutable conditioning. |
+| `prepare_work` | Inspect a bounded PCM snapshot with its absolute sample position and EOF flag; offer compatible numerical work or zero units while awaiting input. |
+| `prepare_batch` | Pack ready work using explicit resident-row and byte-range records, retaining original cohort order. |
+| `generate` | Submit one source-selected numerical phase without waiting for device completion. |
+| `complete` | Acknowledge consumed input and optionally publish a transcript revision, independently of request completion. |
+
+Acknowledgement returns input credit only after actual execution retirement.
+Source code owns any PCM needed beyond `prepare_work`; the snapshot itself is
+borrowed only during that call. Every accepted cohort member is collected,
+including cancelled requests, before shared feedback or request rows can be
+reused. A stalled transcript consumer excludes only its own request from new
+work. Source-defined compatibility permits requests at different sample or token
+positions to share a batch when their next operations support it.
+
+Each transcript segment has a stable request-local identity, increasing revision,
+covered sample interval and replacement UTF-8 text. Finalizing a segment makes
+its text and metadata immutable. Request completion requires every published
+segment to be finalized. A source can additionally provide speaker labels and
+word alignment; an input-coverage interval alone does not establish where words
+were spoken. Consumers preserve these distinctions instead of converting a
+revisable hypothesis into an append-only text delta.
+
+The [finite HTTP adapter](http-profiles.md#audio-transcription) decodes enabled
+WAV, MP3, and FLAC containers into the same bounded F32 input used by raw PCM.
+It performs channel conversion and filtered resampling on shared CPU workers;
+model feature extraction, numerical stages, and transcript policy remain source
+responsibilities. Each upload owns its codec history independently of source
+batch membership, and accepted decode work retains that state until retirement.
+
+The adapter consumes revisions and returns the completed document. Typed
+consumers can apply revisions as they arrive and independently supply more PCM.
+Qualify a model with isolated reference transcripts, staggered arrivals,
+different recording lengths, a stalled reader,
+accepted-work cancellation and row reuse. Compare text and sample clocks across
+changing cohorts, including a final partial model frame.
 
 ## Make parameters and temporaries visible
 

@@ -4,14 +4,17 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-load("//build_tools/bazel:python.bzl", "iree_py_test")
 load("//build_tools/bazel:test_resources.bzl", "GPU_DEVICE_RESOURCE_GROUP")
 load("//loom/build_tools/bazel:build_defs.bzl", "loom_cc_binary", "loom_cc_library", "loom_cc_test", "loom_config_compatible_with")
+load("//loom/build_tools/bazel:python.bzl", "loom_py_test")
 load("//loom/src/loom/serve/fixture/decision:sources.bzl", DECISION_SOURCES = "SOURCES")
 load("//loom/src/loom/serve/fixture/embedding:sources.bzl", EMBEDDING_SOURCES = "SOURCES", EMBEDDING_VARIANT_SOURCES = "VARIANT_SOURCES")
 load("//loom/src/loom/serve/fixture/image:sources.bzl", IMAGE_SOURCES = "SOURCES")
+load("//loom/src/loom/serve/fixture/projector:sources.bzl", PROJECTOR_SOURCES = "SOURCES")
+load("//loom/src/loom/serve/fixture/recognition:sources.bzl", RECOGNITION_SOURCES = "SOURCES")
 load("//loom/src/loom/serve/fixture/speech:sources.bzl", SPEECH_SOURCES = "SOURCES", SPEECH_VARIANT_SOURCES = "VARIANT_SOURCES")
 load("//loom/src/loom/serve/fixture/text:sources.bzl", TEXT_SOURCES = "SOURCES")
+load("//loom/src/loom/serve/service/finite:testdata/component/sources.bzl", COMPONENT_SOURCES = "SOURCES")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -34,7 +37,6 @@ loom_cc_binary(
     name = "loom-serve-test-tool",
     testonly = True,
     target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target/arch:vm",
         "//loom/config/target:spirv_artifacts",
         "//runtime/config/hal:driver_vulkan",
     ]),
@@ -62,6 +64,68 @@ loom_cc_library(
 )
 
 loom_cc_test(
+    name = "control_test",
+    srcs = ["//loom/src/loom/serve/runtime/program:control_test.cc"],
+    args = ["--control_sources=$(rootpath //loom/src/loom/serve/runtime/program:testdata/control/kernels.loom)"],
+    data = [
+        "//loom/src/loom/serve/runtime/program:testdata/control/control.loom",
+        "//loom/src/loom/serve/runtime/program:testdata/control/kernels.loom",
+    ],
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = [
+        "iree-run-requirement=vulkan.resource.device",
+    ],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:spirv_vulkan_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/binding/c:loomc",
+        "//loom/src/loom/serve/runtime/execution",
+        "//loom/src/loom/serve/runtime/execution:workspace",
+        "//loom/src/loom/serve/runtime/host",
+        "//loom/src/loom/serve/runtime/program:jit",
+        "//loom/src/loom/serve/runtime/program:module",
+        "//loom/src/loom/serve/testing:compiler",
+        "//loom/src/loom/serve/testing:device",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/util:proactor_pool",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/threading",
+        "//runtime/src/iree/base/tooling:flags",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/module/hal:types",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+        "//runtime/src/iree/vm",
+        "//runtime/src/iree/vm/bytecode:module",
+    ],
+)
+
+loom_cc_test(
+    name = "finite_component_test",
+    data = COMPONENT_SOURCES,
+    env = {
+        "LOOM_SERVE_TEST_COMPONENT_SOURCE": "$(rootpath //loom/src/loom/serve/service/finite:testdata/component/prepare.loom)",
+    },
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = ["iree-run-requirement=vulkan.resource.device"],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:spirv_vulkan_hal",
+    ]),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/service/finite:component_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
     name = "source_image_service_test",
     data = IMAGE_SOURCES,
     env = {
@@ -72,7 +136,6 @@ loom_cc_test(
         "iree-run-requirement=vulkan.resource.device",
     ],
     target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target/arch:vm",
         "//loom/config/execute:spirv_vulkan_hal",
     ]) + select({
         "@platforms//os:linux": [],
@@ -82,6 +145,54 @@ loom_cc_test(
         ":test_compiler",
         ":test_device",
         "//loom/src/loom/serve/service/image:source_service_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "source_recognition_model_test",
+    args = [
+        "--model_source=$(rootpath //loom/src/loom/serve/fixture/recognition:prepare.loom)",
+    ],
+    data = RECOGNITION_SOURCES,
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = [
+        "iree-run-requirement=vulkan.resource.device",
+    ],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:spirv_vulkan_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/service/recognition:source_model_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "source_recognition_service_test",
+    args = [
+        "--model_source=$(rootpath //loom/src/loom/serve/fixture/recognition:prepare.loom)",
+    ],
+    data = RECOGNITION_SOURCES,
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = [
+        "iree-run-requirement=vulkan.resource.device",
+    ],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:spirv_vulkan_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/service/recognition:source_service_tests",
         "//runtime/src/iree/testing:gtest_main",
     ],
 )
@@ -97,7 +208,6 @@ loom_cc_test(
         "iree-run-requirement=vulkan.resource.device",
     ],
     target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target/arch:vm",
         "//loom/config/execute:spirv_vulkan_hal",
     ]) + select({
         "@platforms//os:linux": [],
@@ -123,7 +233,6 @@ loom_cc_test(
         "iree-run-requirement=vulkan.resource.device",
     ],
     target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target/arch:vm",
         "//loom/config/execute:spirv_vulkan_hal",
     ]) + select({
         "@platforms//os:linux": [],
@@ -137,7 +246,7 @@ loom_cc_test(
     ],
 )
 
-iree_py_test(
+loom_py_test(
     name = "catalog_test",
     size = "medium",
     srcs = ["//loom/src/loom/serve/server:catalog_test.py"],
@@ -160,7 +269,6 @@ iree_py_test(
         "iree-run-requirement=vulkan.resource.device",
     ],
     target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target/arch:vm",
         "//loom/config/execute:spirv_vulkan_hal",
     ]) + select({
         "@platforms//os:linux": [],
@@ -186,7 +294,6 @@ loom_cc_test(
         "iree-run-requirement=vulkan.resource.device",
     ],
     target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target/arch:vm",
         "//loom/config/execute:spirv_vulkan_hal",
     ]) + select({
         "@platforms//os:linux": [],
@@ -211,7 +318,6 @@ loom_cc_test(
         "iree-run-requirement=vulkan.resource.device",
     ],
     target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target/arch:vm",
         "//loom/config/execute:spirv_vulkan_hal",
     ]) + select({
         "@platforms//os:linux": [],
@@ -229,16 +335,17 @@ loom_cc_test(
 
 loom_cc_test(
     name = "source_text_service_test",
-    data = TEXT_SOURCES,
+    data = EMBEDDING_SOURCES + PROJECTOR_SOURCES + TEXT_SOURCES,
     env = {
+        "LOOM_SERVE_TEST_MEDIA_SOURCE": "$(rootpath //loom/src/loom/serve/fixture/embedding:model.json)",
         "LOOM_SERVE_TEST_MODEL_SOURCE": "$(rootpath //loom/src/loom/serve/fixture/text:prepare.loom)",
+        "LOOM_SERVE_TEST_PROJECTOR_SOURCE": "$(rootpath //loom/src/loom/serve/fixture/projector:model.json)",
     },
     resource_group = GPU_DEVICE_RESOURCE_GROUP,
     tags = [
         "iree-run-requirement=vulkan.resource.device",
     ],
     target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target/arch:vm",
         "//loom/config/execute:spirv_vulkan_hal",
     ]) + select({
         "@platforms//os:linux": [],

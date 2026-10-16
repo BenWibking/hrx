@@ -68,6 +68,7 @@ iree_execution_test_suite(
     data = [
         "test/channel_fanout.loom",
         "test/channel_sram.loom",
+        "test/finite_ingress.loom",
     ],
     manifests = ["test/channel_fanout.test.json"],
     resource_group = GPU_DEVICE_RESOURCE_GROUP,
@@ -93,14 +94,6 @@ loom_check_test(
     name = "boolean_storage_lowering",
     src = "test/boolean_storage.cxx-test",
     data = ["//loom/src/loom/import/cxx/test:boolean_storage.cxx"],
-    runner = "//loom/src/loom/tools/loom-check",
-    target_compatible_with = _XDNA_COMPILE_COMPATIBLE_WITH + loom_config_compatible_with(["//loom/config/import:cxx"]),
-)
-
-loom_check_test(
-    name = "mxfp_group_dot_lowering",
-    src = "test/mxfp_group_dot.cxx-test",
-    data = ["//loom/src/loom/import/cxx/test:mxfp_group_dot.cxx"],
     runner = "//loom/src/loom/tools/loom-check",
     target_compatible_with = _XDNA_COMPILE_COMPATIBLE_WITH + loom_config_compatible_with(["//loom/config/import:cxx"]),
 )

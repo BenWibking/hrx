@@ -14,6 +14,7 @@ from loom.dialect.scalar import ALL_SCALAR_OPS
 from loom.dialect.scf import ALL_SCF_OPS
 from loom.dialect.vector import ALL_VECTOR_OPS
 from loom.dialect.view import ALL_VIEW_OPS
+from loom.target.arch.x86.contracts.float_conversion import float_conversion_rules
 from loom.target.arch.x86.contracts.float_narrowing import (
     x86_float_narrowing_rules,
 )
@@ -51,6 +52,9 @@ from loom.target.arch.x86.contracts.vector_construction import (
 from loom.target.arch.x86.contracts.vector_integer_conversion import (
     avx2_vector_integer_narrowing_rules,
     vector_integer_widening_rules,
+)
+from loom.target.arch.x86.contracts.vector_integer_count import (
+    avx2_vector_integer_count_rules,
 )
 from loom.target.arch.x86.descriptors import X86_AVX2_DESCRIPTOR_SET
 from loom.target.arch.x86.vector_families import (
@@ -98,6 +102,7 @@ def _cases() -> Sequence[ContractCase]:
         ),
         *avx2_integer_float_rules(_descriptor),
         *x86_float_narrowing_rules(_descriptor),
+        *float_conversion_rules(_descriptor, evex=False),
         *avx2_vector_construction_rules(_descriptor),
         *vector_integer_widening_rules(
             _descriptor,
@@ -106,6 +111,7 @@ def _cases() -> Sequence[ContractCase]:
             result_vector_bit_widths=AVX2_CARRIER_VECTOR_BIT_WIDTHS,
         ),
         *avx2_vector_integer_narrowing_rules(_descriptor),
+        *avx2_vector_integer_count_rules(_descriptor),
         *avx2_predicate_rules(_descriptor),
         *avx2_lane_movement_rules(_descriptor),
         *avx2_shuffle_rules(_descriptor),

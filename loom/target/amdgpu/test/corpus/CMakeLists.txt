@@ -26,16 +26,29 @@ loom_corpus_build(
     "@subgroup_extended_reductions"
     "AMDGPU/023"
     "loom::target::amdgpu::all"
-    "numeric/conversion/float8_facts.loom"
-    "@float8_facts"
-    "TARGET/034"
+    "kernel/subgroup/reduce.loom"
+    "@subgroup_half_extrema"
+    "AMDGPU/023"
+    "loom::target::amdgpu::all"
+    "kernel/subgroup/reduce.loom"
+    "@subgroup_ieee_extrema"
+    "AMDGPU/023"
+    "loom::target::amdgpu::all"
+    "kernel/workgroup/reduce_tree.loom"
+    "@workgroup_tree_extrema_types"
+    "AMDGPU/023"
+    "loom::target::amdgpu::all"
+    "kernel/workgroup/reduce_tree.loom"
+    "@workgroup_tree_float_types"
+    "AMDGPU/023"
+    "loom::target::amdgpu::all"
+    "kernel/workgroup/reduce_tree.loom"
+    "@workgroup_tree_integer_types"
+    "AMDGPU/023"
     "loom::target::amdgpu::without_bf16_fma"
     "numeric/vector/broadcast_arithmetic.loom"
     "@broadcast_arithmetic_bf16"
     "TARGET/003"
-  ALL_ROOTS_XFAIL
-    "loom::target::amdgpu::all"
-    "numeric/conversion/float8_facts.loom"
   EXCLUDES
     "loom::target::amdgpu::all"
     "control/branch/structured.loom"
@@ -188,6 +201,9 @@ loom_corpus_build(
     "numeric/float/classification.loom"
     "AMDGPU has no module artifact format."
     "loom::target::amdgpu::all"
+    "numeric/float/comparison.loom"
+    "AMDGPU has no module artifact format."
+    "loom::target::amdgpu::all"
     "numeric/float/exponential.loom"
     "AMDGPU has no module artifact format."
     "loom::target::amdgpu::all"
@@ -195,6 +211,12 @@ loom_corpus_build(
     "AMDGPU has no module artifact format."
     "loom::target::amdgpu::all"
     "numeric/float/half_extrema.loom"
+    "AMDGPU has no module artifact format."
+    "loom::target::amdgpu::all"
+    "numeric/float/inverse_hyperbolic.loom"
+    "AMDGPU has no module artifact format."
+    "loom::target::amdgpu::all"
+    "numeric/float/inverse_hyperbolic_narrow.loom"
     "AMDGPU has no module artifact format."
     "loom::target::amdgpu::all"
     "numeric/float/logarithm.loom"
@@ -273,6 +295,9 @@ loom_corpus_build(
     "AMDGPU has no module artifact format."
     "loom::target::amdgpu::all"
     "numeric/vector/bfloat_extrema_reductions.loom"
+    "AMDGPU has no module artifact format."
+    "loom::target::amdgpu::all"
+    "numeric/vector/concatenation.loom"
     "AMDGPU has no module artifact format."
     "loom::target::amdgpu::all"
     "numeric/vector/constants.loom"
@@ -384,9 +409,21 @@ loom_corpus_test(
     "kernel/subgroup/reduce.loom"
     "@subgroup_extended_reduction_values"
     "AMDGPU/023"
-    "memory/address/address.loom"
-    "@launch_arithmetic_values"
-    "TARGET/004"
+    "kernel/subgroup/reduce.loom"
+    "@subgroup_half_extrema_values"
+    "AMDGPU/023"
+    "kernel/subgroup/reduce.loom"
+    "@subgroup_ieee_extrema_values"
+    "AMDGPU/023"
+    "kernel/workgroup/reduce_tree.loom"
+    "@workgroup_tree_extrema_type_values"
+    "AMDGPU/023"
+    "kernel/workgroup/reduce_tree.loom"
+    "@workgroup_tree_float_type_values"
+    "AMDGPU/023"
+    "kernel/workgroup/reduce_tree.loom"
+    "@workgroup_tree_integer_type_values"
+    "AMDGPU/023"
     "memory/buffer/allocation_freshness.loom"
     "@allocation_freshness_values"
     "LOWERING/044"
@@ -411,9 +448,6 @@ loom_corpus_test(
     "memory/view/selected_crops.loom"
     "@selected_crop_values"
     "LOWERING/044"
-    "numeric/conversion/float8_facts.loom"
-    "@float8_fact_values"
-    "TARGET/034"
     "numeric/float/exponential.loom"
     "@exponential_values"
     "EXPECT/002,EXPECT/003"
@@ -514,5 +548,41 @@ loom_corpus_test(
   REQUIRES
     LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU
 )
+
+loom_test_module(
+  NAME
+    inverse_hyperbolic_stress_module
+  SRCS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/stress/numeric/inverse_hyperbolic.loom"
+  LIBRARIES
+    "loom::test::corpus::numeric::inverse_hyperbolic_narrow"
+)
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    inverse_hyperbolic_stress_execute_amdgpu_hardware_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::inverse_hyperbolic_stress_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+  LABELS
+    "manual"
+    "stress"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

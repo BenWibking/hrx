@@ -254,6 +254,102 @@ TEST(ConstantArchiveTest, EvaluatesAggregateDefaultsAfterSourceDestruction) {
   }
 }
 
+TEST(ConstantArchiveTest, PreservesReferenceMemberIdentity) {
+  loom_cxx_import_options_t options;
+  loom_cxx_import_options_initialize(&options);
+  std::vector<std::uint8_t> bytes;
+  {
+    Source source(
+        IREE_SV("constexpr unsigned weights[3] = {2, 3, 5};"
+                "struct Policy {"
+                "  unsigned width = 7;"
+                "  const unsigned& alias = width;"
+                "  const unsigned (&table)[3] = weights;"
+                "};"
+                "constexpr Policy policy = Policy();"
+                "constexpr unsigned evaluate() {"
+                "  return policy.alias + policy.table[2] +"
+                "         (&policy.alias == &policy.width ? 100u : 0u) +"
+                "         (&policy.table == &weights ? 1000u : 0u);"
+                "}"),
+        IREE_SV("reference_members.cxx"), options);
+    cxx::ArchiveWriter writer;
+    cxx::SemanticArchiveRoots roots;
+    roots.ast = source.unit().ast();
+    roots.globalScope = source.unit().globalScope();
+    cxx::SemanticEncoder encoder(&source.unit());
+    ASSERT_TRUE(encoder(roots, writer));
+    bytes = writer();
+  }
+
+  Source destination(IREE_SV(""), IREE_SV("restored.cxx"), options);
+  cxx::SemanticArchiveRoots restored;
+  {
+    cxx::ArchiveReader reader;
+    ASSERT_TRUE(reader(bytes)) << reader.error();
+    cxx::SemanticDecoder decoder(&destination.unit());
+    ASSERT_TRUE(decoder(reader, restored)) << decoder.error();
+  }
+
+  auto symbols = restored.globalScope->find("evaluate");
+  ASSERT_FALSE(symbols.begin() == symbols.end());
+  auto functions = cxx::views::each_function(*symbols.begin());
+  ASSERT_EQ(std::ranges::distance(functions), 1);
+
+  cxx::ASTInterpreter interpreter(&destination.unit());
+  auto value = interpreter.evaluateCall(*functions.begin(), {});
+  ASSERT_TRUE(value);
+  EXPECT_EQ(interpreter.toInt(*value), 1112);
+}
+
+TEST(ConstantArchiveTest, PreservesTemporarySubobjectReadRestriction) {
+  loom_cxx_import_options_t options;
+  loom_cxx_import_options_initialize(&options);
+  std::vector<std::uint8_t> bytes;
+  {
+    Source source(
+        IREE_SV("struct Value { unsigned number = 9; };"
+                "constexpr const unsigned& saved_number = Value{}.number;"
+                "constexpr const unsigned* saved_address = &saved_number;"
+                "constexpr unsigned same_address() {"
+                "  return saved_address == &saved_number ? 1u : 0u;"
+                "}"
+                "constexpr unsigned read_number() { return saved_number; }"),
+        IREE_SV("temporary_subobject.cxx"), options);
+    cxx::ArchiveWriter writer;
+    cxx::SemanticArchiveRoots roots;
+    roots.ast = source.unit().ast();
+    roots.globalScope = source.unit().globalScope();
+    cxx::SemanticEncoder encoder(&source.unit());
+    ASSERT_TRUE(encoder(roots, writer));
+    bytes = writer();
+  }
+
+  Source destination(IREE_SV(""), IREE_SV("restored.cxx"), options);
+  cxx::SemanticArchiveRoots restored;
+  {
+    cxx::ArchiveReader reader;
+    ASSERT_TRUE(reader(bytes)) << reader.error();
+    cxx::SemanticDecoder decoder(&destination.unit());
+    ASSERT_TRUE(decoder(reader, restored)) << decoder.error();
+  }
+
+  cxx::ASTInterpreter interpreter(&destination.unit());
+  auto symbols = restored.globalScope->find("same_address");
+  ASSERT_FALSE(symbols.begin() == symbols.end());
+  auto functions = cxx::views::each_function(*symbols.begin());
+  ASSERT_EQ(std::ranges::distance(functions), 1);
+  auto value = interpreter.evaluateCall(*functions.begin(), {});
+  ASSERT_TRUE(value);
+  EXPECT_EQ(interpreter.toInt(*value), 1);
+
+  symbols = restored.globalScope->find("read_number");
+  ASSERT_FALSE(symbols.begin() == symbols.end());
+  functions = cxx::views::each_function(*symbols.begin());
+  ASSERT_EQ(std::ranges::distance(functions), 1);
+  EXPECT_FALSE(interpreter.evaluateCall(*functions.begin(), {}));
+}
+
 TEST(ConstantArchiveTest, ExecutesNestedConstructorsAfterSourceDestruction) {
   loom_cxx_import_options_t options;
   loom_cxx_import_options_initialize(&options);
@@ -464,8 +560,16 @@ TEST(ConstantArchiveTest, PreservesReferenceTemplateIdentity) {
     auto address =
         std::get<std::shared_ptr<cxx::ConstAddress>>(*variable->constValue());
     ASSERT_NE(address, nullptr);
-    EXPECT_EQ(address->symbol(), *objects.begin());
+    EXPECT_EQ(address->rootSymbol(), *objects.begin());
     EXPECT_EQ(address->offset(), offsets[index]);
+    if (index < 2) {
+      EXPECT_FALSE(address->isArrayElement());
+      EXPECT_EQ(address->symbol(), *objects.begin());
+    } else {
+      EXPECT_TRUE(address->isArrayElement());
+      ASSERT_NE(address->parent(), nullptr);
+      EXPECT_EQ(address->parent()->symbol(), *objects.begin());
+    }
 
     // The independent address constant must find the restored specialization,
     // even though it has a different ConstAddress allocation from its key.

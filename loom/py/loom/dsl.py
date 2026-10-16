@@ -1301,7 +1301,7 @@ MEMORY_FENCE = Trait("MemoryFence")
 # duplicate, speculate, or move it across convergence-changing boundaries.
 CONVERGENT = Trait("Convergent")
 # Source expansion depends on facts at the operation's control-flow position.
-# Motion and CSE must preserve that context until expansion. Runtime purity
+# Motion and CSE must preserve that context until expansion. Runtime effects
 # and erasure of unused pure results remain independent.
 CONTEXTUAL = Trait("Contextual")
 # Each execution produces a result with a distinct identity, even when
@@ -1552,7 +1552,7 @@ class ReferenceTypeKey:
 
 @unique
 class EffectKind(Enum):
-    """Kind of memory effect on a resource-typed operand."""
+    """Kind of memory effect on a resource operand or ambient state."""
 
     READ = "read"
     WRITE = "write"
@@ -1561,28 +1561,29 @@ class EffectKind(Enum):
 
 @dataclass(frozen=True, slots=True)
 class Effect:
-    """Declares a memory effect on a specific operand.
+    """Declares a memory effect on an operand or ambient state.
 
-    operand: Name of the resource-typed operand being accessed.
+    operand: Name of the resource-typed operand being accessed, or None for
+        memory reached without an SSA operand, such as a global value slot.
     kind: What the op does to the resource (read, write, or both).
     """
 
-    operand: str
+    operand: str | None
     kind: EffectKind
 
 
-def Reads(operand: str) -> Effect:
-    """Op reads from the named resource operand."""
+def Reads(operand: str | None = None) -> Effect:
+    """Op reads from the named resource operand or ambient memory."""
     return Effect(operand, EffectKind.READ)
 
 
-def Writes(operand: str) -> Effect:
-    """Op writes to the named resource operand."""
+def Writes(operand: str | None = None) -> Effect:
+    """Op writes to the named resource operand or ambient memory."""
     return Effect(operand, EffectKind.WRITE)
 
 
-def ReadWrites(operand: str) -> Effect:
-    """Op performs an atomic read-modify-write on the named resource operand."""
+def ReadWrites(operand: str | None = None) -> Effect:
+    """Op reads and writes the named resource operand or ambient memory."""
     return Effect(operand, EffectKind.READWRITE)
 
 
@@ -5366,7 +5367,7 @@ def _validate_effects(
     operands: tuple[Operand, ...],
     traits: tuple[Trait, ...],
 ) -> None:
-    """Validate memory effect declarations against operands and traits."""
+    """Validate operand and ambient memory effects against the op contract."""
     trait_names = {t.name for t in traits}
     operand_map = {o.name: o for o in operands}
 
@@ -5404,6 +5405,8 @@ def _validate_effects(
         )
 
     for effect in effects:
+        if effect.operand is None:
+            continue
         # Effect must reference an existing operand.
         if effect.operand not in operand_map:
             raise ValueError(
@@ -5750,8 +5753,8 @@ class CallLikeInterface(NamedTuple):
     operands: str
     # Variadic result field holding call results, or None for no-result calls.
     results: str | None
-    # Optional purity enum attr. None if not applicable.
-    purity: str | None = None
+    # Optional callable effect-contract enum attr. None if not applicable.
+    effect_contract: str | None = None
     # Optional temperature enum attr. None if not applicable.
     temperature: str | None = None
     # Optional inline policy enum attr. None if not applicable.
@@ -5797,8 +5800,8 @@ class FuncLikeInterface(NamedTuple):
     visibility: str | None = None
     # Calling convention enum attr. None if not applicable.
     cc: str | None = None
-    # Purity enum attr. None if not applicable.
-    purity: str | None = None
+    # Callable effect-contract enum attr. None if not applicable.
+    effect_contract: str | None = None
     # Temperature enum attr. None if not applicable.
     temperature: str | None = None
     # Inline policy enum attr. None if not applicable.

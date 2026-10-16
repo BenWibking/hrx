@@ -69,6 +69,25 @@ loom_cc_library(
 endif()
 
 if(LOOM_TARGET_ARCH_X86)
+loom_cc_test(
+  NAME
+    math_policy_test
+  SRCS
+    "math_policy_test.cc"
+  DEPS
+    ::feature_bits
+    ::math_policy
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::target::math_policy
+    loom::target::types
+  LABELS
+    "iree-build-requirement=loom.target.arch.x86"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
     register_classes
@@ -261,8 +280,10 @@ loom_check_test_suite(
     "test/source_low/licm_index_arithmetic.loom-test"
     "test/source_low/loop_counter_offset.loom-test"
     "test/source_low/math_contraction.loom-test"
+    "test/source_low/math_contraction_forms.loom-test"
     "test/source_low/memory_access_flags.loom-test"
     "test/source_low/memory_biased_offsets.loom-test"
+    "test/source_low/memory_byte_offset_reuse.loom-test"
     "test/source_low/memory_float8.loom-test"
     "test/source_low/memory_packed_tails.loom-test"
     "test/source_low/memory_scalar_narrow.loom-test"
@@ -283,8 +304,12 @@ loom_check_test_suite(
     "test/source_low/numeric_constant_remainder.loom-test"
     "test/source_low/numeric_f32_constants.loom-test"
     "test/source_low/numeric_f64_constants.loom-test"
+    "test/source_low/numeric_float_conversion_avx2.loom-test"
+    "test/source_low/numeric_float_conversion_avx512.loom-test"
+    "test/source_low/numeric_half_conversion_avx512.loom-test"
     "test/source_low/numeric_index_operands.loom-test"
     "test/source_low/numeric_integer_bit_counts.loom-test"
+    "test/source_low/numeric_integer_bit_counts_avx512.loom-test"
     "test/source_low/numeric_integer_extrema.loom-test"
     "test/source_low/numeric_integer_float_avx2.loom-test"
     "test/source_low/numeric_integer_float_avx512.loom-test"
@@ -295,6 +320,7 @@ loom_check_test_suite(
     "test/source_low/numeric_narrow_constants.loom-test"
     "test/source_low/numeric_narrow_widening.loom-test"
     "test/source_low/numeric_offset_wide.loom-test"
+    "test/source_low/numeric_packet_concat.loom-test"
     "test/source_low/numeric_runtime_division.loom-test"
     "test/source_low/numeric_scalar_i64.loom-test"
     "test/source_low/numeric_scalar_i64_shift_counts.loom-test"
@@ -332,6 +358,7 @@ loom_check_test_suite(
     "test/source_low/source_low_invoke.loom-test"
     "test/source_low/source_low_math_legalization_report.loom-test"
     "test/source_low/source_low_packed_dot.loom-test"
+    "test/source_low/source_low_rsqrt_refinement.loom-test"
     "test/source_low/source_low_scalar_addressing.loom-test"
     "test/source_low/source_low_scalar_arithmetic.loom-test"
     "test/source_low/source_low_scalar_bitwise.loom-test"
@@ -349,6 +376,7 @@ loom_check_test_suite(
     "test/source_low/split_barrier.loom-test"
     "test/source_low/storage_float_constants.loom-test"
     "test/source_low/uniform_shifts.loom-test"
+    "test/source_low/vector_from_elements.loom-test"
     "test/source_low/vector_large_insert.loom-test"
     "test/source_low/view_carrier.loom-test"
     "test/source_low/view_carriers.loom-test"

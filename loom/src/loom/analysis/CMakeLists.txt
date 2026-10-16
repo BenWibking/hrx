@@ -11,6 +11,40 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    callable_effect_inference
+  HDRS
+    "callable_effect_inference.h"
+  SRCS
+    "callable_effect_inference.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::callable_effects
+    loom::ops::op_defs
+    loom::util::call_graph
+    loom::util::walk
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    callable_effect_inference_test
+  SRCS
+    "callable_effect_inference_test.cc"
+  DEPS
+    ::callable_effect_inference
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::buffer
+    loom::ops::func
+    loom::ops::index
+)
+
+loom_cc_library(
+  NAME
     condition_relation_set
   HDRS
     "condition_relation_set.h"
@@ -727,11 +761,11 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
-    kernel_async_legality
+    kernel_synchronization_legality
   HDRS
-    "kernel_async_legality.h"
+    "kernel_synchronization_legality.h"
   SRCS
-    "kernel_async_legality.c"
+    "kernel_synchronization_legality.c"
   DEPS
     ::control_uniformity
     ::movement
@@ -953,7 +987,7 @@ loom_cc_library(
   DEPS
     ::channel_completion
     ::channel_plan
-    ::kernel_async_legality
+    ::kernel_synchronization_legality
     ::movement
     ::pipeline_resources
     iree::base
@@ -1802,6 +1836,7 @@ loom_cc_test(
     loom::ops::buffer
     loom::ops::channel
     loom::ops::encoding
+    loom::ops::global
     loom::ops::index
     loom::ops::kernel
     loom::ops::scf

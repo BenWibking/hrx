@@ -55,8 +55,9 @@ A command program is not a pure function: launching a kernel and ordering work
 are its purpose. Those observable effects must nevertheless be represented by
 explicit command operations such as `kernel.launch`, `command.program.launch`,
 `command.serial`, and `command.concurrent`. Ordinary SSA computation around
-them is effect-free. Calls used to derive launch workloads therefore carry a
-`pure` contract, just as calls in a kernel launch-configuration region do.
+them is pure or deterministic read-only computation. Calls used to derive
+launch workloads carry the corresponding `pure` or `readonly` contract, just
+as calls in a kernel launch-configuration region do.
 
 The distinction keeps planning movable. The compiler can inline and fold
 pure shape arithmetic at its real caller-owned control-flow site. When a count
@@ -71,8 +72,8 @@ An opaque ordinary call is rejected inside nested control flow instead of
 surviving until command outlining or schedule materialization.
 
 Schedule topology and parameter identity must be closed after planning.
-Pure launch-count expressions either fold to exact direct counts or terminate
-in explicit indirect-count storage. They cannot leave an unresolved source
+Launch-count expressions either fold to exact direct counts or terminate in
+explicit indirect-count storage. They cannot leave an unresolved source
 branch, dynamic parameter key, or free scalar result in the materialized
 command program.
 
@@ -97,9 +98,8 @@ disagree about which ABI carries a value.
 ## Launch configuration stays with its caller
 
 Command planning does not open a selected kernel implementation. Linking
-projects only its logical contract and pure launch-configuration
-facet, then rewrites each workload-level launch at the same caller-owned CFG
-site:
+projects only its logical contract and launch-configuration facet, then
+rewrites each workload-level launch at the same caller-owned CFG site:
 
 ```loom
 %x, %y, %z = func.call pure @project_block$config(%element_count) : (index) -> (index, index, index)
@@ -112,12 +112,23 @@ calls in different branches or loop iterations retain the control-flow scope
 that gives their values meaning. There is no aggregate result function or
 command-specific memo table.
 
+A pure configuration call may move to the earliest scope that dominates its
+workloads. A read-only configuration call remains at its lexical launch so a
+storage producer cannot be crossed. Inlining preserves the same distinction:
+ordinary scalar arithmetic can fold freely, while loads retain their explicit
+buffer/view identities and schedule ordering.
+
 Exact scalar results become direct dispatch commands. An exact aligned
-`view<3xi32>` rooted in an immutable parameter or command input becomes a
-static indirect dispatch. The same view in transient command storage becomes
-a dynamic indirect dispatch when an earlier execution wave writes it. Any
-other residual count is diagnosed because the portable artifact has no hidden
-place to evaluate or store it.
+`view<3xi32>` rooted in an immutable parameter becomes a static indirect
+dispatch, allowing the device to fetch counts early. Invocation buffers and
+transient command storage use dynamic indirect dispatch: the device reads the
+tuple immediately before issuing that dispatch. A count-producing kernel must
+precede its consumer in the command schedule. Invocation buffers may instead
+arrive initialized by the caller, so they can drive the first dispatch.
+
+Read-only launch expressions that still depend on device data become generated
+device kernels writing transient XYZ tuples. The command program orders those
+producers before their indirect consumers without a host readback.
 
 Each configured entry contributes one atomic executable-entry requirement.
 The embedding may satisfy it with a Loom-compiled executable, a cached object,
@@ -273,7 +284,7 @@ compiler operations:
 
 1. Link the dependency closure of the requested roots.
 2. Flatten reachable command-program composition.
-3. Project each referenced kernel's logical contract and pure launch
+3. Project each referenced kernel's logical contract and deterministic launch
    configuration without opening its implementation.
 4. Rewrite launches in caller IR, then specialize, inline, canonicalize, CSE,
    and unroll the resulting ordinary dataflow.

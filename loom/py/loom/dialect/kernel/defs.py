@@ -91,6 +91,7 @@ from loom.dsl import (
     SymbolReference,
     TypeDef,
     TypeSemantic,
+    VariadicValuesMatch,
     Writes,
 )
 
@@ -329,7 +330,15 @@ kernel_def = Op(
     regions=[
         RegionDef(
             "config",
-            doc=("Pure launch configuration region. The region computes launch parameters from its workload arguments and immutable compilation inputs and must terminate with kernel.launch.config."),
+            doc=(
+                "Deterministic launch configuration region. The region "
+                "computes launch parameters from its workload arguments and "
+                "immutable compilation inputs and must terminate with "
+                "kernel.launch.config. Workgroup counts may use deterministic "
+                "loads from explicit buffer or view workload arguments. "
+                "Workgroup and cluster sizes remain independent of loaded "
+                "workload data."
+            ),
             single_block=True,
             terminator="kernel.launch.config",
             buffer_arg_memory_space="global",
@@ -1214,16 +1223,20 @@ kernel_workgroup_reduce = Op(
     group=kernel_ops,
     contracts=[ContractFamily.KERNEL_SYNCHRONIZATION],
     phase=OpPhase.EXECUTABLE,
-    doc="Reduce a scalar or rank-1 vector value across the current workgroup." + _COLLECTIVE_MATH_DOC,
-    operands=[Operand("value", ANY, doc="Per-invocation value to reduce.")],
-    results=[Result("result", ANY, doc="Reduced value.")],
+    doc="Reduce one or more independent scalar or rank-1 vector payloads at one workgroup convergence point. Each result has the type of the operand in the same position. All payloads share the combining kind and math requirement; no combination occurs between payloads."
+    + _COLLECTIVE_MATH_DOC,
+    operands=[Operand("values", ANY, variadic=True, doc="Nonempty independent per-invocation payloads to reduce.")],
+    results=[Result("results", ANY, variadic=True, doc="Workgroup-uniform results corresponding positionally to the payloads.")],
     attrs=_collective_combining_attrs(),
-    constraints=[SameType("value", "result")],
+    constraints=[VariadicValuesMatch("values", "results")],
     traits=_KERNEL_CONVERGENT_TRAITS,
     verify="loom_kernel_workgroup_reduce_verify",
     facts="loom_kernel_workgroup_reduce_facts",
-    format=[TemplateParamFlags("kind", "math"), Ref("value"), COLON, TypeOf("value")],
-    examples=["%sum = kernel.workgroup.reduce<addf> %v : f32"],
+    format=[TemplateParamFlags("kind", "math"), Refs("values"), COLON, TypesOf("results")],
+    examples=[
+        "%sum = kernel.workgroup.reduce<addf> %v : f32",
+        "%sum, %moment = kernel.workgroup.reduce<addf> %value, %squared : f32, vector<4xf32>",
+    ],
 )
 
 kernel_workgroup_scan = Op(
@@ -2153,11 +2166,12 @@ kernel_dispatch = Op(
     group=kernel_ops,
     phase=OpPhase.EXECUTABLE,
     doc=(
-        "Dispatch an executable kernel entry with exact workgroup counts and "
-        "device-ABI operands. Counts are one to three index values or one "
-        "dense view<3xi32> for indirect dispatch. An optional XYZ workgroup "
-        "size overrides the executable entry default for targets supporting "
-        "dispatch-time workgroup sizes."
+        "Dispatch a resolved kernel.entry.decl with exact workgroup counts "
+        "and device-ABI operands. Configured kernel.def and kernel.decl "
+        "symbols are invoked with kernel.launch instead. Counts are one to "
+        "three index values or one dense view<3xi32> for indirect dispatch. "
+        "An optional XYZ workgroup size overrides the executable entry "
+        "default for targets supporting dispatch-time workgroup sizes."
     ),
     operands=[
         Operand("workgroup_counts", ANY, variadic=True),
@@ -2233,7 +2247,7 @@ def _launch_schedule(name: str, doc: str) -> Op:
         regions=[
             RegionDef(
                 "body",
-                doc="Nested kernel launches and launch schedules.",
+                doc=("Nested kernel launches, launch schedules, and pure or deterministic read-only launch preparation."),
                 single_block=True,
                 terminator="kernel.launch.yield",
             ),

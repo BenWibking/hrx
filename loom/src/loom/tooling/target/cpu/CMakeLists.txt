@@ -80,10 +80,41 @@ endif()
 if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
 iree_native_test(
   NAME
+    "integer_bit_counts_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/integer/bit_count.loom}}"
+    "--device=task"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/integer/bit_count.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "ranked_exchange_packets_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/memory/view/scalar_exchange.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@ranked_exchange_packet_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/memory/view/scalar_exchange.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
     "scalar_loop_scenario_test"
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/control/loop/scalar_state.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@scalar_loop_state_values"
   SRC
     loom::tools::iree-test-loom
@@ -99,6 +130,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/integer/scalar_observations.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@scalar_i32_arithmetic_values"
   SRC
     loom::tools::iree-test-loom
@@ -114,6 +146,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/integer/scalar_observations.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@portable_index_arithmetic_values"
   SRC
     loom::tools::iree-test-loom
@@ -129,6 +162,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/integer/scalar_observations.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@scalar_i32_bitfield_values"
   SRC
     loom::tools::iree-test-loom
@@ -144,6 +178,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/conversion.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@scalar_integer_float_values"
   SRC
     loom::tools::iree-test-loom
@@ -159,6 +194,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/vector/conversion.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@wide_integer_values"
   SRC
     loom::tools::iree-test-loom
@@ -170,10 +206,139 @@ endif()
 if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
 iree_native_test(
   NAME
+    "packed_float_widening_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@packed_f32_to_f64_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "packed_float_narrowing_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@packed_f64_to_f32_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "half_narrowing_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/f32_narrowing.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@f32_half_packet_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/f32_narrowing.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "half_double_widening_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@float16_to_f64_all_bits"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "half_widening_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@float16_to_f32_all_bits"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "packet_concatenation_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/vector/concatenation.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@packet_concatenation_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/vector/concatenation.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "bfloat_widening_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@bfloat_to_f32_all_bits"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "bfloat_double_widening_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@bfloat_to_f64_all_bits"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/narrow_widening.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
     "uniform_word_shifts_scenario_test"
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/vector/integer_bitwise.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@uniform_word_shift_values"
   SRC
     loom::tools::iree-test-loom
@@ -189,6 +354,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/vector/integer_bitwise.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@uniform_dword_shift_values"
   SRC
     loom::tools::iree-test-loom
@@ -204,6 +370,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/vector/integer_bitwise.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@uniform_qword_shift_values"
   SRC
     loom::tools::iree-test-loom
@@ -219,6 +386,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/function/rodata.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@rodata_values"
   SRC
     loom::tools::iree-test-loom
@@ -234,6 +402,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/integer/constant_division.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@constant_scalar_quotient_values"
   SRC
     loom::tools::iree-test-loom
@@ -249,6 +418,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/float/roots.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@root_values"
   SRC
     loom::tools::iree-test-loom
@@ -264,6 +434,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/cpu/test/x86_approximate_roots.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@x86_root_approximate_values"
   SRC
     loom::tools::iree-test-loom
@@ -279,6 +450,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/float/roots.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@root_f64_values"
   SRC
     loom::tools::iree-test-loom
@@ -294,7 +466,24 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/cpu/test/x86_approximate_roots.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@x86_root_f64_approximate_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/cpu/test/x86_approximate_roots.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "float_approximate_root_guards_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/cpu/test/x86_approximate_roots.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@x86_root_approximate_guard_values"
   SRC
     loom::tools::iree-test-loom
   DATA
@@ -309,6 +498,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/float/exponential.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@exponential_values"
   SRC
     loom::tools::iree-test-loom
@@ -324,6 +514,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/float/turns.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@turn_approximate_values"
   SRC
     loom::tools::iree-test-loom
@@ -339,6 +530,7 @@ iree_native_test(
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/float/activations.loom}}"
     "--device=task"
+    "--task_topology_max_group_count=2"
     "--case=@activation_core_values"
   SRC
     loom::tools::iree-test-loom

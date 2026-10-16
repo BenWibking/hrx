@@ -81,6 +81,13 @@ typedef struct loom_low_allocation_materialized_spill_list_t {
   iree_host_size_t record_count;
 } loom_low_allocation_materialized_spill_list_t;
 
+typedef struct loom_low_allocation_materialized_value_list_t {
+  // Materialized values owned by the caller-provided arena.
+  const loom_value_id_t* values;
+  // Number of entries in |values|.
+  iree_host_size_t count;
+} loom_low_allocation_materialized_value_list_t;
+
 typedef struct loom_low_allocation_materialization_options_t {
   // True when |supported_storage_spaces| names the complete target lowering
   // capability for newly generated spill storage.
@@ -109,6 +116,11 @@ typedef struct loom_low_allocation_materialization_options_t {
 typedef struct loom_low_allocation_materialization_result_t {
   // Number of error diagnostics emitted before mutating the low function.
   uint32_t error_count;
+  // Register values that generated spill traffic requires in later frames.
+  // Includes low.reload results and values newly consumed by low.spill.
+  loom_low_allocation_materialized_value_list_t required_register_values;
+  // Single-consumer low.reload results private to their consumer setup chain.
+  loom_low_allocation_materialized_value_list_t per_user_placement_values;
   // Number of low.storage.reserve ops created from spill plans.
   uint32_t storage_count;
   // Number of low.spill stores inserted.
@@ -129,8 +141,10 @@ typedef struct loom_low_allocation_materialization_result_t {
   iree_host_size_t materialized_spill_count;
 } loom_low_allocation_materialization_result_t;
 
-// Materializes spill plans in |table| into low.storage.reserve, low.spill, and
-// low.reload ops. Existing entry-block storage reservations are moved to its
+// Materializes the selected |spill_plans| from |table| into
+// low.storage.reserve, low.spill, and low.reload ops. The allocation snapshot
+// remains immutable; callers may omit plans whose values were reconstructed
+// without storage. Existing entry-block storage reservations are moved to its
 // prefix after ABI live-in/resource imports without changing their relative
 // order or byte offsets. New reservations append to that prefix, dominating
 // all generated traffic even when earlier repairs inserted executable entry
@@ -143,6 +157,8 @@ typedef struct loom_low_allocation_materialization_result_t {
 // never appear in a spill plan.
 iree_status_t loom_low_allocation_materialize_spills(
     const loom_low_allocation_table_t* table,
+    const loom_low_allocation_spill_plan_t* spill_plans,
+    iree_host_size_t spill_plan_count,
     const loom_low_allocation_materialization_options_t* options,
     iree_arena_allocator_t* arena,
     loom_low_allocation_materialization_result_t* out_result);

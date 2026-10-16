@@ -34,6 +34,7 @@ loom_cc_library(
     "rule_match.h"
     "rule_plan.h"
     "rule_source_memory.h"
+    "rule_source_memory_plan.h"
     "rule_value.h"
     "rules.h"
     "source_call.h"
@@ -70,6 +71,7 @@ loom_cc_library(
     "rule_plan.c"
     "rule_source_memory_match.c"
     "rule_source_memory_materialize.c"
+    "rule_source_memory_plan.c"
     "rule_value.c"
     "source_call.c"
     "source_graph_nodes.c"
@@ -91,8 +93,8 @@ loom_cc_library(
     loom::analysis::contract_vector
     loom::analysis::control_uniformity
     loom::analysis::integer_relation
-    loom::analysis::kernel_async_legality
     loom::analysis::kernel_barrier_lifetime
+    loom::analysis::kernel_synchronization_legality
     loom::analysis::motion
     loom::analysis::native_layout
     loom::analysis::storage_access

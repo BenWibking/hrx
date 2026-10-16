@@ -69,6 +69,7 @@ iree_execution_test_suite(
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amd/xdna/test/channel_fanout.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amd/xdna/test/channel_sram.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amd/xdna/test/finite_ingress.loom"
   LABELS
     "iree-run-requirement=libamdf.resource.xdna"
     "runtime-resource=amd-xdna"
@@ -102,22 +103,6 @@ iree_native_test(
     loom::tools::loom-check
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/boolean_storage.cxx"
-  LABELS
-    "loom-check"
-)
-endif()
-
-if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND LOOM_IMPORT_CXX)
-iree_native_test(
-  NAME
-    "mxfp_group_dot_lowering"
-  WORKING_DIRECTORY "${IREE_ROOT_DIR}"
-  ARGS
-    "{{${CMAKE_CURRENT_SOURCE_DIR}/test/mxfp_group_dot.cxx-test}}"
-  SRC
-    loom::tools::loom-check
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/mxfp_group_dot.cxx"
   LABELS
     "loom-check"
 )

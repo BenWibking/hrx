@@ -1,14 +1,15 @@
 # Serving HTTP profiles
 
 All TCP and Unix listeners expose the same catalog and HTTP endpoints.
-Inference requests select a registered deployment through the JSON `model`
-field. Names come from [model documents](model-documents.md), not checkpoint
-filenames or an inferred architecture. An absent model returns 404.
+Inference requests select a registered deployment through the `model` field
+in JSON or multipart form data. Names come from
+[model documents](model-documents.md), not checkpoint filenames or an inferred
+architecture. An absent model returns 404.
 
-The text, image, embedding and speech profiles use familiar OpenAI response shapes,
-but are not the entire OpenAI API. Supported fields are explicit; unsupported
-execution options reject rather than being silently ignored. The server has
-no built-in authentication or TLS termination.
+The text, image, embedding, speech and transcription profiles use familiar
+OpenAI response shapes, but are not the entire OpenAI API. Supported fields are
+explicit; unsupported execution options reject rather than being silently
+ignored. The server has no built-in authentication or TLS termination.
 
 ## Request framing
 
@@ -37,8 +38,8 @@ header.
 | `POST /v1/models/register` | Complete model document, optionally with uploaded source files; HTTP 202 accepts registration intent. |
 | `POST /v1/models/drain`, `POST /v1/models/undrain` | `{"model":"name"}`; HTTP 200 acknowledges the gate change. |
 | `POST /v1/models/unregister` | `{"model":"name","mode":"drain"}`; mode may instead be `"abort"`; HTTP 202 accepts removal. |
-| `POST /v1/models/activate`, `POST /v1/models/deactivate` | Model-only body; HTTP 202 accepts a residency operation on a healthy drained registration. |
-| `POST /v1/models/pin`, `POST /v1/models/unpin` | Model-only body; HTTP 200 changes parameter eviction policy. |
+| `POST /v1/models/activate`, `POST /v1/models/deactivate` | `{"model":"name","component":"primary"}`; HTTP 202 accepts a residency operation on a healthy drained registration. |
+| `POST /v1/models/pin`, `POST /v1/models/unpin` | Same component selector; HTTP 200 changes parameter eviction policy. |
 | `GET /v1/models/variants` | Native executable inventory or one candidate's retained compilation diagnostics. |
 | `POST /v1/models/variants` | Stage native providers against a ready base without selecting them. |
 | `POST /v1/models/variants/select` | Select a ready candidate with expected-current protection. |
@@ -54,6 +55,12 @@ Prepared but drained or weight-evicted models remain discoverable.
 loaded tokenizer. Text also reports configured `context_length` and
 `limits.max_output_tokens`, not training context or total cache-pool capacity.
 Capabilities do not establish learned quality or support for every optional field.
+
+Residency controls default to `component:"primary"`. A text deployment with an
+image-input component also accepts `component:"image"`; an image-generation
+deployment's normal computation is still `primary`. An undeclared component
+returns 404; an invalid selector returns 400. Drain and unregister apply to the
+whole registration and do not accept a component selector.
 
 [Operation](workflows/operate-model-server.md) specifies asynchronous control
 completion, conflict and overload behavior. [Observation](workflows/observe-model-server.md)
@@ -228,6 +235,34 @@ the tools. Invalid generated tool syntax fails rather than publishing a
 partially executable call. The client executes tools and returns their results
 in the next full conversation history.
 
+### Image input
+
+An image-capable text deployment reports both `text` and `image` input
+modalities. Message `content` may be an ordered array of `text` and `image_url`
+parts. A text part contains `type:"text"` and `text`; an image part contains
+`type:"image_url"` and an `image_url` object with `url` and optional `detail`.
+Detail is `auto` by default, or `low` or `high`, with interpretation owned by
+the model's source policy.
+
+Image URLs must be base64 data URLs. The server does not fetch network URLs or
+read image paths from the request. Image-enabled builds always accept static
+PAM (`image/x-portable-arbitrarymap`) without third-party codecs. PNG, JPEG,
+GIF, and WebP are enabled by default and can be omitted individually without
+removing image input or other serving modalities. PAM supports standard
+black-and-white, grayscale, and RGB tuples, with optional straight alpha and
+sample maxima up to 65535, normalized to RGB8 or RGBA8. Animated or multi-image
+inputs, MIME/signature mismatches, and images exceeding source-declared byte,
+dimension, or pixel limits reject.
+The normal HTTP request-body limit still applies.
+
+Multiple images and concurrent requests can share projection cohorts. Features
+remain device-resident through language input; a disconnected peer does not
+change the surviving images' association. Full conversation history remains
+required for retained reuse. Image identity includes the compressed bytes,
+ordered placement, detail and resolved source metadata, so reuse cannot cross
+a change in those semantics. A complete retained media prefix skips pixel
+decoding and projection; it does not require a separate image-feature cache.
+
 ### Retained conversations
 
 `X-Loom-Session: SESSION` requests best-effort reuse of a named history. Requests
@@ -310,6 +345,76 @@ omitted response format return an input error. Voice registration and sample
 persistence are not supplied by this endpoint; conditioning assets belong to
 the loaded package. File-based players require an encoded-audio profile rather
 than raw PCM.
+
+## Audio transcription
+
+`POST /v1/audio/transcriptions` accepts a recognition deployment and a completed
+recording as `multipart/form-data`. Builds with audio codecs accept WAV, MP3,
+and FLAC, converting their sample rate and channel layout to the model's input
+geometry:
+
+```sh
+curl --fail-with-body -H 'Expect:' \
+  http://127.0.0.1:8080/v1/audio/transcriptions \
+  -F model=recognizer \
+  -F 'file=@recording.wav;type=audio/wav'
+```
+
+The default response is `{"text":"Recognized speech."}`. `response_format=text`
+returns UTF-8 plain text. Independent finalized segments appear in input-time
+order, separated by newlines; segment identities break equal-time ties.
+
+| Field | Contract |
+| --- | --- |
+| `model` | Required registered recognition deployment. |
+| `file` | Required nonempty recording in an enabled format, or PCM16LE with explicit geometry; the filename never names a server path. |
+| `language` | Optional UTF-8 language hint interpreted by the package. |
+| `prompt` | Optional UTF-8 context interpreted by the package. |
+| `temperature` | Finite number from 0 through 1, default 0; source policy may restrict it. |
+| `response_format` | `json` by default, or `text`. |
+| `stream` | Omitted or `false` for this finite-upload profile. |
+
+Container bytes select the decoder, independently of the filename or MIME
+label. `audio/wav`, `audio/mpeg`, and `audio/flac` are conventional labels;
+`application/octet-stream` also works for a supported container. A disabled
+codec or unsupported container returns an error. Direct WebM/Opus and MP4/AAC
+uploads are not accepted; clients must convert them to an enabled format.
+
+Raw PCM16LE works in every build. Its file part explicitly declares `audio/pcm`
+with the sample rate and interleaved channel count, matching the selected model.
+For a 16 kHz mono recognizer:
+
+```sh
+curl --fail-with-body -H 'Expect:' \
+  http://127.0.0.1:8080/v1/audio/transcriptions \
+  -F model=recognizer \
+  -F 'file=@recording.pcm;headers="Content-Type: audio/pcm;rate=16000;channels=1"'
+```
+
+These bytes contain whole PCM16 frames without a WAV header. Missing, duplicate,
+or mismatched geometry and partial frames reject. The raw path performs no
+resampling or channel conversion. PCM input and PCM speech output require no
+audio codec dependency.
+
+The request-body byte limit and source-defined input-frame limit apply
+independently. The raw PCM frame count is checked before model admission;
+encoded recordings are checked as decoded frames reach recognition. An
+overlong recording rejects without truncation or a partial success response.
+Decoding and conversion stage a bounded number of frames on the shared CPU
+executor, retaining each recording's codec and resampling history across blocks.
+
+Uploads may share numerical batches while retaining independent sample clocks,
+model histories, and transcript state. A disconnect cancels that request;
+upload bytes, decoder state, and model storage remain owned until accepted
+work retires.
+Concurrent requests continue through their own input and output credit.
+
+Unknown or duplicate fields, unsupported response formats and `stream=true`
+reject. The finite profile does not emit provisional hypotheses, word timing or
+speaker labels. The [recognition source contract](model-programs.md#recognize-continuing-audio)
+preserves revisions and optional alignment/diarization evidence for typed
+consumers. A chunked HTTP upload still completes before recognition begins;
+it is not an appendable microphone session.
 
 ## Embeddings
 

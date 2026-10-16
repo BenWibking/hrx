@@ -23,6 +23,8 @@ loom_cc_library(
     "approximate_f32.h"
     "evaluation.c"
     "evaluation.h"
+    "inverse_hyperbolic.c"
+    "inverse_hyperbolic.h"
     "legalize.c"
     "patterns.c"
     "patterns.h"
@@ -48,6 +50,7 @@ loom_cc_library(
     loom::target::math_policy
     loom::target::pass_environment
     loom::target::reporting::report
+    loom::util::fact_table_api
   PUBLIC
 )
 

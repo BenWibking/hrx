@@ -12,6 +12,7 @@
 namespace {
 
 using loom_serve::testing::text::Oracle;
+using loom_serve::testing::text::RegisteredSourceTextServiceTest;
 using loom_serve::testing::text::SourceTextServiceTest;
 using loom_serve::testing::text::StalledClient;
 
@@ -270,7 +271,8 @@ TEST_F(SourceTextServiceTest, CheckpointClaimSurvivesDisconnectAndStopping) {
   }
 }
 
-TEST_F(SourceTextServiceTest, FailedTextSourceLeavesPeerAndDiagnosticsUsable) {
+TEST_F(RegisteredSourceTextServiceTest,
+       FailedTextSourceLeavesPeerAndDiagnosticsUsable) {
   const auto package = iree::testing::MakeTempFilePath("failed_text_source");
   ASSERT_TRUE(std::filesystem::create_directory(package));
   for (const char* file :
@@ -674,6 +676,29 @@ TEST_F(SourceTextServiceTest, CancelledPreparationRetainsPartialOwnership) {
   EXPECT_EQ(after.retained.committed_bytes, before.retained.committed_bytes);
 }
 
+TEST_F(SourceTextServiceTest, TokenizerFailureRetiresCompiledModel) {
+  const auto before = loom_serve_device_memory_statistics(device_);
+  auto options = ModelOptions();
+  options.tokenizer_path = IREE_SV("absent-tokenizer.json");
+  loom_serve_text_model_t* model = nullptr;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_NOT_FOUND,
+                        loom_serve_text_model_allocate(
+                            device_, &options, host_allocator_, &model));
+  EXPECT_EQ(model, nullptr);
+  const auto after = loom_serve_device_memory_statistics(device_);
+  EXPECT_EQ(after.retained.reserved_bytes, before.retained.reserved_bytes);
+  EXPECT_EQ(after.retained.committed_bytes, before.retained.committed_bytes);
+
+  // The failed tokenizer belongs to one load, not the application task pool or
+  // another model's activation and execution timeline.
+  auto* row = loom_serve_text_model_row(model_, 0);
+  const int32_t token = Oracle::Id('a');
+  IREE_ASSERT_OK(loom_serve_text_row_prefill(row, 1, &token));
+  Oracle reference;
+  reference.Consume("a");
+  EXPECT_EQ(loom_serve_text_row_token(row), reference.Predict());
+}
+
 TEST_F(SourceTextServiceTest, FailedLinkRetiresAcceptedInitialization) {
   const auto package = iree::testing::MakeTempFilePath("failed_text_link");
   ASSERT_TRUE(std::filesystem::create_directory(package));
@@ -844,7 +869,7 @@ TEST_F(SourceTextServiceTest,
       }
     }
   };
-  struct Claim {
+  struct loom_serve_test_text_lifecycle_claim_t {
     // Actual HTTP claim held through service admission or cancellation.
     loom_serve_http_connection_t* connection = nullptr;
     // Immutable request storage borrowed from that claim.

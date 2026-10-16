@@ -15,8 +15,11 @@ loom-serve --agents_md
 The [serving walkthrough](workflows/serve-models.md) reaches a first response
 without weights. [Stream speech](workflows/stream-speech.md) receives incremental
 audio and explains how voices share numerical batches while advancing
-independently. [Model documents](model-documents.md) specify programs, assets,
-placement and per-model capacities. [Author model programs](model-programs.md)
+independently. [Audio transcription](http-profiles.md#audio-transcription) accepts
+recorded audio, and the
+[client guide](workflows/connect-model-clients.md#transcription-and-dictation) describes
+upload formats and Open WebUI dictation. [Model documents](model-documents.md)
+specify programs, assets, placement and per-model capacities. [Author model programs](model-programs.md)
 describes preparation, execution and the contracts for adding a model package.
 The [operation](workflows/operate-model-server.md) and
 [observation](workflows/observe-model-server.md) workflows describe lifecycle
@@ -76,12 +79,19 @@ programs rather than assuming a GPU command program also runs on the NPU.
 Device-group membership alone does not distribute a model or share its memory
 between members.
 
-Fixed backing is suitable for devices without virtual-memory support, including
-the task and Vulkan paths. Elastic backing requires the device's virtual-memory
-contract; missing support fails during device-group initialization. Model-specific
-resource requirements are checked during preparation. Neither path silently
-changes the memory policy. Address-sanitized devices require fixed backing so
-their allocations can be published to the sanitizer shadow state.
+Use `--pool_backing=fixed` for task and Vulkan in the current server. Both
+backends support virtual memory: task uses host virtual memory where available,
+and Vulkan requires suitable sparse-memory capabilities. Their VMM implementations
+use HAL's device-group interfaces, while serving's elastic retained pool still
+consumes the allocator-level contract currently implemented by AMDGPU. The
+fixed-backing requirement is a serving integration boundary, not an absence of
+backend VMM support.
+
+Elastic backing fails during device-group initialization when that allocator
+contract is unavailable. Model-specific resource requirements are checked during
+preparation. Neither path silently changes the memory policy. Address-sanitized
+devices require fixed backing so their allocations can be published to the
+sanitizer shadow state.
 
 All listeners share one catalog, worker pool and connection budget. A port of
 zero requests an ephemeral port. One JSON `ready` record is written to stderr

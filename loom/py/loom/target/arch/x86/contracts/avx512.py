@@ -15,6 +15,7 @@ from loom.dialect.vector import ALL_VECTOR_OPS
 from loom.target.arch.x86.contracts.avx512_predicate import (
     avx512_predicate_rules,
 )
+from loom.target.arch.x86.contracts.float_conversion import float_conversion_rules
 from loom.target.arch.x86.contracts.float_roots import (
     scalar_float_root_rules,
     vector_float_root_rules,
@@ -26,6 +27,7 @@ from loom.target.arch.x86.contracts.floating_reduction import (
     avx512_float_dot_rules,
     avx512_float_reduction_rules,
 )
+from loom.target.arch.x86.contracts.half_conversion import half_conversion_rules
 from loom.target.arch.x86.contracts.integer_float import avx512_integer_float_rules
 from loom.target.arch.x86.contracts.integer_reduction import (
     avx512_integer_reduction_rules,
@@ -44,6 +46,9 @@ from loom.target.arch.x86.contracts.vector_construction import (
 from loom.target.arch.x86.contracts.vector_integer_conversion import (
     avx512_vector_integer_narrowing_rules,
     vector_integer_widening_rules,
+)
+from loom.target.arch.x86.contracts.vector_integer_count import (
+    avx512_vector_integer_count_rules,
 )
 from loom.target.arch.x86.descriptors import X86_AVX512_CORE_DESCRIPTOR_SET
 from loom.target.arch.x86.vector_families import (
@@ -91,6 +96,8 @@ def _cases() -> Sequence[ContractCase]:
     )
     return (
         *avx512_integer_float_rules(_descriptor),
+        *float_conversion_rules(_descriptor, evex=True),
+        *half_conversion_rules(_descriptor, evex=True),
         *avx512_vector_construction_rules(_descriptor),
         *vector_integer_widening_rules(
             _descriptor,
@@ -99,6 +106,7 @@ def _cases() -> Sequence[ContractCase]:
             result_vector_bit_widths=(512,),
         ),
         *avx512_vector_integer_narrowing_rules(_descriptor),
+        *avx512_vector_integer_count_rules(_descriptor),
         *avx512_predicate_rules(_descriptor),
         *avx512_vector_arithmetic_rules(_descriptor),
         *scalar_float_root_rules(

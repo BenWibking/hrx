@@ -99,6 +99,7 @@ from .common import (
     _xmm_operand,
     _xmm_result,
 )
+from .float_conversion import float_conversion_descriptors
 from .integer_float import integer_float_descriptors
 from .memory import memory_descriptors
 from .scalar import (
@@ -1032,6 +1033,7 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
             instruction=instruction,
         )
         for mnemonic, element_bit_width, instruction in (
+            ("vpunpcklbw", 8, native.VPUNPCKLBW),
             ("vpunpcklwd", 16, native.VPUNPCKLWD),
             ("vpunpckldq", 32, native.VPUNPCKLDQ),
             ("vpunpcklqdq", 64, native.VPUNPCKLQDQ),
@@ -1312,6 +1314,7 @@ X86_AVX2_DESCRIPTORS = (
     *X86_SCALAR_PREFIX_DESCRIPTORS,
     *X86_AVX2_VECTOR_DESCRIPTORS,
     *integer_float_descriptors(unsigned=False),
+    *float_conversion_descriptors(evex=False),
     *X86_SCALAR_SUFFIX_DESCRIPTORS,
 )
 
@@ -1348,6 +1351,7 @@ X86_AVX2_DESCRIPTOR_SET = DescriptorSet(
             alias_set_id=1,
         ),
     ),
+    register_packing_resources=X86_SCALAR_DESCRIPTOR_SET.register_packing_resources,
     resources=(
         *X86_SCALAR_DESCRIPTOR_SET.resources,
         Resource(

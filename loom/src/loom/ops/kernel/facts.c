@@ -307,14 +307,6 @@ static uint32_t loom_kernel_context_fixed_subgroup_size(
   return bundle->snapshot->subgroup_size;
 }
 
-static bool loom_kernel_context_has_dense_subgroup_partition(
-    const loom_fact_context_t* context) {
-  const loom_target_bundle_t* bundle = loom_kernel_target_bundle(context);
-  return bundle != NULL &&
-         (bundle->snapshot->dense_subgroup_partition ||
-          loom_kernel_context_fixed_subgroup_size(context) == 1);
-}
-
 static bool loom_kernel_context_required_workgroup_size(
     const loom_fact_context_t* context, const loom_module_t* module,
     loom_target_workgroup_size_t* out_size) {
@@ -458,6 +450,32 @@ static loom_value_facts_t loom_kernel_launch_workgroup_size_facts(
   launch_facts =
       loom_kernel_positive_u32_extent_facts(launch_facts, maximum_extent);
   return loom_kernel_intersect_integer_facts(launch_facts, target_facts);
+}
+
+static bool loom_kernel_context_has_dense_subgroup_partition(
+    const loom_fact_context_t* context, const loom_module_t* module) {
+  const loom_target_bundle_t* bundle = loom_kernel_target_bundle(context);
+  if (!bundle) {
+    return false;
+  }
+  if (bundle->snapshot->subgroup_partition ==
+      LOOM_TARGET_SUBGROUP_PARTITION_DENSE) {
+    return true;
+  }
+  const uint32_t subgroup_size =
+      loom_kernel_context_fixed_subgroup_size(context);
+  if (subgroup_size == 1) {
+    return true;
+  }
+  if (bundle->snapshot->subgroup_partition !=
+          LOOM_TARGET_SUBGROUP_PARTITION_WORKGROUP_X_ALIGNED ||
+      subgroup_size == 0) {
+    return false;
+  }
+  const loom_value_facts_t workgroup_x =
+      loom_kernel_launch_workgroup_size_facts(context, module,
+                                              LOOM_KERNEL_DIMENSION_X);
+  return loom_value_facts_divisible_by(workgroup_x, subgroup_size);
 }
 
 static loom_value_facts_t loom_kernel_launch_workgroup_count_facts(
@@ -605,7 +623,7 @@ static uint32_t loom_kernel_max_subgroup_size(
 static uint32_t loom_kernel_max_subgroup_lane_count(
     const loom_fact_context_t* context, const loom_module_t* module) {
   uint32_t max_lane_count = loom_kernel_max_subgroup_size(context);
-  if (!loom_kernel_context_has_dense_subgroup_partition(context)) {
+  if (!loom_kernel_context_has_dense_subgroup_partition(context, module)) {
     return max_lane_count;
   }
   const uint32_t max_flat_workgroup_size =
@@ -626,7 +644,7 @@ static uint32_t loom_kernel_max_subgroup_count(
   const uint32_t fixed_subgroup_size =
       loom_kernel_context_fixed_subgroup_size(context);
   if (fixed_subgroup_size != 0 &&
-      loom_kernel_context_has_dense_subgroup_partition(context)) {
+      loom_kernel_context_has_dense_subgroup_partition(context, module)) {
     return loom_kernel_ceil_div_u32(max_flat_workgroup_size,
                                     fixed_subgroup_size);
   }
@@ -640,7 +658,7 @@ static bool loom_kernel_exact_subgroup_count(const loom_fact_context_t* context,
   const uint32_t fixed_subgroup_size =
       loom_kernel_context_fixed_subgroup_size(context);
   if (fixed_subgroup_size == 0 ||
-      !loom_kernel_context_has_dense_subgroup_partition(context)) {
+      !loom_kernel_context_has_dense_subgroup_partition(context, module)) {
     return false;
   }
   uint32_t flat_workgroup_size = 0;
@@ -1101,23 +1119,25 @@ iree_status_t loom_kernel_workgroup_reduce_facts(
     loom_fact_context_t* context, const loom_module_t* module,
     const loom_op_t* op, const loom_value_facts_t* operand_facts,
     loom_value_facts_t* result_facts) {
-  result_facts[0] = loom_value_facts_unknown();
   const uint32_t maximum_count =
       loom_kernel_workgroup_reduce_kind(op) == LOOM_COMBINING_KIND_ADDI
           ? loom_kernel_context_max_flat_workgroup_size(context, module)
           : 0;
-  if (maximum_count != 0) {
-    uint32_t exact_count = 0;
-    const uint32_t minimum_count =
-        loom_kernel_context_fixed_flat_workgroup_size(context, module,
-                                                      &exact_count)
-            ? exact_count
-            : 1;
-    result_facts[0] = loom_kernel_integer_sum_facts(
-        module, loom_kernel_workgroup_reduce_result(op), operand_facts[0],
-        minimum_count, maximum_count);
+  uint32_t exact_count = 0;
+  const uint32_t minimum_count =
+      maximum_count != 0 && loom_kernel_context_fixed_flat_workgroup_size(
+                                context, module, &exact_count)
+          ? exact_count
+          : 1;
+  const loom_value_slice_t results = loom_kernel_workgroup_reduce_results(op);
+  for (iree_host_size_t i = 0; i < results.count; ++i) {
+    result_facts[i] = maximum_count != 0
+                          ? loom_kernel_integer_sum_facts(
+                                module, results.values[i], operand_facts[i],
+                                minimum_count, maximum_count)
+                          : loom_value_facts_unknown();
+    loom_value_facts_mark_workgroup_uniform(&result_facts[i]);
   }
-  loom_value_facts_mark_workgroup_uniform(&result_facts[0]);
   return iree_ok_status();
 }
 

@@ -117,6 +117,8 @@ from .common import (
     _zmm_operand,
     _zmm_result,
 )
+from .float_conversion import float_conversion_descriptors
+from .half_conversion import half_conversion_descriptors
 from .integer_float import integer_float_descriptors
 from .memory import memory_descriptors
 from .scalar import X86_SCALAR_DESCRIPTOR_SET
@@ -337,6 +339,7 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             allocatable_count=8,
         ),
     ),
+    register_packing_resources=X86_SCALAR_DESCRIPTOR_SET.register_packing_resources,
     resources=(
         Resource(_RESOURCE_SCALAR, capacity_per_cycle=1, kind=ResourceKind.SCALAR_ALU),
         Resource(
@@ -581,6 +584,8 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
     descriptors=(
         *X86_AVX2_DESCRIPTORS,
         *integer_float_descriptors(unsigned=True),
+        *float_conversion_descriptors(evex=True),
+        *half_conversion_descriptors(evex=True),
         _evex_descriptor(
             Descriptor(
                 key="x86.avx512.vextractf32x4.xmm.zmm",
@@ -864,6 +869,15 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             for (_, mnemonic, semantic), instruction in zip(
                 AVX512_BITWISE_FAMILIES, native.AVX512_BITWISE, strict=True
             )
+        ),
+        _evex_descriptor(
+            _vector_i32_binary_descriptor(
+                vector_bit_width=512,
+                key="x86.avx512.vpshufb.zmm",
+                mnemonic="vpshufb",
+                semantic_tag="bits.shuffle.bytes.v512",
+            ),
+            native.VPSHUFB,
         ),
         *(
             _evex_descriptor(

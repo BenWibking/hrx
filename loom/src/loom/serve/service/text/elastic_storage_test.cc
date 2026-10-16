@@ -134,7 +134,8 @@ class ElasticTextServiceTest : public SourceTextServiceTest {
                   .find("HTTP/1.1 202"),
               0u);
     const auto activated = WaitModel("cold", R"("parameter_operation":"idle")");
-    ASSERT_NE(activated.find(R"("parameters":{"active":true)"),
+    ASSERT_NE(activated.find(
+                  R"("primary":{"phase":"ready","pinned":false,"active":true)"),
               std::string::npos)
         << activated;
     ASSERT_EQ(Read(Send(R"({"model":"cold"})", "", "/v1/models/undrain"))
@@ -185,6 +186,11 @@ class ElasticTextServiceTest : public SourceTextServiceTest {
   }
 };
 
+class RegisteredElasticTextServiceTest : public ElasticTextServiceTest {
+ protected:
+  bool NeedsStandaloneModel() const override { return false; }
+};
+
 TEST_F(ElasticTextServiceTest,
        PrefixNativeBackingRetiresBeforeNextReservation) {
   CheckPrefixBackingRetirement(/*trim_first=*/false);
@@ -194,17 +200,17 @@ TEST_F(ElasticTextServiceTest, PrefixNativeBackingRetiresBeforeTrim) {
   CheckPrefixBackingRetirement(/*trim_first=*/true);
 }
 
-TEST_F(ElasticTextServiceTest,
+TEST_F(RegisteredElasticTextServiceTest,
        ColdStateCommitDoesNotBlockWarmHttpInferenceOnOneWorker) {
   CheckColdStateAdmission(/*cancel=*/false);
 }
 
-TEST_F(ElasticTextServiceTest,
+TEST_F(RegisteredElasticTextServiceTest,
        UnregisterJoinsPendingStateWithoutBlockingWarmInference) {
   CheckColdStateAdmission(/*cancel=*/true);
 }
 
-TEST_F(ElasticTextServiceTest,
+TEST_F(RegisteredElasticTextServiceTest,
        IdleParametersReleaseWithoutBlockingPeersOrDiscardingHistory) {
   StartManaged({.parameter_timeout = iree_make_duration_ms(1)});
   for (const char* name : {"fixture-text", "warm"}) {
@@ -242,14 +248,17 @@ TEST_F(ElasticTextServiceTest,
               0u);
     // This poll does not keep parameters hot. Expiry schedules native release
     // without closing admission or blocking the sole serving task worker.
-    const auto expired =
-        WaitModel("fixture-text", R"("parameters":{"active":false)");
+    const auto expired = WaitModel(
+        "fixture-text",
+        R"("primary":{"phase":"ready","pinned":false,"active":false)");
     ASSERT_NE(expired.find(R"("deactivations":1)"), std::string::npos)
         << expired;
     EXPECT_EQ(Content(Read(Send(warm, "X-Loom-Session: warm\r\n"))), first);
     EXPECT_EQ(Read(Send("", "", "/healthz", "GET")).find("HTTP/1.1 200"), 0u);
     const auto peer = WaitModel("warm", R"("phase":"idle")");
-    EXPECT_NE(peer.find(R"("parameters":{"active":true)"), std::string::npos);
+    EXPECT_NE(
+        peer.find(R"("primary":{"phase":"ready","pinned":true,"active":true)"),
+        std::string::npos);
     EXPECT_NE(peer.find(R"("deactivations":0)"), std::string::npos);
   }
   const auto continuation =

@@ -95,6 +95,7 @@ class CiTest(unittest.TestCase):
                 "Test",
                 ("//suite/...",),
                 test_tag_filters=("focus",),
+                test_language_filters=("-py",),
                 available_resources=("device.a",),
             )
             cmake_step = ci.cmake_test_step(
@@ -110,6 +111,7 @@ class CiTest(unittest.TestCase):
         self.assertEqual(
             bazel_filter, "--test_tag_filters=focus,-iree-run-requirement=device.b"
         )
+        self.assertIn("--test_lang_filters=-py", bazel_step.argv)
         ctest_filter = cmake_step.argv[cmake_step.argv.index("-LE") + 1]
         self.assertIsNotNone(re.search(ctest_filter, "iree-run-requirement=device.b"))
         self.assertIsNotNone(re.search(ctest_filter, "manual"))
@@ -138,6 +140,104 @@ class CiTest(unittest.TestCase):
                     ci.bazel_test_step(
                         "Test", ("//suite:test",), bazel_options=(option,)
                     )
+
+            for option in ("--test_lang_filters", "--test_lang_filters=-py"):
+                with self.assertRaisesRegex(ValueError, "Use test_language_filters"):
+                    ci.bazel_test_step(
+                        "Test", ("//suite:test",), bazel_options=(option,)
+                    )
+
+    def test_bazel_test_builds_only_selected_test_rules(self):
+        test_step = ci.bazel_test_step("Test", ("//suite/...",))
+        build_step = ci.bazel_build_step("Build", ("//suite/...",))
+
+        self.assertIn("--build_tests_only", test_step.argv)
+        self.assertNotIn("--build_tests_only", build_step.argv)
+
+    def test_platform_selection_applies_to_each_build_phase(self):
+        for selection, bazel_list, cmake_list in (
+            (None, "", ""),
+            ("0", "", ""),
+            ("1", "first,second", "first;second"),
+        ):
+            with self.subTest(selection=selection):
+                environment = (
+                    {}
+                    if selection is None
+                    else {"IREE_CI_PLATFORM_COVERAGE": selection}
+                )
+                with (
+                    mock.patch.dict(os.environ, environment, clear=True),
+                    mock.patch.object(
+                        ci_config, "OPTIONAL_IMAGE_CODECS", ("first", "second")
+                    ),
+                    mock.patch.object(ci_config, "OPTIONAL_AUDIO_CODECS", ("voice",)),
+                ):
+                    steps = (
+                        ci.bazel_configure_step(),
+                        ci.bazel_build_step("Build", ("//suite:target",)),
+                        ci.bazel_test_step("Test", ("//suite:target",)),
+                        ci.bazel_run_step("Run", "//suite:target"),
+                    )
+                    cmake_step = ci.cmake_configure_step("example")
+                for step in steps:
+                    for kind, codecs in (
+                        ("image", bazel_list),
+                        ("audio", "voice" if selection == "1" else ""),
+                    ):
+                        prefix = "--//loom/config/serve:" + kind + "_codecs="
+                        self.assertEqual(
+                            [arg for arg in step.argv if arg.startswith(prefix)],
+                            [prefix + codecs],
+                        )
+                self.assertIn(
+                    "-DLOOM_SERVE_IMAGE_CODECS=" + cmake_list, cmake_step.argv
+                )
+                self.assertIn(
+                    "-DLOOM_SERVE_AUDIO_CODECS="
+                    + ("voice" if selection == "1" else ""),
+                    cmake_step.argv,
+                )
+                self.assertEqual(
+                    shlex.split(cmake_step.command_line()), list(cmake_step.argv)
+                )
+
+    def test_platform_selection_owns_compile_coverage_build_steps(self):
+        step = ci.CiStep("Compile coverage", ("tool", "build"))
+        for selection, expected_steps in (("0", []), ("1", [step])):
+            with self.subTest(selection=selection):
+                with mock.patch.dict(
+                    os.environ,
+                    {"IREE_CI_PLATFORM_COVERAGE": selection},
+                    clear=True,
+                ):
+                    self.assertEqual(
+                        ci.platform_coverage_build_steps(step), expected_steps
+                    )
+
+    def test_codec_policy_precedes_explicit_job_overrides(self):
+        with mock.patch.object(ci, "codec_options", return_value=("--choice=default",)):
+            override = ("--choice=job",)
+            steps = (
+                ci.bazel_configure_step(extra_options=override),
+                ci.bazel_build_step(
+                    "Build", ("//suite:target",), bazel_options=override
+                ),
+                ci.bazel_test_step("Test", ("//suite:target",), bazel_options=override),
+                ci.bazel_run_step("Run", "//suite:target", bazel_options=override),
+                ci.cmake_configure_step("example", extra_options=override),
+            )
+        for step in steps:
+            self.assertLess(
+                step.argv.index("--choice=default"), step.argv.index("--choice=job")
+            )
+
+    def test_invalid_platform_selection_fails_loud(self):
+        with mock.patch.dict(os.environ, {"IREE_CI_PLATFORM_COVERAGE": "treu"}):
+            with self.assertRaisesRegex(
+                ValueError, "IREE_CI_PLATFORM_COVERAGE must be 0 or 1"
+            ):
+                ci.bazel_configure_step()
 
     def test_audit_survives_step_options_and_dry_run_has_no_subprocesses(self):
         step = ci.bazel_test_step("Test", ("//suite:test",))
@@ -274,7 +374,7 @@ class CiTest(unittest.TestCase):
         self.assertIsNotNone(match)
         return match.group("body")
 
-    def test_cpu_dry_run_exposes_copyable_commands(self):
+    def test_cpu_dry_run_exposes_copyable_test_closure(self):
         args = ci.parse_arguments(
             [
                 "iree-bazel-cpu",
@@ -298,7 +398,7 @@ class CiTest(unittest.TestCase):
 
         text = output.getvalue()
         self.assertIn("dev.py bazel configure", text)
-        self.assertIn("dev.py bazel build ", text)
+        self.assertNotIn("dev.py bazel build ", text)
         self.assertIn("dev.py bazel test ", text)
         self.assertIn(" -- //runtime/...", text)
         self.assertIn("-//runtime/src/iree/hal/drivers/amdgpu/...", text)
@@ -308,7 +408,7 @@ class CiTest(unittest.TestCase):
             text,
         )
 
-    def test_bazel_profiles_are_named_for_each_build_and_test_phase(self):
+    def test_bazel_profiles_are_named_for_each_selected_phase(self):
         profile_dir = Path("/tmp/iree-bazel-profiles")
         resolved_profile_dir = profile_dir.resolve()
         args = ci.parse_arguments(
@@ -321,19 +421,52 @@ class CiTest(unittest.TestCase):
             ]
         )
 
-        steps = ci.steps_from_args(args)
+        for selection, expected_names in (
+            ("0", ("test-iree.profile.gz",)),
+            ("1", ("build-iree.profile.gz", "test-iree.profile.gz")),
+        ):
+            with self.subTest(selection=selection):
+                with mock.patch.dict(
+                    os.environ,
+                    {"IREE_CI_PLATFORM_COVERAGE": selection},
+                    clear=True,
+                ):
+                    steps = ci.steps_from_args(args)
+                self.assertEqual(
+                    [
+                        arg
+                        for step in steps
+                        for arg in step.argv
+                        if arg.startswith("--profile=")
+                    ],
+                    [
+                        f"--profile={resolved_profile_dir / name}"
+                        for name in expected_names
+                    ],
+                )
 
+    def test_bazel_test_results_capture_only_test_phases(self):
+        result_dir = Path("/tmp/iree-bazel-test-results").resolve()
+        steps = [
+            ci.bazel_build_step("Build example", ("//example:all",)),
+            ci.bazel_test_step("Test example", ("//example:all",)),
+        ]
+        args = ci.parse_arguments(
+            ["iree-bazel-cpu", "--bazel-test-results-dir", str(result_dir)]
+        )
+
+        with mock.patch.object(ci, "_steps_from_args", return_value=steps):
+            planned = ci.steps_from_args(args)
+
+        self.assertEqual(planned[0], steps[0])
+        event_path = result_dir / ".events" / "test-example.json"
+        self.assertIn(f"--build_event_json_file={event_path}", planned[1].argv)
         self.assertEqual(
-            [
-                arg
-                for step in steps
-                for arg in step.argv
-                if arg.startswith("--profile=")
-            ],
-            [
-                f"--profile={resolved_profile_dir / 'build-iree.profile.gz'}",
-                f"--profile={resolved_profile_dir / 'test-iree.profile.gz'}",
-            ],
+            planned[1].test_results,
+            ci.bazel_test_results.BazelTestResultsCapture(
+                build_event_path=event_path,
+                output_dir=result_dir,
+            ),
         )
 
     def test_bazel_profile_names_must_be_unique(self):
@@ -347,15 +480,17 @@ class CiTest(unittest.TestCase):
 
     def test_non_bazel_commands_reject_bazel_profile_directory(self):
         for command in ("iree-cmake-cpu", "iree-importers-tilelang"):
-            with self.subTest(command=command):
-                args = ci.parse_arguments(
-                    [command, "--bazel-profile-dir", "/tmp/profiles"]
-                )
-                with self.assertRaisesRegex(
-                    ValueError,
-                    "--bazel-profile-dir is only supported for Bazel CI commands",
-                ):
-                    ci.steps_from_args(args)
+            for option, path in (
+                ("--bazel-profile-dir", "/tmp/profiles"),
+                ("--bazel-test-results-dir", "/tmp/results"),
+            ):
+                with self.subTest(command=command, option=option):
+                    args = ci.parse_arguments([command, option, path])
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"{option} is only supported for Bazel CI commands",
+                    ):
+                        ci.steps_from_args(args)
 
     def test_main_creates_bazel_profile_directory_only_when_executing(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
@@ -374,15 +509,27 @@ class CiTest(unittest.TestCase):
                 self.assertEqual(ci.main(argv), 0)
                 self.assertTrue(profile_dir.is_dir())
 
-    def test_bazel_default_targets_include_loom(self):
+    def test_main_creates_fresh_bazel_test_result_directory(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            result_dir = Path(temporary_dir) / "results"
+            argv = [
+                "iree-bazel-cpu",
+                "--bazel-test-results-dir",
+                str(result_dir),
+            ]
+            with mock.patch.object(ci, "run_steps", return_value=0):
+                self.assertEqual(ci.main([*argv, "--dry-run"]), 0)
+                self.assertFalse(result_dir.exists())
+                self.assertEqual(ci.main(argv), 0)
+                self.assertTrue((result_dir / ".events").is_dir())
+
+    def test_bazel_default_test_targets_include_loom(self):
         args = ci.parse_arguments(["iree-bazel-cpu"])
 
         steps = ci.steps_from_args(args)
-        build_step = next(step for step in steps if step.name == "Build IREE")
         test_step = next(step for step in steps if step.name == "Test IREE")
 
-        self.assertIn("//runtime/...", build_step.argv)
-        self.assertIn("//loom/...", build_step.argv)
+        self.assertFalse(any("bazel build" in step.command_line() for step in steps))
         self.assertIn("//runtime/...", test_step.argv)
         self.assertIn("//loom/...", test_step.argv)
 
@@ -441,7 +588,10 @@ class CiTest(unittest.TestCase):
 
         with mock.patch.dict(
             ci.os.environ,
-            {"HRX_ROCM_ROOT": "/tmp/rocm-root"},
+            {
+                "HRX_ROCM_ROOT": "/tmp/rocm-root",
+                "IREE_CI_PLATFORM_COVERAGE": "1",
+            },
             clear=True,
         ):
             steps = ci.steps_from_args(args)
@@ -453,7 +603,6 @@ class CiTest(unittest.TestCase):
                 "Build repository",
                 "Build AMDGPU device toolchain smoke",
                 "Test repository",
-                "Test lock-free Bazel launch",
                 "Run dynamic library environment smoke",
                 "Run executable alias smoke",
             ],
@@ -474,21 +623,36 @@ class CiTest(unittest.TestCase):
             integration_test_step.argv,
         )
         self.assertEqual(
-            steps[5].argv[-1],
+            steps[4].argv[-1],
             ci_config.BAZEL_REPOSITORY_INTEGRATION_DYNAMIC_LIBRARY_TARGET,
         )
         self.assertEqual(
-            steps[6].argv[-3:],
+            steps[5].argv[-3:],
             (
                 ci_config.BAZEL_REPOSITORY_INTEGRATION_ALIAS_TARGET,
                 "--",
                 "--help",
             ),
         )
-        self.assertEqual(
-            steps[4].argv[-1],
-            "build_tools/devtools/bazel_launcher_integration_test.py",
+
+    def test_bazel_repository_integration_skips_ordinary_repository_build(self):
+        args = ci.parse_arguments(["iree-bazel-repository-integration"])
+
+        with mock.patch.dict(
+            ci.os.environ,
+            {
+                "HRX_ROCM_ROOT": "/tmp/rocm-root",
+                "IREE_CI_PLATFORM_COVERAGE": "0",
+            },
+            clear=True,
+        ):
+            steps = ci.steps_from_args(args)
+
+        self.assertNotIn("Build repository", [step.name for step in steps])
+        self.assertIn(
+            "Build AMDGPU device toolchain smoke", [step.name for step in steps]
         )
+        self.assertIn("Test repository", [step.name for step in steps])
 
     def test_bazel_repository_integration_requires_rocm_device_tools(self):
         args = ci.parse_arguments(["iree-bazel-repository-integration"])
@@ -507,6 +671,12 @@ class CiTest(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "repository-wide"):
+            ci.steps_from_args(args)
+
+    def test_python_test_exclusion_rejects_non_repository_commands(self):
+        args = ci.parse_arguments(["iree-bazel-cpu", "--exclude-python-tests"])
+
+        with self.assertRaisesRegex(ValueError, "repository-integration"):
             ci.steps_from_args(args)
 
     def test_cmake_repository_build_covers_supported_graph_with_prebuilts(self):
@@ -756,7 +926,7 @@ class CiTest(unittest.TestCase):
             amdgpu_test.argv,
         )
 
-    def test_amdgpu_loom_target_scope_builds_and_tests_loom(self):
+    def test_amdgpu_loom_target_scope_tests_loom(self):
         args = ci.parse_arguments(
             [
                 "iree-bazel-amdgpu",
@@ -766,11 +936,9 @@ class CiTest(unittest.TestCase):
         )
 
         steps = ci.steps_from_args(args)
-        build_step = next(step for step in steps if step.name == "Build IREE / AMDGPU")
         test_step = next(step for step in steps if step.name == "Test IREE / AMDGPU")
 
-        self.assertIn("//loom/...", build_step.argv)
-        self.assertNotIn("//runtime/...", build_step.argv)
+        self.assertFalse(any("bazel build" in step.command_line() for step in steps))
         self.assertIn("//loom/...", test_step.argv)
         self.assertNotIn("//runtime/...", test_step.argv)
 
@@ -945,7 +1113,7 @@ class CiTest(unittest.TestCase):
         )
         self.assertFalse(any("bazel test" in line for line in command_lines))
 
-    def test_amdgpu_command_builds_scope_before_one_semantic_test_graph(self):
+    def test_amdgpu_command_tests_one_semantic_graph(self):
         args = ci.parse_arguments(
             [
                 "iree-bazel-amdgpu",
@@ -959,20 +1127,17 @@ class CiTest(unittest.TestCase):
         steps = ci.steps_from_args(args)
         self.assertEqual(
             [step.name for step in steps],
-            ["Configure Bazel", "Build IREE / AMDGPU", "Test IREE / AMDGPU"],
+            ["Configure Bazel", "Test IREE / AMDGPU"],
         )
-        build_step = steps[1]
-        test_step = steps[2]
+        test_step = steps[1]
         for target in ("//runtime/...", "//loom/..."):
-            self.assertIn(target, build_step.argv)
             self.assertIn(target, test_step.argv)
         for target in ci_config.AMDGPU_BAZEL_TARGET_EXCLUDES:
-            self.assertIn(target, build_step.argv)
             self.assertIn(target, test_step.argv)
         self.assertFalse(
             any(
                 arg.startswith("-//runtime/src/iree/hal/drivers/amdgpu")
-                for arg in build_step.argv + test_step.argv
+                for arg in test_step.argv
             )
         )
 
@@ -994,16 +1159,12 @@ class CiTest(unittest.TestCase):
             [step.name for step in steps],
             [
                 "Configure Bazel",
-                "Build IREE / AMDGPU / TSAN",
                 "Test IREE / AMDGPU / TSAN",
             ],
         )
-        tsan_build = steps[1]
-        tsan_test = steps[2]
-        self.assertIn("--config=tsan", tsan_build.argv)
+        tsan_test = steps[1]
         self.assertIn("--config=tsan", tsan_test.argv)
         for target in ("//runtime/...", "//loom/..."):
-            self.assertIn(target, tsan_build.argv)
             self.assertIn(target, tsan_test.argv)
         self.assertTrue(
             any(
@@ -1046,27 +1207,24 @@ class CiTest(unittest.TestCase):
                     )
                 )
 
-    def test_vulkan_command_builds_scope_before_one_semantic_test_graph(self):
+    def test_vulkan_command_tests_one_semantic_graph(self):
         args = ci.parse_arguments(["iree-bazel-vulkan"])
 
         steps = ci.steps_from_args(args)
 
         self.assertEqual(
             [step.name for step in steps],
-            ["Configure Bazel", "Build IREE / Vulkan", "Test IREE / Vulkan"],
+            ["Configure Bazel", "Test IREE / Vulkan"],
         )
-        build_step = steps[1]
-        test_step = steps[2]
+        test_step = steps[1]
         for target in ("//runtime/...", "//loom/..."):
-            self.assertIn(target, build_step.argv)
             self.assertIn(target, test_step.argv)
         for target in ci_config.VULKAN_BAZEL_TARGET_EXCLUDES:
-            self.assertIn(target, build_step.argv)
             self.assertIn(target, test_step.argv)
         self.assertFalse(
             any(
                 arg.startswith("-//runtime/src/iree/hal/drivers/vulkan")
-                for arg in build_step.argv + test_step.argv
+                for arg in test_step.argv
             )
         )
         for xfail_target in ci_config.VULKAN_XFAIL_TARGETS:
@@ -1344,6 +1502,7 @@ fi
             )
         )
         self.assertTrue(any("-DIREE_ENABLE_UBSAN=ON" in line for line in command_lines))
+        self.assertFalse(any(" cmake build " in line for line in command_lines))
         test_steps = [step for step in steps if step.name.startswith("Test IREE")]
         self.assertTrue(
             any(
@@ -1445,7 +1604,7 @@ fi
             )
         )
 
-    def test_cmake_amdgpu_command_scopes_build_and_tests_to_amdgpu(self):
+    def test_cmake_amdgpu_command_scopes_tests_to_amdgpu(self):
         args = ci.parse_arguments(["iree-cmake-amdgpu", "--amdgpu-target", "gfx1150"])
 
         steps = ci.steps_from_args(args)
@@ -1479,13 +1638,7 @@ fi
             )
         )
         build_steps = [step for step in steps if step.name.startswith("Build IREE")]
-        self.assertFalse(
-            any(
-                "loom_tools_iree-test-loom_amdgpu_execution_test" in arg
-                for step in build_steps
-                for arg in step.argv
-            )
-        )
+        self.assertEqual(build_steps, [])
         self.assertTrue(
             any(
                 ci_config.AMDGPU_CTEST_RESOURCE_LABEL_REGEX in step.argv
@@ -1551,6 +1704,7 @@ fi
         self.assertTrue(
             any("-DIREE_BUILD_BENCHMARKS=OFF" in line for line in command_lines)
         )
+        self.assertTrue(any(" cmake build " in line for line in command_lines))
         self.assertFalse(any("Test IREE CMake AMDGPU" in step.name for step in steps))
 
     def test_cmake_loom_amdgpu_command_runs_compile_coverage_without_driver(self):
@@ -1579,7 +1733,7 @@ fi
         for regex in ci_config.LOOM_AMDGPU_CMAKE_COMPILE_CTEST_REGEXES:
             self.assertTrue(any(regex in arg for arg in test_step.argv))
 
-    def test_cmake_vulkan_command_scopes_build_and_tests_to_vulkan(self):
+    def test_cmake_vulkan_command_scopes_tests_to_vulkan(self):
         args = ci.parse_arguments(["iree-cmake-vulkan"])
 
         steps = ci.steps_from_args(args)
@@ -1592,14 +1746,7 @@ fi
             any("-DIREE_HAL_DRIVER_AMDGPU=OFF" in line for line in command_lines)
         )
         build_steps = [step for step in steps if step.name.startswith("Build IREE")]
-        for target in ci_config.VULKAN_CMAKE_DRIVER_TARGETS:
-            self.assertTrue(any(target in step.argv for step in build_steps))
-        for target in (
-            "loom/src/loom/tools/iree-test-loom/all",
-            "loom/binding/c/example/all",
-            "loom/binding/c/test/target/spirv/all",
-        ):
-            self.assertFalse(any(target in step.argv for step in build_steps))
+        self.assertEqual(build_steps, [])
         package_test = next(
             step
             for step in steps

@@ -29,12 +29,25 @@ SANITIZER_BUILD_CONFIGS = ("msan",)
 # conventional Bazel tag and CTest label.
 HOST_TSAN_INCOMPATIBLE_TEST_LABEL = "notsan"
 
+# Python test processes are qualified once per host platform and build system.
+# Native Python drivers selected by hardware jobs remain admitted because those
+# jobs do not apply these exclusions.
+PYTHON_TEST_BAZEL_LANGUAGE_EXCLUSIONS = ("-py",)
+PYTHON_TEST_CTEST_LABEL_REGEX = r"^python-test$"
+
+# The shared platform-coverage matrix qualifies portable optional dependencies.
+# Other source-tree CI configurations retain built-in media formats.
+OPTIONAL_IMAGE_CODECS = ("png", "jpeg", "gif", "webp")
+OPTIONAL_AUDIO_CODECS = ("wav", "mp3", "flac")
+
 CMAKE_SANITIZER_SMOKE_CTEST_REGEXES = (
     "^iree/base/status_test$",
     "^loom/format/bytecode/varint_test$",
 )
 CMAKE_REPOSITORY_SMOKE_CTEST_REGEXES = (
     "^iree/base/status_test$",
+    "^iree/hal/drivers/amd/xdna/",
+    "^libamdf/src/xdna/",
     "^loom/format/bytecode/varint_test$",
 )
 BAZEL_REPOSITORY_INTEGRATION_DEVICE_TARGETS = (

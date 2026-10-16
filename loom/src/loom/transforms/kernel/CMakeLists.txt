@@ -228,14 +228,14 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
-    kernel_async_legality
+    kernel_synchronization_legality
   HDRS
-    "kernel_async_legality.h"
+    "kernel_synchronization_legality.h"
   SRCS
-    "kernel_async_legality.c"
+    "kernel_synchronization_legality.c"
   DEPS
     iree::base
-    loom::analysis::kernel_async_legality
+    loom::analysis::kernel_synchronization_legality
     loom::ir
     loom::ops::op_defs
     loom::pass::types
@@ -306,6 +306,26 @@ loom_cc_library(
     loom::rewrite::remap
     loom::rewrite::rewriter
   PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    resolve_launches_test
+  SRCS
+    "resolve_launches_test.cc"
+  DEPS
+    ::resolve_launches
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::analysis::symbol_references
+    loom::ir
+    loom::ops::command
+    loom::ops::func
+    loom::ops::index
+    loom::ops::kernel
+    loom::ops::op_registry
+    loom::verify
 )
 
 loom_cc_library(

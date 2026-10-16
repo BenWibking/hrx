@@ -167,6 +167,7 @@ from loom.dsl import (
     PositiveBitWidthAttr,
     RanksMatch,
     Reads,
+    ReadWrites,
     ReferenceTypeKey,
     RegionDef,
     Result,
@@ -1191,7 +1192,7 @@ class TestInterfaces:
         assert interface.callee == "callee"
         assert interface.operands == "operands"
         assert interface.results is None
-        assert interface.purity is None
+        assert interface.effect_contract is None
         assert interface.kind == CallLikeKind.SEMANTIC
 
     def test_call_like_kind_values(self) -> None:
@@ -2970,6 +2971,21 @@ class TestOp:
 
 
 class TestEffects:
+    def test_ambient_effects(self) -> None:
+        for effect in (Reads(), Writes(), ReadWrites()):
+            op = Op("test.ambient", effects=[effect])
+            assert not op.is_pure
+            assert op.effects[0].operand is None
+            for trait in (
+                PURE,
+                UNKNOWN_EFFECTS,
+                SAFE_TO_SPECULATE,
+                HINT,
+                COMPILE_TIME_ONLY,
+            ):
+                with _raises(ValueError):
+                    Op("test.bad", traits=[trait], effects=[effect])
+
     def test_valid_read_effect(self) -> None:
         op = Op(
             "test.load",
@@ -3379,7 +3395,7 @@ class TestOwnershipEffects:
         with _raises(ValueError, match="SAFE_TO_SPECULATE.*CONVERGENT"):
             Op("test.bad", traits=[SAFE_TO_SPECULATE, CONVERGENT])
 
-    def test_contextual_is_independent_of_purity(self) -> None:
+    def test_contextual_is_independent_of_effect_contract(self) -> None:
         op = Op("test.contextual", traits=[PURE, dsl.CONTEXTUAL])
         assert dsl.CONTEXTUAL in op.traits
         assert PURE in op.traits

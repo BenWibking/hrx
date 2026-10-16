@@ -207,13 +207,6 @@ static iree_status_t loom_kernel_launch_config_program_build_function(
   for (uint16_t i = 0; i < source_arguments.count; ++i) {
     const loom_type_t source_type =
         loom_module_value_type(source_module, source_arguments.values[i]);
-    if (!loom_type_is_scalar(source_type)) {
-      return iree_make_status(
-          IREE_STATUS_UNIMPLEMENTED,
-          "kernel '@%.*s' launch workload argument %u is not scalar",
-          (int)source_function_name.size, source_function_name.data,
-          (unsigned)i);
-    }
     IREE_RETURN_IF_ERROR(
         loom_ir_remap_type(&remap, source_type, &argument_types[i]));
   }
@@ -232,11 +225,12 @@ static iree_status_t loom_kernel_launch_config_program_build_function(
   IREE_RETURN_IF_ERROR(loom_func_def_build(
       &builder,
       LOOM_FUNC_DEF_BUILD_FLAG_HAS_VISIBILITY |
-          LOOM_FUNC_DEF_BUILD_FLAG_HAS_PURITY,
+          LOOM_FUNC_DEF_BUILD_FLAG_HAS_EFFECT_CONTRACT,
       LOOM_FUNC_VISIBILITY_PUBLIC, /*retain=*/0, /*cc=*/0,
-      LOOM_FUNC_PURITY_PURE, /*temperature=*/0, /*inline_policy=*/0,
-      loom_symbol_ref_null(), /*abi=*/0, loom_named_attr_slice_empty(),
-      LOOM_STRING_ID_INVALID, loom_named_attr_slice_empty(),
+      LOOM_CALLABLE_EFFECT_CONTRACT_PURE, /*temperature=*/0,
+      /*inline_policy=*/0, loom_symbol_ref_null(), /*abi=*/0,
+      loom_named_attr_slice_empty(), LOOM_STRING_ID_INVALID,
+      loom_named_attr_slice_empty(),
       (loom_symbol_ref_t){.module_id = 0, .symbol_id = target_symbol_id},
       argument_types, source_arguments.count, result_types,
       IREE_ARRAYSIZE(result_types), /*tied_results=*/NULL,
@@ -404,11 +398,12 @@ iree_status_t loom_kernel_launch_config_program_capture_static(
   IREE_RETURN_IF_ERROR(loom_func_def_build(
       &builder,
       LOOM_FUNC_DEF_BUILD_FLAG_HAS_VISIBILITY |
-          LOOM_FUNC_DEF_BUILD_FLAG_HAS_PURITY,
+          LOOM_FUNC_DEF_BUILD_FLAG_HAS_EFFECT_CONTRACT,
       LOOM_FUNC_VISIBILITY_PUBLIC, /*retain=*/0, /*cc=*/0,
-      LOOM_FUNC_PURITY_PURE, /*temperature=*/0, /*inline_policy=*/0,
-      loom_symbol_ref_null(), /*abi=*/0, loom_named_attr_slice_empty(),
-      LOOM_STRING_ID_INVALID, loom_named_attr_slice_empty(),
+      LOOM_CALLABLE_EFFECT_CONTRACT_PURE, /*temperature=*/0,
+      /*inline_policy=*/0, loom_symbol_ref_null(), /*abi=*/0,
+      loom_named_attr_slice_empty(), LOOM_STRING_ID_INVALID,
+      loom_named_attr_slice_empty(),
       (loom_symbol_ref_t){.module_id = 0, .symbol_id = symbol},
       /*arg_types=*/NULL, /*arg_count=*/0, result_types,
       IREE_ARRAYSIZE(result_types), /*tied_results=*/NULL,
@@ -504,6 +499,54 @@ static iree_status_t loom_kernel_launch_config_workgroup_storage_bytes(
   return iree_ok_status();
 }
 
+static iree_status_t loom_kernel_launch_config_program_project_scalar_arguments(
+    loom_kernel_launch_config_program_t* program,
+    const loom_kernel_launch_config_program_entry_t* entry,
+    iree_arena_allocator_t* scratch_arena) {
+  loom_module_t* module = program->module;
+  loom_block_t* entry_block =
+      loom_region_entry_block(loom_func_like_body(entry->launch_function));
+  if (entry_block->arg_count == 0) {
+    return iree_ok_status();
+  }
+  const iree_string_view_t source_name =
+      loom_string_table_get(&module->strings, entry->source_function_name_id);
+
+  bool* remove_arguments = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      scratch_arena, entry_block->arg_count, sizeof(*remove_arguments),
+      (void**)&remove_arguments));
+  for (uint16_t i = 0; i < entry_block->arg_count; ++i) {
+    const loom_value_id_t argument = loom_block_arg_id(entry_block, i);
+    remove_arguments[i] =
+        !loom_type_is_scalar(loom_module_value_type(module, argument));
+    if (!remove_arguments[i]) {
+      continue;
+    }
+    if (loom_module_value_has_uses(module, argument)) {
+      const iree_string_view_t argument_name =
+          loom_module_value_name(module, argument);
+      if (!iree_string_view_is_empty(argument_name)) {
+        return iree_make_status(
+            IREE_STATUS_FAILED_PRECONDITION,
+            "kernel '@%.*s' launch-config artifact still depends on "
+            "non-scalar workload argument %u (%%%.*s) after specialization",
+            (int)source_name.size, source_name.data, (unsigned)i,
+            (int)argument_name.size, argument_name.data);
+      }
+      return iree_make_status(
+          IREE_STATUS_FAILED_PRECONDITION,
+          "kernel '@%.*s' launch-config artifact still depends on "
+          "non-scalar workload argument %u after specialization",
+          (int)source_name.size, source_name.data, (unsigned)i);
+    }
+  }
+
+  loom_block_remove_args(module, entry_block, remove_arguments,
+                         entry_block->arg_count);
+  return iree_ok_status();
+}
+
 iree_status_t loom_kernel_launch_config_program_finalize(
     loom_kernel_launch_config_program_t* program,
     const loom_module_t* lowered_module,
@@ -567,6 +610,10 @@ iree_status_t loom_kernel_launch_config_program_finalize(
           .statistic_storage = &statistics,
       };
       status = loom_dce_run(&dce_pass, program->module, entry->launch_function);
+      if (iree_status_is_ok(status)) {
+        status = loom_kernel_launch_config_program_project_scalar_arguments(
+            program, entry, &scratch_arena);
+      }
       iree_arena_reset(&scratch_arena);
     }
   }

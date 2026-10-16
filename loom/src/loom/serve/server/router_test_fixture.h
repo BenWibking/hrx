@@ -167,7 +167,7 @@ class ObservationClient {
 // The dependency is a bounded model service. Routing, HTTP claims, copied
 // output, task scheduling, readiness and shutdown use production
 // infrastructure.
-struct ModelService {
+struct loom_serve_test_model_service_t {
   // Deployment identifier, borrowed for the router lifetime.
   const char* name;
   // Accepted connection/request pairs owned only by serialized router turns.
@@ -211,13 +211,13 @@ struct ModelService {
   const loom_serve_telemetry_latency_t* latency = nullptr;
 
   static void SetObserver(void* self, loom_serve_wake_callback_t observer) {
-    auto* service = static_cast<ModelService*>(self);
+    auto* service = static_cast<loom_serve_test_model_service_t*>(self);
     std::lock_guard<std::mutex> lock(service->mutex);
     EXPECT_FALSE(service->waiting);
     service->observer = observer;
   }
   static bool IsPending(void* self) {
-    auto* service = static_cast<ModelService*>(self);
+    auto* service = static_cast<loom_serve_test_model_service_t*>(self);
     std::lock_guard<std::mutex> lock(service->mutex);
     return service->waiting;
   }
@@ -248,12 +248,12 @@ struct ModelService {
   }
 
   static bool IsActive(void* self) {
-    const auto* service = static_cast<ModelService*>(self);
+    const auto* service = static_cast<loom_serve_test_model_service_t*>(self);
     return !service->wait_for_shared_activity && !service->pending.empty();
   }
 
   static loom_serve_http_service_snapshot_t Snapshot(void* self) {
-    auto* service = static_cast<ModelService*>(self);
+    auto* service = static_cast<loom_serve_test_model_service_t*>(self);
     std::lock_guard<std::mutex> lock(service->mutex);
     const size_t queued = service->pending.size() - service->waiting;
     return {.phase = service->waiting ? "held" : "idle",
@@ -267,7 +267,7 @@ struct ModelService {
                               loom_serve_http_connection_t* connection,
                               const loom_serve_http_request_t* request,
                               loom_serve_http_service_flags_t flags) {
-    auto* service = static_cast<ModelService*>(self);
+    auto* service = static_cast<loom_serve_test_model_service_t*>(self);
     std::lock_guard<std::mutex> lock(service->mutex);
     service->pending.emplace_back(connection, request);
     ++service->accepted;
@@ -277,7 +277,7 @@ struct ModelService {
   static iree_status_t Advance(void* self,
                                loom_serve_http_service_flags_t flags,
                                bool* progress) {
-    auto* service = static_cast<ModelService*>(self);
+    auto* service = static_cast<loom_serve_test_model_service_t*>(self);
     *progress = false;
     if (iree_any_bit_set(flags, LOOM_SERVE_HTTP_SERVICE_FLAG_STOPPING)) {
       std::lock_guard<std::mutex> lock(service->mutex);
@@ -401,10 +401,20 @@ class HttpRouterTest : public ::testing::TestWithParam<int> {
         IREE_SV(R"({"model":{"type":"BPE","vocab":{"a":0,"b":1},
                               "merges":[]},"decoder":{"type":"ByteFallback"}})"),
         iree_allocator_system(), &tokenizer_a_));
-    IREE_ASSERT_OK(iree_tokenizer_from_huggingface_json(
+    iree_tokenizer_builder_t builder;
+    iree_tokenizer_builder_initialize(iree_allocator_system(), &builder);
+    iree_status_t tokenizer_status = iree_tokenizer_parse_huggingface_json(
         IREE_SV(R"({"model":{"type":"BPE","vocab":{"a":1,"b":0},
                               "merges":[]}})"),
-        iree_allocator_system(), &tokenizer_b_));
+        &builder);
+    if (iree_status_is_ok(tokenizer_status)) {
+      // Native builders explicitly disable decoding; an absent HF decoder
+      // selects the format's space-separated default instead.
+      iree_tokenizer_builder_set_decoder(&builder, nullptr);
+      tokenizer_status = iree_tokenizer_builder_build(&builder, &tokenizer_b_);
+    }
+    iree_tokenizer_builder_deinitialize(&builder);
+    IREE_ASSERT_OK(tokenizer_status);
     owner_ = std::thread([this] {
       const loom_serve_http_service_t services[] = {
           a_.Interface(tokenizer_a_, &a_), b_.Interface(tokenizer_b_, &a_),
@@ -521,15 +531,15 @@ class HttpRouterTest : public ::testing::TestWithParam<int> {
   // Second model's vocabulary proves utilities use the selected deployment.
   iree_tokenizer_t* tokenizer_b_ = nullptr;
   // First model dependency used only by serialized router turns.
-  ModelService a_{"a"};
+  loom_serve_test_model_service_t a_{"a"};
   // Second model dependency used only by serialized router turns.
-  ModelService b_{"b", {}, true};
+  loom_serve_test_model_service_t b_{"b", {}, true};
   // Explicitly held device-readiness dependencies, independent of a and b.
-  ModelService held_{"held", {}, false, true};
+  loom_serve_test_model_service_t held_{"held", {}, false, true};
   // A second held dependency proves failure drains every accepted callback.
-  ModelService other_{"other", {}, false, true};
+  loom_serve_test_model_service_t other_{"other", {}, false, true};
   // Valid deployment identifier requiring distinct metric label escaping.
-  ModelService escaped_{R"(quoted"\name)", {}, true};
+  loom_serve_test_model_service_t escaped_{R"(quoted"\name)", {}, true};
   // Outer application caller joining the production router's final release.
   std::thread owner_;
   // Terminal result published by joining owner_.
