@@ -140,24 +140,16 @@ DEVICE int integrate(ScratchView s) {
                     solve(s, target);
                 }
 
-                {
-                    Real yv[15];
-                    Real ev[15];
-                    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                        const Real ak3i = s.work[i];
-                        yv[i] = s.y[i] + C::b1 * s.ak1[i] + C::b2 * s.ak2[i] + C::b3 * ak3i;
-                        ev[i] = C::e1 * s.ak1[i] + C::e2 * s.ak2[i] + C::e3 * ak3i;
-                    }
-                    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                        s.ynew[i] = yv[i];
-                        s.work[i] = ev[i];
-                    }
-                }
+                // Final combination with the error norm formed in registers: the
+                // new state and error vector are not stored and reloaded (ynew and
+                // work are only read here and by the accept copy). Same operations
+                // and order as the combination loop + error_norm.
+                Real yacc[15];
+                const Real err = combine_and_error_norm(s, yacc);
                 s.n_rhs[0] += 3;
                 n_step += 1;
                 s.n_step[0] = n_step;
 
-                const Real err = error_norm(s);
                 const Real raw_fac = math::cbrt(err) / s.safe[0];
                 const Real lower_fac = 1.0 / s.fac_max[0];
                 const Real upper_fac = 1.0 / s.fac_min[0];
@@ -176,14 +168,8 @@ DEVICE int integrate(ScratchView s) {
                     }
                     hacc = h;
                     erracc = math::max(1.e-2, err);
-                    {
-                        Real yv[15];
-                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                            yv[i] = s.ynew[i];
-                        }
-                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                            s.y[i] = yv[i];
-                        }
+                    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                        s.y[i] = yacc[i];
                     }
                     x += h;
                     if (math::abs(hnew) > hmaxn) {

@@ -5778,35 +5778,39 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
     ipvt[K] = static_cast<int>(pivot_row);
     __builtin_assume(pivot_row < 15u);
 
-    if (A[midx(pivot_row, K)] != 0.0) {
-        if (pivot_row != K) {
-            const Real t = A[midx(pivot_row, K)];
-            A[midx(pivot_row, K)] = A[midx(K, K)];
-            A[midx(K, K)] = t;
-            Real prow[14 - K];
-            Real krow[14 - K];
-            [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
-                prow[j - K - 1] = A[midx(pivot_row, j)];
-                krow[j - K - 1] = A[midx(K, j)];
-            }
-            [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
-                A[midx(pivot_row, j)] = krow[j - K - 1];
-                A[midx(K, j)] = prow[j - K - 1];
-            }
-        }
-
-        const Real multiplier = -1.0 / A[midx(K, K)];
+    // Row interchange without swap stores: trailing row i is read from row
+    // (i == pivot_row ? K : i), and the pivot row is written to row K after
+    // the loop. Final values match the swap-then-eliminate reference.
+    const Real pivot = A[midx(pivot_row, K)];
+    if (pivot != 0.0) {
         Real row[14 - K];
         [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
-            row[j - K - 1] = A[midx(K, j)];
+            row[j - K - 1] = A[midx(pivot_row, j)];
         }
+        const Real multiplier = -1.0 / pivot;
         Real next_max = 0.0;
+        // Software-pipelined rows: row i+1 is loaded before row i is
+        // updated and stored, so its load latency overlaps row i's work.
+        Real nxt[15 - K];
+        {
+            const unsigned from1 = (K + 1 == pivot_row) ? K : K + 1;
+            __builtin_assume(from1 < 15u);
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                nxt[j - K] = A[midx(from1, j)];
+            }
+        }
         for (unsigned i = K + 1; i < 15u; ++i) {
-            // Load the whole trailing row first, then store it: no store
-            // between this row's loads (one memory wait per row).
             Real cur[15 - K];
             [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
-                cur[j - K] = A[midx(i, j)];
+                cur[j - K] = nxt[j - K];
+            }
+            if (i + 1 < 15u) {
+                const unsigned i1 = i + 1;
+                const unsigned from = (i1 == pivot_row) ? K : i1;
+                __builtin_assume(from < 15u);
+                [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                    nxt[j - K] = A[midx(from, j)];
+                }
             }
             const Real m = cur[0] * multiplier;
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
@@ -5822,6 +5826,10 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
                 A[midx(i, j)] = cur[j - K];
             }
+        }
+        A[midx(K, K)] = pivot;
+        [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+            A[midx(K, j)] = row[j - K - 1];
         }
     } else {
         info = static_cast<int>(K + 1);
@@ -5869,12 +5877,26 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         }
         const Real multiplier = -1.0 / pivot;
         Real next_max = 0.0;
+        // Software-pipelined rows (see lu_step): row i+1 is loaded first.
+        Real nxt[15];
+        {
+            const unsigned src1 = (1u == pivot_row) ? 0u : 1u;
+            [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+                nxt[j] = iter_elem(J, src1, j, fac);
+            }
+        }
         for (unsigned i = 1; i < 15u; ++i) {
-            const unsigned src = (i == pivot_row) ? 0u : i;
-            __builtin_assume(src < 15u);
             Real cur[15];
             [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
-                cur[j] = iter_elem(J, src, j, fac);
+                cur[j] = nxt[j];
+            }
+            if (i + 1 < 15u) {
+                const unsigned i1 = i + 1;
+                const unsigned src = (i1 == pivot_row) ? 0u : i1;
+                __builtin_assume(src < 15u);
+                [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+                    nxt[j] = iter_elem(J, src, j, fac);
+                }
             }
             const Real m = cur[0] * multiplier;
             [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
@@ -5977,6 +5999,60 @@ DEVICE void lu_solve_backward(const Real* LU, Real* x, Real xk) {
         lu_solve_backward<K - 1>(LU, x, next);
     }
 }
+// Batched solve steps: every load of a step (x entries, LU column, and the
+// pivot entries) is issued before any of its stores, so each step waits on
+// memory once. The forward pivot swap is an ordered overwrite store:
+// x[j] (j > K) gets its update, then x[p] = old x[K] + t*L(p,K) (for p == K
+// it is overwritten by x[K] = t). Same per-element operations as lu_solve.
+template <unsigned K>
+DEVICE void lu_fwd_batched(const Real* LU, const int* ipvt, Real* x) {
+    const unsigned pivot_row = static_cast<unsigned>(ipvt[K]);
+    __builtin_assume(pivot_row < 15u);
+    const Real t = x[pivot_row];
+    const Real a = x[K];
+    const Real lp = LU[midx(pivot_row, K)];
+    Real v[14 - K];
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        v[j - K - 1] = x[j] + t * LU[midx(j, K)];
+    }
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        x[j] = v[j - K - 1];
+    }
+    x[pivot_row] = a + t * lp;
+    x[K] = t;
+    if constexpr (K + 1 < 14u) lu_fwd_batched<K + 1>(LU, ipvt, x);
+}
+template <unsigned K>
+DEVICE void lu_bwd_batched(const Real* LU, Real* x, Real xk) {
+    const Real xq = xk / LU[midx(K, K)];
+    if constexpr (K > 0) {
+        Real v[K];
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            v[j] = x[j];
+        }
+        Real u[K];
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            u[j] = LU[midx(j, K)];
+        }
+        x[K] = xq;
+        const Real t = -xq;
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            v[j] = v[j] + t * u[j];
+        }
+        [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+            x[j] = v[j];
+        }
+        lu_bwd_batched<K - 1>(LU, x, v[K - 1]);
+    } else {
+        x[K] = xq;
+    }
+}
+DEVICE void lu_solve_batched(const Real* LU, const int* ipvt, Real* x) {
+
+    lu_fwd_batched<0>(LU, ipvt, x);
+    lu_bwd_batched<14>(LU, x, x[14]);
+
+}
 DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 
     lu_solve_forward<0>(LU, ipvt, x);
@@ -5999,7 +6075,7 @@ DEVICE int decompose(ScratchView s, Real fac) {
 }
 DEVICE void solve(ScratchView s, Real* ak) {
 
-        lu_solve(s.e, s.ip, ak);
+        lu_solve_batched(s.e, s.ip, ak);
         s.n_solve[0] += 1;
 
 }
@@ -6013,6 +6089,50 @@ DEVICE Real error_norm(ScratchView s) {
         }
         return math::sqrt(err / static_cast<Real>(N));
 
+}
+// Final ROS2S combination with the error norm formed in registers: yacc gets
+// the new state; same operations and summation order as the combination loop
+// followed by error_norm.
+DEVICE Real combine_and_error_norm(ScratchView s, Real* yacc) {
+    Real ev[15];
+    Real yo[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        const Real ak3i = s.work[i];
+        yo[i] = s.y[i];
+        yacc[i] = yo[i] + C::b1 * s.ak1[i] + C::b2 * s.ak2[i] + C::b3 * ak3i;
+        ev[i] = C::e1 * s.ak1[i] + C::e2 * s.ak2[i] + C::e3 * ak3i;
+    }
+    const Real t0 = ev[0] / (s.atol_vec[0] + s.rtol_vec[0] * math::max(math::abs(yo[0]), math::abs(yacc[0])));
+    const Real t1 = ev[1] / (s.atol_vec[1] + s.rtol_vec[1] * math::max(math::abs(yo[1]), math::abs(yacc[1])));
+    const Real t2 = ev[2] / (s.atol_vec[2] + s.rtol_vec[2] * math::max(math::abs(yo[2]), math::abs(yacc[2])));
+    const Real t3 = ev[3] / (s.atol_vec[3] + s.rtol_vec[3] * math::max(math::abs(yo[3]), math::abs(yacc[3])));
+    const Real t4 = ev[4] / (s.atol_vec[4] + s.rtol_vec[4] * math::max(math::abs(yo[4]), math::abs(yacc[4])));
+    const Real t5 = ev[5] / (s.atol_vec[5] + s.rtol_vec[5] * math::max(math::abs(yo[5]), math::abs(yacc[5])));
+    const Real t6 = ev[6] / (s.atol_vec[6] + s.rtol_vec[6] * math::max(math::abs(yo[6]), math::abs(yacc[6])));
+    const Real t7 = ev[7] / (s.atol_vec[7] + s.rtol_vec[7] * math::max(math::abs(yo[7]), math::abs(yacc[7])));
+    const Real t8 = ev[8] / (s.atol_vec[8] + s.rtol_vec[8] * math::max(math::abs(yo[8]), math::abs(yacc[8])));
+    const Real t9 = ev[9] / (s.atol_vec[9] + s.rtol_vec[9] * math::max(math::abs(yo[9]), math::abs(yacc[9])));
+    const Real t10 = ev[10] / (s.atol_vec[10] + s.rtol_vec[10] * math::max(math::abs(yo[10]), math::abs(yacc[10])));
+    const Real t11 = ev[11] / (s.atol_vec[11] + s.rtol_vec[11] * math::max(math::abs(yo[11]), math::abs(yacc[11])));
+    const Real t12 = ev[12] / (s.atol_vec[12] + s.rtol_vec[12] * math::max(math::abs(yo[12]), math::abs(yacc[12])));
+    const Real t13 = ev[13] / (s.atol_vec[13] + s.rtol_vec[13] * math::max(math::abs(yo[13]), math::abs(yacc[13])));
+    const Real t14 = ev[14] / (s.atol_vec[14] + s.rtol_vec[14] * math::max(math::abs(yo[14]), math::abs(yacc[14])));
+    const Real q0 = 0.0 + t0 * t0;
+    const Real q1 = q0 + t1 * t1;
+    const Real q2 = q1 + t2 * t2;
+    const Real q3 = q2 + t3 * t3;
+    const Real q4 = q3 + t4 * t4;
+    const Real q5 = q4 + t5 * t5;
+    const Real q6 = q5 + t6 * t6;
+    const Real q7 = q6 + t7 * t7;
+    const Real q8 = q7 + t8 * t8;
+    const Real q9 = q8 + t9 * t9;
+    const Real q10 = q9 + t10 * t10;
+    const Real q11 = q10 + t11 * t11;
+    const Real q12 = q11 + t12 * t12;
+    const Real q13 = q12 + t13 * t13;
+    const Real q14 = q13 + t14 * t14;
+    return math::sqrt(q14 / static_cast<Real>(N));
 }
 #include "integrate.inc"
 DEVICE void configure_ros2s(ScratchView s) {
