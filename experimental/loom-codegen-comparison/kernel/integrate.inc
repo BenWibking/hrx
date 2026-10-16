@@ -149,6 +149,10 @@ DEVICE int integrate(ScratchView s) {
                 if (err <= 1.0) {
                     n_accept += 1;
                     s.n_accept[0] = n_accept;
+                    if (n_accept == 1) {
+                        // n_reject holds the attempt number of the first accept.
+                        s.n_reject[0] = n_step;
+                    }
                     if (n_accept > 1) {
                         const Real facgus = math::max(1.0 / s.fac_max[0],
                             math::min(1.0 / s.fac_min[0],
@@ -177,9 +181,8 @@ DEVICE int integrate(ScratchView s) {
                     reject = true;
                     last = false;
                     h = hnew;
-                    if (n_accept >= 1) {
-                        s.n_reject[0] += 1;
-                    }
+                    // Rejections after the first accept are counted at exit from
+                    // n_step, n_accept and the step of the first accept.
                 }
             }
         }

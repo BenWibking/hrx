@@ -6232,7 +6232,7 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     stats->decompositions += static_cast<u64>(math::max(0, s.n_step[0]));
     stats->linear_solves += static_cast<u64>(math::max(0, 3 * s.n_step[0]));
     stats->accepted_steps += static_cast<u64>(math::max(0, s.n_accept[0]));
-    stats->rejected_steps += static_cast<u64>(math::max(0, s.n_reject[0]));
+    stats->rejected_steps += static_cast<u64>(math::max(0, s.n_accept[0] >= 1 ? s.n_step[0] - s.n_accept[0] - s.n_reject[0] + 1 : 0));
 
     if (result != SUCCESS) {
         return result;
