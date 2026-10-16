@@ -34,12 +34,14 @@ DEVICE int integrate(ScratchView s) {
     bool reject = false;
     bool last = false;
     int nsing = 0;
-    Real hacc = 0.0;
-    Real erracc = 1.0;
-    Real hopt = h;
+    // Rarely used controller state lives in private memory rather than in
+    // registers across the step loop: hacc/erracc (accepted steps only),
+    // hopt (kept in s.dt, which every exit path writes), n_accept (s.n_accept).
+    s.hacc[0] = 0.0;
+    s.erracc[0] = 1.0;
+    s.dt[0] = h;
     Real x = s.t[0];
     int n_step = 0;
-    int n_accept = 0;
 
     while (!done) {
         if (n_step > s.max_steps[0]) {
@@ -54,12 +56,11 @@ DEVICE int integrate(ScratchView s) {
         }
         else if (last) {
             s.t[0] = x;
-            s.dt[0] = hopt;
             result = SUCCESS; done = true;
         }
 
         if (!done) {
-            hopt = h;
+            s.dt[0] = h;
             if (x + h * 1.0001 >= s.tout[0]) {
                 h = s.tout[0] - x;
                 last = true;
@@ -146,18 +147,18 @@ DEVICE int integrate(ScratchView s) {
                 const Real fac_step = math::max(lower_fac, math::min(upper_fac, raw_fac));
                 Real hnew = h / fac_step;
                 if (err <= 1.0) {
-                    n_accept += 1;
+                    const int n_accept = s.n_accept[0] + 1;
                     s.n_accept[0] = n_accept;
                     if (n_accept > 1) {
                         const Real facgus = math::max(1.0 / s.fac_max[0],
                             math::min(1.0 / s.fac_min[0],
-                            (hacc / h) *
-                            math::cbrt((err * err) / erracc) /
+                            (s.hacc[0] / h) *
+                            math::cbrt((err * err) / s.erracc[0]) /
                             s.safe[0]));
                         hnew = h / math::max(fac_step, facgus);
                     }
-                    hacc = h;
-                    erracc = math::max(1.e-2, err);
+                    s.hacc[0] = h;
+                    s.erracc[0] = math::max(1.e-2, err);
                     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
                         s.y[i] = yacc[i];
                     }
@@ -176,7 +177,7 @@ DEVICE int integrate(ScratchView s) {
                     reject = true;
                     last = false;
                     h = hnew;
-                    if (n_accept >= 1) {
+                    if (s.n_accept[0] >= 1) {
                         s.n_reject[0] += 1;
                     }
                 }
