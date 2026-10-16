@@ -282,7 +282,6 @@ loom_cc_library(
     ::preference
     ::scalar_packing
     ::spill_plan
-    ::spill_traffic
     ::storage
     ::storage_lease
     ::target_constraints
@@ -1379,6 +1378,7 @@ loom_cc_library(
     loom::codegen::low::target_binding
     loom::ir
     loom::util::cfg_graph
+    loom::util::cfg_loop
   PUBLIC
 )
 

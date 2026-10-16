@@ -110,6 +110,7 @@ iree_executable_test(
         ("portable_index_arithmetic", "//loom/src/loom/test/corpus/numeric:integer/scalar_observations.loom", "portable_index_arithmetic_values"),
         ("scalar_bitfield", "//loom/src/loom/test/corpus/numeric:integer/scalar_observations.loom", "scalar_i32_bitfield_values"),
         ("scalar_integer_float", "//loom/src/loom/test/corpus/numeric:conversion/conversion.loom", "scalar_integer_float_values"),
+        ("wide_integer_conversion", "//loom/src/loom/test/corpus/numeric:vector/conversion.loom", "wide_integer_values"),
         ("uniform_word_shifts", "//loom/src/loom/test/corpus/numeric:vector/integer_bitwise.loom", "uniform_word_shift_values"),
         ("uniform_dword_shifts", "//loom/src/loom/test/corpus/numeric:vector/integer_bitwise.loom", "uniform_dword_shift_values"),
         ("uniform_qword_shifts", "//loom/src/loom/test/corpus/numeric:vector/integer_bitwise.loom", "uniform_qword_shift_values"),
@@ -119,5 +120,8 @@ iree_executable_test(
         ("float_approximate_roots", "//loom/src/loom/tooling/target/cpu:test/x86_approximate_roots.loom", "x86_root_approximate_values"),
         ("float64_roots", "//loom/src/loom/test/corpus/numeric:float/roots.loom", "root_f64_values"),
         ("float64_approximate_roots", "//loom/src/loom/tooling/target/cpu:test/x86_approximate_roots.loom", "x86_root_f64_approximate_values"),
+        ("float_exponential", "//loom/src/loom/test/corpus/numeric:float/exponential.loom", "exponential_values"),
+        ("float_turns", "//loom/src/loom/test/corpus/numeric:float/turns.loom", "turn_approximate_values"),
+        ("float_activations", "//loom/src/loom/test/corpus/numeric:float/activations.loom", "activation_core_values"),
     ]
 ]

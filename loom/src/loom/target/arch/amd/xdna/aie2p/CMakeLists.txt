@@ -381,6 +381,7 @@ loom_cc_library(
     ::array_descriptors
     ::array_local_memory
     iree::base
+    iree::base::internal
     iree::base::internal::arena
     loom::analysis::scc
     loom::analysis::storage_geometry
@@ -740,6 +741,31 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA)
 iree_py_test(
   NAME
+    vector_construct_family_exhaustive_test
+  MAIN
+    "test/vector_construct_family_test.py"
+  SRCS
+    "test/vector_construct_family_test.py"
+  ARGS
+    "{{$<TARGET_FILE:loom::target::arch::amd::xdna::aie2p::loom-check>}}"
+    "--exhaustive"
+  DATA
+    "loom::target::arch::amd::xdna::aie2p::loom-check"
+  LABELS
+    "manual"
+    "stress"
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+  TIMEOUT
+    60
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+iree_py_test(
+  NAME
     interleave_family_test
   MAIN
     "test/interleave_family_test.py"
@@ -773,6 +799,7 @@ iree_py_test(
     "loom::target::arch::amd::xdna::aie2p::loom-check"
   LABELS
     "manual"
+    "stress"
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"
@@ -818,6 +845,7 @@ iree_py_test(
     "loom::target::arch::amd::xdna::aie2p::loom-check"
   LABELS
     "manual"
+    "stress"
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"
@@ -929,11 +957,13 @@ loom_check_test_suite(
     "test/native_admission.loom-test"
     "test/native_bindings.loom-test"
     "test/native_completion.loom-test"
+    "test/native_distribution.loom-test"
     "test/native_dma_descriptors.loom-test"
     "test/native_endpoint_addresses.loom-test"
     "test/native_local_buffers.loom-test"
     "test/native_repetition.loom-test"
     "test/native_strands.loom-test"
+    "test/native_stream_routes.loom-test"
     "test/operand_ties.loom-test"
     "test/source_low/bf16_vectors.loom-test"
     "test/source_low/buffer_selection.loom-test"

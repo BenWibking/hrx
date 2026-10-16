@@ -42,9 +42,14 @@ typedef struct loom_native_contraction_facts_t loom_native_contraction_facts_t;
 typedef struct loom_local_value_domain_t loom_local_value_domain_t;
 
 // Returns true when |type| has a complete vector-carrier mapping under the
-// selected target policy.
+// selected target policy. A concrete source value retains its identity and
+// optional analysis facts so targets can admit value-dependent representations.
+// Hypothetical packet types use NULL facts and LOOM_VALUE_ID_INVALID; they must
+// not inherit the representation of the aggregate they will replace.
 typedef bool (*loom_target_vector_carrier_supported_fn_t)(
-    void* user_data, const loom_module_t* module, loom_type_t type);
+    void* user_data, const loom_module_t* module,
+    const loom_value_fact_table_t* fact_table, loom_value_id_t value_id,
+    loom_type_t type);
 
 typedef struct loom_target_vector_carrier_supported_callback_t {
   // Optional target query for complete vector-carrier admission.
@@ -89,9 +94,9 @@ typedef enum loom_target_vector_packet_policy_flag_bits_e {
   // Coordinates components touching oversized memory roots with the memory
   // packet planner so they never slice an unsupported memory snapshot.
   LOOM_TARGET_VECTOR_PACKET_POLICY_FLAG_MEMORY_ROOT_COMPONENTS = 1u << 1,
-  // Projects unsupported static vector carriers across callable, CFG, and
-  // LoopLike boundaries using native lane candidates. Object-function
-  // signatures retain their authored platform ABI.
+  // Projects unsupported static vector carriers across callable, CFG,
+  // LoopLike, and RegionBranch boundaries using native lane candidates.
+  // Object-function signatures retain their authored platform ABI.
   LOOM_TARGET_VECTOR_PACKET_POLICY_FLAG_BOUNDARY_PROJECTION = 1u << 2,
   // Selects fact-bounded dynamic windows directly from retained SSA packet
   // snapshots instead of reifying those snapshots in private memory.
@@ -508,6 +513,15 @@ static inline bool loom_target_contract_query_result_is_terminal_rejection(
   return result->outcome == LOOM_TARGET_CONTRACT_QUERY_TERMINAL_REJECTION;
 }
 
+typedef struct loom_target_contract_function_analysis_callback_t {
+  // Acquires complete analyses for the owner's immutable source snapshot.
+  iree_status_t (*fn)(void* user_data,
+                      loom_local_value_domain_t** out_value_domain,
+                      const loom_view_region_table_t** out_view_regions);
+  // Owner retaining the analyses until the source snapshot is retired.
+  void* user_data;
+} loom_target_contract_function_analysis_callback_t;
+
 typedef struct loom_target_contract_query_environment_t {
   // Source module being queried.
   const loom_module_t* module;
@@ -527,11 +541,19 @@ typedef struct loom_target_contract_query_environment_t {
   loom_local_value_domain_t* value_domain;
   // Optional function-local view-region analysis visible to the query.
   const loom_view_region_table_t* view_regions;
+  // Optional lazy owner of the function-local domain and view analysis.
+  loom_target_contract_function_analysis_callback_t function_analysis;
   // Scoped arena available for rare query-side auxiliary records.
   iree_arena_allocator_t* arena;
   // Optional scoped storage allocator for target-owned query analyses.
   loom_target_contract_query_state_allocator_t target_state_allocator;
 } loom_target_contract_query_environment_t;
+
+// Acquires the owner's function analyses when not already borrowed.
+// Environments without an owner retain their explicitly supplied, possibly
+// absent analyses.
+iree_status_t loom_target_contract_query_resolve_function_analysis(
+    loom_target_contract_query_environment_t* environment);
 
 // Returns the common target bundle selected for |environment|.
 static inline const loom_target_bundle_t*

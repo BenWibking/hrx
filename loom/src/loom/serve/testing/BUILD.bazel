@@ -14,6 +14,14 @@ package(
 )
 
 loom_cc_library(
+    name = "maintenance_gate",
+    testonly = True,
+    hdrs = ["maintenance_gate.h"],
+    visibility = ["//loom/src/loom/serve:implementation"],
+    deps = ["//runtime/src/iree/hal/memory:maintenance"],
+)
+
+loom_cc_library(
     name = "compiler",
     testonly = True,
     srcs = ["compiler.c"],
@@ -39,6 +47,7 @@ loom_cc_library(
         "//loom/src/loom/serve/runtime/host",
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",
+        "//runtime/src/iree/hal/memory:maintenance",
     ],
 )
 
@@ -287,5 +296,8 @@ py_test(
     name = "http_test",
     size = "small",
     srcs = ["loom_serve_testing/http_test.py"],
-    deps = [":http"],
+    deps = [
+        ":http",
+        ":logs",
+    ],
 )

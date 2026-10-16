@@ -11,6 +11,17 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    maintenance_gate
+  HDRS
+    "maintenance_gate.h"
+  DEPS
+    iree::hal::memory::maintenance
+  TESTONLY
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     compiler
   HDRS
     "compiler.h"
@@ -36,6 +47,7 @@ loom_cc_library(
   DEPS
     iree::base
     iree::hal
+    iree::hal::memory::maintenance
     loom::serve::runtime::device
     loom::serve::runtime::host
   TESTONLY
@@ -337,6 +349,7 @@ iree_py_test(
     "loom_serve_testing/http_test.py"
   DEPS
     loom::serve::testing::http
+    loom::serve::testing::logs
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"

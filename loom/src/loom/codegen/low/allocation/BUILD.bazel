@@ -254,7 +254,6 @@ loom_cc_library(
         ":preference",
         ":scalar_packing",
         ":spill_plan",
-        ":spill_traffic",
         ":storage",
         ":storage_lease",
         ":target_constraints",
@@ -1231,6 +1230,7 @@ loom_cc_library(
         "//loom/src/loom/codegen/low:target_binding",
         "//loom/src/loom/ir",
         "//loom/src/loom/util:cfg_graph",
+        "//loom/src/loom/util:cfg_loop",
         "//runtime/src/iree/base",
     ],
 )

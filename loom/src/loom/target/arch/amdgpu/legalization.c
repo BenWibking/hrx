@@ -317,6 +317,13 @@ static iree_status_t loom_amdgpu_legalize_static_vector_shape(
         context, op, context->vector_packet_policy,
         /*insert_materializer=*/NULL, &rewritten));
   }
+  if (!rewritten && loom_vector_concat_isa(op)) {
+    loom_amdgpu_vector_concat_plan_t plan = {0};
+    if (!loom_amdgpu_vector_concat_plan_from_op(context->module, op, &plan)) {
+      IREE_RETURN_IF_ERROR(loom_vector_descriptor_to_scalar_rewrite_op(
+          context->pass, context->rewriter, op, &rewritten));
+    }
+  }
   if (!rewritten && loom_vector_slice_isa(op) &&
       loom_vector_slice_offsets(op).count != 0) {
     const loom_vector_packet_consumer_materializer_t materializer =
@@ -704,6 +711,8 @@ static iree_status_t loom_amdgpu_legalize_packed_atomic(
       loom_memory_access_cast(context->module, op);
   const loom_type_t value_type =
       loom_module_value_type(context->module, loom_memory_access_value(access));
+  IREE_RETURN_IF_ERROR(
+      loom_target_legalization_resolve_function_analysis(context));
   loom_low_source_memory_access_plan_t source = {0};
   loom_low_source_memory_access_diagnostic_t diagnostic = {0};
   if (!loom_low_source_memory_access_plan_build(context->view_regions, op,

@@ -147,12 +147,21 @@ typedef struct loom_target_legalization_context_t {
   const loom_value_fact_table_t* fact_table;
   // Analyzed view-region table visible to legalizers.
   const loom_view_region_table_t* view_regions;
+  // Immutable-snapshot owner for legalizers requiring function analyses.
+  loom_target_contract_function_analysis_callback_t function_analysis;
   // Lazy block-local read motion barriers visible to legalizers.
   loom_motion_read_barrier_table_t* read_motion_barriers;
   // Function-local value domain extendable during the current callback.
   loom_local_value_domain_t* value_domain;
   // Active rewriter for mutating the function body.
   loom_rewriter_t* rewriter;
+  // Packet graph creation observed during the active legalizer callback.
+  struct {
+    // Value checkpoint immediately before the first packet materialization.
+    loom_value_id_t value_checkpoint;
+    // True when value_checkpoint has been recorded.
+    bool recorded;
+  } component_packet_materialization;
   // Current legalization phase.
   loom_target_legalization_mode_t mode;
   // Representation state of callable, CFG, and LoopLike boundaries.
@@ -167,6 +176,19 @@ typedef struct loom_target_legalization_context_t {
   // Read-only target contract query for already-legal checks.
   loom_target_contract_query_callback_t contract_query;
 } loom_target_legalization_context_t;
+
+// Records that the active legalizer is about to materialize a packet graph.
+// The target legalization driver uses the first checkpoint to give generated
+// decomposable operations to the component planner before reference fallback.
+static inline void
+loom_target_legalization_record_component_packet_materialization(
+    loom_target_legalization_context_t* context) {
+  if (!context->component_packet_materialization.recorded) {
+    context->component_packet_materialization.value_checkpoint =
+        loom_rewriter_value_checkpoint(context->rewriter);
+    context->component_packet_materialization.recorded = true;
+  }
+}
 
 // Returns the common target bundle selected for |context|.
 static inline const loom_target_bundle_t*
@@ -360,6 +382,10 @@ const loom_target_legalizer_registry_t*
 loom_target_legalizer_registry_storage_registry(
     const loom_target_legalizer_registry_storage_t* storage);
 
+// Acquires complete function analyses for a memory or component legalizer.
+iree_status_t loom_target_legalization_resolve_function_analysis(
+    loom_target_legalization_context_t* context);
+
 // Queries whether |op| is already legal for the selected target contract.
 iree_status_t loom_target_legalization_query_contract(
     loom_target_legalization_context_t* context, const loom_op_t* op,
@@ -374,9 +400,12 @@ loom_target_legalization_query_contract_with_vector_lane_projection(
     loom_target_contract_query_result_t* out_result);
 
 // Returns true when |type| has a source vector carrier under the selected
-// target lowering policy. Non-vector types always return true.
+// target lowering policy. Non-vector types always return true. A concrete
+// source passes its value identity; hypothetical types use
+// LOOM_VALUE_ID_INVALID.
 bool loom_target_legalization_has_source_vector_carrier(
-    const loom_target_legalization_context_t* context, loom_type_t type);
+    const loom_target_legalization_context_t* context, loom_type_t type,
+    loom_value_id_t value_id);
 
 // Returns true when every vector operand and result of |op| has a source
 // carrier under the selected target lowering policy.

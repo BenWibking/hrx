@@ -86,6 +86,13 @@ typedef struct loom_low_target_legalize_report_lineage_key_t {
   const loom_op_t* op;
 } loom_low_target_legalize_report_lineage_key_t;
 
+typedef struct loom_low_target_legalize_packet_plan_value_range_t {
+  // First result value created by one packet-materializing legalizer.
+  loom_value_id_t begin;
+  // One past the final result value created by that legalizer.
+  loom_value_id_t end;
+} loom_low_target_legalize_packet_plan_value_range_t;
+
 typedef struct loom_low_target_legalize_function_state_t {
   // Pass invocation being executed.
   loom_pass_t* pass;
@@ -113,6 +120,15 @@ typedef struct loom_low_target_legalize_function_state_t {
   loom_target_legalization_context_t legalization_context;
   // Authored contract results retained by the current component packet plan.
   loom_vector_component_packet_query_cache_t packet_query_cache;
+  // Packet-materialized value ranges awaiting the next component plan.
+  struct {
+    // Monotonic half-open ranges created during the current worklist.
+    loom_low_target_legalize_packet_plan_value_range_t* entries;
+    // Number of initialized ranges.
+    iree_host_size_t count;
+    // Allocated entry capacity.
+    iree_host_size_t capacity;
+  } pending_packet_plan_values;
   // Optional compile report receiving cold legalization decision rows.
   loom_target_compile_report_t* compile_report;
   // Original source decisions, indexed once before the function is mutated.
@@ -957,7 +973,7 @@ loom_low_target_legalize_apply_final_rejection_to_contract_query(
   return iree_ok_status();
 }
 
-static void loom_low_target_legalize_deinitialize_query_scope(
+static void loom_low_target_legalize_reset_query_scope(
     loom_low_target_legalize_function_state_t* state) {
   state->packet_query_cache = loom_vector_component_packet_query_cache_empty();
   if (state->query_scope == NULL) {
@@ -965,22 +981,19 @@ static void loom_low_target_legalize_deinitialize_query_scope(
   }
   state->legalization_context.value_domain = NULL;
   state->legalization_context.view_regions = NULL;
-  loom_low_lower_source_query_scope_deinitialize(state->query_scope);
-  state->query_scope = NULL;
+  loom_low_lower_source_query_scope_reset(state->query_scope);
 }
 
 static iree_status_t loom_low_target_legalize_refresh_query_scope(
     loom_low_target_legalize_function_state_t* state,
     const loom_value_fact_table_t* fact_table) {
-  loom_low_target_legalize_deinitialize_query_scope(state);
   state->lower_options.fact_table = (loom_value_fact_table_t*)fact_table;
-  IREE_RETURN_IF_ERROR(loom_low_lower_source_query_scope_allocate(
-      state->module, state->selection->func, &state->lower_options,
-      state->query_scope_arena, &state->query_scope));
-  state->legalization_context.value_domain =
-      loom_low_lower_source_query_scope_value_domain(state->query_scope);
-  IREE_RETURN_IF_ERROR(loom_low_lower_source_query_scope_view_regions(
-      state->query_scope, &state->legalization_context.view_regions));
+  loom_low_target_legalize_reset_query_scope(state);
+  if (state->query_scope == NULL) {
+    IREE_RETURN_IF_ERROR(loom_low_lower_source_query_scope_allocate(
+        state->module, state->selection->func, &state->lower_options,
+        state->query_scope_arena, &state->query_scope));
+  }
   return iree_ok_status();
 }
 
@@ -992,6 +1005,19 @@ static iree_status_t loom_low_target_legalize_ensure_query_scope(
     return iree_ok_status();
   }
   return loom_low_target_legalize_refresh_query_scope(state, fact_table);
+}
+
+static iree_status_t loom_low_target_legalize_function_analysis(
+    void* user_data, loom_local_value_domain_t** out_value_domain,
+    const loom_view_region_table_t** out_view_regions) {
+  loom_low_target_legalize_function_state_t* state = user_data;
+  IREE_RETURN_IF_ERROR(loom_low_target_legalize_ensure_query_scope(
+      state, state->legalization_context.fact_table));
+  IREE_RETURN_IF_ERROR(loom_low_lower_source_query_scope_view_regions(
+      state->query_scope, out_view_regions));
+  *out_value_domain =
+      loom_low_lower_source_query_scope_value_domain(state->query_scope);
+  return iree_ok_status();
 }
 
 static iree_status_t loom_low_target_legalize_query_contract(
@@ -1088,6 +1114,58 @@ loom_low_target_legalize_reference_entry_has_terminal_input(
   return iree_ok_status();
 }
 
+static iree_status_t loom_low_target_legalize_retain_packet_plan_values(
+    loom_low_target_legalize_function_state_t* state, loom_value_id_t begin,
+    loom_value_id_t end) {
+  if (begin == LOOM_VALUE_ID_INVALID || end == LOOM_VALUE_ID_INVALID ||
+      begin == end) {
+    return iree_ok_status();
+  }
+  IREE_ASSERT_LT(begin, end);
+  if (state->pending_packet_plan_values.count != 0) {
+    IREE_ASSERT_LE(state->pending_packet_plan_values
+                       .entries[state->pending_packet_plan_values.count - 1u]
+                       .end,
+                   begin);
+  }
+  if (state->pending_packet_plan_values.count ==
+      state->pending_packet_plan_values.capacity) {
+    IREE_RETURN_IF_ERROR(iree_arena_grow_array(
+        state->query_scope_arena, state->pending_packet_plan_values.count,
+        state->pending_packet_plan_values.count + 1u,
+        sizeof(*state->pending_packet_plan_values.entries),
+        &state->pending_packet_plan_values.capacity,
+        (void**)&state->pending_packet_plan_values.entries));
+  }
+  state->pending_packet_plan_values
+      .entries[state->pending_packet_plan_values.count++] =
+      (loom_low_target_legalize_packet_plan_value_range_t){
+          .begin = begin,
+          .end = end,
+      };
+  return iree_ok_status();
+}
+
+static bool loom_low_target_legalize_value_needs_packet_plan(
+    const loom_low_target_legalize_function_state_t* state,
+    loom_value_id_t value) {
+  iree_host_size_t begin = 0;
+  iree_host_size_t end = state->pending_packet_plan_values.count;
+  while (begin < end) {
+    const iree_host_size_t middle = begin + (end - begin) / 2u;
+    const loom_low_target_legalize_packet_plan_value_range_t range =
+        state->pending_packet_plan_values.entries[middle];
+    if (value < range.begin) {
+      end = middle;
+    } else if (value >= range.end) {
+      begin = middle + 1u;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
 static iree_status_t loom_low_target_legalize_rewrite_op(
     void* user_data, loom_greedy_rewrite_driver_t* driver, loom_op_t* op,
     loom_greedy_rewrite_result_t* result, bool* out_changed) {
@@ -1156,6 +1234,28 @@ static iree_status_t loom_low_target_legalize_rewrite_op(
         &state->legalization_context, op, &query_result_storage));
     query_result = &query_result_storage;
   }
+  // Packet materialization earlier in this worklist can create a
+  // shape-preserving vector operation after the iteration's component plan has
+  // run. Give the next plan first claim when the target admits a multi-lane
+  // packet width. Ordinary target and reference rewrites never enter this
+  // handoff and consume their generated operations in the current worklist.
+  if (!state->legalization_context
+           .source_function_has_unsupported_vector_carrier &&
+      state->legalization_context.vector_packet_policy != NULL &&
+      state->legalization_context.vector_packet_policy
+              ->native_lane_count_count != 0 &&
+      state->legalization_context.policy !=
+          LOOM_TARGET_LEGALIZATION_POLICY_REFERENCE_ONLY &&
+      op->result_count == 1 &&
+      loom_low_target_legalize_value_needs_packet_plan(
+          state, loom_op_const_results(op)[0])) {
+    bool has_packet_candidate = false;
+    IREE_RETURN_IF_ERROR(loom_vector_component_packet_op_has_vector_candidate(
+        &state->legalization_context, op, query_result, &has_packet_candidate));
+    if (has_packet_candidate) {
+      return iree_ok_status();
+    }
+  }
   if (query_result->outcome == LOOM_TARGET_CONTRACT_QUERY_INVALID_IR) {
     if (is_report_source) {
       IREE_RETURN_IF_ERROR(loom_low_target_legalize_retain_report_decision(
@@ -1204,6 +1304,8 @@ static iree_status_t loom_low_target_legalize_rewrite_op(
       continue;
     }
     driver->rewriter.flags = 0;
+    state->legalization_context.component_packet_materialization.recorded =
+        false;
     const uint64_t created_op_count_before = driver->rewriter.created_op_count;
     const uint64_t erased_op_count_before = driver->rewriter.erased_op_count;
     const uint64_t scalarized_op_count_before =
@@ -1252,6 +1354,15 @@ static iree_status_t loom_low_target_legalize_rewrite_op(
       case LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT:
         continue;
       case LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN: {
+        if (state->legalization_context.component_packet_materialization
+                .recorded) {
+          IREE_RETURN_IF_ERROR(
+              loom_low_target_legalize_retain_packet_plan_values(
+                  state,
+                  state->legalization_context.component_packet_materialization
+                      .value_checkpoint,
+                  loom_rewriter_value_checkpoint(&driver->rewriter)));
+        }
         loom_greedy_rewrite_result_record_change(
             result, &driver->rewriter,
             LOOM_GREEDY_REWRITE_CHANGE_FLAG_COUNT_MODIFIED_OP);
@@ -1358,6 +1469,7 @@ static iree_status_t loom_low_target_legalize_packet_components(
   *out_changed = false;
   loom_low_target_legalize_function_state_t* state =
       (loom_low_target_legalize_function_state_t*)user_data;
+  state->pending_packet_plan_values.count = 0;
   if (state->preflight.error_count != 0 ||
       state->legalization_context.vector_packet_policy == NULL ||
       state->legalization_context.policy ==
@@ -1370,8 +1482,8 @@ static iree_status_t loom_low_target_legalize_packet_components(
   state->legalization_context.fact_table = driver->fact_table;
   state->legalization_context.rewriter = &driver->rewriter;
   state->legalization_context.arena = driver->scratch_arena;
-  IREE_RETURN_IF_ERROR(
-      loom_low_target_legalize_ensure_query_scope(state, driver->fact_table));
+  IREE_RETURN_IF_ERROR(loom_target_legalization_resolve_function_analysis(
+      &state->legalization_context));
   uint32_t rewritten_op_count = 0;
   iree_status_t packet_status = loom_vector_component_packet_legalize(
       &state->legalization_context,
@@ -1401,7 +1513,7 @@ static iree_status_t loom_low_target_legalize_packet_components(
 static void loom_low_target_legalize_changed(
     void* user_data, loom_greedy_rewrite_driver_t* driver) {
   (void)driver;
-  loom_low_target_legalize_deinitialize_query_scope(
+  loom_low_target_legalize_reset_query_scope(
       (loom_low_target_legalize_function_state_t*)user_data);
 }
 
@@ -1446,6 +1558,7 @@ static iree_status_t loom_low_target_legalize_verify_final(
 
 static bool loom_low_target_legalize_function_has_source_vector_carriers(
     const loom_module_t* module, loom_func_like_t function,
+    const loom_value_fact_table_t* fact_table,
     const loom_low_lower_policy_t* policy) {
   loom_target_vector_carrier_supported_callback_t callback =
       policy->source_function_vector_carrier_supported;
@@ -1462,7 +1575,8 @@ static bool loom_low_target_legalize_function_has_source_vector_carriers(
   for (uint16_t i = 0; i < argument_count; ++i) {
     const loom_type_t type = loom_module_value_type(module, argument_ids[i]);
     if (loom_type_is_vector(type) &&
-        !callback.fn(callback.user_data, module, type)) {
+        !callback.fn(callback.user_data, module, fact_table, argument_ids[i],
+                     type)) {
       return false;
     }
   }
@@ -1470,7 +1584,8 @@ static bool loom_low_target_legalize_function_has_source_vector_carriers(
   for (uint16_t i = 0; i < function.op->result_count; ++i) {
     const loom_type_t type = loom_module_value_type(module, result_ids[i]);
     if (loom_type_is_vector(type) &&
-        !callback.fn(callback.user_data, module, type)) {
+        !callback.fn(callback.user_data, module, fact_table, result_ids[i],
+                     type)) {
       return false;
     }
   }
@@ -1541,7 +1656,7 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_target_legalize_function(
           selection->policy->source_vector_carrier_supported,
       .source_function_has_unsupported_vector_carrier =
           !loom_low_target_legalize_function_has_source_vector_carriers(
-              module, selection->func, selection->policy),
+              module, selection->func, fact_table, selection->policy),
       .mode = pass_state->mode,
       .boundary_representation = pass_state->boundary_representation,
       .policy = pass_state->policy,
@@ -1549,6 +1664,11 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_target_legalize_function(
       .contract_query =
           {
               .fn = loom_low_target_legalize_query_contract,
+              .user_data = &state,
+          },
+      .function_analysis =
+          {
+              .fn = loom_low_target_legalize_function_analysis,
               .user_data = &state,
           },
   };
@@ -1583,7 +1703,7 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_target_legalize_function(
   // Queries and rewrites borrow the pass-owned facts. Release their state
   // before invalidation so final legality can acquire a fresh scope after IR
   // changes.
-  loom_low_target_legalize_deinitialize_query_scope(&state);
+  loom_low_target_legalize_reset_query_scope(&state);
   loom_greedy_rewrite_driver_deinitialize(&rewrite_driver);
   iree_arena_deinitialize(&rewrite_arena);
   if (!iree_status_is_ok(status) || rewrite_result.changed) {
@@ -1617,7 +1737,7 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_target_legalize_function(
           module, &state, pass_state, fact_table, &final_error_count);
     }
   }
-  loom_low_target_legalize_deinitialize_query_scope(&state);
+  loom_low_lower_source_query_scope_deinitialize(state.query_scope);
   IREE_RETURN_IF_ERROR(status);
 
   loom_low_target_legalize_statistics(pass)->errors +=

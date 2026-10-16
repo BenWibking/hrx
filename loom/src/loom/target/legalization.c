@@ -279,6 +279,16 @@ loom_target_legalizer_registry_storage_registry(
   return &storage->registry;
 }
 
+iree_status_t loom_target_legalization_resolve_function_analysis(
+    loom_target_legalization_context_t* context) {
+  if (context->view_regions != NULL || context->function_analysis.fn == NULL) {
+    return iree_ok_status();
+  }
+  return context->function_analysis.fn(context->function_analysis.user_data,
+                                       &context->value_domain,
+                                       &context->view_regions);
+}
+
 iree_status_t loom_target_legalization_query_contract(
     loom_target_legalization_context_t* context, const loom_op_t* op,
     loom_target_contract_query_result_t* out_result) {
@@ -305,6 +315,7 @@ loom_target_legalization_query_contract_with_vector_lane_projection(
       .vector_lane_projection = vector_lane_projection,
       .value_domain = context->value_domain,
       .view_regions = context->view_regions,
+      .function_analysis = context->function_analysis,
       .arena = context->arena,
   };
   return context->contract_query.fn(context->contract_query.user_data,
@@ -316,14 +327,16 @@ bool loom_target_legalization_op_has_source_vector_carriers(
   const loom_value_id_t* operands = loom_op_const_operands(op);
   for (uint16_t i = 0; i < op->operand_count; ++i) {
     if (!loom_target_legalization_has_source_vector_carrier(
-            context, loom_module_value_type(context->module, operands[i]))) {
+            context, loom_module_value_type(context->module, operands[i]),
+            operands[i])) {
       return false;
     }
   }
   const loom_value_id_t* results = loom_op_const_results(op);
   for (uint16_t i = 0; i < op->result_count; ++i) {
     if (!loom_target_legalization_has_source_vector_carrier(
-            context, loom_module_value_type(context->module, results[i]))) {
+            context, loom_module_value_type(context->module, results[i]),
+            results[i])) {
       return false;
     }
   }
@@ -331,14 +344,18 @@ bool loom_target_legalization_op_has_source_vector_carriers(
 }
 
 bool loom_target_legalization_has_source_vector_carrier(
-    const loom_target_legalization_context_t* context, loom_type_t type) {
+    const loom_target_legalization_context_t* context, loom_type_t type,
+    loom_value_id_t value_id) {
   if (!loom_type_is_vector(type)) {
     return true;
   }
   const loom_target_vector_carrier_supported_callback_t callback =
       context->source_vector_carrier_supported;
   return callback.fn == NULL ||
-         callback.fn(callback.user_data, context->module, type);
+         callback.fn(
+             callback.user_data, context->module,
+             value_id != LOOM_VALUE_ID_INVALID ? context->fact_table : NULL,
+             value_id, type);
 }
 
 bool loom_target_legalization_op_has_bitstream_packet_carriers(
@@ -372,5 +389,6 @@ bool loom_target_legalization_has_bitstream_packet_carrier(
   const loom_target_vector_carrier_supported_callback_t callback =
       policy->packet_carrier_supported;
   IREE_ASSERT(callback.fn != NULL);
-  return callback.fn(callback.user_data, context->module, type);
+  return callback.fn(callback.user_data, context->module, NULL,
+                     LOOM_VALUE_ID_INVALID, type);
 }

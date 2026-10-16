@@ -897,9 +897,9 @@ typedef struct loom_low_lower_policy_t {
   // |map_type| can map them to target-low values.
   loom_target_low_legality_type_supported_callback_t source_type_supported;
   // Optionally reports the complete source-vector carrier domain accepted by
-  // |map_type|. Target legalizers use it to prevent scalar fallback from
-  // expanding unmappable aggregates, and final target-low legality uses it to
-  // report carrier failures.
+  // |map_type| or |map_value|. Target legalizers use it to prevent fallback
+  // from expanding unmappable aggregates, and final target-low legality uses it
+  // to report carrier failures.
   loom_target_vector_carrier_supported_callback_t
       source_vector_carrier_supported;
   // Optionally reports the source-vector carrier domain accepted at function
@@ -1293,9 +1293,10 @@ const loom_value_fact_table_t* loom_low_lower_context_fact_table(
 const loom_value_fact_cfg_region_t* loom_low_lower_context_cfg(
     const loom_low_lower_context_t* context);
 
-// Returns reusable traversal state for planning-only condition-fact queries.
-loom_condition_query_t* loom_low_lower_context_condition_query(
-    loom_low_lower_context_t* context);
+// Acquires reusable traversal state for planning-only condition-fact queries.
+// Read-only source scopes acquire compact function-local ordinals on demand.
+iree_status_t loom_low_lower_context_condition_query(
+    loom_low_lower_context_t* context, loom_condition_query_t** out_query);
 
 // Returns the function-local symbolic expression context during planning.
 loom_symbolic_expr_context_t* loom_low_lower_context_symbolic_expr_context(
