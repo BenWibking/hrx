@@ -232,7 +232,8 @@ return ((x4) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_1(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x8, Real x9) {
-return ((T <= 1160.0) ? (
+const Real cond_r = T <= 1160.0;
+return ((cond_r) ? (
    1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs(T)))
 )
 : (
@@ -240,7 +241,8 @@ return ((T <= 1160.0) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_2(Real T, Real x32, Real x33, Real x34) {
-return ((x33 <= 9280.0) ? (
+const Real cond_r = x33 <= 9280.0;
+return ((cond_r) ? (
    x32
 )
 : (
@@ -248,7 +250,8 @@ return ((x33 <= 9280.0) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_3(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x32, Real x33, Real x8, Real x9) {
-return ((x33 <= 5500.0) ? (
+const Real cond_r = x33 <= 5500.0;
+return ((cond_r) ? (
    x32
 )
 : (
@@ -256,7 +259,8 @@ return ((x33 <= 5500.0) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_4(Real T, Real x28, Real x29) {
-return ((T >= 10.0 & T <= 100000.0) ? (
+const Real cond_r = T >= 10.0 & T <= 100000.0;
+return ((cond_r) ? (
    -7.7700000000000002e-13*T + 2.5000000000000002e-10*x28 + 2.96e-6*x29 - 1.73e-9
 )
 : (
@@ -264,7 +268,8 @@ return ((T >= 10.0 & T <= 100000.0) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_5(Real T, Real x46, Real x52, Real x53, Real x57) {
-return ((T < 30) ? (
+const Real cond_r = T < 30;
+return ((cond_r) ? (
    3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs(T)))
 )
 : (
@@ -272,7 +277,8 @@ return ((T < 30) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_6(Real T, Real x34, Real x52, Real x56, Real x6, Real x60, Real x61) {
-return ((T >= 100.0 & T <= 30000.0) ? (
+const Real cond_r = T >= 100.0 & T <= 30000.0;
+return ((cond_r) ? (
    (-1.4491368e-7*x52 + 3.4172804999999998e-8*x56 + 3.5311931999999998e-13*((x6)*(x6)*(x6)*(x6)*(x6)*(x6)*(x6)) - 1.8171411000000001e-11*math::exp((6)*math::log(math::abs(x6))) + 3.3735381999999997e-7*x6 - 4.7813727999999997e-9*x60 + 3.9731542e-10*x61 - 3.3232183000000002e-7)*math::exp(-21237.150000000001*x34)
 )
 : (
@@ -304,7 +310,8 @@ return ((x73) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_10(Real T, Real x34, Real x44, Real x46, Real x54, Real x57, Real x60, Real x61) {
-return ((T <= 1167.4796423742259) ? (
+const Real cond_r = T <= 1167.4796423742259;
+return ((cond_r) ? (
    math::exp((5.8888600000000002*x46 + 7.1969200000000004*x54 + 2.2506900000000001*x57 - 56.473700000000001 - 2.1690299999999998*x60/((((x44)*(x44)))*(((x44)*(x44)))) + 0.31788699999999998*x61/((x44)*(x44)*(x44)*(x44)*(x44)))*math::log(math::abs(10)))
 )
 : (
@@ -312,7 +319,8 @@ return ((T <= 1167.4796423742259) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_11(Real T, Real x3, Real x34) {
-return ((T > 200.0) ? (
+const Real cond_r = T > 200.0;
+return ((cond_r) ? (
    5.25e-11*math::exp(-4430.0*x34 + 173900.0/x3)
 )
 : (
@@ -635,7 +643,8 @@ return ((x6) ? (
 ));
 }
 DEVICE auto rhs_eint_choice_5(Real T) {
-return ((T >= 10000.0) ? (
+const Real cond_r = T >= 10000.0;
+return ((cond_r) ? (
    10000.0
 )
 : (
@@ -1387,7 +1396,8 @@ return ((rhs_eint_choice_98(x105, x107, x109, x114, x115, x116, x118, x120, x125
    ));
 }
 DEVICE auto rhs_eint_choice_100(Real T, bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, Real x119, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x70, Real x71, bool x73, bool x85, bool x88, Real x89, bool x97, bool x98, const Real* xn) {
-return ((T < 2.0) ? (
+const Real cond_r = T < 2.0;
+return ((cond_r) ? (
    0
 )
 : (
@@ -1395,7 +1405,8 @@ return ((T < 2.0) ? (
 ));
 }
 DEVICE auto rhs_eint_choice_101(Real T, Real x25, Real x26, Real x35, Real x41, Real x42, Real x43, Real x44, Real x45, Real x47, Real x48, Real x49, Real x5, Real x50, Real x51, Real x52, Real x53, Real x54, const Real* xn) {
-return ((T >= x5) ? (
+const Real cond_r = T >= x5;
+return ((cond_r) ? (
    math::exp((21.93385*x25*x41 + 0.92432999999999998*x25*x47 + 0.77951999999999999*x26*x41*x47 - 10.19097*x26*x45 + 0.54962*x26*x50 - 1.06447*x35*x41*x50 + 2.1990599999999998*x35*x44 - 0.54262999999999995*x35*x45*x47 - 0.076759999999999995*x35*x49 + 0.11864*x41*x42*x49 - 0.0036600000000000001*x41*x48*x51 - 0.17333999999999999*x42*x43 + 0.11711000000000001*x42*x44*x47 + 0.62343000000000004*x42*x45*x50 + 0.0027499999999999998*x42*x48 - 0.0083499999999999998*x43*x47*x51 + 6.1920000000000003e-5*x43*x48*x52 - 0.001482*x43*x49*x53 + 0.0106*x43*x50*x54 - 0.00066631000000000004*x44*x48*x53 + 0.017590000000000001*x44*x49*x54 - 0.13768*x44*x50*x51 + 0.0025140000000000002*x45*x48*x54 - 0.073660000000000003*x45*x49*x51 - 42.567880000000002)*math::log(math::abs(10.0)))*xn[10]
 )
 : (
