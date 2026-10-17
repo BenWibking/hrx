@@ -5778,10 +5778,23 @@ DEVICE unsigned lu_pivot_search(const Real* A) {
 // The pivot for column K arrives precomputed: the previous step's row update
 // tracks the running first maximum of |A[i][K]| over i = K..14 as it writes
 // those values (same comparisons in the same order as the search).
+DEVICE void perm_swap(unsigned* pm, unsigned k, unsigned p) {
+    // pm[k] <-> pm[p] for p >= k with p dynamic (int selects).
+    const unsigned a0 = pm[k];
+    unsigned b0 = a0;
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        if (i > k) b0 = (p == i) ? pm[i] : b0;
+    }
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        if (i > k) pm[i] = (p == i) ? a0 : pm[i];
+    }
+    pm[k] = b0;
+}
 template <unsigned K>
-DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
+DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row, unsigned* pm) {
     unsigned next_pivot = K + 1;
-    ipvt[K] = static_cast<int>(pivot_row);
+    // The composite row permutation is carried in registers and stored once.
+    perm_swap(pm, K, pivot_row);
     __builtin_assume(pivot_row < 15u);
     // K == 13: the final A(14,14), kept from registers for the singularity check.
     Real last_diag = 0.0;
@@ -5865,10 +5878,13 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
         if constexpr (K == 13u) last_diag = A[midx(14u, 14u)];
     }
     if constexpr (K + 1 < 14u) {
-        return lu_step<K + 1>(A, ipvt, info, next_pivot);
+        return lu_step<K + 1>(A, ipvt, info, next_pivot, pm);
     } else {
         // Reference: a zero final diagonal reports info = 15 (overriding).
         if (last_diag == 0.0) info = 15;
+        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+            ipvt[i] = static_cast<int>(pm[i]);
+        }
         return info;
     }
 }
@@ -5897,7 +5913,11 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         pivot_row = take ? i : pivot_row;
     }
     __builtin_assume(pivot_row < 15u);
-    ipvt[0] = static_cast<int>(pivot_row);
+    unsigned pm[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        pm[i] = i;
+    }
+    perm_swap(pm, 0u, pivot_row);
     unsigned next_pivot = 1;
     int info = 0;
     const Real pivot = iter_elem(J, pivot_row, 0u, fac);
@@ -5959,11 +5979,15 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         info = 1;
         next_pivot = lu_pivot_search<1>(A);
     }
-    return lu_step<1>(A, ipvt, info, next_pivot);
+    return lu_step<1>(A, ipvt, info, next_pivot, pm);
 }
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
-    int info = lu_step<0>(A, ipvt, 0, lu_pivot_search<0>(A));
+    unsigned pm[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        pm[i] = i;
+    }
+    int info = lu_step<0>(A, ipvt, 0, lu_pivot_search<0>(A), pm);
 
     ipvt[14] = 14;
     if (A[midx(14u, 14u)] == 0.0) {
@@ -6183,7 +6207,6 @@ DEVICE int decompose(ScratchView s, Real fac) {
         // in lu_step<13> on the register value.
         int info = lu_step0_from_jac(s.fjac, A, s.ip, fac);
         // ip now holds the composite row permutation (all 15 entries).
-        store_permutation(s.ip);
         return info;
 
 }
