@@ -603,36 +603,24 @@ return ((x6) ? (
 ));
 }
 DEVICE auto rhs_eint_choice_1(bool x6, Real x9) {
-return ((x6) ? (
-   math::sqrt(10)
-)
-: (
-   x9
-));
+    const auto arm_a = math::sqrt(10);
+    const auto arm_b = x9;
+    return (x6) ? arm_a : arm_b;
 }
 DEVICE auto rhs_eint_choice_2(Real T, bool x6) {
-return ((x6) ? (
-   0.63095734448019325
-)
-: (
-   math::exp((-0.20000000000000001)*math::log(math::abs(T)))
-));
+    const auto arm_a = 0.63095734448019325;
+    const auto arm_b = math::exp((-0.20000000000000001)*math::log(math::abs(T)));
+    return (x6) ? arm_a : arm_b;
 }
 DEVICE auto rhs_eint_choice_3(Real T, bool x6) {
-return ((x6) ? (
-   5.011872336272722
-)
-: (
-   math::exp((0.69999999999999996)*math::log(math::abs(T)))
-));
+    const auto arm_a = 5.011872336272722;
+    const auto arm_b = math::exp((0.69999999999999996)*math::log(math::abs(T)));
+    return (x6) ? arm_a : arm_b;
 }
 DEVICE auto rhs_eint_choice_4(Real T, bool x6) {
-return ((x6) ? (
-   0.67810976749343443
-)
-: (
-   math::exp((-0.16869999999999999)*math::log(math::abs(T)))
-));
+    const auto arm_a = 0.67810976749343443;
+    const auto arm_b = math::exp((-0.16869999999999999)*math::log(math::abs(T)));
+    return (x6) ? arm_a : arm_b;
 }
 DEVICE auto rhs_eint_choice_5(Real T) {
 return ((T >= 10000.0) ? (
@@ -883,28 +871,19 @@ return ((rhs_eint_choice_31(x55, x57, x60, x61, x63, x64, x66, x67, x69)) ? (
 ));
 }
 DEVICE auto rhs_eint_choice_37(Real T, bool x6) {
-return ((x6) ? (
-   0.4008667176273028
-)
-: (
-   math::exp((-0.39700000000000002)*math::log(math::abs(T)))
-));
+    const auto arm_a = 0.4008667176273028;
+    const auto arm_b = math::exp((-0.39700000000000002)*math::log(math::abs(T)));
+    return (x6) ? arm_a : arm_b;
 }
 DEVICE auto rhs_eint_choice_38(Real T, bool x6) {
-return ((x6) ? (
-   0.031622776601683791
-)
-: (
-   math::exp((-1.5)*math::log(math::abs(T)))
-));
+    const auto arm_a = 0.031622776601683791;
+    const auto arm_b = math::exp((-1.5)*math::log(math::abs(T)));
+    return (x6) ? arm_a : arm_b;
 }
 DEVICE auto rhs_eint_choice_39(Real T, bool x6) {
-return ((x6) ? (
-   2.3157944032250755
-)
-: (
-   math::exp((0.36470000000000002)*math::log(math::abs(T)))
-));
+    const auto arm_a = 2.3157944032250755;
+    const auto arm_b = math::exp((0.36470000000000002)*math::log(math::abs(T)));
+    return (x6) ? arm_a : arm_b;
 }
 DEVICE auto rhs_eint_choice_40(bool x70, Real x71) {
 return ((x70) ? (
