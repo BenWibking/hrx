@@ -42,7 +42,7 @@ typedef struct loom_serve_module_options_t {
     // Stage descriptors copied and commands retained at creation.
     const loom_serve_stage_t* values;
   } stages;
-  // Fixed feedback destinations shared by serialized model invocations.
+  // Initial feedback destinations shared by serialized model invocations.
   struct {
     // Number of addressable feedback slots.
     iree_host_size_t count;
@@ -74,6 +74,16 @@ iree_status_t loom_serve_module_create(const iree_hal_module_types_t* types,
                                        iree_allocator_t host_allocator,
                                        iree_vm_module_t** out_module);
 
+// Rebinds an existing feedback slot between serialized invocations. The owner
+// has retired all feedback and host consumers of the previous destination and
+// keeps the new storage alive through actual queue retirement, including on
+// failure. Slot belongs to the module's original feedback table. No allocation
+// or device wait occurs; source feedback still checks its requested byte
+// extent.
+void loom_serve_module_bind_feedback(iree_vm_module_t* module,
+                                     iree_host_size_t slot,
+                                     iree_byte_span_t destination);
+
 // Rebinds the native stages of a module created above without changing its VM
 // declarations, process storage, feedback destinations or execution timeline.
 // The nonempty table may grow or shrink; each stage's model-buffer arity must
@@ -90,6 +100,12 @@ iree_status_t loom_serve_module_create(const iree_hal_module_types_t* types,
 iree_status_t loom_serve_module_bind_stages(iree_vm_module_t* module,
                                             iree_host_size_t stage_count,
                                             const loom_serve_stage_t* stages);
+
+// Releases the copied stage table and every retained code reference at the
+// same owner boundary as bind_stages, without allocation or a device wait.
+// Submitted work retains its resources independently. Source execution rejects
+// every stage until the owner binds a new table; VM declarations remain linked.
+void loom_serve_module_clear_stages(iree_vm_module_t* module);
 
 #ifdef __cplusplus
 }  // extern "C"

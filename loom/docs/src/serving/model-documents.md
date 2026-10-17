@@ -115,6 +115,10 @@ to `{}`. It uses the enclosing definition's `sources`, uploaded source package,
 path base and device. This is an input projector, distinct from an
 image-generation deployment.
 
+The optional `image.specialization_cache` object controls idle request-shape
+executable reuse, with the same fields and defaults as finite models below.
+It does not pin vision weights or allocate image workspace at registration.
+
 The component implements the finite request/cohort contract and owns independent
 preparation and parameter residency. Registration and ordinary text generation
 leave it dormant; an image not covered by retained state or an explicit
@@ -130,7 +134,10 @@ for the source boundaries.
 Image requires `checkpoint`, an asset directory interpreted by source
 preparation. `adapter` optionally supplies another asset path. `width` and
 `height` default to 384 pixels, and `text_tokens` defaults to 512; all are
-positive, with architecture constraints checked by the source.
+positive, with architecture constraints checked by the source. Width and height
+are defaults, not the only accepted request size. An explicit image `size`
+reaches source preparation and can select or declare shape-specialized code
+without changing checkpoint residency.
 
 `command_quantum` defaults to zero, meaning one whole-program submission.
 A positive value is a soft command-count target for full-barrier-aligned
@@ -140,6 +147,27 @@ workspace and weights until final completion.
 Embedding and decision definitions require an `assets` directory. Their
 architecture and batching settings belong in source-owned `options`, not new
 native per-model fields.
+
+For image, embedding, and decision deployments, `specialization_cache` bounds
+executable choices declared by request preparation:
+
+```json
+"specialization_cache": {"capacity": 16, "max_bytes": 16777216}
+```
+
+These are the defaults. `capacity` counts idle choices and `max_bytes` counts
+their retained declaration, entry, portable-program, and native-key/artifact
+storage. Least-recently-used choices retire first. Either limit can be zero to
+disable idle retention. A single larger request can still compile and execute;
+its choice retires afterward instead of remaining cached. Reusing shapes shares
+the immutable source index and checkpoint residency. Fixed source/index capacity,
+temporary compiler storage, and driver-private allocations are separate from
+this byte budget.
+
+This cache is independent of `variant_capacity`, which controls explicitly
+registered native replacements. Requests use the source generation selected
+when their image or cohort is prepared; selecting another replacement affects
+subsequent requests without changing one already being compiled or executed.
 
 The referenced assets must match the package's preparation policy. Loading
 checks its declared parameter keys and extents; matching a filename alone does
