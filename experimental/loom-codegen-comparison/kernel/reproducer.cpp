@@ -5829,7 +5829,7 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
         [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
             nxt[j - K] = A[midx(K + 1, j)];
         }
-        for (unsigned i = K + 1; i < 15u; ++i) {
+        [[loom::unroll]] for (unsigned i = K + 1; i < 15u; ++i) {
             Real cur[15 - K];
             [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
                 cur[j - K] = nxt[j - K];
@@ -5918,7 +5918,7 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
                 nxt[j] = iter_elem(J, src1, j, fac);
             }
         }
-        for (unsigned i = 1; i < 15u; ++i) {
+        [[loom::unroll]] for (unsigned i = 1; i < 15u; ++i) {
             Real cur[15];
             [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
                 cur[j] = nxt[j];
