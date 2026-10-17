@@ -5791,9 +5791,24 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
             A[midx(K, K)] = t;
             Real prow[14 - K];
             Real krow[14 - K];
+            // Full-row interchange (LAPACK form): the multipliers in columns
+            // 0..K-1 move with their rows, so the solve can apply the whole
+            // permutation up front and run the forward sweep with constant
+            // indices. The multipliers are only data here (not used again by
+            // the elimination), so the factorization arithmetic is unchanged.
+            Real plft[K > 0 ? K : 1];
+            Real klft[K > 0 ? K : 1];
+            [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+                plft[j] = A[midx(pivot_row, j)];
+                klft[j] = A[midx(K, j)];
+            }
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
                 prow[j - K - 1] = A[midx(pivot_row, j)];
                 krow[j - K - 1] = A[midx(K, j)];
+            }
+            [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+                A[midx(pivot_row, j)] = klft[j];
+                A[midx(K, j)] = plft[j];
             }
             [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
                 A[midx(pivot_row, j)] = krow[j - K - 1];
@@ -6078,6 +6093,62 @@ DEVICE void lu_bwd_regs(const Real* LU, Real* v) {
         lu_bwd_regs<K - 1>(LU, v);
     }
 }
+// Forward sweep in registers for the LAPACK-form factorization (rows of L
+// interchanged with the pivots): x[j] += x[K] * L(j,K), constant indices.
+// Each value gets the same operations as in the interleaved LINPACK sweep.
+template <unsigned K>
+DEVICE void lu_fwd_regs(const Real* LU, Real* v) {
+    const Real t = v[K];
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        v[j] = v[j] + t * LU[midx(j, K)];
+    }
+    if constexpr (K + 1 < 14u) lu_fwd_regs<K + 1>(LU, v);
+}
+// Composite row permutation of the pivot sequence: applying the swaps
+// (K, ipvt[K]) for K = 0..13 to x gives x[perm[i]] at position i.
+template <unsigned K>
+DEVICE void perm_step(const int* pv, unsigned* pm) {
+    const unsigned p = static_cast<unsigned>(pv[K]);
+    const unsigned a = pm[K];
+    unsigned b = a;
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        b = (p == j) ? pm[j] : b;
+    }
+    [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+        pm[j] = (p == j) ? a : pm[j];
+    }
+    pm[K] = b;
+    if constexpr (K + 1 < 14u) perm_step<K + 1>(pv, pm);
+}
+DEVICE void store_permutation(int* ipvt) {
+    int pv[14];
+    [[loom::unroll]] for (unsigned k = 0; k < 14u; ++k) {
+        pv[k] = ipvt[k];
+    }
+    unsigned pm[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        pm[i] = i;
+    }
+    perm_step<0>(pv, pm);
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        ipvt[i] = static_cast<int>(pm[i]);
+    }
+}
+// Solve with the permutation applied up front (one gather), then both sweeps
+// in registers; x is stored once.
+DEVICE void lu_solve_perm(const Real* LU, const int* perm, Real* x) {
+    Real v[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        const unsigned src = static_cast<unsigned>(perm[i]);
+        __builtin_assume(src < 15u);
+        v[i] = x[src];
+    }
+    lu_fwd_regs<0>(LU, v);
+    lu_bwd_regs<14>(LU, v);
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        x[i] = v[i];
+    }
+}
 DEVICE void lu_solve_batched(const Real* LU, const int* ipvt, Real* x) {
 
     // All pivot rows are loaded up front (independent of the x updates), so
@@ -6109,12 +6180,14 @@ DEVICE int decompose(ScratchView s, Real fac) {
         // ip[14] is never read by the solve; the A(14,14) == 0 check is done
         // in lu_step<13> on the register value.
         int info = lu_step0_from_jac(s.fjac, A, s.ip, fac);
+        // ip now holds the composite row permutation (all 15 entries).
+        store_permutation(s.ip);
         return info;
 
 }
 DEVICE void solve(ScratchView s, Real* ak) {
 
-        lu_solve_batched(s.e, s.ip, ak);
+        lu_solve_perm(s.e, s.ip, ak);
 
 }
 DEVICE Real error_norm(ScratchView s) {
