@@ -93,7 +93,7 @@ DEVICE int integrate(ScratchView s) {
 
                 // One RHS/solve call site for all three stages (ak1, ak2, work
                 // are contiguous: stage k writes ak1 + 15*k).
-                for (int stage = 0; stage < 3; ++stage) {
+                [[loom::unroll]] for (int stage = 0; stage < 3; ++stage) {
                     Real* target = s.ak1 + 15 * stage;
                     // The stage state goes to the RHS in registers (ynew is only
                     // rewritten after the stages), and the k-vector term is formed
