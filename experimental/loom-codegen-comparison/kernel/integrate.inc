@@ -100,21 +100,24 @@ DEVICE int integrate(ScratchView s) {
                     // after the RHS from ak1/ak2, so nothing is stored and then
                     // reloaded from the same array before the RHS.
                     Real yv[15];
-                    if (stage == 0) {
-                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                            yv[i] = s.y[i];
-                        }
-                    } else if (stage == 1) {
+                    if (stage == 1) {
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
                             yv[i] = s.y[i] + C::a21 * s.ak1[i];
                         }
-                    } else {
+                    } else if (stage == 2) {
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
                             yv[i] = s.y[i] + C::a31 * s.ak1[i] + C::a32 * s.ak2[i];
                         }
                     }
                     Real dyv[15];
-                    CHEM_RHS(x, yv, dyv, s);
+                    if (stage == 0) {
+                        // Stage-0 RHS at (x, y): evaluated with the Jacobian.
+                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                            dyv[i] = s.dy[i];
+                        }
+                    } else {
+                        CHEM_RHS(x, yv, dyv, s);
+                    }
                     {
                         Real tv[15];
                         if (stage == 0) {

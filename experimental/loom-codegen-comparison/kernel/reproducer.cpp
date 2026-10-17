@@ -5747,9 +5747,17 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
 
     // jac_nuc writes the 146 structurally nonzero entries; the 79 zeros are
     // written once in burn_ros2s (jac_nuc_structural_zeros).
+    // The stage-0 RHS sees the same state (s.y is only rewritten on accept,
+    // which re-evaluates the Jacobian), so it is evaluated here once per
+    // Jacobian into s.dy, from the same T and xn, sharing the T-only rate
+    // coefficients with jac_nuc. The retry loop's stage 0 reads s.dy.
     BurnView b = s.burn;
     burn_state_from_y_view(s.y, b);
-    jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
+    const Real T = b.T[0];
+    const Real edot = rhs_eint(T, b.xn, default_redshift);
+    rhs_specie(T, s.dy, b.xn, default_redshift);
+    s.dy[14] = edot;
+    jac_nuc(T, s.fjac, b.xn, default_redshift);
 
 }
 DEVICE unsigned midx(unsigned row, unsigned column) {
