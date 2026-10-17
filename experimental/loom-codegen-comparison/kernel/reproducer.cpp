@@ -930,468 +930,468 @@ return ((rhs_eint_choice_40(x70, x71)) ? (
       rhs_eint_choice_41(x70, x71)
    ));
 }
-DEVICE auto rhs_eint_choice_43(bool x109, bool x118, bool x150, bool x151, bool x161) {
-return ((x109 & x118) ? (
-                                                                                                                                                                           x150 & x161
+DEVICE auto rhs_eint_choice_43(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull)) ? (
+                                                                                                                                                                           (((bits >> 28u) & 1ull) != 0ull) & (((bits >> 39u) & 1ull) != 0ull)
                                                                                                                                                                         )
                                                                                                                                                                         : (
-                                                                                                                                                                           x151 & x161
+                                                                                                                                                                           (((bits >> 29u) & 1ull) != 0ull) & (((bits >> 39u) & 1ull) != 0ull)
                                                                                                                                                                         ));
 }
-DEVICE auto rhs_eint_choice_44(bool x107, bool x109, bool x118, bool x149, bool x150, bool x151, bool x161) {
-return ((x107 & x118) ? (
-                                                                                                                                                                        x149 & x161
+DEVICE auto rhs_eint_choice_44(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull)) ? (
+                                                                                                                                                                        (((bits >> 27u) & 1ull) != 0ull) & (((bits >> 39u) & 1ull) != 0ull)
                                                                                                                                                                      )
                                                                                                                                                                      : (
-                                                                                                                                                                        rhs_eint_choice_43(x109, x118, x150, x151, x161)
+                                                                                                                                                                        rhs_eint_choice_43(bits)
                                                                                                                                                                      ));
 }
-DEVICE auto rhs_eint_choice_45(bool x105, bool x107, bool x109, bool x118, bool x148, bool x149, bool x150, bool x151, bool x161) {
-return ((x105 & x118) ? (
-                                                                                                                                                                     x148 & x161
+DEVICE auto rhs_eint_choice_45(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull)) ? (
+                                                                                                                                                                     (((bits >> 26u) & 1ull) != 0ull) & (((bits >> 39u) & 1ull) != 0ull)
                                                                                                                                                                   )
                                                                                                                                                                   : (
-                                                                                                                                                                     rhs_eint_choice_44(x107, x109, x118, x149, x150, x151, x161)
+                                                                                                                                                                     rhs_eint_choice_44(bits)
                                                                                                                                                                   ));
 }
-DEVICE auto rhs_eint_choice_46(bool x105, bool x107, bool x109, bool x116, bool x118, bool x142, bool x148, bool x149, bool x150, bool x151, bool x161) {
-return ((x116) ? (
-                                                                                                                                                                  x142 & x161
+DEVICE auto rhs_eint_choice_46(u64 bits) {
+return (((((bits >> 11u) & 1ull) != 0ull)) ? (
+                                                                                                                                                                  (((bits >> 21u) & 1ull) != 0ull) & (((bits >> 39u) & 1ull) != 0ull)
                                                                                                                                                                )
                                                                                                                                                                : (
-                                                                                                                                                                  rhs_eint_choice_45(x105, x107, x109, x118, x148, x149, x150, x151, x161)
+                                                                                                                                                                  rhs_eint_choice_45(bits)
                                                                                                                                                                ));
 }
-DEVICE auto rhs_eint_choice_47(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x161) {
-return ((x109 & x114 & x115) ? (
-                                                                                                                                                               x140 & x161
+DEVICE auto rhs_eint_choice_47(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull)) ? (
+                                                                                                                                                               (((bits >> 20u) & 1ull) != 0ull) & (((bits >> 39u) & 1ull) != 0ull)
                                                                                                                                                             )
                                                                                                                                                             : (
-                                                                                                                                                               rhs_eint_choice_46(x105, x107, x109, x116, x118, x142, x148, x149, x150, x151, x161)
+                                                                                                                                                               rhs_eint_choice_46(bits)
                                                                                                                                                             ));
 }
-DEVICE auto rhs_eint_choice_48(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x161) {
-return ((x107 & x114 & x115) ? (
-                                                                                                                                                            x138 & x161
+DEVICE auto rhs_eint_choice_48(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull)) ? (
+                                                                                                                                                            (((bits >> 19u) & 1ull) != 0ull) & (((bits >> 39u) & 1ull) != 0ull)
                                                                                                                                                          )
                                                                                                                                                          : (
-                                                                                                                                                            rhs_eint_choice_47(x105, x107, x109, x114, x115, x116, x118, x140, x142, x148, x149, x150, x151, x161)
+                                                                                                                                                            rhs_eint_choice_47(bits)
                                                                                                                                                          ));
 }
-DEVICE auto rhs_eint_choice_49(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x161) {
-return ((x105 & x114 & x115) ? (
-                                                                                                                                                         x135 & x161
+DEVICE auto rhs_eint_choice_49(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull)) ? (
+                                                                                                                                                         (((bits >> 18u) & 1ull) != 0ull) & (((bits >> 39u) & 1ull) != 0ull)
                                                                                                                                                       )
                                                                                                                                                       : (
-                                                                                                                                                         rhs_eint_choice_48(x105, x107, x109, x114, x115, x116, x118, x138, x140, x142, x148, x149, x150, x151, x161)
+                                                                                                                                                         rhs_eint_choice_48(bits)
                                                                                                                                                       ));
 }
-DEVICE auto rhs_eint_choice_50(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x161, bool x88) {
-return ((x88 & (x105 | x88) & (x107 | x88) & (x109 | x88) & (x114 | x88) & (x115 | x88) & (x118 | x88) & (x105 | x107 | x88) & (x105 | x109 | x88) & (x105 | x114 | x88) & (x105 | x115 | x88) & (x105 | x118 | x88) & (x107 | x109 | x88) & (x107 | x114 | x88) & (x107 | x115 | x88) & (x107 | x118 | x88) & (x109 | x114 | x88) & (x109 | x115 | x88) & (x109 | x118 | x88) & (x114 | x115 | x88) & (x115 | x118 | x88) & (x105 | x107 | x109 | x88) & (x105 | x107 | x114 | x88) & (x105 | x107 | x115 | x88) & (x105 | x107 | x118 | x88) & (x105 | x109 | x114 | x88) & (x105 | x109 | x115 | x88) & (x105 | x109 | x118 | x88) & (x105 | x114 | x115 | x88) & (x105 | x115 | x118 | x88) & (x107 | x109 | x114 | x88) & (x107 | x109 | x115 | x88) & (x107 | x109 | x118 | x88) & (x107 | x114 | x115 | x88) & (x107 | x115 | x118 | x88) & (x109 | x114 | x115 | x88) & (x109 | x115 | x118 | x88) & (x105 | x107 | x109 | x114 | x88) & (x105 | x107 | x109 | x115 | x88) & (x105 | x107 | x109 | x118 | x88) & (x105 | x107 | x114 | x115 | x88) & (x105 | x107 | x115 | x118 | x88) & (x105 | x109 | x114 | x115 | x88) & (x105 | x109 | x115 | x118 | x88) & (x107 | x109 | x114 | x115 | x88) & (x107 | x109 | x115 | x118 | x88) & (x105 | x107 | x109 | x114 | x115 | x88) & (x105 | x107 | x109 | x115 | x118 | x88)) ? (
+DEVICE auto rhs_eint_choice_50(u64 bits) {
+return (((((bits >> 3u) & 1ull) != 0ull) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 8u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 9u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 8u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 8u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 8u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 9u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 10u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 8u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 8u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 9u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull)) & ((((bits >> 6u) & 1ull) != 0ull) | (((bits >> 7u) & 1ull) != 0ull) | (((bits >> 8u) & 1ull) != 0ull) | (((bits >> 10u) & 1ull) != 0ull) | (((bits >> 12u) & 1ull) != 0ull) | (((bits >> 3u) & 1ull) != 0ull))) ? (
                                                                                                                                                       false
                                                                                                                                                    )
                                                                                                                                                    : (
-                                                                                                                                                      rhs_eint_choice_49(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x161)
+                                                                                                                                                      rhs_eint_choice_49(bits)
                                                                                                                                                    ));
 }
-DEVICE auto rhs_eint_choice_51(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x159, bool x160, bool x161, bool x85, bool x88) {
-return ((x85) ? (
-                                                                                                                                                   x159 & x160
+DEVICE auto rhs_eint_choice_51(u64 bits) {
+return (((((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                                                                                   (((bits >> 37u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                                                 )
                                                                                                                                                 : (
-                                                                                                                                                   rhs_eint_choice_50(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x161, x88)
+                                                                                                                                                   rhs_eint_choice_50(bits)
                                                                                                                                                 ));
 }
-DEVICE auto rhs_eint_choice_52(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88) {
-return ((x109 & x85) ? (
-                                                                                                                                                x158 & x160
+DEVICE auto rhs_eint_choice_52(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                                                                                (((bits >> 36u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                                              )
                                                                                                                                              : (
-                                                                                                                                                rhs_eint_choice_51(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x159, x160, x161, x85, x88)
+                                                                                                                                                rhs_eint_choice_51(bits)
                                                                                                                                              ));
 }
-DEVICE auto rhs_eint_choice_53(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88) {
-return ((x107 & x85) ? (
-                                                                                                                                             x157 & x160
+DEVICE auto rhs_eint_choice_53(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                                                                             (((bits >> 35u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                                           )
                                                                                                                                           : (
-                                                                                                                                             rhs_eint_choice_52(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x158, x159, x160, x161, x85, x88)
+                                                                                                                                             rhs_eint_choice_52(bits)
                                                                                                                                           ));
 }
-DEVICE auto rhs_eint_choice_54(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88) {
-return ((x105 & x85) ? (
-                                                                                                                                          x156 & x160
+DEVICE auto rhs_eint_choice_54(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                                                                          (((bits >> 34u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                                        )
                                                                                                                                        : (
-                                                                                                                                          rhs_eint_choice_53(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x157, x158, x159, x160, x161, x85, x88)
+                                                                                                                                          rhs_eint_choice_53(bits)
                                                                                                                                        ));
 }
-DEVICE auto rhs_eint_choice_55(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x98) {
-return ((x98) ? (
-                                                                                                                                       x155 & x160
+DEVICE auto rhs_eint_choice_55(u64 bits) {
+return (((((bits >> 5u) & 1ull) != 0ull)) ? (
+                                                                                                                                       (((bits >> 33u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                                     )
                                                                                                                                     : (
-                                                                                                                                       rhs_eint_choice_54(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x156, x157, x158, x159, x160, x161, x85, x88)
+                                                                                                                                       rhs_eint_choice_54(bits)
                                                                                                                                     ));
 }
-DEVICE auto rhs_eint_choice_56(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x85 & x97) ? (
-                                                                                                                                    x154 & x160
+DEVICE auto rhs_eint_choice_56(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                                                                                    (((bits >> 32u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                                  )
                                                                                                                                  : (
-                                                                                                                                    rhs_eint_choice_55(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x155, x156, x157, x158, x159, x160, x161, x85, x88, x98)
+                                                                                                                                    rhs_eint_choice_55(bits)
                                                                                                                                  ));
 }
-DEVICE auto rhs_eint_choice_57(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x85 & x97) ? (
-                                                                                                                                 x153 & x160
+DEVICE auto rhs_eint_choice_57(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                                                                                 (((bits >> 31u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                               )
                                                                                                                               : (
-                                                                                                                                 rhs_eint_choice_56(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                                                 rhs_eint_choice_56(bits)
                                                                                                                               ));
 }
-DEVICE auto rhs_eint_choice_58(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x85 & x97) ? (
-                                                                                                                              x152 & x160
+DEVICE auto rhs_eint_choice_58(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                                                                              (((bits >> 30u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                            )
                                                                                                                            : (
-                                                                                                                              rhs_eint_choice_57(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                                              rhs_eint_choice_57(bits)
                                                                                                                            ));
 }
-DEVICE auto rhs_eint_choice_59(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x118 & x85) ? (
-                                                                                                                           x151 & x160
+DEVICE auto rhs_eint_choice_59(u64 bits) {
+return (((((bits >> 12u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                                                           (((bits >> 29u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                         )
                                                                                                                         : (
-                                                                                                                           rhs_eint_choice_58(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                                           rhs_eint_choice_58(bits)
                                                                                                                         ));
 }
-DEVICE auto rhs_eint_choice_60(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x118 & x85) ? (
-                                                                                                                        x150 & x160
+DEVICE auto rhs_eint_choice_60(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                                                        (((bits >> 28u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                      )
                                                                                                                      : (
-                                                                                                                        rhs_eint_choice_59(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                                        rhs_eint_choice_59(bits)
                                                                                                                      ));
 }
-DEVICE auto rhs_eint_choice_61(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x118 & x85) ? (
-                                                                                                                     x149 & x160
+DEVICE auto rhs_eint_choice_61(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                                                     (((bits >> 27u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                   )
                                                                                                                   : (
-                                                                                                                     rhs_eint_choice_60(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                                     rhs_eint_choice_60(bits)
                                                                                                                   ));
 }
-DEVICE auto rhs_eint_choice_62(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x118 & x85) ? (
-                                                                                                                  x148 & x160
+DEVICE auto rhs_eint_choice_62(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                                                  (((bits >> 26u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                                )
                                                                                                                : (
-                                                                                                                  rhs_eint_choice_61(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                                  rhs_eint_choice_61(bits)
                                                                                                                ));
 }
-DEVICE auto rhs_eint_choice_63(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x118 & x85 & x97) ? (
-                                                                                                               x147 & x160
+DEVICE auto rhs_eint_choice_63(u64 bits) {
+return (((((bits >> 12u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                                                               (((bits >> 25u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                             )
                                                                                                             : (
-                                                                                                               rhs_eint_choice_62(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                               rhs_eint_choice_62(bits)
                                                                                                             ));
 }
-DEVICE auto rhs_eint_choice_64(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x118 & x85 & x97) ? (
-                                                                                                            x146 & x160
+DEVICE auto rhs_eint_choice_64(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                                                            (((bits >> 24u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                          )
                                                                                                          : (
-                                                                                                            rhs_eint_choice_63(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                            rhs_eint_choice_63(bits)
                                                                                                          ));
 }
-DEVICE auto rhs_eint_choice_65(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x118 & x85 & x97) ? (
-                                                                                                         x145 & x160
+DEVICE auto rhs_eint_choice_65(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                                                         (((bits >> 23u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                       )
                                                                                                       : (
-                                                                                                         rhs_eint_choice_64(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                         rhs_eint_choice_64(bits)
                                                                                                       ));
 }
-DEVICE auto rhs_eint_choice_66(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x118 & x85 & x97) ? (
-                                                                                                      x144 & x160
+DEVICE auto rhs_eint_choice_66(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                                                      (((bits >> 22u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                    )
                                                                                                    : (
-                                                                                                      rhs_eint_choice_65(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                      rhs_eint_choice_65(bits)
                                                                                                    ));
 }
-DEVICE auto rhs_eint_choice_67(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x114 & x115 & x85) ? (
-                                                                                                   x142 & x160
+DEVICE auto rhs_eint_choice_67(u64 bits) {
+return (((((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                                   (((bits >> 21u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                                 )
                                                                                                 : (
-                                                                                                   rhs_eint_choice_66(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                   rhs_eint_choice_66(bits)
                                                                                                 ));
 }
-DEVICE auto rhs_eint_choice_68(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x114 & x115 & x85) ? (
-                                                                                                x140 & x160
+DEVICE auto rhs_eint_choice_68(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                                (((bits >> 20u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                              )
                                                                                              : (
-                                                                                                rhs_eint_choice_67(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                                rhs_eint_choice_67(bits)
                                                                                              ));
 }
-DEVICE auto rhs_eint_choice_69(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x114 & x115 & x85) ? (
-                                                                                             x138 & x160
+DEVICE auto rhs_eint_choice_69(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                             (((bits >> 19u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                           )
                                                                                           : (
-                                                                                             rhs_eint_choice_68(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                             rhs_eint_choice_68(bits)
                                                                                           ));
 }
-DEVICE auto rhs_eint_choice_70(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x114 & x115 & x85) ? (
-                                                                                          x135 & x160
+DEVICE auto rhs_eint_choice_70(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull)) ? (
+                                                                                          (((bits >> 18u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                        )
                                                                                        : (
-                                                                                          rhs_eint_choice_69(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                          rhs_eint_choice_69(bits)
                                                                                        ));
 }
-DEVICE auto rhs_eint_choice_71(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x114 & x115 & x85 & x97) ? (
-                                                                                       x132 & x160
+DEVICE auto rhs_eint_choice_71(u64 bits) {
+return (((((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                                       (((bits >> 17u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                     )
                                                                                     : (
-                                                                                       rhs_eint_choice_70(x105, x107, x109, x114, x115, x116, x118, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                       rhs_eint_choice_70(bits)
                                                                                     ));
 }
-DEVICE auto rhs_eint_choice_72(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x114 & x115 & x85 & x97) ? (
-                                                                                    x130 & x160
+DEVICE auto rhs_eint_choice_72(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                                    (((bits >> 16u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                                  )
                                                                                  : (
-                                                                                    rhs_eint_choice_71(x105, x107, x109, x114, x115, x116, x118, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                    rhs_eint_choice_71(bits)
                                                                                  ));
 }
-DEVICE auto rhs_eint_choice_73(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x114 & x115 & x85 & x97) ? (
-                                                                                 x128 & x160
+DEVICE auto rhs_eint_choice_73(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                                 (((bits >> 15u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                               )
                                                                               : (
-                                                                                 rhs_eint_choice_72(x105, x107, x109, x114, x115, x116, x118, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                                 rhs_eint_choice_72(bits)
                                                                               ));
 }
-DEVICE auto rhs_eint_choice_74(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x114 & x115 & x85 & x97) ? (
-                                                                              x125 & x160
+DEVICE auto rhs_eint_choice_74(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                                              (((bits >> 14u) & 1ull) != 0ull) & (((bits >> 38u) & 1ull) != 0ull)
                                                                            )
                                                                            : (
-                                                                              rhs_eint_choice_73(x105, x107, x109, x114, x115, x116, x118, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                              rhs_eint_choice_73(bits)
                                                                            ));
 }
-DEVICE auto rhs_eint_choice_75(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x73) ? (
-                                                                           x120 & x159
+DEVICE auto rhs_eint_choice_75(u64 bits) {
+return (((((bits >> 1u) & 1ull) != 0ull)) ? (
+                                                                           (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 37u) & 1ull) != 0ull)
                                                                         )
                                                                         : (
-                                                                           rhs_eint_choice_74(x105, x107, x109, x114, x115, x116, x118, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x85, x88, x97, x98)
+                                                                           rhs_eint_choice_74(bits)
                                                                         ));
 }
-DEVICE auto rhs_eint_choice_76(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x73) ? (
-                                                                        x120 & x158
+DEVICE auto rhs_eint_choice_76(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                                                                        (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 36u) & 1ull) != 0ull)
                                                                      )
                                                                      : (
-                                                                        rhs_eint_choice_75(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                                                        rhs_eint_choice_75(bits)
                                                                      ));
 }
-DEVICE auto rhs_eint_choice_77(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x73) ? (
-                                                                     x120 & x157
+DEVICE auto rhs_eint_choice_77(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                                                                     (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 35u) & 1ull) != 0ull)
                                                                   )
                                                                   : (
-                                                                     rhs_eint_choice_76(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                                                     rhs_eint_choice_76(bits)
                                                                   ));
 }
-DEVICE auto rhs_eint_choice_78(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x73) ? (
-                                                                  x120 & x156
+DEVICE auto rhs_eint_choice_78(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                                                                  (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 34u) & 1ull) != 0ull)
                                                                )
                                                                : (
-                                                                  rhs_eint_choice_77(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                                                  rhs_eint_choice_77(bits)
                                                                ));
 }
-DEVICE auto rhs_eint_choice_79(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x73 & x85 & x97) ? (
-                                                               x120 & x155
+DEVICE auto rhs_eint_choice_79(u64 bits) {
+return (((((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                               (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 33u) & 1ull) != 0ull)
                                                             )
                                                             : (
-                                                               rhs_eint_choice_78(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                                               rhs_eint_choice_78(bits)
                                                             ));
 }
-DEVICE auto rhs_eint_choice_80(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x73 & x85 & x97) ? (
-                                                            x120 & x154
+DEVICE auto rhs_eint_choice_80(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                            (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 32u) & 1ull) != 0ull)
                                                          )
                                                          : (
-                                                            rhs_eint_choice_79(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                                            rhs_eint_choice_79(bits)
                                                          ));
 }
-DEVICE auto rhs_eint_choice_81(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x73 & x85 & x97) ? (
-                                                         x120 & x153
+DEVICE auto rhs_eint_choice_81(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                         (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 31u) & 1ull) != 0ull)
                                                       )
                                                       : (
-                                                         rhs_eint_choice_80(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                                         rhs_eint_choice_80(bits)
                                                       ));
 }
-DEVICE auto rhs_eint_choice_82(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x73 & x85 & x97) ? (
-                                                      x120 & x152
+DEVICE auto rhs_eint_choice_82(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                                      (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 30u) & 1ull) != 0ull)
                                                    )
                                                    : (
-                                                      rhs_eint_choice_81(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                                      rhs_eint_choice_81(bits)
                                                    ));
 }
-DEVICE auto rhs_eint_choice_83(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x118 & x73) ? (
-                                                   x120 & x151
+DEVICE auto rhs_eint_choice_83(u64 bits) {
+return (((((bits >> 12u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                                                   (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 29u) & 1ull) != 0ull)
                                                 )
                                                 : (
-                                                   rhs_eint_choice_82(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                                   rhs_eint_choice_82(bits)
                                                 ));
 }
-DEVICE auto rhs_eint_choice_84(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x118 & x73) ? (
-                                                x120 & x150
+DEVICE auto rhs_eint_choice_84(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                                                (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 28u) & 1ull) != 0ull)
                                              )
                                              : (
-                                                rhs_eint_choice_83(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                                rhs_eint_choice_83(bits)
                                              ));
 }
-DEVICE auto rhs_eint_choice_85(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x118 & x73) ? (
-                                             x120 & x149
+DEVICE auto rhs_eint_choice_85(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                                             (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 27u) & 1ull) != 0ull)
                                           )
                                           : (
-                                             rhs_eint_choice_84(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                             rhs_eint_choice_84(bits)
                                           ));
 }
-DEVICE auto rhs_eint_choice_86(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x118 & x73) ? (
-                                          x120 & x148
+DEVICE auto rhs_eint_choice_86(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                                          (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 26u) & 1ull) != 0ull)
                                        )
                                        : (
-                                          rhs_eint_choice_85(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                          rhs_eint_choice_85(bits)
                                        ));
 }
-DEVICE auto rhs_eint_choice_87(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x118 & x73 & x85 & x97) ? (
-                                       x120 & x147
+DEVICE auto rhs_eint_choice_87(u64 bits) {
+return (((((bits >> 12u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                       (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 25u) & 1ull) != 0ull)
                                     )
                                     : (
-                                       rhs_eint_choice_86(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                       rhs_eint_choice_86(bits)
                                     ));
 }
-DEVICE auto rhs_eint_choice_88(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x118 & x73 & x85 & x97) ? (
-                                    x120 & x146
+DEVICE auto rhs_eint_choice_88(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                    (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 24u) & 1ull) != 0ull)
                                  )
                                  : (
-                                    rhs_eint_choice_87(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                    rhs_eint_choice_87(bits)
                                  ));
 }
-DEVICE auto rhs_eint_choice_89(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x118 & x73 & x85 & x97) ? (
-                                 x120 & x145
+DEVICE auto rhs_eint_choice_89(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                                 (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 23u) & 1ull) != 0ull)
                               )
                               : (
-                                 rhs_eint_choice_88(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                                 rhs_eint_choice_88(bits)
                               ));
 }
-DEVICE auto rhs_eint_choice_90(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x118 & x73 & x85 & x97) ? (
-                              x120 & x144
+DEVICE auto rhs_eint_choice_90(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 12u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+                              (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 22u) & 1ull) != 0ull)
                            )
                            : (
-                              rhs_eint_choice_89(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                              rhs_eint_choice_89(bits)
                            ));
 }
-DEVICE auto rhs_eint_choice_91(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x114 & x115 & x73) ? (
-                           x120 & x142
+DEVICE auto rhs_eint_choice_91(u64 bits) {
+return (((((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                           (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 21u) & 1ull) != 0ull)
                         )
                         : (
-                           rhs_eint_choice_90(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                           rhs_eint_choice_90(bits)
                         ));
 }
-DEVICE auto rhs_eint_choice_92(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x114 & x115 & x73) ? (
-                        x120 & x140
+DEVICE auto rhs_eint_choice_92(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                        (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 20u) & 1ull) != 0ull)
                      )
                      : (
-                        rhs_eint_choice_91(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                        rhs_eint_choice_91(bits)
                      ));
 }
-DEVICE auto rhs_eint_choice_93(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x114 & x115 & x73) ? (
-                     x120 & x138
+DEVICE auto rhs_eint_choice_93(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                     (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 19u) & 1ull) != 0ull)
                   )
                   : (
-                     rhs_eint_choice_92(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                     rhs_eint_choice_92(bits)
                   ));
 }
-DEVICE auto rhs_eint_choice_94(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x114 & x115 & x73) ? (
-                  x120 & x135
+DEVICE auto rhs_eint_choice_94(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull)) ? (
+                  (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 18u) & 1ull) != 0ull)
                )
                : (
-                  rhs_eint_choice_93(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+                  rhs_eint_choice_93(bits)
                ));
 }
-DEVICE auto rhs_eint_choice_95(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x114 & x115 & x73 & x85 & x97) ? (
-               x120 & x132
+DEVICE auto rhs_eint_choice_95(u64 bits) {
+return (((((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+               (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 17u) & 1ull) != 0ull)
             )
             : (
-               rhs_eint_choice_94(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+               rhs_eint_choice_94(bits)
             ));
 }
-DEVICE auto rhs_eint_choice_96(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x114 & x115 & x73 & x85 & x97) ? (
-            x120 & x130
+DEVICE auto rhs_eint_choice_96(u64 bits) {
+return (((((bits >> 8u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+            (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 16u) & 1ull) != 0ull)
          )
          : (
-            rhs_eint_choice_95(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+            rhs_eint_choice_95(bits)
          ));
 }
-DEVICE auto rhs_eint_choice_97(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x114 & x115 & x73 & x85 & x97) ? (
-         x120 & x128
+DEVICE auto rhs_eint_choice_97(u64 bits) {
+return (((((bits >> 7u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+         (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 15u) & 1ull) != 0ull)
       )
       : (
-         rhs_eint_choice_96(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+         rhs_eint_choice_96(bits)
       ));
 }
-DEVICE auto rhs_eint_choice_98(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x114 & x115 & x73 & x85 & x97) ? (
-      x120 & x125
+DEVICE auto rhs_eint_choice_98(u64 bits) {
+return (((((bits >> 6u) & 1ull) != 0ull) & (((bits >> 9u) & 1ull) != 0ull) & (((bits >> 10u) & 1ull) != 0ull) & (((bits >> 1u) & 1ull) != 0ull) & (((bits >> 2u) & 1ull) != 0ull) & (((bits >> 4u) & 1ull) != 0ull)) ? (
+      (((bits >> 13u) & 1ull) != 0ull) & (((bits >> 14u) & 1ull) != 0ull)
    )
    : (
-      rhs_eint_choice_97(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
+      rhs_eint_choice_97(bits)
    ));
 }
-DEVICE auto rhs_eint_choice_99(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, Real x119, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, Real x89, bool x97, bool x98) {
-return ((rhs_eint_choice_98(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)) ? (
+DEVICE auto rhs_eint_choice_99(u64 bits, Real x119, Real x89) {
+return ((rhs_eint_choice_98(bits)) ? (
       x119*x89/(x119 + x89)
    )
    : (
       0
    ));
 }
-DEVICE auto rhs_eint_choice_100(Real T, bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, Real x119, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x70, Real x71, bool x73, bool x85, bool x88, Real x89, bool x97, bool x98, const Real* xn) {
+DEVICE auto rhs_eint_choice_100(Real T, u64 bits, Real x119, Real x71, Real x89, const Real* xn) {
 return ((T < 2.0) ? (
    0
 )
 : (
-   xn[8]*rhs_eint_choice_42(x70, x71)*rhs_eint_choice_99(x105, x107, x109, x114, x115, x116, x118, x119, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x89, x97, x98)
+   xn[8]*rhs_eint_choice_42((((bits >> 0u) & 1ull) != 0ull), x71)*rhs_eint_choice_99(bits, x119, x89)
 ));
 }
 DEVICE auto rhs_eint_choice_101(Real T, Real x25, Real x26, Real x35, Real x41, Real x42, Real x43, Real x44, Real x45, Real x47, Real x48, Real x49, Real x5, Real x50, Real x51, Real x52, Real x53, Real x54, const Real* xn) {
@@ -1731,7 +1731,50 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     Real x161 = 5.5313336794064847e-19/(0.0024787521766663585*math::exp(x86) + 1.0) >= 1.0e-99;
 
 
-    return (x1*(-3.1438547368704001e-21*math::exp((0.34999999999999998)*math::log(math::abs(T)))*xn[0]*xn[8]*math::exp(-102000.0*x4) - 0.00022681492*((((T)*(T)))*(((T)*(T))))*x0*x58*rhs_eint_choice_36(x55, x57, x58, x59, x60, x61, x62, x63, x64, x66, x67, x68, x69) + 0.00084373771595996178*T*(1.3806479999999999e-16*xn[0] + 1.3806479999999999e-16*xn[1] + 1.3806479999999999e-16*xn[10] + 1.3806479999999999e-16*xn[11] + 1.3806479999999999e-16*xn[12] + 1.3806479999999999e-16*xn[13] + 1.3806479999999999e-16*xn[2] + 1.3806479999999999e-16*xn[3] + 1.3806479999999999e-16*xn[4] + 1.3806479999999999e-16*xn[5] + 1.3806479999999999e-16*xn[6] + 1.3806479999999999e-16*xn[7] + 1.3806479999999999e-16*xn[8] + 1.3806479999999999e-16*xn[9])/(math::sqrt(x1)*x22) - 2.1299999999999999e-27*xn[0]*x2*(4.0*xn[11] + x3) - 5.6500000000000001e-36*xn[0]*(T - x5)*((((z + 1.0)*(z + 1.0)))*(((z + 1.0)*(z + 1.0)))) - 3.4635323838154264e-26*xn[1]*x14 - 1.3854129535261706e-25*xn[11]*x14 - 9.3799999999999993e-22*xn[13]*x10*x12*math::exp(-285335.40000000002*x8) + 7.1777505408000004e-12*((xn[2])*(xn[2])*(xn[2]))*x18*(2.0000000000000002e-31*x15 + 6.0000000000000001e-32*x21) + 7.1777505408000004e-12*((xn[2])*(xn[2]))*xn[8]*x18*(2.5000000000000002e-32*x15 + 7.5000000000000001e-33*x21) + 5.6556829037999995e-12*xn[2]*xn[3]*x18*(1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T))))/(0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0) + 1.75918975308e-21*xn[2]*xn[6]*x18 - 7.1777505408000004e-12*xn[2]*xn[8]*(math::exp((42.707410000000003*x23*x25 - 2.0273650000000001*x29 - 21467.790000000001*x4 - 1657.4099999999999*x4/(math::exp((x39)*math::log(math::abs(math::exp((-x38 - 8.1313220000000008)*math::log(math::abs(10.0)))*x17))) + 1.0) - x40 - 142.7664 - (70.138370000000009*x23*x25 + 11.28215*x25*math::log(14254.549999999999*x4 + 1.0) - 4.7035149999999994*x29 - x40 - 203.11568)/(math::exp((x39)*math::log(math::abs(math::exp((-x38 - 9.3055640000000004)*math::log(math::abs(10.0)))*x17))) + 1.0))*math::log(math::abs(10.0))) + math::exp((43.20243*x26*x28 - 68.422430000000006*x34 - x37 - 23705.700000000001*x4 - 2080.4099999999999*x4/(math::exp((x33)*math::log(math::abs(math::exp((-x30 - 13.656822)*math::log(math::abs(10.0)))*x17))) + 1.0) - 178.4239 - (19.734269999999999*x25*math::log(16780.950000000001*x4 + 1.0) + 37.886913*x26*x28 - 14.509090000000008*x34 - x37 - 307.31920000000002)/(math::exp((x33)*math::log(math::abs(math::exp((-x30 - 14.82123)*math::log(math::abs(10.0)))*x17))) + 1.0))*math::log(math::abs(10.0)))) - 7.1777505408000004e-12*((xn[8])*(xn[8]))*math::exp((x27)*math::log(math::abs(1.1800000000000001e-10*math::exp(-69500.0*x4))))*math::exp((1.0 - x27)*math::log(math::abs(8.1250000000000003e-8*x15*(1.0 - math::exp(-6000.0*x4))*math::exp(-52000.0*x4)))) - 1.2700000000000001e-21*x10*x13*math::exp(-157809.10000000001*x8) - 4.9500000000000001e-22*x10*x19*math::exp(-631515.0*x8) - 7.4999999999999996e-19*x13*math::exp(-118348.0*x8) - 5.5399999999999998e-17*x19*rhs_eint_choice_37(T, x6)*math::exp(-473638.0*x8) - 5.0099999999999997e-27*x20*math::exp(-55338.0*x8) - 9.1000000000000001e-27*x20*math::exp(-13179.0*x8) - 1.24e-13*x7*(1.0 + 0.29999999999999999*math::exp(-94000.0*x8))*rhs_eint_choice_38(T, x6)*math::exp(-470000.0*x8) - 1.5499999999999999e-26*x7*rhs_eint_choice_39(T, x6) - rhs_eint_choice_100(T, x105, x107, x109, x114, x115, x116, x118, x119, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x70, x71, x73, x85, x88, x89, x97, x98, xn) - rhs_eint_choice_101(T, x25, x26, x35, x41, x42, x43, x44, x45, x47, x48, x49, x5, x50, x51, x52, x53, x54, xn)));
+    // The piecewise selector conditions packed one bit each (bool(x) == (x != 0)),
+    // so they live in one 64-bit lane value instead of many lane masks.
+    const u64 bits =
+        (static_cast<u64>(x70 != 0.0) << 0u) |
+        (static_cast<u64>(x73 != 0.0) << 1u) |
+        (static_cast<u64>(x85 != 0.0) << 2u) |
+        (static_cast<u64>(x88 != 0.0) << 3u) |
+        (static_cast<u64>(x97 != 0.0) << 4u) |
+        (static_cast<u64>(x98 != 0.0) << 5u) |
+        (static_cast<u64>(x105 != 0.0) << 6u) |
+        (static_cast<u64>(x107 != 0.0) << 7u) |
+        (static_cast<u64>(x109 != 0.0) << 8u) |
+        (static_cast<u64>(x114 != 0.0) << 9u) |
+        (static_cast<u64>(x115 != 0.0) << 10u) |
+        (static_cast<u64>(x116 != 0.0) << 11u) |
+        (static_cast<u64>(x118 != 0.0) << 12u) |
+        (static_cast<u64>(x120 != 0.0) << 13u) |
+        (static_cast<u64>(x125 != 0.0) << 14u) |
+        (static_cast<u64>(x128 != 0.0) << 15u) |
+        (static_cast<u64>(x130 != 0.0) << 16u) |
+        (static_cast<u64>(x132 != 0.0) << 17u) |
+        (static_cast<u64>(x135 != 0.0) << 18u) |
+        (static_cast<u64>(x138 != 0.0) << 19u) |
+        (static_cast<u64>(x140 != 0.0) << 20u) |
+        (static_cast<u64>(x142 != 0.0) << 21u) |
+        (static_cast<u64>(x144 != 0.0) << 22u) |
+        (static_cast<u64>(x145 != 0.0) << 23u) |
+        (static_cast<u64>(x146 != 0.0) << 24u) |
+        (static_cast<u64>(x147 != 0.0) << 25u) |
+        (static_cast<u64>(x148 != 0.0) << 26u) |
+        (static_cast<u64>(x149 != 0.0) << 27u) |
+        (static_cast<u64>(x150 != 0.0) << 28u) |
+        (static_cast<u64>(x151 != 0.0) << 29u) |
+        (static_cast<u64>(x152 != 0.0) << 30u) |
+        (static_cast<u64>(x153 != 0.0) << 31u) |
+        (static_cast<u64>(x154 != 0.0) << 32u) |
+        (static_cast<u64>(x155 != 0.0) << 33u) |
+        (static_cast<u64>(x156 != 0.0) << 34u) |
+        (static_cast<u64>(x157 != 0.0) << 35u) |
+        (static_cast<u64>(x158 != 0.0) << 36u) |
+        (static_cast<u64>(x159 != 0.0) << 37u) |
+        (static_cast<u64>(x160 != 0.0) << 38u) |
+        (static_cast<u64>(x161 != 0.0) << 39u);
+    return (x1*(-3.1438547368704001e-21*math::exp((0.34999999999999998)*math::log(math::abs(T)))*xn[0]*xn[8]*math::exp(-102000.0*x4) - 0.00022681492*((((T)*(T)))*(((T)*(T))))*x0*x58*rhs_eint_choice_36(x55, x57, x58, x59, x60, x61, x62, x63, x64, x66, x67, x68, x69) + 0.00084373771595996178*T*(1.3806479999999999e-16*xn[0] + 1.3806479999999999e-16*xn[1] + 1.3806479999999999e-16*xn[10] + 1.3806479999999999e-16*xn[11] + 1.3806479999999999e-16*xn[12] + 1.3806479999999999e-16*xn[13] + 1.3806479999999999e-16*xn[2] + 1.3806479999999999e-16*xn[3] + 1.3806479999999999e-16*xn[4] + 1.3806479999999999e-16*xn[5] + 1.3806479999999999e-16*xn[6] + 1.3806479999999999e-16*xn[7] + 1.3806479999999999e-16*xn[8] + 1.3806479999999999e-16*xn[9])/(math::sqrt(x1)*x22) - 2.1299999999999999e-27*xn[0]*x2*(4.0*xn[11] + x3) - 5.6500000000000001e-36*xn[0]*(T - x5)*((((z + 1.0)*(z + 1.0)))*(((z + 1.0)*(z + 1.0)))) - 3.4635323838154264e-26*xn[1]*x14 - 1.3854129535261706e-25*xn[11]*x14 - 9.3799999999999993e-22*xn[13]*x10*x12*math::exp(-285335.40000000002*x8) + 7.1777505408000004e-12*((xn[2])*(xn[2])*(xn[2]))*x18*(2.0000000000000002e-31*x15 + 6.0000000000000001e-32*x21) + 7.1777505408000004e-12*((xn[2])*(xn[2]))*xn[8]*x18*(2.5000000000000002e-32*x15 + 7.5000000000000001e-33*x21) + 5.6556829037999995e-12*xn[2]*xn[3]*x18*(1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T))))/(0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0) + 1.75918975308e-21*xn[2]*xn[6]*x18 - 7.1777505408000004e-12*xn[2]*xn[8]*(math::exp((42.707410000000003*x23*x25 - 2.0273650000000001*x29 - 21467.790000000001*x4 - 1657.4099999999999*x4/(math::exp((x39)*math::log(math::abs(math::exp((-x38 - 8.1313220000000008)*math::log(math::abs(10.0)))*x17))) + 1.0) - x40 - 142.7664 - (70.138370000000009*x23*x25 + 11.28215*x25*math::log(14254.549999999999*x4 + 1.0) - 4.7035149999999994*x29 - x40 - 203.11568)/(math::exp((x39)*math::log(math::abs(math::exp((-x38 - 9.3055640000000004)*math::log(math::abs(10.0)))*x17))) + 1.0))*math::log(math::abs(10.0))) + math::exp((43.20243*x26*x28 - 68.422430000000006*x34 - x37 - 23705.700000000001*x4 - 2080.4099999999999*x4/(math::exp((x33)*math::log(math::abs(math::exp((-x30 - 13.656822)*math::log(math::abs(10.0)))*x17))) + 1.0) - 178.4239 - (19.734269999999999*x25*math::log(16780.950000000001*x4 + 1.0) + 37.886913*x26*x28 - 14.509090000000008*x34 - x37 - 307.31920000000002)/(math::exp((x33)*math::log(math::abs(math::exp((-x30 - 14.82123)*math::log(math::abs(10.0)))*x17))) + 1.0))*math::log(math::abs(10.0)))) - 7.1777505408000004e-12*((xn[8])*(xn[8]))*math::exp((x27)*math::log(math::abs(1.1800000000000001e-10*math::exp(-69500.0*x4))))*math::exp((1.0 - x27)*math::log(math::abs(8.1250000000000003e-8*x15*(1.0 - math::exp(-6000.0*x4))*math::exp(-52000.0*x4)))) - 1.2700000000000001e-21*x10*x13*math::exp(-157809.10000000001*x8) - 4.9500000000000001e-22*x10*x19*math::exp(-631515.0*x8) - 7.4999999999999996e-19*x13*math::exp(-118348.0*x8) - 5.5399999999999998e-17*x19*rhs_eint_choice_37(T, x6)*math::exp(-473638.0*x8) - 5.0099999999999997e-27*x20*math::exp(-55338.0*x8) - 9.1000000000000001e-27*x20*math::exp(-13179.0*x8) - 1.24e-13*x7*(1.0 + 0.29999999999999999*math::exp(-94000.0*x8))*rhs_eint_choice_38(T, x6)*math::exp(-470000.0*x8) - 1.5499999999999999e-26*x7*rhs_eint_choice_39(T, x6) - rhs_eint_choice_100(T, bits, x119, x71, x89, xn) - rhs_eint_choice_101(T, x25, x26, x35, x41, x42, x43, x44, x45, x47, x48, x49, x5, x50, x51, x52, x53, x54, xn)));
 
 }
 DEVICE auto jac_nuc_choice_0(Real T, Real x23, Real x24, Real x25, bool x26) {
@@ -5776,10 +5819,23 @@ DEVICE unsigned lu_pivot_search(const Real* A) {
 // The pivot for column K arrives precomputed: the previous step's row update
 // tracks the running first maximum of |A[i][K]| over i = K..14 as it writes
 // those values (same comparisons in the same order as the search).
+DEVICE void perm_swap(unsigned* pm, unsigned k, unsigned p) {
+    // pm[k] <-> pm[p] for p >= k with p dynamic (int selects).
+    const unsigned a0 = pm[k];
+    unsigned b0 = a0;
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        if (i > k) b0 = (p == i) ? pm[i] : b0;
+    }
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        if (i > k) pm[i] = (p == i) ? a0 : pm[i];
+    }
+    pm[k] = b0;
+}
 template <unsigned K>
-DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
+DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row, unsigned* pm) {
     unsigned next_pivot = K + 1;
-    ipvt[K] = static_cast<int>(pivot_row);
+    // The composite row permutation is carried in registers and stored once.
+    perm_swap(pm, K, pivot_row);
     __builtin_assume(pivot_row < 15u);
     // K == 13: the final A(14,14), kept from registers for the singularity check.
     Real last_diag = 0.0;
@@ -5863,10 +5919,13 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
         if constexpr (K == 13u) last_diag = A[midx(14u, 14u)];
     }
     if constexpr (K + 1 < 14u) {
-        return lu_step<K + 1>(A, ipvt, info, next_pivot);
+        return lu_step<K + 1>(A, ipvt, info, next_pivot, pm);
     } else {
         // Reference: a zero final diagonal reports info = 15 (overriding).
         if (last_diag == 0.0) info = 15;
+        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+            ipvt[i] = static_cast<int>(pm[i]);
+        }
         return info;
     }
 }
@@ -5895,7 +5954,11 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         pivot_row = take ? i : pivot_row;
     }
     __builtin_assume(pivot_row < 15u);
-    ipvt[0] = static_cast<int>(pivot_row);
+    unsigned pm[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        pm[i] = i;
+    }
+    perm_swap(pm, 0u, pivot_row);
     unsigned next_pivot = 1;
     int info = 0;
     const Real pivot = iter_elem(J, pivot_row, 0u, fac);
@@ -5957,11 +6020,15 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         info = 1;
         next_pivot = lu_pivot_search<1>(A);
     }
-    return lu_step<1>(A, ipvt, info, next_pivot);
+    return lu_step<1>(A, ipvt, info, next_pivot, pm);
 }
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
-    int info = lu_step<0>(A, ipvt, 0, lu_pivot_search<0>(A));
+    unsigned pm[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        pm[i] = i;
+    }
+    int info = lu_step<0>(A, ipvt, 0, lu_pivot_search<0>(A), pm);
 
     ipvt[14] = 14;
     if (A[midx(14u, 14u)] == 0.0) {
@@ -6181,7 +6248,6 @@ DEVICE int decompose(ScratchView s, Real fac) {
         // in lu_step<13> on the register value.
         int info = lu_step0_from_jac(s.fjac, A, s.ip, fac);
         // ip now holds the composite row permutation (all 15 entries).
-        store_permutation(s.ip);
         return info;
 
 }
