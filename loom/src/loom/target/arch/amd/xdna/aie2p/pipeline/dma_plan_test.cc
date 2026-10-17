@@ -91,6 +91,66 @@ uint32_t Decode(uint32_t word, loom_xdna_register_field_id_t field) {
          (UINT32_MAX >> (32 - info.bit_width));
 }
 
+TEST(Aie2pDmaPlanTest, EveryAddressWrapFieldRejectsTruncation) {
+  const auto* family = loom_xdna_npu2_array_family();
+  const struct {
+    // Tile module whose descriptor owns the address generator.
+    loom_xdna_tile_kind_t kind;
+    // Physical wrap field, counted from the innermost address dimension.
+    uint8_t dimension;
+    // Largest nonzero count representable by this hardware field.
+    uint16_t maximum;
+    // Descriptor word containing the wrap field.
+    uint8_t word;
+    // Register field decoded independently of descriptor planning.
+    loom_xdna_register_field_id_t field;
+  } cases[] = {
+      {LOOM_XDNA_TILE_KIND_COMPUTE, 0, 255, 3,
+       LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD3_D0_WRAP},
+      {LOOM_XDNA_TILE_KIND_COMPUTE, 1, 255, 3,
+       LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD3_D1_WRAP},
+      {LOOM_XDNA_TILE_KIND_MEMORY, 0, 1023, 2,
+       LOOM_XDNA_REGISTER_FIELD_MEMORY_TILE_DMA_BD_WORD2_D0_WRAP},
+      {LOOM_XDNA_TILE_KIND_MEMORY, 1, 1023, 3,
+       LOOM_XDNA_REGISTER_FIELD_MEMORY_TILE_DMA_BD_WORD3_D1_WRAP},
+      {LOOM_XDNA_TILE_KIND_MEMORY, 2, 1023, 4,
+       LOOM_XDNA_REGISTER_FIELD_MEMORY_TILE_DMA_BD_WORD4_D2_WRAP},
+      {LOOM_XDNA_TILE_KIND_SHIM_NOC, 0, 1023, 3,
+       LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_BD_WORD3_D0_WRAP},
+      {LOOM_XDNA_TILE_KIND_SHIM_NOC, 1, 1023, 4,
+       LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_BD_WORD4_D1_WRAP},
+  };
+  for (const auto& entry : cases) {
+    SCOPED_TRACE(::testing::Message()
+                 << "tile=" << entry.kind << " dimension=" << +entry.dimension);
+    const auto* dma = &loom_xdna_array_tile_kind_facts(family, entry.kind)->dma;
+    loom_storage_geometry_t geometry = {
+        .layout_kind = LOOM_VALUE_FACT_ADDRESS_LAYOUT_STRIDED,
+        .element_bit_count = 32,
+        .rank = static_cast<uint8_t>(entry.dimension + 2),
+        .axes = {{2, 2064},
+                 {entry.maximum, entry.dimension ? 2u : 1u},
+                 {1, 1},
+                 {1, 1}},
+    };
+    uint32_t words[8] = {};
+    iree_string_view_t reason;
+    ASSERT_TRUE(loom_aie2p_native_encode_descriptor(
+        family, &geometry, dma, 2 * entry.maximum * sizeof(uint32_t), 1,
+        entry.kind, words, &reason));
+    EXPECT_EQ(Decode(words[entry.word], entry.field), entry.maximum);
+
+    ++geometry.axes[1].extent;
+    uint32_t rejected_words[8] = {};
+    EXPECT_FALSE(loom_aie2p_native_encode_descriptor(
+        family, &geometry, dma, 2 * (entry.maximum + 1) * sizeof(uint32_t), 1,
+        entry.kind, rejected_words, &reason));
+    EXPECT_TRUE(iree_string_view_equal(
+        reason,
+        IREE_SV("an address dimension exceeds the nonzero DMA wrap field")));
+  }
+}
+
 class Aie2pDmaSequenceTest
     : public ::testing::TestWithParam<loom_xdna_tile_kind_t> {
  protected:
@@ -239,7 +299,7 @@ TEST_P(Aie2pDmaSequenceTest, QueueAndRingBoundariesPreserveEveryRecord) {
         continue;
       }
       for (uint32_t count : {1u, 63u, 64u, 65u, 255u, 256u, 257u, 1023u, 1024u,
-                             1025u, 3360u, 3361u}) {
+                             1025u, 3360u, 3361u, 4294u, 5190u}) {
         SCOPED_TRACE(::testing::Message()
                      << "direction=" << direction << " capacity=" << capacity
                      << " count=" << count);
@@ -258,7 +318,7 @@ TEST_P(Aie2pDmaSequenceTest, QueueAndRingBoundariesPreserveEveryRecord) {
   }
 }
 
-TEST_P(Aie2pDmaSequenceTest, FiniteChainHasAnIndependentTerminatingPrefix) {
+TEST_P(Aie2pDmaSequenceTest, FiniteChainRetainsExactTailAndTaskEncodings) {
   const uint32_t capacity = layout() ? 3 : 1;
   // 3361 = 6 * (256 + 256 + 48) + 1 for local rings, and
   //        5 * (256 + 256 + 160) + 1 for a fixed external address.
@@ -272,12 +332,13 @@ TEST_P(Aie2pDmaSequenceTest, FiniteChainHasAnIndependentTerminatingPrefix) {
       dma(), layout(), first_descriptor(), bank_size() - 2, direction, 3361,
       capacity, 128, 64, words.data(), &sequence, &reason, &valid, &arena_));
   ASSERT_TRUE(valid);
-  ASSERT_EQ(sequence.descriptor_count, chain_length + 1);
+  ASSERT_EQ(sequence.descriptor_count, chain_length + (layout() ? 1 : 0));
   ASSERT_EQ(sequence.task_count, 4);
   EXPECT_FALSE(sequence.rewind_iteration);
   const uint32_t cycles[] = {256, 256, layout() ? 48u : 160u, 1};
   for (uint32_t task = 0; task < 4; ++task) {
-    const uint32_t head = sequence.descriptor + (task == 3 ? chain_length : 0);
+    const uint32_t tail = layout() ? chain_length : chain_length - 1;
+    const uint32_t head = sequence.descriptor + (task == 3 ? tail : 0);
     EXPECT_EQ(
         sequence.tasks[task],
         loom_xdna_register_field_encode_admitted(start_field(direction), head) |
@@ -309,6 +370,41 @@ TEST_P(Aie2pDmaSequenceTest, FiniteChainHasAnIndependentTerminatingPrefix) {
     for (uint32_t word = 0; word < expected.size(); ++word) {
       EXPECT_EQ(sequence.words[index][word], expected[word])
           << "descriptor=" << index << " word=" << word;
+    }
+  }
+}
+
+TEST_P(Aie2pDmaSequenceTest, AlignedTailFitsWithoutDuplicatingRingSlots) {
+  for (auto direction : {LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM,
+                         LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY}) {
+    for (uint32_t capacity : {1u, 2u, 3u, 4u}) {
+      if (!layout() && capacity != 1) {
+        continue;
+      }
+      SCOPED_TRACE(::testing::Message()
+                   << "direction=" << direction << " capacity=" << capacity);
+      const uint32_t count = capacity * 1025;
+      const auto words = descriptor_template();
+      loom_aie2p_native_dma_sequence_t sequence = {};
+      iree_string_view_t reason;
+      bool valid = false;
+      IREE_ASSERT_OK(loom_aie2p_native_build_sequence(
+          dma(), layout(), first_descriptor(), 2 * capacity, direction, count,
+          capacity, 128, 64, words.data(), &sequence, &reason, &valid,
+          &arena_));
+      ASSERT_TRUE(valid);
+      ASSERT_EQ(sequence.descriptor_count, 2 * capacity);
+      ASSERT_EQ(sequence.task_count, 3);
+      EXPECT_EQ(sequence.tasks[0],
+                loom_xdna_register_field_encode_admitted(start_field(direction),
+                                                         sequence.descriptor) |
+                    loom_xdna_register_field_encode_admitted(
+                        repeat_field(direction), 255));
+      EXPECT_EQ(sequence.tasks[1], sequence.tasks[0]);
+      EXPECT_EQ(sequence.tasks[2],
+                loom_xdna_register_field_encode_admitted(
+                    start_field(direction), sequence.descriptor + capacity));
+      ExpectExecution(sequence, direction, count, capacity);
     }
   }
 }
