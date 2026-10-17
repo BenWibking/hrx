@@ -75,6 +75,14 @@ DEVICE double fma(double a, double b, double c) {
     return loom::scalar::fmaf(a, b, c);
 }
 
+// A recipe constant made per call: zz is 0 for every input whose result the
+// recipe does not replace by a final select, so the value is the constant.
+// It depends on the input, so the compiler materializes it at its use instead
+// of hoisting it into a register for the whole kernel.
+DEVICE double opaque_constant(double k, u64 zz) {
+    return __builtin_bit_cast(double, __builtin_bit_cast(u64, k) | zz);
+}
+
 // BUILTIN_AMDGPU_LOG2_F32 and BUILTIN_AMDGPU_EXP2_F32 (v_log_f32, v_exp_f32).
 DEVICE float amdgpu_log2(float x) {
     return loom::scalar::approximate::log2f(x);
@@ -94,19 +102,24 @@ DEVICE double exp(double x) {
     const double dn = shifted - shift;
     const int n = (int)__builtin_bit_cast(u64, shifted);
 
-    const double negative_dn = -dn;
-    const double t_hi = fma(negative_dn, 0x1.62e42fefa39efp-1, x);
-    const double t = fma(negative_dn, 0x1.abc9e3b39803fp-56, t_hi);
+    // n is in [-1551, 1477] unless a final select replaces the result, so
+    // zz is 0 there (see opaque_constant).
+    const int range_check = (n + 2048) >> 12;
+    const u64 zz = (u64)(long long)range_check;
 
-    const double p10 = fma(t, 0x1.ade156a5dcb37p-26, 0x1.28af3fca7ab0cp-22);
-    const double p9 = fma(t, p10, 0x1.71dee623fde64p-19);
-    const double p8 = fma(t, p9, 0x1.a01997c89e6b0p-16);
-    const double p7 = fma(t, p8, 0x1.a01a014761f6ep-13);
-    const double p6 = fma(t, p7, 0x1.6c16c1852b7b0p-10);
-    const double p5 = fma(t, p6, 0x1.1111111122322p-7);
-    const double p4 = fma(t, p5, 0x1.55555555502a1p-5);
-    const double p3 = fma(t, p4, 0x1.5555555555511p-3);
-    const double p2 = fma(t, p3, 0x1.000000000000bp-1);
+    const double negative_dn = -dn;
+    const double t_hi = fma(negative_dn, opaque_constant(0x1.62e42fefa39efp-1, zz), x);
+    const double t = fma(negative_dn, opaque_constant(0x1.abc9e3b39803fp-56, zz), t_hi);
+
+    const double p10 = fma(t, opaque_constant(0x1.ade156a5dcb37p-26, zz), opaque_constant(0x1.28af3fca7ab0cp-22, zz));
+    const double p9 = fma(t, p10, opaque_constant(0x1.71dee623fde64p-19, zz));
+    const double p8 = fma(t, p9, opaque_constant(0x1.a01997c89e6b0p-16, zz));
+    const double p7 = fma(t, p8, opaque_constant(0x1.a01a014761f6ep-13, zz));
+    const double p6 = fma(t, p7, opaque_constant(0x1.6c16c1852b7b0p-10, zz));
+    const double p5 = fma(t, p6, opaque_constant(0x1.1111111122322p-7, zz));
+    const double p4 = fma(t, p5, opaque_constant(0x1.55555555502a1p-5, zz));
+    const double p3 = fma(t, p4, opaque_constant(0x1.5555555555511p-3, zz));
+    const double p2 = fma(t, p3, opaque_constant(0x1.000000000000bp-1, zz));
     const double p1 = fma(t, p2, 1.0);
     const double p = fma(t, p1, 1.0);
 
@@ -192,13 +205,16 @@ DEVICE double log(double a) {
     const double x_hi_change = x_hi - q_hi;
     const double x_lo = q_lo - x_hi_change;
 
+    // e is in [-1076, 1025] for every input, so zz is 0 (see opaque_constant).
+    const int range_check = (e + 2048) >> 12;
+    const u64 zz = (u64)(long long)range_check;
     const double s = x_hi * x_hi;
-    const double p5 = fma(s, 0x1.3ab76bf559e2bp-3, 0x1.385386b47b09ap-3);
-    const double p4 = fma(s, p5, 0x1.7474dd7f4df2ep-3);
-    const double p3 = fma(s, p4, 0x1.c71c016291751p-3);
-    const double p2 = fma(s, p3, 0x1.249249b27acf1p-2);
-    const double p1 = fma(s, p2, 0x1.99999998ef7b6p-2);
-    const double p = fma(s, p1, 0x1.5555555555780p-1);
+    const double p5 = fma(s, opaque_constant(0x1.3ab76bf559e2bp-3, zz), opaque_constant(0x1.385386b47b09ap-3, zz));
+    const double p4 = fma(s, p5, opaque_constant(0x1.7474dd7f4df2ep-3, zz));
+    const double p3 = fma(s, p4, opaque_constant(0x1.c71c016291751p-3, zz));
+    const double p2 = fma(s, p3, opaque_constant(0x1.249249b27acf1p-2, zz));
+    const double p1 = fma(s, p2, opaque_constant(0x1.99999998ef7b6p-2, zz));
+    const double p = fma(s, p1, opaque_constant(0x1.5555555555780p-1, zz));
 
     // r = fadd(ldx(x, 1), s * x.hi * p)
     const double twice_x_hi = x_hi * 2.0;
@@ -214,8 +230,8 @@ DEVICE double log(double a) {
     const double r_lo = sum_lo - r_hi_change;
 
     // r = add(mul(con(ln2_hi, ln2_lo), (double)e), r)
-    const double ln2_hi = 0x1.62e42fefa39efp-1;
-    const double ln2_lo = 0x1.abc9e3b39803fp-56;
+    const double ln2_hi = opaque_constant(0x1.62e42fefa39efp-1, zz);
+    const double ln2_lo = opaque_constant(0x1.abc9e3b39803fp-56, zz);
     const double de = (double)e;
     const double scaled_hi = ln2_hi * de;
     const double negative_scaled_hi = -scaled_hi;
