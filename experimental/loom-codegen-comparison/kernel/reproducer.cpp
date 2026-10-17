@@ -322,273 +322,309 @@ return ((T > 200.0) ? (
 DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
 
 
-    Real T = temperature;
-
-    Real x0 = math::exp((-0.75)*math::log(math::abs(T)));
-
-    Real x2 = 1.3300135414628029e-18*math::exp((0.94999999999999996)*math::log(math::abs(T)))*xn[0]*xn[5]*math::exp(-0.00010729613733905579*T);
-
-    Real x1 = 2.5950363272655348e-10*xn[0]*xn[4]*x0;
-
-    Real x3 = ((T)*(T));
-
-    Real x4 = T <= 10000.0;
-
-    Real x6 = math::log(math::abs(T));
-
-    Real x5 = xn[0]*xn[6]*rhs_specie_choice_0(T, x3, x4);
-
-    Real x7 = 0.10684732509875319*x6 - 1;
-
-    Real x8 = ((x7)*(x7));
-
-    Real x9 = ((x7)*(x7)*(x7));
-
-    Real x10 = ((((x7)*(x7)))*(((x7)*(x7))));
-
-    Real x11 = ((x7)*(x7)*(x7)*(x7)*(x7));
-
-    Real x12 = math::exp((6)*math::log(math::abs(x7)));
-
-    Real x13 = ((x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7));
-
-    Real x15 = ((x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7));
-
-    Real x14 = math::exp((8)*math::log(math::abs(x7)));
-
-    Real x16 = xn[2]*xn[3];
-
-    Real x18 = xn[1]*xn[3];
-
-    Real x17 = x16*rhs_specie_choice_1(T, x10, x11, x12, x13, x14, x15, x8, x9);
-
-    Real x19 = 1.0e-8*math::exp((-0.40000000000000002)*math::log(math::abs(T)))*x18;
-
-    Real x20 = 2.6534040307116387e-9*math::exp((-0.10000000000000001)*math::log(math::abs(T)));
-
-    Real x21 = xn[3]*xn[5];
-
-    Real x22 = x20*x21;
-
-    Real x23 = xn[0]*xn[2];
-
-    Real x25 = xn[0]*xn[12];
-
-    Real x24 = 1.4000000000000001e-18*math::exp((0.92800000000000005)*math::log(math::abs(T)))*x23*math::exp(-6.1728395061728397e-5*T);
-
-    Real x26 = 3.8571873359681582e-209*math::exp((43.933476326349997)*math::log(math::abs(T)))*x25*math::exp(-5902.1601240760483*x10 + 5825.9326359379538*x11 - 3578.1439181805954*x12 + 1242.7294446825149*x13 - 186.35635455381879*x14 - 1618.789587733125*x8 + 3854.4033653120223*x9);
-
-    Real x27 = 3.7903999274394518e-18*math::exp((2.360852208681)*math::log(math::abs(T)))*xn[0]*xn[3]*math::exp(-258.18559308467115*x10 + 846.15238706523724*x11 - 1113.0879095147111*x12 + 671.95094388835207*x13 - 154.90262957142161*x14 - 24.766609674457612*x8 + 13.307984239358756*x9);
-
-    Real x28 = math::sqrt(T);
-
-    Real x29 = 1.0/x28;
-
-    Real x30 = xn[0]*x29;
-
-    Real x31 = 5.7884371785482823e-10*xn[11]*x30*math::exp((-1.7524)*math::log(math::abs(0.00060040841663220993*x28 + 1.0)))*math::exp((-0.24759999999999999)*math::log(math::abs(0.32668576019240059*x28 + 1.0)));
-
-    Real x32 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)));
-
-    Real x34 = 1.0/T;
-
-    Real x33 = 8.6173430000000006e-5*T;
-
-    Real x35 = -4.3524079114767552e-117*math::exp((23.915965629999999)*math::log(math::abs(T)))*xn[0]*xn[13]*math::exp(-4361.9927099007555*x10 + 4879.7345146260486*x11 - 3366.4639698826941*x12 + 1300.3028484326148*x13 - 214.82451513312137*x14 - 941.91483008144996*x8 + 2506.9866529060901*x9) + x25*rhs_specie_choice_2(T, x32, x33, x34);
-
-    Real x36 = -5.9082438637265071e-70*math::exp((13.536555999999999)*math::log(math::abs(T)))*x23*math::exp(-2207.4643501257692*x10 + 2500.8077583366976*x11 - 1768.8867461266502*x12 + 704.19926629500367*x13 - 120.0438480494693*x14 - 502.72883252679094*x8 + 1281.477767828706*x9) + xn[0]*xn[1]*rhs_specie_choice_3(T, x10, x11, x12, x13, x14, x15, x32, x33, x8, x9);
-
-    Real x40 = x16*(1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T))))/(0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0);
-
-    Real x37 = 7.1999999999999996e-8*xn[9]*x30;
-
-    Real x38 = xn[2]*xn[7];
-
-    Real x39 = x20*x38;
-
-    Real x41 = xn[0]*xn[8];
-
-    Real x42 = 35.5*math::exp((-2.2799999999999998)*math::log(math::abs(T)))*x41*math::exp(-46707.0*x34);
-
-    Real x43 = x37 - x39 - x40 + x42;
-
-    Real x44 = M_LN10;
-
-    Real x45 = 1.0/x44;
-
-    Real x46 = x45*x6;
-
-    Real x47 = math::exp((-0.12690000000000001*math::exp((-3.0)*math::log(math::abs(x44)))*((x6)*(x6)*(x6)) + 1.1180000000000001*math::exp((-2.0)*math::log(math::abs(x44)))*((x6)*(x6)) - 1.5229999999999999*x46 - 19.379999999999999)*math::log(math::abs(10.0)));
-
-    Real x48 = xn[1]*xn[5];
-
-    Real x49 = x47*x48;
-
-    Real x50 = x18*rhs_specie_choice_4(T, x28, x29);
-
-    Real x51 = 1.0000000000000001e-9*xn[1]*xn[10]*math::exp(-457.0*x34);
-
-    Real x52 = ((x6)*(x6));
-
-    Real x53 = math::exp((-2)*math::log(math::abs(x44)));
-
-    Real x54 = x52*x53;
-
-    Real x56 = ((x6)*(x6)*(x6));
-
-    Real x55 = 8.4600000000000008e-10*x46 - 1.3700000000000002e-10*x54 + 4.1700000000000001e-10;
-
-    Real x57 = x56/((x44)*(x44)*(x44));
-
-    Real x58 = xn[1]*xn[2]*rhs_specie_choice_5(T, x46, x52, x53, x57);
-
-    Real x59 = 6.0e-10*xn[2]*xn[6];
-
-    Real x60 = ((((x6)*(x6)))*(((x6)*(x6))));
-
-    Real x61 = ((x6)*(x6)*(x6)*(x6)*(x6));
-
-    Real x62 = xn[1]*xn[8]*rhs_specie_choice_6(T, x34, x52, x56, x6, x60, x61);
-
-    Real x63 = -x59 + x62;
-
-    Real x64 = x19 + x58 + x63;
-
-    Real x65 = 6.3999999999999996e-10*xn[2]*xn[9];
-
-    Real x66 = -x65;
-
-    Real x67 = math::exp((-0.5)*math::log(math::abs(T)));
-
-    Real x68 = xn[7]*x67;
-
-    Real x69 = 7.9674337148168363e-7*xn[1]*x68;
-
-    Real x70 = xn[1]*xn[13]*rhs_specie_choice_7(T, x0, x34, x4);
-
-    Real x71 = math::exp((0.25)*math::log(math::abs(T)));
-
-    Real x72 = 2.8833736969617052e-16*xn[12]*xn[2]*x71;
-
-    Real x73 = T >= 50.0;
-
-    Real x75 = xn[2]*xn[4];
-
-    Real x74 = x48*rhs_specie_choice_8(T, x34, x73);
-
-    Real x76 = x75*rhs_specie_choice_9(T, x34, x73);
-
-    Real x77 = x74 - x76;
-
-    Real x78 = x36 + x66 + x69 + x70 - x72 + x77;
-
-    Real x79 = 4.9999999999999996e-6*xn[3]*xn[6]*x29;
-
-    Real x80 = ((xn[2])*(xn[2])*(xn[2]));
-
-    Real x81 = 1.0/x71;
-
-    Real x82 = 1.0e-25*xn[2]*xn[5];
-
-    Real x83 = xn[1] + xn[10] + xn[2] + xn[3] + 2.0*xn[6] + 2.0*xn[8] + xn[9];
-
-    Real x85 = math::exp(-0.0022727272727272726*T);
-
-    Real x84 = -133.82830000000001*x34 - 4.8909149999999997*x45*x6 + 0.47490300000000002*x54;
-
-    Real x86 = math::exp(-0.00054054054054054055*T);
-
-    Real x87 = -2.0563129999999998*x85 + 0.58640729999999996*x86 + 0.82274429999999998;
-
-    Real x88 = -69.700860000000006*x45*math::log(40870.379999999997*x34 + 1.0) + 4.6331670000000003*x57;
-
-    Real x89 = math::exp((-23705.700000000001*x34 - 2080.4099999999999*x34/(math::exp((x87)*math::log(math::abs(math::exp((-x84 - 13.656822)*math::log(math::abs(10.0)))*x83))) + 1.0) - 68.422430000000006*x46 + 43.20243*x52*x53 - x88 - 178.4239 - (19.734269999999999*x45*math::log(16780.950000000001*x34 + 1.0) - 14.509090000000008*x46 + 37.886913*x52*x53 - x88 - 307.31920000000002)/(math::exp((x87)*math::log(math::abs(math::exp((-x84 - 14.82123)*math::log(math::abs(10.0)))*x83))) + 1.0))*math::log(math::abs(10.0)));
-
-    Real x90 = 743.05999999999995*x34 - 2.4640089999999999*x45*x6 + 0.19859550000000001*x54;
-
-    Real x91 = 2.9375070000000001*x85 + 0.23588480000000001*x86 + 0.75022860000000002;
-
-    Real x92 = -21.360939999999999*x45*math::log(27535.310000000001*x34 + 1.0) + 0.25820969999999999*x57;
-
-    Real x93 = math::exp((-21467.790000000001*x34 - 1657.4099999999999*x34/(math::exp((x91)*math::log(math::abs(math::exp((-x90 - 8.1313220000000008)*math::log(math::abs(10.0)))*x83))) + 1.0) + 42.707410000000003*x45*x6 - 2.0273650000000001*x54 - x92 - 142.7664 - (70.138370000000009*x45*x6 + 11.28215*x45*math::log(14254.549999999999*x34 + 1.0) - 4.7035149999999994*x54 - x92 - 203.11568)/(math::exp((x91)*math::log(math::abs(math::exp((-x90 - 9.3055640000000004)*math::log(math::abs(10.0)))*x83))) + 1.0))*math::log(math::abs(10.0)));
-
-    Real x95 = 5.0000000000000004e-32*x67 + 1.5e-32*x81;
-
-    Real x94 = xn[2]*xn[8];
-
-    Real x96 = ((xn[2])*(xn[2]))*xn[8];
-
-    Real x97 = x47*x75;
-
-    Real x98 = 1.0/(math::exp((1.3*x45*(x6 - 9.2103403719761836) - 137.42519902360013*x53*((0.10857362047581294*x6 - 1)*(0.10857362047581294*x6 - 1)) - 4.8449999999999998)*math::log(math::abs(10.0)))*x83 + 1.0);
-
-    Real x100 = math::exp((0.34999999999999998)*math::log(math::abs(T)))*x41*math::exp(-102000.0*x34);
-
-    Real x101 = xn[5]*xn[8]*rhs_specie_choice_10(T, x34, x44, x46, x54, x57, x60, x61);
-
-    Real x99 = ((xn[8])*(xn[8]))*math::exp((x98)*math::log(math::abs(1.1800000000000001e-10*math::exp(-69500.0*x34))))*math::exp((1.0 - x98)*math::log(math::abs(8.1250000000000003e-8*x67*(1.0 - math::exp(-6000.0*x34))*math::exp(-52000.0*x34))));
-
-    Real x102 = xn[10]*xn[2]*rhs_specie_choice_11(T, x3, x34);
-
-    Real x103 = x101 - x102;
-
-    Real x104 = 6.1739095063118665e-10*math::exp((0.40999999999999998)*math::log(math::abs(T)));
-
-    Real x105 = x104*x21;
-
-    Real x106 = x104*x38;
-
-    Real x107 = x105 - x106;
-
-    Real x108 = x107 + x17 - x24 + x27;
-
-    Real x109 = x80*(2.0000000000000002e-31*x67 + 6.0000000000000001e-32*x81) + x94*(-x89 - x93);
-
-    Real x110 = x40 - x42 + x79;
-
-    Real x111 = 9.8726896031426014e-7*xn[4]*x68;
-
-    Real x112 = -x51;
-
-    Real x113 = -x55;
-
-    Real x114 = -x37 + x49;
-
-    Real x115 = x103 + x22 + x82;
-
-    Real x116 = xn[4]*xn[8];
-
-    Real x117 = x26 - x31;
-
-    Real x118 = x35 - x70 + x72;
-
-    out[0] = -x1 + x17 + x19 - x2 + x22 - x24 + x26 + x27 - x31 - x35 - x36 - x43 - x5;
-
-    out[1] = xn[4]*xn[8]*x55 - x49 - x50 - x51 - x64 - x78;
-
-    out[2] = 8.7599999999999997e-10*x100 + x103 + x108 + x109 + x43 + 2*x5 + 2*x50 - x58 + x63 + x78 + x79 + x80*(-6.0000000000000005e-31*x67 - 1.8e-31*x81) - x82 + x94*(3*x89 + 3*x93) - x95*x96 - x97 + 2*x99;
-
-    out[3] = -x108 - x110 - x19 - x22 - x50;
-
-    out[4] = xn[4]*xn[8]*x113 - x1 - x111 - x112 + x74 - x76 - x97;
-
-    out[5] = 1.9745379206285203e-6*xn[4]*xn[7]*x67 + x1 - x107 - x114 - x115 - x2 + x69 - x77;
-
-    out[6] = -x5 + x64 - x79;
-
-    out[7] = x105 - x106 - x111 + x2 - x39 - x69;
-
-    out[8] = -4.3799999999999999e-10*x100 - x101 + x102 + x109 + x110 + x113*x116 + x51 + x59 - x62 + x95*x96 + x96*(-2.5000000000000002e-32*x67 - 7.5000000000000001e-33*x81) - x99;
-
-    out[9] = x114 + x66 + x97;
-
-    out[10] = x112 + x115 + x116*x55 + x39 + x65;
-
-    out[11] = x117;
-
-    out[12] = -x117 - x118;
-
-    out[13] = x118;
+    const Real T = temperature;
+    const Real x0 = math::exp((-0.75)*math::log(math::abs(T)));
+    const Real x2 = 1.3300135414628029e-18*math::exp((0.94999999999999996)*math::log(math::abs(T)))*xn[0]*xn[5]*math::exp(-0.00010729613733905579*T);
+    const Real x1 = 2.5950363272655348e-10*xn[0]*xn[4]*x0;
+    const Real acc0_0 = -(x1);
+    const Real x3 = ((T)*(T));
+    const Real x4 = T <= 10000.0;
+    const Real x6 = math::log(math::abs(T));
+    const Real x5 = xn[0]*xn[6]*rhs_specie_choice_0(T, x3, x4);
+    const Real acc6_0 = -(x5);
+    const Real x7_t0 = 0.1068473250987532 * x6;
+    const Real x7_t1 = 1;
+    const Real x7 = 0.10684732509875319*x6 - 1;
+    const Real x8 = ((x7)*(x7));
+    const Real x9 = ((x7)*(x7)*(x7));
+    const Real x10 = ((((x7)*(x7)))*(((x7)*(x7))));
+    const Real x11 = ((x7)*(x7)*(x7)*(x7)*(x7));
+    const Real x12 = math::exp((6)*math::log(math::abs(x7)));
+    const Real x13 = ((x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7));
+    const Real x15 = ((x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7));
+    const Real x14 = math::exp((8)*math::log(math::abs(x7)));
+    const Real x16 = xn[2]*xn[3];
+    const Real x18 = xn[1]*xn[3];
+    const Real x17 = x16*rhs_specie_choice_1(T, x10, x11, x12, x13, x14, x15, x8, x9);
+    const Real acc0_1 = acc0_0 + x17;
+    const Real x19 = 1.0e-8*math::exp((-0.40000000000000002)*math::log(math::abs(T)))*x18;
+    const Real acc0_2 = acc0_1 + x19;
+    const Real acc0_3 = acc0_2 - x2;
+    const Real acc6_1 = acc6_0 + x19;
+    const Real x20 = 2.6534040307116387e-9*math::exp((-0.10000000000000001)*math::log(math::abs(T)));
+    const Real x21 = xn[3]*xn[5];
+    const Real x22 = x20*x21;
+    const Real acc0_4 = acc0_3 + x22;
+    const Real x23 = xn[0]*xn[2];
+    const Real x25 = xn[0]*xn[12];
+    const Real x24 = 1.4000000000000001e-18*math::exp((0.92800000000000005)*math::log(math::abs(T)))*x23*math::exp(-6.1728395061728397e-5*T);
+    const Real acc0_5 = acc0_4 - x24;
+    const Real x26 = 3.8571873359681582e-209*math::exp((43.933476326349997)*math::log(math::abs(T)))*x25*math::exp(-5902.1601240760483*x10 + 5825.9326359379538*x11 - 3578.1439181805954*x12 + 1242.7294446825149*x13 - 186.35635455381879*x14 - 1618.789587733125*x8 + 3854.4033653120223*x9);
+    const Real acc0_6 = acc0_5 + x26;
+    const Real acc11_0 = x26;
+    const Real acc12_0 = -(x26);
+    const Real x27 = 3.7903999274394518e-18*math::exp((2.360852208681)*math::log(math::abs(T)))*xn[0]*xn[3]*math::exp(-258.18559308467115*x10 + 846.15238706523724*x11 - 1113.0879095147111*x12 + 671.95094388835207*x13 - 154.90262957142161*x14 - 24.766609674457612*x8 + 13.307984239358756*x9);
+    const Real acc0_7 = acc0_6 + x27;
+    const Real x28 = math::sqrt(T);
+    const Real x29 = 1.0/x28;
+    const Real x30 = xn[0]*x29;
+    const Real x31 = 5.7884371785482823e-10*xn[11]*x30*math::exp((-1.7524)*math::log(math::abs(0.00060040841663220993*x28 + 1.0)))*math::exp((-0.24759999999999999)*math::log(math::abs(0.32668576019240059*x28 + 1.0)));
+    const Real acc0_8 = acc0_7 - x31;
+    const Real acc11_1 = acc11_0 - x31;
+    const Real acc12_1 = acc12_0 + x31;
+    const Real x32 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)));
+    const Real x34 = 1.0/T;
+    const Real x33 = 8.6173430000000006e-5*T;
+    const Real x35_t0 = -4.352407911476755e-117 * math::exp(23.91596563 * math::log(math::abs(T))) * xn[0] * xn[13] * math::exp(-4361.9927099007555 * x10 + 4879.734514626049 * x11 - 3366.463969882694 * x12 + 1300.3028484326148 * x13 - 214.82451513312137 * x14 - 941.91483008145 * x8 + 2506.98665290609 * x9);
+    const Real acc0_9 = acc0_8 - x35_t0;
+    const Real acc12_2 = acc12_1 - x35_t0;
+    const Real acc13_0 = x35_t0;
+    const Real x35_t1 = x25 * rhs_specie_choice_2(T, x32, x33, x34);
+    const Real acc0_10 = acc0_9 - x35_t1;
+    const Real acc12_3 = acc12_2 - x35_t1;
+    const Real acc13_1 = acc13_0 + x35_t1;
+    const Real x36_t0 = -5.908243863726507e-70 * math::exp(13.536556 * math::log(math::abs(T))) * x23 * math::exp(-2207.464350125769 * x10 + 2500.8077583366976 * x11 - 1768.8867461266502 * x12 + 704.1992662950037 * x13 - 120.0438480494693 * x14 - 502.72883252679094 * x8 + 1281.477767828706 * x9);
+    const Real acc0_11 = acc0_10 - x36_t0;
+    const Real x36_t1 = xn[0] * xn[1] * rhs_specie_choice_3(T, x10, x11, x12, x13, x14, x15, x32, x33, x8, x9);
+    const Real acc0_12 = acc0_11 - x36_t1;
+    const Real x40 = x16*(1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T))))/(0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0);
+    const Real x37 = 7.1999999999999996e-8*xn[9]*x30;
+    const Real acc0_13 = acc0_12 - x37;
+    const Real acc9_0 = -(x37);
+    const Real x38 = xn[2]*xn[7];
+    const Real x39 = x20*x38;
+    const Real acc0_14 = acc0_13 + x39;
+    const Real acc0_15 = acc0_14 + x40;
+    const Real x41 = xn[0]*xn[8];
+    const Real x42 = 35.5*math::exp((-2.2799999999999998)*math::log(math::abs(T)))*x41*math::exp(-46707.0*x34);
+    const Real acc0_16 = acc0_15 - x42;
+    const Real acc0_17 = acc0_16 - x5;
+    const Real x44 = M_LN10;
+    const Real x45 = 1.0/x44;
+    const Real x46 = x45*x6;
+    const Real x47 = math::exp((-0.12690000000000001*math::exp((-3.0)*math::log(math::abs(x44)))*((x6)*(x6)*(x6)) + 1.1180000000000001*math::exp((-2.0)*math::log(math::abs(x44)))*((x6)*(x6)) - 1.5229999999999999*x46 - 19.379999999999999)*math::log(math::abs(10.0)));
+    const Real x48 = xn[1]*xn[5];
+    const Real x49 = x47*x48;
+    const Real acc9_1 = acc9_0 + x49;
+    const Real x50 = x18*rhs_specie_choice_4(T, x28, x29);
+    const Real x51 = 1.0000000000000001e-9*xn[1]*xn[10]*math::exp(-457.0*x34);
+    const Real acc10_0 = -(x51);
+    const Real x52 = ((x6)*(x6));
+    const Real x53 = math::exp((-2)*math::log(math::abs(x44)));
+    const Real x54 = x52*x53;
+    const Real x56 = ((x6)*(x6)*(x6));
+    const Real x55_t0 = 8.460000000000001e-10 * x46;
+    const Real x55_t1 = 1.3700000000000002e-10 * x54;
+    const Real x55_t2 = 4.17e-10;
+    const Real x55 = 8.4600000000000008e-10*x46 - 1.3700000000000002e-10*x54 + 4.1700000000000001e-10;
+    const Real acc1_0 = xn[4] * xn[8] * x55;
+    const Real acc1_1 = acc1_0 - x49;
+    const Real acc1_2 = acc1_1 - x50;
+    const Real acc1_3 = acc1_2 - x51;
+    const Real acc1_4 = acc1_3 - x19;
+    const Real x57 = x56/((x44)*(x44)*(x44));
+    const Real x58 = xn[1]*xn[2]*rhs_specie_choice_5(T, x46, x52, x53, x57);
+    const Real acc1_5 = acc1_4 - x58;
+    const Real acc6_2 = acc6_1 + x58;
+    const Real x59 = 6.0e-10*xn[2]*xn[6];
+    const Real acc1_6 = acc1_5 + x59;
+    const Real acc6_3 = acc6_2 - x59;
+    const Real x60 = ((((x6)*(x6)))*(((x6)*(x6))));
+    const Real x61 = ((x6)*(x6)*(x6)*(x6)*(x6));
+    const Real x62 = xn[1]*xn[8]*rhs_specie_choice_6(T, x34, x52, x56, x6, x60, x61);
+    const Real acc1_7 = acc1_6 - x62;
+    const Real acc1_8 = acc1_7 - x36_t0;
+    const Real acc1_9 = acc1_8 - x36_t1;
+    const Real acc6_4 = acc6_3 + x62;
+    const Real x65 = 6.3999999999999996e-10*xn[2]*xn[9];
+    const Real acc1_10 = acc1_9 + x65;
+    const Real acc9_2 = acc9_1 - x65;
+    const Real x67 = math::exp((-0.5)*math::log(math::abs(T)));
+    const Real acc5_0 = 1.9745379206285203e-06 * xn[4] * xn[7] * x67;
+    const Real acc5_1 = acc5_0 + x1;
+    const Real x68 = xn[7]*x67;
+    const Real x69 = 7.9674337148168363e-7*xn[1]*x68;
+    const Real acc1_11 = acc1_10 - x69;
+    const Real x70 = xn[1]*xn[13]*rhs_specie_choice_7(T, x0, x34, x4);
+    const Real acc1_12 = acc1_11 - x70;
+    const Real acc12_4 = acc12_3 + x70;
+    const Real acc13_2 = acc13_1 - x70;
+    const Real x71 = math::exp((0.25)*math::log(math::abs(T)));
+    const Real x72 = 2.8833736969617052e-16*xn[12]*xn[2]*x71;
+    const Real acc1_13 = acc1_12 + x72;
+    const Real acc12_5 = acc12_4 - x72;
+    const Real acc13_3 = acc13_2 + x72;
+    const Real x73 = T >= 50.0;
+    const Real x75 = xn[2]*xn[4];
+    const Real x74 = x48*rhs_specie_choice_8(T, x34, x73);
+    const Real acc1_14 = acc1_13 - x74;
+    const Real x76 = x75*rhs_specie_choice_9(T, x34, x73);
+    const Real acc1_15 = acc1_14 + x76;
+    const Real x79 = 4.9999999999999996e-6*xn[3]*xn[6]*x29;
+    const Real acc6_5 = acc6_4 - x79;
+    const Real x80 = ((xn[2])*(xn[2])*(xn[2]));
+    const Real x81 = 1.0/x71;
+    const Real x82 = 1.0e-25*xn[2]*xn[5];
+    const Real x83_t0 = xn[1];
+    const Real x83_t1 = xn[10];
+    const Real x83_t2 = xn[2];
+    const Real x83_t3 = xn[3];
+    const Real x83_t4 = 2.0 * xn[6];
+    const Real x83_t5 = 2.0 * xn[8];
+    const Real x83_t6 = xn[9];
+    const Real x83 = xn[1] + xn[10] + xn[2] + xn[3] + 2.0*xn[6] + 2.0*xn[8] + xn[9];
+    const Real x85 = math::exp(-0.0022727272727272726*T);
+    const Real x84_t0 = -133.8283 * x34;
+    const Real x84_t1 = 4.890915 * x45 * x6;
+    const Real x84_t2 = 0.474903 * x54;
+    const Real x84 = -133.82830000000001*x34 - 4.8909149999999997*x45*x6 + 0.47490300000000002*x54;
+    const Real x86 = math::exp(-0.00054054054054054055*T);
+    const Real x87_t0 = -2.056313 * x85;
+    const Real x87_t1 = 0.5864073 * x86;
+    const Real x87_t2 = 0.8227443;
+    const Real x87 = -2.0563129999999998*x85 + 0.58640729999999996*x86 + 0.82274429999999998;
+    const Real x88_t0 = -69.70086 * x45 * math::log(40870.38 * x34 + 1.0);
+    const Real x88_t1 = 4.633167 * x57;
+    const Real x88 = -69.700860000000006*x45*math::log(40870.379999999997*x34 + 1.0) + 4.6331670000000003*x57;
+    const Real x89 = math::exp((-23705.700000000001*x34 - 2080.4099999999999*x34/(math::exp((x87)*math::log(math::abs(math::exp((-x84 - 13.656822)*math::log(math::abs(10.0)))*x83))) + 1.0) - 68.422430000000006*x46 + 43.20243*x52*x53 - x88 - 178.4239 - (19.734269999999999*x45*math::log(16780.950000000001*x34 + 1.0) - 14.509090000000008*x46 + 37.886913*x52*x53 - x88 - 307.31920000000002)/(math::exp((x87)*math::log(math::abs(math::exp((-x84 - 14.82123)*math::log(math::abs(10.0)))*x83))) + 1.0))*math::log(math::abs(10.0)));
+    const Real x90_t0 = 743.06 * x34;
+    const Real x90_t1 = 2.464009 * x45 * x6;
+    const Real x90_t2 = 0.1985955 * x54;
+    const Real x90 = 743.05999999999995*x34 - 2.4640089999999999*x45*x6 + 0.19859550000000001*x54;
+    const Real x91_t0 = 2.937507 * x85;
+    const Real x91_t1 = 0.2358848 * x86;
+    const Real x91_t2 = 0.7502286;
+    const Real x91 = 2.9375070000000001*x85 + 0.23588480000000001*x86 + 0.75022860000000002;
+    const Real x92_t0 = -21.36094 * x45 * math::log(27535.31 * x34 + 1.0);
+    const Real x92_t1 = 0.2582097 * x57;
+    const Real x92 = -21.360939999999999*x45*math::log(27535.310000000001*x34 + 1.0) + 0.25820969999999999*x57;
+    const Real x93 = math::exp((-21467.790000000001*x34 - 1657.4099999999999*x34/(math::exp((x91)*math::log(math::abs(math::exp((-x90 - 8.1313220000000008)*math::log(math::abs(10.0)))*x83))) + 1.0) + 42.707410000000003*x45*x6 - 2.0273650000000001*x54 - x92 - 142.7664 - (70.138370000000009*x45*x6 + 11.28215*x45*math::log(14254.549999999999*x34 + 1.0) - 4.7035149999999994*x54 - x92 - 203.11568)/(math::exp((x91)*math::log(math::abs(math::exp((-x90 - 9.3055640000000004)*math::log(math::abs(10.0)))*x83))) + 1.0))*math::log(math::abs(10.0)));
+    const Real x95_t0 = 5e-32 * x67;
+    const Real x95_t1 = 1.5e-32 * x81;
+    const Real x95 = 5.0000000000000004e-32*x67 + 1.5e-32*x81;
+    const Real x94 = xn[2]*xn[8];
+    const Real x96 = ((xn[2])*(xn[2]))*xn[8];
+    const Real x97 = x47*x75;
+    const Real acc9_3 = acc9_2 + x97;
+    const Real x98 = 1.0/(math::exp((1.3*x45*(x6 - 9.2103403719761836) - 137.42519902360013*x53*((0.10857362047581294*x6 - 1)*(0.10857362047581294*x6 - 1)) - 4.8449999999999998)*math::log(math::abs(10.0)))*x83 + 1.0);
+    const Real x100 = math::exp((0.34999999999999998)*math::log(math::abs(T)))*x41*math::exp(-102000.0*x34);
+    const Real acc2_0 = 8.76e-10 * x100;
+    const Real acc8_0 = -4.38e-10 * x100;
+    const Real x101 = xn[5]*xn[8]*rhs_specie_choice_10(T, x34, x44, x46, x54, x57, x60, x61);
+    const Real acc2_1 = acc2_0 + x101;
+    const Real acc8_1 = acc8_0 - x101;
+    const Real acc10_1 = acc10_0 + x101;
+    const Real x99 = ((xn[8])*(xn[8]))*math::exp((x98)*math::log(math::abs(1.1800000000000001e-10*math::exp(-69500.0*x34))))*math::exp((1.0 - x98)*math::log(math::abs(8.1250000000000003e-8*x67*(1.0 - math::exp(-6000.0*x34))*math::exp(-52000.0*x34))));
+    const Real x102 = xn[10]*xn[2]*rhs_specie_choice_11(T, x3, x34);
+    const Real acc2_2 = acc2_1 - x102;
+    const Real acc8_2 = acc8_1 + x102;
+    const Real acc10_2 = acc10_1 - x102;
+    const Real acc10_3 = acc10_2 + x22;
+    const Real acc10_4 = acc10_3 + x82;
+    const Real x104 = 6.1739095063118665e-10*math::exp((0.40999999999999998)*math::log(math::abs(T)));
+    const Real x105 = x104*x21;
+    const Real acc2_3 = acc2_2 + x105;
+    const Real acc3_0 = -(x105);
+    const Real acc5_2 = acc5_1 - x105;
+    const Real acc7_0 = x105;
+    const Real x106 = x104*x38;
+    const Real acc2_4 = acc2_3 - x106;
+    const Real acc2_5 = acc2_4 + x17;
+    const Real acc2_6 = acc2_5 - x24;
+    const Real acc2_7 = acc2_6 + x27;
+    const Real acc3_1 = acc3_0 + x106;
+    const Real acc3_2 = acc3_1 - x17;
+    const Real acc3_3 = acc3_2 + x24;
+    const Real acc3_4 = acc3_3 - x27;
+    const Real acc3_5 = acc3_4 - x40;
+    const Real acc3_6 = acc3_5 + x42;
+    const Real acc3_7 = acc3_6 - x79;
+    const Real acc3_8 = acc3_7 - x19;
+    const Real acc3_9 = acc3_8 - x22;
+    const Real acc3_10 = acc3_9 - x50;
+    const Real acc5_3 = acc5_2 + x106;
+    const Real acc5_4 = acc5_3 + x37;
+    const Real acc5_5 = acc5_4 - x49;
+    const Real acc5_6 = acc5_5 - x101;
+    const Real acc5_7 = acc5_6 + x102;
+    const Real acc5_8 = acc5_7 - x22;
+    const Real acc5_9 = acc5_8 - x82;
+    const Real acc5_10 = acc5_9 - x2;
+    const Real acc5_11 = acc5_10 + x69;
+    const Real acc5_12 = acc5_11 - x74;
+    const Real acc5_13 = acc5_12 + x76;
+    const Real acc7_1 = acc7_0 - x106;
+    const Real x109_t0 = x80 * (2e-31 * x67 + 6e-32 * x81);
+    const Real acc2_8 = acc2_7 + x109_t0;
+    const Real acc8_3 = acc8_2 + x109_t0;
+    const Real x109_t1 = x94 * (-x89 - x93);
+    const Real acc2_9 = acc2_8 + x109_t1;
+    const Real acc2_10 = acc2_9 + x37;
+    const Real acc2_11 = acc2_10 - x39;
+    const Real acc2_12 = acc2_11 - x40;
+    const Real acc2_13 = acc2_12 + x42;
+    const Real acc2_14 = acc2_13 + 2 * x5;
+    const Real acc2_15 = acc2_14 + 2 * x50;
+    const Real acc2_16 = acc2_15 - x58;
+    const Real acc2_17 = acc2_16 - x59;
+    const Real acc2_18 = acc2_17 + x62;
+    const Real acc2_19 = acc2_18 + x36_t0;
+    const Real acc2_20 = acc2_19 + x36_t1;
+    const Real acc2_21 = acc2_20 - x65;
+    const Real acc2_22 = acc2_21 + x69;
+    const Real acc2_23 = acc2_22 + x70;
+    const Real acc2_24 = acc2_23 - x72;
+    const Real acc2_25 = acc2_24 + x74;
+    const Real acc2_26 = acc2_25 - x76;
+    const Real acc2_27 = acc2_26 + x79;
+    const Real acc2_28 = acc2_27 + x80 * (-6.0000000000000005e-31 * x67 - 1.8e-31 * x81);
+    const Real acc2_29 = acc2_28 - x82;
+    const Real acc2_30 = acc2_29 + x94 * (3 * x89 + 3 * x93);
+    const Real acc2_31 = acc2_30 - x95 * x96;
+    const Real acc2_32 = acc2_31 - x97;
+    const Real acc2_33 = acc2_32 + 2 * x99;
+    const Real acc8_4 = acc8_3 + x109_t1;
+    const Real acc8_5 = acc8_4 + x40;
+    const Real acc8_6 = acc8_5 - x42;
+    const Real acc8_7 = acc8_6 + x79;
+    const Real x111 = 9.8726896031426014e-7*xn[4]*x68;
+    const Real acc7_2 = acc7_1 - x111;
+    const Real acc7_3 = acc7_2 + x2;
+    const Real acc7_4 = acc7_3 - x39;
+    const Real acc7_5 = acc7_4 - x69;
+    const Real x113 = -x55;
+    const Real acc4_0 = xn[4] * xn[8] * x113;
+    const Real acc4_1 = acc4_0 - x1;
+    const Real acc4_2 = acc4_1 - x111;
+    const Real acc4_3 = acc4_2 + x51;
+    const Real acc4_4 = acc4_3 + x74;
+    const Real acc4_5 = acc4_4 - x76;
+    const Real acc4_6 = acc4_5 - x97;
+    const Real x116 = xn[4]*xn[8];
+    const Real acc8_8 = acc8_7 + x113 * x116;
+    const Real acc8_9 = acc8_8 + x51;
+    const Real acc8_10 = acc8_9 + x59;
+    const Real acc8_11 = acc8_10 - x62;
+    const Real acc8_12 = acc8_11 + x95 * x96;
+    const Real acc8_13 = acc8_12 + x96 * (-2.5e-32 * x67 - 7.5e-33 * x81);
+    const Real acc8_14 = acc8_13 - x99;
+    const Real acc10_5 = acc10_4 + x116 * x55;
+    const Real acc10_6 = acc10_5 + x39;
+    const Real acc10_7 = acc10_6 + x65;
+    out[0] = acc0_17;
+    out[1] = acc1_15;
+    out[2] = acc2_33;
+    out[3] = acc3_10;
+    out[4] = acc4_6;
+    out[5] = acc5_13;
+    out[6] = acc6_5;
+    out[7] = acc7_5;
+    out[8] = acc8_14;
+    out[9] = acc9_3;
+    out[10] = acc10_7;
+    out[11] = acc11_1;
+    out[12] = acc12_5;
+    out[13] = acc13_3;
 
 
 
