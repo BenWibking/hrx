@@ -232,7 +232,8 @@ return ((x4) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_1(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x8, Real x9) {
-return ((T <= 1160.0) ? (
+const Real cond_r = T <= 1160.0;
+return ((cond_r) ? (
    1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs(T)))
 )
 : (
@@ -240,7 +241,8 @@ return ((T <= 1160.0) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_2(Real T, Real x32, Real x33, Real x34) {
-return ((x33 <= 9280.0) ? (
+const Real cond_r = x33 <= 9280.0;
+return ((cond_r) ? (
    x32
 )
 : (
@@ -248,7 +250,8 @@ return ((x33 <= 9280.0) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_3(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x32, Real x33, Real x8, Real x9) {
-return ((x33 <= 5500.0) ? (
+const Real cond_r = x33 <= 5500.0;
+return ((cond_r) ? (
    x32
 )
 : (
@@ -256,7 +259,8 @@ return ((x33 <= 5500.0) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_4(Real T, Real x28, Real x29) {
-return ((T >= 10.0 & T <= 100000.0) ? (
+const Real cond_r = T >= 10.0 & T <= 100000.0;
+return ((cond_r) ? (
    -7.7700000000000002e-13*T + 2.5000000000000002e-10*x28 + 2.96e-6*x29 - 1.73e-9
 )
 : (
@@ -264,7 +268,8 @@ return ((T >= 10.0 & T <= 100000.0) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_5(Real T, Real x46, Real x52, Real x53, Real x57) {
-return ((T < 30) ? (
+const Real cond_r = T < 30;
+return ((cond_r) ? (
    3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs(T)))
 )
 : (
@@ -272,7 +277,8 @@ return ((T < 30) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_6(Real T, Real x34, Real x52, Real x56, Real x6, Real x60, Real x61) {
-return ((T >= 100.0 & T <= 30000.0) ? (
+const Real cond_r = T >= 100.0 & T <= 30000.0;
+return ((cond_r) ? (
    (-1.4491368e-7*x52 + 3.4172804999999998e-8*x56 + 3.5311931999999998e-13*((x6)*(x6)*(x6)*(x6)*(x6)*(x6)*(x6)) - 1.8171411000000001e-11*math::exp((6)*math::log(math::abs(x6))) + 3.3735381999999997e-7*x6 - 4.7813727999999997e-9*x60 + 3.9731542e-10*x61 - 3.3232183000000002e-7)*math::exp(-21237.150000000001*x34)
 )
 : (
@@ -304,7 +310,8 @@ return ((x73) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_10(Real T, Real x34, Real x44, Real x46, Real x54, Real x57, Real x60, Real x61) {
-return ((T <= 1167.4796423742259) ? (
+const Real cond_r = T <= 1167.4796423742259;
+return ((cond_r) ? (
    math::exp((5.8888600000000002*x46 + 7.1969200000000004*x54 + 2.2506900000000001*x57 - 56.473700000000001 - 2.1690299999999998*x60/((((x44)*(x44)))*(((x44)*(x44)))) + 0.31788699999999998*x61/((x44)*(x44)*(x44)*(x44)*(x44)))*math::log(math::abs(10)))
 )
 : (
@@ -312,7 +319,8 @@ return ((T <= 1167.4796423742259) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_11(Real T, Real x3, Real x34) {
-return ((T > 200.0) ? (
+const Real cond_r = T > 200.0;
+return ((cond_r) ? (
    5.25e-11*math::exp(-4430.0*x34 + 173900.0/x3)
 )
 : (
@@ -323,271 +331,138 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
 
 
     Real T = temperature;
-
-    Real x0 = math::exp((-0.75)*math::log(math::abs(T)));
-
     Real x2 = 1.3300135414628029e-18*math::exp((0.94999999999999996)*math::log(math::abs(T)))*xn[0]*xn[5]*math::exp(-0.00010729613733905579*T);
-
+    Real x0 = math::exp((-0.75)*math::log(math::abs(T)));
     Real x1 = 2.5950363272655348e-10*xn[0]*xn[4]*x0;
-
     Real x3 = ((T)*(T));
-
     Real x4 = T <= 10000.0;
-
-    Real x6 = math::log(math::abs(T));
-
     Real x5 = xn[0]*xn[6]*rhs_specie_choice_0(T, x3, x4);
-
+    Real x6 = math::log(math::abs(T));
     Real x7 = 0.10684732509875319*x6 - 1;
-
     Real x8 = ((x7)*(x7));
-
     Real x9 = ((x7)*(x7)*(x7));
-
     Real x10 = ((((x7)*(x7)))*(((x7)*(x7))));
-
     Real x11 = ((x7)*(x7)*(x7)*(x7)*(x7));
-
     Real x12 = math::exp((6)*math::log(math::abs(x7)));
-
     Real x13 = ((x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7));
-
     Real x15 = ((x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7));
-
     Real x14 = math::exp((8)*math::log(math::abs(x7)));
-
     Real x16 = xn[2]*xn[3];
-
-    Real x18 = xn[1]*xn[3];
-
     Real x17 = x16*rhs_specie_choice_1(T, x10, x11, x12, x13, x14, x15, x8, x9);
-
+    Real x18 = xn[1]*xn[3];
     Real x19 = 1.0e-8*math::exp((-0.40000000000000002)*math::log(math::abs(T)))*x18;
-
     Real x20 = 2.6534040307116387e-9*math::exp((-0.10000000000000001)*math::log(math::abs(T)));
-
     Real x21 = xn[3]*xn[5];
-
     Real x22 = x20*x21;
-
     Real x23 = xn[0]*xn[2];
-
-    Real x25 = xn[0]*xn[12];
-
     Real x24 = 1.4000000000000001e-18*math::exp((0.92800000000000005)*math::log(math::abs(T)))*x23*math::exp(-6.1728395061728397e-5*T);
-
+    Real x25 = xn[0]*xn[12];
     Real x26 = 3.8571873359681582e-209*math::exp((43.933476326349997)*math::log(math::abs(T)))*x25*math::exp(-5902.1601240760483*x10 + 5825.9326359379538*x11 - 3578.1439181805954*x12 + 1242.7294446825149*x13 - 186.35635455381879*x14 - 1618.789587733125*x8 + 3854.4033653120223*x9);
-
     Real x27 = 3.7903999274394518e-18*math::exp((2.360852208681)*math::log(math::abs(T)))*xn[0]*xn[3]*math::exp(-258.18559308467115*x10 + 846.15238706523724*x11 - 1113.0879095147111*x12 + 671.95094388835207*x13 - 154.90262957142161*x14 - 24.766609674457612*x8 + 13.307984239358756*x9);
-
     Real x28 = math::sqrt(T);
-
     Real x29 = 1.0/x28;
-
     Real x30 = xn[0]*x29;
-
     Real x31 = 5.7884371785482823e-10*xn[11]*x30*math::exp((-1.7524)*math::log(math::abs(0.00060040841663220993*x28 + 1.0)))*math::exp((-0.24759999999999999)*math::log(math::abs(0.32668576019240059*x28 + 1.0)));
-
     Real x32 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)));
-
     Real x34 = 1.0/T;
-
     Real x33 = 8.6173430000000006e-5*T;
-
     Real x35 = -4.3524079114767552e-117*math::exp((23.915965629999999)*math::log(math::abs(T)))*xn[0]*xn[13]*math::exp(-4361.9927099007555*x10 + 4879.7345146260486*x11 - 3366.4639698826941*x12 + 1300.3028484326148*x13 - 214.82451513312137*x14 - 941.91483008144996*x8 + 2506.9866529060901*x9) + x25*rhs_specie_choice_2(T, x32, x33, x34);
-
     Real x36 = -5.9082438637265071e-70*math::exp((13.536555999999999)*math::log(math::abs(T)))*x23*math::exp(-2207.4643501257692*x10 + 2500.8077583366976*x11 - 1768.8867461266502*x12 + 704.19926629500367*x13 - 120.0438480494693*x14 - 502.72883252679094*x8 + 1281.477767828706*x9) + xn[0]*xn[1]*rhs_specie_choice_3(T, x10, x11, x12, x13, x14, x15, x32, x33, x8, x9);
-
     Real x40 = x16*(1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T))))/(0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0);
-
     Real x37 = 7.1999999999999996e-8*xn[9]*x30;
-
     Real x38 = xn[2]*xn[7];
-
     Real x39 = x20*x38;
-
     Real x41 = xn[0]*xn[8];
-
     Real x42 = 35.5*math::exp((-2.2799999999999998)*math::log(math::abs(T)))*x41*math::exp(-46707.0*x34);
-
     Real x43 = x37 - x39 - x40 + x42;
-
-    Real x44 = M_LN10;
-
-    Real x45 = 1.0/x44;
-
-    Real x46 = x45*x6;
-
-    Real x47 = math::exp((-0.12690000000000001*math::exp((-3.0)*math::log(math::abs(x44)))*((x6)*(x6)*(x6)) + 1.1180000000000001*math::exp((-2.0)*math::log(math::abs(x44)))*((x6)*(x6)) - 1.5229999999999999*x46 - 19.379999999999999)*math::log(math::abs(10.0)));
-
-    Real x48 = xn[1]*xn[5];
-
-    Real x49 = x47*x48;
-
-    Real x50 = x18*rhs_specie_choice_4(T, x28, x29);
-
-    Real x51 = 1.0000000000000001e-9*xn[1]*xn[10]*math::exp(-457.0*x34);
-
-    Real x52 = ((x6)*(x6));
-
-    Real x53 = math::exp((-2)*math::log(math::abs(x44)));
-
-    Real x54 = x52*x53;
-
-    Real x56 = ((x6)*(x6)*(x6));
-
-    Real x55 = 8.4600000000000008e-10*x46 - 1.3700000000000002e-10*x54 + 4.1700000000000001e-10;
-
-    Real x57 = x56/((x44)*(x44)*(x44));
-
-    Real x58 = xn[1]*xn[2]*rhs_specie_choice_5(T, x46, x52, x53, x57);
-
-    Real x59 = 6.0e-10*xn[2]*xn[6];
-
-    Real x60 = ((((x6)*(x6)))*(((x6)*(x6))));
-
-    Real x61 = ((x6)*(x6)*(x6)*(x6)*(x6));
-
-    Real x62 = xn[1]*xn[8]*rhs_specie_choice_6(T, x34, x52, x56, x6, x60, x61);
-
-    Real x63 = -x59 + x62;
-
-    Real x64 = x19 + x58 + x63;
-
-    Real x65 = 6.3999999999999996e-10*xn[2]*xn[9];
-
-    Real x66 = -x65;
-
-    Real x67 = math::exp((-0.5)*math::log(math::abs(T)));
-
-    Real x68 = xn[7]*x67;
-
-    Real x69 = 7.9674337148168363e-7*xn[1]*x68;
-
-    Real x70 = xn[1]*xn[13]*rhs_specie_choice_7(T, x0, x34, x4);
-
-    Real x71 = math::exp((0.25)*math::log(math::abs(T)));
-
-    Real x72 = 2.8833736969617052e-16*xn[12]*xn[2]*x71;
-
-    Real x73 = T >= 50.0;
-
-    Real x75 = xn[2]*xn[4];
-
-    Real x74 = x48*rhs_specie_choice_8(T, x34, x73);
-
-    Real x76 = x75*rhs_specie_choice_9(T, x34, x73);
-
-    Real x77 = x74 - x76;
-
-    Real x78 = x36 + x66 + x69 + x70 - x72 + x77;
-
-    Real x79 = 4.9999999999999996e-6*xn[3]*xn[6]*x29;
-
-    Real x80 = ((xn[2])*(xn[2])*(xn[2]));
-
-    Real x81 = 1.0/x71;
-
-    Real x82 = 1.0e-25*xn[2]*xn[5];
-
-    Real x83 = xn[1] + xn[10] + xn[2] + xn[3] + 2.0*xn[6] + 2.0*xn[8] + xn[9];
-
-    Real x85 = math::exp(-0.0022727272727272726*T);
-
-    Real x84 = -133.82830000000001*x34 - 4.8909149999999997*x45*x6 + 0.47490300000000002*x54;
-
-    Real x86 = math::exp(-0.00054054054054054055*T);
-
-    Real x87 = -2.0563129999999998*x85 + 0.58640729999999996*x86 + 0.82274429999999998;
-
-    Real x88 = -69.700860000000006*x45*math::log(40870.379999999997*x34 + 1.0) + 4.6331670000000003*x57;
-
-    Real x89 = math::exp((-23705.700000000001*x34 - 2080.4099999999999*x34/(math::exp((x87)*math::log(math::abs(math::exp((-x84 - 13.656822)*math::log(math::abs(10.0)))*x83))) + 1.0) - 68.422430000000006*x46 + 43.20243*x52*x53 - x88 - 178.4239 - (19.734269999999999*x45*math::log(16780.950000000001*x34 + 1.0) - 14.509090000000008*x46 + 37.886913*x52*x53 - x88 - 307.31920000000002)/(math::exp((x87)*math::log(math::abs(math::exp((-x84 - 14.82123)*math::log(math::abs(10.0)))*x83))) + 1.0))*math::log(math::abs(10.0)));
-
-    Real x90 = 743.05999999999995*x34 - 2.4640089999999999*x45*x6 + 0.19859550000000001*x54;
-
-    Real x91 = 2.9375070000000001*x85 + 0.23588480000000001*x86 + 0.75022860000000002;
-
-    Real x92 = -21.360939999999999*x45*math::log(27535.310000000001*x34 + 1.0) + 0.25820969999999999*x57;
-
-    Real x93 = math::exp((-21467.790000000001*x34 - 1657.4099999999999*x34/(math::exp((x91)*math::log(math::abs(math::exp((-x90 - 8.1313220000000008)*math::log(math::abs(10.0)))*x83))) + 1.0) + 42.707410000000003*x45*x6 - 2.0273650000000001*x54 - x92 - 142.7664 - (70.138370000000009*x45*x6 + 11.28215*x45*math::log(14254.549999999999*x34 + 1.0) - 4.7035149999999994*x54 - x92 - 203.11568)/(math::exp((x91)*math::log(math::abs(math::exp((-x90 - 9.3055640000000004)*math::log(math::abs(10.0)))*x83))) + 1.0))*math::log(math::abs(10.0)));
-
-    Real x95 = 5.0000000000000004e-32*x67 + 1.5e-32*x81;
-
-    Real x94 = xn[2]*xn[8];
-
-    Real x96 = ((xn[2])*(xn[2]))*xn[8];
-
-    Real x97 = x47*x75;
-
-    Real x98 = 1.0/(math::exp((1.3*x45*(x6 - 9.2103403719761836) - 137.42519902360013*x53*((0.10857362047581294*x6 - 1)*(0.10857362047581294*x6 - 1)) - 4.8449999999999998)*math::log(math::abs(10.0)))*x83 + 1.0);
-
-    Real x100 = math::exp((0.34999999999999998)*math::log(math::abs(T)))*x41*math::exp(-102000.0*x34);
-
-    Real x101 = xn[5]*xn[8]*rhs_specie_choice_10(T, x34, x44, x46, x54, x57, x60, x61);
-
-    Real x99 = ((xn[8])*(xn[8]))*math::exp((x98)*math::log(math::abs(1.1800000000000001e-10*math::exp(-69500.0*x34))))*math::exp((1.0 - x98)*math::log(math::abs(8.1250000000000003e-8*x67*(1.0 - math::exp(-6000.0*x34))*math::exp(-52000.0*x34))));
-
-    Real x102 = xn[10]*xn[2]*rhs_specie_choice_11(T, x3, x34);
-
-    Real x103 = x101 - x102;
-
-    Real x104 = 6.1739095063118665e-10*math::exp((0.40999999999999998)*math::log(math::abs(T)));
-
-    Real x105 = x104*x21;
-
-    Real x106 = x104*x38;
-
-    Real x107 = x105 - x106;
-
-    Real x108 = x107 + x17 - x24 + x27;
-
-    Real x109 = x80*(2.0000000000000002e-31*x67 + 6.0000000000000001e-32*x81) + x94*(-x89 - x93);
-
-    Real x110 = x40 - x42 + x79;
-
-    Real x111 = 9.8726896031426014e-7*xn[4]*x68;
-
-    Real x112 = -x51;
-
-    Real x113 = -x55;
-
-    Real x114 = -x37 + x49;
-
-    Real x115 = x103 + x22 + x82;
-
-    Real x116 = xn[4]*xn[8];
-
-    Real x117 = x26 - x31;
-
-    Real x118 = x35 - x70 + x72;
-
     out[0] = -x1 + x17 + x19 - x2 + x22 - x24 + x26 + x27 - x31 - x35 - x36 - x43 - x5;
-
+    Real x44 = M_LN10;
+    Real x45 = 1.0/x44;
+    Real x46 = x45*x6;
+    Real x47 = math::exp((-0.12690000000000001*math::exp((-3.0)*math::log(math::abs(x44)))*((x6)*(x6)*(x6)) + 1.1180000000000001*math::exp((-2.0)*math::log(math::abs(x44)))*((x6)*(x6)) - 1.5229999999999999*x46 - 19.379999999999999)*math::log(math::abs(10.0)));
+    Real x48 = xn[1]*xn[5];
+    Real x49 = x47*x48;
+    Real x50 = x18*rhs_specie_choice_4(T, x28, x29);
+    Real x51 = 1.0000000000000001e-9*xn[1]*xn[10]*math::exp(-457.0*x34);
+    Real x52 = ((x6)*(x6));
+    Real x53 = math::exp((-2)*math::log(math::abs(x44)));
+    Real x54 = x52*x53;
+    Real x55 = 8.4600000000000008e-10*x46 - 1.3700000000000002e-10*x54 + 4.1700000000000001e-10;
+    Real x56 = ((x6)*(x6)*(x6));
+    Real x57 = x56/((x44)*(x44)*(x44));
+    Real x58 = xn[1]*xn[2]*rhs_specie_choice_5(T, x46, x52, x53, x57);
+    Real x59 = 6.0e-10*xn[2]*xn[6];
+    Real x60 = ((((x6)*(x6)))*(((x6)*(x6))));
+    Real x61 = ((x6)*(x6)*(x6)*(x6)*(x6));
+    Real x62 = xn[1]*xn[8]*rhs_specie_choice_6(T, x34, x52, x56, x6, x60, x61);
+    Real x63 = -x59 + x62;
+    Real x64 = x19 + x58 + x63;
+    Real x65 = 6.3999999999999996e-10*xn[2]*xn[9];
+    Real x66 = -x65;
+    Real x67 = math::exp((-0.5)*math::log(math::abs(T)));
+    Real x68 = xn[7]*x67;
+    Real x69 = 7.9674337148168363e-7*xn[1]*x68;
+    Real x70 = xn[1]*xn[13]*rhs_specie_choice_7(T, x0, x34, x4);
+    Real x71 = math::exp((0.25)*math::log(math::abs(T)));
+    Real x72 = 2.8833736969617052e-16*xn[12]*xn[2]*x71;
+    Real x73 = T >= 50.0;
+    Real x74 = x48*rhs_specie_choice_8(T, x34, x73);
+    Real x75 = xn[2]*xn[4];
+    Real x76 = x75*rhs_specie_choice_9(T, x34, x73);
+    Real x77 = x74 - x76;
+    Real x78 = x36 + x66 + x69 + x70 - x72 + x77;
     out[1] = xn[4]*xn[8]*x55 - x49 - x50 - x51 - x64 - x78;
-
+    Real x79 = 4.9999999999999996e-6*xn[3]*xn[6]*x29;
+    Real x80 = ((xn[2])*(xn[2])*(xn[2]));
+    Real x81 = 1.0/x71;
+    Real x82 = 1.0e-25*xn[2]*xn[5];
+    Real x83 = xn[1] + xn[10] + xn[2] + xn[3] + 2.0*xn[6] + 2.0*xn[8] + xn[9];
+    Real x84 = -133.82830000000001*x34 - 4.8909149999999997*x45*x6 + 0.47490300000000002*x54;
+    Real x85 = math::exp(-0.0022727272727272726*T);
+    Real x86 = math::exp(-0.00054054054054054055*T);
+    Real x87 = -2.0563129999999998*x85 + 0.58640729999999996*x86 + 0.82274429999999998;
+    Real x88 = -69.700860000000006*x45*math::log(40870.379999999997*x34 + 1.0) + 4.6331670000000003*x57;
+    Real x89 = math::exp((-23705.700000000001*x34 - 2080.4099999999999*x34/(math::exp((x87)*math::log(math::abs(math::exp((-x84 - 13.656822)*math::log(math::abs(10.0)))*x83))) + 1.0) - 68.422430000000006*x46 + 43.20243*x52*x53 - x88 - 178.4239 - (19.734269999999999*x45*math::log(16780.950000000001*x34 + 1.0) - 14.509090000000008*x46 + 37.886913*x52*x53 - x88 - 307.31920000000002)/(math::exp((x87)*math::log(math::abs(math::exp((-x84 - 14.82123)*math::log(math::abs(10.0)))*x83))) + 1.0))*math::log(math::abs(10.0)));
+    Real x90 = 743.05999999999995*x34 - 2.4640089999999999*x45*x6 + 0.19859550000000001*x54;
+    Real x91 = 2.9375070000000001*x85 + 0.23588480000000001*x86 + 0.75022860000000002;
+    Real x92 = -21.360939999999999*x45*math::log(27535.310000000001*x34 + 1.0) + 0.25820969999999999*x57;
+    Real x93 = math::exp((-21467.790000000001*x34 - 1657.4099999999999*x34/(math::exp((x91)*math::log(math::abs(math::exp((-x90 - 8.1313220000000008)*math::log(math::abs(10.0)))*x83))) + 1.0) + 42.707410000000003*x45*x6 - 2.0273650000000001*x54 - x92 - 142.7664 - (70.138370000000009*x45*x6 + 11.28215*x45*math::log(14254.549999999999*x34 + 1.0) - 4.7035149999999994*x54 - x92 - 203.11568)/(math::exp((x91)*math::log(math::abs(math::exp((-x90 - 9.3055640000000004)*math::log(math::abs(10.0)))*x83))) + 1.0))*math::log(math::abs(10.0)));
+    Real x95 = 5.0000000000000004e-32*x67 + 1.5e-32*x81;
+    Real x94 = xn[2]*xn[8];
+    Real x96 = ((xn[2])*(xn[2]))*xn[8];
+    Real x97 = x47*x75;
+    Real x100 = math::exp((0.34999999999999998)*math::log(math::abs(T)))*x41*math::exp(-102000.0*x34);
+    Real x98 = 1.0/(math::exp((1.3*x45*(x6 - 9.2103403719761836) - 137.42519902360013*x53*((0.10857362047581294*x6 - 1)*(0.10857362047581294*x6 - 1)) - 4.8449999999999998)*math::log(math::abs(10.0)))*x83 + 1.0);
+    Real x99 = ((xn[8])*(xn[8]))*math::exp((x98)*math::log(math::abs(1.1800000000000001e-10*math::exp(-69500.0*x34))))*math::exp((1.0 - x98)*math::log(math::abs(8.1250000000000003e-8*x67*(1.0 - math::exp(-6000.0*x34))*math::exp(-52000.0*x34))));
+    Real x101 = xn[5]*xn[8]*rhs_specie_choice_10(T, x34, x44, x46, x54, x57, x60, x61);
+    Real x102 = xn[10]*xn[2]*rhs_specie_choice_11(T, x3, x34);
+    Real x103 = x101 - x102;
+    Real x104 = 6.1739095063118665e-10*math::exp((0.40999999999999998)*math::log(math::abs(T)));
+    Real x105 = x104*x21;
+    Real x106 = x104*x38;
+    Real x107 = x105 - x106;
+    Real x108 = x107 + x17 - x24 + x27;
+    Real x109 = x80*(2.0000000000000002e-31*x67 + 6.0000000000000001e-32*x81) + x94*(-x89 - x93);
     out[2] = 8.7599999999999997e-10*x100 + x103 + x108 + x109 + x43 + 2*x5 + 2*x50 - x58 + x63 + x78 + x79 + x80*(-6.0000000000000005e-31*x67 - 1.8e-31*x81) - x82 + x94*(3*x89 + 3*x93) - x95*x96 - x97 + 2*x99;
-
+    Real x110 = x40 - x42 + x79;
     out[3] = -x108 - x110 - x19 - x22 - x50;
-
+    Real x111 = 9.8726896031426014e-7*xn[4]*x68;
+    Real x112 = -x51;
+    Real x113 = -x55;
     out[4] = xn[4]*xn[8]*x113 - x1 - x111 - x112 + x74 - x76 - x97;
-
+    Real x114 = -x37 + x49;
+    Real x115 = x103 + x22 + x82;
     out[5] = 1.9745379206285203e-6*xn[4]*xn[7]*x67 + x1 - x107 - x114 - x115 - x2 + x69 - x77;
-
     out[6] = -x5 + x64 - x79;
-
     out[7] = x105 - x106 - x111 + x2 - x39 - x69;
-
+    Real x116 = xn[4]*xn[8];
     out[8] = -4.3799999999999999e-10*x100 - x101 + x102 + x109 + x110 + x113*x116 + x51 + x59 - x62 + x95*x96 + x96*(-2.5000000000000002e-32*x67 - 7.5000000000000001e-33*x81) - x99;
-
     out[9] = x114 + x66 + x97;
-
     out[10] = x112 + x115 + x116*x55 + x39 + x65;
-
+    Real x117 = x26 - x31;
     out[11] = x117;
-
+    Real x118 = x35 - x70 + x72;
     out[12] = -x117 - x118;
-
     out[13] = x118;
 
 
@@ -635,7 +510,8 @@ return ((x6) ? (
 ));
 }
 DEVICE auto rhs_eint_choice_5(Real T) {
-return ((T >= 10000.0) ? (
+const Real cond_r = T >= 10000.0;
+return ((cond_r) ? (
    10000.0
 )
 : (
@@ -1387,7 +1263,8 @@ return ((rhs_eint_choice_98(x105, x107, x109, x114, x115, x116, x118, x120, x125
    ));
 }
 DEVICE auto rhs_eint_choice_100(Real T, bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, Real x119, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x70, Real x71, bool x73, bool x85, bool x88, Real x89, bool x97, bool x98, const Real* xn) {
-return ((T < 2.0) ? (
+const Real cond_r = T < 2.0;
+return ((cond_r) ? (
    0
 )
 : (
@@ -1395,7 +1272,8 @@ return ((T < 2.0) ? (
 ));
 }
 DEVICE auto rhs_eint_choice_101(Real T, Real x25, Real x26, Real x35, Real x41, Real x42, Real x43, Real x44, Real x45, Real x47, Real x48, Real x49, Real x5, Real x50, Real x51, Real x52, Real x53, Real x54, const Real* xn) {
-return ((T >= x5) ? (
+const Real cond_r = T >= x5;
+return ((cond_r) ? (
    math::exp((21.93385*x25*x41 + 0.92432999999999998*x25*x47 + 0.77951999999999999*x26*x41*x47 - 10.19097*x26*x45 + 0.54962*x26*x50 - 1.06447*x35*x41*x50 + 2.1990599999999998*x35*x44 - 0.54262999999999995*x35*x45*x47 - 0.076759999999999995*x35*x49 + 0.11864*x41*x42*x49 - 0.0036600000000000001*x41*x48*x51 - 0.17333999999999999*x42*x43 + 0.11711000000000001*x42*x44*x47 + 0.62343000000000004*x42*x45*x50 + 0.0027499999999999998*x42*x48 - 0.0083499999999999998*x43*x47*x51 + 6.1920000000000003e-5*x43*x48*x52 - 0.001482*x43*x49*x53 + 0.0106*x43*x50*x54 - 0.00066631000000000004*x44*x48*x53 + 0.017590000000000001*x44*x49*x54 - 0.13768*x44*x50*x51 + 0.0025140000000000002*x45*x48*x54 - 0.073660000000000003*x45*x49*x51 - 42.567880000000002)*math::log(math::abs(10.0)))*xn[10]
 )
 : (
