@@ -5872,6 +5872,116 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
         return info;
     }
 }
+// Ping-pong elimination step (same arithmetic as lu_step): the active rows
+// K..14 (columns K..14) are read from Win with the pivot interchange applied on
+// load, the updated trailing rows go to Wout, and A (the factor) only receives
+// the multipliers and the pivot row. Row loads never follow stores to the same
+// array within a step, so the rolled row loop does not drain on every row.
+template <unsigned K>
+DEVICE int lu_step_pp(Real* Win, Real* Wout, Real* A, int* ipvt, int info, unsigned pivot_row) {
+    unsigned next_pivot = K + 1;
+    ipvt[K] = static_cast<int>(pivot_row);
+    __builtin_assume(pivot_row < 15u);
+    Real last_diag = 0.0;
+    const Real pivot = Win[midx(pivot_row, K)];
+    if (pivot != 0.0) {
+        if constexpr (K > 0) {
+            if (pivot_row != K) {
+                // LAPACK form: the earlier multipliers move with their rows.
+                Real plft[K];
+                Real klft[K];
+                [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+                    plft[j] = A[midx(pivot_row, j)];
+                    klft[j] = A[midx(K, j)];
+                }
+                [[loom::unroll]] for (unsigned j = 0; j < K; ++j) {
+                    A[midx(pivot_row, j)] = klft[j];
+                    A[midx(K, j)] = plft[j];
+                }
+            }
+        }
+        Real row[14 - K];
+        [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+            row[j - K - 1] = Win[midx(pivot_row, j)];
+        }
+        A[midx(K, K)] = pivot;
+        [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+            A[midx(K, j)] = row[j - K - 1];
+        }
+        const Real multiplier = -1.0 / pivot;
+        Real next_max = 0.0;
+        Real nxt[15 - K];
+        {
+            const unsigned src1 = (K + 1 == pivot_row) ? K : K + 1;
+            __builtin_assume(src1 < 15u);
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                nxt[j - K] = Win[midx(src1, j)];
+            }
+        }
+        for (unsigned i = K + 1; i < 15u; ++i) {
+            Real cur[15 - K];
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                cur[j - K] = nxt[j - K];
+            }
+            if (i + 1 < 15u) {
+                const unsigned i1 = i + 1;
+                const unsigned src = (i1 == pivot_row) ? K : i1;
+                __builtin_assume(src < 15u);
+                [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                    nxt[j - K] = Win[midx(src, j)];
+                }
+            }
+            const Real m = cur[0] * multiplier;
+            [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                cur[j - K] = cur[j - K] + row[j - K - 1] * m;
+            }
+            if constexpr (K + 1 < 14u) {
+                const Real val = math::abs(cur[1]);
+                const bool take = (i == K + 1) | (val > next_max);
+                next_max = take ? val : next_max;
+                next_pivot = take ? i : next_pivot;
+            }
+            A[midx(i, K)] = m;
+            if constexpr (K == 13u) {
+                last_diag = cur[1];
+                A[midx(14u, 14u)] = cur[1];
+            } else {
+                [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                    Wout[midx(i, j)] = cur[j - K];
+                }
+            }
+        }
+    } else {
+        // Zero column: no interchange and no elimination (the rows keep
+        // their values); only info and the later pivots matter.
+        info = static_cast<int>(K + 1);
+        [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+            A[midx(K, j)] = Win[midx(K, j)];
+        }
+        for (unsigned i = K + 1; i < 15u; ++i) {
+            Real cur[15 - K];
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                cur[j - K] = Win[midx(i, j)];
+            }
+            A[midx(i, K)] = cur[0];
+            if constexpr (K == 13u) {
+                last_diag = cur[1];
+                A[midx(14u, 14u)] = cur[1];
+            } else {
+                [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+                    Wout[midx(i, j)] = cur[j - K];
+                }
+            }
+        }
+        if constexpr (K + 1 < 14u) next_pivot = lu_pivot_search<K + 1>(Win);
+    }
+    if constexpr (K + 1 < 14u) {
+        return lu_step_pp<K + 1>(Wout, Win, A, ipvt, info, next_pivot);
+    } else {
+        if (last_diag == 0.0) info = 15;
+        return info;
+    }
+}
 // Iteration-matrix element E(i,j) = -J(i,j) (+ fac on the diagonal), exactly as
 // decompose used to store it into e.
 DEVICE Real iter_elem(const Real* J, unsigned i, unsigned j, Real fac) {
@@ -5882,7 +5992,7 @@ DEVICE Real iter_elem(const Real* J, unsigned i, unsigned j, Real fac) {
 // identical values and operation order to "e = -fjac + fac*I; lu_step<0>(e)",
 // but the loads come from fjac (never stored here), so the per-row loads do not
 // wait on the preceding stores to e. Every element of e is written.
-DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
+DEVICE int lu_step0_from_jac_pp(const Real* J, Real* A, Real* W1, Real* W0, int* ipvt, Real fac) {
     // Column-0 pivot search with all loads issued together (fjac is not
     // stored here); same comparisons in the same order (first maximum).
     Real col[15];
@@ -5943,7 +6053,7 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
             next_pivot = take ? i : next_pivot;
             A[midx(i, 0u)] = m;
             [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
-                A[midx(i, j)] = cur[j];
+                W1[midx(i, j)] = cur[j];
             }
         }
     } else {
@@ -5952,14 +6062,21 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
             [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
                 cur[j] = iter_elem(J, i, j, fac);
             }
-            [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
-                A[midx(i, j)] = cur[j];
+            if (i == 0u) {
+                [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+                    A[midx(0u, j)] = cur[j];
+                }
+            } else {
+                A[midx(i, 0u)] = cur[0];
+                [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
+                    W1[midx(i, j)] = cur[j];
+                }
             }
         }
         info = 1;
-        next_pivot = lu_pivot_search<1>(A);
+        next_pivot = lu_pivot_search<1>(W1);
     }
-    return lu_step<1>(A, ipvt, info, next_pivot);
+    return lu_step_pp<1>(W1, W0, A, ipvt, info, next_pivot);
 }
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
@@ -6181,7 +6298,9 @@ DEVICE int decompose(ScratchView s, Real fac) {
         Real* A = s.e;
         // ip[14] is never read by the solve; the A(14,14) == 0 check is done
         // in lu_step<13> on the register value.
-        int info = lu_step0_from_jac(s.fjac, A, s.ip, fac);
+        Real w0[225];
+        Real w1[225];
+        int info = lu_step0_from_jac_pp(s.fjac, A, w1, w0, s.ip, fac);
         // ip now holds the composite row permutation (all 15 entries).
         store_permutation(s.ip);
         return info;
