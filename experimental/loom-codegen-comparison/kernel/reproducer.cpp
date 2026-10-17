@@ -5959,6 +5959,98 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
     }
     return lu_step<1>(A, ipvt, info, next_pivot);
 }
+// Left-looking (Crout) LU with partial pivoting and LAPACK row interchanges.
+// Element (i,j) receives the same "a + u(k,j) * m(i,k)" updates in the same k
+// order as the right-looking elimination, so L, U, the pivots and info (zero or
+// not) are bitwise those of lu_step0_from_jac/lu_step in LAPACK form. Each
+// element of e is stored once (plus the multiplier interchange); unprocessed
+// values are read from fjac through the row permutation pm.
+template <unsigned K>
+DEVICE int crout_step(const Real* J, Real* A, unsigned* pm, int info, Real fac) {
+    Real c[15 - K];
+    [[loom::unroll]] for (unsigned i = K; i < 15u; ++i) {
+        const unsigned r = pm[i];
+        __builtin_assume(r < 15u);
+        Real a = iter_elem(J, r, K, fac);
+        [[loom::unroll]] for (unsigned k = 0; k < K; ++k) {
+            a = a + A[midx(k, K)] * A[midx(i, k)];
+        }
+        c[i - K] = a;
+    }
+    if constexpr (K == 14u) {
+        A[midx(14u, 14u)] = c[0];
+        if (c[0] == 0.0) info = 15;
+        return info;
+    } else {
+        unsigned p = K;
+        Real mx = math::abs(c[0]);
+        [[loom::unroll]] for (unsigned i = K + 1; i < 15u; ++i) {
+            const Real v = math::abs(c[i - K]);
+            const bool take = v > mx;
+            mx = take ? v : mx;
+            p = take ? i : p;
+        }
+        __builtin_assume(p < 15u);
+        Real piv = c[0];
+        [[loom::unroll]] for (unsigned i = K + 1; i < 15u; ++i) {
+            piv = (p == i) ? c[i - K] : piv;
+        }
+        [[loom::unroll]] for (unsigned i = K + 1; i < 15u; ++i) {
+            c[i - K] = (p == i) ? c[0] : c[i - K];
+        }
+        c[0] = piv;
+        const unsigned a0 = pm[K];
+        unsigned b0 = a0;
+        [[loom::unroll]] for (unsigned i = K + 1; i < 15u; ++i) {
+            b0 = (p == i) ? pm[i] : b0;
+        }
+        [[loom::unroll]] for (unsigned i = K + 1; i < 15u; ++i) {
+            pm[i] = (p == i) ? a0 : pm[i];
+        }
+        pm[K] = b0;
+        // Interchange the multiplier parts (columns 0..K-1) of rows K and p.
+        Real pl[K > 0 ? K : 1];
+        if constexpr (K > 0) {
+            Real kl[K];
+            [[loom::unroll]] for (unsigned k = 0; k < K; ++k) {
+                pl[k] = A[midx(p, k)];
+                kl[k] = A[midx(K, k)];
+            }
+            [[loom::unroll]] for (unsigned k = 0; k < K; ++k) {
+                A[midx(p, k)] = kl[k];
+                A[midx(K, k)] = pl[k];
+            }
+        }
+        if (piv == 0.0) info = static_cast<int>(K + 1);
+        const Real multiplier = -1.0 / piv;
+        A[midx(K, K)] = piv;
+        [[loom::unroll]] for (unsigned i = K + 1; i < 15u; ++i) {
+            A[midx(i, K)] = c[i - K] * multiplier;
+        }
+        // Row K of U.
+        const unsigned rk = b0;
+        __builtin_assume(rk < 15u);
+        [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+            Real a = iter_elem(J, rk, j, fac);
+            [[loom::unroll]] for (unsigned k = 0; k < K; ++k) {
+                a = a + A[midx(k, j)] * pl[k];
+            }
+            A[midx(K, j)] = a;
+        }
+        return crout_step<K + 1>(J, A, pm, info, fac);
+    }
+}
+DEVICE int lu_crout_from_jac(const Real* J, Real* A, int* perm, Real fac) {
+    unsigned pm[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        pm[i] = i;
+    }
+    const int info = crout_step<0>(J, A, pm, 0, fac);
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        perm[i] = static_cast<int>(pm[i]);
+    }
+    return info;
+}
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
     int info = lu_step<0>(A, ipvt, 0, lu_pivot_search<0>(A));
@@ -6179,9 +6271,9 @@ DEVICE int decompose(ScratchView s, Real fac) {
         Real* A = s.e;
         // ip[14] is never read by the solve; the A(14,14) == 0 check is done
         // in lu_step<13> on the register value.
-        int info = lu_step0_from_jac(s.fjac, A, s.ip, fac);
-        // ip now holds the composite row permutation (all 15 entries).
-        store_permutation(s.ip);
+        // Crout LU (bitwise the LAPACK-form elimination); ip gets the
+        // composite row permutation (all 15 entries).
+        int info = lu_crout_from_jac(s.fjac, A, s.ip, fac);
         return info;
 
 }
