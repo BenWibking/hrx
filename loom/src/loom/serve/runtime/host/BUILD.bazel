@@ -13,6 +13,13 @@ package(
 )
 
 loom_cc_library(
+    name = "clock",
+    srcs = ["clock.c"],
+    hdrs = ["clock.h"],
+    deps = ["//runtime/src/iree/base"],
+)
+
+loom_cc_library(
     name = "host",
     srcs = ["host.c"],
     hdrs = ["host.h"],
@@ -24,6 +31,7 @@ loom_cc_library(
         "//runtime/src/iree/async/util:proactor_pool",
         "//runtime/src/iree/async/util:proactor_thread",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/base/threading",
         "//runtime/src/iree/hal",
         "//runtime/src/iree/hal/drivers/task:driver",
@@ -51,6 +59,7 @@ loom_cc_test(
         ":host",
         "//loom/binding/c:task_pool",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/task",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",

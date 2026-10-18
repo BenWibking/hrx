@@ -465,9 +465,72 @@ class CiTest(unittest.TestCase):
             planned[1].test_results,
             ci.bazel_test_results.BazelTestResultsCapture(
                 build_event_path=event_path,
-                output_dir=result_dir,
+                output_dir=result_dir / "test-example",
             ),
         )
+
+    def test_repeated_test_phases_preserve_each_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_dir = root / "results"
+            ci.bazel_test_results.prepare_output_directory(result_dir)
+            source = root / "testlogs" / "example" / "test.xml"
+            source.parent.mkdir(parents=True)
+            steps = ci.add_bazel_test_results(
+                [
+                    ci.bazel_test_step("First", ("//example:test",)),
+                    ci.bazel_test_step("Second", ("//example:test",)),
+                ],
+                result_dir,
+            )
+            event = {
+                "testResult": {
+                    "testActionOutput": [{"name": "test.xml", "uri": source.as_uri()}]
+                }
+            }
+            for step, payload in zip(steps, ("first result", "second result")):
+                source.write_text(payload)
+                capture = step.test_results
+                capture.build_event_path.write_text(json.dumps(event) + "\n")
+                self.assertEqual(
+                    ci.bazel_test_results.stage(
+                        capture.build_event_path, capture.output_dir
+                    ),
+                    1,
+                )
+            self.assertEqual(
+                sorted(path.read_text() for path in result_dir.rglob("test.xml")),
+                ["first result", "second result"],
+            )
+
+    def test_native_gpu_ci_requires_explicit_windows_target(self):
+        with mock.patch.object(ci.sys, "platform", "win32"):
+            args = ci.parse_arguments(["iree-bazel-amdgpu-native"])
+            with self.assertRaisesRegex(ValueError, "exact --amdgpu-target"):
+                ci.steps_from_args(args)
+        with mock.patch.object(ci.sys, "platform", "linux"):
+            args = ci.parse_arguments(
+                ["iree-bazel-amdgpu-native", "--amdgpu-target", "gfx1201"]
+            )
+            with self.assertRaisesRegex(ValueError, "requires Windows"):
+                ci.steps_from_args(args)
+
+    def test_native_gpu_ci_forwards_target_override_and_sanitizer(self):
+        args = ci.parse_arguments(
+            [
+                "iree-bazel-amdgpu-native-asan",
+                "--amdgpu-target",
+                "gfx1201",
+                "--target",
+                "//example:custom",
+            ]
+        )
+        with (
+            mock.patch.object(ci.sys, "platform", "win32"),
+            mock.patch.object(ci, "amdgpu_windows_steps", return_value=[]) as plan,
+        ):
+            ci.steps_from_args(args)
+        plan.assert_called_once_with(("//example:custom",), "gfx1201", "asan")
 
     def test_bazel_profile_names_must_be_unique(self):
         duplicate_steps = [
@@ -605,6 +668,7 @@ class CiTest(unittest.TestCase):
                 "Test repository",
                 "Run dynamic library environment smoke",
                 "Run executable alias smoke",
+                "Test shared Loom tools",
             ],
         )
         configure_step = steps[0]
@@ -634,6 +698,11 @@ class CiTest(unittest.TestCase):
                 "--help",
             ),
         )
+        self.assertIn("--//loom/config:shared_tools", steps[6].argv)
+        self.assertIn("//loom/src/loom/tools/loom-opt:execution_test", steps[6].argv)
+        self.assertIn("//loom/src/loom/tooling/target/cpu/serve:all", steps[6].argv)
+        for step in steps[:6]:
+            self.assertNotIn("--//loom/config:shared_tools", step.argv)
 
     def test_bazel_repository_integration_skips_ordinary_repository_build(self):
         args = ci.parse_arguments(["iree-bazel-repository-integration"])
@@ -1089,6 +1158,13 @@ class CiTest(unittest.TestCase):
         self.assertFalse(any("--config=ubsan" in line for line in command_lines))
         self.assertFalse(any("--config=tsan" in line for line in command_lines))
         self.assertFalse(any("--config=msan" in line for line in command_lines))
+        shared_step = next(
+            step for step in steps if step.name == "Test shared Loom tools"
+        )
+        self.assertIn("--//loom/config/import:enable=cxx", shared_step.argv)
+        self.assertIn(
+            "//loom/src/loom/tools/loom-import-cxx:execution_test", shared_step.argv
+        )
 
     def test_bazel_cpu_msan_command_builds_without_tests(self):
         args = ci.parse_arguments(
@@ -1539,6 +1615,30 @@ fi
                 for step in test_steps
             )
         )
+
+    def test_cmake_cpu_qualifies_static_then_shared_in_the_same_tree(self):
+        steps = ci.steps_from_args(ci.parse_arguments(["iree-cmake-cpu"]))
+        configure_index = next(
+            index
+            for index, step in enumerate(steps)
+            if step.name == "Configure shared Loom tools"
+        )
+        self.assertTrue(
+            any(step.name == "Test IREE CMake" for step in steps[:configure_index])
+        )
+        for step in steps[:configure_index]:
+            self.assertNotIn("-DLOOM_LINK_SHARED_TOOLS=ON", step.argv)
+        for step in steps[configure_index:]:
+            self.assertTrue(self.uses_cmake_build_dir(step, "iree-cmake-cpu"))
+        self.assertNotIn("--fresh", steps[configure_index].argv)
+        self.assertIn("-DLOOM_LINK_SHARED_TOOLS=ON", steps[configure_index].argv)
+        self.assertIn("-DLOOM_IMPORT_CXX=ON", steps[configure_index].argv)
+        self.assertIn("loom-import-cxx", steps[configure_index + 1].argv)
+        self.assertIn(
+            "loom_tooling_target_cpu_serve_loom-serve-test-tool",
+            steps[configure_index + 1].argv,
+        )
+        self.assertEqual(steps[-1].name, "Test shared Loom tools")
 
     def test_cmake_cpu_sanitizers_command_runs_each_configuration(self):
         args = ci.parse_arguments(["iree-cmake-cpu-sanitizers"])

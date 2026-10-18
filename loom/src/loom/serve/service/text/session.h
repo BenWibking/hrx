@@ -97,8 +97,10 @@ typedef struct loom_serve_text_session_t {
     // Terminal wire literal: stop, length, tool_calls, or error. NULL until
     // translation establishes a terminal response.
     const char* finish_reason;
-    // Application admission time; network framing is not included.
+    // Monotonic application admission time; network framing is not included.
     iree_time_t start_time;
+    // Wall-clock Unix seconds at response creation, fixed across every chunk.
+    int64_t created_unix_seconds;
     // Time spent awaiting row and completion capacity before admission.
     iree_duration_t queue_duration;
     // Page-rounded maximum extent; admission charges only remaining growth.
@@ -120,6 +122,16 @@ typedef struct loom_serve_text_session_t {
     loom_serve_telemetry_diagnostic_t diagnostic;
   } request;
 } loom_serve_text_session_t;
+
+// Selects the named row (including an active row so the caller can report a
+// conflict), or the oldest idle row. For an untagged rendered chat, prefers the
+// longest reusable canonical completion in an idle untagged row. A null chat
+// performs identity/LRU selection only. Completion storage stays immutable
+// through selection and the caller's preparation/admission borrow. Returns
+// null when there is neither a named match nor an idle row.
+loom_serve_text_session_t* loom_serve_text_session_select(
+    iree_host_size_t count, loom_serve_text_session_t* sessions,
+    iree_string_view_t name, const loom_serve_text_chat_t* chat);
 
 // Copies only owner-published work and immutable admission metadata. Safe on
 // the serialized owner while a CPU task borrows the row's response storage;
@@ -156,13 +168,17 @@ void loom_serve_text_session_release_request(
 
 // Decodes selected tokens and produces bounded SSE or final JSON output. Source
 // VM calls use the request's policy; scratch/tool_calls are exclusive shared
-// model builders, not per-row caches. No transport send or native release
-// occurs. On failure, the caller translates the error and invalidates the
-// continuation; the partially modified packet is not a valid complete response.
+// model builders, not per-row caches. scratch_allocator owns call-local VM
+// wrappers and may be reset when this function returns. No transport send or
+// native release occurs. On failure, the caller translates the error and
+// invalidates the continuation; the partially modified packet is not a valid
+// complete response.
 iree_status_t loom_serve_text_session_append_tokens(
     loom_serve_text_session_t* session, iree_string_view_t model_name,
     iree_host_size_t count, const int32_t* tokens,
-    iree_string_builder_t* scratch, iree_string_builder_t* tool_calls);
+    iree_string_builder_t* scratch, iree_string_builder_t* tool_calls,
+    loom_serve_text_chat_scratch_t* completion_scratch,
+    iree_allocator_t scratch_allocator);
 
 #ifdef __cplusplus
 }  // extern "C"

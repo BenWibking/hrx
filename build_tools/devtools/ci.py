@@ -99,6 +99,8 @@ BAZEL_COMMANDS = {
     "iree-bazel-amdgpu-asan": ("amdgpu", "asan"),
     "iree-bazel-amdgpu-tsan": ("amdgpu", "tsan"),
     "iree-bazel-amdgpu-ubsan": ("amdgpu", "ubsan"),
+    "iree-bazel-amdgpu-native": ("amdgpu-native", None),
+    "iree-bazel-amdgpu-native-asan": ("amdgpu-native", "asan"),
     "iree-bazel-loom-amdgpu": ("loom-amdgpu", None),
     "iree-bazel-vulkan": ("vulkan", None),
 }
@@ -643,7 +645,26 @@ def repository_integration_steps(
             program_args=("--help",),
             bazel_options=ci_config.REPOSITORY_BAZEL_OPTIONS,
         ),
+        shared_tool_bazel_step(bazel_options=ci_config.REPOSITORY_BAZEL_OPTIONS),
     ]
+
+
+def shared_tool_bazel_step(
+    config: str | None = None, bazel_options: tuple[str, ...] = ()
+) -> CiStep:
+    return bazel_test_step(
+        "Test shared Loom tools",
+        (
+            "//loom/src/loom/tools/loom-compile:execution_test",
+            "//loom/src/loom/tools/loom-opt:execution_test",
+            "//loom/src/loom/tools/loom-import-cxx:execution_test",
+            "//loom/src/loom/tools/loom-import-cxx:export_roundtrip_test",
+            "//loom/src/loom/tools/loom-serve:execution_test",
+            "//loom/src/loom/tooling/target/cpu/serve:all",
+        ),
+        config=config,
+        bazel_options=bazel_options + ("--//loom/config:shared_tools",),
+    )
 
 
 def cpu_sanitizer_steps(targets: tuple[str, ...]) -> list[CiStep]:
@@ -656,7 +677,7 @@ def cpu_sanitizer_steps(targets: tuple[str, ...]) -> list[CiStep]:
 def cpu_config_steps(targets: tuple[str, ...], config: str) -> list[CiStep]:
     scoped_targets = targets + ci_config.CPU_BAZEL_TARGET_EXCLUDES
     if config in ci_config.SANITIZER_TEST_CONFIGS:
-        return [
+        steps = [
             *platform_coverage_build_steps(
                 bazel_build_step(
                     f"Build IREE with {config.upper()}",
@@ -672,6 +693,14 @@ def cpu_config_steps(targets: tuple[str, ...], config: str) -> list[CiStep]:
                 test_language_filters=ci_config.PYTHON_TEST_BAZEL_LANGUAGE_EXCLUSIONS,
             ),
         ]
+        if config == "asan":
+            steps.append(
+                shared_tool_bazel_step(
+                    config=config,
+                    bazel_options=("--//loom/config/import:enable=cxx",),
+                )
+            )
+        return steps
     if config in ci_config.SANITIZER_BUILD_CONFIGS:
         return [
             bazel_build_step(
@@ -782,6 +811,63 @@ def amdgpu_test_steps(
             bazel_options=bazel_options,
         ),
     ]
+
+
+def amdgpu_windows_steps(
+    targets: tuple[str, ...], target_selector: str, config: str | None
+) -> list[CiStep]:
+    options = ci_config.AMDGPU_WINDOWS_BAZEL_OPTIONS
+    config_name = f" / {config.upper()}" if config is not None else ""
+    # A required finite PM4 copy establishes the exact GPU and usable native
+    # transport. SDMA remains capability-admitted; its skip is not a proof.
+    queue_options = options + (
+        f"--test_arg=--amdf_gpu_target={target_selector}",
+        "--test_arg=--amdf_require_test=Pm4KernelQueueTest.ExecutesMaterializedCopyData",
+        "--test_arg=--gtest_fail_fast=1",
+    )
+    steps = [
+        bazel_configure_step(extra_options=options),
+        bazel_run_step(
+            "Enumerate Windows GPU queue families",
+            "//libamdf/examples:enumerate",
+            bazel_options=options
+            + ((f"--config={config}",) if config is not None else ()),
+        ),
+    ]
+    for lifetime in ("process", "instance"):
+        steps.append(
+            bazel_test_step(
+                f"Check Windows GPU finite copies / {lifetime}{config_name}",
+                (ci_config.AMDGPU_WINDOWS_QUEUE_TARGET,),
+                config=config,
+                available_resources=ci_config.AMDGPU_WINDOWS_RESOURCES,
+                bazel_options=queue_options
+                + (
+                    f"--test_arg=--amdf_native_lifetime={lifetime}",
+                    "--test_filter=" + ci_config.AMDGPU_WINDOWS_COPY_FILTER,
+                ),
+            )
+        )
+    steps.append(
+        bazel_test_step(
+            f"Test IREE / Windows AMDGPU{config_name}",
+            targets or ci_config.AMDGPU_WINDOWS_BAZEL_TARGETS,
+            config=config,
+            available_resources=ci_config.AMDGPU_WINDOWS_RESOURCES,
+            bazel_options=options + ("--test_arg=--gtest_fail_fast=1",),
+        )
+    )
+    steps.append(
+        bazel_test_step(
+            f"Test Windows GPU queues / instance{config_name}",
+            (ci_config.AMDGPU_WINDOWS_QUEUE_TARGET,),
+            config=config,
+            available_resources=ci_config.AMDGPU_WINDOWS_RESOURCES,
+            bazel_options=queue_options
+            + ("--test_arg=--amdf_native_lifetime=instance",),
+        )
+    )
+    return steps
 
 
 def amdgpu_steps(
@@ -904,6 +990,38 @@ def cmake_cpu_steps(command_name: str, sanitizer: str | None) -> list[CiStep]:
                     ),
                 ),
             )
+        )
+    if sanitizer is None:
+        # Reuse the static qualification tree so both final-link modes are
+        # exercised without another compilation tree or worker job.
+        steps.extend(
+            [
+                CiStep(
+                    "Configure shared Loom tools",
+                    cmake_dev_command(
+                        command_name,
+                        "configure",
+                        "-DLOOM_LINK_SHARED_TOOLS=ON",
+                        "-DLOOM_IMPORT_CXX=ON",
+                    ),
+                ),
+                cmake_build_step(
+                    command_name,
+                    "Build shared Loom tools",
+                    (
+                        "loom-compile",
+                        "loom-opt",
+                        "loom-import-cxx",
+                        "loom-serve",
+                        "loom_tooling_target_cpu_serve_loom-serve-test-tool",
+                    ),
+                ),
+                cmake_test_step(
+                    command_name,
+                    "Test shared Loom tools",
+                    regex=r"^(loom/tools/(loom-compile|loom-opt|loom-import-cxx|loom-serve)/(execution_test|export_roundtrip_test)|loom/tooling/target/cpu/serve/serve_command_test)$",
+                ),
+            ]
         )
     return steps
 
@@ -1257,6 +1375,7 @@ def _steps_from_args(args: argparse.Namespace) -> list[CiStep]:
     cmake_target_group = CMAKE_COMMANDS.get(args.command, (None, None))[0]
     amdgpu_target_bazel_groups = (
         "amdgpu",
+        "amdgpu-native",
         "repository-integration",
     )
     accepts_amdgpu_target = (
@@ -1310,6 +1429,14 @@ def _steps_from_args(args: argparse.Namespace) -> list[CiStep]:
         return amd_client_steps(
             tuple(args.target or ()),
             sanitizer,
+        )
+    if bazel_target == "amdgpu-native":
+        if sys.platform != "win32":
+            raise ValueError("Native kernel-queue CI requires Windows")
+        if args.amdgpu_target is None:
+            raise ValueError("Windows GPU CI requires an exact --amdgpu-target")
+        return amdgpu_windows_steps(
+            tuple(args.target or ()), amdgpu_target_selector, sanitizer
         )
     if bazel_target == "xdna":
         return xdna_steps(
@@ -1439,7 +1566,7 @@ def add_bazel_test_results(steps: list[CiStep], output_dir: Path) -> list[CiStep
                 + step.argv[4:],
                 test_results=bazel_test_results.BazelTestResultsCapture(
                     build_event_path=event_path,
-                    output_dir=output_dir,
+                    output_dir=output_dir / event_stem,
                 ),
             )
         )

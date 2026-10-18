@@ -104,6 +104,7 @@ iree_cc_library(
   NAME
     aql_cases
   SRCS
+    "argument_payloads_test.cc"
     "barrier_test.cc"
     "byte_copy_test.cc"
     "dispatch_test.cc"
@@ -115,9 +116,11 @@ iree_cc_library(
     "lds_test.cc"
     "pattern_fill_test.cc"
     "private_test.cc"
+    "program_atomic_test.cc"
     "publication_test.cc"
     "resource_test.cc"
     "scope_test.cc"
+    "shader_event_test.cc"
     "timestamp_test.cc"
     "transfer_test.cc"
     "workset_test.cc"
@@ -128,6 +131,7 @@ iree_cc_library(
     ::queue_fixture
     amdf::headers
     iree::third_party::google_test
+    libamdf::cts::gpu::kernels::argument_payloads_kernels
     libamdf::cts::gpu::kernels::byte_copy_unaligned
     libamdf::cts::gpu::kernels::byte_copy_unaligned_kernels
     libamdf::cts::gpu::kernels::geometry_ids
@@ -141,10 +145,14 @@ iree_cc_library(
     libamdf::cts::gpu::kernels::pattern_fill_unaligned_kernels
     libamdf::cts::gpu::kernels::private_roundtrip
     libamdf::cts::gpu::kernels::private_roundtrip_kernels
+    libamdf::cts::gpu::kernels::shader_event
+    libamdf::cts::gpu::kernels::shader_event_kernels
     libamdf::cts::gpu::kernels::transform
     libamdf::cts::gpu::kernels::transform_alternate_kernels
     libamdf::cts::gpu::kernels::transform_kernels
     libamdf::cts::gpu::pm4::encoding::memory_commands
+    libamdf::cts::gpu::util::program_atomic_fixture
+    libamdf::cts::gpu::util::shader_event_fixture
   TESTONLY
   ALWAYSLINK
   PUBLIC

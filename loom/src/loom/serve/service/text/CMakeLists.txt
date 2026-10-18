@@ -122,9 +122,12 @@ loom_cc_library(
     source_lifecycle_tests
   SRCS
     "component_service_test.cc"
+    "input_count_test.cc"
     "source_lifecycle_test.cc"
   DEPS
+    ::input_count
     ::source_service_fixture
+    ::telemetry
     loom::serve::service::finite::component
     loom::serve::telemetry::latency
   TESTONLY
@@ -141,6 +144,8 @@ loom_cc_library(
     "source_cache_test.cc"
   DEPS
     ::source_service_fixture
+    iree::base::internal::arena
+    iree::vm::test_support
     loom::serve::media::image_codec
     loom::serve::media::image_codecs
   TESTONLY
@@ -576,6 +581,7 @@ loom_cc_library(
     ::model
     iree::base
     iree::tokenizer
+    loom::serve::runtime::host::clock
     loom::serve::service::inspection
     loom::serve::telemetry::record
     loom::serve::transport::http::server
@@ -833,6 +839,55 @@ endif()
 if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
+    pending_queue
+  HDRS
+    "pending_queue.h"
+  SRCS
+    "pending_queue.c"
+  DEPS
+    ::admission
+    ::chat
+    ::checkpoint_registry
+    ::media_projector
+    ::model
+    ::pending_request
+    ::prefix_cache
+    ::response
+    ::session
+    ::session_cache
+    ::telemetry
+    iree::base
+    loom::serve::runtime::parameter::residency
+    loom::serve::telemetry::stream
+    loom::serve::transport::http::request
+    loom::serve::transport::http::server
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_library(
+  NAME
+    input_count
+  HDRS
+    "input_count.h"
+  SRCS
+    "input_count.c"
+  DEPS
+    ::chat
+    ::response
+    ::telemetry
+    iree::base
+    loom::serve::telemetry::stream
+    loom::serve::transport::http::request
+    loom::serve::transport::http::server
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_library(
+  NAME
     service
   HDRS
     "service.h"
@@ -846,9 +901,11 @@ loom_cc_library(
     ::epoch
     ::heartbeat
     ::input
+    ::input_count
     ::media_projector
     ::model
     ::packing
+    ::pending_queue
     ::pending_request
     ::prefix_cache
     ::readiness
@@ -861,6 +918,7 @@ loom_cc_library(
     iree::async
     iree::async::util::proactor_pool
     iree::base
+    iree::base::internal::arena
     iree::base::threading
     iree::tokenizer
     iree::vm

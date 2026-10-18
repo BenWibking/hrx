@@ -93,9 +93,15 @@ from .common import (
     _gpr32_result,
     _gpr64_operand,
     _gpr64_result,
+    _gpr_width_flags,
+    _gpr_width_operand,
 )
 from .encoding import Flag, Form, encoding
-from .integer_bits import X86_SCALAR_INTEGER_BIT_DESCRIPTORS
+from .integer_bits import (
+    X86_SCALAR_INTEGER_BIT_DESCRIPTORS,
+    X86_SCALAR_NATIVE_COUNT_DESCRIPTORS,
+)
+from .integer_rotation import X86_SCALAR_ROTATION_DESCRIPTORS
 from .memory import memory_descriptors, read_memory_binary_descriptors
 
 _NON_TRAPPING_SCALAR_FORMS = frozenset(
@@ -107,6 +113,7 @@ _NON_TRAPPING_SCALAR_FORMS = frozenset(
         Form.SHIFT_IMMEDIATE,
         Form.SHIFT_COUNT,
         Form.UNARY_R_RM,
+        Form.UNARY_F3_R_RM,
         Form.SELECT,
         Form.SUBTRACT_IF_UGE,
         Form.COMPARE,
@@ -759,20 +766,6 @@ _INTEGER_PREDICATE_IMMEDIATE = Immediate(
 )
 
 
-def _gpr_width_flags(bit_count: int) -> Flag:
-    if bit_count == 8:
-        return Flag.BYTE
-    if bit_count == 16:
-        return Flag.OPERAND_16
-    if bit_count == 64:
-        return Flag.REX_W
-    return Flag(0)
-
-
-def _gpr_width_operand(bit_count: int, field_name: str) -> Operand:
-    return _gpr64_operand(field_name) if bit_count == 64 else _gpr32_operand(field_name)
-
-
 def _gpr_compare_immediate(bit_count: int) -> Immediate:
     if bit_count == 8:
         return _IMM8_IMMEDIATE
@@ -923,21 +916,21 @@ def _gpr_compare_select_descriptor(
     )
 
 
-def _gpr32_compare_descriptor(
+def _gpr_register_compare_descriptor(
     *,
+    bit_count: int,
     predicate: str,
     setcc: str,
     opcode: int,
-    semantic_tag: str,
 ) -> Descriptor:
     return _gpr_compare_descriptor(
         predicate=predicate,
         setcc=setcc,
-        encoding_id=encoding(opcode),
-        semantic_tag=semantic_tag,
-        lhs=_gpr32_operand("lhs"),
-        rhs=_gpr32_operand("rhs"),
-        asm_suffix="gpr32",
+        encoding_id=encoding(opcode, flags=_gpr_width_flags(bit_count)),
+        semantic_tag=f"integer.cmp.{predicate}.i{bit_count}",
+        lhs=_gpr_width_operand(bit_count, "lhs"),
+        rhs=_gpr_width_operand(bit_count, "rhs"),
+        asm_suffix=f"gpr{bit_count}",
     )
 
 
@@ -992,6 +985,7 @@ _X86_SCALAR_PREFIX_DESCRIPTORS = (
 
 _X86_SCALAR_SUFFIX_DESCRIPTORS = (
     *X86_SCALAR_INTEGER_BIT_DESCRIPTORS,
+    *X86_SCALAR_ROTATION_DESCRIPTORS,
     Descriptor(
         key="x86.scalar.lea.symbol.gpr64",
         encoding_format_id=Form.ADDRESS_PC_RELATIVE,
@@ -1317,15 +1311,18 @@ _X86_SCALAR_SUFFIX_DESCRIPTORS = (
             (32, "sgt"),
             (32, "uge"),
             (64, "eq"),
+            (64, "sge"),
+            (64, "sgt"),
         }
     ),
     *(
-        _gpr32_compare_descriptor(
+        _gpr_register_compare_descriptor(
+            bit_count=bit_count,
             predicate=predicate,
             setcc=setcc,
             opcode=opcode,
-            semantic_tag=f"integer.cmp.{predicate}.i32",
         )
+        for bit_count in (32, 64)
         for predicate, setcc, opcode in _CMP_PREDICATE_SETCC
         if predicate in {"slt", "sge", "sgt"}
     ),
@@ -1583,9 +1580,13 @@ X86_SCALAR_BMI2_DESCRIPTORS = tuple(
         strict=True,
     )
 )
+X86_SCALAR_FEATURE_DESCRIPTORS = (
+    *X86_SCALAR_BMI2_DESCRIPTORS,
+    *X86_SCALAR_NATIVE_COUNT_DESCRIPTORS,
+)
 X86_SCALAR_DESCRIPTORS = (
     *X86_SCALAR_BASE_DESCRIPTORS,
-    *X86_SCALAR_BMI2_DESCRIPTORS,
+    *X86_SCALAR_FEATURE_DESCRIPTORS,
 )
 
 X86_SCALAR_DESCRIPTOR_SET = DescriptorSet(

@@ -300,8 +300,8 @@ static iree_status_t loom_cfg_simplify_remove_unreachable_blocks(
   }
 
   uint16_t removed_count = 0;
-  IREE_RETURN_IF_ERROR(loom_region_remove_blocks(
-      state->module, (loom_region_t*)graph->region, remove_blocks,
+  IREE_RETURN_IF_ERROR(loom_rewriter_remove_blocks(
+      state->rewriter, (loom_region_t*)graph->region, remove_blocks,
       graph->block_count, state->analysis_arena, &removed_count));
   state->statistics->blocks_removed += removed_count;
   state->rewriter->flags |= LOOM_REWRITER_FLAG_CHANGED;
@@ -1188,8 +1188,8 @@ static iree_status_t loom_cfg_simplify_merge_equivalent_blocks(
   }
   if (iree_status_is_ok(status)) {
     uint16_t removed_count = 0;
-    status = loom_region_remove_blocks(
-        state->module, (loom_region_t*)graph->region, remove_blocks,
+    status = loom_rewriter_remove_blocks(
+        state->rewriter, (loom_region_t*)graph->region, remove_blocks,
         graph->block_count, state->analysis_arena, &removed_count);
     if (iree_status_is_ok(status)) {
       state->statistics->duplicate_blocks_merged += removed_count;
@@ -1636,8 +1636,8 @@ static iree_status_t loom_cfg_simplify_remove_redundant_block_args_from_block(
     }
   }
   IREE_ASSERT_EQ((uint16_t)(retained_count + removed_count), initial_arg_count);
-  const uint16_t actual_removed_count = loom_block_remove_args(
-      state->module, block, remove_args, initial_arg_count);
+  const uint16_t actual_removed_count = loom_rewriter_remove_block_args(
+      state->rewriter, block, remove_args, initial_arg_count);
   IREE_ASSERT_EQ(actual_removed_count, removed_count);
   state->statistics->block_args_removed += removed_count;
   state->rewriter->flags |= LOOM_REWRITER_FLAG_CHANGED;
@@ -1779,22 +1779,33 @@ static iree_status_t loom_cfg_simplify_process_function_once(
     if (branches_folded != 0) {
       state->statistics->branches_folded += branches_folded;
       *out_changed = true;
-      return loom_rewriter_refresh_cfg_facts(state->rewriter, region);
+      IREE_RETURN_IF_ERROR(
+          loom_rewriter_refresh_cfg_facts(state->rewriter, region));
+      continue;
     }
 
+    if (iree_any_bit_set(region->flags, LOOM_REGION_INSTANCE_FLAG_CFG)) {
+      bool region_changed = false;
+      IREE_RETURN_IF_ERROR(
+          loom_cfg_simplify_process_cfg_region(state, region, &region_changed));
+      if (region_changed) {
+        *out_changed = true;
+        IREE_RETURN_IF_ERROR(
+            loom_rewriter_refresh_cfg_facts(state->rewriter, region));
+        continue;
+      }
+    }
+
+    // Only unchanged ancestors publish children into this round. A CFG edit
+    // can delete nested regions or invalidate their ancestor dominance, so
+    // those descendants wait for the next analysis snapshot. Pending siblings
+    // retain their structure, and operation folding stays deferred until the
+    // next round's worklist drain.
     loom_block_t* block = NULL;
     loom_region_for_each_block(region, block) {
       loom_op_t* op = NULL;
       loom_block_for_each_op(block, op) {
         IREE_RETURN_IF_ERROR(loom_cfg_simplify_push_child_regions(state, op));
-      }
-    }
-
-    if (iree_any_bit_set(region->flags, LOOM_REGION_INSTANCE_FLAG_CFG)) {
-      IREE_RETURN_IF_ERROR(
-          loom_cfg_simplify_process_cfg_region(state, region, out_changed));
-      if (*out_changed) {
-        return loom_rewriter_refresh_cfg_facts(state->rewriter, region);
       }
     }
   }

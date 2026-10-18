@@ -135,6 +135,7 @@ loom_cc_library(
     "vector_insert.h"
   DEPS
     iree::base
+    loom::codegen::low::descriptors
     loom::ir
     loom::ops::index
     loom::ops::scalar
@@ -303,6 +304,8 @@ loom_check_test_suite(
     "test/source_low/memory_wide_carriers.loom-test"
     "test/source_low/memory_wide_offsets.loom-test"
     "test/source_low/memory_word.loom-test"
+    "test/source_low/native_integer_rotations.loom-test"
+    "test/source_low/native_scalar_bit_counts.loom-test"
     "test/source_low/nested_view_selection.loom-test"
     "test/source_low/numeric_address_widening.loom-test"
     "test/source_low/numeric_bfloat_narrow_avx2.loom-test"
@@ -316,6 +319,8 @@ loom_check_test_suite(
     "test/source_low/numeric_f64_constants.loom-test"
     "test/source_low/numeric_float_conversion_avx2.loom-test"
     "test/source_low/numeric_float_conversion_avx512.loom-test"
+    "test/source_low/numeric_float_integer_avx2.loom-test"
+    "test/source_low/numeric_float_integer_avx512.loom-test"
     "test/source_low/numeric_half_conversion_avx512.loom-test"
     "test/source_low/numeric_index_operands.loom-test"
     "test/source_low/numeric_integer_bit_counts.loom-test"

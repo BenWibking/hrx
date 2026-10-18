@@ -36,6 +36,8 @@ from loom.target.contracts import (
 )
 
 _SCALAR_SOURCE_OPS = {
+    "sinf": scalar_math.scalar_sinf,
+    "cosf": scalar_math.scalar_cosf,
     "expf": scalar_math.scalar_expf,
     "logf": scalar_math.scalar_logf,
     "exp2f": scalar_math.scalar_exp2f,
@@ -45,6 +47,8 @@ _SCALAR_SOURCE_OPS = {
 }
 
 _VECTOR_SOURCE_OPS = {
+    "sinf": vector.vector_sinf,
+    "cosf": vector.vector_cosf,
     "expf": vector.vector_expf,
     "logf": vector.vector_logf,
     "exp2f": vector.vector_exp2f,
@@ -70,7 +74,7 @@ def _extended_math_rule(
             ),
             Guard.value_type("result", source_type),
             *(
-                Guard.instance_flags_has_all("fastmath", fastmath_flag)
+                Guard.instance_flags_has_all(source_op.attrs[0].name, fastmath_flag)
                 for fastmath_flag in instruction.operation.required_fastmath_flags
             ),
             *descriptor_feature_guards(descriptor),

@@ -122,11 +122,14 @@ weights/payloads one ahead. Carrying only the ID in the metadata stage avoids
 making the weight an immediate consumer of that lookup.
 
 The varied-input checks preserve row/weight identity across startup, drain,
-holes, duplicates and tails. Independent analytic cases check missing routes,
-floating-point recurrence order, and the benchmark outputs. Access testing uses
-undersized backing storage for inactive routes. The `n8_t1`, `n8_t16`, and
-`n8_t256` benchmark suffixes cover decode and batched combines; `n32` rows stress
-a longer recurrence. Each benchmark case launches exactly one kernel.
+holes, duplicates and tails. Correctness scenarios use an independent,
+route-ordered oracle and analytic expectations for missing routes and
+floating-point recurrence order. Access testing uses undersized backing storage
+for inactive routes. The `@routed_row_combine_serial_workloads` and
+`@routed_row_combine_pipelined_workloads` benchmarks each generate six samples:
+one, sixteen and 256 tokens with eight routes, followed by the same token counts
+with 32 routes. `--sample=2` selects eight routes and 256 tokens. Each sample
+launches one kernel, with input generation outside the measured invocation.
 
 Compare the serial and pipelined rows under the same batching and cache policy.
 Native partial waits show overlap inside the unrolled body; edge copies may
@@ -148,13 +151,14 @@ Independent analytic cases check maximum, denominator and normalized output
 for empty, absent, repeated, short and ragged pages. Varied inputs distinguish
 K/V row identity and lane fragments across shared pages and different query
 lengths. Undersized inactive backing makes accidental tail reads observable
-under the access sanitizer. Timing cases launch one kernel each, with exact
-expectations and the full K/V cache footprint.
+under the access sanitizer. Benchmark samples launch one kernel each, with the
+same full K/V cache footprint.
 
-Matched benchmark names are
-`@cooperative_paged_attention_serial_n128_i256` and
-`@cooperative_paged_attention_pipelined_n128_i256`. The `n128`/`n1024` and
-`i1`/`i16`/`i256` suffixes select token and query counts. The
+The `@cooperative_paged_attention_serial_workloads` and
+`@cooperative_paged_attention_pipelined_workloads` benchmarks each generate six
+samples: 128-token prefixes at 1, 16, and 256 queries, followed by 1024-token
+prefixes at the same query counts. `--sample=2` selects 128 tokens and 256
+queries. Input generation stays outside the measured invocation. The
 [cooperative pipeline workflow](../../../../../docs/src/workflows/tune-loop-schedules.md#pipeline-cooperative-paged-attention)
 connects these workloads to native resource reports and controlled timings.
 
@@ -173,10 +177,11 @@ by two. Independent analytic cases check maximum, denominator and normalized
 output; varied queries cover shared lists and differing prefixes. Minimal
 backing and NaN-poisoned inactive payloads exercise both access boundaries.
 
-The `@sparse_token_attention_serial_n128_i256` and
-`@sparse_token_attention_pipelined_n128_i256` benchmarks launch one kernel
-each. The `n128`/`n1024` and `i1`/`i16`/`i256` suffixes select prefix and query
-counts with the same full-cache footprint. The
+The `@sparse_token_attention_serial_workloads` and
+`@sparse_token_attention_pipelined_workloads` benchmarks each generate six
+samples: 128-token prefixes at 1, 16, and 256 queries, followed by 1024-token
+prefixes at the same query counts. Each sample launches one kernel with the
+same full-cache footprint; `--sample=2` selects 128 tokens and 256 queries. The
 [sparse attention workflow](../../../../../docs/src/workflows/tune-loop-schedules.md#pipeline-sparse-token-attention)
 connects this source to access checking, reports and schedule comparisons.
 
@@ -194,10 +199,11 @@ whose vector width comes from the target's subgroup size. Analytic checks
 anchor both heads' states and outputs; varied pairs distinguish query and
 table ownership. Minimal backing covers ragged tails, holes and repeated pages.
 
-The `@grouped_paged_attention_independent_n128_p1024` and
-`@grouped_paged_attention_shared_n128_p1024` benchmarks compare 2048 query heads
-over the same 64 MiB K/V pool. The `n128`/`n1024` and `p1`/`p128`/`p1024`
-suffixes select token and pair counts. Sharing halves issued K/V loads for
+The `@grouped_paged_attention_independent_workloads` and
+`@grouped_paged_attention_shared_workloads` benchmarks each generate six
+samples: 128-token prefixes at 1, 128, and 1024 pairs, followed by 1024-token
+prefixes at the same pair counts. `--sample=2` compares 2048 query heads over
+the same 64 MiB K/V pool. Sharing halves issued K/V loads for
 equal-length heads but retains more state and launches fewer subgroups. The
 [shared-loading workflow](../../../../../docs/src/workflows/tune-loop-schedules.md#share-kv-loads-across-query-heads)
 compares that tradeoff separately from pipeline depth.

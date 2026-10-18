@@ -12,6 +12,20 @@ iree_add_all_subdirs()
 if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
+    clock
+  HDRS
+    "clock.h"
+  SRCS
+    "clock.c"
+  DEPS
+    iree::base
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_library(
+  NAME
     host
   HDRS
     "host.h"
@@ -21,6 +35,7 @@ loom_cc_library(
     iree::async::util::proactor_pool
     iree::async::util::proactor_thread
     iree::base
+    iree::base::internal::arena
     iree::base::threading
     iree::hal
     iree::hal::drivers::task::driver
@@ -44,6 +59,7 @@ loom_cc_test(
   DEPS
     ::host
     iree::base
+    iree::base::internal::arena
     iree::task
     iree::testing::gtest
     iree::testing::gtest_main

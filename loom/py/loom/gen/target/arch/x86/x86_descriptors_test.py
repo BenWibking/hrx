@@ -18,6 +18,9 @@ from loom.gen.target.low import compiler
 from loom.target.arch.x86 import descriptors as x86_descriptor_data
 from loom.target.arch.x86 import native_vector
 from loom.target.arch.x86.descriptors.encoding import Flag, Form, encoding
+from loom.target.arch.x86.descriptors.integer_bits import (
+    X86_SCALAR_NATIVE_COUNT_DESCRIPTORS,
+)
 from loom.target.arch.x86.feature_bits import FEATURE_BMI2
 from loom.target.arch.x86.scalar_families import (
     X86_SCALAR_READ_MEMORY_FAMILIES,
@@ -161,6 +164,7 @@ def test_scalar_speculation_facts_cover_total_integer_forms() -> None:
         Form.SHIFT_IMMEDIATE,
         Form.SHIFT_COUNT,
         Form.UNARY_R_RM,
+        Form.UNARY_F3_R_RM,
         Form.SELECT,
         Form.SUBTRACT_IF_UGE,
         Form.COMPARE,
@@ -237,6 +241,33 @@ def test_bmi2_variable_shifts_are_one_feature_qualified_physical_family() -> Non
         feature_views,
     )
     assert {key: sum(descriptor.key == key for descriptor in storage.descriptors) for key in expected_keys} == dict.fromkeys(expected_keys, 1)
+
+
+def test_native_counts_are_one_feature_qualified_physical_family() -> None:
+    expected = {descriptor.key: descriptor.feature_mask_words for descriptor in X86_SCALAR_NATIVE_COUNT_DESCRIPTORS}
+    assert len(expected) == 9
+
+    feature_views = (
+        x86_descriptor_data.X86_SCALAR_DESCRIPTOR_SET,
+        x86_descriptor_data.X86_AVX2_FEATURES_DESCRIPTOR_SET,
+        x86_descriptor_data.X86_AVX512_FEATURES_DESCRIPTOR_SET,
+    )
+    core_views = (
+        x86_descriptor_data.X86_SIMD128_DESCRIPTOR_SET,
+        x86_descriptor_data.X86_AVX2_DESCRIPTOR_SET,
+        x86_descriptor_data.X86_AVX512_CORE_DESCRIPTOR_SET,
+    )
+    for descriptor_set in feature_views:
+        actual = {descriptor.key: descriptor.feature_mask_words for descriptor in descriptor_set.descriptors if descriptor.key in expected}
+        assert actual == expected
+    for descriptor_set in core_views:
+        assert expected.keys().isdisjoint(descriptor.key for descriptor in descriptor_set.descriptors)
+
+    storage = x86_descriptors._shared_storage_descriptor_set(
+        x86_descriptor_data.X86_AVX512_FEATURES_DESCRIPTOR_SET,
+        feature_views,
+    )
+    assert {key: sum(descriptor.key == key for descriptor in storage.descriptors) for key in expected} == dict.fromkeys(expected, 1)
 
 
 def test_native_facts_cover_core_profiles() -> None:
@@ -356,19 +387,21 @@ def test_integer_comparisons_use_width_parametric_predicates() -> None:
     branch_descriptors = {descriptor.key: descriptor for descriptor in x86_descriptor_data.X86_SCALAR_DESCRIPTOR_SET.descriptors if descriptor.key.startswith("x86.scalar.cmp.branch.")}
     dynamic_keys = {f"x86.scalar.cmp.{form_name}gpr{bit_count}" for bit_count in (8, 16, 32, 64) for form_name in ("", "imm.")}
     branch_keys = {f"x86.scalar.cmp.branch.{form_name}gpr{bit_count}" for bit_count in (8, 16, 32, 64) for form_name in ("", "imm.")}
-    fixed_recipe_keys = {f"x86.scalar.cmp.{predicate}.gpr32" for predicate in ("slt", "sge", "sgt")} | {
-        f"x86.scalar.cmp.{predicate}.imm.gpr{bit_count}"
-        for bit_count, predicate in (
-            (32, "eq"),
-            (32, "slt"),
-            (32, "sge"),
-            (32, "sgt"),
-            (32, "uge"),
-            (64, "eq"),
-        )
-    }
-    assert set(predicate_descriptors) == dynamic_keys | fixed_recipe_keys
+    assert {key for key, descriptor in predicate_descriptors.items() if descriptor.encoding_format_id in (Form.COMPARE_PREDICATE, Form.COMPARE_IMMEDIATE_PREDICATE)} == dynamic_keys
     assert set(branch_descriptors) == branch_keys
+
+    # Closed descriptor recipes bind their comparison identity directly and
+    # therefore have no source predicate attribute to project. Validate that
+    # representation without duplicating the recipe inventory here.
+    for key, descriptor in predicate_descriptors.items():
+        if key in dynamic_keys:
+            continue
+        match = re.fullmatch(r"x86\.scalar\.cmp\.([a-z0-9_]+)\.(imm\.)?gpr(\d+)", key)
+        assert match is not None, key
+        predicate, immediate_marker, bit_count = match.groups()
+        assert descriptor.encoding_format_id == (Form.COMPARE_IMMEDIATE if immediate_marker else Form.COMPARE)
+        assert descriptor.semantic_tag == f"integer.cmp.{predicate}.i{bit_count}"
+        assert all(immediate.enum_domain is None for immediate in descriptor.immediates)
 
     width_flags = {
         8: Flag.BYTE,

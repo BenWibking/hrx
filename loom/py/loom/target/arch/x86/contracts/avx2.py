@@ -15,6 +15,10 @@ from loom.dialect.scf import ALL_SCF_OPS
 from loom.dialect.vector import ALL_VECTOR_OPS
 from loom.dialect.view import ALL_VIEW_OPS
 from loom.target.arch.x86.contracts.float_conversion import float_conversion_rules
+from loom.target.arch.x86.contracts.float_integer import (
+    avx2_scalar_float_integer_rules,
+    avx2_vector_float_integer_rules,
+)
 from loom.target.arch.x86.contracts.float_narrowing import (
     packed_bfloat_narrowing_rules,
     x86_float_narrowing_rules,
@@ -30,7 +34,10 @@ from loom.target.arch.x86.contracts.floating_reduction import (
     avx2_float_dot_rules,
     avx2_float_reduction_rules,
 )
-from loom.target.arch.x86.contracts.integer_float import avx2_integer_float_rules
+from loom.target.arch.x86.contracts.integer_float import (
+    avx2_integer_float_rules,
+    avx2_vector_integer_float_rules,
+)
 from loom.target.arch.x86.contracts.integer_reduction import (
     avx2_integer_reduction_rules,
 )
@@ -102,6 +109,9 @@ def _cases() -> Sequence[ContractCase]:
             families=AVX2_SCALAR_FLOAT_ROOT_FAMILIES,
         ),
         *avx2_integer_float_rules(_descriptor),
+        *avx2_vector_integer_float_rules(_descriptor),
+        *avx2_scalar_float_integer_rules(_descriptor),
+        *avx2_vector_float_integer_rules(_descriptor),
         *x86_float_narrowing_rules(_descriptor),
         *packed_bfloat_narrowing_rules(_descriptor, evex=False),
         *float_conversion_rules(_descriptor, evex=False),

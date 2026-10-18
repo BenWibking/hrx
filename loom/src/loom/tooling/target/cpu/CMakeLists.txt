@@ -77,6 +77,30 @@ loom_execution_test(
 endif()
 endif()
 
+if(LOOM_IMPORT_CXX AND IREE_ARCH STREQUAL "x86_64")
+if(LOOM_TARGET_ARCH_X86 AND LOOM_TARGET_ARCH_VM AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF)
+loom_execution_test(
+  NAME
+    integer_intrinsics_test_execute_x86_task_hardware_test
+  CORRECTNESS_ONLY
+  MODULE
+    "loom::import::cxx::test::integer_intrinsics_module"
+  RUNNER_ARGS
+    "--device=task"
+  LABELS
+    "iree-build-requirement=loom.target.arch.x86"
+    "iree-build-requirement=loom.target.arch.vm"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.task"
+    "iree-build-requirement=runtime.hal.executable_loader.embedded_elf"
+    "loom-execution-profile=x86_task_hardware"
+    "loom-target-family=x86"
+    "loom-target-class=cpu"
+    "loom-executor=hardware"
+)
+endif()
+endif()
+
 if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
 iree_native_test(
   NAME
@@ -200,6 +224,22 @@ iree_native_test(
     loom::tools::iree-test-loom
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/integer/bitfield.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "integer_rotations_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/integer/rotation.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@integer_rotation_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/integer/rotation.loom"
 )
 endif()
 
@@ -430,6 +470,22 @@ endif()
 if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
 iree_native_test(
   NAME
+    "native_i16_count_carriers_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/cpu/test/x86_native_i16_count_carriers.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@x86_native_i16_count_carrier_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/cpu/test/x86_native_i16_count_carriers.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
     "rodata_scenario_test"
   ARGS
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/function/rodata.loom}}"
@@ -552,6 +608,118 @@ iree_native_test(
     loom::tools::iree-test-loom
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/float/exponential.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "float64_narrowing_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/float_narrowing_matrix.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@f64_narrowing_matrix_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/float_narrowing_matrix.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "integer_floating_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/integer_floating.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@integer_floating_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/integer_floating.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "wide_integer_floating_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/integer_floating.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@wide_integer_floating_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/integer_floating.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "double_integer_floating_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/cpu/test/x86_integer_floating_f64.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@double_integer_floating_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/cpu/test/x86_integer_floating_f64.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "loop_carried_floating_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/integer_floating.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@loop_carried_floating_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/integer_floating.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "floating_integer_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/integer_floating.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@floating_integer_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/integer_floating.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "wide_floating_integer_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/integer_floating.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+    "--case=@wide_floating_integer_values"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/conversion/integer_floating.loom"
 )
 endif()
 
