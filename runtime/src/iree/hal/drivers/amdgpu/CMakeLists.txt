@@ -259,11 +259,48 @@ endif()
 if(IREE_HAL_DRIVER_AMDGPU)
 iree_cc_library(
   NAME
+    hsa_queue
+  HDRS
+    "hsa_queue.h"
+  SRCS
+    "hsa_queue.c"
+  DEPS
+    iree::base
+    iree::hal::drivers::amdgpu::util::libhsa
+  PUBLIC
+)
+endif()
+
+if(IREE_HAL_DRIVER_AMDGPU)
+iree_cc_test(
+  NAME
+    hsa_queue_test
+  SRCS
+    "hsa_queue_test.cc"
+  DEPS
+    ::hsa_queue
+    iree::base
+    iree::testing::gtest
+    iree::testing::gtest_main
+  LABELS
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
+if(IREE_HAL_DRIVER_AMDGPU)
+iree_cc_library(
+  NAME
     amdgpu
   HDRS
     "allocator.h"
     "api.h"
   SRCS
+    "allocation_queue.c"
+    "allocation_queue.h"
     "allocator.c"
     "allocator.h"
     "aql_atomic.c"
@@ -342,8 +379,6 @@ iree_cc_library(
     "host_queue_waits.h"
     "hostcall_provider.c"
     "hostcall_provider.h"
-    "hsa_queue.c"
-    "hsa_queue.h"
     "logical_device.c"
     "logical_device.h"
     "memory_backend.c"
@@ -391,6 +426,7 @@ iree_cc_library(
     "transient_buffer.h"
     "tsan_state.c"
     "tsan_state.h"
+    "virtual_buffer.c"
     "virtual_memory.c"
     "virtual_memory.h"
   DEPS
@@ -404,6 +440,7 @@ iree_cc_library(
     ::executable_metadata
     ::executable_metadata_hsaco
     ::host_memory_pools
+    ::hsa_queue
     ::kernarg_layout
     ::profile_events
     ::queue_execution_resources
@@ -451,8 +488,6 @@ iree_cc_library(
     iree::hal::drivers::amdgpu::util::topology
     iree::hal::drivers::amdgpu::util::vmem
     iree::hal::memory::asan_pool
-    iree::hal::memory::maintenance
-    iree::hal::memory::maintenance_thread
     iree::hal::memory::passthrough_pool
     iree::hal::memory::slab_cache
     iree::hal::memory::slab_provider
@@ -530,6 +565,7 @@ iree_cc_library(
   DEPS
     ::dispatch_concurrency
     ::host_memory_pools
+    ::kernarg_layout
     ::profile_events
     iree::base
     iree::base::internal
@@ -703,11 +739,11 @@ iree_cc_test(
     ::headers
     iree::base
     iree::hal
+    iree::hal::cts::util::pool_test_util
     iree::hal::cts::util::test_base
     iree::hal::drivers::amdgpu::util::info
     iree::hal::drivers::amdgpu::util::topology
     iree::hal::drivers::amdgpu::util::vmem
-    iree::hal::memory::maintenance
     iree::testing::gtest
     iree::testing::gtest_main
   LABELS

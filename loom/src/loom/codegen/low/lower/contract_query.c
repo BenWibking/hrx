@@ -361,6 +361,16 @@ static iree_status_t loom_low_lower_visit_contract_cases(
         !loom_low_lower_contract_case_queries_target(index, contract_case)) {
       continue;
     }
+    const loom_target_contract_binding_t* binding =
+        &index->bindings[contract_case->binding_index];
+    if (used_candidate_index &&
+        domain == LOOM_LOW_LOWER_CONTRACT_CASE_DOMAIN_LOWERING &&
+        binding->required_primary_feature_class != 0 &&
+        !loom_low_lower_rule_primary_feature_class_available(
+            match_context, options->rule_sets.values[binding->rule_set_index],
+            binding->required_primary_feature_class)) {
+      continue;
+    }
     if (case_scope != LOOM_LOW_LOWER_CONTRACT_CASE_SCOPE_ALL) {
       uint16_t rule_index = UINT16_MAX;
       const bool has_lower_rule = loom_low_lower_contract_case_lower_rule_index(
@@ -368,8 +378,6 @@ static iree_status_t loom_low_lower_visit_contract_cases(
       bool is_source_graph = false;
       const loom_low_lower_rule_set_t* rule_set = NULL;
       if (has_lower_rule) {
-        const loom_target_contract_binding_t* binding =
-            &index->bindings[contract_case->binding_index];
         rule_set = options->rule_sets.values[binding->rule_set_index];
         is_source_graph = loom_low_lower_rule_source_node_count(
                               &rule_set->rules[rule_index]) != 0;
@@ -555,6 +563,7 @@ static iree_status_t loom_low_lower_query_target_contract_index(
     loom_low_lower_rule_selection_t unavailable_selection = {
         .rule_index = UINT16_MAX,
     };
+    uint16_t declined_rule_count = 0;
     loom_low_lower_contract_case_iterator_t iterator;
     const bool used_candidates =
         loom_low_lower_contract_case_iterator_initialize(
@@ -629,6 +638,7 @@ static iree_status_t loom_low_lower_query_target_contract_index(
           options, contract_case, case_index, binding, &case_match_context,
           /*apply_accept_rule=*/true, &match, &accepted));
       if (!accepted) {
+        ++declined_rule_count;
         continue;
       }
       if (primary_status ==
@@ -656,6 +666,18 @@ static iree_status_t loom_low_lower_query_target_contract_index(
       *out_result = unavailable_result;
       if (out_selection != NULL) {
         *out_selection = unavailable_selection;
+      }
+      return iree_ok_status();
+    }
+    if (environment->defer_rejection_diagnostics) {
+      // The candidate index excludes only impossible matches. A query rule
+      // either failed or matched and was declined by the ownership filter;
+      // the generated total distinguishes those outcomes without replaying
+      // excluded rules just to rank their failure diagnostics.
+      *out_result = loom_target_contract_query_result_empty();
+      if (has_unsupported_marker ||
+          declined_rule_count < op_entry.query_rule_count) {
+        out_result->outcome = LOOM_TARGET_CONTRACT_QUERY_UNSUPPORTED;
       }
       return iree_ok_status();
     }

@@ -633,11 +633,13 @@ loom_cc_library(
     pipeline_native
   HDRS
     "pipeline/native.h"
+    "pipeline/switch.h"
   SRCS
     "pipeline/channels.c"
     "pipeline/configuration.c"
     "pipeline/dma.c"
     "pipeline/native.c"
+    "pipeline/switch.c"
     "pipeline/transport.c"
   DEPS
     ::array_abi_layout
@@ -686,21 +688,25 @@ loom_cc_library(
   HDRS
     "check/array_plan.h"
     "check/artifact.h"
+    "check/configuration.h"
     "check/leaf.h"
     "check/provider.h"
   SRCS
     "check/array_plan.c"
     "check/artifact.c"
+    "check/configuration.c"
     "check/leaf.c"
     "check/provider.c"
   DEPS
     ::array_plan
     ::array_program
     ::array_resident
+    ::artifact
     ::core_descriptors
     ::leaf_compile
     ::machine
     ::provider
+    ::target_facts
     iree::base
     iree::schemas::xdna_executable
     loom::analysis::symbol_facts
@@ -714,6 +720,10 @@ loom_cc_library(
     loom::ir
     loom::ops::low
     loom::ops::op_defs
+    loom::pass::report
+    loom::target::function_version
+    loom::target::pass_environment
+    loom::target::provider
     loom::target::reporting::report
     loom::tools::loom-check::execute
     loom::tools::loom-check::provider
@@ -897,6 +907,7 @@ loom_check_test_suite(
   NAME
     loom_check_file_test
   SRCS
+    "emit/configuration.loom-test"
     "test/array_plan/bank_spans.loom-test"
     "test/array_plan/binding_abi.loom-test"
     "test/array_plan/binding_view_admission.loom-test"
@@ -1331,12 +1342,12 @@ loom_cc_library(
     artifact
   HDRS
     "emit/artifact.h"
+    "emit/configuration.h"
   SRCS
     "emit/array_report.c"
     "emit/array_report.h"
     "emit/artifact.c"
     "emit/configuration.c"
-    "emit/configuration.h"
     "emit/configuration_report.c"
     "emit/configuration_report.h"
   DEPS
@@ -1462,6 +1473,28 @@ loom_cc_test(
     loom::analysis::storage_geometry
     loom::target::arch::amd::xdna::array_facts
     loom::target::arch::amd::xdna::array_registers
+  LABELS
+    "iree-build-requirement=loom.target.arch.xdna"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_test(
+  NAME
+    pipeline_switch_test
+  SRCS
+    "pipeline/switch_test.cc"
+  DEPS
+    ::array_plan
+    ::pipeline_native
+    iree::base
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::pass::types
+    loom::target::arch::amd::xdna::array_facts
+    loom::target::arch::amd::xdna::array_registers
+    loom::testing::diagnostic_matchers
   LABELS
     "iree-build-requirement=loom.target.arch.xdna"
 )

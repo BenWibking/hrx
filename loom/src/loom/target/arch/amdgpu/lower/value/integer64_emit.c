@@ -148,8 +148,12 @@ iree_status_t loom_amdgpu_lower_index_cast(
     }
     case LOOM_AMDGPU_INDEX_CAST_KIND_NORMALIZING_NARROW: {
       loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_registers(
-          context, source_op, plan->source, &low_source));
+      if (plan->result_register_class == LOOM_AMDGPU_REG_CLASS_ID_VGPR) {
+        IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_registers(
+            context, source_op, plan->source, &low_source));
+      } else {
+        low_source = loom_low_lower_lookup_value(context, plan->source);
+      }
       const loom_module_t* module = loom_low_lower_context_module(context);
       const loom_scalar_type_t result_scalar_type =
           loom_type_element_type(loom_module_value_type(module, plan->result));
@@ -158,17 +162,21 @@ iree_status_t loom_amdgpu_lower_index_cast(
               ? LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_SIGN_EXTENDED
               : LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED;
       loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-      IREE_RETURN_IF_ERROR(loom_amdgpu_normalize_narrow_integer(
-          context, source_op, low_source, plan->payload_bit_count,
-          loom_amdgpu_source_integer_representation_lookup(context,
-                                                           plan->source),
-          required_representation, &low_result));
+      const loom_type_t lane_type =
+          loom_low_register_carrier_type_with_unit_count(result_type, 1);
+      IREE_RETURN_IF_ERROR(loom_amdgpu_normalize_narrow_source_integer(
+          context, source_op, plan->source, low_source, required_representation,
+          lane_type, &low_result));
       if (plan->result_unit_count == 2) {
         if (result_scalar_type == LOOM_SCALAR_TYPE_INDEX) {
           IREE_RETURN_IF_ERROR(loom_amdgpu_emit_i64_from_i32(
               context, source_op, low_result, &low_result));
-        } else {
+        } else if (plan->result_register_class ==
+                   LOOM_AMDGPU_REG_CLASS_ID_VGPR) {
           IREE_RETURN_IF_ERROR(loom_amdgpu_emit_vgpr64_from_u32(
+              context, source_op, low_result, &low_result));
+        } else {
+          IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr64_from_u32(
               context, source_op, low_result, &low_result));
         }
       }
@@ -226,6 +234,39 @@ iree_status_t loom_amdgpu_lookup_or_materialize_integer_operand(
         context, source_op, source_value, register_class_id, &low_value));
   } else {
     low_value = loom_low_lower_lookup_value(context, source_value);
+  }
+  const loom_type_t source_type = loom_module_value_type(module, source_value);
+  if (loom_amdgpu_source_integer_representation_type_is_narrow(source_type)) {
+    if (register_class_id == LOOM_AMDGPU_REG_CLASS_ID_VGPR) {
+      IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
+          context, source_op, low_value, &low_value));
+    } else if (!loom_amdgpu_low_value_is_register_class_count(
+                   context, low_value, LOOM_AMDGPU_REG_CLASS_ID_SGPR, 1)) {
+      IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_uniform_sgpr_address(
+          context, source_op, source_value, &low_value));
+    }
+    const loom_type_t lane_type = loom_module_value_type(module, low_value);
+    const loom_low_representation_id_t required_representation =
+        form == LOOM_AMDGPU_INTEGER_OPERAND_SIGNED_PAIR
+            ? LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_SIGN_EXTENDED
+            : LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED;
+    IREE_RETURN_IF_ERROR(loom_amdgpu_normalize_narrow_source_integer(
+        context, source_op, source_value, low_value, required_representation,
+        lane_type, &low_value));
+    if (form == LOOM_AMDGPU_INTEGER_OPERAND_UNSIGNED_WORD) {
+      *out_low_value = low_value;
+      return iree_ok_status();
+    }
+    if (form == LOOM_AMDGPU_INTEGER_OPERAND_SIGNED_PAIR) {
+      return loom_amdgpu_emit_i64_from_i32(context, source_op, low_value,
+                                           out_low_value);
+    }
+    if (register_class_id == LOOM_AMDGPU_REG_CLASS_ID_VGPR) {
+      return loom_amdgpu_emit_vgpr64_from_u32(context, source_op, low_value,
+                                              out_low_value);
+    }
+    return loom_amdgpu_emit_sgpr64_from_u32(context, source_op, low_value,
+                                            out_low_value);
   }
   const loom_type_t low_type = loom_module_value_type(module, low_value);
   const uint32_t unit_count = loom_low_register_type_unit_count(low_type);
@@ -387,12 +428,16 @@ iree_status_t loom_amdgpu_extract_low_32_bits_as_vgpr(
       context, source_op, low_source_lane, out_low_source);
 }
 
-iree_status_t loom_amdgpu_emit_sgpr64_binary_carry(
+static iree_status_t loom_amdgpu_emit_sgpr64_binary_carry_result(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_descriptor_ref_t low_descriptor_ref,
     loom_amdgpu_descriptor_ref_t high_descriptor_ref, loom_value_id_t low_lhs,
-    loom_value_id_t low_rhs, loom_value_id_t* out_low_result) {
+    loom_value_id_t low_rhs, loom_value_id_t* out_low_result,
+    loom_value_id_t* out_low_carry) {
   *out_low_result = LOOM_VALUE_ID_INVALID;
+  if (out_low_carry != NULL) {
+    *out_low_carry = LOOM_VALUE_ID_INVALID;
+  }
 
   loom_type_t sgpr_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_type(context, &sgpr_type));
@@ -451,7 +496,212 @@ iree_status_t loom_amdgpu_emit_sgpr64_binary_carry(
       loom_low_lower_context_builder(context), sources, IREE_ARRAYSIZE(sources),
       sgpr_x2_type, source_op->location, &concat_op));
   *out_low_result = loom_low_concat_result(concat_op);
+  if (out_low_carry != NULL) {
+    *out_low_carry =
+        loom_value_slice_get(loom_low_op_results(low_binary_hi_op), 1);
+  }
   return iree_ok_status();
+}
+
+iree_status_t loom_amdgpu_emit_sgpr64_binary_carry(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_amdgpu_descriptor_ref_t low_descriptor_ref,
+    loom_amdgpu_descriptor_ref_t high_descriptor_ref, loom_value_id_t low_lhs,
+    loom_value_id_t low_rhs, loom_value_id_t* out_low_result) {
+  return loom_amdgpu_emit_sgpr64_binary_carry_result(
+      context, source_op, low_descriptor_ref, high_descriptor_ref, low_lhs,
+      low_rhs, out_low_result, /*out_low_carry=*/NULL);
+}
+
+iree_status_t loom_amdgpu_emit_sgpr64_add_checked(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t low_lhs, loom_value_id_t low_rhs,
+    loom_value_id_t* out_low_sum, loom_value_id_t* out_overflow) {
+  *out_low_sum = LOOM_VALUE_ID_INVALID;
+  *out_overflow = LOOM_VALUE_ID_INVALID;
+  loom_value_id_t low_carry = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr64_binary_carry_result(
+      context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_ADD_CO_U32,
+      LOOM_AMDGPU_DESCRIPTOR_REF_S_ADDC_U32, low_lhs, low_rhs, out_low_sum,
+      &low_carry));
+  return loom_amdgpu_emit_scc_word(context, source_op, low_carry, out_overflow);
+}
+
+static iree_status_t loom_amdgpu_emit_sgpr32_add_checked(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t low_lhs, loom_value_id_t low_rhs,
+    loom_value_id_t* out_low_sum, loom_value_id_t* out_overflow) {
+  *out_low_sum = LOOM_VALUE_ID_INVALID;
+  *out_overflow = LOOM_VALUE_ID_INVALID;
+  loom_type_t sgpr_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_type(context, &sgpr_type));
+  loom_type_t scc_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_scc_type(context, &scc_type));
+  const loom_value_id_t operands[] = {low_lhs, low_rhs};
+  const loom_type_t result_types[] = {sgpr_type, scc_type};
+  loom_op_t* add_op = NULL;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_op(
+      context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_ADD_CO_U32, operands,
+      IREE_ARRAYSIZE(operands), loom_named_attr_slice_empty(), result_types,
+      IREE_ARRAYSIZE(result_types), &add_op));
+  *out_low_sum = loom_value_slice_get(loom_low_op_results(add_op), 0);
+  return loom_amdgpu_emit_scc_word(
+      context, source_op, loom_value_slice_get(loom_low_op_results(add_op), 1),
+      out_overflow);
+}
+
+static iree_status_t loom_amdgpu_emit_sgpr32_or(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t low_lhs, loom_value_id_t low_rhs,
+    loom_value_id_t* out_low_result) {
+  loom_type_t sgpr_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_type(context, &sgpr_type));
+  return loom_amdgpu_emit_binary(context, source_op,
+                                 LOOM_AMDGPU_DESCRIPTOR_REF_S_OR_B32, low_lhs,
+                                 low_rhs, sgpr_type, out_low_result);
+}
+
+iree_status_t loom_amdgpu_emit_sgpr64_mul_checked(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t low_lhs, loom_value_id_t low_rhs,
+    loom_value_id_t* out_low_product, loom_value_id_t* out_overflow) {
+  *out_low_product = LOOM_VALUE_ID_INVALID;
+  *out_overflow = LOOM_VALUE_ID_INVALID;
+
+  loom_type_t sgpr_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_type(context, &sgpr_type));
+  loom_value_id_t lhs[2] = {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID};
+  loom_value_id_t rhs[2] = {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID};
+  for (uint32_t i = 0; i < 2; ++i) {
+    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(context, source_op, low_lhs,
+                                                    i, sgpr_type, &lhs[i]));
+    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(context, source_op, low_rhs,
+                                                    i, sgpr_type, &rhs[i]));
+  }
+
+  loom_value_id_t products_low[4] = {
+      LOOM_VALUE_ID_INVALID,
+      LOOM_VALUE_ID_INVALID,
+      LOOM_VALUE_ID_INVALID,
+      LOOM_VALUE_ID_INVALID,
+  };
+  loom_value_id_t products_high[4] = {
+      LOOM_VALUE_ID_INVALID,
+      LOOM_VALUE_ID_INVALID,
+      LOOM_VALUE_ID_INVALID,
+      LOOM_VALUE_ID_INVALID,
+  };
+  const uint8_t lhs_indices[] = {0, 0, 1, 1};
+  const uint8_t rhs_indices[] = {0, 1, 0, 1};
+  for (uint32_t i = 0; i < IREE_ARRAYSIZE(products_low); ++i) {
+    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_binary(
+        context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_MUL_I32,
+        lhs[lhs_indices[i]], rhs[rhs_indices[i]], sgpr_type, &products_low[i]));
+    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_binary(
+        context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_MUL_HI_U32,
+        lhs[lhs_indices[i]], rhs[rhs_indices[i]], sgpr_type,
+        &products_high[i]));
+  }
+
+  loom_value_id_t product_high = LOOM_VALUE_ID_INVALID;
+  loom_value_id_t first_carry = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_add_checked(
+      context, source_op, products_high[0], products_low[1], &product_high,
+      &first_carry));
+  loom_value_id_t second_carry = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_add_checked(
+      context, source_op, product_high, products_low[2], &product_high,
+      &second_carry));
+
+  loom_type_t sgpr_x2_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(
+      loom_amdgpu_make_sgpr_range_type(context, 2, &sgpr_x2_type));
+  const loom_value_id_t product_parts[] = {products_low[0], product_high};
+  loom_op_t* concat_op = NULL;
+  IREE_RETURN_IF_ERROR(
+      loom_low_concat_build(loom_low_lower_context_builder(context),
+                            product_parts, IREE_ARRAYSIZE(product_parts),
+                            sgpr_x2_type, source_op->location, &concat_op));
+  *out_low_product = loom_low_concat_result(concat_op);
+
+  loom_value_id_t overflow = products_high[1];
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_or(context, source_op, overflow,
+                                                  products_high[2], &overflow));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_or(context, source_op, overflow,
+                                                  products_low[3], &overflow));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_or(context, source_op, overflow,
+                                                  products_high[3], &overflow));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_or(context, source_op, overflow,
+                                                  first_carry, &overflow));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_or(context, source_op, overflow,
+                                                  second_carry, &overflow));
+  *out_overflow = overflow;
+  return iree_ok_status();
+}
+
+static iree_status_t loom_amdgpu_emit_sgpr32_compare(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_amdgpu_descriptor_ref_t descriptor_ref, loom_value_id_t low_lhs,
+    loom_value_id_t low_rhs, loom_value_id_t* out_low_scc) {
+  *out_low_scc = LOOM_VALUE_ID_INVALID;
+  loom_type_t scc_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_scc_type(context, &scc_type));
+  const loom_value_id_t operands[] = {low_lhs, low_rhs};
+  loom_op_t* compare_op = NULL;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_op(
+      context, source_op, descriptor_ref, operands, IREE_ARRAYSIZE(operands),
+      loom_named_attr_slice_empty(), &scc_type, 1, &compare_op));
+  *out_low_scc = loom_value_slice_get(loom_low_op_results(compare_op), 0);
+  return iree_ok_status();
+}
+
+iree_status_t loom_amdgpu_emit_sgpr64_ule_scc(loom_low_lower_context_t* context,
+                                              const loom_op_t* source_op,
+                                              loom_value_id_t low_lhs,
+                                              loom_value_id_t low_rhs,
+                                              loom_value_id_t* out_low_scc) {
+  *out_low_scc = LOOM_VALUE_ID_INVALID;
+  loom_type_t sgpr_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_type(context, &sgpr_type));
+  loom_value_id_t lhs[2] = {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID};
+  loom_value_id_t rhs[2] = {LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID};
+  for (uint32_t i = 0; i < 2; ++i) {
+    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(context, source_op, low_lhs,
+                                                    i, sgpr_type, &lhs[i]));
+    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(context, source_op, low_rhs,
+                                                    i, sgpr_type, &rhs[i]));
+  }
+
+  loom_value_id_t high_less_scc = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_compare(
+      context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_CMP_LT_U32, lhs[1],
+      rhs[1], &high_less_scc));
+  loom_value_id_t high_less = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(
+      loom_amdgpu_emit_scc_word(context, source_op, high_less_scc, &high_less));
+  loom_value_id_t high_equal_scc = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_compare(
+      context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_CMP_EQ_I32, lhs[1],
+      rhs[1], &high_equal_scc));
+  loom_value_id_t high_equal = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_scc_word(context, source_op,
+                                                 high_equal_scc, &high_equal));
+  loom_value_id_t low_less_equal_scc = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_compare(
+      context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_CMP_LE_U32, lhs[0],
+      rhs[0], &low_less_equal_scc));
+  loom_value_id_t low_less_equal = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_scc_word(
+      context, source_op, low_less_equal_scc, &low_less_equal));
+  loom_value_id_t equal_and_low = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_binary(
+      context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_AND_B32, high_equal,
+      low_less_equal, sgpr_type, &equal_and_low));
+  loom_value_id_t less_equal = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr32_or(context, source_op, high_less,
+                                                  equal_and_low, &less_equal));
+  return loom_amdgpu_emit_sgpr32_nonzero_scc(context, source_op, less_equal,
+                                             out_low_scc);
 }
 
 iree_status_t loom_amdgpu_emit_i64_mul_lo(loom_low_lower_context_t* context,

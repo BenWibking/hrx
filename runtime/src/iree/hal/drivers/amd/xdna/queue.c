@@ -93,7 +93,7 @@ static void iree_hal_amd_xdna_queue_release_publisher(
 
 static bool iree_hal_amd_xdna_queue_has_publishable_dispatch(
     const iree_hal_amd_xdna_queue_t* queue) {
-  return iree_status_is_ok(queue->failure_status) &&
+  return iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue)) &&
          queue->observer_state == IREE_HAL_AMD_XDNA_OBSERVER_STATE_REGISTERED &&
          !iree_atomic_load(&queue->native_publication_blocked,
                            iree_memory_order_acquire) &&
@@ -177,7 +177,8 @@ static void iree_hal_amd_xdna_queue_fail_dispatch_ready(
     operation->next = NULL;
     if (operation->native.phase != IREE_HAL_AMD_XDNA_NATIVE_PHASE_ABANDONED) {
       operation->status = iree_status_join(
-          operation->status, iree_status_clone(queue->failure_status));
+          operation->status,
+          iree_status_clone(iree_hal_amd_xdna_queue_failure_status(queue)));
       operation->native.phase = IREE_HAL_AMD_XDNA_NATIVE_PHASE_COMPLETE;
       if (!operation->native.pending_count) {
         iree_hal_amd_xdna_operation_complete(operation);
@@ -189,9 +190,16 @@ static void iree_hal_amd_xdna_queue_fail_dispatch_ready(
 
 static void iree_hal_amd_xdna_queue_record_failure(
     iree_hal_amd_xdna_queue_t* queue, iree_status_t status) {
+  if (iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue))) {
+    iree_atomic_store(&queue->failure_status, (intptr_t)status,
+                      iree_memory_order_release);
+  } else {
+    iree_hal_amd_xdna_queue_report(queue, iree_status_code(status),
+                                   iree_status_message(status));
+    iree_status_free(status);
+  }
   iree_atomic_store(&queue->native_admission_open, 0,
                     iree_memory_order_release);
-  queue->failure_status = iree_status_join(queue->failure_status, status);
 }
 
 // A failed observer cannot prove accepted device references have retired. Keep
@@ -199,8 +207,9 @@ static void iree_hal_amd_xdna_queue_record_failure(
 // edges. Native progress is never inferred from a failure signal.
 static void iree_hal_amd_xdna_queue_abandon_pending(
     iree_hal_amd_xdna_queue_t* queue) {
-  iree_hal_amd_xdna_queue_report(queue, iree_status_code(queue->failure_status),
-                                 iree_status_message(queue->failure_status));
+  iree_hal_amd_xdna_queue_report(
+      queue, iree_status_code(iree_hal_amd_xdna_queue_failure_status(queue)),
+      iree_status_message(iree_hal_amd_xdna_queue_failure_status(queue)));
   while (queue->pending.count) {
     iree_hal_amd_xdna_pending_t* pending =
         &queue->pending.entries[queue->pending.head];
@@ -209,8 +218,9 @@ static void iree_hal_amd_xdna_queue_abandon_pending(
       operation->native.phase = IREE_HAL_AMD_XDNA_NATIVE_PHASE_ABANDONED;
       iree_hal_amd_xdna_operation_t* waiters =
           iree_hal_amd_xdna_operation_unregister_producers(operation);
-      iree_hal_semaphore_list_fail(operation->signals,
-                                   iree_status_clone(queue->failure_status));
+      iree_hal_semaphore_list_fail(
+          operation->signals,
+          iree_status_clone(iree_hal_amd_xdna_queue_failure_status(queue)));
       iree_hal_amd_xdna_operation_wake_acceptance_waiters(waiters);
     }
     pending->operation = NULL;
@@ -245,6 +255,9 @@ static iree_status_t iree_hal_amd_xdna_queue_arm(
 static bool iree_hal_amd_xdna_queue_apply_checked_status(
     iree_hal_amd_xdna_queue_t* queue, const amdf_kernel_queue_status_t* checked,
     iree_hal_amd_xdna_retired_batch_t* out_retired) {
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, checked->retired_submission);
+  IREE_TRACE(const uint32_t pending_count = queue->pending.count);
   iree_atomic_store(&queue->native_publication_blocked, 0,
                     iree_memory_order_release);
   if (!amdf_status_is_ok(checked->terminal_status)) {
@@ -267,12 +280,14 @@ static bool iree_hal_amd_xdna_queue_apply_checked_status(
         &queue->pending.entries[queue->pending.head];
     iree_hal_amd_xdna_operation_t* operation = pending->operation;
     if (iree_status_is_ok(operation->status)) {
-      operation->status = iree_status_clone(queue->failure_status);
+      operation->status =
+          iree_status_clone(iree_hal_amd_xdna_queue_failure_status(queue));
     }
     iree_hal_amd_xdna_invocation_release(pending->invocation);
     pending->invocation = NULL;
     --operation->native.pending_count;
-    if (queue->tracker && iree_status_is_ok(queue->failure_status)) {
+    if (queue->tracker &&
+        iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue))) {
       iree_async_frontier_tracker_advance(queue->tracker, queue->axis,
                                           pending->epoch);
     }
@@ -313,12 +328,14 @@ static bool iree_hal_amd_xdna_queue_apply_checked_status(
       }
     }
   }
-  if (!iree_status_is_ok(queue->failure_status)) {
+  if (!iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue))) {
     iree_hal_amd_xdna_queue_fail_dispatch_ready(queue);
   }
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, pending_count - queue->pending.count);
+  IREE_TRACE_ZONE_END(z0);
   return queue->dispatch_ready.head &&
          queue->pending.count < queue->pending.capacity &&
-         iree_status_is_ok(queue->failure_status);
+         iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue));
 }
 
 // Publishes a detached FIFO prefix while |completion_drain_mutex| is held.
@@ -365,6 +382,7 @@ static void iree_hal_amd_xdna_queue_publish_signals(
 
 static void iree_hal_amd_xdna_publisher_execute(
     void* user_data, iree_hal_amd_xdna_queue_service_item_t* item) {
+  IREE_TRACE_ZONE_BEGIN(z0);
   iree_hal_amd_xdna_queue_t* queue = user_data;
   iree_hal_amd_xdna_operation_t* operation =
       iree_hal_amd_xdna_operation_from_service_item(item);
@@ -413,9 +431,14 @@ static void iree_hal_amd_xdna_publisher_execute(
         iree_atomic_load(&queue->pending.visible_count,
                          iree_memory_order_acquire) > 0;
     uint64_t submission = 0;
+    IREE_TRACE_ZONE_BEGIN_NAMED(z1, "iree_hal_amd_xdna_native_submit");
+    IREE_TRACE_ZONE_APPEND_VALUE_I64(z1, command_count);
     const amdf_status_t submit_status =
         queue->context->xdna->kernel_queue_submit(
             queue->handle, &submission_info, &submission);
+    IREE_TRACE_ZONE_APPEND_VALUE_I64(z1, submission);
+    IREE_TRACE_ZONE_APPEND_VALUE_I64(z1, submit_status);
+    IREE_TRACE_ZONE_END(z1);
     if (submit_status == amdf_make_api_status(AMDF_STATUS_CODE_BUSY)) {
       operation->native.publication.result =
           IREE_HAL_AMD_XDNA_PUBLICATION_RESULT_RETRY;
@@ -461,6 +484,7 @@ static void iree_hal_amd_xdna_publisher_execute(
         iree_status_code(operation->native.publication.status),
         operation->native.publication.count);
   }
+  IREE_TRACE_ZONE_END(z0);
 }
 
 static void iree_hal_amd_xdna_host_worker_execute(
@@ -508,8 +532,9 @@ void iree_hal_amd_xdna_queue_enqueue_ready(
   iree_hal_amd_xdna_queue_t* queue = operation->queue;
   operation->status = status;
   if (iree_status_is_ok(operation->status) &&
-      !iree_status_is_ok(queue->failure_status)) {
-    operation->status = iree_status_clone(queue->failure_status);
+      !iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue))) {
+    operation->status =
+        iree_status_clone(iree_hal_amd_xdna_queue_failure_status(queue));
   }
   if (iree_status_is_ok(operation->status) &&
       operation->kind == IREE_HAL_AMD_XDNA_OPERATION_HOST_CALL &&
@@ -534,9 +559,7 @@ void iree_hal_amd_xdna_queue_enqueue_ready(
     iree_hal_amd_xdna_operation_complete(operation);
     return;
   }
-  if (operation->kind == IREE_HAL_AMD_XDNA_OPERATION_ALLOCA ||
-      operation->kind == IREE_HAL_AMD_XDNA_OPERATION_DEALLOCA ||
-      operation->kind == IREE_HAL_AMD_XDNA_OPERATION_TRANSFER ||
+  if (operation->kind == IREE_HAL_AMD_XDNA_OPERATION_TRANSFER ||
       operation->kind == IREE_HAL_AMD_XDNA_OPERATION_HOST_CALL ||
       operation->kind == IREE_HAL_AMD_XDNA_OPERATION_FILE ||
       (operation->kind == IREE_HAL_AMD_XDNA_OPERATION_EXECUTE &&
@@ -573,6 +596,8 @@ static void iree_hal_amd_xdna_queue_commit_publication(
     iree_hal_amd_xdna_queue_service_t* service,
     iree_hal_amd_xdna_queue_service_item_t* item,
     iree_hal_amd_xdna_operation_t* operation, iree_status_t status) {
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, operation->native.publication.count);
   operation->status =
       iree_status_join(operation->status, operation->native.publication.status);
   operation->native.publication.status = iree_ok_status();
@@ -584,7 +609,7 @@ static void iree_hal_amd_xdna_queue_commit_publication(
   const bool retry = operation->native.publication.result ==
                      IREE_HAL_AMD_XDNA_PUBLICATION_RESULT_RETRY;
   if (retry && !operation->native.publication.had_pending &&
-      iree_status_is_ok(queue->failure_status)) {
+      iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue))) {
     iree_hal_amd_xdna_queue_fail_pending(
         queue,
         iree_make_status(
@@ -592,7 +617,8 @@ static void iree_hal_amd_xdna_queue_commit_publication(
             "XDNA native publication reported BUSY without pending progress"));
   }
   if (iree_status_is_ok(operation->status)) {
-    operation->status = iree_status_clone(queue->failure_status);
+    operation->status =
+        iree_status_clone(iree_hal_amd_xdna_queue_failure_status(queue));
   }
   if (service) {
     iree_hal_amd_xdna_queue_service_acknowledge(service, item);
@@ -602,15 +628,17 @@ static void iree_hal_amd_xdna_queue_commit_publication(
   iree_hal_amd_xdna_operation_t* targeted_waiters = NULL;
   bool complete = false;
   if (operation->native.phase == IREE_HAL_AMD_XDNA_NATIVE_PHASE_ABANDONED ||
-      (accepted_count && !iree_status_is_ok(queue->failure_status))) {
+      (accepted_count &&
+       !iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue)))) {
     // A concurrent observer failure can precede publication acknowledgement.
     // The invisible accepted suffix is still native-reachable and must leak.
     if (operation->native.phase != IREE_HAL_AMD_XDNA_NATIVE_PHASE_ABANDONED) {
       operation->native.phase = IREE_HAL_AMD_XDNA_NATIVE_PHASE_ABANDONED;
       targeted_waiters =
           iree_hal_amd_xdna_operation_unregister_producers(operation);
-      iree_hal_semaphore_list_fail(operation->signals,
-                                   iree_status_clone(queue->failure_status));
+      iree_hal_semaphore_list_fail(
+          operation->signals,
+          iree_status_clone(iree_hal_amd_xdna_queue_failure_status(queue)));
     }
   } else {
     if (accepted_count) {
@@ -675,6 +703,7 @@ static void iree_hal_amd_xdna_queue_commit_publication(
     iree_hal_amd_xdna_operation_complete(operation);
   }
   iree_hal_amd_xdna_operation_wake_acceptance_waiters(targeted_waiters);
+  IREE_TRACE_ZONE_END(z0);
 }
 
 static void iree_hal_amd_xdna_publisher_complete(
@@ -708,40 +737,6 @@ static void iree_hal_amd_xdna_operation_resume(void* user_data,
   }
 }
 
-static void iree_hal_amd_xdna_queue_memory_complete(
-    void* user_data, iree_async_operation_t* base_operation,
-    iree_status_t status, iree_async_completion_flags_t flags) {
-  (void)base_operation;
-  (void)flags;
-  iree_hal_amd_xdna_operation_t* operation = user_data;
-  iree_hal_amd_xdna_memory_wait_t* wait = operation->alloca.memory_wait;
-  const iree_hal_amd_xdna_memory_wait_kind_t wait_kind = wait->kind;
-  wait->kind = IREE_HAL_AMD_XDNA_MEMORY_WAIT_NONE;
-  iree_status_t continuation_status = (iree_status_t)iree_atomic_exchange(
-      &operation->continuation_status, 0, iree_memory_order_acquire);
-  status = iree_status_join(status, continuation_status);
-  if (iree_status_is_ok(status) &&
-      !iree_status_is_ok(operation->queue->failure_status)) {
-    status = iree_status_clone(operation->queue->failure_status);
-  }
-  if (!iree_status_is_ok(status)) {
-    operation->status = status;
-    if (wait_kind == IREE_HAL_AMD_XDNA_MEMORY_WAIT_FRONTIER) {
-      iree_hal_amd_xdna_operation_release_alloca_reservations(operation);
-    }
-    iree_hal_amd_xdna_operation_complete(operation);
-    return;
-  }
-  if (IREE_UNLIKELY(wait_kind == IREE_HAL_AMD_XDNA_MEMORY_WAIT_NONE)) {
-    operation->status = iree_make_status(
-        IREE_STATUS_INTERNAL, "XDNA memory wait completed without an owner");
-    iree_hal_amd_xdna_operation_complete(operation);
-    return;
-  }
-  iree_hal_amd_xdna_queue_service_enqueue(&operation->queue->host_worker,
-                                          &operation->service_item);
-}
-
 static void iree_hal_amd_xdna_queue_file_complete(
     void* user_data, iree_async_operation_t* base_operation,
     iree_status_t status, iree_async_completion_flags_t flags) {
@@ -752,8 +747,10 @@ static void iree_hal_amd_xdna_queue_file_complete(
       &operation->continuation_status, 0, iree_memory_order_acquire);
   operation->status = iree_status_join(status, io_status);
   if (iree_status_is_ok(operation->status) &&
-      !iree_status_is_ok(operation->queue->failure_status)) {
-    operation->status = iree_status_clone(operation->queue->failure_status);
+      !iree_status_is_ok(
+          iree_hal_amd_xdna_queue_failure_status(operation->queue))) {
+    operation->status = iree_status_clone(
+        iree_hal_amd_xdna_queue_failure_status(operation->queue));
   }
   operation->file.io_completed = true;
   if (iree_status_is_ok(operation->status) &&
@@ -783,8 +780,9 @@ static void iree_hal_amd_xdna_host_worker_complete(
   }
   operation->status = iree_status_join(operation->status, status);
   if (iree_status_is_ok(operation->status) &&
-      !iree_status_is_ok(queue->failure_status)) {
-    operation->status = iree_status_clone(queue->failure_status);
+      !iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue))) {
+    operation->status =
+        iree_status_clone(iree_hal_amd_xdna_queue_failure_status(queue));
   }
   iree_hal_amd_xdna_queue_service_acknowledge(service, item);
 
@@ -806,42 +804,6 @@ static void iree_hal_amd_xdna_host_worker_complete(
     }
   }
 
-  if (operation->kind == IREE_HAL_AMD_XDNA_OPERATION_ALLOCA &&
-      iree_status_is_ok(operation->status)) {
-    iree_hal_amd_xdna_memory_wait_t* wait = operation->alloca.memory_wait;
-    iree_async_operation_initialize(
-        &operation->continuation, IREE_ASYNC_OPERATION_TYPE_NOP,
-        IREE_ASYNC_OPERATION_FLAG_NONE, iree_hal_amd_xdna_queue_memory_complete,
-        operation);
-    switch (operation->alloca.acquire_result) {
-      case IREE_HAL_POOL_ACQUIRE_OK:
-      case IREE_HAL_POOL_ACQUIRE_OK_FRESH:
-        break;
-      case IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT: {
-        wait->kind = IREE_HAL_AMD_XDNA_MEMORY_WAIT_FRONTIER;
-        status = iree_async_frontier_tracker_wait(
-            operation->alloca.pool->frontier_tracker, wait->frontier,
-            iree_hal_amd_xdna_operation_resume, operation,
-            &wait->frontier_waiter);
-        if (iree_status_is_ok(status)) {
-          return;
-        }
-        wait->kind = IREE_HAL_AMD_XDNA_MEMORY_WAIT_NONE;
-        iree_hal_amd_xdna_operation_release_alloca_reservations(operation);
-        operation->status = status;
-        break;
-      }
-      case IREE_HAL_POOL_ACQUIRE_EXHAUSTED:
-      case IREE_HAL_POOL_ACQUIRE_OVER_BUDGET:
-        wait->kind = IREE_HAL_AMD_XDNA_MEMORY_WAIT_CAPACITY;
-        iree_hal_pool_wait_commit(wait->capacity_wait, iree_infinite_timeout(),
-                                  (iree_hal_pool_wait_callback_t){
-                                      .fn = iree_hal_amd_xdna_operation_resume,
-                                      .user_data = operation,
-                                  });
-        return;
-    }
-  }
   iree_hal_amd_xdna_operation_complete(operation);
 }
 
@@ -875,6 +837,7 @@ static void iree_hal_amd_xdna_queue_native_ready(
     }
   }
 
+  IREE_TRACE_ZONE_BEGIN(z0);
   iree_slim_mutex_lock(&queue->completion_drain_mutex);
   iree_slim_mutex_lock(&queue->state_mutex);
   queue->notification_pending = false;
@@ -886,7 +849,8 @@ static void iree_hal_amd_xdna_queue_native_ready(
     // A waiter claimed retirement while this callback acquired the locks. The
     // consumed notification is already reflected in |notification_pending|;
     // the waiter will rearm any remaining prefix after checked retirement.
-  } else if (iree_status_is_ok(queue->failure_status) && queue->pending.count) {
+  } else if (iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue)) &&
+             queue->pending.count) {
     amdf_kernel_queue_status_t checked = {
         .type = AMDF_STRUCTURE_TYPE_KERNEL_QUEUE_STATUS,
         .structure_size = sizeof(checked),
@@ -906,6 +870,7 @@ static void iree_hal_amd_xdna_queue_native_ready(
   iree_hal_amd_xdna_queue_complete_retired_batch(&retired);
   iree_slim_mutex_unlock(&queue->completion_drain_mutex);
   iree_hal_amd_xdna_queue_pump_after_retirement(queue, should_pump);
+  IREE_TRACE_ZONE_END(z0);
 }
 
 static uint64_t iree_hal_amd_xdna_queue_wait_timeout_ns(
@@ -945,8 +910,8 @@ bool iree_hal_amd_xdna_queue_try_wait_epoch(iree_hal_queue_t* base,
     return false;
   }
   uint64_t submission = 0;
-  if (iree_status_is_ok(queue->failure_status) && queue->pending.count &&
-      queue->axis == producer_axis) {
+  if (iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue)) &&
+      queue->pending.count && queue->axis == producer_axis) {
     const uint64_t head_epoch =
         queue->pending.entries[queue->pending.head].epoch;
     if (producer_epoch >= head_epoch) {
@@ -983,6 +948,8 @@ bool iree_hal_amd_xdna_queue_try_wait_epoch(iree_hal_queue_t* base,
   // The wait performs checked retirement but returns no snapshot. Query the
   // established state without another native operation, then serialize HAL
   // ring detachment and user-visible completion publication.
+  IREE_TRACE_ZONE_BEGIN_NAMED(z0, "iree_hal_amd_xdna_wait_retire");
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, submission);
   amdf_kernel_queue_status_t checked = {
       .type = AMDF_STRUCTURE_TYPE_KERNEL_QUEUE_STATUS,
       .structure_size = sizeof(checked),
@@ -1018,8 +985,8 @@ bool iree_hal_amd_xdna_queue_try_wait_epoch(iree_hal_queue_t* base,
     should_pump =
         iree_hal_amd_xdna_queue_apply_checked_status(queue, &checked, &retired);
     if (iree_status_is_ok(status) &&
-        !iree_status_is_ok(queue->failure_status)) {
-      status = iree_status_clone(queue->failure_status);
+        !iree_status_is_ok(iree_hal_amd_xdna_queue_failure_status(queue))) {
+      status = iree_status_clone(iree_hal_amd_xdna_queue_failure_status(queue));
     }
   }
   iree_slim_mutex_unlock(&queue->state_mutex);
@@ -1027,6 +994,7 @@ bool iree_hal_amd_xdna_queue_try_wait_epoch(iree_hal_queue_t* base,
   iree_slim_mutex_unlock(&queue->completion_drain_mutex);
   iree_hal_amd_xdna_queue_pump_after_retirement(queue, should_pump);
   *out_status = status;
+  IREE_TRACE_ZONE_END(z0);
   return true;
 }
 
@@ -1179,16 +1147,31 @@ static bool iree_hal_amd_xdna_operation_try_direct_publish(
     return false;
   }
 
+  IREE_TRACE_ZONE_BEGIN(z0);
   iree_hal_amd_xdna_queue_t* queue = operation->queue;
   if (!iree_slim_mutex_try_lock(&queue->state_mutex)) {
+    IREE_TRACE_ZONE_APPEND_TEXT(z0, "queue state busy");
+    IREE_TRACE_ZONE_END(z0);
     return false;
   }
   if (!iree_atomic_load(&queue->native_admission_open,
-                        iree_memory_order_acquire) ||
-      iree_atomic_load(&queue->native_publication_blocked,
-                       iree_memory_order_acquire) ||
-      !iree_hal_amd_xdna_queue_try_claim_publisher(queue)) {
+                        iree_memory_order_acquire)) {
+    IREE_TRACE_ZONE_APPEND_TEXT(z0, "native admission closed");
     iree_slim_mutex_unlock(&queue->state_mutex);
+    IREE_TRACE_ZONE_END(z0);
+    return false;
+  }
+  if (iree_atomic_load(&queue->native_publication_blocked,
+                       iree_memory_order_acquire)) {
+    IREE_TRACE_ZONE_APPEND_TEXT(z0, "native credits busy");
+    iree_slim_mutex_unlock(&queue->state_mutex);
+    IREE_TRACE_ZONE_END(z0);
+    return false;
+  }
+  if (!iree_hal_amd_xdna_queue_try_claim_publisher(queue)) {
+    IREE_TRACE_ZONE_APPEND_TEXT(z0, "publisher busy");
+    iree_slim_mutex_unlock(&queue->state_mutex);
+    IREE_TRACE_ZONE_END(z0);
     return false;
   }
 
@@ -1199,8 +1182,11 @@ static bool iree_hal_amd_xdna_operation_try_direct_publish(
       iree_atomic_load(&queue->native_publication_blocked,
                        iree_memory_order_acquire) ||
       pending_count >= (int32_t)queue->pending.capacity) {
+    IREE_TRACE_ZONE_APPEND_TEXT(z0, "native window unavailable");
+    IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, pending_count);
     iree_hal_amd_xdna_queue_release_publisher(queue);
     iree_slim_mutex_unlock(&queue->state_mutex);
+    IREE_TRACE_ZONE_END(z0);
     return false;
   }
 
@@ -1216,14 +1202,18 @@ static bool iree_hal_amd_xdna_operation_try_direct_publish(
                       iree_memory_order_release);
   } else {
     if (resolution != IREE_HAL_AMD_XDNA_WAIT_RESOLUTION_READY) {
+      IREE_TRACE_ZONE_APPEND_TEXT(z0, "wait frontier unproven");
       iree_hal_amd_xdna_queue_release_publisher(queue);
       iree_slim_mutex_unlock(&queue->state_mutex);
+      IREE_TRACE_ZONE_END(z0);
       return false;
     }
     iree_atomic_store(&queue->publisher_operation, (intptr_t)operation,
                       iree_memory_order_release);
   }
   iree_slim_mutex_unlock(&queue->state_mutex);
+  IREE_TRACE_ZONE_APPEND_TEXT(z0, "caller direct");
+  IREE_TRACE_ZONE_END(z0);
 
   // Native publication may block, so it runs without excluding proactor state
   // transitions. The publisher claim preserves physical acceptance order.
@@ -1248,6 +1238,11 @@ iree_status_t iree_hal_amd_xdna_operation_submit(
   if (!iree_status_is_ok(status)) {
     iree_hal_amd_xdna_operation_discard(operation);
     return status;
+  }
+  if (operation->kind == IREE_HAL_AMD_XDNA_OPERATION_ALLOCA ||
+      operation->kind == IREE_HAL_AMD_XDNA_OPERATION_DEALLOCA) {
+    iree_hal_amd_xdna_operation_admit_memory(operation, iree_ok_status());
+    return iree_ok_status();
   }
   if (iree_hal_amd_xdna_operation_try_direct_publish(operation, &status)) {
     return status;
@@ -1412,7 +1407,7 @@ static void iree_hal_amd_xdna_queue_destroy(iree_hal_queue_t* base) {
   if (!iree_status_is_ok(profile_status)) {
     iree_hal_amd_xdna_queue_report_status(queue, profile_status);
   }
-  iree_status_free(queue->failure_status);
+  iree_status_free(iree_hal_amd_xdna_queue_failure_status(queue));
   iree_async_event_release(queue->event);
   iree_allocator_free(queue->host_allocator, queue->pending.entries);
   iree_hal_amd_xdna_queue_storage_deinitialize(&queue->storage);

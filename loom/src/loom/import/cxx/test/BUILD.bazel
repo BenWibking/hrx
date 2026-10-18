@@ -38,6 +38,7 @@ loom_library(
 loom_check_test_suite(
     name = "compiler_test",
     srcs = [
+        "address_counted_loops.cxx-test",
         "address_values.cxx-test",
         "address_values_invalid.cxx-test",
         "aggregate_constants.cxx-test",
@@ -134,6 +135,8 @@ loom_check_test_suite(
         "matrix_fragments_invalid.cxx-test",
         "mxfp_group_dot.cxx-test",
         "narrow_float_subtraction.cxx-test",
+        "numeric_conversion.cxx-test",
+        "numeric_conversion_invalid.cxx-test",
         "offsetof.cxx-test",
         "offsetof_roundtrip.cxx-test",
         "opaque_pointers.cxx-test",
@@ -260,6 +263,7 @@ loom_check_test(
 )
 
 _AUTHORED_HOST_SOURCES = [
+    "address_counted_loops",
     "assumptions",
     "comparison_functions",
     "constant_loops",
@@ -602,6 +606,7 @@ loom_test_module(
         target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
     )
     for source in [
+        "address_counted_loops",
         "assumptions",
         "barrier_helpers",
         "borrowed_storage",

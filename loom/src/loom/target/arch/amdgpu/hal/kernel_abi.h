@@ -33,13 +33,17 @@ extern "C" {
 // Required kernarg alignment for HAL binding pointers.
 #define LOOM_AMDGPU_HAL_KERNEL_ABI_GLOBAL_BUFFER_KERNARG_ALIGNMENT 8u
 
-// Kernarg storage for one 32-bit direct dispatch constant word.
-// Narrow i8/i16 integers use sign-extended words, matching their scalar value
-// representation. Unsigned source operations interpret the declared low bits.
+// Kernarg storage for one 32-bit direct dispatch constant word. Logical
+// payloads narrower than a word occupy its low-address bytes; HAL dispatch
+// zero-fills the remaining native slot before launch.
 #define LOOM_AMDGPU_HAL_KERNEL_ABI_DIRECT_SCALAR_KERNARG_SIZE 4u
 
 // Required kernarg alignment for direct dispatch constant words.
 #define LOOM_AMDGPU_HAL_KERNEL_ABI_DIRECT_SCALAR_KERNARG_ALIGNMENT 4u
+
+// Maximum physical word count carried by one direct dispatch argument. This
+// covers the widest source vector representation admitted by AMDGPU lowering.
+#define LOOM_AMDGPU_HAL_KERNEL_ABI_DIRECT_ARG_MAX_UNIT_COUNT 32u
 
 // Stable low.live_in source spelling for the AMDGPU kernarg segment pointer.
 #define LOOM_AMDGPU_HAL_KERNEL_ABI_KERNARG_SEGMENT_PTR_SOURCE \
@@ -289,6 +293,8 @@ typedef struct loom_amdgpu_hal_kernarg_direct_arg_t {
   uint32_t kernarg_offset;
   // Byte length of the direct argument in the kernarg segment.
   uint32_t kernarg_size;
+  // Byte length consumed from the dense HAL dispatch constant stream.
+  uint32_t payload_size;
   // Byte alignment of the direct argument in the kernarg segment.
   uint32_t kernarg_alignment;
   // Target-low value type produced by materializing this argument.
@@ -308,7 +314,7 @@ typedef struct loom_amdgpu_hal_kernel_abi_layout_t {
   // Source lowering may initialize this conservatively; HAL ABI materialization
   // refines it after low-level dead-code elimination.
   bool uses_kernarg_segment_ptr;
-  // HAL dispatch constant word count consumed by direct arguments.
+  // Physical kernarg word count occupied by direct arguments.
   uint32_t constant_count;
   // Resource records in HAL binding/kernarg offset order.
   const loom_amdgpu_hal_kernarg_resource_t* resources;

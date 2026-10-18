@@ -4,6 +4,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import pytest
+
 from loom.dialect.index import defs as index
 from loom.dialect.scalar import bitwise, conversion
 from loom.dialect.scf import defs as scf
@@ -113,7 +115,7 @@ def test_uniform_shifts_cover_constant_and_runtime_counts_for_all_lane_widths():
     }
 
 
-def _narrowing_pair(rule: DescriptorRule) -> tuple[str, str]:
+def _narrowing_pair(rule: DescriptorRule | ValueAliasRule) -> tuple[str, str]:
     type_guards = {
         guard.field: guard.type_pattern
         for guard in rule.guards
@@ -153,22 +155,43 @@ def test_scalar_float_narrowing_rules_cover_the_complete_type_matrix() -> None:
     assert actual_pairs == expected_pairs
 
 
-def test_exact_bfloat_value_rule_uses_reinterpret_and_shift() -> None:
+@pytest.mark.parametrize("preserve_nan", [False, True])
+def test_exact_bfloat_value_rule_separates_rounding_from_nan_handling(
+    preserve_nan: bool,
+) -> None:
+    report_key = "exactly_representable_binary32_to_bfloat16" + (
+        "_preserve_nan" if preserve_nan else ""
+    )
     rule = next(
         rule
         for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases
-        if isinstance(rule, DescriptorRule)
-        and rule.report_key == "exactly_representable_binary32_to_bfloat16"
+        if isinstance(rule, DescriptorRule) and rule.report_key == report_key
     )
 
     assert any(
         guard.kind is GuardKind.VALUE_FLOAT_EXACTLY_REPRESENTABLE_AS
         for guard in rule.guards
     )
+    assert (
+        any(guard.kind is GuardKind.VALUE_NOT_NAN for guard in rule.guards)
+        != preserve_nan
+    )
     assert tuple(emit.descriptor.key for emit in rule.emit) == (
         "wasm.i32.reinterpret_f32",
         "wasm.i32.const",
         "wasm.i32.shr_u",
+    ) + (
+        (
+            "wasm.i32.const",
+            "wasm.i32.and",
+            "wasm.i32.const",
+            "wasm.i32.gt_u",
+            "wasm.i32.const",
+            "wasm.i32.or",
+            "wasm.i32.select",
+        )
+        if preserve_nan
+        else ()
     )
     assert rule.emit[1].immediates == {"i32_value": 16}
 
@@ -206,6 +229,36 @@ def test_scalar_integer_constants_cover_every_fixed_width_type() -> None:
         "i16": "wasm.i32.const",
         "i32": "wasm.i32.const",
         "i64": "wasm.i64.const",
+    }
+
+
+def test_scalar_integer_truncation_covers_every_carrier_pair() -> None:
+    actual = {}
+    for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases:
+        if rule.source_op is not conversion.scalar_trunci:
+            continue
+        input_type, result_type = _narrowing_pair(rule)
+        if result_type == "i1":
+            continue
+        pair = (input_type, result_type)
+        assert pair not in actual
+        if input_type == "i64":
+            assert isinstance(rule, DescriptorRule)
+            assert len(rule.emit) == 1
+            assert rule.emit[0].descriptor.key == "wasm.i32.wrap_i64"
+            assert rule.emit[0].operands == {"input": ValueRef.operand("input")}
+            assert rule.emit[0].results == {"dst": ValueRef.result("result")}
+        else:
+            assert isinstance(rule, ValueAliasRule)
+            assert rule.source == ValueRef.operand("input")
+            assert rule.result == ValueRef.result("result")
+        actual[pair] = rule
+
+    assert set(actual) == {
+        (f"i{source_bits}", f"i{result_bits}")
+        for source_bits in (16, 32, 64)
+        for result_bits in (8, 16, 32)
+        if result_bits < source_bits
     }
 
 
