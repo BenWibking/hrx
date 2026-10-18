@@ -85,14 +85,10 @@ DEVICE float amdgpu_exp2(float x) {
 
 // expD_base.h
 DEVICE double exp(double x) {
-    // dn = rint(x * log2(e)). The low 32 bits of the integer-valued shifted
-    // double encode (int)dn. This avoids a target-unsupported f64-to-i32
-    // conversion.
-    const double shift = 0x1.8p52;
+    // dn = rint(x * log2(e)), native f64 round-to-nearest-even (v_rndne_f64).
     const double scaled_input = x * 0x1.71547652b82fep+0;
-    const double shifted = scaled_input + shift;
-    const double dn = shifted - shift;
-    const int n = (int)__builtin_bit_cast(u64, shifted);
+    const double dn = loom::scalar::roundevenf(scaled_input);
+    const int n = (int)dn;
 
     const double negative_dn = -dn;
     const double t_hi = fma(negative_dn, 0x1.62e42fefa39efp-1, x);
