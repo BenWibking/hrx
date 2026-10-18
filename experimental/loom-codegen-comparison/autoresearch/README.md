@@ -61,13 +61,19 @@ panic.
 
 - **Fixed compiler.** The tools are built once from `BASE`, and every eval
   checks their md5.
+- **HRX launch path.** `compare_rocm` runs on HRX's `libamdhip64`, built with
+  the tools from `BASE`, for both the original HIP kernels and the Loom code
+  objects. ROCm's runtime does not zero-fill the padding of sub-word kernel
+  arguments, which Loom relies on (ROCm/hrx-system#1997). The runtime is
+  recorded per campaign in `hip_runtime` (`hrx` or `rocm`).
 - **Fixed host side.** `compare_rocm` is built once from the seed kernel.
   Candidates reach it only as code objects. The kernel headers in the IR
   and the `CellRecord` layout must match the seed.
 - **Exact source.** Each eval builds `git archive` of the committed
   `kernel/`. Commits that touch anything else are refused.
-- **Correctness.** Every eval runs 5 gridwide steps against the original HIP
-  kernels, and every timing run checks correctness again.
+- **Correctness.** Every eval runs 50 gridwide steps against the original HIP
+  kernels, crossing the perturbation steps (every 20) twice, and every timing
+  run checks correctness again.
 - **Timing.** Pairs are interleaved against the current best on the same
   GPU, with the host side pinned to cores near the GPU (NUMA node 1,
   CPUs 46–47). Builds run on node 0.
@@ -96,3 +102,5 @@ These are already in place:
 - the `venv-py312` tools (cmake, ninja, Python 3.12);
 - conda-forge GCC 14 at `/mnt/data/bwibking/gcc14`. Its libstdc++ provides
   the C++23 support that `loom-import-cxx` needs and moth's GCC 11 lacks.
+- `patchelf` in the `venv-py312` tools (`uv pip install patchelf`), used to give
+  `compare_rocm` a `RUNPATH` so the HIP runtime can be selected at run time.

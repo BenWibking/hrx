@@ -55,9 +55,13 @@ it waits for the GPU. In order, it:
    is `interface-fail`.
 4. **Skips identical code.** If both code objects are byte-identical to the
    best, the verdict is `identical`.
-5. **Checks correctness.** It runs 5 gridwide steps on 262,144 cells and
-   compares against the original HIP kernels on the same GPU. The tolerances
-   are fixed (rtol 2e-4, abundance atol 1e-14). Failing is `incorrect`; a
+5. **Checks correctness.** It runs 50 gridwide steps on 262,144 cells and
+   compares against the original HIP kernels on the same GPU. The 50 steps
+   cross the perturbation steps (20 and 40), so perturbed inputs are always
+   tested; a 5-step check never reached one and missed a real Loom bug.
+   Both kernels run on HRX's HIP runtime (see the README). The tolerances
+   are fixed (rtol 2e-4, abundance atol 1e-13; raised from 1e-14 because
+   accepted non-bit-exact changes drift trace abundances by ~1e-14 over 50 steps). Failing is `incorrect`; a
    run longer than 5 minutes is `hang`.
 6. **Times the candidate.** It runs interleaved pairs against the current
    best on the same GPU (cand, best, best, cand, ...; 5 pairs by default). Each pair gives

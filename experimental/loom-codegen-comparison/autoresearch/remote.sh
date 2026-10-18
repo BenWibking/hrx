@@ -33,6 +33,23 @@ WORKGROUPS=2048  # ceil(64^3 / 128), compare_rocm's default grid
 # runs pin to two node-1 cores.
 BUILD_CPUS=0-23
 TIMING_CPUS=46,47
+# compare_rocm's abundance atol (its default is 1e-14). Raised to 1e-13 on
+# 2026-10-17: over 50 steps, accepted non-bit-exact kernel changes drift a few
+# trace abundances by ~1e-14 near the floor; rtol stays 2e-4.
+ABUNDANCE_ATOL=1e-13
+# HIP runtime that launches both the original HIP kernels and the Loom code
+# objects in compare_rocm: "hrx" (HRX's libamdhip64 from this campaign's build,
+# the default) or "rocm" (ROCm's). Loom zero-fills sub-word kernel arguments only
+# under HRX's launchers; under ROCm a bool argument can read stale bytes
+# (ROCm/hrx-system#1997). Per campaign in $D/hip_runtime; absent means "rocm",
+# for campaigns set up before this option existed.
+hip_env() {
+  if [[ $(cat "$D/hip_runtime" 2>/dev/null || echo rocm) == hrx ]]; then
+    echo env LD_LIBRARY_PATH="$D/tools/hip" IREE_HAL_AMDGPU_LIBHSA_PATH="$ROCM/lib/libhsa-runtime64.so.1"
+  else
+    echo env
+  fi
+}
 KREL=experimental/loom-codegen-comparison/kernel
 export XDG_CACHE_HOME=$R/cache TMPDIR=$R/tmp PYTHONPYCACHEPREFIX=$R/cache/pycache
 export PIP_NO_CACHE_DIR=1 PATH=$V:$PATH
@@ -179,11 +196,14 @@ setup_job() {  # setup_job BASE
     "-DIREE_HAL_AMDGPU_TARGETS=$TARGET" -DLOOM_IMPORT_CXX=ON \
     > "$D/jobs/configure.log" 2>&1 || { tail -30 "$D/jobs/configure.log"; echo "SETUP fail configure"; return 1; }
   log "build loom-import-cxx loom-compile"
-  "${pin[@]}" "$V/cmake" --build "$b" --target loom-import-cxx loom-compile -j 24 \
+  "${pin[@]}" "$V/cmake" --build "$b" --target loom-import-cxx loom-compile libhrx_src_binding_hip_amdhip64 -j 24 \
     > "$D/jobs/build.log" 2>&1 || { grep -A12 FAILED: "$D/jobs/build.log" | head -40; echo "SETUP fail build"; return 1; }
   cp "$b/loom/src/loom/tools/loom-import-cxx/loom-import-cxx" \
      "$b/loom/src/loom/tools/loom-compile/loom-compile" "$D/tools/"
-  (cd "$D/tools" && md5sum loom-import-cxx loom-compile > tools.md5)
+  mkdir -p "$D/tools/hip"
+  cp -P "$b"/libhrx/src/binding/hip/libamdhip64.so* "$D/tools/hip/"
+  echo hrx > "$D/hip_runtime"
+  (cd "$D/tools" && md5sum loom-import-cxx loom-compile hip/libamdhip64.so.7 > tools.md5)
   # compare_rocm is built once from the seed kernel. Candidates reach it only
   # as code objects, so they cannot change the host side of the measurement.
   log "build compare_rocm"
@@ -193,6 +213,8 @@ setup_job() {  # setup_job BASE
     -DPRIMORDIAL_ROS2S_ENABLE_HIP=1 -DPRIMORDIAL_ROS2S_NO_MAIN=1 \
     -I "$D/harness/generated" -I "$c" "$c/compare_rocm.cpp" -o "$D/harness/compare_rocm" \
     > "$D/jobs/hipcc.log" 2>&1 || { tail -30 "$D/jobs/hipcc.log"; echo "SETUP fail hipcc"; return 1; }
+  "$V/patchelf" --remove-rpath "$D/harness/compare_rocm" &&
+    "$V/patchelf" --set-rpath "$ROCM/lib" "$D/harness/compare_rocm" || { echo "SETUP fail patchelf"; return 1; }
   # Interface references from the seed kernel.
   local k=$D/harness/seed-kernel
   rm -rf "$k"; mkdir -p "$k"
@@ -212,8 +234,8 @@ time_one() {  # time_one IDX LABEL RUN_DIR TIMING_DIR
   local log=$4/run$1-$2.log t0 t1 rc f
   f=$(foreign_gpu_procs | wc -l)
   t0=$(date +%s.%N)
-  timeout 600 taskset -c "$TIMING_CPUS" "$D/harness/compare_rocm" \
-    "$3/prepare.hsaco" "$3/advance.hsaco" --arch $TARGET --repeats 10 > "$log" 2>&1
+  $(hip_env) timeout 600 taskset -c "$TIMING_CPUS" "$D/harness/compare_rocm" \
+    "$3/prepare.hsaco" "$3/advance.hsaco" --arch $TARGET --repeats 10 --abundance-atol $ABUNDANCE_ATOL > "$log" 2>&1
   rc=$?
   t1=$(date +%s.%N)
   f=$((f + $(foreign_gpu_procs | wc -l)))
@@ -289,9 +311,9 @@ eval_job() {  # eval_job RUN BEST PAIRS STEPS BAR CONTENDED GPU_WAIT
     sleep 30; waited=$((waited + 30))
   done
 
-  log "correctness: $steps gridwide steps"
-  timeout 300 taskset -c "$TIMING_CPUS" "$D/harness/compare_rocm" "$out/prepare.hsaco" \
-    "$out/advance.hsaco" --arch $TARGET --steps "$steps" --warmup 0 --repeats 1 > "$out/correctness.log" 2>&1
+  log "correctness: $steps gridwide steps (HIP runtime: $(cat "$D/hip_runtime" 2>/dev/null || echo rocm))"
+  $(hip_env) timeout 300 taskset -c "$TIMING_CPUS" "$D/harness/compare_rocm" "$out/prepare.hsaco" \
+    "$out/advance.hsaco" --arch $TARGET --steps "$steps" --warmup 0 --repeats 1 --abundance-atol $ABUNDANCE_ATOL > "$out/correctness.log" 2>&1
   local rc=$?
   cat "$out/correctness.log"
   [[ $rc == 124 ]] && { finish hang stage=correctness; return; }

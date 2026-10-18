@@ -190,7 +190,8 @@ record() {  # record RUN : unpack the bundle, log the row, apply the verdict
 cmd_eval() {
   resolve_tag
   local desc=${1:?usage: ar eval \"DESCRIPTION\" [options]}; shift
-  local pairs=5 steps=5 bar=${BAR:-1.02} contended=0 gpu_wait=1800
+  # 50 correctness steps cross the perturbation steps (every 20) twice; 5 never reached one.
+  local pairs=5 steps=50 bar=${BAR:-1.02} contended=0 gpu_wait=1800
   while (($#)); do
     case $1 in
       --pairs) pairs=$2; shift ;;
