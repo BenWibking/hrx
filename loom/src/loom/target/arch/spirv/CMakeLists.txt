@@ -411,6 +411,24 @@ endif()
 if(LOOM_TARGET_ARCH_SPIRV)
 loom_cc_library(
   NAME
+    ir_provider
+  HDRS
+    "ir_provider.h"
+  SRCS
+    "ir_provider.c"
+  DEPS
+    ::facts
+    iree::base
+    loom::target::arch::spirv::descriptors::low_registry
+    loom::target::arch::spirv::ops
+    loom::target::provider
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV)
+loom_cc_library(
+  NAME
     provider
   HDRS
     "provider.h"
@@ -621,6 +639,7 @@ loom_check_test_suite(
     "test/source_low/workgroup_payload_projection.loom-test"
     "test/source_low/workgroup_storage.loom-test"
     "test/source_low/workgroup_storage_reuse.loom-test"
+    "test/subgroup_packet_legalization.loom-test"
   TEST_NAME_PREFIX_TO_STRIP
     "test/source_low/"
 )

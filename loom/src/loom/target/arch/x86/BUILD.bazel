@@ -159,6 +159,7 @@ loom_cc_library(
     srcs = ["hal_materialization.c"],
     hdrs = ["hal_materialization.h"],
     deps = [
+        ":call_abi",
         ":facts",
         ":register_classes",
         "//loom/src/loom/codegen/low:builder",
@@ -186,6 +187,20 @@ loom_cc_library(
         "//loom/src/loom/pass:registry",
         "//loom/src/loom/target:pass_environment",
         "//loom/src/loom/target:pass_requirements",
+    ],
+)
+
+loom_cc_library(
+    name = "ir_provider",
+    srcs = ["ir_provider.c"],
+    hdrs = ["ir_provider.h"],
+    visibility = ["//loom/src/loom/target/configured:__pkg__"],
+    deps = [
+        ":facts",
+        "//loom/src/loom/target:provider",
+        "//loom/src/loom/target/arch/x86/descriptors:low_registry",
+        "//loom/src/loom/target/arch/x86/ops",
+        "//runtime/src/iree/base",
     ],
 )
 

@@ -159,6 +159,7 @@ loom_cc_library(
   SRCS
     "hal_materialization.c"
   DEPS
+    ::call_abi
     ::facts
     ::register_classes
     iree::base
@@ -191,6 +192,24 @@ loom_cc_library(
     loom::pass::registry
     loom::target::pass_environment
     loom::target::pass_requirements
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
+    ir_provider
+  HDRS
+    "ir_provider.h"
+  SRCS
+    "ir_provider.c"
+  DEPS
+    ::facts
+    iree::base
+    loom::target::arch::x86::descriptors::low_registry
+    loom::target::arch::x86::ops
+    loom::target::provider
   PUBLIC
 )
 endif()

@@ -360,6 +360,20 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "ir_provider",
+    srcs = ["ir_provider.c"],
+    hdrs = ["ir_provider.h"],
+    visibility = ["//loom/src/loom/target/configured:__pkg__"],
+    deps = [
+        ":facts",
+        "//loom/src/loom/target:provider",
+        "//loom/src/loom/target/arch/spirv/descriptors:low_registry",
+        "//loom/src/loom/target/arch/spirv/ops",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "provider",
     srcs = ["provider.c"],
     hdrs = ["provider.h"],
@@ -540,6 +554,7 @@ loom_check_test_suite(
         "test/source_low/workgroup_payload_projection.loom-test",
         "test/source_low/workgroup_storage.loom-test",
         "test/source_low/workgroup_storage_reuse.loom-test",
+        "test/subgroup_packet_legalization.loom-test",
     ],
     test_name_prefix_to_strip = "test/source_low/",
 )
