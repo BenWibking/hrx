@@ -30,20 +30,18 @@ struct SingularProblem {
         }
     }
 };
-namespace singular_case {
-using namespace chemistry;
-inline void eval_jacobian(ScratchView s, Real) {
-    SingularProblem::jacobian_type jac{};
-    SingularProblem::state_type y{};
-    SingularProblem::jacobian(0., y, jac);
-    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.fjac[n * 15 + m] = jac[n][m];
-    s.n_jac[0] += 1;
-}
-inline void rhs(Real, const Real*, Real*, ScratchView) { std::abort(); }
-#define CHEM_EVAL_JACOBIAN singular_case::eval_jacobian
-#define CHEM_RHS singular_case::rhs
-#include "integrate.inc"
-}
+// The same singular problem in the translation's types, driving lc::RODAS.
+struct TranslatedSingularProblem {
+    static constexpr lc::size_type neqs = 15;
+    using state_type = lc::math::array<double, 15>;
+    using jacobian_type = lc::math::array<lc::math::array<double, 15>, 15>;
+    static void rhs(double, const state_type&, state_type&) { std::abort(); }
+    static void jacobian(double t, const state_type&, jacobian_type& jac) {
+        SingularProblem::jacobian_type original{};
+        SingularProblem::jacobian(t, {}, original);
+        for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) jac[n][m] = original[n][m];
+    }
+};
 static unsigned long checks = 0;
 static void equal(double a, double b, const char* label) {
     ++checks;
@@ -103,28 +101,41 @@ static void test_math_and_chemistry() {
             c.current.rho = pc::density(c.current.xn);
             pc::eos_rt(c.current);
             auto record = pack(c);
-            auto* b = &record.current;
-            lc::eos_rt(b); check_burn(c.current, *b);
-            pc::eos_re(c.current); lc::eos_re(b); check_burn(c.current, *b);
+            auto& b = record.current;
+            lc::eos_rt(&b); check_burn(c.current, b);
+            pc::eos_re(c.current); lc::eos_re(&b); check_burn(c.current, b);
             pc::floor_and_normalize_number_densities(c.current);
-            double mass[14]; lc::floor_and_normalize_number_densities(b, mass);
-            pc::balance_charge(c.current); lc::balance_charge(b);
-            check_burn(c.current, *b);
+            lc::floor_and_normalize_number_densities(&b);
+            pc::balance_charge(c.current); lc::balance_charge(&b);
+            check_burn(c.current, b);
             pc::Array1D<double, 0, 13> X;
             pc::Array1D<double, 1, 15> out;
-            for (int n = 0; n < 14; ++n) X(n) = c.current.xn[n];
-            double actual[15] = {};
+            lc::Array1D<double, 0, 13> actual_X;
+            lc::Array1D<double, 1, 15> actual;
+            for (int n = 0; n < 14; ++n) { X(n) = c.current.xn[n]; actual_X(n) = b.xn[n]; }
             pc::rhs_specie(c.current, out, X, 30.);
-            lc::rhs_specie(b->T, actual, b->xn, 30.);
-            for (int n = 0; n < 14; ++n) equal(out(n+1), actual[n], "rhs species");
-            equal(pc::rhs_eint(c.current, X, 30.), lc::rhs_eint(b->T, b->xn, 30.), "rhs energy");
+            lc::rhs_specie(&b, actual, actual_X, 30.);
+            for (int n = 1; n <= 14; ++n) equal(out(n), actual(n), "rhs species");
+            equal(pc::rhs_eint(c.current, X, 30.), lc::rhs_eint(&b, actual_X, 30.), "rhs energy");
             pc::PrimordialChem::jacobian_type jac{};
             pc::JacobianAdapter adapter{jac};
-            double actual_jac[225] = {};
+            lc::PrimordialChem::jacobian_type actual_jac{};
+            lc::JacobianAdapter actual_adapter{actual_jac};
             pc::jac_nuc(c.current, adapter, X, 30.);
-            lc::jac_nuc(b->T, actual_jac, b->xn, 30.);
+            lc::jac_nuc(&b, actual_adapter, actual_X, 30.);
             for (int i = 0; i < 15; ++i)
-                for (int j = 0; j < 15; ++j) equal(jac[i][j], actual_jac[i * 15 + j], "jacobian");
+                for (int j = 0; j < 15; ++j) equal(jac[i][j], actual_jac[i][j], "jacobian");
+            pc::PrimordialChem::state_type y{}, dydt{};
+            lc::PrimordialChem::state_type actual_y{}, actual_dydt{};
+            for (int n = 0; n < 14; ++n) y[n] = actual_y[n] = c.current.xn[n];
+            y[14] = actual_y[14] = c.current.e;
+            pc::PrimordialChem::rhs(0., y, dydt);
+            lc::PrimordialChem::rhs(0., actual_y, actual_dydt);
+            for (int n = 0; n < 15; ++n) equal(dydt[n], actual_dydt[n], "problem rhs");
+            pc::PrimordialChem::jacobian(0., y, jac);
+            lc::PrimordialChem::jacobian(0., actual_y, actual_jac);
+            for (int i = 0; i < 15; ++i)
+                for (int j = 0; j < 15; ++j) equal(jac[i][j], actual_jac[i][j], "problem jacobian");
         }
     }
     // Preserve min/max first-operand semantics for NaNs and signed zeros.
@@ -138,8 +149,8 @@ static void test_math_and_chemistry() {
 static void test_lu() {
     for (int variant = 0; variant < 3; ++variant) {
         std::array<std::array<double, 15>, 15> a{};
-        double matrix[15][15] = {};
-        std::array<int, 15> ip{}; int fp[15] = {};
+        lc::math::array<lc::math::array<double, 15>, 15> matrix{};
+        std::array<int, 15> ip{}; lc::math::array<int, 15> fp{};
         for (int i = 0; i < 15; ++i)
             for (int j = 0; j < 15; ++j) {
                 double x = (i == j ? 7.0 : 0.01*(i+1)*(j+1));
@@ -148,16 +159,16 @@ static void test_lu() {
                 a[i][j] = matrix[i][j] = x;
             }
         int info = integrators::linalg::lu_decomposition<15>(a, ip);
-        integer(info, lc::lu_decomposition(&matrix[0][0], fp), "LU info");
+        integer(info, lc::lu_decomposition<15>(matrix, fp), "LU info");
         for (int i = 0; i < 15; ++i) {
             integer(ip[i], fp[i], "pivot");
             for (int j = 0; j < 15; ++j) equal(a[i][j], matrix[i][j], "LU matrix");
         }
         if (!info) {
-            std::array<double, 15> x{}; double fx[15];
+            std::array<double, 15> x{}; lc::math::array<double, 15> fx;
             for (int n = 0; n < 15; ++n) x[n] = fx[n] = n+1.;
             integrators::linalg::lu_solve<15>(a, ip, x);
-            lc::lu_solve(&matrix[0][0], fp, fx);
+            lc::lu_solve<15>(matrix, fp, fx);
             for (int n = 0; n < 15; ++n) equal(x[n], fx[n], "LU solution");
         }
     }
@@ -184,7 +195,7 @@ static void test_integrator() {
         if (variant == 7) old.safe = 0.;
         if (variant >= 8) old.tout = old.dt = 1.e14;
         if (variant == 9) old.safe = .1;
-        lc::ScratchRecord storage{};
+        lc::Ros2sIntegrator::State storage{};
         auto* s = &storage;
         // Copy every original field, including matrices and all default values.
 #define COPY_SCALAR(n) s->n = old.n
@@ -199,7 +210,8 @@ static void test_integrator() {
 #undef COPY_ARRAY
         Ros2sIntegrator integrator;
         int result = static_cast<int>(integrator.integrate(old));
-        integer(result, lc::integrate(lc::scratch_view(s)), "integrator result");
+        lc::Ros2sIntegrator translated;
+        integer(result, static_cast<int>(translated.integrate(s)), "integrator result");
 #define CHECK_SCALAR(n) equal(old.n, s->n, #n)
         CHECK_SCALAR(t); CHECK_SCALAR(tout); CHECK_SCALAR(dt); CHECK_SCALAR(uround);
         CHECK_SCALAR(fac_min); CHECK_SCALAR(fac_max); CHECK_SCALAR(safe);
@@ -273,14 +285,15 @@ static void test_singular_exit() {
     integrators::RODASState<15> old;
     configure_ros2s(old);
     old.dt = 1.; old.tout = 10.;
-    lc::ScratchRecord storage{};
+    lc::RODAS<TranslatedSingularProblem>::State storage{};
     auto* s = &storage;
-    lc::configure_ros2s(lc::scratch_view(s));
+    lc::configure_ros2s(s);
     s->dt = 1.; s->tout = 10.;
     integrators::RODAS<SingularProblem> integrator;
     int result = static_cast<int>(integrator.integrate(old));
     integer(-7, result, "singular fixture triggers fifth failure");
-    integer(result, singular_case::integrate(lc::scratch_view(s)), "singular result");
+    lc::RODAS<TranslatedSingularProblem> translated;
+    integer(result, static_cast<int>(translated.integrate(s)), "singular result");
     equal(old.t, s->t, "singular t"); equal(old.dt, s->dt, "singular dt");
     integer(old.n_jac, s->n_jac, "singular Jacobian count");
     integer(old.n_decomp, s->n_decomp, "singular decomposition count");

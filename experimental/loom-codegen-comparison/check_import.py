@@ -29,9 +29,9 @@ with tempfile.TemporaryDirectory(prefix='loom-chemistry-import-') as work:
     assert all(('scalar.log2f<afn>' in line or 'scalar.exp2f<afn>' in line)
                and line.rstrip().endswith(': f32') for line in approximate), approximate
     assert ir.count('kernel.def ') == 2
-    for name in ('fjac', 'e', 'y', 'mass', 'ip'):
+    # Solver state, burn states, and the one-based RHS adapters stay private.
+    for name in ('ros2s_state', 'state', 'X', 'ydot', 'mass_fractions'):
         assert f'%{name}_storage = buffer.alloca<private>' in ir, name
-    assert 'ScratchRecord* scratch' not in reproducer.read_text()
     atomics = [line for line in ir.splitlines() if 'view.atomic.' in line]
     assert any('view.atomic.rmw<addi>' in line for line in atomics), atomics
     assert any('view.atomic.cmpxchg' in line for line in atomics), atomics

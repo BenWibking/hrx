@@ -5,7 +5,6 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(CHEM_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set(CHEM_GENERATED_SOURCES
   ${CHEM_GENERATED_DIR}/reproducer.cpp
-  ${CHEM_GENERATED_DIR}/integrate.inc
   ${CHEM_GENERATED_DIR}/reference_kernels.inc)
 add_custom_command(
   OUTPUT ${CHEM_GENERATED_SOURCES}

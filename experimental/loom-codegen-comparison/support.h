@@ -29,6 +29,20 @@ using u64 = unsigned long long;
 #define MAX_DOUBLE __DBL_MAX__
 
 namespace math {
+// std::array subset used by the source: element access, size, and fill.
+template<typename T, size_type N> struct array {
+    T elements[N];
+    DEVICE constexpr T& operator[](size_type i) { return elements[i]; }
+    DEVICE constexpr const T& operator[](size_type i) const { return elements[i]; }
+    static DEVICE constexpr size_type size() { return N; }
+    DEVICE void fill(const T& value) {
+        for (size_type i = 0; i < N; ++i) elements[i] = value;
+    }
+};
+template<typename T> struct numeric_limits;
+template<> struct numeric_limits<double> {
+    static DEVICE constexpr double max() { return __DBL_MAX__; }
+};
 // Preserve the source template's multiplication grouping.
 template<int N> DEVICE Real powi(Real x) {
     if constexpr (N < 0) return 1.0 / powi<-N>(x);
@@ -66,14 +80,15 @@ using std::isfinite;
 #endif
 } // namespace math
 
-// Loom bindings preserve the original HIP relaxed device-scope RMW operations.
+// The HIP atomicCAS/atomicAdd names, bound to relaxed device-scope Loom RMW
+// operations; loom-import-cxx's hip_runtime.h has no atomics.
 #if defined(__loom__)
-[[loom::force_inline]] DEVICE int atomic_cas(int* address, int expected, int desired) {
+[[loom::force_inline]] DEVICE int atomicCAS(int* address, int expected, int desired) {
     return loom::view::atomic::cmpxchg<loom::atomic::ordering::relaxed,
         loom::atomic::ordering::relaxed, loom::atomic::scope::device>(
         expected, desired, address);
 }
-[[loom::force_inline]] DEVICE int atomic_add(int* address, int value) {
+[[loom::force_inline]] DEVICE int atomicAdd(int* address, int value) {
     return loom::view::atomic::rmw<loom::atomic::kind::addi,
         loom::atomic::ordering::relaxed, loom::atomic::scope::device>(
         value, address);
@@ -81,12 +96,12 @@ using std::isfinite;
 #else
 // Native CPU validation retains atomic RMW semantics; tests choose an explicit
 // serial lane ordering for comparison against the original HIP kernel bodies.
-DEVICE int atomic_cas(int* address, int expected, int desired) {
+DEVICE int atomicCAS(int* address, int expected, int desired) {
     __atomic_compare_exchange_n(address, &expected, desired, false,
                                 __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
     return expected;
 }
-DEVICE int atomic_add(int* address, int value) {
+DEVICE int atomicAdd(int* address, int value) {
     return __atomic_fetch_add(address, value, __ATOMIC_SEQ_CST);
 }
 #endif

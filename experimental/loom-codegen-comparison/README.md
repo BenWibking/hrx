@@ -16,8 +16,8 @@ original license notices.
 | Files | Purpose |
 | --- | --- |
 | `reference.cpp` | Original HIP kernels and standalone host driver |
-| `support.h`, `f64_math.h` | Loom math, atomics, and OCML-derived f64 exp/log/cbrt source recipes |
-| `generate.py` | Translation from the pinned HIP source; emits `reproducer.cpp` and `integrate.inc` (Loom device program and solver control flow) and `reference_kernels.inc` (original kernel bodies) |
+| `support.h`, `f64_math.h` | `std::array`/math/atomic stand-ins and OCML-derived f64 exp/log/cbrt source recipes |
+| `generate.py` | Translation from the pinned HIP source; emits `reproducer.cpp` (Loom device program) and `reference_kernels.inc` (original kernel bodies) |
 | `validate.cpp`, `CMakeLists.txt` | Native differential validation against HIP source bodies |
 | `check_import.py` | Checks both imported roots, f64 math, private storage, and atomics |
 | `check_compile.py` | Compiles the production-sized advance kernel for gfx942 |

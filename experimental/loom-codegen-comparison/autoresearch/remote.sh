@@ -218,8 +218,9 @@ setup_job() {  # setup_job BASE
   # Interface references from the seed kernel.
   local k=$D/harness/seed-kernel
   rm -rf "$k"; mkdir -p "$k"
-  cp "$D/harness/generated/reproducer.cpp" "$D/harness/generated/integrate.inc" \
-     "$c/support.h" "$c/f64_math.h" "$k/"
+  cp "$D/harness/generated/reproducer.cpp" "$c/support.h" "$c/f64_math.h" "$k/"
+  # Generators before the 2026-10-19 rework also emitted integrate.inc.
+  [[ ! -f $D/harness/generated/integrate.inc ]] || cp "$D/harness/generated/integrate.inc" "$k/"
   layout_of "$k" "$D/harness/layout-seed" > "$D/harness/layout.txt" || { echo "SETUP fail layout"; return 1; }
   import_kernel "$k" "$D/harness/seed.loom" "$D/jobs/seed-import.log" || { tail -20 "$D/jobs/seed-import.log"; echo "SETUP fail import"; return 1; }
   interface_of "$D/harness/seed.loom" > "$D/harness/interface.txt"

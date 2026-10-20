@@ -24,8 +24,9 @@ away, and repeat until the deadline passes or a human stops you.
 - **The kernel.** It lives in `experimental/loom-codegen-comparison/kernel/`
   and is the only directory you may change:
   - `reproducer.cpp`: the Loom C++ translation of the chemistry and ROS2S
-    integrator, with both kernel roots at the bottom.
-  - `integrate.inc`: the solver control flow.
+    integrator (`RODAS::integrate` is the solver control flow), with both
+    kernel roots at the bottom. Campaigns seeded before 2026-10-19 keep the
+    solver control flow in a separate `integrate.inc`.
   - `support.h`, `f64_math.h`: device math helpers and the strict f64
     exp/log/cbrt recipes.
   - `chemistry.loom` (optional): if it exists, evals compile this Loom IR
@@ -300,6 +301,6 @@ pressure and lose.
      the acceptance bar.
    - If evals are already recorded, read `notes.md` and continue where the
      log ends.
-2. Read the kernel's two roots and `integrate.inc`, and skim the rest of
-   `reproducer.cpp`.
+2. Read the kernel's two roots and `RODAS::integrate` (or `integrate.inc` in
+   older seeds), and skim the rest of `reproducer.cpp`.
 3. Start the loop.
