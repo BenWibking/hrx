@@ -54,6 +54,26 @@ loom_cc_library(
 )
 endif()
 
+if(IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_VM AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+loom_cc_test(
+  NAME
+    execution_queues_test
+  DEPS
+    ::test_device
+    iree::testing::gtest_main
+    loom::serve::runtime::execution::queues_tests
+  ARGS
+    "--vulkan_dedicated_compute_queue=false"
+  LABELS
+    "iree-run-requirement=vulkan.resource.device"
+    "iree-build-requirement=loom.target.arch.vm"
+    "iree-build-requirement=loom.target.arch.spirv"
+    "iree-build-requirement=loom.emit.spirv"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_VM AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 loom_cc_test(
   NAME
@@ -79,6 +99,7 @@ loom_cc_test(
     iree::vm::bytecode::module
     loom::binding::c::loomc
     loom::serve::runtime::execution
+    loom::serve::runtime::execution::queues
     loom::serve::runtime::execution::workspace
     loom::serve::runtime::host
     loom::serve::runtime::program::jit
@@ -159,6 +180,7 @@ loom_cc_test(
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/control.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/generate.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/model.json"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/prepare.loom"
   DEPS
     ::test_compiler
@@ -180,18 +202,71 @@ endif()
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_VM AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 loom_cc_test(
   NAME
-    source_recognition_service_test
+    source_recognition_stream_test
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/control.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/generate.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/model.json"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/prepare.loom"
   DEPS
     ::test_compiler
     ::test_device
     iree::testing::gtest_main
-    loom::serve::service::recognition::source_service_tests
+    loom::serve::service::recognition::source_stream_tests
   ARGS
     "--model_source={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/prepare.loom}}"
+  LABELS
+    "iree-run-requirement=vulkan.resource.device"
+    "iree-build-requirement=loom.target.arch.vm"
+    "iree-build-requirement=loom.target.arch.spirv"
+    "iree-build-requirement=loom.emit.spirv"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_VM AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_cc_test(
+  NAME
+    registry_speech_test
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/speech/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/speech/generate.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/speech/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/speech/prepare.loom"
+  DEPS
+    ::test_compiler
+    ::test_device
+    iree::testing::gtest_main
+    loom::serve::server::registry_speech_tests
+  ARGS
+    "--model={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/speech/model.json}}"
+  LABELS
+    "iree-run-requirement=vulkan.resource.device"
+    "iree-build-requirement=loom.target.arch.vm"
+    "iree-build-requirement=loom.target.arch.spirv"
+    "iree-build-requirement=loom.emit.spirv"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_VM AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_cc_test(
+  NAME
+    registry_recognition_test
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/generate.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/prepare.loom"
+  DEPS
+    ::test_compiler
+    ::test_device
+    iree::testing::gtest_main
+    loom::serve::server::registry_recognition_tests
+  ARGS
+    "--model={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/recognition/model.json}}"
   LABELS
     "iree-run-requirement=vulkan.resource.device"
     "iree-build-requirement=loom.target.arch.vm"
@@ -406,6 +481,34 @@ loom_cc_test(
   NAME
     source_text_service_test
   DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/advance.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/prepare.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/tokenizer.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/weights.loom"
+  DEPS
+    ::test_compiler
+    ::test_device
+    iree::testing::gtest_main
+    loom::serve::service::text::source_execution_tests
+  ENV
+    "LOOM_SERVE_TEST_MODEL_SOURCE={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/prepare.loom}}"
+  LABELS
+    "iree-run-requirement=vulkan.resource.device"
+    "iree-build-requirement=loom.target.arch.vm"
+    "iree-build-requirement=loom.target.arch.spirv"
+    "iree-build-requirement=loom.emit.spirv"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_VM AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_cc_test(
+  NAME
+    source_text_media_test
+  DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/config.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/control.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/embed.loom"
@@ -428,11 +531,39 @@ loom_cc_test(
     ::test_compiler
     ::test_device
     iree::testing::gtest_main
-    loom::serve::service::text::source_execution_tests
+    loom::serve::service::text::source_media_tests
   ENV
     "LOOM_SERVE_TEST_MEDIA_SOURCE={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/embedding/model.json}}"
     "LOOM_SERVE_TEST_MODEL_SOURCE={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/prepare.loom}}"
     "LOOM_SERVE_TEST_PROJECTOR_SOURCE={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/projector/model.json}}"
+  LABELS
+    "iree-run-requirement=vulkan.resource.device"
+    "iree-build-requirement=loom.target.arch.vm"
+    "iree-build-requirement=loom.target.arch.spirv"
+    "iree-build-requirement=loom.emit.spirv"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_VM AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_cc_test(
+  NAME
+    native_text_service_test
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/advance.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/prepare.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/tokenizer.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/weights.loom"
+  DEPS
+    ::test_compiler
+    ::test_device
+    iree::testing::gtest_main
+    loom::serve::service::text::native_service_tests
+  ENV
+    "LOOM_SERVE_TEST_MODEL_SOURCE={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/prepare.loom}}"
   LABELS
     "iree-run-requirement=vulkan.resource.device"
     "iree-build-requirement=loom.target.arch.vm"

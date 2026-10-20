@@ -324,6 +324,102 @@ endif()
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 loom_test_module(
   NAME
+    packed_f16_widening_test_module
+  SRCS
+    "packed_f16_widening.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    packed_f16_widening_test_execute_amdgpu_hardware_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::packed_f16_widening_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    packed_f16_widening_test_execute_amdgpu_access_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::packed_f16_widening_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=access"
+  LABELS
+    "notsan"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_access"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+loom_check_compile_tests(
+  NAME
+    "packed_f16_widening_test"
+  SRC
+    "::packed_f16_widening_test_module"
+  TARGETS
+    loom::target::amdgpu::gfx11-generic
+    loom::target::amdgpu::gfx1100
+    loom::target::amdgpu::gfx1101
+    loom::target::amdgpu::gfx1102
+    loom::target::amdgpu::gfx1103
+    loom::target::amdgpu::gfx1150
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1152
+    loom::target::amdgpu::gfx1153
+    loom::target::amdgpu::gfx1170
+    loom::target::amdgpu::gfx1171
+    loom::target::amdgpu::gfx1172
+    loom::target::amdgpu::gfx12-5-generic
+    loom::target::amdgpu::gfx12-generic
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1201
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx1250-a0
+    loom::target::amdgpu::gfx1251
+    loom::target::amdgpu::gfx9-4-generic
+    loom::target::amdgpu::gfx90a
+    loom::target::amdgpu::gfx940
+    loom::target::amdgpu::gfx941
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+loom_test_module(
+  NAME
     packed_table_lookup_test_module
   SRCS
     "packed_table_lookup.loom"
@@ -447,6 +543,102 @@ loom_check_compile_tests(
     "packed_nibble_unpack_test"
   SRC
     "::packed_nibble_unpack_test_module"
+  TARGETS
+    loom::target::amdgpu::gfx11-generic
+    loom::target::amdgpu::gfx1100
+    loom::target::amdgpu::gfx1101
+    loom::target::amdgpu::gfx1102
+    loom::target::amdgpu::gfx1103
+    loom::target::amdgpu::gfx1150
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1152
+    loom::target::amdgpu::gfx1153
+    loom::target::amdgpu::gfx1170
+    loom::target::amdgpu::gfx1171
+    loom::target::amdgpu::gfx1172
+    loom::target::amdgpu::gfx12-5-generic
+    loom::target::amdgpu::gfx12-generic
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1201
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx1250-a0
+    loom::target::amdgpu::gfx1251
+    loom::target::amdgpu::gfx9-4-generic
+    loom::target::amdgpu::gfx90a
+    loom::target::amdgpu::gfx940
+    loom::target::amdgpu::gfx941
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+loom_test_module(
+  NAME
+    buffer_descriptor_extents_test_module
+  SRCS
+    "buffer_descriptor_extents.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    buffer_descriptor_extents_test_execute_amdgpu_hardware_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::buffer_descriptor_extents_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    buffer_descriptor_extents_test_execute_amdgpu_access_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::buffer_descriptor_extents_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=access"
+  LABELS
+    "notsan"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_access"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+loom_check_compile_tests(
+  NAME
+    "buffer_descriptor_extents_test"
+  SRC
+    "::buffer_descriptor_extents_test_module"
   TARGETS
     loom::target::amdgpu::gfx11-generic
     loom::target::amdgpu::gfx1100
@@ -735,7 +927,7 @@ loom_test_module(
   NAME
     asan_test_module
   SRCS
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/sanitizer/amdgpu_asan_actual.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/sanitizer/access_reporting.loom"
 )
 endif()
 
@@ -776,7 +968,7 @@ loom_test_module(
   NAME
     ubsan_test_module
   SRCS
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/sanitizer/amdgpu_ubsan_actual.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/sanitizer/assertion_reporting.loom"
 )
 endif()
 
@@ -1079,7 +1271,7 @@ loom_test_module(
   NAME
     tsan_test_module
   SRCS
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/sanitizer/amdgpu_tsan_actual.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/sanitizer/race_workgroup.loom"
 )
 endif()
 
@@ -1090,6 +1282,45 @@ loom_execution_test(
     tsan_test_execute_amdgpu_tsan_test
   MODULE
     "::tsan_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=tsan"
+    "--sanitizer-reporting=report-only"
+    "--amdgpu_tsan=true"
+    "--amdgpu_tsan_report_policy=report-only"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_tsan"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+loom_test_module(
+  NAME
+    tsan_collective_publication_test_module
+  SRCS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/kernel/workgroup/publication.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    tsan_collective_publication_test_execute_amdgpu_tsan_test
+  MODULE
+    "::tsan_collective_publication_test_module"
   RUNNER_ARGS
     "--device=amdgpu"
     "--sanitizer=tsan"
@@ -1155,9 +1386,81 @@ endif()
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 loom_test_module(
   NAME
+    tsan_subgroup_test_module
+  SRCS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/sanitizer/race_subgroup.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    tsan_subgroup_test_execute_amdgpu_tsan_test
+  MODULE
+    "::tsan_subgroup_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=tsan"
+    "--sanitizer-reporting=report-only"
+    "--amdgpu_tsan=true"
+    "--amdgpu_tsan_report_policy=report-only"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_tsan"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+loom_check_compile_tests(
+  NAME
+    "tsan_subgroup_test"
+  SRC
+    "::tsan_subgroup_test_module"
+  TARGETS
+    loom::target::amdgpu::gfx11-generic
+    loom::target::amdgpu::gfx1100
+    loom::target::amdgpu::gfx1101
+    loom::target::amdgpu::gfx1102
+    loom::target::amdgpu::gfx1103
+    loom::target::amdgpu::gfx1150
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1152
+    loom::target::amdgpu::gfx1153
+    loom::target::amdgpu::gfx1170
+    loom::target::amdgpu::gfx1171
+    loom::target::amdgpu::gfx1172
+    loom::target::amdgpu::gfx12-5-generic
+    loom::target::amdgpu::gfx12-generic
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1201
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx1250-a0
+    loom::target::amdgpu::gfx1251
+    loom::target::amdgpu::gfx9-4-generic
+    loom::target::amdgpu::gfx90a
+    loom::target::amdgpu::gfx940
+    loom::target::amdgpu::gfx941
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+loom_test_module(
+  NAME
     tsan_capacity_test_module
   SRCS
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/sanitizer/amdgpu_tsan_capacity.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/sanitizer/race_capacity.loom"
 )
 endif()
 

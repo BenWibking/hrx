@@ -25,16 +25,17 @@ extern "C" {
 typedef struct loom_serve_preparation_parameter_t {
   // Fixed-buffer ordinal in the compiled command's parameter reflection.
   uint32_t binding;
-  // Owned resolved paths in registration order, independent of the bootstrap
-  // VM.
-  iree_string_view_list_t paths;
+  // Number of independently indexed input checkpoints, in source order.
+  uint32_t source_count;
+  // Owned resolved shard paths per source, independent of the bootstrap VM.
+  const iree_string_view_list_t* sources;
   // Owned preparation-policy path, relative to the bootstrap source directory.
   iree_string_view_t policy;
 } loom_serve_preparation_parameter_t;
 
-// Compares checkpoint domains by their ordered file lists and preparation
-// policy. Binding ordinals are local to each command and do not affect domain
-// identity.
+// Compares checkpoint domains by their ordered source file lists and
+// preparation policy. Binding ordinals are local to each command and do not
+// affect domain identity.
 bool loom_serve_preparation_parameter_equal(
     const loom_serve_preparation_parameter_t* lhs,
     const loom_serve_preparation_parameter_t* rhs);
@@ -74,8 +75,9 @@ iree_status_t loom_serve_preparation_module_create(
     iree_vm_module_t** out_module);
 
 enum loom_serve_preparation_flag_bits_e {
-  // Allows checkpoint declarations during cold model construction. Request
-  // choices reuse the already prepared checkpoint placement instead.
+  // Allows checkpoint declarations when the caller owns parameter resolution.
+  // Cold construction prepares the declared roots; request choices reuse or
+  // prepare compatible domains before recording.
   LOOM_SERVE_PREPARATION_FLAG_PARAMETERS = 1u << 0,
 };
 typedef uint32_t loom_serve_preparation_flags_t;
@@ -100,14 +102,17 @@ loom_serve_preparation_t* loom_serve_preparation_module_take(
 //   config(i32 stage, buffer key, buffer value)
 //   config_i64(i32 stage, buffer key, i64 value)
 //   workspace_limit(i32 stage, i64 bytes)
-//   parameter(i32 stage, i32 binding, buffer directory, buffer path,
+//   parameter(i32 stage, i32 binding, i32 source, buffer directory, buffer
+//   path,
 //             buffer policy)
 // All string buffers exclude NUL bytes. Config values use the public loomc
 // textual value syntax; config_i64 formats signed decimal values. Parameter
 // paths join directory and path in the server filesystem namespace. Repeated
-// parameter calls for the same binding append files to one checkpoint domain
-// and must name the same policy. File order is preserved in the parameter
-// index. Policy paths resolve through the source environment. Declarations
+// parameter calls for the same binding and source append shards to one index.
+// Distinct sources may contain identical tensor names. Source ordinals are
+// declared densely from zero, and all sources for a binding name one policy.
+// File order is preserved within each index. Policy paths resolve through the
+// source environment. Declarations
 // copy their strings and retain no references to arguments, source mappings,
 // or the VM environment.
 // Additional caller libraries are linked beside the prepare module. Results
@@ -145,6 +150,13 @@ iree_host_size_t loom_serve_preparation_storage_size(
 // part of identity. NULL compares equal only to NULL.
 bool loom_serve_preparation_equal(const loom_serve_preparation_t* lhs,
                                   const loom_serve_preparation_t* rhs);
+
+// Exact compiler inputs in declaration order: product kind, root, and config
+// spelling. Checkpoint identity, selection tags, and workspace limits do not
+// specialize code. A consumer reusing these products still checks the new
+// declaration's workspace limit and binds its selected checkpoint storage.
+bool loom_serve_preparation_code_equal(const loom_serve_preparation_t* lhs,
+                                       const loom_serve_preparation_t* rhs);
 
 // Borrows an immutable declaration; |index| is below stage_count.
 const loom_serve_preparation_stage_t* loom_serve_preparation_stage(

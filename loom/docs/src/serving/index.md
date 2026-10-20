@@ -72,6 +72,28 @@ a specific device. `?feedback&asan&tsan` is also valid; explicit `feedback`
 adds general authored diagnostics to the sanitizer services. A backend that
 cannot provide a requested service rejects the URI during device creation.
 
+Models on one device share its memory budget and provisioned queues. Each
+loaded model holds a queue assignment until its last execution reference
+retires. New assignments choose the fewest live model executions in each
+selected queue family; removing and reloading a model reuses the available
+inventory. A single-queue device is supported, and models share queues when
+there are more live executions than queues.
+
+For independent AMDGPU model submissions, provision extra queues at startup:
+
+```sh
+loom-serve --device='amdgpu://0?queue_count=2' \
+  --model=models/chat/model.json --model=models/speech/model.json
+```
+
+Both model documents select the same device and share its storage and residency
+policy. `queue_count` defaults to one per selected GPU and remains fixed for the
+device lifetime. Separate queues allow independent submissions to overlap, but
+do not reserve compute or memory bandwidth and provide no latency guarantee.
+Assignment counts live executions; request batching and residency pinning remain
+separate controls. Vulkan uses its provisioned inventory, and task devices use
+the application's shared CPU workers.
+
 The model's native source must compile for that device. `task` uses native x86
 CPU execution. AMDGPU and Vulkan require the corresponding compiler target,
 HAL driver and supported hardware. XDNA packages use resident direct-dispatch
@@ -79,19 +101,18 @@ programs rather than assuming a GPU command program also runs on the NPU.
 Device-group membership alone does not distribute a model or share its memory
 between members.
 
-Use `--pool_backing=fixed` for task and Vulkan in the current server. Both
-backends support virtual memory: task uses host virtual memory where available,
-and Vulkan requires suitable sparse-memory capabilities. Their VMM implementations
-use HAL's device-group interfaces, while serving's elastic retained pool still
-consumes the allocator-level contract currently implemented by AMDGPU. The
-fixed-backing requirement is a serving integration boundary, not an absence of
-backend VMM support.
+Elastic backing supports retained-memory budgets and reclamation of idle,
+unpinned parameters on task and AMDGPU. It requires virtual reservations,
+mapping-source allocations, and bind/unbind operations from the selected device.
+Task uses host virtual memory where available; Vulkan requires suitable
+sparse-memory capabilities. Fixed backing eagerly retains storage and does not
+support parameter deactivation or a retained-memory budget.
 
-Elastic backing fails during device-group initialization when that allocator
-contract is unavailable. Model-specific resource requirements are checked during
-preparation. Neither path silently changes the memory policy. Address-sanitized
-devices require fixed backing so their allocations can be published to the
-sanitizer shadow state.
+Elastic backing fails during device-group initialization when the required
+mapping capabilities are unavailable. Model-specific resource requirements are
+checked during preparation. Neither path silently changes the memory policy.
+Address-sanitized devices require fixed backing so their allocations can be
+published to the sanitizer shadow state.
 
 All listeners share one catalog, worker pool and connection budget. A port of
 zero requests an ephemeral port. One JSON `ready` record is written to stderr

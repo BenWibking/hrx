@@ -9,9 +9,9 @@
 
 #include "loom/serve/runtime/execution/dispatch.h"
 #include "loom/serve/runtime/host/host.h"
-#include "loom/serve/runtime/program/command.h"
 #include "loom/serve/runtime/program/compilation.h"
 #include "loom/serve/runtime/program/sources.h"
+#include "loom/target/arch/cmd/program.h"
 #include "loomc/config.h"
 #include "loomc/sanitizer.h"
 
@@ -79,11 +79,11 @@ typedef struct loom_serve_jit_cache_storage_t {
 } loom_serve_jit_cache_storage_t;
 
 // Owner-only operations after all accepted compilations have completed.
-// Trimming removes only entries unused by compiled stages; surviving stages
-// keep exact native reuse. Recorded commands retain their HAL executables
-// independently, so a cache owner releases those consumers before interpreting
-// released bytes as a storage saving. Neither operation allocates, compiles, or
-// waits.
+// Trimming removes only entries unused by compiled stages, retained direct
+// dispatches, and HAL consumers. Recordings preserve exact native reuse after
+// their compiler stages retire. Concurrent HAL release may defer collection
+// until the next trim; no consumer can be created without an existing owner.
+// Neither operation allocates, compiles, or waits.
 loom_serve_jit_cache_storage_t loom_serve_jit_cache_storage(
     const loom_serve_jit_t* jit);
 void loom_serve_jit_trim(loom_serve_jit_t* jit);
@@ -162,7 +162,8 @@ loom_serve_dispatch_t* loom_serve_jit_stage_dispatch(
 // Records the compiled stage after the model has allocated its fixed parameter
 // roots. The command retains executables and buffers, independently of stage.
 // NULL range records the whole program; otherwise it selects complete barrier
-// waves with unchanged bindings and workspace, as in command_create.
+// waves with unchanged bindings and workspace, as in the shared HAL command
+// buffer materializer.
 iree_status_t loom_serve_jit_stage_record(
     const loom_serve_jit_stage_t* stage,
     const iree_hal_queue_family_t* queue_family,

@@ -103,8 +103,8 @@ loom_low_allocation_search_candidate_assignment(
 }
 
 typedef struct loom_low_allocation_search_location_query_t {
-  // Known active conflicts for the first word of scalar linear locations.
-  uint64_t active_conflicts;
+  // Proven active conflicts in the bounded linear-location prefix.
+  uint64_t active_conflicts[LOOM_LOW_ALLOCATION_ACTIVE_CONFLICT_WORD_COUNT];
   // Physical-domain candidate ranks retained for this scalar interval.
   loom_low_allocation_physical_domain_row_t physical_domain;
   // Common structural and instruction preference objective.
@@ -112,6 +112,13 @@ typedef struct loom_low_allocation_search_location_query_t {
   // Best attainable tier before extending the current physical frontier.
   uint32_t tier_limit;
 } loom_low_allocation_search_location_query_t;
+
+static bool loom_low_allocation_search_has_active_conflict(
+    const loom_low_allocation_search_location_query_t* query, uint32_t base) {
+  return base < LOOM_LOW_ALLOCATION_ACTIVE_CONFLICT_LOCATION_COUNT &&
+         (query->active_conflicts[base / 64u] &
+          (UINT64_C(1) << (base % 64u))) != 0;
+}
 
 static loom_low_allocation_search_location_query_t
 loom_low_allocation_search_location_query(
@@ -447,7 +454,7 @@ static bool loom_low_allocation_search_consider_linear_location(
     const loom_low_allocation_search_location_query_t* query, uint32_t base,
     loom_low_allocation_storage_release_policy_t release_policy,
     loom_low_allocation_search_location_choice_t* out_choice) {
-  if (base < 64 && (query->active_conflicts & (UINT64_C(1) << base))) {
+  if (loom_low_allocation_search_has_active_conflict(query, base)) {
     return false;
   }
   loom_low_allocation_assignment_t candidate = *candidate_template;
@@ -518,8 +525,9 @@ static bool loom_low_allocation_search_active_location_conflicts(
 // its conflicts before consulting the remaining availability indexes.
 static bool loom_low_allocation_search_find_ordered_unoccupied_location(
     loom_low_allocation_search_context_t* context,
-    const loom_low_allocation_assignment_t* candidate, uint32_t minimum_base,
-    uint32_t maximum_base,
+    const loom_low_allocation_assignment_t* candidate,
+    const loom_low_allocation_search_location_query_t* query,
+    uint32_t minimum_base, uint32_t maximum_base,
     loom_low_allocation_location_search_direction_t direction,
     loom_low_allocation_storage_release_policy_t release_policy,
     uint32_t* out_base) {
@@ -545,6 +553,13 @@ static bool loom_low_allocation_search_find_ordered_unoccupied_location(
   if (direction == LOOM_LOW_ALLOCATION_LOCATION_SEARCH_ASCENDING) {
     uint32_t cursor = minimum_base;
     while (cursor <= maximum_base) {
+      if (loom_low_allocation_search_has_active_conflict(query, cursor)) {
+        if (cursor == maximum_base) {
+          return false;
+        }
+        ++cursor;
+        continue;
+      }
       const uint32_t initial_cursor = cursor;
       if (!can_skip_active &&
           loom_low_allocation_search_active_location_conflicts(
@@ -589,6 +604,13 @@ static bool loom_low_allocation_search_find_ordered_unoccupied_location(
 
   uint32_t cursor = maximum_base;
   while (true) {
+    if (loom_low_allocation_search_has_active_conflict(query, cursor)) {
+      if (cursor == minimum_base) {
+        return false;
+      }
+      --cursor;
+      continue;
+    }
     const uint32_t initial_cursor = cursor;
     if (!can_skip_active &&
         loom_low_allocation_search_active_location_conflicts(context, candidate,
@@ -630,7 +652,10 @@ static bool loom_low_allocation_search_find_ordered_unoccupied_location(
   }
 }
 
-static void loom_low_allocation_search_find_location_for_release_policy(
+// Keep the ordinary search outlined so adding cold repair policies cannot
+// perturb register allocation in the successful first-fit path.
+IREE_ATTRIBUTE_NOINLINE static void
+loom_low_allocation_search_find_location_for_release_policy(
     loom_low_allocation_search_context_t* context,
     const loom_low_allocation_assignment_t* candidate_template,
     const loom_low_allocation_search_location_query_t* query,
@@ -664,7 +689,7 @@ static void loom_low_allocation_search_find_location_for_release_policy(
       while (minimum_base <= maximum_base) {
         uint32_t base = 0;
         if (!loom_low_allocation_search_find_ordered_unoccupied_location(
-                context, candidate_template, minimum_base, maximum_base,
+                context, candidate_template, query, minimum_base, maximum_base,
                 LOOM_LOW_ALLOCATION_LOCATION_SEARCH_DESCENDING, release_policy,
                 &base)) {
           break;
@@ -685,7 +710,7 @@ static void loom_low_allocation_search_find_location_for_release_policy(
     while (next_base <= last_base) {
       uint32_t base = 0;
       if (!loom_low_allocation_search_find_ordered_unoccupied_location(
-              context, candidate_template, next_base, last_base,
+              context, candidate_template, query, next_base, last_base,
               LOOM_LOW_ALLOCATION_LOCATION_SEARCH_ASCENDING, release_policy,
               &base)) {
         break;
@@ -722,6 +747,54 @@ static void loom_low_allocation_search_find_location_for_release_policy(
   }
 }
 
+// Fragmentation repair is an independent aggregate coloring, not another pass
+// through the aligned-first order that already failed. Scalar repair retains
+// the ordinary frontier-aware search above.
+IREE_ATTRIBUTE_NOINLINE IREE_ATTRIBUTE_COLD static void
+loom_low_allocation_search_find_dense_aggregate_location(
+    loom_low_allocation_search_context_t* context,
+    const loom_low_allocation_assignment_t* candidate_template,
+    const loom_low_allocation_search_location_query_t* query,
+    uint32_t minimum_base, uint32_t last_base, uint32_t alignment,
+    loom_low_allocation_storage_release_policy_t release_policy,
+    loom_low_allocation_search_location_choice_t* out_choice) {
+  *out_choice = (loom_low_allocation_search_location_choice_t){0};
+  const uint64_t candidate_count = (uint64_t)last_base / alignment + 1;
+  for (uint64_t i = 0; i < candidate_count; ++i) {
+    const uint32_t base = (uint32_t)(i * alignment);
+    if (base < minimum_base) {
+      continue;
+    }
+    if (loom_low_allocation_search_consider_linear_location(
+            context, candidate_template, query, base, release_policy,
+            out_choice)) {
+      return;
+    }
+  }
+}
+
+// Keep repair dispatch out of its callers and the ordinary search above.
+IREE_ATTRIBUTE_NOINLINE static void
+loom_low_allocation_search_find_linear_location_for_release_policy(
+    loom_low_allocation_search_context_t* context,
+    const loom_low_allocation_assignment_t* candidate_template,
+    const loom_low_allocation_search_location_query_t* query,
+    uint32_t minimum_base, uint32_t last_base, uint32_t alignment,
+    uint32_t scalar_packing_frontier,
+    loom_low_allocation_storage_release_policy_t release_policy,
+    loom_low_allocation_search_location_choice_t* out_choice) {
+  if (IREE_UNLIKELY(candidate_template->unit_count > 1 &&
+                    context->scalar_packing.frontiers_by_reg_class != NULL)) {
+    loom_low_allocation_search_find_dense_aggregate_location(
+        context, candidate_template, query, minimum_base, last_base, alignment,
+        release_policy, out_choice);
+    return;
+  }
+  loom_low_allocation_search_find_location_for_release_policy(
+      context, candidate_template, query, minimum_base, last_base, alignment,
+      scalar_packing_frontier, release_policy, out_choice);
+}
+
 // Pressure release can only add feasible bases. Its minimum is strictly lower
 // than the forbidden minimum exactly when the first pressure-legal candidate
 // still has a forbidden lease conflict. Select that policy before searching in
@@ -743,13 +816,13 @@ loom_low_allocation_search_find_linear_pressure_choice(
     uint32_t base = (uint32_t)next_base;
     if (use_ordered_availability &&
         !loom_low_allocation_search_find_ordered_unoccupied_location(
-            context, candidate_template, base, last_base,
+            context, candidate_template, query, base, last_base,
             LOOM_LOW_ALLOCATION_LOCATION_SEARCH_ASCENDING,
             LOOM_LOW_ALLOCATION_STORAGE_RELEASE_FOR_PRESSURE, &base)) {
       break;
     }
     next_base = (uint64_t)base + alignment;
-    if (base < 64 && (query->active_conflicts & (UINT64_C(1) << base))) {
+    if (loom_low_allocation_search_has_active_conflict(query, base)) {
       continue;
     }
     loom_low_allocation_assignment_t candidate = *candidate_template;
@@ -769,7 +842,7 @@ loom_low_allocation_search_find_linear_pressure_choice(
             LOOM_LOW_ALLOCATION_STORAGE_RELEASE_FORBIDDEN)
             ? LOOM_LOW_ALLOCATION_STORAGE_RELEASE_FOR_PRESSURE
             : LOOM_LOW_ALLOCATION_STORAGE_RELEASE_FORBIDDEN;
-    loom_low_allocation_search_find_location_for_release_policy(
+    loom_low_allocation_search_find_linear_location_for_release_policy(
         context, candidate_template, query, (uint32_t)base, last_base,
         alignment, scalar_packing_frontier, policy, out_choice);
     return policy;
@@ -909,7 +982,7 @@ static void loom_low_allocation_search_find_for_release_policy(
         context, candidate_template, query, explicit_candidate_count, alignment,
         release_policy, out_choice);
   } else {
-    loom_low_allocation_search_find_location_for_release_policy(
+    loom_low_allocation_search_find_linear_location_for_release_policy(
         context, candidate_template, query, /*minimum_base=*/0, last_base,
         alignment, scalar_packing_frontier, release_policy, out_choice);
   }
@@ -1013,12 +1086,14 @@ bool loom_low_allocation_search_find_free_location(
   // work independently of function size; large active sets keep indexed probes.
   if (!uses_explicit_physical_registers && interval->unit_count == 1 &&
       context->active_set->count <= 64) {
-    query.active_conflicts =
+    query.active_conflicts[0] =
         loom_low_allocation_active_set_conflicting_locations(
             context->active_set, context->descriptor_set,
             context->unit_liveness, context->assignment_map->assignments,
             context->assignment_map->assignment_count, &candidate_template);
   }
+  loom_low_allocation_active_unit_index_project_conflicts(
+      &context->active_set->units, &candidate_template, query.active_conflicts);
   if (uses_explicit_physical_registers && interval->unit_count == 1) {
     query.physical_domain = loom_low_allocation_physical_domains_for_interval(
         context->physical_domains, context->liveness, interval);

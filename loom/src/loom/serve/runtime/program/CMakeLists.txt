@@ -16,29 +16,14 @@ loom_cc_test(
   SRCS
     "sources_test.cc"
   DEPS
+    ::package
     ::sources
     iree::base
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::binding::c::loomc
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
-)
-endif()
-
-if(LOOM_TARGET_ARCH_VM)
-loom_cc_library(
-  NAME
-    command
-  HDRS
-    "command.h"
-  SRCS
-    "command.c"
-  DEPS
-    iree::base
-    iree::base::core_headers
-    iree::hal
-    loom::target::arch::cmd::program
-  PUBLIC
 )
 endif()
 
@@ -247,7 +232,6 @@ loom_cc_library(
   SRCS
     "jit.c"
   DEPS
-    ::command
     ::compilation
     ::sources
     ::target
@@ -260,6 +244,7 @@ loom_cc_library(
     loom::binding::c::task_pool
     loom::serve::runtime::execution::dispatch
     loom::serve::runtime::host
+    loom::target::arch::cmd::hal_command_buffer
     loom::target::arch::cmd::program
   PUBLIC
 )

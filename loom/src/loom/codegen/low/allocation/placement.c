@@ -9,13 +9,146 @@
 #include <string.h>
 
 #include "iree/base/internal/math.h"
+#include "loom/codegen/low/allocation/edge_affinity.h"
 #include "loom/codegen/low/allocation/unit_location.h"
 #include "loom/codegen/low/representation_binding.h"
 #include "loom/codegen/low/storage_relation.h"
 #include "loom/ops/low/ops.h"
+#include "loom/util/segmented_storage.h"
 
 // Bounded collection payload fitting even a 4 KiB arena block.
 #define LOOM_LOW_PLACEMENT_RELATIONS_PER_CHUNK 64u
+
+// One composed source span inside its terminal concat's storage.
+typedef struct loom_low_allocation_concat_span_t {
+  // Terminal concat result's local value ordinal.
+  loom_value_ordinal_t result_ordinal;
+  // First covered allocation unit in the indexed source value.
+  uint32_t source_unit_offset;
+  // First corresponding allocation unit in the terminal result.
+  uint32_t result_unit_offset;
+  // Covered unit count; zero means no unique aliasable concat chain.
+  uint32_t unit_count;
+} loom_low_allocation_concat_span_t;
+
+#define LOOM_LOW_ALLOCATION_CONCAT_SPANS_PER_SEGMENT 1024u
+
+struct loom_low_allocation_concat_affinity_t {
+  // Composed spans indexed by local value ordinal in fixed pooled segments.
+  loom_segmented_storage_t spans;
+};
+
+static const loom_low_allocation_concat_span_t*
+loom_low_allocation_concat_affinity_span(
+    const loom_low_allocation_concat_affinity_t* affinity,
+    loom_value_ordinal_t value_ordinal) {
+  const loom_low_allocation_concat_span_t* segment =
+      loom_segmented_storage_const_segment(
+          &affinity->spans,
+          value_ordinal / LOOM_LOW_ALLOCATION_CONCAT_SPANS_PER_SEGMENT);
+  return &segment[value_ordinal % LOOM_LOW_ALLOCATION_CONCAT_SPANS_PER_SEGMENT];
+}
+
+bool loom_low_allocation_concat_affinity_project(
+    const loom_low_allocation_concat_affinity_t* affinity,
+    loom_low_placement_relation_t* relation) {
+  if (affinity == NULL) {
+    return false;
+  }
+  const loom_low_allocation_concat_span_t* span =
+      loom_low_allocation_concat_affinity_span(affinity,
+                                               relation->result_ordinal);
+  if (span->unit_count == 0) {
+    return false;
+  }
+  const loom_low_placement_relation_t parent = {
+      .source_ordinal = relation->result_ordinal,
+      .result_ordinal = span->result_ordinal,
+      .source_unit_offset = span->source_unit_offset,
+      .result_unit_offset = span->result_unit_offset,
+      .unit_count = span->unit_count,
+  };
+  loom_low_placement_relation_t composed;
+  if (!loom_low_placement_relation_compose(relation, &parent, &composed)) {
+    return false;
+  }
+  relation->result_ordinal = composed.result_ordinal;
+  relation->source_unit_offset = composed.source_unit_offset;
+  relation->result_unit_offset = composed.result_unit_offset;
+  relation->unit_count = composed.unit_count;
+  return true;
+}
+
+iree_status_t loom_low_allocation_concat_affinity_build(
+    const loom_low_placement_table_t* placement, iree_arena_allocator_t* arena,
+    loom_low_allocation_concat_affinity_t** out_affinity) {
+  *out_affinity = NULL;
+  if (placement->edge_relation_count == 0 ||
+      !iree_any_bit_set(placement->storage.flags,
+                        LOOM_LOW_PLACEMENT_STORAGE_FLAG_CONCAT)) {
+    return iree_ok_status();
+  }
+  loom_low_allocation_concat_affinity_t* affinity = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate(arena, sizeof(*affinity), (void**)&affinity));
+  loom_segmented_storage_initialize(
+      iree_min(placement->value_count,
+               LOOM_LOW_ALLOCATION_CONCAT_SPANS_PER_SEGMENT) *
+          sizeof(loom_low_allocation_concat_span_t),
+      iree_alignof(loom_low_allocation_concat_span_t), &affinity->spans);
+  const uint32_t segment_count =
+      placement->value_count / LOOM_LOW_ALLOCATION_CONCAT_SPANS_PER_SEGMENT +
+      (placement->value_count % LOOM_LOW_ALLOCATION_CONCAT_SPANS_PER_SEGMENT !=
+       0);
+  for (uint32_t i = 0; i < segment_count; ++i) {
+    void* segment = NULL;
+    IREE_RETURN_IF_ERROR(
+        loom_segmented_storage_append(&affinity->spans, arena, &segment));
+    memset(segment, 0, affinity->spans.segment_size);
+  }
+  for (loom_value_ordinal_t cursor = 0;
+       cursor < placement->storage_value_order_count; ++cursor) {
+    const loom_value_ordinal_t value = placement->storage_value_order[cursor];
+    const loom_low_placement_relation_range_t range =
+        placement->ranges_by_source_ordinal[value];
+    if (range.count != 1) {
+      continue;
+    }
+    loom_low_placement_relation_t relation =
+        placement->relations
+            [placement->relation_indices_by_source_ordinal[range.start]];
+    if (relation.cause != LOOM_LOW_PLACEMENT_CAUSE_LOW_CONCAT ||
+        !loom_low_placement_relation_can_alias(&relation) ||
+        iree_any_bit_set(relation.flags,
+                         LOOM_LOW_PLACEMENT_RELATION_FLAG_CAPTURED_PART)) {
+      continue;
+    }
+    if (!loom_low_allocation_concat_affinity_project(affinity, &relation)) {
+      const loom_low_placement_relation_range_t outgoing =
+          placement->ranges_by_source_ordinal[relation.result_ordinal];
+      if (outgoing.count != 1) {
+        continue;
+      }
+      const uint32_t edge_index =
+          placement->relation_indices_by_source_ordinal[outgoing.start];
+      if (!loom_low_placement_cause_is_edge(
+              placement->relations[edge_index].cause)) {
+        continue;
+      }
+    }
+    loom_low_allocation_concat_span_t* segment = loom_segmented_storage_segment(
+        &affinity->spans, value / LOOM_LOW_ALLOCATION_CONCAT_SPANS_PER_SEGMENT);
+    segment[value % LOOM_LOW_ALLOCATION_CONCAT_SPANS_PER_SEGMENT] =
+        (loom_low_allocation_concat_span_t){
+            .result_ordinal = relation.result_ordinal,
+            .source_unit_offset = relation.source_unit_offset,
+            .result_unit_offset = relation.result_unit_offset,
+            .unit_count = relation.unit_count,
+        };
+  }
+  *out_affinity = affinity;
+  return iree_ok_status();
+}
 
 // Collection preserves operation order until the final endpoint-indexed
 // scatter. Every chunk preceding the tail is full; only the total row count
@@ -26,6 +159,16 @@ typedef struct loom_low_placement_relation_chunk_t {
   // Complete relation rows in the initialized prefix.
   loom_low_placement_relation_t values[LOOM_LOW_PLACEMENT_RELATIONS_PER_CHUNK];
 } loom_low_placement_relation_chunk_t;
+
+// Destination scope identifying one logical edge on a forwarding operation.
+typedef struct loom_low_placement_edge_scope_t {
+  // Block or operation owning the authored destination.
+  const void* destination_owner;
+  // Assigned edge identity passed to the affinity builder.
+  uint32_t edge_group;
+  // Whether destination_owner names a block instead of an operation.
+  bool destination_owner_is_block;
+} loom_low_placement_edge_scope_t;
 
 typedef struct loom_low_placement_build_state_t {
   // Module containing the analyzed low region.
@@ -261,15 +404,169 @@ static iree_status_t loom_low_placement_collect_relation(
   return iree_ok_status();
 }
 
+static loom_value_ordinal_t loom_low_placement_storage_origin(
+    const loom_low_placement_build_state_t* state,
+    loom_value_ordinal_t ordinal) {
+  return state->tied_storage_origins_by_value_ordinal
+             ? state->tied_storage_origins_by_value_ordinal[ordinal]
+             : ordinal;
+}
+
+// Carries hard co-indexed destination choices backward to the independent
+// values entering each logical control-flow edge. The carried relation is a
+// preference: an edge may still require moves, but free inputs should not
+// manufacture a register cycle that no temporary register can resolve.
+static iree_status_t loom_low_placement_collect_edge_pair_affinities_impl(
+    loom_low_placement_build_state_t* state,
+    iree_arena_allocator_t* scratch_arena) {
+  if (state->edge_relation_count < 2 ||
+      state->hard_location_relation_count == 0) {
+    return iree_ok_status();
+  }
+
+  loom_low_edge_affinity_input_t* inputs = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(scratch_arena, state->edge_relation_count,
+                                sizeof(*inputs), (void**)&inputs));
+  loom_low_edge_affinity_constraint_t* constraints = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      scratch_arena, state->hard_location_relation_count, sizeof(*constraints),
+      (void**)&constraints));
+  loom_low_placement_edge_scope_t* edge_scopes = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(scratch_arena, state->edge_relation_count,
+                                sizeof(*edge_scopes), (void**)&edge_scopes));
+
+  const uint32_t original_relation_count = state->relation_count;
+  uint32_t relation_sequence = 0;
+  uint32_t input_count = 0;
+  uint32_t constraint_count = 0;
+  const loom_op_t* current_edge_op = NULL;
+  uint32_t edge_scope_count = 0;
+  uint32_t next_edge_group = 0;
+  for (const loom_low_placement_relation_chunk_t* chunk =
+           state->collected_relations.head;
+       chunk != NULL && relation_sequence < original_relation_count;
+       chunk = chunk->next) {
+    const uint32_t chunk_count =
+        iree_min(LOOM_LOW_PLACEMENT_RELATIONS_PER_CHUNK,
+                 original_relation_count - relation_sequence);
+    for (uint32_t i = 0; i < chunk_count; ++i, ++relation_sequence) {
+      const loom_low_placement_relation_t* relation = &chunk->values[i];
+      if (relation->kind == LOOM_LOW_PLACEMENT_RELATION_SAME_REGISTER_ORDINAL &&
+          iree_any_bit_set(relation->flags,
+                           LOOM_LOW_PLACEMENT_RELATION_FLAG_HARD)) {
+        const loom_value_ordinal_t result_origin =
+            loom_low_placement_storage_origin(state, relation->result_ordinal);
+        const loom_value_ordinal_t source_origin =
+            loom_low_placement_storage_origin(state, relation->source_ordinal);
+        if (result_origin != source_origin) {
+          IREE_ASSERT_LT(constraint_count, state->hard_location_relation_count);
+          constraints[constraint_count++] =
+              (loom_low_edge_affinity_constraint_t){
+                  .first = result_origin,
+                  .second = source_origin,
+              };
+        }
+      }
+      if (!loom_low_placement_relation_is_edge_payload(relation) ||
+          relation->result_unit_offset != 0 ||
+          relation->source_unit_offset != 0 || relation->unit_count != 1) {
+        continue;
+      }
+
+      const loom_value_t* destination = loom_module_value(
+          state->module, state->liveness->value_ids[relation->result_ordinal]);
+      const bool destination_owner_is_block =
+          loom_value_is_block_arg(destination);
+      const void* destination_owner =
+          destination_owner_is_block
+              ? (const void*)loom_value_def_block(destination)
+              : (const void*)loom_value_owner_op(destination);
+      if (relation->op != current_edge_op) {
+        current_edge_op = relation->op;
+        edge_scope_count = 0;
+      }
+      uint32_t edge_group = UINT32_MAX;
+      for (uint32_t j = 0; j < edge_scope_count; ++j) {
+        const loom_low_placement_edge_scope_t* scope = &edge_scopes[j];
+        if (scope->destination_owner == destination_owner &&
+            scope->destination_owner_is_block == destination_owner_is_block) {
+          edge_group = scope->edge_group;
+          break;
+        }
+      }
+      if (edge_group == UINT32_MAX) {
+        IREE_ASSERT_LT(edge_scope_count, state->edge_relation_count);
+        edge_group = next_edge_group++;
+        edge_scopes[edge_scope_count++] = (loom_low_placement_edge_scope_t){
+            .destination_owner = destination_owner,
+            .edge_group = edge_group,
+            .destination_owner_is_block = destination_owner_is_block,
+        };
+      }
+      IREE_ASSERT_LT(input_count, state->edge_relation_count);
+      inputs[input_count++] = (loom_low_edge_affinity_input_t){
+          .destination_origin = loom_low_placement_storage_origin(
+              state, relation->result_ordinal),
+          .source_origin = loom_low_placement_storage_origin(
+              state, relation->source_ordinal),
+          .edge_group = edge_group,
+          .sequence = relation_sequence,
+          .op = relation->op,
+      };
+    }
+  }
+  IREE_ASSERT_LE(input_count, state->edge_relation_count);
+  IREE_ASSERT_LE(constraint_count, state->hard_location_relation_count);
+
+  loom_low_edge_affinity_list_t affinities;
+  IREE_RETURN_IF_ERROR(loom_low_edge_affinity_build(
+      inputs, input_count, constraints, constraint_count,
+      state->value_domain->value_count, scratch_arena, &affinities));
+  if (affinities.count > UINT32_MAX - state->relation_count) {
+    return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                            "too many low placement relations");
+  }
+  for (iree_host_size_t i = 0; i < affinities.count; ++i) {
+    const loom_low_edge_affinity_t* affinity = &affinities.values[i];
+    const loom_low_placement_relation_t relation = {
+        .op = affinity->op,
+        .result_ordinal = affinity->first,
+        .source_ordinal = affinity->second,
+        .result_unit_offset = 0,
+        .source_unit_offset = 0,
+        .unit_count = 1,
+        .kind = LOOM_LOW_PLACEMENT_RELATION_SAME_REGISTER_ORDINAL,
+        .cause = LOOM_LOW_PLACEMENT_CAUSE_EDGE_PAIR_AFFINITY,
+        .flags = LOOM_LOW_PLACEMENT_RELATION_FLAG_PREFERRED,
+        .priority = affinity->priority,
+        .source_operand_index = LOOM_LOW_PLACEMENT_SOURCE_OPERAND_NONE,
+    };
+    IREE_RETURN_IF_ERROR(loom_low_placement_collect_relation(state, &relation));
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_low_placement_collect_edge_pair_affinities(
+    loom_low_placement_build_state_t* state) {
+  iree_arena_allocator_t scratch_arena;
+  iree_arena_initialize(state->arena->block_pool, &scratch_arena);
+  const iree_status_t status =
+      loom_low_placement_collect_edge_pair_affinities_impl(state,
+                                                           &scratch_arena);
+  iree_arena_deinitialize(&scratch_arena);
+  return status;
+}
+
 static loom_value_ordinal_t loom_low_placement_relation_index_ordinal(
     const loom_low_placement_build_state_t* state,
     const loom_low_placement_relation_t* relation,
     loom_value_ordinal_t ordinal) {
-  if (state->tied_storage_origins_by_value_ordinal != NULL &&
-      relation->kind == LOOM_LOW_PLACEMENT_RELATION_SAME_REGISTER_ORDINAL &&
+  if (relation->kind == LOOM_LOW_PLACEMENT_RELATION_SAME_REGISTER_ORDINAL &&
       iree_any_bit_set(relation->flags,
                        LOOM_LOW_PLACEMENT_RELATION_FLAG_HARD)) {
-    return state->tied_storage_origins_by_value_ordinal[ordinal];
+    return loom_low_placement_storage_origin(state, ordinal);
   }
   return ordinal;
 }
@@ -1369,6 +1666,7 @@ static iree_status_t loom_low_placement_build(
     IREE_RETURN_IF_ERROR(loom_low_placement_collect_pair_relations(
         state, &state->pair_uses.values[i]));
   }
+  IREE_RETURN_IF_ERROR(loom_low_placement_collect_edge_pair_affinities(state));
 
   const iree_host_size_t relation_count = state->relation_count;
   if (relation_count > 0) {

@@ -76,6 +76,21 @@ loom_cc_library(
 )
 
 loom_cc_test(
+    name = "execution_queues_test",
+    args = ["--execution_device_uri=amdgpu://0?queue_count=2"],
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = _ROCR_TEST_TAGS,
+    target_compatible_with = loom_config_compatible_with([
+        "//runtime/config/hal:driver_amdgpu",
+    ]),
+    deps = [
+        ":test_device",
+        "//loom/src/loom/serve/runtime/execution:queues_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
     name = "finite_component_test",
     data = COMPONENT_SOURCES,
     env = {
@@ -112,6 +127,7 @@ loom_cc_test(
         ":test_device",
         "//loom/binding/c:loomc",
         "//loom/src/loom/serve/runtime/execution",
+        "//loom/src/loom/serve/runtime/execution:queues",
         "//loom/src/loom/serve/runtime/execution:workspace",
         "//loom/src/loom/serve/runtime/host",
         "//loom/src/loom/serve/runtime/program:jit",
@@ -269,6 +285,7 @@ loom_py_test(
     args = [
         "--server=$(rootpath :loom-serve-test-tool)",
         "--source=$(rootpath //loom/src/loom/serve/fixture/text:prepare.loom)",
+        "--device=amdgpu",
     ],
     data = TEXT_SOURCES + [
         ":loom-serve-test-tool",
@@ -295,6 +312,7 @@ loom_py_test(
     args = [
         "--server=$(rootpath :loom-serve-test-tool)",
         "--source=$(rootpath //loom/src/loom/serve/fixture/text:prepare.loom)",
+        "--device=amdgpu",
     ],
     data = TEXT_SOURCES + [
         ":loom-serve-test-tool",
@@ -364,6 +382,29 @@ loom_cc_test(
 
 loom_cc_test(
     name = "source_text_service_test",
+    data = TEXT_SOURCES,
+    env = {
+        "LOOM_SERVE_TEST_MODEL_SOURCE": "$(rootpath //loom/src/loom/serve/fixture/text:prepare.loom)",
+    },
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = _ROCR_TEST_TAGS,
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:amdgpu_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/service/text:elastic_storage_tests",
+        "//loom/src/loom/serve/service/text:source_execution_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "source_text_media_test",
     data = EMBEDDING_SOURCES + PROJECTOR_SOURCES + TEXT_SOURCES,
     env = {
         "LOOM_SERVE_TEST_MEDIA_SOURCE": "$(rootpath //loom/src/loom/serve/fixture/embedding:model.json)",
@@ -381,8 +422,29 @@ loom_cc_test(
     deps = [
         ":test_compiler",
         ":test_device",
-        "//loom/src/loom/serve/service/text:elastic_storage_tests",
-        "//loom/src/loom/serve/service/text:source_execution_tests",
+        "//loom/src/loom/serve/service/text:source_media_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "native_text_service_test",
+    data = TEXT_SOURCES,
+    env = {
+        "LOOM_SERVE_TEST_MODEL_SOURCE": "$(rootpath //loom/src/loom/serve/fixture/text:prepare.loom)",
+    },
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = _ROCR_TEST_TAGS,
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:amdgpu_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/service/text:native_service_tests",
         "//runtime/src/iree/testing:gtest_main",
     ],
 )
@@ -455,7 +517,7 @@ loom_cc_test(
 )
 
 loom_cc_test(
-    name = "source_recognition_service_test",
+    name = "source_recognition_http_test",
     args = [
         "--model_source=$(rootpath //loom/src/loom/serve/fixture/recognition:prepare.loom)",
     ],
@@ -471,13 +533,13 @@ loom_cc_test(
     deps = [
         ":test_compiler",
         ":test_device",
-        "//loom/src/loom/serve/service/recognition:source_service_tests",
+        "//loom/src/loom/serve/service/recognition:source_http_tests",
         "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
 loom_cc_test(
-    name = "source_recognition_service_elastic_test",
+    name = "source_recognition_http_elastic_test",
     args = [
         "--test_elastic=true",
         "--model_source=$(rootpath //loom/src/loom/serve/fixture/recognition:prepare.loom)",
@@ -494,7 +556,96 @@ loom_cc_test(
     deps = [
         ":test_compiler",
         ":test_device",
-        "//loom/src/loom/serve/service/recognition:source_service_tests",
+        "//loom/src/loom/serve/service/recognition:source_http_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "source_recognition_stream_test",
+    args = [
+        "--model_source=$(rootpath //loom/src/loom/serve/fixture/recognition:prepare.loom)",
+    ],
+    data = RECOGNITION_SOURCES,
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = _ROCR_TEST_TAGS,
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:amdgpu_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/service/recognition:source_stream_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "source_recognition_stream_elastic_test",
+    args = [
+        "--test_elastic=true",
+        "--model_source=$(rootpath //loom/src/loom/serve/fixture/recognition:prepare.loom)",
+    ],
+    data = RECOGNITION_SOURCES,
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = _ROCR_TEST_TAGS,
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:amdgpu_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/service/recognition:source_stream_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "registry_speech_test",
+    args = [
+        "--model=$(rootpath //loom/src/loom/serve/fixture/speech:model.json)",
+    ],
+    data = SPEECH_SOURCES,
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = _ROCR_TEST_TAGS,
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:amdgpu_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/server:registry_speech_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "registry_recognition_test",
+    args = [
+        "--model=$(rootpath //loom/src/loom/serve/fixture/recognition:model.json)",
+    ],
+    data = RECOGNITION_SOURCES,
+    resource_group = GPU_DEVICE_RESOURCE_GROUP,
+    tags = _ROCR_TEST_TAGS,
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:amdgpu_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/server:registry_recognition_tests",
         "//runtime/src/iree/testing:gtest_main",
     ],
 )
@@ -678,6 +829,28 @@ loom_cc_test(
     }),
 )
 
+loom_cc_binary(
+    name = "storage_benchmark",
+    testonly = True,
+    srcs = ["//loom/src/loom/serve/runtime/program:stage_table_storage_benchmark.cc"],
+    tags = ["manual"],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/execute:amdgpu_hal",
+    ]),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/runtime/device",
+        "//loom/src/loom/serve/runtime/parameter:bank",
+        "//loom/src/loom/serve/runtime/program:jit",
+        "//loom/src/loom/serve/runtime/program:stage_table",
+        "//loom/src/loom/serve/testing:compiler",
+        "//loom/src/loom/serve/testing:device",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+    ],
+)
+
 loom_cc_test(
     name = "retirement_test",
     srcs = ["//loom/src/loom/serve/runtime/execution:retirement_test.cc"],
@@ -702,11 +875,24 @@ loom_cc_test(
 
 loom_cc_test(
     name = "weights_test",
-    srcs = ["//loom/src/loom/serve/runtime/parameter:weights_test.cc"],
-    args = ["--weight_sources=$(rootpath //loom/src/loom/serve/runtime/parameter:testdata/weights/stages.loom)"],
+    srcs = [
+        "//loom/src/loom/serve/runtime/parameter:bank_test.cc",
+        "//loom/src/loom/serve/runtime/parameter:weights_packing_test.cc",
+        "//loom/src/loom/serve/runtime/parameter:weights_test.cc",
+        "//loom/src/loom/serve/runtime/parameter:weights_test_base.h",
+        "//loom/src/loom/serve/service:executables_test.cc",
+    ],
+    args = [
+        "--weight_sources=$(rootpath //loom/src/loom/serve/runtime/parameter:testdata/weights/stages.loom)",
+        "--executable_sources=$(rootpath //loom/src/loom/serve/service:testdata/executables/prepare.loom)",
+    ],
     data = [
+        "//loom/src/loom/serve/runtime/parameter:testdata/weights/boundaries.loom",
+        "//loom/src/loom/serve/runtime/parameter:testdata/weights/packing.loom",
+        "//loom/src/loom/serve/runtime/parameter:testdata/weights/packing_policy.loom",
         "//loom/src/loom/serve/runtime/parameter:testdata/weights/policy.loom",
         "//loom/src/loom/serve/runtime/parameter:testdata/weights/stages.loom",
+        "//loom/src/loom/serve/service:testdata/executables/prepare.loom",
     ],
     resource_group = GPU_DEVICE_RESOURCE_GROUP,
     tags = _ROCR_TEST_TAGS,
@@ -720,10 +906,16 @@ loom_cc_test(
         "//loom/src/loom/serve/runtime/device",
         "//loom/src/loom/serve/runtime/execution",
         "//loom/src/loom/serve/runtime/parameter:activation",
+        "//loom/src/loom/serve/runtime/parameter:bank",
         "//loom/src/loom/serve/runtime/parameter:residency",
         "//loom/src/loom/serve/runtime/parameter:weights",
+        "//loom/src/loom/serve/runtime/program",
         "//loom/src/loom/serve/runtime/program:jit",
+        "//loom/src/loom/serve/runtime/program:module",
+        "//loom/src/loom/serve/runtime/program:preparation",
+        "//loom/src/loom/serve/runtime/program:stage_table",
         "//loom/src/loom/serve/runtime/storage:memory",
+        "//loom/src/loom/serve/service:executables",
         "//loom/src/loom/serve/testing:compiler",
         "//loom/src/loom/serve/testing:device",
         "//loom/src/loom/serve/testing:native_allocator",
@@ -732,10 +924,12 @@ loom_cc_test(
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/tooling:flags",
         "//runtime/src/iree/hal",
+        "//runtime/src/iree/module/hal:types",
         "//runtime/src/iree/task",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
         "//runtime/src/iree/testing:temp_file",
+        "//runtime/src/iree/vm",
     ],
 )
 

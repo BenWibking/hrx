@@ -120,7 +120,6 @@ loom_cc_library(
     "completion_demand.h"
     "dependency_incoming.h"
     "diagnostics.h"
-    "json.h"
     "run.h"
     "source_suffix.h"
     "types.h"
@@ -143,7 +142,6 @@ loom_cc_library(
     "effect_dependencies.h"
     "graph.c"
     "graph.h"
-    "json.c"
     "memory_completion.c"
     "memory_completion.h"
     "pressure.c"
@@ -155,6 +153,8 @@ loom_cc_library(
     "pressure_priority.c"
     "ready_policy.c"
     "ready_policy.h"
+    "required_pressure.c"
+    "required_pressure.h"
     "run.c"
     "scopes.c"
     "scopes.h"
@@ -177,7 +177,6 @@ loom_cc_library(
     iree::base::internal
     iree::base::internal::arena
     loom::analysis::liveness
-    loom::analysis::liveness_json
     loom::codegen::low::allocation::call
     loom::codegen::low::allocation::storage
     loom::codegen::low::allocation::target_constraints
@@ -195,7 +194,6 @@ loom_cc_library(
     loom::codegen::low::storage_relation
     loom::codegen::low::storage_transport
     loom::codegen::low::target_binding
-    loom::codegen::low::text_asm
     loom::error::emitter
     loom::error::error_defs
     loom::error::parameter
@@ -207,8 +205,27 @@ loom_cc_library(
     loom::util::cfg_graph
     loom::util::cfg_loop
     loom::util::index_set
-    loom::util::json
     loom::util::segmented_storage
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    json
+  HDRS
+    "json.h"
+  SRCS
+    "json.c"
+  DEPS
+    ::schedule
+    iree::base
+    loom::analysis::liveness_json
+    loom::codegen::low::function
+    loom::codegen::low::text_asm
+    loom::ir
+    loom::ops::low
+    loom::ops::op_defs
+    loom::util::json
     loom::util::stream
   PUBLIC
 )
@@ -287,6 +304,7 @@ loom_cc_test(
     "pressure_alias.h"
     "pressure_alias_test.cc"
     "ready_policy.h"
+    "required_pressure.h"
     "setup_order.h"
     "storage_lifetime.h"
     "storage_relation_index.h"

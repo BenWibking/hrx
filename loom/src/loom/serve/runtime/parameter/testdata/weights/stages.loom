@@ -1,3 +1,5 @@
+config.decl @delta : i32
+
 kernel.def @add() {
   %c1 = index.constant 1 : index
   %c8 = index.constant 8 : index
@@ -12,14 +14,8 @@ kernel.def @add() {
   kernel.return
 }
 
-command.program.def public @add3() launch(%storage: buffer) {
-  %delta = scalar.constant 3 : i32
-  kernel.launch @add(%storage, %delta) : (buffer, i32)
-  command.return
-}
-
-command.program.def public @add7() launch(%storage: buffer) {
-  %delta = scalar.constant 7 : i32
+command.program.def public @add_configured() launch(%storage: buffer) {
+  %delta = config.get @delta : i32
   kernel.launch @add(%storage, %delta) : (buffer, i32)
   command.return
 }
@@ -70,6 +66,48 @@ command.program.def public @domains() launch(%base: buffer, %adapter: buffer, %o
   %left = command.parameter %base, "raw" : view<8xi32>
   %right = command.parameter %adapter, "raw" : view<8xi32>
   kernel.launch @consume(%left, %right, %right, %output) : (view<8xi32>, view<8xi32>, view<8xi32>, buffer)
+  command.return
+}
+
+command.program.def public @domains_workspace() launch(%base: buffer, %adapter: buffer, %output: buffer) {
+  %left = command.parameter %base, "raw" : view<8xi32>
+  %right = command.parameter %adapter, "raw" : view<8xi32>
+  %bytes = index.constant 32 : offset
+  %temporary = buffer.alloca<global> align(16) %bytes : buffer
+  kernel.launch @consume(%left, %right, %right, %temporary) : (view<8xi32>, view<8xi32>, view<8xi32>, buffer)
+  %c0 = index.constant 0 : offset
+  %intermediate = buffer.view %temporary[%c0] : buffer -> view<8xi32>
+  kernel.launch @consume(%intermediate, %intermediate, %intermediate, %output) : (view<8xi32>, view<8xi32>, view<8xi32>, buffer)
+  command.return
+}
+
+command.program.def public @domains_interleaved() launch(%base: buffer, %adapter: buffer, %output: buffer) {
+  %right = command.parameter %adapter, "raw" : view<8xi32>
+  %left = command.parameter %base, "raw" : view<8xi32>
+  kernel.launch @consume(%left, %right, %right, %output) : (view<8xi32>, view<8xi32>, view<8xi32>, buffer)
+  command.return
+}
+
+command.program.def public @domains_swapped() launch(%adapter: buffer, %base: buffer, %output: buffer) {
+  %left = command.parameter %base, "raw" : view<8xi32>
+  %right = command.parameter %adapter, "raw" : view<8xi32>
+  kernel.launch @consume(%left, %right, %right, %output) : (view<8xi32>, view<8xi32>, view<8xi32>, buffer)
+  command.return
+}
+
+command.program.def public @many_domains() launch(%root0: buffer, %root1: buffer, %root2: buffer, %root3: buffer, %root4: buffer, %root5: buffer, %root6: buffer, %root7: buffer, %root8: buffer, %output: buffer) {
+  %p0 = command.parameter %root0, "raw" : view<8xi32>
+  %p1 = command.parameter %root1, "raw" : view<8xi32>
+  %p2 = command.parameter %root2, "raw" : view<8xi32>
+  %p3 = command.parameter %root3, "raw" : view<8xi32>
+  %p4 = command.parameter %root4, "raw" : view<8xi32>
+  %p5 = command.parameter %root5, "raw" : view<8xi32>
+  %p6 = command.parameter %root6, "raw" : view<8xi32>
+  %p7 = command.parameter %root7, "raw" : view<8xi32>
+  %p8 = command.parameter %root8, "raw" : view<8xi32>
+  kernel.launch @consume(%p0, %p1, %p2, %output) : (view<8xi32>, view<8xi32>, view<8xi32>, buffer)
+  kernel.launch @consume(%p3, %p4, %p5, %output) : (view<8xi32>, view<8xi32>, view<8xi32>, buffer)
+  kernel.launch @consume(%p6, %p7, %p8, %output) : (view<8xi32>, view<8xi32>, view<8xi32>, buffer)
   command.return
 }
 

@@ -23,12 +23,40 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    edge_affinity
+  HDRS
+    "edge_affinity.h"
+  SRCS
+    "edge_affinity.c"
+  DEPS
+    iree::base
+    iree::base::internal
+    iree::base::internal::arena
+    loom::ir
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    edge_affinity_test
+  SRCS
+    "edge_affinity_test.cc"
+  DEPS
+    ::edge_affinity
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+loom_cc_library(
+  NAME
     placement
   HDRS
     "placement.h"
   SRCS
     "placement.c"
   DEPS
+    ::edge_affinity
     ::target_constraints
     ::unit_location
     iree::base
@@ -41,6 +69,7 @@ loom_cc_library(
     loom::codegen::low::storage_relation
     loom::ir
     loom::ops::low
+    loom::util::segmented_storage
   PUBLIC
 )
 
@@ -141,6 +170,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::analysis::liveness
     loom::codegen::low::descriptors
+    loom::util::segmented_storage
   PUBLIC
 )
 
@@ -414,6 +444,7 @@ loom_cc_library(
     ::edge_alias
     ::live_range
     ::physical_domains
+    ::placement
     ::search
     ::storage
     ::target_constraints

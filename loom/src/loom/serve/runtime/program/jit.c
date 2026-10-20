@@ -11,6 +11,7 @@
 #include "iree/base/threading/mutex.h"
 #include "iree/base/threading/notification.h"
 #include "loom/serve/runtime/program/target.h"
+#include "loom/target/arch/cmd/hal_command_buffer.h"
 #include "loomc/compile.h"
 #include "loomc/emit.h"
 #include "loomc/iree.h"
@@ -36,8 +37,9 @@ typedef struct loom_serve_jit_compiler_t {
 typedef struct loom_serve_jit_job_t loom_serve_jit_job_t;
 typedef struct loom_serve_jit_request_t loom_serve_jit_request_t;
 
-// Loaded code shared by a cache entry and every compiled stage using it. Its
-// lifetime is independent of source keys, compiler diagnostics and the catalog.
+// Loaded code shared by a cache entry and every compiled stage using it.
+// Recorded consumers retain HAL objects independently; their lifetime also
+// protects the native key from cache trimming.
 typedef struct loom_serve_jit_executable_t {
   // Cache and stage ownership; recorded commands retain HAL objects directly.
   iree_atomic_ref_count_t ref_count;
@@ -150,7 +152,7 @@ struct loom_serve_jit_stage_t {
   // Parsed program borrowing image.
   loom_cmd_program_t program;
   // Loaded entries in the command program's local slot order.
-  loom_serve_command_entry_t* entries;
+  loom_cmd_program_hal_entry_t* entries;
   // Number of initialized entry slots, including null entries on failure.
   iree_host_size_t entry_count;
   // Number of initialized loaded-code owners.
@@ -376,11 +378,26 @@ loom_serve_jit_cache_storage_t loom_serve_jit_cache_storage(
   return storage;
 }
 
+static bool loom_serve_jit_executable_is_shared(
+    const loom_serve_jit_executable_t* executable) {
+  if (iree_atomic_ref_count_load(&executable->ref_count) != 1 ||
+      (executable->dispatch &&
+       loom_serve_dispatch_is_shared(executable->dispatch))) {
+    return true;
+  }
+  const iree_hal_resource_t* resource =
+      (const iree_hal_resource_t*)executable->handle;
+  // The cache owns one HAL reference and a direct descriptor owns another.
+  // Any remaining reference is a recorded command or accepted device work.
+  const int32_t owned_references = executable->dispatch ? 2 : 1;
+  return iree_atomic_ref_count_load(&resource->ref_count) != owned_references;
+}
+
 void loom_serve_jit_trim(loom_serve_jit_t* jit) {
   iree_host_size_t count = 0;
   for (iree_host_size_t i = 0; i < jit->natives.count; ++i) {
     loom_serve_jit_native_t* native = jit->natives.values[i];
-    if (iree_atomic_ref_count_load(&native->executable->ref_count) == 1) {
+    if (!loom_serve_jit_executable_is_shared(native->executable)) {
       loom_serve_jit_native_release(native, jit->host_allocator);
     } else {
       jit->natives.values[count++] = native;
@@ -841,7 +858,7 @@ struct loom_serve_jit_job_t {
   // Parsed command description borrowing product storage.
   loomc_cmd_program_t program;
   // Joined executable bindings indexed by parent requirement ordinal.
-  loom_serve_command_entry_t* requirements;
+  loom_cmd_program_hal_entry_t* requirements;
   // Number of allocated requirement slots.
   iree_host_size_t requirement_count;
   // Number of native requests submitted for the command.
@@ -1009,9 +1026,9 @@ static void loom_serve_jit_job_release(loom_serve_jit_job_t* job) {
            i < loomc_request_binding_count(node->request); ++i) {
         loomc_request_binding_t binding;
         loomc_request_binding_at(node->request, i, &binding);
-        loom_serve_command_entry_t* entry =
+        loom_cmd_program_hal_entry_t* entry =
             &job->requirements[binding.requirement_ordinal];
-        *entry = (loom_serve_command_entry_t){
+        *entry = (loom_cmd_program_hal_entry_t){
             .executable = node->native->executable->handle,
             .function =
                 node->native->executable->functions[binding.root_ordinal],
@@ -1544,10 +1561,31 @@ iree_status_t loom_serve_jit_stage_record(
     const loom_cmd_program_command_range_t* range,
     iree_hal_buffer_t* const* fixed_buffers,
     iree_hal_command_buffer_t** out_command) {
-  return loom_serve_command_create(
-      queue_family, mode, &stage->program, range,
-      stage->program.requirements.fixed_buffer_count, fixed_buffers,
-      stage->entry_count, stage->entries, stage->host_allocator, out_command);
+  const iree_host_size_t fixed_buffer_count =
+      stage->program.requirements.fixed_buffer_count;
+  iree_hal_buffer_binding_t* fixed_bindings = NULL;
+  iree_status_t status = iree_ok_status();
+  if (fixed_buffer_count != 0) {
+    status = iree_allocator_malloc_array(
+        stage->host_allocator, fixed_buffer_count, sizeof(*fixed_bindings),
+        (void**)&fixed_bindings);
+  }
+  for (iree_host_size_t i = 0;
+       i < fixed_buffer_count && iree_status_is_ok(status); ++i) {
+    fixed_bindings[i] = (iree_hal_buffer_binding_t){
+        .buffer = fixed_buffers[i],
+        .offset = 0,
+        .length = IREE_HAL_WHOLE_BUFFER,
+    };
+  }
+  if (iree_status_is_ok(status)) {
+    status = loom_cmd_program_hal_command_buffer_create(
+        queue_family, mode, &stage->program, range, fixed_buffer_count,
+        fixed_bindings, stage->entry_count, stage->entries,
+        stage->host_allocator, out_command);
+  }
+  iree_allocator_free(stage->host_allocator, fixed_bindings);
+  return status;
 }
 
 iree_status_t loom_serve_jit_compile_vm(

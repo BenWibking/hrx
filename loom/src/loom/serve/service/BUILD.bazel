@@ -12,11 +12,20 @@ package(
     licenses = ["notice"],
 )
 
+exports_files(
+    [
+        "executables_test.cc",
+        "testdata/executables/prepare.loom",
+    ],
+    visibility = ["//loom/src/loom/serve:implementation"],
+)
+
 loom_cc_library(
     name = "service",
     hdrs = ["service.h"],
     deps = [
         ":inspection",
+        ":kind",
         ":reconfiguration",
         "//loom/src/loom/serve/runtime/host:wake",
         "//loom/src/loom/serve/telemetry:latency",
@@ -24,6 +33,24 @@ loom_cc_library(
         "//loom/src/loom/serve/transport/http:server",
         "//runtime/src/iree/base",
         "//runtime/src/iree/tokenizer",
+    ],
+)
+
+loom_cc_library(
+    name = "kind",
+    srcs = ["kind.c"],
+    hdrs = ["kind.h"],
+    deps = ["//runtime/src/iree/base"],
+)
+
+loom_cc_test(
+    name = "kind_test",
+    srcs = ["kind_test.cc"],
+    deps = [
+        ":kind",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
@@ -45,7 +72,6 @@ loom_cc_library(
         ":reconfiguration",
         "//loom/src/loom/serve/runtime/host:wake",
         "//loom/src/loom/serve/runtime/program:compilation",
-        "//loom/src/loom/serve/runtime/program:package",
         "//loom/src/loom/serve/runtime/program:sources",
         "//loom/src/loom/serve/runtime/program:variant_pool",
         "//runtime/src/iree/base",
@@ -61,10 +87,12 @@ loom_cc_library(
         "//loom/binding/c:task_pool",
         "//loom/src/loom/serve/runtime/device",
         "//loom/src/loom/serve/runtime/host",
+        "//loom/src/loom/serve/runtime/parameter:bank",
+        "//loom/src/loom/serve/runtime/parameter:residency",
+        "//loom/src/loom/serve/runtime/parameter:weights",
         "//loom/src/loom/serve/runtime/program:compilation",
         "//loom/src/loom/serve/runtime/program:jit",
         "//loom/src/loom/serve/runtime/program:module",
-        "//loom/src/loom/serve/runtime/program:parameter_layout",
         "//loom/src/loom/serve/runtime/program:preparation",
         "//loom/src/loom/serve/runtime/program:sources",
         "//loom/src/loom/serve/runtime/program:stage_set",
@@ -72,6 +100,7 @@ loom_cc_library(
         "//loom/src/loom/serve/runtime/program:variant_pool",
         "//loom/src/loom/serve/service:execution_reconfiguration",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/threading",
         "//runtime/src/iree/hal",
         "//runtime/src/iree/vm",
     ],

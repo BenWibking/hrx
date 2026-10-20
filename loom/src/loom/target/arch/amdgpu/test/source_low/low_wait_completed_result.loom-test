@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // RUN: emit amdgpu-assembly @completed_vector_result strategy=source fixed=%old:physical_register:4:2 fixed=%fresh:physical_register:8:1 fixed=%offset:physical_register:0:1 fixed=%first:physical_register:6:1 fixed=%old_again:physical_register:7:1 fixed=%result:physical_register:9:1
 
 // Reading one lane completes the whole load. A younger pending load must not
@@ -314,9 +308,9 @@ low.func.def target<amdgpu.rdna3.core>(@target) @copied_lane_completes_backedge(
   v_add_u32 v7, v12, v6
   global_load_b64 v[8:9], v0, s[0:1] offset:16
 .Lbb3:
+  s_add_u32 s3, s3, s4
   s_waitcnt vmcnt(0) lgkmcnt(63)
   v_mov_b32 v4, v8
-  s_add_u32 s3, s3, s4
   s_branch .Lbb1
 .Lbb4:
   s_endpgm

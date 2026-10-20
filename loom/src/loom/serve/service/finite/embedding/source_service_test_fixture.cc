@@ -81,7 +81,7 @@ iree_status_t loom_serve_test_embedding_model_lifecycle_t::Drain(
   bool pending = false;
   if (self->service) {
     const auto flags =
-        self->complete ? 0 : LOOM_SERVE_HTTP_SERVICE_FLAG_SHARED_ACTIVITY;
+        self->complete ? 0 : LOOM_SERVE_SERVICE_FLAG_SHARED_ACTIVITY;
     self->status = iree_status_join(
         self->status,
         self->service->advance(self->service->self, flags, &result->did_work));
@@ -290,7 +290,7 @@ void SourceEmbeddingServiceTest::Accept(
   }
 }
 
-bool SourceEmbeddingServiceTest::Step(loom_serve_http_service_flags_t flags) {
+bool SourceEmbeddingServiceTest::Step(loom_serve_service_flags_t flags) {
   const uint64_t previous = wakes_.load();
   bool progress = false;
   IREE_EXPECT_OK(interface_.advance(interface_.self, flags, &progress));
@@ -324,7 +324,7 @@ void SourceEmbeddingServiceTest::Drain() {
 }
 
 void SourceEmbeddingServiceTest::CheckAbandonedCohort(
-    loom_serve_http_service_flags_t flags, const char* expected) {
+    loom_serve_service_flags_t flags, const char* expected) {
   const char* bodies[] = {R"({"model":"fixture","input":"a"})",
                           R"({"model":"fixture","input":"bbb"})"};
   int clients[IREE_ARRAYSIZE(bodies)] = {};
@@ -338,7 +338,7 @@ void SourceEmbeddingServiceTest::CheckAbandonedCohort(
   ASSERT_TRUE(Step());  // Accepted device work; readiness may still be pending.
   ASSERT_STREQ(interface_.snapshot(interface_.self).phase, "running");
 
-  if (!iree_any_bit_set(flags, LOOM_SERVE_HTTP_SERVICE_FLAG_STOPPING)) {
+  if (!iree_any_bit_set(flags, LOOM_SERVE_SERVICE_FLAG_STOPPING)) {
     for (size_t i = 0; i < IREE_ARRAYSIZE(clients); ++i) {
       const linger reset = {1, 0};
       ASSERT_EQ(
@@ -367,7 +367,7 @@ void SourceEmbeddingServiceTest::CheckAbandonedCohort(
   EXPECT_EQ(interface_.telemetry.counters->input_tokens, 4u);
   EXPECT_EQ(interface_.telemetry.counters->batches, 1u);
   Drain();
-  if (iree_any_bit_set(flags, LOOM_SERVE_HTTP_SERVICE_FLAG_STOPPING)) {
+  if (iree_any_bit_set(flags, LOOM_SERVE_SERVICE_FLAG_STOPPING)) {
     for (int client : clients) {
       EXPECT_TRUE(Read(client, /*allow_empty=*/true).empty());
     }
@@ -602,12 +602,13 @@ void SourceEmbeddingServiceTest::WriteCheckpointPackage(
   ASSERT_NE(result_position, std::string::npos);
   prepare.insert(result_position, R"(
   %parameter_index = scalar.constant 0 : i32
+  %parameter_source = scalar.constant 0 : i32
   %parameter_path = global.load @checkpoint : buffer
   %parameter_policy = global.load @policy : buffer
-  func.call @parameter(%stage, %parameter_index, %directory, %parameter_path, %parameter_policy) : (i32, i32, buffer, buffer, buffer) -> ()
+  func.call @parameter(%stage, %parameter_index, %parameter_source, %directory, %parameter_path, %parameter_policy) : (i32, i32, i32, buffer, buffer, buffer) -> ()
 )");
   const std::string declarations = R"(
-func.decl import("prepare") @parameter(%stage: i32, %binding: i32, %directory: buffer, %path: buffer, %policy: buffer)
+func.decl import("prepare") @parameter(%stage: i32, %binding: i32, %source: i32, %directory: buffer, %path: buffer, %policy: buffer)
 global.rodata.def @checkpoint = bytes("776569676874732e7361666574656e736f7273")
 global.rodata.def @policy = bytes("706f6c6963792e6c6f6f6d")
 )";

@@ -527,6 +527,12 @@ TEST(BenchmarkReportTest, WritesHalTimingCountsAndWarnings) {
   result.data_cache.requested_min_ring_bytes = 4096;
   result.data_cache.binding_set_bytes = 8192;
   result.data_cache.binding_ring_bytes = 8192;
+  result.data_cache.binding_range_count = 1;
+  result.data_cache.binding_range_set_bytes = 1024;
+  result.data_cache.binding_range_ring_bytes = 1024;
+  result.data_cache.materialized_storage_count = 2;
+  result.data_cache.materialized_storage_set_bytes = 8192;
+  result.data_cache.materialized_storage_ring_bytes = 8192;
   result.artifact_manifest_path =
       IREE_SV("bundle/artifact_manifests/run_candidate_artifact_manifest.json");
 
@@ -593,8 +599,25 @@ TEST(BenchmarkReportTest, WritesHalTimingCountsAndWarnings) {
   EXPECT_TRUE(iree_string_view_equal(
       LookupObject(data_cache, IREE_SV("binding_ring_count")), IREE_SV("1")));
   EXPECT_TRUE(iree_string_view_equal(
+      LookupObject(data_cache, IREE_SV("binding_range_count")), IREE_SV("1")));
+  EXPECT_TRUE(iree_string_view_equal(
+      LookupObject(data_cache, IREE_SV("binding_range_set_bytes")),
+      IREE_SV("1024")));
+  EXPECT_TRUE(iree_string_view_equal(
+      LookupObject(data_cache, IREE_SV("binding_range_ring_bytes")),
+      IREE_SV("1024")));
+  EXPECT_TRUE(iree_string_view_equal(
+      LookupObject(data_cache, IREE_SV("materialized_storage_count")),
+      IREE_SV("2")));
+  EXPECT_TRUE(iree_string_view_equal(
+      LookupObject(data_cache, IREE_SV("materialized_storage_set_bytes")),
+      IREE_SV("8192")));
+  EXPECT_TRUE(iree_string_view_equal(
+      LookupObject(data_cache, IREE_SV("materialized_storage_ring_bytes")),
+      IREE_SV("8192")));
+  EXPECT_TRUE(iree_string_view_equal(
       LookupObject(data_cache, IREE_SV("ring_byte_target_met")),
-      IREE_SV("true")));
+      IREE_SV("false")));
 
   iree_string_view_t timing_interpretation =
       LookupObject(measurement, IREE_SV("timing_interpretation"));
@@ -624,6 +647,35 @@ TEST(BenchmarkReportTest, WritesHalTimingCountsAndWarnings) {
       JsonArrayContainsString(warnings, IREE_SV("unstable_p90_to_p50")));
 
   iree_string_builder_deinitialize(&builder);
+}
+
+TEST(BenchmarkReportTest, TransferOnlyHalBatchesHaveNoPhysicalDispatches) {
+  iree_benchmark_loom_benchmark_result_t result = {
+      .has_hal_benchmark = true,
+  };
+  result.hal_benchmark.timing.batch_size = 4;
+  result.hal_benchmark.timing.measured_batch_count = 3;
+  result.hal_benchmark.timing.measured_operation_count = 12;
+  result.hal_benchmark.timing.measured_duration_ns = 900;
+  result.data_cache.populated = true;
+  result.data_cache.dispatches_per_batch = 0;
+
+  iree_host_size_t dispatch_count = IREE_HOST_SIZE_MAX;
+  IREE_ASSERT_OK(iree_benchmark_loom_hal_physical_dispatches_per_batch(
+      &result, &dispatch_count));
+  EXPECT_EQ(dispatch_count, 0u);
+  IREE_ASSERT_OK(
+      iree_benchmark_loom_hal_physical_dispatches_per_logical_operation(
+          &result, &dispatch_count));
+  EXPECT_EQ(dispatch_count, 0u);
+  IREE_ASSERT_OK(iree_benchmark_loom_hal_measured_physical_dispatch_count(
+      &result, &dispatch_count));
+  EXPECT_EQ(dispatch_count, 0u);
+
+  double mean_dispatch_duration_ns = -1.0;
+  IREE_ASSERT_OK(iree_benchmark_loom_hal_mean_physical_dispatch_duration_ns(
+      &result, &mean_dispatch_duration_ns));
+  EXPECT_EQ(mean_dispatch_duration_ns, 0.0);
 }
 
 TEST(BenchmarkReportTest, WritesExactWorkloadAndResolvedLaunchConfig) {

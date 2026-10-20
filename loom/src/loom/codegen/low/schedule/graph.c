@@ -146,8 +146,8 @@ static iree_status_t loom_low_schedule_resolve_descriptor(
       loom_low_descriptor_set_descriptor_view_at(state->target.descriptor_set,
                                                  packet.descriptor_ordinal);
   node->schedule_class_id = descriptor_view->schedule_class_id;
-  node->schedule_class =
-      &state->target.descriptor_set->schedule_classes[node->schedule_class_id];
+  node->schedule_class = loom_low_descriptor_set_schedule_class(
+      state->target.descriptor_set, descriptor_view);
   *out_descriptor = packet.descriptor;
   return iree_ok_status();
 }
@@ -226,8 +226,8 @@ static iree_status_t loom_low_schedule_apply_structural_model(
           state->target.descriptor_set,
           selected_model->schedule_descriptor_ordinal);
   node->schedule_class_id = descriptor_view->schedule_class_id;
-  node->schedule_class =
-      &state->target.descriptor_set->schedule_classes[node->schedule_class_id];
+  node->schedule_class = loom_low_descriptor_set_schedule_class(
+      state->target.descriptor_set, descriptor_view);
   return iree_ok_status();
 }
 
@@ -1710,6 +1710,8 @@ iree_status_t loom_low_schedule_build_dependencies(
             state->value_producer_nodes[operand_ordinal];
         if (producer_node != LOOM_LOW_SCHEDULE_NODE_NONE &&
             state->nodes[producer_node].block_index == node->block_index) {
+          state->nodes[node_index].flags |=
+              LOOM_LOW_SCHEDULE_NODE_FLAG_LOCAL_SSA_INPUT;
           const uint16_t descriptor_operand_index =
               descriptor != NULL ? descriptor_operand_indices[operand_index]
                                  : LOOM_LOW_ID_NONE;

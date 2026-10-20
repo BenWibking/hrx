@@ -28,12 +28,20 @@ resource retirement before freeing the name. A control connection acknowledges
 intent without owning the operation's lifetime.
 
 The [registration adapter](model_registration.h) is the concrete composition
-point for text, image, speech and finite-vector services. It translates deployment
-options into their native constructors, then exposes preparation, residency and
+point for text, image, speech, recognition, activity, and finite-vector services.
+It translates deployment options into their native constructors, then exposes
+preparation, residency and
 retirement callbacks to the registry. The registry consumes that callback
 contract without depending on concrete model implementations. Source loading
 and compilation use the application's shared task pool. Metadata-only drained
 registrations perform neither source I/O nor model allocation.
+
+The deployment [kind](../service/kind.h) stays typed through declaration,
+prepared service, native admission, and retirement. One table supplies canonical
+names and default endpoints. Activity registrations use the recognition owner,
+require activity output, and publish no HTTP inference endpoint. Compound sources
+can satisfy both recognition output families without a second scheduler or model
+registration. Source capability checks occur before the service is published.
 
 Each deployment selects a member of one application-owned device group. The
 group and its host outlive every registration. Weight pinning, activation and
@@ -55,6 +63,12 @@ Requests held behind closed admission retain transport claims rather than
 execution rows. Holding and live observation share a bound below connection
 capacity so they cannot occupy every control connection. Each service applies
 its own admission and output-credit policy after routing.
+
+Releasing a text checkpoint bypasses drained admission and held inference,
+using the existing bounded control slot. This lets a departing client release
+its history while inference remains closed. Pinning and suspension still obey
+admission. An unprepared model has no retained checkpoint and returns not-found
+without preparing its source or weights.
 
 Raw tokenization runs as independent finite CPU tasks. A tokenizer borrower
 keeps its deployment alive through task release, including after disconnect.

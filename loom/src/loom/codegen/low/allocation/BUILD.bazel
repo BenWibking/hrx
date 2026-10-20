@@ -27,10 +27,35 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "edge_affinity",
+    srcs = ["edge_affinity.c"],
+    hdrs = ["edge_affinity.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "edge_affinity_test",
+    srcs = ["edge_affinity_test.cc"],
+    deps = [
+        ":edge_affinity",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "placement",
     srcs = ["placement.c"],
     hdrs = ["placement.h"],
     deps = [
+        ":edge_affinity",
         ":target_constraints",
         ":unit_location",
         "//loom/src/loom/analysis:liveness",
@@ -40,6 +65,7 @@ loom_cc_library(
         "//loom/src/loom/codegen/low:storage_relation",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/low",
+        "//loom/src/loom/util:segmented_storage",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
         "//runtime/src/iree/base/internal:arena",
@@ -129,6 +155,7 @@ loom_cc_library(
         ":unit_liveness",
         "//loom/src/loom/analysis:liveness",
         "//loom/src/loom/codegen/low:descriptors",
+        "//loom/src/loom/util:segmented_storage",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
     ],
@@ -373,6 +400,7 @@ loom_cc_library(
         ":edge_alias",
         ":live_range",
         ":physical_domains",
+        ":placement",
         ":search",
         ":storage",
         ":target_constraints",

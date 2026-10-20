@@ -86,6 +86,40 @@ loom_py_test(
     deps = ["//loom/src/loom/serve/testing:http"],
 )
 
+loom_py_test(
+    name = "pressure_test",
+    size = "small",
+    srcs = ["//loom/src/loom/serve/server:pressure_test.py"],
+    args = [
+        "--server=$(rootpath :loom-serve-test-tool)",
+        "--source=$(rootpath //loom/src/loom/serve/fixture/text:prepare.loom)",
+        "--device=task",
+    ],
+    data = TEXT_SOURCES + [":loom-serve-test-tool"],
+    main = "pressure_test.py",
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//runtime/config/hal:driver_task",
+        "//runtime/config/hal:executable_loader_embedded_elf",
+    ]) + ["@platforms//cpu:x86_64"] + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//loom/src/loom/serve/testing:http"],
+)
+
+loom_cc_test(
+    name = "execution_queues_test",
+    target_compatible_with = loom_config_compatible_with([
+        "//runtime/config/hal:driver_task",
+    ]),
+    deps = [
+        ":test_device",
+        "//loom/src/loom/serve/runtime/execution:queues_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
 loom_cc_test(
     name = "finite_component_test",
     data = COMPONENT_SOURCES,
@@ -222,7 +256,7 @@ loom_cc_test(
 )
 
 loom_cc_test(
-    name = "source_recognition_service_test",
+    name = "source_recognition_stream_test",
     args = [
         "--model_source=$(rootpath //loom/src/loom/serve/fixture/recognition:prepare.loom)",
     ],
@@ -237,13 +271,13 @@ loom_cc_test(
     deps = [
         ":test_compiler",
         ":test_device",
-        "//loom/src/loom/serve/service/recognition:source_service_tests",
+        "//loom/src/loom/serve/service/recognition:source_stream_tests",
         "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
 loom_cc_test(
-    name = "source_recognition_service_parallel_test",
+    name = "source_recognition_stream_parallel_test",
     args = [
         "--test_workers=4",
         "--model_source=$(rootpath //loom/src/loom/serve/fixture/recognition:prepare.loom)",
@@ -259,7 +293,49 @@ loom_cc_test(
     deps = [
         ":test_compiler",
         ":test_device",
-        "//loom/src/loom/serve/service/recognition:source_service_tests",
+        "//loom/src/loom/serve/service/recognition:source_stream_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "registry_speech_test",
+    args = [
+        "--model=$(rootpath //loom/src/loom/serve/fixture/speech:model.json)",
+    ],
+    data = SPEECH_SOURCES,
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//loom/config/execute:task_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/server:registry_speech_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "registry_recognition_test",
+    args = [
+        "--model=$(rootpath //loom/src/loom/serve/fixture/recognition:model.json)",
+    ],
+    data = RECOGNITION_SOURCES,
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//loom/config/execute:task_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/server:registry_recognition_tests",
         "//runtime/src/iree/testing:gtest_main",
     ],
 )
@@ -396,6 +472,27 @@ loom_cc_test(
 
 loom_cc_test(
     name = "source_text_service_test",
+    data = TEXT_SOURCES,
+    env = {
+        "LOOM_SERVE_TEST_MODEL_SOURCE": "$(rootpath //loom/src/loom/serve/fixture/text:prepare.loom)",
+    },
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//loom/config/execute:task_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/service/text:source_reference_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "source_text_media_test",
     data = EMBEDDING_SOURCES + PROJECTOR_SOURCES + TEXT_SOURCES,
     env = {
         "LOOM_SERVE_TEST_MEDIA_SOURCE": "$(rootpath //loom/src/loom/serve/fixture/embedding:model.json)",
@@ -412,7 +509,28 @@ loom_cc_test(
     deps = [
         ":test_compiler",
         ":test_device",
-        "//loom/src/loom/serve/service/text:source_reference_tests",
+        "//loom/src/loom/serve/service/text:source_media_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "native_text_service_test",
+    data = TEXT_SOURCES,
+    env = {
+        "LOOM_SERVE_TEST_MODEL_SOURCE": "$(rootpath //loom/src/loom/serve/fixture/text:prepare.loom)",
+    },
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//loom/config/execute:task_hal",
+    ]) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/src/loom/serve/service/text:native_service_tests",
         "//runtime/src/iree/testing:gtest_main",
     ],
 )

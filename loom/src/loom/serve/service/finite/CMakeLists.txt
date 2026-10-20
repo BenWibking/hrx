@@ -66,6 +66,7 @@ loom_cc_library(
   DEPS
     iree::base
     iree::vm
+    loom::serve::service::kind
   PUBLIC
 )
 endif()
@@ -96,6 +97,7 @@ loom_cc_library(
     loom::serve::runtime::parameter::residency
     loom::serve::service
     loom::serve::service::execution_reconfiguration
+    loom::serve::service::kind
     loom::serve::telemetry::latency
     loom::serve::telemetry::stream
     loom::serve::transport::http::request
@@ -145,6 +147,7 @@ loom_cc_library(
     loom::serve::runtime::execution
     loom::serve::runtime::execution::dispatch
     loom::serve::runtime::host
+    loom::serve::runtime::parameter::bank
     loom::serve::runtime::parameter::residency
     loom::serve::runtime::parameter::weights
     loom::serve::runtime::program

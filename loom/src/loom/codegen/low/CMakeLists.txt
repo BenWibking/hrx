@@ -820,6 +820,7 @@ loom_cc_library(
     ::allocation
     ::diagnostics
     ::representation_binding
+    ::storage_relation
     iree::base
     iree::base::internal::arena
     loom::codegen::low::allocation::live_range
@@ -1137,6 +1138,7 @@ loom_cc_library(
     ::text_asm
     iree::base
     loom::codegen::low::schedule
+    loom::codegen::low::schedule::json
     loom::format::text::printer
     loom::ir
     loom::ops::low

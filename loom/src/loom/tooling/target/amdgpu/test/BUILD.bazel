@@ -198,6 +198,17 @@ loom_test(
 )
 
 loom_test(
+    name = "packed_f16_widening_test",
+    srcs = ["packed_f16_widening.loom"],
+    benchmark_smoke = False,
+    compile_targets = ["//loom/target/amdgpu:" + target for target in LOOM_AMDGPU_SUPPORTED_TARGETS],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMDGPU_ACCESS_PROFILE,
+    ],
+)
+
+loom_test(
     name = "packed_table_lookup_test",
     srcs = ["packed_table_lookup.loom"],
     execution_profiles = [
@@ -209,6 +220,17 @@ loom_test(
 loom_test(
     name = "packed_nibble_unpack_test",
     srcs = ["packed_nibble_unpack.loom"],
+    compile_targets = ["//loom/target/amdgpu:" + target for target in LOOM_AMDGPU_SUPPORTED_TARGETS],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMDGPU_ACCESS_PROFILE,
+    ],
+)
+
+loom_test(
+    name = "buffer_descriptor_extents_test",
+    srcs = ["buffer_descriptor_extents.loom"],
+    benchmark_smoke = False,
     compile_targets = ["//loom/target/amdgpu:" + target for target in LOOM_AMDGPU_SUPPORTED_TARGETS],
     execution_profiles = [
         AMDGPU_HARDWARE_PROFILE,
@@ -259,14 +281,14 @@ loom_test(
 
 loom_test(
     name = "asan_test",
-    srcs = ["//loom/src/loom/test/corpus/sanitizer:amdgpu_asan_actual.loom"],
+    srcs = ["//loom/src/loom/test/corpus/sanitizer:access_reporting.loom"],
     configs = {"asan_launch_bound.tile_capacity": "1"},
     execution_profiles = [AMDGPU_ASAN_PROFILE],
 )
 
 loom_test(
     name = "ubsan_test",
-    srcs = ["//loom/src/loom/test/corpus/sanitizer:amdgpu_ubsan_actual.loom"],
+    srcs = ["//loom/src/loom/test/corpus/sanitizer:assertion_reporting.loom"],
     # Authored assertions must provision feedback without insertion options.
     execution_profiles = [AMDGPU_HARDWARE_PROFILE],
 )
@@ -344,7 +366,13 @@ loom_test(
 
 loom_test(
     name = "tsan_test",
-    srcs = ["//loom/src/loom/test/corpus/sanitizer:amdgpu_tsan_actual.loom"],
+    srcs = ["//loom/src/loom/test/corpus/sanitizer:race_workgroup.loom"],
+    execution_profiles = [AMDGPU_TSAN_PROFILE],
+)
+
+loom_test(
+    name = "tsan_collective_publication_test",
+    srcs = ["//loom/src/loom/test/corpus/kernel:workgroup/publication.loom"],
     execution_profiles = [AMDGPU_TSAN_PROFILE],
 )
 
@@ -356,8 +384,15 @@ loom_test(
 )
 
 loom_test(
+    name = "tsan_subgroup_test",
+    srcs = ["//loom/src/loom/test/corpus/sanitizer:race_subgroup.loom"],
+    compile_targets = ["//loom/target/amdgpu:" + target for target in LOOM_AMDGPU_SUPPORTED_TARGETS],
+    execution_profiles = [AMDGPU_TSAN_PROFILE],
+)
+
+loom_test(
     name = "tsan_capacity_test",
-    srcs = ["//loom/src/loom/test/corpus/sanitizer:amdgpu_tsan_capacity.loom"],
+    srcs = ["//loom/src/loom/test/corpus/sanitizer:race_capacity.loom"],
     execution_profiles = [AMDGPU_TSAN_CAPACITY_PROFILE],
 )
 

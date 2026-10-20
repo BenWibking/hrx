@@ -15,8 +15,8 @@
 #include "loom/serve/service/finite/service.h"
 #include "loom/serve/service/image/model.h"
 #include "loom/serve/service/image/service.h"
-#include "loom/serve/service/recognition/http.h"
 #include "loom/serve/service/recognition/model.h"
+#include "loom/serve/service/recognition/service.h"
 #include "loom/serve/service/speech/model.h"
 #include "loom/serve/service/speech/service.h"
 #include "loom/serve/service/text/schedule.h"
@@ -48,9 +48,8 @@ static iree_status_t loom_serve_registration_activate(
 }
 
 static loom_serve_registration_parameters_t
-loom_serve_registration_prepared_parameters(loom_serve_residency_t* residency) {
-  const loom_serve_residency_snapshot_t parameters =
-      loom_serve_residency_snapshot(residency);
+loom_serve_registration_prepared_parameters(
+    loom_serve_residency_snapshot_t parameters) {
   return (loom_serve_registration_parameters_t){
       .phase = "ready",
       .prepared = true,
@@ -86,7 +85,7 @@ typedef struct loom_serve_finite_registration_t {
 
 static iree_status_t loom_serve_finite_registration_prepare(
     void* self, bool cancel, bool* out_complete,
-    loom_serve_http_service_t* out_service,
+    loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_finite_registration_t* registration = self;
   iree_status_t status = loom_serve_finite_load_advance(
@@ -158,21 +157,19 @@ loom_serve_finite_registration_parameters(
     void* self, loom_serve_model_component_t component) {
   loom_serve_finite_registration_t* registration = self;
   return loom_serve_registration_prepared_parameters(
-      loom_serve_finite_model_residency(registration->model));
+      loom_serve_finite_model_parameters(registration->model));
 }
 
 static void loom_serve_finite_registration_set_pinned(
     void* self, loom_serve_model_component_t component, bool pinned) {
   loom_serve_finite_registration_t* registration = self;
-  loom_serve_residency_set_pinned(
-      loom_serve_finite_model_residency(registration->model), pinned);
+  loom_serve_finite_model_set_pinned(registration->model, pinned);
 }
 
 static iree_status_t loom_serve_finite_registration_deactivate(
     void* self, loom_serve_model_component_t component, bool* out_complete) {
   loom_serve_finite_registration_t* registration = self;
-  return loom_serve_residency_deactivate(
-      loom_serve_finite_model_residency(registration->model), out_complete);
+  return loom_serve_finite_model_deactivate(registration->model, out_complete);
 }
 
 static iree_status_t loom_serve_finite_registration_activate(
@@ -257,7 +254,7 @@ typedef struct loom_serve_image_registration_t {
 
 static iree_status_t loom_serve_image_registration_prepare(
     void* self, bool cancel, bool* out_complete,
-    loom_serve_http_service_t* out_service,
+    loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_image_registration_t* registration = self;
   iree_status_t status = loom_serve_image_load_advance(
@@ -333,14 +330,13 @@ loom_serve_image_registration_parameters(
     void* self, loom_serve_model_component_t component) {
   loom_serve_image_registration_t* registration = self;
   return loom_serve_registration_prepared_parameters(
-      loom_serve_image_model_residency(registration->model));
+      loom_serve_image_model_parameters(registration->model));
 }
 
 static void loom_serve_image_registration_set_pinned(
     void* self, loom_serve_model_component_t component, bool pinned) {
   loom_serve_image_registration_t* registration = self;
-  loom_serve_residency_set_pinned(
-      loom_serve_image_model_residency(registration->model), pinned);
+  loom_serve_image_model_set_pinned(registration->model, pinned);
 }
 
 static iree_status_t loom_serve_image_registration_deactivate(
@@ -436,7 +432,7 @@ typedef struct loom_serve_speech_registration_t {
 
 static iree_status_t loom_serve_speech_registration_prepare(
     void* self, bool cancel, bool* out_complete,
-    loom_serve_http_service_t* out_service,
+    loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_speech_registration_t* registration = self;
   iree_status_t status = loom_serve_speech_load_advance(
@@ -508,7 +504,8 @@ loom_serve_speech_registration_parameters(
     void* self, loom_serve_model_component_t component) {
   loom_serve_speech_registration_t* registration = self;
   return loom_serve_registration_prepared_parameters(
-      loom_serve_speech_model_residency(registration->model));
+      loom_serve_residency_snapshot(
+          loom_serve_speech_model_residency(registration->model)));
 }
 
 static void loom_serve_speech_registration_set_pinned(
@@ -594,8 +591,9 @@ typedef struct loom_serve_recognition_registration_t {
   loom_serve_recognition_load_t* load;
   // Owned prepared model, retained through actual consumer retirement.
   loom_serve_recognition_model_t* model;
-  // Owned HTTP service, destroyed after CPU and external borrowers retire.
-  loom_serve_recognition_http_t* service;
+  // Owned native/HTTP service, destroyed after CPU and external borrowers
+  // retire.
+  loom_serve_recognition_service_t* service;
   // Explicit warmup, joined before service/model retirement.
   loom_serve_activation_t* activation;
   // Model consumers have been relinquished with an ownership wake installed.
@@ -604,7 +602,7 @@ typedef struct loom_serve_recognition_registration_t {
 
 static iree_status_t loom_serve_recognition_registration_prepare(
     void* self, bool cancel, bool* out_complete,
-    loom_serve_http_service_t* out_service,
+    loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_recognition_registration_t* registration = self;
   iree_status_t status = loom_serve_recognition_load_advance(
@@ -625,20 +623,22 @@ static iree_status_t loom_serve_recognition_registration_prepare(
   if (iree_status_is_ok(status)) {
     const loom_serve_model_configuration_t* configuration =
         registration->configuration;
-    const loom_serve_recognition_http_options_t service_options = {
+    const loom_serve_recognition_service_options_t service_options = {
         .name = configuration->name,
+        .kind = configuration->kind,
         .pending_capacity = configuration->pending_requests,
         .request_limit = 64 * 1024,
         .document_limit = 1024 * 1024,
         .decode_frames = 4096};
-    status = loom_serve_recognition_http_allocate(
+    status = loom_serve_recognition_service_allocate(
         loom_serve_device_host(registration->device),
         loom_serve_recognition_model_generator(registration->model),
         &service_options, registration->stream, registration->host_allocator,
         &registration->service);
   }
   if (iree_status_is_ok(status)) {
-    *out_service = loom_serve_recognition_http_interface(registration->service);
+    *out_service =
+        loom_serve_recognition_service_interface(registration->service);
   }
   return status;
 }
@@ -651,7 +651,7 @@ static iree_status_t loom_serve_recognition_registration_retire(
     IREE_RETURN_IF_ERROR(loom_serve_recognition_load_free(registration->load));
     registration->load = NULL;
   }
-  loom_serve_recognition_http_free(registration->service);
+  loom_serve_recognition_service_free(registration->service);
   registration->service = NULL;
   if (registration->model && !registration->retiring) {
     loom_serve_recognition_model_retire(registration->model,
@@ -679,7 +679,8 @@ loom_serve_recognition_registration_parameters(
     void* self, loom_serve_model_component_t component) {
   loom_serve_recognition_registration_t* registration = self;
   return loom_serve_registration_prepared_parameters(
-      loom_serve_recognition_model_residency(registration->model));
+      loom_serve_residency_snapshot(
+          loom_serve_recognition_model_residency(registration->model)));
 }
 
 static void loom_serve_recognition_registration_set_pinned(
@@ -781,7 +782,7 @@ typedef struct loom_serve_text_registration_t {
 
 static iree_status_t loom_serve_text_registration_prepare(
     void* self, bool cancel, bool* out_complete,
-    loom_serve_http_service_t* out_service,
+    loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_text_registration_t* registration = self;
   iree_status_t status = loom_serve_text_load_advance(
@@ -875,7 +876,8 @@ loom_serve_text_registration_parameters(
     return state;
   }
   return loom_serve_registration_prepared_parameters(
-      loom_serve_text_model_residency(registration->model));
+      loom_serve_residency_snapshot(
+          loom_serve_text_model_residency(registration->model)));
 }
 
 static void loom_serve_text_registration_set_pinned(
@@ -1015,28 +1017,22 @@ static iree_status_t loom_serve_model_registration_create(
     loom_serve_wake_callback_t observer, loom_serve_telemetry_stream_t* stream,
     iree_allocator_t host_allocator,
     loom_serve_registration_t* out_registration) {
-  if (configuration->kind == LOOM_SERVE_MODEL_KIND_TEXT) {
-    return loom_serve_text_registration_create(self, configuration, observer,
-                                               stream, host_allocator,
-                                               out_registration);
-  }
-  if (configuration->kind == LOOM_SERVE_MODEL_KIND_IMAGE) {
-    return loom_serve_image_registration_create(self, configuration, observer,
-                                                stream, host_allocator,
-                                                out_registration);
-  }
-  if (configuration->kind == LOOM_SERVE_MODEL_KIND_SPEECH) {
-    return loom_serve_speech_registration_create(self, configuration, observer,
-                                                 stream, host_allocator,
-                                                 out_registration);
-  }
-  if (configuration->kind == LOOM_SERVE_MODEL_KIND_RECOGNITION) {
-    return loom_serve_recognition_registration_create(
-        self, configuration, observer, stream, host_allocator,
-        out_registration);
-  }
-  return loom_serve_finite_registration_create(
-      self, configuration, observer, stream, host_allocator, out_registration);
+  static iree_status_t (*const create[])(
+      void*, const loom_serve_model_configuration_t*,
+      loom_serve_wake_callback_t, loom_serve_telemetry_stream_t*,
+      iree_allocator_t, loom_serve_registration_t*) = {
+      [LOOM_SERVE_MODEL_KIND_TEXT] = loom_serve_text_registration_create,
+      [LOOM_SERVE_MODEL_KIND_IMAGE] = loom_serve_image_registration_create,
+      [LOOM_SERVE_MODEL_KIND_EMBEDDING] = loom_serve_finite_registration_create,
+      [LOOM_SERVE_MODEL_KIND_DECISION] = loom_serve_finite_registration_create,
+      [LOOM_SERVE_MODEL_KIND_SPEECH] = loom_serve_speech_registration_create,
+      [LOOM_SERVE_MODEL_KIND_RECOGNITION] =
+          loom_serve_recognition_registration_create,
+      [LOOM_SERVE_MODEL_KIND_ACTIVITY] =
+          loom_serve_recognition_registration_create,
+  };
+  return create[configuration->kind](self, configuration, observer, stream,
+                                     host_allocator, out_registration);
 }
 
 static iree_status_t loom_serve_model_registration_query_status(void* self) {
@@ -1062,6 +1058,7 @@ loom_serve_registration_factory_t loom_serve_model_registration_factory(
                (1u << LOOM_SERVE_MODEL_KIND_IMAGE) |
                (1u << LOOM_SERVE_MODEL_KIND_SPEECH) |
                (1u << LOOM_SERVE_MODEL_KIND_RECOGNITION) |
+               (1u << LOOM_SERVE_MODEL_KIND_ACTIVITY) |
                (1u << LOOM_SERVE_MODEL_KIND_TEXT),
       .device_count = loom_serve_device_group_count(options->device_group),
       .create = loom_serve_model_registration_create,

@@ -184,17 +184,23 @@ static iree_status_t iree_test_loom_admit_module(
   iree_status_t status =
       loom_tooling_read_input_file(input_path, host_allocator, &contents);
   if (iree_status_is_ok(status)) {
-    const loom_tooling_loomc_input_options_t admission_options = {
-        .providers = configuration->input_providers,
+    loom_tooling_loomc_input_options_t admission_options = {
         .input = *input_options,
         .path = input_path,
         .source = loom_tooling_file_contents_string_view(contents),
         .import = configuration->import,
         .import_user_data = configuration->import_user_data,
     };
-    status = loom_tooling_input_admit_loomc_module(
-        &admission_options, context, workspace, block_pool, out_module, &result,
-        host_allocator);
+    const loom_input_provider_t* provider = NULL;
+    status = loom_input_provider_select(configuration->input_providers,
+                                        admission_options.input.format,
+                                        admission_options.path, &provider);
+    if (iree_status_is_ok(status)) {
+      admission_options.input.format = provider->format->name;
+      status = loom_tooling_input_admit_loomc_module(
+          &admission_options, context, workspace, block_pool, out_module,
+          &result, host_allocator);
+    }
   }
   if (iree_status_is_ok(status)) {
     status = iree_test_loom_require_loomc_result(result,
@@ -1188,6 +1194,7 @@ int iree_test_loom_main(int argc, char** argv,
     iree_host_size_t selected_scenario_count = 0;
     iree_host_size_t runnable_scenario_count = 0;
     const loom_testbench_compilation_t compilation = {
+        .context = compiler_context,
         .compiler = compiler,
         .workspace = compiler_workspace,
         .module = module,
