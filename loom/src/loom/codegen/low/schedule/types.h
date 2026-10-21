@@ -23,6 +23,7 @@
 #include "loom/analysis/liveness.h"
 #include "loom/codegen/low/descriptors.h"
 #include "loom/codegen/low/function_requirements.h"
+#include "loom/codegen/low/loop_execution.h"
 #include "loom/codegen/low/memory_access.h"
 #include "loom/codegen/low/placement.h"
 #include "loom/codegen/low/schedule/dependencies.h"
@@ -194,6 +195,8 @@ enum loom_low_schedule_flag_bits_e {
   // scheduled function. Retained private placements remain demand driven once
   // mandatory spill helpers can intervene before their consumers.
   LOOM_LOW_SCHEDULE_FLAG_HAS_MATERIALIZED_SPILL_TRAFFIC = 1u << 9,
+  // Reconciles private setup ownership after required-register exhaustion.
+  LOOM_LOW_SCHEDULE_FLAG_REPAIR_PRIVATE_SETUP = 1u << 10,
 };
 typedef uint32_t loom_low_schedule_flags_t;
 
@@ -326,8 +329,6 @@ typedef struct loom_low_schedule_node_t {
   uint32_t source_descriptor_ordinal;
   // Region block ordinal containing |op|.
   uint32_t block_index;
-  // Source-order ordinal within the whole low function body.
-  uint32_t source_ordinal;
   // Scheduled ordinal within the containing block after topological scheduling.
   uint32_t scheduled_ordinal;
   // Abstract issue cycle within the containing block after timing-aware
@@ -365,7 +366,7 @@ typedef struct loom_low_schedule_node_t {
   } value_ordinals;
 } loom_low_schedule_node_t;
 
-static_assert(sizeof(loom_low_schedule_node_t) <= 88,
+static_assert(sizeof(loom_low_schedule_node_t) <= 80,
               "schedule nodes must retain compact indexed identities");
 
 static inline loom_value_ordinal_t* loom_low_schedule_node_value_ordinals(
@@ -696,15 +697,14 @@ typedef struct loom_low_schedule_resource_summary_t {
 
 // Maximal contiguous run of scheduled nodes that issue in one block cycle.
 typedef struct loom_low_schedule_issue_group_t {
-  // Region block containing every node in the group.
-  uint32_t block_index;
   // Abstract issue cycle shared by every node in the group.
   uint32_t issue_cycle;
   // First entry in the table scheduled-node-index array.
   uint32_t scheduled_node_start;
-  // Number of scheduled-node-index entries in the group.
-  uint32_t scheduled_node_count;
 } loom_low_schedule_issue_group_t;
+
+static_assert(sizeof(loom_low_schedule_issue_group_t) == 8,
+              "issue groups must retain compact indexed ranges");
 
 // Schedule metadata for one low function block.
 typedef struct loom_low_schedule_block_t {
@@ -756,6 +756,8 @@ typedef struct loom_low_schedule_options_t {
   // Optional source-derived memory summaries for the modeled function. Empty
   // uses conservative descriptor effect summaries.
   const loom_low_memory_access_map_t* memory_accesses;
+  // Optional producer-proven execution counts to index by final block order.
+  const loom_low_loop_execution_map_t* loop_execution;
   // Physical spill traffic incorporated into callable boundaries. The plan
   // adds boundary memory effects without mutating semantic operation traits.
   const struct loom_low_storage_transport_t* storage_transport;
@@ -849,7 +851,10 @@ typedef struct loom_low_schedule_table_t {
   loom_cfg_loop_forest_t loop_forest;
   // Semantic natural loops shared by target planning overlays.
   loom_cfg_loop_nest_t loop_nest;
-  // Per-op schedule nodes in source order.
+  // Producer-proven execution counts indexed by final source block order.
+  loom_low_loop_execution_index_t loop_execution;
+  // Per-op schedule nodes in source order. Each node's array index is its
+  // source-order ordinal within the whole low function body.
   const loom_low_schedule_node_t* nodes;
   // Number of schedule nodes.
   iree_host_size_t node_count;

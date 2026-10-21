@@ -97,7 +97,7 @@ loom_cc_library(
 endif()
 
 if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM)
-loom_cc_binary(
+loomc_cc_binary(
   NAME
     loom-serve-test-tool
   DEPS
@@ -993,7 +993,7 @@ loom_cc_test(
     loom::serve::testing::native_allocator
   ARGS
     "--weight_sources={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/runtime/parameter/testdata/weights/stages.loom}}"
-    "--gtest_filter=Streaming/*"
+    "--gtest_filter=Streaming/*:Backing/WeightPackingTest.InvocationWorkingSet*"
     "--executable_sources={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/service/testdata/executables/prepare.loom}}"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"

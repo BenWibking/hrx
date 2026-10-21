@@ -30,13 +30,19 @@ its output requires the importer.
 
 ```sh
 loom-export-cxx specialized.loombc --output=specialized.cxx
+loom-export-cxx mixed.loombc --root=@attention --output=attention.cxx
 loom-import-cxx specialized.cxx --to=bc --output=edited.loombc
 ```
 
-The first projection accepts one structured kernel and reconstructs ordinary
-C++ expressions, mutable loop-carried state, views, launch contracts, target
-records, and Loom scheduling attributes. For example, an SSA chain containing
-hardware IDs, integer casts, and a dynamic subview renders as:
+Without `--root`, every top-level definition must have a C++ projection so the
+tool cannot silently omit program semantics. Repeated `--root=@kernel` options
+select kernels from a mixed module and retain only their referenced target
+definitions. Selected kernels remain in module order.
+
+The projection reconstructs ordinary C++ expressions, mutable loop-carried
+state, views, launch contracts, target records, and Loom scheduling attributes.
+For example, an SSA chain containing hardware IDs, integer casts, and a dynamic
+subview renders as:
 
 ```cpp
 constexpr loom::amdgpu::target rendered_target{.kind = "gfx942"};
@@ -527,10 +533,11 @@ same module.
 `emit cxx` instead compares the readable C++ projection of the admitted module.
 It uses the public `loom-export-cxx` tool, so the golden covers the same bytecode
 boundary and renderer as the command-line workflow. Declare the tool requirement
-in files using the mode:
+in files using the mode. `emit cxx @kernel` selects one kernel from a mixed
+module:
 
 ```cpp
-// RUN: emit cxx
+// RUN: emit cxx @copy_one
 // REQUIRES: loom-export-cxx
 #include <loomcxx/kernel.h>
 
@@ -883,7 +890,7 @@ The declaration imports as `config.decl @tuning.factor : i32`, and each read
 becomes `config.get @tuning.factor : i32`. Unresolved reads survive ordinary
 cleanup and bytecode serialization. Import once, then specialize fresh copies
 of that module with different settings through the existing Loom config API
-or command-line inputs. `iree-test-loom` and `iree-benchmark-loom` both apply
+or command-line inputs. `loom-test` and `loom-benchmark` both apply
 `--config=tuning.factor=5` when compiling called functions as well as kernels.
 
 Config values work in ordinary arithmetic, branches, loop bounds and scheduling
@@ -1701,10 +1708,10 @@ directly when the C++ importer and VM target are enabled:
 
 ```sh
 iree-bazel-run --config=loom-importer-cxx --//loom/config/target:enable=vm \
-  //loom/src/loom/tools/iree-test-loom -- checks.cxx
+  //loom/src/loom/tools/loom-test -- checks.cxx
 
 iree-bazel-run --config=loom-importer-cxx --//loom/config/target:enable=vm \
-  //loom/src/loom/tools/iree-benchmark-loom -- checks.cxx \
+  //loom/src/loom/tools/loom-benchmark -- checks.cxx \
   --iterations=10 --warmup-iterations=1 --output-format=jsonl
 ```
 
@@ -1781,7 +1788,7 @@ LOOM_CHECK_BENCHMARK(update_benchmark, update_values);
 ```
 
 For an AMDGPU-enabled build, run this file with
-`iree-test-loom native_checks.cxx --device=amdgpu`. The benchmark tool accepts
+`loom-test native_checks.cxx --device=amdgpu`. The benchmark tool accepts
 that same file and device selection. Build-integrated native tests select
 `AMDGPU_HARDWARE_PROFILE` or `AMDGPU_ACCESS_PROFILE` from
 `//loom/target/amdgpu:execution_profiles.bzl`.
@@ -1876,7 +1883,7 @@ Repository-authored C++ programs use `.cxx`; compiler expectation fixtures use
 `.cxx-test`. Kernels, helpers, check cases and benchmarks can share one `.cxx`
 translation unit.
 
-`loom-link`, `iree-test-loom`, `iree-benchmark-loom`, and `iree-run-loom` share
+`loom-link`, `loom-test`, `loom-benchmark`, and `loom-run` share
 the optional input provider used by `loom-check`. Enabled binaries recognize
 `.c`, `.cc`, `.cpp`, and `.cxx`; explicit `--input-format=cxx` handles another
 filename or stdin. `--input-options='cxx:std=c++23 D=COUNT=8 I=include'` applies
@@ -1889,7 +1896,7 @@ Source inputs can also be linked once and executed as bytecode:
 ```sh
 loom-link checks.cxx --mode=link --include-input-tests \
   --to=bc --output=checks.loombc
-iree-test-loom checks.loombc
+loom-test checks.loombc
 ```
 
 Source diagnostics retain the admitted main file and headers through linking
@@ -1899,9 +1906,9 @@ including assertions authored in headers. Bytecode retains those locations.
 `--source-prefix-map=old=new` changes displayed filenames without changing
 include resolution.
 
-The input provider changes admission, not execution semantics. `iree-run-loom`
+The input provider changes admission, not execution semantics. `loom-run`
 accepts C++ kernel programs for its HAL workflow; scalar check cases use
-`iree-test-loom`. Building without the C++ importer removes C++ input support
+`loom-test`. Building without the C++ importer removes C++ input support
 from these tools. Other importers can participate through the same optional
 provider contract.
 

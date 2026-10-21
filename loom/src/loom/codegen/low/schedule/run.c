@@ -109,11 +109,6 @@ static iree_status_t loom_low_schedule_initialize_value_records(
                             LOOM_LOW_SCHEDULE_DEPENDENCY_ATTACHMENT_NONE,
                     },
             },
-        .unspillable_completion =
-            {
-                .activation_units = UINT32_MAX,
-                .sink = LOOM_LOW_SCHEDULE_NODE_NONE,
-            },
         .register_class_id = LOOM_LOW_REG_CLASS_NONE,
     };
     const loom_type_t type = loom_module_value_type(state->module, value_id);
@@ -627,6 +622,18 @@ static iree_status_t loom_low_schedule_initialize_pressure_limits(
   }
   state->pressure_limits.unspillable_completion_domain_count =
       (uint16_t)completion_domain_count;
+  const iree_host_size_t value_count = state->value_domain->value_count;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(state->scratch_arena, value_count,
+                                sizeof(*state->value_unspillable_completions),
+                                (void**)&state->value_unspillable_completions));
+  for (loom_value_ordinal_t ordinal = 0; ordinal < value_count; ++ordinal) {
+    state->value_unspillable_completions[ordinal] =
+        (loom_low_schedule_unspillable_completion_path_t){
+            .activation_units = UINT32_MAX,
+            .sink = LOOM_LOW_SCHEDULE_NODE_NONE,
+        };
+  }
   return iree_ok_status();
 }
 
@@ -932,8 +939,7 @@ static void loom_low_schedule_insert_ready_node(
     keys = loom_low_schedule_pressure_ready_keys(state, pressure_state,
                                                  node_index);
   } else {
-    keys.values[LOOM_LOW_SCHEDULE_READY_VIEW_SOURCE] =
-        state->nodes[node_index].source_ordinal;
+    keys.values[LOOM_LOW_SCHEDULE_READY_VIEW_SOURCE] = node_index;
   }
   loom_low_schedule_ready_policy_insert(state, ready_policy, node_index, &keys);
 }
@@ -1073,9 +1079,9 @@ loom_low_schedule_find_dependency_witness(
   return NULL;
 }
 
-// Finds the explicit architectural-state value responsible for a
-// read-before-clobber dependency. Other state dependency forms have no SSA
-// value that can be rematerialized.
+// Finds the explicit architectural-state value retained on a read-before-
+// clobber dependency. Other state dependency forms have no SSA value that can
+// be rematerialized.
 static loom_value_id_t loom_low_schedule_state_value_for_dependency(
     const loom_low_schedule_build_state_t* state,
     const loom_low_schedule_dependency_t* dependency) {
@@ -1091,23 +1097,7 @@ static loom_value_id_t loom_low_schedule_state_value_for_dependency(
     return state->value_domain
         ->value_ids[operand_ordinals[dependency->value_operand_index]];
   }
-  loom_value_id_t state_value_id = LOOM_VALUE_ID_INVALID;
-  for (uint16_t i = 0; i < reader->operand_count; ++i) {
-    const loom_low_schedule_value_record_t* value =
-        &state->values[operand_ordinals[i]];
-    if (value->register_class_id == LOOM_LOW_REG_CLASS_NONE ||
-        state->reg_class_state_flags[value->register_class_id] == 0 ||
-        value->state_next_write.node_index != dependency->consumer_node) {
-      continue;
-    }
-    const loom_value_id_t value_id =
-        state->value_domain->value_ids[operand_ordinals[i]];
-    if (state_value_id != LOOM_VALUE_ID_INVALID && state_value_id != value_id) {
-      return LOOM_VALUE_ID_INVALID;
-    }
-    state_value_id = value_id;
-  }
-  return state_value_id;
+  return LOOM_VALUE_ID_INVALID;
 }
 
 static void loom_low_schedule_record_cycle_state_value(
@@ -1380,6 +1370,15 @@ static iree_status_t loom_low_schedule_run_list_scheduler(
     return iree_make_status(
         IREE_STATUS_RESOURCE_EXHAUSTED,
         "low schedule dependency count exceeds uint32_t adjacency capacity");
+  }
+  if (loom_low_schedule_strategy_uses_pressure(state->options->strategy)) {
+    for (loom_value_ordinal_t ordinal = 0;
+         ordinal < state->value_domain->value_count; ++ordinal) {
+      loom_low_schedule_value_record_t* value = &state->values[ordinal];
+      value->live_unit_count = 0;
+      value->candidate_transferred_units = 0;
+      value->remaining_use_count = 0;
+    }
   }
   IREE_ASSERT_LE(node_count, UINT32_MAX);
   if (node_count > 0) {
@@ -1911,7 +1910,7 @@ static iree_status_t loom_low_schedule_build(
     status = loom_low_schedule_build_scope_dependencies(&state);
   }
   if (iree_status_is_ok(status) && state.error_count == 0) {
-    status = loom_low_schedule_setup_order_finish(&state);
+    status = loom_low_schedule_setup_order_finish(&state, (uint32_t)node_count);
   }
   if (iree_status_is_ok(status) && state.error_count == 0) {
     status = loom_low_schedule_run_list_scheduler(&state, node_count);
@@ -1952,6 +1951,12 @@ static iree_status_t loom_low_schedule_build(
     }
   }
 
+  loom_low_loop_execution_index_t loop_execution = {0};
+  if (iree_status_is_ok(status) && state.error_count == 0) {
+    status = loom_low_loop_execution_index_build(
+        options->loop_execution, state.body, arena, &loop_execution);
+  }
+
   if (iree_status_is_ok(status)) {
     *out_table = (loom_low_schedule_table_t){
         .module = model->context.module,
@@ -1979,6 +1984,7 @@ static iree_status_t loom_low_schedule_build(
         .cfg_graph = model->cfg_graph,
         .loop_forest = model->loop_forest,
         .loop_nest = model->loop_nest,
+        .loop_execution = loop_execution,
         .nodes = state.nodes,
         .node_count = node_count,
         .scopes = state.scopes,

@@ -478,6 +478,7 @@ loom_cc_library(
     lower
   HDRS
     "lower/f32_representation.h"
+    "lower/fifo_state.h"
     "lower/gather.h"
     "lower/interleave.h"
     "lower/lower.h"
@@ -491,6 +492,7 @@ loom_cc_library(
     "${IREE_BINARY_DIR}/loom/src/loom/target/arch/amd/xdna/aie2p/contracts/core_index.inl"
   SRCS
     "lower/f32_representation.c"
+    "lower/fifo_state.c"
     "lower/gather.c"
     "lower/interleave.c"
     "lower/matrix.c"
@@ -518,6 +520,7 @@ loom_cc_library(
     loom::ops::vector
     loom::target::arch::amd::xdna::aie2p::contracts::core
     loom::target::arch::amd::xdna::aie2p::contracts::core_lower_rules
+    loom::target::arch::amd::xdna::aie2p::ops
     loom::target::arch::amd::xdna::error_defs
     loom::target::contract
     loom::target::registers
@@ -743,6 +746,8 @@ loom_cc_library(
     ::array_resident
     ::artifact
     ::core_descriptors
+    ::descriptor_encoding
+    ::encoding
     ::leaf_compile
     ::machine
     ::provider
@@ -1013,6 +1018,7 @@ loom_check_test_suite(
     "test/descriptors/scalar_stream.loom-test"
     "test/descriptors/vector_push.loom-test"
     "test/expansion_report.loom-test"
+    "test/hardware_loops.loom-test"
     "test/kernel_realization.loom-test"
     "test/leaf_alignment.loom-test"
     "test/leaf_allocation.loom-test"
@@ -1057,6 +1063,7 @@ loom_check_test_suite(
     "test/source_low/integer_float_conversion.loom-test"
     "test/source_low/integer_narrowing.loom-test"
     "test/source_low/licm_index_arithmetic.loom-test"
+    "test/source_low/load_fifo_state.loom-test"
     "test/source_low/lookup_table.loom-test"
     "test/source_low/lookup_table_vector.loom-test"
     "test/source_low/loop_counter_offset.loom-test"
@@ -1212,26 +1219,135 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA)
 loom_cc_library(
   NAME
+    leaf_plan_metadata
+  HDRS
+    "emit/leaf_plan_metadata.h"
+  SRCS
+    "emit/leaf_plan_metadata.c"
+  DEPS
+    ::leaf_program
+    iree::base
+    iree::base::internal::arena
+    loom::codegen::low::diagnostics
+    loom::codegen::low::frame
+    loom::codegen::low::function_requirements
+    loom::codegen::low::packet
+    loom::codegen::low::storage_layout
+    loom::ir
+    loom::ops::low
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
+    bundle_analysis
+  HDRS
+    "emit/bundle_analysis.h"
+  SRCS
+    "emit/bundle_analysis.c"
+  DEPS
+    ::core_descriptors
+    ::core_structure
+    ::descriptor_encoding
+    ::encoding
+    iree::base
+    iree::base::internal
+    iree::base::internal::arena
+    loom::codegen::low::frame
+    loom::codegen::low::loop_execution
+    loom::codegen::low::packet
+    loom::ir
+    loom::ops::low
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
+    bundle_alignment
+  HDRS
+    "emit/bundle_alignment.h"
+  SRCS
+    "emit/bundle_alignment.c"
+  DEPS
+    ::bundle_encoding
+    ::core_descriptors
+    ::descriptor_encoding
+    ::encoding
+    ::leaf_program
+    iree::base
+    iree::base::internal
+    iree::base::internal::arena
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
+    bundle_encoding
+  HDRS
+    "emit/bundle_encoding.h"
+  SRCS
+    "emit/bundle_encoding.c"
+  DEPS
+    ::core_descriptors
+    ::descriptor_encoding
+    iree::base
+    iree::base::internal
+    loom::codegen::low::frame
+    loom::codegen::low::function_requirements
+    loom::codegen::low::packet
+    loom::codegen::low::storage_layout
+    loom::ops::low
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
+    bundle_fixup
+  HDRS
+    "emit/bundle_fixup.h"
+  SRCS
+    "emit/bundle_fixup.c"
+  DEPS
+    ::leaf_program
+    iree::base
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
     bundle_plan
   HDRS
     "emit/bundle_plan.h"
   SRCS
     "emit/bundle_plan.c"
   DEPS
+    ::bundle_alignment
+    ::bundle_analysis
+    ::bundle_encoding
+    ::bundle_fixup
     ::core_descriptors
     ::core_structure
     ::descriptor_encoding
     ::encoding
+    ::leaf_plan_metadata
     ::leaf_program
     ::machine
     iree::base
     iree::base::internal
     iree::base::internal::arena
-    loom::codegen::low::diagnostics
     loom::codegen::low::frame
     loom::codegen::low::packet
     loom::codegen::low::schedule::physical_issue
-    loom::codegen::low::storage_layout
     loom::ir
     loom::ops::low
   PUBLIC

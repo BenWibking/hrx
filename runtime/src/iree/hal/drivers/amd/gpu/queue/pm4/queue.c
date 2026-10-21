@@ -1309,6 +1309,18 @@ static void iree_hal_amd_gpu_pm4_pending_end(
   iree_slim_mutex_unlock(&queue->pending.completion_mutex);
 }
 
+// File I/O and host calls may finish on an external progress owner. Keep their
+// callback tails in the same idle proof as semaphore-ready publication.
+static void iree_hal_amd_gpu_pm4_host_begin(iree_hal_queue_t* base) {
+  iree_hal_amd_gpu_pm4_queue_t* queue = (void*)base;
+  iree_atomic_fetch_add(&queue->pending.host_owners, 1,
+                        iree_memory_order_relaxed);
+}
+
+static void iree_hal_amd_gpu_pm4_host_end(iree_hal_queue_t* base) {
+  iree_hal_amd_gpu_pm4_pending_end((iree_hal_amd_gpu_pm4_queue_t*)base);
+}
+
 // Wait completion reenters the publication owner only after registration and
 // every cancellation borrower have relinquished the captured sidecar.
 static void iree_hal_amd_gpu_pm4_enqueue(
@@ -2392,14 +2404,18 @@ amdf_queue_publication_modes_t iree_hal_amd_gpu_pm4_queue_publication_modes(
   return modes;
 }
 
+bool iree_hal_amd_gpu_pm4_queue_host_is_supported(void) {
+  return iree_cpu_architecture_host() == IREE_CPU_ARCHITECTURE_X86_64 &&
+         iree_atomic_int32_is_lock_free() && iree_atomic_int64_is_lock_free();
+}
+
 iree_status_t iree_hal_amd_gpu_pm4_queue_create(
     const iree_hal_queue_family_t* family, iree_hal_amd_gpu_context_t* context,
     const iree_hal_amd_gpu_pm4_queue_options_t* options,
     const iree_hal_queue_params_t* params, iree_allocator_t host_allocator,
     iree_hal_queue_t** out_queue) {
   *out_queue = NULL;
-  if (iree_cpu_architecture_host() != IREE_CPU_ARCHITECTURE_X86_64 ||
-      !iree_atomic_int32_is_lock_free() || !iree_atomic_int64_is_lock_free()) {
+  if (!iree_hal_amd_gpu_pm4_queue_host_is_supported()) {
     return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
                             "PM4 publication requires the qualified "
                             "x86-64 host store-fence and atomic contract");
@@ -2471,11 +2487,15 @@ iree_status_t iree_hal_amd_gpu_pm4_queue_create(
       .queue = &queue->base,
       .context = context,
       .captures = &queue->captures,
+      .begin = iree_hal_amd_gpu_pm4_host_begin,
+      .end = iree_hal_amd_gpu_pm4_host_end,
       .barrier = iree_hal_amd_gpu_pm4_host_barrier};
   queue->file_executor = (iree_hal_amd_gpu_file_executor_t){
       .queue = &queue->base,
       .context = context,
       .captures = &queue->captures,
+      .begin = iree_hal_amd_gpu_pm4_host_begin,
+      .end = iree_hal_amd_gpu_pm4_host_end,
       .staging = options->file_staging,
       .waits = &queue->wait_context,
       .queue_ordinal = options->queue_ordinal,

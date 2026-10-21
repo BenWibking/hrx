@@ -431,6 +431,7 @@ static iree_status_t loom_low_emission_frame_build_impl(
       .storage_transport = storage_transport,
       .retained_blocks = retained_blocks,
       .memory_accesses = options->memory_accesses,
+      .loop_execution = options->loop_execution,
       .residency = out_frame->residency,
       .allocation_budgets = options->allocation_budgets,
       .allocation_budget_count = options->allocation_budget_count,
@@ -794,7 +795,7 @@ static iree_status_t loom_low_emission_frame_try_loop_placement(
     loom_low_emission_frame_t* frame) {
   loom_low_loop_placement_plan_t plan = {0};
   IREE_RETURN_IF_ERROR(loom_low_loop_placement_plan(
-      &frame->schedule, &frame->allocation, frame_options->loop_execution,
+      &frame->schedule, &frame->allocation,
       spill_free_options->loop_placement_cost_query,
       spill_free_options->loop_placement_cost_query_user_data, repair_arena,
       &plan));
@@ -1061,6 +1062,22 @@ static iree_status_t loom_low_emission_frame_build_spill_free_impl(
       return iree_ok_status();
     }
     if (frame.allocation.error_count != 0) {
+      const loom_value_id_t failed_value = frame.allocation.failure.value_id;
+      // A private producer can remain live across unrelated work when its
+      // value consumer shares a later state or scope successor. Reconcile
+      // those setup dependencies before cloning the failure frontier. This
+      // transition is attempted once per materialized storage generation.
+      if (!iree_any_bit_set(repair_options.schedule_flags,
+                            LOOM_LOW_SCHEDULE_FLAG_REPAIR_PRIVATE_SETUP) &&
+          failed_value < rematerialization.per_user_values.bit_count &&
+          iree_bitmap_test(rematerialization.per_user_values, failed_value)) {
+        repair_options.schedule_flags |=
+            LOOM_LOW_SCHEDULE_FLAG_REPAIR_PRIVATE_SETUP |
+            LOOM_LOW_SCHEDULE_FLAG_ORDER_STRUCTURAL_SETUP;
+        loom_low_emission_frame_advance_repair_iteration(statistics);
+        restore_frame_before_build = true;
+        continue;
+      }
       if (value_repair_iteration_count < value_repair_iteration_limit) {
         loom_low_rematerialization_batch_result_t result = {0};
         IREE_RETURN_IF_ERROR(loom_low_allocation_rematerialize_failure(
@@ -1226,7 +1243,8 @@ static iree_status_t loom_low_emission_frame_build_spill_free_impl(
             &materialization_summary.spill_records, repair_arena));
     last_rematerialized_spill_plan_count = IREE_HOST_SIZE_MAX;
     repair_options.schedule_flags &=
-        ~LOOM_LOW_SCHEDULE_FLAG_ORDER_STRUCTURAL_SETUP;
+        ~(LOOM_LOW_SCHEDULE_FLAG_ORDER_STRUCTURAL_SETUP |
+          LOOM_LOW_SCHEDULE_FLAG_REPAIR_PRIVATE_SETUP);
     value_repair_iteration_count = 0;
     value_repair_iteration_limit = 0;
 

@@ -1000,8 +1000,20 @@ void loom_serve_finite_model_set_observer(loom_serve_finite_model_t* model,
 
 iree_status_t loom_serve_finite_model_advance_batch(
     loom_serve_finite_model_t* model, bool cancel, bool* out_complete) {
-  return loom_serve_executables_advance(model->executables, cancel,
-                                        out_complete);
+  IREE_RETURN_IF_ERROR(
+      loom_serve_executables_advance(model->executables, cancel, out_complete));
+  if (!cancel && *out_complete) {
+    const iree_device_size_t extents[] = {
+        iree_vm_buffer_length(model->invocation.payload),
+        loom_serve_finite_result_output_length(model->invocation.result),
+        loom_serve_module_workspace_requirement(model->control.runner)
+            .allocation_size,
+    };
+    return loom_serve_residency_check_working_set(
+        loom_serve_executables_residency(model->executables),
+        IREE_ARRAYSIZE(extents), extents);
+  }
+  return iree_ok_status();
 }
 
 iree_status_t loom_serve_finite_model_submit(
@@ -1024,15 +1036,14 @@ iree_status_t loom_serve_finite_model_submit(
   IREE_RETURN_IF_ERROR(loom_serve_execution_reserve_workspace(
       execution, iree_max(input.data_length, output_length),
       LOOM_SERVE_FINITE_BUFFER_ALIGNMENT));
-  iree_status_t status = iree_ok_status();
-  for (iree_host_size_t i = 0; i < 2 && iree_status_is_ok(status); ++i) {
-    const iree_hal_pool_reservation_request_t request = {
-        .allocation_size = i ? output_length : input.data_length,
-        .min_alignment = LOOM_SERVE_FINITE_BUFFER_ALIGNMENT,
-    };
-    status =
-        loom_serve_execution_alloca(execution, &request, &model->buffers[i]);
-  }
+  const iree_hal_pool_reservation_request_t requests[] = {
+      iree_hal_make_pool_reservation_request(
+          input.data_length, LOOM_SERVE_FINITE_BUFFER_ALIGNMENT),
+      iree_hal_make_pool_reservation_request(
+          output_length, LOOM_SERVE_FINITE_BUFFER_ALIGNMENT),
+  };
+  iree_status_t status = loom_serve_execution_alloca(
+      execution, IREE_ARRAYSIZE(requests), requests, model->buffers);
   uint64_t value = 0;
   if (iree_status_is_ok(status)) {
     const iree_hal_transfer_operation_t upload = {
@@ -1060,8 +1071,9 @@ iree_status_t loom_serve_finite_model_submit(
         loom_serve_execution_dealloca(execution, model->buffers[0], &value);
   }
   if (iree_status_is_ok(status)) {
-    loom_serve_finite_result_bind(model->invocation.result, execution,
-                                  model->buffers[1]);
+    loom_serve_finite_result_bind(
+        model->invocation.result, execution,
+        iree_hal_buffer_allocated_buffer(model->buffers[1]));
     *out_result = model->invocation.result;
     model->invocation.result = NULL;
     *out_frontier = loom_serve_finite_result_ready(*out_result);
