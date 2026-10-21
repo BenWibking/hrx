@@ -20,7 +20,7 @@
 // explicit scalar or storage workload arguments and immutable target
 // properties. Configuration bodies may read workload storage but cannot write
 // it or use loaded data to select workgroup or cluster sizes.
-// Counted unsigned for loops accept loom::unroll(factor),
+// Counted int and unsigned int for loops accept loom::unroll(factor),
 // loom::pipeline(depth), and
 // loom::schedule("linear"|"interleaved"|"recurrence"). Factors and depths are
 // pure integer expressions read after the for initializer. They become SSA
@@ -508,17 +508,17 @@ namespace workgroup {
 namespace subgroup {
 
 // Reads this subgroup's zero-based coordinate within the workgroup.
-[[loom::op("kernel.subgroup.id")]] unsigned id();
+[[loom::op("kernel.subgroup.id")]] coordinate id();
 
 // Counts subgroups in the workgroup, including a partially occupied subgroup.
-[[loom::op("kernel.subgroup.count")]] unsigned count();
+[[loom::op("kernel.subgroup.count")]] coordinate count();
 
 // Reads this invocation's physical lane, without compacting inactive lanes.
-[[loom::op("kernel.subgroup.lane.id")]] unsigned lane_id();
+[[loom::op("kernel.subgroup.lane.id")]] coordinate lane_id();
 
 // Reads the target-selected execution width, including inactive lanes. It may
 // exceed the workgroup size; no fixed wave size is implied.
-[[loom::op("kernel.subgroup.size")]] unsigned size();
+[[loom::op("kernel.subgroup.size")]] coordinate size();
 
 // Votes over the active invocations at this convergent call. These operations
 // do not synchronize memory or rendezvous with other subgroups.
@@ -547,8 +547,37 @@ template <class T>
 template <class T>
 [[loom::op("kernel.subgroup.broadcast.first")]] T broadcast_first(T value);
 
-// Exchanges values across lanes selected by XOR within the given width.
-[[loom::shuffle_xor]] float shuffle_xor(float value, int mask, int width);
+// Result of an exchange within a logical subgroup. The payload is usable only
+// when the selected source lane participates in the exchange.
+template <class T>
+struct shuffle_result {
+  // Value read from the selected source lane when valid is true.
+  T value;
+  // Whether the source lies within the logical width and participates.
+  bool valid;
+};
+
+// Exchanges a scalar or explicit rank-one vector with lane id XOR mask within
+// the logical width. Physical subgroup size and participation remain separate.
+template <class T>
+[[loom::op("kernel.subgroup.shuffle", "xor")]]
+shuffle_result<T> shuffle_xor(T value, unsigned mask, unsigned width);
+
+// Reads a lower-numbered lane in the logical subgroup, or returns valid=false
+// when the offset crosses its boundary or the source does not participate.
+template <class T>
+[[loom::op("kernel.subgroup.shuffle", "up")]]
+shuffle_result<T> shuffle_up(T value, unsigned offset, unsigned width);
+
+// Reads a higher-numbered lane with the same range and participation contract.
+template <class T>
+[[loom::op("kernel.subgroup.shuffle", "down")]]
+shuffle_result<T> shuffle_down(T value, unsigned offset, unsigned width);
+
+// Reads the named lane relative to this invocation's logical subgroup.
+template <class T>
+[[loom::op("kernel.subgroup.shuffle", "index")]]
+shuffle_result<T> shuffle_index(T value, unsigned lane, unsigned width);
 
 }  // namespace subgroup
 

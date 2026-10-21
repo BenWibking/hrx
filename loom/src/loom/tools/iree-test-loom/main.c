@@ -337,6 +337,76 @@ static bool iree_test_loom_scenario_matches_selection(
          iree_string_view_equal(scenario_plan->name, selected_case_name);
 }
 
+static iree_status_t iree_test_loom_add_runtime_requirements(
+    loom_run_hal_testbench_context_t* context, const loomc_module_t* module,
+    const loomc_sanitizer_options_t* sanitizer_options,
+    const loom_testbench_module_plan_t* plan, iree_string_view_t selected_name,
+    iree_arena_block_pool_t* block_pool) {
+  iree_host_size_t capacity = 0;
+  for (iree_host_size_t i = 0; i < plan->case_count; ++i) {
+    if (plan->cases[i].issue_count == 0 &&
+        iree_test_loom_case_matches_selection(&plan->cases[i], selected_name)) {
+      capacity += plan->cases[i].invocation_count;
+    }
+  }
+  for (iree_host_size_t i = 0; i < plan->scenario_count; ++i) {
+    if (plan->scenarios[i].issue_count == 0 &&
+        iree_test_loom_scenario_matches_selection(&plan->scenarios[i],
+                                                  selected_name)) {
+      capacity += plan->scenarios[i].trial_count;
+    }
+  }
+  iree_arena_allocator_t arena;
+  iree_arena_initialize(block_pool, &arena);
+  loomc_string_view_t* roots = NULL;
+  iree_status_t status = iree_arena_allocate_array(
+      &arena, capacity, sizeof(*roots), (void**)&roots);
+  iree_host_size_t count = 0;
+  for (iree_host_size_t i = 0;
+       iree_status_is_ok(status) && i < plan->case_count; ++i) {
+    const loom_testbench_case_plan_t* case_plan = &plan->cases[i];
+    if (case_plan->issue_count != 0 ||
+        !iree_test_loom_case_matches_selection(case_plan, selected_name)) {
+      continue;
+    }
+    for (iree_host_size_t j = 0; j < case_plan->invocation_count; ++j) {
+      const loom_testbench_invocation_plan_t* invocation =
+          &case_plan->invocations[j];
+      if (invocation->kind != LOOM_TESTBENCH_INVOCATION_KERNEL_LAUNCH &&
+          invocation->kind != LOOM_TESTBENCH_INVOCATION_PIPELINE &&
+          invocation->kind != LOOM_TESTBENCH_INVOCATION_COMMAND_PROGRAM) {
+        continue;
+      }
+      const loom_symbol_t* symbol =
+          &plan->module->symbols.entries[invocation->callee_ref.symbol_id];
+      roots[count++] = loomc_string_view_from_iree(
+          loom_string_table_get(&plan->module->strings, symbol->name_id));
+    }
+  }
+  for (iree_host_size_t i = 0;
+       iree_status_is_ok(status) && i < plan->scenario_count; ++i) {
+    const loom_testbench_scenario_plan_t* scenario = &plan->scenarios[i];
+    if (scenario->issue_count != 0 ||
+        !iree_test_loom_scenario_matches_selection(scenario, selected_name)) {
+      continue;
+    }
+    for (iree_host_size_t j = 0; j < scenario->trial_count; ++j) {
+      const loom_testbench_invocation_plan_t* invocation =
+          &scenario->trials[j].action.target;
+      const loom_symbol_t* symbol =
+          &plan->module->symbols.entries[invocation->callee_ref.symbol_id];
+      roots[count++] = loomc_string_view_from_iree(
+          loom_string_table_get(&plan->module->strings, symbol->name_id));
+    }
+  }
+  if (iree_status_is_ok(status) && count != 0) {
+    status = loom_run_hal_testbench_context_add_module_runtime_requirements(
+        context, module, sanitizer_options, roots, count);
+  }
+  iree_arena_deinitialize(&arena);
+  return status;
+}
+
 static iree_status_t iree_test_loom_validate_sample_flag(
     iree_host_size_t sample_count, iree_host_size_t* out_sample_ordinal,
     bool* out_has_sample) {
@@ -364,7 +434,7 @@ static bool iree_test_loom_case_has_kernel_launch(
 static iree_status_t iree_test_loom_evaluate_requirements(
     const iree_test_loom_configuration_t* configuration,
     loom_run_hal_testbench_context_t* hal_context, const loom_module_t* module,
-    const loom_region_t* body,
+    const loom_region_t* body, iree_arena_allocator_t* arena,
     loom_testbench_requirement_result_t* out_result) {
   loom_testbench_requirement_provider_t
       requirement_providers[IREE_TEST_LOOM_MAX_REQUIREMENT_PROVIDERS] = {0};
@@ -384,7 +454,7 @@ static iree_status_t iree_test_loom_evaluate_requirements(
   loom_testbench_requirement_provider_registry_initialize(
       requirement_providers, requirement_provider_count, &requirement_registry);
   return loom_testbench_evaluate_requirements(
-      module, body, &requirement_registry, out_result);
+      module, body, &requirement_registry, arena, out_result);
 }
 
 static iree_status_t iree_test_loom_append_skipped_record(
@@ -397,19 +467,8 @@ static iree_status_t iree_test_loom_append_skipped_record(
       loom_json_object_begin(skipped_records->stream, &object));
   IREE_RETURN_IF_ERROR(
       loom_json_object_write_string_field(&object, kind, name));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      &object, IREE_SV("provider"), requirement_result->provider));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      &object, IREE_SV("op"),
-      loom_testbench_requirement_op_kind_name(requirement_result->op_kind)));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      &object, IREE_SV("code"),
-      loom_testbench_requirement_skip_code_name(requirement_result->code)));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
-      &object, IREE_SV("provider_code"), requirement_result->provider_code));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
-      &object, IREE_SV("display_message"),
-      requirement_result->display_message));
+  IREE_RETURN_IF_ERROR(loom_testbench_requirement_result_write_json_fields(
+      requirement_result, &object));
   return loom_json_object_end(&object);
 }
 
@@ -558,8 +617,9 @@ static iree_status_t iree_test_loom_run_case_samples(
        iree_status_is_ok(status) && sample_ordinal < end_sample;
        ++sample_ordinal) {
     loom_testbench_case_sample_result_t sample_result = {0};
-    status = loom_testbench_run_case_sample(&executor, sample_ordinal,
-                                            &sample_result);
+    status = loom_testbench_run_case_sample(
+        &executor, (loom_testbench_case_sample_t){.ordinal = sample_ordinal},
+        sample_ordinal, &sample_result);
     if (iree_status_is_ok(status)) {
       iree_test_loom_capture_expectation_report(
           diagnostic_capture, sample_result.expectation_report);
@@ -619,8 +679,7 @@ static iree_status_t iree_test_loom_run_scenario(
     loom_testbench_prepared_scenario_configuration_t prepared = {0};
     if (iree_status_is_ok(status)) {
       status = loom_testbench_prepare_scenario_configuration(
-          execution_options, &configuration,
-          LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_CORRECTNESS, &prepared);
+          execution_options, &configuration, &prepared);
     }
     for (iree_host_size_t trial_index = 0;
          iree_status_is_ok(status) && trial_index < scenario->trial_count;
@@ -634,8 +693,9 @@ static iree_status_t iree_test_loom_run_scenario(
       }
       loom_testbench_scenario_trial_executor_t executor = {0};
       status = loom_testbench_scenario_trial_executor_initialize(
-          &prepared, trial_index, materializer_options, batch_capacity,
-          &executor);
+          &prepared, trial_index,
+          LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_CORRECTNESS,
+          materializer_options, batch_capacity, &executor);
       for (iree_host_size_t first_trial_ordinal = 0;
            iree_status_is_ok(status) &&
            first_trial_ordinal < trial->trial_count;
@@ -1143,12 +1203,6 @@ int iree_test_loom_main(int argc, char** argv,
     loomc_result_release(result);
   }
   if (iree_status_is_ok(status)) {
-    status = loom_run_hal_testbench_context_add_module_runtime_requirements(
-        &hal_context, module,
-        sanitizer_enabled ? &loomc_sanitizer_options : NULL);
-  }
-
-  if (iree_status_is_ok(status)) {
     iree_arena_initialize(&block_pool, &plan_arena);
     iree_arena_initialize(&block_pool, &execution_arena);
     loom_testbench_plan_options_t plan_options = {0};
@@ -1163,6 +1217,12 @@ int iree_test_loom_main(int argc, char** argv,
     if (iree_status_is_ok(status)) {
       status = iree_test_loom_validate_xfails(&xfails, &module_plan,
                                               selected_case_name);
+    }
+    if (iree_status_is_ok(status)) {
+      status = iree_test_loom_add_runtime_requirements(
+          &hal_context, module,
+          sanitizer_enabled ? &loomc_sanitizer_options : NULL, &module_plan,
+          selected_case_name, &block_pool);
     }
     loom_testbench_case_execution_options_t execution_options = {0};
     loom_testbench_case_execution_options_initialize(&execution_options);
@@ -1230,7 +1290,8 @@ int iree_test_loom_main(int argc, char** argv,
           if (case_plan->issue_count == 0) {
             status = iree_test_loom_evaluate_requirements(
                 configuration, &hal_context, module_plan.module,
-                loom_check_case_body(case_plan->op), &requirement_results[i]);
+                loom_check_case_body(case_plan->op), &plan_arena,
+                &requirement_results[i]);
           }
         }
       }
@@ -1248,7 +1309,7 @@ int iree_test_loom_main(int argc, char** argv,
               &requirement_results[module_plan.case_count + i];
           status = iree_test_loom_evaluate_requirements(
               configuration, &hal_context, module_plan.module,
-              loom_check_scenario_body(scenario->op), result);
+              loom_check_scenario_body(scenario->op), &plan_arena, result);
           if (iree_status_is_ok(status) && !result->skipped) {
             ++runnable_scenario_count;
           }

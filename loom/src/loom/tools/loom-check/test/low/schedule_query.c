@@ -401,6 +401,20 @@ static iree_status_t loom_check_test_low_schedule_parse_option(
     options->schedule_flags |= LOOM_LOW_SCHEDULE_FLAG_ORDER_STRUCTURAL_SETUP;
     return iree_ok_status();
   }
+  if (iree_string_view_equal(name, IREE_SV("materialized-spill-traffic"))) {
+    if (!iree_string_view_is_empty(value) ||
+        iree_any_bit_set(
+            options->schedule_flags,
+            LOOM_LOW_SCHEDULE_FLAG_HAS_MATERIALIZED_SPILL_TRAFFIC)) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "low-schedule-query flag 'materialized-spill-traffic' takes no "
+          "value and may appear only once");
+    }
+    options->schedule_flags |=
+        LOOM_LOW_SCHEDULE_FLAG_HAS_MATERIALIZED_SPILL_TRAFFIC;
+    return iree_ok_status();
+  }
   iree_string_view_t* value_selectors = NULL;
   if (iree_string_view_equal(name, IREE_SV("required-register-values"))) {
     value_selectors = &options->required_register_value_selectors;
@@ -855,11 +869,13 @@ static iree_status_t loom_check_test_low_schedule_append_edges(
       continue;
     }
     iree_string_view_t producer_event =
-        loom_low_descriptor_set_timing_event_name(
-            schedule->target.descriptor_set, match->producer_event_id);
+        loom_low_schedule_model_timing_event_name(
+            schedule->target.descriptor_set, schedule->target.schedule_model,
+            match->producer_event_id);
     iree_string_view_t consumer_event =
-        loom_low_descriptor_set_timing_event_name(
-            schedule->target.descriptor_set, match->consumer_event_id);
+        loom_low_schedule_model_timing_event_name(
+            schedule->target.descriptor_set, schedule->target.schedule_model,
+            match->consumer_event_id);
     if (iree_string_view_is_empty(producer_event)) {
       producer_event = IREE_SV("<none>");
     }
@@ -1096,24 +1112,26 @@ static iree_status_t loom_check_test_low_schedule_build(
   iree_status_t status = loom_low_function_model_initialize(
       native_module->module, low_function,
       /*function_target_facts=*/NULL, &request->low_registry->registry, emitter,
-      /*flags=*/0, request->case_arena, &model);
-  if (iree_status_is_ok(status)) {
+      LOOM_LOW_FUNCTION_MODEL_FLAG_REQUIRE_SCHEDULE_MODEL, request->case_arena,
+      &model);
+  if (iree_status_is_ok(status) && model.context.error_count == 0) {
     status = loom_low_storage_transport_build(
         &model, options->storage_transport_spaces, request->case_arena,
         &schedule_options.storage_transport);
   }
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && model.context.error_count == 0) {
     status = loom_low_schedule_function(&model, &schedule_options,
                                         request->case_arena, out_schedule);
   }
-  if (iree_status_is_ok(status) && out_schedule->error_count == 0 &&
+  if (iree_status_is_ok(status) && model.context.error_count == 0 &&
+      out_schedule->error_count == 0 &&
       !iree_string_view_is_empty(options->pressure_register_class)) {
     status = loom_liveness_analyze_local_value_domain_with_dataflow(
         &model.context.value_domain, &model.liveness_dataflow,
         out_schedule->operation_order, request->case_arena,
         out_scheduled_liveness);
   }
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && model.context.error_count == 0) {
     *out_accepted = out_schedule->error_count == 0;
   }
   if (iree_status_is_ok(status) && *out_accepted &&

@@ -17,6 +17,63 @@ load("//loom/src/loom/serve/service/finite:testdata/component/sources.bzl", COMP
 
 package(default_visibility = ["//visibility:private"])
 
+loom_cc_test(
+    name = "activity_test",
+    srcs = ["activity_test_main.c"],
+    args = [
+        "--fixture=true",
+        "--model=$(rootpath //loom/src/loom/serve/fixture/recognition:model.json)",
+        "--device=task",
+        "--pool_backing=fixed",
+        "--workers=1",
+    ],
+    data = RECOGNITION_SOURCES,
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//runtime/config/hal:driver_task",
+        "//runtime/config/hal:executable_loader_embedded_elf",
+    ]) + ["@platforms//cpu:x86_64"] + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//loom/binding/c/target/cpu:iree_hal",
+        "//loom/binding/c/target/x86",
+        "//loom/src/loom/serve/runtime/host",
+        "//loom/src/loom/tools/loom-serve:activity_tests",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_test(
+    name = "activity_parallel_test",
+    srcs = ["activity_test_main.c"],
+    args = [
+        "--fixture=true",
+        "--model=$(rootpath //loom/src/loom/serve/fixture/recognition:model.json)",
+        "--device=task",
+        "--pool_backing=fixed",
+        "--workers=8",
+        "--stream_count=8",
+    ],
+    data = RECOGNITION_SOURCES,
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//runtime/config/hal:driver_task",
+        "//runtime/config/hal:executable_loader_embedded_elf",
+    ]) + ["@platforms//cpu:x86_64"] + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//loom/binding/c/target/cpu:iree_hal",
+        "//loom/binding/c/target/x86",
+        "//loom/src/loom/serve/runtime/host",
+        "//loom/src/loom/tools/loom-serve:activity_tests",
+        "//runtime/src/iree/base",
+    ],
+)
+
 loom_cc_library(
     name = "test_compiler",
     testonly = True,
@@ -56,6 +113,38 @@ loom_cc_binary(
         ":test_compiler",
         ":test_device",
         "//loom/src/loom/serve/testing:server_test_tool",
+    ],
+)
+
+loom_cc_test(
+    name = "executable_test",
+    srcs = ["//loom/src/loom/serve/runtime/program:executable_test.cc"],
+    args = ["--jit_sources=$(rootpath //loom/src/loom/serve/runtime/program:testdata/jit/config.loom)"],
+    data = [
+        "//loom/src/loom/serve/runtime/program:testdata/jit/config.loom",
+        "//loom/src/loom/serve/runtime/program:testdata/jit/stage.loom",
+    ],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//runtime/config/hal:driver_task",
+        "//runtime/config/hal:executable_loader_embedded_elf",
+    ]) + ["@platforms//cpu:x86_64"] + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/binding/c:loomc",
+        "//loom/src/loom/serve/runtime/device",
+        "//loom/src/loom/serve/runtime/execution",
+        "//loom/src/loom/serve/runtime/program:executable",
+        "//loom/src/loom/serve/runtime/program:jit",
+        "//loom/src/loom/serve/testing:jit",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
@@ -106,6 +195,19 @@ loom_py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//loom/src/loom/serve/testing:http"],
+)
+
+loom_cc_test(
+    name = "memory_test",
+    args = ["--gtest_filter=-DedicatedNativeWorkerMemoryTest.*"],
+    target_compatible_with = loom_config_compatible_with([
+        "//runtime/config/hal:driver_task",
+    ]),
+    deps = [
+        ":test_device",
+        "//loom/src/loom/serve/runtime/storage:memory_tests",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
 )
 
 loom_cc_test(
@@ -637,5 +739,154 @@ loom_cc_test(
         ":test_device",
         "//loom/src/loom/serve/service/text:source_reconfiguration_tests",
         "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "device_group_test",
+    srcs = ["//loom/src/loom/serve/runtime/device:device_group_test.cc"],
+    target_compatible_with = loom_config_compatible_with([
+        "//runtime/config/hal:driver_task",
+    ]),
+    deps = [
+        ":test_device",
+        "//loom/src/loom/serve/runtime/device",
+        "//loom/src/loom/serve/runtime/execution",
+        "//loom/src/loom/serve/runtime/host",
+        "//loom/src/loom/serve/runtime/storage:memory",
+        "//loom/src/loom/serve/testing:device",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "retirement_test",
+    srcs = ["//loom/src/loom/serve/runtime/execution:retirement_test.cc"],
+    target_compatible_with = loom_config_compatible_with([
+        "//runtime/config/hal:driver_task",
+    ]),
+    deps = [
+        ":test_device",
+        "//loom/src/loom/serve/runtime/device",
+        "//loom/src/loom/serve/runtime/execution:retirement",
+        "//loom/src/loom/serve/runtime/storage:memory",
+        "//loom/src/loom/serve/testing:device",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/threading",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "relocation_test",
+    srcs = ["//loom/src/loom/serve/runtime/storage:relocation_test.cc"],
+    target_compatible_with = loom_config_compatible_with([
+        "//runtime/config/hal:driver_task",
+    ]),
+    deps = [
+        ":test_device",
+        "//loom/src/loom/serve/runtime/device",
+        "//loom/src/loom/serve/runtime/execution",
+        "//loom/src/loom/serve/runtime/execution:retirement",
+        "//loom/src/loom/serve/runtime/storage:memory",
+        "//loom/src/loom/serve/runtime/storage:relocation",
+        "//loom/src/loom/serve/testing:device",
+        "//loom/src/loom/serve/testing:native_allocator",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "snapshot_test",
+    srcs = ["//loom/src/loom/serve/runtime/storage:snapshot_test.cc"],
+    target_compatible_with = loom_config_compatible_with([
+        "//runtime/config/hal:driver_task",
+    ]),
+    deps = [
+        ":test_device",
+        "//loom/src/loom/serve/runtime/device",
+        "//loom/src/loom/serve/runtime/execution",
+        "//loom/src/loom/serve/runtime/execution:retirement",
+        "//loom/src/loom/serve/runtime/storage:memory",
+        "//loom/src/loom/serve/runtime/storage:snapshot",
+        "//loom/src/loom/serve/testing:device",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/util:proactor_pool",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/task",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "weights_test",
+    srcs = [
+        "//loom/src/loom/serve/runtime/parameter:bank_test.cc",
+        "//loom/src/loom/serve/runtime/parameter:weights_packing_test.cc",
+        "//loom/src/loom/serve/runtime/parameter:weights_streaming_test.cc",
+        "//loom/src/loom/serve/runtime/parameter:weights_test.cc",
+        "//loom/src/loom/serve/runtime/parameter:weights_test_base.h",
+        "//loom/src/loom/serve/service:executables_test.cc",
+    ],
+    args = [
+        "--weight_sources=$(rootpath //loom/src/loom/serve/runtime/parameter:testdata/weights/stages.loom)",
+        "--gtest_filter=Streaming/*",
+        "--executable_sources=$(rootpath //loom/src/loom/serve/service:testdata/executables/prepare.loom)",
+    ],
+    data = [
+        "//loom/src/loom/serve/runtime/parameter:testdata/weights/boundaries.loom",
+        "//loom/src/loom/serve/runtime/parameter:testdata/weights/packing.loom",
+        "//loom/src/loom/serve/runtime/parameter:testdata/weights/packing_policy.loom",
+        "//loom/src/loom/serve/runtime/parameter:testdata/weights/policy.loom",
+        "//loom/src/loom/serve/runtime/parameter:testdata/weights/stages.loom",
+        "//loom/src/loom/serve/runtime/parameter:testdata/weights/streaming_policy.loom",
+        "//loom/src/loom/serve/service:testdata/executables/prepare.loom",
+    ],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//loom/config/execute:task_hal",
+    ]),
+    deps = [
+        ":test_compiler",
+        ":test_device",
+        "//loom/binding/c:loomc",
+        "//loom/src/loom/serve/runtime/device",
+        "//loom/src/loom/serve/runtime/execution",
+        "//loom/src/loom/serve/runtime/parameter:activation",
+        "//loom/src/loom/serve/runtime/parameter:bank",
+        "//loom/src/loom/serve/runtime/parameter:residency",
+        "//loom/src/loom/serve/runtime/parameter:weights",
+        "//loom/src/loom/serve/runtime/program",
+        "//loom/src/loom/serve/runtime/program:jit",
+        "//loom/src/loom/serve/runtime/program:module",
+        "//loom/src/loom/serve/runtime/program:preparation",
+        "//loom/src/loom/serve/runtime/program:stage_table",
+        "//loom/src/loom/serve/runtime/storage:memory",
+        "//loom/src/loom/serve/service:executables",
+        "//loom/src/loom/serve/testing:compiler",
+        "//loom/src/loom/serve/testing:device",
+        "//loom/src/loom/serve/testing:native_allocator",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/util:proactor_pool",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/tooling:flags",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/hal/testing:deferred_pool",
+        "//runtime/src/iree/module/hal:types",
+        "//runtime/src/iree/task",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+        "//runtime/src/iree/testing:temp_file",
+        "//runtime/src/iree/vm",
     ],
 )

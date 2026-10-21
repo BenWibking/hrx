@@ -439,7 +439,6 @@ VBROADCASTSD = _instruction(
     _IMMEDIATES_0,
     _encoding(_EVEX, _MAP_2, 1, 1, 0x19, (512,)),
     _encoding(_VEX, _MAP_2, 1, 0, 0x19, (256,)),
-    _encoding(_VEX, _MAP_1, 3, 0, 0x12, (128,)),
 )
 VBROADCASTSS = _instruction(
     "vbroadcastss",
@@ -768,6 +767,13 @@ VMOVD_FROM_GPR32 = _instruction(
     _OPERANDS_9,
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_1, 1, 0, 0x6E, (128,)),
+)
+VMOVDDUP = _instruction(
+    "vmovddup",
+    _UNARY,
+    _OPERANDS_13,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_1, 3, 0, 0x12, (128,)),
 )
 VMOVDQU32_INDEXED_LOAD = _instruction(
     "vmovdqu32",
@@ -1231,6 +1237,22 @@ VPDPBSUDS = _instruction(
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_2, 2, 0, 0x51, (128, 256)),
 )
+VPDPBUSD = _instruction(
+    "vpdpbusd",
+    _DESTRUCTIVE_NDS,
+    _OPERANDS_17,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_2, 1, 0, 0x50, (128, 256)),
+    _encoding(_EVEX, _MAP_2, 1, 0, 0x50, (128, 256, 512)),
+)
+VPDPBUSDS = _instruction(
+    "vpdpbusds",
+    _DESTRUCTIVE_NDS,
+    _OPERANDS_17,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_2, 1, 0, 0x51, (128, 256)),
+    _encoding(_EVEX, _MAP_2, 1, 0, 0x51, (128, 256, 512)),
+)
 VPDPBUUD = _instruction(
     "vpdpbuud",
     _DESTRUCTIVE_NDS,
@@ -1244,6 +1266,22 @@ VPDPBUUDS = _instruction(
     _OPERANDS_17,
     _IMMEDIATES_0,
     _encoding(_VEX, _MAP_2, 0, 0, 0x51, (128, 256)),
+)
+VPDPWSSD = _instruction(
+    "vpdpwssd",
+    _DESTRUCTIVE_NDS,
+    _OPERANDS_17,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_2, 1, 0, 0x52, (128, 256)),
+    _encoding(_EVEX, _MAP_2, 1, 0, 0x52, (128, 256, 512)),
+)
+VPDPWSSDS = _instruction(
+    "vpdpwssds",
+    _DESTRUCTIVE_NDS,
+    _OPERANDS_17,
+    _IMMEDIATES_0,
+    _encoding(_VEX, _MAP_2, 1, 0, 0x53, (128, 256)),
+    _encoding(_EVEX, _MAP_2, 1, 0, 0x53, (128, 256, 512)),
 )
 VPERMD = _instruction(
     "vpermd",
@@ -2274,6 +2312,7 @@ PACKED_INTEGER_WIDEN = (
     (VPMOVSXDQ, VPMOVZXDQ),
 )
 PACKED_INTEGER_NARROW = (VPMOVWB, VPMOVDB, VPMOVQB, VPMOVDW, VPMOVQW, VPMOVQD)
+VNNI = (VPDPBUSD, VPDPBUSDS, VPDPWSSD, VPDPWSSDS)
 AVX_VNNI_INT8 = (
     VPDPBSSD,
     VPDPBSSDS,

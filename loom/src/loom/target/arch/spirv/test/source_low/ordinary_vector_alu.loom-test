@@ -44,6 +44,160 @@ low.func.def target<spirv.logical.core>(@target) abi(shader_entry_point) @intege
 }
 
 // ====
+// RUN: emit spirv-low target=spirv:vulkan1.3+bda+extended-types
+
+// Seven i64 elements exceed the native vector carrier. Count normalization
+// must not recreate this rejected shape before carrier selection completes.
+kernel.def @wide_integer_shifts() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%input: buffer, %count_input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %values_view = buffer.view %input[%base] : buffer -> view<7xi64>
+  %counts_view = buffer.view %count_input[%base] : buffer -> view<7xi64>
+  %results = buffer.view %output[%base] : buffer -> view<3x7xi64>
+  %values = vector.load %values_view[0] : view<7xi64> -> vector<7xi64>
+  %counts = vector.load %counts_view[0] : view<7xi64> -> vector<7xi64>
+  %left = vector.shli %values, %counts : vector<7xi64>
+  %logical = vector.shrui %values, %counts : vector<7xi64>
+  %arithmetic = vector.shrsi %values, %counts : vector<7xi64>
+  vector.store %left, %results[0, 0] : vector<7xi64>, view<3x7xi64>
+  vector.store %logical, %results[1, 0] : vector<7xi64>, view<3x7xi64>
+  vector.store %arithmetic, %results[2, 0] : vector<7xi64>, view<3x7xi64>
+  kernel.return
+}
+
+// ----
+low.kernel.def target<spirv.logical.core> abi_layout({signature = (buffer, buffer, buffer) -> ()}) workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @wide_integer_shifts() asm {
+  %input = resource<hal_binding> {index = 0, source_type = hal.buffer} : reg<spirv.ptr.storage_buffer>
+  %count_input = resource<hal_binding> {index = 1, source_type = hal.buffer} : reg<spirv.ptr.storage_buffer>
+  %output = resource<hal_binding> {index = 2, source_type = hal.buffer} : reg<spirv.ptr.storage_buffer>
+  %68 = OpConstant.offset64 0
+  %69 = OpPtrAccessChain.storage_buffer.i64.byte_offset %input, %68
+  %70 = OpLoad.storage_buffer.i64 %69
+  %71 = OpConstant.offset64 8
+  %72 = OpPtrAccessChain.storage_buffer.i64.byte_offset %input, %71
+  %73 = OpLoad.storage_buffer.i64 %72
+  %74 = OpConstant.offset64 16
+  %75 = OpPtrAccessChain.storage_buffer.i64.byte_offset %input, %74
+  %76 = OpLoad.storage_buffer.i64 %75
+  %77 = OpConstant.offset64 24
+  %78 = OpPtrAccessChain.storage_buffer.i64.byte_offset %input, %77
+  %79 = OpLoad.storage_buffer.i64 %78
+  %80 = OpCompositeConstruct.v4i64 %70, %73, %76, %79
+  %81 = OpConstant.offset64 32
+  %82 = OpPtrAccessChain.storage_buffer.i64.byte_offset %input, %81
+  %83 = OpLoad.storage_buffer.i64 %82
+  %84 = OpConstant.offset64 40
+  %85 = OpPtrAccessChain.storage_buffer.i64.byte_offset %input, %84
+  %86 = OpLoad.storage_buffer.i64 %85
+  %87 = OpConstant.offset64 48
+  %88 = OpPtrAccessChain.storage_buffer.i64.byte_offset %input, %87
+  %89 = OpLoad.storage_buffer.i64 %88
+  %90 = OpCompositeConstruct.v3i64 %83, %86, %89
+  %92 = OpPtrAccessChain.storage_buffer.i64.byte_offset %count_input, %68
+  %93 = OpLoad.storage_buffer.i64 %92
+  %95 = OpPtrAccessChain.storage_buffer.i64.byte_offset %count_input, %71
+  %96 = OpLoad.storage_buffer.i64 %95
+  %98 = OpPtrAccessChain.storage_buffer.i64.byte_offset %count_input, %74
+  %99 = OpLoad.storage_buffer.i64 %98
+  %101 = OpPtrAccessChain.storage_buffer.i64.byte_offset %count_input, %77
+  %102 = OpLoad.storage_buffer.i64 %101
+  %103 = OpCompositeConstruct.v4i64 %93, %96, %99, %102
+  %105 = OpPtrAccessChain.storage_buffer.i64.byte_offset %count_input, %81
+  %106 = OpLoad.storage_buffer.i64 %105
+  %108 = OpPtrAccessChain.storage_buffer.i64.byte_offset %count_input, %84
+  %109 = OpLoad.storage_buffer.i64 %108
+  %111 = OpPtrAccessChain.storage_buffer.i64.byte_offset %count_input, %87
+  %112 = OpLoad.storage_buffer.i64 %111
+  %113 = OpCompositeConstruct.v3i64 %106, %109, %112
+  %114 = OpShiftLeftLogical.v4i64 %80, %103
+  %115 = OpCompositeExtract.v4i64.i64 %114, 0
+  %116 = OpCompositeExtract.v4i64.i64 %114, 1
+  %117 = OpCompositeExtract.v4i64.i64 %114, 2
+  %118 = OpCompositeExtract.v4i64.i64 %114, 3
+  %120 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %68
+  OpStore.storage_buffer.i64 %120, %115
+  %122 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %71
+  OpStore.storage_buffer.i64 %122, %116
+  %124 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %74
+  OpStore.storage_buffer.i64 %124, %117
+  %126 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %77
+  OpStore.storage_buffer.i64 %126, %118
+  %127 = OpShiftLeftLogical.v3i64 %90, %113
+  %128 = OpCompositeExtract.v3i64.i64 %127, 0
+  %129 = OpCompositeExtract.v3i64.i64 %127, 1
+  %130 = OpCompositeExtract.v3i64.i64 %127, 2
+  %132 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %81
+  OpStore.storage_buffer.i64 %132, %128
+  %134 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %84
+  OpStore.storage_buffer.i64 %134, %129
+  %136 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %87
+  OpStore.storage_buffer.i64 %136, %130
+  %137 = OpShiftRightLogical.v4i64 %80, %103
+  %138 = OpCompositeExtract.v4i64.i64 %137, 0
+  %139 = OpCompositeExtract.v4i64.i64 %137, 1
+  %140 = OpCompositeExtract.v4i64.i64 %137, 2
+  %141 = OpCompositeExtract.v4i64.i64 %137, 3
+  %142 = OpConstant.offset64 56
+  %143 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %142
+  OpStore.storage_buffer.i64 %143, %138
+  %144 = OpConstant.offset64 64
+  %145 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %144
+  OpStore.storage_buffer.i64 %145, %139
+  %146 = OpConstant.offset64 72
+  %147 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %146
+  OpStore.storage_buffer.i64 %147, %140
+  %148 = OpConstant.offset64 80
+  %149 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %148
+  OpStore.storage_buffer.i64 %149, %141
+  %150 = OpShiftRightLogical.v3i64 %90, %113
+  %151 = OpCompositeExtract.v3i64.i64 %150, 0
+  %152 = OpCompositeExtract.v3i64.i64 %150, 1
+  %153 = OpCompositeExtract.v3i64.i64 %150, 2
+  %154 = OpConstant.offset64 88
+  %155 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %154
+  OpStore.storage_buffer.i64 %155, %151
+  %156 = OpConstant.offset64 96
+  %157 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %156
+  OpStore.storage_buffer.i64 %157, %152
+  %158 = OpConstant.offset64 104
+  %159 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %158
+  OpStore.storage_buffer.i64 %159, %153
+  %160 = OpShiftRightArithmetic.v4i64 %80, %103
+  %161 = OpCompositeExtract.v4i64.i64 %160, 0
+  %162 = OpCompositeExtract.v4i64.i64 %160, 1
+  %163 = OpCompositeExtract.v4i64.i64 %160, 2
+  %164 = OpCompositeExtract.v4i64.i64 %160, 3
+  %165 = OpConstant.offset64 112
+  %166 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %165
+  OpStore.storage_buffer.i64 %166, %161
+  %167 = OpConstant.offset64 120
+  %168 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %167
+  OpStore.storage_buffer.i64 %168, %162
+  %169 = OpConstant.offset64 128
+  %170 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %169
+  OpStore.storage_buffer.i64 %170, %163
+  %171 = OpConstant.offset64 136
+  %172 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %171
+  OpStore.storage_buffer.i64 %172, %164
+  %173 = OpShiftRightArithmetic.v3i64 %90, %113
+  %174 = OpCompositeExtract.v3i64.i64 %173, 0
+  %175 = OpCompositeExtract.v3i64.i64 %173, 1
+  %176 = OpCompositeExtract.v3i64.i64 %173, 2
+  %177 = OpConstant.offset64 144
+  %178 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %177
+  OpStore.storage_buffer.i64 %178, %174
+  %179 = OpConstant.offset64 152
+  %180 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %179
+  OpStore.storage_buffer.i64 %180, %175
+  %181 = OpConstant.offset64 160
+  %182 = OpPtrAccessChain.storage_buffer.i64.byte_offset %output, %181
+  OpStore.storage_buffer.i64 %182, %176
+  return
+}
+
+// ====
 
 spirv.target<vulkan1_3> @target {contract_feature_bits = 983547543582}
 

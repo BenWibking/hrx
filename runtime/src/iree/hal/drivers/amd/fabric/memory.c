@@ -6,6 +6,7 @@
 
 #include "iree/hal/drivers/amd/fabric/memory.h"
 
+#include "iree/async/proactor.h"
 #include "iree/base/internal/math.h"
 #include "iree/hal/drivers/amd/status.h"
 
@@ -101,27 +102,66 @@ bool iree_hal_amd_fabric_memory_constrain_profile(
   return true;
 }
 
-void iree_hal_amd_fabric_memory_deinitialize(
+iree_status_t iree_hal_amd_fabric_memory_query_host_publication(
+    const amdf_api_t* api, const iree_hal_amd_fabric_memory_options_t* options,
+    uint32_t access_ordinal, uint32_t queue_family_ordinal,
+    bool* out_supported) {
+  *out_supported = false;
+  const amdf_memory_profile_pair_query_t query = {
+      .type = AMDF_STRUCTURE_TYPE_MEMORY_PROFILE_PAIR_QUERY,
+      .structure_size = sizeof(query),
+      .memory_profile_ordinal = options->profile.ordinal,
+      .access_count = options->access_count,
+      .required_flags = options->required_flags,
+      .accesses = options->accesses,
+      .producer = {.kind = AMDF_MEMORY_SITE_KIND_HOST,
+                   .value.host_access = AMDF_MEMORY_MAP_FLAG_WRITE},
+      .consumer = {.kind = AMDF_MEMORY_SITE_KIND_DEVICE,
+                   .value.device = {.access_ordinal = access_ordinal,
+                                    .queue_family_ordinal =
+                                        queue_family_ordinal}},
+  };
+  amdf_memory_pair_info_t pair = {
+      .type = AMDF_STRUCTURE_TYPE_MEMORY_PAIR_INFO,
+      .structure_size = sizeof(pair),
+  };
+  const amdf_status_t status =
+      api->memory_scope_query_pair_info(options->scope, &query, &pair);
+  if (status == amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED)) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(
+      IREE_HAL_AMD_STATUS_FROM_AMDF(status, "qualify host publication"));
+  *out_supported = true;
+  return iree_ok_status();
+}
+
+amdf_memory_release_info_t iree_hal_amd_fabric_memory_deinitialize(
     const amdf_api_t* api, iree_hal_device_event_sink_t event_sink,
     iree_hal_amd_fabric_memory_t* memory) {
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, memory->info.byte_length);
+  iree_async_buffer_registration_state_deinitialize(&memory->registrations);
   if (memory->mapping) {
-    amdf_status_t status = api->host_mapping_destroy(memory->mapping);
-    if (!amdf_status_is_ok(status)) {
-      iree_hal_amd_report_failure(event_sink, IREE_SV("amd"), status,
-                                  "host_mapping_destroy");
-      return;
-    }
+    // A live host view has metadata-only, infallible destruction. Its native
+    // backing is released by memory_destroy after all views have retired.
+    const amdf_status_t status = api->host_mapping_destroy(memory->mapping);
+    IREE_ASSERT(amdf_status_is_ok(status));
+    (void)status;
   }
+  amdf_memory_release_info_t release_info = {0};
   if (memory->handle) {
     // memory_destroy consumes its handle even on native cleanup failure; the
     // provider preserves any backing required by failed detach as a leak.
-    amdf_status_t status = api->memory_destroy(memory->handle);
+    amdf_status_t status = api->memory_destroy(memory->handle, &release_info);
     if (!amdf_status_is_ok(status)) {
       iree_hal_amd_report_failure(event_sink, IREE_SV("amd"), status,
                                   "memory_destroy");
     }
   }
   *memory = (iree_hal_amd_fabric_memory_t){0};
+  IREE_TRACE_ZONE_END(z0);
+  return release_info;
 }
 
 // Completes an attached owner before it can be published. All failures leave
@@ -165,24 +205,30 @@ static iree_status_t iree_hal_amd_fabric_memory_prepare(
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "AMD host mapping exceeds host address space");
   }
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, memory->info.byte_length);
   const amdf_memory_map_info_t map_info = {
       .type = AMDF_STRUCTURE_TYPE_MEMORY_MAP_INFO,
       .structure_size = sizeof(map_info),
       .byte_length = memory->info.byte_length,
       .flags = options->host_access,
   };
-  IREE_RETURN_IF_ERROR(IREE_HAL_AMD_STATUS_FROM_AMDF(
-      api->memory_map(memory->handle, &map_info, &memory->mapping),
-      "memory_map"));
+  IREE_RETURN_AND_END_ZONE_IF_ERROR(
+      z0, IREE_HAL_AMD_STATUS_FROM_AMDF(
+              api->memory_map(memory->handle, &map_info, &memory->mapping),
+              "memory_map"));
   amdf_host_mapping_info_t mapping_info = {
       .type = AMDF_STRUCTURE_TYPE_HOST_MAPPING_INFO,
       .structure_size = sizeof(mapping_info),
   };
-  IREE_RETURN_IF_ERROR(IREE_HAL_AMD_STATUS_FROM_AMDF(
-      api->host_mapping_query_info(memory->mapping, &mapping_info),
-      "host_mapping_query_info"));
+  IREE_RETURN_AND_END_ZONE_IF_ERROR(
+      z0, IREE_HAL_AMD_STATUS_FROM_AMDF(
+              api->host_mapping_query_info(memory->mapping, &mapping_info),
+              "host_mapping_query_info"));
   memory->contents =
       iree_make_byte_span(mapping_info.pointer, memory->info.byte_length);
+  memory->host_access = map_info.flags;
+  memory->host_features = mapping_info.features;
   switch (mapping_info.cacheability) {
     case AMDF_HOST_CACHEABILITY_WRITE_BACK:
       memory->host_cacheability = IREE_HAL_HOST_CACHEABILITY_WRITE_BACK;
@@ -197,6 +243,7 @@ static iree_status_t iree_hal_amd_fabric_memory_prepare(
       memory->host_cacheability = IREE_HAL_HOST_CACHEABILITY_UNKNOWN;
       break;
   }
+  IREE_TRACE_ZONE_END(z0);
   return iree_ok_status();
 }
 
@@ -204,8 +251,12 @@ iree_status_t iree_hal_amd_fabric_memory_allocate(
     const amdf_api_t* api, const iree_hal_amd_fabric_memory_options_t* options,
     uint64_t byte_length, uint64_t alignment,
     iree_hal_device_event_sink_t event_sink,
-    iree_hal_amd_fabric_memory_t* out_memory) {
+    iree_hal_amd_fabric_memory_t* out_memory,
+    amdf_memory_release_info_t* out_release_info) {
   *out_memory = (iree_hal_amd_fabric_memory_t){0};
+  if (out_release_info) {
+    *out_release_info = (amdf_memory_release_info_t){0};
+  }
   const uint64_t granularity =
       options->profile.allocation.byte_length_granularity;
   uint64_t allocation_length = 0;
@@ -220,6 +271,8 @@ iree_status_t iree_hal_amd_fabric_memory_allocate(
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "AMD allocation exceeds the native profile");
   }
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, allocation_length);
   const amdf_memory_create_info_t create_info = {
       .type = AMDF_STRUCTURE_TYPE_MEMORY_CREATE_INFO,
       .structure_size = sizeof(create_info),
@@ -233,16 +286,37 @@ iree_status_t iree_hal_amd_fabric_memory_allocate(
       .placement = options->placement,
   };
   iree_hal_amd_fabric_memory_t memory = {0};
-  IREE_RETURN_IF_ERROR(IREE_HAL_AMD_STATUS_FROM_AMDF(
-      api->memory_create(options->scope, &create_info, &memory.handle),
-      "memory_create"));
-  iree_status_t status =
-      iree_hal_amd_fabric_memory_prepare(api, options, &memory);
+  amdf_memory_release_info_t release_info = {0};
+  iree_status_t status = IREE_HAL_AMD_STATUS_FROM_AMDF(
+      api->memory_create(options->scope, &create_info, &memory.handle,
+                         &release_info),
+      "memory_create");
+  if (!amdf_status_is_ok(release_info.status)) {
+    iree_hal_amd_report_failure(event_sink, IREE_SV("amd"), release_info.status,
+                                "memory_create cleanup");
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_amd_fabric_memory_prepare(api, options, &memory);
+  }
+  for (iree_host_size_t i = 0;
+       i < options->io.proactor_count && iree_status_is_ok(status); ++i) {
+    iree_async_buffer_registration_entry_t* entry = NULL;
+    status = iree_async_proactor_prepare_buffer(
+        options->io.proactors[i], &memory.registrations, memory.contents,
+        IREE_ASYNC_BUFFER_ACCESS_FLAG_READ |
+            IREE_ASYNC_BUFFER_ACCESS_FLAG_WRITE,
+        &entry);
+  }
   if (iree_status_is_ok(status)) {
     *out_memory = memory;
-  } else {
-    iree_hal_amd_fabric_memory_deinitialize(api, event_sink, &memory);
+  } else if (memory.handle) {
+    release_info =
+        iree_hal_amd_fabric_memory_deinitialize(api, event_sink, &memory);
   }
+  if (out_release_info) {
+    *out_release_info = release_info;
+  }
+  IREE_TRACE_ZONE_END(z0);
   return status;
 }
 
@@ -286,6 +360,8 @@ iree_status_t iree_hal_amd_fabric_memory_register(
                             "host storage cacheability does not match the "
                             "qualified AMD registration profile");
   }
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, storage->byte_length);
   const amdf_memory_create_info_t create_info = {
       .type = AMDF_STRUCTURE_TYPE_MEMORY_CREATE_INFO,
       .structure_size = sizeof(create_info),
@@ -299,11 +375,18 @@ iree_status_t iree_hal_amd_fabric_memory_register(
       .registered_host_cacheability = cacheability,
   };
   iree_hal_amd_fabric_memory_t memory = {0};
-  IREE_RETURN_IF_ERROR(IREE_HAL_AMD_STATUS_FROM_AMDF(
-      api->memory_create(options->scope, &create_info, &memory.handle),
-      "memory_create(REGISTER)"));
-  iree_status_t status =
-      iree_hal_amd_fabric_memory_prepare(api, options, &memory);
+  amdf_memory_release_info_t release_info = {0};
+  iree_status_t status = IREE_HAL_AMD_STATUS_FROM_AMDF(
+      api->memory_create(options->scope, &create_info, &memory.handle,
+                         &release_info),
+      "memory_create(REGISTER)");
+  if (!amdf_status_is_ok(release_info.status)) {
+    iree_hal_amd_report_failure(event_sink, IREE_SV("amd"), release_info.status,
+                                "memory_create(REGISTER) cleanup");
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_amd_fabric_memory_prepare(api, options, &memory);
+  }
   if (iree_status_is_ok(status)) {
     memory.host_cacheability = storage->host_cacheability;
     memory.maintenance_range = storage->maintenance_range;
@@ -315,6 +398,7 @@ iree_status_t iree_hal_amd_fabric_memory_register(
   } else {
     iree_hal_amd_fabric_memory_deinitialize(api, event_sink, &memory);
   }
+  IREE_TRACE_ZONE_END(z0);
   return status;
 }
 
@@ -330,6 +414,8 @@ iree_status_t iree_hal_amd_fabric_memory_import(
         IREE_STATUS_OUT_OF_RANGE,
         "external storage extent violates the import/export contract");
   }
+  IREE_TRACE_ZONE_BEGIN(z0);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, storage->byte_length);
   amdf_external_memory_t external = {
       .type =
           iree_hal_amd_fabric_memory_external_type(storage->storage_class.type),
@@ -364,12 +450,18 @@ iree_status_t iree_hal_amd_fabric_memory_import(
       .accesses = options->accesses,
   };
   iree_hal_amd_fabric_memory_t memory = {0};
-  IREE_RETURN_IF_ERROR(IREE_HAL_AMD_STATUS_FROM_AMDF(
+  amdf_memory_release_info_t release_info = {0};
+  iree_status_t status = IREE_HAL_AMD_STATUS_FROM_AMDF(
       api->memory_import(options->scope, &import_info, &external,
-                         &memory.handle),
-      "memory_import"));
-  iree_status_t status =
-      iree_hal_amd_fabric_memory_prepare(api, options, &memory);
+                         &memory.handle, &release_info),
+      "memory_import");
+  if (!amdf_status_is_ok(release_info.status)) {
+    iree_hal_amd_report_failure(event_sink, IREE_SV("amd"), release_info.status,
+                                "memory_import cleanup");
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_amd_fabric_memory_prepare(api, options, &memory);
+  }
   if (iree_status_is_ok(status)) {
     memory.maintenance_range = storage->maintenance_range;
     if (memory.maintenance_range.byte_length == IREE_HAL_WHOLE_BUFFER) {
@@ -380,5 +472,6 @@ iree_status_t iree_hal_amd_fabric_memory_import(
   } else {
     iree_hal_amd_fabric_memory_deinitialize(api, event_sink, &memory);
   }
+  IREE_TRACE_ZONE_END(z0);
   return status;
 }

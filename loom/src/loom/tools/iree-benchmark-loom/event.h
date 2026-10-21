@@ -16,6 +16,7 @@
 
 #include "iree/base/api.h"
 #include "loom/ir/module.h"
+#include "loom/tooling/testbench/scenario/executor.h"
 #include "loom/tooling/testbench/testbench.h"
 #include "loom/tools/iree-benchmark-loom/model.h"
 #include "loom/tools/iree-benchmark-loom/options.h"
@@ -37,7 +38,7 @@ typedef enum iree_benchmark_loom_event_kind_e {
   IREE_BENCHMARK_LOOM_EVENT_SUMMARY = 3,
   // Selected HAL device metadata.
   IREE_BENCHMARK_LOOM_EVENT_DEVICE = 4,
-  // Candidate compile metadata.
+  // One canonical compiled entry's metadata.
   IREE_BENCHMARK_LOOM_EVENT_COMPILE = 5,
   // One correctness sample result.
   IREE_BENCHMARK_LOOM_EVENT_SAMPLE = 6,
@@ -53,6 +54,8 @@ typedef enum iree_benchmark_loom_event_kind_e {
   IREE_BENCHMARK_LOOM_EVENT_COMPARISON = 11,
   // Deduplicated planned work graph for dry-run/reporting sinks.
   IREE_BENCHMARK_LOOM_EVENT_WORK_PLAN = 12,
+  // One untimed scenario trial's correctness observations.
+  IREE_BENCHMARK_LOOM_EVENT_SCENARIO_SAMPLE = 13,
 } iree_benchmark_loom_event_kind_t;
 
 typedef struct iree_benchmark_loom_run_event_t {
@@ -114,6 +117,8 @@ typedef struct iree_benchmark_loom_compile_event_t {
   const iree_benchmark_loom_run_identity_t* run;
   // Stable candidate identity for the compile row.
   const iree_benchmark_loom_candidate_identity_t* candidate;
+  // Planned compilation shared by benchmark aliases and their work items.
+  const iree_benchmark_loom_hal_compile_item_t* compile_item;
   // Benchmark plan owning the candidate.
   const loom_testbench_benchmark_plan_t* benchmark_plan;
   // Case plan referenced by |benchmark_plan|.
@@ -137,19 +142,30 @@ typedef struct iree_benchmark_loom_sample_event_t {
   const loom_testbench_case_plan_t* case_plan;
   // Zero-based sample ordinal within the benchmark's selected sample space.
   iree_host_size_t benchmark_sample_ordinal;
-  // Zero-based sample ordinal within the check.case cartesian sample space.
-  iree_host_size_t case_sample_ordinal;
   // Borrowed correctness result for this sample.
   const loom_testbench_case_sample_result_t* sample_result;
 } iree_benchmark_loom_sample_event_t;
+
+typedef struct iree_benchmark_loom_scenario_sample_event_t {
+  // Run identity shared by all emitted events.
+  const iree_benchmark_loom_run_identity_t* run;
+  // Logical benchmark selection that executed this correctness trial.
+  const iree_benchmark_loom_selected_benchmark_t* selection;
+  // Physical work item shared by all aliases of this trial.
+  iree_host_size_t work_item_index;
+  // Zero-based sample ordinal within the selected benchmark.
+  iree_host_size_t benchmark_sample_ordinal;
+  // Borrowed observations, valid only while the sink handles this event.
+  const loom_testbench_scenario_trial_result_t* result;
+} iree_benchmark_loom_scenario_sample_event_t;
 
 typedef struct iree_benchmark_loom_benchmark_result_event_t {
   // Run identity shared by all emitted events.
   const iree_benchmark_loom_run_identity_t* run;
   // Stable candidate identity for the benchmark row.
   const iree_benchmark_loom_candidate_identity_t* candidate;
-  // Stable physical work item ordinal, or IREE_BENCHMARK_LOOM_INDEX_INVALID.
-  iree_host_size_t work_item_index;
+  // Borrowed physical work item, including its representative selection.
+  const iree_benchmark_loom_work_item_t* work_item;
   // Parsed module used to render sample parameter assignments.
   const loom_module_t* module;
   // Benchmark plan owning the result.
@@ -269,6 +285,8 @@ typedef struct iree_benchmark_loom_event_t {
     iree_benchmark_loom_compile_event_t compile;
     // Payload for IREE_BENCHMARK_LOOM_EVENT_SAMPLE.
     iree_benchmark_loom_sample_event_t sample;
+    // Payload for IREE_BENCHMARK_LOOM_EVENT_SCENARIO_SAMPLE.
+    iree_benchmark_loom_scenario_sample_event_t scenario_sample;
     // Payload for IREE_BENCHMARK_LOOM_EVENT_BENCHMARK_RESULT.
     iree_benchmark_loom_benchmark_result_event_t benchmark_result;
     // Payload for IREE_BENCHMARK_LOOM_EVENT_PROFILE_REPLAY.
@@ -344,11 +362,12 @@ iree_status_t iree_benchmark_loom_event_sink_emit_device(
     const iree_benchmark_loom_run_identity_t* run,
     const iree_benchmark_loom_hal_context_t* context);
 
-// Emits candidate compile metadata.
+// Emits one canonical compiled entry's metadata.
 iree_status_t iree_benchmark_loom_event_sink_emit_compile(
     const iree_benchmark_loom_event_sink_t* sink,
     const iree_benchmark_loom_run_identity_t* run,
     const iree_benchmark_loom_candidate_identity_t* candidate,
+    const iree_benchmark_loom_hal_compile_item_t* compile_item,
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
     const iree_benchmark_loom_hal_actual_provider_t* provider);
@@ -362,15 +381,16 @@ iree_status_t iree_benchmark_loom_event_sink_emit_sample(
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
     iree_host_size_t benchmark_sample_ordinal,
-    iree_host_size_t case_sample_ordinal,
     const loom_testbench_case_sample_result_t* sample_result);
 
-// Emits one benchmark measurement result.
+// Emits one logical alias of a physical benchmark result. The work item's
+// representative selection owns the shared evidence; other aliases refer to it.
 iree_status_t iree_benchmark_loom_event_sink_emit_benchmark_result(
     const iree_benchmark_loom_event_sink_t* sink,
     const iree_benchmark_loom_run_identity_t* run,
     const iree_benchmark_loom_candidate_identity_t* candidate,
-    iree_host_size_t work_item_index, const loom_module_t* module,
+    const iree_benchmark_loom_work_item_t* work_item,
+    const loom_module_t* module,
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
     const loom_testbench_scenario_plan_t* scenario_plan,

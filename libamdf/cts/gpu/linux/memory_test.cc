@@ -55,7 +55,7 @@ class GpuLinuxMemoryTest : public GpuDeviceFixture {
       if (memory == nullptr) {
         continue;
       }
-      ASSERT_EQ(api_->memory_destroy(std::exchange(memory, nullptr)),
+      ASSERT_EQ(api_->memory_destroy(std::exchange(memory, nullptr), nullptr),
                 AMDF_STATUS_OK);
     }
     if (!HasFailure() && caller_pages_ != nullptr) {
@@ -175,8 +175,9 @@ class GpuLinuxMemoryTest : public GpuDeviceFixture {
             granularity - 1) /
            granularity) *
           granularity;
-      ASSERT_EQ(api_->memory_create(scope, &create_info, &memories_[0]),
-                AMDF_STATUS_OK)
+      ASSERT_EQ(
+          api_->memory_create(scope, &create_info, &memories_[0], nullptr),
+          AMDF_STATUS_OK)
           << "access case " << case_ordinal;
 
       amdf_memory_info_t info = {
@@ -296,8 +297,9 @@ class GpuLinuxMemoryTest : public GpuDeviceFixture {
         EXPECT_EQ(output, sentinel);
       }
 
-      ASSERT_EQ(api_->memory_destroy(std::exchange(memories_[0], nullptr)),
-                AMDF_STATUS_OK);
+      ASSERT_EQ(
+          api_->memory_destroy(std::exchange(memories_[0], nullptr), nullptr),
+          AMDF_STATUS_OK);
     }
   }
 
@@ -309,8 +311,9 @@ class GpuLinuxMemoryTest : public GpuDeviceFixture {
     amdf_memory_create_info_t create_info = MakeSystemMemoryCreateInfo();
     memory_access_.requirements.access = AMDF_MEMORY_ACCESS_WRITE;
     amdf_memory_t* output = reinterpret_cast<amdf_memory_t*>(uintptr_t{1});
-    EXPECT_EQ(api_->memory_create(system_scope_, &create_info, &output),
-              amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED));
+    EXPECT_EQ(
+        api_->memory_create(system_scope_, &create_info, &output, nullptr),
+        amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED));
     EXPECT_EQ(reinterpret_cast<uintptr_t>(output), uintptr_t{1});
   }
 
@@ -333,8 +336,9 @@ class GpuLinuxMemoryTest : public GpuDeviceFixture {
           local_scope_, AMDF_MEMORY_PROFILE_ROLE_CREATE,
           AMDF_MEMORY_FLAG_DEVICE_LOCAL, memory_access_.requirements);
       amdf_memory_t* output = reinterpret_cast<amdf_memory_t*>(uintptr_t{1});
-      EXPECT_EQ(api_->memory_create(local_scope_, &create_info, &output),
-                amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED));
+      EXPECT_EQ(
+          api_->memory_create(local_scope_, &create_info, &output, nullptr),
+          amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED));
       EXPECT_EQ(reinterpret_cast<uintptr_t>(output), uintptr_t{1});
       return;
     }
@@ -346,7 +350,8 @@ class GpuLinuxMemoryTest : public GpuDeviceFixture {
   // Exercises allocation and host-view lifetime under either instance policy.
   void ExerciseSystemMemory() {
     const amdf_memory_create_info_t create_info = MakeSystemMemoryCreateInfo();
-    ASSERT_EQ(api_->memory_create(system_scope_, &create_info, &memories_[0]),
+    ASSERT_EQ(api_->memory_create(system_scope_, &create_info, &memories_[0],
+                                  nullptr),
               AMDF_STATUS_OK);
     amdf_memory_info_t info = {
         .type = AMDF_STRUCTURE_TYPE_MEMORY_INFO,
@@ -435,8 +440,9 @@ class GpuLinuxMemoryTest : public GpuDeviceFixture {
       ASSERT_EQ(api_->host_mapping_destroy(mapping), AMDF_STATUS_OK);
       mapping = nullptr;
     }
-    ASSERT_EQ(api_->memory_destroy(std::exchange(memories_[0], nullptr)),
-              AMDF_STATUS_OK);
+    ASSERT_EQ(
+        api_->memory_destroy(std::exchange(memories_[0], nullptr), nullptr),
+        AMDF_STATUS_OK);
   }
 
   // Owned backing handles released after every host view.
@@ -459,13 +465,84 @@ TEST_F(GpuLinuxMemoryTest, HonorsExactSystemDeviceAccess) {
   ASSERT_NO_FATAL_FAILURE(ExerciseExactSystemDeviceAccess());
 }
 
-TEST_F(GpuLinuxMemoryTest, RejectsUnachievableSystemPlacement) {
+TEST_F(GpuLinuxMemoryTest, UnifiedExecutableStorageRetainsCachedHostAccess) {
+  memory_access_.requirements = {
+      .access = AMDF_MEMORY_ACCESS_READ | AMDF_MEMORY_ACCESS_WRITE |
+                AMDF_MEMORY_ACCESS_EXECUTE,
+      .flags = AMDF_MEMORY_FLAG_DEVICE_ADDRESS,
+  };
+  const amdf_memory_flags_t flags =
+      AMDF_MEMORY_FLAG_DEVICE_LOCAL | AMDF_MEMORY_FLAG_HOST_VISIBLE;
+  const uint32_t ordinal = FindMemoryProfileOrdinal(
+      system_scope_,
+      AMDF_MEMORY_PROFILE_ROLE_CREATE | AMDF_MEMORY_PROFILE_ROLE_HOST_MAP,
+      flags, memory_access_.requirements);
+  if (ordinal == AMDF_MEMORY_PROFILE_ORDINAL_UNKNOWN) {
+    GTEST_SKIP() << "No device-local unified storage profile";
+  }
+  const amdf_memory_create_info_t request = {
+      .type = AMDF_STRUCTURE_TYPE_MEMORY_CREATE_INFO,
+      .structure_size = sizeof(request),
+      .memory_profile_ordinal = ordinal,
+      .access_count = 1,
+      .required_flags = flags,
+      .byte_length = 4096,
+      .minimum_alignment = 256,
+      .accesses = &memory_access_,
+  };
+  ASSERT_EQ(
+      api_->memory_create(system_scope_, &request, &memories_[0], nullptr),
+      AMDF_STATUS_OK);
+  amdf_memory_info_t info = {
+      .type = AMDF_STRUCTURE_TYPE_MEMORY_INFO,
+      .structure_size = sizeof(info),
+  };
+  ASSERT_EQ(api_->memory_query_info(memories_[0], &info), AMDF_STATUS_OK);
+  EXPECT_EQ(info.memory_class, AMDF_MEMORY_CLASS_SYSTEM);
+  EXPECT_EQ(info.flags & flags, flags);
+  ASSERT_EQ(MapMemory(memories_[0], 0, 0, request.byte_length,
+                      AMDF_MEMORY_MAP_FLAG_READ | AMDF_MEMORY_MAP_FLAG_WRITE),
+            AMDF_STATUS_OK);
+  EXPECT_EQ(mapping_infos_[0].cacheability, AMDF_HOST_CACHEABILITY_WRITE_BACK);
+  std::memset(mapping_infos_[0].pointer, 0x5A, request.byte_length);
+  ASSERT_EQ(api_->host_mapping_cache_control(mappings_[0],
+                                             AMDF_HOST_CACHE_OPERATION_FLUSH, 0,
+                                             request.byte_length),
+            AMDF_STATUS_OK);
+  ASSERT_EQ(api_->host_mapping_cache_control(
+                mappings_[0], AMDF_HOST_CACHE_OPERATION_INVALIDATE, 0,
+                request.byte_length),
+            AMDF_STATUS_OK);
+  EXPECT_EQ(static_cast<const uint8_t*>(mapping_infos_[0].pointer)[4095], 0x5A);
+}
+
+TEST_F(GpuLinuxMemoryTest, HonorsSystemPlacementCapabilities) {
   amdf_memory_create_info_t info = MakeSystemMemoryCreateInfo();
+  amdf_memory_profile_t profile = {
+      .type = AMDF_STRUCTURE_TYPE_MEMORY_PROFILE,
+      .structure_size = sizeof(profile),
+  };
+  amdf_memory_access_capabilities_t capabilities = {
+      .type = AMDF_STRUCTURE_TYPE_MEMORY_ACCESS_CAPABILITIES,
+      .structure_size = sizeof(capabilities),
+  };
+  ASSERT_EQ(
+      QueryMemoryProfile(system_scope_, info.memory_profile_ordinal,
+                         memory_access_.requirements, &profile, &capabilities),
+      AMDF_STATUS_OK);
   info.required_flags |= AMDF_MEMORY_FLAG_DEVICE_LOCAL;
   amdf_memory_t* output = reinterpret_cast<amdf_memory_t*>(uintptr_t{1});
-  EXPECT_EQ(api_->memory_create(system_scope_, &info, &output),
-            amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED));
-  EXPECT_EQ(reinterpret_cast<uintptr_t>(output), uintptr_t{1});
+  const amdf_status_t status =
+      api_->memory_create(system_scope_, &info, &output, nullptr);
+  if (amdf_status_is_ok(status)) {
+    memories_[0] = output;
+  }
+  if (profile.supported_flags & AMDF_MEMORY_FLAG_DEVICE_LOCAL) {
+    EXPECT_EQ(status, AMDF_STATUS_OK);
+  } else {
+    EXPECT_EQ(status, amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED));
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(output), uintptr_t{1});
+  }
 }
 
 TEST_F(GpuLinuxMemoryTest, HonorsLocalPlacementCapabilities) {
@@ -551,7 +628,7 @@ TEST_F(GpuLinuxMemoryTest, RegistersOverlappingCallerPagesWithExactAccess) {
     create_info.registered_host_cacheability =
         AMDF_HOST_CACHEABILITY_WRITE_BACK;
     ASSERT_EQ(api_->memory_create(system_scope_, &create_info,
-                                  &memories_[case_ordinal]),
+                                  &memories_[case_ordinal], nullptr),
               AMDF_STATUS_OK)
         << "access case " << case_ordinal;
 
@@ -656,9 +733,9 @@ TEST_F(GpuLinuxMemoryTest, RegistersOverlappingCallerPagesWithExactAccess) {
       AMDF_HOST_CACHEABILITY_WRITE_BACK;
   amdf_memory_t* invalid_output =
       reinterpret_cast<amdf_memory_t*>(uintptr_t{1});
-  EXPECT_EQ(
-      api_->memory_create(system_scope_, &invalid_access, &invalid_output),
-      amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED));
+  EXPECT_EQ(api_->memory_create(system_scope_, &invalid_access, &invalid_output,
+                                nullptr),
+            amdf_make_api_status(AMDF_STATUS_CODE_UNSUPPORTED));
   EXPECT_EQ(reinterpret_cast<uintptr_t>(invalid_output), uintptr_t{1});
 
   for (amdf_host_mapping_t*& mapping : mappings_) {
@@ -666,7 +743,7 @@ TEST_F(GpuLinuxMemoryTest, RegistersOverlappingCallerPagesWithExactAccess) {
     mapping = nullptr;
   }
   for (amdf_memory_t*& memory : memories_) {
-    ASSERT_EQ(api_->memory_destroy(std::exchange(memory, nullptr)),
+    ASSERT_EQ(api_->memory_destroy(std::exchange(memory, nullptr), nullptr),
               AMDF_STATUS_OK);
   }
   std::memset(caller_pages_, 0x3C, caller_byte_length_);

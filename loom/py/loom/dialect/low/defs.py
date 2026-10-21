@@ -57,10 +57,9 @@ from loom.dialect.func.defs import (
     CallingConv,
     EffectContract,
     InlinePolicyAttr,
-    Retain,
-    Visibility,
 )
 from loom.dialect.memory import MemoryAccessFlags
+from loom.dialect.symbol import Retain, Visibility
 from loom.dialect.target.defs import ExportAbiKind, ExportLinkage
 from loom.dsl import (
     ANY,
@@ -99,6 +98,7 @@ from loom.dsl import (
     NoAncestor,
     Op,
     Operand,
+    OperandRole,
     OpPhase,
     RegionBranchInterface,
     RegionDef,
@@ -1389,7 +1389,7 @@ low_slice = Op(
     attrs=[
         AttrDef("offset", "i64"),
     ],
-    operands=[Operand("source", REGISTER)],
+    operands=[Operand("source", REGISTER, role=OperandRole.ACCESS_PATH)],
     results=[Result("result", REGISTER)],
     structural_materialization=True,
     traits=[PURE, STORAGE_RELATION],
@@ -1520,7 +1520,7 @@ low_storage_view = Op(
     group=low_ops,
     phase=OpPhase.EXECUTABLE,
     doc="Project a byte subspan from function-local storage.",
-    operands=[Operand("source", STORAGE)],
+    operands=[Operand("source", STORAGE, role=OperandRole.ACCESS_PATH)],
     attrs=[
         AttrDef("offset", ATTR_TYPE_I64, default=0, elide_default=True),
         AttrDef("byte_length", ATTR_TYPE_I64),

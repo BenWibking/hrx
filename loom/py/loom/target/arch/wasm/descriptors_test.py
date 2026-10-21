@@ -10,6 +10,7 @@ from loom.target.arch.wasm.descriptors import (
     WASM_CORE_SIMD128_DESCRIPTOR_SET,
     WASM_INTEGER_ARITHMETIC_INSTRUCTIONS,
     WASM_INTEGER_EXTENSION_INSTRUCTIONS,
+    WASM_INTEGER_NARROWING_INSTRUCTIONS,
 )
 from loom.target.low_descriptors import ImmediateFlag, ImmediateKind
 
@@ -77,6 +78,18 @@ def test_shuffle_has_sixteen_required_lanes_from_both_inputs():
         assert not immediate.flags
 
 
+def test_i32_eqz_descriptor_uses_the_native_scalar_encoding():
+    descriptor = next(
+        descriptor
+        for descriptor in WASM_CORE_SIMD128_DESCRIPTOR_SET.descriptors
+        if descriptor.key == "wasm.i32.eqz"
+    )
+    assert descriptor.encoding_id == 0x45
+    assert descriptor.semantic_tag == "integer.cmp.eqz.i32"
+    assert [operand.field_name for operand in descriptor.operands] == ["dst", "input"]
+    assert not descriptor.immediates
+
+
 def test_swizzle_has_dynamic_byte_indices():
     descriptor = next(
         descriptor
@@ -113,6 +126,40 @@ def test_narrow_lanes_use_unsigned_extract_encodings_and_exact_lane_domains():
             assert immediate.kind is ImmediateKind.UNSIGNED
             assert immediate.unsigned_max == lanes - 1
             assert not immediate.flags
+
+
+def test_integer_narrowing_descriptors_cover_the_native_instruction_matrix():
+    descriptors = {
+        descriptor.key: descriptor
+        for descriptor in WASM_CORE_SIMD128_DESCRIPTOR_SET.descriptors
+    }
+    expected = {
+        ("i8x16", "i16x8", "s"): 0x65,
+        ("i8x16", "i16x8", "u"): 0x66,
+        ("i16x8", "i32x4", "s"): 0x85,
+        ("i16x8", "i32x4", "u"): 0x86,
+    }
+
+    actual = {
+        (
+            instruction.result_shape,
+            instruction.source_shape,
+            instruction.signedness,
+        ): instruction.subopcode
+        for instruction in WASM_INTEGER_NARROWING_INSTRUCTIONS
+    }
+    assert actual == expected
+    for (result_shape, source_shape, signedness), subopcode in expected.items():
+        descriptor = descriptors[
+            f"wasm.{result_shape}.narrow_{source_shape}_{signedness}"
+        ]
+        assert descriptor.encoding_id == (0xFD << 8) | subopcode
+        assert [operand.field_name for operand in descriptor.operands] == [
+            "dst",
+            "low",
+            "high",
+        ]
+        assert not descriptor.immediates
 
 
 def test_simd_compare_descriptors_cover_the_native_instruction_matrix():
@@ -176,6 +223,73 @@ def test_simd_compare_descriptors_cover_the_native_instruction_matrix():
         descriptor = descriptors[key]
         assert not descriptor.immediates
         assert len(descriptor.operands) == 3
+
+
+def test_float_arithmetic_descriptors_cover_both_native_widths():
+    descriptors = {
+        descriptor.key: descriptor
+        for descriptor in WASM_CORE_SIMD128_DESCRIPTOR_SET.descriptors
+    }
+    scalar_expected = {
+        **{
+            f"wasm.{type_name}.{operation}": base + offset
+            for type_name, base in (("f32", 0x8B), ("f64", 0x99))
+            for operation, offset in (
+                ("abs", 0),
+                ("neg", 1),
+                ("ceil", 2),
+                ("floor", 3),
+                ("trunc", 4),
+                ("nearest", 5),
+                ("sqrt", 6),
+                ("add", 7),
+                ("sub", 8),
+                ("mul", 9),
+                ("div", 10),
+                ("min", 11),
+                ("max", 12),
+                ("copysign", 13),
+            )
+        },
+        **{
+            f"wasm.{type_name}.{operation}": base + offset
+            for type_name, base in (("f32", 0x5B), ("f64", 0x61))
+            for offset, operation in enumerate(("eq", "ne", "lt", "gt", "le", "ge"))
+        },
+    }
+    simd_expected = {
+        **{
+            f"wasm.{shape}.{operation}": (0xFD << 8) | subopcode
+            for shape, subopcodes in (
+                ("f32x4", (0xE0, 0xE1, 0x67, 0x68, 0x69, 0x6A, 0xE3)),
+                ("f64x2", (0xEC, 0xED, 0x74, 0x75, 0x7A, 0x94, 0xEF)),
+            )
+            for operation, subopcode in zip(
+                ("abs", "neg", "ceil", "floor", "trunc", "nearest", "sqrt"),
+                subopcodes,
+                strict=True,
+            )
+        },
+        **{
+            f"wasm.{shape}.{operation}": (0xFD << 8) | (base + offset)
+            for shape, base in (("f32x4", 0xE4), ("f64x2", 0xF0))
+            for offset, operation in enumerate(
+                ("add", "sub", "mul", "div", "min", "max")
+            )
+        },
+    }
+    for expected in (scalar_expected, simd_expected):
+        for key, encoding in expected.items():
+            descriptor = descriptors[key]
+            assert descriptor.encoding_id == encoding
+            assert not descriptor.immediates
+            assert len(descriptor.operands) == (
+                2
+                if key.endswith(
+                    (".abs", ".neg", ".ceil", ".floor", ".trunc", ".nearest", ".sqrt")
+                )
+                else 3
+            )
 
 
 def test_v128_not_uses_the_simd128_logical_opcode():

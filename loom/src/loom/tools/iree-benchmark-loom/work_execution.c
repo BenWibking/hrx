@@ -46,6 +46,7 @@ static iree_status_t iree_benchmark_loom_run_dispatch_sample_work_item(
           work_item->begin_benchmark_sample, options->host_allocator,
           &benchmark_result);
       if (iree_status_is_ok(status)) {
+        benchmark_result.compile_item = compile_context->compile_item;
         benchmark_result.launch_evidence = &work_item_state.launch_evidence;
         status = iree_benchmark_loom_emit_work_item_result_aliases(
             options->run, options->module_plan, work_plan, work_item,
@@ -63,6 +64,7 @@ static iree_status_t iree_benchmark_loom_run_dispatch_sample_work_item(
           work_item->begin_benchmark_sample, options->host_allocator,
           &benchmark_result);
       if (iree_status_is_ok(status)) {
+        benchmark_result.compile_item = compile_context->compile_item;
         benchmark_result.launch_evidence = &work_item_state.launch_evidence;
         status = iree_benchmark_loom_emit_work_item_result_aliases(
             options->run, options->module_plan, work_plan, work_item,
@@ -150,9 +152,10 @@ iree_status_t iree_benchmark_loom_run_work_plan(
     const iree_benchmark_loom_selected_benchmark_t* selection =
         &work_plan
              ->selected_benchmarks[work_item->representative_selection_index];
-    if (selection->skipped) {
+    if (selection->skip_reason != NULL) {
       const iree_benchmark_loom_benchmark_result_t benchmark_result = {
           .state = IREE_SV("skipped"),
+          .skip_reason = selection->skip_reason,
       };
       status = iree_benchmark_loom_emit_work_item_result_aliases(
           options->run, options->module_plan, work_plan, work_item,
@@ -198,7 +201,9 @@ iree_status_t iree_benchmark_loom_run_work_plan(
         }
         if (iree_status_is_ok(status)) {
           status = iree_benchmark_loom_run_scenario_work_item(
-              scenario_execution, work_item, inout_failed_benchmark_count);
+              scenario_execution, work_item, inout_correctness_sample_count,
+              inout_correctness_failed_sample_count,
+              inout_failed_benchmark_count);
         }
         break;
       }

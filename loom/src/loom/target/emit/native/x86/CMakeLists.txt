@@ -193,6 +193,7 @@ loom_cc_library(
     loom::codegen::low::frame
     loom::codegen::low::target_binding
     loom::error::error_defs
+    loom::target::arch::x86::facts
     loom::target::emit::native::module
     loom::target::reporting::low
     loom::target::reporting::report
@@ -230,6 +231,7 @@ loom_check_test_suite(
     "test/function.loom-test"
     "test/operand_ties.loom-test"
     "test/root_native_bytes.loom-test"
+    "test/scalar_memory_native_bytes.loom-test"
     "test/spill_pressure.loom-test"
     "test/unused_abi_inputs.loom-test"
 )
@@ -262,9 +264,11 @@ iree_py_test(
     "{{$<TARGET_FILE:loom::tools::loom-compile::loom-compile>}}"
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/callable.loom}}"
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/hal_dispatch.loom}}"
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/schedule_model_callable.loom}}"
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/callable.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/hal_dispatch.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/schedule_model_callable.loom"
     "loom::tools::loom-compile::loom-compile"
   DEPS
     loom::py::loom::reporting::reporting

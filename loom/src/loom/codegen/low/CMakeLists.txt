@@ -299,6 +299,7 @@ loom_cc_test(
     loom::target::function_contract
     loom::target::test::alt_descriptors
     loom::target::test::descriptors
+    loom::target::test::target_record_table
     loom::testing::module_ptr
 )
 
@@ -343,6 +344,7 @@ loom_cc_library(
     "function_model.c"
   DEPS
     ::descriptors
+    ::diagnostics
     ::function
     ::function_requirements
     ::storage_identity
@@ -352,8 +354,10 @@ loom_cc_library(
     loom::analysis::liveness_dataflow
     loom::error::emitter
     loom::ir
+    loom::util::cfg_dominance
     loom::util::cfg_graph
     loom::util::cfg_loop
+    loom::util::cfg_loop_nest
   PUBLIC
 )
 
@@ -745,6 +749,7 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     loom::codegen::low::allocation::spill_plan
+    loom::codegen::low::allocation::spill_storage
     loom::codegen::low::allocation::storage
     loom::error::error_defs
     loom::error::parameter
@@ -769,12 +774,14 @@ loom_cc_test(
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::analysis::liveness
     loom::format::text::parser
     loom::ir
     loom::ops::low
     loom::ops::test
     loom::target::test::descriptors
     loom::testing::module_ptr
+    loom::util::cfg_graph
 )
 
 loom_cc_library(

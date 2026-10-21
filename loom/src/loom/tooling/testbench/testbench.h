@@ -314,6 +314,33 @@ typedef struct loom_testbench_file_write_plan_t {
   loom_check_file_write_npy_mode_t mode;
 } loom_testbench_file_write_plan_t;
 
+// Canonical authored storage identity for a shaped SSA value.
+typedef struct loom_testbench_storage_identity_t {
+  // Ultimate allocation value, or INVALID when no storage is represented.
+  loom_value_id_t root_value_id;
+  // Cumulative byte offset from |root_value_id|.
+  iree_device_size_t byte_offset;
+} loom_testbench_storage_identity_t;
+
+typedef enum loom_testbench_launch_schedule_event_kind_e {
+  // A kernel launch entry from the case's ordered launch list.
+  LOOM_TESTBENCH_LAUNCH_SCHEDULE_EVENT_LAUNCH = 0,
+  // Beginning of a serial launch schedule region.
+  LOOM_TESTBENCH_LAUNCH_SCHEDULE_EVENT_SERIAL_BEGIN = 1,
+  // Beginning of a concurrent launch schedule region.
+  LOOM_TESTBENCH_LAUNCH_SCHEDULE_EVENT_CONCURRENT_BEGIN = 2,
+  // End of the innermost launch schedule region.
+  LOOM_TESTBENCH_LAUNCH_SCHEDULE_EVENT_END = 3,
+} loom_testbench_launch_schedule_event_kind_t;
+
+// One event in a flat, balanced representation of authored launch structure.
+typedef struct loom_testbench_launch_schedule_event_t {
+  // Event discriminator.
+  loom_testbench_launch_schedule_event_kind_t kind;
+  // Location of the source launch or schedule operation.
+  loom_location_id_t location;
+} loom_testbench_launch_schedule_event_t;
+
 typedef struct loom_testbench_invocation_plan_t {
   // Invocation kind and provider discriminator.
   loom_testbench_invocation_kind_t kind;
@@ -533,10 +560,14 @@ typedef struct loom_testbench_case_plan_t {
   const loom_testbench_invocation_plan_t* invocations;
   // Number of entries in |invocations|.
   iree_host_size_t invocation_count;
-  // First kernel launch in |invocations|, or NULL when none are present.
-  const loom_testbench_invocation_plan_t* first_kernel_launch;
-  // Number of kernel launch entries in |invocations|.
+  // Kernel launch plans in source order, referencing entries in |invocations|.
+  const loom_testbench_invocation_plan_t* const* kernel_launches;
+  // Number of entries in |kernel_launches|.
   iree_host_size_t kernel_launch_count;
+  // Balanced launch/schedule events preserving authored execution structure.
+  const loom_testbench_launch_schedule_event_t* launch_schedule_events;
+  // Number of entries in |launch_schedule_events|.
+  iree_host_size_t launch_schedule_event_count;
   // Expectation plans in source order.
   const loom_testbench_expectation_plan_t* expectations;
   // Number of entries in |expectations|.
@@ -570,9 +601,9 @@ typedef struct loom_testbench_benchmark_plan_t {
   iree_host_size_t scenario_index;
   // Borrowed benchmark assignment dictionary.
   loom_named_attr_slice_t attrs;
-  // Per-parameter fixed sample ordinals selected by a case benchmark. Empty for
-  // scenario benchmarks. Entries are PARAMETER_SAMPLE_ORDINAL_ALL for
-  // unassigned parameters.
+  // Fixed sample ordinals in case parameter order, covering every parameter.
+  // Empty for scenario benchmarks. Entries are PARAMETER_SAMPLE_ORDINAL_ALL
+  // for unassigned parameters.
   const iree_host_size_t* parameter_sample_ordinals;
   // Number of entries in |parameter_sample_ordinals|.
   iree_host_size_t parameter_sample_ordinal_count;
@@ -588,6 +619,11 @@ typedef struct loom_testbench_benchmark_plan_t {
 typedef struct loom_testbench_module_plan_t {
   // Module this plan was derived from.
   const loom_module_t* module;
+  // Dense storage identities indexed by module value ID. Values outside
+  // planned check.case bodies have INVALID roots.
+  const loom_testbench_storage_identity_t* value_storage_identities;
+  // Number of entries in |value_storage_identities|.
+  iree_host_size_t value_storage_identity_count;
   // Discovered check.case records.
   const loom_testbench_case_plan_t* cases;
   // Number of entries in |cases|.
@@ -631,24 +667,44 @@ bool loom_testbench_plan_expectation(
     const loom_module_t* module, const loom_op_t* op,
     loom_testbench_expectation_plan_t* out_expectation);
 
-// Maps a case sample ordinal to a parameter-local sample ordinal.
-//
-// Parameters use mixed-radix expansion in source order. Parameter 0 varies
-// fastest, then parameter 1, and so on. |sample_ordinal| must be less than the
-// case plan's |cartesian_sample_count|.
-iree_host_size_t loom_testbench_case_sample_parameter_ordinal(
-    const loom_testbench_case_plan_t* case_plan,
-    iree_host_size_t sample_ordinal, iree_host_size_t parameter_index);
+// One concrete sample in a case's parameter domain. The Cartesian product may
+// exceed host limits even when every parameter and the selected sweep fit.
+// Retaining assignments avoids flattening that product into a lossy index.
+typedef struct loom_testbench_case_sample_t {
+  // Position in the reduced sweep of unassigned parameters, first varying
+  // fastest. With no assignments this is the ordinary case sample ordinal.
+  iree_host_size_t ordinal;
+  // Borrowed parameter-local ordinals in case parameter order, or NULL when
+  // every parameter is unassigned. A non-NULL array covers every parameter;
+  // PARAMETER_SAMPLE_ORDINAL_ALL entries vary with |ordinal|.
+  const iree_host_size_t* assignments;
+} loom_testbench_case_sample_t;
 
-// Maps a benchmark-local sample ordinal to the referenced case sample ordinal.
-//
-// Assigned benchmark parameters use their fixed parameter-local ordinals.
-// Unassigned parameters use mixed-radix expansion in source order over the
-// reduced benchmark sample domain.
-iree_host_size_t loom_testbench_benchmark_sample_case_ordinal(
-    const loom_testbench_case_plan_t* case_plan,
+// Selects a sample without allocation. The result borrows the benchmark plan's
+// assignments. |ordinal| must be within the planned benchmark sample count.
+loom_testbench_case_sample_t loom_testbench_benchmark_case_sample(
     const loom_testbench_benchmark_plan_t* benchmark_plan,
-    iree_host_size_t benchmark_sample_ordinal);
+    iree_host_size_t ordinal);
+
+// Consumes one parameter from a copy of a sample, returning its parameter-local
+// ordinal. Call once per parameter in source order with that parameter's
+// nonzero sample count. Decoding the whole sample is linear in parameter count.
+iree_host_size_t loom_testbench_case_sample_next(
+    loom_testbench_case_sample_t* remaining, iree_host_size_t sample_count);
+
+// Compares resolved parameter coordinates within the same case, independent of
+// how a benchmark pins them. Zero means the samples select identical inputs.
+int loom_testbench_case_sample_compare(
+    const loom_testbench_case_plan_t* case_plan,
+    loom_testbench_case_sample_t lhs, loom_testbench_case_sample_t rhs);
+
+// Derives the global Cartesian ordinal for reporting, if it fits in a host
+// word. On false, |out_ordinal| is zero; the sample is still valid and usable.
+// Execution and identity must remain valid when this representation cannot
+// fit; sort accelerators may use it with coordinate comparison on overflow.
+bool loom_testbench_case_sample_flatten(
+    const loom_testbench_case_plan_t* case_plan,
+    loom_testbench_case_sample_t sample, iree_host_size_t* out_ordinal);
 
 // Maps a benchmark-local sample ordinal to its scenario domain coordinate.
 //

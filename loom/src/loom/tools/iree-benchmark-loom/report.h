@@ -11,6 +11,7 @@
 
 #include "iree/base/api.h"
 #include "loom/sanitizer/options.h"
+#include "loom/tooling/testbench/scenario/executor.h"
 #include "loom/tooling/testbench/testbench.h"
 #include "loom/tools/iree-benchmark-loom/model.h"
 #include "loom/tools/iree-benchmark-loom/output.h"
@@ -50,6 +51,10 @@ typedef struct iree_benchmark_loom_summary_counts_t {
   iree_host_size_t profile_count;
   // Number of compile-report artifact files observed.
   iree_host_size_t compile_report_count;
+  // Number of canonical compile-request source files observed.
+  iree_host_size_t compile_request_count;
+  // Number of canonical compile-request manifest files observed.
+  iree_host_size_t compile_request_manifest_count;
   // Number of artifact-manifest files observed.
   iree_host_size_t artifact_manifest_count;
   // Number of target artifact files observed.
@@ -82,7 +87,7 @@ iree_status_t iree_benchmark_loom_write_sanitizer_options_json(
 // Writes fields for one concrete parameterized case sample.
 iree_status_t iree_benchmark_loom_write_sample_fields_json(
     const loom_module_t* module, const loom_testbench_case_plan_t* case_plan,
-    iree_host_size_t sample_ordinal, loom_json_object_writer_t* object);
+    loom_testbench_case_sample_t sample, loom_json_object_writer_t* object);
 
 // Writes the three fields identifying one concrete scenario trial.
 iree_status_t iree_benchmark_loom_write_scenario_coordinate_fields_json(
@@ -214,9 +219,15 @@ iree_status_t iree_benchmark_loom_append_sample_row(
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
     iree_host_size_t benchmark_sample_ordinal,
-    iree_host_size_t case_sample_ordinal,
     const loom_testbench_case_sample_result_t* sample_result,
     iree_string_builder_t* sample_output);
+
+// Writes scenario correctness observations and their benchmark replay identity.
+iree_status_t iree_benchmark_loom_write_scenario_sample_fields_json(
+    const iree_benchmark_loom_selected_benchmark_t* selection,
+    iree_host_size_t work_item_index, iree_host_size_t benchmark_sample_ordinal,
+    const loom_testbench_scenario_trial_result_t* result,
+    loom_json_object_writer_t* object);
 
 // Appends the initial run row.
 iree_status_t iree_benchmark_loom_append_run_row(
@@ -253,10 +264,17 @@ iree_status_t iree_benchmark_loom_write_compile_report_artifact(
     iree_benchmark_loom_hal_actual_provider_t* provider,
     iree_allocator_t allocator);
 
-// Appends a candidate compile row.
+// Writes one canonical compiled entry, shared by snapshot and JSONL output.
+iree_status_t iree_benchmark_loom_write_compile_fields_json(
+    const iree_benchmark_loom_hal_compile_item_t* compile_item,
+    const iree_benchmark_loom_hal_actual_provider_t* provider,
+    loom_json_object_writer_t* object);
+
+// Appends a canonical compiled-entry row.
 iree_status_t iree_benchmark_loom_append_compile_row(
     const iree_benchmark_loom_run_identity_t* run,
     const iree_benchmark_loom_candidate_identity_t* candidate,
+    const iree_benchmark_loom_hal_compile_item_t* compile_item,
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
     const iree_benchmark_loom_hal_actual_provider_t* provider,

@@ -488,9 +488,30 @@ loom_cc_library(
     ::table
     iree::base
     iree::base::internal
+    iree::base::internal::arena
+    loom::codegen::low::function
     loom::ir
     loom::ops::low
     loom::target::registers
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    spill_storage
+  HDRS
+    "spill_storage.h"
+  SRCS
+    "spill_storage.c"
+  DEPS
+    ::table
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::liveness
+    loom::ir
+    loom::ops::low
+    loom::util::adaptive_sort
+    loom::util::cfg_graph
   PUBLIC
 )
 
@@ -960,8 +981,6 @@ loom_cc_library(
     loom::codegen::low::placement
     loom::codegen::low::read_retention
     loom::codegen::low::target_binding
-    loom::ir
-    loom::target::registers
     loom::util::cfg_graph
     loom::util::index_set
     loom::util::segmented_storage
@@ -1059,6 +1078,23 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    storage_reservations
+  HDRS
+    "storage_reservations.h"
+  SRCS
+    "storage_reservations.c"
+  DEPS
+    ::unit_liveness
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::liveness
+    loom::codegen::low::placement
+    loom::ir
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     unit_liveness_builder
   HDRS
     "unit_liveness_builder.h"
@@ -1069,6 +1105,7 @@ loom_cc_library(
     ::clobber_index
     ::live_range
     ::storage
+    ::storage_reservations
     ::unit_liveness
     ::write_interference
     iree::base
@@ -1327,7 +1364,9 @@ loom_cc_test(
     loom::format::text::parser
     loom::ir
     loom::ops::low
+    loom::target::facts_builder
     loom::target::test::low_registry
+    loom::target::test::target_record_table
     loom::testing::module_ptr
 )
 

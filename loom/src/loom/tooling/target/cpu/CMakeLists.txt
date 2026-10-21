@@ -29,6 +29,20 @@ iree_native_test(
 )
 endif()
 
+if(LOOM_TARGET_ARCH_X86 AND LOOM_TARGET_ARCH_VM AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND IREE_ARCH STREQUAL "x86_64")
+iree_execution_test_suite(
+  NAME
+    benchmark_scenario_correctness_test
+  MANIFESTS
+    "test/benchmark_scenario_correctness.test.json"
+  TOOLS
+    "benchmark=loom::tools::iree-benchmark-loom"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/execution/hal/testdata/command_scenario_dependent_stages.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/testbench/testdata/benchmark_scenarios.loom"
+)
+endif()
+
 if(LOOM_IMPORT_CXX AND IREE_ARCH STREQUAL "x86_64")
 if(LOOM_TARGET_ARCH_X86 AND LOOM_TARGET_ARCH_VM AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF)
 loom_execution_test(
@@ -112,6 +126,36 @@ iree_native_test(
     loom::tools::iree-test-loom
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/integer/bit_count.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND LOOM_TARGET_ARCH_VM AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "float_exponent_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/float/exponent.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/float/exponent.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND LOOM_TARGET_ARCH_VM AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "float_reciprocal_scenario_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/float/reciprocal.loom}}"
+    "--device=task"
+    "--task_topology_max_group_count=2"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/numeric/float/reciprocal.loom"
 )
 endif()
 

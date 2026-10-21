@@ -52,6 +52,7 @@ static iree_status_t loom_vector_packet_legalize_partition_insert(
   uint32_t scalar_run_count = 0;
   uint32_t lane_offset = 0;
   bool previous_component_was_scalar = false;
+  bool inserts_into_vector_component = false;
   for (uint32_t i = 0; i < partition.count; ++i) {
     const loom_value_fact_vector_partition_component_t component =
         partition.components[i];
@@ -78,6 +79,10 @@ static iree_status_t loom_vector_packet_legalize_partition_insert(
         return iree_ok_status();
       }
       ++aggregate_count;
+      inserts_into_vector_component |=
+          has_dynamic_index ||
+          (has_static_index && static_index >= lane_offset &&
+           static_index - lane_offset < component.lane_count);
     }
     if (has_dynamic_index) {
       const uint8_t component_operation_count =
@@ -202,6 +207,10 @@ static iree_status_t loom_vector_packet_legalize_partition_insert(
           .components = replacement_components,
           .count = partition.count,
           .lane_count = partition.lane_count,
+          .flags = partition.flags |
+                   (inserts_into_vector_component
+                        ? LOOM_VALUE_FACT_VECTOR_PARTITION_FLAG_COMPUTED_PACKETS
+                        : LOOM_VALUE_FACT_VECTOR_PARTITION_FLAG_NONE),
       },
       /*inout_changed=*/NULL));
   IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
@@ -245,21 +254,10 @@ iree_status_t loom_vector_packet_legalize_insert(
     return iree_ok_status();
   }
 
-  bool geometric_packets_supported = true;
-  for (uint32_t lane_offset = 0; lane_offset < shape.lane_count;
-       lane_offset += shape.chunk_lane_count) {
-    const uint32_t packet_lane_count =
-        iree_min(shape.lane_count - lane_offset, shape.chunk_lane_count);
-    if (!loom_target_legalization_has_source_vector_carrier(
-            context, loom_vector_packet_type(result_type, packet_lane_count),
-            LOOM_VALUE_ID_INVALID)) {
-      geometric_packets_supported = false;
-      break;
-    }
-  }
   const uint32_t static_index =
       has_static_index ? (uint32_t)static_indices.i64_array[0] : 0u;
-  if (!geometric_packets_supported) {
+  if (!loom_vector_packet_shape_has_source_carriers(context, result_type,
+                                                    &shape)) {
     const loom_value_fact_vector_partition_t partition =
         loom_value_fact_table_query_vector_partition(context->fact_table, dest);
     return loom_vector_packet_legalize_partition_insert(

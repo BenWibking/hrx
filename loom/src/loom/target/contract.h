@@ -42,14 +42,15 @@ typedef struct loom_native_contraction_facts_t loom_native_contraction_facts_t;
 typedef struct loom_local_value_domain_t loom_local_value_domain_t;
 
 // Returns true when |type| has a complete vector-carrier mapping under the
-// selected target policy. A concrete source value retains its identity and
-// optional analysis facts so targets can admit value-dependent representations.
-// Hypothetical packet types use NULL facts and LOOM_VALUE_ID_INVALID; they must
-// not inherit the representation of the aggregate they will replace.
+// selected target facts and policy. A concrete source value retains its
+// identity and optional analysis facts so targets can admit value-dependent
+// representations. Hypothetical packet types use a NULL value fact table and
+// LOOM_VALUE_ID_INVALID; they must not inherit the representation of the
+// aggregate they will replace.
 typedef bool (*loom_target_vector_carrier_supported_fn_t)(
-    void* user_data, const loom_module_t* module,
-    const loom_value_fact_table_t* fact_table, loom_value_id_t value_id,
-    loom_type_t type);
+    void* user_data, const loom_target_facts_t* target_facts,
+    const loom_module_t* module, const loom_value_fact_table_t* fact_table,
+    loom_value_id_t value_id, loom_type_t type);
 
 typedef struct loom_target_vector_carrier_supported_callback_t {
   // Optional target query for complete vector-carrier admission.
@@ -71,6 +72,11 @@ typedef struct loom_target_bitstream_policy_t {
 // component planning represents the candidate intersection as one bit per
 // policy entry.
 #define LOOM_TARGET_VECTOR_PACKET_LANE_COUNT_LIMIT 64u
+
+// Disables the aggregate payload ceiling while retaining any explicit
+// per-element lane ceilings. Scalar targets use this when vector operations
+// lower without a native packet representation.
+#define LOOM_TARGET_VECTOR_PACKET_UNBOUNDED_BIT_COUNT UINT16_MAX
 
 // Target vector packet candidates consumed by shared legalization.
 //
@@ -101,6 +107,21 @@ typedef enum loom_target_vector_packet_policy_flag_bits_e {
   // Selects fact-bounded dynamic windows directly from retained SSA packet
   // snapshots instead of reifying those snapshots in private memory.
   LOOM_TARGET_VECTOR_PACKET_POLICY_FLAG_DYNAMIC_SNAPSHOT_SELECTION = 1u << 3,
+  // Restricts store packetization to producer graphs or exact partitions that
+  // preserve vector computation. Scalar-memory targets use this to terminate
+  // packetized computation without regrouping pure load and copy graphs.
+  LOOM_TARGET_VECTOR_PACKET_POLICY_FLAG_STORE_COMPUTED_PACKETS_ONLY = 1u << 4,
+  // Keeps packet snapshots in SSA. Rewrites that require temporary private
+  // storage remain with their target fallback instead.
+  LOOM_TARGET_VECTOR_PACKET_POLICY_FLAG_NO_PRIVATE_STAGING = 1u << 5,
+  // Clones decomposable packet operations only when the projected operation
+  // has a native target contract. Targets with later packet legalization can
+  // leave this unset and consume the cloned operation there.
+  LOOM_TARGET_VECTOR_PACKET_POLICY_FLAG_REPLAY_REQUIRES_CONTRACT = 1u << 6,
+  // Uses scalar elements as the final boundary components when the target has
+  // no vector carrier. This affects callable and control-flow projection only;
+  // it does not declare singleton vectors to be native packets.
+  LOOM_TARGET_VECTOR_PACKET_POLICY_FLAG_SCALAR_BOUNDARY_COMPONENTS = 1u << 7,
 } loom_target_vector_packet_policy_flag_bits_t;
 typedef uint8_t loom_target_vector_packet_policy_flags_t;
 
@@ -119,8 +140,12 @@ typedef struct loom_target_vector_packet_policy_t {
   // Sparse per-element lane ceilings for structural packet widths.
   const loom_target_vector_packet_lane_limit_t* structural_lane_limits;
   // Largest payload in bits that remains owned by ordinary structural
-  // lowering instead of packet legalization.
+  // lowering instead of packet legalization. The unbounded sentinel leaves
+  // every payload with ordinary lowering while retaining structural limits.
   uint16_t maximum_unpacketized_bit_count;
+  // Maximum number of packet operations materialized for one static
+  // decomposable component. Zero uses the shared conservative limit.
+  uint16_t maximum_component_expansion_op_count;
   // Number of entries in |native_bit_counts|.
   uint8_t native_bit_count_count;
   // Number of entries in |native_lane_counts|, at most
@@ -538,6 +563,8 @@ typedef struct loom_target_contract_query_environment_t {
   const loom_target_facts_t* target_facts;
   // Low descriptor set selected for this query.
   const loom_low_descriptor_set_t* descriptor_set;
+  // Machine schedule model selected with |descriptor_set|.
+  const loom_low_schedule_model_t* schedule_model;
   // Source value facts visible to the query.
   const loom_value_fact_table_t* fact_table;
   // Shared reference/access scope valid for this immutable source snapshot.

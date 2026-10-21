@@ -16,9 +16,11 @@
 #include "loom/serve/runtime/program/sources.h"
 #include "loom/serve/runtime/program/variant_pool.h"
 #include "loom/serve/runtime/storage/memory.h"
+#include "loom/serve/service/text/capture.h"
 #include "loom/serve/service/text/chat.h"
 #include "loom/serve/service/text/media_input.h"
 #include "loom/serve/service/text/packing.h"
+#include "loom/serve/service/text/warmup.h"
 #include "loomc/sanitizer.h"
 
 #ifdef __cplusplus
@@ -83,7 +85,27 @@ const loom_serve_compilation_report_t* loom_serve_text_variant_report(
 // Retained arenas are sized to row_count, not this control-payload bound.
 enum { LOOM_SERVE_TEXT_ROW_CAPACITY = 16 };
 
+typedef enum loom_serve_text_mode_e {
+  // Tokenizer/chat policy and optional local token prediction.
+  LOOM_SERVE_TEXT_MODE_GENERATE = 0,
+  // Known IDs advance retained state and produce opaque activation bytes.
+  // No tokenizer, chat policy, vocabulary head, or proposal stage is required.
+  LOOM_SERVE_TEXT_MODE_ENCODE = 1,
+} loom_serve_text_mode_t;
+
+// Immutable source contract selected at registration.
+loom_serve_text_mode_t loom_serve_text_model_mode(
+    const loom_serve_text_model_t* model);
+
+// Source-owned known-input options, validated before row admission. The caller
+// exclusively borrows the model VM and receives one owned options reference.
+iree_status_t loom_serve_text_model_request_options(
+    loom_serve_text_model_t* model, iree_string_view_t body,
+    uint64_t request_id, iree_vm_buffer_t** out_options);
+
 typedef struct loom_serve_text_options_t {
+  // Source root contract and request semantics, fixed for this residency.
+  loom_serve_text_mode_t mode;
   // Explicit program inputs and local base, borrowed through load completion.
   loom_serve_sources_t sources;
   // Maximum input count specialized into isolated prefill.
@@ -226,7 +248,7 @@ typedef enum loom_serve_text_reserve_mode_e {
 // model frontier. No model-completion or native backing wait occurs. Only one
 // reservation may own a row.
 //
-// CAPACITY/DEFERRED mean parameter admission is pending without a pin or state
+// Parameter CAPACITY/DEFERRED mean admission is pending without a pin or state
 // change; abandoning the request cancels its residency admission interest.
 // ACQUIRED owns a parameter pin through successful ALL
 // readiness on the borrowed frontier and complete_reserve, even if subsequent
@@ -242,13 +264,16 @@ iree_status_t loom_serve_text_row_submit_reserve(
     loom_serve_residency_admission_t* out_admission,
     loom_serve_execution_frontier_t* out_frontier);
 
-// Consumes a submitted reservation after successful ALL readiness. True owns
-// the parameter pin and exact target/draft pages, private views and recurrent
-// writer until release_reservation. False releases the activation-only pin and
-// preserves both selected row and checkpoint. Idle owners may be reclaimed
-// before retrying. No allocation or wait occurs. An already-cancelled request
-// completes normally, then releases any admitted reservation.
-bool loom_serve_text_row_complete_reserve(loom_serve_text_row_t* row);
+// Consumes a submitted reservation after successful ALL readiness. AVAILABLE
+// owns the parameter pin and exact target/draft pages, private views and
+// recurrent writer until release_reservation. CAPACITY/DEFERRED release the
+// activation-only pin and preserve both selected row and checkpoint. DEFERRED
+// preserves the observed native progress even if it has since retired. Idle
+// owners may be reclaimed before retrying. No allocation or wait occurs. An
+// already-cancelled request completes normally, then releases any admitted
+// reservation.
+loom_serve_memory_admission_t loom_serve_text_row_complete_reserve(
+    loom_serve_text_row_t* row);
 
 // Copies source-validated request options into source-owned row state before
 // its next epoch. The caller excludes outstanding model work and other model
@@ -318,12 +343,19 @@ iree_status_t loom_serve_text_load_allocate(
 enum loom_serve_text_load_flag_bits_e {
   // Irreversible cancellation stops new phases after accepted work returns.
   LOOM_SERVE_TEXT_LOAD_FLAG_CANCEL = 1u << 0,
+  // Current inference or explicit warmup allows prepared weights to activate
+  // while native compilation/tokenizer work remains pending. Ordinary
+  // registration stays cold.
+  LOOM_SERVE_TEXT_LOAD_FLAG_DEMAND = 1u << 1,
 };
 typedef uint32_t loom_serve_text_load_flags_t;
 
 // Serialized owner turn. Never joins CPU or device work. Terminal advance
-// joins every load callback, but a failed initialization can still own queue
-// consumers. Success means initialization readiness and a fully linked model.
+// joins every preparation callback, but a failed initialization can still own
+// queue consumers. Success means state initialization and a fully linked model;
+// demanded parameter I/O may remain owned by model_warmup. The service can
+// admit actual requests while those weights load; execution still imports
+// readiness.
 iree_status_t loom_serve_text_load_advance(loom_serve_text_load_t* load,
                                            loom_serve_text_load_flags_t flags,
                                            bool* out_complete);
@@ -398,6 +430,12 @@ iree_status_t loom_serve_text_model_deactivate(loom_serve_text_model_t* model,
 // work, retaining the returned pin across invocations until release. Ordinary
 // capacity backpressure leaves all model state unchanged.
 loom_serve_residency_t* loom_serve_text_model_residency(
+    const loom_serve_text_model_t* model);
+
+// Borrowed demanded parameter warmup, or NULL for cold preparation. The service
+// transfers its observer and polls it on owner turns; model retirement joins
+// it.
+loom_serve_text_warmup_t* loom_serve_text_model_warmup(
     const loom_serve_text_model_t* model);
 
 // Parameter-only virtual/physical statistics, excluding mutable state.
@@ -480,6 +518,11 @@ const loom_serve_packing_shape_t* loom_serve_text_model_shapes(
 // chunks or promotes a selected first result to speculation, stopping
 // speculative work at EOS, output credit or context bound.
 //
+// Known-input models require out_capture and reject selection, proposal, media,
+// and continuation. Their source capture plan is checked before row mutation;
+// successful submission transfers independent output ownership to the caller.
+// Generative models require out_capture=NULL and preserve the token contract.
+//
 // Accepted token IDs and publication metadata are copied before return. Their
 // caller storage may be reused immediately, even on submission failure. Media
 // metadata is also copied, and queue submission retains every device view it
@@ -498,6 +541,7 @@ iree_status_t loom_serve_text_model_submit_epoch(
     iree_host_size_t span_count, const loom_serve_text_span_t* spans,
     const uint32_t* output_limits,
     const loom_serve_text_continuation_t* continuation,
+    loom_serve_text_capture_t** out_capture,
     loom_serve_execution_frontier_t* out_frontier);
 
 // Consumes one successfully completed epoch after both submitted frontiers

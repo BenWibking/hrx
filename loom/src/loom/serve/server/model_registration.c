@@ -84,12 +84,15 @@ typedef struct loom_serve_finite_registration_t {
 } loom_serve_finite_registration_t;
 
 static iree_status_t loom_serve_finite_registration_prepare(
-    void* self, bool cancel, bool* out_complete,
-    loom_serve_service_t* out_service,
+    void* self, loom_serve_registration_prepare_flags_t flags,
+    bool* out_complete, loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_finite_registration_t* registration = self;
   iree_status_t status = loom_serve_finite_load_advance(
-      registration->load, cancel ? LOOM_SERVE_FINITE_LOAD_FLAG_CANCEL : 0,
+      registration->load,
+      iree_any_bit_set(flags, LOOM_SERVE_REGISTRATION_PREPARE_FLAG_CANCEL)
+          ? LOOM_SERVE_FINITE_LOAD_FLAG_CANCEL
+          : 0,
       out_complete);
   if (!*out_complete) {
     return status;
@@ -253,12 +256,15 @@ typedef struct loom_serve_image_registration_t {
 } loom_serve_image_registration_t;
 
 static iree_status_t loom_serve_image_registration_prepare(
-    void* self, bool cancel, bool* out_complete,
-    loom_serve_service_t* out_service,
+    void* self, loom_serve_registration_prepare_flags_t flags,
+    bool* out_complete, loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_image_registration_t* registration = self;
   iree_status_t status = loom_serve_image_load_advance(
-      registration->load, cancel ? LOOM_SERVE_IMAGE_LOAD_FLAG_CANCEL : 0,
+      registration->load,
+      iree_any_bit_set(flags, LOOM_SERVE_REGISTRATION_PREPARE_FLAG_CANCEL)
+          ? LOOM_SERVE_IMAGE_LOAD_FLAG_CANCEL
+          : 0,
       out_complete);
   if (!*out_complete) {
     return status;
@@ -278,7 +284,6 @@ static iree_status_t loom_serve_image_registration_prepare(
         .name = configuration->name,
         .width = configuration->image.width,
         .height = configuration->image.height,
-        .adapter_enabled = configuration->image.adapter.size != 0,
         .pending_capacity = configuration->pending_requests,
         .variant_capacity = configuration->variant_capacity,
         .heartbeat_interval = registration->options->heartbeat_interval};
@@ -431,12 +436,15 @@ typedef struct loom_serve_speech_registration_t {
 } loom_serve_speech_registration_t;
 
 static iree_status_t loom_serve_speech_registration_prepare(
-    void* self, bool cancel, bool* out_complete,
-    loom_serve_service_t* out_service,
+    void* self, loom_serve_registration_prepare_flags_t flags,
+    bool* out_complete, loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_speech_registration_t* registration = self;
   iree_status_t status = loom_serve_speech_load_advance(
-      registration->load, cancel ? LOOM_SERVE_SPEECH_LOAD_FLAG_CANCEL : 0,
+      registration->load,
+      iree_any_bit_set(flags, LOOM_SERVE_REGISTRATION_PREPARE_FLAG_CANCEL)
+          ? LOOM_SERVE_SPEECH_LOAD_FLAG_CANCEL
+          : 0,
       out_complete);
   if (!*out_complete) {
     return status;
@@ -601,12 +609,15 @@ typedef struct loom_serve_recognition_registration_t {
 } loom_serve_recognition_registration_t;
 
 static iree_status_t loom_serve_recognition_registration_prepare(
-    void* self, bool cancel, bool* out_complete,
-    loom_serve_service_t* out_service,
+    void* self, loom_serve_registration_prepare_flags_t flags,
+    bool* out_complete, loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_recognition_registration_t* registration = self;
   iree_status_t status = loom_serve_recognition_load_advance(
-      registration->load, cancel ? LOOM_SERVE_RECOGNITION_LOAD_FLAG_CANCEL : 0,
+      registration->load,
+      iree_any_bit_set(flags, LOOM_SERVE_REGISTRATION_PREPARE_FLAG_CANCEL)
+          ? LOOM_SERVE_RECOGNITION_LOAD_FLAG_CANCEL
+          : 0,
       out_complete);
   if (!*out_complete) {
     return status;
@@ -781,13 +792,19 @@ typedef struct loom_serve_text_registration_t {
 } loom_serve_text_registration_t;
 
 static iree_status_t loom_serve_text_registration_prepare(
-    void* self, bool cancel, bool* out_complete,
-    loom_serve_service_t* out_service,
+    void* self, loom_serve_registration_prepare_flags_t flags,
+    bool* out_complete, loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_text_registration_t* registration = self;
-  iree_status_t status = loom_serve_text_load_advance(
-      registration->load, cancel ? LOOM_SERVE_TEXT_LOAD_FLAG_CANCEL : 0,
-      out_complete);
+  loom_serve_text_load_flags_t load_flags = 0;
+  if (iree_any_bit_set(flags, LOOM_SERVE_REGISTRATION_PREPARE_FLAG_CANCEL)) {
+    load_flags |= LOOM_SERVE_TEXT_LOAD_FLAG_CANCEL;
+  }
+  if (iree_any_bit_set(flags, LOOM_SERVE_REGISTRATION_PREPARE_FLAG_DEMAND)) {
+    load_flags |= LOOM_SERVE_TEXT_LOAD_FLAG_DEMAND;
+  }
+  iree_status_t status = loom_serve_text_load_advance(registration->load,
+                                                      load_flags, out_complete);
   if (!*out_complete) {
     return status;
   }
@@ -961,6 +978,9 @@ static iree_status_t loom_serve_text_registration_create(
   const iree_host_size_t shape_count = loom_serve_text_default_shapes(
       text->rows, text->prefill_capacity, registration->shapes);
   const loom_serve_text_options_t model_options = {
+      .mode = configuration->kind == LOOM_SERVE_MODEL_KIND_SEQUENCE
+                  ? LOOM_SERVE_TEXT_MODE_ENCODE
+                  : LOOM_SERVE_TEXT_MODE_GENERATE,
       .sources = configuration->sources,
       .prefill_capacity = text->prefill_capacity,
       .context_capacity = text->context_capacity,
@@ -1022,6 +1042,7 @@ static iree_status_t loom_serve_model_registration_create(
       loom_serve_wake_callback_t, loom_serve_telemetry_stream_t*,
       iree_allocator_t, loom_serve_registration_t*) = {
       [LOOM_SERVE_MODEL_KIND_TEXT] = loom_serve_text_registration_create,
+      [LOOM_SERVE_MODEL_KIND_SEQUENCE] = loom_serve_text_registration_create,
       [LOOM_SERVE_MODEL_KIND_IMAGE] = loom_serve_image_registration_create,
       [LOOM_SERVE_MODEL_KIND_EMBEDDING] = loom_serve_finite_registration_create,
       [LOOM_SERVE_MODEL_KIND_DECISION] = loom_serve_finite_registration_create,
@@ -1059,6 +1080,7 @@ loom_serve_registration_factory_t loom_serve_model_registration_factory(
                (1u << LOOM_SERVE_MODEL_KIND_SPEECH) |
                (1u << LOOM_SERVE_MODEL_KIND_RECOGNITION) |
                (1u << LOOM_SERVE_MODEL_KIND_ACTIVITY) |
+               (1u << LOOM_SERVE_MODEL_KIND_SEQUENCE) |
                (1u << LOOM_SERVE_MODEL_KIND_TEXT),
       .device_count = loom_serve_device_group_count(options->device_group),
       .create = loom_serve_model_registration_create,

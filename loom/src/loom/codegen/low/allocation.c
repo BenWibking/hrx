@@ -714,7 +714,7 @@ static iree_status_t loom_low_allocate_function_impl(
         &state.unit_liveness);
   }
   if (iree_status_is_ok(status) && state.target_constraints.error_count == 0) {
-    status = loom_low_allocation_unit_liveness_retain_tied_storage(
+    status = loom_low_allocation_unit_liveness_retain_storage(
         &state.unit_liveness, &state.liveness, &state.placement, arena,
         &decision_arena);
   }
@@ -741,13 +741,17 @@ static iree_status_t loom_low_allocate_function_impl(
         arena);
   }
   if (iree_status_is_ok(status) && state.target_constraints.error_count == 0) {
-    for (iree_host_size_t i = 0; i < state.target_constraints.fixed_value_count;
-         ++i) {
-      const loom_low_allocation_resolved_fixed_value_t* fixed =
-          &state.target_constraints.fixed_values[i];
-      loom_low_allocation_write_interference_note_fixed(
-          state.unit_liveness.write_interference, fixed->value_ordinal,
-          &fixed->assignment);
+    if (state.unit_liveness.write_interference != NULL) {
+      for (iree_host_size_t i = 0;
+           i < state.target_constraints.fixed_value_count; ++i) {
+        const loom_low_allocation_resolved_fixed_value_t* fixed =
+            &state.target_constraints.fixed_values[i];
+        const loom_low_allocation_storage_origin_t origin =
+            loom_low_allocation_write_interference_storage_origin_for_value_ordinal(
+                state.unit_liveness.write_interference, fixed->value_ordinal);
+        loom_low_allocation_write_interference_note_fixed(
+            state.unit_liveness.write_interference, origin, &fixed->assignment);
+      }
     }
     status = loom_low_allocation_write_interference_finalize(
         state.unit_liveness.write_interference, &state.liveness,

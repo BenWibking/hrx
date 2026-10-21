@@ -135,6 +135,7 @@ iree_status_t iree_benchmark_loom_event_sink_emit_compile(
     const iree_benchmark_loom_event_sink_t* sink,
     const iree_benchmark_loom_run_identity_t* run,
     const iree_benchmark_loom_candidate_identity_t* candidate,
+    const iree_benchmark_loom_hal_compile_item_t* compile_item,
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
     const iree_benchmark_loom_hal_actual_provider_t* provider) {
@@ -150,6 +151,7 @@ iree_status_t iree_benchmark_loom_event_sink_emit_compile(
                     {
                         .run = run,
                         .candidate = candidate,
+                        .compile_item = compile_item,
                         .benchmark_plan = benchmark_plan,
                         .case_plan = case_plan,
                         .provider = provider,
@@ -165,7 +167,6 @@ iree_status_t iree_benchmark_loom_event_sink_emit_sample(
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
     iree_host_size_t benchmark_sample_ordinal,
-    iree_host_size_t case_sample_ordinal,
     const loom_testbench_case_sample_result_t* sample_result) {
   IREE_ASSERT_ARGUMENT(run);
   IREE_ASSERT_ARGUMENT(candidate);
@@ -185,7 +186,6 @@ iree_status_t iree_benchmark_loom_event_sink_emit_sample(
                         .benchmark_plan = benchmark_plan,
                         .case_plan = case_plan,
                         .benchmark_sample_ordinal = benchmark_sample_ordinal,
-                        .case_sample_ordinal = case_sample_ordinal,
                         .sample_result = sample_result,
                     },
             });
@@ -195,7 +195,8 @@ iree_status_t iree_benchmark_loom_event_sink_emit_benchmark_result(
     const iree_benchmark_loom_event_sink_t* sink,
     const iree_benchmark_loom_run_identity_t* run,
     const iree_benchmark_loom_candidate_identity_t* candidate,
-    iree_host_size_t work_item_index, const loom_module_t* module,
+    const iree_benchmark_loom_work_item_t* work_item,
+    const loom_module_t* module,
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
     const loom_testbench_scenario_plan_t* scenario_plan,
@@ -217,7 +218,7 @@ iree_status_t iree_benchmark_loom_event_sink_emit_benchmark_result(
                     {
                         .run = run,
                         .candidate = candidate,
-                        .work_item_index = work_item_index,
+                        .work_item = work_item,
                         .module = module,
                         .benchmark_plan = benchmark_plan,
                         .case_plan = case_plan,
@@ -367,6 +368,24 @@ iree_status_t iree_benchmark_loom_event_sink_emit_comparison(
             });
 }
 
+static iree_status_t iree_benchmark_loom_append_scenario_sample_row(
+    const iree_benchmark_loom_scenario_sample_event_t* event,
+    iree_string_builder_t* output) {
+  loom_output_stream_t stream;
+  loom_output_stream_for_builder(output, &stream);
+  loom_json_object_writer_t object;
+  IREE_RETURN_IF_ERROR(loom_json_object_begin(&stream, &object));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+      &object, IREE_SV("row"), IREE_SV("sample")));
+  IREE_RETURN_IF_ERROR(
+      iree_benchmark_loom_write_run_id_field_json(event->run, &object));
+  IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_scenario_sample_fields_json(
+      event->selection, event->work_item_index, event->benchmark_sample_ordinal,
+      event->result, &object));
+  IREE_RETURN_IF_ERROR(loom_json_object_end(&object));
+  return loom_output_stream_write_char(&stream, '\n');
+}
+
 static iree_status_t iree_benchmark_loom_jsonl_event_sink_emit(
     void* user_data, const iree_benchmark_loom_event_t* event) {
   iree_benchmark_loom_jsonl_event_sink_t* adapter =
@@ -409,27 +428,32 @@ static iree_status_t iree_benchmark_loom_jsonl_event_sink_emit(
                           iree_benchmark_loom_jsonl_sink_begin(jsonl_sink)));
     case IREE_BENCHMARK_LOOM_EVENT_COMPILE:
       return iree_benchmark_loom_jsonl_sink_end(
-          jsonl_sink, iree_benchmark_loom_append_compile_row(
-                          event->compile.run, event->compile.candidate,
-                          event->compile.benchmark_plan,
-                          event->compile.case_plan, event->compile.provider,
-                          iree_benchmark_loom_jsonl_sink_begin(jsonl_sink)));
+          jsonl_sink,
+          iree_benchmark_loom_append_compile_row(
+              event->compile.run, event->compile.candidate,
+              event->compile.compile_item, event->compile.benchmark_plan,
+              event->compile.case_plan, event->compile.provider,
+              iree_benchmark_loom_jsonl_sink_begin(jsonl_sink)));
     case IREE_BENCHMARK_LOOM_EVENT_SAMPLE:
       return iree_benchmark_loom_jsonl_sink_end(
-          jsonl_sink,
-          iree_benchmark_loom_append_sample_row(
-              event->sample.run, event->sample.candidate,
-              event->sample.work_item_index, event->sample.module,
-              event->sample.benchmark_plan, event->sample.case_plan,
-              event->sample.benchmark_sample_ordinal,
-              event->sample.case_sample_ordinal, event->sample.sample_result,
-              iree_benchmark_loom_jsonl_sink_begin(jsonl_sink)));
+          jsonl_sink, iree_benchmark_loom_append_sample_row(
+                          event->sample.run, event->sample.candidate,
+                          event->sample.work_item_index, event->sample.module,
+                          event->sample.benchmark_plan, event->sample.case_plan,
+                          event->sample.benchmark_sample_ordinal,
+                          event->sample.sample_result,
+                          iree_benchmark_loom_jsonl_sink_begin(jsonl_sink)));
+    case IREE_BENCHMARK_LOOM_EVENT_SCENARIO_SAMPLE:
+      return iree_benchmark_loom_jsonl_sink_end(
+          jsonl_sink, iree_benchmark_loom_append_scenario_sample_row(
+                          &event->scenario_sample,
+                          iree_benchmark_loom_jsonl_sink_begin(jsonl_sink)));
     case IREE_BENCHMARK_LOOM_EVENT_BENCHMARK_RESULT:
       return iree_benchmark_loom_jsonl_sink_end(
           jsonl_sink,
           iree_benchmark_loom_append_benchmark_result(
               event->benchmark_result.run, event->benchmark_result.candidate,
-              event->benchmark_result.work_item_index,
+              event->benchmark_result.work_item->work_item_index,
               event->benchmark_result.module,
               event->benchmark_result.benchmark_plan,
               event->benchmark_result.case_plan,

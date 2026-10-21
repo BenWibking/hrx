@@ -10,6 +10,7 @@
 #include "loom/serve/runtime/host/wake.h"
 #include "loom/serve/service/kind.h"
 #include "loom/serve/service/text/checkpoint_control.h"
+#include "loom/serve/telemetry/tracing.h"
 
 struct loom_serve_registry_t {
   // Allocator owning the table and registration operations.
@@ -32,6 +33,50 @@ struct loom_serve_registry_t {
     loom_serve_telemetry_latency_t latency;
   } retired;
 };
+
+static void loom_serve_registry_set_phase(
+    loom_serve_registered_model_t* model,
+    loom_serve_registration_phase_t phase) {
+  IREE_TRACE({
+    if (model->phase != phase) {
+      IREE_TRACE_SECTION_LEAVE(model->trace.lifecycle);
+      model->trace.lifecycle = 0;
+      if (phase == LOOM_SERVE_REGISTRATION_PREPARING) {
+        model->trace.lifecycle = loom_serve_trace_section_enter(
+            LOOM_SERVE_TRACE_SECTION_PREPARE, model->service.name);
+      } else if (phase == LOOM_SERVE_REGISTRATION_RETIRING) {
+        model->trace.lifecycle = loom_serve_trace_section_enter(
+            LOOM_SERVE_TRACE_SECTION_RETIRE, model->service.name);
+      }
+    }
+  });
+  model->phase = phase;
+}
+
+static void loom_serve_registry_set_parameter_operation(
+    loom_serve_registered_model_t* model,
+    loom_serve_parameter_operation_t operation) {
+  IREE_TRACE({
+    const bool was_warmup =
+        model->parameter_operation == LOOM_SERVE_PARAMETER_OPERATION_WAITING ||
+        model->parameter_operation == LOOM_SERVE_PARAMETER_OPERATION_ACTIVATING;
+    const bool is_warmup =
+        operation == LOOM_SERVE_PARAMETER_OPERATION_WAITING ||
+        operation == LOOM_SERVE_PARAMETER_OPERATION_ACTIVATING;
+    // Waiting and loading are successive parts of the same explicit warmup.
+    if (model->parameter_operation != operation && !(was_warmup && is_warmup)) {
+      IREE_TRACE_SECTION_LEAVE(model->trace.parameters);
+      model->trace.parameters =
+          operation != LOOM_SERVE_PARAMETER_OPERATION_NONE
+              ? loom_serve_trace_section_enter(
+                    is_warmup ? LOOM_SERVE_TRACE_SECTION_WARMUP
+                              : LOOM_SERVE_TRACE_SECTION_DEACTIVATE,
+                    model->service.name)
+              : 0;
+    }
+  });
+  model->parameter_operation = operation;
+}
 
 static void loom_serve_registry_add_counters(
     loom_serve_telemetry_counters_t* target,
@@ -88,6 +133,7 @@ iree_status_t loom_serve_registry_allocate(
                                          (void**)&registry->models);
   }
   if (iree_status_is_ok(status)) {
+    IREE_TRACE(loom_serve_trace_initialize());
     const int64_t registered_unix_seconds = loom_serve_clock_now_unix_seconds();
     for (iree_host_size_t i = 0; i < service_count; ++i) {
       registry->models[i].service = services[i];
@@ -117,6 +163,8 @@ iree_status_t loom_serve_registry_free(loom_serve_registry_t* registry) {
   }
   for (iree_host_size_t i = 0; i < registry->capacity; ++i) {
     loom_serve_registered_model_t* model = &registry->models[i];
+    IREE_TRACE_SECTION_LEAVE(model->trace.lifecycle);
+    IREE_TRACE_SECTION_LEAVE(model->trace.parameters);
     iree_status_free(model->status);
     loom_serve_telemetry_stream_free(model->stream);
     loom_serve_model_configuration_deinitialize(&model->configuration);
@@ -250,7 +298,10 @@ iree_status_t loom_serve_registry_try_open_text_checkpoint(
   *out_control = NULL;
   loom_serve_service_t* service = NULL;
   IREE_RETURN_IF_ERROR(loom_serve_registry_find_admission(
-      registry, name, 1u << LOOM_SERVE_MODEL_KIND_TEXT, "text",
+      registry, name,
+      (1u << LOOM_SERVE_MODEL_KIND_TEXT) |
+          (1u << LOOM_SERVE_MODEL_KIND_SEQUENCE),
+      "retained sequence",
       request->action == LOOM_SERVE_TEXT_CHECKPOINT_ACTION_RELEASE, &service));
   if (!service) {
     return iree_ok_status();
@@ -326,13 +377,14 @@ iree_status_t loom_serve_registry_remove(loom_serve_registered_model_t* model,
   model->closed = true;
   if (model->parameter_operation ==
       LOOM_SERVE_PARAMETER_OPERATION_DEACTIVATING) {
-    model->parameter_operation = LOOM_SERVE_PARAMETER_OPERATION_NONE;
+    loom_serve_registry_set_parameter_operation(
+        model, LOOM_SERVE_PARAMETER_OPERATION_NONE);
   }
   if (mode > model->removal) {
     model->removal = mode;
   }
   if (model->phase == LOOM_SERVE_REGISTRATION_RELEASE_FAILED) {
-    model->phase = LOOM_SERVE_REGISTRATION_RETIRING;
+    loom_serve_registry_set_phase(model, LOOM_SERVE_REGISTRATION_RETIRING);
   }
   return iree_ok_status();
 }
@@ -391,7 +443,8 @@ iree_status_t loom_serve_registry_deactivate(
                             "component cannot release its parameter backing");
   }
   model->parameter_component = component;
-  model->parameter_operation = LOOM_SERVE_PARAMETER_OPERATION_DEACTIVATING;
+  loom_serve_registry_set_parameter_operation(
+      model, LOOM_SERVE_PARAMETER_OPERATION_DEACTIVATING);
   return iree_ok_status();
 }
 
@@ -448,7 +501,8 @@ iree_status_t loom_serve_registry_activate(
   }
   if (model->parameter_operation == LOOM_SERVE_PARAMETER_OPERATION_NONE) {
     model->parameter_component = component;
-    model->parameter_operation = LOOM_SERVE_PARAMETER_OPERATION_WAITING;
+    loom_serve_registry_set_parameter_operation(
+        model, LOOM_SERVE_PARAMETER_OPERATION_WAITING);
   }
   return iree_ok_status();
 }
@@ -509,21 +563,32 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
     model->status = registry->factory.create(
         registry->factory.self, &model->configuration, observer, model->stream,
         registry->host_allocator, &model->registration);
-    model->phase = iree_status_is_ok(model->status)
-                       ? LOOM_SERVE_REGISTRATION_PREPARING
-                       : LOOM_SERVE_REGISTRATION_FAILED;
+    loom_serve_registry_set_phase(model, iree_status_is_ok(model->status)
+                                             ? LOOM_SERVE_REGISTRATION_PREPARING
+                                             : LOOM_SERVE_REGISTRATION_FAILED);
     if (!iree_status_is_ok(model->status)) {
-      model->parameter_operation = LOOM_SERVE_PARAMETER_OPERATION_NONE;
+      loom_serve_registry_set_parameter_operation(
+          model, LOOM_SERVE_PARAMETER_OPERATION_NONE);
       loom_serve_registry_record_error(model, model->status);
     }
     progress = true;
   }
   if (model->phase == LOOM_SERVE_REGISTRATION_PREPARING) {
+    loom_serve_registration_prepare_flags_t flags = 0;
+    if (model->removal) {
+      flags = LOOM_SERVE_REGISTRATION_PREPARE_FLAG_CANCEL;
+    } else if ((!model->closed && model->parameter_demand_count) ||
+               (model->parameter_operation ==
+                    LOOM_SERVE_PARAMETER_OPERATION_WAITING &&
+                model->parameter_component ==
+                    LOOM_SERVE_MODEL_COMPONENT_PRIMARY)) {
+      flags = LOOM_SERVE_REGISTRATION_PREPARE_FLAG_DEMAND;
+    }
     bool complete = false;
     loom_serve_service_t service = {0};
-    model->status = model->registration.prepare(
-        model->registration.self, model->removal != LOOM_SERVE_REMOVAL_NONE,
-        &complete, &service, &model->compilation);
+    model->status =
+        model->registration.prepare(model->registration.self, flags, &complete,
+                                    &service, &model->compilation);
     if (complete) {
       if (iree_status_is_ok(model->status) && model->pinned_components &&
           !model->registration.set_pinned) {
@@ -551,15 +616,16 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
         }
         model->service = service;
         service.set_observer(service.self, observer);
-        model->phase = LOOM_SERVE_REGISTRATION_READY;
+        loom_serve_registry_set_phase(model, LOOM_SERVE_REGISTRATION_READY);
       } else {
-        model->parameter_operation = LOOM_SERVE_PARAMETER_OPERATION_NONE;
+        loom_serve_registry_set_parameter_operation(
+            model, LOOM_SERVE_PARAMETER_OPERATION_NONE);
         loom_serve_registry_record_error(model, model->status);
         if (registry->factory.query_status) {
           terminal_status =
               registry->factory.query_status(registry->factory.self);
         }
-        model->phase = LOOM_SERVE_REGISTRATION_RETIRING;
+        loom_serve_registry_set_phase(model, LOOM_SERVE_REGISTRATION_RETIRING);
       }
       progress = true;
     }
@@ -597,7 +663,7 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
               ? LOOM_SERVE_PARAMETER_OPERATION_ACTIVATING
               : LOOM_SERVE_PARAMETER_OPERATION_WAITING;
       progress |= operation != model->parameter_operation;
-      model->parameter_operation = operation;
+      loom_serve_registry_set_parameter_operation(model, operation);
       if (!iree_status_is_ok(model->status)) {
         loom_serve_registry_record_error(model, model->status);
         terminal_status = iree_status_clone(model->status);
@@ -614,7 +680,7 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
       model->service.set_observer(model->service.self,
                                   (loom_serve_wake_callback_t){0});
       loom_serve_registry_release_service(model);
-      model->phase = LOOM_SERVE_REGISTRATION_RETIRING;
+      loom_serve_registry_set_phase(model, LOOM_SERVE_REGISTRATION_RETIRING);
       progress = true;
     }
   }
@@ -634,7 +700,8 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
         complete = true;
       }
       if (complete) {
-        model->parameter_operation = LOOM_SERVE_PARAMETER_OPERATION_NONE;
+        loom_serve_registry_set_parameter_operation(
+            model, LOOM_SERVE_PARAMETER_OPERATION_NONE);
         progress = true;
       }
     }
@@ -646,12 +713,13 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
     if (!iree_status_is_ok(status)) {
       loom_serve_registry_record_error(model, status);
       model->status = iree_status_join(model->status, status);
-      model->phase = LOOM_SERVE_REGISTRATION_RELEASE_FAILED;
+      loom_serve_registry_set_phase(model,
+                                    LOOM_SERVE_REGISTRATION_RELEASE_FAILED);
       progress = true;
     } else if (complete) {
       model->registration.destroy(model->registration.self);
       model->registration = (loom_serve_registration_t){0};
-      model->phase = LOOM_SERVE_REGISTRATION_FAILED;
+      loom_serve_registry_set_phase(model, LOOM_SERVE_REGISTRATION_FAILED);
       progress = true;
     }
   }
@@ -666,6 +734,8 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
   }
   if (model->removal && !model->registration.self && !model->held_count &&
       !model->tokenizer_count) {
+    IREE_TRACE_SECTION_LEAVE(model->trace.lifecycle);
+    IREE_TRACE_SECTION_LEAVE(model->trace.parameters);
     loom_serve_registry_add_counters(&registry->retired.counters,
                                      &model->counters);
     loom_serve_telemetry_latency_merge(&registry->retired.latency,

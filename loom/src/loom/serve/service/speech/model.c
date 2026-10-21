@@ -48,8 +48,8 @@ typedef struct loom_serve_speech_invocation_t {
   iree_vm_buffer_t* payload;
   // Stable resident row, independent of its ordinal in any numerical batch.
   iree_host_size_t row_index;
-  // Successful state commitment retained through request release.
-  bool reserved;
+  // State admission result retained through activation readiness.
+  loom_serve_memory_admission_t admission;
   // Source next-work bytes, refreshed at each retired model selection cut.
   iree_vm_buffer_t* work;
   // Playback position after the most recently collected block.
@@ -717,6 +717,7 @@ static iree_status_t loom_serve_speech_bind_parameters(
         loom_serve_device_dispatch_queue(model->owner),
         loom_serve_device_storage_pool(model->owner),
         loom_serve_device_memory_pool(model->owner),
+        loom_serve_device_weight_geometry(model->owner),
         loom_serve_device_workspace(model->owner), 0, count, roots,
         host_allocator, &model->weights.plans[domain]);
   }
@@ -966,8 +967,8 @@ iree_status_t loom_serve_speech_load_advance(
         load->event.pending = true;
         iree_slim_mutex_unlock(&load->event.mutex);
         status = loom_serve_stage_set_compile_catalog_async(
-            model->jit, model->preparation, loom_serve_speech_load_compiled,
-            load, load->host_allocator);
+            model->jit, model->preparation, NULL,
+            loom_serve_speech_load_compiled, load, load->host_allocator);
         submitted = iree_status_is_ok(status);
         break;
       case SPEECH_LOAD_BIND:
@@ -1209,8 +1210,8 @@ static iree_status_t loom_serve_speech_generator_admit(
   // Activation already owns a pin and may have accepted device work. Even a
   // state-capacity denial retains that pin until complete_admit.
   IREE_RETURN_IF_ERROR(loom_serve_rows_try_reserve(
-      &model->state, invocation->row_index, &invocation->reserved));
-  if (invocation->reserved) {
+      &model->state, invocation->row_index, &invocation->admission));
+  if (invocation->admission == LOOM_SERVE_MEMORY_ADMISSION_AVAILABLE) {
     iree_const_byte_span_t payload;
     IREE_RETURN_IF_ERROR(iree_vm_buffer_map_read(
         invocation->payload, 0, iree_vm_buffer_length(invocation->payload),
@@ -1255,17 +1256,17 @@ static iree_status_t loom_serve_speech_generator_admit(
   return iree_ok_status();
 }
 
-static bool loom_serve_speech_generator_complete_admit(
+static loom_serve_memory_admission_t loom_serve_speech_generator_complete_admit(
     void* self, void* opaque_invocation) {
   loom_serve_speech_model_t* model = self;
   loom_serve_speech_invocation_t* invocation = opaque_invocation;
   loom_serve_rows_complete_backing(&model->state);
-  if (invocation->reserved) {
+  if (invocation->admission == LOOM_SERVE_MEMORY_ADMISSION_AVAILABLE) {
     loom_serve_residency_cancel_admission(model->residency);
   } else {
     loom_serve_residency_release(model->residency);
   }
-  return invocation->reserved;
+  return invocation->admission;
 }
 
 static iree_status_t loom_serve_speech_generator_prepare_work(

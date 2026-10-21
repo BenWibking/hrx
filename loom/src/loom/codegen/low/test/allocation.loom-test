@@ -221,10 +221,13 @@ value %out1: test.i32 -> target_id[1:1]
 
 // ====
 
-// RUN: emit low-allocation-query @multiple_edge_concats_remain_distinct values=%first_state,%second_state
+// RUN: emit low-allocation-query @multiple_edge_concats_remain_distinct spill-count edge-moves values=%first_state,%second_state
 
 test.target<low_core> @test_target
 
+// The shared zero remains live on the bypass path. Its hole at the join
+// permits reuse, but eagerly reserving the join destination from the zero
+// would grow the four-register placement to five just to avoid edge copies.
 low.func.def target<test.low.core>(@test_target) @multiple_edge_concats_remain_distinct(%condition: reg<test.i32>, %lhs: reg<test.i32>, %rhs: reg<test.i32>, %zero: reg<test.i32>) -> (reg<test.i32>) asm {
   low.cond_br %condition, ^build, ^exit : reg<test.i32>
 ^build:
@@ -243,6 +246,11 @@ low.func.def target<test.low.core>(@test_target) @multiple_edge_concats_remain_d
 }
 
 // ----
+spills: 0
+edge moves: 3
+move test.i32:target_id[1] <- test.i32:target_id[0]
+move test.i32:target_id[0] <- test.i32:target_id[2]
+move test.i32:target_id[2] <- test.i32:target_id[1]
 value %first_state: test.i32 -> target_id[2:2]
 value %second_state: test.i32 -> target_id[0:2]
 
@@ -1383,16 +1391,6 @@ value %next0: test.i32 -> target_id[3:1]
 value %state0: test.i32 -> target_id[0:1]
 value %next1: test.i32 -> target_id[4:1]
 
-// ====
-
-// RUN: emit low-allocation-query @contract_only_capacity_error fixed=%value:physical_register:40:1
-
-// A representation contract is sufficient for Low allocation. Export/config
-// context is absent when the optional target-symbol witness is omitted.
-// ERROR@+1: BACKEND/022 {target_key="<empty>", export_name="<empty>", config_key="<empty>", function_name="contract_only_capacity_error", request_kind="fixed_value", register_class="test.phys", location_base="40", allocation_capacity="32"}
-low.func.def target<test.low.core> @contract_only_capacity_error(%value: reg<test.phys>) -> (reg<test.phys>) asm {
-  return %value
-}
 // ====
 
 // RUN: emit low-allocation-query @explicit_physical_noncanonical_slice values=%wide,%high

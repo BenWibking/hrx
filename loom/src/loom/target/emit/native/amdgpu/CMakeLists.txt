@@ -158,6 +158,7 @@ loom_check_test_suite(
     "test/assembly_integer_subtract.loom-test"
     "test/assembly_packed_broadcast.loom-test"
     "test/assembly_q8.loom-test"
+    "test/assembly_spill_storage.loom-test"
     "test/assembly_vopd.loom-test"
     "test/assembly_vopd_cache.loom-test"
     "test/assembly_vopd_profiles.loom-test"
@@ -187,6 +188,7 @@ loom_check_test_suite(
     "test/packet.loom-test"
     "test/packet_json.loom-test"
     "test/permlane_swap.loom-test"
+    "test/private_segment_limit.loom-test"
     "test/register_banks.loom-test"
     "test/register_numbering.loom-test"
     "test/replay_clauses.loom-test"
@@ -282,12 +284,33 @@ endif()
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 loom_cc_library(
   NAME
+    spill_recipe
+  HDRS
+    "spill_recipe.h"
+  SRCS
+    "spill_recipe.c"
+  DEPS
+    ::storage_layout
+    iree::base
+    iree::base::internal::arena
+    loom::codegen::low::descriptors
+    loom::ir
+    loom::target::arch::amdgpu::refs::target_refs
+    loom::target::registers
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+loom_cc_library(
+  NAME
     spill_lowering
   HDRS
     "spill_lowering.h"
   SRCS
     "spill_lowering.c"
   DEPS
+    ::spill_recipe
     ::storage_layout
     iree::base
     iree::base::internal::arena
@@ -513,6 +536,7 @@ loom_cc_library(
     ::kernel_record_build
     ::kernel_report
     ::preflight
+    ::storage_layout
     iree::base
     iree::base::internal::arena
     loom::codegen::low::diagnostics
@@ -521,6 +545,7 @@ loom_cc_library(
     loom::error::parameter
     loom::ir
     loom::target::arch::amdgpu::error_defs
+    loom::target::arch::amdgpu::facts
     loom::target::arch::amdgpu::hal::kernel_abi
     loom::target::arch::amdgpu::planning::occupancy
     loom::target::arch::amdgpu::refs::target_refs

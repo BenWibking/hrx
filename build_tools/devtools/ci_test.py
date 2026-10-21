@@ -47,6 +47,61 @@ from build_tools.devtools import ci, ci_config, run_requirements
 
 
 class CiTest(unittest.TestCase):
+    def test_sanitizer_uses_explicit_symbolizer_before_toolchain_discovery(self):
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"UBSAN_SYMBOLIZER_PATH": "/chosen/llvm-symbolizer"},
+                clear=True,
+            ),
+            mock.patch.object(ci.shutil, "which") as which,
+        ):
+            step = ci.bazel_test_step("Test", ("//suite:test",), config="ubsan")
+        self.assertIn(
+            "--test_env=UBSAN_SYMBOLIZER_PATH=/chosen/llvm-symbolizer", step.argv
+        )
+        which.assert_not_called()
+
+    def test_sanitizer_discovers_existing_toolchain_symbolizer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = root / "lib" / "llvm" / "bin"
+            binaries.mkdir(parents=True)
+            for platform, executable in (
+                ("linux", "llvm-symbolizer"),
+                ("win32", "llvm-symbolizer.exe"),
+            ):
+                symbolizer = binaries / executable
+                symbolizer.touch()
+                with (
+                    self.subTest(platform=platform),
+                    mock.patch.object(ci.sys, "platform", platform),
+                    mock.patch.dict(
+                        os.environ, {"HRX_ROCM_ROOT": str(root)}, clear=True
+                    ),
+                    mock.patch.object(ci.shutil, "which") as which,
+                ):
+                    environment = dict(ci.sanitizer_env("tsan"))
+                    self.assertEqual(
+                        environment["TSAN_SYMBOLIZER_PATH"], str(symbolizer)
+                    )
+                    self.assertIn("suppressions=", environment["TSAN_OPTIONS"])
+                    which.assert_not_called()
+
+    def test_sanitizer_symbolizer_discovery_does_not_invent_missing_paths(self):
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(ci.shutil, "which", return_value=None) as which,
+        ):
+            self.assertEqual(ci.sanitizer_env(None), ())
+            which.assert_not_called()
+            self.assertEqual(ci.sanitizer_env("asan"), ())
+            which.return_value = "/tools/llvm-symbolizer"
+            self.assertEqual(
+                dict(ci.sanitizer_env("msan")),
+                {"MSAN_SYMBOLIZER_PATH": "/tools/llvm-symbolizer"},
+            )
+
     def test_requirement_audit_precedes_execution_and_rejects_unknown_tags(self):
         for requirement, audit_code, expected_code in (
             ("device", 0, 0),
@@ -444,6 +499,110 @@ class CiTest(unittest.TestCase):
                         for name in expected_names
                     ],
                 )
+                self.assertEqual(
+                    [
+                        step.bazel_profile
+                        for step in steps
+                        if step.bazel_profile is not None
+                    ],
+                    [resolved_profile_dir / name for name in expected_names],
+                )
+
+    def test_profile_summary_is_published_after_success_and_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile_path = root / "test-example.profile.gz"
+            output_path = root / "test-example.summary.json"
+            step = ci.CiStep(
+                "Test example",
+                ("example",),
+                bazel_profile=profile_path,
+            )
+            summary = object()
+
+            for command_code in (0, 7):
+                with self.subTest(command_code=command_code):
+                    job_summary_path = root / f"job-{command_code}.md"
+                    with (
+                        mock.patch.object(
+                            ci.subprocess,
+                            "run",
+                            return_value=subprocess.CompletedProcess(
+                                step.argv, command_code
+                            ),
+                        ),
+                        mock.patch.object(
+                            ci.bazel_profile_summary,
+                            "summarize",
+                            return_value=summary,
+                        ) as summarize,
+                        mock.patch.object(
+                            ci.bazel_profile_summary,
+                            "summary_path",
+                            return_value=output_path,
+                        ),
+                        mock.patch.object(
+                            ci.bazel_profile_summary, "write"
+                        ) as write_summary,
+                        mock.patch.object(
+                            ci.bazel_profile_summary,
+                            "render_console",
+                            return_value="console summary",
+                        ),
+                        mock.patch.object(
+                            ci.bazel_profile_summary,
+                            "render_markdown",
+                            return_value="markdown summary",
+                        ),
+                        mock.patch.dict(
+                            os.environ,
+                            {"GITHUB_STEP_SUMMARY": str(job_summary_path)},
+                            clear=True,
+                        ),
+                        contextlib.redirect_stdout(io.StringIO()),
+                        contextlib.redirect_stderr(io.StringIO()),
+                    ):
+                        result = ci.run_step(step, verbose=False)
+
+                    self.assertEqual(result.returncode, command_code)
+                    summarize.assert_called_once_with(profile_path)
+                    write_summary.assert_called_once_with(summary, output_path)
+                    self.assertEqual(job_summary_path.read_text(), "markdown summary\n")
+
+    def test_profile_summary_failure_preserves_command_failure(self):
+        profile_error = ci.bazel_profile_summary.BazelProfileSummaryError(
+            "truncated profile"
+        )
+        step = ci.CiStep(
+            "Test example",
+            ("example",),
+            bazel_profile=Path("/tmp/test-example.profile.gz"),
+        )
+
+        for command_code, expected_code in ((0, 1), (7, 7)):
+            with self.subTest(command_code=command_code):
+                stderr = io.StringIO()
+                with (
+                    mock.patch.object(
+                        ci.subprocess,
+                        "run",
+                        return_value=subprocess.CompletedProcess(
+                            step.argv, command_code
+                        ),
+                    ),
+                    mock.patch.object(
+                        ci,
+                        "publish_bazel_profile",
+                        side_effect=profile_error,
+                    ),
+                    mock.patch.dict(os.environ, {}, clear=True),
+                    contextlib.redirect_stdout(io.StringIO()),
+                    contextlib.redirect_stderr(stderr),
+                ):
+                    result = ci.run_step(step, verbose=False)
+
+                self.assertEqual(result.returncode, expected_code)
+                self.assertIn("truncated profile", stderr.getvalue())
 
     def test_bazel_test_results_capture_only_test_phases(self):
         result_dir = Path("/tmp/iree-bazel-test-results").resolve()
@@ -1119,7 +1278,9 @@ class CiTest(unittest.TestCase):
             step for step in steps if step.name == "Test IREE with TSAN"
         )
         tsan_test_env = [
-            arg for arg in tsan_test_step.argv if arg.startswith("--test_env=")
+            arg
+            for arg in tsan_test_step.argv
+            if arg.startswith("--test_env=TSAN_OPTIONS=")
         ]
         self.assertEqual(len(tsan_test_env), 1)
         self.assertTrue(

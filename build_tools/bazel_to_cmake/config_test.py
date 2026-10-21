@@ -421,6 +421,19 @@ cc_library(
             functions._convert_select_condition("//libamdf/config:enabled_setting"),
             "AMDF_BUILD",
         )
+        for family, condition in (
+            ("rdna", "AMDF_FAMILY_RDNA"),
+            ("cdna", "AMDF_FAMILY_CDNA"),
+            ("xdna", "AMDF_FAMILY_XDNA"),
+            ("gpu", "AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA"),
+        ):
+            with self.subTest(family=family):
+                label = f"//libamdf/config/family:{family}"
+                self.assertEqual(functions._convert_select_condition(label), condition)
+                self.assertEqual(
+                    functions._target_compatible_condition([label]),
+                    f"({condition})" if family == "gpu" else condition,
+                )
 
     def test_target_compatible_with_composes_selects_and_requirements(self):
         functions = bazel_to_cmake_converter.BuildFileFunctions(
@@ -508,6 +521,26 @@ cc_library(
             functions._convert_select_condition("@platforms//os:wasi"),
             'CMAKE_SYSTEM_NAME STREQUAL "WASI"',
         )
+
+    def test_tracing_provider_compatibility(self):
+        functions = bazel_to_cmake_converter.BuildFileFunctions(
+            converter=SimpleNamespace(body=""),
+            targets=bazel_to_cmake_targets.TargetConverter(repo_map={"@hrx": ""}),
+            build_dir="",
+        )
+        for provider in ("console", "tracy"):
+            with self.subTest(provider=provider):
+                compatibility = functions.select(
+                    {
+                        f"//runtime/config/base/tracing:provider_{provider}": [],
+                        "//conditions:default": ["@platforms//:incompatible"],
+                    }
+                )
+                self.assertEqual(
+                    functions._target_compatible_condition(compatibility),
+                    "IREE_ENABLE_RUNTIME_TRACING AND IREE_TRACING_MODE GREATER 0 "
+                    f'AND IREE_TRACING_PROVIDER STREQUAL "{provider}"',
+                )
 
     def test_target_compatible_with_parenthesizes_disjunctions(self):
         functions = bazel_to_cmake_converter.BuildFileFunctions(

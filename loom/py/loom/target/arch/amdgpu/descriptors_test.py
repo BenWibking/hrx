@@ -455,8 +455,12 @@ def test_exact_descriptor_storage_orders_portable_view_as_prefix() -> None:
     )
 
 
-def test_v_readlane_b32_reserves_unused_vop3_source() -> None:
-    overlays = {overlay.descriptor_key: overlay for overlay in _gfx11_core_overlays()}
+@pytest.mark.parametrize("target", _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS)
+def test_v_readlane_b32_reserves_unused_vop3_source(target) -> None:
+    overlays = {
+        overlay.descriptor_key: overlay
+        for overlay in _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS[target].overlay_rows()
+    }
     for descriptor_key in (
         "amdgpu.v_readlane_b32.src1_inline",
         "amdgpu.v_readlane_b32.src1_sgpr",
@@ -467,6 +471,7 @@ def test_v_readlane_b32_reserves_unused_vop3_source() -> None:
 def _descriptor_set(*descriptors: Descriptor) -> DescriptorSet:
     return DescriptorSet(
         key="amdgpu.test.core",
+        inline_schedule_model_key="amdgpu.generic",
         target_key="amdgpu.test",
         feature_key="amdgpu.test",
         c_header_path=Path("test.h"),
@@ -1243,6 +1248,54 @@ def test_packed_dot_descriptors_use_packed_dot_schedule_class() -> None:
         for overlay in dot_descriptors:
             assert overlay.schedule_class == _SCHEDULE_PACKED_DOT
     assert dot_descriptor_count != 0
+
+
+def test_gfx125x_packed_dot_admission_matches_llvm_feature_family() -> None:
+    supported_keys = {
+        "amdgpu.v_dot4_i32_i8",
+        "amdgpu.v_dot4_i32_iu8.s8u8",
+        "amdgpu.v_dot4_i32_iu8.u8s8",
+        "amdgpu.v_dot4_u32_u8",
+        "amdgpu.v_dot8_i32_i4",
+        "amdgpu.v_dot8_i32_iu4.s4u4",
+        "amdgpu.v_dot8_i32_iu4.u4s4",
+        "amdgpu.v_dot8_u32_u4",
+    }
+    unavailable_keys = {
+        "amdgpu.v_dot2_f32_f16",
+        "amdgpu.v_dot2_f32_bf16",
+        "amdgpu.v_dot4_f32_fp8_bf8",
+        "amdgpu.v_dot4_f32_bf8_fp8",
+        "amdgpu.v_dot4_f32_fp8_fp8",
+        "amdgpu.v_dot4_f32_bf8_bf8",
+    }
+
+    def dot_keys(
+        overlays: tuple[AmdgpuDescriptorOverlay, ...],
+    ) -> set[str]:
+        return {
+            overlay.descriptor_key
+            for overlay in overlays
+            if (overlay.semantic_tag or "").startswith("dot.")
+        }
+
+    assert dot_keys(_gfx12_core_overlays()) == supported_keys | unavailable_keys
+    for overlays in (
+        _gfx125x_core_overlays(),
+        _gfx12_5_generic_core_overlays(),
+    ):
+        assert dot_keys(overlays) == supported_keys
+
+    for target in (
+        "gfx12_5_generic",
+        "rdna4_gfx1250_a0",
+        "rdna4_gfx1251",
+        "rdna4_gfx125x",
+    ):
+        assert (
+            dot_keys(_AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS[target].overlay_rows())
+            == supported_keys
+        )
 
 
 def test_rdna4_packed_fp8_dots_pin_no_op_modifiers() -> None:

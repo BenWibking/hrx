@@ -20,10 +20,10 @@ struct Pm4CommandProfile {
   uint32_t system_release_gcr;
   // ACQUIRE_MEM GL2 writeback only, including the required scope selection.
   uint32_t gl2_writeback_gcr;
-  // ATOMIC_MEM system scope in word 1; zero where the scope field is reserved.
-  uint32_t system_atomic_scope_control;
   // COMPUTE_PGM_RSRC3 DWORD address in ordinary shader register space.
   uint32_t resource3_register;
+  // COMPUTE_TMPRING_SIZE DWORD address for architected private storage.
+  uint32_t scratch_size_register;
   // Unshifted mask of RSRC3.INST_PREF_SIZE, whose unit is 128 bytes.
   uint32_t instruction_prefetch_mask;
   // Byte length represented by one COMPUTE_PGM_RSRC2.LDS_SIZE unit.

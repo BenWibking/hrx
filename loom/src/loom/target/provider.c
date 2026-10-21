@@ -33,6 +33,18 @@ static iree_string_view_t loom_target_artifact_copy_string(
   return result;
 }
 
+loom_target_call_policy_t loom_target_provider_select_call_policy(
+    const loom_resolved_target_t* resolved_target, const loom_module_t* module,
+    loom_call_like_kind_t kind, loom_call_like_t call,
+    loom_func_like_t callee) {
+  if (resolved_target == NULL || resolved_target->provider == NULL ||
+      resolved_target->provider->select_call_policy == NULL) {
+    return LOOM_TARGET_CALL_POLICY_DIRECT;
+  }
+  return resolved_target->provider->select_call_policy(resolved_target, module,
+                                                       kind, call, callee);
+}
+
 iree_status_t loom_target_emit_artifact_retain_metadata(
     const loom_target_bundle_t* target_bundle, iree_host_size_t sidecar_count,
     const loom_target_emit_sidecar_artifact_t* sidecars,
@@ -56,7 +68,7 @@ iree_status_t loom_target_emit_artifact_retain_metadata(
       offsetof(loom_target_bundle_storage_t, export_plan.export_symbol),
       offsetof(loom_target_bundle_storage_t, export_plan.calling_convention),
       offsetof(loom_target_bundle_storage_t, config.name),
-      offsetof(loom_target_bundle_storage_t, config.contract_set_key),
+      offsetof(loom_target_bundle_storage_t, config.contract_set.spelling),
   };
   iree_host_size_t descriptor_bytes = 0;
   iree_host_size_t allocation_size = 0;

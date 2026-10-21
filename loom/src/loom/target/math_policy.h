@@ -65,10 +65,11 @@ typedef enum loom_target_math_op_e {
   LOOM_TARGET_MATH_OP_ASINHF = 28,
   LOOM_TARGET_MATH_OP_ACOSHF = 29,
   LOOM_TARGET_MATH_OP_ATANHF = 30,
+  LOOM_TARGET_MATH_OP_DIVF = 31,
 } loom_target_math_op_t;
 
 // Number of operation ordinals available to operation-indexed policy tables.
-#define LOOM_TARGET_MATH_OP_COUNT ((int)LOOM_TARGET_MATH_OP_ATANHF + 1)
+#define LOOM_TARGET_MATH_OP_COUNT ((int)LOOM_TARGET_MATH_OP_DIVF + 1)
 
 typedef enum loom_target_math_lane_domain_e {
   LOOM_TARGET_MATH_LANE_DOMAIN_UNKNOWN = 0,
@@ -406,14 +407,15 @@ struct loom_target_math_policy_t {
 };
 
 typedef struct loom_target_math_policy_registry_entry_t {
-  // Target contract-set key that selects |policy|.
-  iree_string_view_t contract_set_key;
-  // Borrowed math policy used for bundles naming |contract_set_key|.
+  // Stable target contract-set identity that selects |policy|.
+  uint64_t contract_set_stable_id;
+  // Borrowed math policy used for matching target bundles.
   const loom_target_math_policy_t* policy;
 } loom_target_math_policy_registry_entry_t;
 
 struct loom_target_math_policy_registry_t {
-  // Borrowed contract-set key to policy table linked into the target package.
+  // Borrowed contract-set identity to policy table linked into the target
+  // package.
   const loom_target_math_policy_registry_entry_t* entries;
   // Number of rows in |entries|.
   iree_host_size_t entry_count;
@@ -439,14 +441,14 @@ void loom_target_math_policy_registry_initialize_from_entries(
     const loom_target_math_policy_registry_entry_t* entries,
     iree_host_size_t entry_count);
 
-// Looks up the math policy for |contract_set_key|, or returns NULL when no row
-// matches.
+// Looks up the math policy for |contract_set_stable_id|, or returns NULL when
+// no row matches.
 const loom_target_math_policy_t* loom_target_math_policy_registry_lookup(
     const loom_target_math_policy_registry_t* registry,
-    iree_string_view_t contract_set_key);
+    uint64_t contract_set_stable_id);
 
-// Looks up the math policy for |bundle|'s target-contract key, or returns NULL
-// when no row matches.
+// Looks up the math policy for |bundle|'s target-contract identity, or returns
+// NULL when no row matches.
 const loom_target_math_policy_t*
 loom_target_math_policy_registry_lookup_for_bundle(
     const loom_target_math_policy_registry_t* registry,

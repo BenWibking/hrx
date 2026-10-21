@@ -1045,6 +1045,8 @@ class TemporalFactsRewriteTest : public GreedyRewriteTest,
                                  public ::testing::WithParamInterface<bool> {};
 
 TEST_P(TemporalFactsRewriteTest, TracksSelectorsAndMovedObservers) {
+  // Shared storage has uniform identity only within its workgroup. Divergent
+  // cycle observations can lose that proof even when the byte count is fixed.
   const bool has_carried_argument = GetParam();
   const loom_type_t i1 = loom_type_scalar(LOOM_SCALAR_TYPE_I1);
   const loom_type_t offset = loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET);
@@ -1081,7 +1083,7 @@ TEST_P(TemporalFactsRewriteTest, TracksSelectorsAndMovedObservers) {
   loom_builder_set_block(&builder_, header);
   loom_op_t* allocation = nullptr;
   IREE_ASSERT_OK(loom_buffer_alloca_build(
-      &builder_, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE,
+      &builder_, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
       LOOM_VALUE_ID_INVALID, 16, length_id, buffer, LOOM_LOCATION_UNKNOWN,
       &allocation));
   const loom_value_id_t allocation_id = loom_buffer_alloca_result(allocation);
@@ -1098,7 +1100,7 @@ TEST_P(TemporalFactsRewriteTest, TracksSelectorsAndMovedObservers) {
       &builder_, nested_owner, loom_test_block_args_body(nested_owner));
   loom_op_t* nested_allocation = nullptr;
   IREE_ASSERT_OK(loom_buffer_alloca_build(
-      &builder_, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE,
+      &builder_, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
       LOOM_VALUE_ID_INVALID, 16, length_id, buffer, LOOM_LOCATION_UNKNOWN,
       &nested_allocation));
   const loom_value_id_t nested_id =
@@ -1146,7 +1148,7 @@ TEST_P(TemporalFactsRewriteTest, TracksSelectorsAndMovedObservers) {
           fresh, loom_value_fact_table_lookup(fresh, compared)))
           << "value " << compared;
     }
-    EXPECT_EQ(loom_value_facts_is_cluster_uniform(
+    EXPECT_EQ(loom_value_facts_is_workgroup_uniform(
                   loom_value_fact_table_lookup(facts, value)),
               expected_uniform);
     loom_pass_value_fact_owner_deinitialize(&fresh_owner);
@@ -1208,11 +1210,11 @@ TEST_P(TemporalFactsRewriteTest, TracksSelectorsAndMovedObservers) {
   loom_op_t* created_allocation = nullptr;
   IREE_ASSERT_OK(loom_buffer_alloca_build(
       &rewriter.builder, /*build_flags=*/0,
-      LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE, LOOM_VALUE_ID_INVALID, 16,
+      LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP, LOOM_VALUE_ID_INVALID, 16,
       length_id, buffer, LOOM_LOCATION_UNKNOWN, &created_allocation));
   const loom_value_id_t created_id =
       loom_buffer_alloca_result(created_allocation);
-  EXPECT_TRUE(loom_value_facts_is_cluster_uniform(
+  EXPECT_TRUE(loom_value_facts_is_workgroup_uniform(
       loom_value_fact_table_lookup(facts, created_id)));
   IREE_ASSERT_OK(loom_test_use_build(&rewriter.builder, &created_id, 1,
                                      LOOM_LOCATION_UNKNOWN, &use));
@@ -1575,6 +1577,10 @@ TEST_P(ConditionInductionFactsRewriteTest, SemanticEditsMatchFreshAnalysis) {
   const auto type = loom_type_scalar(scalar_type);
   const int64_t domain_minimum =
       scalar_type == LOOM_SCALAR_TYPE_OFFSET ? 0 : INT64_MIN;
+  const int64_t domain_maximum =
+      scalar_type == LOOM_SCALAR_TYPE_OFFSET && bitwidth < 63
+          ? (int64_t)((UINT64_C(1) << bitwidth) - 1)
+          : INT64_MAX;
   auto constant = [&](int64_t value) {
     loom_op_t* op = nullptr;
     IREE_EXPECT_OK(loom_index_constant_build(&builder_, loom_attr_i64(value),
@@ -1722,7 +1728,7 @@ TEST_P(ConditionInductionFactsRewriteTest, SemanticEditsMatchFreshAnalysis) {
   check(edited_initial, 4, 5, 5 - edited_initial);
   IREE_ASSERT_OK(loom_index_cmp_rewrite_predicate(
       &rewriter, compare, loom_attr_enum(LOOM_INDEX_CMP_PREDICATE_NE)));
-  check(domain_minimum, INT64_MAX, INT64_MAX, UINT64_MAX);
+  check(domain_minimum, domain_maximum, domain_maximum, UINT64_MAX);
   IREE_ASSERT_OK(loom_index_cmp_rewrite_predicate(
       &rewriter, compare, loom_attr_enum(LOOM_INDEX_CMP_PREDICATE_SLT)));
   check(edited_initial, 3, 4, 4 - edited_initial);
@@ -1763,7 +1769,7 @@ TEST_P(ConditionInductionFactsRewriteTest, SemanticEditsMatchFreshAnalysis) {
   set_constant(initial, maximum - 1);
   set_constant(upper, maximum);
   set_constant(step, 2);
-  check(domain_minimum, INT64_MAX, INT64_MAX, UINT64_MAX);
+  check(domain_minimum, domain_maximum, domain_maximum, UINT64_MAX);
   set_constant(initial, 0);
   set_constant(upper, 4);
   set_constant(step, 1);
@@ -1804,7 +1810,8 @@ TEST_P(StructuredForwardingFactsRewriteTest,
   loom_op_t* injected = constant(count + 8, i32);
   const auto injected_id = loom_test_constant_result(injected);
   const auto begin = loom_test_constant_result(constant(0, index));
-  const auto limit = loom_test_constant_result(constant(4, index));
+  constexpr int64_t kTripCount = 4;
+  const auto limit = loom_test_constant_result(constant(kTripCount, index));
   const auto step = loom_test_constant_result(constant(1, index));
   const auto enabled = loom_test_constant_result(constant(1, i1));
   loom_op_t* unknown_input = nullptr;
@@ -1914,7 +1921,29 @@ TEST_P(StructuredForwardingFactsRewriteTest,
             fresh, loom_value_fact_table_lookup(fresh, value)));
       }
       const auto value = loom_value_fact_table_lookup(facts, carried[i]);
-      if (state != State::kUnknownInput) {
+      if (!is_while && state != State::kClosed) {
+        const bool transfer_reaches_body = i + kTripCount - 1 >= count;
+        if (state == State::kUnknownInput && transfer_reaches_body) {
+          EXPECT_FALSE(loom_value_facts_is_cluster_uniform(value));
+        } else {
+          EXPECT_EQ(value.range_lo, i);
+          EXPECT_EQ(value.range_hi, transfer_reaches_body ? injected_value
+                                                          : i + kTripCount - 1);
+          EXPECT_TRUE(loom_value_facts_is_cluster_uniform(value));
+        }
+        const auto output =
+            loom_value_fact_table_lookup(facts, loom_op_results(loop)[i]);
+        const bool transfer_reaches_result = i + kTripCount >= count;
+        if (state == State::kUnknownInput && transfer_reaches_result) {
+          EXPECT_FALSE(loom_value_facts_is_cluster_uniform(output));
+        } else {
+          const int64_t expected =
+              transfer_reaches_result ? injected_value : i + kTripCount;
+          EXPECT_EQ(output.range_lo, expected);
+          EXPECT_EQ(output.range_hi, expected);
+          EXPECT_TRUE(loom_value_facts_is_cluster_uniform(output));
+        }
+      } else if (state != State::kUnknownInput) {
         EXPECT_EQ(value.range_lo, state == State::kClosed ? 0 : i);
         EXPECT_EQ(value.range_hi,
                   state == State::kClosed ? count - 1 : injected_value);

@@ -21,7 +21,23 @@ namespace loom_serve::testing {
 
 class ExecutablesTest : public WeightsTest {
  protected:
+  void SetUpDevice() override {
+    // Native geometry is known after device construction. Select a budget for
+    // two small roots, reusing the process-owned configurations throughout.
+    ASSERT_NO_FATAL_FAILURE(WeightsTest::SetUpDevice());
+    if (GetParam()) {
+      const uint64_t root_bytes = loom_serve_device_weight_geometry(
+                                      loom_serve_device_group_at(group_, 0))
+                                      .minimum_size;
+      IREE_ASSERT_OK(
+          AcquireWeightDeviceGroup(true, kSlabBytes, 2 * root_bytes, &group_));
+    }
+  }
+
   void TearDown() override {
+    if (!device_owner_) {
+      return;
+    }
     if (execution_) {
       IREE_EXPECT_OK(loom_serve_execution_drain(execution_));
     }
@@ -461,9 +477,12 @@ TEST_P(ExecutablesTest, ParameterByteBudgetRetiresRecordingsAndBank) {
   ASSERT_NO_FATAL_FAILURE(CollectIdle());
   const auto first = loom_serve_executables_parameters(executables_);
   EXPECT_EQ(first.activity.activations, 2u);
-  EXPECT_EQ(first.memory.reserved_bytes, GetParam() ? kSlabBytes : 0u);
-  EXPECT_EQ(first.memory.committed_bytes, GetParam() ? kSlabBytes : 0u);
-  EXPECT_EQ(first.memory.released_bytes, GetParam() ? kSlabBytes : 0u);
+  const uint64_t root_bytes =
+      GetParam() ? loom_serve_device_weight_geometry(device_owner_).minimum_size
+                 : 0;
+  EXPECT_EQ(first.memory.reserved_bytes, root_bytes);
+  EXPECT_EQ(first.memory.committed_bytes, root_bytes);
+  EXPECT_EQ(first.memory.released_bytes, root_bytes);
   IREE_ASSERT_OK(Select("raw", false, 1));
   EXPECT_EQ(loom_serve_residency_activity(
                 loom_serve_executables_residency(executables_))
@@ -494,13 +513,15 @@ TEST_P(ExecutablesTest, RetainedCheckpointsDoNotAddIndependentPeaks) {
   IREE_ASSERT_OK(Select("raw", false, 1));
   ASSERT_NO_FATAL_FAILURE(Execute(990));
   const auto memory = loom_serve_executables_parameters(executables_).memory;
-  EXPECT_EQ(memory.reserved_bytes, 3 * kSlabBytes);
-  EXPECT_EQ(memory.committed_bytes, 2 * kSlabBytes);
-  EXPECT_EQ(memory.released_bytes, kSlabBytes);
+  const uint64_t root_bytes =
+      loom_serve_device_weight_geometry(device_owner_).minimum_size;
+  EXPECT_EQ(memory.reserved_bytes, 3 * root_bytes);
+  EXPECT_EQ(memory.committed_bytes, 2 * root_bytes);
+  EXPECT_EQ(memory.released_bytes, root_bytes);
   // The pool observes the actual overlap. A retained checkpoint's historical
   // peak cannot be added to the independently activated replacement's peak.
   EXPECT_EQ(loom_serve_memory_pool_statistics(pool_).peak_bytes,
-            2 * kSlabBytes);
+            2 * root_bytes);
 }
 
 TEST_P(ExecutablesTest, MissingNewCheckpointDoesNotPoisonNextSelection) {

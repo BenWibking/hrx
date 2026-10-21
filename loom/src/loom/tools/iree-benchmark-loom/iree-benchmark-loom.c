@@ -129,6 +129,14 @@ int main(int argc, char** argv) {
           .driver_name = IREE_SV("amdgpu"),
           .provider = loomc_amdgpu_iree_hal_target_provider(),
       },
+      {
+          .driver_name = IREE_SV("rdna"),
+          .provider = loomc_amdgpu_iree_hal_target_provider(),
+      },
+      {
+          .driver_name = IREE_SV("cdna"),
+          .provider = loomc_amdgpu_iree_hal_target_provider(),
+      },
 #endif  // IREE_BENCHMARK_LOOM_HAVE_AMDGPU
 #if IREE_BENCHMARK_LOOM_HAVE_SPIRV
       {
@@ -179,6 +187,11 @@ int main(int argc, char** argv) {
   configuration.function_call_provider =
       (loom_testbench_function_call_provider_callback_t){
           .fn = loom_vm_testbench_invocation_provider,
+          .user_data = &vm_testbench,
+      };
+  configuration.scenario_oracle_profile =
+      (loom_testbench_bind_scenario_profile_callback_t){
+          .fn = loom_vm_testbench_execution_profile,
           .user_data = &vm_testbench,
       };
 #endif  // IREE_BENCHMARK_LOOM_HAVE_VM

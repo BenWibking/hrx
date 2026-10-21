@@ -34,6 +34,7 @@
 #include "loom/import/cxx/binding/assumptions.h"
 #include "loom/import/cxx/binding/config.h"
 #include "loom/import/cxx/binding/constexpr.h"
+#include "loom/import/cxx/binding/exponent.h"
 #include "loom/import/cxx/binding/fastmath.h"
 #include "loom/import/cxx/binding/function_contracts.h"
 #include "loom/import/cxx/binding/intrinsics.h"
@@ -49,6 +50,7 @@
 #include "loom/import/cxx/source/locations.h"
 #include "loom/import/cxx/source/source.h"
 #include "loom/import/cxx/symbol/functions.h"
+#include "loom/import/cxx/symbol/immutable_objects.h"
 #include "loom/import/cxx/value/bitcast.h"
 #include "loom/import/cxx/value/initialization.h"
 #include "loom/import/cxx/value/objects.h"
@@ -60,6 +62,7 @@
 #include "loom/import/cxx/value/vector.h"
 #include "loom/ir/module.h"
 #include "loom/ops/func/ops.h"
+#include "loom/ops/global/ops.h"
 #include "loom/ops/index/ops.h"
 #include "loom/ops/kernel/ops.h"
 #include "loom/ops/scalar/ops.h"
@@ -80,6 +83,7 @@ class Translator final : private Initialization::Evaluation {
         types_(unit, diagnostics, module),
         scalars_(unit, diagnostics, types_, locations_, builder_),
         names_(unit, diagnostics),
+        immutable_objects_(unit, diagnostics, locations_, names_, module),
         fastmath_(unit, diagnostics),
         function_contracts_(unit, diagnostics),
         configs_(unit, diagnostics, types_, scalars_, locations_, names_),
@@ -93,9 +97,9 @@ class Translator final : private Initialization::Evaluation {
         launches_(unit, diagnostics),
         intrinsics_(unit, diagnostics, types_, scalars_, vectors_, locations_,
                     names_, launches_, function_contracts_, module),
-        functions_(unit, diagnostics, module, intrinsics_, launches_, configs_,
-                   fastmath_, function_contracts_, target_definitions_,
-                   template_definitions_, names_),
+        functions_(unit, diagnostics, module, immutable_objects_, intrinsics_,
+                   launches_, configs_, fastmath_, function_contracts_,
+                   target_definitions_, template_definitions_, names_),
         options_(options),
         default_fastmath_flags_(options.fp_model == LOOM_CXX_FP_MODEL_FAST
                                     ? LOOM_SCALAR_FASTMATHFLAGS_FAST
@@ -112,6 +116,7 @@ class Translator final : private Initialization::Evaluation {
     }
     functions_.build_declarations(types_, locations_, &builder_);
     functions_.build_benchmarks(locations_, &builder_);
+    immutable_objects_.build(&builder_);
     assembly_fragments_.verify(module_, options_.diagnostic_sink);
   }
 
@@ -660,6 +665,8 @@ class Translator final : private Initialization::Evaluation {
     auto saved = loom_builder_enter_region(&builder_, op, region);
     values_.clear();
     locals_.clear();
+    immutable_storage_.clear();
+    immutable_preamble_end_ = nullptr;
     references_.clear();
     receivers_.clear();
     receiver_owners_.clear();
@@ -821,6 +828,38 @@ class Translator final : private Initialization::Evaluation {
     return {allocation.view, std::nullopt};
   }
 
+  StorageProjection immutable_object(cxx::VariableSymbol* variable,
+                                     cxx::AST* owner) {
+    auto* canonical = variable->canonical();
+    auto object = immutable_objects_.reference(canonical, owner);
+    auto found = immutable_storage_.find(canonical);
+    if (found == immutable_storage_.end()) {
+      auto saved = loom_builder_enter_region(
+          &builder_, current_function_.operation, current_function_.region);
+      auto* entry = loom_region_entry_block(current_function_.region);
+      if (immutable_preamble_end_) {
+        loom_builder_set_after(&builder_, immutable_preamble_end_);
+      } else if (entry->first_op) {
+        loom_builder_set_before(&builder_, entry->first_op);
+      }
+      auto type = loom_type_buffer();
+      loom_op_t* op;
+      check(loom_global_load_build(&builder_, object.symbol, &type, 1,
+                                   locations_.get(owner), &op));
+      auto allocation = storage_.admit_fixed(
+          loom_global_load_result(op).values[0], object.type,
+          LOOM_VALUE_FACT_MEMORY_SPACE_CONSTANT, owner);
+      std::string spelling(object.value_name.data, object.value_name.size);
+      name(Value(allocation.pointer), spelling + "_storage");
+      name(allocation.view, spelling + "_view");
+      immutable_preamble_end_ =
+          loom_value_def_op(loom_module_value(module_, allocation.view));
+      found = immutable_storage_.emplace(canonical, allocation).first;
+      loom_builder_restore(&builder_, saved);
+    }
+    return storage_.project(found->second.pointer, object.type, owner);
+  }
+
   Value binding(cxx::Symbol* symbol, cxx::AST* owner) {
     auto found = locals_.find(symbol);
     if (found == locals_.end()) {
@@ -889,7 +928,14 @@ class Translator final : private Initialization::Evaluation {
       return;
     }
     if (!initializer) {
-      fail(owner, "locals require initializers");
+      const auto& partition = types_.partition(variable->type(), owner);
+      if (partition.kind != ValueKind::SSA) {
+        fail(owner,
+             "uninitialized locals require scalar or native vector object "
+             "storage");
+      }
+      allocate_local(variable, variable->explicitAlignment(), owner);
+      return;
     }
     types_.partition(variable->type(), owner);
     if (types_.address_domain(types_.unqualified(variable->type()), owner) ==
@@ -1212,6 +1258,13 @@ class Translator final : private Initialization::Evaluation {
       }
       if (auto found = locals_.find(id->symbol); found != locals_.end()) {
         return storage_.project(found->second.pointer, id->type, id);
+      }
+      if (auto* variable = cxx::symbol_cast<cxx::VariableSymbol>(id->symbol);
+          variable &&
+          cxx::symbol_cast<cxx::NamespaceSymbol>(
+              variable->canonical()->parent()) &&
+          !configs_.contains(variable)) {
+        return immutable_object(variable, id);
       }
       if (unit_.typeTraits().is_array(id->type)) {
         return storage_.project(expression(id).pointer(), id->type, id);
@@ -2185,11 +2238,17 @@ class Translator final : private Initialization::Evaluation {
               .advance(pointer_projection(previous, pointer, owner), one,
                        pointer, unit_.control()->getIntType(), operation, owner)
               .pointer;
+    } else if (types_.is_float(destination->type)) {
+      auto one = scalars_.convert(
+          scalars_.integer(1, LOOM_SCALAR_TYPE_I32, source),
+          unit_.control()->getIntType(), destination->type, owner);
+      updated = scalars_.binary(operation, previous.ssa(), one,
+                                destination->type, destination->type, owner);
     } else {
       if (!unit_.typeTraits().is_integral(destination->type) ||
           types_.unqualified(destination->type)->kind() ==
               cxx::TypeKind::kBool) {
-        fail(owner, "increment requires an integer or pointer binding");
+        fail(owner, "increment requires an arithmetic or pointer binding");
       }
       // Builtin ++/-- performs promoted arithmetic before converting back to
       // the lvalue type, just like compound assignment with an integer one.
@@ -2478,8 +2537,7 @@ class Translator final : private Initialization::Evaluation {
         });
   }
 
-  std::optional<IntrinsicCallResult> atomic_builtin(
-      cxx::CallExpressionAST* call) {
+  std::optional<IntrinsicCallResult> builtin(cxx::CallExpressionAST* call) {
     if (auto atomic =
             AtomicBuiltin::resolve(unit_, diagnostics_, types_, call)) {
       std::array<Value, 4> arguments;
@@ -2498,6 +2556,16 @@ class Translator final : private Initialization::Evaluation {
             FenceIntrinsic::resolve_builtin(unit_, diagnostics_, call)) {
       fence->call(&builder_, locations_.get(call));
       return IntrinsicCallResult{std::nullopt};
+    }
+    if (auto exponent = ExponentBuiltin::resolve(types_, call)) {
+      std::array<Value, 2> arguments;
+      auto* argument = call->expressionList;
+      for (auto& value : arguments) {
+        value = expression(argument->value);
+        argument = argument->next;
+      }
+      return IntrinsicCallResult{exponent->call(
+          arguments, storage_, call, &builder_, locations_.get(call))};
     }
     return std::nullopt;
   }
@@ -2710,6 +2778,9 @@ class Translator final : private Initialization::Evaluation {
           return name(value_arena_.capture(
                           types_.partition(variable->type(), ast), components),
                       cxx::to_string(variable->name()));
+        }
+        if (unit_.typeTraits().is_array(variable->type())) {
+          return immutable_object(variable, id).pointer;
         }
         if (variable->constValue() &&
             !unit_.typeTraits().is_volatile(variable->type()) &&
@@ -3027,7 +3098,7 @@ class Translator final : private Initialization::Evaluation {
       if (auto constant = fold_constant_reference_call(ast, call)) {
         return *constant;
       }
-      if (auto called = atomic_builtin(call)) {
+      if (auto called = builtin(call)) {
         return *called->value;
       }
       auto* function = direct_callee(call);
@@ -3043,14 +3114,14 @@ class Translator final : private Initialization::Evaluation {
       auto* binding = intrinsics_.lookup(function, ast);
       if (binding &&
           (std::holds_alternative<KernelCollectiveIntrinsic>(*binding) ||
+           std::holds_alternative<SubgroupShuffleIntrinsic>(*binding) ||
            std::holds_alternative<AsyncIntrinsic>(*binding))) {
         require_kernel_context(ast);
       }
       if (binding && std::holds_alternative<TargetIntrinsic>(*binding)) {
         require_launch_configuration_context(ast);
       }
-      const bool shuffle_xor = annotated(function, "shuffle_xor");
-      if (!binding && !shuffle_xor) {
+      if (!binding) {
         if (annotated(function, "kernel")) {
           fail(ast, "kernels require an explicit launch operation");
         }
@@ -3073,8 +3144,7 @@ class Translator final : private Initialization::Evaluation {
         }
         return *called;
       }
-      auto* assembly =
-          binding ? std::get_if<AssemblyIntrinsic>(binding) : nullptr;
+      auto* assembly = std::get_if<AssemblyIntrinsic>(binding);
       loom_symbol_ref_t fragment = {};
       auto* expressions = call->expressionList;
       if (assembly) {
@@ -3090,36 +3160,13 @@ class Translator final : private Initialization::Evaluation {
       if (assembly) {
         return *assembly->call(fragment, source_arguments, &builder_, source);
       }
-      auto flatten_arguments = [&] {
-        std::vector<loom_value_id_t> arguments;
-        for (auto argument : source_arguments) {
-          argument.append_to(arguments);
-        }
-        return arguments;
-      };
-      loom_op_t* op;
-      if (shuffle_xor) {
-        require_kernel_context(ast);
-        auto arguments = flatten_arguments();
-        if (arguments.size() != 3) {
-          fail(ast, "shuffle_xor requires three scalar operands");
-        }
-        check(loom_kernel_subgroup_shuffle_build(
-            &builder_, LOOM_KERNEL_SUBGROUP_SHUFFLE_MODE_XOR, arguments[0],
-            arguments[1], arguments[2], types_.get(ast->type, ast), source,
-            &op));
-        return result(op);
+      auto called =
+          intrinsics_.call(*binding, source_arguments, value_arena_, storage_,
+                           ast, lexical_fastmath_flags_, &builder_, source);
+      if (!called.value) {
+        fail(ast, "void intrinsic cannot be used as a value");
       }
-      if (binding) {
-        auto called =
-            intrinsics_.call(*binding, source_arguments, value_arena_, storage_,
-                             ast, lexical_fastmath_flags_, &builder_, source);
-        if (!called.value) {
-          fail(ast, "void intrinsic cannot be used as a value");
-        }
-        return *called.value;
-      }
-      fail(ast, "call has no admitted Loom binding");
+      return *called.value;
     }
     fail(ast,
          "unsupported expression: " + std::string(cxx::to_string(ast->kind())));
@@ -3475,9 +3522,6 @@ class Translator final : private Initialization::Evaluation {
     }
     if (auto* loop = cxx::ast_cast<cxx::ForStatementAST>(ast)) {
       LoopSchedule schedule(unit_, diagnostics_, types_, loop->attributeList);
-      if (!loop->condition) {
-        fail(ast, "for loops require a condition");
-      }
       if (loop->initializer) {
         statement(loop->initializer);
       }
@@ -3630,6 +3674,11 @@ class Translator final : private Initialization::Evaluation {
     auto initial = current(written);
     auto outer_values = values_;
     auto source = locations_.get(ast);
+    auto evaluate_condition = [&] {
+      return condition_expression
+                 ? expression(condition_expression).ssa()
+                 : scalars_.integer(true, LOOM_SCALAR_TYPE_I1, source);
+    };
 
     if (control_->breaks(body) != ExitFlow::None) {
       loom_op_t* op;
@@ -3654,9 +3703,8 @@ class Translator final : private Initialization::Evaluation {
         bind(written, before);
         auto header_active =
             loom_region_entry_arg_id(before, header_initial.size() - 1u);
-        auto condition = guarded_condition(ast, header_active, [&] {
-          return expression(condition_expression).ssa();
-        });
+        auto condition =
+            guarded_condition(ast, header_active, evaluate_condition);
         auto forwarded = current(written);
         loom_op_t* terminator;
         check(loom_scf_condition_build(&builder_, condition, forwarded.data(),
@@ -3691,9 +3739,8 @@ class Translator final : private Initialization::Evaluation {
         auto saved = loom_builder_enter_region(&builder_, op, before);
         bind(written, before);
         auto flow = loop_body(body, /*tracks_break=*/true);
-        auto condition = guarded_condition(ast, flow.reaches_latch, [&] {
-          return expression(condition_expression).ssa();
-        });
+        auto condition =
+            guarded_condition(ast, flow.reaches_latch, evaluate_condition);
         auto forwarded = current(written);
         loom_op_t* terminator;
         check(loom_scf_condition_build(&builder_, condition, forwarded.data(),
@@ -3731,7 +3778,7 @@ class Translator final : private Initialization::Evaluation {
     if (test == LoopTest::AfterBody) {
       loop_body(body);
     }
-    auto condition = expression(condition_expression).ssa();
+    auto condition = evaluate_condition();
     auto forwarded = current(written);
     loom_op_t* terminator;
     check(loom_scf_condition_build(&builder_, condition, forwarded.data(),
@@ -3773,6 +3820,15 @@ class Translator final : private Initialization::Evaluation {
     return result(cast);
   }
 
+  loom_value_id_t signed_index(loom_value_id_t value,
+                               loom_location_id_t source) {
+    loom_op_t* cast;
+    check(loom_index_cast_build(&builder_, value, value_type(value),
+                                loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+                                source, &cast));
+    return result(cast);
+  }
+
   void counted_loop(cxx::ForStatementAST* loop, const CountedLoop& counted,
                     const LoopSchedule& schedule) {
     auto source = locations_.get(loop);
@@ -3793,6 +3849,18 @@ class Translator final : private Initialization::Evaluation {
                     .ssa();
       upper = unsigned_offset(bound, source);
       step = scalars_.integer(range->step, LOOM_SCALAR_TYPE_OFFSET, source);
+    } else if (auto* range =
+                   std::get_if<CountedLoop::SignedRange>(&counted.range)) {
+      lower = signed_index(values_.at(induction).ssa(), source);
+      auto* constant_upper = std::get_if<std::int32_t>(&range->upper);
+      auto bound =
+          constant_upper
+              ? scalars_.integer(*constant_upper, LOOM_SCALAR_TYPE_I32, source)
+              : expression(
+                    std::get<CountedLoop::Bound>(range->upper).expression)
+                    .ssa();
+      upper = signed_index(bound, source);
+      step = scalars_.integer(range->step, LOOM_SCALAR_TYPE_INDEX, source);
     } else {
       const auto& address_range =
           std::get<CountedLoop::AddressRange>(counted.range);
@@ -3910,7 +3978,7 @@ class Translator final : private Initialization::Evaluation {
       }
     }
     if (auto* call = cxx::ast_cast<cxx::CallExpressionAST>(ast)) {
-      if (atomic_builtin(call)) {
+      if (builtin(call)) {
         return;
       }
       auto* id = cxx::ast_cast<cxx::IdExpressionAST>(call->baseExpression);
@@ -3919,6 +3987,21 @@ class Translator final : private Initialization::Evaluation {
         for (const auto& predicate : predicates) {
           for (size_t i = 0; i < predicate.value_count; ++i) {
             const auto& source_value = predicate.values[i];
+            if (source_value.origin == PredicateValueOrigin::Expression) {
+              for (const auto& dependency : source_value.dependencies) {
+                if (locals_.contains(dependency.binding)) {
+                  fail(dependency.source,
+                       "assume expressions cannot read an addressable binding "
+                       "whose storage may change through an alias");
+                }
+                if (!values_.contains(dependency.binding)) {
+                  fail(dependency.source,
+                       "assume expressions can read only owned automatic "
+                       "scalar bindings");
+                }
+              }
+              continue;
+            }
             if (source_value.origin != PredicateValueOrigin::Binding ||
                 !source_value.members.empty()) {
               fail(source_value.source,
@@ -3973,6 +4056,9 @@ class Translator final : private Initialization::Evaluation {
           }
           for (size_t i = 0; i < admitted.value_count; ++i) {
             const auto& source_value = admitted.values[i];
+            if (source_value.origin == PredicateValueOrigin::Expression) {
+              continue;
+            }
             auto result = loom_op_results(op)[i];
             auto refined =
                 index_domain
@@ -4077,6 +4163,8 @@ class Translator final : private Initialization::Evaluation {
   Scalars scalars_;
   // Shared output namespace for callables and configuration symbols.
   SymbolNames names_;
+  // Reached source-owned immutable objects retain translation-unit identity.
+  ImmutableObjects immutable_objects_;
   // Explicit lexical floating-point permissions indexed by source scope.
   FastMathContracts fastmath_;
   // Callable predicates shared by definitions and template declarations.
@@ -4119,6 +4207,12 @@ class Translator final : private Initialization::Evaluation {
   // Storage-backed automatic objects retain one allocation across direct and
   // aliased accesses. They are not mutable SSA bindings at region edges.
   std::unordered_map<cxx::Symbol*, StorageAllocation> locals_;
+  // Each reached immutable source object has one entry-dominating root per
+  // function. The translation-unit owner separately retains its payload.
+  std::unordered_map<cxx::VariableSymbol*, StorageAllocation>
+      immutable_storage_;
+  // Last immutable-root setup op in the current function entry preamble.
+  loom_op_t* immutable_preamble_end_ = nullptr;
   // Runtime C++ reference bindings retain one resolved lvalue and never
   // rebind. Storage references therefore preserve their root and byte offset
   // without re-evaluating a source address expression.

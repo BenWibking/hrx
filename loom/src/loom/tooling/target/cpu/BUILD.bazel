@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 load("//build_tools/bazel:executable.bzl", "iree_executable_test")
+load("//build_tools/testing:build_defs.bzl", "iree_execution_test_suite")
 load(
     "//loom/build_tools/bazel:build_defs.bzl",
     "loom_config_compatible_with",
@@ -69,6 +70,22 @@ iree_executable_test(
     ]) + ["@platforms//cpu:x86_64"],
 )
 
+iree_execution_test_suite(
+    name = "benchmark_scenario_correctness_test",
+    data = [
+        "//loom/src/loom/tooling/execution/hal:testdata/command_scenario_dependent_stages.loom",
+        "//loom/src/loom/tooling/testbench:testdata/benchmark_scenarios.loom",
+    ],
+    manifests = ["test/benchmark_scenario_correctness.test.json"],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//loom/config/target/arch:vm",
+        "//runtime/config/hal:executable_loader_embedded_elf",
+        "//loom/config/execute:task_hal",
+    ]) + ["@platforms//cpu:x86_64"],
+    tools = {"benchmark": "//loom/src/loom/tools/iree-benchmark-loom"},
+)
+
 # Addressable C++ locals preserve independent storage across native calls.
 [
     loom_test(
@@ -113,6 +130,30 @@ iree_executable_test(
         "//loom/config/target/arch:vm",
     ]) + ["@platforms//cpu:x86_64"],
 )
+
+# Floating exponent and division families share the portable numeric corpus.
+[
+    iree_executable_test(
+        name = "float_" + family + "_scenario_test",
+        src = "//loom/src/loom/tools/iree-test-loom",
+        args = [
+            "$(rootpath //loom/src/loom/test/corpus/numeric:float/" + family + ".loom)",
+            "--device=task",
+            "--task_topology_max_group_count=2",
+        ],
+        data = ["//loom/src/loom/test/corpus/numeric:float/" + family + ".loom"],
+        target_compatible_with = loom_config_compatible_with([
+            "//loom/config/target/arch:x86",
+            "//loom/config/target/arch:vm",
+            "//runtime/config/hal:executable_loader_embedded_elf",
+            "//loom/config/execute:task_hal",
+        ]) + ["@platforms//cpu:x86_64"],
+    )
+    for family in [
+        "exponent",
+        "reciprocal",
+    ]
+]
 
 # Exercises shared corpus programs through the task HAL and independent VM oracle.
 # Two workers retain concurrent scheduling without a machine-sized test pool.

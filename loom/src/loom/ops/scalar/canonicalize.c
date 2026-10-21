@@ -35,6 +35,14 @@ static bool loom_scalar_query_exact_i64(loom_rewriter_t* rewriter,
   return true;
 }
 
+static bool loom_scalar_query_exact_raw_bits(loom_rewriter_t* rewriter,
+                                             loom_value_id_t value_id,
+                                             int32_t bit_count,
+                                             uint64_t* out_bits) {
+  return loom_value_facts_as_exact_raw_bits(
+      loom_rewriter_value_facts(rewriter, value_id), bit_count, out_bits);
+}
+
 static bool loom_scalar_query_power_of_two_bits(loom_rewriter_t* rewriter,
                                                 loom_value_id_t value_id,
                                                 uint64_t* out_bits) {
@@ -1096,7 +1104,7 @@ iree_status_t loom_scalar_absi_canonicalize(loom_op_t* op,
 static iree_status_t loom_scalar_signed_minmax_canonicalize(
     loom_op_t* op, loom_rewriter_t* rewriter, loom_value_id_t lhs,
     loom_value_id_t rhs, bool is_minimum) {
-  if (loom_rewriter_values_equal(rewriter, lhs, rhs)) {
+  if (lhs == rhs) {
     return loom_scalar_replace_single_result_with_value(op, rewriter, lhs);
   }
 
@@ -1145,7 +1153,7 @@ iree_status_t loom_scalar_maxsi_canonicalize(loom_op_t* op,
 static iree_status_t loom_scalar_unsigned_minmax_canonicalize(
     loom_op_t* op, loom_rewriter_t* rewriter, loom_value_id_t lhs,
     loom_value_id_t rhs, bool is_minimum) {
-  if (loom_rewriter_values_equal(rewriter, lhs, rhs)) {
+  if (lhs == rhs) {
     return loom_scalar_replace_single_result_with_value(op, rewriter, lhs);
   }
 
@@ -1381,7 +1389,7 @@ iree_status_t loom_scalar_copysignf_canonicalize(loom_op_t* op,
                                                  loom_rewriter_t* rewriter) {
   loom_value_id_t lhs = loom_scalar_copysignf_lhs(op);
   loom_value_id_t rhs = loom_scalar_copysignf_rhs(op);
-  if (loom_rewriter_values_equal(rewriter, lhs, rhs)) {
+  if (lhs == rhs) {
     return loom_scalar_replace_single_result_with_value(op, rewriter, lhs);
   }
   return iree_ok_status();
@@ -1494,11 +1502,73 @@ iree_status_t loom_scalar_truncf_canonicalize(loom_op_t* op,
 // Bitwise
 //===----------------------------------------------------------------------===//
 
+static bool loom_scalar_match_xori_with_exact_operand(
+    loom_rewriter_t* rewriter, loom_value_id_t value, int32_t bit_count,
+    loom_value_id_t* out_input, loom_value_id_t* out_constant,
+    uint64_t* out_constant_bits) {
+  loom_op_t* defining_op = loom_rewriter_value_defining_op(rewriter, value);
+  if (!defining_op || !loom_scalar_xori_isa(defining_op)) {
+    return false;
+  }
+
+  loom_value_id_t lhs = loom_scalar_xori_lhs(defining_op);
+  loom_value_id_t rhs = loom_scalar_xori_rhs(defining_op);
+  uint64_t lhs_bits = 0;
+  uint64_t rhs_bits = 0;
+  const bool lhs_is_exact =
+      loom_scalar_query_exact_raw_bits(rewriter, lhs, bit_count, &lhs_bits);
+  const bool rhs_is_exact =
+      loom_scalar_query_exact_raw_bits(rewriter, rhs, bit_count, &rhs_bits);
+  if (lhs_is_exact == rhs_is_exact) {
+    return false;
+  }
+
+  *out_input = lhs_is_exact ? rhs : lhs;
+  *out_constant = lhs_is_exact ? lhs : rhs;
+  *out_constant_bits = lhs_is_exact ? lhs_bits : rhs_bits;
+  return true;
+}
+
+static iree_status_t loom_scalar_push_andi_through_constant_xori(
+    loom_op_t* op, loom_rewriter_t* rewriter, loom_value_id_t input,
+    loom_value_id_t xor_constant, uint64_t xor_constant_bits,
+    loom_value_id_t mask, uint64_t mask_bits) {
+  loom_builder_set_before(&rewriter->builder, op);
+  const loom_value_id_t value_checkpoint =
+      loom_rewriter_value_checkpoint(rewriter);
+  const loom_type_t result_type = loom_scalar_single_result_type(rewriter, op);
+
+  loom_op_t* masked_op = NULL;
+  IREE_RETURN_IF_ERROR(loom_scalar_andi_build(
+      &rewriter->builder, input, mask, result_type, op->location, &masked_op));
+  loom_value_id_t replacement = loom_scalar_andi_result(masked_op);
+
+  const uint64_t masked_constant_bits = xor_constant_bits & mask_bits;
+  if (masked_constant_bits != 0) {
+    const loom_value_id_t constant_candidate =
+        masked_constant_bits == mask_bits ? mask : xor_constant;
+    loom_value_id_t masked_constant = LOOM_VALUE_ID_INVALID;
+    IREE_RETURN_IF_ERROR(loom_scalar_materialize_or_reuse_integer_constant(
+        op, rewriter, constant_candidate, masked_constant_bits, result_type,
+        &masked_constant));
+    loom_op_t* xor_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_scalar_xori_build(&rewriter->builder, replacement,
+                                                masked_constant, result_type,
+                                                op->location, &xor_op));
+    replacement = loom_scalar_xori_result(xor_op);
+  }
+
+  IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
+      rewriter, op, &replacement, 1, value_checkpoint));
+  return loom_scalar_replace_single_result_with_value(op, rewriter,
+                                                      replacement);
+}
+
 iree_status_t loom_scalar_andi_canonicalize(loom_op_t* op,
                                             loom_rewriter_t* rewriter) {
   loom_value_id_t lhs = loom_scalar_andi_lhs(op);
   loom_value_id_t rhs = loom_scalar_andi_rhs(op);
-  if (loom_rewriter_values_equal(rewriter, lhs, rhs)) {
+  if (lhs == rhs) {
     return loom_scalar_replace_single_result_with_value(op, rewriter, lhs);
   }
   if (loom_scalar_value_facts_are_exact_i64(rewriter, lhs, 0) ||
@@ -1524,6 +1594,27 @@ iree_status_t loom_scalar_andi_canonicalize(loom_op_t* op,
       return loom_scalar_replace_single_result_with_value(op, rewriter, lhs);
     }
   }
+
+  const int32_t bit_count =
+      loom_scalar_type_bitwidth(loom_type_element_type(type));
+  loom_value_id_t input = LOOM_VALUE_ID_INVALID;
+  loom_value_id_t xor_constant = LOOM_VALUE_ID_INVALID;
+  uint64_t xor_constant_bits = 0;
+  uint64_t mask_bits = 0;
+  if (loom_scalar_query_exact_raw_bits(rewriter, rhs, bit_count, &mask_bits) &&
+      loom_scalar_match_xori_with_exact_operand(rewriter, lhs, bit_count,
+                                                &input, &xor_constant,
+                                                &xor_constant_bits)) {
+    return loom_scalar_push_andi_through_constant_xori(
+        op, rewriter, input, xor_constant, xor_constant_bits, rhs, mask_bits);
+  }
+  if (loom_scalar_query_exact_raw_bits(rewriter, lhs, bit_count, &mask_bits) &&
+      loom_scalar_match_xori_with_exact_operand(rewriter, rhs, bit_count,
+                                                &input, &xor_constant,
+                                                &xor_constant_bits)) {
+    return loom_scalar_push_andi_through_constant_xori(
+        op, rewriter, input, xor_constant, xor_constant_bits, lhs, mask_bits);
+  }
   return iree_ok_status();
 }
 
@@ -1531,7 +1622,7 @@ iree_status_t loom_scalar_ori_canonicalize(loom_op_t* op,
                                            loom_rewriter_t* rewriter) {
   loom_value_id_t lhs = loom_scalar_ori_lhs(op);
   loom_value_id_t rhs = loom_scalar_ori_rhs(op);
-  if (loom_rewriter_values_equal(rewriter, lhs, rhs)) {
+  if (lhs == rhs) {
     return loom_scalar_replace_single_result_with_value(op, rewriter, lhs);
   }
   if (loom_scalar_value_facts_are_exact_i64(rewriter, lhs, 0)) {

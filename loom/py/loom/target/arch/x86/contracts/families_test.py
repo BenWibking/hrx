@@ -4,6 +4,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import math
+
 from loom.dialect.cfg import cfg_cond_br
 from loom.dialect.index import defs as index
 from loom.dialect.scalar import arithmetic as scalar_arithmetic
@@ -24,8 +26,10 @@ from loom.target.arch.x86.descriptors import (
     X86_AVX2_DESCRIPTOR_SET,
     X86_AVX512_CORE_DESCRIPTOR_SET,
     X86_INTEGER_CONDITION_CODES,
+    X86_SCALAR_DESCRIPTOR_SET,
 )
 from loom.target.arch.x86.scalar_families import (
+    X86_SCALAR_MEMORY_EXTENSION_FAMILIES,
     X86_SCALAR_READ_MEMORY_FAMILIES,
 )
 from loom.target.arch.x86.vector_families import (
@@ -59,9 +63,11 @@ from loom.target.contracts import (
     AttrProject,
     AttrProjectKind,
     Buffer,
+    ContractFragment,
     DescriptorEmitForm,
     DescriptorRule,
     EmitDescriptorOp,
+    Guard,
     GuardKind,
     OperandSegmentProject,
     Scalar,
@@ -102,6 +108,99 @@ def _static_index_range(rule: DescriptorRule) -> tuple[int, int]:
     assert guard.minimum is not None
     assert guard.maximum is not None
     return guard.minimum, guard.maximum
+
+
+def _zero_insert_rules(fragment: ContractFragment) -> tuple[DescriptorRule, ...]:
+    return tuple(
+        case
+        for case in fragment.cases
+        if isinstance(case, DescriptorRule)
+        and case.source_op is vector.vector_insert
+        and (
+            _has_positive_zero_guard(case)
+            or (
+                Guard.value_exact_i64("dest") in case.guards
+                and Guard.value_i64_range("dest", 0, 0) in case.guards
+            )
+        )
+    )
+
+
+def _has_positive_zero_guard(rule: DescriptorRule) -> bool:
+    return any(
+        guard.kind is GuardKind.VALUE_FLOAT_EQUALS
+        and guard.field == "dest"
+        and guard.f64_value == 0.0
+        and math.copysign(1.0, guard.f64_value) > 0.0
+        for guard in rule.guards
+    )
+
+
+def _static_index_lanes(rule: DescriptorRule) -> range:
+    minimum, maximum = _static_index_range(rule)
+    return range(minimum, maximum + 1)
+
+
+def _assert_zero_insert_family(
+    fragment: ContractFragment, vector_bit_widths: tuple[int, ...]
+) -> None:
+    rules = _zero_insert_rules(fragment)
+    actual_cells = [
+        (
+            _value_type_guard(rule, "value"),
+            _value_type_guard(rule, "dest"),
+            lane,
+        )
+        for rule in rules
+        for lane in _static_index_lanes(rule)
+    ]
+    expected_cells = {
+        (
+            Scalar(element_names),
+            Vector(element_names, lanes=vector_bit_width // row.element_bit_width),
+            lane,
+        )
+        for row in X86_LANE_FAMILIES
+        for element_names in (
+            tuple(name for name in row.element_names if name.startswith("i")),
+            tuple(name for name in row.element_names if not name.startswith("i")),
+        )
+        if element_names
+        for vector_bit_width in vector_bit_widths
+        if vector_bit_width > 128
+        for lane in range(vector_bit_width // row.element_bit_width)
+    }
+    expected_cells.update(
+        (
+            Scalar("f32"),
+            Vector("f32", lanes=vector_bit_width // 32),
+            lane,
+        )
+        for vector_bit_width in vector_bit_widths
+        if vector_bit_width >= 32
+        for lane in range(vector_bit_width // 32)
+    )
+    expected_cells.update(
+        (
+            Scalar("f64"),
+            Vector("f64", lanes=vector_bit_width // 64),
+            lane,
+        )
+        for vector_bit_width in vector_bit_widths
+        if vector_bit_width > 128
+        for lane in range(vector_bit_width // 64)
+    )
+    assert set(actual_cells) == expected_cells
+    assert len(actual_cells) == len(expected_cells)
+    for rule in rules:
+        value_type = _value_type_guard(rule, "value")
+        if all(element.startswith("i") for element in value_type.elements):
+            assert Guard.value_exact_i64("dest") in rule.guards
+            assert Guard.value_i64_range("dest", 0, 0) in rule.guards
+            assert Guard.value_float_equals("dest", 0.0) not in rule.guards
+        else:
+            assert _has_positive_zero_guard(rule)
+            assert Guard.value_exact_i64("dest") not in rule.guards
 
 
 def test_scalar_float_comparisons_cover_types_predicates_and_selects() -> None:
@@ -722,6 +821,63 @@ def test_scalar_integer_read_memory_rules_cover_native_carriers() -> None:
             )
 
 
+def test_scalar_memory_extensions_fuse_every_narrow_widening() -> None:
+    assert {
+        (family.signed, family.source_bit_count, result_bit_count)
+        for family in X86_SCALAR_MEMORY_EXTENSION_FAMILIES
+        for result_bit_count in family.result_bit_counts
+    } == {
+        (signed, source_bit_count, result_bit_count)
+        for signed in (False, True)
+        for source_bit_count in (8, 16, 32)
+        for result_bit_count in (16, 32, 64)
+        if source_bit_count < result_bit_count
+    }
+    rules_by_report = {}
+    for rule in X86_SCALAR_READ_MEMORY_CONTRACT_FRAGMENT.cases:
+        if isinstance(rule, DescriptorRule) and rule.report_key.startswith(
+            "native_memory_extension_"
+        ):
+            rules_by_report.setdefault(rule.report_key, []).append(rule)
+
+    expected_reports = {
+        (
+            f"native_memory_extension_{'extsi' if family.signed else 'extui'}_"
+            f"i{family.source_bit_count}_"
+            + "_".join(f"i{bit_count}" for bit_count in family.result_bit_counts)
+        ): family
+        for family in X86_SCALAR_MEMORY_EXTENSION_FAMILIES
+    }
+    assert set(rules_by_report) == set(expected_reports)
+    for report, family in expected_reports.items():
+        rules = rules_by_report[report]
+        assert len(rules) == 9
+        for rule in rules:
+            rule.validate(X86_SCALAR_DESCRIPTOR_SET)
+            assert rule.source_op is view.view_load
+            assert rule.priority == 1
+            assert len(rule.source_nodes) == 1
+            extension = rule.source_nodes[0]
+            assert extension.relation is SourceNodeRelation.EXCLUSIVE_USER
+            assert extension.source_op is (
+                scalar_conversion.scalar_extsi
+                if family.signed
+                else scalar_conversion.scalar_extui
+            )
+            assert _source_node_value_type_guard(extension, "input") == Scalar(
+                f"i{family.source_bit_count}"
+            )
+            assert _source_node_value_type_guard(extension, "result") == Scalar(
+                tuple(f"i{bit_count}" for bit_count in family.result_bit_counts)
+            )
+            source_prefix = "i" if family.signed else "u"
+            assert rule.descriptor.key.startswith(f"x86.scalar.{family.mnemonic}.load")
+            assert rule.descriptor.key.endswith(
+                f".{source_prefix}{family.source_bit_count}."
+                f"gpr{family.carrier_bit_count}"
+            )
+
+
 def test_address_arithmetic_uses_immediates_after_specialized_lea_forms() -> None:
     operations = (index.index_mul, index.index_scale)
     assert _integer_immediate_rule_cells(operations) == {
@@ -1011,6 +1167,7 @@ def test_avx2_lane_movement_covers_every_payload_type_and_width() -> None:
         case
         for case in X86_AVX2_CONTRACT_FRAGMENT.cases
         if isinstance(case, DescriptorRule)
+        and case.priority == 0
         and case.source_op in (vector.vector_extract, vector.vector_insert)
         and _value_type_guard(
             case, "result" if case.source_op is vector.vector_extract else "value"
@@ -1078,6 +1235,12 @@ def test_avx2_lane_movement_covers_every_payload_type_and_width() -> None:
     }
     assert actual == expected
     assert len(rules) == len(expected)
+
+
+def test_avx2_zero_insert_covers_every_applicable_payload_lane() -> None:
+    _assert_zero_insert_family(
+        X86_AVX2_CONTRACT_FRAGMENT, AVX2_CARRIER_VECTOR_BIT_WIDTHS
+    )
 
 
 def test_avx2_memory_covers_every_register_carried_payload() -> None:
@@ -1220,6 +1383,7 @@ def test_avx512_lane_movement_covers_every_zmm_payload_type() -> None:
         case
         for case in X86_AVX512_CONTRACT_FRAGMENT.cases
         if isinstance(case, DescriptorRule)
+        and case.priority == 0
         and case.source_op in (vector.vector_extract, vector.vector_insert)
         and _value_type_guard(
             case, "result" if case.source_op is vector.vector_extract else "value"
@@ -1261,6 +1425,10 @@ def test_avx512_lane_movement_covers_every_zmm_payload_type() -> None:
     }
     assert actual == expected
     assert len(rules) == len(expected)
+
+
+def test_avx512_zero_insert_covers_every_applicable_payload_lane() -> None:
+    _assert_zero_insert_family(X86_AVX512_CONTRACT_FRAGMENT, AVX512_VECTOR_BIT_WIDTHS)
 
 
 def test_avx2_shuffles_cover_every_payload_type_and_width() -> None:

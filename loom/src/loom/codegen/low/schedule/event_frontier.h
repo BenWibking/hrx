@@ -29,8 +29,10 @@ extern "C" {
 // occupy their containing atomic unit; they cannot kill another part's pending
 // events. No allocation occurs after initialize.
 typedef struct loom_low_schedule_event_frontier_t {
-  // Descriptor set owning the event rules and physical storage geometry.
+  // Descriptor set owning the physical storage geometry.
   const loom_low_descriptor_set_t* descriptor_set;
+  // Machine model owning the event rules.
+  const loom_low_schedule_model_t* schedule_model;
   // Unit-major deadlines indexed by the consumer timing-event ID.
   uint32_t* deadlines;
   // First cycle at which no retained event constrains any future access.
@@ -39,8 +41,16 @@ typedef struct loom_low_schedule_event_frontier_t {
 
 iree_status_t loom_low_schedule_event_frontier_initialize(
     const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_schedule_model_t* schedule_model,
     iree_arena_allocator_t* arena,
     loom_low_schedule_event_frontier_t* out_frontier);
+
+// Clears every retained access deadline while preserving the fixed storage.
+// This models a synchronous execution boundary after the prior instruction
+// stream has reached quiescence; source-level dependency readiness belongs to
+// the enclosing issue owner and is intentionally separate.
+void loom_low_schedule_event_frontier_reset(
+    loom_low_schedule_event_frontier_t* frontier);
 
 // Returns the earliest legal issue cycle for this event on one physical
 // register, considering every overlapping atomic storage unit.

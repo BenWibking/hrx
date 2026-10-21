@@ -742,13 +742,14 @@ vector_from_elements = Op(
     ],
     facts="loom_vector_from_elements_facts",
     canonicalize="loom_vector_from_elements_canonicalize",
-    traits=[PURE],
+    traits=[PURE, SAFE_TO_SPECULATE],
     format=[
         Refs("elements"),
         COLON,
         ResultType("result"),
     ],
     examples=["%v = vector.from_elements %a, %b, %c, %d : vector<4xf32>"],
+    eager_execution_cost=1,
 )
 
 
@@ -767,8 +768,8 @@ vector_extract = Op(
         "a scalar element."
     ),
     operands=[
-        Operand("source", VECTOR),
-        Operand("indices", INDEX, variadic=True),
+        Operand("source", VECTOR, role=OperandRole.ACCESS_PATH),
+        Operand("indices", INDEX, variadic=True, role=OperandRole.ACCESS_PATH),
     ],
     results=[Result("result", ANY)],
     attrs=[
@@ -783,6 +784,7 @@ vector_extract = Op(
     facts="loom_vector_extract_facts",
     canonicalize="loom_vector_extract_canonicalize",
     traits=[PURE],
+    effective_traits="loom_vector_extract_effective_traits",
     format=[
         Ref("source"),
         IndexList("indices", "static_indices"),
@@ -792,6 +794,7 @@ vector_extract = Op(
         ResultType("result"),
     ],
     examples=["%x = vector.extract %v[%i] : vector<[%n]xf32> -> f32"],
+    eager_execution_cost=1,
 )
 
 vector_insert = Op(
@@ -806,8 +809,8 @@ vector_insert = Op(
     ),
     operands=[
         Operand("value", ANY),
-        Operand("dest", VECTOR),
-        Operand("indices", INDEX, variadic=True),
+        Operand("dest", VECTOR, role=OperandRole.ACCESS_PATH),
+        Operand("indices", INDEX, variadic=True, role=OperandRole.ACCESS_PATH),
     ],
     results=[Result("result", VECTOR)],
     attrs=[
@@ -853,8 +856,8 @@ vector_slice = Op(
         "axis extent describes how many lanes are kept from that source axis."
     ),
     operands=[
-        Operand("source", VECTOR),
-        Operand("offsets", INDEX, variadic=True),
+        Operand("source", VECTOR, role=OperandRole.ACCESS_PATH),
+        Operand("offsets", INDEX, variadic=True, role=OperandRole.ACCESS_PATH),
     ],
     results=[Result("result", VECTOR)],
     attrs=[
@@ -1103,8 +1106,18 @@ vector_table_lookup = Op(
         "the table element type."
     ),
     operands=[
-        Operand("table", VECTOR, doc="Rank-1 register table containing selectable lane values."),
-        Operand("indices", VECTOR, doc="Index vector selecting one table lane for each result lane."),
+        Operand(
+            "table",
+            VECTOR,
+            doc="Rank-1 register table containing selectable lane values.",
+            role=OperandRole.ACCESS_PATH,
+        ),
+        Operand(
+            "indices",
+            VECTOR,
+            doc="Index vector selecting one table lane for each result lane.",
+            role=OperandRole.ACCESS_PATH,
+        ),
     ],
     results=[Result("result", VECTOR)],
     constraints=[
@@ -1572,16 +1585,27 @@ vector_fragment_load = Op(
         "the storage schema."
     ),
     operands=[
-        Operand("view", VIEW, doc="Typed source view holding logical matrix data."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed source view holding logical matrix data."),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
         Operand(
             "blocks",
             INDEX,
             optional=True,
             doc="Optional independent matrix block count.",
+            role=OperandRole.ACCESS_PATH,
         ),
-        Operand("rows", INDEX, doc="Logical matrix row count for this fragment role."),
-        Operand("columns", INDEX, doc="Logical matrix column count for this fragment role."),
+        Operand(
+            "rows",
+            INDEX,
+            doc="Logical matrix row count for this fragment role.",
+            role=OperandRole.ACCESS_PATH,
+        ),
+        Operand(
+            "columns",
+            INDEX,
+            doc="Logical matrix column count for this fragment role.",
+            role=OperandRole.ACCESS_PATH,
+        ),
         Operand(
             "auxiliary",
             VECTOR,
@@ -1653,16 +1677,27 @@ vector_fragment_store = Op(
     ),
     operands=[
         Operand("value", VECTOR, doc="Physical matrix fragment payload to store."),
-        Operand("view", VIEW, doc="Typed destination view for logical matrix data."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view for logical matrix data."),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
         Operand(
             "blocks",
             INDEX,
             optional=True,
             doc="Optional independent matrix block count.",
+            role=OperandRole.ACCESS_PATH,
         ),
-        Operand("rows", INDEX, doc="Logical matrix row count for this fragment role."),
-        Operand("columns", INDEX, doc="Logical matrix column count for this fragment role."),
+        Operand(
+            "rows",
+            INDEX,
+            doc="Logical matrix row count for this fragment role.",
+            role=OperandRole.ACCESS_PATH,
+        ),
+        Operand(
+            "columns",
+            INDEX,
+            doc="Logical matrix column count for this fragment role.",
+            role=OperandRole.ACCESS_PATH,
+        ),
     ],
     attrs=[
         AttrDef("role", ATTR_TYPE_ENUM, enum_def=VectorFragmentRole),
@@ -1710,8 +1745,8 @@ vector_load = Op(
         "select a slice and trailing axes describe the loaded footprint."
     ),
     operands=[
-        Operand("view", VIEW, doc="Typed source view."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed source view."),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     results=[Result("result", VECTOR, doc="Loaded vector value.")],
     attrs=[
@@ -1758,8 +1793,8 @@ vector_store = Op(
     ),
     operands=[
         Operand("value", VECTOR, doc="Vector value to store."),
-        Operand("view", VIEW, doc="Typed destination view."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view."),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     attrs=[
         AttrDef(
@@ -1803,10 +1838,10 @@ vector_load_mask = Op(
         "access memory and instead take the corresponding passthrough lane."
     ),
     operands=[
-        Operand("view", VIEW, doc="Typed source view."),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed source view."),
         Operand("mask", VECTOR, doc="i1 vector mask selecting loaded lanes."),
         Operand("passthrough", VECTOR, doc="Value used for masked-off lanes."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     results=[Result("result", VECTOR, doc="Loaded vector value.")],
     attrs=_indexed_memory_attrs(),
@@ -1846,9 +1881,9 @@ vector_store_mask = Op(
     doc=("Masked vector store into a typed view. True mask lanes store the corresponding value lane, and false mask lanes do not access memory and leave the destination unchanged."),
     operands=[
         Operand("value", VECTOR, doc="Vector value to store."),
-        Operand("view", VIEW, doc="Typed destination view."),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view."),
         Operand("mask", VECTOR, doc="i1 vector mask selecting stored lanes."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     attrs=_indexed_memory_attrs(),
     constraints=[
@@ -1890,10 +1925,10 @@ vector_load_expand = Op(
         "lane."
     ),
     operands=[
-        Operand("view", VIEW, doc="Typed source view."),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed source view."),
         Operand("mask", VECTOR, doc="i1 rank-1 vector mask selecting loaded lanes."),
         Operand("passthrough", VECTOR, doc="Value used for inactive lanes."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     results=[Result("result", VECTOR, doc="Expanded loaded vector value.")],
     attrs=_indexed_memory_attrs(),
@@ -1934,9 +1969,9 @@ vector_store_compress = Op(
     doc=("Rank-1 masked compress store to consecutive view elements. Active lanes write densely in increasing lane order; inactive lanes do not produce memory elements."),
     operands=[
         Operand("value", VECTOR, doc="Rank-1 vector value to store."),
-        Operand("view", VIEW, doc="Typed destination view."),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view."),
         Operand("mask", VECTOR, doc="i1 rank-1 vector mask selecting stored lanes."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     attrs=_indexed_memory_attrs(),
     constraints=[
@@ -1979,9 +2014,9 @@ vector_gather = Op(
         "offset vector shape matches the result shape."
     ),
     operands=[
-        Operand("view", VIEW, doc="Typed source view."),
-        Operand("offsets", VECTOR, doc="Per-lane signed element offsets from the logical origin."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed source view."),
+        Operand("offsets", VECTOR, role=OperandRole.ACCESS_PATH, doc="Per-lane signed element offsets from the logical origin."),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     results=[Result("result", VECTOR, doc="Gathered vector value.")],
     attrs=_indexed_memory_attrs(),
@@ -2026,9 +2061,9 @@ vector_scatter = Op(
     ),
     operands=[
         Operand("value", VECTOR, doc="Vector value to store."),
-        Operand("view", VIEW, doc="Typed destination view."),
-        Operand("offsets", VECTOR, doc="Per-lane signed element offsets from the logical origin."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view."),
+        Operand("offsets", VECTOR, role=OperandRole.ACCESS_PATH, doc="Per-lane signed element offsets from the logical origin."),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     attrs=_indexed_memory_attrs(),
     constraints=[
@@ -2072,11 +2107,11 @@ vector_gather_mask = Op(
         "corresponding passthrough lane."
     ),
     operands=[
-        Operand("view", VIEW, doc="Typed source view."),
-        Operand("offsets", VECTOR, doc="Per-lane signed element offsets from the logical origin."),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed source view."),
+        Operand("offsets", VECTOR, role=OperandRole.ACCESS_PATH, doc="Per-lane signed element offsets from the logical origin."),
         Operand("mask", VECTOR, doc="i1 vector mask selecting gathered lanes."),
         Operand("passthrough", VECTOR, doc="Value used for masked-off lanes."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     results=[Result("result", VECTOR, doc="Gathered vector value.")],
     attrs=_indexed_memory_attrs(),
@@ -2125,10 +2160,10 @@ vector_scatter_mask = Op(
     ),
     operands=[
         Operand("value", VECTOR, doc="Vector value to store."),
-        Operand("view", VIEW, doc="Typed destination view."),
-        Operand("offsets", VECTOR, doc="Per-lane signed element offsets from the logical origin."),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view."),
+        Operand("offsets", VECTOR, role=OperandRole.ACCESS_PATH, doc="Per-lane signed element offsets from the logical origin."),
         Operand("mask", VECTOR, doc="i1 vector mask selecting stored lanes."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     attrs=_indexed_memory_attrs(),
     constraints=[
@@ -2233,9 +2268,9 @@ vector_atomic_reduce = Op(
     ),
     operands=[
         Operand("value", VECTOR, doc="Fixed-width byte-addressable contribution for each lane."),
-        Operand("view", VIEW, doc="Typed destination view."),
-        Operand("offsets", VECTOR, doc="Per-lane signed element offsets from the logical origin."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view."),
+        Operand("offsets", VECTOR, role=OperandRole.ACCESS_PATH, doc="Per-lane signed element offsets from the logical origin."),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     attrs=_atomic_memory_attrs(),
     constraints=[
@@ -2276,10 +2311,10 @@ vector_atomic_reduce_mask = Op(
     doc=("Masked atomic no-result scatter reduction/update. True mask lanes perform vector.atomic.reduce, while false mask lanes do not access memory."),
     operands=[
         Operand("value", VECTOR, doc="Fixed-width byte-addressable contribution for each lane."),
-        Operand("view", VIEW, doc="Typed destination view."),
-        Operand("offsets", VECTOR, doc="Per-lane signed element offsets from the logical origin."),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view."),
+        Operand("offsets", VECTOR, role=OperandRole.ACCESS_PATH, doc="Per-lane signed element offsets from the logical origin."),
         Operand("mask", VECTOR, doc="i1 vector mask selecting active atomic lanes."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     attrs=_atomic_memory_attrs(),
     constraints=[
@@ -2331,9 +2366,9 @@ vector_atomic_rmw = Op(
     ),
     operands=[
         Operand("value", VECTOR, doc="Fixed-width byte-addressable update value for each lane."),
-        Operand("view", VIEW, doc="Typed destination view."),
-        Operand("offsets", VECTOR, doc="Per-lane signed element offsets from the logical origin."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view."),
+        Operand("offsets", VECTOR, role=OperandRole.ACCESS_PATH, doc="Per-lane signed element offsets from the logical origin."),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     results=[Result("result", VECTOR, doc="Old memory values read by the atomic operations.")],
     attrs=_atomic_memory_attrs(),
@@ -2376,11 +2411,11 @@ vector_atomic_rmw_mask = Op(
     doc=("Masked atomic read-modify-write. True mask lanes perform vector.atomic.rmw, while false mask lanes do not access memory and take the corresponding passthrough lane in the result."),
     operands=[
         Operand("value", VECTOR, doc="Fixed-width byte-addressable update value for each lane."),
-        Operand("view", VIEW, doc="Typed destination view."),
-        Operand("offsets", VECTOR, doc="Per-lane signed element offsets from the logical origin."),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view."),
+        Operand("offsets", VECTOR, role=OperandRole.ACCESS_PATH, doc="Per-lane signed element offsets from the logical origin."),
         Operand("mask", VECTOR, doc="i1 vector mask selecting active atomic lanes."),
         Operand("passthrough", VECTOR, doc="Value used for masked-off result lanes."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     results=[Result("result", VECTOR, doc="Old memory values for active lanes and passthrough for inactive lanes.")],
     attrs=_atomic_memory_attrs(),
@@ -2440,9 +2475,9 @@ vector_atomic_cmpxchg = Op(
     operands=[
         Operand("expected", VECTOR, doc="Fixed-width byte-addressable expected value for each lane."),
         Operand("replacement", VECTOR, doc="Matching replacement value written for each successful lane."),
-        Operand("view", VIEW, doc="Typed destination view."),
-        Operand("offsets", VECTOR, doc="Per-lane signed element offsets from the logical origin."),
-        Operand("indices", INDEX, doc="Dynamic logical origin indices.", variadic=True),
+        Operand("view", VIEW, role=OperandRole.ACCESS_PATH, doc="Typed destination view."),
+        Operand("offsets", VECTOR, role=OperandRole.ACCESS_PATH, doc="Per-lane signed element offsets from the logical origin."),
+        Operand("indices", INDEX, role=OperandRole.ACCESS_PATH, doc="Dynamic logical origin indices.", variadic=True),
     ],
     results=[Result("old", VECTOR, doc="Old memory values read by the atomic operations.")],
     attrs=_atomic_cmpxchg_memory_attrs(),
@@ -3225,6 +3260,58 @@ vector_expf = _lanewise_unary(
     eager_execution_cost=0,
 )
 
+vector_ldexpf = Op(
+    "vector.ldexpf",
+    group=vector_ops,
+    phase=OpPhase.EXECUTABLE,
+    doc=("Elementwise binary exponent scaling with scalar.ldexpf semantics. The input and signed i32 exponent vectors have the same shape."),
+    operands=[Operand("input", VECTOR), Operand("exponent", VECTOR)],
+    results=[Result("result", VECTOR)],
+    constraints=[
+        HasFloatElement("input"),
+        HasI32Element("exponent"),
+        SameType("input", "result"),
+        SameShape("input", "exponent", "result"),
+    ],
+    traits=[PURE, ELEMENTWISE, SAFE_TO_SPECULATE],
+    format=[
+        Ref("input"),
+        COMMA,
+        Ref("exponent"),
+        COLON,
+        TypeOf("result"),
+        COMMA,
+        TypeOf("exponent"),
+    ],
+    examples=["%scaled = vector.ldexpf %input, %exponent : vector<4xf64>, vector<4xi32>"],
+    eager_execution_cost=0,
+)
+
+vector_frexpf = Op(
+    "vector.frexpf",
+    group=vector_ops,
+    phase=OpPhase.EXECUTABLE,
+    doc=("Elementwise exact decomposition with scalar.frexpf semantics. The fraction preserves the input type and the signed i32 exponent vector preserves its shape."),
+    operands=[Operand("input", VECTOR)],
+    results=[Result("fraction", VECTOR), Result("exponent", VECTOR)],
+    constraints=[
+        HasFloatElement("input"),
+        HasI32Element("exponent"),
+        SameType("input", "fraction"),
+        SameShape("input", "fraction", "exponent"),
+    ],
+    traits=[PURE, ELEMENTWISE, SAFE_TO_SPECULATE],
+    format=[
+        Ref("input"),
+        COLON,
+        TypeOf("fraction"),
+        COMMA,
+        TypeOf("exponent"),
+    ],
+    examples=["%fraction, %exponent = vector.frexpf %input : vector<4xf64>, vector<4xi32>"],
+    eager_execution_cost=0,
+)
+
 vector_exp2f = _lanewise_unary(
     "vector.exp2f",
     result_constraint=FLOAT_ELEMENT,
@@ -3810,6 +3897,7 @@ vector_extui = _vector_cast(
     traits=[SAFE_TO_SPECULATE],
     constraints=[ElementWidthGreaterThan("result", "input")],
     facts="loom_vector_extui_facts",
+    canonicalize="loom_vector_uniform_result_canonicalize",
     eager_execution_cost=1,
 )
 
@@ -4662,6 +4750,8 @@ VECTOR_INTEGER_ARITHMETIC_OPS: tuple[Op, ...] = (
 )
 
 VECTOR_MATH_OPS: tuple[Op, ...] = (
+    vector_ldexpf,
+    vector_frexpf,
     vector_expf,
     vector_exp2f,
     vector_expm1f,

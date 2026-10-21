@@ -123,6 +123,8 @@ typedef struct loom_vector_packetization_t {
   uint32_t value_count;
   // Number of allocated value entries.
   uint32_t value_capacity;
+  // Whether selection retained a decomposable producer operation.
+  bool contains_vector_computation;
 } loom_vector_packetization_t;
 
 int32_t loom_vector_packet_element_bit_count(
@@ -140,6 +142,12 @@ bool loom_vector_packet_shape_from_type(
     const loom_target_legalization_context_t* context,
     const loom_target_vector_packet_policy_t* policy, loom_type_t vector_type,
     loom_vector_packet_shape_t* out_shape);
+
+// Returns whether both the regular packets and optional tail have native
+// source carriers. The shape is produced by packet selection for vector_type.
+bool loom_vector_packet_shape_has_source_carriers(
+    const loom_target_legalization_context_t* context, loom_type_t vector_type,
+    const loom_vector_packet_shape_t* shape);
 
 // Returns target-native lane candidates for a shape-preserving decomposable
 // operation. |out_producer_closure_candidate_bits| identifies the subset whose

@@ -21,6 +21,38 @@
 
 namespace loom::cxx_import {
 
+// Lane exchange retains both High results in an ordinary source record. The
+// admitted record partition supplies member identity at every source use;
+// inactive-source handling remains explicit in the caller.
+class SubgroupShuffleIntrinsic {
+ public:
+  static bool supports(std::string_view name) {
+    return name == "kernel.subgroup.shuffle";
+  }
+
+  static std::optional<SubgroupShuffleIntrinsic> resolve(
+      cxx::TranslationUnit& unit, Diagnostics& diagnostics, Types& types,
+      cxx::FunctionSymbol* function, const cxx::Attribute& attribute,
+      cxx::AST* owner);
+
+  Value call(std::span<const Value> arguments, ValueArena& arena,
+             loom_builder_t* builder, loom_location_id_t location) const;
+
+  bool equivalent(const SubgroupShuffleIntrinsic& other) const {
+    return mode_ == other.mode_ && result_partition_ == other.result_partition_;
+  }
+
+ private:
+  SubgroupShuffleIntrinsic(uint8_t mode,
+                           const RecordPartition* result_partition)
+      : mode_(mode), result_partition_(result_partition) {}
+
+  // Lane addressing mode in the canonical High enum representation.
+  uint8_t mode_;
+  // Admitted value/bool record, owned by the source Types instance.
+  const RecordPartition* result_partition_;
+};
+
 // Typed source projection of kernel topology, votes, broadcasts, reductions,
 // and scans. Calls require a kernel or required-inline helper; the translation
 // driver owns that placement check. Collective participation and convergence
@@ -38,10 +70,10 @@ class KernelCollectiveIntrinsic {
       cxx::AST* owner);
 
   // Emits the admitted collective from already evaluated arguments. Topology
-  // queries project High's index result to the source's unsigned i32 value.
-  loom_value_id_t call(std::span<const Value> arguments,
-                       loom_builder_t* builder,
-                       loom_location_id_t location) const;
+  // queries retain High's index result or project it to an explicit unsigned
+  // i32 source value.
+  Value call(std::span<const Value> arguments, ValueArena& arena,
+             loom_builder_t* builder, loom_location_id_t location) const;
 
   bool equivalent(const KernelCollectiveIntrinsic& other) const;
 
@@ -87,18 +119,25 @@ class KernelCollectiveIntrinsic {
 
   static std::optional<Operation> find(std::string_view name);
 
-  KernelCollectiveIntrinsic(Operation operation, loom_type_t result_type)
-      : operation_(operation), result_type_(result_type) {}
   KernelCollectiveIntrinsic(Operation operation, loom_type_t result_type,
+                            const Partition* result_partition)
+      : operation_(operation),
+        result_type_(result_type),
+        result_partition_(result_partition) {}
+  KernelCollectiveIntrinsic(Operation operation, loom_type_t result_type,
+                            const Partition* result_partition,
                             Combining combining)
       : operation_(operation),
         result_type_(result_type),
+        result_partition_(result_partition),
         combining_(combining) {}
 
   // Operation selected once at declaration or template-instance admission.
   Operation operation_;
   // Source-selected scalar or rank-one vector representation.
   loom_type_t result_type_;
+  // Admitted source result identity, owned by the source Types instance.
+  const Partition* result_partition_;
   // Combining semantics; present exactly for reduction and scan operations.
   std::optional<Combining> combining_;
 };

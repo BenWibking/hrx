@@ -432,6 +432,15 @@ static iree_status_t loom_target_pipeline_build_source_loop_unrolling(
   return loom_target_pipeline_build_cleanup_if_changed(builder);
 }
 
+static iree_status_t
+loom_target_pipeline_build_post_expansion_private_storage_promotion(
+    loom_builder_t* builder, void* user_data) {
+  (void)user_data;
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
+      builder, IREE_SV("promote-private-fragments")));
+  return loom_target_pipeline_build_cleanup_if_changed(builder);
+}
+
 // Motion consumes structured loop entry and effect facts before CFG conversion
 // erases those boundaries, including when lexical workers are still inline.
 static iree_status_t loom_target_pipeline_build_source_cfg_lowering(
@@ -457,9 +466,6 @@ loom_target_pipeline_build_cfg_source_finalization_after_bank_sroa(
   (void)user_data;
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
       builder, IREE_SV("sink-single-use-reads")));
-  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_cleanup_if_changed(builder));
-  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
-      builder, IREE_SV("promote-private-fragments")));
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_cleanup_if_changed(builder));
   IREE_RETURN_IF_ERROR(
       loom_target_pipeline_build_view_root_selection_decomposition(builder,
@@ -696,8 +702,13 @@ static iree_status_t loom_target_pipeline_build_realized_lexical_workers(
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
       builder, IREE_SV("source"), loom_target_pipeline_build_lexical_workers,
       user_data, &for_op));
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
+      builder, IREE_SV("outline-pipeline-strands")));
+  // Outlining gives every spatial worker its own target context. Reproject
+  // retained helper closures into those contexts before target-aware worker
+  // lowering observes their call edges.
   return loom_target_pipeline_build_run(builder,
-                                        IREE_SV("outline-pipeline-strands"));
+                                        IREE_SV("specialize-target-callgraph"));
 }
 
 static iree_status_t loom_target_pipeline_build_source_low_body(
@@ -726,6 +737,8 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
   // available for legalization. Outlining registers their target versions.
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
       builder, IREE_SV("outline-pipeline-strands")));
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
+      builder, IREE_SV("specialize-target-callgraph")));
   IREE_RETURN_IF_ERROR(loom_target_pipeline_contribute_phase(
       builder, context,
       LOOM_TARGET_PIPELINE_PHASE_SOURCE_EXECUTION_REALIZATION));
@@ -758,6 +771,22 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
       builder, IREE_SV("source"),
       loom_target_pipeline_build_source_loop_unrolling, user_data, &for_op));
+  // Banks cross structured loops and branches independently of the target's
+  // control-flow representation. Project their static slots before final
+  // legalization decomposes tail-vector accesses into target-native packets.
+  IREE_RETURN_IF_ERROR(
+      loom_target_pipeline_build_run(builder, IREE_SV("sroa-vector-banks")));
+  loom_op_t* bank_sroa_changed_op = NULL;
+  IREE_RETURN_IF_ERROR(loom_pass_ir_build_if_changed(
+      builder, loom_target_pipeline_build_cleanup_target_functions, NULL,
+      &bank_sroa_changed_op));
+  // Source expansion can turn dynamically indexed private fragments into
+  // static cells. Promote them for every control-flow representation before
+  // complete legalization requires target-native memory spaces.
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
+      builder, IREE_SV("source"),
+      loom_target_pipeline_build_post_expansion_private_storage_promotion, NULL,
+      &for_op));
   // Finish reference rewrites after source expansion exposes static lanes and
   // before CFG finalization. Source-to-low owns the final legality check.
   IREE_RETURN_IF_ERROR(
@@ -769,12 +798,6 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
       builder, loom_target_pipeline_build_cleanup_target_functions, NULL,
       &if_changed_op));
   if (control_flow_lowering == LOOM_TARGET_CONTROL_FLOW_LOWERING_CFG) {
-    IREE_RETURN_IF_ERROR(
-        loom_target_pipeline_build_run(builder, IREE_SV("sroa-vector-banks")));
-    loom_op_t* bank_sroa_changed_op = NULL;
-    IREE_RETURN_IF_ERROR(loom_pass_ir_build_if_changed(
-        builder, loom_target_pipeline_build_cleanup_target_functions, NULL,
-        &bank_sroa_changed_op));
     IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
         builder, IREE_SV("project-loop-boundary-representations")));
     IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(

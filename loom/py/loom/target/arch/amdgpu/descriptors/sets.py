@@ -36,6 +36,7 @@ from .bitwise import *
 from .cdna import *
 from .common import *
 from .control import *
+from .exponent import floating_exponent_overlays
 from .integer_multiply import *
 from .matrix import *
 from .memory import *
@@ -335,7 +336,7 @@ def _rdna_scalar_domain_fma_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
 
 def _floating_arithmetic_support_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
     return (
-        _v_ldexp_f32_overlay(),
+        *floating_exponent_overlays(),
         _v_ceil_f64_overlay(),
         _v_floor_f64_overlay(),
         _v_rndne_f64_overlay(),
@@ -343,7 +344,6 @@ def _floating_arithmetic_support_overlays() -> tuple[AmdgpuDescriptorOverlay, ..
         _v_sub_f64_overlay(),
         _v_sqrt_f64_overlay(),
         _v_rsq_f64_overlay(),
-        _v_ldexp_f64_overlay(),
         _v_rcp_f64_overlay(),
         _v_div_scale_f64_overlay(),
         _v_div_fmas_f64_overlay(),
@@ -443,6 +443,7 @@ def _cdna_core_overlays(
         *_v_max_u32_overlays(),
         _v_readfirstlane_b32_overlay(),
         _v_readlane_b32_src1_inline_overlay(),
+        _v_readlane_b32_src1_sgpr_overlay(),
         # CDNA2+ wide shifts read the count register's successor at allocation
         # block boundaries. Final packet planning retains the allocation floor;
         # v255 has no representable successor and cannot hold the count.
@@ -2042,6 +2043,7 @@ def _rdna4_core_overlays(
         *_v_max_u32_overlays(),
         _v_readfirstlane_b32_overlay(),
         _v_readlane_b32_src1_inline_overlay(),
+        _v_readlane_b32_src1_sgpr_overlay(),
         *_integer_bitwise_shift_overlays(),
         *_integer_bitwise_permute_overlays(),
         _v_permlanex16_b32_src12_inline_overlay(),
@@ -2416,6 +2418,22 @@ def _gfx12_core_overlay_descriptors(
     )
 
 
+_GFX125X_NATIVE_PACKED_DOT_DESCRIPTOR_KEYS = frozenset(
+    {
+        # LLVM FeatureDot7Insts.
+        "amdgpu.v_dot4_i32_i8",
+        "amdgpu.v_dot4_i32_iu8.s8u8",
+        "amdgpu.v_dot4_i32_iu8.u8s8",
+        "amdgpu.v_dot4_u32_u8",
+        # LLVM FeatureDot8Insts.
+        "amdgpu.v_dot8_i32_i4",
+        "amdgpu.v_dot8_i32_iu4.s4u4",
+        "amdgpu.v_dot8_i32_iu4.u4s4",
+        "amdgpu.v_dot8_u32_u4",
+    }
+)
+
+
 @cache
 def _gfx125x_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
     return (
@@ -2424,6 +2442,10 @@ def _gfx125x_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
             for overlay in _rdna4_core_overlays(include_f64_atomic_arithmetic=True)
             if not (overlay.semantic_tag or "").startswith(
                 ("float.interpolation.", "matrix.wmma.")
+            )
+            and (
+                not (overlay.semantic_tag or "").startswith("dot.")
+                or overlay.descriptor_key in _GFX125X_NATIVE_PACKED_DOT_DESCRIPTOR_KEYS
             )
         ),
         _s_getreg_b32_cluster_workgroup_flat_id_overlay(),

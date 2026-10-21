@@ -6,11 +6,13 @@
 
 #include "loom/ir/module.h"
 #include "loom/ir/scalar_type.h"
+#include "loom/ops/op_defs.h"
 #include "loom/ops/vector/fragment.h"
 #include "loom/target/arch/amd/xdna/aie2p/contracts/core.h"
 #include "loom/target/arch/amd/xdna/aie2p/contracts/core_lower_rules.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/gather.h"
+#include "loom/target/arch/amd/xdna/aie2p/lower/f32_representation.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/gather.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/interleave.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/lower.h"
@@ -61,10 +63,11 @@ static bool loom_aie2p_source_type_supported(void* user_data,
 }
 
 static bool loom_aie2p_source_vector_carrier_supported(
-    void* user_data, const loom_module_t* module,
-    const loom_value_fact_table_t* fact_table, loom_value_id_t value_id,
-    loom_type_t source_type) {
+    void* user_data, const loom_target_facts_t* target_facts,
+    const loom_module_t* module, const loom_value_fact_table_t* fact_table,
+    loom_value_id_t value_id, loom_type_t source_type) {
   (void)user_data;
+  (void)target_facts;
   (void)module;
   (void)fact_table;
   (void)value_id;
@@ -162,6 +165,18 @@ static iree_status_t loom_aie2p_map_value(void* user_data,
                                           loom_value_id_t source_value_id,
                                           loom_type_t source_type,
                                           loom_type_t* out_low_type) {
+  if (loom_aie2p_f32_packet_type(source_type)) {
+    loom_low_representation_id_t representation =
+        LOOM_LOW_REPRESENTATION_ID_NONE;
+    loom_low_lower_representation_lookup_if_ready(context, source_value_id,
+                                                  &representation);
+    if (representation == LOOM_AIE2P_F32_REPRESENTATION_ACCUMULATOR) {
+      return loom_low_lower_make_register_type(
+          context, AIE2P_CORE_REG_CLASS_ID_AIE2P_EBMLL, 1, out_low_type);
+    }
+    IREE_ASSERT(representation == LOOM_LOW_REPRESENTATION_ID_NONE ||
+                representation == LOOM_AIE2P_F32_REPRESENTATION_VECTOR);
+  }
   if (loom_type_is_vector(source_type) && loom_type_rank(source_type) == 1 &&
       loom_type_element_type(source_type) == LOOM_SCALAR_TYPE_I8 &&
       loom_type_dim_static_size_at(source_type, 0) == 72 &&
@@ -181,7 +196,20 @@ static iree_status_t loom_aie2p_map_argument(
     loom_low_lower_abi_argument_t* out_argument) {
   loom_type_t source_type = loom_module_value_type(
       loom_low_lower_context_module(context), source_argument_id);
-  if (loom_type_is_buffer(source_type)) {
+  const loom_func_like_t source_function =
+      loom_low_lower_context_source_function(context);
+  const bool is_direct_helper = loom_func_like_inline_policy(source_function) ==
+                                LOOM_INLINE_POLICY_NOINLINE;
+  if (loom_type_is_view(source_type) && is_direct_helper) {
+    *out_argument = (loom_low_lower_abi_argument_t){
+        .kind = LOOM_LOW_LOWER_ABI_ARGUMENT_DIRECT,
+        .abi_type = loom_type_none(),
+        .body_type = loom_type_none(),
+    };
+    return loom_low_lower_make_register_type(
+        context, AIE2P_CORE_REG_CLASS_ID_AIE2P_EP, 1, &out_argument->abi_type);
+  }
+  if (loom_type_is_buffer(source_type) && !is_direct_helper) {
     loom_type_t resource_type = loom_type_none();
     IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
         context, AIE2P_CORE_REG_CLASS_ID_AIE2P_EP, 1, &resource_type));
@@ -423,6 +451,7 @@ static const loom_low_lower_policy_t kAie2pCoreLowLowerPolicy = {
             .attrs = NULL,
             .user_data = NULL,
         },
+    .source_plan_observer = &loom_aie2p_f32_representation_observer,
     .preselect_op = {.fn = loom_aie2p_preselect_op, .user_data = NULL},
     .mark_plan_storage_demands =
         {
@@ -443,7 +472,7 @@ void loom_aie2p_low_lower_policy_registry_initialize(
     loom_low_lower_policy_registry_t* out_registry) {
   static const loom_low_lower_policy_registry_entry_t kEntries[] = {
       {
-          .contract_set_key = IREE_SVL("amd.xdna.aie2p.core"),
+          .contract_set_stable_id = UINT64_C(0x25ed3c7d25a1452a),
           .policy = &kAie2pCoreLowLowerPolicy,
       },
   };

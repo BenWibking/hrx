@@ -41,6 +41,7 @@ IREE_FLAG(string, model_source, "", "Speech fixture bootstrap source.");
 namespace {
 
 using loom_serve::testing::AcquireApplication;
+using loom_serve::testing::kSpeechSlabSize;
 using loom_serve::testing::ObservationCount;
 using loom_serve::testing::OpenSpeech;
 using loom_serve::testing::SpeechElasticBacking;
@@ -49,8 +50,6 @@ using loom_serve::testing::SpeechWorkerCount;
 
 class SourceSpeechServiceTest : public ::testing::TestWithParam<bool> {
  protected:
-  static constexpr uint64_t kSlabSize = 2 * 1024 * 1024;
-
   virtual bool NeedsStandaloneModel() const { return true; }
 
   static void WriteCheckpoint(const std::string& path,
@@ -290,7 +289,8 @@ class SourceSpeechServiceTest : public ::testing::TestWithParam<bool> {
                                               &admission, &frontier));
     EXPECT_EQ(admission, LOOM_SERVE_RESIDENCY_ADMISSION_ACQUIRED);
     IREE_RETURN_IF_ERROR(Wait(frontier));
-    EXPECT_TRUE(generator_.complete_admit(generator_.self, invocation));
+    EXPECT_EQ(generator_.complete_admit(generator_.self, invocation),
+              LOOM_SERVE_MEMORY_ADMISSION_AVAILABLE);
     return iree_ok_status();
   }
 
@@ -466,13 +466,14 @@ TEST_P(SourceSpeechServiceTest,
     if (SpeechElasticBacking()) {
       EXPECT_EQ(
           loom_serve_device_memory_statistics(device).retained.pending_bytes,
-          3 * kSlabSize);
+          3 * kSpeechSlabSize);
     }
     IREE_ASSERT_OK(Generate(warm, 6, &warm_samples, &warm_blocks));
     ASSERT_EQ(warm_samples.size(), 6u);
   }
   IREE_ASSERT_OK(Wait(frontier));
-  ASSERT_TRUE(cold.complete_admit(cold.self, invocation));
+  ASSERT_EQ(cold.complete_admit(cold.self, invocation),
+            LOOM_SERVE_MEMORY_ADMISSION_AVAILABLE);
   std::vector<float> cold_samples;
   bool complete = false;
   while (!complete) {
@@ -502,7 +503,7 @@ TEST_P(SourceSpeechServiceTest,
     if (SpeechElasticBacking()) {
       EXPECT_EQ(
           loom_serve_device_memory_statistics(device).retained.releasing_bytes,
-          2 * kSlabSize);
+          2 * kSpeechSlabSize);
     }
     IREE_ASSERT_OK(Generate(warm, SIZE_MAX, &warm_samples, &warm_blocks));
   }
@@ -611,10 +612,10 @@ TEST_P(SourceSpeechServiceTest, CohortsPreserveIndependentResidentProgress) {
   size_t tick = 0;
   size_t largest_cohort = 0;
   size_t paused_samples = 0;
-  uint64_t full_commitment = 0;
+  uint64_t full_live_bytes = 0;
   auto* device = loom_serve_device_group_at(group_, 0);
   const auto initial = loom_serve_device_memory_statistics(device).retained;
-  EXPECT_EQ(initial.committed_bytes, 0u);
+  EXPECT_EQ(initial.committed_bytes, initial.cached_bytes);
   bool live = true;
   while (live) {
     if (tick < 4) {
@@ -642,8 +643,8 @@ TEST_P(SourceSpeechServiceTest, CohortsPreserveIndependentResidentProgress) {
       ASSERT_NO_FATAL_FAILURE(run(selected, tick == 4 ? 1 : SIZE_MAX));
     }
     if (tick == 3) {
-      full_commitment =
-          loom_serve_device_memory_statistics(device).retained.committed_bytes;
+      const auto memory = loom_serve_device_memory_statistics(device).retained;
+      full_live_bytes = memory.committed_bytes - memory.cached_bytes;
     }
     if (tick >= 4 && tick < 9) {
       EXPECT_EQ(requests[2].samples.size(), paused_samples);
@@ -662,7 +663,8 @@ TEST_P(SourceSpeechServiceTest, CohortsPreserveIndependentResidentProgress) {
     // Releasing an individual row cannot trim slabs shared by live neighbors.
     // The last release reclaims input/history; reusable conditioning survives.
     EXPECT_EQ(idle.reserved_bytes, initial.reserved_bytes);
-    EXPECT_EQ(full_commitment - idle.committed_bytes, 2 * kSlabSize);
+    EXPECT_EQ(full_live_bytes - (idle.committed_bytes - idle.cached_bytes),
+              2 * kSpeechSlabSize);
   }
   for (size_t index = 0; index < 5; ++index) {
     const auto& request = requests[index];

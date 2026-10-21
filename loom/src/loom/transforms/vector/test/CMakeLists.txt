@@ -14,7 +14,10 @@ loom_check_test_suite(
     test
   SRCS
     "bank_sroa.loom-test"
+    "bank_sroa_branches.loom-test"
+    "bitwise_legalization.loom-test"
     "dynamic_extract.loom-test"
+    "integer_cast.loom-test"
     "mask_range_relations.loom-test"
     "memory_footprint.loom-test"
     "memory_footprint_affine_preimage.loom-test"
@@ -35,10 +38,14 @@ loom_check_test_suite(
     "memory_to_scalar.loom-test"
     "packed_memory_consumers.loom-test"
     "reduce_axes_to_scalar.loom-test"
+    "reshape_lanes.loom-test"
+    "shape_slices.loom-test"
     "sink_single_use_reads.loom-test"
+    "snapshot_rewrites.loom-test"
     "to_scalar.loom-test"
     "to_scalar_divrem.loom-test"
     "to_scalar_e8m0.loom-test"
+    "to_scalar_exponent.loom-test"
     "to_scalar_float_formats.loom-test"
 )
 

@@ -400,6 +400,7 @@ loom_cc_library(
 loom_cc_library(
     name = "lower",
     srcs = [
+        "lower/f32_representation.c",
         "lower/gather.c",
         "lower/interleave.c",
         "lower/matrix.c",
@@ -411,6 +412,7 @@ loom_cc_library(
         "lower/vector_packet.c",
     ],
     hdrs = [
+        "lower/f32_representation.h",
         "lower/gather.h",
         "lower/interleave.h",
         "lower/lower.h",
@@ -428,9 +430,11 @@ loom_cc_library(
         ":vector_carrier",
         "//loom/src/loom/analysis:contract_vector",
         "//loom/src/loom/codegen/low/lower",
+        "//loom/src/loom/codegen/low/lower:representation_observer",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ir:facts",
+        "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/buffer",
         "//loom/src/loom/ops/global",
         "//loom/src/loom/ops/low",
@@ -442,6 +446,18 @@ loom_cc_library(
         "//loom/src/loom/target/arch/amd/xdna/aie2p/contracts:core_lower_rules",
         "//loom/src/loom/util:fact_table",
         "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
+    name = "call_abi",
+    srcs = ["call_abi.c"],
+    hdrs = ["call_abi.h"],
+    deps = [
+        ":core_descriptors",
+        "//loom/src/loom/codegen/low/allocation:call",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/target:registers",
     ],
 )
 
@@ -465,6 +481,7 @@ loom_cc_library(
     hdrs = ["provider.h"],
     visibility = ["//visibility:public"],
     deps = [
+        ":call_abi",
         ":legalization",
         ":low_registry",
         ":low_verify",
@@ -842,11 +859,13 @@ loom_check_test_suite(
         "test/module_contracts.loom-test",
         "test/native_admission.loom-test",
         "test/native_bindings.loom-test",
+        "test/native_calls.loom-test",
         "test/native_completion.loom-test",
         "test/native_distribution.loom-test",
         "test/native_dma_completions.loom-test",
         "test/native_dma_descriptors.loom-test",
         "test/native_endpoint_addresses.loom-test",
+        "test/native_helper_effects.loom-test",
         "test/native_local_buffers.loom-test",
         "test/native_repetition.loom-test",
         "test/native_strands.loom-test",
@@ -860,6 +879,8 @@ loom_check_test_suite(
         "test/source_low/carried_counter_store.loom-test",
         "test/source_low/component_packetization.loom-test",
         "test/source_low/component_packetization_report.loom-test",
+        "test/source_low/exact_bf16_accumulator_conversion.loom-test",
+        "test/source_low/f32_representation.loom-test",
         "test/source_low/function_storage.loom-test",
         "test/source_low/fused_packet_memory.loom-test",
         "test/source_low/immutable_gather.loom-test",
@@ -950,6 +971,7 @@ loom_check_test_suite(
         "test/source_low/predicate_concat.loom-test",
         "test/source_low/predicate_extension.loom-test",
         "test/source_low/predicate_extract.loom-test",
+        "test/source_low/predicate_range.loom-test",
         "test/source_low/predicate_slice.loom-test",
         "test/source_low/predicate_storage_reuse.loom-test",
         "test/source_low/rodata.loom-test",
@@ -1091,6 +1113,36 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "program_object",
+    srcs = ["emit/program_object.c"],
+    hdrs = ["emit/program_object.h"],
+    deps = [
+        ":bundle_plan",
+        ":leaf_object",
+        ":relocation",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
+    name = "program_compile",
+    srcs = ["emit/program_compile.c"],
+    hdrs = ["emit/program_compile.h"],
+    deps = [
+        ":call_abi",
+        ":core_descriptors",
+        ":leaf_compile",
+        ":program_object",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/target:registers",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "tile_link",
     srcs = ["emit/tile_link.c"],
     hdrs = ["emit/tile_link.h"],
@@ -1171,6 +1223,7 @@ loom_cc_library(
         ":configuration_descriptors",
         ":configuration_storage",
         ":leaf_compile",
+        ":program_compile",
         ":provider",
         ":target_facts",
         ":target_profile",
@@ -1241,6 +1294,20 @@ loom_cc_test(
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal/drivers/amd/xdna/image",
         "//runtime/src/iree/hal/drivers/amd/xdna/image/aie2p:npu2",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "call_abi_test",
+    srcs = ["call_abi_test.cc"],
+    deps = [
+        ":call_abi",
+        ":core_descriptors",
+        ":machine",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/target:registers",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],
@@ -1339,6 +1406,47 @@ loom_cc_test(
     deps = [
         ":encoding",
         ":leaf_object",
+        ":relocation",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "program_compile_test",
+    srcs = ["emit/program_compile_test.cc"],
+    deps = [
+        ":bundle_plan",
+        ":core_descriptors",
+        ":descriptor_encoding",
+        ":encoding",
+        ":low_registry",
+        ":machine",
+        ":program_compile",
+        ":provider",
+        ":relocation",
+        ":tile_link",
+        "//loom/src/loom/codegen/low:function_requirements",
+        "//loom/src/loom/codegen/low:text_asm",
+        "//loom/src/loom/format/text:parser",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops:op_registry",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/target/emit/native:object",
+        "//loom/src/loom/testing:module_ptr",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "program_object_test",
+    srcs = ["emit/program_object_test.cc"],
+    deps = [
+        ":program_object",
         ":relocation",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",

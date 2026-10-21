@@ -14,7 +14,9 @@ loom_cc_library(
     main
   HDRS
     "case_execution.h"
+    "case_request.h"
     "comparison_execution.h"
+    "compile_requests.h"
     "configuration.h"
     "context.h"
     "device_spec_report.h"
@@ -44,7 +46,9 @@ loom_cc_library(
     "work_plan.h"
   SRCS
     "case_execution.c"
+    "case_request.c"
     "comparison_execution.c"
+    "compile_requests.c"
     "context.c"
     "device_spec_report.c"
     "diagnostics.c"
@@ -78,16 +82,19 @@ loom_cc_library(
     iree::base::tooling::flags
     iree::hal
     iree::io::stream
+    iree::tooling::device_flags
     iree::tooling::device_util
     iree::tooling::profile::counter
     iree::tooling::profile::summary
     loom::binding::c::interop
     loom::binding::c::loomc
+    loom::binding::c::target::cmd
     loom::binding::c::target::iree_hal
     loom::config::text_binding
     loom::error::diagnostic
     loom::error::json_sink
     loom::error::renderer
+    loom::format::text::printer
     loom::ir
     loom::ir::facts
     loom::ops::check
@@ -111,6 +118,7 @@ loom_cc_library(
     loom::tooling::io::file
     loom::tooling::testbench
     loom::tooling::testbench::api
+    loom::tooling::testbench::case_command_program
     loom::tooling::testbench::compiled_provider
     loom::tooling::testbench::device_event
     loom::tooling::testbench::executor
@@ -121,7 +129,9 @@ loom_cc_library(
     loom::tooling::testbench::scenario::entropy
     loom::tooling::testbench::scenario::executor
     loom::tooling::testbench::scenario::values
+    loom::tooling::testbench::source_report
     loom::tooling::testbench::value_materializer
+    loom::util::adaptive_sort
     loom::util::json
     loom::util::stream
   PUBLIC
@@ -143,6 +153,20 @@ loom_cc_test(
     loom::ops::check
     loom::tooling::testbench
     loom::tooling::testbench::executor
+)
+
+loom_cc_test(
+  NAME
+    case_request_test
+  SRCS
+    "case_request_test.cc"
+  DEPS
+    ::main
+    iree::base
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::binding::c::loomc
+    loom::binding::c::target::cmd
 )
 
 loom_cc_test(
@@ -196,11 +220,13 @@ loom_cc_test(
   DEPS
     ::main
     iree::base
+    iree::base::internal::arena
     iree::base::internal::json
     iree::testing::gtest
     iree::testing::gtest_main
     loom::binding::c::interop
     loom::binding::c::loomc
+    loom::ir
 )
 
 loom_cc_test(
@@ -224,6 +250,8 @@ loom_cc_test(
     run_test
   SRCS
     "run_test.cc"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-benchmark-loom/testdata/planning_error.loom"
   DEPS
     ::main
     iree::base
@@ -231,10 +259,13 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     iree::testing::temp_file
+    loom::ir
+  ENV
+    "LOOM_BENCHMARK_PLANNING_SOURCE={{${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-benchmark-loom/testdata/planning_error.loom}}"
 )
 
 set(_iree_benchmark_loom_platform_copts "")
-if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND (IREE_HAL_DRIVER_AMDGPU OR IREE_HAL_DRIVER_AMD))
   list(APPEND _iree_benchmark_loom_platform_copts "-DIREE_BENCHMARK_LOOM_HAVE_AMDGPU=1")
 endif()
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
@@ -246,11 +277,11 @@ endif()
 if(LOOM_TARGET_ARCH_VM)
   list(APPEND _iree_benchmark_loom_platform_copts "-DIREE_BENCHMARK_LOOM_HAVE_VM=1")
 endif()
-if(LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_XDNA)
+if(LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMD)
   list(APPEND _iree_benchmark_loom_platform_copts "-DIREE_BENCHMARK_LOOM_HAVE_XDNA=1")
 endif()
 set(_iree_benchmark_loom_platform_deps "")
-if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND (IREE_HAL_DRIVER_AMDGPU OR IREE_HAL_DRIVER_AMD))
   list(APPEND _iree_benchmark_loom_platform_deps loom::binding::c::target::amdgpu::iree_hal)
   list(APPEND _iree_benchmark_loom_platform_deps loom::tooling::target::amdgpu::testbench_requirements)
 endif()
@@ -264,7 +295,7 @@ endif()
 if(LOOM_TARGET_ARCH_VM)
   list(APPEND _iree_benchmark_loom_platform_deps loom::tooling::target::vm::testbench)
 endif()
-if(LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_XDNA)
+if(LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMD)
   list(APPEND _iree_benchmark_loom_platform_deps loom::binding::c::target::amd::xdna::iree_hal)
 endif()
 loom_cc_binary(

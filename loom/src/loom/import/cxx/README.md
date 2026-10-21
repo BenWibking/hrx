@@ -705,6 +705,53 @@ definition. Non-overloaded external names derive from their qualified C++ names.
 Overloads, operators and template specializations need `loom::symbol` because a
 stable cross-module identity cannot depend on reachability or declaration order.
 
+Namespace-scope immutable object storage uses the same module boundary. A
+header can declare externally supplied data and define an inline table:
+
+```cpp
+namespace coefficients {
+inline constexpr unsigned bias[2] = {3, 5};
+extern const unsigned weights[2];
+}
+```
+
+One translation unit supplies the strong definition:
+
+```cpp
+#include "coefficients.h"
+
+namespace coefficients {
+extern const unsigned weights[2] = {10, 20};
+}
+```
+
+Another translation unit reads both objects through ordinary C++ indexing:
+
+```cpp
+#include "coefficients.h"
+
+unsigned coefficient(unsigned index) {
+  const unsigned lane = index & 1u;
+  return coefficients::weights[lane] + coefficients::bias[lane];
+}
+```
+
+The consumer emits `global.rodata.decl @coefficients.weights`; the provider
+emits `global.rodata.def public @coefficients.weights`. Every translation unit
+that reaches `bias` emits an equivalent
+`global.rodata.def public linkonce @coefficients.bias`, and the Loom linker
+coalesces those definitions. Internal-linkage `static const` and ordinary
+namespace `constexpr` objects remain private to their source module.
+
+Strong external definitions are published even when no function in their own
+translation unit reads them. Declarations, inline definitions and private
+definitions remain lazy and appear only when reached. As in C++, matching
+external declarations and definitions are an ODR promise from the source;
+read-only data symbols do not add a second type system or compare inline
+payload bodies while linking. Linkable object template specializations remain
+unsupported because their readable source name does not identify a concrete
+specialization.
+
 `loom::import` binds a bodyless function to a runtime module or service instead
 of another Loom definition. The first string names the service. An optional
 second string names its external function; omitting it reuses the local Loom
@@ -1316,8 +1363,8 @@ the corresponding High operation.
 
 ## Subgroup cooperation
 
-`<loomcxx/kernel.h>` exposes subgroup topology, votes, and broadcasts as typed
-High operations. `loom::kernel::subgroup::{id,count,size,lane_id}()` return
+`<loomcxx/kernel.h>` exposes subgroup topology, votes, broadcasts, and shuffles
+as typed High operations. `loom::kernel::subgroup::{id,count,size,lane_id}()` return
 unsigned coordinates. The execution width includes inactive lanes and can
 exceed the number of invocations in a partial subgroup.
 
@@ -1335,6 +1382,14 @@ requirements. `loom::kernel::subgroup::broadcast_first(value)` selects the
 first active lane, including inside divergent control flow; that lane need not
 be lane zero.
 
+`shuffle_xor`, `shuffle_up`, `shuffle_down`, and `shuffle_index` preserve scalar
+and explicit rank-one vector payloads, including their floating-point object
+bits. Each takes a value, an unsigned lane selector or offset, and an unsigned
+logical width, and returns `shuffle_result<T>{value, valid}`. The validity bit
+reports whether the selected source is within the logical subgroup and
+participated in the exchange. Callers consume `value` only when `valid` is true;
+inactive lanes and partial subgroups do not supply an implicit identity.
+
 ```cpp
 #include <loomcxx/kernel.h>
 using UInt4 = unsigned __attribute__((ext_vector_type(4)));
@@ -1346,10 +1401,18 @@ using UInt4 = unsigned __attribute__((ext_vector_type(4)));
 [[loom::force_inline]] unsigned long long ready_streams(bool ready) {
   return loom::kernel::subgroup::vote::ballot(ready);
 }
+
+[[loom::force_inline]] UInt4 predecessor_or(UInt4 local, UInt4 identity) {
+  auto previous = loom::kernel::subgroup::shuffle_up(
+      local, 1u, loom::kernel::subgroup::size());
+  return previous.valid ? previous.value : identity;
+}
 ```
 
-These become `kernel.subgroup.broadcast ... : vector<4xi32>, i32` and
-`kernel.subgroup.vote.ballot ... : i1 -> i64`. Declarations use ordinary
+These become `kernel.subgroup.broadcast ... : vector<4xi32>, i32`,
+`kernel.subgroup.vote.ballot ... : i1 -> i64`, and
+`kernel.subgroup.shuffle<up> ... : vector<4xi32>, i32, i32`. A shuffle binds
+both High results directly to the source record. Declarations use ordinary
 `[[loom::op("kernel.subgroup.broadcast")]]` bindings; custom names and concrete
 template instances use the same admission path. Calls require a kernel body or
 a `loom::force_inline` helper. Each argument is evaluated once, and the shared
@@ -1852,7 +1915,8 @@ resolve its `kernel.decl` through normal library dependencies. An explicit
 `export("name")` is needed only when the artifact export name differs.
 Overloaded root names require disambiguation in the source. Template helpers
 are instantiated by cxx before import. This interface does not yet define an
-external C++ ABI for linking separately compiled C++ translation units.
+external C++ ABI for arbitrary source entities; supported callable and
+immutable-object identities project directly onto Loom symbols instead.
 
 Scoped and unscoped enums preserve their resolved integer representation:
 
@@ -2142,11 +2206,38 @@ side effects retain the source evaluation order for plain and compound updates.
 Native vectors are the register-resident spelling for dynamically selected
 fixed lanes; C++ arrays retain their object-storage and aliasing contract.
 
-Admission requires non-boolean lanes and an object layout with no padding beyond
-the lanes. Packed boolean vectors and padded three-lane objects need separate
-storage projections. Lane addresses, swizzles, vector `&&`/`||`, and
-vector-conditioned `?:` produce source diagnostics: they require additional
-address or lane-selection projections. Target support remains a separate
+`loom::vector::slice<Result>(source, offsets)` extracts a register subvector
+while preserving rank and element type. Native vectors and semantic
+`loom::type::vector` values can be mixed at rank one. A scalar integer or
+logical index selects a rank-one offset; a coordinate record supplies one
+offset per axis for larger shapes. Dynamic result dimensions are explicit:
+
+```cpp
+using Values = loom::type::vector<
+    loom::type::shape<loom::type::dynamic>, unsigned>;
+using Pair = unsigned __attribute__((ext_vector_type(2)));
+
+Pair record(Values values, unsigned position) {
+  return loom::vector::slice<Pair>(values, position * 2);
+}
+
+Values prefix(Values values, loom::type::index count) {
+  return loom::vector::slice<Values>(values, 0u, {count});
+}
+```
+
+Source dimensions remain attached to `values`, while `count` describes the
+result. Those identities survive import and ordinary bytecode linking, so
+configuration can choose the register widths later. Each result extent must
+fit within the source at its selected offset; slicing neither pads nor clamps.
+For a two-dimensional source, `{row, column}` selects the origin and the result
+type selects the rectangle, with one explicit index per dynamic result axis.
+
+Native C++ vector admission requires non-boolean lanes and an object layout
+with no padding beyond the lanes. Packed boolean vectors and padded three-lane
+objects need separate storage projections. Lane addresses, swizzles, vector
+`&&`/`||`, and vector-conditioned `?:` produce source diagnostics: they require
+additional address or lane-selection projections. Target support remains a separate
 compilation boundary. For example, the VM can execute extracted lane programs
 but currently rejects vector aggregate transport across loop/branch arguments;
 that requires a shared aggregate representation through control flow.
@@ -2219,7 +2310,8 @@ and disjunction produce source diagnostics. Source conditions generate no
 runtime comparisons or branches. The program must satisfy every declared
 predicate.
 
-Counted unsigned `for` loops accept explicit scheduling attributes:
+Counted `int` and `unsigned int` `for` loops accept explicit scheduling
+attributes:
 
 ```cpp
 [[loom::unroll(3), loom::pipeline(2), loom::schedule("linear")]]
@@ -2270,12 +2362,16 @@ Constant evaluation preserves source widths and defined unsigned wrapping;
 unevaluated operands such as `sizeof(++value)` have no runtime effects.
 Prefix and postfix increments have the same counted-loop behavior.
 
-The induction and comparison use the same unsigned-int width. Unit steps may
-use a stable runtime scalar bound; larger steps require a constant bound that
-leaves room for the final increment without wrapping. Runtime starts preserve
-zero-trip and partial-tail behavior. Mutable bounds, effectful expressions,
-widened comparisons and potentially wrapping increments keep general-loop
-semantics, and explicit scheduling on those loops is diagnosed.
+The induction and comparison use the same `int` or `unsigned int` width. Signed
+loops use Loom's signed `index` domain; unsigned loops use the physical
+`offset` domain. Unit steps may use a stable runtime scalar bound; larger steps
+require a constant bound that leaves room for the final increment without
+wrapping. Runtime starts preserve zero-trip and partial-tail behavior. Narrow
+induction types governed by integer promotion and signed types wider than a
+possibly 32-bit target index retain general-loop semantics. Mutable bounds,
+effectful expressions, widened comparisons, and potentially wrapping
+increments also retain general-loop semantics, and explicit scheduling on
+those loops is diagnosed.
 
 Dynamic offset loops currently compile with linear body ordering. The core
 interleaved/recurrence tail construction uses index-only division and

@@ -73,20 +73,25 @@ static const loom_string_ref_t
 
 static const loom_target_math_policy_direct_rule_t
     kTestWidenMathDirectRules[LOOM_TARGET_MATH_OP_COUNT] = {
-        [LOOM_TARGET_MATH_OP_MULF] = LOOM_TARGET_MATH_POLICY_DIRECT_RULE(
-            LOOM_SCALAR_TYPE_SET_F32, LOOM_TARGET_MATH_LANE_DOMAIN_SET_ALL,
-            LOOM_TARGET_MATH_FASTMATH_FLAG_NONE,
-            LOOM_TARGET_MATH_RECIPE_UNKNOWN,
-            LOOM_TARGET_MATH_FASTMATH_FLAG_NONE,
-            LOOM_TARGET_MATH_FASTMATH_FLAG_NONE, 0,
-            LOOM_TEST_MATH_CONSTRAINT_WIDEN_FIXTURE,
-            LOOM_TEST_MATH_CONSTRAINT_NONE),
+#define LOOM_TEST_WIDEN_NATIVE_RULE(op_)                                    \
+  [LOOM_TARGET_MATH_OP_##op_] = LOOM_TARGET_MATH_POLICY_DIRECT_RULE(        \
+      LOOM_SCALAR_TYPE_SET_F32, LOOM_TARGET_MATH_LANE_DOMAIN_SET_ALL,       \
+      LOOM_TARGET_MATH_FASTMATH_FLAG_NONE, LOOM_TARGET_MATH_RECIPE_UNKNOWN, \
+      LOOM_TARGET_MATH_FASTMATH_FLAG_NONE,                                  \
+      LOOM_TARGET_MATH_FASTMATH_FLAG_NONE, 0,                               \
+      LOOM_TEST_MATH_CONSTRAINT_WIDEN_FIXTURE, LOOM_TEST_MATH_CONSTRAINT_NONE)
+        LOOM_TEST_WIDEN_NATIVE_RULE(MULF),
+        LOOM_TEST_WIDEN_NATIVE_RULE(DIVF),
+        LOOM_TEST_WIDEN_NATIVE_RULE(CEILF),
+        LOOM_TEST_WIDEN_NATIVE_RULE(FLOORF),
+        LOOM_TEST_WIDEN_NATIVE_RULE(ROUNDEVENF),
+        LOOM_TEST_WIDEN_NATIVE_RULE(TRUNCF),
+#undef LOOM_TEST_WIDEN_NATIVE_RULE
 };
 
 static const loom_target_math_policy_rule_t kTestWidenMathRules[] = {
     {
-        .match = LOOM_TEST_MATH_MATCH(LOOM_SCALAR_TYPE_SET_F16 |
-                                      LOOM_SCALAR_TYPE_SET_BF16),
+        .match = LOOM_TEST_MATH_MATCH(LOOM_SCALAR_TYPE_SET_FLOAT_LE16),
         .recipe = LOOM_TARGET_MATH_RECIPE_WIDEN_F32_ROUND,
         .decision_constraint = LOOM_TEST_MATH_CONSTRAINT_RECIPE_WIDEN_F32_ROUND,
     },
@@ -94,11 +99,15 @@ static const loom_target_math_policy_rule_t kTestWidenMathRules[] = {
 
 static const loom_target_math_policy_rule_span_t
     kTestWidenMathOperationSpans[LOOM_TARGET_MATH_OP_COUNT] = {
-        [LOOM_TARGET_MATH_OP_MULF] =
-            {
-                .rule_count = IREE_ARRAYSIZE(kTestWidenMathRules),
-                .fallback_constraint = LOOM_TEST_MATH_CONSTRAINT_WIDEN_FIXTURE,
-            },
+#define LOOM_TEST_WIDEN_SPAN(op_)                                     \
+  [LOOM_TARGET_MATH_OP_##op_] = {                                     \
+      .rule_count = IREE_ARRAYSIZE(kTestWidenMathRules),              \
+      .fallback_constraint = LOOM_TEST_MATH_CONSTRAINT_WIDEN_FIXTURE, \
+  }
+        LOOM_TEST_WIDEN_SPAN(MULF),       LOOM_TEST_WIDEN_SPAN(DIVF),
+        LOOM_TEST_WIDEN_SPAN(CEILF),      LOOM_TEST_WIDEN_SPAN(FLOORF),
+        LOOM_TEST_WIDEN_SPAN(ROUNDEVENF), LOOM_TEST_WIDEN_SPAN(TRUNCF),
+#undef LOOM_TEST_WIDEN_SPAN
 };
 
 static const loom_target_math_policy_table_t kTestWidenMathPolicyTable = {
@@ -304,19 +313,19 @@ static void loom_test_math_policy_registry_initialize(
   };
   static const loom_target_math_policy_registry_entry_t kEntries[] = {
       {
-          .contract_set_key = IREE_SVL("test.math.widen_f32_round"),
+          .contract_set_stable_id = UINT64_C(0x382977ec10cc5a09),
           .policy = &kWidenF32RoundPolicy,
       },
       {
-          .contract_set_key = IREE_SVL("test.math.grouped_product"),
+          .contract_set_stable_id = UINT64_C(0x145802c242758eb7),
           .policy = &kBf16x16EvaluationPolicy,
       },
       {
-          .contract_set_key = IREE_SVL("test.math.grouped_product_f16x4"),
+          .contract_set_stable_id = UINT64_C(0x23083cb600290ce9),
           .policy = &kF16x4EvaluationPolicy,
       },
       {
-          .contract_set_key = IREE_SVL("test.math.prefer_fma"),
+          .contract_set_stable_id = UINT64_C(0x5ddd1af00c682c82),
           .policy = &kPreferFmaPolicy,
       },
   };

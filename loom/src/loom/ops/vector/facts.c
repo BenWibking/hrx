@@ -26,6 +26,7 @@
 #include "loom/ops/encoding/hadamard.h"
 #include "loom/ops/encoding/storage.h"
 #include "loom/ops/index/cast.h"
+#include "loom/ops/op_defs.h"
 #include "loom/ops/scalar/compare.h"
 #include "loom/ops/vector/fragment.h"
 #include "loom/ops/vector/ops.h"
@@ -2631,6 +2632,8 @@ static iree_status_t loom_vector_concat_define_partition_fact(
   iree_host_size_t component_count = 0;
   bool expand_nested_partitions = true;
   bool direct_partition_is_regular = true;
+  loom_value_fact_vector_partition_flags_t partition_flags =
+      LOOM_VALUE_FACT_VECTOR_PARTITION_FLAG_NONE;
   uint32_t direct_regular_lane_count = 0;
   uint64_t partition_lane_count = 0;
   for (iree_host_size_t i = 0; i < inputs.count; ++i) {
@@ -2651,9 +2654,22 @@ static iree_status_t loom_vector_concat_define_partition_fact(
                 input_lane_count != direct_regular_lane_count)) {
       direct_partition_is_regular = false;
     }
+    const loom_value_fact_vector_partition_t input_partition =
+        loom_value_fact_table_query_vector_partition(context->table, input);
+    if (input_partition.lane_count == input_lane_count) {
+      partition_flags |= input_partition.flags;
+    }
+    const loom_value_t* input_value = loom_module_value(module, input);
+    if (!loom_value_is_block_arg(input_value)) {
+      const loom_op_t* input_op = loom_value_def_op(input_value);
+      if (input_op != NULL &&
+          iree_all_bits_set(loom_op_effective_traits(module, input_op),
+                            LOOM_TRAIT_DECOMPOSABLE)) {
+        partition_flags |=
+            LOOM_VALUE_FACT_VECTOR_PARTITION_FLAG_COMPUTED_PACKETS;
+      }
+    }
     if (expand_nested_partitions) {
-      const loom_value_fact_vector_partition_t input_partition =
-          loom_value_fact_table_query_vector_partition(context->table, input);
       const iree_host_size_t input_component_count =
           input_partition.count != 0 &&
                   input_partition.lane_count == input_lane_count
@@ -2775,6 +2791,7 @@ static iree_status_t loom_vector_concat_define_partition_fact(
           .regular_lane_count = regular_lane_count,
           .snapshot_count = snapshot_count,
           .snapshot_lane_count = snapshot_lane_count,
+          .flags = partition_flags,
       });
 }
 
@@ -4539,6 +4556,12 @@ iree_status_t loom_vector_bitcast_facts(loom_fact_context_t* context,
     }
     return loom_vector_make_unknown_facts(result_facts);
   }
+  if (source_element_type == result_element_type && context != NULL &&
+      context->table != NULL) {
+    IREE_RETURN_IF_ERROR(loom_value_fact_table_forward_vector_partition(
+        context->table, loom_vector_bitcast_input(op),
+        loom_vector_bitcast_result(op), context->result_facts_changed));
+  }
 
   loom_value_facts_t uniform_element = {0};
   loom_value_facts_t bitcast_element = {0};
@@ -4573,12 +4596,18 @@ iree_status_t loom_vector_bitcast_facts(loom_fact_context_t* context,
 //===----------------------------------------------------------------------===//
 
 static bool loom_vector_bitfield_extract_element(
-    loom_value_facts_t source, int32_t source_width, int64_t offset,
-    int64_t width, bool signed_extract, loom_value_facts_t* out_element) {
-  return signed_extract ? loom_value_facts_extract_signed_bitfield(
-                              source, source_width, offset, width, out_element)
-                        : loom_value_facts_extract_unsigned_bitfield(
-                              source, source_width, offset, width, out_element);
+    loom_value_facts_t source, int32_t source_width, int32_t result_width,
+    int64_t offset, int64_t width, bool signed_extract,
+    loom_value_facts_t* out_element) {
+  bool valid = (signed_extract || width == result_width)
+                   ? loom_value_facts_extract_signed_bitfield(
+                         source, source_width, offset, width, out_element)
+                   : loom_value_facts_extract_unsigned_bitfield(
+                         source, source_width, offset, width, out_element);
+  if (valid) {
+    *out_element = loom_value_facts_wrap_integer(*out_element, result_width);
+  }
+  return valid;
 }
 
 static iree_status_t loom_vector_bitfield_extract_summary_facts(
@@ -4597,8 +4626,9 @@ static iree_status_t loom_vector_bitfield_extract_summary_facts(
   if (loom_vector_facts_query_uniform_element(context, operand_facts[0],
                                               &source)) {
     loom_value_facts_t element = loom_value_facts_unknown();
-    if (!loom_vector_bitfield_extract_element(
-            source, source_width, offset, width, signed_extract, &element)) {
+    if (!loom_vector_bitfield_extract_element(source, source_width,
+                                              result_width, offset, width,
+                                              signed_extract, &element)) {
       return loom_vector_make_unknown_facts(result_facts);
     }
     return loom_value_facts_make_uniform_element(context, element,
@@ -4612,9 +4642,9 @@ static iree_status_t loom_vector_bitfield_extract_summary_facts(
   }
   loom_value_facts_t lanes[LOOM_VALUE_FACT_SMALL_STATIC_LANE_LIMIT] = {{0}};
   for (iree_host_size_t i = 0; i < source_lanes.count; ++i) {
-    if (!loom_vector_bitfield_extract_element(source_lanes.lanes[i],
-                                              source_width, offset, width,
-                                              signed_extract, &lanes[i])) {
+    if (!loom_vector_bitfield_extract_element(
+            source_lanes.lanes[i], source_width, result_width, offset, width,
+            signed_extract, &lanes[i])) {
       return loom_vector_make_unknown_facts(result_facts);
     }
   }
@@ -4847,6 +4877,10 @@ static iree_status_t loom_vector_bitunpack_facts(
     return loom_vector_make_unknown_facts(result_facts);
   }
 
+  // Full-width fields have the same signed/unsigned result bits. Their signed
+  // representation also retains exact i64 bit patterns above INT64_MAX.
+  const bool sign_extend = signed_unpack || width == result_width;
+
   loom_value_facts_t source_element = {0};
   uint64_t raw_bits = 0;
   if (width == storage_width &&
@@ -4855,13 +4889,15 @@ static iree_status_t loom_vector_bitunpack_facts(
       loom_value_facts_as_exact_raw_bits(source_element, storage_width,
                                          &raw_bits)) {
     loom_value_facts_t result_element = {0};
-    if (signed_unpack) {
+    if (sign_extend) {
       result_element =
           loom_value_facts_make_signed_raw_bits(raw_bits, (int32_t)width);
     } else if (!loom_value_facts_make_unsigned_raw_bits(
                    raw_bits, (int32_t)width, &result_element)) {
       return loom_vector_make_unknown_facts(result_facts);
     }
+    result_element =
+        loom_value_facts_wrap_integer(result_element, result_width);
     return loom_value_facts_make_uniform_element(context, result_element,
                                                  &result_facts[0]);
   }
@@ -4871,9 +4907,10 @@ static iree_status_t loom_vector_bitunpack_facts(
     return loom_vector_make_unknown_facts(result_facts);
   }
 
-  const loom_value_facts_t dynamic_lane_facts =
-      signed_unpack ? loom_value_facts_make_signed_bit_count_range(width)
-                    : loom_value_facts_make_unsigned_bit_count_range(width);
+  const loom_value_facts_t dynamic_lane_facts = loom_value_facts_wrap_integer(
+      sign_extend ? loom_value_facts_make_signed_bit_count_range(width)
+                  : loom_value_facts_make_unsigned_bit_count_range(width),
+      result_width);
   if (result_lane_count > LOOM_VALUE_FACT_SMALL_STATIC_LANE_LIMIT) {
     return loom_value_facts_make_uniform_element(context, dynamic_lane_facts,
                                                  &result_facts[0]);
@@ -4891,13 +4928,14 @@ static iree_status_t loom_vector_bitunpack_facts(
             context, operand_facts[0], source_type, storage_width, bit_position,
             (int32_t)width, &raw_bits)) {
       lanes[lane] = dynamic_lane_facts;
-    } else if (signed_unpack) {
+    } else if (sign_extend) {
       lanes[lane] =
           loom_value_facts_make_signed_raw_bits(raw_bits, (int32_t)width);
     } else if (!loom_value_facts_make_unsigned_raw_bits(
                    raw_bits, (int32_t)width, &lanes[lane])) {
       return loom_vector_make_unknown_facts(result_facts);
     }
+    lanes[lane] = loom_value_facts_wrap_integer(lanes[lane], result_width);
   }
   return loom_vector_make_small_static_lane_facts(
       context, lanes, result_lane_count, &result_facts[0]);

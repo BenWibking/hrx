@@ -30,7 +30,7 @@ struct FakeKmtState {
   uint32_t adapter_close_success_count = 0;
   // Native result returned by memory-capability qualification.
   NTSTATUS memory_capabilities_status = kSuccess;
-  // Native address width, unavailable until explicit device activation.
+  // Native virtual-address width returned by the GPU MMU capability query.
   uint32_t virtual_address_bit_count = 48;
   // Number of native memory-capability queries.
   uint32_t memory_query_count = 0;
@@ -234,11 +234,15 @@ TEST_F(WindowsGpuEndpointProfileTest, DiscoveryDoesNotQueryMemory) {
   ASSERT_GT(profile->queue_family_count, 0u);
   for (uint32_t i = 0; i < profile->queue_family_count; ++i) {
     const auto& family = profile->queue_families[i];
-    if ((family.publication_modes & AMDF_QUEUE_PUBLICATION_MODE_KERNEL) != 0) {
-      EXPECT_NE(family.kernel_queue_capabilities &
-                    AMDF_KERNEL_QUEUE_CAPABILITY_VIRTUAL_MEMORY,
-                0u);
-    }
+    // The injected adapter has HWS compute and SWS SDMA. KMT entry points
+    // alone cannot give the latter a hardware-queue dependency handle.
+    const bool supports_mapping =
+        family.command_type == AMDF_QUEUE_COMMAND_TYPE_GPU_PM4;
+    EXPECT_EQ((family.kernel_queue_capabilities &
+               AMDF_KERNEL_QUEUE_CAPABILITY_VIRTUAL_MEMORY) != 0,
+              supports_mapping);
+    EXPECT_EQ((family.roles & AMDF_QUEUE_ROLE_VIRTUAL_MEMORY) != 0,
+              supports_mapping);
   }
   EXPECT_EQ(state_.query_bridge_close_success_count(), 1u);
   amdf_free(instance_.host_allocator, profile);

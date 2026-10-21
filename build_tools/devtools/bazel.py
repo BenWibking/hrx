@@ -1062,8 +1062,8 @@ def cleanup_try_scratch(scratch_dir: Path, execution_root: Path | None) -> None:
     # package concurrently, and their empty scaffolding has no retained payload.
 
 
-def wait_for_try_process(process_launch: BazelProcess) -> int:
-    """Keeps artifact ownership until the snippet exits, including on signals."""
+def wait_for_bazel_process(process_launch: BazelProcess) -> int:
+    """Keeps artifact ownership until the child exits, including on signals."""
     process = None
     pending_signal = None
 
@@ -1314,7 +1314,7 @@ class BazelFuzzStep:
                     ]
                 )
             )
-            lines.append("exec " + quote_command(["<Bazel launch script>"]))
+            lines.append("run " + quote_command(["<Bazel launch script>"]))
         return "\n".join(lines)
 
     def run(self, verbose: bool = False) -> int:
@@ -1391,7 +1391,19 @@ class BazelFuzzStep:
         )
         if launch_result != 0 or launch is None:
             return launch_result
-        return execute_bazel_launch(launch, env=self.env)
+        process_result, process_launch = prepare_bazel_process(launch, env=self.env)
+        if process_result != 0 or process_launch is None:
+            return process_result
+        # libFuzzer measures peak RSS through getrusage. A fresh child resets
+        # memory accounting that otherwise survives the launcher's exec chain.
+        try:
+            return wait_for_bazel_process(process_launch)
+        except (OSError, ValueError) as exc:
+            print(f"dev.py: failed to start fuzzer: {exc}", file=sys.stderr)
+            return 127
+        finally:
+            if process_launch.script_path is not None:
+                bazel_launcher.remove_launch_script(process_launch.script_path)
 
     def generate_fuzzer_launch(
         self,
@@ -1599,7 +1611,7 @@ class BazelTryStep:
             process_result, process_launch = prepare_bazel_process(launch, env=self.env)
             if process_result != 0 or process_launch is None:
                 return process_result
-            return wait_for_try_process(process_launch)
+            return wait_for_bazel_process(process_launch)
         finally:
             if launch is not None:
                 bazel_launcher.remove_launch_script(launch.script_path)
@@ -1792,6 +1804,114 @@ def query_rules_with_header(
         if labels:
             return labels
     return []
+
+
+class BazelSourceOwnerQueryError(RuntimeError):
+    """Raised when Bazel cannot resolve rules that compile source files."""
+
+
+def _source_label_pattern(label: str) -> str:
+    """Returns an exact Bazel attr regexp without costly label grouping."""
+    if not re.fullmatch(r"//[A-Za-z0-9_./+-]+:[A-Za-z0-9_./+-]+", label):
+        raise ValueError(f"unsupported main-workspace source label: {label!r}")
+    literal = label.replace(".", "[.]").replace("+", "[+]")
+    # attr() searches a label-list rendering. Reject a longer label that merely
+    # shares this label as a prefix. Each label gets its own attr() expression;
+    # grouped label alternatives make Bazel query scale poorly on large graphs.
+    return literal + r"(?![A-Za-z0-9_./:+-])"
+
+
+def _compiling_owner_query(
+    source_labels: set[str], target_patterns: tuple[str, ...]
+) -> str:
+    universe = " + ".join(target_patterns)
+    source_references = " +\n    ".join(
+        f'attr("srcs", "{_source_label_pattern(label)}", $universe)'
+        for label in sorted(source_labels)
+    )
+    aliases = " +\n    ".join(
+        f'attr("actual", "{_source_label_pattern(label)}", '
+        'kind("alias rule", $universe))'
+        for label in sorted(source_labels)
+    )
+    return (
+        f"let universe = {universe} in\n"
+        f"let references = {source_references} in\n"
+        f"let aliases = {aliases} in\n"
+        'kind("cc_.* rule", $references) +\n'
+        'kind("filegroup rule", $references) +\n'
+        "$aliases\n"
+    )
+
+
+def query_compiling_targets_for_sources(
+    bazel: str,
+    *,
+    source_labels: set[str],
+    target_patterns: tuple[str, ...],
+    cwd: Path,
+    env: dict[str, str] | None,
+) -> list[str]:
+    """Returns C/C++ rules that directly compile the given source labels.
+
+    Bazel macros have expanded by query time, while an unconfigured query sees
+    labels from every select() branch. Filegroups and aliases are followed until
+    their concrete cc_* consumers are found. The caller still applies its
+    configured build so compatibility and source selection remain owned by
+    Bazel.
+    """
+    if not source_labels:
+        return []
+    if not target_patterns:
+        raise ValueError("at least one Bazel target pattern is required")
+
+    owners: set[str] = set()
+    visited_labels = set(source_labels)
+    pending_labels = set(source_labels)
+    with tempfile.TemporaryDirectory(prefix="iree-bazel-source-owners-") as temp_dir:
+        query_path = Path(temp_dir) / "owners.query"
+        while pending_labels:
+            query_path.write_text(
+                _compiling_owner_query(pending_labels, target_patterns),
+                encoding="utf-8",
+            )
+            completed = run_captured(
+                [
+                    bazel,
+                    "query",
+                    "--noshow_progress",
+                    "--order_output=no",
+                    "--output=label_kind",
+                    f"--query_file={query_path}",
+                ],
+                cwd=cwd,
+                env=env,
+            )
+            if completed.returncode != 0:
+                detail = (completed.stderr or completed.stdout).strip()
+                raise BazelSourceOwnerQueryError(
+                    "Bazel source-owner query failed"
+                    + (f":\n{detail[-8192:]}" if detail else "")
+                )
+
+            forwarding_labels: set[str] = set()
+            for line in completed.stdout.splitlines():
+                kind, separator, label = line.rpartition(" ")
+                if not separator or not label.startswith("//"):
+                    raise BazelSourceOwnerQueryError(
+                        f"malformed Bazel source-owner result: {line!r}"
+                    )
+                if kind.startswith("cc_") and kind.endswith(" rule"):
+                    owners.add(label)
+                elif kind in ("alias rule", "filegroup rule"):
+                    forwarding_labels.add(label)
+                else:
+                    raise BazelSourceOwnerQueryError(
+                        f"unexpected Bazel source-owner result: {line!r}"
+                    )
+            pending_labels = forwarding_labels - visited_labels
+            visited_labels.update(pending_labels)
+    return sorted(owners)
 
 
 def nearest_package_dir(path: Path) -> Path | None:

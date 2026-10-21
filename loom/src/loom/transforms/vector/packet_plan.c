@@ -154,6 +154,22 @@ bool loom_vector_packet_shape_from_type(
   return true;
 }
 
+bool loom_vector_packet_shape_has_source_carriers(
+    const loom_target_legalization_context_t* context, loom_type_t vector_type,
+    const loom_vector_packet_shape_t* shape) {
+  if (!loom_target_legalization_has_source_vector_carrier(
+          context,
+          loom_vector_packet_type(vector_type, shape->chunk_lane_count),
+          LOOM_VALUE_ID_INVALID)) {
+    return false;
+  }
+  const uint32_t tail_lane_count = shape->lane_count % shape->chunk_lane_count;
+  return tail_lane_count == 0 ||
+         loom_target_legalization_has_source_vector_carrier(
+             context, loom_vector_packet_type(vector_type, tail_lane_count),
+             LOOM_VALUE_ID_INVALID);
+}
+
 static iree_status_t loom_vector_packet_component_query(
     loom_target_legalization_context_t* context, const loom_op_t* op,
     uint32_t source_lane_count, uint32_t packet_lane_count,
@@ -1443,6 +1459,35 @@ static iree_status_t loom_vector_packet_select_decomposable_op_shape(
       return iree_ok_status();
     }
   }
+
+  if (iree_any_bit_set(
+          packetization->policy->flags,
+          LOOM_TARGET_VECTOR_PACKET_POLICY_FLAG_REPLAY_REQUIRES_CONTRACT)) {
+    loom_target_contract_query_result_t packet_result =
+        loom_target_contract_query_result_empty();
+    IREE_RETURN_IF_ERROR(loom_vector_packet_component_query(
+        packetization->context, op, inout_shape->lane_count,
+        inout_shape->chunk_lane_count, &packet_result));
+    if (packet_result.outcome != LOOM_TARGET_CONTRACT_QUERY_LEGAL ||
+        !loom_vector_packet_component_has_carriers(
+            packetization->context, op, inout_shape->chunk_lane_count)) {
+      return iree_ok_status();
+    }
+    const uint32_t tail_lane_count =
+        inout_shape->lane_count % inout_shape->chunk_lane_count;
+    if (tail_lane_count != 0) {
+      loom_target_contract_query_result_t tail_result =
+          loom_target_contract_query_result_empty();
+      IREE_RETURN_IF_ERROR(loom_vector_packet_component_query(
+          packetization->context, op, inout_shape->lane_count, tail_lane_count,
+          &tail_result));
+      if (tail_result.outcome != LOOM_TARGET_CONTRACT_QUERY_LEGAL ||
+          !loom_vector_packet_component_has_carriers(packetization->context, op,
+                                                     tail_lane_count)) {
+        return iree_ok_status();
+      }
+    }
+  }
   *out_selected = true;
   return iree_ok_status();
 }
@@ -1528,6 +1573,7 @@ iree_status_t loom_vector_packet_select_value_shape(
     }
     IREE_RETURN_IF_ERROR(loom_vector_packet_select_decomposable_op_shape(
         packetization, op, inout_shape, out_selected));
+    packetization->contains_vector_computation |= *out_selected;
   }
   if (*out_selected) {
     IREE_RETURN_IF_ERROR(

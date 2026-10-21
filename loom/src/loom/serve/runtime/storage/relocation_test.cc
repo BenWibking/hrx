@@ -27,13 +27,13 @@ class RelocationTest : public ::testing::Test {
     IREE_ASSERT_OK(
         loom_serve_host_create(1, nullptr, iree_allocator_system(), &host));
     iree_hal_driver_t* driver = nullptr;
-    IREE_ASSERT_OK(
-        loom_serve_test_driver_create(host, iree_allocator_system(), &driver));
+    IREE_ASSERT_OK(loom_serve_test_driver_acquire(host, &driver));
     const loom_serve_device_options_t options = {
         .driver = driver,
         .uri = loom_serve_test_device()->device_uri,
         .backing = LOOM_SERVE_DEVICE_BACKING_ELASTIC,
-        .slab_size = 2 * 1024 * 1024,
+        .weight_slab_size = 2 * 1024 * 1024,
+        .state_slab_size = 2 * 1024 * 1024,
     };
     auto status = loom_serve_device_group_allocate(host, 1, &options,
                                                    native.allocator(), &group);
@@ -47,7 +47,9 @@ class RelocationTest : public ::testing::Test {
   }
 
   void TearDown() override {
-    IREE_ASSERT_OK(loom_serve_execution_drain(execution));
+    if (execution) {
+      IREE_ASSERT_OK(loom_serve_execution_drain(execution));
+    }
     iree_hal_buffer_release(view);
     loom_serve_retirement_await(&retirement);
     loom_serve_retirement_deinitialize(&retirement);
@@ -84,7 +86,7 @@ TEST_F(RelocationTest, RepeatedPlanesCrossBatchAndAddressBoundaries) {
   constexpr uint32_t kLiveBlocks = 35;
   constexpr uint32_t kBlockCount = kLiveBlocks * 2;
   IREE_ASSERT_OK(loom_serve_virtual_buffer_allocate(
-      pool,
+      pool, loom_serve_device_state_geometry(device),
       region.origin + 2 * region.stride + kBlockCount * region.block_bytes, 256,
       &statistics, &buffer));
   auto* const handle = loom_serve_virtual_buffer_handle(buffer);
@@ -134,10 +136,11 @@ TEST_F(RelocationTest, RepeatedPlanesCrossBatchAndAddressBoundaries) {
   loom_serve_memory_operation_t* commitment = nullptr;
   {
     loom_serve::testing::ScopedNativeHold gate(device);
-    bool admitted = false;
+    loom_serve_memory_admission_t commit_admission;
     IREE_ASSERT_OK(loom_serve_memory_pool_commit_async(
-        pool, ranges.size(), ranges.data(), ready, 1, &admitted, &commitment));
-    ASSERT_TRUE(admitted);
+        pool, ranges.size(), ranges.data(), ready, 1, &commit_admission,
+        &commitment));
+    ASSERT_EQ(commit_admission, LOOM_SERVE_MEMORY_ADMISSION_AVAILABLE);
     ASSERT_NE(commitment, nullptr);
     gate.WaitEntered();
     uint64_t value = 1;

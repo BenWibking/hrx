@@ -76,15 +76,20 @@ void loom_run_hal_testbench_context_set_device_event_sink(
     loom_run_hal_testbench_context_t* context,
     iree_hal_device_event_sink_t device_event_sink);
 
-// Adds runtime requirements for executable sanitizer operations in |module|
-// and instrumentation requested by |sanitizer_options|.
+// Adds runtime requirements for the selected |root_symbols| in |module| and
+// instrumentation requested by |sanitizer_options|. The caller supplies every
+// HAL product it will prepare, excluding host-only generators and oracles.
 //
 // Requirements may be accumulated across modules before runtime creation. A
 // module added afterward must require only services already provisioned by the
-// active device.
+// active device. Collect the complete selection before capability admission or
+// target selection can create that device; product preparation does not rescan
+// source modules.
 iree_status_t loom_run_hal_testbench_context_add_module_runtime_requirements(
     loom_run_hal_testbench_context_t* context, const loomc_module_t* module,
-    const loomc_sanitizer_options_t* sanitizer_options);
+    const loomc_sanitizer_options_t* sanitizer_options,
+    const loomc_string_view_t* root_symbols,
+    iree_host_size_t root_symbol_count);
 
 // Releases HAL runtime resources owned by |context|.
 void loom_run_hal_testbench_context_deinitialize(
@@ -309,9 +314,11 @@ iree_status_t loom_run_hal_testbench_actual_provider_materialize_invocation(
 // execution is destroyed; the pointer array itself is needed only during this
 // call. One execution may be reused across case executors but is submitted
 // serially; concurrent invocation requires a distinct execution object.
+// |execution_sample_count| bounds the dense storage indices supplied by those
+// executors, independently of their selected parameter coordinates.
 iree_status_t loom_run_hal_testbench_actual_sequence_execution_allocate(
     const loom_testbench_case_plan_t* case_plan,
-    iree_host_size_t provider_count,
+    iree_host_size_t execution_sample_count, iree_host_size_t provider_count,
     loom_run_hal_testbench_actual_provider_t* const* providers,
     iree_allocator_t host_allocator,
     loom_run_hal_testbench_actual_sequence_execution_t** out_execution);
@@ -377,7 +384,7 @@ iree_status_t loom_run_hal_testbench_materialize_invocation_for_sample(
     const loom_testbench_value_materializer_options_t* materializer_options,
     const loom_testbench_case_plan_t* case_plan,
     loom_run_hal_testbench_actual_provider_t* provider,
-    iree_host_size_t sample_ordinal, iree_allocator_t allocator,
+    loom_testbench_case_sample_t sample, iree_allocator_t allocator,
     loom_run_hal_invocation_options_t* out_options,
     loom_run_hal_binding_list_t* out_bindings,
     loom_testbench_buffer_footprint_t* out_input_footprint);
@@ -388,7 +395,7 @@ iree_status_t loom_run_hal_testbench_prepare_invocation_plan_for_sample(
     const loom_testbench_case_plan_t* case_plan,
     const loom_testbench_value_materializer_options_t* materializer_options,
     loom_run_hal_testbench_actual_provider_t* provider,
-    iree_host_size_t sample_ordinal, iree_allocator_t allocator,
+    loom_testbench_case_sample_t sample, iree_allocator_t allocator,
     loom_run_hal_invocation_plan_t* out_plan);
 
 #ifdef __cplusplus

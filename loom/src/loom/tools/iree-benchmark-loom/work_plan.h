@@ -36,6 +36,8 @@ typedef struct iree_benchmark_loom_hal_compile_item_t {
   iree_host_size_t compile_item_index;
   // Representative selected benchmark ordinal used for compilation.
   iree_host_size_t representative_selection_index;
+  // Dense execution slots retained across the case's physical work windows.
+  iree_host_size_t execution_sample_count;
 } iree_benchmark_loom_hal_compile_item_t;
 
 typedef struct iree_benchmark_loom_logical_sample_t {
@@ -45,15 +47,14 @@ typedef struct iree_benchmark_loom_logical_sample_t {
   iree_host_size_t begin_benchmark_sample;
   // One-past-end benchmark-local sample ordinal covered by this logical sample.
   iree_host_size_t end_benchmark_sample;
-  // True when |case_sample_ordinal| identifies one concrete case sample.
-  bool has_case_sample_ordinal;
-  // Case-local sample ordinal measured by the physical work item.
-  iree_host_size_t case_sample_ordinal;
   // Scenario coordinate selected by this logical sample. Meaningful only when
   // the selected benchmark references a scenario.
   loom_testbench_scenario_sample_coordinate_t scenario_coordinate;
   // Deduplicated physical work item index satisfying this logical sample.
   iree_host_size_t work_item_index;
+  // Next logical sample sharing the physical work item, in report order, or
+  // INDEX_INVALID for the last alias.
+  iree_host_size_t next_alias_index;
 } iree_benchmark_loom_logical_sample_t;
 
 typedef struct iree_benchmark_loom_work_item_t {
@@ -63,17 +64,17 @@ typedef struct iree_benchmark_loom_work_item_t {
   iree_host_size_t work_item_index;
   // Representative selected benchmark ordinal used for execution.
   iree_host_size_t representative_selection_index;
+  // First logical sample in the nonempty, report-ordered alias chain.
+  iree_host_size_t first_logical_sample_index;
   // HAL compile item index, or INDEX_INVALID when compilation is owned by the
   // work item or the subject has no actual call.
   iree_host_size_t hal_compile_item_index;
+  // First dense sequence slot in the HAL compile item's execution storage.
+  iree_host_size_t execution_sample_base;
   // First benchmark-local sample ordinal covered by this work item.
   iree_host_size_t begin_benchmark_sample;
   // One-past-end benchmark-local sample ordinal covered by this work item.
   iree_host_size_t end_benchmark_sample;
-  // True when |case_sample_ordinal| identifies one concrete case sample.
-  bool has_case_sample_ordinal;
-  // Case-local sample ordinal measured by this work item.
-  iree_host_size_t case_sample_ordinal;
   // Scenario coordinate measured by this work item. Meaningful only for
   // SCENARIO_TRIAL work.
   loom_testbench_scenario_sample_coordinate_t scenario_coordinate;
@@ -82,6 +83,11 @@ typedef struct iree_benchmark_loom_work_item_t {
 typedef struct iree_benchmark_loom_work_plan_t {
   // Host allocator used for arrays owned by this plan.
   iree_allocator_t host_allocator;
+  // Original selected issues borrowed from the module plan, in module issue
+  // order. Nonempty diagnostics exclude all executable selections and work.
+  const loom_testbench_issue_t** planning_issues;
+  // Number of entries in |planning_issues|, each present once across aliases.
+  iree_host_size_t planning_issue_count;
   // Selected benchmark records in execution/report order.
   iree_benchmark_loom_selected_benchmark_t* selected_benchmarks;
   // Number of populated selected benchmark records.
@@ -101,6 +107,11 @@ typedef struct iree_benchmark_loom_work_plan_t {
 } iree_benchmark_loom_work_plan_t;
 
 // Builds a selected benchmark and deduplicated physical work plan.
+// Logical samples retain selection order. Shared work and compile products use
+// the first selected representative, preserving its execution order.
+// Authored planning errors return OK with |planning_issues| and no executable
+// work. CLI selection/policy errors and allocation failures return a status.
+// The module plan must outlive this plan.
 iree_status_t iree_benchmark_loom_work_plan_initialize(
     const loom_testbench_module_plan_t* module_plan,
     const iree_benchmark_loom_options_t* options, iree_allocator_t allocator,

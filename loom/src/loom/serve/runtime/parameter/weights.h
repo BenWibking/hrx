@@ -62,7 +62,8 @@ typedef struct loom_serve_weight_activity_t {
 // tensor name in distinct checkpoint domains does not imply shared storage.
 //
 // With pool, roots have stable virtual addresses and start without physical
-// backing. NULL selects explicitly fixed storage (including device ASAN use);
+// backing. geometry is the device's qualified weight replacement geometry.
+// A NULL pool selects explicitly fixed storage (including device ASAN use);
 // deactivation is unavailable in that mode. Fixed roots use one queued
 // allocation batch. Source preparation joins its readiness before consumer
 // commands can be recorded, and activation imports it before file reads.
@@ -78,10 +79,15 @@ typedef struct loom_serve_weight_activity_t {
 iree_status_t loom_serve_weights_allocate(
     iree_hal_device_t* device, iree_hal_queue_t* transfer,
     iree_hal_queue_t* dispatch, iree_hal_pool_t* storage_pool,
-    loom_serve_memory_pool_t* pool, loom_serve_workspace_t* workspace,
-    iree_host_size_t shared_root_count, iree_host_size_t root_count,
-    const loom_serve_weight_root_t* roots, iree_allocator_t host_allocator,
-    loom_serve_weights_t** out_weights);
+    loom_serve_memory_pool_t* pool, loom_serve_memory_geometry_t geometry,
+    loom_serve_workspace_t* workspace, iree_host_size_t shared_root_count,
+    iree_host_size_t root_count, const loom_serve_weight_root_t* roots,
+    iree_allocator_t host_allocator, loom_serve_weights_t** out_weights);
+
+// Folds the missing backing of unique roots, excluding accepted commitments.
+// Shared root bindings contribute once; fixed backing has no elastic demand.
+loom_serve_memory_demand_t loom_serve_weights_missing_demand(
+    const loom_serve_weights_t* weights);
 
 // Receives terminal source preparation and fixed-root allocation status.
 // All preparation tasks/compiler accesses have retired before this callback,
@@ -118,8 +124,10 @@ typedef void (*loom_serve_weights_completion_fn_t)(void* user_data,
 // staging shared across tensors. The temporary VM policy is released before
 // JIT.
 //
-// Success accepts exclusive access to weights and jit until completion, which
-// may run before return. The caller keeps both, declaration, host and user_data
+// Success accepts exclusive access to weights until completion, which may run
+// before return. Independent compilations may share jit; policy evidence is
+// accumulated privately and merged through its report lock. The caller keeps
+// both, declaration, host and user_data
 // alive through that callback. Rejection owes no callback. Preparation is
 // attempted once per plan; failure returns ownership for destruction, not
 // activation.
@@ -146,11 +154,12 @@ iree_host_size_t loom_serve_weights_parameter_count(
 loom_cmd_program_parameter_t loom_serve_weights_parameter_at(
     const loom_serve_weights_t* weights, iree_host_size_t index);
 
-// Commits storage and streams/prepares directly into final roots through four
-// independent queue lanes. An already active plan does not reload or prepare
-// again. Success means producer submission, not completion or consumer
-// ordering. Native backing runs on the shared cold-memory executor and gates
-// file loading through a semaphore. Neither native preparation nor device
+// Commits storage and streams directly into final roots through four read
+// lanes. Four preparation lanes join each tensor's reads and captured inputs.
+// An already active plan does not reload or prepare again. Success means
+// producer submission, not completion or consumer ordering. Native backing
+// runs on the shared cold-memory executor and gates file loading with each
+// slab's readiness. Neither native preparation nor device
 // completion blocks the submitting owner. The caller pins backing until every
 // consuming domain retires. A failed load is terminal: later consumers receive
 // its error without replaying accepted I/O, whose ownership remains protected
@@ -178,10 +187,11 @@ iree_status_t loom_serve_weights_await(loom_serve_weights_t* weights);
 iree_status_t loom_serve_weights_deactivate(loom_serve_weights_t* weights,
                                             bool* out_complete);
 
-// Parameter accounting only, separate from state sharing the physical pool.
+// Collects completed native activation records on the serialized owner and
+// reports parameter accounting, separate from state sharing the physical pool.
 // Fixed storage reports zero virtual-pool statistics.
 loom_serve_memory_statistics_t loom_serve_weights_statistics(
-    const loom_serve_weights_t* weights);
+    loom_serve_weights_t* weights);
 
 // Copies cumulative submission counters on the serialized activation owner.
 loom_serve_weight_activity_t loom_serve_weights_activity(

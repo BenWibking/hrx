@@ -6,13 +6,19 @@
 
 #include "loom/tools/iree-benchmark-loom/snapshot.h"
 
+#include <cstring>
 #include <memory>
+#include <vector>
 
+#include "iree/base/internal/arena.h"
 #include "iree/base/internal/json.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
+#include "loom/ir/context.h"
+#include "loom/ir/module.h"
 #include "loom/tools/iree-benchmark-loom/hal_actual.h"
 #include "loom/tools/iree-benchmark-loom/launch_evidence.h"
+#include "loom/tools/iree-benchmark-loom/report.h"
 #include "loomc/compile_report.h"
 #include "loomc/iree.h"
 
@@ -82,6 +88,392 @@ static bool JsonArrayContainsString(iree_string_view_t array,
     }
   }
   return false;
+}
+
+class BenchmarkCompileEvidenceTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    iree_arena_block_pool_initialize(4096, iree_allocator_system(), &pool_);
+    loom_context_initialize(iree_allocator_system(), &context_);
+    IREE_ASSERT_OK(loom_context_finalize(&context_));
+    IREE_ASSERT_OK(loom_module_allocate(&context_, IREE_SV("entries"), &pool_,
+                                        nullptr, iree_allocator_system(),
+                                        &module_));
+    for (iree_string_view_t name : {IREE_SV("first"), IREE_SV("second")}) {
+      loom_string_id_t name_id;
+      uint16_t symbol_id;
+      IREE_ASSERT_OK(loom_module_intern_string(module_, name, &name_id));
+      IREE_ASSERT_OK(loom_module_add_symbol(module_, name_id, &symbol_id));
+    }
+    hal_context_.execution.host_allocator = iree_allocator_system();
+  }
+
+  void TearDown() override {
+    iree_benchmark_loom_hal_actual_sequence_deinitialize(&sequence_);
+    loom_module_free(module_);
+    loom_context_deinitialize(&context_);
+    iree_arena_block_pool_deinitialize(&pool_);
+  }
+
+  void InitializeSequence(const std::vector<uint16_t>& symbols) {
+    const size_t count = symbols.size();
+    invocations_.resize(count);
+    launches_.resize(count);
+    for (size_t i = 0; i < count; ++i) {
+      invocations_[i] = {
+          .kind = LOOM_TESTBENCH_INVOCATION_KERNEL_LAUNCH,
+          .module = module_,
+          .callee_ref = {0, symbols[i]},
+      };
+      launches_[i] = &invocations_[i];
+    }
+    case_plan_ = {
+        .name = IREE_SV("sequence"),
+        .invocations = invocations_.data(),
+        .invocation_count = count,
+        .kernel_launches = launches_.data(),
+        .kernel_launch_count = count,
+        .cartesian_sample_count = 1,
+        .sample_count = 1,
+    };
+    const iree_benchmark_loom_hal_compilation_options_t options = {
+        .compilation = &compilation_,
+        .native_module = module_,
+    };
+    IREE_ASSERT_OK(iree_benchmark_loom_hal_actual_sequence_initialize(
+        &hal_context_, &options, &case_plan_, 1, &sequence_));
+  }
+
+  iree_arena_block_pool_t pool_ = {};
+  loom_context_t context_ = {};
+  loom_module_t* module_ = nullptr;
+  iree_benchmark_loom_hal_context_t hal_context_ = {};
+  loom_testbench_compilation_t compilation_ = {};
+  std::vector<loom_testbench_invocation_plan_t> invocations_;
+  std::vector<const loom_testbench_invocation_plan_t*> launches_;
+  loom_testbench_case_plan_t case_plan_ = {};
+  iree_benchmark_loom_hal_actual_sequence_t sequence_ = {};
+};
+
+TEST_F(BenchmarkCompileEvidenceTest, RetainsFirstEntryWithoutReorderingCalls) {
+  // Repeated pairs give the second root a non-dense index. The large sequence
+  // also exercises the bounded sort fallback.
+  for (size_t count : {1u, 3u, 257u}) {
+    SCOPED_TRACE(count);
+    std::vector<uint16_t> symbols(count);
+    for (size_t i = 0; i < count; ++i) {
+      symbols[i] = 1 - (i / 2) % 2;
+    }
+    InitializeSequence(symbols);
+    ASSERT_EQ(sequence_.provider_count, count);
+    for (size_t i = 0; i < count; ++i) {
+      EXPECT_EQ(sequence_.providers[i].compile_entry_index, 2 * ((i / 2) % 2));
+      EXPECT_EQ(sequence_.providers[i].execution.invocation, &invocations_[i]);
+    }
+    iree_benchmark_loom_hal_actual_sequence_deinitialize(&sequence_);
+  }
+}
+
+TEST_F(BenchmarkCompileEvidenceTest, OwnsSharedReportsAndLaunchReferences) {
+  InitializeSequence({1, 0, 1});
+  for (bool capture_report : {false, true}) {
+    SCOPED_TRACE(capture_report);
+    ByteSequencePtr bytes =
+        CopyByteSequence(IREE_SV("{\"kind\":\"loom.compile_report\"}"));
+    loomc_artifact_t report = {
+        .kind = LOOMC_ARTIFACT_KIND_REPORT,
+        .format =
+            loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_COMPILE_REPORT_JSON),
+        .contents = bytes.get(),
+    };
+    iree_benchmark_loom_snapshot_sink_t snapshot = {};
+    IREE_ASSERT_OK(iree_benchmark_loom_snapshot_sink_initialize(
+        iree_allocator_system(), &snapshot));
+    iree_benchmark_loom_event_sink_t sink = {};
+    iree_benchmark_loom_snapshot_event_sink_initialize(&snapshot, &sink);
+    const iree_benchmark_loom_run_identity_t run = {.run_id = IREE_SV("run")};
+    const loom_testbench_benchmark_plan_t benchmark = {
+        .name = IREE_SV("sequence"),
+    };
+    iree_benchmark_loom_candidate_identity_t candidate = {
+        .candidate_id = IREE_SV("c0"),
+    };
+    iree_benchmark_loom_hal_compile_item_t compile_item = {
+        .compile_item_index = 7,
+    };
+    IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_run(&sink, &run, false,
+                                                           &kNoSanitizer));
+    iree_string_builder_t jsonl;
+    iree_string_builder_initialize(iree_allocator_system(), &jsonl);
+    for (size_t i = 0; i < 2; ++i) {
+      auto& provider = sequence_.providers[i];
+      provider.execution.artifacts.compile_report =
+          capture_report ? &report : nullptr;
+      provider.compile_report_artifact_path =
+          capture_report ? IREE_SV("entry.json") : iree_string_view_empty();
+      IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_compile(
+          &sink, &run, &candidate, &compile_item, &benchmark, &case_plan_,
+          &provider));
+      if (i == 0) {
+        IREE_ASSERT_OK(iree_benchmark_loom_append_compile_row(
+            &run, &candidate, &compile_item, &benchmark, &case_plan_, &provider,
+            &jsonl));
+      }
+    }
+    // The same entry in a different compilation context stays distinct.
+    compile_item.compile_item_index = 8;
+    IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_compile(
+        &sink, &run, &candidate, &compile_item, &benchmark, &case_plan_,
+        &sequence_.providers[0]));
+    compile_item.compile_item_index = 7;
+    iree_benchmark_loom_launch_evidence_t evidence = {};
+    IREE_ASSERT_OK(iree_benchmark_loom_launch_evidence_initialize(
+        &case_plan_, 3, 0, iree_allocator_system(), &evidence));
+    for (size_t i = 0; i < 3; ++i) {
+      auto& provider = sequence_.providers[i];
+      provider.execution.invocation_options.function_name =
+          IREE_SV("device_export");
+      iree_benchmark_loom_launch_evidence_capture(&provider.execution, {}, i,
+                                                  provider.compile_entry_index,
+                                                  i, 0, &evidence);
+    }
+    const iree_benchmark_loom_benchmark_policy_t policy = {
+        .measure = IREE_SV("dispatch_complete"),
+    };
+    const iree_benchmark_loom_benchmark_result_t result = {
+        .compile_item = &compile_item,
+        .compile_report = capture_report ? &report : nullptr,
+        .executed = true,
+        .passed = true,
+        .launch_evidence = &evidence,
+    };
+    const iree_benchmark_loom_work_item_t work = {.work_item_index = 12};
+    for (size_t alias = 0; alias < 2; ++alias) {
+      candidate.candidate_index = alias;
+      candidate.candidate_id = alias == 0 ? IREE_SV("c0") : IREE_SV("c1");
+      IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_benchmark_result(
+          &sink, &run, &candidate, &work, module_, &benchmark, &case_plan_,
+          nullptr, &policy, &result, 1, 0));
+    }
+    // Destroy all borrowed evidence before rendering the deferred snapshot.
+    iree_benchmark_loom_launch_evidence_deinitialize(&evidence);
+    for (size_t i = 0; i < 2; ++i) {
+      sequence_.providers[i].execution.artifacts.compile_report = nullptr;
+      sequence_.providers[i].compile_report_artifact_path =
+          iree_string_view_empty();
+    }
+    bytes.reset();
+    report = {};
+    compile_item = {};
+    const iree_benchmark_loom_artifact_bundle_t bundle = {};
+    IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_summary(
+        &sink, &run, &bundle, 1, 2, 2, 2, 1, 0, 0, 1, 0, false));
+    iree_string_builder_t output;
+    iree_string_builder_initialize(iree_allocator_system(), &output);
+    auto root = ParseJsonDocument(SnapshotJson(&snapshot, &output));
+    auto entries = LookupObject(root, IREE_SV("compiled_entries"));
+    iree_host_size_t count = 0;
+    IREE_ASSERT_OK(iree_json_array_length(entries, &count));
+    ASSERT_EQ(count, 3u);
+    auto first = FirstArrayElement(entries);
+    auto streamed = ParseJsonDocument(iree_string_builder_view(&jsonl));
+    for (iree_string_view_t key :
+         {IREE_SV("compile_item_index"), IREE_SV("compile_entry_index"),
+          IREE_SV("entry"), IREE_SV("state")}) {
+      EXPECT_TRUE(iree_string_view_equal(LookupObject(first, key),
+                                         LookupObject(streamed, key)));
+    }
+    EXPECT_EQ(iree_string_view_is_empty(
+                  TryLookupObject(first, IREE_SV("compile_report"))),
+              !capture_report);
+    EXPECT_EQ(iree_string_view_is_empty(
+                  TryLookupObject(first, IREE_SV("compile_report_path"))),
+              !capture_report);
+    if (capture_report) {
+      EXPECT_TRUE(iree_string_view_equal(
+          LookupObject(LookupObject(first, IREE_SV("compile_report")),
+                       IREE_SV("kind")),
+          IREE_SV("loom.compile_report")));
+      EXPECT_TRUE(iree_string_view_equal(
+          LookupObject(first, IREE_SV("compile_report_path")),
+          IREE_SV("entry.json")));
+    }
+    iree_string_view_t other_context;
+    IREE_ASSERT_OK(iree_json_array_get(entries, 2, &other_context));
+    EXPECT_TRUE(iree_string_view_equal(
+        LookupObject(other_context, IREE_SV("compile_item_index")),
+        IREE_SV("8")));
+    auto work_items = LookupObject(root, IREE_SV("work_items"));
+    IREE_ASSERT_OK(iree_json_array_length(work_items, &count));
+    EXPECT_EQ(count, 1u);
+    auto work_result = FirstArrayElement(work_items);
+    EXPECT_TRUE(iree_string_view_is_empty(
+        TryLookupObject(work_result, IREE_SV("compile_report"))));
+    EXPECT_TRUE(iree_string_view_equal(
+        LookupObject(work_result, IREE_SV("compile_item_index")),
+        IREE_SV("7")));
+    auto launch_rows = LookupObject(work_result, IREE_SV("launches"));
+    IREE_ASSERT_OK(iree_json_array_length(launch_rows, &count));
+    EXPECT_EQ(count, 3u);
+    for (size_t i = 0; i < 3; ++i) {
+      iree_string_view_t launch;
+      IREE_ASSERT_OK(iree_json_array_get(launch_rows, i, &launch));
+      EXPECT_TRUE(iree_string_view_equal(
+          LookupObject(launch, IREE_SV("compile_entry_index")),
+          i == 1 ? IREE_SV("1") : IREE_SV("0")));
+      EXPECT_TRUE(iree_string_view_equal(LookupObject(launch, IREE_SV("entry")),
+                                         IREE_SV("device_export")));
+    }
+    iree_string_builder_deinitialize(&output);
+    iree_string_builder_deinitialize(&jsonl);
+    iree_benchmark_loom_snapshot_sink_deinitialize(&snapshot);
+  }
+}
+
+TEST_F(BenchmarkCompileEvidenceTest,
+       RetainsRejectedEntryAfterProviderTeardown) {
+  InitializeSequence({1});
+  auto& provider = sequence_.providers[0];
+  char message[] = "entry cannot be lowered";
+  provider.execution.compile_rejected = true;
+  provider.execution.compile_failure_stage = IREE_SV("compile");
+  provider.execution.compile_failure_kind = IREE_SV("diagnostics");
+  provider.execution.compile_failure_message = iree_make_cstring_view(message);
+  const iree_benchmark_loom_hal_compile_item_t compile_item = {
+      .compile_item_index = 3,
+  };
+  iree_benchmark_loom_snapshot_sink_t snapshot = {};
+  IREE_ASSERT_OK(iree_benchmark_loom_snapshot_sink_initialize(
+      iree_allocator_system(), &snapshot));
+  iree_benchmark_loom_event_sink_t sink = {};
+  iree_benchmark_loom_snapshot_event_sink_initialize(&snapshot, &sink);
+  const iree_benchmark_loom_run_identity_t run = {.run_id = IREE_SV("run")};
+  const iree_benchmark_loom_candidate_identity_t candidate = {
+      .candidate_id = IREE_SV("c0"),
+  };
+  const loom_testbench_benchmark_plan_t benchmark = {
+      .name = IREE_SV("sequence"),
+  };
+  IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_run(&sink, &run, false,
+                                                         &kNoSanitizer));
+  IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_compile(
+      &sink, &run, &candidate, &compile_item, &benchmark, &case_plan_,
+      &provider));
+  iree_benchmark_loom_hal_actual_sequence_deinitialize(&sequence_);
+  std::memset(message, '?', sizeof(message));
+  const iree_benchmark_loom_artifact_bundle_t bundle = {};
+  IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_summary(
+      &sink, &run, &bundle, 1, 1, 1, 1, 1, 0, 1, 0, 0, false));
+  iree_string_builder_t output;
+  iree_string_builder_initialize(iree_allocator_system(), &output);
+  auto root = ParseJsonDocument(SnapshotJson(&snapshot, &output));
+  auto entry =
+      FirstArrayElement(LookupObject(root, IREE_SV("compiled_entries")));
+  EXPECT_TRUE(iree_string_view_equal(LookupObject(entry, IREE_SV("state")),
+                                     IREE_SV("failed")));
+  EXPECT_TRUE(iree_string_view_equal(LookupObject(entry, IREE_SV("message")),
+                                     IREE_SV("entry cannot be lowered")));
+  EXPECT_TRUE(iree_string_view_is_empty(
+      TryLookupObject(entry, IREE_SV("compile_report"))));
+  iree_string_builder_deinitialize(&output);
+  iree_benchmark_loom_snapshot_sink_deinitialize(&snapshot);
+}
+
+TEST(BenchmarkSnapshotSinkTest, OwnsSkippedEvidenceAndMatchesJsonl) {
+  for (bool scenario : {false, true}) {
+    SCOPED_TRACE(scenario);
+    char message[] = "provider is unavailable";
+    loom_testbench_requirement_result_t reason = {
+        .skipped = true,
+        .op_kind = LOOM_TESTBENCH_REQUIREMENT_OP_KIND_REQUIRES,
+        .code = LOOM_TESTBENCH_REQUIREMENT_SKIP_CODE_PROVIDER_UNAVAILABLE,
+        .provider = IREE_SV("test.provider"),
+        .provider_code = IREE_SV("unavailable"),
+        .display_message = iree_make_cstring_view(message),
+    };
+    const iree_benchmark_loom_benchmark_result_t result = {
+        .state = IREE_SV("skipped"),
+        .skip_reason = &reason,
+    };
+    const iree_benchmark_loom_benchmark_policy_t policy = {
+        .measure = IREE_SV("dispatch_complete"),
+    };
+    const iree_benchmark_loom_work_item_t work = {};
+    const loom_module_t module = {};
+    const loom_testbench_case_plan_t case_plan = {.name = IREE_SV("case")};
+    const loom_testbench_scenario_plan_t scenario_plan = {
+        .name = IREE_SV("scenario"),
+    };
+    const loom_testbench_benchmark_plan_t benchmark = {
+        .name = IREE_SV("bench"),
+    };
+    const iree_benchmark_loom_run_identity_t run = {.run_id = IREE_SV("run")};
+    iree_benchmark_loom_candidate_identity_t candidate = {
+        .candidate_id = IREE_SV("c0"),
+    };
+    iree_benchmark_loom_snapshot_sink_t snapshot = {};
+    IREE_ASSERT_OK(iree_benchmark_loom_snapshot_sink_initialize(
+        iree_allocator_system(), &snapshot));
+    iree_benchmark_loom_event_sink_t sink = {};
+    iree_benchmark_loom_snapshot_event_sink_initialize(&snapshot, &sink);
+    IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_run(&sink, &run, false,
+                                                           &kNoSanitizer));
+    for (size_t i = 0; i < 2; ++i) {
+      candidate.candidate_index = i;
+      IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_benchmark_result(
+          &sink, &run, &candidate, &work, &module, &benchmark,
+          scenario ? nullptr : &case_plan, scenario ? &scenario_plan : nullptr,
+          &policy, &result, 0, 0));
+    }
+    iree_string_builder_t jsonl;
+    iree_string_builder_initialize(iree_allocator_system(), &jsonl);
+    IREE_ASSERT_OK(iree_benchmark_loom_append_benchmark_result(
+        &run, &candidate, 0, &module, &benchmark,
+        scenario ? nullptr : &case_plan, scenario ? &scenario_plan : nullptr,
+        &policy, &result, 0, 0, &jsonl));
+    // Neither the deferred snapshot nor rendered JSONL borrows provider text.
+    std::memset(message, '?', sizeof(message));
+    reason = {};
+    const iree_benchmark_loom_artifact_bundle_t bundle = {};
+    IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_summary(
+        &sink, &run, &bundle, /*planned_case_count=*/scenario ? 0 : 1,
+        /*planned_benchmark_count=*/2, /*selected_benchmark_count=*/2,
+        /*logical_sample_count=*/2, /*work_item_count=*/1,
+        /*failure_count=*/0, /*failed_benchmark_count=*/0,
+        /*correctness_sample_count=*/0, /*correctness_failed_sample_count=*/0,
+        /*dry_run=*/false));
+    iree_string_builder_t output;
+    iree_string_builder_initialize(iree_allocator_system(), &output);
+    auto root = ParseJsonDocument(SnapshotJson(&snapshot, &output));
+    auto work_items = LookupObject(root, IREE_SV("work_items"));
+    iree_host_size_t count = 0;
+    IREE_ASSERT_OK(iree_json_array_length(work_items, &count));
+    EXPECT_EQ(count, 1u);
+    auto evidence = FirstArrayElement(work_items);
+    EXPECT_TRUE(iree_string_view_equal(LookupObject(evidence, IREE_SV("state")),
+                                       IREE_SV("skipped")));
+    auto skip = LookupObject(evidence, IREE_SV("skip_reason"));
+    EXPECT_TRUE(iree_string_view_equal(
+        skip, IREE_SV("{\"provider\":\"test.provider\",\"op\":\"requires\","
+                      "\"code\":\"provider_unavailable\",\"provider_code\":"
+                      "\"unavailable\","
+                      "\"display_message\":\"provider is unavailable\"}")));
+    auto row = ParseJsonDocument(iree_string_builder_view(&jsonl));
+    EXPECT_TRUE(iree_string_view_equal(
+        LookupObject(LookupObject(row, IREE_SV("benchmark_result")),
+                     IREE_SV("skip_reason")),
+        skip));
+    IREE_ASSERT_OK(iree_json_array_length(
+        LookupObject(root, IREE_SV("benchmarks")), &count));
+    EXPECT_EQ(count, 2u);
+    EXPECT_TRUE(iree_string_view_is_empty(
+        TryLookupObject(evidence, IREE_SV("measurement"))));
+    EXPECT_TRUE(iree_string_view_is_empty(
+        TryLookupObject(evidence, IREE_SV("failure"))));
+    iree_string_builder_deinitialize(&jsonl);
+    iree_string_builder_deinitialize(&output);
+    iree_benchmark_loom_snapshot_sink_deinitialize(&snapshot);
+  }
 }
 
 TEST(BenchmarkSnapshotSinkTest, PreservesInterleavedProfileSuppression) {
@@ -171,6 +563,7 @@ TEST(BenchmarkSnapshotSinkTest, PreservesInterleavedProfileSuppression) {
 }
 
 TEST(BenchmarkSnapshotSinkTest, AggregatesDeduplicatedWorkItems) {
+  const iree_benchmark_loom_work_item_t work_item = {.work_item_index = 7};
   iree_allocator_t allocator = iree_allocator_system();
   iree_benchmark_loom_snapshot_sink_t snapshot = {};
   IREE_ASSERT_OK(
@@ -204,8 +597,8 @@ TEST(BenchmarkSnapshotSinkTest, AggregatesDeduplicatedWorkItems) {
   iree_benchmark_loom_benchmark_result_t result = {
       .executed = true,
       .passed = true,
-      .has_sample_ordinal = true,
-      .sample_ordinal = 0,
+      .has_benchmark_sample_ordinal = true,
+      .benchmark_sample_ordinal = 0,
       .samples_per_iteration = 1,
   };
   result.timing.count = 3;
@@ -220,7 +613,7 @@ TEST(BenchmarkSnapshotSinkTest, AggregatesDeduplicatedWorkItems) {
       {.type = LOOM_SCALAR_TYPE_I32, .value = 513},
   };
   iree_benchmark_loom_launch_record_t launch_record = {
-      .case_sample_ordinal = 0,
+      .sample = {},
       .sequence_step_ordinal = 0,
       .entry = IREE_SV("kernel_entry"),
       .workload_values = workload_values,
@@ -239,6 +632,7 @@ TEST(BenchmarkSnapshotSinkTest, AggregatesDeduplicatedWorkItems) {
   };
   iree_benchmark_loom_launch_evidence_t launch_evidence = {
       .host_allocator = {},
+      .case_plan = &case_plan,
       .records = &launch_record,
       .record_count = 1,
       .workload_values = workload_values,
@@ -253,13 +647,13 @@ TEST(BenchmarkSnapshotSinkTest, AggregatesDeduplicatedWorkItems) {
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_run(
       &event_sink, &run, /*dry_run=*/false, &sanitizer));
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_benchmark_result(
-      &event_sink, &run, &candidate0, /*work_item_index=*/7, &module,
-      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
+      &event_sink, &run, &candidate0, &work_item, &module, &benchmark_plan,
+      &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/1,
       /*correctness_failed_sample_count=*/0));
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_benchmark_result(
-      &event_sink, &run, &candidate1, /*work_item_index=*/7, &module,
-      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
+      &event_sink, &run, &candidate1, &work_item, &module, &benchmark_plan,
+      &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/1,
       /*correctness_failed_sample_count=*/0));
   workload_values[0].value = 1;
@@ -365,6 +759,7 @@ TEST(BenchmarkSnapshotSinkTest, AggregatesDeduplicatedWorkItems) {
 }
 
 TEST(BenchmarkSnapshotSinkTest, IncludesRequestedProfileSummary) {
+  const iree_benchmark_loom_work_item_t work_item = {};
   iree_allocator_t allocator = iree_allocator_system();
   iree_benchmark_loom_snapshot_sink_t snapshot = {};
   IREE_ASSERT_OK(
@@ -411,8 +806,8 @@ TEST(BenchmarkSnapshotSinkTest, IncludesRequestedProfileSummary) {
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_run(
       &event_sink, &run, /*dry_run=*/false, &kNoSanitizer));
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_benchmark_result(
-      &event_sink, &run, &candidate, /*work_item_index=*/0, &module,
-      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
+      &event_sink, &run, &candidate, &work_item, &module, &benchmark_plan,
+      &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/1,
       /*correctness_failed_sample_count=*/0));
   iree_benchmark_loom_artifact_bundle_t bundle = {};
@@ -451,6 +846,7 @@ TEST(BenchmarkSnapshotSinkTest, IncludesRequestedProfileSummary) {
 }
 
 TEST(BenchmarkSnapshotSinkTest, IncludesHalTimingCountsAndWarnings) {
+  const iree_benchmark_loom_work_item_t work_item = {};
   iree_allocator_t allocator = iree_allocator_system();
   iree_benchmark_loom_snapshot_sink_t snapshot = {};
   IREE_ASSERT_OK(
@@ -503,8 +899,8 @@ TEST(BenchmarkSnapshotSinkTest, IncludesHalTimingCountsAndWarnings) {
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_run(
       &event_sink, &run, /*dry_run=*/false, &kNoSanitizer));
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_benchmark_result(
-      &event_sink, &run, &candidate, /*work_item_index=*/0, &module,
-      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
+      &event_sink, &run, &candidate, &work_item, &module, &benchmark_plan,
+      &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/1,
       /*correctness_failed_sample_count=*/0));
   iree_benchmark_loom_artifact_bundle_t bundle = {};
@@ -582,6 +978,7 @@ TEST(BenchmarkSnapshotSinkTest, IncludesHalTimingCountsAndWarnings) {
 }
 
 TEST(BenchmarkSnapshotSinkTest, IncludesRequestedCompileReport) {
+  const iree_benchmark_loom_work_item_t work_item = {};
   iree_allocator_t allocator = iree_allocator_system();
   iree_benchmark_loom_snapshot_sink_t snapshot = {};
   IREE_ASSERT_OK(
@@ -634,8 +1031,8 @@ TEST(BenchmarkSnapshotSinkTest, IncludesRequestedCompileReport) {
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_run(
       &event_sink, &run, /*dry_run=*/false, &kNoSanitizer));
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_benchmark_result(
-      &event_sink, &run, &candidate, /*work_item_index=*/0, &module,
-      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
+      &event_sink, &run, &candidate, &work_item, &module, &benchmark_plan,
+      &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/1,
       /*correctness_failed_sample_count=*/0));
   iree_benchmark_loom_artifact_bundle_t bundle = {};
@@ -685,6 +1082,7 @@ TEST(BenchmarkSnapshotSinkTest, IncludesRequestedCompileReport) {
 }
 
 TEST(BenchmarkSnapshotSinkTest, IncludesFailurePayloadsOnFailure) {
+  const iree_benchmark_loom_work_item_t work_item = {};
   iree_allocator_t allocator = iree_allocator_system();
   iree_benchmark_loom_snapshot_sink_t snapshot = {};
   IREE_ASSERT_OK(
@@ -728,8 +1126,8 @@ TEST(BenchmarkSnapshotSinkTest, IncludesFailurePayloadsOnFailure) {
       &event_sink, &run, IREE_SV("parse"), IREE_SV("diagnostics"),
       IREE_SV("input module has parse errors"), /*diagnostics=*/NULL));
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_benchmark_result(
-      &event_sink, &run, &candidate, /*work_item_index=*/0, &module,
-      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
+      &event_sink, &run, &candidate, &work_item, &module, &benchmark_plan,
+      &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/0,
       /*correctness_failed_sample_count=*/0));
   iree_benchmark_loom_artifact_bundle_t bundle = {};
@@ -809,15 +1207,14 @@ TEST(BenchmarkSnapshotSinkTest, DryRunReportsPlannedWorkAliases) {
   logical_samples[0].selection_index = 0;
   logical_samples[0].begin_benchmark_sample = 0;
   logical_samples[0].end_benchmark_sample = 1;
-  logical_samples[0].has_case_sample_ordinal = true;
-  logical_samples[0].case_sample_ordinal = 0;
   logical_samples[0].work_item_index = 7;
+  logical_samples[0].next_alias_index = 1;
   logical_samples[1].selection_index = 1;
   logical_samples[1].begin_benchmark_sample = 0;
   logical_samples[1].end_benchmark_sample = 1;
-  logical_samples[1].has_case_sample_ordinal = true;
-  logical_samples[1].case_sample_ordinal = 0;
   logical_samples[1].work_item_index = 7;
+  logical_samples[1].next_alias_index =
+      IREE_BENCHMARK_LOOM_WORK_PLAN_INDEX_INVALID;
   iree_benchmark_loom_work_item_t work_item = {
       .kind = IREE_BENCHMARK_LOOM_WORK_ITEM_DISPATCH_SAMPLE,
       .work_item_index = 7,
@@ -825,8 +1222,6 @@ TEST(BenchmarkSnapshotSinkTest, DryRunReportsPlannedWorkAliases) {
       .hal_compile_item_index = 0,
       .begin_benchmark_sample = 0,
       .end_benchmark_sample = 1,
-      .has_case_sample_ordinal = true,
-      .case_sample_ordinal = 0,
   };
   iree_benchmark_loom_work_plan_t work_plan = {
       .selected_benchmarks = selections,
@@ -944,6 +1339,7 @@ TEST(BenchmarkSnapshotSinkTest, DryRunReportsScenarioTrialCoordinates) {
       .end_benchmark_sample = 8,
       .scenario_coordinate = coordinate,
       .work_item_index = 4,
+      .next_alias_index = IREE_BENCHMARK_LOOM_WORK_PLAN_INDEX_INVALID,
   };
   iree_benchmark_loom_work_item_t work_item = {
       .kind = IREE_BENCHMARK_LOOM_WORK_ITEM_SCENARIO_TRIAL,
@@ -998,7 +1394,11 @@ TEST(BenchmarkSnapshotSinkTest, DryRunReportsScenarioTrialCoordinates) {
   iree_benchmark_loom_snapshot_sink_deinitialize(&snapshot);
 }
 
-TEST(BenchmarkSnapshotSinkTest, ReportsExecutedScenarioTrialCoordinates) {
+TEST(BenchmarkSnapshotSinkTest, ReportsExecutedScenarioAliases) {
+  iree_benchmark_loom_work_item_t physical_work[] = {
+      {.work_item_index = 4, .representative_selection_index = 1},
+      {.work_item_index = 2, .representative_selection_index = 0},
+  };
   iree_allocator_t allocator = iree_allocator_system();
   iree_benchmark_loom_snapshot_sink_t snapshot = {};
   IREE_ASSERT_OK(
@@ -1008,12 +1408,16 @@ TEST(BenchmarkSnapshotSinkTest, ReportsExecutedScenarioTrialCoordinates) {
 
   iree_benchmark_loom_run_identity_t run = {.run_id = IREE_SV("run")};
   loom_module_t module = {};
-  loom_testbench_benchmark_plan_t benchmark_plan = {
-      .name = IREE_SV("scenario_throughput"),
+  const loom_testbench_benchmark_plan_t benchmarks[] = {
+      {.name = IREE_SV("first")},
+      {.name = IREE_SV("second")},
+      {.name = IREE_SV("alias")},
   };
   loom_testbench_scenario_plan_t scenario_plan = {.name = IREE_SV("scenario")};
-  iree_benchmark_loom_candidate_identity_t candidate = {
-      .candidate_id = IREE_SV("c0"),
+  const iree_benchmark_loom_candidate_identity_t candidates[] = {
+      {.candidate_id = IREE_SV("c0"), .candidate_index = 0},
+      {.candidate_id = IREE_SV("c1"), .candidate_index = 1},
+      {.candidate_id = IREE_SV("c2"), .candidate_index = 2},
   };
   iree_benchmark_loom_benchmark_policy_t policy = {
       .measure = IREE_SV("dispatch_complete"),
@@ -1030,16 +1434,27 @@ TEST(BenchmarkSnapshotSinkTest, ReportsExecutedScenarioTrialCoordinates) {
 
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_run(
       &event_sink, &run, /*dry_run=*/false, &kNoSanitizer));
-  IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_benchmark_result(
-      &event_sink, &run, &candidate, /*work_item_index=*/4, &module,
-      &benchmark_plan, /*case_plan=*/nullptr, &scenario_plan, &policy, &result,
-      /*correctness_sample_count=*/0,
-      /*correctness_failed_sample_count=*/0));
+  // Physical and selection indexes differ. Aliases need not arrive adjacent
+  // to their representative, nor physical items in ascending index order.
+  const size_t selections[] = {1, 0, 2, 2};
+  for (size_t i = 0; i < IREE_ARRAYSIZE(selections); ++i) {
+    const size_t selection = selections[i];
+    result.benchmark_sample_ordinal = 17 + i % 2;
+    result.scenario_coordinate.trial_ordinal = 5 + i % 2;
+    IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_benchmark_result(
+        &event_sink, &run, &candidates[selection], &physical_work[i % 2],
+        &module, &benchmarks[selection], /*case_plan=*/nullptr, &scenario_plan,
+        &policy, &result, /*correctness_sample_count=*/0,
+        /*correctness_failed_sample_count=*/0));
+  }
+  // The snapshot owns its rendered evidence, not these borrowed work items.
+  physical_work[0].work_item_index = 99;
+  physical_work[1].work_item_index = 98;
   iree_benchmark_loom_artifact_bundle_t bundle = {};
   IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_summary(
       &event_sink, &run, &bundle, /*planned_case_count=*/0,
-      /*planned_benchmark_count=*/1, /*selected_benchmark_count=*/1,
-      /*logical_sample_count=*/1, /*work_item_count=*/1,
+      /*planned_benchmark_count=*/3, /*selected_benchmark_count=*/3,
+      /*logical_sample_count=*/4, /*work_item_count=*/2,
       /*failure_count=*/0, /*failed_benchmark_count=*/0,
       /*correctness_sample_count=*/0, /*correctness_failed_sample_count=*/0,
       /*dry_run=*/false));
@@ -1050,6 +1465,9 @@ TEST(BenchmarkSnapshotSinkTest, ReportsExecutedScenarioTrialCoordinates) {
       ParseJsonDocument(SnapshotJson(&snapshot, &output));
   const iree_string_view_t work_items =
       LookupObject(root, IREE_SV("work_items"));
+  iree_host_size_t work_item_count = 0;
+  IREE_ASSERT_OK(iree_json_array_length(work_items, &work_item_count));
+  EXPECT_EQ(work_item_count, 2u);
   const iree_string_view_t work_item = FirstArrayElement(work_items);
   EXPECT_TRUE(iree_string_view_equal(
       LookupObject(work_item, IREE_SV("scenario")), IREE_SV("scenario")));
@@ -1062,6 +1480,34 @@ TEST(BenchmarkSnapshotSinkTest, ReportsExecutedScenarioTrialCoordinates) {
       LookupObject(work_item, IREE_SV("trial_index")), IREE_SV("3")));
   EXPECT_TRUE(iree_string_view_equal(
       LookupObject(work_item, IREE_SV("trial_ordinal")), IREE_SV("5")));
+  const iree_string_view_t benchmark_rows =
+      LookupObject(root, IREE_SV("benchmarks"));
+  iree_host_size_t benchmark_count = 0;
+  IREE_ASSERT_OK(iree_json_array_length(benchmark_rows, &benchmark_count));
+  EXPECT_EQ(benchmark_count, 4u);
+  for (size_t i = 0; i < IREE_ARRAYSIZE(selections); ++i) {
+    iree_string_view_t row = iree_string_view_empty();
+    IREE_ASSERT_OK(iree_json_array_get(benchmark_rows, i, &row));
+    EXPECT_TRUE(
+        iree_string_view_equal(LookupObject(row, IREE_SV("candidate_id")),
+                               candidates[selections[i]].candidate_id));
+    EXPECT_TRUE(
+        iree_string_view_equal(LookupObject(row, IREE_SV("work_item_index")),
+                               i % 2 == 0 ? IREE_SV("4") : IREE_SV("2")));
+    EXPECT_TRUE(iree_string_view_is_empty(
+        TryLookupObject(row, IREE_SV("measurement"))));
+    if (i < work_item_count) {
+      IREE_ASSERT_OK(iree_json_array_get(work_items, i, &row));
+      EXPECT_TRUE(
+          iree_string_view_equal(LookupObject(row, IREE_SV("work_item_index")),
+                                 i == 0 ? IREE_SV("4") : IREE_SV("2")));
+      EXPECT_TRUE(
+          iree_string_view_equal(LookupObject(row, IREE_SV("benchmark")),
+                                 benchmarks[selections[i]].name));
+      EXPECT_FALSE(
+          iree_string_view_is_empty(LookupObject(row, IREE_SV("measurement"))));
+    }
+  }
 
   iree_string_builder_deinitialize(&output);
   iree_benchmark_loom_snapshot_sink_deinitialize(&snapshot);

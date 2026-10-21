@@ -51,9 +51,12 @@ class FactVectorPartitionTest : public ::testing::Test {
 TEST_F(FactVectorPartitionTest, PartitionsOwnComponentsAndTrackScope) {
   loom_value_fact_vector_partition_component_t components[] = {
       {1, 16}, {2, 16}, {3, 8}};
+  auto regular_partition = MakeRegularPartition(components, 3, 40, 16);
+  regular_partition.flags =
+      LOOM_VALUE_FACT_VECTOR_PARTITION_FLAG_COMPUTED_PACKETS;
   bool changed = false;
   IREE_ASSERT_OK(loom_value_fact_table_define_vector_partition(
-      &table_, 7, MakeRegularPartition(components, 3, 40, 16), &changed));
+      &table_, 7, regular_partition, &changed));
   EXPECT_TRUE(changed);
   const auto first = loom_value_fact_table_query_vector_partition(&table_, 7);
   ASSERT_EQ(first.count, 3u);
@@ -63,6 +66,8 @@ TEST_F(FactVectorPartitionTest, PartitionsOwnComponentsAndTrackScope) {
   EXPECT_EQ(first.snapshot_components, first.components);
   EXPECT_EQ(first.snapshot_count, 3u);
   EXPECT_EQ(first.snapshot_lane_count, 16u);
+  EXPECT_EQ(first.flags,
+            LOOM_VALUE_FACT_VECTOR_PARTITION_FLAG_COMPUTED_PACKETS);
   EXPECT_EQ(first.components[0].value, 1u);
   EXPECT_EQ(first.components[2].value, 3u);
   EXPECT_EQ(first.components[2].lane_count, 8u);
@@ -70,7 +75,7 @@ TEST_F(FactVectorPartitionTest, PartitionsOwnComponentsAndTrackScope) {
   const auto bytes = arena_.used_allocation_size;
   changed = false;
   IREE_ASSERT_OK(loom_value_fact_table_define_vector_partition(
-      &table_, 7, MakeRegularPartition(components, 3, 40, 16), &changed));
+      &table_, 7, regular_partition, &changed));
   EXPECT_FALSE(changed);
   EXPECT_EQ(loom_value_fact_table_query_vector_partition(&table_, 7).components,
             first.components);
@@ -279,6 +284,84 @@ TEST_F(FactVectorPartitionTest, ErasurePreservesIndependentSnapshot) {
   EXPECT_EQ(
       loom_value_fact_table_query_vector_partition(&table_, 8).snapshot_count,
       0u);
+}
+
+TEST_F(FactVectorPartitionTest,
+       SparseValuesPreserveBorrowedViewsAcrossGrowthAndReplacement) {
+  constexpr loom_value_id_t kBase = 65536;
+  constexpr loom_value_id_t kPartition = kBase + 7;
+  constexpr uint32_t kAliasCount = 32;
+  const loom_value_fact_vector_partition_component_t components[] = {
+      {kBase + 1, 16}, {kBase + 2, 16}};
+  const loom_value_fact_vector_partition_component_t snapshot[] = {
+      {kBase + 3, 32}};
+  IREE_ASSERT_OK(loom_value_fact_table_define_vector_partition(
+      &table_, kPartition, {components, snapshot, 2, 32, 16, 1, 32}, nullptr));
+  const auto borrowed =
+      loom_value_fact_table_query_vector_partition(&table_, kPartition);
+
+  // A scope may mix original values and aliases created much later in the
+  // module. Both alias insertion and replacement grow the index while callers
+  // retain the component views, whose addresses must stay stable.
+  loom_value_id_t replacement = kBase + 1;
+  for (uint32_t i = 0; i < kAliasCount; ++i) {
+    const loom_value_id_t alias = kBase + 4096 + i * 257;
+    IREE_ASSERT_OK(loom_value_fact_table_forward_vector_partition(
+        &table_, kPartition, alias, nullptr));
+    const loom_value_id_t next_replacement = kBase + 32768 + i * 1021;
+    IREE_ASSERT_OK(loom_value_fact_table_replace_vector_partition_value(
+        &table_, replacement, next_replacement));
+    loom_value_fact_table_invalidate_vector_partition_value(&table_,
+                                                            replacement);
+    replacement = next_replacement;
+    EXPECT_EQ(borrowed.components[0].value, replacement);
+    EXPECT_EQ(borrowed.snapshot_components[0].value, kBase + 3);
+  }
+  for (uint32_t i = 0; i < kAliasCount; ++i) {
+    const loom_value_id_t alias = kBase + 4096 + i * 257;
+    const auto partition =
+        loom_value_fact_table_query_vector_partition(&table_, alias);
+    ASSERT_EQ(partition.count, 2u);
+    ASSERT_EQ(partition.snapshot_count, 1u);
+    EXPECT_EQ(partition.components, borrowed.components);
+    EXPECT_EQ(partition.snapshot_components, borrowed.snapshot_components);
+  }
+  EXPECT_EQ(loom_value_fact_table_query_vector_partition(&table_, 1).count, 0u);
+  EXPECT_EQ(loom_value_fact_table_query_vector_partition(&table_,
+                                                         LOOM_VALUE_ID_INVALID)
+                .count,
+            0u);
+
+  loom_value_fact_table_invalidate_vector_partition_value(&table_, replacement);
+  const auto remaining =
+      loom_value_fact_table_query_vector_partition(&table_, kPartition);
+  EXPECT_EQ(remaining.count, 0u);
+  ASSERT_EQ(remaining.snapshot_count, 1u);
+  EXPECT_EQ(remaining.snapshot_components, borrowed.snapshot_components);
+  loom_value_fact_table_invalidate_vector_partition_value(&table_, kBase + 3);
+  EXPECT_EQ(loom_value_fact_table_query_vector_partition(&table_, kPartition)
+                .snapshot_count,
+            0u);
+
+  // Cleared keys are reusable, and clearing the entire scope discards every
+  // alias and use chain before another scope publishes the same value IDs.
+  IREE_ASSERT_OK(loom_value_fact_table_define_vector_partition(
+      &table_, kPartition, MakeRegularPartition(components, 2, 32, 16),
+      nullptr));
+  EXPECT_EQ(loom_value_fact_table_query_vector_partition(&table_, kPartition)
+                .components[0]
+                .value,
+            kBase + 1);
+  loom_value_fact_table_clear_scope(&table_);
+  IREE_ASSERT_OK(loom_value_fact_table_define_vector_partition(
+      &table_, kPartition, MakeRegularPartition(components, 2, 32, 16),
+      nullptr));
+  EXPECT_EQ(
+      loom_value_fact_table_query_vector_partition(&table_, kBase + 4096).count,
+      0u);
+  EXPECT_EQ(loom_value_fact_table_query_vector_partition(&table_, kPartition)
+                .snapshot_count,
+            2u);
 }
 
 TEST_F(FactVectorPartitionTest, SharedComponentsAreUpdatedOnce) {

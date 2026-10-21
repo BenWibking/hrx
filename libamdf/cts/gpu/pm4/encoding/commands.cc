@@ -160,9 +160,13 @@ void Pm4CommandWriter::AcquireMemory(uint32_t gcr) {
 }
 
 void Pm4CommandWriter::SystemBarrier() {
+  WaitCompute();
+  AcquireMemory(profile_.system_acquire_gcr);
+}
+
+void Pm4CommandWriter::WaitCompute() {
   words_[word_count_++] = MakeHeader(0x46, 2);
   words_[word_count_++] = 7 | (4 << 8);  // CS_PARTIAL_FLUSH.
-  AcquireMemory(profile_.system_acquire_gcr);
 }
 
 void Pm4CommandWriter::AcquireFromSystem() {
@@ -225,6 +229,16 @@ void Pm4CommandWriter::Release32(uint64_t target_address, uint32_t value) {
   words_[word_count_++] = 0;
 }
 
+void Pm4CommandWriter::Store32(uint64_t target_address, uint32_t value) {
+  word_count_ += pm4::StoreImmediate(words_ + word_count_, target_address,
+                                     value, pm4::CopyDataWidth::k32Bit);
+}
+
+void Pm4CommandWriter::Store64(uint64_t target_address, uint64_t value) {
+  word_count_ += pm4::StoreImmediate(words_ + word_count_, target_address,
+                                     value, pm4::CopyDataWidth::k64Bit);
+}
+
 void Pm4CommandWriter::WaitEndOfPipeAndWriteback(uint64_t fence_address,
                                                  uint32_t value) {
   Release32(fence_address, value);
@@ -241,6 +255,15 @@ void Pm4CommandWriter::WaitEndOfPipeAndWriteback(uint64_t fence_address,
   // GL2_WB is bit 15; the selected profile also supplies its scope. The high
   // size preserves only defined MEC bits rather than the wider ME layout.
   AcquireMemory(profile_.gl2_writeback_gcr);
+}
+
+void Pm4CommandWriter::BindScratch(uint64_t base, uint32_t waves_per_engine,
+                                   uint32_t wave_byte_length) {
+  const uint32_t address[] = {static_cast<uint32_t>(base >> 8),
+                              static_cast<uint32_t>(base >> 40)};
+  SetComputeRegisters(0x2e10, address, 2);
+  const uint32_t size = waves_per_engine | ((wave_byte_length >> 8) << 12);
+  SetComputeRegisters(profile_.scratch_size_register, &size, 1);
 }
 
 void Pm4CommandWriter::CopyData32(uint64_t source_address,
@@ -278,18 +301,6 @@ void Pm4CommandWriter::DmaFill32(uint64_t target_address, uint32_t pattern,
   words_[word_count_++] = static_cast<uint32_t>(target_address);
   words_[word_count_++] = static_cast<uint32_t>(target_address >> 32);
   words_[word_count_++] = byte_length | (1u << 30);
-}
-
-void Pm4CommandWriter::AtomicStore32(uint64_t target_address, uint32_t value) {
-  word_count_ += pm4::AtomicStore(words_ + word_count_, target_address, value,
-                                  pm4::AtomicStoreWidth::k32Bit,
-                                  profile_.system_atomic_scope_control);
-}
-
-void Pm4CommandWriter::AtomicStore64(uint64_t target_address, uint64_t value) {
-  word_count_ += pm4::AtomicStore(words_ + word_count_, target_address, value,
-                                  pm4::AtomicStoreWidth::k64Bit,
-                                  profile_.system_atomic_scope_control);
 }
 
 void Pm4CommandWriter::WaitDma() {

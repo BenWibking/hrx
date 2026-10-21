@@ -438,11 +438,29 @@ loom_cc_library(
     deps = [
         ":assignment",
         ":table",
+        "//loom/src/loom/codegen/low:function",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target:registers",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
+    name = "spill_storage",
+    srcs = ["spill_storage.c"],
+    hdrs = ["spill_storage.h"],
+    deps = [
+        ":table",
+        "//loom/src/loom/analysis:liveness",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/util:adaptive_sort",
+        "//loom/src/loom/util:cfg_graph",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
     ],
 )
 
@@ -855,8 +873,6 @@ loom_cc_library(
         "//loom/src/loom/codegen/low:placement",
         "//loom/src/loom/codegen/low:read_retention",
         "//loom/src/loom/codegen/low:target_binding",
-        "//loom/src/loom/ir",
-        "//loom/src/loom/target:registers",
         "//loom/src/loom/util:cfg_graph",
         "//loom/src/loom/util:index_set",
         "//loom/src/loom/util:segmented_storage",
@@ -944,6 +960,21 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "storage_reservations",
+    srcs = ["storage_reservations.c"],
+    hdrs = ["storage_reservations.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":unit_liveness",
+        "//loom/src/loom/analysis:liveness",
+        "//loom/src/loom/codegen/low:placement",
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "unit_liveness_builder",
     srcs = ["unit_liveness_builder.c"],
     hdrs = ["unit_liveness_builder.h"],
@@ -952,6 +983,7 @@ loom_cc_library(
         ":clobber_index",
         ":live_range",
         ":storage",
+        ":storage_reservations",
         ":unit_liveness",
         ":write_interference",
         "//loom/src/loom/analysis:liveness",
@@ -1183,7 +1215,9 @@ loom_cc_test(
         "//loom/src/loom/format/text:parser",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/low",
+        "//loom/src/loom/target:facts_builder",
         "//loom/src/loom/target/test:low_registry",
+        "//loom/src/loom/target/test:target_record_table",
         "//loom/src/loom/testing:module_ptr",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",

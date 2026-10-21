@@ -45,6 +45,15 @@ typedef struct loom_serve_registration_parameters_t {
   const loom_serve_compilation_report_t* compilation;
 } loom_serve_registration_parameters_t;
 
+enum loom_serve_registration_prepare_flag_bits_e {
+  // Irrevocably stops preparation while joining accepted work.
+  LOOM_SERVE_REGISTRATION_PREPARE_FLAG_CANCEL = 1u << 0,
+  // Current inference or explicit primary warmup permits early parameter
+  // admission. Registration and retention policy alone never supply demand.
+  LOOM_SERVE_REGISTRATION_PREPARE_FLAG_DEMAND = 1u << 1,
+};
+typedef uint32_t loom_serve_registration_prepare_flags_t;
+
 // A modality's owned preparation/retirement operation. All methods run on the
 // serialized serving owner and never wait. Wake callbacks only schedule that
 // owner. The declaration and factory remain borrowed through destruction.
@@ -56,7 +65,9 @@ typedef struct loom_serve_registration_t {
   // a service using the supplied stream, cumulative counters and terminal
   // latency distributions; terminal failure still requires retire.
   // Copies compilation evidence on terminal completion, including failure.
-  iree_status_t (*prepare)(void* self, bool cancel, bool* out_complete,
+  iree_status_t (*prepare)(void* self,
+                           loom_serve_registration_prepare_flags_t flags,
+                           bool* out_complete,
                            loom_serve_service_t* out_service,
                            loom_serve_compilation_report_t* out_report);
   // Called after preparation terminates and service/tokenizer borrowers retire.
@@ -180,6 +191,8 @@ typedef struct loom_serve_registered_model_t {
   loom_serve_parameter_operation_t parameter_operation;
   // Requests parked outside service admission on transport-owned storage.
   iree_host_size_t held_count;
+  // Held inference requests, excluding tokenizer and retained-state utilities.
+  iree_host_size_t parameter_demand_count;
   // Independent tokenizer processes still borrowing the model.
   iree_host_size_t tokenizer_count;
   // Copied scheduler observation for one response; never a readiness signal.
@@ -199,6 +212,13 @@ typedef struct loom_serve_registered_model_t {
   uint64_t incarnation;
   // Wall-clock Unix seconds at registration, fixed until deployment retirement.
   int64_t registered_unix_seconds;
+  // Elapsed operations follow the serialized owner across worker handoffs.
+  IREE_TRACE(struct {
+    // Preparation or retirement, ending at its terminal result.
+    iree_section_id_t lifecycle;
+    // Explicit warmup or deactivation, including admission and readiness waits.
+    iree_section_id_t parameters;
+  } trace;)
 } loom_serve_registered_model_t;
 
 typedef struct loom_serve_registry_t loom_serve_registry_t;

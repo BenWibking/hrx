@@ -21,6 +21,7 @@
 #include "loom/target/arch/wasm/records/target_records.h"
 #include "loom/target/emit/wasm/lower/lower.h"
 #include "loom/transforms/scalar/target_legalization.h"
+#include "loom/transforms/vector/packet_insert_legalization.h"
 #include "loom/transforms/vector/packet_legalization.h"
 #include "loom/transforms/vector/shape_legalization.h"
 #include "loom/transforms/vector/target_legalization.h"
@@ -82,7 +83,8 @@ static iree_status_t loom_wasm_materialize_definition(
   if (iree_any_bit_set(build_flags,
                        LOOM_WASM_TARGET_BUILD_FLAG_HAS_CONTRACT_SET_KEY)) {
     IREE_RETURN_IF_ERROR(loom_builder_intern_string(
-        builder, facts->storage.config.contract_set_key, &contract_set_key));
+        builder, facts->storage.config.contract_set.spelling,
+        &contract_set_key));
   }
 
   const loom_target_snapshot_t* snapshot = &facts->storage.snapshot;
@@ -303,6 +305,27 @@ static iree_status_t loom_wasm_legalize_vector_extract(
   return iree_ok_status();
 }
 
+static iree_status_t loom_wasm_legalize_vector_insert(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (!loom_wasm_legalizer_descriptor_set_is_simd128(context->descriptor_set)) {
+    return iree_ok_status();
+  }
+  bool rewritten = false;
+  IREE_RETURN_IF_ERROR(loom_vector_packet_legalize_insert(
+      context, op, context->vector_packet_policy,
+      /*insert_materializer=*/NULL, &rewritten));
+  if (rewritten) {
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_wasm_legalize_vector_slice(
     const loom_target_legalizer_entry_t* entry,
     loom_target_legalization_context_t* context, loom_op_t* op,
@@ -357,6 +380,33 @@ static iree_status_t loom_wasm_legalize_vector_transpose(
   return iree_ok_status();
 }
 
+static iree_status_t loom_wasm_legalize_vector_reduce(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (!loom_wasm_legalizer_descriptor_set_is_simd128(context->descriptor_set)) {
+    return iree_ok_status();
+  }
+
+  loom_vector_packet_reduce_result_t packet_result =
+      LOOM_VECTOR_PACKET_REDUCE_RESULT_NONE;
+  IREE_RETURN_IF_ERROR(loom_vector_packet_legalize_reduce(
+      context, op, context->vector_packet_policy, &packet_result));
+  bool rewritten = packet_result == LOOM_VECTOR_PACKET_REDUCE_RESULT_REWRITTEN;
+  if (packet_result == LOOM_VECTOR_PACKET_REDUCE_RESULT_CAPTURE_INPUT) {
+    IREE_RETURN_IF_ERROR(loom_vector_reduce_captured_to_scalar_rewrite_op(
+        context->pass, context->rewriter, op, &rewritten));
+  }
+  if (rewritten) {
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  }
+  return iree_ok_status();
+}
+
 static const loom_target_legalizer_rule_t kLoomWasmLegalizerRules[] = {
     {
         .root_kind = LOOM_OP_SCALAR_EXTF,
@@ -366,6 +416,31 @@ static const loom_target_legalizer_rule_t kLoomWasmLegalizerRules[] = {
         .legalize = loom_wasm_legalize_float8_to_bfloat_extension,
     },
     {
+        .root_kind = LOOM_OP_SCALAR_MINIMUMF,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_wasm_legalize_scalar_float_extrema,
+    },
+    {
+        .root_kind = LOOM_OP_SCALAR_MAXIMUMF,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_wasm_legalize_scalar_float_extrema,
+    },
+    {
+        .root_kind = LOOM_OP_SCALAR_MINNUMF,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_wasm_legalize_scalar_float_extrema,
+    },
+    {
+        .root_kind = LOOM_OP_SCALAR_MAXNUMF,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_wasm_legalize_scalar_float_extrema,
+    },
+    {
+        .root_kind = LOOM_OP_SCALAR_CLAMPF,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_wasm_legalize_scalar_float_extrema,
+    },
+    {
         .root_kind = LOOM_OP_VECTOR_CMPF,
         .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
         .legalize = loom_wasm_legalize_vector_cmpf,
@@ -373,26 +448,31 @@ static const loom_target_legalizer_rule_t kLoomWasmLegalizerRules[] = {
     {
         .root_kind = LOOM_OP_VECTOR_MINIMUMF,
         .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
         .legalize = loom_wasm_legalize_vector_float_extrema,
     },
     {
         .root_kind = LOOM_OP_VECTOR_MAXIMUMF,
         .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
         .legalize = loom_wasm_legalize_vector_float_extrema,
     },
     {
         .root_kind = LOOM_OP_VECTOR_MINNUMF,
-        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
         .legalize = loom_wasm_legalize_vector_float_extrema,
     },
     {
         .root_kind = LOOM_OP_VECTOR_MAXNUMF,
-        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
         .legalize = loom_wasm_legalize_vector_float_extrema,
     },
     {
         .root_kind = LOOM_OP_VECTOR_CLAMPF,
-        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT_LE16,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
         .legalize = loom_wasm_legalize_vector_float_extrema,
     },
     {
@@ -412,12 +492,23 @@ static const loom_target_legalizer_rule_t kLoomWasmLegalizerRules[] = {
         .legalize = loom_wasm_legalize_vector_extract,
     },
     {
+        .root_kind = LOOM_OP_VECTOR_INSERT,
+        .first_operand_element_types =
+            LOOM_SCALAR_TYPE_SET_INTEGER_PAYLOAD | LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_wasm_legalize_vector_insert,
+    },
+    {
         .root_kind = LOOM_OP_VECTOR_SLICE,
         .legalize = loom_wasm_legalize_vector_slice,
     },
     {
         .root_kind = LOOM_OP_VECTOR_TRANSPOSE,
         .legalize = loom_wasm_legalize_vector_transpose,
+    },
+    {
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
+        .root_kind = LOOM_OP_VECTOR_REDUCE,
+        .legalize = loom_wasm_legalize_vector_reduce,
     },
 };
 

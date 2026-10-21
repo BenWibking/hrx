@@ -109,7 +109,7 @@ static bool loom_amdgpu_match_subgroup_shuffle_reference_lowering(
              native_width);
 }
 
-static bool loom_amdgpu_match_subgroup_scan_reference_lowering(
+static bool loom_amdgpu_match_target(
     const loom_target_legalizer_entry_t* entry,
     const loom_target_legalization_context_t* context, const loom_op_t* op) {
   (void)entry;
@@ -441,12 +441,16 @@ static iree_status_t loom_amdgpu_legalize_static_vector_shape(
   bool rewritten = false;
   loom_type_t carrier_type = loom_type_none();
   loom_amdgpu_vector_storage_t carrier_storage = {0};
-  if (loom_amdgpu_static_shape_carrier_type(context->module, op,
-                                            &carrier_type) &&
-      loom_amdgpu_type_vector_storage(carrier_type, &carrier_storage) &&
-      carrier_storage.register_count != 0 &&
-      carrier_storage.register_count <=
-          LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES) {
+  // A rectangular slice can stream only its selected runs from a source
+  // larger than the native carrier. The shared rewrite bounds expansion;
+  // packet legalization retains ownership of the resulting rank-one windows.
+  if (loom_vector_slice_isa(op) ||
+      (loom_amdgpu_static_shape_carrier_type(context->module, op,
+                                             &carrier_type) &&
+       loom_amdgpu_type_vector_storage(carrier_type, &carrier_storage) &&
+       carrier_storage.register_count != 0 &&
+       carrier_storage.register_count <=
+           LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES)) {
     IREE_RETURN_IF_ERROR(
         loom_vector_static_shape_rewrite_op(context, op, &rewritten));
   }
@@ -1174,6 +1178,24 @@ static iree_status_t loom_amdgpu_legalize_kernel_subgroup_match_all(
 static const loom_target_legalizer_rule_t kAmdgpuLegalizerRules[] = {
     {
         .root_kind = LOOM_OP_KERNEL_SUBGROUP_SHUFFLE,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I1,
+        .match = loom_amdgpu_match_target,
+        .legalize = loom_kernel_target_legalize_subgroup_predicate,
+    },
+    {
+        .root_kind = LOOM_OP_KERNEL_SUBGROUP_BROADCAST,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I1,
+        .match = loom_amdgpu_match_target,
+        .legalize = loom_kernel_target_legalize_subgroup_predicate,
+    },
+    {
+        .root_kind = LOOM_OP_KERNEL_SUBGROUP_BROADCAST_FIRST,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I1,
+        .match = loom_amdgpu_match_target,
+        .legalize = loom_kernel_target_legalize_subgroup_predicate,
+    },
+    {
+        .root_kind = LOOM_OP_KERNEL_SUBGROUP_SHUFFLE,
         .first_operand_element_types =
             LOOM_SCALAR_TYPE_SET_INTEGER | LOOM_SCALAR_TYPE_SET_FLOAT,
         .match = loom_amdgpu_match_subgroup_shuffle_reference_lowering,
@@ -1192,7 +1214,7 @@ static const loom_target_legalizer_rule_t kAmdgpuLegalizerRules[] = {
         .root_kind = LOOM_OP_KERNEL_SUBGROUP_SCAN,
         .first_operand_element_types =
             LOOM_SCALAR_TYPE_SET_INTEGER | LOOM_SCALAR_TYPE_SET_FLOAT,
-        .match = loom_amdgpu_match_subgroup_scan_reference_lowering,
+        .match = loom_amdgpu_match_target,
         .legalize = loom_amdgpu_legalize_subgroup_scan_reference_lowering,
     },
     {
@@ -1222,7 +1244,7 @@ static const loom_target_legalizer_rule_t kAmdgpuLegalizerRules[] = {
         .root_kind = LOOM_OP_SCALAR_CLAMPF,
         .first_operand_element_types = LOOM_SCALAR_TYPE_SET_F32,
         .match = loom_amdgpu_match_f32_clamp_decomposition,
-        .legalize = loom_scalar_legalize_f32_clamp,
+        .legalize = loom_scalar_legalize_clamp,
     },
     {
         .root_kind = LOOM_OP_VECTOR_CLAMPF,
@@ -1336,14 +1358,6 @@ static const loom_target_legalizer_rule_t kAmdgpuLegalizerRules[] = {
         .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
         .root_kind = LOOM_OP_VECTOR_REDUCE,
         .legalize = loom_amdgpu_legalize_oversized_vector_reduce,
-    },
-    {
-        .root_kind = LOOM_OP_VECTOR_BITFIELD_EXTRACTU,
-        .legalize = loom_amdgpu_retain_native_vector_op,
-    },
-    {
-        .root_kind = LOOM_OP_VECTOR_BITFIELD_EXTRACTS,
-        .legalize = loom_amdgpu_retain_native_vector_op,
     },
     {
         .root_kind = LOOM_OP_VECTOR_BITFIELD_INSERT,

@@ -45,6 +45,7 @@ from loom.target.contracts import (
     EmitDescriptorOp,
     Guard,
     GuardDiagnostic,
+    RecipeRule,
     Scalar,
     SourceMemoryByteOffsetMaterializer,
     SourceMemoryConstraint,
@@ -70,7 +71,13 @@ from loom.target.contracts.templates import (
 )
 from loom.target.emit.wasm.float_extension import float_extension_rules
 from loom.target.emit.wasm.float_narrowing import float_narrowing_rules
-from loom.target.emit.wasm.predicate import predicate_rules
+from loom.target.emit.wasm.predicate import (
+    FLOAT_PREDICATE_RECIPES,
+    FLOAT_PREDICATES,
+    NATIVE_FLOAT_PREDICATE_OPERATIONS,
+    NNAN_FLOAT_PREDICATES,
+    predicate_rules,
+)
 from loom.target.emit.wasm.vector_integer_arithmetic import (
     integer_arithmetic_rules,
 )
@@ -121,8 +128,34 @@ _V128_LANE_TYPES = (
     (_I64, _V2I64, "i64x2", ""),
     (_F64, _V2F64, "f64x2", ""),
 )
+_NATIVE_FLOAT_LANE_TYPES = (
+    (Vector("f32", minimum_lanes=1, maximum_lanes=4), "f32x4"),
+    (Vector("f64", minimum_lanes=1, maximum_lanes=2), "f64x2"),
+)
 
-# Transient integer values smaller than one physical SIMD register retain their
+# Bounded source-vector shapes handled by Wasm's floating-extrema legalizer.
+# Recipe rows make this target-owned capability visible to packet planning
+# before the source operation has been rewritten.
+_NARROW_FLOAT_VECTOR_CARRIER_TYPES = (
+    Vector(("f8E4M3", "f8E5M2"), minimum_lanes=1, maximum_lanes=16),
+    Vector(("f16", "bf16"), minimum_lanes=1, maximum_lanes=8),
+)
+_FLOAT_VECTOR_CARRIER_TYPES = (
+    *_NARROW_FLOAT_VECTOR_CARRIER_TYPES,
+    Vector("f32", minimum_lanes=1, maximum_lanes=4),
+    Vector("f64", minimum_lanes=1, maximum_lanes=2),
+)
+
+# Wasm has no native scalar number-extremum or clamp instructions. Explicit
+# contract rejection selects their exact shared reference legalization while
+# leaving room for future native descriptor cases to take precedence.
+_SCALAR_FLOAT_REFERENCE_FALLBACK_OPS = (
+    scalar_arithmetic.scalar_minnumf,
+    scalar_arithmetic.scalar_maxnumf,
+    scalar_arithmetic.scalar_clampf,
+)
+
+# Transient numeric values smaller than one physical SIMD register retain their
 # source lane count while occupying the low lanes of a v128 carrier. Callable
 # arguments and results remain restricted to the exact shapes above.
 _PARTIAL_I8 = Vector("i8", minimum_lanes=1, maximum_lanes=15)
@@ -151,9 +184,14 @@ _PARTIAL_NARROW_FLOAT_LANE_TYPES = (
         8,
     ),
 )
-_PARTIAL_BIT_PRESERVING_LANE_TYPES = (
+_PARTIAL_WIDE_FLOAT_LANE_TYPES = (
+    (_F32, Vector("f32", minimum_lanes=1, maximum_lanes=3), "f32x4", "", 4),
+    (_F64, Vector("f64", minimum_lanes=1, maximum_lanes=1), "f64x2", "", 2),
+)
+_PARTIAL_NUMERIC_LANE_TYPES = (
     *_PARTIAL_INTEGER_LANE_TYPES,
     *_PARTIAL_NARROW_FLOAT_LANE_TYPES,
+    *_PARTIAL_WIDE_FLOAT_LANE_TYPES,
 )
 
 _I64_ATTR_DIAGNOSTIC = GuardDiagnostic(
@@ -441,9 +479,38 @@ def _unary_rule(
                 descriptor=descriptor,
                 operands={"input": ValueRef.operand("input")},
                 results={"dst": ValueRef.result("result")},
+                form=DescriptorEmitForm.OP,
             ),
         ),
     )
+
+
+def _vector_float_extrema_recipe_rules() -> tuple[RecipeRule, ...]:
+    rules: list[RecipeRule] = []
+    rules.extend(
+        RecipeRule(
+            source_op=source_op,
+            guards=_typed_guards(("lhs", "rhs", "result"), value_type),
+        )
+        for source_op in (vector.vector_minimumf, vector.vector_maximumf)
+        for value_type in _NARROW_FLOAT_VECTOR_CARRIER_TYPES
+    )
+    rules.extend(
+        RecipeRule(
+            source_op=source_op,
+            guards=_typed_guards(("lhs", "rhs", "result"), value_type),
+        )
+        for source_op in (vector.vector_minnumf, vector.vector_maxnumf)
+        for value_type in _FLOAT_VECTOR_CARRIER_TYPES
+    )
+    rules.extend(
+        RecipeRule(
+            source_op=vector.vector_clampf,
+            guards=_typed_guards(("value", "lower", "upper", "result"), value_type),
+        )
+        for value_type in _FLOAT_VECTOR_CARRIER_TYPES
+    )
+    return tuple(rules)
 
 
 def _integer_sign_rules(
@@ -992,6 +1059,94 @@ def _scalar_compare_rule(
                 results={"dst": ValueRef.result("result")},
             ),
         ),
+    )
+
+
+def _scalar_float_compare_rule(
+    predicate: str,
+    operand_type: TypePattern,
+    type_name: str,
+    *,
+    emitted_predicate: str | None = None,
+    guards: tuple[Guard, ...] = (),
+    priority: int = 0,
+    suffix: str = "",
+) -> DescriptorRule:
+    recipe = FLOAT_PREDICATE_RECIPES[emitted_predicate or predicate]
+    operands = {
+        "lhs": ValueRef.operand("lhs"),
+        "rhs": ValueRef.operand("rhs"),
+    }
+    emits = []
+    term_values = []
+    direct = len(recipe.terms) == 1 and recipe.combine is None and not recipe.negate
+    for term_index, term in enumerate(recipe.terms):
+        term_result = (
+            ValueRef.result("result")
+            if direct
+            else ValueRef.temporary(f"predicate_term_{term_index}")
+        )
+        emits.append(
+            EmitDescriptorOp(
+                descriptor=_descriptor(
+                    f"wasm.{type_name}."
+                    f"{NATIVE_FLOAT_PREDICATE_OPERATIONS[term.native_predicate]}"
+                ),
+                operands={
+                    "lhs": operands[term.lhs],
+                    "rhs": operands[term.rhs],
+                },
+                results={"dst": term_result},
+                result_types={"dst": _I32} if not direct else None,
+                form=DescriptorEmitForm.OP,
+            )
+        )
+        term_values.append(term_result)
+
+    combined = term_values[0]
+    if recipe.combine is not None:
+        combined = (
+            ValueRef.temporary("predicate_combined")
+            if recipe.negate
+            else ValueRef.result("result")
+        )
+        emits.append(
+            EmitDescriptorOp(
+                descriptor=_descriptor(f"wasm.i32.{recipe.combine}"),
+                operands={"lhs": term_values[0], "rhs": term_values[1]},
+                results={"dst": combined},
+                result_types={"dst": _I32} if recipe.negate else None,
+                form=DescriptorEmitForm.OP,
+            )
+        )
+
+    if recipe.negate:
+        emits.append(
+            EmitDescriptorOp(
+                descriptor=_descriptor("wasm.i32.eqz"),
+                operands={"input": combined},
+                results={"dst": ValueRef.result("result")},
+                form=DescriptorEmitForm.OP,
+            )
+        )
+
+    mechanism = "native" if len(emits) == 1 else "composed"
+    report_key = f"wasm.scalar_float_compare.{mechanism}"
+    if suffix:
+        report_key += f".{suffix}"
+    return DescriptorRule(
+        source_op=scalar_comparison.scalar_cmpf,
+        descriptor=emits[-1].descriptor,
+        guards=(
+            Guard.enum_attr_equals("predicate", predicate),
+            _value_type("lhs", operand_type),
+            _value_type("rhs", operand_type),
+            _value_type("result", _I1),
+            *guards,
+        ),
+        emit=tuple(emits),
+        priority=priority,
+        report_key=report_key,
     )
 
 
@@ -1549,7 +1704,8 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             )
         ),
         *(
-            _binary_rule(source_op, _F32, f"wasm.f32.{operation}")
+            _binary_rule(source_op, value_type, f"wasm.{type_name}.{operation}")
+            for value_type, type_name in ((_F32, "f32"), (_F64, "f64"))
             for source_op, operation in (
                 (scalar_arithmetic.scalar_addf, "add"),
                 (scalar_arithmetic.scalar_subf, "sub"),
@@ -1561,7 +1717,8 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             )
         ),
         *(
-            _unary_rule(source_op, _F32, f"wasm.f32.{operation}")
+            _unary_rule(source_op, value_type, f"wasm.{type_name}.{operation}")
+            for value_type, type_name in ((_F32, "f32"), (_F64, "f64"))
             for source_op, operation in (
                 (scalar_arithmetic.scalar_absf, "abs"),
                 (scalar_arithmetic.scalar_negf, "neg"),
@@ -1573,37 +1730,22 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             )
         ),
         *(
-            _scalar_compare_rule(
-                scalar_comparison.scalar_cmpf,
-                predicate,
-                _F32,
-                f"wasm.f32.{operation}",
-            )
-            for predicate, operation in (
-                ("oeq", "eq"),
-                ("ogt", "gt"),
-                ("oge", "ge"),
-                ("olt", "lt"),
-                ("ole", "le"),
-                ("une", "ne"),
-            )
+            _scalar_float_compare_rule(predicate, value_type, type_name)
+            for value_type, type_name in ((_F32, "f32"), (_F64, "f64"))
+            for predicate in FLOAT_PREDICATES
         ),
         *(
-            _scalar_compare_rule(
-                scalar_comparison.scalar_cmpf,
+            _scalar_float_compare_rule(
                 predicate,
-                _F32,
-                f"wasm.f32.{operation}",
+                value_type,
+                type_name,
+                emitted_predicate=native_predicate,
                 guards=(Guard.instance_flags_has_all("fastmath", "nnan"),),
+                priority=1,
+                suffix="nnan",
             )
-            for predicate, operation in (
-                ("one", "ne"),
-                ("ueq", "eq"),
-                ("ugt", "gt"),
-                ("uge", "ge"),
-                ("ult", "lt"),
-                ("ule", "le"),
-            )
+            for value_type, type_name in ((_F32, "f32"), (_F64, "f64"))
+            for predicate, native_predicate in NNAN_FLOAT_PREDICATES.items()
         ),
         *(
             _scalar_compare_rule(
@@ -1734,19 +1876,9 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         _conversion_alias_rule(scalar_conversion.scalar_bitcast, _I16, _F16),
         _conversion_alias_rule(scalar_conversion.scalar_bitcast, _BF16, _I16),
         _conversion_alias_rule(scalar_conversion.scalar_bitcast, _I16, _BF16),
-        *(
-            _conversion_alias_rule(vector.vector_bitcast, source_type, result_type)
-            for source_type in _NUMERIC_V128_TYPES
-            for result_type in _NUMERIC_V128_TYPES
-        ),
-        *(
-            _conversion_alias_rule(vector.vector_bitcast, source_type, result_type)
-            for _, source_type, _, _, _ in _PARTIAL_BIT_PRESERVING_LANE_TYPES
-            for _, result_type, _, _, _ in _PARTIAL_BIT_PRESERVING_LANE_TYPES
-        ),
-        # Wasm has native aliases for the bitcast carrier shapes above. Every
-        # other cast, and every unmatched bitcast shape, deliberately enters
-        # the shared lane-wise reference legalization family.
+        # The structural planner owns every vector.bitcast whose source and
+        # result use equal carrier payloads. Every other vector cast enters the
+        # shared lane-wise reference legalization family.
         *(UnsupportedRule(source_op=source_op) for source_op in vector.VECTOR_CAST_OPS),
         *(
             rule
@@ -1878,7 +2010,6 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 (_F64, "f64"),
                 (_INDEX, "i32"),
                 (_OFFSET, "i32"),
-                *((value_type, "v128") for value_type in _NUMERIC_V128_TYPES),
                 (Buffer(), "i32"),
             )
         ),
@@ -1888,18 +2019,8 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         ),
         *(
             _splat_rule(scalar_type, vector_type, f"wasm.{shape_name}.splat")
-            for (
-                scalar_type,
-                vector_type,
-                shape_name,
-                _,
-                _,
-            ) in _PARTIAL_INTEGER_LANE_TYPES
-        ),
-        *(
-            _splat_rule(scalar_type, vector_type, f"wasm.{shape_name}.splat")
             for scalar_type, vector_type, shape_name, _, _ in (
-                _PARTIAL_NARROW_FLOAT_LANE_TYPES
+                _PARTIAL_NUMERIC_LANE_TYPES
             )
         ),
         *varying_shift_rules(_descriptor, _value_type),
@@ -1927,7 +2048,8 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             for _, vector_type, _, _, _ in _PARTIAL_INTEGER_LANE_TYPES
         ),
         *(
-            _binary_rule(source_op, _V4F32, f"wasm.f32x4.{operation}")
+            _binary_rule(source_op, value_type, f"wasm.{shape_name}.{operation}")
+            for value_type, shape_name in _NATIVE_FLOAT_LANE_TYPES
             for source_op, operation in (
                 (vector.vector_addf, "add"),
                 (vector.vector_subf, "sub"),
@@ -1938,7 +2060,8 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             )
         ),
         *(
-            _unary_rule(source_op, _V4F32, f"wasm.f32x4.{operation}")
+            _unary_rule(source_op, value_type, f"wasm.{shape_name}.{operation}")
+            for value_type, shape_name in _NATIVE_FLOAT_LANE_TYPES
             for source_op, operation in (
                 (vector.vector_absf, "abs"),
                 (vector.vector_negf, "neg"),
@@ -1949,6 +2072,7 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 (vector.vector_sqrtf, "sqrt"),
             )
         ),
+        *_vector_float_extrema_recipe_rules(),
         *float_extension_rules(_descriptor, _value_type),
         *integer_arithmetic_rules(_descriptor, _value_type),
         *integer_extension_rules(_descriptor, _value_type),
@@ -2067,20 +2191,8 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             _extract_rule(
                 vector_type, scalar_type, f"wasm.{shape_name}.extract_lane{suffix}"
             )
-            for (
-                scalar_type,
-                vector_type,
-                shape_name,
-                suffix,
-                _,
-            ) in _PARTIAL_INTEGER_LANE_TYPES
-        ),
-        *(
-            _extract_rule(
-                vector_type, scalar_type, f"wasm.{shape_name}.extract_lane{suffix}"
-            )
             for scalar_type, vector_type, shape_name, suffix, _ in (
-                _PARTIAL_NARROW_FLOAT_LANE_TYPES
+                _PARTIAL_NUMERIC_LANE_TYPES
             )
         ),
         *(
@@ -2089,18 +2201,8 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         ),
         *(
             _insert_rule(scalar_type, vector_type, f"wasm.{shape_name}.replace_lane")
-            for (
-                scalar_type,
-                vector_type,
-                shape_name,
-                _,
-                _,
-            ) in _PARTIAL_INTEGER_LANE_TYPES
-        ),
-        *(
-            _insert_rule(scalar_type, vector_type, f"wasm.{shape_name}.replace_lane")
             for scalar_type, vector_type, shape_name, _, _ in (
-                _PARTIAL_NARROW_FLOAT_LANE_TYPES
+                _PARTIAL_NUMERIC_LANE_TYPES
             )
         ),
         *(
@@ -2120,18 +2222,7 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 shape_name,
                 _,
                 physical_lane_count,
-            ) in _PARTIAL_INTEGER_LANE_TYPES
-        ),
-        *(
-            _dynamic_insert_rule(
-                scalar_type,
-                vector_type,
-                f"wasm.{shape_name}.splat",
-                physical_lane_count=physical_lane_count,
-            )
-            for scalar_type, vector_type, shape_name, _, physical_lane_count in (
-                _PARTIAL_NARROW_FLOAT_LANE_TYPES
-            )
+            ) in _PARTIAL_NUMERIC_LANE_TYPES
         ),
         *(_shuffle_rule(value_type) for value_type in _NUMERIC_V128_TYPES),
         *(
@@ -2239,6 +2330,10 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 ),
             ),
             lane_count=4,
+        ),
+        *(
+            UnsupportedRule(source_op=source_op)
+            for source_op in _SCALAR_FLOAT_REFERENCE_FALLBACK_OPS
         ),
     ),
 )

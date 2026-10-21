@@ -253,6 +253,8 @@ loom_cc_library(
         "fact_extensions.h",
         "fact_identity.h",
         "fact_layout.h",
+        "fact_range.h",
+        "fact_select_dependencies.h",
         "fact_table.h",
     ],
     deps = [
@@ -271,7 +273,9 @@ loom_cc_library(
     hdrs = ["fact_ordinal_map.h"],
     deps = [
         ":fact_table_api",
+        "//loom/src/loom/ir",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal",
         "//runtime/src/iree/base/internal:arena",
     ],
 )
@@ -285,8 +289,10 @@ loom_cc_library(
         "fact_induction.c",
         "fact_layout.c",
         "fact_loop.c",
+        "fact_range.c",
         "fact_recurrence.c",
         "fact_relation.c",
+        "fact_select_dependencies.c",
         "fact_table.c",
         "fact_table_compute.c",
         "fact_vector_partition.c",
@@ -299,8 +305,10 @@ loom_cc_library(
         "fact_induction.h",
         "fact_layout.h",
         "fact_loop.h",
+        "fact_range.h",
         "fact_recurrence.h",
         "fact_relation.h",
+        "fact_select_dependencies.h",
         "fact_table.h",
         "fact_vector_partition.h",
         "reference_transfer.h",
@@ -333,6 +341,17 @@ loom_cc_library(
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
         "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "fact_range_test",
+    srcs = ["fact_range_test.cc"],
+    deps = [
+        ":fact_table",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
@@ -402,6 +421,20 @@ loom_cc_test(
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/index",
         "//loom/src/loom/ops/scalar",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "fact_select_dependencies_test",
+    srcs = ["fact_select_dependencies_test.cc"],
+    deps = [
+        ":fact_table",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/index",
+        "//loom/src/loom/ops/scf",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",

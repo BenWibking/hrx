@@ -191,6 +191,28 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_cc_library(
   NAME
+    exponent
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "exponent.h"
+  SRCS
+    "exponent.cc"
+  DEPS
+    iree::third_party::cxx_parser
+    loom::import::cxx::source::error
+    loom::import::cxx::value::storage
+    loom::ops::scalar
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
     function_contracts
   CXX_STANDARD
     23
@@ -925,6 +947,7 @@ loom_cc_test(
     iree::testing::gtest_main
     iree::third_party::cxx_parser
     loom::import::cxx::source
+    loom::import::cxx::source::error
   LABELS
     "iree-build-requirement=loom.import.cxx"
 )

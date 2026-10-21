@@ -591,7 +591,7 @@ iree_status_t loom_serve_executables_query_status(
       cursor = &checkpoint->next;
       continue;
     }
-    const loom_serve_weights_t* weights =
+    loom_serve_weights_t* weights =
         checkpoint->bank
             ? loom_serve_parameter_bank_weights(checkpoint->bank, 0)
             : NULL;
@@ -657,7 +657,7 @@ loom_serve_residency_snapshot_t loom_serve_executables_parameters(
   for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(lists); ++i) {
     for (const loom_serve_checkpoint_t* entry = lists[i]; entry;
          entry = entry->next) {
-      const loom_serve_weights_t* weights =
+      loom_serve_weights_t* weights =
           entry->bank ? loom_serve_parameter_bank_weights(entry->bank, 0)
                       : NULL;
       if (!weights) {
@@ -1220,7 +1220,7 @@ static iree_status_t loom_serve_choice_begin(
       choice->code->users = 1;
       job->pending = true;
       status = loom_serve_stage_set_compile_catalog_async(
-          choice->generation->jit, choice->preparation,
+          choice->generation->jit, choice->preparation, NULL,
           loom_serve_choice_compiled, job, executables->host_allocator);
     }
   }
@@ -1347,7 +1347,7 @@ static void loom_serve_generation_indexed(loomc_task_t* task) {
   iree_status_t status = job->status;
   if (iree_status_is_ok(status)) {
     status = loom_serve_stage_set_compile_catalog_async(
-        job->generation->jit, job->executables->options.preparation,
+        job->generation->jit, job->executables->options.preparation, NULL,
         loom_serve_generation_compiled, job, job->generation->host_allocator);
   }
   if (!iree_status_is_ok(status)) {

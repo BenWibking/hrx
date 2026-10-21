@@ -94,6 +94,7 @@ loom_check_test_suite(
     "enum_semantics.cxx-test"
     "enums.cxx-test"
     "enums_invalid.cxx-test"
+    "exponent.cxx-test"
     "fastmath.cxx-test"
     "fastmath_invalid.cxx-test"
     "float16.cxx-test"
@@ -103,6 +104,8 @@ loom_check_test_suite(
     "function_declarations.cxx-test"
     "function_declarations_invalid.cxx-test"
     "functions.cxx-test"
+    "immutable_objects.cxx-test"
+    "immutable_objects_invalid.cxx-test"
     "index_views.cxx-test"
     "initializer_dependencies.cxx-test"
     "integer_intrinsics.cxx-test"
@@ -145,6 +148,7 @@ loom_check_test_suite(
     "pointers.cxx-test"
     "predicate_contracts.cxx-test"
     "predicate_contracts_invalid.cxx-test"
+    "reciprocal.cxx-test"
     "record_arrays.cxx-test"
     "record_initialization.cxx-test"
     "record_memory.cxx-test"
@@ -170,6 +174,8 @@ loom_check_test_suite(
     "storage_updates.cxx-test"
     "subgroup_reductions.cxx-test"
     "subgroup_reductions_invalid.cxx-test"
+    "subgroup_shuffles.cxx-test"
+    "subgroup_shuffles_invalid.cxx-test"
     "subgroups.cxx-test"
     "subgroups_invalid.cxx-test"
     "symbols.cxx-test"
@@ -204,6 +210,9 @@ loom_check_test_suite(
     "vector_memory.cxx-test"
     "vector_memory_cleanup.cxx-test"
     "vector_memory_invalid.cxx-test"
+    "vector_slices.cxx-test"
+    "vector_slices_family.cxx-test"
+    "vector_slices_invalid.cxx-test"
     "vector_tensors.cxx-test"
     "vector_tensors_invalid.cxx-test"
     "vectors.cxx-test"
@@ -346,12 +355,96 @@ loom_test_module(
 endif()
 
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+loom_test_module(
+  NAME
+    exponent_values_test_module
+  SRCS
+    "exponent.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    exponent_values_test_execute_vm_reference_test
+  MODULE
+    "::exponent_values_test_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 if(LOOM_TARGET_ARCH_VM)
 loom_execution_test(
   NAME
     integer_intrinsics_test_execute_vm_reference_test
   MODULE
     "::integer_intrinsics_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+loom_test_module(
+  NAME
+    immutable_objects_test_module
+  SRCS
+    "immutable_objects.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    immutable_objects_test_execute_vm_reference_test
+  MODULE
+    "::immutable_objects_test_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    immutable_object_link_module
+  SRCS
+    "immutable_object_link_left.cxx"
+    "immutable_object_link_right.cxx"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/immutable_object_link_tables.h"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    immutable_object_link_test_execute_vm_reference_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::immutable_object_link_module"
+  RUNNER_ARGS
+    "--case=immutable_object_link_identity"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
     "loom-execution-profile=vm_reference"
@@ -1385,6 +1478,15 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
+    subgroup_shuffles_module
+  SRCS
+    "subgroup_shuffles.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
     symbol_exports_module
   SRCS
     "symbol_exports.cxx"
@@ -1415,6 +1517,15 @@ loom_test_module(
     vector_math_module
   SRCS
     "vector_math.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    vector_slices_module
+  SRCS
+    "vector_slices.cxx"
 )
 endif()
 

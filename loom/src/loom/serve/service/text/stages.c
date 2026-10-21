@@ -113,7 +113,6 @@ static iree_status_t loom_serve_text_stages_initialize(
   for (iree_host_size_t i = 0; i < stage_count && iree_status_is_ok(status);
        ++i) {
     loom_serve_text_stage_t* stage = &stages[i];
-    stage->program = *loom_serve_jit_stage_program(stage->compiled);
     const uint32_t count = stage->program.requirements.fixed_buffer_count;
     if (count) {
       status = iree_allocator_malloc_array(host_allocator, count,
@@ -199,6 +198,7 @@ iree_status_t loom_serve_text_stages_bind(
           loom_serve_device_dispatch_queue(device),
           loom_serve_device_storage_pool(device),
           loom_serve_device_memory_pool(device),
+          loom_serve_device_weight_geometry(device),
           loom_serve_device_workspace(device), domain == 0 ? shared_count : 0,
           count, roots, host_allocator, &parameters->plans[domain]);
     }

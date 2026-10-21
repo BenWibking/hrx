@@ -6,8 +6,33 @@
 
 #include "loom/codegen/low/function_model.h"
 
+#include "loom/codegen/low/diagnostics.h"
 #include "loom/codegen/low/function.h"
 #include "loom/codegen/low/storage_identity.h"
+#include "loom/util/cfg_dominance.h"
+
+static iree_status_t loom_low_function_model_build_loop_nest(
+    const loom_cfg_graph_t* graph, iree_arena_allocator_t* arena,
+    loom_cfg_loop_nest_t* out_loop_nest) {
+  *out_loop_nest = (loom_cfg_loop_nest_t){
+      .graph = graph,
+      .reducible = !graph->malformed,
+  };
+  if (graph->malformed || !graph->has_cycles) {
+    return iree_ok_status();
+  }
+
+  iree_arena_allocator_t dominance_arena;
+  iree_arena_initialize(arena->block_pool, &dominance_arena);
+  loom_cfg_dominance_t dominance = {0};
+  iree_status_t status =
+      loom_cfg_dominance_build(graph, &dominance_arena, &dominance);
+  if (iree_status_is_ok(status)) {
+    status = loom_cfg_loop_nest_build(graph, &dominance, arena, out_loop_nest);
+  }
+  iree_arena_deinitialize(&dominance_arena);
+  return status;
+}
 
 iree_status_t loom_low_function_context_initialize(
     loom_module_t* module, const loom_op_t* low_func_op,
@@ -33,6 +58,14 @@ iree_status_t loom_low_function_context_initialize(
         descriptor_registry, emitter, &out_context->target));
   }
   if (out_context->target.descriptor_set == NULL) {
+    out_context->error_count = 1;
+    return iree_ok_status();
+  }
+  if (iree_any_bit_set(flags,
+                       LOOM_LOW_FUNCTION_MODEL_FLAG_REQUIRE_SCHEDULE_MODEL) &&
+      out_context->target.schedule_model == NULL) {
+    IREE_RETURN_IF_ERROR(
+        loom_low_diagnostic_emit_missing_target(module, low_func_op, emitter));
     out_context->error_count = 1;
     return iree_ok_status();
   }
@@ -86,6 +119,10 @@ iree_status_t loom_low_function_model_build(
   if (iree_status_is_ok(status)) {
     status = loom_cfg_loop_forest_build(&out_model->cfg_graph, arena,
                                         &out_model->loop_forest);
+  }
+  if (iree_status_is_ok(status)) {
+    status = loom_low_function_model_build_loop_nest(
+        &out_model->cfg_graph, arena, &out_model->loop_nest);
   }
   if (iree_status_is_ok(status)) {
     status = loom_liveness_dataflow_analyze(

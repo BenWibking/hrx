@@ -206,7 +206,8 @@ iree_status_t loom_boundary_projection_plan_slot_schema(
       IREE_ASSERT(rule->transport.reconstruct != NULL);
     } else {
       IREE_ASSERT(role == LOOM_BOUNDARY_PROJECTION_SLOT_BLOCK_ARGUMENT ||
-                  role == LOOM_BOUNDARY_PROJECTION_SLOT_LOOP_STATE);
+                  role == LOOM_BOUNDARY_PROJECTION_SLOT_LOOP_STATE ||
+                  role == LOOM_BOUNDARY_PROJECTION_SLOT_BRANCH_RESULT);
       IREE_ASSERT(rule->transport.eliminate != NULL);
     }
     *out_schema = schema;
@@ -730,7 +731,9 @@ static iree_status_t loom_boundary_projection_collect_op(
   }
   loom_boundary_projection_function_t* callee_plan =
       &collect->plan->functions[callee_index];
-  if (!callee_plan->signature_changes) {
+  // Rejected signature schemas are planning evidence, not a boundary the
+  // caller may adopt independently of the unchanged callee.
+  if (!callee_plan->selected || !callee_plan->signature_changes) {
     return iree_ok_status();
   }
   if (operands.count != callee_plan->argument_count ||
@@ -881,6 +884,7 @@ static iree_status_t loom_boundary_projection_collect_function(
     }
   }
   loom_boundary_projection_index_loops(function);
+  loom_boundary_projection_index_branches(function);
   return iree_ok_status();
 }
 
@@ -1564,6 +1568,14 @@ iree_status_t loom_boundary_projection_plan_prepare(
           status = rule->prepare_function(rule, plan, function);
         }
       }
+    }
+    if (iree_status_is_ok(status) && function->selected &&
+        loom_func_like_body(function->function)) {
+      status = loom_boundary_projection_select_branches(plan, function);
+    }
+    if (iree_status_is_ok(status) && function->selected &&
+        loom_func_like_body(function->function)) {
+      status = loom_boundary_projection_select_loops(plan, function);
     }
     if (iree_status_is_ok(status) && function->selected &&
         loom_func_like_body(function->function)) {

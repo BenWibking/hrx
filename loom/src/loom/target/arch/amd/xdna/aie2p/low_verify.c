@@ -330,11 +330,6 @@ static iree_status_t loom_aie2p_low_verify_core_op(
           LOOM_AIE2P_CORE_STRUCTURE_UNSUPPORTED) {
     return iree_ok_status();
   }
-  // Low helpers are valid authored and intermediate IR. The common pipeline
-  // applies the target's required-inline policy before native frame admission.
-  if (loom_low_func_call_isa(packet->op)) {
-    return iree_ok_status();
-  }
   return loom_aie2p_low_verify_emit_unsupported_core_op(context, state,
                                                         packet->op);
 }
@@ -391,7 +386,7 @@ static iree_string_view_t loom_aie2p_low_function_contract_name(
       (uint32_t)loom_attr_as_enum(loom_target_like_selector(target));
   const loom_target_bundle_t* bundle =
       loom_target_bundle_table_lookup(descriptor->bundle_table, selector);
-  return bundle ? bundle->config->contract_set_key
+  return bundle ? bundle->config->contract_set.spelling
                 : IREE_SV("<unresolved-target>");
 }
 

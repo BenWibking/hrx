@@ -57,8 +57,7 @@ iree_status_t AcquireJitTestApplication(iree_host_size_t worker_count,
   IREE_RETURN_IF_ERROR(
       loom_serve_test_host_create(worker_count, host_allocator, &host));
   iree_hal_driver_t* driver = nullptr;
-  iree_status_t status =
-      loom_serve_test_driver_create(host, host_allocator, &driver);
+  iree_status_t status = loom_serve_test_driver_acquire(host, &driver);
   if (iree_status_is_ok(status)) {
     const loom_serve_device_options_t options = {
         .driver = driver,
@@ -101,15 +100,22 @@ iree_status_t loom_serve_test_compilation_t::Drain(
   self->retired_execution = nullptr;
   auto status = self->direct_dispatch
                     ? loom_serve_jit_compile_dispatch_async(
-                          self->jit, self->root, self->config, Complete, self)
+                          self->jit, loom_serve_jit_task_sink(self->jit),
+                          self->root, self->config, Complete, self)
                     : loom_serve_jit_compile_async(
-                          self->jit, self->root, self->config, Complete, self);
+                          self->jit, loom_serve_jit_task_sink(self->jit),
+                          self->root, self->config, Layout, Complete, self);
   if (!iree_status_is_ok(status)) {
     Complete(self, status, nullptr);
   }
   result->completed = true;
   result->did_work = true;
   return iree_ok_status();
+}
+
+void loom_serve_test_compilation_t::Layout(void* user_data,
+                                           const loom_cmd_program_t* program) {
+  static_cast<loom_serve_test_compilation_t*>(user_data)->layout = program;
 }
 
 void loom_serve_test_compilation_t::Complete(void* user_data,

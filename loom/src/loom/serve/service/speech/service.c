@@ -16,6 +16,7 @@
 #include "loom/serve/service/speech/http.h"
 #include "loom/serve/service/speech/stream.h"
 #include "loom/serve/telemetry/latency.h"
+#include "loom/serve/telemetry/tracing.h"
 
 typedef struct loom_serve_speech_job_t {
   // Monotonic request identity within this registration.
@@ -160,6 +161,8 @@ struct loom_serve_speech_service_t {
     loom_serve_execution_frontier_t frontier;
     // Toll-free semaphore handles for the proactor API.
     iree_async_semaphore_t* semaphores[2];
+    // Accepted numerical batch through readiness; zero for admission/release.
+    IREE_TRACE(iree_section_id_t section;)
   } device;
   // Periodic observation and its independently retired cancellation receipt.
   loom_serve_timer_t timer;
@@ -374,6 +377,12 @@ static iree_status_t loom_serve_speech_wait(
   IREE_RETURN_IF_ERROR(
       iree_async_proactor_submit_one(service->proactor, &wait->base));
   service->phase = phase;
+  IREE_TRACE({
+    if (phase == SPEECH_PHASE_GENERATING) {
+      service->device.section = loom_serve_trace_section_enter(
+          LOOM_SERVE_TRACE_SECTION_EXECUTE, service->options.name);
+    }
+  });
   return iree_ok_status();
 }
 
@@ -520,12 +529,19 @@ static void loom_serve_speech_prepared(loom_serve_speech_service_t* service,
     if (!complete) {
       service->device.frontier = frontier;
       service->status = loom_serve_speech_wait(service, SPEECH_PHASE_RESERVING);
-    } else if (service->generator.complete_admit(service->generator.self,
-                                                 row->invocation)) {
-      row->phase = SPEECH_ROW_READY;
-      service->admission = NULL;
     } else {
-      admission = LOOM_SERVE_RESIDENCY_ADMISSION_CAPACITY;
+      const loom_serve_memory_admission_t state_admission =
+          service->generator.complete_admit(service->generator.self,
+                                            row->invocation);
+      if (state_admission == LOOM_SERVE_MEMORY_ADMISSION_DEFERRED) {
+        return;
+      }
+      if (state_admission == LOOM_SERVE_MEMORY_ADMISSION_AVAILABLE) {
+        row->phase = SPEECH_ROW_READY;
+        service->admission = NULL;
+      } else {
+        admission = LOOM_SERVE_RESIDENCY_ADMISSION_CAPACITY;
+      }
     }
   }
   if (iree_status_is_ok(service->status) &&
@@ -564,6 +580,8 @@ static void loom_serve_speech_collect(loom_serve_speech_service_t* service,
   *progress = true;
   const loom_serve_speech_phase_t phase = service->phase;
   service->phase = SPEECH_PHASE_IDLE;
+  IREE_TRACE_SECTION_LEAVE(service->device.section);
+  IREE_TRACE(service->device.section = 0);
   if (phase == SPEECH_PHASE_PREPARING &&
       iree_status_is_invalid_argument(cpu_status) &&
       iree_status_is_ok(service->status)) {
@@ -595,7 +613,8 @@ static void loom_serve_speech_collect(loom_serve_speech_service_t* service,
   } else if (phase == SPEECH_PHASE_RESERVING) {
     loom_serve_speech_row_t* row = service->admission;
     if (service->generator.complete_admit(service->generator.self,
-                                          row->invocation)) {
+                                          row->invocation) ==
+        LOOM_SERVE_MEMORY_ADMISSION_AVAILABLE) {
       row->phase = SPEECH_ROW_READY;
       service->admission = NULL;
     }

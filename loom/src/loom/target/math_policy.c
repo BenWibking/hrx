@@ -63,15 +63,14 @@ void loom_target_math_policy_registry_initialize_from_entries(
 
 const loom_target_math_policy_t* loom_target_math_policy_registry_lookup(
     const loom_target_math_policy_registry_t* registry,
-    iree_string_view_t contract_set_key) {
+    uint64_t contract_set_stable_id) {
   if (registry == NULL) {
     return NULL;
   }
-  contract_set_key = iree_string_view_trim(contract_set_key);
   for (iree_host_size_t i = 0; i < registry->entry_count; ++i) {
     const loom_target_math_policy_registry_entry_t* entry =
         &registry->entries[i];
-    if (iree_string_view_equal(entry->contract_set_key, contract_set_key)) {
+    if (entry->contract_set_stable_id == contract_set_stable_id) {
       return entry->policy;
     }
   }
@@ -86,7 +85,7 @@ loom_target_math_policy_registry_lookup_for_bundle(
     return NULL;
   }
   return loom_target_math_policy_registry_lookup(
-      registry, bundle->config->contract_set_key);
+      registry, bundle->config->contract_set.stable_id);
 }
 
 iree_string_view_t loom_target_math_policy_constraint_key(
@@ -387,7 +386,8 @@ bool loom_target_math_policy_prefers_fma(
   _(EXP2F, op_exp2f, "exp2f")                            \
   _(ASINHF, op_asinhf, "asinhf")                         \
   _(ACOSHF, op_acoshf, "acoshf")                         \
-  _(ATANHF, op_atanhf, "atanhf")
+  _(ATANHF, op_atanhf, "atanhf")                         \
+  _(DIVF, op_divf, "divf")
 
 #define LOOM_TARGET_MATH_LANE_DOMAIN_NAMES(_) \
   _(UNKNOWN, lane_unknown, "unknown")         \

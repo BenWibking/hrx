@@ -25,8 +25,8 @@ enum class Pm4MemoryComparison : uint32_t {
   kGreater = 6,
 };
 
-// Compiled PM4 compute program with no scratch or hidden runtime inputs. The
-// caller supplies only a kernarg pointer; hardware supplies group/local IDs.
+// Compiled PM4 compute program with no hidden runtime inputs. The caller
+// supplies a kernarg pointer and any required scratch; hardware supplies IDs.
 struct Pm4ComputeProgram {
   // GPU entry address, aligned to 256 bytes and below the 48-bit program limit.
   uint64_t entry_address;
@@ -67,6 +67,8 @@ class Pm4CommandWriter {
 
   // Joins preceding compute waves and acquires code and data from SYSTEM.
   void SystemBarrier();
+  // Joins preceding compute waves without performing cache operations.
+  void WaitCompute();
   // Acquires SYSTEM data while retaining instruction-cache contents. The
   // caller has already published immutable code and joined preceding waves
   // through an independent completion dependency. This emits no shader wait.
@@ -83,9 +85,15 @@ class Pm4CommandWriter {
   // Samples the GPU clock at bottom-of-pipe with a confirmed TC/L2 write.
   // This cacheless release requires an explicit visibility/ownership join.
   void ReleaseGpuClock64(uint64_t target_address);
-  // Writes a confirmed known DWORD at bottom-of-pipe without cache actions.
-  // The marker alone does not publish other addresses to the host.
+  // Writes a confirmed known value at bottom-of-pipe without cache actions or
+  // read-modify-write. The marker alone does not publish other addresses to
+  // the host. Atomicity and reach require the target mapping's STORE contract.
   void Release32(uint64_t target_address, uint32_t value);
+  // Writes one naturally aligned value at the CP stage with confirmation.
+  // Atomicity and reach require the target mapping's STORE contract; shader
+  // completion and other payload visibility are separate operations.
+  void Store32(uint64_t target_address, uint32_t value);
+  void Store64(uint64_t target_address, uint64_t value);
   // Joins bottom-of-pipe through a private known-value fence and PAL's compute
   // equality wait, then writes back GL2. The caller owns the fence through a
   // subsequent completion; this fixed recipe performs no invalidation.
@@ -94,6 +102,11 @@ class Pm4CommandWriter {
   // register requirements. The caller separately publishes code and data.
   void BindCompute(const Pm4ComputeProgram& program, uint64_t kernarg_address,
                    amdf_queue_format_features_t format_features);
+  // Programs admitted command-owned scratch after prior users have joined.
+  // Base is 256-byte aligned; each engine owns waves_per_engine slots of
+  // wave_byte_length bytes, a multiple of 256 covering every dispatched lane.
+  void BindScratch(uint64_t base, uint32_t waves_per_engine,
+                   uint32_t wave_byte_length);
   // Launches the bound program in thread units, starting at zero with complete
   // groups. The program supplies the compiled wave size; shader completion and
   // memory visibility require an explicit subsequent completion/cache
@@ -136,12 +149,6 @@ class Pm4CommandWriter {
   // source retains readable trailing backing for native reads beyond its DWORD.
   void CopyData32(uint64_t source_address, uint64_t target_address);
   void CopyData64(uint64_t source_address, uint64_t target_address);
-  // Atomic STORE via a single-pass ATOMIC_MEM swap, without a prior value.
-  // Selects SYSTEM scope on targets with an explicit packet scope field.
-  // Target operation support and pair reach are separate from queue encoding;
-  // a subsequent barrier and completion establish visibility and retirement.
-  void AtomicStore32(uint64_t target_address, uint32_t value);
-  void AtomicStore64(uint64_t target_address, uint64_t value);
   // MEC incrementing copy through the native TC_L2 selectors, with RAW_WAIT
   // and write confirmation. Those selectors route through MALL on GFX12.
   // The caller supplies a nonzero byte count within the native 26-bit field

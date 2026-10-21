@@ -14,6 +14,7 @@
 #include "loom/tooling/execution/hal/benchmark.h"
 #include "loom/tooling/execution/hal/testbench_actual.h"
 #include "loom/tooling/testbench/executor.h"
+#include "loom/tooling/testbench/requirements.h"
 #include "loom/tools/iree-benchmark-loom/configuration.h"
 #include "loom/tools/iree-benchmark-loom/output.h"
 #include "loom/util/json.h"
@@ -26,6 +27,8 @@ extern "C" {
 
 typedef struct iree_benchmark_loom_launch_evidence_t
     iree_benchmark_loom_launch_evidence_t;
+typedef struct iree_benchmark_loom_hal_compile_item_t
+    iree_benchmark_loom_hal_compile_item_t;
 
 // Invalid stable ordinal for optional benchmark model indexes.
 #define IREE_BENCHMARK_LOOM_INDEX_INVALID IREE_HOST_SIZE_MAX
@@ -84,13 +87,19 @@ typedef struct iree_benchmark_loom_selected_benchmark_t {
   char candidate_id_storage[32];
   // Borrowed benchmark plan selected from the module plan.
   const loom_testbench_benchmark_plan_t* benchmark_plan;
+  // Source-order ordinal of |benchmark_plan| in its module plan.
+  iree_host_size_t benchmark_index;
   // Borrowed case plan referenced by |benchmark_plan|.
   const loom_testbench_case_plan_t* case_plan;
   // Borrowed scenario plan referenced by |benchmark_plan|.
   const loom_testbench_scenario_plan_t* scenario_plan;
-  // True when the subject's requirements exclude execution. Populated once
-  // before invocation binding; dry-run planning leaves this false.
-  bool skipped;
+  // First selected benchmark-local sample ordinal.
+  iree_host_size_t begin_benchmark_sample;
+  // One-past-end selected benchmark-local sample ordinal.
+  iree_host_size_t end_benchmark_sample;
+  // Run-arena-owned reason shared by all selections of a skipped record.
+  // NULL for admitted records and unevaluated dry-run/compile-only plans.
+  const loom_testbench_requirement_result_t* skip_reason;
   // Effective benchmark policy after command-line overrides.
   iree_benchmark_loom_benchmark_policy_t policy;
 } iree_benchmark_loom_selected_benchmark_t;
@@ -162,6 +171,8 @@ typedef struct iree_benchmark_loom_data_cache_summary_t {
 typedef struct iree_benchmark_loom_benchmark_result_t {
   // Stable benchmark state string when it differs from the default.
   iree_string_view_t state;
+  // Borrowed requirement evidence when execution was skipped, otherwise NULL.
+  const loom_testbench_requirement_result_t* skip_reason;
   // True when failure fields below describe why the benchmark did not run.
   bool has_failure;
   // Kernel entry whose candidate failed, when the failure is entry-specific.
@@ -180,7 +191,11 @@ typedef struct iree_benchmark_loom_benchmark_result_t {
   iree_host_size_t diagnostic_remark_count;
   // JSON array entries for structured diagnostics associated with the failure.
   iree_string_view_t diagnostic_json;
-  // Public structured compile-report artifact for the benchmark candidate.
+  // Planned compilation whose per-entry evidence is shared by case results.
+  // NULL for products whose compilation is owned by the work item itself.
+  const iree_benchmark_loom_hal_compile_item_t* compile_item;
+  // Public structured compile report, serialized inline only when the product
+  // has no shared |compile_item|.
   const loomc_artifact_t* compile_report;
   // Sidecar compile report artifact path for debug/full bundles, if any.
   iree_string_view_t compile_report_artifact_path;
@@ -196,10 +211,6 @@ typedef struct iree_benchmark_loom_benchmark_result_t {
   bool executed;
   // True when no measured or warmup sample failed expectations.
   bool passed;
-  // True when |sample_ordinal| identifies the measured check.case sample.
-  bool has_sample_ordinal;
-  // Concrete case sample ordinal measured by dispatch_complete.
-  iree_host_size_t sample_ordinal;
   // True when |benchmark_sample_ordinal| identifies one selected benchmark
   // sample and can be passed back through --sample.
   bool has_benchmark_sample_ordinal;
@@ -240,6 +251,9 @@ typedef struct iree_benchmark_loom_hal_actual_provider_t {
   iree_benchmark_loom_hal_context_t* context;
   // Shared HAL actual provider owning compilation and dispatch state.
   loom_run_hal_testbench_actual_provider_t execution;
+  // First source-order launch of this root within the compile item. All calls
+  // of that root share its report; single-provider items use zero.
+  iree_host_size_t compile_entry_index;
   // Optional suffix appended to debug/full artifact leaves.
   iree_string_view_t artifact_path_suffix;
   // Structured diagnostics emitted while compiling this candidate.

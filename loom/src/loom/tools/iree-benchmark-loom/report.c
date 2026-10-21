@@ -24,6 +24,7 @@
 #include "loom/tools/iree-benchmark-loom/module_query.h"
 #include "loom/tools/iree-benchmark-loom/options.h"
 #include "loom/tools/iree-benchmark-loom/profile_report.h"
+#include "loom/tools/iree-benchmark-loom/work_plan.h"
 #include "loom/util/json.h"
 #include "loomc/artifact_manifest.h"
 #include "loomc/compile_report.h"
@@ -154,7 +155,7 @@ static iree_status_t iree_benchmark_loom_write_sample_attr_json(
 
 static iree_status_t iree_benchmark_loom_write_case_parameter_map_json(
     const loom_module_t* module, const loom_testbench_case_plan_t* case_plan,
-    iree_host_size_t sample_ordinal, bool write_ordinals,
+    loom_testbench_case_sample_t sample, bool write_ordinals,
     loom_output_stream_t* stream) {
   loom_json_object_writer_t object;
   IREE_RETURN_IF_ERROR(loom_json_object_begin(stream, &object));
@@ -163,8 +164,7 @@ static iree_status_t iree_benchmark_loom_write_case_parameter_map_json(
     const loom_testbench_parameter_plan_t* parameter =
         &case_plan->parameters[parameter_index];
     const iree_host_size_t parameter_sample_ordinal =
-        loom_testbench_case_sample_parameter_ordinal(case_plan, sample_ordinal,
-                                                     parameter_index);
+        loom_testbench_case_sample_next(&sample, parameter->sample_count);
     iree_string_view_t name = parameter->name;
     if (iree_string_view_is_empty(name)) {
       name = iree_benchmark_loom_value_name(module, parameter->value_id);
@@ -196,46 +196,52 @@ static iree_status_t iree_benchmark_loom_write_case_parameter_map_json(
 
 static iree_status_t iree_benchmark_loom_write_sample_json(
     const loom_module_t* module, const loom_testbench_case_plan_t* case_plan,
-    iree_host_size_t sample_ordinal, loom_output_stream_t* stream) {
+    loom_testbench_case_sample_t sample, loom_output_stream_t* stream) {
   loom_json_object_writer_t object;
   IREE_RETURN_IF_ERROR(loom_json_object_begin(stream, &object));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
-      &object, IREE_SV("sample_ordinal"), sample_ordinal));
+  iree_host_size_t sample_ordinal = 0;
+  if (loom_testbench_case_sample_flatten(case_plan, sample, &sample_ordinal)) {
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &object, IREE_SV("sample_ordinal"), sample_ordinal));
+  }
   IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
       &object, IREE_SV("parameter_count"), case_plan->parameter_count));
   IREE_RETURN_IF_ERROR(
       loom_json_object_begin_field(&object, IREE_SV("parameters")));
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_case_parameter_map_json(
-      module, case_plan, sample_ordinal, /*write_ordinals=*/false, stream));
+      module, case_plan, sample, /*write_ordinals=*/false, stream));
   IREE_RETURN_IF_ERROR(
       loom_json_object_begin_field(&object, IREE_SV("parameter_ordinals")));
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_case_parameter_map_json(
-      module, case_plan, sample_ordinal, /*write_ordinals=*/true, stream));
+      module, case_plan, sample, /*write_ordinals=*/true, stream));
   return loom_json_object_end(&object);
 }
 
 iree_status_t iree_benchmark_loom_write_sample_fields_json(
     const loom_module_t* module, const loom_testbench_case_plan_t* case_plan,
-    iree_host_size_t sample_ordinal, loom_json_object_writer_t* object) {
+    loom_testbench_case_sample_t sample, loom_json_object_writer_t* object) {
   if (case_plan->parameter_count == 0) {
     return iree_ok_status();
   }
-  char sample_id[32];
-  const int sample_id_length =
-      iree_snprintf(sample_id, sizeof(sample_id), "s%" PRIhsz, sample_ordinal);
-  if (sample_id_length <= 0 ||
-      (iree_host_size_t)sample_id_length >= sizeof(sample_id)) {
-    return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
-                            "failed to format sample identifier");
+  iree_host_size_t sample_ordinal = 0;
+  if (loom_testbench_case_sample_flatten(case_plan, sample, &sample_ordinal)) {
+    char sample_id[32];
+    const int sample_id_length = iree_snprintf(sample_id, sizeof(sample_id),
+                                               "s%" PRIhsz, sample_ordinal);
+    if (sample_id_length <= 0 ||
+        (iree_host_size_t)sample_id_length >= sizeof(sample_id)) {
+      return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                              "failed to format sample identifier");
+    }
+    IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+        object, IREE_SV("sample_id"),
+        iree_make_string_view(sample_id, (iree_host_size_t)sample_id_length)));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        object, IREE_SV("sample_index"), sample_ordinal));
   }
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      object, IREE_SV("sample_id"),
-      iree_make_string_view(sample_id, (iree_host_size_t)sample_id_length)));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
-      object, IREE_SV("sample_index"), sample_ordinal));
   IREE_RETURN_IF_ERROR(loom_json_object_begin_field(object, IREE_SV("sample")));
-  return iree_benchmark_loom_write_sample_json(module, case_plan,
-                                               sample_ordinal, object->stream);
+  return iree_benchmark_loom_write_sample_json(module, case_plan, sample,
+                                               object->stream);
 }
 
 iree_status_t iree_benchmark_loom_write_scenario_coordinate_fields_json(
@@ -298,7 +304,6 @@ iree_status_t iree_benchmark_loom_append_sample_row(
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
     iree_host_size_t benchmark_sample_ordinal,
-    iree_host_size_t case_sample_ordinal,
     const loom_testbench_case_sample_result_t* sample_result,
     iree_string_builder_t* sample_output) {
   loom_output_stream_t stream;
@@ -313,9 +318,15 @@ iree_status_t iree_benchmark_loom_append_sample_row(
       iree_benchmark_loom_write_candidate_identity_json(candidate, &object));
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_work_item_index_field_json(
       work_item_index, &object));
+  const loom_testbench_case_sample_t sample =
+      loom_testbench_benchmark_case_sample(benchmark_plan,
+                                           benchmark_sample_ordinal);
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_sample_fields_json(
-      module, case_plan, case_sample_ordinal, &object));
-  if (benchmark_sample_ordinal != case_sample_ordinal) {
+      module, case_plan, sample, &object));
+  iree_host_size_t case_sample_ordinal = 0;
+  if (!loom_testbench_case_sample_flatten(case_plan, sample,
+                                          &case_sample_ordinal) ||
+      benchmark_sample_ordinal != case_sample_ordinal) {
     IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
         &object, IREE_SV("benchmark_sample_ordinal"),
         benchmark_sample_ordinal));
@@ -326,6 +337,27 @@ iree_status_t iree_benchmark_loom_append_sample_row(
       loom_testbench_case_sample_result_write_json(sample_result, &stream));
   IREE_RETURN_IF_ERROR(loom_json_object_end(&object));
   return loom_output_stream_write_char(&stream, '\n');
+}
+
+iree_status_t iree_benchmark_loom_write_scenario_sample_fields_json(
+    const iree_benchmark_loom_selected_benchmark_t* selection,
+    iree_host_size_t work_item_index, iree_host_size_t benchmark_sample_ordinal,
+    const loom_testbench_scenario_trial_result_t* result,
+    loom_json_object_writer_t* object) {
+  IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_candidate_identity_json(
+      &selection->identity, object));
+  IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_work_item_index_field_json(
+      work_item_index, object));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+      object, IREE_SV("benchmark"), selection->benchmark_plan->name));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+      object, IREE_SV("scenario"), result->scenario_plan->name));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+      object, IREE_SV("benchmark_sample_index"), benchmark_sample_ordinal));
+  IREE_RETURN_IF_ERROR(
+      loom_json_object_begin_field(object, IREE_SV("trial_result")));
+  return loom_testbench_scenario_trial_result_write_json(result,
+                                                         object->stream);
 }
 
 iree_status_t iree_benchmark_loom_append_run_row(
@@ -341,6 +373,8 @@ iree_status_t iree_benchmark_loom_append_run_row(
       iree_benchmark_loom_write_run_id_field_json(run, &object));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
       &object, IREE_SV("tool"), IREE_SV("iree-benchmark-loom")));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      &object, IREE_SV("mode"), run->mode));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
       &object, IREE_SV("source"), run->source));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
@@ -441,12 +475,12 @@ static iree_status_t iree_benchmark_loom_write_kernel_launch_plan_json(
 
   iree_string_view_t kernel_entry = iree_string_view_empty();
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_module_symbol_name_from_ref(
-      module, case_plan->first_kernel_launch->callee_ref, &kernel_entry));
+      module, case_plan->kernel_launches[0]->callee_ref, &kernel_entry));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
       object, IREE_SV("kernel_entry"), kernel_entry));
   IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
       object, IREE_SV("kernel_argument_count"),
-      case_plan->first_kernel_launch->input_count));
+      case_plan->kernel_launches[0]->input_count));
   return iree_ok_status();
 }
 
@@ -1917,11 +1951,12 @@ static iree_status_t iree_benchmark_loom_write_data_cache_materialization_json(
 
 static iree_status_t iree_benchmark_loom_write_data_cache_summary_json(
     const iree_benchmark_loom_data_cache_summary_t* summary,
-    loom_output_stream_t* stream) {
+    bool correctness_checked, loom_output_stream_t* stream) {
   loom_json_object_writer_t object;
   IREE_RETURN_IF_ERROR(loom_json_object_begin(stream, &object));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      &object, IREE_SV("validity"), IREE_SV("check_ops")));
+      &object, IREE_SV("validity"),
+      correctness_checked ? IREE_SV("check_ops") : IREE_SV("unchecked")));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
       &object, IREE_SV("cache_policy"), IREE_SV("binding_ring")));
   IREE_RETURN_IF_ERROR(
@@ -1975,14 +2010,14 @@ static iree_status_t iree_benchmark_loom_write_data_cache_summary_json(
 
 static iree_status_t iree_benchmark_loom_write_data_cache_summary_field_json(
     const iree_benchmark_loom_data_cache_summary_t* summary,
-    loom_json_object_writer_t* object) {
+    bool correctness_checked, loom_json_object_writer_t* object) {
   if (!summary->populated) {
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(
       loom_json_object_begin_field(object, IREE_SV("data_cache")));
-  return iree_benchmark_loom_write_data_cache_summary_json(summary,
-                                                           object->stream);
+  return iree_benchmark_loom_write_data_cache_summary_json(
+      summary, correctness_checked, object->stream);
 }
 
 iree_status_t iree_benchmark_loom_write_benchmark_policy_json(
@@ -2008,6 +2043,14 @@ iree_status_t iree_benchmark_loom_write_benchmark_correctness_json(
       &object, IREE_SV("sample_count"), sample_count));
   IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
       &object, IREE_SV("failed_sample_count"), failed_sample_count));
+  iree_string_view_t state = IREE_SV("unchecked");
+  if (failed_sample_count != 0) {
+    state = IREE_SV("failed");
+  } else if (sample_count != 0) {
+    state = IREE_SV("passed");
+  }
+  IREE_RETURN_IF_ERROR(
+      loom_json_object_write_string_field(&object, IREE_SV("state"), state));
   return loom_json_object_end(&object);
 }
 
@@ -2106,6 +2149,15 @@ iree_status_t iree_benchmark_loom_write_benchmark_evidence_fields_json(
     iree_host_size_t correctness_sample_count,
     iree_host_size_t correctness_failed_sample_count,
     loom_json_object_writer_t* object) {
+  if (benchmark_result->skip_reason != NULL) {
+    IREE_RETURN_IF_ERROR(
+        loom_json_object_begin_field(object, IREE_SV("skip_reason")));
+    loom_json_object_writer_t reason;
+    IREE_RETURN_IF_ERROR(loom_json_object_begin(object->stream, &reason));
+    IREE_RETURN_IF_ERROR(loom_testbench_requirement_result_write_json_fields(
+        benchmark_result->skip_reason, &reason));
+    IREE_RETURN_IF_ERROR(loom_json_object_end(&reason));
+  }
   IREE_RETURN_IF_ERROR(loom_json_object_begin_field(object, IREE_SV("policy")));
   IREE_RETURN_IF_ERROR(
       iree_benchmark_loom_write_benchmark_policy_json(policy, object->stream));
@@ -2128,7 +2180,7 @@ iree_status_t iree_benchmark_loom_write_benchmark_evidence_fields_json(
         policy, benchmark_result, object->stream));
   }
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_data_cache_summary_field_json(
-      &benchmark_result->data_cache, object));
+      &benchmark_result->data_cache, correctness_sample_count != 0, object));
   if (benchmark_result->hal_benchmark.profile_replay.requested ||
       benchmark_result->hal_benchmark.profile_replay.executed ||
       benchmark_result->hal_benchmark.profile_replay.has_error) {
@@ -2137,8 +2189,14 @@ iree_status_t iree_benchmark_loom_write_benchmark_evidence_fields_json(
     IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_hal_profile_replay_json(
         policy, benchmark_result, object->stream));
   }
-  IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_compile_report_field_json(
-      benchmark_result->compile_report, object));
+  if (benchmark_result->compile_item != NULL) {
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        object, IREE_SV("compile_item_index"),
+        benchmark_result->compile_item->compile_item_index));
+  } else {
+    IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_compile_report_field_json(
+        benchmark_result->compile_report, object));
+  }
   if (benchmark_result->has_failure) {
     IREE_RETURN_IF_ERROR(
         loom_json_object_begin_field(object, IREE_SV("failure")));
@@ -2194,7 +2252,8 @@ iree_status_t iree_benchmark_loom_write_summary_counts_json(
 
   if (counts->artifact_bundle_enabled || counts->fixture_read_count != 0 ||
       counts->file_output_count != 0 || counts->profile_count != 0 ||
-      counts->compile_report_count != 0 ||
+      counts->compile_report_count != 0 || counts->compile_request_count != 0 ||
+      counts->compile_request_manifest_count != 0 ||
       counts->artifact_manifest_count != 0 ||
       counts->target_artifact_count != 0 || counts->target_listing_count != 0 ||
       counts->hal_executable_count != 0) {
@@ -2214,6 +2273,12 @@ iree_status_t iree_benchmark_loom_write_summary_counts_json(
     IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
         &artifacts, IREE_SV("compile_report_count"),
         counts->compile_report_count));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &artifacts, IREE_SV("compile_request_count"),
+        counts->compile_request_count));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &artifacts, IREE_SV("compile_request_manifest_count"),
+        counts->compile_request_manifest_count));
     IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
         &artifacts, IREE_SV("artifact_manifest_count"),
         counts->artifact_manifest_count));
@@ -2254,9 +2319,16 @@ iree_status_t iree_benchmark_loom_write_benchmark_result_json(
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
       &object, IREE_SV("state"),
       iree_benchmark_loom_benchmark_result_state(benchmark_result)));
-  if (benchmark_result->has_sample_ordinal) {
-    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
-        &object, IREE_SV("sample_ordinal"), benchmark_result->sample_ordinal));
+  if (case_plan != NULL && benchmark_result->has_benchmark_sample_ordinal) {
+    iree_host_size_t sample_ordinal = 0;
+    if (loom_testbench_case_sample_flatten(
+            case_plan,
+            loom_testbench_benchmark_case_sample(
+                benchmark_plan, benchmark_result->benchmark_sample_ordinal),
+            &sample_ordinal)) {
+      IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+          &object, IREE_SV("sample_ordinal"), sample_ordinal));
+    }
   }
   if (benchmark_result->has_benchmark_sample_ordinal) {
     IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
@@ -2289,18 +2361,56 @@ iree_status_t iree_benchmark_loom_write_benchmark_result_json(
   return loom_json_object_end(&object);
 }
 
-iree_status_t iree_benchmark_loom_append_compile_row(
-    const iree_benchmark_loom_run_identity_t* run,
-    const iree_benchmark_loom_candidate_identity_t* candidate,
-    const loom_testbench_benchmark_plan_t* benchmark_plan,
-    const loom_testbench_case_plan_t* case_plan,
+iree_status_t iree_benchmark_loom_write_compile_fields_json(
+    const iree_benchmark_loom_hal_compile_item_t* compile_item,
     const iree_benchmark_loom_hal_actual_provider_t* provider,
-    iree_string_builder_t* compile_output) {
+    loom_json_object_writer_t* object) {
   iree_string_view_t entry_symbol = iree_string_view_empty();
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_module_symbol_name_from_ref(
       provider->execution.native_module,
       provider->execution.invocation->callee_ref, &entry_symbol));
 
+  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+      object, IREE_SV("compile_item_index"), compile_item->compile_item_index));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+      object, IREE_SV("compile_entry_index"), provider->compile_entry_index));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+      object, IREE_SV("entry"), entry_symbol));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+      object, IREE_SV("state"),
+      provider->execution.compile_rejected ? IREE_SV("failed")
+                                           : IREE_SV("ok")));
+  if (provider->execution.compile_rejected) {
+    IREE_RETURN_IF_ERROR(
+        iree_benchmark_loom_write_compile_rejection_fields_json(provider,
+                                                                object));
+  }
+  IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_diagnostic_capture_fields_json(
+      &provider->diagnostics, object));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      object, IREE_SV("compile_report_path"),
+      provider->compile_report_artifact_path));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      object, IREE_SV("artifact_manifest_path"),
+      provider->artifact_manifest_path));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      object, IREE_SV("target_artifact_path"), provider->target_artifact_path));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      object, IREE_SV("target_listing_path"), provider->target_listing_path));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      object, IREE_SV("hal_executable_path"), provider->hal_executable_path));
+  return iree_benchmark_loom_write_compile_report_field_json(
+      provider->execution.artifacts.compile_report, object);
+}
+
+iree_status_t iree_benchmark_loom_append_compile_row(
+    const iree_benchmark_loom_run_identity_t* run,
+    const iree_benchmark_loom_candidate_identity_t* candidate,
+    const iree_benchmark_loom_hal_compile_item_t* compile_item,
+    const loom_testbench_benchmark_plan_t* benchmark_plan,
+    const loom_testbench_case_plan_t* case_plan,
+    const iree_benchmark_loom_hal_actual_provider_t* provider,
+    iree_string_builder_t* compile_output) {
   loom_output_stream_t stream;
   loom_output_stream_for_builder(compile_output, &stream);
   loom_json_object_writer_t object;
@@ -2315,34 +2425,8 @@ iree_status_t iree_benchmark_loom_append_compile_row(
       &object, IREE_SV("benchmark"), benchmark_plan->name));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
       &object, IREE_SV("case"), case_plan->name));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      &object, IREE_SV("entry"), entry_symbol));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      &object, IREE_SV("state"),
-      provider->execution.compile_rejected ? IREE_SV("failed")
-                                           : IREE_SV("ok")));
-  if (provider->execution.compile_rejected) {
-    IREE_RETURN_IF_ERROR(
-        iree_benchmark_loom_write_compile_rejection_fields_json(provider,
-                                                                &object));
-  }
-  IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_diagnostic_capture_fields_json(
-      &provider->diagnostics, &object));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
-      &object, IREE_SV("compile_report_path"),
-      provider->compile_report_artifact_path));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
-      &object, IREE_SV("artifact_manifest_path"),
-      provider->artifact_manifest_path));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
-      &object, IREE_SV("target_artifact_path"),
-      provider->target_artifact_path));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
-      &object, IREE_SV("target_listing_path"), provider->target_listing_path));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
-      &object, IREE_SV("hal_executable_path"), provider->hal_executable_path));
-  IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_compile_report_field_json(
-      provider->execution.artifacts.compile_report, &object));
+  IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_compile_fields_json(
+      compile_item, provider, &object));
   IREE_RETURN_IF_ERROR(loom_json_object_end(&object));
   IREE_RETURN_IF_ERROR(loom_output_stream_write_cstring(&stream, "\n"));
   return iree_ok_status();
@@ -2372,9 +2456,12 @@ iree_status_t iree_benchmark_loom_append_benchmark_result(
       iree_benchmark_loom_write_candidate_identity_json(candidate, &object));
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_work_item_index_field_json(
       work_item_index, &object));
-  if (case_plan != NULL && benchmark_result->has_sample_ordinal) {
+  if (case_plan != NULL && benchmark_result->has_benchmark_sample_ordinal) {
     IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_sample_fields_json(
-        module, case_plan, benchmark_result->sample_ordinal, &object));
+        module, case_plan,
+        loom_testbench_benchmark_case_sample(
+            benchmark_plan, benchmark_result->benchmark_sample_ordinal),
+        &object));
   }
   if (benchmark_result->has_benchmark_sample_ordinal) {
     IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
@@ -2417,10 +2504,14 @@ iree_status_t iree_benchmark_loom_append_benchmark_repetition_row(
       iree_benchmark_loom_write_run_id_field_json(run, &object));
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_candidate_identity_json(
       &selection->identity, &object));
-  if (selection->case_plan != NULL && benchmark_result->has_sample_ordinal) {
+  if (selection->case_plan != NULL &&
+      benchmark_result->has_benchmark_sample_ordinal) {
     IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_sample_fields_json(
         candidate->module, selection->case_plan,
-        benchmark_result->sample_ordinal, &object));
+        loom_testbench_benchmark_case_sample(
+            selection->benchmark_plan,
+            benchmark_result->benchmark_sample_ordinal),
+        &object));
   }
   if (benchmark_result->has_benchmark_sample_ordinal) {
     IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
@@ -2630,6 +2721,11 @@ iree_status_t iree_benchmark_loom_append_summary_row(
           bundle, IREE_BENCHMARK_LOOM_BUNDLE_FILE_PROFILE),
       .compile_report_count = iree_benchmark_loom_artifact_bundle_file_count(
           bundle, IREE_BENCHMARK_LOOM_BUNDLE_FILE_COMPILE_REPORT),
+      .compile_request_count = iree_benchmark_loom_artifact_bundle_file_count(
+          bundle, IREE_BENCHMARK_LOOM_BUNDLE_FILE_COMPILE_REQUEST),
+      .compile_request_manifest_count =
+          iree_benchmark_loom_artifact_bundle_file_count(
+              bundle, IREE_BENCHMARK_LOOM_BUNDLE_FILE_COMPILE_REQUEST_MANIFEST),
       .artifact_manifest_count = iree_benchmark_loom_artifact_bundle_file_count(
           bundle, IREE_BENCHMARK_LOOM_BUNDLE_FILE_ARTIFACT_MANIFEST),
       .target_artifact_count = iree_benchmark_loom_artifact_bundle_file_count(

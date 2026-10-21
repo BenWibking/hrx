@@ -77,6 +77,44 @@ TEST(LinuxGpuMemoryProfileTest, InstanceLifetimeExposesOwnedSystemMemory) {
   EXPECT_EQ(unavailable.ordinal, UINT32_MAX);
 }
 
+TEST(LinuxGpuMemoryProfileTest, UnifiedCachedSystemStorageCanBeDeviceLocal) {
+  amdf_gpu_umd_device_t device = {
+      .native_lifetime = AMDF_NATIVE_LIFETIME_PROCESS,
+      .page_size = 4096,
+      .cache_line_size = 64,
+  };
+  device.topology.virtual_address.begin = UINT64_C(0x10000);
+  device.topology.virtual_address.end = UINT64_C(1) << 48;
+  device.topology.integrated = true;
+  const auto profile =
+      QueryProfile(&device, AMDF_GPU_KFD_MEMORY_PROFILE_SYSTEM_CACHED);
+  EXPECT_EQ(profile.memory_class, AMDF_MEMORY_CLASS_SYSTEM);
+  EXPECT_NE(profile.supported_flags & AMDF_MEMORY_FLAG_DEVICE_LOCAL, 0u);
+  EXPECT_NE(profile.roles & AMDF_MEMORY_PROFILE_ROLE_HOST_MAP, 0u);
+  const auto host = profile.visibility.describe_host(
+      profile.visibility.data, 0,
+      profile.guaranteed_flags | AMDF_MEMORY_FLAG_DEVICE_LOCAL);
+  EXPECT_EQ(host.cacheability, AMDF_HOST_CACHEABILITY_WRITE_BACK);
+  EXPECT_EQ(host.flush.host_instruction,
+            AMDF_HOST_CACHE_INSTRUCTION_X86_CLFLUSH);
+  EXPECT_EQ(host.invalidate.host_instruction,
+            AMDF_HOST_CACHE_INSTRUCTION_X86_CLFLUSH);
+  // Control and arbitrary registered pages do not inherit the owned cached
+  // allocation's device-local contract.
+  for (uint32_t ordinal :
+       {uint32_t{AMDF_GPU_KFD_MEMORY_PROFILE_SYSTEM_CONTROL},
+        uint32_t{AMDF_GPU_KFD_MEMORY_PROFILE_SYSTEM_COUNT}}) {
+    EXPECT_EQ(QueryProfile(&device, ordinal).supported_flags &
+                  AMDF_MEMORY_FLAG_DEVICE_LOCAL,
+              0u);
+  }
+  device.topology.integrated = false;
+  EXPECT_EQ(QueryProfile(&device, AMDF_GPU_KFD_MEMORY_PROFILE_SYSTEM_CACHED)
+                    .supported_flags &
+                AMDF_MEMORY_FLAG_DEVICE_LOCAL,
+            0u);
+}
+
 TEST(LinuxGpuMemoryProfileTest,
      OwnedHostImportsDoNotAdvertiseForeignOwnership) {
   for (auto lifetime :
@@ -532,6 +570,35 @@ TEST(LinuxGpuMemoryProfileTest,
   EXPECT_EQ(pair.acquire.kind, AMDF_CACHE_TRANSITION_KIND_GLOBAL);
   EXPECT_EQ(pair.acquire.executor, AMDF_CACHE_TRANSITION_EXECUTOR_QUEUE);
 
+  // The SDMA payload path needs no cache command on this engine, but CPU
+  // publication still requires the same live HDP release operation.
+  const amdf_queue_family_info_t sdma_family = {
+      .command_type = AMDF_QUEUE_COMMAND_TYPE_GPU_SDMA,
+      .format_version = AMDF_GPU_SDMA_QUEUE_FORMAT_VERSION_1,
+      .roles = AMDF_QUEUE_ROLE_TRANSFER,
+  };
+  const amdf_memory_site_query_t sdma_query = {
+      .access = AMDF_MEMORY_ACCESS_READ,
+      .flags = flags,
+      .queue_family_info = &sdma_family,
+  };
+  amdf_memory_site_description_t sdma_site = {};
+  ASSERT_EQ(local.visibility.describe_site(&sdma_query, &sdma_site),
+            AMDF_STATUS_OK);
+  const auto unavailable_sdma_host = amdf_memory_describe_host_site(
+      &unavailable, AMDF_MEMORY_MAP_FLAG_WRITE, false, &sdma_site);
+  EXPECT_EQ(amdf_status_code(amdf_memory_pair_compose(&unavailable_sdma_host,
+                                                      &sdma_site, &pair)),
+            AMDF_STATUS_CODE_UNSUPPORTED);
+  const auto available_sdma_host = amdf_memory_describe_host_site(
+      &available, AMDF_MEMORY_MAP_FLAG_WRITE, false, &sdma_site);
+  ASSERT_EQ(amdf_memory_pair_compose(&available_sdma_host, &sdma_site, &pair),
+            AMDF_STATUS_OK);
+  EXPECT_EQ(pair.release.kind, AMDF_CACHE_TRANSITION_KIND_GLOBAL);
+  EXPECT_EQ(pair.release.executor, AMDF_CACHE_TRANSITION_EXECUTOR_HOST_API);
+  EXPECT_EQ(pair.release.host_operation, AMDF_HOST_CACHE_OPERATION_FLUSH);
+  EXPECT_EQ(pair.acquire.kind, AMDF_CACHE_TRANSITION_KIND_NONE);
+
   const auto system = QueryProfile(&device, 1);
   const auto system_host = system.visibility.describe_host(
       system.visibility.data, 0, system.guaranteed_flags);
@@ -595,8 +662,7 @@ TEST(LinuxGpuMemoryProfileTest, RegisteredMemoryUsesExactNativeSdmaPolicy) {
   ExpectSiteUnsupported(QueryProfile(&device, 3), kTransferFamily);
 }
 
-TEST(LinuxGpuMemoryProfileTest,
-     SdmaLocalSiteRequiresNonHostVisibleDeviceLocalBacking) {
+TEST(LinuxGpuMemoryProfileTest, SdmaLocalSitePreservesLocalBackingPolicy) {
   auto device = MakeDiscreteGfx942Device();
   device.topology.memory_features |=
       AMDF_GPU_DEVICE_FEATURE_HOST_VISIBLE_LOCAL_MEMORY;
@@ -615,14 +681,20 @@ TEST(LinuxGpuMemoryProfileTest,
     ASSERT_EQ(local.visibility.describe_site(&query, &description),
               AMDF_STATUS_OK);
 
-    // Host visibility excludes the SDMA no-cache policy even when no host
-    // view is live. AQL retains its global payload fence actions.
+    // CPU visibility does not change the SDMA payload protocol. Removing the
+    // local backing identity cannot inherit that same-GPU policy.
     for (amdf_memory_flags_t flags :
          {local.guaranteed_flags | AMDF_MEMORY_FLAG_HOST_VISIBLE,
           local.guaranteed_flags & ~AMDF_MEMORY_FLAG_DEVICE_LOCAL}) {
       query.flags = flags;
       if (family.command_type == AMDF_QUEUE_COMMAND_TYPE_GPU_SDMA) {
-        ExpectSiteUnsupported(local, query);
+        if (flags & AMDF_MEMORY_FLAG_DEVICE_LOCAL) {
+          ASSERT_EQ(local.visibility.describe_site(&query, &description),
+                    AMDF_STATUS_OK);
+          ExpectNoCacheTransitions(description);
+        } else {
+          ExpectSiteUnsupported(local, query);
+        }
       } else {
         ExpectGlobalQueueTransitions(local, query);
       }
@@ -1234,7 +1306,7 @@ TEST(LinuxGpuMemoryProfileTest,
   EXPECT_EQ(std::memcmp(&description, &original, sizeof(description)), 0);
 }
 
-TEST(LinuxGpuMemoryProfileTest, LegacySdmaExcludesHostAperture) {
+TEST(LinuxGpuMemoryProfileTest, LegacySdmaPreservesHostAperturePublication) {
   auto device = MakeLegacySdmaMemoryDevice();
   device.topology.memory_features |=
       AMDF_GPU_DEVICE_FEATURE_HOST_VISIBLE_LOCAL_MEMORY;
@@ -1249,13 +1321,14 @@ TEST(LinuxGpuMemoryProfileTest, LegacySdmaExcludesHostAperture) {
         .flags = flags,
         .queue_family_info = &kLegacySdmaFamily,
     };
-    amdf_memory_site_description_t description;
-    std::memset(&description, 0xA5, sizeof(description));
-    const auto original = description;
-    EXPECT_EQ(
-        amdf_status_code(local.visibility.describe_site(&query, &description)),
-        AMDF_STATUS_CODE_UNSUPPORTED);
-    EXPECT_EQ(std::memcmp(&description, &original, sizeof(description)), 0);
+    if (flags & AMDF_MEMORY_FLAG_DEVICE_LOCAL) {
+      amdf_memory_site_description_t description = {};
+      ASSERT_EQ(local.visibility.describe_site(&query, &description),
+                AMDF_STATUS_OK);
+      ExpectNoCacheTransitions(description);
+    } else {
+      ExpectSiteUnsupported(local, query);
+    }
   }
 }
 

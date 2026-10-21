@@ -11,8 +11,10 @@ import io
 import json
 import os
 import re
+import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +24,84 @@ from build_tools.devtools import bazel as bazel_dev
 
 
 class BazelTest(unittest.TestCase):
+    def test_source_owner_query_follows_filegroups_and_aliases(self):
+        queries = []
+
+        def run_query(command, **_kwargs):
+            query_path = Path(
+                next(arg for arg in command if arg.startswith("--query_file=")).split(
+                    "=", 1
+                )[1]
+            )
+            queries.append(query_path.read_text(encoding="utf-8"))
+            if len(queries) == 1:
+                output = (
+                    "cc_library rule //consumer:direct_owner\n"
+                    "filegroup rule //source:forwarded_sources\n"
+                    "alias rule //source:source_alias\n"
+                )
+            else:
+                output = (
+                    "cc_test rule //consumer:filegroup_owner\n"
+                    "cc_binary rule //consumer:alias_owner\n"
+                    "filegroup rule //source:forwarded_sources\n"
+                )
+            return subprocess.CompletedProcess(command, 0, stdout=output, stderr="")
+
+        with mock.patch.object(bazel_dev, "run_captured", side_effect=run_query):
+            owners = bazel_dev.query_compiling_targets_for_sources(
+                "bazel",
+                source_labels={"//source:exported_test.cc"},
+                target_patterns=("//runtime/...", "//loom/..."),
+                cwd=Path("/repo"),
+                env=None,
+            )
+
+        self.assertEqual(
+            owners,
+            [
+                "//consumer:alias_owner",
+                "//consumer:direct_owner",
+                "//consumer:filegroup_owner",
+            ],
+        )
+        self.assertEqual(len(queries), 2)
+        self.assertIn("let universe = //runtime/... + //loom/... in", queries[0])
+        self.assertIn("//source:exported_test[.]cc(?![A-Za-z0-9_./:+-])", queries[0])
+        self.assertIn("//source:forwarded_sources", queries[1])
+        self.assertIn("//source:source_alias", queries[1])
+
+    def test_source_owner_query_rejects_query_failure(self):
+        with (
+            mock.patch.object(
+                bazel_dev,
+                "run_captured",
+                return_value=subprocess.CompletedProcess(
+                    [], 7, stdout="", stderr="broken package\n"
+                ),
+            ),
+            self.assertRaisesRegex(
+                bazel_dev.BazelSourceOwnerQueryError, "broken package"
+            ),
+        ):
+            bazel_dev.query_compiling_targets_for_sources(
+                "bazel",
+                source_labels={"//source:subject.c"},
+                target_patterns=("//runtime/...",),
+                cwd=Path("/repo"),
+                env=None,
+            )
+
+    def test_source_owner_query_rejects_unsupported_labels(self):
+        with self.assertRaisesRegex(ValueError, "unsupported main-workspace"):
+            bazel_dev.query_compiling_targets_for_sources(
+                "bazel",
+                source_labels={"@other//source:subject.c"},
+                target_patterns=("//runtime/...",),
+                cwd=Path("/repo"),
+                env=None,
+            )
+
     def test_try_dependency_finds_generated_header_before_build(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -794,6 +874,137 @@ class BazelTest(unittest.TestCase):
                 env=None,
             )
             generate_launch.assert_not_called()
+
+    def test_bazel_fuzz_single_target_owns_a_fresh_child(self):
+        for exit_code in (0, 23):
+            with (
+                self.subTest(exit_code=exit_code),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                script = root / "launch.sh"
+                script.write_text("generated", encoding="utf-8")
+                output = root / "child.json"
+                launch = bazel_dev.BazelLaunch(
+                    target="//pkg:one_fuzz",
+                    script_path=script,
+                    run_cwd=root,
+                    argument_separator="separator",
+                )
+                process_launch = bazel_dev.BazelProcess(
+                    target=launch.target,
+                    argv=[
+                        sys.executable,
+                        "-c",
+                        "import json, os, sys; "
+                        "from pathlib import Path; "
+                        "Path(sys.argv[1]).write_text(json.dumps({"
+                        "'pid': os.getpid(), 'cwd': os.getcwd(), "
+                        "'marker': os.environ['FUZZ_MARKER'], 'args': sys.argv[3:]})); "
+                        "sys.exit(int(sys.argv[2]))",
+                        str(output),
+                        str(exit_code),
+                        "argument with spaces",
+                    ],
+                    cwd=root,
+                    env={**os.environ, "FUZZ_MARKER": "child environment"},
+                    script_path=script,
+                )
+                step = bazel_dev.BazelFuzzStep(
+                    "bazel", bazel_dev.BazelTargetCommand(target=launch.target)
+                )
+                with (
+                    mock.patch.object(
+                        bazel_dev.BazelFuzzStep,
+                        "generate_fuzzer_launch",
+                        return_value=(0, launch),
+                    ),
+                    mock.patch.object(
+                        bazel_dev,
+                        "prepare_bazel_process",
+                        return_value=(0, process_launch),
+                    ),
+                ):
+                    self.assertEqual(step.run(), exit_code)
+                child = json.loads(output.read_text(encoding="utf-8"))
+                self.assertNotEqual(child["pid"], os.getpid())
+                self.assertEqual(Path(child["cwd"]), root)
+                self.assertEqual(child["marker"], "child environment")
+                self.assertEqual(child["args"], ["argument with spaces"])
+                self.assertFalse(script.exists())
+
+    def test_bazel_fuzz_single_target_removes_launch_after_start_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / "launch.sh"
+            script.write_text("generated", encoding="utf-8")
+            launch = bazel_dev.BazelLaunch(
+                target="//pkg:one_fuzz",
+                script_path=script,
+                run_cwd=root,
+                argument_separator="separator",
+            )
+            process_launch = bazel_dev.BazelProcess(
+                target=launch.target,
+                argv=[str(root / "missing-executable")],
+                cwd=root,
+                env=None,
+                script_path=script,
+            )
+            step = bazel_dev.BazelFuzzStep(
+                "bazel", bazel_dev.BazelTargetCommand(target=launch.target)
+            )
+            handlers = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
+            with (
+                mock.patch.object(
+                    bazel_dev.BazelFuzzStep,
+                    "generate_fuzzer_launch",
+                    return_value=(0, launch),
+                ),
+                mock.patch.object(
+                    bazel_dev,
+                    "prepare_bazel_process",
+                    return_value=(0, process_launch),
+                ),
+                contextlib.redirect_stderr(io.StringIO()) as stderr,
+            ):
+                self.assertEqual(step.run(), 127)
+            self.assertIn("failed to start fuzzer", stderr.getvalue())
+            self.assertFalse(script.exists())
+            self.assertEqual({s: signal.getsignal(s) for s in handlers}, handlers)
+
+    def test_bazel_child_forwards_signals_and_restores_handlers(self):
+        launch = bazel_dev.BazelProcess(
+            target="//pkg:one_fuzz",
+            argv=["child"],
+            cwd=bazel_dev.REPO_ROOT,
+            env=None,
+        )
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signum=signum):
+                process = mock.MagicMock()
+                process.__enter__.return_value = process
+                handlers = {
+                    s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)
+                }
+
+                def wait():
+                    # Invoke the installed handler without signaling the test runner.
+                    signal.getsignal(signum)(signum, None)
+                    return -signum
+
+                process.wait.side_effect = wait
+                with mock.patch.object(
+                    bazel_dev.subprocess, "Popen", return_value=process
+                ):
+                    self.assertEqual(
+                        bazel_dev.wait_for_bazel_process(launch), 128 + signum
+                    )
+                if os.name == "nt" and signum == signal.SIGINT:
+                    process.send_signal.assert_not_called()
+                else:
+                    process.send_signal.assert_called_once_with(signum)
+                self.assertEqual({s: signal.getsignal(s) for s in handlers}, handlers)
 
     def test_bazel_fuzz_builds_every_discovered_target_before_launching(self):
         with tempfile.TemporaryDirectory() as temporary_dir:

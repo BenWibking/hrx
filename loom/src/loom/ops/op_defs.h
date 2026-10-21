@@ -455,6 +455,9 @@ enum loom_operand_role_e {
   LOOM_OPERAND_ROLE_COMPOSITE_ELEMENT = 5,
   // Operand is widened by a floating-point precision extension.
   LOOM_OPERAND_ROLE_FLOAT_EXTENSION_SOURCE = 6,
+  // Operand contributes to the logical path selecting a subvalue, resource, or
+  // storage range observed or updated by the operation.
+  LOOM_OPERAND_ROLE_ACCESS_PATH = 7,
 };
 typedef uint8_t loom_operand_role_t;
 
@@ -471,6 +474,7 @@ enum loom_operand_role_mask_bits_e {
       1u << LOOM_OPERAND_ROLE_COMPOSITE_ELEMENT,
   LOOM_OPERAND_ROLE_MASK_FLOAT_EXTENSION_SOURCE =
       1u << LOOM_OPERAND_ROLE_FLOAT_EXTENSION_SOURCE,
+  LOOM_OPERAND_ROLE_MASK_ACCESS_PATH = 1u << LOOM_OPERAND_ROLE_ACCESS_PATH,
 };
 typedef uint8_t loom_operand_role_mask_t;
 
@@ -656,6 +660,26 @@ static inline uint8_t loom_symbol_definition_linkage_attr_index(
   return descriptor && descriptor->linkage_attr_index_plus_one
              ? descriptor->linkage_attr_index_plus_one - 1
              : LOOM_ATTR_INDEX_NONE;
+}
+
+static inline uint8_t loom_symbol_definition_retain_attr_index(
+    const loom_symbol_definition_descriptor_t* descriptor) {
+  return descriptor && descriptor->retain_attr_index_plus_one
+             ? descriptor->retain_attr_index_plus_one - 1
+             : LOOM_ATTR_INDEX_NONE;
+}
+
+// Returns whether |attr_index| carries generic symbol policy serialized in the
+// common symbol header rather than a dialect-specific definition payload.
+static inline bool loom_symbol_definition_attr_is_policy(
+    const loom_symbol_definition_descriptor_t* descriptor, uint8_t attr_index) {
+  if (!descriptor) {
+    return false;
+  }
+  return attr_index ==
+             loom_symbol_definition_visibility_attr_index(descriptor) ||
+         attr_index == loom_symbol_definition_linkage_attr_index(descriptor) ||
+         attr_index == loom_symbol_definition_retain_attr_index(descriptor);
 }
 
 static inline bool loom_symbol_definition_has_value_contract(

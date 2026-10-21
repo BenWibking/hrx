@@ -390,8 +390,15 @@ static iree_status_t loom_low_emission_frame_build_impl(
   iree_status_t status = loom_low_function_context_initialize(
       module, low_func_op, options->resolved_target,
       options->function_target_facts, options->descriptor_registry,
-      options->emitter, LOOM_LOW_FUNCTION_MODEL_FLAG_REGION_TREE,
+      options->emitter,
+      LOOM_LOW_FUNCTION_MODEL_FLAG_REGION_TREE |
+          LOOM_LOW_FUNCTION_MODEL_FLAG_REQUIRE_SCHEDULE_MODEL,
       options->allocation_fixed_value_count, arena, &context);
+  if (iree_status_is_ok(status) && context.target.schedule_model == NULL) {
+    out_frame->target = context.target;
+    loom_low_function_context_deinitialize(&context);
+    return status;
+  }
   iree_arena_allocator_t preparation_arena;
   iree_arena_initialize(arena->block_pool, &preparation_arena);
   if (iree_status_is_ok(status)) {
@@ -883,7 +890,8 @@ iree_status_t loom_low_emission_frame_build(
   iree_arena_initialize(arena->block_pool, &repair_arena);
   iree_arena_allocator_t scratch_arena;
   iree_arena_initialize(arena->block_pool, &scratch_arena);
-  if (iree_status_is_ok(status) && out_frame->schedule.error_count == 0 &&
+  if (iree_status_is_ok(status) && out_frame->target.schedule_model != NULL &&
+      out_frame->schedule.error_count == 0 &&
       out_frame->allocation.error_count == 0 &&
       out_frame->allocation.spill_plan_count == 0 &&
       out_frame->allocation.spill_count == 0) {
@@ -899,7 +907,8 @@ iree_status_t loom_low_emission_frame_build(
   if (iree_status_is_ok(status)) {
     status = loom_low_emission_frame_emit_diagnostics(options, out_frame);
   }
-  if (iree_status_is_ok(status) && out_frame->schedule.error_count == 0 &&
+  if (iree_status_is_ok(status) && out_frame->target.schedule_model != NULL &&
+      out_frame->schedule.error_count == 0 &&
       out_frame->allocation.error_count == 0) {
     *out_accepted = true;
   }
@@ -936,6 +945,16 @@ static iree_status_t loom_low_emission_frame_apply_materialization_summary(
             arena));
   }
   return iree_ok_status();
+}
+
+// Publishes a completed local frame and repairs retained pointers to fields
+// within the frame itself. The schedule builder binds the loop nest to its CFG;
+// a by-value frame copy must rebind that relationship to the destination.
+static void loom_low_emission_frame_publish(
+    const loom_low_emission_frame_t* source,
+    loom_low_emission_frame_t* destination) {
+  *destination = *source;
+  destination->schedule.loop_nest.graph = &destination->schedule.cfg_graph;
 }
 
 static iree_status_t loom_low_emission_frame_build_spill_free_impl(
@@ -1006,6 +1025,10 @@ static iree_status_t loom_low_emission_frame_build_spill_free_impl(
         loom_low_placement_pair_use_list_empty(), required_register_values,
         expanded_execution_values, rematerialization.per_user_values, arena,
         statistics, &frame));
+    if (frame.target.schedule_model == NULL) {
+      *out_frame = frame;
+      return iree_ok_status();
+    }
     if (value_repair_iteration_limit == 0) {
       // Use the initial function-local value population as the convergence
       // budget. Allocation repair can retire a complete batch in one pass;
@@ -1034,7 +1057,7 @@ static iree_status_t loom_low_emission_frame_build_spill_free_impl(
       }
       IREE_RETURN_IF_ERROR(
           loom_low_emission_frame_emit_diagnostics(frame_options, &frame));
-      *out_frame = frame;
+      loom_low_emission_frame_publish(&frame, out_frame);
       return iree_ok_status();
     }
     if (frame.allocation.error_count != 0) {
@@ -1061,7 +1084,7 @@ static iree_status_t loom_low_emission_frame_build_spill_free_impl(
       }
       IREE_RETURN_IF_ERROR(
           loom_low_emission_frame_emit_diagnostics(frame_options, &frame));
-      *out_frame = frame;
+      loom_low_emission_frame_publish(&frame, out_frame);
       return iree_ok_status();
     }
 
@@ -1133,7 +1156,7 @@ static iree_status_t loom_low_emission_frame_build_spill_free_impl(
       IREE_RETURN_IF_ERROR(
           loom_low_emission_frame_apply_materialization_summary(
               &materialization_summary, arena, &frame));
-      *out_frame = frame;
+      loom_low_emission_frame_publish(&frame, out_frame);
       *out_accepted = true;
       return iree_ok_status();
     }
@@ -1175,7 +1198,10 @@ static iree_status_t loom_low_emission_frame_build_spill_free_impl(
     if (result.error_count != 0) {
       return iree_ok_status();
     }
-    IREE_ASSERT_EQ((iree_host_size_t)result.storage_count, storage_plan_count);
+    // Every subsequent frame contains traffic inserted by allocation repair,
+    // including target packets that replace the structural spill operations.
+    repair_options.schedule_flags |=
+        LOOM_LOW_SCHEDULE_FLAG_HAS_MATERIALIZED_SPILL_TRAFFIC;
     // Retain facts from the representation used by the next frame. A target
     // callback replaces this traffic and publishes its own register helpers;
     // incoming edge payloads remain independently spillable after that rewrite.

@@ -778,6 +778,7 @@ TEST_F(WindowsGpuMemoryTest,
                                     Operation::kCreateAllocation}));
   EXPECT_EQ(amdf_gpu_umd_memory_destroy(memory),
             amdf_kmt_make_status(kStatusNoMemory));
+  EXPECT_EQ(amdf_gpu_umd_memory_remaining_backing_byte_length(memory), 65536u);
   EXPECT_EQ(state_.metadata_free_count, 0u);
   amdf_gpu_umd_memory_abandon(memory);
   EXPECT_EQ(state_.metadata_free_count, 1u);
@@ -863,6 +864,56 @@ TEST_F(WindowsGpuMemoryTest, MalformedUngroupedAllocationReleasesValidHandles) {
                 Operation::kQueryLayout, Operation::kReserveAddress,
                 Operation::kCreateAllocation, Operation::kDestroyAllocation,
                 Operation::kFreeAddress}));
+}
+
+TEST_F(WindowsGpuMemoryTest, EmptyGpuVaFailureDoesNotClaimLostPayload) {
+  amdf_gpu_umd_memory_t* memory = nullptr;
+  amdf_gpu_umd_memory_result_t result = {};
+  ASSERT_EQ(amdf_gpu_umd_memory_prepare(&device_, 0, nullptr, &profile_,
+                                        &create_info_, &memory, &result),
+            AMDF_STATUS_OK);
+  kmt_.free_gpu_virtual_address =
+      [](const D3DKMT_FREEGPUVIRTUALADDRESS* free_address) -> NTSTATUS {
+    EXPECT_EQ(FakeFreeGpuVirtualAddress(free_address), 0);
+    return kStatusNoMemory;
+  };
+  EXPECT_EQ(amdf_gpu_umd_memory_destroy(memory),
+            amdf_kmt_make_status(kStatusNoMemory));
+  EXPECT_EQ(state_.operations.back(), Operation::kFreeAddress);
+  EXPECT_EQ(amdf_gpu_umd_memory_remaining_backing_byte_length(memory), 0u);
+  amdf_gpu_umd_memory_abandon(memory);
+  EXPECT_EQ(state_.metadata_free_count, 1u);
+}
+
+TEST_F(WindowsGpuMemoryTest, FailedGpuVaReleaseRetainsOwnedHostBacking) {
+  state_.allocation_domain = AMDF_WKMI_BRIDGE_GPU_ALLOCATION_DOMAIN_SYSTEM;
+  state_.expected_synchronous_destroy = 1;
+  create_info_.required_flags =
+      AMDF_MEMORY_FLAG_HOST_VISIBLE | AMDF_MEMORY_FLAG_DEVICE_ADDRESS;
+  ASSERT_EQ(amdf_gpu_umd_device_query_memory_profile(&device_, 0, &profile_),
+            AMDF_STATUS_OK);
+  amdf_gpu_umd_memory_t* memory = nullptr;
+  amdf_gpu_umd_memory_result_t result = {};
+  ASSERT_EQ(amdf_gpu_umd_memory_prepare(&device_, 0, nullptr, &profile_,
+                                        &create_info_, &memory, &result),
+            AMDF_STATUS_OK);
+  kmt_.free_gpu_virtual_address =
+      [](const D3DKMT_FREEGPUVIRTUALADDRESS* free_address) -> NTSTATUS {
+    EXPECT_EQ(FakeFreeGpuVirtualAddress(free_address), 0);
+    return kStatusNoMemory;
+  };
+  EXPECT_EQ(amdf_gpu_umd_memory_destroy(memory),
+            amdf_kmt_make_status(kStatusNoMemory));
+  EXPECT_EQ(state_.operations.back(), Operation::kFreeAddress);
+  EXPECT_EQ(amdf_gpu_umd_memory_remaining_backing_byte_length(memory), 65536u);
+  amdf_gpu_umd_memory_abandon(memory);
+  EXPECT_EQ(state_.metadata_free_count, 1u);
+  // The fake driver no longer retains this real host allocation.
+  MEMORY_BASIC_INFORMATION information = {};
+  ASSERT_NE(
+      VirtualQuery(state_.host_pointer, &information, sizeof(information)), 0u);
+  EXPECT_EQ(information.State, MEM_COMMIT);
+  EXPECT_TRUE(VirtualFree(information.AllocationBase, 0, MEM_RELEASE));
 }
 
 TEST_F(WindowsGpuMemoryTest, DestroyReclaimsUnexpectedMapping) {
@@ -1077,37 +1128,28 @@ TEST_P(WindowsGpuImportFailureTest, RetainsProgressForOrderedRollback) {
   }
 }
 
-TEST_F(WindowsGpuMemoryTest, SystemSignalsRequireFineGrainAndNativeCpuRoute) {
-  for (uint32_t major : {9u, 11u, 12u}) {
-    device_.properties.gfx_ip_major = major;
-    for (uint32_t discrete : {0u, 1u}) {
-      device_.properties.is_discrete = discrete;
-      for (uint32_t platform_atomics : {0u, 1u}) {
-        device_.properties.supports_platform_atomics = platform_atomics;
-        for (uint32_t coherent : {0u, 1u}) {
-          device_.memory_capabilities.cache_coherent_memory_supported =
-              coherent;
-          for (uint32_t ordinal = 0; ordinal < 4; ++ordinal) {
-            SCOPED_TRACE(::testing::Message()
-                         << "major=" << major << " discrete=" << discrete
-                         << " platform=" << platform_atomics
-                         << " coherent=" << coherent << " profile=" << ordinal);
-            amdf_memory_native_profile_t profile = {};
-            ASSERT_EQ(amdf_gpu_umd_device_query_memory_profile(
-                          &device_, ordinal, &profile),
-                      AMDF_STATUS_OK);
-            const bool supported = ordinal == 0 && major == 11 && coherent &&
-                                   (!discrete || platform_atomics);
-            const amdf_atomic_operations_t operations =
-                supported
-                    ? AMDF_ATOMIC_OPERATION_WAIT | AMDF_ATOMIC_OPERATION_STORE
-                    : 0u;
-            EXPECT_EQ(profile.atomic_operations_32, operations);
-            EXPECT_EQ(profile.atomic_operations_64, operations);
-            EXPECT_NE(profile.visibility.describe_site, nullptr);
-          }
-        }
-      }
+TEST_F(WindowsGpuMemoryTest,
+       SystemSignalsUseCoherenceAndCpuVisibleUpdateWidth) {
+  for (uint32_t mask = 0; mask < 4; ++mask) {
+    const bool coherent = (mask & 1u) != 0;
+    const bool atomic_update_64 = (mask & 2u) != 0;
+    device_.memory_capabilities.cache_coherent_memory_supported = coherent;
+    device_.memory_capabilities.atomic_update_64_supported = atomic_update_64;
+    for (uint32_t ordinal = 0; ordinal < 4; ++ordinal) {
+      SCOPED_TRACE(::testing::Message()
+                   << "capability_mask=" << mask << " profile=" << ordinal);
+      amdf_memory_native_profile_t profile = {};
+      ASSERT_EQ(
+          amdf_gpu_umd_device_query_memory_profile(&device_, ordinal, &profile),
+          AMDF_STATUS_OK);
+      const amdf_atomic_operations_t operations =
+          ordinal == 0 && coherent
+              ? AMDF_ATOMIC_OPERATION_WAIT | AMDF_ATOMIC_OPERATION_STORE
+              : 0u;
+      EXPECT_EQ(profile.atomic_operations_32, operations);
+      EXPECT_EQ(profile.atomic_operations_64,
+                atomic_update_64 ? operations : 0u);
+      EXPECT_NE(profile.visibility.describe_site, nullptr);
     }
   }
   EXPECT_TRUE(state_.operations.empty());

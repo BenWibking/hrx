@@ -40,12 +40,14 @@ loom_corpus_test(
     "numeric/vector/integer_comparison.loom"
     "numeric/vector/integer_extrema_reductions.loom"
     "numeric/vector/integer_shifts.loom"
-    "numeric/vector/integer_widening.loom"
     "numeric/vector/interleave.loom"
     "numeric/vector/packed/arithmetic.loom"
     "numeric/vector/packed/dot.loom"
     "numeric/vector/packed/narrowing.loom"
     "numeric/vector/reductions.loom"
+  EXCLUDES
+    "numeric/vector/integer_widening.loom"
+    "Quarantined after an NPU firmware context timeout during partial-width widening execution."
   XFAILS
     "function/rodata.loom"
     "@rodata_copy_values"
@@ -100,7 +102,7 @@ loom_corpus_test(
     "XDNA/051"
     "numeric/vector/f32.loom"
     "@vector_f32_division_values"
-    "TARGET/001"
+    "LOWERING/036"
     "numeric/vector/f32.loom"
     "@vector_f32_rounding_values"
     "LOWERING/036"
@@ -123,9 +125,6 @@ loom_corpus_test(
     "@vector_scale_f64_values"
     "XDNA/051"
     "numeric/vector/integer_shifts.loom"
-    "@vector_i16_shift_values"
-    "BACKEND/005"
-    "numeric/vector/integer_shifts.loom"
     "@vector_i64_shift_values"
     "BACKEND/005"
     "numeric/vector/integer_shifts.loom"
@@ -145,7 +144,7 @@ loom_corpus_test(
     "iree-build-requirement=loom.target.arch.xdna"
     "iree-build-requirement=loom.emit.xdna"
     "iree-build-requirement=loom.execute.iree_hal"
-    "iree-build-requirement=runtime.hal.xdna"
+    "iree-build-requirement=runtime.hal.amd"
     "iree-run-requirement=libamdf.resource.xdna"
     "runtime-resource=amd-xdna"
     "loom-execution-profile=xdna_hardware"
@@ -155,7 +154,7 @@ loom_corpus_test(
   RESOURCE_GROUP
     "gpu-device"
   REQUIRES
-    AMDF_BUILD AND AMDF_FAMILY_XDNA AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_XDNA
+    AMDF_BUILD AND AMDF_FAMILY_XDNA AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMD
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###
