@@ -38,8 +38,10 @@ remainder, which is equivalent because steps count up from zero. Every other
 statement is the source's.
 
 `f64_math.h` carries f64 exp/log/cbrt source recipes transcribed from AMD's
-OCML, with explicit `loom::scalar::fmaf` and bit-level replacements for f64
-rint, ldexp, and frexp, which Loom does not lower. The device path uses these
+OCML, with explicit `loom::scalar::fmaf`, `loom::scalar::frexpf` and
+`loom::scalar::ldexpf` in exp and cbrt, and bit-level replacements for f64
+rint, which Loom does not lower, and for frexp and ldexp in log, where the
+native operations are slower on the advance kernel. The device path uses these
 while native differential validation uses system math. As in OCML, only the
 cbrt seed uses f32 approximate log2 and exp2; a Halley step in f64 corrects it.
 No other f32 substitution or approximate-function permission is enabled.

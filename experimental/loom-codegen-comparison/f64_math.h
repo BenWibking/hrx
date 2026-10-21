@@ -6,14 +6,14 @@
 // statement-for-statement transcriptions of AMD's OCML (ROCm-Device-Libs
 // ocml/src/expD_base.h, logD_base.h with ep.h, and cbrtD.cl at llvm-project
 // amd/device-libs d366fa84f3fd). They use f64 add/sub/mul/div, explicit fma,
-// f32 approximate log2/exp2, conversions, and integer and bitcast operations.
-// Loom has no f64 rint, ldexp, frexp, or fast reciprocal, so the transcription
-// substitutes:
+// f32 approximate log2/exp2, Loom's frexp and ldexp, conversions, and integer
+// and bitcast operations. Loom has no f64 rint or fast reciprocal, so the
+// transcription substitutes:
 //   rint(v)      (v + 0x1.8p52) - 0x1.8p52, exact for |v| < 2^51.
-//   ldexp(v, n)  Multiplication by powers of two built from exponent bits,
-//                split so that only the final multiplication can round.
-//   frexp(v)     The exponent and mantissa fields, after scaling subnormals by
-//                2^54.
+//   frexp and ldexp in log
+//                The exponent and mantissa fields, after scaling subnormals by
+//                2^54, and doubling. The native operations here cost 2.7% on
+//                the advance kernel (adv-mi210-14 e001 vs e002).
 //   MATH_FAST_RCP and MATH_FAST_DIV
 //                IEEE f64 division.
 // One operation per statement keeps OCML's evaluation order and prevents
@@ -83,6 +83,15 @@ DEVICE float amdgpu_exp2(float x) {
     return loom::scalar::approximate::exp2f(x);
 }
 
+// BUILTIN_FREXP_MANT_F64/BUILTIN_FREXP_EXP_F64 and BUILTIN_FLDEXP_F64
+// (v_frexp_mant_f64, v_frexp_exp_i32_f64, v_ldexp_f64).
+DEVICE loom::scalar::frexpf_result<double> frexp(double x) {
+    return loom::scalar::frexpf(x);
+}
+DEVICE double ldexp(double x, int n) {
+    return loom::scalar::ldexpf(x, n);
+}
+
 // expD_base.h
 DEVICE double exp(double x) {
     // dn = rint(x * log2(e)). The low 32 bits of the integer-valued shifted
@@ -110,23 +119,7 @@ DEVICE double exp(double x) {
     const double p1 = fma(t, p2, 1.0);
     const double p = fma(t, p1, 1.0);
 
-    // z = ldexp(p, n). Unclamped inputs give n in [-1551, 1477] and p in
-    // [0.7, 1.42]. Moving 1000 of the exponent into the second factor keeps
-    // the first product exact, so only the second product rounds, overflows,
-    // or becomes subnormal.
-    const bool scale_down = n < -1000;
-    const bool scale_up = n > 1000;
-    const int down_exponent = n + 1000;
-    const int up_exponent = n - 1000;
-    const int up_or_exact_exponent = scale_up ? up_exponent : n;
-    const int exact_exponent = scale_down ? down_exponent : up_or_exact_exponent;
-    const double up_or_unit_scale = scale_up ? 0x1p1000 : 1.0;
-    const double rounding_scale = scale_down ? 0x1p-1000 : up_or_unit_scale;
-    const int exact_biased_exponent = exact_exponent + 1023;
-    const u64 exact_scale_bits = (u64)exact_biased_exponent << 52;
-    const double exact_scale = __builtin_bit_cast(double, exact_scale_bits);
-    const double exact_product = p * exact_scale;
-    const double z = exact_product * rounding_scale;
+    const double z = ldexp(p, n);
 
     // NaN inputs propagate through the arithmetic above.
     const double infinity = __builtin_bit_cast(double, 0x7ff0000000000000ULL);
@@ -264,15 +257,9 @@ DEVICE double cbrt(double x) {
     const u64 magnitude = bits & 0x7fffffffffffffffULL;
     const double a = __builtin_bit_cast(double, magnitude);
 
-    // e3 = frexp_exp(a)
-    const bool subnormal = magnitude < 0x0010000000000000ULL;
-    const double scaled_subnormal = a * 0x1p54;
-    const double normalized_value = subnormal ? scaled_subnormal : a;
-    const u64 normalized = __builtin_bit_cast(u64, normalized_value);
-    const u64 exponent_bits = normalized >> 52;
-    const int biased_exponent = (int)exponent_bits;
-    const int exponent_offset = subnormal ? 1076 : 1022;
-    const int e3 = biased_exponent - exponent_offset;
+    // Zeros, infinities, and NaNs produce unused values that the final select
+    // replaces.
+    const int e3 = frexp(a).exponent;
 
     // e = rint(e3 / 3). e3 / 3 is never a tie, so this is
     // floor((e3 + 1) / 3). Adding 3 * 359 keeps the dividend in [2, 2102],
@@ -282,15 +269,10 @@ DEVICE double cbrt(double x) {
     const int biased_quotient = reciprocal_product >> 17;
     const int e = biased_quotient - 359;
 
-    // a = ldexp(a, -3 * e): the frexp mantissa times 2^(e3 - 3 * e), where
-    // e3 - 3 * e is -1, 0, or 1.
+    // a = ldexp(a, -3 * e)
     const int three_e = 3 * e;
-    const int reduced_exponent = e3 - three_e;
-    const int reduced_biased_exponent = reduced_exponent + 1022;
-    const u64 reduced_exponent_bits = (u64)reduced_biased_exponent << 52;
-    const u64 mantissa_bits = normalized & 0x000fffffffffffffULL;
-    const u64 reduced_bits = mantissa_bits | reduced_exponent_bits;
-    const double reduced = __builtin_bit_cast(double, reduced_bits);
+    const int negative_three_e = -three_e;
+    const double reduced = ldexp(a, negative_three_e);
 
     const float reduced_f32 = (float)reduced;
     const float log2_reduced = amdgpu_log2(reduced_f32);
@@ -305,12 +287,8 @@ DEVICE double cbrt(double x) {
     const double correction = residual / denominator;
     const double root = fma(c, correction, c);
 
-    // c = ldexp(c, e). e is in [-358, 341], so 2^e is normal and the product
-    // is exact.
-    const int scale_exponent = e + 1023;
-    const u64 scale_bits = (u64)scale_exponent << 52;
-    const double scale = __builtin_bit_cast(double, scale_bits);
-    const double scaled_root = root * scale;
+    // c = ldexp(c, e)
+    const double scaled_root = ldexp(root, e);
 
     // Zeros, infinities, and NaNs return x unchanged.
     const bool is_nonzero = magnitude != 0;
