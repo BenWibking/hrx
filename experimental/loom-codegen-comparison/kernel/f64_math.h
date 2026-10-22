@@ -134,27 +134,17 @@ DEVICE double log(double a) {
     const unsigned hi = (unsigned)(bits >> 32);
     const unsigned exponent_field = (hi << 1) >> 21;
 
-    // m = frexp_mant(a) in [0.5, 1) and its exponent. Signed, zero, and
-    // non-finite inputs produce unused values that the selects below replace.
-    const bool subnormal = exponent_field == 0u;
-    const double scaled_subnormal = a * 0x1p54;
-    const double normalized_input = subnormal ? scaled_subnormal : a;
-    const u64 normalized_bits = __builtin_bit_cast(u64, normalized_input);
-    const unsigned normalized_hi = (unsigned)(normalized_bits >> 32);
-    const unsigned normalized_lo = (unsigned)normalized_bits;
-    const int biased_exponent = (int)((normalized_hi << 1) >> 21);
-    const int subnormal_shift = subnormal ? 54 : 0;
-    const int frexp_exponent = (biased_exponent - 1022) - subnormal_shift;
-    const unsigned half_mantissa_hi = ((normalized_hi << 12) >> 12) | 0x3fe00000u;
-    const u64 half_mantissa_bits = ((u64)half_mantissa_hi << 32) | (u64)normalized_lo;
-    const double frexp_mantissa = __builtin_bit_cast(double, half_mantissa_bits);
+    // m = frexp_mant(a) in [0.5, 1) and its exponent (native frexp; the
+    // high-word classification below is kept). Signed, zero, and non-finite
+    // inputs produce unused values that the selects below replace.
+    const auto parts = frexp(a);
 
     // b = m < 2/3; m = ldexp(m, b); e = frexp_exp(a) - b.
-    const bool below_two_thirds = frexp_mantissa < 0x1.5555555555555p-1;
-    const double doubled_mantissa = frexp_mantissa * 2.0;
-    const double m = below_two_thirds ? doubled_mantissa : frexp_mantissa;
+    const bool below_two_thirds = parts.fraction < 0x1.5555555555555p-1;
+    const double doubled_mantissa = parts.fraction * 2.0;
+    const double m = below_two_thirds ? doubled_mantissa : parts.fraction;
     const int b = below_two_thirds ? 1 : 0;
-    const int e = frexp_exponent - b;
+    const int e = parts.exponent - b;
 
     // x = div(m - 1.0, fadd(1.0, m))
     const double numerator = m - 1.0;
