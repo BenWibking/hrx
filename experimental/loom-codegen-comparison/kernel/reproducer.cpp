@@ -4172,15 +4172,16 @@ DEVICE void jac_nuc_structural_zeros(Real* out) {
 }
 DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     Real T = temperature;
+    const Real rT = 1.0/T;
     // rows 0..13 by forward differentiation of rhs_specie (genjac.py)
     const Real rv1192 = 1.0/(9.1093818800000008e-28*xn[0] + 1.6726215800000001e-24*xn[1] + 5.01956503638e-24*xn[10] + 6.6902431600000005e-24*xn[11] + 6.6911540981899994e-24*xn[12] + 6.6920650363799998e-24*xn[13] + 1.6735325181900001e-24*xn[2] + 1.6744434563800001e-24*xn[3] + 3.3451215800000003e-24*xn[4] + 3.3460325181899999e-24*xn[5] + 3.3461540981899999e-24*xn[6] + 3.3469434563800003e-24*xn[7] + 3.3470650363800003e-24*xn[8] + 5.0186540981899997e-24*xn[9]);
     const Real rv1193 = 2.0860422997526066e-16*rv1192;
     const Real rv1194 = 3.4767371836380304e-16*rv1192;
     const Real dTde = 1.0/(xn[0]*rv1193 + xn[1]*rv1193 + xn[10]*rv1194 + xn[11]*rv1193 + xn[12]*rv1193 + xn[13]*rv1193 + xn[2]*rv1193 + xn[3]*rv1193 + xn[4]*rv1193 + xn[5]*rv1193 + xn[6]*rv1194 + xn[7]*rv1193 + xn[8]*rv1194 + xn[9]*rv1194);
     const Real sx0 = math::exp((-0.75)*math::log(math::abs(T)));
-    const Real sdT_x0 = ((-0.75*math::exp(((-0.75) * math::log(math::abs(T)))))/T);
+    const Real sdT_x0 = ((-0.75*math::exp(((-0.75) * math::log(math::abs(T)))))*rT);
     const Real sx2 = 1.3300135414628029e-18*math::exp((0.94999999999999996)*math::log(math::abs(T)))*xn[0]*xn[5]*math::exp(-0.00010729613733905579*T);
-    const Real sdT_x2 = (((((1.3300135414628029e-18*((0.95*math::exp((0.95 * math::log(math::abs(T)))))/T))*xn[0])*xn[5])*math::exp(((-0.00010729613733905579) * T))) + ((((1.3300135414628029e-18 * math::exp((0.95 * math::log(math::abs(T))))) * xn[0]) * xn[5])*(math::exp(((-0.00010729613733905579) * T))*((-0.00010729613733905579)*1.0))));
+    const Real sdT_x2 = (((((1.3300135414628029e-18*((0.95*math::exp((0.95 * math::log(math::abs(T)))))*rT))*xn[0])*xn[5])*math::exp(((-0.00010729613733905579) * T))) + ((((1.3300135414628029e-18 * math::exp((0.95 * math::log(math::abs(T))))) * xn[0]) * xn[5])*(math::exp(((-0.00010729613733905579) * T))*((-0.00010729613733905579)*1.0))));
     const Real sdn0_x2 = ((((1.3300135414628029e-18 * math::exp((0.95 * math::log(math::abs(T)))))*1.0)*xn[5])*math::exp(((-0.00010729613733905579) * T)));
     const Real sdn5_x2 = ((((1.3300135414628029e-18 * math::exp((0.95 * math::log(math::abs(T))))) * xn[0])*1.0)*math::exp(((-0.00010729613733905579) * T)));
     const Real a0_T_0 = -sdT_x2;
@@ -4212,7 +4213,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sdT_x3 = ((1.0*T) + (T*1.0));
     const Real sx4 = T <= 10000.0;
     const Real sx6 = math::log(math::abs(T));
-    const Real sdT_x6 = (1.0/T);
+    const Real sdT_x6 = (1.0*rT);
     const Real sx5 = xn[0]*xn[6]*rhs_specie_choice_0(T, sx3, sx4);
     const Real sdT_x5 = ((xn[0] * xn[6])*jacd_rhs_specie_choice_0_0(T, sx3, sx4, sdT_x3));
     const Real sdn0_x5 = ((1.0*xn[6])*rhs_specie_choice_0(T, sx3, sx4));
@@ -4260,7 +4261,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real a0_n2_0 = sdn2_x17;
     const Real a0_n3_0 = sdn3_x17;
     const Real sx19 = 1.0e-8*math::exp((-0.40000000000000002)*math::log(math::abs(T)))*sx18;
-    const Real sdT_x19 = ((1e-08*((-0.4*math::exp(((-0.4) * math::log(math::abs(T)))))/T))*sx18);
+    const Real sdT_x19 = ((1e-08*((-0.4*math::exp(((-0.4) * math::log(math::abs(T)))))*rT))*sx18);
     const Real sdn1_x19 = ((1e-08 * math::exp(((-0.4) * math::log(math::abs(T)))))*sdn1_x18);
     const Real sdn3_x19 = ((1e-08 * math::exp(((-0.4) * math::log(math::abs(T)))))*sdn3_x18);
     const Real a0_T_4 = a0_T_3 + sdT_x19;
@@ -4270,7 +4271,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real a3_n1_0 = -sdn1_x19;
     const Real a3_n3_0 = -sdn3_x19;
     const Real sx20 = 2.6534040307116387e-9*math::exp((-0.10000000000000001)*math::log(math::abs(T)));
-    const Real sdT_x20 = (2.6534040307116387e-09*((-0.1*math::exp(((-0.1) * math::log(math::abs(T)))))/T));
+    const Real sdT_x20 = (2.6534040307116387e-09*((-0.1*math::exp(((-0.1) * math::log(math::abs(T)))))*rT));
     const Real sx21 = xn[3]*xn[5];
     const Real sdn3_x21 = (1.0*xn[5]);
     const Real sdn5_x21 = (xn[3]*1.0);
@@ -4292,21 +4293,21 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sdn0_x25 = (1.0*xn[12]);
     const Real sdn12_x25 = (xn[0]*1.0);
     const Real sx24 = 1.4000000000000001e-18*math::exp((0.92800000000000005)*math::log(math::abs(T)))*sx23*math::exp(-6.1728395061728397e-5*T);
-    const Real sdT_x24 = ((((1.4e-18*((0.928*math::exp((0.928 * math::log(math::abs(T)))))/T))*sx23)*math::exp(((-6.17283950617284e-05) * T))) + (((1.4e-18 * math::exp((0.928 * math::log(math::abs(T))))) * sx23)*(math::exp(((-6.17283950617284e-05) * T))*((-6.17283950617284e-05)*1.0))));
+    const Real sdT_x24 = ((((1.4e-18*((0.928*math::exp((0.928 * math::log(math::abs(T)))))*rT))*sx23)*math::exp(((-6.17283950617284e-05) * T))) + (((1.4e-18 * math::exp((0.928 * math::log(math::abs(T))))) * sx23)*(math::exp(((-6.17283950617284e-05) * T))*((-6.17283950617284e-05)*1.0))));
     const Real sdn0_x24 = (((1.4e-18 * math::exp((0.928 * math::log(math::abs(T)))))*sdn0_x23)*math::exp(((-6.17283950617284e-05) * T)));
     const Real sdn2_x24 = (((1.4e-18 * math::exp((0.928 * math::log(math::abs(T)))))*sdn2_x23)*math::exp(((-6.17283950617284e-05) * T)));
     const Real a0_T_6 = a0_T_5 - sdT_x24;
     const Real a0_n0_3 = a0_n0_2 - sdn0_x24;
     const Real a0_n2_1 = a0_n2_0 - sdn2_x24;
     const Real sx26 = 3.8571873359681582e-209*math::exp((43.933476326349997)*math::log(math::abs(T)))*sx25*math::exp(-5902.1601240760483*sx10 + 5825.9326359379538*sx11 - 3578.1439181805954*sx12 + 1242.7294446825149*sx13 - 186.35635455381879*sx14 - 1618.789587733125*sx8 + 3854.4033653120223*sx9);
-    const Real sdT_x26 = ((((3.857187335968158e-209*((43.93347632635*math::exp((43.93347632635 * math::log(math::abs(T)))))/T))*sx25)*math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9)))) + (((3.857187335968158e-209 * math::exp((43.93347632635 * math::log(math::abs(T))))) * sx25)*(math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9)))*((((((((-5902.160124076048)*sdT_x10) + (5825.932635937954*sdT_x11)) - (3578.1439181805954*sdT_x12)) + (1242.729444682515*sdT_x13)) - (186.3563545538188*sdT_x14)) - (1618.789587733125*sdT_x8)) + (3854.4033653120223*sdT_x9)))));
+    const Real sdT_x26 = ((((3.857187335968158e-209*((43.93347632635*math::exp((43.93347632635 * math::log(math::abs(T)))))*rT))*sx25)*math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9)))) + (((3.857187335968158e-209 * math::exp((43.93347632635 * math::log(math::abs(T))))) * sx25)*(math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9)))*((((((((-5902.160124076048)*sdT_x10) + (5825.932635937954*sdT_x11)) - (3578.1439181805954*sdT_x12)) + (1242.729444682515*sdT_x13)) - (186.3563545538188*sdT_x14)) - (1618.789587733125*sdT_x8)) + (3854.4033653120223*sdT_x9)))));
     const Real sdn0_x26 = (((3.857187335968158e-209 * math::exp((43.93347632635 * math::log(math::abs(T)))))*sdn0_x25)*math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9))));
     const Real sdn12_x26 = (((3.857187335968158e-209 * math::exp((43.93347632635 * math::log(math::abs(T)))))*sdn12_x25)*math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9))));
     const Real a0_T_7 = a0_T_6 + sdT_x26;
     const Real a0_n0_4 = a0_n0_3 + sdn0_x26;
     const Real a0_n12_0 = sdn12_x26;
     const Real sx27 = 3.7903999274394518e-18*math::exp((2.360852208681)*math::log(math::abs(T)))*xn[0]*xn[3]*math::exp(-258.18559308467115*sx10 + 846.15238706523724*sx11 - 1113.0879095147111*sx12 + 671.95094388835207*sx13 - 154.90262957142161*sx14 - 24.766609674457612*sx8 + 13.307984239358756*sx9);
-    const Real sdT_x27 = (((((3.790399927439452e-18*((2.360852208681*math::exp((2.360852208681 * math::log(math::abs(T)))))/T))*xn[0])*xn[3])*math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9)))) + ((((3.790399927439452e-18 * math::exp((2.360852208681 * math::log(math::abs(T))))) * xn[0]) * xn[3])*(math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9)))*((((((((-258.18559308467115)*sdT_x10) + (846.1523870652372*sdT_x11)) - (1113.087909514711*sdT_x12)) + (671.9509438883521*sdT_x13)) - (154.9026295714216*sdT_x14)) - (24.766609674457612*sdT_x8)) + (13.307984239358756*sdT_x9)))));
+    const Real sdT_x27 = (((((3.790399927439452e-18*((2.360852208681*math::exp((2.360852208681 * math::log(math::abs(T)))))*rT))*xn[0])*xn[3])*math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9)))) + ((((3.790399927439452e-18 * math::exp((2.360852208681 * math::log(math::abs(T))))) * xn[0]) * xn[3])*(math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9)))*((((((((-258.18559308467115)*sdT_x10) + (846.1523870652372*sdT_x11)) - (1113.087909514711*sdT_x12)) + (671.9509438883521*sdT_x13)) - (154.9026295714216*sdT_x14)) - (24.766609674457612*sdT_x8)) + (13.307984239358756*sdT_x9)))));
     const Real sdn0_x27 = ((((3.790399927439452e-18 * math::exp((2.360852208681 * math::log(math::abs(T)))))*1.0)*xn[3])*math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9))));
     const Real sdn3_x27 = ((((3.790399927439452e-18 * math::exp((2.360852208681 * math::log(math::abs(T))))) * xn[0])*1.0)*math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9))));
     const Real a0_T_8 = a0_T_7 + sdT_x27;
@@ -4328,13 +4329,13 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real a0_n11_0 = -sdn11_x31;
     out[matrix_index(0, 11)] = a0_n11_0;
     const Real sx32 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)));
-    const Real sdT_x32 = (1.4981088130721367e-10*((-0.6353*math::exp(((-0.6353) * math::log(math::abs(T)))))/T));
+    const Real sdT_x32 = (1.4981088130721367e-10*((-0.6353*math::exp(((-0.6353) * math::log(math::abs(T)))))*rT));
     const Real sx34 = 1.0/T;
-    const Real sdT_x34 = (-(((1.0 / T)*1.0)/T));
+    const Real sdT_x34 = (-(((1.0 / T)*1.0)*rT));
     const Real sx33 = 8.6173430000000006e-5*T;
     const Real sdT_x33 = (8.617343e-05*1.0);
     const Real sx35 = -4.3524079114767552e-117*math::exp((23.915965629999999)*math::log(math::abs(T)))*xn[0]*xn[13]*math::exp(-4361.9927099007555*sx10 + 4879.7345146260486*sx11 - 3366.4639698826941*sx12 + 1300.3028484326148*sx13 - 214.82451513312137*sx14 - 941.91483008144996*sx8 + 2506.9866529060901*sx9) + sx25*rhs_specie_choice_2(T, sx32, sx33, sx34);
-    const Real sdT_x35 = (((((((-4.352407911476755e-117)*((23.91596563*math::exp((23.91596563 * math::log(math::abs(T)))))/T))*xn[0])*xn[13])*math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))) + (((((-4.352407911476755e-117) * math::exp((23.91596563 * math::log(math::abs(T))))) * xn[0]) * xn[13])*(math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))*((((((((-4361.9927099007555)*sdT_x10) + (4879.734514626049*sdT_x11)) - (3366.463969882694*sdT_x12)) + (1300.3028484326148*sdT_x13)) - (214.82451513312137*sdT_x14)) - (941.91483008145*sdT_x8)) + (2506.98665290609*sdT_x9))))) + (sx25*jacd_rhs_specie_choice_2_2(T, sx32, sx33, sx34, sdT_x32, sdT_x33, sdT_x34)));
+    const Real sdT_x35 = (((((((-4.352407911476755e-117)*((23.91596563*math::exp((23.91596563 * math::log(math::abs(T)))))*rT))*xn[0])*xn[13])*math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))) + (((((-4.352407911476755e-117) * math::exp((23.91596563 * math::log(math::abs(T))))) * xn[0]) * xn[13])*(math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))*((((((((-4361.9927099007555)*sdT_x10) + (4879.734514626049*sdT_x11)) - (3366.463969882694*sdT_x12)) + (1300.3028484326148*sdT_x13)) - (214.82451513312137*sdT_x14)) - (941.91483008145*sdT_x8)) + (2506.98665290609*sdT_x9))))) + (sx25*jacd_rhs_specie_choice_2_2(T, sx32, sx33, sx34, sdT_x32, sdT_x33, sdT_x34)));
     const Real sdn0_x35 = ((((((-4.352407911476755e-117) * math::exp((23.91596563 * math::log(math::abs(T)))))*1.0)*xn[13])*math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))) + (sdn0_x25*rhs_specie_choice_2(T, sx32, sx33, sx34)));
     const Real sdn12_x35 = (sdn12_x25*rhs_specie_choice_2(T, sx32, sx33, sx34));
     const Real sdn13_x35 = (((((-4.352407911476755e-117) * math::exp((23.91596563 * math::log(math::abs(T))))) * xn[0])*1.0)*math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9))));
@@ -4345,7 +4346,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     out[matrix_index(0, 12)] = a0_n12_1;
     out[matrix_index(0, 13)] = a0_n13_0;
     const Real sx36 = -5.9082438637265071e-70*math::exp((13.536555999999999)*math::log(math::abs(T)))*sx23*math::exp(-2207.4643501257692*sx10 + 2500.8077583366976*sx11 - 1768.8867461266502*sx12 + 704.19926629500367*sx13 - 120.0438480494693*sx14 - 502.72883252679094*sx8 + 1281.477767828706*sx9) + xn[0]*xn[1]*rhs_specie_choice_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9);
-    const Real sdT_x36 = ((((((-5.908243863726507e-70)*((13.536556*math::exp((13.536556 * math::log(math::abs(T)))))/T))*sx23)*math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))) + ((((-5.908243863726507e-70) * math::exp((13.536556 * math::log(math::abs(T))))) * sx23)*(math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))*((((((((-2207.464350125769)*sdT_x10) + (2500.8077583366976*sdT_x11)) - (1768.8867461266502*sdT_x12)) + (704.1992662950037*sdT_x13)) - (120.0438480494693*sdT_x14)) - (502.72883252679094*sdT_x8)) + (1281.477767828706*sdT_x9))))) + ((xn[0] * xn[1])*jacd_rhs_specie_choice_3_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9, sdT_x10, sdT_x11, sdT_x12, sdT_x13, sdT_x14, sdT_x15, sdT_x32, sdT_x33, sdT_x8, sdT_x9)));
+    const Real sdT_x36 = ((((((-5.908243863726507e-70)*((13.536556*math::exp((13.536556 * math::log(math::abs(T)))))*rT))*sx23)*math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))) + ((((-5.908243863726507e-70) * math::exp((13.536556 * math::log(math::abs(T))))) * sx23)*(math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))*((((((((-2207.464350125769)*sdT_x10) + (2500.8077583366976*sdT_x11)) - (1768.8867461266502*sdT_x12)) + (704.1992662950037*sdT_x13)) - (120.0438480494693*sdT_x14)) - (502.72883252679094*sdT_x8)) + (1281.477767828706*sdT_x9))))) + ((xn[0] * xn[1])*jacd_rhs_specie_choice_3_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9, sdT_x10, sdT_x11, sdT_x12, sdT_x13, sdT_x14, sdT_x15, sdT_x32, sdT_x33, sdT_x8, sdT_x9)));
     const Real sdn0_x36 = (((((-5.908243863726507e-70) * math::exp((13.536556 * math::log(math::abs(T)))))*sdn0_x23)*math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))) + ((1.0*xn[1])*rhs_specie_choice_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9)));
     const Real sdn1_x36 = ((xn[0]*1.0)*rhs_specie_choice_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9));
     const Real sdn2_x36 = ((((-5.908243863726507e-70) * math::exp((13.536556 * math::log(math::abs(T)))))*sdn2_x23)*math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9))));
@@ -4355,7 +4356,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real a0_n2_2 = a0_n2_1 - sdn2_x36;
     out[matrix_index(0, 1)] = a0_n1_1;
     const Real sx40 = sx16*(1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T))))/(0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0);
-    const Real sdT_x40 = (((sx16*(((1.35e-09*((0.098493*math::exp((0.098493 * math::log(math::abs(T)))))/T)) + (4.43502e-10*((0.5561*math::exp((0.5561 * math::log(math::abs(T)))))/T))) + (3.7408500000000004e-16*((2.1826*math::exp((2.1826 * math::log(math::abs(T)))))/T))))/((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0)) - ((((sx16 * (((1.35e-09 * math::exp((0.098493 * math::log(math::abs(T))))) + (4.43502e-10 * math::exp((0.5561 * math::log(math::abs(T)))))) + (3.7408500000000004e-16 * math::exp((2.1826 * math::log(math::abs(T))))))) / ((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0))*(((0.006191*((1.0461*math::exp((1.0461 * math::log(math::abs(T)))))/T)) + (8.9712e-11*((3.0424*math::exp((3.0424 * math::log(math::abs(T)))))/T))) + (3.2576e-14*((3.7741*math::exp((3.7741 * math::log(math::abs(T)))))/T))))/((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0)));
+    const Real sdT_x40 = (((sx16*(((1.35e-09*((0.098493*math::exp((0.098493 * math::log(math::abs(T)))))*rT)) + (4.43502e-10*((0.5561*math::exp((0.5561 * math::log(math::abs(T)))))*rT))) + (3.7408500000000004e-16*((2.1826*math::exp((2.1826 * math::log(math::abs(T)))))*rT))))/((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0)) - ((((sx16 * (((1.35e-09 * math::exp((0.098493 * math::log(math::abs(T))))) + (4.43502e-10 * math::exp((0.5561 * math::log(math::abs(T)))))) + (3.7408500000000004e-16 * math::exp((2.1826 * math::log(math::abs(T))))))) / ((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0))*(((0.006191*((1.0461*math::exp((1.0461 * math::log(math::abs(T)))))*rT)) + (8.9712e-11*((3.0424*math::exp((3.0424 * math::log(math::abs(T)))))*rT))) + (3.2576e-14*((3.7741*math::exp((3.7741 * math::log(math::abs(T)))))*rT))))/((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0)));
     const Real sdn2_x40 = ((sdn2_x16*(((1.35e-09 * math::exp((0.098493 * math::log(math::abs(T))))) + (4.43502e-10 * math::exp((0.5561 * math::log(math::abs(T)))))) + (3.7408500000000004e-16 * math::exp((2.1826 * math::log(math::abs(T)))))))/((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0));
     const Real sdn3_x40 = ((sdn3_x16*(((1.35e-09 * math::exp((0.098493 * math::log(math::abs(T))))) + (4.43502e-10 * math::exp((0.5561 * math::log(math::abs(T)))))) + (3.7408500000000004e-16 * math::exp((2.1826 * math::log(math::abs(T)))))))/((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0));
     const Real sx37 = 7.1999999999999996e-8*xn[9]*sx30;
@@ -4380,7 +4381,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sdn0_x41 = (1.0*xn[8]);
     const Real sdn8_x41 = (xn[0]*1.0);
     const Real sx42 = 35.5*math::exp((-2.2799999999999998)*math::log(math::abs(T)))*sx41*math::exp(-46707.0*sx34);
-    const Real sdT_x42 = ((((35.5*((-2.28*math::exp(((-2.28) * math::log(math::abs(T)))))/T))*sx41)*math::exp(((-46707.0) * sx34))) + (((35.5 * math::exp(((-2.28) * math::log(math::abs(T))))) * sx41)*(math::exp(((-46707.0) * sx34))*((-46707.0)*sdT_x34))));
+    const Real sdT_x42 = ((((35.5*((-2.28*math::exp(((-2.28) * math::log(math::abs(T)))))*rT))*sx41)*math::exp(((-46707.0) * sx34))) + (((35.5 * math::exp(((-2.28) * math::log(math::abs(T))))) * sx41)*(math::exp(((-46707.0) * sx34))*((-46707.0)*sdT_x34))));
     const Real sdn0_x42 = (((35.5 * math::exp(((-2.28) * math::log(math::abs(T)))))*sdn0_x41)*math::exp(((-46707.0) * sx34)));
     const Real sdn8_x42 = (((35.5 * math::exp(((-2.28) * math::log(math::abs(T)))))*sdn8_x41)*math::exp(((-46707.0) * sx34)));
     const Real sx43 = sx37 - sx39 - sx40 + sx42;
@@ -4538,7 +4539,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real a9_n2_0 = sdn2_x66;
     const Real a9_n9_0 = sdn9_x66;
     const Real sx67 = math::exp((-0.5)*math::log(math::abs(T)));
-    const Real sdT_x67 = ((-0.5*math::exp(((-0.5) * math::log(math::abs(T)))))/T);
+    const Real sdT_x67 = ((-0.5*math::exp(((-0.5) * math::log(math::abs(T)))))*rT);
     const Real a5_T_2 = a5_T_1 + (((1.9745379206285203e-06 * xn[4]) * xn[7])*sdT_x67);
     const Real a5_n4_1 = a5_n4_0 + (((1.9745379206285203e-06*1.0)*xn[7])*sx67);
     const Real a5_n7_0 = (((1.9745379206285203e-06 * xn[4])*1.0)*sx67);
@@ -4561,7 +4562,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sdn1_x70 = ((1.0*xn[13])*rhs_specie_choice_7(T, sx0, sx34, sx4));
     const Real sdn13_x70 = ((xn[1]*1.0)*rhs_specie_choice_7(T, sx0, sx34, sx4));
     const Real sx71 = math::exp((0.25)*math::log(math::abs(T)));
-    const Real sdT_x71 = ((0.25*math::exp((0.25 * math::log(math::abs(T)))))/T);
+    const Real sdT_x71 = ((0.25*math::exp((0.25 * math::log(math::abs(T)))))*rT);
     const Real sx72 = 2.8833736969617052e-16*xn[12]*xn[2]*sx71;
     const Real sdT_x72 = (((2.883373696961705e-16 * xn[12]) * xn[2])*sdT_x71);
     const Real sdn2_x72 = (((2.883373696961705e-16 * xn[12])*1.0)*sx71);
@@ -4758,7 +4759,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sdn9_x98 = (-(((1.0 / ((math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0)))) * sx83) + 1.0))*(math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0))))*sdn9_x83))/((math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0)))) * sx83) + 1.0)));
     const Real sdn10_x98 = (-(((1.0 / ((math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0)))) * sx83) + 1.0))*(math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0))))*sdn10_x83))/((math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0)))) * sx83) + 1.0)));
     const Real sx100 = math::exp((0.34999999999999998)*math::log(math::abs(T)))*sx41*math::exp(-102000.0*sx34);
-    const Real sdT_x100 = (((((0.35*math::exp((0.35 * math::log(math::abs(T)))))/T)*sx41)*math::exp(((-102000.0) * sx34))) + ((math::exp((0.35 * math::log(math::abs(T)))) * sx41)*(math::exp(((-102000.0) * sx34))*((-102000.0)*sdT_x34))));
+    const Real sdT_x100 = (((((0.35*math::exp((0.35 * math::log(math::abs(T)))))*rT)*sx41)*math::exp(((-102000.0) * sx34))) + ((math::exp((0.35 * math::log(math::abs(T)))) * sx41)*(math::exp(((-102000.0) * sx34))*((-102000.0)*sdT_x34))));
     const Real sdn0_x100 = ((math::exp((0.35 * math::log(math::abs(T))))*sdn0_x41)*math::exp(((-102000.0) * sx34)));
     const Real sdn8_x100 = ((math::exp((0.35 * math::log(math::abs(T))))*sdn8_x41)*math::exp(((-102000.0) * sx34)));
     const Real a2_T_11 = a2_T_10 + (8.76e-10*sdT_x100);
@@ -4819,7 +4820,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real a2_n8_6 = a2_n8_5 + sdn8_x103;
     const Real a2_n10_2 = a2_n10_1 + sdn10_x103;
     const Real sx104 = 6.1739095063118665e-10*math::exp((0.40999999999999998)*math::log(math::abs(T)));
-    const Real sdT_x104 = (6.173909506311866e-10*((0.41*math::exp((0.41 * math::log(math::abs(T)))))/T));
+    const Real sdT_x104 = (6.173909506311866e-10*((0.41*math::exp((0.41 * math::log(math::abs(T)))))*rT));
     const Real sx105 = sx104*sx21;
     const Real sdT_x105 = (sdT_x104*sx21);
     const Real sdn3_x105 = (sx104*sdn3_x21);
@@ -5898,7 +5899,7 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
     Real last_diag = 0.0;
 
     if (A[midx(pivot_row, K)] != 0.0) {
-        if (pivot_row != K) {
+        {  // unconditional interchange (a no-op when pivot_row == K)
             const Real t = A[midx(pivot_row, K)];
             A[midx(pivot_row, K)] = A[midx(K, K)];
             A[midx(K, K)] = t;
