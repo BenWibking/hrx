@@ -53,35 +53,7 @@ DEVICE int integrate(ScratchView s) {
     // evaluates it while retrying lanes wait, then all lanes run the
     // decomposition and stages together. Same per-lane sequence of operations.
     while (!done) {
-      if (need_jac) {
-        if (n_step > max_steps_c) {
-            s.t[0] = x;
-            s.dt[0] = h;
-            result = TOO_MANY_STEPS; done = true;
-        }
-        else if (0.1 * math::abs(h) <= math::abs(x) * uround_c) {
-            s.t[0] = x;
-            s.dt[0] = h;
-            result = DT_UNDERFLOW; done = true;
-        }
-        else if (last) {
-            s.t[0] = x;
-            s.dt[0] = hopt;
-            result = SUCCESS; done = true;
-        }
-
-        if (!done) {
-            hopt = h;
-            if (x + h * 1.0001 >= s.tout[0]) {
-                h = s.tout[0] - x;
-                last = true;
-            }
-
-            CHEM_EVAL_JACOBIAN(s, x);
-            need_jac = false;
-        }
-      }
-        if (!done) {
+        if (!need_jac) {
                 const Real fac = 1.0 / (h * C::gamma);
                 if (decompose(s, fac) != 0) {
                     nsing += 1;
@@ -196,6 +168,34 @@ DEVICE int integrate(ScratchView s) {
                     // n_step, n_accept and the step of the first accept.
                 }
             }
+      if (need_jac) {
+        if (n_step > max_steps_c) {
+            s.t[0] = x;
+            s.dt[0] = h;
+            result = TOO_MANY_STEPS; done = true;
+        }
+        else if (0.1 * math::abs(h) <= math::abs(x) * uround_c) {
+            s.t[0] = x;
+            s.dt[0] = h;
+            result = DT_UNDERFLOW; done = true;
+        }
+        else if (last) {
+            s.t[0] = x;
+            s.dt[0] = hopt;
+            result = SUCCESS; done = true;
+        }
+
+        if (!done) {
+            hopt = h;
+            if (x + h * 1.0001 >= s.tout[0]) {
+                h = s.tout[0] - x;
+                last = true;
+            }
+
+            CHEM_EVAL_JACOBIAN(s, x);
+            need_jac = false;
+        }
+      }
     }
     // The step counters are only read after integrate returns.
     s.n_step[0] = n_step;
