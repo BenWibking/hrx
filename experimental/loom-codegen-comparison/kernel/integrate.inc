@@ -48,7 +48,12 @@ DEVICE int integrate(ScratchView s) {
     int n_step = 0;
     int n_accept = 0;
 
+    bool need_jac = true;
+    // One loop for new steps and retries: a lane that needs a new Jacobian
+    // evaluates it while retrying lanes wait, then all lanes run the
+    // decomposition and stages together. Same per-lane sequence of operations.
     while (!done) {
+      if (need_jac) {
         if (n_step > max_steps_c) {
             s.t[0] = x;
             s.dt[0] = h;
@@ -73,9 +78,10 @@ DEVICE int integrate(ScratchView s) {
             }
 
             CHEM_EVAL_JACOBIAN(s, x);
-            bool retry = true;
-
-            while (retry && !done) {
+            need_jac = false;
+        }
+      }
+        if (!done) {
                 const Real fac = 1.0 / (h * C::gamma);
                 if (decompose(s, fac) != 0) {
                     nsing += 1;
@@ -180,7 +186,7 @@ DEVICE int integrate(ScratchView s) {
                     }
                     reject = false;
                     h = hnew;
-                    retry = false;
+                    need_jac = true;
                 } else {
 
                     reject = true;
@@ -190,7 +196,6 @@ DEVICE int integrate(ScratchView s) {
                     // n_step, n_accept and the step of the first accept.
                 }
             }
-        }
     }
     // The step counters are only read after integrate returns.
     s.n_step[0] = n_step;

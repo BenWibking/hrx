@@ -236,7 +236,7 @@ return ((T <= 1160.0) ? (
    1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs(T)))
 )
 : (
-   3.3178155742407614e-14*math::exp((1.1394493358416311)*math::log(math::abs(T)))*math::exp(-10.993097527150175*x10 + 14.449862906216714*x11 + 58.228375789703179*x12 - 162.59852239006702*x13 + 144.55426734953477*x14 - 44.454280878123605*x15 - 12.447178055372778*x8 + 6.9391784778399117*x9)
+   3.3178155742407614e-14*math::exp(((1.1394493358416311)*math::log(math::abs(T))) + (-10.993097527150175*x10 + 14.449862906216714*x11 + 58.228375789703179*x12 - 162.59852239006702*x13 + 144.55426734953477*x14 - 44.454280878123605*x15 - 12.447178055372778*x8 + 6.9391784778399117*x9))
 ));
 }
 DEVICE auto rhs_specie_choice_2(Real T, Real x32, Real x33, Real x34) {
@@ -252,7 +252,7 @@ return ((x33 <= 5500.0) ? (
    x32
 )
 : (
-   3.2867337024382687e-10*math::exp((-0.72411256578268512)*math::log(math::abs(T)))*math::exp(-2.4649195146505534*x10 - 1.020773727011937*x11 + 3.3530579587656564*x12 + 3.6203127646377791*x13 - 1.0930705283186732*x14 - 1.6921001126637107*x15 - 1.774686809424741*x8 - 1.951835616513679*x9)
+   3.2867337024382687e-10*math::exp(((-0.72411256578268512)*math::log(math::abs(T))) + (-2.4649195146505534*x10 - 1.020773727011937*x11 + 3.3530579587656564*x12 + 3.6203127646377791*x13 - 1.0930705283186732*x14 - 1.6921001126637107*x15 - 1.774686809424741*x8 - 1.951835616513679*x9))
 ));
 }
 DEVICE auto rhs_specie_choice_4(Real T, Real x28, Real x29) {
@@ -273,7 +273,7 @@ return ((T < 30) ? (
 }
 DEVICE auto rhs_specie_choice_6(Real T, Real x34, Real x52, Real x56, Real x6, Real x60, Real x61) {
 return ((T >= 100.0 & T <= 30000.0) ? (
-   (-1.4491368e-7*x52 + 3.4172804999999998e-8*x56 + 3.5311931999999998e-13*((x6)*(x6)*(x6)*(x6)*(x6)*(x6)*(x6)) - 1.8171411000000001e-11*math::exp((6)*math::log(math::abs(x6))) + 3.3735381999999997e-7*x6 - 4.7813727999999997e-9*x60 + 3.9731542e-10*x61 - 3.3232183000000002e-7)*math::exp(-21237.150000000001*x34)
+   (-1.4491368e-7*x52 + 3.4172804999999998e-8*x56 + 3.5311931999999998e-13*((x6)*(x6)*(x6)*(x6)*(x6)*(x6)*(x6)) - 1.8171411000000001e-11*math::powi<6>(math::abs(x6)) + 3.3735381999999997e-7*x6 - 4.7813727999999997e-9*x60 + 3.9731542e-10*x61 - 3.3232183000000002e-7)*math::exp(-21237.150000000001*x34)
 )
 : (
    0
@@ -289,7 +289,7 @@ return ((x4) ? (
 }
 DEVICE auto rhs_specie_choice_8(Real T, Real x34, bool x73) {
 return ((x73) ? (
-   2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs(T)))*math::exp(-37.100000000000001*x34) - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
+   2.0000000000000001e-10*math::exp(((0.40200000000000002)*math::log(math::abs(T))) + (-37.100000000000001*x34)) - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
 )
 : (
    0
@@ -297,7 +297,7 @@ return ((x73) ? (
 }
 DEVICE auto rhs_specie_choice_9(Real T, Real x34, bool x73) {
 return ((x73) ? (
-   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs(T)))*math::exp(-33.0*x34)
+   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp(((0.39600000000000002)*math::log(math::abs(T))) + (-33.0*x34))
 )
 : (
    0
@@ -338,7 +338,7 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real x83 = g84_6;
     const Real T = temperature;
     const Real x0 = math::exp((-0.75)*math::log(math::abs(T)));
-    const Real x2 = 1.3300135414628029e-18*math::exp((0.94999999999999996)*math::log(math::abs(T)))*xn[0]*xn[5]*math::exp(-0.00010729613733905579*T);
+    const Real x2 = 1.3300135414628029e-18*math::exp(((0.94999999999999996)*math::log(math::abs(T))) + (-0.00010729613733905579*T))*xn[0]*xn[5];
     const Real acc0_0 = -(x2);
     const Real acc5_0 = -(x2);
     const Real acc7_0 = x2;
@@ -360,10 +360,10 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real x9 = ((x7)*(x7)*(x7));
     const Real x10 = ((((x7)*(x7)))*(((x7)*(x7))));
     const Real x11 = ((x7)*(x7)*(x7)*(x7)*(x7));
-    const Real x12 = math::exp((6)*math::log(math::abs(x7)));
+    const Real x12 = math::powi<6>(math::abs(x7));
     const Real x13 = ((x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7));
     const Real x15 = ((x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7)*(x7));
-    const Real x14 = math::exp((8)*math::log(math::abs(x7)));
+    const Real x14 = math::powi<8>(math::abs(x7));
     const Real x16 = xn[2]*xn[3];
     const Real x18 = xn[1]*xn[3];
     const Real x17 = x16*rhs_specie_choice_1(T, x10, x11, x12, x13, x14, x15, x8, x9);
@@ -379,29 +379,29 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc3_1 = acc3_0 - x22;
     const Real x23 = xn[0]*xn[2];
     const Real x25 = xn[0]*xn[12];
-    const Real x24 = 1.4000000000000001e-18*math::exp((0.92800000000000005)*math::log(math::abs(T)))*x23*math::exp(-6.1728395061728397e-5*T);
+    const Real x24 = 1.4000000000000001e-18*math::exp(((0.92800000000000005)*math::log(math::abs(T))) + (-6.1728395061728397e-5*T))*x23;
     const Real acc0_6 = acc0_5 - x24;
     const Real g109_1 = g109_0 - x24;
-    const Real x26 = 3.8571873359681582e-209*math::exp((43.933476326349997)*math::log(math::abs(T)))*x25*math::exp(-5902.1601240760483*x10 + 5825.9326359379538*x11 - 3578.1439181805954*x12 + 1242.7294446825149*x13 - 186.35635455381879*x14 - 1618.789587733125*x8 + 3854.4033653120223*x9);
+    const Real x26 = 3.8571873359681582e-209*math::exp(((43.933476326349997)*math::log(math::abs(T))) + (-5902.1601240760483*x10 + 5825.9326359379538*x11 - 3578.1439181805954*x12 + 1242.7294446825149*x13 - 186.35635455381879*x14 - 1618.789587733125*x8 + 3854.4033653120223*x9))*x25;
     const Real acc0_7 = acc0_6 + x26;
-    const Real x27 = 3.7903999274394518e-18*math::exp((2.360852208681)*math::log(math::abs(T)))*xn[0]*xn[3]*math::exp(-258.18559308467115*x10 + 846.15238706523724*x11 - 1113.0879095147111*x12 + 671.95094388835207*x13 - 154.90262957142161*x14 - 24.766609674457612*x8 + 13.307984239358756*x9);
+    const Real x27 = 3.7903999274394518e-18*math::exp(((2.360852208681)*math::log(math::abs(T))) + (-258.18559308467115*x10 + 846.15238706523724*x11 - 1113.0879095147111*x12 + 671.95094388835207*x13 - 154.90262957142161*x14 - 24.766609674457612*x8 + 13.307984239358756*x9))*xn[0]*xn[3];
     const Real acc0_8 = acc0_7 + x27;
     const Real g109_2 = g109_1 + x27;
     const Real x28 = math::sqrt(T);
     const Real x29 = 1.0/x28;
     const Real x30 = xn[0]*x29;
-    const Real x31 = 5.7884371785482823e-10*xn[11]*x30*math::exp((-1.7524)*math::log(math::abs(0.00060040841663220993*x28 + 1.0)))*math::exp((-0.24759999999999999)*math::log(math::abs(0.32668576019240059*x28 + 1.0)));
+    const Real x31 = 5.7884371785482823e-10*xn[11]*x30*math::exp(((-1.7524)*math::log(math::abs(0.00060040841663220993*x28 + 1.0))) + ((-0.24759999999999999)*math::log(math::abs(0.32668576019240059*x28 + 1.0))));
     const Real acc0_9 = acc0_8 - x31;
     const Real x32 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)));
     const Real x34 = 1.0/T;
     const Real x33 = 8.6173430000000006e-5*T;
-    const Real x35_t0 = -4.352407911476755e-117 * math::exp(23.91596563 * math::log(math::abs(T))) * xn[0] * xn[13] * math::exp(-4361.9927099007555 * x10 + 4879.734514626049 * x11 - 3366.463969882694 * x12 + 1300.3028484326148 * x13 - 214.82451513312137 * x14 - 941.91483008145 * x8 + 2506.98665290609 * x9);
+    const Real x35_t0 = -4.352407911476755e-117 * math::exp((23.91596563 * math::log(math::abs(T))) + (-4361.9927099007555 * x10 + 4879.734514626049 * x11 - 3366.463969882694 * x12 + 1300.3028484326148 * x13 - 214.82451513312137 * x14 - 941.91483008145 * x8 + 2506.98665290609 * x9)) * xn[0] * xn[13];
     const Real x35_t1 = x25 * rhs_specie_choice_2(T, x32, x33, x34);
-    const Real x35 = -4.3524079114767552e-117*math::exp((23.915965629999999)*math::log(math::abs(T)))*xn[0]*xn[13]*math::exp(-4361.9927099007555*x10 + 4879.7345146260486*x11 - 3366.4639698826941*x12 + 1300.3028484326148*x13 - 214.82451513312137*x14 - 941.91483008144996*x8 + 2506.9866529060901*x9) + x25*rhs_specie_choice_2(T, x32, x33, x34);
+    const Real x35 = -4.3524079114767552e-117*math::exp(((23.915965629999999)*math::log(math::abs(T))) + (-4361.9927099007555*x10 + 4879.7345146260486*x11 - 3366.4639698826941*x12 + 1300.3028484326148*x13 - 214.82451513312137*x14 - 941.91483008144996*x8 + 2506.9866529060901*x9))*xn[0]*xn[13] + x25*rhs_specie_choice_2(T, x32, x33, x34);
     const Real acc0_10 = acc0_9 - x35;
-    const Real x36_t0 = -5.908243863726507e-70 * math::exp(13.536556 * math::log(math::abs(T))) * x23 * math::exp(-2207.464350125769 * x10 + 2500.8077583366976 * x11 - 1768.8867461266502 * x12 + 704.1992662950037 * x13 - 120.0438480494693 * x14 - 502.72883252679094 * x8 + 1281.477767828706 * x9);
+    const Real x36_t0 = -5.908243863726507e-70 * math::exp((13.536556 * math::log(math::abs(T))) + (-2207.464350125769 * x10 + 2500.8077583366976 * x11 - 1768.8867461266502 * x12 + 704.1992662950037 * x13 - 120.0438480494693 * x14 - 502.72883252679094 * x8 + 1281.477767828706 * x9)) * x23;
     const Real x36_t1 = xn[0] * xn[1] * rhs_specie_choice_3(T, x10, x11, x12, x13, x14, x15, x32, x33, x8, x9);
-    const Real x36 = -5.9082438637265071e-70*math::exp((13.536555999999999)*math::log(math::abs(T)))*x23*math::exp(-2207.4643501257692*x10 + 2500.8077583366976*x11 - 1768.8867461266502*x12 + 704.19926629500367*x13 - 120.0438480494693*x14 - 502.72883252679094*x8 + 1281.477767828706*x9) + xn[0]*xn[1]*rhs_specie_choice_3(T, x10, x11, x12, x13, x14, x15, x32, x33, x8, x9);
+    const Real x36 = -5.9082438637265071e-70*math::exp(((13.536555999999999)*math::log(math::abs(T))) + (-2207.4643501257692*x10 + 2500.8077583366976*x11 - 1768.8867461266502*x12 + 704.19926629500367*x13 - 120.0438480494693*x14 - 502.72883252679094*x8 + 1281.477767828706*x9))*x23 + xn[0]*xn[1]*rhs_specie_choice_3(T, x10, x11, x12, x13, x14, x15, x32, x33, x8, x9);
     const Real acc0_11 = acc0_10 - x36;
     const Real g79_0 = x36;
     const Real x40 = x16*(1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T))))/(0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0);
@@ -414,7 +414,7 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc10_0 = x39;
     const Real g44_2 = g44_1 - x39;
     const Real x41 = xn[0]*xn[8];
-    const Real x42 = 35.5*math::exp((-2.2799999999999998)*math::log(math::abs(T)))*x41*math::exp(-46707.0*x34);
+    const Real x42 = 35.5*math::exp(((-2.2799999999999998)*math::log(math::abs(T))) + (-46707.0*x34))*x41;
     const Real g44_3 = g44_2 + x42;
     const Real x43 = g44_3;
     const Real acc0_12 = acc0_11 - x43;
@@ -422,7 +422,7 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real x44 = M_LN10;
     const Real x45 = 1.0/x44;
     const Real x46 = x45*x6;
-    const Real x47 = math::exp((-0.12690000000000001*math::exp((-3.0)*math::log(math::abs(x44)))*((x6)*(x6)*(x6)) + 1.1180000000000001*math::exp((-2.0)*math::log(math::abs(x44)))*((x6)*(x6)) - 1.5229999999999999*x46 - 19.379999999999999)*math::log(math::abs(10.0)));
+    const Real x47 = math::exp((-0.12690000000000001*math::powi<-3>(math::abs(x44))*((x6)*(x6)*(x6)) + 1.1180000000000001*math::powi<-2>(math::abs(x44))*((x6)*(x6)) - 1.5229999999999999*x46 - 19.379999999999999)*math::log(math::abs(10.0)));
     const Real x48 = xn[1]*xn[5];
     const Real x49 = x47*x48;
     const Real acc1_0 = -(x49);
@@ -434,7 +434,7 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc1_2 = acc1_1 - x51;
     const Real acc8_0 = x51;
     const Real x52 = ((x6)*(x6));
-    const Real x53 = math::exp((-2)*math::log(math::abs(x44)));
+    const Real x53 = math::powi<-2>(math::abs(x44));
     const Real x54 = x52*x53;
     const Real x56 = ((x6)*(x6)*(x6));
     const Real x55_t0 = 8.460000000000001e-10 * x46;
@@ -533,12 +533,12 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc4_3 = acc4_2 - x97;
     const Real acc9_1 = acc9_0 + x97;
     const Real x98 = 1.0/(math::exp((1.3*x45*(x6 - 9.2103403719761836) - 137.42519902360013*x53*((0.10857362047581294*x6 - 1)*(0.10857362047581294*x6 - 1)) - 4.8449999999999998)*math::log(math::abs(10.0)))*x83 + 1.0);
-    const Real x100 = math::exp((0.34999999999999998)*math::log(math::abs(T)))*x41*math::exp(-102000.0*x34);
+    const Real x100 = math::exp(((0.34999999999999998)*math::log(math::abs(T))) + (-102000.0*x34))*x41;
     const Real acc2_12 = acc2_11 + 8.76e-10 * x100;
     const Real acc8_5 = acc8_4 + -4.38e-10 * x100;
     const Real x101 = xn[5]*xn[8]*rhs_specie_choice_10(T, x34, x44, x46, x54, x57, x60, x61);
     const Real acc8_6 = acc8_5 - x101;
-    const Real x99 = ((xn[8])*(xn[8]))*math::exp((x98)*math::log(math::abs(1.1800000000000001e-10*math::exp(-69500.0*x34))))*math::exp((1.0 - x98)*math::log(math::abs(8.1250000000000003e-8*x67*(1.0 - math::exp(-6000.0*x34))*math::exp(-52000.0*x34))));
+    const Real x99 = ((xn[8])*(xn[8]))*math::exp(((x98)*math::log(math::abs(1.1800000000000001e-10*math::exp(-69500.0*x34)))) + ((1.0 - x98)*math::log(math::abs(8.1250000000000003e-8*x67*(1.0 - math::exp(-6000.0*x34))*math::exp(-52000.0*x34)))));
     const Real acc2_13 = acc2_12 + 2 * x99;
     const Real acc8_7 = acc8_6 - x99;
     const Real x102 = xn[10]*xn[2]*rhs_specie_choice_11(T, x3, x34);
@@ -1466,7 +1466,7 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real g88_13 = g88_12 + 0.7499410228243667 * xn[9];
     const Real x65 = g88_13;
     const Real T = temperature;
-    const Real g96_0 = 4.985670872372847e-33 * math::exp(3.76 * math::log(math::abs(T))) * math::exp(-2197000.0 / (T * T * T)) / (6.014246803527264e-08 * math::exp(2.1 * math::log(math::abs(T))) + 1.0);
+    const Real g96_0 = 4.985670872372847e-33 * math::exp((3.76 * math::log(math::abs(T))) + (-2197000.0 / (T * T * T))) / (6.014246803527264e-08 * math::exp(2.1 * math::log(math::abs(T))) + 1.0);
     const Real x1 = 1.0/x0;
     const Real x2 = math::sqrt(T);
     const Real x3 = xn[1] + xn[12] + xn[4];
@@ -1478,7 +1478,7 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real g96_2 = g96_1 + 6.7e-19 * math::exp(-5860.0 * x4);
     const Real g96_3 = g96_2 + 3e-24 * math::exp(-510.0 * x4);
     const Real x72 = g96_3;
-    const Real acc0_1 = acc0_0 + -3.1438547368704e-21 * math::exp(0.35 * math::log(math::abs(T))) * xn[0] * xn[8] * math::exp(-102000.0 * x4);
+    const Real acc0_1 = acc0_0 + -3.1438547368704e-21 * math::exp((0.35 * math::log(math::abs(T))) + (-102000.0 * x4)) * xn[0] * xn[8];
     const Real x5 = 2.73*z + 2.73;
     const Real acc0_2 = acc0_1 - 5.65e-36 * xn[0] * (T - x5) * ((z + 1.0) * (z + 1.0) * ((z + 1.0) * (z + 1.0)));
     const Real x6 = T <= 10;
@@ -1515,9 +1515,9 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real x23 = math::log(math::abs(T));
     const Real x24 = M_LN10;
     const Real x25 = 1.0/x24;
-    const Real x26 = math::exp((-2)*math::log(math::abs(x24)));
+    const Real x26 = math::powi<-2>(math::abs(x24));
     const Real x27 = 1.0/(math::exp((1.3*x25*(x23 - 9.2103403719761836) - 137.42519902360013*x26*((0.10857362047581294*x23 - 1)*(0.10857362047581294*x23 - 1)) - 4.8449999999999998)*math::log(math::abs(10.0)))*x17 + 1.0);
-    const Real acc0_19 = acc0_18 - 7.1777505408e-12 * (xn[8] * xn[8]) * math::exp(x27 * math::log(math::abs(1.18e-10 * math::exp(-69500.0 * x4)))) * math::exp((1.0 - x27) * math::log(math::abs(8.125e-08 * x15 * (1.0 - math::exp(-6000.0 * x4)) * math::exp(-52000.0 * x4))));
+    const Real acc0_19 = acc0_18 - 7.1777505408e-12 * (xn[8] * xn[8]) * math::exp((x27 * math::log(math::abs(1.18e-10 * math::exp(-69500.0 * x4)))) + ((1.0 - x27) * math::log(math::abs(8.125e-08 * x15 * (1.0 - math::exp(-6000.0 * x4)) * math::exp(-52000.0 * x4)))));
     const Real x28 = ((x23)*(x23));
     const Real x29 = x26*x28;
     const Real x30 = -4.8909149999999997*x23*x25 + 0.47490300000000002*x29 - 133.82830000000001*x4;
@@ -1533,7 +1533,7 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real x40 = -21.360939999999999*x25*math::log(27535.310000000001*x4 + 1.0) + 0.25820969999999999*x36;
     const Real acc0_20 = acc0_19 - 7.1777505408e-12 * xn[2] * xn[8] * (math::exp((42.70741 * x23 * x25 - 2.027365 * x29 - 21467.79 * x4 - 1657.4099999999999 * x4 / (math::exp(x39 * math::log(math::abs(math::exp((-x38 - 8.131322) * math::log(math::abs(10.0))) * x17))) + 1.0) - x40 - 142.7664 - (70.13837000000001 * x23 * x25 + 11.28215 * x25 * math::log(14254.55 * x4 + 1.0) - 4.7035149999999994 * x29 - x40 - 203.11568) / (math::exp(x39 * math::log(math::abs(math::exp((-x38 - 9.305564) * math::log(math::abs(10.0))) * x17))) + 1.0)) * math::log(math::abs(10.0))) + math::exp((43.20243 * x26 * x28 - 68.42243 * x34 - x37 - 23705.7 * x4 - 2080.41 * x4 / (math::exp(x33 * math::log(math::abs(math::exp((-x30 - 13.656822) * math::log(math::abs(10.0))) * x17))) + 1.0) - 178.4239 - (19.73427 * x25 * math::log(16780.95 * x4 + 1.0) + 37.886913 * x26 * x28 - 14.509090000000008 * x34 - x37 - 307.3192) / (math::exp(x33 * math::log(math::abs(math::exp((-x30 - 14.82123) * math::log(math::abs(10.0))) * x17))) + 1.0)) * math::log(math::abs(10.0))));
     const Real x41 = math::log(rhs_eint_choice_5(T));
-    const Real x42 = math::exp((-4)*math::log(math::abs(x24)));
+    const Real x42 = math::powi<-4>(math::abs(x24));
     const Real x43 = ((((x41)*(x41)))*(((x41)*(x41))));
     const Real x44 = ((x41)*(x41)*(x41));
     const Real x45 = ((x41)*(x41));
@@ -1543,9 +1543,9 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real x49 = ((x47)*(x47)*(x47));
     const Real x50 = ((x47)*(x47));
     const Real x51 = math::powi<-5>(x24);
-    const Real x52 = math::exp((-8)*math::log(math::abs(x24)));
+    const Real x52 = math::powi<-8>(math::abs(x24));
     const Real x53 = math::powi<-7>(x24);
-    const Real x54 = math::exp((-6)*math::log(math::abs(x24)));
+    const Real x54 = math::powi<-6>(math::abs(x24));
     const Real acc0_21 = acc0_20 - rhs_eint_choice_101(T, x25, x26, x35, x41, x42, x43, x44, x45, x47, x48, x49, x5, x50, x51, x52, x53, x54, xn);
     const Real x55 = x0 >= 0.5;
     const Real x56 = 1.0000420000000001*x25;
@@ -1558,7 +1558,7 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real x64 = math::exp((x56*math::log(x0) + 2.1498900000000001)*math::log(math::abs(10.0)))*x62;
     const Real x66 = 1.0/math::fabs(x65);
     const Real x67 = math::sqrt(x59);
-    const Real x68 = math::exp((-2)*math::log(math::abs(x65)));
+    const Real x68 = math::powi<-2>(math::abs(x65));
     const Real x69 = math::sqrt(x59*x68);
     const Real acc0_22 = acc0_21 - 0.00022681492 * (T * T * (T * T)) * x0 * x58 * rhs_eint_choice_36(x55, x57, x58, x59, x60, x61, x62, x63, x64, x66, x67, x68, x69);
     const Real x70 = 1.2500000000000001e-10*xn[0] + 1.2500000000000001e-10*xn[1] + 1.2500000000000001e-10*xn[10] + 1.2500000000000001e-10*xn[11] + 1.2500000000000001e-10*xn[12] + 1.2500000000000001e-10*xn[13] + 1.2500000000000001e-10*xn[2] + 1.2500000000000001e-10*xn[3] + 1.2500000000000001e-10*xn[4] + 1.2500000000000001e-10*xn[5] + 1.2500000000000001e-10*xn[6] + 1.2500000000000001e-10*xn[7] + 1.2500000000000001e-10*xn[8] + 1.2500000000000001e-10*xn[9] <= 9.9999999999999993e-41;
@@ -1571,9 +1571,9 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real x78 = x35*x77;
     const Real x79 = ((((x75)*(x75)))*(((x75)*(x75))));
     const Real x80 = ((x75)*(x75)*(x75)*(x75)*(x75));
-    const Real x81 = x54*math::exp((6)*math::log(math::abs(x75)));
+    const Real x81 = x54*math::powi<6>(math::abs(x75));
     const Real x82 = x53*((x75)*(x75)*(x75)*(x75)*(x75)*(x75)*(x75));
-    const Real x83 = math::exp((8)*math::log(math::abs(x75)));
+    const Real x83 = math::powi<8>(math::abs(x75));
     const Real x84 = math::exp((5.0194035000000001*x25*x74 + 5627.2167698544854*x42*x79 + 86051.290034608537*x51*x80 + 9415777.8988952208*x52*x83 - 75.100986441619156*x76 - 1554.3387057364687*x78 - 428804.85473346239*x81 - 1662263.0320406025*x82 - 20.584225)*math::log(math::abs(10.0)));
     const Real x85 = T <= 10000.0;
     const Real x86 = 0.00020000000000000001*T;
@@ -4041,7 +4041,7 @@ return ((T < 30) ? (
 }
 DEVICE auto jacd_rhs_specie_choice_6_6(Real T, Real x34, Real x52, Real x56, Real x6, Real x60, Real x61, Real dx34, Real dx52, Real dx56, Real dx6, Real dx60, Real dx61) {
 return ((T >= 100.0 & T <= 30000.0) ? (
-   ((((((((((-1.4491368e-07)*dx52) + (3.4172805e-08*dx56)) + (3.5311932e-13*((((((((((((dx6*x6) + (x6*dx6))*x6) + ((x6 * x6)*dx6))*x6) + (((x6 * x6) * x6)*dx6))*x6) + ((((x6 * x6) * x6) * x6)*dx6))*x6) + (((((x6 * x6) * x6) * x6) * x6)*dx6))*x6) + ((((((x6 * x6) * x6) * x6) * x6) * x6)*dx6)))) - (1.8171411e-11*(6.0*(x6*x6*x6*x6*x6)*dx6))) + (3.3735382e-07*dx6)) - (4.7813728e-09*dx60)) + (3.9731542e-10*dx61))*math::exp(((-21237.15) * x34))) + ((((((((((-1.4491368e-07) * x52) + (3.4172805e-08 * x56)) + (3.5311932e-13 * ((((((x6 * x6) * x6) * x6) * x6) * x6) * x6))) - (1.8171411e-11 * math::exp((6.0 * math::log(math::abs(x6)))))) + (3.3735382e-07 * x6)) - (4.7813728e-09 * x60)) + (3.9731542e-10 * x61)) - 3.3232183e-07)*(math::exp(((-21237.15) * x34))*((-21237.15)*dx34))))
+   ((((((((((-1.4491368e-07)*dx52) + (3.4172805e-08*dx56)) + (3.5311932e-13*((((((((((((dx6*x6) + (x6*dx6))*x6) + ((x6 * x6)*dx6))*x6) + (((x6 * x6) * x6)*dx6))*x6) + ((((x6 * x6) * x6) * x6)*dx6))*x6) + (((((x6 * x6) * x6) * x6) * x6)*dx6))*x6) + ((((((x6 * x6) * x6) * x6) * x6) * x6)*dx6)))) - (1.8171411e-11*(6.0*(x6*x6*x6*x6*x6)*dx6))) + (3.3735382e-07*dx6)) - (4.7813728e-09*dx60)) + (3.9731542e-10*dx61))*math::exp(((-21237.15) * x34))) + ((((((((((-1.4491368e-07) * x52) + (3.4172805e-08 * x56)) + (3.5311932e-13 * ((((((x6 * x6) * x6) * x6) * x6) * x6) * x6))) - (1.8171411e-11 * math::powi<6>(math::abs(x6)))) + (3.3735382e-07 * x6)) - (4.7813728e-09 * x60)) + (3.9731542e-10 * x61)) - 3.3232183e-07)*(math::exp(((-21237.15) * x34))*((-21237.15)*dx34))))
 )
 : (
    0.0
@@ -4238,13 +4238,13 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sdT_x10 = ((((sdT_x7*sx7) + (sx7*sdT_x7))*(sx7 * sx7)) + ((sx7 * sx7)*((sdT_x7*sx7) + (sx7*sdT_x7))));
     const Real sx11 = ((sx7)*(sx7)*(sx7)*(sx7)*(sx7));
     const Real sdT_x11 = ((((((((sdT_x7*sx7) + (sx7*sdT_x7))*sx7) + ((sx7 * sx7)*sdT_x7))*sx7) + (((sx7 * sx7) * sx7)*sdT_x7))*sx7) + ((((sx7 * sx7) * sx7) * sx7)*sdT_x7));
-    const Real sx12 = math::exp((6)*math::log(math::abs(sx7)));
+    const Real sx12 = math::powi<6>(math::abs(sx7));
     const Real sdT_x12 = (6.0*(sx7*sx7*sx7*sx7*sx7)*sdT_x7);
     const Real sx13 = ((sx7)*(sx7)*(sx7)*(sx7)*(sx7)*(sx7)*(sx7));
     const Real sdT_x13 = ((((((((((((sdT_x7*sx7) + (sx7*sdT_x7))*sx7) + ((sx7 * sx7)*sdT_x7))*sx7) + (((sx7 * sx7) * sx7)*sdT_x7))*sx7) + ((((sx7 * sx7) * sx7) * sx7)*sdT_x7))*sx7) + (((((sx7 * sx7) * sx7) * sx7) * sx7)*sdT_x7))*sx7) + ((((((sx7 * sx7) * sx7) * sx7) * sx7) * sx7)*sdT_x7));
     const Real sx15 = ((sx7)*(sx7)*(sx7)*(sx7)*(sx7)*(sx7)*(sx7)*(sx7)*(sx7));
     const Real sdT_x15 = ((((((((((((((((sdT_x7*sx7) + (sx7*sdT_x7))*sx7) + ((sx7 * sx7)*sdT_x7))*sx7) + (((sx7 * sx7) * sx7)*sdT_x7))*sx7) + ((((sx7 * sx7) * sx7) * sx7)*sdT_x7))*sx7) + (((((sx7 * sx7) * sx7) * sx7) * sx7)*sdT_x7))*sx7) + ((((((sx7 * sx7) * sx7) * sx7) * sx7) * sx7)*sdT_x7))*sx7) + (((((((sx7 * sx7) * sx7) * sx7) * sx7) * sx7) * sx7)*sdT_x7))*sx7) + ((((((((sx7 * sx7) * sx7) * sx7) * sx7) * sx7) * sx7) * sx7)*sdT_x7));
-    const Real sx14 = math::exp((8)*math::log(math::abs(sx7)));
+    const Real sx14 = math::powi<8>(math::abs(sx7));
     const Real sdT_x14 = (8.0*(sx7*sx7*sx7*sx7*sx7*sx7*sx7)*sdT_x7);
     const Real sx16 = xn[2]*xn[3];
     const Real sdn2_x16 = (1.0*xn[3]);
@@ -4416,7 +4416,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sx45 = 1.0/sx44;
     const Real sx46 = sx45*sx6;
     const Real sdT_x46 = (sx45*sdT_x6);
-    const Real sx47 = math::exp((-0.12690000000000001*math::exp((-3.0)*math::log(math::abs(sx44)))*((sx6)*(sx6)*(sx6)) + 1.1180000000000001*math::exp((-2.0)*math::log(math::abs(sx44)))*((sx6)*(sx6)) - 1.5229999999999999*sx46 - 19.379999999999999)*math::log(math::abs(10.0)));
+    const Real sx47 = math::exp((-0.12690000000000001*math::powi<-3>(math::abs(sx44))*((sx6)*(sx6)*(sx6)) + 1.1180000000000001*math::powi<-2>(math::abs(sx44))*((sx6)*(sx6)) - 1.5229999999999999*sx46 - 19.379999999999999)*math::log(math::abs(10.0)));
     const Real sdT_x47 = (math::exp((((((((-0.1269) * math::exp(((-3.0) * math::log(math::abs(sx44))))) * ((sx6 * sx6) * sx6)) + ((1.118 * math::exp(((-2.0) * math::log(math::abs(sx44))))) * (sx6 * sx6))) - (1.523 * sx46)) - 19.38) * math::log(math::abs(10.0))))*((((((-0.1269) * math::exp(((-3.0) * math::log(math::abs(sx44)))))*((((sdT_x6*sx6) + (sx6*sdT_x6))*sx6) + ((sx6 * sx6)*sdT_x6))) + ((1.118 * math::exp(((-2.0) * math::log(math::abs(sx44)))))*((sdT_x6*sx6) + (sx6*sdT_x6)))) - (1.523*sdT_x46))*math::log(math::abs(10.0))));
     const Real sx48 = xn[1]*xn[5];
     const Real sdn1_x48 = (1.0*xn[5]);
@@ -4455,7 +4455,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     out[matrix_index(1, 10)] = a1_n10_0;
     const Real sx52 = ((sx6)*(sx6));
     const Real sdT_x52 = ((sdT_x6*sx6) + (sx6*sdT_x6));
-    const Real sx53 = math::exp((-2)*math::log(math::abs(sx44)));
+    const Real sx53 = math::powi<-2>(math::abs(sx44));
     const Real sx54 = sx52*sx53;
     const Real sdT_x54 = (sdT_x52*sx53);
     const Real sx56 = ((sx6)*(sx6)*(sx6));
@@ -5097,8 +5097,8 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1845 = ((v1844)*(v1844)*(v1844)*(v1844)*(v1844));
     const Real v1704 = M_LN10;
     const Real v1705 = 1.0/v1704;
-    const Real v1773 = math::exp((-4)*math::log(math::abs(v1704)));
-    const Real v1706 = math::exp((-2)*math::log(math::abs(v1704)));
+    const Real v1773 = math::powi<-4>(math::abs(v1704));
+    const Real v1706 = math::powi<-2>(math::abs(v1704));
     const Real v1784 = math::powi<-5>(v1704);
     const Real v1846 = v1784*v1845;
     const Real v1738 = math::powi<-3>(v1704);
@@ -5130,15 +5130,15 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1884 = 1.0/(2973.7534532281375*v1883 + 10.0);
     const Real v1886 = 1.8623144679125181e-22*math::exp((20000.0*v1884*v1885 - 200.0)*math::log(math::abs(10.0)));
     const Real v1887 = xn[2]*v1886;
-    const Real v1888 = math::exp((8)*math::log(math::abs(v1844)));
+    const Real v1888 = math::powi<8>(math::abs(v1844));
     const Real v1945 = v1887 + v1940;
-    const Real v1791 = math::exp((-8)*math::log(math::abs(v1704)));
+    const Real v1791 = math::powi<-8>(math::abs(v1704));
     const Real v1889 = v1791*v1888;
     const Real v1793 = math::powi<-7>(v1704);
     const Real v1890 = ((v1844)*(v1844)*(v1844)*(v1844)*(v1844)*(v1844)*(v1844));
     const Real v1891 = v1793*v1890;
-    const Real v1892 = math::exp((6)*math::log(math::abs(v1844)));
-    const Real v1796 = math::exp((-6)*math::log(math::abs(v1704)));
+    const Real v1892 = math::powi<6>(math::abs(v1844));
+    const Real v1796 = math::powi<-6>(math::abs(v1704));
     const Real v1856 = v1738*v1849;
     const Real v1893 = v1796*v1892;
     const Real v1855 = v1705*v1844;
@@ -5243,7 +5243,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2131 = v1784*v1847*v1612;
     const Real v2132 = v1773*v1849*v1612;
     const Real v2137 = v1843*jac_nuc_choice_241(v1895, v1898, v1900, v1901, v2116, v2127, v2128, v2129, v2130, v2131, v2132, v2133) + v1854*v2135 + v1854*(4.8223900769399082*v1705*v1612 + 3.0182298984217999*v1738*v1850*v1612 - 3.5529549287336835*v2127 - 0.3872755400043702*v2131 - 1.3735579540080118*v2132) + v1902*v2135 + jac_nuc_choice_242(v1858, v1861, v1868, v2116, v2127, v2131, v2132, v2133, v2136) + jac_nuc_choice_243(v1861, v1870, v1872, v2116, v2127, v2131, v2132, v2133, v2136) + jac_nuc_choice_246(v1705, v1874, v1875, v1877, v1878, v1880, v1881, v1882, v1883, v1884, v1885, v1887, v2116, v2127, v2131, v2132, v2133, v1612);
-    const Real v1652 = math::exp((-2)*math::log(math::abs(T)));
+    const Real v1652 = math::powi<-2>(math::abs(T));
     const Real v2134 = jac_nuc_choice_239(T, v1859, v1904, v1905, v1906, v1907, v1910, v1911, v1913, v1914, v1917, v1918, v1919, v1652, v2116, v2127, v2128, v2129, v2130, v2131, v2132, v2133);
     const Real v1777 = xn[2] <= 0.01;
     const Real v1778 = jac_nuc_choice_93(v1777, xn);
@@ -5395,7 +5395,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2035 = v1650*v1651/((v1654 + 0.87499999999999989*v1656)*(v1654 + 0.87499999999999989*v1656));
     const Real v1642 = math::exp((-1.5)*math::log(math::abs(T)));
     const Real v2107 = v2018*(500000.0*v1642*v1650*v1657 - 390624.99999999994*v2035*(-512000.0*v1909*v1654 - 0.011666666666666665*v1656/((0.00083333333333333339*T + 1)*(0.00083333333333333339*T + 1))));
-    const Real v2012 = math::exp((-2)*math::log(math::abs(v1709)));
+    const Real v2012 = math::powi<-2>(math::abs(v1709));
     const Real v1660 = 1.0/(1000000.0*v1659 + 1.0);
     const Real v2013 = v2012*math::log(v1717);
     const Real v2043 = 5.6556829037999995e-12*v1660;
