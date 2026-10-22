@@ -158,25 +158,29 @@ DEVICE int integrate(ScratchView s) {
                 const Real upper_fac = 1.0 / fac_min_c;
                 const Real fac_step = math::max(lower_fac, math::min(upper_fac, raw_fac));
                 Real hnew = h / fac_step;
-                if (err <= 1.0) {
+                // Accept-path values formed without branching (pure; unused on
+                // rejection): the new state is stored by select, and the
+                // Gustafsson factor's cbrt is computed for every lane.
+                const bool accepted = err <= 1.0;
+                [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                    s.y[i] = accepted ? yacc[i] : s.y[i];
+                }
+                const Real facgus = math::max(1.0 / fac_max_c,
+                    math::min(1.0 / fac_min_c,
+                    (hacc / h) *
+                    math::cbrt((err * err) / erracc) /
+                    safe_c));
+                if (accepted) {
                     n_accept += 1;
                     if (n_accept == 1) {
                         // n_reject holds the attempt number of the first accept.
                         s.n_reject[0] = n_step;
                     }
                     if (n_accept > 1) {
-                        const Real facgus = math::max(1.0 / fac_max_c,
-                            math::min(1.0 / fac_min_c,
-                            (hacc / h) *
-                            math::cbrt((err * err) / erracc) /
-                            safe_c));
                         hnew = h / math::max(fac_step, facgus);
                     }
                     hacc = h;
                     erracc = math::max(1.e-2, err);
-                    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                        s.y[i] = yacc[i];
-                    }
                     x += h;
                     if (math::abs(hnew) > hmaxn) {
                         hnew = hmaxn;
