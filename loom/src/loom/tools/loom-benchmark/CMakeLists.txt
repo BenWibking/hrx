@@ -94,11 +94,9 @@ loom_cc_library(
     loom::error::diagnostic
     loom::error::json_sink
     loom::error::renderer
-    loom::format::text::printer
     loom::ir
     loom::ir::facts
     loom::ops::check
-    loom::ops::special_values
     loom::sanitizer::options
     loom::tooling::cli::help
     loom::tooling::cli::loomc_diagnostic_json
@@ -298,7 +296,8 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMD)
   list(APPEND _loom_benchmark_platform_deps loom::binding::c::target::amd::xdna::iree_hal)
 endif()
-loom_cc_binary(
+loomc_cc_binary(
+  RUNTIME_ONLY
   NAME
     loom-benchmark
   SRCS

@@ -6,10 +6,9 @@
 
 // AMDGPU lowering for target-low spill traffic.
 //
-// Generic target-low allocation materialization represents spills with
-// structural low.spill/low.reload ops and function-local storage handles. This
-// target-owned layer lowers that representation into the concrete AMDGPU
-// private-segment scratch packets selected from the active descriptor set.
+// Target-low allocation materialization can select concrete AMDGPU
+// private-segment scratch recipes before mutating IR and emit them directly.
+// The same machinery also lowers authored low.spill/low.reload operations.
 
 #ifndef LOOM_TARGET_EMIT_NATIVE_AMDGPU_SPILL_LOWERING_H_
 #define LOOM_TARGET_EMIT_NATIVE_AMDGPU_SPILL_LOWERING_H_
@@ -24,9 +23,19 @@
 extern "C" {
 #endif
 
+typedef struct loom_low_allocation_spill_plan_t
+    loom_low_allocation_spill_plan_t;
+typedef struct loom_low_allocation_table_t loom_low_allocation_table_t;
+typedef struct loom_low_spill_materialization_plan_t
+    loom_low_spill_materialization_plan_t;
+typedef struct loom_low_spill_materialization_traffic_plan_t
+    loom_low_spill_materialization_traffic_plan_t;
+
 typedef struct loom_amdgpu_spill_lowering_result_t {
   // Number of user-facing diagnostics emitted while lowering spill traffic.
   uint32_t error_count;
+  // True when lowering replaced at least one spill or reload operation.
+  bool lowered_traffic;
   // Scratch-arena-owned helper value IDs created by spill lowering
   // that must remain in registers during subsequent allocation rounds.
   const loom_value_id_t* required_register_value_ids;
@@ -43,6 +52,17 @@ typedef struct loom_amdgpu_spill_lowering_result_t {
   // Number of entries in |per_user_placement_value_ids|.
   iree_host_size_t per_user_placement_value_count;
 } loom_amdgpu_spill_lowering_result_t;
+
+// Selects immutable AMDGPU packet recipes for one generic spill
+// materialization plan. The selected recipes are emitted directly while the
+// generic plan applies its ordered SSA and CFG mutations.
+iree_status_t loom_amdgpu_plan_spill_materialization_traffic(
+    void* user_data, const loom_low_allocation_table_t* table,
+    const loom_low_allocation_spill_plan_t* spill_plans,
+    iree_host_size_t spill_plan_count,
+    const loom_low_spill_materialization_plan_t* materialization_plan,
+    iree_arena_allocator_t* arena,
+    loom_low_spill_materialization_traffic_plan_t* out_plan);
 
 // Rewrites low.spill/low.reload in |function_op| into descriptor-backed AMDGPU
 // scratch load/store packets. The descriptor set must be the already-selected

@@ -94,6 +94,8 @@ struct loom_low_schedule_pressure_state_t {
   // Downstream headroom reserved by the current candidate, indexed by
   // register-packing resource.
   uint32_t* candidate_register_packing_activation_units;
+  // Current live footprint indexed by register-packing resource.
+  uint64_t* current_register_packing_units;
   // Downstream headroom reserved by the current candidate, indexed by bounded
   // unspillable completion domain.
   uint32_t* candidate_unspillable_activation_units;
@@ -332,6 +334,9 @@ typedef struct loom_low_schedule_candidate_score_t {
   // Physical descriptor selected for this candidate, or
   // LOOM_LOW_DESCRIPTOR_ORDINAL_NONE for structural nodes.
   uint32_t selected_descriptor_ordinal;
+  // Unspillable domain corresponding to active_unspillable_completion_capacity,
+  // or UINT16_MAX when the candidate advances no active completion.
+  uint16_t active_unspillable_completion_domain_id;
   // Maximum latency of same-block SSA producers consumed by the candidate.
   uint16_t dependency_latency_cycles;
   // Descriptor latency for the candidate itself.

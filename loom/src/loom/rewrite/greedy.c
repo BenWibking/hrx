@@ -78,6 +78,33 @@ void loom_greedy_rewrite_result_record_change(
   }
 }
 
+static iree_status_t loom_greedy_rewrite_apply_prepared(
+    loom_greedy_rewrite_driver_t* driver, loom_region_t* region,
+    const loom_rewrite_pattern_registry_t* patterns,
+    const loom_greedy_rewrite_callbacks_t* callbacks,
+    loom_greedy_rewrite_result_t* result) {
+  IREE_RETURN_IF_ERROR(loom_rewriter_propagate_value_facts(&driver->rewriter));
+  loom_greedy_rewrite_result_record_rewriter_flags(result, &driver->rewriter);
+  iree_arena_allocator_t arena;
+  iree_arena_initialize(driver->scratch_arena->block_pool, &arena);
+  loom_rewrite_action_t* actions = NULL;
+  iree_status_t status = loom_rewrite_pattern_registry_prepare_region(
+      patterns, driver->module, driver->fact_table, region, &arena, &actions);
+  for (loom_rewrite_action_t* action = actions;
+       iree_status_is_ok(status) && action; action = action->next) {
+    driver->rewriter.flags = 0;
+    status = action->apply(action, &driver->rewriter);
+    loom_greedy_rewrite_result_record_change(
+        result, &driver->rewriter,
+        LOOM_GREEDY_REWRITE_CHANGE_FLAG_COUNT_MODIFIED_OP);
+    if (callbacks && callbacks->changed) {
+      callbacks->changed(callbacks->user_data, driver);
+    }
+  }
+  iree_arena_deinitialize(&arena);
+  return status;
+}
+
 iree_status_t loom_greedy_rewrite_run_region(
     loom_greedy_rewrite_driver_t* driver, loom_func_like_t function,
     loom_region_t* region, loom_op_t* parent_op,
@@ -114,6 +141,11 @@ iree_status_t loom_greedy_rewrite_run_region(
     status = callbacks->prepare_region(callbacks->user_data, driver, function,
                                        region, parent_op);
   }
+  if (iree_status_is_ok(status) && options && options->prepared_patterns &&
+      options->prepared_patterns->pattern_count) {
+    status = loom_greedy_rewrite_apply_prepared(
+        driver, region, options->prepared_patterns, callbacks, &result);
+  }
 
   for (uint32_t iteration = 0;
        iree_status_is_ok(status) && iteration < max_iterations; ++iteration) {
@@ -123,10 +155,52 @@ iree_status_t loom_greedy_rewrite_run_region(
     }
 
     bool any_changed = false;
+    if (callbacks && callbacks->rewrite_op_without_facts) {
+      loom_op_t* op = NULL;
+      while ((op = loom_rewriter_pop(&driver->rewriter)) != NULL) {
+        bool changed = false;
+        status = callbacks->rewrite_op_without_facts(
+            callbacks->user_data, driver, op, &result, &changed);
+        if (!iree_status_is_ok(status)) {
+          break;
+        }
+        if (changed) {
+          any_changed = true;
+          if (callbacks->changed) {
+            callbacks->changed(callbacks->user_data, driver);
+          }
+        }
+      }
+      if (!iree_status_is_ok(status)) {
+        break;
+      }
+      status = loom_rewriter_propagate_value_facts(&driver->rewriter);
+      loom_greedy_rewrite_result_record_rewriter_flags(&result,
+                                                       &driver->rewriter);
+      if (!iree_status_is_ok(status)) {
+        break;
+      }
+      // Fact propagation schedules affected operations, but the complete
+      // region rescan below supersedes that incremental work. Drain it first
+      // so solver publication order cannot perturb the deterministic region
+      // order seen by fact-observing rewrites.
+      while (loom_rewriter_pop(&driver->rewriter) != NULL) {
+      }
+      status = loom_rewriter_seed_region(&driver->rewriter, region);
+      if (!iree_status_is_ok(status)) {
+        break;
+      }
+    }
+
     if (callbacks && callbacks->before_worklist) {
       bool changed = false;
-      status = callbacks->before_worklist(callbacks->user_data, driver, region,
-                                          &result, &changed);
+      status = loom_rewriter_propagate_value_facts(&driver->rewriter);
+      loom_greedy_rewrite_result_record_rewriter_flags(&result,
+                                                       &driver->rewriter);
+      if (iree_status_is_ok(status)) {
+        status = callbacks->before_worklist(callbacks->user_data, driver,
+                                            region, &result, &changed);
+      }
       if (!iree_status_is_ok(status)) {
         break;
       }
@@ -142,6 +216,12 @@ iree_status_t loom_greedy_rewrite_run_region(
     while ((op = loom_rewriter_pop(&driver->rewriter)) != NULL) {
       if (!callbacks || !callbacks->rewrite_op) {
         continue;
+      }
+      status = loom_rewriter_propagate_value_facts(&driver->rewriter);
+      loom_greedy_rewrite_result_record_rewriter_flags(&result,
+                                                       &driver->rewriter);
+      if (!iree_status_is_ok(status)) {
+        break;
       }
       // Patterns and any operations they create use the current region's
       // target. Optional math choices require that target's own policy.
@@ -181,6 +261,11 @@ iree_status_t loom_greedy_rewrite_run_region(
     }
   }
 
+  if (iree_status_is_ok(status)) {
+    status = loom_rewriter_propagate_value_facts(&driver->rewriter);
+    loom_greedy_rewrite_result_record_rewriter_flags(&result,
+                                                     &driver->rewriter);
+  }
   if (prepare_region_called && callbacks && callbacks->cleanup_region) {
     callbacks->cleanup_region(callbacks->user_data, driver);
   }

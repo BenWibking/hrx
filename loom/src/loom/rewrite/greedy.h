@@ -51,6 +51,10 @@ typedef struct loom_greedy_rewrite_options_t {
 
   // Resolved target bundle paired with |math_policy|.
   const struct loom_target_bundle_t* math_target_bundle;
+
+  // Optional rooted patterns prepared once from coherent facts, then applied
+  // as a batch before fixed-point rewriting. Plans are released immediately.
+  const loom_rewrite_pattern_registry_t* prepared_patterns;
 } loom_greedy_rewrite_options_t;
 
 // Summary of one greedy rewrite run.
@@ -128,11 +132,20 @@ typedef struct loom_greedy_rewrite_callbacks_t {
   // prepare_region itself fails.
   loom_greedy_rewrite_cleanup_region_fn_t cleanup_region;
 
-  // Optional hook called once per fixed-point iteration after worklist seeding
-  // and before individual ops are popped.
+  // Optional hook called once per fixed-point iteration after any
+  // fact-independent rewrite batch has completed and the worklist has been
+  // reseeded. Pending facts are published first.
   loom_greedy_rewrite_before_worklist_fn_t before_worklist;
 
-  // Optional hook called for each popped live op.
+  // Optional fact-independent rewrite hook. When present, the driver drains a
+  // complete worklist through this hook before publishing the mutations as one
+  // batch and reseeding for |rewrite_op|. The callback must not observe value
+  // facts; mutation APIs continue maintaining the attached fact table.
+  loom_greedy_rewrite_op_fn_t rewrite_op_without_facts;
+
+  // Optional hook called for each popped live op with pending facts published.
+  // A callback that mutates and then reads derived facts must publish those
+  // mutations with loom_rewriter_propagate_value_facts before reading.
   loom_greedy_rewrite_op_fn_t rewrite_op;
 
   // Optional hook called after a callback reports a rewrite change.
@@ -174,7 +187,8 @@ void loom_greedy_rewrite_result_record_change(
 
 // Runs greedy rewriting on an explicit region tree. |function| and |parent_op|
 // describe the region to policy callbacks; the driver does not rediscover or
-// recompute facts for the region. On failure the borrowed fact table may
+// recompute facts for the region. Successful return publishes all pending
+// equations before detaching the rewriter. On failure the borrowed table may
 // contain partial incremental updates and its owner must invalidate it before
 // reuse.
 iree_status_t loom_greedy_rewrite_run_region(

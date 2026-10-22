@@ -33,6 +33,18 @@ class ConfigTest(unittest.TestCase):
             REPO_ROOT / ".bazel_to_cmake.cfg.py", "loom/.bazel_to_cmake.cfg.py"
         )
 
+    def test_library_group_preserves_dependencies_and_package_policy(self):
+        output = bazel_to_cmake_converter.convert_build_file(
+            'loom_cc_library_group(name="aggregate", deps=[":first", ":second"])',
+            SimpleNamespace(PROJECTS=[self.project], REPO_MAP={"@hrx": ""}),
+            str(REPO_ROOT / "loom/src/loom/target/arch/wasm"),
+            repo_root=str(REPO_ROOT),
+        )
+        self.assertIn("if(LOOM_TARGET_ARCH_WASM)", output)
+        self.assertIn("iree_cc_library(\n", output)
+        self.assertIn("DEPS\n    ::first\n    ::second\n", output)
+        self.assertNotIn("SRCS", output)
+
     def test_loom_conditions_reach_non_loom_build_files(self):
         repo_cfg = SimpleNamespace(PROJECTS=[self.project], REPO_MAP={"@hrx": ""})
         for label, condition in (
@@ -288,6 +300,24 @@ loom_kernel_binary(name="program", srcs=["program.loom"], deps=[":support"], tar
         self.assertIn("loom_kernel_binary(", output)
         self.assertIn("  LIBRARIES\n    ::support", output)
         self.assertIn('OUTPUT\n    "program"', output)
+
+    def test_shared_tools_preserve_runtime_only_ownership(self):
+        runtime_project = bazel_to_cmake_config.include_project(
+            REPO_ROOT / ".bazel_to_cmake.cfg.py", "runtime/.bazel_to_cmake.cfg.py"
+        )
+        repo_cfg = SimpleNamespace(
+            PROJECTS=[runtime_project, self.project], REPO_MAP={"@hrx": ""}
+        )
+        for runtime_only in (False, True):
+            with self.subTest(runtime_only=runtime_only):
+                output = bazel_to_cmake_converter.convert_build_file(
+                    f"loomc_cc_binary(name='tool', srcs=['main.c'], runtime_only={runtime_only})",
+                    repo_cfg,
+                    str(REPO_ROOT / "loom/tools"),
+                    repo_root=str(REPO_ROOT),
+                )
+                self.assertIn("loomc_cc_binary(\n", output)
+                self.assertEqual("  RUNTIME_ONLY\n" in output, runtime_only)
 
     def test_shared_bindings_preserve_configuration_and_helper_ownership(self):
         repo_cfg = SimpleNamespace(PROJECTS=[self.project], REPO_MAP={"@hrx": ""})

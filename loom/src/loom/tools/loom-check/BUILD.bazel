@@ -1,9 +1,9 @@
 load("//build_tools/bazel:query.bzl", "iree_assert_dependency_boundary")
 load("//build_tools/testing:build_defs.bzl", "iree_execution_test_suite")
+load("//loom/binding/c:shared.bzl", "loomc_cc_binary")
 load(
     "//loom/build_tools/bazel:build_defs.bzl",
     "iree_select",
-    "loom_cc_binary",
     "loom_cc_library",
     "loom_cc_test",
 )
@@ -119,6 +119,13 @@ _TARGET_XDNA_CHECK_COPTS = iree_select({
 _TARGET_XDNA_CHECK_DEPS = iree_select({
     "//loom/config/target/arch:xdna": [
         "//loom/src/loom/target/arch/amd/xdna/aie2p:check_provider",
+    ],
+    "//conditions:default": [],
+})
+
+_TARGET_XDNA_CHECK_TEST_DEPS = iree_select({
+    "//loom/config/target/arch:xdna": [
+        "//loom/src/loom/target/arch/amd/xdna/aie2p:check_test_provider",
     ],
     "//conditions:default": [],
 })
@@ -525,10 +532,11 @@ loom_cc_test(
     ],
 )
 
-loom_cc_binary(
+loomc_cc_binary(
     name = "loom-check",
     srcs = ["loom-check.c"],
     copts = _LOOM_CHECK_PROVIDER_COPTS,
+    runtime_only = True,
     deps = [
         ":execute",
         ":provider",
@@ -541,11 +549,12 @@ loom_cc_binary(
     ] + _LOOM_CHECK_PROVIDER_DEPS,
 )
 
-loom_cc_binary(
+loomc_cc_binary(
     name = "loom-check-test",
     testonly = True,
     srcs = ["loom-check.c"],
     copts = ["-DLOOM_CHECK_HAVE_TEST_PROVIDER=1"] + _LOOM_CHECK_PROVIDER_COPTS,
+    runtime_only = True,
     deps = [
         ":execute",
         ":provider",
@@ -556,7 +565,7 @@ loom_cc_binary(
         "//loom/src/loom/tooling/input:configured",
         "//loom/src/loom/tooling/input:loomc_configured",
         "//runtime/src/iree/base",
-    ] + _LOOM_CHECK_PROVIDER_DEPS,
+    ] + _LOOM_CHECK_PROVIDER_DEPS + _TARGET_XDNA_CHECK_TEST_DEPS,
 )
 
 loom_cc_test(

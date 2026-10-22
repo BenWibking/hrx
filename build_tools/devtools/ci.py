@@ -355,7 +355,7 @@ def amdgpu_bazel_options(target_selector: str) -> tuple[str, ...]:
     )
 
 
-def rdna_device_compiler_options() -> tuple[str, ...]:
+def amd_gpu_device_compiler_options() -> tuple[str, ...]:
     # The native HAL consumes HIP code objects without loading ROCr. Its CTS
     # still compiles real HIP inputs with the installed ROCm device toolchain.
     options = ("--repo_env=IREE_HAL_AMDGPU_DEVICE_TOOLCHAIN=rocm",)
@@ -364,10 +364,12 @@ def rdna_device_compiler_options() -> tuple[str, ...]:
     return options
 
 
-def rdna_windows_weights_step(options: tuple[str, ...], config: str | None) -> CiStep:
+def amd_gpu_windows_weights_step(
+    options: tuple[str, ...], config: str | None
+) -> CiStep:
     return bazel_test_step(
-        "Test RDNA weight streaming",
-        (ci_config.RDNA_WEIGHTS_TARGET,),
+        "Test AMD GPU weight streaming",
+        (ci_config.AMD_GPU_WEIGHTS_TARGET,),
         config=config,
         available_resources=ci_config.AMDGPU_WINDOWS_RESOURCES,
         test_env=amd_test_env(),
@@ -730,6 +732,14 @@ def shared_tool_bazel_step(
             "//loom/src/loom/tools/loom-import-cxx:execution_test",
             "//loom/src/loom/tools/loom-import-cxx:export_roundtrip_test",
             "//loom/src/loom/tools/loom-serve:execution_test",
+            "//loom/src/loom/tools/loom-check:execution_test",
+            "//loom/src/loom/tools/loom-check/test:core_test",
+            "//loom/src/loom/tools/loom-test:execution_test",
+            "//loom/src/loom/tools/loom-test:scenario_execution_test",
+            "//loom/src/loom/tools/loom-benchmark:execution_test",
+            "//loom/src/loom/tooling/execution/hal:command_scenario_execution_test",
+            "//loom/src/loom/tooling/execution/hal:command_scenario_specialization_test",
+            "//loom/src/loom/tooling/target/cpu:benchmark_scenario_correctness_test",
             "//loom/src/loom/tooling/target/cpu/serve:all",
         ),
         config=config,
@@ -826,13 +836,15 @@ def amd_client_steps(targets: tuple[str, ...], config: str | None) -> list[CiSte
         default_targets = ci_config.AMD_CLIENT_WINDOWS_BAZEL_TARGETS
         resources = ci_config.AMD_CLIENT_WINDOWS_RESOURCES
         test_tag_filters += ci_config.VULKAN_BAZEL_TEST_TAG_FILTERS + (
-            ci_config.RDNA_RUN_REQUIREMENT_TAG,
+            ci_config.AMD_GPU_RUN_REQUIREMENT_TAG,
         )
-        native_options = ci_config.RDNA_BAZEL_OPTIONS + rdna_device_compiler_options()
+        native_options = (
+            ci_config.AMD_GPU_BAZEL_OPTIONS + amd_gpu_device_compiler_options()
+        )
     additional_steps = []
     if sys.platform == "win32" and not targets:
         additional_steps.append(
-            rdna_windows_weights_step(options + native_options, config)
+            amd_gpu_windows_weights_step(options + native_options, config)
         )
     targets = targets or default_targets
     return [
@@ -867,12 +879,11 @@ def amdgpu_test_steps(
     config_name = f" / {config.upper()}" if config is not None else ""
     scoped_targets = targets + ci_config.AMDGPU_BAZEL_TARGET_EXCLUDES
     bazel_options = (
-        amdgpu_bazel_options(target_selector) + ci_config.AMDGPU_BAZEL_OPTIONS
+        amdgpu_bazel_options(target_selector)
+        + ci_config.AMDGPU_BAZEL_OPTIONS
+        + ci_config.AMD_GPU_BAZEL_OPTIONS
+        + ("--//runtime/config/hal:drivers=task,amdgpu,amd",)
     )
-    if target_selector.startswith(("gfx11", "gfx12")):
-        bazel_options += ci_config.RDNA_BAZEL_OPTIONS + (
-            "--//runtime/config/hal:drivers=task,amdgpu,amd",
-        )
     host_sanitizer_tag_filters = (
         (f"-{ci_config.HOST_TSAN_INCOMPATIBLE_TEST_LABEL}",) if config == "tsan" else ()
     )
@@ -904,8 +915,8 @@ def amdgpu_windows_steps(
 ) -> list[CiStep]:
     options = (
         ci_config.AMDGPU_WINDOWS_BAZEL_OPTIONS
-        + ci_config.RDNA_BAZEL_OPTIONS
-        + rdna_device_compiler_options()
+        + ci_config.AMD_GPU_BAZEL_OPTIONS
+        + amd_gpu_device_compiler_options()
     )
     config_name = f" / {config.upper()}" if config is not None else ""
     # A required finite PM4 copy establishes the exact GPU and usable native
@@ -989,7 +1000,7 @@ def amdgpu_windows_steps(
         )
     )
     if not targets:
-        steps.append(rdna_windows_weights_step(options, config))
+        steps.append(amd_gpu_windows_weights_step(options, config))
     return steps
 
 
@@ -1000,7 +1011,7 @@ def amdgpu_steps(
 ) -> list[CiStep]:
     return [
         bazel_configure_step(
-            enabled_drivers=("amdgpu",),
+            enabled_drivers=("amdgpu", "amd"),
             enabled_loom_targets=("amdgpu", "vm"),
             enabled_loom_importers=enabled_loom_importers,
         ),
@@ -1140,6 +1151,10 @@ def cmake_cpu_steps(command_name: str, sanitizer: str | None) -> list[CiStep]:
                         "loom-import-cxx",
                         "loom_import_cxx_tooling_execution_test_test_deps",
                         "loom-serve",
+                        "loom-check",
+                        "loom-check-test",
+                        "loom-test",
+                        "loom-benchmark",
                         "loom_tooling_target_cpu_serve_loom-serve-test-tool",
                     ),
                 ),
@@ -1147,7 +1162,10 @@ def cmake_cpu_steps(command_name: str, sanitizer: str | None) -> list[CiStep]:
                     command_name,
                     "Test shared Loom tools",
                     regex=(
-                        r"^(loom/tools/(loom-compile|loom-opt|loom-format|loom-link|loom-import-cxx|loom-run|loom-serve)/(execution_test|export_roundtrip_test)"
+                        r"^(loom/tools/(loom-compile|loom-opt|loom-format|loom-link|loom-import-cxx|loom-run|loom-serve|loom-check|loom-test|loom-benchmark)/(execution_test|export_roundtrip_test|scenario_execution_test)"
+                        r"|loom/tools/loom-check/test/.*"
+                        r"|loom/tooling/execution/hal/command_scenario_(execution|specialization)_test"
+                        r"|loom/tooling/target/cpu/benchmark_scenario_correctness_test"
                         r"|loom/import/cxx/tooling/execution_test"
                         r"|loom/tooling/target/cpu/run_cxx_input_test"
                         r"|loom/tooling/target/cpu/serve/serve_command_test)$"
@@ -1255,7 +1273,7 @@ def cmake_amdgpu_steps(
     steps = [
         cmake_configure_step(
             command_name,
-            enabled_drivers=("amdgpu",),
+            enabled_drivers=("amdgpu", "amd"),
             enabled_loom_targets=("amdgpu", "vm"),
             amdgpu_target_selector=target_selector,
             sanitizer=sanitizer,
@@ -1265,6 +1283,10 @@ def cmake_amdgpu_steps(
                 "-DAMDF_FAMILY_CDNA=ON",
                 "-DAMDF_FAMILY_XDNA=OFF",
                 "-DLOOM_BUILD=ON",
+                "-DIREE_HAL_AMD_GPU_TARGETS="
+                + ";".join(ci_config.AMD_GPU_BINARY_TARGETS),
+                "-DLOOM_TARGET_AMDGPU_TARGETS="
+                + ";".join(ci_config.AMD_GPU_LOOM_TARGETS),
             ),
         ),
         *cmake_explicit_build_steps(
@@ -1281,7 +1303,7 @@ def cmake_amdgpu_steps(
         cmake_test_step(
             command_name,
             f"Test IREE CMake AMDGPU package tests{sanitizer_name}",
-            regex="^iree/hal/drivers/amdgpu/",
+            regex=ci_config.AMDGPU_CMAKE_PACKAGE_REGEX,
             exclude_regex=xfail_regex,
             available_resources=ci_config.AMDGPU_RESOURCES,
             env=sanitizer_env(sanitizer) + amdgpu_test_env(),
@@ -1289,7 +1311,7 @@ def cmake_amdgpu_steps(
         )
     )
     resource_exclude_regex = combine_ctest_regex(
-        "^iree/hal/drivers/amdgpu/",
+        ci_config.AMDGPU_CMAKE_PACKAGE_REGEX,
         xfail_regex,
     )
     resource_label_exclude_regex = ci_config.CTEST_MANUAL_LABEL_EXCLUDE_REGEX
@@ -1609,7 +1631,7 @@ def _steps_from_args(args: argparse.Namespace) -> list[CiStep]:
         if sanitizer is not None:
             return [
                 bazel_configure_step(
-                    enabled_drivers=("amdgpu",),
+                    enabled_drivers=("amdgpu", "amd"),
                     enabled_loom_targets=("amdgpu", "vm"),
                     enabled_loom_importers=enabled_loom_importers,
                 ),

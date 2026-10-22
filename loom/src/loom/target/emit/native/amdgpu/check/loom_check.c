@@ -368,6 +368,7 @@ static iree_status_t loom_amdgpu_loom_check_lower_spill_traffic(
   IREE_RETURN_IF_ERROR(loom_amdgpu_lower_spill_traffic(
       module, low_function_op, target.descriptor_set, emitter, &result, arena));
   out_result->error_count = result.error_count;
+  out_result->lowered_traffic = result.lowered_traffic;
   out_result->required_register_value_ids = result.required_register_value_ids;
   out_result->required_register_value_count =
       result.required_register_value_count;
@@ -518,6 +519,7 @@ static iree_status_t loom_amdgpu_loom_check_emit_provider_execute(
               .has_supported_storage_spaces = true,
               .supported_storage_spaces = LOOM_LOW_STORAGE_SPACE_SET_SCRATCH |
                                           LOOM_LOW_STORAGE_SPACE_SET_PRIVATE,
+              .plan_traffic = loom_amdgpu_plan_spill_materialization_traffic,
           },
       .lower_spill_traffic = loom_amdgpu_loom_check_lower_spill_traffic,
       .lower_spill_traffic_user_data = &spill_lowering_context,

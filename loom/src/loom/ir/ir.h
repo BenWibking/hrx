@@ -1039,6 +1039,9 @@ enum loom_op_vtable_flag_bits_e {
   LOOM_OP_VTABLE_STRUCTURAL_MATERIALIZATION = 1u << 10,
   // At least one result declares its originating buffer/view operand field.
   LOOM_OP_VTABLE_HAS_REFERENCE_SOURCE = 1u << 11,
+  // The canonicalization callback depends only on IR structure and may run in
+  // a mutation batch before pending value facts are published.
+  LOOM_OP_VTABLE_CANONICALIZE_WITHOUT_FACTS = 1u << 12,
 };
 typedef uint16_t loom_op_vtable_flags_t;
 
@@ -1159,7 +1162,7 @@ enum loom_call_like_kind_e {
   LOOM_CALL_LIKE_KIND_LOW_INTERNAL = 2,
   // Explicit semantic-to-target-low invocation of a selected low function.
   LOOM_CALL_LIKE_KIND_LOW_INVOKE = 3,
-  // Command-program materialization with specialization and binding operands.
+  // Command-program composition with specialization and storage bindings.
   LOOM_CALL_LIKE_KIND_COMMAND_PROGRAM = 4,
   // Exact compile-time template implementation call.
   LOOM_CALL_LIKE_KIND_TEMPLATE = 5,
