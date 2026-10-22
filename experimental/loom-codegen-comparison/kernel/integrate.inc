@@ -77,11 +77,15 @@ DEVICE int integrate(ScratchView s) {
                 last = true;
             }
 
-            CHEM_EVAL_JACOBIAN(s, x);
             need_jac = false;
         }
       }
         if (!done) {
+            // The Jacobian is evaluated by every active lane on every attempt:
+            // s.y is unchanged on a retry, so a retrying lane recomputes the
+            // identical matrix, and the jac no longer sits under a divergent
+            // branch (it only adds work when every lane of a wave retries).
+            CHEM_EVAL_JACOBIAN(s, x);
                 const Real fac = 1.0 / (h * C::gamma);
                 if (decompose(s, fac) != 0) {
                     nsing += 1;
