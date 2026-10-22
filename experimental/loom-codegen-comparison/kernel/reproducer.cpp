@@ -5851,8 +5851,8 @@ DEVICE void rhs(Real t, const Real* y, Real* out, ScratchView s) {
     burn_state_from_y_view(y, b);
     // rhs_eint first: only edot (not the 14 species outputs) is live across
     // the other half of the RHS.
-    rhs_specie(b.T[0], out, b.xn, default_redshift);
     out[14] = rhs_eint(b.T[0], b.xn, default_redshift);
+    rhs_specie(b.T[0], out, b.xn, default_redshift);
 
 }
 DEVICE void eval_jacobian(ScratchView s, Real x) {
