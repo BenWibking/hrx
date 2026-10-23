@@ -10,7 +10,7 @@ iree_host_size_t loom_serve_text_default_shapes(
     iree_host_size_t row_count, iree_host_size_t token_capacity,
     loom_serve_packing_shape_t* shapes) {
   iree_host_size_t count = 0;
-  for (iree_host_size_t tokens = iree_min(4, token_capacity);;
+  for (iree_host_size_t tokens = 1;;
        tokens = iree_min(tokens * 2, token_capacity)) {
     for (iree_host_size_t spans = 1;; spans = iree_min(spans * 2, row_count)) {
       if (spans <= tokens) {
@@ -39,5 +39,5 @@ iree_host_size_t loom_serve_text_request_reservation(
     // contribute; an ordinary single-output tail requires no extra credit.
     extent = iree_min(context_capacity, extent + proposal_depth - 1);
   }
-  return ((extent + block_size - 1) / block_size) * block_size;
+  return iree_host_size_ceil_div(extent, block_size) * block_size;
 }

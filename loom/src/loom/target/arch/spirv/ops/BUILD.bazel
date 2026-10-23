@@ -4,10 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-load(
-    "//loom/build_tools/bazel:build_defs.bzl",
-    "loom_generated_cc_library",
-)
+load("//loom/build_tools/bazel:build_defs.bzl", "loom_cc_library", "loom_cc_library_group", "loom_generated_cc_library")
 
 package(
     default_visibility = ["//visibility:private"],
@@ -23,6 +20,39 @@ _SPIRV_TOOLING_VISIBILITY = [
     "//loom/src/loom/tooling/target/spirv:__pkg__",
 ]
 
+loom_cc_library(
+    name = "op_defs",
+    hdrs = ["ops.h"],
+    textual_hdrs = ["ops.inc"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//loom/src/loom/ops:headers",
+        "//loom/src/loom/target:types",
+        "//loom/src/loom/target/arch/spirv/records:record_defs",
+    ],
+)
+
+loom_cc_library_group(
+    name = "builders",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":op_builders",
+        ":op_defs",
+        ":type_builders",
+    ],
+)
+
+loom_cc_library(
+    name = "op_builders",
+    srcs = ["builders.c"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":op_defs",
+        "//loom/src/loom/ir:builders",
+        "//loom/src/loom/ops:op_defs",
+    ],
+)
+
 loom_generated_cc_library(
     name = "ops",
     srcs = [
@@ -37,15 +67,21 @@ loom_generated_cc_library(
         "types.h",
     ],
     args = ["--dialect=spirv"],
-    extra_output_flags = ["--ops-include"],
-    extra_outputs = ["ops.inc"],
-    generated_src_flags = [
+    extra_output_flags = [
+        "--ops-include",
+        "--type-builders",
         "--builders",
+    ],
+    extra_outputs = [
+        "ops.inc",
+        "type_builders.c",
+        "builders.c",
+    ],
+    generated_src_flags = [
         "--tables",
         "--types",
     ],
     generated_srcs = [
-        "builders.c",
         "tables.c",
         "types.c",
     ],
@@ -53,6 +89,8 @@ loom_generated_cc_library(
     textual_hdrs = ["ops.inc"],
     visibility = _SPIRV_ROOT_VISIBILITY + _SPIRV_LOWER_VISIBILITY + _SPIRV_TOOLING_VISIBILITY,
     deps = [
+        ":builders",
+        ":type_builders",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_defs",
@@ -64,6 +102,21 @@ loom_generated_cc_library(
         "//loom/src/loom/target/arch/spirv:isa",
         "//loom/src/loom/target/arch/spirv:scalar_types",
         "//loom/src/loom/target/arch/spirv/records:target_records",
+        "//runtime/src/iree/base",
+    ],
+)
+
+# Native value typing consumes the same construction API without the target's
+# semantic providers. Other compiler consumers retain the combined ops rule.
+loom_cc_library(
+    name = "type_builders",
+    srcs = ["type_builders.c"],
+    hdrs = ["type_builders.h"],
+    visibility = _SPIRV_ROOT_VISIBILITY,
+    deps = [
+        "//loom/src/loom/ir:builders",
+        "//loom/src/loom/target/arch/spirv:isa",
+        "//loom/src/loom/target/arch/spirv:vocabulary",
         "//runtime/src/iree/base",
     ],
 )

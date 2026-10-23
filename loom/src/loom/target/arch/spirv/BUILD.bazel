@@ -10,6 +10,7 @@ load(
 )
 load(
     "//loom/build_tools/bazel:build_defs.bzl",
+    "loom_cc_benchmark",
     "loom_cc_library",
     "loom_cc_test",
     "loom_generated_cc_library",
@@ -29,6 +30,7 @@ package(
 exports_files(
     [
         "isa.h",
+        "scalar_type.h",
         "scalar_types.h",
     ],
     visibility = [
@@ -135,12 +137,26 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "vocabulary",
+    hdrs = [
+        "features.h",
+        "scalar_type.h",
+    ],
+    visibility = _SPIRV_OPS_VISIBILITY + _SPIRV_RECORDS_VISIBILITY,
+    deps = [
+        ":isa",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "scalar_types",
     srcs = ["scalar_types.c"],
     hdrs = ["scalar_types.h"],
     visibility = _SPIRV_EMIT_VISIBILITY + _SPIRV_LOWER_VISIBILITY + _SPIRV_OPS_VISIBILITY,
     deps = [
         ":features",
+        ":vocabulary",
         "//loom/src/loom/util:numeric_format",
         "//runtime/src/iree/base",
     ],
@@ -154,8 +170,8 @@ loom_cc_library(
     deps = [
         ":isa",
         ":scalar_types",
-        "//loom/src/loom/ir",
-        "//loom/src/loom/target/arch/spirv/ops",
+        "//loom/src/loom/ir:types",
+        "//loom/src/loom/target/arch/spirv/ops:type_builders",
         "//runtime/src/iree/base",
     ],
 )
@@ -229,6 +245,7 @@ loom_cc_library(
         ":cooperative_properties",
         "//loom/src/loom/target:facts",
         "//loom/src/loom/target:facts_builder",
+        "//loom/src/loom/target/arch/spirv/records:record_defs",
         "//runtime/src/iree/base",
     ],
 )
@@ -259,6 +276,7 @@ loom_cc_library(
         "//loom/src/loom/target:profile",
         "//loom/src/loom/target/arch/spirv/records:target_records",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
     ],
 )
 
@@ -464,6 +482,18 @@ loom_cc_test(
     ],
 )
 
+loom_cc_benchmark(
+    name = "value_types_benchmark",
+    srcs = ["value_types_benchmark.cc"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//loom/src/loom/target/arch/spirv/ops",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:benchmark_main",
+    ],
+)
+
 loom_cc_test(
     name = "registers_test",
     srcs = ["registers_test.cc"],
@@ -508,6 +538,7 @@ loom_check_test_suite(
         "test/source_low/memory_workgroup_scalar_addressing.loom-test",
         "test/source_low/narrow_float_payloads.loom-test",
         "test/source_low/nested_view_selection.loom-test",
+        "test/source_low/numeric_activations.loom-test",
         "test/source_low/numeric_bfloat_narrow.loom-test",
         "test/source_low/numeric_bfloat_widen.loom-test",
         "test/source_low/numeric_extended_math.loom-test",

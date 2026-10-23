@@ -384,6 +384,13 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "record_defs",
+    hdrs = ["records/target_records.h"],
+    visibility = ["//loom/src/loom/target/arch/amd/xdna/aie2p:__subpackages__"],
+    deps = ["//loom/src/loom/target:types"],
+)
+
+loom_cc_library(
     name = "target_records",
     srcs = ["records/target_records.c"],
     hdrs = ["records/target_records.h"],
@@ -536,7 +543,7 @@ loom_cc_library(
         "//loom/src/loom/error:parameter",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_defs",
-        "//loom/src/loom/ops:type_registry",
+        "//loom/src/loom/ops:type_builders",
         "//loom/src/loom/ops/buffer",
         "//loom/src/loom/ops/channel",
         "//loom/src/loom/ops/index",
@@ -777,6 +784,19 @@ iree_execution_test_suite(
     target_compatible_with = _XDNA_IMAGE_COMPATIBLE_WITH,
     tools = {
         "loom-compile": "//loom/src/loom/tools/loom-compile",
+    },
+)
+
+iree_execution_test_suite(
+    name = "failed_helper_report_test",
+    size = "small",
+    data = ["test/failed_helper_report.loom"],
+    manifests = ["test/failed_helper_report.test.json"],
+    tags = ["hostonly"],
+    target_compatible_with = _XDNA_IMAGE_COMPATIBLE_WITH,
+    tools = {
+        "loom-compile": "//loom/src/loom/tools/loom-compile",
+        "loom-compile-report": "//loom/py/loom/tools:loom-compile-report",
     },
 )
 

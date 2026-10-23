@@ -17,7 +17,7 @@ loom_cc_library(
   TEXTUAL_HDRS
     "ops.inc"
   DEPS
-    loom::ops::op_defs
+    loom::ops::headers
   PUBLIC
 )
 
@@ -54,6 +54,21 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_library(
+  NAME
+    builders
+  HDRS
+    "ops.h"
+  TEXTUAL_HDRS
+    "ops.inc"
+  SRCS
+    "builders.c"
+  DEPS
+    loom::ir::builders
+    loom::ops::op_defs
+  PUBLIC
+)
+
 loom_generated_cc_library(
   NAME
     index
@@ -67,10 +82,8 @@ loom_generated_cc_library(
   TEXTUAL_HDRS
     "ops.inc"
   GENERATED_SRC_FLAGS
-    "--builders"
     "--tables"
   GENERATED_SRCS
-    "builders.c"
     "tables.c"
   HDRS
     "carrier.h"
@@ -80,9 +93,12 @@ loom_generated_cc_library(
     "--dialect=index"
   EXTRA_OUTPUT_FLAGS
     "--ops-include"
+    "--builders"
   EXTRA_OUTPUTS
     "ops.inc"
+    "builders.c"
   DEPS
+    ::builders
     ::cast
     ::comparison
     ::op_defs
@@ -96,8 +112,20 @@ loom_generated_cc_library(
     loom::ops::scalar
     loom::rewrite::rewriter
     loom::target::facts
+    loom::util::fact_relation
     loom::util::fact_table
     loom::util::predicate_facts
+)
+
+loom_cc_test(
+  NAME
+    cast_test
+  SRCS
+    "cast_test.cc"
+  DEPS
+    ::cast
+    iree::testing::gtest
+    iree::testing::gtest_main
 )
 
 loom_cc_test(

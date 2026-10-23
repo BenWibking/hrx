@@ -22,6 +22,35 @@ loom_generated_file_family(
     "--rows"
 )
 
+loom_cc_library(
+  NAME
+    op_defs
+  HDRS
+    "ops.h"
+  TEXTUAL_HDRS
+    "ops.inc"
+  DEPS
+    loom::ops::headers
+    loom::ops::vocabulary
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    builders
+  HDRS
+    "ops.h"
+  TEXTUAL_HDRS
+    "ops.inc"
+  SRCS
+    "builders.c"
+  DEPS
+    loom::ir::builders
+    loom::ops::op_defs
+    loom::ops::vocabulary
+  PUBLIC
+)
+
 loom_generated_cc_library(
   NAME
     vector
@@ -47,7 +76,6 @@ loom_generated_cc_library(
     "ops.inc"
     "scalarization_rows.inl"
   GENERATED_SRC_FLAGS
-    "--builders"
     "--tables"
     "--table-shard=aggregate"
     "--table-shard=atomic"
@@ -65,7 +93,6 @@ loom_generated_cc_library(
     "--table-shard=reduction"
     "--table-shard=table"
   GENERATED_SRCS
-    "builders.c"
     "tables.c"
     "tables/aggregate.c"
     "tables/atomic.c"
@@ -98,9 +125,12 @@ loom_generated_cc_library(
     "--dialect=vector"
   EXTRA_OUTPUT_FLAGS
     "--ops-include"
+    "--builders"
   EXTRA_OUTPUTS
     "ops.inc"
+    "builders.c"
   DEPS
+    ::builders
     iree::base
     iree::base::internal
     loom::error::emitter

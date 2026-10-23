@@ -460,6 +460,18 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA)
 loom_cc_library(
   NAME
+    record_defs
+  HDRS
+    "records/target_records.h"
+  DEPS
+    loom::target::types
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
     target_records
   HDRS
     "records/target_records.h"
@@ -638,7 +650,7 @@ loom_cc_library(
     loom::ops::kernel
     loom::ops::op_defs
     loom::ops::pipeline
-    loom::ops::type_registry
+    loom::ops::type_builders
     loom::pass::registry
     loom::pass::types
     loom::pass::value_facts
@@ -942,6 +954,24 @@ iree_execution_test_suite(
     "loom-compile=loom::tools::loom-compile"
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/arch/amd/xdna/aie2p/test/native_allocation_report.loom"
+  LABELS
+    "hostonly"
+  TIMEOUT
+    60
+)
+endif()
+
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND AMDF_BUILD)
+iree_execution_test_suite(
+  NAME
+    failed_helper_report_test
+  MANIFESTS
+    "test/failed_helper_report.test.json"
+  TOOLS
+    "loom-compile=loom::tools::loom-compile"
+    "loom-compile-report=loom::py::loom::tools::loom-compile-report"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/arch/amd/xdna/aie2p/test/failed_helper_report.loom"
   LABELS
     "hostonly"
   TIMEOUT

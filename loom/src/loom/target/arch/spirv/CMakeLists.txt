@@ -117,6 +117,20 @@ endif()
 if(LOOM_TARGET_ARCH_SPIRV)
 loom_cc_library(
   NAME
+    vocabulary
+  HDRS
+    "features.h"
+    "scalar_type.h"
+  DEPS
+    ::isa
+    iree::base
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV)
+loom_cc_library(
+  NAME
     scalar_types
   HDRS
     "scalar_types.h"
@@ -124,6 +138,7 @@ loom_cc_library(
     "scalar_types.c"
   DEPS
     ::features
+    ::vocabulary
     iree::base
     loom::util::numeric_format
   PUBLIC
@@ -142,8 +157,8 @@ loom_cc_library(
     ::isa
     ::scalar_types
     iree::base
-    loom::ir
-    loom::target::arch::spirv::ops
+    loom::ir::types
+    loom::target::arch::spirv::ops::type_builders
   PUBLIC
 )
 endif()
@@ -245,6 +260,7 @@ loom_cc_library(
   DEPS
     ::cooperative_properties
     iree::base
+    loom::target::arch::spirv::records::record_defs
     loom::target::facts
     loom::target::facts_builder
   PUBLIC
@@ -279,6 +295,7 @@ loom_cc_library(
   DEPS
     ::facts
     iree::base
+    iree::base::internal::arena
     loom::target::arch::spirv::records::target_records
     loom::target::profile
   PUBLIC
@@ -549,6 +566,24 @@ loom_cc_test(
 endif()
 
 if(LOOM_TARGET_ARCH_SPIRV)
+loom_cc_benchmark(
+  NAME
+    value_types_benchmark
+  SRCS
+    "value_types_benchmark.cc"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    iree::testing::benchmark_main
+    loom::ir
+    loom::target::arch::spirv::ops
+  TESTONLY
+  LABELS
+    "iree-build-requirement=loom.target.arch.spirv"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV)
 loom_cc_test(
   NAME
     registers_test
@@ -595,6 +630,7 @@ loom_check_test_suite(
     "test/source_low/memory_workgroup_scalar_addressing.loom-test"
     "test/source_low/narrow_float_payloads.loom-test"
     "test/source_low/nested_view_selection.loom-test"
+    "test/source_low/numeric_activations.loom-test"
     "test/source_low/numeric_bfloat_narrow.loom-test"
     "test/source_low/numeric_bfloat_widen.loom-test"
     "test/source_low/numeric_extended_math.loom-test"

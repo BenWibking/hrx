@@ -247,12 +247,14 @@ iree_status_t loom_run_hal_testbench_require_successful_result(
         !loomc_string_view_is_empty(diagnostic->message)) {
       const iree_string_view_t message =
           iree_string_view_from_loomc(diagnostic->message);
-      return iree_make_status(IREE_STATUS_FAILED_PRECONDITION, "%.*s",
-                              (int)message.size, message.data);
+      return iree_status_allocate_copy(IREE_STATUS_FAILED_PRECONDITION,
+                                       iree_make_cstring_view(__FILE__),
+                                       __LINE__, message);
     }
   }
-  return iree_make_status(IREE_STATUS_FAILED_PRECONDITION, "%.*s",
-                          (int)fallback_message.size, fallback_message.data);
+  return iree_status_allocate_copy(IREE_STATUS_FAILED_PRECONDITION,
+                                   iree_make_cstring_view(__FILE__), __LINE__,
+                                   fallback_message);
 }
 
 static iree_status_t loom_run_hal_testbench_validate_kernel_launch(
@@ -1791,60 +1793,5 @@ iree_status_t loom_run_hal_testbench_materialize_invocation_from_table(
   if (!iree_status_is_ok(status)) {
     loom_run_hal_binding_list_deinitialize(out_bindings);
   }
-  return status;
-}
-
-iree_status_t loom_run_hal_testbench_materialize_invocation_for_sample(
-    const loom_module_t* module,
-    const loom_testbench_value_materializer_options_t* materializer_options,
-    const loom_testbench_case_plan_t* case_plan,
-    loom_run_hal_testbench_actual_provider_t* provider,
-    loom_testbench_case_sample_t sample, iree_allocator_t allocator,
-    loom_run_hal_invocation_options_t* out_options,
-    loom_run_hal_binding_list_t* out_bindings,
-    loom_testbench_buffer_footprint_t* out_input_footprint) {
-  if (out_input_footprint) {
-    *out_input_footprint = (loom_testbench_buffer_footprint_t){0};
-  }
-  loom_testbench_value_table_t table = {0};
-  iree_status_t status = loom_testbench_value_table_initialize_case(
-      module, case_plan, allocator, &table);
-  if (iree_status_is_ok(status)) {
-    status = loom_testbench_materialize_case_sample(materializer_options,
-                                                    case_plan, sample, &table);
-  }
-  if (iree_status_is_ok(status) && out_input_footprint) {
-    status = loom_testbench_value_table_resolve_buffer_footprint(
-        &table, provider->invocation->input_count,
-        provider->invocation->input_value_ids, out_input_footprint);
-  }
-  if (iree_status_is_ok(status)) {
-    status = loom_run_hal_testbench_materialize_invocation_from_table(
-        &table, provider, allocator, out_options, out_bindings);
-  }
-  loom_testbench_value_table_deinitialize(&table);
-  return status;
-}
-
-iree_status_t loom_run_hal_testbench_prepare_invocation_plan_for_sample(
-    const loom_testbench_module_plan_t* module_plan,
-    const loom_testbench_case_plan_t* case_plan,
-    const loom_testbench_value_materializer_options_t* materializer_options,
-    loom_run_hal_testbench_actual_provider_t* provider,
-    loom_testbench_case_sample_t sample, iree_allocator_t allocator,
-    loom_run_hal_invocation_plan_t* out_plan) {
-  loom_run_hal_invocation_options_t invocation_options = {0};
-  loom_run_hal_binding_list_t bindings = {0};
-  iree_status_t status =
-      loom_run_hal_testbench_materialize_invocation_for_sample(
-          module_plan->module, materializer_options, case_plan, provider,
-          sample, allocator, &invocation_options, &bindings,
-          /*out_input_footprint=*/NULL);
-  if (iree_status_is_ok(status)) {
-    status = loom_run_hal_invocation_plan_prepare_from_lists(
-        &invocation_options, &bindings, /*expected_bindings=*/NULL,
-        /*max_output_element_count=*/0, allocator, out_plan);
-  }
-  loom_run_hal_binding_list_deinitialize(&bindings);
   return status;
 }

@@ -20,7 +20,7 @@ loom_cc_library(
     "descriptors_enums.c"
   DEPS
     iree::base
-    loom::ir
+    loom::ir::builders
     loom::target::types
     loom::util::stable_id
     loom::util::string_pool
@@ -58,7 +58,7 @@ loom_cc_library(
   DEPS
     ::descriptors
     iree::base
-    loom::ir
+    loom::ir::builders
   PUBLIC
 )
 
@@ -142,8 +142,9 @@ loom_cc_library(
     ::descriptors
     ::immediates
     iree::base
-    loom::ir
-    loom::ops::low
+    loom::ir::builders
+    loom::ops::low::op_defs
+    loom::ops::op_defs
     loom::target::registers
   PUBLIC
 )
@@ -179,7 +180,7 @@ loom_cc_library(
     ::descriptors
     iree::base
     iree::base::internal::arena
-    loom::ir
+    loom::ir::builders
   PUBLIC
 )
 
@@ -238,14 +239,13 @@ loom_cc_library(
   SRCS
     "text_asm.c"
   DEPS
-    ::builder
     ::descriptors
     ::repr
     iree::base
     loom::format::text::low_asm
     loom::format::text::printer
     loom::ir
-    loom::ops::low
+    loom::ops::low::builders
     loom::target::low_asm_diagnostics
     loom::target::registers
   PUBLIC
@@ -414,7 +414,7 @@ loom_cc_library(
     loom::analysis::storage_layout
     loom::ir
     loom::ops::low
-    loom::ops::type_registry
+    loom::ops::type_builders
     loom::rewrite::rewriter
   PUBLIC
 )

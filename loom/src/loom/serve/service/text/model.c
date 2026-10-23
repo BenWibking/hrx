@@ -25,6 +25,7 @@
 #include "loom/serve/runtime/program/tokenizer_load.h"
 #include "loom/serve/service/text/control.h"
 #include "loom/serve/service/text/epoch_plan.h"
+#include "loom/serve/service/text/epoch_upload.h"
 #include "loom/serve/service/text/media_epoch.h"
 #include "loom/serve/service/text/model_instance.h"
 #include "loom/serve/service/text/source.h"
@@ -253,9 +254,9 @@ static iree_status_t loom_serve_text_load_link(loom_serve_text_load_t* load) {
     model->stage_bindings[i] = loom_serve_text_stage_binding(&model->stages[i]);
   }
   IREE_RETURN_IF_ERROR(loom_serve_text_control_initialize(
-      &model->source, model->execution, &model->state, model->shape_count,
-      model->shapes, model->stage_count, model->stage_bindings,
-      model->host_allocator, &model->control));
+      &model->source, model->execution, model->transfer, &model->state,
+      model->shape_count, model->shapes, model->stage_count,
+      model->stage_bindings, model->host_allocator, &model->control));
   iree_async_proactor_t* proactor = NULL;
   IREE_RETURN_IF_ERROR(iree_async_proactor_pool_get(
       loom_serve_host_proactor_pool(
@@ -301,7 +302,7 @@ iree_status_t loom_serve_text_load_allocate(
       options->epoch_count > SIZE_MAX / (2 * sizeof(int64_t)) ||
       options->draft_depth > 7 ||
       (options->draft_depth && !options->epoch_count) ||
-      options->pool_capacity > 4194304 ||
+      (uint64_t)options->pool_capacity > INT64_MAX ||
       options->checkpoint_capacity > INT32_MAX ||
       (options->checkpoint_capacity && !options->pool_capacity) ||
       (options->pool_capacity && !options->epoch_count)) {
@@ -426,7 +427,8 @@ iree_status_t loom_serve_text_load_advance(loom_serve_text_load_t* load,
           status = loom_serve_weights_prepare_async(
               model->parameters.plans[index], host, model->jit,
               model->command_mode, &load->options.sources, checkpoint,
-              loom_serve_text_load_complete, load);
+              model->source.parameter_sources, loom_serve_text_load_complete,
+              load);
           submitted = iree_status_is_ok(status);
         } else {
           // Source preparation defines captured-input lane storage. Register
@@ -786,7 +788,7 @@ loom_serve_text_pool_usage_t loom_serve_text_model_pool_usage(
     const loom_serve_text_state_row_t* row = &model->state.rows[i];
     if (row->reserved_extent) {
       const iree_host_size_t live =
-          (row->position + usage.block_size - 1) / usage.block_size;
+          iree_host_size_ceil_div(row->position, usage.block_size);
       usage.pending += (row->block_count - live) * usage.block_size;
     }
   }
@@ -1263,7 +1265,7 @@ iree_status_t loom_serve_text_model_submit_epoch(
       iree_vm_buffer_variant_from_ptr_borrowed(&model->source.vm_types,
                                                input_packet),
   };
-  iree_vm_variant_t encode_results[1] = {0};
+  iree_vm_variant_t encode_results[4] = {0};
   if (iree_status_is_ok(status)) {
     status = loom_serve_text_invoke(
         model, model->control.encode_epoch,
@@ -1274,7 +1276,34 @@ iree_status_t loom_serve_text_model_submit_epoch(
   if (iree_status_is_ok(status)) {
     status = iree_vm_i32_from_variant(encode_results[0], &output_count);
   }
-  iree_vm_variant_span_reset(iree_vm_variant_span_from_array(encode_results));
+  iree_vm_buffer_t* transfer_plan = NULL;
+  int64_t transfer_offset = 0;
+  int64_t transfer_length = 0;
+  iree_const_byte_span_t transfer_ranges = iree_const_byte_span_empty();
+  if (iree_status_is_ok(status)) {
+    status = iree_vm_buffer_ptr_from_variant_move(
+        &model->source.vm_types, &encode_results[1], &transfer_plan);
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_vm_i64_from_variant(encode_results[2], &transfer_offset);
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_vm_i64_from_variant(encode_results[3], &transfer_length);
+  }
+  if (iree_status_is_ok(status) && !transfer_plan) {
+    status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "source epoch transfer plan must not be null");
+  }
+  if (iree_status_is_ok(status) &&
+      ((uint64_t)transfer_offset > IREE_HOST_SIZE_MAX ||
+       (uint64_t)transfer_length > IREE_HOST_SIZE_MAX)) {
+    status = iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                              "source epoch transfer view exceeds host extent");
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_vm_buffer_map_read(transfer_plan, transfer_offset,
+                                     transfer_length, &transfer_ranges);
+  }
   iree_hal_buffer_t* dynamic_input = NULL;
   if (iree_status_is_ok(status) && has_media_packet) {
     const iree_hal_pool_reservation_request_t request = {
@@ -1287,29 +1316,24 @@ iree_status_t loom_serve_text_model_submit_epoch(
   iree_hal_buffer_t* device_input =
       dynamic_input ? dynamic_input : model->state.epoch.buffers[4];
   uint64_t completion = 0;
+  if (iree_status_is_ok(status)) {
+    const iree_const_byte_span_t packets[] = {
+        iree_const_cast_byte_span(
+            model->control.host.bytes[TEXT_HOST_METADATA]),
+        iree_const_cast_byte_span(
+            has_media_packet ? invocation_media->packet_record_bytes
+                             : model->control.host.bytes[TEXT_HOST_TOKENS]),
+    };
+    iree_hal_buffer_t* targets[] = {model->state.epoch.buffers[1],
+                                    device_input};
+    status = loom_serve_text_epoch_upload(model->execution, transfer_ranges,
+                                          packets, targets);
+  }
+  iree_vm_buffer_release(transfer_plan);
+  iree_vm_variant_span_reset(iree_vm_variant_span_from_array(encode_results));
   if (iree_status_is_ok(status) && has_media_packet) {
     status = loom_serve_text_media_epoch_enqueue(
-        invocation_media, model->execution,
-        iree_make_const_byte_span(
-            model->control.host.bytes[TEXT_HOST_METADATA].data,
-            model->control.host.bytes[TEXT_HOST_METADATA].data_length),
-        model->state.epoch.buffers[1], device_input, &completion);
-  } else if (iree_status_is_ok(status)) {
-    const iree_hal_transfer_operation_t uploads[] = {
-        {.type = IREE_HAL_TRANSFER_OPERATION_TYPE_UPLOAD,
-         .upload =
-             {.source = model->control.host.bytes[TEXT_HOST_METADATA].data,
-              .target_buffer = model->state.epoch.buffers[1],
-              .length =
-                  model->control.host.bytes[TEXT_HOST_METADATA].data_length}},
-        {.type = IREE_HAL_TRANSFER_OPERATION_TYPE_UPLOAD,
-         .upload = {.source = model->control.host.bytes[TEXT_HOST_TOKENS].data,
-                    .target_buffer = model->state.epoch.buffers[4],
-                    .length = model->control.host.bytes[TEXT_HOST_TOKENS]
-                                  .data_length}},
-    };
-    status = loom_serve_execution_transfer(
-        model->execution, IREE_ARRAYSIZE(uploads), uploads, &completion);
+        invocation_media, model->execution, device_input, &completion);
   }
   iree_hal_buffer_t* buffers[] = {
       model->state.residual,
@@ -1318,7 +1342,7 @@ iree_status_t loom_serve_text_model_submit_epoch(
       model->state.row_arena,
       device_input,
       model->state.epoch.buffers[5],
-      model->state.draft.carry,
+      model->state.carry,
       model->state.draft.committed,
       model->state.draft.results,
       model->state.draft.cache,

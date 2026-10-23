@@ -102,9 +102,7 @@ static bool loom_value_fact_table_dynamic_extent_type_supported(
 }
 
 static loom_value_facts_t loom_value_fact_table_clamp_scalar_type_domain(
-    const loom_module_t* module, loom_value_id_t value_id,
-    loom_value_facts_t facts) {
-  loom_type_t type = loom_module_value_type(module, value_id);
+    loom_type_t type, loom_value_facts_t facts) {
   if (!loom_type_is_scalar(type)) {
     return facts;
   }
@@ -137,9 +135,9 @@ static const loom_block_t* loom_value_fact_table_definition_block(
 // optional layout reference has encoding type. Consume the maintained reverse
 // type-use index instead of finding extents by walking other definitions.
 static bool loom_value_fact_table_has_extent_domain(const loom_module_t* module,
-                                                    loom_value_id_t value_id) {
-  if (!loom_value_fact_table_dynamic_extent_type_supported(
-          loom_module_value_type(module, value_id)) ||
+                                                    loom_value_id_t value_id,
+                                                    loom_type_t type) {
+  if (!loom_value_fact_table_dynamic_extent_type_supported(type) ||
       !loom_module_value_has_type_uses(module, value_id)) {
     return false;
   }
@@ -166,10 +164,9 @@ static bool loom_value_fact_table_has_extent_domain(const loom_module_t* module,
 }
 
 static loom_value_facts_t loom_value_fact_table_clamp_extent_domain(
-    const loom_module_t* module, loom_value_id_t value_id,
-    loom_value_facts_t facts) {
+    loom_type_t type, loom_value_facts_t facts) {
   return loom_value_fact_table_clamp_scalar_type_domain(
-      module, value_id, loom_value_facts_non_negative_extent(facts));
+      type, loom_value_facts_non_negative_extent(facts));
 }
 
 static iree_status_t loom_value_fact_table_seed_scalar_arg(
@@ -191,7 +188,7 @@ static iree_status_t loom_value_fact_table_seed_scalar_arg(
   }
   return loom_value_fact_table_define(
       table, value_id,
-      loom_value_fact_table_clamp_scalar_type_domain(module, value_id, facts));
+      loom_value_fact_table_clamp_scalar_type_domain(type, facts));
 }
 
 static loom_value_facts_t loom_value_fact_table_unknown_for_value(
@@ -202,8 +199,7 @@ static loom_value_facts_t loom_value_fact_table_unknown_for_value(
   }
   loom_type_t type = loom_module_value_type(module, value_id);
   if (loom_type_is_scalar(type)) {
-    facts =
-        loom_value_fact_table_clamp_scalar_type_domain(module, value_id, facts);
+    facts = loom_value_fact_table_clamp_scalar_type_domain(type, facts);
   }
   return facts;
 }
@@ -308,7 +304,8 @@ static iree_status_t loom_value_fact_table_apply_func_predicates(
       continue;
     }
     loom_value_facts_t facts = loom_value_fact_table_clamp_scalar_type_domain(
-        module, value_id, loom_value_fact_table_lookup(table, value_id));
+        loom_module_value_type(module, value_id),
+        loom_value_fact_table_lookup(table, value_id));
     loom_value_facts_apply_predicate(&facts, predicate);
     IREE_RETURN_IF_ERROR(loom_value_fact_table_define(table, value_id, facts));
   }
@@ -423,12 +420,11 @@ static iree_status_t loom_value_fact_table_seed_block_args(
       IREE_RETURN_IF_ERROR(
           loom_value_fact_table_define(table, value_id, facts));
     }
-    if (loom_value_fact_table_has_extent_domain(module, value_id)) {
+    if (loom_value_fact_table_has_extent_domain(module, value_id, type)) {
       IREE_RETURN_IF_ERROR(loom_value_fact_table_define(
           table, value_id,
           loom_value_fact_table_clamp_extent_domain(
-              module, value_id,
-              loom_value_fact_table_lookup(table, value_id))));
+              type, loom_value_fact_table_lookup(table, value_id))));
     }
   }
   return loom_value_fact_table_seed_loop_iv_arg(table, module, block,
@@ -654,11 +650,10 @@ static iree_status_t loom_value_fact_table_compute_cfg_block_arg(
                   : arg_id;
     loom_type_t member_type = loom_module_value_type(module, value_id);
     const bool is_extent =
-        loom_value_fact_table_has_extent_domain(module, value_id);
+        loom_value_fact_table_has_extent_domain(module, value_id, member_type);
     loom_value_facts_t facts = incoming_facts;
     if (is_extent) {
-      facts =
-          loom_value_fact_table_clamp_extent_domain(module, value_id, facts);
+      facts = loom_value_fact_table_clamp_extent_domain(member_type, facts);
     }
     if (widen && !exits_at_header &&
         loom_value_fact_table_has_entry(table, value_id)) {
@@ -668,8 +663,7 @@ static iree_status_t loom_value_fact_table_compute_cfg_block_arg(
           table, module, member_type, table, current_facts, table, facts,
           iteration, &facts));
       if (is_extent) {
-        facts =
-            loom_value_fact_table_clamp_extent_domain(module, value_id, facts);
+        facts = loom_value_fact_table_clamp_extent_domain(member_type, facts);
       }
     }
     facts = loom_value_fact_table_refine_cfg_recurrence(table, module, region,
@@ -949,7 +943,7 @@ static iree_status_t loom_value_fact_table_seed_cfg_recurrences(
 
 // A component's inputs are stable before its solve. Only its feedback needs
 // iteration; definitions in predecessor and successor components do not.
-static iree_status_t loom_value_fact_table_solve_cfg_component(
+static iree_status_t loom_value_fact_table_iterate_cfg_component(
     loom_value_fact_table_t* table, const loom_module_t* module,
     const loom_value_fact_cfg_region_t* region, const loom_scc_t* component,
     iree_arena_allocator_t* scratch_arena,
@@ -978,6 +972,10 @@ static iree_status_t loom_value_fact_table_solve_cfg_component(
       IREE_RETURN_IF_ERROR(loom_value_fact_table_compute_cfg_block_tree(
           table, module, region->graph.blocks[block_index].block, &changed));
     }
+    // A complete traversal establishes constant results and selector roots.
+    // Reverse postorder publishes dominating SSA dependencies before use;
+    // backedge equations change only operand-dependent numeric facts.
+    table->replaying = true;
     if (!changed) {
       converged = true;
       break;
@@ -1009,6 +1007,9 @@ static iree_status_t loom_value_fact_table_solve_cfg_component(
     }
     IREE_RETURN_IF_ERROR(
         loom_value_fact_table_reset_cfg_values(table, module, restart_values));
+    // Typed unknown rows are defined but no longer contain computed constant
+    // facts. Reestablish the complete traversal before reusing those rows.
+    table->replaying = false;
     loom_value_fact_cfg_seed_control(table, region, component);
     for (iree_host_size_t i = 0; i < component->node_count; ++i) {
       bool changed = false;
@@ -1019,6 +1020,19 @@ static iree_status_t loom_value_fact_table_solve_cfg_component(
     }
   }
   return iree_ok_status();
+}
+
+static iree_status_t loom_value_fact_table_solve_cfg_component(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    const loom_value_fact_cfg_region_t* region, const loom_scc_t* component,
+    iree_arena_allocator_t* scratch_arena,
+    const loom_value_fact_cfg_saved_values_t* restart_values) {
+  IREE_RETURN_IF_ERROR(loom_value_fact_table_enable_replay_generations(table));
+  const bool was_replaying = table->replaying;
+  iree_status_t status = loom_value_fact_table_iterate_cfg_component(
+      table, module, region, component, scratch_arena, restart_values);
+  table->replaying = was_replaying;
+  return status;
 }
 
 iree_status_t loom_value_fact_table_recompute_cfg_component(
@@ -1146,20 +1160,25 @@ iree_status_t loom_value_fact_table_define_results(
     }
     loom_value_facts_t facts =
         i < result_count ? result_facts[i] : loom_value_facts_unknown();
-    if (loom_value_fact_table_has_extent_domain(module, result)) {
+    const loom_type_t type = loom_module_value_type(module, result);
+    if (loom_value_fact_table_has_extent_domain(module, result, type)) {
       facts = loom_value_facts_non_negative_extent(facts);
     }
     // Inference may be less precise than the verified scalar result type.
-    facts =
-        loom_value_fact_table_clamp_scalar_type_domain(module, result, facts);
-    loom_type_t type = loom_module_value_type(module, result);
+    facts = loom_value_fact_table_clamp_scalar_type_domain(type, facts);
     table->result_type_kind_bits |=
         (uint16_t)(UINT16_C(1) << loom_type_kind(type));
+    loom_value_facts_t previous;
+    const bool defined =
+        loom_value_fact_table_try_lookup(table, result, &previous);
+    // Equal tuples in one table name the same immutable extension payload.
+    // Their row already owns scope membership, so publication is complete.
+    if (defined && loom_value_facts_equal(previous, facts)) {
+      continue;
+    }
     if (out_changed &&
-        (!loom_value_fact_table_has_entry(table, result) ||
-         !loom_value_fact_table_facts_equal_for_type(
-             module, type, table, loom_value_fact_table_lookup(table, result),
-             table, facts))) {
+        (!defined || !loom_value_fact_table_facts_equal_for_type(
+                         module, type, table, previous, table, facts))) {
       *out_changed = true;
     }
     IREE_RETURN_IF_ERROR(loom_value_fact_table_define(table, result, facts));
@@ -1337,6 +1356,37 @@ static iree_status_t loom_value_fact_table_compute_ordinary_op(
                                                  out_changed);
 }
 
+// Publication generations survive nested convergence and changes that later
+// revert. Result watermarks belong to completed equations, not individual
+// solver iterations; a changed input remains visible until its consumer runs.
+static bool loom_value_fact_table_operands_unchanged(
+    const loom_value_fact_table_t* table, const loom_op_t* op) {
+  uint32_t evaluated = UINT32_MAX;
+  const loom_value_id_t* results = loom_op_const_results(op);
+  for (uint16_t i = 0; i < op->result_count; ++i) {
+    const iree_host_size_t index =
+        (iree_host_size_t)results[i] - table->first_value_id;
+    if (index >= table->capacity) {
+      return false;
+    }
+    const uint32_t generation = table->replay.generations[index];
+    if (!generation || (generation & UINT32_C(1))) {
+      return false;
+    }
+    evaluated = iree_min(evaluated, generation);
+  }
+  const loom_value_id_t* operands = loom_op_const_operands(op);
+  for (uint16_t i = 0; i < op->operand_count; ++i) {
+    const iree_host_size_t index =
+        (iree_host_size_t)operands[i] - table->first_value_id;
+    if (index < table->capacity &&
+        (table->replay.generations[index] & ~UINT32_C(1)) > evaluated) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static iree_status_t loom_value_fact_table_compute_scoped_op(
     loom_value_fact_table_t* table, const loom_module_t* module,
     const loom_op_t* op, bool* out_changed) {
@@ -1350,9 +1400,28 @@ static iree_status_t loom_value_fact_table_compute_scoped_op(
   if (out_changed) {
     *out_changed = false;
   }
+  // Constant-like facts depend on immutable literal/type state. Reuse them
+  // only after a completed traversal; nested restarts still seed missing rows.
+  if (table->replaying &&
+      iree_any_bit_set(op->traits, LOOM_TRAIT_CONSTANT_LIKE) &&
+      loom_value_fact_table_has_entry(table, loom_op_const_results(op)[0])) {
+    return iree_ok_status();
+  }
   const loom_op_vtable_t* vtable = loom_op_vtable(module, op);
-  IREE_RETURN_IF_ERROR(loom_value_fact_table_propagate_select_dependencies(
-      table, module, op, vtable, out_changed));
+  // A refinement callback can depend on values outside the operand list. Its
+  // scope cannot reuse equations using numeric operand generations alone.
+  const bool operand_only =
+      table->replay.generation && vtable && op->result_count &&
+      (vtable->vtable_flags & LOOM_OP_VTABLE_FACTS_FROM_OPERANDS) &&
+      !table->context.refine_operands.fn;
+  if (table->replaying && operand_only &&
+      loom_value_fact_table_operands_unchanged(table, op)) {
+    return iree_ok_status();
+  }
+  if (!table->replaying) {
+    IREE_RETURN_IF_ERROR(loom_value_fact_table_propagate_select_dependencies(
+        table, module, op, vtable, out_changed));
+  }
   if (vtable && (vtable->loop_like || vtable->region_branch)) {
     iree_status_t status =
         vtable->loop_like ? loom_value_fact_table_compute_loop_like_summary(
@@ -1370,6 +1439,15 @@ static iree_status_t loom_value_fact_table_compute_scoped_op(
   iree_status_t status = loom_value_fact_table_compute_ordinary_op(
       table, module, op, vtable, out_changed);
   loom_value_fact_table_end_origins(table, iree_status_is_ok(status));
+  if (iree_status_is_ok(status) && operand_only) {
+    // Inference and typed publication are complete. Every result participates,
+    // including unchanged siblings of a multi-result equation.
+    const loom_value_id_t* results = loom_op_const_results(op);
+    for (uint16_t i = 0; i < op->result_count; ++i) {
+      table->replay.generations[results[i] - table->first_value_id] =
+          table->replay.generation;
+    }
+  }
   return status;
 }
 

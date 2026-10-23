@@ -199,6 +199,11 @@ struct loom_value_fact_table_t {
     iree_host_size_t word_count;
   } seeds;
 
+  // The current numeric solve is replaying a completed traversal without IR
+  // edits. Constant results and structural selector dependencies remain valid.
+  // Nested solves inherit this state; each solver restores its caller's state.
+  bool replaying;
+
   // Facts derived under path conditions require whole-scope invalidation after
   // edits. The incremental rewriter cannot maintain their guard dependencies.
   bool has_conditioned_results;
@@ -297,6 +302,15 @@ struct loom_value_fact_table_t {
     // Allocated sparse entry count retained across populated scopes.
     iree_host_size_t capacity;
   } exact_lane_origins;
+
+  // Exact scalar numeric origins keyed by result value ID. Direct entries are
+  // allocated lazily when a function first publishes a preserving conversion.
+  struct {
+    // Source value IDs indexed relative to range.first_value_id.
+    loom_value_id_t* entries;
+    // Value-ID range covered by the direct entries.
+    loom_value_fact_range_t range;
+  } exact_scalar_origins;
 
   // Uniform scalar-scale origins keyed by aggregate value ID. An entry with
   // source_value_id == LOOM_VALUE_ID_INVALID has no known scaled origin.
@@ -412,6 +426,17 @@ struct loom_value_fact_table_t {
     // Lazily allocated query scratch for condition-loop edge projections.
     loom_value_fact_condition_scratch_t* condition;
   } scratch;
+  // Numeric dependency tracking, activated lazily by iterative solvers.
+  struct {
+    // One transient-arena generation per dense row. Zero is unevaluated; the
+    // low bit marks a publication not yet established by its defining op.
+    // Completed equations record the scope generation at evaluation, allowing
+    // consumers to see changes even after a nested equation has converged.
+    uint32_t* generations;
+    // Even publication serial, or zero when tracking is inactive. Wraparound
+    // expires every evaluation before the serial restarts.
+    uint32_t generation;
+  } replay;
 #ifndef NDEBUG
   // Diagnostics for retained coherent observations; absent in release builds.
   struct {
@@ -731,6 +756,13 @@ iree_status_t loom_value_fact_table_propagate_origins(
 iree_status_t loom_value_fact_table_compute_op(loom_value_fact_table_t* table,
                                                const loom_module_t* module,
                                                const loom_op_t* op);
+
+// Activates numeric change tracking for the current fact scope. Iterative
+// solvers call this before their first traversal; nested solves share the
+// publication serial. clear_scope releases the transient column. This does not
+// enter immutable replay: the solver owns table->replaying separately.
+iree_status_t loom_value_fact_table_enable_replay_generations(
+    loom_value_fact_table_t* table);
 
 // Computes facts for a single op and reports whether any result facts changed
 // relative to the table's previous entries.

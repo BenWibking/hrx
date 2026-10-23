@@ -61,7 +61,7 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     iree::base::internal::unicode
-    loom::ir
+    loom::ir::builders
   PUBLIC
 )
 
@@ -209,7 +209,7 @@ loom_cc_library(
     ::emitter
     ::error_defs
     iree::base
-    loom::ir
+    loom::ir::types
   PUBLIC
 )
 
