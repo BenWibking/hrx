@@ -121,6 +121,7 @@ DEVICE int integrate(ScratchView s) {
                     }
                     Real dyv[15];
                     CHEM_RHS(x, yv, dyv, s);
+                    CHEM_RHS(x, yv, dyv, s);
                     {
                         Real tv[15];
                         if (stage == 0) {
