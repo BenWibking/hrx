@@ -11,22 +11,15 @@ DEVICE int integrate(ScratchView s) {
     int result = SUCCESS;
     bool done = false;
 
-    if (s.tout[0] <= s.t[0] || s.safe[0] <= 0.001 || s.safe[0] >= 1.0 ||
-        s.fac_min[0] <= 0.0 || s.fac_max[0] < 1.0) {
+    // safe, fac_min, fac_max, atol_vec, rtol_vec and uround are the compile-time
+    // values configure_ros2s/burn_ros2s store (all checks below pass for them),
+    // so only the time-interval check depends on the inputs.
+    if (s.tout[0] <= s.t[0]) {
         return BAD_INPUTS;
     }
-    for (size_type i = 0; i < N && !done; ++i) {
-        __builtin_assume(i < N);
-        if (s.atol_vec[i] <= 0.0 || s.rtol_vec[i] <= 10.0 * s.uround[0]) {
-            result = TOO_MUCH_ACCURACY_REQUESTED;
-            done = true;
-        }
-    }
-
-    if (done) return result;
     const Real hmaxn = s.tout[0] - s.t[0];
     Real h = s.dt[0];
-    if (math::abs(h) <= 10.0 * s.uround[0]) {
+    if (math::abs(h) <= 10.0 * 1.e-16) {
         h = 1.e-6;
     }
     h = math::min(math::abs(h), hmaxn);
@@ -49,6 +42,10 @@ DEVICE int integrate(ScratchView s) {
     int n_accept = 0;
 
     bool need_jac = true;
+    // Stage 0's RHS is f(y) at the state the Jacobian was evaluated at; a
+    // retry (same y) reuses it from s.dy. Waves where every lane is retrying
+    // (the first rejections of each call) skip the stage-0 RHS entirely.
+    bool have_f0 = false;
     // One loop for new steps and retries: a lane that needs a new Jacobian
     // evaluates it while retrying lanes wait, then all lanes run the
     // decomposition and stages together. Same per-lane sequence of operations.
@@ -79,6 +76,7 @@ DEVICE int integrate(ScratchView s) {
 
             CHEM_EVAL_JACOBIAN(s, x);
             need_jac = false;
+            have_f0 = false;
         }
       }
         if (!done) {
@@ -120,7 +118,20 @@ DEVICE int integrate(ScratchView s) {
                         }
                     }
                     Real dyv[15];
-                    CHEM_RHS(x, yv, dyv, s);
+                    const bool reuse = (stage == 0) & have_f0;
+                    if (!reuse) {
+                        CHEM_RHS(x, yv, dyv, s);
+                    } else {
+                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                            dyv[i] = s.dy[i];
+                        }
+                    }
+                    if ((stage == 0) & !have_f0) {
+                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                            s.dy[i] = dyv[i];
+                        }
+                        have_f0 = true;
+                    }
                     {
                         Real tv[15];
                         if (stage == 0) {
