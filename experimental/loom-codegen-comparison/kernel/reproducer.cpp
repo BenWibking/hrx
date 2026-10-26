@@ -5948,8 +5948,10 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
             [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
                 cur[j - K] = nxt[j - K];
             }
-            if (i + 1 < 15u) {
-                const unsigned i1 = i + 1;
+            {
+                // Unconditional (clamped) prefetch: no merge with the old
+                // values, so the loads are not waited on until the next row.
+                const unsigned i1 = (i + 1 < 15u) ? i + 1 : 14u;
                 __builtin_assume(i1 < 15u);
                 [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
                     nxt[j - K] = A[midx(i1, j)];
@@ -6037,8 +6039,8 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
             [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
                 cur[j] = nxt[j];
             }
-            if (i + 1 < 15u) {
-                const unsigned i1 = i + 1;
+            {
+                const unsigned i1 = (i + 1 < 15u) ? i + 1 : 14u;
                 const unsigned src = (i1 == pivot_row) ? 0u : i1;
                 __builtin_assume(src < 15u);
                 [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
