@@ -1279,6 +1279,8 @@ ELEMENTWISE = Trait("Elementwise")
 # operands contribute the same lane interval and scalar operands are invariant
 # captures. The operation must be pure and have one vector result.
 DECOMPOSABLE = Trait("Decomposable")
+# Op defines an unqualified identity in the flat module symbol table and is
+# therefore valid only as a direct child of the module body.
 SYMBOL_DEFINE = Trait("SymbolDefine")
 # Op is valid only as a direct child of the module body. Module-owned operations
 # use this independently from SymbolDefine so they do not enter the symbol table
@@ -5802,6 +5804,8 @@ class FuncLikeInterface(NamedTuple):
     repr_contract: str | None = None
     # Optional ABI enum attr for concrete target-bound functions.
     abi: str | None = None
+    # Optional source-language ABI contract, independent of the output ABI.
+    source_signature: str | None = None
     # Optional ABI payload dictionary attr.
     abi_attrs: str | None = None
     # Optional exported symbol string attr.

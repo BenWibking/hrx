@@ -373,8 +373,10 @@ typedef struct loom_amdgpu_subgroup_predicate_mask_descriptors_t {
 } loom_amdgpu_subgroup_predicate_mask_descriptors_t;
 
 typedef struct loom_amdgpu_subgroup_ballot_plan_t {
-  // Source predicate already materialized as a native EXEC-width mask.
+  // Source predicate to materialize as a native EXEC-width mask at this use.
   loom_value_id_t predicate;
+  // Optional exact predicate recipe; NULL materializes the canonical carrier.
+  const void* predicate_plan;
   // Descriptors that restrict the predicate to lanes active at this use.
   loom_amdgpu_subgroup_predicate_mask_descriptors_t active;
   // Source mask result receiving predicate bits for active lanes.
@@ -388,8 +390,12 @@ typedef struct loom_amdgpu_subgroup_ballot_plan_t {
 } loom_amdgpu_subgroup_ballot_plan_t;
 
 typedef struct loom_amdgpu_subgroup_vote_any_plan_t {
-  // Source predicate already materialized as a native EXEC-width mask.
+  // Source predicate represented as either a uniform i1 or native lane mask.
   loom_value_id_t predicate;
+  // Whether the uniform result directly aliases the uniform predicate.
+  bool result_aliases_predicate;
+  // Optional exact predicate recipe; NULL materializes the canonical carrier.
+  const void* predicate_plan;
   // Descriptors that restrict the predicate to lanes active at this use.
   loom_amdgpu_subgroup_predicate_mask_descriptors_t active;
   // Descriptor row selected to compare the predicate mask against zero.
@@ -403,8 +409,12 @@ typedef struct loom_amdgpu_subgroup_vote_any_plan_t {
 } loom_amdgpu_subgroup_vote_any_plan_t;
 
 typedef struct loom_amdgpu_subgroup_vote_all_plan_t {
-  // Source predicate already materialized as a native EXEC-width mask.
+  // Source predicate represented as either a uniform i1 or native lane mask.
   loom_value_id_t predicate;
+  // Whether the uniform result directly aliases the uniform predicate.
+  bool result_aliases_predicate;
+  // Optional exact predicate recipe; NULL materializes the canonical carrier.
+  const void* predicate_plan;
   // Descriptor row selected to compare predicate and active EXEC masks.
   loom_low_lower_resolved_descriptor_t compare_descriptor;
   // Descriptors that restrict the predicate to lanes active at this use.

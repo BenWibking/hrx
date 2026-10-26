@@ -172,10 +172,6 @@ loom_cc_library(
     "source_cache_test.cc"
   DEPS
     ::source_service_fixture
-    iree::base::internal::arena
-    iree::vm::test_support
-    loom::serve::media::image_codec
-    loom::serve::media::image_codecs
   TESTONLY
   ALWAYSLINK
   PUBLIC
@@ -287,6 +283,7 @@ loom_cc_library(
     "model_instance.h"
     "source_execution_test.cc"
     "state_test.cc"
+    "workspace_test.cc"
   DEPS
     ::capture
     ::epoch_upload
@@ -297,6 +294,32 @@ loom_cc_library(
     iree::vm
     loom::serve::runtime::device
     loom::serve::runtime::execution
+    loom::serve::testing::service_application
+  TESTONLY
+  ALWAYSLINK
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_library(
+  NAME
+    media_projector_tests
+  SRCS
+    "media_projector_test.cc"
+  DEPS
+    ::media_projector
+    iree::async
+    iree::base
+    iree::base::threading
+    iree::hal
+    iree::testing::gtest
+    loom::serve::media::image
+    loom::serve::runtime::device
+    loom::serve::runtime::host
+    loom::serve::service::finite::model
+    loom::serve::service::finite::result
+    loom::serve::testing::model
     loom::serve::testing::service_application
   TESTONLY
   ALWAYSLINK
@@ -438,6 +461,36 @@ loom_cc_test(
     iree::base
     iree::testing::gtest
     iree::testing::gtest_main
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_test(
+  NAME
+    chat_policy_test
+  SRCS
+    "chat_policy_test.cc"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/control.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/tokenizer.json"
+  DEPS
+    ::chat
+    ::input
+    iree::base
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    iree::vm::test_support
+    loom::serve::media::image_codec
+    loom::serve::media::image_codecs
+    loom::serve::runtime::program::compilation
+    loom::serve::testing::text_policy
+    loom::util::stream
+  ENV
+    "LOOM_SERVE_TEST_CHAT_CONTROL={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/control.loom}}"
+    "LOOM_SERVE_TEST_CHAT_TOKENIZER={{${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/tokenizer.json}}"
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
 )
@@ -1154,6 +1207,7 @@ loom_cc_library(
     loom::serve::service
     loom::serve::service::finite::model
     loom::serve::service::finite::result
+    loom::serve::service::prepared_request
   PUBLIC
 )
 endif()

@@ -148,10 +148,6 @@ loom_cc_library(
     visibility = ["//loom/src/loom/serve:implementation"],
     deps = [
         ":source_service_fixture",
-        "//loom/src/loom/serve/media:image_codec",
-        "//loom/src/loom/serve/media:image_codecs",
-        "//runtime/src/iree/base/internal:arena",
-        "//runtime/src/iree/vm:test_support",
     ],
     alwayslink = True,
 )
@@ -248,6 +244,7 @@ loom_cc_library(
         "model_instance.h",
         "source_execution_test.cc",
         "state_test.cc",
+        "workspace_test.cc",
     ],
     target_compatible_with = _SOURCE_TEST_COMPATIBILITY,
     visibility = ["//loom/src/loom/serve:implementation"],
@@ -262,6 +259,29 @@ loom_cc_library(
         "//loom/src/loom/serve/testing:service_application",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/vm",
+    ],
+    alwayslink = True,
+)
+
+loom_cc_library(
+    name = "media_projector_tests",
+    testonly = True,
+    srcs = ["media_projector_test.cc"],
+    visibility = ["//loom/src/loom/serve:implementation"],
+    deps = [
+        ":media_projector",
+        "//loom/src/loom/serve/media:image",
+        "//loom/src/loom/serve/runtime/device",
+        "//loom/src/loom/serve/runtime/host",
+        "//loom/src/loom/serve/service/finite:model",
+        "//loom/src/loom/serve/service/finite:result",
+        "//loom/src/loom/serve/testing:model",
+        "//loom/src/loom/serve/testing:service_application",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/threading",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
     ],
     alwayslink = True,
 )
@@ -389,6 +409,33 @@ loom_cc_test(
         "//runtime/src/iree/base",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "chat_policy_test",
+    srcs = ["chat_policy_test.cc"],
+    data = [
+        "//loom/src/loom/serve/fixture/text:control.loom",
+        "//loom/src/loom/serve/fixture/text:tokenizer.json",
+    ],
+    env = {
+        "LOOM_SERVE_TEST_CHAT_CONTROL": "$(rootpath //loom/src/loom/serve/fixture/text:control.loom)",
+        "LOOM_SERVE_TEST_CHAT_TOKENIZER": "$(rootpath //loom/src/loom/serve/fixture/text:tokenizer.json)",
+    },
+    deps = [
+        ":chat",
+        ":input",
+        "//loom/src/loom/serve/media:image_codec",
+        "//loom/src/loom/serve/media:image_codecs",
+        "//loom/src/loom/serve/runtime/program:compilation",
+        "//loom/src/loom/serve/testing:text_policy",
+        "//loom/src/loom/util:stream",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+        "//runtime/src/iree/vm:test_support",
     ],
 )
 
@@ -953,6 +1000,7 @@ loom_cc_library(
         "//loom/src/loom/serve/runtime/execution",
         "//loom/src/loom/serve/runtime/parameter:residency",
         "//loom/src/loom/serve/service",
+        "//loom/src/loom/serve/service:prepared_request",
         "//loom/src/loom/serve/service/finite:model",
         "//loom/src/loom/serve/service/finite:result",
         "//runtime/src/iree/base",
