@@ -5984,6 +5984,121 @@ DEVICE int lu_step(Real* A, int* ipvt, int info, unsigned pivot_row) {
         return info;
     }
 }
+// Steps K and K+1 of lu_step in one pass over the trailing rows (K + 1 < 13).
+// Every element gets the same operations in the same order as two lu_step
+// passes (step K update, then step K+1 update); pivots, interchanges and
+// multipliers are identical, so the factor is bitwise identical. The step K+1
+// pivot column is scanned first (recomputing the step K update of columns K,
+// K+1), and the K+1 row interchange is applied to the rows before their step K
+// update (it commutes: each row keeps its own multiplier). The trailing matrix
+// is read and written once per two steps instead of once per step.
+template <unsigned K>
+DEVICE int lu_pair(Real* A, int* ipvt, int info, unsigned pivot_row) {
+    ipvt[K] = static_cast<int>(pivot_row);
+    __builtin_assume(pivot_row < 15u);
+    if (A[midx(pivot_row, K)] == 0.0) info = static_cast<int>(K + 1);
+    if (pivot_row != K) {
+        Real prow[15];
+        Real krow[15];
+        [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+            prow[j] = A[midx(pivot_row, j)];
+            krow[j] = A[midx(K, j)];
+        }
+        [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+            A[midx(pivot_row, j)] = krow[j];
+            A[midx(K, j)] = prow[j];
+        }
+    }
+    Real rowK[15 - K];
+    [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+        rowK[j - K] = A[midx(K, j)];
+    }
+    const Real mK = -1.0 / rowK[0];
+    // Pivot search for column K+1 on its step-K-updated values.
+    unsigned p1 = K + 1;
+    Real max1 = 0.0;
+    for (unsigned i = K + 1; i < 15u; ++i) {
+        const Real m = A[midx(i, K)] * mK;
+        const Real c = A[midx(i, K + 1)] + rowK[1] * m;
+        const Real v = math::abs(c);
+        const bool take = (i == K + 1) | (v > max1);
+        max1 = take ? v : max1;
+        p1 = take ? i : p1;
+    }
+    ipvt[K + 1] = static_cast<int>(p1);
+    __builtin_assume(p1 < 15u);
+    if (p1 != K + 1) {
+        Real prow[15];
+        Real krow[15];
+        [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+            prow[j] = A[midx(p1, j)];
+            krow[j] = A[midx(K + 1, j)];
+        }
+        [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+            A[midx(p1, j)] = krow[j];
+            A[midx(K + 1, j)] = prow[j];
+        }
+    }
+    // Row K+1: step K update; it is the step K+1 pivot row.
+    Real u1[14 - K];
+    {
+        Real r[15 - K];
+        [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+            r[j - K] = A[midx(K + 1, j)];
+        }
+        const Real m = r[0] * mK;
+        [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+            u1[j - K - 1] = r[j - K] + rowK[j - K] * m;
+        }
+        A[midx(K + 1, K)] = m;
+        [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+            A[midx(K + 1, j)] = u1[j - K - 1];
+        }
+    }
+    if (u1[0] == 0.0) info = static_cast<int>(K + 2);
+    const Real mK1 = -1.0 / u1[0];
+    Real next_max = 0.0;
+    unsigned next_pivot = K + 2;
+    Real nxt[15 - K];
+    [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+        nxt[j - K] = A[midx(K + 2, j)];
+    }
+    for (unsigned i = K + 2; i < 15u; ++i) {
+        Real cur[15 - K];
+        [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+            cur[j - K] = nxt[j - K];
+        }
+        if (i + 1 < 15u) {
+            const unsigned i1 = i + 1;
+            __builtin_assume(i1 < 15u);
+            [[loom::unroll]] for (unsigned j = K; j < 15u; ++j) {
+                nxt[j - K] = A[midx(i1, j)];
+            }
+        }
+        const Real m = cur[0] * mK;
+        [[loom::unroll]] for (unsigned j = K + 1; j < 15u; ++j) {
+            cur[j - K] = cur[j - K] + rowK[j - K] * m;
+        }
+        const Real m1 = cur[1] * mK1;
+        [[loom::unroll]] for (unsigned j = K + 2; j < 15u; ++j) {
+            cur[j - K] = cur[j - K] + u1[j - K - 1] * m1;
+        }
+        const Real val = math::abs(cur[2]);
+        const bool take = (i == K + 2) | (val > next_max);
+        next_max = take ? val : next_max;
+        next_pivot = take ? i : next_pivot;
+        A[midx(i, K)] = m;
+        A[midx(i, K + 1)] = m1;
+        [[loom::unroll]] for (unsigned j = K + 2; j < 15u; ++j) {
+            A[midx(i, j)] = cur[j - K];
+        }
+    }
+    if constexpr (K + 2 < 13u) {
+        return lu_pair<K + 2>(A, ipvt, info, next_pivot);
+    } else {
+        return lu_step<K + 2>(A, ipvt, info, next_pivot);
+    }
+}
 // Iteration-matrix element E(i,j) = -J(i,j) (+ fac on the diagonal), exactly as
 // decompose used to store it into e.
 DEVICE Real iter_elem(const Real* J, unsigned i, unsigned j, Real fac) {
@@ -6071,7 +6186,7 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         info = 1;
         next_pivot = lu_pivot_search<1>(A);
     }
-    return lu_step<1>(A, ipvt, info, next_pivot);
+    return lu_pair<1>(A, ipvt, info, next_pivot);
 }
 DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
