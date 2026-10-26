@@ -120,6 +120,7 @@ DEVICE int integrate(ScratchView s) {
                     }
                     {
                         Real tv[15];
+                        const Real rh = 1.0 / h;
                         if (stage == 0) {
                             [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
                                 tv[i] = dyv[i];
@@ -130,7 +131,7 @@ DEVICE int integrate(ScratchView s) {
                             }
                         } else {
                             [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                                tv[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) / h + dyv[i];
+                                tv[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) * rh + dyv[i];
                             }
                         }
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
