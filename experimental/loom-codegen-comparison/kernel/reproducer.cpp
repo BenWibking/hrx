@@ -297,12 +297,11 @@ return ((T < 30) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_6(Real T, Real x34, Real x52, Real x56, Real x6, Real x60, Real x61) {
-return ((T >= 100.0 & T <= 30000.0) ? (
-   (-1.4491368e-7*x52 + 3.4172804999999998e-8*x56 + 3.5311931999999998e-13*((x6)*(x6)*(x6)*(x6)*(x6)*(x6)*(x6)) - 1.8171411000000001e-11*math::powi<6>(math::abs(x6)) + 3.3735381999999997e-7*x6 - 4.7813727999999997e-9*x60 + 3.9731542e-10*x61 - 3.3232183000000002e-7)*math::exp(-21237.150000000001*x34)
-)
-: (
+    const auto ca = (-1.4491368e-7*x52 + 3.4172804999999998e-8*x56 + 3.5311931999999998e-13*((x6)*(x6)*(x6)*(x6)*(x6)*(x6)*(x6)) - 1.8171411000000001e-11*math::powi<6>(math::abs(x6)) + 3.3735381999999997e-7*x6 - 4.7813727999999997e-9*x60 + 3.9731542e-10*x61 - 3.3232183000000002e-7)*math::exp(-21237.150000000001*x34);
+    const auto cb = (
    0
-));
+);
+    return (T >= 100.0 & T <= 30000.0) ? ca : cb;
 }
 DEVICE auto rhs_specie_choice_7(Real T, Real x0, Real x34, bool x4) {
 return ((x4) ? (
@@ -313,20 +312,18 @@ return ((x4) ? (
 ));
 }
 DEVICE auto rhs_specie_choice_8(Real T, Real x34, bool x73) {
-return ((x73) ? (
-   2.0000000000000001e-10*math::exp(((0.40200000000000002)*math::log(math::abs(T))) + (-37.100000000000001*x34)) - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
-)
-: (
+    const auto ca = 2.0000000000000001e-10*math::exp(((0.40200000000000002)*math::log(math::abs(T))) + (-37.100000000000001*x34)) - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)));
+    const auto cb = (
    0
-));
+);
+    return (x73) ? ca : cb;
 }
 DEVICE auto rhs_specie_choice_9(Real T, Real x34, bool x73) {
-return ((x73) ? (
-   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp(((0.39600000000000002)*math::log(math::abs(T))) + (-33.0*x34))
-)
-: (
+    const auto ca = 2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp(((0.39600000000000002)*math::log(math::abs(T))) + (-33.0*x34));
+    const auto cb = (
    0
-));
+);
+    return (x73) ? ca : cb;
 }
 DEVICE auto rhs_specie_choice_10(Real T, Real x34, Real x44, Real x46, Real x54, Real x57, Real x60, Real x61) {
 return ((T <= 1167.4796423742259) ? (
@@ -648,28 +645,25 @@ return ((x6) ? (
 ));
 }
 DEVICE auto rhs_eint_choice_2(Real T, bool x6) {
-return ((x6) ? (
-   0.63095734448019325
-)
-: (
+    const auto ca = 0.63095734448019325;
+    const auto cb = (
    math::exp((-0.20000000000000001)*math::log(math::abs(T)))
-));
+);
+    return (x6) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_3(Real T, bool x6) {
-return ((x6) ? (
-   5.011872336272722
-)
-: (
+    const auto ca = 5.011872336272722;
+    const auto cb = (
    math::exp((0.69999999999999996)*math::log(math::abs(T)))
-));
+);
+    return (x6) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_4(Real T, bool x6) {
-return ((x6) ? (
-   0.67810976749343443
-)
-: (
+    const auto ca = 0.67810976749343443;
+    const auto cb = (
    math::exp((-0.16869999999999999)*math::log(math::abs(T)))
-));
+);
+    return (x6) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_5(Real T) {
 return ((T >= 10000.0) ? (
@@ -696,12 +690,11 @@ return ((x46) ? (
    ));
 }
 DEVICE auto rhs_eint_choice_8(bool x46, const Real* xn) {
-return ((rhs_eint_choice_6(x46, xn)) ? (
-   10000000000.0
-)
-: (
+    const auto ca = 10000000000.0;
+    const auto cb = (
    rhs_eint_choice_7(x46, xn)
-));
+);
+    return (rhs_eint_choice_6(x46, xn)) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_9(Real x0, bool x55) {
 return ((x55) ? (
@@ -800,84 +793,74 @@ return ((x57) ? (
                               ));
 }
 DEVICE auto rhs_eint_choice_22(bool x55, bool x57, Real x63, Real x64, Real x69) {
-return ((x55 & x57) ? (
-                              2.1648287161311648e-38/((x63*x69 + 1.471335691176954e-59)*(x63*x69 + 1.471335691176954e-59)) >= 1.0
-                           )
-                           : (
+    const auto ca = 2.1648287161311648e-38/((x63*x69 + 1.471335691176954e-59)*(x63*x69 + 1.471335691176954e-59)) >= 1.0;
+    const auto cb = (
                               rhs_eint_choice_21(x57, x64, x69)
-                           ));
+                           );
+    return (x55 & x57) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_23(bool x55, bool x57, bool x61, Real x63, Real x64, Real x69) {
-return ((x61) ? (
-                           true
-                        )
-                        : (
+    const auto ca = true;
+    const auto cb = (
                            rhs_eint_choice_22(x55, x57, x63, x64, x69)
-                        ));
+                        );
+    return (x61) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_24(bool x55, bool x57, bool x61, Real x63, Real x64, Real x67, Real x69) {
-return ((x57 & x61) ? (
-                        4.833962023629485e-72/((x64*x67 + 2.1986273043946045e-76)*(x64*x67 + 2.1986273043946045e-76)) >= 1.0
-                     )
-                     : (
+    const auto ca = 4.833962023629485e-72/((x64*x67 + 2.1986273043946045e-76)*(x64*x67 + 2.1986273043946045e-76)) >= 1.0;
+    const auto cb = (
                         rhs_eint_choice_23(x55, x57, x61, x63, x64, x69)
-                     ));
+                     );
+    return (x57 & x61) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_25(bool x55, bool x57, bool x61, Real x63, Real x64, Real x67, Real x69) {
-return ((x55 & x57 & x61) ? (
-                     4.833962023629485e-72/((x63*x67 + 2.1986273043946045e-76)*(x63*x67 + 2.1986273043946045e-76)) >= 1.0
-                  )
-                  : (
+    const auto ca = 4.833962023629485e-72/((x63*x67 + 2.1986273043946045e-76)*(x63*x67 + 2.1986273043946045e-76)) >= 1.0;
+    const auto cb = (
                      rhs_eint_choice_24(x55, x57, x61, x63, x64, x67, x69)
-                  ));
+                  );
+    return (x55 & x57 & x61) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_26(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x67, Real x69) {
-return ((x60) ? (
-                  true
-               )
-               : (
+    const auto ca = true;
+    const auto cb = (
                   rhs_eint_choice_25(x55, x57, x61, x63, x64, x67, x69)
-               ));
+               );
+    return (x60) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_27(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
-return ((x57 & x60) ? (
-               216.48287161311649/((x64*x66 + 1.471335691176954e-39)*(x64*x66 + 1.471335691176954e-39)) >= 1.0
-            )
-            : (
+    const auto ca = 216.48287161311649/((x64*x66 + 1.471335691176954e-39)*(x64*x66 + 1.471335691176954e-39)) >= 1.0;
+    const auto cb = (
                rhs_eint_choice_26(x55, x57, x60, x61, x63, x64, x67, x69)
-            ));
+            );
+    return (x57 & x60) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_28(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
-return ((x55 & x57 & x60) ? (
-            216.48287161311649/((x63*x66 + 1.471335691176954e-39)*(x63*x66 + 1.471335691176954e-39)) >= 1.0
-         )
-         : (
+    const auto ca = 216.48287161311649/((x63*x66 + 1.471335691176954e-39)*(x63*x66 + 1.471335691176954e-39)) >= 1.0;
+    const auto cb = (
             rhs_eint_choice_27(x55, x57, x60, x61, x63, x64, x66, x67, x69)
-         ));
+         );
+    return (x55 & x57 & x60) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_29(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
-return ((x60 & x61) ? (
-         true
-      )
-      : (
+    const auto ca = true;
+    const auto cb = (
          rhs_eint_choice_28(x55, x57, x60, x61, x63, x64, x66, x67, x69)
-      ));
+      );
+    return (x60 & x61) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_30(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
-return ((x57 & x60 & x61) ? (
-      4.8339620236294848e-32/((x64 + 2.1986273043946046e-56)*(x64 + 2.1986273043946046e-56)) >= 1.0
-   )
-   : (
+    const auto ca = 4.8339620236294848e-32/((x64 + 2.1986273043946046e-56)*(x64 + 2.1986273043946046e-56)) >= 1.0;
+    const auto cb = (
       rhs_eint_choice_29(x55, x57, x60, x61, x63, x64, x66, x67, x69)
-   ));
+   );
+    return (x57 & x60 & x61) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_31(bool x55, bool x57, bool x60, bool x61, Real x63, Real x64, Real x66, Real x67, Real x69) {
-return ((x55 & x57 & x60 & x61) ? (
-   4.8339620236294848e-32/((x63 + 2.1986273043946046e-56)*(x63 + 2.1986273043946046e-56)) >= 1.0
-)
-: (
+    const auto ca = 4.8339620236294848e-32/((x63 + 2.1986273043946046e-56)*(x63 + 2.1986273043946046e-56)) >= 1.0;
+    const auto cb = (
    rhs_eint_choice_30(x55, x57, x60, x61, x63, x64, x66, x67, x69)
-));
+);
+    return (x55 & x57 & x60 & x61) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_32(Real x59, bool x60) {
 return ((x60) ? (
@@ -920,28 +903,25 @@ return ((rhs_eint_choice_31(x55, x57, x60, x61, x63, x64, x66, x67, x69)) ? (
 ));
 }
 DEVICE auto rhs_eint_choice_37(Real T, bool x6) {
-return ((x6) ? (
-   0.4008667176273028
-)
-: (
+    const auto ca = 0.4008667176273028;
+    const auto cb = (
    math::exp((-0.39700000000000002)*math::log(math::abs(T)))
-));
+);
+    return (x6) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_38(Real T, bool x6) {
-return ((x6) ? (
-   0.031622776601683791
-)
-: (
+    const auto ca = 0.031622776601683791;
+    const auto cb = (
    (math::exp((-0.5)*math::log(math::abs(T)))*(1.0/T))
-));
+);
+    return (x6) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_39(Real T, bool x6) {
-return ((x6) ? (
-   2.3157944032250755
-)
-: (
+    const auto ca = 2.3157944032250755;
+    const auto cb = (
    math::exp((0.36470000000000002)*math::log(math::abs(T)))
-));
+);
+    return (x6) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_40(bool x70, Real x71) {
 return ((x70) ? (
@@ -1288,52 +1268,46 @@ return ((x105 & x73 & x85 & x97) ? (
                                                    ));
 }
 DEVICE auto rhs_eint_choice_83(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x118 & x73) ? (
-                                                   x120 & x151
-                                                )
-                                                : (
+    const auto ca = x120 & x151;
+    const auto cb = (
                                                    rhs_eint_choice_82(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                                ));
+                                                );
+    return (x118 & x73) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_84(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x118 & x73) ? (
-                                                x120 & x150
-                                             )
-                                             : (
+    const auto ca = x120 & x150;
+    const auto cb = (
                                                 rhs_eint_choice_83(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                             ));
+                                             );
+    return (x109 & x118 & x73) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_85(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x118 & x73) ? (
-                                             x120 & x149
-                                          )
-                                          : (
+    const auto ca = x120 & x149;
+    const auto cb = (
                                              rhs_eint_choice_84(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                          ));
+                                          );
+    return (x107 & x118 & x73) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_86(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x118 & x73) ? (
-                                          x120 & x148
-                                       )
-                                       : (
+    const auto ca = x120 & x148;
+    const auto cb = (
                                           rhs_eint_choice_85(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                       ));
+                                       );
+    return (x105 & x118 & x73) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_87(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x118 & x73 & x85 & x97) ? (
-                                       x120 & x147
-                                    )
-                                    : (
+    const auto ca = x120 & x147;
+    const auto cb = (
                                        rhs_eint_choice_86(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                    ));
+                                    );
+    return (x118 & x73 & x85 & x97) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_88(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x118 & x73 & x85 & x97) ? (
-                                    x120 & x146
-                                 )
-                                 : (
+    const auto ca = x120 & x146;
+    const auto cb = (
                                     rhs_eint_choice_87(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                                 ));
+                                 );
+    return (x109 & x118 & x73 & x85 & x97) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_89(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
 return ((x107 & x118 & x73 & x85 & x97) ? (
@@ -1344,60 +1318,53 @@ return ((x107 & x118 & x73 & x85 & x97) ? (
                               ));
 }
 DEVICE auto rhs_eint_choice_90(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x118 & x73 & x85 & x97) ? (
-                              x120 & x144
-                           )
-                           : (
+    const auto ca = x120 & x144;
+    const auto cb = (
                               rhs_eint_choice_89(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                           ));
+                           );
+    return (x105 & x118 & x73 & x85 & x97) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_91(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x114 & x115 & x73) ? (
-                           x120 & x142
-                        )
-                        : (
+    const auto ca = x120 & x142;
+    const auto cb = (
                            rhs_eint_choice_90(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                        ));
+                        );
+    return (x114 & x115 & x73) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_92(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x114 & x115 & x73) ? (
-                        x120 & x140
-                     )
-                     : (
+    const auto ca = x120 & x140;
+    const auto cb = (
                         rhs_eint_choice_91(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                     ));
+                     );
+    return (x109 & x114 & x115 & x73) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_93(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x107 & x114 & x115 & x73) ? (
-                     x120 & x138
-                  )
-                  : (
+    const auto ca = x120 & x138;
+    const auto cb = (
                      rhs_eint_choice_92(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-                  ));
+                  );
+    return (x107 & x114 & x115 & x73) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_94(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x114 & x115 & x73) ? (
-                  x120 & x135
-               )
-               : (
+    const auto ca = x120 & x135;
+    const auto cb = (
                   rhs_eint_choice_93(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-               ));
+               );
+    return (x105 & x114 & x115 & x73) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_95(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x114 & x115 & x73 & x85 & x97) ? (
-               x120 & x132
-            )
-            : (
+    const auto ca = x120 & x132;
+    const auto cb = (
                rhs_eint_choice_94(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-            ));
+            );
+    return (x114 & x115 & x73 & x85 & x97) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_96(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x109 & x114 & x115 & x73 & x85 & x97) ? (
-            x120 & x130
-         )
-         : (
+    const auto ca = x120 & x130;
+    const auto cb = (
             rhs_eint_choice_95(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-         ));
+         );
+    return (x109 & x114 & x115 & x73 & x85 & x97) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_97(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
 return ((x107 & x114 & x115 & x73 & x85 & x97) ? (
@@ -1408,12 +1375,11 @@ return ((x107 & x114 & x115 & x73 & x85 & x97) ? (
       ));
 }
 DEVICE auto rhs_eint_choice_98(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, bool x97, bool x98) {
-return ((x105 & x114 & x115 & x73 & x85 & x97) ? (
-      x120 & x125
-   )
-   : (
+    const auto ca = x120 & x125;
+    const auto cb = (
       rhs_eint_choice_97(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)
-   ));
+   );
+    return (x105 & x114 & x115 & x73 & x85 & x97) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_99(bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, Real x119, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x73, bool x85, bool x88, Real x89, bool x97, bool x98) {
 return ((rhs_eint_choice_98(x105, x107, x109, x114, x115, x116, x118, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x97, x98)) ? (
@@ -1424,20 +1390,18 @@ return ((rhs_eint_choice_98(x105, x107, x109, x114, x115, x116, x118, x120, x125
    ));
 }
 DEVICE auto rhs_eint_choice_100(Real T, bool x105, bool x107, bool x109, bool x114, bool x115, bool x116, bool x118, Real x119, bool x120, bool x125, bool x128, bool x130, bool x132, bool x135, bool x138, bool x140, bool x142, bool x144, bool x145, bool x146, bool x147, bool x148, bool x149, bool x150, bool x151, bool x152, bool x153, bool x154, bool x155, bool x156, bool x157, bool x158, bool x159, bool x160, bool x161, bool x70, Real x71, bool x73, bool x85, bool x88, Real x89, bool x97, bool x98, const Real* xn) {
-return ((T < 2.0) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    xn[8 * XS]*rhs_eint_choice_42(x70, x71)*rhs_eint_choice_99(x105, x107, x109, x114, x115, x116, x118, x119, x120, x125, x128, x130, x132, x135, x138, x140, x142, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x73, x85, x88, x89, x97, x98)
-));
+);
+    return (T < 2.0) ? ca : cb;
 }
 DEVICE auto rhs_eint_choice_101(Real T, Real x25, Real x26, Real x35, Real x41, Real x42, Real x43, Real x44, Real x45, Real x47, Real x48, Real x49, Real x5, Real x50, Real x51, Real x52, Real x53, Real x54, const Real* xn) {
-return ((T >= x5) ? (
-   math::exp((21.93385*x25*x41 + 0.92432999999999998*x25*x47 + 0.77951999999999999*x26*x41*x47 - 10.19097*x26*x45 + 0.54962*x26*x50 - 1.06447*x35*x41*x50 + 2.1990599999999998*x35*x44 - 0.54262999999999995*x35*x45*x47 - 0.076759999999999995*x35*x49 + 0.11864*x41*x42*x49 - 0.0036600000000000001*x41*x48*x51 - 0.17333999999999999*x42*x43 + 0.11711000000000001*x42*x44*x47 + 0.62343000000000004*x42*x45*x50 + 0.0027499999999999998*x42*x48 - 0.0083499999999999998*x43*x47*x51 + 6.1920000000000003e-5*x43*x48*x52 - 0.001482*x43*x49*x53 + 0.0106*x43*x50*x54 - 0.00066631000000000004*x44*x48*x53 + 0.017590000000000001*x44*x49*x54 - 0.13768*x44*x50*x51 + 0.0025140000000000002*x45*x48*x54 - 0.073660000000000003*x45*x49*x51 - 42.567880000000002)*math::log(math::abs(10.0)))*xn[10 * XS]
-)
-: (
+    const auto ca = math::exp((21.93385*x25*x41 + 0.92432999999999998*x25*x47 + 0.77951999999999999*x26*x41*x47 - 10.19097*x26*x45 + 0.54962*x26*x50 - 1.06447*x35*x41*x50 + 2.1990599999999998*x35*x44 - 0.54262999999999995*x35*x45*x47 - 0.076759999999999995*x35*x49 + 0.11864*x41*x42*x49 - 0.0036600000000000001*x41*x48*x51 - 0.17333999999999999*x42*x43 + 0.11711000000000001*x42*x44*x47 + 0.62343000000000004*x42*x45*x50 + 0.0027499999999999998*x42*x48 - 0.0083499999999999998*x43*x47*x51 + 6.1920000000000003e-5*x43*x48*x52 - 0.001482*x43*x49*x53 + 0.0106*x43*x50*x54 - 0.00066631000000000004*x44*x48*x53 + 0.017590000000000001*x44*x49*x54 - 0.13768*x44*x50*x51 + 0.0025140000000000002*x45*x48*x54 - 0.073660000000000003*x45*x49*x51 - 42.567880000000002)*math::log(math::abs(10.0)))*xn[10 * XS];
+    const auto cb = (
    0
-));
+);
+    return (T >= x5) ? ca : cb;
 }
 DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
 
@@ -2359,12 +2323,11 @@ return ((x19) ? (
 ));
 }
 DEVICE auto jac_nuc_choice_84(Real T, bool x16) {
-return ((x16) ? (
-   2.3157944032250755
-)
-: (
+    const auto ca = 2.3157944032250755;
+    const auto cb = (
    math::exp((0.36470000000000002)*math::log(math::abs(T)))
-));
+);
+    return (x16) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_85(bool x16, Real x19) {
 return ((x16) ? (
@@ -2383,20 +2346,18 @@ return ((x16) ? (
 ));
 }
 DEVICE auto jac_nuc_choice_87(Real T, bool x16) {
-return ((x16) ? (
-   5.011872336272722
-)
-: (
+    const auto ca = 5.011872336272722;
+    const auto cb = (
    math::exp((0.69999999999999996)*math::log(math::abs(T)))
-));
+);
+    return (x16) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_88(Real T, bool x16) {
-return ((x16) ? (
-   0.63095734448019325
-)
-: (
+    const auto ca = 0.63095734448019325;
+    const auto cb = (
    math::exp((-0.20000000000000001)*math::log(math::abs(T)))
-));
+);
+    return (x16) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_89(bool x16, Real x38) {
 return ((x16) ? (
@@ -2407,20 +2368,18 @@ return ((x16) ? (
 ));
 }
 DEVICE auto jac_nuc_choice_90(Real T, bool x16) {
-return ((x16) ? (
-   0.4008667176273028
-)
-: (
+    const auto ca = 0.4008667176273028;
+    const auto cb = (
    math::exp((-0.39700000000000002)*math::log(math::abs(T)))
-));
+);
+    return (x16) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_91(Real T, bool x16) {
-return ((x16) ? (
-   0.67810976749343443
-)
-: (
+    const auto ca = 0.67810976749343443;
+    const auto cb = (
    math::exp((-0.16869999999999999)*math::log(math::abs(T)))
-));
+);
+    return (x16) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_92(Real T, bool x167) {
 return ((x167) ? (
@@ -2447,12 +2406,11 @@ return ((x173) ? (
    ));
 }
 DEVICE auto jac_nuc_choice_95(bool x173, bool x174, const Real* xn) {
-return ((x174) ? (
-   10000000000.0
-)
-: (
+    const auto ca = 10000000000.0;
+    const auto cb = (
    jac_nuc_choice_94(x173, xn)
-));
+);
+    return (x174) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_96(bool x205, Real x212, Real x215) {
 return ((x205) ? (
@@ -2463,84 +2421,74 @@ return ((x205) ? (
                               ));
 }
 DEVICE auto jac_nuc_choice_97(bool x205, bool x206, Real x210, Real x212, Real x215) {
-return ((x205 & x206) ? (
-                              2.1648287161311648e-38/((x210*x215 + 1.471335691176954e-59)*(x210*x215 + 1.471335691176954e-59)) >= 1.0
-                           )
-                           : (
+    const auto ca = 2.1648287161311648e-38/((x210*x215 + 1.471335691176954e-59)*(x210*x215 + 1.471335691176954e-59)) >= 1.0;
+    const auto cb = (
                               jac_nuc_choice_96(x205, x212, x215)
-                           ));
+                           );
+    return (x205 & x206) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_98(bool x205, bool x206, bool x207, Real x210, Real x212, Real x215) {
-return ((x207) ? (
-                           true
-                        )
-                        : (
+    const auto ca = true;
+    const auto cb = (
                            jac_nuc_choice_97(x205, x206, x210, x212, x215)
-                        ));
+                        );
+    return (x207) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_99(bool x205, bool x206, bool x207, Real x210, Real x212, Real x214, Real x215) {
-return ((x205 & x207) ? (
-                        4.833962023629485e-72/((x212*x214 + 2.1986273043946045e-76)*(x212*x214 + 2.1986273043946045e-76)) >= 1.0
-                     )
-                     : (
+    const auto ca = 4.833962023629485e-72/((x212*x214 + 2.1986273043946045e-76)*(x212*x214 + 2.1986273043946045e-76)) >= 1.0;
+    const auto cb = (
                         jac_nuc_choice_98(x205, x206, x207, x210, x212, x215)
-                     ));
+                     );
+    return (x205 & x207) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_100(bool x205, bool x206, bool x207, Real x210, Real x212, Real x214, Real x215) {
-return ((x205 & x206 & x207) ? (
-                     4.833962023629485e-72/((x210*x214 + 2.1986273043946045e-76)*(x210*x214 + 2.1986273043946045e-76)) >= 1.0
-                  )
-                  : (
+    const auto ca = 4.833962023629485e-72/((x210*x214 + 2.1986273043946045e-76)*(x210*x214 + 2.1986273043946045e-76)) >= 1.0;
+    const auto cb = (
                      jac_nuc_choice_99(x205, x206, x207, x210, x212, x214, x215)
-                  ));
+                  );
+    return (x205 & x206 & x207) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_101(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x214, Real x215) {
-return ((x204) ? (
-                  true
-               )
-               : (
+    const auto ca = true;
+    const auto cb = (
                   jac_nuc_choice_100(x205, x206, x207, x210, x212, x214, x215)
-               ));
+               );
+    return (x204) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_102(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
-return ((x204 & x205) ? (
-               216.48287161311649/((x212*x213 + 1.471335691176954e-39)*(x212*x213 + 1.471335691176954e-39)) >= 1.0
-            )
-            : (
+    const auto ca = 216.48287161311649/((x212*x213 + 1.471335691176954e-39)*(x212*x213 + 1.471335691176954e-39)) >= 1.0;
+    const auto cb = (
                jac_nuc_choice_101(x204, x205, x206, x207, x210, x212, x214, x215)
-            ));
+            );
+    return (x204 & x205) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_103(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
-return ((x204 & x205 & x206) ? (
-            216.48287161311649/((x210*x213 + 1.471335691176954e-39)*(x210*x213 + 1.471335691176954e-39)) >= 1.0
-         )
-         : (
+    const auto ca = 216.48287161311649/((x210*x213 + 1.471335691176954e-39)*(x210*x213 + 1.471335691176954e-39)) >= 1.0;
+    const auto cb = (
             jac_nuc_choice_102(x204, x205, x206, x207, x210, x212, x213, x214, x215)
-         ));
+         );
+    return (x204 & x205 & x206) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_104(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
-return ((x204 & x207) ? (
-         true
-      )
-      : (
+    const auto ca = true;
+    const auto cb = (
          jac_nuc_choice_103(x204, x205, x206, x207, x210, x212, x213, x214, x215)
-      ));
+      );
+    return (x204 & x207) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_105(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
-return ((x204 & x205 & x207) ? (
-      4.8339620236294848e-32/((x212 + 2.1986273043946046e-56)*(x212 + 2.1986273043946046e-56)) >= 1.0
-   )
-   : (
+    const auto ca = 4.8339620236294848e-32/((x212 + 2.1986273043946046e-56)*(x212 + 2.1986273043946046e-56)) >= 1.0;
+    const auto cb = (
       jac_nuc_choice_104(x204, x205, x206, x207, x210, x212, x213, x214, x215)
-   ));
+   );
+    return (x204 & x205 & x207) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_106(bool x204, bool x205, bool x206, bool x207, Real x210, Real x212, Real x213, Real x214, Real x215) {
-return ((x204 & x205 & x206 & x207) ? (
-   4.8339620236294848e-32/((x210 + 2.1986273043946046e-56)*(x210 + 2.1986273043946046e-56)) >= 1.0
-)
-: (
+    const auto ca = 4.8339620236294848e-32/((x210 + 2.1986273043946046e-56)*(x210 + 2.1986273043946046e-56)) >= 1.0;
+    const auto cb = (
    jac_nuc_choice_105(x204, x205, x206, x207, x210, x212, x213, x214, x215)
-));
+);
+    return (x204 & x205 & x206 & x207) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_107(bool x206, Real x94) {
 return ((x206) ? (
@@ -2999,52 +2947,46 @@ return ((x255 & x256 & x271 & x309) ? (
                                                 ));
 }
 DEVICE auto jac_nuc_choice_165(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x297 & x309) ? (
-                                                x320 & x351
-                                             )
-                                             : (
+    const auto ca = x320 & x351;
+    const auto cb = (
                                                 jac_nuc_choice_164(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                             ));
+                                             );
+    return (x297 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_166(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x277 & x297 & x309) ? (
-                                             x320 & x350
-                                          )
-                                          : (
+    const auto ca = x320 & x350;
+    const auto cb = (
                                              jac_nuc_choice_165(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                          ));
+                                          );
+    return (x277 & x297 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_167(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x274 & x297 & x309) ? (
-                                          x320 & x349
-                                       )
-                                       : (
+    const auto ca = x320 & x349;
+    const auto cb = (
                                           jac_nuc_choice_166(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                       ));
+                                       );
+    return (x274 & x297 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_168(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x271 & x297 & x309) ? (
-                                       x320 & x348
-                                    )
-                                    : (
+    const auto ca = x320 & x348;
+    const auto cb = (
                                        jac_nuc_choice_167(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                    ));
+                                    );
+    return (x271 & x297 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_169(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x255 & x256 & x297 & x309) ? (
-                                    x320 & x347
-                                 )
-                                 : (
+    const auto ca = x320 & x347;
+    const auto cb = (
                                     jac_nuc_choice_168(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                                 ));
+                                 );
+    return (x255 & x256 & x297 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_170(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x255 & x256 & x277 & x297 & x309) ? (
-                                 x320 & x346
-                              )
-                              : (
+    const auto ca = x320 & x346;
+    const auto cb = (
                                  jac_nuc_choice_169(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                              ));
+                              );
+    return (x255 & x256 & x277 & x297 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_171(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
 return ((x255 & x256 & x274 & x297 & x309) ? (
@@ -3055,60 +2997,53 @@ return ((x255 & x256 & x274 & x297 & x309) ? (
                            ));
 }
 DEVICE auto jac_nuc_choice_172(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x255 & x256 & x271 & x297 & x309) ? (
-                           x320 & x344
-                        )
-                        : (
+    const auto ca = x320 & x344;
+    const auto cb = (
                            jac_nuc_choice_171(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                        ));
+                        );
+    return (x255 & x256 & x271 & x297 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_173(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x292 & x293 & x309) ? (
-                        x320 & x342
-                     )
-                     : (
+    const auto ca = x320 & x342;
+    const auto cb = (
                         jac_nuc_choice_172(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                     ));
+                     );
+    return (x292 & x293 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_174(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x277 & x292 & x293 & x309) ? (
-                     x320 & x340
-                  )
-                  : (
+    const auto ca = x320 & x340;
+    const auto cb = (
                      jac_nuc_choice_173(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-                  ));
+                  );
+    return (x277 & x292 & x293 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_175(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x274 & x292 & x293 & x309) ? (
-                  x320 & x338
-               )
-               : (
+    const auto ca = x320 & x338;
+    const auto cb = (
                   jac_nuc_choice_174(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-               ));
+               );
+    return (x274 & x292 & x293 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_176(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x271 & x292 & x293 & x309) ? (
-               x320 & x335
-            )
-            : (
+    const auto ca = x320 & x335;
+    const auto cb = (
                jac_nuc_choice_175(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-            ));
+            );
+    return (x271 & x292 & x293 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_177(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x255 & x256 & x292 & x293 & x309) ? (
-            x320 & x332
-         )
-         : (
+    const auto ca = x320 & x332;
+    const auto cb = (
             jac_nuc_choice_176(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-         ));
+         );
+    return (x255 & x256 & x292 & x293 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_178(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x255 & x256 & x277 & x292 & x293 & x309) ? (
-         x320 & x330
-      )
-      : (
+    const auto ca = x320 & x330;
+    const auto cb = (
          jac_nuc_choice_177(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-      ));
+      );
+    return (x255 & x256 & x277 & x292 & x293 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_179(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
 return ((x255 & x256 & x274 & x292 & x293 & x309) ? (
@@ -3119,12 +3054,11 @@ return ((x255 & x256 & x274 & x292 & x293 & x309) ? (
    ));
 }
 DEVICE auto jac_nuc_choice_180(bool x255, bool x256, bool x257, bool x271, bool x274, bool x277, bool x292, bool x293, bool x294, bool x297, bool x309, bool x313, bool x320, bool x325, bool x328, bool x330, bool x332, bool x335, bool x338, bool x340, bool x342, bool x344, bool x345, bool x346, bool x347, bool x348, bool x349, bool x350, bool x351, bool x352, bool x353, bool x354, bool x355, bool x356, bool x357, bool x358, bool x359, bool x360, bool x361) {
-return ((x255 & x256 & x271 & x292 & x293 & x309) ? (
-   x320 & x325
-)
-: (
+    const auto ca = x320 & x325;
+    const auto cb = (
    jac_nuc_choice_179(x255, x256, x257, x271, x274, x277, x292, x293, x294, x297, x309, x313, x320, x325, x328, x330, x332, x335, x338, x340, x342, x344, x345, x346, x347, x348, x349, x350, x351, x352, x353, x354, x355, x356, x357, x358, x359, x360, x361)
-));
+);
+    return (x255 & x256 & x271 & x292 & x293 & x309) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_181(Real x299, Real x319, bool x362) {
 return ((x362) ? (
@@ -3281,12 +3215,11 @@ return ((x173) ? (
    ));
 }
 DEVICE auto jac_nuc_choice_201(bool x173, bool x174) {
-return ((x174) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    jac_nuc_choice_200(x173)
-));
+);
+    return (x174) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_202(bool x173, const Real* xn) {
 return ((x173) ? (
@@ -3297,12 +3230,11 @@ return ((x173) ? (
    ));
 }
 DEVICE auto jac_nuc_choice_203(bool x173, bool x174, const Real* xn) {
-return ((x174) ? (
-   1.0e-10
-)
-: (
+    const auto ca = 1.0e-10;
+    const auto cb = (
    jac_nuc_choice_202(x173, xn)
-));
+);
+    return (x174) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_204(bool x206) {
 return ((x206) ? (
@@ -3529,28 +3461,25 @@ return ((x16) ? (
 ));
 }
 DEVICE auto jac_nuc_choice_232(Real T, bool x16) {
-return ((x16) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    -0.20000000000000001*(math::exp((-0.20000000000000001)*math::log(math::abs(T)))*(1.0/T))
-));
+);
+    return (x16) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_233(Real T, bool x16) {
-return ((x16) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    -0.16869999999999999*(math::exp((-0.16869999999999999)*math::log(math::abs(T)))*(1.0/T))
-));
+);
+    return (x16) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_234(Real T, bool x16) {
-return ((x16) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    0.69999999999999996*(math::exp((0.69999999999999996)*math::log(math::abs(T)))*(1.0/T))
-));
+);
+    return (x16) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_235(bool x167) {
 return ((x167) ? (
@@ -3665,12 +3594,11 @@ return ((x362) ? (
    ));
 }
 DEVICE auto jac_nuc_choice_250(bool x230, Real x239, Real x316, Real x318, bool x362, Real x380, Real x381, Real x382, Real x383) {
-return ((x230) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    x380 + x383*jac_nuc_choice_249(x239, x316, x318, x362, x381, x382)
-));
+);
+    return (x230) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_251(bool x207, Real x375) {
 return ((x207) ? (
@@ -3697,12 +3625,11 @@ return ((x362) ? (
    ));
 }
 DEVICE auto jac_nuc_choice_254(bool x230, Real x316, Real x318, bool x362, Real x380, Real x382, Real x383, Real x386) {
-return ((x230) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    x380 + x383*jac_nuc_choice_253(x316, x318, x362, x382, x386)
-));
+);
+    return (x230) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_255(bool x207, Real x375) {
 return ((x207) ? (
@@ -3729,12 +3656,11 @@ return ((x362) ? (
    ));
 }
 DEVICE auto jac_nuc_choice_258(bool x230, Real x316, Real x318, bool x362, Real x380, Real x382, Real x383, Real x419) {
-return ((x230) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    x380 + x383*jac_nuc_choice_257(x316, x318, x362, x382, x419)
-));
+);
+    return (x230) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_259(Real x101, Real x179, Real x182, Real x183, Real x184, Real x185, Real x186, Real x188, Real x190, Real x191, Real x193, Real x194, Real x195, Real x196, Real x197, Real x198, Real x200, bool x201, Real x420, Real x421, Real x422, Real x423, Real x424, Real x425, Real x426, Real x427, Real x428) {
 return ((x201) ? (
@@ -3849,12 +3775,11 @@ return ((x362) ? (
    ));
 }
 DEVICE auto jac_nuc_choice_273(bool x230, Real x239, Real x248, Real x249, Real x316, Real x318, bool x362, Real x364, Real x380, Real x382, Real x383) {
-return ((x230) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    x364 + x380 + x383*jac_nuc_choice_272(x239, x248, x249, x316, x318, x362, x382)
-));
+);
+    return (x230) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_274(bool x207, Real x375) {
 return ((x207) ? (
@@ -3953,20 +3878,18 @@ return ((x362) ? (
    ));
 }
 DEVICE auto jac_nuc_choice_286(bool x230, Real x316, Real x318, bool x362, Real x380, Real x382, Real x383, Real x474) {
-return ((x230) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    x380 + x383*jac_nuc_choice_285(x316, x318, x362, x382, x474)
-));
+);
+    return (x230) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_287(Real T, bool x16) {
-return ((x16) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    -0.39700000000000002*(math::exp((-0.39700000000000002)*math::log(math::abs(T)))*(1.0/T))
-));
+);
+    return (x16) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_288(bool x16, Real x488) {
 return ((x16) ? (
@@ -3977,12 +3900,11 @@ return ((x16) ? (
 ));
 }
 DEVICE auto jac_nuc_choice_289(Real T, bool x16) {
-return ((x16) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    0.36470000000000002*(math::exp((0.36470000000000002)*math::log(math::abs(T)))*(1.0/T))
-));
+);
+    return (x16) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_290(bool x216, Real x222, Real x378, Real x481, Real x91, Real x94) {
 return ((x216) ? (
@@ -4001,12 +3923,11 @@ return ((x362) ? (
    ));
 }
 DEVICE auto jac_nuc_choice_292(bool x230, Real x299, Real x318, Real x319, bool x362, Real x382, Real x383, Real x530, Real x533) {
-return ((x230) ? (
-   0
-)
-: (
+    const auto ca = 0;
+    const auto cb = (
    x383*jac_nuc_choice_291(x299, x318, x319, x362, x382, x530, x533)
-));
+);
+    return (x230) ? ca : cb;
 }
 DEVICE auto jac_nuc_choice_293(Real x101, Real x168, Real x171, Real x172, Real x179, Real x181, Real x183, Real x184, Real x185, Real x186, Real x187, Real x189, Real x190, Real x192, Real x193, Real x194, Real x196, Real x197, Real x198, Real x200, bool x201, Real x421, Real x423, Real x425, Real x428, Real x506, Real x507, Real x508, Real x509, Real x510, Real x511) {
 return ((x201) ? (
@@ -4065,12 +3986,11 @@ return ((T < 30) ? (
 ));
 }
 DEVICE auto jacd_rhs_specie_choice_6_6(Real T, Real x34, Real x52, Real x56, Real x6, Real x60, Real x61, Real dx34, Real dx52, Real dx56, Real dx6, Real dx60, Real dx61) {
-return ((T >= 100.0 & T <= 30000.0) ? (
-   ((((((((((-1.4491368e-07)*dx52) + (3.4172805e-08*dx56)) + (3.5311932e-13*((((((((((((dx6*x6) + (x6*dx6))*x6) + ((x6 * x6)*dx6))*x6) + (((x6 * x6) * x6)*dx6))*x6) + ((((x6 * x6) * x6) * x6)*dx6))*x6) + (((((x6 * x6) * x6) * x6) * x6)*dx6))*x6) + ((((((x6 * x6) * x6) * x6) * x6) * x6)*dx6)))) - (1.8171411e-11*(6.0*(x6*x6*x6*x6*x6)*dx6))) + (3.3735382e-07*dx6)) - (4.7813728e-09*dx60)) + (3.9731542e-10*dx61))*math::exp(((-21237.15) * x34))) + ((((((((((-1.4491368e-07) * x52) + (3.4172805e-08 * x56)) + (3.5311932e-13 * ((((((x6 * x6) * x6) * x6) * x6) * x6) * x6))) - (1.8171411e-11 * math::powi<6>(math::abs(x6)))) + (3.3735382e-07 * x6)) - (4.7813728e-09 * x60)) + (3.9731542e-10 * x61)) - 3.3232183e-07)*(math::exp(((-21237.15) * x34))*((-21237.15)*dx34))))
-)
-: (
+    const auto ca = ((((((((((-1.4491368e-07)*dx52) + (3.4172805e-08*dx56)) + (3.5311932e-13*((((((((((((dx6*x6) + (x6*dx6))*x6) + ((x6 * x6)*dx6))*x6) + (((x6 * x6) * x6)*dx6))*x6) + ((((x6 * x6) * x6) * x6)*dx6))*x6) + (((((x6 * x6) * x6) * x6) * x6)*dx6))*x6) + ((((((x6 * x6) * x6) * x6) * x6) * x6)*dx6)))) - (1.8171411e-11*(6.0*(x6*x6*x6*x6*x6)*dx6))) + (3.3735382e-07*dx6)) - (4.7813728e-09*dx60)) + (3.9731542e-10*dx61))*math::exp(((-21237.15) * x34))) + ((((((((((-1.4491368e-07) * x52) + (3.4172805e-08 * x56)) + (3.5311932e-13 * ((((((x6 * x6) * x6) * x6) * x6) * x6) * x6))) - (1.8171411e-11 * math::powi<6>(math::abs(x6)))) + (3.3735382e-07 * x6)) - (4.7813728e-09 * x60)) + (3.9731542e-10 * x61)) - 3.3232183e-07)*(math::exp(((-21237.15) * x34))*((-21237.15)*dx34))));
+    const auto cb = (
    0.0
-));
+);
+    return (T >= 100.0 & T <= 30000.0) ? ca : cb;
 }
 DEVICE auto jacd_rhs_specie_choice_7_7(Real T, Real x0, Real x34, bool x4, Real dx0, Real dx34) {
 return ((x4) ? (
@@ -4081,20 +4001,18 @@ return ((x4) ? (
 ));
 }
 DEVICE auto jacd_rhs_specie_choice_8_8(Real T, Real x34, bool x73, Real dx34) {
-return ((x73) ? (
-   ((((2e-10*((0.402*math::exp((0.402 * math::log(math::abs(T)))))*(1.0/T)))*math::exp(((-37.1) * x34))) + ((2e-10 * math::exp((0.402 * math::log(math::abs(T)))))*(math::exp(((-37.1) * x34))*((-37.1)*dx34)))) - (3.31e-17*((1.48*math::exp((1.48 * math::log(math::abs(T)))))*(1.0/T))))
-)
-: (
+    const auto ca = ((((2e-10*((0.402*math::exp((0.402 * math::log(math::abs(T)))))*(1.0/T)))*math::exp(((-37.1) * x34))) + ((2e-10 * math::exp((0.402 * math::log(math::abs(T)))))*(math::exp(((-37.1) * x34))*((-37.1)*dx34)))) - (3.31e-17*((1.48*math::exp((1.48 * math::log(math::abs(T)))))*(1.0/T))));
+    const auto cb = (
    0.0
-));
+);
+    return (x73) ? ca : cb;
 }
 DEVICE auto jacd_rhs_specie_choice_9_9(Real T, Real x34, bool x73, Real dx34) {
-return ((x73) ? (
-   ((2.03e-09*((-0.332*math::exp(((-0.332) * math::log(math::abs(T)))))*(1.0/T))) + (((2.06e-10*((0.396*math::exp((0.396 * math::log(math::abs(T)))))*(1.0/T)))*math::exp(((-33.0) * x34))) + ((2.06e-10 * math::exp((0.396 * math::log(math::abs(T)))))*(math::exp(((-33.0) * x34))*((-33.0)*dx34)))))
-)
-: (
+    const auto ca = ((2.03e-09*((-0.332*math::exp(((-0.332) * math::log(math::abs(T)))))*(1.0/T))) + (((2.06e-10*((0.396*math::exp((0.396 * math::log(math::abs(T)))))*(1.0/T)))*math::exp(((-33.0) * x34))) + ((2.06e-10 * math::exp((0.396 * math::log(math::abs(T)))))*(math::exp(((-33.0) * x34))*((-33.0)*dx34)))));
+    const auto cb = (
    0.0
-));
+);
+    return (x73) ? ca : cb;
 }
 DEVICE auto jacd_rhs_specie_choice_10_10(Real T, Real x34, Real x44, Real x46, Real x54, Real x57, Real x60, Real x61, Real dx34, Real dx46, Real dx54, Real dx57, Real dx60, Real dx61) {
 return ((T <= 1167.4796423742259) ? (
