@@ -1404,6 +1404,439 @@ DEVICE auto rhs_eint_choice_101(Real T, Real x25, Real x26, Real x35, Real x41, 
 );
     return (T >= x5) ? ca : cb;
 }
+// ratefit e_r9_b5e7: R9: Piecewise((sqrt(10), T <= 10), (sqrt(T), True))*exp(-157809.10000000001*Piecewise((0.1, T <= 10), (1.0/T, True)))/(0.0031622776601683794*Piecewise((sqrt(10), T <= 10), (sqrt(T), True)) + 1.0)
+// Fit of log2 k as a polynomial in t = (lnT - m) * s, T in [10, 100000] K;
+// max |k_fit/k - 1| = 2.21e-07 over 1000008 points incl. segment boundaries (bound 5e-07);
+// where the source is < 1e-200 the fit only has to be <= 2e-200 (practically zero).
+// k = 2^n * q(f), n = rint(g2), f = g2 - n; q ~ 2^f (degree 6, rel err 2.2e-09, C1 at f = +-1/2).
+// e_r9_b5e7_kd returns k and dk/dT from the SAME arithmetic (Jacobian-consistent).
+// lnT must be math::log(math::abs(T)); rT = 1/T. Outside [tmin, tmax] the fit is NOT validated.
+DEVICE Real e_r9_b5e7_kd(Real T, Real lnT, Real rT, Real& dkdT) {
+    const Real m = 6.907755278982137;
+    const Real s = 0.21714724095162588;
+    const Real t = (lnT - m) * s;
+    const Real c0 = -222.82501766497336;
+    const Real c1 = 1051.480901165713;
+    const Real c2 = -2414.4866163369607;
+    const Real c3 = 3705.6902792210385;
+    const Real c4 = -4266.6338804159095;
+    const Real c5 = 3929.649270398929;
+    const Real c6 = -3016.0873426506014;
+    const Real c7 = 1984.2516215918363;
+    const Real c8 = -1142.2914132139908;
+    const Real c9 = 584.4833471272653;
+    const Real c10 = -268.9589626689804;
+    const Real c11 = 112.61803519172507;
+    const Real c12 = -43.571471142979014;
+    const Real c13 = 15.41473885192029;
+    const Real c14 = -4.721593261046932;
+    const Real c15 = 1.4612885104127888;
+    const Real c16 = -0.6066387212870913;
+    const Real c17 = 0.1615704725644402;
+    // Below 2^-1000 the rate is zero for all practical purposes (user rule): clamp, no subnormals.
+    const Real g2 = math::max((((((((((((((((((c17 * t + c16) * t + c15) * t + c14) * t + c13) * t + c12) * t + c11) * t + c10) * t + c9) * t + c8) * t + c7) * t + c6) * t + c5) * t + c4) * t + c3) * t + c2) * t + c1) * t + c0), -1000.0);
+    const Real dg2 = g2 > -1000.0 ? (((((((((((((((((17.0 * c17 * t + 16.0 * c16) * t + 15.0 * c15) * t + 14.0 * c14) * t + 13.0 * c13) * t + 12.0 * c12) * t + 11.0 * c11) * t + 10.0 * c10) * t + 9.0 * c9) * t + 8.0 * c8) * t + 7.0 * c7) * t + 6.0 * c6) * t + 5.0 * c5) * t + 4.0 * c4) * t + 3.0 * c3) * t + 2.0 * c2) * t + 1.0 * c1)) * s : 0.0;
+    const Real sh = g2 + 0x1.8p52;
+    const Real dn = sh - 0x1.8p52;
+    const Real f = g2 - dn;
+    const Real p2n = __builtin_bit_cast(Real, (u64)((int)__builtin_bit_cast(u64, sh) + 1023) << 52);
+    const Real q = ((((((0.0001533086904080303 * f + 0.0013403260613782655) * f + 0.009618566111069074) * f + 0.055503203616022866) * f + 0.24022645966305523) * f + 0.6931472096879261) * f + 1.0000000007101584);
+    const Real dq = (((((0.0009198521424481818 * f + 0.0067016303068913275) * f + 0.0384742644442763) * f + 0.1665096108480686) * f + 0.48045291932611045) * f + 0.6931472096879261);
+    const Real k = q * p2n;
+    dkdT = dq * p2n * dg2 * rT;
+    return k;
+}
+
+// ratefit e_r10_b5e7: R10: Piecewise((sqrt(10), T <= 10), (sqrt(T), True))*exp(-285335.40000000002*Piecewise((0.1, T <= 10), (1.0/T, True)))/(0.0031622776601683794*Piecewise((sqrt(10), T <= 10), (sqrt(T), True)) + 1.0)
+// Fit of log2 k as a polynomial in t = (lnT - m) * s, T in [10, 100000] K;
+// max |k_fit/k - 1| = 4.9e-08 over 1000008 points incl. segment boundaries (bound 5e-07);
+// where the source is < 1e-200 the fit only has to be <= 2e-200 (practically zero).
+// k = 2^n * q(f), n = rint(g2), f = g2 - n; q ~ 2^f (degree 6, rel err 2.2e-09, C1 at f = +-1/2).
+// e_r10_b5e7_kd returns k and dk/dT from the SAME arithmetic (Jacobian-consistent).
+// lnT must be math::log(math::abs(T)); rT = 1/T. Outside [tmin, tmax] the fit is NOT validated.
+DEVICE Real e_r10_b5e7_kd(Real T, Real lnT, Real rT, Real& dkdT) {
+    const Real m = 6.907755278982137;
+    const Real s = 0.21714724095162588;
+    const Real t = (lnT - m) * s;
+    const Real c0 = -406.8065779439489;
+    const Real c1 = 1898.747299342259;
+    const Real c2 = -4365.389644264236;
+    const Real c3 = 6700.436987296399;
+    const Real c4 = -7714.462118953737;
+    const Real c5 = 7105.218278609209;
+    const Real c6 = -5453.440233950471;
+    const Real c7 = 3587.726943328917;
+    const Real c8 = -2065.2560396660188;
+    const Real c9 = 1056.8084419540537;
+    const Real c10 = -486.6748335817435;
+    const Real c11 = 203.62564490718879;
+    const Real c12 = -78.15392943162927;
+    const Real c13 = 27.871250435710287;
+    const Real c14 = -9.158280694046915;
+    const Real c15 = 2.6421915608866247;
+    const Real c16 = -0.7656054079010131;
+    const Real c17 = 0.29213690939741804;
+    const Real c18 = -0.07360993902096889;
+    // Below 2^-1000 the rate is zero for all practical purposes (user rule): clamp, no subnormals.
+    const Real g2 = math::max(((((((((((((((((((c18 * t + c17) * t + c16) * t + c15) * t + c14) * t + c13) * t + c12) * t + c11) * t + c10) * t + c9) * t + c8) * t + c7) * t + c6) * t + c5) * t + c4) * t + c3) * t + c2) * t + c1) * t + c0), -1000.0);
+    const Real dg2 = g2 > -1000.0 ? ((((((((((((((((((18.0 * c18 * t + 17.0 * c17) * t + 16.0 * c16) * t + 15.0 * c15) * t + 14.0 * c14) * t + 13.0 * c13) * t + 12.0 * c12) * t + 11.0 * c11) * t + 10.0 * c10) * t + 9.0 * c9) * t + 8.0 * c8) * t + 7.0 * c7) * t + 6.0 * c6) * t + 5.0 * c5) * t + 4.0 * c4) * t + 3.0 * c3) * t + 2.0 * c2) * t + 1.0 * c1)) * s : 0.0;
+    const Real sh = g2 + 0x1.8p52;
+    const Real dn = sh - 0x1.8p52;
+    const Real f = g2 - dn;
+    const Real p2n = __builtin_bit_cast(Real, (u64)((int)__builtin_bit_cast(u64, sh) + 1023) << 52);
+    const Real q = ((((((0.0001533086904080303 * f + 0.0013403260613782655) * f + 0.009618566111069074) * f + 0.055503203616022866) * f + 0.24022645966305523) * f + 0.6931472096879261) * f + 1.0000000007101584);
+    const Real dq = (((((0.0009198521424481818 * f + 0.0067016303068913275) * f + 0.0384742644442763) * f + 0.1665096108480686) * f + 0.48045291932611045) * f + 0.6931472096879261);
+    const Real k = q * p2n;
+    dkdT = dq * p2n * dg2 * rT;
+    return k;
+}
+
+// ratefit e_r11_b5e7: R11: Piecewise((sqrt(10), T <= 10), (sqrt(T), True))*exp(-631515.0*Piecewise((0.1, T <= 10), (1.0/T, True)))/(0.0031622776601683794*Piecewise((sqrt(10), T <= 10), (sqrt(T), True)) + 1.0)
+// Fit of log2 k as a polynomial in t = (lnT - m) * s, T in [10, 100000] K;
+// max |k_fit/k - 1| = 1.04e-07 over 1000008 points incl. segment boundaries (bound 5e-07);
+// where the source is < 1e-200 the fit only has to be <= 2e-200 (practically zero).
+// k = 2^n * q(f), n = rint(g2), f = g2 - n; q ~ 2^f (degree 6, rel err 2.2e-09, C1 at f = +-1/2).
+// e_r11_b5e7_kd returns k and dk/dT from the SAME arithmetic (Jacobian-consistent).
+// lnT must be math::log(math::abs(T)); rT = 1/T. Outside [tmin, tmax] the fit is NOT validated.
+DEVICE Real e_r11_b5e7_kd(Real T, Real lnT, Real rT, Real& dkdT) {
+    const Real m = 6.907755278982137;
+    const Real s = 0.21714724095162588;
+    const Real t = (lnT - m) * s;
+    const Real c0 = -906.238170111708;
+    const Real c1 = 4198.714779102731;
+    const Real c2 = -9661.260475843717;
+    const Real c3 = 14829.899047304229;
+    const Real c4 = -17073.851240669657;
+    const Real c5 = 15725.535883926581;
+    const Real c6 = -12069.77804367807;
+    const Real c7 = 7940.479634461634;
+    const Real c8 = -4570.904279970676;
+    const Real c9 = 2338.9699434667705;
+    const Real c10 = -1077.1251639206598;
+    const Real c11 = 450.67255341680516;
+    const Real c12 = -172.97332821928455;
+    const Real c13 = 61.68537266887806;
+    const Real c14 = -20.269606610634728;
+    const Real c15 = 5.847842021205903;
+    const Real c16 = -1.694407720409831;
+    const Real c17 = 0.6465687780761643;
+    const Real c18 = -0.16292388569260555;
+    // Below 2^-1000 the rate is zero for all practical purposes (user rule): clamp, no subnormals.
+    const Real g2 = math::max(((((((((((((((((((c18 * t + c17) * t + c16) * t + c15) * t + c14) * t + c13) * t + c12) * t + c11) * t + c10) * t + c9) * t + c8) * t + c7) * t + c6) * t + c5) * t + c4) * t + c3) * t + c2) * t + c1) * t + c0), -1000.0);
+    const Real dg2 = g2 > -1000.0 ? ((((((((((((((((((18.0 * c18 * t + 17.0 * c17) * t + 16.0 * c16) * t + 15.0 * c15) * t + 14.0 * c14) * t + 13.0 * c13) * t + 12.0 * c12) * t + 11.0 * c11) * t + 10.0 * c10) * t + 9.0 * c9) * t + 8.0 * c8) * t + 7.0 * c7) * t + 6.0 * c6) * t + 5.0 * c5) * t + 4.0 * c4) * t + 3.0 * c3) * t + 2.0 * c2) * t + 1.0 * c1)) * s : 0.0;
+    const Real sh = g2 + 0x1.8p52;
+    const Real dn = sh - 0x1.8p52;
+    const Real f = g2 - dn;
+    const Real p2n = __builtin_bit_cast(Real, (u64)((int)__builtin_bit_cast(u64, sh) + 1023) << 52);
+    const Real q = ((((((0.0001533086904080303 * f + 0.0013403260613782655) * f + 0.009618566111069074) * f + 0.055503203616022866) * f + 0.24022645966305523) * f + 0.6931472096879261) * f + 1.0000000007101584);
+    const Real dq = (((((0.0009198521424481818 * f + 0.0067016303068913275) * f + 0.0384742644442763) * f + 0.1665096108480686) * f + 0.48045291932611045) * f + 0.6931472096879261);
+    const Real k = q * p2n;
+    dkdT = dq * p2n * dg2 * rT;
+    return k;
+}
+
+// ratefit e_r15_b5e7: R15: (1.0 + 0.29999999999999999*exp(-94000.0*Piecewise((0.1, T <= 10), (1.0/T, True))))*Piecewise((0.031622776601683791, T <= 10), (T**(-1.5), True))*exp(-470000.0*Piecewise((0.1, T <= 10), (1.0/T, True)))
+// Fit of log2 k as a polynomial in t = (lnT - m) * s, T in [10, 100000] K;
+// max |k_fit/k - 1| = 2.12e-07 over 1000017 points incl. segment boundaries (bound 5e-07);
+// where the source is < 1e-200 the fit only has to be <= 2e-200 (practically zero).
+// k = 2^n * q(f), n = rint(g2), f = g2 - n; q ~ 2^f (degree 6, rel err 2.2e-09, C1 at f = +-1/2).
+// e_r15_b5e7_kd returns k and dk/dT from the SAME arithmetic (Jacobian-consistent).
+// lnT must be math::log(math::abs(T)); rT = 1/T. Outside [tmin, tmax] the fit is NOT validated.
+DEVICE Real e_r15_b5e7_kd(Real T, Real lnT, Real rT, Real& dkdT) {
+    const Real m = (T <= 1000.0 ? 4.605170185988092 : 9.210340371976184);
+    const Real s = (T <= 1000.0 ? 0.43429448190325187 : 0.43429448190325176);
+    const Real t = (lnT - m) * s;
+    const Real c0 = (T <= 1000.0 ? -6842.337783356598 : -87.73819940789572);
+    const Real c1 = (T <= 1000.0 ? 14245.551124351921 : 151.14850529063443);
+    const Real c2 = (T <= 1000.0 ? -17060.786535113166 : -179.7445857659465);
+    const Real c3 = (T <= 1000.0 ? 19020.973176936615 : 138.00648636240052);
+    const Real c4 = (T <= 1000.0 ? -10295.099384542478 : -79.27280584885557);
+    const Real c5 = (T <= 1000.0 ? 0.0 : 36.86250896012801);
+    const Real c6 = (T <= 1000.0 ? 0.0 : -13.887462535845023);
+    const Real c7 = (T <= 1000.0 ? 0.0 : 4.039786415696841);
+    const Real c8 = (T <= 1000.0 ? 0.0 : -2.2790944340173254);
+    const Real c9 = (T <= 1000.0 ? 0.0 : 0.7980015115138442);
+    const Real c10 = (T <= 1000.0 ? 0.0 : 1.7555508077358255);
+    const Real c11 = (T <= 1000.0 ? 0.0 : 0.06927149608540951);
+    const Real c12 = (T <= 1000.0 ? 0.0 : -2.1113488258557545);
+    const Real c13 = (T <= 1000.0 ? 0.0 : -0.5075580316102589);
+    const Real c14 = (T <= 1000.0 ? 0.0 : 1.518222560255009);
+    const Real c15 = (T <= 1000.0 ? 0.0 : 0.5277455826561837);
+    const Real c16 = (T <= 1000.0 ? 0.0 : -0.6305681495097202);
+    const Real c17 = (T <= 1000.0 ? 0.0 : -0.25446787412047867);
+    const Real c18 = (T <= 1000.0 ? 0.0 : 0.11499146286302653);
+    const Real c19 = (T <= 1000.0 ? 0.0 : 0.04976567664464876);
+    // Below 2^-1000 the rate is zero for all practical purposes (user rule): clamp, no subnormals.
+    const Real g2 = math::max((((((((((((((((((((c19 * t + c18) * t + c17) * t + c16) * t + c15) * t + c14) * t + c13) * t + c12) * t + c11) * t + c10) * t + c9) * t + c8) * t + c7) * t + c6) * t + c5) * t + c4) * t + c3) * t + c2) * t + c1) * t + c0), -1000.0);
+    const Real dg2 = g2 > -1000.0 ? (((((((((((((((((((19.0 * c19 * t + 18.0 * c18) * t + 17.0 * c17) * t + 16.0 * c16) * t + 15.0 * c15) * t + 14.0 * c14) * t + 13.0 * c13) * t + 12.0 * c12) * t + 11.0 * c11) * t + 10.0 * c10) * t + 9.0 * c9) * t + 8.0 * c8) * t + 7.0 * c7) * t + 6.0 * c6) * t + 5.0 * c5) * t + 4.0 * c4) * t + 3.0 * c3) * t + 2.0 * c2) * t + 1.0 * c1)) * s : 0.0;
+    const Real sh = g2 + 0x1.8p52;
+    const Real dn = sh - 0x1.8p52;
+    const Real f = g2 - dn;
+    const Real p2n = __builtin_bit_cast(Real, (u64)((int)__builtin_bit_cast(u64, sh) + 1023) << 52);
+    const Real q = ((((((0.0001533086904080303 * f + 0.0013403260613782655) * f + 0.009618566111069074) * f + 0.055503203616022866) * f + 0.24022645966305523) * f + 0.6931472096879261) * f + 1.0000000007101584);
+    const Real dq = (((((0.0009198521424481818 * f + 0.0067016303068913275) * f + 0.0384742644442763) * f + 0.1665096108480686) * f + 0.48045291932611045) * f + 0.6931472096879261);
+    const Real k = q * p2n;
+    dkdT = dq * p2n * dg2 * rT;
+    return k;
+}
+
+// ratefit e_r16_b5e7: R16: Piecewise((0.4008667176273028, T <= 10), (T**(-0.39700000000000002), True))*exp(-473638.0*Piecewise((0.1, T <= 10), (1.0/T, True)))/(0.0031622776601683794*Piecewise((sqrt(10), T <= 10), (sqrt(T), True)) + 1.0)
+// Fit of log2 k as a polynomial in t = (lnT - m) * s, T in [10, 100000] K;
+// max |k_fit/k - 1| = 7.84e-08 over 1000008 points incl. segment boundaries (bound 5e-07);
+// where the source is < 1e-200 the fit only has to be <= 2e-200 (practically zero).
+// k = 2^n * q(f), n = rint(g2), f = g2 - n; q ~ 2^f (degree 6, rel err 2.2e-09, C1 at f = +-1/2).
+// e_r16_b5e7_kd returns k and dk/dT from the SAME arithmetic (Jacobian-consistent).
+// lnT must be math::log(math::abs(T)); rT = 1/T. Outside [tmin, tmax] the fit is NOT validated.
+DEVICE Real e_r16_b5e7_kd(Real T, Real lnT, Real rT, Real& dkdT) {
+    const Real m = 6.907755278982137;
+    const Real s = 0.21714724095162588;
+    const Real t = (lnT - m) * s;
+    const Real c0 = -687.4091136488114;
+    const Real c1 = 3143.8431557313074;
+    const Real c2 = -7246.051147282341;
+    const Real c3 = 11122.415759294887;
+    const Real c4 = -12805.453344437065;
+    const Real c5 = 11794.195381618552;
+    const Real c6 = -9052.362908581288;
+    const Real c7 = 5955.384219425384;
+    const Real c8 = -3428.1904210173248;
+    const Real c9 = 1754.2335493876512;
+    const Real c10 = -807.8472264113368;
+    const Real c11 = 338.0055290968472;
+    const Real c12 = -129.73045977589695;
+    const Real c13 = 46.264268879042866;
+    const Real c14 = -15.202219109023417;
+    const Real c15 = 4.385887553851716;
+    const Real c16 = -1.2708279396285247;
+    const Real c17 = 0.4849284982742948;
+    const Real c18 = -0.12219058920478663;
+    // Below 2^-1000 the rate is zero for all practical purposes (user rule): clamp, no subnormals.
+    const Real g2 = math::max(((((((((((((((((((c18 * t + c17) * t + c16) * t + c15) * t + c14) * t + c13) * t + c12) * t + c11) * t + c10) * t + c9) * t + c8) * t + c7) * t + c6) * t + c5) * t + c4) * t + c3) * t + c2) * t + c1) * t + c0), -1000.0);
+    const Real dg2 = g2 > -1000.0 ? ((((((((((((((((((18.0 * c18 * t + 17.0 * c17) * t + 16.0 * c16) * t + 15.0 * c15) * t + 14.0 * c14) * t + 13.0 * c13) * t + 12.0 * c12) * t + 11.0 * c11) * t + 10.0 * c10) * t + 9.0 * c9) * t + 8.0 * c8) * t + 7.0 * c7) * t + 6.0 * c6) * t + 5.0 * c5) * t + 4.0 * c4) * t + 3.0 * c3) * t + 2.0 * c2) * t + 1.0 * c1)) * s : 0.0;
+    const Real sh = g2 + 0x1.8p52;
+    const Real dn = sh - 0x1.8p52;
+    const Real f = g2 - dn;
+    const Real p2n = __builtin_bit_cast(Real, (u64)((int)__builtin_bit_cast(u64, sh) + 1023) << 52);
+    const Real q = ((((((0.0001533086904080303 * f + 0.0013403260613782655) * f + 0.009618566111069074) * f + 0.055503203616022866) * f + 0.24022645966305523) * f + 0.6931472096879261) * f + 1.0000000007101584);
+    const Real dq = (((((0.0009198521424481818 * f + 0.0067016303068913275) * f + 0.0384742644442763) * f + 0.1665096108480686) * f + 0.48045291932611045) * f + 0.6931472096879261);
+    const Real k = q * p2n;
+    dkdT = dq * p2n * dg2 * rT;
+    return k;
+}
+
+// ratefit e_r17_b5e7: R17: Piecewise((0.67810976749343443, T <= 10), (T**(-0.16869999999999999), True))*exp(-13179.0*Piecewise((0.1, T <= 10), (1.0/T, True)))/(0.0031622776601683794*Piecewise((sqrt(10), T <= 10), (sqrt(T), True)) + 1.0)
+// Fit of log2 k as a polynomial in t = (lnT - m) * s, T in [10, 100000] K;
+// max |k_fit/k - 1| = 1.59e-07 over 1000008 points incl. segment boundaries (bound 5e-07);
+// where the source is < 1e-200 the fit only has to be <= 2e-200 (practically zero).
+// k = 2^n * q(f), n = rint(g2), f = g2 - n; q ~ 2^f (degree 6, rel err 2.2e-09, C1 at f = +-1/2).
+// e_r17_b5e7_kd returns k and dk/dT from the SAME arithmetic (Jacobian-consistent).
+// lnT must be math::log(math::abs(T)); rT = 1/T. Outside [tmin, tmax] the fit is NOT validated.
+DEVICE Real e_r17_b5e7_kd(Real T, Real lnT, Real rT, Real& dkdT) {
+    const Real m = 6.907755278982137;
+    const Real s = 0.21714724095162588;
+    const Real t = (lnT - m) * s;
+    const Real c0 = -20.83200930199855;
+    const Real c1 = 86.13656528104643;
+    const Real c2 = -201.9289959770069;
+    const Real c3 = 309.28895306807794;
+    const Real c4 = -356.38090665251195;
+    const Real c5 = 328.171276022101;
+    const Real c6 = -251.86545299920877;
+    const Real c7 = 165.7333175645232;
+    const Real c8 = -95.39369032698957;
+    const Real c9 = 48.76083232103754;
+    const Real c10 = -22.462780360620965;
+    const Real c11 = 9.497687435923469;
+    const Real c12 = -3.6386116966227915;
+    const Real c13 = 1.187211806209526;
+    const Real c14 = -0.3942413264356932;
+    const Real c15 = 0.1793462033840157;
+    const Real c16 = -0.05068037116378823;
+    // Below 2^-1000 the rate is zero for all practical purposes (user rule): clamp, no subnormals.
+    const Real g2 = math::max(((((((((((((((((c16 * t + c15) * t + c14) * t + c13) * t + c12) * t + c11) * t + c10) * t + c9) * t + c8) * t + c7) * t + c6) * t + c5) * t + c4) * t + c3) * t + c2) * t + c1) * t + c0), -1000.0);
+    const Real dg2 = g2 > -1000.0 ? ((((((((((((((((16.0 * c16 * t + 15.0 * c15) * t + 14.0 * c14) * t + 13.0 * c13) * t + 12.0 * c12) * t + 11.0 * c11) * t + 10.0 * c10) * t + 9.0 * c9) * t + 8.0 * c8) * t + 7.0 * c7) * t + 6.0 * c6) * t + 5.0 * c5) * t + 4.0 * c4) * t + 3.0 * c3) * t + 2.0 * c2) * t + 1.0 * c1)) * s : 0.0;
+    const Real sh = g2 + 0x1.8p52;
+    const Real dn = sh - 0x1.8p52;
+    const Real f = g2 - dn;
+    const Real p2n = __builtin_bit_cast(Real, (u64)((int)__builtin_bit_cast(u64, sh) + 1023) << 52);
+    const Real q = ((((((0.0001533086904080303 * f + 0.0013403260613782655) * f + 0.009618566111069074) * f + 0.055503203616022866) * f + 0.24022645966305523) * f + 0.6931472096879261) * f + 1.0000000007101584);
+    const Real dq = (((((0.0009198521424481818 * f + 0.0067016303068913275) * f + 0.0384742644442763) * f + 0.1665096108480686) * f + 0.48045291932611045) * f + 0.6931472096879261);
+    const Real k = q * p2n;
+    dkdT = dq * p2n * dg2 * rT;
+    return k;
+}
+
+// ratefit e_r18_b5e7: R18: Piecewise((0.67810976749343443, T <= 10), (T**(-0.16869999999999999), True))*exp(-55338.0*Piecewise((0.1, T <= 10), (1.0/T, True)))/(0.0031622776601683794*Piecewise((sqrt(10), T <= 10), (sqrt(T), True)) + 1.0)
+// Fit of log2 k as a polynomial in t = (lnT - m) * s, T in [10, 100000] K;
+// max |k_fit/k - 1| = 8.05e-08 over 1000008 points incl. segment boundaries (bound 5e-07);
+// where the source is < 1e-200 the fit only has to be <= 2e-200 (practically zero).
+// k = 2^n * q(f), n = rint(g2), f = g2 - n; q ~ 2^f (degree 6, rel err 2.2e-09, C1 at f = +-1/2).
+// e_r18_b5e7_kd returns k and dk/dT from the SAME arithmetic (Jacobian-consistent).
+// lnT must be math::log(math::abs(T)); rT = 1/T. Outside [tmin, tmax] the fit is NOT validated.
+DEVICE Real e_r18_b5e7_kd(Real T, Real lnT, Real rT, Real& dkdT) {
+    const Real m = 6.907755278982137;
+    const Real s = 0.21714724095162588;
+    const Real t = (lnT - m) * s;
+    const Real c0 = -81.65458961270203;
+    const Real c1 = 366.23490207167805;
+    const Real c2 = -846.8792291357153;
+    const Real c3 = 1299.3239893029709;
+    const Real c4 = -1496.2014220275926;
+    const Real c5 = 1377.9869905701448;
+    const Real c6 = -1057.623249242088;
+    const Real c7 = 695.8124521901332;
+    const Real c8 = -400.55949674196023;
+    const Real c9 = 204.95636333725713;
+    const Real c10 = -94.31526853396913;
+    const Real c11 = 39.49076693674129;
+    const Real c12 = -15.27885410067338;
+    const Real c13 = 5.405569383624284;
+    const Real c14 = -1.6556442354246619;
+    const Real c15 = 0.5123979740827779;
+    const Real c16 = -0.21273964134551726;
+    const Real c17 = 0.05665667225431163;
+    // Below 2^-1000 the rate is zero for all practical purposes (user rule): clamp, no subnormals.
+    const Real g2 = math::max((((((((((((((((((c17 * t + c16) * t + c15) * t + c14) * t + c13) * t + c12) * t + c11) * t + c10) * t + c9) * t + c8) * t + c7) * t + c6) * t + c5) * t + c4) * t + c3) * t + c2) * t + c1) * t + c0), -1000.0);
+    const Real dg2 = g2 > -1000.0 ? (((((((((((((((((17.0 * c17 * t + 16.0 * c16) * t + 15.0 * c15) * t + 14.0 * c14) * t + 13.0 * c13) * t + 12.0 * c12) * t + 11.0 * c11) * t + 10.0 * c10) * t + 9.0 * c9) * t + 8.0 * c8) * t + 7.0 * c7) * t + 6.0 * c6) * t + 5.0 * c5) * t + 4.0 * c4) * t + 3.0 * c3) * t + 2.0 * c2) * t + 1.0 * c1)) * s : 0.0;
+    const Real sh = g2 + 0x1.8p52;
+    const Real dn = sh - 0x1.8p52;
+    const Real f = g2 - dn;
+    const Real p2n = __builtin_bit_cast(Real, (u64)((int)__builtin_bit_cast(u64, sh) + 1023) << 52);
+    const Real q = ((((((0.0001533086904080303 * f + 0.0013403260613782655) * f + 0.009618566111069074) * f + 0.055503203616022866) * f + 0.24022645966305523) * f + 0.6931472096879261) * f + 1.0000000007101584);
+    const Real dq = (((((0.0009198521424481818 * f + 0.0067016303068913275) * f + 0.0384742644442763) * f + 0.1665096108480686) * f + 0.48045291932611045) * f + 0.6931472096879261);
+    const Real k = q * p2n;
+    dkdT = dq * p2n * dg2 * rT;
+    return k;
+}
+
+// ratefit e_r20_b5e7: R20: exp(-118348.0*Piecewise((0.1, T <= 10), (1.0/T, True)))/(0.0031622776601683794*Piecewise((sqrt(10), T <= 10), (sqrt(T), True)) + 1.0)
+// Fit of log2 k as a polynomial in t = (lnT - m) * s, T in [10, 100000] K;
+// max |k_fit/k - 1| = 1.66e-07 over 1000008 points incl. segment boundaries (bound 5e-07);
+// where the source is < 1e-200 the fit only has to be <= 2e-200 (practically zero).
+// k = 2^n * q(f), n = rint(g2), f = g2 - n; q ~ 2^f (degree 6, rel err 2.2e-09, C1 at f = +-1/2).
+// e_r20_b5e7_kd returns k and dk/dT from the SAME arithmetic (Jacobian-consistent).
+// lnT must be math::log(math::abs(T)); rT = 1/T. Outside [tmin, tmax] the fit is NOT validated.
+DEVICE Real e_r20_b5e7_kd(Real T, Real lnT, Real rT, Real& dkdT) {
+    const Real m = 6.907755278982137;
+    const Real s = 0.21714724095162588;
+    const Real t = (lnT - m) * s;
+    const Real c0 = -170.87757645264972;
+    const Real c1 = 785.9850994064619;
+    const Real c2 = -1810.8089758403505;
+    const Real c3 = 2779.010846649317;
+    const Real c4 = -3199.7544160248463;
+    const Real c5 = 2947.0170902842833;
+    const Real c6 = -2261.8927703505224;
+    const Real c7 = 1488.0802435096182;
+    const Real c8 = -856.6542206388974;
+    const Real c9 = 438.3294336614638;
+    const Real c10 = -201.70456323537076;
+    const Real c11 = 84.45709609671864;
+    const Real c12 = -32.6761281954455;
+    const Real c13 = 11.56025815523651;
+    const Real c14 = -3.5409117839949165;
+    const Real c15 = 1.0958757919315716;
+    const Real c16 = -0.4549502081579535;
+    const Real c17 = 0.12116865610876226;
+    // Below 2^-1000 the rate is zero for all practical purposes (user rule): clamp, no subnormals.
+    const Real g2 = math::max((((((((((((((((((c17 * t + c16) * t + c15) * t + c14) * t + c13) * t + c12) * t + c11) * t + c10) * t + c9) * t + c8) * t + c7) * t + c6) * t + c5) * t + c4) * t + c3) * t + c2) * t + c1) * t + c0), -1000.0);
+    const Real dg2 = g2 > -1000.0 ? (((((((((((((((((17.0 * c17 * t + 16.0 * c16) * t + 15.0 * c15) * t + 14.0 * c14) * t + 13.0 * c13) * t + 12.0 * c12) * t + 11.0 * c11) * t + 10.0 * c10) * t + 9.0 * c9) * t + 8.0 * c8) * t + 7.0 * c7) * t + 6.0 * c6) * t + 5.0 * c5) * t + 4.0 * c4) * t + 3.0 * c3) * t + 2.0 * c2) * t + 1.0 * c1)) * s : 0.0;
+    const Real sh = g2 + 0x1.8p52;
+    const Real dn = sh - 0x1.8p52;
+    const Real f = g2 - dn;
+    const Real p2n = __builtin_bit_cast(Real, (u64)((int)__builtin_bit_cast(u64, sh) + 1023) << 52);
+    const Real q = ((((((0.0001533086904080303 * f + 0.0013403260613782655) * f + 0.009618566111069074) * f + 0.055503203616022866) * f + 0.24022645966305523) * f + 0.6931472096879261) * f + 1.0000000007101584);
+    const Real dq = (((((0.0009198521424481818 * f + 0.0067016303068913275) * f + 0.0384742644442763) * f + 0.1665096108480686) * f + 0.48045291932611045) * f + 0.6931472096879261);
+    const Real k = q * p2n;
+    dkdT = dq * p2n * dg2 * rT;
+    return k;
+}
+
+// ratefit e_r21_b5e7: R21: Piecewise((0.63095734448019325, T <= 10), (T**(-0.20000000000000001), True))*Piecewise((sqrt(10), T <= 10), (sqrt(T), True))/(6.3095734448019361e-5*Piecewise((5.011872336272722, T <= 10), (T**0.69999999999999996, True)) + 1.0)
+// Fit of log2 k as a polynomial in t = (lnT - m) * s, T in [10, 100000] K;
+// max |k_fit/k - 1| = 2.49e-08 over 1000008 points incl. segment boundaries (bound 5e-07);
+// where the source is < 1e-200 the fit only has to be <= 2e-200 (practically zero).
+// k = 2^n * q(f), n = rint(g2), f = g2 - n; q ~ 2^f (degree 6, rel err 2.2e-09, C1 at f = +-1/2).
+// e_r21_b5e7_kd returns k and dk/dT from the SAME arithmetic (Jacobian-consistent).
+// lnT must be math::log(math::abs(T)); rT = 1/T. Outside [tmin, tmax] the fit is NOT validated.
+DEVICE Real e_r21_b5e7_kd(Real T, Real lnT, Real rT, Real& dkdT) {
+    const Real m = 6.907755278982137;
+    const Real s = 0.21714724095162588;
+    const Real t = (lnT - m) * s;
+    const Real c0 = 2.978320814465807;
+    const Real c1 = 1.956506428080791;
+    const Real c2 = -0.05860734927124137;
+    const Real c3 = -0.06199142666236412;
+    const Real c4 = -0.0483884097674506;
+    const Real c5 = -0.029132632617336368;
+    const Real c6 = -0.013496012840238982;
+    const Real c7 = -0.004563672964856555;
+    const Real c8 = -0.0006150654684307999;
+    const Real c9 = 0.0009814776285847694;
+    const Real c10 = 0.0010608891125240259;
+    const Real c11 = 0.0003524295953035292;
+    // Below 2^-1000 the rate is zero for all practical purposes (user rule): clamp, no subnormals.
+    const Real g2 = math::max((((((((((((c11 * t + c10) * t + c9) * t + c8) * t + c7) * t + c6) * t + c5) * t + c4) * t + c3) * t + c2) * t + c1) * t + c0), -1000.0);
+    const Real dg2 = g2 > -1000.0 ? (((((((((((11.0 * c11 * t + 10.0 * c10) * t + 9.0 * c9) * t + 8.0 * c8) * t + 7.0 * c7) * t + 6.0 * c6) * t + 5.0 * c5) * t + 4.0 * c4) * t + 3.0 * c3) * t + 2.0 * c2) * t + 1.0 * c1)) * s : 0.0;
+    const Real sh = g2 + 0x1.8p52;
+    const Real dn = sh - 0x1.8p52;
+    const Real f = g2 - dn;
+    const Real p2n = __builtin_bit_cast(Real, (u64)((int)__builtin_bit_cast(u64, sh) + 1023) << 52);
+    const Real q = ((((((0.0001533086904080303 * f + 0.0013403260613782655) * f + 0.009618566111069074) * f + 0.055503203616022866) * f + 0.24022645966305523) * f + 0.6931472096879261) * f + 1.0000000007101584);
+    const Real dq = (((((0.0009198521424481818 * f + 0.0067016303068913275) * f + 0.0384742644442763) * f + 0.1665096108480686) * f + 0.48045291932611045) * f + 0.6931472096879261);
+    const Real k = q * p2n;
+    dkdT = dq * p2n * dg2 * rT;
+    return k;
+}
+
+// Exact source forms of the fitted energy-only factors and their d/dT (for the Jacobian correction).
+DEVICE void eint_exact(Real T, Real* R, Real* dR) {
+    const bool lo = T <= 10.0;
+    const Real rT = 1.0 / T;
+    const Real rT2 = rT * rT;
+    const Real x8 = lo ? 0.1 : rT;
+    const Real dx8 = lo ? 0.0 : -rT2;
+    const Real x10 = lo ? math::sqrt(10.0) : math::sqrt(T);
+    const Real dx10 = lo ? 0.0 : 0.5 * x10 * rT;
+    const Real a = 0.0031622776601683794;
+    const Real x11 = 1.0 / (a * x10 + 1.0);
+    const Real dx11 = -a * dx10 * x11 * x11;
+    const Real lnT = math::log(math::abs(T));
+    const Real c38 = lo ? 0.031622776601683791 : math::exp(-1.5 * lnT);
+    const Real dc38 = lo ? 0.0 : -1.5 * c38 * rT;
+    const Real c37 = lo ? 0.4008667176273028 : math::exp(-0.397 * lnT);
+    const Real dc37 = lo ? 0.0 : -0.397 * c37 * rT;
+    const Real c4 = lo ? 0.67810976749343443 : math::exp(-0.1687 * lnT);
+    const Real dc4 = lo ? 0.0 : -0.1687 * c4 * rT;
+    const Real c2 = lo ? 0.63095734448019325 : math::exp(-0.2 * lnT);
+    const Real dc2 = lo ? 0.0 : -0.2 * c2 * rT;
+    const Real c3 = lo ? 5.011872336272722 : math::exp(0.7 * lnT);
+    const Real dc3 = lo ? 0.0 : 0.7 * c3 * rT;
+    // exp(-C x8) and its derivative
+    #define EX(C, E, DE) const Real E = math::exp(-(C) * x8); const Real DE = -(C) * E * dx8;
+    EX(157809.1, e9, de9) EX(285335.4, e10, de10) EX(631515.0, e11, de11) EX(118348.0, e20, de20)
+    EX(470000.0, e15b, de15b) EX(94000.0, e15a, de15a) EX(473638.0, e16, de16) EX(13179.0, e17, de17)
+    EX(55338.0, e18, de18)
+    #undef EX
+    // R9, R10, R11 = x10 x11 e
+    R[0] = x10 * x11 * e9;  dR[0] = dx10 * x11 * e9 + x10 * dx11 * e9 + x10 * x11 * de9;
+    R[1] = x10 * x11 * e10; dR[1] = dx10 * x11 * e10 + x10 * dx11 * e10 + x10 * x11 * de10;
+    R[2] = x10 * x11 * e11; dR[2] = dx10 * x11 * e11 + x10 * dx11 * e11 + x10 * x11 * de11;
+    // R15 = (1 + 0.3 ea) c38 eb
+    const Real p15 = 1.0 + 0.3 * e15a;
+    R[3] = p15 * c38 * e15b; dR[3] = 0.3 * de15a * c38 * e15b + p15 * dc38 * e15b + p15 * c38 * de15b;
+    // R16 = c37 e x11 ; R17, R18 = c4 e x11
+    R[4] = c37 * e16 * x11; dR[4] = dc37 * e16 * x11 + c37 * de16 * x11 + c37 * e16 * dx11;
+    R[5] = c4 * e17 * x11;  dR[5] = dc4 * e17 * x11 + c4 * de17 * x11 + c4 * e17 * dx11;
+    R[6] = c4 * e18 * x11;  dR[6] = dc4 * e18 * x11 + c4 * de18 * x11 + c4 * e18 * dx11;
+    // R20 = x11 e
+    R[7] = x11 * e20; dR[7] = dx11 * e20 + x11 * de20;
+    // R21 = x10 c2 / (b c3 + 1)
+    const Real b = 6.3095734448019361e-5;
+    const Real q = 1.0 / (b * c3 + 1.0);
+    const Real dq = -b * dc3 * q * q;
+    R[8] = x10 * c2 * q; dR[8] = dx10 * c2 * q + x10 * dc2 * q + x10 * c2 * dq;
+}
 DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
 
 
@@ -1456,6 +1889,18 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real g88_13 = g88_12 + 0.7499410228243667 * xn[9 * XS];
     const Real x65 = g88_13;
     const Real T = temperature;
+    const Real lnTf = math::log(math::abs(T));
+    const Real rTf = 1.0 / T;
+    Real dkf = 0.0;
+    const Real fr9 = e_r9_b5e7_kd(T, lnTf, rTf, dkf);
+    const Real fr10 = e_r10_b5e7_kd(T, lnTf, rTf, dkf);
+    const Real fr11 = e_r11_b5e7_kd(T, lnTf, rTf, dkf);
+    const Real fr15 = e_r15_b5e7_kd(T, lnTf, rTf, dkf);
+    const Real fr16 = e_r16_b5e7_kd(T, lnTf, rTf, dkf);
+    const Real fr17 = e_r17_b5e7_kd(T, lnTf, rTf, dkf);
+    const Real fr18 = e_r18_b5e7_kd(T, lnTf, rTf, dkf);
+    const Real fr20 = e_r20_b5e7_kd(T, lnTf, rTf, dkf);
+    const Real fr21 = e_r21_b5e7_kd(T, lnTf, rTf, dkf);
     const Real g96_0 = 4.985670872372847e-33 * math::exp((3.76 * math::log(math::abs(T))) + (-2197000.0 / (T * T * T))) / (6.014246803527264e-08 * math::exp(2.1 * math::log(math::abs(T))) + 1.0);
     const Real x1 = 1.0/x0;
     const Real x2 = math::sqrt(T);
@@ -1475,16 +1920,16 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real x7 = xn[0 * XS]*xn[12 * XS];
     const Real acc0_3 = acc0_2 - 1.55e-26 * x7 * rhs_eint_choice_39(T, x6);
     const Real x8 = rhs_eint_choice_0(x4, x6);
-    const Real acc0_4 = acc0_3 - 1.24e-13 * x7 * (1.0 + 0.3 * math::exp(-94000.0 * x8)) * rhs_eint_choice_38(T, x6) * math::exp(-470000.0 * x8);
+    const Real acc0_4 = acc0_3 - 1.24e-13 * x7 * fr15;
     const Real x9 = math::sqrt(T);
     const Real x10 = rhs_eint_choice_1(x6, x9);
     const Real x11 = 1.0/(0.0031622776601683794*x10 + 1.0);
     const Real x12 = xn[0 * XS]*x11;
-    const Real acc0_5 = acc0_4 - 9.38e-22 * xn[13 * XS] * x10 * x12 * math::exp(-285335.4 * x8);
+    const Real acc0_5 = acc0_4 - 9.38e-22 * xn[13 * XS] * xn[0 * XS] * fr10;
     const Real x13 = xn[2 * XS]*x12;
-    const Real acc0_6 = acc0_5 - 1.27e-21 * x10 * x13 * math::exp(-157809.1 * x8);
-    const Real acc0_7 = acc0_6 - 7.5e-19 * x13 * math::exp(-118348.0 * x8);
-    const Real x14 = xn[0 * XS]*x10*rhs_eint_choice_2(T, x6)/(6.3095734448019361e-5*rhs_eint_choice_3(T, x6) + 1.0);
+    const Real acc0_6 = acc0_5 - 1.27e-21 * xn[2 * XS] * xn[0 * XS] * fr9;
+    const Real acc0_7 = acc0_6 - 7.5e-19 * xn[2 * XS] * xn[0 * XS] * fr20;
+    const Real x14 = xn[0 * XS]*fr21;
     const Real acc0_8 = acc0_7 - 3.4635323838154264e-26 * xn[1 * XS] * x14;
     const Real acc0_9 = acc0_8 - 1.3854129535261706e-25 * xn[11 * XS] * x14;
     const Real x15 = 1.0/x2;
@@ -1492,11 +1937,11 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real acc0_10 = acc0_9 + 5.6556829037999995e-12 * xn[2 * XS] * xn[3 * XS] * x18 * (1.35e-09 * math::exp(0.098493 * math::log(math::abs(T))) + 4.43502e-10 * math::exp(0.5561 * math::log(math::abs(T))) + 3.7408500000000004e-16 * math::exp(2.1826 * math::log(math::abs(T)))) / (0.006191 * math::exp(1.0461 * math::log(math::abs(T))) + 8.9712e-11 * math::exp(3.0424 * math::log(math::abs(T))) + 3.2576e-14 * math::exp(3.7741 * math::log(math::abs(T))) + 1.0);
     const Real acc0_11 = acc0_10 + 1.75918975308e-21 * xn[2 * XS] * xn[6 * XS] * x18;
     const Real x19 = x11*x7;
-    const Real acc0_12 = acc0_11 - 4.95e-22 * x10 * x19 * math::exp(-631515.0 * x8);
-    const Real acc0_13 = acc0_12 - 5.54e-17 * x19 * rhs_eint_choice_37(T, x6) * math::exp(-473638.0 * x8);
-    const Real x20 = ((xn[0 * XS])*(xn[0 * XS]))*xn[12 * XS]*x11*rhs_eint_choice_4(T, x6);
-    const Real acc0_14 = acc0_13 - 5.01e-27 * x20 * math::exp(-55338.0 * x8);
-    const Real acc0_15 = acc0_14 - 9.1e-27 * x20 * math::exp(-13179.0 * x8);
+    const Real acc0_12 = acc0_11 - 4.95e-22 * x7 * fr11;
+    const Real acc0_13 = acc0_12 - 5.54e-17 * x7 * fr16;
+    const Real x20 = ((xn[0 * XS])*(xn[0 * XS]))*xn[12 * XS];
+    const Real acc0_14 = acc0_13 - 5.01e-27 * x20 * fr18;
+    const Real acc0_15 = acc0_14 - 9.1e-27 * x20 * fr17;
     const Real x21 = math::exp((-0.25)*math::log(math::abs(T)));
     const Real acc0_16 = acc0_15 + 7.1777505408e-12 * (xn[2 * XS] * xn[2 * XS] * xn[2 * XS]) * x18 * (2e-31 * x15 + 6e-32 * x21);
     const Real acc0_17 = acc0_16 + 7.1777505408e-12 * (xn[2 * XS] * xn[2 * XS]) * xn[8 * XS] * x18 * (2.5e-32 * x15 + 7.5e-33 * x21);
@@ -5032,6 +5477,37 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     out[matrix_index(13, 2)] = a13_n2_0;
     out[matrix_index(13, 12)] = a13_n12_0;
     out[matrix_index(13, 13)] = a13_n13_0;
+    // Energy row = exact derivative of the FITTED rhs_eint: add (fit - source) for each fitted term.
+    Real eR[9], edR[9];
+    eint_exact(T, eR, edR);
+    const Real elnT = math::log(math::abs(T));
+    const Real erT = 1.0 / T;
+    Real ekd9 = 0.0; const Real ek9 = e_r9_b5e7_kd(T, elnT, erT, ekd9);
+    const Real edk9 = ek9 - eR[0]; const Real eddk9 = ekd9 - edR[0];
+    Real ekd10 = 0.0; const Real ek10 = e_r10_b5e7_kd(T, elnT, erT, ekd10);
+    const Real edk10 = ek10 - eR[1]; const Real eddk10 = ekd10 - edR[1];
+    Real ekd11 = 0.0; const Real ek11 = e_r11_b5e7_kd(T, elnT, erT, ekd11);
+    const Real edk11 = ek11 - eR[2]; const Real eddk11 = ekd11 - edR[2];
+    Real ekd15 = 0.0; const Real ek15 = e_r15_b5e7_kd(T, elnT, erT, ekd15);
+    const Real edk15 = ek15 - eR[3]; const Real eddk15 = ekd15 - edR[3];
+    Real ekd16 = 0.0; const Real ek16 = e_r16_b5e7_kd(T, elnT, erT, ekd16);
+    const Real edk16 = ek16 - eR[4]; const Real eddk16 = ekd16 - edR[4];
+    Real ekd17 = 0.0; const Real ek17 = e_r17_b5e7_kd(T, elnT, erT, ekd17);
+    const Real edk17 = ek17 - eR[5]; const Real eddk17 = ekd17 - edR[5];
+    Real ekd18 = 0.0; const Real ek18 = e_r18_b5e7_kd(T, elnT, erT, ekd18);
+    const Real edk18 = ek18 - eR[6]; const Real eddk18 = ekd18 - edR[6];
+    Real ekd20 = 0.0; const Real ek20 = e_r20_b5e7_kd(T, elnT, erT, ekd20);
+    const Real edk20 = ek20 - eR[7]; const Real eddk20 = ekd20 - edR[7];
+    Real ekd21 = 0.0; const Real ek21 = e_r21_b5e7_kd(T, elnT, erT, ekd21);
+    const Real edk21 = ek21 - eR[8]; const Real eddk21 = ekd21 - edR[8];
+    const Real e_dL = (-1.24e-13) * xn[0 * XS]*xn[12 * XS] * edk15 + (-9.38e-22) * xn[13 * XS]*xn[0 * XS] * edk10 + (-1.27e-21) * xn[2 * XS]*xn[0 * XS] * edk9 + (-7.5e-19) * xn[2 * XS]*xn[0 * XS] * edk20 + (-3.4635323838154264e-26) * xn[1 * XS]*xn[0 * XS] * edk21 + (-1.3854129535261706e-25) * xn[11 * XS]*xn[0 * XS] * edk21 + (-4.95e-22) * xn[0 * XS]*xn[12 * XS] * edk11 + (-5.54e-17) * xn[0 * XS]*xn[12 * XS] * edk16 + (-5.01e-27) * xn[0 * XS]*xn[0 * XS]*xn[12 * XS] * edk18 + (-9.1e-27) * xn[0 * XS]*xn[0 * XS]*xn[12 * XS] * edk17;
+    const Real e_dB = (-1.24e-13) * xn[0 * XS]*xn[12 * XS] * eddk15 + (-9.38e-22) * xn[13 * XS]*xn[0 * XS] * eddk10 + (-1.27e-21) * xn[2 * XS]*xn[0 * XS] * eddk9 + (-7.5e-19) * xn[2 * XS]*xn[0 * XS] * eddk20 + (-3.4635323838154264e-26) * xn[1 * XS]*xn[0 * XS] * eddk21 + (-1.3854129535261706e-25) * xn[11 * XS]*xn[0 * XS] * eddk21 + (-4.95e-22) * xn[0 * XS]*xn[12 * XS] * eddk11 + (-5.54e-17) * xn[0 * XS]*xn[12 * XS] * eddk16 + (-5.01e-27) * xn[0 * XS]*xn[0 * XS]*xn[12 * XS] * eddk18 + (-9.1e-27) * xn[0 * XS]*xn[0 * XS]*xn[12 * XS] * eddk17;
+    const Real e_dA0 = (-1.24e-13) * 1.0 * xn[12 * XS] * edk15 + (-9.38e-22) * 1.0 * xn[13 * XS] * edk10 + (-1.27e-21) * 1.0 * xn[2 * XS] * edk9 + (-7.5e-19) * 1.0 * xn[2 * XS] * edk20 + (-3.4635323838154264e-26) * 1.0 * xn[1 * XS] * edk21 + (-1.3854129535261706e-25) * 1.0 * xn[11 * XS] * edk21 + (-4.95e-22) * 1.0 * xn[12 * XS] * edk11 + (-5.54e-17) * 1.0 * xn[12 * XS] * edk16 + (-5.01e-27) * 2.0 * xn[0 * XS]*xn[12 * XS] * edk18 + (-9.1e-27) * 2.0 * xn[0 * XS]*xn[12 * XS] * edk17;
+    const Real e_dA1 = (-3.4635323838154264e-26) * 1.0 * xn[0 * XS] * edk21;
+    const Real e_dA2 = (-1.27e-21) * 1.0 * xn[0 * XS] * edk9 + (-7.5e-19) * 1.0 * xn[0 * XS] * edk20;
+    const Real e_dA11 = (-1.3854129535261706e-25) * 1.0 * xn[0 * XS] * edk21;
+    const Real e_dA12 = (-1.24e-13) * 1.0 * xn[0 * XS] * edk15 + (-4.95e-22) * 1.0 * xn[0 * XS] * edk11 + (-5.54e-17) * 1.0 * xn[0 * XS] * edk16 + (-5.01e-27) * 1.0 * xn[0 * XS]*xn[0 * XS] * edk18 + (-9.1e-27) * 1.0 * xn[0 * XS]*xn[0 * XS] * edk17;
+    const Real e_dA13 = (-9.38e-22) * 1.0 * xn[0 * XS] * edk10;
     const Real v1641 = xn[0 * XS]*xn[12 * XS];
     const Real v1844 = math::log(0.001*T);
     const Real v1850 = ((v1844)*(v1844));
@@ -5541,7 +6017,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc13_1 = acc13_0 + 6.3040161099239145e+19 * T * v1606 * v1696 * v1697 * v1698 * v1700;
     const Real v1834 = T < 2.0;
     const Real acc14_49 = acc14_48 - jac_nuc_choice_292(v1834, v1903, v1922, v1923, v1966, v1986, v1987, v2134, v2137);
-    out[matrix_index(14, 14)] = v1699*acc14_49/(xn[0 * XS] * v2079 + xn[1 * XS] * v2079 + xn[10 * XS] * v2080 + xn[11 * XS] * v2079 + xn[12 * XS] * v2079 + xn[13 * XS] * v2079 + xn[2 * XS] * v2079 + xn[3 * XS] * v2079 + xn[4 * XS] * v2079 + xn[5 * XS] * v2079 + xn[6 * XS] * v2080 + xn[7 * XS] * v2079 + xn[8 * XS] * v2080 + xn[9 * XS] * v2080);
+    out[matrix_index(14, 14)] = v1699*(acc14_49 + e_dB)/(xn[0 * XS] * v2079 + xn[1 * XS] * v2079 + xn[10 * XS] * v2080 + xn[11 * XS] * v2079 + xn[12 * XS] * v2079 + xn[13 * XS] * v2079 + xn[2 * XS] * v2079 + xn[3 * XS] * v2079 + xn[4 * XS] * v2079 + xn[5 * XS] * v2079 + xn[6 * XS] * v2080 + xn[7 * XS] * v2079 + xn[8 * XS] * v2080 + xn[9 * XS] * v2080);
     const Real v1636 = v1624*v1635;
     const Real v1637 = 3.4635323838154264e-26*v1636;
     const Real acc1_1 = acc1_0 - xn[0 * XS] * v1637;
@@ -5657,7 +6133,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc6_3 = acc6_2 + xn[2 * XS] * v2033;
     const Real v2039 = 1.4355501081600001e-11*xn[8 * XS];
     const Real acc2_18 = acc2_17 + xn[2 * XS] * v2039 * v1660 * v1691;
-    out[matrix_index(14, 2)] = -3.7369204214442467e+22 * v1969 + v1699 * acc2_18;
+    out[matrix_index(14, 2)] = (-3.7369204214442467e+22 * v1969 + v1699 * acc2_18) + (v1699 * e_dA2 - 1.67353251819e-24 * e_dL * v1699 * v1699);
     const Real acc8_7 = acc8_6 - v1720 * v2039;
     const Real v2068 = v2013*v2067;
     const Real acc6_4 = acc6_3 - v2068;
@@ -5677,7 +6153,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc0_14 = acc0_13 - v1971;
     const Real acc1_3 = acc1_2 - v1971;
     const Real acc8_16 = acc8_15 - v1971;
-    out[matrix_index(14, 8)] = -7.473840842888493e+22 * v1969 + v1699 * acc8_16;
+    out[matrix_index(14, 8)] = (-7.473840842888493e+22 * v1969 + v1699 * acc8_16) + (0.0 - 3.34706503638e-24 * e_dL * v1699 * v1699);
     const Real acc13_3 = acc13_2 - v1971;
     const Real v1974 = jac_nuc_choice_186(v1809, v1810, v1973);
     const Real acc0_15 = acc0_14 - v1974 * v1975;
@@ -5687,7 +6163,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1972 = v1624*v1626;
     const Real acc0_18 = acc0_17 - v1972 * v1678;
     const Real acc0_19 = acc0_18 - v1972 * v1682;
-    out[matrix_index(14, 0)] = -2.0340826846270714e+19 * v1969 + v1699 * acc0_19;
+    out[matrix_index(14, 0)] = (-2.0340826846270714e+19 * v1969 + v1699 * acc0_19) + (v1699 * e_dA0 - 9.10938188e-28 * e_dL * v1699 * v1699);
     const Real v1988 = xn[0 * XS]*v1610;
     const Real acc1_4 = acc1_3 - v1988;
     const Real v1989 = jac_nuc_choice_195(v1809, v1810, v1973);
@@ -5697,14 +6173,14 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc1_7 = acc1_6 - jac_nuc_choice_254(v1834, v1920, v1922, v1966, v1984, v1986, v1987, v1990);
     const Real v2019 = -1.4139207259499998e-18*xn[2 * XS]*xn[3 * XS]*v2017*v2018*v1651*v1657*v1692*v1694 - 4.3979743826999997e-28*xn[2 * XS]*xn[6 * XS]*v2017*v2018*v1651*v1657 - 1.7944376352000002e-18*xn[8 * XS]*v2017*v2018*v1651*v1657*v1690*v1691 - 7.1777505408000004e-12*v1707*v1712*v1719*v2012*v2016*v1701 + v2011 + v2015 - 1.7944376352000002e-18*v2017*v2018*v1651*v1657*v1687*v1689;
     const Real acc1_8 = acc1_7 - v2019;
-    out[matrix_index(14, 1)] = -3.734886338755154e+22 * v1969 + v1699 * acc1_8;
+    out[matrix_index(14, 1)] = (-3.734886338755154e+22 * v1969 + v1699 * acc1_8) + (v1699 * e_dA1 - 1.67262158e-24 * e_dL * v1699 * v1699);
     const Real acc10_3 = acc10_2 - v2019;
     const Real v2078 = jac_nuc_choice_229(v1857, v1861, v1867);
     const Real acc13_4 = acc13_3 - jac_nuc_choice_286(v1834, v1920, v1922, v1966, v1984, v1986, v1987, v2078);
     const Real v2077 = jac_nuc_choice_228(v1809, v1810, v1973);
     const Real acc13_5 = acc13_4 - v1975 * v2077;
     const Real acc13_6 = acc13_5 - v1983 * jac_nuc_choice_284(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2077);
-    out[matrix_index(14, 13)] = -1.4943070555407201e+23 * v1969 + v1699 * acc13_6;
+    out[matrix_index(14, 13)] = (-1.4943070555407201e+23 * v1969 + v1699 * acc13_6) + (v1699 * e_dA13 - 6.69206503638e-24 * e_dL * v1699 * v1699);
     const Real v2058 = jac_nuc_choice_208(v1834, v1984);
     const Real v2062 = v1971 + v2058;
     const Real acc5_2 = acc5_1 - v2062;
@@ -5720,7 +6196,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2076 = v1626*v1670;
     const Real acc12_9 = acc12_8 - v2076 * v1669;
     const Real acc12_10 = acc12_9 - v2076 * v1675;
-    out[matrix_index(14, 12)] = -1.4941036472718107e+23 * v1969 + v1699 * acc12_10;
+    out[matrix_index(14, 12)] = (-1.4941036472718107e+23 * v1969 + v1699 * acc12_10) + (v1699 * e_dA12 - 6.69115409819e-24 * e_dL * v1699 * v1699);
     const Real v2053 = v2018*v2034;
     const Real v2054 = v2038*v2053;
     const Real acc6_6 = acc6_5 + 3.5888752704e-18 * v2054;
@@ -5735,38 +6211,38 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2066 = jac_nuc_choice_214(v1809, v1810, v1973);
     const Real acc6_11 = acc6_10 - v1975 * v2066;
     const Real acc6_12 = acc6_11 - v1983 * jac_nuc_choice_267(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2066);
-    out[matrix_index(14, 6)] = -7.4718067601994e+22 * v1969 + v1699 * acc6_12;
+    out[matrix_index(14, 6)] = (-7.4718067601994e+22 * v1969 + v1699 * acc6_12) + (0.0 - 3.34615409819e-24 * e_dL * v1699 * v1699);
     const Real v2052 = jac_nuc_choice_207(v1809, v1810, v1973);
     const Real acc3_3 = acc3_2 - v1975 * v2052;
     const Real acc3_4 = acc3_3 - v1983 * jac_nuc_choice_261(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2052);
     const Real v2060 = v2050 + 1.7944376352000002e-18*v2054 + 4.3979743826999997e-28*v2055 + 1.7944376352000002e-18*v2056 + 1.4139207259499998e-18*v2057 + v2059;
     const Real acc3_5 = acc3_4 + v2060;
-    out[matrix_index(14, 3)] = -3.73895450413334e+22 * v1969 + v1699 * acc3_5;
+    out[matrix_index(14, 3)] = (-3.73895450413334e+22 * v1969 + v1699 * acc3_5) + (0.0 - 1.67444345638e-24 * e_dL * v1699 * v1699);
     const Real acc9_2 = acc9_1 + v2060;
     const Real v2073 = jac_nuc_choice_222(v1809, v1810, v1973);
     const Real acc10_5 = acc10_4 - v1975 * v2073;
     const Real acc10_6 = acc10_5 - v1983 * jac_nuc_choice_277(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2073);
-    out[matrix_index(14, 10)] = -1.1208455699147847e+23 * v1969 + v1699 * acc10_6;
+    out[matrix_index(14, 10)] = (-1.1208455699147847e+23 * v1969 + v1699 * acc10_6) + (0.0 - 5.01956503638e-24 * e_dL * v1699 * v1699);
     const Real v2072 = jac_nuc_choice_220(v1809, v1810, v1973);
     const Real acc9_3 = acc9_2 - v1975 * v2072;
     const Real acc9_4 = acc9_3 - v1983 * jac_nuc_choice_275(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2072);
-    out[matrix_index(14, 9)] = -1.1206421616458753e+23 * v1969 + v1699 * acc9_4;
+    out[matrix_index(14, 9)] = (-1.1206421616458753e+23 * v1969 + v1699 * acc9_4) + (0.0 - 5.01865409819e-24 * e_dL * v1699 * v1699);
     const Real v2074 = jac_nuc_choice_224(v1809, v1810, v1973);
     const Real acc11_5 = acc11_4 - v1975 * v2074;
     const Real acc11_6 = acc11_5 - v1983 * jac_nuc_choice_280(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2074);
-    out[matrix_index(14, 11)] = -1.4939002390029017e+23 * v1969 + v1699 * acc11_6;
+    out[matrix_index(14, 11)] = (-1.4939002390029017e+23 * v1969 + v1699 * acc11_6) + (v1699 * e_dA11 - 6.69024316e-24 * e_dL * v1699 * v1699);
     const Real v2061 = jac_nuc_choice_210(v1809, v1810, v1973);
     const Real acc4_3 = acc4_2 - v1975 * v2061;
     const Real acc4_4 = acc4_3 - v1983 * jac_nuc_choice_263(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2061);
-    out[matrix_index(14, 4)] = -7.4695011950145084e+22 * v1969 + v1699 * acc4_4;
+    out[matrix_index(14, 4)] = (-7.4695011950145084e+22 * v1969 + v1699 * acc4_4) + (0.0 - 3.34512158e-24 * e_dL * v1699 * v1699);
     const Real v2069 = jac_nuc_choice_216(v1809, v1810, v1973);
     const Real acc7_3 = acc7_2 - v1975 * v2069;
     const Real acc7_4 = acc7_3 - v1983 * jac_nuc_choice_269(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2069);
-    out[matrix_index(14, 7)] = -7.473569360392695e+22 * v1969 + v1699 * acc7_4;
+    out[matrix_index(14, 7)] = (-7.473569360392695e+22 * v1969 + v1699 * acc7_4) + (0.0 - 3.34694345638e-24 * e_dL * v1699 * v1699);
     const Real v2064 = jac_nuc_choice_212(v1809, v1810, v1973);
     const Real acc5_3 = acc5_2 - v1975 * v2064;
     const Real acc5_4 = acc5_3 - v1983 * jac_nuc_choice_265(v1811, v1820, v1976, v1977, v1978, v1979, v1980, v1981, v1982, v2064);
-    out[matrix_index(14, 5)] = -7.4715352777036004e+22 * v1969 + v1699 * acc5_4;
+    out[matrix_index(14, 5)] = (-7.4715352777036004e+22 * v1969 + v1699 * acc5_4) + (0.0 - 3.34603251819e-24 * e_dL * v1699 * v1699);
 }
 DEVICE void burn_state_from_y(const Real* y, BurnRecord* b) {
 
