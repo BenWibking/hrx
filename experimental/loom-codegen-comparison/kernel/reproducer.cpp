@@ -4170,7 +4170,7 @@ DEVICE void jac_nuc_structural_zeros(Real* out) {
     out[matrix_index(13, 10)] = 0;
     out[matrix_index(13, 11)] = 0;
 }
-DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
+DEVICE void jac_nuc_species(Real temperature, Real* out, const Real* xn, Real z) {
     Real T = temperature;
     const Real rT = 1.0/T;
     // rows 0..13 by forward differentiation of rhs_specie (genjac.py)
@@ -5091,6 +5091,9 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     out[matrix_index(13, 2)] = a13_n2_0;
     out[matrix_index(13, 12)] = a13_n12_0;
     out[matrix_index(13, 13)] = a13_n13_0;
+}
+DEVICE void jac_nuc_row14(Real temperature, Real* out, const Real* xn, Real z) {
+    Real T = temperature;
     const Real v1641 = xn[0]*xn[12];
     const Real v1844 = math::log(0.001*T);
     const Real v1850 = ((v1844)*(v1844));
@@ -5861,7 +5864,15 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
     // written once in burn_ros2s (jac_nuc_structural_zeros).
     BurnView b = s.burn;
     burn_state_from_y_view(s.y, b);
-    jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
+    // The species rows and the energy row in separate iterations of a rolled
+    // loop: no values (or schedule) shared across the two halves.
+    [[loom::unroll(1)]] for (unsigned part = 0; part < 2u; ++part) {
+        if (part == 0u) {
+            jac_nuc_species(b.T[0], s.fjac, b.xn, default_redshift);
+        } else {
+            jac_nuc_row14(b.T[0], s.fjac, b.xn, default_redshift);
+        }
+    }
 
 }
 DEVICE unsigned midx(unsigned row, unsigned column) {
