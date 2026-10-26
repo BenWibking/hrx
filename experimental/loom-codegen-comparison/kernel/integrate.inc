@@ -49,6 +49,10 @@ DEVICE int integrate(ScratchView s) {
     int n_accept = 0;
 
     bool need_jac = true;
+    // Stage 0's RHS is f(y) at the state the Jacobian was evaluated at; a
+    // retry (same y) reuses it from s.dy. Waves where every lane is retrying
+    // (the first rejections of each call) skip the stage-0 RHS entirely.
+    bool have_f0 = false;
     // One loop for new steps and retries: a lane that needs a new Jacobian
     // evaluates it while retrying lanes wait, then all lanes run the
     // decomposition and stages together. Same per-lane sequence of operations.
@@ -79,6 +83,7 @@ DEVICE int integrate(ScratchView s) {
 
             CHEM_EVAL_JACOBIAN(s, x);
             need_jac = false;
+            have_f0 = false;
         }
       }
         if (!done) {
@@ -120,7 +125,20 @@ DEVICE int integrate(ScratchView s) {
                         }
                     }
                     Real dyv[15];
-                    CHEM_RHS(x, yv, dyv, s);
+                    const bool reuse = (stage == 0) & have_f0;
+                    if (!reuse) {
+                        CHEM_RHS(x, yv, dyv, s);
+                    } else {
+                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                            dyv[i] = s.dy[i];
+                        }
+                    }
+                    if ((stage == 0) & !have_f0) {
+                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                            s.dy[i] = dyv[i];
+                        }
+                        have_f0 = true;
+                    }
                     {
                         Real tv[15];
                         if (stage == 0) {

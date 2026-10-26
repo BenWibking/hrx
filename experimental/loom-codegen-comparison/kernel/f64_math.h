@@ -103,17 +103,21 @@ DEVICE double exp(double x) {
     const double t_hi = fma(negative_dn, 0x1.62e42fefa39efp-1, x);
     const double t = fma(negative_dn, 0x1.abc9e3b39803fp-56, t_hi);
 
-    const double p10 = fma(t, 0x1.ade156a5dcb37p-26, 0x1.28af3fca7ab0cp-22);
-    const double p9 = fma(t, p10, 0x1.71dee623fde64p-19);
-    const double p8 = fma(t, p9, 0x1.a01997c89e6b0p-16);
-    const double p7 = fma(t, p8, 0x1.a01a014761f6ep-13);
-    const double p6 = fma(t, p7, 0x1.6c16c1852b7b0p-10);
-    const double p5 = fma(t, p6, 0x1.1111111122322p-7);
-    const double p4 = fma(t, p5, 0x1.55555555502a1p-5);
-    const double p3 = fma(t, p4, 0x1.5555555555511p-3);
-    const double p2 = fma(t, p3, 0x1.000000000000bp-1);
-    const double p1 = fma(t, p2, 1.0);
-    const double p = fma(t, p1, 1.0);
+    // Estrin evaluation of the same degree-12 polynomial: p = 1 + (t + t^2 Q(t)).
+    // Half the dependency depth of Horner; <= 1 ulp from the Horner result.
+    const double t2 = t * t;
+    const double t4 = t2 * t2;
+    const double t8 = t4 * t4;
+    const double q0 = fma(t, 0x1.5555555555511p-3, 0x1.000000000000bp-1);
+    const double q1 = fma(t, 0x1.1111111122322p-7, 0x1.55555555502a1p-5);
+    const double q2 = fma(t, 0x1.a01a014761f6ep-13, 0x1.6c16c1852b7b0p-10);
+    const double q3 = fma(t, 0x1.71dee623fde64p-19, 0x1.a01997c89e6b0p-16);
+    const double q4 = fma(t, 0x1.ade156a5dcb37p-26, 0x1.28af3fca7ab0cp-22);
+    const double r0 = fma(t2, q1, q0);
+    const double r1 = fma(t2, q3, q2);
+    const double s0 = fma(t4, r1, r0);
+    const double q = fma(t8, q4, s0);
+    const double p = 1.0 + fma(t2, q, t);
 
     const double z = ldexp(p, n);
 
