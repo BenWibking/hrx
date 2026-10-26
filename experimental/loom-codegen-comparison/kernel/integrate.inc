@@ -83,7 +83,8 @@ DEVICE int integrate(ScratchView s) {
       }
         if (!done) {
                 const Real fac = 1.0 / (h * C::gamma);
-                if (decompose(s, fac) != 0) {
+                const int dinfo0 = decompose(s, fac);
+                if ((dinfo0 + decompose(s, fac)) != 0) {
                     nsing += 1;
                     if (nsing >= 5) {
                         s.t[0] = x;
