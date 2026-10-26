@@ -5938,12 +5938,23 @@ DEVICE Real iter_elem(const Real* J, unsigned i, unsigned j, Real fac) {
 // identical values and operation order to "e = -fjac + fac*I; lu_step<0>(e)",
 // but the loads come from fjac (never stored here), so the per-row loads do not
 // wait on the preceding stores to e. Every element of e is written.
+// Initial row order of the iteration matrix: the most common partial-pivoting
+// order observed for this network (energy row first). Pivoting then rarely has
+// to interchange rows; the pivot choices (first maximum of the same values) and
+// hence the factor and composite permutation are the same as from the natural
+// order, except that exact ties in |pivot| may resolve to a different row.
+DEVICE unsigned lu_row0(unsigned w) {
+    return (w == 0u) ? 14u : (w == 1u) ? 0u : (w == 2u) ? 2u : (w == 3u) ? 8u : (w == 4u) ? 1u : (w == 5u) ? 5u : (w == 6u) ? 6u : (w == 7u) ? 7u : (w == 8u) ? 4u : (w == 9u) ? 9u : (w == 10u) ? 3u : (w == 11u) ? 11u : (w == 12u) ? 12u : (w == 13u) ? 13u : 10u;
+}
+DEVICE Real iter_elem_p(const Real* J, unsigned w, unsigned j, Real fac) {
+    return iter_elem(J, lu_row0(w), j, fac);
+}
 DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
     // Column-0 pivot search with all loads issued together (fjac is not
     // stored here); same comparisons in the same order (first maximum).
     Real col[15];
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-        col[i] = math::abs(iter_elem(J, i, 0u, fac));
+        col[i] = math::abs(iter_elem_p(J, i, 0u, fac));
     }
     unsigned pivot_row = 0;
     Real max_val = col[0];
@@ -5956,11 +5967,11 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
     ipvt[0] = static_cast<int>(pivot_row);
     unsigned next_pivot = 1;
     int info = 0;
-    const Real pivot = iter_elem(J, pivot_row, 0u, fac);
+    const Real pivot = iter_elem_p(J, pivot_row, 0u, fac);
     if (pivot != 0.0) {
         Real row[14];
         [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
-            row[j - 1] = iter_elem(J, pivot_row, j, fac);
+            row[j - 1] = iter_elem_p(J, pivot_row, j, fac);
         }
         const Real multiplier = -1.0 / pivot;
         A[midx(0u, 0u)] = -multiplier;
@@ -5973,7 +5984,7 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         {
             const unsigned src1 = (1u == pivot_row) ? 0u : 1u;
             [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
-                nxt[j] = iter_elem(J, src1, j, fac);
+                nxt[j] = iter_elem_p(J, src1, j, fac);
             }
         }
         for (unsigned i = 1; i < 15u; ++i) {
@@ -5986,7 +5997,7 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
                 const unsigned src = (i1 == pivot_row) ? 0u : i1;
                 __builtin_assume(src < 15u);
                 [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
-                    nxt[j] = iter_elem(J, src, j, fac);
+                    nxt[j] = iter_elem_p(J, src, j, fac);
                 }
             }
             const Real m = cur[0] * multiplier;
@@ -6006,7 +6017,7 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
         for (unsigned i = 0; i < 15u; ++i) {
             Real cur[15];
             [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
-                cur[j] = iter_elem(J, i, j, fac);
+                cur[j] = iter_elem_p(J, i, j, fac);
             }
             [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
                 A[midx(i, j)] = cur[j];
@@ -6185,7 +6196,7 @@ DEVICE void store_permutation(int* ipvt) {
     }
     unsigned pm[15];
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-        pm[i] = i;
+        pm[i] = lu_row0(i);
     }
     perm_step<0>(pv, pm);
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
