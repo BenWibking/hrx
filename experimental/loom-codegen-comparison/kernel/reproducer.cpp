@@ -17,6 +17,9 @@ constexpr Real atol_energy = 1.0e-6;
 constexpr int perturbation_interval = 20;
 constexpr Real perturbation_amplitude = 0.2;
 constexpr size_type N = 15;
+// The integrator state y lives in workgroup memory, element-interleaved across
+// the 128 lanes (y[i] of a lane at offset i * YS): conflict-free LDS access.
+constexpr unsigned YS = 128;
 constexpr int SUCCESS = 1;
 constexpr int BAD_INPUTS = -1;
 constexpr int DT_UNDERFLOW = -2;
@@ -5860,7 +5863,11 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
     // jac_nuc writes the 146 structurally nonzero entries; the 79 zeros are
     // written once in burn_ros2s (jac_nuc_structural_zeros).
     BurnView b = s.burn;
-    burn_state_from_y_view(s.y, b);
+    Real yl[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        yl[i] = s.y[i * YS];
+    }
+    burn_state_from_y_view(yl, b);
     jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
 
 }
@@ -6308,7 +6315,7 @@ DEVICE Real error_norm(ScratchView s) {
 
         Real err = 0.0;
         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-            const Real sk = s.atol_vec[i] + s.rtol_vec[i] * math::max(math::abs(s.y[i]), math::abs(s.ynew[i]));
+            const Real sk = s.atol_vec[i] + s.rtol_vec[i] * math::max(math::abs(s.y[i * YS]), math::abs(s.ynew[i]));
             const Real term = s.work[i] / sk;
             err += term * term;
         }
@@ -6325,7 +6332,7 @@ DEVICE Real combine_and_error_norm(ScratchView s, Real* yacc) {
     Real yo[15];
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
         const Real ak3i = s.work[i];
-        yo[i] = s.y[i];
+        yo[i] = s.y[i * YS];
         yacc[i] = yo[i] + C::b1 * s.ak1[i] + C::b2 * s.ak2[i] + C::b3 * ak3i;
         ev[i] = C::e1 * s.ak1[i] + C::e2 * s.ak2[i] + C::e3 * ak3i;
     }
@@ -6373,7 +6380,7 @@ DEVICE void configure_ros2s(ScratchView s) {
     s.max_steps[0] = 10000000;
 
 }
-DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
+DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats, Real* ylane) {
 
     eos_rt(b);
     // Work arrays are fully written before they are read; no zero fill.
@@ -6381,7 +6388,6 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     Real t = 0.0;
     Real tout = 0.0;
     Real dt = 0.0;
-    Real y[15];
     Real rtol_vec[15];
     Real atol_vec[15];
     Real uround = 1.e-16;
@@ -6409,16 +6415,16 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     int n_solve = 0;
     int max_steps = 100000;
     int ip[15];
-    ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip};
+    ScratchView s = {&t, &tout, &dt, ylane, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip};
     configure_ros2s(s);
 
     s.t[0] = 0.0;
     s.tout[0] = duration;
     s.dt[0] = duration;
     for (int n = 0; n < NumSpec; ++n) {
-        s.y[static_cast<size_type>(n)] = b->xn[static_cast<size_type>(n)];
+        s.y[static_cast<size_type>(n) * YS] = b->xn[static_cast<size_type>(n)];
     }
-    s.y[NumSpec] = b->e;
+    s.y[NumSpec * YS] = b->e;
 
     jac_nuc_structural_zeros(s.fjac);
     const auto result = integrate(s);
@@ -6436,9 +6442,9 @@ DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
     }
 
     for (int n = 0; n < NumSpec; ++n) {
-        b->xn[static_cast<size_type>(n)] = s.y[static_cast<size_type>(n)];
+        b->xn[static_cast<size_type>(n)] = s.y[static_cast<size_type>(n) * YS];
     }
-    b->e = s.y[NumSpec];
+    b->e = s.y[NumSpec * YS];
     return result;
 
 }
@@ -6540,6 +6546,7 @@ Real mass[14];
 
 }
 KERNEL void advance_collapse_gridwide_kernel(CellRecord* cells, int num_cells, int completed_global_steps, Real next_grid_time, Real dt_grid, int* integrated_count, int* failure_code CELL_PARAMETER) {
+    WORKGROUP_ARRAY(Real, y_lds, 15 * 128);
 
 
     const int cell = CELL_INDEX;
@@ -6574,7 +6581,7 @@ Real mass[14];
     b->rho *= density_ratio;
 
     auto failure = SUCCESS;
-    const auto result = burn_ros2s(b, dt_grid, &record->stats);
+    const auto result = burn_ros2s(b, dt_grid, &record->stats, y_lds + LANE_INDEX);
     if (result != SUCCESS) {
         failure = result;
     } else {

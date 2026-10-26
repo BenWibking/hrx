@@ -89,15 +89,15 @@ DEVICE int integrate(ScratchView s) {
                     Real yv[15];
                     if (stage == 0) {
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                            yv[i] = s.y[i];
+                            yv[i] = s.y[i * YS];
                         }
                     } else if (stage == 1) {
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                            yv[i] = s.y[i] + C::a21 * s.ak1[i];
+                            yv[i] = s.y[i * YS] + C::a21 * s.ak1[i];
                         }
                     } else {
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                            yv[i] = s.y[i] + C::a31 * s.ak1[i] + C::a32 * s.ak2[i];
+                            yv[i] = s.y[i * YS] + C::a31 * s.ak1[i] + C::a32 * s.ak2[i];
                         }
                     }
                     Real dyv[15];
@@ -185,7 +185,7 @@ DEVICE int integrate(ScratchView s) {
                     hacc = h;
                     erracc = math::max(1.e-2, err);
                     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                        s.y[i] = yacc[i];
+                        s.y[i * YS] = yacc[i];
                     }
                     x += h;
                     if (math::abs(hnew) > hmaxn) {
