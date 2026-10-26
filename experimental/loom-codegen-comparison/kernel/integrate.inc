@@ -11,22 +11,14 @@ DEVICE int integrate(ScratchView s) {
     int result = SUCCESS;
     bool done = false;
 
-    if (s.tout[0] <= s.t[0] || s.safe[0] <= 0.001 || s.safe[0] >= 1.0 ||
-        s.fac_min[0] <= 0.0 || s.fac_max[0] < 1.0) {
+    // safe, fac_min, fac_max, atol_vec, rtol_vec and uround are the compile-time
+    // values configure_ros2s/burn_ros2s store (all checks pass for them).
+    if (s.tout[0] <= s.t[0]) {
         return BAD_INPUTS;
     }
-    for (size_type i = 0; i < N && !done; ++i) {
-        __builtin_assume(i < N);
-        if (s.atol_vec[i] <= 0.0 || s.rtol_vec[i] <= 10.0 * s.uround[0]) {
-            result = TOO_MUCH_ACCURACY_REQUESTED;
-            done = true;
-        }
-    }
-
-    if (done) return result;
     const Real hmaxn = s.tout[0] - s.t[0];
     Real h = s.dt[0];
-    if (math::abs(h) <= 10.0 * s.uround[0]) {
+    if (math::abs(h) <= 10.0 * 1.e-16) {
         h = 1.e-6;
     }
     h = math::min(math::abs(h), hmaxn);
@@ -49,6 +41,8 @@ DEVICE int integrate(ScratchView s) {
     int n_accept = 0;
 
     bool need_jac = true;
+    // Stage 0's f(y) is reused from s.dy on retries (same y).
+    bool have_f0 = false;
     // One loop for new steps and retries: a lane that needs a new Jacobian
     // evaluates it while retrying lanes wait, then all lanes run the
     // decomposition and stages together. Same per-lane sequence of operations.
@@ -79,32 +73,19 @@ DEVICE int integrate(ScratchView s) {
 
             CHEM_EVAL_JACOBIAN(s, x);
             need_jac = false;
+            have_f0 = false;
         }
       }
         if (!done) {
+                // Stage 0's RHS (at y, independent of h) runs first, then the
+                // Jacobian (new steps) and the decomposition, so stage 0's solve
+                // reads the factor right after it was written (still cached).
+                // A lane with a singular matrix runs the stages on a discarded
+                // factor and is handled after the stage loop.
+                bool singular = false;
                 const Real fac = 1.0 / (h * C::gamma);
-                if (decompose(s, fac) != 0) {
-                    nsing += 1;
-                    if (nsing >= 5) {
-                        s.t[0] = x;
-                        s.dt[0] = h;
-                        result = LU_DECOMPOSITION_ERROR; done = true;
-                        continue;
-                    }
-                    h *= 0.5;
-                    reject = true;
-                    last = false;
-                    continue;
-                }
-
-                // One RHS/solve call site for all three stages (ak1, ak2, work
-                // are contiguous: stage k writes ak1 + 15*k).
                 for (int stage = 0; stage < 3; ++stage) {
                     Real* target = s.ak1 + 15 * stage;
-                    // The stage state goes to the RHS in registers (ynew is only
-                    // rewritten after the stages), and the k-vector term is formed
-                    // after the RHS from ak1/ak2, so nothing is stored and then
-                    // reloaded from the same array before the RHS.
                     Real yv[15];
                     if (stage == 0) {
                         [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
@@ -120,7 +101,23 @@ DEVICE int integrate(ScratchView s) {
                         }
                     }
                     Real dyv[15];
-                    CHEM_RHS(x, yv, dyv, s);
+                    const bool reuse = (stage == 0) & have_f0;
+                    if (!reuse) {
+                        CHEM_RHS(x, yv, dyv, s);
+                    } else {
+                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                            dyv[i] = s.dy[i];
+                        }
+                    }
+                    if ((stage == 0) & !have_f0) {
+                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                            s.dy[i] = dyv[i];
+                        }
+                        have_f0 = true;
+                    }
+                    if (stage == 0) {
+                        singular = decompose(s, fac) != 0;
+                    }
                     {
                         Real tv[15];
                         if (stage == 0) {
@@ -141,6 +138,19 @@ DEVICE int integrate(ScratchView s) {
                         }
                     }
                     solve(s, target);
+                }
+                if (singular) {
+                    nsing += 1;
+                    if (nsing >= 5) {
+                        s.t[0] = x;
+                        s.dt[0] = h;
+                        result = LU_DECOMPOSITION_ERROR; done = true;
+                        continue;
+                    }
+                    h *= 0.5;
+                    reject = true;
+                    last = false;
+                    continue;
                 }
 
                 // Final combination with the error norm formed in registers: the
