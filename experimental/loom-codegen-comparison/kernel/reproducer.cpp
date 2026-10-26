@@ -6232,15 +6232,103 @@ DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
     lu_solve_backward<14>(LU, x, x[14]);
 
 }
+// Left-looking (Crout, jki) LU with partial pivoting, LAPACK form. Column J of
+// the iteration matrix E = -fjac + fac*I is gathered with the rows permuted by
+// the pivots of steps 0..J-1, then gets the step updates a + U(k,J)*M(i,k) for
+// k = 0..J-1 in order: per element the identical operation sequence, pivot
+// choice (first maximum) and multipliers as the right-looking lu_step, so the
+// factor and permutation are bitwise identical. Only info != 0 is used by the
+// integrator; after a zero pivot the factor is discarded.
+template <unsigned J>
+DEVICE int lu_left_col(const Real* Jm, Real* A, unsigned* pm, Real fac, int info) {
+    Real col[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        const unsigned r = pm[i];
+        __builtin_assume(r < 15u);
+        col[i] = iter_elem(Jm, r, J, fac);
+    }
+    [[loom::unroll]] for (unsigned k = 0; k < J; ++k) {
+        const Real t = col[k];
+        [[loom::unroll]] for (unsigned i = k + 1; i < 15u; ++i) {
+            col[i] = col[i] + t * A[midx(i, k)];
+        }
+    }
+    if constexpr (J < 14u) {
+        unsigned p = J;
+        Real maxv = math::abs(col[J]);
+        Real pv = col[J];
+        [[loom::unroll]] for (unsigned i = J + 1; i < 15u; ++i) {
+            const Real v = math::abs(col[i]);
+            const bool take = v > maxv;
+            maxv = take ? v : maxv;
+            pv = take ? col[i] : pv;
+            p = take ? i : p;
+        }
+        info = (pv == 0.0) ? static_cast<int>(J + 1) : info;
+        const Real cj = col[J];
+        [[loom::unroll]] for (unsigned i = J + 1; i < 15u; ++i) {
+            col[i] = (p == i) ? cj : col[i];
+        }
+        col[J] = pv;
+        const unsigned a = pm[J];
+        unsigned b = a;
+        [[loom::unroll]] for (unsigned i = J + 1; i < 15u; ++i) {
+            b = (p == i) ? pm[i] : b;
+        }
+        [[loom::unroll]] for (unsigned i = J + 1; i < 15u; ++i) {
+            pm[i] = (p == i) ? a : pm[i];
+        }
+        pm[J] = b;
+        if constexpr (J > 0) {
+            if (p != J) {
+                __builtin_assume(p < 15u);
+                Real rj[J];
+                Real rp[J];
+                [[loom::unroll]] for (unsigned k = 0; k < J; ++k) {
+                    rj[k] = A[midx(J, k)];
+                    rp[k] = A[midx(p, k)];
+                }
+                [[loom::unroll]] for (unsigned k = 0; k < J; ++k) {
+                    A[midx(J, k)] = rp[k];
+                    A[midx(p, k)] = rj[k];
+                }
+            }
+        }
+        const Real multiplier = -1.0 / pv;
+        [[loom::unroll]] for (unsigned i = J + 1; i < 15u; ++i) {
+            col[i] = col[i] * multiplier;
+        }
+        col[J] = -multiplier;  // U diagonal stored as its reciprocal
+        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+            A[midx(i, J)] = col[i];
+        }
+        return lu_left_col<J + 1>(Jm, A, pm, fac, info);
+    } else {
+        if (col[14] == 0.0) info = 15;
+        col[14] = 1.0 / col[14];
+        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+            A[midx(i, J)] = col[i];
+        }
+        return info;
+    }
+}
+DEVICE int lu_left(const Real* Jm, Real* A, int* ip, Real fac) {
+    unsigned pm[15];
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        pm[i] = i;
+    }
+    const int info = lu_left_col<0>(Jm, A, pm, fac, 0);
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        ip[i] = static_cast<int>(pm[i]);
+    }
+    return info;
+}
 DEVICE int decompose(ScratchView s, Real fac) {
 
         Real* A = s.e;
         // ip[14] is never read by the solve; the A(14,14) == 0 check is done
         // in lu_step<13> on the register value.
-        int info = lu_step0_from_jac(s.fjac, A, s.ip, fac);
-        // ip now holds the composite row permutation (all 15 entries).
-        store_permutation(s.ip);
-        return info;
+        return lu_left(s.fjac, A, s.ip, fac);
 
 }
 DEVICE void solve(ScratchView s, Real* ak) {
