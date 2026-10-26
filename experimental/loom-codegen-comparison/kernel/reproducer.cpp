@@ -6301,6 +6301,14 @@ DEVICE int decompose(ScratchView s, Real fac) {
 }
 DEVICE void solve(ScratchView s, Real* ak) {
 
+        // PROBE: an extra read pass over the factor (opaque), pure traffic.
+        {
+            Real acc = 0.0;
+            [[loom::unroll]] for (unsigned i = 0; i < 225u; ++i) {
+                acc = acc + s.e[i];
+            }
+            if (acc == 1.2345e-300) ak[0] = acc;
+        }
         lu_solve_perm(s.e, s.ip, ak);
 
 }
