@@ -231,28 +231,28 @@ return ((x4) ? (
    0
 ));
 }
-DEVICE auto rhs_specie_choice_1(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x8, Real x9) {
+DEVICE auto rhs_specie_choice_1(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x8, Real x9, Real lnT) {
 return ((T <= 1160.0) ? (
-   1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs(T)))
+   1.4643482606109061e-16*math::exp((1.78186)*lnT)
 )
 : (
-   3.3178155742407614e-14*math::exp(((1.1394493358416311)*math::log(math::abs(T))) + (-10.993097527150175*x10 + 14.449862906216714*x11 + 58.228375789703179*x12 - 162.59852239006702*x13 + 144.55426734953477*x14 - 44.454280878123605*x15 - 12.447178055372778*x8 + 6.9391784778399117*x9))
+   3.3178155742407614e-14*math::exp(((1.1394493358416311)*lnT) + (-10.993097527150175*x10 + 14.449862906216714*x11 + 58.228375789703179*x12 - 162.59852239006702*x13 + 144.55426734953477*x14 - 44.454280878123605*x15 - 12.447178055372778*x8 + 6.9391784778399117*x9))
 ));
 }
-DEVICE auto rhs_specie_choice_2(Real T, Real x32, Real x33, Real x34) {
+DEVICE auto rhs_specie_choice_2(Real T, Real x32, Real x33, Real x34, Real lnT) {
 return ((x33 <= 9280.0) ? (
    x32
 )
 : (
-   1250086.112245841*math::exp((-1.5)*math::log(math::abs(T)))*(1.5400000000000001e-9 + 4.6200000000000001e-10*math::exp(-93988.701501924661*x34))*math::exp(-469943.50750964211*x34) + x32
+   1250086.112245841*math::exp((-1.5)*lnT)*(1.5400000000000001e-9 + 4.6200000000000001e-10*math::exp(-93988.701501924661*x34))*math::exp(-469943.50750964211*x34) + x32
 ));
 }
-DEVICE auto rhs_specie_choice_3(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x32, Real x33, Real x8, Real x9) {
+DEVICE auto rhs_specie_choice_3(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x32, Real x33, Real x8, Real x9, Real lnT) {
 return ((x33 <= 5500.0) ? (
    x32
 )
 : (
-   3.2867337024382687e-10*math::exp(((-0.72411256578268512)*math::log(math::abs(T))) + (-2.4649195146505534*x10 - 1.020773727011937*x11 + 3.3530579587656564*x12 + 3.6203127646377791*x13 - 1.0930705283186732*x14 - 1.6921001126637107*x15 - 1.774686809424741*x8 - 1.951835616513679*x9))
+   3.2867337024382687e-10*math::exp(((-0.72411256578268512)*lnT) + (-2.4649195146505534*x10 - 1.020773727011937*x11 + 3.3530579587656564*x12 + 3.6203127646377791*x13 - 1.0930705283186732*x14 - 1.6921001126637107*x15 - 1.774686809424741*x8 - 1.951835616513679*x9))
 ));
 }
 DEVICE auto rhs_specie_choice_4(Real T, Real x28, Real x29) {
@@ -263,9 +263,9 @@ return ((T >= 10.0 & T <= 100000.0) ? (
    0
 ));
 }
-DEVICE auto rhs_specie_choice_5(Real T, Real x46, Real x52, Real x53, Real x57) {
+DEVICE auto rhs_specie_choice_5(Real T, Real x46, Real x52, Real x53, Real x57, Real lnT) {
 return ((T < 30) ? (
-   3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs(T)))
+   3.4977396723747635e-20*math::exp((-0.14999999999999999)*lnT)
 )
 : (
    math::exp((-3.194*x46 + 1.786*x52*x53 - 0.2072*x57 - 18.199999999999999)*math::log(math::abs(10)))
@@ -279,25 +279,25 @@ return ((T >= 100.0 & T <= 30000.0) ? (
    0
 ));
 }
-DEVICE auto rhs_specie_choice_7(Real T, Real x0, Real x34, bool x4) {
+DEVICE auto rhs_specie_choice_7(Real T, Real x0, Real x34, bool x4, Real lnT) {
 return ((x4) ? (
    1.26e-9*x0*math::exp(-127500.0*x34)
 )
 : (
-   4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs(T)))
+   4.0000000000000003e-37*math::exp((4.7400000000000002)*lnT)
 ));
 }
-DEVICE auto rhs_specie_choice_8(Real T, Real x34, bool x73) {
+DEVICE auto rhs_specie_choice_8(Real T, Real x34, bool x73, Real lnT) {
 return ((x73) ? (
-   2.0000000000000001e-10*math::exp(((0.40200000000000002)*math::log(math::abs(T))) + (-37.100000000000001*x34)) - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
+   2.0000000000000001e-10*math::exp(((0.40200000000000002)*lnT) + (-37.100000000000001*x34)) - 3.3099999999999998e-17*math::exp((1.48)*lnT)
 )
 : (
    0
 ));
 }
-DEVICE auto rhs_specie_choice_9(Real T, Real x34, bool x73) {
+DEVICE auto rhs_specie_choice_9(Real T, Real x34, bool x73, Real lnT) {
 return ((x73) ? (
-   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp(((0.39600000000000002)*math::log(math::abs(T))) + (-33.0*x34))
+   2.0299999999999998e-9*math::exp((-0.33200000000000002)*lnT) + 2.0600000000000001e-10*math::exp(((0.39600000000000002)*lnT) + (-33.0*x34))
 )
 : (
    0
@@ -337,8 +337,9 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real g84_6 = g84_5 + xn[9];
     const Real x83 = g84_6;
     const Real T = temperature;
-    const Real x0 = math::exp((-0.75)*math::log(math::abs(T)));
-    const Real x2 = 1.3300135414628029e-18*math::exp(((0.94999999999999996)*math::log(math::abs(T))) + (-0.00010729613733905579*T))*xn[0]*xn[5];
+    const Real lnT = math::log(math::abs(T));
+    const Real x0 = math::exp((-0.75)*lnT);
+    const Real x2 = 1.3300135414628029e-18*math::exp(((0.94999999999999996)*lnT) + (-0.00010729613733905579*T))*xn[0]*xn[5];
     const Real acc0_0 = -(x2);
     const Real acc5_0 = -(x2);
     const Real acc7_0 = x2;
@@ -348,7 +349,7 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc5_1 = acc5_0 + x1;
     const Real x3 = ((T)*(T));
     const Real x4 = T <= 10000.0;
-    const Real x6 = math::log(math::abs(T));
+    const Real x6 = lnT;
     const Real x5 = xn[0]*xn[6]*rhs_specie_choice_0(T, x3, x4);
     const Real acc0_2 = acc0_1 - x5;
     const Real acc2_0 = 2 * x5;
@@ -366,25 +367,25 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real x14 = math::powi<8>(math::abs(x7));
     const Real x16 = xn[2]*xn[3];
     const Real x18 = xn[1]*xn[3];
-    const Real x17 = x16*rhs_specie_choice_1(T, x10, x11, x12, x13, x14, x15, x8, x9);
+    const Real x17 = x16*rhs_specie_choice_1(T, x10, x11, x12, x13, x14, x15, x8, x9, lnT);
     const Real acc0_3 = acc0_2 + x17;
     const Real g109_0 = x17;
-    const Real x19 = 1.0e-8*math::exp((-0.40000000000000002)*math::log(math::abs(T)))*x18;
+    const Real x19 = 1.0e-8*math::exp((-0.40000000000000002)*lnT)*x18;
     const Real acc0_4 = acc0_3 + x19;
     const Real acc3_0 = -(x19);
-    const Real x20 = 2.6534040307116387e-9*math::exp((-0.10000000000000001)*math::log(math::abs(T)));
+    const Real x20 = 2.6534040307116387e-9*math::exp((-0.10000000000000001)*lnT);
     const Real x21 = xn[3]*xn[5];
     const Real x22 = x20*x21;
     const Real acc0_5 = acc0_4 + x22;
     const Real acc3_1 = acc3_0 - x22;
     const Real x23 = xn[0]*xn[2];
     const Real x25 = xn[0]*xn[12];
-    const Real x24 = 1.4000000000000001e-18*math::exp(((0.92800000000000005)*math::log(math::abs(T))) + (-6.1728395061728397e-5*T))*x23;
+    const Real x24 = 1.4000000000000001e-18*math::exp(((0.92800000000000005)*lnT) + (-6.1728395061728397e-5*T))*x23;
     const Real acc0_6 = acc0_5 - x24;
     const Real g109_1 = g109_0 - x24;
-    const Real x26 = 3.8571873359681582e-209*math::exp(((43.933476326349997)*math::log(math::abs(T))) + (-5902.1601240760483*x10 + 5825.9326359379538*x11 - 3578.1439181805954*x12 + 1242.7294446825149*x13 - 186.35635455381879*x14 - 1618.789587733125*x8 + 3854.4033653120223*x9))*x25;
+    const Real x26 = 3.8571873359681582e-209*math::exp(((43.933476326349997)*lnT) + (-5902.1601240760483*x10 + 5825.9326359379538*x11 - 3578.1439181805954*x12 + 1242.7294446825149*x13 - 186.35635455381879*x14 - 1618.789587733125*x8 + 3854.4033653120223*x9))*x25;
     const Real acc0_7 = acc0_6 + x26;
-    const Real x27 = 3.7903999274394518e-18*math::exp(((2.360852208681)*math::log(math::abs(T))) + (-258.18559308467115*x10 + 846.15238706523724*x11 - 1113.0879095147111*x12 + 671.95094388835207*x13 - 154.90262957142161*x14 - 24.766609674457612*x8 + 13.307984239358756*x9))*xn[0]*xn[3];
+    const Real x27 = 3.7903999274394518e-18*math::exp(((2.360852208681)*lnT) + (-258.18559308467115*x10 + 846.15238706523724*x11 - 1113.0879095147111*x12 + 671.95094388835207*x13 - 154.90262957142161*x14 - 24.766609674457612*x8 + 13.307984239358756*x9))*xn[0]*xn[3];
     const Real acc0_8 = acc0_7 + x27;
     const Real g109_2 = g109_1 + x27;
     const Real x28 = math::sqrt(T);
@@ -392,19 +393,19 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real x30 = xn[0]*x29;
     const Real x31 = 5.7884371785482823e-10*xn[11]*x30*math::exp(((-1.7524)*math::log(math::abs(0.00060040841663220993*x28 + 1.0))) + ((-0.24759999999999999)*math::log(math::abs(0.32668576019240059*x28 + 1.0))));
     const Real acc0_9 = acc0_8 - x31;
-    const Real x32 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)));
+    const Real x32 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*lnT);
     const Real x34 = 1.0*(1.0/T);
     const Real x33 = 8.6173430000000006e-5*T;
-    const Real x35_t0 = -4.352407911476755e-117 * math::exp((23.91596563 * math::log(math::abs(T))) + (-4361.9927099007555 * x10 + 4879.734514626049 * x11 - 3366.463969882694 * x12 + 1300.3028484326148 * x13 - 214.82451513312137 * x14 - 941.91483008145 * x8 + 2506.98665290609 * x9)) * xn[0] * xn[13];
-    const Real x35_t1 = x25 * rhs_specie_choice_2(T, x32, x33, x34);
-    const Real x35 = -4.3524079114767552e-117*math::exp(((23.915965629999999)*math::log(math::abs(T))) + (-4361.9927099007555*x10 + 4879.7345146260486*x11 - 3366.4639698826941*x12 + 1300.3028484326148*x13 - 214.82451513312137*x14 - 941.91483008144996*x8 + 2506.9866529060901*x9))*xn[0]*xn[13] + x25*rhs_specie_choice_2(T, x32, x33, x34);
+    const Real x35_t0 = -4.352407911476755e-117 * math::exp((23.91596563 * lnT) + (-4361.9927099007555 * x10 + 4879.734514626049 * x11 - 3366.463969882694 * x12 + 1300.3028484326148 * x13 - 214.82451513312137 * x14 - 941.91483008145 * x8 + 2506.98665290609 * x9)) * xn[0] * xn[13];
+    const Real x35_t1 = x25 * rhs_specie_choice_2(T, x32, x33, x34, lnT);
+    const Real x35 = -4.3524079114767552e-117*math::exp(((23.915965629999999)*lnT) + (-4361.9927099007555*x10 + 4879.7345146260486*x11 - 3366.4639698826941*x12 + 1300.3028484326148*x13 - 214.82451513312137*x14 - 941.91483008144996*x8 + 2506.9866529060901*x9))*xn[0]*xn[13] + x25*rhs_specie_choice_2(T, x32, x33, x34, lnT);
     const Real acc0_10 = acc0_9 - x35;
-    const Real x36_t0 = -5.908243863726507e-70 * math::exp((13.536556 * math::log(math::abs(T))) + (-2207.464350125769 * x10 + 2500.8077583366976 * x11 - 1768.8867461266502 * x12 + 704.1992662950037 * x13 - 120.0438480494693 * x14 - 502.72883252679094 * x8 + 1281.477767828706 * x9)) * x23;
-    const Real x36_t1 = xn[0] * xn[1] * rhs_specie_choice_3(T, x10, x11, x12, x13, x14, x15, x32, x33, x8, x9);
-    const Real x36 = -5.9082438637265071e-70*math::exp(((13.536555999999999)*math::log(math::abs(T))) + (-2207.4643501257692*x10 + 2500.8077583366976*x11 - 1768.8867461266502*x12 + 704.19926629500367*x13 - 120.0438480494693*x14 - 502.72883252679094*x8 + 1281.477767828706*x9))*x23 + xn[0]*xn[1]*rhs_specie_choice_3(T, x10, x11, x12, x13, x14, x15, x32, x33, x8, x9);
+    const Real x36_t0 = -5.908243863726507e-70 * math::exp((13.536556 * lnT) + (-2207.464350125769 * x10 + 2500.8077583366976 * x11 - 1768.8867461266502 * x12 + 704.1992662950037 * x13 - 120.0438480494693 * x14 - 502.72883252679094 * x8 + 1281.477767828706 * x9)) * x23;
+    const Real x36_t1 = xn[0] * xn[1] * rhs_specie_choice_3(T, x10, x11, x12, x13, x14, x15, x32, x33, x8, x9, lnT);
+    const Real x36 = -5.9082438637265071e-70*math::exp(((13.536555999999999)*lnT) + (-2207.4643501257692*x10 + 2500.8077583366976*x11 - 1768.8867461266502*x12 + 704.19926629500367*x13 - 120.0438480494693*x14 - 502.72883252679094*x8 + 1281.477767828706*x9))*x23 + xn[0]*xn[1]*rhs_specie_choice_3(T, x10, x11, x12, x13, x14, x15, x32, x33, x8, x9, lnT);
     const Real acc0_11 = acc0_10 - x36;
     const Real g79_0 = x36;
-    const Real x40 = x16*(1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T))))/(0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0);
+    const Real x40 = x16*(1.3500000000000001e-9*math::exp((0.098492999999999997)*lnT) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*lnT) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*lnT))/(0.0061910000000000003*math::exp((1.0461)*lnT) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*lnT) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*lnT) + 1.0);
     const Real g44_0 = -(x40);
     const Real x37 = 7.1999999999999996e-8*xn[9]*x30;
     const Real g44_1 = g44_0 + x37;
@@ -414,7 +415,7 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc10_0 = x39;
     const Real g44_2 = g44_1 - x39;
     const Real x41 = xn[0]*xn[8];
-    const Real x42 = 35.5*math::exp(((-2.2799999999999998)*math::log(math::abs(T))) + (-46707.0*x34))*x41;
+    const Real x42 = 35.5*math::exp(((-2.2799999999999998)*lnT) + (-46707.0*x34))*x41;
     const Real g44_3 = g44_2 + x42;
     const Real x43 = g44_3;
     const Real acc0_12 = acc0_11 - x43;
@@ -443,7 +444,7 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real x55 = 8.4600000000000008e-10*x46 - 1.3700000000000002e-10*x54 + 4.1700000000000001e-10;
     const Real acc1_3 = acc1_2 + xn[4] * xn[8] * x55;
     const Real x57 = x56/((x44)*(x44)*(x44));
-    const Real x58 = xn[1]*xn[2]*rhs_specie_choice_5(T, x46, x52, x53, x57);
+    const Real x58 = xn[1]*xn[2]*rhs_specie_choice_5(T, x46, x52, x53, x57, lnT);
     const Real acc2_3 = acc2_2 - x58;
     const Real x59 = 6.0e-10*xn[2]*xn[6];
     const Real acc8_1 = acc8_0 + x59;
@@ -461,23 +462,23 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real x66 = -x65;
     const Real acc9_0 = x66;
     const Real g79_1 = g79_0 + x66;
-    const Real x67 = math::exp((-0.5)*math::log(math::abs(T)));
+    const Real x67 = math::exp((-0.5)*lnT);
     const Real acc5_2 = acc5_1 + 1.9745379206285203e-06 * xn[4] * xn[7] * x67;
     const Real x68 = xn[7]*x67;
     const Real x69 = 7.9674337148168363e-7*xn[1]*x68;
     const Real acc5_3 = acc5_2 + x69;
     const Real acc7_2 = acc7_1 - x69;
     const Real g79_2 = g79_1 + x69;
-    const Real x70 = xn[1]*xn[13]*rhs_specie_choice_7(T, x0, x34, x4);
+    const Real x70 = xn[1]*xn[13]*rhs_specie_choice_7(T, x0, x34, x4, lnT);
     const Real g79_3 = g79_2 + x70;
-    const Real x71 = math::exp((0.25)*math::log(math::abs(T)));
+    const Real x71 = math::exp((0.25)*lnT);
     const Real x72 = 2.8833736969617052e-16*xn[12]*xn[2]*x71;
     const Real g79_4 = g79_3 - x72;
     const Real x73 = T >= 50.0;
     const Real x75 = xn[2]*xn[4];
-    const Real x74 = x48*rhs_specie_choice_8(T, x34, x73);
+    const Real x74 = x48*rhs_specie_choice_8(T, x34, x73, lnT);
     const Real acc4_1 = acc4_0 + x74;
-    const Real x76 = x75*rhs_specie_choice_9(T, x34, x73);
+    const Real x76 = x75*rhs_specie_choice_9(T, x34, x73, lnT);
     const Real acc4_2 = acc4_1 - x76;
     const Real x77 = x74 - x76;
     const Real acc5_4 = acc5_3 - x77;
@@ -533,7 +534,7 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc4_3 = acc4_2 - x97;
     const Real acc9_1 = acc9_0 + x97;
     const Real x98 = 1.0/(math::exp((1.3*x45*(x6 - 9.2103403719761836) - 137.42519902360013*x53*((0.10857362047581294*x6 - 1)*(0.10857362047581294*x6 - 1)) - 4.8449999999999998)*math::log(math::abs(10.0)))*x83 + 1.0);
-    const Real x100 = math::exp(((0.34999999999999998)*math::log(math::abs(T))) + (-102000.0*x34))*x41;
+    const Real x100 = math::exp(((0.34999999999999998)*lnT) + (-102000.0*x34))*x41;
     const Real acc2_12 = acc2_11 + 8.76e-10 * x100;
     const Real acc8_5 = acc8_4 + -4.38e-10 * x100;
     const Real x101 = xn[5]*xn[8]*rhs_specie_choice_10(T, x34, x44, x46, x54, x57, x60, x61);
@@ -545,7 +546,7 @@ DEVICE void rhs_specie(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc8_8 = acc8_7 + x102;
     const Real x103 = x101 - x102;
     const Real acc2_14 = acc2_13 + x103;
-    const Real x104 = 6.1739095063118665e-10*math::exp((0.40999999999999998)*math::log(math::abs(T)));
+    const Real x104 = 6.1739095063118665e-10*math::exp((0.40999999999999998)*lnT);
     const Real x105 = x104*x21;
     const Real acc7_3 = acc7_2 + x105;
     const Real x106 = x104*x38;
@@ -622,28 +623,28 @@ return ((x6) ? (
    x9
 ));
 }
-DEVICE auto rhs_eint_choice_2(Real T, bool x6) {
+DEVICE auto rhs_eint_choice_2(Real T, bool x6, Real lnT) {
 return ((x6) ? (
    0.63095734448019325
 )
 : (
-   math::exp((-0.20000000000000001)*math::log(math::abs(T)))
+   math::exp((-0.20000000000000001)*lnT)
 ));
 }
-DEVICE auto rhs_eint_choice_3(Real T, bool x6) {
+DEVICE auto rhs_eint_choice_3(Real T, bool x6, Real lnT) {
 return ((x6) ? (
    5.011872336272722
 )
 : (
-   math::exp((0.69999999999999996)*math::log(math::abs(T)))
+   math::exp((0.69999999999999996)*lnT)
 ));
 }
-DEVICE auto rhs_eint_choice_4(Real T, bool x6) {
+DEVICE auto rhs_eint_choice_4(Real T, bool x6, Real lnT) {
 return ((x6) ? (
    0.67810976749343443
 )
 : (
-   math::exp((-0.16869999999999999)*math::log(math::abs(T)))
+   math::exp((-0.16869999999999999)*lnT)
 ));
 }
 DEVICE auto rhs_eint_choice_5(Real T) {
@@ -894,28 +895,28 @@ return ((rhs_eint_choice_31(x55, x57, x60, x61, x63, x64, x66, x67, x69)) ? (
    483396202.36294854/((x58*x62*math::sqrt(rhs_eint_choice_32(x59, x60)*rhs_eint_choice_33(x61, x68)) + 2.1986273043946046e-36)*(x58*x62*math::sqrt(rhs_eint_choice_34(x59, x60)*rhs_eint_choice_35(x61, x68)) + 2.1986273043946046e-36))
 ));
 }
-DEVICE auto rhs_eint_choice_37(Real T, bool x6) {
+DEVICE auto rhs_eint_choice_37(Real T, bool x6, Real lnT) {
 return ((x6) ? (
    0.4008667176273028
 )
 : (
-   math::exp((-0.39700000000000002)*math::log(math::abs(T)))
+   math::exp((-0.39700000000000002)*lnT)
 ));
 }
-DEVICE auto rhs_eint_choice_38(Real T, bool x6) {
+DEVICE auto rhs_eint_choice_38(Real T, bool x6, Real lnT) {
 return ((x6) ? (
    0.031622776601683791
 )
 : (
-   math::exp((-1.5)*math::log(math::abs(T)))
+   math::exp((-1.5)*lnT)
 ));
 }
-DEVICE auto rhs_eint_choice_39(Real T, bool x6) {
+DEVICE auto rhs_eint_choice_39(Real T, bool x6, Real lnT) {
 return ((x6) ? (
    2.3157944032250755
 )
 : (
-   math::exp((0.36470000000000002)*math::log(math::abs(T)))
+   math::exp((0.36470000000000002)*lnT)
 ));
 }
 DEVICE auto rhs_eint_choice_40(bool x70, Real x71) {
@@ -1466,7 +1467,8 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real g88_13 = g88_12 + 0.7499410228243667 * xn[9];
     const Real x65 = g88_13;
     const Real T = temperature;
-    const Real g96_0 = 4.985670872372847e-33 * math::exp((3.76 * math::log(math::abs(T))) + (-2197000.0 / (T * T * T))) / (6.014246803527264e-08 * math::exp(2.1 * math::log(math::abs(T))) + 1.0);
+    const Real lnT = math::log(math::abs(T));
+    const Real g96_0 = 4.985670872372847e-33 * math::exp((3.76 * lnT) + (-2197000.0 / (T * T * T))) / (6.014246803527264e-08 * math::exp(2.1 * lnT) + 1.0);
     const Real x1 = 1.0/x0;
     const Real x2 = math::sqrt(T);
     const Real x3 = xn[1] + xn[12] + xn[4];
@@ -1478,14 +1480,14 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real g96_2 = g96_1 + 6.7e-19 * math::exp(-5860.0 * x4);
     const Real g96_3 = g96_2 + 3e-24 * math::exp(-510.0 * x4);
     const Real x72 = g96_3;
-    const Real acc0_1 = acc0_0 + -3.1438547368704e-21 * math::exp((0.35 * math::log(math::abs(T))) + (-102000.0 * x4)) * xn[0] * xn[8];
+    const Real acc0_1 = acc0_0 + -3.1438547368704e-21 * math::exp((0.35 * lnT) + (-102000.0 * x4)) * xn[0] * xn[8];
     const Real x5 = 2.73*z + 2.73;
     const Real acc0_2 = acc0_1 - 5.65e-36 * xn[0] * (T - x5) * ((z + 1.0) * (z + 1.0) * ((z + 1.0) * (z + 1.0)));
     const Real x6 = T <= 10;
     const Real x7 = xn[0]*xn[12];
-    const Real acc0_3 = acc0_2 - 1.55e-26 * x7 * rhs_eint_choice_39(T, x6);
+    const Real acc0_3 = acc0_2 - 1.55e-26 * x7 * rhs_eint_choice_39(T, x6, lnT);
     const Real x8 = rhs_eint_choice_0(x4, x6);
-    const Real acc0_4 = acc0_3 - 1.24e-13 * x7 * (1.0 + 0.3 * math::exp(-94000.0 * x8)) * rhs_eint_choice_38(T, x6) * math::exp(-470000.0 * x8);
+    const Real acc0_4 = acc0_3 - 1.24e-13 * x7 * (1.0 + 0.3 * math::exp(-94000.0 * x8)) * rhs_eint_choice_38(T, x6, lnT) * math::exp(-470000.0 * x8);
     const Real x9 = math::sqrt(T);
     const Real x10 = rhs_eint_choice_1(x6, x9);
     const Real x11 = 1.0/(0.0031622776601683794*x10 + 1.0);
@@ -1494,25 +1496,25 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real x13 = xn[2]*x12;
     const Real acc0_6 = acc0_5 - 1.27e-21 * x10 * x13 * math::exp(-157809.1 * x8);
     const Real acc0_7 = acc0_6 - 7.5e-19 * x13 * math::exp(-118348.0 * x8);
-    const Real x14 = xn[0]*x10*rhs_eint_choice_2(T, x6)/(6.3095734448019361e-5*rhs_eint_choice_3(T, x6) + 1.0);
+    const Real x14 = xn[0]*x10*rhs_eint_choice_2(T, x6, lnT)/(6.3095734448019361e-5*rhs_eint_choice_3(T, x6, lnT) + 1.0);
     const Real acc0_8 = acc0_7 - 3.4635323838154264e-26 * xn[1] * x14;
     const Real acc0_9 = acc0_8 - 1.3854129535261706e-25 * xn[11] * x14;
     const Real x15 = 1.0/x2;
     const Real x18 = 1.0/(1000000.0*x15/(x17*(1.6000000000000001*xn[2]*math::exp(-160000.0/((T)*(T))) + 1.3999999999999999*xn[8]*math::exp(-12000.0/(T + 1200.0)))) + 1.0);
-    const Real acc0_10 = acc0_9 + 5.6556829037999995e-12 * xn[2] * xn[3] * x18 * (1.35e-09 * math::exp(0.098493 * math::log(math::abs(T))) + 4.43502e-10 * math::exp(0.5561 * math::log(math::abs(T))) + 3.7408500000000004e-16 * math::exp(2.1826 * math::log(math::abs(T)))) / (0.006191 * math::exp(1.0461 * math::log(math::abs(T))) + 8.9712e-11 * math::exp(3.0424 * math::log(math::abs(T))) + 3.2576e-14 * math::exp(3.7741 * math::log(math::abs(T))) + 1.0);
+    const Real acc0_10 = acc0_9 + 5.6556829037999995e-12 * xn[2] * xn[3] * x18 * (1.35e-09 * math::exp(0.098493 * lnT) + 4.43502e-10 * math::exp(0.5561 * lnT) + 3.7408500000000004e-16 * math::exp(2.1826 * lnT)) / (0.006191 * math::exp(1.0461 * lnT) + 8.9712e-11 * math::exp(3.0424 * lnT) + 3.2576e-14 * math::exp(3.7741 * lnT) + 1.0);
     const Real acc0_11 = acc0_10 + 1.75918975308e-21 * xn[2] * xn[6] * x18;
     const Real x19 = x11*x7;
     const Real acc0_12 = acc0_11 - 4.95e-22 * x10 * x19 * math::exp(-631515.0 * x8);
-    const Real acc0_13 = acc0_12 - 5.54e-17 * x19 * rhs_eint_choice_37(T, x6) * math::exp(-473638.0 * x8);
-    const Real x20 = ((xn[0])*(xn[0]))*xn[12]*x11*rhs_eint_choice_4(T, x6);
+    const Real acc0_13 = acc0_12 - 5.54e-17 * x19 * rhs_eint_choice_37(T, x6, lnT) * math::exp(-473638.0 * x8);
+    const Real x20 = ((xn[0])*(xn[0]))*xn[12]*x11*rhs_eint_choice_4(T, x6, lnT);
     const Real acc0_14 = acc0_13 - 5.01e-27 * x20 * math::exp(-55338.0 * x8);
     const Real acc0_15 = acc0_14 - 9.1e-27 * x20 * math::exp(-13179.0 * x8);
-    const Real x21 = math::exp((-0.25)*math::log(math::abs(T)));
+    const Real x21 = math::exp((-0.25)*lnT);
     const Real acc0_16 = acc0_15 + 7.1777505408e-12 * (xn[2] * xn[2] * xn[2]) * x18 * (2e-31 * x15 + 6e-32 * x21);
     const Real acc0_17 = acc0_16 + 7.1777505408e-12 * (xn[2] * xn[2]) * xn[8] * x18 * (2.5e-32 * x15 + 7.5e-33 * x21);
     const Real x22 = math::sqrt(M_PI);
     const Real acc0_18 = acc0_17 + 0.0008437377159599618 * T * (1.380648e-16 * xn[0] + 1.380648e-16 * xn[1] + 1.380648e-16 * xn[10] + 1.380648e-16 * xn[11] + 1.380648e-16 * xn[12] + 1.380648e-16 * xn[13] + 1.380648e-16 * xn[2] + 1.380648e-16 * xn[3] + 1.380648e-16 * xn[4] + 1.380648e-16 * xn[5] + 1.380648e-16 * xn[6] + 1.380648e-16 * xn[7] + 1.380648e-16 * xn[8] + 1.380648e-16 * xn[9]) / (math::sqrt(x1) * x22);
-    const Real x23 = math::log(math::abs(T));
+    const Real x23 = lnT;
     const Real x24 = M_LN10;
     const Real x25 = 1.0/x24;
     const Real x26 = math::powi<-2>(math::abs(x24));
@@ -1580,7 +1582,7 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real x87 = x86 - 6.0;
     const Real x88 = x87 >= 300.0;
     const Real x89 = rhs_eint_choice_13(x72, x73, x84, x85, x87, x88);
-    const Real x90 = math::exp((25.0*x25)*math::log(math::abs(T)));
+    const Real x90 = math::exp((25.0*x25)*lnT);
     const Real x91 = math::exp((-200.0 + 20000.0/((10.0 + 2.3538526683701997e+17/x90)*(1.6889118802245084e-48*x90 + 10.0)))*math::log(math::abs(10.0)));
     const Real x92 = x42*x79;
     const Real x93 = x51*x80;
@@ -1590,7 +1592,7 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real x96 = math::exp((-38.89917505778142*x76 + 95.70878894783884*x78 - 377.88183430702219*x92 + 3018.4974183098116*x93 + 2.1892372*x95 - 23.689236999999999)*math::log(math::abs(10.0)))*xn[13];
     const Real x97 = T > 10.0;
     const Real x98 = x85 && x97;
-    const Real x99 = math::exp((16.666666666666664*x25)*math::log(math::abs(T)));
+    const Real x99 = math::exp((16.666666666666664*x25)*lnT);
     const Real x100 = math::exp((-200.0 + 20000.0/((10.0 + 785.77199422741614/x99)*(5.0592917094448065e-34*x99 + 10.0)))*math::log(math::abs(10.0)));
     const Real x101 = 1.002560385050777e-22*xn[13]*x100;
     const Real g143_1 = g143_0 + rhs_eint_choice_17(x101, x96, x98);
@@ -1603,7 +1605,7 @@ DEVICE Real rhs_eint(Real temperature, const Real* xn, Real z) {
     const Real x107 = T <= 1000.0;
     const Real x108 = math::exp((-177.55453097873294*x76 + 1956.911370108365*x78 - 12547.661945180447*x92 + 24439.250555499191*x93 + 4.6450521*x95 - 24.311209000000002)*math::log(math::abs(10.0)))*xn[2];
     const Real x109 = T <= 6000.0;
-    const Real x110 = math::exp((17.997580222853362*x25)*math::log(math::abs(T)));
+    const Real x110 = math::exp((17.997580222853362*x25)*lnT);
     const Real x111 = 1.8623144679125181e-22*math::exp((-200.0 + 20000.0/((10.0 + 2973.7534532281375/x110)*(1.3368457736780898e-34*x110 + 10.0)))*math::log(math::abs(10.0)))*xn[2];
     const Real g143_3 = g143_2 + rhs_eint_choice_20(x104, x105, x106, x107, x108, x109, x111);
     const Real x112 = x52*x83;
@@ -1669,12 +1671,12 @@ return ((x26) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_1(Real T, Real x28, bool x30, Real x31) {
+DEVICE auto jac_nuc_choice_1(Real T, Real x28, bool x30, Real x31, Real lnT) {
 return ((x30) ? (
    x28
 )
 : (
-   1250086.112245841*math::exp((-1.5)*math::log(math::abs(T)))*x31 + x28
+   1250086.112245841*math::exp((-1.5)*lnT)*x31 + x28
 ));
 }
 DEVICE auto jac_nuc_choice_2(Real x28, bool x49, Real x50, Real x52) {
@@ -1685,20 +1687,20 @@ return ((x49) ? (
    3.2867337024382687e-10*x50*x52
 ));
 }
-DEVICE auto jac_nuc_choice_3(Real T, bool x61, Real x63) {
+DEVICE auto jac_nuc_choice_3(Real T, bool x61, Real x63, Real lnT) {
 return ((x61) ? (
-   1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs(T)))
+   1.4643482606109061e-16*math::exp((1.78186)*lnT)
 )
 : (
    x63
 ));
 }
-DEVICE auto jac_nuc_choice_4(Real T, Real x12, Real x35, Real x37, Real x38, Real x39, bool x49, Real x50, Real x52, Real x82, Real x84, Real x85, Real x87, Real x88) {
+DEVICE auto jac_nuc_choice_4(Real T, Real x12, Real x35, Real x37, Real x38, Real x39, bool x49, Real x50, Real x52, Real x82, Real x84, Real x85, Real x87, Real x88, Real lnT) {
 return ((x49) ? (
    x82
 )
 : (
-   -2.3799651743169991e-10*math::exp((-1.724112565782685)*math::log(math::abs(T)))*x52 + 3.2867337024382687e-10*x50*x52*(-0.0071425856320495021*x12*x35 - 7.1075145702705346e-5*x12*x37 + 2.9934653521797078e-5*x12*x38 + 4.0289298963030308e-6*x12*x39 - 0.04052089463969382*x84 - 0.0012850420852755183*x85 - 1.4854136318202087e-7*x87 - 2.7640217188769353e-8*x88)
+   -2.3799651743169991e-10*math::exp((-1.724112565782685)*lnT)*x52 + 3.2867337024382687e-10*x50*x52*(-0.0071425856320495021*x12*x35 - 7.1075145702705346e-5*x12*x37 + 2.9934653521797078e-5*x12*x38 + 4.0289298963030308e-6*x12*x39 - 0.04052089463969382*x84 - 0.0012850420852755183*x85 - 1.4854136318202087e-7*x87 - 2.7640217188769353e-8*x88)
 ));
 }
 DEVICE auto jac_nuc_choice_5(Real T, Real x23, Real x24, Real x25, bool x26) {
@@ -1709,41 +1711,41 @@ return ((x26) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_6(Real T, Real x12, Real x35, Real x37, Real x38, Real x39, Real x40, bool x61, Real x62, Real x63, Real x84, Real x85, Real x88) {
+DEVICE auto jac_nuc_choice_6(Real T, Real x12, Real x35, Real x37, Real x38, Real x39, Real x40, bool x61, Real x62, Real x63, Real x84, Real x85, Real x88, Real lnT) {
 return ((x61) ? (
-   2.6092635916521491e-16*math::exp((0.78186)*math::log(math::abs(T)))
+   2.6092635916521491e-16*math::exp((0.78186)*lnT)
 )
 : (
-   3.7804827525136553e-14*math::exp((0.13944933584163111)*math::log(math::abs(T)))*x62 + x63*(0.025393366159889998*x12*x35 + 0.0010061251423955*x12*x37 + 0.00051983779458540007*x12*x38 - 0.00018095067761848*x12*x39 + 1.9644009576313599e-5*x12*x40 - 0.28420270431082961*x84 - 0.0057310564851968003*x85 - 7.2615442150620009e-7*x88)
+   3.7804827525136553e-14*math::exp((0.13944933584163111)*lnT)*x62 + x63*(0.025393366159889998*x12*x35 + 0.0010061251423955*x12*x37 + 0.00051983779458540007*x12*x38 - 0.00018095067761848*x12*x39 + 1.9644009576313599e-5*x12*x40 - 0.28420270431082961*x84 - 0.0057310564851968003*x85 - 7.2615442150620009e-7*x88)
 ));
 }
-DEVICE auto jac_nuc_choice_7(Real T, Real x12, bool x30, Real x31, Real x82, Real x83) {
+DEVICE auto jac_nuc_choice_7(Real T, Real x12, bool x30, Real x31, Real x82, Real x83, Real lnT) {
 return ((x30) ? (
    x82
 )
 : (
-   -1875129.1683687614*math::exp((-2.5)*math::log(math::abs(T)))*x31 + 587469852277.90271*x31*x83 + x82 + 54.282214350476039*x83*math::exp(-563932.20901156683*x12)
+   -1875129.1683687614*math::exp((-2.5)*lnT)*x31 + 587469852277.90271*x31*x83 + x82 + 54.282214350476039*x83*math::exp(-563932.20901156683*x12)
 ));
 }
-DEVICE auto jac_nuc_choice_8(Real T, bool x12, Real x13, Real x14) {
+DEVICE auto jac_nuc_choice_8(Real T, bool x12, Real x13, Real x14, Real lnT) {
 return ((x12) ? (
-   1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)))
+   1.4981088130721367e-10*math::exp((-0.63529999999999998)*lnT)
 )
 : (
    3.2867337024382687e-10*x13*x14
 ));
 }
-DEVICE auto jac_nuc_choice_9(Real T, Real x21, Real x22, bool x23) {
+DEVICE auto jac_nuc_choice_9(Real T, Real x21, Real x22, bool x23, Real lnT) {
 return ((x23) ? (
    1.26e-9*x21*x22
 )
 : (
-   4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs(T)))
+   4.0000000000000003e-37*math::exp((4.7400000000000002)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_10(Real T, Real x25, bool x26) {
+DEVICE auto jac_nuc_choice_10(Real T, Real x25, bool x26, Real lnT) {
 return ((x26) ? (
-   2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs(T)))*x25 - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
+   2.0000000000000001e-10*math::exp((0.40200000000000002)*lnT)*x25 - 3.3099999999999998e-17*math::exp((1.48)*lnT)
 )
 : (
    0
@@ -1757,9 +1759,9 @@ return ((x30) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_12(Real T, bool x41, Real x46) {
+DEVICE auto jac_nuc_choice_12(Real T, bool x41, Real x46, Real lnT) {
 return ((x41) ? (
-   3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs(T)))
+   3.4977396723747635e-20*math::exp((-0.14999999999999999)*lnT)
 )
 : (
    x46
@@ -1773,49 +1775,49 @@ return ((x53) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_14(Real T, bool x26, Real x56) {
+DEVICE auto jac_nuc_choice_14(Real T, bool x26, Real x56, Real lnT) {
 return ((x26) ? (
-   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs(T)))*x56
+   2.0299999999999998e-9*math::exp((-0.33200000000000002)*lnT) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*lnT)*x56
 )
 : (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_15(Real T, bool x12, Real x13, Real x14, Real x18, Real x2, Real x4, Real x5, Real x6, Real x66, Real x67, Real x68, Real x8) {
+DEVICE auto jac_nuc_choice_15(Real T, bool x12, Real x13, Real x14, Real x18, Real x2, Real x4, Real x5, Real x6, Real x66, Real x67, Real x68, Real x8, Real lnT) {
 return ((x12) ? (
-   -9.5174852894472843e-11*math::exp((-1.6353)*math::log(math::abs(T)))
+   -9.5174852894472843e-11*math::exp((-1.6353)*lnT)
 )
 : (
-   -2.3799651743169991e-10*math::exp((-1.724112565782685)*math::log(math::abs(T)))*x14 + 3.2867337024382687e-10*x13*x14*(-0.0071425856320495021*x18*x2 - 7.1075145702705346e-5*x18*x4 + 2.9934653521797078e-5*x18*x5 + 4.0289298963030308e-6*x18*x6 - 2.7640217188769353e-8*x18*x8 - 0.04052089463969382*x66 - 0.0012850420852755183*x67 - 1.4854136318202087e-7*x68)
+   -2.3799651743169991e-10*math::exp((-1.724112565782685)*lnT)*x14 + 3.2867337024382687e-10*x13*x14*(-0.0071425856320495021*x18*x2 - 7.1075145702705346e-5*x18*x4 + 2.9934653521797078e-5*x18*x5 + 4.0289298963030308e-6*x18*x6 - 2.7640217188769353e-8*x18*x8 - 0.04052089463969382*x66 - 0.0012850420852755183*x67 - 1.4854136318202087e-7*x68)
 ));
 }
-DEVICE auto jac_nuc_choice_16(Real T, Real x22, bool x23) {
+DEVICE auto jac_nuc_choice_16(Real T, Real x22, bool x23, Real lnT) {
 return ((x23) ? (
-   0.00016065*math::exp((-2.75)*math::log(math::abs(T)))*x22 - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs(T)))*x22
+   0.00016065*math::exp((-2.75)*lnT)*x22 - 9.4499999999999994e-10*math::exp((-1.75)*lnT)*x22
 )
 : (
-   1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs(T)))
+   1.8960000000000001e-36*math::exp((3.7400000000000002)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_17(Real T, Real x18, Real x32, Real x33, bool x41, Real x42, Real x44, Real x46, Real x64, Real x65) {
+DEVICE auto jac_nuc_choice_17(Real T, Real x18, Real x32, Real x33, bool x41, Real x42, Real x44, Real x46, Real x64, Real x65, Real lnT) {
 return ((x41) ? (
-   -5.2466095085621454e-21*math::exp((-1.1499999999999999)*math::log(math::abs(T)))
+   -5.2466095085621454e-21*math::exp((-1.1499999999999999)*lnT)
 )
 : (
    x33*x46*(3.5720000000000001*x18*x32*x44 - 0.62159999999999993*x42*x65 - 3.194*x64)
 ));
 }
-DEVICE auto jac_nuc_choice_18(Real T, Real x29, bool x30) {
+DEVICE auto jac_nuc_choice_18(Real T, Real x29, bool x30, Real lnT) {
 return ((x30) ? (
-   1.2500000000000001e-10*x29 - 7.7700000000000002e-13 - 1.48e-6/math::exp((3.0/2.0)*math::log(math::abs(T)))
+   1.2500000000000001e-10*x29 - 7.7700000000000002e-13 - 1.48e-6/math::exp((3.0/2.0)*lnT)
 )
 : (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_19(Real T, Real x25, bool x26) {
+DEVICE auto jac_nuc_choice_19(Real T, Real x25, bool x26, Real lnT) {
 return ((x26) ? (
-   7.4200000000000004e-9*math::exp((-1.5979999999999999)*math::log(math::abs(T)))*x25 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*math::log(math::abs(T)))*x25 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*math::log(math::abs(T)))
+   7.4200000000000004e-9*math::exp((-1.5979999999999999)*lnT)*x25 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*lnT)*x25 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*lnT)
 )
 : (
    0
@@ -1829,9 +1831,9 @@ return ((x53) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_21(Real T, bool x26, Real x56) {
+DEVICE auto jac_nuc_choice_21(Real T, bool x26, Real x56, Real lnT) {
 return ((x26) ? (
-   6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs(T)))*x56 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs(T))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs(T)))*x56
+   6.7980000000000007e-9*math::exp((-1.6040000000000001)*lnT)*x56 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*lnT) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*lnT)*x56
 )
 : (
    0
@@ -1845,25 +1847,25 @@ return ((x17) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_23(Real T, bool x36, Real x37, Real x39) {
+DEVICE auto jac_nuc_choice_23(Real T, bool x36, Real x37, Real x39, Real lnT) {
 return ((x36) ? (
-   1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)))
+   1.4981088130721367e-10*math::exp((-0.63529999999999998)*lnT)
 )
 : (
    3.2867337024382687e-10*x37*x39
 ));
 }
-DEVICE auto jac_nuc_choice_24(Real T, bool x17, Real x41, Real x42) {
+DEVICE auto jac_nuc_choice_24(Real T, bool x17, Real x41, Real x42, Real lnT) {
 return ((x17) ? (
    1.26e-9*x41*x42
 )
 : (
-   4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs(T)))
+   4.0000000000000003e-37*math::exp((4.7400000000000002)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_25(Real T, Real x44, bool x45) {
+DEVICE auto jac_nuc_choice_25(Real T, Real x44, bool x45, Real lnT) {
 return ((x45) ? (
-   2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs(T)))*x44 - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
+   2.0000000000000001e-10*math::exp((0.40200000000000002)*lnT)*x44 - 3.3099999999999998e-17*math::exp((1.48)*lnT)
 )
 : (
    0
@@ -1877,9 +1879,9 @@ return ((x55) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_27(Real T, bool x57, Real x64) {
+DEVICE auto jac_nuc_choice_27(Real T, bool x57, Real x64, Real lnT) {
 return ((x57) ? (
-   3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs(T)))
+   3.4977396723747635e-20*math::exp((-0.14999999999999999)*lnT)
 )
 : (
    x64
@@ -1901,17 +1903,17 @@ return ((x171) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_30(Real T, Real x173, bool x45) {
+DEVICE auto jac_nuc_choice_30(Real T, Real x173, bool x45, Real lnT) {
 return ((x45) ? (
-   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs(T)))*x173
+   2.0299999999999998e-9*math::exp((-0.33200000000000002)*lnT) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*lnT)*x173
 )
 : (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_31(Real T, bool x184, Real x186) {
+DEVICE auto jac_nuc_choice_31(Real T, bool x184, Real x186, Real lnT) {
 return ((x184) ? (
-   1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs(T)))
+   1.4643482606109061e-16*math::exp((1.78186)*lnT)
 )
 : (
    x186
@@ -1925,12 +1927,12 @@ return ((x196) ? (
    3.1699999999999999e-10*x197
 ));
 }
-DEVICE auto jac_nuc_choice_33(Real T, Real x21, Real x222, Real x223, Real x225, Real x227, Real x23, Real x24, Real x25, bool x36, Real x37, Real x39, Real x7) {
+DEVICE auto jac_nuc_choice_33(Real T, Real x21, Real x222, Real x223, Real x225, Real x227, Real x23, Real x24, Real x25, bool x36, Real x37, Real x39, Real x7, Real lnT) {
 return ((x36) ? (
-   -9.5174852894472843e-11*math::exp((-1.6353)*math::log(math::abs(T)))
+   -9.5174852894472843e-11*math::exp((-1.6353)*lnT)
 )
 : (
-   -2.3799651743169991e-10*math::exp((-1.724112565782685)*math::log(math::abs(T)))*x39 + 3.2867337024382687e-10*x37*x39*(-0.0071425856320495021*x21*x7 - 0.04052089463969382*x222 - 0.0012850420852755183*x223 - 1.4854136318202087e-7*x225 - 2.7640217188769353e-8*x227 - 7.1075145702705346e-5*x23*x7 + 2.9934653521797078e-5*x24*x7 + 4.0289298963030308e-6*x25*x7)
+   -2.3799651743169991e-10*math::exp((-1.724112565782685)*lnT)*x39 + 3.2867337024382687e-10*x37*x39*(-0.0071425856320495021*x21*x7 - 0.04052089463969382*x222 - 0.0012850420852755183*x223 - 1.4854136318202087e-7*x225 - 2.7640217188769353e-8*x227 - 7.1075145702705346e-5*x23*x7 + 2.9934653521797078e-5*x24*x7 + 4.0289298963030308e-6*x25*x7)
 ));
 }
 DEVICE auto jac_nuc_choice_34(Real T, Real x14, Real x15, Real x16, bool x17) {
@@ -1941,17 +1943,17 @@ return ((x17) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_35(Real T, bool x17, Real x42) {
+DEVICE auto jac_nuc_choice_35(Real T, bool x17, Real x42, Real lnT) {
 return ((x17) ? (
-   0.00016065*math::exp((-2.75)*math::log(math::abs(T)))*x42 - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs(T)))*x42
+   0.00016065*math::exp((-2.75)*lnT)*x42 - 9.4499999999999994e-10*math::exp((-1.75)*lnT)*x42
 )
 : (
-   1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs(T)))
+   1.8960000000000001e-36*math::exp((3.7400000000000002)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_36(Real T, Real x216, Real x218, Real x48, bool x57, Real x58, Real x63, Real x64, Real x7) {
+DEVICE auto jac_nuc_choice_36(Real T, Real x216, Real x218, Real x48, bool x57, Real x58, Real x63, Real x64, Real x7, Real lnT) {
 return ((x57) ? (
-   -5.2466095085621454e-21*math::exp((-1.1499999999999999)*math::log(math::abs(T)))
+   -5.2466095085621454e-21*math::exp((-1.1499999999999999)*lnT)
 )
 : (
    x58*x64*(-3.194*x216 - 0.62159999999999993*x218 + 3.5720000000000001*x48*x63*x7)
@@ -1965,9 +1967,9 @@ return ((x66) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_38(Real T, Real x44, bool x45) {
+DEVICE auto jac_nuc_choice_38(Real T, Real x44, bool x45, Real lnT) {
 return ((x45) ? (
-   7.4200000000000004e-9*math::exp((-1.5979999999999999)*math::log(math::abs(T)))*x44 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*math::log(math::abs(T)))*x44 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*math::log(math::abs(T)))
+   7.4200000000000004e-9*math::exp((-1.5979999999999999)*lnT)*x44 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*lnT)*x44 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*lnT)
 )
 : (
    0
@@ -1989,9 +1991,9 @@ return ((x171) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_41(Real T, Real x173, bool x45) {
+DEVICE auto jac_nuc_choice_41(Real T, Real x173, bool x45, Real lnT) {
 return ((x45) ? (
-   6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs(T)))*x173 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs(T))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs(T)))*x173
+   6.7980000000000007e-9*math::exp((-1.6040000000000001)*lnT)*x173 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*lnT) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*lnT)*x173
 )
 : (
    0
@@ -2005,12 +2007,12 @@ return ((x196) ? (
    1.650619e-6*x169*x197
 ));
 }
-DEVICE auto jac_nuc_choice_43(Real T, bool x184, Real x185, Real x186, Real x21, Real x222, Real x223, Real x227, Real x23, Real x24, Real x25, Real x26, Real x7) {
+DEVICE auto jac_nuc_choice_43(Real T, bool x184, Real x185, Real x186, Real x21, Real x222, Real x223, Real x227, Real x23, Real x24, Real x25, Real x26, Real x7, Real lnT) {
 return ((x184) ? (
-   2.6092635916521491e-16*math::exp((0.78186)*math::log(math::abs(T)))
+   2.6092635916521491e-16*math::exp((0.78186)*lnT)
 )
 : (
-   3.7804827525136553e-14*math::exp((0.13944933584163111)*math::log(math::abs(T)))*x185 + x186*(0.025393366159889998*x21*x7 - 0.28420270431082961*x222 - 0.0057310564851968003*x223 - 7.2615442150620009e-7*x227 + 0.0010061251423955*x23*x7 + 0.00051983779458540007*x24*x7 - 0.00018095067761848*x25*x7 + 1.9644009576313599e-5*x26*x7)
+   3.7804827525136553e-14*math::exp((0.13944933584163111)*lnT)*x185 + x186*(0.025393366159889998*x21*x7 - 0.28420270431082961*x222 - 0.0057310564851968003*x223 - 7.2615442150620009e-7*x227 + 0.0010061251423955*x23*x7 + 0.00051983779458540007*x24*x7 - 0.00018095067761848*x25*x7 + 1.9644009576313599e-5*x26*x7)
 ));
 }
 DEVICE auto jac_nuc_choice_44(Real T, Real x21, Real x22, bool x23) {
@@ -2021,9 +2023,9 @@ return ((x23) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_45(Real T, bool x30, Real x32) {
+DEVICE auto jac_nuc_choice_45(Real T, bool x30, Real x32, Real lnT) {
 return ((x30) ? (
-   1.4643482606109061e-16*math::exp((1.78186)*math::log(math::abs(T)))
+   1.4643482606109061e-16*math::exp((1.78186)*lnT)
 )
 : (
    x32
@@ -2037,49 +2039,49 @@ return ((x23) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_47(Real T, Real x11, Real x12, Real x13, Real x14, Real x15, bool x30, Real x31, Real x32, Real x4, Real x42, Real x43, Real x9) {
+DEVICE auto jac_nuc_choice_47(Real T, Real x11, Real x12, Real x13, Real x14, Real x15, bool x30, Real x31, Real x32, Real x4, Real x42, Real x43, Real x9, Real lnT) {
 return ((x30) ? (
-   2.6092635916521491e-16*math::exp((0.78186)*math::log(math::abs(T)))
+   2.6092635916521491e-16*math::exp((0.78186)*lnT)
 )
 : (
-   3.7804827525136553e-14*math::exp((0.13944933584163111)*math::log(math::abs(T)))*x31 + x32*(0.0010061251423955*x11*x4 + 0.00051983779458540007*x12*x4 - 0.00018095067761848*x13*x4 + 1.9644009576313599e-5*x14*x4 - 7.2615442150620009e-7*x15*x4 + 0.025393366159889998*x4*x9 - 0.28420270431082961*x42 - 0.0057310564851968003*x43)
+   3.7804827525136553e-14*math::exp((0.13944933584163111)*lnT)*x31 + x32*(0.0010061251423955*x11*x4 + 0.00051983779458540007*x12*x4 - 0.00018095067761848*x13*x4 + 1.9644009576313599e-5*x14*x4 - 7.2615442150620009e-7*x15*x4 + 0.025393366159889998*x4*x9 - 0.28420270431082961*x42 - 0.0057310564851968003*x43)
 ));
 }
-DEVICE auto jac_nuc_choice_48(Real T, Real x4, bool x5) {
+DEVICE auto jac_nuc_choice_48(Real T, Real x4, bool x5, Real lnT) {
 return ((x5) ? (
-   2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs(T)))*x4 - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
+   2.0000000000000001e-10*math::exp((0.40200000000000002)*lnT)*x4 - 3.3099999999999998e-17*math::exp((1.48)*lnT)
 )
 : (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_49(Real T, bool x5, Real x7) {
+DEVICE auto jac_nuc_choice_49(Real T, bool x5, Real x7, Real lnT) {
 return ((x5) ? (
-   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs(T)))*x7
+   2.0299999999999998e-9*math::exp((-0.33200000000000002)*lnT) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*lnT)*x7
 )
 : (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_50(Real T, Real x4, bool x5) {
+DEVICE auto jac_nuc_choice_50(Real T, Real x4, bool x5, Real lnT) {
 return ((x5) ? (
-   7.4200000000000004e-9*math::exp((-1.5979999999999999)*math::log(math::abs(T)))*x4 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*math::log(math::abs(T)))*x4 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*math::log(math::abs(T)))
+   7.4200000000000004e-9*math::exp((-1.5979999999999999)*lnT)*x4 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*lnT)*x4 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*lnT)
 )
 : (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_51(Real T, bool x5, Real x7) {
+DEVICE auto jac_nuc_choice_51(Real T, bool x5, Real x7, Real lnT) {
 return ((x5) ? (
-   6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs(T)))*x7 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs(T))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs(T)))*x7
+   6.7980000000000007e-9*math::exp((-1.6040000000000001)*lnT)*x7 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*lnT) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*lnT)*x7
 )
 : (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_52(Real T, Real x8, bool x9) {
+DEVICE auto jac_nuc_choice_52(Real T, Real x8, bool x9, Real lnT) {
 return ((x9) ? (
-   2.0000000000000001e-10*math::exp((0.40200000000000002)*math::log(math::abs(T)))*x8 - 3.3099999999999998e-17*math::exp((1.48)*math::log(math::abs(T)))
+   2.0000000000000001e-10*math::exp((0.40200000000000002)*lnT)*x8 - 3.3099999999999998e-17*math::exp((1.48)*lnT)
 )
 : (
    0
@@ -2093,9 +2095,9 @@ return ((x23) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_54(Real T, Real x25, bool x9) {
+DEVICE auto jac_nuc_choice_54(Real T, Real x25, bool x9, Real lnT) {
 return ((x9) ? (
-   2.0299999999999998e-9*math::exp((-0.33200000000000002)*math::log(math::abs(T))) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*math::log(math::abs(T)))*x25
+   2.0299999999999998e-9*math::exp((-0.33200000000000002)*lnT) + 2.0600000000000001e-10*math::exp((0.39600000000000002)*lnT)*x25
 )
 : (
    0
@@ -2109,9 +2111,9 @@ return ((x36) ? (
    3.1699999999999999e-10*x37
 ));
 }
-DEVICE auto jac_nuc_choice_56(Real T, Real x8, bool x9) {
+DEVICE auto jac_nuc_choice_56(Real T, Real x8, bool x9, Real lnT) {
 return ((x9) ? (
-   7.4200000000000004e-9*math::exp((-1.5979999999999999)*math::log(math::abs(T)))*x8 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*math::log(math::abs(T)))*x8 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*math::log(math::abs(T)))
+   7.4200000000000004e-9*math::exp((-1.5979999999999999)*lnT)*x8 + 8.0400000000000002e-11*math::exp((-0.59799999999999998)*lnT)*x8 - 4.8987999999999998e-17*math::exp((0.47999999999999998)*lnT)
 )
 : (
    0
@@ -2125,9 +2127,9 @@ return ((x23) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_58(Real T, Real x25, bool x9) {
+DEVICE auto jac_nuc_choice_58(Real T, Real x25, bool x9, Real lnT) {
 return ((x9) ? (
-   6.7980000000000007e-9*math::exp((-1.6040000000000001)*math::log(math::abs(T)))*x25 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*math::log(math::abs(T))) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*math::log(math::abs(T)))*x25
+   6.7980000000000007e-9*math::exp((-1.6040000000000001)*lnT)*x25 - 6.7396000000000002e-10*math::exp((-1.3320000000000001)*lnT) + 8.1576000000000009e-11*math::exp((-0.60399999999999998)*lnT)*x25
 )
 : (
    0
@@ -2149,9 +2151,9 @@ return ((x3) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_61(Real T, Real x14, bool x6) {
+DEVICE auto jac_nuc_choice_61(Real T, Real x14, bool x6, Real lnT) {
 return ((x6) ? (
-   3.4977396723747635e-20*math::exp((-0.14999999999999999)*math::log(math::abs(T)))
+   3.4977396723747635e-20*math::exp((-0.14999999999999999)*lnT)
 )
 : (
    x14
@@ -2173,9 +2175,9 @@ return ((x3) ? (
    0
 ));
 }
-DEVICE auto jac_nuc_choice_64(Real T, Real x10, Real x12, Real x14, Real x16, Real x25, bool x6, Real x7, Real x8, Real x9) {
+DEVICE auto jac_nuc_choice_64(Real T, Real x10, Real x12, Real x14, Real x16, Real x25, bool x6, Real x7, Real x8, Real x9, Real lnT) {
 return ((x6) ? (
-   -5.2466095085621454e-21*math::exp((-1.1499999999999999)*math::log(math::abs(T)))
+   -5.2466095085621454e-21*math::exp((-1.1499999999999999)*lnT)
 )
 : (
    x14*x8*(-0.62159999999999993*x10*x25 + 3.5720000000000001*x12*x16*x7 - x16*x9)
@@ -2269,76 +2271,76 @@ return ((x22) ? (
    1.650619e-6*x23*x4
 ));
 }
-DEVICE auto jac_nuc_choice_76(Real T, bool x10, Real x12, Real x8) {
+DEVICE auto jac_nuc_choice_76(Real T, bool x10, Real x12, Real x8, Real lnT) {
 return ((x10) ? (
    x8
 )
 : (
-   1250086.112245841*math::exp((-1.5)*math::log(math::abs(T)))*x12 + x8
+   1250086.112245841*math::exp((-1.5)*lnT)*x12 + x8
 ));
 }
-DEVICE auto jac_nuc_choice_77(Real T, Real x27, Real x28, bool x29) {
+DEVICE auto jac_nuc_choice_77(Real T, Real x27, Real x28, bool x29, Real lnT) {
 return ((x29) ? (
    1.26e-9*x27*x28
 )
 : (
-   4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs(T)))
+   4.0000000000000003e-37*math::exp((4.7400000000000002)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_78(Real T, Real x28, bool x29) {
+DEVICE auto jac_nuc_choice_78(Real T, Real x28, bool x29, Real lnT) {
 return ((x29) ? (
-   0.00016065*math::exp((-2.75)*math::log(math::abs(T)))*x28 - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs(T)))*x28
+   0.00016065*math::exp((-2.75)*lnT)*x28 - 9.4499999999999994e-10*math::exp((-1.75)*lnT)*x28
 )
 : (
-   1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs(T)))
+   1.8960000000000001e-36*math::exp((3.7400000000000002)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_79(Real T, bool x10, Real x11, Real x12, Real x34, Real x35) {
+DEVICE auto jac_nuc_choice_79(Real T, bool x10, Real x11, Real x12, Real x34, Real x35, Real lnT) {
 return ((x10) ? (
    x34
 )
 : (
-   -1875129.1683687614*math::exp((-2.5)*math::log(math::abs(T)))*x12 + 587469852277.90271*x12*x35 + x34 + 54.282214350476039*x35*math::exp(-563932.20901156683*x11)
+   -1875129.1683687614*math::exp((-2.5)*lnT)*x12 + 587469852277.90271*x12*x35 + x34 + 54.282214350476039*x35*math::exp(-563932.20901156683*x11)
 ));
 }
-DEVICE auto jac_nuc_choice_80(Real T, Real x0, bool x2, Real x4) {
+DEVICE auto jac_nuc_choice_80(Real T, Real x0, bool x2, Real x4, Real lnT) {
 return ((x2) ? (
    x0
 )
 : (
-   1250086.112245841*math::exp((-1.5)*math::log(math::abs(T)))*x4 + x0
+   1250086.112245841*math::exp((-1.5)*lnT)*x4 + x0
 ));
 }
-DEVICE auto jac_nuc_choice_81(Real T, Real x17, Real x18, bool x19) {
+DEVICE auto jac_nuc_choice_81(Real T, Real x17, Real x18, bool x19, Real lnT) {
 return ((x19) ? (
    1.26e-9*x17*x18
 )
 : (
-   4.0000000000000003e-37*math::exp((4.7400000000000002)*math::log(math::abs(T)))
+   4.0000000000000003e-37*math::exp((4.7400000000000002)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_82(Real T, bool x2, Real x22, Real x23, Real x3, Real x4) {
+DEVICE auto jac_nuc_choice_82(Real T, bool x2, Real x22, Real x23, Real x3, Real x4, Real lnT) {
 return ((x2) ? (
    x22
 )
 : (
-   -1875129.1683687614*math::exp((-2.5)*math::log(math::abs(T)))*x4 + x22 + 587469852277.90271*x23*x4 + 54.282214350476039*x23*math::exp(-563932.20901156683*x3)
+   -1875129.1683687614*math::exp((-2.5)*lnT)*x4 + x22 + 587469852277.90271*x23*x4 + 54.282214350476039*x23*math::exp(-563932.20901156683*x3)
 ));
 }
-DEVICE auto jac_nuc_choice_83(Real T, Real x18, bool x19) {
+DEVICE auto jac_nuc_choice_83(Real T, Real x18, bool x19, Real lnT) {
 return ((x19) ? (
-   0.00016065*math::exp((-2.75)*math::log(math::abs(T)))*x18 - 9.4499999999999994e-10*math::exp((-1.75)*math::log(math::abs(T)))*x18
+   0.00016065*math::exp((-2.75)*lnT)*x18 - 9.4499999999999994e-10*math::exp((-1.75)*lnT)*x18
 )
 : (
-   1.8960000000000001e-36*math::exp((3.7400000000000002)*math::log(math::abs(T)))
+   1.8960000000000001e-36*math::exp((3.7400000000000002)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_84(Real T, bool x16) {
+DEVICE auto jac_nuc_choice_84(Real T, bool x16, Real lnT) {
 return ((x16) ? (
    2.3157944032250755
 )
 : (
-   math::exp((0.36470000000000002)*math::log(math::abs(T)))
+   math::exp((0.36470000000000002)*lnT)
 ));
 }
 DEVICE auto jac_nuc_choice_85(bool x16, Real x19) {
@@ -2357,20 +2359,20 @@ return ((x16) ? (
    x8
 ));
 }
-DEVICE auto jac_nuc_choice_87(Real T, bool x16) {
+DEVICE auto jac_nuc_choice_87(Real T, bool x16, Real lnT) {
 return ((x16) ? (
    5.011872336272722
 )
 : (
-   math::exp((0.69999999999999996)*math::log(math::abs(T)))
+   math::exp((0.69999999999999996)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_88(Real T, bool x16) {
+DEVICE auto jac_nuc_choice_88(Real T, bool x16, Real lnT) {
 return ((x16) ? (
    0.63095734448019325
 )
 : (
-   math::exp((-0.20000000000000001)*math::log(math::abs(T)))
+   math::exp((-0.20000000000000001)*lnT)
 ));
 }
 DEVICE auto jac_nuc_choice_89(bool x16, Real x38) {
@@ -2381,20 +2383,20 @@ return ((x16) ? (
    x38
 ));
 }
-DEVICE auto jac_nuc_choice_90(Real T, bool x16) {
+DEVICE auto jac_nuc_choice_90(Real T, bool x16, Real lnT) {
 return ((x16) ? (
    0.4008667176273028
 )
 : (
-   math::exp((-0.39700000000000002)*math::log(math::abs(T)))
+   math::exp((-0.39700000000000002)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_91(Real T, bool x16) {
+DEVICE auto jac_nuc_choice_91(Real T, bool x16, Real lnT) {
 return ((x16) ? (
    0.67810976749343443
 )
 : (
-   math::exp((-0.16869999999999999)*math::log(math::abs(T)))
+   math::exp((-0.16869999999999999)*lnT)
 ));
 }
 DEVICE auto jac_nuc_choice_92(Real T, bool x167) {
@@ -3503,28 +3505,28 @@ return ((x16) ? (
    (1.0/2.0)*x481
 ));
 }
-DEVICE auto jac_nuc_choice_232(Real T, bool x16) {
+DEVICE auto jac_nuc_choice_232(Real T, bool x16, Real lnT) {
 return ((x16) ? (
    0
 )
 : (
-   -0.20000000000000001*math::exp((-1.2)*math::log(math::abs(T)))
+   -0.20000000000000001*math::exp((-1.2)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_233(Real T, bool x16) {
+DEVICE auto jac_nuc_choice_233(Real T, bool x16, Real lnT) {
 return ((x16) ? (
    0
 )
 : (
-   -0.16869999999999999*math::exp((-1.1687000000000001)*math::log(math::abs(T)))
+   -0.16869999999999999*math::exp((-1.1687000000000001)*lnT)
 ));
 }
-DEVICE auto jac_nuc_choice_234(Real T, bool x16) {
+DEVICE auto jac_nuc_choice_234(Real T, bool x16, Real lnT) {
 return ((x16) ? (
    0
 )
 : (
-   0.69999999999999996*math::exp((-0.30000000000000004)*math::log(math::abs(T)))
+   0.69999999999999996*math::exp((-0.30000000000000004)*lnT)
 ));
 }
 DEVICE auto jac_nuc_choice_235(bool x167) {
@@ -3559,9 +3561,9 @@ return ((x255) ? (
    -5.5313336794064847e-19*x314*jac_nuc_choice_237(x313)/((x315)*(x315))
 ));
 }
-DEVICE auto jac_nuc_choice_239(Real T, bool x255, Real x300, Real x301, Real x302, Real x303, Real x306, Real x307, bool x309, Real x310, bool x313, Real x314, Real x315, Real x48, Real x512, Real x523, Real x524, Real x525, Real x526, Real x527, Real x528, Real x529) {
+DEVICE auto jac_nuc_choice_239(Real T, bool x255, Real x300, Real x301, Real x302, Real x303, Real x306, Real x307, bool x309, Real x310, bool x313, Real x314, Real x315, Real x48, Real x512, Real x523, Real x524, Real x525, Real x526, Real x527, Real x528, Real x529, Real lnT) {
 return ((x309) ? (
-   3.2860556719809434e-26*math::exp((-0.24000000000000021)*math::log(math::abs(T)))*x307 + 1.8746122480121903e-32*math::exp((2.7599999999999998)*math::log(math::abs(T)))*x307 - 6.2968615725975507e-40*math::exp((4.8599999999999994)*math::log(math::abs(T)))*x306/((x303)*(x303)) + 1.8719999999999998e-14*x300*x48 + 3.9261999999999998e-15*x301*x48 + 1.53e-21*x302*x48
+   3.2860556719809434e-26*math::exp((-0.24000000000000021)*lnT)*x307 + 1.8746122480121903e-32*math::exp((2.7599999999999998)*lnT)*x307 - 6.2968615725975507e-40*math::exp((4.8599999999999994)*lnT)*x306/((x303)*(x303)) + 1.8719999999999998e-14*x300*x48 + 3.9261999999999998e-15*x301*x48 + 1.53e-21*x302*x48
 )
 : jac_nuc_choice_238(x255, x310, x313, x314, x315, x512, x523, x524, x525, x526, x527, x528, x529));
 }
@@ -3935,12 +3937,12 @@ return ((x230) ? (
    x380 + x383*jac_nuc_choice_285(x316, x318, x362, x382, x474)
 ));
 }
-DEVICE auto jac_nuc_choice_287(Real T, bool x16) {
+DEVICE auto jac_nuc_choice_287(Real T, bool x16, Real lnT) {
 return ((x16) ? (
    0
 )
 : (
-   -0.39700000000000002*math::exp((-1.397)*math::log(math::abs(T)))
+   -0.39700000000000002*math::exp((-1.397)*lnT)
 ));
 }
 DEVICE auto jac_nuc_choice_288(bool x16, Real x488) {
@@ -3951,12 +3953,12 @@ return ((x16) ? (
    -1.5*x488
 ));
 }
-DEVICE auto jac_nuc_choice_289(Real T, bool x16) {
+DEVICE auto jac_nuc_choice_289(Real T, bool x16, Real lnT) {
 return ((x16) ? (
    0
 )
 : (
-   0.36470000000000002*math::exp((-0.63529999999999998)*math::log(math::abs(T)))
+   0.36470000000000002*math::exp((-0.63529999999999998)*lnT)
 ));
 }
 DEVICE auto jac_nuc_choice_290(bool x216, Real x222, Real x378, Real x481, Real x91, Real x94) {
@@ -3999,28 +4001,28 @@ return ((x4) ? (
    0.0
 ));
 }
-DEVICE auto jacd_rhs_specie_choice_1_1(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x8, Real x9, Real dx10, Real dx11, Real dx12, Real dx13, Real dx14, Real dx15, Real dx8, Real dx9) {
+DEVICE auto jacd_rhs_specie_choice_1_1(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x8, Real x9, Real dx10, Real dx11, Real dx12, Real dx13, Real dx14, Real dx15, Real dx8, Real dx9, Real lnT) {
 return ((T <= 1160.0) ? (
-   (1.464348260610906e-16*((1.78186*math::exp((1.78186 * math::log(math::abs(T)))))*(1.0/T)))
+   (1.464348260610906e-16*((1.78186*math::exp((1.78186 * lnT)))*(1.0/T)))
 )
 : (
-   (((3.3178155742407614e-14*((1.139449335841631*math::exp((1.139449335841631 * math::log(math::abs(T)))))*(1.0/T)))*math::exp((((((((((-10.993097527150175) * x10) + (14.449862906216714 * x11)) + (58.22837578970318 * x12)) - (162.59852239006702 * x13)) + (144.55426734953477 * x14)) - (44.454280878123605 * x15)) - (12.447178055372778 * x8)) + (6.939178477839912 * x9)))) + ((3.3178155742407614e-14 * math::exp((1.139449335841631 * math::log(math::abs(T)))))*(math::exp((((((((((-10.993097527150175) * x10) + (14.449862906216714 * x11)) + (58.22837578970318 * x12)) - (162.59852239006702 * x13)) + (144.55426734953477 * x14)) - (44.454280878123605 * x15)) - (12.447178055372778 * x8)) + (6.939178477839912 * x9)))*(((((((((-10.993097527150175)*dx10) + (14.449862906216714*dx11)) + (58.22837578970318*dx12)) - (162.59852239006702*dx13)) + (144.55426734953477*dx14)) - (44.454280878123605*dx15)) - (12.447178055372778*dx8)) + (6.939178477839912*dx9)))))
+   (((3.3178155742407614e-14*((1.139449335841631*math::exp((1.139449335841631 * lnT)))*(1.0/T)))*math::exp((((((((((-10.993097527150175) * x10) + (14.449862906216714 * x11)) + (58.22837578970318 * x12)) - (162.59852239006702 * x13)) + (144.55426734953477 * x14)) - (44.454280878123605 * x15)) - (12.447178055372778 * x8)) + (6.939178477839912 * x9)))) + ((3.3178155742407614e-14 * math::exp((1.139449335841631 * lnT)))*(math::exp((((((((((-10.993097527150175) * x10) + (14.449862906216714 * x11)) + (58.22837578970318 * x12)) - (162.59852239006702 * x13)) + (144.55426734953477 * x14)) - (44.454280878123605 * x15)) - (12.447178055372778 * x8)) + (6.939178477839912 * x9)))*(((((((((-10.993097527150175)*dx10) + (14.449862906216714*dx11)) + (58.22837578970318*dx12)) - (162.59852239006702*dx13)) + (144.55426734953477*dx14)) - (44.454280878123605*dx15)) - (12.447178055372778*dx8)) + (6.939178477839912*dx9)))))
 ));
 }
-DEVICE auto jacd_rhs_specie_choice_2_2(Real T, Real x32, Real x33, Real x34, Real dx32, Real dx33, Real dx34) {
+DEVICE auto jacd_rhs_specie_choice_2_2(Real T, Real x32, Real x33, Real x34, Real dx32, Real dx33, Real dx34, Real lnT) {
 return ((x33 <= 9280.0) ? (
    dx32
 )
 : (
-   ((((((1250086.112245841*((-1.5*math::exp(((-1.5) * math::log(math::abs(T)))))*(1.0/T)))*(1.54e-09 + (4.62e-10 * math::exp(((-93988.70150192466) * x34))))) + ((1250086.112245841 * math::exp(((-1.5) * math::log(math::abs(T)))))*(4.62e-10*(math::exp(((-93988.70150192466) * x34))*((-93988.70150192466)*dx34)))))*math::exp(((-469943.5075096421) * x34))) + (((1250086.112245841 * math::exp(((-1.5) * math::log(math::abs(T))))) * (1.54e-09 + (4.62e-10 * math::exp(((-93988.70150192466) * x34)))))*(math::exp(((-469943.5075096421) * x34))*((-469943.5075096421)*dx34)))) + dx32)
+   ((((((1250086.112245841*((-1.5*math::exp(((-1.5) * lnT)))*(1.0/T)))*(1.54e-09 + (4.62e-10 * math::exp(((-93988.70150192466) * x34))))) + ((1250086.112245841 * math::exp(((-1.5) * lnT)))*(4.62e-10*(math::exp(((-93988.70150192466) * x34))*((-93988.70150192466)*dx34)))))*math::exp(((-469943.5075096421) * x34))) + (((1250086.112245841 * math::exp(((-1.5) * lnT))) * (1.54e-09 + (4.62e-10 * math::exp(((-93988.70150192466) * x34)))))*(math::exp(((-469943.5075096421) * x34))*((-469943.5075096421)*dx34)))) + dx32)
 ));
 }
-DEVICE auto jacd_rhs_specie_choice_3_3(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x32, Real x33, Real x8, Real x9, Real dx10, Real dx11, Real dx12, Real dx13, Real dx14, Real dx15, Real dx32, Real dx33, Real dx8, Real dx9) {
+DEVICE auto jacd_rhs_specie_choice_3_3(Real T, Real x10, Real x11, Real x12, Real x13, Real x14, Real x15, Real x32, Real x33, Real x8, Real x9, Real dx10, Real dx11, Real dx12, Real dx13, Real dx14, Real dx15, Real dx32, Real dx33, Real dx8, Real dx9, Real lnT) {
 return ((x33 <= 5500.0) ? (
    dx32
 )
 : (
-   (((3.2867337024382687e-10*((-0.7241125657826851*math::exp(((-0.7241125657826851) * math::log(math::abs(T)))))*(1.0/T)))*math::exp((((((((((-2.4649195146505534) * x10) - (1.020773727011937 * x11)) + (3.3530579587656564 * x12)) + (3.620312764637779 * x13)) - (1.0930705283186732 * x14)) - (1.6921001126637107 * x15)) - (1.774686809424741 * x8)) - (1.951835616513679 * x9)))) + ((3.2867337024382687e-10 * math::exp(((-0.7241125657826851) * math::log(math::abs(T)))))*(math::exp((((((((((-2.4649195146505534) * x10) - (1.020773727011937 * x11)) + (3.3530579587656564 * x12)) + (3.620312764637779 * x13)) - (1.0930705283186732 * x14)) - (1.6921001126637107 * x15)) - (1.774686809424741 * x8)) - (1.951835616513679 * x9)))*(((((((((-2.4649195146505534)*dx10) - (1.020773727011937*dx11)) + (3.3530579587656564*dx12)) + (3.620312764637779*dx13)) - (1.0930705283186732*dx14)) - (1.6921001126637107*dx15)) - (1.774686809424741*dx8)) - (1.951835616513679*dx9)))))
+   (((3.2867337024382687e-10*((-0.7241125657826851*math::exp(((-0.7241125657826851) * lnT)))*(1.0/T)))*math::exp((((((((((-2.4649195146505534) * x10) - (1.020773727011937 * x11)) + (3.3530579587656564 * x12)) + (3.620312764637779 * x13)) - (1.0930705283186732 * x14)) - (1.6921001126637107 * x15)) - (1.774686809424741 * x8)) - (1.951835616513679 * x9)))) + ((3.2867337024382687e-10 * math::exp(((-0.7241125657826851) * lnT)))*(math::exp((((((((((-2.4649195146505534) * x10) - (1.020773727011937 * x11)) + (3.3530579587656564 * x12)) + (3.620312764637779 * x13)) - (1.0930705283186732 * x14)) - (1.6921001126637107 * x15)) - (1.774686809424741 * x8)) - (1.951835616513679 * x9)))*(((((((((-2.4649195146505534)*dx10) - (1.020773727011937*dx11)) + (3.3530579587656564*dx12)) + (3.620312764637779*dx13)) - (1.0930705283186732*dx14)) - (1.6921001126637107*dx15)) - (1.774686809424741*dx8)) - (1.951835616513679*dx9)))))
 ));
 }
 DEVICE auto jacd_rhs_specie_choice_4_4(Real T, Real x28, Real x29, Real dx28, Real dx29) {
@@ -4031,9 +4033,9 @@ return ((T >= 10.0 & T <= 100000.0) ? (
    0.0
 ));
 }
-DEVICE auto jacd_rhs_specie_choice_5_5(Real T, Real x46, Real x52, Real x53, Real x57, Real dx46, Real dx52, Real dx57) {
+DEVICE auto jacd_rhs_specie_choice_5_5(Real T, Real x46, Real x52, Real x53, Real x57, Real dx46, Real dx52, Real dx57, Real lnT) {
 return ((T < 30) ? (
-   (3.4977396723747635e-20*((-0.15*math::exp(((-0.15) * math::log(math::abs(T)))))*(1.0/T)))
+   (3.4977396723747635e-20*((-0.15*math::exp(((-0.15) * lnT)))*(1.0/T)))
 )
 : (
    (math::exp(((((((-3.194) * x46) + ((1.786 * x52) * x53)) - (0.2072 * x57)) - 18.2) * math::log(math::abs(10.0))))*(((((-3.194)*dx46) + ((1.786*dx52)*x53)) - (0.2072*dx57))*math::log(math::abs(10.0))))
@@ -4047,25 +4049,25 @@ return ((T >= 100.0 & T <= 30000.0) ? (
    0.0
 ));
 }
-DEVICE auto jacd_rhs_specie_choice_7_7(Real T, Real x0, Real x34, bool x4, Real dx0, Real dx34) {
+DEVICE auto jacd_rhs_specie_choice_7_7(Real T, Real x0, Real x34, bool x4, Real dx0, Real dx34, Real lnT) {
 return ((x4) ? (
    (((1.26e-09*dx0)*math::exp(((-127500.0) * x34))) + ((1.26e-09 * x0)*(math::exp(((-127500.0) * x34))*((-127500.0)*dx34))))
 )
 : (
-   (4e-37*((4.74*math::exp((4.74 * math::log(math::abs(T)))))*(1.0/T)))
+   (4e-37*((4.74*math::exp((4.74 * lnT)))*(1.0/T)))
 ));
 }
-DEVICE auto jacd_rhs_specie_choice_8_8(Real T, Real x34, bool x73, Real dx34) {
+DEVICE auto jacd_rhs_specie_choice_8_8(Real T, Real x34, bool x73, Real dx34, Real lnT) {
 return ((x73) ? (
-   ((((2e-10*((0.402*math::exp((0.402 * math::log(math::abs(T)))))*(1.0/T)))*math::exp(((-37.1) * x34))) + ((2e-10 * math::exp((0.402 * math::log(math::abs(T)))))*(math::exp(((-37.1) * x34))*((-37.1)*dx34)))) - (3.31e-17*((1.48*math::exp((1.48 * math::log(math::abs(T)))))*(1.0/T))))
+   ((((2e-10*((0.402*math::exp((0.402 * lnT)))*(1.0/T)))*math::exp(((-37.1) * x34))) + ((2e-10 * math::exp((0.402 * lnT)))*(math::exp(((-37.1) * x34))*((-37.1)*dx34)))) - (3.31e-17*((1.48*math::exp((1.48 * lnT)))*(1.0/T))))
 )
 : (
    0.0
 ));
 }
-DEVICE auto jacd_rhs_specie_choice_9_9(Real T, Real x34, bool x73, Real dx34) {
+DEVICE auto jacd_rhs_specie_choice_9_9(Real T, Real x34, bool x73, Real dx34, Real lnT) {
 return ((x73) ? (
-   ((2.03e-09*((-0.332*math::exp(((-0.332) * math::log(math::abs(T)))))*(1.0/T))) + (((2.06e-10*((0.396*math::exp((0.396 * math::log(math::abs(T)))))*(1.0/T)))*math::exp(((-33.0) * x34))) + ((2.06e-10 * math::exp((0.396 * math::log(math::abs(T)))))*(math::exp(((-33.0) * x34))*((-33.0)*dx34)))))
+   ((2.03e-09*((-0.332*math::exp(((-0.332) * lnT)))*(1.0/T))) + (((2.06e-10*((0.396*math::exp((0.396 * lnT)))*(1.0/T)))*math::exp(((-33.0) * x34))) + ((2.06e-10 * math::exp((0.396 * lnT)))*(math::exp(((-33.0) * x34))*((-33.0)*dx34)))))
 )
 : (
    0.0
@@ -4172,18 +4174,19 @@ DEVICE void jac_nuc_structural_zeros(Real* out) {
 }
 DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     Real T = temperature;
+    const Real lnT = math::log(math::abs(T));
     const Real rT = 1.0/T;
     // rows 0..13 by forward differentiation of rhs_specie (genjac.py)
     const Real rv1192 = 1.0/(9.1093818800000008e-28*xn[0] + 1.6726215800000001e-24*xn[1] + 5.01956503638e-24*xn[10] + 6.6902431600000005e-24*xn[11] + 6.6911540981899994e-24*xn[12] + 6.6920650363799998e-24*xn[13] + 1.6735325181900001e-24*xn[2] + 1.6744434563800001e-24*xn[3] + 3.3451215800000003e-24*xn[4] + 3.3460325181899999e-24*xn[5] + 3.3461540981899999e-24*xn[6] + 3.3469434563800003e-24*xn[7] + 3.3470650363800003e-24*xn[8] + 5.0186540981899997e-24*xn[9]);
     const Real rv1193 = 2.0860422997526066e-16*rv1192;
     const Real rv1194 = 3.4767371836380304e-16*rv1192;
     const Real dTde = 1.0/(xn[0]*rv1193 + xn[1]*rv1193 + xn[10]*rv1194 + xn[11]*rv1193 + xn[12]*rv1193 + xn[13]*rv1193 + xn[2]*rv1193 + xn[3]*rv1193 + xn[4]*rv1193 + xn[5]*rv1193 + xn[6]*rv1194 + xn[7]*rv1193 + xn[8]*rv1194 + xn[9]*rv1194);
-    const Real sx0 = math::exp((-0.75)*math::log(math::abs(T)));
-    const Real sdT_x0 = ((-0.75*math::exp(((-0.75) * math::log(math::abs(T)))))*rT);
-    const Real sx2 = 1.3300135414628029e-18*math::exp((0.94999999999999996)*math::log(math::abs(T)))*xn[0]*xn[5]*math::exp(-0.00010729613733905579*T);
-    const Real sdT_x2 = (((((1.3300135414628029e-18*((0.95*math::exp((0.95 * math::log(math::abs(T)))))*rT))*xn[0])*xn[5])*math::exp(((-0.00010729613733905579) * T))) + ((((1.3300135414628029e-18 * math::exp((0.95 * math::log(math::abs(T))))) * xn[0]) * xn[5])*(math::exp(((-0.00010729613733905579) * T))*((-0.00010729613733905579)*1.0))));
-    const Real sdn0_x2 = ((((1.3300135414628029e-18 * math::exp((0.95 * math::log(math::abs(T)))))*1.0)*xn[5])*math::exp(((-0.00010729613733905579) * T)));
-    const Real sdn5_x2 = ((((1.3300135414628029e-18 * math::exp((0.95 * math::log(math::abs(T))))) * xn[0])*1.0)*math::exp(((-0.00010729613733905579) * T)));
+    const Real sx0 = math::exp((-0.75)*lnT);
+    const Real sdT_x0 = ((-0.75*math::exp(((-0.75) * lnT)))*rT);
+    const Real sx2 = 1.3300135414628029e-18*math::exp((0.94999999999999996)*lnT)*xn[0]*xn[5]*math::exp(-0.00010729613733905579*T);
+    const Real sdT_x2 = (((((1.3300135414628029e-18*((0.95*math::exp((0.95 * lnT)))*rT))*xn[0])*xn[5])*math::exp(((-0.00010729613733905579) * T))) + ((((1.3300135414628029e-18 * math::exp((0.95 * lnT))) * xn[0]) * xn[5])*(math::exp(((-0.00010729613733905579) * T))*((-0.00010729613733905579)*1.0))));
+    const Real sdn0_x2 = ((((1.3300135414628029e-18 * math::exp((0.95 * lnT)))*1.0)*xn[5])*math::exp(((-0.00010729613733905579) * T)));
+    const Real sdn5_x2 = ((((1.3300135414628029e-18 * math::exp((0.95 * lnT))) * xn[0])*1.0)*math::exp(((-0.00010729613733905579) * T)));
     const Real a0_T_0 = -sdT_x2;
     const Real a0_n0_0 = -sdn0_x2;
     const Real a0_n5_0 = -sdn5_x2;
@@ -4212,7 +4215,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sx3 = ((T)*(T));
     const Real sdT_x3 = ((1.0*T) + (T*1.0));
     const Real sx4 = T <= 10000.0;
-    const Real sx6 = math::log(math::abs(T));
+    const Real sx6 = lnT;
     const Real sdT_x6 = (1.0*rT);
     const Real sx5 = xn[0]*xn[6]*rhs_specie_choice_0(T, sx3, sx4);
     const Real sdT_x5 = ((xn[0] * xn[6])*jacd_rhs_specie_choice_0_0(T, sx3, sx4, sdT_x3));
@@ -4253,25 +4256,25 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sx18 = xn[1]*xn[3];
     const Real sdn1_x18 = (1.0*xn[3]);
     const Real sdn3_x18 = (xn[1]*1.0);
-    const Real sx17 = sx16*rhs_specie_choice_1(T, sx10, sx11, sx12, sx13, sx14, sx15, sx8, sx9);
-    const Real sdT_x17 = (sx16*jacd_rhs_specie_choice_1_1(T, sx10, sx11, sx12, sx13, sx14, sx15, sx8, sx9, sdT_x10, sdT_x11, sdT_x12, sdT_x13, sdT_x14, sdT_x15, sdT_x8, sdT_x9));
-    const Real sdn2_x17 = (sdn2_x16*rhs_specie_choice_1(T, sx10, sx11, sx12, sx13, sx14, sx15, sx8, sx9));
-    const Real sdn3_x17 = (sdn3_x16*rhs_specie_choice_1(T, sx10, sx11, sx12, sx13, sx14, sx15, sx8, sx9));
+    const Real sx17 = sx16*rhs_specie_choice_1(T, sx10, sx11, sx12, sx13, sx14, sx15, sx8, sx9, lnT);
+    const Real sdT_x17 = (sx16*jacd_rhs_specie_choice_1_1(T, sx10, sx11, sx12, sx13, sx14, sx15, sx8, sx9, sdT_x10, sdT_x11, sdT_x12, sdT_x13, sdT_x14, sdT_x15, sdT_x8, sdT_x9, lnT));
+    const Real sdn2_x17 = (sdn2_x16*rhs_specie_choice_1(T, sx10, sx11, sx12, sx13, sx14, sx15, sx8, sx9, lnT));
+    const Real sdn3_x17 = (sdn3_x16*rhs_specie_choice_1(T, sx10, sx11, sx12, sx13, sx14, sx15, sx8, sx9, lnT));
     const Real a0_T_3 = a0_T_2 + sdT_x17;
     const Real a0_n2_0 = sdn2_x17;
     const Real a0_n3_0 = sdn3_x17;
-    const Real sx19 = 1.0e-8*math::exp((-0.40000000000000002)*math::log(math::abs(T)))*sx18;
-    const Real sdT_x19 = ((1e-08*((-0.4*math::exp(((-0.4) * math::log(math::abs(T)))))*rT))*sx18);
-    const Real sdn1_x19 = ((1e-08 * math::exp(((-0.4) * math::log(math::abs(T)))))*sdn1_x18);
-    const Real sdn3_x19 = ((1e-08 * math::exp(((-0.4) * math::log(math::abs(T)))))*sdn3_x18);
+    const Real sx19 = 1.0e-8*math::exp((-0.40000000000000002)*lnT)*sx18;
+    const Real sdT_x19 = ((1e-08*((-0.4*math::exp(((-0.4) * lnT)))*rT))*sx18);
+    const Real sdn1_x19 = ((1e-08 * math::exp(((-0.4) * lnT)))*sdn1_x18);
+    const Real sdn3_x19 = ((1e-08 * math::exp(((-0.4) * lnT)))*sdn3_x18);
     const Real a0_T_4 = a0_T_3 + sdT_x19;
     const Real a0_n1_0 = sdn1_x19;
     const Real a0_n3_1 = a0_n3_0 + sdn3_x19;
     const Real a3_T_0 = -sdT_x19;
     const Real a3_n1_0 = -sdn1_x19;
     const Real a3_n3_0 = -sdn3_x19;
-    const Real sx20 = 2.6534040307116387e-9*math::exp((-0.10000000000000001)*math::log(math::abs(T)));
-    const Real sdT_x20 = (2.6534040307116387e-09*((-0.1*math::exp(((-0.1) * math::log(math::abs(T)))))*rT));
+    const Real sx20 = 2.6534040307116387e-9*math::exp((-0.10000000000000001)*lnT);
+    const Real sdT_x20 = (2.6534040307116387e-09*((-0.1*math::exp(((-0.1) * lnT)))*rT));
     const Real sx21 = xn[3]*xn[5];
     const Real sdn3_x21 = (1.0*xn[5]);
     const Real sdn5_x21 = (xn[3]*1.0);
@@ -4292,24 +4295,24 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sx25 = xn[0]*xn[12];
     const Real sdn0_x25 = (1.0*xn[12]);
     const Real sdn12_x25 = (xn[0]*1.0);
-    const Real sx24 = 1.4000000000000001e-18*math::exp((0.92800000000000005)*math::log(math::abs(T)))*sx23*math::exp(-6.1728395061728397e-5*T);
-    const Real sdT_x24 = ((((1.4e-18*((0.928*math::exp((0.928 * math::log(math::abs(T)))))*rT))*sx23)*math::exp(((-6.17283950617284e-05) * T))) + (((1.4e-18 * math::exp((0.928 * math::log(math::abs(T))))) * sx23)*(math::exp(((-6.17283950617284e-05) * T))*((-6.17283950617284e-05)*1.0))));
-    const Real sdn0_x24 = (((1.4e-18 * math::exp((0.928 * math::log(math::abs(T)))))*sdn0_x23)*math::exp(((-6.17283950617284e-05) * T)));
-    const Real sdn2_x24 = (((1.4e-18 * math::exp((0.928 * math::log(math::abs(T)))))*sdn2_x23)*math::exp(((-6.17283950617284e-05) * T)));
+    const Real sx24 = 1.4000000000000001e-18*math::exp((0.92800000000000005)*lnT)*sx23*math::exp(-6.1728395061728397e-5*T);
+    const Real sdT_x24 = ((((1.4e-18*((0.928*math::exp((0.928 * lnT)))*rT))*sx23)*math::exp(((-6.17283950617284e-05) * T))) + (((1.4e-18 * math::exp((0.928 * lnT))) * sx23)*(math::exp(((-6.17283950617284e-05) * T))*((-6.17283950617284e-05)*1.0))));
+    const Real sdn0_x24 = (((1.4e-18 * math::exp((0.928 * lnT)))*sdn0_x23)*math::exp(((-6.17283950617284e-05) * T)));
+    const Real sdn2_x24 = (((1.4e-18 * math::exp((0.928 * lnT)))*sdn2_x23)*math::exp(((-6.17283950617284e-05) * T)));
     const Real a0_T_6 = a0_T_5 - sdT_x24;
     const Real a0_n0_3 = a0_n0_2 - sdn0_x24;
     const Real a0_n2_1 = a0_n2_0 - sdn2_x24;
-    const Real sx26 = 3.8571873359681582e-209*math::exp((43.933476326349997)*math::log(math::abs(T)))*sx25*math::exp(-5902.1601240760483*sx10 + 5825.9326359379538*sx11 - 3578.1439181805954*sx12 + 1242.7294446825149*sx13 - 186.35635455381879*sx14 - 1618.789587733125*sx8 + 3854.4033653120223*sx9);
-    const Real sdT_x26 = ((((3.857187335968158e-209*((43.93347632635*math::exp((43.93347632635 * math::log(math::abs(T)))))*rT))*sx25)*math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9)))) + (((3.857187335968158e-209 * math::exp((43.93347632635 * math::log(math::abs(T))))) * sx25)*(math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9)))*((((((((-5902.160124076048)*sdT_x10) + (5825.932635937954*sdT_x11)) - (3578.1439181805954*sdT_x12)) + (1242.729444682515*sdT_x13)) - (186.3563545538188*sdT_x14)) - (1618.789587733125*sdT_x8)) + (3854.4033653120223*sdT_x9)))));
-    const Real sdn0_x26 = (((3.857187335968158e-209 * math::exp((43.93347632635 * math::log(math::abs(T)))))*sdn0_x25)*math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9))));
-    const Real sdn12_x26 = (((3.857187335968158e-209 * math::exp((43.93347632635 * math::log(math::abs(T)))))*sdn12_x25)*math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9))));
+    const Real sx26 = 3.8571873359681582e-209*math::exp((43.933476326349997)*lnT)*sx25*math::exp(-5902.1601240760483*sx10 + 5825.9326359379538*sx11 - 3578.1439181805954*sx12 + 1242.7294446825149*sx13 - 186.35635455381879*sx14 - 1618.789587733125*sx8 + 3854.4033653120223*sx9);
+    const Real sdT_x26 = ((((3.857187335968158e-209*((43.93347632635*math::exp((43.93347632635 * lnT)))*rT))*sx25)*math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9)))) + (((3.857187335968158e-209 * math::exp((43.93347632635 * lnT))) * sx25)*(math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9)))*((((((((-5902.160124076048)*sdT_x10) + (5825.932635937954*sdT_x11)) - (3578.1439181805954*sdT_x12)) + (1242.729444682515*sdT_x13)) - (186.3563545538188*sdT_x14)) - (1618.789587733125*sdT_x8)) + (3854.4033653120223*sdT_x9)))));
+    const Real sdn0_x26 = (((3.857187335968158e-209 * math::exp((43.93347632635 * lnT)))*sdn0_x25)*math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9))));
+    const Real sdn12_x26 = (((3.857187335968158e-209 * math::exp((43.93347632635 * lnT)))*sdn12_x25)*math::exp(((((((((-5902.160124076048) * sx10) + (5825.932635937954 * sx11)) - (3578.1439181805954 * sx12)) + (1242.729444682515 * sx13)) - (186.3563545538188 * sx14)) - (1618.789587733125 * sx8)) + (3854.4033653120223 * sx9))));
     const Real a0_T_7 = a0_T_6 + sdT_x26;
     const Real a0_n0_4 = a0_n0_3 + sdn0_x26;
     const Real a0_n12_0 = sdn12_x26;
-    const Real sx27 = 3.7903999274394518e-18*math::exp((2.360852208681)*math::log(math::abs(T)))*xn[0]*xn[3]*math::exp(-258.18559308467115*sx10 + 846.15238706523724*sx11 - 1113.0879095147111*sx12 + 671.95094388835207*sx13 - 154.90262957142161*sx14 - 24.766609674457612*sx8 + 13.307984239358756*sx9);
-    const Real sdT_x27 = (((((3.790399927439452e-18*((2.360852208681*math::exp((2.360852208681 * math::log(math::abs(T)))))*rT))*xn[0])*xn[3])*math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9)))) + ((((3.790399927439452e-18 * math::exp((2.360852208681 * math::log(math::abs(T))))) * xn[0]) * xn[3])*(math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9)))*((((((((-258.18559308467115)*sdT_x10) + (846.1523870652372*sdT_x11)) - (1113.087909514711*sdT_x12)) + (671.9509438883521*sdT_x13)) - (154.9026295714216*sdT_x14)) - (24.766609674457612*sdT_x8)) + (13.307984239358756*sdT_x9)))));
-    const Real sdn0_x27 = ((((3.790399927439452e-18 * math::exp((2.360852208681 * math::log(math::abs(T)))))*1.0)*xn[3])*math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9))));
-    const Real sdn3_x27 = ((((3.790399927439452e-18 * math::exp((2.360852208681 * math::log(math::abs(T))))) * xn[0])*1.0)*math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9))));
+    const Real sx27 = 3.7903999274394518e-18*math::exp((2.360852208681)*lnT)*xn[0]*xn[3]*math::exp(-258.18559308467115*sx10 + 846.15238706523724*sx11 - 1113.0879095147111*sx12 + 671.95094388835207*sx13 - 154.90262957142161*sx14 - 24.766609674457612*sx8 + 13.307984239358756*sx9);
+    const Real sdT_x27 = (((((3.790399927439452e-18*((2.360852208681*math::exp((2.360852208681 * lnT)))*rT))*xn[0])*xn[3])*math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9)))) + ((((3.790399927439452e-18 * math::exp((2.360852208681 * lnT))) * xn[0]) * xn[3])*(math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9)))*((((((((-258.18559308467115)*sdT_x10) + (846.1523870652372*sdT_x11)) - (1113.087909514711*sdT_x12)) + (671.9509438883521*sdT_x13)) - (154.9026295714216*sdT_x14)) - (24.766609674457612*sdT_x8)) + (13.307984239358756*sdT_x9)))));
+    const Real sdn0_x27 = ((((3.790399927439452e-18 * math::exp((2.360852208681 * lnT)))*1.0)*xn[3])*math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9))));
+    const Real sdn3_x27 = ((((3.790399927439452e-18 * math::exp((2.360852208681 * lnT))) * xn[0])*1.0)*math::exp(((((((((-258.18559308467115) * sx10) + (846.1523870652372 * sx11)) - (1113.087909514711 * sx12)) + (671.9509438883521 * sx13)) - (154.9026295714216 * sx14)) - (24.766609674457612 * sx8)) + (13.307984239358756 * sx9))));
     const Real a0_T_8 = a0_T_7 + sdT_x27;
     const Real a0_n0_5 = a0_n0_4 + sdn0_x27;
     const Real a0_n3_3 = a0_n3_2 + sdn3_x27;
@@ -4328,37 +4331,37 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real a0_n0_6 = a0_n0_5 - sdn0_x31;
     const Real a0_n11_0 = -sdn11_x31;
     out[matrix_index(0, 11)] = a0_n11_0;
-    const Real sx32 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)));
-    const Real sdT_x32 = (1.4981088130721367e-10*((-0.6353*math::exp(((-0.6353) * math::log(math::abs(T)))))*rT));
+    const Real sx32 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*lnT);
+    const Real sdT_x32 = (1.4981088130721367e-10*((-0.6353*math::exp(((-0.6353) * lnT)))*rT));
     const Real sx34 = 1.0/T;
     const Real sdT_x34 = (-(((1.0 / T)*1.0)*rT));
     const Real sx33 = 8.6173430000000006e-5*T;
     const Real sdT_x33 = (8.617343e-05*1.0);
-    const Real sx35 = -4.3524079114767552e-117*math::exp((23.915965629999999)*math::log(math::abs(T)))*xn[0]*xn[13]*math::exp(-4361.9927099007555*sx10 + 4879.7345146260486*sx11 - 3366.4639698826941*sx12 + 1300.3028484326148*sx13 - 214.82451513312137*sx14 - 941.91483008144996*sx8 + 2506.9866529060901*sx9) + sx25*rhs_specie_choice_2(T, sx32, sx33, sx34);
-    const Real sdT_x35 = (((((((-4.352407911476755e-117)*((23.91596563*math::exp((23.91596563 * math::log(math::abs(T)))))*rT))*xn[0])*xn[13])*math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))) + (((((-4.352407911476755e-117) * math::exp((23.91596563 * math::log(math::abs(T))))) * xn[0]) * xn[13])*(math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))*((((((((-4361.9927099007555)*sdT_x10) + (4879.734514626049*sdT_x11)) - (3366.463969882694*sdT_x12)) + (1300.3028484326148*sdT_x13)) - (214.82451513312137*sdT_x14)) - (941.91483008145*sdT_x8)) + (2506.98665290609*sdT_x9))))) + (sx25*jacd_rhs_specie_choice_2_2(T, sx32, sx33, sx34, sdT_x32, sdT_x33, sdT_x34)));
-    const Real sdn0_x35 = ((((((-4.352407911476755e-117) * math::exp((23.91596563 * math::log(math::abs(T)))))*1.0)*xn[13])*math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))) + (sdn0_x25*rhs_specie_choice_2(T, sx32, sx33, sx34)));
-    const Real sdn12_x35 = (sdn12_x25*rhs_specie_choice_2(T, sx32, sx33, sx34));
-    const Real sdn13_x35 = (((((-4.352407911476755e-117) * math::exp((23.91596563 * math::log(math::abs(T))))) * xn[0])*1.0)*math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9))));
+    const Real sx35 = -4.3524079114767552e-117*math::exp((23.915965629999999)*lnT)*xn[0]*xn[13]*math::exp(-4361.9927099007555*sx10 + 4879.7345146260486*sx11 - 3366.4639698826941*sx12 + 1300.3028484326148*sx13 - 214.82451513312137*sx14 - 941.91483008144996*sx8 + 2506.9866529060901*sx9) + sx25*rhs_specie_choice_2(T, sx32, sx33, sx34, lnT);
+    const Real sdT_x35 = (((((((-4.352407911476755e-117)*((23.91596563*math::exp((23.91596563 * lnT)))*rT))*xn[0])*xn[13])*math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))) + (((((-4.352407911476755e-117) * math::exp((23.91596563 * lnT))) * xn[0]) * xn[13])*(math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))*((((((((-4361.9927099007555)*sdT_x10) + (4879.734514626049*sdT_x11)) - (3366.463969882694*sdT_x12)) + (1300.3028484326148*sdT_x13)) - (214.82451513312137*sdT_x14)) - (941.91483008145*sdT_x8)) + (2506.98665290609*sdT_x9))))) + (sx25*jacd_rhs_specie_choice_2_2(T, sx32, sx33, sx34, sdT_x32, sdT_x33, sdT_x34, lnT)));
+    const Real sdn0_x35 = ((((((-4.352407911476755e-117) * math::exp((23.91596563 * lnT)))*1.0)*xn[13])*math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9)))) + (sdn0_x25*rhs_specie_choice_2(T, sx32, sx33, sx34, lnT)));
+    const Real sdn12_x35 = (sdn12_x25*rhs_specie_choice_2(T, sx32, sx33, sx34, lnT));
+    const Real sdn13_x35 = (((((-4.352407911476755e-117) * math::exp((23.91596563 * lnT))) * xn[0])*1.0)*math::exp(((((((((-4361.9927099007555) * sx10) + (4879.734514626049 * sx11)) - (3366.463969882694 * sx12)) + (1300.3028484326148 * sx13)) - (214.82451513312137 * sx14)) - (941.91483008145 * sx8)) + (2506.98665290609 * sx9))));
     const Real a0_T_10 = a0_T_9 - sdT_x35;
     const Real a0_n0_7 = a0_n0_6 - sdn0_x35;
     const Real a0_n12_1 = a0_n12_0 - sdn12_x35;
     const Real a0_n13_0 = -sdn13_x35;
     out[matrix_index(0, 12)] = a0_n12_1;
     out[matrix_index(0, 13)] = a0_n13_0;
-    const Real sx36 = -5.9082438637265071e-70*math::exp((13.536555999999999)*math::log(math::abs(T)))*sx23*math::exp(-2207.4643501257692*sx10 + 2500.8077583366976*sx11 - 1768.8867461266502*sx12 + 704.19926629500367*sx13 - 120.0438480494693*sx14 - 502.72883252679094*sx8 + 1281.477767828706*sx9) + xn[0]*xn[1]*rhs_specie_choice_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9);
-    const Real sdT_x36 = ((((((-5.908243863726507e-70)*((13.536556*math::exp((13.536556 * math::log(math::abs(T)))))*rT))*sx23)*math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))) + ((((-5.908243863726507e-70) * math::exp((13.536556 * math::log(math::abs(T))))) * sx23)*(math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))*((((((((-2207.464350125769)*sdT_x10) + (2500.8077583366976*sdT_x11)) - (1768.8867461266502*sdT_x12)) + (704.1992662950037*sdT_x13)) - (120.0438480494693*sdT_x14)) - (502.72883252679094*sdT_x8)) + (1281.477767828706*sdT_x9))))) + ((xn[0] * xn[1])*jacd_rhs_specie_choice_3_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9, sdT_x10, sdT_x11, sdT_x12, sdT_x13, sdT_x14, sdT_x15, sdT_x32, sdT_x33, sdT_x8, sdT_x9)));
-    const Real sdn0_x36 = (((((-5.908243863726507e-70) * math::exp((13.536556 * math::log(math::abs(T)))))*sdn0_x23)*math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))) + ((1.0*xn[1])*rhs_specie_choice_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9)));
-    const Real sdn1_x36 = ((xn[0]*1.0)*rhs_specie_choice_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9));
-    const Real sdn2_x36 = ((((-5.908243863726507e-70) * math::exp((13.536556 * math::log(math::abs(T)))))*sdn2_x23)*math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9))));
+    const Real sx36 = -5.9082438637265071e-70*math::exp((13.536555999999999)*lnT)*sx23*math::exp(-2207.4643501257692*sx10 + 2500.8077583366976*sx11 - 1768.8867461266502*sx12 + 704.19926629500367*sx13 - 120.0438480494693*sx14 - 502.72883252679094*sx8 + 1281.477767828706*sx9) + xn[0]*xn[1]*rhs_specie_choice_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9, lnT);
+    const Real sdT_x36 = ((((((-5.908243863726507e-70)*((13.536556*math::exp((13.536556 * lnT)))*rT))*sx23)*math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))) + ((((-5.908243863726507e-70) * math::exp((13.536556 * lnT))) * sx23)*(math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))*((((((((-2207.464350125769)*sdT_x10) + (2500.8077583366976*sdT_x11)) - (1768.8867461266502*sdT_x12)) + (704.1992662950037*sdT_x13)) - (120.0438480494693*sdT_x14)) - (502.72883252679094*sdT_x8)) + (1281.477767828706*sdT_x9))))) + ((xn[0] * xn[1])*jacd_rhs_specie_choice_3_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9, sdT_x10, sdT_x11, sdT_x12, sdT_x13, sdT_x14, sdT_x15, sdT_x32, sdT_x33, sdT_x8, sdT_x9, lnT)));
+    const Real sdn0_x36 = (((((-5.908243863726507e-70) * math::exp((13.536556 * lnT)))*sdn0_x23)*math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9)))) + ((1.0*xn[1])*rhs_specie_choice_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9, lnT)));
+    const Real sdn1_x36 = ((xn[0]*1.0)*rhs_specie_choice_3(T, sx10, sx11, sx12, sx13, sx14, sx15, sx32, sx33, sx8, sx9, lnT));
+    const Real sdn2_x36 = ((((-5.908243863726507e-70) * math::exp((13.536556 * lnT)))*sdn2_x23)*math::exp(((((((((-2207.464350125769) * sx10) + (2500.8077583366976 * sx11)) - (1768.8867461266502 * sx12)) + (704.1992662950037 * sx13)) - (120.0438480494693 * sx14)) - (502.72883252679094 * sx8)) + (1281.477767828706 * sx9))));
     const Real a0_T_11 = a0_T_10 - sdT_x36;
     const Real a0_n0_8 = a0_n0_7 - sdn0_x36;
     const Real a0_n1_1 = a0_n1_0 - sdn1_x36;
     const Real a0_n2_2 = a0_n2_1 - sdn2_x36;
     out[matrix_index(0, 1)] = a0_n1_1;
-    const Real sx40 = sx16*(1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T))))/(0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0);
-    const Real sdT_x40 = (((sx16*(((1.35e-09*((0.098493*math::exp((0.098493 * math::log(math::abs(T)))))*rT)) + (4.43502e-10*((0.5561*math::exp((0.5561 * math::log(math::abs(T)))))*rT))) + (3.7408500000000004e-16*((2.1826*math::exp((2.1826 * math::log(math::abs(T)))))*rT))))/((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0)) - ((((sx16 * (((1.35e-09 * math::exp((0.098493 * math::log(math::abs(T))))) + (4.43502e-10 * math::exp((0.5561 * math::log(math::abs(T)))))) + (3.7408500000000004e-16 * math::exp((2.1826 * math::log(math::abs(T))))))) / ((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0))*(((0.006191*((1.0461*math::exp((1.0461 * math::log(math::abs(T)))))*rT)) + (8.9712e-11*((3.0424*math::exp((3.0424 * math::log(math::abs(T)))))*rT))) + (3.2576e-14*((3.7741*math::exp((3.7741 * math::log(math::abs(T)))))*rT))))/((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0)));
-    const Real sdn2_x40 = ((sdn2_x16*(((1.35e-09 * math::exp((0.098493 * math::log(math::abs(T))))) + (4.43502e-10 * math::exp((0.5561 * math::log(math::abs(T)))))) + (3.7408500000000004e-16 * math::exp((2.1826 * math::log(math::abs(T)))))))/((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0));
-    const Real sdn3_x40 = ((sdn3_x16*(((1.35e-09 * math::exp((0.098493 * math::log(math::abs(T))))) + (4.43502e-10 * math::exp((0.5561 * math::log(math::abs(T)))))) + (3.7408500000000004e-16 * math::exp((2.1826 * math::log(math::abs(T)))))))/((((0.006191 * math::exp((1.0461 * math::log(math::abs(T))))) + (8.9712e-11 * math::exp((3.0424 * math::log(math::abs(T)))))) + (3.2576e-14 * math::exp((3.7741 * math::log(math::abs(T)))))) + 1.0));
+    const Real sx40 = sx16*(1.3500000000000001e-9*math::exp((0.098492999999999997)*lnT) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*lnT) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*lnT))/(0.0061910000000000003*math::exp((1.0461)*lnT) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*lnT) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*lnT) + 1.0);
+    const Real sdT_x40 = (((sx16*(((1.35e-09*((0.098493*math::exp((0.098493 * lnT)))*rT)) + (4.43502e-10*((0.5561*math::exp((0.5561 * lnT)))*rT))) + (3.7408500000000004e-16*((2.1826*math::exp((2.1826 * lnT)))*rT))))/((((0.006191 * math::exp((1.0461 * lnT))) + (8.9712e-11 * math::exp((3.0424 * lnT)))) + (3.2576e-14 * math::exp((3.7741 * lnT)))) + 1.0)) - ((((sx16 * (((1.35e-09 * math::exp((0.098493 * lnT))) + (4.43502e-10 * math::exp((0.5561 * lnT)))) + (3.7408500000000004e-16 * math::exp((2.1826 * lnT))))) / ((((0.006191 * math::exp((1.0461 * lnT))) + (8.9712e-11 * math::exp((3.0424 * lnT)))) + (3.2576e-14 * math::exp((3.7741 * lnT)))) + 1.0))*(((0.006191*((1.0461*math::exp((1.0461 * lnT)))*rT)) + (8.9712e-11*((3.0424*math::exp((3.0424 * lnT)))*rT))) + (3.2576e-14*((3.7741*math::exp((3.7741 * lnT)))*rT))))/((((0.006191 * math::exp((1.0461 * lnT))) + (8.9712e-11 * math::exp((3.0424 * lnT)))) + (3.2576e-14 * math::exp((3.7741 * lnT)))) + 1.0)));
+    const Real sdn2_x40 = ((sdn2_x16*(((1.35e-09 * math::exp((0.098493 * lnT))) + (4.43502e-10 * math::exp((0.5561 * lnT)))) + (3.7408500000000004e-16 * math::exp((2.1826 * lnT)))))/((((0.006191 * math::exp((1.0461 * lnT))) + (8.9712e-11 * math::exp((3.0424 * lnT)))) + (3.2576e-14 * math::exp((3.7741 * lnT)))) + 1.0));
+    const Real sdn3_x40 = ((sdn3_x16*(((1.35e-09 * math::exp((0.098493 * lnT))) + (4.43502e-10 * math::exp((0.5561 * lnT)))) + (3.7408500000000004e-16 * math::exp((2.1826 * lnT)))))/((((0.006191 * math::exp((1.0461 * lnT))) + (8.9712e-11 * math::exp((3.0424 * lnT)))) + (3.2576e-14 * math::exp((3.7741 * lnT)))) + 1.0));
     const Real sx37 = 7.1999999999999996e-8*xn[9]*sx30;
     const Real sdT_x37 = ((7.2e-08 * xn[9])*sdT_x30);
     const Real sdn0_x37 = ((7.2e-08 * xn[9])*sdn0_x30);
@@ -4380,10 +4383,10 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sx41 = xn[0]*xn[8];
     const Real sdn0_x41 = (1.0*xn[8]);
     const Real sdn8_x41 = (xn[0]*1.0);
-    const Real sx42 = 35.5*math::exp((-2.2799999999999998)*math::log(math::abs(T)))*sx41*math::exp(-46707.0*sx34);
-    const Real sdT_x42 = ((((35.5*((-2.28*math::exp(((-2.28) * math::log(math::abs(T)))))*rT))*sx41)*math::exp(((-46707.0) * sx34))) + (((35.5 * math::exp(((-2.28) * math::log(math::abs(T))))) * sx41)*(math::exp(((-46707.0) * sx34))*((-46707.0)*sdT_x34))));
-    const Real sdn0_x42 = (((35.5 * math::exp(((-2.28) * math::log(math::abs(T)))))*sdn0_x41)*math::exp(((-46707.0) * sx34)));
-    const Real sdn8_x42 = (((35.5 * math::exp(((-2.28) * math::log(math::abs(T)))))*sdn8_x41)*math::exp(((-46707.0) * sx34)));
+    const Real sx42 = 35.5*math::exp((-2.2799999999999998)*lnT)*sx41*math::exp(-46707.0*sx34);
+    const Real sdT_x42 = ((((35.5*((-2.28*math::exp(((-2.28) * lnT)))*rT))*sx41)*math::exp(((-46707.0) * sx34))) + (((35.5 * math::exp(((-2.28) * lnT))) * sx41)*(math::exp(((-46707.0) * sx34))*((-46707.0)*sdT_x34))));
+    const Real sdn0_x42 = (((35.5 * math::exp(((-2.28) * lnT)))*sdn0_x41)*math::exp(((-46707.0) * sx34)));
+    const Real sdn8_x42 = (((35.5 * math::exp(((-2.28) * lnT)))*sdn8_x41)*math::exp(((-46707.0) * sx34)));
     const Real sx43 = sx37 - sx39 - sx40 + sx42;
     const Real sdT_x43 = (((sdT_x37 - sdT_x39) - sdT_x40) + sdT_x42);
     const Real sdn0_x43 = (sdn0_x37 + sdn0_x42);
@@ -4468,10 +4471,10 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real a1_n8_0 = ((xn[4]*1.0)*sx55);
     const Real sx57 = sx56/((sx44)*(sx44)*(sx44));
     const Real sdT_x57 = (sdT_x56/((sx44 * sx44) * sx44));
-    const Real sx58 = xn[1]*xn[2]*rhs_specie_choice_5(T, sx46, sx52, sx53, sx57);
-    const Real sdT_x58 = ((xn[1] * xn[2])*jacd_rhs_specie_choice_5_5(T, sx46, sx52, sx53, sx57, sdT_x46, sdT_x52, sdT_x57));
-    const Real sdn1_x58 = ((1.0*xn[2])*rhs_specie_choice_5(T, sx46, sx52, sx53, sx57));
-    const Real sdn2_x58 = ((xn[1]*1.0)*rhs_specie_choice_5(T, sx46, sx52, sx53, sx57));
+    const Real sx58 = xn[1]*xn[2]*rhs_specie_choice_5(T, sx46, sx52, sx53, sx57, lnT);
+    const Real sdT_x58 = ((xn[1] * xn[2])*jacd_rhs_specie_choice_5_5(T, sx46, sx52, sx53, sx57, sdT_x46, sdT_x52, sdT_x57, lnT));
+    const Real sdn1_x58 = ((1.0*xn[2])*rhs_specie_choice_5(T, sx46, sx52, sx53, sx57, lnT));
+    const Real sdn2_x58 = ((xn[1]*1.0)*rhs_specie_choice_5(T, sx46, sx52, sx53, sx57, lnT));
     const Real a2_T_3 = a2_T_2 - sdT_x58;
     const Real a2_n1_1 = a2_n1_0 - sdn1_x58;
     const Real a2_n2_1 = a2_n2_0 - sdn2_x58;
@@ -4538,8 +4541,8 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sdn9_x66 = (-sdn9_x65);
     const Real a9_n2_0 = sdn2_x66;
     const Real a9_n9_0 = sdn9_x66;
-    const Real sx67 = math::exp((-0.5)*math::log(math::abs(T)));
-    const Real sdT_x67 = ((-0.5*math::exp(((-0.5) * math::log(math::abs(T)))))*rT);
+    const Real sx67 = math::exp((-0.5)*lnT);
+    const Real sdT_x67 = ((-0.5*math::exp(((-0.5) * lnT)))*rT);
     const Real a5_T_2 = a5_T_1 + (((1.9745379206285203e-06 * xn[4]) * xn[7])*sdT_x67);
     const Real a5_n4_1 = a5_n4_0 + (((1.9745379206285203e-06*1.0)*xn[7])*sx67);
     const Real a5_n7_0 = (((1.9745379206285203e-06 * xn[4])*1.0)*sx67);
@@ -4557,12 +4560,12 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real a7_n1_0 = -sdn1_x69;
     const Real a7_n7_1 = a7_n7_0 - sdn7_x69;
     out[matrix_index(7, 1)] = a7_n1_0;
-    const Real sx70 = xn[1]*xn[13]*rhs_specie_choice_7(T, sx0, sx34, sx4);
-    const Real sdT_x70 = ((xn[1] * xn[13])*jacd_rhs_specie_choice_7_7(T, sx0, sx34, sx4, sdT_x0, sdT_x34));
-    const Real sdn1_x70 = ((1.0*xn[13])*rhs_specie_choice_7(T, sx0, sx34, sx4));
-    const Real sdn13_x70 = ((xn[1]*1.0)*rhs_specie_choice_7(T, sx0, sx34, sx4));
-    const Real sx71 = math::exp((0.25)*math::log(math::abs(T)));
-    const Real sdT_x71 = ((0.25*math::exp((0.25 * math::log(math::abs(T)))))*rT);
+    const Real sx70 = xn[1]*xn[13]*rhs_specie_choice_7(T, sx0, sx34, sx4, lnT);
+    const Real sdT_x70 = ((xn[1] * xn[13])*jacd_rhs_specie_choice_7_7(T, sx0, sx34, sx4, sdT_x0, sdT_x34, lnT));
+    const Real sdn1_x70 = ((1.0*xn[13])*rhs_specie_choice_7(T, sx0, sx34, sx4, lnT));
+    const Real sdn13_x70 = ((xn[1]*1.0)*rhs_specie_choice_7(T, sx0, sx34, sx4, lnT));
+    const Real sx71 = math::exp((0.25)*lnT);
+    const Real sdT_x71 = ((0.25*math::exp((0.25 * lnT)))*rT);
     const Real sx72 = 2.8833736969617052e-16*xn[12]*xn[2]*sx71;
     const Real sdT_x72 = (((2.883373696961705e-16 * xn[12]) * xn[2])*sdT_x71);
     const Real sdn2_x72 = (((2.883373696961705e-16 * xn[12])*1.0)*sx71);
@@ -4571,18 +4574,18 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sx75 = xn[2]*xn[4];
     const Real sdn2_x75 = (1.0*xn[4]);
     const Real sdn4_x75 = (xn[2]*1.0);
-    const Real sx74 = sx48*rhs_specie_choice_8(T, sx34, sx73);
-    const Real sdT_x74 = (sx48*jacd_rhs_specie_choice_8_8(T, sx34, sx73, sdT_x34));
-    const Real sdn1_x74 = (sdn1_x48*rhs_specie_choice_8(T, sx34, sx73));
-    const Real sdn5_x74 = (sdn5_x48*rhs_specie_choice_8(T, sx34, sx73));
+    const Real sx74 = sx48*rhs_specie_choice_8(T, sx34, sx73, lnT);
+    const Real sdT_x74 = (sx48*jacd_rhs_specie_choice_8_8(T, sx34, sx73, sdT_x34, lnT));
+    const Real sdn1_x74 = (sdn1_x48*rhs_specie_choice_8(T, sx34, sx73, lnT));
+    const Real sdn5_x74 = (sdn5_x48*rhs_specie_choice_8(T, sx34, sx73, lnT));
     const Real a4_T_1 = a4_T_0 + sdT_x74;
     const Real a4_n1_0 = sdn1_x74;
     const Real a4_n5_0 = sdn5_x74;
     out[matrix_index(4, 5)] = a4_n5_0;
-    const Real sx76 = sx75*rhs_specie_choice_9(T, sx34, sx73);
-    const Real sdT_x76 = (sx75*jacd_rhs_specie_choice_9_9(T, sx34, sx73, sdT_x34));
-    const Real sdn2_x76 = (sdn2_x75*rhs_specie_choice_9(T, sx34, sx73));
-    const Real sdn4_x76 = (sdn4_x75*rhs_specie_choice_9(T, sx34, sx73));
+    const Real sx76 = sx75*rhs_specie_choice_9(T, sx34, sx73, lnT);
+    const Real sdT_x76 = (sx75*jacd_rhs_specie_choice_9_9(T, sx34, sx73, sdT_x34, lnT));
+    const Real sdn2_x76 = (sdn2_x75*rhs_specie_choice_9(T, sx34, sx73, lnT));
+    const Real sdn4_x76 = (sdn4_x75*rhs_specie_choice_9(T, sx34, sx73, lnT));
     const Real a4_T_2 = a4_T_1 - sdT_x76;
     const Real a4_n2_0 = -sdn2_x76;
     const Real a4_n4_1 = a4_n4_0 - sdn4_x76;
@@ -4758,10 +4761,10 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real sdn8_x98 = (-(((1.0 / ((math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0)))) * sx83) + 1.0))*(math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0))))*sdn8_x83))/((math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0)))) * sx83) + 1.0)));
     const Real sdn9_x98 = (-(((1.0 / ((math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0)))) * sx83) + 1.0))*(math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0))))*sdn9_x83))/((math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0)))) * sx83) + 1.0)));
     const Real sdn10_x98 = (-(((1.0 / ((math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0)))) * sx83) + 1.0))*(math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0))))*sdn10_x83))/((math::exp((((((1.3 * sx45) * (sx6 - 9.210340371976184)) - ((137.42519902360013 * sx53) * (((0.10857362047581294 * sx6) - 1.0) * ((0.10857362047581294 * sx6) - 1.0)))) - 4.845) * math::log(math::abs(10.0)))) * sx83) + 1.0)));
-    const Real sx100 = math::exp((0.34999999999999998)*math::log(math::abs(T)))*sx41*math::exp(-102000.0*sx34);
-    const Real sdT_x100 = (((((0.35*math::exp((0.35 * math::log(math::abs(T)))))*rT)*sx41)*math::exp(((-102000.0) * sx34))) + ((math::exp((0.35 * math::log(math::abs(T)))) * sx41)*(math::exp(((-102000.0) * sx34))*((-102000.0)*sdT_x34))));
-    const Real sdn0_x100 = ((math::exp((0.35 * math::log(math::abs(T))))*sdn0_x41)*math::exp(((-102000.0) * sx34)));
-    const Real sdn8_x100 = ((math::exp((0.35 * math::log(math::abs(T))))*sdn8_x41)*math::exp(((-102000.0) * sx34)));
+    const Real sx100 = math::exp((0.34999999999999998)*lnT)*sx41*math::exp(-102000.0*sx34);
+    const Real sdT_x100 = (((((0.35*math::exp((0.35 * lnT)))*rT)*sx41)*math::exp(((-102000.0) * sx34))) + ((math::exp((0.35 * lnT)) * sx41)*(math::exp(((-102000.0) * sx34))*((-102000.0)*sdT_x34))));
+    const Real sdn0_x100 = ((math::exp((0.35 * lnT))*sdn0_x41)*math::exp(((-102000.0) * sx34)));
+    const Real sdn8_x100 = ((math::exp((0.35 * lnT))*sdn8_x41)*math::exp(((-102000.0) * sx34)));
     const Real a2_T_11 = a2_T_10 + (8.76e-10*sdT_x100);
     const Real a2_n0_3 = a2_n0_2 + (8.76e-10*sdn0_x100);
     const Real a2_n8_4 = a2_n8_3 + (8.76e-10*sdn8_x100);
@@ -4819,8 +4822,8 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real a2_n5_2 = a2_n5_1 + sdn5_x103;
     const Real a2_n8_6 = a2_n8_5 + sdn8_x103;
     const Real a2_n10_2 = a2_n10_1 + sdn10_x103;
-    const Real sx104 = 6.1739095063118665e-10*math::exp((0.40999999999999998)*math::log(math::abs(T)));
-    const Real sdT_x104 = (6.173909506311866e-10*((0.41*math::exp((0.41 * math::log(math::abs(T)))))*rT));
+    const Real sx104 = 6.1739095063118665e-10*math::exp((0.40999999999999998)*lnT);
+    const Real sdT_x104 = (6.173909506311866e-10*((0.41*math::exp((0.41 * lnT)))*rT));
     const Real sx105 = sx104*sx21;
     const Real sdT_x105 = (sdT_x104*sx21);
     const Real sdn3_x105 = (sx104*sdn3_x21);
@@ -5104,10 +5107,10 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1846 = v1784*v1845;
     const Real v1738 = math::powi<-3>(v1704);
     const Real v1851 = v1706*v1850;
-    const Real v1862 = math::exp((16.666666666666664*v1705)*math::log(math::abs(T)));
+    const Real v1862 = math::exp((16.666666666666664*v1705)*lnT);
     const Real v1847 = ((((v1844)*(v1844)))*(((v1844)*(v1844))));
     const Real v1865 = 1.0/(5.0592917094448065e-34*v1862 + 10.0);
-    const Real v1839 = math::exp((25.0*v1705)*math::log(math::abs(T)));
+    const Real v1839 = math::exp((25.0*v1705)*lnT);
     const Real v1840 = 1.0/v1839;
     const Real v1863 = 1.0/v1862;
     const Real v1864 = 1.0/(785.77199422741614*v1863 + 10.0);
@@ -5125,7 +5128,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1868 = xn[13]*v1867;
     const Real v1937 = v1868 + v1872;
     const Real v1940 = v1854 + v1937;
-    const Real v1882 = math::exp((17.997580222853362*v1705)*math::log(math::abs(T)));
+    const Real v1882 = math::exp((17.997580222853362*v1705)*lnT);
     const Real v1883 = 1.0/v1882;
     const Real v1885 = 1.0/(1.3368457736780898e-34*v1882 + 10.0);
     const Real v1884 = 1.0/(2973.7534532281375*v1883 + 10.0);
@@ -5196,14 +5199,14 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1964 = v1914 >= 1.0e-99;
     const Real v1908 = ((T)*(T)*(T));
     const Real v1909 = 1.0/v1908;
-    const Real v1907 = 6.0142468035272636e-8*math::exp((2.1000000000000001)*math::log(math::abs(T))) + 1.0;
+    const Real v1907 = 6.0142468035272636e-8*math::exp((2.1000000000000001)*lnT) + 1.0;
     const Real v1910 = math::exp(-2197000.0*v1909);
     const Real v1911 = v1910/v1907;
     const Real v1612 = 1.0/T;
     const Real v1906 = math::exp(-510.0*v1612);
     const Real v1904 = math::exp(-11700.0*v1612);
     const Real v1905 = math::exp(-5860.0*v1612);
-    const Real v1912 = 4.985670872372847e-33*math::exp((3.7599999999999998)*math::log(math::abs(T)))*v1911 + 1.6e-18*v1904 + 6.7e-19*v1905 + 3.0e-24*v1906;
+    const Real v1912 = 4.985670872372847e-33*math::exp((3.7599999999999998)*lnT)*v1911 + 1.6e-18*v1904 + 6.7e-19*v1905 + 3.0e-24*v1906;
     const Real v1924 = v1912 >= 1.0e-99;
     const Real v1859 = T <= 10000.0;
     const Real v1860 = T > 10.0;
@@ -5245,7 +5248,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2132 = v1773*v1849*v1612;
     const Real v2137 = v1843*jac_nuc_choice_241(v1895, v1898, v1900, v1901, v2116, v2127, v2128, v2129, v2130, v2131, v2132, v2133) + v1854*v2135 + v1854*(4.8223900769399082*v1705*v1612 + 3.0182298984217999*v1738*v1850*v1612 - 3.5529549287336835*v2127 - 0.3872755400043702*v2131 - 1.3735579540080118*v2132) + v1902*v2135 + jac_nuc_choice_242(v1858, v1861, v1868, v2116, v2127, v2131, v2132, v2133, v2136) + jac_nuc_choice_243(v1861, v1870, v1872, v2116, v2127, v2131, v2132, v2133, v2136) + jac_nuc_choice_246(v1705, v1874, v1875, v1877, v1878, v1880, v1881, v1882, v1883, v1884, v1885, v1887, v2116, v2127, v2131, v2132, v2133, v1612);
     const Real v1652 = math::powi<-2>(math::abs(T));
-    const Real v2134 = jac_nuc_choice_239(T, v1859, v1904, v1905, v1906, v1907, v1910, v1911, v1913, v1914, v1917, v1918, v1919, v1652, v2116, v2127, v2128, v2129, v2130, v2131, v2132, v2133);
+    const Real v2134 = jac_nuc_choice_239(T, v1859, v1904, v1905, v1906, v1907, v1910, v1911, v1913, v1914, v1917, v1918, v1919, v1652, v2116, v2127, v2128, v2129, v2130, v2131, v2132, v2133, lnT);
     const Real v1777 = xn[2] <= 0.01;
     const Real v1778 = jac_nuc_choice_93(v1777, xn);
     const Real v1779 = math::log(jac_nuc_choice_95(v1777, v1778, xn));
@@ -5308,7 +5311,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1820 = jac_nuc_choice_106(v1808, v1809, v1810, v1811, v1814, v1816, v1817, v1818, v1819);
     const Real v1829 = jac_nuc_choice_111(v1820, v1828);
     const Real acc14_0 = -(0.00090725968 * v1822 * v1829 * v1908 * v1698);
-    const Real v1723 = math::log(math::abs(T));
+    const Real v1723 = lnT;
     const Real v1724 = ((v1723)*(v1723));
     const Real v1725 = v1706*v1724;
     const Real v1726 = -4.8909149999999997*v1705*v1723 + 0.47490300000000002*v1725 - 133.82830000000001*v1612;
@@ -5394,16 +5397,16 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1659 = v1650*v1658;
     const Real v2018 = math::exp((-2)*math::log(math::abs(v1659 + 9.9999999999999995e-7)));
     const Real v2035 = v1650*v1651/((v1654 + 0.87499999999999989*v1656)*(v1654 + 0.87499999999999989*v1656));
-    const Real v1642 = math::exp((-1.5)*math::log(math::abs(T)));
+    const Real v1642 = math::exp((-1.5)*lnT);
     const Real v2107 = v2018*(500000.0*v1642*v1650*v1657 - 390624.99999999994*v2035*(-512000.0*v1909*v1654 - 0.011666666666666665*v1656/((0.00083333333333333339*T + 1)*(0.00083333333333333339*T + 1))));
     const Real v2012 = math::powi<-2>(math::abs(v1709));
     const Real v1660 = 1.0/(1000000.0*v1659 + 1.0);
     const Real v2013 = v2012*math::log(v1717);
     const Real v2043 = 5.6556829037999995e-12*v1660;
-    const Real v1693 = 0.0061910000000000003*math::exp((1.0461)*math::log(math::abs(T))) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*math::log(math::abs(T))) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*math::log(math::abs(T))) + 1.0;
+    const Real v1693 = 0.0061910000000000003*math::exp((1.0461)*lnT) + 8.9711999999999997e-11*math::exp((3.0424000000000002)*lnT) + 3.2575999999999999e-14*math::exp((3.7740999999999998)*lnT) + 1.0;
     const Real v1694 = 1.0/v1693;
     const Real v2051 = xn[2]*v2043*v1694;
-    const Real acc14_1 = acc14_0 + xn[3] * v2051 * (1.3296555e-10 * math::exp(-0.9015070000000001 * math::log(math::abs(T))) + 2.466314622e-10 * math::exp(-0.44389999999999996 * math::log(math::abs(T))) + 8.16477921e-16 * math::exp(1.1825999999999999 * math::log(math::abs(T))));
+    const Real acc14_1 = acc14_0 + xn[3] * v2051 * (1.3296555e-10 * math::exp(-0.9015070000000001 * lnT) + 2.466314622e-10 * math::exp(-0.44389999999999996 * lnT) + 8.16477921e-16 * math::exp(1.1825999999999999 * lnT));
     const Real v2016 = math::log(v1702);
     const Real acc8_0 = 1.43555010816e-11 * v1707 * v1712 * v1719 * v2012 * v2016 * v1701;
     const Real v2049 = v2012*v2016;
@@ -5415,7 +5418,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1833 = 0.00022681492*v1698;
     const Real v1983 = v1831*v1833;
     const Real v1620 = T <= 10;
-    const Real acc14_2 = acc14_1 - 1.55e-26 * v1641 * jac_nuc_choice_289(T, v1620);
+    const Real acc14_2 = acc14_1 - 1.55e-26 * v1641 * jac_nuc_choice_289(T, v1620, lnT);
     const Real v1624 = jac_nuc_choice_85(v1620, v1623);
     const Real v1625 = 0.0031622776601683794*v1624 + 1.0;
     const Real v1626 = 1.0/v1625;
@@ -5430,9 +5433,9 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1998 = v1727*v1728;
     const Real v2002 = v1762*v1763;
     const Real v2007 = v1751*v1752;
-    const Real v1632 = 6.3095734448019361e-5*jac_nuc_choice_87(T, v1620) + 1.0;
+    const Real v1632 = 6.3095734448019361e-5*jac_nuc_choice_87(T, v1620, lnT) + 1.0;
     const Real v1633 = 1.0/v1632;
-    const Real v1634 = jac_nuc_choice_88(T, v1620);
+    const Real v1634 = jac_nuc_choice_88(T, v1620, lnT);
     const Real v1635 = v1633*v1634;
     const Real v2085 = 1.0/v1623;
     const Real acc14_4 = acc14_3 - v1983 * jac_nuc_choice_290(v1820, v1826, v1982, v2085, v1695, v1698);
@@ -5445,7 +5448,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2093 = v2086*v1661;
     const Real v1627 = xn[2]*v1626;
     const Real v2097 = v1627*v2082;
-    const Real v2098 = v1672*jac_nuc_choice_233(T, v1620);
+    const Real v2098 = v1672*jac_nuc_choice_233(T, v1620, lnT);
     const Real v2095 = v2086/((v1625)*(v1625));
     const Real v2101 = v1641*v2095;
     const Real v2102 = xn[12]*v2095*v1670;
@@ -5470,8 +5473,8 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2083 = v1641*v1643*v2082;
     const Real acc14_8 = acc14_7 + 3.4968e-09 * v2083 * math::exp(-564000.0 * v1628);
     const Real v2090 = xn[0]*v1624;
-    const Real v2091 = v1633*v2090*jac_nuc_choice_232(T, v1620);
-    const Real v2099 = v1634*v2090*jac_nuc_choice_234(T, v1620)/((v1632)*(v1632));
+    const Real v2091 = v1633*v2090*jac_nuc_choice_232(T, v1620, lnT);
+    const Real v2099 = v1634*v2090*jac_nuc_choice_234(T, v1620, lnT)/((v1632)*(v1632));
     const Real acc14_9 = acc14_8 + 2.185341195413336e-30 * xn[1] * v2099;
     const Real acc14_10 = acc14_9 + 8.741364781653344e-30 * xn[11] * v2099;
     const Real v2113 = v1779*v2110;
@@ -5483,7 +5486,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1644 = 1.0 + 0.29999999999999999*math::exp(-94000.0*v1628);
     const Real v1645 = math::exp(-470000.0*v1628);
     const Real acc14_11 = acc14_10 + 5.828e-08 * v1644 * v1645 * v2083;
-    const Real v1666 = jac_nuc_choice_91(T, v1620);
+    const Real v1666 = jac_nuc_choice_91(T, v1620, lnT);
     const Real v1646 = 1.24e-13*v1644*v1645;
     const Real v1667 = math::exp(-55338.0*v1628);
     const Real acc14_12 = acc14_11 - 5.01e-27 * v2098 * v1667;
@@ -5518,7 +5521,7 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2029 = v1773*v1776;
     const Real v2027 = v1738*v1779;
     const Real v2032 = v1776*v1784;
-    const Real v1688 = math::exp((-0.25)*math::log(math::abs(T)));
+    const Real v1688 = math::exp((-0.25)*lnT);
     const Real v1689 = 2.0000000000000002e-31*v1651 + 6.0000000000000001e-32*v1688;
     const Real v1687 = ((xn[2])*(xn[2])*(xn[2]));
     const Real v2038 = v1687*v1689;
@@ -5529,8 +5532,8 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc8_1 = acc8_0 + 7.1777505408e-12 * v1660 * v1690 * v1691;
     const Real v2045 = xn[8]*v1690*v1691;
     const Real acc14_23 = acc14_22 + 7.1777505408e-24 * v2045 * v2107;
-    const Real v1692 = 1.3500000000000001e-9*math::exp((0.098492999999999997)*math::log(math::abs(T))) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*math::log(math::abs(T))) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*math::log(math::abs(T)));
-    const Real acc14_24 = acc14_23 + xn[2] * xn[3] * v2043 * v1692 * (-0.006476405100000001 * math::exp(0.04610000000000003 * math::log(math::abs(T))) - 2.729397888e-10 * math::exp(2.0424 * math::log(math::abs(T))) - 1.229450816e-13 * math::exp(2.7741 * math::log(math::abs(T)))) / (v1693 * v1693);
+    const Real v1692 = 1.3500000000000001e-9*math::exp((0.098492999999999997)*lnT) + 4.4350199999999998e-10*math::exp((0.55610000000000004)*lnT) + 3.7408500000000004e-16*math::exp((2.1825999999999999)*lnT);
+    const Real acc14_24 = acc14_23 + xn[2] * xn[3] * v2043 * v1692 * (-0.006476405100000001 * math::exp(0.04610000000000003 * lnT) - 2.729397888e-10 * math::exp(2.0424 * lnT) - 1.229450816e-13 * math::exp(2.7741 * lnT)) / (v1693 * v1693);
     const Real acc3_0 = v2051 * v1692;
     const Real v2042 = xn[3]*v1692*v1694;
     const Real acc2_1 = acc2_0 + v2042 * v2043;
@@ -5546,16 +5549,16 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real acc14_29 = acc14_28 + 2.676446052e-16 * v2104 * v2105;
     const Real v2111 = v1772*v2110;
     const Real v1662 = math::exp(-473638.0*v1628);
-    const Real acc14_30 = acc14_29 - 5.54e-17 * v1970 * v1662 * jac_nuc_choice_287(T, v1620);
-    const Real v1663 = v1662*jac_nuc_choice_90(T, v1620);
+    const Real acc14_30 = acc14_29 - 5.54e-17 * v1970 * v1662 * jac_nuc_choice_287(T, v1620, lnT);
+    const Real v1663 = v1662*jac_nuc_choice_90(T, v1620, lnT);
     const Real acc14_31 = acc14_30 + 2.62395452e-11 * v1970 * v2082 * v1663;
     const Real acc14_32 = acc14_31 + 1.7519018237332822e-19 * v2101 * v1663;
     const Real v1613 = math::exp(-102000.0*v1612);
     const Real v2021 = T*v2020;
     const Real v1614 = xn[8]*v1613;
     const Real v2081 = xn[0]*v1614;
-    const Real acc14_33 = acc14_32 + -3.206731831607808e-16 * math::exp(-1.65 * math::log(math::abs(T))) * v2081;
-    const Real acc14_34 = acc14_33 - 1.10034915790464e-21 * math::exp(-0.65 * math::log(math::abs(T))) * v2081;
+    const Real acc14_33 = acc14_32 + -3.206731831607808e-16 * math::exp(-1.65 * lnT) * v2081;
+    const Real acc14_34 = acc14_33 - 1.10034915790464e-21 * math::exp(-0.65 * lnT) * v2081;
     const Real v2079 = 2.0860422997526066e-16*v1699;
     const Real v2080 = 3.4767371836380304e-16*v1699;
     const Real v2122 = 0.0046734386363636356*v1730 - 0.00031697691891891889*v1731;
@@ -5578,10 +5581,10 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v2089 = 1.3854129535261706e-25*xn[11];
     const Real acc14_41 = acc14_40 - v2088 * v2089;
     const Real acc14_42 = acc14_41 - v2089 * v2091;
-    const Real v2092 = math::exp((-2.5)*math::log(math::abs(T)));
+    const Real v2092 = math::exp((-2.5)*lnT);
     const Real acc14_43 = acc14_42 - v1722 * (v2013 * v2109 + 12307692.307692308 * v1718 * v1609 * (0.0042250000000000005 * v1713 * v1715 * v2092 - 4.0625e-08 * v1716 * v1642 - 0.00048750000000000003 * v2092 * math::exp(-58000.0 * v1612)) * math::exp(v1714) / v1713);
     const Real acc14_44 = acc14_43 - v1641 * v1646 * jac_nuc_choice_288(v1620, v2092);
-    const Real v2100 = math::exp((-1.25)*math::log(math::abs(T)));
+    const Real v2100 = math::exp((-1.25)*lnT);
     const Real acc14_45 = acc14_44 + v2009 * v1660 * v1690 * (-1.25e-32 * v1642 - 1.875e-33 * v2100);
     const Real acc14_46 = acc14_45 + 7.1777505408e-12 * v1660 * v1687 * (-1e-31 * v1642 - 1.5e-32 * v2100);
     const Real v1618 = 5.6500000000000001e-36*((((z + 1.0)*(z + 1.0)))*(((z + 1.0)*(z + 1.0))));
@@ -5619,13 +5622,13 @@ DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
     const Real v1967 = jac_nuc_choice_181(v1903, v1923, v1966);
     const Real v1968 = v1838*v1967;
     const Real v1610 = 2.1299999999999999e-27*v1609;
-    const Real v1615 = 3.1438547368704001e-21*math::exp((0.34999999999999998)*math::log(math::abs(T)));
+    const Real v1615 = 3.1438547368704001e-21*math::exp((0.34999999999999998)*lnT);
     const Real acc8_3 = acc8_2 - xn[0] * v1615 * v1613;
     const Real v1611 = v1608*v1610;
     const Real acc0_6 = acc0_5 - v1611;
     const Real v1616 = v1614*v1615;
     const Real acc0_7 = acc0_6 - v1616;
-    const Real v1621 = 1.5499999999999999e-26*jac_nuc_choice_84(T, v1620);
+    const Real v1621 = 1.5499999999999999e-26*jac_nuc_choice_84(T, v1620, lnT);
     const Real acc12_3 = acc12_2 - xn[0] * v1621;
     const Real v1622 = xn[12]*v1621;
     const Real acc0_8 = acc0_7 - v1622;
