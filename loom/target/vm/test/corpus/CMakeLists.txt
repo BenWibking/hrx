@@ -386,6 +386,9 @@ loom_corpus_build(
     "numeric/conversion/integer_widths.loom"
     "VM has no kernel artifact format."
     "loom::target::vm::all"
+    "numeric/conversion/mxfp8_record_layout.loom"
+    "VM has no kernel artifact format."
+    "loom::target::vm::all"
     "numeric/conversion/narrow_vectors.loom"
     "VM has no kernel artifact format."
     "loom::target::vm::all"
@@ -446,6 +449,7 @@ loom_corpus_test(
     "numeric/float/inverse_hyperbolic.loom"
     "numeric/float/inverse_hyperbolic_narrow.loom"
   LABELS
+    "loom-corpus"
     "iree-build-requirement=loom.target.arch.vm"
     "loom-execution-profile=vm_reference"
     "loom-target-family=vm"

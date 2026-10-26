@@ -119,7 +119,11 @@ class TextHeartbeatTest : public ::testing::Test {
 TEST_F(TextHeartbeatTest, TimerReadinessPublishesCopiedCounters) {
   Configure(iree_make_duration_ms(1));
   heartbeat_.snapshot.prefill_tokens = 42;
+  heartbeat_.snapshot.session_capacity = 4;
+  heartbeat_.snapshot.max_sessions = 6;
   heartbeat_.snapshot.session_cache = {24, 17};
+  heartbeat_.snapshot.cache_target_bytes = 65536;
+  heartbeat_.snapshot.cache_additional_bytes = 64000;
   counters_.input_tokens = 42;
   heartbeat_.snapshot.weight_activity = {2, 1, 64, 32, 4};
   heartbeat_.snapshot.state_memory = {
@@ -141,8 +145,14 @@ TEST_F(TextHeartbeatTest, TimerReadinessPublishesCopiedCounters) {
   const std::string first = ReadRecords(&cursor);
   EXPECT_NE(first.find("\"prefill_tokens\":42"), std::string::npos);
   EXPECT_NE(first.find("\"input_tokens\":42"), std::string::npos);
+  EXPECT_NE(first.find("\"session_capacity\":4,\"max_sessions\":6"),
+            std::string::npos);
   EXPECT_NE(first.find("\"session_cache\":{\"capacity\":24,\"endpoints\":17}"),
             std::string::npos);
+  EXPECT_NE(
+      first.find(
+          "\"cache_target_bytes\":65536,\"cache_additional_bytes\":64000"),
+      std::string::npos);
   EXPECT_NE(
       first.find("\"activations\":2,\"deactivations\":1,\"read_bytes\":64"),
       std::string::npos);

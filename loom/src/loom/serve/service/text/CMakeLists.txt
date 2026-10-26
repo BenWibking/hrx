@@ -24,7 +24,10 @@ iree_py_test(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/advance.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/control.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/model.json"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/native.card.json"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/prepare.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/service.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/storage.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/tokenizer.json"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/serve/fixture/text/weights.loom"
     "loom::serve::testing::text_request_check"
@@ -75,6 +78,35 @@ loom_cc_library(
   DEPS
     iree::base
   PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_library(
+  NAME
+    cache_policy
+  HDRS
+    "cache_policy.h"
+  SRCS
+    "cache_policy.c"
+  DEPS
+    iree::base
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_VM)
+loom_cc_test(
+  NAME
+    cache_policy_test
+  SRCS
+    "cache_policy_test.cc"
+  DEPS
+    ::cache_policy
+    iree::testing::gtest
+    iree::testing::gtest_main
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
 )
 endif()
 
@@ -130,6 +162,7 @@ loom_cc_library(
     loom::serve::telemetry::stream
     loom::serve::testing::http_harness
     loom::serve::testing::model
+    loom::serve::testing::model_wait
     loom::serve::testing::package
     loom::serve::testing::service_application
     loom::serve::testing::stalled_http_client
@@ -158,6 +191,7 @@ loom_cc_library(
     iree::base::internal::base64
     loom::serve::service::finite::component
     loom::serve::telemetry::latency
+    loom::serve::testing::worker_gate
   TESTONLY
   ALWAYSLINK
   PUBLIC
@@ -281,6 +315,7 @@ loom_cc_library(
     "capture_execution_test.cc"
     "epoch_upload_test.cc"
     "model_instance.h"
+    "service_capacity_test.cc"
     "source_execution_test.cc"
     "state_test.cc"
     "workspace_test.cc"
@@ -461,6 +496,8 @@ loom_cc_test(
     iree::base
     iree::testing::gtest
     iree::testing::gtest_main
+    iree::vm
+    loom::serve::runtime::program
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
 )
@@ -645,6 +682,7 @@ loom_cc_library(
     "variant.h"
     "warmup.h"
   SRCS
+    "capacity.c"
     "control.c"
     "epoch_plan.c"
     "media_epoch.c"
@@ -655,9 +693,11 @@ loom_cc_library(
     "source.c"
     "stages.c"
     "state.c"
+    "state_resize.c"
     "variant.c"
     "warmup.c"
   DEPS
+    ::cache_policy
     ::capture
     ::chat
     ::epoch_upload
@@ -666,6 +706,7 @@ loom_cc_library(
     iree::async
     iree::async::util::proactor_pool
     iree::base
+    iree::base::internal::arena
     iree::base::threading
     iree::hal
     iree::module::hal::types
@@ -677,6 +718,7 @@ loom_cc_library(
     loom::serve::runtime::device
     loom::serve::runtime::execution
     loom::serve::runtime::execution::retirement
+    loom::serve::runtime::host
     loom::serve::runtime::parameter::activation
     loom::serve::runtime::parameter::module
     loom::serve::runtime::parameter::residency
@@ -1316,6 +1358,8 @@ loom_cc_library(
     "request_admission.c"
     "request_admission.h"
     "service.c"
+    "service_capacity.c"
+    "service_capacity.h"
     "service_owner.c"
     "service_owner.h"
   DEPS

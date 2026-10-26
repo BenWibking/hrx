@@ -6,10 +6,14 @@
 
 #include "loom/serve/server/configuration.h"
 
+#include <algorithm>
 #include <string>
 
+#include "iree/io/file_contents.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
+#include "iree/testing/temp_file.h"
+#include "loom/model/card.h"
 
 namespace {
 
@@ -49,9 +53,134 @@ class ConfigurationTest : public ::testing::Test {
     return std::string(value.data, value.size);
   }
 
+  iree_status_t Load(const std::string& json,
+                     iree_string_view_t preset = iree_string_view_empty()) {
+    iree::testing::TempFilePath path("model-card", ".json");
+    IREE_RETURN_IF_ERROR(iree_io_file_contents_write(
+        path.path_view(), iree_make_const_byte_span(json.data(), json.size()),
+        iree_allocator_system()));
+    loom_serve_model_configuration_deinitialize(&model_);
+    iree_status_t status = loom_serve_model_configuration_load(
+        path.path_view(), preset, iree_allocator_system(), &model_);
+    EXPECT_TRUE(path.Remove());
+    return status;
+  }
+
   // Owned declaration independent of parser input lifetime.
   loom_serve_model_configuration_t model_ = {};
 };
+
+std::string Card(const std::string& kind, int version = 1,
+                 const std::string& identity = "publisher/model") {
+  return R"({"schema_version":1,"model":{"id":")" + identity +
+         R"(","name":"A readable model name"},
+    "programs":{"mixed":{"inputs":["absent.loom","absent.loombc"],"libraries":[]}},
+    "services":{"serve":{"kind":")" +
+         kind + R"(","version":)" + std::to_string(version) +
+         R"(,"options":["batch_units"]}},
+    "variants":{"original":{"services":{"serve":{"programs":["mixed"]}}}},
+    "presets":{"interactive":{"service":"serve","variant":"original",
+      "programs":"mixed","options":{"batch_units":64},
+      "execution":{"pending_requests":7}}}})";
+}
+
+class CardConfigurationTest
+    : public ConfigurationTest,
+      public ::testing::WithParamInterface<const char*> {};
+
+TEST_P(CardConfigurationTest, DirectCardOwnsPresetWithoutReadingPrograms) {
+  auto json = Card(GetParam());
+  IREE_ASSERT_OK(Load(json));
+  json.assign(json.size(), 'x');
+  EXPECT_EQ(String(model_.name), "publisher/model");
+  EXPECT_EQ(model_.device_index, IREE_HOST_SIZE_MAX);
+  EXPECT_EQ(model_.pending_requests, 7u);
+  EXPECT_EQ(String(model_.options), R"({"batch_units":64})");
+  ASSERT_NE(model_.resolved_sources, nullptr);
+  ASSERT_NE(model_.sources.card, nullptr);
+  const auto* selection = loom_model_card_selection(model_.sources.card);
+  EXPECT_EQ(String(selection->kind), GetParam());
+  EXPECT_EQ(String(selection->selector.preset), "interactive");
+  EXPECT_EQ(selection->inputs.count, 2u);
+  EXPECT_EQ(String(selection->inputs.values[0].file.path), "absent.loom");
+  EXPECT_EQ(model_.sources.reference.path.size, 0u);
+  EXPECT_EQ(model_.document.size, 0u);
+  EXPECT_FALSE(model_.start_drained);
+}
+
+TEST_P(CardConfigurationTest, DirectCardAcceptsEverySupportedAbi) {
+  const int latest = std::string(GetParam()) == "speech" ? 2 : 1;
+  for (int version = 1; version <= latest; ++version) {
+    SCOPED_TRACE(version);
+    IREE_ASSERT_OK(Load(Card(GetParam(), version)));
+    ASSERT_NE(model_.sources.card, nullptr);
+    EXPECT_EQ(loom_model_card_selection(model_.sources.card)->version, version);
+  }
+}
+
+TEST_P(CardConfigurationTest, DirectCardRejectsUnsupportedAbiBeforeProgramIo) {
+  const int unsupported = std::string(GetParam()) == "speech" ? 3 : 2;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_UNIMPLEMENTED,
+                        Load(Card(GetParam(), unsupported)));
+  EXPECT_EQ(model_.sources.card, nullptr);
+  EXPECT_EQ(model_.name.data, nullptr);
+}
+
+INSTANTIATE_TEST_SUITE_P(NativeServices, CardConfigurationTest,
+                         ::testing::Values("text", "sequence", "image",
+                                           "embedding", "decision", "speech",
+                                           "recognition", "activity"));
+
+TEST_F(ConfigurationTest,
+       DirectCardSelectsNamedPresetAndPreservesDecodedIdentity) {
+  IREE_ASSERT_OK(
+      Load(Card("text", 1, R"(publisher/a\\b)"), IREE_SV("interactive")));
+  EXPECT_EQ(String(model_.name), R"(publisher/a\b)");
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_NOT_FOUND,
+                        Load(Card("text"), IREE_SV("absent")));
+  EXPECT_EQ(model_.name.data, nullptr);
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        Load(Card("text", 1, "invalid alias")));
+  EXPECT_EQ(model_.sources.card, nullptr);
+}
+
+TEST_F(ConfigurationTest, DeploymentOwnsItsPresetSelection) {
+  IREE_ASSERT_OK(Load(Text()));
+  EXPECT_EQ(String(model_.name), "scout");
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        Load(Text(), IREE_SV("interactive")));
+  EXPECT_EQ(model_.name.data, nullptr);
+}
+
+TEST_F(ConfigurationTest, DirectCardRetainsLazyImageContractAndDefaults) {
+  auto json = Card("text");
+  json.insert(json.find("\"version\":1"),
+              R"("components":{"image":{"version":1,"options":["patches"]}},)");
+  json.insert(
+      json.find("\"execution\""),
+      R"("components":{"image":{"options":{"patches":4},"execution":{"specialization_cache":{"capacity":3}}}},)");
+  IREE_ASSERT_OK(Load(json));
+  ASSERT_NE(model_.text.image.contract, nullptr);
+  EXPECT_EQ(String(model_.text.image.contract->export_prefix), "text_image");
+  EXPECT_EQ(String(model_.text.image.options), R"({"patches":4})");
+  EXPECT_EQ(model_.text.image.specialization_cache.capacity, 3u);
+  EXPECT_EQ(model_.text.image.prepare.size, 0u);
+  EXPECT_EQ(model_.text.image.assets.size, 0u);
+}
+
+TEST_F(ConfigurationTest, UnsupportedComponentsFailBeforeProgramIo) {
+  for (const char* declaration :
+       {R"({"audio":{"version":1}})", R"({"image":{"version":2}})"}) {
+    auto json = Card("text");
+    json.insert(json.find("\"version\":1"),
+                std::string("\"components\":") + declaration + ",");
+    IREE_EXPECT_STATUS_IS(IREE_STATUS_UNIMPLEMENTED, Load(json));
+    EXPECT_EQ(model_.sources.card, nullptr);
+  }
+  auto json = Card("speech");
+  json.insert(json.find("\"version\":1"), R"("components":{"image":{}},)");
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_UNIMPLEMENTED, Load(json));
+}
 
 TEST_F(ConfigurationTest, OwnsAuthoredPathsAndBaseSeparately) {
   auto json =
@@ -105,6 +234,7 @@ TEST_F(ConfigurationTest, SequenceRequiresWeightsButNoTokenizerOrSampler) {
   EXPECT_EQ(model_.text.tokenizer.size, 0u);
   EXPECT_EQ(model_.text.max_tokens, 0u);
   EXPECT_EQ(model_.text.rows, 4u);
+  EXPECT_EQ(model_.text.max_sessions, 0u);
   EXPECT_EQ(model_.text.session_cache_capacity, 1u);
   IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                         Parse(Document("sequence")));
@@ -119,6 +249,29 @@ TEST_F(ConfigurationTest, SequenceRequiresWeightsButNoTokenizerOrSampler) {
         Parse(Document("sequence",
                        std::string(R"(,"weights":"model.irpa")") + field)));
     EXPECT_EQ(model_.name.data, nullptr);
+  }
+}
+
+TEST_F(ConfigurationTest, CardReferenceOwnsItsPartitionSelection) {
+  std::string json = R"({"name":"part","model":{"path":"model.json",
+    "variant":"small","partition":"node-1"},"definition":{"kind":"text"}})";
+  IREE_ASSERT_OK(Parse(json));
+  json.assign(json.size(), 'x');
+  EXPECT_EQ(String(model_.sources.reference.selector.partition), "node-1");
+}
+
+TEST_F(ConfigurationTest, ImageCardRejectsDeploymentAssetAndAdapterPaths) {
+  const std::string prefix =
+      R"({"name":"pixels","model":{"path":"model.json"},
+        "definition":{"kind":"image")";
+  IREE_ASSERT_OK(Parse(prefix + "}}"));
+  EXPECT_EQ(model_.image.checkpoint.size, 0u);
+  EXPECT_EQ(model_.image.adapter.size, 0u);
+  for (const char* field :
+       {R"(,"checkpoint":"weights")", R"(,"adapter":"adapter.safetensors")"}) {
+    SCOPED_TRACE(field);
+    IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                          Parse(prefix + field + "}}"));
   }
 }
 
@@ -356,7 +509,17 @@ TEST_F(ConfigurationTest, HttpRelativePathsRequireAnExplicitBase) {
                         Parse(Document("embedding", R"(,"assets":".")"), {}));
   IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                         Parse(Document("embedding", R"(,"assets":".")",
-                                       R"(,"base_directory":"relative")")));
+                                       R"(,"base_directory":"relative")"),
+                              {}));
+}
+
+TEST_F(ConfigurationTest, RelativeBaseUsesTheContainingDocumentDirectory) {
+  IREE_ASSERT_OK(Parse(Document("embedding", R"(,"assets":".")",
+                                R"(,"base_directory":"program/model")")));
+  EXPECT_EQ(String(model_.sources.base_directory),
+            "models/local/program/model");
+  EXPECT_EQ(String(model_.sources.prepare), "boot.loombc");
+  EXPECT_EQ(String(model_.assets), ".");
 }
 
 TEST_F(ConfigurationTest,
@@ -413,11 +576,28 @@ TEST_F(ConfigurationTest, RequiredProgramsAndPublicNamesRejectBeforeIo) {
   }
 }
 
+TEST_F(ConfigurationTest, MissingDefinitionNamesTheRequiredObject) {
+  for (
+      const char* json : {
+          R"({"name":"speaker"})",
+          R"({"name":"speaker","model":{"path":"unread.json","preset":"streaming"}})",
+      }) {
+    iree::Status status(Parse(json));
+    EXPECT_EQ(status.code(), iree::StatusCode::kInvalidArgument);
+    EXPECT_NE(status.ToString().find("model requires 'definition' object"),
+              std::string::npos)
+        << status.ToString();
+    EXPECT_EQ(model_.name.data, nullptr);
+    EXPECT_EQ(model_.sources.values, nullptr);
+  }
+}
+
 TEST_F(ConfigurationTest,
        TextDefaultsAndSpecializationsRemainModelIndependent) {
   IREE_ASSERT_OK(Parse(Text()));
   EXPECT_EQ(model_.kind, LOOM_SERVE_MODEL_KIND_TEXT);
   EXPECT_EQ(model_.text.rows, 4u);
+  EXPECT_EQ(model_.text.max_sessions, 0u);
   EXPECT_EQ(model_.variant_capacity, 16u);
   EXPECT_EQ(model_.text.admission_overtakes, 4u);
   EXPECT_EQ(model_.text.context_capacity, 16384u);
@@ -426,8 +606,9 @@ TEST_F(ConfigurationTest,
   EXPECT_EQ(model_.text.max_tokens, 512u);
   EXPECT_EQ(model_.text.draft_depth, 0u);
   EXPECT_EQ(model_.text.continuation_epochs, 1u);
-  EXPECT_EQ(model_.text.session_cache_capacity, 0u);
-  EXPECT_EQ(model_.text.prefix_cache_capacity, 0u);
+  EXPECT_EQ(model_.text.session_cache_capacity, IREE_HOST_SIZE_MAX);
+  EXPECT_EQ(model_.text.prefix_cache_capacity, IREE_HOST_SIZE_MAX);
+  EXPECT_EQ(model_.text.cache_target_bytes, IREE_HOST_SIZE_MAX);
   EXPECT_EQ(String(model_.options), "{}");
   IREE_ASSERT_OK(Parse(Text(
       R"(,"rows":8,"context_capacity":262144,"pool_capacity":4096,"prefill_capacity":128,"draft_depth":3,"continuation_epochs":2,"checkpoint_capacity":2,"session_cache_capacity":24,"prefix_cache_capacity":4,"pending_requests":17,"max_tokens":128,"admission_overtakes":0,"options":{"draft_weights":"draft.gguf"})")));
@@ -442,6 +623,72 @@ TEST_F(ConfigurationTest,
   EXPECT_EQ(model_.pending_requests, 17u);
   EXPECT_EQ(model_.text.max_tokens, 128u);
   EXPECT_EQ(String(model_.options), R"({"draft_weights":"draft.gguf"})");
+}
+
+TEST_F(ConfigurationTest, CacheOmissionAndExplicitZeroRemainDistinct) {
+  IREE_ASSERT_OK(Parse(Text(R"(,"cache_target_bytes":0)")));
+  EXPECT_EQ(model_.text.cache_target_bytes, 0u);
+  EXPECT_EQ(model_.text.session_cache_capacity, IREE_HOST_SIZE_MAX);
+  EXPECT_EQ(model_.text.prefix_cache_capacity, IREE_HOST_SIZE_MAX);
+  IREE_ASSERT_OK(
+      Parse(Text(R"(,"cache_target_bytes":65536,"session_cache_capacity":0)")));
+  EXPECT_EQ(model_.text.cache_target_bytes, 65536u);
+  EXPECT_EQ(model_.text.session_cache_capacity, 0u);
+  EXPECT_EQ(model_.text.prefix_cache_capacity, IREE_HOST_SIZE_MAX);
+  IREE_ASSERT_OK(Parse(Text(R"(,"prefix_cache_capacity":0)")));
+  EXPECT_EQ(model_.text.session_cache_capacity, IREE_HOST_SIZE_MAX);
+  EXPECT_EQ(model_.text.prefix_cache_capacity, 0u);
+  IREE_ASSERT_OK(
+      Parse(Text(R"(,"session_cache_capacity":0,"prefix_cache_capacity":0)")));
+  EXPECT_EQ(model_.text.session_cache_capacity, 0u);
+  EXPECT_EQ(model_.text.prefix_cache_capacity, 0u);
+  for (const char* field :
+       {R"(,"cache_target_bytes":-1)", R"(,"cache_target_bytes":1.5)",
+        R"(,"cache_target_bytes":"auto")"}) {
+    IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT, Parse(Text(field)));
+  }
+  IREE_ASSERT_OK(Parse(Document("sequence", R"(,"weights":"model.irpa")")));
+  EXPECT_EQ(model_.text.session_cache_capacity, 0u);
+  EXPECT_EQ(model_.text.prefix_cache_capacity, 0u);
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      Parse(Document("sequence",
+                     R"(,"weights":"model.irpa","cache_target_bytes":0)")));
+}
+
+TEST_F(ConfigurationTest, SessionMaximumBoundsInitialCapacityNotEpochShape) {
+  for (const char* kind : {"text", "sequence"}) {
+    const std::string inputs =
+        std::string(R"(,"weights":"model.irpa")") +
+        (std::string(kind) == "text" ? R"(,"tokenizer":"tokenizer.json")" : "");
+    for (const unsigned maximum : {1u, 4u, 6u, 100u}) {
+      SCOPED_TRACE(kind);
+      SCOPED_TRACE(maximum);
+      const std::string field = ",\"max_sessions\":" + std::to_string(maximum);
+      IREE_ASSERT_OK(Parse(Document(kind, inputs + field)));
+      EXPECT_EQ(model_.text.max_sessions, maximum);
+      EXPECT_EQ(model_.text.rows, std::min(4u, maximum));
+      EXPECT_EQ(model_.text.admission_overtakes, model_.text.rows);
+      EXPECT_EQ(model_.text.prefill_capacity, 512u);
+      IREE_ASSERT_OK(Parse(Document(kind, inputs + field + R"(,"rows":128)")));
+      EXPECT_EQ(model_.text.rows, maximum);
+    }
+    for (const char* value : {"0", "-1", "2147483648", "1.5", "\"4\""}) {
+      IREE_EXPECT_STATUS_IS(
+          IREE_STATUS_INVALID_ARGUMENT,
+          Parse(Document(kind, inputs + ",\"max_sessions\":" + value)));
+    }
+  }
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        Parse(Image(R"(,"max_sessions":4)")));
+}
+
+TEST_F(ConfigurationTest, CardPresetMayBoundSessionsWithoutInitialRows) {
+  auto json = Card("text");
+  json.insert(json.find("\"pending_requests\""), R"("max_sessions":1,)");
+  IREE_ASSERT_OK(Load(json));
+  EXPECT_EQ(model_.text.max_sessions, 1u);
+  EXPECT_EQ(model_.text.rows, 1u);
 }
 
 TEST_F(ConfigurationTest, ImageDefaultsAndSpecializations) {
@@ -556,6 +803,11 @@ TEST_F(ConfigurationTest, SpecializationCacheRejectsInvalidPolicy) {
 }
 
 TEST_F(ConfigurationTest, NativeCapacitiesAreNotOneModelShape) {
+  for (unsigned rows : {17u, 32u, 64u, 100u, 129u, 257u, 2147483647u}) {
+    IREE_ASSERT_OK(
+        Parse(Text(std::string(R"(,"rows":)") + std::to_string(rows))));
+    EXPECT_EQ(model_.text.rows, rows);
+  }
   for (unsigned depth = 0; depth <= 7; ++depth) {
     IREE_ASSERT_OK(
         Parse(Text(std::string(R"(,"draft_depth":)") + std::to_string(depth) +
@@ -565,7 +817,7 @@ TEST_F(ConfigurationTest, NativeCapacitiesAreNotOneModelShape) {
   }
   for (unsigned capacity : {513u, 1024u, 4097u, 262144u}) {
     IREE_ASSERT_OK(Parse(
-        Text(std::string(R"(,"context_capacity":262144,"prefill_capacity":)") +
+        Text(std::string(R"(,"context_capacity":96,"prefill_capacity":)") +
              std::to_string(capacity))));
     EXPECT_EQ(model_.text.prefill_capacity, capacity);
   }
@@ -574,7 +826,7 @@ TEST_F(ConfigurationTest, NativeCapacitiesAreNotOneModelShape) {
 TEST_F(ConfigurationTest, RejectsInvalidAndWrongModalityFields) {
   for (const char* field :
        {R"(,"rows":0)",
-        R"(,"rows":17)",
+        R"(,"rows":2147483648)",
         R"(,"variant_capacity":-1)",
         R"(,"variant_capacity":2147483648)",
         R"(,"rows":2,"rows":4)",
@@ -582,7 +834,6 @@ TEST_F(ConfigurationTest, RejectsInvalidAndWrongModalityFields) {
         R"(,"continuation_epochs":2)",
         R"(,"prefill_capacity":2,"draft_depth":3)",
         R"(,"prefill_capacity":262145)",
-        R"(,"prefill_capacity":1024,"context_capacity":513)",
         R"(,"pool_capacity":0)",
         R"(,"pending_requests":-1)",
         R"(,"max_tokens":1.5)",

@@ -43,7 +43,7 @@ class ElasticEmbeddingServiceTest : public SourceEmbeddingServiceTest {
 };
 
 TEST_F(ElasticEmbeddingServiceTest,
-       ParameterDeactivationDoesNotBlockWarmRequestsAndReloadsExactly) {
+       ParameterDeactivationCachesBackingAndReloadsExactly) {
   const std::string package =
       iree::testing::MakeTempFilePath("parameter_release_progress");
   ASSERT_NO_FATAL_FAILURE(WriteCheckpointPackage(package));
@@ -60,25 +60,19 @@ TEST_F(ElasticEmbeddingServiceTest,
   ASSERT_EQ(Read(Send(R"({"model":"cold"})", "/v1/models/drain"))
                 .find("HTTP/1.1 200"),
             0u);
-  {
-    loom_serve::testing::ScopedNativeHold gate(device_,
-                                               IREE_ALLOCATOR_COMMAND_FREE);
-    ASSERT_EQ(Read(Send(R"({"model":"cold"})", "/v1/models/deactivate"))
-                  .find("HTTP/1.1 202"),
-              0u);
-    const auto retired = WaitModel("cold", R"("parameter_operation":"idle")");
-    EXPECT_NE(retired.find(R"("committed_bytes":0)"), std::string::npos);
-    // Deactivation returns reusable slabs without requiring a native free.
-    EXPECT_NE(
-        Read(Send({}, "/v1/status", "GET")).find(R"("cached_bytes":4096)"),
-        std::string::npos);
-    EXPECT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
-                  .find(R"("embedding":[1,1,1,1])"),
-              std::string::npos);
-    EXPECT_EQ(Read(Send({}, "/healthz", "GET")).find("HTTP/1.1 200"), 0u);
-  }
-  ASSERT_NO_FATAL_FAILURE(WaitModel("cold", R"("parameter_operation":"idle")"));
-  EXPECT_NE(ModelStatus("cold").find(R"("committed_bytes":0)"),
+  ASSERT_EQ(Read(Send(R"({"model":"cold"})", "/v1/models/deactivate"))
+                .find("HTTP/1.1 202"),
+            0u);
+  EXPECT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
+                .find(R"("embedding":[1,1,1,1])"),
+            std::string::npos);
+  EXPECT_EQ(Read(Send({}, "/healthz", "GET")).find("HTTP/1.1 200"), 0u);
+  const auto retired =
+      WaitModelState("cold", R"("parameter_operation":"idle")");
+  EXPECT_NE(retired.find(R"("committed_bytes":0)"), std::string::npos);
+  // Slab accounting distinguishes retained physical storage from temporary
+  // host metadata that an unmap may allocate and free.
+  EXPECT_NE(Read(Send({}, "/v1/status", "GET")).find(R"("cached_bytes":4096)"),
             std::string::npos);
   ASSERT_EQ(Read(Send(R"({"model":"cold"})", "/v1/models/undrain"))
                 .find("HTTP/1.1 200"),
@@ -98,7 +92,7 @@ TEST_F(ElasticEmbeddingServiceTest,
     ASSERT_EQ(Read(Send(Declaration(name, package), "/v1/models/register"))
                   .find("HTTP/1.1 202"),
               0u);
-    ASSERT_NO_FATAL_FAILURE(WaitModel(name, R"("registration":"ready")"));
+    ASSERT_NO_FATAL_FAILURE(WaitModelState(name, R"("registration":"ready")"));
   }
   ASSERT_NE(Read(Send(R"({"model":"first","input":"a"})"))
                 .find(R"("embedding":[2,2,2,2])"),
@@ -113,14 +107,14 @@ TEST_F(ElasticEmbeddingServiceTest,
     EXPECT_NE(Read(Send(R"({"model":"second","input":"a"})"))
                   .find(R"("embedding":[2,2,2,2])"),
               std::string::npos);
-    ASSERT_NO_FATAL_FAILURE(WaitModel("first", R"("committed_bytes":0)"));
+    ASSERT_NO_FATAL_FAILURE(WaitModelState("first", R"("committed_bytes":0)"));
     EXPECT_NE(ModelStatus("second").find(R"("committed_bytes":4096)"),
               std::string::npos);
     EXPECT_EQ(Read(Send(R"({"model":"first","mode":"abort"})",
                         "/v1/models/unregister"))
                   .find("HTTP/1.1 202"),
               0u);
-    ASSERT_NO_FATAL_FAILURE(WaitModel("first", {}));
+    ASSERT_NO_FATAL_FAILURE(WaitModelAbsent("first"));
     EXPECT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
                   .find(R"("embedding":[1,1,1,1])"),
               std::string::npos);
@@ -128,7 +122,7 @@ TEST_F(ElasticEmbeddingServiceTest,
     EXPECT_NE(ModelStatus("second").find(R"("pending_bytes":0)"),
               std::string::npos);
   }
-  ASSERT_NO_FATAL_FAILURE(WaitModel("first", {}));
+  ASSERT_NO_FATAL_FAILURE(WaitModelAbsent("first"));
 }
 
 TEST_F(ElasticEmbeddingServiceTest,
@@ -140,7 +134,7 @@ TEST_F(ElasticEmbeddingServiceTest,
   ASSERT_EQ(Read(Send(Declaration("cold", package), "/v1/models/register"))
                 .find("HTTP/1.1 202"),
             0u);
-  ASSERT_NO_FATAL_FAILURE(WaitModel("cold", R"("registration":"ready")"));
+  ASSERT_NO_FATAL_FAILURE(WaitModelState("cold", R"("registration":"ready")"));
   // Populate the shared workspace and the warm service's feedback path before
   // holding cold memory. Its next request needs no additional physical storage.
   ASSERT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
@@ -151,7 +145,7 @@ TEST_F(ElasticEmbeddingServiceTest,
     loom_serve::testing::ScopedNativeHold gate(device_);
     cold = Send(R"({"model":"cold","input":"a"})");
     gate.WaitEntered();
-    const auto waiting = WaitModel("cold", R"("pending_bytes":4096)");
+    const auto waiting = WaitModelState("cold", R"("pending_bytes":4096)");
     EXPECT_NE(waiting.find(R"("committed_bytes":0)"), std::string::npos);
     EXPECT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
                   .find(R"("embedding":[1,1,1,1])"),
@@ -162,7 +156,92 @@ TEST_F(ElasticEmbeddingServiceTest,
   EXPECT_EQ(Read(Send(R"({"model":"cold"})", "/v1/models/unregister"))
                 .find("HTTP/1.1 202"),
             0u);
-  ASSERT_NO_FATAL_FAILURE(WaitModel("cold", {}));
+  ASSERT_NO_FATAL_FAILURE(WaitModelAbsent("cold"));
+}
+
+TEST_F(ElasticEmbeddingServiceTest,
+       ColdAllocationFailureDoesNotPublishAnOutput) {
+  const std::string package =
+      iree::testing::MakeTempFilePath("failed_parameter_output");
+  ASSERT_NO_FATAL_FAILURE(WriteCheckpointPackage(package));
+  StartManagedRouter();
+  ASSERT_EQ(Read(Send(Declaration("cold", package), "/v1/models/register"))
+                .find("HTTP/1.1 202"),
+            0u);
+  ASSERT_NO_FATAL_FAILURE(WaitModelState("cold", R"("registration":"ready")"));
+  ASSERT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
+                .find(R"("embedding":[1,1,1,1])"),
+            std::string::npos);
+
+  // Leave native failure free to complete during submission. Holding it until
+  // another request queues would exclude this dependency-publication ordering.
+  NativeAllocator::ForDevice(device_).FailNextAllocation(
+      IREE_ALLOCATOR_COMMAND_CALLOC, /*native_only=*/true);
+  const auto failed = Read(Send(R"({"model":"cold","input":"a"})"));
+  ASSERT_EQ(failed.find("HTTP/1.1 503"), 0u) << failed;
+  EXPECT_NE(failed.find(R"("type":"loom_execution_error")"), std::string::npos);
+  ASSERT_NO_FATAL_FAILURE(WaitModelState("cold", R"("registration":"failed")"));
+  EXPECT_EQ(Read(Send({}, "/healthz", "GET")).find("HTTP/1.1 200"), 0u);
+  EXPECT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
+                .find(R"("embedding":[1,1,1,1])"),
+            std::string::npos);
+}
+
+TEST_F(ElasticEmbeddingServiceTest,
+       ColdAllocationFailurePreservesWarmHttpInference) {
+  const std::string package =
+      iree::testing::MakeTempFilePath("failed_parameter_allocation");
+  ASSERT_NO_FATAL_FAILURE(WriteCheckpointPackage(package));
+  StartManagedRouter();
+  ASSERT_EQ(Read(Send(Declaration("cold", package), "/v1/models/register"))
+                .find("HTTP/1.1 202"),
+            0u);
+  ASSERT_NO_FATAL_FAILURE(WaitModelState("cold", R"("registration":"ready")"));
+  ASSERT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
+                .find(R"("embedding":[1,1,1,1])"),
+            std::string::npos);
+
+  NativeAllocator::ForDevice(device_).FailNextAllocation(
+      IREE_ALLOCATOR_COMMAND_CALLOC, /*native_only=*/true);
+  int active = -1;
+  int pending = -1;
+  {
+    ScopedNativeHold allocation(device_);
+    active = Send(R"({"model":"cold","input":"a"})");
+    allocation.WaitEntered();
+    pending = Send(R"({"model":"cold","input":"b"})");
+    ASSERT_NO_FATAL_FAILURE(WaitModelState("cold", R"("queued_requests":1)"));
+    EXPECT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
+                  .find(R"("embedding":[1,1,1,1])"),
+              std::string::npos);
+  }
+  const auto failed = Read(active);
+  const auto rejected = Read(pending);
+  ASSERT_EQ(failed.find("HTTP/1.1 503"), 0u) << failed;
+  EXPECT_NE(failed.find(R"("type":"loom_execution_error")"), std::string::npos);
+  EXPECT_EQ(rejected.find("HTTP/1.1 503"), 0u) << rejected;
+  EXPECT_NE(rejected.find(R"("type":"loom_execution_error")"),
+            std::string::npos);
+  const auto state = WaitModelState("cold", R"("registration":"failed")");
+  EXPECT_NE(state.find(R"("error":{"code":8,)"), std::string::npos) << state;
+  EXPECT_EQ(Read(Send({}, "/v1/models", "GET")).find(R"("id":"cold")"),
+            std::string::npos);
+  EXPECT_EQ(Read(Send(R"({"model":"cold","input":"a"})")).find("HTTP/1.1 503"),
+            0u);
+  EXPECT_EQ(Read(Send({}, "/healthz", "GET")).find("HTTP/1.1 200"), 0u);
+  EXPECT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
+                .find(R"("embedding":[1,1,1,1])"),
+            std::string::npos);
+  EXPECT_EQ(Read(Send(R"({"model":"cold"})", "/v1/models/unregister"))
+                .find("HTTP/1.1 202"),
+            0u);
+  ASSERT_NO_FATAL_FAILURE(WaitModelAbsent("cold"));
+  EXPECT_EQ(Read(Send(Declaration("cold", package), "/v1/models/register"))
+                .find("HTTP/1.1 202"),
+            0u);
+  EXPECT_NE(Read(Send(R"({"model":"cold","input":"a"})"))
+                .find(R"("embedding":[2,2,2,2])"),
+            std::string::npos);
 }
 
 TEST_F(ElasticEmbeddingServiceTest,
@@ -174,7 +253,7 @@ TEST_F(ElasticEmbeddingServiceTest,
   ASSERT_EQ(Read(Send(Declaration("cold", package), "/v1/models/register"))
                 .find("HTTP/1.1 202"),
             0u);
-  ASSERT_NO_FATAL_FAILURE(WaitModel("cold", R"("registration":"ready")"));
+  ASSERT_NO_FATAL_FAILURE(WaitModelState("cold", R"("registration":"ready")"));
   ASSERT_NE(Read(Send(R"({"model":"fixture","input":"a"})"))
                 .find(R"("embedding":[1,1,1,1])"),
             std::string::npos);
@@ -183,7 +262,7 @@ TEST_F(ElasticEmbeddingServiceTest,
     loom_serve::testing::ScopedNativeHold gate(device_);
     cold = Send(R"({"model":"cold","input":"a"})");
     gate.WaitEntered();
-    ASSERT_NO_FATAL_FAILURE(WaitModel("cold", R"("pending_bytes":4096)"));
+    ASSERT_NO_FATAL_FAILURE(WaitModelState("cold", R"("pending_bytes":4096)"));
     EXPECT_EQ(Read(Send(R"({"model":"cold","mode":"abort"})",
                         "/v1/models/unregister"))
                   .find("HTTP/1.1 202"),
@@ -199,7 +278,7 @@ TEST_F(ElasticEmbeddingServiceTest,
               std::string::npos);
     EXPECT_FALSE(ModelStatus("cold").empty());
   }
-  ASSERT_NO_FATAL_FAILURE(WaitModel("cold", {}));
+  ASSERT_NO_FATAL_FAILURE(WaitModelAbsent("cold"));
   const auto status = Read(Send({}, "/v1/status", "GET"));
   EXPECT_NE(status.find(R"("pending_bytes":0)"), std::string::npos);
 }
@@ -227,14 +306,14 @@ TEST_F(ElasticEmbeddingServiceTest,
   EXPECT_EQ(Read(Send(R"({"model":"first"})", "/v1/models/unregister"))
                 .find("HTTP/1.1 202"),
             0u);
-  WaitModel("first", {});
+  WaitModelAbsent("first");
   EXPECT_NE(Read(Send(R"({"model":"second","input":"a"})"))
                 .find(R"("embedding":[2,2,2,2])"),
             std::string::npos);
   EXPECT_EQ(Read(Send(R"({"model":"second"})", "/v1/models/unregister"))
                 .find("HTTP/1.1 202"),
             0u);
-  WaitModel("second", {});
+  WaitModelAbsent("second");
   EXPECT_EQ(CompletedRequests(), 3u);
   EXPECT_NE(Read(Send({}, "/v1/models", "GET")).find(R"("data":[])"),
             std::string::npos);

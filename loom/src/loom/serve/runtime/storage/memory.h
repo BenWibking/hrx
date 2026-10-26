@@ -21,6 +21,7 @@ extern "C" {
 // use public HAL queues. These are capacity transitions, not per-token work.
 // Backing supports storage, transfers, and indirect dispatch parameters.
 typedef struct loom_serve_memory_pool_t loom_serve_memory_pool_t;
+typedef struct loom_serve_memory_arena_t loom_serve_memory_arena_t;
 typedef struct loom_serve_virtual_buffer_t loom_serve_virtual_buffer_t;
 typedef struct loom_serve_memory_operation_t loom_serve_memory_operation_t;
 
@@ -217,8 +218,57 @@ iree_status_t loom_serve_virtual_buffer_allocate(
     iree_device_size_t length, iree_device_size_t alignment,
     loom_serve_memory_statistics_t* statistics,
     loom_serve_virtual_buffer_t** out_buffer);
+
+// Reserves one address interval for independently backed parameter ranges.
+// The arena owns address allocation, mapping order and the native target's
+// failure domain, but no physical payload. Its owner serializes allocation and
+// retirement with pool and destroys every range before freeing the arena.
+// Metadata follows allocated ranges, not the unoccupied address interval.
+iree_status_t loom_serve_memory_arena_allocate(
+    loom_serve_memory_pool_t* pool, loom_serve_memory_geometry_t geometry,
+    iree_device_size_t length, loom_serve_memory_arena_t** out_arena);
+
+// Borrowed full address interval, suitable for a single indexed binding.
+// Retaining this handle preserves addresses, not range leases or backing.
+iree_hal_buffer_t* loom_serve_memory_arena_handle(
+    const loom_serve_memory_arena_t* arena);
+
+// Reserves an independent range, initially without physical payload. Physical
+// slabs and short tails are local to this range; it shares no replacement
+// extent with another range. The arena outlives this buffer and all its views.
+// The owner retires consumers and completes asynchronous trim before freeing
+// the buffer to make its offset reusable; metadata release never waits on
+// peers.
+iree_status_t loom_serve_virtual_buffer_allocate_in_arena(
+    loom_serve_memory_arena_t* arena, iree_device_size_t length,
+    iree_device_size_t alignment, loom_serve_memory_statistics_t* statistics,
+    loom_serve_virtual_buffer_t** out_buffer);
+
+// Terminal checked removal after every arena consumer and accepted mapping
+// has retired. Required before range cleanup following a failed shared-target
+// edit. Failure preserves all backing ownership for another cleanup attempt.
+// Successful detach permits range destruction, never further execution.
+iree_status_t loom_serve_memory_arena_detach(loom_serve_memory_arena_t* arena);
+
+// Destroys an arena after every allocated range has been freed. NULL is valid.
+void loom_serve_memory_arena_free(loom_serve_memory_arena_t* arena);
+
 iree_hal_buffer_t* loom_serve_virtual_buffer_handle(
     const loom_serve_virtual_buffer_t* buffer);
+
+// Enlarges a standalone whole-slab reservation (not a shared-arena range) at a
+// successfully retired consumer and
+// mapping boundary. The wrapper and physical slab identities remain stable;
+// the borrowed HAL handle changes. The caller excludes use and mutation until
+// operation completion, then rebuilds its views from handle(). No payload is
+// copied and no physical capacity is acquired. Ordinary producer/consumer
+// visibility must already be established; mapping readiness publishes only
+// translations. Both reservations survive a failed edit for checked cleanup.
+// A length within the current reservation is a no-op returning NULL.
+iree_status_t loom_serve_virtual_buffer_grow_async(
+    loom_serve_virtual_buffer_t* buffer, iree_device_size_t length,
+    iree_hal_semaphore_t* readiness, uint64_t value,
+    loom_serve_memory_operation_t** out_operation);
 
 // Independent physical replacement size in this root.
 iree_device_size_t loom_serve_virtual_buffer_slab_size(
@@ -381,7 +431,9 @@ iree_status_t loom_serve_virtual_buffer_trim(
 
 // All device uses and borrowed HAL references must have retired. On a platform
 // cleanup failure the object retains unreleased ownership and may be retried;
-// the pool must remain alive. Null is accepted.
+// the pool must remain alive. Arena ranges additionally require completed trim
+// or terminal arena detach: this call never submits or waits on their mappings.
+// Null is accepted.
 iree_status_t loom_serve_virtual_buffer_free(
     loom_serve_virtual_buffer_t* buffer);
 

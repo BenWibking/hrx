@@ -153,7 +153,7 @@ iree_status_t loom_serve_registry_free(loom_serve_registry_t* registry) {
   }
   for (iree_host_size_t i = 0; i < registry->capacity; ++i) {
     loom_serve_registered_model_t* model = &registry->models[i];
-    if (model->registration.self) {
+    if (model->registration.self || model->resolution) {
       if (!iree_status_is_ok(model->status)) {
         return iree_status_clone(model->status);
       }
@@ -252,6 +252,39 @@ iree_status_t loom_serve_registry_try_open_speech(
   return service->try_open_speech(service->self, request, out_stream);
 }
 
+iree_status_t loom_serve_registry_try_upload_voice(
+    loom_serve_registry_t* registry, iree_string_view_t name,
+    loom_serve_speech_voice_request_t* request,
+    loom_serve_speech_voice_upload_t** out_upload) {
+  *out_upload = NULL;
+  loom_serve_service_t* service = NULL;
+  IREE_RETURN_IF_ERROR(loom_serve_registry_find_admission(
+      registry, name, 1u << LOOM_SERVE_MODEL_KIND_SPEECH, "voice upload", false,
+      &service));
+  if (!service) {
+    return iree_ok_status();
+  }
+  if (!service->try_upload_voice) {
+    return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
+                            "speech model does not support voice uploads");
+  }
+  return service->try_upload_voice(service->self, request, out_upload);
+}
+
+iree_status_t loom_serve_registry_remove_voice(loom_serve_registry_t* registry,
+                                               iree_string_view_t name,
+                                               iree_string_view_t id) {
+  loom_serve_service_t* service = NULL;
+  IREE_RETURN_IF_ERROR(loom_serve_registry_find_admission(
+      registry, name, 1u << LOOM_SERVE_MODEL_KIND_SPEECH, "voice removal", true,
+      &service));
+  if (!service->remove_voice) {
+    return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
+                            "speech model does not support voice uploads");
+  }
+  return service->remove_voice(service->self, id);
+}
+
 iree_status_t loom_serve_registry_try_open_recognition(
     loom_serve_registry_t* registry, iree_string_view_t name,
     const loom_serve_recognition_request_t* request,
@@ -321,6 +354,12 @@ iree_status_t loom_serve_registry_register(
     return iree_make_status(
         IREE_STATUS_UNIMPLEMENTED,
         "this modality has no asynchronous registration provider");
+  }
+  if (configuration->sources.reference.path.size &&
+      !registry->factory.resolution_sink.submit) {
+    return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
+                            "registration provider has no model-card "
+                            "preparation worker");
   }
   iree_host_size_t device_index = 0;
   IREE_RETURN_IF_ERROR(loom_serve_model_configuration_resolve_device(
@@ -400,12 +439,18 @@ bool loom_serve_registry_has_component(
     loom_serve_model_component_t component) {
   return component == LOOM_SERVE_MODEL_COMPONENT_PRIMARY ||
          (model->configuration.kind == LOOM_SERVE_MODEL_KIND_TEXT &&
-          model->configuration.text.image.prepare.size != 0);
+          (model->configuration.text.image.contract ||
+           model->configuration.text.image.prepare.size != 0));
 }
 
 static iree_status_t loom_serve_registry_require_component(
     const loom_serve_registered_model_t* model,
     loom_serve_model_component_t component) {
+  if (component != LOOM_SERVE_MODEL_COMPONENT_PRIMARY &&
+      model->configuration.sources.reference.path.size) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "model card is still resolving component metadata");
+  }
   if (!loom_serve_registry_has_component(model, component)) {
     return iree_make_status(IREE_STATUS_NOT_FOUND, "model has no %s component",
                             loom_serve_model_component_name(component));
@@ -509,7 +554,8 @@ iree_status_t loom_serve_registry_activate(
 
 loom_serve_service_flags_t loom_serve_registry_service_flags(
     const loom_serve_registered_model_t* model) {
-  if (model->removal == LOOM_SERVE_REMOVAL_ABORT) {
+  if (!iree_status_is_ok(model->status) ||
+      model->removal == LOOM_SERVE_REMOVAL_ABORT) {
     return LOOM_SERVE_SERVICE_FLAG_STOPPING;
   }
   if (model->removal == LOOM_SERVE_REMOVAL_DRAIN) {
@@ -545,6 +591,22 @@ static void loom_serve_registry_record_error(
   loom_serve_telemetry_stream_append(model->stream, &record);
 }
 
+iree_status_t loom_serve_registry_fail(loom_serve_registry_t* registry,
+                                       iree_host_size_t index,
+                                       iree_status_t status) {
+  loom_serve_registered_model_t* model = &registry->models[index];
+  if (!model->incarnation) {
+    return status;
+  }
+  if (iree_status_is_ok(model->status)) {
+    loom_serve_registry_record_error(model, status);
+  }
+  model->status = iree_status_join(model->status, status);
+  return registry->factory.query_status
+             ? registry->factory.query_status(registry->factory.self)
+             : iree_ok_status();
+}
+
 iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
                                           iree_host_size_t index,
                                           loom_serve_wake_callback_t observer,
@@ -558,11 +620,17 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
   bool progress = false;
   const loom_serve_registration_phase_t previous_phase = model->phase;
   if (model->phase == LOOM_SERVE_REGISTRATION_DECLARED && !model->removal &&
-      (!model->closed ||
+      (model->configuration.sources.reference.path.size || !model->closed ||
        model->parameter_operation == LOOM_SERVE_PARAMETER_OPERATION_WAITING)) {
-    model->status = registry->factory.create(
-        registry->factory.self, &model->configuration, observer, model->stream,
-        registry->host_allocator, &model->registration);
+    if (model->configuration.sources.reference.path.size) {
+      model->status = loom_serve_model_resolution_start(
+          registry->factory.resolution_sink, &model->configuration, observer,
+          registry->host_allocator, &model->resolution);
+    } else {
+      model->status = registry->factory.create(
+          registry->factory.self, &model->configuration, observer,
+          model->stream, registry->host_allocator, &model->registration);
+    }
     loom_serve_registry_set_phase(model, iree_status_is_ok(model->status)
                                              ? LOOM_SERVE_REGISTRATION_PREPARING
                                              : LOOM_SERVE_REGISTRATION_FAILED);
@@ -573,7 +641,40 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
     }
     progress = true;
   }
-  if (model->phase == LOOM_SERVE_REGISTRATION_PREPARING) {
+  if (model->resolution) {
+    loom_serve_model_configuration_t resolved = {0};
+    if (loom_serve_model_resolution_take(&model->resolution, &model->status,
+                                         &resolved)) {
+      if (iree_status_is_ok(model->status) && !model->removal) {
+        loom_serve_model_configuration_deinitialize(&model->configuration);
+        model->configuration = resolved;
+        resolved = (loom_serve_model_configuration_t){0};
+        model->service.name = model->configuration.name;
+        if (!model->closed || model->parameter_operation ==
+                                  LOOM_SERVE_PARAMETER_OPERATION_WAITING) {
+          model->status = registry->factory.create(
+              registry->factory.self, &model->configuration, observer,
+              model->stream, registry->host_allocator, &model->registration);
+        } else {
+          // Resolve model facts while drained without preparing programs or
+          // parameters. Component management can then use the declared roles.
+          loom_serve_registry_set_phase(model,
+                                        LOOM_SERVE_REGISTRATION_DECLARED);
+        }
+      }
+      loom_serve_model_configuration_deinitialize(&resolved);
+      if (model->removal || !iree_status_is_ok(model->status)) {
+        loom_serve_registry_set_parameter_operation(
+            model, LOOM_SERVE_PARAMETER_OPERATION_NONE);
+        loom_serve_registry_set_phase(model, LOOM_SERVE_REGISTRATION_FAILED);
+        if (!iree_status_is_ok(model->status)) {
+          loom_serve_registry_record_error(model, model->status);
+        }
+      }
+      progress = true;
+    }
+  }
+  if (model->phase == LOOM_SERVE_REGISTRATION_PREPARING && !model->resolution) {
     loom_serve_registration_prepare_flags_t flags = 0;
     if (model->removal) {
       flags = LOOM_SERVE_REGISTRATION_PREPARE_FLAG_CANCEL;
@@ -636,24 +737,25 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
            LOOM_SERVE_PARAMETER_OPERATION_ACTIVATING)) {
     const loom_serve_service_snapshot_t snapshot =
         model->service.snapshot(model->service.self);
-    if (model->removal ||
+    if (model->removal || !iree_status_is_ok(model->status) ||
         (!snapshot.queued_requests && !snapshot.active_requests &&
          !model->service.is_active(model->service.self))) {
       loom_serve_activation_phase_t phase = LOOM_SERVE_ACTIVATION_COMPLETE;
       iree_status_t component_status = iree_ok_status();
-      model->status = model->registration.activate(
+      iree_status_t status = model->registration.activate(
           model->registration.self, model->parameter_component,
-          model->removal ? LOOM_SERVE_ACTIVATION_FLAG_CANCEL : 0, &phase,
-          &component_status);
+          model->removal || !iree_status_is_ok(model->status)
+              ? LOOM_SERVE_ACTIVATION_FLAG_CANCEL
+              : 0,
+          &phase, &component_status);
       if (!iree_status_is_ok(component_status)) {
         // The component retains its diagnostic and remains inspectable. Only
         // its affected operation fails unless shared backing was disturbed.
         loom_serve_registry_record_error(model, component_status);
         iree_status_free(component_status);
         if (registry->factory.query_status) {
-          model->status = iree_status_join(
-              model->status,
-              registry->factory.query_status(registry->factory.self));
+          status = iree_status_join(
+              status, registry->factory.query_status(registry->factory.self));
         }
       }
       const loom_serve_parameter_operation_t operation =
@@ -664,13 +766,13 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
               : LOOM_SERVE_PARAMETER_OPERATION_WAITING;
       progress |= operation != model->parameter_operation;
       loom_serve_registry_set_parameter_operation(model, operation);
-      if (!iree_status_is_ok(model->status)) {
-        loom_serve_registry_record_error(model, model->status);
-        terminal_status = iree_status_clone(model->status);
+      if (!iree_status_is_ok(status)) {
+        terminal_status = loom_serve_registry_fail(registry, index, status);
       }
     }
   }
-  if (model->phase == LOOM_SERVE_REGISTRATION_READY && model->removal &&
+  if (model->phase == LOOM_SERVE_REGISTRATION_READY &&
+      (model->removal || !iree_status_is_ok(model->status)) &&
       model->parameter_operation == LOOM_SERVE_PARAMETER_OPERATION_NONE) {
     const loom_serve_service_snapshot_t snapshot =
         model->service.snapshot(model->service.self);
@@ -692,11 +794,10 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
     if (!snapshot.queued_requests && !snapshot.active_requests &&
         !model->service.is_active(model->service.self)) {
       bool complete = false;
-      model->status = model->registration.deactivate(
+      iree_status_t status = model->registration.deactivate(
           model->registration.self, model->parameter_component, &complete);
-      if (!iree_status_is_ok(model->status)) {
-        loom_serve_registry_record_error(model, model->status);
-        terminal_status = iree_status_clone(model->status);
+      if (!iree_status_is_ok(status)) {
+        terminal_status = loom_serve_registry_fail(registry, index, status);
         complete = true;
       }
       if (complete) {
@@ -732,8 +833,8 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
     memcpy(record.data.snapshot.phase, phase, strlen(phase) + 1);
     loom_serve_telemetry_stream_append(model->stream, &record);
   }
-  if (model->removal && !model->registration.self && !model->held_count &&
-      !model->tokenizer_count) {
+  if (model->removal && !model->resolution && !model->registration.self &&
+      !model->held_count && !model->tokenizer_count) {
     IREE_TRACE_SECTION_LEAVE(model->trace.lifecycle);
     IREE_TRACE_SECTION_LEAVE(model->trace.parameters);
     loom_serve_registry_add_counters(&registry->retired.counters,

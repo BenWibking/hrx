@@ -15,9 +15,6 @@ using loom_serve::testing::text::SourceTextServiceTest;
 
 class ElasticTextServiceTest : public SourceTextServiceTest {
  protected:
-  // Four private rows and ten recurrent slots precede the KV plane.
-  static constexpr size_t kPrivateBytes = 4 * 768 + 10 * 256;
-
   void SetUp() override {
     ASSERT_NO_FATAL_FAILURE(SourceTextServiceTest::SetUp());
     // Cold-allocation holds must not depend on a previous test's cached slabs.
@@ -60,12 +57,11 @@ class ElasticTextServiceTest : public SourceTextServiceTest {
     };
     const std::unique_ptr<loom_serve_text_model_t, decltype(release_model)>
         owner(source, release_model);
-    // The fixture places four 768-byte private rows and ten 256-byte recurrent
-    // slots before its four-byte-per-token KV plane. Fill exactly one slab;
+    // Private state occupies its own slab after the four-byte-per-token KV
+    // plane. Fill exactly one KV slab;
     // a new COW tail must acquire native backing, not reuse an existing page.
-    const size_t extents[] = {
-        4, options.context_capacity,
-        (slab_size - kPrivateBytes) / 4 - 4 - options.context_capacity};
+    const size_t extents[] = {4, options.context_capacity,
+                              slab_size / 4 - 4 - options.context_capacity};
     for (size_t i = 0; i < IREE_ARRAYSIZE(extents); ++i) {
       bool admitted = false;
       IREE_ASSERT_OK(loom_serve_text_row_try_reserve(
@@ -81,7 +77,7 @@ class ElasticTextServiceTest : public SourceTextServiceTest {
     IREE_ASSERT_OK(
         loom_serve_text_row_prefill(warm, IREE_ARRAYSIZE(tokens), tokens));
     ASSERT_EQ(loom_serve_text_model_memory_statistics(source).committed_bytes,
-              slab_size);
+              2 * slab_size);
     loom_serve_text_checkpoint_t* checkpoint = nullptr;
     loom_serve_execution_frontier_t frontier;
     {
@@ -133,7 +129,8 @@ class ElasticTextServiceTest : public SourceTextServiceTest {
           Read(Send(Declaration(name, directory_), "", "/v1/models/register"))
               .find("HTTP/1.1 202"),
           0u);
-      ASSERT_NO_FATAL_FAILURE(WaitModel(name, R"("registration":"ready")"));
+      ASSERT_NO_FATAL_FAILURE(
+          WaitModelState(name, R"("registration":"ready")"));
     }
     // Explicit parameter activation leaves the cold model's KV untouched.
     ASSERT_EQ(Read(Send(R"({"model":"cold"})", "", "/v1/models/drain"))
@@ -142,7 +139,8 @@ class ElasticTextServiceTest : public SourceTextServiceTest {
     ASSERT_EQ(Read(Send(R"({"model":"cold"})", "", "/v1/models/activate"))
                   .find("HTTP/1.1 202"),
               0u);
-    const auto activated = WaitModel("cold", R"("parameter_operation":"idle")");
+    const auto activated =
+        WaitModelState("cold", R"("parameter_operation":"idle")");
     ASSERT_NE(activated.find(
                   R"("primary":{"phase":"ready","pinned":false,"active":true)"),
               std::string::npos)
@@ -156,7 +154,8 @@ class ElasticTextServiceTest : public SourceTextServiceTest {
     cold_request.replace(cold_request.find("fixture-text"), 12, "cold");
     ASSERT_EQ(Content(Read(Send(warm, "X-Loom-Session: warm\r\n"))),
               Oracle::Complete(prompt, 4));
-    ASSERT_NO_FATAL_FAILURE(WaitModel("fixture-text", R"("phase":"idle")"));
+    ASSERT_NO_FATAL_FAILURE(
+        WaitModelState("fixture-text", R"("phase":"idle")"));
     ASSERT_FALSE(HasPendingBacking(Read(Send("", "", "/v1/status", "GET"))));
     int cold = -1;
     {
@@ -177,7 +176,8 @@ class ElasticTextServiceTest : public SourceTextServiceTest {
                             "/v1/models/unregister"))
                       .find("HTTP/1.1 202"),
                   0u);
-        ASSERT_NO_FATAL_FAILURE(WaitModel("cold", R"("admission":"removing")"));
+        ASSERT_NO_FATAL_FAILURE(
+            WaitModelState("cold", R"("admission":"removing")"));
         EXPECT_TRUE(HasPendingBacking(Read(Send("", "", "/v1/status", "GET"))));
       }
       EXPECT_EQ(Content(Read(Send(warm, "X-Loom-Session: warm\r\n"))),
@@ -185,10 +185,10 @@ class ElasticTextServiceTest : public SourceTextServiceTest {
       EXPECT_EQ(Read(Send("", "", "/healthz", "GET")).find("HTTP/1.1 200"), 0u);
     }
     if (cancel) {
-      ASSERT_NO_FATAL_FAILURE(WaitModel("cold", {}));
+      ASSERT_NO_FATAL_FAILURE(WaitModelAbsent("cold"));
     } else {
       EXPECT_EQ(Content(Read(cold)), Oracle::Complete(prompt, 4));
-      ASSERT_NO_FATAL_FAILURE(WaitModel("cold", R"("phase":"idle")"));
+      ASSERT_NO_FATAL_FAILURE(WaitModelState("cold", R"("phase":"idle")"));
     }
     EXPECT_FALSE(HasPendingBacking(Read(Send("", "", "/v1/status", "GET"))));
   }
@@ -226,7 +226,7 @@ TEST_F(RegisteredElasticTextServiceTest,
         Read(Send(Declaration(name, directory_), "", "/v1/models/register"))
             .find("HTTP/1.1 202"),
         0u);
-    ASSERT_NO_FATAL_FAILURE(WaitModel(name, R"("registration":"ready")"));
+    ASSERT_NO_FATAL_FAILURE(WaitModelState(name, R"("registration":"ready")"));
     ASSERT_EQ(Read(Send("{\"model\":\"" + std::string(name) + "\"}", "",
                         "/v1/models/pin"))
                   .find("HTTP/1.1 200"),
@@ -246,22 +246,22 @@ TEST_F(RegisteredElasticTextServiceTest,
   std::string warm = request;
   warm.replace(warm.find("fixture-text"), 12, "warm");
   ASSERT_EQ(Content(Read(Send(warm, "X-Loom-Session: warm\r\n"))), first);
-  ASSERT_NO_FATAL_FAILURE(WaitModel("fixture-text", R"("phase":"idle")"));
-  ASSERT_NO_FATAL_FAILURE(WaitModel("warm", R"("phase":"idle")"));
+  ASSERT_NO_FATAL_FAILURE(WaitModelState("fixture-text", R"("phase":"idle")"));
+  ASSERT_NO_FATAL_FAILURE(WaitModelState("warm", R"("phase":"idle")"));
   {
     ASSERT_EQ(Read(Send(R"({"model":"fixture-text"})", "", "/v1/models/unpin"))
                   .find("HTTP/1.1 200"),
               0u);
     // This poll does not keep parameters hot. Expiry returns backing to the
     // shared cache without closing admission or losing retained history.
-    const auto expired = WaitModel(
+    const auto expired = WaitModelState(
         "fixture-text",
         R"("primary":{"phase":"ready","pinned":false,"active":false)");
     ASSERT_NE(expired.find(R"("deactivations":1)"), std::string::npos)
         << expired;
     EXPECT_EQ(Content(Read(Send(warm, "X-Loom-Session: warm\r\n"))), first);
     EXPECT_EQ(Read(Send("", "", "/healthz", "GET")).find("HTTP/1.1 200"), 0u);
-    const auto peer = WaitModel("warm", R"("phase":"idle")");
+    const auto peer = WaitModelState("warm", R"("phase":"idle")");
     EXPECT_NE(
         peer.find(R"("primary":{"phase":"ready","pinned":true,"active":true)"),
         std::string::npos);
@@ -292,11 +292,11 @@ TEST_F(ElasticTextServiceTest,
   const iree_device_size_t slab_size =
       loom_serve_test_application_options_default().slab_size;
   auto options = ModelOptions();
-  // Reserve exactly three physical slabs. Four full row reservations touch all
-  // three, but only three tokens in the upper half survive. Both trim phases
-  // must return full reusable slabs; no long prompt is executed.
+  // Reserve three KV slabs and one private-state slab. Four full reservations
+  // touch two KV slabs, but only three tokens in the upper half survive. Both
+  // trim phases return full reusable slabs; no long prompt is executed.
   options.context_capacity = slab_size / 8;
-  options.pool_capacity = (3 * slab_size - kPrivateBytes) / 4;
+  options.pool_capacity = 3 * slab_size / 4;
   loom_serve_text_model_t* sparse = nullptr;
   IREE_ASSERT_OK(loom_serve_text_model_allocate(device_, &options,
                                                 host_allocator_, &sparse));
@@ -383,7 +383,7 @@ TEST_F(ElasticTextServiceTest,
     const auto physical = loom_serve_memory_pool_statistics(
         loom_serve_device_memory_pool(device_));
     const auto returned = loom_serve_text_model_memory_statistics(sparse);
-    EXPECT_EQ(returned.committed_bytes, slab_size);
+    EXPECT_EQ(returned.committed_bytes, 2 * slab_size);
     EXPECT_EQ(returned.releasing_bytes, 0u);
     EXPECT_GE(physical.releasing_bytes, slab_size);
     ASSERT_NO_FATAL_FAILURE(advance_warm());
@@ -394,7 +394,7 @@ TEST_F(ElasticTextServiceTest,
   ASSERT_TRUE(complete);
   EXPECT_EQ(result.released_bytes, 2 * slab_size);
   EXPECT_EQ(loom_serve_text_model_memory_statistics(sparse).committed_bytes,
-            slab_size);
+            2 * slab_size);
 
   // The compacted page is still shared. Appending detaches its partial tail;
   // restoring the immutable endpoint must retain the original prediction.

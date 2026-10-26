@@ -33,6 +33,7 @@
 #include "loom/serve/telemetry/stream.h"
 #include "loom/serve/testing/http_harness.h"
 #include "loom/serve/testing/model.h"
+#include "loom/serve/testing/model_wait.h"
 #include "loom/serve/testing/stalled_http_client.h"
 #include "loom/serve/testing/stalled_stderr.h"
 #include "loom/serve/transport/http/listener.h"
@@ -61,6 +62,10 @@ class SourceTextServiceTest : public ::testing::Test {
   // One process uses one shared executor configuration; filtered qualification
   // runs can exercise the same owner contract with additional workers.
   virtual iree_host_size_t WorkerCount() const { return 1; }
+
+  virtual loom_serve_http_server_options_t ServerOptions() const {
+    return loom_serve_http_server_options_default();
+  }
 
   // Document ownership covers every asynchronous native load in this fixture.
   loom_serve::testing::ModelDocument document_;
@@ -178,7 +183,7 @@ class SourceTextServiceTest : public ::testing::Test {
       const std::string& name, const std::string& source,
       const char* admission = "open", const std::string& definition_fields = "",
       const std::vector<std::string>& additional_sources = {}) {
-    std::string sources = "\"advance.loom\"";
+    std::string sources = "\"advance.loom\",\"storage.loom\"";
     for (const auto& path : additional_sources) {
       sources += ",\"" + path + "\"";
     }
@@ -198,22 +203,25 @@ class SourceTextServiceTest : public ::testing::Test {
            definition_fields + "}}";
   }
 
-  std::string WaitModel(const std::string& name, const std::string& marker) {
-    while (!http_.failed() && !HasFatalFailure()) {
-      const auto listing = Read(Send("", "", "/v1/status", "GET"));
-      const size_t begin = listing.find("\"id\":\"" + name + "\"");
-      const size_t end = listing.find("{\"object\":\"model\"", begin);
-      const auto state =
-          begin == std::string::npos
-              ? std::string()
-              : listing.substr(begin,
-                               end == std::string::npos ? end : end - begin);
-      if (marker.empty() ? state.empty()
-                         : state.find(marker) != std::string::npos) {
-        return state;
-      }
+  std::string ModelStatus(const std::string& name) {
+    const auto listing = Read(Send("", "", "/v1/status", "GET"));
+    const size_t begin = listing.find("\"id\":\"" + name + "\"");
+    if (begin == std::string::npos) {
+      return {};
     }
-    return {};
+    const size_t end = listing.find("{\"object\":\"model\"", begin);
+    return listing.substr(begin, end == std::string::npos ? end : end - begin);
+  }
+
+  std::string WaitModelState(const std::string& name,
+                             const std::string& marker) {
+    return loom_serve::testing::WaitModelState(
+        http_, name, marker, [this, &name] { return ModelStatus(name); });
+  }
+
+  void WaitModelAbsent(const std::string& name) {
+    loom_serve::testing::WaitModelAbsent(
+        http_, [this, &name] { return ModelStatus(name); });
   }
 
   int Send(const std::string& body, const std::string& headers = "",
@@ -383,7 +391,7 @@ class SourceTextServiceTest : public ::testing::Test {
         stalled.Send(server_, Request(Message("user", "abxa"), 4)));
     const std::string held_state =
         R"("phase":"idle","queued_requests":0,"active_requests":1)";
-    WaitModel("fixture-text", held_state);
+    WaitModelState("fixture-text", held_state);
     auto expect_counts = [&](uint64_t completed, uint64_t cancelled,
                              uint64_t outputs) {
       const std::string metrics = Read(Send("", "", "/metrics", "GET"));
@@ -427,7 +435,7 @@ class SourceTextServiceTest : public ::testing::Test {
     EXPECT_EQ(Content(Read(Send(Request(Message("user", "abxa"), 2),
                                 "X-Loom-Session: third\r\n"))),
               Oracle::Complete("abxa", 2));
-    WaitModel("fixture-text", held_state);
+    WaitModelState("fixture-text", held_state);
     // All six new outputs belong to the independent TCP peers. The held row
     // has not advanced while they execute, retire and retain their histories.
     expect_counts(3, 0, 7);
@@ -452,8 +460,8 @@ class SourceTextServiceTest : public ::testing::Test {
                      Message("user", "b");
     }
     ASSERT_NO_FATAL_FAILURE(stalled.Close());
-    WaitModel("fixture-text",
-              R"("phase":"idle","queued_requests":0,"active_requests":0)");
+    WaitModelState("fixture-text",
+                   R"("phase":"idle","queued_requests":0,"active_requests":0)");
     expect_counts(action == OverlapAction::kComplete ? 4 : 3,
                   action == OverlapAction::kDisconnect ? 1 : 0,
                   action == OverlapAction::kComplete ? 10 : 7);

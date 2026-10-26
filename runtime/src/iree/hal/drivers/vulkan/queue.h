@@ -242,8 +242,9 @@ typedef struct iree_hal_vulkan_queue_t {
   // Next queue epoch value to assign to an accepted submission.
   uint64_t next_epoch_value;
 
-  // Last queue epoch whose completion side effects have fully retired.
-  iree_atomic_int64_t last_drained_epoch;
+  // Last completed native epoch dequeued under submission_mutex. The worker
+  // waits for later epochs; callbacks for this epoch may still be running.
+  iree_atomic_int64_t last_dequeued_epoch;
 
   // Accumulated causal frontier for work submitted through this queue.
   iree_hal_vulkan_queue_frontier_t frontier;
@@ -479,8 +480,9 @@ iree_hal_vulkan_queue_completion_action_null(void) {
 }
 
 // Submits an existing queue dependency/publication boundary with an owned
-// continuation. A successful submission retains the action resource; a
-// rejected submission may invoke the action with the terminal failure.
+// continuation. An accepted submission retains the action resource and invokes
+// the action once on completion, including deferred failure. A rejected
+// submission returns an error without invoking or retaining the action.
 iree_status_t iree_hal_vulkan_queue_submit_barrier_with_action(
     iree_hal_vulkan_queue_t* queue,
     const iree_hal_semaphore_list_t wait_semaphore_list,

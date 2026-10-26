@@ -26,6 +26,10 @@ typedef struct loom_serve_text_heartbeat_snapshot_t {
   iree_time_t last_completion;
   // Requests currently holding retained rows.
   iree_host_size_t active_rows;
+  // Allocated resident owners, including idle reusable records.
+  iree_host_size_t session_capacity;
+  // Configured resident ceiling; zero leaves concurrency memory-limited.
+  iree_host_size_t max_sessions;
   // Claimed requests waiting without a device row or completion reservation.
   iree_host_size_t queued_requests;
   // Monotonic receipt time of the oldest admitted request, if active_rows > 0.
@@ -59,6 +63,11 @@ typedef struct loom_serve_text_heartbeat_snapshot_t {
   } prefix_cache;
   // Host payload owned by explicitly suspended endpoints, not device backing.
   iree_host_size_t checkpoint_host_bytes;
+  // Cold automatic-cache sizing target; not a reservation or physical usage.
+  uint64_t cache_target_bytes;
+  // Selected additional initial state and checkpoint-map extent. Resident
+  // growth can add COW working set independently of this cold estimate.
+  uint64_t cache_additional_bytes;
   // Elastic mutable-state backing; weights and transient workspace are
   // separate.
   loom_serve_memory_statistics_t state_memory;

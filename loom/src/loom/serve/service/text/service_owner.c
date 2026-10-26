@@ -44,7 +44,7 @@ void loom_serve_text_observe(loom_serve_text_service_t* service,
   iree_host_size_t active = 0, prefill = 0, decode = 0, backpressured = 0;
   iree_time_t oldest_active_arrival = IREE_TIME_INFINITE_FUTURE;
   for (iree_host_size_t i = 0; i < service->row_count; ++i) {
-    const loom_serve_text_session_t* session = &service->sessions[i];
+    const loom_serve_text_session_t* session = service->sessions[i];
     if (session->request.consumer.self) {
       ++active;
       const iree_time_t arrival =
@@ -63,6 +63,8 @@ void loom_serve_text_observe(loom_serve_text_service_t* service,
     state->phase_start = iree_time_now();
   }
   state->active_rows = active;
+  state->session_capacity = service->row_count;
+  state->max_sessions = service->max_sessions;
   state->oldest_active_arrival = oldest_active_arrival;
   state->pool.capacity = pool.capacity;
   state->pool.reserved = pool.pending;
@@ -73,6 +75,10 @@ void loom_serve_text_observe(loom_serve_text_service_t* service,
   state->prefix_cache.endpoints = service->prefixes.count;
   state->checkpoint_host_bytes =
       loom_serve_text_model_checkpoint_suspended_bytes(service->model);
+  const loom_serve_text_cache_selection_t cache =
+      loom_serve_text_model_cache_selection(service->model);
+  state->cache_target_bytes = cache.target_bytes;
+  state->cache_additional_bytes = cache.additional_bytes;
   state->state_memory = loom_serve_text_model_memory_statistics(service->model);
   state->weight_memory =
       loom_serve_text_model_weight_statistics(service->model);

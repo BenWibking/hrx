@@ -16,6 +16,7 @@
 #include "loom/serve/runtime/program/sources.h"
 #include "loom/serve/runtime/program/variant_pool.h"
 #include "loom/serve/runtime/storage/memory.h"
+#include "loom/serve/service/text/cache_policy.h"
 #include "loom/serve/service/text/capture.h"
 #include "loom/serve/service/text/chat.h"
 #include "loom/serve/service/text/media_input.h"
@@ -83,9 +84,6 @@ void loom_serve_text_variant_free(loom_serve_text_variant_t* variant);
 const loom_serve_compilation_report_t* loom_serve_text_variant_report(
     const loom_serve_text_variant_t* variant);
 
-// Retained arenas are sized to row_count, not this control-payload bound.
-enum { LOOM_SERVE_TEXT_ROW_CAPACITY = 16 };
-
 typedef enum loom_serve_text_mode_e {
   // Tokenizer/chat policy and optional local token prediction.
   LOOM_SERVE_TEXT_MODE_GENERATE = 0,
@@ -134,16 +132,24 @@ typedef struct loom_serve_text_options_t {
   iree_string_view_t weights_path;
   // Hugging Face tokenizer.json loaded once during creation.
   iree_string_view_t tokenizer_path;
-  // Number of addressable retained rows in one stable state arena (1-16).
+  // Initial addressable resident capacity, independent of epoch shape capacity.
+  // Service demand grows it; source-visible identities fit a positive i32.
   iree_host_size_t row_count;
   // Maximum explicitly retained endpoints; zero keeps no checkpoint reserve.
   // Requires pooled execution. Source reserves reader/writer slot headroom;
   // elastic backing commits only used ranges, fixed backing reserves it all.
   iree_host_size_t checkpoint_capacity;
+  // Service-owned automatic histories, additional to explicit checkpoints.
+  // Zero initialization retains the exact checkpoint-only native contract.
+  loom_serve_text_cache_options_t cache;
   // Opaque bootstrap JSON object interpreted by source; empty means {}.
   // Borrowed through load completion, independently of per-request options.
   iree_string_view_t options;
 } loom_serve_text_options_t;
+
+// Cold resolved cache counts retained independently of resident growth.
+loom_serve_text_cache_selection_t loom_serve_text_model_cache_selection(
+    const loom_serve_text_model_t* model);
 
 enum loom_serve_text_span_flag_bits_e {
   // Select the next token after consuming this span. An intermediate input
@@ -334,6 +340,38 @@ iree_status_t loom_serve_text_model_complete_trim(
 // maintenance, not ordinary decoding or a task-worker entry point.
 iree_status_t loom_serve_text_model_trim(
     loom_serve_text_model_t* model, loom_serve_text_trim_result_t* out_result);
+
+// Owned source layout and control state for one retired-frontier growth.
+typedef struct loom_serve_text_resize_t loom_serve_text_resize_t;
+
+// Evaluates append-stable source storage without changing model directories,
+// device bindings, or shared pool accounting. May run on a CPU worker with an
+// exclusive model VM borrow. Prepared continuations defer growth by returning
+// NULL. The caller excludes other model mutation through submission/completion
+// or frees the prepared result without submitting it.
+iree_status_t loom_serve_text_model_prepare_resize(
+    loom_serve_text_model_t* model, iree_host_size_t row_count,
+    loom_serve_text_resize_t** out_resize);
+
+// Releases unconsumed source results. Safe after submission on success/failure;
+// accepted native work retains everything it borrowed independently.
+void loom_serve_text_resize_free(loom_serve_text_resize_t* resize);
+
+// Applies a prepared growth on the serialized server/pool owner. Programs,
+// parameters, epoch shapes, and existing handles survive. Virtual backing
+// retains slabs; fixed backing copies at this cold boundary. Returns accepted
+// queue readiness without waiting. Submission failure retains accepted work
+// for normal model retirement. The prepared result is consumed, not freed.
+iree_status_t loom_serve_text_model_submit_resize(
+    loom_serve_text_model_t* model, loom_serve_text_resize_t* resize,
+    loom_serve_execution_frontier_t* out_frontier);
+
+// Called after ALL resize readiness succeeds, before admitting new residents.
+void loom_serve_text_model_complete_resize(loom_serve_text_model_t* model);
+
+// Published resident capacity, independent of compiled epoch width.
+iree_host_size_t loom_serve_text_model_row_count(
+    const loom_serve_text_model_t* model);
 
 // Owner-driven preparation on shared CPU/JIT workers and proactor waits.
 typedef struct loom_serve_text_load_t loom_serve_text_load_t;
@@ -728,6 +766,9 @@ iree_status_t loom_serve_text_row_decode(loom_serve_text_row_t* row);
 // a shared epoch's duration belongs to the batch, not to each constituent row.
 int32_t loom_serve_text_row_token(const loom_serve_text_row_t* row);
 bool loom_serve_text_row_is_eos(const loom_serve_text_row_t* row);
+// Stable source-visible identity, independent of handle allocation and cohort.
+iree_host_size_t loom_serve_text_row_index(const loom_serve_text_row_t* row);
+
 iree_host_size_t loom_serve_text_row_position(const loom_serve_text_row_t* row);
 loom_serve_text_metrics_t loom_serve_text_row_metrics(
     const loom_serve_text_row_t* row);

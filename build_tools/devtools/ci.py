@@ -31,15 +31,6 @@ CMAKE_SANITIZER_OPTIONS = {
     "tsan": ("-DIREE_ENABLE_TSAN=ON",),
     "ubsan": ("-DIREE_ENABLE_UBSAN=ON",),
 }
-BAZEL_HAL_DRIVER_DEFINES = (
-    ("amdgpu", "IREE_HAL_DRIVER_AMDGPU"),
-    ("task", "IREE_HAL_DRIVER_TASK"),
-    ("vulkan", "IREE_HAL_DRIVER_VULKAN"),
-    ("webgpu", "IREE_HAL_DRIVER_WEBGPU"),
-    ("amd", "IREE_HAL_DRIVER_AMD"),
-    ("amd-gpu", "IREE_HAL_DRIVER_AMD_GPU"),
-    ("amd-xdna", "IREE_HAL_DRIVER_AMD_XDNA"),
-)
 CMAKE_HAL_DRIVER_DEFINES = (
     ("amdgpu", "IREE_HAL_DRIVER_AMDGPU"),
     ("vulkan", "IREE_HAL_DRIVER_VULKAN"),
@@ -61,7 +52,9 @@ CMAKE_LOOM_IMPORTER_DEFINES = (
     ("mlir", "LOOM_IMPORT_MLIR"),
     ("tilelang", "LOOM_IMPORT_TILELANG"),
 )
-CI_SUPPORTED_HAL_DRIVERS = frozenset(driver for driver, _ in BAZEL_HAL_DRIVER_DEFINES)
+CI_SUPPORTED_HAL_DRIVERS = frozenset(
+    ("task", *(driver for driver, _ in CMAKE_HAL_DRIVER_DEFINES))
+)
 REPOSITORY_BUILD_HAL_DRIVERS = (
     "amd",
     "amdgpu",
@@ -388,10 +381,12 @@ def bazel_configure_step(
     extra_options: tuple[str, ...] = (),
 ) -> CiStep:
     enabled_driver_set = validate_enabled_drivers(enabled_drivers)
-    command = ["bazel", "configure"]
-    for driver, define in BAZEL_HAL_DRIVER_DEFINES:
-        if driver in enabled_driver_set:
-            command.append(f"-D{define}=ON")
+    drivers = sorted((enabled_driver_set | {"task"}) - {"amd"})
+    command = [
+        "bazel",
+        "configure",
+        "--//runtime/config/hal:drivers=" + ",".join(drivers),
+    ]
     if "amdgpu" in enabled_driver_set:
         command.append(ROCM_PINNED_DEPENDENCY_MODE_OPTION)
         rocm_root = os.environ.get("HRX_ROCM_ROOT")
@@ -573,9 +568,11 @@ def cmake_build_step(
     name: str,
     targets: tuple[str, ...] = (),
 ) -> CiStep:
+    parallelism = os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL")
+    parallel_args = ("--parallel", parallelism) if parallelism else ("--parallel",)
     return CiStep(
         name,
-        cmake_dev_command(command_name, "build", *targets, "--parallel"),
+        cmake_dev_command(command_name, "build", *targets, *parallel_args),
     )
 
 
@@ -672,18 +669,24 @@ def repository_build_steps() -> list[CiStep]:
     ]
 
 
-def repository_integration_steps(
-    amdgpu_target_selector: str, *, include_python_tests: bool
-) -> list[CiStep]:
+def repository_integration_steps(amdgpu_target_selector: str) -> list[CiStep]:
     if not os.environ.get("HRX_ROCM_ROOT"):
         raise ValueError(
             "iree-bazel-repository-integration requires HRX_ROCM_ROOT so the "
             "AMDGPU device compiler is exercised"
         )
+    platform_coverage = platform_coverage_enabled()
     amdgpu_options = amdgpu_bazel_options(amdgpu_target_selector)
+    test_tag_filters = ci_config.CPU_RESOURCE_TAG_EXCLUDES
+    test_language_filters: tuple[str, ...] = ()
+    if not platform_coverage:
+        # The secondary compiler lane keeps focused native tests while the
+        # platform lane owns portable Python and corpus scenario coverage.
+        test_tag_filters += ("-loom-corpus",)
+        test_language_filters = ci_config.PYTHON_TEST_BAZEL_LANGUAGE_EXCLUSIONS
     return [
         repository_configure_step(),
-        *platform_coverage_build_steps(repository_build_step()),
+        *([repository_build_step()] if platform_coverage else []),
         bazel_build_step(
             "Build AMDGPU device toolchain smoke",
             ci_config.BAZEL_REPOSITORY_INTEGRATION_DEVICE_TARGETS,
@@ -692,12 +695,8 @@ def repository_integration_steps(
         bazel_test_step(
             "Test repository",
             ci_config.BAZEL_REPOSITORY_TEST_TARGETS,
-            test_tag_filters=ci_config.CPU_RESOURCE_TAG_EXCLUDES,
-            test_language_filters=(
-                ()
-                if include_python_tests
-                else ci_config.PYTHON_TEST_BAZEL_LANGUAGE_EXCLUSIONS
-            ),
+            test_tag_filters=test_tag_filters,
+            test_language_filters=test_language_filters,
             bazel_options=ci_config.REPOSITORY_BAZEL_OPTIONS,
         ),
         bazel_run_step(
@@ -1557,11 +1556,6 @@ def _steps_from_args(args: argparse.Namespace) -> list[CiStep]:
         raise ValueError(
             "--loom-importer is only supported for AMDGPU Bazel CI commands"
         )
-    if args.exclude_python_tests and bazel_target_group != "repository-integration":
-        raise ValueError(
-            "--exclude-python-tests is only supported for repository-integration "
-            "CI commands"
-        )
     amdgpu_target_selector = (
         args.amdgpu_target or ci_config.DEFAULT_AMDGPU_TARGET_SELECTOR
     )
@@ -1626,10 +1620,7 @@ def _steps_from_args(args: argparse.Namespace) -> list[CiStep]:
             raise ValueError(
                 "--target is not supported by the repository-wide integration command"
             )
-        return repository_integration_steps(
-            amdgpu_target_selector,
-            include_python_tests=not args.exclude_python_tests,
-        )
+        return repository_integration_steps(amdgpu_target_selector)
     targets = command_targets(args.target)
     if bazel_target == "cpu":
         if sanitizer == "all":
@@ -1997,14 +1988,6 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Loom importer to enable for AMDGPU Bazel CI commands. May be "
             "specified more than once."
-        ),
-    )
-    parser.add_argument(
-        "--exclude-python-tests",
-        action="store_true",
-        help=(
-            "Exclude Python tests from a duplicate repository-integration lane. "
-            "Only supported for repository-integration CI commands."
         ),
     )
     parser.add_argument(

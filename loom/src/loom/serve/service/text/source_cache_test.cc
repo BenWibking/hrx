@@ -15,6 +15,109 @@ using loom_serve::testing::text::RegisteredSourceTextServiceTest;
 using loom_serve::testing::text::SourceTextServiceTest;
 using loom_serve::testing::text::StalledClient;
 
+class AutomaticCacheTextServiceTest : public SourceTextServiceTest {
+ protected:
+  loom_serve_text_options_t ModelOptions() const override {
+    auto options = SourceTextServiceTest::ModelOptions();
+    options.checkpoint_capacity = 0;
+    options.cache = {65536, LOOM_SERVE_TEXT_CACHE_AUTOMATIC,
+                     LOOM_SERVE_TEXT_CACHE_AUTOMATIC};
+    return options;
+  }
+
+  loom_serve_text_service_options_t ServiceOptions() const override {
+    auto options = SourceTextServiceTest::ServiceOptions();
+    const auto selected = loom_serve_text_model_cache_selection(model_);
+    options.row_count = loom_serve_text_model_row_count(model_);
+    options.session_cache_capacity = selected.session_capacity;
+    options.prefix_cache_capacity = selected.prefix_capacity;
+    return options;
+  }
+};
+
+TEST_F(AutomaticCacheTextServiceTest,
+       SelectedSourceStateServesAndRestoresHistory) {
+  const auto selected = loom_serve_text_model_cache_selection(model_);
+  EXPECT_EQ(selected.prefix_capacity, 2u);
+  EXPECT_GT(selected.session_capacity, 8u);
+  EXPECT_LE(selected.session_capacity, 64u);
+  EXPECT_EQ(selected.checkpoint_capacity, selected.session_capacity + 3);
+  EXPECT_GT(selected.additional_bytes, 0u);
+  EXPECT_LE(selected.additional_bytes, 65536u);
+  EXPECT_EQ(loom_serve_text_model_checkpoint_capacity(model_),
+            selected.checkpoint_capacity);
+  loom_serve_text_resize_t* resize = nullptr;
+  IREE_ASSERT_OK(loom_serve_text_model_prepare_resize(model_, 8, &resize));
+  ASSERT_NE(resize, nullptr);
+  loom_serve_execution_frontier_t frontier;
+  auto status = loom_serve_text_model_submit_resize(model_, resize, &frontier);
+  loom_serve_text_resize_free(resize);
+  IREE_ASSERT_OK(status);
+  for (size_t i = 0; i < IREE_ARRAYSIZE(frontier.semaphores); ++i) {
+    IREE_ASSERT_OK(
+        loom_serve_workspace_wait(loom_serve_device_workspace(device_),
+                                  frontier.semaphores[i], frontier.values[i]));
+  }
+  loom_serve_text_model_complete_resize(model_);
+  EXPECT_EQ(loom_serve_text_model_row_count(model_), 8u);
+  EXPECT_EQ(loom_serve_text_model_checkpoint_capacity(model_),
+            selected.checkpoint_capacity);
+  Start();
+  std::vector<std::string> replies;
+  for (int i = 0; i < 12; ++i) {
+    const auto response =
+        Read(Send(Request(Message("user", "abxa"), 2),
+                  "X-Loom-Session: agent-" + std::to_string(i) + "\r\n"));
+    replies.push_back(Content(response));
+    EXPECT_EQ(replies.back(), Oracle::Complete("abxa", 2));
+  }
+  const auto response = Read(Send(
+      Request(Message("user", "abxa") + "," + Message("assistant", replies[0]) +
+                  "," + Message("user", "b"),
+              2),
+      "X-Loom-Session: agent-0\r\n"));
+  EXPECT_EQ(Content(response), Oracle::Complete("abxa" + replies[0] + "#b", 2));
+  EXPECT_NE(response.find(R"("cached_tokens":5})"), std::string::npos)
+      << response;
+}
+
+TEST_F(RegisteredSourceTextServiceTest,
+       AutomaticCacheDefaultsAndExplicitDisablement) {
+  StartManaged();
+  for (bool automatic : {true, false}) {
+    const std::string fields =
+        std::string(R"(,"max_sessions":1)") +
+        (automatic
+             ? ""
+             : R"(,"session_cache_capacity":0,"prefix_cache_capacity":0)");
+    ASSERT_EQ(Read(Send(Declaration("fixture-text", directory_, "open", fields),
+                        "", "/v1/models/register"))
+                  .find("HTTP/1.1 202"),
+              0u);
+    const auto first = Content(Read(Send(Request(Message("user", "abxa"), 2),
+                                         "X-Loom-Session: first\r\n")));
+    EXPECT_EQ(first, Oracle::Complete("abxa", 2));
+    EXPECT_EQ(Content(Read(Send(Request(Message("user", "xbbx"), 2),
+                                "X-Loom-Session: peer\r\n"))),
+              Oracle::Complete("xbbx", 2));
+    const auto response = Read(Send(
+        Request(Message("user", "abxa") + "," + Message("assistant", first) +
+                    "," + Message("user", "b"),
+                2),
+        "X-Loom-Session: first\r\n"));
+    EXPECT_EQ(Content(response), Oracle::Complete("abxa" + first + "#b", 2));
+    EXPECT_NE(response.find(automatic ? R"("cached_tokens":5})"
+                                      : R"("cached_tokens":0})"),
+              std::string::npos)
+        << response;
+    ASSERT_EQ(
+        Read(Send(R"({"model":"fixture-text"})", "", "/v1/models/unregister"))
+            .find("HTTP/1.1 202"),
+        0u);
+    WaitModelAbsent("fixture-text");
+  }
+}
+
 class UntaggedTextServiceTest : public SourceTextServiceTest {
  protected:
   loom_serve_text_options_t ModelOptions() const override {
@@ -153,8 +256,8 @@ TEST_F(UntaggedTextServiceTest, ActiveAndCancelledCompletionsCannotBeReused) {
   const auto reply = Oracle::Complete(prompt, 1);
   ASSERT_NO_FATAL_FAILURE(active.Send(server_, "/v1/chat/completions",
                                       Request(Message("user", prompt), 1)));
-  WaitModel("fixture-text",
-            R"("phase":"idle","queued_requests":0,"active_requests":1)");
+  WaitModelState("fixture-text",
+                 R"("phase":"idle","queued_requests":0,"active_requests":1)");
   const auto history =
       Message("user", prompt) + "," + Message("assistant", reply);
   const auto peer =
@@ -162,8 +265,8 @@ TEST_F(UntaggedTextServiceTest, ActiveAndCancelledCompletionsCannotBeReused) {
   EXPECT_EQ(Content(peer), Oracle::Complete(prompt + reply + "#b", 2));
   EXPECT_NE(peer.find(R"("cached_tokens":0})"), std::string::npos);
   ASSERT_NO_FATAL_FAILURE(active.Close());
-  WaitModel("fixture-text",
-            R"("phase":"idle","queued_requests":0,"active_requests":0)");
+  WaitModelState("fixture-text",
+                 R"("phase":"idle","queued_requests":0,"active_requests":0)");
   const auto retry =
       Read(Send(Request(history + "," + Message("user", "x"), 2)));
   EXPECT_EQ(Content(retry), Oracle::Complete(prompt + reply + "#x", 2));
@@ -176,14 +279,14 @@ TEST_F(UntaggedTextServiceTest, LongestCompletedHistoryWins) {
   loom_serve::testing::StalledHttpClient shorter;
   ASSERT_NO_FATAL_FAILURE(shorter.Send(server_, "/v1/chat/completions",
                                        Request(Message("user", prompt), 1)));
-  WaitModel("fixture-text",
-            R"("phase":"idle","queued_requests":0,"active_requests":1)");
+  WaitModelState("fixture-text",
+                 R"("phase":"idle","queued_requests":0,"active_requests":1)");
   const auto longer = Content(Read(Send(Request(Message("user", prompt), 2))));
   EXPECT_EQ(longer, Oracle::Complete(prompt, 2));
   EXPECT_EQ(Content(shorter.Read()), Oracle::Complete(prompt, 1));
   ASSERT_NO_FATAL_FAILURE(shorter.Close());
-  WaitModel("fixture-text",
-            R"("phase":"idle","queued_requests":0,"active_requests":0)");
+  WaitModelState("fixture-text",
+                 R"("phase":"idle","queued_requests":0,"active_requests":0)");
   const auto response = Read(Send(Request(Message("user", prompt) + "," +
                                               Message("assistant", longer) +
                                               "," + Message("user", "b"),
@@ -220,7 +323,7 @@ TEST_F(RegisteredSourceTextServiceTest,
   EXPECT_EQ(Read(Send("", headers, "/v1/checkpoints/absent", "DELETE"))
                 .find("HTTP/1.1 404"),
             0u);
-  EXPECT_NE(WaitModel("fixture-text", R"("registration":"registered")")
+  EXPECT_NE(WaitModelState("fixture-text", R"("registration":"registered")")
                 .find(R"("admission":"drained")"),
             std::string::npos);
   EXPECT_EQ(Read(Send(selector, "", "/v1/models/undrain")).find("HTTP/1.1 200"),
@@ -240,7 +343,7 @@ TEST_F(RegisteredSourceTextServiceTest,
       Send(Request(Message("user", "b"), 2), "X-Loom-Session: waiting\r\n");
   const int capture =
       Send("", headers + "X-Loom-Session: base\r\n", "/v1/checkpoints/another");
-  WaitModel("fixture-text", R"("held_requests":2)");
+  WaitModelState("fixture-text", R"("held_requests":2)");
   EXPECT_EQ(Read(Send("", headers, "/v1/checkpoints/retained", "DELETE"))
                 .find("HTTP/1.1 200"),
             0u);
@@ -250,7 +353,7 @@ TEST_F(RegisteredSourceTextServiceTest,
   EXPECT_EQ(Read(Send("", headers, "/v1/checkpoints/another/suspend", "DELETE"))
                 .find("HTTP/1.1 400"),
             0u);
-  EXPECT_NE(WaitModel("fixture-text", R"("held_requests":2)")
+  EXPECT_NE(WaitModelState("fixture-text", R"("held_requests":2)")
                 .find(R"("admission":"drained")"),
             std::string::npos);
   EXPECT_EQ(Read(Send(selector, "", "/v1/models/undrain")).find("HTTP/1.1 200"),
@@ -261,11 +364,11 @@ TEST_F(RegisteredSourceTextServiceTest,
   EXPECT_EQ(Read(Send(selector, "", "/v1/models/drain")).find("HTTP/1.1 200"),
             0u);
   const int suspension = Send("", headers, "/v1/checkpoints/another/suspend");
-  WaitModel("fixture-text", R"("held_requests":1)");
+  WaitModelState("fixture-text", R"("held_requests":1)");
   EXPECT_EQ(Read(Send("", headers, "/v1/checkpoints/another", "DELETE"))
                 .find("HTTP/1.1 200"),
             0u);
-  EXPECT_NE(WaitModel("fixture-text", R"("held_requests":1)")
+  EXPECT_NE(WaitModelState("fixture-text", R"("held_requests":1)")
                 .find(R"("admission":"drained")"),
             std::string::npos);
   EXPECT_EQ(Read(Send(selector, "", "/v1/models/undrain")).find("HTTP/1.1 200"),
@@ -284,7 +387,8 @@ TEST_F(RegisteredSourceTextServiceTest,
                       "/v1/models/register"))
                 .find("HTTP/1.1 202"),
             0u);
-  const auto declared = WaitModel("fixture-text", R"("admission":"drained")");
+  const auto declared =
+      WaitModelState("fixture-text", R"("admission":"drained")");
   EXPECT_NE(declared.find(R"("registration":"registered")"), std::string::npos);
   const auto initial_log =
       Read(Send("", "X-Loom-Model: fixture-text\r\n", "/logz", "GET"));
@@ -295,13 +399,14 @@ TEST_F(RegisteredSourceTextServiceTest,
       Send(Request(Message("user", prompt), 2), "X-Loom-Session: retained\r\n");
   const int tokenizer =
       Send(R"({"model":"fixture-text","content":"abx"})", "", "/tokenize");
-  WaitModel("fixture-text", R"("held_requests":2)");
+  WaitModelState("fixture-text", R"("held_requests":2)");
   EXPECT_EQ(Read(Send(R"({"model":"fixture-text"})", "", "/v1/models/undrain"))
                 .find("HTTP/1.1 200"),
             0u);
   EXPECT_EQ(Content(Read(held)), Oracle::Complete(prompt, 2));
   EXPECT_NE(Read(tokenizer).find(R"({"tokens":[0,1,2]})"), std::string::npos);
-  const auto first = WaitModel("fixture-text", R"("registration":"ready")");
+  const auto first =
+      WaitModelState("fixture-text", R"("registration":"ready")");
   const auto pinned = Read(
       Send("", "X-Loom-Model: fixture-text\r\nX-Loom-Session: retained\r\n",
            "/v1/checkpoints/base"));
@@ -314,7 +419,7 @@ TEST_F(RegisteredSourceTextServiceTest,
                 .find("HTTP/1.1 200"),
             0u);
   const int removed = Send(Request(Message("user", "b")));
-  WaitModel("fixture-text", R"("held_requests":1)");
+  WaitModelState("fixture-text", R"("held_requests":1)");
   std::string peer = Request(Message("user", "ab"), 2);
   peer.replace(peer.find("fixture-text"), 12, "peer");
   EXPECT_EQ(Content(Read(Send(peer))), Oracle::Complete("ab", 2));
@@ -323,7 +428,7 @@ TEST_F(RegisteredSourceTextServiceTest,
                 .find("HTTP/1.1 202"),
             0u);
   EXPECT_EQ(Read(removed).find("HTTP/1.1 410"), 0u);
-  WaitModel("fixture-text", {});
+  WaitModelAbsent("fixture-text");
   EXPECT_EQ(Read(Send(Declaration("fixture-text", directory_), "",
                       "/v1/models/register"))
                 .find("HTTP/1.1 202"),
@@ -331,7 +436,7 @@ TEST_F(RegisteredSourceTextServiceTest,
   EXPECT_EQ(Content(Read(Send(Request(Message("user", prompt), 2)))),
             Oracle::Complete(prompt, 2));
   const auto replacement =
-      WaitModel("fixture-text", R"("registration":"ready")");
+      WaitModelState("fixture-text", R"("registration":"ready")");
   const auto incarnation = [](const std::string& state) {
     const auto start = state.find("\"incarnation\":");
     EXPECT_NE(start, std::string::npos);
@@ -342,7 +447,7 @@ TEST_F(RegisteredSourceTextServiceTest,
                       "/v1/models/unregister"))
                 .find("HTTP/1.1 202"),
             0u);
-  WaitModel("fixture-text", {});
+  WaitModelAbsent("fixture-text");
   EXPECT_EQ(Content(Read(Send(peer))), Oracle::Complete("ab", 2));
 }
 
@@ -407,7 +512,7 @@ TEST_F(RegisteredSourceTextServiceTest,
                       "/v1/models/unregister"))
                 .find("HTTP/1.1 202"),
             0u);
-  WaitModel("fixture-text", {});
+  WaitModelAbsent("fixture-text");
   // All automatic and explicit ownership retires with the registration.
   EXPECT_EQ(
       Read(Send(declaration, "", "/v1/models/register")).find("HTTP/1.1 202"),
@@ -618,18 +723,35 @@ TEST_F(RegisteredSourceTextServiceTest,
       Read(Send(R"({"model":"fixture-text"})", "", "/v1/models/unregister"))
           .find("HTTP/1.1 202"),
       0u);
-  WaitModel("fixture-text", {});
+  WaitModelAbsent("fixture-text");
   EXPECT_EQ(inspect("/v1/sessions").find("HTTP/1.1 404"), 0u);
   ASSERT_EQ(Read(Send(Declaration("fixture-text", directory_), "",
                       "/v1/models/register"))
                 .find("HTTP/1.1 202"),
             0u);
-  WaitModel("fixture-text", R"("registration":"ready")");
+  WaitModelState("fixture-text", R"("registration":"ready")");
   const auto replacement = inspect("/v1/sessions");
   EXPECT_NE(replacement.find(R"("incarnation":2,)"), std::string::npos)
       << replacement;
-  EXPECT_NE(replacement.find(R"("data":[],"next_offset":null)"),
-            std::string::npos);
+  // Pagination addresses the retained directory, including empty cache slots.
+  // A fresh incarnation can have several empty pages without any old history.
+  std::string page = replacement;
+  uint64_t offset = 0;
+  const std::string next_key = R"("next_offset":)";
+  while (true) {
+    EXPECT_NE(page.find(R"("data":[])"), std::string::npos) << page;
+    const auto begin = page.find(next_key);
+    ASSERT_NE(begin, std::string::npos) << page;
+    const auto next = page.substr(begin + next_key.size());
+    if (next.starts_with("null")) {
+      break;
+    }
+    const auto next_offset = std::stoull(next);
+    ASSERT_GT(next_offset, offset);
+    offset = next_offset;
+    page = inspect("/v1/sessions",
+                   "X-Loom-Offset: " + std::to_string(offset) + "\r\n");
+  }
   const auto old_inventory = inspector.Read();
   EXPECT_NE(old_inventory.find(R"("incarnation":1,)"), std::string::npos);
   EXPECT_NE(old_inventory.find(R"("name":"conversation0",)"),

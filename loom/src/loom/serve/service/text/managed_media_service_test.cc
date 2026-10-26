@@ -32,7 +32,8 @@ bool HasField(const std::string& object, const char* name) {
   return !iree_string_view_is_empty(value);
 }
 
-class ManagedMediaServiceTest : public RegisteredSourceTextServiceTest {
+class ManagedMediaServiceTest : public RegisteredSourceTextServiceTest,
+                                public ::testing::WithParamInterface<bool> {
  protected:
   void SetUp() override {
     ASSERT_NO_FATAL_FAILURE(RegisteredSourceTextServiceTest::SetUp());
@@ -46,6 +47,13 @@ class ManagedMediaServiceTest : public RegisteredSourceTextServiceTest {
         std::filesystem::copy_file(weights_, assets_ + "/weights.safetensors"));
     ASSERT_TRUE(std::filesystem::copy_file(directory_ + "/weights.loom",
                                            assets_ + "/weights.loom"));
+    if (GetParam()) {
+      const char* declaration = std::getenv("LOOM_SERVE_TEST_TEXT_IMAGE_CARD");
+      ASSERT_NE(declaration, nullptr);
+      std::filesystem::copy(
+          std::filesystem::absolute(declaration).parent_path(),
+          assets_ + "/card", std::filesystem::copy_options::recursive);
+    }
   }
 
   void TearDown() override {
@@ -56,6 +64,34 @@ class ManagedMediaServiceTest : public RegisteredSourceTextServiceTest {
   }
 
   std::string ImageDeclaration(const std::string& assets = "") {
+    if (GetParam()) {
+      auto path = assets_ + "/card/model.json";
+      if (!assets.empty()) {
+        std::ifstream input(path);
+        std::string json((std::istreambuf_iterator<char>(input)), {});
+        iree_string_view_t value =
+            iree_make_string_view(json.data(), json.size());
+        for (const char* name : {"variants", "fixture", "services", "chat",
+                                 "parameters", "vision"}) {
+          iree_string_view_t next;
+          IREE_EXPECT_OK(iree_json_lookup_object_value(
+              value, iree_make_cstring_view(name), &next));
+          value = next;
+        }
+        json.replace(
+            value.data - json.data(), value.size,
+            R"({"files":[{"path":"missing.safetensors","format":"safetensors"}]})");
+        path = assets_ + "/card/missing.json";
+        std::ofstream output(path);
+        output << json;
+        output.close();
+        EXPECT_TRUE(output.good());
+      }
+      return "{\"name\":\"fixture-text\",\"admission\":\"drained\",\"model\":{"
+             "\"path\":\"" +
+             path +
+             "\",\"preset\":\"check\"},\"definition\":{\"kind\":\"text\"}}";
+    }
     const std::string image =
         ",\"image\":{\"prepare\":\"" + projector_directory_ +
         "/weighted_prepare.loom\",\"control\":\"" + projector_directory_ +
@@ -71,6 +107,9 @@ class ManagedMediaServiceTest : public RegisteredSourceTextServiceTest {
     const auto declaration = ImageDeclaration(assets);
     const auto response = Read(Send(declaration, "", "/v1/models/register"));
     ASSERT_EQ(response.find("HTTP/1.1 202"), 0u) << response;
+    if (GetParam()) {
+      ASSERT_FALSE(WaitModelState("fixture-text", "\"image\":").empty());
+    }
   }
 
   void Control(const char* operation, const char* component = "",
@@ -109,7 +148,7 @@ class ManagedMediaServiceTest : public RegisteredSourceTextServiceTest {
 
   void FinishOperation() {
     const auto state =
-        WaitModel("fixture-text", R"("parameter_operation":"idle")");
+        WaitModelState("fixture-text", R"("parameter_operation":"idle")");
     ASSERT_FALSE(state.empty());
     const auto observed = State();
     ASSERT_FALSE(HasField(observed, "error")) << observed;
@@ -236,7 +275,7 @@ class ManagedMediaServiceTest : public RegisteredSourceTextServiceTest {
   std::string assets_;
 };
 
-TEST_F(ManagedMediaServiceTest, ExplicitWarmupAndPinPolicyAreComponentScoped) {
+TEST_P(ManagedMediaServiceTest, ExplicitWarmupAndPinPolicyAreComponentScoped) {
   ASSERT_NO_FATAL_FAILURE(Register());
   ASSERT_NO_FATAL_FAILURE(Control("pin", "image"));
   EXPECT_EQ(Field(Parameters("image"), "pinned"), "true");
@@ -282,7 +321,7 @@ TEST_F(ManagedMediaServiceTest, ExplicitWarmupAndPinPolicyAreComponentScoped) {
   EXPECT_EQ(Field(Parameters("image"), "pinned"), "false");
 }
 
-TEST_F(ManagedMediaServiceTest,
+TEST_P(ManagedMediaServiceTest,
        ImageTrimPreservesTextCheckpointAndCachedMedia) {
   ASSERT_NO_FATAL_FAILURE(Register());
   ASSERT_NO_FATAL_FAILURE(Activate());
@@ -350,7 +389,7 @@ TEST_F(ManagedMediaServiceTest,
       0u);
 }
 
-TEST_F(ManagedMediaServiceTest, FailedImageWarmupLeavesTextAvailable) {
+TEST_P(ManagedMediaServiceTest, FailedImageWarmupLeavesTextAvailable) {
   ASSERT_NO_FATAL_FAILURE(Register(assets_ + "/missing"));
   ASSERT_NO_FATAL_FAILURE(Activate("image"));
   EXPECT_EQ(Field(State(), "registration"), "ready");
@@ -368,11 +407,69 @@ TEST_F(ManagedMediaServiceTest, FailedImageWarmupLeavesTextAvailable) {
   EXPECT_EQ(Content(Read(Send(Request(Message("user", "abxa"), 4)))),
             Oracle::Complete("abxa", 4));
   ASSERT_NO_FATAL_FAILURE(Control("unregister", "", 202));
-  WaitModel("fixture-text", {});
+  WaitModelAbsent("fixture-text");
   EXPECT_FALSE(http_.failed());
 }
 
-TEST_F(ManagedMediaServiceTest, ComponentSelectorsValidateTheDeclaredBoundary) {
+TEST_P(ManagedMediaServiceTest, InvalidInputsPreserveHealthAndServingPeers) {
+  if (!loom_serve_media_image_codec(LOOM_SERVE_MEDIA_IMAGE_FORMAT_PAM)) {
+    return;
+  }
+  ASSERT_NO_FATAL_FAILURE(Register());
+  ASSERT_NO_FATAL_FAILURE(Control("undrain"));
+  ASSERT_EQ(
+      Read(Send(Declaration("peer", directory_), "", "/v1/models/register"))
+          .find("HTTP/1.1 202"),
+      0u);
+  const auto image =
+      ImageMessage("a", "image/x-portable-arbitrarymap", kPam, "low", "b");
+  std::string five_images = image;
+  for (size_t i = 1; i < 5; ++i) {
+    five_images += "," + image;
+  }
+  // Inspecting an excessive geometry must reject before raster allocation.
+  const char* wide =
+      "UDcKV0lEVEggNDA5NwpIRUlHSFQgMQpERVBUSCAzCk1BWFZBTCAyNTUKVFVQ"
+      "TFRZUEUgUkdCCkVOREhEUgr/AAA=";
+  const auto wide_image =
+      ImageMessage("a", "image/x-portable-arbitrarymap", wide, "low", "b");
+  auto unsupported_image = Request(image, 4);
+  unsupported_image.replace(unsupported_image.find("fixture-text"),
+                            sizeof("fixture-text") - 1, "peer");
+  auto peer_request = Request(Message("user", "xbab"), 4);
+  peer_request.replace(peer_request.find("fixture-text"),
+                       sizeof("fixture-text") - 1, "peer");
+  for (const auto& [body, diagnostic] :
+       std::vector<std::pair<std::string, const char*>>{
+           {Request(five_images, 4), "at most 4 image occurrences"},
+           {Request(wide_image, 4), "image geometry 4097x1"},
+           {unsupported_image, "model does not accept image input"},
+       }) {
+    SCOPED_TRACE(diagnostic);
+    const int peer = Send(peer_request);
+    const auto rejected = Read(Send(body));
+    EXPECT_EQ(rejected.find("HTTP/1.1 400"), 0u) << rejected;
+    EXPECT_NE(rejected.find(diagnostic), std::string::npos) << rejected;
+    EXPECT_EQ(Content(Read(peer)), Oracle::Complete("xbab", 4));
+    EXPECT_EQ(Read(Send("", "", "/healthz", "GET")).find("HTTP/1.1 200"), 0u);
+    EXPECT_EQ(Content(Read(Send(Request(Message("user", "abxa"), 4)))),
+              Oracle::Complete("abxa", 4));
+  }
+  const auto missing = Read(Send(
+      R"({"name":"broken","model":{"path":"unread.json","preset":"streaming"}})",
+      "", "/v1/models/register"));
+  EXPECT_EQ(missing.find("HTTP/1.1 400"), 0u) << missing;
+  EXPECT_NE(missing.find("model requires 'definition' object"),
+            std::string::npos)
+      << missing;
+  EXPECT_EQ(Read(Send("", "", "/healthz", "GET")).find("HTTP/1.1 200"), 0u);
+  EXPECT_EQ(Content(Read(Send(peer_request))), Oracle::Complete("xbab", 4));
+  EXPECT_EQ(Content(Read(Send(Request(Message("user", "abxa"), 4)))),
+            Oracle::Complete("abxa", 4));
+  EXPECT_FALSE(http_.failed());
+}
+
+TEST_P(ManagedMediaServiceTest, ComponentSelectorsValidateTheDeclaredBoundary) {
   ASSERT_NO_FATAL_FAILURE(Register());
   for (const char* fields : {R"("component":"missing")", R"("component":0)",
                              R"("component":"image","component":"primary")"}) {
@@ -383,7 +480,7 @@ TEST_F(ManagedMediaServiceTest, ComponentSelectorsValidateTheDeclaredBoundary) {
   ASSERT_NO_FATAL_FAILURE(Control("drain", "image", 400));
   ASSERT_NO_FATAL_FAILURE(Control("unregister", "image", 400));
   ASSERT_NO_FATAL_FAILURE(Control("unregister", "", 202));
-  WaitModel("fixture-text", {});
+  WaitModelAbsent("fixture-text");
   const auto declaration = Declaration("fixture-text", directory_, "drained");
   ASSERT_EQ(
       Read(Send(declaration, "", "/v1/models/register")).find("HTTP/1.1 202"),
@@ -393,12 +490,15 @@ TEST_F(ManagedMediaServiceTest, ComponentSelectorsValidateTheDeclaredBoundary) {
   EXPECT_EQ(Field(State(), "registration"), "registered");
 }
 
-TEST_F(ManagedMediaServiceTest, RemovalJoinsAcceptedImagePreparation) {
+TEST_P(ManagedMediaServiceTest, RemovalJoinsAcceptedImagePreparation) {
   RemoveDuring(LOOM_SERVE_PARAMETER_OPERATION_WAITING);
 }
 
-TEST_F(ManagedMediaServiceTest, RemovalJoinsAcceptedImageActivation) {
+TEST_P(ManagedMediaServiceTest, RemovalJoinsAcceptedImageActivation) {
   RemoveDuring(LOOM_SERVE_PARAMETER_OPERATION_ACTIVATING);
 }
+
+INSTANTIATE_TEST_SUITE_P(Declarations, ManagedMediaServiceTest,
+                         ::testing::Bool());
 
 }  // namespace

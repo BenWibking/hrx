@@ -768,6 +768,7 @@ loom_cc_library(
     iree::base
     iree::schemas::xdna_executable
     loom::analysis::symbol_facts
+    loom::binding::c::loomc
     loom::codegen::low::diagnostics
     loom::codegen::low::function_requirements
     loom::codegen::low::storage_layout
@@ -1164,6 +1165,7 @@ loom_check_test_suite(
     "test/source_low/numeric_index.loom-test"
     "test/source_low/numeric_index_conversion.loom-test"
     "test/source_low/numeric_index_operands.loom-test"
+    "test/source_low/numeric_index_zero_comparison.loom-test"
     "test/source_low/numeric_integer_count.loom-test"
     "test/source_low/numeric_integer_extrema.loom-test"
     "test/source_low/numeric_integer_extrema_reductions.loom-test"
@@ -1210,6 +1212,7 @@ loom_check_test_suite(
     "test/source_low/shared_conditional_values.loom-test"
     "test/source_low/split_barrier.loom-test"
     "test/source_low/static_vector_shape.loom-test"
+    "test/source_low/store_fifo_state.loom-test"
     "test/source_low/structured_switch.loom-test"
     "test/source_low/table_quantize.loom-test"
     "test/source_low/target_legalize_scalar_multiply_add.loom-test"

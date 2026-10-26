@@ -23,6 +23,10 @@ extern "C" {
 // Modality-owned input and detached output types used by native admission.
 typedef struct loom_serve_speech_request_t loom_serve_speech_request_t;
 typedef struct loom_serve_speech_stream_t loom_serve_speech_stream_t;
+typedef struct loom_serve_speech_voice_request_t
+    loom_serve_speech_voice_request_t;
+typedef struct loom_serve_speech_voice_upload_t
+    loom_serve_speech_voice_upload_t;
 typedef struct loom_serve_recognition_request_t
     loom_serve_recognition_request_t;
 typedef struct loom_serve_recognition_stream_t loom_serve_recognition_stream_t;
@@ -82,9 +86,10 @@ typedef struct loom_serve_service_t {
   // make progress by waiting on one another. Called by the serialized owner.
   bool (*is_active)(void* self);
   // Optional HTTP inference; absent when endpoint is NULL. Takes the connection
-  // claim on both success and failure. Invalid requests
-  // produce an HTTP rejection and success; a terminal failure ends the owner
-  // loop. Request views remain valid until this service finishes or aborts.
+  // claim on both success and failure. Invalid requests produce an HTTP
+  // rejection and success; a terminal failure stops this service's admission
+  // and requires its owner to retire accepted borrowers. Request views remain
+  // valid until this service finishes or aborts.
   iree_status_t (*accept)(void* self, loom_serve_http_connection_t* connection,
                           const loom_serve_http_request_t* request,
                           loom_serve_service_flags_t flags);
@@ -95,6 +100,13 @@ typedef struct loom_serve_service_t {
   iree_status_t (*try_open_speech)(void* self,
                                    loom_serve_speech_request_t* request,
                                    loom_serve_speech_stream_t** out_stream);
+  // Optional one-time voice preparation. Admission moves the owned recording
+  // only with a non-NULL receipt; pressure/failure preserves caller ownership.
+  iree_status_t (*try_upload_voice)(
+      void* self, loom_serve_speech_voice_request_t* request,
+      loom_serve_speech_voice_upload_t** out_upload);
+  // Hides an uploaded voice without invalidating accepted synthesis captures.
+  iree_status_t (*remove_voice)(void* self, iree_string_view_t id);
   // Optional native continuing-input recognition on this serialized owner.
   // Success with a stream copies request options and grants bounded PCM credit
   // in the stream's format. NULL success is pressure. The caller owns the
@@ -118,6 +130,9 @@ typedef struct loom_serve_service_t {
   // turn can retry admission after another service released shared capacity.
   // False means awaiting service readiness or a network event, never polling.
   // STOPPING consumes accepted readiness without launching another model unit.
+  // Terminal failure belongs to this service; its shared resource owners report
+  // wider failure independently. Even after failure, is_pending governs
+  // release.
   iree_status_t (*advance)(void* self, loom_serve_service_flags_t flags,
                            bool* out_progress);
   // Optional immutable input tokenizer, live through utility task release. Raw

@@ -28,6 +28,8 @@ loom_py_test(
         "$(rootpath //loom/src/loom/serve/fixture/text:control.loom)",
     ],
     data = TEXT_SOURCES + [
+        "//loom/src/loom/serve/fixture/text:native.card.json",
+        "//loom/src/loom/serve/fixture/text:service.loom",
         "//loom/src/loom/serve/testing:text_request_check",
     ],
 )
@@ -51,6 +53,23 @@ loom_cc_library(
     srcs = ["admission.c"],
     hdrs = ["admission.h"],
     deps = ["//runtime/src/iree/base"],
+)
+
+loom_cc_library(
+    name = "cache_policy",
+    srcs = ["cache_policy.c"],
+    hdrs = ["cache_policy.h"],
+    deps = ["//runtime/src/iree/base"],
+)
+
+loom_cc_test(
+    name = "cache_policy_test",
+    srcs = ["cache_policy_test.cc"],
+    deps = [
+        ":cache_policy",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
 )
 
 loom_cc_test(
@@ -101,6 +120,7 @@ loom_cc_library(
         "//loom/src/loom/serve/telemetry:stream",
         "//loom/src/loom/serve/testing:http_harness",
         "//loom/src/loom/serve/testing:model",
+        "//loom/src/loom/serve/testing:model_wait",
         "//loom/src/loom/serve/testing:package",
         "//loom/src/loom/serve/testing:service_application",
         "//loom/src/loom/serve/testing:stalled_http_client",
@@ -135,6 +155,7 @@ loom_cc_library(
         ":telemetry",
         "//loom/src/loom/serve/service/finite:component",
         "//loom/src/loom/serve/telemetry:latency",
+        "//loom/src/loom/serve/testing:worker_gate",
         "//runtime/src/iree/base/internal:base64",
     ],
     alwayslink = True,
@@ -242,6 +263,7 @@ loom_cc_library(
         "capture_execution_test.cc",
         "epoch_upload_test.cc",
         "model_instance.h",
+        "service_capacity_test.cc",
         "source_execution_test.cc",
         "state_test.cc",
         "workspace_test.cc",
@@ -406,9 +428,11 @@ loom_cc_test(
     srcs = ["chat_test.cc"],
     deps = [
         ":chat",
+        "//loom/src/loom/serve/runtime/program",
         "//runtime/src/iree/base",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
+        "//runtime/src/iree/vm",
     ],
 )
 
@@ -546,6 +570,7 @@ loom_cc_library(
 loom_cc_library(
     name = "model",
     srcs = [
+        "capacity.c",
         "control.c",
         "epoch_plan.c",
         "media_epoch.c",
@@ -556,6 +581,7 @@ loom_cc_library(
         "source.c",
         "stages.c",
         "state.c",
+        "state_resize.c",
         "variant.c",
         "warmup.c",
     ],
@@ -573,6 +599,7 @@ loom_cc_library(
         "warmup.h",
     ],
     deps = [
+        ":cache_policy",
         ":capture",
         ":chat",
         ":epoch_upload",
@@ -582,6 +609,7 @@ loom_cc_library(
         "//loom/src/loom/serve/runtime/device",
         "//loom/src/loom/serve/runtime/execution",
         "//loom/src/loom/serve/runtime/execution:retirement",
+        "//loom/src/loom/serve/runtime/host",
         "//loom/src/loom/serve/runtime/parameter:activation",
         "//loom/src/loom/serve/runtime/parameter:module",
         "//loom/src/loom/serve/runtime/parameter:residency",
@@ -607,6 +635,7 @@ loom_cc_library(
         "//runtime/src/iree/async",
         "//runtime/src/iree/async/util:proactor_pool",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/base/threading",
         "//runtime/src/iree/hal",
         "//runtime/src/iree/module/hal:types",
@@ -1092,6 +1121,8 @@ loom_cc_library(
         "request_admission.c",
         "request_admission.h",
         "service.c",
+        "service_capacity.c",
+        "service_capacity.h",
         "service_owner.c",
         "service_owner.h",
     ],

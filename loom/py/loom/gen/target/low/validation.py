@@ -1013,6 +1013,8 @@ def validate_register_classes(
             f"{description} alias-set ID",
         )
         uses_explicit_physical_registers = RegClassFlag.EXPLICIT_PHYSICAL_REGISTERS in register_class.flags
+        if RegClassFlag.EXCHANGE in register_class.flags and RegClassFlag.PHYSICAL not in register_class.flags:
+            raise ValueError(f"{description} supports physical exchange without the physical flag")
         uses_contiguous_physical_register_candidates = RegClassFlag.CONTIGUOUS_PHYSICAL_REGISTER_CANDIDATES in register_class.flags
         if uses_contiguous_physical_register_candidates and not uses_explicit_physical_registers:
             raise ValueError(f"{description} uses contiguous physical register candidates without explicit physical registers")
@@ -1535,6 +1537,58 @@ def validate_descriptor_state_assignment(descriptor: Descriptor, register_classe
             raise ValueError(f"{description} cannot depend on architectural state")
         if operand is not write and operand.role is not OperandRole.OPERAND:
             raise ValueError(f"{description} may only have explicit inputs and the assigned state result")
+
+
+def validate_descriptor_idempotent_state_update(descriptor: Descriptor, register_classes: Mapping[str, RegClass]) -> None:
+    """Checks a result-coupled idempotent architectural-state update."""
+    if DescriptorFlag.IDEMPOTENT_STATE_UPDATE not in descriptor.flags:
+        return
+    description = f"descriptor '{descriptor.key}' idempotent state update"
+    forbidden = {
+        DescriptorFlag.SIDE_EFFECTING,
+        DescriptorFlag.TERMINATOR,
+        DescriptorFlag.BARRIER,
+        DescriptorFlag.PSEUDO,
+        DescriptorFlag.UNIQUE_IDENTITY,
+        DescriptorFlag.VARIADIC_OPERANDS,
+        DescriptorFlag.ALLOCATION_MOVE,
+        DescriptorFlag.SAFE_TO_SPECULATE,
+        DescriptorFlag.STATE_ASSIGNMENT,
+    }
+    if forbidden.intersection(descriptor.flags) or descriptor.effects or descriptor.storage_leases:
+        raise ValueError(f"{description} must have no independent effects")
+    if DescriptorFlag.DEAD_REMOVABLE not in descriptor.flags:
+        raise ValueError(f"{description} must couple its updates to live SSA results")
+    if not any(operand.role is OperandRole.RESULT for operand in descriptor.operands):
+        raise ValueError(f"{description} must produce an SSA result")
+    if any(constraint.kind in (ConstraintKind.TIED, ConstraintKind.DESTRUCTIVE) for constraint in descriptor.constraints):
+        raise ValueError(f"{description} cannot transfer input storage ownership")
+
+    writes = [operand for operand in descriptor.operands if OperandFlag.STATE_WRITE in operand.flags]
+    if not writes:
+        raise ValueError(f"{description} must update architectural state")
+    write_classes = set()
+    for write in writes:
+        required = {
+            OperandFlag.IMPLICIT,
+            OperandFlag.STATE_WRITE,
+            OperandFlag.COMMUTATIVE_STATE_UPDATE,
+        }
+        if write.role is not OperandRole.IMPLICIT or not required.issubset(write.flags):
+            raise ValueError(f"{description} writes must be implicit commutative updates")
+        if write.unit_count != 1 or any(alternative.register_part is not None for alternative in write.reg_alts):
+            raise ValueError(f"{description} must update whole state registers")
+        register_class_name = write.reg_alts[0].reg_class
+        register_class = register_classes[register_class_name]
+        if _register_class_allocatable_count(register_class) != 1:
+            raise ValueError(f"{description} must name singleton architectural state")
+        write_classes.add(register_class_name)
+
+    for read in descriptor.operands:
+        if OperandFlag.STATE_READ not in read.flags:
+            continue
+        if read.reg_alts[0].reg_class in write_classes:
+            raise ValueError(f"{description} cannot read a state register it updates")
 
 
 def validate_register_part(part: RegisterPart) -> None:

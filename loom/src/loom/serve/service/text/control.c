@@ -25,9 +25,11 @@ iree_status_t loom_serve_text_control_initialize(
   // Both dense padding and semantic packed inputs belong to the single model
   // invocation. Only the final prediction persists independently in each row.
   iree_host_size_t input_length = 0;
+  iree_host_size_t span_capacity = 1;
   for (iree_host_size_t i = 0; i < shape_count; ++i) {
     input_length =
         iree_max(input_length, 2 * shapes[i].token_capacity * sizeof(int32_t));
+    span_capacity = iree_max(span_capacity, shapes[i].span_capacity);
   }
   const bool packed =
       state->cache.capacity ||
@@ -40,7 +42,7 @@ iree_status_t loom_serve_text_control_initialize(
   }
   for (iree_host_size_t i = 0; i < state->row_count; ++i) {
     const iree_device_size_t length =
-        iree_hal_buffer_byte_length(state->rows[i].buffers[TEXT_TOKENS]);
+        iree_hal_buffer_byte_length(state->rows[i]->buffers[TEXT_TOKENS]);
     const iree_host_size_t minimum =
         (packed ? 1 : source->prefill_capacity) * sizeof(int32_t);
     if (length < minimum || length > IREE_HOST_SIZE_MAX) {
@@ -52,8 +54,7 @@ iree_status_t loom_serve_text_control_initialize(
     }
   }
   const iree_host_size_t lengths[TEXT_HOST_BUFFER_COUNT] = {
-      2 * LOOM_SERVE_TEXT_ROW_CAPACITY * TEXT_PLAN_FIELD_COUNT *
-          sizeof(int32_t),
+      2 * span_capacity * TEXT_PLAN_FIELD_COUNT * sizeof(int32_t),
       input_length,
       shape_count ? iree_hal_buffer_byte_length(state->epoch.buffers[1]) : 0,
       shape_count ? iree_hal_buffer_byte_length(state->epoch.buffers[4]) : 0,
@@ -64,12 +65,12 @@ iree_status_t loom_serve_text_control_initialize(
       iree_any_bit_set(state->flags, LOOM_SERVE_TEXT_STATE_FLAG_DRAFT)
           ? iree_hal_buffer_byte_length(state->draft.next_results)
           : 0,
-      LOOM_SERVE_TEXT_ROW_CAPACITY * TEXT_PROGRESS_FIELD_COUNT *
-          sizeof(int32_t),
-      LOOM_SERVE_TEXT_ROW_CAPACITY * 4 * sizeof(int64_t),
+      span_capacity * TEXT_PROGRESS_FIELD_COUNT * sizeof(int32_t),
+      state->row_count * 4 * sizeof(int64_t),
       shape_count ? state->storage.bytes[LOOM_SERVE_TEXT_STORAGE_TARGET_ORIGINS]
                         .data_length
                   : 0,
+      span_capacity * sizeof(int32_t),
   };
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t i = 0;
@@ -119,8 +120,9 @@ iree_status_t loom_serve_text_control_initialize(
         source->environment, host_allocator, &libraries[4]);
   }
   if (iree_status_is_ok(status)) {
-    status = loom_serve_program_link(
-        source->module,
+    status = loom_serve_program_link_service(
+        source->module, loom_serve_preparation_card(source->preparation),
+        loom_serve_preparation_component(source->preparation),
         iree_vm_module_span_from_ptr(libraries, generates ? 5 : 4),
         host_allocator, &control->program);
   }
@@ -157,8 +159,11 @@ iree_status_t loom_serve_text_control_initialize(
   const iree_vm_signature_type_t encode_results[] = {i32, buffer, i64, i64};
   const iree_vm_signature_type_t publish_arguments[] = {
       buffer, buffer, i32,    i32,    i32,    i32,
-      i32,    i32,    buffer, buffer, buffer, buffer};
+      i32,    buffer, buffer, buffer, buffer, buffer};
   const iree_vm_signature_type_t state_arguments[] = {buffer, i32, buffer};
+  const iree_vm_signature_type_t resize_arguments[] = {buffer, i64};
+  const iree_vm_signature_type_t resize_results[] = {buffer, buffer, buffer,
+                                                     buffer, buffer, buffer};
   const iree_vm_signature_type_t epoch_arguments[] = {
       buffer,        i32,           i32,           i32,           i32,
       i32,           i32,           i32,           i32,           i32,
@@ -182,12 +187,16 @@ iree_status_t loom_serve_text_control_initialize(
        {state_arguments, IREE_ARRAYSIZE(state_arguments)},
        {NULL, 0},
        &control->bind_request},
+      {IREE_SVL("resize_state"),
+       {resize_arguments, IREE_ARRAYSIZE(resize_arguments)},
+       {resize_results, IREE_ARRAYSIZE(resize_results)},
+       &control->resize_state},
       {IREE_SVL("epoch"),
        {epoch_arguments, IREE_ARRAYSIZE(epoch_arguments)},
        {&i64, 1},
        &control->epoch_step},
   };
-  IREE_RETURN_IF_ERROR(loom_serve_program_bind(
+  IREE_RETURN_IF_ERROR(loom_serve_program_bind_service(
       control->program, IREE_ARRAYSIZE(bindings), bindings));
   if (generates) {
     const loom_serve_program_binding_t step = {
@@ -195,7 +204,7 @@ iree_status_t loom_serve_text_control_initialize(
         {step_arguments, IREE_ARRAYSIZE(step_arguments)},
         {step_results, IREE_ARRAYSIZE(step_results)},
         &control->step};
-    return loom_serve_program_bind(control->program, 1, &step);
+    return loom_serve_program_bind_service(control->program, 1, &step);
   }
   iree_vm_function_t defaults = {0};
   const iree_vm_signature_type_t capture_arguments[] = {buffer, i32, i32,
@@ -212,7 +221,7 @@ iree_status_t loom_serve_text_control_initialize(
        {&buffer, 1},
        &control->request_options},
   };
-  IREE_RETURN_IF_ERROR(loom_serve_program_bind(
+  IREE_RETURN_IF_ERROR(loom_serve_program_bind_service(
       control->program, IREE_ARRAYSIZE(encoding_bindings), encoding_bindings));
   iree_vm_variant_t argument = iree_vm_buffer_variant_from_ptr_borrowed(
       &source->vm_types, source->options);

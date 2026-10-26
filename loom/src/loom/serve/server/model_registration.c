@@ -19,6 +19,8 @@
 #include "loom/serve/service/recognition/service.h"
 #include "loom/serve/service/speech/model.h"
 #include "loom/serve/service/speech/service.h"
+#include "loom/serve/service/speech/voice_load.h"
+#include "loom/serve/service/text/cache_policy.h"
 #include "loom/serve/service/text/schedule.h"
 #include "loom/serve/service/text/service.h"
 
@@ -429,6 +431,8 @@ typedef struct loom_serve_speech_registration_t {
   loom_serve_speech_model_t* model;
   // Owned HTTP service, destroyed after CPU and external borrowers retire.
   loom_serve_speech_service_t* service;
+  // Original card recordings, joined before publication or retirement.
+  loom_serve_speech_voice_load_t* voices;
   // Explicit warmup, joined before service/model retirement.
   loom_serve_activation_t* activation;
   // Model consumers have been relinquished with an ownership wake installed.
@@ -440,38 +444,60 @@ static iree_status_t loom_serve_speech_registration_prepare(
     bool* out_complete, loom_serve_service_t* out_service,
     loom_serve_compilation_report_t* out_report) {
   loom_serve_speech_registration_t* registration = self;
-  iree_status_t status = loom_serve_speech_load_advance(
-      registration->load,
-      iree_any_bit_set(flags, LOOM_SERVE_REGISTRATION_PREPARE_FLAG_CANCEL)
-          ? LOOM_SERVE_SPEECH_LOAD_FLAG_CANCEL
-          : 0,
-      out_complete);
-  if (!*out_complete) {
-    return status;
-  }
-  *out_report = *loom_serve_speech_load_report(registration->load);
-  if (iree_status_is_ok(status)) {
-    registration->model = loom_serve_speech_load_take_model(registration->load);
-    status = loom_serve_speech_load_free(registration->load);
+  const bool cancel =
+      iree_any_bit_set(flags, LOOM_SERVE_REGISTRATION_PREPARE_FLAG_CANCEL);
+  *out_complete = false;
+  iree_status_t status = iree_ok_status();
+  if (registration->load) {
+    bool loaded = false;
+    status = loom_serve_speech_load_advance(
+        registration->load, cancel ? LOOM_SERVE_SPEECH_LOAD_FLAG_CANCEL : 0,
+        &loaded);
+    if (!loaded) {
+      return status;
+    }
+    *out_report = *loom_serve_speech_load_report(registration->load);
     if (iree_status_is_ok(status)) {
-      registration->load = NULL;
+      registration->model =
+          loom_serve_speech_load_take_model(registration->load);
+      status = loom_serve_speech_load_free(registration->load);
+      if (iree_status_is_ok(status)) {
+        registration->load = NULL;
+      }
+    }
+    if (iree_status_is_ok(status)) {
+      const loom_serve_model_configuration_t* configuration =
+          registration->configuration;
+      const loom_serve_speech_service_options_t service_options = {
+          .name = configuration->name,
+          .pending_capacity = configuration->pending_requests,
+          .heartbeat_interval = registration->options->heartbeat_interval};
+      status = loom_serve_speech_service_allocate(
+          loom_serve_device_host(registration->device),
+          loom_serve_speech_model_generator(registration->model),
+          &service_options, registration->stream, registration->host_allocator,
+          &registration->service);
+    }
+    if (iree_status_is_ok(status)) {
+      status = loom_serve_speech_voice_load_allocate(
+          loom_serve_device_host(registration->device),
+          &registration->configuration->sources, registration->service,
+          registration->observer, registration->host_allocator,
+          &registration->voices);
+    }
+    if (!iree_status_is_ok(status)) {
+      *out_complete = true;
+      return status;
     }
   }
-  if (iree_status_is_ok(status)) {
-    const loom_serve_model_configuration_t* configuration =
-        registration->configuration;
-    const loom_serve_speech_service_options_t service_options = {
-        .name = configuration->name,
-        .pending_capacity = configuration->pending_requests,
-        .heartbeat_interval = registration->options->heartbeat_interval};
-    status = loom_serve_speech_service_allocate(
-        loom_serve_device_host(registration->device),
-        loom_serve_speech_model_generator(registration->model),
-        &service_options, registration->stream, registration->host_allocator,
-        &registration->service);
-  }
-  if (iree_status_is_ok(status)) {
-    *out_service = loom_serve_speech_service_interface(registration->service);
+  status = loom_serve_speech_voice_load_advance(registration->voices, cancel,
+                                                out_complete);
+  if (*out_complete) {
+    loom_serve_speech_voice_load_free(registration->voices);
+    registration->voices = NULL;
+    if (iree_status_is_ok(status)) {
+      *out_service = loom_serve_speech_service_interface(registration->service);
+    }
   }
   return status;
 }
@@ -777,7 +803,7 @@ typedef struct loom_serve_text_registration_t {
   // Registration-wide history retained beyond service retirement.
   loom_serve_telemetry_stream_t* stream;
   // Shape inputs borrowed by asynchronous preparation until publication.
-  loom_serve_packing_shape_t shapes[LOOM_SERVE_TEXT_DEFAULT_SHAPE_CAPACITY];
+  loom_serve_packing_shape_t* shapes;
   // Owned preparation operation, transferred on every terminal outcome.
   loom_serve_text_load_t* load;
   // Partial or prepared model retained through actual consumer retirement.
@@ -817,16 +843,19 @@ static iree_status_t loom_serve_text_registration_prepare(
     const loom_serve_model_configuration_t* configuration =
         registration->configuration;
     const loom_serve_text_configuration_t* text = &configuration->text;
+    const loom_serve_text_cache_selection_t cache =
+        loom_serve_text_model_cache_selection(registration->model);
     const loom_serve_text_service_options_t options = {
         .name = configuration->name,
         .image = registration->image,
         .row_count = text->rows,
+        .max_sessions = text->max_sessions,
         .variant_capacity = configuration->variant_capacity,
         .chunk_size = text->prefill_capacity,
         .default_max_tokens = text->max_tokens,
         .pending_capacity = configuration->pending_requests,
-        .session_cache_capacity = text->session_cache_capacity,
-        .prefix_cache_capacity = text->prefix_cache_capacity,
+        .session_cache_capacity = cache.session_capacity,
+        .prefix_cache_capacity = cache.prefix_capacity,
         .admission_overtakes = text->admission_overtakes,
         .heartbeat_interval = registration->options->heartbeat_interval,
         .schedule_mode = LOOM_SERVE_TEXT_SCHEDULE_PACKED,
@@ -965,9 +994,17 @@ static iree_status_t loom_serve_text_registration_create(
     iree_allocator_t host_allocator,
     loom_serve_registration_t* out_registration) {
   const loom_serve_model_registration_options_t* options = self;
+  const loom_serve_text_configuration_t* text = &configuration->text;
+  const iree_host_size_t shape_count =
+      loom_serve_text_default_shapes(text->prefill_capacity, NULL);
+  iree_host_size_t total = 0, shapes_offset = 0;
+  IREE_RETURN_IF_ERROR(IREE_STRUCT_LAYOUT(
+      sizeof(loom_serve_text_registration_t), &total,
+      IREE_STRUCT_FIELD(shape_count, loom_serve_packing_shape_t,
+                        &shapes_offset)));
   loom_serve_text_registration_t* registration = NULL;
-  IREE_RETURN_IF_ERROR(iree_allocator_malloc(
-      host_allocator, sizeof(*registration), (void**)&registration));
+  IREE_RETURN_IF_ERROR(
+      iree_allocator_malloc(host_allocator, total, (void**)&registration));
   registration->host_allocator = host_allocator;
   registration->options = options;
   registration->device = loom_serve_device_group_at(
@@ -975,9 +1012,11 @@ static iree_status_t loom_serve_text_registration_create(
   registration->configuration = configuration;
   registration->observer = observer;
   registration->stream = stream;
-  const loom_serve_text_configuration_t* text = &configuration->text;
-  const iree_host_size_t shape_count = loom_serve_text_default_shapes(
-      text->rows, text->prefill_capacity, registration->shapes);
+  registration->shapes =
+      (loom_serve_packing_shape_t*)((uint8_t*)registration + shapes_offset);
+  loom_serve_text_default_shapes(text->prefill_capacity, registration->shapes);
+  loom_serve_memory_pool_t* memory_pool =
+      loom_serve_device_memory_pool(registration->device);
   const loom_serve_text_options_t model_options = {
       .mode = configuration->kind == LOOM_SERVE_MODEL_KIND_SEQUENCE
                   ? LOOM_SERVE_TEXT_MODE_ENCODE
@@ -994,17 +1033,25 @@ static iree_status_t loom_serve_text_registration_create(
       .weights_path = text->weights,
       .tokenizer_path = text->tokenizer,
       .row_count = text->rows,
-      .checkpoint_capacity =
-          text->checkpoint_capacity + text->prefix_cache_capacity +
-          (text->session_cache_capacity ? text->session_cache_capacity + 1 : 0),
+      .checkpoint_capacity = text->checkpoint_capacity,
+      .cache = {.target_bytes =
+                    text->cache_target_bytes == IREE_HOST_SIZE_MAX
+                        ? loom_serve_text_cache_default_target(
+                              memory_pool
+                                  ? loom_serve_memory_pool_limit(memory_pool)
+                                  : 0)
+                        : text->cache_target_bytes,
+                .session_capacity = text->session_cache_capacity,
+                .prefix_capacity = text->prefix_cache_capacity},
       .options = configuration->options};
   iree_status_t status = iree_ok_status();
-  if (text->image.prepare.size) {
+  if (text->image.contract || text->image.prepare.size) {
     loom_serve_finite_model_options_t image_options = {
         .sources = configuration->sources,
         .asset_directory = text->image.assets,
         .options = text->image.options,
         .specialization_cache = text->image.specialization_cache};
+    image_options.sources.component = text->image.contract;
     image_options.sources.prepare = text->image.prepare;
     image_options.sources.control = text->image.control;
     status = loom_serve_finite_component_allocate(
@@ -1084,6 +1131,8 @@ loom_serve_registration_factory_t loom_serve_model_registration_factory(
                (1u << LOOM_SERVE_MODEL_KIND_SEQUENCE) |
                (1u << LOOM_SERVE_MODEL_KIND_TEXT),
       .device_count = loom_serve_device_group_count(options->device_group),
+      .resolution_sink = loom_serve_host_compiler_sink(loom_serve_device_host(
+          loom_serve_device_group_at(options->device_group, 0))),
       .create = loom_serve_model_registration_create,
       .query_status = loom_serve_model_registration_query_status};
 }

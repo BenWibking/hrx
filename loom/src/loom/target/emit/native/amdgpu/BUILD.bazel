@@ -9,6 +9,7 @@ load("//build_tools/bazel:test_resources.bzl", "GPU_DEVICE_RESOURCE_GROUP")
 load("//build_tools/embed_data:build_defs.bzl", "iree_c_embed_data")
 load(
     "//loom/build_tools/amdgpu:descriptor_sets.bzl",
+    "loom_amdgpu_descriptor_set_compatible_with",
     "loom_amdgpu_iree_hal_representation_compatible_with",
 )
 load(
@@ -27,7 +28,7 @@ load(
     "//loom/build_tools/bazel:loom_check.bzl",
     "loom_check_test_suite",
 )
-load("//loom/target/amdgpu:execution_profiles.bzl", "AMDGPU_HARDWARE_PROFILE")
+load("//loom/target/amdgpu:execution_profiles.bzl", "AMDGPU_HARDWARE_PROFILE", "AMD_GPU_HARDWARE_PROFILE")
 
 package(
     default_visibility = ["//visibility:private"],
@@ -124,8 +125,8 @@ loom_cc_library(
     deps = [
         ":assembly",
         ":encoding",
-        ":hal_kernel_library",
         ":spill_lowering",
+        "//loom/binding/c:loomc",
         "//loom/src/loom/codegen/low:allocation_json",
         "//loom/src/loom/codegen/low:diagnostics",
         "//loom/src/loom/codegen/low:frame",
@@ -192,6 +193,7 @@ loom_check_test_suite(
         "test/packet.loom-test",
         "test/packet_json.loom-test",
         "test/permlane_swap.loom-test",
+        "test/physical_exchange.loom-test",
         "test/private_segment_limit.loom-test",
         "test/private_setup_recovery.loom-test",
         "test/register_banks.loom-test",
@@ -891,7 +893,10 @@ loom_test(
     name = "dot_wait_windows_execution_test",
     srcs = ["test/dot_wait_windows.loom"],
     compile_targets = ["//loom/target/amdgpu:gfx90a"],
-    execution_profiles = [AMDGPU_HARDWARE_PROFILE],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMD_GPU_HARDWARE_PROFILE,
+    ],
     target_compatible_with = loom_amdgpu_iree_hal_representation_compatible_with(
         LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY["amdgpu.cdna2.core"],
     ),
@@ -901,7 +906,10 @@ loom_test(
     name = "matrix_result_windows_execution_test",
     srcs = ["test/matrix_result_windows.loom"],
     compile_targets = ["//loom/target/amdgpu:gfx90a"],
-    execution_profiles = [AMDGPU_HARDWARE_PROFILE],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMD_GPU_HARDWARE_PROFILE,
+    ],
     target_compatible_with = loom_amdgpu_iree_hal_representation_compatible_with(
         LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY["amdgpu.cdna2.core"],
     ),
@@ -911,7 +919,10 @@ loom_test(
     name = "shift_allocation_execution_test",
     srcs = ["test/shift_allocation.loom"],
     compile_targets = ["//loom/target/amdgpu:gfx90a"],
-    execution_profiles = [AMDGPU_HARDWARE_PROFILE],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMD_GPU_HARDWARE_PROFILE,
+    ],
     target_compatible_with = loom_amdgpu_iree_hal_representation_compatible_with(
         LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY["amdgpu.cdna2.core"],
     ),
@@ -921,7 +932,10 @@ loom_test(
     name = "accumulator_memory_execution_test",
     srcs = ["test/accumulator_memory.loom"],
     compile_targets = ["//loom/target/amdgpu:gfx90a"],
-    execution_profiles = [AMDGPU_HARDWARE_PROFILE],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMD_GPU_HARDWARE_PROFILE,
+    ],
     target_compatible_with = loom_amdgpu_iree_hal_representation_compatible_with(
         LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY["amdgpu.cdna2.core"],
     ),
@@ -931,9 +945,22 @@ loom_test(
     name = "operand_ties_execution_test",
     srcs = ["test/operand_ties.loom"],
     compile_targets = ["//loom/target/amdgpu:gfx1100"],
-    execution_profiles = [AMDGPU_HARDWARE_PROFILE],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMD_GPU_HARDWARE_PROFILE,
+    ],
     target_compatible_with = loom_amdgpu_iree_hal_representation_compatible_with(
         LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY["amdgpu.rdna3.core"],
+    ),
+)
+
+loom_test(
+    name = "physical_exchange_execution_test",
+    srcs = ["test/physical_exchange.loom"],
+    compile_targets = ["//loom/target/amdgpu:gfx11-generic"],
+    execution_profiles = [AMD_GPU_HARDWARE_PROFILE],
+    target_compatible_with = loom_amdgpu_descriptor_set_compatible_with(
+        LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY["amdgpu.gfx11.generic.core"],
     ),
 )
 
@@ -941,7 +968,10 @@ loom_test(
     name = "accumulator_moves_execution_test",
     srcs = ["test/accumulator_moves.loom"],
     compile_targets = ["//loom/target/amdgpu:gfx90a"],
-    execution_profiles = [AMDGPU_HARDWARE_PROFILE],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMD_GPU_HARDWARE_PROFILE,
+    ],
     target_compatible_with = loom_amdgpu_iree_hal_representation_compatible_with(
         LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY["amdgpu.cdna2.core"],
     ),
@@ -951,7 +981,10 @@ loom_test(
     name = "accumulator_atomic_execution_test",
     srcs = ["test/accumulator_atomic.loom"],
     compile_targets = ["//loom/target/amdgpu:gfx942"],
-    execution_profiles = [AMDGPU_HARDWARE_PROFILE],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMD_GPU_HARDWARE_PROFILE,
+    ],
     target_compatible_with = loom_amdgpu_iree_hal_representation_compatible_with(
         LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY["amdgpu.cdna3.core"],
     ),

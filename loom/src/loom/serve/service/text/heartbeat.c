@@ -32,6 +32,10 @@ typedef struct loom_serve_text_activity_record_t {
   uint64_t epoch_spans;
   // Token count of the last issued epoch.
   uint64_t epoch_tokens;
+  // Allocated resident owners, independent of the latest epoch's span count.
+  uint64_t session_capacity;
+  // Configured resident ceiling; zero leaves concurrency memory-limited.
+  uint64_t max_sessions;
 } loom_serve_text_activity_record_t;
 
 typedef struct loom_serve_text_work_record_t {
@@ -62,6 +66,10 @@ typedef struct loom_serve_text_memory_record_t {
   uint64_t resident;
   // Explicitly suspended endpoint payload.
   uint64_t checkpoint_host_bytes;
+  // Cold automatic sizing target, independent of active working-set admission.
+  uint64_t cache_target_bytes;
+  // Selected initial extra declared state and native checkpoint maps.
+  uint64_t cache_additional_bytes;
   // Detached idle endpoints, independent of active execution rows.
   struct {
     // Configured retained endpoint bound.
@@ -130,10 +138,12 @@ static iree_status_t loom_serve_text_activity_format(
       ",\"oldest_queued_arrival_ns\":%" PRIu64
       ",\"oldest_active_arrival_ns\":%" PRIu64 ",\"prefill_rows\":%" PRIu64
       ",\"decode_rows\":%" PRIu64 ",\"backpressured_rows\":%" PRIu64
-      ",\"epoch_spans\":%" PRIu64 ",\"epoch_tokens\":%" PRIu64,
+      ",\"epoch_spans\":%" PRIu64 ",\"epoch_tokens\":%" PRIu64
+      ",\"session_capacity\":%" PRIu64 ",\"max_sessions\":%" PRIu64,
       value.phase_start, value.last_completion, value.oldest_queued_arrival,
       value.oldest_active_arrival, value.prefill_rows, value.decode_rows,
-      value.backpressured_rows, value.epoch_spans, value.epoch_tokens);
+      value.backpressured_rows, value.epoch_spans, value.epoch_tokens,
+      value.session_capacity, value.max_sessions);
 }
 
 static iree_status_t loom_serve_text_work_format(
@@ -166,11 +176,14 @@ static iree_status_t loom_serve_text_memory_format(
       ",\"resident_tokens\":%" PRIu64 "},\"checkpoint_host_bytes\":%" PRIu64
       ",\"session_cache\":{\"capacity\":%" PRIu64 ",\"endpoints\":%" PRIu64
       "}"
-      ",\"prefix_cache\":{\"capacity\":%" PRIu64 ",\"endpoints\":%" PRIu64 "}",
+      ",\"prefix_cache\":{\"capacity\":%" PRIu64 ",\"endpoints\":%" PRIu64
+      "}"
+      ",\"cache_target_bytes\":%" PRIu64 ",\"cache_additional_bytes\":%" PRIu64,
       value.capacity, value.reserved, value.resident,
       value.checkpoint_host_bytes, value.session_cache.capacity,
       value.session_cache.endpoints, value.prefix_cache.capacity,
-      value.prefix_cache.endpoints);
+      value.prefix_cache.endpoints, value.cache_target_bytes,
+      value.cache_additional_bytes);
 }
 
 static iree_status_t loom_serve_text_backing_format(
@@ -238,7 +251,9 @@ static void loom_serve_text_heartbeat_report(
       .decode_rows = state.decode_rows,
       .backpressured_rows = state.backpressured_rows,
       .epoch_spans = state.epoch_spans,
-      .epoch_tokens = state.epoch_tokens};
+      .epoch_tokens = state.epoch_tokens,
+      .session_capacity = state.session_capacity,
+      .max_sessions = state.max_sessions};
   memset(&record.data, 0, sizeof(record.data));
   record.event = &text_activity_event;
   memcpy(record.data.words, &activity, sizeof(activity));
@@ -261,6 +276,8 @@ static void loom_serve_text_heartbeat_report(
       .reserved = state.pool.reserved,
       .resident = state.pool.resident,
       .checkpoint_host_bytes = state.checkpoint_host_bytes,
+      .cache_target_bytes = state.cache_target_bytes,
+      .cache_additional_bytes = state.cache_additional_bytes,
       .session_cache = {state.session_cache.capacity,
                         state.session_cache.endpoints},
       .prefix_cache = {state.prefix_cache.capacity,

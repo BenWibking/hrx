@@ -43,6 +43,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from build_tools.bazel import configure as bazel_configure
 from build_tools.devtools import ci, ci_config, run_requirements
 
 
@@ -314,12 +315,42 @@ class CiTest(unittest.TestCase):
             (("amd-gpu", "amd-xdna"), True, True),
         ):
             with self.subTest(drivers=drivers):
-                bazel = ci.bazel_configure_step(enabled_drivers=drivers).argv
+                step = ci.bazel_configure_step(enabled_drivers=drivers)
+                request = bazel_configure.request_from_args(
+                    bazel_configure.parse_arguments(step.argv[4:])
+                )
                 cmake = ci.cmake_configure_step("example", enabled_drivers=drivers).argv
                 for engine, enabled in (("GPU", gpu), ("XDNA", xdna)):
                     option = f"-DIREE_HAL_DRIVER_AMD_{engine}="
-                    self.assertEqual(option + "ON" in bazel, enabled)
+                    self.assertEqual(
+                        "amd-" + engine.lower() in request.enabled_drivers, enabled
+                    )
                     self.assertIn(option + ("ON" if enabled else "OFF"), cmake)
+
+    def test_bazel_complete_driver_list_overrides_ci_selection(self):
+        for drivers, selections, expected in (
+            (("amd",), ("task",), {"task"}),
+            ((), ("task,amd-gpu",), {"task", "amd-gpu"}),
+            ((), ("task,amd-xdna",), {"task", "amd-xdna"}),
+            (
+                (),
+                ("task,amd", "task,vulkan,amd"),
+                {"task", "vulkan", "amd-gpu", "amd-xdna"},
+            ),
+            (("amd-gpu",), ("",), set()),
+        ):
+            with self.subTest(drivers=drivers, selections=selections):
+                step = ci.bazel_configure_step(
+                    enabled_drivers=drivers,
+                    extra_options=tuple(
+                        "--//runtime/config/hal:drivers=" + selection
+                        for selection in selections
+                    ),
+                )
+                request = bazel_configure.request_from_args(
+                    bazel_configure.parse_arguments(step.argv[4:])
+                )
+                self.assertEqual(request.enabled_drivers, expected)
 
     def test_codec_policy_precedes_explicit_job_overrides(self):
         with mock.patch.object(ci, "codec_options", return_value=("--choice=default",)):
@@ -809,24 +840,28 @@ class CiTest(unittest.TestCase):
     def test_bazel_repository_build_covers_supported_linux_graph(self):
         args = ci.parse_arguments(["iree-bazel-repository-build"])
 
-        with mock.patch.dict(
-            ci.os.environ,
-            {"HRX_ROCM_ROOT": "/tmp/rocm-root"},
-            clear=True,
+        with (
+            tempfile.TemporaryDirectory() as rocm_root,
+            mock.patch.dict(
+                ci.os.environ,
+                {"HRX_ROCM_ROOT": rocm_root},
+                clear=True,
+            ),
         ):
+            (Path(rocm_root) / "include").mkdir()
             steps = ci.steps_from_args(args)
+            configure_step = steps[0]
+            request = bazel_configure.request_from_args(
+                bazel_configure.parse_arguments(configure_step.argv[4:])
+            )
 
         self.assertEqual(
             [step.name for step in steps], ["Configure Bazel", "Build repository"]
         )
-        configure_step = steps[0]
-        for define in (
-            "IREE_HAL_DRIVER_AMDGPU",
-            "IREE_HAL_DRIVER_TASK",
-            "IREE_HAL_DRIVER_VULKAN",
-            "IREE_HAL_DRIVER_WEBGPU",
-        ):
-            self.assertIn(f"-D{define}=ON", configure_step.argv)
+        self.assertEqual(
+            request.enabled_drivers,
+            {"task", "amdgpu", "vulkan", "webgpu", "amd-gpu", "amd-xdna"},
+        )
         self.assertIn(
             "--//loom/config/target:enable=amdgpu,spirv,vm,wasm,xdna,x86",
             configure_step.argv,
@@ -836,7 +871,7 @@ class CiTest(unittest.TestCase):
             + ",".join(ci.REPOSITORY_BUILD_LOOM_IMPORTERS),
             configure_step.argv,
         )
-        self.assertIn("-DIREE_ROCM_PATH=/tmp/rocm-root", configure_step.argv)
+        self.assertIn(f"-DIREE_ROCM_PATH={rocm_root}", configure_step.argv)
         build_step = steps[-1]
         self.assertEqual(build_step.argv[-1], "//...")
         self.assertFalse(any(arg.startswith("-//") for arg in build_step.argv))
@@ -896,6 +931,12 @@ class CiTest(unittest.TestCase):
             "--test_tag_filters=" + ",".join(ci_config.CPU_RESOURCE_TAG_EXCLUDES),
             integration_test_step.argv,
         )
+        self.assertFalse(
+            any(
+                arg.startswith("--test_lang_filters=")
+                for arg in integration_test_step.argv
+            )
+        )
         self.assertEqual(
             steps[4].argv[-1],
             ci_config.BAZEL_REPOSITORY_INTEGRATION_DYNAMIC_LIBRARY_TARGET,
@@ -926,7 +967,9 @@ class CiTest(unittest.TestCase):
         for step in steps[:6]:
             self.assertNotIn("--//loom/config:shared_tools", step.argv)
 
-    def test_bazel_repository_integration_skips_ordinary_repository_build(self):
+    def test_bazel_repository_integration_secondary_lane_skips_duplicate_coverage(
+        self,
+    ):
         args = ci.parse_arguments(["iree-bazel-repository-integration"])
 
         with mock.patch.dict(
@@ -944,6 +987,15 @@ class CiTest(unittest.TestCase):
             "Build AMDGPU device toolchain smoke", [step.name for step in steps]
         )
         self.assertIn("Test repository", [step.name for step in steps])
+        integration_test_step = next(
+            step for step in steps if step.name == "Test repository"
+        )
+        self.assertIn(
+            "--test_tag_filters="
+            + ",".join(ci_config.CPU_RESOURCE_TAG_EXCLUDES + ("-loom-corpus",)),
+            integration_test_step.argv,
+        )
+        self.assertIn("--test_lang_filters=-py", integration_test_step.argv)
 
     def test_bazel_repository_integration_requires_rocm_device_tools(self):
         args = ci.parse_arguments(["iree-bazel-repository-integration"])
@@ -962,12 +1014,6 @@ class CiTest(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "repository-wide"):
-            ci.steps_from_args(args)
-
-    def test_python_test_exclusion_rejects_non_repository_commands(self):
-        args = ci.parse_arguments(["iree-bazel-cpu", "--exclude-python-tests"])
-
-        with self.assertRaisesRegex(ValueError, "repository-integration"):
             ci.steps_from_args(args)
 
     def test_cmake_repository_build_covers_supported_graph_with_prebuilts(self):
@@ -1015,6 +1061,12 @@ class CiTest(unittest.TestCase):
                 for arg in smoke_step.argv
             )
         )
+
+    def test_cmake_build_honors_standard_parallelism_environment(self):
+        with mock.patch.dict(os.environ, {"CMAKE_BUILD_PARALLEL_LEVEL": "40"}):
+            step = ci.cmake_build_step("iree-cmake-repository-build", "Build")
+
+        self.assertEqual(step.argv[-3:], ("build", "--parallel", "40"))
 
     def test_amdgpu_dry_run_does_not_embed_machine_paths(self):
         args = ci.parse_arguments(
