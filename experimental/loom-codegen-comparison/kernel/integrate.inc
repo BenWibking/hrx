@@ -119,8 +119,19 @@ DEVICE int integrate(ScratchView s) {
                             yv[i] = s.y[i] + C::a31 * s.ak1[i] + C::a32 * s.ak2[i];
                         }
                     }
+                    Real dyv0[15];
+                    CHEM_RHS(x, yv, dyv0, s);
+                    const Real z0 = x - x;
+                    Real yv2[15];
+                    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                        yv2[i] = yv[i] + z0;
+                    }
+                    Real dyv1[15];
+                    CHEM_RHS(x, yv2, dyv1, s);
                     Real dyv[15];
-                    CHEM_RHS(x, yv, dyv, s);
+                    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                        dyv[i] = (z0 != 0.0) ? dyv0[i] : dyv1[i];
+                    }
                     {
                         Real tv[15];
                         if (stage == 0) {
