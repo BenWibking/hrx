@@ -5862,6 +5862,11 @@ DEVICE void eval_jacobian(ScratchView s, Real x) {
     BurnView b = s.burn;
     burn_state_from_y_view(s.y, b);
     jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
+    // Stage 0's f(y): same state (T, xn) as the Jacobian, so the rate
+    // coefficients are shared with jac_nuc; integrate reads it from s.dy for
+    // every attempt of this step (y does not change on retries). Bitwise.
+    rhs_specie(b.T[0], s.dy, b.xn, default_redshift);
+    s.dy[14] = rhs_eint(b.T[0], b.xn, default_redshift);
 
 }
 DEVICE unsigned midx(unsigned row, unsigned column) {

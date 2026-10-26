@@ -120,7 +120,14 @@ DEVICE int integrate(ScratchView s) {
                         }
                     }
                     Real dyv[15];
-                    CHEM_RHS(x, yv, dyv, s);
+                    if (stage != 0) {
+                        CHEM_RHS(x, yv, dyv, s);
+                    } else {
+                        // f(y) was evaluated with the Jacobian (eval_jacobian).
+                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+                            dyv[i] = s.dy[i];
+                        }
+                    }
                     {
                         Real tv[15];
                         if (stage == 0) {
