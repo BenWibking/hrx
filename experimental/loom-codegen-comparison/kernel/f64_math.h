@@ -150,91 +150,27 @@ DEVICE double log(double a) {
     const double frexp_mantissa = __builtin_bit_cast(double, half_mantissa_bits);
 
     // b = m < 2/3; m = ldexp(m, b); e = frexp_exp(a) - b.
-    const bool below_two_thirds = frexp_mantissa < 0x1.5555555555555p-1;
-    const double doubled_mantissa = frexp_mantissa * 2.0;
-    const double m = below_two_thirds ? doubled_mantissa : frexp_mantissa;
-    const int b = below_two_thirds ? 1 : 0;
-    const int e = frexp_exponent - b;
+    // fdlibm-style reduction: m in [sqrt(1/2), sqrt(2)), s = f / (2 + f),
+    // single-precision-free polynomial in s^2 (< 1 ulp; not bitwise vs the
+    // double-double recipe, which it replaces for speed).
+    const bool below = frexp_mantissa < 0x1.6a09e667f3bcdp-1;
+    const double m = below ? frexp_mantissa * 2.0 : frexp_mantissa;
+    const int e = frexp_exponent - (below ? 1 : 0);
+    const double f = m - 1.0;
+    const double hfsq = 0.5 * f * f;
+    const double s = f / (2.0 + f);
+    const double dk = (double)e;
+    const double z = s * s;
+    const double w = z * z;
+    const double t1 = w * fma(w, fma(w, 1.531383769920937332e-01,
+        2.222219843214978396e-01), 3.999999999940941908e-01);
+    const double t2 = z * fma(w, fma(w, fma(w, 1.479819860511658591e-01,
+        1.818357216161805012e-01), 2.857142874366239149e-01),
+        6.666666666666735130e-01);
+    const double R = t2 + t1;
+    const double result = dk * 6.93147180369123816490e-01 -
+        ((hfsq - (s * (hfsq + R) + dk * 1.90821492927058770002e-10)) - f);
 
-    // x = div(m - 1.0, fadd(1.0, m))
-    const double numerator = m - 1.0;
-    const double denominator_hi = 1.0 + m;
-    const double denominator_hi_minus_one = denominator_hi - 1.0;
-    const double denominator_lo = m - denominator_hi_minus_one;
-    const double reciprocal = 1.0 / denominator_hi;
-    const double q_hi = numerator * reciprocal;
-    const double product_hi = q_hi * denominator_hi;
-    const double negative_product_hi = -product_hi;
-    const double product_lo_hi = fma(q_hi, denominator_hi, negative_product_hi);
-    const double product_lo = fma(q_hi, denominator_lo, product_lo_hi);
-    const double normalized_product_hi = product_hi + product_lo;
-    const double product_hi_change = normalized_product_hi - product_hi;
-    const double normalized_product_lo = product_lo - product_hi_change;
-    const double difference_hi = numerator - normalized_product_hi;
-    const double numerator_minus_difference = numerator - difference_hi;
-    const double difference_lo_hi =
-        numerator_minus_difference - normalized_product_hi;
-    const double difference_lo = difference_lo_hi - normalized_product_lo;
-    const double difference = difference_hi + difference_lo;
-    const double q_lo = difference * reciprocal;
-    const double x_hi = q_hi + q_lo;
-    const double x_hi_change = x_hi - q_hi;
-    const double x_lo = q_lo - x_hi_change;
-
-    const double s = x_hi * x_hi;
-    const double p5 = fma(s, 0x1.3ab76bf559e2bp-3, 0x1.385386b47b09ap-3);
-    const double p4 = fma(s, p5, 0x1.7474dd7f4df2ep-3);
-    const double p3 = fma(s, p4, 0x1.c71c016291751p-3);
-    const double p2 = fma(s, p3, 0x1.249249b27acf1p-2);
-    const double p1 = fma(s, p2, 0x1.99999998ef7b6p-2);
-    const double p = fma(s, p1, 0x1.5555555555780p-1);
-
-    // r = fadd(ldx(x, 1), s * x.hi * p)
-    const double twice_x_hi = x_hi * 2.0;
-    const double twice_x_lo = x_lo * 2.0;
-    const double s_x_hi = s * x_hi;
-    const double tail = s_x_hi * p;
-    const double sum_hi = twice_x_hi + tail;
-    const double sum_hi_change = sum_hi - twice_x_hi;
-    const double sum_lo_hi = tail - sum_hi_change;
-    const double sum_lo = sum_lo_hi + twice_x_lo;
-    const double r_hi = sum_hi + sum_lo;
-    const double r_hi_change = r_hi - sum_hi;
-    const double r_lo = sum_lo - r_hi_change;
-
-    // r = add(mul(con(ln2_hi, ln2_lo), (double)e), r)
-    const double ln2_hi = 0x1.62e42fefa39efp-1;
-    const double ln2_lo = 0x1.abc9e3b39803fp-56;
-    const double de = (double)e;
-    const double scaled_hi = ln2_hi * de;
-    const double negative_scaled_hi = -scaled_hi;
-    const double scaled_lo_hi = fma(ln2_hi, de, negative_scaled_hi);
-    const double scaled_lo = fma(ln2_lo, de, scaled_lo_hi);
-    const double l_hi = scaled_hi + scaled_lo;
-    const double l_hi_change = l_hi - scaled_hi;
-    const double l_lo = scaled_lo - l_hi_change;
-
-    const double high_sum = l_hi + r_hi;
-    const double high_r_part = high_sum - l_hi;
-    const double high_l_part = high_sum - high_r_part;
-    const double high_l_error = l_hi - high_l_part;
-    const double high_r_error = r_hi - high_r_part;
-    const double high_error = high_l_error + high_r_error;
-    const double low_sum = l_lo + r_lo;
-    const double low_r_part = low_sum - l_lo;
-    const double low_l_part = low_sum - low_r_part;
-    const double low_l_error = l_lo - low_l_part;
-    const double low_r_error = r_lo - low_r_part;
-    const double low_error = low_l_error + low_r_error;
-    const double total_lo_hi = high_error + low_sum;
-    const double total_hi = high_sum + total_lo_hi;
-    const double total_hi_change = total_hi - high_sum;
-    const double total_lo_lo = total_lo_hi - total_hi_change;
-    const double total_lo = total_lo_lo + low_error;
-    const double result = total_hi + total_lo;
-
-    // OCML's NaN result comes from propagation through frexp. Setting the
-    // quiet bit produces the same value without it.
     const bool is_nan = a != a;
     const bool is_infinite = (exponent_field == 2047u) & !is_nan;
     const bool negative = a < 0.0;
