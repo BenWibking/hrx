@@ -50,6 +50,12 @@ hip_env() {
     echo env
   fi
 }
+# Correctness mode for compare_rocm, per campaign: "exact" (default: state within
+# rtol 2e-4, dt candidates and work counters match HIP after every prepare and
+# advance) or "trajectory" (state after every prepare and advance within the
+# integrator's relative targets; counters and candidates are free, for kernels
+# that approximate the network). Set by writing $D/check_mode.
+check_args() { echo --check "$(cat "$D/check_mode" 2>/dev/null || echo exact)"; }
 KREL=experimental/loom-codegen-comparison/kernel
 export XDG_CACHE_HOME=$R/cache TMPDIR=$R/tmp PYTHONPYCACHEPREFIX=$R/cache/pycache
 export PIP_NO_CACHE_DIR=1 PATH=$V:$PATH
@@ -236,7 +242,7 @@ time_one() {  # time_one IDX LABEL RUN_DIR TIMING_DIR
   f=$(foreign_gpu_procs | wc -l)
   t0=$(date +%s.%N)
   $(hip_env) timeout 600 taskset -c "$TIMING_CPUS" "$D/harness/compare_rocm" \
-    "$3/prepare.hsaco" "$3/advance.hsaco" --arch $TARGET --repeats 10 --abundance-atol $ABUNDANCE_ATOL > "$log" 2>&1
+    "$3/prepare.hsaco" "$3/advance.hsaco" --arch $TARGET --repeats 10 --abundance-atol $ABUNDANCE_ATOL $(check_args) > "$log" 2>&1
   rc=$?
   t1=$(date +%s.%N)
   f=$((f + $(foreign_gpu_procs | wc -l)))
@@ -312,9 +318,9 @@ eval_job() {  # eval_job RUN BEST PAIRS STEPS BAR CONTENDED GPU_WAIT
     sleep 30; waited=$((waited + 30))
   done
 
-  log "correctness: $steps gridwide steps (HIP runtime: $(cat "$D/hip_runtime" 2>/dev/null || echo rocm))"
+  log "correctness: $steps gridwide steps (HIP runtime: $(cat "$D/hip_runtime" 2>/dev/null || echo rocm), $(check_args))"
   $(hip_env) timeout 300 taskset -c "$TIMING_CPUS" "$D/harness/compare_rocm" "$out/prepare.hsaco" \
-    "$out/advance.hsaco" --arch $TARGET --steps "$steps" --warmup 0 --repeats 1 --abundance-atol $ABUNDANCE_ATOL > "$out/correctness.log" 2>&1
+    "$out/advance.hsaco" --arch $TARGET --steps "$steps" --warmup 0 --repeats 1 --abundance-atol $ABUNDANCE_ATOL $(check_args) > "$out/correctness.log" 2>&1
   local rc=$?
   cat "$out/correctness.log"
   [[ $rc == 124 ]] && { finish hang stage=correctness; return; }

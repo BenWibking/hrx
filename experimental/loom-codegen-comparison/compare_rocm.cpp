@@ -130,7 +130,63 @@ static void same_int(unsigned long long a, unsigned long long b, int cell, const
     if (a != b && ++mismatches <= 20)
         std::fprintf(stderr, "cell %d %s: original %llu, Loom %llu\n", cell, field, a, b);
 }
+// --check trajectory: kernels may approximate the network (e.g. fitted rate
+// constants), so their internal step sequences, work counters and timestep
+// candidates legitimately differ from HIP's. Each backend runs on its own; failure
+// codes still match per step, and the state after every prepare and advance must
+// lie within the integrator's relative accuracy targets (rtol_spec for species,
+// rtol_energy for e; T, rho, time and density_driver follow from these and take
+// rtol_spec). Abundances keep the absolute floor for values near zero.
+static bool check_trajectory = false;
+static double max_rel[8] = {};
+static const char* const final_fields[8] = {"rho", "T", "e", "xn", "time", "density_driver", "D/H", "He/H"};
+// Nuclei ratios are linear invariants of the network that the driver never
+// re-projects (balance_charge only sets E; normalization and perturbations scale
+// all species uniformly), so an approximation that breaks c^T f = 0 or c^T J = 0
+// shows up here even when every species stays within rtol_spec.
+static double invariant_rtol = 1e-12;
+struct Nuclei { double h, d, he; };
+static Nuclei nuclei(const lc::CellRecord& c) {
+    const auto& x = c.current.xn;  // E Hp H Hm Dp D H2p Dm H2 HDp HD HEpp HEp HE
+    return {x[1] + x[2] + x[3] + 2 * x[6] + 2 * x[8] + x[9] + x[10],
+            x[4] + x[5] + x[7] + x[9] + x[10],
+            x[11] + x[12] + x[13]};
+}
+static void within(double a, double b, int cell, int field, double rtol, double abs_tol = 0.) {
+    double diff = std::abs(a - b), scale = std::abs(a);
+    if (rtol * scale > abs_tol) max_rel[field] = std::max(max_rel[field], diff / scale);  // relative regime only
+    if (!std::isfinite(a) || !std::isfinite(b) || diff > abs_tol + rtol * scale) {
+        if (++mismatches <= 20)
+            std::fprintf(stderr, "cell %d %s: original %.17g, Loom %.17g, rel %.3g > rtol %g\n", cell,
+                         final_fields[field], a, b, scale > 0 ? diff / scale : diff, rtol);
+    }
+}
+static void compare_trajectory(const std::vector<lc::CellRecord>& a, const std::vector<lc::CellRecord>& b) {
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        int cell = static_cast<int>(i);
+        within(a[i].current.rho, b[i].current.rho, cell, 0, rtol_spec);
+        within(a[i].current.T, b[i].current.T, cell, 1, rtol_spec);
+        within(a[i].current.e, b[i].current.e, cell, 2, rtol_energy);
+        for (int j = 0; j < 14; ++j)
+            within(a[i].current.xn[j], b[i].current.xn[j], cell, 3, rtol_spec, abundance_absolute_tolerance);
+        within(a[i].time, b[i].time, cell, 4, rtol_spec);
+        within(a[i].density_driver, b[i].density_driver, cell, 5, rtol_spec);
+        same_int(a[i].completed_steps, b[i].completed_steps, cell, "completed_steps");
+        Nuclei na = nuclei(a[i]), nb = nuclei(b[i]);
+        // Deuterium starts at ~1e-40, far below the integrator's species atol, so
+        // even HIP does not conserve it; it gets the abundance floor like xn does.
+        within(na.d / na.h, nb.d / nb.h, cell, 6, invariant_rtol, abundance_absolute_tolerance);
+        within(na.he / na.h, nb.he / nb.h, cell, 7, invariant_rtol);
+    }
+}
+static void print_trajectory_deviation() {
+    std::printf("trajectory max relative deviation (all steps; xn only where |ref| > abundance_atol/rtol):");
+    for (int f = 0; f < 8; ++f) std::printf(" %s=%.3g", final_fields[f], max_rel[f]);
+    std::printf(" (nuclei ratios vs HIP, rtol %g)", invariant_rtol);
+    std::printf("\n");
+}
 static void compare_state(const std::vector<lc::CellRecord>& a, const std::vector<lc::CellRecord>& b) {
+    if (check_trajectory) { compare_trajectory(a, b); return; }
     for (std::size_t i = 0; i < a.size(); ++i) {
         int cell = static_cast<int>(i);
         same(a[i].current.rho, b[i].current.rho, cell, "rho");
@@ -182,7 +238,7 @@ static double median(std::vector<double> values) {
 }
 
 int main(int argc, char** argv) try {
-    if (argc < 3) throw std::runtime_error("usage: compare_rocm PREPARE.hsaco ADVANCE.hsaco [--arch GFX] [--cells N] [--steps N] [--warmup N] [--repeats N] [--rtol X] [--atol X] [--abundance-atol X]");
+    if (argc < 3) throw std::runtime_error("usage: compare_rocm PREPARE.hsaco ADVANCE.hsaco [--arch GFX] [--cells N] [--steps N] [--warmup N] [--repeats N] [--rtol X] [--atol X] [--abundance-atol X] [--check exact|trajectory] [--invariant-rtol X]");
     int n = default_grid_dim * default_grid_dim * default_grid_dim;
     int steps = 1, warmup = 1, repeats = 5;
     std::string arch = "gfx942";
@@ -197,6 +253,12 @@ int main(int argc, char** argv) try {
         else if (key == "--rtol") relative_tolerance = std::stod(argv[i + 1]);
         else if (key == "--atol") absolute_tolerance = std::stod(argv[i + 1]);
         else if (key == "--abundance-atol") abundance_absolute_tolerance = std::stod(argv[i + 1]);
+        else if (key == "--invariant-rtol") invariant_rtol = std::stod(argv[i + 1]);
+        else if (key == "--check") {
+            std::string mode = argv[i + 1];
+            if (mode != "exact" && mode != "trajectory") throw std::runtime_error("--check must be exact or trajectory");
+            check_trajectory = mode == "trajectory";
+        }
         else throw std::runtime_error("unknown option: " + key);
     }
     if (n < 1 || n > 1000000 || steps < 1 || steps > 1000 || warmup < 0 || repeats < 1 ||
@@ -239,15 +301,15 @@ int main(int argc, char** argv) try {
         double original_dt = std::numeric_limits<double>::max();
         double loom_dt = std::numeric_limits<double>::max();
         for (int i = 0; i < n; ++i) {
-            same(dt_a[i], dt_b[i], i, "candidate");
+            if (!check_trajectory) same(dt_a[i], dt_b[i], i, "candidate");
             original_dt = std::min(original_dt, dt_a[i]);
             loom_dt = std::min(loom_dt, dt_b[i]);
         }
-        same(original_dt, loom_dt, -1, "grid dt");
+        if (!check_trajectory) same(original_dt, loom_dt, -1, "grid dt");
         compare_state(original.state(), loom.state());
         if (mismatches) { std::fprintf(stderr, "correctness mismatch at step %d after prepare\n", step); break; }
         if (original.code() != 1 || original_dt == std::numeric_limits<double>::max() ||
-            loom_dt == std::numeric_limits<double>::max())
+            loom.code() != 1 || loom_dt == std::numeric_limits<double>::max())
             throw std::runtime_error("grid stopped before requested correctness steps");
         if (step == 0) bench_dt = original_dt;
         double original_next = original_time + original_dt;
@@ -256,16 +318,21 @@ int main(int argc, char** argv) try {
         loom.launch_advance(completed, loom_next, loom_dt);
         hip_check(hipDeviceSynchronize(), "advance synchronize");
         same_int(original.code(), loom.code(), -1, "advance failure");
-        same_int(original.count(), loom.count(), -1, "integrated count");
+        if (!check_trajectory) same_int(original.count(), loom.count(), -1, "integrated count");
         compare_state(original.state(), loom.state());
         if (mismatches) { std::fprintf(stderr, "correctness mismatch at step %d after advance\n", step); break; }
-        if (original.code() != 1 || original.count() == 0)
+        if (original.code() != 1 || original.count() == 0 || loom.code() != 1 || loom.count() == 0)
             throw std::runtime_error("grid stopped before requested correctness steps");
         original_time = original_next; loom_time = loom_next; ++completed;
     }
+    if (check_trajectory) print_trajectory_deviation();
     if (mismatches) { std::fprintf(stderr, "FAIL: %d mismatches (first 20 shown); performance skipped\n", mismatches); return 1; }
-    std::printf("PASS: %d full gridwide steps; final grid time original %.17g, Loom %.17g; rtol=%g atol=%g abundance_atol=%g\n",
-                completed, original_time, loom_time, relative_tolerance, absolute_tolerance, abundance_absolute_tolerance);
+    if (check_trajectory)
+        std::printf("PASS: %d full gridwide steps (check=trajectory: every step within integrator targets, species/T/rho/time rtol=%g, e rtol=%g); final grid time original %.17g, Loom %.17g; abundance_atol=%g\n",
+                    completed, rtol_spec, rtol_energy, original_time, loom_time, abundance_absolute_tolerance);
+    else
+        std::printf("PASS: %d full gridwide steps; final grid time original %.17g, Loom %.17g; rtol=%g atol=%g abundance_atol=%g\n",
+                    completed, original_time, loom_time, relative_tolerance, absolute_tolerance, abundance_absolute_tolerance);
     for (bool prep : {true, false}) {
         std::vector<double> a, b;
         for (int rep = -warmup; rep < repeats; ++rep) {
