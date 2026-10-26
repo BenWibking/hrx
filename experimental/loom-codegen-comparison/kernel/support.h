@@ -13,6 +13,8 @@
 #define KERNEL __global__ [[loom::workgroup_size(128, 1, 1)]]
 #define CELL_PARAMETER
 #define CELL_INDEX (blockIdx.x * blockDim.x + threadIdx.x)
+#define LANE_INDEX (threadIdx.x)
+#define WORKGROUP_ARRAY(T, name, n) [[loom::workgroup]] T name[n]
 #include "f64_math.h"
 #else
 #include <cmath>
@@ -20,6 +22,8 @@
 #define KERNEL
 #define CELL_PARAMETER , int cell_index
 #define CELL_INDEX cell_index
+#define LANE_INDEX 0
+#define WORKGROUP_ARRAY(T, name, n) T name[n]
 #endif
 
 namespace chemistry {
