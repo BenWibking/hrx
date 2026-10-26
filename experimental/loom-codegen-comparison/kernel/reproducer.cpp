@@ -5990,16 +5990,28 @@ DEVICE Real iter_elem(const Real* J, unsigned i, unsigned j, Real fac) {
     const Real nj = -J[midx(i, j)];
     return (i == j) ? nj + fac : nj;
 }
+// Structural zeros of fjac (jac_nuc_structural_zeros): bit j of row i's mask.
+// With constant (unrolled) indices the test folds and the load disappears.
+DEVICE bool jac_structural_zero(unsigned i, unsigned j) {
+    const unsigned m = (i == 0u) ? 0x0400u : (i == 1u) ? 0x0800u : (i == 2u) ? 0x0800u : (i == 3u) ? 0x3e10u : (i == 4u) ? 0x3a48u : (i == 5u) ? 0x3840u : (i == 6u) ? 0x3eb0u : (i == 7u) ? 0x3f40u : (i == 8u) ? 0x3880u : (i == 9u) ? 0x3dc8u : (i == 10u) ? 0x3841u : (i == 11u) ? 0x27feu : (i == 12u) ? 0x07f8u : (i == 13u) ? 0x0ff8u : 0x0000u;
+    return ((m >> j) & 1u) != 0u;
+}
+// iter_elem with structural zeros not loaded (fjac holds +0.0 there, so the
+// value -0.0 (+ fac on the diagonal) is identical).
+DEVICE Real iter_elem_z(const Real* J, unsigned i, unsigned j, Real fac) {
+    const Real jv = jac_structural_zero(i, j) ? 0.0 : J[midx(i, j)];
+    const Real nj = -jv;
+    return (i == j) ? nj + fac : nj;
+}
 // Step K = 0 of lu_step with the iteration matrix formed on the fly from fjac:
 // identical values and operation order to "e = -fjac + fac*I; lu_step<0>(e)",
 // but the loads come from fjac (never stored here), so the per-row loads do not
 // wait on the preceding stores to e. Every element of e is written.
 DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
-    // Column-0 pivot search with all loads issued together (fjac is not
-    // stored here); same comparisons in the same order (first maximum).
+    // Rows with constant indices: structural zeros of fjac are not loaded.
     Real col[15];
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-        col[i] = math::abs(iter_elem(J, i, 0u, fac));
+        col[i] = math::abs(iter_elem_z(J, i, 0u, fac));
     }
     unsigned pivot_row = 0;
     Real max_val = col[0];
@@ -6012,38 +6024,29 @@ DEVICE int lu_step0_from_jac(const Real* J, Real* A, int* ipvt, Real fac) {
     ipvt[0] = static_cast<int>(pivot_row);
     unsigned next_pivot = 1;
     int info = 0;
+    Real e0[15];
+    [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
+        e0[j] = iter_elem_z(J, 0u, j, fac);
+    }
     const Real pivot = iter_elem(J, pivot_row, 0u, fac);
     if (pivot != 0.0) {
         Real row[14];
         [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
             row[j - 1] = iter_elem(J, pivot_row, j, fac);
         }
+        const Real multiplier = -1.0 / pivot;
         A[midx(0u, 0u)] = pivot;
         [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
             A[midx(0u, j)] = row[j - 1];
         }
-        const Real multiplier = -1.0 / pivot;
         Real next_max = 0.0;
-        // Software-pipelined rows (see lu_step): row i+1 is loaded first.
-        Real nxt[15];
-        {
-            const unsigned src1 = (1u == pivot_row) ? 0u : 1u;
-            [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
-                nxt[j] = iter_elem(J, src1, j, fac);
-            }
-        }
-        for (unsigned i = 1; i < 15u; ++i) {
+        [[loom::unroll]] for (unsigned i = 1; i < 15u; ++i) {
+            // Row i of the interchanged matrix: original row i, or row 0 when
+            // i is the pivot row.
+            const bool swapped = i == pivot_row;
             Real cur[15];
             [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
-                cur[j] = nxt[j];
-            }
-            if (i + 1 < 15u) {
-                const unsigned i1 = i + 1;
-                const unsigned src = (i1 == pivot_row) ? 0u : i1;
-                __builtin_assume(src < 15u);
-                [[loom::unroll]] for (unsigned j = 0; j < 15u; ++j) {
-                    nxt[j] = iter_elem(J, src, j, fac);
-                }
+                cur[j] = swapped ? e0[j] : iter_elem_z(J, i, j, fac);
             }
             const Real m = cur[0] * multiplier;
             [[loom::unroll]] for (unsigned j = 1; j < 15u; ++j) {
