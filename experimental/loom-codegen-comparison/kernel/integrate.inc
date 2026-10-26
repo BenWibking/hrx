@@ -83,6 +83,7 @@ DEVICE int integrate(ScratchView s) {
                 // A lane with a singular matrix runs the stages on a discarded
                 // factor and is handled after the stage loop.
                 bool singular = false;
+                bool noperm = true;
                 const Real fac = 1.0 / (h * C::gamma);
                 for (int stage = 0; stage < 3; ++stage) {
                     Real* target = s.ak1 + 15 * stage;
@@ -116,7 +117,7 @@ DEVICE int integrate(ScratchView s) {
                         have_f0 = true;
                     }
                     if (stage == 0) {
-                        singular = decompose(s, fac) != 0;
+                        singular = decompose(s, fac, &noperm) != 0;
                     }
                     {
                         Real tv[15];
@@ -133,11 +134,8 @@ DEVICE int integrate(ScratchView s) {
                                 tv[i] = (C::c31 * s.ak1[i] + C::c32 * s.ak2[i]) / h + dyv[i];
                             }
                         }
-                        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
-                            target[i] = tv[i];
-                        }
+                        solve_regs(s, tv, target, noperm);
                     }
-                    solve(s, target);
                 }
                 if (singular) {
                     nsing += 1;

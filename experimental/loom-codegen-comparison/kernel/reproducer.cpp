@@ -6234,7 +6234,7 @@ DEVICE void perm_step(const int* pv, unsigned* pm) {
     pm[K] = b;
     if constexpr (K + 1 < 14u) perm_step<K + 1>(pv, pm);
 }
-DEVICE void store_permutation(int* ipvt) {
+DEVICE bool store_permutation(int* ipvt) {
     int pv[14];
     [[loom::unroll]] for (unsigned k = 0; k < 14u; ++k) {
         pv[k] = ipvt[k];
@@ -6247,6 +6247,11 @@ DEVICE void store_permutation(int* ipvt) {
     [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
         ipvt[i] = static_cast<int>(pm[i]);
     }
+    bool identity = true;
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        identity = identity & (pm[i] == i);
+    }
+    return identity;
 }
 // Solve with the permutation applied up front (one gather), then both sweeps
 // in registers; x is stored once.
@@ -6288,16 +6293,40 @@ DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
     lu_solve_backward<14>(LU, x, x[14]);
 
 }
-DEVICE int decompose(ScratchView s, Real fac) {
+DEVICE int decompose(ScratchView s, Real fac, bool* identity) {
 
         Real* A = s.e;
         // ip[14] is never read by the solve; the A(14,14) == 0 check is done
         // in lu_step<13> on the register value.
         int info = lu_step0_from_jac(s.fjac, A, s.ip, fac);
         // ip now holds the composite row permutation (all 15 entries).
-        store_permutation(s.ip);
+        *identity = store_permutation(s.ip);
         return info;
 
+}
+// Solve with the right-hand side in registers. Without row interchanges (the
+// common case) the permutation gather is skipped: no store/reload of the vector.
+DEVICE void solve_regs(ScratchView s, const Real* tv, Real* ak, bool identity) {
+    Real v[15];
+    if (identity) {
+        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+            v[i] = tv[i];
+        }
+    } else {
+        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+            ak[i] = tv[i];
+        }
+        [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+            const unsigned src = static_cast<unsigned>(s.ip[i]);
+            __builtin_assume(src < 15u);
+            v[i] = ak[src];
+        }
+    }
+    lu_fwd_regs<0>(s.e, v);
+    lu_bwd_regs<14>(s.e, v);
+    [[loom::unroll]] for (unsigned i = 0; i < 15u; ++i) {
+        ak[i] = v[i];
+    }
 }
 DEVICE void solve(ScratchView s, Real* ak) {
 
