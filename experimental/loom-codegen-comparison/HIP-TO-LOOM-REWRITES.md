@@ -18,7 +18,7 @@ one-based `Array1D` `X(i)`/`ydot(i)` adapters, `JacobianAdapter`, nested
 conditional expressions in the generated RHS and Jacobian. `CellRecord` and
 `BurnRecord` are aliases for the record types that `compare_rocm.cpp` and the
 autoresearch harness use. These rewrites remain, each needed by
-loom-import-cxx as of 8d91c11750:
+loom-import-cxx as of 964249c20e:
 
 | HIP source | Loom translation | Importer limitation |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ loom-import-cxx as of 8d91c11750:
 | `std::min` and `std::max` | By-value helpers retaining the first operand on ties and unordered comparisons | No `<algorithm>` |
 | HIP integer `atomicCAS` and `atomicAdd` | Same names in `support.h`: typed Loom compare-exchange and add RMW, relaxed ordering, device scope, returning the old value | The embedded `hip_runtime.h` has no atomics |
 | Range-for loops | Indexed loops binding the same element reference, in the original order | `for-range-statement` is unsupported |
-| Integrator returns inside its loops, `for (;;)` | `done`, `retry`, and a result variable retaining the original early-exit points | Returns inside loops need a structured loop-exit projection; `for` needs a condition |
+| Integrator returns inside its loops, `for (;;)` | `done`, `retry`, and a result variable retaining the original early-exit points | Returns inside loops need a structured loop-exit projection; the `for (;;)` loops carry those returns, so they become `while (!done)` |
 | Record reference parameters (`burn_t&`, `CollapseState&`, `RODASState&`, `IntegratorStats&`) | Pointer parameters rebound to the source's reference name on entry; callers pass `&` | Binding a member of a record reference parameter to a reference rejects it ("mutation requires an owned automatic source binding") |
 | Default-initialized class locals (`Ros2sIntegrator integrator;`) | `{}` value initialization; every member already has a default initializer | Locals require initializers |
 | `redshift()`, problem traits, HIP launch code | Device branch only; `Problem::neqs` directly; kernels as Loom roots | Host-only code does not parse (`<<<>>>`, std headers) |
