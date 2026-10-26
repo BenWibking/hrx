@@ -78,6 +78,7 @@ DEVICE int integrate(ScratchView s) {
             }
 
             CHEM_EVAL_JACOBIAN(s, x);
+            CHEM_EVAL_JACOBIAN(s, x);
             need_jac = false;
         }
       }
