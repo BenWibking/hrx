@@ -61,7 +61,7 @@ def test_local_file_is_not_copied_into_another_cache(tmp_path):
 
 
 @contextmanager
-def _held_http_body():
+def _held_http_body(*, prefix=b"", declared_size=True):
     started, release = threading.Event(), threading.Event()
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -70,8 +70,11 @@ def _held_http_body():
 
         def do_GET(self):
             self.send_response(200)
-            self.send_header("Content-Length", "4")
+            if declared_size:
+                self.send_header("Content-Length", str(len(prefix) + 4))
             self.end_headers()
+            self.wfile.write(prefix)
+            self.wfile.flush()
             started.set()
             release.wait()
             # Cancellation deliberately closes the client before release.
@@ -115,6 +118,85 @@ def test_cancel_releases_http_reader_and_removes_its_temporary_file(tmp_path):
             source, _identity(b"code"), offline=False
         )
         assert result.path.read_bytes() == b"code"
+
+
+@pytest.mark.parametrize("transferred", [0, 1024 * 1024])
+def test_progress_crosses_worker_pipe_before_held_download_and_cancellation(
+    tmp_path, transferred
+):
+    observed = threading.Event()
+    events = []
+
+    def observe(event):
+        events.append(event)
+        if event.phase == "download" and event.completed_bytes == transferred:
+            observed.set()
+
+    content = b"a" * transferred + b"code"
+    with _held_http_body(prefix=content[:-4]) as (url, _, release):
+        cache = ContentCache(tmp_path / "cache", progress=observe)
+        source = Source("program.loom", {"kind": "url", "url": url})
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            try:
+                future = executor.submit(
+                    cache.acquire,
+                    source,
+                    _identity(content),
+                    offline=False,
+                    progress=cache.progress.file("program.loom"),
+                )
+                future.add_done_callback(lambda _: observed.set())
+                observed.wait()
+                assert not future.done(), future.result()
+                event = events[-1]
+                assert event.phase == "download"
+                assert event.path == "program.loom"
+                assert (event.completed_bytes, event.total_bytes) == (
+                    transferred,
+                    len(content),
+                )
+                assert url not in repr(events)
+                cache.cancel()
+                with pytest.raises(FetchError, match="cancelled"):
+                    future.result()
+                assert not release.is_set()
+                assert not cache.blob_path(_identity(content).sha256).exists()
+                assert not list((cache.root / "temporary").iterdir())
+            finally:
+                cache.cancel()
+                release.set()
+
+
+def test_http_progress_does_not_invent_an_unknown_length(tmp_path):
+    events = []
+    with _held_http_body(declared_size=False) as (url, _, release):
+        release.set()
+        cache = ContentCache(tmp_path / "cache", progress=events.append)
+        result = cache.acquire(
+            Source("program.loom", {"kind": "url", "url": url}), None, offline=False
+        )
+        assert result.path.read_bytes() == b"code"
+        download = [event for event in events if event.phase == "download"]
+        assert [event.completed_bytes for event in download] == [0, 4]
+        assert all(event.total_bytes is None for event in download)
+
+
+@pytest.mark.parametrize("failure", [OSError, BrokenPipeError, EOFError])
+def test_observer_failure_joins_transfer_before_returning_to_caller(tmp_path, failure):
+    def fail(event):
+        raise failure("progress sink closed")
+
+    with _held_http_body() as (url, _, release):
+        cache = ContentCache(tmp_path / "cache", progress=fail)
+        with pytest.raises(failure, match="progress sink closed"):
+            cache.acquire(
+                Source("program.loom", {"kind": "url", "url": url}),
+                _identity(b"code"),
+                offline=False,
+            )
+        assert not release.is_set()
+        assert not list((cache.root / "temporary").iterdir())
+        assert not cache.blob_path(_identity(b"code").sha256).exists()
 
 
 def test_programmatic_caller_needs_no_process_entrypoint_guard(tmp_path):
@@ -211,6 +293,20 @@ def test_offline_reuses_verified_blob_without_touching_url(tmp_path):
         offline=True,
     )
     assert acquired.path == cached.path
+
+
+def test_offline_editable_source_uses_and_verifies_its_local_receipt(tmp_path):
+    cache = ContentCache(tmp_path / "cache")
+    with _held_http_body() as (url, _, release):
+        release.set()
+        source = Source("program.loom", {"kind": "url", "url": url})
+        acquired = cache.acquire(source, None, offline=False)
+    offline = ContentCache(cache.root).acquire(source, None, offline=True)
+    assert offline.path == acquired.path
+    assert offline.identity == acquired.identity
+    acquired.path.write_bytes(b"evil")
+    with pytest.raises(ManifestError, match="integrity mismatch"):
+        cache.acquire(source, None, offline=True)
 
 
 def test_cache_corruption_fails_instead_of_silently_refetching(tmp_path):

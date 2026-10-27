@@ -251,6 +251,7 @@ loom_cc_library(
     ::registry
     ::types
     iree::base
+    iree::base::internal::arena
     loom::util::json
     loom::util::stream
   LINKABLE_MORE_THAN_ONCE
@@ -307,7 +308,6 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     iree::base::internal::fpu_state
-    loom::error::error_defs
     loom::ir
     loom::ops::op_defs
     loom::ops::pass
@@ -437,6 +437,7 @@ loom_cc_test(
   DEPS
     ::interpreter
     ::program
+    ::registry
     ::report
     ::trace
     iree::testing::gtest
@@ -446,6 +447,7 @@ loom_cc_test(
     loom::ops::op_defs
     loom::ops::test
     loom::pass::test::harness
+    loom::pass::test::registry
     loom::rewrite::rewriter
     loom::util::stream
 )
@@ -488,15 +490,13 @@ loom_cc_test(
   SRCS
     "report_test.cc"
   DEPS
+    ::registry
     ::report
-    ::tooling
+    ::types
+    iree::base
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::format::text::parser
-    loom::ir
-    loom::pass::test::harness
-    loom::util::stream
 )
 
 loom_cc_test(

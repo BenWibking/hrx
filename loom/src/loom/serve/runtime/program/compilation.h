@@ -60,14 +60,17 @@ typedef struct loom_serve_compilation_report_t {
   // Native compilations accepted directly or by command products, excluding
   // exact-input reuse.
   uint64_t kernels;
-  // Requests reusing an exact native input within the same JIT catalog.
+  // Native entries satisfied by exact input or complete-stage reuse instead
+  // of new compiler work in this model's JIT catalog.
   uint64_t reused_kernels;
   // Successfully bound native entries across both stage kinds.
   uint64_t entries;
   // Largest shared compiler worker pool used by a stage attempt.
   uint64_t workers;
-  // Sum of stage-attempt wall durations, not CPU or device execution time.
-  uint64_t duration_ns;
+  // Sum of stage submission-to-completion intervals, including queue and
+  // native-dependency waits. Intervals overlap; this is neither preparation
+  // elapsed time nor CPU/device work time.
+  uint64_t stage_duration_sum_ns;
 } loom_serve_compilation_report_t;
 
 // Independently owned evidence retained with a cached compilation result.

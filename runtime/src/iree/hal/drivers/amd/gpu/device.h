@@ -30,7 +30,8 @@ typedef struct iree_hal_amd_gpu_device_options_t {
   // Exact native family ordinal, or UINT32_MAX to prefer AQL on CDNA and PM4
   // on RDNA among supported families. File transfers independently select SDMA.
   uint32_t queue_family_ordinal;
-  // Number of provisioned queues in this family, between 1 and 256.
+  // Number of provisioned queues in this family, between 1 and 256. Defaults
+  // to four so independent execution timelines can use distinct queues.
   uint32_t queue_count;
   // Host NUMA node for both device workers and the shared proactor. UINT32_MAX
   // leaves placement unspecified; GPU memory nodes are not CPU NUMA nodes.
@@ -39,6 +40,10 @@ typedef struct iree_hal_amd_gpu_device_options_t {
   // Zero uses native events immediately. Applies only to coherent USER queue
   // records; KERNEL queues retain native event/status observation.
   uint32_t completion_spin_ns;
+  // Software wait budget for native-stop ownership and stalled-cleanup report
+  // threshold, in milliseconds. Expiry preserves unproven native ownership;
+  // kernel calls and live CPU borrowers still must join. Zero reports at once.
+  uint32_t failure_timeout_ms;
   // Initial per-queue storage. Native growth uses the fabric allocation owner.
   struct {
     // Native command storage capacity in bytes, or zero for the protocol's

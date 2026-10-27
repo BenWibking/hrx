@@ -9,6 +9,7 @@
 #include "loom/serve/runtime/execution/execution.h"
 #include "loom/serve/runtime/host/host.h"
 #include "loom/serve/runtime/parameter/residency.h"
+#include "loom/serve/runtime/program/jit.h"
 #include "loom/serve/runtime/storage/memory.h"
 
 #ifdef __cplusplus
@@ -39,6 +40,9 @@ typedef struct loom_serve_device_options_t {
   iree_hal_driver_t* driver;
   // HAL device URI, borrowed during creation.
   iree_string_view_t uri;
+  // Application-selected key, copied at creation. Empty is accepted only for
+  // a singleton group, where the key is "device". Keys are visible ASCII.
+  iree_string_view_t name;
   // Physical backing strategy for all models sharing this owner.
   loom_serve_device_backing_t backing;
   // Parameter/workspace slab bytes; zero selects the allocator recommendation.
@@ -81,18 +85,28 @@ iree_status_t loom_serve_device_group_free(loom_serve_device_group_t* group);
 iree_host_size_t loom_serve_device_group_count(
     const loom_serve_device_group_t* group);
 
+// Immutable application keys in native group order, borrowed through teardown.
+iree_string_view_list_t loom_serve_device_group_names(
+    const loom_serve_device_group_t* group);
+
+// Application key, distinct from the HAL identity or hardware display name.
+iree_string_view_t loom_serve_device_name(const loom_serve_device_t* device);
+
 // Borrows a record through group destruction. device_index is a caller-resolved
 // ordinal less than the group's count.
 loom_serve_device_t* loom_serve_device_group_at(
     loom_serve_device_group_t* group, iree_host_size_t device_index);
 
-// Serving-managed backing across every model sharing this device. Virtual
-// statistics are zero for fixed backing. Workspace statistics are atomic HAL
-// observations, not a coherent device-wide snapshot. With elastic backing,
-// workspace is a subset of retained, not additional physical consumption.
-// Reported commitments exclude host snapshots, fixed buffers, loader storage,
-// and driver overhead; HAL providers may also hide physical allocation padding.
+// Serving-managed backing across every model sharing this device. Storage and
+// retained have separate native sources; workspace is a breakdown of storage
+// for fixed backing or retained for elastic backing, not additional physical
+// consumption. Virtual statistics are zero for fixed backing. HAL statistics
+// are independent atomic observations, not a coherent device-wide snapshot.
+// Reported commitments exclude host snapshots, loader storage, and driver
+// overhead; HAL providers may also hide physical allocation padding.
 typedef struct loom_serve_device_memory_statistics_t {
+  // Ordinary native buffers, including fixed parameters, state, and workspace.
+  iree_hal_pool_stats_t storage;
   // All virtual reservations and backing, including weights, state, workspace.
   loom_serve_memory_statistics_t retained;
   // Shared command workspace, including reusable idle backing.
@@ -178,6 +192,14 @@ loom_serve_memory_geometry_t loom_serve_device_state_geometry(
 // Borrowed parameter admission, pinning and LRU policy shared by all models.
 loom_serve_residency_cache_t* loom_serve_device_residency_cache(
     const loom_serve_device_t* device);
+
+// Creates a model-local source catalog backed by this device's immutable
+// compilation cache. The model retains the returned catalog and its private
+// report/callback state; the device owns reusable completed products.
+iree_status_t loom_serve_device_create_jit(
+    loom_serve_device_t* device, const loom_serve_sources_t* sources,
+    const loomc_sanitizer_options_t* sanitizer,
+    loom_serve_compilation_report_t* report, loom_serve_jit_t** out_jit);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -6,14 +6,9 @@
 
 #include "loom/tools/loom-check/execute.h"
 
-#include "loom/codegen/low/text_asm.h"
 #include "loom/error/diagnostic.h"
 #include "loom/error/json_sink.h"
 #include "loom/error/source.h"
-#include "loom/format/text/printer.h"
-#include "loom/pass/report.h"
-#include "loom/target/provider.h"
-#include "loom/target/reporting/format.h"
 #include "loom/tools/loom-check/comparison.h"
 #include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/compile_diagnostics.h"
@@ -22,6 +17,7 @@
 #include "loom/util/diff.h"
 #include "loom/util/json.h"
 #include "loom/util/stream.h"
+#include "loomc/compile_report.h"
 #include "loomc/iree.h"
 
 void loom_check_result_initialize(iree_allocator_t allocator,
@@ -360,19 +356,6 @@ typedef struct loom_check_pass_target_request_t {
   bool has_target;
 } loom_check_pass_target_request_t;
 
-static loom_text_print_flags_t loom_check_pass_print_flags(
-    const loom_test_case_t* test_case) {
-  loom_text_print_flags_t flags =
-      LOOM_TEXT_PRINT_DEFAULT | LOOM_TEXT_PRINT_PREFER_LOW_ASM;
-  if (iree_all_bits_set(test_case->output_flags, LOOM_TEST_OUTPUT_LOW_ASM)) {
-    flags |= LOOM_TEXT_PRINT_PRESERVE_LOW_ASM;
-  }
-  if (iree_all_bits_set(test_case->output_flags, LOOM_TEST_OUTPUT_LOCATIONS)) {
-    flags |= LOOM_TEXT_PRINT_LOCATIONS;
-  }
-  return flags;
-}
-
 // Compile options precede the pipeline, whose own pass options remain opaque
 // to this front door. A named pipeline starts with '@', so an explicit entry
 // uses entry=@function instead of overloading the pipeline spelling.
@@ -410,6 +393,13 @@ static iree_status_t loom_check_parse_pass_target(
                             "pass entry requires target=family:selector");
   }
   return iree_ok_status();
+}
+
+static loomc_status_t loom_check_append_report_segment(
+    void* user_data, loomc_byte_span_t segment) {
+  return loomc_status_from_iree(iree_string_builder_append_string(
+      (iree_string_builder_t*)user_data,
+      iree_make_string_view((const char*)segment.data, segment.data_length)));
 }
 
 static iree_status_t loom_check_execute_pass_with_output(
@@ -494,41 +484,17 @@ static iree_status_t loom_check_execute_pass_with_output(
     }
     loomc_result_release(preparation);
   }
-  loom_pass_report_t pass_report = {0};
-  if (iree_status_is_ok(status) &&
-      output_kind == LOOM_CHECK_PASS_OUTPUT_PASS_REPORT) {
-    loom_pass_report_initialize(allocator, &pass_report);
-  }
-  loom_target_compile_report_t compile_report = {0};
-  if (iree_status_is_ok(status) &&
-      output_kind == LOOM_CHECK_PASS_OUTPUT_COMPILE_REPORT) {
-    loom_target_compile_report_initialize(
-        &compile_report, iree_arena_allocator(&diagnostic_arena));
-    compile_report.requested_detail_flags =
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_PRESSURE_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_PRESSURE_ORIGIN_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_SCHEDULE_BAND_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_SCHEDULE_BAND_SUMMARY_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_SPILL_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_ALLOCATION_FAILURE_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_ALLOCATION_HIGH_WATER_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_SOURCE_LOW_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_MATH_LEGALIZATION_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_TARGET_LEGALIZATION_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_WAIT_PLAN |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_TARGET_CAPABILITY_ROWS |
-        LOOM_TARGET_COMPILE_REPORT_DETAIL_TARGET_INSERTION_ROWS;
-  }
+  loomc_result_t* execution = NULL;
   if (iree_status_is_ok(status) && succeeded) {
-    const loomc_native_pass_report_options_t pass_report_options = {
-        .type = LOOMC_STRUCTURE_TYPE_NATIVE_PASS_REPORT_OPTIONS,
+    const loomc_pass_report_options_t pass_report_options = {
+        .type = LOOMC_STRUCTURE_TYPE_PASS_REPORT_OPTIONS,
         .structure_size = sizeof(pass_report_options),
-        .report = &pass_report,
     };
-    const loomc_native_compile_report_options_t compile_report_options = {
-        .type = LOOMC_STRUCTURE_TYPE_NATIVE_COMPILE_REPORT_OPTIONS,
+    const loomc_compile_report_options_t compile_report_options = {
+        .type = LOOMC_STRUCTURE_TYPE_COMPILE_REPORT_OPTIONS,
         .structure_size = sizeof(compile_report_options),
-        .report = &compile_report,
+        .mode = LOOMC_COMPILE_REPORT_MODE_DETAILS,
+        .format = LOOMC_COMPILE_REPORT_FORMAT_TEXT,
     };
     const void* report_options = NULL;
     if (output_kind == LOOM_CHECK_PASS_OUTPUT_PASS_REPORT) {
@@ -536,7 +502,6 @@ static iree_status_t loom_check_execute_pass_with_output(
     } else if (output_kind == LOOM_CHECK_PASS_OUTPUT_COMPILE_REPORT) {
       report_options = &compile_report_options;
     }
-    loomc_result_t* execution = NULL;
     if (target_profile != NULL) {
       const loomc_target_specialization_t specialization = {
           .function_symbol =
@@ -573,7 +538,6 @@ static iree_status_t loom_check_execute_pass_with_output(
       status = loom_check_compile_append_result_diagnostics(
           &diagnostic_collector, execution);
     }
-    loomc_result_release(execution);
   }
   bool verified = false;
   if (iree_status_is_ok(status) && succeeded) {
@@ -603,66 +567,56 @@ static iree_status_t loom_check_execute_pass_with_output(
       }
     }
   }
-  if (emit_output && output_kind == LOOM_CHECK_PASS_OUTPUT_COMPILE_REPORT) {
-    loom_target_compile_report_format_options_t report_options;
-    loom_target_compile_report_format_options_initialize(&report_options);
-    report_options.mode = LOOM_TARGET_COMPILE_REPORT_FORMAT_MODE_DETAILS;
-    status = loom_target_compile_report_format_text(
-        &compile_report, &report_options, &result->actual_output);
-  } else if (emit_output && output_kind == LOOM_CHECK_PASS_OUTPUT_PASS_REPORT) {
-    // Wall-clock duration is observational data, not part of the stable
-    // compiler-semantic contract checked by golden fixtures.
-    for (iree_host_size_t i = 0; i < pass_report.invocation_count; ++i) {
-      pass_report.invocations[i].duration_nanoseconds = 0;
+  if (emit_output && output_kind != LOOM_CHECK_PASS_OUTPUT_IR) {
+    const iree_string_view_t format =
+        output_kind == LOOM_CHECK_PASS_OUTPUT_COMPILE_REPORT
+            ? IREE_SV(LOOMC_ARTIFACT_FORMAT_COMPILE_REPORT_TEXT)
+            : IREE_SV(LOOMC_ARTIFACT_FORMAT_PASS_REPORT_JSON);
+    const loomc_artifact_t* artifact = NULL;
+    status = loom_check_compile_select_artifact(
+        execution, LOOMC_ARTIFACT_KIND_REPORT, format, &artifact);
+    if (iree_status_is_ok(status)) {
+      status = iree_status_from_loomc(loomc_byte_sequence_enumerate(
+          artifact->contents, (loomc_byte_sequence_callback_t){
+                                  .fn = loom_check_append_report_segment,
+                                  .user_data = &result->actual_output,
+                              }));
     }
-    loom_output_stream_t output_stream;
-    loom_output_stream_for_builder(&result->actual_output, &output_stream);
-    status = loom_pass_report_format_json(&pass_report, &output_stream);
   } else if (emit_output) {
-    // Inspect the transformed IR, not the durable export projection that
-    // materializes retained target contexts as additional definitions.
-    loomc_module_interop_view_t view = {0};
-    status = loom_check_compile_project_module(module, &diagnostic_collector,
-                                               allocator, &view, &verified);
-    const loom_target_low_descriptor_registry_t low_registry =
-        loom_target_environment_low_descriptor_registry(
-            environment->target_environment);
-    loom_text_low_asm_environment_t low_asm_environment = {0};
-    loom_low_descriptor_text_asm_environment_initialize(&low_registry.registry,
-                                                        &low_asm_environment);
-    const loom_text_print_options_t print_options = {
-        .flags = loom_check_pass_print_flags(test_case),
-        .low_asm_environment = low_asm_environment,
+    const loomc_module_serialize_options_t print_options = {
+        .type = LOOMC_STRUCTURE_TYPE_MODULE_SERIALIZE_OPTIONS,
+        .structure_size = sizeof(print_options),
+        .format = LOOMC_SOURCE_FORMAT_TEXT,
+        .text_presentation =
+            iree_all_bits_set(test_case->output_flags, LOOM_TEST_OUTPUT_LOW_ASM)
+                ? LOOMC_MODULE_TEXT_PRESENTATION_PRESERVE
+                : LOOMC_MODULE_TEXT_PRESENTATION_DEFAULT,
+        .print_locations = iree_all_bits_set(test_case->output_flags,
+                                             LOOM_TEST_OUTPUT_LOCATIONS),
     };
-    if (iree_status_is_ok(status) && verified) {
-      status = loom_text_print_module_to_builder_with_options(
-          view.module, &result->actual_output, &print_options);
+    loomc_source_t* printed = NULL;
+    status = iree_status_from_loomc(loomc_module_print_text_to_source(
+        module, &print_options, public_allocator, &printed));
+    if (iree_status_is_ok(status)) {
+      const loomc_byte_span_t contents = loomc_source_contents(printed);
+      status = iree_string_builder_append_string(
+          &result->actual_output,
+          iree_make_string_view((const char*)contents.data,
+                                contents.data_length));
     }
-    if (iree_status_is_ok(status) && verified) {
+    loomc_source_release(printed);
+    if (iree_status_is_ok(status)) {
       bool valid_output = false;
-      const loomc_module_serialize_options_t reprint_options = {
-          .type = LOOMC_STRUCTURE_TYPE_MODULE_SERIALIZE_OPTIONS,
-          .structure_size = sizeof(reprint_options),
-          .format = LOOMC_SOURCE_FORMAT_TEXT,
-          .text_presentation = iree_all_bits_set(test_case->output_flags,
-                                                 LOOM_TEST_OUTPUT_LOW_ASM)
-                                   ? LOOMC_MODULE_TEXT_PRESENTATION_PRESERVE
-                                   : LOOMC_MODULE_TEXT_PRESENTATION_DEFAULT,
-          .print_locations = iree_all_bits_set(test_case->output_flags,
-                                               LOOM_TEST_OUTPUT_LOCATIONS),
-      };
       status = loom_check_validate_printed_ir(
           iree_string_builder_view(&result->actual_output), session, block_pool,
-          &reprint_options, result, &valid_output);
+          &print_options, result, &valid_output);
       if (iree_status_is_ok(status) && !valid_output) {
         result->raw_outcome = LOOM_CHECK_FAIL;
         emit_output = false;
       }
     }
   }
-  // Reports borrow target and module identities until formatting completes.
-  loom_pass_report_deinitialize(&pass_report);
-  loom_target_compile_report_deinitialize(&compile_report);
+  loomc_result_release(execution);
   loomc_pass_program_release(pass_program);
   loomc_target_profile_release(target_profile);
   loomc_module_release(module);

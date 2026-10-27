@@ -917,7 +917,10 @@ loom_serve_text_registration_parameters(
         .phase = phases[loom_serve_finite_component_phase(registration->image)],
         .deactivatable = true,
         .status = loom_serve_finite_component_status(registration->image),
-        .compilation = loom_serve_finite_component_report(registration->image)};
+        .compilation = loom_serve_finite_component_report(registration->image),
+        .preparation_duration_ns =
+            loom_serve_finite_component_preparation_duration_ns(
+                registration->image)};
     state.prepared = loom_serve_finite_component_parameters(registration->image,
                                                             &state.parameters);
     return state;
@@ -1130,7 +1133,7 @@ loom_serve_registration_factory_t loom_serve_model_registration_factory(
                (1u << LOOM_SERVE_MODEL_KIND_ACTIVITY) |
                (1u << LOOM_SERVE_MODEL_KIND_SEQUENCE) |
                (1u << LOOM_SERVE_MODEL_KIND_TEXT),
-      .device_count = loom_serve_device_group_count(options->device_group),
+      .device_names = loom_serve_device_group_names(options->device_group),
       .resolution_sink = loom_serve_host_compiler_sink(loom_serve_device_host(
           loom_serve_device_group_at(options->device_group, 0))),
       .create = loom_serve_model_registration_create,

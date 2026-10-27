@@ -14,6 +14,7 @@
 
 #include "iree/testing/gtest.h"
 #include "loomc/context.h"
+#include "loomc/interop.h"
 #include "loomc/module.h"
 #include "loomc/pass.h"
 #include "loomc/pass_trace.h"
@@ -36,6 +37,12 @@ using ResultPtr = HandlePtr<loomc_result_t, loomc_result_release>;
 
 std::string ToString(loomc_string_view_t value) {
   return value.data ? std::string(value.data, value.size) : std::string();
+}
+
+std::string SourceContents(const loomc_source_t* source) {
+  const auto contents = loomc_source_contents(source);
+  return std::string(reinterpret_cast<const char*>(contents.data),
+                     contents.data_length);
 }
 
 ContextPtr CreateContext() {
@@ -139,6 +146,27 @@ TEST(PassProgramTest, RetainRelease) {
   loomc_pass_program_release(pass_program_ptr.get());
 }
 
+TEST(PassProgramTest, PrintsEmptyProgram) {
+  auto context = CreateContext();
+  loomc_pass_program_t* raw_program = nullptr;
+  LOOMC_ASSERT_OK(loomc_pass_program_create_empty(
+      context.get(), nullptr, loomc_allocator_system(), &raw_program));
+  PassProgramPtr program(raw_program);
+  loomc_source_t* raw_source = nullptr;
+  LOOMC_ASSERT_OK(loomc_pass_program_print_text_to_source(
+      program.get(), nullptr, loomc_allocator_system(), &raw_source));
+  SourcePtr source(raw_source);
+  EXPECT_EQ(loomc_source_format(source.get()), LOOMC_SOURCE_FORMAT_TEXT);
+
+  auto workspace = CreateWorkspace();
+  auto module = DeserializeModule(context.get(), workspace.get(), source.get());
+  loomc_source_t* raw_roundtrip = nullptr;
+  LOOMC_ASSERT_OK(loomc_module_print_text_to_source(
+      module.get(), nullptr, loomc_allocator_system(), &raw_roundtrip));
+  SourcePtr roundtrip(raw_roundtrip);
+  EXPECT_EQ(SourceContents(source.get()), SourceContents(roundtrip.get()));
+}
+
 TEST(PassProgramTest, CreatesFromPipelineText) {
   ContextPtr context = CreateContext();
 
@@ -152,12 +180,28 @@ TEST(PassProgramTest, CreatesFromPipelineText) {
   ResultPtr result_ptr(result);
   EXPECT_NE(pass_program_ptr.get(), nullptr);
   ExpectSucceededResult(result_ptr.get());
+
+  loomc_source_t* raw_source = nullptr;
+  LOOMC_ASSERT_OK(loomc_pass_program_print_text_to_source(
+      pass_program_ptr.get(), nullptr, loomc_allocator_system(), &raw_source));
+  SourcePtr source(raw_source);
+  auto workspace = CreateWorkspace();
+  auto module = DeserializeModule(context.get(), workspace.get(), source.get());
+  loomc_source_t* raw_roundtrip = nullptr;
+  LOOMC_ASSERT_OK(loomc_module_print_text_to_source(
+      module.get(), nullptr, loomc_allocator_system(), &raw_roundtrip));
+  SourcePtr roundtrip(raw_roundtrip);
+  EXPECT_EQ(SourceContents(source.get()), SourceContents(roundtrip.get()));
 }
 
 TEST(PassProgramTest, CreatesFromModuleSymbol) {
   ContextPtr context = CreateContext();
   WorkspacePtr workspace = CreateWorkspace();
   ModulePtr module = CreatePipelineModule(context.get(), workspace.get());
+  loomc_source_t* raw_expected = nullptr;
+  LOOMC_ASSERT_OK(loomc_module_print_text_to_source(
+      module.get(), nullptr, loomc_allocator_system(), &raw_expected));
+  SourcePtr expected(raw_expected);
 
   loomc_pass_program_t* pass_program = nullptr;
   loomc_result_t* result = nullptr;
@@ -169,6 +213,53 @@ TEST(PassProgramTest, CreatesFromModuleSymbol) {
   ResultPtr result_ptr(result);
   EXPECT_NE(pass_program_ptr.get(), nullptr);
   ExpectSucceededResult(result_ptr.get());
+
+  module.reset();
+  workspace.reset();
+  context.reset();
+  const loomc_module_serialize_options_t print_options = {
+      .identifier = loomc_make_cstring_view("prepared.loom"),
+      .text_presentation = LOOMC_MODULE_TEXT_PRESENTATION_PRESERVE,
+  };
+  loomc_source_t* raw_printed = nullptr;
+  LOOMC_ASSERT_OK(loomc_pass_program_print_text_to_source(
+      pass_program_ptr.get(), &print_options, loomc_allocator_system(),
+      &raw_printed));
+  SourcePtr printed(raw_printed);
+  pass_program_ptr.reset();
+  EXPECT_EQ(ToString(loomc_source_identifier(printed.get())), "prepared.loom");
+  EXPECT_EQ(SourceContents(printed.get()), SourceContents(expected.get()));
+}
+
+TEST(PassProgramTest, RejectsInvalidPrintArguments) {
+  auto context = CreateContext();
+  loomc_pass_program_t* raw_program = nullptr;
+  LOOMC_ASSERT_OK(loomc_pass_program_create_empty(
+      context.get(), nullptr, loomc_allocator_system(), &raw_program));
+  PassProgramPtr program(raw_program);
+  LOOMC_EXPECT_STATUS_IS(
+      LOOMC_STATUS_INVALID_ARGUMENT,
+      loomc_pass_program_print_text_to_source(
+          program.get(), nullptr, loomc_allocator_system(), nullptr));
+  loomc_source_t* source = reinterpret_cast<loomc_source_t*>(0x1);
+  LOOMC_EXPECT_STATUS_IS(
+      LOOMC_STATUS_INVALID_ARGUMENT,
+      loomc_pass_program_print_text_to_source(
+          nullptr, nullptr, loomc_allocator_system(), &source));
+  EXPECT_EQ(source, nullptr);
+  const loomc_module_serialize_options_t invalid_options[] = {
+      {.format = LOOMC_SOURCE_FORMAT_BYTECODE},
+      {.identifier = loomc_make_string_view(nullptr, 1)},
+      {.type = LOOMC_STRUCTURE_TYPE_PASS_PROGRAM_OPTIONS},
+  };
+  for (const auto& options : invalid_options) {
+    source = reinterpret_cast<loomc_source_t*>(0x1);
+    LOOMC_EXPECT_STATUS_IS(
+        LOOMC_STATUS_INVALID_ARGUMENT,
+        loomc_pass_program_print_text_to_source(
+            program.get(), &options, loomc_allocator_system(), &source));
+    EXPECT_EQ(source, nullptr);
+  }
 }
 
 TEST(PassProgramTest, ReportsInvalidPipelineTextInResult) {
@@ -259,12 +350,6 @@ SourcePtr SerializeModule(loomc_module_t* module,
   LOOMC_EXPECT_OK(loomc_module_serialize_to_source(
       module, &options, loomc_allocator_system(), &source));
   return SourcePtr(source);
-}
-
-std::string SourceContents(const loomc_source_t* source) {
-  const auto contents = loomc_source_contents(source);
-  return std::string(reinterpret_cast<const char*>(contents.data),
-                     contents.data_length);
 }
 
 PassProgramPtr PrepareText(loomc_context_t* context, const char* text) {
@@ -531,6 +616,48 @@ TEST(PassProgramTest, RunPropagatesTraceFailureAndClosesOpenedArtifacts) {
                              &options, loomc_allocator_system(), &result));
   EXPECT_EQ(result, nullptr);
   EXPECT_EQ(closes, 1);
+}
+
+TEST(PassProgramTest, RunStopsReportingAfterTraceInfrastructureFailure) {
+  auto context = CreateContext();
+  auto workspace = CreateWorkspace();
+  auto source = CreateTextSource("input.loom", kRunInput);
+  auto module = DeserializeModule(context.get(), workspace.get(), source.get());
+  auto program = PrepareText(context.get(), "dce");
+  const loomc_pass_trace_options_t trace = {
+      .type = LOOMC_STRUCTURE_TYPE_PASS_TRACE_OPTIONS,
+      .structure_size = sizeof(trace),
+      .flags = LOOMC_PASS_TRACE_FLAG_AFTER_ALL,
+      .sink =
+          {
+              .write =
+                  [](void*, loomc_string_view_t) {
+                    return loomc_status_from_code(
+                        LOOMC_STATUS_RESOURCE_EXHAUSTED);
+                  },
+          },
+  };
+  iree_arena_block_pool_t report_block_pool;
+  iree_arena_block_pool_initialize(4096, iree_allocator_system(),
+                                   &report_block_pool);
+  loom_pass_report_t report;
+  loom_pass_report_initialize(&report_block_pool, &report);
+  const loomc_native_pass_report_options_t report_options = {
+      .type = LOOMC_STRUCTURE_TYPE_NATIVE_PASS_REPORT_OPTIONS,
+      .structure_size = sizeof(report_options),
+      .next = &trace,
+      .report = &report,
+  };
+  const loomc_pass_run_options_t options = {.next = &report_options};
+  loomc_result_t* result = nullptr;
+  LOOMC_EXPECT_STATUS_IS(
+      LOOMC_STATUS_RESOURCE_EXHAUSTED,
+      loomc_pass_program_run(program.get(), workspace.get(), module.get(),
+                             &options, loomc_allocator_system(), &result));
+  EXPECT_EQ(result, nullptr);
+  EXPECT_EQ(report.invocation_count, 0u);
+  loom_pass_report_deinitialize(&report);
+  iree_arena_block_pool_deinitialize(&report_block_pool);
 }
 
 TEST(PassProgramTest, RunAllocationFailureLeavesNoResultOrMutation) {

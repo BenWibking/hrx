@@ -98,7 +98,6 @@ loom_cc_library(
     loom::ops::type_registry
     loom::pass::pipeline
     loom::pass::registry
-    loom::pass::report
     loom::rewrite::rewriter
     loom::sanitizer::options
     loom::target::entry_selection
@@ -183,7 +182,6 @@ loom_cc_test(
     loom::target::provider
     loom::target::test::provider
     loom::testing::test_file
-    loom::transforms::cleanup::configured
 )
 
 loom_cc_library(
@@ -256,7 +254,6 @@ loom_cc_library(
   DEPS
     ::execute
     iree::base
-    loom::binding::c::interop
     loom::binding::c::loomc
     loom::codegen::low::text_asm
     loom::error::error_defs
@@ -267,7 +264,6 @@ loom_cc_library(
     loom::ops::op_defs
     loom::sanitizer::options
     loom::target::entry_selection
-    loom::target::pipeline
     loom::target::pipeline_options
     loom::target::provider
   PUBLIC
@@ -366,7 +362,6 @@ loom_cc_library(
     loom::binding::c::interop
     loom::binding::c::loomc
     loom::tooling::input::format
-    loom::transforms::cleanup::configured
   PUBLIC
 )
 

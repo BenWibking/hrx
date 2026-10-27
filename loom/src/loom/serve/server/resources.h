@@ -22,6 +22,11 @@ extern "C" {
 typedef struct loom_serve_resources_t {
   // Application's single cooperating group, or NULL for externally owned work.
   loom_serve_device_group_t* device_group;
+  // Zero disables idle reclamation; otherwise equals the device-group count.
+  iree_host_size_t idle_policy_count;
+  // Borrowed immutable policies, in device-group order, through the router
+  // join.
+  const loom_serve_device_idle_policy_t* idle_policies;
   // Number of bound listeners published by this application.
   iree_host_size_t listener_count;
   // Borrowed array; listener storage survives stop until routing has joined.
@@ -51,23 +56,25 @@ bool loom_serve_resources_is_pending(const loom_serve_resources_t* resources);
 // serving-managed memory observations. Called on the serialized serving owner;
 // never waits for devices, polls hardware or changes residency. Retained pool
 // accounting is null for fixed backing; an elastic limit is null when
-// unbounded. With elastic backing, workspace is a subset of retained physical
-// usage, not an additional amount. Workspace values are independent atomic
-// observations, not a coherent total. Acquisition/release counters accumulate
-// across models and retired pool generations for the device owner's lifetime.
+// unbounded. Storage reports ordinary native backing. Workspace is a subset of
+// storage for fixed backing or retained for elastic backing, not an additional
+// amount. Pool values are independent atomic observations, not a coherent
+// total. Acquisition/release counters accumulate across models and retired pool
+// generations for the device owner's lifetime.
 // wait_count counts reservations needing a reuse prerequisite, not host waits
-// or elapsed time. These values exclude fixed buffers, loader/driver storage
+// or elapsed time. These values exclude host snapshots, loader/driver storage,
 // and hidden padding; they cannot be interpreted as device-wide usage or
 // available allocation bytes.
 iree_status_t loom_serve_resources_write_json(
     const loom_serve_resources_t* resources, loom_output_stream_t* output);
 
-// Parses exactly {"device": <index>, "target_bytes": <unsigned integer>} and
-// resolves the device index against immutable membership. Performs no mutation.
+// Parses exactly {"device": <key>, "target_bytes": <unsigned integer>} and
+// resolves the device key against immutable membership. Performs no mutation.
 // Outputs are valid only on success and through this resource view's lifetime.
 iree_status_t loom_serve_resources_parse_trim(
     const loom_serve_resources_t* resources, iree_string_view_t value,
-    iree_host_size_t* out_device_index, uint64_t* out_target_bytes);
+    iree_allocator_t host_allocator, iree_host_size_t* out_device_index,
+    uint64_t* out_target_bytes);
 
 // Executes a validated trim request on the serialized serving owner and writes
 // {"target_bytes": ..., "device": <resource object>} with current accounting.

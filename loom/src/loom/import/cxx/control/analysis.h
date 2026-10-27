@@ -23,6 +23,8 @@
 
 namespace loom::cxx_import {
 
+struct DirectOperatorCall;
+
 // Retained ownership of a source assignment destination. A field or vector-lane
 // write replaces a slice of its owning automatic binding; it is not a
 // storage-backed store. Dynamic lane selection remains on the source expression
@@ -52,6 +54,10 @@ struct CallArgument {
   // Whether the expression already denotes durable storage independently of
   // any caller fact, as with dereferences and reference-returning accessors.
   bool inherent_storage;
+  // Reference-returning calls whose results supply this lvalue identity.
+  // Identity demand is resolved through their retained call edges after every
+  // reachable callee has been analyzed.
+  std::vector<cxx::AST*> reference_calls;
 };
 
 // One directly selected source call retained during the owning function walk.
@@ -190,6 +196,15 @@ class ControlFlow final : private cxx::ASTVisitor {
   const SwitchLayout& switch_layout(cxx::SwitchStatementAST* statement) const;
   // Retained return/fallthrough summary, including nested statements.
   ExitFlow returns(cxx::StatementAST* statement) const;
+  // Whether a return in this statement requires callable-exit projection
+  // instead of becoming a result of an enclosing structured conditional.
+  bool requires_callable_exit(cxx::StatementAST* statement) const;
+  // Number of direct children whose nested return crosses a loop or switch.
+  // A return sequence decrements this retained suffix count as it advances.
+  size_t callable_exit_count(cxx::CompoundStatementAST* statement) const;
+  // Whether execution can reach the statement immediately following this
+  // source statement. Diverging and function-returning paths do not.
+  bool falls_through(cxx::StatementAST* statement) const;
   // Continues escaping this statement to its enclosing loop. A nested loop
   // consumes its own continues rather than propagating them to its parent.
   ExitFlow continues(cxx::StatementAST* statement) const;
@@ -209,6 +224,16 @@ class ControlFlow final : private cxx::ASTVisitor {
   bool reference_written(cxx::Symbol* parameter) const;
   // Whether the implicit object itself must be addressable.
   bool receiver_requires_storage() const { return receiver_requires_storage_; }
+  // Whether every lvalue-reference return aliases the current object. A value
+  // receiver can preserve this reference as its existing SSA identity.
+  bool returns_current_receiver_reference() const {
+    return reference_return_ == ReferenceReturn::CurrentReceiver;
+  }
+  // Whether this reached call must materialize a self-reference result as
+  // durable storage for a caller-side lvalue use.
+  bool call_result_requires_storage(cxx::AST* call) const {
+    return storage_call_results_.contains(call);
+  }
   // Exact top-level current-object fields whose values may be replaced.
   std::span<cxx::FieldSymbol* const> receiver_writes() const {
     return receiver_writes_;
@@ -221,11 +246,18 @@ class ControlFlow final : private cxx::ASTVisitor {
   void finalize_callable_effects();
 
  private:
+  enum class ReferenceReturn {
+    None,
+    CurrentReceiver,
+    Storage,
+  };
+
   enum Path : unsigned {
     Fallthrough = 1,
     Return = 2,
     Continue = 4,
     Break = 8,
+    Diverge = 16,
   };
 
   bool preVisit(cxx::AST* ast) override;
@@ -236,6 +268,7 @@ class ControlFlow final : private cxx::ASTVisitor {
   void visit(cxx::IfStatementAST* ast) override;
   void visit(cxx::SwitchStatementAST* ast) override;
   void visit(cxx::AssignmentExpressionAST* ast) override;
+  void visit(cxx::BinaryExpressionAST* ast) override;
   void visit(cxx::CompoundAssignmentExpressionAST* ast) override;
   void visit(cxx::PostIncrExpressionAST* ast) override;
   void visit(cxx::UnaryExpressionAST* ast) override;
@@ -252,7 +285,7 @@ class ControlFlow final : private cxx::ASTVisitor {
                                    cxx::FunctionSymbol* constructor,
                                    cxx::AST* owner);
   std::optional<Destination> retain_destination(cxx::ExpressionAST* expression);
-  void record(cxx::ExpressionAST* expression);
+  bool record(cxx::ExpressionAST* expression);
   void record(cxx::Symbol* binding);
   void record_implicit_object_call(cxx::CallExpressionAST* call,
                                    cxx::FunctionSymbol* callee);
@@ -268,6 +301,7 @@ class ControlFlow final : private cxx::ASTVisitor {
   void retain_call(cxx::CallExpressionAST* call, cxx::FunctionSymbol* function);
   void retain_call(cxx::SubscriptExpressionAST* call,
                    cxx::FunctionSymbol* function);
+  void retain_call(const DirectOperatorCall& call, cxx::AST* source);
   void retain_reference_initializers(cxx::VariableSymbol* variable,
                                      cxx::ExpressionAST* initializer,
                                      cxx::AST* owner);
@@ -288,6 +322,7 @@ class ControlFlow final : private cxx::ASTVisitor {
   unsigned paths(cxx::StatementAST* statement) const;
   unsigned sequence_paths(std::span<cxx::StatementAST* const> statements) const;
   unsigned classify_paths(cxx::StatementAST* statement) const;
+  bool classify_callable_exit(cxx::StatementAST* statement);
   ExitFlow exits(cxx::StatementAST* statement, unsigned selected_paths) const;
 
   // Resolved source types and literal interpretation for loop admission.
@@ -316,8 +351,16 @@ class ControlFlow final : private cxx::ASTVisitor {
   std::vector<cxx::FieldSymbol*> receiver_writes_;
   // Calls retained once for sparse fixed-point propagation.
   std::vector<DirectCall> calls_;
+  // Reference-returning call results whose callers require durable identity.
+  // Their retained edges map that demand back to the actual source referent.
+  std::unordered_set<cxx::AST*> identity_call_results_;
+  // Identity-demanded results proven to alias their implicit object. This is
+  // consumed directly when choosing the call site's receiver transport.
+  std::unordered_set<cxx::AST*> storage_call_results_;
   // True when a direct or transitive use requires current-object identity.
   bool receiver_requires_storage_ = false;
+  // Common origin of every runtime lvalue-reference return seen in the body.
+  ReferenceReturn reference_return_ = ReferenceReturn::None;
   // Nested lvalue ownership and transitive component offsets computed once.
   std::unordered_map<cxx::ExpressionAST*, Destination> destinations_;
   // Memory record objects and member projections, including nested fields.
@@ -329,6 +372,11 @@ class ControlFlow final : private cxx::ASTVisitor {
   std::unordered_map<cxx::ForStatementAST*, CountedLoop> counted_;
   // Sparse path sets retain statements with function or iteration exits.
   std::unordered_map<cxx::StatementAST*, unsigned> paths_;
+  // Statements containing a return across a loop or switch boundary. Direct
+  // return trees remain absent and retain result-bearing projection.
+  std::unordered_set<cxx::StatementAST*> callable_exits_;
+  // Nonzero direct-child counts for compound return sequences.
+  std::unordered_map<cxx::CompoundStatementAST*, size_t> callable_exit_counts_;
   struct SwitchFacts {
     // Public lexical structure consumed directly by translation.
     SwitchLayout layout;

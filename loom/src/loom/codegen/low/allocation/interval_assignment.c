@@ -14,6 +14,7 @@
 #include "loom/codegen/low/allocation/fixed_storage_index.h"
 #include "loom/codegen/low/allocation/interval_order.h"
 #include "loom/codegen/low/allocation/live_range.h"
+#include "loom/codegen/low/allocation/ordinal_recolor.h"
 #include "loom/codegen/low/allocation/physical_domains.h"
 #include "loom/codegen/low/allocation/scalar_packing.h"
 #include "loom/codegen/low/allocation/search.h"
@@ -64,6 +65,8 @@ typedef struct loom_low_allocation_interval_assignment_state_t {
   uint64_t* full_entry_class_words;
   // Cached predicted spill traffic, dense by liveness value ordinal.
   loom_low_allocation_spill_plan_traffic_t* spill_traffic_by_value_ordinal;
+  // Block-local grouping scratch shared by all uncached traffic queries.
+  loom_low_allocation_spill_plan_traffic_workspace_t spill_traffic_workspace;
   // Lazily allocated decision array. Each allocatable interval spills at most
   // once, so the interval count is a fixed upper bound without growth.
   loom_low_allocation_spill_decision_t* spill_decisions;
@@ -88,17 +91,9 @@ loom_low_allocation_interval_assignment_flags_for_interval(
     const loom_low_allocation_interval_assignment_state_t* state,
     const loom_liveness_interval_t* interval,
     loom_value_ordinal_t value_ordinal) {
-  if (interval->value_id >=
-          state->context->expanded_execution_values.bit_count ||
-      !iree_bitmap_test(state->context->expanded_execution_values,
-                        interval->value_id)) {
-    return 0;
-  }
-  IREE_ASSERT_EQ(
-      interval->definition_point,
-      state->unit_liveness.values[value_ordinal].acquisition_start_point,
-      "expanded-execution values must acquire storage at their definition");
-  return LOOM_LOW_ALLOCATION_ASSIGNMENT_FLAG_EXPANDED_EXECUTION_DEFINITION;
+  return loom_low_allocation_unit_liveness_assignment_flags(
+      &state->unit_liveness, interval, value_ordinal,
+      state->context->expanded_execution_values);
 }
 
 static uint32_t
@@ -146,6 +141,7 @@ loom_low_allocation_interval_assignment_search_context(
       .storage_leases = state->context->storage_leases,
       .expanded_execution_values = state->context->expanded_execution_values,
       .spill_traffic_by_value_ordinal = state->spill_traffic_by_value_ordinal,
+      .spill_traffic_workspace = &state->spill_traffic_workspace,
       .use_pressure_efficiency =
           state->context->search_strategy ==
           LOOM_LOW_ALLOCATION_SEARCH_STRATEGY_PRESSURE_EFFICIENCY,
@@ -567,7 +563,7 @@ static iree_status_t loom_low_allocation_interval_assignment_spill_traffic(
   if (traffic->store_count == UINT32_MAX) {
     IREE_RETURN_IF_ERROR(loom_low_allocation_spill_plan_traffic(
         state->context->module, state->context->function_cfg_graph, assignment,
-        alloc_unit_bits, traffic));
+        alloc_unit_bits, &state->spill_traffic_workspace, traffic));
   }
   *out_traffic = *traffic;
   return iree_ok_status();
@@ -1215,7 +1211,11 @@ loom_low_allocation_interval_assignment_try_relocate_required_blocker(
       state->context->target->descriptor_set;
   if (loom_low_reg_class_uses_explicit_physical_registers(
           &descriptors->reg_classes[capacity->descriptor_reg_class_id])) {
-    return iree_ok_status();
+    return loom_low_allocation_ordinal_recolor_try(
+        state->context->value_domain, state->context->storage_transport,
+        search_context, &state->result.assignment_map,
+        state->result.assignments, state->scratch_arena, entry->interval,
+        value_ordinal, capacity, out_location_base, out_relocated);
   }
   const loom_liveness_interval_t* interval = entry->interval;
   const uint32_t alignment = loom_low_allocation_live_range_interval_alignment(
@@ -1610,7 +1610,9 @@ loom_low_allocation_interval_assignment_initialize_spill_traffic_cache(
             .store_count = UINT32_MAX,
         };
   }
-  return iree_ok_status();
+  return loom_low_allocation_spill_plan_traffic_workspace_initialize(
+      state->context->function_cfg_graph->region, state->scratch_arena,
+      &state->spill_traffic_workspace);
 }
 
 static iree_status_t loom_low_allocation_interval_assignment_assign(
@@ -1634,9 +1636,8 @@ static iree_status_t loom_low_allocation_interval_assignment_assign(
       context->preferences, state->scratch_arena,
       &state->preference_workspace));
   IREE_RETURN_IF_ERROR(loom_low_allocation_physical_domains_build(
-      context->target->descriptor_set, context->liveness,
-      context->unit_liveness, context->placement, state->scratch_arena,
-      &state->physical_domains));
+      context->target_constraints, context->liveness, context->unit_liveness,
+      context->placement, state->scratch_arena, &state->physical_domains));
   if (context->search_strategy ==
       LOOM_LOW_ALLOCATION_SEARCH_STRATEGY_FRAGMENTATION_REPAIR) {
     IREE_RETURN_IF_ERROR(loom_low_allocation_scalar_packing_build(

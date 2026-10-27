@@ -42,6 +42,32 @@ does not select a file format.
 loom-fetch "$model_url/model.json" --preset=streaming --output=./moonshine
 ```
 
+Fetch reports its current phase, file counts, and available byte counts on
+stderr. Known byte totals include a compact bar and percentage. These updates
+also appear in redirected logs and with `--no-input`; they require no terminal.
+For example, a large file can produce these status lines (illustrative counts):
+
+```text
+loom-fetch  Download  [###.........]  25%  1.0 GiB / 4.0 GiB  model.safetensors  2/3 files
+loom-fetch  Transfer  384.0 MiB (total unknown)  model.safetensors  2/3 files
+loom-fetch  Verify    [############] 100%  4.0 GiB / 4.0 GiB  model.safetensors  2/3 files
+loom-fetch  Complete  3/3 files
+```
+
+stdout contains only the installed card path, or the final JSON result with
+`--json`:
+
+```sh
+loom-fetch "$model_url/model.json" --preset=streaming --output=./moonshine --no-input --json >installed.json 2>fetch.log
+```
+
+Use `--quiet` to suppress progress while retaining errors and access guidance.
+Download progress describes file bytes; Hugging Face may additionally report
+network transfer bytes separately when reconstructing a file from cached or
+compressed chunks. Verification reports bytes checked, including cache hits.
+Unknown totals stay unknown. A complete installation is reported only after
+its model card has been published.
+
 On Windows PowerShell, the same acquisition is:
 
 ```powershell
@@ -50,16 +76,30 @@ loom-fetch "$modelUrl/model.json" --preset=streaming --output=./moonshine
 ```
 
 Fetch reads the adjacent `model.json.lock`, resolves the selected dependencies,
-and verifies their identities before publishing the installed card. The output
+and verifies identities within the lock's declared scope before publishing the
+installed card. An asset-scoped lock protects weights, tokenizers, and other
+assets while leaving programs editable. A complete publication lock additionally
+checks program bytes. The output
 contains local program and asset paths and retains the chosen preset. Supply a
 new output directory for another selection; a changed selection never silently
 replaces an installed model.
 
-The default shared materialization reuses cached weights. Two installations
-that differ only in execution settings can share the same parameter files.
-`--materialize=copy` requests independent files when moving an installation or
-using a filesystem that cannot share them. Keep the backing cache and local
-source files available while using a shared installation.
+The default `--materialize=auto` copies programs and their auxiliary files so
+you can edit them independently. It shares cached weights and other assets;
+two installations that differ only in execution settings can share the same
+parameter files. `--materialize=copy` makes every file independent when moving
+an installation or using a filesystem that cannot share them.
+`--materialize=share` also shares programs with their source or cache, so edits
+can affect other installations. Keep the backing cache and local source files
+available while using shared files.
+
+With an asset-scoped lock, editing a program requires no lock update, and a
+repeat fetch into the same installation preserves that edit. Git can version
+and share the model's source files. Program origin aliases, such as `@library`,
+do not require per-file hashes in an asset-scoped lock. `--offline` reuses cached
+assets and the last fetched source bytes for a new installation, without
+network requests. The [model format reference](https://github.com/ROCm/hrx-system/tree/main/loom/py/loom/model#acquisition)
+describes lock updates and complete publication coverage.
 
 Hugging Face gating is handled during acquisition. If access is required,
 fetch displays the repository's access URL and authentication guidance. Use
@@ -68,6 +108,41 @@ the publisher's approval process in your browser, then recheck from the prompt;
 approval can be delayed. Fetch never accepts terms on your behalf. In scripts,
 `--no-input` fails with the required action instead of waiting for a terminal.
 `--wait-for-access` explicitly enables automatic rechecking for unattended use.
+
+### Resolve publication and access failures
+
+A card URL, publisher approval, and downloader credentials are separate inputs.
+If a GitHub card or its adjacent lock returns HTTP 404, check that both files
+are published at the selected path and revision. A local checkout or unmerged
+branch can contain a model that is not on the published branch. The pinned
+example above keeps the card, lock, programs, and recording together; changing
+only the card's revision does not update the rest of that example.
+
+For a Hugging Face access request, approval belongs to the account downloading
+the files. Browser approval with one account does not authorize another account's
+credential. In the environment performing acquisition, these commands identify
+the effective account and establish a saved login:
+
+```sh
+hf auth whoami
+hf auth login
+```
+
+An `HF_TOKEN` environment variable overrides the saved login. With `--json`,
+the fetch access diagnostic reports the credential source, not its value. After
+changing an environment override, restart fetch so it sees the new environment.
+A container or agent sandbox may intentionally have no access to the host's
+saved login.
+Acquisition can instead run in an authorized host shell with
+`--materialize=copy`, followed by exposing that self-contained installation to
+the server. Serving local files requires no Hugging Face credential.
+
+Without `--wait-for-access`, `--no-input` reports an unmet access requirement and
+exits unsuccessfully. It does not accept terms for the user. `--wait-for-access`
+is the explicit waiting policy, not a remedy for a missing published file. The
+publisher's [gated-model instructions](https://huggingface.co/docs/hub/models-gated)
+explain approval, and the [authentication guide](https://huggingface.co/docs/huggingface_hub/guides/cli#hf-auth-login)
+describes credential setup.
 
 ## Start the server
 

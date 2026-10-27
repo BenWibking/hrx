@@ -37,6 +37,16 @@ struct loom_serve_registry_t {
 static void loom_serve_registry_set_phase(
     loom_serve_registered_model_t* model,
     loom_serve_registration_phase_t phase) {
+  if (model->phase != phase &&
+      (model->phase == LOOM_SERVE_REGISTRATION_PREPARING ||
+       phase == LOOM_SERVE_REGISTRATION_PREPARING)) {
+    const iree_time_t now = iree_time_now();
+    if (model->phase == LOOM_SERVE_REGISTRATION_PREPARING) {
+      model->preparation_duration_ns += now - model->preparation_start;
+    } else {
+      model->preparation_start = now;
+    }
+  }
   IREE_TRACE({
     if (model->phase != phase) {
       IREE_TRACE_SECTION_LEAVE(model->trace.lifecycle);
@@ -363,7 +373,7 @@ iree_status_t loom_serve_registry_register(
   }
   iree_host_size_t device_index = 0;
   IREE_RETURN_IF_ERROR(loom_serve_model_configuration_resolve_device(
-      configuration, registry->factory.device_count, &device_index));
+      configuration, registry->factory.device_names, &device_index));
   iree_host_size_t available = registry->capacity;
   for (iree_host_size_t i = 0; i < registry->capacity; ++i) {
     const iree_string_view_t name = registry->models[i].service.name;
@@ -378,6 +388,15 @@ iree_status_t loom_serve_registry_register(
   if (available == registry->capacity) {
     return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
                             "model registration capacity is full");
+  }
+  if (!configuration->device.size) {
+    const iree_string_view_t name =
+        registry->factory.device_names.values[device_index];
+    char* storage = NULL;
+    IREE_RETURN_IF_ERROR(iree_allocator_clone(
+        configuration->host_allocator,
+        iree_make_const_byte_span(name.data, name.size), (void**)&storage));
+    configuration->device = iree_make_string_view(storage, name.size);
   }
   loom_serve_registered_model_t* model = &registry->models[available];
   IREE_RETURN_IF_ERROR(loom_serve_telemetry_stream_allocate(
@@ -622,6 +641,7 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
   if (model->phase == LOOM_SERVE_REGISTRATION_DECLARED && !model->removal &&
       (model->configuration.sources.reference.path.size || !model->closed ||
        model->parameter_operation == LOOM_SERVE_PARAMETER_OPERATION_WAITING)) {
+    loom_serve_registry_set_phase(model, LOOM_SERVE_REGISTRATION_PREPARING);
     if (model->configuration.sources.reference.path.size) {
       model->status = loom_serve_model_resolution_start(
           registry->factory.resolution_sink, &model->configuration, observer,
@@ -631,10 +651,8 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
           registry->factory.self, &model->configuration, observer,
           model->stream, registry->host_allocator, &model->registration);
     }
-    loom_serve_registry_set_phase(model, iree_status_is_ok(model->status)
-                                             ? LOOM_SERVE_REGISTRATION_PREPARING
-                                             : LOOM_SERVE_REGISTRATION_FAILED);
     if (!iree_status_is_ok(model->status)) {
+      loom_serve_registry_set_phase(model, LOOM_SERVE_REGISTRATION_FAILED);
       loom_serve_registry_set_parameter_operation(
           model, LOOM_SERVE_PARAMETER_OPERATION_NONE);
       loom_serve_registry_record_error(model, model->status);
@@ -866,6 +884,14 @@ const char* loom_serve_registry_phase(
                                        "ready",      "retiring",
                                        "failed",     "release_failed"};
   return phases[model->phase];
+}
+
+uint64_t loom_serve_registry_preparation_duration_ns(
+    const loom_serve_registered_model_t* model) {
+  return model->preparation_duration_ns +
+         (model->phase == LOOM_SERVE_REGISTRATION_PREPARING
+              ? iree_time_now() - model->preparation_start
+              : 0);
 }
 
 bool loom_serve_registry_counters(

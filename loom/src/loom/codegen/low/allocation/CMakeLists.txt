@@ -78,6 +78,32 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
+    ordinal_component
+  HDRS
+    "ordinal_component.h"
+  SRCS
+    "ordinal_component.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::codegen::low::placement
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    ordinal_component_test
+  SRCS
+    "ordinal_component_test.cc"
+  DEPS
+    ::ordinal_component
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+loom_cc_library(
+  NAME
     placement
   HDRS
     "placement.h"
@@ -85,6 +111,7 @@ loom_cc_library(
     "placement.c"
   DEPS
     ::edge_affinity
+    ::ordinal_component
     ::target_constraints
     ::unit_location
     iree::base
@@ -826,6 +853,7 @@ loom_cc_library(
     "physical_domains.c"
   DEPS
     ::live_range
+    ::target_constraints
     ::unit_liveness
     iree::base
     iree::base::internal
@@ -924,6 +952,33 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
+    ordinal_recolor
+  HDRS
+    "ordinal_recolor.h"
+  SRCS
+    "ordinal_recolor.c"
+  DEPS
+    ::active_unit
+    ::assignment_map
+    ::live_range
+    ::search
+    ::storage
+    ::storage_lease
+    ::target_constraints
+    ::unit_liveness
+    ::write_interference
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::liveness
+    loom::codegen::low::descriptors
+    loom::codegen::low::placement
+    loom::codegen::low::target_binding
+    loom::ir
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     interval_assignment
   HDRS
     "interval_assignment.h"
@@ -937,6 +992,7 @@ loom_cc_library(
     ::coalescing
     ::interval_order
     ::live_range
+    ::ordinal_recolor
     ::physical_domains
     ::preference
     ::scalar_packing
@@ -1040,7 +1096,9 @@ loom_cc_test(
     loom::ir
     loom::ops::low
     loom::target::registers
+    loom::util::cfg_dominance
     loom::util::cfg_graph
+    loom::util::cfg_loop_nest
 )
 
 loom_cc_library(
@@ -1127,6 +1185,25 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    lane_liveness
+  HDRS
+    "lane_liveness.h"
+  SRCS
+    "lane_liveness.c"
+  DEPS
+    ::live_range
+    ::unit_liveness
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::liveness
+    loom::codegen::low::descriptors
+    loom::ir
+    loom::util::cfg_loop_nest
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     unit_liveness_builder
   HDRS
     "unit_liveness_builder.h"
@@ -1135,6 +1212,7 @@ loom_cc_library(
   DEPS
     ::call
     ::clobber_index
+    ::lane_liveness
     ::live_range
     ::storage
     ::storage_reservations
@@ -1151,6 +1229,7 @@ loom_cc_library(
     loom::ops::low
     loom::target::registers
     loom::util::cfg_graph
+    loom::util::cfg_loop_nest
   PUBLIC
 )
 
@@ -1200,7 +1279,9 @@ loom_cc_test(
     loom::ir
     loom::ops::low
     loom::target::registers
+    loom::util::cfg_dominance
     loom::util::cfg_graph
+    loom::util::cfg_loop_nest
 )
 
 loom_cc_library(

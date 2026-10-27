@@ -18,7 +18,7 @@ curl --fail --silent --show-error http://127.0.0.1:8080/metrics
 
 Status includes the current registrations plus a `server` object, even when
 no models are loaded. That object reports actual worker count, admission limits,
-bound addresses and the ordered device inventory. Worker count is provisioned
+bound addresses and the named device inventory. Worker count is provisioned
 capacity, not merely the requested maximum.
 
 Each model's `loom.status` contains phase, queued/active counts and the oldest
@@ -48,6 +48,51 @@ model-specific controls such as text checkpoints, but exclude router-owned raw
 tokenization, health/observation calls and unknown-route rejections. Unavailable
 counters are reported as unavailable, not zero. Disabling periodic heartbeats
 with `--heartbeat_ms=0` does not disable counting.
+
+## Read preparation timing
+
+To see how long a model has spent preparing, query its elapsed time alongside
+the compilation report:
+
+```sh
+curl --fail --silent --show-error http://127.0.0.1:8080/v1/status |
+  jq '.data[] | select(.loom.incarnation) | {
+    model: .id,
+    phase: .loom.registration,
+    preparation_seconds: (.loom.preparation_duration_ns / 1e9),
+    compilation_stage_seconds:
+      (if .loom.compilation then
+         .loom.compilation.stage_duration_sum_ns / 1e9
+       else null end)
+  }'
+```
+
+`loom.preparation_duration_ns` counts elapsed time in preparation, including
+model-card resolution and synchronous setup. It advances while preparation is
+pending and freezes on completion, failure, or completed cancellation. A drained
+registration can resolve its card and then return to `declared`; that idle gap
+adds no time. Later preparation adds another interval. The field is zero before
+any preparation starts. Parameter activation after preparation, inference, and
+retirement have their own lifetimes and add no preparation time.
+
+`compilation.stage_duration_sum_ns` sums each compiled stage's interval from
+submission through completion. Those intervals include queueing and waits for
+shared native kernels, and overlap when stages compile concurrently. For
+example, two stages each pending for one second can contribute two seconds to
+the sum during one second of elapsed preparation. The sum is neither CPU work
+nor model startup latency; dividing it by elapsed time does not measure worker
+utilization. Reports are cumulative and contain completed stages, so a pending
+stage does not yet contribute its interval.
+
+A lazy image component reports its independent elapsed time at
+`loom.parameters.image.preparation_duration_ns`, next to its own `compilation`
+report. Reading either field leaves a declared component cold. Retiring a
+fixed-backing component and preparing it again adds a new interval; reactivating
+an already prepared component's weights does not. During registration retirement,
+the component's observations are unavailable and its timing field is omitted;
+the registration retains its own elapsed time until removal. Native executable
+variants use the same summed-stage field in their compilation reports; staging a
+variant does not add to the model's preparation time.
 
 ## Distinguish parameter pressure from queued work
 
@@ -225,12 +270,20 @@ content.
 
 ## Interpret memory and packing evidence
 
-`server.resources.devices[].memory.retained` reports the shared elastic backing
-for parameters, mutable state and invocation workspace on that device.
-`memory.workspace` describes the workspace portion of that same backing,
-including reusable idle ranges; adding it to `retained` double-counts storage.
-Fixed retained accounting is `null`, not zero. An elastic `limit_bytes:null`
-means unbounded by serving policy.
+`server.resources.devices[].memory` reports serving-owned backing on that
+device:
+
+| Field | What it counts |
+| --- | --- |
+| `storage` | Ordinary native buffers, including fixed parameters and state. With fixed backing, this also includes workspace backing. |
+| `retained` | Shared elastic backing for parameters, mutable state, and workspace. It is `null` with fixed backing; an elastic `limit_bytes:null` means unbounded by serving policy. |
+| `workspace` | The workspace portion of `storage` (fixed) or `retained` (elastic), including reusable idle ranges. This is a breakdown, not an additional allocation. |
+
+`storage.committed_bytes` plus non-null `retained.committed_bytes` describes
+managed backing. Adding `workspace.committed_bytes` again double-counts it.
+`storage.reserved_bytes` counts backing charged to live native reservations;
+`storage.abandoned_bytes` is the subset of committed backing whose native return
+failed, not reusable capacity. Native release can lag logical buffer retirement.
 
 Workspace values are independent HAL observations, not one coherent device-wide
 snapshot. Its cumulative acquire/release/reuse counters survive model removal
@@ -240,10 +293,10 @@ followed by growth and success; it is not a failed-request counter.
 
 Virtual `reserved_bytes` can remain nonzero after physical backing is trimmed:
 the reusable addresses are still owned without retaining those physical pages.
-Neither scope includes all host allocations, fixed buffers, executable/driver
-storage or hidden physical padding. These values are not peak process RAM,
-whole-device VRAM or immediately available memory. Status does not poll hardware
-sensors.
+These scopes exclude host snapshots, compiler/tokenizer allocations,
+executable/driver storage, and hidden physical padding. These values are not
+peak process RAM, whole-device VRAM or immediately available memory. Status
+does not poll hardware sensors.
 
 | Question | Useful evidence |
 | --- | --- |

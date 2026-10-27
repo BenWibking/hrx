@@ -44,6 +44,9 @@ typedef struct loom_serve_registration_parameters_t {
   iree_status_t status;
   // Borrowed cumulative compilation evidence, or NULL for no separate report.
   const loom_serve_compilation_report_t* compilation;
+  // Optional-component preparation elapsed in ns; primary timing is
+  // registry-owned.
+  uint64_t preparation_duration_ns;
 } loom_serve_registration_parameters_t;
 
 enum loom_serve_registration_prepare_flag_bits_e {
@@ -118,8 +121,8 @@ typedef struct loom_serve_registration_factory_t {
   void* self;
   // Supported configuration kinds as bit positions; zero disables management.
   uint32_t kinds;
-  // Immutable group cardinality used to resolve deployment device bindings.
-  iree_host_size_t device_count;
+  // Borrowed immutable group keys, live through registry destruction.
+  iree_string_view_list_t device_names;
   // Shared cold-work sink for resolving local model cards before create.
   // An empty sink supports direct declarations only.
   loomc_task_sink_t resolution_sink;
@@ -184,6 +187,10 @@ typedef struct loom_serve_registered_model_t {
   loom_serve_registration_t registration;
   // Preparation/publication/retirement state, independent of admission.
   loom_serve_registration_phase_t phase;
+  // Monotonic start of the current PREPARING interval; phase owns its validity.
+  iree_time_t preparation_start;
+  // Completed PREPARING intervals, excluding declared gaps and retirement.
+  uint64_t preparation_duration_ns;
   // Irreversible unregister intent; drain can be escalated explicitly to abort.
   loom_serve_removal_t removal;
   // Reversible admission gate, not a residency or cancellation flag.
@@ -390,6 +397,13 @@ iree_status_t loom_serve_registry_advance(loom_serve_registry_t* registry,
                                           bool* out_progress);
 bool loom_serve_registry_pending(const loom_serve_registered_model_t* model);
 const char* loom_serve_registry_phase(
+    const loom_serve_registered_model_t* model);
+
+// Cumulative preparation elapsed time, including its open interval. Zero
+// before preparation; declared idle gaps and later parameter activation add
+// none. Called only by the serialized owner; observation never advances
+// preparation.
+uint64_t loom_serve_registry_preparation_duration_ns(
     const loom_serve_registered_model_t* model);
 
 // Totals include removed incarnations. False means a borrowed service omitted

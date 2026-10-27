@@ -37,19 +37,21 @@ loom_cc_test(
         "--fixture=true",
         "--model=$(rootpath //loom/src/loom/serve/fixture/recognition:activity.json)",
         "--transcription_model=$(rootpath //loom/src/loom/serve/fixture/recognition:model.json)",
-        "--device=task",
-        "--pool_backing=fixed",
+        "--devices=$(rootpath :activity_devices.json)",
         "--workers=8",
         "--stream_count=8",
-        "--device=legacy-amdgpu",
-        "--fixture_transcription_device=1",
+        "--fixture_activity_device=cpu",
+        "--fixture_transcription_device=gpu",
     ],
-    data = RECOGNITION_SOURCES + ["//loom/src/loom/serve/fixture/recognition:activity.json"],
+    data = RECOGNITION_SOURCES + [
+        "activity_devices.json",
+        "//loom/src/loom/serve/fixture/recognition:activity.json",
+    ],
     resource_group = GPU_DEVICE_RESOURCE_GROUP,
     tags = _ROCR_TEST_TAGS,
     target_compatible_with = loom_config_compatible_with([
         "//loom/config/target/arch:x86",
-        "//loom/config/target:amdgpu_artifacts",
+        "//loom/config/emit:amdgpu_artifacts",
         "//runtime/config/hal:driver_amdgpu",
         "//runtime/config/hal:driver_task",
         "//runtime/config/hal:executable_loader_embedded_elf",
@@ -76,7 +78,7 @@ loom_cc_library(
     testonly = True,
     srcs = ["test_compiler.c"],
     target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target:amdgpu_artifacts",
+        "//loom/config/emit:amdgpu_artifacts",
     ]),
     deps = [
         "//loom/binding/c/target/amdgpu",
@@ -90,7 +92,7 @@ loom_cc_binary(
     name = "loom-serve-test-tool",
     testonly = True,
     target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target:amdgpu_artifacts",
+        "//loom/config/emit:amdgpu_artifacts",
         "//runtime/config/hal:driver_amdgpu",
     ]),
     deps = [

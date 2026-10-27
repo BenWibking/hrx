@@ -16,6 +16,85 @@ __device__ __forceinline__ int first(const int* input, unsigned index,
   return input[index];
 }
 
+__device__ __forceinline__ int first_negative(const int* input, unsigned start,
+                                              unsigned length) {
+  for (unsigned index = start; index < length; ++index) {
+    if (input[index] < 0) {
+      return (int)index;
+    }
+  }
+  return -1;
+}
+
+__device__ __forceinline__ int first_zero(const int* input, unsigned start,
+                                          unsigned length) {
+  while (true) {
+    if (start >= length) {
+      return -1;
+    }
+    int value = input[start];
+    if (value < 0) {
+      start += 2u;
+      continue;
+    }
+    if (value == 0) {
+      return (int)start;
+    }
+    ++start;
+  }
+}
+
+__device__ __forceinline__ int guarded_first_negative(const int* input,
+                                                      unsigned start,
+                                                      unsigned length) {
+  if (input[start] > 1) {
+    return -2;
+  }
+  for (unsigned index = start; index < length; ++index) {
+    if (input[index] < 0) {
+      return (int)index;
+    }
+  }
+  return -1;
+}
+
+__device__ __forceinline__ int guarded_first_negative_forever(const int* input,
+                                                              unsigned start,
+                                                              unsigned length) {
+  if (input[start] > 1) {
+    return -2;
+  }
+  unsigned index = start;
+  for (;;) {
+    if (input[index] < 0) {
+      return (int)index;
+    }
+    ++index;
+    if (index >= length) {
+      return -1;
+    }
+  }
+}
+
+__device__ __forceinline__ int guarded_two_scans(const int* input,
+                                                 unsigned start,
+                                                 unsigned length) {
+  if (input[start] > 1) {
+    return -2;
+  }
+  for (unsigned index = start; index < length; ++index) {
+    if (input[index] < 0) {
+      return (int)index;
+    }
+  }
+  for (unsigned index = start; index < length; ++index) {
+    if (input[index] == 0) {
+      return (int)index + 100;
+    }
+  }
+  return -1;
+}
+
 __device__ __forceinline__ int classify(const int* input, unsigned index,
                                         unsigned length, int* trace,
                                         unsigned position) {
@@ -90,7 +169,7 @@ __global__
   if (lane >= length) {
     return;
   }
-  unsigned base = lane * 6u;
+  unsigned base = lane * 11u;
   output[base] = classify(input, lane + 1u, length, output, base + 1u);
   int total = 0;
   for (unsigned step = 0; step < 3u; ++step) {
@@ -102,6 +181,11 @@ __global__
   output[base + 4u] = 0;
   publish(output, base + 4u, value);
   output[base + 5u] = state(value);
+  output[base + 6u] = first_negative(input, lane, length);
+  output[base + 7u] = first_zero(input, lane, length);
+  output[base + 8u] = guarded_first_negative(input, lane, length);
+  output[base + 9u] = guarded_first_negative_forever(input, lane, length);
+  output[base + 10u] = guarded_two_scans(input, lane, length);
 }
 
 template <unsigned Count>
@@ -137,8 +221,8 @@ void early_returns_oracle(loom::type::buffer<int> input,
                           loom::type::buffer<int> output, unsigned length) {
   static_cast<void>(input);
   loom::assume(length <= 64u);
-  auto output_values =
-      loom::buffer::view<64, 6>(output, {}, loom::encoding::layout::dense<2>());
+  auto output_values = loom::buffer::view<64, 11>(
+      output, {}, loom::encoding::layout::dense<2>());
   for (unsigned lane = 0; lane < length; ++lane) {
     loom::assume(lane < 64u);
     int value = early_return_value(lane);
@@ -164,12 +248,56 @@ void early_returns_oracle(loom::type::buffer<int> input,
         value < 0 ? ((lane & 1u) ? -11 : -13) : ((lane & 1u) ? 17 : 19);
     int published = value < 0 ? 11 : value;
     int final_state = value < 0 ? value + 1 : (value == 0 ? 5 : value + 7);
+    int first_negative = -1;
+    int first_zero = -1;
+    for (unsigned index = lane; index < length; ++index) {
+      int candidate = early_return_value(index);
+      if (candidate < 0) {
+        first_negative = (int)index;
+        break;
+      }
+    }
+    for (unsigned index = lane; index < length;) {
+      int candidate = early_return_value(index);
+      if (candidate < 0) {
+        index += 2u;
+      } else if (candidate == 0) {
+        first_zero = (int)index;
+        break;
+      } else {
+        ++index;
+      }
+    }
+    int guarded_first_negative = -2;
+    if (value <= 1) {
+      guarded_first_negative = -1;
+      for (unsigned index = lane; index < length; ++index) {
+        if (early_return_value(index) < 0) {
+          guarded_first_negative = (int)index;
+          break;
+        }
+      }
+    }
+    int guarded_two_scans = guarded_first_negative;
+    if (guarded_two_scans == -1) {
+      for (unsigned index = lane; index < length; ++index) {
+        if (early_return_value(index) == 0) {
+          guarded_two_scans = (int)index + 100;
+          break;
+        }
+      }
+    }
     loom::view::store(classified, output_values, lane, 0);
     loom::view::store(trace, output_values, lane, 1);
     loom::view::store(total, output_values, lane, 2);
     loom::view::store(chosen, output_values, lane, 3);
     loom::view::store(published, output_values, lane, 4);
     loom::view::store(final_state, output_values, lane, 5);
+    loom::view::store(first_negative, output_values, lane, 6);
+    loom::view::store(first_zero, output_values, lane, 7);
+    loom::view::store(guarded_first_negative, output_values, lane, 8);
+    loom::view::store(guarded_first_negative, output_values, lane, 9);
+    loom::view::store(guarded_two_scans, output_values, lane, 10);
   }
 }
 
@@ -178,8 +306,8 @@ LOOM_CHECK_SCENARIO(early_return_values) {
       [](loom::check::ordinal trial, loom::check::entropy entropy) {
         const auto input = loom::check::fill<1, int>(0);
         loom::check::generate<early_return_input_1>(input);
-        const auto storage = loom::check::fill<416, int>(-123);
-        const auto output = loom::check::slice<384>(storage, 16);
+        const auto storage = loom::check::fill<736, int>(-123);
+        const auto output = loom::check::slice<704>(storage, 16);
         loom::check::compare<early_returns, early_returns_oracle>(
             input, output, 0u, [&] {
               loom::check::expect_bitwise(input, input);
@@ -190,8 +318,8 @@ LOOM_CHECK_SCENARIO(early_return_values) {
       [](loom::check::ordinal trial, loom::check::entropy entropy) {
         const auto input = loom::check::fill<1, int>(0);
         loom::check::generate<early_return_input_1>(input);
-        const auto storage = loom::check::fill<416, int>(-123);
-        const auto output = loom::check::slice<384>(storage, 16);
+        const auto storage = loom::check::fill<736, int>(-123);
+        const auto output = loom::check::slice<704>(storage, 16);
         loom::check::compare<early_returns, early_returns_oracle>(
             input, output, 1u, [&] {
               loom::check::expect_bitwise(input, input);
@@ -202,8 +330,8 @@ LOOM_CHECK_SCENARIO(early_return_values) {
       [](loom::check::ordinal trial, loom::check::entropy entropy) {
         const auto input = loom::check::fill<17, int>(0);
         loom::check::generate<early_return_input_17>(input);
-        const auto storage = loom::check::fill<416, int>(-123);
-        const auto output = loom::check::slice<384>(storage, 16);
+        const auto storage = loom::check::fill<736, int>(-123);
+        const auto output = loom::check::slice<704>(storage, 16);
         loom::check::compare<early_returns, early_returns_oracle>(
             input, output, 17u, [&] {
               loom::check::expect_bitwise(input, input);
@@ -214,8 +342,8 @@ LOOM_CHECK_SCENARIO(early_return_values) {
       [](loom::check::ordinal trial, loom::check::entropy entropy) {
         const auto input = loom::check::fill<33, int>(0);
         loom::check::generate<early_return_input_33>(input);
-        const auto storage = loom::check::fill<416, int>(-123);
-        const auto output = loom::check::slice<384>(storage, 16);
+        const auto storage = loom::check::fill<736, int>(-123);
+        const auto output = loom::check::slice<704>(storage, 16);
         loom::check::compare<early_returns, early_returns_oracle>(
             input, output, 33u, [&] {
               loom::check::expect_bitwise(input, input);
@@ -226,8 +354,8 @@ LOOM_CHECK_SCENARIO(early_return_values) {
       [](loom::check::ordinal trial, loom::check::entropy entropy) {
         const auto input = loom::check::fill<64, int>(0);
         loom::check::generate<early_return_input_64>(input);
-        const auto storage = loom::check::fill<416, int>(-123);
-        const auto output = loom::check::slice<384>(storage, 16);
+        const auto storage = loom::check::fill<736, int>(-123);
+        const auto output = loom::check::slice<704>(storage, 16);
         loom::check::compare<early_returns, early_returns_oracle>(
             input, output, 64u, [&] {
               loom::check::expect_bitwise(input, input);

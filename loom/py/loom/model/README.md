@@ -268,6 +268,54 @@ The fetched card retains its preset, and requests use its `model.id` as the
 model name. An authored card with multiple presets can be served directly with
 `--preset=NAME` alongside one `--model` argument.
 
+Acquisition progress uses stderr, including when redirected or running with
+`--no-input`. Aligned phase rows include a compact bar and percentage when a
+byte total is known. It reports each new phase promptly and throttles ongoing
+updates to one line every five seconds. stdout remains the final path or
+`--json` result. `--quiet` suppresses progress without suppressing errors or
+access actions. Reports contain destination paths and numeric facts, never
+provider logs, credentials, or signed redirect URLs.
+
+Python callers can observe the same work through `ContentCache(progress=...)`:
+
+```python
+from pathlib import Path
+import sys
+
+from loom.model import ModelCard
+from loom.model.fetch import install, plan_fetch
+from loom.model.fetch_storage import ContentCache
+
+cache = ContentCache(
+    Path("./cache"), progress=lambda event: print(event, file=sys.stderr)
+)
+document = cache.read_document("./model.json", offline=False)
+selection = ModelCard.parse(document.text).select(preset="streaming")
+plan = plan_fetch(document, selection, cache)
+installed_card = install(plan, cache, Path("./installed"))
+```
+
+Each immutable `ProgressEvent` has a `phase`, optional authored destination
+`path`, and optional `completed_bytes`/`total_bytes` and
+`completed_files`/`total_files` pairs. Callbacks are serialized across transfer
+workers, can run on a worker thread, and should return promptly. Raising from a
+callback fails the operation through its normal cancellation and cleanup path;
+a completion callback runs after publication. An exception remains the API's
+failure result. Applications should consume events as they arrive instead of
+retaining an unbounded history for large acquisitions.
+
+Phases are `discover` (metadata), `access`, `acquire` (unique source counts),
+`download` (file reconstruction), `transfer` (provider-reported network bytes),
+`read` (local/inline reads), `verify`, `transform`, `install` (destination
+counts), and `complete`. Byte counts apply to one file and phase, not to the
+whole model. Unknown totals are `None`. Download/reconstruction and transfer
+counts can differ because of provider caching and compression. Transform
+counts cover selected source ranges, including their header, rather than an
+entire checkpoint or the padded output. Verification can happen during a
+streaming download or separately over cached bytes; observing it does not mean
+another copy or read was required. A file is acquired only after its integrity
+checks succeed, and `complete` follows publication of the card or updated lock.
+
 On Windows and Unix terminals, missing selections open a keyboard picker. Type
 to filter, use arrows or Home/End/Page Up/Page Down to move, and press Enter to
 select. Ctrl-U clears the filter; Escape or Ctrl-C cancels. Service, preset,
@@ -283,21 +331,39 @@ terminals use named line input, including `/text` filtering and `/cancel`.
 flags and card defaults. They require `--output` for acquisition and never open
 the picker.
 
-The acquisition path requires a complete matching `model.json.lock`, or an
-explicit `--lockfile` path/URL. A publication lock may cover more variants;
-fetch reads only the selected files. `--update-lock` computes a new exact selected set,
+The acquisition path requires a matching `model.json.lock`, or an explicit
+`--lockfile` path/URL. Version 2 locks declare their coverage with `scope`:
+
+- `assets` covers parameters, tokenizers, and voice recordings. Programs and
+  auxiliary inputs remain editable, including those fetched through an origin
+  such as `@library`. The chosen checkout or source URL supplies their version.
+- `all` also commits to every program and auxiliary file. This is useful for
+  generated publication artifacts whose exact executable bytes are sealed.
+
+Coverage follows declared roles for every program format. A source also used
+as an asset remains protected at every destination. Missing asset commitments
+are errors; missing program commitments are permitted only by asset scope.
+Version 1 locks retain complete coverage. Version 2 requires an explicit scope;
+unknown versions are rejected. Source edits need no asset-lock update, and
+Bazel tracks program inputs through its normal dependency graph.
+
+A lock may cover more variants; fetch reads only the selected files.
+`--update-lock` defaults to asset scope and computes a new exact selected set,
 replacing the local card's sibling lock or an explicit local `--lockfile`.
+`--update-lock --lock-scope=all` requests complete coverage instead.
 For a remote card without an explicit local lock destination, the new lock is
 written only beside the installed card. `--no-lock` neither reads nor writes
 locks and conflicts with lock update or an explicit lockfile. `--offline`
 forbids network access, including document requests; cached documents and locked
-payloads remain usable. A floating mutable URL without a lock needs a local
-override in offline mode because a historical payload is not a fresh resolution.
+payloads remain usable. Editable HTTP sources use their last successfully cached
+bytes offline. Online acquisition refreshes an unlocked source when a new copy
+is needed; an existing editable destination is preserved. Local cache receipts
+record those observations without adding program hashes to the authored lock.
 
 For developer swatches, `--no-verify-parameters` skips comparison with the
-publisher's parameter byte expectations. It still requires a complete matching
-lock and retains its origin revisions. Programs, libraries, auxiliary inputs,
-and tokenizers keep their ordinary checks, including a logical source also used
+publisher's parameter byte expectations. It still requires a matching lock and
+retains its origin revisions. Programs, libraries, auxiliary inputs, and
+tokenizers keep their ordinary checks, including a logical source also used
 as a parameter at another local path. Format validity and exact range bounds
 remain enforced. This mode conflicts with `--no-lock` and `--update-lock`.
 
@@ -314,9 +380,12 @@ loom-fetch model.json --preset=swatch --origin=checkpoint=./fixture \
   --offline --no-verify-parameters --output=./experiment
 ```
 
-Authors can publish a lock covering every declared compatible variant, partition,
+Authors can update a lock covering every declared compatible variant, partition,
 service, and program set with `--update-lock --all-variants`. This operation
-acquires each unique output once and replaces the lock after every read succeeds.
+acquires each unique asset once and replaces the lock after every read succeeds.
+It does not read program files, so source edits and unbuilt program sets do not
+require checksum inventory maintenance. `--lock-scope=all` includes programs and
+auxiliary inputs when generating a complete publication lock.
 It creates no installation. `--programs=NAME` restricts the union to compatible
 choices using that program set; other selection and output flags do not apply.
 Ordinary fetches still download only their selected files, even when variants place
@@ -327,20 +396,21 @@ the current card are removed from the replacement lock.
 loom-fetch model.json --update-lock --all-variants --dry-run
 loom-fetch model.json --update-lock --all-variants
 loom-fetch model.json --update-lock --all-variants --programs=source
-loom-fetch https://example.org/model.json --update-lock --all-variants --lockfile=publication.lock
+loom-fetch dist/model.json --update-lock --all-variants --lock-scope=all
+loom-fetch https://example.org/model.json --update-lock --all-variants --lockfile=model.json.lock
 ```
 
-Publication acquires and hashes the complete output union, using the normal cache;
+Lock updates acquire and hash the requested scope's output union, using the normal cache;
 `--dry-run` resolves metadata without downloading payloads or changing the lock.
 A remote card requires an explicit local `--lockfile` destination. Origin
 overrides and `--offline` apply to both publication and selected installation.
-The program filter lets a source checkout lock every parameter variant without
-requiring its generated bytecode. Variants that do not support the selected set
+The program filter selects compatible variants; asset scope never requires
+generated bytecode. Variants that do not support the selected set
 are excluded. An unknown or unused program set fails before source acquisition.
 The resulting lock contains exactly that union; generated representations receive
 their own lock when their bytes are published.
 
-Locks use a separate [versioned editor schema](model-lock.v1.schema.json).
+Locks use a separate [versioned editor schema](model-lock.v2.schema.json).
 `origins` records requested roots and resolved repository commits. Each `files`
 record contains its logical `origin`, final whole-file `size`, and `sha256`.
 Transformed parameter records also contain the normalized `transform`; the hash
@@ -400,15 +470,24 @@ Forked callers create their own workers without taking ownership of the parent's
 transfers.
 
 Files stream into verified content storage with bounded buffers and concurrent
-transfers. The default `--materialize=share` links cache or local-source files
-into the installation, so changing only preset does not copy weights.
-Filesystems without sharing require an explicit `--materialize=copy` choice.
-Shared files remain shared: editing one view can alter another, and a later
-locked fetch detects that modification. Verified existing destinations can be
-reused; conflicts fail before payload transfer. Fetch never prunes an output.
+transfers. The default `--materialize=auto` makes independent copies of programs
+and their auxiliary files, so editing them cannot alter the cache, the source
+checkout, or another installation. This follows declared roles for every
+program format, including text, bytecode, and C++ inputs. Assets such as weights
+and tokenizers share cache or local-source storage, so changing only preset
+does not copy weights.
 
-The selected `model.json` is published after the complete closure verifies.
-An installation lock is a projection of those verified commitments. Relative
+`--materialize=share` explicitly shares every file, including programs;
+`--materialize=copy` makes every file independent, including weights. Shared
+files remain shared: editing one view can alter another, and a later locked
+fetch detects that modification. Filesystems without sharing require
+`--materialize=copy`. Verified existing destinations can be reused; conflicts
+fail before payload transfer. Fetch never prunes an output.
+
+The selected `model.json` is published after acquisition and all required checks
+succeed. An installation lock preserves the original coverage scope. Editable
+programs are not silently frozen during installation; repeated acquisition
+preserves their local edits. Relative
 runtime paths are retained, while original card-relative acquisition sources
 are anchored to a document origin. A serving deployment references the local
 card separately; native serving performs no network access or lock processing.

@@ -14,6 +14,7 @@ import json
 import os
 import shutil
 import tempfile
+from collections.abc import Iterable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
@@ -21,6 +22,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urljoin
 
 from .fetch_hf import AccessRequired
+from .fetch_progress import ByteProgress
 from .fetch_source import (
     Document,
     FetchError,
@@ -36,7 +38,7 @@ from .fetch_storage import (
     installation_lock,
     share_file,
 )
-from .lock import FileIdentity, ModelLock, file_digest, file_key
+from .lock import FileIdentity, ModelLock, file_digest, file_key, lock_files
 from .manifest import ManifestError, ModelCard, Selection, parse_json
 
 _RESERVED_PATHS = frozenset(
@@ -58,8 +60,10 @@ class FetchPlan:
     origins: dict
     # Network prohibition, including provider metadata and authentication.
     offline: bool
-    # Whether installation/source lock documents are emitted.
-    locked: bool
+    # Acquisition policy: verify an existing lock, update it, or omit locks.
+    lock_mode: str
+    # Required commitment coverage, independent of transport or materialization.
+    lock_scope: str
     # Explicit author's lock update destination; absent for ordinary acquisition.
     update_path: Path | None
     # Acquisition provenance for catalog or developer verification selections.
@@ -77,11 +81,8 @@ class FetchPlan:
             "partition": self.selection.partition,
             "programs": self.selection.programs,
             "offline": self.offline,
-            "lock": "verify"
-            if self.identities
-            else "update"
-            if self.locked
-            else "none",
+            "lock": self.lock_mode,
+            "lock_scope": self.lock_scope if self.lock_mode != "none" else None,
             "unverified_parameters": sorted(self.unverified_parameters),
             **(
                 {"memory": copy.deepcopy(self.selection.settings["memory"])}
@@ -117,6 +118,7 @@ def plan_fetch(
     offline: bool = False,
     no_lock: bool = False,
     update_lock: bool = False,
+    lock_scope: str | None = None,
     no_verify_parameters: bool = False,
     catalog: dict | None = None,
 ) -> FetchPlan:
@@ -125,6 +127,8 @@ def plan_fetch(
         raise ManifestError(
             "--no-lock cannot be combined with --update-lock or --lockfile"
         )
+    if lock_scope is not None and not update_lock:
+        raise ManifestError("--lock-scope requires --update-lock")
     if no_verify_parameters and (no_lock or update_lock):
         raise ManifestError(
             "--no-verify-parameters requires ordinary locked acquisition; "
@@ -150,6 +154,9 @@ def plan_fetch(
                 "explicitly --update-lock, or use --no-lock"
             ) from error
     identities = lock.cover(selection) if lock else {}
+    scope = lock.scope if lock else lock_scope or "assets"
+    if scope not in ("assets", "all"):
+        raise ManifestError("lock scope must be 'assets' or 'all'")
     resolver = SourceResolver(
         document,
         selection.document.get("origins", {}),
@@ -208,7 +215,8 @@ def plan_fetch(
         identities,
         resolver.origins,
         offline,
-        not no_lock,
+        "none" if no_lock else "update" if update_lock else "verify",
+        scope,
         update_path,
         {
             "schema_version": 1,
@@ -237,11 +245,15 @@ class LockPlan:
     selections: list[dict[str, str]]
     # One source per origin/transform pair, independent of installation paths.
     sources: dict[str, Source]
+    # First authored destination for each unique source, retained for observation.
+    paths: dict[str, str]
     # Fixed operations included in each unique output's identity.
     transforms: dict[str, dict]
     # Selected authored roots and their immutable repository resolutions.
     origins: dict
-    # Caller-owned local publication lock destination.
+    # Explicit asset-only or complete commitment coverage for this update.
+    scope: str
+    # Caller-owned local lock destination.
     path: Path
     # Network prohibition retained across planning and acquisition.
     offline: bool
@@ -250,6 +262,7 @@ class LockPlan:
         return {
             "model": self.model_id,
             "lock": "update-all-variants",
+            "lock_scope": self.scope,
             "lockfile": str(self.path),
             "offline": self.offline,
             "selections": copy.deepcopy(self.selections),
@@ -273,8 +286,9 @@ def plan_lock(
     overrides: dict[str, str] | None = None,
     lock_location: str | None = None,
     offline: bool = False,
+    lock_scope: str = "assets",
 ) -> LockPlan:
-    """Resolves a publication union, optionally restricted to one program set."""
+    """Resolves the selected lock scope across all compatible card choices."""
     selections = card.choices()
     if programs is not None:
         selections = [choice for choice in selections if choice["programs"] == programs]
@@ -282,10 +296,10 @@ def plan_lock(
             raise ManifestError(f"no compatible choices for program set {programs!r}")
     location = document_location(lock_location or sibling_lock(document.location))
     if "://" in location:
-        raise ManifestError("publication lock updates require a local --lockfile")
+        raise ManifestError("lock updates require a local --lockfile")
     path = Path(location)
     if path.name == ".loom-fetch.lock" or (path.exists() and not path.is_file()):
-        raise ManifestError("publication lock destination must be an ordinary file")
+        raise ManifestError("lock destination must be an ordinary file")
     authored = card.document
     resolver = SourceResolver(
         document,
@@ -298,27 +312,36 @@ def plan_lock(
         ),
     )
     sources = {}
+    paths = {}
     transforms = {}
+    local_inputs = set()
     for choice in selections:
         selected = card.select(**choice)
         for name, file in selected.files.items():
             if PurePosixPath(name).parts[0] in _RESERVED_PATHS:
                 raise ManifestError(f"reserved installation path {name!r}")
+            local = resolver.local_file(file.origin)
+            if local is not None:
+                local_inputs.add(local)
+        for name, file in lock_files(selected, lock_scope).items():
             key = file_key(file.origin, file.transform)
             if key not in sources:
                 sources[key] = resolver.resolve(file.origin, None)
+                paths[key] = name
                 if file.transform is not None:
                     transforms[key] = file.transform
     sources = _prepare_sources(
         sources, {}, cache, offline=offline, transforms=transforms
     )
-    _check_lock_sources(path, document, sources)
+    _check_lock_sources(path, document, sources, local_inputs=local_inputs)
     return LockPlan(
         authored["model"]["id"],
         selections,
         sources,
+        paths,
         transforms,
         resolver.origins,
+        lock_scope,
         path,
         offline,
     )
@@ -346,8 +369,15 @@ def _prepare_sources(
     return sources
 
 
-def _check_lock_sources(path: Path, document: Document, sources: dict[str, Source]):
+def _check_lock_sources(
+    path: Path,
+    document: Document,
+    sources: dict[str, Source],
+    *,
+    local_inputs: Iterable[Path] = (),
+):
     protected = [Path(document.location)] if not document.remote else []
+    protected.extend(local_inputs)
     protected += [
         Path(source.transport["path"])
         for source in sources.values()
@@ -368,12 +398,21 @@ def _acquire_sources(
     *,
     offline: bool,
     transforms: dict[str, dict],
+    paths: dict[str, str],
     preserve_sources: bool = False,
     present: dict[str, AcquiredFile] | None = None,
 ) -> dict[str, AcquiredFile]:
     """Joins a bounded transfer batch, deduplicated by logical source identity."""
     acquired = dict(present or {})
     unique = {}
+    total = len(
+        set(acquired)
+        | {
+            file_key(source.origin, transforms.get(name))
+            for name, source in sources.items()
+        }
+    )
+    cache.progress.emit("acquire", completed_files=len(acquired), total_files=total)
     with ThreadPoolExecutor(max_workers=4, thread_name_prefix="loom-fetch") as executor:
         try:
             for name, source in sources.items():
@@ -388,10 +427,15 @@ def _acquire_sources(
                             identities.get(name),
                             offline=offline,
                             preserve_sources=preserve_sources,
+                            progress=cache.progress.file(paths[name]),
                         )
                         if transform is not None
                         else executor.submit(
-                            cache.acquire, source, identities.get(name), offline=offline
+                            cache.acquire,
+                            source,
+                            identities.get(name),
+                            offline=offline,
+                            progress=cache.progress.file(paths[name]),
                         )
                     )
             names = {future: key for key, future in unique.items()}
@@ -404,6 +448,9 @@ def _acquire_sources(
                 )
                 for future in completed:
                     acquired[names[future]] = future.result()
+                    cache.progress.emit(
+                        "acquire", completed_files=len(acquired), total_files=total
+                    )
         except BaseException:
             cache.cancel()
             for future in unique.values():
@@ -415,7 +462,7 @@ def _acquire_sources(
 def update_lock(
     plan: LockPlan, cache: ContentCache, *, preserve_sources: bool = False
 ) -> Path:
-    """Atomically replaces one publication lock after all source reads succeed."""
+    """Atomically replaces one scoped lock after all required source reads succeed."""
     with installation_lock(plan.path.parent):
         acquired = _acquire_sources(
             plan.sources,
@@ -423,14 +470,19 @@ def update_lock(
             cache,
             offline=plan.offline,
             transforms=plan.transforms,
+            paths=plan.paths,
             preserve_sources=preserve_sources,
         )
         document = ModelLock.snapshot(
-            plan.origins, [item.identity for item in acquired.values()]
+            plan.origins,
+            [item.identity for item in acquired.values()],
+            scope=plan.scope,
         )
         if cache.cancelled.is_set():
             raise FetchError("model acquisition cancelled")
+        cache.progress.emit("install", completed_files=0, total_files=1)
         atomic_write(plan.path, (json.dumps(document, indent=2) + "\n").encode("utf-8"))
+        cache.progress.emit("complete", completed_files=1, total_files=1)
     return plan.path
 
 
@@ -540,8 +592,21 @@ def _check_document(path: Path, expected: dict) -> None:
         )
 
 
+def _check_installation_lock(path: Path, document: dict) -> None:
+    if not path.exists():
+        return
+    actual = ModelLock.parse(path.read_text(encoding="utf-8"))
+    canonical = ModelLock.snapshot(
+        actual.origins, list(actual.files.values()), scope=actual.scope
+    )
+    if canonical != document:
+        raise FetchError(
+            f"conflicting installation document: {path}; choose another output"
+        )
+
+
 def _check_outputs(
-    plan: FetchPlan, directory: Path, card: dict
+    plan: FetchPlan, directory: Path, card: dict, *, cancelled=None, progress=None
 ) -> dict[str, AcquiredFile]:
     _check_document(_destination(directory, "model.json"), card)
     _destination(directory, "model.json.lock")
@@ -552,9 +617,11 @@ def _check_outputs(
         destination = _destination(directory, name)
         if not destination.exists():
             continue
+        counter = ByteProgress(progress.file(name) if progress else None, "verify")
         identity = plan.identities.get(name)
         if identity is None:
-            if (
+            editable = plan.selection.files[name].roles <= {"program", "auxiliary"}
+            if not editable and (
                 plan.selection.files[name].transform is not None
                 or source.transport["kind"] != "local"
                 or not os.path.samefile(source.transport["path"], destination)
@@ -564,10 +631,12 @@ def _check_outputs(
                     "before transfer; "
                     "use a matching lock or choose another output"
                 )
-            size, digest = file_digest(destination)
+            size, digest = file_digest(
+                destination, cancelled=cancelled, progress=counter
+            )
             identity = FileIdentity(source.origin, size, digest, source.resolved)
         else:
-            identity.verify(destination)
+            identity.verify(destination, cancelled=cancelled, progress=counter)
         present[name] = AcquiredFile(destination, identity)
     return present
 
@@ -581,14 +650,14 @@ def check_output(plan: FetchPlan, output: Path) -> None:
 
 def _check_lock_output(plan: FetchPlan, directory: Path, relocated: dict, roots: dict):
     path = directory / "model.json.lock"
-    if not plan.locked or not path.exists():
+    if plan.lock_mode == "none" or not path.exists():
         return
     if plan.unverified_parameters:
         raise FetchError(
             "choose another output for --no-verify-parameters; "
             "this installation already records parameter identities"
         )
-    if not plan.identities:
+    if plan.lock_mode == "update":
         raise FetchError(
             "an installation lock already exists; choose another output "
             "for --update-lock"
@@ -599,20 +668,26 @@ def _check_lock_output(plan: FetchPlan, directory: Path, relocated: dict, roots:
             replace(identity, origin=relocated[name])
             for name, identity in plan.identities.items()
         ],
+        scope=plan.lock_scope,
     )
-    _check_document(path, expected)
+    _check_installation_lock(path, expected)
 
 
-def _probe_sharing(plan: FetchPlan, cache: ContentCache, directory: Path) -> None:
+def _probe_sharing(
+    plan: FetchPlan,
+    cache: ContentCache,
+    directory: Path,
+    sources: dict[str, Source],
+) -> None:
     roots = {cache.root}
     if any(
         source.transport["kind"] == "hf"
         and plan.selection.files[name].transform is None
-        for name, source in plan.sources.items()
+        for name, source in sources.items()
     ):
         roots.add(cache.huggingface.cache_directory)
     with ExitStack() as stack:
-        sources = set()
+        paths = set()
         for root in roots:
             root.mkdir(parents=True, exist_ok=True)
             temporary = stack.enter_context(
@@ -620,17 +695,17 @@ def _probe_sharing(plan: FetchPlan, cache: ContentCache, directory: Path) -> Non
             )
             path = Path(temporary) / "probe"
             path.write_bytes(b"")
-            sources.add(path)
-        sources.update(
+            paths.add(path)
+        paths.update(
             Path(source.transport["path"])
-            for name, source in plan.sources.items()
+            for name, source in sources.items()
             if source.transport["kind"] == "local"
             and plan.selection.files[name].transform is None
         )
         with tempfile.TemporaryDirectory(prefix=".loom-fetch-", dir=directory) as probe:
             destination = Path(probe) / "shared"
             devices = set()
-            for source in sources:
+            for source in paths:
                 device = source.stat().st_dev
                 if device in devices:
                     continue
@@ -644,14 +719,23 @@ def install(
     cache: ContentCache,
     output: Path,
     *,
-    materialize: str = "share",
+    materialize: str = "auto",
     preserve_sources: bool = False,
 ) -> Path:
     """Publishes a card only after its complete selected acquisition succeeds."""
     if cache.cancelled.is_set():
         raise FetchError("model acquisition cancelled")
-    if materialize not in ("share", "copy"):
-        raise ManifestError("materialize must be 'share' or 'copy'")
+    if materialize not in ("auto", "share", "copy"):
+        raise ManifestError("materialize must be 'auto', 'share', or 'copy'")
+    shared = {
+        name: source
+        for name, source in plan.sources.items()
+        if materialize == "share"
+        or (
+            materialize == "auto"
+            and not plan.selection.files[name].roles & {"program", "auxiliary"}
+        )
+    }
     directory = output.absolute()
     card, relocated, roots = _installation_card(plan)
     if plan.update_path is not None:
@@ -661,12 +745,23 @@ def install(
                     "lock update destination overlaps installation content"
                 )
     with installation_lock(directory):
-        present = _check_outputs(plan, directory, card)
+        present = _check_outputs(
+            plan, directory, card, cancelled=cache.cancelled, progress=cache.progress
+        )
         _check_lock_output(plan, directory, relocated, roots)
-        if materialize == "share":
-            _probe_sharing(plan, cache, directory)
+        if shared:
+            _probe_sharing(plan, cache, directory, shared)
+        required = lock_files(plan.selection, plan.lock_scope)
         acquired = _acquire_sources(
-            plan.sources,
+            {
+                name: source
+                for name, source in plan.sources.items()
+                if name not in present
+                or (
+                    preserve_sources
+                    and plan.selection.files[name].transform is not None
+                )
+            },
             plan.identities,
             cache,
             offline=plan.offline,
@@ -675,13 +770,17 @@ def install(
                 for name, file in plan.selection.files.items()
                 if file.transform is not None
             },
+            paths={name: name for name in plan.sources},
             preserve_sources=preserve_sources,
             present={
                 file_key(
                     plan.sources[name].origin, plan.selection.files[name].transform
                 ): item
                 for name, item in present.items()
-                if not preserve_sources or plan.selection.files[name].transform is None
+                if name in required
+                and (
+                    not preserve_sources or plan.selection.files[name].transform is None
+                )
             },
         )
         identities = [
@@ -692,14 +791,22 @@ def install(
                 origin=relocated[name],
             )
             for name, source in plan.sources.items()
+            if name in required
         ]
         installation_lock_document = (
-            ModelLock.snapshot(roots, identities) if plan.locked else None
+            ModelLock.snapshot(roots, identities, scope=plan.lock_scope)
+            if plan.lock_mode != "none"
+            else None
         )
         if installation_lock_document is not None:
-            _check_document(directory / "model.json.lock", installation_lock_document)
+            _check_installation_lock(
+                directory / "model.json.lock", installation_lock_document
+            )
         published = []
         try:
+            cache.progress.emit(
+                "install", completed_files=len(present), total_files=len(plan.sources)
+            )
             with tempfile.TemporaryDirectory(
                 prefix=".loom-fetch-", dir=directory
             ) as temporary:
@@ -710,11 +817,12 @@ def install(
                     if name in present:
                         continue
                     destination = directory / name
+                    cache.progress.file(name).emit("install")
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     path = acquired[
                         file_key(source.origin, plan.selection.files[name].transform)
                     ].path
-                    if materialize == "copy":
+                    if name not in shared:
                         copied = staging / "payload"
                         shutil.copyfile(path, copied)
                         os.link(copied, destination)
@@ -722,6 +830,11 @@ def install(
                     else:
                         share_file(path, destination)
                     published.append(destination)
+                    cache.progress.emit(
+                        "install",
+                        completed_files=len(present) + len(published),
+                        total_files=len(plan.sources),
+                    )
                 # The complete card is the publication boundary. No runtime ever
                 # sees a card advertising a partially acquired closure.
                 metadata = {
@@ -743,7 +856,12 @@ def install(
                     published.append(destination)
             if plan.update_path is not None:
                 document = ModelLock.snapshot(
-                    plan.origins, [item.identity for item in acquired.values()]
+                    plan.origins,
+                    [
+                        acquired[file_key(file.origin, file.transform)].identity
+                        for file in required.values()
+                    ],
+                    scope=plan.lock_scope,
                 )
                 atomic_write(
                     plan.update_path,
@@ -753,4 +871,7 @@ def install(
             for path in reversed(published):
                 path.unlink()
             raise
+    cache.progress.emit(
+        "complete", completed_files=len(plan.sources), total_files=len(plan.sources)
+    )
     return directory / "model.json"

@@ -1329,7 +1329,7 @@ loom_low_allocation_target_constraints_resolve_tied_fixed_values(
     uint32_t* binding = &fixed_indices[fixed->tied_root_ordinal];
     if (*binding == 0) {
       *binding = i + 1;
-    } else if (!loom_low_allocation_storage_assignment_ranges_equal(
+    } else if (!loom_low_allocation_storage_assignment_locations_correspond(
                    constraints->target->descriptor_set,
                    &constraints->fixed_values[*binding - 1].assignment,
                    &fixed->assignment)) {
@@ -1643,6 +1643,8 @@ iree_status_t loom_low_allocation_target_constraints_finalize_fixed_values(
         loom_liveness_interval_for_value_ordinal(liveness,
                                                  fixed->value_ordinal);
     loom_low_allocation_assignment_t* assignment = &fixed->assignment;
+    assignment->flags |= loom_low_allocation_unit_liveness_assignment_flags(
+        unit_liveness, interval, fixed->value_ordinal, (iree_bitmap_t){0});
     assignment->start_point =
         unit_liveness->values[fixed->value_ordinal].acquisition_start_point;
     assignment->end_point =

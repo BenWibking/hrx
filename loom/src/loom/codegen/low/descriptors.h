@@ -211,6 +211,10 @@ typedef uint32_t loom_low_register_part_mask_t;
 // temporary storage or writes to other storage or architectural state. Aliased
 // views do not inherit this capability.
 #define LOOM_LOW_REG_CLASS_FLAG_EXCHANGE ((uint16_t)1u << 7)
+// Ordinary writes preserve inactive execution lanes. Values observed after
+// leaving a loop retain those lanes while other lanes continue iterating;
+// expanded-execution writes must respect that cyclic storage lifetime.
+#define LOOM_LOW_REG_CLASS_FLAG_LANE_MASKED ((uint16_t)1u << 8)
 
 typedef enum loom_low_spill_slot_space_e {
   // Unknown or uninitialized spill storage space.
@@ -775,14 +779,9 @@ typedef struct loom_low_register_packing_resource_t {
   uint16_t member_start;
   // Number of register-class contribution rows.
   uint16_t member_count;
+  // Member-table row whose candidate domain spans the complete capacity.
+  uint16_t capacity_member_index;
 } loom_low_register_packing_resource_t;
-
-enum loom_low_register_packing_resource_member_flag_bits_e {
-  // This member's candidate domain spans the resource's complete physical
-  // capacity and projects function-local allocation constraints onto it.
-  LOOM_LOW_REGISTER_PACKING_RESOURCE_MEMBER_FLAG_CAPACITY_SOURCE = 1u << 0,
-};
-typedef uint16_t loom_low_register_packing_resource_member_flags_t;
 
 // One register-class contribution to a shared packing resource.
 typedef struct loom_low_register_packing_resource_member_t {
@@ -792,8 +791,6 @@ typedef struct loom_low_register_packing_resource_member_t {
   uint16_t register_unit_count;
   // Packing-resource units consumed by one contribution group.
   uint16_t resource_unit_count;
-  // Immutable member properties derived during descriptor generation.
-  loom_low_register_packing_resource_member_flags_t flags;
 } loom_low_register_packing_resource_member_t;
 
 // Returns the first ABI-fixed location, or zero for explicit storage.

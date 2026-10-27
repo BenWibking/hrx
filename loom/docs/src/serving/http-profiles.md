@@ -44,7 +44,7 @@ header.
 | `POST /v1/models/variants` | Stage native providers against a ready base without selecting them. |
 | `POST /v1/models/variants/select` | Select a ready candidate with expected-current protection. |
 | `POST /v1/models/variants/remove` | Remove an unused terminal candidate. |
-| `POST /v1/devices/trim` | `{"device":0,"target_bytes":0}`; HTTP 200 schedules eligible reclamation and returns current resource accounting. |
+| `POST /v1/devices/trim` | `{"device":"gpu0","target_bytes":0}` selects a configured device key; HTTP 200 schedules eligible reclamation and returns current resource accounting. |
 | `GET /metrics` | Prometheus text counters and ownership gauges. |
 | `GET /logz`, `GET /logz/stream` | Bounded JSONL polling or SSE with independent cursors. |
 | `GET /v1/requests`, `GET /v1/sessions` | Bounded live owner inspection; sessions require a retained-text service. |
@@ -107,7 +107,9 @@ Both responses contain `selected` and `variant`. A variant record contains
 `object:"variant"`, `id`, `base`, `phase` (`compiling`, `ready` or `failed`) and
 `users` (explicit consumer references). Terminal failures retain an `error`
 with code/message. Detailed records also include available `compilation`
-evidence. Staging never changes the preferred choice, including when JIT fails.
+evidence. Its `stage_duration_sum_ns` sums overlapping stage intervals, as
+defined in [preparation timing](workflows/observe-model-server.md#read-preparation-timing).
+Staging never changes the preferred choice, including when JIT fails.
 
 Selection accepts `{"model":"scout","variant":13,"expected":12}`. The request
 completes at the service's safe execution boundary and returns
@@ -234,23 +236,39 @@ separately from answer `content`, in both SSE deltas and complete messages.
 `tools` accepts up to 4096 function declarations. Omitted `tool_choice` or
 `"auto"` allows tool calls. `"none"` disables tools for the current response,
 including when a client retains its tool catalog and prior tool calls while
-requesting a conversation summary. Supplied declarations are still validated
-and remain in the source-visible catalog, preserving the conversation prefix.
+requesting a conversation summary. Function envelopes and unique catalog names
+are validated; declarations remain in the source-visible catalog, preserving
+the conversation prefix.
 Source sampling receives the original request, and the completion boundary
 rejects forbidden structured calls before publication.
-Required or named tool choices reject. `store` may be omitted or false.
+Parameter schemas and descriptive metadata pass through to model source without
+JSON Schema validation. Required or named tool choices and `strict:true` reject:
+the server does not implement constrained tool sampling. `store` may be omitted
+or false.
 The source policy owns tool grammar, safe output boundaries and canonical
 history. Generated calls become structured `tool_calls`; the server never runs
-the tools. Invalid generated tool syntax fails rather than publishing a
-partially executable call. The client executes tools and returns their results
-in the next full conversation history.
+the tools. Argument strings are opaque at the HTTP boundary: unknown functions,
+missing or extra arguments, duplicate members, and even invalid argument JSON
+can reach the client. The harness validates arguments and permissions before
+execution, then returns either a result or a validation error as a `role:"tool"`
+message in the next full conversation history. A bad `read({"q":"file"})` call
+can therefore receive a missing-`path` error and be corrected by the model
+without retrying an earlier successful image-generation call.
+
+For model programs selecting the optional XML codec, schema type hints recover
+JSON values from untyped parameter text. Unknown parameters remain literal
+strings; duplicate parameters remain duplicate JSON members in their original
+order. No required-field, range, enum, or permission checks run in that codec.
+The [model-authoring contract](model-programs.md#tool-call-translation)
+describes its representation rules.
 
 An output translation failure returns an error object with
 `"type":"loom_output_error"`: HTTP 500 for a nonstreaming completion, or an SSE
 error followed by `[DONE]` after streaming has begun. This is distinct from
-`loom_request_error`, which describes a rejected request. The XML tool codec
-names undeclared tools, undeclared arguments, and duplicate arguments in its
-diagnostic. A failed tool-call list publishes no partial structured calls.
+`loom_request_error`, which describes a rejected request. Broken model framing
+such as an unterminated XML parameter is a translation error; its diagnostic
+identifies the call ordinal and byte offset. A failed tool-call list publishes
+no partial structured calls.
 Earlier successful tool results remain the client's conversation history;
 resuming an unfinished turn preserves those results and any created artifacts
 rather than repeating their side effects. The server does not automatically
