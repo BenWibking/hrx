@@ -1837,6 +1837,8 @@ void Types::require_record_storage(const cxx::ClassType* input,
     }
     storage_size(source_object_type(base), owner);
   }
+  auto saved_context = storage_context_;
+  storage_context_ += cxx::to_string(source->name()) + "::";
   for (auto* symbol : source->members()) {
     auto* field = cxx::symbol_cast<cxx::FieldSymbol>(symbol);
     if (!field || field->isStatic()) {
@@ -1850,6 +1852,7 @@ void Types::require_record_storage(const cxx::ClassType* input,
     }
     storage_size(field->type(), owner);
   }
+  storage_context_ = saved_context;
   storage_records_.insert(source);
 }
 
@@ -1859,7 +1862,8 @@ int64_t Types::storage_size(const cxx::Type* input, cxx::AST* owner) {
     diagnostics_.reject(
         unit_, owner,
         "stored pointers and references require an object storage "
-        "representation");
+        "representation (" + storage_context_ + cxx::to_string(input) +
+            ", while translating " + diagnostic_function_ + ")");
   }
   if (auto* array = cxx::type_cast<cxx::BoundedArrayType>(unqualified(input))) {
     storage_size(array->elementType(), owner);

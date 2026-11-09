@@ -520,6 +520,10 @@ class Types {
   // or structured result. A dependent source value requires destination SSA
   // identities before type binding and cannot use this static projection.
   // Kernel parameters instead use append_kernel_parameter().
+  // Names the function under translation in storage diagnostics.
+  void set_diagnostic_function(std::string name) {
+    diagnostic_function_ = std::move(name);
+  }
   void append(const cxx::Type* input, cxx::AST* owner,
               std::vector<loom_type_t>& output);
   // Appends the launch binding ABI of one kernel parameter. Leaf parameters
@@ -621,6 +625,10 @@ class Types {
 
   // Resolved source traits and configured memory layout.
   cxx::TranslationUnit& unit_;
+  // Enclosing record path while admitting storage, for diagnostics.
+  std::string storage_context_;
+  // Source function being translated, for diagnostics.
+  std::string diagnostic_function_;
   // Source rejection boundary for unsupported types.
   Diagnostics& diagnostics_;
   // Destination owning interned dialect type names; null in scalar-only tests.
