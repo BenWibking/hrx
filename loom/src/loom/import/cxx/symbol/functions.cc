@@ -11,7 +11,9 @@
 #include <cxx/ast_rewriter.h>
 #include <cxx/attributes.h>
 #include <cxx/const_int.h>
+#include <cxx/ast_visitor.h>
 #include <cxx/const_value.h>
+#include <cxx/external_name_encoder.h>
 #include <cxx/control.h>
 #include <cxx/decl.h>
 #include <cxx/literals.h>
@@ -27,6 +29,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 
@@ -231,7 +234,16 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
                           "check benchmark must reference a check record");
     }
   }
-  if (!roots.empty()) {
+  const bool launched_roots =
+      roots.size() == 1 && cxx_import::string(roots[0]) == "@launched";
+  if (launched_roots) {
+    // Device-pass mode: export exactly the kernels named by launch sites in
+    // the translation unit's host code. Host bodies are walked, never lowered.
+    for (auto* kernel : discover_launched_kernels(definitions)) {
+      exported_.insert(kernel);
+      declare(kernel);
+    }
+  } else if (!roots.empty()) {
     std::unordered_map<std::string, std::vector<cxx::FunctionSymbol*>>
         candidates;
     for (auto* symbol : definitions) {
@@ -340,6 +352,165 @@ bool Functions::ordinary_analysis_call(const DirectCall& call) {
     intrinsics_.bind_math(function, call.source);
   }
   return false;
+}
+
+// Returns the kernel named by a launch-style callee's leading function
+// template argument, such as loom::kernel::launch<kernel<F>>.
+static cxx::FunctionSymbol* launched_kernel(cxx::FunctionSymbol* function) {
+  if (!function) {
+    return nullptr;
+  }
+  auto arguments = function->templateArguments();
+  if (arguments.empty()) {
+    return nullptr;
+  }
+  auto selected = cxx::template_argument_value(arguments[0]);
+  auto* address =
+      selected ? std::get_if<std::shared_ptr<cxx::ConstAddress>>(&*selected)
+               : nullptr;
+  auto* kernel =
+      address && *address
+          ? cxx::symbol_cast<cxx::FunctionSymbol>((*address)->symbol())
+          : nullptr;
+  return kernel && annotated(kernel, "kernel") ? kernel : nullptr;
+}
+
+namespace {
+
+// Whether a function belongs to the C++ standard library implementation.
+// Device launch discovery never needs to enter those bodies.
+bool is_standard_library(cxx::FunctionSymbol* function) {
+  for (auto* owner : function->enclosingSymbols()) {
+    auto* space = cxx::symbol_cast<cxx::NamespaceSymbol>(owner);
+    if (!space || !space->name()) {
+      continue;
+    }
+    auto name = cxx::to_string(space->name());
+    if (name == "std" || name == "__gnu_cxx" || name == "__cxxabiv1") {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Collects every callable referenced by one function body: direct calls,
+// constructors, overloaded operators, and user conversions.
+class CalleeCollector final : public cxx::ASTVisitor {
+ public:
+  explicit CalleeCollector(std::vector<cxx::FunctionSymbol*>& output)
+      : output_(output) {}
+
+  void visit(cxx::CallExpressionAST* ast) override {
+    add(direct_callee(ast));
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::InitDeclaratorAST* ast) override {
+    if (auto* variable = cxx::symbol_cast<cxx::VariableSymbol>(ast->symbol)) {
+      add(variable->constructor());
+    }
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::TypeConstructionAST* ast) override {
+    add(ast->constructorSymbol);
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::BracedTypeConstructionAST* ast) override {
+    add(ast->constructorSymbol);
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::NewExpressionAST* ast) override {
+    add(ast->constructorSymbol);
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::ImplicitCastExpressionAST* ast) override {
+    add(ast->conversionFunction);
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::BinaryExpressionAST* ast) override {
+    add(cxx::symbol_cast<cxx::FunctionSymbol>(ast->symbol));
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::AssignmentExpressionAST* ast) override {
+    add(cxx::symbol_cast<cxx::FunctionSymbol>(ast->symbol));
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::CompoundAssignmentExpressionAST* ast) override {
+    add(cxx::symbol_cast<cxx::FunctionSymbol>(ast->symbol));
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::UnaryExpressionAST* ast) override {
+    add(cxx::symbol_cast<cxx::FunctionSymbol>(ast->symbol));
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::SubscriptExpressionAST* ast) override {
+    add(cxx::symbol_cast<cxx::FunctionSymbol>(ast->symbol));
+    cxx::ASTVisitor::visit(ast);
+  }
+
+ private:
+  void add(cxx::FunctionSymbol* function) {
+    if (function) {
+      output_.push_back(function);
+    }
+  }
+  std::vector<cxx::FunctionSymbol*>& output_;
+};
+
+}  // namespace
+
+std::string Functions::kernel_type_symbol_spelling(
+    cxx::FunctionSymbol* function, cxx::AST* source) {
+  auto arguments = function->templateArguments();
+  auto* tag =
+      arguments.empty() ? nullptr : cxx::template_argument_type(arguments[0]);
+  if (!tag) {
+    diagnostics_.reject(unit_, source,
+                        "kernel_type_symbol requires a kernel template "
+                        "instance with a leading type argument");
+  }
+  cxx::ExternalNameEncoder encoder(&unit_);
+  return cxx::to_string(function->name()) + "__" + encoder.encode(tag);
+}
+
+std::vector<cxx::FunctionSymbol*> Functions::discover_launched_kernels(
+    std::span<cxx::FunctionSymbol* const> definitions) {
+  std::vector<cxx::FunctionSymbol*> kernels;
+  std::unordered_set<cxx::FunctionSymbol*> kernel_set;
+  std::unordered_set<cxx::FunctionSymbol*> visited;
+  std::vector<cxx::FunctionSymbol*> pending;
+  for (auto* function : definitions) {
+    if (!function->isTemplatePattern() && !is_standard_library(function)) {
+      pending.push_back(function);
+    }
+  }
+  while (!pending.empty()) {
+    auto* function = pending.back();
+    pending.pop_back();
+    if (auto* kernel = launched_kernel(function)) {
+      if (kernel_set.insert(kernel->canonical()).second) {
+        kernels.push_back(kernel);
+      }
+      continue;
+    }
+    if (annotated(function, "kernel") || is_standard_library(function) ||
+        !visited.insert(function->canonical()).second) {
+      continue;
+    }
+    auto* concrete = definition(function);
+    if (!concrete || !concrete->declaration()) {
+      continue;
+    }
+    cxx::ASTRewriter::requireFunctionDefinition(&unit_, concrete);
+    if (concrete->hasPendingBody()) {
+      cxx::ASTRewriter::completePendingBodyFor(&unit_, concrete);
+      diagnostics_.finish();
+    }
+    std::vector<cxx::FunctionSymbol*> callees;
+    CalleeCollector collector(callees);
+    collector.accept(concrete->declaration());
+    pending.insert(pending.end(), callees.begin(), callees.end());
+  }
+  return kernels;
 }
 
 // Returns the kernel named by a launch-style call's leading function template
@@ -1295,8 +1466,14 @@ loom_symbol_ref_t Functions::create_symbol(FunctionInstance instance,
                                            cxx::AST* source) {
   auto* function = instance.symbol;
   std::string spelling;
-  if (auto found = explicit_names_.find(function->canonical());
-      found != explicit_names_.end()) {
+  if (annotated(function, "kernel_type_symbol")) {
+    // A kernel template instance named by its leading type argument's Itanium
+    // encoding, which host C++ observes as typeid(T).name(). This joins a
+    // host-compiled launch site to the separately compiled kernel export.
+    spelling = kernel_type_symbol_spelling(function, source);
+    names_.reserve(spelling, source);
+  } else if (auto found = explicit_names_.find(function->canonical());
+             found != explicit_names_.end()) {
     spelling = found->second;
   } else if (exported_.contains(function) ||
              external_.contains(function->canonical())) {

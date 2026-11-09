@@ -286,6 +286,17 @@ class Functions {
   void collect(cxx::DeclarationAST* declaration, DeclarationScope scope,
                std::vector<cxx::FunctionSymbol*>& definitions);
   const std::string& qualified_name(cxx::FunctionSymbol* symbol);
+  // Walks host bodies reachable from the translation unit's concrete
+  // definitions (outside the standard library) and returns every kernel named
+  // by a launch-style call's leading template argument. Bodies are completed
+  // for instantiation but never lowered.
+  std::vector<cxx::FunctionSymbol*> discover_launched_kernels(
+      std::span<cxx::FunctionSymbol* const> definitions);
+  // Export name of a kernel_type_symbol kernel instance: the kernel name and
+  // the Itanium encoding of its leading type argument, which host C++
+  // observes as typeid(T).name().
+  std::string kernel_type_symbol_spelling(cxx::FunctionSymbol* function,
+                                          cxx::AST* source);
   std::optional<ImplicitObjectParameter> implicit_object(
       FunctionInstance instance, cxx::AST* source) const;
 

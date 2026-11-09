@@ -68,6 +68,7 @@ class ImportTest : public ::testing::Test {
                                          const loom_diagnostic_t* diagnostic) {
     auto& self = *static_cast<ImportTest*>(user_data);
     ++self.diagnostic_count_;
+    if (diagnostic->severity == LOOM_DIAGNOSTIC_ERROR) ++self.error_count_;
     self.diagnostic_ref_ = loom_error_def_ref(diagnostic->error);
     auto filename = diagnostic->source_location.filename;
     self.diagnostic_filename_.assign(filename.data ? filename.data : "",
@@ -104,6 +105,8 @@ class ImportTest : public ::testing::Test {
   loom_cxx_preamble_t* preamble_ = nullptr;
   // Number of callbacks delivered by the source diagnostic boundary.
   int diagnostic_count_ = 0;
+  // Number of those callbacks with error severity.
+  int error_count_ = 0;
   // Structured identity of the most recently delivered diagnostic.
   loom_error_ref_t diagnostic_ref_ = LOOM_ERROR_REF_NONE;
   // Copied source identity retained after the frontend is destroyed.
@@ -665,6 +668,66 @@ TEST_F(ImportTest, TemplateFacadeNeedsOnlyOneHeader) {
   EXPECT_EQ(Print(), embedded);
   EXPECT_EQ(source_requests_.size(), 1u);
   EXPECT_EQ(source_requests_.at("/templates/loomcxx/template.h"), 1);
+}
+
+// Hosted single-source import: launched kernel template instances named by
+// their leading type argument. Body has a base, an array and two pointers;
+// Other has one pointer. host() is walked for launch sites, never lowered.
+constexpr char kLaunchedSource[] = R"cxx(
+#include <loomcxx/kernel.h>
+
+static loom::kernel::configuration launch_config(unsigned groups) {
+  return {{groups, 1, 1}, {64, 1, 1}};
+}
+
+template <class T>
+[[loom::kernel(launch_config), loom::kernel_type_symbol]]
+void run(T tag) { tag(); }
+
+struct Base { float scale; };
+struct Body : Base {
+  int pad[2];
+  const float* x;
+  float* y;
+  [[loom::inline]] void operator()() const {
+    unsigned i = static_cast<unsigned>(loom::kernel::workitem::id.x);
+    y[i] = scale * x[i] + static_cast<float>(pad[1]);
+  }
+};
+struct Other {
+  float* y;
+  [[loom::inline]] void operator()() const { y[0] = 1.0f; }
+};
+
+void host(const float* x, float* y) {
+  loom::kernel::launch<run<Body>>(loom::kernel::workload(4u),
+                                  Body{{2.0f}, {0, 1}, x, y});
+  loom::kernel::launch<run<Other>>(loom::kernel::workload(1u), Other{y});
+}
+)cxx";
+
+class LaunchedImportTest : public ImportTest {
+ protected:
+  void SetUp() override {
+    ImportTest::SetUp();
+    options_.roots = &launched_root_;
+    options_.root_count = 1;
+  }
+
+  const iree_string_view_t launched_root_ = IREE_SV("@launched");
+};
+
+TEST_F(LaunchedImportTest, LaunchedRootsExportOnlyLaunchedKernelInstances) {
+  IREE_ASSERT_OK(Import(iree_make_cstring_view(kLaunchedSource)));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+  // Each launched instance is exported under its kernel_type_symbol name, the
+  // kernel name and the Itanium encoding of its tag; the launching host
+  // function is walked for launch sites but not lowered.
+  const std::string printed = Print();
+  EXPECT_NE(printed.find("@run__4Body"), std::string::npos) << printed;
+  EXPECT_NE(printed.find("@run__5Other"), std::string::npos) << printed;
+  EXPECT_EQ(printed.find("@host"), std::string::npos) << printed;
 }
 
 }  // namespace
