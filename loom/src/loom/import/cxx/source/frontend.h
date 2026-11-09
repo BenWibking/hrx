@@ -49,6 +49,10 @@ class Diagnostics final : public cxx::DiagnosticsClient {
                            std::string_view message);
   SourceContents& contents() const { return *contents_; }
   bool has_error() const { return has_error_; }
+  // While set, lowering rejections are reported as warnings so a launched
+  // kernel can be dropped without failing the whole translation unit.
+  void set_soft_reject(bool soft) { soft_reject_ = soft; }
+  bool soft_reject() const { return soft_reject_; }
   // A single-source device pass parses host-only code it never lowers. When
   // set (LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS), frontend errors are
   // reported as warnings and become fatal only inside lowered definitions.
@@ -78,6 +82,7 @@ class Diagnostics final : public cxx::DiagnosticsClient {
   SourceContents* contents_ = nullptr;
   // Forwarded diagnostics can bypass cxx's counter; this owns admission.
   bool has_error_ = false;
+  bool soft_reject_ = false;
   bool tolerate_host_errors_ = false;
   // Frontend error positions downgraded to warnings in tolerant mode.
   std::vector<cxx::Token> deferred_errors_;

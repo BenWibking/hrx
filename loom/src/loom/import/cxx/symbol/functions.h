@@ -231,6 +231,14 @@ class Functions {
   // Discovery order grows as declare reaches helpers. Spans are invalidated by
   // growth; consumers obtain the next indexed entry after each body finishes.
   std::span<const FunctionInstance> pending() const { return pending_; }
+  // Launched kernel whose translation first reached pending()[index].
+  cxx::FunctionSymbol* pending_origin(size_t index) const {
+    return index < pending_origins_.size() ? pending_origins_[index] : nullptr;
+  }
+  // Attributes subsequently declared definitions to a launched kernel root.
+  void set_current_origin(cxx::FunctionSymbol* origin) {
+    current_origin_ = origin;
+  }
   // Import options borrowed for the translation: hosted profile, excluded
   // export names and the kernel manifest path.
   void set_import_options(const loom_cxx_import_options_t* options) {
@@ -238,6 +246,11 @@ class Functions {
   }
   bool hosted() const {
     return options_ && (options_->flags & LOOM_CXX_IMPORT_FLAG_HOSTED);
+  }
+  // Launched kernels omitted from @launched selection after failing to lower.
+  void set_excluded_kernels(
+      const std::unordered_set<cxx::FunctionSymbol*>* excluded) {
+    excluded_kernels_ = excluded;
   }
   // Builds the selected native definition and launch contract at the caller's
   // module insertion point. The caller then enters and fills the returned body.
@@ -421,6 +434,10 @@ class Functions {
       callees_;
   // Reachable worklist in deterministic discovery order.
   std::vector<FunctionInstance> pending_;
+  // Launched kernel root attributed to each pending_ entry.
+  std::vector<cxx::FunctionSymbol*> pending_origins_;
+  cxx::FunctionSymbol* current_origin_ = nullptr;
+  const std::unordered_set<cxx::FunctionSymbol*>* excluded_kernels_ = nullptr;
   const loom_cxx_import_options_t* options_ = nullptr;
   // Reachable bodyless declarations in deterministic discovery order.
   std::vector<FunctionDeclaration> pending_declarations_;

@@ -54,6 +54,9 @@ typedef enum loomc_cxx_import_flag_bits_e {
   LOOMC_CXX_IMPORT_FLAG_HOSTED = 1u << 1,
   /// Report frontend errors in host-only code as deferred warnings.
   LOOMC_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS = 1u << 2,
+  /// Drop launched kernels whose lowering is rejected instead of rejecting the
+  /// whole translation unit.
+  LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS = 1u << 3,
 } loomc_cxx_import_flag_bits_t;
 /// Bitmask of loomc_cxx_import_flag_bits_t values.
 typedef uint32_t loomc_cxx_import_flags_t;
@@ -182,6 +185,10 @@ typedef struct loomc_cxx_import_options_t {
   /// Optional immutable preamble borrowed until import returns. An exact source
   /// prefix or frontend-configuration mismatch uses ordinary cold parsing.
   const loomc_cxx_preamble_t* preamble;
+  /// kernel_type_symbol export names omitted from launched-root selection.
+  const loomc_string_view_t* excluded_kernels;
+  /// Number of excluded kernel export names.
+  loomc_host_size_t excluded_kernel_count;
   /// Optional path receiving the per-kernel leaf manifest. Empty writes none.
   loomc_string_view_t kernel_manifest_path;
 } loomc_cxx_import_options_t;

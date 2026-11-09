@@ -270,10 +270,36 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
   if (launched_roots) {
     // Device-pass mode: export exactly the kernels named by launch sites in
     // the translation unit's host code. Host bodies are walked, never lowered.
+    // kernel_type_symbol export names omitted from selection, such as kernels
+    // a later compile rejected.
+    std::unordered_set<std::string> excluded_names;
+    if (options_) {
+      for (size_t i = 0; i < options_->excluded_kernel_count; ++i) {
+        excluded_names.emplace(string(options_->excluded_kernels[i]));
+      }
+    }
     for (auto* kernel : discover_launched_kernels(definitions)) {
+      if (excluded_kernels_ && excluded_kernels_->contains(kernel->canonical())) {
+        continue;
+      }
+      if (!excluded_names.empty() && annotated(kernel, "kernel_type_symbol")) {
+        auto arguments = kernel->templateArguments();
+        auto* tag = arguments.empty()
+                        ? nullptr
+                        : cxx::template_argument_type(arguments[0]);
+        if (tag) {
+          cxx::ExternalNameEncoder encoder(&unit_);
+          if (excluded_names.contains(cxx::to_string(kernel->name()) + "__" +
+                                      encoder.encode(tag))) {
+            continue;
+          }
+        }
+      }
       exported_.insert(kernel);
+      current_origin_ = kernel->canonical();
       declare(kernel);
     }
+    current_origin_ = nullptr;
   } else if (!roots.empty()) {
     std::unordered_map<std::string, std::vector<cxx::FunctionSymbol*>>
         candidates;
@@ -678,9 +704,16 @@ void Functions::prepare_analysis(cxx::FunctionSymbol* function, Types& types,
 void Functions::analyze(Types& types) {
   std::vector<AnalyzedFunction> analyzed_functions;
   std::vector<AnalyzedCall> analyzed_calls;
-  for (const auto& instance : pending_) {
-    prepare_analysis(instance.symbol, types, analyzed_functions,
-                     analyzed_calls);
+  for (size_t index = 0; index < pending_.size(); ++index) {
+    try {
+      prepare_analysis(pending_[index].symbol, types, analyzed_functions,
+                       analyzed_calls);
+    } catch (const SourceRejected&) {
+      if (diagnostics_.soft_reject() && pending_origin(index)) {
+        throw KernelRejected{pending_origin(index)};
+      }
+      throw;
+    }
   }
 
   // Constructor receiver storage is a local fact but must be selected before
@@ -1573,6 +1606,7 @@ loom_symbol_ref_t Functions::retain(FunctionInstance instance,
   auto retained = FunctionInstance{body, instance.receiver_abi};
   auto callee = create_symbol(retained, body->declaration());
   pending_.push_back(retained);
+  pending_origins_.push_back(current_origin_);
   return callee;
 }
 

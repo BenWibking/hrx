@@ -41,7 +41,10 @@ typedef enum loom_cxx_import_flag_bits_e {
   // Report frontend errors as deferred warnings, and skip mutable globals, in
   // host-only code that shares the translation unit with device code.
   LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS = 1u << 2,
-  LOOM_CXX_IMPORT_FLAG_ALL = (1u << 3) - 1,
+  // Drop a launched kernel whose lowering is rejected and retranslate the unit
+  // without it, instead of rejecting the whole translation unit.
+  LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS = 1u << 3,
+  LOOM_CXX_IMPORT_FLAG_ALL = (1u << 4) - 1,
 } loom_cxx_import_flag_bits_t;
 typedef uint32_t loom_cxx_import_flags_t;
 
@@ -129,6 +132,11 @@ typedef struct loom_cxx_import_options_t {
   // Optional immutable frontend preamble borrowed for the import duration.
   // Source or frontend-configuration mismatches use ordinary cold parsing.
   const loom_cxx_preamble_t* preamble;
+  // kernel_type_symbol export names omitted from launched-root selection
+  // (roots = {"@launched"}), such as kernels a later compile rejected.
+  const iree_string_view_t* excluded_kernels;
+  // Number of excluded kernel export names.
+  iree_host_size_t excluded_kernel_count;
   // Optional path receiving the per-kernel leaf manifest for host packing of
   // record kernel arguments. Empty writes no manifest.
   iree_string_view_t kernel_manifest_path;

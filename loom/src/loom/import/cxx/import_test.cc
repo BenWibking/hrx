@@ -778,11 +778,56 @@ TEST_F(LaunchedImportTest, ManifestRowsFollowKernelArgumentFlattening) {
   EXPECT_EQ(manifest.find("loc "), std::string::npos) << manifest;
 }
 
+TEST_F(LaunchedImportTest, ExcludedKernelsAreOmittedFromLaunchedRoots) {
+  const iree_string_view_t excluded = IREE_SV("run__5Other");
+  options_.excluded_kernels = &excluded;
+  options_.excluded_kernel_count = 1;
+  IREE_ASSERT_OK(Import(iree_make_cstring_view(kLaunchedSource)));
+  ASSERT_NE(module_, nullptr);
+  const std::string printed = Print();
+  EXPECT_NE(printed.find("@run__4Body"), std::string::npos);
+  EXPECT_EQ(printed.find("run__5Other"), std::string::npos);
+  const std::string manifest = Manifest();
+  EXPECT_NE(manifest.find("kernel run__4Body 1\n"), std::string::npos);
+  EXPECT_EQ(manifest.find("run__5Other"), std::string::npos) << manifest;
+}
+
 TEST_F(LaunchedImportTest, ManifestIsOptional) {
   options_.kernel_manifest_path = iree_string_view_empty();
   IREE_ASSERT_OK(Import(iree_make_cstring_view(kLaunchedSource)));
   ASSERT_NE(module_, nullptr);
   EXPECT_FALSE(std::filesystem::exists(manifest_path_));
+}
+
+TEST_F(LaunchedImportTest, DropFailedKernelsKeepsTheOtherKernels) {
+  // nullptr is not importable in device code; only run<Bad> uses it.
+  std::string source = std::string(kLaunchedSource) + R"cxx(
+struct Bad {
+  float* y;
+  [[loom::inline]] void operator()() const { if (y != nullptr) y[0] = 2.0f; }
+};
+void host_bad(float* y) {
+  loom::kernel::launch<run<Bad>>(loom::kernel::workload(1u), Bad{y});
+}
+)cxx";
+  const auto view = iree_make_string_view(source.data(), source.size());
+  IREE_ASSERT_OK(Import(view));
+  EXPECT_EQ(module_, nullptr);
+  EXPECT_GT(error_count_, 0);
+
+  error_count_ = 0;
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
+  IREE_ASSERT_OK(Import(view));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+  const std::string printed = Print();
+  EXPECT_NE(printed.find("@run__4Body"), std::string::npos);
+  EXPECT_NE(printed.find("@run__5Other"), std::string::npos);
+  EXPECT_EQ(printed.find("run__3Bad"), std::string::npos);
+  // The manifest describes only the kernels of the successful attempt.
+  const std::string manifest = Manifest();
+  EXPECT_NE(manifest.find("kernel run__4Body 1\n"), std::string::npos);
+  EXPECT_EQ(manifest.find("run__3Bad"), std::string::npos) << manifest;
 }
 
 TEST_F(LaunchedImportTest, TolerateHostErrorsDefersErrorsInHostOnlyCode) {
@@ -820,6 +865,13 @@ TEST_F(ImportTest, HostedFlagSelectsTheHostedProfile) {
 
 TEST_F(ImportTest, RejectsUnknownImportFlags) {
   options_.flags = LOOM_CXX_IMPORT_FLAG_ALL + 1;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        Import(IREE_SV("int entry() { return 0; }\n")));
+  EXPECT_EQ(module_, nullptr);
+}
+
+TEST_F(ImportTest, RejectsExcludedKernelCountWithoutStorage) {
+  options_.excluded_kernel_count = 1;
   IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                         Import(IREE_SV("int entry() { return 0; }\n")));
   EXPECT_EQ(module_, nullptr);

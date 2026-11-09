@@ -131,13 +131,14 @@ void Diagnostics::finish() {
 
 void Diagnostics::reject(cxx::TranslationUnit& unit, cxx::AST* ast,
                          std::string_view message) {
+  const auto severity =
+      soft_reject_ ? LOOM_DIAGNOSTIC_WARNING : LOOM_DIAGNOSTIC_ERROR;
   if (cxx::ast_cast<cxx::TranslationUnitAST>(ast)) {
     cxx::Token token{};
     token.setFileId(unit.preprocessor()->mainSourceFileId());
-    emit(token, LOOM_DIAGNOSTIC_ERROR, LOOM_ERR_LOWERING_059, message);
+    emit(token, severity, LOOM_ERR_LOWERING_059, message);
   } else {
-    emit(ast->firstSourceLocation(), LOOM_DIAGNOSTIC_ERROR,
-         LOOM_ERR_LOWERING_059, message);
+    emit(ast->firstSourceLocation(), severity, LOOM_ERR_LOWERING_059, message);
   }
   finish();
   throw SourceRejected();
@@ -145,7 +146,8 @@ void Diagnostics::reject(cxx::TranslationUnit& unit, cxx::AST* ast,
 
 void Diagnostics::reject(cxx::SourceLocation location,
                          std::string_view message) {
-  emit(location, LOOM_DIAGNOSTIC_ERROR, LOOM_ERR_LOWERING_059, message);
+  emit(location, soft_reject_ ? LOOM_DIAGNOSTIC_WARNING : LOOM_DIAGNOSTIC_ERROR,
+       LOOM_ERR_LOWERING_059, message);
   finish();
   throw SourceRejected();
 }

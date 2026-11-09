@@ -41,6 +41,10 @@ IREE_STATIC_ASSERT_ENUM_EQ(
     LOOMC_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS,
     LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS,
     "public tolerate-host-errors flag matches the native importer");
+IREE_STATIC_ASSERT_ENUM_EQ(
+    LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS,
+    LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS,
+    "public drop-failed-kernels flag matches the native importer");
 
 enum {
   LOOMC_CXX_SOURCE_PATH_BLOCK_SIZE = 8 * 1024,
@@ -233,7 +237,8 @@ static loomc_status_t loomc_cxx_resolve_options(
   if ((!options->include_paths && options->include_path_count) ||
       (!options->system_include_paths && options->system_include_path_count) ||
       (!options->defines && options->define_count) ||
-      (!options->roots && options->root_count)) {
+      (!options->roots && options->root_count) ||
+      (!options->excluded_kernels && options->excluded_kernel_count)) {
     return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
                              "nonempty C/C++ option arrays require storage");
   }
@@ -249,12 +254,13 @@ static loomc_status_t loomc_cxx_resolve_options(
   out_options->system_include_path_count = options->system_include_path_count;
   out_options->root_count = options->root_count;
   out_options->define_count = options->define_count;
+  out_options->excluded_kernel_count = options->excluded_kernel_count;
   out_options->kernel_manifest_path =
       iree_string_view_from_loomc(options->kernel_manifest_path);
 
   iree_host_size_t allocation_size = 0;
   iree_host_size_t includes_offset = 0, system_offset = 0, roots_offset = 0;
-  iree_host_size_t defines_offset = 0;
+  iree_host_size_t defines_offset = 0, excluded_offset = 0;
   LOOMC_RETURN_IF_ERROR(loomc_status_from_iree(IREE_STRUCT_LAYOUT(
       0, &allocation_size,
       IREE_STRUCT_FIELD(options->include_path_count, iree_string_view_t,
@@ -263,7 +269,9 @@ static loomc_status_t loomc_cxx_resolve_options(
                         &system_offset),
       IREE_STRUCT_FIELD(options->root_count, iree_string_view_t, &roots_offset),
       IREE_STRUCT_FIELD(options->define_count, loom_cxx_define_t,
-                        &defines_offset))));
+                        &defines_offset),
+      IREE_STRUCT_FIELD(options->excluded_kernel_count, iree_string_view_t,
+                        &excluded_offset))));
   if (!allocation_size) {
     return loomc_ok_status();
   }
@@ -275,10 +283,13 @@ static loomc_status_t loomc_cxx_resolve_options(
   iree_string_view_t* system = (iree_string_view_t*)(storage + system_offset);
   iree_string_view_t* roots = (iree_string_view_t*)(storage + roots_offset);
   loom_cxx_define_t* defines = (loom_cxx_define_t*)(storage + defines_offset);
+  iree_string_view_t* excluded =
+      (iree_string_view_t*)(storage + excluded_offset);
   out_options->include_paths = includes;
   out_options->system_include_paths = system;
   out_options->roots = roots;
   out_options->defines = defines;
+  out_options->excluded_kernels = excluded;
   LOOMC_RETURN_IF_ERROR(loomc_cxx_copy_strings(
       options->include_path_count, options->include_paths, includes));
   LOOMC_RETURN_IF_ERROR(
@@ -286,6 +297,8 @@ static loomc_status_t loomc_cxx_resolve_options(
                              options->system_include_paths, system));
   LOOMC_RETURN_IF_ERROR(
       loomc_cxx_copy_strings(options->root_count, options->roots, roots));
+  LOOMC_RETURN_IF_ERROR(loomc_cxx_copy_strings(
+      options->excluded_kernel_count, options->excluded_kernels, excluded));
   loomc_status_t status = loomc_ok_status();
   for (loomc_host_size_t i = 0;
        i < options->define_count && loomc_status_is_ok(status); ++i) {

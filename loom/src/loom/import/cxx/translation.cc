@@ -7,6 +7,8 @@
 #include "loom/import/cxx/translation.h"
 
 #include <cxx/ast.h>
+#include <cstdio>
+#include <cstdlib>
 #include <cxx/ast_interpreter.h>
 #include <cxx/control.h>
 #include <cxx/initialization.h>
@@ -189,13 +191,39 @@ class Translator final : private Initialization::Evaluation {
     }
   }
 
-  void translate() {
+  void translate(const std::unordered_set<cxx::FunctionSymbol*>* excluded) {
+    const bool drop = excluded != nullptr;
     functions_.set_import_options(&options_);
+    functions_.set_excluded_kernels(excluded);
     functions_.select({options_.roots, options_.root_count});
+    diagnostics_.set_soft_reject(drop);
     functions_.analyze(types_);
     for (size_t index = 0; index < functions_.pending().size(); ++index) {
-      function(functions_.pending()[index]);
+      auto* origin = functions_.pending_origin(index);
+      functions_.set_current_origin(origin);
+      try {
+        function(functions_.pending()[index]);
+      } catch (const SourceRejected&) {
+        if (drop && origin) {
+          throw KernelRejected{origin};
+        }
+        throw;
+      }
     }
+    functions_.set_current_origin(nullptr);
+    if (drop) {
+      for (size_t index = 0; index < functions_.pending().size(); ++index) {
+        try {
+          reject_deferred_errors_in(index);
+        } catch (const SourceRejected&) {
+          if (auto* origin = functions_.pending_origin(index)) {
+            throw KernelRejected{origin};
+          }
+          throw;
+        }
+      }
+    }
+    diagnostics_.set_soft_reject(false);
     reject_deferred_errors_in_lowered_code();
     functions_.build_declarations(types_, locations_, &builder_);
     functions_.build_benchmarks(locations_, &builder_);
@@ -8644,9 +8672,9 @@ class Translator final : private Initialization::Evaluation {
 }  // namespace
 
 void translate(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
-               loom_module_t* module,
-               const loom_cxx_import_options_t& options) {
-  Translator(unit, diagnostics, module, options).translate();
+               loom_module_t* module, const loom_cxx_import_options_t& options,
+               const std::unordered_set<cxx::FunctionSymbol*>* excluded) {
+  Translator(unit, diagnostics, module, options).translate(excluded);
 }
 
 }  // namespace loom::cxx_import

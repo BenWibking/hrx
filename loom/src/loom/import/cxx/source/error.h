@@ -17,6 +17,13 @@ namespace loom::cxx_import {
 // Unwinds AST translation after its source diagnostic has been delivered.
 struct SourceRejected {};
 
+// Unwinds translation of one launched kernel whose lowering was rejected while
+// LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS is set; the importer retries
+// without it.
+struct KernelRejected {
+  void* kernel;  // canonical cxx::FunctionSymbol*
+};
+
 // Owns a fallible Loom builder, diagnostic sink, or source provider result
 // while C++ unwinds. Exception copies share the original status, including its
 // payloads, until the C entry point transfers it back to the caller.

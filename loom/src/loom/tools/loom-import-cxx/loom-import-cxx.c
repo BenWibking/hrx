@@ -44,6 +44,12 @@ IREE_FLAG(bool, hosted, false,
           "declaring workgroup storage are required-inline.");
 IREE_FLAG_NAMED(bool, tolerate_host_errors, "tolerate-host-errors", false,
                 "Report frontend errors in host-only code as warnings.");
+IREE_FLAG_NAMED(bool, drop_failed_kernels, "drop-failed-kernels", false,
+                "Drop launched kernels that cannot be imported instead of "
+                "rejecting the translation unit.");
+IREE_FLAG_LIST_NAMED(string, exclude_kernel, "exclude-kernel",
+                     "kernel_type_symbol export name omitted from "
+                     "--root=@launched selection; repeat for several.");
 IREE_FLAG_NAMED(string, kernel_manifest, "kernel-manifest", "",
                 "Path receiving the per-kernel leaf manifest for host packing "
                 "of record kernel arguments.");
@@ -118,6 +124,9 @@ static iree_status_t loom_cxx_cli_options_from_flags(
   if (FLAG_tolerate_host_errors) {
     out_options->flags |= LOOMC_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS;
   }
+  if (FLAG_drop_failed_kernels) {
+    out_options->flags |= LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
+  }
   out_options->kernel_manifest_path =
       loomc_make_cstring_view(FLAG_kernel_manifest);
 
@@ -125,8 +134,9 @@ static iree_status_t loom_cxx_cli_options_from_flags(
   const iree_flag_string_list_t system_includes =
       FLAG_system_include_path_list();
   const iree_flag_string_list_t roots = FLAG_root_list();
+  const iree_flag_string_list_t excluded = FLAG_exclude_kernel_list();
   const iree_host_size_t string_count =
-      includes.count + system_includes.count + roots.count;
+      includes.count + system_includes.count + roots.count + excluded.count;
   if (string_count != 0) {
     IREE_RETURN_IF_ERROR(iree_allocator_malloc_array(
         allocator, string_count, sizeof(**out_strings), (void**)out_strings));
@@ -140,6 +150,11 @@ static iree_status_t loom_cxx_cli_options_from_flags(
     out_options->system_include_path_count = system_includes.count;
     out_options->roots = *out_strings + includes.count + system_includes.count;
     out_options->root_count = roots.count;
+    loomc_string_view_t* excluded_strings =
+        *out_strings + includes.count + system_includes.count + roots.count;
+    loom_cxx_cli_copy_strings(excluded, excluded_strings);
+    out_options->excluded_kernels = excluded_strings;
+    out_options->excluded_kernel_count = excluded.count;
   }
 
   const iree_flag_string_list_t definitions = FLAG_define_list();

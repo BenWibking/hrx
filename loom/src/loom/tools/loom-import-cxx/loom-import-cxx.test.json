@@ -82,6 +82,44 @@
       "stderr": {
         "contains": ["INVALID_ARGUMENT", "unknown source data model 'wide'"]
       }
+    },
+    {
+      "name": "imports launched kernels in hosted single-source mode",
+      "run": {
+        "tool": "loom-import-cxx",
+        "args": [
+          "--root=@launched",
+          "--hosted",
+          "--tolerate-host-errors",
+          "--drop-failed-kernels",
+          "--kernel-manifest={tmp}/kernels.manifest",
+          "--exclude-kernel=run__5Other",
+          "-"
+        ]
+      },
+      "stdin": {
+        "text": "#include <loomcxx/kernel.h>\n#ifndef __loom_hosted__\n#error hosted profile expected\n#endif\nstatic loom::kernel::configuration launch_config(unsigned groups) {\n  return {{groups, 1, 1}, {64, 1, 1}};\n}\ntemplate <class T>\n[[loom::kernel(launch_config), loom::kernel_type_symbol]]\nvoid run(T tag) { tag(); }\nstruct Body {\n  float a;\n  float* y;\n  [[loom::inline]] void operator()() const { y[0] = a; }\n};\nstruct Other {\n  float* y;\n  [[loom::inline]] void operator()() const { y[0] = 1.0f; }\n};\nvoid host(float* y) {\n  loom::kernel::launch<run<Body>>(loom::kernel::workload(1u), Body{2.0f, y});\n  loom::kernel::launch<run<Other>>(loom::kernel::workload(1u), Other{y});\n  undeclared_host_function();\n}\n"
+      },
+      "stdout": {
+        "contains": [
+          "@run__4Body"
+        ],
+        "not_contains": [
+          "run__5Other",
+          "@host"
+        ]
+      },
+      "files": [
+        {
+          "path": "{tmp}/kernels.manifest",
+          "contains": [
+            "kernel run__4Body 1",
+            "size 16 8",
+            "arg 0 c 0 4",
+            "arg 0 b 8 8"
+          ]
+        }
+      ]
     }
   ]
 }

@@ -7,6 +7,8 @@
 #ifndef LOOM_IMPORT_CXX_TRANSLATION_H_
 #define LOOM_IMPORT_CXX_TRANSLATION_H_
 
+#include <unordered_set>
+
 #include "loom/import/cxx/source/source.h"
 
 namespace loom::cxx_import {
@@ -15,7 +17,8 @@ namespace loom::cxx_import {
 // Throws SourceRejected after a source diagnostic, or StatusError on allocation
 // or sink failure. The import entry point owns both exception boundaries.
 void translate(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
-               loom_module_t* module, const loom_cxx_import_options_t& options);
+               loom_module_t* module, const loom_cxx_import_options_t& options,
+               const std::unordered_set<cxx::FunctionSymbol*>* excluded = nullptr);
 
 }  // namespace loom::cxx_import
 
