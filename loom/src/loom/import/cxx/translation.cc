@@ -604,6 +604,36 @@ class Translator final : private Initialization::Evaluation {
     return value_arena_.capture(partition, components);
   }
 
+  // Reconstructs a record kernel parameter from its launch binding ABI. Each
+  // pointer member's buffer argument receives a zero byte origin.
+  Value kernel_record_value(loom_region_t* region, size_t& index,
+                            const cxx::Type* type, const Partition& partition,
+                            cxx::AST* owner) {
+    auto* block = loom_region_entry_block(region);
+    auto arguments =
+        std::span<const loom_value_id_t>(block->arg_ids, block->arg_count);
+    std::vector<loom_value_id_t> components;
+    components.reserve(partition.component_count);
+    loom_value_id_t root = LOOM_VALUE_ID_INVALID;
+    for (auto component : types_.kernel_components(type, owner)) {
+      switch (component) {
+        case KernelComponent::Value:
+          components.push_back(arguments[index++]);
+          break;
+        case KernelComponent::PointerRoot:
+          root = arguments[index++];
+          break;
+        case KernelComponent::PointerOffset: {
+          auto pointer = storage_.root(root, owner);
+          components.push_back(pointer.root);
+          components.push_back(pointer.byte_offset);
+          break;
+        }
+      }
+    }
+    return value_arena_.capture(partition, components);
+  }
+
   Value staged_region_value(loom_region_t* region,
                             const StagedSignatureProjection& signature,
                             const StagedParameterProjection& parameter,
@@ -1566,8 +1596,11 @@ class Translator final : private Initialization::Evaluation {
       }
       bool kernel_pointer = defined.kind == FunctionKind::Kernel &&
                             partition.kind == ValueKind::Pointer;
+      bool kernel_record = defined.kind == FunctionKind::Kernel &&
+                           partition.kind == ValueKind::Record;
       // Only pointers change representation at kernel entry: the ABI supplies
       // one buffer, and source pointer transport adds its zero byte origin.
+      // Record parameters apply the same rule to each pointer member.
       const auto& incoming_partition =
           defined.template_family
               ? types_.partition(cxx::type_cast<cxx::FunctionType>(
@@ -1581,6 +1614,9 @@ class Translator final : private Initialization::Evaluation {
                     region, *defined.staged_signature,
                     defined.staged_signature->parameters[parameter_index],
                     partition)
+          : kernel_record
+              ? kernel_record_value(region, argument_index, value_type,
+                                    partition, defined.source)
               : region_value(region, argument_index, incoming_partition);
       if (defined.template_family) {
         value = bind_template_input(value, value_type, types_, value_arena_,
@@ -4397,6 +4433,11 @@ class Translator final : private Initialization::Evaluation {
     size_t ordinal = 0;
     for (; argument; argument = argument->next, ++ordinal) {
       auto value = expression(argument->value);
+      if (value.is_record()) {
+        append_kernel_record_argument(kernel_parameters[ordinal], value,
+                                      argument->value, arguments);
+        continue;
+      }
       auto expected = types_.get(kernel_parameters[ordinal], argument->value);
       if (loom_type_kind(expected) == LOOM_TYPE_BUFFER) {
         if (!value.is_buffer()) {
@@ -4424,6 +4465,29 @@ class Translator final : private Initialization::Evaluation {
         &builder_, functions_.declare(launch.kernel, call), workloads.data(),
         workloads.size(), arguments.data(), arguments.size(),
         locations_.get(call), &op));
+  }
+
+  // Flattens a record launch argument into the kernel's record parameter ABI.
+  // Pointer members must have zero byte origin and pass only their root.
+  void append_kernel_record_argument(const cxx::Type* parameter_type,
+                                     Value value, cxx::AST* owner,
+                                     std::vector<loom_value_id_t>& arguments) {
+    auto components = value.components();
+    auto roles = types_.kernel_components(parameter_type, owner);
+    IREE_ASSERT(roles.size() == components.size());
+    for (size_t index = 0; index < roles.size(); ++index) {
+      switch (roles[index]) {
+        case KernelComponent::Value:
+          arguments.push_back(components[index]);
+          break;
+        case KernelComponent::PointerRoot:
+          arguments.push_back(storage_.zero_origin_root(
+              {components[index], components[index + 1]}, owner));
+          break;
+        case KernelComponent::PointerOffset:
+          break;
+      }
+    }
   }
 
   void append_staged_arguments(cxx::List<cxx::ExpressionAST*>* source,

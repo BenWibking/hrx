@@ -377,6 +377,18 @@ struct TensorPartition final : Partition {
   uint64_t element_bytes;
 };
 
+// Kernel entry transport of one flattened source component. Kernel launch
+// arguments carry storage as untyped zero-origin buffers, so a pointer's byte
+// offset is supplied by the entry instead of the launch.
+enum class KernelComponent : uint8_t {
+  // Transported unchanged as one kernel argument.
+  Value,
+  // Pointer storage root transported as one kernel buffer argument.
+  PointerRoot,
+  // Pointer byte offset reconstructed as zero at kernel entry.
+  PointerOffset,
+};
+
 // Projects resolved C++ types using the translation unit's explicit data model.
 // Source signedness remains available even when both types share one IR
 // carrier. Enums use their resolved underlying integer representation; nominal
@@ -496,9 +508,22 @@ class Types {
   // Appends today's admitted static High signature for an ordinary function
   // or structured result. A dependent source value requires destination SSA
   // identities before type binding and cannot use this static projection.
-  // Kernel parameters instead use get(), retaining the launch binding ABI.
+  // Kernel parameters instead use append_kernel_parameter().
   void append(const cxx::Type* input, cxx::AST* owner,
               std::vector<loom_type_t>& output);
+  // Appends the launch binding ABI of one kernel parameter. Leaf parameters
+  // keep their single High type. Records (including lambda closures) are
+  // flattened in member declaration order; each pointer member contributes
+  // one buffer and no byte offset. Record members must be scalars, native
+  // vectors, typed buffers, object pointers, or nested records and fixed
+  // arrays of those; references and dependent shaped values diagnose.
+  void append_kernel_parameter(const cxx::Type* input, cxx::AST* owner,
+                               std::vector<loom_type_t>& output);
+  // Returns the kernel transport of every flattened component of a record
+  // kernel parameter, in partition order. Diagnoses as
+  // append_kernel_parameter() does.
+  std::vector<KernelComponent> kernel_components(const cxx::Type* input,
+                                                 cxx::AST* owner);
   // Appends a High signature bound to this destination's flattened component
   // IDs. Static leaves ignore their IDs; dependent shaped values and handles
   // reference their own dynamic extents and encoding. |identities| is either
