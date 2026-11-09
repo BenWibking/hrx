@@ -131,6 +131,17 @@ std::optional<KernelLaunchIntrinsic> KernelLaunchIntrinsic::resolve(
     fail("kernel.launch arguments must match the kernel signature");
   }
   for (size_t index = 0; index < kernel_parameters.size(); ++index) {
+    auto* expected_record = types.unqualified(kernel_parameters[index]);
+    if (types.record(expected_record, owner)) {
+      if (types.unqualified_value(parameters[index + parameter_offset]) !=
+          expected_record) {
+        fail(
+            "kernel.launch record arguments must have the kernel parameter "
+            "type");
+      }
+      (void)types.kernel_components(expected_record, owner);
+      continue;
+    }
     const auto expected = types.get(kernel_parameters[index], owner);
     const auto& actual =
         types.partition(parameters[index + parameter_offset], owner);
