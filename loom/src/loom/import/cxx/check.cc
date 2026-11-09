@@ -1013,6 +1013,21 @@ class CheckBody {
     std::vector<loom_value_id_t> arguments;
     for (; argument; argument = argument->next) {
       auto value = expression(argument->value);
+      if (value.is_record()) {
+        // Record (including lambda closure) arguments flatten into the
+        // kernel's record ABI. Check values carry no source pointers, so
+        // every component transports unchanged.
+        for (auto component : types_.kernel_components(
+                 types_.unqualified_value(argument->value->type),
+                 argument->value)) {
+          if (component != KernelComponent::Value) {
+            fail(argument->value,
+                 "check kernel record arguments cannot contain pointers");
+          }
+        }
+        value.append_to(arguments);
+        continue;
+      }
       if (!value.is_tensor() && value.partition().kind != ValueKind::SSA) {
         fail(argument->value,
              "check kernel arguments require tensors or scalar values");
