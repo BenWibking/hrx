@@ -458,6 +458,13 @@ class Types {
   // effects. Ordinary overloads and destructors are never replaced by
   // component transport.
   bool is_trivial_value_operation(cxx::FunctionSymbol* function);
+  // Empty-bodied user constructor forwarding parameter i to field i for every
+  // field of a pointer-holding record; constructed as an aggregate value.
+  bool member_forwarding_constructor(const RecordPartition& record,
+                                     cxx::FunctionSymbol* constructor);
+  bool member_forwarding_constructor(const cxx::Type* type,
+                                     cxx::FunctionSymbol* constructor,
+                                     cxx::AST* owner);
   // Returns a fixed array's value schema, or null for a non-array type.
   const ArrayPartition* array(const cxx::Type* input, cxx::AST* owner);
   // Direct lookup of a member slice retained by its owning record's admission.
@@ -636,6 +643,8 @@ class Types {
   // Stable source partitions, independent of every particular SSA binding.
   std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<RecordPartition>>
       records_;
+  // Member-forwarding constructor classification, retained at first demand.
+  std::unordered_map<cxx::FunctionSymbol*, bool> member_forwarding_constructors_;
   // Admitted typed buffer handles keyed by concrete source specialization.
   std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<BufferPartition>>
       buffers_;

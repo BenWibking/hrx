@@ -8,6 +8,8 @@
 
 #include <cxx/ast.h>
 #include <cxx/ast_interpreter.h>
+#include <cxx/ast_rewriter.h>
+#include <cxx/function_body.h>
 #include <cxx/attributes.h>
 #include <cxx/control.h>
 #include <cxx/memory_layout.h>
@@ -19,6 +21,7 @@
 #include <algorithm>
 #include <limits>
 #include <optional>
+#include <vector>
 
 #include "loom/import/cxx/source/error.h"
 #include "loom/import/cxx/source/expressions.h"
@@ -1346,6 +1349,118 @@ bool Types::implicit_object_may_mutate(cxx::FunctionSymbol* function,
   return admitted && admitted->has_mutable_subobject;
 }
 
+namespace {
+cxx::ExpressionAST* strip_value_wrappers(cxx::ExpressionAST* expression) {
+  for (;;) {
+    if (auto* nested = cxx::ast_cast<cxx::NestedExpressionAST>(expression)) {
+      expression = nested->expression;
+    } else if (auto* cast =
+                   cxx::ast_cast<cxx::ImplicitCastExpressionAST>(expression)) {
+      expression = cast->expression;
+    } else {
+      return expression;
+    }
+  }
+}
+}  // namespace
+
+// A user constructor whose body is empty and whose mem-initializers forward
+// parameter i to field i, for every field in declaration order, initializes
+// exactly like aggregate initialization from its arguments. Records holding
+// pointers cannot be constructed in object storage, so they use that form.
+bool Types::member_forwarding_constructor(const RecordPartition& record,
+                                          cxx::FunctionSymbol* constructor) {
+  if (!constructor || !unit_.typeTraits().is_user_provided(constructor) ||
+      record.source->isPolymorphic()) {
+    return false;
+  }
+  auto [cached, inserted] =
+      member_forwarding_constructors_.try_emplace(constructor->canonical(), false);
+  if (!inserted) {
+    return cached->second;
+  }
+  auto traits = unit_.typeTraits();
+  bool has_pointer = false;
+  std::vector<cxx::FieldSymbol*> fields;
+  for (const auto& member : record.members) {
+    auto* field = cxx::symbol_cast<cxx::FieldSymbol>(member.source);
+    if (!field) {
+      // Empty bases carry no components; any other base needs its own
+      // initializer, which the aggregate form does not express.
+      if (member.partition->component_count) {
+        return false;
+      }
+      continue;
+    }
+    fields.push_back(field);
+    has_pointer = has_pointer || traits.is_pointer(field->type());
+  }
+  if (!has_pointer) {
+    return false;
+  }
+  cxx::ASTRewriter::requireFunctionDefinition(&unit_, constructor);
+  auto* definition = constructor->resolvedDefinition();
+  if (definition && definition->hasPendingBody()) {
+    cxx::ASTRewriter::completePendingBodyFor(&unit_, definition);
+  }
+  auto* declaration = definition ? definition->declaration() : nullptr;
+  auto* body = declaration ? cxx::ast_cast<cxx::CompoundStatementFunctionBodyAST>(
+                                 declaration->functionBody)
+                           : nullptr;
+  if (!body || !body->statement || body->statement->statementList) {
+    return false;
+  }
+  auto parameters = definition->parameters();
+  if (parameters.size() != fields.size()) {
+    return false;
+  }
+  size_t index = 0;
+  for (auto* initializer :
+       cxx::ListView{cxx::ctor_initializers(declaration->functionBody)}) {
+    auto* paren = cxx::ast_cast<cxx::ParenMemInitializerAST>(initializer);
+    if (!paren || index >= fields.size() ||
+        paren->symbol != fields[index] || !paren->expressionList ||
+        paren->expressionList->next) {
+      return false;
+    }
+    auto* id = cxx::ast_cast<cxx::IdExpressionAST>(
+        strip_value_wrappers(paren->expressionList->value));
+    auto* parameter = parameters[index];
+    if (!id || id->symbol != parameter) {
+      return false;
+    }
+    const auto* parameter_type = parameter->type();
+    if (traits.is_reference(parameter_type)) {
+      if (traits.is_rvalue_reference(parameter_type) ||
+          !traits.is_const(traits.remove_reference(parameter_type))) {
+        return false;
+      }
+      parameter_type = traits.remove_reference(parameter_type);
+    }
+    if (traits.remove_cv(parameter_type) != traits.remove_cv(fields[index]->type()) &&
+        !(traits.is_pointer(parameter_type) &&
+          traits.is_pointer(fields[index]->type()))) {
+      return false;
+    }
+    ++index;
+  }
+  if (index != fields.size()) {
+    return false;
+  }
+  member_forwarding_constructors_[constructor->canonical()] = true;
+  return true;
+}
+
+bool Types::member_forwarding_constructor(const cxx::Type* type,
+                                          cxx::FunctionSymbol* constructor,
+                                          cxx::AST* owner) {
+  if (!constructor || !constructor->isConstructor()) {
+    return false;
+  }
+  auto* admitted = record(unqualified(type), owner);
+  return admitted && member_forwarding_constructor(*admitted, constructor);
+}
+
 bool Types::record_constructor_requires_call(const cxx::Type* type,
                                              cxx::FunctionSymbol* constructor,
                                              cxx::AST* owner) {
@@ -1357,6 +1472,10 @@ bool Types::record_constructor_requires_call(const cxx::Type* type,
     type = unqualified(array->elementType());
   }
   auto* admitted = record(type, owner);
+  if (admitted && member_forwarding_constructor(*admitted, constructor)) {
+    // Lowered exactly like aggregate initialization from the arguments.
+    return false;
+  }
   return admitted && (unit_.typeTraits().is_user_provided(constructor) ||
                       (!same_function(constructor,
                                       admitted->source->defaultConstructor()) &&
