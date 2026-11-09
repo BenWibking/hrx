@@ -177,6 +177,8 @@ typedef struct loomc_cxx_import_options_t {
   /// Optional immutable preamble borrowed until import returns. An exact source
   /// prefix or frontend-configuration mismatch uses ordinary cold parsing.
   const loomc_cxx_preamble_t* preamble;
+  /// Optional path receiving the per-kernel leaf manifest. Empty writes none.
+  loomc_string_view_t kernel_manifest_path;
 } loomc_cxx_import_options_t;
 
 /// Creates an immutable semantic preamble from leading include directives.

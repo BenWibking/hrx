@@ -122,6 +122,9 @@ typedef struct loom_cxx_import_options_t {
   // Optional immutable frontend preamble borrowed for the import duration.
   // Source or frontend-configuration mismatches use ordinary cold parsing.
   const loom_cxx_preamble_t* preamble;
+  // Optional path receiving the per-kernel leaf manifest for host packing of
+  // record kernel arguments. Empty writes no manifest.
+  iree_string_view_t kernel_manifest_path;
 } loom_cxx_import_options_t;
 
 // Parses the canonical precise or fast floating-point model spelling.

@@ -136,6 +136,7 @@ class Translator final : private Initialization::Evaluation {
   }
 
   void translate() {
+    functions_.set_import_options(&options_);
     functions_.select({options_.roots, options_.root_count});
     functions_.analyze(types_);
     for (size_t index = 0; index < functions_.pending().size(); ++index) {

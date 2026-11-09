@@ -6,7 +6,9 @@
 
 #include "loom/import/cxx/import.h"
 
+#include <cstdio>
 #include <memory>
+#include <string>
 #include <new>
 #include <stdexcept>
 #include <string_view>
@@ -66,6 +68,12 @@ iree_status_t loom_cxx_import(iree_string_view_t source,
   try {
     NumericConversionConstantEvaluator constant_evaluator;
     Source parsed(source, filename, *options, &constant_evaluator);
+    const std::string manifest_path = string(options->kernel_manifest_path);
+    if (!manifest_path.empty()) {
+      if (FILE* file = std::fopen(manifest_path.c_str(), "w")) {
+        std::fclose(file);
+      }
+    }
     loom_module_t* raw_module = nullptr;
     check(loom_module_allocate(context, filename, block_pool, nullptr,
                                host_allocator, &raw_module));

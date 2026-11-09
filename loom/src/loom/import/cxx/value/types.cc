@@ -1953,30 +1953,43 @@ void Types::append_kernel_parameter(const cxx::Type* input, cxx::AST* owner,
 
 std::vector<KernelComponent> Types::kernel_components(const cxx::Type* input,
                                                       cxx::AST* owner) {
+  std::vector<KernelComponent> output;
+  for (const auto& leaf : kernel_leaves(input, owner)) {
+    output.push_back(leaf.component);
+  }
+  return output;
+}
+
+std::vector<KernelLeaf> Types::kernel_leaves(const cxx::Type* input,
+                                             cxx::AST* owner) {
   if (requires_binding(input, owner)) {
     diagnostics_.reject(unit_, owner,
                         "kernel record parameters cannot contain dependent "
                         "shaped values");
   }
-  std::vector<KernelComponent> output;
-  auto append_partition = [&](auto& self, const Partition& admitted) -> void {
+  auto* layout = unit_.control()->memoryLayout();
+  std::vector<KernelLeaf> output;
+  auto append_partition = [&](auto& self, const Partition& admitted,
+                              const cxx::Type* type, uint64_t offset) -> void {
     const size_t start = output.size();
     switch (admitted.kind) {
       case ValueKind::Pointer:
-        output.push_back(KernelComponent::PointerRoot);
-        output.push_back(KernelComponent::PointerOffset);
+        output.push_back({KernelComponent::PointerRoot, type, offset});
+        output.push_back({KernelComponent::PointerOffset, type, offset});
         break;
       case ValueKind::Record: {
         const auto& record = static_cast<const RecordPartition&>(admitted);
         for (const auto& member : record.members) {
-          if (unit_.typeTraits().is_reference(source_object_type(member.source))) {
+          if (unit_.typeTraits().is_reference(member.type())) {
             diagnostics_.reject(
                 unit_, owner,
                 "kernel record parameters cannot contain reference members "
                 "or by-reference lambda captures");
           }
           IREE_ASSERT(member.component_offset == output.size() - start);
-          self(self, *member.partition);
+          // Direct bases and fields alike carry their host subobject offset.
+          self(self, *member.partition, member.type(),
+               offset + member.byte_offset());
         }
         break;
       }
@@ -1986,8 +1999,12 @@ std::vector<KernelComponent> Types::kernel_components(const cxx::Type* input,
             array.element->component_count
                 ? admitted.component_count / array.element->component_count
                 : 0;
+        const cxx::Type* element_type = array.source->elementType();
+        const uint64_t element_bytes =
+            layout->sizeOf(element_type).value_or(0);
         for (size_t index = 0; index < element_count; ++index) {
-          self(self, *array.element);
+          self(self, *array.element, element_type,
+               offset + index * element_bytes);
         }
         break;
       }
@@ -1995,7 +2012,7 @@ std::vector<KernelComponent> Types::kernel_components(const cxx::Type* input,
       case ValueKind::Vector:
       case ValueKind::Buffer:
         output.insert(output.end(), admitted.component_count,
-                      KernelComponent::Value);
+                      KernelLeaf{KernelComponent::Value, type, offset});
         break;
       default:
         diagnostics_.reject(
@@ -2005,7 +2022,7 @@ std::vector<KernelComponent> Types::kernel_components(const cxx::Type* input,
     }
     IREE_ASSERT(output.size() - start == admitted.component_count);
   };
-  append_partition(append_partition, partition(input, owner));
+  append_partition(append_partition, partition(input, owner), input, 0);
   return output;
 }
 

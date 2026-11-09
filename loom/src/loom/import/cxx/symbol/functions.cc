@@ -14,6 +14,7 @@
 #include <cxx/ast_visitor.h>
 #include <cxx/const_value.h>
 #include <cxx/external_name_encoder.h>
+#include <cxx/memory_layout.h>
 #include <cxx/control.h>
 #include <cxx/decl.h>
 #include <cxx/literals.h>
@@ -24,7 +25,11 @@
 
 #include <array>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <deque>
+#include <format>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <string>
@@ -470,6 +475,65 @@ std::string Functions::kernel_type_symbol_spelling(
   }
   cxx::ExternalNameEncoder encoder(&unit_);
   return cxx::to_string(function->name()) + "__" + encoder.encode(tag);
+}
+
+void Functions::write_kernel_manifest(cxx::FunctionSymbol* function,
+                                      Types& types, cxx::AST* source) {
+  const std::string path =
+      options_ ? string(options_->kernel_manifest_path) : std::string();
+  if (path.empty()) {
+    return;
+  }
+  // One block per kernel instance:
+  //   kernel <symbol> <parameter_count>
+  //   size <sizeof> <alignof>            leading (tag) parameter
+  //   arg <parameter> <c|b> <byte_offset> <byte_size>
+  // One arg row per kernel ABI argument, in argument order. Offsets are C
+  // object offsets inside the host parameter object; `c` rows are by-value
+  // constants and `b` rows are pointers passed as buffer bindings.
+  auto* layout = unit_.control()->memoryLayout();
+  auto parameters = function->parameters();
+  std::string rows;
+  for (size_t i = 0; i < parameters.size(); ++i) {
+    const KernelLeaf* previous = nullptr;
+    for (const auto& leaf :
+         types.kernel_leaves(types.unqualified(parameters[i]->type()), source)) {
+      switch (leaf.component) {
+        case KernelComponent::PointerRoot:
+          rows += std::format("arg {} b {} {}\n", i, leaf.byte_offset,
+                              layout->sizeOfPointer());
+          break;
+        case KernelComponent::PointerOffset:
+          break;
+        case KernelComponent::Value:
+          // A host packer copies one C object per argument; a leaf that
+          // flattens to several arguments has no such object.
+          if (previous && previous->component == KernelComponent::Value &&
+              previous->type == leaf.type &&
+              previous->byte_offset == leaf.byte_offset) {
+            diagnostics_.reject(unit_, source,
+                                "kernel manifest requires one argument per "
+                                "record leaf");
+          }
+          rows += std::format("arg {} c {} {}\n", i, leaf.byte_offset,
+                              layout->sizeOf(leaf.type).value_or(0));
+          break;
+      }
+      previous = &leaf;
+    }
+  }
+  std::string header =
+      std::format("kernel {} {}\n", kernel_type_symbol_spelling(function, source),
+                  parameters.size());
+  if (!parameters.empty()) {
+    auto* tag = unit_.typeTraits().remove_cv(parameters[0]->type());
+    header += std::format("size {} {}\n", layout->sizeOf(tag).value_or(0),
+                          layout->alignmentOf(tag).value_or(0));
+  }
+  if (FILE* file = std::fopen(path.c_str(), "a")) {
+    std::fprintf(file, "%s%s", header.c_str(), rows.c_str());
+    std::fclose(file);
+  }
 }
 
 std::vector<cxx::FunctionSymbol*> Functions::discover_launched_kernels(
@@ -2053,6 +2117,9 @@ DefinedFunction Functions::define(FunctionInstance instance, Types& types,
     for (auto* parameter : parameters) {
       types.append_kernel_parameter(types.unqualified(parameter->type()),
                                     definition, arguments);
+    }
+    if (annotated(symbol, "kernel_type_symbol")) {
+      write_kernel_manifest(symbol, types, definition);
     }
     if (auto* configuration = launches_.configuration_function(symbol)) {
       auto* configuration_symbol = this->definition(configuration);

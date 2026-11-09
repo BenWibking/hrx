@@ -231,6 +231,11 @@ class Functions {
   // Discovery order grows as declare reaches helpers. Spans are invalidated by
   // growth; consumers obtain the next indexed entry after each body finishes.
   std::span<const FunctionInstance> pending() const { return pending_; }
+  // Import options borrowed for the translation: hosted profile, excluded
+  // export names and the kernel manifest path.
+  void set_import_options(const loom_cxx_import_options_t* options) {
+    options_ = options;
+  }
   // Builds the selected native definition and launch contract at the caller's
   // module insertion point. The caller then enters and fills the returned body.
   DefinedFunction define(FunctionInstance instance, Types& types,
@@ -297,6 +302,12 @@ class Functions {
   // observes as typeid(T).name().
   std::string kernel_type_symbol_spelling(cxx::FunctionSymbol* function,
                                           cxx::AST* source);
+  // Appends a kernel's launch-ABI rows to the import options' kernel manifest
+  // path, if set, so a host-compiled launch site can pack kernel constants and
+  // bindings from its own parameter objects. Rows come from the same
+  // flattening that builds the kernel's argument list.
+  void write_kernel_manifest(cxx::FunctionSymbol* function, Types& types,
+                             cxx::AST* source);
   std::optional<ImplicitObjectParameter> implicit_object(
       FunctionInstance instance, cxx::AST* source) const;
 
@@ -405,6 +416,7 @@ class Functions {
       callees_;
   // Reachable worklist in deterministic discovery order.
   std::vector<FunctionInstance> pending_;
+  const loom_cxx_import_options_t* options_ = nullptr;
   // Reachable bodyless declarations in deterministic discovery order.
   std::vector<FunctionDeclaration> pending_declarations_;
   // Canonical declarations inherit one exact name borrowed from source text.

@@ -230,6 +230,8 @@ static loomc_status_t loomc_cxx_resolve_options(
     return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
                              "nonempty C/C++ option arrays require storage");
   }
+  LOOMC_RETURN_IF_ERROR(
+      loomc_cxx_validate_string(options->kernel_manifest_path));
   out_options->standard = iree_string_view_from_loomc(options->standard);
   out_options->triple = iree_string_view_from_loomc(options->triple);
   out_options->data_model = (loom_cxx_data_model_t)options->data_model;
@@ -240,6 +242,8 @@ static loomc_status_t loomc_cxx_resolve_options(
   out_options->system_include_path_count = options->system_include_path_count;
   out_options->root_count = options->root_count;
   out_options->define_count = options->define_count;
+  out_options->kernel_manifest_path =
+      iree_string_view_from_loomc(options->kernel_manifest_path);
 
   iree_host_size_t allocation_size = 0;
   iree_host_size_t includes_offset = 0, system_offset = 0, roots_offset = 0;

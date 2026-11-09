@@ -7,7 +7,9 @@
 #include "loom/import/cxx/import.h"
 
 #include <filesystem>
+#include <fstream>
 #include <map>
+#include <sstream>
 #include <string>
 
 #include "iree/testing/gtest.h"
@@ -712,9 +714,26 @@ class LaunchedImportTest : public ImportTest {
     ImportTest::SetUp();
     options_.roots = &launched_root_;
     options_.root_count = 1;
+    manifest_path_ = (std::filesystem::path(::testing::TempDir()) /
+                      (std::string(::testing::UnitTest::GetInstance()
+                                       ->current_test_info()
+                                       ->name()) +
+                       ".manifest"))
+                         .string();
+    std::filesystem::remove(manifest_path_);
+    options_.kernel_manifest_path =
+        iree_make_string_view(manifest_path_.data(), manifest_path_.size());
+  }
+
+  std::string Manifest() const {
+    std::ifstream file(manifest_path_);
+    std::stringstream contents;
+    contents << file.rdbuf();
+    return contents.str();
   }
 
   const iree_string_view_t launched_root_ = IREE_SV("@launched");
+  std::string manifest_path_;
 };
 
 TEST_F(LaunchedImportTest, LaunchedRootsExportOnlyLaunchedKernelInstances) {
@@ -728,6 +747,42 @@ TEST_F(LaunchedImportTest, LaunchedRootsExportOnlyLaunchedKernelInstances) {
   EXPECT_NE(printed.find("@run__4Body"), std::string::npos) << printed;
   EXPECT_NE(printed.find("@run__5Other"), std::string::npos) << printed;
   EXPECT_EQ(printed.find("@host"), std::string::npos) << printed;
+}
+
+TEST_F(LaunchedImportTest, ManifestRowsFollowKernelArgumentFlattening) {
+  IREE_ASSERT_OK(Import(iree_make_cstring_view(kLaunchedSource)));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+  const std::string printed = Print();
+  EXPECT_NE(printed.find("@run__4Body"), std::string::npos);
+  EXPECT_NE(printed.find("@run__5Other"), std::string::npos);
+  EXPECT_EQ(printed.find("@host"), std::string::npos);
+  // One row per kernel argument, in argument order: the base's field first,
+  // then each array element, then one buffer row per pointer. Offsets are the
+  // host object's (LP64): Base at 0, pad at 4, x at 16, y at 24.
+  const std::string manifest = Manifest();
+  EXPECT_NE(manifest.find("kernel run__4Body 1\n"
+                          "size 32 8\n"
+                          "arg 0 c 0 4\n"
+                          "arg 0 c 4 4\n"
+                          "arg 0 c 8 4\n"
+                          "arg 0 b 16 8\n"
+                          "arg 0 b 24 8\n"),
+            std::string::npos)
+      << manifest;
+  EXPECT_NE(manifest.find("kernel run__5Other 1\n"
+                          "size 8 8\n"
+                          "arg 0 b 0 8\n"),
+            std::string::npos)
+      << manifest;
+  EXPECT_EQ(manifest.find("loc "), std::string::npos) << manifest;
+}
+
+TEST_F(LaunchedImportTest, ManifestIsOptional) {
+  options_.kernel_manifest_path = iree_string_view_empty();
+  IREE_ASSERT_OK(Import(iree_make_cstring_view(kLaunchedSource)));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_FALSE(std::filesystem::exists(manifest_path_));
 }
 
 }  // namespace
