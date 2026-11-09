@@ -11,6 +11,7 @@
 #include <cxx/ast_rewriter.h>
 #include <cxx/attributes.h>
 #include <cxx/const_int.h>
+#include <cxx/const_value.h>
 #include <cxx/control.h>
 #include <cxx/decl.h>
 #include <cxx/literals.h>
@@ -23,9 +24,11 @@
 #include <cctype>
 #include <deque>
 #include <limits>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #include "loom/import/cxx/binding/template_inputs.h"
 #include "loom/import/cxx/source/attributes.h"
@@ -339,6 +342,29 @@ bool Functions::ordinary_analysis_call(const DirectCall& call) {
   return false;
 }
 
+// Returns the kernel named by a launch-style call's leading function template
+// argument, such as loom::kernel::launch<kernel<F>>. Kernel template instances
+// selected this way are materialized only when the launch translates, so
+// callable analysis must reach them from the launching body.
+static cxx::FunctionSymbol* launched_kernel(const DirectCall& call) {
+  if (!call.function) {
+    return nullptr;
+  }
+  auto arguments = call.function->templateArguments();
+  if (arguments.empty()) {
+    return nullptr;
+  }
+  auto selected = cxx::template_argument_value(arguments[0]);
+  auto* address =
+      selected ? std::get_if<std::shared_ptr<cxx::ConstAddress>>(&*selected)
+               : nullptr;
+  auto* kernel =
+      address && *address
+          ? cxx::symbol_cast<cxx::FunctionSymbol>((*address)->symbol())
+          : nullptr;
+  return kernel && annotated(kernel, "kernel") ? kernel : nullptr;
+}
+
 void Functions::prepare_analysis(cxx::FunctionSymbol* function, Types& types,
                                  std::vector<AnalyzedFunction>& functions,
                                  std::vector<AnalyzedCall>& calls) {
@@ -373,6 +399,12 @@ void Functions::prepare_analysis(cxx::FunctionSymbol* function, Types& types,
   control_flows_.emplace(canonical, std::move(analysis));
   functions.emplace_back(canonical, retained);
   for (const auto& call : retained->calls()) {
+    if (auto* kernel = launched_kernel(call)) {
+      // A launched kernel is an independent analysis root, not a call edge:
+      // launch arguments cross the kernel ABI by value.
+      prepare_analysis(kernel, types, functions, calls);
+      continue;
+    }
     if (ordinary_analysis_call(call)) {
       prepare_analysis(call.function, types, functions, calls);
       if (auto* callee = mutable_control_flow(call.function)) {
@@ -1842,8 +1874,8 @@ DefinedFunction Functions::define(FunctionInstance instance, Types& types,
   BoundStagedSignature staged_signature;
   if (kernel) {
     for (auto* parameter : parameters) {
-      arguments.push_back(
-          types.get(types.unqualified(parameter->type()), definition));
+      types.append_kernel_parameter(types.unqualified(parameter->type()),
+                                    definition, arguments);
     }
     if (auto* configuration = launches_.configuration_function(symbol)) {
       auto* configuration_symbol = this->definition(configuration);

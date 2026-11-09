@@ -29,15 +29,3 @@ LOOM_KERNEL void entry(Input input) {}
 using Input = loom::type::encoding<loom::encoding::role::layout, 1>;
 // ERROR@+1: LOWERING/059 "unsupported C++ type: ::loom::type::encoding<0, 1>"
 LOOM_KERNEL void entry(Input input) {}
-
-// ====
-// Records are not implicitly flattened at the kernel entry ABI.
-#include <loomcxx/kernel.h>
-struct Input {
-  // First independent scalar component.
-  unsigned first;
-  // Second independent scalar component.
-  unsigned second;
-};
-// ERROR@+1: LOWERING/059 "unsupported C++ type: ::Input"
-LOOM_KERNEL void entry(Input input) {}

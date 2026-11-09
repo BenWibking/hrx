@@ -1934,6 +1934,81 @@ void Types::append(const cxx::Type* input, cxx::AST* owner,
   append_bound(input, owner, {}, storage, output);
 }
 
+void Types::append_kernel_parameter(const cxx::Type* input, cxx::AST* owner,
+                                    std::vector<loom_type_t>& output) {
+  if (!record(unqualified(input), owner)) {
+    output.push_back(get(input, owner));
+    return;
+  }
+  auto components = kernel_components(input, owner);
+  std::vector<loom_type_t> flattened;
+  append(input, owner, flattened);
+  IREE_ASSERT(flattened.size() == components.size());
+  for (size_t index = 0; index < components.size(); ++index) {
+    if (components[index] != KernelComponent::PointerOffset) {
+      output.push_back(flattened[index]);
+    }
+  }
+}
+
+std::vector<KernelComponent> Types::kernel_components(const cxx::Type* input,
+                                                      cxx::AST* owner) {
+  if (requires_binding(input, owner)) {
+    diagnostics_.reject(unit_, owner,
+                        "kernel record parameters cannot contain dependent "
+                        "shaped values");
+  }
+  std::vector<KernelComponent> output;
+  auto append_partition = [&](auto& self, const Partition& admitted) -> void {
+    const size_t start = output.size();
+    switch (admitted.kind) {
+      case ValueKind::Pointer:
+        output.push_back(KernelComponent::PointerRoot);
+        output.push_back(KernelComponent::PointerOffset);
+        break;
+      case ValueKind::Record: {
+        const auto& record = static_cast<const RecordPartition&>(admitted);
+        for (const auto& member : record.members) {
+          if (unit_.typeTraits().is_reference(source_object_type(member.source))) {
+            diagnostics_.reject(
+                unit_, owner,
+                "kernel record parameters cannot contain reference members "
+                "or by-reference lambda captures");
+          }
+          IREE_ASSERT(member.component_offset == output.size() - start);
+          self(self, *member.partition);
+        }
+        break;
+      }
+      case ValueKind::Array: {
+        const auto& array = static_cast<const ArrayPartition&>(admitted);
+        const size_t element_count =
+            array.element->component_count
+                ? admitted.component_count / array.element->component_count
+                : 0;
+        for (size_t index = 0; index < element_count; ++index) {
+          self(self, *array.element);
+        }
+        break;
+      }
+      case ValueKind::SSA:
+      case ValueKind::Vector:
+      case ValueKind::Buffer:
+        output.insert(output.end(), admitted.component_count,
+                      KernelComponent::Value);
+        break;
+      default:
+        diagnostics_.reject(
+            unit_, owner,
+            "kernel record parameter members require scalars, vectors, typed "
+            "buffers, pointers, or nested records of those");
+    }
+    IREE_ASSERT(output.size() - start == admitted.component_count);
+  };
+  append_partition(append_partition, partition(input, owner));
+  return output;
+}
+
 void Types::append_bound(const cxx::Type* input, cxx::AST* owner,
                          std::span<const loom_value_id_t> identities,
                          BoundTypeStorage& storage,

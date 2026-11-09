@@ -1,0 +1,206 @@
+// RUN: roundtrip
+// A record kernel parameter flattens in member order. Each pointer member
+// binds one buffer and receives a zero byte origin at entry.
+#include <loomcxx/kernel.h>
+
+struct Saxpy {
+  float a;
+  const float* x;
+  float* y;
+  [[loom::inline]] void operator()(unsigned i) const { y[i] = a * x[i] + y[i]; }
+};
+
+[[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
+void saxpy(unsigned n, Saxpy body) {
+  unsigned i = static_cast<unsigned>(loom::kernel::workitem::id.x);
+  if (i < n) body(i);
+}
+
+// ----
+kernel.def @saxpy() {
+  %4 = index.constant 1 : index
+  %5 = index.constant 1 : index
+  %6 = index.constant 1 : index
+  %7 = index.constant 64 : index
+  %8 = index.constant 1 : index
+  %9 = index.constant 1 : index
+  kernel.launch.config workgroups(%4, %5, %6) workgroup_size(%7, %8, %9) : index
+} launch(%n: i32, %body_a: f32, %body_x: buffer, %body_y: buffer) {
+  %body_x_byte_offset = index.constant 0 : offset
+  %body_y_byte_offset = index.constant 0 : offset
+  %workitem_id_x = kernel.workitem.id<x> : index
+  %i = index.cast %workitem_id_x : index to i32
+  %14 = scalar.cmpi ult, %i, %n : i32
+  scf.if %14 {
+    func.call @Saxpy__operator_call_value(%body_a, %body_x, %body_x_byte_offset, %body_y, %body_y_byte_offset, %i) : (f32, buffer, offset, buffer, offset, i32)
+  }
+  kernel.return
+}
+
+func.def inline @Saxpy__operator_call_value(%this_a: f32, %this_x: buffer, %this_x_byte_offset: offset, %this_y: buffer, %this_y_byte_offset: offset, %i: i32) {
+  %21 = scalar.extui %i : i32 to i64
+  %22 = scalar.constant 4 : i64
+  %23 = scalar.muli %21, %22 : i64
+  %24 = index.cast %this_x_byte_offset : offset to i64
+  %25 = scalar.addi %24, %23 : i64
+  %26 = scalar.assume %25 [range(%25, 0, 9223372036854775807)] : i64
+  %27 = index.cast %26 : i64 to offset
+  %28 = buffer.view %this_x[%27] : buffer -> view<1xf32>
+  %29 = view.load %28[0] : view<1xf32> -> f32
+  %30 = scalar.mulf %this_a, %29 : f32
+  %31 = scalar.extui %i : i32 to i64
+  %32 = scalar.constant 4 : i64
+  %33 = scalar.muli %31, %32 : i64
+  %34 = index.cast %this_y_byte_offset : offset to i64
+  %35 = scalar.addi %34, %33 : i64
+  %36 = scalar.assume %35 [range(%35, 0, 9223372036854775807)] : i64
+  %37 = index.cast %36 : i64 to offset
+  %38 = buffer.view %this_y[%37] : buffer -> view<1xf32>
+  %39 = view.load %38[0] : view<1xf32> -> f32
+  %40 = scalar.addf %30, %39 : f32
+  %41 = scalar.extui %i : i32 to i64
+  %42 = scalar.constant 4 : i64
+  %43 = scalar.muli %41, %42 : i64
+  %44 = index.cast %this_y_byte_offset : offset to i64
+  %45 = scalar.addi %44, %43 : i64
+  %46 = scalar.assume %45 [range(%45, 0, 9223372036854775807)] : i64
+  %47 = index.cast %46 : i64 to offset
+  %48 = buffer.view %this_y[%47] : buffer -> view<1xf32>
+  view.store %40, %48[0] : f32, view<1xf32>
+  func.return
+}
+
+// ====
+// RUN: roundtrip
+// A kernel template instantiated with a lambda closure type launches from a
+// check case. The closure's by-value captures become scalar launch operands.
+#include <loomcxx/check.h>
+#include <loomcxx/kernel.h>
+
+template <class F>
+[[loom::kernel, loom::workgroup_size(4, 1, 1), loom::workgroup_count(1, 1, 1)]]
+void apply(float* y, F body) {
+  unsigned i = static_cast<unsigned>(loom::kernel::workitem::id.x);
+  y[i] = body(y[i]);
+}
+
+inline auto make_affine(float scale, float bias) {
+  return [scale, bias](float value) { return scale * value + bias; };
+}
+
+LOOM_CHECK_CASE(closure_launch) {
+  const auto y = loom::check::fill<4, float>(1.0f);
+  const auto body = make_affine(3.0f, 2.0f);
+  loom::check::launch<apply<decltype(body)>>(y, body);
+  loom::check::expect_bitwise(y, loom::check::fill<4, float>(5.0f));
+}
+
+// ----
+func.def public linkonce @make_affine(%scale: f32, %bias: f32) -> (f32, f32) {
+  func.return %scale, %bias : f32, f32
+}
+
+check.case public @closure_launch {
+  %y = check.generate.fill value(1.0) : tensor<4xf32>
+  %5 = check.literal value(3.0) : f32
+  %6 = check.literal value(2.0) : f32
+  %body_scale, %body_bias = func.call @make_affine(%5, %6) : (f32, f32) -> (f32, f32)
+  kernel.launch @apply_const__lambda_float__float__const_(%y, %body_scale, %body_bias) : (tensor<4xf32>, f32, f32)
+  %9 = check.generate.fill value(5.0) : tensor<4xf32>
+  check.expect.bitwise actual(%y) expected(%9) : tensor<4xf32>
+  check.return
+}
+
+kernel.def @apply_const__lambda_float__float__const_() {
+  %13 = index.constant 1 : index
+  %14 = index.constant 1 : index
+  %15 = index.constant 1 : index
+  %16 = index.constant 4 : index
+  %17 = index.constant 1 : index
+  %18 = index.constant 1 : index
+  kernel.launch.config workgroups(%13, %14, %15) workgroup_size(%16, %17, %18) : index
+} launch(%y: buffer, %body_scale: f32, %body_bias: f32) {
+  %y_byte_offset = index.constant 0 : offset
+  %workitem_id_x = kernel.workitem.id<x> : index
+  %i = index.cast %workitem_id_x : index to i32
+  %22 = scalar.extui %i : i32 to i64
+  %23 = scalar.constant 4 : i64
+  %24 = scalar.muli %22, %23 : i64
+  %25 = index.cast %y_byte_offset : offset to i64
+  %26 = scalar.addi %25, %24 : i64
+  %27 = scalar.assume %26 [range(%26, 0, 9223372036854775807)] : i64
+  %28 = index.cast %27 : i64 to offset
+  %29 = buffer.view %y[%28] : buffer -> view<1xf32>
+  %30 = view.load %29[0] : view<1xf32> -> f32
+  %31 = func.call pure @operator_call_value(%body_scale, %body_bias, %30) : (f32, f32, f32) -> (f32)
+  %32 = scalar.extui %i : i32 to i64
+  %33 = scalar.constant 4 : i64
+  %34 = scalar.muli %32, %33 : i64
+  %35 = index.cast %y_byte_offset : offset to i64
+  %36 = scalar.addi %35, %34 : i64
+  %37 = scalar.assume %36 [range(%36, 0, 9223372036854775807)] : i64
+  %38 = index.cast %37 : i64 to offset
+  %39 = buffer.view %y[%38] : buffer -> view<1xf32>
+  view.store %31, %39[0] : f32, view<1xf32>
+  kernel.return
+}
+
+func.def @operator_call_value(%this_scale: f32, %this_bias: f32, %value: f32) -> (f32) {
+  %44 = scalar.mulf %this_scale, %value : f32
+  %45 = scalar.addf %44, %this_bias : f32
+  func.return %45 : f32
+}
+
+// ====
+// RUN: roundtrip
+// A command program builds the closure from its own values and typed buffer
+// handles. Buffer captures bind kernel buffer operands directly.
+#include <loomcxx/command.h>
+#include <loomcxx/kernel.h>
+
+namespace loomt = loom::type;
+using Output = loomt::buffer<float>;
+
+template <class F>
+[[loom::kernel, loom::workgroup_size(64, 1, 1), loom::workgroup_count(1, 1, 1)]]
+void run_body(unsigned n, F body) {
+  unsigned i = static_cast<unsigned>(loom::kernel::workitem::id.x);
+  if (i < n) body(i);
+}
+
+[[loom::command_program]] void run(unsigned n, float a, [[loom::launch]] Output y) {
+  auto body = [=](unsigned i) {
+    (void)i;
+    (void)a;
+    (void)y;
+  };
+  loom::kernel::launch<run_body<decltype(body)>>(n, body);
+}
+
+// ----
+command.def public @run(%n: i32, %a: f32) launch(%y: buffer) {
+  kernel.launch @run_body__lambda_void__unsigned_int__const_(%n, %a, %y) : (i32, f32, buffer)
+  command.return
+}
+
+kernel.def @run_body__lambda_void__unsigned_int__const_() {
+  %6 = index.constant 1 : index
+  %7 = index.constant 1 : index
+  %8 = index.constant 1 : index
+  %9 = index.constant 64 : index
+  %10 = index.constant 1 : index
+  %11 = index.constant 1 : index
+  kernel.launch.config workgroups(%6, %7, %8) workgroup_size(%9, %10, %11) : index
+} launch(%n: i32, %body_a: f32, %body_y: buffer) {
+  %workitem_id_x = kernel.workitem.id<x> : index
+  %i = index.cast %workitem_id_x : index to i32
+  %14 = scalar.cmpi ult, %i, %n : i32
+  scf.if %14 {
+    func.call pure @operator_call_value(%body_a, %body_y, %i) : (f32, buffer, i32)
+  }
+  kernel.return
+}
+
+func.def @operator_call_value(%this_a: f32, %this_y: buffer, %i: i32) {
+  func.return
+}
