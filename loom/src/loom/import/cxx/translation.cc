@@ -1482,6 +1482,8 @@ class Translator final : private Initialization::Evaluation {
   }
 
   void function(FunctionInstance instance) {
+    types_.set_diagnostic_function(
+        instance.symbol ? cxx::to_string(instance.symbol->name()) : "");
     auto defined = functions_.define(instance, types_, locations_, &builder_);
     if (defined.configuration) {
       function_body(*defined.configuration);
