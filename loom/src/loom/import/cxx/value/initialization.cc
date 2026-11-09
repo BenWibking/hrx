@@ -6,6 +6,9 @@
 
 #include "loom/import/cxx/value/initialization.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 #include <cxx/ast.h>
 #include <cxx/ast_interpreter.h>
 #include <cxx/ast_rewriter.h>
@@ -190,6 +193,13 @@ Value Initialization::value(const cxx::Type* type,
                         type, conversion->conversionFunction, owner)) {
     constructor = conversion->conversionFunction;
     initializer = conversion->expression;
+  } else if (conversion && types_.member_forwarding_constructor(
+                               type, conversion->conversionFunction, owner)) {
+    // One-field forwarding constructor: the converted operand is the field.
+    auto* single = new (unit_.arena())
+        cxx::List<cxx::ExpressionAST*>(conversion->expression);
+    return from_elements(type, single, nullptr, nullptr, nullptr, owner,
+                         retained);
   }
   type = types_.unqualified(type);
   if (unit_.typeTraits().is_array(type)) {

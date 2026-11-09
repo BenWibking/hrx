@@ -1962,6 +1962,14 @@ class Translator final : private Initialization::Evaluation {
       activate_automatic_destruction(variable, owner);
       return;
     }
+    if (types_.member_forwarding_constructor(variable->type(),
+                                             variable->constructor(), owner)) {
+      auto value = initialization_.value(variable->type(), initializer,
+                                         variable->constructor(), owner);
+      values_.set(variable, name(value, cxx::to_string(variable->name())));
+      activate_automatic_destruction(variable, owner);
+      return;
+    }
     types_.partition(variable->type(), owner);
     auto* folded_constant = folded_variable_constant(variable);
     if (!folded_constant &&
@@ -5950,8 +5958,10 @@ class Translator final : private Initialization::Evaluation {
       }
       if (cast->conversionFunction &&
           cast->conversionFunction->isConstructor() &&
-          types_.record_constructor_requires_call(
-              cast->type, cast->conversionFunction, cast)) {
+          (types_.record_constructor_requires_call(
+               cast->type, cast->conversionFunction, cast) ||
+           types_.member_forwarding_constructor(
+               cast->type, cast->conversionFunction, cast))) {
         return initialization_.value(cast->type, cast->expression,
                                      cast->conversionFunction, cast);
       }
