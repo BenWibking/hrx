@@ -49,6 +49,9 @@ typedef enum loomc_cxx_fp_model_e {
 typedef enum loomc_cxx_import_flag_bits_e {
   /// Omit the embedded system include root; use caller paths/providers only.
   LOOMC_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES = 1u << 0,
+  /// Hosted single-source profile: Linux/glibc/libc++ predefines, and helpers
+  /// declaring workgroup storage become required-inline.
+  LOOMC_CXX_IMPORT_FLAG_HOSTED = 1u << 1,
 } loomc_cxx_import_flag_bits_t;
 /// Bitmask of loomc_cxx_import_flag_bits_t values.
 typedef uint32_t loomc_cxx_import_flags_t;

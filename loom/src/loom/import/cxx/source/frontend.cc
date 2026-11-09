@@ -149,7 +149,8 @@ class SourceToolchain final : public cxx::Toolchain {
  public:
   SourceToolchain(cxx::Preprocessor* preprocessor,
                   const loom_cxx_import_options_t& options)
-      : cxx::Toolchain(preprocessor, cxx::Triple{string(options.triple)}) {
+      : cxx::Toolchain(preprocessor, cxx::Triple{string(options.triple)}),
+        hosted_(options.flags & LOOM_CXX_IMPORT_FLAG_HOSTED) {
     auto spelling = options.standard.size ? string(options.standard) : "c++26";
     auto* standard = cxx::findLanguageStandard(spelling);
     if (!standard) {
@@ -205,15 +206,43 @@ class SourceToolchain final : public cxx::Toolchain {
     defineMacro("__SIZEOF_LONG__", std::to_string(layout->sizeOfLong()));
     defineMacro("__loom__", "1");
     addCommonMacros();
+    // Hosted mode admits a GCC/Linux C and C++ library (glibc, libstdc++)
+    // supplied through -isystem, so device code can share host headers.
+    if (hosted_) {
+      defineMacro("__extension__", "");
+      defineMacro("__null", "nullptr");
+      defineMacro("__restrict__", "");
+      defineMacro("__restrict", "");
+      defineMacro("__signed__", "signed");
+      defineMacro("__decltype", "decltype");
+      defineMacro("_Nonnull", "");
+      defineMacro("_Nullable", "");
+      addCommonLinuxMacros();
+      if (language() == cxx::LanguageKind::kC) {
+        addLinuxC23Macros();
+      } else {
+        addLinuxCxx26Macros();
+      }
+      addLinuxX86_64Macros();
+      defineMacro("__loom_hosted__", "1");
+    }
     if (language() == cxx::LanguageKind::kC) {
       addCommonC23Macros();
     } else {
       addCommonCxx26Macros();
-      defineMacro("__STDCPP_FLOAT16_T__", "1");
-      defineMacro("__STDCPP_BFLOAT16_T__", "1");
+      // libstdc++ declares its narrow float types from __FLT16_*/__BFLT16_*
+      // macros but uses them under these; keep the two consistent when hosted.
+      if (!hosted_) {
+        defineMacro("__STDCPP_FLOAT16_T__", "1");
+        defineMacro("__STDCPP_BFLOAT16_T__", "1");
+      }
     }
     preprocessor()->setPredefinedMacros(kPredefinedMacros);
   }
+
+ private:
+  // Hosted single-source profile (LOOM_CXX_IMPORT_FLAG_HOSTED).
+  bool hosted_ = false;
 };
 
 }  // namespace

@@ -236,6 +236,9 @@ class Functions {
   void set_import_options(const loom_cxx_import_options_t* options) {
     options_ = options;
   }
+  bool hosted() const {
+    return options_ && (options_->flags & LOOM_CXX_IMPORT_FLAG_HOSTED);
+  }
   // Builds the selected native definition and launch contract at the caller's
   // module insertion point. The caller then enters and fills the returned body.
   DefinedFunction define(FunctionInstance instance, Types& types,

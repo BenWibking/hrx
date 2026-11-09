@@ -32,7 +32,7 @@ iree_status_t loom_cxx_import_options_validate(
       options->data_model > LOOM_CXX_DATA_MODEL_ILP32 ||
       options->fp_model < LOOM_CXX_FP_MODEL_PRECISE ||
       options->fp_model > LOOM_CXX_FP_MODEL_FAST ||
-      (options->flags & ~LOOM_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES)) {
+      (options->flags & ~LOOM_CXX_IMPORT_FLAG_ALL)) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "invalid C/C++ source configuration");
   }

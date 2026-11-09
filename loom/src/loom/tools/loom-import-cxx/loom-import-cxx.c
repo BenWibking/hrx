@@ -39,6 +39,9 @@ IREE_FLAG(bool, cleanup, true,
           "Canonicalize, eliminate common expressions, and remove dead IR.");
 IREE_FLAG_NAMED(bool, builtin_includes, "builtin-includes", true,
                 "Search embedded Loom/HIP source headers when available.");
+IREE_FLAG(bool, hosted, false,
+          "Hosted single-source profile: Linux/glibc/libc++ predefines; helpers "
+          "declaring workgroup storage are required-inline.");
 IREE_FLAG_NAMED(string, kernel_manifest, "kernel-manifest", "",
                 "Path receiving the per-kernel leaf manifest for host packing "
                 "of record kernel arguments.");
@@ -109,6 +112,7 @@ static iree_status_t loom_cxx_cli_options_from_flags(
   if (!FLAG_builtin_includes) {
     out_options->flags |= LOOMC_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES;
   }
+  if (FLAG_hosted) out_options->flags |= LOOMC_CXX_IMPORT_FLAG_HOSTED;
   out_options->kernel_manifest_path =
       loomc_make_cstring_view(FLAG_kernel_manifest);
 

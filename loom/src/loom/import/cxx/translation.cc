@@ -1990,8 +1990,13 @@ class Translator final : private Initialization::Evaluation {
       fail(owner, "local storage duration must be automatic or __shared__");
     }
     if (annotated(declaration->symbol, "workgroup")) {
+      // Hosted single-source mode also admits required-inline helpers.
+      const bool hosted = functions_.hosted();
       if (current_function_.kind != FunctionKind::Kernel &&
-          current_function_.kind != FunctionKind::TemplateDefinition) {
+          current_function_.kind != FunctionKind::TemplateDefinition &&
+          !(hosted && current_function_.kind == FunctionKind::Ordinary &&
+            loom_func_def_inline_policy(current_function_.operation) ==
+                LOOM_INLINE_POLICY_INLINE)) {
         fail(declaration,
              "workgroup storage requires a kernel or template definition "
              "body");

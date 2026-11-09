@@ -785,4 +785,26 @@ TEST_F(LaunchedImportTest, ManifestIsOptional) {
   EXPECT_FALSE(std::filesystem::exists(manifest_path_));
 }
 
+TEST_F(ImportTest, HostedFlagSelectsTheHostedProfile) {
+  const auto source = IREE_SV(
+      "#ifndef __loom_hosted__\n#error not hosted\n#endif\n"
+      "int entry(int value) { return value; }\n");
+  IREE_ASSERT_OK(Import(source));
+  EXPECT_EQ(module_, nullptr);
+  EXPECT_GT(error_count_, 0);
+
+  error_count_ = 0;
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  IREE_ASSERT_OK(Import(source));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+}
+
+TEST_F(ImportTest, RejectsUnknownImportFlags) {
+  options_.flags = LOOM_CXX_IMPORT_FLAG_ALL + 1;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        Import(IREE_SV("int entry() { return 0; }\n")));
+  EXPECT_EQ(module_, nullptr);
+}
+
 }  // namespace
