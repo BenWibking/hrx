@@ -401,6 +401,8 @@ class Functions {
   // Selected externally visible definitions; other reached helpers stay
   // private.
   std::unordered_set<cxx::FunctionSymbol*> exported_;
+  // Mutable namespace-scope variable definitions skipped at collection.
+  std::unordered_set<cxx::VariableSymbol*> mutable_globals_;
   // Reached bodyless declarations whose names must remain stable for linking.
   std::unordered_set<cxx::FunctionSymbol*> external_;
   // Nonempty indirect-parameter ABIs indexed by canonical declaration identity.

@@ -38,7 +38,10 @@ typedef enum loom_cxx_import_flag_bits_e {
   // Hosted single-source profile: Linux/glibc/libc++ predefines, and helpers
   // declaring workgroup storage become required-inline.
   LOOM_CXX_IMPORT_FLAG_HOSTED = 1u << 1,
-  LOOM_CXX_IMPORT_FLAG_ALL = (1u << 2) - 1,
+  // Report frontend errors as deferred warnings, and skip mutable globals, in
+  // host-only code that shares the translation unit with device code.
+  LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS = 1u << 2,
+  LOOM_CXX_IMPORT_FLAG_ALL = (1u << 3) - 1,
 } loom_cxx_import_flag_bits_t;
 typedef uint32_t loom_cxx_import_flags_t;
 

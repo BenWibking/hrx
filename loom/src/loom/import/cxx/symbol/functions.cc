@@ -921,7 +921,14 @@ void Functions::collect(cxx::List<cxx::DeclarationAST*>* declarations,
 void Functions::collect(cxx::DeclarationAST* declaration,
                         DeclarationScope scope,
                         std::vector<cxx::FunctionSymbol*>& definitions) {
+  if (!declaration) {
+    return;
+  }
   if (auto* function = cxx::ast_cast<cxx::FunctionDefinitionAST>(declaration)) {
+    // Error recovery (tolerant mode) can leave a definition without a symbol.
+    if (!function->symbol) {
+      return;
+    }
     admit_declaration(function->symbol, function->attributeList, function,
                       scope);
     if (scope == DeclarationScope::Namespace &&
@@ -951,6 +958,9 @@ void Functions::collect(cxx::DeclarationAST* declaration,
       if (auto* simple =
               cxx::ast_cast<cxx::SimpleDeclarationAST>(pattern->declaration)) {
         for (auto* declarator : cxx::ListView{simple->initDeclaratorList}) {
+          if (!declarator) {
+            continue;
+          }
           if (auto* function =
                   cxx::symbol_cast<cxx::FunctionSymbol>(declarator->symbol)) {
             intrinsics_.declaration(function, simple->attributeList,
@@ -958,7 +968,8 @@ void Functions::collect(cxx::DeclarationAST* declaration,
           }
         }
       } else if (auto* function = cxx::ast_cast<cxx::FunctionDefinitionAST>(
-                     pattern->declaration)) {
+                     pattern->declaration);
+                 function && function->symbol) {
         intrinsics_.declaration(function->symbol, function->attributeList,
                                 function);
       }
@@ -969,6 +980,9 @@ void Functions::collect(cxx::DeclarationAST* declaration,
   } else if (auto* alias =
                  cxx::ast_cast<cxx::AliasDeclarationAST>(declaration)) {
     admit_declaration(nullptr, alias->attributeList, alias, scope);
+    if (!alias->typeId) {
+      return;
+    }
     reject_misplaced_binding_attributes(unit_, diagnostics_,
                                         alias->typeId->attributeList);
     reject_misplaced_binding_declarator(unit_, diagnostics_,
@@ -1004,6 +1018,9 @@ void Functions::collect(cxx::DeclarationAST* declaration,
       }
     }
     for (auto* declarator : cxx::ListView{simple->initDeclaratorList}) {
+      if (!declarator) {
+        continue;
+      }
       auto* function =
           cxx::symbol_cast<cxx::FunctionSymbol>(declarator->symbol);
       bool is_module_metadata = admit_declaration(
@@ -1027,9 +1044,16 @@ void Functions::collect(cxx::DeclarationAST* declaration,
              !(variable->isConstexpr() ||
                (unit_.typeTraits().is_const(variable->type()) &&
                 variable->constValue())))) {
-          diagnostics_.reject(unit_, declarator,
-                              "global storage definitions require a "
-                              "global-storage projection");
+          // Mutable global storage has no projection. In a single-source
+          // device pass that tolerates host errors, host-only definitions
+          // share the translation unit and are skipped; otherwise reject.
+          if (!diagnostics_.tolerates_host_errors()) {
+            diagnostics_.reject(unit_, declarator,
+                                "global storage definitions require a "
+                                "global-storage projection");
+          }
+          mutable_globals_.insert(variable);
+          continue;
         }
         immutable_objects_.retain_definition(variable, declarator);
       }

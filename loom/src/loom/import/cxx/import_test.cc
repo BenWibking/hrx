@@ -785,6 +785,24 @@ TEST_F(LaunchedImportTest, ManifestIsOptional) {
   EXPECT_FALSE(std::filesystem::exists(manifest_path_));
 }
 
+TEST_F(LaunchedImportTest, TolerateHostErrorsDefersErrorsInHostOnlyCode) {
+  std::string source = std::string(kLaunchedSource) +
+                       "void host_only() { undeclared_function(); }\n";
+  const auto view = iree_make_string_view(source.data(), source.size());
+  IREE_ASSERT_OK(Import(view));
+  EXPECT_EQ(module_, nullptr);
+  EXPECT_GT(error_count_, 0);
+
+  error_count_ = 0;
+  diagnostic_count_ = 0;
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS;
+  IREE_ASSERT_OK(Import(view));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+  EXPECT_GT(diagnostic_count_, 0);  // reported as a deferred-error warning
+  EXPECT_NE(Print().find("@run__4Body"), std::string::npos);
+}
+
 TEST_F(ImportTest, HostedFlagSelectsTheHostedProfile) {
   const auto source = IREE_SV(
       "#ifndef __loom_hosted__\n#error not hosted\n#endif\n"

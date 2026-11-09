@@ -11,6 +11,8 @@
 #include <cxx/preprocessor.h>
 #include <cxx/triple.h>
 
+#include <cstdlib>
+
 #include "loom/error/error_catalog.h"
 #include "loom/import/cxx/source/error.h"
 
@@ -109,6 +111,13 @@ void Diagnostics::report(const cxx::Diagnostic& diagnostic) {
       break;
     default:
       break;
+  }
+  if (tolerate_host_errors_ && severity == LOOM_DIAGNOSTIC_ERROR) {
+    deferred_errors_.push_back(diagnostic.token());
+    // Marked so tooling can tell demoted errors from genuine warnings.
+    emit(diagnostic.token(), LOOM_DIAGNOSTIC_WARNING, LOOM_ERR_PARSE_036,
+         "deferred error: " + std::string(diagnostic.message()));
+    return;
   }
   emit(diagnostic.token(), severity, LOOM_ERR_PARSE_036, diagnostic.message());
 }
@@ -255,6 +264,8 @@ Frontend::Frontend(iree_string_view_t filename,
   auto* preprocessor = unit_.preprocessor();
   contents_.bind(preprocessor, string(filename));
   diagnostics_.bind(&unit_, &contents_);
+  diagnostics_.set_tolerate_host_errors(
+      options.flags & LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS);
   toolchain_ = std::make_unique<SourceToolchain>(preprocessor, options);
   for (size_t i = 0; i < options.include_path_count; ++i) {
     preprocessor->addUserIncludePath(string(options.include_paths[i]));

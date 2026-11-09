@@ -52,6 +52,8 @@ typedef enum loomc_cxx_import_flag_bits_e {
   /// Hosted single-source profile: Linux/glibc/libc++ predefines, and helpers
   /// declaring workgroup storage become required-inline.
   LOOMC_CXX_IMPORT_FLAG_HOSTED = 1u << 1,
+  /// Report frontend errors in host-only code as deferred warnings.
+  LOOMC_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS = 1u << 2,
 } loomc_cxx_import_flag_bits_t;
 /// Bitmask of loomc_cxx_import_flag_bits_t values.
 typedef uint32_t loomc_cxx_import_flags_t;

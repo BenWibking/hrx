@@ -42,6 +42,8 @@ IREE_FLAG_NAMED(bool, builtin_includes, "builtin-includes", true,
 IREE_FLAG(bool, hosted, false,
           "Hosted single-source profile: Linux/glibc/libc++ predefines; helpers "
           "declaring workgroup storage are required-inline.");
+IREE_FLAG_NAMED(bool, tolerate_host_errors, "tolerate-host-errors", false,
+                "Report frontend errors in host-only code as warnings.");
 IREE_FLAG_NAMED(string, kernel_manifest, "kernel-manifest", "",
                 "Path receiving the per-kernel leaf manifest for host packing "
                 "of record kernel arguments.");
@@ -113,6 +115,9 @@ static iree_status_t loom_cxx_cli_options_from_flags(
     out_options->flags |= LOOMC_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES;
   }
   if (FLAG_hosted) out_options->flags |= LOOMC_CXX_IMPORT_FLAG_HOSTED;
+  if (FLAG_tolerate_host_errors) {
+    out_options->flags |= LOOMC_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS;
+  }
   out_options->kernel_manifest_path =
       loomc_make_cstring_view(FLAG_kernel_manifest);
 
