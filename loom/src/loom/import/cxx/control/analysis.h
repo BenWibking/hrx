@@ -675,6 +675,12 @@ class ControlFlow final : private cxx::ASTVisitor {
   void retain_reference_initializers(cxx::VariableSymbol* variable,
                                      cxx::ExpressionAST* initializer,
                                      cxx::AST* owner);
+  // Arguments whose address a member-forwarding constructor stores in a
+  // pointer field are identity uses, like `&argument`.
+  void retain_forwarded_addresses(const cxx::Type* type,
+                                  cxx::FunctionSymbol* constructor,
+                                  cxx::List<cxx::ExpressionAST*>* arguments,
+                                  cxx::AST* owner);
   static bool append_interval(std::vector<ObjectInterval>& intervals,
                               ObjectInterval interval);
   template <typename Visitor>

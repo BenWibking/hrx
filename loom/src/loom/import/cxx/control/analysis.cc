@@ -3718,10 +3718,37 @@ void ControlFlow::retain_reference_initializers(cxx::VariableSymbol* variable,
                                    types_.unqualified(variable->type())) {
     return;
   }
+  if (types_.member_forwarding_constructor(variable->type(),
+                                           variable->constructor(), owner)) {
+    for (size_t index = 0; index < arguments.size(); ++index) {
+      // Translation evaluates forwarded arguments in the caller instead of
+      // calling the constructor, so the caller reads them itself.
+      record_parameter_read(arguments[index]);
+      if (types_.forwards_argument_address(variable->constructor(), index)) {
+        require_identity(arguments[index]);
+      }
+    }
+  }
   const size_t count = std::min(arguments.size(), record->members.size());
   for (size_t index = 0; index < count; ++index) {
     if (unit_.typeTraits().is_lvalue_reference(record->members[index].type())) {
       require_identity(arguments[index]);
+    }
+  }
+}
+
+void ControlFlow::retain_forwarded_addresses(
+    const cxx::Type* type, cxx::FunctionSymbol* constructor,
+    cxx::List<cxx::ExpressionAST*>* arguments, cxx::AST* owner) {
+  if (!types_.member_forwarding_constructor(type, constructor, owner)) {
+    return;
+  }
+  size_t index = 0;
+  for (auto* argument : cxx::ListView{arguments}) {
+    // Forwarded arguments are evaluated in the caller (see above).
+    record_parameter_read(argument);
+    if (types_.forwards_argument_address(constructor, index++)) {
+      require_identity(argument);
     }
   }
 }
@@ -5033,6 +5060,8 @@ void ControlFlow::visit(cxx::TypeConstructionAST* ast) {
   } else {
     record_copy_read(ast->type, ast->expressionList);
   }
+  retain_forwarded_addresses(ast->type, ast->constructorSymbol,
+                             ast->expressionList, ast);
   analyze_default_constructor(ast->type, ast->constructorSymbol, ast);
 }
 
@@ -5045,6 +5074,10 @@ void ControlFlow::visit(cxx::BracedTypeConstructionAST* ast) {
   } else if (ast->bracedInitList) {
     record_copy_read(ast->type,
                      cxx::Initializer(ast->bracedInitList).expressionList());
+  }
+  if (ast->bracedInitList) {
+    retain_forwarded_addresses(ast->type, ast->constructorSymbol,
+                               ast->bracedInitList->expressionList, ast);
   }
   analyze_default_constructor(ast->type, ast->constructorSymbol, ast);
 }

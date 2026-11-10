@@ -27,6 +27,8 @@ loom_check_test_suite(
         "field_receivers.cxx-test",
         "field_references.cxx-test",
         "initializer_lists.cxx-test",
+        "constructor_pointer_records.cxx-test",
+        "constructor_pointer_records_invalid.cxx-test",
         "lambdas.cxx-test",
         "lambdas_invalid.cxx-test",
         "lambdas_lowering.cxx-test",

@@ -1415,6 +1415,7 @@ bool Types::member_forwarding_constructor(const RecordPartition& record,
     return false;
   }
   size_t index = 0;
+  std::vector<bool> addresses;
   for (auto* initializer :
        cxx::ListView{cxx::ctor_initializers(declaration->functionBody)}) {
     auto* paren = cxx::ast_cast<cxx::ParenMemInitializerAST>(initializer);
@@ -1423,13 +1424,38 @@ bool Types::member_forwarding_constructor(const RecordPartition& record,
         paren->expressionList->next) {
       return false;
     }
-    auto* id = cxx::ast_cast<cxx::IdExpressionAST>(
-        strip_value_wrappers(paren->expressionList->value));
+    auto* argument = strip_value_wrappers(paren->expressionList->value);
     auto* parameter = parameters[index];
+    const auto* parameter_type = parameter->type();
+    // `field(&parameter)` for an lvalue reference parameter stores the address
+    // of the argument's referent. A one-parameter constructor also converts
+    // implicitly, and those paths forward the operand as the field's value,
+    // so such a constructor is not admitted in this form.
+    if (auto* address = cxx::ast_cast<cxx::UnaryExpressionAST>(argument);
+        address && address->op == cxx::TokenKind::T_AMP && !address->symbol) {
+      auto* id = cxx::ast_cast<cxx::IdExpressionAST>(
+          strip_value_wrappers(address->expression));
+      const auto* field_type = fields[index]->type();
+      if (!id || id->symbol != parameter || parameters.size() < 2 ||
+          !traits.is_lvalue_reference(parameter_type) ||
+          !traits.is_pointer(field_type)) {
+        return false;
+      }
+      const auto* referent =
+          traits.remove_cv(traits.remove_reference(parameter_type));
+      if (referent != traits.remove_cv(traits.remove_pointer(field_type)) ||
+          referent == record.source->type()) {
+        return false;
+      }
+      addresses.resize(fields.size());
+      addresses[index] = true;
+      ++index;
+      continue;
+    }
+    auto* id = cxx::ast_cast<cxx::IdExpressionAST>(argument);
     if (!id || id->symbol != parameter) {
       return false;
     }
-    const auto* parameter_type = parameter->type();
     if (traits.is_reference(parameter_type)) {
       if (traits.is_rvalue_reference(parameter_type) ||
           !traits.is_const(traits.remove_reference(parameter_type))) {
@@ -1448,7 +1474,21 @@ bool Types::member_forwarding_constructor(const RecordPartition& record,
     return false;
   }
   member_forwarding_constructors_[constructor->canonical()] = true;
+  if (!addresses.empty()) {
+    forwarded_argument_addresses_[constructor->canonical()] =
+        std::move(addresses);
+  }
   return true;
+}
+
+bool Types::forwards_argument_address(cxx::FunctionSymbol* constructor,
+                                      size_t index) const {
+  if (!constructor) {
+    return false;
+  }
+  auto found = forwarded_argument_addresses_.find(constructor->canonical());
+  return found != forwarded_argument_addresses_.end() &&
+         index < found->second.size() && found->second[index];
 }
 
 bool Types::member_forwarding_constructor(const cxx::Type* type,
