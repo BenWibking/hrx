@@ -456,12 +456,18 @@ class Types {
   // component transport.
   bool is_trivial_value_operation(cxx::FunctionSymbol* function);
   // Empty-bodied user constructor forwarding parameter i to field i for every
-  // field of a pointer-holding record; constructed as an aggregate value.
+  // field of a pointer-holding record; constructed as an aggregate value. A
+  // pointer field may instead be initialized with the address of an lvalue
+  // reference parameter (`p(&b)`), which stores the argument's address.
   bool member_forwarding_constructor(const RecordPartition& record,
                                      cxx::FunctionSymbol* constructor);
   bool member_forwarding_constructor(const cxx::Type* type,
                                      cxx::FunctionSymbol* constructor,
                                      cxx::AST* owner);
+  // Whether field `index` of an admitted member-forwarding constructor stores
+  // the address of its reference argument rather than the argument's value.
+  bool forwards_argument_address(cxx::FunctionSymbol* constructor,
+                                 size_t index) const;
   // Returns a fixed array's value schema, or null for a non-array type.
   const ArrayPartition* array(const cxx::Type* input, cxx::AST* owner);
   // Direct lookup of a member slice retained by its owning record's admission.
@@ -635,6 +641,10 @@ class Types {
       records_;
   // Member-forwarding constructor classification, retained at first demand.
   std::unordered_map<cxx::FunctionSymbol*, bool> member_forwarding_constructors_;
+  // Fields of admitted member-forwarding constructors initialized with the
+  // address of their reference parameter, by declaration index.
+  std::unordered_map<cxx::FunctionSymbol*, std::vector<bool>>
+      forwarded_argument_addresses_;
   // Admitted typed buffer handles keyed by concrete source specialization.
   std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<BufferPartition>>
       buffers_;

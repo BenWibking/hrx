@@ -841,7 +841,13 @@ Value Initialization::from_elements(const cxx::Type* type,
       return initialized;
     }
     ReceiverScope receiver(evaluation_, *record);
+    size_t field_index = 0;
     for (const auto& member : record->members) {
+      // A member-forwarding constructor may store its reference argument's
+      // address in this pointer field instead of the argument's value.
+      const bool forwarded_address =
+          cxx::symbol_cast<cxx::FieldSymbol>(member.source) &&
+          types_.forwards_argument_address(constructor, field_index++);
       auto* initializing_expression = elements ? elements->value : nullptr;
       Value initialized;
       {
@@ -852,7 +858,8 @@ Value Initialization::from_elements(const cxx::Type* type,
         if (elements && !default_clause) {
           lexical_receiver.emplace(evaluation_);
         }
-        if (unit_.typeTraits().is_lvalue_reference(member.type())) {
+        if (forwarded_address ||
+            unit_.typeTraits().is_lvalue_reference(member.type())) {
           if (!elements) {
             diagnostics_.reject(unit_, owner,
                                 "reference members require an initializer");
