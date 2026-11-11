@@ -22,7 +22,7 @@ ARGS = None
 EM_X86_64, EM_AARCH64 = 62, 183
 HOST_MACHINES = (EM_X86_64, EM_AARCH64)
 STB_LOCAL, STB_GLOBAL, STB_WEAK = 0, 1, 2
-STT_OBJECT, STT_FUNC = 1, 2
+STT_OBJECT, STT_FUNC, STT_FILE = 1, 2, 4
 SHN_UNDEF = 0
 SHT_RELA, SHT_NOTE = 4, 7
 KERNEL_REF_PREFIX = "_ZN4loom6kernel10kernel_ref"
@@ -42,6 +42,55 @@ struct Body {
   [[loom::inline]] void operator()() const { y[0] = a; }
 };
 """
+
+# Range-based for statements over an array, a class range and, in a lambda,
+# nested arrays: in a kernel body and in a function host code also calls.
+RANGE_FOR_SOURCE = (
+    KERNEL_PRELUDE
+    + r"""
+struct Counter {
+  struct Iterator {
+    unsigned index;
+    void operator++() { ++index; }
+    bool operator!=(const Iterator& other) const { return index != other.index; }
+    unsigned operator*() const { return index; }
+  };
+  unsigned count;
+  Iterator begin() const { return {0}; }
+  Iterator end() const { return {count}; }
+};
+float total(const float* y) {
+  float values[3] = {y[0], y[1], y[2]};
+  float sum = 0.0f;
+  for (float value : values) sum += value;
+  for (unsigned index : Counter{3}) sum += values[index] * y[index];
+  return sum;
+}
+struct Ranges {
+  float* y;
+  [[loom::inline]] void operator()() const {
+    float values[2] = {y[0], y[1]};
+    auto product = [&] {
+      float p = 0.0f;
+      for (float v : values)
+        for (float w : values) p += v * w;
+      return p;
+    };
+    y[0] = total(y) + product();
+  }
+};
+float host_total(const float* y) {
+  float pair[2] = {y[0], y[1]};
+  float sum = 0.0f;
+  for (float value : pair) sum += value;
+  return total(y) + sum;
+}
+const loom::kernel::descriptor* ranges() {
+  return &loom::kernel::kernel_ref<&run<Ranges>>;
+}
+"""
+)
+RANGES_REF = "_ZN4loom6kernel10kernel_refIXadL_Z3runI6RangesEvT_EEEE"
 
 BODY_REF = "_ZN4loom6kernel10kernel_refIXadL_Z3runI4BodyEvT_EEEE"
 BAD_REF = "_ZN4loom6kernel10kernel_refIXadL_Z3runI3BadEvT_EEEE"
@@ -680,6 +729,47 @@ extern "C" reference via_{name}() {{ return &shared_ref; }}
                 self.assertEqual(a[:4], ["run__6Shared", "0", "0", "-1"])
                 self.assertEqual(b[:3], ["run__6Shared", "1", "1"])
                 self.assertNotEqual(b[3], "-1")
+
+    def test_host_object_does_not_depend_on_import_order(self):
+        # The importer translates range-based for statements without changing
+        # the unit's AST, so running it before host code generation (as the
+        # hidden --loom-import-first option does) gives the same object. -O0
+        # keeps host code close to the AST it was generated from.
+        objects = []
+        for extra in ((), ("--loom-import-first",)):
+            elf, stderr, _ = self.compile(RANGE_FOR_SOURCE, "-O0", *extra)
+            self.assertIn("preprocess=1 parse=1", stderr)
+            self.assertIn("host_codegen=1 imports=1 device_compiles=1", stderr)
+            objects.append(elf)
+        host_first, import_first = objects
+        symbols = host_first.symbols()
+        for symbol in ("_Z5totalPKf", "_Z10host_totalPKf"):
+            self.assertEqual(symbols[symbol][:2], (STB_GLOBAL, STT_FUNC))
+            self.assertNotEqual(symbols[symbol][2], SHN_UNDEF)
+        # Descriptors are local to the object that defines them.
+        self.assertEqual(symbols[RANGES_REF][:2], (STB_LOCAL, STT_OBJECT))
+        self.assertTrue(self.device_code_objects(host_first))
+
+        # The same symbols (other than the source file's, whose temporary path
+        # differs) and the same bytes in every section but the symbol tables.
+        def named(elf):
+            return {
+                name: value
+                for name, value in elf.symbols().items()
+                if value[1] != STT_FILE
+            }
+
+        def sections(elf):
+            return [
+                (name, elf.contents(section))
+                for name, section in zip(elf.names, elf.sections)
+                if name not in (".symtab", ".strtab")
+            ]
+
+        self.assertEqual(named(host_first), named(import_first))
+        text = [data for name, data in sections(host_first) if name.startswith(".text")]
+        self.assertTrue(any(text))
+        self.assertEqual(sections(host_first), sections(import_first))
 
     def test_host_errors_are_compile_errors(self):
         _, stderr, _ = self.compile(

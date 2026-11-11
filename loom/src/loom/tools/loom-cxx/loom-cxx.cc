@@ -12,8 +12,12 @@
 // consume that one translation unit:
 //
 //   1. Host: cxx's MLIR/LLVM pipeline lowers the unit to optimized LLVM IR.
-//      This runs first, so translation (which may instantiate templates and
-//      rewrite device bodies in the unit) cannot change host code.
+//      The order of host code generation and import does not matter: the
+//      importer only reads the unit's AST (it may complete template
+//      instantiations through cxx, as host code generation does) and keeps
+//      its range-for expansions outside the AST. Host code runs first so a
+//      unit that references no kernel descriptors needs no device pass. The
+//      hidden --loom-import-first test option runs the device pass first.
 //   2. Device: if host code references loom::kernel::kernel_ref descriptors,
 //      Loom's importer translates the launched kernels of the same unit, and
 //      the Loom compiler compiles them for --loom-target. Kernels the importer
@@ -137,6 +141,9 @@ struct Options {
   DeviceFailurePolicy device_failure = DeviceFailurePolicy::kError;
   bool stats = false;
   bool verbose = false;
+  // Test option: run the device pass before host code generation, to check
+  // that the order does not change the object.
+  bool import_first = false;
   std::string keep_directory;
   std::vector<std::string> ignored;
 };
@@ -290,6 +297,8 @@ Options parse_options(int argc, char** argv) {
       options.stats = true;
     } else if (arg == "--loom-verbose") {
       options.verbose = true;
+    } else if (arg == "--loom-import-first") {
+      options.import_first = true;
     } else if (starts_with(arg, "--loom-keep=")) {
       options.keep_directory = std::string(arg.substr(12));
     } else if (arg == "-Xclang") {
@@ -448,6 +457,9 @@ class Driver {
   void write_dependency_file();
   bool generate_host_code();
   std::vector<std::string> referenced_kernel_refs() const;
+  // Runs the device pass in a work directory. Returns false when the pass
+  // failed and the failure policy fails the compile.
+  bool run_device_pass();
   // Imports and compiles the device code, applying the drop policy. Returns
   // false when the device pass failed.
   bool device_pass();
@@ -1386,47 +1398,53 @@ void Driver::emit_object() {
   emit_seconds_ = seconds_since(start);
 }
 
+bool Driver::run_device_pass() {
+  if (!options_.keep_directory.empty()) {
+    work_directory_ = options_.keep_directory;
+    keep_work_directory_ = true;
+    std::filesystem::create_directories(work_directory_);
+  } else {
+    auto base = std::filesystem::temp_directory_path() /
+                std::format("loom-cxx-{}-XXXXXX", (long)getpid());
+    std::string pattern = base.string();
+    if (!mkdtemp(pattern.data())) {
+      std::fprintf(stderr, "%s: error: cannot create a temporary directory\n",
+                   kTool.data());
+      return false;
+    }
+    work_directory_ = pattern;
+  }
+  bool ok = false;
+  try {
+    ok = device_pass();
+  } catch (...) {
+    if (!keep_work_directory_) {
+      std::filesystem::remove_all(work_directory_);
+    }
+    throw;
+  }
+  if (!keep_work_directory_) {
+    std::filesystem::remove_all(work_directory_);
+  }
+  return ok || options_.device_failure != DeviceFailurePolicy::kError;
+}
+
 int Driver::run() {
   const auto before = loom::cxx_import::frontend_statistics();
   if (!parse()) {
     return 1;
   }
   write_dependency_file();
+  // Host code generation and the device pass read the same unit and neither
+  // changes its AST, so either may run first; --loom-import-first checks it.
+  if (options_.import_first && !run_device_pass()) {
+    return 1;
+  }
   if (!generate_host_code()) {
     return 1;
   }
-
-  if (!kernel_refs_.empty()) {
-    if (!options_.keep_directory.empty()) {
-      work_directory_ = options_.keep_directory;
-      keep_work_directory_ = true;
-      std::filesystem::create_directories(work_directory_);
-    } else {
-      auto base = std::filesystem::temp_directory_path() /
-                  std::format("loom-cxx-{}-XXXXXX", (long)getpid());
-      std::string pattern = base.string();
-      if (!mkdtemp(pattern.data())) {
-        std::fprintf(stderr, "%s: error: cannot create a temporary directory\n",
-                     kTool.data());
-        return 1;
-      }
-      work_directory_ = pattern;
-    }
-    bool ok = false;
-    try {
-      ok = device_pass();
-    } catch (...) {
-      if (!keep_work_directory_) {
-        std::filesystem::remove_all(work_directory_);
-      }
-      throw;
-    }
-    if (!keep_work_directory_) {
-      std::filesystem::remove_all(work_directory_);
-    }
-    if (!ok && options_.device_failure == DeviceFailurePolicy::kError) {
-      return 1;
-    }
+  if (!options_.import_first && !kernel_refs_.empty() && !run_device_pass()) {
+    return 1;
   }
   embed_device_code();
   emit_object();
