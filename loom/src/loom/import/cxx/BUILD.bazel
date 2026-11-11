@@ -55,6 +55,8 @@ exports_files([
 loom_cc_test(
     name = "import_test",
     srcs = ["import_test.cc"],
+    cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
+    cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
     deps = [
         ":cxx",
         "//loom/src/loom/codegen/low:text_asm",
@@ -107,7 +109,10 @@ loom_cc_library(
         "translation.cc",
         "translation.h",
     ],
-    hdrs = ["import.h"],
+    hdrs = [
+        "import.h",
+        "unit.h",
+    ],
     cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
     cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
     deps = [

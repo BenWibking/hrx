@@ -12,6 +12,7 @@
 #include <cxx/preprocessor.h>
 #include <cxx/triple.h>
 
+#include <atomic>
 #include <cstdlib>
 
 #include "loom/error/error_catalog.h"
@@ -154,6 +155,9 @@ void Diagnostics::reject(cxx::SourceLocation location,
 }
 
 namespace {
+
+std::atomic<uint64_t> preprocess_count{0};
+std::atomic<uint64_t> parse_count{0};
 
 // Supplies language macros and an explicit data model without discovering a
 // host SDK, compiler driver, or machine-specific include directory.
@@ -302,6 +306,7 @@ Frontend::Frontend(iree_string_view_t filename,
 }
 
 void Frontend::preprocess(iree_string_view_t source, bool preamble_only) {
+  preprocess_count.fetch_add(1, std::memory_order_relaxed);
   auto* preprocessor = unit_.preprocessor();
   preprocessor->setPreambleOnly(preamble_only);
   unit_.beginPreprocessing(string(source),
@@ -343,14 +348,28 @@ void Frontend::preprocess(iree_string_view_t source, bool preamble_only) {
   diagnostics_.finish();
 }
 
+cxx::ParserConfiguration Frontend::parser_configuration() const {
+  // Exception support follows the profile, as in a compiler driver: the
+  // hosted profile parses and generates host code without exceptions.
+  return {.analysisMode = cxx::ParserAnalysisMode::kFull,
+          .exceptionsEnabled = toolchain_->exceptionsEnabled()};
+}
+
 void Frontend::parse() {
-  unit_.parse({.analysisMode = cxx::ParserAnalysisMode::kFull});
+  parse_count.fetch_add(1, std::memory_order_relaxed);
+  unit_.parse(parser_configuration());
   diagnostics_.finish();
 }
 
 void Frontend::resume() {
-  unit_.resume({.analysisMode = cxx::ParserAnalysisMode::kFull});
+  parse_count.fetch_add(1, std::memory_order_relaxed);
+  unit_.resume(parser_configuration());
   diagnostics_.finish();
+}
+
+FrontendStatistics frontend_statistics() {
+  return {.preprocess_count = preprocess_count.load(std::memory_order_relaxed),
+          .parse_count = parse_count.load(std::memory_order_relaxed)};
 }
 
 }  // namespace loom::cxx_import

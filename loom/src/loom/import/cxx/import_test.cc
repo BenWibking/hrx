@@ -18,6 +18,7 @@
 #include "loom/error/error_catalog.h"
 #include "loom/format/text/printer.h"
 #include "loom/import/cxx/source/catalog.h"
+#include "loom/import/cxx/unit.h"
 #include "loom/ops/func/ops.h"
 #include "loom/ops/op_registry.h"
 #include "loom/target/test/descriptors.h"
@@ -989,6 +990,96 @@ TEST_F(LaunchedImportTest, TolerateHostErrorsDefersErrorsInHostOnlyCode) {
   EXPECT_EQ(error_count_, 0);
   EXPECT_GT(diagnostic_count_, 0);  // reported as a deferred-error warning
   EXPECT_NE(Print().find("@run__4Body"), std::string::npos);
+}
+
+// A unit is parsed once and imported from its existing translation unit, as
+// a single-source driver does after generating host code from it.
+TEST_F(LaunchedImportTest, ParsedUnitImportsWithoutReparsing) {
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  options_.triple = IREE_SV("x86_64-linux-gnu");
+  const auto before = loom::cxx_import::frontend_statistics();
+  loom_cxx_unit_t* unit = nullptr;
+  IREE_ASSERT_OK(loom_cxx_unit_parse(iree_make_cstring_view(kKernelRefSource),
+                                     IREE_SV("/app/source.cpp"), &options_,
+                                     iree_allocator_system(), &unit));
+  ASSERT_NE(unit, nullptr);
+  const auto parsed = loom::cxx_import::frontend_statistics();
+  EXPECT_EQ(parsed.preprocess_count - before.preprocess_count, 1u);
+  EXPECT_EQ(parsed.parse_count - before.parse_count, 1u);
+
+  // Consumers see the unit's frontend state and hosted profile.
+  cxx::TranslationUnit& translation_unit =
+      loom::cxx_import::unit_translation_unit(unit);
+  EXPECT_NE(translation_unit.ast(), nullptr);
+  // The hosted profile parses as a host compile without exceptions, so host
+  // code generation from the unit emits no unwinding.
+  EXPECT_FALSE(loom::cxx_import::unit_toolchain(unit).exceptionsEnabled());
+  EXPECT_FALSE(translation_unit.config().exceptionsEnabled);
+  EXPECT_FALSE(loom::cxx_import::unit_has_error(unit));
+
+  IREE_ASSERT_OK(loom_cxx_import_unit(unit, &context_, &pool_, &options_,
+                                      iree_allocator_system(), &module_));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+  EXPECT_NE(Print().find("@_Z3runI4BodyEvT_"), std::string::npos);
+  EXPECT_NE(Descriptor(kBodyReference).find("  .long 1, 1\n"),
+            std::string::npos);
+
+  // Importing again, for example with a kernel the device compiler rejected
+  // excluded, reuses the same translation unit.
+  loom_module_free(module_);
+  module_ = nullptr;
+  const iree_string_view_t excluded = IREE_SV("_Z3runI4BodyEvT_");
+  options_.excluded_kernels = &excluded;
+  options_.excluded_kernel_count = 1;
+  IREE_ASSERT_OK(loom_cxx_import_unit(unit, &context_, &pool_, &options_,
+                                      iree_allocator_system(), &module_));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(Print().find("@_Z3runI4BodyEvT_"), std::string::npos);
+  EXPECT_NE(Descriptor(kBodyReference).find("  .long 1, 0\n"),
+            std::string::npos);
+  EXPECT_EQ(loom::cxx_import::unit_statistics(unit).import_count, 2u);
+  const auto imported = loom::cxx_import::frontend_statistics();
+  EXPECT_EQ(imported.preprocess_count, parsed.preprocess_count);
+  EXPECT_EQ(imported.parse_count, parsed.parse_count);
+  loom_cxx_unit_free(unit);
+}
+
+TEST_F(ImportTest, ParsedUnitRejectsSourceErrorsOnce) {
+  loom_cxx_unit_t* unit = nullptr;
+  IREE_ASSERT_OK(loom_cxx_unit_parse(IREE_SV("int entry() { return x; }\n"),
+                                     IREE_SV("/app/source.cpp"), &options_,
+                                     iree_allocator_system(), &unit));
+  EXPECT_EQ(unit, nullptr);
+  EXPECT_GT(error_count_, 0);
+}
+
+TEST_F(LaunchedImportTest, ParsedUnitDiagnosticsFollowTheImportSink) {
+  // The parse sink belongs to the parse; an import reports through its own.
+  options_.flags |=
+      LOOM_CXX_IMPORT_FLAG_HOSTED | LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
+  options_.triple = IREE_SV("x86_64-linux-gnu");
+  std::string source = std::string(kKernelRefSource) + R"cxx(
+struct Bad {
+  float* y;
+  [[loom::inline]] void operator()() const { if (y != nullptr) y[0] = 2.0f; }
+};
+const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
+)cxx";
+  loom_cxx_unit_t* unit = nullptr;
+  IREE_ASSERT_OK(loom_cxx_unit_parse(
+      iree_make_string_view(source.data(), source.size()),
+      IREE_SV("/app/source.cpp"), &options_, iree_allocator_system(), &unit));
+  ASSERT_NE(unit, nullptr);
+  EXPECT_EQ(diagnostic_count_, 0);
+  loom_cxx_unit_set_diagnostic_sink(unit, {});
+  IREE_ASSERT_OK(loom_cxx_import_unit(unit, &context_, &pool_, &options_,
+                                      iree_allocator_system(), &module_));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_GT(diagnostic_count_, 0);  // the dropped kernel's warning
+  EXPECT_EQ(error_count_, 0);
+  EXPECT_EQ(loom::cxx_import::unit_statistics(unit).dropped_kernel_count, 1u);
+  loom_cxx_unit_free(unit);
 }
 
 TEST_F(ImportTest, HostedFlagSelectsTheHostedProfile) {
