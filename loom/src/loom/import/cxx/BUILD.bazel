@@ -33,6 +33,7 @@ exports_files([
     "include/loomcxx/encoding_type.h",
     "include/loomcxx/index.h",
     "include/loomcxx/kernel.h",
+    "include/loomcxx/kernel_ref.h",
     "include/loomcxx/low.h",
     "include/loomcxx/math.h",
     "include/loomcxx/numeric.h",

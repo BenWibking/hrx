@@ -7,6 +7,7 @@
 #ifndef LOOM_IMPORT_CXX_SYMBOL_FUNCTIONS_H_
 #define LOOM_IMPORT_CXX_SYMBOL_FUNCTIONS_H_
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -240,7 +241,7 @@ class Functions {
     current_origin_ = origin;
   }
   // Import options borrowed for the translation: hosted profile, excluded
-  // export names and the kernel manifest path.
+  // export names and the kernel descriptor path.
   void set_import_options(const loom_cxx_import_options_t* options) {
     options_ = options;
   }
@@ -252,6 +253,11 @@ class Functions {
       const std::unordered_set<cxx::FunctionSymbol*>* excluded) {
     excluded_kernels_ = excluded;
   }
+  // Writes one host launch descriptor per loom::kernel::kernel_ref
+  // specialization reached from host code to the import options' kernel
+  // descriptor path, if set. Each defines the specialization's Itanium symbol
+  // as assembly; see loomcxx/kernel_ref.h for the layout.
+  void write_kernel_descriptors();
   // Builds the selected native definition and launch contract at the caller's
   // module insertion point. The caller then enters and fills the returned body.
   DefinedFunction define(FunctionInstance instance, Types& types,
@@ -309,8 +315,9 @@ class Functions {
   const std::string& qualified_name(cxx::FunctionSymbol* symbol);
   // Walks host bodies reachable from the translation unit's concrete
   // definitions (outside the standard library) and returns every kernel named
-  // by a launch-style call's leading template argument. Bodies are completed
-  // for instantiation but never lowered.
+  // by a launch-style call's leading template argument or by an odr-use of
+  // loom::kernel::kernel_ref<&K>, recording the latter in kernel_references_.
+  // Bodies are completed for instantiation but never lowered.
   std::vector<cxx::FunctionSymbol*> discover_launched_kernels(
       std::span<cxx::FunctionSymbol* const> definitions);
   // Export name of a kernel_type_symbol kernel instance: the kernel name and
@@ -318,12 +325,16 @@ class Functions {
   // observes as typeid(T).name().
   std::string kernel_type_symbol_spelling(cxx::FunctionSymbol* function,
                                           cxx::AST* source);
-  // Appends a kernel's launch-ABI rows to the import options' kernel manifest
-  // path, if set, so a host-compiled launch site can pack kernel constants and
-  // bindings from its own parameter objects. Rows come from the same
+  // Export name of a launched kernel root: the kernel_type_symbol spelling,
+  // else the Itanium symbol of a kernel named only through kernel_ref, else
+  // empty (the ordinary naming rules apply).
+  std::string launched_export_name(cxx::FunctionSymbol* kernel,
+                                   cxx::AST* source);
+  // Records a kernel_ref-named kernel's host launch descriptor: its export
+  // name, static workgroup size and kernel argument leaves, from the same
   // flattening that builds the kernel's argument list.
-  void write_kernel_manifest(cxx::FunctionSymbol* function, Types& types,
-                             cxx::AST* source);
+  void record_kernel_descriptor(cxx::FunctionSymbol* function, Types& types,
+                                cxx::AST* source);
   std::optional<ImplicitObjectParameter> implicit_object(
       FunctionInstance instance, cxx::AST* source) const;
 
@@ -441,6 +452,44 @@ class Functions {
   const loom_cxx_import_options_t* options_ = nullptr;
   // Reachable bodyless declarations in deterministic discovery order.
   std::vector<FunctionDeclaration> pending_declarations_;
+  // One odr-use of loom::kernel::kernel_ref<&K> reached from host code.
+  struct KernelReference {
+    // The kernel_ref specialization, whose Itanium symbol the host references.
+    cxx::VariableSymbol* variable;
+    // Canonical kernel K.
+    cxx::FunctionSymbol* kernel;
+  };
+  // One kernel ABI argument copied from a host parameter object.
+  struct KernelDescriptorLeaf {
+    // Kernel parameter owning the leaf.
+    uint32_t parameter;
+    // 0: by-value bytes; 1: device pointer passed as a buffer binding.
+    uint32_t kind;
+    // Byte offset of the leaf in the host parameter object.
+    uint64_t source_offset;
+    // Byte offset of the argument in the explicit kernel argument segment.
+    uint64_t kernarg_offset;
+    // Byte size of the leaf and of its argument.
+    uint64_t size;
+  };
+  // Host launch facts of one translated kernel_ref-named kernel.
+  struct KernelDescriptor {
+    std::string export_name;
+    // Exact workgroup size annotation, or zeros when the launch configuration
+    // computes it.
+    std::array<uint32_t, 3> workgroup_size;
+    uint64_t kernarg_size;
+    uint32_t parameter_count;
+    std::vector<KernelDescriptorLeaf> leaves;
+  };
+  // kernel_ref odr-uses in discovery order.
+  std::vector<KernelReference> kernel_references_;
+  // Canonical kernels named by at least one kernel_ref.
+  std::unordered_set<cxx::FunctionSymbol*> referenced_kernels_;
+  // Descriptors of the translated kernel_ref-named kernels, by canonical
+  // kernel.
+  std::unordered_map<cxx::FunctionSymbol*, KernelDescriptor>
+      kernel_descriptors_;
   // Canonical declarations inherit one exact name borrowed from source text.
   std::unordered_map<cxx::FunctionSymbol*, std::string_view> explicit_names_;
   // Source qualification retained once per reached function.

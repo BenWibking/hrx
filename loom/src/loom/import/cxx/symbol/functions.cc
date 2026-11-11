@@ -23,6 +23,7 @@
 #include <cxx/types.h>
 #include <cxx/views/symbol_chain.h>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstdio>
@@ -268,10 +269,10 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
   const bool launched_roots =
       roots.size() == 1 && cxx_import::string(roots[0]) == "@launched";
   if (launched_roots) {
-    // Device-pass mode: export exactly the kernels named by launch sites in
-    // the translation unit's host code. Host bodies are walked, never lowered.
-    // kernel_type_symbol export names omitted from selection, such as kernels
-    // a later compile rejected.
+    // Device-pass mode: export exactly the kernels named by launch sites and
+    // kernel_ref odr-uses in the translation unit's host code. Host bodies are
+    // walked, never lowered. Launched export names omitted from selection,
+    // such as kernels a later compile rejected.
     std::unordered_set<std::string> excluded_names;
     if (options_) {
       for (size_t i = 0; i < options_->excluded_kernel_count; ++i) {
@@ -282,17 +283,10 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
       if (excluded_kernels_ && excluded_kernels_->contains(kernel->canonical())) {
         continue;
       }
-      if (!excluded_names.empty() && annotated(kernel, "kernel_type_symbol")) {
-        auto arguments = kernel->templateArguments();
-        auto* tag = arguments.empty()
-                        ? nullptr
-                        : cxx::template_argument_type(arguments[0]);
-        if (tag) {
-          cxx::ExternalNameEncoder encoder(&unit_);
-          if (excluded_names.contains(cxx::to_string(kernel->name()) + "__" +
-                                      encoder.encode(tag))) {
-            continue;
-          }
+      if (!excluded_names.empty()) {
+        auto name = launched_export_name(kernel, nullptr);
+        if (!name.empty() && excluded_names.contains(name)) {
+          continue;
         }
       }
       exported_.insert(kernel);
@@ -411,13 +405,9 @@ bool Functions::ordinary_analysis_call(const DirectCall& call) {
   return false;
 }
 
-// Returns the kernel named by a launch-style callee's leading function
-// template argument, such as loom::kernel::launch<kernel<F>>.
-static cxx::FunctionSymbol* launched_kernel(cxx::FunctionSymbol* function) {
-  if (!function) {
-    return nullptr;
-  }
-  auto arguments = function->templateArguments();
+// Returns the kernel whose address is the leading template argument, if any.
+static cxx::FunctionSymbol* leading_kernel_argument(
+    std::span<const cxx::TemplateArgument> arguments) {
   if (arguments.empty()) {
     return nullptr;
   }
@@ -430,6 +420,26 @@ static cxx::FunctionSymbol* launched_kernel(cxx::FunctionSymbol* function) {
           ? cxx::symbol_cast<cxx::FunctionSymbol>((*address)->symbol())
           : nullptr;
   return kernel && annotated(kernel, "kernel") ? kernel : nullptr;
+}
+
+// Returns the kernel named by a launch-style callee's leading function
+// template argument, such as loom::kernel::launch<kernel<F>>.
+static cxx::FunctionSymbol* launched_kernel(cxx::FunctionSymbol* function) {
+  return function ? leading_kernel_argument(function->templateArguments())
+                  : nullptr;
+}
+
+// Returns the kernel K named by a specialization of a [[loom::kernel_ref]]
+// variable template, such as loom::kernel::kernel_ref<&K>.
+static cxx::FunctionSymbol* referenced_kernel(cxx::VariableSymbol* variable) {
+  if (!variable || !variable->isSpecialization()) {
+    return nullptr;
+  }
+  if (!annotated(variable, "kernel_ref") &&
+      !annotated(variable->primaryTemplateSymbol(), "kernel_ref")) {
+    return nullptr;
+  }
+  return leading_kernel_argument(variable->templateArguments());
 }
 
 namespace {
@@ -454,8 +464,17 @@ bool is_standard_library(cxx::FunctionSymbol* function) {
 // constructors, overloaded operators, and user conversions.
 class CalleeCollector final : public cxx::ASTVisitor {
  public:
-  explicit CalleeCollector(std::vector<cxx::FunctionSymbol*>& output)
-      : output_(output) {}
+  CalleeCollector(std::vector<cxx::FunctionSymbol*>& output,
+                  std::vector<cxx::VariableSymbol*>& kernel_references)
+      : output_(output), kernel_references_(kernel_references) {}
+
+  void visit(cxx::IdExpressionAST* ast) override {
+    auto* variable = cxx::symbol_cast<cxx::VariableSymbol>(ast->symbol);
+    if (referenced_kernel(variable)) {
+      kernel_references_.push_back(variable);
+    }
+    cxx::ASTVisitor::visit(ast);
+  }
 
   void visit(cxx::CallExpressionAST* ast) override {
     add(direct_callee(ast));
@@ -511,6 +530,7 @@ class CalleeCollector final : public cxx::ASTVisitor {
     }
   }
   std::vector<cxx::FunctionSymbol*>& output_;
+  std::vector<cxx::VariableSymbol*>& kernel_references_;
 };
 
 }  // namespace
@@ -529,31 +549,67 @@ std::string Functions::kernel_type_symbol_spelling(
   return cxx::to_string(function->name()) + "__" + encoder.encode(tag);
 }
 
-void Functions::write_kernel_manifest(cxx::FunctionSymbol* function,
-                                      Types& types, cxx::AST* source) {
-  const std::string path =
-      options_ ? string(options_->kernel_manifest_path) : std::string();
-  if (path.empty()) {
-    return;
+std::string Functions::launched_export_name(cxx::FunctionSymbol* kernel,
+                                            cxx::AST* source) {
+  if (annotated(kernel, "kernel_type_symbol")) {
+    if (source) {
+      return kernel_type_symbol_spelling(kernel, source);
+    }
+    auto arguments = kernel->templateArguments();
+    auto* tag = arguments.empty() ? nullptr
+                                  : cxx::template_argument_type(arguments[0]);
+    if (!tag) {
+      return {};
+    }
+    cxx::ExternalNameEncoder encoder(&unit_);
+    return cxx::to_string(kernel->name()) + "__" + encoder.encode(tag);
   }
-  // One block per kernel instance:
-  //   kernel <symbol> <parameter_count>
-  //   size <sizeof> <alignof>            leading (tag) parameter
-  //   arg <parameter> <c|b> <byte_offset> <byte_size>
-  // One arg row per kernel ABI argument, in argument order. Offsets are C
-  // object offsets inside the host parameter object; `c` rows are by-value
-  // constants and `b` rows are pointers passed as buffer bindings.
+  if (referenced_kernels_.contains(kernel->canonical())) {
+    if (auto found = explicit_names_.find(kernel->canonical());
+        found != explicit_names_.end()) {
+      return std::string(found->second);
+    }
+    cxx::ExternalNameEncoder encoder(&unit_);
+    return encoder.encode(kernel->canonical());
+  }
+  return {};
+}
+
+void Functions::record_kernel_descriptor(cxx::FunctionSymbol* function,
+                                         Types& types, cxx::AST* source) {
+  // Leaves follow the kernel ABI argument order: one leaf per by-value scalar
+  // or vector and one per pointer, which Loom passes as a buffer binding.
+  // Source offsets are C object offsets inside the host parameter object. The
+  // explicit kernel argument segment aligns buffers to 8 bytes and by-value
+  // leaves to their size, at most 4 bytes, and is padded to 8 bytes (Loom's
+  // AMDGPU kernel argument layout).
   auto* layout = unit_.control()->memoryLayout();
   auto parameters = function->parameters();
-  std::string rows;
+  KernelDescriptor descriptor;
+  descriptor.export_name = launched_export_name(function, source);
+  descriptor.workgroup_size =
+      launches_.exact_workgroup_size(function).value_or(
+          std::array<uint32_t, 3>{0, 0, 0});
+  descriptor.parameter_count = static_cast<uint32_t>(parameters.size());
+  uint64_t kernarg_size = 0;
+  auto append = [&](uint32_t parameter, uint32_t kind, uint64_t offset,
+                    uint64_t size) {
+    uint64_t align = kind == 1 ? 8 : std::min<uint64_t>(size, 4);
+    if (align == 0) {
+      align = 1;
+    }
+    uint64_t kernarg_offset = (kernarg_size + align - 1) / align * align;
+    kernarg_size = kernarg_offset + size;
+    descriptor.leaves.push_back({parameter, kind, offset, kernarg_offset, size});
+  };
   for (size_t i = 0; i < parameters.size(); ++i) {
     const KernelLeaf* previous = nullptr;
     for (const auto& leaf :
          types.kernel_leaves(types.unqualified(parameters[i]->type()), source)) {
       switch (leaf.component) {
         case KernelComponent::PointerRoot:
-          rows += std::format("arg {} b {} {}\n", i, leaf.byte_offset,
-                              layout->sizeOfPointer());
+          append(static_cast<uint32_t>(i), 1, leaf.byte_offset,
+                 layout->sizeOfPointer());
           break;
         case KernelComponent::PointerOffset:
           break;
@@ -564,28 +620,110 @@ void Functions::write_kernel_manifest(cxx::FunctionSymbol* function,
               previous->type == leaf.type &&
               previous->byte_offset == leaf.byte_offset) {
             diagnostics_.reject(unit_, source,
-                                "kernel manifest requires one argument per "
+                                "kernel descriptor requires one argument per "
                                 "record leaf");
           }
-          rows += std::format("arg {} c {} {}\n", i, leaf.byte_offset,
-                              layout->sizeOf(leaf.type).value_or(0));
+          append(static_cast<uint32_t>(i), 0, leaf.byte_offset,
+                 layout->sizeOf(leaf.type).value_or(0));
           break;
       }
       previous = &leaf;
     }
   }
-  std::string header =
-      std::format("kernel {} {}\n", kernel_type_symbol_spelling(function, source),
-                  parameters.size());
-  if (!parameters.empty()) {
-    auto* tag = unit_.typeTraits().remove_cv(parameters[0]->type());
-    header += std::format("size {} {}\n", layout->sizeOf(tag).value_or(0),
-                          layout->alignmentOf(tag).value_or(0));
+  descriptor.kernarg_size = (kernarg_size + 7) / 8 * 8;
+  kernel_descriptors_[function->canonical()] = std::move(descriptor);
+}
+
+namespace {
+
+// Quotes an assembler symbol or string operand.
+std::string assembly_quote(std::string_view text) {
+  std::string quoted = "\"";
+  for (char c : text) {
+    if (c == '"' || c == '\\') {
+      quoted += '\\';
+    }
+    quoted += c;
   }
-  if (FILE* file = std::fopen(path.c_str(), "a")) {
-    std::fprintf(file, "%s%s", header.c_str(), rows.c_str());
-    std::fclose(file);
+  quoted += '"';
+  return quoted;
+}
+
+}  // namespace
+
+void Functions::write_kernel_descriptors() {
+  const std::string path =
+      options_ ? string(options_->kernel_descriptors_path) : std::string();
+  if (path.empty()) {
+    return;
   }
+  // One weak COMDAT definition per kernel_ref specialization (ELF, LP64), so
+  // several translation units may define the same descriptor. Layout of
+  // loom::kernel::descriptor and descriptor_leaf in loomcxx/kernel_ref.h:
+  //   u32 version, u32 flags, ptr name, u32 workgroup_size[3],
+  //   u32 kernarg_size, u32 parameter_count, u32 leaf_count, ptr leaves
+  //   leaf: u32 parameter, kind, source_offset, kernarg_offset, size
+  // A kernel_ref whose kernel was dropped or excluded has flags 0 and no
+  // leaves: the host reports the launch as having no device code.
+  std::string text = "# Loom kernel descriptors\n";
+  std::unordered_set<std::string> written;
+  size_t index = 0;
+  for (const auto& reference : kernel_references_) {
+    cxx::ExternalNameEncoder encoder(&unit_);
+    std::string symbol = encoder.encode(reference.variable);
+    if (!written.insert(symbol).second) {
+      continue;
+    }
+    auto found = kernel_descriptors_.find(reference.kernel);
+    const KernelDescriptor* descriptor =
+        found == kernel_descriptors_.end() ? nullptr : &found->second;
+    std::string name = descriptor
+                           ? descriptor->export_name
+                           : launched_export_name(reference.kernel, nullptr);
+    std::string quoted = assembly_quote(symbol);
+    std::string label = std::format(".Lloom_kernel_descriptor_{}", index++);
+    text += std::format(
+        "  .section {3},\"aG\",%progbits,{0},comdat\n"
+        "  .weak {0}\n"
+        "  .type {0},%object\n"
+        "  .size {0},48\n"
+        "  .p2align 3\n"
+        "{0}:\n"
+        "  .long 1, {1}\n"
+        "  .quad {2}_name\n",
+        quoted, descriptor ? 1 : 0, label,
+        assembly_quote(".rodata." + symbol));
+    if (descriptor) {
+      text += std::format("  .long {}, {}, {}, {}, {}, {}\n",
+                          descriptor->workgroup_size[0],
+                          descriptor->workgroup_size[1],
+                          descriptor->workgroup_size[2],
+                          descriptor->kernarg_size, descriptor->parameter_count,
+                          descriptor->leaves.size());
+      text += descriptor->leaves.empty()
+                  ? std::string("  .quad 0\n")
+                  : std::format("  .quad {}_leaves\n{}_leaves:\n", label,
+                                label);
+      for (const auto& leaf : descriptor->leaves) {
+        text += std::format("  .long {}, {}, {}, {}, {}\n", leaf.parameter,
+                            leaf.kind, leaf.source_offset, leaf.kernarg_offset,
+                            leaf.size);
+      }
+    } else {
+      text += "  .long 0, 0, 0, 0, 0, 0\n  .quad 0\n";
+    }
+    text += std::format("{}_name:\n  .asciz {}\n", label,
+                        assembly_quote(name));
+  }
+  text += "  .section .note.GNU-stack,\"\",%progbits\n";
+  FILE* file = std::fopen(path.c_str(), "w");
+  if (!file) {
+    throw StatusError(iree_make_status(IREE_STATUS_UNAVAILABLE,
+                                       "cannot write kernel descriptors to %s",
+                                       path.c_str()));
+  }
+  std::fwrite(text.data(), 1, text.size(), file);
+  std::fclose(file);
 }
 
 std::vector<cxx::FunctionSymbol*> Functions::discover_launched_kernels(
@@ -593,6 +731,7 @@ std::vector<cxx::FunctionSymbol*> Functions::discover_launched_kernels(
   std::vector<cxx::FunctionSymbol*> kernels;
   std::unordered_set<cxx::FunctionSymbol*> kernel_set;
   std::unordered_set<cxx::FunctionSymbol*> visited;
+  std::unordered_set<cxx::VariableSymbol*> referenced_variables;
   std::vector<cxx::FunctionSymbol*> pending;
   for (auto* function : definitions) {
     if (!function->isTemplatePattern() && !is_standard_library(function)) {
@@ -622,8 +761,20 @@ std::vector<cxx::FunctionSymbol*> Functions::discover_launched_kernels(
       diagnostics_.finish();
     }
     std::vector<cxx::FunctionSymbol*> callees;
-    CalleeCollector collector(callees);
+    std::vector<cxx::VariableSymbol*> references;
+    CalleeCollector collector(callees, references);
     collector.accept(concrete->declaration());
+    for (auto* variable : references) {
+      auto* kernel = referenced_kernel(variable)->canonical();
+      if (!referenced_variables.insert(variable->canonical()).second) {
+        continue;
+      }
+      kernel_references_.push_back({variable->canonical(), kernel});
+      referenced_kernels_.insert(kernel);
+      if (kernel_set.insert(kernel).second) {
+        kernels.push_back(kernel);
+      }
+    }
     pending.insert(pending.end(), callees.begin(), callees.end());
   }
   return kernels;
@@ -1619,11 +1770,13 @@ loom_symbol_ref_t Functions::create_symbol(FunctionInstance instance,
                                            cxx::AST* source) {
   auto* function = instance.symbol;
   std::string spelling;
-  if (annotated(function, "kernel_type_symbol")) {
+  if (annotated(function, "kernel_type_symbol") ||
+      referenced_kernels_.contains(function->canonical())) {
     // A kernel template instance named by its leading type argument's Itanium
-    // encoding, which host C++ observes as typeid(T).name(). This joins a
-    // host-compiled launch site to the separately compiled kernel export.
-    spelling = kernel_type_symbol_spelling(function, source);
+    // encoding (kernel_type_symbol), which host C++ observes as
+    // typeid(T).name(), or a kernel named through kernel_ref by its own
+    // Itanium symbol. The host finds the export through that name.
+    spelling = launched_export_name(function, source);
     names_.reserve(spelling, source);
   } else if (auto found = explicit_names_.find(function->canonical());
              found != explicit_names_.end()) {
@@ -2207,8 +2360,8 @@ DefinedFunction Functions::define(FunctionInstance instance, Types& types,
       types.append_kernel_parameter(types.unqualified(parameter->type()),
                                     definition, arguments);
     }
-    if (annotated(symbol, "kernel_type_symbol")) {
-      write_kernel_manifest(symbol, types, definition);
+    if (referenced_kernels_.contains(symbol->canonical())) {
+      record_kernel_descriptor(symbol, types, definition);
     }
     if (auto* configuration = launches_.configuration_function(symbol)) {
       auto* configuration_symbol = this->definition(configuration);

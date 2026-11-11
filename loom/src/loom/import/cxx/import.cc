@@ -79,17 +79,10 @@ iree_status_t loom_cxx_import(iree_string_view_t source,
     // every other kernel's device code.
     const bool drop_failed =
         options->flags & LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
-    const std::string manifest_path = string(options->kernel_manifest_path);
     std::unordered_set<cxx::FunctionSymbol*> excluded;
     std::unique_ptr<loom_module_t, decltype(&loom_module_free)> module(
         nullptr, loom_module_free);
     for (;;) {
-      // Each attempt rewrites the manifest from scratch.
-      if (!manifest_path.empty()) {
-        if (FILE* file = std::fopen(manifest_path.c_str(), "w")) {
-          std::fclose(file);
-        }
-      }
       loom_module_t* raw_module = nullptr;
       check(loom_module_allocate(context, filename, block_pool, nullptr,
                                  host_allocator, &raw_module));

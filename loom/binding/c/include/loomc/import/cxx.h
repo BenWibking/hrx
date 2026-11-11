@@ -185,12 +185,13 @@ typedef struct loomc_cxx_import_options_t {
   /// Optional immutable preamble borrowed until import returns. An exact source
   /// prefix or frontend-configuration mismatch uses ordinary cold parsing.
   const loomc_cxx_preamble_t* preamble;
-  /// kernel_type_symbol export names omitted from launched-root selection.
+  /// Launched kernel export names omitted from launched-root selection.
   const loomc_string_view_t* excluded_kernels;
   /// Number of excluded kernel export names.
   loomc_host_size_t excluded_kernel_count;
-  /// Optional path receiving the per-kernel leaf manifest. Empty writes none.
-  loomc_string_view_t kernel_manifest_path;
+  /// Optional path receiving assembly defining the host launch descriptors of
+  /// the reached loom::kernel::kernel_ref specializations. Empty writes none.
+  loomc_string_view_t kernel_descriptors_path;
 } loomc_cxx_import_options_t;
 
 /// Creates an immutable semantic preamble from leading include directives.

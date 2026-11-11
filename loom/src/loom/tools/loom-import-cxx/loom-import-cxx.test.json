@@ -84,7 +84,7 @@
       }
     },
     {
-      "name": "imports launched kernels in hosted single-source mode",
+      "name": "imports launched and kernel_ref-named kernels in hosted single-source mode",
       "run": {
         "tool": "loom-import-cxx",
         "args": [
@@ -93,13 +93,13 @@
           "--triple=x86_64-linux-gnu",
           "--tolerate-host-errors",
           "--drop-failed-kernels",
-          "--kernel-manifest={tmp}/kernels.manifest",
+          "--kernel-descriptors={tmp}/kernels.s",
           "--exclude-kernel=run__5Other",
           "-"
         ]
       },
       "stdin": {
-        "text": "#include <loomcxx/kernel.h>\n#ifndef __linux__\n#error hosted profile expected\n#endif\nstatic loom::kernel::configuration launch_config(unsigned groups) {\n  return {{groups, 1, 1}, {64, 1, 1}};\n}\ntemplate <class T>\n[[loom::kernel(launch_config), loom::kernel_type_symbol]]\nvoid run(T tag) { tag(); }\nstruct Body {\n  float a;\n  float* y;\n  [[loom::inline]] void operator()() const { y[0] = a; }\n};\nstruct Other {\n  float* y;\n  [[loom::inline]] void operator()() const { y[0] = 1.0f; }\n};\nvoid host(float* y) {\n  loom::kernel::launch<run<Body>>(loom::kernel::workload(1u), Body{2.0f, y});\n  loom::kernel::launch<run<Other>>(loom::kernel::workload(1u), Other{y});\n  undeclared_host_function();\n}\n"
+        "text": "#include <loomcxx/kernel.h>\n#ifndef __linux__\n#error hosted profile expected\n#endif\nstatic loom::kernel::configuration launch_config(unsigned groups) {\n  return {{groups, 1, 1}, {64, 1, 1}};\n}\ntemplate <class T>\n[[loom::kernel(launch_config), loom::kernel_type_symbol]]\nvoid run(T tag) { tag(); }\nstruct Body {\n  float a;\n  float* y;\n  [[loom::inline]] void operator()() const { y[0] = a; }\n};\nstruct Other {\n  float* y;\n  [[loom::inline]] void operator()() const { y[0] = 1.0f; }\n};\nvoid host(float* y) {\n  (void)&loom::kernel::kernel_ref<&run<Body>>;\n  loom::kernel::launch<run<Other>>(loom::kernel::workload(1u), Other{y});\n  undeclared_host_function();\n}\n"
       },
       "stdout": {
         "contains": [
@@ -112,12 +112,13 @@
       },
       "files": [
         {
-          "path": "{tmp}/kernels.manifest",
+          "path": "{tmp}/kernels.s",
           "contains": [
-            "kernel run__4Body 1",
-            "size 16 8",
-            "arg 0 c 0 4",
-            "arg 0 b 8 8"
+            ".weak \"_ZN4loom6kernel10kernel_refIXadL_Z3runI4BodyEvT_EEEE\"",
+            ".long 0, 0, 0, 16, 1, 2",
+            ".long 0, 0, 0, 0, 4",
+            ".long 0, 1, 8, 8, 8",
+            ".asciz \"run__4Body\""
           ]
         }
       ]

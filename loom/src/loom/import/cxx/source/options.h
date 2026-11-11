@@ -132,14 +132,15 @@ typedef struct loom_cxx_import_options_t {
   // Optional immutable frontend preamble borrowed for the import duration.
   // Source or frontend-configuration mismatches use ordinary cold parsing.
   const loom_cxx_preamble_t* preamble;
-  // kernel_type_symbol export names omitted from launched-root selection
+  // Launched kernel export names omitted from launched-root selection
   // (roots = {"@launched"}), such as kernels a later compile rejected.
   const iree_string_view_t* excluded_kernels;
   // Number of excluded kernel export names.
   iree_host_size_t excluded_kernel_count;
-  // Optional path receiving the per-kernel leaf manifest for host packing of
-  // record kernel arguments. Empty writes no manifest.
-  iree_string_view_t kernel_manifest_path;
+  // Optional path receiving assembly that defines one host launch descriptor
+  // per loom::kernel::kernel_ref specialization reached from host code
+  // (loomcxx/kernel_ref.h). Empty writes none.
+  iree_string_view_t kernel_descriptors_path;
 } loom_cxx_import_options_t;
 
 // Parses the canonical precise or fast floating-point model spelling.

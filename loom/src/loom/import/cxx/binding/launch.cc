@@ -127,6 +127,26 @@ cxx::FunctionSymbol* LaunchContracts::parse_configuration(
   return function->canonical();
 }
 
+std::optional<std::array<uint32_t, 3>> LaunchContracts::exact_workgroup_size(
+    cxx::FunctionSymbol* function) const {
+  auto found = contracts_.find(function->canonical());
+  if (found == contracts_.end() && function->isSpecialization()) {
+    found = contracts_.find(function->primaryTemplateSymbol()->canonical());
+  }
+  if (found == contracts_.end() || !found->second.size ||
+      found->second.size->form != Form::Exact) {
+    return std::nullopt;
+  }
+  std::array<uint32_t, 3> size;
+  for (size_t i = 0; i < 3; ++i) {
+    const auto& axis = found->second.size->axes[i];
+    size[i] = axis.lower == axis.upper && axis.upper > 0
+                  ? static_cast<uint32_t>(axis.upper)
+                  : 0;
+  }
+  return size;
+}
+
 void LaunchContracts::declaration(
     cxx::FunctionSymbol* function,
     cxx::List<cxx::AttributeSpecifierAST*>* attributes) {

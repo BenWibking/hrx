@@ -49,11 +49,12 @@ IREE_FLAG_NAMED(bool, drop_failed_kernels, "drop-failed-kernels", false,
                 "Drop launched kernels that cannot be imported instead of "
                 "rejecting the translation unit.");
 IREE_FLAG_LIST_NAMED(string, exclude_kernel, "exclude-kernel",
-                     "kernel_type_symbol export name omitted from "
+                     "Launched kernel export name omitted from "
                      "--root=@launched selection; repeat for several.");
-IREE_FLAG_NAMED(string, kernel_manifest, "kernel-manifest", "",
-                "Path receiving the per-kernel leaf manifest for host packing "
-                "of record kernel arguments.");
+IREE_FLAG_NAMED(string, kernel_descriptors, "kernel-descriptors", "",
+                "Path receiving assembly that defines the host launch "
+                "descriptor of each loom::kernel::kernel_ref specialization "
+                "reached from host code.");
 IREE_FLAG(string, options, "",
           "Provider option string used by build-system source declarations. "
           "When present, it replaces the individual source configuration "
@@ -128,8 +129,8 @@ static iree_status_t loom_cxx_cli_options_from_flags(
   if (FLAG_drop_failed_kernels) {
     out_options->flags |= LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
   }
-  out_options->kernel_manifest_path =
-      loomc_make_cstring_view(FLAG_kernel_manifest);
+  out_options->kernel_descriptors_path =
+      loomc_make_cstring_view(FLAG_kernel_descriptors);
 
   const iree_flag_string_list_t includes = FLAG_include_path_list();
   const iree_flag_string_list_t system_includes =
