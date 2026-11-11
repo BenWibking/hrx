@@ -1026,6 +1026,19 @@ TEST_F(ImportTest, HostedProfileRequiresALinuxTriple) {
   EXPECT_EQ(module_, nullptr);
 }
 
+TEST_F(ImportTest, HostedProfileDoesNotMarkTheDevicePass) {
+  // Hosted source sees exactly the host compile's macros, so it cannot branch
+  // on the pass; it uses loom::target::is_device() instead.
+  const auto source = IREE_SV(
+      "#ifdef __loom__\n#error device pass is marked\n#endif\n"
+      "int entry(int value) { return value; }\n");
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  options_.triple = IREE_SV("x86_64-linux-gnu");
+  IREE_ASSERT_OK(Import(source));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+}
+
 TEST_F(ImportTest, HostedProfileUsesTheHostLayout) {
   // x86-64 Linux: 16-byte long double with a 64-bit significand, in both the
   // layout and the macros, as in a host compile for the same triple.

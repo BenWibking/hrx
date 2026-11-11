@@ -234,7 +234,8 @@ class SourceToolchain final : public cxx::Toolchain {
 // layout (including long double) and the target architecture seen by
 // __has_builtin then match the host compile. Include paths come from the
 // options rather than toolchain discovery. Loom does not import exceptions,
-// so they are disabled, and __loom__ marks the device pass.
+// so they are disabled. Nothing marks the device pass: hosted source sees the
+// same macros as the host compile and branches on loom::target::is_device().
 std::unique_ptr<cxx::Toolchain> make_hosted_toolchain(
     cxx::Preprocessor* preprocessor, const loom_cxx_import_options_t& options) {
   cxx::Triple triple{string(options.triple)};
@@ -264,7 +265,6 @@ std::unique_ptr<cxx::Toolchain> make_hosted_toolchain(
   toolchain->initMemoryLayout();
   toolchain->setLanguageStandard(standard);
   toolchain->addPredefinedMacros();
-  toolchain->defineMacro("__loom__", "1");
   return toolchain;
 }
 
