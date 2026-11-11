@@ -964,6 +964,11 @@ void Functions::collect(cxx::DeclarationAST* declaration,
     }
     admit_declaration(function->symbol, function->attributeList, function,
                       scope);
+    // A device query's host definition is never imported: every call folds
+    // to true, so it is neither a root nor a callee.
+    if (annotated(function->symbol, "is_device")) {
+      return;
+    }
     if (scope == DeclarationScope::Namespace &&
         !function->symbol->isTemplatePattern()) {
       intrinsics_.declaration(function->symbol, function->attributeList,

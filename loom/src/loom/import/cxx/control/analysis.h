@@ -214,6 +214,24 @@ struct CountedLoop {
   std::variant<UnsignedRange, SignedRange, AddressRange> range;
 };
 
+// Whether |call| asks whether code runs on the device: a call to a function
+// annotated [[loom::is_device]], such as loom::target::is_device(). Its host
+// definition returns false; the importer only builds device code, so every
+// such call is true here.
+bool is_device_query(cxx::CallExpressionAST* call);
+
+// Whether a device query appears in |expression|, outside lambda bodies. The
+// host value of such an expression is not its value in imported code.
+bool contains_device_query(cxx::ExpressionAST* expression);
+
+// The branch of |branch| that the importer selects without a runtime
+// condition, or nullopt when both arms remain. `if constexpr` keeps the
+// frontend's selection. An ordinary condition that calls a device query is
+// selected when it is constant once each query is true; the discarded arm,
+// which may hold host-only code, is never analyzed or translated.
+std::optional<bool> selected_branch(cxx::TranslationUnit& unit,
+                                    cxx::IfStatementAST* branch);
+
 // Syntactic paths through a statement that take a particular exit. Other
 // outcomes remain possible for None and Some; All takes that exit on every
 // path.

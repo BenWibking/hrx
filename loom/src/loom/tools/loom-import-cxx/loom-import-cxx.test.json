@@ -121,6 +121,31 @@
           ]
         }
       ]
+    },
+    {
+      "name": "imports only the device arm of a device query in hosted mode",
+      "run": {
+        "tool": "loom-import-cxx",
+        "args": [
+          "--root=@launched",
+          "--hosted",
+          "--triple=x86_64-linux-gnu",
+          "-"
+        ]
+      },
+      "stdin": {
+        "text": "#include <loomcxx/kernel.h>\n#include <loomcxx/target.h>\nextern \"C\" int printf(const char* format, ...);\nstatic loom::kernel::configuration launch_config(unsigned groups) {\n  return {{groups, 1, 1}, {64, 1, 1}};\n}\ntemplate <class T>\n[[loom::kernel(launch_config), loom::kernel_type_symbol]]\nvoid run(T tag) { tag(); }\ninline float scaled(float value) {\n  if (loom::target::is_device()) {\n    return value * 2.0f;\n  } else {\n    printf(\"host %f\\n\", value);\n    return value;\n  }\n}\nstruct Body {\n  float a;\n  float* y;\n  [[loom::inline]] void operator()() const {\n    if (!loom::target::is_device()) { printf(\"host\\n\"); }\n    y[0] = scaled(a);\n  }\n};\nvoid host(float* y) {\n  loom::kernel::launch<run<Body>>(loom::kernel::workload(1u), Body{2.0f, y});\n  printf(\"%f\\n\", scaled(1.0f));\n}\n"
+      },
+      "stdout": {
+        "contains": [
+          "@run__4Body",
+          "scalar.mulf"
+        ],
+        "not_contains": [
+          "printf",
+          "@host"
+        ]
+      }
     }
   ]
 }
