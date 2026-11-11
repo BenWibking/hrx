@@ -1082,6 +1082,25 @@ const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
   loom_cxx_unit_free(unit);
 }
 
+TEST_F(LaunchedImportTest, HostedUnitsSkipHostGlobalStorage) {
+  // A hosted unit is a host compile: mutable globals are host storage.
+  std::string source = std::string(kLaunchedSource) +
+                       "int host_counter = 0;\n"
+                       "void bump() { ++host_counter; }\n";
+  const auto view = iree_make_string_view(source.data(), source.size());
+  IREE_ASSERT_OK(Import(view));
+  EXPECT_EQ(module_, nullptr);
+  EXPECT_GT(error_count_, 0);
+
+  error_count_ = 0;
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  options_.triple = IREE_SV("x86_64-linux-gnu");
+  IREE_ASSERT_OK(Import(view));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+  EXPECT_NE(Print().find("@run__4Body"), std::string::npos);
+}
+
 TEST_F(ImportTest, HostedFlagSelectsTheHostedProfile) {
   const auto source = IREE_SV(
       "#ifndef __linux__\n#error not hosted\n#endif\n"

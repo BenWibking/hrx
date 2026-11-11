@@ -49,8 +49,10 @@ typedef enum loomc_cxx_fp_model_e {
 typedef enum loomc_cxx_import_flag_bits_e {
   /// Omit the embedded system include root; use caller paths/providers only.
   LOOMC_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES = 1u << 0,
-  /// Hosted single-source profile: Linux/glibc/libc++ predefines, and helpers
-  /// declaring workgroup storage become required-inline.
+  /// Hosted single-source profile: the unit is a host compile for the triple
+  /// (Linux/glibc/libc++ predefines, exceptions disabled). Mutable globals are
+  /// host storage and are skipped, and helpers declaring workgroup storage
+  /// become required-inline.
   LOOMC_CXX_IMPORT_FLAG_HOSTED = 1u << 1,
   /// Report frontend errors in host-only code as deferred warnings.
   LOOMC_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS = 1u << 2,

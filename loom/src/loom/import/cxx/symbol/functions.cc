@@ -1233,10 +1233,11 @@ void Functions::collect(cxx::DeclarationAST* declaration,
              !(variable->isConstexpr() ||
                (unit_.typeTraits().is_const(variable->type()) &&
                 variable->constValue())))) {
-          // Mutable global storage has no projection. In a single-source
-          // device pass that tolerates host errors, host-only definitions
-          // share the translation unit and are skipped; otherwise reject.
-          if (!diagnostics_.tolerates_host_errors()) {
+          // Mutable global storage has no projection. A hosted single-source
+          // unit is a host compile: its mutable globals are host storage that
+          // device code cannot reference, so they are skipped like the rest
+          // of the host-only code. Otherwise reject.
+          if (!hosted() && !diagnostics_.tolerates_host_errors()) {
             diagnostics_.reject(unit_, declarator,
                                 "global storage definitions require a "
                                 "global-storage projection");

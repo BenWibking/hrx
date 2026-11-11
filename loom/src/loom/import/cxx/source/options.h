@@ -35,11 +35,15 @@ typedef enum loom_cxx_fp_model_e {
 typedef enum loom_cxx_import_flag_bits_e {
   // Omit the embedded system include root and use explicit source paths only.
   LOOM_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES = 1u << 0,
-  // Hosted single-source profile: Linux/glibc/libc++ predefines, and helpers
-  // declaring workgroup storage become required-inline.
+  // Hosted single-source profile: the unit is a host compile for the triple
+  // (Linux/glibc/libc++ predefines, exceptions disabled). Its mutable globals
+  // are host storage and are skipped, and helpers declaring workgroup storage
+  // become required-inline.
   LOOM_CXX_IMPORT_FLAG_HOSTED = 1u << 1,
   // Report frontend errors as deferred warnings, and skip mutable globals, in
-  // host-only code that shares the translation unit with device code.
+  // host-only code that shares the translation unit with device code. Only a
+  // device pass that reparses a unit another compiler checked needs this; a
+  // driver that parses a unit once reports frontend errors as errors.
   LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS = 1u << 2,
   // Drop a launched kernel whose lowering is rejected and retranslate the unit
   // without it, instead of rejecting the whole translation unit.
