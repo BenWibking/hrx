@@ -40,8 +40,9 @@ IREE_FLAG(bool, cleanup, true,
 IREE_FLAG_NAMED(bool, builtin_includes, "builtin-includes", true,
                 "Search embedded Loom/HIP source headers when available.");
 IREE_FLAG(bool, hosted, false,
-          "Hosted single-source profile: Linux/glibc/libc++ predefines; helpers "
-          "declaring workgroup storage are required-inline.");
+          "Hosted single-source profile: parse as a host compile for --triple "
+          "(an x86_64 or aarch64 Linux triple) with exceptions disabled; "
+          "helpers declaring workgroup storage are required-inline.");
 IREE_FLAG_NAMED(bool, tolerate_host_errors, "tolerate-host-errors", false,
                 "Report frontend errors in host-only code as warnings.");
 IREE_FLAG_NAMED(bool, drop_failed_kernels, "drop-failed-kernels", false,

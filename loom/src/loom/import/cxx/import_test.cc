@@ -858,6 +858,7 @@ TEST_F(ImportTest, HostedFlagSelectsTheHostedProfile) {
 
   error_count_ = 0;
   options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  options_.triple = IREE_SV("x86_64-linux-gnu");
   IREE_ASSERT_OK(Import(source));
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(error_count_, 0);
@@ -869,6 +870,29 @@ TEST_F(ImportTest, HostedProfileDisablesExceptions) {
       "#error exceptions enabled\n#endif\n"
       "int entry(int value) { return value; }\n");
   options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  options_.triple = IREE_SV("x86_64-linux-gnu");
+  IREE_ASSERT_OK(Import(source));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+}
+
+TEST_F(ImportTest, HostedProfileRequiresALinuxTriple) {
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        Import(IREE_SV("int entry() { return 0; }\n")));
+  EXPECT_EQ(module_, nullptr);
+}
+
+TEST_F(ImportTest, HostedProfileUsesTheHostLayout) {
+  // x86-64 Linux: 16-byte long double with a 64-bit significand, in both the
+  // layout and the macros, as in a host compile for the same triple.
+  const auto source = IREE_SV(
+      "static_assert(sizeof(long double) == 16);\n"
+      "static_assert(__SIZEOF_LONG_DOUBLE__ == 16);\n"
+      "static_assert(__LDBL_MANT_DIG__ == 64);\n"
+      "int entry(int value) { return value; }\n");
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  options_.triple = IREE_SV("x86_64-linux-gnu");
   IREE_ASSERT_OK(Import(source));
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(error_count_, 0);

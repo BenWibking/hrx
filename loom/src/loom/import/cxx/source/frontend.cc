@@ -7,6 +7,7 @@
 #include "loom/import/cxx/source/frontend.h"
 
 #include <cxx/ast.h>
+#include <cxx/gcc_linux_toolchain.h>
 #include <cxx/memory_layout.h>
 #include <cxx/preprocessor.h>
 #include <cxx/triple.h>
@@ -160,8 +161,7 @@ class SourceToolchain final : public cxx::Toolchain {
  public:
   SourceToolchain(cxx::Preprocessor* preprocessor,
                   const loom_cxx_import_options_t& options)
-      : cxx::Toolchain(preprocessor, cxx::Triple{string(options.triple)}),
-        hosted_(options.flags & LOOM_CXX_IMPORT_FLAG_HOSTED) {
+      : cxx::Toolchain(preprocessor, cxx::Triple{string(options.triple)}) {
     auto spelling = options.standard.size ? string(options.standard) : "c++26";
     auto* standard = cxx::findLanguageStandard(spelling);
     if (!standard) {
@@ -182,12 +182,6 @@ class SourceToolchain final : public cxx::Toolchain {
     layout->setTriple(string(options.triple));
     setMemoryLayout(std::move(layout));
     initMemoryLayout();
-    // Loom does not import exceptions, and hosted device code shares headers
-    // with a host compile that disables them, so neither may see
-    // __cpp_exceptions or __EXCEPTIONS.
-    if (hosted_) {
-      setExceptionsEnabled(false);
-    }
     addPredefinedMacros();
   }
 
@@ -223,42 +217,56 @@ class SourceToolchain final : public cxx::Toolchain {
     defineMacro("__SIZEOF_LONG__", std::to_string(layout->sizeOfLong()));
     defineMacro("__loom__", "1");
     addCommonMacros();
-    // Hosted mode admits a GCC/Linux C and C++ library (glibc, libstdc++)
-    // supplied through -isystem, so device code can share host headers.
-    if (hosted_) {
-      defineMacro("__extension__", "");
-      defineMacro("__null", "nullptr");
-      defineMacro("__restrict__", "");
-      defineMacro("__restrict", "");
-      defineMacro("__signed__", "signed");
-      defineMacro("_Nonnull", "");
-      defineMacro("_Nullable", "");
-      addCommonLinuxMacros();
-      if (language() == cxx::LanguageKind::kC) {
-        addLinuxC23Macros();
-      } else {
-        addLinuxCxx26Macros();
-      }
-      addLinuxX86_64Macros();
-    }
     if (language() == cxx::LanguageKind::kC) {
       addCommonC23Macros();
     } else {
       addCommonCxx26Macros();
-      // libstdc++ declares its narrow float types from __FLT16_*/__BFLT16_*
-      // macros but uses them under these; keep the two consistent when hosted.
-      if (!hosted_) {
-        defineMacro("__STDCPP_FLOAT16_T__", "1");
-        defineMacro("__STDCPP_BFLOAT16_T__", "1");
-      }
+      defineMacro("__STDCPP_FLOAT16_T__", "1");
+      defineMacro("__STDCPP_BFLOAT16_T__", "1");
     }
     preprocessor()->setPredefinedMacros(kPredefinedMacros);
   }
-
- private:
-  // Hosted single-source profile (LOOM_CXX_IMPORT_FLAG_HOSTED).
-  bool hosted_ = false;
 };
+
+// Hosted single-source profile (LOOM_CXX_IMPORT_FLAG_HOSTED): the device pass
+// parses the same headers as a host compile for options.triple, so it uses
+// cxx's own Linux toolchain for that triple. Predefined macros, the memory
+// layout (including long double) and the target architecture seen by
+// __has_builtin then match the host compile. Include paths come from the
+// options rather than toolchain discovery. Loom does not import exceptions,
+// so they are disabled, and __loom__ marks the device pass.
+std::unique_ptr<cxx::Toolchain> make_hosted_toolchain(
+    cxx::Preprocessor* preprocessor, const loom_cxx_import_options_t& options) {
+  cxx::Triple triple{string(options.triple)};
+  if (triple.os() != cxx::TripleOS::kLinux ||
+      (triple.arch() != cxx::TripleArch::kX86_64 &&
+       triple.arch() != cxx::TripleArch::kAArch64)) {
+    throw StatusError(iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "hosted import requires an x86_64 or aarch64 Linux triple, got '%s'",
+        string(options.triple).c_str()));
+  }
+  if (options.data_model != LOOM_CXX_DATA_MODEL_LP64) {
+    throw StatusError(iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "hosted import takes its data model from the triple; use lp64"));
+  }
+  auto spelling = options.standard.size ? string(options.standard) : "c++26";
+  auto* standard = cxx::findLanguageStandard(spelling);
+  if (!standard) {
+    throw StatusError(iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                                       "unsupported C/C++ standard '%s'",
+                                       spelling.c_str()));
+  }
+  auto toolchain = std::make_unique<cxx::GCCLinuxToolchain>(preprocessor, triple);
+  toolchain->setLanguage(standard->language);
+  toolchain->setExceptionsEnabled(false);
+  toolchain->initMemoryLayout();
+  toolchain->setLanguageStandard(standard);
+  toolchain->addPredefinedMacros();
+  toolchain->defineMacro("__loom__", "1");
+  return toolchain;
+}
 
 }  // namespace
 
@@ -272,7 +280,11 @@ Frontend::Frontend(iree_string_view_t filename,
   diagnostics_.bind(&unit_, &contents_);
   diagnostics_.set_tolerate_host_errors(
       options.flags & LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS);
-  toolchain_ = std::make_unique<SourceToolchain>(preprocessor, options);
+  if (options.flags & LOOM_CXX_IMPORT_FLAG_HOSTED) {
+    toolchain_ = make_hosted_toolchain(preprocessor, options);
+  } else {
+    toolchain_ = std::make_unique<SourceToolchain>(preprocessor, options);
+  }
   for (size_t i = 0; i < options.include_path_count; ++i) {
     preprocessor->addUserIncludePath(string(options.include_paths[i]));
   }

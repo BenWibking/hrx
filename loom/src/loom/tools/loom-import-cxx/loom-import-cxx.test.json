@@ -90,6 +90,7 @@
         "args": [
           "--root=@launched",
           "--hosted",
+          "--triple=x86_64-linux-gnu",
           "--tolerate-host-errors",
           "--drop-failed-kernels",
           "--kernel-manifest={tmp}/kernels.manifest",
