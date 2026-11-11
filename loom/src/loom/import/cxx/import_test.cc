@@ -850,7 +850,7 @@ TEST_F(LaunchedImportTest, TolerateHostErrorsDefersErrorsInHostOnlyCode) {
 
 TEST_F(ImportTest, HostedFlagSelectsTheHostedProfile) {
   const auto source = IREE_SV(
-      "#ifndef __loom_hosted__\n#error not hosted\n#endif\n"
+      "#ifndef __linux__\n#error not hosted\n#endif\n"
       "int entry(int value) { return value; }\n");
   IREE_ASSERT_OK(Import(source));
   EXPECT_EQ(module_, nullptr);

@@ -240,7 +240,6 @@ class SourceToolchain final : public cxx::Toolchain {
         addLinuxCxx26Macros();
       }
       addLinuxX86_64Macros();
-      defineMacro("__loom_hosted__", "1");
     }
     if (language() == cxx::LanguageKind::kC) {
       addCommonC23Macros();
