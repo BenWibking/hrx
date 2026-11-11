@@ -863,6 +863,17 @@ TEST_F(ImportTest, HostedFlagSelectsTheHostedProfile) {
   EXPECT_EQ(error_count_, 0);
 }
 
+TEST_F(ImportTest, HostedProfileDisablesExceptions) {
+  const auto source = IREE_SV(
+      "#if defined(__cpp_exceptions) || defined(__EXCEPTIONS)\n"
+      "#error exceptions enabled\n#endif\n"
+      "int entry(int value) { return value; }\n");
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  IREE_ASSERT_OK(Import(source));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+}
+
 TEST_F(ImportTest, RejectsUnknownImportFlags) {
   options_.flags = LOOM_CXX_IMPORT_FLAG_ALL + 1;
   IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,

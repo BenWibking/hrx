@@ -182,6 +182,12 @@ class SourceToolchain final : public cxx::Toolchain {
     layout->setTriple(string(options.triple));
     setMemoryLayout(std::move(layout));
     initMemoryLayout();
+    // Loom does not import exceptions, and hosted device code shares headers
+    // with a host compile that disables them, so neither may see
+    // __cpp_exceptions or __EXCEPTIONS.
+    if (hosted_) {
+      setExceptionsEnabled(false);
+    }
     addPredefinedMacros();
   }
 
