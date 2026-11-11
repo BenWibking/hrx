@@ -231,7 +231,6 @@ class SourceToolchain final : public cxx::Toolchain {
       defineMacro("__restrict__", "");
       defineMacro("__restrict", "");
       defineMacro("__signed__", "signed");
-      defineMacro("__decltype", "decltype");
       defineMacro("_Nonnull", "");
       defineMacro("_Nullable", "");
       addCommonLinuxMacros();
