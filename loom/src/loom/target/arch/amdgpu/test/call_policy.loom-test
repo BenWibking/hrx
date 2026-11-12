@@ -170,68 +170,40 @@ low.func.def public target<amdgpu.gfx11.generic.core>(@target) @entry(%value: re
 
 // ====
 
-// A helper that reads the workgroup size expands into its caller: only a
-// kernel's launch configuration makes that size exact, so a retained native
-// helper could not lower the query. A helper reading only the work-item id
-// stays retained.
+// A source helper authored noinline stays a native call; one without the
+// attribute expands into its caller.
 amdgpu.target<gfx11-generic> @target
 
-func.def target(@target) @width() -> (index) {
-  %width = kernel.workgroup.size<x> : index
-  func.return %width : index
+func.def noinline target(@target) @retained(%value: i32) -> (i32) {
+  %one = scalar.constant 1 : i32
+  %result = scalar.addi %value, %one : i32
+  func.return %result : i32
 }
 
-func.def target(@target) @lane() -> (index) {
-  %lane = kernel.workitem.id<x> : index
-  func.return %lane : index
+func.def target(@target) @expanded(%value: i32) -> (i32) {
+  %two = scalar.constant 2 : i32
+  %result = scalar.addi %value, %two : i32
+  func.return %result : i32
 }
 
-func.def public target(@target) @entry() -> (index, index) {
-  %width = func.call @width() : () -> (index)
-  %lane = func.call @lane() : () -> (index)
-  func.return %width, %lane : index, index
+func.def public target(@target) @entry(%value: i32) -> (i32, i32) {
+  %a = func.call @retained(%value) : (i32) -> (i32)
+  %b = func.call @expanded(%value) : (i32) -> (i32)
+  func.return %a, %b : i32, i32
 }
 
 // ----
 amdgpu.target<gfx11-generic> @target
 
-func.def target(@target) @lane() -> (index) {
-  %lane = kernel.workitem.id<x> : index
-  func.return %lane : index
+func.def noinline target(@target) @retained(%value: i32) -> (i32) {
+  %one = scalar.constant 1 : i32
+  %result = scalar.addi %value, %one : i32
+  func.return %result : i32
 }
 
-func.def public target(@target) @entry() -> (index, index) {
-  %width = kernel.workgroup.size<x> : index
-  %lane = func.call @lane() : () -> (index)
-  func.return %width, %lane : index, index
-}
-
-// ====
-
-// The query can also reach a helper through a callee that expands into it.
-amdgpu.target<gfx11-generic> @target
-
-func.def target(@target) @width() -> (index) {
-  %width = kernel.workgroup.size<x> : index
-  func.return %width : index
-}
-
-func.def target(@target) @scaled(%value: index) -> (index) {
-  %width = func.call @width() : () -> (index)
-  %scaled = index.mul %value, %width : index
-  func.return %scaled : index
-}
-
-func.def public target(@target) @entry(%value: index) -> (index) {
-  %scaled = func.call @scaled(%value) : (index) -> (index)
-  func.return %scaled : index
-}
-
-// ----
-amdgpu.target<gfx11-generic> @target
-
-func.def public target(@target) @entry(%value: index) -> (index) {
-  %width = kernel.workgroup.size<x> : index
-  %scaled = index.mul %value, %width : index
-  func.return %scaled : index
+func.def public target(@target) @entry(%value: i32) -> (i32, i32) {
+  %a = func.call @retained(%value) : (i32) -> (i32)
+  %two = scalar.constant 2 : i32
+  %result = scalar.addi %value, %two : i32
+  func.return %a, %result : i32, i32
 }

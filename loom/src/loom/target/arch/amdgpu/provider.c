@@ -215,7 +215,6 @@ static loom_target_call_policy_t loom_amdgpu_select_call_policy(
     loom_call_like_kind_t kind, loom_call_like_t call,
     loom_func_like_t callee) {
   (void)resolved_target;
-  (void)call;
   if (kind != LOOM_CALL_LIKE_KIND_SEMANTIC &&
       kind != LOOM_CALL_LIKE_KIND_LOW_INTERNAL) {
     return LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE;
@@ -244,7 +243,16 @@ static loom_target_call_policy_t loom_amdgpu_select_call_policy(
     }
   }
   if (kind == LOOM_CALL_LIKE_KIND_SEMANTIC) {
-    return LOOM_TARGET_CALL_POLICY_REQUIRE_LEAF;
+    // Source helpers stay native calls only when authored noinline. Retaining
+    // them automatically still breaks kernels whose helpers have divergent
+    // exits (cfg.cond_br: masked_region_exits_by_cfg) or receive private
+    // allocations made inside a caller's loop (buffer.alloca reuse,
+    // TARGET/092).
+    const bool explicit_noinline =
+        loom_call_like_inline_policy(call) == LOOM_INLINE_POLICY_NOINLINE ||
+        loom_func_like_inline_policy(callee) == LOOM_INLINE_POLICY_NOINLINE;
+    return explicit_noinline ? LOOM_TARGET_CALL_POLICY_REQUIRE_LEAF
+                             : LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE;
   }
 
   // Physical carriers are known at the Low boundary. Use the same classifier
