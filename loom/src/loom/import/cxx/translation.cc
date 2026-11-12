@@ -191,7 +191,8 @@ class Translator final : private Initialization::Evaluation {
     }
   }
 
-  void translate(const std::unordered_set<cxx::FunctionSymbol*>* excluded) {
+  void translate(const std::unordered_set<cxx::FunctionSymbol*>* excluded,
+                 std::vector<KernelLaunch>* out_kernel_launches) {
     const bool drop = excluded != nullptr;
     functions_.set_import_options(&options_);
     functions_.set_excluded_kernels(excluded);
@@ -230,6 +231,9 @@ class Translator final : private Initialization::Evaluation {
     immutable_objects_.build(&builder_);
     assembly_fragments_.verify(module_, options_.diagnostic_sink);
     functions_.write_kernel_descriptors();
+    if (out_kernel_launches) {
+      *out_kernel_launches = functions_.kernel_launches();
+    }
   }
 
  private:
@@ -8687,8 +8691,10 @@ class Translator final : private Initialization::Evaluation {
 
 void translate(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
                loom_module_t* module, const loom_cxx_import_options_t& options,
-               const std::unordered_set<cxx::FunctionSymbol*>* excluded) {
-  Translator(unit, diagnostics, module, options).translate(excluded);
+               const std::unordered_set<cxx::FunctionSymbol*>* excluded,
+               std::vector<KernelLaunch>* out_kernel_launches) {
+  Translator(unit, diagnostics, module, options)
+      .translate(excluded, out_kernel_launches);
 }
 
 }  // namespace loom::cxx_import

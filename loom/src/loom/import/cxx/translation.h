@@ -8,17 +8,22 @@
 #define LOOM_IMPORT_CXX_TRANSLATION_H_
 
 #include <unordered_set>
+#include <vector>
 
 #include "loom/import/cxx/source/source.h"
+#include "loom/import/cxx/symbol/kernel_launch.h"
 
 namespace loom::cxx_import {
 
 // Projects checked source symbols and structured control flow into native IR.
 // Throws SourceRejected after a source diagnostic, or StatusError on allocation
 // or sink failure. The import entry point owns both exception boundaries.
+// |out_kernel_launches|, if set, receives the host launch facts of every
+// kernel_ref specialization reached from host code.
 void translate(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
                loom_module_t* module, const loom_cxx_import_options_t& options,
-               const std::unordered_set<cxx::FunctionSymbol*>* excluded = nullptr);
+               const std::unordered_set<cxx::FunctionSymbol*>* excluded = nullptr,
+               std::vector<KernelLaunch>* out_kernel_launches = nullptr);
 
 }  // namespace loom::cxx_import
 

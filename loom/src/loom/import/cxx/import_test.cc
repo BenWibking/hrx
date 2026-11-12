@@ -6,11 +6,14 @@
 
 #include "loom/import/cxx/import.h"
 
+#include <array>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -897,7 +900,8 @@ TEST_F(LaunchedImportTest, KernelDescriptorsFollowKernelArgumentFlattening) {
   // One leaf per kernel argument, in argument order: the base's field, each
   // array element, then one buffer leaf per pointer. Source offsets are the
   // host object's (LP64): Base at 0, pad at 4, x at 16, y at 24. Kernel
-  // arguments align buffers to 8 and scalars to 4.
+  // arguments align buffers to 8 and scalars to 4 (the legacy copy of the
+  // AMDGPU layout).
   const std::string body = Descriptor(kBodyReference);
   EXPECT_NE(body.find("  .long 1, 1\n"), std::string::npos) << body;
   EXPECT_NE(body.find("  .long 0, 0, 0, 32, 1, 5\n"), std::string::npos)
@@ -1042,6 +1046,109 @@ TEST_F(LaunchedImportTest, ParsedUnitImportsWithoutReparsing) {
   const auto imported = loom::cxx_import::frontend_statistics();
   EXPECT_EQ(imported.preprocess_count, parsed.preprocess_count);
   EXPECT_EQ(imported.parse_count, parsed.parse_count);
+  loom_cxx_unit_free(unit);
+}
+
+// Sub-word scalars mixed with pointers. The importer reports each kernel
+// argument's host object offset and size; it does not decide where the
+// argument lives in the native kernel argument segment.
+constexpr char kMixedReference[] =
+    "_ZN4loom6kernel10kernel_refIXadL_Z3runI5MixedEvT_EEEE";
+
+TEST_F(LaunchedImportTest, KernelLaunchesCarryHostLeavesOfSubWordScalars) {
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  options_.triple = IREE_SV("x86_64-linux-gnu");
+  std::string source = std::string(kKernelRefSource) + R"cxx(
+struct Mixed {
+  char c;
+  short s;
+  bool b;
+  float* y;
+  char c2;
+  double d;
+  int* z;
+  bool b2;
+  unsigned char u;
+  int i;
+  [[loom::inline]] void operator()() const {
+    y[0] = static_cast<float>(c) + static_cast<float>(s) +
+           static_cast<float>(c2) + static_cast<float>(d) + (b ? 1.0f : 0.0f);
+    z[0] = static_cast<int>(u) + i + (b2 ? 1 : 0);
+  }
+};
+const loom::kernel::descriptor* host_mixed() { return describe<Mixed>(); }
+)cxx";
+  loom_cxx_unit_t* unit = nullptr;
+  IREE_ASSERT_OK(loom_cxx_unit_parse(
+      iree_make_string_view(source.data(), source.size()),
+      IREE_SV("/app/source.cpp"), &options_, iree_allocator_system(), &unit));
+  ASSERT_NE(unit, nullptr);
+  IREE_ASSERT_OK(loom_cxx_import_unit(unit, &context_, &pool_, &options_,
+                                      iree_allocator_system(), &module_));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+
+  const loom::cxx_import::KernelLaunch* mixed = nullptr;
+  for (const auto& launch : loom::cxx_import::unit_kernel_launches(unit)) {
+    if (launch.symbol == kMixedReference) {
+      mixed = &launch;
+    }
+  }
+  ASSERT_NE(mixed, nullptr);
+  EXPECT_TRUE(mixed->available);
+  EXPECT_EQ(mixed->export_name, "_Z3runI5MixedEvT_");
+  EXPECT_EQ(mixed->parameter_count, 1u);
+  // (kind, source offset, size) in kernel argument order; LP64 host layout.
+  const std::vector<std::array<uint64_t, 3>> expected = {
+      {0, 0, 1},  {0, 2, 2},  {0, 4, 1},  {1, 8, 8},  {0, 16, 1},
+      {0, 24, 8}, {1, 32, 8}, {0, 40, 1}, {0, 41, 1}, {0, 44, 4},
+  };
+  ASSERT_EQ(mixed->leaves.size(), expected.size());
+  for (size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_EQ(mixed->leaves[i].parameter, 0u) << i;
+    EXPECT_EQ(mixed->leaves[i].kind, expected[i][0]) << i;
+    EXPECT_EQ(mixed->leaves[i].source_offset, expected[i][1]) << i;
+    EXPECT_EQ(mixed->leaves[i].size, expected[i][2]) << i;
+  }
+
+  // The legacy two-pass descriptor assumes the AMDGPU layout: each by-value
+  // argument starts on a 4-byte word, so adjacent sub-word scalars do not
+  // pack. (The rule before packed them at their own alignment: s at 2, b at 4.)
+  const std::string legacy = Descriptor(kMixedReference);
+  EXPECT_NE(legacy.find("  .long 0, 0, 0, 64, 1, 10\n"), std::string::npos)
+      << legacy;
+  EXPECT_NE(legacy.find("  .long 0, 0, 0, 0, 1\n"
+                        "  .long 0, 0, 2, 4, 2\n"
+                        "  .long 0, 0, 4, 8, 1\n"
+                        "  .long 0, 1, 8, 16, 8\n"
+                        "  .long 0, 0, 16, 24, 1\n"
+                        "  .long 0, 0, 24, 28, 8\n"
+                        "  .long 0, 1, 32, 40, 8\n"
+                        "  .long 0, 0, 40, 48, 1\n"
+                        "  .long 0, 0, 41, 52, 1\n"
+                        "  .long 0, 0, 44, 56, 4\n"),
+            std::string::npos)
+      << legacy;
+
+  // Excluding the kernel keeps its launch, unavailable and without leaves.
+  loom_module_free(module_);
+  module_ = nullptr;
+  const iree_string_view_t excluded = IREE_SV("_Z3runI5MixedEvT_");
+  options_.excluded_kernels = &excluded;
+  options_.excluded_kernel_count = 1;
+  IREE_ASSERT_OK(loom_cxx_import_unit(unit, &context_, &pool_, &options_,
+                                      iree_allocator_system(), &module_));
+  ASSERT_NE(module_, nullptr);
+  mixed = nullptr;
+  for (const auto& launch : loom::cxx_import::unit_kernel_launches(unit)) {
+    if (launch.symbol == kMixedReference) {
+      mixed = &launch;
+    }
+  }
+  ASSERT_NE(mixed, nullptr);
+  EXPECT_FALSE(mixed->available);
+  EXPECT_EQ(mixed->export_name, "_Z3runI5MixedEvT_");
+  EXPECT_TRUE(mixed->leaves.empty());
   loom_cxx_unit_free(unit);
 }
 

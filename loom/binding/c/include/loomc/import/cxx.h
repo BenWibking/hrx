@@ -192,7 +192,9 @@ typedef struct loomc_cxx_import_options_t {
   /// Number of excluded kernel export names.
   loomc_host_size_t excluded_kernel_count;
   /// Optional path receiving assembly defining the host launch descriptors of
-  /// the reached loom::kernel::kernel_ref specializations. Empty writes none.
+  /// the reached loom::kernel::kernel_ref specializations, for the legacy
+  /// two-pass single-source build (weak COMDAT objects with an assumed AMDGPU
+  /// kernel argument layout). Empty writes none.
   loomc_string_view_t kernel_descriptors_path;
 } loomc_cxx_import_options_t;
 

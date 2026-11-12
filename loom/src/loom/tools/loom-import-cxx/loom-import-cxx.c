@@ -54,7 +54,9 @@ IREE_FLAG_LIST_NAMED(string, exclude_kernel, "exclude-kernel",
 IREE_FLAG_NAMED(string, kernel_descriptors, "kernel-descriptors", "",
                 "Path receiving assembly that defines the host launch "
                 "descriptor of each loom::kernel::kernel_ref specialization "
-                "reached from host code.");
+                "reached from host code, as weak COMDAT objects (legacy "
+                "two-pass single source; loom-cxx defines descriptors from "
+                "the compiled kernels instead).");
 IREE_FLAG(string, options, "",
           "Provider option string used by build-system source declarations. "
           "When present, it replaces the individual source configuration "

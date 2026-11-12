@@ -63,6 +63,9 @@ struct loom_cxx_unit_t {
   std::unique_ptr<loom::cxx_import::Source> source;
   // Usage counts reported by loom::cxx_import::unit_statistics().
   loom::cxx_import::UnitStatistics statistics;
+  // Host launch facts of the most recent import, reported by
+  // loom::cxx_import::unit_kernel_launches().
+  std::vector<loom::cxx_import::KernelLaunch> kernel_launches;
 };
 
 namespace {
@@ -96,6 +99,7 @@ iree_status_t import_parsed(loom_cxx_unit_t* unit, iree_string_view_t filename,
   using namespace loom::cxx_import;
   Source& parsed = *unit->source;
   unit->statistics.dropped_kernel_count = 0;
+  unit->kernel_launches.clear();
   // A launched kernel whose lowering is rejected is dropped and the unit
   // retranslated without it, so one unsupported kernel does not discard
   // every other kernel's device code.
@@ -130,7 +134,7 @@ iree_status_t import_parsed(loom_cxx_unit_t* unit, iree_string_view_t filename,
     }
     try {
       translate(parsed.unit(), parsed.diagnostics(), module.get(), attempt,
-                drop_failed ? &excluded : nullptr);
+                drop_failed ? &excluded : nullptr, &unit->kernel_launches);
       if (drop_failed && options->source_observer.fn) {
         for (const auto& entry : observed) {
           check(options->source_observer.fn(
@@ -265,6 +269,11 @@ bool unit_has_error(const loom_cxx_unit_t* unit) {
 
 UnitStatistics unit_statistics(const loom_cxx_unit_t* unit) {
   return unit->statistics;
+}
+
+const std::vector<KernelLaunch>& unit_kernel_launches(
+    const loom_cxx_unit_t* unit) {
+  return unit->kernel_launches;
 }
 
 }  // namespace loom::cxx_import

@@ -33,6 +33,7 @@
 #include "loom/import/cxx/control/analysis.h"
 #include "loom/import/cxx/control/call_fields.h"
 #include "loom/import/cxx/source/locations.h"
+#include "loom/import/cxx/symbol/kernel_launch.h"
 #include "loom/import/cxx/symbol/names.h"
 #include "loom/import/cxx/value/signature.h"
 #include "loom/import/cxx/value/types.h"
@@ -253,10 +254,16 @@ class Functions {
       const std::unordered_set<cxx::FunctionSymbol*>* excluded) {
     excluded_kernels_ = excluded;
   }
-  // Writes one host launch descriptor per loom::kernel::kernel_ref
-  // specialization reached from host code to the import options' kernel
-  // descriptor path, if set. Each defines the specialization's Itanium symbol
-  // as assembly; see loomcxx/kernel_ref.h for the layout.
+  // Host launch facts of each loom::kernel::kernel_ref specialization reached
+  // from host code, one per specialization in discovery order.
+  std::vector<KernelLaunch> kernel_launches();
+  // Legacy two-pass path (loom-import-cxx --kernel-descriptors): writes one
+  // host launch descriptor per kernel_ref specialization to the import
+  // options' kernel descriptor path, if set, as assembly defining the
+  // specialization's Itanium symbol as a weak COMDAT object. Without the
+  // compiled kernel it assumes Loom's AMDGPU kernel argument layout; see
+  // loomcxx/kernel_ref.h. One-pass drivers use kernel_launches() and take the
+  // layout from the compiled artifact instead.
   void write_kernel_descriptors();
   // Builds the selected native definition and launch contract at the caller's
   // module insertion point. The caller then enters and fills the returned body.
@@ -459,28 +466,15 @@ class Functions {
     // Canonical kernel K.
     cxx::FunctionSymbol* kernel;
   };
-  // One kernel ABI argument copied from a host parameter object.
-  struct KernelDescriptorLeaf {
-    // Kernel parameter owning the leaf.
-    uint32_t parameter;
-    // 0: by-value bytes; 1: device pointer passed as a buffer binding.
-    uint32_t kind;
-    // Byte offset of the leaf in the host parameter object.
-    uint64_t source_offset;
-    // Byte offset of the argument in the explicit kernel argument segment.
-    uint64_t kernarg_offset;
-    // Byte size of the leaf and of its argument.
-    uint64_t size;
-  };
-  // Host launch facts of one translated kernel_ref-named kernel.
+  // Host launch facts of one translated kernel_ref-named kernel. Its leaves
+  // carry no native argument layout; see KernelLaunch.
   struct KernelDescriptor {
     std::string export_name;
     // Exact workgroup size annotation, or zeros when the launch configuration
     // computes it.
     std::array<uint32_t, 3> workgroup_size;
-    uint64_t kernarg_size;
     uint32_t parameter_count;
-    std::vector<KernelDescriptorLeaf> leaves;
+    std::vector<KernelLaunchLeaf> leaves;
   };
   // kernel_ref odr-uses in discovery order.
   std::vector<KernelReference> kernel_references_;
