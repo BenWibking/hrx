@@ -110,13 +110,6 @@ constexpr int kMaxDeviceRounds = 5;
 constexpr uint32_t kDescriptorVersion = 2;
 constexpr uint32_t kDescriptorLeafBuffer = 1;
 
-enum class DeviceFailurePolicy {
-  // A failed device pass fails the compile.
-  kError,
-  // A failed device pass keeps the host object with unavailable descriptors.
-  kHostOnly,
-};
-
 struct Options {
   std::string source;
   std::string output;
@@ -138,7 +131,6 @@ struct Options {
   std::string loom_format;
   std::string register_function;
   bool drop_failed_kernels = false;
-  DeviceFailurePolicy device_failure = DeviceFailurePolicy::kError;
   bool stats = false;
   bool verbose = false;
   // Test option: run the device pass before host code generation, to check
@@ -188,9 +180,6 @@ void print_help() {
       "  --loom-drop-failed-kernels\n"
       "      drop launched kernels that the importer or the device compiler\n"
       "      rejects and keep the rest; their descriptors stay unavailable\n"
-      "  --loom-on-device-failure=error|host-only\n"
-      "      a failed device pass fails the compile (default) or keeps a\n"
-      "      host-only object\n"
       "  --loom-stats\n"
       "      report parse counts and phase times\n"
       "  --loom-keep=DIR\n"
@@ -284,15 +273,6 @@ Options parse_options(int argc, char** argv) {
       options.register_function = std::string(arg.substr(25));
     } else if (arg == "--loom-drop-failed-kernels") {
       options.drop_failed_kernels = true;
-    } else if (starts_with(arg, "--loom-on-device-failure=")) {
-      auto policy = arg.substr(25);
-      if (policy == "error") {
-        options.device_failure = DeviceFailurePolicy::kError;
-      } else if (policy == "host-only") {
-        options.device_failure = DeviceFailurePolicy::kHostOnly;
-      } else {
-        usage_error(std::format("unknown device failure policy '{}'", policy));
-      }
     } else if (arg == "--loom-stats") {
       options.stats = true;
     } else if (arg == "--loom-verbose") {
@@ -468,7 +448,8 @@ class Driver {
   bool compile_device_module(const std::string& bytecode,
                              std::vector<std::string>& rejected);
   void read_argument_layouts(const loomc_result_t* result);
-  void device_failure(std::string_view stage, std::string_view log);
+  [[noreturn]] void device_failure(std::string_view stage,
+                                   std::string_view log);
   void embed_device_code();
   void define_kernel_descriptors(llvm::GlobalVariable* code_object);
   void localize_descriptor_users(
@@ -740,14 +721,7 @@ void Driver::device_failure(std::string_view stage, std::string_view log) {
                    log_lines[j].data());
     }
   }
-  if (options_.device_failure == DeviceFailurePolicy::kError) {
-    throw Failure{};
-  }
-  std::fprintf(stderr, "%s: warning: continuing without device code for %s\n",
-               kTool.data(), options_.source.c_str());
-  launches_.clear();
-  layouts_.clear();
-  code_object_.clear();
+  throw Failure{};
 }
 
 bool Driver::import_device_module(std::vector<std::string>& excluded, int round,
@@ -1426,7 +1400,7 @@ bool Driver::run_device_pass() {
   if (!keep_work_directory_) {
     std::filesystem::remove_all(work_directory_);
   }
-  return ok || options_.device_failure != DeviceFailurePolicy::kError;
+  return ok;
 }
 
 int Driver::run() {
