@@ -327,8 +327,6 @@ class LoomCxxTest(unittest.TestCase):
             str(object_path),
             "-std=gnu++17",
             "-O2",
-            "-isystem",
-            ARGS.include,
             "-Wall",
             "-fPIC",
             "-MD",
@@ -407,7 +405,9 @@ const loom::kernel::descriptor* host_entry() {
         self.assertFalse(
             [s for s in symbols if s.startswith("_ZN4loom") and s != BODY_REF]
         )
-        self.assertIn("loomcxx/kernel.h", depfile)
+        # loom-cxx found the loomcxx/ headers next to itself, without -isystem.
+        headers = pathlib.Path(ARGS.loom_cxx).resolve().parent / "include"
+        self.assertIn(str(headers / "loomcxx" / "kernel.h"), depfile)
 
     def test_host_only_unit_has_no_device_pass(self):
         # -v, which CMake passes while checking the compiler, is accepted.
@@ -786,7 +786,6 @@ def main():
     global ARGS
     parser = argparse.ArgumentParser()
     parser.add_argument("--loom-cxx", required=True)
-    parser.add_argument("--include", required=True)
     parser.add_argument("--target", required=True)
     ARGS, rest = parser.parse_known_args()
     unittest.main(argv=[sys.argv[0], *rest])

@@ -38,6 +38,18 @@ target_link_libraries(loom-cxx PRIVATE
   ${_loom_cxx_defs}
   ${IREE_DEFAULT_EXECUTABLE_LINK_LIBRARIES})
 
+# loom-cxx searches Loom's loomcxx/ headers implicitly, as clang searches its
+# resource directory (find_loomcxx_include_dir in loom-cxx.cc): include/ next
+# to the binary in the build tree, a link to the source headers, and
+# lib/loom-cxx/include in an installation.
+set(_loom_cxx_headers "${IREE_SOURCE_DIR}/loom/src/loom/import/cxx/include/loomcxx")
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include")
+file(CREATE_LINK "${_loom_cxx_headers}" "${CMAKE_CURRENT_BINARY_DIR}/include/loomcxx"
+     SYMBOLIC)
+install(TARGETS loom-cxx RUNTIME DESTINATION bin COMPONENT loom-cxx)
+install(DIRECTORY "${_loom_cxx_headers}" DESTINATION lib/loom-cxx/include
+        COMPONENT loom-cxx)
+
 if(IREE_BUILD_TESTS AND Python3_EXECUTABLE)
   # Compiles tiny translation units for the AMDGPU target (no device needed)
   # and inspects the objects: host code, an embedded code object, its
@@ -47,7 +59,6 @@ if(IREE_BUILD_TESTS AND Python3_EXECUTABLE)
     COMMAND "${Python3_EXECUTABLE}" -B
       "${CMAKE_CURRENT_SOURCE_DIR}/loom_cxx_test.py"
       --loom-cxx "$<TARGET_FILE:loom-cxx>"
-      --include "${IREE_SOURCE_DIR}/loom/src/loom/import/cxx/include"
       --target amdgpu:gfx90a
   )
   set_tests_properties(loom/tools/loom-cxx/loom-cxx_test PROPERTIES

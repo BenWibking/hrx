@@ -50,6 +50,7 @@
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Support/FileSystem.h>
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
@@ -119,6 +120,9 @@ struct Options {
   int optimization_level = 0;
   std::vector<std::string> include_paths;
   std::vector<std::string> system_include_paths;
+  // Directory holding Loom's loomcxx/ headers, searched after every -isystem
+  // directory, or empty when none was found (see find_loomcxx_include_dir).
+  std::string loomcxx_include_path;
   std::vector<std::string> defines;
   // Dependency file options (-MD/-MMD/-MP/-MF/-MT/-MQ).
   bool dependency_file = false;
@@ -160,8 +164,8 @@ void print_help() {
       "Compiler options:\n"
       "  -c                    compile to an object (required)\n"
       "  -o FILE               output object\n"
-      "  -I DIR, -isystem DIR  user and system include directories; none are\n"
-      "                        discovered implicitly\n"
+      "  -I DIR, -isystem DIR  user and system include directories; the only\n"
+      "                        implicit one holds Loom's loomcxx/ headers\n"
       "  -D NAME[=VALUE]       macro definition\n"
       "  -std=STD              c++17, c++20, ... (gnu++NN reads as c++NN)\n"
       "  -O0 -O1 -O2 -O3 -Os   host optimization level\n"
@@ -207,6 +211,31 @@ int parse_optimization_level(std::string_view flag) {
     return std::min(level[0] - '0', 3);
   }
   usage_error(std::format("unknown optimization level '{}'", flag));
+}
+
+// The directory holding Loom's loomcxx/ headers, which every compile searches
+// after the -isystem directories, as clang searches its resource directory:
+// include/ next to the binary in the build tree (CMake links it to the source
+// headers), or lib/loom-cxx/include beside the binary's bin/ directory in an
+// installation. Empty when neither holds loomcxx/kernel_ref.h.
+std::string find_loomcxx_include_dir(const char* argv0) {
+  static int anchor;
+  const std::filesystem::path executable =
+      llvm::sys::fs::getMainExecutable(argv0, &anchor);
+  if (executable.empty()) {
+    return {};
+  }
+  const std::filesystem::path directory = executable.parent_path();
+  for (const auto& candidate :
+       {directory / "include",
+        directory.parent_path() / "lib" / "loom-cxx" / "include"}) {
+    std::error_code error;
+    if (std::filesystem::exists(candidate / "loomcxx" / "kernel_ref.h",
+                                error)) {
+      return candidate.lexically_normal().string();
+    }
+  }
+  return {};
 }
 
 Options parse_options(int argc, char** argv) {
@@ -312,6 +341,7 @@ Options parse_options(int argc, char** argv) {
                          .replace_extension(".o")
                          .string();
   }
+  options.loomcxx_include_path = find_loomcxx_include_dir(argv[0]);
   if (!options.loom_target.empty() && options.loom_format.empty()) {
     if (starts_with(options.loom_target, "amdgpu:")) {
       options.loom_format = "amdgpu-hsaco";
@@ -545,8 +575,8 @@ loomc_cxx_import_options_t Driver::import_options() const {
   options.triple = loomc_make_cstring_view(options_.triple.c_str());
   options.data_model = LOOMC_CXX_DATA_MODEL_LP64;
   options.fp_model = LOOMC_CXX_FP_MODEL_PRECISE;
-  // A host compile: the hosted profile for the triple and exactly the
-  // include directories on the command line.
+  // A host compile: the hosted profile for the triple, the include
+  // directories on the command line and loom-cxx's loomcxx/ headers.
   options.flags =
       LOOMC_CXX_IMPORT_FLAG_HOSTED | LOOMC_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES;
   return options;
@@ -570,6 +600,10 @@ bool Driver::parse() {
   }
   for (const auto& path : options_.system_include_paths) {
     system_includes.push_back(loomc_make_cstring_view(path.c_str()));
+  }
+  if (!options_.loomcxx_include_path.empty()) {
+    system_includes.push_back(
+        loomc_make_cstring_view(options_.loomcxx_include_path.c_str()));
   }
   std::vector<std::string> define_names, define_values;
   for (const auto& define : options_.defines) {
