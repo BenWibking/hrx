@@ -26,6 +26,18 @@ void loom_cxx_import_options_initialize(loom_cxx_import_options_t* options) {
   options->fp_model = LOOM_CXX_FP_MODEL_PRECISE;
 }
 
+iree_string_view_t loom_cxx_import_options_standard(
+    const loom_cxx_import_options_t* options) {
+  if (!iree_string_view_is_empty(options->standard)) {
+    return options->standard;
+  }
+  // Hosted import reads the platform's C and C++ library headers, which cxx
+  // parses at C++20 but not yet every C++26 libc++ header.
+  return iree_all_bits_set(options->flags, LOOM_CXX_IMPORT_FLAG_HOSTED)
+             ? IREE_SV("c++20")
+             : IREE_SV("c++26");
+}
+
 iree_status_t loom_cxx_import_options_validate(
     const loom_cxx_import_options_t* options) {
   if (options->data_model < LOOM_CXX_DATA_MODEL_LP64 ||

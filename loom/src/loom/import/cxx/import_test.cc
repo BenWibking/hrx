@@ -1240,6 +1240,24 @@ TEST_F(ImportTest, HostedProfileDisablesExceptions) {
   EXPECT_EQ(error_count_, 0);
 }
 
+TEST_F(ImportTest, HostedProfileDefaultsToCxx20) {
+  // Hosted import reads the platform's C++ library headers, which parse at
+  // C++20; an explicit standard still applies.
+  const auto source = IREE_SV(
+      "static_assert(__cplusplus == 202002L);\n"
+      "int entry(int value) { return value; }\n");
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+  options_.triple = IREE_SV("x86_64-linux-gnu");
+  options_.standard = iree_string_view_empty();
+  IREE_ASSERT_OK(Import(source));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+  options_.standard = IREE_SV("c++26");
+  IREE_ASSERT_OK(Import(source));
+  EXPECT_EQ(module_, nullptr);
+  EXPECT_GT(error_count_, 0);
+}
+
 TEST_F(ImportTest, HostedProfileRequiresALinuxTriple) {
   options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
   IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,

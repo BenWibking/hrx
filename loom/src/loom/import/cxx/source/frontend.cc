@@ -159,7 +159,7 @@ class SourceToolchain final : public cxx::Toolchain {
   SourceToolchain(cxx::Preprocessor* preprocessor,
                   const loom_cxx_import_options_t& options)
       : cxx::Toolchain(preprocessor, cxx::Triple{string(options.triple)}) {
-    auto spelling = options.standard.size ? string(options.standard) : "c++26";
+    auto spelling = string(loom_cxx_import_options_standard(&options));
     auto* standard = cxx::findLanguageStandard(spelling);
     if (!standard) {
       throw StatusError(iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
@@ -249,7 +249,7 @@ std::unique_ptr<cxx::Toolchain> make_hosted_toolchain(
         IREE_STATUS_INVALID_ARGUMENT,
         "hosted import takes its data model from the triple; use lp64"));
   }
-  auto spelling = options.standard.size ? string(options.standard) : "c++26";
+  auto spelling = string(loom_cxx_import_options_standard(&options));
   auto* standard = cxx::findLanguageStandard(spelling);
   if (!standard) {
     throw StatusError(iree_make_status(IREE_STATUS_INVALID_ARGUMENT,

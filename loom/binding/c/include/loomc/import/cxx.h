@@ -151,7 +151,8 @@ typedef struct loomc_cxx_import_options_t {
   loomc_host_size_t structure_size;
   /// Reserved extension chain. Must be NULL.
   const void* next;
-  /// Frontend standard spelling, such as c23 or c++26. Empty selects c++26.
+  /// Frontend standard spelling, such as c23 or c++26. Empty selects c++26,
+  /// or c++20 for hosted import.
   loomc_string_view_t standard;
   /// Source ABI triple, independent of output target selection.
   loomc_string_view_t triple;
