@@ -39,12 +39,6 @@ IREE_FLAG(bool, cleanup, true,
           "Canonicalize, eliminate common expressions, and remove dead IR.");
 IREE_FLAG_NAMED(bool, builtin_includes, "builtin-includes", true,
                 "Search embedded Loom/HIP source headers when available.");
-IREE_FLAG_NAMED(bool, drop_failed_kernels, "drop-failed-kernels", false,
-                "Drop launched kernels that cannot be imported instead of "
-                "rejecting the translation unit.");
-IREE_FLAG_LIST_NAMED(string, exclude_kernel, "exclude-kernel",
-                     "Launched kernel export name omitted from "
-                     "--root=@launched selection; repeat for several.");
 IREE_FLAG(string, options, "",
           "Provider option string used by build-system source declarations. "
           "When present, it replaces the individual source configuration "
@@ -112,17 +106,13 @@ static iree_status_t loom_cxx_cli_options_from_flags(
   if (!FLAG_builtin_includes) {
     out_options->flags |= LOOMC_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES;
   }
-  if (FLAG_drop_failed_kernels) {
-    out_options->flags |= LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
-  }
 
   const iree_flag_string_list_t includes = FLAG_include_path_list();
   const iree_flag_string_list_t system_includes =
       FLAG_system_include_path_list();
   const iree_flag_string_list_t roots = FLAG_root_list();
-  const iree_flag_string_list_t excluded = FLAG_exclude_kernel_list();
   const iree_host_size_t string_count =
-      includes.count + system_includes.count + roots.count + excluded.count;
+      includes.count + system_includes.count + roots.count;
   if (string_count != 0) {
     IREE_RETURN_IF_ERROR(iree_allocator_malloc_array(
         allocator, string_count, sizeof(**out_strings), (void**)out_strings));
@@ -136,11 +126,6 @@ static iree_status_t loom_cxx_cli_options_from_flags(
     out_options->system_include_path_count = system_includes.count;
     out_options->roots = *out_strings + includes.count + system_includes.count;
     out_options->root_count = roots.count;
-    loomc_string_view_t* excluded_strings =
-        *out_strings + includes.count + system_includes.count + roots.count;
-    loom_cxx_cli_copy_strings(excluded, excluded_strings);
-    out_options->excluded_kernels = excluded_strings;
-    out_options->excluded_kernel_count = excluded.count;
   }
 
   const iree_flag_string_list_t definitions = FLAG_define_list();
