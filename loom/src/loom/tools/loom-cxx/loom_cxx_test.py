@@ -5,8 +5,8 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 """Compiles tiny single-source translation units with loom-cxx and checks the
-objects: host code, the embedded device code object with its registration
-constructor, and the kernel descriptors, all from one parse of the source."""
+objects: host code, the embedded device code object with its load record, and
+the kernel descriptors, all from one parse of the source."""
 
 import argparse
 import pathlib
@@ -211,14 +211,29 @@ class Elf:
             "code_object": code_object,
         }
 
-    def code_object_at(self, location):
-        """The embedded ELF code object starting at (section, offset)."""
+    def code_object_record(self, location):
+        """The loom::kernel::embedded_code_object at (section, offset)."""
+        relocations = self.relocations(location[0])
+        family, key, data = (relocations.get(location[1] + i) for i in (0, 8, 16))
+        (size,) = struct.unpack("<Q", self.read(location[0], location[1] + 24, 8))
+        return {
+            "target_family": self.c_string(*family) if family else None,
+            "target_key": self.c_string(*key) if key else None,
+            "data": data,
+            "size": size,
+        }
+
+    def code_object(self, descriptor):
+        """The ELF code object embedded at the descriptor's code object
+        record's data address, of the record's size."""
+        record = self.code_object_record(descriptor["code_object"])
+        location = record["data"]
+        assert location, "the code object record has no data"
         start = self.sections[location[0]][4] + location[1]
-        data = self.data[start:]
-        assert data[:4] == b"\x7fELF", "no code object at the descriptor's address"
-        (shoff,) = struct.unpack_from("<Q", data, 0x28)
-        shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
-        return Elf(data[: shoff + shentsize * shnum])
+        data = self.data[start : start + record["size"]]
+        assert data[:4] == b"\x7fELF", "no code object at the record's address"
+        assert len(data) == record["size"], "the code object exceeds its section"
+        return Elf(data)
 
     def amdgpu_kernel_arguments(self):
         """Kernel name -> (kernarg segment size, [(offset, size, value kind)])
@@ -347,7 +362,6 @@ class LoomCxxTest(unittest.TestCase):
             "-MF",
             str(directory / f"{name}.d"),
             f"--loom-target={ARGS.target}",
-            "--loom-register-function=test_register_code_object",
             "--loom-stats",
             *extra,
         ]
@@ -409,12 +423,16 @@ const loom::kernel::descriptor* host_entry() {
         self.assertEqual(descriptor["name"], "_Z3runI4BodyEvT_")
         self.assertIsNotNone(descriptor["code_object"])
         # The export ordinal numbers the kernel in that code object.
-        exports = elf.code_object_at(descriptor["code_object"]).amdgpu_export_names()
+        exports = elf.code_object(descriptor).amdgpu_export_names()
         self.assertEqual(exports[descriptor["export_ordinal"]], "_Z3runI4BodyEvT_")
-        # The embedded device code object and its registration constructor.
+        # The embedded device code object and its record: what a runtime
+        # needs to load it, at the first launch of one of its kernels.
         self.assertTrue(self.device_code_objects(elf))
-        self.assertGreater(elf.section(".init_array")[5], 0)
-        self.assertEqual(symbols["test_register_code_object"][2], SHN_UNDEF)
+        record = elf.code_object_record(descriptor["code_object"])
+        family, key = ARGS.target.split(":", 1)
+        self.assertEqual((record["target_family"], record["target_key"]), (family, key))
+        self.assertGreater(record["size"], 0)
+        self.assertNoStartupCode(elf)
         # No device-only symbols reach the host object.
         self.assertFalse(
             [s for s in symbols if s.startswith("_ZN4loom") and s != BODY_REF]
@@ -492,13 +510,55 @@ const loom::kernel::descriptor* entries(int i) {
         )
         descriptors = [elf.descriptor(name) for name, _, _ in elf.kernel_ref_symbols()]
         self.assertEqual(len(descriptors), 3)
-        (code_object,) = {d["code_object"] for d in descriptors}
-        exports = elf.code_object_at(code_object).amdgpu_export_names()
+        self.assertEqual(len({d["code_object"] for d in descriptors}), 1)
+        exports = elf.code_object(descriptors[0]).amdgpu_export_names()
         self.assertEqual(
             sorted(d["export_ordinal"] for d in descriptors), list(range(len(exports)))
         )
         for descriptor in descriptors:
             self.assertEqual(exports[descriptor["export_ordinal"]], descriptor["name"])
+
+    def assertNoStartupCode(self, elf):
+        """Nothing runs before main: no constructors register or load the
+        code object, and the object needs no runtime symbol."""
+        for name in (".init_array", ".preinit_array", ".ctors", ".init"):
+            self.assertIsNone(elf.section(name), name)
+        undefined = [
+            name
+            for name, _, _, shndx, _ in elf.symbol_table()
+            if name and shndx == SHN_UNDEF
+        ]
+        self.assertEqual(undefined, [])
+
+    def test_objects_load_no_code_object_at_startup(self):
+        # Objects whose kernels are launched, dropped or both carry their code
+        # object without any startup code: a program that launches nothing
+        # never loads one.
+        source = (
+            KERNEL_PRELUDE
+            + """
+struct Bad {
+  float* y;
+  [[loom::inline]] void operator()() const { if (y != nullptr) y[0] = 2.0f; }
+};
+const loom::kernel::descriptor* good() {
+  return &loom::kernel::kernel_ref<&run<Body>>;
+}
+const loom::kernel::descriptor* bad() {
+  return &loom::kernel::kernel_ref<&run<Bad>>;
+}
+"""
+        )
+        elf, _, _ = self.compile(source, "--loom-drop-failed-kernels")
+        self.assertTrue(self.device_code_objects(elf))
+        self.assertNoStartupCode(elf)
+        # A unit whose only kernel is dropped has no code object at all.
+        elf, _, _ = self.compile(
+            source.replace("&run<Body>", "&run<Bad>"), "--loom-drop-failed-kernels"
+        )
+        self.assertEqual(self.device_code_objects(elf), [])
+        self.assertNoStartupCode(elf)
+        self.assertIsNone(elf.descriptor(BAD_REF)["code_object"])
 
     def assertNoExportedKernelRefs(self, elf):
         """Descriptors are local definitions: none exported, none undefined."""
@@ -563,7 +623,7 @@ const loom::kernel::descriptor* host_entry() {
         )
         self.assertEqual(descriptor["kernarg_size"], 64)
         # The code object the descriptor names declares the same layout.
-        kernels = elf.code_object_at(descriptor["code_object"]).amdgpu_kernel_arguments()
+        kernels = elf.code_object(descriptor).amdgpu_kernel_arguments()
         segment_size, arguments = kernels[descriptor["name"]]
         self.assertEqual(segment_size, descriptor["kernarg_size"])
         self.assertEqual(
@@ -605,8 +665,31 @@ const loom::kernel::descriptor* host_entry() {
         self.assertEqual(run.returncode, 0)
         return run.stdout.split("\n")
 
-    DESCRIPTOR_MAIN = r"""
+    # Code objects as the descriptors name them: -1 for none, -2 for a record
+    # that does not hold an amdgpu code object, else the index of the record
+    # in order of first appearance.
+    CODE_OBJECTS_C = r"""
 #include <stdio.h>
+#include <string.h>
+struct code_object {
+  const char* target_family;
+  const char* target_key;
+  const void* data;
+  unsigned long size;
+};
+static const struct code_object* seen[8];
+static int seen_count;
+static int code_object(const struct code_object* c) {
+  if (!c) return -1;
+  for (int i = 0; i < seen_count; ++i) if (seen[i] == c) return i;
+  if (c->size < 4 || memcmp(c->data, "\177ELF", 4) != 0 ||
+      strcmp(c->target_family, "amdgpu") != 0) return -2;
+  seen[seen_count] = c;
+  return seen_count++;
+}
+"""
+
+    DESCRIPTOR_MAIN = CODE_OBJECTS_C + r"""
 struct leaf { unsigned parameter, kind, source_offset, kernarg_offset, size; };
 struct descriptor {
   unsigned version, flags;
@@ -614,29 +697,19 @@ struct descriptor {
   unsigned workgroup_size[3], kernarg_size, parameter_count, leaf_count;
   unsigned export_ordinal;
   const struct leaf* leaves;
-  const void* code_object;
+  const struct code_object* code_object;
 };
-static const void* images[8];
-static int image_count;
-void test_register_code_object(const void* data, unsigned long size) {
-  (void)size;
-  images[image_count++] = data;
-}
 const struct descriptor* entry_a(void);
 const struct descriptor* entry_b(void);
-static int image(const void* code_object) {
-  for (int i = 0; i < image_count; ++i) if (images[i] == code_object) return i;
-  return -1;
-}
 static void print(const struct descriptor* d) {
-  printf("%s %u %u %d\n", d->name, d->flags, d->leaf_count, image(d->code_object));
+  printf("%s %u %u %d\n", d->name, d->flags, d->leaf_count, code_object(d->code_object));
 }
 int main(void) {
   const struct descriptor* a = entry_a();
   const struct descriptor* b = entry_b();
-  printf("%d %d\n", image_count, a == b);
   print(a);
   print(b);
+  printf("%d %d\n", seen_count, a == b);
   return 0;
 }
 """
@@ -680,43 +753,30 @@ extern "C" const loom::kernel::descriptor* entry_{name}() {{
             self.skipTest("no C compiler to link with")
         name = refs[0][1]["name"]
         # Two code objects, two descriptors, each naming its own object's.
-        self.assertEqual(output[0], "2 0")
-        a, b = output[1].split(), output[2].split()
-        self.assertEqual(a[:3], [name, "1", "1"])
-        self.assertEqual(b[:3], [name, "1", "2"])
-        self.assertNotEqual(a[3], b[3])
-        self.assertNotIn("-1", (a[3], b[3]))
+        a, b = output[0].split(), output[1].split()
+        self.assertEqual(a, [name, "1", "1", "0"])
+        self.assertEqual(b, [name, "1", "2", "1"])
+        self.assertEqual(output[2], "2 0")
 
-    SHARED_MAIN = r"""
-#include <stdio.h>
+    SHARED_MAIN = CODE_OBJECTS_C + r"""
 struct descriptor {
   unsigned version, flags;
   const char* name;
   unsigned workgroup_size[3], kernarg_size, parameter_count, leaf_count;
   unsigned export_ordinal;
   const void* leaves;
-  const void* code_object;
+  const struct code_object* code_object;
 };
 typedef const struct descriptor* (*reference)(void);
-static const void* images[8];
-static int image_count;
-void test_register_code_object(const void* data, unsigned long size) {
-  (void)size;
-  images[image_count++] = data;
-}
 const struct descriptor* entry_a(void);
 const struct descriptor* entry_b(void);
 reference via_a(void);
 reference via_b(void);
-static int image(const void* code_object) {
-  for (int i = 0; i < image_count; ++i) if (images[i] == code_object) return i;
-  return -1;
-}
 static void print(const struct descriptor* d) {
-  printf("%s %u %u %d\n", d->name, d->flags, d->leaf_count, image(d->code_object));
+  printf("%s %u %u %d\n", d->name, d->flags, d->leaf_count, code_object(d->code_object));
 }
 int main(void) {
-  printf("%d %d\n", image_count, via_a() == via_b());
+  printf("references %d\n", via_a() == via_b());
   print(entry_a());
   print(entry_b());
   print(via_a()());
@@ -779,8 +839,7 @@ extern "C" reference via_{name}() {{ return &shared_ref; }}
             for a, b in ((output[1], output[2]), (output[3], output[4])):
                 a, b = a.split(), b.split()
                 self.assertEqual(a[:4], ["_Z3runI6SharedEvT_", "0", "0", "-1"])
-                self.assertEqual(b[:3], ["_Z3runI6SharedEvT_", "1", "1"])
-                self.assertNotEqual(b[3], "-1")
+                self.assertEqual(b, ["_Z3runI6SharedEvT_", "1", "1", "0"])
 
     def test_host_object_does_not_depend_on_import_order(self):
         # The importer translates range-based for statements without changing

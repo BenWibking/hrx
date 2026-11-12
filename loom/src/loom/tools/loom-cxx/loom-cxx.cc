@@ -23,31 +23,31 @@
 //      the Loom compiler compiles them for --loom-target. Kernels the importer
 //      or the device compiler rejects are dropped when the drop policy allows,
 //      and the unit is translated again without them (it is not reparsed).
-//   3. Output: the device code object is embedded in the host module, with a
-//      static constructor passing it to --loom-register-function. Every
-//      kernel_ref descriptor the host references is defined in the host
-//      module with internal linkage, so the object exports no kernel_ref
-//      symbol and each object's launches resolve to its own descriptors and
-//      its own code object (loomcxx/kernel_ref.h). A descriptor combines the
-//      importer's host leaves (source offsets and sizes in the host object)
-//      with the kernel argument layout that the device compiler reports for
-//      the compiled kernel in its artifact manifest, and names the kernel by
-//      the ordinal of its export in the code object. Descriptors of kernels
-//      without device code are defined without their available flag, so
-//      launching them fails at run time instead of at link time. The module
-//      is emitted as one object file.
+//   3. Output: the device code object is embedded in the host module with an
+//      embedded_code_object record that tells a runtime how to load it. No
+//      static constructor registers or loads it: a runtime loads it when it
+//      first launches one of its kernels. Every kernel_ref descriptor the
+//      host references is defined in the host module with internal linkage,
+//      so the object exports no kernel_ref symbol and each object's launches
+//      resolve to its own descriptors and its own code object
+//      (loomcxx/kernel_ref.h). A descriptor combines the importer's host
+//      leaves (source offsets and sizes in the host object) with the kernel
+//      argument layout that the device compiler reports for the compiled
+//      kernel in its artifact manifest, and names the kernel by the ordinal
+//      of its export in the code object. Descriptors of kernels without
+//      device code are defined without their available flag, so launching
+//      them fails at run time instead of at link time. The module is emitted
+//      as one object file.
 
 #include <cxx/memory_layout.h>
 #include <cxx/mlir/llvm_codegen.h>
 #include <cxx/preprocessor.h>
 #include <cxx/toolchain.h>
 #include <cxx/translation_unit.h>
-#include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/GlobalVariable.h>
-#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -55,7 +55,6 @@
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
-#include <llvm/Transforms/Utils/ModuleUtils.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -134,7 +133,6 @@ struct Options {
   // Device options.
   std::string loom_target;
   std::string loom_format;
-  std::string register_function;
   bool drop_failed_kernels = false;
   bool stats = false;
   bool verbose = false;
@@ -179,9 +177,6 @@ void print_help() {
       "      device target, such as amdgpu:gfx90a\n"
       "  --loom-format=FORMAT\n"
       "      device artifact format (default amdgpu-hsaco for amdgpu)\n"
-      "  --loom-register-function=NAME\n"
-      "      extern \"C\" void NAME(const void*, size_t) receiving the\n"
-      "      embedded code object from a static constructor\n"
       "  --loom-drop-failed-kernels\n"
       "      drop launched kernels that the importer or the device compiler\n"
       "      rejects and keep the rest; their descriptors stay unavailable\n"
@@ -299,8 +294,6 @@ Options parse_options(int argc, char** argv) {
       options.loom_target = std::string(arg.substr(14));
     } else if (starts_with(arg, "--loom-format=")) {
       options.loom_format = std::string(arg.substr(14));
-    } else if (starts_with(arg, "--loom-register-function=")) {
-      options.register_function = std::string(arg.substr(25));
     } else if (arg == "--loom-drop-failed-kernels") {
       options.drop_failed_kernels = true;
     } else if (arg == "--loom-stats") {
@@ -1428,13 +1421,6 @@ bool Driver::device_pass() {
                  kTool.data(), options_.source.c_str());
     throw Failure{};
   }
-  if (options_.register_function.empty()) {
-    std::fprintf(stderr,
-                 "%s: error: %s launches kernels; --loom-register-function is "
-                 "required\n",
-                 kTool.data(), options_.source.c_str());
-    throw Failure{};
-  }
   std::vector<std::string> excluded;
   for (int round = 1; round <= kMaxDeviceRounds; ++round) {
     std::string bytecode;
@@ -1462,39 +1448,47 @@ bool Driver::device_pass() {
 }
 
 void Driver::embed_device_code() {
-  llvm::GlobalVariable* blob = nullptr;
+  llvm::GlobalVariable* record = nullptr;
   if (!code_object_.empty()) {
-    // The code object, and a static constructor registering it.
+    // The code object and its loom::kernel::embedded_code_object record:
+    // target family, target key, data and size.
     auto& context = host_module_->getContext();
     auto* data = llvm::ConstantDataArray::get(
         context, llvm::ArrayRef<uint8_t>(
                      reinterpret_cast<const uint8_t*>(code_object_.data()),
                      code_object_.size()));
-    blob = new llvm::GlobalVariable(
+    auto* blob = new llvm::GlobalVariable(
         *host_module_, data->getType(), /*isConstant=*/true,
-        llvm::GlobalValue::PrivateLinkage, data, "__loom_cxx_code_object");
+        llvm::GlobalValue::PrivateLinkage, data, "__loom_cxx_code_object_data");
     blob->setAlignment(llvm::Align(16));
-    auto* void_type = llvm::Type::getVoidTy(context);
+    auto string = [&](std::string_view value, std::string_view name) {
+      auto* text = llvm::ConstantDataArray::getString(context, value);
+      auto* global = new llvm::GlobalVariable(
+          *host_module_, text->getType(), /*isConstant=*/true,
+          llvm::GlobalValue::PrivateLinkage, text, name);
+      global->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+      return global;
+    };
+    const std::string_view target = options_.loom_target;
+    const auto colon = target.find(':');
     auto* pointer_type = llvm::PointerType::getUnqual(context);
     auto* size_type = host_module_->getDataLayout().getIntPtrType(context);
-    auto callee = host_module_->getOrInsertFunction(
-        options_.register_function,
-        llvm::FunctionType::get(
-            void_type, {static_cast<llvm::Type*>(pointer_type), size_type},
-            false));
-    auto* constructor =
-        llvm::Function::Create(llvm::FunctionType::get(void_type, false),
-                               llvm::GlobalValue::InternalLinkage,
-                               "__loom_cxx_register_code_object", *host_module_);
-    llvm::IRBuilder<> builder(
-        llvm::BasicBlock::Create(context, "entry", constructor));
-    llvm::Value* arguments[] = {
-        blob, llvm::ConstantInt::get(size_type, code_object_.size())};
-    builder.CreateCall(callee, arguments);
-    builder.CreateRetVoid();
-    llvm::appendToGlobalCtors(*host_module_, constructor, 65535);
+    auto* record_type = llvm::StructType::get(
+        context, {pointer_type, pointer_type, pointer_type, size_type});
+    record = new llvm::GlobalVariable(
+        *host_module_, record_type, /*isConstant=*/true,
+        llvm::GlobalValue::InternalLinkage,
+        llvm::ConstantStruct::get(
+            record_type,
+            {string(target.substr(0, colon), "__loom_cxx_target_family"),
+             string(colon == std::string_view::npos ? std::string_view()
+                                                    : target.substr(colon + 1),
+                    "__loom_cxx_target_key"),
+             blob, llvm::ConstantInt::get(size_type, code_object_.size())}),
+        "__loom_cxx_code_object");
+    record->setAlignment(llvm::Align(8));
   }
-  define_kernel_descriptors(blob);
+  define_kernel_descriptors(record);
 }
 
 // Defines every kernel_ref descriptor the host module references, in the
@@ -1502,7 +1496,7 @@ void Driver::embed_device_code() {
 // available when the importer imported it and the device compiler compiled
 // it; its leaves take their kernel argument offsets and payload sizes from
 // the compiled kernel's layout, and the descriptor names this object's code
-// object and the kernel's export ordinal in it. Other references get
+// object record and the kernel's export ordinal in it. Other references get
 // descriptors without the available flag.
 void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
   if (kernel_refs_.empty()) {

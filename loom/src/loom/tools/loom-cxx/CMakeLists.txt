@@ -53,7 +53,7 @@ install(DIRECTORY "${_loom_cxx_headers}" DESTINATION lib/loom-cxx/include
 if(IREE_BUILD_TESTS AND Python3_EXECUTABLE)
   # Compiles tiny translation units for the AMDGPU target (no device needed)
   # and inspects the objects: host code, an embedded code object, its
-  # registration constructor and the kernel descriptors, from one parse.
+  # load record and the kernel descriptors, from one parse.
   add_test(
     NAME loom/tools/loom-cxx/loom-cxx_test
     COMMAND "${Python3_EXECUTABLE}" -B

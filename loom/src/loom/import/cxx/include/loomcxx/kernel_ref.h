@@ -13,18 +13,22 @@
 // host compile only references that variable template specialization. Loom's
 // importer treats the same odr-use as a launch root and exports K. The
 // descriptor gives the host K's export and how to pack its kernel arguments,
-// so the host can dispatch K without naming conventions or side tables. loom-cxx compiles host and device code from one parse and defines
-// each descriptor the host references inside the host object, with local
-// linkage. Each object resolves its own references to its own descriptors,
-// which name the object's own embedded code object; no kernel_ref symbol is
-// exported, so descriptors of different kernels with the same mangled name
-// (internal-linkage lambdas, for example) never merge. The kernel argument
-// layout comes from the compiled kernel.
+// so the host can dispatch K without naming conventions or side tables.
+// loom-cxx compiles host and device code from one parse and defines each
+// descriptor the host references inside the host object, with local linkage.
+// Each object resolves its own references to its own descriptors, which name
+// the object's own embedded code object; no kernel_ref symbol is exported, so
+// descriptors of different kernels with the same mangled name
+// (internal-linkage lambdas, for example) never merge. Nothing registers or
+// loads a code object at startup: a runtime loads it from its
+// embedded_code_object record the first time it launches one of its kernels.
+// The kernel argument layout comes from the compiled kernel.
 //
 // To launch, a host zero-fills |kernarg_size| bytes, copies each leaf's
 // |size| bytes from |source_offset| in the parameter object to
-// |kernarg_offset|, and dispatches export |export_ordinal| of |code_object|
-// with that buffer as the kernel's explicit arguments.
+// |kernarg_offset|, and dispatches export |export_ordinal| of the executable
+// it loaded from |code_object| with that buffer as the kernel's explicit
+// arguments.
 //
 // This header has no other dependencies so that host code can include it.
 
@@ -51,11 +55,27 @@ struct descriptor_leaf {
 inline constexpr unsigned int descriptor_leaf_scalar = 0;
 inline constexpr unsigned int descriptor_leaf_buffer = 1;
 
-// Version 3 names the kernel by its export ordinal instead of by name.
+// Version 3 names the kernel by its export ordinal instead of by name, and its
+// code object by an embedded_code_object record that a runtime loads lazily.
 inline constexpr unsigned int descriptor_version = 3;
 // The kernel was imported. Without it the importer reached the kernel_ref but
 // dropped or excluded the kernel, and the descriptor names no device code.
 inline constexpr unsigned int descriptor_flag_available = 1u << 0;
+
+// The device code object an object file embeds, with what loading it needs.
+// loom-cxx defines one per object that launches kernels, with internal
+// linkage; every available descriptor of the object points to it. A runtime
+// identifies the code object by this record's address.
+struct embedded_code_object {
+  // Device target of the code object, from loom-cxx's
+  // --loom-target=FAMILY:SELECTOR: NUL-terminated family ("amdgpu") and
+  // selector ("gfx90a").
+  const char* target_family;
+  const char* target_key;
+  // The code object's bytes.
+  const void* data;
+  decltype(sizeof(0)) size;
+};
 
 // Launch facts of one kernel, one per kernel_ref specialization a translation
 // unit references.
@@ -82,10 +102,9 @@ struct descriptor {
   // kernel is unavailable.
   unsigned int export_ordinal;
   const descriptor_leaf* leaves;
-  // The code object that exports the kernel for this descriptor: the address
-  // loom-cxx passes to its registration function for the object's embedded
-  // code object. Null when the kernel is unavailable.
-  const void* code_object;
+  // The code object that exports the kernel: the object's embedded code
+  // object. Null when the kernel is unavailable.
+  const embedded_code_object* code_object;
 };
 
 // The descriptor of kernel K. Odr-use it, for example by taking its address,
