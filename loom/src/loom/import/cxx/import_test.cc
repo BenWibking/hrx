@@ -938,26 +938,6 @@ TEST_F(KernelRefImportTest, KernelLaunchesFollowKernelArgumentFlattening) {
   expect_leaves(*fixed, {{1, 0, 8}});
 }
 
-TEST_F(KernelRefImportTest, ExcludedKernelRefKernelsKeepUnavailableDescriptors) {
-  const iree_string_view_t excluded = IREE_SV("_Z3runI5OtherEvT_");
-  options_.excluded_kernels = &excluded;
-  options_.excluded_kernel_count = 1;
-  IREE_ASSERT_OK(ImportUnit(iree_make_cstring_view(kKernelRefSource)));
-  ASSERT_NE(module_, nullptr);
-  const std::string printed = Print();
-  EXPECT_NE(printed.find("@_Z3runI4BodyEvT_"), std::string::npos);
-  EXPECT_EQ(printed.find("_Z3runI5OtherEvT_"), std::string::npos) << printed;
-  // The host still references the excluded kernel's descriptor: its launch
-  // is unavailable and has no leaves.
-  const auto* other = Launch(kOtherReference);
-  ASSERT_NE(other, nullptr);
-  EXPECT_FALSE(other->available);
-  EXPECT_TRUE(other->leaves.empty());
-  EXPECT_EQ(other->export_name, "_Z3runI5OtherEvT_");
-  ASSERT_NE(Launch(kBodyReference), nullptr);
-  EXPECT_TRUE(Launch(kBodyReference)->available);
-}
-
 TEST_F(KernelRefImportTest, DroppedKernelRefKernelsKeepUnavailableDescriptors) {
   std::string source = std::string(kKernelRefSource) + R"cxx(
 struct Bad {
@@ -1070,13 +1050,11 @@ TEST_F(KernelRefImportTest, ParsedUnitImportsWithoutReparsing) {
   };
   EXPECT_TRUE(body_available());
 
-  // Importing again, for example with a kernel the device compiler rejected
-  // excluded, reuses the same translation unit.
+  // Importing again, for example without the root of a kernel the device
+  // compiler rejected, reuses the same translation unit.
   loom_module_free(module_);
   module_ = nullptr;
-  const iree_string_view_t excluded = IREE_SV("_Z3runI4BodyEvT_");
-  options_.excluded_kernels = &excluded;
-  options_.excluded_kernel_count = 1;
+  UseKernelRefs({kOtherReference, kFixedReference});
   IREE_ASSERT_OK(loom_cxx_import_unit(unit, &context_, &pool_, &options_,
                                       iree_allocator_system(), &module_));
   ASSERT_NE(module_, nullptr);
@@ -1153,25 +1131,6 @@ const loom::kernel::descriptor* host_mixed() { return describe<Mixed>(); }
     EXPECT_EQ(mixed->leaves[i].size, expected[i][2]) << i;
   }
 
-  // Excluding the kernel keeps its launch, unavailable and without leaves.
-  loom_module_free(module_);
-  module_ = nullptr;
-  const iree_string_view_t excluded = IREE_SV("_Z3runI5MixedEvT_");
-  options_.excluded_kernels = &excluded;
-  options_.excluded_kernel_count = 1;
-  IREE_ASSERT_OK(loom_cxx_import_unit(unit, &context_, &pool_, &options_,
-                                      iree_allocator_system(), &module_));
-  ASSERT_NE(module_, nullptr);
-  mixed = nullptr;
-  for (const auto& launch : loom::cxx_import::unit_kernel_launches(unit)) {
-    if (launch.symbol == kMixedReference) {
-      mixed = &launch;
-    }
-  }
-  ASSERT_NE(mixed, nullptr);
-  EXPECT_FALSE(mixed->available);
-  EXPECT_EQ(mixed->export_name, "_Z3runI5MixedEvT_");
-  EXPECT_TRUE(mixed->leaves.empty());
   loom_cxx_unit_free(unit);
 }
 
@@ -1321,8 +1280,8 @@ TEST_F(ImportTest, RejectsUnknownImportFlags) {
   EXPECT_EQ(module_, nullptr);
 }
 
-TEST_F(ImportTest, RejectsExcludedKernelCountWithoutStorage) {
-  options_.excluded_kernel_count = 1;
+TEST_F(ImportTest, RejectsKernelRefCountWithoutStorage) {
+  options_.kernel_ref_count = 1;
   IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                         Import(IREE_SV("int entry() { return 0; }\n")));
   EXPECT_EQ(module_, nullptr);

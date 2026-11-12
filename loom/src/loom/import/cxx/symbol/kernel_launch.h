@@ -37,8 +37,8 @@ struct KernelLaunchLeaf {
 struct KernelLaunch {
   // Itanium symbol of the kernel_ref specialization the host references.
   std::string symbol;
-  // Whether the kernel was imported. A dropped or excluded kernel has no
-  // device code and no leaves.
+  // Whether the kernel was imported. A dropped kernel has no device code and
+  // no leaves.
   bool available = false;
   // Export name of the kernel in the compiled executable.
   std::string export_name;

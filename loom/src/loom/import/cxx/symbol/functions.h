@@ -241,8 +241,8 @@ class Functions {
   void set_current_origin(cxx::FunctionSymbol* origin) {
     current_origin_ = origin;
   }
-  // Import options borrowed for the translation: hosted profile, excluded
-  // export names and the kernel descriptor path.
+  // Import options borrowed for the translation: hosted profile and kernel_ref
+  // roots.
   void set_import_options(const loom_cxx_import_options_t* options) {
     options_ = options;
   }
@@ -254,8 +254,8 @@ class Functions {
       const std::unordered_set<cxx::FunctionSymbol*>* excluded) {
     excluded_kernels_ = excluded;
   }
-  // Host launch facts of each loom::kernel::kernel_ref specialization reached
-  // from host code, one per specialization in discovery order.
+  // Host launch facts of each kernel_ref root, one per specialization in
+  // request order.
   std::vector<KernelLaunch> kernel_launches();
   // Builds the selected native definition and launch contract at the caller's
   // module insertion point. The caller then enters and fills the returned body.
@@ -446,7 +446,8 @@ class Functions {
   const loom_cxx_import_options_t* options_ = nullptr;
   // Reachable bodyless declarations in deterministic discovery order.
   std::vector<FunctionDeclaration> pending_declarations_;
-  // One odr-use of loom::kernel::kernel_ref<&K> reached from host code.
+  // One kernel_ref root: a loom::kernel::kernel_ref<&K> specialization host
+  // code references.
   struct KernelReference {
     // The kernel_ref specialization, whose Itanium symbol the host references.
     cxx::VariableSymbol* variable;
@@ -465,9 +466,7 @@ class Functions {
   };
   // kernel_ref roots in request order.
   std::vector<KernelReference> kernel_references_;
-  // Canonical kernels named by at least one kernel_ref.
-  std::unordered_set<cxx::FunctionSymbol*> referenced_kernels_;
-  // Canonical kernels exported as kernel_ref roots.
+  // Canonical kernels of the kernel_ref roots.
   std::unordered_set<cxx::FunctionSymbol*> kernel_roots_;
   // Descriptors of the translated kernel_ref-named kernels, by canonical
   // kernel.

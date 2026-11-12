@@ -736,7 +736,9 @@ class Driver {
   // Imports and compiles the device code, applying the drop policy. Returns
   // false when the device pass failed.
   bool device_pass();
-  bool import_device_module(std::vector<std::string>& excluded, int round,
+  // Imports the kernels of kernel_refs_ other than |excluded| (kernel_ref
+  // symbols).
+  bool import_device_module(const std::vector<std::string>& excluded, int round,
                             std::string& bytecode_out, bool& has_kernels);
   bool compile_device_module(const std::string& bytecode,
                              std::vector<std::string>& rejected);
@@ -1041,18 +1043,18 @@ void Driver::device_failure(std::string_view stage, std::string_view log) {
   throw Failure{};
 }
 
-bool Driver::import_device_module(std::vector<std::string>& excluded, int round,
+bool Driver::import_device_module(const std::vector<std::string>& excluded,
+                                  int round,
                                   std::string& bytecode, bool& has_kernels) {
   auto start = Clock::now();
   // The kernels to import are exactly those whose descriptors the host code
-  // references.
+  // references, less those the device compiler rejected. A descriptor the
+  // import reports nothing for stays unavailable.
   std::vector<loomc_string_view_t> kernel_refs;
   for (const auto& symbol : kernel_refs_) {
-    kernel_refs.push_back(loomc_make_cstring_view(symbol.c_str()));
-  }
-  std::vector<loomc_string_view_t> excluded_views;
-  for (const auto& name : excluded) {
-    excluded_views.push_back(loomc_make_cstring_view(name.c_str()));
+    if (std::find(excluded.begin(), excluded.end(), symbol) == excluded.end()) {
+      kernel_refs.push_back(loomc_make_cstring_view(symbol.c_str()));
+    }
   }
   loomc_cxx_import_options_t options = import_options();
   if (options_.drop_failed_kernels) {
@@ -1060,8 +1062,6 @@ bool Driver::import_device_module(std::vector<std::string>& excluded, int round,
   }
   options.kernel_refs = kernel_refs.data();
   options.kernel_ref_count = kernel_refs.size();
-  options.excluded_kernels = excluded_views.data();
-  options.excluded_kernel_count = excluded_views.size();
 
   auto* native_unit = reinterpret_cast<loom_cxx_unit_t*>(unit_.get());
   loomc_module_t* raw_module = nullptr;
@@ -1466,7 +1466,20 @@ bool Driver::device_pass() {
       device_failure("device compile", "error [TOOL]: retry limit reached\n");
       return false;
     }
-    excluded.insert(excluded.end(), rejected.begin(), rejected.end());
+    // Retry without the kernel_ref roots of the rejected exports.
+    const size_t before = excluded.size();
+    for (const auto& launch : launches_) {
+      if (launch.available &&
+          std::find(rejected.begin(), rejected.end(), launch.export_name) !=
+              rejected.end()) {
+        excluded.push_back(launch.symbol);
+      }
+    }
+    if (excluded.size() == before) {
+      device_failure("device compile",
+                     "error [TOOL]: rejected exports name no kernel_ref root\n");
+      return false;
+    }
   }
   return false;
 }

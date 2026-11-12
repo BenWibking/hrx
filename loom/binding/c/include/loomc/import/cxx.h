@@ -196,10 +196,6 @@ typedef struct loomc_cxx_import_options_t {
   const loomc_string_view_t* kernel_refs;
   /// Number of kernel_ref roots.
   loomc_host_size_t kernel_ref_count;
-  /// Export names of kernel_ref roots omitted from selection.
-  const loomc_string_view_t* excluded_kernels;
-  /// Number of excluded kernel export names.
-  loomc_host_size_t excluded_kernel_count;
 } loomc_cxx_import_options_t;
 
 /// Creates an immutable semantic preamble from leading include directives.
@@ -333,7 +329,7 @@ LOOMC_API_EXPORT void loomc_cxx_unit_release(loomc_cxx_unit_t* unit);
 /// @param context Immutable context containing the core dialects.
 /// @param workspace Workspace backing the returned module's arena storage.
 /// @param unit Unit from loomc_cxx_unit_parse. It is not reparsed.
-/// @param options Import policy, or NULL for defaults: roots, excluded kernels,
+/// @param options Import policy, or NULL for defaults: roots, kernel_ref roots,
 /// floating-point model, path mapper, and the HOSTED and DROP_FAILED_KERNELS
 /// flags. Source configuration
 /// fields were fixed when the unit was parsed and are ignored.
@@ -342,7 +338,7 @@ LOOMC_API_EXPORT void loomc_cxx_unit_release(loomc_cxx_unit_t* unit);
 /// @param out_result Receives one owned result with retained diagnostics.
 /// @return OK for successful import or diagnosed rejection, as
 /// loomc_module_import_cxx. A unit can be imported again, for example with
-/// more excluded kernels.
+/// fewer kernel_ref roots.
 ///
 /// @ownership
 /// Release outputs with loomc_module_release and loomc_result_release.

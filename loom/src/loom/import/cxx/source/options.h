@@ -142,11 +142,6 @@ typedef struct loom_cxx_import_options_t {
   const iree_string_view_t* kernel_refs;
   // Number of kernel_ref roots.
   iree_host_size_t kernel_ref_count;
-  // Export names of kernel_ref roots omitted from selection, such as kernels a
-  // later compile rejected.
-  const iree_string_view_t* excluded_kernels;
-  // Number of excluded kernel export names.
-  iree_host_size_t excluded_kernel_count;
 } loom_cxx_import_options_t;
 
 // Parses the canonical precise or fast floating-point model spelling.

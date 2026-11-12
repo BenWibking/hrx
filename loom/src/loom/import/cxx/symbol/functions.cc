@@ -267,20 +267,12 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
   const bool kernel_ref_roots = options_ && options_->kernel_ref_count;
   if (kernel_ref_roots) {
     // Offload mode: export exactly the kernels named by the kernel_ref
-    // specializations the host code references, except kernels a later
-    // compile rejected.
-    std::unordered_set<std::string> excluded_names;
-    for (size_t i = 0; i < options_->excluded_kernel_count; ++i) {
-      excluded_names.emplace(string(options_->excluded_kernels[i]));
-    }
+    // specializations the host code references, except roots this import
+    // already dropped.
     for (auto* kernel : kernel_ref_kernels(
              std::span(options_->kernel_refs, options_->kernel_ref_count),
              root)) {
       if (excluded_kernels_ && excluded_kernels_->contains(kernel->canonical())) {
-        continue;
-      }
-      if (!excluded_names.empty() &&
-          excluded_names.contains(kernel_root_export_name(kernel))) {
         continue;
       }
       exported_.insert(kernel);
@@ -565,7 +557,6 @@ std::vector<cxx::FunctionSymbol*> Functions::kernel_ref_kernels(
     }
   }
   std::vector<cxx::FunctionSymbol*> kernels;
-  std::unordered_set<cxx::FunctionSymbol*> kernel_set;
   std::unordered_set<std::string> seen;
   for (auto name : names) {
     auto spelling = string(name);
@@ -585,10 +576,8 @@ std::vector<cxx::FunctionSymbol*> Functions::kernel_ref_kernels(
     }
     auto* kernel = referenced_kernel(found->second)->canonical();
     kernel_references_.push_back({found->second->canonical(), kernel});
-    referenced_kernels_.insert(kernel);
-    if (kernel_set.insert(kernel).second) {
+    if (kernel_roots_.insert(kernel).second) {
       kernels.push_back(kernel);
-      kernel_roots_.insert(kernel);
     }
   }
   return kernels;
@@ -1586,9 +1575,8 @@ loom_symbol_ref_t Functions::create_symbol(FunctionInstance instance,
   auto* function = instance.symbol;
   std::string spelling;
   if (kernel_roots_.contains(function->canonical())) {
-    // A kernel named by a launch site or a kernel_ref odr-use, exported under
-    // its explicit name or its own Itanium symbol, which is also how the host
-    // names it.
+    // A kernel_ref root, exported under its explicit name or its own Itanium
+    // symbol, which is also how the host names it.
     spelling = kernel_root_export_name(function);
     names_.reserve(spelling, source);
   } else if (auto found = explicit_names_.find(function->canonical());
@@ -2173,7 +2161,7 @@ DefinedFunction Functions::define(FunctionInstance instance, Types& types,
       types.append_kernel_parameter(types.unqualified(parameter->type()),
                                     definition, arguments);
     }
-    if (referenced_kernels_.contains(symbol->canonical())) {
+    if (kernel_roots_.contains(symbol->canonical())) {
       record_kernel_descriptor(symbol, types, definition);
     }
     if (auto* configuration = launches_.configuration_function(symbol)) {

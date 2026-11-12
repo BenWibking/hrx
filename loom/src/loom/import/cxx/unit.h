@@ -45,8 +45,8 @@ struct UnitStatistics {
 };
 UnitStatistics unit_statistics(const loom_cxx_unit_t* unit);
 
-// Host launch facts of every loom::kernel::kernel_ref specialization reached
-// from host code by the most recent successful import, in discovery order.
+// Host launch facts of every kernel_ref root of the most recent successful
+// import, in request order.
 // Kernels that import dropped or excluded are listed without availability.
 // A single-source driver combines these with the native argument layout of
 // the compiled kernels to define the host's descriptors.

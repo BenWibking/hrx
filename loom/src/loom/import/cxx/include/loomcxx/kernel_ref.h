@@ -10,8 +10,9 @@
 // Host launch descriptors for single-source C++.
 //
 // Host code names a kernel K by odr-using loom::kernel::kernel_ref<&K>; the
-// host compile only references that variable template specialization. Loom's
-// importer treats the same odr-use as a launch root and exports K. The
+// host compile only references that variable template specialization. The
+// specializations host code references are the importer's roots: it exports
+// their kernels K. The
 // descriptor gives the host K's export and how to pack its kernel arguments,
 // so the host can dispatch K without naming conventions or side tables.
 // loom-cxx compiles host and device code from one parse and defines each
@@ -50,8 +51,8 @@ using pack_function = void (*)(void* kernarg, const void* const* parameters);
 // and packs kernel arguments with a generated pack_function instead of a
 // table of leaves.
 inline constexpr unsigned int descriptor_version = 3;
-// The kernel was imported. Without it the importer reached the kernel_ref but
-// dropped or excluded the kernel, and the descriptor names no device code.
+// The kernel was imported and compiled. Without it the kernel was dropped, and
+// the descriptor names no device code.
 inline constexpr unsigned int descriptor_flag_available = 1u << 0;
 
 // The device code object an object file embeds, with what loading it needs.

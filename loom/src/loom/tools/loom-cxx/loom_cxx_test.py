@@ -497,8 +497,9 @@ const loom::kernel::descriptor* bad() {
 
     def test_compile_rejected_kernels_are_excluded_and_retried(self):
         # The importer admits Big, but its private array exceeds the device's
-        # scratch limit, so the device compiler rejects it. The driver
-        # excludes the kernel, imports and compiles again, and keeps Body.
+        # scratch limit, so the device compiler rejects it. The driver drops
+        # the kernel's kernel_ref root, imports and compiles again, and keeps
+        # Body.
         big_ref = "_ZN4loom6kernel10kernel_refIXadL_Z3runI3BigEvT_EEEE"
         source = (
             KERNEL_PRELUDE
