@@ -282,7 +282,7 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
         continue;
       }
       if (!excluded_names.empty()) {
-        auto name = launched_export_name(kernel, nullptr);
+        auto name = launched_export_name(kernel);
         if (!name.empty() && excluded_names.contains(name)) {
           continue;
         }
@@ -533,44 +533,16 @@ class CalleeCollector final : public cxx::ASTVisitor {
 
 }  // namespace
 
-std::string Functions::kernel_type_symbol_spelling(
-    cxx::FunctionSymbol* function, cxx::AST* source) {
-  auto arguments = function->templateArguments();
-  auto* tag =
-      arguments.empty() ? nullptr : cxx::template_argument_type(arguments[0]);
-  if (!tag) {
-    diagnostics_.reject(unit_, source,
-                        "kernel_type_symbol requires a kernel template "
-                        "instance with a leading type argument");
+std::string Functions::launched_export_name(cxx::FunctionSymbol* kernel) {
+  if (!launched_kernels_.contains(kernel->canonical())) {
+    return {};
+  }
+  if (auto found = explicit_names_.find(kernel->canonical());
+      found != explicit_names_.end()) {
+    return std::string(found->second);
   }
   cxx::ExternalNameEncoder encoder(&unit_);
-  return cxx::to_string(function->name()) + "__" + encoder.encode(tag);
-}
-
-std::string Functions::launched_export_name(cxx::FunctionSymbol* kernel,
-                                            cxx::AST* source) {
-  if (annotated(kernel, "kernel_type_symbol")) {
-    if (source) {
-      return kernel_type_symbol_spelling(kernel, source);
-    }
-    auto arguments = kernel->templateArguments();
-    auto* tag = arguments.empty() ? nullptr
-                                  : cxx::template_argument_type(arguments[0]);
-    if (!tag) {
-      return {};
-    }
-    cxx::ExternalNameEncoder encoder(&unit_);
-    return cxx::to_string(kernel->name()) + "__" + encoder.encode(tag);
-  }
-  if (referenced_kernels_.contains(kernel->canonical())) {
-    if (auto found = explicit_names_.find(kernel->canonical());
-        found != explicit_names_.end()) {
-      return std::string(found->second);
-    }
-    cxx::ExternalNameEncoder encoder(&unit_);
-    return encoder.encode(kernel->canonical());
-  }
-  return {};
+  return encoder.encode(kernel->canonical());
 }
 
 void Functions::record_kernel_descriptor(cxx::FunctionSymbol* function,
@@ -583,7 +555,7 @@ void Functions::record_kernel_descriptor(cxx::FunctionSymbol* function,
   auto* layout = unit_.control()->memoryLayout();
   auto parameters = function->parameters();
   KernelDescriptor descriptor;
-  descriptor.export_name = launched_export_name(function, source);
+  descriptor.export_name = launched_export_name(function);
   descriptor.workgroup_size =
       launches_.exact_workgroup_size(function).value_or(
           std::array<uint32_t, 3>{0, 0, 0});
@@ -637,7 +609,7 @@ std::vector<KernelLaunch> Functions::kernel_launches() {
     launch.symbol = std::move(symbol);
     auto found = kernel_descriptors_.find(reference.kernel);
     if (found == kernel_descriptors_.end()) {
-      launch.export_name = launched_export_name(reference.kernel, nullptr);
+      launch.export_name = launched_export_name(reference.kernel);
     } else {
       const KernelDescriptor& descriptor = found->second;
       launch.available = true;
@@ -669,6 +641,7 @@ std::vector<cxx::FunctionSymbol*> Functions::discover_launched_kernels(
     if (auto* kernel = launched_kernel(function)) {
       if (kernel_set.insert(kernel->canonical()).second) {
         kernels.push_back(kernel);
+        launched_kernels_.insert(kernel->canonical());
       }
       continue;
     }
@@ -698,6 +671,7 @@ std::vector<cxx::FunctionSymbol*> Functions::discover_launched_kernels(
       referenced_kernels_.insert(kernel);
       if (kernel_set.insert(kernel).second) {
         kernels.push_back(kernel);
+        launched_kernels_.insert(kernel);
       }
     }
     pending.insert(pending.end(), callees.begin(), callees.end());
@@ -1696,13 +1670,11 @@ loom_symbol_ref_t Functions::create_symbol(FunctionInstance instance,
                                            cxx::AST* source) {
   auto* function = instance.symbol;
   std::string spelling;
-  if (annotated(function, "kernel_type_symbol") ||
-      referenced_kernels_.contains(function->canonical())) {
-    // A kernel template instance named by its leading type argument's Itanium
-    // encoding (kernel_type_symbol), which host C++ observes as
-    // typeid(T).name(), or a kernel named through kernel_ref by its own
-    // Itanium symbol. The host finds the export through that name.
-    spelling = launched_export_name(function, source);
+  if (launched_kernels_.contains(function->canonical())) {
+    // A kernel named by a launch site or a kernel_ref odr-use, exported under
+    // its explicit name or its own Itanium symbol, which is also how the host
+    // names it.
+    spelling = launched_export_name(function);
     names_.reserve(spelling, source);
   } else if (auto found = explicit_names_.find(function->canonical());
              found != explicit_names_.end()) {

@@ -34,7 +34,7 @@ static loom::kernel::configuration launch_config(unsigned groups) {
   return {{groups, 1, 1}, {64, 1, 1}};
 }
 template <class T>
-[[loom::kernel(launch_config), loom::kernel_type_symbol]]
+[[loom::kernel(launch_config)]]
 void run(T tag) { tag(); }
 struct Body {
   float a;
@@ -396,9 +396,9 @@ const loom::kernel::descriptor* host_entry() {
         self.assertNoExportedKernelRefs(elf)
         descriptor = elf.descriptor(BODY_REF)
         self.assertEqual((descriptor["version"], descriptor["flags"]), (2, 1))
-        self.assertEqual(descriptor["name"], "run__4Body")
+        self.assertEqual(descriptor["name"], "_Z3runI4BodyEvT_")
         self.assertIsNotNone(descriptor["code_object"])
-        self.assertIn("run__4Body", elf.code_object_at(descriptor["code_object"]).amdgpu_kernel_arguments())
+        self.assertIn("_Z3runI4BodyEvT_", elf.code_object_at(descriptor["code_object"]).amdgpu_kernel_arguments())
         # The embedded device code object and its registration constructor.
         self.assertTrue(self.device_code_objects(elf))
         self.assertGreater(elf.section(".init_array")[5], 0)
@@ -726,8 +726,8 @@ extern "C" reference via_{name}() {{ return &shared_ref; }}
             self.assertEqual(output[0].split()[1], "0")  # two shared_ref copies
             for a, b in ((output[1], output[2]), (output[3], output[4])):
                 a, b = a.split(), b.split()
-                self.assertEqual(a[:4], ["run__6Shared", "0", "0", "-1"])
-                self.assertEqual(b[:3], ["run__6Shared", "1", "1"])
+                self.assertEqual(a[:4], ["_Z3runI6SharedEvT_", "0", "0", "-1"])
+                self.assertEqual(b[:3], ["_Z3runI6SharedEvT_", "1", "1"])
                 self.assertNotEqual(b[3], "-1")
 
     def test_host_object_does_not_depend_on_import_order(self):

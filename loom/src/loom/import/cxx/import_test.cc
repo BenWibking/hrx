@@ -677,8 +677,8 @@ TEST_F(ImportTest, TemplateFacadeNeedsOnlyOneHeader) {
   EXPECT_EQ(source_requests_.at("/templates/loomcxx/template.h"), 1);
 }
 
-// Hosted single-source import: launched kernel template instances named by
-// their leading type argument. Body has a base, an array and two pointers;
+// Hosted single-source import: launched kernel template instances, exported
+// under their Itanium symbols. Body has a base, an array and two pointers;
 // Other has one pointer. host() is walked for launch sites, never lowered.
 constexpr char kLaunchedSource[] = R"cxx(
 #include <loomcxx/kernel.h>
@@ -688,7 +688,7 @@ static loom::kernel::configuration launch_config(unsigned groups) {
 }
 
 template <class T>
-[[loom::kernel(launch_config), loom::kernel_type_symbol]]
+[[loom::kernel(launch_config)]]
 void run(T tag) { tag(); }
 
 struct Base { float scale; };
@@ -765,26 +765,26 @@ TEST_F(LaunchedImportTest, LaunchedRootsExportOnlyLaunchedKernelInstances) {
   IREE_ASSERT_OK(ImportUnit(iree_make_cstring_view(kLaunchedSource)));
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(error_count_, 0);
-  // Each launched instance is exported under its kernel_type_symbol name, the
-  // kernel name and the Itanium encoding of its tag; the launching host
-  // function is walked for launch sites but not lowered.
+  // Each launched instance is exported under its Itanium symbol, as a kernel
+  // named through kernel_ref is; the launching host function is walked for
+  // launch sites but not lowered.
   const std::string printed = Print();
-  EXPECT_NE(printed.find("@run__4Body"), std::string::npos) << printed;
-  EXPECT_NE(printed.find("@run__5Other"), std::string::npos) << printed;
+  EXPECT_NE(printed.find("@_Z3runI4BodyEvT_"), std::string::npos) << printed;
+  EXPECT_NE(printed.find("@_Z3runI5OtherEvT_"), std::string::npos) << printed;
   EXPECT_EQ(printed.find("@host"), std::string::npos) << printed;
   // Launches through loom::kernel::launch reference no kernel_ref descriptors.
   EXPECT_TRUE(loom::cxx_import::unit_kernel_launches(unit_).empty());
 }
 
 TEST_F(LaunchedImportTest, ExcludedKernelsAreOmittedFromLaunchedRoots) {
-  const iree_string_view_t excluded = IREE_SV("run__5Other");
+  const iree_string_view_t excluded = IREE_SV("_Z3runI5OtherEvT_");
   options_.excluded_kernels = &excluded;
   options_.excluded_kernel_count = 1;
   IREE_ASSERT_OK(Import(iree_make_cstring_view(kLaunchedSource)));
   ASSERT_NE(module_, nullptr);
   const std::string printed = Print();
-  EXPECT_NE(printed.find("@run__4Body"), std::string::npos);
-  EXPECT_EQ(printed.find("run__5Other"), std::string::npos);
+  EXPECT_NE(printed.find("@_Z3runI4BodyEvT_"), std::string::npos);
+  EXPECT_EQ(printed.find("_Z3runI5OtherEvT_"), std::string::npos);
 }
 
 TEST_F(LaunchedImportTest, DropFailedKernelsKeepsTheOtherKernels) {
@@ -809,9 +809,9 @@ void host_bad(float* y) {
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(error_count_, 0);
   const std::string printed = Print();
-  EXPECT_NE(printed.find("@run__4Body"), std::string::npos);
-  EXPECT_NE(printed.find("@run__5Other"), std::string::npos);
-  EXPECT_EQ(printed.find("run__3Bad"), std::string::npos);
+  EXPECT_NE(printed.find("@_Z3runI4BodyEvT_"), std::string::npos);
+  EXPECT_NE(printed.find("@_Z3runI5OtherEvT_"), std::string::npos);
+  EXPECT_EQ(printed.find("_Z3runI3BadEvT_"), std::string::npos);
 }
 
 // Host code names kernels through loom::kernel::kernel_ref<&K> instead of
@@ -982,7 +982,7 @@ static loom::kernel::configuration launch_config(unsigned groups) {
   return {{groups, 1, 1}, {64, 1, 1}};
 }
 template <class T>
-[[loom::kernel(launch_config), loom::kernel_type_symbol]]
+[[loom::kernel(launch_config)]]
 void run(T tag) { tag(); }
 inline float scaled(float value) {
   if (loom::target::is_device()) {
@@ -1009,7 +1009,7 @@ void host(float* y) {
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(error_count_, 0);
   const std::string printed = Print();
-  EXPECT_NE(printed.find("@run__4Body"), std::string::npos) << printed;
+  EXPECT_NE(printed.find("@_Z3runI4BodyEvT_"), std::string::npos) << printed;
   EXPECT_NE(printed.find("scalar.mulf"), std::string::npos) << printed;
   EXPECT_EQ(printed.find("printf"), std::string::npos) << printed;
   EXPECT_EQ(printed.find("@host"), std::string::npos) << printed;
@@ -1209,7 +1209,7 @@ TEST_F(LaunchedImportTest, HostedUnitsSkipHostGlobalStorage) {
   IREE_ASSERT_OK(Import(view));
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(error_count_, 0);
-  EXPECT_NE(Print().find("@run__4Body"), std::string::npos);
+  EXPECT_NE(Print().find("@_Z3runI4BodyEvT_"), std::string::npos);
 }
 
 TEST_F(ImportTest, HostedFlagSelectsTheHostedProfile) {

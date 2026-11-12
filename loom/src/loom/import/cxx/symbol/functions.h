@@ -319,16 +319,10 @@ class Functions {
   // Bodies are completed for instantiation but never lowered.
   std::vector<cxx::FunctionSymbol*> discover_launched_kernels(
       std::span<cxx::FunctionSymbol* const> definitions);
-  // Export name of a kernel_type_symbol kernel instance: the kernel name and
-  // the Itanium encoding of its leading type argument, which host C++
-  // observes as typeid(T).name().
-  std::string kernel_type_symbol_spelling(cxx::FunctionSymbol* function,
-                                          cxx::AST* source);
-  // Export name of a launched kernel root: the kernel_type_symbol spelling,
-  // else the Itanium symbol of a kernel named only through kernel_ref, else
-  // empty (the ordinary naming rules apply).
-  std::string launched_export_name(cxx::FunctionSymbol* kernel,
-                                   cxx::AST* source);
+  // Export name of a launched kernel root (a kernel named by a launch site or
+  // a kernel_ref odr-use): its explicit loom::symbol name, else its Itanium
+  // symbol. Empty for any other function (the ordinary naming rules apply).
+  std::string launched_export_name(cxx::FunctionSymbol* kernel);
   // Records a kernel_ref-named kernel's host launch descriptor: its export
   // name, static workgroup size and kernel argument leaves, from the same
   // flattening that builds the kernel's argument list.
@@ -472,6 +466,8 @@ class Functions {
   std::vector<KernelReference> kernel_references_;
   // Canonical kernels named by at least one kernel_ref.
   std::unordered_set<cxx::FunctionSymbol*> referenced_kernels_;
+  // Canonical kernels named by a launch site or a kernel_ref (@launched).
+  std::unordered_set<cxx::FunctionSymbol*> launched_kernels_;
   // Descriptors of the translated kernel_ref-named kernels, by canonical
   // kernel.
   std::unordered_map<cxx::FunctionSymbol*, KernelDescriptor>
